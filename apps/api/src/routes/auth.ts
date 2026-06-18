@@ -121,6 +121,31 @@ async function runAuthWrites<T>(
   return write(fallbackRepos);
 }
 
+// 团队就绪 gap[41]：安全/身份事件审计。注册/登录(成败)/锁定/登出/停用/首管引导/邀请收发等核心
+// 身份动作此前几乎不写审计。统一经 deps.auditLogs.createAuditLog seam（与 G3 停用交接同款），尽力而为——
+// auditLogs seam 缺席（老运行时/假仓库）则静默跳过；写失败仅告警，绝不影响认证主流程的状态码/响应体。
+// entityType 统一为 "user"（实体即被审计的账号），actorKind="human"（与 G3 模板一致；登录失败无确定 actor）。
+async function auditSecurityEvent(
+  deps: AuthDependencies,
+  input: Omit<Parameters<NonNullable<AuthDependencies["auditLogs"]>["createAuditLog"]>[0], "actorKind" | "entityType"> & {
+    actorKind?: Parameters<NonNullable<AuthDependencies["auditLogs"]>["createAuditLog"]>[0]["actorKind"];
+  }
+): Promise<void> {
+  if (!deps.auditLogs) {
+    return; // seam 可选——假仓库/老运行时缺席时静默跳过。
+  }
+  try {
+    await deps.auditLogs.createAuditLog({
+      actorKind: input.actorKind ?? "human",
+      entityType: "user",
+      ...input
+    });
+  } catch (error) {
+    // 尽力而为：审计写失败绝不破坏认证主流程（与 G3 停用交接的 try/catch 善后语义一致）。
+    console.warn(`security audit write failed (best-effort): ${input.action}`, error);
+  }
+}
+
 export function createAuthRoutes(
   source: AuthDependencySource = getDefaultAuthDependencies,
   options: { adminClaimThrottle?: AdminClaimThrottle } = {}
@@ -173,6 +198,13 @@ export function createAuthRoutes(
           throw new HTTPException(500, { message: "管理员认领失败" });
         }
         user = promoted;
+        // 安全事件：凭 ADMIN_CLAIM_SECRET 把普通账号提为管理员（权限抬升，必审）。
+        await auditSecurityEvent(deps, {
+          actorUserId: user.id,
+          entityId: user.id,
+          action: "auth.admin_bootstrapped",
+          detailJson: { nickname: user.nickname, via: "admin_claim_secret" }
+        });
       }
     }
     // 口令校验通过（或本就无需口令）：清空该来源的失败计数，避免影响后续正常登录。
@@ -239,6 +271,22 @@ export function createAuthRoutes(
     await issueSessionCookie(c, token, getAuthSettings(deps));
     await deps.touchUser?.(user.id);
 
+    // 安全事件：新账号注册。首个注册者自举为 admin 时一并记 admin_bootstrapped（首管引导路径，必审）。
+    await auditSecurityEvent(deps, {
+      actorUserId: user.id,
+      entityId: user.id,
+      action: "auth.user_registered",
+      detailJson: { nickname: user.nickname, bootstrapped_admin: shouldBeAdmin }
+    });
+    if (shouldBeAdmin) {
+      await auditSecurityEvent(deps, {
+        actorUserId: user.id,
+        entityId: user.id,
+        action: "auth.admin_bootstrapped",
+        detailJson: { nickname: user.nickname, via: "first_user_registration" }
+      });
+    }
+
     return c.json(toIdentityResponse(user, true), 201);
   });
 
@@ -282,6 +330,22 @@ export function createAuthRoutes(
       const attempts = priorAttempts + 1;
       const lockedUntil = attempts >= LOGIN_MAX_ATTEMPTS ? new Date(now.getTime() + LOGIN_LOCK_MS) : null;
       await deps.credentials.recordFailedAttempt(credential.userId, lockedUntil);
+      // 安全事件：密码错误（在线暴力破解信号）。subject=凭据所属用户；不记明文。
+      await auditSecurityEvent(deps, {
+        actorUserId: credential.userId,
+        entityId: credential.userId,
+        action: "auth.login_failed",
+        detailJson: { reason: "bad_password", failed_attempts: attempts }
+      });
+      if (lockedUntil) {
+        // 安全事件：连续失败达上限，账号临时锁定。
+        await auditSecurityEvent(deps, {
+          actorUserId: credential.userId,
+          entityId: credential.userId,
+          action: "auth.account_locked",
+          detailJson: { failed_attempts: attempts, locked_until: lockedUntil.toISOString() }
+        });
+      }
       throw invalid();
     }
 
@@ -295,6 +359,14 @@ export function createAuthRoutes(
     const { token } = await mintSession(deps, user, { authMethod: "password" });
     await issueSessionCookie(c, token, getAuthSettings(deps));
     await deps.touchUser?.(user.id);
+
+    // 安全事件：登录成功。
+    await auditSecurityEvent(deps, {
+      actorUserId: user.id,
+      entityId: user.id,
+      action: "auth.login_succeeded",
+      detailJson: { nickname: user.nickname }
+    });
 
     return c.json(toIdentityResponse(user, false), 200);
   });
@@ -340,6 +412,14 @@ export function createAuthRoutes(
     const { token } = await mintSession(deps, actingUser, { authMethod: "password" });
     await issueSessionCookie(c, token, getAuthSettings(deps));
 
+    // 安全事件：用户自助改密（撤销旧会话即信任重建，必审）。
+    await auditSecurityEvent(deps, {
+      actorUserId: actingUser.id,
+      entityId: actingUser.id,
+      action: "auth.password_changed",
+      detailJson: { nickname: actingUser.nickname }
+    });
+
     return c.json({ ok: true });
   });
 
@@ -369,6 +449,14 @@ export function createAuthRoutes(
       workspaceId: payload.workspace_id ?? null,
       expiresAt
     });
+    // 安全事件：管理员创建邀请（赋权入口，必审）。entityId=邀请 id；actor=创建邀请的管理员。不记明文 token。
+    await auditSecurityEvent(deps, {
+      actorUserId: actingUser.id,
+      entityId: invite.id,
+      action: "auth.invite_created",
+      detailJson: { email: invite.email, role: invite.role, workspace_id: invite.workspaceId ?? null }
+    });
+
     // 一次性返回明文 token——服务端只存 hash，明文不再可取回。
     return c.json(
       { invite_id: invite.id, token, email: invite.email, expires_at: expiresAt.toISOString() },
@@ -446,6 +534,14 @@ export function createAuthRoutes(
     await issueSessionCookie(c, token, getAuthSettings(deps));
     await deps.touchUser?.(user.id);
 
+    // 安全事件：邀请被接受 → 新账号入驻（赋权落地，必审）。entityId=新用户；detail 记邀请来源。
+    await auditSecurityEvent(deps, {
+      actorUserId: user.id,
+      entityId: user.id,
+      action: "auth.invite_accepted",
+      detailJson: { nickname: user.nickname, invite_id: invite.id, email: invite.email, role: invite.role }
+    });
+
     return c.json(toIdentityResponse(user, true), 201);
   });
 
@@ -521,6 +617,14 @@ export function createAuthRoutes(
     forgetUserCookie(c, runtimeSettings);
     await deps.forgetUser?.(user.id);
 
+    // 安全事件：登出（会话/cookie 失效，会话审计闭环）。
+    await auditSecurityEvent(deps, {
+      actorUserId: user.id,
+      entityId: user.id,
+      action: "auth.logout",
+      detailJson: { nickname: user.nickname }
+    });
+
     return c.json({ ok: true });
   });
 
@@ -545,6 +649,14 @@ export function createAuthRoutes(
     if (!deleted) {
       throw new HTTPException(404, { message: "用户不存在或已停用" });
     }
+    // 安全事件：账号被管理员停用（账号级，区别于下方 G3 的逐工作项交接审计）。entityId=被停用用户；
+    // actor=执行停用的管理员。这是账号生命周期终止的权威审计点。
+    await auditSecurityEvent(deps, {
+      actorUserId: actingUser.id,
+      entityId: targetId,
+      action: "auth.user_deactivated",
+      detailJson: { deactivated_nickname: deleted.nickname }
+    });
     // 释放邮箱：user_credentials.email 是 citext UNIQUE，停用用户若留着凭据行会让那个邮箱永远无法再注册。
     // 用户行仍以 deletedAt 软删保留供审计，只删对停用用户已无意义的凭据。顺序写——软删成功后残留凭据无害,
     // 故删凭据失败不必回滚软删（与本路由后续撤会话/设备同为尽力而为的善后步骤）。

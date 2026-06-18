@@ -1538,3 +1538,186 @@ test("invite accept rejects an invalid token (404); create requires admin (403)"
   });
   assert.equal(byMember.status, 403);
 });
+
+// ——— 团队就绪 gap[41]：安全/身份事件审计 ———
+
+// auditLogs 写必抛——验「尽力而为」：审计失败绝不破坏认证主流程的状态码/响应体。
+class ThrowingAuditLogs implements Pick<AuditLogRepository, "createAuditLog"> {
+  public attempts = 0;
+  async createAuditLog(_input: CreateAuditLogInput): Promise<AuditLogRow> {
+    this.attempts += 1;
+    throw new Error("audit sink is down");
+  }
+}
+
+function passwordCtxWithAudit(seedUsers: UserAuthRow[] = []) {
+  const base = passwordCtx(seedUsers);
+  const auditLogs = new MemoryAuditLogs();
+  (base.deps as AuthDependencies).auditLogs = auditLogs;
+  return { ...base, auditLogs };
+}
+
+test("gap[41]: POST /register writes auth.user_registered (and admin_bootstrapped for the first user)", async () => {
+  const { deps, auditLogs } = passwordCtxWithAudit();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const res = await app.request("/auth/register", jsonPost({
+    email: "founder@example.com",
+    password: "founder-pass-1",
+    nickname: "Founder"
+  }));
+  assert.equal(res.status, 201);
+
+  const registered = auditLogs.rows.filter((row) => row.action === "auth.user_registered");
+  assert.equal(registered.length, 1, "one auth.user_registered audit");
+  assert.equal(registered[0]?.entityType, "user");
+  assert.equal(registered[0]?.actorKind, "human");
+  assert.equal((registered[0]?.detailJson as { nickname?: string }).nickname, "Founder");
+  // 首个注册者自举为 admin → 一并记 admin_bootstrapped。
+  const bootstrapped = auditLogs.rows.filter((row) => row.action === "auth.admin_bootstrapped");
+  assert.equal(bootstrapped.length, 1, "first user registration also writes admin_bootstrapped");
+});
+
+test("gap[41]: POST /login success writes auth.login_succeeded", async () => {
+  const alice = user({ id: "10000000-0000-4000-8000-0000000000e1", nickname: "alice" });
+  const { deps, credentials, auditLogs } = passwordCtxWithAudit([alice]);
+  credentials.rows.push(
+    credentialRow({
+      userId: alice.id,
+      email: "alice@example.com",
+      passwordHash: await hashPassword("alice-secret-1"),
+      passwordAlgo: "scrypt"
+    })
+  );
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const res = await app.request("/auth/login", jsonPost({ email: "alice@example.com", password: "alice-secret-1" }));
+  assert.equal(res.status, 200);
+
+  const succeeded = auditLogs.rows.filter((row) => row.action === "auth.login_succeeded");
+  assert.equal(succeeded.length, 1, "one auth.login_succeeded audit");
+  assert.equal(succeeded[0]?.entityId, alice.id);
+  assert.equal(succeeded[0]?.actorUserId, alice.id);
+  assert.equal(auditLogs.rows.some((row) => row.action === "auth.login_failed"), false, "no failure audit on success");
+});
+
+test("gap[41]: failed login writes auth.login_failed (and account_locked on the lockout trip)", async () => {
+  const bob = user({ id: "10000000-0000-4000-8000-0000000000e2", nickname: "bob" });
+  const { deps, credentials, auditLogs } = passwordCtxWithAudit([bob]);
+  const seeded = credentialRow({
+    userId: bob.id,
+    email: "bob@example.com",
+    passwordHash: await hashPassword("bob-secret-1"),
+    passwordAlgo: "scrypt"
+  });
+  seeded.failedAttempts = 9; // 下一次失败即达上限 → 锁定
+  credentials.rows.push(seeded);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const res = await app.request("/auth/login", jsonPost({ email: "bob@example.com", password: "wrong" }));
+  assert.equal(res.status, 401, "bad password still returns generic 401");
+
+  const failed = auditLogs.rows.filter((row) => row.action === "auth.login_failed");
+  assert.equal(failed.length, 1, "one auth.login_failed audit");
+  assert.equal(failed[0]?.entityId, bob.id);
+  assert.equal((failed[0]?.detailJson as { reason?: string }).reason, "bad_password");
+  // 第 10 次失败触发锁定 → account_locked。
+  const locked = auditLogs.rows.filter((row) => row.action === "auth.account_locked");
+  assert.equal(locked.length, 1, "lockout trip writes auth.account_locked");
+});
+
+test("gap[41]: POST /logout writes auth.logout", async () => {
+  const { deps, auditLogs } = passwordCtxWithAudit();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const reg = await app.request("/auth/register", jsonPost({
+    email: "logout-audit@example.com",
+    password: "logout-pass-1",
+    nickname: "LogoutAudit"
+  }));
+  assert.equal(reg.status, 201);
+  const cookiePair = (reg.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+
+  const logout = await app.request("/auth/logout", { method: "POST", headers: { Cookie: cookiePair } });
+  assert.equal(logout.status, 200);
+
+  const logoutLogs = auditLogs.rows.filter((row) => row.action === "auth.logout");
+  assert.equal(logoutLogs.length, 1, "one auth.logout audit");
+  assert.equal(logoutLogs[0]?.entityType, "user");
+});
+
+test("gap[41]: account deactivate writes account-level auth.user_deactivated (distinct from G3 per-item handover)", async () => {
+  const runtimeSettings = settings();
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000e3", nickname: "admin", isAdmin: true });
+  const target = user({ id: "10000000-0000-4000-8000-0000000000e4", nickname: "target", cookieToken: "cookie-deact-audit" });
+  const auditLogs = new MemoryAuditLogs();
+  const deps: AuthDependencies = {
+    users: new MemoryUsers([admin, target]),
+    devices: new MemoryDevices([]),
+    sessions: new MemorySessions(),
+    auditLogs,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const res = await app.request("/auth/users/" + target.id + "/deactivate", {
+    method: "POST",
+    headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) }
+  });
+  assert.equal(res.status, 200);
+
+  const deactivated = auditLogs.rows.filter((row) => row.action === "auth.user_deactivated");
+  assert.equal(deactivated.length, 1, "one account-level auth.user_deactivated audit");
+  assert.equal(deactivated[0]?.entityId, target.id, "subject is the deactivated user");
+  assert.equal(deactivated[0]?.actorUserId, admin.id, "actor is the admin");
+  // 不与 G3 逐工作项审计重复（本场景无 workItems dep → 零交接审计）。
+  assert.equal(auditLogs.rows.some((row) => row.action === "work_item.unassigned_on_offboarding"), false);
+});
+
+test("gap[41]: best-effort — auth flow still succeeds when the audit write throws", async () => {
+  const base = passwordCtx();
+  const throwing = new ThrowingAuditLogs();
+  (base.deps as AuthDependencies).auditLogs = throwing;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(base.deps));
+  app.get("/who", createCurrentUserMiddleware(base.deps), (c) => c.json({ id: c.var.currentUser.id }));
+
+  // 注册（审计抛）→ 仍 201 且会话可用。
+  const reg = await app.request("/auth/register", jsonPost({
+    email: "besteffort@example.com",
+    password: "best-pass-1",
+    nickname: "BestEffort"
+  }));
+  assert.equal(reg.status, 201, "register succeeds despite audit throw");
+  const cookiePair = (reg.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+  assert.equal((await app.request("/who", { headers: { Cookie: cookiePair } })).status, 200, "session usable");
+
+  // 登录（审计抛）→ 仍 200。
+  const login = await app.request("/auth/login", jsonPost({ email: "besteffort@example.com", password: "best-pass-1" }));
+  assert.equal(login.status, 200, "login succeeds despite audit throw");
+
+  // 登出（审计抛）→ 仍 200。
+  const logout = await app.request("/auth/logout", { method: "POST", headers: { Cookie: cookiePair } });
+  assert.equal(logout.status, 200, "logout succeeds despite audit throw");
+
+  assert.ok(throwing.attempts > 0, "audit writes were actually attempted (and swallowed)");
+});
+
+test("gap[41]: auditLogs seam absent → no throw, auth flow unaffected", async () => {
+  const { deps } = passwordCtx(); // 不挂 auditLogs（老运行时/假仓库语义）
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const reg = await app.request("/auth/register", jsonPost({
+    email: "noseam@example.com",
+    password: "noseam-pass-1",
+    nickname: "NoSeam"
+  }));
+  assert.equal(reg.status, 201, "register works with no auditLogs seam wired");
+});
