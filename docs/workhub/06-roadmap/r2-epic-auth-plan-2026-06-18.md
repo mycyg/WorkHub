@@ -176,6 +176,7 @@ Flip AUTH_MODE default to 'password' (or 'hybrid' for staged pilots), add a back
   - **算法决策（偏离设计稿，刻意）**：设计点名 argon2id，本实施改用 **node 内置 `scrypt`**（内存硬、零依赖、glibc/musl 无关）——避免在自动循环里引入原生依赖（`@node-rs/argon2` 的预编译二进制要靠 Docker 构建的 pilot-stack-smoke 才验证得到，风险不该无人值守时担）。PHC 串自带 `$scrypt$ln=15,r=8,p=1$salt$hash`，`password_algo` 列 + `needsRehash` 留好**无停机轮换钩子**：日后注册 argon2id 实现，旧 scrypt 串靠 algo 标签继续验、登录时透明升级，无需迁移。参数 N=2^15(~32MB/次)、r=8、p=1、keylen=32、salt 16B；scrypt 异步不阻塞事件循环。
 - **`packages/db/src/repositories/user-credentials.ts`**（`createCredentialRepository`）：`findByEmail`(citext 大小写不敏感) / `findByUserId` / `createCredential` / `updatePassword`(改密清零失败计数+解锁) / `recordFailedAttempt`(计数+1+可选锁定) / `resetFailedAttempts` / `setEmailVerified`。仓库只存/读已哈希 PHC 串，策略无关。经 `index.ts` 导出。DB 方法待接线由 PG smoke 覆盖。
 - **测试**：`apps/api/src/password.test.ts` 4 测（PHC 格式+随机 salt / 校验对错+篡改+垃圾串不抛 / 长度策略 / needsRehash 判弱参与未知算法）。`@workhub/api` 257 测 + `@workhub/db` 28 测 + `pnpm -r typecheck`(16 包)全绿。
+- **✅ 真 PG 覆盖（`r2-pg-redis-smoke`）**：凭据 + 会话 DB 层（2a/3a 仓库此前仅假数据单测）首次过真 Postgres——`createCredential`→`findByEmail`(大写 email 验 **citext 大小写不敏感**)→`verifyPassword`(对/错)→失败计数+复位；会话 `create`→`findActiveByTokenHash`→`touch` 滑动→`revoke`(解析不到)→绝对过期 `deleteExpired` 清扫→`revokeAllForUser` 全撤。补上了 DB 方法的真库验证缺口。
 
 ### ⏭️ 之后（依设计推进，本刀未含）
 

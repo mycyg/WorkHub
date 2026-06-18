@@ -10,11 +10,15 @@ import {
   agentRuns,
   createAgentRunRepository,
   createClientDeviceRepository,
+  createCredentialRepository,
   createDatabaseClient,
+  createSessionRepository,
   createUserRepository,
   createWorkItemRepository,
   defaultSeedFixture,
   defaultSeedIds,
+  generateSessionToken,
+  hashSessionToken,
   orgs,
   projects,
   runMigrations,
@@ -27,6 +31,7 @@ import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
+import { currentPasswordAlgo, hashPassword, verifyPassword } from "../auth/password.js";
 import { RedisPresenceStore, RedisPushBus } from "../broker/index.js";
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { createPushRoutes } from "../routes/push.js";
@@ -192,6 +197,92 @@ async function main() {
     assert.equal(raceA.user.id, raceB.user.id, "concurrent first-login resolves to one user row");
     assert.equal(raceA.created !== raceB.created, true, "exactly one concurrent caller is the creator");
 
+    // R2 auth epic：凭据 + 会话 DB 层真 PG 往返（2a/3a 仓库此前仅假数据单测，这里首次过真 Postgres + citext）。
+    {
+      const credentials = createCredentialRepository(db);
+      const sessionRepo = createSessionRepository(db);
+      const authUserId = randomUUID();
+      // 故意大写 email → 验 citext 列大小写不敏感唯一 + 等值查找。
+      const email = `R2.Auth+${authUserId.slice(0, 8)}@Example.com`;
+      await db
+        .insert(users)
+        .values({
+          id: authUserId,
+          nickname: `r2-auth-${authUserId.slice(0, 8)}`,
+          cookieToken: `r2-auth-cookie-${randomUUID()}`,
+          availabilityStatus: "free",
+          isAdmin: false
+        })
+        .onConflictDoNothing();
+
+      const passwordHash = await hashPassword("r2-smoke-passphrase");
+      const created = await credentials.createCredential({
+        userId: authUserId,
+        email,
+        passwordHash,
+        passwordAlgo: currentPasswordAlgo()
+      });
+      assert.equal(created.userId, authUserId);
+
+      const byLower = await credentials.findByEmail(email.toLowerCase());
+      assert.ok(byLower, "citext email lookup must be case-insensitive");
+      assert.equal(byLower.id, created.id);
+      assert.equal(await verifyPassword("r2-smoke-passphrase", byLower.passwordHash ?? ""), true);
+      assert.equal(await verifyPassword("wrong-passphrase", byLower.passwordHash ?? ""), false);
+
+      await credentials.recordFailedAttempt(authUserId);
+      const afterFail = await credentials.findByUserId(authUserId);
+      assert.equal(afterFail?.failedAttempts, 1, "recordFailedAttempt should increment");
+      await credentials.resetFailedAttempts(authUserId);
+      const afterReset = await credentials.findByUserId(authUserId);
+      assert.equal(afterReset?.failedAttempts, 0, "resetFailedAttempts should clear");
+
+      const nowAt = new Date();
+      const secret = generateSessionToken();
+      const absoluteExpiresAt = new Date(nowAt.getTime() + 3_600_000);
+      const idleExpiresAt = new Date(nowAt.getTime() + 1_800_000);
+      const session = await sessionRepo.create({
+        userId: authUserId,
+        tokenHash: hashSessionToken(secret),
+        authMethod: "password",
+        absoluteExpiresAt,
+        idleExpiresAt
+      });
+      const resolved = await sessionRepo.findActiveByTokenHash(hashSessionToken(secret), nowAt);
+      assert.ok(resolved, "active session should resolve by token hash");
+      assert.equal(resolved.id, session.id);
+
+      const slid = await sessionRepo.touch(session.id, new Date(nowAt.getTime() + 2_400_000), nowAt);
+      assert.ok(slid && slid.idleExpiresAt.getTime() > idleExpiresAt.getTime(), "touch should slide idle expiry forward");
+
+      await sessionRepo.revoke(session.id, new Date());
+      const afterRevoke = await sessionRepo.findActiveByTokenHash(hashSessionToken(secret), new Date());
+      assert.equal(afterRevoke, null, "revoked session must not resolve");
+
+      // 绝对过期的死会话 → deleteExpired 清掉。
+      await sessionRepo.create({
+        userId: authUserId,
+        tokenHash: hashSessionToken(generateSessionToken()),
+        authMethod: "password",
+        absoluteExpiresAt: new Date(nowAt.getTime() - 3_600_000),
+        idleExpiresAt: new Date(nowAt.getTime() - 1_800_000)
+      });
+      const swept = await sessionRepo.deleteExpired(new Date());
+      assert.ok(swept >= 1, "deleteExpired should remove absolutely-expired sessions");
+
+      // 再建一个 active 会话 → revokeAllForUser 全撤（停用/全设备登出）。
+      await sessionRepo.create({
+        userId: authUserId,
+        tokenHash: hashSessionToken(generateSessionToken()),
+        authMethod: "password",
+        absoluteExpiresAt,
+        idleExpiresAt
+      });
+      const revokedCount = await sessionRepo.revokeAllForUser(authUserId, new Date());
+      assert.ok(revokedCount >= 1, "revokeAllForUser should revoke remaining active sessions");
+
+      console.log("[r2-pg-redis-smoke] credential + session DB layer round-trip ok");
+    }
 
     const workItemService = createDbWorkItemService(createWorkItemRepository(db));
     const app = withErrors(new Hono<AuthEnv>());
