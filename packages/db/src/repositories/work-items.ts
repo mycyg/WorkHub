@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, notInArray, or, sql, type SQL } from "drizzle-orm";
 
 import { allowedWorkItemTransitions, sessionFinalizeFromStatuses } from "@workhub/contracts";
 import type { EvidenceRef, WorkItemMode, WorkItemStatus } from "@workhub/contracts";
+
+// 用户停用-工作交接（offboarding）：被停用用户「认领中」的事项要回退到可领取池，避免在岗工作卡在已消失的人身上。
+// 终态集（已交付/作废）不交接——交接它们既无意义又会抹掉「谁交付的」的溯源；与本仓 updateWorkItemFromSession
+// 注释里的「已交付/终态(merged/done/cancelled)」同一集合。done 是真正落地终态；merged/cancelled 各为交付/作废端点。
+const terminalWorkItemStatuses: WorkItemStatus[] = ["merged", "done", "cancelled"];
 
 import type { WorkHubDb } from "../client.js";
 import {
@@ -217,7 +222,15 @@ export type WorkItemRepository = {
   }) => Promise<{ id: string; status: WorkItemStatus } | null>;
 };
 
-export type WorkItemDataRepository = WorkItemRepository & {
+// 用户停用-工作交接（offboarding）：清空被停用用户在所有「非终态、未软删」事项上的认领，把它们退回可领取池
+// （claimed_by_user_id/claimed_by_nickname/claimed_at 全置空）。单条 UPDATE ... RETURNING 受影响的 id，供调用方
+// 逐项写审计日志。终态(merged/done/cancelled)与已软删事项不动；提交人(submitter)不动以保溯源。
+// 单列在自有接口（而非塞进基 WorkItemRepository）——它只服务停用路由，不污染 agent-runner/通知用的最小写面。
+export type WorkItemClaimHandoverRepository = {
+  unassignActiveClaimsForUser: (userId: string, at: Date) => Promise<{ id: string }[]>;
+};
+
+export type WorkItemDataRepository = WorkItemRepository & WorkItemClaimHandoverRepository & {
   findProjectById: (projectId: string) => Promise<WorkItemProjectRow | null>;
   findFirstActiveProject: () => Promise<WorkItemProjectRow | null>;
   // 缺省 project_id 的兜底必须锚定 actor 的 workspace，否则会落到全局首个项目（跨租户写入默认 seed 工作区）。
@@ -448,6 +461,29 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         )
         .returning({ id: workItems.id, status: workItems.status });
       return rows[0] ?? null;
+    },
+
+    async unassignActiveClaimsForUser(userId, at) {
+      // 单条 UPDATE：把该用户认领的、非终态、未软删事项的认领字段清空，RETURNING 受影响 id。
+      // 走 work_items_claimed_by_user_id_idx；version+1 让客户端乐观锁/同步感知到归属变更（与本仓其它写一致）。
+      const rows = await db
+        .update(workItems)
+        .set({
+          claimedByUserId: null,
+          claimedByNickname: null,
+          claimedAt: null,
+          version: sql`${workItems.version} + 1`,
+          updatedAt: at
+        })
+        .where(
+          and(
+            eq(workItems.claimedByUserId, userId),
+            notInArray(workItems.status, terminalWorkItemStatuses),
+            isNull(workItems.deletedAt)
+          )
+        )
+        .returning({ id: workItems.id });
+      return rows;
     },
 
     async findProjectById(projectId) {

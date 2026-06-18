@@ -551,6 +551,29 @@ export function createAuthRoutes(
     if (deps.credentials) {
       await deps.credentials.deleteByUserId(targetId);
     }
+    // 工作交接：把被停用用户认领中的非终态事项退回可领取池（claimed_by_user_id=null），避免在岗工作卡在
+    // 已消失的人身上。提交人(submitter)字段保留以保溯源，终态(merged/done/cancelled)与已软删事项不动。
+    // 每退回一项写一笔审计（actor=执行停用的管理员）让交接可追溯。尽力而为——审计写失败不得使停用失败，
+    // 故整段裹 try/catch 仅告警（与上方撤凭据/下方撤会话设备同为善后步骤）。
+    if (deps.workItems) {
+      try {
+        const reassigned = await deps.workItems.unassignActiveClaimsForUser(targetId, at);
+        if (deps.auditLogs) {
+          for (const item of reassigned) {
+            await deps.auditLogs.createAuditLog({
+              actorKind: "human",
+              actorUserId: actingUser.id,
+              entityType: "work_item",
+              entityId: item.id,
+              action: "work_item.unassigned_on_offboarding",
+              detailJson: { offboarded_user_id: targetId }
+            });
+          }
+        }
+      } catch (error) {
+        console.warn("offboarding work-item handover failed (best-effort)", error);
+      }
+    }
     // 立即切断访问：撤销全部服务端会话 + 客户端设备令牌。
     if (deps.sessions) {
       await deps.sessions.revokeAllForUser(targetId, at);

@@ -8,16 +8,19 @@ import { HTTPException } from "hono/http-exception";
 import { authDefaults, settings as defaultSettings, type Settings } from "@workhub/config";
 import { defaultWorkHubLocale, type ActorKind } from "@workhub/contracts";
 import {
+  createAuditLogRepository,
   createClientDeviceRepository,
   createCredentialRepository,
   createInviteRepository,
   createSessionRepository,
+  createWorkItemRepository,
   createWorkspaceMembershipRepository,
   generateSessionToken,
   getSharedDatabaseClient,
   createUserRepository,
   hashSessionToken,
   nextIdleExpiry,
+  type AuditLogRepository,
   type ClientDeviceAuthRow,
   type ClientDeviceRepository,
   type CredentialRepository,
@@ -28,6 +31,7 @@ import {
   type UserAuthRow,
   type UserRepository,
   type WorkHubDatabaseClient,
+  type WorkItemClaimHandoverRepository,
   type WorkspaceMembershipRepository
 } from "@workhub/db";
 
@@ -97,6 +101,12 @@ export type AuthDependencies = {
   memberships?: WorkspaceMembershipRepository;
   // R2 auth epic：邀请仓库为 OPTIONAL——仅邀请路由用。
   invites?: InviteRepository;
+  // 用户停用-工作交接：停用时把被停用用户认领中的非终态事项退回可领取池（claimedByUserId=null），
+  // 避免在岗工作卡在已消失的人身上。OPTIONAL——仅停用路由用；未注入则跳过（与会话/凭据清理同为可选善后）。
+  workItems?: WorkItemClaimHandoverRepository;
+  // 交接审计：每条被退回的事项写一笔审计日志（actor=执行停用的管理员），让交接可追溯。OPTIONAL——
+  // 与 workItems 配套；缺任一则跳过审计写（停用主流程不受影响）。
+  auditLogs?: Pick<AuditLogRepository, "createAuditLog">;
   settings?: Settings;
   now?: () => Date;
   touchUser?: (userId: string) => void | Promise<void>;
@@ -118,6 +128,9 @@ export function getDefaultAuthDependencies(): AuthDependencies {
     credentials: createCredentialRepository(dbClient.db),
     memberships: createWorkspaceMembershipRepository(dbClient.db),
     invites: createInviteRepository(dbClient.db),
+    // 用户停用-工作交接：退回被停用用户认领的非终态事项 + 逐项写审计日志。
+    workItems: createWorkItemRepository(dbClient.db),
+    auditLogs: createAuditLogRepository(dbClient.db),
     // R2 audit 修复：注册/接受邀请的跨表写在同一事务内（tx-bound 仓库，任一步抛即整笔回滚）。
     // tx 与 db 共享查询接口，故可现起 tx-bound 仓库——与 cost-policy-store 的原子审计写同范式。
     atomicAuthWrites: (write) =>

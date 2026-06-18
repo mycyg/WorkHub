@@ -9,8 +9,11 @@ import { ZodError } from "zod";
 import { loadSettings, type Settings } from "@workhub/config";
 import { isSessionActive } from "@workhub/db";
 import type {
+  AuditLogRepository,
+  AuditLogRow,
   ClientDeviceAuthRow,
   ClientDeviceRepository,
+  CreateAuditLogInput,
   CreateSessionInput,
   CreateInviteInput,
   CreateUserCredentialInput,
@@ -23,10 +26,11 @@ import type {
   UserCredentialRow,
   UserInviteRow,
   UserRepository,
+  WorkItemClaimHandoverRepository,
   WorkspaceMembershipRepository,
   WorkspaceMembershipRow
 } from "@workhub/db";
-import type { WorkHubLocale } from "@workhub/contracts";
+import type { WorkHubLocale, WorkItemStatus } from "@workhub/contracts";
 
 import {
   COOKIE_NAME,
@@ -502,6 +506,61 @@ class MemoryInvites implements InviteRepository {
     return this.rows.filter(
       (row) => row.email.toLowerCase() === email.toLowerCase() && row.acceptedAt === null && row.deletedAt === null
     );
+  }
+}
+
+// 用户停用-工作交接的假仓库：只实现 unassignActiveClaimsForUser（停用路由用的唯一方法）。
+// 模拟真库语义：清空被停用用户认领的、非终态、未软删事项的认领字段，RETURNING 受影响 id。
+type FakeWorkItemClaim = {
+  id: string;
+  claimedByUserId: string | null;
+  status: WorkItemStatus;
+  deletedAt: Date | null;
+};
+
+const TERMINAL_STATUSES: readonly WorkItemStatus[] = ["merged", "done", "cancelled"];
+
+class MemoryWorkItems implements WorkItemClaimHandoverRepository {
+  constructor(public rows: FakeWorkItemClaim[]) {}
+
+  async unassignActiveClaimsForUser(userId: string, at: Date) {
+    const affected: { id: string }[] = [];
+    for (const row of this.rows) {
+      if (
+        row.claimedByUserId === userId &&
+        row.deletedAt === null &&
+        !TERMINAL_STATUSES.includes(row.status)
+      ) {
+        row.claimedByUserId = null;
+        affected.push({ id: row.id });
+      }
+    }
+    void at;
+    return affected;
+  }
+}
+
+class MemoryAuditLogs implements Pick<AuditLogRepository, "createAuditLog"> {
+  public rows: AuditLogRow[] = [];
+
+  async createAuditLog(input: CreateAuditLogInput) {
+    const row = {
+      id: input.id ?? `70000000-0000-4000-8000-${String(this.rows.length + 1).padStart(12, "0")}`,
+      orgId: input.orgId ?? null,
+      workspaceId: input.workspaceId ?? null,
+      actorKind: input.actorKind,
+      actorUserId: input.actorUserId ?? null,
+      actorNickname: input.actorNickname ?? null,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      action: input.action,
+      detailJson: input.detailJson ?? {},
+      snapshotId: input.snapshotId ?? null,
+      undoneAt: null,
+      createdAt: now
+    } as AuditLogRow;
+    this.rows.push(row);
+    return row;
   }
 }
 
@@ -1240,6 +1299,60 @@ test("POST /users/:id/deactivate (admin) soft-deletes the user and revokes their
   assert.equal(sessions.rows.filter((row) => row.userId === target.id && row.revokedAt === null).length, 0, "sessions revoked");
   const targetDevices = await devices.listByUser(target.id);
   assert.equal(targetDevices.every((d) => d.revokedAt !== null), true, "devices revoked");
+});
+
+test("POST /users/:id/deactivate hands over the target's active claims (unassign + audit) and leaves terminal items", async () => {
+  const runtimeSettings = settings();
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000d3", nickname: "admin", isAdmin: true });
+  const target = user({ id: "10000000-0000-4000-8000-0000000000d4", nickname: "target", cookieToken: "cookie-target-ho" });
+  const workItems = new MemoryWorkItems([
+    // 两条该用户认领中的非终态事项 → 应被退回（claimedByUserId 清空）。
+    { id: "a0000000-0000-4000-8000-000000000001", claimedByUserId: target.id, status: "ai_working", deletedAt: null },
+    { id: "a0000000-0000-4000-8000-000000000002", claimedByUserId: target.id, status: "in_review", deletedAt: null },
+    // 终态事项（merged）→ 不动，保溯源「谁交付的」。
+    { id: "a0000000-0000-4000-8000-000000000003", claimedByUserId: target.id, status: "merged", deletedAt: null },
+    // 别人认领的非终态事项 → 不受影响。
+    { id: "a0000000-0000-4000-8000-000000000004", claimedByUserId: admin.id, status: "ai_working", deletedAt: null }
+  ]);
+  const auditLogs = new MemoryAuditLogs();
+  const deps: AuthDependencies = {
+    users: new MemoryUsers([admin, target]),
+    devices: new MemoryDevices([]),
+    sessions: new MemorySessions(),
+    workItems,
+    auditLogs,
+    settings: runtimeSettings,
+    now: () => now
+  };
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const res = await app.request("/auth/users/" + target.id + "/deactivate", {
+    method: "POST",
+    headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) }
+  });
+  assert.equal(res.status, 200);
+
+  // 该用户认领的两条非终态事项被退回可领取池。
+  const byId = new Map(workItems.rows.map((row) => [row.id, row]));
+  assert.equal(byId.get("a0000000-0000-4000-8000-000000000001")?.claimedByUserId, null, "active claim #1 unassigned");
+  assert.equal(byId.get("a0000000-0000-4000-8000-000000000002")?.claimedByUserId, null, "active claim #2 unassigned");
+  // 终态事项保持认领（不交接，保溯源）。
+  assert.equal(byId.get("a0000000-0000-4000-8000-000000000003")?.claimedByUserId, target.id, "terminal item untouched");
+  // 别人的认领不受影响。
+  assert.equal(byId.get("a0000000-0000-4000-8000-000000000004")?.claimedByUserId, admin.id, "other user's claim untouched");
+
+  // 每条退回的事项各写一笔审计：action / actor(admin) / entity(work_item) 都对。
+  const handoverLogs = auditLogs.rows.filter((row) => row.action === "work_item.unassigned_on_offboarding");
+  assert.equal(handoverLogs.length, 2, "one audit log per reassigned item");
+  assert.equal(handoverLogs.every((row) => row.actorUserId === admin.id), true, "actor is the admin performing the deactivate");
+  assert.equal(handoverLogs.every((row) => row.entityType === "work_item"), true, "entity is the work item");
+  assert.deepEqual(
+    handoverLogs.map((row) => row.entityId).sort(),
+    ["a0000000-0000-4000-8000-000000000001", "a0000000-0000-4000-8000-000000000002"],
+    "audit entityIds are exactly the reassigned items"
+  );
 });
 
 test("POST /users/:id/deactivate rejects non-admins (403) and self-deactivation (400)", async () => {
