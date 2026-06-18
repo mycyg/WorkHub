@@ -146,6 +146,18 @@ Flip AUTH_MODE default to 'password' (or 'hybrid' for staged pilots), add a back
 - **验证齐绿**：`pnpm -r typecheck`（16 包）、`pnpm audit:migrations`、`@workhub/db` 24 测、`@workhub/api` 246 测全过；PG smoke 在 CI 应用 0023 迁移。
 - **registry 决策**：`workHubTables`（schema.test.ts 的 F02 count gate=50）保持不变——遵循原子预算 epic 把 `budget_reservations` 留在 registry 外的先例，新运营表只 `export const` 不进 F02「计划图」清单，不动 count gate。
 
-### ⏭️ 下一刀（拆分独立的高风险 slice）= SessionRepository + AUTH_MODE 中间件改造
+设计原 Phase 0 把会话表与中间件 cookie 互换捆在一起；本实施**刻意拆开成三刀**，逐刀 CI-gated：
+**①schema 地基**（已完成，上节）→ **②SessionRepository 数据访问层**（已完成，下节）→ **③AUTH_MODE 中间件 cookie 互换**（待做，最高爆炸半径，单独一刀）。
 
-设计原 Phase 0 把会话表与中间件 cookie 互换捆在一起；本实施**刻意拆开**：schema 已先行（本刀），接下来单独做 `SessionRepository` + `resolveCurrentUser`/`resolveStreamUser`/`issueUserCookie`（auth.ts:116-324，每请求 + SSE 流都过）的 AUTH_MODE 旗标改造，`AUTH_MODE='nickname'` 默认下行为逐字节不变（cookie 仍载 `cookieToken`），把最高爆炸半径的会话互换隔离为可单独 review/回滚的一刀。之后再依设计推进密码注册/登录、首管引导、生命周期（邀请/停用/offboard）、OIDC（接 0 provider 的抽象层）。
+### ✅ Phase 2a（SessionRepository 数据访问层）已完成、全 CI 绿 —— 仍零运行时行为变化（未接线）
+
+与原子预算 `budget-reservations` 仓库同范式：先落不接线、可单测的数据访问层，中间件仍走 nickname `cookieToken`。
+
+- **`packages/db/src/repositories/sessions.ts`**（`createSessionRepository(db)`）：`create` / `findActiveByTokenHash(hash, now)`（未撤销 ∧ 绝对未过期 ∧ 滑动未过期，SQL 层 `gt` 过滤）/ `touch`（滑动续期 idle + last_seen，guard `revoked_at IS NULL` 不复活墓碑）/ `revoke`（单会话登出）/ `revokeAllForUser`（全设备登出 / 停用批量撤销）/ `deleteExpired`（硬删绝对过期死会话，墓碑保留作短期审计）。与 `devices` 仓库一致——仓库只认 `token_hash`，明文 secret 永不落库。
+- **纯函数（无 DB，可单测）**：`generateSessionToken`（base64url 48 字节熵，mirror `makeClientToken`）/ `hashSessionToken`（sha256 hex，mirror `hashClientToken`）/ `isSessionActive(row, now)` / `nextIdleExpiry(now, idleTtlMs, absolute)`（滑动永不越过绝对硬上限）。
+- **测试**：`packages/db/src/sessions-repository.test.ts` 4 测覆盖全部纯函数（hash 确定性/不泄明文、token 高熵且每次不同、有效性四条件 + 边界、滑动夹绝对上限）。DB 方法待接线阶段由 PG smoke 覆盖。导出经 `packages/db/src/index.ts`。
+- **验证**：`pnpm -r typecheck`（16 包，无符号碰撞）+ `@workhub/db` 28 测全绿。
+
+### ⏭️ 下一刀 = ③AUTH_MODE 中间件 cookie 互换（最高爆炸半径）
+
+单独做 `resolveCurrentUser`/`resolveStreamUser`/`issueUserCookie`（auth.ts:116-324，每请求 + SSE 流都过）的 AUTH_MODE 旗标改造：`AUTH_MODE='nickname'` 默认下行为逐字节不变（cookie 仍载 `cookieToken`），`!='nickname'` 时 cookie 载 session secret、经 `SessionRepository.findActiveByTokenHash` 解析。把会话互换隔离为可单独 review/回滚的一刀（含 session sweeper 接 `deleteExpired`）。之后再依设计推进密码注册/登录、首管引导、生命周期（邀请/停用/offboard）、OIDC（接 0 provider 的抽象层）。
