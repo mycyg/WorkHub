@@ -818,6 +818,13 @@ class MemoryProposalRepository implements ProposalRepository {
     if (!stored) {
       return null;
     }
+    // R2 audit#11：模拟真库 L3 最后防线撞车——有 base 快照 → rebase_required（可对底稿再采纳）；否则裸 stale_base。
+    // 与本假仓库 merge() 同口径(1094)；此前候选-apply 不模拟撞车,故服务层的 rebase 分支无单测覆盖。
+    if (this.forceStaleBase.has(context.proposalId)) {
+      throw this.baseSnapshotRefs.has(context.proposalId)
+        ? new ProposalRepositoryRebaseRequiredError([context.conflictKey])
+        : new ProposalRepositoryStaleBaseError(context.conflictKey);
+    }
     const at = input.at ?? now;
     const workItem = this.workItemRows.get(stored.proposal.workItemId);
     if (workItem && input.resolvedStructuredFieldPatch) {
@@ -1773,6 +1780,100 @@ test("proposal service dry-runs structured field patches before applying AI fusi
       && error.status === 409
       && error.code === "structured_field_patch_dry_run_failed"
   );
+});
+
+test("R2 audit#11: applyMergeCandidate surfaces rebase_required (not bare stale_base) when the branch has a base snapshot", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = structuredManifest();
+  const change = itemManifest.changes.find((item) => item.target_kind === "structured_record");
+  if (!change?.target_ref.entity_id) {
+    throw new Error("missing structured change");
+  }
+  change.machine_summary = {
+    ...(change.machine_summary ?? {}),
+    changed_fields: ["title", "summary_md", "priority", "due_at"]
+  };
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: created.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+
+  const mergeAttemptId = "91000000-0000-4000-8000-0000000006a1";
+  const mergeProposalId = "91000000-0000-4000-8000-0000000006a2";
+  const conflict = {
+    proposal_id: created.id,
+    work_item_id: itemManifest.work_item_id,
+    proposal_title: itemManifest.title,
+    target_key: `${change.target_ref.entity_type}:${change.target_ref.entity_id}`,
+    change_id: change.id,
+    target_kind: "structured_record" as const,
+    change_type: change.change_type,
+    existing_proposal_id: "91000000-0000-4000-8000-0000000006a3",
+    existing_change_id: "91000000-0000-4000-8000-0000000006a4",
+    existing_ref: "main"
+  };
+  repository.mergeAttempts.push({
+    id: mergeAttemptId,
+    proposalId: created.id,
+    workItemId: itemManifest.work_item_id,
+    branchId: created.branch_id,
+    actorKind: "human",
+    actorUserId: userId,
+    result: "conflict",
+    mergeSnapshotId: null,
+    conflictsJson: [conflict],
+    acceptedTargetKeys: [],
+    targetKeys: [conflict.target_key],
+    conflictCount: 1,
+    createdAt: now
+  });
+  repository.mergeProposals.push({
+    id: mergeProposalId,
+    mergeAttemptId,
+    conflictKey: conflict.target_key,
+    recommendedOptionKey: "ai_fusion",
+    chosenOptionKey: null,
+    chosenByUserId: null,
+    chosenAt: null,
+    candidatesJson: [
+      {
+        option_key: "ai_fusion",
+        target_kind: "structured_record",
+        rationale_md: "更新事项标题、摘要、优先级和截止时间。",
+        source: "llm",
+        quality_gate: { status: "passed" },
+        merged_value: {
+          fields: {
+            title: "客户周报草稿",
+            summary_md: "整理客户周报素材，保留可追溯证据。",
+            priority: "high",
+            due_at: "2026-06-30T00:00:00.000Z"
+          }
+        }
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  });
+  // 有 base 快照 + 撞上最后防线 → 可恢复的 rebase_required（而非裸 stale_base 死路：AI 融合稿采纳得到"对一下底稿再采纳"卡片）。
+  repository.baseSnapshotRefs.set(created.id, "/tmp/workhub-candidate-rebase-base");
+  repository.forceStaleBase.add(created.id);
+
+  let captured: unknown;
+  try {
+    await service.applyMergeCandidate({ mergeProposalId, actor: { actor_kind: "human", actor_user_id: userId } });
+  } catch (error) {
+    captured = error;
+  }
+  assert.ok(captured instanceof ProposalServiceRebaseRequiredError, "candidate-apply must surface rebase_required, not bare stale_base");
+  const err = captured as ProposalServiceRebaseRequiredError;
+  assert.equal(err.status, 409);
+  assert.equal(err.code, "rebase_required");
+  // 去黑话铁律：用户面卡片不得出现 git 术语 rebase。
+  assert.doesNotMatch(`${err.card.headline} ${err.card.body} ${err.card.action_label}`, /rebase/iu);
 });
 
 test("proposal service applies executable structured field patches to WorkItem scalars", async () => {

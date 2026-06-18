@@ -2016,6 +2016,9 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             proposalTitle: proposals.title,
             workItemId: proposals.workItemId,
             branchId: proposals.branchId,
+            // R2 audit#11：本分支有无 base 快照,决定撞上最后防线时是"对底稿再采纳"(rebase)还是裸 stale_base
+            // ——与 merge() 同口径(2550)。此前候选-apply 不取它,故只能裸抛 StaleBase,AI 融合稿采纳永远走不到 rebase。
+            baseSnapshotId: branches.baseSnapshotId,
             diffManifest: proposals.diffManifest,
             workItemCode: workItems.code,
             projectId: workItems.projectId,
@@ -2024,6 +2027,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           .from(mergeProposals)
           .innerJoin(mergeAttempts, eq(mergeProposals.mergeAttemptId, mergeAttempts.id))
           .innerJoin(proposals, eq(mergeAttempts.proposalId, proposals.id))
+          .innerJoin(branches, eq(proposals.branchId, branches.id))
           .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
           .where(eq(mergeProposals.id, input.mergeProposalId))
           .limit(1);
@@ -2215,8 +2219,11 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
               ))
               .returning({ id: acceptedDeliverableChanges.id });
             // L3 提交前复检：0 行作废说明锁内当前态已被改，中止采纳，绝不脏写盖掉别人内容。
+            // R2 audit#11：本分支有 base 快照(可三方合并)→ rebase_required(走"对一下底稿再采纳");否则裸 stale_base。
             if (superseded.length === 0) {
-              throw new ProposalRepositoryStaleBaseError(row.mergeProposal.conflictKey);
+              throw row.baseSnapshotId
+                ? new ProposalRepositoryRebaseRequiredError([row.mergeProposal.conflictKey])
+                : new ProposalRepositoryStaleBaseError(row.mergeProposal.conflictKey);
             }
           }
           const structuredAcceptedChangeId = randomUUID();
@@ -2390,8 +2397,11 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             ))
             .returning({ id: acceptedDeliverableChanges.id });
           // H2/H5 L3 + #0：提交前复检，0 行作废即中止采纳（最后防线，避免盖掉别人内容/基于陈旧底稿写回）。
+          // R2 audit#11：有 base 快照→rebase_required(可对底稿再采纳)；否则裸 stale_base。与 merge()(2764)同口径。
           if (superseded.length === 0) {
-            throw new ProposalRepositoryStaleBaseError(row.mergeProposal.conflictKey);
+            throw row.baseSnapshotId
+              ? new ProposalRepositoryRebaseRequiredError([row.mergeProposal.conflictKey])
+              : new ProposalRepositoryStaleBaseError(row.mergeProposal.conflictKey);
           }
         }
         const acceptedChangeId = randomUUID();

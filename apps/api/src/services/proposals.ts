@@ -2158,6 +2158,13 @@ export function createDbProposalService(repository: ProposalRepository, options:
         if (error instanceof ProposalRepositoryUnsupportedMergeProposalApplyError) {
           throw new ProposalServiceError(409, error.code, error.message);
         }
+        // R2 audit#11：本分支有 base 快照时撞上最后防线 → 不裸中止,改成"对一下底稿再采纳"：对最新正式版重算冲突 +
+        // 候选,回 409 卡片(与 merge() 路径 2035 同口径)。此前候选-apply 只认 StaleBase,AI 融合稿采纳永远走不到 rebase。
+        if (error instanceof ProposalRepositoryRebaseRequiredError) {
+          const proposal = await requireProposal(context.proposalId);
+          const conflicts = await runRebase(proposal, input.actor);
+          throw new ProposalServiceRebaseRequiredError(conflicts, rebaseRequiredCard());
+        }
         if (error instanceof ProposalRepositoryStaleBaseError) {
           throw new ProposalServiceError(409, "stale_base", "正式版刚刚被别人改过，请刷新后重新采纳。");
         }
