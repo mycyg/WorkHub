@@ -191,7 +191,7 @@ Flip AUTH_MODE default to 'password' (or 'hybrid' for staged pilots), add a back
 ### ⏭️ 之后（依设计推进，本刀未含）
 
 - **✅ 会话清扫调度（已完成）**：`apps/api/src/workers/session-sweep.ts`（`createSessionSweepScheduler`，mirror agent-run-recovery：`tick`→`sessions.deleteExpired`、unref 定时器、`.start/.stop/.stats`）；`server.ts` 仅 `AUTH_MODE!='nickname'` 时启动（nickname 模式不签发会话→不清扫）。单测直测 `tick()`（删除计数+错误记录，无定时器不挂起）。`@workhub/api` 268 测全绿。
-- **生命周期**：邀请（out-of-band 链接）/停用（`revokeAllForUser`+软删）/offboard/改密路由。
+- **生命周期**：**✅ 停用已完成**——`POST /api/auth/users/:id/deactivate`（管理员；软删用户 `users.softDelete`+记 `deleted_by_user_id`、`sessions.revokeAllForUser`、逐设备 revoke、forget presence；防呆禁停用自己 400、非管理员 403、任意 AUTH_MODE 通用；route-auth-posture 门确认未鉴权 401 fail-closed）。**⏭️ 待做**：邀请（out-of-band 链接）/offboard（昵称改名释放）/改密路由。
 - **OIDC**：provider 抽象层（接 0 provider 占位）。
 - **前端**：web onboarding 注册/登录屏（password 模式）、桌面端会话适配。
 - **Phase 5 切换**：AUTH_MODE 默认翻 password、退役 ADMIN_CLAIM_SECRET、最终删 `users.cookie_token`。

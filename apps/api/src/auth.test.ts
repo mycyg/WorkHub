@@ -147,6 +147,17 @@ class MemoryUsers implements UserRepository {
   async hasAnyActiveAdmin() {
     return this.rows.some((row) => row.isAdmin && row.deletedAt === null);
   }
+
+  async softDelete(userId: string, deletedByUserId: string, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === userId && candidate.deletedAt === null);
+    if (!row) {
+      return null;
+    }
+    row.deletedAt = at;
+    row.deletedByUserId = deletedByUserId;
+    row.updatedAt = at;
+    return row;
+  }
 }
 
 class MemoryDevices implements ClientDeviceRepository {
@@ -1112,4 +1123,73 @@ test("resolveHumanActor uses the constant when no memberships repository is wire
   const actor = await resolveHumanActor(deps, alice);
   assert.equal(actor.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
   assert.equal(actor.orgId, runtimeSettings.auth.defaultOrgId);
+});
+
+// ——— R2 auth epic：账号生命周期-停用 ———
+
+test("POST /users/:id/deactivate (admin) soft-deletes the user and revokes their sessions + devices", async () => {
+  const runtimeSettings = settings();
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000d1", nickname: "admin", isAdmin: true });
+  const target = user({ id: "10000000-0000-4000-8000-0000000000d2", nickname: "target", cookieToken: "cookie-target" });
+  const sessions = new MemorySessions();
+  const devices = new MemoryDevices([
+    device({ id: "20000000-0000-4000-8000-0000000000d2", userId: target.id, clientTokenHash: hashClientToken("target-device") })
+  ]);
+  const users = new MemoryUsers([admin, target]);
+  const deps: AuthDependencies = {
+    users,
+    devices,
+    sessions,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  await sessions.create({
+    userId: target.id,
+    tokenHash: "target-session-hash",
+    authMethod: "password",
+    absoluteExpiresAt: new Date(now.getTime() + 3_600_000),
+    idleExpiresAt: new Date(now.getTime() + 1_800_000)
+  });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const res = await app.request("/auth/users/" + target.id + "/deactivate", {
+    method: "POST",
+    headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) }
+  });
+  assert.equal(res.status, 200);
+  assert.equal(await users.findActiveById(target.id), null, "target is soft-deleted");
+  assert.equal(sessions.rows.filter((row) => row.userId === target.id && row.revokedAt === null).length, 0, "sessions revoked");
+  const targetDevices = await devices.listByUser(target.id);
+  assert.equal(targetDevices.every((d) => d.revokedAt !== null), true, "devices revoked");
+});
+
+test("POST /users/:id/deactivate rejects non-admins (403) and self-deactivation (400)", async () => {
+  const runtimeSettings = settings();
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000e1", nickname: "admin", isAdmin: true });
+  const member = user({ id: "10000000-0000-4000-8000-0000000000e2", nickname: "member", cookieToken: "cookie-member" });
+  const deps: AuthDependencies = {
+    users: new MemoryUsers([admin, member]),
+    devices: new MemoryDevices([]),
+    sessions: new MemorySessions(),
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  // 非管理员 → 403
+  const byMember = await app.request("/auth/users/" + admin.id + "/deactivate", {
+    method: "POST",
+    headers: { Cookie: await signedCookie(member.cookieToken, runtimeSettings) }
+  });
+  assert.equal(byMember.status, 403);
+
+  // 管理员停用自己 → 400
+  const selfDeactivate = await app.request("/auth/users/" + admin.id + "/deactivate", {
+    method: "POST",
+    headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) }
+  });
+  assert.equal(selfDeactivate.status, 400);
 });

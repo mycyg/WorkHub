@@ -34,6 +34,8 @@ export type UserRepository = {
   // R2 auth epic：首管引导用——空/零管理员的实例里首个密码注册者置 admin（取代 ADMIN_CLAIM_SECRET）。
   // OPTIONAL：旧运行时/假仓库不实现则跳过自举（默认不自动提权）。
   hasAnyActiveAdmin?: () => Promise<boolean>;
+  // R2 auth epic（账号生命周期-停用）：软删用户并记录操作者。OPTIONAL（假仓库不实现则路由回 501）。
+  softDelete?: (userId: string, deletedByUserId: string, at: Date) => Promise<UserAuthRow | null>;
 };
 
 export function createUserRepository(db: WorkHubDb): UserRepository {
@@ -139,6 +141,16 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
         .where(and(eq(users.isAdmin, true), isNull(users.deletedAt)))
         .limit(1);
       return rows.length > 0;
+    },
+
+    async softDelete(userId, deletedByUserId, at) {
+      // 仅软删仍 active 的用户（幂等：已删行不再返回）。
+      const rows = await db
+        .update(users)
+        .set({ deletedAt: at, deletedByUserId, updatedAt: at })
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+        .returning();
+      return rows[0] ?? null;
     },
 
     async updatePreferredLocale(userId, locale) {

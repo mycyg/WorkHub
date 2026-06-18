@@ -319,5 +319,41 @@ export function createAuthRoutes(
     return c.json({ ok: true });
   });
 
+  // R2 auth epic（账号生命周期-停用）：管理员软删某用户并立即切断其访问（撤销全部会话 + 设备）。
+  // 任意 AUTH_MODE 通用——软删用户是租户无关的管理操作。
+  routes.post("/users/:id/deactivate", async (c) => {
+    const deps = resolveAuthDependencies(source);
+    const actingUser = await resolveCurrentUser(c, deps);
+    if (!actingUser.isAdmin) {
+      throw new HTTPException(403, { message: "需要管理员权限" });
+    }
+    const targetId = c.req.param("id");
+    if (targetId === actingUser.id) {
+      // 防呆：管理员停用自己会立即把自己锁在外面。
+      throw new HTTPException(400, { message: "不能停用自己的账号" });
+    }
+    if (!deps.users.softDelete) {
+      throw new HTTPException(501, { message: "当前运行时不支持账号停用" });
+    }
+    const at = (deps.now ?? (() => new Date()))();
+    const deleted = await deps.users.softDelete(targetId, actingUser.id, at);
+    if (!deleted) {
+      throw new HTTPException(404, { message: "用户不存在或已停用" });
+    }
+    // 立即切断访问：撤销全部服务端会话 + 客户端设备令牌。
+    if (deps.sessions) {
+      await deps.sessions.revokeAllForUser(targetId, at);
+    }
+    const devices = await deps.devices.listByUser(targetId);
+    for (const device of devices) {
+      if (device.revokedAt === null) {
+        await deps.devices.revokeByIdForUser(device.id, targetId, at);
+      }
+    }
+    await deps.forgetUser?.(targetId);
+
+    return c.json({ ok: true });
+  });
+
   return routes;
 }
