@@ -1,6 +1,6 @@
 # R2 Epic 计划：多租户隔离强制
 
-- status: **planned（待用户拍板 open questions 后实施）**
+- status: **in-progress（Phase 1 成员 schema 地基已落、全 CI 绿；defense-in-depth、暂单租户、应用层+仓库层不上 RLS）**
 - created: 2026-06-18
 - 来源：2026-06-17 第二轮全量审查的三大「团队就绪地基」之一；用户 2026-06-18 拍板 plan-first 实施。
 - 设计依据：design workflow `wf_3b23a675` 在 HEAD 逐文件深读产出（证据带 file:line）。
@@ -54,6 +54,14 @@ Add workspace_memberships table to packages/db/src/schema/core.ts (+ workHubTabl
 
 - **涉及文件**：packages/db/src/schema/core.ts, packages/db/migrations/00xx_workspace_memberships.sql, packages/db/migrations/00xx_seed_default_memberships.sql, packages/db/migrations/meta/_journal.json, packages/db/src/repositories/memberships.ts, packages/db/src/repositories/index.ts
 - **测试门**：node --test unit on the new repo (CRUD + one-default-per-user partial-unique + soft-delete frees the unique). A real-PG assertion added to apps/api/src/qa/r1-pg-agent-run-smoke.ts (or a new tenancy smoke) that after migration every existing user has exactly one active default membership pointing at defaultWorkspaceId, and the partial unique rejects a second default.
+
+> **✅ Phase 1 已完成、全 CI 绿（commit 见 git log，纯加表零行为变化）。**
+> - **表**：`workspace_memberships`（`packages/db/src/schema/core.ts`，workspaces 表后）——`workspace_id`/`user_id`/`role`(member|admin|owner)/`default_workspace`/soft-delete；`ws_user_uq`(WHERE deleted_at IS NULL) + **`user_default_uq`(WHERE default_workspace AND deleted_at IS NULL，一用户一默认)** + user/workspace/deleted_at 索引。
+> - **迁移**：手写 `0024_workspace_memberships.sql`(表+索引) + `0025_seed_default_memberships.sql`(为每个现存未删用户回填一条 default 成员→默认工作区，role 由 is_admin 派生；**ON CONFLICT DO NOTHING 幂等 + EXISTS 守卫默认工作区存在才插**，全新库空操作)。journal idx 24/25。`audit:migrations` 通过。
+> - **仓库**：`packages/db/src/repositories/memberships.ts`(`createWorkspaceMembershipRepository`：listForUser / findActiveForUserWorkspace / resolveDefaultWorkspace / create / softDelete)，经 index.ts 导出。**Phase 1 不接线**（actor 仍走常量）。
+> - **测试**：`schema.test.ts` 加 2 测(列契约 + 0024/0025 迁移内容：partial-unique + 幂等 seed + FK 守卫)；`r2-pg-redis-smoke` 加真 PG 往返(一用户一默认 partial-unique 拒第二默认 + soft-delete 释放唯一可重新加入)。`@workhub/db` 30 测 + `@workhub/api` 263 测 + `pnpm -r typecheck`(16 包) 全绿。
+> - **registry 决策**：`workspace_memberships` **不进** `workHubTables`（F02 count gate=50 保持不变）——遵循本轮 budget_reservations/user_credentials/sessions 留 registry 外的先例（该 registry 仅 schema.test.ts 计数门消费，非运行时依赖）。
+> - **⏭️ 下一刀 = Phase 2**：TenantResolver 从成员派生 actor 租户（默认/override/sole；无成员回退常量），createAiActor/createSystemActor 从 work_item/agent_run 取租户。仍因 seed 让现有用户都指向默认工作区而零可观测变化。
 
 ### Phase 2：Phase 2 — Derive actor tenant from membership (constant as fallback)
 

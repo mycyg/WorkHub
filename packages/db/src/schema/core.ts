@@ -150,6 +150,35 @@ export const workspaces = pgTable(
   ]
 );
 
+// R2 多租户 epic Phase 1：用户↔工作区成员模型。今天租户隔离是惰性的（actor 租户写死 config 常量、
+// 无成员模型），本表为「从成员关系派生 actor 租户」铺真实地基。纯加表、不接线（actor 仍走常量），
+// 零运行时行为变化——只有当真实第二工作区+成员出现时，既有 scope 检查才开始区分。
+export const workspaceMemberships = pgTable(
+  "workspace_memberships",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    role: varchar("role", { length: 16 }).notNull().default("member"), // member|admin|owner
+    defaultWorkspace: boolean("default_workspace").notNull().default(false),
+    deletedAt: timestampTz("deleted_at"),
+    ...timestamps()
+  },
+  (table) => [
+    // 每 (workspace,user) 至多一条 active 成员行（soft-delete 后可重新加入，不被墓碑永久占位）。
+    uniqueIndex("workspace_memberships_ws_user_uq")
+      .on(table.workspaceId, table.userId)
+      .where(sql`${table.deletedAt} is null`),
+    // 每用户至多一个 default workspace（actor 租户解析的兜底锚点）。
+    uniqueIndex("workspace_memberships_user_default_uq")
+      .on(table.userId)
+      .where(sql`${table.defaultWorkspace} and ${table.deletedAt} is null`),
+    index("workspace_memberships_user_id_idx").on(table.userId),
+    index("workspace_memberships_workspace_id_idx").on(table.workspaceId),
+    index("workspace_memberships_deleted_at_idx").on(table.deletedAt)
+  ]
+);
+
 export const clientDevices = pgTable(
   "client_devices",
   {

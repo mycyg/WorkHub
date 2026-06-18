@@ -15,6 +15,7 @@ import {
   createSessionRepository,
   createUserRepository,
   createWorkItemRepository,
+  createWorkspaceMembershipRepository,
   defaultSeedFixture,
   defaultSeedIds,
   generateSessionToken,
@@ -282,6 +283,44 @@ async function main() {
       assert.ok(revokedCount >= 1, "revokeAllForUser should revoke remaining active sessions");
 
       console.log("[r2-pg-redis-smoke] credential + session DB layer round-trip ok");
+    }
+
+    // R2 多租户 epic Phase 1：工作区成员 partial-unique 真 PG 往返（一用户一默认 + 一(ws,user)一 active + 软删释放）。
+    {
+      const memberships = createWorkspaceMembershipRepository(db);
+      const memberUserId = randomUUID();
+      await db
+        .insert(users)
+        .values({
+          id: memberUserId,
+          nickname: `r2-member-${memberUserId.slice(0, 8)}`,
+          cookieToken: `r2-member-cookie-${randomUUID()}`,
+          availabilityStatus: "free",
+          isAdmin: false
+        })
+        .onConflictDoNothing();
+      const ws = settings.auth.defaultWorkspaceId;
+
+      const m1 = await memberships.create({ workspaceId: ws, userId: memberUserId, role: "owner", defaultWorkspace: true });
+      assert.equal(m1.defaultWorkspace, true);
+      const resolvedDefault = await memberships.resolveDefaultWorkspace(memberUserId);
+      assert.ok(resolvedDefault && resolvedDefault.id === m1.id, "default membership resolves");
+
+      let secondDefaultRejected = false;
+      try {
+        await memberships.create({ workspaceId: ws, userId: memberUserId, role: "member", defaultWorkspace: true });
+      } catch {
+        secondDefaultRejected = true;
+      }
+      assert.equal(secondDefaultRejected, true, "one default workspace per user is enforced");
+
+      // soft-delete 释放 (ws,user) + default 的 partial unique → 可重新加入。
+      await memberships.softDelete(m1.id, new Date());
+      const rejoin = await memberships.create({ workspaceId: ws, userId: memberUserId, role: "member", defaultWorkspace: true });
+      assert.ok(rejoin.id !== m1.id, "soft-delete frees the unique so the member can rejoin");
+      assert.equal((await memberships.listForUser(memberUserId)).length, 1, "only the active membership is listed");
+
+      console.log("[r2-pg-redis-smoke] workspace membership partial-unique round-trip ok");
     }
 
     const workItemService = createDbWorkItemService(createWorkItemRepository(db));

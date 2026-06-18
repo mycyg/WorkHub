@@ -169,6 +169,20 @@
       "when": 1781511833742,
       "tag": "0023_auth_credentials_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1781511933742,
+      "tag": "0024_workspace_memberships",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781512033742,
+      "tag": "0025_seed_default_memberships",
+      "breakpoints": true
     }
   ]
 }

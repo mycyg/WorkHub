@@ -24,7 +24,8 @@ import {
   userCredentials,
   users,
   workHubTables,
-  workItems
+  workItems,
+  workspaceMemberships
 } from "./index.js";
 
 const F02_TABLE_COUNT = 50;
@@ -207,6 +208,28 @@ test("migration 0023 provisions citext email, session token uniqueness, and the 
   // partial index：仅未撤销会话进过期清扫索引。
   assert.match(migration, /sessions_idle_expires_idx[\s\S]*WHERE "revoked_at" IS NULL/u);
   assert.match(migration, /ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "deleted_by_user_id"/u);
+});
+
+test("R2 multi-tenancy foundation: workspace_memberships exposes the membership contract", () => {
+  assert.equal(getTableName(workspaceMemberships), "workspace_memberships");
+  assert.equal(workspaceMemberships.workspaceId.name, "workspace_id");
+  assert.equal(workspaceMemberships.userId.name, "user_id");
+  assert.equal(workspaceMemberships.role.name, "role");
+  assert.equal(workspaceMemberships.defaultWorkspace.name, "default_workspace");
+  assert.equal(workspaceMemberships.deletedAt.name, "deleted_at");
+});
+
+test("migration 0024/0025 provision memberships with one-default-per-user and an idempotent seed", () => {
+  const table = readFileSync(join(process.cwd(), "migrations", "0024_workspace_memberships.sql"), "utf8");
+  // 每用户至多一个 default workspace（partial unique）。
+  assert.match(table, /workspace_memberships_user_default_uq[\s\S]*WHERE "default_workspace" AND "deleted_at" IS NULL/u);
+  // 每 (ws,user) 至多一条 active 成员行。
+  assert.match(table, /workspace_memberships_ws_user_uq[\s\S]*WHERE "deleted_at" IS NULL/u);
+
+  const seed = readFileSync(join(process.cwd(), "migrations", "0025_seed_default_memberships.sql"), "utf8");
+  assert.match(seed, /INSERT INTO "workspace_memberships"/u);
+  assert.match(seed, /ON CONFLICT DO NOTHING/u); // 幂等
+  assert.match(seed, /EXISTS \(SELECT 1 FROM "workspaces"/u); // FK 守卫
 });
 
 test("enum drift is closed in the shared contract package", () => {

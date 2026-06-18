@@ -10,6 +10,7 @@ export * from "./types.js";
 export * from "./repositories/users.js";
 export * from "./repositories/sessions.js";
 export * from "./repositories/user-credentials.js";
+export * from "./repositories/memberships.js";
 export * from "./repositories/user-memory.js";
 export * from "./repositories/team-skill.js";
 export * from "./repositories/devices.js";
