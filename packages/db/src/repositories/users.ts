@@ -84,8 +84,29 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
       if (existing) {
         return { user: existing, created: false };
       }
-      const user = await this.createUser({ nickname, cookieToken: newCookieToken });
-      return { user, created: true };
+      // findings[#low]：check-then-insert 并发竞态——两个首登同 nickname 都过 findActive 检查，
+      // 输者撞 nickname 部分唯一索引(WHERE deleted_at IS NULL)抛 500。改 onConflictDoNothing：
+      // 插入返回行=created；冲突(0 行)=他人已建，回查复用、不算 created。
+      const inserted = await db
+        .insert(users)
+        .values({
+          id: randomUUID(),
+          nickname,
+          cookieToken: newCookieToken,
+          preferredLocale: "zh-CN",
+          isAdmin: false
+        })
+        .onConflictDoNothing()
+        .returning();
+      const created = inserted[0];
+      if (created) {
+        return { user: created, created: true };
+      }
+      const fallback = await this.findActiveByNickname(nickname);
+      if (!fallback) {
+        throw new Error("Failed to create or resolve user by nickname");
+      }
+      return { user: fallback, created: false };
     },
 
     async rotateCookieToken(userId, cookieToken) {

@@ -470,10 +470,13 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         if (!project) {
           return;
         }
+        // findings[#low]：先对行加锁再做 version/empty 校验，关闭 select→update 之间的丢更新窗口
+        //（不把 currentVersionId 塞进 UPDATE WHERE，以免污染错误码语义）。
         const itemRows = await tx
           .select()
           .from(projectDriveItems)
           .where(and(eq(projectDriveItems.id, input.itemId), eq(projectDriveItems.projectId, input.projectId)))
+          .for("update")
           .limit(1);
         const item = itemRows[0];
         if (!item) {

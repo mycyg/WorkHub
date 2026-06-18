@@ -182,6 +182,17 @@ async function main() {
       devices: createClientDeviceRepository(db),
       settings
     };
+
+    // findings[#low]：并发首登同 nickname 不应 500——onConflictDoNothing 让输者复用赢者的行。
+    const raceNickname = "Concurrent Race User";
+    const [raceA, raceB] = await Promise.all([
+      auth.users.getOrCreateActiveByNickname(raceNickname, "race-cookie-token-a"),
+      auth.users.getOrCreateActiveByNickname(raceNickname, "race-cookie-token-b")
+    ]);
+    assert.equal(raceA.user.id, raceB.user.id, "concurrent first-login resolves to one user row");
+    assert.equal(raceA.created !== raceB.created, true, "exactly one concurrent caller is the creator");
+
+
     const workItemService = createDbWorkItemService(createWorkItemRepository(db));
     const app = withErrors(new Hono<AuthEnv>());
     app.route("/api/push", createPushRoutes({
