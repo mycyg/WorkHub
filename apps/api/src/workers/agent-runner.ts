@@ -39,7 +39,13 @@ import {
   type ToolExecutionContext,
   type ToolResult
 } from "@workhub/tools";
-import { makeWorkHubEvent, topics, toCuuState, type LifecycleWorkItemRef } from "@workhub/events";
+import {
+  makeWorkHubEvent,
+  topics,
+  toCuuState,
+  type LifecycleUserRef,
+  type LifecycleWorkItemRef
+} from "@workhub/events";
 import { getSharedDatabaseClient, createWorkItemRepository } from "@workhub/db";
 import type {
   AuditLogRepository,
@@ -66,7 +72,9 @@ import { createHumanReservedGuard, type HumanReservedGuard } from "../services/h
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
 import {
   createAgentRunNotificationWorkItemResolver,
-  type AgentRunNotificationWorkItemResolver
+  createAgentRunUserRefResolver,
+  type AgentRunNotificationWorkItemResolver,
+  type AgentRunUserRefResolver
 } from "../services/agent-run-notification-workitem.js";
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "../services/proposals.js";
 import { getDefaultAgentRunPersistence } from "../services/agent-run-persistence.js";
@@ -330,6 +338,9 @@ export function createInMemoryAgentRunQueue(options: {
   proposals?: AgentRunProposalSink | false;
   notifications?: AgentRunNotificationPublisher | false;
   notificationWorkItem?: AgentRunNotificationWorkItemResolver | false;
+  // R2 audit#5：把里程碑收件人解析成活跃度引用，让 lifecycle 过滤丢弃已停用收件人。
+  // 不传（单测内存队列）→ usersById 留空 → 全员视为活跃（旧行为，零影响）；仅 PG 装配注入真解析器。
+  resolveUserRefs?: AgentRunUserRefResolver | false;
   // findings[H8/H9]：跑完后把工作项状态机推进（成功+开了提议→in_review；失败/升级/提议创建失败→escalated）。
   // CAS 守卫在仓库层(transitionWorkItemStatus)，此处只是 fire-and-forget 的写入回调；不传则不写状态（旧行为）。
   transitionWorkItemStatus?: ((input: { workItemId: string; to: WorkItemStatus; at: Date }) => Promise<void>) | false;
@@ -364,6 +375,7 @@ export function createInMemoryAgentRunQueue(options: {
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
   const proposalSink = options.proposals === false ? undefined : options.proposals;
   const notificationWorkItem = options.notificationWorkItem === false ? undefined : options.notificationWorkItem;
+  const resolveUserRefs = options.resolveUserRefs === false ? undefined : options.resolveUserRefs;
   const transitionWorkItemStatus = options.transitionWorkItemStatus === false ? undefined : options.transitionWorkItemStatus;
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const persistence = options.persistence === false ? undefined : options.persistence;
@@ -1148,6 +1160,29 @@ export function createInMemoryAgentRunQueue(options: {
           ? { approverUserId: submitterUserId }
           : {})
     };
+    // R2 audit#5：解析候选收件人的活跃度，让 lifecycle 丢弃已停用者。解析失败 fail-open（不阻断通知）。
+    let usersById: Record<string, LifecycleUserRef> | undefined;
+    if (resolveUserRefs) {
+      const candidateIds = [
+        ...new Set(
+          [
+            workItem.submitterUserId,
+            ...(workItem.assigneeUserIds ?? []),
+            workItem.leadUserId,
+            workItem.projectOwnerUserId,
+            workItem.approverUserId
+          ].filter((id): id is string => Boolean(id))
+        )
+      ];
+      if (candidateIds.length > 0) {
+        try {
+          const refs = await resolveUserRefs(candidateIds);
+          usersById = Object.fromEntries(refs.map((ref) => [ref.id, ref]));
+        } catch (error) {
+          console.warn("WorkHub recipient activity lookup failed", error);
+        }
+      }
+    }
     try {
       await notifications.notifyMilestone({
         workItem,
@@ -1156,7 +1191,8 @@ export function createInMemoryAgentRunQueue(options: {
           label: "AI 工人"
         },
         newStatus,
-        reasonOneline
+        reasonOneline,
+        ...(usersById ? { usersById } : {})
       });
     } catch (error) {
       console.warn("WorkHub notification milestone failed", error);
@@ -1705,6 +1741,7 @@ export function getDefaultAgentRunQueue() {
     // 生产/多租户应保持 false 并改注入真正隔离的 runner。
     ...(runtimeSettings.agentRun.allowUnsandboxedCommands ? { commandRunner: nodeCommandRunner } : {}),
     notificationWorkItem: createAgentRunNotificationWorkItemResolver(),
+    resolveUserRefs: createAgentRunUserRefResolver(),
     transitionWorkItemStatus: getDefaultWorkItemStatusWriter()
   });
   // 启动时回收上次进程崩溃/重启遗留的过期 workdir（fire-and-forget，失败不影响队列就绪）。

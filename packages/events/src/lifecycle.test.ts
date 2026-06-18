@@ -47,6 +47,31 @@ test("approver recipients prefer explicit approver and filter actor/deleted user
   assert.deepEqual(recipients, ["80000000-0000-4000-8000-000000000003"]);
 });
 
+test("R2 audit#5: deactivated recipients are dropped, active+unknown recipients kept", () => {
+  // cancelled 里程碑收件人 = 提交人 + 受理人。提交人已停用→丢弃；受理人未知(不在 map)→fail-open 保留。
+  const milestone = lifecycleMilestones.cancelled;
+  assert.ok(milestone);
+  const recipients = resolveLifecycleRecipients(milestone, {
+    ...baseContext,
+    workItem: {
+      ...baseContext.workItem,
+      submitterUserId: "80000000-0000-4000-8000-000000000002",
+      assigneeUserIds: ["80000000-0000-4000-8000-000000000004"]
+    },
+    newStatus: "cancelled",
+    usersById: {
+      // 提交人已软删——必须被过滤掉。
+      "80000000-0000-4000-8000-000000000002": {
+        id: "80000000-0000-4000-8000-000000000002",
+        deletedAt: new Date("2026-06-01T00:00:00.000Z")
+      }
+      // 受理人 ...004 不在 map：解析缺失视为活跃（fail-open），保留。
+    }
+  });
+
+  assert.deepEqual(recipients, ["80000000-0000-4000-8000-000000000004"]);
+});
+
 test("approver recipients fall back to project owner without routing to the actor", () => {
   const milestone = lifecycleMilestones.escalated;
   assert.ok(milestone);

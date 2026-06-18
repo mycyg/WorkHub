@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import type { WorkHubLocale } from "@workhub/contracts";
 
@@ -36,6 +36,10 @@ export type UserRepository = {
   hasAnyActiveAdmin?: () => Promise<boolean>;
   // R2 auth epic（账号生命周期-停用）：软删用户并记录操作者。OPTIONAL（假仓库不实现则路由回 501）。
   softDelete?: (userId: string, deletedByUserId: string, at: Date) => Promise<UserAuthRow | null>;
+  // R2 audit#5：按 id 批量取「活跃态引用」（含已软删者，带 deletedAt）。
+  // 通知收件人活跃度过滤要分辨「不存在」与「已停用」——故不能复用只回活跃用户的 findActiveById；
+  // 缺失 id 不在结果里（调用方据此 fail-open 视为活跃，只在确认 deletedAt 时丢弃）。OPTIONAL（假仓库不实现则跳过过滤）。
+  findRefsByIds?: (ids: string[]) => Promise<Array<Pick<UserAuthRow, "id" | "deletedAt">>>;
 };
 
 export function createUserRepository(db: WorkHubDb): UserRepository {
@@ -161,6 +165,17 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
         .returning();
       const user = rows[0] ?? null;
       return user && user.deletedAt === null ? user : null;
+    },
+
+    async findRefsByIds(ids) {
+      // R2 audit#5：含已软删者的一次性批量查询（不过滤 deletedAt）；空入参不打库。
+      if (ids.length === 0) {
+        return [];
+      }
+      return db
+        .select({ id: users.id, deletedAt: users.deletedAt })
+        .from(users)
+        .where(inArray(users.id, ids));
     }
   };
 }

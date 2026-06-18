@@ -199,6 +199,27 @@ async function main() {
     assert.equal(raceA.user.id, raceB.user.id, "concurrent first-login resolves to one user row");
     assert.equal(raceA.created !== raceB.created, true, "exactly one concurrent caller is the creator");
 
+    // R2 audit#5：findRefsByIds 必须含已软删者（带 deletedAt），区分「活跃 / 已停用 / 不存在」——
+    // 这是把已停用收件人从里程碑通知里剔除的真库依据（lifecycle userIsActive 据 deletedAt 判定）。
+    {
+      const activeId = raceA.user.id;
+      const deactivated = await auth.users.getOrCreateActiveByNickname(
+        `Deactivated Recipient ${randomUUID().slice(0, 8)}`,
+        `deactivated-cookie-${randomUUID()}`
+      );
+      const softDeleted = await auth.users.softDelete?.(deactivated.user.id, activeId, new Date());
+      assert.ok(softDeleted, "softDelete must return the retired row");
+      assert.ok(softDeleted.deletedAt, "soft-deleted user carries a deletedAt");
+
+      const missingId = randomUUID();
+      const refs = await auth.users.findRefsByIds?.([activeId, deactivated.user.id, missingId]);
+      assert.ok(refs, "findRefsByIds must be implemented on the real repo");
+      const byId = new Map(refs.map((ref) => [ref.id, ref.deletedAt]));
+      assert.equal(byId.get(activeId), null, "active recipient has null deletedAt (kept)");
+      assert.ok(byId.get(deactivated.user.id), "deactivated recipient carries deletedAt (dropped)");
+      assert.equal(byId.has(missingId), false, "absent ids are omitted → fail-open as active");
+    }
+
     // R2 auth epic：凭据 + 会话 DB 层真 PG 往返（2a/3a 仓库此前仅假数据单测，这里首次过真 Postgres + citext）。
     {
       const credentials = createCredentialRepository(db);
