@@ -653,7 +653,9 @@ export function createScheduleNotifyPageService(
           block_count: blocks.length,
           overdue_count: blocks.filter((block) => block.status === "overdue").length,
           today_count: blocks.filter((block) => block.status === "today").length,
-          week_count: blocks.length
+          // R2 audit#3：week_count 此前误等于 block_count（day 视图下其实只数了一天）。改为「块跨越的不同
+          // ISO 周数」（按周一锚点去重），让字段名名副其实。该字段无生产消费方，纯诚实化。
+          week_count: new Set(blocks.map((block) => dateKey(startOfWeek(new Date(block.ends_at))))).size
         },
         days,
         blocks,

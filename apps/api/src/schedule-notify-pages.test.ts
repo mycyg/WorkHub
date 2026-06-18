@@ -347,4 +347,16 @@ test("schedule notify page service builds calendar blocks from due work and meet
   assert.equal(page.scope.view, "week");
   assert.equal(page.blocks.some((block) => block.kind === "work_item_due"), true);
   assert.equal(page.blocks.some((block) => block.kind === "meeting_followup"), true);
+
+  // R2 audit#3：week_count 现为「块跨越的不同 ISO 周数」（周一锚点去重），不再恒等于 block_count。
+  const expectedWeeks = new Set(
+    page.blocks.map((block) => {
+      const d = new Date(block.ends_at);
+      const day = d.getUTCDay();
+      const monday = new Date(d);
+      monday.setUTCDate(d.getUTCDate() + (day === 0 ? -6 : 1 - day));
+      return monday.toISOString().slice(0, 10);
+    })
+  );
+  assert.equal(page.summary.week_count, expectedWeeks.size, "week_count counts distinct ISO weeks, not blocks");
 });
