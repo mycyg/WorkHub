@@ -32,6 +32,7 @@ import {
   getSharedDatabaseClient,
   createProposalRepository,
   ProposalRepositoryConflictError,
+  ProposalRepositoryDuplicateTargetKeyError,
   ProposalRepositoryInvalidMergeProposalCandidateError,
   ProposalRepositoryMergeConflictError,
   ProposalRepositoryMergeProposalNotChosenError,
@@ -1851,6 +1852,10 @@ export function createDbProposalService(repository: ProposalRepository, options:
       } catch (error) {
         if (error instanceof ProposalRepositoryConflictError) {
           throw new ProposalServiceError(409, error.code, "这份变更申请已经存在。");
+        }
+        // 同一 targetKey 的重复 change 是非法 manifest（422 而非裸 500）。
+        if (error instanceof ProposalRepositoryDuplicateTargetKeyError) {
+          throw new ProposalServiceError(422, error.code, "变更申请里有多处改动指向同一个对象，请合并后重试。");
         }
         throw error;
       }

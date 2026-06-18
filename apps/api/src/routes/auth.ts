@@ -545,6 +545,12 @@ export function createAuthRoutes(
     if (!deleted) {
       throw new HTTPException(404, { message: "用户不存在或已停用" });
     }
+    // 释放邮箱：user_credentials.email 是 citext UNIQUE，停用用户若留着凭据行会让那个邮箱永远无法再注册。
+    // 用户行仍以 deletedAt 软删保留供审计，只删对停用用户已无意义的凭据。顺序写——软删成功后残留凭据无害,
+    // 故删凭据失败不必回滚软删（与本路由后续撤会话/设备同为尽力而为的善后步骤）。
+    if (deps.credentials) {
+      await deps.credentials.deleteByUserId(targetId);
+    }
     // 立即切断访问：撤销全部服务端会话 + 客户端设备令牌。
     if (deps.sessions) {
       await deps.sessions.revokeAllForUser(targetId, at);

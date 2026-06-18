@@ -379,6 +379,10 @@ class MemoryCredentials implements CredentialRepository {
     row.updatedAt = at;
     return row;
   }
+
+  async deleteByUserId(userId: string) {
+    this.rows = this.rows.filter((row) => row.userId !== userId);
+  }
 }
 
 function membershipRow(input: CreateWorkspaceMembershipInput, seq = 1): WorkspaceMembershipRow {

@@ -32,6 +32,11 @@ export type CredentialRepository = {
   resetFailedAttempts: (userId: string) => Promise<UserCredentialRow | null>;
   /** out-of-band 邮箱确认（trust-on-first-use 之外的显式确认）。 */
   setEmailVerified: (userId: string, at: Date) => Promise<UserCredentialRow | null>;
+  /**
+   * 停用用户时释放其凭据：删除 user_credentials 行，让那个 email（citext UNIQUE）能被重新注册。
+   * 用户行仍以 deletedAt 软删保留供审计；只删凭据（对停用用户已无意义）。无该用户凭据时是幂等 no-op。
+   */
+  deleteByUserId: (userId: string) => Promise<void>;
 };
 
 export function createCredentialRepository(db: WorkHubDb): CredentialRepository {
@@ -103,6 +108,10 @@ export function createCredentialRepository(db: WorkHubDb): CredentialRepository 
         .where(eq(userCredentials.userId, userId))
         .returning();
       return rows[0] ?? null;
+    },
+
+    async deleteByUserId(userId) {
+      await db.delete(userCredentials).where(eq(userCredentials.userId, userId));
     }
   };
 }

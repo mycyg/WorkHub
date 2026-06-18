@@ -250,6 +250,17 @@ export class ProposalRepositoryConflictError extends Error {
   }
 }
 
+// 一份 manifest 里两个 change 解析到同一个 targetKey 是非法输入：merge() 的 supersede/insert 循环
+// 用 targetKey 当账本键，重复键会让第二次 supersede 撞上刚插入的同键行(0 行作废→冒泡成 stale_base)
+// 或插入重复账本行。在 manifest 进入仓库的最早处(createFromManifest)fail-fast 拒掉，而非进事务后才坏。
+export class ProposalRepositoryDuplicateTargetKeyError extends Error {
+  public readonly code = "duplicate_target_key";
+
+  constructor(public readonly targetKey: string) {
+    super(`Manifest contains multiple changes resolving to the same target "${targetKey}"; each target may change at most once per proposal.`);
+  }
+}
+
 // findings[#low]：service 层 findById 预检与 createFromManifest 插入之间存在 TOCTOU——并发同
 // proposal_id 时输者撞 proposals_pkey / proposals_branch_round_uq 唯一约束抛裸 23505 冒泡成 500。
 // 在仓库层翻译成 proposal_already_exists（service 映射 409），其余错误原样抛出（镜像 drive.ts）。
@@ -1572,6 +1583,17 @@ async function adoptDriveFileVersion(
 export function createProposalRepository(db: WorkHubDb): ProposalRepository {
   return {
     async createFromManifest(input) {
+      // FIX：拒掉同一 targetKey 的重复 change——否则 merge() 的 supersede/insert 循环会用同一账本键
+      // 重复写/撞键(见 ProposalRepositoryDuplicateTargetKeyError)。这是 manifest 进库的最早处，fail-fast。
+      const seenTargetKeys = new Set<string>();
+      for (const change of input.manifest.changes) {
+        const key = targetKey(change);
+        if (seenTargetKeys.has(key)) {
+          throw new ProposalRepositoryDuplicateTargetKeyError(key);
+        }
+        seenTargetKeys.add(key);
+      }
+
       const at = input.at ?? new Date();
       const proposalId = input.proposalId ?? input.manifest.proposal_id ?? randomUUID();
       const branchId = input.branchId ?? input.manifest.branch_id ?? randomUUID();
