@@ -216,11 +216,13 @@ test("R2 audit#1: a failed audit write surfaces as a server error, not a 422 inv
   // 审计写失败必须作为服务端错误冒泡(app.ts 真 onError 映射 500),绝不被路由 catch 当成 422 invalid-patch 吞掉。
   // 此处用 withErrors 测试 helper 对泛型错误是 rethrow,故 app.request 直接 reject——正是「向上冒泡」的证据。
   await assert.rejects(
-    app.request("/api/cost/policies/user/pcost-user-day-v0", {
-      method: "PUT",
-      headers,
-      body: JSON.stringify({ max_tokens: 250000 })
-    }),
+    async () => {
+      await app.request("/api/cost/policies/user/pcost-user-day-v0", {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ max_tokens: 250000 })
+      });
+    },
     (error: unknown) => error instanceof Error && error.message === "audit sink unavailable"
   );
 });
