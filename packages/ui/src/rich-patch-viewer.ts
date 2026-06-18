@@ -170,6 +170,16 @@ export function renderRichPatchViewer(options: RichPatchViewerOptions) {
   const maxVisibleLines = options.maxVisibleLines ?? 80;
   const visibleLineCount = Math.min(totalLineCount, maxVisibleLines);
   const foldedLineCount = Math.max(0, totalLineCount - visibleLineCount);
+  // findings[#low]：行预算耗尽后整段 hunk 不再渲染，但 hunk-count pill 仍报总数。
+  // 统计被整段折叠的 hunk 数（其起始行偏移已 >= 可见行数），单独暴露 + 提示。
+  let foldedHunkCum = 0;
+  let foldedHunkCount = 0;
+  for (const hunk of parsedHunks) {
+    if (foldedHunkCum >= visibleLineCount) {
+      foldedHunkCount += 1;
+    }
+    foldedHunkCum += hunk.lines.length;
+  }
   const visibleLineBudget = { remaining: visibleLineCount };
   const risk = typeof stats?.["overlap_risk"] === "string" ? stats["overlap_risk"] : "unknown";
   const added = numberField(stats, "added_lines");
@@ -185,12 +195,16 @@ export function renderRichPatchViewer(options: RichPatchViewerOptions) {
     "data-rich-patch-line-count": totalLineCount,
     "data-rich-patch-visible-line-count": visibleLineCount,
     "data-rich-patch-folded-line-count": foldedLineCount,
+    "data-rich-patch-folded-hunk-count": foldedHunkCount,
     "data-rich-patch-truncated": foldedLineCount > 0,
     "data-overlap-risk": risk,
     ...options.rootAttributes
   });
+  const foldedHunkNotice = foldedHunkCount > 0
+    ? `; ${escapeHtml(uiT(options.locale, "proposal.patchFoldedHunks"))}: ${escapeHtml(String(foldedHunkCount))}`
+    : "";
   const folded = foldedLineCount > 0
-    ? `<div class="wh-patch-fold" data-rich-patch-overflow="true">${escapeHtml(uiT(options.locale, "proposal.patchFoldedLines"))}: ${escapeHtml(String(foldedLineCount))}</div>`
+    ? `<div class="wh-patch-fold" data-rich-patch-overflow="true">${escapeHtml(uiT(options.locale, "proposal.patchFoldedLines"))}: ${escapeHtml(String(foldedLineCount))}${foldedHunkNotice}</div>`
     : "";
   return `<section ${rootAttrs}>
     <div class="wh-patch-head">

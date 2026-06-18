@@ -109,6 +109,7 @@ const copy = {
   "proposal.patchHunks": { "zh-CN": "段落", "en-US": "Hunks" },
   "proposal.patchLines": { "zh-CN": "行数", "en-US": "Lines" },
   "proposal.patchFoldedLines": { "zh-CN": "已折叠行", "en-US": "Folded lines" },
+  "proposal.patchFoldedHunks": { "zh-CN": "已折叠段落", "en-US": "Folded hunks" },
   "proposal.diff3Title": { "zh-CN": "文本合并检查", "en-US": "Text merge check" },
   "proposal.diff3Auto": { "zh-CN": "已自动合并", "en-US": "Auto-merged" },
   "proposal.diff3Review": { "zh-CN": "需逐项确认", "en-US": "Needs line review" },

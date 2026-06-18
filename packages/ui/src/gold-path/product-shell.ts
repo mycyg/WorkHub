@@ -44,6 +44,9 @@ type ProductShellCopyKey =
   | "nav.cost"
   | "nav.settings"
   | "nav.intake"
+  | "nav.health"
+  | "nav.knowledge"
+  | "nav.skills"
   | "topbar.scope"
   | "topbar.rest"
   | "topbar.admin"
@@ -119,6 +122,9 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.cost": "成本",
     "nav.settings": "设置",
     "nav.intake": "提需求",
+    "nav.health": "健康",
+    "nav.knowledge": "知识",
+    "nav.skills": "技能",
     "topbar.scope": "网页版",
     "topbar.rest": "实时数据",
     "topbar.admin": "管理员",
@@ -193,6 +199,9 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.cost": "Cost",
     "nav.settings": "Settings",
     "nav.intake": "New request",
+    "nav.health": "Health",
+    "nav.knowledge": "Knowledge",
+    "nav.skills": "Skills",
     "topbar.scope": "Web manager",
     "topbar.rest": "Live data",
     "topbar.admin": "Admin",

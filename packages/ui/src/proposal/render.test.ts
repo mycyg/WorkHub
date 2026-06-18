@@ -558,6 +558,58 @@ test("proposal renderer folds large rich patch previews instead of turning confl
   assert.equal(rendered.html.includes("新段落 89"), false);
 });
 
+test("findings: a whole hunk dropped past the line budget is counted as a folded hunk", () => {
+  const vm = createP05GoldPathFixture().proposalDetail;
+  const hunk1 = Array.from({ length: 80 }, (_, i) => i % 2 === 0 ? `-旧 ${i}` : `+新 ${i}`); // 正好吃满 80 行预算
+  const hunk2 = Array.from({ length: 10 }, (_, i) => i % 2 === 0 ? `-尾旧 ${i}` : `+尾新 ${i}`); // 整段被折叠
+  const conflict: ProposalConflict = {
+    id: "conflict-two-hunks",
+    work_item_id: vm.work_item_id,
+    proposal_id: vm.proposal_id,
+    merge_proposal_id: "10000000-0000-4000-8000-000000000609",
+    change_id: vm.manifest.changes[0]?.id ?? "change-1",
+    target_key: "drive_item:docs/two-hunks.md",
+    target_kind: "text_doc",
+    change_type: "updated",
+    target_path: "docs/two-hunks.md",
+    headline: "two-hunks.md 改动较多",
+    summary_text: "第一段吃满预算，第二段整段折叠。",
+    existing: {
+      proposal_id: "10000000-0000-4000-8000-000000000610",
+      change_id: "10000000-0000-4000-8000-000000000611",
+      ref: "main"
+    },
+    incoming: { ref: "proposal" },
+    recommended_option_id: "ai_fusion",
+    options: [
+      {
+        id: "ai_fusion",
+        label: "采用 AI 融合稿",
+        summary_text: "AI 已生成融合稿。",
+        quality_gate: {
+          text_patch_preview: {
+            type: "unified_text_patch_preview",
+            base_available: true,
+            stats: { changed: true, added_lines: 45, removed_lines: 45, overlap_risk: "low" },
+            hunks: [
+              { header: "@@ -1,80 +1,80 @@", lines: hunk1 },
+              { header: "@@ -200,10 +200,10 @@", lines: hunk2 }
+            ]
+          }
+        }
+      }
+    ]
+  };
+
+  const rendered = renderProposalDetail(vm, "web", { conflicts: [conflict] });
+  assert.equal(rendered.html.includes("data-rich-patch-hunk-count=\"2\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-folded-hunk-count=\"1\""), true);
+  // 第一段渲染、第二段整段被丢（无 hunk-index="1"）。
+  assert.equal(rendered.html.includes("data-rich-patch-hunk-index=\"0\""), true);
+  assert.equal(rendered.html.includes("data-rich-patch-hunk-index=\"1\""), false);
+  assert.equal(rendered.html.includes("已折叠段落: 1"), true);
+});
+
 test("proposal renderer exposes a folded field editor for ready structured patches", () => {
   const vm = createP05GoldPathFixture().proposalDetail;
   const applyHref = "/api/merge-proposals/10000000-0000-4000-8000-000000000409/apply";
