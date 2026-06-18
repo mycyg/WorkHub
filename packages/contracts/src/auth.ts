@@ -20,6 +20,21 @@ export const identifyRequestSchema = z.object({
 });
 export type IdentifyRequest = z.infer<typeof identifyRequestSchema>;
 
+// R2 auth epic（密码基线，AUTH_MODE!='nickname' 时启用）。email 落库为 citext（大小写不敏感）；
+// 这里只做基础格式 + 长度边界，强度策略在 apps/api 的 password 模块。
+export const passwordRegisterRequestSchema = z.object({
+  email: z.string().email().max(320),
+  password: z.string().min(8).max(1024),
+  nickname: z.string().min(1).max(64)
+});
+export type PasswordRegisterRequest = z.infer<typeof passwordRegisterRequestSchema>;
+
+export const passwordLoginRequestSchema = z.object({
+  email: z.string().email().max(320),
+  password: z.string().min(1).max(1024)
+});
+export type PasswordLoginRequest = z.infer<typeof passwordLoginRequestSchema>;
+
 export const identifyResponseSchema = userSchema.pick({
   id: true,
   nickname: true,

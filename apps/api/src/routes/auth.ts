@@ -1,8 +1,22 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
-import { identifyRequestSchema, updateUserPreferencesRequestSchema } from "@workhub/contracts";
+import {
+  identifyRequestSchema,
+  passwordLoginRequestSchema,
+  passwordRegisterRequestSchema,
+  updateUserPreferencesRequestSchema
+} from "@workhub/contracts";
+import { hashSessionToken } from "@workhub/db";
 
+import {
+  currentPasswordAlgo,
+  hashPassword,
+  needsRehash,
+  validatePassword,
+  verifyPassword,
+  WeakPasswordError
+} from "../auth/password.js";
 import {
   LOCAL_CLIENT_HEADER,
   constantTimeEquals,
@@ -10,13 +24,17 @@ import {
   getAuthSettings,
   getDefaultAuthDependencies,
   hashClientToken,
+  issueSessionCookie,
   issueUserCookie,
   makeCookieToken,
+  mintSession,
+  readCookieToken,
   resolveAuthDependencies,
   resolveCurrentUser,
   resolveOptionalCurrentUser,
   toIdentityResponse,
   validateNickname,
+  type AuthDependencies,
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
@@ -38,6 +56,19 @@ async function readJsonBody(c: { req: { text: () => Promise<string> } }) {
   } catch {
     throw new HTTPException(400, { message: "认证请求不是有效的 JSON。" });
   }
+}
+
+// R2 auth epic：登录失败锁定策略——连续失败达上限后临时锁定，节流在线暴力破解。
+const LOGIN_MAX_ATTEMPTS = 10;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+
+function passwordModeEnabled(deps: AuthDependencies): boolean {
+  return getAuthSettings(deps).auth.authMode !== "nickname";
+}
+
+// 裸 PG 唯一冲突（23505）→ 路由层转 409，不冒泡成 500（mirror drive/proposals 的 isXxxUniqueViolation）。
+function isUniqueViolation(error: unknown): boolean {
+  return !!error && typeof error === "object" && (error as { code?: string }).code === "23505";
 }
 
 export function createAuthRoutes(
@@ -105,6 +136,117 @@ export function createAuthRoutes(
     return c.json(toIdentityResponse(user, created), created ? 201 : 200);
   });
 
+  // R2 auth epic：密码注册（AUTH_MODE!='nickname' 时启用）。建 user + 凭据 + 会话；
+  // 零管理员实例的首个注册者自举为 admin（取代 ADMIN_CLAIM_SECRET）。
+  routes.post("/register", async (c) => {
+    const deps = resolveAuthDependencies(source);
+    if (!passwordModeEnabled(deps)) {
+      throw new HTTPException(404, { message: "密码注册未启用" });
+    }
+    if (!deps.credentials || !deps.sessions) {
+      throw new HTTPException(501, { message: "当前运行时不支持密码认证" });
+    }
+    const payload = passwordRegisterRequestSchema.parse(await readJsonBody(c));
+    const email = payload.email.trim();
+    const nickname = validateNickname(payload.nickname);
+    try {
+      validatePassword(payload.password);
+    } catch (error) {
+      if (error instanceof WeakPasswordError) {
+        throw new HTTPException(400, { message: error.message });
+      }
+      throw error;
+    }
+
+    // email 唯一预检（citext 大小写不敏感）；竞态由下方 createCredential 的 23505 兜底。
+    if (await deps.credentials.findByEmail(email)) {
+      throw new HTTPException(409, { message: "该邮箱已注册" });
+    }
+
+    const passwordHash = await hashPassword(payload.password);
+    // 首管引导：零管理员实例的首个注册者直接建为 admin（建行前判定，避免多一次提权写）。
+    const shouldBeAdmin = deps.users.hasAnyActiveAdmin ? !(await deps.users.hasAnyActiveAdmin()) : false;
+
+    let user;
+    try {
+      // cookieToken 在会话模式下是 vestigial，但列 NOT NULL，仍生成一个。
+      user = await deps.users.createUser({ nickname, cookieToken: makeCookieToken(), isAdmin: shouldBeAdmin });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new HTTPException(409, { message: "该昵称已被占用" });
+      }
+      throw error;
+    }
+
+    try {
+      await deps.credentials.createCredential({
+        userId: user.id,
+        email,
+        passwordHash,
+        passwordAlgo: currentPasswordAlgo()
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new HTTPException(409, { message: "该邮箱已注册" });
+      }
+      throw error;
+    }
+
+    const { token } = await mintSession(deps, user, { authMethod: "password" });
+    await issueSessionCookie(c, token, getAuthSettings(deps));
+    await deps.touchUser?.(user.id);
+
+    return c.json(toIdentityResponse(user, true), 201);
+  });
+
+  // R2 auth epic：密码登录。统一 401（不泄露 email 是否存在）；失败计数 + 达上限临时锁定；
+  // 成功清零计数并按 needsRehash 透明升级哈希。
+  routes.post("/login", async (c) => {
+    const deps = resolveAuthDependencies(source);
+    if (!passwordModeEnabled(deps)) {
+      throw new HTTPException(404, { message: "密码登录未启用" });
+    }
+    if (!deps.credentials || !deps.sessions) {
+      throw new HTTPException(501, { message: "当前运行时不支持密码认证" });
+    }
+    const payload = passwordLoginRequestSchema.parse(await readJsonBody(c));
+    const email = payload.email.trim();
+    const now = (deps.now ?? (() => new Date()))();
+    const invalid = () => new HTTPException(401, { message: "邮箱或密码不正确" });
+
+    const credential = await deps.credentials.findByEmail(email);
+    if (!credential) {
+      throw invalid();
+    }
+    if (credential.lockedUntil && credential.lockedUntil > now) {
+      throw new HTTPException(429, { message: "登录失败次数过多，账号已临时锁定，请稍后再试。" });
+    }
+    const user = await deps.users.findActiveById(credential.userId);
+    if (!user) {
+      throw invalid(); // 用户被软删/停用
+    }
+    const ok = credential.passwordHash ? await verifyPassword(payload.password, credential.passwordHash) : false;
+    if (!ok) {
+      const attempts = credential.failedAttempts + 1;
+      const lockedUntil = attempts >= LOGIN_MAX_ATTEMPTS ? new Date(now.getTime() + LOGIN_LOCK_MS) : null;
+      await deps.credentials.recordFailedAttempt(credential.userId, lockedUntil);
+      throw invalid();
+    }
+
+    await deps.credentials.resetFailedAttempts(credential.userId);
+    // 透明重哈希：算法/参数升级时在成功登录路径无停机迁移旧串。
+    if (credential.passwordHash && needsRehash(credential.passwordHash) && deps.credentials.updatePassword) {
+      const rehashed = await hashPassword(payload.password);
+      await deps.credentials.updatePassword(credential.userId, rehashed, currentPasswordAlgo());
+    }
+
+    const { token } = await mintSession(deps, user, { authMethod: "password" });
+    await issueSessionCookie(c, token, getAuthSettings(deps));
+    await deps.touchUser?.(user.id);
+
+    return c.json(toIdentityResponse(user, false), 200);
+  });
+
   routes.get("/me", async (c) => {
     const deps = resolveAuthDependencies(source);
     const user = await resolveOptionalCurrentUser(c, deps);
@@ -156,6 +298,18 @@ export function createAuthRoutes(
       );
       if (revokedDevice && revokedDevice.userId !== user.id) {
         await deps.forgetUser?.(revokedDevice.userId);
+      }
+    }
+
+    // R2 auth epic：会话模式下登出要撤销当前会话墓碑（nickname 模式无会话，跳过）。
+    if (passwordModeEnabled(deps) && deps.sessions) {
+      const cookieToken = await readCookieToken(c, runtimeSettings);
+      if (cookieToken) {
+        const at = (deps.now ?? (() => new Date()))();
+        const session = await deps.sessions.findActiveByTokenHash(hashSessionToken(cookieToken), at);
+        if (session) {
+          await deps.sessions.revoke(session.id, at);
+        }
       }
     }
 

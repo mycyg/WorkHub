@@ -12,9 +12,12 @@ import type {
   ClientDeviceAuthRow,
   ClientDeviceRepository,
   CreateSessionInput,
+  CreateUserCredentialInput,
+  CredentialRepository,
   SessionRepository,
   SessionRow,
   UserAuthRow,
+  UserCredentialRow,
   UserRepository
 } from "@workhub/db";
 import type { WorkHubLocale } from "@workhub/contracts";
@@ -34,6 +37,7 @@ import {
   type AuthDependencies,
   type AuthEnv
 } from "./middleware/auth.js";
+import { hashPassword } from "./auth/password.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createAdminClaimThrottle } from "./middleware/admin-claim-throttle.js";
 
@@ -134,6 +138,10 @@ class MemoryUsers implements UserRepository {
     row.preferredLocale = locale;
     row.updatedAt = now;
     return row;
+  }
+
+  async hasAnyActiveAdmin() {
+    return this.rows.some((row) => row.isAdmin && row.deletedAt === null);
   }
 }
 
@@ -270,6 +278,88 @@ class MemorySessions implements SessionRepository {
     const before = this.rows.length;
     this.rows = this.rows.filter((row) => row.absoluteExpiresAt >= at);
     return before - this.rows.length;
+  }
+}
+
+function credentialRow(input: CreateUserCredentialInput, seq = 1): UserCredentialRow {
+  return {
+    id: input.id ?? `40000000-0000-4000-8000-${String(seq).padStart(12, "0")}`,
+    userId: input.userId,
+    email: input.email,
+    passwordHash: input.passwordHash,
+    passwordAlgo: input.passwordAlgo,
+    emailVerifiedAt: input.emailVerifiedAt ?? null,
+    failedAttempts: 0,
+    lockedUntil: null,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+class MemoryCredentials implements CredentialRepository {
+  public rows: UserCredentialRow[] = [];
+
+  // citext 语义：大小写不敏感匹配。
+  async findByEmail(email: string) {
+    return this.rows.find((row) => row.email.toLowerCase() === email.toLowerCase()) ?? null;
+  }
+
+  async findByUserId(userId: string) {
+    return this.rows.find((row) => row.userId === userId) ?? null;
+  }
+
+  async createCredential(input: CreateUserCredentialInput) {
+    if (await this.findByEmail(input.email)) {
+      throw Object.assign(new Error("duplicate email"), { code: "23505" });
+    }
+    const row = credentialRow(input, this.rows.length + 1);
+    this.rows.push(row);
+    return row;
+  }
+
+  async updatePassword(userId: string, passwordHash: string, passwordAlgo: string) {
+    const row = this.rows.find((candidate) => candidate.userId === userId);
+    if (!row) {
+      return null;
+    }
+    row.passwordHash = passwordHash;
+    row.passwordAlgo = passwordAlgo;
+    row.failedAttempts = 0;
+    row.lockedUntil = null;
+    row.updatedAt = now;
+    return row;
+  }
+
+  async recordFailedAttempt(userId: string, lockedUntil?: Date | null) {
+    const row = this.rows.find((candidate) => candidate.userId === userId);
+    if (!row) {
+      return null;
+    }
+    row.failedAttempts += 1;
+    row.lockedUntil = lockedUntil ?? null;
+    row.updatedAt = now;
+    return row;
+  }
+
+  async resetFailedAttempts(userId: string) {
+    const row = this.rows.find((candidate) => candidate.userId === userId);
+    if (!row) {
+      return null;
+    }
+    row.failedAttempts = 0;
+    row.lockedUntil = null;
+    row.updatedAt = now;
+    return row;
+  }
+
+  async setEmailVerified(userId: string, at: Date) {
+    const row = this.rows.find((candidate) => candidate.userId === userId);
+    if (!row) {
+      return null;
+    }
+    row.emailVerifiedAt = at;
+    row.updatedAt = at;
+    return row;
   }
 }
 
@@ -739,4 +829,172 @@ test("resolveStreamUser resolves a session cookie in password mode", async () =>
   const res = await app.request("/stream", { headers: { Cookie: await signedCookie(token, runtimeSettings) } });
   assert.equal(res.status, 200);
   assert.equal(((await res.json()) as { nickname: string }).nickname, "alice");
+});
+
+// ——— R2 auth epic Phase 3b：密码注册/登录/登出路由 ———
+
+function passwordCtx(seedUsers: UserAuthRow[] = []) {
+  const runtimeSettings = settings({ AUTH_MODE: "password" });
+  const memUsers = new MemoryUsers(seedUsers);
+  const sessions = new MemorySessions();
+  const credentials = new MemoryCredentials();
+  const deps: AuthDependencies = {
+    users: memUsers,
+    devices: new MemoryDevices([]),
+    sessions,
+    credentials,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  return { deps, sessions, credentials, users: memUsers, runtimeSettings };
+}
+
+function jsonPost(body: unknown) {
+  return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+}
+
+test("POST /register bootstraps the first user as admin and sets a resolvable session cookie", async () => {
+  const { deps, credentials } = passwordCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+  app.get("/who", createCurrentUserMiddleware(deps), (c) =>
+    c.json({ id: c.var.currentUser.id, admin: c.var.currentUser.isAdmin })
+  );
+
+  const res = await app.request("/auth/register", jsonPost({
+    email: "Founder@Example.com",
+    password: "founder-pass-1",
+    nickname: "Founder"
+  }));
+  assert.equal(res.status, 201);
+  const body = (await res.json()) as { is_admin: boolean };
+  assert.equal(body.is_admin, true, "首个注册者自举为 admin");
+  assert.equal(credentials.rows.length, 1);
+
+  const setCookie = res.headers.get("set-cookie");
+  assert.ok(setCookie, "register should set a session cookie");
+  const cookiePair = setCookie.split(";")[0] ?? "";
+  const who = await app.request("/who", { headers: { Cookie: cookiePair } });
+  assert.equal(who.status, 200);
+  assert.equal(((await who.json()) as { admin: boolean }).admin, true);
+});
+
+test("POST /register does not auto-admin when an admin already exists, and rejects duplicate email (409)", async () => {
+  const boss = user({ id: "10000000-0000-4000-8000-0000000000ad", nickname: "boss", isAdmin: true });
+  const { deps } = passwordCtx([boss]);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const first = await app.request("/auth/register", jsonPost({
+    email: "member@example.com",
+    password: "member-pass-1",
+    nickname: "Member"
+  }));
+  assert.equal(first.status, 201);
+  assert.equal(((await first.json()) as { is_admin: boolean }).is_admin, false, "已有 admin → 不自举");
+
+  // 同邮箱（大小写不同，验 citext 语义）→ 409
+  const dup = await app.request("/auth/register", jsonPost({
+    email: "Member@Example.com",
+    password: "another-pass-1",
+    nickname: "Member Two"
+  }));
+  assert.equal(dup.status, 409);
+});
+
+test("POST /register and /login are 404 in nickname mode (gate off by default)", async () => {
+  const memUsers = new MemoryUsers([]);
+  const deps: AuthDependencies = {
+    users: memUsers,
+    devices: new MemoryDevices([]),
+    sessions: new MemorySessions(),
+    credentials: new MemoryCredentials(),
+    settings: settings(), // 默认 nickname
+    now: () => now
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const reg = await app.request("/auth/register", jsonPost({ email: "x@example.com", password: "pw-123456", nickname: "X" }));
+  assert.equal(reg.status, 404);
+  const login = await app.request("/auth/login", jsonPost({ email: "x@example.com", password: "pw-123456" }));
+  assert.equal(login.status, 404);
+});
+
+test("POST /login succeeds with the right password and rejects the wrong one (401, generic)", async () => {
+  const alice = user({ id: "10000000-0000-4000-8000-0000000000a1", nickname: "alice" });
+  const { deps, credentials } = passwordCtx([alice]);
+  credentials.rows.push(
+    credentialRow({
+      userId: alice.id,
+      email: "alice@example.com",
+      passwordHash: await hashPassword("alice-secret-1"),
+      passwordAlgo: "scrypt"
+    })
+  );
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+  app.get("/who", createCurrentUserMiddleware(deps), (c) => c.json({ id: c.var.currentUser.id }));
+
+  const okRes = await app.request("/auth/login", jsonPost({ email: "Alice@Example.com", password: "alice-secret-1" }));
+  assert.equal(okRes.status, 200);
+  const setCookie = okRes.headers.get("set-cookie");
+  assert.ok(setCookie);
+  const who = await app.request("/who", { headers: { Cookie: setCookie.split(";")[0] ?? "" } });
+  assert.equal(who.status, 200);
+
+  const badRes = await app.request("/auth/login", jsonPost({ email: "alice@example.com", password: "wrong-secret" }));
+  assert.equal(badRes.status, 401);
+  assert.equal((await credentials.findByUserId(alice.id))?.failedAttempts, 1, "wrong password records a failed attempt");
+});
+
+test("POST /login returns 401 for an unknown email and 429 once locked out", async () => {
+  const bob = user({ id: "10000000-0000-4000-8000-0000000000b2", nickname: "bob" });
+  const { deps, credentials } = passwordCtx([bob]);
+  const seeded = credentialRow({
+    userId: bob.id,
+    email: "bob@example.com",
+    passwordHash: await hashPassword("bob-secret-1"),
+    passwordAlgo: "scrypt"
+  });
+  seeded.failedAttempts = 9; // 再失败一次即达上限锁定
+  credentials.rows.push(seeded);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const unknown = await app.request("/auth/login", jsonPost({ email: "nobody@example.com", password: "whatever" }));
+  assert.equal(unknown.status, 401);
+
+  // 第 10 次失败 → 置锁定
+  const trip = await app.request("/auth/login", jsonPost({ email: "bob@example.com", password: "wrong" }));
+  assert.equal(trip.status, 401);
+  // 现在即使密码正确也被锁 → 429
+  const locked = await app.request("/auth/login", jsonPost({ email: "bob@example.com", password: "bob-secret-1" }));
+  assert.equal(locked.status, 429);
+});
+
+test("POST /logout revokes the active session in password mode", async () => {
+  const { deps, sessions } = passwordCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+  app.get("/who", createCurrentUserMiddleware(deps), (c) => c.json({ id: c.var.currentUser.id }));
+
+  const reg = await app.request("/auth/register", jsonPost({
+    email: "logout@example.com",
+    password: "logout-pass-1",
+    nickname: "Logouter"
+  }));
+  assert.equal(reg.status, 201);
+  const cookiePair = (reg.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+
+  // 登出前会话有效
+  assert.equal((await app.request("/who", { headers: { Cookie: cookiePair } })).status, 200);
+  assert.equal(sessions.rows.filter((row) => row.revokedAt === null).length, 1);
+
+  const logout = await app.request("/auth/logout", { method: "POST", headers: { Cookie: cookiePair } });
+  assert.equal(logout.status, 200);
+  assert.equal(sessions.rows.filter((row) => row.revokedAt === null).length, 0, "logout should revoke the session");
+
+  // 登出后同一 cookie 不再鉴权
+  assert.equal((await app.request("/who", { headers: { Cookie: cookiePair } })).status, 401);
 });

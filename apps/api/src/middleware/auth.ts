@@ -9,6 +9,7 @@ import { authDefaults, settings as defaultSettings, type Settings } from "@workh
 import { defaultWorkHubLocale, type ActorKind } from "@workhub/contracts";
 import {
   createClientDeviceRepository,
+  createCredentialRepository,
   createSessionRepository,
   generateSessionToken,
   getSharedDatabaseClient,
@@ -17,6 +18,7 @@ import {
   nextIdleExpiry,
   type ClientDeviceAuthRow,
   type ClientDeviceRepository,
+  type CredentialRepository,
   type SessionAuthMethod,
   type SessionRepository,
   type SessionRow,
@@ -62,6 +64,8 @@ export type AuthDependencies = {
   // R2 auth epic：会话仓库为 OPTIONAL——仅 AUTH_MODE!='nickname' 时被查询；nickname 模式（默认）下整段跳过，
   // 单测不传则会话路径不参与（与原子预算 reservationRepo 同范式）。
   sessions?: SessionRepository;
+  // R2 auth epic：口令凭据仓库为 OPTIONAL——仅密码注册/登录路由用；nickname 模式不触及。
+  credentials?: CredentialRepository;
   settings?: Settings;
   now?: () => Date;
   touchUser?: (userId: string) => void | Promise<void>;
@@ -79,6 +83,7 @@ export function getDefaultAuthDependencies(): AuthDependencies {
     users: createUserRepository(defaultDbClient.db),
     devices: createClientDeviceRepository(defaultDbClient.db),
     sessions: createSessionRepository(defaultDbClient.db),
+    credentials: createCredentialRepository(defaultDbClient.db),
     touchUser: (userId) => presence.touchUser(userId),
     forgetUser: (userId) => presence.forgetUser(userId)
   };

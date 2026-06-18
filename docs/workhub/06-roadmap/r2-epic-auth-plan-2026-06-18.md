@@ -178,9 +178,20 @@ Flip AUTH_MODE default to 'password' (or 'hybrid' for staged pilots), add a back
 - **测试**：`apps/api/src/password.test.ts` 4 测（PHC 格式+随机 salt / 校验对错+篡改+垃圾串不抛 / 长度策略 / needsRehash 判弱参与未知算法）。`@workhub/api` 257 测 + `@workhub/db` 28 测 + `pnpm -r typecheck`(16 包)全绿。
 - **✅ 真 PG 覆盖（`r2-pg-redis-smoke`）**：凭据 + 会话 DB 层（2a/3a 仓库此前仅假数据单测）首次过真 Postgres——`createCredential`→`findByEmail`(大写 email 验 **citext 大小写不敏感**)→`verifyPassword`(对/错)→失败计数+复位；会话 `create`→`findActiveByTokenHash`→`touch` 滑动→`revoke`(解析不到)→绝对过期 `deleteExpired` 清扫→`revokeAllForUser` 全撤。补上了 DB 方法的真库验证缺口。
 
+### ✅ Phase 3b（密码注册/登录/登出路由）已完成、全 CI 绿 —— 首个**行为性**改动（AUTH_MODE 门控，nickname 默认不暴露）
+
+密码认证的实际功能，建在 3a/3b 已 PG 验证的原语上。全部 `AUTH_MODE!='nickname'` 门控：nickname 默认模式下三个路由 404、零现状改动。
+
+- **`POST /api/auth/register`**：`passwordRegisterRequestSchema`(email/password/nickname) → `validatePassword` → email 唯一预检(409) → 建 user(`isAdmin` 由**首管引导**决定：`hasAnyActiveAdmin()===false` 即首个注册者置 admin，取代 ADMIN_CLAIM_SECRET) → `createCredential`(`hashPassword`) → `mintSession`+`issueSessionCookie` → 201。昵称/邮箱并发竞态由 `isUniqueViolation`(23505)→409 兜底。
+- **`POST /api/auth/login`**：`findByEmail` → 锁定检查(`lockedUntil>now`→429) → `findActiveById`(软删用户→401) → `verifyPassword`；失败 `recordFailedAttempt`(连续 ≥10 次置 15 分钟 `lockedUntil`)+**统一 401 不泄露 email 是否存在**；成功 `resetFailedAttempts`+按 `needsRehash` 透明升级哈希 → `mintSession`+`issueSessionCookie` → 200。
+- **`POST /api/auth/logout`**：会话模式额外 `sessions.findActiveByTokenHash`→`revoke` 当前会话墓碑（nickname 模式维持原状删 cookie）。
+- **接线**：`AuthDependencies.credentials?` OPTIONAL + `getDefaultAuthDependencies` 注入 `createCredentialRepository`；`UserRepository.hasAnyActiveAdmin?()` OPTIONAL（假仓库不实现则不自举）。`route-auth-posture` fail-closed 门把 register/login 列入公开入口白名单。
+- **测试**：`auth.test.ts` +6 测（首管自举+会话 cookie 往返 / 已有 admin 不自举+重复邮箱 409 / nickname 模式 404 / 登录对错 401+失败计数 / 未知邮箱 401+锁定 429 / 登出撤销会话）。`@workhub/api` 263 测 + `@workhub/db` 28 + `@workhub/contracts` 42 + `pnpm -r typecheck`(16 包) + `route-auth-posture` fail-closed 门全绿。OpenAPI 补 register/login 条目。
+
 ### ⏭️ 之后（依设计推进，本刀未含）
 
-- **登录/登出/注册路由接线**：password 登录路由查 `findByEmail`→`verifyPassword`(失败 `recordFailedAttempt`/成功 `resetFailedAttempts`+按 `needsRehash` 透明重哈希)→`mintSession`+`issueSessionCookie`；注册路由 `validatePassword`→`hashPassword`→建 user+`createCredential`；登出会话模式调 `sessions.revoke`（nickname 删 cookie 即可）；停用账号调 `revokeAllForUser`。AUTH_MODE 旗标门控（nickname 模式这些路由不暴露/不改现状）。
-- **首管引导**：空/零 admin users 表时首个注册者置 admin（取代 ADMIN_CLAIM_SECRET）。
 - **会话清扫调度**：`deleteExpired` 已就绪，待挂周期任务（mirror agent-runner 心跳清扫）。
-- 生命周期（邀请/停用/offboard）、OIDC（接 0 provider 的抽象层）。
+- **生命周期**：邀请（out-of-band 链接）/停用（`revokeAllForUser`+软删）/offboard/改密路由。
+- **OIDC**：provider 抽象层（接 0 provider 占位）。
+- **前端**：web onboarding 注册/登录屏（password 模式）、桌面端会话适配。
+- **Phase 5 切换**：AUTH_MODE 默认翻 password、退役 ADMIN_CLAIM_SECRET、最终删 `users.cookie_token`。

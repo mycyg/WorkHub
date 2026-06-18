@@ -13,6 +13,8 @@ import app from "./app.js";
 // - GET /api/health        存活探针
 // - GET /openapi.json, /api/openapi.json  契约种子（无用户数据）
 // - POST /api/auth/identify 注册/登入入口本身
+// - POST /api/auth/register, /api/auth/login 密码注册/登录入口本身（AUTH_MODE!='nickname' 时启用；
+//   nickname 默认模式下 404——两者都是「无需既有鉴权即可访问」的公开入口）
 // - GET /api/auth/me       未识别时返回 null（不泄漏数据）
 // - GET /api/pages/gold-path P0.5 demo fixture 模板（无真实用户数据；退役计划见 R4 审查 P0-3）
 const PUBLIC_ROUTES = new Set<string>([
@@ -21,6 +23,8 @@ const PUBLIC_ROUTES = new Set<string>([
   "GET /openapi.json",
   "GET /api/openapi.json",
   "POST /api/auth/identify",
+  "POST /api/auth/register",
+  "POST /api/auth/login",
   "GET /api/auth/me",
   "GET /api/pages/gold-path"
 ]);

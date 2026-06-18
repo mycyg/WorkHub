@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import type { WorkHubLocale } from "@workhub/contracts";
 
@@ -31,6 +31,9 @@ export type UserRepository = {
   rotateCookieToken: (userId: string, cookieToken: string) => Promise<UserAuthRow | null>;
   updatePreferredLocale?: (userId: string, locale: WorkHubLocale) => Promise<UserAuthRow | null>;
   promoteToAdmin?: (userId: string) => Promise<UserAuthRow | null>;
+  // R2 auth epic：首管引导用——空/零管理员的实例里首个密码注册者置 admin（取代 ADMIN_CLAIM_SECRET）。
+  // OPTIONAL：旧运行时/假仓库不实现则跳过自举（默认不自动提权）。
+  hasAnyActiveAdmin?: () => Promise<boolean>;
 };
 
 export function createUserRepository(db: WorkHubDb): UserRepository {
@@ -127,6 +130,15 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
         .returning();
       const user = rows[0] ?? null;
       return user && user.deletedAt === null ? user : null;
+    },
+
+    async hasAnyActiveAdmin() {
+      const rows = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.isAdmin, true), isNull(users.deletedAt)))
+        .limit(1);
+      return rows.length > 0;
     },
 
     async updatePreferredLocale(userId, locale) {

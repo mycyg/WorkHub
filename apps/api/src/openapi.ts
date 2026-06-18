@@ -12,10 +12,22 @@ export function getOpenApiDocument() {
           summary: "Check daemon health"
         }
       },
+      "/api/auth/register": {
+        post: {
+          tags: ["auth"],
+          summary: "Password registration (AUTH_MODE!=nickname); first user bootstraps as admin"
+        }
+      },
+      "/api/auth/login": {
+        post: {
+          tags: ["auth"],
+          summary: "Password login (AUTH_MODE!=nickname); mints a server-side session cookie"
+        }
+      },
       "/api/auth/logout": {
         post: {
           tags: ["auth"],
-          summary: "Rotate the cookie token and clear the session cookie"
+          summary: "Rotate the cookie token, revoke the session, and clear the session cookie"
         }
       },
       "/api/auth/preferences": {
