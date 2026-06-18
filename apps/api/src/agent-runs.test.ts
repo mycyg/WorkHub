@@ -17,6 +17,7 @@ import { topics } from "@workhub/events";
 import type {
   AuditLogRepository,
   AuditLogRow,
+  BudgetReservationRepository,
   AiDecisionRepository,
   ClientDeviceAuthRow,
   ClientDeviceRepository,
@@ -1057,6 +1058,56 @@ test("agent run enqueue returns budget_exhausted before queueing new work", asyn
   assert.equal(body.error.details?.remaining_cost_cny, "0");
   assert.equal(body.error.details?.recommended_action, "ask_admin");
   assert.equal((await queue.listActive()).length, 0);
+});
+
+test("agent run enqueue reserves budget, denies an over-cap concurrent start, and compensates the queued run", async () => {
+  const runtimeSettings = settings();
+  // 默认拒绝（模拟并发在飞已占满该 scope 的预留）；之后切允许验证补偿释放了 work-item 槽。
+  let reserveResult: { ok: true } | { ok: false; limitingScope: { kind: "team"; teamId: string }; limit: "tokens" } = {
+    ok: false,
+    limitingScope: { kind: "team", teamId: runtimeSettings.auth.defaultWorkspaceId },
+    limit: "tokens"
+  };
+  const reserveInputs: Array<{ runId: string; scopes: Array<{ scopeKind: string; estTokens: number }> }> = [];
+  const fakeReservationRepo = {
+    reserve: async (input: { runId: string; scopes: Array<{ scopeKind: string; estTokens: number }> }) => {
+      reserveInputs.push(input);
+      return reserveResult;
+    },
+    reconcile: async () => 0,
+    releaseExpired: async () => 0,
+    refreshLease: async () => 0,
+    outstandingForScopes: async () => new Map()
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000031",
+    reservationRepo: fakeReservationRepo as unknown as BudgetReservationRepository,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  // 预留被拒 → enqueue 抛与 decideBudget 同款 402 budget_exhausted（decideBudget 本身放行，TOCTOU 由预留挡住）。
+  await assert.rejects(
+    () => queue.enqueue({ workItemId, actorId: userId, title: "denied by reservation" }),
+    (error: unknown) => error instanceof AgentRunnerError && error.status === 402 && error.code === "budget_exhausted"
+  );
+  assert.equal(reserveInputs.length, 1);
+  // 预留输入含受限 day/month scope，est = 本 run 的 per-run cap（>0）。
+  assert.equal(reserveInputs[0]!.scopes.some((scope) => scope.scopeKind === "team"), true);
+  assert.equal(reserveInputs[0]!.scopes.some((scope) => scope.scopeKind === "user"), true);
+  assert.equal(reserveInputs[0]!.scopes.every((scope) => scope.estTokens > 0), true);
+  // 补偿：被拒的 queued run 不留在 active 集合里。
+  assert.equal((await queue.listActive()).length, 0);
+
+  // 切允许后，同一 work item 能再次入队 → 证明上一次被干净补偿（work-item active 槽已释放）。
+  reserveResult = { ok: true };
+  const allowed = await queue.enqueue({ workItemId, actorId: userId, title: "allowed after compensation" });
+  assert.equal(allowed.work_item_id, workItemId);
+  assert.equal(reserveInputs.length, 2);
 });
 
 test("agent run enqueue uses ledger snapshots when no usage fixture is injected", async () => {
