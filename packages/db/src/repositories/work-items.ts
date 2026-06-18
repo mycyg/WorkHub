@@ -174,6 +174,11 @@ export type InsertStoredChatMessageInput = {
 export type StoredWorkItemDetailRows = {
   workItem: WorkItemRow;
   projectOwnerUserId: string | null;
+  // 读路径可见性收口用：摊平出工作项所属项目的租户/活跃度字段，
+  // 让 canViewWorkItemRecord(record, actor, {workspaceId}) 能直接判定 workspace 归属，无需再补一次查询。
+  projectWorkspaceId: string | null;
+  projectArchived: boolean | null;
+  projectDeletedAt: Date | null;
   acceptance: WorkItemAcceptanceRow[];
   agentSteps: WorkItemAgentStepRow[];
   latestProposal: WorkItemProposalRow | null;
@@ -215,6 +220,8 @@ export type WorkItemRepository = {
 export type WorkItemDataRepository = WorkItemRepository & {
   findProjectById: (projectId: string) => Promise<WorkItemProjectRow | null>;
   findFirstActiveProject: () => Promise<WorkItemProjectRow | null>;
+  // 缺省 project_id 的兜底必须锚定 actor 的 workspace，否则会落到全局首个项目（跨租户写入默认 seed 工作区）。
+  findFirstActiveProjectInWorkspace: (workspaceId: string) => Promise<WorkItemProjectRow | null>;
   createWorkItem: (input: CreateStoredWorkItemInput) => Promise<WorkItemRow>;
   updateWorkItemFromSession: (input: UpdateStoredWorkItemFromSessionInput) => Promise<WorkItemRow | null>;
   insertChatMessage: (input: InsertStoredChatMessageInput) => Promise<WorkItemChatMessageRow>;
@@ -462,6 +469,18 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       return rows[0] ?? null;
     },
 
+    async findFirstActiveProjectInWorkspace(workspaceId) {
+      const rows = await db
+        .select()
+        .from(projects)
+        .where(
+          and(eq(projects.workspaceId, workspaceId), eq(projects.archived, false), isNull(projects.deletedAt))
+        )
+        .orderBy(asc(projects.createdAt))
+        .limit(1);
+      return rows[0] ?? null;
+    },
+
     async createWorkItem(input) {
       const at = input.at ?? new Date();
       // findings[#low]：序列号分配 + work item 插入 + 验收项插入要原子化，否则中途失败会
@@ -617,7 +636,10 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       const rows = await db
         .select({
           workItem: workItems,
-          projectOwnerUserId: projects.ownerUserId
+          projectOwnerUserId: projects.ownerUserId,
+          projectWorkspaceId: projects.workspaceId,
+          projectArchived: projects.archived,
+          projectDeletedAt: projects.deletedAt
         })
         .from(workItems)
         .innerJoin(projects, eq(workItems.projectId, projects.id))
@@ -711,6 +733,9 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       return {
         workItem: row.workItem,
         projectOwnerUserId: row.projectOwnerUserId,
+        projectWorkspaceId: row.projectWorkspaceId,
+        projectArchived: row.projectArchived,
+        projectDeletedAt: row.projectDeletedAt,
         acceptance,
         agentSteps: agentStepRows,
         latestProposal: latestProposals[0] ?? null,

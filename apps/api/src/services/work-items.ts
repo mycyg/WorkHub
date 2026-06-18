@@ -39,7 +39,7 @@ import {
   type WorkHubLocale
 } from "@workhub/contracts";
 
-import { canViewProjectDrive } from "@workhub/permissions";
+import { canViewProjectDrive, canViewWorkItemRecord } from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
 import { acceptedDeliverableToVm } from "./accepted-deliverables.js";
@@ -361,19 +361,41 @@ function titleFromIntent(intentText: string | undefined) {
   return compact ?? "待澄清事项";
 }
 
+// 把已加载的 detail 行摊平成 @workhub/permissions 的 WorkItemAccessRecord——
+// readWorkItemDetail 已 join 出项目的 workspace/archived/deletedAt，故无需再多查一次。
+function detailToWorkItemAccessRecord(rows: StoredWorkItemDetailRows) {
+  return {
+    id: rows.workItem.id,
+    status: rows.workItem.status,
+    submitterUserId: rows.workItem.submitterUserId,
+    claimedByUserId: rows.workItem.claimedByUserId,
+    workspaceId: rows.workItem.workspaceId,
+    project: {
+      archived: rows.projectArchived,
+      deletedAt: rows.projectDeletedAt,
+      ownerUserId: rows.projectOwnerUserId,
+      workspaceId: rows.projectWorkspaceId
+    }
+  };
+}
+
+// A2 同源收口（读路径）：旧的 ad-hoc 判定只看 submitter/claimer/owner，忽略 workspace 归属——
+// admin 可越租户读全组织工作项，与权限契约漂移。改用读路径同款 canViewWorkItemRecord，
+// 传 actor 的 {orgId, workspaceId} 作用域；单租户下 actor 与工作项同属默认 workspace，故对旧放行的用例仍放行。
+// 认领人（claimedByUserId）此前可读 spec_ready 私有态，canViewWorkItemRecord 不查认领字段，保留显式短路防回归。
 function assertCanReadDetail(rows: StoredWorkItemDetailRows, actor: AuthActor) {
-  if (actor.isAdmin) {
-    return;
-  }
   const userId = actor.userId ?? actor.id;
-  if (
-    rows.workItem.submitterUserId === userId ||
-    rows.workItem.claimedByUserId === userId ||
-    rows.projectOwnerUserId === userId
-  ) {
+  if (rows.workItem.claimedByUserId === userId) {
     return;
   }
-  throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+  const allowed = canViewWorkItemRecord(
+    detailToWorkItemAccessRecord(rows),
+    { id: userId, isAdmin: actor.isAdmin },
+    { orgId: actor.orgId, workspaceId: actor.workspaceId }
+  );
+  if (!allowed) {
+    throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+  }
 }
 
 function toWorkItemVm(row: WorkItemRow): WorkItem {
@@ -753,12 +775,15 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
       assertCanCreateInProject(project, actor);
       return project;
     }
+    // A2 兜底收口：缺省 project_id 时，旧逻辑取全局 seed/最早一个 ACTIVE 项目，无视 actor 的 workspace，
+    // 会把事项写进全局默认 seed 工作区（常量兜底跨租户泄漏）。改为只在 actor.workspaceId 内解析默认/首个 ACTIVE 项目；
+    // 命中的项目仍过 canViewProjectDrive（同租户故必过）。单租户下 actor 的 workspace 即含 seed 项目的默认 workspace，行为不变。
     const seeded = await repository.findProjectById(defaultProjectId);
-    if (seeded) {
+    if (seeded && seeded.workspaceId === actor.workspaceId) {
       assertCanCreateInProject(seeded, actor);
       return seeded;
     }
-    const first = await repository.findFirstActiveProject();
+    const first = await repository.findFirstActiveProjectInWorkspace(actor.workspaceId);
     if (!first) {
       throw new WorkItemServiceError(404, "project_not_found", "还没有可用项目，无法创建事项。");
     }
