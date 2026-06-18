@@ -168,8 +168,18 @@ Flip AUTH_MODE default to 'password' (or 'hybrid' for staged pilots), add a back
 - **依赖注入**：`AuthDependencies.sessions?` 设为 OPTIONAL（与原子预算 `reservationRepo` 同范式——单测不传则会话路径不参与）；`getDefaultAuthDependencies` 注入 `createSessionRepository(db)`。
 - **测试**：`auth.test.ts` + 7 测（password 解析+滑动 / 拒绝撤销+过期 / 纯会话忽略 cookieToken / **nickname 默认忽略会话 cookie 证明门关着** / hybrid 双通 / issueSessionCookie 端到端往返 / resolveStreamUser 会话解析）。`@workhub/api` 253 测 + `@workhub/config` 11 测 + `pnpm -r typecheck`(16 包)全绿。
 
+### ✅ Phase 3a（口令哈希器 + CredentialRepository）已完成、全 CI 绿 —— 仍零路由接线
+
+密码基线的两块安全原语，仍不接线（无注册/登录路由），可单测 + 待业务路由调用。
+
+- **`apps/api/src/auth/password.ts`**：`hashPassword`（生成 PHC 自描述串）/ `verifyPassword`（常量时间，任何解析失败/算法不认识/不匹配都返 false 不抛）/ `needsRehash`（参数弱于当前或不可解析→该透明升级）/ `validatePassword`（长度区间 8–1024，越界抛 `WeakPasswordError`）/ `currentPasswordAlgo`。
+  - **算法决策（偏离设计稿，刻意）**：设计点名 argon2id，本实施改用 **node 内置 `scrypt`**（内存硬、零依赖、glibc/musl 无关）——避免在自动循环里引入原生依赖（`@node-rs/argon2` 的预编译二进制要靠 Docker 构建的 pilot-stack-smoke 才验证得到，风险不该无人值守时担）。PHC 串自带 `$scrypt$ln=15,r=8,p=1$salt$hash`，`password_algo` 列 + `needsRehash` 留好**无停机轮换钩子**：日后注册 argon2id 实现，旧 scrypt 串靠 algo 标签继续验、登录时透明升级，无需迁移。参数 N=2^15(~32MB/次)、r=8、p=1、keylen=32、salt 16B；scrypt 异步不阻塞事件循环。
+- **`packages/db/src/repositories/user-credentials.ts`**（`createCredentialRepository`）：`findByEmail`(citext 大小写不敏感) / `findByUserId` / `createCredential` / `updatePassword`(改密清零失败计数+解锁) / `recordFailedAttempt`(计数+1+可选锁定) / `resetFailedAttempts` / `setEmailVerified`。仓库只存/读已哈希 PHC 串，策略无关。经 `index.ts` 导出。DB 方法待接线由 PG smoke 覆盖。
+- **测试**：`apps/api/src/password.test.ts` 4 测（PHC 格式+随机 salt / 校验对错+篡改+垃圾串不抛 / 长度策略 / needsRehash 判弱参与未知算法）。`@workhub/api` 257 测 + `@workhub/db` 28 测 + `pnpm -r typecheck`(16 包)全绿。
+
 ### ⏭️ 之后（依设计推进，本刀未含）
 
-- **登录/登出接线**：password 登录路由调 `mintSession`+`issueSessionCookie`；登出在会话模式下需 `sessions.revoke`（nickname 模式现状删 cookie 即可）。停用账号调 `revokeAllForUser`。
-- **会话清扫调度**：`deleteExpired` 已就绪，待挂到周期任务（mirror agent-runner 心跳清扫）。
-- 密码注册（argon2id）、首管引导、生命周期（邀请/停用/offboard）、OIDC（接 0 provider 的抽象层）。
+- **登录/登出/注册路由接线**：password 登录路由查 `findByEmail`→`verifyPassword`(失败 `recordFailedAttempt`/成功 `resetFailedAttempts`+按 `needsRehash` 透明重哈希)→`mintSession`+`issueSessionCookie`；注册路由 `validatePassword`→`hashPassword`→建 user+`createCredential`；登出会话模式调 `sessions.revoke`（nickname 删 cookie 即可）；停用账号调 `revokeAllForUser`。AUTH_MODE 旗标门控（nickname 模式这些路由不暴露/不改现状）。
+- **首管引导**：空/零 admin users 表时首个注册者置 admin（取代 ADMIN_CLAIM_SECRET）。
+- **会话清扫调度**：`deleteExpired` 已就绪，待挂周期任务（mirror agent-runner 心跳清扫）。
+- 生命周期（邀请/停用/offboard）、OIDC（接 0 provider 的抽象层）。
