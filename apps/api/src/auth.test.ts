@@ -41,7 +41,7 @@ import {
   type AuthDependencies,
   type AuthEnv
 } from "./middleware/auth.js";
-import { hashPassword } from "./auth/password.js";
+import { hashPassword, verifyPassword } from "./auth/password.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createAdminClaimThrottle } from "./middleware/admin-claim-throttle.js";
 
@@ -1192,4 +1192,82 @@ test("POST /users/:id/deactivate rejects non-admins (403) and self-deactivation 
     headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) }
   });
   assert.equal(selfDeactivate.status, 400);
+});
+
+// ——— R2 auth epic：账号生命周期-改密 ———
+
+test("POST /password changes the password, revokes old sessions, and reissues the current session", async () => {
+  const alice = user({ id: "10000000-0000-4000-8000-0000000000f1", nickname: "alice" });
+  const { deps, sessions, credentials, runtimeSettings } = passwordCtx([alice]);
+  credentials.rows.push(
+    credentialRow({
+      userId: alice.id,
+      email: "alice-change@example.com",
+      passwordHash: await hashPassword("old-pass-1"),
+      passwordAlgo: "scrypt"
+    })
+  );
+  const { token, session } = await mintSession(deps, alice, { authMethod: "password" });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const res = await app.request("/auth/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: await signedCookie(token, runtimeSettings) },
+    body: JSON.stringify({ current_password: "old-pass-1", new_password: "new-pass-2" })
+  });
+  assert.equal(res.status, 200);
+
+  // 旧会话被撤销（含发起请求所用的那条）。
+  const oldSession = sessions.rows.find((row) => row.id === session.id);
+  assert.ok(oldSession && oldSession.revokedAt !== null, "old session revoked on password change");
+  // 新会话 cookie 已签发。
+  assert.ok(res.headers.get("set-cookie"), "a fresh session cookie is issued");
+  // 凭据已更新为新密码。
+  const updated = await credentials.findByUserId(alice.id);
+  assert.equal(await verifyPassword("new-pass-2", updated?.passwordHash ?? ""), true);
+  assert.equal(await verifyPassword("old-pass-1", updated?.passwordHash ?? ""), false);
+});
+
+test("POST /password rejects a wrong current password (403) and is 404 in nickname mode", async () => {
+  const alice = user({ id: "10000000-0000-4000-8000-0000000000f2", nickname: "alice" });
+  const { deps, credentials, runtimeSettings } = passwordCtx([alice]);
+  credentials.rows.push(
+    credentialRow({
+      userId: alice.id,
+      email: "alice-wrong@example.com",
+      passwordHash: await hashPassword("real-pass-1"),
+      passwordAlgo: "scrypt"
+    })
+  );
+  const { token } = await mintSession(deps, alice, { authMethod: "password" });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const wrong = await app.request("/auth/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: await signedCookie(token, runtimeSettings) },
+    body: JSON.stringify({ current_password: "guessed-wrong", new_password: "new-pass-2" })
+  });
+  assert.equal(wrong.status, 403);
+
+  // nickname 模式：路由 404（密码功能未启用）。
+  const nicknameSettings = settings();
+  const nicknameDeps: AuthDependencies = {
+    users: new MemoryUsers([alice]),
+    devices: new MemoryDevices([]),
+    sessions: new MemorySessions(),
+    credentials: new MemoryCredentials(),
+    settings: nicknameSettings,
+    now: () => now
+  };
+  const nicknameApp = withErrors(new Hono<AuthEnv>());
+  nicknameApp.route("/auth", createAuthRoutes(nicknameDeps));
+  const gated = await nicknameApp.request("/auth/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: await signedCookie(alice.cookieToken, nicknameSettings) },
+    body: JSON.stringify({ current_password: "x", new_password: "new-pass-2" })
+  });
+  assert.equal(gated.status, 404);
 });

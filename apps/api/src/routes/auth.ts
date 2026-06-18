@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception";
 
 import {
   identifyRequestSchema,
+  passwordChangeRequestSchema,
   passwordLoginRequestSchema,
   passwordRegisterRequestSchema,
   updateUserPreferencesRequestSchema
@@ -245,6 +246,50 @@ export function createAuthRoutes(
     await deps.touchUser?.(user.id);
 
     return c.json(toIdentityResponse(user, false), 200);
+  });
+
+  // R2 auth epic（账号生命周期-改密）：已登录用户用旧密码换新密码。换成功后撤销该用户全部旧会话并
+  // 为当前请求重新签发会话——其它设备被登出，当前会话不掉线。
+  routes.post("/password", async (c) => {
+    const deps = resolveAuthDependencies(source);
+    // 鉴权先行——未鉴权必须 401 fail-closed（route-auth-posture 门），不能被下面的「功能未启用」404 抢先。
+    const actingUser = await resolveCurrentUser(c, deps);
+    if (!passwordModeEnabled(deps)) {
+      throw new HTTPException(404, { message: "密码功能未启用" });
+    }
+    if (!deps.credentials || !deps.sessions) {
+      throw new HTTPException(501, { message: "当前运行时不支持密码认证" });
+    }
+    const payload = passwordChangeRequestSchema.parse(await readJsonBody(c));
+    try {
+      validatePassword(payload.new_password);
+    } catch (error) {
+      if (error instanceof WeakPasswordError) {
+        throw new HTTPException(400, { message: error.message });
+      }
+      throw error;
+    }
+
+    const credential = await deps.credentials.findByUserId(actingUser.id);
+    const ok = credential?.passwordHash
+      ? await verifyPassword(payload.current_password, credential.passwordHash)
+      : false;
+    if (!ok) {
+      throw new HTTPException(403, { message: "当前密码不正确" });
+    }
+
+    if (!deps.credentials.updatePassword) {
+      throw new HTTPException(501, { message: "当前运行时不支持改密" });
+    }
+    await deps.credentials.updatePassword(actingUser.id, await hashPassword(payload.new_password), currentPasswordAlgo());
+
+    // 改密 = 重建信任：撤销全部旧会话（含其它设备），再为当前请求签发新会话，避免把自己也登出。
+    const at = (deps.now ?? (() => new Date()))();
+    await deps.sessions.revokeAllForUser(actingUser.id, at);
+    const { token } = await mintSession(deps, actingUser, { authMethod: "password" });
+    await issueSessionCookie(c, token, getAuthSettings(deps));
+
+    return c.json({ ok: true });
   });
 
   routes.get("/me", async (c) => {

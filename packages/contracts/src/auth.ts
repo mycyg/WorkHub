@@ -35,6 +35,13 @@ export const passwordLoginRequestSchema = z.object({
 });
 export type PasswordLoginRequest = z.infer<typeof passwordLoginRequestSchema>;
 
+// 改密：已登录用户用旧密码换新密码。new_password 走与注册同口径的强度边界。
+export const passwordChangeRequestSchema = z.object({
+  current_password: z.string().min(1).max(1024),
+  new_password: z.string().min(8).max(1024)
+});
+export type PasswordChangeRequest = z.infer<typeof passwordChangeRequestSchema>;
+
 export const identifyResponseSchema = userSchema.pick({
   id: true,
   nickname: true,
