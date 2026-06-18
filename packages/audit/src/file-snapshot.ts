@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { RevertSnapshotInput, SnapshotRef, SnapshotTakeInput } from "./types.js";
@@ -98,11 +98,12 @@ export async function readSnapshotFile(
   }
 }
 
-async function clearDirectory(root: string) {
-  await mkdir(root, { recursive: true });
-  const entries = await readdir(root);
-  for (const entry of entries) {
-    await rm(path.join(root, entry), { recursive: true, force: true });
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await stat(target);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -111,8 +112,36 @@ export async function revertFileSnapshot(input: RevertSnapshotInput) {
   if (!snapshotStat.isDirectory()) {
     throw new Error("snapshot ref is not a directory");
   }
-  await clearDirectory(input.workdir);
-  await copyTree(input.snapshot.ref, input.workdir);
+  // R2 audit#34：原子化 revert——先把快照拷进同级临时目录(失败不动原 workdir)，再用 rename 换入。
+  // 旧实现先 clearDirectory(workdir) 再 copyTree，若 copy 中途失败工作区被留成空/残缺且无回滚（破坏性数据丢失）。
+  // staging 与 workdir 同父目录→同文件系统→rename 原子；换入失败尽力把退役目录搬回。
+  const workdir = path.resolve(input.workdir);
+  const parent = path.dirname(workdir);
+  const token = randomUUID();
+  const staging = path.join(parent, `.revert-staging-${token}`);
+  const retired = path.join(parent, `.revert-retired-${token}`);
+  await mkdir(parent, { recursive: true });
+  try {
+    await copyTree(input.snapshot.ref, staging);
+  } catch (error) {
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+  let retiredMoved = false;
+  try {
+    if (await pathExists(workdir)) {
+      await rename(workdir, retired);
+      retiredMoved = true;
+    }
+    await rename(staging, workdir);
+  } catch (error) {
+    if (retiredMoved && !(await pathExists(workdir))) {
+      await rename(retired, workdir).catch(() => undefined);
+    }
+    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+  await rm(retired, { recursive: true, force: true }).catch(() => undefined);
   return {
     ...input.snapshot,
     revertedAt: new Date().toISOString()

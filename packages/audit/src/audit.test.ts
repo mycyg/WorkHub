@@ -42,10 +42,37 @@ test("SnapshotService takes and reverts a sandbox file snapshot", async () => {
     createdByKind: "ai"
   });
   await writeFile(path.join(workdir, "outputs", "result.md"), "after", "utf8");
+  // 快照之后新增的文件：revert 后应被清掉（atomic swap 完整替换，不是叠加）。
+  await writeFile(path.join(workdir, "outputs", "stray.md"), "added after snapshot", "utf8");
   await service.revert({ snapshot, workdir });
 
   assert.equal(snapshot.contentSha256?.length, 64);
   assert.equal(await readFile(path.join(workdir, "outputs", "result.md"), "utf8"), "before");
+  // R2 audit#34：原子换入后工作区 == 快照内容，快照里没有的 stray.md 被移除。
+  await assert.rejects(() => readFile(path.join(workdir, "outputs", "stray.md"), "utf8"));
+});
+
+test("R2 audit#34: revert atomically materializes into a not-yet-existing workdir", async () => {
+  const base = await tempDir("workhub-audit-base-");
+  const snapshotRoot = await tempDir("workhub-audit-snap2-");
+  const sourceWorkdir = await tempDir("workhub-audit-src-");
+  await mkdir(path.join(sourceWorkdir, "docs"), { recursive: true });
+  await writeFile(path.join(sourceWorkdir, "docs", "plan.md"), "snapshot body", "utf8");
+  const service = createSnapshotService({
+    snapshotRoot,
+    id: () => "a0000000-0000-4000-8000-0000000000aa",
+    now: () => new Date("2026-06-05T00:00:00.000Z")
+  });
+  const snapshot = await service.takeSandboxFileSnapshot({
+    workItemId: "a0000000-0000-4000-8000-0000000000ab",
+    workdir: sourceWorkdir,
+    createdByKind: "ai"
+  });
+
+  // 目标 workdir 尚不存在：revert 应原子建出并填入快照内容。
+  const freshWorkdir = path.join(base, "fresh-workdir");
+  await service.revert({ snapshot, workdir: freshWorkdir });
+  assert.equal(await readFile(path.join(freshWorkdir, "docs", "plan.md"), "utf8"), "snapshot body");
 });
 
 test("external side effects require ask-gate", () => {
