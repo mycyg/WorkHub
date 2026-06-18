@@ -119,7 +119,11 @@ export class RedisPushBus implements PushBus {
       return;
     }
     for (const subscriber of topicSubscribers) {
-      subscriber.push(event);
+      // findings[#low]：背压满队列时 push 返回 false 静默丢事件——至少留一条 warn 供排查。
+      const delivered = subscriber.push(event);
+      if (!delivered) {
+        console.warn("push bus dropped event under backpressure", { topic, type: event.type });
+      }
     }
   }
 

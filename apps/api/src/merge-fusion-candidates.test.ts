@@ -532,6 +532,75 @@ test("findings: an LLM candidate cannot clobber a key already resolved by determ
   assert.equal(deterministic?.candidates.some((candidate) => candidate.source === "llm"), false);
 });
 
+test("findings: anchored conflict-marker detection keeps a setext H1 but drops a real conflict block", async () => {
+  const llmKey = "delivery:/outputs/notes.md";
+  const notesConflict: ProposalMergeConflict = { ...conflict(), target_key: llmKey, target_path: "/outputs/notes.md" };
+  const contentContexts = {
+    [llmKey]: {
+      conflict_key: llmKey,
+      target_kind: "text_doc",
+      target_path: "/outputs/notes.md",
+      base: { text: "A\nB\nC\n", bytes: 6, truncated: false, ref: "v1" },
+      current: { text: "A\nB owner\nC\n", bytes: 12, truncated: false, ref: "v2" },
+      incoming: { text: "A\nB incoming\nC\n", bytes: 15, truncated: false, ref: "v3" }
+    }
+  };
+  const baseInput = {
+    proposalId: "92000000-0000-4000-8000-000000000001",
+    workItemId: "92000000-0000-4000-8000-000000000002",
+    proposalTitle: "客户周报草稿",
+    manifest: manifest(),
+    conflicts: [notesConflict],
+    contentContexts
+  };
+
+  // Markdown setext H1（正文 + 一行 =）不是冲突标记 → LLM 候选应保留。
+  const keptGen = createLlmMergeFusionCandidateGenerator({
+    registry: fakeRegistry(JSON.stringify({
+      candidates: [{ conflict_key: llmKey, rationale_md: "融合。", merged_value: { merged_text: "标题\n=========\n正文\n" }, recommend: true }]
+    }))
+  });
+  const kept = await keptGen.generate(baseInput);
+  assert.equal(kept.find((s) => s.conflictKey === llmKey)?.candidates.some((c) => c.source === "llm") ?? false, true);
+
+  // 真冲突块（<<<<<<< / >>>>>>>）→ LLM 候选应被丢弃。
+  const droppedGen = createLlmMergeFusionCandidateGenerator({
+    registry: fakeRegistry(JSON.stringify({
+      candidates: [{ conflict_key: llmKey, rationale_md: "融合。", merged_value: { merged_text: "<<<<<<< ours\nx\n=======\ny\n>>>>>>> theirs\n" }, recommend: true }]
+    }))
+  });
+  const dropped = await droppedGen.generate(baseInput);
+  assert.equal(dropped.find((s) => s.conflictKey === llmKey)?.candidates.some((c) => c.source === "llm") ?? false, false);
+});
+
+test("findings: oversized diff3 input short-circuits the generation-side LCS", async () => {
+  const key = "delivery:/outputs/big.md";
+  const bigConflict: ProposalMergeConflict = { ...conflict(), target_key: key, target_path: "/outputs/big.md" };
+  const big = (label: string) => `${Array.from({ length: 5001 }, (_, i) => `${label} line ${i}`).join("\n")}\n`;
+  const result = await createLlmMergeFusionCandidateGenerator({
+    // 候选为空：超阈值时仍会落到 LLM 路径，但 LLM 不产出，便于隔离断言「无 diff3 候选」。
+    registry: fakeRegistry(JSON.stringify({ candidates: [] }))
+  }).generate({
+    proposalId: "92000000-0000-4000-8000-000000000001",
+    workItemId: "92000000-0000-4000-8000-000000000002",
+    proposalTitle: "客户周报草稿",
+    manifest: manifest(),
+    conflicts: [bigConflict],
+    contentContexts: {
+      [key]: {
+        conflict_key: key,
+        target_kind: "text_doc",
+        target_path: "/outputs/big.md",
+        base: { text: big("b"), bytes: 99999, truncated: false, ref: "v1" },
+        current: { text: big("c"), bytes: 99999, truncated: false, ref: "v2" },
+        incoming: { text: big("i"), bytes: 99999, truncated: false, ref: "v3" }
+      }
+    }
+  });
+  // >5000 行 → textDiff3Analysis 返回 undefined → 无 diff3 候选。
+  assert.equal(result.find((s) => s.conflictKey === key)?.candidates.some((c) => c.source === "diff3") ?? false, false);
+});
+
 test("LLM merge mediator keeps overlapping text changes on the LLM path", async () => {
   let prompt = "";
   const generator = createLlmMergeFusionCandidateGenerator({

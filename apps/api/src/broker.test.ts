@@ -47,6 +47,26 @@ test("local queue keeps the old maxsize/drop-slow-subscriber backpressure rule",
   await bus.unsubscribe("run:r1", subscription);
 });
 
+test("findings: an event dropped under backpressure emits a warn", async () => {
+  const bus = new InProcessPushBus(2);
+  const subscription = await bus.subscribe("run:r-drop"); // 订阅但不消费
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args);
+  };
+  try {
+    await bus.publish("run:r-drop", "agent_run.step", { step: 1 });
+    await bus.publish("run:r-drop", "agent_run.step", { step: 2 });
+    await bus.publish("run:r-drop", "agent_run.step", { step: 3 }); // 满队列 → drop → warn
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(warnings.some((entry) => entry[0] === "push bus dropped event under backpressure"), true);
+
+  await bus.unsubscribe("run:r-drop", subscription);
+});
+
 test("presence follows stream count or recent last-seen within the LAN TTL", async () => {
   let tick = 0;
   const presence = new InMemoryPresenceStore(() => new Date(1000 + tick));

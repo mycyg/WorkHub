@@ -111,11 +111,21 @@ function parseJsonObject(text: string) {
   return JSON.parse(fenced ?? direct) as unknown;
 }
 
-function hasConflictMarkers(value: unknown) {
-  const text = JSON.stringify(value) ?? "";
-  return text.includes("<<<<<<<")
-    || text.includes("=======")
-    || text.includes(">>>>>>>");
+// findings[#low]：与 apply 侧 proposals.ts:containsGitConflictMarkers 一致的锚定检测。
+// 旧实现对 JSON.stringify 整串 includes('=======')，会把 Markdown setext H1（正文\n====）
+// 误判成冲突标记而过度拒绝候选。锚定到行首/行尾 + 后缀空白才算真冲突块。
+function containsGitConflictMarkers(value: string) {
+  return /(^|\n)(<<<<<<<[ \t].*|=======$|>>>>>>>[ \t].*)/u.test(value);
+}
+
+function hasConflictMarkers(value: unknown): boolean {
+  if (typeof value === "string") {
+    return containsGitConflictMarkers(value);
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).some((leaf) => hasConflictMarkers(leaf));
+  }
+  return false;
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | undefined {
@@ -322,6 +332,16 @@ function textDiff3Analysis(input: MergeFusionContentContext | undefined) {
     || input.base.truncated
     || input.current.truncated
     || input.incoming.truncated
+  ) {
+    return undefined;
+  }
+  // findings[#low]：生成侧 LCS 与 apply 侧 MAX_TEXT_HUNK_LINES=5000 对齐，超大文本走优雅 no-op
+  // （所有调用方都处理 undefined），避免无界 LCS 在巨文件上拖垮生成。
+  const MAX_DIFF3_LINES = 5000;
+  if (
+    splitTextLines(input.base.text).length > MAX_DIFF3_LINES
+    || splitTextLines(input.current.text).length > MAX_DIFF3_LINES
+    || splitTextLines(input.incoming.text).length > MAX_DIFF3_LINES
   ) {
     return undefined;
   }
