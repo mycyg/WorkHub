@@ -229,7 +229,8 @@ function proposalMutationEditorProps(conflicts: ProposalConflict[], locale: Work
         beforeSummary: summarizeValue(operation.beforeValue),
         currentSummary: summarizeValue(operation.currentValue),
         afterSummary: summarizeValue(operation.value),
-        href: option.action.href,
+        // findings[H17 同源]：action.href 进 React <a href>/data-action-href 前必须 safeHref（React 不拦 javascript:/data:）；与 ProposalLineEditor 同判定。
+        href: safeHref(option.action.href),
         method: option.action.method ?? "POST",
         actionId: option.action.id ?? "apply_ai_fusion",
         acceptOnlyPayload: JSON.stringify(structuredFieldOverridePayload({ operations, field: operation.field, mode: "accept_only" })),
