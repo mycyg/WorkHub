@@ -123,3 +123,15 @@ Add reserved_outstanding into the usage surfaced by /api/cost/usage and /api/pag
 
 **Phase 3（剩余）**：把 reserved_outstanding 并进 /api/cost/usage + /api/pages/cost（看板 remaining 反映在飞持有，
 additive，不动 decideRunBudget）；r1-pg-smoke 加崩溃释放断言（置过期租约 → releaseExpired → 额度释放、之前被堵的入队又通过）。
+
+## Phase 3a 完成 + 3b 决策（2026-06-18）
+
+- **`0f1fc09c` 崩溃释放证明（r1-pg-smoke，全 7 CI 绿）**：远未来 now 调 releaseExpired 模拟租约过期回收 →
+  归还胜者持有 → 被 402 堵掉的 work-item 重新入队成功。**至此预留生命周期三证齐全：deny / reconcile / release，
+  全在真 PG 验证。原子预算 epic 的强制目标（并发不集体超预算）已完成并端到端证明。**
+- **Phase 3b（dashboard reserved_outstanding）延后为 polish**：仅「可见性」——让看板 remaining 反映在飞持有，
+  不影响已证明的强制正确性。涉及契约改动（budgetUsageSchema 加可选 reserved_tokens/reserved_cost_cny）+
+  /api/cost/usage 与 /api/pages/cost 路由经 reservationRepo.outstandingForScopes 填充 + buildCostSummary 签名 +
+  UI 渲染 + smoke——多文件涟漪、价值最低。**做法（future）**：加可选字段（additive，不破现有消费者）；cost 路由注入
+  reservationRepo，按 user/team + 今日 bucket 算 outstanding 传入 buildCostSummary；page builder 同理；UI 增量显示。
+- **优先级**：转去价值更高的 **认证 epic**（团队就绪 #1 缺口）；预算 epic 强制已就绪，3b 随时可续。
