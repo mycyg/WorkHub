@@ -20,6 +20,7 @@ import {
   getSharedDatabaseClient,
   createPermissionPolicyRepository,
   createUserRepository,
+  createWorkItemRepository,
   type ApprovalCommentRepository,
   type ApprovalCommentRow,
   type AuditLogRepository,
@@ -29,11 +30,14 @@ import {
   type PermissionPolicyRepository,
   type UserAuthRow,
   type UserRepository,
+  type WorkItemAccessRow,
+  type WorkItemDataRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import { topics } from "@workhub/events";
 import {
   approvalRiskLevel,
+  canViewWorkItemRecord,
   resolvePermissionDecision,
   toApprovalAttentionItem,
   type ApprovalRequestRecord,
@@ -87,6 +91,9 @@ export type ApprovalServiceDependencies = {
   auditLogs: AuditLogRepository;
   // 可选：用于校验委派目标用户存在（L#48）。缺省时退化为不校验（旧测试夹具）。
   users?: Pick<UserRepository, "findActiveById">;
+  // 可选：委派守卫用——把审批挂的工作项摊平成可见性记录，校验转交目标确实能看到该事项（与 routeApprover 一致）。
+  // 缺省时退化为不校验工作项可见性（旧测试夹具不提供）。
+  workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord">;
   // W2：可选——审批工作台逐项详情用。缺省时 items_detail 退化为空（旧夹具不崩）。
   proposals?: Pick<ProposalService, "get" | "listByWorkItem">;
   approvalComments?: Pick<ApprovalCommentRepository, "listByApproval" | "listByApprovals" | "create">;
@@ -113,6 +120,7 @@ export function getDefaultApprovalServiceDependencies(): ApprovalServiceDependen
     auditLogs: createAuditLogRepository(defaultDbClient.db),
     policies: createPermissionPolicyRepository(defaultDbClient.db),
     users: createUserRepository(defaultDbClient.db),
+    workItems: createWorkItemRepository(defaultDbClient.db),
     proposals: getDefaultProposalService(),
     approvalComments: createApprovalCommentRepository(defaultDbClient.db),
     bus: getDefaultPushBus()
@@ -150,6 +158,19 @@ function toRecord(row: ApprovalRequestRow): ApprovalRequestRecord {
     slaDueAt: row.slaDueAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
+  };
+}
+
+// 把 db 的 WorkItemAccessRow 摊平成 @workhub/permissions 的可见性记录（结构已对齐，仅收口字段）。
+function toWorkItemAccessRecord(row: WorkItemAccessRow) {
+  return {
+    id: row.id,
+    status: row.status,
+    submitterUserId: row.submitterUserId,
+    claimedByUserId: row.claimedByUserId,
+    workspaceId: row.workspaceId,
+    ...(row.project ? { project: row.project } : {}),
+    assignments: row.assignments
   };
 }
 
@@ -595,10 +616,28 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       ensureCanActOnApproval(approval, actor);
 
       // L#48：委派目标必须是真实存在的活跃用户，否则审批会被路由进黑洞或转给非法 id。
+      let target: UserAuthRow | null = null;
       if (deps.users) {
-        const target = await deps.users.findActiveById(toUserId);
+        target = await deps.users.findActiveById(toUserId);
         if (!target) {
           throw new ApprovalServiceError(404, "delegate_target_not_found", "找不到要转交的成员。");
+        }
+      }
+
+      // 与 routeApprover/usableCandidate 一致的转交守卫：审批挂在某个工作项上时，转交目标必须
+      // (a) 不是发起请求的本人（工作项提交人——否则把单据踢回原申请人，等于无效转交），且
+      // (b) 真的能看到该工作项（否则审批落进一个看不到上下文的人的收件箱，与 routeApprover 漏检对称）。
+      if (approval.workItemId && deps.workItems) {
+        const workItem = await deps.workItems.findWorkItemAccessRecord(approval.workItemId);
+        if (workItem) {
+          if (toUserId === workItem.submitterUserId) {
+            throw new ApprovalServiceError(422, "delegate_to_requester", "不能把审批转交回发起人。");
+          }
+          // target 可能未取（无 deps.users 的旧夹具）——此时回退到仅凭 id 构造可见性主体。
+          const candidate = target ?? ({ id: toUserId } as Pick<UserAuthRow, "id">);
+          if (!canViewWorkItemRecord(toWorkItemAccessRecord(workItem), candidate)) {
+            throw new ApprovalServiceError(422, "delegate_target_cannot_view", "这位成员看不到这个事项，没法转交。");
+          }
         }
       }
 

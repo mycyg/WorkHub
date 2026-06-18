@@ -24,6 +24,7 @@ import {
 import { canManageProjectDrive, canViewProjectDrive } from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
+import { parseOutputContract } from "../pages/output-contract.js";
 import { acceptedDeliverableToVm } from "./accepted-deliverables.js";
 import {
   getDefaultProposalService,
@@ -415,7 +416,7 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor): Drive
     } : { empty_state: "no_project" }),
     ...(rows.project && itemVms.length === 0 ? { empty_state: "no_drive_items" } : {})
   };
-  return drivePageVmSchema.parse(data);
+  return parseOutputContract(drivePageVmSchema, data, "drive.page");
 }
 
 export function createDrivePageService(deps: DrivePageServiceDependencies): DrivePageService {

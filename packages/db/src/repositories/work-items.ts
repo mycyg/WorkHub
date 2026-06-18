@@ -22,6 +22,7 @@ import {
   projects,
   proposals,
   workItemAcceptanceItems,
+  workItemAssignments,
   workItems
 } from "../schema/index.js";
 import { allocateProjectCode } from "../sequences.js";
@@ -68,6 +69,23 @@ export type WorkItemNotificationContextRow = {
   submitterUserId: string;
   claimedByUserId: string | null;
   projectOwnerUserId: string | null;
+};
+
+// 审批转交守卫用（R approvals#delegate）：把一条工作项摊平成 @workhub/permissions 的 WorkItemAccessRecord，
+// 让 canViewWorkItemRecord(record, targetUser) 能复用——含状态/提交人/认领人/项目活跃度/显式指派（lead/collaborator）。
+export type WorkItemAccessRow = {
+  id: string;
+  status: WorkItemStatus;
+  submitterUserId: string;
+  claimedByUserId: string | null;
+  workspaceId: string | null;
+  project: {
+    archived: boolean | null;
+    deletedAt: Date | null;
+    ownerUserId: string | null;
+    workspaceId: string | null;
+  } | null;
+  assignments: Array<{ userId: string; role: string }>;
 };
 
 export type WorkItemProjectRow = typeof projects.$inferSelect;
@@ -202,6 +220,7 @@ export type WorkItemDataRepository = WorkItemRepository & {
   insertChatMessage: (input: InsertStoredChatMessageInput) => Promise<WorkItemChatMessageRow>;
   listSessionSelectedOptionIds: (workItemId: string) => Promise<string[]>;
   findWorkItemById: (workItemId: string) => Promise<WorkItemRow | null>;
+  findWorkItemAccessRecord: (workItemId: string) => Promise<WorkItemAccessRow | null>;
   readWorkItemDetail: (workItemId: string) => Promise<StoredWorkItemDetailRows | null>;
   findAcceptedDeliverableFile: (
     workItemId: string,
@@ -335,6 +354,47 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         .where(eq(workItems.id, workItemId))
         .limit(1);
       return rows[0] ?? null;
+    },
+
+    async findWorkItemAccessRecord(workItemId) {
+      const rows = await db
+        .select({
+          id: workItems.id,
+          status: workItems.status,
+          submitterUserId: workItems.submitterUserId,
+          claimedByUserId: workItems.claimedByUserId,
+          workspaceId: workItems.workspaceId,
+          projectArchived: projects.archived,
+          projectDeletedAt: projects.deletedAt,
+          projectOwnerUserId: projects.ownerUserId,
+          projectWorkspaceId: projects.workspaceId
+        })
+        .from(workItems)
+        .innerJoin(projects, eq(workItems.projectId, projects.id))
+        .where(eq(workItems.id, workItemId))
+        .limit(1);
+      const row = rows[0];
+      if (!row) {
+        return null;
+      }
+      const assignments = await db
+        .select({ userId: workItemAssignments.userId, role: workItemAssignments.role })
+        .from(workItemAssignments)
+        .where(eq(workItemAssignments.workItemId, workItemId));
+      return {
+        id: row.id,
+        status: row.status,
+        submitterUserId: row.submitterUserId,
+        claimedByUserId: row.claimedByUserId,
+        workspaceId: row.workspaceId,
+        project: {
+          archived: row.projectArchived,
+          deletedAt: row.projectDeletedAt,
+          ownerUserId: row.projectOwnerUserId,
+          workspaceId: row.projectWorkspaceId
+        },
+        assignments
+      };
     },
 
     async markHumanReservedPmMode(input) {

@@ -21,6 +21,7 @@ import {
 import { canManageProjectMeeting, canViewProjectMeetings } from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
+import { parseOutputContract } from "../pages/output-contract.js";
 import {
   getDefaultProposalService,
   ProposalServiceError,
@@ -212,7 +213,7 @@ function buildInsightVm(input: {
 function buildMeetingPage(rows: MeetingPageRows, actor: AuthActor, locale: WorkHubLocale, now: Date, selectedMeetingId?: string): MeetingPageVM {
   const canView = rows.project ? canViewProjectMeetings(rows.project, actor) : false;
   if (!rows.project || !canView) {
-    return meetingPageVmSchema.parse({
+    return parseOutputContract(meetingPageVmSchema, {
       generated_at: now.toISOString(),
       summary: {
         meeting_count: 0,
@@ -224,7 +225,7 @@ function buildMeetingPage(rows: MeetingPageRows, actor: AuthActor, locale: WorkH
       can_manage: false,
       meetings: [],
       empty_state: "no_project"
-    });
+    }, "meeting.page");
   }
 
   const insightsByMeetingId = new Map<string, MeetingInsightRow[]>();
@@ -274,7 +275,7 @@ function buildMeetingPage(rows: MeetingPageRows, actor: AuthActor, locale: WorkH
     };
   });
   const flatInsights = meetings.flatMap((meeting) => meeting.insights);
-  return meetingPageVmSchema.parse({
+  return parseOutputContract(meetingPageVmSchema, {
     generated_at: now.toISOString(),
     project: {
       id: rows.project.id,
@@ -296,7 +297,7 @@ function buildMeetingPage(rows: MeetingPageRows, actor: AuthActor, locale: WorkH
     selected_meeting_id: meetings.find((meeting) => meeting.id === selectedMeetingId)?.id ?? meetings[0]?.id,
     meetings,
     ...(meetings.length === 0 ? { empty_state: "no_meetings" } : {})
-  });
+  }, "meeting.page");
 }
 
 export function createMeetingPageService(deps: MeetingPageServiceDependencies): MeetingPageService {
