@@ -43,6 +43,8 @@ import { makeWorkHubEvent, topics, toCuuState, type LifecycleWorkItemRef } from 
 import { getSharedDatabaseClient, createWorkItemRepository } from "@workhub/db";
 import type {
   AuditLogRepository,
+  BudgetReservationRepository,
+  BudgetReservationScopeInput,
   SnapshotRepository,
   StoredWorkItemDetailRows,
   WorkItemDataRepository,
@@ -68,6 +70,7 @@ import {
 } from "../services/agent-run-notification-workitem.js";
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "../services/proposals.js";
 import { getDefaultAgentRunPersistence } from "../services/agent-run-persistence.js";
+import { getDefaultBudgetReservationRepository } from "../services/budget-reservation-store.js";
 import { getDefaultUserMemoryContextProvider, type UserMemoryContextProvider } from "../services/user-memory.js";
 import {
   getDefaultTeamSkillContextProvider,
@@ -332,6 +335,8 @@ export function createInMemoryAgentRunQueue(options: {
   transitionWorkItemStatus?: ((input: { workItemId: string; to: WorkItemStatus; at: Date }) => Promise<void>) | false;
   eventBus?: AgentRunEventBus | false;
   persistence?: AgentRunPersistence | false;
+  // R2 原子预算：可选预留仓库。仅 PG 队列注入；内存队列不传 → 整段预留逻辑跳过（单测零影响）。
+  reservationRepo?: BudgetReservationRepository | false;
   workerId?: string;
   leaseMs?: number;
   heartbeatIntervalMs?: number;
@@ -370,6 +375,10 @@ export function createInMemoryAgentRunQueue(options: {
   const leaseMs = options.leaseMs ?? 5 * 60 * 1000;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? Math.max(1000, Math.min(30_000, Math.floor(leaseMs / 3)));
   const maxRecoverAttempts = Math.max(1, options.maxRecoverAttempts ?? 3);
+  // R2 原子预算：可选预留仓库（false/未传 → undefined，整段预留逻辑跳过）。预留租约要覆盖 run 租约 + 全部
+  // 合法恢复重试，否则可恢复 run 的持有量会被过早 releaseExpired 误放。
+  const reservationRepo = options.reservationRepo || undefined;
+  const reservationLeaseMs = leaseMs * (maxRecoverAttempts + 1);
   const decideBudget = options.decideBudget ?? (async (input: BudgetDecisionInput) =>
     decideRunBudget({
       settings: input.settings,
@@ -618,6 +627,10 @@ export function createInMemoryAgentRunQueue(options: {
       ...(updated.claim ? { claim: updated.claim } : {}),
       updated_at: updated.updated_at
     });
+    // R2 原子预算：心跳同步续预留租约，让长跑 run 的持有量不被 releaseExpired 误放。
+    if (reservationRepo) {
+      await reservationRepo.refreshLease(run.run_id, leaseExpiresAt).catch(() => {});
+    }
   }
 
   async function auditRecoveredClaims(recovered: AgentRunQueueRecord[], recoveredAt: Date) {
@@ -1068,6 +1081,16 @@ export function createInMemoryAgentRunQueue(options: {
       return current;
     } finally {
       stopClaimHeartbeat();
+      // R2 原子预算：终态对账——把该 run 的 active 预留翻 settled、写实际用量，释放未用持有量。
+      // best-effort：失败/漏掉由 releaseExpired（租约过期）兜底。
+      if (reservationRepo) {
+        const settled = runs.get(runId);
+        if (settled) {
+          await reservationRepo
+            .reconcile(runId, settled.usage.token_in + settled.usage.token_out, settled.usage.estimated_cost_cny, now())
+            .catch((error) => console.warn("WorkHub budget reconcile failed", error));
+        }
+      }
     }
   }
 
@@ -1203,6 +1226,45 @@ export function createInMemoryAgentRunQueue(options: {
         };
         await persistCreatedRunIfWorkItemIdle(run);
         runs.set(run.run_id, run);
+        // R2 原子预算：run 行已落（reservations.run_id FK 需要它），现在原子预留。被并发在飞占满 → 拒绝；
+        // 补偿：把刚建的 queued run 置 failed（enqueue 非执行路径不传 workerId → 无 fencing，无条件落），
+        // 释放 work-item active 槽 + 防止它被后续 claim 执行；抛与 decideBudget 同款 402 budget_exhausted。
+        if (reservationRepo) {
+          const reserveScopes = buildReserveScopes(decision, now());
+          if (reserveScopes.length > 0) {
+            const reserved = await reservationRepo.reserve({
+              runId: run.run_id,
+              leaseExpiresAt: new Date(now().getTime() + reservationLeaseMs),
+              scopes: reserveScopes
+            });
+            if (!reserved.ok) {
+              const failedRun = updateRun({
+                ...run,
+                status: "failed",
+                trace: [
+                  {
+                    id: `${run.run_id}:final:budget`,
+                    step_no: 1,
+                    phase: "final",
+                    output_excerpt: "AI 预算已被并发在飞执行占满，本次未启动。",
+                    control_signal: "escalate",
+                    created_at: now().toISOString()
+                  }
+                ],
+                updated_at: now().toISOString()
+              });
+              await persistRunWithTrace(failedRun).catch((error) =>
+                console.warn("WorkHub budget-reserve compensation persist failed", error)
+              );
+              runs.delete(run.run_id);
+              throw new AgentRunnerError(402, "budget_exhausted", decision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。", {
+                ...budgetErrorDetails(decision),
+                reserved_limiting_scope: toQueueBudgetScope(reserved.limitingScope),
+                reserved_limit: reserved.limit
+              });
+            }
+          }
+        }
         return run;
       } finally {
         if (!hasPersistentIdleCreate) {
@@ -1275,6 +1337,12 @@ export function createInMemoryAgentRunQueue(options: {
         runs.set(run.run_id, run);
       }
       await auditRecoveredClaims(recovered, recoveredAt);
+      // R2 原子预算：与认领恢复同节奏扫一遍过期预留，释放崩溃/失租 run 占住的额度。
+      if (reservationRepo) {
+        await reservationRepo.releaseExpired(recoveredAt).catch((error) =>
+          console.warn("WorkHub budget releaseExpired failed", error)
+        );
+      }
       return recovered;
     },
 
@@ -1471,6 +1539,48 @@ function toQueueBudgetNotice(notice: BudgetNotice): QueueBudgetNotice {
   };
 }
 
+function budgetScopeId(scope: BudgetScope): string {
+  switch (scope.kind) {
+    case "workitem":
+      return scope.workitemId;
+    case "user":
+      return scope.userId;
+    case "team":
+      return scope.teamId;
+    case "curation":
+      return scope.teamId;
+    case "eval":
+      return scope.suite;
+  }
+}
+
+// R2 原子预算：把预算决策的受限 day/month scope 转成预留输入。per-run cap 不预留（按 work-item，已被
+// work_item active 唯一索引串行化）；committed/cap 取自 decision.usages，est 取本 run 的 per-run cap。
+function buildReserveScopes(decision: BudgetDecisionTrace, at: Date): BudgetReservationScopeInput[] {
+  const isoDay = at.toISOString().slice(0, 10);
+  const isoMonth = at.toISOString().slice(0, 7);
+  const scopes: BudgetReservationScopeInput[] = [];
+  for (const usage of decision.usages) {
+    if (usage.period !== "day" && usage.period !== "month") {
+      continue;
+    }
+    scopes.push({
+      scope: usage.scope,
+      scopeKind: usage.scope.kind,
+      scopeId: budgetScopeId(usage.scope),
+      period: usage.period,
+      periodBucket: usage.period === "day" ? isoDay : isoMonth,
+      capTokens: usage.maxTokens,
+      capCostCny: usage.maxCostCny,
+      committedTokens: usage.totalTokens,
+      committedCostCny: usage.estimatedCostCny,
+      estTokens: decision.runBudget.maxTokens,
+      estCostCny: decision.runBudget.maxCostCny
+    });
+  }
+  return scopes;
+}
+
 function budgetErrorDetails(decision: BudgetDecisionTrace): Record<string, unknown> {
   const usage = decision.limitingUsage;
   return {
@@ -1576,6 +1686,8 @@ export function getDefaultAgentRunQueue() {
     ledgerStore: getDefaultCostLedgerStore(),
     proposals: getDefaultProposalService(),
     persistence: getDefaultAgentRunPersistence(),
+    // R2 原子预算：生产 PG 队列注入预留仓库，串行化并发起跑、防集体超预算。
+    reservationRepo: getDefaultBudgetReservationRepository(),
     // P-COLLAB M2：生产环境也接入快照仓库，否则 hydrate 后的 project/ base 快照分支永不触发，
     // manifest.base.snapshot_id 永远为空、三方合并退回 accepted-history 祖先（背离 M2 设计）。
     snapshots: getDefaultAuditStores().snapshots,
