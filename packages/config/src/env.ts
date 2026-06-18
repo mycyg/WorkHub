@@ -63,6 +63,12 @@ export const envSchema = z.object({
   DEFAULT_ORG_ID: z.string().uuid().default(authDefaults.defaultOrgId),
   DEFAULT_WORKSPACE_ID: z.string().uuid().default(authDefaults.defaultWorkspaceId),
 
+  // R2 auth epic：认证模式旗标。'nickname'(默认)=现状(cookie 载 user.cookieToken)，行为逐字节不变；
+  // 'password'=cookie 载服务端会话 secret，经 sessions.token_hash 解析；'hybrid'=会话优先、解析不到回退 cookieToken（迁移期）。
+  AUTH_MODE: z.enum(["nickname", "hybrid", "password"]).default("nickname"),
+  SESSION_ABSOLUTE_TTL_HOURS: z.coerce.number().int().positive().default(authDefaults.sessionAbsoluteTtlHours),
+  SESSION_IDLE_TTL_HOURS: z.coerce.number().int().positive().default(authDefaults.sessionIdleTtlHours),
+
   // findings[#33/M39]：只约束到真正注册的 provider（createProviderRegistryConfig 仅注册 "deepseek"）。
   // 此前任意字符串都收，配错(如 "openai")要到运行时找不到路由才炸；改 enum 后启动解析即 fail-closed。
   // 加新 provider 时这里与 providers.ts 注册表同步更新——刻意如此。
@@ -136,6 +142,9 @@ export type Settings = {
     touchDeviceOnAuth: boolean;
     defaultOrgId: string;
     defaultWorkspaceId: string;
+    authMode: "nickname" | "hybrid" | "password";
+    sessionAbsoluteTtlMs: number;
+    sessionIdleTtlMs: number;
   };
   llm: {
     defaultProvider: string;
@@ -212,7 +221,10 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       corsAllowOrigins: parseCorsOrigins(parsed.CORS_ALLOW_ORIGINS),
       touchDeviceOnAuth: parsed.TOUCH_DEVICE_ON_AUTH,
       defaultOrgId: parsed.DEFAULT_ORG_ID,
-      defaultWorkspaceId: parsed.DEFAULT_WORKSPACE_ID
+      defaultWorkspaceId: parsed.DEFAULT_WORKSPACE_ID,
+      authMode: parsed.AUTH_MODE,
+      sessionAbsoluteTtlMs: parsed.SESSION_ABSOLUTE_TTL_HOURS * 60 * 60 * 1000,
+      sessionIdleTtlMs: parsed.SESSION_IDLE_TTL_HOURS * 60 * 60 * 1000
     },
     llm: {
       defaultProvider: parsed.LLM_PROVIDER_DEFAULT,

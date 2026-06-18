@@ -9,10 +9,17 @@ import { authDefaults, settings as defaultSettings, type Settings } from "@workh
 import { defaultWorkHubLocale, type ActorKind } from "@workhub/contracts";
 import {
   createClientDeviceRepository,
+  createSessionRepository,
+  generateSessionToken,
   getSharedDatabaseClient,
   createUserRepository,
+  hashSessionToken,
+  nextIdleExpiry,
   type ClientDeviceAuthRow,
   type ClientDeviceRepository,
+  type SessionAuthMethod,
+  type SessionRepository,
+  type SessionRow,
   type UserAuthRow,
   type UserRepository,
   type WorkHubDatabaseClient
@@ -52,6 +59,9 @@ export type AuthEnv = {
 export type AuthDependencies = {
   users: UserRepository;
   devices: ClientDeviceRepository;
+  // R2 auth epic：会话仓库为 OPTIONAL——仅 AUTH_MODE!='nickname' 时被查询；nickname 模式（默认）下整段跳过，
+  // 单测不传则会话路径不参与（与原子预算 reservationRepo 同范式）。
+  sessions?: SessionRepository;
   settings?: Settings;
   now?: () => Date;
   touchUser?: (userId: string) => void | Promise<void>;
@@ -68,6 +78,7 @@ export function getDefaultAuthDependencies(): AuthDependencies {
   return {
     users: createUserRepository(defaultDbClient.db),
     devices: createClientDeviceRepository(defaultDbClient.db),
+    sessions: createSessionRepository(defaultDbClient.db),
     touchUser: (userId) => presence.touchUser(userId),
     forgetUser: (userId) => presence.forgetUser(userId)
   };
@@ -133,6 +144,51 @@ export function forgetUserCookie(c: Context, runtimeSettings: Settings = default
 export async function readCookieToken(c: Context, runtimeSettings: Settings = defaultSettings) {
   const token = await getSignedCookie(c, runtimeSettings.auth.cookieSecret, COOKIE_NAME);
   return typeof token === "string" ? token : undefined;
+}
+
+// R2 auth epic：会话签发（session/hybrid 模式）。明文 secret 只回客户端一次（写进 signed cookie），
+// 落库的是 sha256(secret)。绝对过期=now+absoluteTtl 硬上限；idle=滑动初值（≤绝对上限）。
+export type MintSessionOptions = {
+  authMethod?: SessionAuthMethod;
+  oidcProvider?: string | null;
+  ipHash?: string | null;
+  userAgent?: string | null;
+};
+
+export async function mintSession(
+  deps: AuthDependencies,
+  user: UserAuthRow,
+  options: MintSessionOptions = {}
+): Promise<{ token: string; session: SessionRow }> {
+  if (!deps.sessions) {
+    throw new Error("session repository not configured");
+  }
+  const now = (deps.now ?? (() => new Date()))();
+  const runtimeSettings = getAuthSettings(deps);
+  const token = generateSessionToken();
+  const absoluteExpiresAt = new Date(now.getTime() + runtimeSettings.auth.sessionAbsoluteTtlMs);
+  const idleExpiresAt = nextIdleExpiry(now, runtimeSettings.auth.sessionIdleTtlMs, absoluteExpiresAt);
+  const session = await deps.sessions.create({
+    userId: user.id,
+    tokenHash: hashSessionToken(token),
+    authMethod: options.authMethod ?? "password",
+    oidcProvider: options.oidcProvider ?? null,
+    ipHash: options.ipHash ?? null,
+    userAgent: options.userAgent ?? null,
+    absoluteExpiresAt,
+    idleExpiresAt
+  });
+  return { token, session };
+}
+
+export async function issueSessionCookie(c: Context, token: string, runtimeSettings: Settings = defaultSettings) {
+  await setSignedCookie(c, COOKIE_NAME, token, runtimeSettings.auth.cookieSecret, {
+    httpOnly: true,
+    maxAge: Math.floor(runtimeSettings.auth.sessionAbsoluteTtlMs / 1000),
+    sameSite: "Lax",
+    secure: runtimeSettings.auth.cookieSecure,
+    path: "/"
+  });
 }
 
 export function toIdentityResponse(user: UserAuthRow, created: boolean) {
@@ -240,6 +296,35 @@ async function resolveUserFromClientToken(deps: AuthDependencies, rawToken: stri
   return { user, device };
 }
 
+// R2 auth epic：把 cookie 解析成用户。nickname 模式（默认）下与历史逐字节一致——直接走 cookieToken；
+// session/hybrid 模式下 cookie 载会话 secret，经 sessions.token_hash 解析并滑动续期。
+async function resolveUserFromCookie(
+  deps: AuthDependencies,
+  cookieToken: string,
+  now: Date
+): Promise<UserAuthRow | null> {
+  const mode = getAuthSettings(deps).auth.authMode;
+  if (mode !== "nickname" && deps.sessions) {
+    const session = await deps.sessions.findActiveByTokenHash(hashSessionToken(cookieToken), now);
+    if (session) {
+      const user = await deps.users.findActiveById(session.userId);
+      if (!user) {
+        return null;
+      }
+      // 滑动续期：每次活动把 idle 过期推后（永不越过绝对硬上限）。
+      const idleExpiresAt = nextIdleExpiry(now, getAuthSettings(deps).auth.sessionIdleTtlMs, session.absoluteExpiresAt);
+      await deps.sessions.touch(session.id, idleExpiresAt, now);
+      return user;
+    }
+    if (mode === "password") {
+      // 纯 session 模式：会话解析不到就是未鉴权，绝不回退 cookieToken。
+      return null;
+    }
+    // hybrid：迁移期允许回退 nickname cookieToken（尚未签发会话的老用户）。
+  }
+  return deps.users.findActiveByCookieToken(cookieToken);
+}
+
 export async function resolveCurrentUser(c: Context, deps: AuthDependencies) {
   const clientTokenHeader = c.req.header(LOCAL_CLIENT_HEADER);
   const byToken = await resolveUserFromClientToken(deps, clientTokenHeader);
@@ -257,7 +342,8 @@ export async function resolveCurrentUser(c: Context, deps: AuthDependencies) {
 
   const cookieToken = await readCookieToken(c, getAuthSettings(deps));
   if (cookieToken) {
-    const user = await deps.users.findActiveByCookieToken(cookieToken);
+    const now = (deps.now ?? (() => new Date()))();
+    const user = await resolveUserFromCookie(deps, cookieToken, now);
     if (user) {
       await deps.touchUser?.(user.id);
       return user;
@@ -313,7 +399,8 @@ export async function resolveStreamUser(c: Context, deps: AuthDependencies): Pro
 
   const cookieToken = await readCookieToken(c, getAuthSettings(deps));
   if (cookieToken) {
-    const user = await deps.users.findActiveByCookieToken(cookieToken);
+    const now = (deps.now ?? (() => new Date()))();
+    const user = await resolveUserFromCookie(deps, cookieToken, now);
     if (user) {
       await deps.touchUser?.(user.id);
       return { id: user.id, nickname: user.nickname, isAdmin: user.isAdmin };

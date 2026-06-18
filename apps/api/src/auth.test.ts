@@ -7,9 +7,13 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
+import { isSessionActive } from "@workhub/db";
 import type {
   ClientDeviceAuthRow,
   ClientDeviceRepository,
+  CreateSessionInput,
+  SessionRepository,
+  SessionRow,
   UserAuthRow,
   UserRepository
 } from "@workhub/db";
@@ -23,6 +27,8 @@ import {
   createOptionalLocalClientMiddleware,
   createRequireLocalClientMiddleware,
   hashClientToken,
+  issueSessionCookie,
+  mintSession,
   resolveStreamUser,
   validateNickname,
   type AuthDependencies,
@@ -191,6 +197,79 @@ class MemoryDevices implements ClientDeviceRepository {
       row.updatedAt = at;
     }
     return row ?? null;
+  }
+}
+
+function sessionRow(input: CreateSessionInput, seq = 1): SessionRow {
+  return {
+    id: input.id ?? `30000000-0000-4000-8000-${String(seq).padStart(12, "0")}`,
+    userId: input.userId,
+    tokenHash: input.tokenHash,
+    authMethod: input.authMethod ?? "password",
+    oidcProvider: input.oidcProvider ?? null,
+    ipHash: input.ipHash ?? null,
+    userAgent: input.userAgent ?? null,
+    absoluteExpiresAt: input.absoluteExpiresAt,
+    idleExpiresAt: input.idleExpiresAt,
+    lastSeenAt: null,
+    revokedAt: null,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+class MemorySessions implements SessionRepository {
+  public rows: SessionRow[] = [];
+  public touched: string[] = [];
+
+  async create(input: CreateSessionInput) {
+    const row = sessionRow(input, this.rows.length + 1);
+    this.rows.push(row);
+    return row;
+  }
+
+  async findActiveByTokenHash(tokenHash: string, at: Date) {
+    return this.rows.find((row) => row.tokenHash === tokenHash && isSessionActive(row, at)) ?? null;
+  }
+
+  async touch(sessionId: string, idleExpiresAt: Date, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === sessionId && candidate.revokedAt === null);
+    if (!row) {
+      return null;
+    }
+    row.idleExpiresAt = idleExpiresAt;
+    row.lastSeenAt = at;
+    row.updatedAt = at;
+    this.touched.push(sessionId);
+    return row;
+  }
+
+  async revoke(sessionId: string, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === sessionId && candidate.revokedAt === null);
+    if (!row) {
+      return null;
+    }
+    row.revokedAt = at;
+    row.updatedAt = at;
+    return row;
+  }
+
+  async revokeAllForUser(userId: string, at: Date) {
+    let count = 0;
+    for (const row of this.rows) {
+      if (row.userId === userId && row.revokedAt === null) {
+        row.revokedAt = at;
+        row.updatedAt = at;
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  async deleteExpired(at: Date) {
+    const before = this.rows.length;
+    this.rows = this.rows.filter((row) => row.absoluteExpiresAt >= at);
+    return before - this.rows.length;
   }
 }
 
@@ -536,4 +615,128 @@ test("AI actor construction is first-class and never touches cookie auth", () =>
     orgId: "00000000-0000-4000-8000-000000000001",
     workspaceId: "00000000-0000-4000-8000-000000000002"
   });
+});
+
+// ——— R2 auth epic Phase 2b：AUTH_MODE 会话 cookie 解析 ———
+
+test("AUTH_MODE=password resolves a session-secret cookie and slides idle expiry", async () => {
+  const runtimeSettings = settings({ AUTH_MODE: "password" });
+  const alice = user({ nickname: "alice" });
+  const sessions = new MemorySessions();
+  const authDeps: AuthDependencies = { ...deps([alice], [], runtimeSettings), sessions };
+  const { token, session } = await mintSession(authDeps, alice, { authMethod: "password" });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.get("/who", createCurrentUserMiddleware(authDeps), (c) => c.json({ id: c.var.currentUser.id }));
+  const res = await app.request("/who", { headers: { Cookie: await signedCookie(token, runtimeSettings) } });
+
+  assert.equal(res.status, 200);
+  assert.equal(((await res.json()) as { id: string }).id, alice.id);
+  assert.ok(sessions.touched.includes(session.id), "每次鉴权应滑动续期会话");
+});
+
+test("AUTH_MODE=password rejects revoked and idle-expired sessions", async () => {
+  const runtimeSettings = settings({ AUTH_MODE: "password" });
+  const alice = user({ nickname: "alice" });
+  const sessions = new MemorySessions();
+  const authDeps: AuthDependencies = { ...deps([alice], [], runtimeSettings), sessions };
+
+  const revoked = await mintSession(authDeps, alice);
+  await sessions.revoke(revoked.session.id, now);
+
+  const expired = await mintSession(authDeps, alice);
+  const expiredRow = sessions.rows.find((row) => row.id === expired.session.id);
+  assert.ok(expiredRow);
+  expiredRow.idleExpiresAt = new Date(now.getTime() - 1000); // 滑动已过期
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.get("/who", createCurrentUserMiddleware(authDeps), (c) => c.json({ id: c.var.currentUser.id }));
+
+  const revokedRes = await app.request("/who", { headers: { Cookie: await signedCookie(revoked.token, runtimeSettings) } });
+  assert.equal(revokedRes.status, 401);
+  const expiredRes = await app.request("/who", { headers: { Cookie: await signedCookie(expired.token, runtimeSettings) } });
+  assert.equal(expiredRes.status, 401);
+});
+
+test("AUTH_MODE=password is session-only and ignores the legacy cookieToken", async () => {
+  const runtimeSettings = settings({ AUTH_MODE: "password" });
+  const alice = user({ nickname: "alice" });
+  const sessions = new MemorySessions();
+  const authDeps: AuthDependencies = { ...deps([alice], [], runtimeSettings), sessions };
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.get("/who", createCurrentUserMiddleware(authDeps), (c) => c.json({ id: c.var.currentUser.id }));
+  // 老的 cookieToken 不再是会话凭据 → 纯 session 模式拒绝。
+  const res = await app.request("/who", { headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) } });
+  assert.equal(res.status, 401);
+});
+
+test("AUTH_MODE=nickname (default) ignores session cookies — gate is off", async () => {
+  const runtimeSettings = settings(); // 默认 nickname
+  const alice = user({ nickname: "alice" });
+  const sessions = new MemorySessions();
+  const authDeps: AuthDependencies = { ...deps([alice], [], runtimeSettings), sessions };
+  const { token } = await mintSession(authDeps, alice);
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.get("/who", createCurrentUserMiddleware(authDeps), (c) => c.json({ id: c.var.currentUser.id }));
+  // 即便存在会话且 cookie 载会话 secret，nickname 模式只认 cookieToken → 会话被忽略。
+  const sessionRes = await app.request("/who", { headers: { Cookie: await signedCookie(token, runtimeSettings) } });
+  assert.equal(sessionRes.status, 401);
+  // 老路径 cookieToken 仍照常工作（逐字节不变）。
+  const cookieRes = await app.request("/who", { headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) } });
+  assert.equal(cookieRes.status, 200);
+});
+
+test("AUTH_MODE=hybrid resolves sessions and falls back to the legacy cookieToken", async () => {
+  const runtimeSettings = settings({ AUTH_MODE: "hybrid" });
+  const alice = user({ nickname: "alice" });
+  const sessions = new MemorySessions();
+  const authDeps: AuthDependencies = { ...deps([alice], [], runtimeSettings), sessions };
+  const { token } = await mintSession(authDeps, alice);
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.get("/who", createCurrentUserMiddleware(authDeps), (c) => c.json({ id: c.var.currentUser.id }));
+  const sessionRes = await app.request("/who", { headers: { Cookie: await signedCookie(token, runtimeSettings) } });
+  assert.equal(sessionRes.status, 200);
+  // 迁移期：尚未签发会话的老用户继续靠 cookieToken 进。
+  const cookieRes = await app.request("/who", { headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) } });
+  assert.equal(cookieRes.status, 200);
+});
+
+test("issueSessionCookie round-trips through resolveCurrentUser in password mode", async () => {
+  const runtimeSettings = settings({ AUTH_MODE: "password" });
+  const alice = user({ nickname: "alice" });
+  const sessions = new MemorySessions();
+  const authDeps: AuthDependencies = { ...deps([alice], [], runtimeSettings), sessions };
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.post("/login", async (c) => {
+    const { token } = await mintSession(authDeps, alice, { authMethod: "password" });
+    await issueSessionCookie(c, token, runtimeSettings);
+    return c.json({ ok: true });
+  });
+  app.get("/who", createCurrentUserMiddleware(authDeps), (c) => c.json({ id: c.var.currentUser.id }));
+
+  const loginRes = await app.request("/login", { method: "POST" });
+  const setCookie = loginRes.headers.get("set-cookie");
+  assert.ok(setCookie, "login should set the session cookie");
+  const cookiePair = setCookie.split(";")[0] ?? "";
+  const whoRes = await app.request("/who", { headers: { Cookie: cookiePair } });
+  assert.equal(whoRes.status, 200);
+  assert.equal(((await whoRes.json()) as { id: string }).id, alice.id);
+});
+
+test("resolveStreamUser resolves a session cookie in password mode", async () => {
+  const runtimeSettings = settings({ AUTH_MODE: "password" });
+  const alice = user({ nickname: "alice" });
+  const sessions = new MemorySessions();
+  const authDeps: AuthDependencies = { ...deps([alice], [], runtimeSettings), sessions };
+  const { token } = await mintSession(authDeps, alice);
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.get("/stream", async (c) => c.json(await resolveStreamUser(c, authDeps)));
+  const res = await app.request("/stream", { headers: { Cookie: await signedCookie(token, runtimeSettings) } });
+  assert.equal(res.status, 200);
+  assert.equal(((await res.json()) as { nickname: string }).nickname, "alice");
 });

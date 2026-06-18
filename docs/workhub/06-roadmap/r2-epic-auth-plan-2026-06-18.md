@@ -147,7 +147,7 @@ Flip AUTH_MODE default to 'password' (or 'hybrid' for staged pilots), add a back
 - **registry 决策**：`workHubTables`（schema.test.ts 的 F02 count gate=50）保持不变——遵循原子预算 epic 把 `budget_reservations` 留在 registry 外的先例，新运营表只 `export const` 不进 F02「计划图」清单，不动 count gate。
 
 设计原 Phase 0 把会话表与中间件 cookie 互换捆在一起；本实施**刻意拆开成三刀**，逐刀 CI-gated：
-**①schema 地基**（已完成，上节）→ **②SessionRepository 数据访问层**（已完成，下节）→ **③AUTH_MODE 中间件 cookie 互换**（待做，最高爆炸半径，单独一刀）。
+**①schema 地基**（已完成）→ **②SessionRepository 数据访问层**（已完成）→ **③AUTH_MODE 中间件 cookie 互换**（已完成，最高爆炸半径，单独一刀）。三刀均零运行时行为变化（nickname 默认模式逐字节不变）。
 
 ### ✅ Phase 2a（SessionRepository 数据访问层）已完成、全 CI 绿 —— 仍零运行时行为变化（未接线）
 
@@ -158,6 +158,18 @@ Flip AUTH_MODE default to 'password' (or 'hybrid' for staged pilots), add a back
 - **测试**：`packages/db/src/sessions-repository.test.ts` 4 测覆盖全部纯函数（hash 确定性/不泄明文、token 高熵且每次不同、有效性四条件 + 边界、滑动夹绝对上限）。DB 方法待接线阶段由 PG smoke 覆盖。导出经 `packages/db/src/index.ts`。
 - **验证**：`pnpm -r typecheck`（16 包，无符号碰撞）+ `@workhub/db` 28 测全绿。
 
-### ⏭️ 下一刀 = ③AUTH_MODE 中间件 cookie 互换（最高爆炸半径）
+### ✅ Phase 2b（AUTH_MODE 中间件 cookie 互换）已完成、全 CI 绿 —— nickname 默认逐字节不变
 
-单独做 `resolveCurrentUser`/`resolveStreamUser`/`issueUserCookie`（auth.ts:116-324，每请求 + SSE 流都过）的 AUTH_MODE 旗标改造：`AUTH_MODE='nickname'` 默认下行为逐字节不变（cookie 仍载 `cookieToken`），`!='nickname'` 时 cookie 载 session secret、经 `SessionRepository.findActiveByTokenHash` 解析。把会话互换隔离为可单独 review/回滚的一刀（含 session sweeper 接 `deleteExpired`）。之后再依设计推进密码注册/登录、首管引导、生命周期（邀请/停用/offboard）、OIDC（接 0 provider 的抽象层）。
+最高爆炸半径的一刀，靠**默认 off 的旗标**把风险关进笼子：`AUTH_MODE='nickname'`（默认）下新代码路径一行不进，行为与历史完全一致。
+
+- **配置**（`packages/config`）：新增 `AUTH_MODE`（enum nickname|hybrid|password，默认 nickname）+ `SESSION_ABSOLUTE_TTL_HOURS`（默认 720=30 天硬上限）+ `SESSION_IDLE_TTL_HOURS`（默认 168=7 天滑动）→ `settings.auth.{authMode,sessionAbsoluteTtlMs,sessionIdleTtlMs}`。
+- **读路径**（`auth.ts` `resolveCurrentUser`/`resolveStreamUser`，每请求 + SSE 流都过）：抽出 `resolveUserFromCookie(deps, cookieToken, now)`——`nickname` 模式直接 `findActiveByCookieToken`（与历史逐字节一致）；`password`/`hybrid` 模式把 cookie 当会话 secret，经 `SessionRepository.findActiveByTokenHash(hashSessionToken(secret), now)` 解析并**滑动续期**（`touch` 推后 idle，永不越过绝对上限）；`password` 纯会话不回退、`hybrid` 解析不到回退 cookieToken（迁移期）。
+- **写路径**（备 login 阶段用，本刀仅测试驱动，生产 nickname 模式不触发）：`mintSession(deps, user, opts)`（生成 secret、算绝对/滑动过期、落 `sha256(secret)`）+ `issueSessionCookie(c, token)`（signed cookie 载明文 secret，maxAge=绝对 TTL）。
+- **依赖注入**：`AuthDependencies.sessions?` 设为 OPTIONAL（与原子预算 `reservationRepo` 同范式——单测不传则会话路径不参与）；`getDefaultAuthDependencies` 注入 `createSessionRepository(db)`。
+- **测试**：`auth.test.ts` + 7 测（password 解析+滑动 / 拒绝撤销+过期 / 纯会话忽略 cookieToken / **nickname 默认忽略会话 cookie 证明门关着** / hybrid 双通 / issueSessionCookie 端到端往返 / resolveStreamUser 会话解析）。`@workhub/api` 253 测 + `@workhub/config` 11 测 + `pnpm -r typecheck`(16 包)全绿。
+
+### ⏭️ 之后（依设计推进，本刀未含）
+
+- **登录/登出接线**：password 登录路由调 `mintSession`+`issueSessionCookie`；登出在会话模式下需 `sessions.revoke`（nickname 模式现状删 cookie 即可）。停用账号调 `revokeAllForUser`。
+- **会话清扫调度**：`deleteExpired` 已就绪，待挂到周期任务（mirror agent-runner 心跳清扫）。
+- 密码注册（argon2id）、首管引导、生命周期（邀请/停用/offboard）、OIDC（接 0 provider 的抽象层）。
