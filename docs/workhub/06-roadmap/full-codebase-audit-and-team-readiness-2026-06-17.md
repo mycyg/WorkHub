@@ -478,3 +478,37 @@ updated: 2026-06-17
 - 团队缺口全量：`/tmp/wh-audit2/gaps.json`。
 - 审查为静态代码审查 + 对抗式复验；建议高危修复均配回归测试，按既有 CI 门（workspace + 3 PG smoke + web-live-route-smoke + rust）验证。
 
+
+---
+
+## 51 needs_user defer 项处置进度（2026-06-18，用户「全做、顺序你来定」放行后）
+
+源数据 `reference/audit2/defer-needs-user.json`（gitignored，逐项 `still_open`/`disposition`/`resolution` 标记）。本轮按「先把有明确、保语义/标准模式正解的修掉，再把判断/产品/设计类归类待拍板」推进。
+
+### ✅ 已修并全 CI 绿（6）
+- **#3** calendar `week_count` 改数不同 ISO 周（原恒等 block_count，无生产消费方，纯诚实化）。
+- **#2** merge-fusion `text_patch_preview` 二次应用去冗余 LCS 重算（幂等守卫，两消费方均绿）。
+- **#15** `listConflictsByWorkItem` 批量预取 current-accepted（O(p×c) N+1 → 1 查询，语义保留）。
+- **#13** `listConflicts` 批量取 merge-attempt/merge-proposal（O(p×a) → 2 查询，最后写赢顺序保留）。
+- **#28** CORS 通配 dev 模式只反射 loopback/tauri，不再反射任意 origin（凭据跨源读硬化）。
+- **#34** `revertFileSnapshot` 原子 temp-and-swap（消除 clear-before-copy 破坏性数据丢失窗口）。
+
+### 🚫 经核不修 / 已充分（3）
+- **#29** admin-claim throttle 全局桶 = 无代理 LAN pilot 下对共享 secret 的暴力防护，代码已注释为接受权衡（P5 Redis 化）。
+- **#39** lost-update CAS 实仍保留 scope + `isNull(supersededAt)` 守卫（原 finding 过度描述）；残留 sha-less target 已被序列化 apply 覆盖。
+- **#31** evidence-bubble href-less action 在 HEAD 实渲染带 `data-cuu-action-id` 的 `<a href=#>`（非裸 span），且为未用路径，无生产触发。
+
+### ⏳ 余 42 项分类（需拍板 / 深度重写 / 客户端 / 工具链）
+
+**A. 需产品/UX/设计拍板（17）**——可观测行为或契约变更、或「该不该存在/删除」类，需用户产品意图，不宜在自动循环里替你拍：
+#0 成本卡 disabled-team-policy 显隐；#9 `confirm` 字段（接线还是删，删需多文件协调）；#10 预留事件枚举保留还是删；#16 blocked 候选呈现（隐藏/标记）；#26 `complete` vs `dismiss` 是否应有不同终态；#36 pm-mode 执行器行为定义（真特征需 spec，已确认是真接线的特性、非可删）；#37 成本聚合口径；#38 conflict-range 形状（被 override CAS 精确匹配 + LLM prompt，客户端可观测契约）；#42 replay AgentStep VM id 跨 cache/DB 一致化（客户端 keying 契约，无 seam 测）；#47 merge 强置 `status='merged'` 语义；#48+#41 work-item read-authz 双模型统一 + 死权限门；#49/#12/#40 评审/合并/委派授权（four-eyes？submitter 自批？）；#23 meeting insight 全局 cap（去 cap vs 加聚合 COUNT）；#25 指向已删/不可见 work-item 的通知是否对本人收件箱保留。
+
+**B. 多层/核心路径深度重写（10，宜 fresh-context 专注做，非产品决策）**——方向清楚但跨层/触核心路径，depth 下风险高：
+#43 model 调用无 abort/timeout（穿 AbortController 进 callModel/provider fetch/SSE reader，核心 LLM 路径，high）；#11 stale-base 永抛 bare error 不抛 RebaseRequiredError（跨两包，high）；#5 软删用户收件人过滤未接线（需新 users-by-ids-incl-deleted 查询 + 假仓库涟漪）；#19/#20 agent loop reviewDeliverable 无超时 / compaction 阈值键于累计 token；#6 recoverExpiredClaims 用无 trace 记录覆盖内存富 trace（并发恢复路径）；#35 内存队列并发双执行（dev/test 路径）；#21 文件夹软删 vs 并发子上传竞态；#1/#22/#24 操作+审计日志非原子（需跨抽象仓库穿一个 db.transaction，基础设施改）。
+
+**C. 客户端/Tauri/desktop（9，需视觉/手动验证，关联待办「桌宠动作截图审查」）**：
+#7 Restore-Cuu 重置透明度；#8 PetWindowRuntimeState 中毒 mutex；#17 post-run clarity 卡片闪烁盖住用户输入；#18 desktop 持久化整个 CuuCard；#32 pet-window 命令 TOCTOU；#33 deep-link 路由校验器分叉；#45 CuuController dismiss/clearBadges 队列竞态；#46 CSP 禁用(csp:null)；#50 desktop fetch-EventSource 不重连。
+
+**D. 工具链（2）**：#30 CI 无 drizzle snapshot/journal parity 检查；#44 drizzle snapshot 链冻结于 0015（0016–0026 手写无 snapshot）。
+
+> **下一步建议**：A 类需用户逐条或批量拍板（尤其授权模型 #48/#49、pm-mode #36）；B 类宜各自单独 fresh-context PR 专注做（每个带 PG-smoke/单测）；C 类并入桌宠视觉验证一轮；D 类是 CI 加固。无明确正解前不在自动循环里硬猜，避免回归绿库（曾因把 #36 误当 drift 差点删掉真 pm-mode 特性）。
