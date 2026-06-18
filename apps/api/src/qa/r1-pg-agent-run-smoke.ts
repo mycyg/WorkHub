@@ -1827,10 +1827,11 @@ async function main() {
       throw new Error("Expected pcost-team-day-v0 policy to exist for reservation concurrency gate.");
     }
     const reserveCapTokens = settings.budgets.runTokens;
+    // max_cost_cny 用 numeric(12,6) 上限内的大值（999999，>> 任何 run 成本，使 cost 维不绑定，由 tokens 决定）。
     const teamDayCapOverride = await app.request("/api/cost/policies/team/pcost-team-day-v0", {
       method: "PUT",
       headers,
-      body: JSON.stringify({ max_tokens: reserveCapTokens, max_cost_cny: "1000000", on_warning: "notify" })
+      body: JSON.stringify({ max_tokens: reserveCapTokens, max_cost_cny: "999999", on_warning: "notify" })
     });
     if (teamDayCapOverride.status !== 200) {
       throw new Error(`Expected team/day reservation-cap override 200, got ${teamDayCapOverride.status}: ${await teamDayCapOverride.text()}`);
