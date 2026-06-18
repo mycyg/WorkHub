@@ -705,6 +705,14 @@ class MemoryProposalRepository implements ProposalRepository {
     return this.mergeProposals.filter((proposal) => proposal.mergeAttemptId === mergeAttemptId);
   }
 
+  async listMergeAttemptsByProposals(proposalIds: string[]) {
+    return this.mergeAttempts.filter((attempt) => proposalIds.includes(attempt.proposalId));
+  }
+
+  async listMergeProposalsByAttempts(mergeAttemptIds: string[]) {
+    return this.mergeProposals.filter((proposal) => mergeAttemptIds.includes(proposal.mergeAttemptId));
+  }
+
   async chooseMergeProposalCandidate(input: Parameters<ProposalRepository["chooseMergeProposalCandidate"]>[0]) {
     const row = this.mergeProposals.find((proposal) => proposal.id === input.mergeProposalId);
     if (!row) {

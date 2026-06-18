@@ -341,6 +341,9 @@ export type ProposalRepository = {
   listConflictsByWorkItem: (workItemId: string) => Promise<ProposalMergeConflict[]>;
   listMergeAttemptsByProposal: (proposalId: string) => Promise<MergeAttemptRow[]>;
   listMergeProposalsByAttempt: (mergeAttemptId: string) => Promise<MergeProposalRow[]>;
+  // R2 audit#13：批量取（IN）——listConflicts 用以消除 O(proposals×attempts) N+1。
+  listMergeAttemptsByProposals: (proposalIds: string[]) => Promise<MergeAttemptRow[]>;
+  listMergeProposalsByAttempts: (mergeAttemptIds: string[]) => Promise<MergeProposalRow[]>;
   chooseMergeProposalCandidate: (input: ChooseMergeProposalCandidateInput) => Promise<MergeProposalRow | null>;
   applyMergeProposalCandidate: (input: ApplyMergeProposalCandidateInput) => Promise<StoredProposalRows | null>;
   review: (input: ReviewProposalInput) => Promise<StoredProposalRows | null>;
@@ -1911,6 +1914,30 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         .select()
         .from(mergeProposals)
         .where(eq(mergeProposals.mergeAttemptId, mergeAttemptId))
+        .orderBy(asc(mergeProposals.createdAt));
+    },
+
+    // R2 audit#13：批量版（按 proposalId/mergeAttemptId IN(...)），供 listConflicts 一次性取代 O(p×a) N+1。
+    // 保持与单条版同样的 createdAt ASC 排序——调用方按 proposalId/attemptId 分组后，组内顺序与逐条版一致。
+    async listMergeAttemptsByProposals(proposalIds) {
+      if (proposalIds.length === 0) {
+        return [];
+      }
+      return db
+        .select()
+        .from(mergeAttempts)
+        .where(inArray(mergeAttempts.proposalId, proposalIds))
+        .orderBy(asc(mergeAttempts.createdAt));
+    },
+
+    async listMergeProposalsByAttempts(mergeAttemptIds) {
+      if (mergeAttemptIds.length === 0) {
+        return [];
+      }
+      return db
+        .select()
+        .from(mergeProposals)
+        .where(inArray(mergeProposals.mergeAttemptId, mergeAttemptIds))
         .orderBy(asc(mergeProposals.createdAt));
     },
 

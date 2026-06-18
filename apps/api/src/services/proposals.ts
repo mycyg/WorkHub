@@ -1458,34 +1458,74 @@ function aiFusionQualityGateByConflictKey(
   return byKey;
 }
 
+type MergeProposalRef = {
+  mergeProposalId: string;
+  aiFusionRationale?: string;
+  aiFusionQualityGate?: Record<string, unknown>;
+  recommendedOptionId?: ProposalConflict["recommended_option_id"];
+};
+
+function mergeProposalRefFor(row: MergeProposalRow): MergeProposalRef {
+  const aiFusion = mergeProposalCandidate(row, "ai_fusion");
+  const aiFusionRationale = typeof aiFusion?.rationale_md === "string" ? aiFusion.rationale_md : undefined;
+  const aiFusionQualityGate = objectRecord(aiFusion?.quality_gate);
+  const recommendedOptionId = proposalConflictOptionId(row.recommendedOptionKey);
+  return {
+    mergeProposalId: row.id,
+    ...(aiFusionRationale ? { aiFusionRationale } : {}),
+    ...(aiFusionQualityGate ? { aiFusionQualityGate } : {}),
+    ...(recommendedOptionId ? { recommendedOptionId } : {})
+  };
+}
+
+// 单 proposal 的 conflictKey → ref（用于 review/merge 预览等单提议路径，O(attempts)，非 listConflicts 的 N+1）。
 async function mergeProposalRefsByConflictKey(repository: ProposalRepository, proposalId: string) {
-  const refs = new Map<string, {
-    mergeProposalId: string;
-    aiFusionRationale?: string;
-    aiFusionQualityGate?: Record<string, unknown>;
-    recommendedOptionId?: ProposalConflict["recommended_option_id"];
-  }>();
+  const refs = new Map<string, MergeProposalRef>();
   const attempts = await repository.listMergeAttemptsByProposal(proposalId);
   for (const attempt of attempts) {
     if (attempt.result !== "conflict") {
       continue;
     }
-    const mergeProposalRows = await repository.listMergeProposalsByAttempt(attempt.id);
-    for (const row of mergeProposalRows) {
-      const aiFusion = mergeProposalCandidate(row, "ai_fusion");
-      const aiFusionRationale =
-        typeof aiFusion?.rationale_md === "string" ? aiFusion.rationale_md : undefined;
-      const aiFusionQualityGate = objectRecord(aiFusion?.quality_gate);
-      const recommendedOptionId = proposalConflictOptionId(row.recommendedOptionKey);
-      refs.set(row.conflictKey, {
-        mergeProposalId: row.id,
-        ...(aiFusionRationale ? { aiFusionRationale } : {}),
-        ...(aiFusionQualityGate ? { aiFusionQualityGate } : {}),
-        ...(recommendedOptionId ? { recommendedOptionId } : {})
-      });
+    for (const row of await repository.listMergeProposalsByAttempt(attempt.id)) {
+      refs.set(row.conflictKey, mergeProposalRefFor(row));
     }
   }
   return refs;
+}
+
+// R2 audit#13：批量构建 proposalId → (conflictKey → ref) 映射，消除 listConflicts 的 O(proposals×attempts) N+1。
+// 一次取所有相关 merge-attempt（IN proposalIds，ASC），一次取所有 conflict-attempt 的 merge-proposal（IN attemptIds，
+// ASC），再在内存按 (proposal, attempt-ASC, row-ASC) 重放——与原逐 proposal 串行版的「同 conflictKey 最后写赢」语义逐字等价。
+async function buildMergeProposalRefs(
+  repository: ProposalRepository,
+  proposalIds: string[]
+): Promise<Map<string, Map<string, MergeProposalRef>>> {
+  const refsByProposal = new Map<string, Map<string, MergeProposalRef>>();
+  for (const proposalId of proposalIds) {
+    refsByProposal.set(proposalId, new Map());
+  }
+  if (proposalIds.length === 0) {
+    return refsByProposal;
+  }
+  const attempts = (await repository.listMergeAttemptsByProposals(proposalIds)).filter(
+    (attempt) => attempt.result === "conflict"
+  );
+  const rowsByAttempt = new Map<string, MergeProposalRow[]>();
+  for (const row of await repository.listMergeProposalsByAttempts(attempts.map((attempt) => attempt.id))) {
+    const list = rowsByAttempt.get(row.mergeAttemptId) ?? [];
+    list.push(row); // 查询已按 createdAt ASC，组内保序
+    rowsByAttempt.set(row.mergeAttemptId, list);
+  }
+  for (const attempt of attempts) {
+    const refs = refsByProposal.get(attempt.proposalId);
+    if (!refs) {
+      continue;
+    }
+    for (const row of rowsByAttempt.get(attempt.id) ?? []) {
+      refs.set(row.conflictKey, mergeProposalRefFor(row)); // attempt-ASC × row-ASC → 同 conflictKey 最后写赢
+    }
+  }
+  return refsByProposal;
 }
 
 function mergeProposalCandidate(row: MergeProposalRow, optionKey: string) {
@@ -1849,10 +1889,10 @@ export function createDbProposalService(repository: ProposalRepository, options:
 
     async listConflicts(workItemId) {
       const conflicts = await repository.listConflictsByWorkItem(workItemId);
-      const refsByProposal = new Map<string, Awaited<ReturnType<typeof mergeProposalRefsByConflictKey>>>();
-      for (const proposalId of [...new Set(conflicts.map((conflict) => conflict.proposal_id))]) {
-        refsByProposal.set(proposalId, await mergeProposalRefsByConflictKey(repository, proposalId));
-      }
+      const refsByProposal = await buildMergeProposalRefs(
+        repository,
+        [...new Set(conflicts.map((conflict) => conflict.proposal_id))]
+      );
       return conflictListResult(conflicts.map((conflict) => {
         const ref = refsByProposal.get(conflict.proposal_id)?.get(conflict.target_key);
         return conflictToVm(conflict, ref ? {
