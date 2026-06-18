@@ -34,6 +34,7 @@ import {
   readCookieToken,
   resolveAuthDependencies,
   resolveCurrentUser,
+  resolveHumanActor,
   resolveOptionalCurrentUser,
   toIdentityResponse,
   validateNickname,
@@ -407,6 +408,9 @@ export function createAuthRoutes(
       return c.json(null);
     }
 
+    // R2 多租户 Phase 4：identity 的 org/workspace 用 actor 的真实租户（从成员派生），取代写死常量——
+    // 单租户下 actor 经 seed 解析 == 默认工作区，零变化；多租户下 /me 如实反映成员所属租户。
+    const actor = await resolveHumanActor(deps, user);
     return c.json({
       ...toIdentityResponse(user, false),
       identity: {
@@ -414,8 +418,8 @@ export function createAuthRoutes(
         actor_id: user.id,
         actor_label: user.nickname,
         user_id: user.id,
-        org_id: getAuthSettings(deps).auth.defaultOrgId,
-        workspace_id: getAuthSettings(deps).auth.defaultWorkspaceId,
+        org_id: actor.orgId,
+        workspace_id: actor.workspaceId,
         is_admin: user.isAdmin
       }
     });

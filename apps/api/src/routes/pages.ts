@@ -356,7 +356,10 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
 
   routes.get("/cost", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
-    const teamId = settings.auth.defaultWorkspaceId;
+    // R2 多租户 Phase 4：团队预算卡片按 actor 工作区取（取代写死常量；单租户经 seed 解析==默认工作区零变化）。
+    // 注意：非管理员账目仍走下方 user-scope fail-closed；管理员全组织账目的工作区围栏需 cost_ledger_entries
+    // 加 denormalized workspace_id 列（Phase 4 deeper，待 2nd-tenant 才有意义，见 plan）。
+    const teamId = c.var.actor.workspaceId;
     const decision = decideRunBudget({
       settings,
       scopeIds: {

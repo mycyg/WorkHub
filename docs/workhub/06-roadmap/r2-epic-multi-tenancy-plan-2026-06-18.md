@@ -100,6 +100,11 @@ Add tenant fences to the repos with no predicate today, prioritizing cross-tenan
 - **涉及文件**：packages/db/src/repositories/cost-ledger.ts, packages/db/src/repositories/approval-requests.ts, packages/db/src/repositories/schedule-notify.ts, packages/db/src/repositories/notifications.ts, packages/db/src/repositories/proposals.ts, packages/db/src/repositories/confidence.ts, apps/api/src/routes/pages.ts
 - **测试门**：node --test per repo: each list/sum query returns only rows for the passed workspace (and, transitionally, NULL-tagged rows). Real-PG smoke extension: two workspaces each with notifications/approvals/schedule/cost rows; assert each repo query for workspace A excludes workspace B's rows and the cost total for A excludes B's spend.
 
+> **🔄 Phase 4 进行中（用户 2026-06-18「全做、顺序我定」放行；cost open-Q #7 采默认=workspace 硬边界）。**
+> - **✅ 已做（actor 租户取代写死常量，mirror Phase 3a team-skills；单租户经 seed 解析==默认工作区→零变化）**：`/me` identity 的 org_id/workspace_id 改用 `resolveHumanActor` 派生的 actor 租户（auth.ts）；`/cost` 团队预算卡片 `teamId` 改 `c.var.actor.workspaceId`（pages.ts）。`@workhub/api` 274 测全绿。
+> - **open-Q #7 决策**：**workspace = 成本硬边界**（一租户成本看板只显示本工作区；org-admin 跨工作区汇总是未来增强，不在本轮）。
+> - **⏭️ 待做（Phase 4 deeper，需 schema 才能正确围栏，2nd-tenant 才真正生效）**：管理员全组织账目视图（`/cost` listEntries）的工作区围栏——cost_ledger_entries 的条目按 user/workitem/team scope 标记、**不直接带 workspace_id**，故需先加 denormalized `workspace_id` 列（nullable→backfill via join→谓词源，即计划「OPTIONAL later migration」）才能正确 fence；approvals/proposals/notifications/schedule 的 DB 级防御谓词（应用层已用 user-scope/work-item-access 围栏，DB 谓词为 belt-and-suspenders，需 2nd-tenant fixtures 才好测）。AI/system actor 从 work_item/agent_run 继承租户（createAiActor/createSystemActor 仍用常量，Phase 2 deferred）。
+
 ### Phase 5：Phase 5 — Backfill NULL tenants and tighten to strict equality
 
 Run the backfill migration to populate NULL workspace_id on cross-tenant tables (work_items via project join, plus any columns added in Phase 4). Then flip the tenantPredicate from 'OR IS NULL' to strict '= $ws' and make work_items.workspaceId (and any new workspace_id columns) NOT NULL where safe. This is the step that removes the last cross-tenant exposure (a row with NULL tenant is reachable by everyone). Sequenced last so it only runs once data is guaranteed tagged.
