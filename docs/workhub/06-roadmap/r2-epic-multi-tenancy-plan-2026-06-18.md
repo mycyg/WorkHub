@@ -85,6 +85,14 @@ With actor.workspaceId now varying, the existing checks become live. Audit and t
 - **涉及文件**：apps/api/src/routes/pages.ts, packages/permissions/src/resource-permissions.ts, apps/api/src/services/drive-pages.ts, apps/api/src/services/meeting-pages.ts, apps/api/src/services/work-items.ts, apps/api/src/services/projects.ts, packages/permissions/src/permissions.test.ts
 - **测试门**：node --test in permissions.test.ts: a user in workspace B is denied canViewProjectDrive/canViewWorkItemRecord for a project/work-item in workspace A (these currently pass-through). Real-PG cross-tenant smoke: seed workspace A project P_A and workspace B user U_B; assert U_B fetching P_A by id (drive/meetings/work-item detail) gets denied, and U_B's project list excludes P_A.
 
+> **✅ Phase 3a 已完成、全 CI 绿。审计发现架构在 Phase 2（actor.workspaceId 真实变化）后**多数 by-id 路径已自动围栏，原计划高估了缺口：**
+> - **canViewProjectDrive 自带工作区硬围栏**（resource-permissions.ts:79 `project.workspaceId === actor.workspaceId`）→ project/drive/meeting 的 by-id 在 Phase 2 后即区分；`permissions.test.ts:80` 早已测「stranger in other workspace → false」。
+> - **work-item 详情 by-id（`assertCanReadDetail` work-items.ts:361）比 canViewWorkItemRecord 更严**——admin/submitter/claimer/projectOwner 才放行，与状态/工作区无关，故非成员跨租户取 by-id 本就 403，无泄漏面。
+> - **work-item 列表**（schedule-notify / project-health pages）两处 canViewWorkItemRecord 调用**已传 `scope:{workspaceId: actor.workspaceId}`**→ 公共看板项被租户围栏。
+> - **唯一真实常量泄漏 = team-skills 页**（pages.ts:394 读 `settings.auth.defaultWorkspaceId`）→ **已改 `c.var.actor.workspaceId`**（单租户经 seed 解析 == 默认工作区，零变化；多租户各成员只看本工作区技能）。
+> - **测试**：`permissions.test.ts` 加跨工作区 scope 围栏测（公共看板项同工作区 scope 可见、跨工作区 scope 拒）。`@workhub/permissions` 11 测 + `@workhub/api` 266 测 + `pnpm -r typecheck`(16 包) 全绿。
+> - **延后**：cost 页 teamId 常量（pages.ts:359）归 Phase 4（cost-ledger 租户围栏一并做）；drive/meetings 的 DB 级防御性谓词（findProject 已自带）作 Phase 4 防御加固；真 PG 跨租户 deny smoke 待 Phase 3 配套（当前 permissions 单测已锁住核心围栏逻辑）。
+
 ### Phase 4：Phase 4 — Tenant predicates on the zero-predicate repos
 
 Add tenant fences to the repos with no predicate today, prioritizing cross-tenant-reachable reads: cost-ledger team/all queries (already user-scoped for non-admin at pages.ts:362-380 — extend the team-scope path to fence by actor workspace via cost_ledger_entries.team_id), approval-requests listing (join work_items.workspace_id), schedule-notify and notifications enumeration (fence via project/work-item join or, if added, a workspace_id column), proposals/confidence (via work_items join). Use a shared tenantPredicate helper. During transition the predicate is 'workspace_id = $ws OR workspace_id IS NULL'; after Phase 5 backfill it tightens to strict equality. Leave the global AI worker queue (agent-runs claimNextQueued) as-is but document it as intentionally cross-tenant (single worker pool).

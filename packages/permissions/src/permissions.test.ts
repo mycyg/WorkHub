@@ -68,6 +68,16 @@ test("resource gate hides private work items from strangers but keeps public boa
   assert.equal(canViewWorkItemRecord(workItem({ status: "in_review" }), stranger), true);
 });
 
+test("R2 multi-tenancy: work-item scope fences a public-board item to the actor's workspace", () => {
+  const stranger = user({ id: "10000000-0000-4000-8000-000000000050" });
+  const itemInA = workItem({ status: "in_review", workspaceId: "workspace-A" });
+
+  // 同工作区 scope → 公共看板可见（与无 scope 行为一致）。
+  assert.equal(canViewWorkItemRecord(itemInA, stranger, { workspaceId: "workspace-A" }), true);
+  // 跨工作区 scope → 被租户围栏挡住，即便状态本是公开的（Phase 2 后 actor.workspaceId 真实变化，此围栏才生效）。
+  assert.equal(canViewWorkItemRecord(itemInA, stranger, { workspaceId: "workspace-B" }), false);
+});
+
 test("drive project gate allows owner, admin, and same-workspace policy actors", () => {
   const project = {
     archived: false,

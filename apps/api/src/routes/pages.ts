@@ -390,8 +390,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
 
   routes.get("/skills", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
-    // pilot = 单工作空间：技能按默认工作空间读（与 /cost 的 teamId 同源）。
-    const workspaceId = settings.auth.defaultWorkspaceId;
+    // R2 多租户 Phase 3：技能按 actor 的工作区读（取代写死默认工作区常量）——单租户下 actor.workspaceId
+    // 经 seed 成员解析 == 默认工作区，零变化；多租户下各成员只看自己工作区的技能。
+    const workspaceId = c.var.actor.workspaceId;
     const active = await teamSkills.listActive(workspaceId);
     return c.json(pageEnvelope(buildTeamSkillsPage({ skills: active }), locale));
   });
