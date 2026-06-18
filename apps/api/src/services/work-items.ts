@@ -11,6 +11,7 @@ import {
   type WorkItemDataRepository,
   type WorkItemAgentStepRow,
   type WorkItemKnowledgeDocumentRow,
+  type WorkItemProjectRow,
   type WorkItemRow,
   type WorkHubDatabaseClient
 } from "@workhub/db";
@@ -37,6 +38,8 @@ import {
   type WorkItemDetailVM,
   type WorkHubLocale
 } from "@workhub/contracts";
+
+import { canViewProjectDrive } from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
 import { acceptedDeliverableToVm } from "./accepted-deliverables.js";
@@ -731,22 +734,35 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
   const now = options.now ?? (() => new Date());
   const defaultProjectId = options.defaultProjectId ?? defaultSeedIds.projectId;
 
-  async function resolveProject(projectId?: string) {
+  // A2(HIGH/安全)：project_id 是客户端可传的可选 id，findProjectById 仅按 archived/deletedAt 过滤，
+  // 不含任何租户谓词。若不校验 actor 对该项目的访问权，B 工作区成员就能传 A 工作区的 project_id 把
+  // 事项/会话注入 A 工作区（跨租户写）。复用读路径同款 canViewProjectDrive（按 workspace/owner/admin 判定，
+  // 单租户下 actor 与默认项目同属默认 workspace 故必过），失败按 404 处理以免泄漏跨租户项目是否存在。
+  function assertCanCreateInProject(project: WorkItemProjectRow, actor: AuthActor) {
+    if (!canViewProjectDrive(project, actor)) {
+      throw new WorkItemServiceError(404, "project_not_found", "没有找到这个项目。");
+    }
+  }
+
+  async function resolveProject(projectId: string | undefined, actor: AuthActor) {
     if (projectId) {
       const project = await repository.findProjectById(projectId);
       if (!project) {
         throw new WorkItemServiceError(404, "project_not_found", "没有找到这个项目。");
       }
+      assertCanCreateInProject(project, actor);
       return project;
     }
     const seeded = await repository.findProjectById(defaultProjectId);
     if (seeded) {
+      assertCanCreateInProject(seeded, actor);
       return seeded;
     }
     const first = await repository.findFirstActiveProject();
     if (!first) {
       throw new WorkItemServiceError(404, "project_not_found", "还没有可用项目，无法创建事项。");
     }
+    assertCanCreateInProject(first, actor);
     return first;
   }
 
@@ -766,7 +782,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         return sessionVmFor(rows.workItem, "scope", input.locale);
       }
 
-      const project = await resolveProject(input.payload.project_id);
+      const project = await resolveProject(input.payload.project_id, input.actor);
       const title = input.payload.title ?? titleFromIntent(input.payload.intent_text);
       const workItem = await repository.createWorkItem({
         projectId: project.id,
@@ -870,7 +886,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         return buildWorkItemDetail(await requireDetail(updated.id, input.actor), input.locale);
       }
 
-      const project = await resolveProject(input.payload.project_id);
+      const project = await resolveProject(input.payload.project_id, input.actor);
       const title = input.payload.title ?? titleFromIntent(input.payload.raw_description);
       const selectedOptionIds = mergeSelectedOptionIds(
         input.payload.selected_option_ids,
