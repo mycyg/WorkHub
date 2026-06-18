@@ -343,7 +343,12 @@ export function createInMemoryAgentRunQueue(options: {
   resolveUserRefs?: AgentRunUserRefResolver | false;
   // findings[H8/H9]：跑完后把工作项状态机推进（成功+开了提议→in_review；失败/升级/提议创建失败→escalated）。
   // CAS 守卫在仓库层(transitionWorkItemStatus)，此处只是 fire-and-forget 的写入回调；不传则不写状态（旧行为）。
-  transitionWorkItemStatus?: ((input: { workItemId: string; to: WorkItemStatus; at: Date }) => Promise<void>) | false;
+  // FIX#4：回调透传仓库 CAS 结果——成功迁移回 {id,status}，当前态非 `to` 的合法前驱则 no-op 回 null。
+  // notifyRunMilestone 据此 gate 里程碑通知，避免「工单状态没动却收到 in_review 通知」的漂移。
+  transitionWorkItemStatus?:
+    | ((input: { workItemId: string; to: WorkItemStatus; at: Date }) =>
+        Promise<{ id: string; status: WorkItemStatus } | null | void>)
+    | false;
   eventBus?: AgentRunEventBus | false;
   persistence?: AgentRunPersistence | false;
   // R2 原子预算：可选预留仓库。仅 PG 队列注入；内存队列不传 → 整段预留逻辑跳过（单测零影响）。
@@ -644,8 +649,13 @@ export function createInMemoryAgentRunQueue(options: {
       updated_at: updated.updated_at
     });
     // R2 原子预算：心跳同步续预留租约，让长跑 run 的持有量不被 releaseExpired 误放。
+    // 关键：预留租约必须续到「长视界」（heartbeatAt + reservationLeaseMs，覆盖 claim 租约 + 全部合法恢复重试），
+    // 不能续成短的 claim 租约（leaseExpiresAt = heartbeatAt + leaseMs）。否则每次心跳都把预留持有量缩短到
+    // 一次 claim 周期，run 一旦被合法重排/转交、原 worker 静默期超过 leaseMs，releaseExpired 就会过早释放
+    // 仍在生效的预留，导致无预留的重跑集体超预算。与入队时 reserve 用的 reservationLeaseMs 保持同一视界。
     if (reservationRepo) {
-      await reservationRepo.refreshLease(run.run_id, leaseExpiresAt).catch(() => {});
+      const reservationLeaseExpiresAt = new Date(heartbeatAt.getTime() + reservationLeaseMs);
+      await reservationRepo.refreshLease(run.run_id, reservationLeaseExpiresAt).catch(() => {});
     }
   }
 
@@ -805,7 +815,14 @@ export function createInMemoryAgentRunQueue(options: {
         manifest: proposal.diff_manifest
       }
     });
-    await eventBus.publish(topic, eventTypes.proposalOpened, envelope);
+    // findings：事件发布尽力而为——提议行已落库（createFromManifest 已 resolve），proposalOpened 状态由
+    // 此而定，绝不能因总线瞬时抖动（Redis 抛错）把本已成功、提议已开的 run 误判失败、错落 escalated。
+    // 与 emitRunEvent 同款 best-effort：吞错 + 告警。
+    try {
+      await eventBus.publish(topic, eventTypes.proposalOpened, envelope);
+    } catch (error) {
+      console.warn("WorkHub proposal-opened event emit failed (best-effort)", error);
+    }
   }
 
   async function openProposalFromManifest(
@@ -937,6 +954,12 @@ export function createInMemoryAgentRunQueue(options: {
 
     const stopClaimHeartbeat = startClaimHeartbeat(current.run_id);
 
+    // FIX#3：本 worker 是否已漂移下此 run（租约被回收/转交、或被取消）。与既有 fencing 同源：
+    // 在每个 `return drifted` 出口（循环后/捕获后）置位，让 finally 据此跳过对账。漂移后预留已归新 owner，
+    // 由它续租/对账；本 worker 不得 reconcile（会过早 settle/释放仍在生效的预留 → 超预算窗口），
+    // 真被遗弃的预留交给 releaseExpired 兜底。判定必须在合法终态写入 runs 之前取（终态也会让 status≠running，
+    // 无法在 finally 时凭 status 区分「漂移」与「本 worker 正常落终态」），故用显式 flag。
+    let workerDrifted = false;
     try {
       const resolvedWorkItemContext = await workItemContext?.(current);
       const resolvedUserMemory = await userMemory?.(current);
@@ -1009,6 +1032,7 @@ export function createInMemoryAgentRunQueue(options: {
       });
       const drifted = driftedRun(current.run_id);
       if (drifted) {
+        workerDrifted = true;
         return drifted;
       }
       // 先落定运行成功状态，再开提议。否则 openProposalFromManifest 抛错（manifest 不匹配/
@@ -1032,6 +1056,7 @@ export function createInMemoryAgentRunQueue(options: {
       const failureReason = error instanceof Error ? error.message : String(error);
       const drifted = driftedRun(current.run_id);
       if (drifted) {
+        workerDrifted = true;
         return drifted;
       }
       current = updateRun({
@@ -1099,7 +1124,10 @@ export function createInMemoryAgentRunQueue(options: {
       stopClaimHeartbeat();
       // R2 原子预算：终态对账——把该 run 的 active 预留翻 settled、写实际用量，释放未用持有量。
       // best-effort：失败/漏掉由 releaseExpired（租约过期）兜底。
-      if (reservationRepo) {
+      // FIX#3：本 worker 已漂移下此 run（租约被回收/转交，run 现归别的 worker）时绝不对账——否则会用本 worker
+      // 的局部用量把仍在跑的新 owner 的预留过早 settle/释放，开出超预算窗口。漂移的预留交由新 owner 续租/对账，
+      // 真被遗弃的交由 releaseExpired 兜底。
+      if (reservationRepo && !workerDrifted) {
         const settled = runs.get(runId);
         if (settled) {
           await reservationRepo
@@ -1138,12 +1166,30 @@ export function createInMemoryAgentRunQueue(options: {
     }
     // findings[H8/H9]：把工作项状态机推进（CAS 守卫在仓库层 transitionWorkItemStatus，非法前驱/已迁移则 no-op）。
     // 独立于通知开关，且 fire-and-forget——状态写入失败不拖垮已完成的 run。
+    // FIX#4：捕获 CAS 结果以 gate 里程碑通知。入队路径从不把工单置 ai_working（仅 session-finalize kickoff 会），
+    // 故 run 完成时工单常不在 in_review/escalated 的合法前驱态 → CAS no-op（仓库回 null），但通知此前无条件发，
+    // 用户会收到「in_review」通知而工单纹丝未动（漂移）。下方据 transitionSucceeded gate：仅当迁移真发生才通知。
+    // transitionFailed 仅在「注入了回调且回调明确报 no-op（返回 null/void）」时为真——没注入回调（旧行为/不写状态
+    // 的装配，如部分单测）则视为不 gate，照常通知；状态写入抛错也 fail-open 照常通知，不因瞬时 DB 错吞掉里程碑。
+    let transitionAttempted = false;
+    let transitionSucceeded = false;
     try {
-      await transitionWorkItemStatus?.({ workItemId: run.work_item_id, to: newStatus, at: now() });
+      if (transitionWorkItemStatus) {
+        transitionAttempted = true;
+        const transitioned = await transitionWorkItemStatus({ workItemId: run.work_item_id, to: newStatus, at: now() });
+        transitionSucceeded = Boolean(transitioned);
+      }
     } catch (error) {
       console.warn("WorkHub work-item status transition failed", error);
+      // 写入抛错（瞬时 DB 故障）→ 无法判定是否真 no-op，fail-open 照常通知，不静默漏报里程碑。
+      transitionSucceeded = true;
     }
     if (options.notifications === false) {
+      return;
+    }
+    // 仅当工单状态没真正迁移（注入了回调 + 回调报 no-op，即当前态非 `to` 的合法前驱）时，抑制这次里程碑通知，
+    // 避免谎报。run 自身的终态/审计已在调用方落定，不受影响。
+    if (transitionAttempted && !transitionSucceeded) {
       return;
     }
     const notifications = options.notifications ?? createNotificationService();
@@ -1710,15 +1756,16 @@ function getDefaultWorkItemContextProvider() {
   return defaultWorkItemContextProvider;
 }
 
-let defaultWorkItemStatusWriter: ((input: { workItemId: string; to: WorkItemStatus; at: Date }) => Promise<void>) | undefined;
+let defaultWorkItemStatusWriter:
+  | ((input: { workItemId: string; to: WorkItemStatus; at: Date }) => Promise<{ id: string; status: WorkItemStatus } | null>)
+  | undefined;
 
 // findings[H8/H9]：默认状态写入器——把 run 完成时的工作项状态机迁移落到真实 work-item 仓库（CAS 守卫）。
+// FIX#4：透传仓库 CAS 结果（迁移成功 {id,status} / no-op null），供 notifyRunMilestone gate 里程碑通知。
 function getDefaultWorkItemStatusWriter() {
   if (!defaultWorkItemStatusWriter) {
     const repo = createWorkItemRepository(getSharedDatabaseClient().db);
-    defaultWorkItemStatusWriter = async (input) => {
-      await repo.transitionWorkItemStatus(input);
-    };
+    defaultWorkItemStatusWriter = (input) => repo.transitionWorkItemStatus(input);
   }
   return defaultWorkItemStatusWriter;
 }
