@@ -130,7 +130,9 @@ async function callModel(input: AgentLoopInput, params: {
     maxTokens: params.maxTokens,
     source: "agent_step" as const,
     // findings[19]：把单调步号带进用量记账去重键——同 run 内两步即便 token/毫秒相同也不被误并、少记成本。
-    seq: params.stepNo
+    seq: params.stepNo,
+    // 单次请求超时（默认 120s）：挂死的 provider 连接超时即中断、抛 llm_request_timeout 走重试，绝不无限 park worker。
+    timeoutMs: input.budget.providerRequestTimeoutMs ?? 120_000
   };
   const stream = input.client.messages.stream;
   if (!stream) {
@@ -322,6 +324,67 @@ function summarizeStepsForCompaction(steps: AgentLoopStep[], maxChars = 4000) {
   return summary.length > maxChars ? `${summary.slice(0, maxChars)}\n…[摘要已截断]` : summary;
 }
 
+function blockType(block: unknown): string | undefined {
+  if (block && typeof block === "object") {
+    const type = (block as Record<string, unknown>).type;
+    return typeof type === "string" ? type : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * 收集 tail 中所有「已有匹配 tool_result」的 tool_use id。
+ * 截断（max_tokens）会让某个 assistant turn 的 tool_use 没机会执行 → 永远没有对应 tool_result。
+ */
+function matchedToolResultIds(messages: LlmMessage[]): Set<string> {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    if (!Array.isArray(message.content)) {
+      continue;
+    }
+    for (const block of message.content) {
+      if (blockType(block) === "tool_result") {
+        const id = (block as Record<string, unknown>).tool_use_id;
+        if (typeof id === "string") {
+          ids.add(id);
+        }
+      }
+    }
+  }
+  return ids;
+}
+
+/**
+ * 剔除 tail 里悬空的 tool_use（没有对应 tool_result 的）——否则压缩后的历史会以悬空 tool_use 收尾，
+ * 下一次 provider 调用直接 400（"tool_use ids must have corresponding tool_result"）。
+ * 同时把只剩悬空 tool_use 而被清空的 assistant turn 整条丢掉（一个内容为空数组的 assistant 同样非法）。
+ * 不动有 tool_result 配对的 tool_use，保持既有「tool_use/tool_result 成对」的不变量。
+ */
+function dropDanglingToolUse(tail: LlmMessage[]): LlmMessage[] {
+  const matched = matchedToolResultIds(tail);
+  const result: LlmMessage[] = [];
+  for (const message of tail) {
+    if (message.role !== "assistant" || !Array.isArray(message.content)) {
+      result.push(message);
+      continue;
+    }
+    const kept = message.content.filter((block) => {
+      if (blockType(block) !== "tool_use") {
+        return true;
+      }
+      const id = (block as Record<string, unknown>).id;
+      // 悬空 tool_use（无匹配 tool_result，含被截断成残缺 string input 的）直接剔除。
+      return typeof id === "string" && matched.has(id);
+    });
+    if (kept.length === 0) {
+      // 内容被清空的 assistant turn 不能保留（空 content 数组同样会被 provider 拒）。
+      continue;
+    }
+    result.push({ ...message, content: kept });
+  }
+  return result;
+}
+
 export function compactConversation(input: {
   messages: LlmMessage[];
   initialUserMessage: string;
@@ -334,7 +397,8 @@ export function compactConversation(input: {
   while (cut < input.messages.length && input.messages[cut]?.role !== "assistant") {
     cut += 1;
   }
-  const tail = input.messages.slice(cut);
+  // 剔除被截断遗留的悬空 tool_use（无匹配 tool_result）——否则压缩后的序列以悬空 tool_use 收尾，下次调用 400。
+  const tail = dropDanglingToolUse(input.messages.slice(cut));
   const summary = summarizeStepsForCompaction(input.steps);
   return [
     {

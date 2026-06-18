@@ -654,6 +654,63 @@ test("compactConversation keeps the tail starting at an assistant boundary (tool
   assert.equal(compacted[1]?.role, "assistant");
 });
 
+test("compactConversation drops a trailing dangling tool_use truncated by max_tokens (no unmatched tool_use id)", () => {
+  // 末尾 assistant turn 因 max_tokens 截断，tool_use(t-dangling) 没机会执行 → 永远没有对应 tool_result。
+  // 压缩后若保留这块 tool_use，下次 provider 调用会 400（tool_use 必须有匹配 tool_result）。
+  const messages: LlmMessage[] = [
+    { role: "user", content: "写一份长报告" },
+    { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "read_file", input: { path: "spec.md" } }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }] },
+    // 被截断的最后一步：tool_use 没有后续 tool_result（input 退化成残缺 string）。
+    {
+      role: "assistant",
+      content: [
+        { type: "text", text: "我开始写报告" },
+        { type: "tool_use", id: "t-dangling", name: "write_file", input: "{\"path\":\"outputs/r.md\",\"content\":\"part" }
+      ]
+    }
+  ];
+  const compacted = compactConversation({ messages, initialUserMessage: "写一份长报告", steps: [], keepTailEntries: 6 });
+
+  // 收集压缩结果里所有 tool_use id 与 tool_result tool_use_id，断言不存在悬空 id。
+  const toolUseIds = new Set<string>();
+  const toolResultIds = new Set<string>();
+  for (const message of compacted) {
+    if (!Array.isArray(message.content)) {
+      continue;
+    }
+    for (const block of message.content as Array<Record<string, unknown>>) {
+      if (block.type === "tool_use" && typeof block.id === "string") {
+        toolUseIds.add(block.id);
+      }
+      if (block.type === "tool_result" && typeof block.tool_use_id === "string") {
+        toolResultIds.add(block.tool_use_id);
+      }
+    }
+  }
+  // 悬空的 t-dangling 必须被剔除；任何残留 tool_use 都必须有匹配 tool_result。
+  assert.equal(toolUseIds.has("t-dangling"), false);
+  for (const id of toolUseIds) {
+    assert.equal(toolResultIds.has(id), true);
+  }
+  // 末尾若清空（本例最后一条 assistant 还留有 text，故仍存在）不应以悬空 tool_use 收尾。
+  const last = compacted[compacted.length - 1];
+  if (last?.role === "assistant" && Array.isArray(last.content)) {
+    const lastToolUses = (last.content as Array<Record<string, unknown>>).filter((block) => block.type === "tool_use");
+    for (const block of lastToolUses) {
+      assert.equal(toolResultIds.has(block.id as string), true);
+    }
+  }
+  // 截断步的 text 应保留（仅剔除悬空 tool_use，不丢有用文本）。
+  assert.equal(
+    compacted.some((message) =>
+      Array.isArray(message.content) &&
+      (message.content as Array<Record<string, unknown>>).some((block) => block.type === "text" && block.text === "我开始写报告")
+    ),
+    true
+  );
+});
+
 test("compactConversation advances the cut past a dangling tool_result to the next assistant", () => {
   const messages: LlmMessage[] = [
     { role: "user", content: "task" },

@@ -8,7 +8,9 @@ import {
   createAnthropicCompatibleTransport,
   createDefaultProviderRegistry,
   createProviderRegistry,
+  LLM_REQUEST_TIMEOUT_ERROR,
   LlmHttpError,
+  LlmRequestTimeoutError,
   nextRetryDecision,
   type LlmCreateParams,
   type LlmCreateResponse,
@@ -400,4 +402,131 @@ test("anthropic-compatible transport throws retryable http errors without leakin
       return true;
     }
   );
+});
+
+function timeoutProvider() {
+  return {
+    name: "deepseek",
+    baseUrl: "https://api.deepseek.com/anthropic",
+    apiKey: "secret-provider-key",
+    defaultModelId: "default",
+    models: {}
+  };
+}
+
+test("create with timeoutMs aborts a hung fetch and throws a retryable llm_request_timeout error", async () => {
+  // fetch 永不完成（连接打开但 provider 永不返回）——无超时会无限 park worker；timeoutMs 派生 AbortSignal.timeout。
+  // keepAlive 兜底定时器仅为让 node:test 认得这是带挂起 I/O 的异步用例（中断会在它之前清掉）。
+  const fetchImpl: typeof fetch = (_url, init) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      const keepAlive = setTimeout(() => reject(new Error("keepalive expired without abort")), 5000);
+      signal?.addEventListener("abort", () => {
+        clearTimeout(keepAlive);
+        reject(signal.reason);
+      }, { once: true });
+    });
+  const transport = createAnthropicCompatibleTransport(timeoutProvider(), { fetchImpl });
+
+  await assert.rejects(
+    () =>
+      transport.create({
+        model: "deepseek-v4-flash",
+        maxTokens: 128,
+        messages: [{ role: "user", content: "hi" }],
+        timeoutMs: 20
+      }),
+    (error) => {
+      assert.equal(error instanceof LlmRequestTimeoutError, true);
+      assert.equal((error as Error).name, LLM_REQUEST_TIMEOUT_ERROR);
+      // 重试层据 name/status 把它当瞬态网络错误处理 → 可重试。
+      assert.equal(nextRetryDecision(error as { status?: number; name?: string }, 0).retry, true);
+      return true;
+    }
+  );
+});
+
+test("create with an external signal already aborted throws a retryable llm_request_timeout error", async () => {
+  const fetchImpl: typeof fetch = (_url, init) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (signal?.aborted) {
+        reject(signal.reason);
+        return;
+      }
+      signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  const transport = createAnthropicCompatibleTransport(timeoutProvider(), { fetchImpl });
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    () =>
+      transport.create({
+        model: "deepseek-v4-flash",
+        maxTokens: 128,
+        messages: [{ role: "user", content: "hi" }],
+        signal: controller.signal
+      }),
+    (error) => {
+      assert.equal(error instanceof LlmRequestTimeoutError, true);
+      assert.equal(nextRetryDecision(error as { status?: number; name?: string }, 0).retry, true);
+      return true;
+    }
+  );
+});
+
+test("stream with timeoutMs cancels a hung reader and throws a retryable llm_request_timeout error", async () => {
+  let cancelled = false;
+  let keepAlive: ReturnType<typeof setTimeout> | undefined;
+  // 流体打开但 reader 永不结束（parseSseBody 的 while(true) await reader.read() 永久 park）——超时须 cancel
+  // reader 让循环以明确错误退出。keepAlive 兜底定时器（中断时清掉）仅为让 node:test 认得挂起 I/O。
+  const fetchImpl: typeof fetch = async () =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("event: message_start\ndata: {}\n\n"));
+          // 故意不 close：模拟挂死的流。
+          keepAlive = setTimeout(() => controller.error(new Error("keepalive expired without cancel")), 5000);
+        },
+        cancel() {
+          cancelled = true;
+          if (keepAlive) {
+            clearTimeout(keepAlive);
+          }
+        }
+      }),
+      { status: 200, headers: { "content-type": "text/event-stream" } }
+    );
+  const transport = createAnthropicCompatibleTransport(timeoutProvider(), { fetchImpl });
+
+  const stream = await transport.stream({
+    model: "deepseek-v4-flash",
+    maxTokens: 128,
+    messages: [{ role: "user", content: "hi" }],
+    timeoutMs: 20
+  });
+
+  await assert.rejects(
+    async () => {
+      for await (const _event of stream) {
+        void _event;
+      }
+    },
+    (error) => {
+      assert.equal(error instanceof LlmRequestTimeoutError, true);
+      assert.equal(nextRetryDecision(error as { status?: number; name?: string }, 0).retry, true);
+      return true;
+    }
+  );
+  // 超时必须主动 cancel 挂起的 reader（否则 while 循环永不退出）。
+  assert.equal(cancelled, true);
+});
+
+test("nextRetryDecision treats an llm_request_timeout error as a retryable transient", () => {
+  const error = new LlmRequestTimeoutError("LLM request aborted/timed out: timeout");
+  assert.equal(error.status, 0);
+  assert.equal(nextRetryDecision(error, 0, { baseDelayMs: 100 }).retry, true);
+  // 中断/超时无 Retry-After → 走指数退避瞬态分支。
+  assert.equal(nextRetryDecision(error, 0, { baseDelayMs: 100 }).reason, "transient");
 });

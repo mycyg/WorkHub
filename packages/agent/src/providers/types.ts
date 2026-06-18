@@ -41,7 +41,15 @@ export type LlmCreateParams = {
   source?: UsageSource;
   // findings[19]：调用序号（agent 步号），透传给用量记账作为去重消歧（同 run 内不同步即便 token 相同也不被误并）。
   seq?: number;
+  // 可选：外部中断信号。透传给底层 fetch/流解析；触发即放弃请求并取消读取，绝不 park worker。可选保后向兼容。
+  signal?: AbortSignal;
+  // 可选：单次 provider 请求超时（毫秒）。无 signal 时由它派生 AbortSignal.timeout；与 signal 同存则二者任一触发即中断。
+  // 可选保后向兼容——既有调用方/测试不传则不施加超时。
+  timeoutMs?: number;
 };
+
+/** AbortSignal.timeout / AbortError 抛出的中断错误统一识别名——让重试层把"挂死连接"当瞬态网络错误处理。 */
+export const LLM_REQUEST_TIMEOUT_ERROR = "llm_request_timeout";
 
 export type LlmCreateResponse = {
   id: string;

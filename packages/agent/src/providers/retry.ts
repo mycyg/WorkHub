@@ -20,7 +20,7 @@ export function parseRetryAfterMs(value: string | null | undefined, now = new Da
 }
 
 export function nextRetryDecision(
-  error: { status?: number; headers?: { get: (name: string) => string | null }; message?: string; code?: string; cause?: unknown },
+  error: { status?: number; headers?: { get: (name: string) => string | null }; message?: string; code?: string; name?: string; cause?: unknown },
   attempt: number,
   options: { maxAttempts?: number; baseDelayMs?: number; maxDelayMs?: number; now?: Date } = {}
 ): RetryDecision {
@@ -37,10 +37,13 @@ export function nextRetryDecision(
   const networkMessage = [
     error.message,
     error.code,
+    error.name,
     error.cause instanceof Error ? error.cause.message : undefined
   ].filter(Boolean).join(" ");
+  // 把中断/超时（AbortError/TimeoutError/llm_request_timeout）也算瞬态网络错误：挂死连接重试合理，
+  // 否则一个永不返回的 provider 会把 worker park 到整 run 超时（循环顶部检查在 fetch/流挂起时永不触发）。
   const isNetworkError = status === 0
-    && /\b(fetch failed|terminated|econnreset|econnrefused|etimedout|enotfound|network)\b/iu.test(networkMessage);
+    && /\b(fetch failed|terminated|econnreset|econnrefused|etimedout|enotfound|network|abort(?:ed)?|aborterror|timeouterror|timed out|llm_request_timeout)\b/iu.test(networkMessage);
   const isRetryableStatus = status === 429 || status >= 500;
   if (!isRetryableStatus && !isNetworkError) {
     // L#62：非可重试状态（4xx，鉴权/参数错误等）即便带 Retry-After 也不重试——

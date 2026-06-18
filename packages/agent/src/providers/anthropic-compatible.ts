@@ -1,10 +1,54 @@
-import type { LlmCreateParams, LlmCreateResponse, LlmStream, LlmStreamEvent, LlmTransport } from "./types.js";
+import { LLM_REQUEST_TIMEOUT_ERROR, type LlmCreateParams, type LlmCreateResponse, type LlmStream, type LlmStreamEvent, type LlmTransport } from "./types.js";
 import type { LlmProviderConfig } from "@workhub/config";
 
 export type AnthropicCompatibleTransportOptions = {
   fetchImpl?: typeof fetch;
   anthropicVersion?: string;
 };
+
+/**
+ * 中断/超时错误统一成一个可被重试层识别的网络错误：name=llm_request_timeout、status=0、
+ * message 含 "aborted/timed out"——retry.ts 的 isNetworkError 正则据此判定为瞬态可重试（挂死连接重试合理）。
+ */
+export class LlmRequestTimeoutError extends Error {
+  public readonly status = 0;
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = LLM_REQUEST_TIMEOUT_ERROR;
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  if (error instanceof LlmRequestTimeoutError) {
+    return true;
+  }
+  if (error instanceof Error) {
+    return error.name === "AbortError" || error.name === "TimeoutError";
+  }
+  return false;
+}
+
+/** 把外部 signal + 可选 timeoutMs 合成单个 AbortSignal；都不传则返回 undefined（不施加任何中断）。 */
+function resolveSignal(params: { signal?: AbortSignal; timeoutMs?: number }): AbortSignal | undefined {
+  const hasTimeout = typeof params.timeoutMs === "number" && params.timeoutMs > 0;
+  if (params.signal && hasTimeout) {
+    return AbortSignal.any([params.signal, AbortSignal.timeout(params.timeoutMs!)]);
+  }
+  if (hasTimeout) {
+    return AbortSignal.timeout(params.timeoutMs!);
+  }
+  return params.signal;
+}
+
+/** 把任意中断/超时错误归一成 LlmRequestTimeoutError；非中断错误原样返回。 */
+function normalizeAbortError(error: unknown, signal: AbortSignal | undefined): unknown {
+  if (isAbortError(error)) {
+    const reason = signal?.reason;
+    const detail = reason instanceof Error ? reason.message : typeof reason === "string" ? reason : (error as Error).message;
+    return new LlmRequestTimeoutError(`LLM request aborted/timed out: ${detail ?? "aborted"}`, { cause: error });
+  }
+  return error;
+}
 
 type SseEvent = {
   event?: string;
@@ -96,31 +140,63 @@ async function assertOk(response: Response) {
   throw new LlmHttpError(response.status, response.headers, await response.text());
 }
 
-async function* parseSseBody(body: NonNullable<Response["body"]>): AsyncGenerator<SseEvent> {
+async function* parseSseBody(
+  body: NonNullable<Response["body"]>,
+  signal?: AbortSignal
+): AsyncGenerator<SseEvent> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const read = await reader.read();
-    if (read.done) {
-      break;
-    }
-    buffer += decoder.decode(read.value, { stream: true });
-    const parts = buffer.split(/\r?\n\r?\n/u);
-    buffer = parts.pop() ?? "";
-    for (const part of parts) {
-      const event = parseSsePart(part);
-      if (event) {
-        yield event;
-      }
+  // 中断时主动 cancel reader，让挂起的 reader.read() 立刻 reject，while 循环以明确错误退出而非永久 park。
+  const onAbort = () => {
+    void reader.cancel(signal?.reason).catch(() => {});
+  };
+  if (signal) {
+    if (signal.aborted) {
+      onAbort();
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
     }
   }
 
-  buffer += decoder.decode();
-  const final = parseSsePart(buffer);
-  if (final) {
-    yield final;
+  try {
+    while (true) {
+      if (signal?.aborted) {
+        throw normalizeAbortError(signal.reason ?? new Error("aborted"), signal);
+      }
+      let read: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        read = await reader.read();
+      } catch (error) {
+        throw normalizeAbortError(error, signal);
+      }
+      // reader.cancel() 会让挂起的 read() 以 {done:true} 平静收尾（而非 reject）——若收尾是中断导致的，
+      // 必须抛错而非当作正常 EOF，否则挂死的流会被误判为"已完整读完"。
+      if (signal?.aborted) {
+        throw normalizeAbortError(signal.reason ?? new Error("aborted"), signal);
+      }
+      if (read.done) {
+        break;
+      }
+      buffer += decoder.decode(read.value, { stream: true });
+      const parts = buffer.split(/\r?\n\r?\n/u);
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        const event = parseSsePart(part);
+        if (event) {
+          yield event;
+        }
+      }
+    }
+
+    buffer += decoder.decode();
+    const final = parseSsePart(buffer);
+    if (final) {
+      yield final;
+    }
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 
@@ -219,8 +295,13 @@ class AnthropicCompatibleStream implements LlmStream {
   private id = "msg-stream";
   private stopReason: string | undefined;
   private finalPromise: Promise<LlmCreateResponse> | undefined;
+  // 消费（含中断/超时）出错时记下来：让 async 迭代器的 next() 也抛出，而不是静默结束 for-await。
+  private consumeError: unknown;
 
-  constructor(private readonly body: NonNullable<Response["body"]>) {}
+  constructor(
+    private readonly body: NonNullable<Response["body"]>,
+    private readonly signal?: AbortSignal
+  ) {}
 
   [Symbol.asyncIterator](): AsyncIterator<LlmStreamEvent> {
     let index = 0;
@@ -235,6 +316,10 @@ class AnthropicCompatibleStream implements LlmStream {
           index += 1;
           return { value, done: false };
         }
+        // 已消费完所有缓冲事件且流已结束——若消费因中断/超时出错，在此抛出（而非静默结束迭代）。
+        if (this.consumeError !== undefined) {
+          throw this.consumeError;
+        }
         return { value: undefined, done: true };
       }
     };
@@ -247,13 +332,16 @@ class AnthropicCompatibleStream implements LlmStream {
   private start() {
     if (!this.finalPromise) {
       this.finalPromise = this.consume();
+      // 防未处理拒绝：消费失败时仅迭代器消费（未 await finalPromise）的路径也不应触发 unhandledRejection；
+      // getFinalMessage() 仍返回同一个会拒绝的 promise，错误照常传播给它的调用方。
+      this.finalPromise.catch(() => {});
     }
     return this.finalPromise;
   }
 
   private async consume(): Promise<LlmCreateResponse> {
     try {
-      for await (const event of parseSseBody(this.body)) {
+      for await (const event of parseSseBody(this.body, this.signal)) {
         this.applyEvent(event);
         const llmEvent: LlmStreamEvent = {
           type: eventType(event)
@@ -265,6 +353,10 @@ class AnthropicCompatibleStream implements LlmStream {
         this.flushWaiters();
       }
       return this.finalMessage();
+    } catch (error) {
+      // 记下消费错误：迭代器 next() 与 getFinalMessage() 都据此抛出，中断/超时不会被悄悄吞掉。
+      this.consumeError = error;
+      throw error;
     } finally {
       this.done = true;
       this.flushWaiters();
@@ -346,26 +438,44 @@ export function createAnthropicCompatibleTransport(
 
   return {
     async create(params) {
-      const response = await fetchImpl(messagesEndpoint(provider.baseUrl), {
-        method: "POST",
-        headers: headers(provider, anthropicVersion),
-        body: JSON.stringify(requestBody(params, false))
-      });
+      const signal = resolveSignal(params);
+      let response: Response;
+      try {
+        response = await fetchImpl(messagesEndpoint(provider.baseUrl), {
+          method: "POST",
+          headers: headers(provider, anthropicVersion),
+          body: JSON.stringify(requestBody(params, false)),
+          ...(signal ? { signal } : {})
+        });
+      } catch (error) {
+        throw normalizeAbortError(error, signal);
+      }
       await assertOk(response);
-      return normalizeResponse(await response.json());
+      try {
+        return normalizeResponse(await response.json());
+      } catch (error) {
+        throw normalizeAbortError(error, signal);
+      }
     },
 
     async stream(params) {
-      const response = await fetchImpl(messagesEndpoint(provider.baseUrl), {
-        method: "POST",
-        headers: headers(provider, anthropicVersion),
-        body: JSON.stringify(requestBody(params, true))
-      });
+      const signal = resolveSignal(params);
+      let response: Response;
+      try {
+        response = await fetchImpl(messagesEndpoint(provider.baseUrl), {
+          method: "POST",
+          headers: headers(provider, anthropicVersion),
+          body: JSON.stringify(requestBody(params, true)),
+          ...(signal ? { signal } : {})
+        });
+      } catch (error) {
+        throw normalizeAbortError(error, signal);
+      }
       await assertOk(response);
       if (!response.body) {
         throw new Error("LLM provider returned an empty stream body");
       }
-      return new AnthropicCompatibleStream(response.body);
+      return new AnthropicCompatibleStream(response.body, signal);
     }
   };
 }

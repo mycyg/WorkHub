@@ -26,6 +26,11 @@ export type AgentLoopBudget = RunBudget & Partial<SandboxBudget> & {
   providerRetryBaseDelayMs?: number;
   /** 单次重试延迟上限（毫秒，默认 60000）。findings[#49]：钳住上游 Retry-After，防恶意/异常上游 park worker 数小时。 */
   providerRetryMaxDelayMs?: number;
+  /**
+   * 单次 provider HTTP/流请求超时（毫秒，默认 120000）。挂死的连接（fetch 永不完成 / 流 reader 永不结束）
+   * 不再无限 park worker——超时即中断并抛 llm_request_timeout，由重试层当瞬态网络错误重试。
+   */
+  providerRequestTimeoutMs?: number;
 };
 
 export type AgentLoopUsage = {
