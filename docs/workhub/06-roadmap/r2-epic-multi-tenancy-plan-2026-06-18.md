@@ -70,6 +70,14 @@ Introduce a TenantResolver used by createHumanActor: resolve active workspace fr
 - **涉及文件**：apps/api/src/middleware/auth.ts, apps/api/src/services/tenant-resolver.ts, packages/config/src/auth.ts, apps/api/src/auth.test.ts
 - **测试门**：node --test: actor for a user with a default membership resolves to that workspace's org/workspace; user with no membership falls back to the constant; user with two memberships + override header resolves the requested one and REJECTS an override for a workspace they don't belong to. Real-PG smoke: seed two workspaces + a user member of only workspace A, assert resolved actor.workspaceId=A and an override to B is denied.
 
+> **✅ Phase 2 已完成、全 CI 绿（纯派生+常量兜底，零可观测变化）。**
+> - **仓库**：`memberships.ts` 加 `resolveDefaultTenant(userId)`→`{workspaceId, orgId}`（innerJoin workspaces 取 org_id；无默认成员→null）。
+> - **解析器**：`apps/api/src/middleware/auth.ts` 加 `resolveHumanActor(deps, user)`（async）——`deps.memberships` 存在且有默认成员行→用其工作区+org；否则回退 `createHumanActor` 常量。4 个中间件（current/optional/require-local/optional-local）的 `c.set("actor", ...)` 改 `await resolveHumanActor`。`AuthDependencies.memberships?` OPTIONAL + `getDefaultAuthDependencies` 注入 `createWorkspaceMembershipRepository`。
+> - **零变化保证**：Phase 1 的 seed 让现有用户都有指向**默认工作区**的默认成员 → 解析结果 == 今天常量；密码注册尚未建成员的用户 + 单测不传仓库 → 走常量兜底。只有真实非默认工作区成员出现时 actor 租户才开始区分。
+> - **测试**：`auth.test.ts` +3 测（默认成员→派生该工作区/org；无成员→常量兜底；无仓库→常量）。`r2-pg-redis-smoke` 加真 PG：建非默认工作区+成员→`resolveDefaultTenant` 返回该工作区(≠常量)、org 经 join 派生、无成员→null。`@workhub/api` 266 测 + `pnpm -r typecheck`(16 包) 全绿。
+> - **本刀刻意未含（缩小爆炸半径）**：override-header 多工作区切换（open Q #2，单租户不需要，且不读 header=无切换绕过面）、createAiActor/createSystemActor 从 work_item/agent_run 继承租户（Phase 3 激活 scope 检查时再做）、per-userId 成员缓存（先正确后性能，避免失效漏洞）、密码注册建默认成员（Phase 3 整合）。
+> - **⏭️ 下一刀 = Phase 3（最高风险）**：actor.workspaceId 现在会变了 → 既有 scopeMatches/projectScopeMatches/policyAppliesToActor 变「活」；审计 read-by-id 路径确实调 canView* 并传 scope、修 pages.ts:394 团队技能页读常量、给默认项目挑选加 DB 级工作区谓词。
+
 ### Phase 3：Phase 3 — Activate inert scope checks + close the by-id leak (highest risk)
 
 With actor.workspaceId now varying, the existing checks become live. Audit and tighten the read-by-explicit-id paths that today trust canView*: ensure canViewProjectDrive/canViewWorkItemRecord are actually invoked on every project/work-item/drive/meeting fetch-by-id, and that scope is passed (the ResourceScope built from actor — see services/drive-pages.ts:429, approvals.ts:398-399 for existing construction). Fix team-skills page reading the constant (apps/api/src/routes/pages.ts:394 → use actor.workspaceId). Add a DB-level workspace predicate on the default-project-pick and any cross-project enumeration as defense-in-depth (drive.ts/meetings.ts findProject already do this; replicate for projects.listForWorkspace consumers).

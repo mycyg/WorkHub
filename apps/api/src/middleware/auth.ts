@@ -11,6 +11,7 @@ import {
   createClientDeviceRepository,
   createCredentialRepository,
   createSessionRepository,
+  createWorkspaceMembershipRepository,
   generateSessionToken,
   getSharedDatabaseClient,
   createUserRepository,
@@ -24,7 +25,8 @@ import {
   type SessionRow,
   type UserAuthRow,
   type UserRepository,
-  type WorkHubDatabaseClient
+  type WorkHubDatabaseClient,
+  type WorkspaceMembershipRepository
 } from "@workhub/db";
 
 import { getDefaultPresenceStore } from "../broker/presence.js";
@@ -66,6 +68,9 @@ export type AuthDependencies = {
   sessions?: SessionRepository;
   // R2 auth epic：口令凭据仓库为 OPTIONAL——仅密码注册/登录路由用；nickname 模式不触及。
   credentials?: CredentialRepository;
+  // R2 多租户 epic：成员仓库为 OPTIONAL——提供时 actor 租户从默认成员行派生，否则回退 config 常量。
+  // 单测不传则 actor 走常量（与今天一致）；生产注入后因 seed 让现有用户都指向默认工作区而零可观测变化。
+  memberships?: WorkspaceMembershipRepository;
   settings?: Settings;
   now?: () => Date;
   touchUser?: (userId: string) => void | Promise<void>;
@@ -84,6 +89,7 @@ export function getDefaultAuthDependencies(): AuthDependencies {
     devices: createClientDeviceRepository(defaultDbClient.db),
     sessions: createSessionRepository(defaultDbClient.db),
     credentials: createCredentialRepository(defaultDbClient.db),
+    memberships: createWorkspaceMembershipRepository(defaultDbClient.db),
     touchUser: (userId) => presence.touchUser(userId),
     forgetUser: (userId) => presence.forgetUser(userId)
   };
@@ -245,6 +251,29 @@ export function createHumanActor(user: UserAuthRow, runtimeSettings: Settings = 
     orgId: runtimeSettings.auth.defaultOrgId,
     workspaceId: runtimeSettings.auth.defaultWorkspaceId
   };
+}
+
+// R2 多租户 epic Phase 2：从成员关系派生 human actor 租户。提供 memberships 仓库时用默认成员行的
+// 工作区+org；无默认成员（或未提供仓库）回退单租户常量。因 seed 让现有用户都有指向默认工作区的默认成员，
+// 解析结果 == 今天常量产出 → 零可观测变化；只有真实第二工作区+成员出现时才开始区分。
+export async function resolveHumanActor(deps: AuthDependencies, user: UserAuthRow): Promise<AuthActor> {
+  const runtimeSettings = getAuthSettings(deps);
+  if (deps.memberships) {
+    const tenant = await deps.memberships.resolveDefaultTenant(user.id);
+    if (tenant) {
+      return {
+        kind: "human",
+        id: user.id,
+        label: user.nickname,
+        userId: user.id,
+        isAdmin: user.isAdmin,
+        orgId: tenant.orgId,
+        workspaceId: tenant.workspaceId
+      };
+    }
+  }
+  // 无成员行 → 单租户常量兜底（滚动迁移期 / 密码注册尚未建成员的用户 / 单测不传仓库）。
+  return createHumanActor(user, runtimeSettings);
 }
 
 export function createAiActor(
@@ -420,7 +449,7 @@ export function createCurrentUserMiddleware(source: AuthDependencySource = getDe
     const deps = resolveAuthDependencies(source);
     const user = await resolveCurrentUser(c, deps);
     c.set("currentUser", user);
-    c.set("actor", createHumanActor(user, getAuthSettings(deps)));
+    c.set("actor", await resolveHumanActor(deps, user));
     await next();
   });
 }
@@ -431,7 +460,7 @@ export function createOptionalCurrentUserMiddleware(source: AuthDependencySource
     const user = await resolveOptionalCurrentUser(c, deps);
     if (user) {
       c.set("currentUser", user);
-      c.set("actor", createHumanActor(user, getAuthSettings(deps)));
+      c.set("actor", await resolveHumanActor(deps, user));
     }
     await next();
   });
@@ -444,7 +473,7 @@ export function createRequireLocalClientMiddleware(source: AuthDependencySource 
     const device = await resolveCurrentClientDevice(c, deps, user);
     c.set("currentUser", user);
     c.set("currentClientDevice", device);
-    c.set("actor", createHumanActor(user, getAuthSettings(deps)));
+    c.set("actor", await resolveHumanActor(deps, user));
     await next();
   });
 }
@@ -455,7 +484,7 @@ export function createOptionalLocalClientMiddleware(source: AuthDependencySource
     const user = await resolveCurrentUser(c, deps);
     const device = await resolveOptionalLocalClient(c, deps, user);
     c.set("currentUser", user);
-    c.set("actor", createHumanActor(user, getAuthSettings(deps)));
+    c.set("actor", await resolveHumanActor(deps, user));
     if (device) {
       c.set("currentClientDevice", device);
     }

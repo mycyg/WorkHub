@@ -320,7 +320,36 @@ async function main() {
       assert.ok(rejoin.id !== m1.id, "soft-delete frees the unique so the member can rejoin");
       assert.equal((await memberships.listForUser(memberUserId)).length, 1, "only the active membership is listed");
 
-      console.log("[r2-pg-redis-smoke] workspace membership partial-unique round-trip ok");
+      // Phase 2：resolveDefaultTenant 读成员行的工作区(+其 org)，而非写死常量——用一个非默认工作区证明区分。
+      const otherWorkspaceId = randomUUID();
+      await db
+        .insert(workspaces)
+        .values({
+          id: otherWorkspaceId,
+          orgId: settings.auth.defaultOrgId,
+          name: "R2 tenancy second workspace",
+          slug: `r2-ws-${otherWorkspaceId.slice(0, 8)}`
+        })
+        .onConflictDoNothing();
+      const tenantUserId = randomUUID();
+      await db
+        .insert(users)
+        .values({
+          id: tenantUserId,
+          nickname: `r2-tenant-${tenantUserId.slice(0, 8)}`,
+          cookieToken: `r2-tenant-cookie-${randomUUID()}`,
+          availabilityStatus: "free",
+          isAdmin: false
+        })
+        .onConflictDoNothing();
+      await memberships.create({ workspaceId: otherWorkspaceId, userId: tenantUserId, role: "owner", defaultWorkspace: true });
+      const resolvedTenant = await memberships.resolveDefaultTenant(tenantUserId);
+      assert.ok(resolvedTenant, "default tenant resolves for a member");
+      assert.equal(resolvedTenant.workspaceId, otherWorkspaceId, "tenant comes from the membership's workspace, not the constant");
+      assert.equal(resolvedTenant.orgId, settings.auth.defaultOrgId, "org is derived via the workspaces join");
+      assert.equal(await memberships.resolveDefaultTenant(randomUUID()), null, "no membership → null (caller falls back to constant)");
+
+      console.log("[r2-pg-redis-smoke] workspace membership partial-unique + tenant resolution round-trip ok");
     }
 
     const workItemService = createDbWorkItemService(createWorkItemRepository(db));

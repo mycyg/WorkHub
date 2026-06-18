@@ -13,12 +13,15 @@ import type {
   ClientDeviceRepository,
   CreateSessionInput,
   CreateUserCredentialInput,
+  CreateWorkspaceMembershipInput,
   CredentialRepository,
   SessionRepository,
   SessionRow,
   UserAuthRow,
   UserCredentialRow,
-  UserRepository
+  UserRepository,
+  WorkspaceMembershipRepository,
+  WorkspaceMembershipRow
 } from "@workhub/db";
 import type { WorkHubLocale } from "@workhub/contracts";
 
@@ -32,6 +35,7 @@ import {
   hashClientToken,
   issueSessionCookie,
   mintSession,
+  resolveHumanActor,
   resolveStreamUser,
   validateNickname,
   type AuthDependencies,
@@ -358,6 +362,64 @@ class MemoryCredentials implements CredentialRepository {
       return null;
     }
     row.emailVerifiedAt = at;
+    row.updatedAt = at;
+    return row;
+  }
+}
+
+function membershipRow(input: CreateWorkspaceMembershipInput, seq = 1): WorkspaceMembershipRow {
+  return {
+    id: input.id ?? `50000000-0000-4000-8000-${String(seq).padStart(12, "0")}`,
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    role: input.role ?? "member",
+    defaultWorkspace: input.defaultWorkspace ?? false,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+class MemoryMemberships implements WorkspaceMembershipRepository {
+  public rows: WorkspaceMembershipRow[] = [];
+
+  // 工作区→org 映射（resolveDefaultTenant 在真库里靠 join workspaces 取 org；fake 用预置 map）。
+  constructor(private orgByWorkspace: Record<string, string> = {}) {}
+
+  async listForUser(userId: string) {
+    return this.rows.filter((row) => row.userId === userId && row.deletedAt === null);
+  }
+
+  async findActiveForUserWorkspace(userId: string, workspaceId: string) {
+    return (
+      this.rows.find((row) => row.userId === userId && row.workspaceId === workspaceId && row.deletedAt === null) ?? null
+    );
+  }
+
+  async resolveDefaultWorkspace(userId: string) {
+    return this.rows.find((row) => row.userId === userId && row.defaultWorkspace && row.deletedAt === null) ?? null;
+  }
+
+  async resolveDefaultTenant(userId: string) {
+    const row = this.rows.find((candidate) => candidate.userId === userId && candidate.defaultWorkspace && candidate.deletedAt === null);
+    if (!row) {
+      return null;
+    }
+    return { workspaceId: row.workspaceId, orgId: this.orgByWorkspace[row.workspaceId] ?? "00000000-0000-4000-8000-0000000000fa" };
+  }
+
+  async create(input: CreateWorkspaceMembershipInput) {
+    const row = membershipRow(input, this.rows.length + 1);
+    this.rows.push(row);
+    return row;
+  }
+
+  async softDelete(id: string, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === id && candidate.deletedAt === null);
+    if (!row) {
+      return null;
+    }
+    row.deletedAt = at;
     row.updatedAt = at;
     return row;
   }
@@ -997,4 +1059,57 @@ test("POST /logout revokes the active session in password mode", async () => {
 
   // 登出后同一 cookie 不再鉴权
   assert.equal((await app.request("/who", { headers: { Cookie: cookiePair } })).status, 401);
+});
+
+// ——— R2 multi-tenancy epic Phase 2：从成员关系派生 actor 租户 ———
+
+test("resolveHumanActor derives tenant from the user's default membership", async () => {
+  const runtimeSettings = settings();
+  const alice = user({ id: "10000000-0000-4000-8000-0000000000c1", nickname: "alice" });
+  const workspaceId = "22220000-0000-4000-8000-000000000001";
+  const orgId = "11110000-0000-4000-8000-000000000001";
+  const memberships = new MemoryMemberships({ [workspaceId]: orgId });
+  await memberships.create({ workspaceId, userId: alice.id, role: "owner", defaultWorkspace: true });
+
+  const deps: AuthDependencies = {
+    users: new MemoryUsers([alice]),
+    devices: new MemoryDevices([]),
+    memberships,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const actor = await resolveHumanActor(deps, alice);
+  assert.equal(actor.workspaceId, workspaceId);
+  assert.equal(actor.orgId, orgId);
+  assert.equal(actor.userId, alice.id);
+  assert.equal(actor.kind, "human");
+});
+
+test("resolveHumanActor falls back to the single-tenant constant when there is no membership", async () => {
+  const runtimeSettings = settings();
+  const alice = user({ nickname: "alice" });
+  const deps: AuthDependencies = {
+    users: new MemoryUsers([alice]),
+    devices: new MemoryDevices([]),
+    memberships: new MemoryMemberships(), // 无成员行
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const actor = await resolveHumanActor(deps, alice);
+  assert.equal(actor.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(actor.orgId, runtimeSettings.auth.defaultOrgId);
+});
+
+test("resolveHumanActor uses the constant when no memberships repository is wired (today's default)", async () => {
+  const runtimeSettings = settings();
+  const alice = user({ nickname: "alice" });
+  const deps: AuthDependencies = {
+    users: new MemoryUsers([alice]),
+    devices: new MemoryDevices([]),
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const actor = await resolveHumanActor(deps, alice);
+  assert.equal(actor.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(actor.orgId, runtimeSettings.auth.defaultOrgId);
 });
