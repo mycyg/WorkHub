@@ -109,3 +109,17 @@ Add reserved_outstanding into the usage surfaced by /api/cost/usage and /api/pag
 7. **并发门测在 r1-pg-agent-run-smoke**（真 PG）：两个不同 work-item 在超额团队并发入队 → 恰一个成功、另一个 402；reconcile 释放后后续入队又可成功；崩溃租约 releaseExpired 释放。
 
 **Phase 2（下一刀，最大/最关键）**：把 reserve 接进 enqueue（拒绝→同 402）、reconcile 进 run 终态、releaseExpired 进认领恢复、refreshLease 进心跳；getDefaultAgentRunQueue 注入真 reservationRepo，内存队列默认内存预留 store 使单测不受影响；翻红→绿并发门。须整体落地（只接 reserve 不接 reconcile/release 会永久占额）。
+
+## Phase 2 完成（2026-06-18）
+
+- **`d5bcce54`** 接线：reserve→enqueue（create-run→reserve→compensate，拒绝置 queued run failed + 抛同款 402）、
+  reconcile→executeRun finally、releaseExpired→recoverExpiredClaims、refreshLease→心跳；reservationRepo 为队列
+  OPTIONAL 选项（内存队列不传 → 245 单测零影响），getDefaultAgentRunQueue 注入 PG 仓库。
+- **`0aa5d67a`** agent-runner 级单测：deny→402→compensate（fake repo，无需 PG）+ 切允许后同 work-item 可再入队。
+- **真 PG 并发 deny 门**（r1-pg-agent-run-smoke）：team/day cap 压到一个 run 额度，两个不同 work-item 同团队并发入队
+  → advisory 锁 + 锁内读 outstanding 串行化 → 恰一个成功、一个 402 budget_exhausted，胜者有 active 预留；结束还原 cap。
+- 覆盖：reserve 判定数学（cost 纯逻辑 9 单测）+ 接线 deny/补偿（agent-runner 单测）+ 真 PG reserve-allow（pilot-stack-smoke）
+  + 真 PG 并发 deny（r1-pg-smoke）。
+
+**Phase 3（剩余）**：把 reserved_outstanding 并进 /api/cost/usage + /api/pages/cost（看板 remaining 反映在飞持有，
+additive，不动 decideRunBudget）；r1-pg-smoke 加崩溃释放断言（置过期租约 → releaseExpired → 额度释放、之前被堵的入队又通过）。

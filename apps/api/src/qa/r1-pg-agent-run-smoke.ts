@@ -11,9 +11,11 @@ import {
   acceptedDeliverableChanges,
   branches,
   budgetPolicies,
+  budgetReservations,
   costLedgerEntries,
   createAgentRunRepository,
   createAuditLogRepository,
+  createBudgetReservationRepository,
   createClientDeviceRepository,
   createDatabaseClient,
   createDbBudgetPolicyStore,
@@ -1815,6 +1817,90 @@ async function main() {
       throw new Error(
         `Expected task item patch audit payload, got ${JSON.stringify(structuredTaskAudit?.detailJson)}`
       );
+    }
+
+    // R2 原子预算：真 PG 并发 deny 门。把 team/day cap 压到一个 run 的额度，两个不同 work-item 在同团队
+    // 并发入队 → reserve 的 advisory 锁 + 锁内读 outstanding 串行化 → 恰一个成功、另一个 402（decideBudget
+    // 本身都放行，TOCTOU 由预留挡住）。自包含：用自己的 work-item + 队列，结束后还原 team/day cap。
+    const teamDayOriginal = policyListBeforeBody.data.find((policy) => policy.id === "pcost-team-day-v0");
+    if (!teamDayOriginal) {
+      throw new Error("Expected pcost-team-day-v0 policy to exist for reservation concurrency gate.");
+    }
+    const reserveCapTokens = settings.budgets.runTokens;
+    const teamDayCapOverride = await app.request("/api/cost/policies/team/pcost-team-day-v0", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ max_tokens: reserveCapTokens, max_cost_cny: "1000000", on_warning: "notify" })
+    });
+    if (teamDayCapOverride.status !== 200) {
+      throw new Error(`Expected team/day reservation-cap override 200, got ${teamDayCapOverride.status}: ${await teamDayCapOverride.text()}`);
+    }
+    const reservationRepoForGate = createBudgetReservationRepository(db);
+    const reserveQueueOptions = {
+      settings,
+      persistence,
+      policyStore,
+      ledgerStore,
+      reservationRepo: reservationRepoForGate,
+      confidence: false,
+      humanReserved: false,
+      proposals: false,
+      notifications: false,
+      eventBus: false
+    } satisfies Parameters<typeof createInMemoryAgentRunQueue>[0];
+    const reserveWorkItemIds = [randomUUID(), randomUUID()] as const;
+    for (const [index, id] of reserveWorkItemIds.entries()) {
+      await db.insert(workItems).values({
+        id,
+        code: `RES-${Date.now().toString(36)}-${index}-${randomUUID().slice(0, 6)}`,
+        projectId: defaultSeedIds.projectId,
+        workspaceId: settings.auth.defaultWorkspaceId,
+        submitterUserId: seedUser.id,
+        title: `Budget reservation concurrency ${index}`,
+        rawDescription: "Atomic budget reservation concurrency gate.",
+        summaryMd: "Reservation concurrency smoke.",
+        status: "spec_ready",
+        mode: "worker"
+      });
+    }
+    const reserveQueueA: AgentRunQueue = createInMemoryAgentRunQueue(reserveQueueOptions);
+    const reserveQueueB: AgentRunQueue = createInMemoryAgentRunQueue(reserveQueueOptions);
+    const reserveResults = await Promise.allSettled([
+      reserveQueueA.enqueue({ workItemId: reserveWorkItemIds[0], actorId: seedUser.id, title: "Budget reserve A" }),
+      reserveQueueB.enqueue({ workItemId: reserveWorkItemIds[1], actorId: seedUser.id, title: "Budget reserve B" })
+    ]);
+    const reserveFulfilled = reserveResults.filter((result) => result.status === "fulfilled");
+    const reserveRejected = reserveResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    const reserveRejectedReason = reserveRejected?.reason as { status?: unknown; code?: unknown } | undefined;
+    const winnerRunId = reserveFulfilled[0]?.status === "fulfilled" ? reserveFulfilled[0].value.run_id : undefined;
+    const winnerActiveReservations = winnerRunId
+      ? await db.select().from(budgetReservations).then((rows) =>
+          rows.filter((row) => row.runId === winnerRunId && row.status === "active")
+        )
+      : [];
+    if (
+      reserveFulfilled.length !== 1
+      || !reserveRejected
+      || reserveRejectedReason?.status !== 402
+      || reserveRejectedReason.code !== "budget_exhausted"
+      || winnerActiveReservations.length === 0
+    ) {
+      throw new Error(`Expected exactly one concurrent enqueue to win the team/day budget reservation, got ${JSON.stringify({
+        fulfilled: reserveFulfilled.length,
+        rejected: Boolean(reserveRejected),
+        rejectedStatus: reserveRejectedReason?.status,
+        rejectedCode: reserveRejectedReason?.code,
+        winnerActiveReservations: winnerActiveReservations.length
+      })}`);
+    }
+    // 还原 team/day cap，避免影响本 smoke 后续/重跑。
+    const teamDayRestore = await app.request("/api/cost/policies/team/pcost-team-day-v0", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ max_tokens: teamDayOriginal.max_tokens, max_cost_cny: teamDayOriginal.max_cost_cny, on_warning: "notify" })
+    });
+    if (teamDayRestore.status !== 200) {
+      throw new Error(`Expected team/day reservation-cap restore 200, got ${teamDayRestore.status}: ${await teamDayRestore.text()}`);
     }
 
     const summary = {
