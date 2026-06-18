@@ -253,6 +253,23 @@ test("migration 0026 provisions citext invite email, unique token hash, and a pe
   assert.match(migration, /user_invites_pending_idx[\s\S]*WHERE "accepted_at" IS NULL AND "deleted_at" IS NULL/u);
 });
 
+test("team-readiness notification prefs: users exposes the per-type mute column with a default-off empty array", () => {
+  // 列加在 users 上（jsonb 字符串数组，默认空数组=不静音=DEFAULT-OFF）。
+  assert.equal(users.mutedNotificationTypes.name, "muted_notification_types");
+});
+
+test("migration 0027 adds the muted notification types column default-off (idempotent)", () => {
+  const migration = readFileSync(
+    join(process.cwd(), "migrations", "0027_user_notification_prefs.sql"),
+    "utf8"
+  );
+  // 加列、jsonb、NOT NULL、默认空数组、IF NOT EXISTS 幂等。
+  assert.match(
+    migration,
+    /ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "muted_notification_types" jsonb NOT NULL DEFAULT '\[\]'::jsonb/u
+  );
+});
+
 test("enum drift is closed in the shared contract package", () => {
   assert.deepEqual(confidenceGrades, ["low", "medium", "high"]);
   assert.equal(escalationTriggers.includes("user_unsatisfied"), true);

@@ -62,6 +62,7 @@ function user(): DbUserAuthRow {
     availabilityStatus: "free",
     availabilityText: null,
     availabilityUpdatedAt: null,
+    mutedNotificationTypes: [],
     isAdmin: false,
     deletedAt: null,
     deletedByUserId: null,

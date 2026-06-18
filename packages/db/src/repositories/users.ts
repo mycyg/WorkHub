@@ -40,6 +40,10 @@ export type UserRepository = {
   // 通知收件人活跃度过滤要分辨「不存在」与「已停用」——故不能复用只回活跃用户的 findActiveById；
   // 缺失 id 不在结果里（调用方据此 fail-open 视为活跃，只在确认 deletedAt 时丢弃）。OPTIONAL（假仓库不实现则跳过过滤）。
   findRefsByIds?: (ids: string[]) => Promise<Array<Pick<UserAuthRow, "id" | "deletedAt">>>;
+  // 团队就绪 must-have（通知偏好-按类型静音）：读/写该用户被静音的通知类型清单。
+  // 空/缺失=不静音（DEFAULT-OFF）。OPTIONAL（假仓库不实现则通知路径跳过静音、按今天创建）。
+  getMutedNotificationTypes?: (userId: string) => Promise<string[]>;
+  setMutedNotificationTypes?: (userId: string, types: string[]) => Promise<UserAuthRow | null>;
 };
 
 export function createUserRepository(db: WorkHubDb): UserRepository {
@@ -176,6 +180,26 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
         .select({ id: users.id, deletedAt: users.deletedAt })
         .from(users)
         .where(inArray(users.id, ids));
+    },
+
+    async getMutedNotificationTypes(userId) {
+      // 团队就绪 must-have：读该用户被静音的通知类型；行不存在/列为空一律回 []（DEFAULT-OFF）。
+      const rows = await db
+        .select({ mutedNotificationTypes: users.mutedNotificationTypes })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      return rows[0]?.mutedNotificationTypes ?? [];
+    },
+
+    async setMutedNotificationTypes(userId, types) {
+      const rows = await db
+        .update(users)
+        .set({ mutedNotificationTypes: types, updatedAt: new Date() })
+        .where(eq(users.id, userId))
+        .returning();
+      const user = rows[0] ?? null;
+      return user && user.deletedAt === null ? user : null;
     }
   };
 }

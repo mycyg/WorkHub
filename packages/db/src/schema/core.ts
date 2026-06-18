@@ -55,6 +55,9 @@ export const users = pgTable(
     availabilityText: varchar("availability_text", { length: 128 }),
     availabilityUpdatedAt: timestampTz("availability_updated_at"),
     isAdmin: boolean("is_admin").notNull().default(false),
+    // 团队就绪 must-have（通知偏好-按类型静音）：被静音的通知类型清单（jsonb 字符串数组）。
+    // 空数组=不静音=既有行为逐字不变（DEFAULT-OFF 不变量）。通知创建路径命中此列则跳过、不建。
+    mutedNotificationTypes: jsonb("muted_notification_types").$type<string[]>().notNull().default([]),
     deletedAt: timestampTz("deleted_at"),
     // R2 auth epic：记录是谁停用/离职了该账号（与 softDeleteColumns() 约定一致）。自引用 set null。
     deletedByUserId: uuid("deleted_by_user_id").references((): AnyPgColumn => users.id, { onDelete: "set null" }),

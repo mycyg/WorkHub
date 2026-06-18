@@ -35,6 +35,53 @@ export function createNotificationRoutes(deps: NotificationRoutesDependencies = 
     return c.json({ ok: true, data });
   });
 
+  // 团队就绪 must-have（通知偏好-按类型静音）：读当前用户被静音的通知类型清单。
+  routes.get("/preferences", createCurrentUserMiddleware(authSource), async (c) => {
+    const data = await service.getPreferences(c.var.currentUser.id);
+    return c.json({ ok: true, data });
+  });
+
+  // 写当前用户被静音的通知类型清单。校验：必须是去重后的非空字符串数组（空数组=不静音）。
+  routes.put("/preferences", createCurrentUserMiddleware(authSource), async (c) => {
+    let payload: unknown;
+    try {
+      payload = await c.req.json();
+    } catch {
+      throw new HTTPException(400, { message: "请求体必须是 JSON。" });
+    }
+    const raw = (payload as { muted_notification_types?: unknown } | null)?.muted_notification_types;
+    if (!Array.isArray(raw)) {
+      throw new HTTPException(400, { message: "muted_notification_types 必须是字符串数组。" });
+    }
+    if (raw.length > 100) {
+      throw new HTTPException(400, { message: "静音类型过多（上限 100 个）。" });
+    }
+    const cleaned: string[] = [];
+    const seen = new Set<string>();
+    for (const item of raw) {
+      if (typeof item !== "string") {
+        throw new HTTPException(400, { message: "muted_notification_types 的每一项都必须是字符串。" });
+      }
+      const trimmed = item.trim();
+      if (trimmed.length === 0) {
+        throw new HTTPException(400, { message: "通知类型不能为空。" });
+      }
+      if (trimmed.length > 64) {
+        throw new HTTPException(400, { message: "通知类型过长（上限 64 字符）。" });
+      }
+      if (!seen.has(trimmed)) {
+        seen.add(trimmed);
+        cleaned.push(trimmed);
+      }
+    }
+    try {
+      const data = await service.setPreferences(c.var.currentUser.id, cleaned);
+      return c.json({ ok: true, data });
+    } catch (error) {
+      handleNotificationError(error);
+    }
+  });
+
   routes.post("/:id/read", createCurrentUserMiddleware(authSource), async (c) => {
     try {
       const data = await service.markRead(c.req.param("id"), c.var.currentUser.id);

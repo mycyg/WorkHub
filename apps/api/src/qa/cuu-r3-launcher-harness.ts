@@ -40,6 +40,7 @@ export const cuuR3SmokeOwner: UserAuthRow = {
   availabilityStatus: "free",
   availabilityText: null,
   availabilityUpdatedAt: null,
+  mutedNotificationTypes: [],
   isAdmin: true,
   deletedAt: null,
   deletedByUserId: null,

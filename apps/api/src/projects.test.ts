@@ -36,6 +36,7 @@ function user(): UserAuthRow {
     availabilityStatus: "free",
     availabilityText: null,
     availabilityUpdatedAt: null,
+    mutedNotificationTypes: [],
     isAdmin: true,
     deletedAt: null,
     deletedByUserId: null,
