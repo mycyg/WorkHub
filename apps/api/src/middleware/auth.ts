@@ -62,9 +62,27 @@ export type AuthEnv = {
   Variables: AuthVariables;
 };
 
+// R2 audit 修复：注册/接受邀请要做跨表写（建 user → 建 credential[→ 建成员 → 标记邀请已用]）。
+// createUser 之后任一步失败都会留下孤儿 user 行并永久烧掉那个唯一昵称。把这组写聚成一个原子单元：
+// 生产注入 db.transaction 版（任一步抛即整笔回滚，不留孤儿、不烧昵称），测试注入假仓库则该 seam 缺席，
+// 路由回退到原顺序写（假仓库无真事务，靠下方补偿/顺序语义保持单测绿）。与 cost-policy-store 同范式。
+export type AuthAtomicWriteRepos = {
+  users: Pick<UserRepository, "createUser">;
+  credentials: Pick<CredentialRepository, "createCredential">;
+  // OPTIONAL：注册不带成员/邀请写；接受邀请才两者皆有。显式写 | undefined 以兼容
+  // exactOptionalPropertyTypes（调用方可直接传 deps.memberships 这一可能 undefined 的值）。
+  memberships?: Pick<WorkspaceMembershipRepository, "create"> | undefined;
+  invites?: Pick<InviteRepository, "accept"> | undefined;
+};
+
+export type AuthAtomicWrites = <T>(write: (repos: AuthAtomicWriteRepos) => Promise<T>) => Promise<T>;
+
 export type AuthDependencies = {
   users: UserRepository;
   devices: ClientDeviceRepository;
+  // R2 audit 修复：把注册/接受邀请的跨表写包进单个 db.transaction（tx-bound 仓库）。OPTIONAL——
+  // 生产由 getDefaultAuthDependencies 注入真事务；假仓库不提供时路由回退顺序写（见 routes/auth.ts）。
+  atomicAuthWrites?: AuthAtomicWrites;
   // R2 auth epic：会话仓库为 OPTIONAL——仅 AUTH_MODE!='nickname' 时被查询；nickname 模式（默认）下整段跳过，
   // 单测不传则会话路径不参与（与原子预算 reservationRepo 同范式）。
   sessions?: SessionRepository;
@@ -87,14 +105,26 @@ let defaultDbClient: WorkHubDatabaseClient | undefined;
 
 export function getDefaultAuthDependencies(): AuthDependencies {
   defaultDbClient ??= getSharedDatabaseClient();
+  const dbClient = defaultDbClient;
   const presence = getDefaultPresenceStore();
   return {
-    users: createUserRepository(defaultDbClient.db),
-    devices: createClientDeviceRepository(defaultDbClient.db),
-    sessions: createSessionRepository(defaultDbClient.db),
-    credentials: createCredentialRepository(defaultDbClient.db),
-    memberships: createWorkspaceMembershipRepository(defaultDbClient.db),
-    invites: createInviteRepository(defaultDbClient.db),
+    users: createUserRepository(dbClient.db),
+    devices: createClientDeviceRepository(dbClient.db),
+    sessions: createSessionRepository(dbClient.db),
+    credentials: createCredentialRepository(dbClient.db),
+    memberships: createWorkspaceMembershipRepository(dbClient.db),
+    invites: createInviteRepository(dbClient.db),
+    // R2 audit 修复：注册/接受邀请的跨表写在同一事务内（tx-bound 仓库，任一步抛即整笔回滚）。
+    // tx 与 db 共享查询接口，故可现起 tx-bound 仓库——与 cost-policy-store 的原子审计写同范式。
+    atomicAuthWrites: (write) =>
+      dbClient.db.transaction((tx) =>
+        write({
+          users: createUserRepository(tx),
+          credentials: createCredentialRepository(tx),
+          memberships: createWorkspaceMembershipRepository(tx),
+          invites: createInviteRepository(tx)
+        })
+      ),
     touchUser: (userId) => presence.touchUser(userId),
     forgetUser: (userId) => presence.forgetUser(userId)
   };

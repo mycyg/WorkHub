@@ -68,11 +68,21 @@ export function createAdminClaimThrottle(options: AdminClaimThrottleOptions = {}
   };
 }
 
-// XFF 首跳 / x-real-ip 作为 key；无代理的 LAN pilot 取不到时回退 "global"——
-// 此时即变成一个全局桶，恰好能限制对共享口令的暴力猜测（不依赖每客户端区分）。
-export function adminClaimClientKey(headers: {
-  get: (name: string) => string | null | undefined;
-}): string {
+// 审计修复：默认 key 是常量 "global" 桶——绝不信任客户端可伪造的 X-Forwarded-For / x-real-ip。
+// 之前用 XFF 首跳作 key，攻击者只需每次请求换一个 XFF 值即可让每次猜测落入不同桶、彻底绕过锁定。
+// S1 是单进程 LAN pilot，本就没有可信反代终结连接，全局桶恰好限制对「共享」管理员口令的在线暴力猜测
+// （口令全局唯一，无需按客户端区分）。仅当确实部署在可信反代之后（且配置了受信代理白名单/跳数）
+// 时，XFF 才可信——届时传 trustedProxy=true 才会启用按客户端 IP 分桶；默认 LAN 模型下一律 "global"。
+export function adminClaimClientKey(
+  headers: {
+    get: (name: string) => string | null | undefined;
+  },
+  options: { trustedProxy?: boolean } = {}
+): string {
+  if (!options.trustedProxy) {
+    return "global";
+  }
+  // 仅在显式配置了可信反代时才信任转发头（当前 LAN pilot 不会进到这里）。
   const forwarded = headers.get("x-forwarded-for");
   if (forwarded) {
     const first = forwarded.split(",")[0]?.trim();

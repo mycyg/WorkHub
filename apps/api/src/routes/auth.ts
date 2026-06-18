@@ -38,6 +38,7 @@ import {
   resolveOptionalCurrentUser,
   toIdentityResponse,
   validateNickname,
+  type AuthAtomicWriteRepos,
   type AuthDependencies,
   type AuthDependencySource,
   type AuthEnv
@@ -75,6 +76,49 @@ function passwordModeEnabled(deps: AuthDependencies): boolean {
 // 裸 PG 唯一冲突（23505）→ 路由层转 409，不冒泡成 500（mirror drive/proposals 的 isXxxUniqueViolation）。
 function isUniqueViolation(error: unknown): boolean {
   return !!error && typeof error === "object" && (error as { code?: string }).code === "23505";
+}
+
+// 唯一冲突就地映射成 409（昵称/邮箱各自的文案），其余原样抛出。在事务内抛出即触发整笔回滚。
+async function createUserOr409(
+  users: AuthAtomicWriteRepos["users"],
+  input: Parameters<AuthAtomicWriteRepos["users"]["createUser"]>[0]
+) {
+  try {
+    return await users.createUser(input);
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new HTTPException(409, { message: "该昵称已被占用" });
+    }
+    throw error;
+  }
+}
+
+async function createCredentialOr409(
+  credentials: AuthAtomicWriteRepos["credentials"],
+  input: Parameters<AuthAtomicWriteRepos["credentials"]["createCredential"]>[0]
+) {
+  try {
+    return await credentials.createCredential(input);
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new HTTPException(409, { message: "该邮箱已注册" });
+    }
+    throw error;
+  }
+}
+
+// R2 audit 修复：把注册/接受邀请的跨表写跑成一个原子单元。注入了 atomicAuthWrites（生产真库）时
+// 在单事务内执行（任一步抛即整笔回滚，不留孤儿 user / 不烧唯一昵称 / 邀请不被消费）；未注入（测试假仓库）
+// 时回退到顺序写——直接用传入的 deps 仓库，行为与原逐步写一致。
+async function runAuthWrites<T>(
+  deps: AuthDependencies,
+  fallbackRepos: AuthAtomicWriteRepos,
+  write: (repos: AuthAtomicWriteRepos) => Promise<T>
+): Promise<T> {
+  if (deps.atomicAuthWrites) {
+    return deps.atomicAuthWrites(write);
+  }
+  return write(fallbackRepos);
 }
 
 export function createAuthRoutes(
@@ -173,30 +217,23 @@ export function createAuthRoutes(
     // 首管引导：零管理员实例的首个注册者直接建为 admin（建行前判定，避免多一次提权写）。
     const shouldBeAdmin = deps.users.hasAnyActiveAdmin ? !(await deps.users.hasAnyActiveAdmin()) : false;
 
-    let user;
-    try {
+    const credentials = deps.credentials;
+    // R2 audit 修复（孤儿 user + 烧昵称）：user+credential 两笔写要么都成功要么都不留痕。
+    // 生产经 atomicAuthWrites 在单事务内做（credential 失败则 createUser 回滚）；测试注入假仓库时
+    // 该 seam 缺席，回退到原顺序写——假仓库的 createCredential 不会在 createUser 成功后失败，
+    // 故顺序回退对单测语义不变（真库才有跨表失败窗口，那里走事务）。每步的 23505 在写点就地映射成
+    // 对应 409（昵称 vs 邮箱），异常向上冒泡即触发事务回滚，HTTP 语义与原逐步写逐字一致。
+    const user = await runAuthWrites(deps, { users: deps.users, credentials }, async ({ users, credentials: credentialsTx }) => {
       // cookieToken 在会话模式下是 vestigial，但列 NOT NULL，仍生成一个。
-      user = await deps.users.createUser({ nickname, cookieToken: makeCookieToken(), isAdmin: shouldBeAdmin });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new HTTPException(409, { message: "该昵称已被占用" });
-      }
-      throw error;
-    }
-
-    try {
-      await deps.credentials.createCredential({
-        userId: user.id,
+      const created = await createUserOr409(users, { nickname, cookieToken: makeCookieToken(), isAdmin: shouldBeAdmin });
+      await createCredentialOr409(credentialsTx, {
+        userId: created.id,
         email,
         passwordHash,
         passwordAlgo: currentPasswordAlgo()
       });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new HTTPException(409, { message: "该邮箱已注册" });
-      }
-      throw error;
-    }
+      return created;
+    });
 
     const { token } = await mintSession(deps, user, { authMethod: "password" });
     await issueSessionCookie(c, token, getAuthSettings(deps));
@@ -367,41 +404,43 @@ export function createAuthRoutes(
       throw new HTTPException(409, { message: "该邮箱已注册" });
     }
 
-    let user;
-    try {
-      user = await deps.users.createUser({ nickname, cookieToken: makeCookieToken() });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new HTTPException(409, { message: "该昵称已被占用" });
+    const credentials = deps.credentials;
+    const invites = deps.invites;
+    const passwordHash = await hashPassword(payload.password);
+    const workspaceId = invite.workspaceId ?? getAuthSettings(deps).auth.defaultWorkspaceId;
+    // R2 audit 修复（孤儿 user + 烧昵称）：建 user → 建凭据 →（建成员）→ 标记邀请已用，整组同进退。
+    // 生产在单事务内做（任一步抛即全回滚，邀请不被消费、昵称/邮箱不被烧）；假仓库注入时回退顺序写，
+    // 假仓库不会在中途失败，故单测语义不变（真库的跨表失败窗口才走事务）。
+    const user = await runAuthWrites(
+      deps,
+      { users: deps.users, credentials, memberships: deps.memberships, invites },
+      async ({ users, credentials: credentialsTx, memberships, invites: invitesTx }) => {
+        // invites 在本路由顶部已被 501 守卫，两条写路径（事务/顺序回退）都必带 invites——防御性兜底。
+        if (!invitesTx) {
+          throw new HTTPException(501, { message: "当前运行时不支持邀请" });
+        }
+        const created = await createUserOr409(users, { nickname, cookieToken: makeCookieToken() });
+        // 邀请即证明邮箱控制权（trust-on-invite）→ email_verified_at 置 at。
+        await createCredentialOr409(credentialsTx, {
+          userId: created.id,
+          email: invite.email,
+          passwordHash,
+          passwordAlgo: currentPasswordAlgo(),
+          emailVerifiedAt: at
+        });
+        // 按邀请赋予工作区成员（默认成员=actor 租户锚点）。
+        if (memberships) {
+          await memberships.create({
+            workspaceId,
+            userId: created.id,
+            role: invite.role as "member" | "admin" | "owner",
+            defaultWorkspace: true
+          });
+        }
+        await invitesTx.accept(invite.id, created.id, at);
+        return created;
       }
-      throw error;
-    }
-    try {
-      // 邀请即证明邮箱控制权（trust-on-invite）→ email_verified_at 置 at。
-      await deps.credentials.createCredential({
-        userId: user.id,
-        email: invite.email,
-        passwordHash: await hashPassword(payload.password),
-        passwordAlgo: currentPasswordAlgo(),
-        emailVerifiedAt: at
-      });
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new HTTPException(409, { message: "该邮箱已注册" });
-      }
-      throw error;
-    }
-    // 按邀请赋予工作区成员（默认成员=actor 租户锚点）。
-    if (deps.memberships) {
-      const workspaceId = invite.workspaceId ?? getAuthSettings(deps).auth.defaultWorkspaceId;
-      await deps.memberships.create({
-        workspaceId,
-        userId: user.id,
-        role: invite.role as "member" | "admin" | "owner",
-        defaultWorkspace: true
-      });
-    }
-    await deps.invites.accept(invite.id, user.id, at);
+    );
 
     const { token } = await mintSession(deps, user, { authMethod: "password" });
     await issueSessionCookie(c, token, getAuthSettings(deps));
