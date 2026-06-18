@@ -187,18 +187,29 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
     const timeoutMs = options.requestTimeoutMs;
     let timeoutController: AbortController | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let signal = init.signal ?? undefined;
+    const callerSignal = init.signal ?? undefined;
+    let signal = callerSignal;
     if (timeoutMs && timeoutMs > 0) {
       timeoutController = new AbortController();
       timer = setTimeout(() => timeoutController?.abort(), timeoutMs);
-      if (init.signal && typeof AbortSignal.any === "function") {
-        signal = AbortSignal.any([init.signal, timeoutController.signal]);
+      if (callerSignal && typeof AbortSignal.any === "function") {
+        signal = AbortSignal.any([callerSignal, timeoutController.signal]);
+      } else if (callerSignal) {
+        // findings[#low]：AbortSignal.any 不可用时也必须尊重调用方 signal——转发到 timeout
+        // controller，而不是把调用方 signal 丢掉。
+        if (callerSignal.aborted) {
+          timeoutController.abort(callerSignal.reason);
+        } else {
+          callerSignal.addEventListener("abort", () => timeoutController?.abort(callerSignal.reason), { once: true });
+        }
+        signal = timeoutController.signal;
       } else {
         signal = timeoutController.signal;
       }
     }
 
     let response: Response;
+    let body: unknown;
     try {
       response = await fetchFn(joinApiUrl(options.baseUrl, path), {
         ...init,
@@ -206,9 +217,16 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         headers,
         ...(signal ? { signal } : {})
       });
+      // findings[#low]：body 读取也纳入超时窗口（此前 timer 在 fetch 后即清，readJson 不计时）。
+      body = await readJson(response);
     } catch (error) {
-      // 仅超时触发的中止才映射为 408；调用方自己 abort 的保持原始错误。
-      if (timeoutController?.signal.aborted && (error as { name?: string } | null)?.name === "AbortError") {
+      // 仅超时触发、且非调用方自己 abort 的中止才映射为 408（含 body 读取阶段的中止）；
+      // 调用方 abort（即便经 timeout controller 转发）保持原始 AbortError。
+      if (
+        timeoutController?.signal.aborted &&
+        !callerSignal?.aborted &&
+        (error as { name?: string } | null)?.name === "AbortError"
+      ) {
         throw new WorkHubApiError(408, "request_timeout", `WorkHub API 请求超时（${timeoutMs}ms）`);
       }
       throw error;
@@ -217,7 +235,6 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         clearTimeout(timer);
       }
     }
-    const body = await readJson(response);
     if (!response.ok) {
       throw new WorkHubApiError(
         response.status,

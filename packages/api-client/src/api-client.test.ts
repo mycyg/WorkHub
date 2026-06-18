@@ -122,6 +122,56 @@ test("api client propagates a caller abort without mislabeling it as a timeout",
   await assert.rejects(pending, (error) => (error as { name?: string }).name === "AbortError");
 });
 
+test("findings: a hung response-body read also times out into a 408", async () => {
+  const client = createApiClient({
+    requestTimeoutMs: 20,
+    // fetch 立即返回，但 body 读取永久挂起，只在 signal abort 时以 AbortError 拒绝。
+    fetchFn: (_input, init) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () =>
+          new Promise<string>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            });
+          })
+      } as unknown as Response)
+  });
+
+  await assert.rejects(
+    () => client.request("/api/pages/home"),
+    (error) => error instanceof WorkHubApiError && error.status === 408 && error.code === "request_timeout"
+  );
+});
+
+test("findings: caller abort is honored even when AbortSignal.any is unavailable", async () => {
+  const original = (globalThis.AbortSignal as unknown as { any?: unknown }).any;
+  (globalThis.AbortSignal as unknown as { any?: unknown }).any = undefined;
+  try {
+    const controller = new AbortController();
+    const client = createApiClient({
+      requestTimeoutMs: 10_000,
+      fetchFn: (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          });
+        })
+    });
+    const pending = client.request("/api/pages/home", { signal: controller.signal });
+    controller.abort();
+    // 无 AbortSignal.any 时，调用方 abort 仍被转发，保持原始 AbortError（不误判 408）。
+    await assert.rejects(pending, (error) => (error as { name?: string }).name === "AbortError");
+  } finally {
+    (globalThis.AbortSignal as unknown as { any?: unknown }).any = original;
+  }
+});
+
 test("api client exposes P0.5 gold path page and replay endpoints", async () => {
   const calls: string[] = [];
   const client = createApiClient({
