@@ -194,7 +194,8 @@ Flip AUTH_MODE default to 'password' (or 'hybrid' for staged pilots), add a back
 - **生命周期**：**✅ 停用 + 改密已完成**。
   - 停用：`POST /api/auth/users/:id/deactivate`（管理员；软删用户 `users.softDelete`+记 `deleted_by_user_id`、`sessions.revokeAllForUser`、逐设备 revoke、forget presence；防呆禁停用自己 400、非管理员 403、任意 AUTH_MODE 通用）。
   - 改密：`POST /api/auth/password`（已登录用户旧密码换新；`findByUserId`→`verifyPassword`(错→403)→`validatePassword`→`updatePassword`→`revokeAllForUser`(撤其它设备)+`mintSession`(当前不掉线)；AUTH_MODE 门控 404。**坑：鉴权必须先于「功能未启用」404——否则未鉴权请求被 404 抢先，route-auth-posture fail-closed 门会红；已修为 resolveCurrentUser 先行 401**）。
-  - **⏭️ 待做**：邀请（out-of-band 链接，需 user_invites 表）/offboard（昵称改名释放唯一）。
+  - **邀请（out-of-band）**：**✅ 地基已完成**——`user_invites` 表（email citext / token_hash 唯一 / invited_by / role / workspace_id / expires_at / accepted_at+accepted_user_id 墓碑 / 软删撤销 / pending partial index）+ 迁移 0026 + journal idx:26；`invites` 仓库（create/findActiveByTokenHash 未接受∧未撤销∧未过期/accept 墓碑防重用/revoke/listPendingForEmail），经 index.ts 导出。schema.test.ts +2 测 + r2-pg-redis-smoke 真 PG 往返（建→解析→接受→已用/过期均解析不到）。**Phase 1 不接线**（无路由）。**⏭️ 待做（路由）**：`POST /api/auth/invites`（管理员建邀请返回一次性链接）+ `POST /api/auth/invites/accept`（凭 token 建账号+凭据+默认成员+接受墓碑）。
+  - **⏭️ 待做**：offboard（昵称改名释放唯一）。
 - **OIDC**：provider 抽象层（接 0 provider 占位）。
 - **前端**：web onboarding 注册/登录屏（password 模式）、桌面端会话适配。
 - **Phase 5 切换**：AUTH_MODE 默认翻 password、退役 ADMIN_CLAIM_SECRET、最终删 `users.cookie_token`。

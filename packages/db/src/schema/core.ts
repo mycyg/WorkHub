@@ -179,6 +179,34 @@ export const workspaceMemberships = pgTable(
   ]
 );
 
+// R2 auth epic（账号生命周期-邀请，out-of-band 链接，无 SMTP）：管理员建邀请→拿一次性链接手动分发；
+// 收件人凭 token 接受→建账号 + 凭据 + 默认成员。token_hash=sha256(明文 token)，明文只回管理员一次。
+// 纯加表、不接线（无路由），零行为变化——为邀请路由铺地基。
+export const userInvites = pgTable(
+  "user_invites",
+  {
+    id: id(),
+    email: varchar("email", { length: 320 }).notNull(), // DB 列为 citext（大小写不敏感）
+    tokenHash: varchar("token_hash", { length: 128 }).notNull(), // sha256(邀请 token)，不存明文
+    invitedByUserId: uuid("invited_by_user_id").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
+    role: varchar("role", { length: 16 }).notNull().default("member"), // 接受后赋予的成员角色
+    workspaceId: uuid("workspace_id").references(() => workspaces.id, { onDelete: "cascade" }), // 加入的工作区（空=默认）
+    expiresAt: timestampTz("expires_at").notNull(), // 邀请链接过期
+    acceptedAt: timestampTz("accepted_at"), // 已接受墓碑（防重复使用）
+    acceptedUserId: uuid("accepted_user_id").references((): AnyPgColumn => users.id, { onDelete: "set null" }),
+    deletedAt: timestampTz("deleted_at"), // 管理员撤销邀请
+    ...timestamps()
+  },
+  (table) => [
+    uniqueIndex("user_invites_token_hash_uq").on(table.tokenHash),
+    index("user_invites_email_idx").on(table.email),
+    // 待接受邀请清单：未接受 ∧ 未撤销。
+    index("user_invites_pending_idx")
+      .on(table.email, table.expiresAt)
+      .where(sql`${table.acceptedAt} is null and ${table.deletedAt} is null`)
+  ]
+);
+
 export const clientDevices = pgTable(
   "client_devices",
   {

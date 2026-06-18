@@ -12,6 +12,7 @@ import {
   createClientDeviceRepository,
   createCredentialRepository,
   createDatabaseClient,
+  createInviteRepository,
   createSessionRepository,
   createUserRepository,
   createWorkItemRepository,
@@ -350,6 +351,52 @@ async function main() {
       assert.equal(await memberships.resolveDefaultTenant(randomUUID()), null, "no membership → null (caller falls back to constant)");
 
       console.log("[r2-pg-redis-smoke] workspace membership partial-unique + tenant resolution round-trip ok");
+    }
+
+    // R2 auth epic（邀请）：邀请 DB 层真 PG 往返（create→token 解析→接受墓碑→已用/过期均解析不到）。
+    {
+      const invites = createInviteRepository(db);
+      const inviteToken = hashSessionToken(generateSessionToken()); // 复用 sha256 哈希作为 token_hash
+      const inviteNow = new Date();
+      const created = await invites.create({
+        email: "Invitee@Example.com", // 大写验 citext
+        tokenHash: inviteToken,
+        role: "member",
+        expiresAt: new Date(inviteNow.getTime() + 86_400_000)
+      });
+      assert.equal(created.acceptedAt, null);
+
+      const active = await invites.findActiveByTokenHash(inviteToken, inviteNow);
+      assert.ok(active && active.id === created.id, "active invite resolves by token hash");
+      assert.equal((await invites.listPendingForEmail("invitee@example.com")).length, 1, "citext pending lookup");
+
+      // 接受 → 记墓碑 → 不能再解析（防重复使用）。
+      const acceptUserId = randomUUID();
+      await db
+        .insert(users)
+        .values({
+          id: acceptUserId,
+          nickname: `r2-invitee-${acceptUserId.slice(0, 8)}`,
+          cookieToken: `r2-invitee-cookie-${randomUUID()}`,
+          availabilityStatus: "free",
+          isAdmin: false
+        })
+        .onConflictDoNothing();
+      const accepted = await invites.accept(created.id, acceptUserId, new Date());
+      assert.ok(accepted && accepted.acceptedUserId === acceptUserId, "invite accepted records the new user");
+      assert.equal(await invites.findActiveByTokenHash(inviteToken, new Date()), null, "used invite no longer resolves");
+
+      // 过期邀请解析不到。
+      const expiredToken = hashSessionToken(generateSessionToken());
+      await invites.create({
+        email: "expired@example.com",
+        tokenHash: expiredToken,
+        role: "member",
+        expiresAt: new Date(inviteNow.getTime() - 1000)
+      });
+      assert.equal(await invites.findActiveByTokenHash(expiredToken, new Date()), null, "expired invite does not resolve");
+
+      console.log("[r2-pg-redis-smoke] user invite round-trip ok");
     }
 
     const workItemService = createDbWorkItemService(createWorkItemRepository(db));

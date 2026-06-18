@@ -23,6 +23,7 @@ import {
   usageRecords,
   userCredentials,
   users,
+  userInvites,
   workHubTables,
   workItems,
   workspaceMemberships
@@ -230,6 +231,26 @@ test("migration 0024/0025 provision memberships with one-default-per-user and an
   assert.match(seed, /INSERT INTO "workspace_memberships"/u);
   assert.match(seed, /ON CONFLICT DO NOTHING/u); // 幂等
   assert.match(seed, /EXISTS \(SELECT 1 FROM "workspaces"/u); // FK 守卫
+});
+
+test("R2 auth invite foundation: user_invites exposes the out-of-band invite contract", () => {
+  assert.equal(getTableName(userInvites), "user_invites");
+  assert.equal(userInvites.email.name, "email");
+  assert.equal(userInvites.tokenHash.name, "token_hash");
+  assert.equal(userInvites.invitedByUserId.name, "invited_by_user_id");
+  assert.equal(userInvites.role.name, "role");
+  assert.equal(userInvites.workspaceId.name, "workspace_id");
+  assert.equal(userInvites.expiresAt.name, "expires_at");
+  assert.equal(userInvites.acceptedAt.name, "accepted_at");
+  assert.equal(userInvites.acceptedUserId.name, "accepted_user_id");
+});
+
+test("migration 0026 provisions citext invite email, unique token hash, and a pending-only index", () => {
+  const migration = readFileSync(join(process.cwd(), "migrations", "0026_user_invites.sql"), "utf8");
+  assert.match(migration, /"email" citext NOT NULL/u);
+  assert.match(migration, /user_invites_token_hash_uq/u);
+  // 待接受清单 partial index：未接受 ∧ 未撤销。
+  assert.match(migration, /user_invites_pending_idx[\s\S]*WHERE "accepted_at" IS NULL AND "deleted_at" IS NULL/u);
 });
 
 test("enum drift is closed in the shared contract package", () => {
