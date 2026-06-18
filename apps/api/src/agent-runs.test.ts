@@ -2060,6 +2060,63 @@ test("agent run queue requeues expired persistent claims and audits the recovery
   assert.equal(auditLogs.rows[0]?.entityId, queued.run_id);
 });
 
+test("R2 audit#6: recoverExpiredClaims preserves a richer in-memory trace instead of clobbering it with the trace-less requeued record", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-audit6-work-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-audit6-snap-"));
+  const snapshots = new MemorySnapshots();
+  const persistence = new MemoryAgentRunPersistence();
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000061",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshotId: () => "40000000-0000-4000-8000-000000000062",
+    snapshots,
+    persistence,
+    auditLogs: new MemoryAuditLogs(),
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Trace-preservation run" });
+  const executed = await queue.runNext();
+  // 不依赖 run 成功——本用例只需内存里存在已累积的执行轨迹(成功/失败 run 都会累积 trace 步骤)。
+  assert.ok(executed, "run must execute");
+  const richTraceLength = (await queue.get(queued.run_id))?.trace.length ?? 0;
+  assert.ok(richTraceLength > 0, "executed run must have accumulated an in-memory trace");
+
+  // 模拟「本进程内存里有富 trace 的 run、其租约在 persistence 侧已过期、且 persistence 重排/读取不暴露步骤」
+  //（与生产 requeueExpiredClaims/get 的 trace-less 行为一致）。只重写 persistence 行,不动内存 runs[id] 的富 trace。
+  const persisted = await persistence.get(queued.run_id);
+  assert.ok(persisted);
+  persistence.rows.set(queued.run_id, {
+    ...persisted,
+    status: "running",
+    trace: [],
+    claim: {
+      claimed_by: "dead-worker",
+      claimed_at: "2020-01-01T00:00:00.000Z",
+      heartbeat_at: "2020-01-01T00:00:30.000Z",
+      lease_expires_at: "2020-01-01T00:01:00.000Z"
+    },
+    updated_at: "2020-01-01T00:01:00.000Z"
+  });
+
+  const recovered = await queue.recoverExpiredClaims();
+  assert.equal(recovered.length, 1, "the expired running claim must be requeued");
+  assert.equal(recovered[0]?.trace.length, 0, "requeued record is trace-less (matches production persistence)");
+
+  // 修复后内存富 trace 被保留,不被空 trace 覆盖。无修复时此处为 0——与仍在跑的 executeRun(按 runs.get(id).trace
+  // 逐步追加)交错会把轨迹截断,再经 replaceTrace 把 DB 也写短(真丢数据)。
+  const afterRecover = await queue.get(queued.run_id);
+  assert.equal(afterRecover?.trace.length, richTraceLength, "recoverExpiredClaims must preserve the richer in-memory trace");
+});
+
 test("agent run queue dead-letters a run that keeps crashing past the recover-attempt cap", async () => {
   // poison run（每次都崩）不该被无限重排：超过 maxRecoverAttempts 即转死信 failed，且打专门的审计动作。
   const runtimeSettings = settings();

@@ -1370,7 +1370,12 @@ export function createInMemoryAgentRunQueue(options: {
         maxRecoverAttempts
       });
       for (const run of recovered) {
-        runs.set(run.run_id, run);
+        // R2 audit#6：requeueExpiredClaims 回的是 trace-less 记录(persistence 重排不带步骤)。若本进程内存里
+        // 已有更富的执行轨迹(该 run 曾/正在本进程执行,只是租约失效被扫到),保留它——只采纳恢复记录的状态/
+        // 重排字段,绝不用空 trace 覆盖。否则与仍在跑的 executeRun(按 runs.get(id).trace 逐步追加)交错时会
+        // 把轨迹截断,再经 replaceTrace 把 DB 也写短(真丢数据)。空 trace 的恢复记录则原样落入(无可保留者)。
+        const live = runs.get(run.run_id);
+        runs.set(run.run_id, live && live.trace.length > run.trace.length ? { ...run, trace: live.trace } : run);
       }
       await auditRecoveredClaims(recovered, recoveredAt);
       // R2 原子预算：与认领恢复同节奏扫一遍过期预留，释放崩溃/失租 run 占住的额度。
