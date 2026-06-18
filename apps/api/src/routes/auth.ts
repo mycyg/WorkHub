@@ -3,12 +3,14 @@ import { HTTPException } from "hono/http-exception";
 
 import {
   identifyRequestSchema,
+  inviteAcceptRequestSchema,
+  inviteCreateRequestSchema,
   passwordChangeRequestSchema,
   passwordLoginRequestSchema,
   passwordRegisterRequestSchema,
   updateUserPreferencesRequestSchema
 } from "@workhub/contracts";
-import { hashSessionToken } from "@workhub/db";
+import { generateSessionToken, hashSessionToken } from "@workhub/db";
 
 import {
   currentPasswordAlgo,
@@ -62,6 +64,8 @@ async function readJsonBody(c: { req: { text: () => Promise<string> } }) {
 // R2 auth epic：登录失败锁定策略——连续失败达上限后临时锁定，节流在线暴力破解。
 const LOGIN_MAX_ATTEMPTS = 10;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
+// 邀请链接有效期（out-of-band 分发，给足管理员转交时间）。
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function passwordModeEnabled(deps: AuthDependencies): boolean {
   return getAuthSettings(deps).auth.authMode !== "nickname";
@@ -290,6 +294,110 @@ export function createAuthRoutes(
     await issueSessionCookie(c, token, getAuthSettings(deps));
 
     return c.json({ ok: true });
+  });
+
+  // R2 auth epic（账号生命周期-邀请）：管理员建邀请，一次性返回明文 token（服务端只存 sha256）。
+  // 管理员据 token 自行拼 out-of-band 链接分发（无 SMTP）。
+  routes.post("/invites", async (c) => {
+    const deps = resolveAuthDependencies(source);
+    const actingUser = await resolveCurrentUser(c, deps); // 鉴权先行 → 未鉴权 401 fail-closed
+    if (!actingUser.isAdmin) {
+      throw new HTTPException(403, { message: "需要管理员权限" });
+    }
+    if (!passwordModeEnabled(deps)) {
+      throw new HTTPException(404, { message: "邀请功能未启用" });
+    }
+    if (!deps.invites) {
+      throw new HTTPException(501, { message: "当前运行时不支持邀请" });
+    }
+    const payload = inviteCreateRequestSchema.parse(await readJsonBody(c));
+    const at = (deps.now ?? (() => new Date()))();
+    const token = generateSessionToken();
+    const expiresAt = new Date(at.getTime() + INVITE_TTL_MS);
+    const invite = await deps.invites.create({
+      email: payload.email.trim(),
+      tokenHash: hashSessionToken(token),
+      invitedByUserId: actingUser.id,
+      role: payload.role ?? "member",
+      workspaceId: payload.workspace_id ?? null,
+      expiresAt
+    });
+    // 一次性返回明文 token——服务端只存 hash，明文不再可取回。
+    return c.json(
+      { invite_id: invite.id, token, email: invite.email, expires_at: expiresAt.toISOString() },
+      201
+    );
+  });
+
+  // 公开入口：收件人凭 out-of-band token 接受邀请 → 建账号 + 凭据 + 默认成员 + 会话。
+  routes.post("/invites/accept", async (c) => {
+    const deps = resolveAuthDependencies(source);
+    if (!passwordModeEnabled(deps)) {
+      throw new HTTPException(404, { message: "邀请功能未启用" });
+    }
+    if (!deps.invites || !deps.credentials || !deps.sessions) {
+      throw new HTTPException(501, { message: "当前运行时不支持邀请" });
+    }
+    const payload = inviteAcceptRequestSchema.parse(await readJsonBody(c));
+    const nickname = validateNickname(payload.nickname);
+    try {
+      validatePassword(payload.password);
+    } catch (error) {
+      if (error instanceof WeakPasswordError) {
+        throw new HTTPException(400, { message: error.message });
+      }
+      throw error;
+    }
+    const at = (deps.now ?? (() => new Date()))();
+    const invite = await deps.invites.findActiveByTokenHash(hashSessionToken(payload.token), at);
+    if (!invite) {
+      throw new HTTPException(404, { message: "邀请无效或已过期" });
+    }
+    if (await deps.credentials.findByEmail(invite.email)) {
+      throw new HTTPException(409, { message: "该邮箱已注册" });
+    }
+
+    let user;
+    try {
+      user = await deps.users.createUser({ nickname, cookieToken: makeCookieToken() });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new HTTPException(409, { message: "该昵称已被占用" });
+      }
+      throw error;
+    }
+    try {
+      // 邀请即证明邮箱控制权（trust-on-invite）→ email_verified_at 置 at。
+      await deps.credentials.createCredential({
+        userId: user.id,
+        email: invite.email,
+        passwordHash: await hashPassword(payload.password),
+        passwordAlgo: currentPasswordAlgo(),
+        emailVerifiedAt: at
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new HTTPException(409, { message: "该邮箱已注册" });
+      }
+      throw error;
+    }
+    // 按邀请赋予工作区成员（默认成员=actor 租户锚点）。
+    if (deps.memberships) {
+      const workspaceId = invite.workspaceId ?? getAuthSettings(deps).auth.defaultWorkspaceId;
+      await deps.memberships.create({
+        workspaceId,
+        userId: user.id,
+        role: invite.role as "member" | "admin" | "owner",
+        defaultWorkspace: true
+      });
+    }
+    await deps.invites.accept(invite.id, user.id, at);
+
+    const { token } = await mintSession(deps, user, { authMethod: "password" });
+    await issueSessionCookie(c, token, getAuthSettings(deps));
+    await deps.touchUser?.(user.id);
+
+    return c.json(toIdentityResponse(user, true), 201);
   });
 
   routes.get("/me", async (c) => {

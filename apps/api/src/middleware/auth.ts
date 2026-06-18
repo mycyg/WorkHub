@@ -10,6 +10,7 @@ import { defaultWorkHubLocale, type ActorKind } from "@workhub/contracts";
 import {
   createClientDeviceRepository,
   createCredentialRepository,
+  createInviteRepository,
   createSessionRepository,
   createWorkspaceMembershipRepository,
   generateSessionToken,
@@ -20,6 +21,7 @@ import {
   type ClientDeviceAuthRow,
   type ClientDeviceRepository,
   type CredentialRepository,
+  type InviteRepository,
   type SessionAuthMethod,
   type SessionRepository,
   type SessionRow,
@@ -71,6 +73,8 @@ export type AuthDependencies = {
   // R2 多租户 epic：成员仓库为 OPTIONAL——提供时 actor 租户从默认成员行派生，否则回退 config 常量。
   // 单测不传则 actor 走常量（与今天一致）；生产注入后因 seed 让现有用户都指向默认工作区而零可观测变化。
   memberships?: WorkspaceMembershipRepository;
+  // R2 auth epic：邀请仓库为 OPTIONAL——仅邀请路由用。
+  invites?: InviteRepository;
   settings?: Settings;
   now?: () => Date;
   touchUser?: (userId: string) => void | Promise<void>;
@@ -90,6 +94,7 @@ export function getDefaultAuthDependencies(): AuthDependencies {
     sessions: createSessionRepository(defaultDbClient.db),
     credentials: createCredentialRepository(defaultDbClient.db),
     memberships: createWorkspaceMembershipRepository(defaultDbClient.db),
+    invites: createInviteRepository(defaultDbClient.db),
     touchUser: (userId) => presence.touchUser(userId),
     forgetUser: (userId) => presence.forgetUser(userId)
   };

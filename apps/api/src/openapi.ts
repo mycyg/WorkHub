@@ -30,6 +30,30 @@ export function getOpenApiDocument() {
           summary: "Rotate the cookie token, revoke the session, and clear the session cookie"
         }
       },
+      "/api/auth/password": {
+        post: {
+          tags: ["auth"],
+          summary: "Change the current user's password (AUTH_MODE!=nickname); rotates sessions"
+        }
+      },
+      "/api/auth/users/{id}/deactivate": {
+        post: {
+          tags: ["auth"],
+          summary: "Admin: deactivate a user (soft-delete + revoke sessions/devices)"
+        }
+      },
+      "/api/auth/invites": {
+        post: {
+          tags: ["auth"],
+          summary: "Admin: create an out-of-band invite, returns a one-time token"
+        }
+      },
+      "/api/auth/invites/accept": {
+        post: {
+          tags: ["auth"],
+          summary: "Accept an invite token: create account + credential + membership + session"
+        }
+      },
       "/api/auth/preferences": {
         patch: {
           tags: ["auth"],

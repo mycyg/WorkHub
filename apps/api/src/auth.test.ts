@@ -12,13 +12,16 @@ import type {
   ClientDeviceAuthRow,
   ClientDeviceRepository,
   CreateSessionInput,
+  CreateInviteInput,
   CreateUserCredentialInput,
   CreateWorkspaceMembershipInput,
   CredentialRepository,
+  InviteRepository,
   SessionRepository,
   SessionRow,
   UserAuthRow,
   UserCredentialRow,
+  UserInviteRow,
   UserRepository,
   WorkspaceMembershipRepository,
   WorkspaceMembershipRow
@@ -433,6 +436,68 @@ class MemoryMemberships implements WorkspaceMembershipRepository {
     row.deletedAt = at;
     row.updatedAt = at;
     return row;
+  }
+}
+
+function inviteRow(input: CreateInviteInput, seq = 1): UserInviteRow {
+  return {
+    id: input.id ?? `60000000-0000-4000-8000-${String(seq).padStart(12, "0")}`,
+    email: input.email,
+    tokenHash: input.tokenHash,
+    invitedByUserId: input.invitedByUserId ?? null,
+    role: input.role ?? "member",
+    workspaceId: input.workspaceId ?? null,
+    expiresAt: input.expiresAt,
+    acceptedAt: null,
+    acceptedUserId: null,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+class MemoryInvites implements InviteRepository {
+  public rows: UserInviteRow[] = [];
+
+  async create(input: CreateInviteInput) {
+    const row = inviteRow(input, this.rows.length + 1);
+    this.rows.push(row);
+    return row;
+  }
+
+  async findActiveByTokenHash(tokenHash: string, at: Date) {
+    return (
+      this.rows.find(
+        (row) => row.tokenHash === tokenHash && row.acceptedAt === null && row.deletedAt === null && row.expiresAt > at
+      ) ?? null
+    );
+  }
+
+  async accept(id: string, acceptedUserId: string, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === id && candidate.acceptedAt === null && candidate.deletedAt === null);
+    if (!row) {
+      return null;
+    }
+    row.acceptedAt = at;
+    row.acceptedUserId = acceptedUserId;
+    row.updatedAt = at;
+    return row;
+  }
+
+  async revoke(id: string, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === id && candidate.deletedAt === null);
+    if (!row) {
+      return null;
+    }
+    row.deletedAt = at;
+    row.updatedAt = at;
+    return row;
+  }
+
+  async listPendingForEmail(email: string) {
+    return this.rows.filter(
+      (row) => row.email.toLowerCase() === email.toLowerCase() && row.acceptedAt === null && row.deletedAt === null
+    );
   }
 }
 
@@ -1270,4 +1335,80 @@ test("POST /password rejects a wrong current password (403) and is 404 in nickna
     body: JSON.stringify({ current_password: "x", new_password: "new-pass-2" })
   });
   assert.equal(gated.status, 404);
+});
+
+// ——— R2 auth epic：邀请路由（out-of-band create + accept） ———
+
+function inviteCtx(adminUser: UserAuthRow) {
+  const runtimeSettings = settings({ AUTH_MODE: "password" });
+  const users = new MemoryUsers([adminUser]);
+  const sessions = new MemorySessions();
+  const credentials = new MemoryCredentials();
+  const memberships = new MemoryMemberships();
+  const invites = new MemoryInvites();
+  const deps: AuthDependencies = {
+    users,
+    devices: new MemoryDevices([]),
+    sessions,
+    credentials,
+    memberships,
+    invites,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  return { deps, users, sessions, credentials, memberships, invites, runtimeSettings };
+}
+
+test("invite create→accept end-to-end builds an account, credential, default membership, and session", async () => {
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000aa", nickname: "admin", isAdmin: true });
+  const { deps, credentials, memberships, invites, runtimeSettings } = inviteCtx(admin);
+  const { token: adminToken } = await mintSession(deps, admin, { authMethod: "password" });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const createRes = await app.request("/auth/invites", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: await signedCookie(adminToken, runtimeSettings) },
+    body: JSON.stringify({ email: "Newbie@Example.com" })
+  });
+  assert.equal(createRes.status, 201);
+  const inviteToken = ((await createRes.json()) as { token: string }).token;
+  assert.ok(inviteToken && inviteToken.length > 0, "create returns a one-time token");
+
+  const acceptRes = await app.request("/auth/invites/accept", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: inviteToken, nickname: "Newbie", password: "newbie-pass-1" })
+  });
+  assert.equal(acceptRes.status, 201);
+  assert.ok(acceptRes.headers.get("set-cookie"), "accept mints a session cookie");
+  assert.ok(await credentials.findByEmail("newbie@example.com"), "credential created with the invited email (citext)");
+  assert.equal(memberships.rows.some((m) => m.defaultWorkspace && m.role === "member"), true, "default membership created");
+  assert.equal(invites.rows[0]?.acceptedAt !== null, true, "invite marked accepted (cannot be reused)");
+});
+
+test("invite accept rejects an invalid token (404); create requires admin (403)", async () => {
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000ab", nickname: "admin", isAdmin: true });
+  const member = user({ id: "10000000-0000-4000-8000-0000000000ac", nickname: "member" });
+  const { deps, users, runtimeSettings } = inviteCtx(admin);
+  (users as unknown as { rows: UserAuthRow[] }).rows.push(member);
+  const { token: memberToken } = await mintSession(deps, member, { authMethod: "password" });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const badAccept = await app.request("/auth/invites/accept", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: "not-a-real-invite-token", nickname: "Ghost", password: "ghost-pass-1" })
+  });
+  assert.equal(badAccept.status, 404);
+
+  const byMember = await app.request("/auth/invites", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: await signedCookie(memberToken, runtimeSettings) },
+    body: JSON.stringify({ email: "x@example.com" })
+  });
+  assert.equal(byMember.status, 403);
 });

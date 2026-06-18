@@ -42,6 +42,21 @@ export const passwordChangeRequestSchema = z.object({
 });
 export type PasswordChangeRequest = z.infer<typeof passwordChangeRequestSchema>;
 
+// 邀请（out-of-band）：管理员建邀请（返回一次性 token，自行拼链接分发）；收件人凭 token 接受建账号。
+export const inviteCreateRequestSchema = z.object({
+  email: z.string().email().max(320),
+  role: z.enum(["member", "admin", "owner"]).optional(),
+  workspace_id: z.string().uuid().optional()
+});
+export type InviteCreateRequest = z.infer<typeof inviteCreateRequestSchema>;
+
+export const inviteAcceptRequestSchema = z.object({
+  token: z.string().min(1).max(512),
+  nickname: z.string().min(1).max(64),
+  password: z.string().min(8).max(1024)
+});
+export type InviteAcceptRequest = z.infer<typeof inviteAcceptRequestSchema>;
+
 export const identifyResponseSchema = userSchema.pick({
   id: true,
   nickname: true,
