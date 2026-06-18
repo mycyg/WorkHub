@@ -4,6 +4,7 @@ import app, { attachWebStatic, logger } from "./app.js";
 import { settings } from "@workhub/config";
 import { getDefaultAgentRunRecoveryScheduler } from "./workers/agent-run-recovery.js";
 import { getDefaultAgentRunSkillCurationScheduler } from "./workers/agent-skill-curation.js";
+import { getDefaultSessionSweepScheduler } from "./workers/session-sweep.js";
 
 if (settings.webDistDir) {
   attachWebStatic(app, settings.webDistDir);
@@ -17,6 +18,11 @@ const skillCurationScheduler = settings.agentRun.skillCurationEnabled
   ? getDefaultAgentRunSkillCurationScheduler()
   : undefined;
 skillCurationScheduler?.start();
+
+// R2 auth epic：会话清扫——仅密码/混合模式启动（nickname 模式不签发会话，无需清扫）。
+const sessionSweepScheduler =
+  settings.auth.authMode !== "nickname" ? getDefaultSessionSweepScheduler() : undefined;
+sessionSweepScheduler?.start();
 
 const server = serve(
   {
@@ -38,6 +44,7 @@ function shutdown(exitCode: number) {
   logger.info("server_stopping", { exit_code: exitCode });
   recoveryScheduler.stop();
   skillCurationScheduler?.stop();
+  sessionSweepScheduler?.stop();
   const forceExit = setTimeout(() => process.exit(exitCode), 2000);
   forceExit.unref?.();
   server.close(() => {

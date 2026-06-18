@@ -190,7 +190,7 @@ Flip AUTH_MODE default to 'password' (or 'hybrid' for staged pilots), add a back
 
 ### ⏭️ 之后（依设计推进，本刀未含）
 
-- **会话清扫调度**：`deleteExpired` 已就绪，待挂周期任务（mirror agent-runner 心跳清扫）。
+- **✅ 会话清扫调度（已完成）**：`apps/api/src/workers/session-sweep.ts`（`createSessionSweepScheduler`，mirror agent-run-recovery：`tick`→`sessions.deleteExpired`、unref 定时器、`.start/.stop/.stats`）；`server.ts` 仅 `AUTH_MODE!='nickname'` 时启动（nickname 模式不签发会话→不清扫）。单测直测 `tick()`（删除计数+错误记录，无定时器不挂起）。`@workhub/api` 268 测全绿。
 - **生命周期**：邀请（out-of-band 链接）/停用（`revokeAllForUser`+软删）/offboard/改密路由。
 - **OIDC**：provider 抽象层（接 0 provider 占位）。
 - **前端**：web onboarding 注册/登录屏（password 模式）、桌面端会话适配。
