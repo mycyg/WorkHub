@@ -1894,6 +1894,26 @@ async function main() {
         winnerActiveReservations: winnerActiveReservations.length
       })}`);
     }
+
+    // R2 原子预算 — 崩溃释放：用一个远未来的 "now" 调 releaseExpired，模拟胜者租约过期被回收 → 归还其持有 →
+    // 之前被 402 堵掉的那个 work-item（其 run 已被补偿失败、无 active run）现在能新入队成功，证明额度被正确释放。
+    // （此刻只有胜者一条 active 预留，远未来 now 只会释放它，不会误伤别的。）
+    const rejectedIndex = reserveResults.findIndex((result) => result.status === "rejected");
+    const loserWorkItemId = rejectedIndex === 0 ? reserveWorkItemIds[0] : reserveWorkItemIds[1];
+    const loserQueue = rejectedIndex === 0 ? reserveQueueA : reserveQueueB;
+    const releasedHolds = await reservationRepoForGate.releaseExpired(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    if (releasedHolds < 1) {
+      throw new Error(`Expected releaseExpired to free the crashed winner's reservation, got ${releasedHolds}`);
+    }
+    const reReserve = await loserQueue.enqueue({
+      workItemId: loserWorkItemId,
+      actorId: seedUser.id,
+      title: "Budget reserve retry after crash-release"
+    });
+    if (!reReserve.run_id) {
+      throw new Error("Expected enqueue to succeed after the crashed reservation hold was released.");
+    }
+
     // 还原 team/day cap，避免影响本 smoke 后续/重跑。
     const teamDayRestore = await app.request("/api/cost/policies/team/pcost-team-day-v0", {
       method: "PUT",
