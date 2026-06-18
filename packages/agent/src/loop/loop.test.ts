@@ -10,7 +10,7 @@ import { createBuiltInFileTools, createToolRegistry } from "@workhub/tools";
 
 import type { LlmCreateResponse, LlmMessage, LlmStream, LlmStreamEvent } from "../providers/types.js";
 import { createAgentLoop, type AgentLoopClient, type AgentLoopEvent } from "./index.js";
-import { compactConversation } from "./loop.js";
+import { compactConversation, parseReviewJson } from "./loop.js";
 
 const budget = {
   maxSteps: 5,
@@ -635,6 +635,128 @@ test("AgentLoop runs an llm_review after success and carries the grade into the 
   assert.equal(result.review?.source, "llm_review");
   assert.equal(result.review?.rationale.includes("采纳"), true);
   assert.equal(result.usage.totalTokens, 90);
+});
+
+// findings[#8]：parseReviewJson 对垃圾/越界/浮点/空理由/散文夹括号/双对象的鲁棒性（含 #6 平衡括号回退）。
+test("findings[#8] parseReviewJson rejects malformed verdicts and parses balanced JSON from prose", () => {
+  // 纯垃圾、空串。
+  assert.equal(parseReviewJson("not json at all"), undefined);
+  assert.equal(parseReviewJson(""), undefined);
+  assert.equal(parseReviewJson("   "), undefined);
+  // 越界等级（0 / 6 / 负）。
+  assert.equal(parseReviewJson("{\"grade\": 0, \"rationale\": \"x\"}"), undefined);
+  assert.equal(parseReviewJson("{\"grade\": 6, \"rationale\": \"x\"}"), undefined);
+  assert.equal(parseReviewJson("{\"grade\": -1, \"rationale\": \"x\"}"), undefined);
+  // 浮点等级（4.5）必须拒（Number.isInteger）。
+  assert.equal(parseReviewJson("{\"grade\": 4.5, \"rationale\": \"x\"}"), undefined);
+  // 空/纯空白 rationale 必须拒。
+  assert.equal(parseReviewJson("{\"grade\": 5, \"rationale\": \"\"}"), undefined);
+  assert.equal(parseReviewJson("{\"grade\": 5, \"rationale\": \"   \"}"), undefined);
+  // 缺 grade。
+  assert.equal(parseReviewJson("{\"rationale\": \"ok\"}"), undefined);
+  // 合法严格 JSON。
+  assert.deepEqual(parseReviewJson("{\"grade\": 3, \"rationale\": \"可用但需改\"}"), { grade: 3, rationale: "可用但需改" });
+  // #6：散文包裹——从首个平衡 {...} 解析，不被句末的额外 } 或后续文字带偏。
+  assert.deepEqual(
+    parseReviewJson("这是我的评审： {\"grade\": 4, \"rationale\": \"基本可用\"} 以上。"),
+    { grade: 4, rationale: "基本可用" }
+  );
+  // #6：双对象——取第一个平衡对象，而非贪婪吞到最后一个 }（旧实现会把两段连成非法 JSON 解析失败）。
+  assert.deepEqual(
+    parseReviewJson("{\"grade\": 2, \"rationale\": \"返工多\"}\n{\"grade\": 5, \"rationale\": \"忽略我\"}"),
+    { grade: 2, rationale: "返工多" }
+  );
+  // #6：rationale 内含 } 字符（字符串内的括号不应误判平衡）。
+  assert.deepEqual(
+    parseReviewJson("{\"grade\": 3, \"rationale\": \"含 } 字符的理由\"}"),
+    { grade: 3, rationale: "含 } 字符的理由" }
+  );
+});
+
+// findings[#8/#2]：评审客户端抛错时 run 仍成功，但置位 reviewFailed 走 fail-closed，绝不静默奖励成 0.88。
+test("findings[#2] a throwing review client fails closed (reviewFailed set, no review, llm_review_failed emitted)", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const events: AgentLoopEvent[] = [];
+  let createCalls = 0;
+  const client: AgentLoopClient = {
+    model: "fake-model",
+    messages: {
+      async create() {
+        createCalls += 1;
+        if (createCalls === 1) {
+          return {
+            id: "m1",
+            stopReason: "tool_use",
+            usage: { inputTokens: 10, outputTokens: 20 },
+            content: [{ type: "tool_use", id: "tool-1", name: "write_file", input: { path: "outputs/report.md", content: "报告" } }]
+          };
+        }
+        if (createCalls === 2) {
+          return { id: "m2", stopReason: "end_turn", usage: { inputTokens: 5, outputTokens: 5 }, content: [{ type: "text", text: "交付完成" }] };
+        }
+        // 第三次（评审）调用：抛错。
+        throw new Error("review model unavailable");
+      }
+    }
+  };
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000099",
+    workItemId: "50000000-0000-4000-8000-000000000099",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "任务：写一份报告",
+    client,
+    tools,
+    budget,
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000099" }),
+    emit: (event) => {
+      events.push(event);
+    }
+  });
+
+  // run 本身仍成功（评审不阻塞主流程），但 review 缺席且 reviewFailed 置位。
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.review, undefined);
+  assert.equal(result.reviewFailed, true);
+  // 发出可识别的 fail-closed 遥测信号，而不是悄悄回退到乐观启发式。
+  assert.equal(
+    events.some((event) => event.data.kind === "llm_review_failed" && event.data.reason === "exception"),
+    true
+  );
+});
+
+// findings[#2]：评审返回不可解析文本（非抛错）同样 fail-closed。
+test("findings[#2] an unparseable review verdict fails closed", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000100",
+    workItemId: "50000000-0000-4000-8000-000000000100",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "任务：写一份报告",
+    client: fakeClient([
+      {
+        id: "m1",
+        stopReason: "tool_use",
+        usage: { inputTokens: 10, outputTokens: 20 },
+        content: [{ type: "tool_use", id: "tool-1", name: "write_file", input: { path: "outputs/report.md", content: "报告" } }]
+      },
+      { id: "m2", stopReason: "end_turn", usage: { inputTokens: 5, outputTokens: 5 }, content: [{ type: "text", text: "交付完成" }] },
+      // 评审返回纯散文，无 JSON → unparseable。
+      { id: "review-1", stopReason: "end_turn", usage: { inputTokens: 3, outputTokens: 3 }, content: [{ type: "text", text: "我觉得还行吧。" }] }
+    ]),
+    tools,
+    budget,
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000100" })
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.review, undefined);
+  assert.equal(result.reviewFailed, true);
 });
 
 test("compactConversation keeps the tail starting at an assistant boundary (tool_use/tool_result paired)", () => {

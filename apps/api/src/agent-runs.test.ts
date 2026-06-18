@@ -790,6 +790,17 @@ function executableAgentClient(): AgentLoopClient {
         createdAt: "2026-06-05T00:00:01.000Z"
       },
       content: [{ type: "text", text: "交付完成" }]
+    },
+    // findings[#2/#3]：loop 默认在成功后追加一次 llm_review。此前本 fake client 只排了 2 条 worker 响应，
+    // 第 3 次（评审）调用会 throw —— 旧实现把 throw 静默吞成 undefined 并回退乐观启发式 0.88（human_spotcheck）。
+    // 修复后 fail-closed：throw→escalate。为保留本用例「成功 run 的 trace/置信度 happy-path」原意，补一条
+    // 合法 grade=5 评审响应，让置信度真按「高分评审」走（grade=5 是 #3 唯一进 auto-merge 资格带的档；
+    // 但本用例未开 autoMergeAllowed → 仍降级 human_spotcheck，原断言不变且更有意义）。
+    {
+      id: "msg-run-review",
+      stopReason: "end_turn",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      content: [{ type: "text", text: "{\"grade\": 5, \"rationale\": \"可直接采纳\"}" }]
     }
   ] satisfies Awaited<ReturnType<AgentLoopClient["messages"]["create"]>>[];
 

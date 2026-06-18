@@ -326,6 +326,8 @@ export function createInMemoryAgentRunQueue(options: {
   usage?: (input: EnqueueAgentRunInput) => BudgetUsageSnapshot[] | Promise<BudgetUsageSnapshot[]>;
   decideBudget?: BudgetDecisionProvider;
   client?: AgentRunClientProvider;
+  // findings[#4]：可选的独立评审客户端提供者（默认据 'review' 任务类路由派生，去 llm_review 自评偏置）。
+  reviewClient?: AgentRunClientProvider;
   workdir?: AgentRunWorkdirProvider;
   tools?: AgentRunToolsProvider;
   snapshot?: SnapshotHook;
@@ -484,6 +486,17 @@ export function createInMemoryAgentRunQueue(options: {
       runId: input.run.run_id,
       workItemId: input.run.work_item_id
     }, "worker");
+  }
+
+  // findings[#4]：评审客户端走 'review' 任务类路由，让部署可把 llm_review 指到与工人独立的模型（去自评偏置）。
+  // 默认配置下 'review' 路由若未单独配则回退默认 provider/模型——行为与配置前一致，不破坏后向兼容。
+  async function defaultReviewClient(input: AgentRunExecutionInput) {
+    return getDefaultProviderRegistry().get({
+      id: input.run.actor_id,
+      userId: input.run.actor_id,
+      runId: input.run.run_id,
+      workItemId: input.run.work_item_id
+    }, "review");
   }
 
   function defaultWorkerSystemPrompt(teamSkillCatalogAppendix?: string) {
@@ -895,6 +908,13 @@ export function createInMemoryAgentRunQueue(options: {
     }
     const executionInput = { run: current, settings };
     const client = await (options.client ?? defaultClient)(executionInput);
+    // findings[#4]：独立评审客户端（'review' 任务类路由）。复用工人 client 提供者时也据它派生评审客户端，
+    // 保持测试/自定义注入路径一致；默认走 'review' 路由（未单独配则回退默认模型，行为不变）。
+    const reviewClient = options.reviewClient
+      ? await options.reviewClient(executionInput)
+      : options.client
+        ? client
+        : await defaultReviewClient(executionInput);
     const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
     runWorkdirs.set(current.run_id, workdir);
     current = updateRun({
@@ -990,6 +1010,9 @@ export function createInMemoryAgentRunQueue(options: {
         systemPrompt: options.systemPrompt ?? defaultWorkerSystemPrompt(resolvedTeamSkills?.catalogAppendix),
         initialUserMessage,
         client,
+        // findings[#4]：独立评审客户端（去自评偏置）。findings[#7]：用解析过的任务标题，而非 initialUserMessage 首行的中文标签。
+        reviewClient,
+        reviewTaskTitle: current.title,
         tools,
         budget: toAgentLoopBudget(current.budget, resolveWorkerContextWindowTokens()),
         maxTokensPerStep: settings.llm.maxTokensPerStep,

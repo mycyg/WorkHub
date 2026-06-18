@@ -91,14 +91,25 @@ function riskLevelFor(score: number, dimensions: RiskDimensions): RiskLevel {
   return "low";
 }
 
-function matrixVerdict(grade: ConfidenceGrade, riskLevel: RiskLevel): ConfidenceVerdict {
+// findings[#3]：自动采纳带收紧——只有 grade===5（可直接采纳）才落入 auto-merge 资格带。
+// grade 4（基本可直接采纳=仍需轻微修改）即便融合分越过 high 门（0.853）也只走人审。
+// autoMergeEligible 由调用方据 review.grade 决定；无 review 时延续旧的「高置信+低风险=自动」语义。
+function matrixVerdict(grade: ConfidenceGrade, riskLevel: RiskLevel, autoMergeEligible: boolean): ConfidenceVerdict {
   if (grade === "low" || riskLevel === "high") {
     return "escalate";
   }
-  if (grade === "high" && riskLevel === "low") {
+  if (grade === "high" && riskLevel === "low" && autoMergeEligible) {
     return "auto_merge";
   }
   return "human_spotcheck";
+}
+
+// 只有评审给出 grade===5 才允许自动采纳；无评审时回退旧行为（启发式高分仍可自动采纳）。
+function autoMergeEligibleFor(result: AgentLoopResult): boolean {
+  if (result.review) {
+    return result.review.grade === 5;
+  }
+  return true;
 }
 
 function heuristicScoreFor(result: AgentLoopResult) {
@@ -111,6 +122,11 @@ function heuristicScoreFor(result: AgentLoopResult) {
   return 0.2;
 }
 
+// findings[#2]：评审被请求但失败/空/不可解析时的 fail-closed 分。绝不向上美化成 0.88——
+// 钳到「低置信」档（< gradeFor 的 0.6 medium 门），裁决落到 escalate/人审，而非自动采纳。
+// 取 0.4 保持「成功但需人看」的语义，明显低于无评审回退（0.88）也低于 medium 起点。
+const FAILED_REVIEW_SCORE = 0.4;
+
 // R0 acceptance 信号：成功且有交付物清单=1；成功但无清单=0.6；未成功=0。
 // findings[0]：驱动裁决计分的这个表达式与 signalsJson 解释载荷必须用同一个值，否则
 // 「succeeded 但无 manifest」的运行会出现「展示/审计的 acceptance=1」与「实际计分=0.6」相左，破坏审计可信度。
@@ -121,6 +137,10 @@ function acceptanceScoreFor(result: AgentLoopResult): number {
 // R0 v1 权重（confidence-risk-escalation.md §0.1）：review=0.50 / acceptance=0.35 / self=0.15。
 // self 暂缺时按在场来源归一化；llm_review 缺席时回退启发式整体分。
 function confidenceScoreFor(result: AgentLoopResult) {
+  // findings[#2]：评审请求了但失败——fail-closed，向下钳低；优先于任何乐观回退。
+  if (result.reviewFailed && !result.review) {
+    return Math.min(FAILED_REVIEW_SCORE, heuristicScoreFor(result));
+  }
   if (!result.review) {
     return heuristicScoreFor(result);
   }
@@ -196,7 +216,7 @@ export function evaluateAgentRunConfidence(input: EvaluateAgentRunConfidenceInpu
   const grade = gradeFor(confidenceScore);
   const riskLevel = riskLevelFor(riskScore, dimensions);
   const baseVerdict = input.result.status === "succeeded"
-    ? matrixVerdict(grade, riskLevel)
+    ? matrixVerdict(grade, riskLevel, autoMergeEligibleFor(input.result))
     : "escalate";
   const verdict = downgradeAutoMerge(baseVerdict, input.autoMergeAllowed);
   const rationaleMd = rationaleFor({ result: input.result, verdict, riskLevel });
@@ -219,10 +239,17 @@ export function evaluateAgentRunConfidence(input: EvaluateAgentRunConfidenceInpu
           model: input.result.review.model,
           reason: input.result.review.rationale
         }
-        : {
-          score: confidenceScore,
-          reason: `启发式回退（无 llm_review）：${input.result.reason.slice(0, 120)}`
-        },
+        // findings[#2]：评审请求了但失败/空/不可解析——审计载荷如实标注 fail-closed，不冒充乐观回退。
+        : input.result.reviewFailed
+          ? {
+            score: confidenceScore,
+            source: "llm_review_failed",
+            reason: "评审被请求但失败/空/不可解析，已 fail-closed 钳低置信、转人审。"
+          }
+          : {
+            score: confidenceScore,
+            reason: `启发式回退（无 llm_review）：${input.result.reason.slice(0, 120)}`
+          },
       acceptance: {
         // findings[0]：与 confidenceScoreFor 用同一个 acceptanceScoreFor，三态一致（1 / 0.6 / 0）。
         score: round3(acceptanceScoreFor(input.result)),

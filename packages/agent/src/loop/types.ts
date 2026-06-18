@@ -112,6 +112,15 @@ export type AgentLoopInput = {
   systemPrompt: string;
   initialUserMessage: string;
   client: AgentLoopClient;
+  /**
+   * findings[#4]：独立评审客户端。llm_review 不应复用工人同一模型/路由（自评偏置）——部署可经
+   * 'review' 任务类路由到独立模型。不传则回退 client（行为与配置前一致，保持后向兼容）。
+   */
+  reviewClient?: AgentLoopClient;
+  /** findings[#7]：评审用的已解析任务标题（如 run.title）。不传则回退 initialUserMessage 首行（旧行为）。 */
+  reviewTaskTitle?: string;
+  /** findings[#5]：评审用的验收标准清单，作为评分依据传给评审员。不传则不附加。 */
+  reviewAcceptance?: string[];
   tools: {
     toModelTools: (ctx: ToolExecutionContext) => Promise<unknown[]> | unknown[];
     execute: (toolId: string, input: unknown, ctx: ToolExecutionContext) => Promise<ToolResult> | ToolResult;
@@ -119,7 +128,7 @@ export type AgentLoopInput = {
   budget: AgentLoopBudget;
   maxTokensPerStep?: number;
   requireDeliverable?: boolean;
-  /** run 成功后追加一次 llm_review 评审调用（OQ-2 来源②）；默认开启，失败静默降级。 */
+  /** run 成功后追加一次 llm_review 评审调用（OQ-2 来源②）；默认开启。findings[#2]：失败/空/不可解析时 fail-closed（向下钳低置信），不再静默向上美化。 */
   reviewDeliverable?: boolean;
   snapshot?: SnapshotHook;
   // 注入受控命令执行器；不传则 run_command fail-closed（默认不执行宿主命令）。由部署/worker 按配置决定。
@@ -147,4 +156,9 @@ export type AgentLoopResult = {
   handoff?: StructuredHandoff;
   manifest?: DeliverableChangeManifest;
   review?: AgentRunReview;
+  /**
+   * findings[#2]：评审被请求但失败/空/不可解析（≠「未请求评审」）。置位时置信度计分 fail-closed：
+   * 向下钳到低置信/需人审，绝不奖励一次失败的评审。未请求评审时此字段缺省（保持旧的启发式回退）。
+   */
+  reviewFailed?: boolean;
 };
