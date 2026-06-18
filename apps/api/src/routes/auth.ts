@@ -227,13 +227,22 @@ export function createAuthRoutes(
     if (credential.lockedUntil && credential.lockedUntil > now) {
       throw new HTTPException(429, { message: "登录失败次数过多，账号已临时锁定，请稍后再试。" });
     }
+    // 锁窗已过即清白：之前的失败计数若残留，下一次失败会因 failedAttempts(=上限) + 1 立即重锁，
+    // 把合法用户永久挡在外面。锁过期后先清零计数+解锁，让后续失败从干净的 0 重新累计，只有锁过期之后的
+    // 新失败才计入新一轮锁定。lockedUntil 为 null（从未锁过）则无需清零。
+    const lockExpired = credential.lockedUntil !== null && credential.lockedUntil <= now;
+    if (lockExpired) {
+      await deps.credentials.resetFailedAttempts(credential.userId);
+    }
     const user = await deps.users.findActiveById(credential.userId);
     if (!user) {
       throw invalid(); // 用户被软删/停用
     }
     const ok = credential.passwordHash ? await verifyPassword(payload.password, credential.passwordHash) : false;
     if (!ok) {
-      const attempts = credential.failedAttempts + 1;
+      // 锁过期已清零，本次失败从 0 起算；否则沿用既有计数。
+      const priorAttempts = lockExpired ? 0 : credential.failedAttempts;
+      const attempts = priorAttempts + 1;
       const lockedUntil = attempts >= LOGIN_MAX_ATTEMPTS ? new Date(now.getTime() + LOGIN_LOCK_MS) : null;
       await deps.credentials.recordFailedAttempt(credential.userId, lockedUntil);
       throw invalid();

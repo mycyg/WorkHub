@@ -48,6 +48,36 @@ export const app = new Hono();
 
 app.use("*", createRequestLogMiddleware(logger));
 
+// 安全响应头（纵深防御）：在所有响应上钉死浏览器侧的几道防线，紧跟请求日志、早于路由。
+// - X-Content-Type-Options: nosniff —— 禁 MIME 嗅探，挡内容类型混淆。
+// - X-Frame-Options: DENY —— 禁任何站点 iframe 嵌入本服务，挡点击劫持。
+// - Referrer-Policy —— 跨源只带 origin，避免把带 token 的路径泄露到外站。
+// - Strict-Transport-Security —— HTTPS 强制（明文 http 下浏览器自动忽略，无害）。
+// CSP：本服务经 attachWebStatic 直供 Web SSR 产物。该构建的 CSS 由 Vite 以运行时注入的内联 <style>
+// 下发（dist 无独立 .css），React 也用内联 style props——故 style-src 必须放行 'unsafe-inline'，否则白屏。
+// 脚本侧 index.html 仅有外链 module（无内联 <script>），故 script-src 'self' 即可；SSE(EventSource) 同源，
+// connect-src 'self' 足够，附带 ws: 兜底任何 websocket。但 web-live-route-smoke 这道渲染门无法在本地复跑，
+// 为零风险落地策略，CSP 一律以 Report-Only 下发——只上报违例、绝不拦截渲染，待线上确认无违例再考虑改为强制。
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws: wss:",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "object-src 'none'"
+].join("; ");
+app.use("*", async (c, next) => {
+  await next();
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("X-Frame-Options", "DENY");
+  c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+  c.header("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+  c.header("Content-Security-Policy-Report-Only", CONTENT_SECURITY_POLICY);
+});
+
 // CORS：此前 CORS_ALLOW_ORIGINS 被解析+生产校验却从未挂载（死配置）。挂上 hono/cors，由 settings 驱动。
 // 凭据走 cookie，故不能用通配 origin——用 "*" 时按白名单反射；否则只放行配置白名单。生产已禁止 "*"（validateRuntimeConfig）。
 // R2 audit#28：'*'(dev 默认)此前反射任意请求 origin + credentials:true——开发者浏览恶意站点即可携带 cookie 跨源读

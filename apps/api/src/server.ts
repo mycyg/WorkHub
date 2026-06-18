@@ -6,6 +6,23 @@ import { getDefaultAgentRunRecoveryScheduler } from "./workers/agent-run-recover
 import { getDefaultAgentRunSkillCurationScheduler } from "./workers/agent-skill-curation.js";
 import { getDefaultSessionSweepScheduler } from "./workers/session-sweep.js";
 
+// 进程级兜底：未捕获异常/未处理 rejection 此前无人接，一次走线的 throw/reject 会静默杀掉 daemon
+// 或留下半死状态。早注册（先于 server start），与下方 SIGINT/SIGTERM 优雅退出互补、不替代。
+// uncaughtException：进程已处于不确定状态——记一条 fatal 结构化日志后 exit(1)，让进程管理器干净重启；
+// 用 reentrancy guard 防 handler 自身再抛导致递归。unhandledRejection：记 error 不退出（多为可恢复的局部失败）。
+let handlingFatalException = false;
+process.on("uncaughtException", (error) => {
+  if (handlingFatalException) {
+    return;
+  }
+  handlingFatalException = true;
+  logger.error("uncaught_exception", { fatal: true, error });
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  logger.error("unhandled_rejection", { reason });
+});
+
 if (settings.webDistDir) {
   attachWebStatic(app, settings.webDistDir);
 }
