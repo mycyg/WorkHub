@@ -391,7 +391,10 @@ function assertCanReadDetail(rows: StoredWorkItemDetailRows, actor: AuthActor) {
   const allowed = canViewWorkItemRecord(
     detailToWorkItemAccessRecord(rows),
     { id: userId, isAdmin: actor.isAdmin },
-    { orgId: actor.orgId, workspaceId: actor.workspaceId }
+    // 仅按 workspace 作用域（workspace = 硬租户边界）。**不传 orgId**：work_items/projects 无 orgId 列，
+    // 记录侧 orgId 恒为 undefined，而 scopeMatches 在「scope.orgId 有值、记录 orgId 为空」时判否——
+    // 真 PG 下 actor.orgId 是默认 org 实值，会把所有合法读误判成 403（r1-pg-smoke 撞红）。workspace 已是真边界。
+    { workspaceId: actor.workspaceId }
   );
   if (!allowed) {
     throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
