@@ -619,7 +619,10 @@ function candidateWithTextPatchPreview(input: {
   if (!mergedText && !diff3Gate) {
     return input.candidate;
   }
-  const preview = mergedText
+  // R2 audit#2：text_patch_preview 幂等——已算过就不重算 LCS（mirror 下方 text_diff3 的 !existingGate 守卫）。
+  // supplementsWithTextPatchPreviews 在 generate() 与 safelyGenerate 各应用一次，二次对已带预览的候选不再白跑 LCS；
+  // 既有产出（existingGate 经下方 spread 原样保留）逐字节不变，纯去冗余。
+  const preview = mergedText && !existingGate["text_patch_preview"]
     ? textPatchPreviewFor({
       context: input.context,
       mergedText
