@@ -27,8 +27,12 @@ import {
 import { buildCostSummary } from "../pages/cost.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import {
+  createSequentialUpdateBudgetPolicyWithAudit,
   getDefaultBudgetPolicyAuditLogRepository,
-  getDefaultBudgetPolicyStore
+  getDefaultBudgetPolicyStore,
+  getDefaultUpdateBudgetPolicyWithAudit,
+  BudgetPolicyUpdateInvalidError,
+  type UpdateBudgetPolicyWithAudit
 } from "../services/cost-policy-store.js";
 
 type BudgetPolicyAuditWriter = {
@@ -40,6 +44,9 @@ export type CostRoutesDependencies = {
   policyStore?: BudgetPolicyStore;
   ledgerStore?: CostLedgerStore;
   auditLogs?: BudgetPolicyAuditWriter;
+  // R2 audit#1：策略更新+审计的原子编排器。不注入时:注了 policyStore(测试)→顺序版(用其假仓库),
+  // 否则(生产)→ db.transaction 原子版。显式注入可覆盖。
+  updatePolicyWithAudit?: UpdateBudgetPolicyWithAudit;
 };
 
 const scopeKindSchema = z.enum(["workitem", "user", "team", "eval"]);
@@ -49,6 +56,15 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
   const ledgerStore = deps.ledgerStore ?? getDefaultCostLedgerStore();
+  // 测试注入了 policyStore → 顺序版(用它的假仓库 + 懒解析审计写,避免无注入时早连真库);
+  // 生产(无注入) → db.transaction 原子版(R2 audit#1)。
+  const updatePolicyWithAudit: UpdateBudgetPolicyWithAudit = deps.updatePolicyWithAudit
+    ?? (deps.policyStore
+      ? createSequentialUpdateBudgetPolicyWithAudit(deps.policyStore, {
+          createAuditLog: (input) =>
+            (deps.auditLogs ?? getDefaultBudgetPolicyAuditLogRepository()).createAuditLog(input)
+        })
+      : getDefaultUpdateBudgetPolicyWithAudit());
 
   routes.get("/policies", createCurrentUserMiddleware(authSource), async (c) => {
     requireCostPolicyAdmin(c.var.currentUser.isAdmin);
@@ -66,36 +82,43 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
     );
     let policy: CostBudgetPolicy | undefined;
     try {
-      policy = await policyStore.updatePolicy(settings, scopeKind, policyId, toCostBudgetPolicyPatch(payload));
-    } catch (error) {
-      throw new HTTPException(422, {
-        message: error instanceof Error ? error.message : "Budget policy update is invalid."
+      // R2 audit#1：更新 + 审计在编排器里原子完成(生产为同一 db.transaction);审计写失败回滚策略变更。
+      // 只有「补丁非法」抛 BudgetPolicyUpdateInvalidError→422;审计/事务失败照旧冒泡为 500(语义不变)。
+      policy = await updatePolicyWithAudit({
+        settings,
+        scopeKind,
+        policyId,
+        patch: toCostBudgetPolicyPatch(payload),
+        buildAuditLog: (updated) => ({
+          orgId: settings.auth.defaultOrgId,
+          workspaceId: settings.auth.defaultWorkspaceId,
+          actorKind: "human",
+          actorUserId: c.var.currentUser.id,
+          actorNickname: c.var.currentUser.nickname,
+          entityType: "budget_policy",
+          entityId: updated.id,
+          action: "budget_policy.updated",
+          detailJson: {
+            scope_kind: scopeKind,
+            policy_id: updated.id,
+            patch: payload,
+            version_before: before?.version,
+            version_after: updated.version,
+            ...(before ? { before: toApiBudgetPolicy(before) } : {}),
+            after: toApiBudgetPolicy(updated)
+          }
+        })
       });
+    } catch (error) {
+      if (error instanceof BudgetPolicyUpdateInvalidError) {
+        throw new HTTPException(422, { message: error.message });
+      }
+      throw error;
     }
     if (!policy) {
       throw new HTTPException(404, { message: "Budget policy was not found." });
     }
-    const data = toApiBudgetPolicy(policy);
-    await (deps.auditLogs ?? getDefaultBudgetPolicyAuditLogRepository()).createAuditLog({
-      orgId: settings.auth.defaultOrgId,
-      workspaceId: settings.auth.defaultWorkspaceId,
-      actorKind: "human",
-      actorUserId: c.var.currentUser.id,
-      actorNickname: c.var.currentUser.nickname,
-      entityType: "budget_policy",
-      entityId: policy.id,
-      action: "budget_policy.updated",
-      detailJson: {
-        scope_kind: scopeKind,
-        policy_id: policy.id,
-        patch: payload,
-        version_before: before?.version,
-        version_after: policy.version,
-        ...(before ? { before: toApiBudgetPolicy(before) } : {}),
-        after: data
-      }
-    });
-    return c.json({ ok: true, data });
+    return c.json({ ok: true, data: toApiBudgetPolicy(policy) });
   });
 
   routes.get("/usage", createCurrentUserMiddleware(authSource), async (c) => {

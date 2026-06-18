@@ -196,6 +196,35 @@ function captureAuditLogs() {
   };
 }
 
+test("R2 audit#1: a failed audit write surfaces as a server error, not a 422 invalid-patch (update+audit stay atomic in production)", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const policyStore = createMemoryBudgetPolicyStore();
+  app.route("/api/cost", createCostRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore,
+    // 审计写在编排器内紧随策略更新；它抛出时不能被当作「补丁非法(422)」,而应冒泡成 5xx。
+    // 生产路径里二者同处一个 db.transaction,审计失败会回滚策略变更(原子)。
+    auditLogs: {
+      async createAuditLog() {
+        throw new Error("audit sink unavailable");
+      }
+    }
+  }));
+  const headers = { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") };
+
+  // 审计写失败必须作为服务端错误冒泡(app.ts 真 onError 映射 500),绝不被路由 catch 当成 422 invalid-patch 吞掉。
+  // 此处用 withErrors 测试 helper 对泛型错误是 rethrow,故 app.request 直接 reject——正是「向上冒泡」的证据。
+  await assert.rejects(
+    app.request("/api/cost/policies/user/pcost-user-day-v0", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ max_tokens: 250000 })
+    }),
+    (error: unknown) => error instanceof Error && error.message === "audit sink unavailable"
+  );
+});
+
 test("cost policy routes expose configurable P-COST defaults to admins", async () => {
   const runtimeSettings = settings();
   const app = withErrors(new Hono<AuthEnv>());
