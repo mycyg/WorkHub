@@ -12,6 +12,7 @@ import {
   createClientDeviceRepository,
   createCredentialRepository,
   createDatabaseClient,
+  createDriveRepository,
   createInviteRepository,
   createSessionRepository,
   createUserRepository,
@@ -22,6 +23,7 @@ import {
   generateSessionToken,
   hashSessionToken,
   orgs,
+  projectDriveItems,
   projects,
   runMigrations,
   users,
@@ -218,6 +220,55 @@ async function main() {
       assert.equal(byId.get(activeId), null, "active recipient has null deletedAt (kept)");
       assert.ok(byId.get(deactivated.user.id), "deactivated recipient carries deletedAt (dropped)");
       assert.equal(byId.has(missingId), false, "absent ids are omitted → fail-open as active");
+    }
+
+    // R2 audit#21：父文件夹删除 vs 并发子项上传——uploadFile/softDeleteItem 都对父行 FOR UPDATE 串行化,
+    // 绝不留「活跃子项挂在已删父下」的孤儿。无锁时两事务可同时提交(=孤儿,fulfilled=2);加锁后恰好一胜一负。
+    {
+      const drive = createDriveRepository(db);
+      const folderId = randomUUID();
+      const nowAt = new Date();
+      await db.insert(projectDriveItems).values({
+        id: folderId,
+        projectId: defaultSeedIds.projectId,
+        parentId: null,
+        name: `race-folder-${folderId.slice(0, 8)}`,
+        kind: "folder",
+        createdByUserId: raceA.user.id,
+        updatedByUserId: raceA.user.id,
+        createdAt: nowAt,
+        updatedAt: nowAt
+      });
+      const [uploadOutcome, deleteOutcome] = await Promise.allSettled([
+        drive.uploadFile({
+          actorKind: "human",
+          actorUserId: raceA.user.id,
+          projectId: defaultSeedIds.projectId,
+          parentId: folderId,
+          filename: `race-child-${randomUUID().slice(0, 8)}.md`,
+          sizeBytes: 12
+        }),
+        drive.softDeleteItem({
+          actorKind: "human",
+          actorUserId: raceA.user.id,
+          projectId: defaultSeedIds.projectId,
+          itemId: folderId
+        })
+      ]);
+      const fulfilled = [uploadOutcome, deleteOutcome].filter((outcome) => outcome.status === "fulfilled").length;
+      // 恰好一个赢得父行锁:不可能既上传成功又删父成功(那即孤儿)。无 FOR UPDATE 时此处会是 2。
+      assert.equal(fulfilled, 1, "exactly one of {child upload, parent soft-delete} may win the parent-row lock (no orphan)");
+      const loser = uploadOutcome.status === "rejected"
+        ? uploadOutcome.reason
+        : deleteOutcome.status === "rejected"
+          ? deleteOutcome.reason
+          : undefined;
+      const loserCode = (loser as { code?: string } | undefined)?.code;
+      // 输者必须从被锁路径以预期冲突码回退:删父先赢→上传报 parent_deleted;上传先赢→删父报 folder_not_empty。
+      assert.ok(
+        loserCode === "drive_parent_deleted" || loserCode === "drive_folder_not_empty",
+        `parent-folder race loser must reject through the locked path, got code=${String(loserCode)}`
+      );
     }
 
     // R2 auth epic：凭据 + 会话 DB 层真 PG 往返（2a/3a 仓库此前仅假数据单测，这里首次过真 Postgres + citext）。

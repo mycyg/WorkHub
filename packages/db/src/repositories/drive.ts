@@ -366,6 +366,9 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           return;
         }
         if (input.parentId) {
+          // R2 audit#21：对父文件夹行加锁后再校验活跃——softDeleteItem 删父时也对该行 FOR UPDATE(479)。
+          // 否则「读到父活跃」与「插入子项」之间可与并发删父交错,把活跃子项遗留在已删父下(孤儿)。
+          // FOR UPDATE 会等并发删父事务提交后按其结果重判 isNull(deletedAt)：父已删→不命中→drive_parent_deleted。
           const parentRows = await tx
             .select()
             .from(projectDriveItems)
@@ -375,6 +378,7 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
               eq(projectDriveItems.kind, "folder"),
               isNull(projectDriveItems.deletedAt)
             ))
+            .for("update")
             .limit(1);
           if (!parentRows[0]) {
             throw new DriveRepositoryConflictError("drive_parent_deleted", "父文件夹不可用，请刷新后重试。");
@@ -569,10 +573,13 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           throw new DriveRepositoryConflictError("drive_item_not_deleted", "这个文件不在回收站里。");
         }
         if (item.parentId) {
+          // R2 audit#21：恢复子项前对父行 FOR UPDATE,与 uploadFile/softDeleteItem 同口径串行化,
+          // 否则可与并发删父交错把刚恢复的子项遗留在已删父下(孤儿)。等并发事务提交后按其结果重判 deletedAt。
           const parentRows = await tx
             .select()
             .from(projectDriveItems)
             .where(and(eq(projectDriveItems.id, item.parentId), eq(projectDriveItems.projectId, input.projectId)))
+            .for("update")
             .limit(1);
           if (!parentRows[0] || parentRows[0].deletedAt) {
             throw new DriveRepositoryConflictError("drive_parent_deleted", "父文件夹仍在回收站里，先恢复父文件夹。");
