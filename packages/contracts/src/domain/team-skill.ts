@@ -98,7 +98,8 @@ export const TEAM_SKILL_CANONICAL_SECTIONS = ["总则", "套路", "边界情况"
 export const skillEditOpSchema = z.object({
   op: z.enum(["add_section", "modify_section", "remove_section"]),
   // 段落标题（不含前导 `## `）。
-  section: z.string().min(1).max(80),
+  // R4 #35：标题不得含换行——否则序列化成 `## <第一行>` 后，第二行起会被当成正文/新标题，破坏「单 op 单段落」结构。
+  section: z.string().min(1).max(80).refine((value) => !/[\r\n]/u.test(value), "section 不得含换行"),
   // add/modify 需要正文；remove 忽略。正文里不得再含 `## ` 行（会破坏单 op 单段落的不变量）。
   content_md: z.string().max(4000).optional()
 });
@@ -211,7 +212,9 @@ function opContentHasSectionHeading(content: string | undefined): boolean {
       fenceMarker = "";
       continue;
     }
-    if (!inFence && /^##\s+/u.test(line)) {
+    // R4 #34：允许前导空白再判 `## `——否则 `  ## 注入` 这种带缩进的行能绕过本 guard，而 body 入库前会被
+    // `.trim()`（整串）抹掉前导空白、或在 reparse 时（CommonMark ≤3 空格仍是标题）被当成真标题，破坏单段落结构。
+    if (!inFence && /^\s*##\s+/u.test(line)) {
       return true;
     }
   }

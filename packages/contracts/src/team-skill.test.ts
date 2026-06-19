@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   applySkillEditPatch,
   editBudgetForTick,
+  skillEditOpSchema,
   skillEditPatchSchema,
   TEAM_SKILL_MAX_EDIT_OPS,
   type SkillEditOp
@@ -82,6 +83,24 @@ test("applySkillEditPatch refuses content that smuggles a new ## heading (keeps 
   assert.equal(result.appliedCount, 0);
   assert.equal(result.ops[0] && "reason" in result.ops[0] ? result.ops[0].reason : "", "content_has_section_heading");
   assert.equal(result.content_md, SKILL); // 无 op 应用 → 原文不变
+});
+
+test("R4 #34 applySkillEditPatch refuses an INDENTED `## ` heading smuggled in content (would survive whole-string trim)", () => {
+  const ops: SkillEditOp[] = [
+    // 前导空格让旧 `^##` guard 漏过；body 入库前的整串 .trim() 会把它抹成列首真标题。
+    { op: "modify_section", section: "总则", content_md: "  ## 偷塞的段落\n破坏结构" }
+  ];
+  const result = applySkillEditPatch(SKILL, ops);
+  assert.equal(result.appliedCount, 0);
+  assert.equal(result.ops[0] && "reason" in result.ops[0] ? result.ops[0].reason : "", "content_has_section_heading");
+  assert.equal(result.content_md, SKILL);
+});
+
+test("R4 #35 skillEditOpSchema rejects a section heading containing a newline", () => {
+  const withNewline = skillEditOpSchema.safeParse({ op: "add_section", section: "标题\n偷塞正文", content_md: "x" });
+  assert.equal(withNewline.success, false);
+  const ok = skillEditOpSchema.safeParse({ op: "add_section", section: "正常标题", content_md: "x" });
+  assert.equal(ok.success, true);
 });
 
 test("findings: a fenced `## ` line is not treated as a section boundary by the parser", () => {
