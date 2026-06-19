@@ -70,6 +70,18 @@ export function createStructuredLogger(input: {
   };
 }
 
+// R4 缺口①：后台路径（workers/services 的 catch 块）共享的结构化 logger 单例——让原本裸 console.warn/error
+// 的关键失败也进 JSON 日志管道（ts/level/service/event/fields），采集器才能按 level=error 告警、按 event 聚合。
+// 与 app.ts 的请求 logger 同口径（读 LOG_FORMAT，默认 json）；惰性创建，避免模块加载期副作用 + 不耦合 @workhub/config。
+let defaultStructuredLogger: StructuredLogger | undefined;
+export function getDefaultStructuredLogger(): StructuredLogger {
+  if (!defaultStructuredLogger) {
+    const format: LogFormat = process.env.LOG_FORMAT === "pretty" ? "pretty" : "json";
+    defaultStructuredLogger = createStructuredLogger({ format });
+  }
+  return defaultStructuredLogger;
+}
+
 /** 客户端可传入的关联 ID 头；否则每请求自生成一个 UUID。响应同名头回显，便于跨服务/日志串联。 */
 export const REQUEST_ID_HEADER = "X-Request-Id";
 

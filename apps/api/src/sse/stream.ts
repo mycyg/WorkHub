@@ -5,6 +5,7 @@ import { formatSseComment, formatSseEvent } from "@workhub/events";
 
 import type { PresenceStore, PushBus, PushSubscription } from "../broker/index.js";
 import type { StreamUser } from "../middleware/auth.js";
+import { getDefaultStructuredLogger } from "../logging.js";
 
 const encoder = new TextEncoder();
 
@@ -80,7 +81,7 @@ export function writeEventStream(
             await presence.touchUser(user.id);
             lastPresenceRefreshAt = Date.now();
           } catch (error) {
-            console.warn("[sse] heartbeat presence touch failed (stream kept alive)", error);
+            getDefaultStructuredLogger().warn("sse_heartbeat_presence_touch_failed", { error });
           }
           await output.write(encoder.encode(formatSseComment("ping")));
           continue;
@@ -100,7 +101,7 @@ export function writeEventStream(
           try {
             await presence.refreshStream(user.id);
           } catch (error) {
-            console.warn("[sse] active-stream presence refresh failed (stream kept alive)", error);
+            getDefaultStructuredLogger().warn("sse_active_stream_presence_refresh_failed", { error });
           }
         }
       }

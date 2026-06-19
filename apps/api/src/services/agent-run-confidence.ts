@@ -11,6 +11,7 @@ import {
   type WorkHubDatabaseClient
 } from "@workhub/db";
 
+import { getDefaultStructuredLogger } from "../logging.js";
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
 
 export type AgentRunConfidenceRecordInput = {
@@ -159,7 +160,7 @@ export function createAgentRunConfidenceRecorder(
       try {
         await transitionWorkItemStatus({ workItemId: run.work_item_id, to: "escalated", at: new Date() });
       } catch (error) {
-        console.warn("WorkHub escalation work-item status transition failed", error);
+        getDefaultStructuredLogger().warn("escalation_work_item_transition_failed", { error });
       }
     }
 

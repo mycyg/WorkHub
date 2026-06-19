@@ -1,5 +1,6 @@
 import { settings } from "@workhub/config";
 
+import { getDefaultStructuredLogger } from "../logging.js";
 import { getDefaultAgentRunQueue, type AgentRunQueue } from "./agent-runner.js";
 
 export type AgentRunRecoveryTickResult = {
@@ -117,7 +118,7 @@ export function createAgentRunRecoveryScheduler(options: {
     }
     timer = setInterval(() => {
       void tick().catch((error) => {
-        console.warn("WorkHub AgentRun recovery tick failed", error);
+        getDefaultStructuredLogger().error("agent_run_recovery_tick_failed", { error });
       });
     }, intervalMs);
     timer.unref?.();

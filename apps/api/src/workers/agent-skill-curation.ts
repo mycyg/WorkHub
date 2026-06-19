@@ -14,6 +14,7 @@ import {
   type SkillEditPatchResponse
 } from "@workhub/contracts";
 
+import { getDefaultStructuredLogger } from "../logging.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
 import { getDefaultAgentRunQueue } from "./agent-runner.js";
@@ -259,11 +260,10 @@ export function createAgentRunSkillCurationScheduler(
     try {
       refined = await refineWorkspaceSkills(analysis);
     } catch (error) {
-      console.warn(
-        "WorkHub skill curation: refine pass failed",
+      getDefaultStructuredLogger().warn("skill_curation_refine_failed", {
         workspaceId,
-        error instanceof Error ? error.message : String(error)
-      );
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
 
     return { promoted, discarded, deferred, refined };
@@ -304,7 +304,7 @@ export function createAgentRunSkillCurationScheduler(
       // M13：curation 花费 gate——当日 curation 预算耗尽则整轮跳过，避免夜间无条件烧 token。
       const budgetOk = await curationBudgetOk();
       if (!budgetOk) {
-        console.warn("WorkHub skill curation: skipped tick, daily curation budget exhausted");
+        getDefaultStructuredLogger().warn("skill_curation_budget_exhausted_skip", {});
         return {
           workspaces: 0,
           promoted: 0,
@@ -326,11 +326,10 @@ export function createAgentRunSkillCurationScheduler(
           refined += result.refined;
         } catch (error) {
           // 单工作空间失败不连累其余（蒸馏是尽力而为）。
-          console.warn(
-            "WorkHub skill curation: workspace failed",
-            workspace.id,
-            error instanceof Error ? error.message : String(error)
-          );
+          getDefaultStructuredLogger().warn("skill_curation_workspace_failed", {
+            workspaceId: workspace.id,
+            error: error instanceof Error ? error.message : String(error)
+          });
         }
       }
       const finishedAt = now();
@@ -365,7 +364,7 @@ export function createAgentRunSkillCurationScheduler(
     }
     timer = setInterval(() => {
       void tick().catch((error) => {
-        console.warn("WorkHub skill curation tick failed", error);
+        getDefaultStructuredLogger().error("skill_curation_tick_failed", { error });
       });
     }, intervalMs);
     timer.unref?.();

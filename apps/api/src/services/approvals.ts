@@ -47,6 +47,7 @@ import {
 import { getDefaultPushBus } from "../broker/index.js";
 import type { PushBus } from "../broker/types.js";
 import type { AuthActor } from "../middleware/auth.js";
+import { getDefaultStructuredLogger } from "../logging.js";
 import { parseOutputContract } from "../pages/output-contract.js";
 import {
   createNotificationService,
@@ -396,7 +397,7 @@ async function publishIfAvailable<T>(
     await bus.publish(topic, type, data);
   } catch (error) {
     // best-effort：丢一次实时刷新可接受，绝不让总线故障翻掉已提交的审批决策（客户端靠下一条事件/全量重拉补齐）。
-    console.warn("[approvals] failed to publish post-commit event", { topic, type }, error);
+    getDefaultStructuredLogger().warn("approvals_publish_post_commit_failed", { topic, type, error });
   }
 }
 
@@ -503,7 +504,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         });
       }
     } catch (error) {
-      console.warn("[approvals] failed to notify comment mentions", error);
+      getDefaultStructuredLogger().warn("approvals_comment_mentions_notify_failed", { error });
     }
   }
 
@@ -676,7 +677,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           }
         });
       } catch (error) {
-        console.warn("[approvals] post-commit learned-policy/audit write failed (decision already applied)", { id, error });
+        getDefaultStructuredLogger().warn("approvals_post_commit_policy_audit_failed", { id, error });
       }
 
       const eventData = {

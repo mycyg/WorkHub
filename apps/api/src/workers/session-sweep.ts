@@ -1,5 +1,6 @@
 import type { SessionRepository } from "@workhub/db";
 
+import { getDefaultStructuredLogger } from "../logging.js";
 import { getDefaultAuthDependencies } from "../middleware/auth.js";
 
 // R2 auth epic：会话清扫调度器。周期性硬删绝对过期的死会话（sessions.deleteExpired），防止会话表无界增长。
@@ -74,7 +75,7 @@ export function createSessionSweepScheduler(options: {
     }
     timer = setInterval(() => {
       void tick().catch((error) => {
-        console.warn("WorkHub session sweep tick failed", error);
+        getDefaultStructuredLogger().error("session_sweep_tick_failed", { error });
       });
     }, intervalMs);
     timer.unref?.();
