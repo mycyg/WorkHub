@@ -38,7 +38,11 @@ export function checkLoopBudget(usage: AgentLoopUsage, budget: AgentLoopBudget):
   if (usage.totalTokens >= budget.maxTokens) {
     return { signal: "escalate", budgetHit: "tokens", reason: "token 预算已耗尽" };
   }
-  if (numericCny(usage.estimatedCostCny) >= numericCny(budget.maxCostCny)) {
+  // R4 #8：成本上限 <=0（或未配置 → numericCny 回 0）视为「该维度不限」，与 cost 包 decideRunBudget
+  // 同口径（packages/cost/src/decision.ts:153）。否则 `cost >= 0` 恒真 → maxCostCny='0' 会把每个 run
+  // 一开跑就判成本耗尽、立即升级、永久卡死。仅当配了正的成本上限才做耗尽判定。
+  const maxCostCny = numericCny(budget.maxCostCny);
+  if (maxCostCny > 0 && numericCny(usage.estimatedCostCny) >= maxCostCny) {
     return { signal: "escalate", budgetHit: "cost", reason: "成本预算已耗尽" };
   }
   if (

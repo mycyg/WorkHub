@@ -304,7 +304,10 @@ export function createPilotDay1MetricsService(
       if (!input.actor.isAdmin) {
         throw new PilotDay1MetricsServiceError(403, "admin_required", "Day 1 pilot metrics are admin-only.");
       }
-      const fallbackRange = defaultPilotDay1MetricsRange(now());
+      // R4 #21：一次快照只取一个 now()，避免 fallbackRange 与 generatedAt 取到不同时刻
+      // （默认区间的 to 与 generatedAt 本应一致，多次 now() 会让快照自相矛盾、边界处偶发漂移）。
+      const at = now();
+      const fallbackRange = defaultPilotDay1MetricsRange(at);
       const from = input.from ?? fallbackRange.from;
       const to = input.to ?? fallbackRange.to;
       if (from.getTime() >= to.getTime()) {
@@ -314,7 +317,7 @@ export function createPilotDay1MetricsService(
         rows: await repository.readDay1MetricsRows(),
         from,
         to,
-        generatedAt: now()
+        generatedAt: at
       });
     }
   };
