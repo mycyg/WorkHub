@@ -60,7 +60,23 @@ key 全程不回显/不入库；临时脚本跑后删除。
 
 ## 团队就绪缺口（56）
 
-3 个「当前默认部署即有真实价值」的 must-have：后台失败结构化日志覆盖、通知静音偏好 UI、全局搜索框。其余排进 [`team-readiness-gap-roadmap-2026-06-19.md`](./team-readiness-gap-roadmap-2026-06-19.md)：密码重置（缺邮件投递基建）、多租户 Phase4/5（cost_ledger workspace_id / NULL 回填，上第二工作区前置）、OIDC/MFA/admin console/外部集成/全局搜索/metrics 栈/AI eval 栈（多周 + 需产品决策）。
+3 个「当前默认部署即有真实价值」的 must-have + 其余排进 [`team-readiness-gap-roadmap-2026-06-19.md`](./team-readiness-gap-roadmap-2026-06-19.md)。
+
+### 3 个 must-have-now 处置（2026-06-20，用户授权自主修）
+
+| 缺口 | 状态 | 说明 |
+| --- | --- | --- |
+| ① 后台失败结构化日志 | ✅ 已修（`7244e75c` + `b8ecfc2b`） | logging.ts 加 `getDefaultStructuredLogger()` 惰性单例；workers（recovery/session-sweep/skill-curation tick）+ agent-runner 全 15 处 + sse/stream + approvals + confidence 的裸 console.warn 全部接入 JSON 日志管道（stable snake_case event + {error}），采集器可按 level/event 告警聚合 |
+| ② 通知静音偏好 UI | 📋 spec（后端已就绪，UI 待 attended 建） | 后端 GET/PUT `/api/notifications/preferences` + 迁移 0027 `muted_notification_types` 已就绪、功能经 API 可用。**未盲建 UI 的理由**：纯前端/共享 UI 改动，唯一门是 web-live-route-smoke（本机无法复跑、有 CJK 溢出门 + flake），且当时有并行会话正在对同批页面做 all-page-ui-shape + web QA，盲改撞车风险高。**建议实现**：web settings 页加一个客户端 island——加载时 GET prefs、按通知类型清单渲染开关、toggle 调 PUT（避免改 SSR SettingsPageVM/DB 线程，blast radius 最小）；类型清单取自 notifications 服务的 type 枚举；**严禁定高/line-clamp**（[[workhub-web-smoke-overflow-gate]]）。 |
+| ③ 全局搜索框 | 📋 spec（后端已就绪，UI 待 attended 建） | knowledge 后端读 `?q=`（client.searchKnowledge）已可用，仅缺输入框。**建议实现**：`packages/ui/gold-path/render.ts` 的 `renderKnowledge` 在 summary 后加一个布局安全的搜索表单（`<form method="get" action="/knowledge/search"><input name="q">`，原生 GET 即可、无需 JS 接线；或加 data-attr 由 browser.ts 拦截走 SPA navigate）。同 ②，web-smoke 是唯一门、本机不可复跑 + 并行会话在同页 UI 测试，故留待 attended/并行 web 工作告一段落再建。 |
+
+### #38 项目码前缀碰撞（自主决策：维持缓办 + 推荐）
+
+评估了「formatProjectCode 前缀碰撞加 projectId 短哈希后缀」纯码改，但它会**全局改变人读码格式**（`PREFIX-001`→`PREFIXxx-001`），前缀不再干净映射项目 slug，对一个低可利用性的边缘（需两个不同 slug 规范化成同 12 字符前缀、pilot 项目数少）不成比例。**自主决策：维持缓办**，推荐在下次确定「工作项编码命名规范」时一并处理——首选给 `work_items` 加 `(project_id, code)` 维度的唯一性、或让前缀派生自项目唯一标识，而非临时改格式。
+
+### 其余 ~53 缺口（roadmap，多为 epic/需决策/外部阻塞——不盲建）
+
+密码重置（阻塞于缺邮件投递基建）、多租户 Phase4/5（cost_ledger workspace_id / NULL 回填，刻意分阶段、上第二工作区前置）、per-workspace RBAC（membership.role 目前是死列）、OIDC/SSO、MFA、admin 控制台、外部集成（Slack/邮件/日历/webhook）、metrics/可观测性栈、AI 质量 eval/回归集、数据保留/导出、移动端/可访问性——均为多周工程 + 需产品决策（接哪些 provider/集成、RBAC 模型、保留策略）。不在无人值守下 fake-build；待用户按 roadmap 逐个 scope。
 
 ## 与前轮关系
 
