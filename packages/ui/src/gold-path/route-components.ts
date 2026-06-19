@@ -128,6 +128,7 @@ export const webRouteComponentCss = [
   ".wh-r4-route .wh-btn,.wh-r4-route .wh-pill{max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}",
   ".wh-r4-route details:not([open])>*:not(summary){display:none}",
   ".wh-r4-intake-free-text{width:100%;min-height:92px;resize:vertical;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:10px 12px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:#fff;overflow-wrap:anywhere}",
+  ".wh-r4-knowledge-search{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 4px;min-width:0;max-width:100%}.wh-r4-knowledge-search input{flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;line-height:1.45;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:9px 12px;color:var(--wh-product-ink,#172033);background:#fff}.wh-r4-knowledge-search .wh-btn{flex:0 0 auto}",
   ".wh-r4-route-count{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-product-ink,#172033);font-weight:900;line-height:1}",
   ".wh-r4-route-timeline{display:grid;gap:8px}",
   ".wh-r4-route-meter{height:8px;border-radius:999px;background:#e7edf7;overflow:hidden}.wh-r4-route-meter span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--wh-product-green,#24a66a),var(--wh-product-amber,#d98b16));max-width:100%}",
@@ -175,6 +176,9 @@ type RouteCopyKey =
   | "knowledge.sources"
   | "knowledge.missing"
   | "knowledge.open"
+  | "knowledge.searchPlaceholder"
+  | "knowledge.searchLabel"
+  | "knowledge.searchSubmit"
   | "proposal.summary"
   | "proposal.review"
   | "proposal.rollback"
@@ -340,6 +344,9 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "knowledge.sources": "证据来源",
     "knowledge.missing": "没有可靠证据，不会编造来源。",
     "knowledge.open": "打开证据",
+    "knowledge.searchPlaceholder": "搜索证据、文档、会议纪要…",
+    "knowledge.searchLabel": "搜索知识库证据",
+    "knowledge.searchSubmit": "搜索",
     "proposal.summary": "AI 摘要",
     "proposal.review": "审阅动作",
     "proposal.rollback": "回滚路径",
@@ -504,6 +511,9 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "knowledge.sources": "Evidence sources",
     "knowledge.missing": "No reliable evidence found. WorkHub will not invent sources.",
     "knowledge.open": "Open evidence",
+    "knowledge.searchPlaceholder": "Search evidence, docs, meeting notes…",
+    "knowledge.searchLabel": "Search knowledge evidence",
+    "knowledge.searchSubmit": "Search",
     "proposal.summary": "AI summary",
     "proposal.review": "Review actions",
     "proposal.rollback": "Rollback path",
@@ -2477,6 +2487,10 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(refs.length))}</span>
       </header>
+      <form class="wh-r4-knowledge-search" method="get" action="/knowledge/search" role="search" data-r4-knowledge-search-form="true">
+        <input type="search" name="q" value="${escapeHtml(vm.query_text ?? "")}" placeholder="${escapeHtml(routeT(locale, "knowledge.searchPlaceholder"))}" aria-label="${escapeHtml(routeT(locale, "knowledge.searchLabel"))}" autocomplete="off" />
+        <button class="wh-btn wh-btn-primary" type="submit">${escapeHtml(routeT(locale, "knowledge.searchSubmit"))}</button>
+      </form>
       ${sourceRef ? `<p class="wh-subtle" data-r5-7-knowledge-source-ref="${escapeHtml(sourceRef)}">${escapeHtml(routeT(locale, "knowledge.fromNotice"))}: ${escapeHtml(sourceRef)}</p>` : ""}
       <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-knowledge-fallback="true">
         <h3>${escapeHtml(routeT(locale, "knowledge.sources"))}</h3>
