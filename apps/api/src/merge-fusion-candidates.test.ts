@@ -220,6 +220,41 @@ test("LLM merge mediator adds structured field patch quality metadata", async ()
   );
 });
 
+// findings[#20]：提示词必须明确告诉模型 text_doc/spec_doc 把整段合并文本放在 merged_value.merged_text，
+// 并在 output_schema 给出 text_doc 示例——否则模型不知道该用哪个键，下游 textFromMergedValue 取不到、候选被丢。
+// 注意 merged_text 必须就是 textFromMergedValue 键列表里的第一个键（已确认）。
+test("merge mediator prompt instructs merged_text for text_doc/spec_doc and shows a text_doc schema example", async () => {
+  let prompt = "";
+  const generator = createLlmMergeFusionCandidateGenerator({
+    registry: fakeRegistry(JSON.stringify({ candidates: [] }), (content) => {
+      prompt = content;
+    })
+  });
+  await generator.generate({
+    proposalId: "92000000-0000-4000-8000-000000000001",
+    workItemId: "92000000-0000-4000-8000-000000000002",
+    proposalTitle: "客户周报草稿",
+    manifest: manifest(),
+    conflicts: [conflict("text_doc")]
+  });
+  const parsed = JSON.parse(prompt) as {
+    rules: string[];
+    output_schema: { candidates: Array<{ merged_value?: Record<string, unknown> }> };
+  };
+  // 规则里有「text_doc/spec_doc → merged_value.merged_text」这条指引。
+  assert.equal(
+    parsed.rules.some((rule) => /text_doc.*merged_text|merged_text.*text_doc/iu.test(rule)),
+    true
+  );
+  // output_schema 里有一个以 merged_text 为键的 text_doc 示例。
+  assert.equal(
+    parsed.output_schema.candidates.some(
+      (example) => example.merged_value && typeof example.merged_value["merged_text"] === "string"
+    ),
+    true
+  );
+});
+
 test("LLM merge mediator accepts rationale-only candidates", async () => {
   const generator = createLlmMergeFusionCandidateGenerator({
     registry: fakeRegistry(JSON.stringify({

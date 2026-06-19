@@ -13,6 +13,7 @@ import type {
   ProposalMergeConflict
 } from "@workhub/db";
 
+import { containsGitConflictMarkers } from "./git-conflict-markers.js";
 import { getDefaultProviderRegistry } from "./provider-registry.js";
 import type { ProposalActor } from "./proposals.js";
 
@@ -131,13 +132,7 @@ function parseFusionCandidates(parsed: unknown): z.infer<typeof llmFusionCandida
   return salvaged;
 }
 
-// findings[#low]：与 apply 侧 proposals.ts:containsGitConflictMarkers 一致的锚定检测。
-// 旧实现对 JSON.stringify 整串 includes('=======')，会把 Markdown setext H1（正文\n====）
-// 误判成冲突标记而过度拒绝候选。锚定到行首/行尾 + 后缀空白才算真冲突块。
-function containsGitConflictMarkers(value: string) {
-  return /(^|\n)(<<<<<<<[ \t].*|=======$|>>>>>>>[ \t].*)/u.test(value);
-}
-
+// findings[#low/#22]：锚定检测改用共享 git-conflict-markers.ts，与 apply 侧 proposals.ts、K2 skill-curation 同口径不漂移。
 function hasConflictMarkers(value: unknown): boolean {
   if (typeof value === "string") {
     return containsGitConflictMarkers(value);
@@ -817,14 +812,23 @@ function promptFor(input: MergeFusionCandidateGeneratorInput) {
       "Use content_context.current, content_context.incoming, and content_context.base when present.",
       "When text_diff3_conflicts is present, resolve only those overlapping hunks and preserve non-overlapping content.",
       "For structured_record conflicts, put proposed field updates under merged_value.fields and prefer fields listed in change.machine_summary.changed_fields.",
+      // findings[#20]：text_doc/spec_doc 必须把整段合并后文本放在 merged_value.merged_text（单一字符串），
+      // 否则下游 textFromMergedValue 取不到键、候选被丢弃。
+      "For text_doc/spec_doc conflicts, put the full merged text under merged_value.merged_text (a single string).",
       "If content is insufficient, return no candidate for that conflict."
     ],
     output_schema: {
       candidates: [
         {
-          conflict_key: "same as input conflict_key",
+          conflict_key: "same as input conflict_key (structured_record example)",
           rationale_md: "short human-readable reason",
           merged_value: { fields: { title: "structured value" }, proposed_resolution_md: "optional explanation" },
+          recommend: true
+        },
+        {
+          conflict_key: "same as input conflict_key (text_doc / spec_doc example)",
+          rationale_md: "short human-readable reason",
+          merged_value: { merged_text: "the full merged document text as a single string" },
           recommend: true
         }
       ]

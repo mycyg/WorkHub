@@ -107,6 +107,41 @@ test("validateSkillEditPatch hardening: rejects no-op and oversized refinements 
   assert.equal(ok.ok, true);
 });
 
+// findings[#22]：冲突标记检测从朴素 includes('=======') 改成锚定检测——
+// Markdown setext H1 下划线 / 水平分隔线（一行恰为 =======）不再被误判成 git 冲突而过度拒绝；
+// 真正的 <<<<<<< / >>>>>>> 冲突块仍被 fail-closed 拒绝。
+test("validateSkillEditPatch does NOT reject a Markdown setext underline (=======) as a conflict marker", () => {
+  const current = ["---", "name: q", "when_to_use: 用于季度报告", "---", "", "# Q", "", "## 套路", "", "拉数据"].join("\n");
+  // 新增段落正文里含一行恰为 ======= 的 setext H1 下划线（合法 Markdown，不是冲突块）。
+  const patched = validateSkillEditPatch(
+    {
+      skill_key: "q",
+      base_version: 2,
+      ops: [{ op: "add_section", section: "口径", content_md: ["口径说明", "标题", "=======", "正文继续"].join("\n") }],
+      rationale_md: "补口径",
+      confidence_score: 0.9
+    },
+    { activeVersion: 2, currentContentMd: current }
+  );
+  assert.equal(patched.ok, true);
+});
+
+test("validateSkillEditPatch still rejects a real git conflict block as conflict_markers", () => {
+  const current = ["---", "name: q", "when_to_use: 用于季度报告", "---", "", "# Q", "", "## 套路", "", "拉数据"].join("\n");
+  const conflict = ["<<<<<<< HEAD", "我方版本", "=======", "对方版本", ">>>>>>> theirs"].join("\n");
+  const patched = validateSkillEditPatch(
+    {
+      skill_key: "q",
+      base_version: 2,
+      ops: [{ op: "add_section", section: "口径", content_md: conflict }],
+      rationale_md: "误带冲突块",
+      confidence_score: 0.9
+    },
+    { activeVersion: 2, currentContentMd: current }
+  );
+  assert.deepEqual(patched, { ok: false, reason: "conflict_markers" });
+});
+
 test("parseDistilledResponse tolerates fenced json and recovers partial-valid items", () => {
   const fenced = "看一下结果：\n```json\n" + JSON.stringify({ distilled_skills: [skill()] }) + "\n```\n";
   assert.equal(parseDistilledResponse(fenced).distilled_skills.length, 1);

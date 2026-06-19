@@ -54,6 +54,7 @@ import {
   type MergeFusionTextExcerpt,
   type MergeFusionCandidateGenerator
 } from "./merge-fusion-candidates.js";
+import { containsGitConflictMarkers } from "./git-conflict-markers.js";
 import {
   materializeTextHunkOverrides,
   TextHunkMaterializationError,
@@ -594,10 +595,7 @@ function textFromAiFusionMergedValue(mergedValue: Record<string, unknown> | unde
   return null;
 }
 
-function containsGitConflictMarkers(value: string) {
-  return /(^|\n)(<<<<<<<[ \t].*|=======$|>>>>>>>[ \t].*)/u.test(value);
-}
-
+// findings[#22]：锚定检测改用共享 git-conflict-markers.ts（与 merge-fusion / skill-curation 同口径）。
 function structuredMergedValueFieldRecord(mergedValue: Record<string, unknown> | undefined) {
   if (!mergedValue) {
     return {};

@@ -18,6 +18,8 @@ import {
 } from "@workhub/contracts";
 import type { AcceptedDeliverableSignal, DiscardedSkillSignal, EscalationSignal } from "@workhub/db";
 
+import { containsGitConflictMarkers } from "./git-conflict-markers.js";
+
 // K2：可被精修的激活技能（喂回当前正文，要 curator 打受限补丁）。
 export type ActiveSkillForRefinement = {
   skillKey: string;
@@ -202,9 +204,11 @@ export function parseDistilledResponse(text: string): DistilledTeamSkillsRespons
 
 // ── K2：受限编辑补丁式精修（refine existing active skill）────────────────────────────
 
-// git 冲突标记不得出现在精修结果里（与 merge-fusion 同口径，fail-closed）。
+// findings[#22]：git 冲突标记不得出现在精修结果里（fail-closed）。
+// 旧实现用朴素 includes('=======')，会把 Markdown setext H1 下划线 / 水平分隔线误判成冲突而过度拒绝；
+// 改用与 merge-fusion / proposals 共享的锚定检测（git-conflict-markers.ts），三处同口径不漂移。
 function hasConflictMarkers(text: string): boolean {
-  return text.includes("<<<<<<<") || text.includes("=======") || text.includes(">>>>>>>");
+  return containsGitConflictMarkers(text);
 }
 
 export type SkillEditPatchValidation =
