@@ -11,7 +11,13 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
-import { eventTypes, type AcceptedDeliverableVM, type WorkHubEvent } from "@workhub/contracts";
+import {
+  allowedWorkItemTransitions,
+  eventTypes,
+  type AcceptedDeliverableVM,
+  type WorkHubEvent,
+  type WorkItemStatus
+} from "@workhub/contracts";
 import { buildUsageRecord, createMemoryCostLedgerStore, decideRunBudget } from "@workhub/cost";
 import { topics } from "@workhub/events";
 import type {
@@ -447,13 +453,22 @@ class MemoryWorkItems implements WorkItemRepository {
   }
 
   transitions: { workItemId: string; to: string }[] = [];
+  // 忠实复刻仓库层 CAS：仅当当前态是 `to` 的合法前驱时才写并返回 transitioned:true；否则幂等 no-op，
+  // 回填当前真实状态 + transitioned:false（FIX#4 的「已在目标态 vs 非法前驱」判别全凭它）。
   async transitionWorkItemStatus(input: Parameters<WorkItemRepository["transitionWorkItemStatus"]>[0]) {
     this.transitions.push({ workItemId: input.workItemId, to: input.to });
     const row = this.rows.get(input.workItemId);
-    if (row) {
-      this.rows.set(input.workItemId, { ...row, status: input.to });
+    if (!row) {
+      return null;
     }
-    return { id: input.workItemId, status: input.to };
+    const predecessors = (Object.entries(allowedWorkItemTransitions) as [WorkItemStatus, readonly WorkItemStatus[]][])
+      .filter(([, targets]) => targets.includes(input.to))
+      .map(([from]) => from);
+    if (predecessors.includes(row.status as WorkItemStatus)) {
+      this.rows.set(input.workItemId, { ...row, status: input.to });
+      return { id: input.workItemId, status: input.to, transitioned: true };
+    }
+    return { id: input.workItemId, status: row.status as WorkItemStatus, transitioned: false };
   }
 }
 
@@ -819,6 +834,72 @@ function executableAgentClient(): AgentLoopClient {
   };
 }
 
+// FIX#5：成功 + 写出交付物(manifest)，但自评/评审给低分(grade=1) → confidenceScore≈0.41 → grade=low →
+// matrixVerdict 落 escalate。用来构造「成功且有可审阅提议、但置信度判 escalate」的关键场景。
+function escalateReviewAgentClient(): AgentLoopClient {
+  const responses = [
+    {
+      id: "msg-esc-1",
+      stopReason: "tool_use",
+      usage: { inputTokens: 10, outputTokens: 20 },
+      usageRecord: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        task: "worker",
+        inputTokens: 10,
+        outputTokens: 20,
+        estimatedCostCny: "0.001",
+        source: "agent_step",
+        createdAt: "2026-06-05T00:00:00.000Z"
+      },
+      content: [
+        {
+          type: "tool_use",
+          id: "tool-esc-1",
+          name: "write_file",
+          input: { path: "outputs/result.md", content: "done" }
+        }
+      ]
+    },
+    {
+      id: "msg-esc-2",
+      stopReason: "end_turn",
+      usage: { inputTokens: 5, outputTokens: 5 },
+      usageRecord: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        task: "worker",
+        inputTokens: 5,
+        outputTokens: 5,
+        estimatedCostCny: "0.002",
+        source: "agent_step",
+        createdAt: "2026-06-05T00:00:01.000Z"
+      },
+      content: [{ type: "text", text: "交付完成" }]
+    },
+    // 低分评审：driving verdict 落到 escalate（而 run 仍成功、manifest 仍生成）。
+    {
+      id: "msg-esc-review",
+      stopReason: "end_turn",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      content: [{ type: "text", text: "{\"grade\": 1, \"rationale\": \"质量不足，建议人工复核\"}" }]
+    }
+  ] satisfies Awaited<ReturnType<AgentLoopClient["messages"]["create"]>>[];
+
+  return {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        const response = responses.shift();
+        if (!response) {
+          throw new Error("No fake AgentLoop response queued");
+        }
+        return response;
+      }
+    }
+  };
+}
+
 test("agent run prompt includes resolved WorkItem context before calling the model", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-context-test-"));
@@ -892,8 +973,11 @@ test("agent run prompt includes resolved WorkItem context before calling the mod
 
   assert.equal(executed?.run_id, queued.run_id);
   assert.equal(executed?.status, "succeeded", JSON.stringify(executed?.trace));
-  // findings[H8]：成功 run 把工作项推进 ai_working→in_review（此前永不迁移，卡在 ai_working）。
-  assert.equal(statusTransitions.includes("in_review"), true);
+  // FIX#5：本测试未接 proposalSink（proposals:false）→ 成功 run 没有可审阅交付物 → 工作项推进 escalated
+  // （而非 in_review）。in_review 仅保留给「成功 + 开出提议」的 run（见下方 confidence/proposal 集成测试）。
+  // 旧断言期望 in_review，依赖的是「无 proposalSink 也谎报 proposalOpened=true→in_review」的 bug——已修。
+  assert.equal(statusTransitions.includes("escalated"), true);
+  assert.equal(statusTransitions.includes("in_review"), false);
   assert.match(firstMessage, /WorkHub 数据库中的真实工单上下文/u);
   assert.match(firstMessage, /DAY0PILOT-005/u);
   assert.match(firstMessage, /Prepare a concise Day 0 pilot validation note/u);
@@ -1841,10 +1925,14 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(decisions.confidenceRows[0]?.verdict, "human_spotcheck");
   assert.equal(decisions.confidenceRows[0]?.grade, "high");
   assert.equal(decisions.escalationRows.length, 0);
+  // FIX#5：本测试聚焦 run 域的 trace/replay/事件，未接 proposalSink（避免 proposalOpened 事件污染
+  // 「每条事件都在 run topic」的断言）→ 成功 run 无可审阅交付物 → 里程碑落 escalated（不是 in_review）。
+  // 「成功 + 真开出提议 → in_review + 唯一通知」的完整路径由专门的 FIX#5 集成测试覆盖（下方）。
+  // 旧断言期望 in_review，依赖的是「无 proposalSink 也谎报 proposalOpened=true」的 bug——已修。
+  // escalated 无 approverUserId（仅 in_review 里程碑才补发起人为审批人）。
   assert.deepEqual(milestoneNotifications, [{
-    newStatus: "in_review",
+    newStatus: "escalated",
     code: "WH-21",
-    approverUserId: userId,
     projectOwnerUserId: projectOwnerId
   }]);
 
@@ -2789,4 +2877,338 @@ test("agent run confidence recording opens an escalation for failed deliverables
   assert.equal(decisions.escalationRows[0]?.confidenceId, decisions.confidenceRows[0]?.id);
   assert.equal(auditLogs.rows.some((row) => row.action === "confidence.scored"), true);
   assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
+});
+
+// 忠实复刻仓库层 CAS 的工作项状态写入器：持一份 id→status 内存表，仅当当前态是 `to` 的合法前驱时才写并回
+// transitioned:true；否则回填当前真实状态 + transitioned:false（让 FIX#4 的「已在目标态 vs 非法前驱」判别生效）。
+function faithfulWorkItemStatusWriter(initial: Record<string, WorkItemStatus>) {
+  const statuses = new Map<string, WorkItemStatus>(Object.entries(initial));
+  const calls: { to: WorkItemStatus; transitioned: boolean; from: WorkItemStatus | undefined }[] = [];
+  const writer = async (input: { workItemId: string; to: WorkItemStatus; at: Date }) => {
+    const from = statuses.get(input.workItemId);
+    if (from === undefined) {
+      calls.push({ to: input.to, transitioned: false, from });
+      return null;
+    }
+    const predecessors = (Object.entries(allowedWorkItemTransitions) as [WorkItemStatus, readonly WorkItemStatus[]][])
+      .filter(([, targets]) => targets.includes(input.to))
+      .map(([predecessor]) => predecessor);
+    if (predecessors.includes(from)) {
+      statuses.set(input.workItemId, input.to);
+      calls.push({ to: input.to, transitioned: true, from });
+      return { id: input.workItemId, status: input.to, transitioned: true };
+    }
+    calls.push({ to: input.to, transitioned: false, from });
+    return { id: input.workItemId, status: from, transitioned: false };
+  };
+  return { writer, statuses, calls };
+}
+
+test("FIX#5: a succeeded+manifest run with an escalate verdict ends in_review with an open proposal (not escalated) and notifies once", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-fix5-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-fix5-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => "75000000-0000-4000-8000-000000000501"
+  });
+  const milestoneNotifications: { newStatus: string }[] = [];
+  const notifications: AgentRunNotificationPublisher = {
+    async notifyMilestone(context) {
+      milestoneNotifications.push({ newStatus: context.newStatus });
+      return [];
+    }
+  };
+  // 工作项已被 kickoff 推到 ai_working（route 路径在入队时做；此处直接 seed）。
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000051",
+    workdir: () => workdir,
+    // 工人写出交付物 + 低分评审 → run 成功且有 manifest，但置信度判 escalate。
+    client: () => escalateReviewAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: createAgentRunConfidenceRecorder({
+      decisions,
+      auditLogs,
+      settings: runtimeSettings,
+      // FIX#5：把置信记录器的 escalated 写入指到忠实 CAS writer——验证它在 proposalWillOpen 时绝不推 escalated。
+      transitionWorkItemStatus: async (input) => {
+        await status.writer(input);
+      }
+    }),
+    notifications,
+    notificationWorkItem: async () => ({
+      id: workItemId,
+      code: "WH-21",
+      title: "Escalate-verdict worker run",
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: userId,
+      projectOwnerUserId: projectOwnerId
+    }),
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Escalate-verdict worker run" });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "succeeded", JSON.stringify(executed?.trace.at(-1)));
+  // 置信度真判 escalate（低分评审驱动），且升级/注意力事件照常落库——attention 队列仍能浮出这条低置信提议。
+  assert.equal(decisions.confidenceRows.length, 1);
+  assert.equal(decisions.confidenceRows[0]?.verdict, "escalate");
+  assert.equal(decisions.escalationRows.length, 1, "escalation/attention event is still recorded");
+  assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
+  // (a) 恰好一个最终状态：in_review（绝不是 escalated）——有可审阅提议，工作项必须停在 in_review。
+  assert.equal(status.statuses.get(workItemId), "in_review");
+  // 置信记录器在 proposalWillOpen 时绝不写 escalated（否则会抢在 notifyRunMilestone 前把状态拐进 escalated）。
+  assert.equal(status.calls.some((call) => call.to === "escalated"), false, "must never attempt escalated transition");
+  // (c) escalated 工作项上绝不挂 open 提议：本工作项在 in_review，且确有一条 open 提议。
+  const opened = await proposals.listByWorkItem(workItemId);
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0]?.status, "opened");
+  // (b) 恰好一条里程碑通知，且为 in_review。
+  assert.deepEqual(milestoneNotifications, [{ newStatus: "in_review" }]);
+});
+
+test("FIX#4: a failed run already AT escalated still emits the milestone notification (idempotent no-op counts as success)", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-fix4-test-"));
+  const auditLogs = new MemoryAuditLogs();
+  const milestoneNotifications: { newStatus: string }[] = [];
+  const notifications: AgentRunNotificationPublisher = {
+    async notifyMilestone(context) {
+      milestoneNotifications.push({ newStatus: context.newStatus });
+      return [];
+    }
+  };
+  // 工作项已被别处推到 escalated（例如置信记录器先一步落定）。failed run 的里程碑目标也是 escalated：
+  // ai_working→escalated 的 CAS 此刻是「已在目标态」的幂等 no-op（escalated 非 escalated 的合法前驱）。
+  // 旧逻辑把这次 no-op 当真 no-op → 抑制通知（漏报）。FIX#4：already-at-target 视为成功 → 仍发通知。
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "escalated" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000041",
+    workdir: () => workdir,
+    client: () => noDeliverableAgentClient(),
+    auditLogs,
+    confidence: false,
+    proposals: false,
+    notifications,
+    notificationWorkItem: async () => ({
+      id: workItemId,
+      code: "WH-21",
+      title: "Failed worker run",
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: userId,
+      projectOwnerUserId: projectOwnerId
+    }),
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Failed worker run" });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "failed");
+  // CAS 这次是幂等 no-op（已在 escalated）：transitioned:false 但 status===escalated。
+  const escalatedCall = status.calls.find((call) => call.to === "escalated");
+  assert.equal(escalatedCall?.transitioned, false, "transition is a no-op (already at escalated)");
+  // 关键：尽管状态没真正迁移，still-at-target 算成功 → 里程碑通知照常发，不被漏报。
+  assert.deepEqual(milestoneNotifications, [{ newStatus: "escalated" }]);
+});
+
+test("FIX#4: a failed run whose item is at an illegal predecessor (spec_ready) suppresses the milestone notification", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-fix4b-test-"));
+  const auditLogs = new MemoryAuditLogs();
+  const milestoneNotifications: { newStatus: string }[] = [];
+  const notifications: AgentRunNotificationPublisher = {
+    async notifyMilestone(context) {
+      milestoneNotifications.push({ newStatus: context.newStatus });
+      return [];
+    }
+  };
+  // 工作项卡在 spec_ready（非 escalated 的合法前驱，也非 escalated 本身）→ 真 no-op → 抑制谎报通知。
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "spec_ready" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000042",
+    workdir: () => workdir,
+    client: () => noDeliverableAgentClient(),
+    auditLogs,
+    confidence: false,
+    proposals: false,
+    notifications,
+    notificationWorkItem: async () => ({
+      id: workItemId,
+      code: "WH-21",
+      title: "Failed worker run",
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: userId,
+      projectOwnerUserId: projectOwnerId
+    }),
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+
+  await queue.enqueue({ workItemId, actorId: userId, title: "Failed worker run" });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.status, "failed");
+  const escalatedCall = status.calls.find((call) => call.to === "escalated");
+  assert.equal(escalatedCall?.transitioned, false, "illegal predecessor → genuine no-op");
+  // 真 no-op（既没迁移、也不在目标态）→ 抑制里程碑通知，避免谎报「已转人工」。
+  assert.deepEqual(milestoneNotifications, []);
+});
+
+test("FIX#7: POST /workitems/:id/agent-runs on a spec_ready item kicks it to ai_working and reaches in_review (not stuck)", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-fix7-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-fix7-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => "75000000-0000-4000-8000-000000000701"
+  });
+  const milestoneNotifications: { newStatus: string }[] = [];
+  const notifications: AgentRunNotificationPublisher = {
+    async notifyMilestone(context) {
+      milestoneNotifications.push({ newStatus: context.newStatus });
+      return [];
+    }
+  };
+  // 工作项一开始处于 spec_ready（此前的 bug：入队不动状态 → 成功后 ai_working→in_review CAS 落空 → 卡死）。
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "spec_ready" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000071",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: false,
+    notifications,
+    notificationWorkItem: async () => ({
+      id: workItemId,
+      code: "WH-21",
+      title: "Kickoff worker run",
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: userId,
+      projectOwnerUserId: projectOwnerId
+    }),
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAgentRunRoutes({
+    auth: authDeps(runtimeSettings),
+    queue,
+    snapshots,
+    auditLogs,
+    autoRun: false,
+    // FIX#7：route 入队时把工作项 spec_ready→ai_working（镜像 session-finalize kickoff）。
+    kickoffWorkItemStatus: status.writer
+  }));
+
+  const start = await app.request(`/api/workitems/${workItemId}/agent-runs`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) },
+    body: JSON.stringify({ title: "Kickoff worker run" })
+  });
+  assert.equal(start.status, 202);
+  const startBody = await start.json() as { ok: true; data: { run_id: string } };
+
+  // 入队即把工作项 kickoff 到 ai_working（route FIX#7）。
+  assert.equal(status.statuses.get(workItemId), "ai_working");
+
+  const executed = await queue.runNext();
+  assert.equal(executed?.run_id, startBody.data.run_id);
+  assert.equal(executed?.status, "succeeded");
+  // 成功 + 开出提议 → ai_working→in_review 的 CAS 现在能落（不再卡 spec_ready）。
+  assert.equal(status.statuses.get(workItemId), "in_review");
+  const opened = await proposals.listByWorkItem(workItemId);
+  assert.equal(opened.length, 1);
+  assert.deepEqual(milestoneNotifications, [{ newStatus: "in_review" }]);
+});
+
+test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and notifies", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const auditLogs = new MemoryAuditLogs();
+  const milestoneNotifications: { newStatus: string }[] = [];
+  const notifications: AgentRunNotificationPublisher = {
+    async notifyMilestone(context) {
+      milestoneNotifications.push({ newStatus: context.newStatus });
+      return [];
+    }
+  };
+  const recoveredAt = new Date("2026-06-05T00:10:00.000Z");
+  // run 在执行中崩溃，工作项停在 ai_working（执行 worker 已死，无人替它落终态）。
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => recoveredAt,
+    id: () => "40000000-0000-4000-8000-00000000004b",
+    workerId: "worker-deadletter-10",
+    leaseMs: 60_000,
+    maxRecoverAttempts: 1,
+    persistence,
+    auditLogs,
+    confidence: false,
+    proposals: false,
+    notifications,
+    notificationWorkItem: async () => ({
+      id: workItemId,
+      code: "WH-21",
+      title: "Poison run",
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: userId,
+      projectOwnerUserId: projectOwnerId
+    }),
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Poison run" });
+  const expiredLease = {
+    claimedAt: new Date("2026-06-05T00:00:00.000Z"),
+    heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
+    leaseExpiresAt: new Date("2026-06-05T00:01:00.000Z")
+  };
+
+  // 第一次过期：仍在上限内 → 重排 queued（不应动工作项状态，也不发通知）。
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-1", ...expiredLease });
+  const firstRecover = await queue.recoverExpiredClaims();
+  assert.equal(firstRecover[0]?.status, "queued");
+  assert.equal(status.statuses.get(workItemId), "ai_working", "requeue must not touch the work item");
+  assert.deepEqual(milestoneNotifications, [], "requeue must not notify");
+
+  // 第二次过期（已达上限）：转死信 failed → 工作项 ai_working→escalated + 一条「转人工」里程碑通知。
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
+  const secondRecover = await queue.recoverExpiredClaims();
+  assert.equal(secondRecover[0]?.status, "failed");
+  assert.equal(status.statuses.get(workItemId), "escalated", "dead-letter advances the stuck item to escalated");
+  assert.deepEqual(milestoneNotifications, [{ newStatus: "escalated" }]);
+  // 死信审计动作仍照常打。
+  assert.equal(
+    auditLogs.rows.some((row) => row.action === "agent_run.dead_lettered_stale_claim"),
+    true
+  );
 });

@@ -213,13 +213,18 @@ export type WorkItemRepository = {
     at: Date;
   }) => Promise<WorkItemHumanReservedRow | null>;
   // findings[H8/H9]：CAS 守卫的状态机迁移——仅当当前状态是 `to` 的合法前驱(按 allowedWorkItemTransitions)时才写，
-  // 否则 0 行(no-op，返回 null)。供 agent-runner 把跑完的工作项推进 ai_working→in_review / ai_working→escalated，
+  // 否则 0 行(no-op)。供 agent-runner 把跑完的工作项推进 ai_working→in_review / ai_working→escalated，
   // 也防止 illegal 迁移(此前各处直接 SET status 不校验前驱)。
+  // FIX#4：返回值带 `transitioned` 判别符并在 no-op 时回填当前真实状态，让调用方区分两类 no-op：
+  //   - transitioned:true            → CAS 写入发生（当前态是合法前驱）。
+  //   - transitioned:false 且 status===to → 工作项「已在目标态」（幂等无操作，对里程碑而言仍算成功，应照常通知）。
+  //   - transitioned:false 且 status!==to → 「非法前驱」真 no-op（应抑制谎报通知）。
+  // 行/事项不存在(或目标无任何前驱、已软删)时返回 null。
   transitionWorkItemStatus: (input: {
     workItemId: string;
     to: WorkItemStatus;
     at: Date;
-  }) => Promise<{ id: string; status: WorkItemStatus } | null>;
+  }) => Promise<{ id: string; status: WorkItemStatus; transitioned: boolean } | null>;
 };
 
 // 用户停用-工作交接（offboarding）：清空被停用用户在所有「非终态、未软删」事项上的认领，把它们退回可领取池
@@ -356,6 +361,21 @@ function acceptedDeliverableQueryForTx(
 }
 
 export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository {
+  // FIX#4：CAS 迁移落空（或目标态无前驱）时回读当前真实状态，让调用方区分「已在目标态」(幂等成功)
+  // 与「非法前驱」(真 no-op)。行不存在/已软删 → null（与 update 守卫同口径，软删行不算可迁移）。
+  async function readCurrentTransitionState(workItemId: string, to: WorkItemStatus) {
+    const rows = await db
+      .select({ id: workItems.id, status: workItems.status })
+      .from(workItems)
+      .where(and(eq(workItems.id, workItemId), isNull(workItems.deletedAt)))
+      .limit(1);
+    const current = rows[0];
+    if (!current) {
+      return null;
+    }
+    return { id: current.id, status: current.status, transitioned: false };
+  }
+
   return {
     async findWorkItemForHumanReservedGuard(workItemId) {
       const rows = await db
@@ -442,8 +462,10 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       const predecessors = (Object.entries(allowedWorkItemTransitions) as [WorkItemStatus, readonly WorkItemStatus[]][])
         .filter(([, targets]) => targets.includes(input.to))
         .map(([from]) => from);
+      // 目标态没有任何合法前驱（如 done/cancelled 不可经此推进）→ 直接 no-op。仍回填当前真实状态，
+      // 让调用方据「已在目标态」判别幂等成功（FIX#4）；行不存在则返回 null。
       if (predecessors.length === 0) {
-        return null;
+        return readCurrentTransitionState(input.workItemId, input.to);
       }
       const rows = await db
         .update(workItems)
@@ -460,7 +482,13 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           )
         )
         .returning({ id: workItems.id, status: workItems.status });
-      return rows[0] ?? null;
+      const written = rows[0];
+      if (written) {
+        return { ...written, transitioned: true };
+      }
+      // CAS 0 行：当前态不是合法前驱。回读当前真实状态，让调用方区分「已在目标态」(幂等成功)
+      // 与「非法前驱」(真 no-op)。FIX#4：notifyRunMilestone 据此决定是否仍发里程碑通知。
+      return readCurrentTransitionState(input.workItemId, input.to);
     },
 
     async unassignActiveClaimsForUser(userId, at) {

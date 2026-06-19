@@ -4,13 +4,14 @@ import { HTTPException } from "hono/http-exception";
 import {
   getSharedDatabaseClient,
   createProposalRepository,
+  createWorkItemRepository,
   type AuditLogRepository,
   type MergeAttemptRow,
   type MergeProposalRow,
   type SnapshotRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
-import { normalizeWorkHubLocale, startAgentRunRequestSchema, type WorkHubLocale } from "@workhub/contracts";
+import { normalizeWorkHubLocale, startAgentRunRequestSchema, type WorkHubLocale, type WorkItemStatus } from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -89,6 +90,29 @@ function getDefaultProposalReplayAudit(): ProposalReplayAuditReader {
   return createProposalRepository(defaultProposalReplayAuditDbClient.db);
 }
 
+// FIX#7：入队启动 AI 时把工作项从 spec_ready 推进 ai_working（镜像 session-finalize 的 kickoff 路径）。
+// 此前入队不动状态：run 成功后 notifyRunMilestone 试图 ai_working→in_review，但工单仍卡在 spec_ready
+// （非 in_review 合法前驱）→ CAS 落空、工单永远卡 spec_ready 且收不到里程碑通知。
+// CAS 守卫在仓库层：仅当当前态是 ai_working 的合法前驱(spec_ready/in_review 等)时才写，否则幂等 no-op，
+// 不会把已在 ai_working / pm_mode / 终态的工单乱推。
+export type WorkItemStatusKickoff = (input: {
+  workItemId: string;
+  to: WorkItemStatus;
+  at: Date;
+}) => Promise<{ id: string; status: WorkItemStatus; transitioned: boolean } | null>;
+
+let defaultWorkItemStatusKickoffDbClient: WorkHubDatabaseClient | undefined;
+let defaultWorkItemStatusKickoff: WorkItemStatusKickoff | undefined;
+
+function getDefaultWorkItemStatusKickoff(): WorkItemStatusKickoff {
+  if (!defaultWorkItemStatusKickoff) {
+    defaultWorkItemStatusKickoffDbClient ??= getSharedDatabaseClient();
+    const repo = createWorkItemRepository(defaultWorkItemStatusKickoffDbClient.db);
+    defaultWorkItemStatusKickoff = (input) => repo.transitionWorkItemStatus(input);
+  }
+  return defaultWorkItemStatusKickoff;
+}
+
 async function buildMergeTimelineForWorkItem(
   proposalAudit: ProposalReplayAuditReader | undefined,
   auditLogs: AuditLogRepository | undefined,
@@ -120,6 +144,9 @@ export type AgentRunRoutesDependencies = {
   snapshots?: SnapshotRepository;
   workItems?: WorkItemService;
   proposalAudit?: ProposalReplayAuditReader;
+  // FIX#7：入队 kickoff 用的状态写入器（spec_ready→ai_working）。不传时按 deps.queue 是否注入决定：
+  // 纯队列单测（注入了 queue）不接，避免误依赖真 DB；生产 wiring（无 queue）解析为真实仓库写入器。
+  kickoffWorkItemStatus?: WorkItemStatusKickoff;
   autoRun?: boolean;
   onAutoRunError?: (error: unknown, run: AgentRunQueueRecord) => void;
 };
@@ -139,6 +166,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   const queue = deps.queue ?? getDefaultAgentRunQueue();
   const replayWorkItems = deps.workItems ?? (deps.queue ? undefined : getDefaultWorkItemService());
   const replayProposalAudit = deps.proposalAudit ?? (deps.queue ? undefined : getDefaultProposalReplayAudit());
+  const kickoffWorkItemStatus = deps.kickoffWorkItemStatus ?? (deps.queue ? undefined : getDefaultWorkItemStatusKickoff());
 
   function auditStores() {
     if (deps.auditLogs && deps.snapshots) {
@@ -174,6 +202,16 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
       ...(payload.title ? { title: payload.title } : {}),
       ...(payload.mode ? { mode: payload.mode } : {})
     });
+    // FIX#7：入队成功后把工作项 spec_ready→ai_working（CAS 守卫在仓库层；当前态非合法前驱则幂等 no-op）。
+    // 必须在 enqueue 成功之后做：若 enqueue 抛 409/402，工作项状态不该被改动。fire-and-forget——状态写失败
+    // 不拖垮已入队的 run（run 完成时 notifyRunMilestone 仍会再次尝试推进，CAS 兜底）。
+    if (kickoffWorkItemStatus) {
+      try {
+        await kickoffWorkItemStatus({ workItemId, to: "ai_working", at: new Date() });
+      } catch (error) {
+        console.warn("WorkHub agent-run kickoff status transition failed", error);
+      }
+    }
     if (deps.autoRun !== false) {
       void drainAutoRunQueue(queue).catch((error) => {
         if (deps.onAutoRunError) {

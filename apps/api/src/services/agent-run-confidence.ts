@@ -16,6 +16,11 @@ import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
 export type AgentRunConfidenceRecordInput = {
   run: AgentRunQueueRecord;
   result: AgentLoopResult;
+  // FIX#5：本次 run 是否会/已开出可审阅的提议（succeeded + manifest + 接了 proposalSink）。
+  // 为真时：低置信 escalate 裁决只记升级/注意力事件，绝不把工作项推到 escalated——有提议要审，
+  // 终态由唯一写入者 notifyRunMilestone 落到 in_review（杜绝「escalated 工作项上挂着 open 提议」的矛盾）。
+  // 不传（旧调用方/单测）→ 视为 false → 保留「escalate 即推 escalated」的旧行为，零影响。
+  proposalWillOpen?: boolean;
 };
 
 export type AgentRunConfidenceRecorder = (input: AgentRunConfidenceRecordInput) => Promise<{
@@ -77,7 +82,7 @@ export function createAgentRunConfidenceRecorder(
 
   const transitionWorkItemStatus = options.transitionWorkItemStatus ?? getDefaultConfidenceStatusWriter();
 
-  return async ({ run, result }) => {
+  return async ({ run, result, proposalWillOpen }) => {
     const assessment = evaluateAgentRunConfidence({
       runId: run.run_id,
       workItemId: run.work_item_id,
@@ -145,10 +150,17 @@ export function createAgentRunConfidenceRecorder(
 
     // findings[H9]：升级即把工作项推进 escalated（即便 run 本身 succeeded 但置信度判定 escalate）。
     // CAS 守卫在仓库层；fire-and-forget——状态写失败不影响已落库的置信度/升级记录。
-    try {
-      await transitionWorkItemStatus({ workItemId: run.work_item_id, to: "escalated", at: new Date() });
-    } catch (error) {
-      console.warn("WorkHub escalation work-item status transition failed", error);
+    // FIX#5：但当本次 run 会开出可审阅的提议（proposalWillOpen）时，绝不在此处把工作项推到 escalated。
+    // 否则会产生「escalated 工作项上挂着 open 提议」的矛盾，且抢在 notifyRunMilestone 之前改了状态，
+    // 让 ai_working→in_review 的 CAS 落空（escalated 非 in_review 合法前驱）→ 工作项卡死 + 里程碑通知被吞。
+    // 此时升级/注意力事件已照常落库（attention 队列仍能浮出这条低置信提议），最终状态交由唯一写入者
+    // notifyRunMilestone 落到 in_review。escalated 仅保留给「无可审阅交付物」的 run（失败 / 成功但无 manifest）。
+    if (!proposalWillOpen) {
+      try {
+        await transitionWorkItemStatus({ workItemId: run.work_item_id, to: "escalated", at: new Date() });
+      } catch (error) {
+        console.warn("WorkHub escalation work-item status transition failed", error);
+      }
     }
 
     return { confidenceId: confidence.id, escalationId: escalation.id };

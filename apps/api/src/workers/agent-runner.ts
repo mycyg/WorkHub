@@ -352,13 +352,15 @@ export function createInMemoryAgentRunQueue(options: {
   // R2 audit#5：把里程碑收件人解析成活跃度引用，让 lifecycle 过滤丢弃已停用收件人。
   // 不传（单测内存队列）→ usersById 留空 → 全员视为活跃（旧行为，零影响）；仅 PG 装配注入真解析器。
   resolveUserRefs?: AgentRunUserRefResolver | false;
-  // findings[H8/H9]：跑完后把工作项状态机推进（成功+开了提议→in_review；失败/升级/提议创建失败→escalated）。
+  // findings[H8/H9]：跑完后把工作项状态机推进（成功+开了提议→in_review；失败/无提议→escalated）。
   // CAS 守卫在仓库层(transitionWorkItemStatus)，此处只是 fire-and-forget 的写入回调；不传则不写状态（旧行为）。
-  // FIX#4：回调透传仓库 CAS 结果——成功迁移回 {id,status}，当前态非 `to` 的合法前驱则 no-op 回 null。
-  // notifyRunMilestone 据此 gate 里程碑通知，避免「工单状态没动却收到 in_review 通知」的漂移。
+  // FIX#4：回调透传仓库 CAS 结果——{id,status,transitioned}。notifyRunMilestone 据此 gate 里程碑通知：
+  //   transitioned:true 或（no-op 但 status===to，即已在目标态）→ 视为成功，照常通知；
+  //   no-op 且 status!==to（非法前驱）→ 真 no-op，抑制通知，避免「工单状态没动却收到 in_review 通知」的漂移。
+  // 兼容旧注入：回调可只回 {id,status}（无 transitioned）或 null/void，缺 transitioned 时按 status===to 兜底判幂等。
   transitionWorkItemStatus?:
     | ((input: { workItemId: string; to: WorkItemStatus; at: Date }) =>
-        Promise<{ id: string; status: WorkItemStatus } | null | void>)
+        Promise<{ id: string; status: WorkItemStatus; transitioned?: boolean } | null | void>)
     | false;
   eventBus?: AgentRunEventBus | false;
   persistence?: AgentRunPersistence | false;
@@ -1082,11 +1084,15 @@ export function createInMemoryAgentRunQueue(options: {
       current = updateRun(finalizeExecutedRun(current, result, now()));
       await persistRunWithTrace(current, workerId);
       await emitFinalRunEvent(current, result);
-      const confidenceId = await recordRunConfidence(current, result);
+      // FIX#5：成功且有 manifest 且接了 proposalSink → 本次会开出可审阅提议。据此告诉置信记录器：
+      // 即便低置信 escalate，也别把工作项推到 escalated（有提议要审），只记升级/注意力事件；
+      // 最终状态由 notifyRunMilestone 这个唯一写入者落到 in_review。与 openProposalFromManifest 的开提议门同口径。
+      const proposalWillOpen = Boolean(proposalSink && current.status === "succeeded" && result.manifest);
+      const confidenceId = await recordRunConfidence(current, result, { proposalWillOpen });
       let proposalOpened = false;
       try {
         await openProposalFromManifest(current, result, confidenceId);
-        proposalOpened = true;
+        proposalOpened = proposalWillOpen;
       } catch (error) {
         console.warn("WorkHub openProposalFromManifest failed; run already recorded as succeeded", error);
       }
@@ -1182,13 +1188,14 @@ export function createInMemoryAgentRunQueue(options: {
 
   async function recordRunConfidence(
     run: AgentRunQueueRecord,
-    result: AgentLoopResult
+    result: AgentLoopResult,
+    opts: { proposalWillOpen?: boolean } = {}
   ): Promise<string | undefined> {
     if (options.confidence === false || !options.confidence) {
       return undefined;
     }
     try {
-      const recorded = await options.confidence({ run, result });
+      const recorded = await options.confidence({ run, result, proposalWillOpen: opts.proposalWillOpen ?? false });
       return recorded?.confidenceId;
     } catch (error) {
       console.warn("WorkHub AgentRun confidence recording failed", error);
@@ -1206,20 +1213,30 @@ export function createInMemoryAgentRunQueue(options: {
     if (!newStatus) {
       return;
     }
-    // findings[H8/H9]：把工作项状态机推进（CAS 守卫在仓库层 transitionWorkItemStatus，非法前驱/已迁移则 no-op）。
+    // findings[H8/H9]：把工作项状态机推进（CAS 守卫在仓库层 transitionWorkItemStatus）。
     // 独立于通知开关，且 fire-and-forget——状态写入失败不拖垮已完成的 run。
-    // FIX#4：捕获 CAS 结果以 gate 里程碑通知。入队路径从不把工单置 ai_working（仅 session-finalize kickoff 会），
-    // 故 run 完成时工单常不在 in_review/escalated 的合法前驱态 → CAS no-op（仓库回 null），但通知此前无条件发，
-    // 用户会收到「in_review」通知而工单纹丝未动（漂移）。下方据 transitionSucceeded gate：仅当迁移真发生才通知。
-    // transitionFailed 仅在「注入了回调且回调明确报 no-op（返回 null/void）」时为真——没注入回调（旧行为/不写状态
-    // 的装配，如部分单测）则视为不 gate，照常通知；状态写入抛错也 fail-open 照常通知，不因瞬时 DB 错吞掉里程碑。
+    // FIX#4：捕获 CAS 结果以 gate 里程碑通知，并区分两类 no-op：
+    //   - 迁移真发生(transitioned)              → 成功，照常通知。
+    //   - no-op 但工单「已在目标态」(status===to) → 幂等成功，照常通知（不能因为「状态没动」就吞掉本该发的
+    //     in_review 里程碑——例如别处已把它推到 in_review，或 confidence 与本处对同一终态各写一次）。
+    //   - no-op 且 status!==to（非法前驱）        → 真 no-op，抑制通知，避免「工单状态没动却收到 in_review 通知」的漂移。
+    // 没注入回调（旧行为/不写状态的装配，如部分单测）→ 不 gate，照常通知；状态写入抛错也 fail-open 照常通知。
     let transitionAttempted = false;
     let transitionSucceeded = false;
     try {
       if (transitionWorkItemStatus) {
         transitionAttempted = true;
-        const transitioned = await transitionWorkItemStatus({ workItemId: run.work_item_id, to: newStatus, at: now() });
-        transitionSucceeded = Boolean(transitioned);
+        const result = await transitionWorkItemStatus({ workItemId: run.work_item_id, to: newStatus, at: now() });
+        // 回调可能回 void（旧不返回值的注入）→ 视为成功(不 gate)；回 null（行不存在）→ no-op；
+        // 回 {transitioned,status} → 据「迁移发生 或 已在目标态」判定成功。缺 transitioned 字段的旧形状
+        // 退回 status===newStatus 兜底（成功 CAS 的旧返回 status 必等于 newStatus，故仍判成功）。
+        if (result === undefined) {
+          transitionSucceeded = true;
+        } else if (result === null) {
+          transitionSucceeded = false;
+        } else {
+          transitionSucceeded = result.transitioned === true || result.status === newStatus;
+        }
       }
     } catch (error) {
       console.warn("WorkHub work-item status transition failed", error);
@@ -1229,8 +1246,8 @@ export function createInMemoryAgentRunQueue(options: {
     if (options.notifications === false) {
       return;
     }
-    // 仅当工单状态没真正迁移（注入了回调 + 回调报 no-op，即当前态非 `to` 的合法前驱）时，抑制这次里程碑通知，
-    // 避免谎报。run 自身的终态/审计已在调用方落定，不受影响。
+    // 仅当工单状态既没迁移、也不在目标态（即非法前驱真 no-op）时，抑制这次里程碑通知，避免谎报。
+    // run 自身的终态/审计已在调用方落定，不受影响。
     if (transitionAttempted && !transitionSucceeded) {
       return;
     }
@@ -1470,6 +1487,15 @@ export function createInMemoryAgentRunQueue(options: {
         runs.set(run.run_id, live && live.trace.length > run.trace.length ? { ...run, trace: live.trace } : run);
       }
       await auditRecoveredClaims(recovered, recoveredAt);
+      // FIX#10：死信 run（转 failed、不再重排）会把工作项永远卡在 ai_working（执行 worker 已崩，谁也不会再
+      // 替它落终态）。这里对每个死信 run 把工作项 ai_working→escalated（CAS 守卫，合法前驱）并发一条里程碑
+      // 通知「AI 多次崩溃，已转人工接手」，让人接管。仅对死信(status==="failed")处理；重排(status==="queued")
+      // 仍会被下次执行接手，不动其状态。复用 notifyRunMilestone：failed 终态 → newStatus=escalated + 通知。
+      for (const run of recovered) {
+        if (run.status === "failed") {
+          await notifyRunMilestone(run, "AI 多次崩溃，已转人工接手。");
+        }
+      }
       // R2 原子预算：与认领恢复同节奏扫一遍过期预留，释放崩溃/失租 run 占住的额度。
       if (reservationRepo) {
         await reservationRepo.releaseExpired(recoveredAt).catch((error) =>
@@ -1799,7 +1825,8 @@ function getDefaultWorkItemContextProvider() {
 }
 
 let defaultWorkItemStatusWriter:
-  | ((input: { workItemId: string; to: WorkItemStatus; at: Date }) => Promise<{ id: string; status: WorkItemStatus } | null>)
+  | ((input: { workItemId: string; to: WorkItemStatus; at: Date }) =>
+      Promise<{ id: string; status: WorkItemStatus; transitioned: boolean } | null>)
   | undefined;
 
 // findings[H8/H9]：默认状态写入器——把 run 完成时的工作项状态机迁移落到真实 work-item 仓库（CAS 守卫）。
