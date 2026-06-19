@@ -858,7 +858,12 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
           .leftJoin(projectDriveVersions, eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id))
           .where(and(
-            eq(acceptedDeliverableChanges.workItemId, current.accepted.workItemId),
+            // R4 #11：上一版按「项目级当前版」口径找（P-COLLAB：同 targetKey 可经不同工作项采纳，acceptedVersion
+            // 是 per-(project,targetKey) 单调）。与 merge/base 查询同范围（proposals.ts: projectId 优先、回退
+            // workItemId），否则跨工作项采纳同一文件后还原会漏掉别工作项产生的真正上一版、误报"无上一版"。
+            current.accepted.projectId
+              ? eq(acceptedDeliverableChanges.projectId, current.accepted.projectId)
+              : eq(acceptedDeliverableChanges.workItemId, current.accepted.workItemId),
             eq(acceptedDeliverableChanges.targetKey, current.accepted.targetKey),
             eq(acceptedDeliverableChanges.driveItemId, current.driveItem.id),
             lt(acceptedDeliverableChanges.acceptedVersion, current.accepted.acceptedVersion),

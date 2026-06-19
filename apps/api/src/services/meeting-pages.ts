@@ -63,6 +63,8 @@ export type MeetingPageServiceDependencies = {
 export type MeetingMutationInput = {
   actor: AuthActor;
   projectId: string;
+  // R4 #19：mutation 也带请求 locale——否则 pageAfterMutation 取不到、重建页面恒回退 zh-CN（处理会议洞察后页面变中文）。
+  locale?: WorkHubLocale;
 };
 
 export class MeetingPageServiceError extends Error {

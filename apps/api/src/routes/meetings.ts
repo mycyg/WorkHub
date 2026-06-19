@@ -62,7 +62,8 @@ export function createMeetingRoutes(deps: MeetingRoutesDependencies = {}) {
       const data = await meetingPages.insightToDraft({
         actor: c.var.actor,
         projectId: requireUuidParam(c.req.param("projectId"), "项目"),
-        insightId: c.req.param("insightId")
+        insightId: c.req.param("insightId"),
+        locale
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
@@ -79,7 +80,8 @@ export function createMeetingRoutes(deps: MeetingRoutesDependencies = {}) {
       const data = await meetingPages.dismissInsight({
         actor: c.var.actor,
         projectId: requireUuidParam(c.req.param("projectId"), "项目"),
-        insightId: c.req.param("insightId")
+        insightId: c.req.param("insightId"),
+        locale
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
