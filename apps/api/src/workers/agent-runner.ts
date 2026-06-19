@@ -60,6 +60,7 @@ import type {
 } from "@workhub/db";
 
 import { getDefaultPushBus, type PushBus } from "../broker/index.js";
+import { getDefaultStructuredLogger } from "../logging.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
@@ -656,7 +657,7 @@ export function createInMemoryAgentRunQueue(options: {
       return;
     }
     void queueTracePersistence(run, fencingWorkerId).catch((error) => {
-      console.warn("WorkHub AgentRun trace persistence failed", error);
+      getDefaultStructuredLogger().warn("agent_run_trace_persist_failed", { error });
     });
   }
 
@@ -731,7 +732,7 @@ export function createInMemoryAgentRunQueue(options: {
       return;
     }
     void refreshClaim(live).catch((error) => {
-      console.warn("WorkHub AgentRun claim heartbeat failed", error);
+      getDefaultStructuredLogger().warn("agent_run_claim_heartbeat_failed", { error });
     });
   }
 
@@ -812,7 +813,7 @@ export function createInMemoryAgentRunQueue(options: {
       });
       await eventBus.publish(topic, event.type, envelope);
     } catch (error) {
-      console.warn("WorkHub run event emit failed (best-effort)", error);
+      getDefaultStructuredLogger().warn("agent_run_event_emit_failed", { error });
     }
   }
 
@@ -863,7 +864,7 @@ export function createInMemoryAgentRunQueue(options: {
     try {
       await eventBus.publish(topic, eventTypes.proposalOpened, envelope);
     } catch (error) {
-      console.warn("WorkHub proposal-opened event emit failed (best-effort)", error);
+      getDefaultStructuredLogger().warn("agent_run_proposal_opened_event_emit_failed", { error });
     }
   }
 
@@ -960,7 +961,7 @@ export function createInMemoryAgentRunQueue(options: {
         const hydrated = await hydrateProject(current, workdir);
         projectFileCount = hydrated?.files ?? 0;
       } catch (error) {
-        console.warn("WorkHub project hydrate failed", error);
+        getDefaultStructuredLogger().warn("agent_run_project_hydrate_failed", { error });
       }
     }
     // P-COLLAB M2：物化出 project/（只读祖先态）后,趁 AI 还没动手,拍一份 kind:"base" 快照。
@@ -987,7 +988,7 @@ export function createInMemoryAgentRunQueue(options: {
         });
         runBaseSnapshotIds.set(current.run_id, baseRow.id);
       } catch (error) {
-        console.warn("WorkHub base snapshot capture failed", error);
+        getDefaultStructuredLogger().warn("agent_run_base_snapshot_capture_failed", { error });
       }
     }
     const snapshot = options.snapshot ?? createAgentRunSnapshotHook({
@@ -1102,7 +1103,7 @@ export function createInMemoryAgentRunQueue(options: {
         await openProposalFromManifest(current, result, confidenceId);
         proposalOpened = proposalWillOpen;
       } catch (error) {
-        console.warn("WorkHub openProposalFromManifest failed; run already recorded as succeeded", error);
+        getDefaultStructuredLogger().warn("agent_run_open_proposal_failed", { error });
       }
       // findings[H8 + chain-core-loop]：成功且开了提议 → 工作项 ai_working→in_review；成功但提议创建失败
       // → 不谎报 in_review，转 escalated（交付物已产出但进不了审阅，需人工）。
@@ -1188,7 +1189,7 @@ export function createInMemoryAgentRunQueue(options: {
         if (settled) {
           await reservationRepo
             .reconcile(runId, settled.usage.token_in + settled.usage.token_out, settled.usage.estimated_cost_cny, now())
-            .catch((error) => console.warn("WorkHub budget reconcile failed", error));
+            .catch((error) => getDefaultStructuredLogger().warn("agent_run_budget_reconcile_failed", { error }));
         }
       }
     }
@@ -1206,7 +1207,7 @@ export function createInMemoryAgentRunQueue(options: {
       const recorded = await options.confidence({ run, result, proposalWillOpen: opts.proposalWillOpen ?? false });
       return recorded?.confidenceId;
     } catch (error) {
-      console.warn("WorkHub AgentRun confidence recording failed", error);
+      getDefaultStructuredLogger().warn("agent_run_confidence_record_failed", { error });
       return undefined;
     }
   }
@@ -1247,7 +1248,7 @@ export function createInMemoryAgentRunQueue(options: {
         }
       }
     } catch (error) {
-      console.warn("WorkHub work-item status transition failed", error);
+      getDefaultStructuredLogger().warn("agent_run_work_item_transition_failed", { error });
       // 写入抛错（瞬时 DB 故障）→ 无法判定是否真 no-op，fail-open 照常通知，不静默漏报里程碑。
       transitionSucceeded = true;
     }
@@ -1296,7 +1297,7 @@ export function createInMemoryAgentRunQueue(options: {
           const refs = await resolveUserRefs(candidateIds);
           usersById = Object.fromEntries(refs.map((ref) => [ref.id, ref]));
         } catch (error) {
-          console.warn("WorkHub recipient activity lookup failed", error);
+          getDefaultStructuredLogger().warn("agent_run_recipient_activity_lookup_failed", { error });
         }
       }
     }
@@ -1312,7 +1313,7 @@ export function createInMemoryAgentRunQueue(options: {
         ...(usersById ? { usersById } : {})
       });
     } catch (error) {
-      console.warn("WorkHub notification milestone failed", error);
+      getDefaultStructuredLogger().warn("agent_run_notification_milestone_failed", { error });
     }
   }
 
@@ -1407,7 +1408,7 @@ export function createInMemoryAgentRunQueue(options: {
                 updated_at: now().toISOString()
               });
               await persistRunWithTrace(failedRun).catch((error) =>
-                console.warn("WorkHub budget-reserve compensation persist failed", error)
+                getDefaultStructuredLogger().warn("agent_run_budget_reserve_compensation_persist_failed", { error })
               );
               runs.delete(run.run_id);
               throw new AgentRunnerError(402, "budget_exhausted", decision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。", {
@@ -1507,7 +1508,7 @@ export function createInMemoryAgentRunQueue(options: {
       // R2 原子预算：与认领恢复同节奏扫一遍过期预留，释放崩溃/失租 run 占住的额度。
       if (reservationRepo) {
         await reservationRepo.releaseExpired(recoveredAt).catch((error) =>
-          console.warn("WorkHub budget releaseExpired failed", error)
+          getDefaultStructuredLogger().warn("agent_run_budget_release_expired_failed", { error })
         );
       }
       return recovered;
@@ -1879,7 +1880,7 @@ export function getDefaultAgentRunQueue() {
   });
   // 启动时回收上次进程崩溃/重启遗留的过期 workdir（fire-and-forget，失败不影响队列就绪）。
   void sweepStaleAgentWorkdirs().catch((error) => {
-    console.warn("WorkHub stale agent workdir sweep failed", error);
+    getDefaultStructuredLogger().warn("agent_stale_workdir_sweep_failed", { error });
   });
   return defaultQueue;
 }
