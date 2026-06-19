@@ -1619,6 +1619,57 @@ test("agent run enqueue opens user_forbidden escalation for human-reserved worke
   assert.equal(decisions.escalationRows.length, 1);
 });
 
+test("#18: human-reserved guard does not re-mark pm_mode or re-version when an unresolved escalation already exists", async () => {
+  const runtimeSettings = settings();
+  const workItems = new MemoryWorkItems([humanReservedWorkItemRow()]);
+  const decisions = new MemoryAiDecisions();
+  const auditLogs = new MemoryAuditLogs();
+  // 计数 markHumanReservedPmMode 的真实调用次数：每次状态写入 == 一次版本号空转。
+  let markCalls = 0;
+  const baseMark = workItems.markHumanReservedPmMode.bind(workItems);
+  workItems.markHumanReservedPmMode = async (input) => {
+    markCalls += 1;
+    return baseMark(input);
+  };
+  const events: { topic: string; type: string }[] = [];
+  const guard = createHumanReservedGuard({
+    workItems,
+    decisions,
+    auditLogs,
+    settings: runtimeSettings,
+    now: () => now,
+    bus: {
+      async publish(topic, type) {
+        events.push({ topic, type });
+      }
+    }
+  });
+
+  const first = await guard({ workItemId, actorId: userId, mode: "worker", settings: runtimeSettings });
+  assert.ok(first, "first trigger reserves the work item");
+  assert.equal(first?.reused, false, "first trigger is a fresh reservation");
+  assert.equal(markCalls, 1, "first reservation marks pm_mode once");
+  assert.equal(workItems.rows.get(workItemId)?.status, "pm_mode");
+  assert.equal(decisions.escalationRows.length, 1);
+  assert.equal(auditLogs.rows.filter((row) => row.action === "escalation.opened").length, 1);
+  const eventsAfterFirst = events.length;
+
+  // 第二次触发：未结 user_forbidden 升级仍在 → 必须复用且不再写状态/审计/事件。
+  const second = await guard({ workItemId, actorId: userId, mode: "worker", settings: runtimeSettings });
+  assert.ok(second, "second trigger still returns the reused escalation");
+  assert.equal(second?.reused, true, "second trigger reuses the existing escalation");
+  assert.equal(second?.escalationId, first?.escalationId, "same escalation id reused");
+  // 关键修复：第二次不得再调用 markHumanReservedPmMode（无版本号空转/静默写）。
+  assert.equal(markCalls, 1, "second trigger must NOT re-mark pm_mode");
+  assert.equal(decisions.escalationRows.length, 1, "no duplicate escalation created");
+  assert.equal(
+    auditLogs.rows.filter((row) => row.action === "escalation.opened").length,
+    1,
+    "no second audit row (no silent write)"
+  );
+  assert.equal(events.length, eventsAfterFirst, "no second escalation event published");
+});
+
 test("agent run queue executes a queued AgentLoop run and records trace for replay", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-test-"));
@@ -2288,11 +2339,96 @@ test("agent run recovery scheduler ticks once, recovers stale claims, and drains
   const result = await scheduler.tick();
 
   assert.equal(result.recovered, 1);
+  assert.equal(result.requeued, 1);
+  assert.equal(result.dead_lettered, 0);
   assert.equal(result.drained, 1);
   assert.deepEqual(scheduler.stats(), {
     running: false,
     tick_count: 1,
     recovered_count: 1,
+    requeued_count: 1,
+    dead_lettered_count: 0,
+    drained_count: 1,
+    error_count: 0,
+    last_tick_at: now.toISOString()
+  });
+});
+
+test("#25: recovery drain budget counts only requeued runs, not dead-lettered ones", async () => {
+  const requeuedRun: AgentRunQueueRecord = {
+    run_id: "40000000-0000-4000-8000-000000000042",
+    work_item_id: workItemId,
+    actor_id: userId,
+    mode: "worker",
+    status: "queued",
+    title: "Requeued run",
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "test",
+        model: "test",
+        reason: "default"
+      }
+    },
+    usage: {
+      steps_used: 0,
+      token_in: 0,
+      token_out: 0,
+      estimated_cost_cny: "0"
+    },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
+  // 死信记录：超过重试上限后落入 status='failed'，runNext 永远不会放行它。
+  const deadLetteredRun: AgentRunQueueRecord = {
+    ...requeuedRun,
+    run_id: "40000000-0000-4000-8000-000000000043",
+    status: "failed",
+    title: "Dead-lettered run"
+  };
+  let runNextCalls = 0;
+  let drained = false;
+  const scheduler = createAgentRunRecoveryScheduler({
+    intervalMs: 0,
+    now: () => now,
+    queue: {
+      async recoverExpiredClaims() {
+        // 并集：1 条重新入队 + 1 条死信。
+        return [requeuedRun, deadLetteredRun];
+      },
+      async runNext() {
+        runNextCalls += 1;
+        if (drained) {
+          return null;
+        }
+        drained = true;
+        return requeuedRun;
+      }
+    }
+  });
+
+  const result = await scheduler.tick();
+
+  assert.equal(result.recovered, 2, "both records counted as recovered");
+  assert.equal(result.requeued, 1, "only the queued record is requeued");
+  assert.equal(result.dead_lettered, 1, "the failed record is dead-lettered");
+  assert.equal(result.drained, 1, "only the requeued run drains");
+  // 关键：drain 预算按 requeued(=1) 而非 recovered(=2) 计，runNext 不会为死信白跑。
+  assert.equal(runNextCalls, 1, "runNext is not called for the dead-lettered run");
+  assert.deepEqual(scheduler.stats(), {
+    running: false,
+    tick_count: 1,
+    recovered_count: 2,
+    requeued_count: 1,
+    dead_lettered_count: 1,
     drained_count: 1,
     error_count: 0,
     last_tick_at: now.toISOString()

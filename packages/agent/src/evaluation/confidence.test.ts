@@ -268,6 +268,29 @@ test("findings[#2] a failed review fails closed to low confidence and escalates,
   assert.equal(sources.review.source, "llm_review_failed");
 });
 
+// findings[#30]：succeeded + reviewFailed 的 escalate 必须用诚实文案（交付已产出、只是没评审完），
+// 不能落到「AI 没有完成可用交付」的回退（把已交付内容当未交付描述，写进 reasonMd + 审计）。
+test("findings[#30] succeeded-but-review-failed escalations use an honest rationale, not the dishonest 'not delivered' fallback", () => {
+  const assessment = evaluateAgentRunConfidence({
+    runId: "40000000-0000-4000-8000-000000000030",
+    workItemId: "50000000-0000-4000-8000-000000000030",
+    model: "deepseek-v4-flash",
+    autoMergeAllowed: true,
+    result: result({ reviewFailed: true, reason: "已生成交付草稿" })
+  });
+
+  assert.equal(assessment.verdict, "escalate");
+  // 诚实文案：交付已产出，只是自动评审没完成。
+  assert.match(assessment.rationaleMd, /AI 已产出交付物，但自动评审没能完成/u);
+  // 不诚实的旧回退文案必须消失。
+  assert.doesNotMatch(assessment.rationaleMd, /AI 没有完成可用交付/u);
+  // 升级载荷里的 reasonMd 同样用诚实文案。
+  assert.match(assessment.escalation?.reasonMd ?? "", /AI 已产出交付物，但自动评审没能完成/u);
+  // 仅改文案：不动分数/档位/裁决逻辑（仍 fail-closed 钳到 ≤0.4 / 低档 / 升级）。
+  assert.equal(assessment.confidenceScore <= 0.4, true);
+  assert.equal(assessment.grade, "low");
+});
+
 test("findings[0] signalsJson acceptance.score matches the score driving the verdict (succeeded without manifest = 0.6)", () => {
   const base = {
     runId: "40000000-0000-4000-8000-000000000011",

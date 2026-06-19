@@ -122,12 +122,14 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
       handoffJson: humanReservedHandoff(workItem)
     }));
 
-    await workItems.markHumanReservedPmMode({
-      workItemId: input.workItemId,
-      at: now()
-    });
-
     if (!existing) {
+      // #18：状态写入只在首次预留时发生。已有未结升级时再次触发不得重写状态——否则版本号空转
+      // (version++ / updatedAt churn) 且无任何审计轨迹（静默写），还可能把后续状态硬拉回 pm_mode。
+      await workItems.markHumanReservedPmMode({
+        workItemId: input.workItemId,
+        at: now()
+      });
+
       await auditLogs.createAuditLog({
         ...actorOrg(settings),
         actorKind: "system",

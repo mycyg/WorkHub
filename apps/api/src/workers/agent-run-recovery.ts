@@ -4,6 +4,10 @@ import { getDefaultAgentRunQueue, type AgentRunQueue } from "./agent-runner.js";
 
 export type AgentRunRecoveryTickResult = {
   recovered: number;
+  /** 本 tick 恢复记录里被重新入队（status==='queued'）、可被 runNext 放行的条数。 */
+  requeued: number;
+  /** 本 tick 恢复记录里被死信（status==='failed'，超过重试上限）的条数。 */
+  dead_lettered: number;
   drained: number;
   started_at: string;
   finished_at: string;
@@ -17,6 +21,8 @@ export type AgentRunRecoveryScheduler = {
     running: boolean;
     tick_count: number;
     recovered_count: number;
+    requeued_count: number;
+    dead_lettered_count: number;
     drained_count: number;
     error_count: number;
     last_tick_at?: string;
@@ -41,6 +47,8 @@ export function createAgentRunRecoveryScheduler(options: {
   let running = false;
   let tickCount = 0;
   let recoveredCount = 0;
+  let requeuedCount = 0;
+  let deadLetteredCount = 0;
   let drainedCount = 0;
   let errorCount = 0;
   let lastTickAt: string | undefined;
@@ -51,6 +59,8 @@ export function createAgentRunRecoveryScheduler(options: {
     if (running) {
       return {
         recovered: 0,
+        requeued: 0,
+        dead_lettered: 0,
         drained: 0,
         started_at: startedAt.toISOString(),
         finished_at: startedAt.toISOString()
@@ -60,10 +70,14 @@ export function createAgentRunRecoveryScheduler(options: {
     running = true;
     try {
       const recovered = await options.queue.recoverExpiredClaims();
+      // 恢复记录是 dead-letter(status==='failed') 与 requeued(status==='queued') 的并集。
+      // runNext 只放行重新入队的那些；死信永远拿不回来，绝不能进 drain 预算（否则空 runNext 白跑）。
+      const requeued = recovered.filter((run) => run.status === "queued").length;
+      const deadLettered = recovered.filter((run) => run.status === "failed").length;
       let drained = 0;
-      if (autoDrain && recovered.length > 0) {
-        // 上限取「恢复的过期 claim 数」与硬上限的较小值：只需放行被重新入队的那些，且永不超过硬上限。
-        const drainBudget = Math.min(recovered.length, maxDrainPerTick);
+      if (autoDrain && requeued > 0) {
+        // 上限取「被重新入队的 claim 数」与硬上限的较小值：只放行可放行的那些，且永不超过硬上限。
+        const drainBudget = Math.min(requeued, maxDrainPerTick);
         while (drained < drainBudget) {
           const run = await options.queue.runNext();
           if (!run) {
@@ -75,10 +89,14 @@ export function createAgentRunRecoveryScheduler(options: {
       const finishedAt = now();
       tickCount += 1;
       recoveredCount += recovered.length;
+      requeuedCount += requeued;
+      deadLetteredCount += deadLettered;
       drainedCount += drained;
       lastTickAt = finishedAt.toISOString();
       return {
         recovered: recovered.length,
+        requeued,
+        dead_lettered: deadLettered,
         drained,
         started_at: startedAt.toISOString(),
         finished_at: finishedAt.toISOString()
@@ -121,6 +139,8 @@ export function createAgentRunRecoveryScheduler(options: {
       running,
       tick_count: tickCount,
       recovered_count: recoveredCount,
+      requeued_count: requeuedCount,
+      dead_lettered_count: deadLetteredCount,
       drained_count: drainedCount,
       error_count: errorCount,
       ...(lastTickAt ? { last_tick_at: lastTickAt } : {}),

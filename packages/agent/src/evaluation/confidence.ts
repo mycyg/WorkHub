@@ -191,6 +191,12 @@ function rationaleFor(input: {
   verdict: ConfidenceVerdict;
   riskLevel: RiskLevel;
 }) {
+  // findings[#30]：run 成功并已交付，但评审被请求却失败/空/不可解析（reviewFailed），fail-closed 钳低 → escalate。
+  // 此时绝不能落到下方「AI 没有完成可用交付」的回退（它会把已交付的内容当成未交付来描述，写进
+  // escalation.reasonMd + 审计——不诚实）。改用如实表述：交付已产出，只是自动评审没完成、无法自动判质。
+  if (input.result.status === "succeeded" && input.result.reviewFailed) {
+    return "AI 已产出交付物，但自动评审没能完成，无法自动判定质量，建议请人核对后再采纳。";
+  }
   if (input.verdict === "human_spotcheck") {
     return input.riskLevel === "low"
       ? "AI 已产出交付物，我比较有把握，建议你快速扫一眼后确认。"
