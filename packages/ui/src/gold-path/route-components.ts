@@ -129,6 +129,7 @@ export const webRouteComponentCss = [
   ".wh-r4-route details:not([open])>*:not(summary){display:none}",
   ".wh-r4-intake-free-text{width:100%;min-height:92px;resize:vertical;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:10px 12px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:#fff;overflow-wrap:anywhere}",
   ".wh-r4-knowledge-search{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 4px;min-width:0;max-width:100%}.wh-r4-knowledge-search input{flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;line-height:1.45;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:9px 12px;color:var(--wh-product-ink,#172033);background:#fff}.wh-r4-knowledge-search .wh-btn{flex:0 0 auto}",
+  ".wh-r5-notif-mute summary{cursor:pointer;font-weight:800;font-size:14px;color:var(--wh-product-ink,#172033)}.wh-r5-notif-mute-list{display:grid;gap:8px;margin-top:8px;min-width:0}.wh-r5-notif-mute-row{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.4;color:var(--wh-product-secondary,#5B616E);min-width:0;overflow-wrap:anywhere}.wh-r5-notif-mute-row input{margin-top:2px;flex:0 0 auto}.wh-r5-notif-mute-row span{min-width:0}.wh-r5-notif-mute-status{margin:8px 0 0;font-size:12.5px}",
   ".wh-r4-route-count{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-product-ink,#172033);font-weight:900;line-height:1}",
   ".wh-r4-route-timeline{display:grid;gap:8px}",
   ".wh-r4-route-meter{height:8px;border-radius:999px;background:#e7edf7;overflow:hidden}.wh-r4-route-meter span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--wh-product-green,#24a66a),var(--wh-product-amber,#d98b16));max-width:100%}",
@@ -231,6 +232,8 @@ type RouteCopyKey =
   | "notifications.empty"
   | "notifications.open"
   | "notifications.unread"
+  | "notifications.muteTitle"
+  | "notifications.muteHelp"
   | "notifications.read"
   | "notifications.completed"
   | "notifications.source"
@@ -397,6 +400,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.done": "已处理",
     "notifications.markAllRead": "全部已读",
     "notifications.empty": "通知箱是空的。",
+    "notifications.muteTitle": "通知静音偏好",
+    "notifications.muteHelp": "勾选的类型将不再给你发通知（默认全部接收）。",
     "notifications.open": "打开",
     "notifications.unread": "未读",
     "notifications.read": "已读",
@@ -564,6 +569,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.done": "Done",
     "notifications.markAllRead": "Mark all as read",
     "notifications.empty": "Your inbox is empty.",
+    "notifications.muteTitle": "Notification mute preferences",
+    "notifications.muteHelp": "Checked types stop notifying you (everything is on by default).",
     "notifications.open": "Open",
     "notifications.unread": "Unread",
     "notifications.read": "Read",
@@ -2091,6 +2098,36 @@ function renderNotificationBucket(
   </section>`;
 }
 
+// 团队就绪 must-have（缺口②）：可静音的通知类型清单。每一项的 `type` 必须与后端真正在
+// `flushDraft` 里按 `draft.type` 做静音判定的字符串完全一致——否则勾选了却照发就是骗用户。
+// 来源：packages/events/src/lifecycle.ts 的 6 个 workitem.* 里程碑 + notifications.ts 的 comment.mention
+// + schedule-notify-pages.ts 的 meeting.insight.pending。新增可静音类型时同步这里。
+const MUTABLE_NOTIFICATION_TYPES: ReadonlyArray<{ type: string; zh: string; en: string }> = [
+  { type: "workitem.ai_working", zh: "AI 开始处理工作项", en: "AI started working on an item" },
+  { type: "workitem.in_review", zh: "工作项待审查", en: "An item is ready for review" },
+  { type: "workitem.escalated", zh: "工作项升级给人处理", en: "An item was escalated to a human" },
+  { type: "workitem.pm_mode", zh: "工作项转 PM 协作模式", en: "An item switched to PM mode" },
+  { type: "workitem.merged", zh: "工作项已合并交付", en: "An item was merged" },
+  { type: "workitem.cancelled", zh: "工作项已取消", en: "An item was cancelled" },
+  { type: "comment.mention", zh: "评论里 @ 了我", en: "Someone mentioned me in a comment" },
+  { type: "meeting.insight.pending", zh: "会议洞察待确认", en: "A meeting insight needs confirmation" }
+];
+
+// 静音偏好面板：SSR 出一个折叠的 <details>（默认收起→不占版面、不触溢出门），开关默认全不勾（诚实
+// default-off）。browser.ts 在通知路由 ready 后拉 GET /api/notifications/preferences 回填勾选态、change 调 PUT。
+function renderNotificationMutePanel(locale: WorkHubLocale): string {
+  const rows = MUTABLE_NOTIFICATION_TYPES.map(
+    (entry) =>
+      `<label class="wh-r5-notif-mute-row"><input type="checkbox" data-r5-notification-mute-type="${escapeHtml(entry.type)}" /><span>${escapeHtml(locale === "zh-CN" ? entry.zh : entry.en)}</span></label>`
+  ).join("");
+  return `<details class="wh-card wh-r4-route-card wh-r5-notif-mute" data-r5-notification-mute-panel="true">
+        <summary>${escapeHtml(routeT(locale, "notifications.muteTitle"))}</summary>
+        <p class="wh-subtle">${escapeHtml(routeT(locale, "notifications.muteHelp"))}</p>
+        <div class="wh-r5-notif-mute-list">${rows}</div>
+        <p class="wh-subtle wh-r5-notif-mute-status" data-r5-notification-mute-status="idle" hidden></p>
+      </details>`;
+}
+
 function renderNotificationsRouteComponent(vm: NotificationPageVM, locale: WorkHubLocale): WebRouteComponent {
   const markAll = vm.actions.mark_all_read
     ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.mark_all_read.href))}" data-action-id="${escapeHtml(vm.actions.mark_all_read.id)}" data-method="${escapeHtml(vm.actions.mark_all_read.method)}" data-r5-notification-mark-all-read="true">${escapeHtml(vm.actions.mark_all_read.label || routeT(locale, "notifications.markAllRead"))}</a>`
@@ -2121,6 +2158,7 @@ function renderNotificationsRouteComponent(vm: NotificationPageVM, locale: WorkH
         </div>
         <div class="wh-r4-route-actions">${markAll}<span class="wh-r4-route-count">${escapeHtml(String(vm.summary.unread_count))}</span></div>
       </header>
+      ${renderNotificationMutePanel(locale)}
       <div class="wh-r4-route-grid">
         ${renderNotificationBucket("needs_decision", vm.buckets.needs_decision, locale)}
         ${renderNotificationBucket("fyi", vm.buckets.fyi, locale)}

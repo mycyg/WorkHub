@@ -1105,7 +1105,83 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindLocaleSwitch(root, locale, client, signal);
   bindRouteLineEditor(root, { signal, markDirty: markActiveRouteDirty });
   bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
+  bindNotificationMutePanel(root, result, client, locale, signal);
   bindLiveRouteStreams(result, client, locale);
+}
+
+// 团队就绪 must-have（缺口②）：通知页静音偏好面板的客户端水合。SSR 已出折叠的 <details> + 全不勾的开关
+// （route-components renderNotificationMutePanel）；这里拉当前偏好回填勾选态、change 调 PUT。纯客户端、
+// best-effort——读/写失败都不挡通知页（诚实 default-off）。绑定挂在路由 AbortSignal 上，离开路由自动清。
+function bindNotificationMutePanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "notifications") {
+    return;
+  }
+  const panel = container.querySelector<HTMLElement>("[data-r5-notification-mute-panel]");
+  if (!panel) {
+    return;
+  }
+  const checkboxes = Array.from(
+    panel.querySelectorAll<HTMLInputElement>("input[data-r5-notification-mute-type]")
+  );
+  if (checkboxes.length === 0) {
+    return;
+  }
+  const status = panel.querySelector<HTMLElement>("[data-r5-notification-mute-status]");
+  const zh = locale === "zh-CN";
+  const setStatus = (text: string, tone: "saving" | "saved" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r5-notification-mute-status", tone);
+  };
+
+  // 回填当前静音态（best-effort：读不出来就保持全不勾的诚实 default-off）。
+  void (async () => {
+    try {
+      const prefs = await client.getNotificationPreferences();
+      if (signal.aborted) {
+        return;
+      }
+      const muted = new Set(prefs.muted_notification_types ?? []);
+      for (const checkbox of checkboxes) {
+        checkbox.checked = muted.has(checkbox.getAttribute("data-r5-notification-mute-type") ?? "");
+      }
+    } catch {
+      // 偏好读不出来不挡用户用通知页。
+    }
+  })();
+
+  const save = async () => {
+    const muted = checkboxes
+      .filter((checkbox) => checkbox.checked)
+      .map((checkbox) => checkbox.getAttribute("data-r5-notification-mute-type") ?? "")
+      .filter((type) => type.length > 0);
+    setStatus(zh ? "保存中…" : "Saving…", "saving");
+    try {
+      await client.setNotificationPreferences(muted);
+      if (signal.aborted) {
+        return;
+      }
+      setStatus(zh ? "已保存" : "Saved", "saved");
+    } catch {
+      if (signal.aborted) {
+        return;
+      }
+      setStatus(zh ? "保存失败，请重试" : "Save failed, please retry", "error");
+    }
+  };
+
+  for (const checkbox of checkboxes) {
+    checkbox.addEventListener("change", () => void save(), { signal });
+  }
 }
 
 async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocale) {

@@ -295,6 +295,13 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(`/api/notifications/${encodeURIComponent(id)}/complete`, {
         method: "POST"
       }),
+    getNotificationPreferences: () =>
+      request("/api/notifications/preferences"),
+    setNotificationPreferences: (mutedNotificationTypes) =>
+      request("/api/notifications/preferences", {
+        method: "PUT",
+        body: JSON.stringify({ muted_notification_types: mutedNotificationTypes })
+      }),
     bootstrapProject: (payload = {}) =>
       request("/api/projects/bootstrap", {
         method: "POST",

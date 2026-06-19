@@ -191,6 +191,10 @@ export type WorkHubApiClient = {
   markAllNotificationsRead: () => Promise<{ updated: number }>;
   dismissNotification: (id: string) => Promise<Notification>;
   completeNotification: (id: string) => Promise<Notification>;
+  getNotificationPreferences: () => Promise<{ muted_notification_types: string[] }>;
+  setNotificationPreferences: (
+    mutedNotificationTypes: string[]
+  ) => Promise<{ muted_notification_types: string[] }>;
   bootstrapProject: (payload?: BootstrapProjectRequest) => Promise<BootstrapProjectResult>;
   createSession: (payload?: CreateSessionRequest) => Promise<SessionVM>;
   getSession: (id: string, options?: PageRequestOptions) => Promise<SessionVM>;

@@ -50,6 +50,7 @@ export const webSurface = {
     "/api/notifications/read-all",
     "/api/notifications/:id/dismiss",
     "/api/notifications/:id/complete",
+    "/api/notifications/preferences",
     "/api/pages/approvals",
     "/api/pages/cost",
     "/api/pages/settings",

@@ -127,6 +127,12 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async completeNotification() {
       throw new Error("not needed");
     },
+    async getNotificationPreferences() {
+      return { muted_notification_types: [] };
+    },
+    async setNotificationPreferences() {
+      return { muted_notification_types: [] };
+    },
     async bootstrapProject() {
       return {
         project: {
