@@ -41,9 +41,16 @@ function escapeRegExp(input: string) {
 }
 
 export function globMatch(pattern: string, value: string): boolean {
+  // R4-HIGH（ReDoS）：相邻 `*` 会编译出相邻 `.*.*…`，对不匹配的长 value 触发灾难性回溯
+  // （指数级，实测 8 个 `*` 即可让单次匹配挂 ~60s CPU）。用户可经 /ask 提交 action_pattern
+  // 落成 session 级策略，之后每次权限判定都跑 globMatch → 可被用作 CPU DoS。
+  // 修法：先把连续 `*` 折叠为单个——glob 语义下 `**` 与 `*` 等价（都匹配任意），
+  // 折叠后正则里任意两个 `.*` 之间必有 ≥1 字面字符（或位于首尾），不再有相邻 `.*`，
+  // 彻底消除回溯歧义；匹配语义逐字不变。
   // L25：'s'(dotAll) 让 `*` 也跨换行，否则含 \n 的 action 值能绕过 deny 通配
   // （如 "tool.x\ninjected" 不被 "tool.*" 匹配 → 漏过本应 deny 的动作）。
-  const regex = new RegExp(`^${pattern.split("*").map(escapeRegExp).join(".*")}$`, "s");
+  const collapsed = pattern.replace(/\*+/g, "*");
+  const regex = new RegExp(`^${collapsed.split("*").map(escapeRegExp).join(".*")}$`, "s");
   return regex.test(value);
 }
 

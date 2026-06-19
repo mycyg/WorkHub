@@ -9,6 +9,7 @@ import {
   canViewProjectDrive,
   canViewWorkItemRecord,
   canWorkWorkItem,
+  globMatch,
   OVERRIDE_DENY_PRIORITY,
   resolvePermissionDecision,
   routeApprover,
@@ -215,4 +216,23 @@ test("route approver uses proposal submitter and tool lead before admin while ex
 
   assert.equal(routeApprover({ kind: "proposal", workItem: item, requesterUserId: lead, users }), requester);
   assert.equal(routeApprover({ kind: "tool", workItem: item, requesterUserId: requester, users }), lead);
+});
+
+test("R4-HIGH globMatch: collapses adjacent wildcards — semantics preserved, no catastrophic backtracking", () => {
+  // 语义不变：`**` 等价 `*`，前后缀/中缀通配照常工作
+  assert.equal(globMatch("a*b", "axxxb"), true);
+  assert.equal(globMatch("a**b", "axxxb"), true);
+  assert.equal(globMatch("a*b", "axxxc"), false);
+  assert.equal(globMatch("tool.*", "tool.read"), true);
+  assert.equal(globMatch("tool.*", "other.read"), false);
+  assert.equal(globMatch("*", "anything"), true);
+  // dotAll 仍成立（换行不绕过通配）
+  assert.equal(globMatch("tool.*", "tool.x\ninjected"), true);
+  // ReDoS 回归门：64 个相邻 `*` + 不匹配的长 value，折叠后必须瞬时返回（不折叠会指数级回溯挂死）。
+  const evil = `${"*".repeat(64)}z`;
+  const longNonMatch = "a".repeat(200);
+  const started = process.hrtime.bigint();
+  assert.equal(globMatch(evil, longNonMatch), false);
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+  assert.ok(elapsedMs < 50, `globMatch 应瞬时完成，实际 ${elapsedMs}ms（疑似回溯未消除）`);
 });
