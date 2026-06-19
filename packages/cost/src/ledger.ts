@@ -142,6 +142,12 @@ export type CostLedgerStore = {
   /** 只读请求到的 scope 的账目（走索引），用于非管理员只取自己的用量、避免全表扫描。 */
   listEntriesForScopes?: (scopeIds: LedgerScopeIds) => MaybePromise<readonly CostLedgerEntry[]>;
   listRecords?: () => MaybePromise<readonly UsageRecord[]>;
+  /**
+   * R4 #26：按 source + 时间下界聚合 usage 成本（走 created_at 索引的 SQL SUM），用于 curation 当日预算闸门，
+   * 避免 listRecords 全表拉回内存再过滤求和（usage_records 越积越大）。返回累计 CNY 字符串。
+   * 可选：未实现的实现/假仓库回退到 listRecords。
+   */
+  sumUsageCostSince?: (input: { source: string; since: Date }) => MaybePromise<string>;
 };
 
 export function createMemoryCostLedgerStore(options: {

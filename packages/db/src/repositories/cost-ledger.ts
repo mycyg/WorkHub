@@ -10,7 +10,7 @@ import {
   type UsageSource
 } from "@workhub/cost";
 
-import { and, eq, gte, or, type SQL } from "drizzle-orm";
+import { and, eq, gte, or, sql, type SQL } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { costLedgerEntries, usageRecords } from "../schema/index.js";
@@ -204,6 +204,16 @@ export function createDbCostLedgerStore(
     return rows.map(rowToUsageRecord);
   }
 
+  // R4 #26：按 source + 时间下界做 SQL SUM 聚合（走 usage_records_created_at_idx），只回一个累计值，
+  // 不再把整张 usage_records 拉回内存过滤求和。estimated_cost_cny 是 numeric(12,6)，SUM 仍是 numeric → 字符串。
+  async function sumUsageCostSince(input: { source: string; since: Date }) {
+    const rows = await db
+      .select({ total: sql<string>`COALESCE(SUM(${usageRecords.estimatedCostCny}), 0)::text` })
+      .from(usageRecords)
+      .where(and(eq(usageRecords.source, input.source), gte(usageRecords.createdAt, input.since)));
+    return rows[0]?.total ?? "0";
+  }
+
   return {
     get records() {
       return recentRecords;
@@ -212,24 +222,29 @@ export function createDbCostLedgerStore(
       return recentEntries;
     },
     async recordUsage(record) {
-      await db.insert(usageRecords).values(usageInsert(record)).onConflictDoNothing();
       const entries = usageToLedgerEntries(record, {
         ...(options.teamId ? { teamId: options.teamId } : {}),
         ...(options.evalSuite ? { evalSuite: options.evalSuite } : {})
       });
-      if (entries.length > 0) {
-        await db
-          .insert(costLedgerEntries)
-          .values(entries.map(ledgerInsert))
-          .onConflictDoNothing({
-            target: [
-              costLedgerEntries.usageRecordId,
-              costLedgerEntries.scopeKind,
-              costLedgerEntries.scopeId,
-              costLedgerEntries.periodBucket
-            ]
-          });
-      }
+      // R4 #36：usage_records 与 cost_ledger_entries 此前是两条独立 insert——进程在二者之间崩溃会留下
+      // 「usage 落库、ledger 未落」的撕裂写入，成本被永久少记且不会被重试补回。裹进一个事务，要么都落要么都不落。
+      await db.transaction(async (tx) => {
+        await tx.insert(usageRecords).values(usageInsert(record)).onConflictDoNothing();
+        if (entries.length > 0) {
+          await tx
+            .insert(costLedgerEntries)
+            .values(entries.map(ledgerInsert))
+            .onConflictDoNothing({
+              target: [
+                costLedgerEntries.usageRecordId,
+                costLedgerEntries.scopeKind,
+                costLedgerEntries.scopeId,
+                costLedgerEntries.periodBucket
+              ]
+            });
+        }
+      });
+      // 内存近期缓存只在事务提交后更新（回滚则不污染缓存）。
       recentRecords.push(record);
       if (recentRecords.length > RECENT_CAP) {
         recentRecords.splice(0, recentRecords.length - RECENT_CAP);
@@ -244,6 +259,7 @@ export function createDbCostLedgerStore(
     },
     listEntries,
     listEntriesForScopes,
-    listRecords
+    listRecords,
+    sumUsageCostSince
   };
 }

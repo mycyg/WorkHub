@@ -437,11 +437,20 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
     curationBudgetOk: async () => {
       const capCny = Number(settings.budgets.curationDailyCostCny);
       const ledgerStore = getDefaultCostLedgerStore();
-      if (!Number.isFinite(capCny) || capCny <= 0 || !ledgerStore.listRecords) {
+      if (!Number.isFinite(capCny) || capCny <= 0) {
         return true;
       }
       const startOfDay = new Date();
       startOfDay.setUTCHours(0, 0, 0, 0);
+      // R4 #26：优先用 SQL 聚合（走 created_at 索引、只回一个累计值），避免每个 tick 把整张 usage_records
+      // 拉回内存过滤求和（随时间无界增长）。假仓库/旧实现无聚合方法时回退到 listRecords。
+      if (ledgerStore.sumUsageCostSince) {
+        const spent = Number(await ledgerStore.sumUsageCostSince({ source: "curation", since: startOfDay }));
+        return !Number.isFinite(spent) || spent < capCny;
+      }
+      if (!ledgerStore.listRecords) {
+        return true;
+      }
       const records = await ledgerStore.listRecords();
       const spent = records
         .filter((record) => record.source === "curation" && new Date(record.createdAt) >= startOfDay)

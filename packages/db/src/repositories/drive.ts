@@ -158,12 +158,26 @@ function itemPathFromRows(item: DriveItemRow, itemById: Map<string, DriveItemRow
 }
 
 async function driveItemPath(db: WorkHubDb, item: DriveItemRow) {
-  const rows = await db
-    .select()
-    .from(projectDriveItems)
-    .where(eq(projectDriveItems.projectId, item.projectId));
-  const itemById = new Map(rows.map((row) => [row.id, row]));
-  return itemPathFromRows(item, itemById);
+  // R4 #37：原先一次性拉项目下「所有」drive item 建 Map，只为走一条祖先链（≤50 层）。宽而浅的项目
+  // 会把成百上千行 load 进内存（每次写操作都触发）。改为按需逐级查父节点（按主键 id 命中、限同项目），
+  // 内存与查询量只随链深增长（≤50），结果与原 itemPathFromRows 逐字一致。
+  const names: string[] = [];
+  const seen = new Set<string>();
+  let cursor: DriveItemRow | undefined = item;
+  while (cursor && !seen.has(cursor.id) && names.length < 50) {
+    seen.add(cursor.id);
+    names.unshift(cursor.name);
+    if (!cursor.parentId) {
+      break;
+    }
+    const parentRows = await db
+      .select()
+      .from(projectDriveItems)
+      .where(and(eq(projectDriveItems.id, cursor.parentId), eq(projectDriveItems.projectId, item.projectId)))
+      .limit(1);
+    cursor = parentRows[0];
+  }
+  return `/${names.join("/")}`;
 }
 
 async function findProject(db: WorkHubDb, projectId?: string, workspaceId?: string) {

@@ -163,15 +163,18 @@ function createStoredZip(entries: { name: string; data: Buffer }[]) {
   return Buffer.concat([...localParts, centralDirectory, end]);
 }
 
-async function createZipArchive(input: { src: string; dest: string }) {
+async function createZipArchive(input: { src: string; dest: string; ctx: ToolExecutionContext }) {
   const srcStat = await stat(input.src);
   const root = srcStat.isDirectory() ? input.src : path.dirname(input.src);
   const entries = await collectZipEntries(root, input.src, path.resolve(input.dest));
   if (entries.length === 0) {
     throw new Error("zip_path source has no files to archive");
   }
-  await mkdir(path.dirname(input.dest), { recursive: true });
   const archive = createStoredZip(entries);
+  // R4 #39：写盘前先校验归档体积在沙箱字节预算内（与 write_file 的 assertWriteWithinBudget 同口径），
+  // 否则巨型归档会先落满主机磁盘、事后的 enforceBudget 才报错——损害已造成。
+  assertWriteWithinBudget(input.ctx, archive.length);
+  await mkdir(path.dirname(input.dest), { recursive: true });
   await writeFile(input.dest, archive);
   return { entries: entries.map((entry) => entry.name), bytes: archive.length };
 }
@@ -332,7 +335,9 @@ export function createBuiltInFileTools(): AnyToolSpec[] {
       async execute(input, ctx) {
         const src = safeResolvePath(ctx.workdir, input.src);
         const dest = safeResolvePath(ctx.workdir, input.dest);
-        const archive = await createZipArchive({ src, dest });
+        // R4 #39：先确认沙箱当前未超盘预算，再读整棵树/建归档——避免「已超预算还把整树读进内存+落盘」。
+        await enforceBudget(ctx);
+        const archive = await createZipArchive({ src, dest, ctx });
         await enforceBudget(ctx);
         return okToolResult(`archived ${input.src} to ${input.dest}`, { data: archive });
       }
