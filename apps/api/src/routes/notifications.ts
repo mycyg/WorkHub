@@ -12,6 +12,7 @@ import {
   NotificationServiceError,
   type NotificationService
 } from "../services/notifications.js";
+import { isUuidParam } from "./uuid-param.js";
 
 export type NotificationRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -28,6 +29,15 @@ export function createNotificationRoutes(deps: NotificationRoutesDependencies = 
       throw new HTTPException(error.status as 400, { message: error.message });
     }
     throw error;
+  }
+
+  // 路由 uuid 形参先校验：非 uuid 串原本直达通知服务的 uuid 列 → PG 22P02 → 误报 500；非法即抛与
+  // 「合法但不存在」同样的 404（NotificationServiceError，经 handleNotificationError 收口），不泄露存在性。
+  function requireNotificationId(value: string): string {
+    if (!isUuidParam(value)) {
+      throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
+    }
+    return value;
   }
 
   routes.get("/", createCurrentUserMiddleware(authSource), async (c) => {
@@ -84,7 +94,7 @@ export function createNotificationRoutes(deps: NotificationRoutesDependencies = 
 
   routes.post("/:id/read", createCurrentUserMiddleware(authSource), async (c) => {
     try {
-      const data = await service.markRead(c.req.param("id"), c.var.currentUser.id);
+      const data = await service.markRead(requireNotificationId(c.req.param("id")), c.var.currentUser.id);
       return c.json({ ok: true, data });
     } catch (error) {
       handleNotificationError(error);
@@ -98,7 +108,7 @@ export function createNotificationRoutes(deps: NotificationRoutesDependencies = 
 
   routes.post("/:id/dismiss", createCurrentUserMiddleware(authSource), async (c) => {
     try {
-      const data = await service.dismiss(c.req.param("id"), c.var.currentUser.id);
+      const data = await service.dismiss(requireNotificationId(c.req.param("id")), c.var.currentUser.id);
       return c.json({ ok: true, data });
     } catch (error) {
       handleNotificationError(error);
@@ -107,7 +117,7 @@ export function createNotificationRoutes(deps: NotificationRoutesDependencies = 
 
   routes.post("/:id/complete", createCurrentUserMiddleware(authSource), async (c) => {
     try {
-      const data = await service.complete(c.req.param("id"), c.var.currentUser.id);
+      const data = await service.complete(requireNotificationId(c.req.param("id")), c.var.currentUser.id);
       return c.json({ ok: true, data });
     } catch (error) {
       handleNotificationError(error);

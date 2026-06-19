@@ -17,6 +17,7 @@ import {
   type AuthEnv
 } from "../middleware/auth.js";
 import { buildReplayManifestFacts, toAuditLogFact, toSnapshotVm } from "../pages/replay.js";
+import { isUuidParam } from "./uuid-param.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { getDefaultAgentRunQueue } from "../workers/agent-runner.js";
 import { getDefaultWorkItemService, WorkItemServiceError, type WorkItemService } from "../services/work-items.js";
@@ -62,6 +63,11 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
 
   routes.get("/workitems/:id/audit", createCurrentUserMiddleware(authSource), async (c) => {
     const workItemId = c.req.param("id");
+    // 路由 uuid 形参先校验：非 uuid 串原本直达 detailPage / listSnapshotsForWorkItem 的 uuid 列 →
+    // PG 22P02 → 误报 500；与「合法但不存在」同样回 404，不泄露事项存在性。
+    if (!isUuidParam(workItemId)) {
+      throw new HTTPException(404, { message: "没有找到这个事项。" });
+    }
     await assertCanReadWorkItem(workItemId, c.var.actor);
     const snapshotRows = await snapshots.listSnapshotsForWorkItem(workItemId, { includeReverted: true });
     const auditRows = await auditLogs.listAuditLogsForWorkItem(workItemId);

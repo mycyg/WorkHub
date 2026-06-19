@@ -21,6 +21,7 @@ import {
   WorkItemServiceError,
   type WorkItemService
 } from "../services/work-items.js";
+import { isUuidParam } from "./uuid-param.js";
 
 export type WorkItemRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -32,6 +33,22 @@ function handleWorkItemError(error: unknown): never {
     throw new HTTPException(error.status as 400, { message: error.message });
   }
   throw error;
+}
+
+// 路由 uuid 形参先校验：非 uuid 串原本直达服务层的 uuid 列 → PG 22P02 → 误报 500；非法即抛与「合法但不存在」
+// 同样的 404（WorkItemServiceError，经 handleWorkItemError 收口），不泄露存在性。
+function requireWorkItemId(value: string): string {
+  if (!isUuidParam(value)) {
+    throw new WorkItemServiceError(404, "not_found", "没有找到这个事项。");
+  }
+  return value;
+}
+
+function requireAcceptedChangeId(value: string): string {
+  if (!isUuidParam(value)) {
+    throw new WorkItemServiceError(404, "deliverable_not_found", "没有找到这份正式交付物。");
+  }
+  return value;
 }
 
 function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
@@ -104,7 +121,7 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
     const locale = requestLocale(c);
     try {
       const data = await workItems.bindEvidence({
-        workItemId: c.req.param("id"),
+        workItemId: requireWorkItemId(c.req.param("id")),
         payload,
         actor: c.var.actor,
         locale
@@ -118,8 +135,8 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
   routes.get("/workitems/:id/deliverables/:acceptedChangeId/download", createCurrentUserMiddleware(authSource), async (c) => {
     try {
       const file = await workItems.acceptedDeliverableFile({
-        workItemId: c.req.param("id"),
-        acceptedChangeId: c.req.param("acceptedChangeId"),
+        workItemId: requireWorkItemId(c.req.param("id")),
+        acceptedChangeId: requireAcceptedChangeId(c.req.param("acceptedChangeId")),
         actor: c.var.actor
       });
       const content = await readStoredDeliverable(file.storagePath);
@@ -137,8 +154,8 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
   routes.get("/workitems/:id/deliverables/:acceptedChangeId/preview", createCurrentUserMiddleware(authSource), async (c) => {
     try {
       const file = await workItems.acceptedDeliverableFile({
-        workItemId: c.req.param("id"),
-        acceptedChangeId: c.req.param("acceptedChangeId"),
+        workItemId: requireWorkItemId(c.req.param("id")),
+        acceptedChangeId: requireAcceptedChangeId(c.req.param("acceptedChangeId")),
         actor: c.var.actor
       });
       if (!isTextPreview(file.filename, file.mime)) {
@@ -167,8 +184,8 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
   routes.post("/workitems/:id/deliverables/:acceptedChangeId/restore", createCurrentUserMiddleware(authSource), async (c) => {
     try {
       const data = await workItems.restoreAcceptedDeliverable({
-        workItemId: c.req.param("id"),
-        acceptedChangeId: c.req.param("acceptedChangeId"),
+        workItemId: requireWorkItemId(c.req.param("id")),
+        acceptedChangeId: requireAcceptedChangeId(c.req.param("acceptedChangeId")),
         actor: c.var.actor
       });
       return c.json({ ok: true, data });

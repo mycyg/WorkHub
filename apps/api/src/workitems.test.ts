@@ -23,6 +23,10 @@ import { WorkItemServiceError, type WorkItemService } from "./services/work-item
 
 const now = new Date("2026-06-09T00:00:00.000Z");
 const userId = "12000000-0000-4000-8000-000000000001";
+// R3 routes-layer 加固后路由 uuid 形参会先校验：交付物路径段必须是合法 uuid，否则在到达被 mock 的服务前
+// 就以 404 收口。这里用稳定的合法 uuid 作为路径段，让下方各测试继续命中真实处理逻辑（预览/下载/还原）。
+const wiPathId = "73000000-0000-4000-8000-000000000001";
+const acPathId = "73000000-0000-4000-8000-000000000002";
 
 function user(): UserAuthRow {
   return {
@@ -142,9 +146,9 @@ function acceptedDeliverableVm(partial: Partial<AcceptedDeliverableVM> = {}): Ac
     filename: "result.md",
     mime: "text/markdown",
     size_bytes: 42,
-    download_href: "/api/workitems/work-1/deliverables/accepted-1/download",
-    preview_href: "/api/workitems/work-1/deliverables/accepted-1/preview",
-    restore_href: "/api/workitems/work-1/deliverables/accepted-1/restore",
+    download_href: `/api/workitems/${wiPathId}/deliverables/${acPathId}/download`,
+    preview_href: `/api/workitems/${wiPathId}/deliverables/${acPathId}/preview`,
+    restore_href: `/api/workitems/${wiPathId}/deliverables/${acPathId}/restore`,
     accepted_at: now.toISOString(),
     ...partial
   };
@@ -213,14 +217,14 @@ test("accepted deliverable routes download and preview text without exposing sto
     }));
     const headers = { Cookie: await cookie(runtimeSettings) };
 
-    const preview = await app.request("/api/workitems/work-1/deliverables/accepted-1/preview", { headers });
+    const preview = await app.request(`/api/workitems/${wiPathId}/deliverables/${acPathId}/preview`, { headers });
     assert.equal(preview.status, 200);
     const previewBody = await preview.json() as { data: { text: string; preview_type: string } };
     assert.equal(previewBody.data.preview_type, "text");
     assert.equal(previewBody.data.text, content);
     assert.equal(JSON.stringify(previewBody).includes(dir), false);
 
-    const download = await app.request("/api/workitems/work-1/deliverables/accepted-1/download", { headers });
+    const download = await app.request(`/api/workitems/${wiPathId}/deliverables/${acPathId}/download`, { headers });
     assert.equal(download.status, 200);
     assert.match(download.headers.get("content-disposition") ?? "", /result\.md/u);
     assert.equal(await download.text(), content);
@@ -250,7 +254,7 @@ test("findings: download Content-Length comes from the real bytes, not a stale D
       })
     }));
     const headers = { Cookie: await cookie(runtimeSettings) };
-    const download = await app.request("/api/workitems/work-1/deliverables/accepted-1/download", { headers });
+    const download = await app.request(`/api/workitems/${wiPathId}/deliverables/${acPathId}/download`, { headers });
     assert.equal(download.status, 200);
     // header 取实际发出的字节数（5），不是过期的 DB sizeBytes（999）。
     assert.equal(download.headers.get("content-length"), String(Buffer.byteLength(content)));
@@ -281,10 +285,10 @@ test("accepted deliverable preview rejects non-text files while download remains
     }));
     const headers = { Cookie: await cookie(runtimeSettings) };
 
-    const preview = await app.request("/api/workitems/work-1/deliverables/accepted-2/preview", { headers });
+    const preview = await app.request(`/api/workitems/${wiPathId}/deliverables/${acPathId}/preview`, { headers });
     assert.equal(preview.status, 415);
 
-    const download = await app.request("/api/workitems/work-1/deliverables/accepted-2/download", { headers });
+    const download = await app.request(`/api/workitems/${wiPathId}/deliverables/${acPathId}/download`, { headers });
     assert.equal(download.status, 200);
     assert.equal(await download.text(), "binary-ish");
   } finally {
@@ -311,10 +315,10 @@ test("accepted deliverable routes return 404 when the indexed storage file is mi
     }));
     const headers = { Cookie: await cookie(runtimeSettings) };
 
-    const preview = await app.request("/api/workitems/work-1/deliverables/accepted-3/preview", { headers });
+    const preview = await app.request(`/api/workitems/${wiPathId}/deliverables/${acPathId}/preview`, { headers });
     assert.equal(preview.status, 404);
 
-    const download = await app.request("/api/workitems/work-1/deliverables/accepted-3/download", { headers });
+    const download = await app.request(`/api/workitems/${wiPathId}/deliverables/${acPathId}/download`, { headers });
     assert.equal(download.status, 404);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -341,7 +345,7 @@ test("accepted deliverable restore returns the restored current deliverable VM",
     })
   }));
 
-  const response = await app.request("/api/workitems/work-1/deliverables/accepted-restore/restore", {
+  const response = await app.request(`/api/workitems/${wiPathId}/deliverables/${acPathId}/restore`, {
     method: "POST",
     headers: { Cookie: await cookie(runtimeSettings) }
   });
@@ -373,7 +377,7 @@ test("accepted deliverable restore reports version conflicts as a business 409",
     })
   }));
 
-  const response = await app.request("/api/workitems/work-1/deliverables/accepted-conflict/restore", {
+  const response = await app.request(`/api/workitems/${wiPathId}/deliverables/${acPathId}/restore`, {
     method: "POST",
     headers: { Cookie: await cookie(runtimeSettings) }
   });
@@ -381,4 +385,34 @@ test("accepted deliverable restore reports version conflicts as a business 409",
   assert.equal(response.status, 409);
   const body = await response.json() as { error: { message: string } };
   assert.match(body.error.message, /上一版/u);
+});
+
+test("R3 guard: a non-uuid deliverable path id yields 404 (not a 500 from PG 22P02) before hitting the service", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  // 服务被命中即抛——证明 uuid 守卫在到达服务（→ DB uuid 列）之前就以 404 短路了。
+  const service = {
+    ...workItemServiceFor({
+      file: {
+        id: "should-not-be-reached",
+        filename: "result.md",
+        mime: "text/markdown",
+        sizeBytes: 42,
+        storagePath: "not-read"
+      }
+    }),
+    async acceptedDeliverableFile() {
+      throw new Error("service must not be reached for a malformed uuid path id");
+    }
+  } satisfies WorkItemService;
+  app.route("/api", createWorkItemRoutes({ auth: authDeps(runtimeSettings), workItems: service }));
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  // 工作项 id 非法 → 404
+  const badWorkItem = await app.request(`/api/workitems/not-a-uuid/deliverables/${acPathId}/preview`, { headers });
+  assert.equal(badWorkItem.status, 404);
+
+  // acceptedChangeId 非法 → 404
+  const badAccepted = await app.request(`/api/workitems/${wiPathId}/deliverables/not-a-uuid/preview`, { headers });
+  assert.equal(badAccepted.status, 404);
 });

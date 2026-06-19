@@ -48,6 +48,7 @@ import {
   createAdminClaimThrottle,
   type AdminClaimThrottle
 } from "../middleware/admin-claim-throttle.js";
+import { isUuidParam } from "./uuid-param.js";
 
 // 与 workitems/knowledge 路由同款：畸形 JSON 体应回 400 而非冒泡成 500。
 // 空体按 {} 处理，交由各请求 schema 报缺字段（仍是 400）。
@@ -637,6 +638,11 @@ export function createAuthRoutes(
       throw new HTTPException(403, { message: "需要管理员权限" });
     }
     const targetId = c.req.param("id");
+    // 路由 uuid 形参先校验：非 uuid 串原本直达 users.softDelete 的 uuid 列 → PG 22P02 → 误报 500；
+    // 与「合法但不存在」同样回 404，攻击者无法据此区分存在性。置于自停用 400 防呆之前。
+    if (!isUuidParam(targetId)) {
+      throw new HTTPException(404, { message: "用户不存在或已停用" });
+    }
     if (targetId === actingUser.id) {
       // 防呆：管理员停用自己会立即把自己锁在外面。
       throw new HTTPException(400, { message: "不能停用自己的账号" });

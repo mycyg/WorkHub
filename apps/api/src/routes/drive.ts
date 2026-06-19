@@ -14,6 +14,7 @@ import {
   getDefaultDrivePageService,
   type DrivePageService
 } from "../services/drive-pages.js";
+import { isUuidParam } from "./uuid-param.js";
 
 export type DriveRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -57,9 +58,8 @@ function driveErrorResponse(c: Context<AuthEnv>, error: DrivePageServiceError) {
 // findings[#19]：路由 uuid 形参在到达 DB 查询前先校验。非 uuid 串(如 /projects/not-a-uuid/...)原本直达
 // `eq(projects.id, value)`，PG 以 22P02 invalid uuid 抛未捕获 500。这里非法即抛 DrivePageServiceError(404)，
 // 经既有 catch 走 driveErrorResponse——与「合法但不存在的 uuid 同样 404」一致，攻击者无法据此区分存在性。
-const uuidParamSchema = z.uuid();
 function requireUuidParam(value: string, label: string): string {
-  if (!uuidParamSchema.safeParse(value).success) {
+  if (!isUuidParam(value)) {
     throw new DrivePageServiceError(404, `没有找到这个${label}。`, "not_found");
   }
   return value;

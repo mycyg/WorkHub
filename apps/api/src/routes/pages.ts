@@ -25,6 +25,8 @@ import {
 } from "../middleware/auth.js";
 import { createTeamSkillRepository, getSharedDatabaseClient, type TeamSkillRepository } from "@workhub/db";
 
+import { isUuidParam } from "./uuid-param.js";
+
 import { buildAttentionHomePage } from "../pages/attention.js";
 import { getDefaultAiWorklogMetricsService, type AiWorklogMetricsService } from "../services/ai-worklog-metrics.js";
 import { buildCostDashboardPage } from "../pages/cost.js";
@@ -244,6 +246,11 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
 
   routes.get("/workitems/:id", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
+    // 路由 uuid 形参先校验：非 uuid 串原本直达 detailPage 的 uuid 列 → PG 22P02 → 误报 500；
+    // 与「合法但不存在」同样回 404，不泄露事项存在性。
+    if (!isUuidParam(c.req.param("id"))) {
+      throw new HTTPException(404, { message: "没有找到这个事项。" });
+    }
     try {
       const data = await workItems.detailPage({
         workItemId: c.req.param("id"),
@@ -261,6 +268,11 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
 
   routes.get("/proposals/:id", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
+    // 路由 uuid 形参先校验：非 uuid 串原本直达 proposals.get 的 uuid 列 → PG 22P02 → 误报 500；
+    // 与「合法但不存在」同样回 404，不泄露变更申请存在性。
+    if (!isUuidParam(c.req.param("id"))) {
+      throw new HTTPException(404, { message: "没有找到这个变更申请。" });
+    }
     const proposal = await proposals.get(c.req.param("id"));
     if (!proposal) {
       throw new HTTPException(404, { message: "没有找到这个变更申请。" });

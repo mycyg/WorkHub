@@ -40,6 +40,7 @@ import {
   getDefaultWorkItemService,
   type WorkItemService
 } from "../services/work-items.js";
+import { isUuidParam } from "./uuid-param.js";
 
 export type ProposalRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -338,6 +339,11 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   }
 
   async function readProposalForActor(proposalId: string, actor: AuthActor) {
+    // R4-1：畸形（非 UUID）proposalId 直接落 404（与不存在同形，不泄露存在性），
+    // 避免冒泡到 PG uuid 列触发 22P02→未捕获 500。覆盖 /:id 及 /:id/{review,merge,rebase}。
+    if (!isUuidParam(proposalId)) {
+      throw new HTTPException(404, { message: "没有找到这个变更申请。" });
+    }
     const proposal = await proposals.get(proposalId);
     if (!proposal) {
       throw new HTTPException(404, { message: "没有找到这个变更申请。" });
@@ -540,6 +546,11 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
     if (!workItems) {
       throw new HTTPException(403, { message: "没有权限查看这个事项。" });
     }
+    // 路由 uuid 形参先校验：非 uuid 串原本直达 detailPage 的 uuid 列 → PG 22P02 → 误报 500；
+    // 与「合法但不存在」同样回 404，不泄露事项存在性。
+    if (!isUuidParam(workItemId)) {
+      throw new HTTPException(404, { message: "没有找到这个事项。" });
+    }
     try {
       await workItems.detailPage({ workItemId, actor });
     } catch (error) {
@@ -548,6 +559,11 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   }
 
   async function readProposalByMergeProposalForActor(mergeProposalId: string, actor: AuthActor) {
+    // 路由 uuid 形参先校验：非 uuid 串原本直达 getByMergeProposal 的 uuid 列 → PG 22P02 → 误报 500；
+    // 与「合法但不存在」同样回 404，不泄露合并建议存在性。
+    if (!isUuidParam(mergeProposalId)) {
+      throw new HTTPException(404, { message: "没有找到这个合并建议。" });
+    }
     const proposal = await proposals.getByMergeProposal(mergeProposalId);
     if (!proposal) {
       throw new HTTPException(404, { message: "没有找到这个合并建议。" });
@@ -557,8 +573,10 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   }
 
   routes.post("/workitems/:id/proposals", createCurrentUserMiddleware(authSource), async (c) => {
-    const payload = createProposalFromManifestRequestSchema.parse(await readJsonBody(c));
+    // findings[#15]：先鉴权再解析请求体（与 /review、/merge 一致）——未授权者发畸形 body 应拿 403/404 而非
+    // 泄露 schema 的校验 422。assertCanReadWorkItem 同时承担 uuid 形参校验，置于解析之前。
     await assertCanReadWorkItem(c.req.param("id"), c.var.actor);
+    const payload = createProposalFromManifestRequestSchema.parse(await readJsonBody(c));
     try {
       const proposal = await proposals.createFromManifest({
         workItemId: c.req.param("id"),
@@ -593,8 +611,10 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   });
 
   routes.post("/merge-proposals/:id/choose", createCurrentUserMiddleware(authSource), async (c) => {
-    const payload = chooseMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
+    // findings[#15]：先鉴权再解析请求体（与 /review、/merge 一致）——未授权者发畸形 body 应拿 403/404 而非
+    // 泄露 schema 的校验 422。readProposalByMergeProposalForActor 同时承担 uuid 形参校验，置于解析之前。
     await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
+    const payload = chooseMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
     // L5：keep_current / accept_incoming 不经候选「选择 + 应用」路由——apply 只认 ai_fusion，选了它们会
     // 把变更申请永久卡在 reviewed 且冲突反复出现（死状态）。这两种解析在合并接口里内联完成：采纳来方填
     // conflict_resolution.accept_incoming_target_keys；保留现状则省略该冲突，merge 即可收口。此处 fail-closed，
@@ -620,8 +640,10 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   });
 
   routes.post("/merge-proposals/:id/apply", createCurrentUserMiddleware(authSource), async (c) => {
-    const payload = applyMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
+    // findings[#15]：先鉴权再解析请求体（与 /review、/merge 一致）——未授权者发畸形 body 应拿 403/404 而非
+    // 泄露 schema 的校验 422。readProposalByMergeProposalForActor 同时承担 uuid 形参校验，置于解析之前。
     await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
+    const payload = applyMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
     try {
       const proposal = await proposals.applyMergeCandidate({
         mergeProposalId: c.req.param("id"),

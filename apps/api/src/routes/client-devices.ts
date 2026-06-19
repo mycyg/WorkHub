@@ -15,6 +15,7 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
+import { isUuidParam } from "./uuid-param.js";
 
 // 畸形 JSON 体回 400（与 auth/workitems 路由同款），空体按 {} 交 schema 报缺字段。
 async function readJsonBody(c: { req: { text: () => Promise<string> } }) {
@@ -66,6 +67,11 @@ export function createClientDeviceRoutes(source: AuthDependencySource = getDefau
   routes.post("/:deviceId/revoke", async (c) => {
     const deps = resolveAuthDependencies(source);
     const user = await resolveCurrentUser(c, deps);
+    // 路由 uuid 形参先校验：非 uuid 串原本直达 revokeByIdForUser 的 uuid 列 → PG 22P02 → 误报 500；
+    // 与「合法但不存在」同样回 404，不泄露设备存在性。
+    if (!isUuidParam(c.req.param("deviceId"))) {
+      throw new HTTPException(404, { message: "client device not found" });
+    }
     const device = await deps.devices.revokeByIdForUser(
       c.req.param("deviceId"),
       user.id,

@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { z } from "zod";
 
 import {
   getSharedDatabaseClient,
@@ -39,6 +38,7 @@ import {
   WorkItemServiceError,
   type WorkItemService
 } from "../services/work-items.js";
+import { isUuidParam } from "./uuid-param.js";
 
 function auditLogRunId(detailJson: unknown) {
   if (!detailJson || typeof detailJson !== "object") {
@@ -69,9 +69,8 @@ function requestLocale(c: { req: { query: (key: string) => string | undefined; h
 
 // 路由 uuid 形参在到达 DB（uuid 列）前先校验。非 uuid 串原本直达 PG 查询 → 22P02 invalid uuid 抛未捕获
 // 500 + 误报 unhandled_error；非法即抛与「合法但不存在」同样的 404，攻击者无法据此区分存在性。
-const uuidParamSchema = z.uuid();
 function requireUuidParam(value: string): string {
-  if (!uuidParamSchema.safeParse(value).success) {
+  if (!isUuidParam(value)) {
     throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
   }
   return value;
@@ -166,10 +165,11 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
   }
 
   routes.post("/workitems/:id/agent-runs", createCurrentUserMiddleware(authSource), async (c) => {
+    const workItemId = requireUuidParam(c.req.param("id"));
     const payload = startAgentRunRequestSchema.parse(await c.req.json().catch(() => ({})));
-    await assertCanReadWorkItem(c.req.param("id"), c.var.actor);
+    await assertCanReadWorkItem(workItemId, c.var.actor);
     const run = await queue.enqueue({
-      workItemId: c.req.param("id"),
+      workItemId,
       actorId: c.var.actor.id,
       ...(payload.title ? { title: payload.title } : {}),
       ...(payload.mode ? { mode: payload.mode } : {})

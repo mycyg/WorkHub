@@ -1385,6 +1385,26 @@ test("POST /users/:id/deactivate rejects non-admins (403) and self-deactivation 
   assert.equal(selfDeactivate.status, 400);
 });
 
+test("POST /users/:id/deactivate with a non-uuid targetId returns 404 (not a 500 from PG 22P02)", async () => {
+  const runtimeSettings = settings();
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000e3", nickname: "admin", isAdmin: true });
+  const deps: AuthDependencies = {
+    users: new MemoryUsers([admin]),
+    devices: new MemoryDevices([]),
+    sessions: new MemorySessions(),
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const res = await app.request("/auth/users/not-a-uuid/deactivate", {
+    method: "POST",
+    headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) }
+  });
+  assert.equal(res.status, 404);
+});
+
 // ——— R2 auth epic：账号生命周期-改密 ———
 
 test("POST /password changes the password, revokes old sessions, and reissues the current session", async () => {

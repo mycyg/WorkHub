@@ -1,5 +1,4 @@
 import { Hono, type Context } from "hono";
-import { z } from "zod";
 
 import { normalizeWorkHubLocale, type MeetingPageVM, type WorkItemDetailVM } from "@workhub/contracts";
 
@@ -14,6 +13,7 @@ import {
   MeetingPageServiceError,
   type MeetingPageService
 } from "../services/meeting-pages.js";
+import { isUuidParam } from "./uuid-param.js";
 
 export type MeetingRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -44,9 +44,8 @@ function meetingErrorResponse(c: Context<AuthEnv>, error: MeetingPageServiceErro
 
 // 路由 uuid 形参在到达 DB（uuid 列）前先校验。非 uuid 串原本直达 PG 查询 → 22P02 invalid uuid 抛未捕获
 // 500；非法即抛 MeetingPageServiceError(404)，经既有 catch 走 meetingErrorResponse——与「合法但不存在」同样 404。
-const uuidParamSchema = z.uuid();
 function requireUuidParam(value: string, label: string): string {
-  if (!uuidParamSchema.safeParse(value).success) {
+  if (!isUuidParam(value)) {
     throw new MeetingPageServiceError(404, `没有找到这个${label}。`, "not_found");
   }
   return value;
