@@ -172,6 +172,10 @@ pub fn parse_sse_frames(input: &str) -> Vec<ParsedSseFrame> {
         .collect()
 }
 
+// R4 #29：单个未终止 SSE 残片（无 `\n\n` 帧边界）的累积上限。超过即视为畸形/滥用流，丢弃以防内存耗尽
+// 与每 chunk 全量扫描的 O(n^2)。1 MiB 远超任何正常 agent 事件帧。sse_worker 也复用此常量做硬错误中断。
+pub const MAX_SSE_PENDING_BYTES: usize = 1024 * 1024;
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ShellSseFrameBuffer {
     pending: String,
@@ -187,6 +191,11 @@ impl ShellSseFrameBuffer {
             let frame = self.pending[..index].to_string();
             self.pending = self.pending[index + 2..].to_string();
             frames.extend(parse_sse_frames(&format!("{frame}\n\n")));
+        }
+        // R4 #29：防御无界缓冲——排空完整帧后仍超上限说明是一段过大的未终止残片，丢弃以约束内存。
+        // 生产路径下 sse_worker 只喂完整帧、不会触发；此为独立/异常使用时的兜底。
+        if self.pending.len() > MAX_SSE_PENDING_BYTES {
+            self.pending.clear();
         }
         frames
     }

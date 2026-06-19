@@ -13,7 +13,7 @@ use crate::notify::{
 use crate::sse::{
     plan_shell_sse_worker, push_payload_from_frame, startup_shell_sse_targets,
     status_event_channel, status_payload, ShellSseConnectionState, ShellSseFrameBuffer,
-    ShellSsePlanError, ShellSseSubscription, ShellSseWorkerPlan,
+    ShellSsePlanError, ShellSseSubscription, ShellSseWorkerPlan, MAX_SSE_PENDING_BYTES,
 };
 
 pub const DEFAULT_SSE_RECONNECT_DELAY_MS: u64 = 5_000;
@@ -162,6 +162,14 @@ async fn pump_sse_response(
             let frame_bytes: Vec<u8> = pending.drain(..end).collect();
             let frame_text = String::from_utf8_lossy(&frame_bytes);
             frames.extend(buffer.push_chunk(&frame_text));
+        }
+        // R4 #29：排空完整帧后，pending 只剩未终止残片。若它超过上限仍无帧边界（畸形/滥用流，或服务器
+        // 一直不发 `\n\n`），继续累积会内存耗尽且每 chunk 的 find_frame_boundary_end 退化成 O(n^2)。
+        // 视为协议违例、断开连接（上层会重连，得到干净的帧对齐），而非静默截断破坏后续分帧。
+        if pending.len() > MAX_SSE_PENDING_BYTES {
+            return Err(format!(
+                "SSE frame exceeded {MAX_SSE_PENDING_BYTES}-byte buffer cap without a frame boundary; dropping connection"
+            ));
         }
 
         for frame in frames {
