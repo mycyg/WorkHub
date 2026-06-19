@@ -142,6 +142,59 @@ test("redis presence shares online state across worker instances", async () => {
   await Promise.all([writer.close(), reader.close()]);
 });
 
+// 审计 FIX#2(a)：持续活跃的流靠 refreshStream 同时续 lastSeen + streams 计数键的 TTL，
+// 否则两键到 TTL 自然过期、用户正在线却被判离线。验证续期后跨越原 TTL 仍在线。
+test("FIX#2 refreshStream keeps an active redis stream online past the original TTL", async () => {
+  const redis = new FakeRedisHub();
+  const factory: RedisPresenceClientFactory = () => redis.createPresenceClient();
+  let clock = 1_000_000;
+  const store = new RedisPresenceStore("redis://workhub-test", factory, () => new Date(clock));
+
+  await store.markStreamOpen("u-active");
+  assert.equal((await store.getPresence("u-active")).is_online, true);
+
+  // 推进到接近 TTL 边界，活跃流续期（同 SSE 写真事件后的节流续期）。
+  clock += (ONLINE_TTL_SECONDS - 1) * 1000;
+  await store.refreshStream("u-active");
+
+  // 再越过「原始」TTL（自 markStreamOpen 起已 > TTL），若不续期两键早过期；续期后仍在线。
+  clock += 2 * 1000;
+  const presence = await store.getPresence("u-active");
+  assert.equal(presence.is_online, true);
+
+  await store.close();
+});
+
+// 审计 FIX#2(b)：streams 键已过期时 decr 从 0 起算返回 -1（且把键重建成「-1」）。计数绝不能变负，
+// 否则并发流下在线计数被早删/算成负数。验证 close 一条「键已过期」的流后计数归零、不残留负数。
+test("FIX#2 markStreamClosed never yields a negative count when the streams key has expired", async () => {
+  const redis = new FakeRedisHub();
+  const factory: RedisPresenceClientFactory = () => redis.createPresenceClient();
+  let clock = 2_000_000;
+  const store = new RedisPresenceStore("redis://workhub-test", factory, () => new Date(clock));
+
+  await store.markStreamOpen("u-expire");
+  // 让 streams 键越过 TTL 自然过期（lastSeen 也一并过期）。
+  clock += (ONLINE_TTL_SECONDS + 1) * 1000;
+
+  // close 一条其计数键已过期的流：decr 不能把计数留成 -1。
+  await store.markStreamClosed("u-expire");
+
+  // 计数键应被删除归零（getPresence 读不到正计数）。lastSeen 在 markStreamClosed 末尾用「当前」时钟续过 →
+  // is_online 仍可能因 recent 为 true；关键断言是计数永不为负。
+  const streamCount = await redis.getValue(`presence:streams:u-expire`);
+  // 键被删（null）或值非负——绝不为 -1/负数。
+  if (streamCount !== null) {
+    assert.ok(Number.parseInt(streamCount, 10) >= 0, `streams count must not be negative, got ${streamCount}`);
+  }
+
+  // 紧接着新开一条流，计数必须从 1 起（而不是从 -1+1=0 起，否则 is_online 看计数会误判）。
+  await store.markStreamOpen("u-expire");
+  assert.equal(await redis.getValue(`presence:streams:u-expire`), "1");
+
+  await store.close();
+});
+
 async function nextOrTimeout(iterator: AsyncIterator<PushEvent>, ms: number) {
   return Promise.race([
     iterator.next(),

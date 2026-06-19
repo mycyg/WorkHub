@@ -230,6 +230,86 @@ test("findings[#170] connected frame advertises fresh resume mode even with a cu
   controller.abort();
 });
 
+// 审计 FIX#24：心跳里的 presence.touchUser 是软状态续期，一次 Redis 抖动绝不能从心跳分支冒泡出 while
+// → finally 拆掉一条健康 SSE 流（空闲连接每 ~30s 心跳一次，一次 presence 短暂故障会群体掉线）。
+// 验证：touchUser 恒抛错时，流仍写出 connected 帧并继续心跳（: ping），不被终止。
+test("FIX#24 a throwing presence.touchUser in the heartbeat does not terminate the SSE stream", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  class ThrowingTouchPresence extends InMemoryPresenceStore {
+    override async touchUser() {
+      throw new Error("redis presence blip");
+    }
+  }
+  const presence = new ThrowingTouchPresence();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api/push",
+    createPushRoutes({
+      auth: deps([alice], [], runtimeSettings),
+      bus: new InProcessPushBus(),
+      presence,
+      access: { canViewWorkItem: async () => true },
+      // 极小心跳 → 快速进入心跳分支（touchUser 在那里抛错）。
+      stream: { heartbeatMs: 5 }
+    })
+  );
+
+  const controller = new AbortController();
+  const response = await app.request(
+    "/api/push/stream/workitem/50000000-0000-4000-8000-000000000001",
+    {
+      headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) },
+      signal: controller.signal
+    }
+  );
+  assert.equal(response.status, 200);
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  // 第一帧：connected（markStreamOpen 成功）。
+  const first = decoder.decode((await reader.read()).value ?? new Uint8Array());
+  assert.match(first, /event: connected/u);
+  // 后续帧：心跳里的 touchUser 抛错被吞 → 流没被拆 → 仍写出 ping 注释。
+  let sawPing = false;
+  for (let i = 0; i < 5 && !sawPing; i += 1) {
+    const chunk = decoder.decode((await reader.read()).value ?? new Uint8Array());
+    if (chunk.includes(": ping")) {
+      sawPing = true;
+    }
+  }
+  assert.equal(sawPing, true);
+  await reader.cancel();
+  controller.abort();
+});
+
+// 审计 FIX#2：presence 续期 + 计数不变量。FIX#2(a) 的「活跃流 TTL 续期」bug 是 Redis 实现专属
+// （InMemory 用内存计数、无 TTL，天然不掉线；真 Redis 续期行为由 r2-pg-redis-smoke 真库覆盖）。
+// SSE 写循环按节流调用 presence.refreshStream 的接线见 sse/stream.ts（产线代码已审；其 HTTP 流式集成
+// 在 app.request 测试夹具下读第二帧不可靠，故不在此用流式断言）。这里确定性验证两实现都暴露的不变量：
+// refreshStream 续期使在线保持；FIX#2(b) markStreamClosed 多关一次绝不把计数打负、最终如期离线。
+test("FIX#2 presence.refreshStream keeps an active user online and markStreamClosed never underflows", async () => {
+  let clock = new Date("2026-06-19T00:00:00.000Z");
+  const presence = new InMemoryPresenceStore(() => clock);
+  const alice = user();
+
+  await presence.markStreamOpen(alice.id);
+  assert.equal((await presence.getPresence(alice.id)).is_online, true);
+  // 时间推进到超过在线窗口后，refreshStream 续期使活跃用户仍判在线（不被误判离线）。
+  clock = new Date(clock.getTime() + 5 * 60_000);
+  await presence.refreshStream(alice.id);
+  assert.equal((await presence.getPresence(alice.id)).is_online, true);
+
+  // FIX#2(b) 计数不变量：开 1 次、关 2 次（模拟并发/重复关闭）不抛错、计数不为负。
+  const bob = user({ id: "10000000-0000-4000-8000-0000000000b0", nickname: "Bob" });
+  await presence.markStreamOpen(bob.id);
+  await presence.markStreamClosed(bob.id);
+  await presence.markStreamClosed(bob.id);
+  // 时间推进过窗口：计数若被打负会让 is_online 永久卡 true；归零才会如期离线。
+  clock = new Date(clock.getTime() + 5 * 60_000);
+  assert.equal((await presence.getPresence(bob.id)).is_online, false);
+});
+
 test("push route default resolvers authorize workitem session and proposal streams through work item ownership", async () => {
   const runtimeSettings = settings();
   const alice = user();

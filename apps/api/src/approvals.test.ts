@@ -495,6 +495,72 @@ test("approval decisions, delegation, and expiry are audited with identity ancho
   assert.equal(deps.auditLogs.rows[2]?.detailJson["next_action"], "escalate_pm");
 });
 
+// 审计 FIX#3：respond/delegate 在 CAS 提交「之后」才发总线事件。生产默认 Redis 总线 publish 会在抖动时抛——
+// 决策已落库后若让它冒泡，HTTP 500 + 重试撞 409，决策永远拿不回。验证 publish 抛错时方法仍返回已提交结果（不 500）。
+test("FIX#3 respond returns the committed decision even when the bus publish throws", async () => {
+  const approvals = new MemoryApprovals();
+  const auditLogs = new MemoryAuditLogs();
+  const policyRepo = new MemoryPolicies();
+  let publishCalls = 0;
+  const throwingBus = {
+    async publish() {
+      publishCalls += 1;
+      throw new Error("redis connection blip");
+    }
+  };
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies: policyRepo,
+    bus: throwingBus,
+    now: () => now
+  });
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: approverId
+  });
+
+  // best-effort 发布吞掉抛错 → 方法照常返回已提交决策，不冒泡成 500。
+  const result = await service.respond(seeded.id, actor, { decision: "allow", remember: "once" });
+  assert.equal(result.approval.status, "approved");
+  // 决策确实落库（CAS 提交在发布之前，发布失败不回滚）。
+  assert.equal((await approvals.findById(seeded.id))?.status, "approved");
+  // 审计也照常落盘（在发布之前）。
+  assert.equal(auditLogs.rows.some((row) => row.action === "approval.decided"), true);
+  // 确实尝试发布过（≥1 次，每次都抛但被吞）。
+  assert.ok(publishCalls >= 1);
+});
+
+test("FIX#3 delegate returns the committed reassignment even when the bus publish throws", async () => {
+  const approvals = new MemoryApprovals();
+  const auditLogs = new MemoryAuditLogs();
+  const policyRepo = new MemoryPolicies();
+  const throwingBus = {
+    async publish() {
+      throw new Error("redis connection blip");
+    }
+  };
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies: policyRepo,
+    bus: throwingBus,
+    now: () => now
+  });
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: approverId
+  });
+  const toUserId = "10000000-0000-4000-8000-000000000003";
+
+  const result = await service.delegate(seeded.id, actor, toUserId);
+  assert.equal(result.approval.routed_to_user_id, toUserId);
+  assert.equal((await approvals.findById(seeded.id))?.routedToUserId, toUserId);
+  assert.equal(auditLogs.rows.some((row) => row.action === "approval.delegated"), true);
+});
+
 test("findings[#27] respondPending CAS rejects a stale decision after the request was delegated away (TOCTOU)", async () => {
   const approvals = new MemoryApprovals();
   const userA = approverId;

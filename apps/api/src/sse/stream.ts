@@ -10,6 +10,9 @@ const encoder = new TextEncoder();
 
 export type WriteEventStreamOptions = {
   heartbeatMs?: number;
+  // 审计 FIX#2(a)：活跃流 presence 续期的节流窗口（ms）。默认对齐心跳间隔，确保活跃流的续期频率
+  // 与空闲心跳一致（都 ~30s 一次），始终 < 在线 TTL(120s)。测试里可调小以验证续期触发。
+  presenceRefreshMs?: number;
 };
 
 export function writeEventStream(
@@ -21,6 +24,7 @@ export function writeEventStream(
   options: WriteEventStreamOptions = {}
 ) {
   const heartbeatMs = options.heartbeatMs ?? 30000;
+  const presenceRefreshMs = options.presenceRefreshMs ?? heartbeatMs;
   const lastEventId = c.req.header("Last-Event-ID") ?? c.req.query("last_event_id") ?? "";
 
   c.header("Content-Type", "text/event-stream; charset=utf-8");
@@ -61,13 +65,23 @@ export function writeEventStream(
       // 单条在飞 next() 跨心跳复用：每轮都新建 iterator.next() 会在心跳胜出时把上一轮的 resolver
       // 留成孤儿 waiter，导致心跳后丢掉队列里的第一条事件。缓存 pending，只在真正消费后清空。
       let pending: ReturnType<typeof iterator.next> | undefined;
+      // 审计 FIX#2(a)：节流活跃流的 presence 续期——不能每条事件都打一次 Redis。markStreamOpen 刚续过 TTL，
+      // 故从「现在」起算，只在距上次续期 >presenceRefreshMs 时再续。
+      let lastPresenceRefreshAt = Date.now();
       while (!aborted) {
         pending = pending ?? iterator.next();
         const result = await raceHeartbeat(pending, heartbeatMs);
         if (result === "heartbeat") {
           // findings[#low]：长时间空闲流靠心跳刷新 presence lastSeen，否则在线键自然过期、
           // is_online 误转 false（heartbeatMs 30s < TTL 120s，刷 lastSeen 即可保持 recent）。
-          await presence.touchUser(user.id);
+          // 审计 FIX#24：presence 是软状态，绝不能让一次 Redis 抖动从这里冒泡出 while → finally 拆掉一条
+          // 健康的 SSE 流（且空闲连接每 ~30s 都心跳，一次 presence 短暂故障会群体掉线空闲客户端）。心跳尽力而为。
+          try {
+            await presence.touchUser(user.id);
+            lastPresenceRefreshAt = Date.now();
+          } catch (error) {
+            console.warn("[sse] heartbeat presence touch failed (stream kept alive)", error);
+          }
           await output.write(encoder.encode(formatSseComment("ping")));
           continue;
         }
@@ -78,6 +92,17 @@ export function writeEventStream(
         await output.write(encoder.encode(formatSseEvent(result.value.type, result.value.data, {
           id: eventIdFromData(result.value.data)
         })));
+        // 审计 FIX#2(a)：持续活跃（事件 <heartbeatMs 一条 → 永不走心跳分支）的流，靠这里节流续期 presence，
+        // 否则 lastSeen + streams 两键都到 TTL 自然过期、用户正在线却被判离线。best-effort（同 FIX#24）。
+        const elapsed = Date.now() - lastPresenceRefreshAt;
+        if (elapsed >= presenceRefreshMs) {
+          lastPresenceRefreshAt = Date.now();
+          try {
+            await presence.refreshStream(user.id);
+          } catch (error) {
+            console.warn("[sse] active-stream presence refresh failed (stream kept alive)", error);
+          }
+        }
       }
     } finally {
       if (subscription) {

@@ -21,6 +21,10 @@ export type PresenceState = {
 export type PresenceStore = {
   touchUser: (userId: string) => Promise<void>;
   markStreamOpen: (userId: string) => Promise<void>;
+  // 审计 FIX#2(a)：刷新一个「持续活跃」流的在线状态——同时续期 lastseen 与 streams 计数键的 TTL。
+  // 持续有事件（间隔 <30s 永不空闲 → 永不走心跳）的流不刷任一键，两键都会在 120s TTL 到期，
+  // is_online 在用户正盯着看时误转 false。SSE 写出真事件时按节流（>~30s）调用本方法续期。
+  refreshStream: (userId: string) => Promise<void>;
   markStreamClosed: (userId: string) => Promise<void>;
   forgetUser: (userId: string) => Promise<void>;
   getPresence: (userId: string) => Promise<PresenceState>;

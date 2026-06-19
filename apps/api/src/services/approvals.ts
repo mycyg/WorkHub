@@ -379,6 +379,10 @@ function shouldLearnAlways(approval: ApprovalRequestRow, payload: RespondApprova
   return approvalRiskLevel(toRecord(approval)) !== "high";
 }
 
+// 审计 FIX#3：所有 publishIfAvailable 调用点都在 CAS / createApprovalRequest 提交「之后」（决策已落库）。
+// 生产默认总线是 Redis，其 publish 在连接抖动时会抛——若让它冒泡，整个 respond/delegate 方法在决策已提交后
+// 仍返回 HTTP 500；客户端重试又撞上「状态已非 pending」的 CAS → 409，决策永远拿不回来。故把发布做成 best-effort：
+// 吞掉异常并 warn（与 proposals 路由的 publishProposalEvents 同口径）。绝不能在 CAS 提交「之前」用本函数。
 async function publishIfAvailable<T>(
   bus: Pick<PushBus, "publish"> | undefined,
   topic: string | undefined,
@@ -388,7 +392,12 @@ async function publishIfAvailable<T>(
   if (!bus || !topic) {
     return;
   }
-  await bus.publish(topic, type, data);
+  try {
+    await bus.publish(topic, type, data);
+  } catch (error) {
+    // best-effort：丢一次实时刷新可接受，绝不让总线故障翻掉已提交的审批决策（客户端靠下一条事件/全量重拉补齐）。
+    console.warn("[approvals] failed to publish post-commit event", { topic, type }, error);
+  }
 }
 
 function expirationAction(row: ApprovalRequestRow): ApprovalExpirationAction {
