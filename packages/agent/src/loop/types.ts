@@ -137,6 +137,11 @@ export type AgentLoopInput = {
   recorder?: AgentLoopRecorder;
   emit?: (event: AgentLoopEvent) => Promise<void> | void;
   now?: () => Date;
+  /**
+   * R4 #31：可选的运行级取消信号。透传给每次 provider 请求（与 per-request 超时合并）并让重试退避 sleep
+   * 提前中止——被取消的 run 不再空转完整退避延迟。不传则与既有行为一致（无外部取消）。
+   */
+  signal?: AbortSignal;
 };
 
 export type AgentRunReview = {

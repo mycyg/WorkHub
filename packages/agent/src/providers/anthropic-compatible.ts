@@ -40,6 +40,36 @@ function resolveSignal(params: { signal?: AbortSignal; timeoutMs?: number }): Ab
   return params.signal;
 }
 
+/**
+ * R4 #32：流式请求的「空闲超时」——把 timeoutMs 当作**两条数据之间**的最长间隔，而非整条流的墙钟上限。
+ * 每收到一个 chunk 调 reset() 续命；只有真的 idleMs 内毫无数据才中断。健康的长流（持续出 token）不再被
+ * 一个固定墙钟砍断。reset() 在 fetch 前先 arm，覆盖 TTFB（provider 迟迟不回首字节也会超时）。
+ * idleMs<=0 → 不施加空闲超时，signal 退回外部 signal。timer unref，不因它吊住事件循环。
+ */
+function createIdleAbort(externalSignal: AbortSignal | undefined, idleMs: number | undefined) {
+  const hasIdle = typeof idleMs === "number" && idleMs > 0;
+  if (!hasIdle) {
+    return { signal: externalSignal, reset: () => {}, clear: () => {} };
+  }
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const clear = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+  const reset = () => {
+    clear();
+    timer = setTimeout(() => {
+      controller.abort(new DOMException(`LLM stream idle for ${idleMs}ms`, "TimeoutError"));
+    }, idleMs);
+    (timer as { unref?: () => void }).unref?.();
+  };
+  const signal = externalSignal ? AbortSignal.any([externalSignal, controller.signal]) : controller.signal;
+  return { signal, reset, clear };
+}
+
 /** 把任意中断/超时错误归一成 LlmRequestTimeoutError；非中断错误原样返回。 */
 function normalizeAbortError(error: unknown, signal: AbortSignal | undefined): unknown {
   if (isAbortError(error)) {
@@ -142,7 +172,8 @@ async function assertOk(response: Response) {
 
 async function* parseSseBody(
   body: NonNullable<Response["body"]>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onActivity?: () => void
 ): AsyncGenerator<SseEvent> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -179,6 +210,8 @@ async function* parseSseBody(
       if (read.done) {
         break;
       }
+      // R4 #32：收到数据=流仍活跃，续空闲超时计时器。
+      onActivity?.();
       buffer += decoder.decode(read.value, { stream: true });
       const parts = buffer.split(/\r?\n\r?\n/u);
       buffer = parts.pop() ?? "";
@@ -300,7 +333,9 @@ class AnthropicCompatibleStream implements LlmStream {
 
   constructor(
     private readonly body: NonNullable<Response["body"]>,
-    private readonly signal?: AbortSignal
+    private readonly signal?: AbortSignal,
+    // R4 #32：空闲超时句柄——每收到 chunk reset()，流结束/出错时 clear()。
+    private readonly idle?: { reset: () => void; clear: () => void }
   ) {}
 
   [Symbol.asyncIterator](): AsyncIterator<LlmStreamEvent> {
@@ -313,6 +348,9 @@ class AnthropicCompatibleStream implements LlmStream {
         }
         const value = this.events[index];
         if (value) {
+          // R4 #33：释放已消费事件的内存——否则整条流(可达成百上千个 delta)在 stream 存活期间一直被数组持有。
+          // 置 undefined 而非 splice：保持 index 语义不变，只释放重型 event.data 引用。
+          this.events[index] = undefined as unknown as LlmStreamEvent;
           index += 1;
           return { value, done: false };
         }
@@ -341,7 +379,7 @@ class AnthropicCompatibleStream implements LlmStream {
 
   private async consume(): Promise<LlmCreateResponse> {
     try {
-      for await (const event of parseSseBody(this.body, this.signal)) {
+      for await (const event of parseSseBody(this.body, this.signal, this.idle?.reset)) {
         this.applyEvent(event);
         const llmEvent: LlmStreamEvent = {
           type: eventType(event)
@@ -358,6 +396,7 @@ class AnthropicCompatibleStream implements LlmStream {
       this.consumeError = error;
       throw error;
     } finally {
+      this.idle?.clear();
       this.done = true;
       this.flushWaiters();
     }
@@ -459,7 +498,10 @@ export function createAnthropicCompatibleTransport(
     },
 
     async stream(params) {
-      const signal = resolveSignal(params);
+      // R4 #32：流式用空闲超时（chunk 间最长间隔），而非整流墙钟——健康长流不被砍。reset() 先 arm 覆盖 TTFB。
+      const idle = createIdleAbort(params.signal, params.timeoutMs);
+      const signal = idle.signal;
+      idle.reset();
       let response: Response;
       try {
         response = await fetchImpl(messagesEndpoint(provider.baseUrl), {
@@ -469,13 +511,19 @@ export function createAnthropicCompatibleTransport(
           ...(signal ? { signal } : {})
         });
       } catch (error) {
+        idle.clear();
         throw normalizeAbortError(error, signal);
       }
-      await assertOk(response);
-      if (!response.body) {
-        throw new Error("LLM provider returned an empty stream body");
+      try {
+        await assertOk(response);
+        if (!response.body) {
+          throw new Error("LLM provider returned an empty stream body");
+        }
+      } catch (error) {
+        idle.clear();
+        throw error;
       }
-      return new AnthropicCompatibleStream(response.body, signal);
+      return new AnthropicCompatibleStream(response.body, signal, idle);
     }
   };
 }

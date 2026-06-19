@@ -132,7 +132,9 @@ async function callModel(input: AgentLoopInput, params: {
     // findings[19]：把单调步号带进用量记账去重键——同 run 内两步即便 token/毫秒相同也不被误并、少记成本。
     seq: params.stepNo,
     // 单次请求超时（默认 120s）：挂死的 provider 连接超时即中断、抛 llm_request_timeout 走重试，绝不无限 park worker。
-    timeoutMs: input.budget.providerRequestTimeoutMs ?? 120_000
+    timeoutMs: input.budget.providerRequestTimeoutMs ?? 120_000,
+    // R4 #31：透传运行级取消信号——provider 把它与 per-request 超时合并（AbortSignal.any）。
+    ...(input.signal ? { signal: input.signal } : {})
   };
   const stream = input.client.messages.stream;
   if (!stream) {
@@ -165,8 +167,28 @@ async function callModel(input: AgentLoopInput, params: {
   return responseStream.getFinalMessage();
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+// R4 #31：abort-aware sleep——重试退避期间若运行级 signal 触发，立即 reject（带 abort reason），
+// 让被取消的 run 不再空转完整退避延迟。不传 signal 则退回普通 setTimeout（旧行为）。
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new Error("aborted"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      cleanup();
+      reject(signal?.reason ?? new Error("aborted"));
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 async function callModelWithRetry(input: AgentLoopInput, params: Parameters<typeof callModel>[1]) {
@@ -203,7 +225,7 @@ async function callModelWithRetry(input: AgentLoopInput, params: Parameters<type
           delay_ms: decision.delayMs
         }
       });
-      await sleep(decision.delayMs);
+      await sleep(decision.delayMs, input.signal);
     }
   }
 }
