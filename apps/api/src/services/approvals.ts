@@ -638,8 +638,16 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         throw new ApprovalServiceError(409, "approval_race", "这条审批已经被处理过了。");
       }
 
-      const learnedPolicy = shouldLearn
-        ? await deps.policies.createPermissionPolicy({
+      // R4 #34：决策的 CAS 已提交(updated)。其后的「学到策略 + 审计」是 post-commit 副作用——若它们瞬时
+      // 失败而让整个方法抛错，调用方得 HTTP 500，但决策其实已生效；重试又撞非 pending CAS 得 409，
+      // 既拿不回结果也不会重建策略/审计=不可恢复。故 best-effort：吞错 + warn(学到策略丢失=下次再问一次的
+      // 降级,非损坏;审计丢失记入告警通道)。与 #3 的 post-commit publish 同口径。
+      // 注：完全原子化(respondPending+createPermissionPolicy+audit 同一事务,tx-orchestrator 模式)是更彻底
+      // 的修法,跨多仓库改造、工作量较大,记入 R4 报告留待 attended 单独处理。
+      let learnedPolicy: Awaited<ReturnType<typeof deps.policies.createPermissionPolicy>> | undefined;
+      try {
+        if (shouldLearn) {
+          learnedPolicy = await deps.policies.createPermissionPolicy({
             scopeKind: "session",
             scopeId: updated.agentRunId ?? actor.id,
             actionPattern: updated.actionPattern,
@@ -649,25 +657,27 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             ...(actor.userId ? { createdByUserId: actor.userId } : {}),
             orgId: actor.orgId,
             workspaceId: actor.workspaceId
-          })
-        : undefined;
-
-      await auditApprovalAction(updated, {
-        action: "approval.decided",
-        actor: {
-          kind: "human",
-          label: actorNickname(actor),
-          orgId: actor.orgId,
-          workspaceId: actor.workspaceId,
-          ...(actor.userId ? { userId: actor.userId } : {})
-        },
-        detail: {
-          decision: payload.decision,
-          decided_by_user_id: approverId(actor),
-          ...(payload.reason_md ? { reason_preview: payload.reason_md.trim().slice(0, 160) } : {}),
-          ...(learnedPolicy ? { learned_policy_id: learnedPolicy.id } : {})
+          });
         }
-      });
+        await auditApprovalAction(updated, {
+          action: "approval.decided",
+          actor: {
+            kind: "human",
+            label: actorNickname(actor),
+            orgId: actor.orgId,
+            workspaceId: actor.workspaceId,
+            ...(actor.userId ? { userId: actor.userId } : {})
+          },
+          detail: {
+            decision: payload.decision,
+            decided_by_user_id: approverId(actor),
+            ...(payload.reason_md ? { reason_preview: payload.reason_md.trim().slice(0, 160) } : {}),
+            ...(learnedPolicy ? { learned_policy_id: learnedPolicy.id } : {})
+          }
+        });
+      } catch (error) {
+        console.warn("[approvals] post-commit learned-policy/audit write failed (decision already applied)", { id, error });
+      }
 
       const eventData = {
         approval_id: updated.id,
