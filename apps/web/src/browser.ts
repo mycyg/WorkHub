@@ -79,6 +79,7 @@ import {
 } from "./routes.js";
 import {
   mountReactRouteIsland,
+  setReactRouteDirtyHandler,
   unmountReactRouteIsland
 } from "./react-route-mount.js";
 
@@ -474,7 +475,9 @@ function bindGoldPathNavigation(
       if (approvalId && body) {
         try {
           const comment = await client.postApprovalComment(approvalId, { body });
-          if (form && input) {
+          // R4 #27：await 期间路由可能被 SSE 重渲/导航重建，form 会脱离 DOM——此时 insertBefore 静默落到
+          // 已分离的节点、乐观追加丢失。仅当 form 仍挂在文档上才乐观插入；否则跳过（评论已落库，下次渲染自然带出）。
+          if (form && input && form.isConnected) {
             // L#W2-16：首条评论先移除「还没有讨论」空态占位，避免占位与新评论并存。
             commentSubmit.closest("[data-r4-approval-discussion]")?.querySelector("p.wh-subtle")?.remove();
             const row = document.createElement("div");
@@ -1236,6 +1239,9 @@ async function boot() {
   let locale = browserLocale();
   setDocumentLocale(locale);
   canonicalizeLegacyHashRoute();
+  // R4 #28：把 React island 的"进行中编辑"接进路由 dirty-guard——编辑器有未保存决策/输入时标脏，
+  // SSE 刷新会延迟并提示而非静默 unmount 丢弃。只需在 boot 注册一次（markActiveRouteDirty 是稳定引用）。
+  setReactRouteDirtyHandler(markActiveRouteDirty);
   root.innerHTML = renderWebRouteState(currentRouteMatch(), "idle", locale).html;
 
   try {

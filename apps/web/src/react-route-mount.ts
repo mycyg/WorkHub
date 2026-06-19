@@ -15,6 +15,18 @@ import type { WebRouteReadyResult } from "./routes.js";
 
 export type ReactRouteMountReason = "initial" | "sse-props";
 
+// R4 #28：React 行编辑器/字段编辑器的"进行中编辑"（决策选择、自定义值输入）此前只存在组件本地 state，
+// SSE 刷新会无条件 unmount 整个 island 把它丢掉。这里提供一个 dirty 回调钩子——编辑器有进行中改动时调它，
+// 宿主(browser.ts)把它接到 markActiveRouteDirty，使 refreshCurrentRouteFromLiveEvent 的 dirty-guard 同样
+// 覆盖 React 受控态：脏时延迟刷新并提示"有新数据,点刷新"，而非静默丢弃用户正在做的决策。
+let reactRouteDirtyHandler: ((reason: string) => void) | undefined;
+export function setReactRouteDirtyHandler(handler: ((reason: string) => void) | undefined) {
+  reactRouteDirtyHandler = handler;
+}
+function markReactRouteDirty(reason: string) {
+  reactRouteDirtyHandler?.(reason);
+}
+
 export type ReactRouteMountResult = {
   mounted: boolean;
   routeKey?: "home" | "proposal" | undefined;
@@ -316,7 +328,10 @@ function ProposalMutationEditor(input: ProposalMutationEditorProps) {
             "data-structured-field-custom-input": input.field,
             "data-r4-react-controlled-input": "true",
             "aria-label": placeholder,
-            onChange: (event: ChangeEvent<HTMLTextAreaElement>) => setCustomValue(event.currentTarget.value)
+            onChange: (event: ChangeEvent<HTMLTextAreaElement>) => {
+              markReactRouteDirty("proposal_field_custom_value"); // R4 #28：进行中编辑→标脏,SSE 刷新延迟不丢
+              setCustomValue(event.currentTarget.value);
+            }
           }),
           createElement(
             "button",
@@ -667,13 +682,16 @@ function ProposalLineEditor(input: ProposalLineEditorProps) {
                         "data-line-editor-decision": decision,
                         "data-line-editor-decision-selected": String(selected),
                         "data-line-editor-hunk-index": String(range.index),
-                        onClick: () => setDecisionsByPanel((current) => ({
-                          ...current,
-                          [file.panelId]: {
-                            ...(current[file.panelId] ?? {}),
-                            [String(range.index)]: decision
-                          }
-                        }))
+                        onClick: () => {
+                          markReactRouteDirty("proposal_line_decision"); // R4 #28：决策选择→标脏,SSE 刷新延迟不丢
+                          setDecisionsByPanel((current) => ({
+                            ...current,
+                            [file.panelId]: {
+                              ...(current[file.panelId] ?? {}),
+                              [String(range.index)]: decision
+                            }
+                          }));
+                        }
                       },
                       lineEditorDecisionLabel(input.locale, decision)
                     );
