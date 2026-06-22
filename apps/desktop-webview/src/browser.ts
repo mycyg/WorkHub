@@ -1198,6 +1198,19 @@ async function bootSpotlight() {
         spotlight.reset();
       }
     });
+    // rank12：把「待你拍板」实时条数喂给 launcher 审批角标——盒子的核心承诺是一眼看到有几条待决策。
+    // 启动拉一次 + 每 30s + 窗口重新聚焦时刷新；best-effort，失败不更新角标、不影响盒子。
+    const refreshApprovalsBadge = async () => {
+      try {
+        const att = await client.pages.attention({ locale });
+        spotlight.setBadges({ approvals: att.queue?.length ?? 0 });
+      } catch {
+        // 角标尽力而为。
+      }
+    };
+    void refreshApprovalsBadge();
+    window.setInterval(() => void refreshApprovalsBadge(), 30_000);
+    window.addEventListener("focus", () => void refreshApprovalsBadge());
   } catch (error) {
     renderDesktopOfflineCard(root, locale, error);
   }

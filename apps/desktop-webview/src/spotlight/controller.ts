@@ -55,9 +55,14 @@ function renderLauncherGrid(
   if (matches.length === 0) {
     return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${zh ? "没有匹配的能力，换个说法试试" : "No matching capability — try another phrase"}</div></div>`;
   }
-  // 空查询时给一无所知的新用户一句温和的引导（搜索框无 header，保持聚焦盒观感）。
+  // 空查询时给一无所知的新用户一句温和的引导：先亮身份(WorkHub·Cuu)，再说怎么用 + Esc 关闭提示
+  // （搜索框无 header，保持聚焦盒观感；⌘K 已在右上角标出）。
   const hello = showHello
-    ? `<div class="wh-spot-hello ds-anim-fade-in">${zh ? "想做点什么？输入关键词，或选一个 —— Cuu 帮你跑" : "What's on your plate? Type, or pick one — Cuu runs it"}</div>`
+    ? `<div class="wh-spot-hello ds-anim-fade-in">${
+        zh
+          ? "WorkHub · 把活交给 Cuu，你来拍板<br>输入关键词，或选一个开始；Esc 关闭"
+          : "WorkHub · hand work to Cuu, you decide<br>Type or pick one to start; Esc to close"
+      }</div>`
     : "";
   const loc = zh ? "zh-CN" : "en";
   const cards = matches
@@ -87,7 +92,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   // controller 自身的 window 监听器（⌘K/ESC/resize）统一挂这个 signal，dispose 时一并断开（rank25）。
   const controllerAbort = new AbortController();
 
-  const placeholder = zh ? "想做什么？派活 / 审批 / 网盘 / 项目…" : "What do you need? dispatch / approve / drive…";
+  const placeholder = zh ? "想做点什么？新任务 / 审批 / 网盘 / 项目…" : "What do you need? new task / approve / drive…";
   host.className = "wh-ds wh-spot-stage";
   host.innerHTML = `
     <div class="wh-spot ds-glass-strong ds-anim-spring-in" data-spot-box data-mode="launcher">
