@@ -73,6 +73,15 @@ import {
   resolveDesktopPetWindowBridge
 } from "./pet-window-bridge.js";
 import { parseDesktopShellNavigatePayload } from "./shell-events.js";
+import { appleGlassDesignSystemCss } from "./design-system.js";
+import {
+  commandPaletteCss,
+  matchCommands,
+  renderCommandPalette,
+  resolveCommandAction,
+  type CommandId
+} from "./command-palette.js";
+import { glassWindowCss } from "./glass-window.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -122,6 +131,140 @@ async function ensureDesktopClientToken(client: BrowserApiClient): Promise<void>
 async function resolveBootLocale(client: BrowserApiClient, fallback: WorkHubLocale) {
   const me = await client.me().catch(() => null);
   return applyIdentityLocale(me, fallback);
+}
+
+// R8 S3b：命令 → 既有壳层路由（复用 hashchange→activateRoute→懒拉 LIVE 数据）。drive 暂经项目下钻进入。
+const COMMAND_ROUTE: Record<CommandId, string> = {
+  intake: "/intake",
+  approvals: "/approvals",
+  proposals: "/proposals",
+  workitem: "/workitems",
+  drive: "/projects",
+  projects: "/projects",
+  replay: "/agent-runs",
+  knowledge: "/knowledge",
+  cost: "/dashboard/cost",
+  team: "/team",
+  settings: "/settings"
+};
+
+// Cuu 命令面板：常驻召唤药丸 + ⌘K 召出的玻璃浮层；输入意图 → 模糊匹配 → 路由到对应能力。
+// additive：只往主窗加一个药丸 + 一个浮层宿主，不改既有壳层 DOM/导航；选中后走既有 hash 导航。
+function mountCommandPalette(shellRoot: HTMLElement, locale: WorkHubLocale): void {
+  const doc = shellRoot.ownerDocument ?? document;
+  const launcher = doc.createElement("button");
+  launcher.type = "button";
+  launcher.className = "wh-ds wh-cmd-launcher";
+  launcher.innerHTML = `<kbd>⌘K</kbd><span>${locale === "zh-CN" ? "跟 Cuu 说 · 直达任何能力" : "Ask Cuu · jump anywhere"}</span>`;
+  shellRoot.appendChild(launcher);
+
+  const overlay = doc.createElement("div");
+  overlay.className = "wh-ds";
+  overlay.hidden = true;
+  shellRoot.appendChild(overlay);
+
+  let open = false;
+  const renderOverlay = (query: string) => {
+    overlay.innerHTML = `<div class="wh-cmd-backdrop" data-cmd-backdrop>${renderCommandPalette({ query, locale })}</div>`;
+    const input = overlay.querySelector<HTMLInputElement>("[data-command-input]");
+    if (input) {
+      input.focus();
+      const end = input.value.length;
+      try {
+        input.setSelectionRange(end, end);
+      } catch {
+        // type=search 某些实现不接受 setSelectionRange，忽略即可。
+      }
+    }
+  };
+  const openPalette = () => {
+    if (open) {
+      return;
+    }
+    open = true;
+    overlay.hidden = false;
+    renderOverlay("");
+  };
+  const closePalette = () => {
+    if (!open) {
+      return;
+    }
+    open = false;
+    overlay.hidden = true;
+    overlay.innerHTML = "";
+  };
+  const routeTo = (id: CommandId) => {
+    const action = resolveCommandAction(id);
+    closePalette();
+    if (action) {
+      window.location.hash = COMMAND_ROUTE[id];
+    }
+  };
+
+  launcher.addEventListener("click", openPalette);
+
+  // 输入即过滤：只替换结果列表，保留输入框焦点/光标（不重启入场动画）。
+  overlay.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || !target.matches("[data-command-input]")) {
+      return;
+    }
+    const palette = overlay.querySelector(".wh-cmd");
+    if (!palette) {
+      return;
+    }
+    const fresh = doc.createElement("div");
+    fresh.innerHTML = renderCommandPalette({ query: target.value, locale });
+    const oldList = palette.querySelector(".wh-cmd-list, .wh-cmd-empty");
+    const newList = fresh.querySelector(".wh-cmd-list, .wh-cmd-empty");
+    if (oldList && newList) {
+      oldList.replaceWith(newList);
+    }
+  });
+
+  overlay.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    if (target.matches("[data-cmd-backdrop]")) {
+      closePalette();
+      return;
+    }
+    const row = target.closest<HTMLElement>("[data-command-id]");
+    const id = row?.getAttribute("data-command-id");
+    if (id) {
+      routeTo(id as CommandId);
+    }
+  });
+
+  // 回车直达当前最优匹配（极简：输入→回车）。
+  overlay.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    const target = event.target;
+    if (target instanceof HTMLInputElement && target.matches("[data-command-input]")) {
+      const matches = matchCommands(target.value, locale);
+      if (matches[0]) {
+        event.preventDefault();
+        routeTo(matches[0].command.id);
+      }
+    }
+  });
+
+  window.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && (event.key === "k" || event.key === "K")) {
+      event.preventDefault();
+      if (open) {
+        closePalette();
+      } else {
+        openPalette();
+      }
+    } else if (event.key === "Escape" && open) {
+      closePalette();
+    }
+  });
 }
 
 function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client: BrowserApiClient) {
@@ -647,7 +790,7 @@ async function boot() {
     // R7 液态玻璃地基(桌面专属):字体 <link> 在前,玻璃覆盖 CSS 紧跟壳层 CSS 之后(同特异性靠顺序取胜)。
     // proposalCss 放最前:它含一个 :root 重定义(--ink/--blue… 与 goldPathCss 同名不同值),放 shell.css
     // 之前 → goldPath :root 后覆盖、不全局串色;其 wh-proposal-* 布局类(独有)生效;玻璃覆盖在 liquidGlassCss 里(更后)赢。
-    root.innerHTML = `${liquidGlassHeadHtml}<style>${proposalCss}${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}${teamCalendarCss}${projectsPageCss}${projectDriveCss}</style>${shell.html}`;
+    root.innerHTML = `${liquidGlassHeadHtml}<style>${proposalCss}${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}${teamCalendarCss}${projectsPageCss}${projectDriveCss}${appleGlassDesignSystemCss}${commandPaletteCss}${glassWindowCss}</style>${shell.html}`;
     // R7 P3:首页面板换成液态玻璃「决策卡牌」(数据来自 attention.queue)。卡片按钮带 href+data-action-id,
     // 由下面 bindGoldPathNavigation 的既有点击管线处理(审批 respond / 提议 review·merge),无需新交互代码。
     // fail-open:取不到面板/数据就保留 gold-path 原首页,绝不让首页空掉。
@@ -897,6 +1040,9 @@ async function boot() {
         triggerLiveGoldPathForRoute(window.location.hash.slice(1));
       }
     });
+    // R8 S3b：Cuu 命令面板——⌘K（或点常驻药丸）召出，输入意图模糊匹配 → 路由到对应能力面板。
+    // 复用既有 hash 导航（hashchange→activateRoute→懒拉 LIVE 数据），additive，不动既有壳层。
+    mountCommandPalette(root, locale);
   } catch (error) {
     // 测试反馈修复（窗口空白）：连不上后端时不再留空白/晦涩报错，渲一张清晰的玻璃「离线卡」——
     // 说明需要后端、当前连接地址、怎么改地址、重试按钮。否则用户只看到一片透明玻璃，不知所措。
