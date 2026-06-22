@@ -2458,7 +2458,7 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
         : "";
       const descriptionLine = project.description
         ? `<p>${escapeHtml(project.description)}</p>`
-        : `<p>${escapeHtml(`${routeT(locale, "projects.updated")} ${project.updated_at}`)}</p>`;
+        : `<p>${escapeHtml(`${routeT(locale, "projects.updated")} ${project.updated_at.slice(0, 10)}`)}</p>`;
       const projectHref = `/drive?project_id=${encodeURIComponent(project.id)}`;
       return `<div class="wh-r4-route-row" data-r8-project="${escapeHtml(project.id)}" data-r8-project-slug="${escapeHtml(project.slug)}" data-r8-project-archived="${escapeHtml(String(project.archived))}" data-r8-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
       <div>
