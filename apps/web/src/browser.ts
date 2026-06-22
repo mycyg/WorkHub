@@ -12,6 +12,7 @@ import { renderOnboardingScreen } from "@workhub/ui";
 import {
   acceptedDeliverableRestoreFromHref,
   actionElementApplyPayload,
+  actionElementCreateProjectPayload,
   actionElementCreateWorkItemPayload,
   actionElementEvidenceBindingPayload,
   actionElementJsonPayload,
@@ -28,6 +29,7 @@ import {
   bindRouteLineEditor,
   browserLocale,
   bootstrapProjectActionFromHref,
+  createNamedProjectActionFromHref,
   clearActiveRouteDirty as sharedClearActiveRouteDirty,
   clearLiveDirtyMetrics as sharedClearLiveDirtyMetrics,
   conflictsFromMergeError,
@@ -594,6 +596,26 @@ function bindGoldPathNavigation(
     }
     if (action.kind === "api-action") {
       event.preventDefault();
+      if (createNamedProjectActionFromHref(href) && actionTarget.dataset.r8ProjectCreate === "true") {
+        const payload = actionElementCreateProjectPayload(actionTarget);
+        if (!payload.ok || !payload.payload) {
+          showPayloadFailureNotice(shellRoot, locale, payload.ok ? { ok: false, reason: "field_value_required" } : payload, actionId);
+          return;
+        }
+        try {
+          const created = await client.bootstrapProject(payload.payload);
+          await navigateWebRoute(`/drive?project_id=${encodeURIComponent(created.project.id)}`, client, locale);
+          if (root) {
+            const body = locale === "en-US"
+              ? `Project ready: ${created.project.name}.`
+              : `项目已就绪：${created.project.name}。`;
+            showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
       if (bootstrapProjectActionFromHref(href) && actionTarget.dataset.s1Day0StartIntake === "true") {
         const payload = actionElementJsonPayload<Parameters<BrowserApiClient["bootstrapProject"]>[0]>(actionTarget);
         if (!payload.ok) {

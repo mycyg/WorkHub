@@ -1,6 +1,7 @@
 import { WorkHubApiError } from "@workhub/api-client/client";
 import type {
   ApplyMergeProposalCandidateRequest,
+  BootstrapProjectRequest,
   CreateWorkItemRequest,
   MergeProposalRequest,
   NextQuestionRequest,
@@ -52,6 +53,10 @@ export function createWorkItemActionFromHref(href: string) {
 }
 
 export function bootstrapProjectActionFromHref(href: string) {
+  return hrefPathname(href) === "/api/projects/bootstrap";
+}
+
+export function createNamedProjectActionFromHref(href: string) {
   return hrefPathname(href) === "/api/projects/bootstrap";
 }
 
@@ -282,6 +287,19 @@ export function actionElementNextQuestionPayload(element: HTMLElement): ActionPa
 
 export function actionElementCreateWorkItemPayload(element: HTMLElement): ActionPayloadResult<CreateWorkItemRequest> {
   return materializeIntakePayload<CreateWorkItemRequest>(element);
+}
+
+// R8 /projects「新建项目」：从 sibling 输入框读用户填的项目名，bootstrap 按 slug 派生唯一新建。
+// 空名时 fail-closed（field_value_required），避免误复用试点项目。
+export function actionElementCreateProjectPayload(element: HTMLElement): ActionPayloadResult<BootstrapProjectRequest> {
+  const form = element.closest<HTMLElement>("[data-r8-project-create-form]");
+  const scope: ParentNode = form ?? element.parentElement ?? element;
+  const input = scope.querySelector<HTMLInputElement>("[data-r8-project-name-input]");
+  const name = input?.value.trim() ?? "";
+  if (!name) {
+    return { ok: false, reason: "field_value_required" };
+  }
+  return { ok: true, payload: { name } };
 }
 
 export function actionElementEvidenceBindingPayload(element: HTMLElement): ActionPayloadResult<UseEvidenceForTaskRequest> {

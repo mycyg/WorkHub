@@ -130,6 +130,7 @@ export const webRouteComponentCss = [
   ".wh-r4-route details:not([open])>*:not(summary){display:none}",
   ".wh-r4-intake-free-text{width:100%;min-height:92px;resize:vertical;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:10px 12px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:#fff;overflow-wrap:anywhere}",
   ".wh-r4-knowledge-search{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 4px;min-width:0;max-width:100%}.wh-r4-knowledge-search input{flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;line-height:1.45;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:9px 12px;color:var(--wh-product-ink,#172033);background:#fff}.wh-r4-knowledge-search .wh-btn{flex:0 0 auto}",
+  ".wh-r4-project-create{display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-width:0;max-width:100%}.wh-r4-project-create input{flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;line-height:1.45;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:9px 12px;color:var(--wh-product-ink,#172033);background:#fff}.wh-r4-project-create .wh-btn{flex:0 0 auto}",
   ".wh-r5-notif-mute summary{cursor:pointer;font-weight:800;font-size:14px;color:var(--wh-product-ink,#172033)}.wh-r5-notif-mute-list{display:grid;gap:8px;margin-top:8px;min-width:0}.wh-r5-notif-mute-row{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.4;color:var(--wh-product-secondary,#5B616E);min-width:0;overflow-wrap:anywhere}.wh-r5-notif-mute-row input{margin-top:2px;flex:0 0 auto}.wh-r5-notif-mute-row span{min-width:0}.wh-r5-notif-mute-status{margin:8px 0 0;font-size:12.5px}",
   ".wh-r4-route-count{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-product-ink,#172033);font-weight:900;line-height:1}",
   ".wh-r4-route-timeline{display:grid;gap:8px}",
@@ -292,6 +293,8 @@ type RouteCopyKey =
   | "projects.summary"
   | "projects.empty"
   | "projects.new"
+  | "projects.namePlaceholder"
+  | "projects.create"
   | "projects.open"
   | "projects.archived"
   | "projects.openItems"
@@ -466,6 +469,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projects.summary": "把每个项目当成一个产品来管理：进行中工作项、负责人和最近更新一目了然。",
     "projects.empty": "还没有项目。新建一个项目就能开始派活。",
     "projects.new": "新建项目",
+    "projects.namePlaceholder": "新项目名称 / New project name",
+    "projects.create": "创建",
     "projects.open": "打开项目",
     "projects.archived": "已归档",
     "projects.openItems": "进行中",
@@ -646,6 +651,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projects.summary": "Treat every project like a product: open work, owner, and latest activity at a glance.",
     "projects.empty": "No projects yet. Create one to start assigning work.",
     "projects.new": "New project",
+    "projects.namePlaceholder": "新项目名称 / New project name",
+    "projects.create": "Create",
     "projects.open": "Open project",
     "projects.archived": "Archived",
     "projects.openItems": "Open",
@@ -2444,11 +2451,8 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
 
 function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale): WebRouteComponent {
   // GitHub 式仓库索引：每个项目一行卡片（名称 + 负责人 + 进行中工作项 + 归档徽标 + 更新时间），
-  // 头部带「新建项目」动作（沿用试点项目 bootstrap 入口，POST /api/projects/bootstrap）。
-  const bootstrapPayload = {
-    name: "New Project",
-    description: "Project context created from the WorkHub projects index."
-  };
+  // 头部带「新建项目」表单（输入项目名 → POST /api/projects/bootstrap，bootstrap 按 slug 派生新建/复用，
+  // 唯一名 → 唯一 slug → 新项目）。动作 id=create_named_project，由 browser 调度读 sibling 输入框真名提交。
   const projects = vm.projects;
   const rows = projects.length
     ? projects.map((project) => {
@@ -2488,7 +2492,10 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
           <h2>${escapeHtml(routeT(locale, "projects.title"))}</h2>
           <p>${escapeHtml(routeT(locale, "projects.summary"))}</p>
         </div>
-        <a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="new_project" data-method="POST" data-r8-project-new="true" data-request-json="${jsonAttr(bootstrapPayload)}">${escapeHtml(routeT(locale, "projects.new"))}</a>
+        <form class="wh-r4-project-create" data-r8-project-create-form="true">
+          <input type="text" data-r8-project-name-input="true" name="project_name" autocomplete="off" placeholder="${escapeHtml(routeT(locale, "projects.namePlaceholder"))}" aria-label="${escapeHtml(routeT(locale, "projects.new"))}" />
+          <a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="create_named_project" data-method="POST" data-r8-project-new="true" data-r8-project-create="true">${escapeHtml(routeT(locale, "projects.create"))}</a>
+        </form>
       </header>
       <section class="wh-card wh-r4-route-card" data-r8-projects-list="true">
         <div class="wh-r4-route-timeline">${rows}</div>

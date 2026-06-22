@@ -6,10 +6,12 @@ import type { ProposalConflict } from "@workhub/contracts";
 
 import {
   acceptedDeliverableRestoreFromHref,
+  actionElementCreateProjectPayload,
   actionElementJsonPayload,
   approvalRespondIdFromHref,
   bootstrapProjectActionFromHref,
   conflictsFromMergeError,
+  createNamedProjectActionFromHref,
   createWorkItemActionFromHref,
   driveCommentDraftFromHref,
   driveDraftProposalFromHref,
@@ -38,6 +40,8 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   assert.equal(sessionNextQuestionIdFromHref("/api/sessions/s-1/next-question"), "s-1");
   assert.equal(createWorkItemActionFromHref("/api/workitems"), true);
   assert.equal(bootstrapProjectActionFromHref("/api/projects/bootstrap"), true);
+  assert.equal(createNamedProjectActionFromHref("/api/projects/bootstrap"), true);
+  assert.equal(createNamedProjectActionFromHref("/api/projects"), false);
   assert.deepEqual(startAgentRunActionFromHref("/api/workitems/w%201/agent-runs"), { workItemId: "w 1" });
   assert.equal(evidenceBindingWorkItemIdFromHref("/api/workitems/w-1/evidence-bindings"), "w-1");
   assert.deepEqual(acceptedDeliverableRestoreFromHref("/api/workitems/w-1/deliverables/ac-1/restore"), {
@@ -123,6 +127,20 @@ test("M28 custom-field action re-substitutes the latest textarea value on every 
   assert.deepEqual(second.payload, { value: "second value" });
   // 物化结果不得写回 requestJson 污染下一次点击。
   assert.equal(button.dataset.requestJson, undefined);
+});
+
+test("R8 /projects create reads the typed name and fails closed on empty", () => {
+  let nameValue = "  Aurora Launch  ";
+  const form = { querySelector: () => ({ value: nameValue }) };
+  const button = { closest: () => form } as unknown as HTMLElement;
+
+  const filled = actionElementCreateProjectPayload(button);
+  assert.equal(filled.ok, true);
+  assert.deepEqual(filled.payload, { name: "Aurora Launch" });
+
+  nameValue = "   ";
+  const empty = actionElementCreateProjectPayload(button);
+  assert.deepEqual(empty, { ok: false, reason: "field_value_required" });
 });
 
 test("R4.21 shared runtime extracts merge conflicts from API error details", () => {
