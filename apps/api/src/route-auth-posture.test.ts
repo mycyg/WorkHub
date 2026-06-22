@@ -17,6 +17,8 @@ import app from "./app.js";
 // - POST /api/auth/register, /api/auth/login 密码注册/登录入口本身（AUTH_MODE!='nickname' 时启用；
 //   nickname 默认模式下 404——两者都是「无需既有鉴权即可访问」的公开入口）
 // - POST /api/auth/invites/accept 邀请接受入口（收件人尚无账号，凭 out-of-band token 建号，公开入口）
+// - POST /api/auth/desktop-bootstrap 桌面首启引导（跨源客户端首启无 cookie/无 token 的公开引导出口；
+//   仅昵称模式开放、CSRF 豁免；token 走响应体，跨源攻击页因 CORS 读不到 → 比 /identify 更弱）
 // - GET /api/auth/me       未识别时返回 null（不泄漏数据）
 // - GET /api/pages/gold-path P0.5 demo fixture 模板（无真实用户数据；退役计划见 R4 审查 P0-3）
 const PUBLIC_ROUTES = new Set<string>([
@@ -29,6 +31,7 @@ const PUBLIC_ROUTES = new Set<string>([
   "POST /api/auth/register",
   "POST /api/auth/login",
   "POST /api/auth/invites/accept",
+  "POST /api/auth/desktop-bootstrap",
   "GET /api/auth/me",
   "GET /api/pages/gold-path"
 ]);

@@ -1741,3 +1741,53 @@ test("gap[41]: auditLogs seam absent → no throw, auth flow unaffected", async 
   }));
   assert.equal(reg.status, 201, "register works with no auditLogs seam wired");
 });
+
+// ——— 桌面首启引导 desktop-bootstrap（跨源客户端令牌地基 C1）———
+test("desktop-bootstrap (nickname mode) mints a device-bound client token that then authenticates", async () => {
+  const authDeps = deps([], []);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+  app.get("/who", createCurrentUserMiddleware(authDeps), (c) => c.json({ id: c.var.currentUser.id }));
+
+  const res = await app.request("/api/auth/desktop-bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nickname: "WorkHub Desktop", device_name: "WorkHub Desktop", platform: "desktop" })
+  });
+  assert.equal(res.status, 201);
+  const body = (await res.json()) as {
+    client_token: string;
+    identity: { nickname: string };
+    device: { device_name: string };
+  };
+  assert.ok(body.client_token.length >= 32, "returns a usable client token in the body");
+  assert.equal(body.identity.nickname, "WorkHub Desktop");
+  assert.equal(body.device.device_name, "WorkHub Desktop");
+
+  // 关键：用回响应体里的 token（无 cookie）即可鉴权后续请求——这正是桌面跨源所需。
+  const who = await app.request("/who", { headers: { [LOCAL_CLIENT_HEADER]: body.client_token } });
+  assert.equal(who.status, 200, "minted token authenticates a follow-up request with no cookie");
+});
+
+test("desktop-bootstrap refuses an existing admin nickname (no unauthenticated admin device token)", async () => {
+  const admin = user({ nickname: "boss", isAdmin: true });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(deps([admin], [])));
+  const res = await app.request("/api/auth/desktop-bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nickname: "boss", device_name: "x" })
+  });
+  assert.equal(res.status, 403, "admin nickname must not get an unauthenticated device token");
+});
+
+test("desktop-bootstrap is disabled (404) in password mode", async () => {
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(deps([], [], settings({ AUTH_MODE: "password" }))));
+  const res = await app.request("/api/auth/desktop-bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nickname: "anyone", device_name: "x" })
+  });
+  assert.equal(res.status, 404, "password mode must require credentials, not nickname self-provision");
+});

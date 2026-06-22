@@ -270,6 +270,22 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    bootstrapDesktop: (payload) =>
+      request("/api/auth/desktop-bootstrap", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    registerClientDevice: (payload) =>
+      request("/api/client-devices/register", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    listClientDevices: () => request("/api/client-devices/me"),
+    currentClientDevice: () => request("/api/client-devices/current"),
+    revokeClientDevice: (deviceId) =>
+      request(`/api/client-devices/${encodeURIComponent(deviceId)}/revoke`, { method: "POST" }),
+    revokeCurrentClientDevice: () =>
+      request("/api/client-devices/revoke-current", { method: "POST" }),
     me: () => request<IdentityResponse | null>("/api/auth/me"),
     logout: () =>
       request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),

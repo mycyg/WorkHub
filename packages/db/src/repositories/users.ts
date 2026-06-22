@@ -55,23 +55,24 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
     },
 
     async findActiveByCookieToken(cookieToken) {
+      // H1：nickname/cookieToken 是部分唯一索引(WHERE deleted_at IS NULL)，同值可有多行(含墓碑)。
+      // 必须把 isNull(deletedAt) 推进 WHERE(对齐索引谓词)，否则 limit(1) 无 ORDER BY 可能取到软删墓碑、
+      // 再被 JS 后置过滤成 null → 重新注册过的昵称/令牌偶发登录失败。
       const rows = await db
         .select()
         .from(users)
-        .where(eq(users.cookieToken, cookieToken))
+        .where(and(eq(users.cookieToken, cookieToken), isNull(users.deletedAt)))
         .limit(1);
-      const user = rows[0] ?? null;
-      return user && user.deletedAt === null ? user : null;
+      return rows[0] ?? null;
     },
 
     async findActiveByNickname(nickname) {
       const rows = await db
         .select()
         .from(users)
-        .where(eq(users.nickname, nickname))
+        .where(and(eq(users.nickname, nickname), isNull(users.deletedAt)))
         .limit(1);
-      const user = rows[0] ?? null;
-      return user && user.deletedAt === null ? user : null;
+      return rows[0] ?? null;
     },
 
     async createUser(input) {

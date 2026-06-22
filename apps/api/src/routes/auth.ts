@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import {
+  desktopBootstrapRequestSchema,
   identifyRequestSchema,
   inviteAcceptRequestSchema,
   inviteCreateRequestSchema,
@@ -29,7 +30,9 @@ import {
   hashClientToken,
   issueSessionCookie,
   issueUserCookie,
+  makeClientToken,
   makeCookieToken,
+  toClientDeviceResponse,
   mintSession,
   readCookieToken,
   resolveAuthDependencies,
@@ -217,6 +220,41 @@ export function createAuthRoutes(
     await deps.touchUser?.(user.id);
 
     return c.json(toIdentityResponse(user, created), created ? 201 : 200);
+  });
+
+  // 桌面端首启引导：一次调用完成 昵称 identify + 设备注册，client_token 走响应体（非 cookie）。
+  // 仅昵称模式开放（密码模式身份必须来自 邮箱+密码/邀请 → 404）。CSRF 同源守卫对本路径豁免
+  // （见 middleware/csrf.ts）——桌面首启是跨源且无 cookie/无 token 的合法引导出口。
+  // 安全：token 走响应体，跨源攻击页因 CORS 不反射其源而读不到响应（偷不到 token），故比无鉴权的 /identify 更弱。
+  routes.post("/desktop-bootstrap", async (c) => {
+    const deps = resolveAuthDependencies(source);
+    if (passwordModeEnabled(deps)) {
+      throw new HTTPException(404, { message: "桌面引导在当前认证模式下不可用" });
+    }
+    const payload = desktopBootstrapRequestSchema.parse(await readJsonBody(c));
+    const nickname = validateNickname(payload.nickname);
+    const { user, created } = await deps.users.getOrCreateActiveByNickname(nickname, makeCookieToken());
+    // 绝不为管理员账号无口令签发设备令牌——否则等于无口令拿到管理员设备令牌。
+    // 管理员请走 /identify（带口令）后再 /client-devices/register。
+    if (user.isAdmin) {
+      throw new HTTPException(403, { message: "管理员账号请先用带口令的登录，再注册设备" });
+    }
+    const token = makeClientToken();
+    const device = await deps.devices.createClientDevice({
+      userId: user.id,
+      deviceName: payload.device_name.trim(),
+      platform: (payload.platform ?? "desktop").trim().slice(0, 64) || "desktop",
+      clientTokenHash: hashClientToken(token),
+      lastSeenAt: (deps.now ?? (() => new Date()))()
+    });
+    return c.json(
+      {
+        identity: toIdentityResponse(user, created),
+        device: toClientDeviceResponse(device),
+        client_token: token
+      },
+      201
+    );
   });
 
   // R2 auth epic：密码注册（AUTH_MODE!='nickname' 时启用）。建 user + 凭据 + 会话；

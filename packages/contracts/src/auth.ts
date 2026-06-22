@@ -96,6 +96,25 @@ export const clientDeviceRegisterResponseSchema = z.object({
 });
 export type ClientDeviceRegisterResponse = z.infer<typeof clientDeviceRegisterResponseSchema>;
 
+// 桌面端首启引导：一次调用完成 昵称 identify + 设备注册，并在响应体里回 client_token。
+// 桌面是跨源(tauri://localhost → 127.0.0.1)，SameSite=Lax cookie 不随跨源 fetch 发出、且没有 token 可发，
+// 形成「拿 token 需先鉴权、鉴权又需 token」的死循环。本端点是 CSRF 同源守卫豁免的引导出口，
+// 仅在昵称/非密码模式开放（密码模式必须走凭据，返回 404）。token 走响应体而非 cookie：
+// 跨源攻击页即便能发起此 POST，也因 CORS 不反射其源而读不到响应体 → 偷不到 token（比现有 /identify 更弱）。
+export const desktopBootstrapRequestSchema = z.object({
+  nickname: z.string().min(1).max(64),
+  device_name: z.string().min(1).max(128),
+  platform: z.string().max(64).optional()
+});
+export type DesktopBootstrapRequest = z.infer<typeof desktopBootstrapRequestSchema>;
+
+export const desktopBootstrapResponseSchema = z.object({
+  identity: identifyResponseSchema,
+  device: clientDeviceResponseSchema,
+  client_token: z.string().min(32)
+});
+export type DesktopBootstrapResponse = z.infer<typeof desktopBootstrapResponseSchema>;
+
 export const authContextSchema = z.object({
   user: identifyResponseSchema,
   device: clientDeviceResponseSchema.optional(),

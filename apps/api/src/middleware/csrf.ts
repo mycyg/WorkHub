@@ -12,6 +12,17 @@ import { LOCAL_CLIENT_HEADER } from "./auth.js";
 //  - 非浏览器/服务端调用两者都不带 → 放行，仍由既有 cookie/token 鉴权把关。
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+// 同源守卫豁免的精确路径（仅桌面首启引导）。集中在此一处，便于审计豁免面。
+const CSRF_EXEMPT_PATHS = new Set(["/api/auth/desktop-bootstrap"]);
+
+function csrfExemptPath(rawUrl: string): boolean {
+  try {
+    return CSRF_EXEMPT_PATHS.has(new URL(rawUrl).pathname);
+  } catch {
+    return false;
+  }
+}
+
 // 由请求自身重建 origin（scheme://host），优先反代头。仅在"有 Origin 但无 Sec-Fetch-Site"（老浏览器）时用到，
 // 出错只会过度拒绝古早浏览器，绝不会放过现代浏览器的跨源写（那条由 Sec-Fetch-Site 兜住）。
 function selfOrigin(c: Context): string | undefined {
@@ -35,6 +46,12 @@ export function createSameOriginGuardMiddleware(
 ): MiddlewareHandler {
   return async (c, next) => {
     if (SAFE_METHODS.has(c.req.method.toUpperCase())) {
+      return next();
+    }
+    // (0) 桌面首启引导端点豁免：桌面是跨源(tauri://localhost)且首启无 cookie/无 token，
+    //     必须能发起这一个 POST 才能拿到 client_token。豁免范围窄到单条精确路径，便于审计。
+    //     token 走响应体 + CORS 不反射攻击源 → 跨源攻击页发得出请求却读不到 token，无新增 CSRF 面。
+    if (csrfExemptPath(c.req.url)) {
       return next();
     }
     // (1) 本地客户端令牌（桌面）= header bearer 鉴权，免疫 CSRF。只认服务端真正用于鉴权的那个 header

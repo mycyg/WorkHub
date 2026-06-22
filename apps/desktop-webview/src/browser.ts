@@ -96,6 +96,29 @@ function resolveDesktopApiBase(): string {
   return `http://127.0.0.1:${defaultPorts.api}`;
 }
 
+// 桌面跨源(tauri://localhost→127.0.0.1)无法用 SameSite=Lax cookie 鉴权，必须持 client token 走 header。
+// 首启若本地无 token，调 /api/auth/desktop-bootstrap（昵称 identify + 设备注册一步到位、CSRF 豁免）拿到 token
+// 落 localStorage；之后 createApiClient 的 getClientToken 每请求实时读它发 X-YQGL-Client-Token → 鉴权 + 同源
+// 守卫双通过，goldPath 返回 LIVE 数据（不再静默回退 fixture）、所有 mutation 不再被跨站拒绝。
+// 失败(密码模式 404 / 后端离线)静默：上层取数失败会显示连接错误，不阻断渲染。
+async function ensureDesktopClientToken(client: BrowserApiClient): Promise<void> {
+  if (clientToken()) {
+    return;
+  }
+  try {
+    const result = await client.bootstrapDesktop({
+      nickname: "WorkHub Desktop",
+      device_name: "WorkHub Desktop",
+      platform: "desktop"
+    });
+    if (result?.client_token) {
+      window.localStorage.setItem("workhub_client_token", result.client_token);
+    }
+  } catch {
+    // 密码模式(404) / 后端不可达：保持无 token；上层取数失败会显示连接错误。
+  }
+}
+
 async function resolveBootLocale(client: BrowserApiClient, fallback: WorkHubLocale) {
   const me = await client.me().catch(() => null);
   return applyIdentityLocale(me, fallback);
@@ -596,6 +619,8 @@ async function boot() {
       baseUrl: resolveDesktopApiBase(),
       getClientToken: clientToken
     });
+    // 跨源鉴权地基：先确保有 client token，goldPath 才会返回 LIVE 数据而非静默 fixture。
+    await ensureDesktopClientToken(client);
     locale = await resolveBootLocale(client, locale);
     let surfaceVm;
     try {
@@ -604,7 +629,10 @@ async function boot() {
       if (!(error instanceof WorkHubApiError) || error.code !== "not_identified") {
         throw error;
       }
-      locale = applyIdentityLocale(await client.identify({ nickname: "WorkHub Desktop Preview" }), locale);
+      // 身份失效（首启竞态 / token 被吊销）：清掉旧 token、重新引导、重试一次。
+      window.localStorage.removeItem("workhub_client_token");
+      await ensureDesktopClientToken(client);
+      locale = await resolveBootLocale(client, locale);
       surfaceVm = await client.pages.goldPath({ locale });
     }
     const rendered = renderGoldPathSurface(surfaceVm, "desktop", { locale });
@@ -900,7 +928,16 @@ async function boot() {
 }
 
 if (root && resolveDesktopSurface() === "pet") {
-  void bootDesktopPetSurface(root);
+  // C2 修复：桌宠窗口此前用 baseUrl:"" 建客户端 → 所有 API/SSE 落到死的 tauri:// 源 → 永远「离线」。
+  // 改为传入与主窗一致的客户端（真实 API base + client token），桌宠才能真正连后端、SSE 才能鉴权。
+  void (async () => {
+    const petClient = createApiClient({
+      baseUrl: resolveDesktopApiBase(),
+      getClientToken: clientToken
+    });
+    await ensureDesktopClientToken(petClient);
+    await bootDesktopPetSurface(root, { client: petClient });
+  })();
 } else {
   void boot();
 }

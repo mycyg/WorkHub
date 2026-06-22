@@ -103,6 +103,24 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async identify() {
       throw new Error("not needed");
     },
+    async bootstrapDesktop() {
+      throw new Error("not needed");
+    },
+    async registerClientDevice() {
+      throw new Error("not needed");
+    },
+    async listClientDevices() {
+      throw new Error("not needed");
+    },
+    async currentClientDevice() {
+      throw new Error("not needed");
+    },
+    async revokeClientDevice() {
+      throw new Error("not needed");
+    },
+    async revokeCurrentClientDevice() {
+      throw new Error("not needed");
+    },
     async logout() {
       return { ok: true };
     },

@@ -8,6 +8,11 @@ import type {
   BudgetPolicyUpdate,
   BootstrapProjectRequest,
   BootstrapProjectResult,
+  ClientDeviceRegisterRequest,
+  ClientDeviceRegisterResponse,
+  ClientDeviceResponse,
+  DesktopBootstrapRequest,
+  DesktopBootstrapResponse,
   CostDashboardVM,
   CalendarPageVM,
   CostSummaryVM,
@@ -183,6 +188,14 @@ export type WorkHubApiClient = {
   health: () => Promise<HealthResponse>;
   openapi: () => Promise<unknown>;
   identify: (payload: IdentifyRequest) => Promise<IdentityResponse>;
+  // 桌面首启引导：昵称 identify + 设备注册一步到位，返回 client_token（仅昵称模式）。
+  bootstrapDesktop: (payload: DesktopBootstrapRequest) => Promise<DesktopBootstrapResponse>;
+  // 设备管理（需已鉴权）：注册 / 列表 / 当前 / 吊销。
+  registerClientDevice: (payload: ClientDeviceRegisterRequest) => Promise<ClientDeviceRegisterResponse>;
+  listClientDevices: () => Promise<ClientDeviceResponse[]>;
+  currentClientDevice: () => Promise<ClientDeviceResponse>;
+  revokeClientDevice: (deviceId: string) => Promise<ClientDeviceResponse>;
+  revokeCurrentClientDevice: () => Promise<ClientDeviceResponse>;
   logout: () => Promise<{ ok: boolean }>;
   me: () => Promise<IdentityResponse | null>;
   updatePreferences: (payload: UpdateUserPreferencesRequest) => Promise<IdentityResponse>;
