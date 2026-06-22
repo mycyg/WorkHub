@@ -84,6 +84,7 @@ import {
 import { glassWindowCss } from "./glass-window.js";
 import { mountSpotlight, type SpotlightResizeFn } from "./spotlight/controller.js";
 import { spotlightCss } from "./spotlight/css.js";
+import { capabilityForShellRoute } from "./spotlight/state.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -1184,7 +1185,19 @@ async function bootSpotlight() {
         // 桥不可用/桌宠窗未就绪：忽略，主窗照常。
       }
     })();
-    mountSpotlight({ host: hostEl, client, locale, resize: resizeMainWindow });
+    const spotlight = mountSpotlight({ host: hostEl, client, locale, resize: resizeMainWindow });
+    // 以 Cuu 为核心：托盘「打开收件箱/设置」、深链、桌宠点击都会让主窗 emit "navigate"（main.rs execute_window_control）。
+    // 监听它 → 把盒子直接开到对应能力（回 "/" 则回 launcher）。这是 Cuu/外部入口与盒子联动的地基。
+    const shellListen = resolveDesktopShellListen();
+    void shellListen?.("navigate", (event) => {
+      const parsed = parseDesktopShellNavigatePayload(event.payload);
+      const cap = parsed ? capabilityForShellRoute(parsed.route) : undefined;
+      if (cap) {
+        spotlight.openCapability(cap);
+      } else {
+        spotlight.reset();
+      }
+    });
   } catch (error) {
     renderDesktopOfflineCard(root, locale, error);
   }

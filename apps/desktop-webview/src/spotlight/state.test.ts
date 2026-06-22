@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  capabilityForShellRoute,
   initialSpotlightState,
   isLauncher,
   launcherMatches,
@@ -61,4 +62,18 @@ test("topMatchId resolves the best capability for a query", () => {
 test("topMatchId is undefined in capability mode", () => {
   const s = spotlightReducer(initialSpotlightState(), { type: "openCapability", id: "approvals" });
   assert.equal(topMatchId(s, "zh-CN"), undefined);
+});
+
+test("capabilityForShellRoute maps tray/deep-link/pet routes to capabilities", () => {
+  // 托盘「打开收件箱」= /inbox → 审批；「打开设置」= /settings。
+  assert.equal(capabilityForShellRoute("/inbox"), "approvals");
+  assert.equal(capabilityForShellRoute("/settings"), "settings");
+  assert.equal(capabilityForShellRoute("/approvals"), "approvals");
+  // 前缀匹配带 id 的详情路由。
+  assert.equal(capabilityForShellRoute("/workitems/abc-123"), "workitem");
+  assert.equal(capabilityForShellRoute("/drive?project_id=x"), "drive");
+  assert.equal(capabilityForShellRoute("/dashboard/cost"), "cost");
+  // 回主页或无匹配 → undefined（控制器据此回 launcher）。
+  assert.equal(capabilityForShellRoute("/"), undefined);
+  assert.equal(capabilityForShellRoute("/unknown-thing"), undefined);
 });

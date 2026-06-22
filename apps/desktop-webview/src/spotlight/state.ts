@@ -66,3 +66,35 @@ export function topMatchId(state: SpotlightState, locale: string | undefined): C
   }
   return launcherMatches(state, locale)[0]?.command.id;
 }
+
+// 壳层 navigate 路由(托盘 /inbox·/settings、深链、桌宠 focusMainRoute 触发 main 窗 emit "navigate") → 能力。
+// 前缀匹配，故 /workitems/123 也归到 workitem；回 "/" 或无匹配则返回 undefined（控制器据此回 launcher）。
+const SHELL_ROUTE_CAPABILITIES: ReadonlyArray<readonly [string, CommandId]> = [
+  ["/inbox", "approvals"],
+  ["/approvals", "approvals"],
+  ["/intake", "intake"],
+  ["/proposals", "proposals"],
+  ["/workitems", "workitem"],
+  ["/agent-runs", "replay"],
+  ["/replay", "replay"],
+  ["/drive", "drive"],
+  ["/projects", "projects"],
+  ["/knowledge", "knowledge"],
+  ["/team", "team"],
+  ["/dashboard/cost", "cost"],
+  ["/cost", "cost"],
+  ["/settings", "settings"]
+];
+
+export function capabilityForShellRoute(route: string): CommandId | undefined {
+  const path = (route.split(/[?#]/u)[0] ?? route).replace(/\/+$/u, "") || "/";
+  if (path === "/") {
+    return undefined;
+  }
+  for (const [prefix, id] of SHELL_ROUTE_CAPABILITIES) {
+    if (path === prefix || path.startsWith(`${prefix}/`)) {
+      return id;
+    }
+  }
+  return undefined;
+}
