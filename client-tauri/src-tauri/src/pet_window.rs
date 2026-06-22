@@ -351,7 +351,10 @@ fn distance_to_rect(point: LogicalPosition, rect: LogicalRect) -> u32 {
     } else {
         0
     };
-    (((dx * dx + dy * dy) as f64).sqrt().round()) as u32
+    // rank21：先转 f64 再平方——i32 平方在病态多屏(|dx|>46340)会溢出(debug panic / release wrap)。
+    let dxf = dx as f64;
+    let dyf = dy as f64;
+    (dxf * dxf + dyf * dyf).sqrt().round() as u32
 }
 
 fn pointer_axis_percent(cursor: i32, origin: i32, size: u32, near_radius: u32) -> i16 {

@@ -75,7 +75,9 @@ async fn run_sse_subscription(
     notification_deduper: Arc<Mutex<ShellSystemNotificationDeduper>>,
     locale: WorkHubLocale,
 ) {
-    let delay = Duration::from_millis(reconnect_delay_ms);
+    // rank9：连不上(尤令牌被吊销/后端不可达)时不再固定 5s 死锤服务端——指数退避(上限 60s)；
+    // 一旦成功打开连接就把退避复位回基准，故瞬时掉线仍是快速 5s 重连。每拍重读令牌，webview 重铸后即恢复。
+    let mut consecutive_failures: u32 = 0;
     loop {
         emit_sse_status(
             &app,
@@ -91,6 +93,8 @@ async fn run_sse_subscription(
         match open_sse_response(&client, &subscription, token.as_deref()).await {
             Ok(response) => {
                 emit_sse_status(&app, &subscription, ShellSseConnectionState::Open, None);
+                // 成功打开连接 → 退避复位（连上之后即便流随后中断，也按基准快速重连）。
+                consecutive_failures = 0;
                 if let Err(message) =
                     pump_sse_response(&app, &subscription, response, &notification_deduper, locale)
                         .await
@@ -104,6 +108,7 @@ async fn run_sse_subscription(
                 }
             }
             Err(message) => {
+                consecutive_failures = consecutive_failures.saturating_add(1);
                 emit_sse_status(
                     &app,
                     &subscription,
@@ -113,8 +118,18 @@ async fn run_sse_subscription(
             }
         }
 
-        sleep(delay).await;
+        sleep(reconnect_backoff(reconnect_delay_ms, consecutive_failures)).await;
     }
+}
+
+// 指数退避：0 次连续失败=基准；每多一次翻倍，封顶 60s。纯函数，便于单测。
+fn reconnect_backoff(base_ms: u64, consecutive_failures: u32) -> Duration {
+    const MAX_DELAY_MS: u64 = 60_000;
+    if consecutive_failures == 0 {
+        return Duration::from_millis(base_ms.min(MAX_DELAY_MS));
+    }
+    let factor = 1u64.checked_shl(consecutive_failures.min(4)).unwrap_or(16);
+    Duration::from_millis(base_ms.saturating_mul(factor).min(MAX_DELAY_MS))
 }
 
 async fn open_sse_response(
@@ -271,6 +286,18 @@ mod tests {
     #[test]
     fn default_reconnect_delay_is_small_enough_for_desktop_feedback() {
         assert_eq!(DEFAULT_SSE_RECONNECT_DELAY_MS, 5_000);
+    }
+
+    #[test]
+    fn reconnect_backoff_is_base_when_healthy_and_caps_at_60s() {
+        // rank9：连上(0 连续失败)=基准；逐次翻倍；封顶 60s，不再固定 5s 死锤吊销 token。
+        assert_eq!(reconnect_backoff(5_000, 0), Duration::from_millis(5_000));
+        assert_eq!(reconnect_backoff(5_000, 1), Duration::from_millis(10_000));
+        assert_eq!(reconnect_backoff(5_000, 2), Duration::from_millis(20_000));
+        assert_eq!(reconnect_backoff(5_000, 3), Duration::from_millis(40_000));
+        // 5_000*16=80_000 → 封顶 60_000；更多次连续失败仍封顶，不溢出。
+        assert_eq!(reconnect_backoff(5_000, 4), Duration::from_millis(60_000));
+        assert_eq!(reconnect_backoff(5_000, 99), Duration::from_millis(60_000));
     }
 
     #[test]
