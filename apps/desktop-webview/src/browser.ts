@@ -84,7 +84,7 @@ import {
 import { glassWindowCss } from "./glass-window.js";
 import { mountSpotlight, type SpotlightResizeFn } from "./spotlight/controller.js";
 import { spotlightCss } from "./spotlight/css.js";
-import { capabilityForShellRoute } from "./spotlight/state.js";
+import { capabilityForShellRoute, entityIdFromShellRoute } from "./spotlight/state.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -1192,8 +1192,10 @@ async function bootSpotlight() {
     void shellListen?.("navigate", (event) => {
       const parsed = parseDesktopShellNavigatePayload(event.payload);
       const cap = parsed ? capabilityForShellRoute(parsed.route) : undefined;
-      if (cap) {
-        spotlight.openCapability(cap);
+      if (cap && parsed) {
+        // rank13：携带路由里的实体 id，让 workitem/proposals/replay 直接打开该项而非落到列表。
+        const id = entityIdFromShellRoute(parsed.route);
+        spotlight.openCapability(cap, id ? { id, route: parsed.route } : { route: parsed.route });
       } else {
         spotlight.reset();
       }

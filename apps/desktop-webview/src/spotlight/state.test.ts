@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   capabilityForShellRoute,
+  entityIdFromShellRoute,
   initialSpotlightState,
   isLauncher,
   launcherMatches,
@@ -76,4 +77,19 @@ test("capabilityForShellRoute maps tray/deep-link/pet routes to capabilities", (
   // 回主页或无匹配 → undefined（控制器据此回 launcher）。
   assert.equal(capabilityForShellRoute("/"), undefined);
   assert.equal(capabilityForShellRoute("/unknown-thing"), undefined);
+});
+
+test("entityIdFromShellRoute extracts the target entity id for deep-links (rank13)", () => {
+  // 路径 id：前缀后首段。
+  assert.equal(entityIdFromShellRoute("/workitems/abc-123"), "abc-123");
+  assert.equal(entityIdFromShellRoute("/proposals/xyz"), "xyz");
+  assert.equal(entityIdFromShellRoute("/agent-runs/run-9/extra"), "run-9");
+  // 带 URL 编码的段要解码。
+  assert.equal(entityIdFromShellRoute("/workitems/a%20b"), "a b");
+  // 无路径 id 时回退查询参数（如网盘 project_id）。
+  assert.equal(entityIdFromShellRoute("/drive?project_id=p1"), "p1");
+  // 列表路由 / 无 id / 回主页 → undefined。
+  assert.equal(entityIdFromShellRoute("/workitems"), undefined);
+  assert.equal(entityIdFromShellRoute("/inbox"), undefined);
+  assert.equal(entityIdFromShellRoute("/"), undefined);
 });

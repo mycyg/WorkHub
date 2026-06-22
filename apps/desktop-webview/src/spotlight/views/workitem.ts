@@ -148,7 +148,12 @@ export function createWorkItemView(): SpotlightCapabilityView {
         }
       });
 
-      void showList();
+      // rank13：深链/托盘带了工作项 id → 直接开详情；否则从列表起。
+      if (ctx.target?.id) {
+        void showDetail(ctx.target.id);
+      } else {
+        void showList();
+      }
       return () => {
         disposed = true;
       };

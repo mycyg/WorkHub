@@ -130,7 +130,12 @@ export function createReplayView(): SpotlightCapabilityView {
         }
       });
 
-      void showList();
+      // rank13：深链/托盘带了运行 id → 直接开时间线；否则从列表起。
+      if (ctx.target?.id) {
+        void showTrace(ctx.target.id);
+      } else {
+        void showList();
+      }
       return () => {
         disposed = true;
       };

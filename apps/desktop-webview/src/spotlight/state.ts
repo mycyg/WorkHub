@@ -98,3 +98,27 @@ export function capabilityForShellRoute(route: string): CommandId | undefined {
   }
   return undefined;
 }
+
+// 从壳层路由抽出目标实体 id（深链/托盘/桌宠 navigate 用）：/workitems/abc → "abc"、/proposals/xyz → "xyz"。
+// 优先取前缀后的首段路径 id；无路径 id 时回退查询参数 id/project_id（如 /drive?project_id=p → "p"）。
+// rank13：openCapability 据此让 workitem/proposals/replay 直接打开该项，而非永远落到列表。
+export function entityIdFromShellRoute(route: string): string | undefined {
+  const path = (route.split(/[?#]/u)[0] ?? route).replace(/\/+$/u, "") || "/";
+  for (const [prefix] of SHELL_ROUTE_CAPABILITIES) {
+    if (path.startsWith(`${prefix}/`)) {
+      const seg = path.slice(prefix.length + 1).split("/")[0];
+      if (seg) {
+        return decodeURIComponent(seg);
+      }
+    }
+  }
+  const query = route.split("?")[1]?.split("#")[0];
+  if (query) {
+    const params = new URLSearchParams(query);
+    const q = params.get("id") ?? params.get("project_id") ?? params.get("m") ?? params.get("run_id");
+    if (q) {
+      return q;
+    }
+  }
+  return undefined;
+}

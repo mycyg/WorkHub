@@ -254,7 +254,12 @@ export function createProposalsView(): SpotlightCapabilityView {
         }
       });
 
-      void showList();
+      // rank13：深链/托盘带了提议 id → 直接开 diff 详情；否则从列表起。
+      if (ctx.target?.id) {
+        void showDetail(ctx.target.id);
+      } else {
+        void showList();
+      }
       return () => {
         disposed = true;
       };
