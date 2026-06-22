@@ -15,7 +15,7 @@ import {
   topMatchId,
   type SpotlightState
 } from "./state.js";
-import type { SpotlightApiClient, SpotlightViewContext } from "./view-context.js";
+import type { SpotlightApiClient, SpotlightTarget, SpotlightViewContext } from "./view-context.js";
 
 export type SpotlightResizeFn = (width: number, height: number) => void;
 
@@ -30,8 +30,8 @@ export type MountSpotlightInput = {
 };
 
 export type SpotlightHandle = {
-  // 外部（如 Cuu 决策信箱点击）请求打开某能力。
-  openCapability: (id: CommandId) => void;
+  // 外部（如 Cuu 决策信箱点击、托盘/深链）请求打开某能力，可带目标实体 id（让目标 view 直接展开该项）。
+  openCapability: (id: CommandId, target?: SpotlightTarget) => void;
   // 回到 launcher。
   reset: () => void;
   // 更新角标并（若在 launcher）刷新网格。
@@ -89,6 +89,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   let badges: Partial<Record<CommandId, number>> = { ...(input.badges ?? {}) };
   let state: SpotlightState = initialSpotlightState();
   let disposeView: (() => void) | undefined;
+  // 待消费的跳转目标实体：open(id, target) 设置 → 下一次 renderCapability 读入该能力 ctx 后清空（rank13/14）。
+  let pendingTarget: SpotlightTarget | undefined;
   // controller 自身的 window 监听器（⌘K/ESC/resize）统一挂这个 signal，dispose 时一并断开（rank25）。
   const controllerAbort = new AbortController();
 
@@ -166,6 +168,9 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       disposeView();
       disposeView = undefined;
     }
+    // 消费一次性跳转目标（open()/深链设置的）：归属本次 mount 的 ctx.target，随后清空，避免泄漏到下个能力。
+    const target = pendingTarget;
+    pendingTarget = undefined;
     box.dataset.mode = "capability";
     const cmd = commandRegistry.find((c) => c.id === id);
     titleEl.textContent = cmd ? cmd.label[zh ? "zh-CN" : "en"] : id;
@@ -188,6 +193,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       locale,
       body: viewRoot,
       back: () => dispatch({ type: "back" }),
+      open: (nextId, nextTarget) => openCapabilityWithTarget(nextId, nextTarget),
+      ...(target ? { target } : {}),
       setSubtitle: (text) => {
         subtitleEl.textContent = text;
       },
@@ -251,6 +258,12 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0);
       requestResize();
     }
+  };
+
+  // 带目标实体打开某能力：先设 pendingTarget（renderCapability 会读入该能力 ctx.target），再 dispatch。
+  const openCapabilityWithTarget = (id: CommandId, target?: SpotlightTarget) => {
+    pendingTarget = target;
+    dispatch({ type: "openCapability", id });
   };
 
   // —— 交互 —— //
@@ -337,8 +350,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   input2.focus();
 
   return {
-    openCapability: (id) => {
-      dispatch({ type: "openCapability", id });
+    openCapability: (id, target) => {
+      openCapabilityWithTarget(id, target);
     },
     reset: () => {
       input2.value = "";

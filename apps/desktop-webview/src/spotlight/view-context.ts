@@ -10,6 +10,9 @@ import type { CommandId } from "../command-palette.js";
 
 export type SpotlightApiClient = ReturnType<typeof createApiClient>;
 
+// 打开某能力时可携带的目标实体（深链/跨能力跳转用）：id 为要直接展开的实体（工作项/提议/项目）id。
+export type SpotlightTarget = { id?: string; route?: string };
+
 export type SpotlightViewContext = {
   client: SpotlightApiClient;
   locale: WorkHubLocale;
@@ -17,6 +20,10 @@ export type SpotlightViewContext = {
   body: HTMLElement;
   // 回到 launcher（能力网格）。盒子顶部面包屑「← 返回」与 ESC 都调它。
   back: () => void;
+  // 跳到另一个能力（可带目标实体 id，让目标 view 直接展开该项）。用于「项目→网盘」「深链→详情」等跨能力跳转。
+  open: (id: CommandId, target?: SpotlightTarget) => void;
+  // 本次进入该能力时携带的目标实体（来自 open()/深链）。view 可据此直接打开详情，无则从列表起。
+  target?: SpotlightTarget;
   // 顶部标题栏右侧的副标题（如「3 条待你拍板」/「项目 · 文件」），用于面包屑上下文。可随子状态更新。
   setSubtitle: (text: string) => void;
   // 内联轻提示（动作回执/错误）。在盒子内浮一条，不打断。

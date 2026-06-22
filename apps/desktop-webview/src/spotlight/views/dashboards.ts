@@ -29,6 +29,8 @@ function readOnlyView(
     loadingLabel: (zh: boolean) => string;
     errorLabel: (zh: boolean) => string;
     load: (ctx: SpotlightViewContext, zh: boolean) => Promise<{ html: string; subtitle: string }>;
+    // 可选：处理内容区里的自定义点击（如「项目」行→开网盘、空态 CTA→开派活）。retry 已内置。
+    onAction?: (target: HTMLElement, ctx: SpotlightViewContext) => void;
   }
 ): SpotlightCapabilityView {
   return {
@@ -54,9 +56,12 @@ function readOnlyView(
       ctx.body.addEventListener(
         "click",
         (event) => {
-          if (event.target instanceof HTMLElement && event.target.closest("[data-spot-retry]")) {
+          if (!(event.target instanceof HTMLElement)) return;
+          if (event.target.closest("[data-spot-retry]")) {
             void load();
+            return;
           }
+          config.onAction?.(event.target, ctx);
         },
         { signal: ctx.signal }
       );
@@ -72,13 +77,19 @@ function readOnlyView(
 function projectCard(p: ProjectListItemVM, zh: boolean): string {
   const open = p.open_work_item_count;
   const badge = open > 0 ? `<span class="wh-spot-row-badge">${open}</span>` : "";
-  return `<div class="wh-spot-row">
+  // rank14：项目行可点 → 进入该项目网盘（最贴近「项目主页」）。div→button，带 data-open-project。
+  return `<button type="button" class="wh-spot-row" data-open-project="${escapeHtml(p.id)}" style="cursor:pointer;width:100%;text-align:left">
     <div class="wh-spot-row-main">
       <div class="wh-spot-row-title">${escapeHtml(p.name)}${p.archived ? `<span class="wh-spot-row-tag">${zh ? "已归档" : "Archived"}</span>` : ""}</div>
       <div class="wh-spot-row-sub">${escapeHtml(p.description ?? (zh ? `负责人 ${p.owner_nickname}` : `Owner ${p.owner_nickname}`))}</div>
     </div>
     <div class="wh-spot-row-meta">${badge}<span class="wh-spot-row-metalabel">${zh ? "进行中" : "open"}</span></div>
-  </div>`;
+  </button>`;
+}
+
+// rank14：可点的「新任务」CTA——空态/有项目都给一个去派活的入口（开 intake 能力）。
+function newTaskCta(zh: boolean): string {
+  return `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-intake style="align-self:flex-start">${zh ? "＋ 新任务 / 交给 AI" : "＋ New task / Dispatch to AI"}</button>`;
 }
 
 export function createProjectsView(): SpotlightCapabilityView {
@@ -90,9 +101,19 @@ export function createProjectsView(): SpotlightCapabilityView {
       const items = vm.projects;
       const subtitle = zh ? `${items.length} 个项目` : `${items.length} project${items.length === 1 ? "" : "s"}`;
       const html = items.length
-        ? `<div class="wh-spot-list ds-stagger">${items.map((p) => projectCard(p, zh)).join("")}</div>`
-        : emptyHtml("📁", zh ? "还没有项目" : "No projects yet", zh ? "派个活就会自动建项目" : "Dispatch a task to create one");
+        ? `<div class="wh-spot-dash">${newTaskCta(zh)}<div class="wh-spot-list ds-stagger">${items.map((p) => projectCard(p, zh)).join("")}</div></div>`
+        : `<div class="wh-spot-dash">${emptyHtml("📁", zh ? "还没有项目" : "No projects yet", zh ? "派个活就会自动建项目和网盘" : "Dispatch a task to create one")}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
       return { html, subtitle };
+    },
+    onAction: (target, ctx) => {
+      const proj = target.closest<HTMLElement>("[data-open-project]");
+      if (proj?.dataset.openProject) {
+        ctx.open("drive", { id: proj.dataset.openProject });
+        return;
+      }
+      if (target.closest("[data-open-intake]")) {
+        ctx.open("intake");
+      }
     }
   });
 }
@@ -198,7 +219,12 @@ export function createKnowledgeView(): SpotlightCapabilityView {
       let searchGen = 0;
       let projects: { id: string; name: string }[] = [];
       let projectId: string | undefined;
-      ctx.setSubtitle(zh ? "搜索沉淀的知识" : "Search knowledge");
+      // rank22：副标题始终标出当前检索的项目（单项目时没有切换 chip，否则用户不知道在搜哪个项目）。
+      const syncSubtitle = () => {
+        const name = projects.find((p) => p.id === projectId)?.name;
+        ctx.setSubtitle(name ? (zh ? `在「${name}」里搜` : `Search in ${name}`) : zh ? "搜索沉淀的知识" : "Search knowledge");
+      };
+      syncSubtitle();
 
       const projectChips = (): string => {
         if (projects.length <= 1) {
@@ -266,6 +292,7 @@ export function createKnowledgeView(): SpotlightCapabilityView {
           // 项目拉不到就走空态。
         }
         if (disposed) return;
+        syncSubtitle();
         renderShell("");
         ctx.body.querySelector<HTMLInputElement>("[data-know-input]")?.focus();
       })();
@@ -276,6 +303,7 @@ export function createKnowledgeView(): SpotlightCapabilityView {
         const proj = target.closest<HTMLElement>("[data-know-proj]");
         if (proj?.dataset.knowProj && proj.dataset.knowProj !== projectId) {
           projectId = proj.dataset.knowProj;
+          syncSubtitle();
           ctx.body.querySelectorAll<HTMLElement>("[data-know-proj]").forEach((el) => {
             el.dataset.sel = String(el.dataset.knowProj === projectId);
           });

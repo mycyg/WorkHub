@@ -105,7 +105,9 @@ export function createDriveView(): SpotlightCapabilityView {
         try {
           const list = await ctx.client.listProjects();
           projects = list.projects.map((p) => ({ id: p.id, name: p.name }));
-          projectId = projects[0]?.id;
+          // rank14/13：若带了目标项目 id（从「项目」能力点入/深链）且存在，则直接打开它；否则默认第一个。
+          const wanted = ctx.target?.id;
+          projectId = wanted && projects.some((p) => p.id === wanted) ? wanted : projects[0]?.id;
         } catch {
           // 走空态
         }
