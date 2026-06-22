@@ -1,6 +1,7 @@
 import { createApiClient } from "@workhub/api-client/client";
 import {
   cardFromAgentRunLive,
+  cardFromAttentionItem,
   createCuuController,
   createCuuIdleScheduler,
   cuuBubbleKindForState,
@@ -885,6 +886,27 @@ export async function bootDesktopPetSurface(
     }
   }
 
+  // S2「待拍板进桌宠」：首屏主动拉 pages.attention。桌宠空闲(无卡)且有待你拍板时，把头条决策作为 Cuu 卡端上来——
+  // 卡上的通过/打回走既有 submitDesktopCuuAction 管线，可在桌宠就地拍板；SSE 后续会实时更新。Cuu 即决策浮现面。
+  async function surfacePendingDecision() {
+    if (currentCard) {
+      return;
+    }
+    try {
+      const attention = await client.pages.attention({ locale });
+      if (currentCard) {
+        return;
+      }
+      const item = attention.primary ?? attention.queue[0];
+      if (item) {
+        const message = locale === "en-US" ? "You have a decision waiting" : "有一件待你拍板";
+        setCard(cardFromAttentionItem(item), message, { persist: false });
+      }
+    } catch {
+      // 拉不到就保持空闲，不打断。
+    }
+  }
+
   const broadcastPetSettings = (
     preferences: CuuControllerPreferences,
     source: DesktopPetSettingsPayload["source"] = "pet-menu"
@@ -955,7 +977,8 @@ export async function bootDesktopPetSurface(
 
   render();
   if (!desktopPetQaScenarioSkipsLocalRestore(qaScenario)) {
-    void restoreDesktopPetCard();
+    // 先尝试恢复上次会话/运行卡；没有可恢复的卡时，主动浮现一条待拍板（S2）。QA 场景跳过，避免干扰固定卡。
+    void restoreDesktopPetCard().then(() => surfacePendingDecision());
   }
 
   pointerSensor = createDesktopPetPointerSensor(root, {
