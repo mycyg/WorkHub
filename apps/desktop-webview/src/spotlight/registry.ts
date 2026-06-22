@@ -4,6 +4,12 @@
 
 import type { CommandId } from "../command-palette.js";
 import { createAttentionView } from "./views/attention.js";
+import {
+  createCalendarView,
+  createCostView,
+  createKnowledgeView,
+  createProjectsView
+} from "./views/dashboards.js";
 import { createIntakeView } from "./views/intake.js";
 import { createPlaceholderView } from "./views/placeholder.js";
 import type { SpotlightCapabilityView } from "./view-context.js";
@@ -11,7 +17,11 @@ import type { SpotlightCapabilityView } from "./view-context.js";
 // 已做成内联的能力工厂表。
 const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   approvals: createAttentionView,
-  intake: createIntakeView
+  intake: createIntakeView,
+  projects: createProjectsView,
+  cost: createCostView,
+  team: createCalendarView,
+  knowledge: createKnowledgeView
 };
 
 export function resolveCapabilityView(id: CommandId): SpotlightCapabilityView {
