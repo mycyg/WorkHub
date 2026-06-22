@@ -128,21 +128,37 @@ function pushClientTokenToShell(token: string): void {
   }
 }
 
+async function bootstrapDesktopClientToken(client: BrowserApiClient): Promise<void> {
+  try {
+    const result = await client.bootstrapDesktop({
+      nickname: "WorkHub Desktop",
+      device_name: "WorkHub Desktop",
+      platform: "desktop"
+    });
+    if (result?.client_token) {
+      window.localStorage.setItem("workhub_client_token", result.client_token);
+    }
+  } catch (error) {
+    // 密码模式(404) / 后端不可达：保持无 token；上层取数失败会显示连接错误。
+    // 记一行便于诊断（不含敏感信息）——desktop-bootstrap 仅 nickname 模式开放，密码模式会 404。
+    console.warn("WorkHub desktop bootstrap failed; continuing without client token", error);
+  }
+}
+
 async function ensureDesktopClientToken(client: BrowserApiClient): Promise<void> {
   if (!clientToken()) {
+    await bootstrapDesktopClientToken(client);
+  } else {
+    // rank16：已有 token 也要探活一次——若被吊销/陈旧(not_identified)，清掉重铸，
+    // 否则主窗/桌宠会拿着死 token 永远静默拉不到数据（旧的只在「无 token」时引导，覆盖不到这种情况）。
+    // 非身份类错误（网络/后端不可达）不动 token：交给上层离线兜底。
     try {
-      const result = await client.bootstrapDesktop({
-        nickname: "WorkHub Desktop",
-        device_name: "WorkHub Desktop",
-        platform: "desktop"
-      });
-      if (result?.client_token) {
-        window.localStorage.setItem("workhub_client_token", result.client_token);
-      }
+      await client.me();
     } catch (error) {
-      // 密码模式(404) / 后端不可达：保持无 token；上层取数失败会显示连接错误。
-      // 记一行便于诊断（不含敏感信息）——desktop-bootstrap 仅 nickname 模式开放，密码模式会 404。
-      console.warn("WorkHub desktop bootstrap failed; continuing without client token", error);
+      if (error instanceof WorkHubApiError && error.code === "not_identified") {
+        window.localStorage.removeItem("workhub_client_token");
+        await bootstrapDesktopClientToken(client);
+      }
     }
   }
   const token = clientToken();

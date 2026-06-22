@@ -483,7 +483,13 @@ fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
         return;
     }
     // 仅记录尾 4 位用于诊断（绝不打印完整令牌）。SSE worker 下一拍重连即带它鉴权 → Cuu 上线。
-    let tail = &trimmed[trimmed.len().saturating_sub(4)..];
+    // rank21：按「字符」取末 4 位，不按字节切片——token 来自 webview localStorage，非保证 ASCII，
+    // 字节切片若落在多字节字符边界内会 panic 掉这个 #[tauri::command]。
+    let tail = trimmed
+        .char_indices()
+        .nth_back(3)
+        .map(|(i, _)| &trimmed[i..])
+        .unwrap_or(trimmed);
     eprintln!("WorkHub: client token received (…{tail}); SSE /me authenticates on next reconnect");
     if let Ok(mut guard) = state.0.lock() {
         *guard = Some(trimmed.to_string());
