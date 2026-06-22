@@ -13,6 +13,7 @@ import {
 import { createDriveView } from "./views/drive.js";
 import { createIntakeView } from "./views/intake.js";
 import { createPlaceholderView } from "./views/placeholder.js";
+import { createProposalsView } from "./views/proposals.js";
 import { createReplayView } from "./views/replay.js";
 import type { SpotlightCapabilityView } from "./view-context.js";
 
@@ -25,7 +26,8 @@ const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   team: createCalendarView,
   knowledge: createKnowledgeView,
   drive: createDriveView,
-  replay: createReplayView
+  replay: createReplayView,
+  proposals: createProposalsView
 };
 
 export function resolveCapabilityView(id: CommandId): SpotlightCapabilityView {
