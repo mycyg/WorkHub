@@ -86,7 +86,7 @@ export type WebRouteSurface =
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[] }
-  | { key: "drive"; drive: DrivePageVM }
+  | { key: "drive"; drive: DrivePageVM; projects: ProjectListVM }
   | { key: "meetings"; meetings: MeetingPageVM }
   | { key: "notifications"; notifications: NotificationPageVM }
   | { key: "calendar"; calendar: CalendarPageVM }
@@ -769,7 +769,7 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
     }, { locale });
   }
   if (surface.key === "drive") {
-    return renderWebRouteComponent({ key: "drive", drive: surface.drive }, { locale });
+    return renderWebRouteComponent({ key: "drive", drive: surface.drive, projects: surface.projects }, { locale });
   }
   if (surface.key === "meetings") {
     return renderWebRouteComponent({ key: "meetings", meetings: surface.meetings }, { locale });
@@ -903,7 +903,9 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     if (drive.empty_state === "no_project") {
       return "empty" as const;
     }
-    return { key: "drive", drive } satisfies WebRouteSurface;
+    // 网盘是 GitHub 式核心:同时拉全量项目清单,供面板内的项目切换器/「所有项目」回链使用。
+    const projects = await client.listProjects();
+    return { key: "drive", drive, projects } satisfies WebRouteSurface;
   }
   if (match.key === "meetings") {
     const params = new URLSearchParams(match.search);

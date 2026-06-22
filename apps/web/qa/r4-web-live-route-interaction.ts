@@ -1842,6 +1842,35 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       sendJson(response, 200, drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated));
       return;
     }
+    if (request.method === "GET" && url.pathname === "/api/projects") {
+      // 网盘是 GitHub 式核心:面板内项目切换器需要全量项目清单。首条与 drivePage().project 同 id(当前高亮),次条提供切换目标。
+      sendJson(response, 200, {
+        generated_at: "2026-06-11T09:00:00.000Z",
+        projects: [
+          {
+            id: "10000000-0000-4000-8000-000000001600",
+            name: "区域发布资料库",
+            slug: "regional-launch",
+            owner_nickname: "owner",
+            archived: false,
+            created_at: "2026-06-11T08:00:00.000Z",
+            updated_at: "2026-06-11T09:00:00.000Z",
+            open_work_item_count: 2
+          },
+          {
+            id: "10000000-0000-4000-8000-000000001690",
+            name: "新一代客服平台",
+            slug: "next-support-platform",
+            owner_nickname: "owner",
+            archived: false,
+            created_at: "2026-06-10T08:00:00.000Z",
+            updated_at: "2026-06-10T09:00:00.000Z",
+            open_work_item_count: 1
+          }
+        ]
+      });
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/api/pages/meetings") {
       sendJson(response, 200, meetingPage(meetingInsightDraftCreated, meetingDraftProposalCreated, meetingInsightDismissed));
       return;

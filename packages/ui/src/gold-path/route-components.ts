@@ -186,6 +186,8 @@ type RouteCopyKey =
   | "proposal.rollback"
   | "proposal.files"
   | "drive.kicker"
+  | "drive.allProjects"
+  | "drive.switchProject"
   | "drive.files"
   | "drive.versions"
   | "drive.accepted"
@@ -365,6 +367,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "proposal.rollback": "回滚路径",
     "proposal.files": "文件与对象变化",
     "drive.kicker": "项目网盘",
+    "drive.allProjects": "所有项目",
+    "drive.switchProject": "切换项目",
     "drive.files": "文件列表",
     "drive.versions": "版本历史",
     "drive.accepted": "正式交付物",
@@ -543,6 +547,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "proposal.rollback": "Rollback path",
     "proposal.files": "Files and object changes",
     "drive.kicker": "Project drive",
+    "drive.allProjects": "All projects",
+    "drive.switchProject": "Switch project",
     "drive.files": "File tree",
     "drive.versions": "Version history",
     "drive.accepted": "Accepted deliverables",
@@ -1778,8 +1784,27 @@ function meetingInsightStatusLabel(status: MeetingPageVM["meetings"][number]["in
   return routeTOrHumanize(locale, `meeting.status.${status}`, status);
 }
 
-function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebRouteComponent {
+function renderDriveRouteComponent(
+  vm: DrivePageVM,
+  locale: WorkHubLocale,
+  projects?: ProjectListVM | undefined
+): WebRouteComponent {
   const projectTitle = vm.project?.name ?? (locale === "zh-CN" ? "项目网盘" : "Project drive");
+  // 网盘是 GitHub 式核心:头部带「← 所有项目」回链 + 当前项目名 + 紧凑项目切换器。
+  // 纯增量——既有 data-r4-*/data-r5-* 标记一律保留;无项目/≤1 项目时只渲当前项目名,不出切换器。
+  const projectList = projects?.projects ?? [];
+  const currentProjectId = vm.project?.id ?? "";
+  const switcherOptions = projectList.length > 1
+    ? projectList.map((project) => {
+      const selected = project.id === currentProjectId ? " selected" : "";
+      return `<option value="${escapeHtml(safeHref(`/drive?project_id=${encodeURIComponent(project.id)}`))}"${selected}>${escapeHtml(project.name)}</option>`;
+    }).join("")
+    : "";
+  const driveProjectNav = `<nav class="wh-r4-route-meta" data-r8-drive-project-nav="true" data-r8-drive-current-project="${escapeHtml(currentProjectId)}" data-r8-drive-project-count="${escapeHtml(String(projectList.length))}">
+        <a class="wh-pill" href="/projects" data-r8-drive-all-projects="true">&#8592; ${escapeHtml(routeT(locale, "drive.allProjects"))}</a>
+        <strong data-r8-drive-current-project-name="true">${escapeHtml(vm.project?.name ?? routeT(locale, "drive.kicker"))}</strong>
+        ${switcherOptions ? `<select class="wh-pill" data-r8-drive-project-switcher="true" aria-label="${escapeHtml(routeT(locale, "drive.switchProject"))}" onchange="if(this.value){window.location.href=this.value}">${switcherOptions}</select>` : ""}
+      </nav>`;
   const selectedItem = vm.items.find((item) => item.id === vm.selected_item_id) ?? vm.items.find((item) => item.kind === "file") ?? vm.items[0];
   const deleteTargetId = vm.actions.delete_item ? driveItemMutationIdFromHref(vm.actions.delete_item.href) : undefined;
   const deleteTarget = deleteTargetId ? vm.items.find((item) => item.id === deleteTargetId) : undefined;
@@ -1898,6 +1923,7 @@ function renderDriveRouteComponent(vm: DrivePageVM, locale: WorkHubLocale): WebR
     html: `<section class="wh-r4-route" data-r4-route-component="drive" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-drive-project-id="${escapeHtml(vm.project?.id ?? "")}" data-r4-drive-item-count="${escapeHtml(String(vm.summary.item_count))}" data-r4-drive-version-count="${escapeHtml(String(vm.summary.version_count))}" data-r4-drive-accepted-count="${escapeHtml(String(vm.summary.accepted_deliverable_count))}" data-r4-drive-comment-count="${escapeHtml(String(vm.comments.length))}" data-r5-drive-deleted-count="${escapeHtml(String(vm.summary.deleted_item_count))}" data-r5-drive-operation-count="${escapeHtml(String(vm.summary.operation_count))}" data-r5-drive-can-manage="${escapeHtml(String(vm.can_manage))}">
       <header class="wh-r4-route-head">
         <div>
+          ${driveProjectNav}
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "drive.kicker"))}</span>
           <h2>${escapeHtml(projectTitle)}</h2>
           <p>${escapeHtml(selectedItem?.path ?? routeT(locale, "drive.empty"))}</p>
@@ -2711,7 +2737,7 @@ export type WebRouteComponentInput =
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined }
-  | { key: "drive"; drive: DrivePageVM }
+  | { key: "drive"; drive: DrivePageVM; projects?: ProjectListVM | undefined }
   | { key: "meetings"; meetings: MeetingPageVM }
   | { key: "notifications"; notifications: NotificationPageVM }
   | { key: "calendar"; calendar: CalendarPageVM }
@@ -2744,7 +2770,7 @@ export function renderWebRouteComponent(
     case "proposal":
       return renderProposalRouteComponent(input.proposal, locale, input.proposalConflicts ?? []);
     case "drive":
-      return renderDriveRouteComponent(input.drive, locale);
+      return renderDriveRouteComponent(input.drive, locale, input.projects);
     case "meetings":
       return renderMeetingRouteComponent(input.meetings, locale);
     case "notifications":

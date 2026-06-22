@@ -13,6 +13,7 @@ import type {
   GoldPathSurfaceVM,
   MeetingPageVM,
   NotificationPageVM,
+  ProjectListVM,
   ProposalConflict,
   ReplayTraceVM,
   SessionVM,
@@ -35,6 +36,7 @@ type RouteClientOverrides = {
   cost?: CostDashboardVM;
   skills?: TeamSkillsPageVM;
   drive?: DrivePageVM;
+  projects?: ProjectListVM;
   meetings?: MeetingPageVM;
   notifications?: NotificationPageVM;
   calendar?: CalendarPageVM;
@@ -208,6 +210,35 @@ function calendarVm(): CalendarPageVM {
     },
     days: [{ date: "2026-06-11", blocks: [block] }],
     blocks: [block]
+  };
+}
+
+function projectListVm(): ProjectListVM {
+  // 网盘项目切换器 fixture:首条与 driveVm().project 同 id(高亮当前),第二条提供切换目标。
+  return {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    projects: [
+      {
+        id: "93000000-0000-4000-8000-000000000001",
+        name: "R5 Workspace",
+        slug: "r5-workspace",
+        owner_nickname: "owner",
+        archived: false,
+        created_at: "2026-06-11T08:00:00.000Z",
+        updated_at: "2026-06-11T09:00:00.000Z",
+        open_work_item_count: 1
+      },
+      {
+        id: "93000000-0000-4000-8000-000000000099",
+        name: "R5 Secondary",
+        slug: "r5-secondary",
+        owner_nickname: "owner",
+        archived: false,
+        created_at: "2026-06-10T08:00:00.000Z",
+        updated_at: "2026-06-10T09:00:00.000Z",
+        open_work_item_count: 0
+      }
+    ]
   };
 }
 
@@ -539,6 +570,9 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         localeCall(`proposal:${id}`, options);
         return surface.page_vms.proposal;
       }
+    },
+    async listProjects() {
+      return overrides.projects ?? projectListVm();
     },
     async listWorkItemConflicts(workItemId: string) {
       localeCall(`conflicts:${workItemId}`);
