@@ -46,12 +46,17 @@ const BACK_ICON =
 function renderLauncherGrid(
   matches: CommandMatch[],
   locale: WorkHubLocale,
-  badges: Partial<Record<CommandId, number>>
+  badges: Partial<Record<CommandId, number>>,
+  showHello: boolean
 ): string {
   const zh = locale === "zh-CN";
   if (matches.length === 0) {
     return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${zh ? "没有匹配的能力，换个说法试试" : "No matching capability — try another phrase"}</div></div>`;
   }
+  // 空查询时给一无所知的新用户一句温和的引导（搜索框无 header，保持聚焦盒观感）。
+  const hello = showHello
+    ? `<div class="wh-spot-hello ds-anim-fade-in">${zh ? "想做点什么？输入关键词，或选一个 —— Cuu 帮你跑" : "What's on your plate? Type, or pick one — Cuu runs it"}</div>`
+    : "";
   const loc = zh ? "zh-CN" : "en";
   const cards = matches
     .map(({ command }, index) => {
@@ -67,7 +72,7 @@ function renderLauncherGrid(
       </button>`;
     })
     .join("");
-  return `<div class="wh-spot-grid ds-stagger">${cards}</div>`;
+  return `${hello}<div class="wh-spot-grid ds-stagger">${cards}</div>`;
 }
 
 export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
@@ -143,7 +148,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       disposeView = undefined;
     }
     box.dataset.mode = "launcher";
-    body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges);
+    body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0);
     requestResize();
   };
 
@@ -233,7 +238,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       render();
     } else if (!nextCap) {
       // launcher 内查询变化：只换网格，保输入焦点。
-      body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges);
+      body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0);
       requestResize();
     }
   };
@@ -326,7 +331,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     setBadges: (next) => {
       badges = { ...badges, ...next };
       if (!openCapabilityId(state)) {
-        body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges);
+        body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0);
         requestResize();
       }
     }

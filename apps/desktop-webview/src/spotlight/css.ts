@@ -41,6 +41,7 @@ export const spotlightCss = [
   ".wh-spot-cap-hint{font:500 11px/1.25 var(--ds-font);color:var(--ds-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-spot-cap-badge{margin-left:auto;flex:0 0 auto;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--ds-danger);color:#fff;font:700 11px/18px var(--ds-font);text-align:center}",
   ".wh-spot-empty-grid{padding:20px 8px;text-align:center;color:var(--ds-ink-muted);font:500 13px/1.5 var(--ds-font);grid-column:1 / -1}",
+  ".wh-spot-hello{padding:0 2px 11px;font:500 12.5px/1.5 var(--ds-font);color:var(--ds-ink-muted);text-align:center}",
   // 决策卡（审批）。
   ".wh-spot-cards{display:flex;flex-direction:column;gap:10px}",
   ".wh-spot-card{position:relative;display:flex;gap:0;border-radius:var(--ds-radius-lg);overflow:hidden}",
