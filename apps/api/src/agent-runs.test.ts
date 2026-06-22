@@ -2779,6 +2779,14 @@ test("successful agent run opens a proposal from its generated manifest", async 
   assert.equal(proposalEvent?.data.proposal_id, opened[0]?.id);
   assert.equal(proposalEvent?.data.cuu_state, "carrying_document");
   assert.equal(proposalEvent?.data.data["branch_id"], opened[0]?.branch_id);
+  // chain1/rank2：proposal.opened 还必须发到派活用户的 per-user /me 流——桌面富 Cuu 决策卡只订 topics.user，
+  // 否则旗舰「AI 把决策端到你面前」降级成一条干巴巴的通知。
+  const userProposalEvent = publishedEvents.find(
+    (event) => event.type === eventTypes.proposalOpened && event.topic === topics.user(queued.actor_id).topic
+  );
+  assert.ok(userProposalEvent, "proposal.opened must also reach the dispatcher's /me stream (chain1)");
+  assert.equal(userProposalEvent?.data.proposal_id, opened[0]?.id);
+  assert.equal(userProposalEvent?.data.cuu_state, "carrying_document");
 });
 
 test("P-COLLAB M2: a hydrated run captures a base snapshot and stamps manifest.base.snapshot_id", async () => {

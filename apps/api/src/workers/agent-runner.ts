@@ -147,6 +147,17 @@ export type AgentRunQueueRecord = {
   updated_at: string;
 };
 
+// chain1/rank2：proposal.opened 的目标话题——既发工作项流(看改动/审批页等订阅者)，也发派活用户的 per-user
+// /me 流。桌面富 Cuu 决策卡只订 topics.user，不发 /me 则旗舰「AI 把决策端到你面前」降级成一条干巴巴通知。
+// agent-runs.test 的真实 run 集成用例端到端断言两个话题都收到。
+function proposalOpenedTopics(workItemId: string, actorId: string | undefined): string[] {
+  const list = [topics.workitem(workItemId).topic];
+  if (actorId) {
+    list.push(topics.user(actorId).topic);
+  }
+  return list;
+}
+
 export class AgentRunnerError extends Error {
   constructor(
     public readonly status: number,
@@ -838,33 +849,39 @@ export function createInMemoryAgentRunQueue(options: {
       return;
     }
 
-    const topic = topics.workitem(run.work_item_id).topic;
-    const envelope = makeWorkHubEvent({
-      type: eventTypes.proposalOpened,
-      topic,
-      actor: { actor_kind: "ai", label: "WorkHub AI" },
+    const data = {
+      proposal_id: proposal.id,
       work_item_id: run.work_item_id,
       run_id: run.run_id,
-      proposal_id: proposal.id,
-      preview_text: `AI 已生成变更申请: ${proposal.title}`,
-      cuu_state: "carrying_document",
-      data: {
-        proposal_id: proposal.id,
-        work_item_id: run.work_item_id,
-        run_id: run.run_id,
-        branch_id: proposal.branch_id,
-        title: proposal.title,
-        status: proposal.status,
-        manifest: proposal.diff_manifest
-      }
-    });
+      branch_id: proposal.branch_id,
+      title: proposal.title,
+      status: proposal.status,
+      manifest: proposal.diff_manifest
+    };
     // findings：事件发布尽力而为——提议行已落库（createFromManifest 已 resolve），proposalOpened 状态由
     // 此而定，绝不能因总线瞬时抖动（Redis 抛错）把本已成功、提议已开的 run 误判失败、错落 escalated。
-    // 与 emitRunEvent 同款 best-effort：吞错 + 告警。
-    try {
-      await eventBus.publish(topic, eventTypes.proposalOpened, envelope);
-    } catch (error) {
-      getDefaultStructuredLogger().warn("agent_run_proposal_opened_event_emit_failed", { error });
+    // 每个 topic 独立 try/catch：一个发布失败不影响另一个，也不影响 run。
+    const publishTo = async (topic: string) => {
+      const envelope = makeWorkHubEvent({
+        type: eventTypes.proposalOpened,
+        topic,
+        actor: { actor_kind: "ai", label: "WorkHub AI" },
+        work_item_id: run.work_item_id,
+        run_id: run.run_id,
+        proposal_id: proposal.id,
+        preview_text: `AI 已生成变更申请: ${proposal.title}`,
+        cuu_state: "carrying_document",
+        data
+      });
+      try {
+        await eventBus.publish(topic, eventTypes.proposalOpened, envelope);
+      } catch (error) {
+        getDefaultStructuredLogger().warn("agent_run_proposal_opened_event_emit_failed", { error, topic });
+      }
+    };
+
+    for (const topic of proposalOpenedTopics(run.work_item_id, run.actor_id)) {
+      await publishTo(topic);
     }
   }
 
