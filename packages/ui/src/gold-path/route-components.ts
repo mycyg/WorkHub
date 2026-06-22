@@ -794,11 +794,19 @@ function actionClass(action: AttentionAction | ActionSpec, index: number) {
   return index === 0 ? "wh-btn wh-btn-primary" : "wh-btn";
 }
 
+// rank1：转交他人(delegate)在 web 尚无选人 UI/分类器——会落到「功能开发中」toast 的死按钮。
+// 桌面已隐藏(attention.ts/pet-surface)，web 在此一并隐藏，两端一致;待选人 UI 落地再放开。
+// href 形如 /api/approvals/{id}/delegate。
+function isUnsupportedWebAction(href: string): boolean {
+  return /\/delegate(?:[/?#]|$)/u.test(href);
+}
+
 function renderActions(actions: (AttentionAction | ActionSpec)[]) {
-  if (actions.length === 0) {
+  const shown = actions.filter((action) => !isUnsupportedWebAction(action.href));
+  if (shown.length === 0) {
     return "";
   }
-  return `<div class="wh-r4-route-actions">${actions
+  return `<div class="wh-r4-route-actions">${shown
     .map((action, index) => {
       const reason = action.requires_reason ? " data-requires-reason=\"true\"" : "";
       const method = "method" in action ? ` data-method="${escapeHtml(action.method)}"` : "";
@@ -908,21 +916,52 @@ function notificationSeverityLabel(severity: string, zh: boolean): string {
   );
 }
 
+// 通知类型是点分命名空间(comment.mention / workitem.escalated / agent_run.succeeded / proposal.ready …)。
+// rank7：旧 map 的 key(proposal_review 等)与真实类型对不上 + en map 为空 → 两种语言都掉进 humanizeToken
+// 渲出「Workitem.ai Working」式机器 token。改为：精确类型映射(双语) → 命名空间前缀兜底(双语) → 最后才 humanize。
 function notificationTypeLabel(type: string, zh: boolean): string {
-  return localizedEnumLabel(
-    type,
-    zh,
-    {
-      proposal_review: "待审查",
-      escalation: "已升级",
-      sync_conflict: "撞车冲突",
-      delivery_ready: "可交付",
-      budget_warning: "预算预警",
-      knowledge_result: "知识结果",
-      milestone: "里程碑"
-    },
-    {}
-  );
+  const exact: Record<string, [string, string]> = {
+    "comment.mention": ["提到你", "Mention"],
+    "workitem.claimed": ["已认领", "Claimed"],
+    "workitem.escalated": ["已升级", "Escalated"],
+    "escalation.opened": ["已升级", "Escalated"],
+    "proposal.ready": ["改动待审", "Proposal ready"],
+    "proposal.opened": ["改动待审", "Proposal ready"],
+    "agent_run.step": ["AI 进展", "AI progress"],
+    "agent_run.succeeded": ["AI 完成", "AI done"],
+    "agent_run.failed": ["AI 失败", "AI failed"],
+    "approval.decided": ["审批已定", "Decided"],
+    "approval.delegated": ["审批转交", "Delegated"],
+    "approval.expired": ["审批过期", "Expired"],
+    "approval.commented": ["审批评论", "Comment"],
+    "meeting.insight.pending": ["会议待办", "Meeting insight"],
+    "drive.page": ["网盘更新", "Drive"],
+    "system.notice": ["系统通知", "System"],
+    milestone: ["里程碑", "Milestone"],
+    "notification.created": ["新通知", "Update"]
+  };
+  const hit = exact[type];
+  if (hit) {
+    return zh ? hit[0] : hit[1];
+  }
+  const prefix: Record<string, [string, string]> = {
+    comment: ["评论", "Comment"],
+    workitem: ["工作项", "Work item"],
+    agent_run: ["AI 运行", "AI run"],
+    approval: ["审批", "Approval"],
+    proposal: ["改动", "Proposal"],
+    escalation: ["升级", "Escalation"],
+    drive: ["网盘", "Drive"],
+    drive_comment: ["网盘评论", "Drive comment"],
+    meeting: ["会议", "Meeting"],
+    budget: ["预算", "Budget"],
+    system: ["系统", "System"]
+  };
+  const ns = prefix[type.split(".")[0] ?? type];
+  if (ns) {
+    return zh ? ns[0] : ns[1];
+  }
+  return humanizeToken(type.replace(/\./gu, " "));
 }
 
 function driveItemKindLabel(kind: string, zh: boolean): string {

@@ -1009,6 +1009,8 @@ export async function bootDesktopPetSurface(
     }
   });
 
+  // rank8：决策卡动作单飞守卫——双击审批/合并/打回会发两发 POST，第二发服务端 409 approval_race。
+  let petActionBusy = false;
   root.addEventListener("click", async (event) => {
     const menuTarget = event.target instanceof Element ? event.target : null;
     const modelButton = menuTarget?.closest<HTMLButtonElement>("[data-pet-menu-model]");
@@ -1097,6 +1099,10 @@ export async function bootDesktopPetSurface(
 
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-pet-reason]") : null;
     if (reasonButton && pendingAction) {
+      if (petActionBusy) {
+        return;
+      }
+      petActionBusy = true;
       // findings[#low]：currentCard 在 await 期间可能被改写，await 后再读会用到新值（TOCTOU）。
       // 捕获 await 前的卡片做兜底。
       const fallbackCard = currentCard;
@@ -1111,6 +1117,8 @@ export async function bootDesktopPetSurface(
         subscribeToAgentRun(result);
       } catch (error) {
         setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale));
+      } finally {
+        petActionBusy = false;
       }
       return;
     }
@@ -1166,6 +1174,10 @@ export async function bootDesktopPetSurface(
       render();
       return;
     }
+    if (petActionBusy) {
+      return;
+    }
+    petActionBusy = true;
     // findings[#low]：同上——捕获 await 前的卡片做兜底，避免 await 期间 currentCard 被改写。
     const fallbackCard = currentCard;
     try {
@@ -1181,6 +1193,8 @@ export async function bootDesktopPetSurface(
       }
     } catch (error) {
       setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale));
+    } finally {
+      petActionBusy = false;
     }
   });
 
@@ -1814,7 +1828,9 @@ function escapeHtml(value: unknown) {
     .replace(/&/gu, "&amp;")
     .replace(/</gu, "&lt;")
     .replace(/>/gu, "&gt;")
-    .replace(/"/gu, "&quot;");
+    .replace(/"/gu, "&quot;")
+    // rank20：补单引号转义，与 @workhub/web-runtime 的规范 escapeHtml 对齐（防单引号属性逃逸，纵深防御）。
+    .replace(/'/gu, "&#39;");
 }
 
 // 外部/契约来源的 href 可能带 javascript:/data: → 点击即 XSS。只放行相对路径与 http(s)/mailto，其余拦成 "#"。
