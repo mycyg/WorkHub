@@ -15,7 +15,9 @@ import {
 import { renderProposalConflictCards, renderProposalDetail, proposalCss } from "@workhub/ui/proposal";
 import {
   actionElementApplyPayload,
+  actionElementCreateWorkItemPayload,
   actionElementMergePayload,
+  actionElementNextQuestionPayload,
   actionErrorNotice,
   actionHrefFromElement,
   actionPendingNotice,
@@ -24,8 +26,10 @@ import {
   applyIdentityLocale,
   approvalRespondIdFromHref,
   bindRouteLineEditor,
+  bootstrapProjectActionFromHref,
   browserLocale,
   conflictsFromMergeError,
+  createWorkItemActionFromHref,
   fieldValueRequiredNotice,
   intakeOptionRequiredNotice,
   localePersistenceFailedNotice,
@@ -36,8 +40,10 @@ import {
   reasonRequiredNotice,
   reviewReasonButtons,
   selectionNotice,
+  sessionNextQuestionIdFromHref,
   setDocumentLocale,
   showRouteNotice as showSharedRouteNotice,
+  startAgentRunActionFromHref,
   updateIntakeActionPayloads,
   type ActionPayloadResult,
   type RouteNoticeTimerState,
@@ -69,6 +75,7 @@ import { parseDesktopShellNavigatePayload } from "./shell-events.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
+type DesktopSessionVM = Awaited<ReturnType<BrowserApiClient["createSession"]>>;
 const noticeTimerState: RouteNoticeTimerState = {};
 let plainNoticeTimer: number | undefined;
 
@@ -196,12 +203,54 @@ function bindGoldPathNavigation(
   let pendingApprovalId: string | undefined;
   let pendingApprovalActionId: string | undefined;
 
+  // 测试反馈修复：桌面主窗口此前只渲染 P0.5 fixture intake 预览、澄清动作全落「暂不可用」桩。
+  // 这里把 web 已验证的「提需求→澄清→创建工作项」真闭环接进桌面主窗口的 intake 面板：进入「选项接入」
+  // 渲交互式起点屏 → 起真实会话 → 选项+继续(next-question)逐题推进 → 确认后创建工作项(spec_ready,不自动派活)。
+  // 用共享 renderWebRouteComponent（与 web 同一交互式组件：选项卡带 data-intake-option-id、提交带 next-question
+  // 载荷），桌面既有的选项勾选委托(下方 [data-option-id] 分支)与之天然咬合。
+  const intakePanel = () => shellRoot.querySelector<HTMLElement>("[data-wh-panel=\"intake\"]");
+  let activeIntakeSessionId: string | undefined;
+  const renderIntakeSessionPanel = (session: DesktopSessionVM) => {
+    const panel = intakePanel();
+    if (!panel) {
+      return;
+    }
+    activeIntakeSessionId = session.session_id;
+    panel.innerHTML = renderWebRouteComponent({ key: "intake", session }, { locale }).html;
+  };
+  const renderIntakeStartPanel = () => {
+    const panel = intakePanel();
+    if (!panel) {
+      return;
+    }
+    panel.innerHTML = renderWebRouteComponent({ key: "intake", start: true }, { locale }).html;
+  };
+  const startIntakeFromPanel = async (intentText?: string) => {
+    // bootstrapProject 幂等：拿到/建好试点项目，再起一个真实澄清会话（替换静态 demo 预览）。
+    const project = await client.bootstrapProject({});
+    const session = await client.createSession({
+      project_id: project.project.id,
+      ...(intentText && intentText.length > 0 ? { intent_text: intentText } : {})
+    });
+    renderIntakeSessionPanel(session);
+    return session;
+  };
+  const intakeStartIntentText = (actionTarget: HTMLElement) => {
+    const route = actionTarget.closest<HTMLElement>("[data-r4-route-component=\"intake\"]");
+    return route?.querySelector<HTMLTextAreaElement>("[data-s1-day1-intent-input]")?.value.trim() ?? "";
+  };
+
   const activateRoute = (route: string) => {
     const pageKey = resolveGoldPathPageKey(shell.routeMap, route);
     if (pageKey) {
       setActivePage(shellRoot, shell, pageKey);
       // M31：直接导航/壳 navigate 事件进入懒加载页时也拉数据(此前只 click 触发,导致面板空着)。
       input.lazyPanelLoaders?.get(route)?.();
+      // 进入「选项接入」且还没有进行中的真实会话：用交互式起点屏替换 P0.5 fixture 预览（与 web 的
+      // /intake 无 sessionId 起点屏一致）。已有会话则保留当前澄清进度，不打断。
+      if (pageKey === "intake" && !activeIntakeSessionId) {
+        renderIntakeStartPanel();
+      }
       return true;
     }
     return false;
@@ -290,6 +339,10 @@ function bindGoldPathNavigation(
     if (action.kind === "navigate") {
       event.preventDefault();
       setActivePage(shellRoot, shell, action.pageKey);
+      // 点「选项接入」导航且无进行中会话：用交互式起点屏替换 fixture 预览（同 activateRoute 的 hash 路径）。
+      if (action.pageKey === "intake" && !activeIntakeSessionId) {
+        renderIntakeStartPanel();
+      }
       return;
     }
     if (action.kind === "api-action") {
@@ -360,6 +413,70 @@ function bindGoldPathNavigation(
           if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
             showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
           }
+        }
+        input.onActionSettled?.();
+        return;
+      }
+      // 提需求起点：bootstrap 项目 + 起真实澄清会话，渲交互式 scope 题（替换 fixture 预览）。
+      if (bootstrapProjectActionFromHref(href) && actionTarget.dataset.s1Day0StartIntake === "true") {
+        try {
+          await startIntakeFromPanel(intakeStartIntentText(actionTarget));
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, goldPathT(locale, "runtime.notice.actionSuccessTitle"), actionId ?? "start_intake"));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "start_intake"));
+        }
+        return;
+      }
+      // 澄清「继续」→ next-question → 拉最新会话重渲澄清面板（scope→confirm 逐题推进）。
+      const intakeSessionId = sessionNextQuestionIdFromHref(href);
+      if (intakeSessionId) {
+        const payload = actionElementNextQuestionPayload(actionTarget);
+        if (!payload.ok) {
+          showPayloadFailureNotice(shellRoot, locale, payload, actionId);
+          return;
+        }
+        try {
+          await client.nextQuestion(intakeSessionId, payload.payload);
+          const session = await client.getSession(intakeSessionId, { locale });
+          renderIntakeSessionPanel(session);
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, goldPathT(locale, "runtime.notice.actionSuccessTitle"), actionId ?? "intake_continue"));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "intake_continue"));
+        }
+        return;
+      }
+      // 创建工作项（spec_ready，不自动派活——与 web 同口径：先给人过目再派活）→ 跳工作项详情。
+      if (createWorkItemActionFromHref(href) && actionTarget.dataset.intakeCreateWorkitem === "true") {
+        const payload = actionElementCreateWorkItemPayload(actionTarget);
+        if (!payload.ok || !payload.payload) {
+          showPayloadFailureNotice(shellRoot, locale, payload.ok ? { ok: false, reason: "invalid_json" } : payload, actionId);
+          return;
+        }
+        try {
+          const created = await client.createWorkItem(payload.payload);
+          // 会话已定稿：清掉进行中会话，下次进入「选项接入」起新需求。
+          activeIntakeSessionId = undefined;
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(created, locale), actionId ?? "create_workitem"));
+          // 经 hash 导航：壳上既有 hashchange 监听会激活工作项页并懒拉 LIVE 详情面板。
+          window.location.hash = `/workitems/${created.workitem.id}`;
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "create_workitem"));
+        }
+        input.onActionSettled?.();
+        return;
+      }
+      // 派活：起 AI 执行 → 跳工作项详情（LIVE 面板会刷出 run / 之后的 Proposal·Replay）。
+      const startAgentRun = startAgentRunActionFromHref(href);
+      if (startAgentRun) {
+        try {
+          const run = await client.startAgentRun(startAgentRun.workItemId);
+          const body = locale === "en-US"
+            ? `AI run queued: ${run.run_id}.`
+            : `AI 执行已排队：${run.run_id}。`;
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, body, actionId ?? "start_agent_run"));
+          window.location.hash = `/workitems/${startAgentRun.workItemId}`;
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "start_agent_run"));
         }
         input.onActionSettled?.();
         return;
