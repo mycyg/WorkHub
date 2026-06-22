@@ -4,12 +4,14 @@
 
 import type { CommandId } from "../command-palette.js";
 import { createAttentionView } from "./views/attention.js";
+import { createIntakeView } from "./views/intake.js";
 import { createPlaceholderView } from "./views/placeholder.js";
 import type { SpotlightCapabilityView } from "./view-context.js";
 
 // 已做成内联的能力工厂表。
 const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
-  approvals: createAttentionView
+  approvals: createAttentionView,
+  intake: createIntakeView
 };
 
 export function resolveCapabilityView(id: CommandId): SpotlightCapabilityView {
