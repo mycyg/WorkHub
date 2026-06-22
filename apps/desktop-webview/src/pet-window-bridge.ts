@@ -43,7 +43,16 @@ export type DesktopPetWindowBridge = {
   showPetWindow?: () => void | Promise<void>;
   hidePetWindow?: () => void | Promise<void>;
   sampleCursorNear?: () => PetCursorSampleResult | Promise<PetCursorSampleResult>;
+  // 动态穿透命中测试（仅 pet 窗口可用）：读原生光标在窗口客户区的坐标 + 切换 ignore_cursor_events。
+  cursorClientPosition?: () => Promise<PetCursorClientPosition>;
+  setClickThrough?: (ignore: boolean) => Promise<void>;
   diagnostics?: DesktopPetWindowBridgeDiagnostics;
+};
+
+export type PetCursorClientPosition = {
+  x: number;
+  y: number;
+  inside: boolean;
 };
 
 export type DesktopPetWindowBridgeDiagnostics = {
@@ -221,6 +230,13 @@ export function resolveDesktopPetWindowBridge(input: unknown = globalThis): Desk
           sampleCursorNear: async () => {
             const value = await invoke("sample_pet_cursor_near");
             return readCursorSample(value);
+          },
+          cursorClientPosition: async () => {
+            const value = await invoke("pet_cursor_client_position");
+            return readCursorClientPosition(value);
+          },
+          setClickThrough: async (ignore: boolean) => {
+            await invoke("set_pet_window_click_through", { ignore });
           }
         }
       : {
@@ -418,6 +434,16 @@ function readCursorSample(value: unknown): PetCursorSampleResult {
   }
   const sample = value as Extract<PetCursorSampleResult, object>;
   return sample.pointer ? sample : false;
+}
+
+function readCursorClientPosition(value: unknown): PetCursorClientPosition {
+  if (!value || typeof value !== "object") {
+    return { x: 0, y: 0, inside: false };
+  }
+  const raw = value as { x?: unknown; y?: unknown; inside?: unknown };
+  const x = typeof raw.x === "number" && Number.isFinite(raw.x) ? raw.x : 0;
+  const y = typeof raw.y === "number" && Number.isFinite(raw.y) ? raw.y : 0;
+  return { x, y, inside: raw.inside === true };
 }
 
 function readLookAxis(value: unknown): number | undefined {

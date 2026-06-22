@@ -1780,6 +1780,56 @@ test("pet window bridge resolves body/card modes and Tauri-like commands", async
   assert.equal(calls.at(-1), "scaled:set_pet_window_mode:card");
 });
 
+test("pet window bridge wires dynamic click-through (cursor probe + ignore toggle)", async () => {
+  const calls: Array<{ command: string; args: Record<string, unknown> | undefined }> = [];
+  const bridge = resolveDesktopPetWindowBridge({
+    __TAURI__: {
+      core: {
+        async invoke(command: string, args?: Record<string, unknown>) {
+          calls.push({ command, args });
+          if (command === "pet_cursor_client_position") {
+            return { x: 12, y: 34, inside: true };
+          }
+          return {};
+        }
+      },
+      window: {
+        getCurrentWindow() {
+          return { label: "pet" };
+        }
+      }
+    }
+  });
+
+  // 命中测试要用的客户区坐标按原值透传；穿透切换调用 set_pet_window_click_through 并带 ignore 实参。
+  assert.deepEqual(await bridge?.cursorClientPosition?.(), { x: 12, y: 34, inside: true });
+  await bridge?.setClickThrough?.(true);
+  await bridge?.setClickThrough?.(false);
+  assert.deepEqual(
+    calls.map((call) => call.command),
+    ["pet_cursor_client_position", "set_pet_window_click_through", "set_pet_window_click_through"]
+  );
+  assert.deepEqual(calls[1]?.args, { ignore: true });
+  assert.deepEqual(calls[2]?.args, { ignore: false });
+
+  // 坏返回值安全降级为「窗口外」——命中测试不会把缝隙误判成可点击区。
+  const degraded = resolveDesktopPetWindowBridge({
+    __TAURI__: {
+      core: {
+        async invoke() {
+          return null;
+        }
+      },
+      window: {
+        getCurrentWindow() {
+          return { label: "pet" };
+        }
+      }
+    }
+  });
+  assert.deepEqual(await degraded?.cursorClientPosition?.(), { x: 0, y: 0, inside: false });
+});
+
 test("pet window bridge rejects unavailable invoke and maps preferences", async () => {
   const bridge = resolveDesktopPetWindowBridge({
     __TAURI__: {

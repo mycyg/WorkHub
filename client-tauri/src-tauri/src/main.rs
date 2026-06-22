@@ -436,6 +436,53 @@ fn sample_pet_cursor_near(app: tauri::AppHandle) -> Result<PetWindowRuntimeComma
     }))
 }
 
+#[derive(Clone, Copy, serde::Serialize)]
+struct PetCursorClientPosition {
+    x: i32,
+    y: i32,
+    inside: bool,
+}
+
+// R7.1 桌宠动态穿透：返回原生光标在 pet 窗口客户区的逻辑坐标(CSS px)+ 是否落在窗口内。
+// webview 拿它配合 elementFromPoint 做命中测试，决定该不该让窗口点击穿透到下方应用。
+// 穿透开启时 webview 收不到任何鼠标事件，所以必须由原生侧采样光标，而不能靠 webview 的 mousemove。
+#[tauri::command]
+fn pet_cursor_client_position(app: tauri::AppHandle) -> Result<PetCursorClientPosition, String> {
+    let window = app
+        .get_webview_window("pet")
+        .ok_or_else(|| "pet window is not available".to_string())?;
+    let scale_factor = scale_factor_for_window(&window);
+    let cursor = app
+        .cursor_position()
+        .map_err(|error| format!("failed to read cursor position: {error}"))?;
+    let position = window
+        .outer_position()
+        .map_err(|error| format!("failed to read pet window position: {error}"))?;
+    let size = window
+        .inner_size()
+        .map_err(|error| format!("failed to read pet window size: {error}"))?;
+    let cursor = cursor.to_logical::<i32>(scale_factor);
+    let position = physical_position_to_logical(position, scale_factor);
+    let size = size.to_logical::<i32>(scale_factor);
+    let x = cursor.x - position.x;
+    let y = cursor.y - position.y;
+    let inside = x >= 0 && y >= 0 && x < size.width && y < size.height;
+    Ok(PetCursorClientPosition { x, y, inside })
+}
+
+// R7.1：切换 pet 窗口的 ignore_cursor_events(true=点击穿透到下方/false=接管点击)。由 webview 命中测试驱动，
+// 默认在缝隙处穿透、仅在猫猫实体与气泡上接管，替代旧的「整窗静态 pass_through」全有或全无开关。
+#[tauri::command]
+fn set_pet_window_click_through(app: tauri::AppHandle, ignore: bool) -> Result<(), String> {
+    let window = app
+        .get_webview_window("pet")
+        .ok_or_else(|| "pet window is not available".to_string())?;
+    window
+        .set_ignore_cursor_events(ignore)
+        .map_err(|error| format!("failed to set pet window click-through: {error}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn show_main_window(app: tauri::AppHandle) -> Result<ShellWindowControlPlan, String> {
     execute_window_control(
@@ -1209,6 +1256,8 @@ fn main() {
             start_pet_window_drag,
             save_pet_window_position,
             sample_pet_cursor_near,
+            pet_cursor_client_position,
+            set_pet_window_click_through,
             show_main_window,
             hide_main_window,
             focus_main_route,

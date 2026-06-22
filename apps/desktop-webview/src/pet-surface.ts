@@ -1204,6 +1204,51 @@ export async function bootDesktopPetSurface(
     });
   }, 250);
 
+  // R7.1 桌宠动态穿透：默认让 pet 窗口忽略鼠标（点击穿透到下方应用/报价单），仅当原生光标落在
+  // .wh-pet-body / .wh-pet-bubble / .wh-pet-menu（CSS pointer-events:auto）上时才接管点击。
+  // 穿透开启时 webview 收不到任何鼠标事件，故命中测试必须用「原生光标坐标 + elementFromPoint」，
+  // 不能靠 webview 内的 mousemove。仅在真正的 pet 窗口跑（主窗口的 Cuu 预览不触发）。
+  let clickThroughTimer: number | undefined;
+  let syncingClickThrough = false;
+  let lastClickThroughIgnore: boolean | undefined;
+  async function syncPetClickThrough() {
+    const probe = petWindowBridge?.cursorClientPosition;
+    const apply = petWindowBridge?.setClickThrough;
+    if (!probe || !apply) {
+      return;
+    }
+    const position = await Promise.resolve(probe()).catch(() => undefined);
+    if (!position) {
+      return;
+    }
+    let interactive = false;
+    if (position.inside) {
+      const doc = root.ownerDocument ?? document;
+      const hit = doc.elementFromPoint(position.x, position.y);
+      interactive = Boolean(hit && hit.closest(".wh-pet-body,.wh-pet-bubble,.wh-pet-menu"));
+    }
+    const ignore = !interactive;
+    if (ignore === lastClickThroughIgnore) {
+      return;
+    }
+    lastClickThroughIgnore = ignore;
+    await Promise.resolve(apply(ignore)).catch(() => {
+      // 失败则清掉缓存，下一拍重试，避免卡在错误状态。
+      lastClickThroughIgnore = undefined;
+    });
+  }
+  if (resolveDesktopSurface() === "pet" && petWindowBridge?.setClickThrough && petWindowBridge?.cursorClientPosition) {
+    clickThroughTimer = window.setInterval(() => {
+      if (syncingClickThrough) {
+        return;
+      }
+      syncingClickThrough = true;
+      void syncPetClickThrough().finally(() => {
+        syncingClickThrough = false;
+      });
+    }, 80);
+  }
+
   async function tickIdle() {
     const pointer = pointerSensor?.snapshot() ?? pointerSnapshot;
     const sampledPointer = await Promise.resolve(petWindowBridge?.sampleCursorNear?.()).catch(() => undefined);
@@ -1249,6 +1294,11 @@ export async function bootDesktopPetSurface(
     subscribed: runtime.subscribed,
     async dispose() {
       window.clearInterval(idleTimer);
+      if (clickThroughTimer !== undefined) {
+        window.clearInterval(clickThroughTimer);
+        // 释放时把 pet 窗口恢复为可交互，避免停留在「整窗穿透」状态。
+        void petWindowBridge?.setClickThrough?.(false).catch(() => {});
+      }
       cancelPendingFirstPaintSync?.();
       pointerSensor?.dispose();
       runStreamSubscription?.close();

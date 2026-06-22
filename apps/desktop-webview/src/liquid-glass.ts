@@ -68,6 +68,38 @@ export const liquidGlassCss = [
   ".wh-app-content .wh-proposal{background:transparent!important;padding:4px!important}",
   ".wh-app-content .wh-proposal-main,.wh-app-content .wh-proposal-rail{background:rgba(255,255,255,.5)!important;backdrop-filter:blur(30px) saturate(175%);-webkit-backdrop-filter:blur(30px) saturate(175%);border:1px solid rgba(255,255,255,.7)!important;border-radius:20px!important;box-shadow:0 26px 58px -28px rgba(70,54,140,.5),inset 0 1px 0 rgba(255,255,255,.7)!important}",
   ".wh-app-content .wh-proposal .wh-kicker{color:#8b7ed6!important}",
+  // —— R7.1 桌面布局重设计：玻璃浮动面板 + 填满主区 + 结构化侧栏（参考 AutoMedPPT 壳层，desktop-only） ——
+  // 壳层改为「带间距的浮动玻璃面板」：顶栏可拖拽、侧栏与内容各自成卡。
+  ".wh-app-layout{padding:14px!important;gap:14px!important;min-height:calc(100vh - 63px)!important}",
+  ".wh-app-topbar{-webkit-app-region:drag!important}",
+  ".wh-app-topbar a,.wh-app-topbar button,.wh-locale-toggle,.wh-app-nav,.wh-app-content{-webkit-app-region:no-drag!important}",
+  // 品牌 mark 内嵌「W」字母
+  ".wh-app-mark{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:26px!important;height:26px!important}",
+  ".wh-app-mark::after{content:\"W\"!important;color:#fff!important;font:800 13px/1 'M PLUS Rounded 1c','Segoe UI',sans-serif!important}",
+  // 侧栏成独立玻璃卡（满高悬浮）+ 两段式导航项（图标 + 文案）
+  ".wh-app-nav{border-radius:18px!important;border:1px solid rgba(255,255,255,.5)!important;padding:14px 12px!important}",
+  ".wh-app-nav a{justify-content:flex-start!important;gap:10px!important;padding:9px 12px!important;font-weight:700!important}",
+  ".wh-app-nav a::before{flex:0 0 auto!important;width:22px!important;text-align:center!important;font-size:15px!important;line-height:1!important}",
+  ".wh-app-nav a[data-wh-page-key=home]::before{content:\"📥\"}",
+  ".wh-app-nav a[data-wh-page-key=intake]::before{content:\"📝\"}",
+  ".wh-app-nav a[data-wh-page-key=approvals]::before{content:\"⚖️\"}",
+  ".wh-app-nav a[data-wh-page-key=workitem]::before{content:\"📋\"}",
+  ".wh-app-nav a[data-wh-page-key=proposal]::before{content:\"📑\"}",
+  ".wh-app-nav a[data-wh-page-key=replay]::before{content:\"⏱\"}",
+  ".wh-app-nav a[data-wh-page-key=cost]::before{content:\"💰\"}",
+  ".wh-app-nav a[data-wh-page-key=knowledge]::before{content:\"📚\"}",
+  ".wh-app-nav a[data-wh-page-key=skills]::before{content:\"✨\"}",
+  ".wh-app-nav a[data-wh-page-key=health]::before{content:\"💗\"}",
+  ".wh-app-nav a[data-wh-page-key=settings]::before{content:\"⚙️\"}",
+  // 填满主区：覆盖 goldPathCss 的 `.wh-desktop .wh-stage{max-width:660px;margin:0}`（660 左对齐 → 居中铺满，
+  // 消除右侧极光空洞 + 桌宠悬浮在空白处的「奇怪」观感）。仍保留可读行宽上限。
+  ".wh-desktop .wh-shell{background:transparent!important;padding:10px!important}",
+  ".wh-desktop .wh-stage{max-width:1080px!important;margin:0 auto!important;gap:16px!important}",
+  // 内容面板玻璃化（home/intake/审批/工作项 等 gold-path 页都落在 .wh-panel.wh-main 里）
+  ".wh-desktop .wh-panel{background:rgba(255,255,255,.5)!important;border:1px solid rgba(255,255,255,.65)!important;border-radius:20px!important;box-shadow:0 24px 56px -28px rgba(70,54,140,.45),inset 0 1px 0 rgba(255,255,255,.65)!important;backdrop-filter:blur(26px) saturate(170%)!important;-webkit-backdrop-filter:blur(26px) saturate(170%)!important}",
+  ".wh-desktop .wh-kicker{color:#8b7ed6!important}",
+  ".wh-desktop .wh-title{color:#2c2746!important;font-size:26px!important}",
+  ".wh-desktop .wh-grid{gap:14px!important;margin-top:16px!important}",
   // 滚动条
   ".wh-app-root ::-webkit-scrollbar{width:10px}",
   ".wh-app-root ::-webkit-scrollbar-thumb{background:rgba(90,69,216,.22);border-radius:8px;border:3px solid transparent;background-clip:content-box}"
