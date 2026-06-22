@@ -76,7 +76,7 @@ function detailHtml(vm: ProposalDetailVM, zh: boolean): string {
         <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-prop-deny>${zh ? "打回" : "Request changes"}</button>
       </div>`
       : `<div class="wh-spot-card-actions"><span class="wh-spot-chip wh-spot-chip--info">${escapeHtml((zh ? statusLabel[vm.status]?.[0] : statusLabel[vm.status]?.[1]) ?? vm.status)}</span></div>`;
-  return `<div class="wh-spot-dash">
+  return `<div class="wh-spot-dash ds-anim-fade-in">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-prop-back style="align-self:flex-start">${zh ? "← 返回列表" : "← Back"}</button>
     <div>
       <div class="wh-spot-card-head"><span class="wh-spot-chip wh-spot-chip--${riskTone}">${escapeHtml(m.risk.human_label)}</span><span class="wh-spot-change-path">${m.changes.length} ${zh ? "处改动" : "changes"}</span></div>

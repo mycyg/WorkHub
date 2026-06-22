@@ -37,7 +37,7 @@ function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const proposal = vm.latest_proposal
     ? `<div class="wh-spot-change"><div class="wh-spot-change-head"><span class="wh-spot-chip wh-spot-chip--info">${zh ? "最新改动" : "Latest change"}</span></div><div class="wh-spot-change-sum">${escapeHtml(vm.latest_proposal.title)}</div></div>`
     : "";
-  return `<div class="wh-spot-dash">
+  return `<div class="wh-spot-dash ds-anim-fade-in">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-wi-back style="align-self:flex-start">${zh ? "← 返回" : "← Back"}</button>
     <div>
       <div class="wh-spot-card-head"><span class="wh-spot-chip wh-spot-chip--approval">${escapeHtml(statusLabel(w.status, zh))}</span><span class="wh-spot-change-path">${escapeHtml(w.code)}</span></div>

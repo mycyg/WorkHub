@@ -63,7 +63,7 @@ function traceHtml(vm: AgentRunLiveVM, zh: boolean): string {
         )
         .join("")}</div>`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "还没有步骤" : "No steps yet"}</p>`;
-  return `<div class="wh-spot-dash"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-run-back style="align-self:flex-start">${zh ? "← 返回运行列表" : "← Back to runs"}</button>${header}${timeline}</div>`;
+  return `<div class="wh-spot-dash ds-anim-fade-in"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-run-back style="align-self:flex-start">${zh ? "← 返回运行列表" : "← Back to runs"}</button>${header}${timeline}</div>`;
 }
 
 export function createReplayView(): SpotlightCapabilityView {
