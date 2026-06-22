@@ -253,9 +253,12 @@ function agentRunHref(runId: string | undefined) {
 
 function cardFromAgentRunEvent(event: WorkHubEvent<unknown>, options: CuuLocaleOptions = {}): CuuCard {
   const runId = event.run_id ?? (event.topic.startsWith("run:") ? event.topic.slice("run:".length) : undefined);
-  const state = toCuuState(event);
   const dataKind = dataStringField(event.data, "kind");
   const dataStatus = dataStringField(event.data, "status");
+  // L#74 续：预算耗尽即便以 agent_run.step(data.status="budget_exhausted") 形式到达，也要和 budget.exhausted
+  // 事件型(toCuuState→asking_approval)与 cardFromBudgetNotice(状态映射 asking_approval)对齐——否则 toCuuState
+  // 按 event.type=agentRunStep 默认给 "thinking"，桌宠会"淡定思考"却又 urgent(下方 priority)，自相矛盾。
+  const state = dataStatus === "budget_exhausted" ? "asking_approval" : toCuuState(event);
   const finalEvent =
     event.type === eventTypes.agentRunFailed ||
     event.type === eventTypes.agentRunEscalated ||

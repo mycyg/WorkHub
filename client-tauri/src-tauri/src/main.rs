@@ -1204,7 +1204,12 @@ fn main() {
             write_cuu_qa_dom_report
         ])
         .run(tauri::generate_context!())
-        .expect("failed to run WorkHub Tauri shell");
+        // 启动失败（坏 tauri.conf.json / 缺 main·pet 窗口标签 / 缺图标 / 插件初始化失败等）原本只 panic 出
+        // 一句无上下文的 "failed to run WorkHub Tauri shell"。改为打印真实错误(Debug)再非零退出，便于诊断。
+        .unwrap_or_else(|error| {
+            eprintln!("WorkHub Tauri shell failed to start: {error:?}");
+            std::process::exit(1);
+        });
 }
 
 #[cfg(test)]
