@@ -105,3 +105,50 @@ test("R4.21 live runtime reuses EventSource and persists cursor", async () => {
   assert.equal(FakeEventSource.instances[1]?.url, "/api/push/stream/me?last_event_id=evt-r4-21");
   assert.equal(metrics.r4LiveLastOpenHadCursor, true);
 });
+
+test("rank10 live runtime gives up on a dead stream after a consecutive-error streak (and a real event resets it)", () => {
+  FakeEventSource.instances = [];
+  const metrics: Record<string, unknown> = {};
+  const runtime = createWebLiveRuntime({
+    eventTypes: ["proposal.merged"],
+    EventSourceCtor: FakeEventSource,
+    locationHref: "http://workhub.local/proposals/p-1",
+    readCursor: () => "",
+    persistCursor: () => true,
+    setMetric: (key, value) => {
+      metrics[key] = value;
+    },
+    setTimeoutFn: (handler) => {
+      handler();
+      return 1;
+    },
+    clearTimeoutFn: () => undefined,
+    onRefresh: async () => "refreshed",
+    onRefreshNotice: () => undefined,
+    onFatal: (error) => {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
+  });
+
+  runtime.syncTargets([{ key: "me", url: "/api/push/stream/me" }]);
+  const src = FakeEventSource.instances[0];
+  assert.ok(src);
+
+  // 7 次连续错误：还没到阈值，不放弃（浏览器继续自动重连）。
+  for (let i = 0; i < 7; i += 1) {
+    src.emit("error", { data: "" });
+  }
+  assert.equal(src.closed, false, "below the streak threshold the stream stays open");
+
+  // 来了一个真实事件 → 错误连击清零。
+  src.emit("proposal.merged", { data: JSON.stringify({ event_id: "evt-reset" }) });
+  for (let i = 0; i < 7; i += 1) {
+    src.emit("error", { data: "" });
+  }
+  assert.equal(src.closed, false, "a real event resets the streak so 7 more errors still don't give up");
+
+  // 第 8 次连续错误 → 判定流已死，主动关闭并记可观测标志。
+  src.emit("error", { data: "" });
+  assert.equal(src.closed, true, "8 consecutive errors closes the dead stream (no infinite silent retry)");
+  assert.equal(metrics.r4LiveStreamGaveUp, "me");
+});

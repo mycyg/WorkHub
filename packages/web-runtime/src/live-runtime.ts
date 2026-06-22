@@ -41,7 +41,13 @@ type LiveEventSourceEntry = {
   source: WebLiveEventSourceLike;
   target: WebLiveStreamTarget;
   openedUrl: string;
+  // rank10：连续错误计数(连上/收到事件即清零)。超阈值=会话很可能已失效——停止让浏览器对死流无限重连。
+  errorStreak: number;
 };
+
+// rank10：连续错误到此阈值(中间无任何成功连接/事件)即判定流已死、放弃自动重连。浏览器 EventSource
+// 约每 3s 重试，8 次≈持续 ~24s+ 失败，足以区分瞬时抖动与会话失效，又不至于过早放弃。
+const LIVE_STREAM_GIVE_UP_STREAK = 8;
 
 export function eventIdFromPayload(value: unknown): string | undefined {
   if (!value || typeof value !== "object") {
@@ -205,23 +211,35 @@ export function createWebLiveRuntime(options: WebLiveRuntimeOptions) {
     }
     const openedUrl = streamUrlWithCursor(target.url);
     const source = new EventSourceCtor(openedUrl, { withCredentials: true });
-    liveEventSources.set(target.url, { source, target, openedUrl });
+    const entry: LiveEventSourceEntry = { source, target, openedUrl, errorStreak: 0 };
+    liveEventSources.set(target.url, entry);
     liveEventSourceOpenCount += 1;
     setMetric("r4LiveLastOpenedStream", target.key);
     setMetric("r4LiveLastOpenedUrl", openedUrl);
     updateLiveRuntimeMetrics();
     source.addEventListener("connected", (event) => {
       noteLiveEventCursor(event, "connected");
+      entry.errorStreak = 0; // 连上即清零错误计数。
       const connected = Number(String((globalThis.document?.documentElement.dataset.r4LiveConnectedCount ?? "0"))) + 1;
       setMetric("r4LiveConnectedCount", connected);
       setMetric("r4LiveLastConnectedStream", target.key);
     });
     source.addEventListener("error", () => {
       setMetric("r4LiveLastErrorStream", target.key);
+      // rank10：浏览器原生 EventSource 会用同一个(可能已失效的)会话 cookie 无限自动重连——会话被吊销时
+      // 静默死锤。连续错误累计到阈值(中间无任何 connected/事件)判定会话失效，主动关闭止损。
+      entry.errorStreak += 1;
+      setMetric("r4LiveErrorStreak", entry.errorStreak);
+      if (entry.errorStreak >= LIVE_STREAM_GIVE_UP_STREAK) {
+        // 主动关闭(停止浏览器对死流的无限自动重连)，并记一个可观测标志供外壳渲染「实时更新已断·刷新重连」。
+        setMetric("r4LiveStreamGaveUp", target.key);
+        closeLiveEventSource(target.url);
+      }
     });
     for (const eventType of options.eventTypes) {
       source.addEventListener(eventType, (event) => {
         noteLiveEventCursor(event, "payload");
+        entry.errorStreak = 0; // 收到任意事件即清零错误计数。
         scheduleLiveRouteRefresh(eventType, target.key);
       });
     }
