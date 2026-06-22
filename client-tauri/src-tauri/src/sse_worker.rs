@@ -1,6 +1,6 @@
 use futures_util::StreamExt;
 use std::sync::{Arc, Mutex};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tokio::time::{sleep, Duration};
 
 use crate::config::WorkHubShellConfig;
@@ -17,6 +17,12 @@ use crate::sse::{
 };
 
 pub const DEFAULT_SSE_RECONNECT_DELAY_MS: u64 = 5_000;
+
+/// 共享给 SSE worker 的运行时客户端令牌。webview 首启 bootstrap 拿到设备令牌后经 `set_client_token`
+/// 命令写入；worker 每次(重)连前重读它注入鉴权头——故令牌在启动后才到达也能被下一拍重连用上。
+/// 修复：config 文件/env 通常无 token，全局 /api/push/stream 之前裸连→401→每 5s 重连永远 401(Cuu「重连中」)。
+#[derive(Default)]
+pub struct ShellClientToken(pub Mutex<Option<String>>);
 
 pub fn spawn_default_shell_sse_workers(
     app: tauri::AppHandle,
@@ -78,7 +84,11 @@ async fn run_sse_subscription(
             None,
         );
 
-        match open_sse_response(&client, &subscription).await {
+        // 每次(重)连前重读共享令牌：启动时通常没有，webview bootstrap 后写入→下一拍重连即带上→200。
+        let token = app
+            .try_state::<ShellClientToken>()
+            .and_then(|state| state.0.lock().ok().and_then(|guard| guard.clone()));
+        match open_sse_response(&client, &subscription, token.as_deref()).await {
             Ok(response) => {
                 emit_sse_status(&app, &subscription, ShellSseConnectionState::Open, None);
                 if let Err(message) =
@@ -110,12 +120,20 @@ async fn run_sse_subscription(
 async fn open_sse_response(
     client: &reqwest::Client,
     subscription: &ShellSseSubscription,
+    token: Option<&str>,
 ) -> Result<reqwest::Response, String> {
     let mut request = client
         .get(&subscription.url)
         .header(reqwest::header::ACCEPT, "text/event-stream");
     for header in &subscription.headers {
         request = request.header(&header.name, &header.value);
+    }
+    // 注入运行时设备令牌（webview bootstrap 后经 set_client_token 写入）。config 文件/env 通常无 token，
+    // 故 subscription.headers 不含鉴权头→裸连 401；带上即 200，Cuu 上线。
+    if let Some(token) = token {
+        request = request
+            .header(crate::http::WORKHUB_CLIENT_TOKEN_HEADER, token)
+            .header(crate::http::LEGACY_CLIENT_TOKEN_HEADER, token);
     }
 
     let response = request

@@ -110,21 +110,39 @@ function resolveDesktopApiBase(): string {
 // 落 localStorage；之后 createApiClient 的 getClientToken 每请求实时读它发 X-YQGL-Client-Token → 鉴权 + 同源
 // 守卫双通过，goldPath 返回 LIVE 数据（不再静默回退 fixture）、所有 mutation 不再被跨站拒绝。
 // 失败(密码模式 404 / 后端离线)静默：上层取数失败会显示连接错误，不阻断渲染。
-async function ensureDesktopClientToken(client: BrowserApiClient): Promise<void> {
-  if (clientToken()) {
-    return;
+// R8：把设备令牌推给 Rust 壳层（managed ShellClientToken），供其 SSE worker 每次重连注入鉴权头 →
+// 全局 /api/push/stream 不再 401、Cuu 上线（Rust 用 reqwest 开全局流，拿不到 webview 的 localStorage 令牌）。
+function pushClientTokenToShell(token: string): void {
+  const tauri = (globalThis as {
+    __TAURI__?: {
+      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+    };
+  }).__TAURI__;
+  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
+  if (typeof invoke === "function") {
+    void invoke("set_client_token", { token }).catch(() => undefined);
   }
-  try {
-    const result = await client.bootstrapDesktop({
-      nickname: "WorkHub Desktop",
-      device_name: "WorkHub Desktop",
-      platform: "desktop"
-    });
-    if (result?.client_token) {
-      window.localStorage.setItem("workhub_client_token", result.client_token);
+}
+
+async function ensureDesktopClientToken(client: BrowserApiClient): Promise<void> {
+  if (!clientToken()) {
+    try {
+      const result = await client.bootstrapDesktop({
+        nickname: "WorkHub Desktop",
+        device_name: "WorkHub Desktop",
+        platform: "desktop"
+      });
+      if (result?.client_token) {
+        window.localStorage.setItem("workhub_client_token", result.client_token);
+      }
+    } catch {
+      // 密码模式(404) / 后端不可达：保持无 token；上层取数失败会显示连接错误。
     }
-  } catch {
-    // 密码模式(404) / 后端不可达：保持无 token；上层取数失败会显示连接错误。
+  }
+  const token = clientToken();
+  if (token) {
+    pushClientTokenToShell(token);
   }
 }
 
@@ -155,7 +173,9 @@ function mountCommandPalette(shellRoot: HTMLElement, locale: WorkHubLocale): voi
   const launcher = doc.createElement("button");
   launcher.type = "button";
   launcher.className = "wh-ds wh-cmd-launcher";
-  launcher.innerHTML = `<kbd>⌘K</kbd><span>${locale === "zh-CN" ? "跟 Cuu 说 · 直达任何能力" : "Ask Cuu · jump anywhere"}</span>`;
+  const launcherSearchIcon =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/></svg>';
+  launcher.innerHTML = `<span class="wh-cmd-launcher-icon">${launcherSearchIcon}</span><span class="wh-cmd-launcher-text">${locale === "zh-CN" ? "搜索 · 跟 Cuu 说，直达任何能力" : "Search · ask Cuu, jump anywhere"}</span><kbd>⌘K</kbd>`;
   shellRoot.appendChild(launcher);
 
   const overlay = doc.createElement("div");

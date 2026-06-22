@@ -112,8 +112,11 @@ export const desktopPetSurfaceCss = [
   "body{font-family:\"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",\"Noto Sans CJK SC\",sans-serif;color:#222b38;background:rgba(0,0,0,0)!important}",
   ".wh-pet-surface{position:relative;display:block;box-sizing:border-box;width:var(--wh-pet-window-w,260px);height:var(--wh-pet-window-h,340px);border:0;background:rgba(0,0,0,0)!important;box-shadow:none;pointer-events:none;overflow:hidden;opacity:var(--wh-pet-opacity,1)}",
   ".wh-pet-surface[data-pet-window-mode=card]{width:var(--wh-pet-window-w,520px);height:var(--wh-pet-window-h,720px)}",
-  ".wh-pet-body{position:absolute;right:calc(4px * var(--wh-pet-scale,1));bottom:calc(4px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1));display:flex;align-items:flex-end;justify-content:center;border:0;background:rgba(0,0,0,0)!important;box-shadow:none;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:auto;opacity:var(--wh-pet-hide-opacity,1);transform:translate(calc(var(--wh-pet-avoid-x-px,0px) + var(--wh-pet-hide-x-px,0px)),calc(var(--wh-pet-avoid-y-px,0px) + var(--wh-pet-hide-y-px,0px))) scale(var(--wh-pet-hide-scale,1));transition:transform 160ms ease-out,opacity 160ms ease-out}",
-  ".wh-pet-body::after{content:\"\";position:absolute;inset:0;z-index:3;background:rgba(0,0,0,0);pointer-events:auto}",
+  ".wh-pet-body{position:absolute;right:calc(4px * var(--wh-pet-scale,1));bottom:calc(4px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1));display:flex;align-items:flex-end;justify-content:center;border:0;background:rgba(0,0,0,0)!important;box-shadow:none;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:none;opacity:var(--wh-pet-hide-opacity,1);transform:translate(calc(var(--wh-pet-avoid-x-px,0px) + var(--wh-pet-hide-x-px,0px)),calc(var(--wh-pet-avoid-y-px,0px) + var(--wh-pet-hide-y-px,0px))) scale(var(--wh-pet-hide-scale,1));transition:transform 160ms ease-out,opacity 160ms ease-out}",
+  // R8 穿透修复：命中区从整窗(inset:0,占 94%)收成猫身轮廓(上留 22% 头顶空、左右各留 18% 边)，
+  // 配合 .wh-pet-body{pointer-events:none}：只有猫身这块捕获(可点可拖)，四周透明区 elementFromPoint
+  // 落到 none 的底层→命中测试判非交互→ignore_cursor_events(true)→点击穿透到下方窗口。
+  ".wh-pet-body::after{content:\"\";position:absolute;inset:22% 18% 0 18%;z-index:3;background:rgba(0,0,0,0);pointer-events:auto}",
   ".wh-pet-body:active{cursor:grabbing}",
   ".wh-pet-surface[data-pet-hovered=true] .wh-pet-body{cursor:pointer}",
   ".wh-pet-surface[data-pet-dragging=true] .wh-pet-body{cursor:grabbing}",

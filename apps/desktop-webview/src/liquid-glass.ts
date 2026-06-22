@@ -76,21 +76,10 @@ export const liquidGlassCss = [
   // 品牌 mark 内嵌「W」字母
   ".wh-app-mark{display:inline-flex!important;align-items:center!important;justify-content:center!important;width:26px!important;height:26px!important}",
   ".wh-app-mark::after{content:\"W\"!important;color:#fff!important;font:800 13px/1 'M PLUS Rounded 1c','Segoe UI',sans-serif!important}",
-  // 侧栏成独立玻璃卡（满高悬浮）+ 两段式导航项（图标 + 文案）
-  ".wh-app-nav{border-radius:18px!important;border:1px solid rgba(255,255,255,.5)!important;padding:14px 12px!important}",
-  ".wh-app-nav a{justify-content:flex-start!important;gap:10px!important;padding:9px 12px!important;font-weight:700!important}",
-  ".wh-app-nav a::before{flex:0 0 auto!important;width:22px!important;text-align:center!important;font-size:15px!important;line-height:1!important}",
-  ".wh-app-nav a[data-wh-page-key=home]::before{content:\"📥\"}",
-  ".wh-app-nav a[data-wh-page-key=intake]::before{content:\"📝\"}",
-  ".wh-app-nav a[data-wh-page-key=approvals]::before{content:\"⚖️\"}",
-  ".wh-app-nav a[data-wh-page-key=workitem]::before{content:\"📋\"}",
-  ".wh-app-nav a[data-wh-page-key=proposal]::before{content:\"📑\"}",
-  ".wh-app-nav a[data-wh-page-key=replay]::before{content:\"⏱\"}",
-  ".wh-app-nav a[data-wh-page-key=cost]::before{content:\"💰\"}",
-  ".wh-app-nav a[data-wh-page-key=knowledge]::before{content:\"📚\"}",
-  ".wh-app-nav a[data-wh-page-key=skills]::before{content:\"✨\"}",
-  ".wh-app-nav a[data-wh-page-key=health]::before{content:\"💗\"}",
-  ".wh-app-nav a[data-wh-page-key=settings]::before{content:\"⚙️\"}",
+  // R8 搜索框为核心：移除旧侧栏（连同那一片 low emoji 图标）；导航全部从顶部命令搜索框（⌘K / 点搜索条）延展。
+  // 整体交互与搜索框统一为 Apple 玻璃风；侧栏隐藏后主区铺满整窗。
+  ".wh-app-nav{display:none!important}",
+  ".wh-app-layout{grid-template-columns:minmax(0,1fr)!important}",
   // 填满主区：覆盖 goldPathCss 的 `.wh-desktop .wh-stage{max-width:660px;margin:0}`（660 左对齐 → 居中铺满，
   // 消除右侧极光空洞 + 桌宠悬浮在空白处的「奇怪」观感）。仍保留可读行宽上限。
   ".wh-desktop .wh-shell{background:transparent!important;padding:10px!important}",

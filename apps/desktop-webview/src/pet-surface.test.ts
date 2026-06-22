@@ -715,7 +715,9 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(idle.css, /\.wh-pet-menu-row button\{[^}]*flex:1 1 0;[^}]*padding-left:6px;padding-right:6px;[^}]*overflow:hidden;text-overflow:ellipsis/u);
   assert.match(idle.html, /class="wh-cuu-cat-live2d-frame"/u);
   assert.match(idle.html, /cuu\/live2d\/hijiki\/cuu-hijiki\.html/u);
-  assert.match(idle.css, /\.wh-pet-body::after\{content:"";position:absolute;inset:0;z-index:3/u);
+  // R8 穿透修复：命中区收成猫身轮廓(inset:22% 18% 0 18%)，body 本身 pointer-events:none，四周透明区可穿透。
+  assert.match(idle.css, /\.wh-pet-body::after\{content:"";position:absolute;inset:22% 18% 0 18%;z-index:3[^}]*pointer-events:auto/u);
+  assert.match(idle.css, /\.wh-pet-body\{[^}]*pointer-events:none/u);
   assert.match(idle.css, /\.wh-cuu-cat-live2d-frame\{[^}]*pointer-events:none/u);
   // R7.1 桌宠穿透契约：气泡容器穿透(none)，惟真可点子元素 auto —— 浅蓝空白处可点穿到下方窗口。
   assert.match(idle.css, /\.wh-pet-bubble\{[^}]*pointer-events:none/u);

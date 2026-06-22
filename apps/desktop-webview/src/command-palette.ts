@@ -261,8 +261,10 @@ export const commandPaletteCss = [
   ".wh-cmd-empty{padding:18px 8px;text-align:center}",
   // 命令面板浮层（Spotlight 风：顶部居中召出）+ 背景遮罩。
   ".wh-cmd-backdrop{position:fixed;inset:0;z-index:70;display:flex;align-items:flex-start;justify-content:center;padding:12vh 24px 24px;box-sizing:border-box;background:rgba(40,30,70,.18);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}",
-  // 常驻召唤入口（玻璃小药丸，点它或按 ⌘K 召出面板）。
-  ".wh-cmd-launcher{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:55;display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ds-glass-border);background:var(--ds-glass-strong);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);border-radius:var(--ds-radius-pill);box-shadow:var(--ds-shadow-2);color:var(--ds-ink-soft);font:600 12.5px/1 var(--ds-font);padding:8px 14px;cursor:pointer;transition:transform var(--ds-dur-fast) var(--ds-spring),box-shadow var(--ds-dur-fast)}",
-  ".wh-cmd-launcher:hover{transform:translateX(-50%) translateY(1px)}.wh-cmd-launcher:active{transform:translateX(-50%) scale(.97)}",
-  ".wh-cmd-launcher kbd{font:700 11px/1 var(--ds-font);color:var(--ds-accent);background:var(--ds-accent-soft);border-radius:6px;padding:3px 6px}"
+  // 常驻搜索条（全 app 交互中心：点它或按 ⌘K 召出命令面板）。顶部居中、玻璃风、像一根搜索栏。
+  ".wh-cmd-launcher{position:fixed;top:11px;left:50%;transform:translateX(-50%);z-index:55;-webkit-app-region:no-drag;display:inline-flex;align-items:center;gap:9px;width:min(460px,46vw);box-sizing:border-box;border:1px solid var(--ds-glass-border);background:var(--ds-glass-strong);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);border-radius:var(--ds-radius-pill);box-shadow:var(--ds-shadow-2);color:var(--ds-ink-muted);font:500 13px/1 var(--ds-font);padding:9px 14px;cursor:text;transition:transform var(--ds-dur-fast) var(--ds-spring),box-shadow var(--ds-dur-fast),border-color var(--ds-dur-fast)}",
+  ".wh-cmd-launcher:hover{border-color:var(--ds-accent);box-shadow:var(--ds-shadow-3)}.wh-cmd-launcher:active{transform:translateX(-50%) scale(.99)}",
+  ".wh-cmd-launcher-icon{display:inline-flex;width:16px;height:16px;flex:0 0 auto;color:var(--ds-ink-muted)}.wh-cmd-launcher-icon svg{width:16px;height:16px}",
+  ".wh-cmd-launcher-text{flex:1 1 auto;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-cmd-launcher kbd{margin-left:auto;flex:0 0 auto;font:700 11px/1 var(--ds-font);color:var(--ds-accent);background:var(--ds-accent-soft);border-radius:6px;padding:3px 6px}"
 ].join("");

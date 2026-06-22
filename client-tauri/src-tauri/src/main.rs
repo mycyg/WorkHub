@@ -15,7 +15,7 @@ use workhub_client_tauri::pet_window::{
     PetWindowSettings, DEFAULT_PET_CURSOR_NEAR_RADIUS,
 };
 use workhub_client_tauri::single_instance::single_instance_plan_from_args_for_locale;
-use workhub_client_tauri::sse_worker::spawn_default_shell_sse_workers;
+use workhub_client_tauri::sse_worker::{spawn_default_shell_sse_workers, ShellClientToken};
 use workhub_client_tauri::tray::{
     tray_menu_action_plan_by_id_for_locale, tray_tooltip, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID,
     TRAY_OPEN_SETTINGS_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID, TRAY_SHOW_MAIN_ID,
@@ -468,6 +468,20 @@ fn pet_cursor_client_position(app: tauri::AppHandle) -> Result<PetCursorClientPo
     let y = cursor.y - position.y;
     let inside = x >= 0 && y >= 0 && x < size.width && y < size.height;
     Ok(PetCursorClientPosition { x, y, inside })
+}
+
+// R8：webview 把首启 bootstrap 拿到的设备令牌(localStorage workhub_client_token)推给 Rust 壳层，
+// 供 SSE worker 每次重连注入鉴权头 → 全局 /api/push/stream 不再 401、Cuu 上线。空串视为清空。
+#[tauri::command]
+fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
+    if let Ok(mut guard) = state.0.lock() {
+        let trimmed = token.trim();
+        *guard = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        };
+    }
 }
 
 // R7.1：切换 pet 窗口的 ignore_cursor_events(true=点击穿透到下方/false=接管点击)。由 webview 命中测试驱动，
@@ -1197,6 +1211,8 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .manage(Mutex::new(PetWindowRuntimeState::default()))
         .manage(Mutex::new(WorkHubLocale::default()))
+        // R8：webview bootstrap 拿到的设备令牌经 set_client_token 写入此处，供 Rust SSE worker 鉴权（修 Cuu 重连中）。
+        .manage(ShellClientToken::default())
         .on_window_event(|window, event| {
             // findings[#132/H15]：主窗口带 OS 关闭按钮(tauri.conf decorations:true)，Tauri v2 默认关闭即销毁 webview，
             // 之后托盘/深链/通知再想唤起主窗都会因 get_webview_window("main")==None 而失败（execute_window_control 报错），
@@ -1258,6 +1274,7 @@ fn main() {
             sample_pet_cursor_near,
             pet_cursor_client_position,
             set_pet_window_click_through,
+            set_client_token,
             show_main_window,
             hide_main_window,
             focus_main_route,
