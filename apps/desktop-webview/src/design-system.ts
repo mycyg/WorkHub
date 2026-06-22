@@ -9,7 +9,8 @@
 // 设计 token（挂在 .wh-ds 上，作用域隔离，不污染全局）。
 const tokens = `.wh-ds{
   --ds-font: -apple-system, "SF Pro Text", "SF Pro Display", "PingFang SC", "M PLUS Rounded 1c", "Noto Sans SC", system-ui, sans-serif;
-  --ds-ink: #1f1d2b; --ds-ink-soft: #43405a; --ds-ink-muted: #6f6a8c; --ds-ink-faint: #9b96b8;
+  /* rank12：muted/faint 之前在半透明玻璃上低于 WCAG AA(尤 faint≈2.9:1)——整体压暗一档提对比，保留层级 ink>soft>muted>faint */
+  --ds-ink: #1f1d2b; --ds-ink-soft: #403c57; --ds-ink-muted: #57536f; --ds-ink-faint: #6f6a8c;
   --ds-accent: #5a45d8; --ds-accent-2: #b57bff; --ds-accent-soft: rgba(124,131,255,.16);
   --ds-success: #1faf86; --ds-success-soft: rgba(31,175,134,.16);
   --ds-warn: #d98a1f; --ds-warn-soft: rgba(217,138,31,.16);

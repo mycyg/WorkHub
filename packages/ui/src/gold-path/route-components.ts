@@ -2536,7 +2536,7 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
         </div>
         <form class="wh-r4-project-create" data-r8-project-create-form="true">
           <input type="text" data-r8-project-name-input="true" name="project_name" autocomplete="off" maxlength="128" placeholder="${escapeHtml(routeT(locale, "projects.namePlaceholder"))}" aria-label="${escapeHtml(routeT(locale, "projects.new"))}" />
-          <a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="create_named_project" data-method="POST" data-r8-project-new="true" data-r8-project-create="true">${escapeHtml(routeT(locale, "projects.create"))}</a>
+          <a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" role="button" data-action-id="create_named_project" data-method="POST" data-r8-project-new="true" data-r8-project-create="true">${escapeHtml(routeT(locale, "projects.create"))}</a>
         </form>
       </header>
       <section class="wh-card wh-r4-route-card" data-r8-projects-list="true">

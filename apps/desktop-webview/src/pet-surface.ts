@@ -1537,7 +1537,7 @@ function renderDesktopPetBubble(input: {
   const tone = effectiveState ? cuuBubbleKindForState(effectiveState) : undefined;
   const emotionAttrs = emotion && tone ? ` data-pet-bubble-emotion="${emotion}" data-pet-bubble-tone="${tone}"` : "";
   const emotionLabel = emotion && !compact ? `<span class="wh-pet-emotion">${escapeHtml(petEmotionLabel(emotion, locale))}</span>` : "";
-  return `<aside class="wh-pet-bubble" data-pet-bubble="true"${transientAttrs} ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}${emotionAttrs}${payloadAttrs}>
+  return `<aside class="wh-pet-bubble" data-pet-bubble="true" role="status" aria-live="polite" aria-atomic="true"${transientAttrs} ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}${emotionAttrs}${payloadAttrs}>
     <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${emotionLabel}${kind}${priority}</div>
     ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
     ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}

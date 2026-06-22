@@ -69,8 +69,11 @@ function renderLauncherGrid(
     .map(({ command }, index) => {
       const badge = badges[command.id];
       const badgeHtml = typeof badge === "number" && badge > 0 ? `<span class="wh-spot-cap-badge">${badge}</span>` : "";
-      return `<button type="button" class="wh-spot-cap" data-spot-cap="${command.id}" data-active="${index === 0 ? "true" : "false"}">
-        <span class="wh-spot-cap-icon">${command.icon}</span>
+      const active = index === 0;
+      // rank5：组合框/列表框 ARIA——每张能力卡是 option、可读 aria-selected；输入框(combobox)
+      // 用 aria-activedescendant 指向当前项，箭头键移动时屏幕阅读器能播报，无需移动 DOM 焦点。
+      return `<button type="button" id="wh-spot-opt-${index}" role="option" aria-selected="${active ? "true" : "false"}" class="wh-spot-cap" data-spot-cap="${command.id}" data-active="${active ? "true" : "false"}">
+        <span class="wh-spot-cap-icon" aria-hidden="true">${command.icon}</span>
         <span class="wh-spot-cap-text">
           <span class="wh-spot-cap-label">${escapeHtml(command.label[loc])}</span>
           <span class="wh-spot-cap-hint">${escapeHtml(command.hint[loc])}</span>
@@ -79,7 +82,7 @@ function renderLauncherGrid(
       </button>`;
     })
     .join("");
-  return `${hello}<div class="wh-spot-grid ds-stagger">${cards}</div>`;
+  return `${hello}<div class="wh-spot-grid ds-stagger" id="wh-spot-listbox" role="listbox" aria-label="${zh ? "能力列表" : "Capabilities"}">${cards}</div>`;
 }
 
 export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
@@ -102,7 +105,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         <button type="button" class="wh-spot-back" data-spot-back aria-label="${zh ? "返回" : "Back"}">${BACK_ICON}</button>
         <div class="wh-spot-field-wrap">
           <span class="wh-spot-field-icon">${SEARCH_ICON}</span>
-          <input class="wh-spot-field" type="search" data-spot-input placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}" />
+          <input class="wh-spot-field" type="search" data-spot-input role="combobox" aria-expanded="true" aria-controls="wh-spot-listbox" aria-autocomplete="list" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}" />
         </div>
         <div class="wh-spot-titlewrap">
           <span class="wh-spot-title" data-spot-title></span>
@@ -153,6 +156,16 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     resizeRaf = window.requestAnimationFrame(applyResize);
   };
 
+  // rank5：网格(重)渲后让 combobox 输入框的 aria-activedescendant 指向首个(默认高亮)能力项；无项则清除。
+  const syncLauncherActiveDescendant = () => {
+    const first = body.querySelector<HTMLElement>("[data-spot-cap]");
+    if (first?.id) {
+      input2.setAttribute("aria-activedescendant", first.id);
+    } else {
+      input2.removeAttribute("aria-activedescendant");
+    }
+  };
+
   const renderLauncher = () => {
     if (disposeView) {
       disposeView();
@@ -160,6 +173,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     }
     box.dataset.mode = "launcher";
     body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0);
+    syncLauncherActiveDescendant();
     requestResize();
   };
 
@@ -231,6 +245,9 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     box.querySelector(".wh-spot-toast")?.remove();
     const el = doc.createElement("div");
     el.className = `wh-spot-toast wh-spot-toast--${tone}`;
+    // rank6：动作回执/错误要被屏幕阅读器播报——错误用 assertive(alert)，成功/提示用 polite(status)。
+    el.setAttribute("role", tone === "error" ? "alert" : "status");
+    el.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
     el.textContent = message;
     box.appendChild(el);
     if (toastTimer) {
@@ -256,6 +273,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     } else if (!nextCap) {
       // launcher 内查询变化：只换网格，保输入焦点。
       body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0);
+      syncLauncherActiveDescendant();
       requestResize();
     }
   };
@@ -298,9 +316,16 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     }
     const nextIndex = (current + delta + caps.length) % caps.length;
     caps.forEach((c, i) => {
-      c.dataset.active = String(i === nextIndex);
+      const on = i === nextIndex;
+      c.dataset.active = String(on);
+      // rank5：同步 aria-selected + 让 combobox 输入框的 aria-activedescendant 指向当前项，屏幕阅读器随箭头播报。
+      c.setAttribute("aria-selected", on ? "true" : "false");
     });
-    caps[nextIndex]?.scrollIntoView({ block: "nearest" });
+    const activeCap = caps[nextIndex];
+    if (activeCap?.id) {
+      input2.setAttribute("aria-activedescendant", activeCap.id);
+    }
+    activeCap?.scrollIntoView({ block: "nearest" });
   };
 
   input2.addEventListener("keydown", (event) => {
@@ -361,6 +386,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       badges = { ...badges, ...next };
       if (!openCapabilityId(state)) {
         body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0);
+        syncLauncherActiveDescendant();
         requestResize();
       }
     },

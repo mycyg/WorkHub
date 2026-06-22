@@ -36,7 +36,9 @@ export const spotlightCss = [
   ".wh-spot-cap:hover,.wh-spot-cap[data-active=\"true\"]{background:rgba(255,255,255,.72);border-color:var(--ds-glass-border)}",
   ".wh-spot-cap:hover{transform:translateY(-1px);box-shadow:var(--ds-shadow-1)}",
   ".wh-spot-cap:active{transform:translateY(0) scale(.975)}",
-  ".wh-spot-cap[data-active=\"true\"]{box-shadow:inset 0 0 0 1px var(--ds-accent-soft)}",
+  ".wh-spot-cap[data-active=\"true\"]{box-shadow:inset 0 0 0 2px var(--ds-accent)}",
+  // rank17：键盘用户可见焦点环——Tab/聚焦任意盒内可交互元素都给清晰的 accent outline(鼠标点击不触发)。
+  ".wh-spot :focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px;border-radius:var(--ds-radius-sm)}",
   ".wh-spot-cap-icon{display:inline-flex;width:24px;height:24px;flex:0 0 auto;color:var(--ds-accent)}.wh-spot-cap-icon svg{width:24px;height:24px}",
   ".wh-spot-cap-text{display:flex;flex-direction:column;gap:1px;min-width:0}",
   ".wh-spot-cap-label{font:600 13.5px/1.25 var(--ds-font);color:var(--ds-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
