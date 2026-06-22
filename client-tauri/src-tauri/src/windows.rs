@@ -54,7 +54,9 @@ pub fn main_window_plan() -> ShellWindowPlan {
         resizable: true,
         visible: true,
         focus: true,
-        transparent: false,
+        // R7 真·液态玻璃：主窗口透明，配合 main.rs 的 window-vibrancy(macOS vibrancy / Windows acrylic)
+        // 让玻璃穿透看到桌面。前端 liquid-glass.ts 把 app 底色改半透明放行 OS 毛玻璃。
+        transparent: true,
         decorations: true,
         always_on_top: false,
         skip_taskbar: false,
@@ -115,7 +117,8 @@ mod tests {
 
         assert_eq!(main.label, "main");
         assert_eq!(main.route, "/");
-        assert_eq!(main.transparent, false);
+        // R7 真·液态玻璃：主窗口现为透明（配合 window-vibrancy 穿透看桌面）。
+        assert_eq!(main.transparent, true);
         assert_eq!(main.decorations, true);
         assert_eq!(main.always_on_top, false);
         assert_eq!(main.skip_taskbar, false);

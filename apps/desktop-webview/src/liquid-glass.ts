@@ -10,17 +10,21 @@ export const liquidGlassHeadHtml =
   "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800;900&family=Noto+Sans+SC:wght@400;500;700;900&display=swap\">";
 
 const auroraBackground = [
-  "radial-gradient(900px 620px at 10% 6%,rgba(176,196,255,.92),transparent 60%)",
-  "radial-gradient(820px 700px at 90% 10%,rgba(255,196,216,.85),transparent 55%)",
-  "radial-gradient(900px 820px at 78% 96%,rgba(184,255,224,.82),transparent 55%)",
-  "radial-gradient(760px 720px at 16% 95%,rgba(222,204,255,.85),transparent 55%)",
-  "linear-gradient(160deg,#edeffb,#f6eff6)"
+  // R7 真·液态玻璃：底色改半透明，让窗口透明 + OS 毛玻璃(vibrancy/acrylic)穿透看到桌面，
+  // 同时保留极光色调叠加（彩色玻璃 + 模糊桌面）。alpha 调低=更穿透，调高=更不透。
+  "radial-gradient(900px 620px at 10% 6%,rgba(176,196,255,.50),transparent 60%)",
+  "radial-gradient(820px 700px at 90% 10%,rgba(255,196,216,.45),transparent 55%)",
+  "radial-gradient(900px 820px at 78% 96%,rgba(184,255,224,.42),transparent 55%)",
+  "radial-gradient(760px 720px at 16% 95%,rgba(222,204,255,.45),transparent 55%)",
+  "linear-gradient(160deg,rgba(237,239,251,.30),rgba(246,239,246,.30))"
 ].join(",");
 
 export const liquidGlassCss = [
   // 极光底 + 圆体字 + 玻璃配色变量(覆盖 app-shell 的 --wh-app-* 默认蓝灰)
   `.wh-app-root{font-family:'M PLUS Rounded 1c','Noto Sans SC','Segoe UI',sans-serif!important;color:#2c2746;background:${auroraBackground}!important;background-attachment:fixed;--wh-app-ink:#2c2746;--wh-app-muted:#6b6488;--wh-app-blue:#5a45d8;--wh-app-green:#1faf86;--wh-app-coral:#e85d70;--wh-app-line:rgba(255,255,255,.6)}`,
-  "body{margin:0;background:#edeffb}",
+  // 半透明薄底而非全透明：让 OS 毛玻璃(vibrancy/acrylic)穿透看到桌面，同时保证内容未渲染(如后端不可达)时
+  // 窗口仍可见(不会整窗透明消失)。alpha 调低=更穿透，调高=更不透。
+  "html,body{margin:0;background:rgba(240,242,252,.20)!important}",
   // 顶栏磨砂玻璃
   ".wh-app-topbar{background:rgba(255,255,255,.32)!important;backdrop-filter:blur(40px) saturate(180%)!important;-webkit-backdrop-filter:blur(40px) saturate(180%)!important;border-bottom:1px solid rgba(255,255,255,.5)!important}",
   ".wh-app-mark{background:conic-gradient(from 130deg,#7c83ff,#34c79a,#ff9bb0,#7c83ff)!important;box-shadow:0 10px 22px -6px rgba(124,131,255,.7)!important;border-radius:10px!important}",

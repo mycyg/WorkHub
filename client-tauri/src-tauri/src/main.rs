@@ -1186,6 +1186,21 @@ fn main() {
                 spawn_default_shell_sse_workers(app.handle().clone(), shell_config)
                     .map_err(|error| format!("failed to start WorkHub SSE worker: {error:?}"))?;
             }
+            // R7 真·液态玻璃：主窗口透明 + OS 级毛玻璃（macOS vibrancy / Windows acrylic），让玻璃穿透看到桌面。
+            // 失败不致命（不支持的系统/旧版本退回不透明，前端 CSS 仍有极光兜底底色），故忽略 Result。
+            #[cfg(target_os = "macos")]
+            if let Some(main_window) = app.get_webview_window("main") {
+                let _ = window_vibrancy::apply_vibrancy(
+                    &main_window,
+                    window_vibrancy::NSVisualEffectMaterial::HudWindow,
+                    None,
+                    None,
+                );
+            }
+            #[cfg(target_os = "windows")]
+            if let Some(main_window) = app.get_webview_window("main") {
+                let _ = window_vibrancy::apply_acrylic(&main_window, Some((24, 24, 32, 120)));
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

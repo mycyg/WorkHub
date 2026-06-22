@@ -1,4 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
+import { defaultPorts } from "@workhub/config";
 import { createCuuController, type CuuControllerSnapshot } from "@workhub/cuu";
 import {
   classifyGoldPathHref,
@@ -81,6 +82,18 @@ let plainNoticeTimer: number | undefined;
 
 function clientToken() {
   return window.localStorage.getItem("workhub_client_token") ?? window.localStorage.getItem("yqgl_client_token") ?? undefined;
+}
+
+// 测试反馈修复（窗口空白）：打包后 webview 的同源是 tauri://（没有 /api），baseUrl="" 会让所有 API 调用落空、
+// 首页加载不出→整窗空白。桌面客户端改为默认连本机后端（API 默认端口），并可用 localStorage.workhub_api_base
+// 覆盖（指向远端/不同端口的 WorkHub 后端）。后端 CORS 已反射桌面 tauri 源 + 本机回环（apps/api app.ts），故跨源带
+// cookie 可达。注意：仍需后端在跑；连不上时显示的是连接错误而非空白。
+function resolveDesktopApiBase(): string {
+  const override = window.localStorage.getItem("workhub_api_base");
+  if (override && override.trim().length > 0) {
+    return override.trim().replace(/\/+$/u, "");
+  }
+  return `http://127.0.0.1:${defaultPorts.api}`;
 }
 
 async function resolveBootLocale(client: BrowserApiClient, fallback: WorkHubLocale) {
@@ -580,7 +593,7 @@ async function boot() {
 
   try {
     const client = createApiClient({
-      baseUrl: "",
+      baseUrl: resolveDesktopApiBase(),
       getClientToken: clientToken
     });
     locale = await resolveBootLocale(client, locale);
