@@ -12,8 +12,8 @@ export const spotlightCss = [
   // 顶栏：搜索/标题 + 面包屑返回。顶栏空白处可拖动窗（输入/按钮 no-drag）。
   ".wh-spot-top{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--ds-glass-hairline);-webkit-app-region:drag}",
   ".wh-spot-top>*{-webkit-app-region:no-drag}",
-  ".wh-spot-back{display:none;align-items:center;justify-content:center;width:30px;height:30px;flex:0 0 auto;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-pill);background:var(--ds-glass);color:var(--ds-ink-muted);cursor:pointer}",
-  ".wh-spot-back:hover{color:var(--ds-ink)}.wh-spot-back svg{width:17px;height:17px}",
+  ".wh-spot-back{display:none;align-items:center;justify-content:center;width:30px;height:30px;flex:0 0 auto;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-pill);background:var(--ds-glass);color:var(--ds-ink-muted);cursor:pointer;transition:transform var(--ds-dur-fast) var(--ds-spring),color var(--ds-dur-fast) var(--ds-ease),background var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-spot-back:hover{color:var(--ds-ink);background:rgba(255,255,255,.72)}.wh-spot-back:active{transform:scale(.9)}.wh-spot-back svg{width:17px;height:17px}",
   ".wh-spot[data-mode=\"capability\"] .wh-spot-back{display:inline-flex}",
   // 搜索框（launcher 屏）。
   ".wh-spot-field-wrap{display:flex;align-items:center;gap:10px;flex:1 1 auto;min-width:0}",
@@ -32,8 +32,10 @@ export const spotlightCss = [
   ".wh-spot-body{padding:12px;max-height:min(560px,calc(100vh - 96px));overflow-y:auto;overscroll-behavior:contain}",
   // 能力网格（launcher）。
   ".wh-spot-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}",
-  ".wh-spot-cap{display:flex;align-items:center;gap:11px;text-align:left;border:1px solid transparent;background:rgba(255,255,255,.42);border-radius:var(--ds-radius-md);padding:11px 12px;cursor:pointer;color:var(--ds-ink)}",
+  ".wh-spot-cap{display:flex;align-items:center;gap:11px;text-align:left;border:1px solid transparent;background:rgba(255,255,255,.42);border-radius:var(--ds-radius-md);padding:11px 12px;cursor:pointer;color:var(--ds-ink);transition:transform var(--ds-dur-fast) var(--ds-ease-out),background var(--ds-dur-fast) var(--ds-ease),border-color var(--ds-dur-fast) var(--ds-ease),box-shadow var(--ds-dur-fast) var(--ds-ease);will-change:transform}",
   ".wh-spot-cap:hover,.wh-spot-cap[data-active=\"true\"]{background:rgba(255,255,255,.72);border-color:var(--ds-glass-border)}",
+  ".wh-spot-cap:hover{transform:translateY(-1px);box-shadow:var(--ds-shadow-1)}",
+  ".wh-spot-cap:active{transform:translateY(0) scale(.975)}",
   ".wh-spot-cap[data-active=\"true\"]{box-shadow:inset 0 0 0 1px var(--ds-accent-soft)}",
   ".wh-spot-cap-icon{display:inline-flex;width:24px;height:24px;flex:0 0 auto;color:var(--ds-accent)}.wh-spot-cap-icon svg{width:24px;height:24px}",
   ".wh-spot-cap-text{display:flex;flex-direction:column;gap:1px;min-width:0}",
@@ -60,7 +62,9 @@ export const spotlightCss = [
   ".wh-spot-card-title{margin:10px 0 0;font:700 15px/1.4 var(--ds-font);color:var(--ds-ink);overflow-wrap:anywhere}",
   ".wh-spot-card-desc{margin:7px 0 0;font:500 13px/1.55 var(--ds-font);color:var(--ds-ink-soft);overflow-wrap:anywhere}",
   ".wh-spot-card-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}",
-  ".wh-spot-act{border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);background:rgba(255,255,255,.55);color:var(--ds-ink-soft);font:700 13px/1 var(--ds-font);padding:10px 14px;cursor:pointer}",
+  ".wh-spot-act{border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);background:rgba(255,255,255,.55);color:var(--ds-ink-soft);font:700 13px/1 var(--ds-font);padding:10px 14px;cursor:pointer;transition:transform var(--ds-dur-fast) var(--ds-spring),filter var(--ds-dur-fast) var(--ds-ease),background var(--ds-dur-fast) var(--ds-ease);will-change:transform}",
+  ".wh-spot-act:hover{filter:brightness(1.04)}",
+  ".wh-spot-act:active{transform:scale(.96)}",
   ".wh-spot-act--primary{flex:1;min-width:110px;border:0;color:#fff;background:linear-gradient(135deg,#7c83ff,#b57bff);box-shadow:var(--ds-shadow-glow)}",
   ".wh-spot-act--danger{color:var(--ds-danger);border-color:var(--ds-danger-soft)}",
   ".wh-spot-act--quiet{background:rgba(255,255,255,.4);color:var(--ds-ink-muted)}",
@@ -68,8 +72,8 @@ export const spotlightCss = [
   ".wh-spot-reasons{margin-top:10px;border-top:1px dashed var(--ds-glass-hairline);padding-top:11px}",
   ".wh-spot-reasons-q{margin:0 0 8px;font:600 12px/1 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-spot-reasons-row{display:flex;gap:7px;flex-wrap:wrap}",
-  ".wh-spot-reason{border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-pill);background:rgba(255,255,255,.55);color:var(--ds-ink-soft);font:600 12px/1 var(--ds-font);padding:8px 12px;cursor:pointer}",
-  ".wh-spot-reason:hover{border-color:var(--ds-danger);color:var(--ds-danger)}",
+  ".wh-spot-reason{border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-pill);background:rgba(255,255,255,.55);color:var(--ds-ink-soft);font:600 12px/1 var(--ds-font);padding:8px 12px;cursor:pointer;transition:transform var(--ds-dur-fast) var(--ds-spring),border-color var(--ds-dur-fast) var(--ds-ease),color var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-spot-reason:hover{border-color:var(--ds-danger);color:var(--ds-danger)}.wh-spot-reason:active{transform:scale(.95)}",
   // 空/加载/错误/占位。
   ".wh-spot-empty{text-align:center;padding:34px 18px}",
   ".wh-spot-empty-face{font:700 30px/1 var(--ds-font);color:var(--ds-accent)}",
@@ -94,8 +98,9 @@ export const spotlightCss = [
   ".wh-spot-intake-title{margin:0;font:700 17px/1.4 var(--ds-font);color:var(--ds-ink);overflow-wrap:anywhere}",
   ".wh-spot-intake-body{margin:0;font:500 13px/1.6 var(--ds-font);color:var(--ds-ink-soft);overflow-wrap:anywhere}",
   ".wh-spot-opts{display:flex;flex-direction:column;gap:8px}",
-  ".wh-spot-opt{display:flex;align-items:flex-start;gap:11px;text-align:left;border:1px solid var(--ds-glass-border);background:rgba(255,255,255,.46);border-radius:var(--ds-radius-md);padding:12px 13px;cursor:pointer;color:var(--ds-ink);transition:background var(--ds-dur-fast),border-color var(--ds-dur-fast)}",
-  ".wh-spot-opt:hover{background:rgba(255,255,255,.7)}",
+  ".wh-spot-opt{display:flex;align-items:flex-start;gap:11px;text-align:left;border:1px solid var(--ds-glass-border);background:rgba(255,255,255,.46);border-radius:var(--ds-radius-md);padding:12px 13px;cursor:pointer;color:var(--ds-ink);transition:transform var(--ds-dur-fast) var(--ds-ease-out),background var(--ds-dur-fast) var(--ds-ease),border-color var(--ds-dur-fast) var(--ds-ease),box-shadow var(--ds-dur-fast) var(--ds-ease);will-change:transform}",
+  ".wh-spot-opt:hover{background:rgba(255,255,255,.7);transform:translateY(-1px);box-shadow:var(--ds-shadow-1)}",
+  ".wh-spot-opt:active{transform:translateY(0) scale(.985)}",
   ".wh-spot-opt[data-sel=\"true\"]{border-color:var(--ds-accent);background:var(--ds-accent-soft)}",
   ".wh-spot-opt-check{flex:0 0 auto;width:18px;height:18px;margin-top:1px;border-radius:50%;border:2px solid var(--ds-glass-border);transition:all var(--ds-dur-fast)}",
   ".wh-spot-opt[data-sel=\"true\"] .wh-spot-opt-check{border-color:var(--ds-accent);background:var(--ds-accent);box-shadow:inset 0 0 0 3px #fff}",
@@ -110,7 +115,9 @@ export const spotlightCss = [
   // 只读/检索类（项目·成本·日历·知识）。
   ".wh-spot-list{display:flex;flex-direction:column;gap:7px}",
   ".wh-spot-row{display:flex;align-items:center;gap:11px;text-decoration:none;border:1px solid var(--ds-glass-border);background:rgba(255,255,255,.46);border-radius:var(--ds-radius-md);padding:11px 13px;color:var(--ds-ink)}",
-  "a.wh-spot-row:hover{background:rgba(255,255,255,.72)}",
+  "a.wh-spot-row{transition:transform var(--ds-dur-fast) var(--ds-ease-out),background var(--ds-dur-fast) var(--ds-ease),box-shadow var(--ds-dur-fast) var(--ds-ease);will-change:transform}",
+  "a.wh-spot-row:hover{background:rgba(255,255,255,.72);transform:translateY(-1px);box-shadow:var(--ds-shadow-1)}",
+  "a.wh-spot-row:active{transform:translateY(0) scale(.985)}",
   ".wh-spot-row-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}",
   ".wh-spot-row-title{display:flex;align-items:center;gap:8px;font:600 13.5px/1.3 var(--ds-font);color:var(--ds-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-spot-row-sub{font:500 12px/1.45 var(--ds-font);color:var(--ds-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
@@ -170,5 +177,7 @@ export const spotlightCss = [
   // 内联轻提示。
   ".wh-spot-toast{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);max-width:calc(100% - 28px);z-index:5;display:flex;align-items:center;gap:8px;border-radius:var(--ds-radius-pill);padding:9px 15px;font:600 12.5px/1.3 var(--ds-font);color:#fff;background:rgba(40,32,70,.92);box-shadow:var(--ds-shadow-2);animation:ds-pop var(--ds-dur) var(--ds-spring) both;-webkit-app-region:no-drag}",
   ".wh-spot-toast--ok{background:linear-gradient(135deg,#1faf86,#34c79a)}",
-  ".wh-spot-toast--error{background:linear-gradient(135deg,#e85d70,#ff9bb0)}"
+  ".wh-spot-toast--error{background:linear-gradient(135deg,#e85d70,#ff9bb0)}",
+  // 尊重「减少动态效果」系统偏好：去掉装饰性位移/缩放，保留颜色提示（苹果级无障碍）。
+  "@media (prefers-reduced-motion:reduce){.wh-spot-cap,.wh-spot-act,.wh-spot-back,.wh-spot-opt,.wh-spot-reason,a.wh-spot-row{transition-duration:.01ms!important}.wh-spot-cap:hover,.wh-spot-cap:active,.wh-spot-act:active,.wh-spot-back:active,.wh-spot-opt:hover,.wh-spot-opt:active,.wh-spot-reason:active,a.wh-spot-row:hover,a.wh-spot-row:active{transform:none}}"
 ].join("");
