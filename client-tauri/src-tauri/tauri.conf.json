@@ -28,7 +28,7 @@
         "visible": true,
         "focus": true,
         "transparent": true,
-        "decorations": true,
+        "decorations": false,
         "alwaysOnTop": false
       },
       {

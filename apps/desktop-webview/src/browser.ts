@@ -151,6 +151,28 @@ async function resolveBootLocale(client: BrowserApiClient, fallback: WorkHubLoca
   return applyIdentityLocale(me, fallback);
 }
 
+// R8 彻底重构：主窗 = 只剩透明玻璃命令盒。隐藏壳层 chrome（顶栏/侧栏/首页卡），内容只在 cap-open 时
+// 复用既有 .wh-app-content 作居中玻璃浮层呈现。窗口透明 + 盒外区域可拖动整窗（frameless）。
+const desktopBoxHomeCss = [
+  "html,body{background:transparent!important}",
+  ".wh-app-root{background:transparent!important;min-height:100vh}",
+  ".wh-app-topbar{display:none!important}",
+  ".wh-app-notice{z-index:80!important}",
+  ".wh-app-layout{display:block!important;padding:0!important;margin:0!important;min-height:100vh!important}",
+  // 命令盒 home：顶部居中常驻；盒外空白可拖动整个 frameless 窗，盒内可交互。
+  ".wh-cmd-home{position:fixed;inset:0;z-index:40;display:flex;align-items:flex-start;justify-content:center;padding:13vh 24px 24px;box-sizing:border-box;-webkit-app-region:drag}",
+  ".wh-cmd-home .wh-cmd,.wh-cmd-home .wh-cmd *{-webkit-app-region:no-drag}",
+  // 能力内容：默认隐藏；cap-open 时作居中玻璃浮层（复用既有 .wh-app-content + 其中的 route-panel）。
+  ".wh-app-content{position:fixed!important;inset:0;z-index:60;display:none;align-items:flex-start;justify-content:center;padding:6vh 20px 20px;box-sizing:border-box;background:rgba(40,30,70,.2);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);overflow:auto;overscroll-behavior:contain}",
+  ".wh-cap-open .wh-app-content{display:flex}",
+  ".wh-cap-open .wh-cmd-home{opacity:.35;filter:blur(1px);pointer-events:none}",
+  ".wh-app-content .wh-route-panel{width:min(980px,calc(100vw - 40px));margin:0 auto}",
+  // 关闭按钮（cap-open 时右上，回到盒子）。
+  ".wh-cap-close{position:fixed;top:16px;right:16px;z-index:70;display:none;-webkit-app-region:no-drag;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-pill);background:var(--ds-glass-strong);color:var(--ds-ink-muted);cursor:pointer;backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%)}",
+  ".wh-cap-close:hover{color:var(--ds-ink)}.wh-cap-close svg{width:18px;height:18px}",
+  ".wh-cap-open .wh-cap-close{display:inline-flex}"
+].join("");
+
 // R8 S3b：命令 → 既有壳层路由（复用 hashchange→activateRoute→懒拉 LIVE 数据）。drive 暂经项目下钻进入。
 const COMMAND_ROUTE: Record<CommandId, string> = {
   intake: "/intake",
@@ -166,70 +188,62 @@ const COMMAND_ROUTE: Record<CommandId, string> = {
   settings: "/settings"
 };
 
-// Cuu 命令面板：常驻召唤药丸 + ⌘K 召出的玻璃浮层；输入意图 → 模糊匹配 → 路由到对应能力。
-// additive：只往主窗加一个药丸 + 一个浮层宿主，不改既有壳层 DOM/导航；选中后走既有 hash 导航。
-function mountCommandPalette(shellRoot: HTMLElement, locale: WorkHubLocale): void {
+// R8 彻底重构：主窗 = 一个常驻的「透明玻璃命令盒」（搜索框 + 能力列表）就是整个 app。
+// 没有顶栏/侧栏/首页卡片——它们全隐藏（desktopBoxHomeCss）。能力内容只在被选中时，
+// 以玻璃浮层复用既有 .wh-app-content（壳层导航/LIVE 加载/动作全照旧）呈现，关闭即回到盒子。
+// 「以 cuu 为核心、窗口为补充、所有功能从搜索框延展」。
+function mountCommandHome(shellRoot: HTMLElement, locale: WorkHubLocale): void {
   const doc = shellRoot.ownerDocument ?? document;
-  const launcher = doc.createElement("button");
-  launcher.type = "button";
-  launcher.className = "wh-ds wh-cmd-launcher";
-  const launcherSearchIcon =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/></svg>';
-  launcher.innerHTML = `<span class="wh-cmd-launcher-icon">${launcherSearchIcon}</span><span class="wh-cmd-launcher-text">${locale === "zh-CN" ? "搜索 · 跟 Cuu 说，直达任何能力" : "Search · ask Cuu, jump anywhere"}</span><kbd>⌘K</kbd>`;
-  shellRoot.appendChild(launcher);
 
-  const overlay = doc.createElement("div");
-  overlay.className = "wh-ds";
-  overlay.hidden = true;
-  shellRoot.appendChild(overlay);
+  // 常驻命令盒（home）。
+  const home = doc.createElement("div");
+  home.className = "wh-ds wh-cmd-home";
+  shellRoot.appendChild(home);
 
-  let open = false;
-  const renderOverlay = (query: string) => {
-    overlay.innerHTML = `<div class="wh-cmd-backdrop" data-cmd-backdrop>${renderCommandPalette({ query, locale })}</div>`;
-    const input = overlay.querySelector<HTMLInputElement>("[data-command-input]");
+  const focusInput = () => {
+    const input = home.querySelector<HTMLInputElement>("[data-command-input]");
     if (input) {
       input.focus();
       const end = input.value.length;
       try {
         input.setSelectionRange(end, end);
       } catch {
-        // type=search 某些实现不接受 setSelectionRange，忽略即可。
+        // type=search 某些实现不接受 setSelectionRange，忽略。
       }
     }
   };
-  const openPalette = () => {
-    if (open) {
+  home.innerHTML = renderCommandPalette({ query: "", locale });
+  focusInput();
+
+  // 能力内容关闭按钮（cap-open 时右上角；内容复用既有 .wh-app-content 浮层）。
+  const closeBtn = doc.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "wh-ds wh-cap-close";
+  closeBtn.setAttribute("aria-label", locale === "zh-CN" ? "关闭" : "Close");
+  closeBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  shellRoot.appendChild(closeBtn);
+
+  const openCapability = (id: CommandId) => {
+    if (!resolveCommandAction(id)) {
       return;
     }
-    open = true;
-    overlay.hidden = false;
-    renderOverlay("");
+    shellRoot.classList.add("wh-cap-open");
+    // 复用既有 hash 导航：hashchange → activateRoute → 懒拉 LIVE 数据，渲进 .wh-app-content 浮层。
+    window.location.hash = COMMAND_ROUTE[id];
   };
-  const closePalette = () => {
-    if (!open) {
-      return;
-    }
-    open = false;
-    overlay.hidden = true;
-    overlay.innerHTML = "";
+  const closeCapability = () => {
+    shellRoot.classList.remove("wh-cap-open");
   };
-  const routeTo = (id: CommandId) => {
-    const action = resolveCommandAction(id);
-    closePalette();
-    if (action) {
-      window.location.hash = COMMAND_ROUTE[id];
-    }
-  };
+  closeBtn.addEventListener("click", closeCapability);
 
-  launcher.addEventListener("click", openPalette);
-
-  // 输入即过滤：只替换结果列表，保留输入框焦点/光标（不重启入场动画）。
-  overlay.addEventListener("input", (event) => {
+  // 输入即过滤：只换结果列表，保焦点/不重启入场动画。
+  home.addEventListener("input", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement) || !target.matches("[data-command-input]")) {
       return;
     }
-    const palette = overlay.querySelector(".wh-cmd");
+    const palette = home.querySelector(".wh-cmd");
     if (!palette) {
       return;
     }
@@ -242,24 +256,20 @@ function mountCommandPalette(shellRoot: HTMLElement, locale: WorkHubLocale): voi
     }
   });
 
-  overlay.addEventListener("click", (event) => {
+  home.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) {
-      return;
-    }
-    if (target.matches("[data-cmd-backdrop]")) {
-      closePalette();
       return;
     }
     const row = target.closest<HTMLElement>("[data-command-id]");
     const id = row?.getAttribute("data-command-id");
     if (id) {
-      routeTo(id as CommandId);
+      openCapability(id as CommandId);
     }
   });
 
-  // 回车直达当前最优匹配（极简：输入→回车）。
-  overlay.addEventListener("keydown", (event) => {
+  // 回车直达当前最优匹配。
+  home.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") {
       return;
     }
@@ -268,7 +278,7 @@ function mountCommandPalette(shellRoot: HTMLElement, locale: WorkHubLocale): voi
       const matches = matchCommands(target.value, locale);
       if (matches[0]) {
         event.preventDefault();
-        routeTo(matches[0].command.id);
+        openCapability(matches[0].command.id);
       }
     }
   });
@@ -276,13 +286,12 @@ function mountCommandPalette(shellRoot: HTMLElement, locale: WorkHubLocale): voi
   window.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && (event.key === "k" || event.key === "K")) {
       event.preventDefault();
-      if (open) {
-        closePalette();
-      } else {
-        openPalette();
+      if (shellRoot.classList.contains("wh-cap-open")) {
+        closeCapability();
       }
-    } else if (event.key === "Escape" && open) {
-      closePalette();
+      focusInput();
+    } else if (event.key === "Escape" && shellRoot.classList.contains("wh-cap-open")) {
+      closeCapability();
     }
   });
 }
@@ -810,7 +819,7 @@ async function boot() {
     // R7 液态玻璃地基(桌面专属):字体 <link> 在前,玻璃覆盖 CSS 紧跟壳层 CSS 之后(同特异性靠顺序取胜)。
     // proposalCss 放最前:它含一个 :root 重定义(--ink/--blue… 与 goldPathCss 同名不同值),放 shell.css
     // 之前 → goldPath :root 后覆盖、不全局串色;其 wh-proposal-* 布局类(独有)生效;玻璃覆盖在 liquidGlassCss 里(更后)赢。
-    root.innerHTML = `${liquidGlassHeadHtml}<style>${proposalCss}${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}${teamCalendarCss}${projectsPageCss}${projectDriveCss}${appleGlassDesignSystemCss}${commandPaletteCss}${glassWindowCss}</style>${shell.html}`;
+    root.innerHTML = `${liquidGlassHeadHtml}<style>${proposalCss}${shell.css}${desktopPetSettingsCss}${liquidGlassCss}${decisionDeckCss}${teamCalendarCss}${projectsPageCss}${projectDriveCss}${appleGlassDesignSystemCss}${commandPaletteCss}${glassWindowCss}${desktopBoxHomeCss}</style>${shell.html}`;
     // R7 P3:首页面板换成液态玻璃「决策卡牌」(数据来自 attention.queue)。卡片按钮带 href+data-action-id,
     // 由下面 bindGoldPathNavigation 的既有点击管线处理(审批 respond / 提议 review·merge),无需新交互代码。
     // fail-open:取不到面板/数据就保留 gold-path 原首页,绝不让首页空掉。
@@ -1060,9 +1069,8 @@ async function boot() {
         triggerLiveGoldPathForRoute(window.location.hash.slice(1));
       }
     });
-    // R8 S3b：Cuu 命令面板——⌘K（或点常驻药丸）召出，输入意图模糊匹配 → 路由到对应能力面板。
-    // 复用既有 hash 导航（hashchange→activateRoute→懒拉 LIVE 数据），additive，不动既有壳层。
-    mountCommandPalette(root, locale);
+    // R8 彻底重构：主窗 = 常驻透明玻璃命令盒（搜索框就是整个 app）；能力内容仅在选中时作玻璃浮层呈现。
+    mountCommandHome(root, locale);
   } catch (error) {
     // 测试反馈修复（窗口空白）：连不上后端时不再留空白/晦涩报错，渲一张清晰的玻璃「离线卡」——
     // 说明需要后端、当前连接地址、怎么改地址、重试按钮。否则用户只看到一片透明玻璃，不知所措。
