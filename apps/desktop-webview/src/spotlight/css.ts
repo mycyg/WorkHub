@@ -163,6 +163,9 @@ export const spotlightCss = [
   ".wh-spot-check--passed{background:var(--ds-success-soft);color:var(--ds-success)}",
   ".wh-spot-check--failed{background:var(--ds-danger-soft);color:var(--ds-danger)}",
   ".wh-spot-check--warning{background:var(--ds-warn-soft);color:var(--ds-warn)}",
+  // 设置。
+  ".wh-spot-set-group{display:flex;flex-direction:column;gap:8px}",
+  ".wh-spot-set-label{font:600 12px/1 var(--ds-font);color:var(--ds-ink-muted)}",
   // 内联轻提示。
   ".wh-spot-toast{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);max-width:calc(100% - 28px);z-index:5;display:flex;align-items:center;gap:8px;border-radius:var(--ds-radius-pill);padding:9px 15px;font:600 12.5px/1.3 var(--ds-font);color:#fff;background:rgba(40,32,70,.92);box-shadow:var(--ds-shadow-2);animation:ds-pop var(--ds-dur) var(--ds-spring) both;-webkit-app-region:no-drag}",
   ".wh-spot-toast--ok{background:linear-gradient(135deg,#1faf86,#34c79a)}",

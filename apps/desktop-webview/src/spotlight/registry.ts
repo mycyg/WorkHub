@@ -15,9 +15,11 @@ import { createIntakeView } from "./views/intake.js";
 import { createPlaceholderView } from "./views/placeholder.js";
 import { createProposalsView } from "./views/proposals.js";
 import { createReplayView } from "./views/replay.js";
+import { createSettingsView } from "./views/settings.js";
+import { createWorkItemView } from "./views/workitem.js";
 import type { SpotlightCapabilityView } from "./view-context.js";
 
-// 已做成内联的能力工厂表。
+// 已做成内联的能力工厂表（11/11 全部内联；placeholder 仅作未知 id 的兜底）。
 const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   approvals: createAttentionView,
   intake: createIntakeView,
@@ -27,7 +29,9 @@ const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   knowledge: createKnowledgeView,
   drive: createDriveView,
   replay: createReplayView,
-  proposals: createProposalsView
+  proposals: createProposalsView,
+  workitem: createWorkItemView,
+  settings: createSettingsView
 };
 
 export function resolveCapabilityView(id: CommandId): SpotlightCapabilityView {
