@@ -870,11 +870,32 @@ async function boot() {
       }
     });
   } catch (error) {
-    root.innerHTML = renderGoldPathBootDocument({
-      title: goldPathT(locale, "boot.desktop.errorTitle"),
-      message: error instanceof Error ? error.message : goldPathT(locale, "boot.desktop.errorMessage"),
-      tone: "error"
-    });
+    // 测试反馈修复（窗口空白）：连不上后端时不再留空白/晦涩报错，渲一张清晰的玻璃「离线卡」——
+    // 说明需要后端、当前连接地址、怎么改地址、重试按钮。否则用户只看到一片透明玻璃，不知所措。
+    const zh = locale === "zh-CN";
+    const apiBase = resolveDesktopApiBase();
+    const detail = error instanceof Error ? error.message : String(error);
+    const esc = (s: string) =>
+      s.replace(/[&<>"]/gu, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c] ?? c));
+    const title = zh ? "暂时连不上后端" : "Can't reach the backend";
+    const body = zh
+      ? `WorkHub 桌面端要后端在运行才会有内容。当前连接：${apiBase}`
+      : `The WorkHub desktop client needs the backend running to show content. Trying: ${apiBase}`;
+    const hint = zh
+      ? "请先启动后端（默认端口 8787，见 DEPLOY.md 的 docker compose），或在开发者控制台执行 localStorage.setItem('workhub_api_base','http://你的后端:端口') 后点重试。"
+      : "Start the backend (default port 8787, see DEPLOY.md), or run localStorage.setItem('workhub_api_base','http://host:port') in the console, then Retry.";
+    root.innerHTML =
+      `<style>html,body{margin:0;background:rgba(240,242,252,.20)}</style>` +
+      `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;box-sizing:border-box;font-family:'M PLUS Rounded 1c','Noto Sans SC','Segoe UI',sans-serif">` +
+      `<div style="max-width:520px;width:100%;border-radius:22px;padding:30px 30px 26px;background:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.85);box-shadow:0 26px 60px -28px rgba(70,54,140,.5);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%)">` +
+      `<div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#5a45d8,#b57bff);margin-bottom:16px;box-shadow:0 10px 22px -6px rgba(124,131,255,.7)"></div>` +
+      `<h2 style="margin:0 0 10px;font-size:20px;font-weight:900;color:#2c2746">${esc(title)}</h2>` +
+      `<p style="margin:0 0 12px;color:#5b5680;line-height:1.55">${esc(body)}</p>` +
+      `<p style="margin:0 0 18px;color:#8b84ad;font-size:13px;line-height:1.5">${esc(hint)}</p>` +
+      `<button id="wh-retry" type="button" style="border:0;border-radius:12px;padding:10px 18px;font:inherit;font-weight:800;color:#fff;background:linear-gradient(135deg,#7c83ff,#b57bff);cursor:pointer">${zh ? "重试" : "Retry"}</button>` +
+      `<p style="margin:14px 0 0;color:#aaa4c4;font-size:11px;word-break:break-all">${esc(detail)}</p>` +
+      `</div></div>`;
+    root.querySelector<HTMLButtonElement>("#wh-retry")?.addEventListener("click", () => window.location.reload());
   }
 }
 
