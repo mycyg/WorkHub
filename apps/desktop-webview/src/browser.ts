@@ -82,6 +82,8 @@ import {
   type CommandId
 } from "./command-palette.js";
 import { glassWindowCss } from "./glass-window.js";
+import { mountSpotlight, type SpotlightResizeFn } from "./spotlight/controller.js";
+import { spotlightCss } from "./spotlight/css.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -136,8 +138,10 @@ async function ensureDesktopClientToken(client: BrowserApiClient): Promise<void>
       if (result?.client_token) {
         window.localStorage.setItem("workhub_client_token", result.client_token);
       }
-    } catch {
+    } catch (error) {
       // 密码模式(404) / 后端不可达：保持无 token；上层取数失败会显示连接错误。
+      // 记一行便于诊断（不含敏感信息）——desktop-bootstrap 仅 nickname 模式开放，密码模式会 404。
+      console.warn("WorkHub desktop bootstrap failed; continuing without client token", error);
     }
   }
   const token = clientToken();
@@ -1101,6 +1105,91 @@ async function boot() {
   }
 }
 
+// R8 真·Spotlight：把内容高度同步给原生壳，缩放主窗（盒子随内容生长/收缩）。浏览器开发态无 __TAURI__ → no-op。
+const resizeMainWindow: SpotlightResizeFn = (width, height) => {
+  const tauri = (globalThis as {
+    __TAURI__?: {
+      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+    };
+  }).__TAURI__;
+  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
+  if (typeof invoke === "function") {
+    void invoke("set_spotlight_size", { width, height }).catch(() => undefined);
+  }
+};
+
+// 连不上后端时渲一张清晰的玻璃「离线卡」（与旧 boot 的兜底一致）：说明需要后端、当前地址、怎么改、重试。
+function renderDesktopOfflineCard(rootEl: HTMLElement, locale: WorkHubLocale, error: unknown): void {
+  const zh = locale === "zh-CN";
+  const apiBase = resolveDesktopApiBase();
+  const detail = error instanceof Error ? error.message : String(error);
+  const esc = (s: string) =>
+    s.replace(/[&<>"]/gu, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c] ?? c));
+  const title = zh ? "暂时连不上后端" : "Can't reach the backend";
+  const bodyText = zh
+    ? `WorkHub 桌面端要后端在运行才会有内容。当前连接：${apiBase}`
+    : `The WorkHub desktop client needs the backend running to show content. Trying: ${apiBase}`;
+  const hint = zh
+    ? "请先启动后端（默认端口 8787，见 DEPLOY.md 的 docker compose），或在开发者控制台执行 localStorage.setItem('workhub_api_base','http://你的后端:端口') 后点重试。"
+    : "Start the backend (default port 8787, see DEPLOY.md), or run localStorage.setItem('workhub_api_base','http://host:port') in the console, then Retry.";
+  rootEl.innerHTML =
+    `<style>html,body{margin:0;background:rgba(240,242,252,.20)}</style>` +
+    `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;box-sizing:border-box;font-family:'M PLUS Rounded 1c','Noto Sans SC','Segoe UI',sans-serif">` +
+    `<div style="max-width:520px;width:100%;border-radius:22px;padding:30px 30px 26px;background:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.85);box-shadow:0 26px 60px -28px rgba(70,54,140,.5);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%)">` +
+    `<div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#5a45d8,#b57bff);margin-bottom:16px;box-shadow:0 10px 22px -6px rgba(124,131,255,.7)"></div>` +
+    `<h2 style="margin:0 0 10px;font-size:20px;font-weight:900;color:#2c2746">${esc(title)}</h2>` +
+    `<p style="margin:0 0 12px;color:#5b5680;line-height:1.55">${esc(bodyText)}</p>` +
+    `<p style="margin:0 0 18px;color:#8b84ad;font-size:13px;line-height:1.5">${esc(hint)}</p>` +
+    `<button id="wh-retry" type="button" style="border:0;border-radius:12px;padding:10px 18px;font:inherit;font-weight:800;color:#fff;background:linear-gradient(135deg,#7c83ff,#b57bff);cursor:pointer">${zh ? "重试" : "Retry"}</button>` +
+    `<p style="margin:14px 0 0;color:#aaa4c4;font-size:11px;word-break:break-all">${esc(detail)}</p>` +
+    `</div></div>`;
+  rootEl.querySelector<HTMLButtonElement>("#wh-retry")?.addEventListener("click", () => window.location.reload());
+}
+
+// R8 彻底重构主窗：苹果聚焦搜索式「会生长的玻璃盒」就是整个 app（替代旧的 gold-path 全屏壳 boot()）。
+// 复用跨域鉴权地基（client token bootstrap）+ locale；挂 Spotlight 控制器；把桌宠偏好同步给桌宠窗（Cuu 为核心）。
+async function bootSpotlight() {
+  if (!root) {
+    return;
+  }
+  let locale = browserLocale();
+  setDocumentLocale(locale);
+  root.innerHTML = renderGoldPathBootDocument({
+    title: goldPathT(locale, "boot.desktop.title"),
+    message: goldPathT(locale, "boot.desktop.message")
+  });
+  try {
+    const client = createApiClient({
+      baseUrl: resolveDesktopApiBase(),
+      getClientToken: clientToken
+    });
+    // 跨源鉴权地基：先确保有 client token（goldPath/pages 才返回 LIVE 数据），并把令牌推给 Rust 壳（SSE /me 鉴权）。
+    await ensureDesktopClientToken(client);
+    locale = await resolveBootLocale(client, locale);
+    root.innerHTML = `${liquidGlassHeadHtml}<style>${appleGlassDesignSystemCss}${spotlightCss}</style><div data-spot-host></div>`;
+    const hostEl = root.querySelector<HTMLElement>("[data-spot-host]");
+    if (!hostEl) {
+      return;
+    }
+    // Cuu 为核心：主窗启动把桌宠偏好同步给桌宠窗（与旧 boot 一致，保持桌宠行为不回归）。
+    const petWindowBridge = resolveDesktopPetWindowBridge();
+    const cuuController = createCuuController({ preferences: loadCuuPreferences() });
+    void (async () => {
+      try {
+        await petWindowBridge?.setSettings?.(
+          desktopPetWindowSettingsFromPreferences(cuuController.snapshot().preferences)
+        );
+      } catch {
+        // 桥不可用/桌宠窗未就绪：忽略，主窗照常。
+      }
+    })();
+    mountSpotlight({ host: hostEl, client, locale, resize: resizeMainWindow });
+  } catch (error) {
+    renderDesktopOfflineCard(root, locale, error);
+  }
+}
+
 if (root && resolveDesktopSurface() === "pet") {
   // C2 修复：桌宠窗口此前用 baseUrl:"" 建客户端 → 所有 API/SSE 落到死的 tauri:// 源 → 永远「离线」。
   // 改为传入与主窗一致的客户端（真实 API base + client token），桌宠才能真正连后端、SSE 才能鉴权。
@@ -1113,5 +1202,5 @@ if (root && resolveDesktopSurface() === "pet") {
     await bootDesktopPetSurface(root, { client: petClient });
   })();
 } else {
-  void boot();
+  void bootSpotlight();
 }

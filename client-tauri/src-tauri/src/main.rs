@@ -474,14 +474,34 @@ fn pet_cursor_client_position(app: tauri::AppHandle) -> Result<PetCursorClientPo
 // 供 SSE worker 每次重连注入鉴权头 → 全局 /api/push/stream 不再 401、Cuu 上线。空串视为清空。
 #[tauri::command]
 fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
-    if let Ok(mut guard) = state.0.lock() {
-        let trimmed = token.trim();
-        *guard = if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        };
+    let trimmed = token.trim();
+    if trimmed.is_empty() {
+        eprintln!("WorkHub: client token cleared by webview");
+        if let Ok(mut guard) = state.0.lock() {
+            *guard = None;
+        }
+        return;
     }
+    // 仅记录尾 4 位用于诊断（绝不打印完整令牌）。SSE worker 下一拍重连即带它鉴权 → Cuu 上线。
+    let tail = &trimmed[trimmed.len().saturating_sub(4)..];
+    eprintln!("WorkHub: client token received (…{tail}); SSE /me authenticates on next reconnect");
+    if let Ok(mut guard) = state.0.lock() {
+        *guard = Some(trimmed.to_string());
+    }
+}
+
+// R8 真·Spotlight：webview 测得盒子内容高度后调它缩放主窗（盒子随内容生长/收缩，苹果聚焦风）。
+// 只改 main 窗内尺寸，top-left 锚定不动 → 向下生长。clamp 防 webview 传来的异常值把窗口撑爆/压没。
+#[tauri::command]
+fn set_spotlight_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window is not available".to_string())?;
+    let safe_width = if width.is_finite() { width.clamp(360.0, 1600.0) } else { 720.0 };
+    let safe_height = if height.is_finite() { height.clamp(120.0, 1400.0) } else { 480.0 };
+    window
+        .set_size(LogicalSize::new(safe_width, safe_height))
+        .map_err(|error| format!("failed to resize main window: {error}"))
 }
 
 // R7.1：切换 pet 窗口的 ignore_cursor_events(true=点击穿透到下方/false=接管点击)。由 webview 命中测试驱动，
@@ -912,6 +932,28 @@ fn keep_pet_window_above_desktop(window: &tauri::WebviewWindow) -> Result<(), St
         .map_err(|error| format!("failed to keep pet window above desktop: {error}"))
 }
 
+// R8 真·Spotlight：启动时把主窗摆到屏幕上方居中（苹果聚焦盒的位置），之后随内容向下生长。失败不致命。
+fn position_main_window_top_center(window: &tauri::WebviewWindow) {
+    let monitor = match window.current_monitor() {
+        Ok(Some(monitor)) => Some(monitor),
+        _ => window.primary_monitor().ok().flatten(),
+    };
+    let Some(monitor) = monitor else {
+        return;
+    };
+    let scale = valid_scale_factor(monitor.scale_factor());
+    let area = monitor.work_area();
+    let area_pos = area.position.to_logical::<f64>(scale);
+    let area_size = area.size.to_logical::<f64>(scale);
+    let Ok(inner) = window.inner_size() else {
+        return;
+    };
+    let inner = inner.to_logical::<f64>(scale);
+    let x = area_pos.x + (area_size.width - inner.width).max(0.0) / 2.0;
+    let y = area_pos.y + area_size.height * 0.10;
+    let _ = window.set_position(TauriLogicalPosition::new(x, y));
+}
+
 fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), String> {
     let show_main = tray_menu_action_plan_by_id_for_locale(TRAY_SHOW_MAIN_ID, locale)
         .ok_or_else(|| "missing show-main tray action".to_string())?;
@@ -1264,6 +1306,10 @@ fn main() {
             if let Some(main_window) = app.get_webview_window("main") {
                 let _ = window_vibrancy::apply_acrylic(&main_window, Some((24, 24, 32, 120)));
             }
+            // R8 真·Spotlight：把主窗摆到屏幕上方居中（聚焦盒位置）；之后 set_spotlight_size 随内容缩放。
+            if let Some(main_window) = app.get_webview_window("main") {
+                position_main_window_top_center(&main_window);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1275,6 +1321,7 @@ fn main() {
             pet_cursor_client_position,
             set_pet_window_click_through,
             set_client_token,
+            set_spotlight_size,
             show_main_window,
             hide_main_window,
             focus_main_route,

@@ -47,10 +47,12 @@ pub fn main_window_plan() -> ShellWindowPlan {
         kind: ShellWindowKind::Main,
         title: "WorkHub".to_string(),
         route: "/".to_string(),
-        width: 1180,
-        height: 780,
-        min_width: Some(960),
-        min_height: Some(640),
+        // R8 真·Spotlight：主窗 = 一个会随内容缩放的小玻璃盒（苹果聚焦风）。起始 720×480，
+        // webview 测得内容高度后经 set_spotlight_size 命令缩放窗高（top-left 锚定，向下生长）。
+        width: 720,
+        height: 480,
+        min_width: Some(420),
+        min_height: Some(160),
         resizable: true,
         visible: true,
         focus: true,
@@ -114,20 +116,25 @@ mod tests {
     }
 
     #[test]
-    fn main_window_remains_the_full_workhub_shell() {
+    fn main_window_is_a_resizable_spotlight_shell() {
         let main = main_window_plan();
 
         assert_eq!(main.label, "main");
         assert_eq!(main.route, "/");
-        // R7 真·液态玻璃：主窗口现为透明（配合 window-vibrancy 穿透看桌面）。
+        // R7 真·液态玻璃：主窗口透明（配合 window-vibrancy 穿透看桌面）。
         assert_eq!(main.transparent, true);
-        // R8：主窗 frameless（去 OS 标题栏，只剩透明玻璃命令盒）。
+        // R8：主窗 frameless（去 OS 标题栏，只剩透明玻璃聚焦盒）。
         assert_eq!(main.decorations, false);
         assert_eq!(main.always_on_top, false);
         assert_eq!(main.skip_taskbar, false);
         assert_eq!(main.resizable, true);
-        assert!(main.width >= 1100);
-        assert!(main.height >= 720);
+        // R8 真·Spotlight：小窗随内容缩放（不再是 1180×780 全屏壳）。
+        assert_eq!(main.width, 720);
+        assert_eq!(main.height, 480);
+        assert_eq!(main.min_width, Some(420));
+        assert_eq!(main.min_height, Some(160));
+        assert!(main.width <= 900);
+        assert!(main.height <= 640);
     }
 
     #[test]

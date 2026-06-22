@@ -105,12 +105,13 @@ pub fn default_shell_sse_targets() -> Vec<ShellSseTarget> {
     vec![ShellSseTarget::Global, ShellSseTarget::Me]
 }
 
-pub fn startup_shell_sse_targets(config: &WorkHubShellConfig) -> Vec<ShellSseTarget> {
-    let mut targets = vec![ShellSseTarget::Global];
-    if config.has_trusted_device_token() {
-        targets.push(ShellSseTarget::Me);
-    }
-    targets
+pub fn startup_shell_sse_targets(_config: &WorkHubShellConfig) -> Vec<ShellSseTarget> {
+    // 桌面 = 单用户客户端：只订阅 per-user `/api/push/stream/me`（承载本用户的通知/决策事件——
+    // notifications.ts 发到 topics.user，topic-access.ts {kind:"me"} 解析到同一话题）。运行时设备令牌
+    // 经 set_client_token 注入鉴权头后该流 200。
+    // 绝不订阅全局 `/api/push/stream`——"all" 话题仅管理员可读（topic-access.ts:34），而 desktop-bootstrap
+    // 铸的是非管理员用户 → 全局流恒 403 "cannot stream global events" → Cuu 永远「重连中」(这是根因)。
+    vec![ShellSseTarget::Me]
 }
 
 pub fn plan_shell_sse_worker(
@@ -278,18 +279,20 @@ mod tests {
     }
 
     #[test]
-    fn startup_targets_wait_for_a_trusted_device_token_before_private_streams() {
+    fn startup_targets_subscribe_to_the_per_user_stream_not_the_admin_only_global() {
+        // 修 Cuu「重连中」：桌面是非管理员单用户客户端，读全局 `/api/push/stream` 恒 403，
+        // 故启动只订 per-user `/me`（运行时设备令牌经 set_client_token 鉴权），无论 config 是否带 token。
         let mut without_token = config();
         without_token.client_token = None;
         let with_token = config();
 
         assert_eq!(
             startup_shell_sse_targets(&without_token),
-            vec![ShellSseTarget::Global]
+            vec![ShellSseTarget::Me]
         );
         assert_eq!(
             startup_shell_sse_targets(&with_token),
-            vec![ShellSseTarget::Global, ShellSseTarget::Me]
+            vec![ShellSseTarget::Me]
         );
     }
 
@@ -299,10 +302,9 @@ mod tests {
             .expect("worker plan should build");
 
         assert_eq!(plan.reconnect_delay_ms, 5_000);
-        assert_eq!(plan.subscriptions.len(), 2);
-        assert_eq!(plan.subscriptions[0].path, "/api/push/stream");
-        assert_eq!(plan.subscriptions[1].path, "/api/push/stream/me");
-        assert_eq!(plan.subscriptions[1].headers.len(), 2);
+        assert_eq!(plan.subscriptions.len(), 1);
+        assert_eq!(plan.subscriptions[0].path, "/api/push/stream/me");
+        assert_eq!(plan.subscriptions[0].headers.len(), 2);
     }
 
     #[test]
