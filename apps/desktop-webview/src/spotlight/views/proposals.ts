@@ -6,7 +6,7 @@
 import type { AttentionItem, DeliverableChange, ProposalDetailVM } from "@workhub/contracts";
 import { escapeHtml, proposalActionFromHref } from "@workhub/web-runtime";
 
-import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
+import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 function proposalIdFromItem(item: AttentionItem): string | undefined {
   for (const action of item.actions) {
@@ -113,6 +113,8 @@ export function createProposalsView(): SpotlightCapabilityView {
       let disposed = false;
       let busy = false;
       let currentId: string | undefined;
+      // rank7：上次失败的加载器，点「重试」即重跑。
+      let retry: (() => void) | undefined;
       // M4：单调代次——list↔detail 间快速切换时，晚到的 await 不得覆盖更新的一帧。
       let loadGen = 0;
 
@@ -142,7 +144,10 @@ export function createProposalsView(): SpotlightCapabilityView {
               .join("")}</div>`;
           }
         } catch {
-          if (!disposed && gen === loadGen) body.innerHTML = `<div class="wh-spot-error">${zh ? "改动没拉到，稍后重试" : "Couldn't load — retry"}</div>`;
+          if (!disposed && gen === loadGen) {
+            retry = () => void showList();
+            body.innerHTML = spotlightErrorHtml(zh, zh ? "改动没拉到" : "Couldn't load");
+          }
         }
         ctx.requestResize();
       };
@@ -158,7 +163,10 @@ export function createProposalsView(): SpotlightCapabilityView {
           ctx.setSubtitle(zh ? "改动详情" : "Change detail");
           body.innerHTML = detailHtml(vm, zh);
         } catch {
-          if (!disposed && gen === loadGen) body.innerHTML = `<div class="wh-spot-error">${zh ? "diff 没拉到，稍后重试" : "Couldn't load diff — retry"}</div>`;
+          if (!disposed && gen === loadGen) {
+            retry = () => void showDetail(id);
+            body.innerHTML = spotlightErrorHtml(zh, zh ? "diff 没拉到" : "Couldn't load diff");
+          }
         }
         ctx.requestResize();
       };
@@ -210,6 +218,10 @@ export function createProposalsView(): SpotlightCapabilityView {
       body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
+        if (target.closest("[data-spot-retry]")) {
+          retry?.();
+          return;
+        }
         if (target.closest("[data-prop-back]")) {
           void showList();
           return;

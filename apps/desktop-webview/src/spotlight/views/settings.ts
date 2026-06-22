@@ -5,7 +5,7 @@
 import type { SettingsPageVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
-import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
+import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 function localeLabel(locale: string, zh: boolean): string {
   if (locale === "zh-CN") return zh ? "简体中文" : "Chinese";
@@ -49,9 +49,10 @@ export function createSettingsView(): SpotlightCapabilityView {
       let disposed = false;
       let storageKey = "workhub_locale";
       ctx.setSubtitle(zh ? "偏好与状态" : "Preferences & status");
-      ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
-      ctx.requestResize();
-      void (async () => {
+      // rank7：装载失败渲带「重试」的错误块，点重试重跑（不再死胡同）。
+      const load = async () => {
+        ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
+        ctx.requestResize();
         try {
           const vm = await ctx.client.pages.settings({ locale: ctx.locale });
           if (disposed) return;
@@ -59,14 +60,19 @@ export function createSettingsView(): SpotlightCapabilityView {
           ctx.body.innerHTML = settingsHtml(vm, zh);
         } catch {
           if (disposed) return;
-          ctx.body.innerHTML = `<div class="wh-spot-error">${zh ? "设置没拉到，稍后重试" : "Couldn't load settings — retry"}</div>`;
+          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "设置没拉到" : "Couldn't load settings");
         }
         ctx.requestResize();
-      })();
+      };
+      void load();
 
       ctx.body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
+        if (target.closest("[data-spot-retry]")) {
+          void load();
+          return;
+        }
         const loc = target.closest<HTMLElement>("[data-set-locale]");
         if (loc?.dataset.setLocale && loc.dataset.sel !== "true") {
           const next = loc.dataset.setLocale;

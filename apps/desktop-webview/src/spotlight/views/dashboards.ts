@@ -12,7 +12,7 @@ import type {
 import { escapeHtml, safeHref } from "@workhub/web-runtime";
 
 import type { CommandId } from "../../command-palette.js";
-import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
+import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 function loadingHtml(zh: boolean, label: string): string {
   return `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${escapeHtml(label)}</div>`;
@@ -36,21 +36,31 @@ function readOnlyView(
     mount(ctx: SpotlightViewContext) {
       const zh = ctx.locale === "zh-CN";
       let disposed = false;
-      ctx.body.innerHTML = loadingHtml(zh, config.loadingLabel(zh));
-      ctx.requestResize();
-      void (async () => {
+      // rank7：装载失败渲带「重试」的错误块，点重试重跑同一装载器（不再是死胡同）。
+      const load = async () => {
+        ctx.body.innerHTML = loadingHtml(zh, config.loadingLabel(zh));
+        ctx.requestResize();
         try {
           const { html, subtitle } = await config.load(ctx, zh);
           if (disposed) return;
           ctx.setSubtitle(subtitle);
           ctx.body.innerHTML = html;
-          ctx.requestResize();
         } catch {
           if (disposed) return;
-          ctx.body.innerHTML = `<div class="wh-spot-error">${escapeHtml(config.errorLabel(zh))}</div>`;
-          ctx.requestResize();
+          ctx.body.innerHTML = spotlightErrorHtml(zh, config.errorLabel(zh));
         }
-      })();
+        ctx.requestResize();
+      };
+      ctx.body.addEventListener(
+        "click",
+        (event) => {
+          if (event.target instanceof HTMLElement && event.target.closest("[data-spot-retry]")) {
+            void load();
+          }
+        },
+        { signal: ctx.signal }
+      );
+      void load();
       return () => {
         disposed = true;
       };
@@ -237,7 +247,7 @@ export function createKnowledgeView(): SpotlightCapabilityView {
         } catch {
           if (disposed || gen !== searchGen) return;
           const r = ctx.body.querySelector<HTMLElement>("[data-know-result]");
-          if (r) r.innerHTML = `<div class="wh-spot-error">${zh ? "检索失败，稍后重试" : "Search failed — retry"}</div>`;
+          if (r) r.innerHTML = spotlightErrorHtml(zh, zh ? "检索失败" : "Search failed");
         } finally {
           // 仅当本次仍是最新代次才解锁——避免被切项目作废的旧检索把新检索的 busy 解掉。
           if (gen === searchGen) busy = false;
@@ -278,7 +288,7 @@ export function createKnowledgeView(): SpotlightCapabilityView {
           ctx.requestResize();
           return;
         }
-        if (target.closest("[data-know-go]")) {
+        if (target.closest("[data-know-go]") || target.closest("[data-spot-retry]")) {
           void run();
         }
       });

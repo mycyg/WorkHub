@@ -11,7 +11,7 @@ import {
   safeHref
 } from "@workhub/web-runtime";
 
-import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
+import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 type Tone = "approval" | "choice" | "permission" | "handoff" | "info";
 
@@ -139,6 +139,8 @@ export function createAttentionView(): SpotlightCapabilityView {
       let disposed = false;
       // 单飞守卫：处置中禁止再次点击，避免重复 POST（第二发会 409 approval_race）。
       let busy = false;
+      // rank7：上次失败的加载器，点「重试」即重跑。
+      let retry: (() => void) | undefined;
 
       const setSubtitleFromVm = (vm: AttentionHomeVM) => {
         const n = vm.queue?.length ?? 0;
@@ -158,7 +160,8 @@ export function createAttentionView(): SpotlightCapabilityView {
           render(vm);
         } catch {
           if (!disposed) {
-            body.innerHTML = `<div class="wh-spot-error">${zh ? "待拍板没拉到，稍后重试" : "Couldn't load decisions — retry shortly"}</div>`;
+            retry = () => void refresh();
+            body.innerHTML = spotlightErrorHtml(zh, zh ? "待拍板没拉到" : "Couldn't load decisions");
             ctx.requestResize();
           }
         }
@@ -234,6 +237,11 @@ export function createAttentionView(): SpotlightCapabilityView {
       body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        // 0) 重试上次失败的加载（rank7）。
+        if (target.closest("[data-spot-retry]")) {
+          retry?.();
           return;
         }
         // 1) 选了打回理由 → 以该理由打回（href 从理由层容器取，审批/看改动通用）。

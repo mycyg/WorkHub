@@ -5,7 +5,7 @@
 import type { AgentRunLiveVM, AgentStep, AttentionHomeVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
-import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
+import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 type BgRun = AttentionHomeVM["background_runs"][number];
 
@@ -74,6 +74,8 @@ export function createReplayView(): SpotlightCapabilityView {
       let disposed = false;
       // M4：单调代次，防 list↔trace 快切时晚到的 await 覆盖更新一帧。
       let loadGen = 0;
+      // rank7：上次失败的加载器，点「重试」即重跑。
+      let retry: (() => void) | undefined;
 
       const showList = async () => {
         const gen = ++loadGen;
@@ -88,7 +90,8 @@ export function createReplayView(): SpotlightCapabilityView {
           ctx.body.innerHTML = runListHtml(runs, zh);
         } catch {
           if (disposed || gen !== loadGen) return;
-          ctx.body.innerHTML = `<div class="wh-spot-error">${zh ? "运行没拉到，稍后重试" : "Couldn't load runs — retry"}</div>`;
+          retry = () => void showList();
+          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "运行没拉到" : "Couldn't load runs");
         }
         ctx.requestResize();
       };
@@ -104,7 +107,8 @@ export function createReplayView(): SpotlightCapabilityView {
           ctx.body.innerHTML = traceHtml(vm, zh);
         } catch {
           if (disposed || gen !== loadGen) return;
-          ctx.body.innerHTML = `<div class="wh-spot-error">${zh ? "时间线没拉到，稍后重试" : "Couldn't load trace — retry"}</div>`;
+          retry = () => void showTrace(runId);
+          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "时间线没拉到" : "Couldn't load trace");
         }
         ctx.requestResize();
       };
@@ -112,6 +116,10 @@ export function createReplayView(): SpotlightCapabilityView {
       ctx.body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
+        if (target.closest("[data-spot-retry]")) {
+          retry?.();
+          return;
+        }
         if (target.closest("[data-run-back]")) {
           void showList();
           return;

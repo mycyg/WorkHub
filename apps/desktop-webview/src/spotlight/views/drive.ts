@@ -5,7 +5,7 @@
 import type { DriveItemVM, DrivePageVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
-import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
+import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 const FOLDER_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
@@ -66,6 +66,8 @@ export function createDriveView(): SpotlightCapabilityView {
       let busy = false;
       // rank9：单调代次——切项目时旧项目的晚到 await 不得覆盖新项目的文件列表。
       let loadGen = 0;
+      // rank7：上次失败的加载器，点「重试」即重跑。
+      let retry: (() => void) | undefined;
       let projects: { id: string; name: string }[] = [];
       let projectId: string | undefined;
       ctx.setSubtitle(zh ? "文件与 AI 交付物" : "Files & deliverables");
@@ -91,7 +93,8 @@ export function createDriveView(): SpotlightCapabilityView {
           ctx.body.innerHTML = driveHtml(vm, chips(), zh);
         } catch {
           if (disposed || gen !== loadGen) return;
-          ctx.body.innerHTML = `<div class="wh-spot-error">${zh ? "文件没拉到，稍后重试" : "Couldn't load files — retry"}</div>`;
+          retry = () => void loadDrive();
+          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "文件没拉到" : "Couldn't load files");
         }
         ctx.requestResize();
       };
@@ -118,6 +121,10 @@ export function createDriveView(): SpotlightCapabilityView {
       ctx.body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
+        if (target.closest("[data-spot-retry]")) {
+          retry?.();
+          return;
+        }
         const proj = target.closest<HTMLElement>("[data-drive-proj]");
         if (proj?.dataset.driveProj) {
           // rank26：恢复进行中不切项目，否则恢复完成的回执/重载会落到另一个项目。

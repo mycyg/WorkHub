@@ -6,7 +6,7 @@
 import type { WorkItemDetailVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
-import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
+import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 function statusLabel(status: string, zh: boolean): string {
   const map: Record<string, [string, string]> = {
@@ -64,6 +64,8 @@ export function createWorkItemView(): SpotlightCapabilityView {
       let busy = false;
       // M4：单调代次，防 list↔detail 快切时晚到的 await 覆盖更新一帧。
       let loadGen = 0;
+      // rank7：上次失败的加载器，点「重试」即重跑。
+      let retry: (() => void) | undefined;
 
       const showList = async () => {
         const gen = ++loadGen;
@@ -86,7 +88,10 @@ export function createWorkItemView(): SpotlightCapabilityView {
               .join("")}</div>`;
           }
         } catch {
-          if (!disposed && gen === loadGen) body.innerHTML = `<div class="wh-spot-error">${zh ? "工作项没拉到，稍后重试" : "Couldn't load — retry"}</div>`;
+          if (!disposed && gen === loadGen) {
+            retry = () => void showList();
+            body.innerHTML = spotlightErrorHtml(zh, zh ? "工作项没拉到" : "Couldn't load");
+          }
         }
         ctx.requestResize();
       };
@@ -101,7 +106,10 @@ export function createWorkItemView(): SpotlightCapabilityView {
           ctx.setSubtitle(vm.workitem.code);
           body.innerHTML = detailHtml(vm, zh);
         } catch {
-          if (!disposed && gen === loadGen) body.innerHTML = `<div class="wh-spot-error">${zh ? "详情没拉到，稍后重试" : "Couldn't load — retry"}</div>`;
+          if (!disposed && gen === loadGen) {
+            retry = () => void showDetail(id);
+            body.innerHTML = spotlightErrorHtml(zh, zh ? "详情没拉到" : "Couldn't load");
+          }
         }
         ctx.requestResize();
       };
@@ -109,6 +117,10 @@ export function createWorkItemView(): SpotlightCapabilityView {
       body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
+        if (target.closest("[data-spot-retry]")) {
+          retry?.();
+          return;
+        }
         if (target.closest("[data-wi-back]")) {
           void showList();
           return;
