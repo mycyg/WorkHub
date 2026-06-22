@@ -96,16 +96,30 @@ export function createProjectRepository(db: WorkHubDb): ProjectRepository {
         })
         .onConflictDoNothing();
 
-      const existingRows = await db
-        .select()
-        .from(projects)
-        .where(and(eq(projects.slug, input.slug), eq(projects.archived, false), isNull(projects.deletedAt)))
-        .limit(1);
-      const existing = existingRows[0];
+      // rank1：复用查询必须按工作区过滤——否则 slug 全局命中会把别的工作区的项目串给本工作区（跨租户泄漏）。
+      const findActive = async (): Promise<ProjectRow | undefined> => {
+        const rows = await db
+          .select()
+          .from(projects)
+          .where(
+            and(
+              eq(projects.workspaceId, input.workspaceId),
+              eq(projects.slug, input.slug),
+              eq(projects.archived, false),
+              isNull(projects.deletedAt)
+            )
+          )
+          .limit(1);
+        return rows[0];
+      };
+
+      const existing = await findActive();
       if (existing) {
         return { project: existing, created: false };
       }
 
+      // 原子创建：ON CONFLICT (workspace_id, slug) DO NOTHING（与迁移 0028 的工作区级唯一索引对齐）。
+      // 并发同 (workspace, slug) 时第二发不再撞唯一抛 500，而是落空→回查已存在的那条按复用返回。
       const rows = await db
         .insert(projects)
         .values({
@@ -121,12 +135,18 @@ export function createProjectRepository(db: WorkHubDb): ProjectRepository {
           createdAt: at,
           updatedAt: at
         })
+        .onConflictDoNothing({ target: [projects.workspaceId, projects.slug] })
         .returning();
       const project = rows[0];
-      if (!project) {
-        throw new Error("Failed to create pilot project");
+      if (project) {
+        return { project, created: true };
       }
-      return { project, created: true };
+      // onConflict 落空：要么并发抢先建了同一条（回查复用），要么 slug 被同工作区的归档/软删行占用（无可复用→报错）。
+      const raced = await findActive();
+      if (!raced) {
+        throw new Error("Failed to create or reuse project (slug occupied by an archived/deleted row in this workspace)");
+      }
+      return { project: raced, created: false };
     }
   };
 }

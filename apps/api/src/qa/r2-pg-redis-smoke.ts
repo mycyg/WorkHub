@@ -14,6 +14,7 @@ import {
   createDatabaseClient,
   createDriveRepository,
   createInviteRepository,
+  createProjectRepository,
   createSessionRepository,
   createUserRepository,
   createWorkItemRepository,
@@ -487,6 +488,43 @@ async function main() {
       assert.equal(await memberships.resolveDefaultTenant(randomUUID()), null, "no membership → null (caller falls back to constant)");
 
       console.log("[r2-pg-redis-smoke] workspace membership partial-unique + tenant resolution round-trip ok");
+    }
+
+    // rank1（R8 深复审）：项目 create-or-reuse 必须按工作区隔离——同 slug 在不同工作区是不同项目，
+    // 不能把 B 工作区的请求命中并返回 A 工作区的项目（跨租户串号/泄漏）；同工作区同 slug 才复用。
+    // 该断言依赖迁移 0028 把 projects_slug_uq 改成 (workspace_id, slug)；旧全局唯一索引下 inB 的插入会撞唯一抛错。
+    {
+      const projectRepo = createProjectRepository(db);
+      const wsA = settings.auth.defaultWorkspaceId;
+      const wsB = randomUUID();
+      await db
+        .insert(workspaces)
+        .values({
+          id: wsB,
+          orgId: settings.auth.defaultOrgId,
+          name: "R2 project-isolation workspace",
+          slug: `r2-pj-${wsB.slice(0, 8)}`
+        })
+        .onConflictDoNothing();
+      const sharedSlug = `shared-${randomUUID().slice(0, 8)}`;
+      const bootstrapArgs = (workspaceId: string) => ({
+        orgId: settings.auth.defaultOrgId,
+        workspaceId,
+        name: "Shared name",
+        slug: sharedSlug,
+        ownerNickname: "r2",
+        ownerUserId: ownerId
+      });
+      const inA = await projectRepo.bootstrapPilotProject(bootstrapArgs(wsA));
+      const inB = await projectRepo.bootstrapPilotProject(bootstrapArgs(wsB));
+      assert.equal(inA.created, true, "first create in workspace A is a real create");
+      assert.equal(inB.created, true, "same slug in a different workspace creates a separate project (no cross-workspace reuse)");
+      assert.notEqual(inA.project.id, inB.project.id, "cross-workspace same-slug projects are distinct rows");
+      assert.equal(inB.project.workspaceId, wsB, "the workspace-B project belongs to workspace B");
+      const reuseA = await projectRepo.bootstrapPilotProject(bootstrapArgs(wsA));
+      assert.equal(reuseA.created, false, "same slug in the same workspace reuses");
+      assert.equal(reuseA.project.id, inA.project.id, "reuse returns the same project row");
+      console.log("[r2-pg-redis-smoke] project create-or-reuse is workspace-scoped (rank1) ok");
     }
 
     // R2 auth epic（邀请）：邀请 DB 层真 PG 往返（create→token 解析→接受墓碑→已用/过期均解析不到）。

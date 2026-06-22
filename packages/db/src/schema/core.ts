@@ -263,7 +263,8 @@ export const projects = pgTable(
     ...timestamps()
   },
   (table) => [
-    uniqueIndex("projects_slug_uq").on(table.slug),
+    // rank1：slug 唯一性按工作区隔离（非全局），杜绝 create-or-reuse-by-slug 的跨租户串号。见迁移 0028。
+    uniqueIndex("projects_slug_uq").on(table.workspaceId, table.slug),
     index("projects_workspace_id_idx").on(table.workspaceId),
     index("projects_owner_user_id_idx").on(table.ownerUserId),
     index("projects_deleted_at_idx").on(table.deletedAt)
