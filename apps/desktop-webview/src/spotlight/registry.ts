@@ -10,8 +10,10 @@ import {
   createKnowledgeView,
   createProjectsView
 } from "./views/dashboards.js";
+import { createDriveView } from "./views/drive.js";
 import { createIntakeView } from "./views/intake.js";
 import { createPlaceholderView } from "./views/placeholder.js";
+import { createReplayView } from "./views/replay.js";
 import type { SpotlightCapabilityView } from "./view-context.js";
 
 // 已做成内联的能力工厂表。
@@ -21,7 +23,9 @@ const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   projects: createProjectsView,
   cost: createCostView,
   team: createCalendarView,
-  knowledge: createKnowledgeView
+  knowledge: createKnowledgeView,
+  drive: createDriveView,
+  replay: createReplayView
 };
 
 export function resolveCapabilityView(id: CommandId): SpotlightCapabilityView {
