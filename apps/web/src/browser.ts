@@ -425,6 +425,15 @@ function bindGoldPathNavigation(
   let pendingApprovalId: string | undefined;
   let pendingApprovalActionId: string | undefined;
 
+  // M2：项目名输入框按 Enter 即触发「新建项目」——该表单的动作是锚点，原生 Enter 不会提交。
+  shellRoot.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || !(event.target instanceof HTMLElement) || !event.target.matches("[data-r8-project-name-input]")) {
+      return;
+    }
+    event.preventDefault();
+    event.target.closest("[data-r8-project-create-form]")?.querySelector<HTMLElement>("[data-r8-project-create]")?.click();
+  });
+
   shellRoot.addEventListener("click", async (event) => {
     const logoutButton = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-wh-logout]") : null;
     if (logoutButton) {
@@ -606,9 +615,10 @@ function bindGoldPathNavigation(
           const created = await client.bootstrapProject(payload.payload);
           await navigateWebRoute(`/drive?project_id=${encodeURIComponent(created.project.id)}`, client, locale);
           if (root) {
-            const body = locale === "en-US"
-              ? `Project ready: ${created.project.name}.`
-              : `项目已就绪：${created.project.name}。`;
+            // H2：区分「真新建」与「同 slug 复用已有」，别把落进现有项目误报成已创建。
+            const body = created.created
+              ? (locale === "en-US" ? `Created project: ${created.project.name}.` : `已创建项目：${created.project.name}。`)
+              : (locale === "en-US" ? `Opened existing project: ${created.project.name}.` : `已打开同名的现有项目：${created.project.name}。`);
             showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
           }
         } catch (error) {

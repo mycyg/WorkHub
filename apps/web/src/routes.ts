@@ -904,7 +904,13 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       return "empty" as const;
     }
     // 网盘是 GitHub 式核心:同时拉全量项目清单,供面板内的项目切换器/「所有项目」回链使用。
-    const projects = await client.listProjects();
+    // M1：清单拉取失败不应连累已加载好的网盘——退化为无切换器(仍展示文件)，而非整页报错。
+    let projects: ProjectListVM;
+    try {
+      projects = await client.listProjects();
+    } catch {
+      projects = { generated_at: new Date().toISOString(), projects: [] };
+    }
     return { key: "drive", drive, projects } satisfies WebRouteSurface;
   }
   if (match.key === "meetings") {

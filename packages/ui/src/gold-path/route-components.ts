@@ -1801,11 +1801,14 @@ function renderDriveRouteComponent(
   // 纯增量——既有 data-r4-*/data-r5-* 标记一律保留;无项目/≤1 项目时只渲当前项目名,不出切换器。
   const projectList = projects?.projects ?? [];
   const currentProjectId = vm.project?.id ?? "";
+  // M3：当前项目不在清单里时(归档/跨工作区直链)，原生 <select> 会显示第一项名字，与下方标题不符。
+  // 补一个 value 为空、选中的「当前项目」占位项，避免错配（选它不导航）。
+  const currentInList = projectList.some((project) => project.id === currentProjectId);
   const switcherOptions = projectList.length > 1
-    ? projectList.map((project) => {
+    ? `${currentInList ? "" : `<option value="" selected>${escapeHtml(vm.project?.name ?? "")}</option>`}${projectList.map((project) => {
       const selected = project.id === currentProjectId ? " selected" : "";
       return `<option value="${escapeHtml(safeHref(`/drive?project_id=${encodeURIComponent(project.id)}`))}"${selected}>${escapeHtml(project.name)}</option>`;
-    }).join("")
+    }).join("")}`
     : "";
   const driveProjectNav = `<nav class="wh-r4-route-meta" data-r8-drive-project-nav="true" data-r8-drive-current-project="${escapeHtml(currentProjectId)}" data-r8-drive-project-count="${escapeHtml(String(projectList.length))}">
         <a class="wh-pill" href="/projects" data-r8-drive-all-projects="true">&#8592; ${escapeHtml(routeT(locale, "drive.allProjects"))}</a>
@@ -2493,7 +2496,7 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
           <p>${escapeHtml(routeT(locale, "projects.summary"))}</p>
         </div>
         <form class="wh-r4-project-create" data-r8-project-create-form="true">
-          <input type="text" data-r8-project-name-input="true" name="project_name" autocomplete="off" placeholder="${escapeHtml(routeT(locale, "projects.namePlaceholder"))}" aria-label="${escapeHtml(routeT(locale, "projects.new"))}" />
+          <input type="text" data-r8-project-name-input="true" name="project_name" autocomplete="off" maxlength="128" placeholder="${escapeHtml(routeT(locale, "projects.namePlaceholder"))}" aria-label="${escapeHtml(routeT(locale, "projects.new"))}" />
           <a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="create_named_project" data-method="POST" data-r8-project-new="true" data-r8-project-create="true">${escapeHtml(routeT(locale, "projects.create"))}</a>
         </form>
       </header>

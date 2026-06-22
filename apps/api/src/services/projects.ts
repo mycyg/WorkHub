@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { getSharedDatabaseClient, createProjectRepository, type ProjectRepository, type WorkHubDatabaseClient } from "@workhub/db";
 import { projectListVmSchema } from "@workhub/contracts";
 import type {
@@ -45,7 +47,10 @@ function slugFromName(name: string) {
     .replace(/[^a-z0-9]+/gu, "-")
     .replace(/^-+|-+$/gu, "")
     .slice(0, 48);
-  return ascii || "pilot-project";
+  // H1：纯非 ASCII 名（如纯中文）会被清成空串。旧代码统一落回固定 "pilot-project" slug，而 bootstrap 按
+  // slug 复用 → 用户每次用中文名「新建项目」都静默落进同一个(甚至 intake 的 pilot)项目。给空 ascii 一个唯一
+  // 后缀，保证中文名也真正建出独立项目。intake 显式传 slug "pilot-project"，故其幂等复用不受影响。
+  return ascii || `project-${randomUUID().slice(0, 8)}`;
 }
 
 function toProjectVm(project: Awaited<ReturnType<ProjectRepository["bootstrapPilotProject"]>>["project"]): ProjectVM {
