@@ -815,7 +815,18 @@ export async function bootDesktopPetSurface(
     });
   };
 
-  const setCard = (card: CuuCard | undefined, status?: string, options: { persist?: boolean } = {}) => {
+  // rank8：桌宠暂不支持「转交他人」（无选人 UI、无能力承接，点了静默无效）——
+  // 在唯一的卡片展示入口剥掉 delegate 动作，避免渲染出点了没反应的按钮。href 形如 /api/approvals/{id}/delegate。
+  const stripUnsupportedPetActions = (card: CuuCard | undefined): CuuCard | undefined => {
+    if (!card?.actions?.length) {
+      return card;
+    }
+    const kept = card.actions.filter((a) => !(a.href && /\/delegate(?:[/?#]|$)/u.test(a.href)));
+    return kept.length === card.actions.length ? card : { ...card, actions: kept };
+  };
+
+  const setCard = (rawCard: CuuCard | undefined, status?: string, options: { persist?: boolean } = {}) => {
+    const card = stripUnsupportedPetActions(rawCard);
     const nextRunId = agentRunIdFromPetCard(card);
     if (runStreamSubscription && nextRunId !== runStreamSubscription.runId) {
       runStreamSubscription.close();

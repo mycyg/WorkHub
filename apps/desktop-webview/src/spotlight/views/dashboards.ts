@@ -184,6 +184,8 @@ export function createKnowledgeView(): SpotlightCapabilityView {
       const zh = ctx.locale === "zh-CN";
       let disposed = false;
       let busy = false;
+      // rank9：单调代次——切项目使在途检索作废，避免「B 项目下渲染 A 项目结果」+ 锁死 busy。
+      let searchGen = 0;
       let projects: { id: string; name: string }[] = [];
       let projectId: string | undefined;
       ctx.setSubtitle(zh ? "搜索沉淀的知识" : "Search knowledge");
@@ -221,21 +223,25 @@ export function createKnowledgeView(): SpotlightCapabilityView {
         if (busy || !projectId) return;
         const q = ctx.body.querySelector<HTMLInputElement>("[data-know-input]")?.value.trim() ?? "";
         if (!q) return;
+        const gen = ++searchGen;
+        const reqProjectId = projectId;
         busy = true;
         const result = ctx.body.querySelector<HTMLElement>("[data-know-result]");
         if (result) result.innerHTML = loadingHtml(zh, zh ? "正在检索…" : "Searching…");
         ctx.requestResize();
         try {
-          const bubble = await ctx.client.searchKnowledge({ q, project_id: projectId });
-          if (disposed) return;
+          const bubble = await ctx.client.searchKnowledge({ q, project_id: reqProjectId });
+          if (disposed || gen !== searchGen) return;
           const r = ctx.body.querySelector<HTMLElement>("[data-know-result]");
           if (r) r.innerHTML = bubbleHtml(bubble, zh);
         } catch {
+          if (disposed || gen !== searchGen) return;
           const r = ctx.body.querySelector<HTMLElement>("[data-know-result]");
           if (r) r.innerHTML = `<div class="wh-spot-error">${zh ? "检索失败，稍后重试" : "Search failed — retry"}</div>`;
         } finally {
-          busy = false;
-          ctx.requestResize();
+          // 仅当本次仍是最新代次才解锁——避免被切项目作废的旧检索把新检索的 busy 解掉。
+          if (gen === searchGen) busy = false;
+          if (!disposed) ctx.requestResize();
         }
       };
 
@@ -258,12 +264,15 @@ export function createKnowledgeView(): SpotlightCapabilityView {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
         const proj = target.closest<HTMLElement>("[data-know-proj]");
-        if (proj?.dataset.knowProj) {
+        if (proj?.dataset.knowProj && proj.dataset.knowProj !== projectId) {
           projectId = proj.dataset.knowProj;
           ctx.body.querySelectorAll<HTMLElement>("[data-know-proj]").forEach((el) => {
             el.dataset.sel = String(el.dataset.knowProj === projectId);
           });
-          // M5：切项目后旧结果作废，清掉避免“B 项目下显示 A 项目结果”的错觉。
+          // M5+rank9：切项目使在途检索作废(代次++)并解锁 busy——否则旧检索回来会把
+          // A 项目结果渲染到 B 项目下，且 busy 不复位会锁死后续检索。
+          searchGen += 1;
+          busy = false;
           const stale = ctx.body.querySelector<HTMLElement>("[data-know-result]");
           if (stale) stale.innerHTML = "";
           ctx.requestResize();

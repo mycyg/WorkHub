@@ -67,9 +67,16 @@ function renderAction(action: AttentionItem["actions"][number]): string {
   return `<button ${attrs}>${escapeHtml(action.label)}</button>`;
 }
 
+// 桌面暂不支持「转交他人」（需要选人 UI，且没有任何能力承接）——与其渲染一个点了
+// 静默无效/误导 toast 的按钮，不如先不显示(rank8)。href 形如 /api/approvals/{id}/delegate。
+function isUnsupportedDesktopAction(href: string): boolean {
+  return /\/delegate(?:[/?#]|$)/u.test(href);
+}
+
 function renderCard(item: AttentionItem, zh: boolean): string {
   const tone = toneForKind(item.kind);
   const desc = item.reason_text ?? item.summary_text ?? "";
+  const actions = item.actions.filter((a) => !isUnsupportedDesktopAction(a.href));
   return `<article class="wh-spot-card ds-glass" data-att-id="${escapeHtml(item.id)}" data-att-tone="${tone}">
     <span class="wh-spot-card-bar wh-spot-card-bar--${tone}"></span>
     <div class="wh-spot-card-main">
@@ -78,7 +85,7 @@ function renderCard(item: AttentionItem, zh: boolean): string {
       </div>
       <h3 class="wh-spot-card-title">${escapeHtml(item.title)}</h3>
       ${desc ? `<p class="wh-spot-card-desc">${escapeHtml(desc)}</p>` : ""}
-      <div class="wh-spot-card-actions" data-att-actionrow>${item.actions.map(renderAction).join("")}</div>
+      <div class="wh-spot-card-actions" data-att-actionrow>${actions.map(renderAction).join("")}</div>
     </div>
   </article>`;
 }

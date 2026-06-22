@@ -64,6 +64,8 @@ export function createDriveView(): SpotlightCapabilityView {
       const zh = ctx.locale === "zh-CN";
       let disposed = false;
       let busy = false;
+      // rank9：单调代次——切项目时旧项目的晚到 await 不得覆盖新项目的文件列表。
+      let loadGen = 0;
       let projects: { id: string; name: string }[] = [];
       let projectId: string | undefined;
       ctx.setSubtitle(zh ? "文件与 AI 交付物" : "Files & deliverables");
@@ -77,16 +79,18 @@ export function createDriveView(): SpotlightCapabilityView {
 
       const loadDrive = async () => {
         if (!projectId) return;
+        const gen = ++loadGen;
+        const reqProjectId = projectId;
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉文件…" : "Loading files…"}</div>`;
         ctx.requestResize();
         try {
-          const vm = await ctx.client.pages.drive({ project_id: projectId, locale: ctx.locale });
-          if (disposed) return;
-          const proj = projects.find((p) => p.id === projectId);
+          const vm = await ctx.client.pages.drive({ project_id: reqProjectId, locale: ctx.locale });
+          if (disposed || gen !== loadGen) return;
+          const proj = projects.find((p) => p.id === reqProjectId);
           ctx.setSubtitle(proj ? proj.name : zh ? "网盘" : "Drive");
           ctx.body.innerHTML = driveHtml(vm, chips(), zh);
         } catch {
-          if (disposed) return;
+          if (disposed || gen !== loadGen) return;
           ctx.body.innerHTML = `<div class="wh-spot-error">${zh ? "文件没拉到，稍后重试" : "Couldn't load files — retry"}</div>`;
         }
         ctx.requestResize();
@@ -116,6 +120,8 @@ export function createDriveView(): SpotlightCapabilityView {
         if (!(target instanceof HTMLElement)) return;
         const proj = target.closest<HTMLElement>("[data-drive-proj]");
         if (proj?.dataset.driveProj) {
+          // rank26：恢复进行中不切项目，否则恢复完成的回执/重载会落到另一个项目。
+          if (busy || proj.dataset.driveProj === projectId) return;
           projectId = proj.dataset.driveProj;
           void loadDrive();
           return;
