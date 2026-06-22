@@ -727,6 +727,7 @@ function routeStructuredProposalConflict(surface: GoldPathSurfaceVM): ProposalCo
 test("R4 web route registry resolves product URL routes", () => {
   assert.deepEqual(webRouteRegistry.map((route) => route.key), [
     "home",
+    "projects",
     "intake",
     "approvals",
     "workitem",
@@ -743,6 +744,7 @@ test("R4 web route registry resolves product URL routes", () => {
     "settings"
   ]);
   assert.equal(resolveWebRoute("/")?.key, "home");
+  assert.equal(resolveWebRoute("/projects")?.key, "projects");
   assert.equal(resolveWebRoute("/dashboard/health")?.key, "health");
   assert.equal(resolveWebRoute("/approvals?filter=pending")?.key, "approvals");
   assert.equal(resolveWebRoute("/dashboard/cost")?.key, "cost");
@@ -776,6 +778,7 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
     webReactRouteTree.map((route) => [route.key, route.hydration.pageVm]),
     [
       ["home", "attention"],
+      ["projects", "projects"],
       ["intake", "session"],
       ["approvals", "approvals"],
       ["workitem", "workitem"],

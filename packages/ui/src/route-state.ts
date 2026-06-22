@@ -4,6 +4,7 @@ export type RouteStateKind = "loading" | "empty" | "error" | "forbidden";
 
 export type R4WebRouteKey =
   | "home"
+  | "projects"
   | "intake"
   | "approvals"
   | "workitem"
@@ -31,6 +32,7 @@ export type RouteStateCardInput = {
 
 export const r4WebRouteKeys = [
   "home",
+  "projects",
   "intake",
   "approvals",
   "workitem",
@@ -70,6 +72,7 @@ export const routeStateCss = [
 const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; route: string }>> = {
   "zh-CN": {
     home: { label: "总览", route: "/" },
+    projects: { label: "项目", route: "/projects" },
     intake: { label: "快捷入口", route: "/intake/:sessionId" },
     approvals: { label: "审批中心", route: "/approvals" },
     workitem: { label: "工作项详情", route: "/workitems/:id" },
@@ -87,6 +90,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
   },
   "en-US": {
     home: { label: "Overview", route: "/" },
+    projects: { label: "Projects", route: "/projects" },
     intake: { label: "Intake", route: "/intake/:sessionId" },
     approvals: { label: "Approval center", route: "/approvals" },
     workitem: { label: "Work item detail", route: "/workitems/:id" },

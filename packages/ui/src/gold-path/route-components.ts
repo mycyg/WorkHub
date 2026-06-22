@@ -17,6 +17,7 @@ import type {
   MeetingPageVM,
   NotificationPageVM,
   ProjectHealthPageVM,
+  ProjectListVM,
   ReplayTraceVM,
   SessionVM,
   SettingsPageVM,
@@ -49,8 +50,8 @@ import {
 import { goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
-// "skills" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "settings"> | "skills";
+// "skills"/"projects" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "settings"> | "skills" | "projects";
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -284,6 +285,15 @@ type RouteCopyKey =
   | "skills.confidence"
   | "skills.refinedFrom"
   | "skills.authoredBy"
+  | "projects.kicker"
+  | "projects.title"
+  | "projects.summary"
+  | "projects.empty"
+  | "projects.new"
+  | "projects.open"
+  | "projects.archived"
+  | "projects.openItems"
+  | "projects.updated"
   | "settings.runtime"
   | "settings.llm"
   | "settings.language"
@@ -447,6 +457,15 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.title": "团队技能",
     "skills.summary": "AI 沉淀并持续打磨的可复用技能",
     "skills.empty": "还没有沉淀出团队技能。AI 会在夜间从真实工作里蒸馏。",
+    "projects.kicker": "项目即产品",
+    "projects.title": "项目",
+    "projects.summary": "把每个项目当成一个产品来管理：进行中工作项、负责人和最近更新一目了然。",
+    "projects.empty": "还没有项目。新建一个项目就能开始派活。",
+    "projects.new": "新建项目",
+    "projects.open": "打开项目",
+    "projects.archived": "已归档",
+    "projects.openItems": "进行中",
+    "projects.updated": "更新于",
     "skills.active": "在用",
     "skills.aiAuthored": "AI 蒸馏",
     "skills.refined": "已精修",
@@ -616,6 +635,15 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.title": "Team skills",
     "skills.summary": "Reusable skills the AI distills and keeps refining",
     "skills.empty": "No team skills yet. The AI distills them nightly from real work.",
+    "projects.kicker": "Projects as products",
+    "projects.title": "Projects",
+    "projects.summary": "Treat every project like a product: open work, owner, and latest activity at a glance.",
+    "projects.empty": "No projects yet. Create one to start assigning work.",
+    "projects.new": "New project",
+    "projects.open": "Open project",
+    "projects.archived": "Archived",
+    "projects.openItems": "Open",
+    "projects.updated": "Updated",
     "skills.active": "Active",
     "skills.aiAuthored": "AI-distilled",
     "skills.refined": "Refined",
@@ -2388,6 +2416,61 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
   });
 }
 
+function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale): WebRouteComponent {
+  // GitHub 式仓库索引：每个项目一行卡片（名称 + 负责人 + 进行中工作项 + 归档徽标 + 更新时间），
+  // 头部带「新建项目」动作（沿用试点项目 bootstrap 入口，POST /api/projects/bootstrap）。
+  const bootstrapPayload = {
+    name: "New Project",
+    description: "Project context created from the WorkHub projects index."
+  };
+  const projects = vm.projects;
+  const rows = projects.length
+    ? projects.map((project) => {
+      const openLabel = `${routeT(locale, "projects.openItems")} ${project.open_work_item_count}`;
+      const archivedPill = project.archived
+        ? `<span class="wh-pill" data-r8-project-archived="true">${escapeHtml(routeT(locale, "projects.archived"))}</span>`
+        : "";
+      const descriptionLine = project.description
+        ? `<p>${escapeHtml(project.description)}</p>`
+        : `<p>${escapeHtml(`${routeT(locale, "projects.updated")} ${project.updated_at}`)}</p>`;
+      const projectHref = `/drive?project_id=${encodeURIComponent(project.id)}`;
+      return `<div class="wh-r4-route-row" data-r8-project="${escapeHtml(project.id)}" data-r8-project-slug="${escapeHtml(project.slug)}" data-r8-project-archived="${escapeHtml(String(project.archived))}" data-r8-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
+      <div>
+        <strong>${escapeHtml(project.name)}</strong>
+        ${descriptionLine}
+        <div class="wh-r4-route-meta">
+          <span class="wh-pill">${escapeHtml(project.owner_nickname)}</span>
+          <span class="wh-pill">${escapeHtml(openLabel)}</span>
+          ${archivedPill}
+        </div>
+      </div>
+      <a class="wh-btn" href="${escapeHtml(safeHref(projectHref))}" data-action-id="open_project" data-method="GET" data-r8-project-open="${escapeHtml(project.id)}">${escapeHtml(routeT(locale, "projects.open"))}</a>
+    </div>`;
+    }).join("")
+    : `<p class="wh-subtle" data-r8-projects-empty="true">${escapeHtml(routeT(locale, "projects.empty"))}</p>`;
+  return createWebRouteComponent({
+    key: "projects",
+    css: webRouteComponentCss,
+    primaryHrefs: ["/api/projects/bootstrap"],
+    source: "page-vm",
+    locale,
+    pageVm: "projects",
+    html: `<section class="wh-r4-route" data-r4-route-component="projects" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r8-projects-count="${escapeHtml(String(projects.length))}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "projects.kicker"))}</span>
+          <h2>${escapeHtml(routeT(locale, "projects.title"))}</h2>
+          <p>${escapeHtml(routeT(locale, "projects.summary"))}</p>
+        </div>
+        <a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="new_project" data-method="POST" data-r8-project-new="true" data-request-json="${jsonAttr(bootstrapPayload)}">${escapeHtml(routeT(locale, "projects.new"))}</a>
+      </header>
+      <section class="wh-card wh-r4-route-card" data-r8-projects-list="true">
+        <div class="wh-r4-route-timeline">${rows}</div>
+      </section>
+    </section>`
+  });
+}
+
 function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): WebRouteComponent {
   const reactComponent = createCostReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
@@ -2622,6 +2705,7 @@ function renderReplayRouteComponent(vm: ReplayTraceVM, locale: WorkHubLocale): W
 
 export type WebRouteComponentInput =
   | { key: "home"; attention: AttentionHomeVM }
+  | { key: "projects"; projects: ProjectListVM }
   | { key: "intake"; session: SessionVM }
   | { key: "intake"; start: true }
   | { key: "approvals"; approvals: ApprovalCenterVM }
@@ -2646,6 +2730,8 @@ export function renderWebRouteComponent(
   switch (input.key) {
     case "home":
       return renderHomeRouteComponent(input.attention, locale);
+    case "projects":
+      return renderProjectsRouteComponent(input.projects, locale);
     case "intake":
       if ("start" in input) {
         return renderIntakeStartRouteComponent(locale);

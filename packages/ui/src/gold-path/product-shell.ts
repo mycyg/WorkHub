@@ -33,6 +33,7 @@ export type WebProductShellOptions = GoldPathAppShellOptions & {
 type ProductShellCopyKey =
   | "nav.title"
   | "nav.home"
+  | "nav.projects"
   | "nav.approvals"
   | "nav.workitem"
   | "nav.proposal"
@@ -57,6 +58,7 @@ type ProductShellCopyKey =
   | "rail.boundary"
   | "rail.next"
   | "rail.nextHome"
+  | "rail.nextProjects"
   | "rail.nextApprovals"
   | "rail.nextWorkitem"
   | "rail.nextProposal"
@@ -72,6 +74,7 @@ type ProductShellCopyKey =
   | "rail.nextKnowledge"
   | "rail.nextSkills"
   | "masthead.home"
+  | "masthead.projects"
   | "masthead.approvals"
   | "masthead.workitem"
   | "masthead.proposal"
@@ -111,6 +114,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
   "zh-CN": {
     "nav.title": "工作入口",
     "nav.home": "总览",
+    "nav.projects": "项目",
     "nav.approvals": "审批",
     "nav.workitem": "任务",
     "nav.proposal": "变更",
@@ -135,6 +139,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.boundary": "主窗口专注工作，桌宠在独立窗口陪你 (=^･ω･^=)",
     "rail.next": "下一步",
     "rail.nextHome": "先挑最要紧的一件，其他的我在后台盯着 (๑˃ᴗ˂)",
+    "rail.nextProjects": "把每个项目当产品看，挑一个进去派活或新建一个。",
     "rail.nextApprovals": "打回理由会回灌给 AI 继续改。",
     "rail.nextWorkitem": "核对验收项、AI 轨迹和交付物。",
     "rail.nextProposal": "审查风险、证据和可回滚路径。",
@@ -150,6 +155,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextKnowledge": "按证据来源核对，再回到对应任务或审批。",
     "rail.nextSkills": "看团队技能战绩与自进化记录，再决定要不要调整。",
     "masthead.home": "默认只把最该你拿主意的一件事放在最前，其它在后台安静运行。",
+    "masthead.projects": "项目即产品：每个项目汇总进行中工作项、负责人和最近更新，像仓库索引一样一眼看全。",
     "masthead.approvals": "把需要你拍板的审批、理由、超时提醒和后续操作集中在一起。",
     "masthead.workitem": "任务详情把验收项、证据、AI 工作过程和最近变更放在一起。",
     "masthead.proposal": "变更申请像代码评审一样清楚，但面向文档、表格、文件和版本。",
@@ -188,6 +194,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
   "en-US": {
     "nav.title": "Work entry",
     "nav.home": "Overview",
+    "nav.projects": "Projects",
     "nav.approvals": "Approvals",
     "nav.workitem": "Tasks",
     "nav.proposal": "Changes",
@@ -212,6 +219,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.boundary": "The main window stays for focused work; the desktop pet keeps you company in its own window (=^･ω･^=)",
     "rail.next": "Next",
     "rail.nextHome": "Grab the most blocking item first — I'll watch the rest (๑˃ᴗ˂)",
+    "rail.nextProjects": "Treat each project as a product — open one to assign work or create a new one.",
     "rail.nextApprovals": "Rejection reasons flow back into AI work.",
     "rail.nextWorkitem": "Review acceptance, trace, and deliverables.",
     "rail.nextProposal": "Check risk, evidence, and rollback path.",
@@ -227,6 +235,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.nextKnowledge": "Verify against sources, then jump back to the task or approval.",
     "rail.nextSkills": "Review team skills and self-evolution records before adjusting.",
     "masthead.home": "The default view offers one decision first while background work stays secondary.",
+    "masthead.projects": "Projects as products: each project rolls up open work, owner, and latest activity like a repo index.",
     "masthead.approvals": "A blocking inbox for approvals, reasons, SLA, and follow-up execution.",
     "masthead.workitem": "Task detail keeps acceptance, evidence, AI trace, and recent change together.",
     "masthead.proposal": "Change requests read like PRs, but cover documents, sheets, files, and versions.",

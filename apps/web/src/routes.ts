@@ -9,6 +9,7 @@ import type {
   MeetingPageVM,
   NotificationPageVM,
   ProjectHealthPageVM,
+  ProjectListVM,
   ProposalConflict,
   ProposalDetailVM,
   ReplayTraceVM,
@@ -79,6 +80,7 @@ export type WebRouteLoadResult = WebRouteReadyResult | WebRouteStateResult;
 
 export type WebRouteSurface =
   | { key: "home"; attention: AttentionHomeVM }
+  | { key: "projects"; projects: ProjectListVM }
   | { key: "intake"; session: SessionVM }
   | { key: "intake"; start: true }
   | { key: "approvals"; approvals: ApprovalCenterVM }
@@ -101,6 +103,13 @@ const routeMatchers = [
     pattern: "/",
     apiBaseLabel: "/api/pages/attention",
     regex: /^\/$/u,
+    paramNames: []
+  },
+  {
+    key: "projects",
+    pattern: "/projects",
+    apiBaseLabel: "/api/projects",
+    regex: /^\/projects\/?(?:\?.*)?$/u,
     paramNames: []
   },
   {
@@ -211,6 +220,7 @@ export const webRouteRegistry: readonly WebRouteDefinition[] = routeMatchers.map
 
 type WebRouteTreePageVm =
   | "attention"
+  | "projects"
   | "session"
   | "approvals"
   | "workitem"
@@ -256,6 +266,7 @@ export type WebReactRouteTreeNode = WebRouteDefinition & {
 
 const routeTreePageVmByKey = {
   home: "attention",
+  projects: "projects",
   intake: "session",
   approvals: "approvals",
   workitem: "workitem",
@@ -429,6 +440,7 @@ function withLocale(locale: WorkHubLocale) {
 
 const shellPageOrder = [
   "home",
+  "projects",
   "intake",
   "approvals",
   "workitem",
@@ -454,6 +466,7 @@ const detailOnlyShellPages = new Set<GoldPathRenderedPage["key"]>([
 
 const shellDefaultRoutes = {
   home: "/",
+  projects: "/projects",
   intake: "/intake",
   approvals: "/approvals",
   workitem: "/",
@@ -473,6 +486,7 @@ const shellDefaultRoutes = {
 const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], string>> = {
   "zh-CN": {
     home: "总览",
+    projects: "项目",
     intake: "接入",
     approvals: "审批",
     workitem: "任务详情",
@@ -490,6 +504,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
   },
   "en-US": {
     home: "Overview",
+    projects: "Projects",
     intake: "Intake",
     approvals: "Approvals",
     workitem: "Task detail",
@@ -612,6 +627,15 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "running", String(surface.attention.background_runs.length))
     ];
   }
+  if (surface.key === "projects") {
+    const openItems = surface.projects.projects.reduce((sum, project) => sum + project.open_work_item_count, 0);
+    const archived = surface.projects.projects.filter((project) => project.archived).length;
+    return [
+      metric(locale, "projects", String(surface.projects.projects.length)),
+      metric(locale, "running", String(openItems)),
+      metric(locale, "done", String(archived))
+    ];
+  }
   if (surface.key === "intake") {
     if ("start" in surface) {
       return [
@@ -722,6 +746,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   if (surface.key === "home") {
     return renderWebRouteComponent({ key: "home", attention: surface.attention }, { locale });
   }
+  if (surface.key === "projects") {
+    return renderWebRouteComponent({ key: "projects", projects: surface.projects }, { locale });
+  }
   if (surface.key === "intake") {
     if ("start" in surface) {
       return renderWebRouteComponent({ key: "intake", start: true }, { locale });
@@ -807,6 +834,10 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     // （战绩横幅 + 计数 + 可爱空态 + 去提需求 CTA），而不是给叶子路由用的"回到总览"死胡同。
     const attention = await client.pages.attention(withLocale(locale));
     return { key: "home", attention } satisfies WebRouteSurface;
+  }
+  if (match.key === "projects") {
+    const projects = await client.listProjects();
+    return { key: "projects", projects } satisfies WebRouteSurface;
   }
   if (match.key === "intake") {
     const sessionId = match.params["sessionId"] ?? "";

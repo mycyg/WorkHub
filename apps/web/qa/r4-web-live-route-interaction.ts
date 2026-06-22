@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
 import type { CalendarPageVM, DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM,
-  ProjectHealthPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
+  ProjectHealthPageVM, ProposalConflict, SessionVM, SettingsPageVM, TeamSkillsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
 
 type Viewport = {
   width: number;
@@ -238,6 +238,12 @@ type BrowserAudit = {
     healthBandsOnly: string | null;
     healthOpenProject: string | null;
     healthSignalCount: string | null;
+    skillActiveCount: string | null;
+    skillAiAuthoredCount: string | null;
+    skillRefinedCount: string | null;
+    skillCardCount: string | null;
+    skillRefinedBadge: string | null;
+    skillEmpty: string | null;
     notificationGrounding: string | null;
     notificationEvidenceSearchRef: string | null;
     knowledgeSourceRef: string | null;
@@ -356,6 +362,7 @@ const outputDir = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_OUTPUT_DIR"]
   : defaultOutputDir;
 const smokeTitle = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_TITLE"] ?? "R4.5 Web Live Route Interaction Smoke";
 const reportFilename = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_REPORT_NAME"] ?? "live-route-interaction-report.json";
+const expectedLiveRouteSmokeSteps = 72;
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -1132,6 +1139,45 @@ function projectHealthPage(locale: WorkHubLocale): ProjectHealthPageVM {
   };
 }
 
+function teamSkillsPage(): TeamSkillsPageVM {
+  return {
+    generated_at: "2026-06-16T02:00:00.000Z",
+    skills: [
+      {
+        skill_key: "drive-comment-triage",
+        name: "Drive comment triage",
+        when_to_use: "Use when Drive comments need to become scoped work drafts with source context.",
+        version: 1,
+        source_kind: "authored",
+        created_by_kind: "human",
+        sample_count: 4,
+        updated_at: "2026-06-15T12:00:00.000Z"
+      },
+      {
+        skill_key: "proposal-review-synthesis",
+        name: "Proposal review synthesis",
+        when_to_use: "Use when a proposal needs evidence-backed review, conflict resolution, and approval notes.",
+        version: 3,
+        source_kind: "distilled",
+        created_by_kind: "ai",
+        confidence_score: 0.91,
+        sample_count: 8,
+        updated_at: "2026-06-16T02:00:00.000Z",
+        provenance: {
+          refined_from_version: 2,
+          op_count: 2,
+          rationale_md: "Refined from accepted pricing and timeline review runs."
+        }
+      }
+    ],
+    totals: {
+      active: 2,
+      ai_authored: 1,
+      refined: 1
+    }
+  };
+}
+
 function calendarPage(locale: WorkHubLocale, view: "day" | "week" = "week", date = "2026-06-11"): CalendarPageVM {
   const rangeStart = view === "week" ? "2026-06-08T00:00:00.000Z" : `${date}T00:00:00.000Z`;
   const rangeEnd = view === "week" ? "2026-06-15T00:00:00.000Z" : "2026-06-12T00:00:00.000Z";
@@ -1784,6 +1830,10 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       sendJson(response, 200, surface.page_vms.cost);
       return;
     }
+    if (request.method === "GET" && url.pathname === "/api/pages/skills") {
+      sendJson(response, 200, teamSkillsPage());
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/api/pages/settings") {
       sendJson(response, 200, settingsPage(currentLocale));
       return;
@@ -2289,7 +2339,8 @@ async function navigate(cdp: CdpClient, url: string, expectedStatus: string) {
     cdp,
     `${url} -> ${expectedStatus}`,
     "document.querySelector('[data-r4-web-route-status]')?.getAttribute('data-r4-web-route-status') || ''",
-    (value) => value === expectedStatus
+    (value) => value === expectedStatus,
+    30_000
   );
 }
 
@@ -2638,6 +2689,12 @@ function auditExpression() {
       healthBandsOnly: document.querySelector("[data-r5-7-health-bands-only]") ? "true" : "false",
       healthOpenProject: document.querySelector("[data-r5-7-health-open-project]") ? "true" : "false",
       healthSignalCount: String(document.querySelectorAll("[data-r5-7-health-signal]").length),
+      skillActiveCount: routeComponent?.getAttribute("data-r8-skills-active") || null,
+      skillAiAuthoredCount: routeComponent?.getAttribute("data-r8-skills-ai-authored") || null,
+      skillRefinedCount: routeComponent?.getAttribute("data-r8-skills-refined") || null,
+      skillCardCount: String(document.querySelectorAll("[data-r8-skill]").length),
+      skillRefinedBadge: document.querySelector("[data-r8-skill-refined]") ? "true" : "false",
+      skillEmpty: document.querySelector("[data-r8-skills-empty]") ? "true" : "false",
       notificationGrounding: document.querySelector("[data-r5-7-notification-grounding]") ? "true" : "false",
       notificationEvidenceSearchRef: document.querySelector("[data-r5-7-notification-evidence-ref='knowledge_search']")?.getAttribute("href") || null,
       knowledgeSourceRef: document.querySelector("[data-r5-7-knowledge-source-ref]")?.getAttribute("data-r5-7-knowledge-source-ref") || null,
@@ -2742,8 +2799,14 @@ function auditExpression() {
                             document.querySelector("[data-r5-calendar-days]") &&
                             document.querySelector("[data-r5-calendar-block-kind='work_item_due']") &&
                             document.querySelector("[data-r5-calendar-block-kind='meeting_followup']") &&
-                            document.querySelector("[data-r5-calendar-open-target]")
+                          document.querySelector("[data-r5-calendar-open-target]")
                         )
+                        : routeComponentKey === "skills"
+                          ? Boolean(
+                            document.querySelector("[data-r8-skill]") &&
+                              document.querySelector("[data-r8-skill-refined]") &&
+                              !document.querySelector("[data-r8-skills-empty]")
+                          )
                     : routeComponentKey === "settings"
                       ? Boolean(document.querySelector("[data-r4-settings-runtime]") && document.querySelector("[data-r4-settings-llm]") && document.querySelector("[data-r4-settings-device]"))
                       : Boolean(routeComponentKey);
@@ -3331,6 +3394,14 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   steps.push(await captureStep(cdp, { id: "15t-health-en-mobile-no-overflow", url: `${baseUrl}/dashboard/health`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "health" }));
 
   await setViewport(cdp, desktop);
+  await navigate(cdp, `${baseUrl}/dashboard/skills`, "ready");
+  steps.push(await captureStep(cdp, { id: "15v-skills-en-desktop-route-component", url: `${baseUrl}/dashboard/skills`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "skills" }));
+
+  await setViewport(cdp, mobile);
+  await navigate(cdp, `${baseUrl}/dashboard/skills`, "ready");
+  steps.push(await captureStep(cdp, { id: "15w-skills-en-mobile-no-overflow", url: `${baseUrl}/dashboard/skills`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "skills" }));
+
+  await setViewport(cdp, desktop);
   await navigate(cdp, `${baseUrl}/notifications`, "ready");
   await clickAndWait(cdp, `[data-r5-notification-item="${notificationMeetingId}"] [data-r5-7-notification-evidence-ref="knowledge_search"]`, "/knowledge/search");
   steps.push(await captureStep(cdp, { id: "15u-notification-evidence-jump-en-desktop", url: `${baseUrl}/knowledge/search`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "knowledge" }));
@@ -3444,6 +3515,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       typeof request.body === "string" &&
       request.body.includes(`notification:${notificationMeetingId}`)
     ),
+    skills: requests.some((request) => request.pathname === "/api/pages/skills" && request.locale === "en-US"),
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
     settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
     replay: requests.some((request) => request.pathname === "/api/agent-runs/r4-live-run/replay" && request.locale === "en-US"),
@@ -3488,6 +3560,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       identify: count("/api/auth/identify", "POST"),
       logout: count("/api/auth/logout", "POST"),
       health: count("/api/pages/health"),
+      skills: count("/api/pages/skills"),
       cost: count("/api/pages/cost"),
       settings: count("/api/pages/settings"),
       replay: count("/api/agent-runs/r4-live-run/replay"),
@@ -3550,7 +3623,9 @@ function vmDomValueMatches(steps: StepReport[], surface: GoldPathSurfaceVM) {
   const workitem = byId.get("03-workitem-click-zh-desktop-route-component")?.audit.routeData;
   const proposal = byId.get("11-proposal-en-mobile-scrolled-notice-route-component")?.audit.routeData;
   const cost = byId.get("12-cost-en-mobile-route-component")?.audit.routeData;
+  const skills = byId.get("15v-skills-en-desktop-route-component")?.audit.routeData;
   const settings = byId.get("13-settings-en-desktop-route-component")?.audit.routeData;
+  const skillsVm = teamSkillsPage();
   return Boolean(
     workitem &&
       workitem.workitemTraceCount === String(surface.page_vms.workitem.agent_trace_preview.length) &&
@@ -3570,6 +3645,13 @@ function vmDomValueMatches(steps: StepReport[], surface: GoldPathSurfaceVM) {
       cost.costTotalCny === surface.page_vms.cost.total_cost_cny &&
       cost.costBudgetCount === String(surface.page_vms.cost.budget.length) &&
       cost.costModelCount === String(surface.page_vms.cost.model_breakdown.length) &&
+      skills &&
+      skills.skillActiveCount === String(skillsVm.totals.active) &&
+      skills.skillAiAuthoredCount === String(skillsVm.totals.ai_authored) &&
+      skills.skillRefinedCount === String(skillsVm.totals.refined) &&
+      skills.skillCardCount === String(skillsVm.skills.length) &&
+      skills.skillRefinedBadge === "true" &&
+      skills.skillEmpty === "false" &&
       settings &&
       settings.settingsPetModelInWeb === "false" &&
       settings.settingsWorkerCount === "2" &&
@@ -3626,6 +3708,7 @@ async function main() {
     const readyProductSteps = steps.filter((step) => step.audit.productShell && step.audit.status === "ready");
     const routePageVmByComponent: Record<string, string> = {
       home: "attention",
+      projects: "projects",
       intake: "session",
       approvals: "approvals",
       workitem: "workitem",
@@ -3651,7 +3734,7 @@ async function main() {
         steps.some((step) => step.id === "05-history-forward-workitem" && step.audit.pathname === "/workitems/r4-live-workitem"),
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-route-component" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
       ready_empty_forbidden_error_routes: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
-      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.drive && proof.meetings && proof.notifications && proof.calendar && proof.cost && proof.settings && proof.replay && proof.localePatch,
+      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.drive && proof.meetings && proof.notifications && proof.calendar && proof.cost && proof.skills && proof.settings && proof.replay && proof.localePatch,
       r4_14_ready_routes_use_session_knowledge_endpoints:
         proof.session &&
         proof.sessionEn &&
@@ -3979,6 +4062,29 @@ async function main() {
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ),
+      r8_skills_route_component:
+        proof.skills &&
+        proof.counts.skills === 2 &&
+        steps.some((step) =>
+          step.id === "15v-skills-en-desktop-route-component" &&
+          step.audit.routeComponent === "skills" &&
+          step.audit.routeComponentSource === "page-vm" &&
+          step.audit.routeData.skillActiveCount === "2" &&
+          step.audit.routeData.skillAiAuthoredCount === "1" &&
+          step.audit.routeData.skillRefinedCount === "1" &&
+          step.audit.routeData.skillCardCount === "2" &&
+          step.audit.routeData.skillRefinedBadge === "true" &&
+          step.audit.routeData.skillEmpty === "false" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15w-skills-en-mobile-no-overflow" &&
+          step.audit.routeComponent === "skills" &&
+          !step.audit.horizontalOverflow &&
+          !step.audit.navHorizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
       r5_9_onboarding_routes:
         proof.identifyRegistration &&
         proof.identifySecondUser &&
@@ -4249,7 +4355,7 @@ async function main() {
         step.audit.routeTreeMode === "html-fallback" &&
         step.audit.routeTreeAdapter === "route-component-v1" &&
         step.audit.routeTreeActiveOnly &&
-        step.audit.routeTreeRouteCount === "15" &&
+        step.audit.routeTreeRouteCount === "16" &&
         step.audit.routeTreePageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPanelPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""]
@@ -4581,7 +4687,7 @@ async function main() {
           step.audit.notice.kind === "sse_dirty_guard" &&
           step.audit.live.refreshMode === "dirty-deferred"
         ),
-      r4_21_no_new_browser_smoke_sprawl: steps.length === 70,
+      r4_21_no_new_browser_smoke_sprawl: steps.length === expectedLiveRouteSmokeSteps,
       r4_22_visible_react_mutation_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -4633,7 +4739,7 @@ async function main() {
           step.audit.reactRuntimeHtmlFallbackPreserved === "true" &&
           step.audit.reactRuntimeHtmlFallbackHidden === "true"
         ),
-      r4_22_no_new_smoke_sprawl: steps.length === 70,
+      r4_22_no_new_smoke_sprawl: steps.length === expectedLiveRouteSmokeSteps,
       r4_23_visible_react_line_editor:
         steps.some((step) =>
           step.id === "06a-proposal-advanced-review-en-desktop" &&
@@ -4682,9 +4788,9 @@ async function main() {
         ) &&
         proof.counts.mergeApply >= 4 &&
         proof.advancedPayloads.textHunkOverrides,
-      r4_23_no_new_smoke_sprawl: steps.length === 70,
+      r4_23_no_new_smoke_sprawl: steps.length === expectedLiveRouteSmokeSteps,
       r4_24_no_hash_write:
-        steps.length === 70 &&
+        steps.length === expectedLiveRouteSmokeSteps &&
         steps.every((step) => !step.audit.hashNavigationLeak && !step.audit.locationHash.startsWith("#/")),
       r4_24_r4_23_react_line_editor_regression:
         steps.some((step) =>
@@ -4798,6 +4904,7 @@ async function main() {
         `- R5.5 Meeting insight to draft: ${String(gates.r5_5_meeting_insight_to_draft)}`,
         `- R5.6 Schedule/Notify routes: ${String(gates.r5_6_schedule_notify_routes)}`,
         `- R5.7 Health/Grounding routes: ${String(gates.r5_7_health_grounding_routes)}`,
+        `- R8 Team skills route: ${String(gates.r8_skills_route_component)}`,
         `- R5.9 Onboarding routes: ${String(gates.r5_9_onboarding_routes)}`,
         `- R4.11 source truth: ${String(gates.r4_11_route_component_source_truth)}`,
         `- R4.11 VM/DOM match: ${String(gates.r4_11_vm_dom_value_match)}`,
