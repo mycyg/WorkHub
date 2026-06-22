@@ -497,11 +497,39 @@ fn set_spotlight_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "main window is not available".to_string())?;
-    let safe_width = if width.is_finite() { width.clamp(360.0, 1600.0) } else { 720.0 };
-    let safe_height = if height.is_finite() { height.clamp(120.0, 1400.0) } else { 480.0 };
+    // 下限对齐 tauri.conf 的 minWidth=420 / minHeight=160（OS 本就会抬升），上限防越界。
+    let safe_width = if width.is_finite() { width.clamp(420.0, 1600.0) } else { 720.0 };
+    let safe_height = if height.is_finite() { height.clamp(160.0, 1400.0) } else { 480.0 };
     window
         .set_size(LogicalSize::new(safe_width, safe_height))
-        .map_err(|error| format!("failed to resize main window: {error}"))
+        .map_err(|error| format!("failed to resize main window: {error}"))?;
+    // chain3：内容变高时把窗口顶回工作区内——否则小屏 / 窗口被拖到靠下时，盒子底部会长到屏幕外够不着。
+    keep_window_bottom_in_work_area(&window, safe_height);
+    Ok(())
+}
+
+// 若窗口底边超出当前显示器工作区，则上移使其落回区内（不小于工作区顶）。失败不致命。
+fn keep_window_bottom_in_work_area(window: &tauri::WebviewWindow, height_logical: f64) {
+    let monitor = match window.current_monitor() {
+        Ok(Some(monitor)) => Some(monitor),
+        _ => window.primary_monitor().ok().flatten(),
+    };
+    let Some(monitor) = monitor else {
+        return;
+    };
+    let scale = valid_scale_factor(monitor.scale_factor());
+    let area = monitor.work_area();
+    let area_pos = area.position.to_logical::<f64>(scale);
+    let area_size = area.size.to_logical::<f64>(scale);
+    let Ok(pos) = window.outer_position() else {
+        return;
+    };
+    let pos = pos.to_logical::<f64>(scale);
+    let max_bottom = area_pos.y + area_size.height;
+    if pos.y + height_logical > max_bottom {
+        let new_y = (max_bottom - height_logical).max(area_pos.y);
+        let _ = window.set_position(TauriLogicalPosition::new(pos.x, new_y));
+    }
 }
 
 // R7.1：切换 pet 窗口的 ignore_cursor_events(true=点击穿透到下方/false=接管点击)。由 webview 命中测试驱动，

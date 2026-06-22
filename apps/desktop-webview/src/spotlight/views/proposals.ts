@@ -105,14 +105,18 @@ export function createProposalsView(): SpotlightCapabilityView {
       let disposed = false;
       let busy = false;
       let currentId: string | undefined;
+      // M4：单调代次——list↔detail 间快速切换时，晚到的 await 不得覆盖更新的一帧。
+      let loadGen = 0;
 
       const showList = async () => {
+        const gen = ++loadGen;
+        currentId = undefined;
         ctx.setSubtitle(zh ? "待审阅的改动" : "Changes to review");
         body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉改动…" : "Loading…"}</div>`;
         ctx.requestResize();
         try {
           const vm = await client.pages.attention({ locale: ctx.locale });
-          if (disposed) return;
+          if (disposed || gen !== loadGen) return;
           const items = (vm.queue ?? []).filter((it) => it.kind === "proposal_review" || proposalIdFromItem(it));
           if (!items.length) {
             body.innerHTML = `<div class="wh-spot-empty"><div class="wh-spot-empty-face">٩(◜◡◝)۶</div><h3 class="wh-spot-empty-title">${zh ? "没有待看的改动" : "No changes to review"}</h3><p class="wh-spot-empty-sub">${zh ? "AI 产出改动后会出现在这里和审批队列" : "AI changes show here and in approvals"}</p></div>`;
@@ -129,22 +133,23 @@ export function createProposalsView(): SpotlightCapabilityView {
               .join("")}</div>`;
           }
         } catch {
-          if (!disposed) body.innerHTML = `<div class="wh-spot-error">${zh ? "改动没拉到，稍后重试" : "Couldn't load — retry"}</div>`;
+          if (!disposed && gen === loadGen) body.innerHTML = `<div class="wh-spot-error">${zh ? "改动没拉到，稍后重试" : "Couldn't load — retry"}</div>`;
         }
         ctx.requestResize();
       };
 
       const showDetail = async (id: string) => {
+        const gen = ++loadGen;
         currentId = id;
         body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉 diff…" : "Loading diff…"}</div>`;
         ctx.requestResize();
         try {
           const vm = await client.pages.proposal(id, { locale: ctx.locale });
-          if (disposed) return;
+          if (disposed || gen !== loadGen) return;
           ctx.setSubtitle(zh ? "改动详情" : "Change detail");
           body.innerHTML = detailHtml(vm, zh);
         } catch {
-          if (!disposed) body.innerHTML = `<div class="wh-spot-error">${zh ? "diff 没拉到，稍后重试" : "Couldn't load diff — retry"}</div>`;
+          if (!disposed && gen === loadGen) body.innerHTML = `<div class="wh-spot-error">${zh ? "diff 没拉到，稍后重试" : "Couldn't load diff — retry"}</div>`;
         }
         ctx.requestResize();
       };

@@ -62,14 +62,17 @@ export function createWorkItemView(): SpotlightCapabilityView {
       const { client, body } = ctx;
       let disposed = false;
       let busy = false;
+      // M4：单调代次，防 list↔detail 快切时晚到的 await 覆盖更新一帧。
+      let loadGen = 0;
 
       const showList = async () => {
+        const gen = ++loadGen;
         ctx.setSubtitle(zh ? "进行中的工作" : "Active work");
         body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉工作项…" : "Loading…"}</div>`;
         ctx.requestResize();
         try {
           const vm = await client.pages.attention({ locale: ctx.locale });
-          if (disposed) return;
+          if (disposed || gen !== loadGen) return;
           const seen = new Set<string>();
           const items = (vm.background_runs ?? [])
             .filter((r) => r.work_item_id && !seen.has(r.work_item_id) && seen.add(r.work_item_id))
@@ -83,21 +86,22 @@ export function createWorkItemView(): SpotlightCapabilityView {
               .join("")}</div>`;
           }
         } catch {
-          if (!disposed) body.innerHTML = `<div class="wh-spot-error">${zh ? "工作项没拉到，稍后重试" : "Couldn't load — retry"}</div>`;
+          if (!disposed && gen === loadGen) body.innerHTML = `<div class="wh-spot-error">${zh ? "工作项没拉到，稍后重试" : "Couldn't load — retry"}</div>`;
         }
         ctx.requestResize();
       };
 
       const showDetail = async (id: string) => {
+        const gen = ++loadGen;
         body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉详情…" : "Loading…"}</div>`;
         ctx.requestResize();
         try {
           const vm = await client.pages.workItem(id, { locale: ctx.locale });
-          if (disposed) return;
+          if (disposed || gen !== loadGen) return;
           ctx.setSubtitle(vm.workitem.code);
           body.innerHTML = detailHtml(vm, zh);
         } catch {
-          if (!disposed) body.innerHTML = `<div class="wh-spot-error">${zh ? "详情没拉到，稍后重试" : "Couldn't load — retry"}</div>`;
+          if (!disposed && gen === loadGen) body.innerHTML = `<div class="wh-spot-error">${zh ? "详情没拉到，稍后重试" : "Couldn't load — retry"}</div>`;
         }
         ctx.requestResize();
       };

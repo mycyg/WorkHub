@@ -105,6 +105,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
 
   // —— 原生窗口缩放：测内容高度，clamp 到屏幕上限，超出则盒内滚动。去抖合并多次请求。 ——
   let resizeRaf = 0;
+  let lastSentW = 0;
+  let lastSentH = 0;
   const applyResize = () => {
     resizeRaf = 0;
     if (!input.resize) {
@@ -119,6 +121,13 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     const bodyMax = Math.max(80, winH - stagePad - top);
     body.style.maxHeight = `${bodyMax}px`;
     const width = Math.max(360, Math.round(window.innerWidth));
+    // M1：缓存上次下发尺寸——set_size 会回弹一个 window resize 事件，若不去重就会
+    // set_size→resize→requestResize→set_size 抖动。尺寸没变就不再下发。
+    if (width === lastSentW && winH === lastSentH) {
+      return;
+    }
+    lastSentW = width;
+    lastSentH = winH;
     input.resize(width, winH);
   };
   const requestResize = () => {
@@ -147,30 +156,41 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     const cmd = commandRegistry.find((c) => c.id === id);
     titleEl.textContent = cmd ? cmd.label[zh ? "zh-CN" : "en"] : id;
     subtitleEl.textContent = "";
-    body.innerHTML = "";
-    body.classList.add("ds-anim-fade-in");
+    // H1：每个能力一个全新内容节点 + AbortController。view 把监听器挂在这个节点(ctx.body)上；
+    // 切走能力时 replaceChildren 移除该节点（监听器随节点销毁，不在持久 body 上累积）+ abort 信号
+    // 兜住任何挂到 window/document 的监听器。disposeView 同步建好，异步 mount 未 resolve 就切走也能清理。
+    const viewRoot = doc.createElement("div");
+    viewRoot.className = "ds-anim-fade-in";
+    body.replaceChildren(viewRoot);
     requestResize();
+    const viewAbort = new AbortController();
+    let viewCleanup: (() => void) | undefined;
+    disposeView = () => {
+      viewCleanup?.();
+      viewAbort.abort();
+    };
     const ctx: SpotlightViewContext = {
       client,
       locale,
-      body,
+      body: viewRoot,
       back: () => dispatch({ type: "back" }),
       setSubtitle: (text) => {
         subtitleEl.textContent = text;
       },
       toast: (message, tone) => showToast(message, tone),
-      requestResize
+      requestResize,
+      signal: viewAbort.signal
     };
     const view = resolveCapabilityView(id);
     const result = view.mount(ctx);
     if (result instanceof Promise) {
       void result.then((cleanup) => {
         if (typeof cleanup === "function") {
-          disposeView = cleanup;
+          viewCleanup = cleanup;
         }
       });
     } else if (typeof result === "function") {
-      disposeView = result;
+      viewCleanup = result;
     }
   };
 

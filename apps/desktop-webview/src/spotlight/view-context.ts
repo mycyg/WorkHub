@@ -23,6 +23,9 @@ export type SpotlightViewContext = {
   toast: (message: string, tone?: "ok" | "error" | "info") => void;
   // 内容高度变化后请求重新测量并缩放原生窗口（盒子随内容生长/收缩）。
   requestResize: () => void;
+  // 本能力视图的生命周期信号：离开能力时 abort。view 必须用它给 addEventListener 传 {signal}，
+  // 否则监听器会随能力切换在 body 上累积（H1 泄漏）。
+  signal: AbortSignal;
 };
 
 export type SpotlightCapabilityView = {

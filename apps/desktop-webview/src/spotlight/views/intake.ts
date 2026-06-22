@@ -155,6 +155,11 @@ export function createIntakeView(): SpotlightCapabilityView {
         const q = session.question;
         const freeText = body.querySelector<HTMLTextAreaElement>("[data-freetext]")?.value.trim() ?? "";
         const ids = [...selected];
+        // M3：非确认步必须有答案（选项或补充文本），否则别把空答案推给服务端误推进。
+        if (q.input_mode !== "confirm" && ids.length === 0 && !freeText) {
+          ctx.toast(zh ? "先选一项，或补一句再继续" : "Pick an option or add a note first", "info");
+          return;
+        }
         busy = true;
         setBusy(zh ? "处理中…" : "Working…");
         try {

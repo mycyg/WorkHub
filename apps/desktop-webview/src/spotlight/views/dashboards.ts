@@ -263,6 +263,10 @@ export function createKnowledgeView(): SpotlightCapabilityView {
           ctx.body.querySelectorAll<HTMLElement>("[data-know-proj]").forEach((el) => {
             el.dataset.sel = String(el.dataset.knowProj === projectId);
           });
+          // M5：切项目后旧结果作废，清掉避免“B 项目下显示 A 项目结果”的错觉。
+          const stale = ctx.body.querySelector<HTMLElement>("[data-know-result]");
+          if (stale) stale.innerHTML = "";
+          ctx.requestResize();
           return;
         }
         if (target.closest("[data-know-go]")) {

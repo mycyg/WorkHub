@@ -72,34 +72,38 @@ export function createReplayView(): SpotlightCapabilityView {
     mount(ctx: SpotlightViewContext) {
       const zh = ctx.locale === "zh-CN";
       let disposed = false;
+      // M4：单调代次，防 list↔trace 快切时晚到的 await 覆盖更新一帧。
+      let loadGen = 0;
 
       const showList = async () => {
+        const gen = ++loadGen;
         ctx.setSubtitle(zh ? "AI 运行" : "AI runs");
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉运行…" : "Loading runs…"}</div>`;
         ctx.requestResize();
         try {
           const vm = await ctx.client.pages.attention({ locale: ctx.locale });
-          if (disposed) return;
+          if (disposed || gen !== loadGen) return;
           const runs = vm.background_runs ?? [];
           ctx.setSubtitle(zh ? `${runs.length} 个在跑` : `${runs.length} active`);
           ctx.body.innerHTML = runListHtml(runs, zh);
         } catch {
-          if (disposed) return;
+          if (disposed || gen !== loadGen) return;
           ctx.body.innerHTML = `<div class="wh-spot-error">${zh ? "运行没拉到，稍后重试" : "Couldn't load runs — retry"}</div>`;
         }
         ctx.requestResize();
       };
 
       const showTrace = async (runId: string) => {
+        const gen = ++loadGen;
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉时间线…" : "Loading trace…"}</div>`;
         ctx.requestResize();
         try {
           const vm = await ctx.client.getAgentRun(runId);
-          if (disposed) return;
+          if (disposed || gen !== loadGen) return;
           ctx.setSubtitle(zh ? "运行时间线" : "Run trace");
           ctx.body.innerHTML = traceHtml(vm, zh);
         } catch {
-          if (disposed) return;
+          if (disposed || gen !== loadGen) return;
           ctx.body.innerHTML = `<div class="wh-spot-error">${zh ? "时间线没拉到，稍后重试" : "Couldn't load trace — retry"}</div>`;
         }
         ctx.requestResize();

@@ -99,12 +99,13 @@ function loadingHtml(zh: boolean): string {
   return `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉取待拍板…" : "Loading decisions…"}</div>`;
 }
 
-// 内联打回理由（统一玻璃小弹层），点选即以该理由 deny。
-function reasonChips(zh: boolean): string {
+// 内联打回理由（统一玻璃小弹层），点选即以该理由把这条打回。href 存在容器上——审批项的动作 id 是
+// "deny"、看改动项是 "request_changes"，不能靠 id 反查按钮（H2 之前就是写死 deny 才失效）。
+function reasonChips(zh: boolean, href: string): string {
   const reasons = zh
     ? ["方向不对，重做", "细节需要调整", "先放一放", "缺少依据"]
     : ["Wrong direction", "Needs tweaks", "Hold for now", "Insufficient evidence"];
-  return `<div class="wh-spot-reasons" data-att-reasons>
+  return `<div class="wh-spot-reasons" data-att-reasons data-att-reason-href="${escapeHtml(href)}">
     <p class="wh-spot-reasons-q">${zh ? "打回理由（点一个）" : "Reason for sending back"}</p>
     <div class="wh-spot-reasons-row">${reasons
       .map((r) => `<button type="button" class="wh-spot-reason ds-pressable" data-att-reason="${escapeHtml(r)}">${escapeHtml(r)}</button>`)
@@ -209,12 +210,11 @@ export function createAttentionView(): SpotlightCapabilityView {
         if (!(target instanceof HTMLElement)) {
           return;
         }
-        // 1) 选了打回理由 → 以该理由 deny。
+        // 1) 选了打回理由 → 以该理由打回（href 从理由层容器取，审批/看改动通用）。
         const reasonBtn = target.closest<HTMLElement>("[data-att-reason]");
         if (reasonBtn) {
-          const card = reasonBtn.closest<HTMLElement>("[data-att-id]");
-          const denyBtn = card?.querySelector<HTMLElement>('[data-att-action-id="deny"]');
-          const href = denyBtn?.dataset.attHref;
+          const reasonsEl = reasonBtn.closest<HTMLElement>("[data-att-reasons]");
+          const href = reasonsEl?.dataset.attReasonHref;
           const reason = reasonBtn.dataset.attReason;
           if (href) {
             void runAction(href, "deny", reason).then((ok) => {
@@ -237,7 +237,7 @@ export function createAttentionView(): SpotlightCapabilityView {
         if (actionBtn.dataset.attRequiresReason === "true" || actionId === "deny") {
           const row = actionBtn.closest<HTMLElement>("[data-att-actionrow]");
           if (row && !row.querySelector("[data-att-reasons]")) {
-            row.insertAdjacentHTML("afterend", reasonChips(zh));
+            row.insertAdjacentHTML("afterend", reasonChips(zh, href));
             ctx.requestResize();
           }
           return;
