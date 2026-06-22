@@ -210,20 +210,21 @@ function bindGoldPathNavigation(
   // 载荷），桌面既有的选项勾选委托(下方 [data-option-id] 分支)与之天然咬合。
   const intakePanel = () => shellRoot.querySelector<HTMLElement>("[data-wh-panel=\"intake\"]");
   let activeIntakeSessionId: string | undefined;
-  const renderIntakeSessionPanel = (session: DesktopSessionVM) => {
+  // route-component 的 .wh-r4-route* 样式不在壳层 goldPathCss 里，需随面板内联注入（与 skills 懒加载面板
+  // 的 `<style>${component.css}</style>${component.html}` 同款），否则交互式 intake 面板会丢样式。
+  const swapIntakePanel = (component: { css: string; html: string }) => {
     const panel = intakePanel();
     if (!panel) {
       return;
     }
+    panel.innerHTML = `<style>${component.css}</style>${component.html}`;
+  };
+  const renderIntakeSessionPanel = (session: DesktopSessionVM) => {
     activeIntakeSessionId = session.session_id;
-    panel.innerHTML = renderWebRouteComponent({ key: "intake", session }, { locale }).html;
+    swapIntakePanel(renderWebRouteComponent({ key: "intake", session }, { locale }));
   };
   const renderIntakeStartPanel = () => {
-    const panel = intakePanel();
-    if (!panel) {
-      return;
-    }
-    panel.innerHTML = renderWebRouteComponent({ key: "intake", start: true }, { locale }).html;
+    swapIntakePanel(renderWebRouteComponent({ key: "intake", start: true }, { locale }));
   };
   const startIntakeFromPanel = async (intentText?: string) => {
     // bootstrapProject 幂等：拿到/建好试点项目，再起一个真实澄清会话（替换静态 demo 预览）。
