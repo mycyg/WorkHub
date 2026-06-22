@@ -1191,6 +1191,26 @@ test("R5.2 drive route loader forwards project id query to the Page VM client", 
   assert.deepEqual(calls, ["drive:en-US:93000000-0000-4000-8000-000000000001"]);
 });
 
+test("R8 drive project switcher renders CSP-safe (no inline handler) with the current project selected and SPA-href options", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface, { drive: driveVm(), projects: projectListVm() });
+  const match = resolveWebRoute("/drive");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  // 两个项目 → 切换器出现，挂当前项目 id 与项目数。
+  assert.equal(result.html.includes('data-r8-drive-project-switcher="true"'), true);
+  assert.equal(result.html.includes('data-r8-drive-project-count="2"'), true);
+  assert.equal(result.html.includes('data-r8-drive-current-project="93000000-0000-4000-8000-000000000001"'), true);
+  // rank5：绝不能有内联事件处理器（CSP script-src 'self' 会禁掉），导航靠 browser.ts 的委托 change 监听。
+  assert.equal(result.html.includes("onchange="), false);
+  // 当前项目高亮（selected），切换目标项是完整 SPA href。
+  assert.equal(result.html.includes('value="/drive?project_id=93000000-0000-4000-8000-000000000001" selected'), true);
+  assert.equal(result.html.includes('value="/drive?project_id=93000000-0000-4000-8000-000000000099"'), true);
+});
+
 test("R5.6 notifications and calendar routes load typed Page VMs with actionable markers", async () => {
   const surface = goldPathSurfaceVm();
   const { client, calls } = fakeRouteClient(surface, {

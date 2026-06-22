@@ -469,7 +469,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projects.summary": "把每个项目当成一个产品来管理：进行中工作项、负责人和最近更新一目了然。",
     "projects.empty": "还没有项目。新建一个项目就能开始派活。",
     "projects.new": "新建项目",
-    "projects.namePlaceholder": "新项目名称 / New project name",
+    "projects.namePlaceholder": "新项目名称",
     "projects.create": "创建",
     "projects.open": "打开项目",
     "projects.archived": "已归档",
@@ -651,7 +651,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projects.summary": "Treat every project like a product: open work, owner, and latest activity at a glance.",
     "projects.empty": "No projects yet. Create one to start assigning work.",
     "projects.new": "New project",
-    "projects.namePlaceholder": "新项目名称 / New project name",
+    "projects.namePlaceholder": "New project name",
     "projects.create": "Create",
     "projects.open": "Open project",
     "projects.archived": "Archived",
@@ -1813,7 +1813,7 @@ function renderDriveRouteComponent(
   const driveProjectNav = `<nav class="wh-r4-route-meta" data-r8-drive-project-nav="true" data-r8-drive-current-project="${escapeHtml(currentProjectId)}" data-r8-drive-project-count="${escapeHtml(String(projectList.length))}">
         <a class="wh-pill" href="/projects" data-r8-drive-all-projects="true">&#8592; ${escapeHtml(routeT(locale, "drive.allProjects"))}</a>
         <strong data-r8-drive-current-project-name="true">${escapeHtml(vm.project?.name ?? routeT(locale, "drive.kicker"))}</strong>
-        ${switcherOptions ? `<select class="wh-pill" data-r8-drive-project-switcher="true" aria-label="${escapeHtml(routeT(locale, "drive.switchProject"))}" onchange="if(this.value){window.location.href=this.value}">${switcherOptions}</select>` : ""}
+        ${switcherOptions ? `<select class="wh-pill" data-r8-drive-project-switcher="true" aria-label="${escapeHtml(routeT(locale, "drive.switchProject"))}">${switcherOptions}</select>` : ""}
       </nav>`;
   const selectedItem = vm.items.find((item) => item.id === vm.selected_item_id) ?? vm.items.find((item) => item.kind === "file") ?? vm.items[0];
   const deleteTargetId = vm.actions.delete_item ? driveItemMutationIdFromHref(vm.actions.delete_item.href) : undefined;

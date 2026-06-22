@@ -434,6 +434,19 @@ function bindGoldPathNavigation(
     event.target.closest("[data-r8-project-create-form]")?.querySelector<HTMLElement>("[data-r8-project-create]")?.click();
   });
 
+  // rank5：网盘项目切换器用 CSP 合规的委托 change 监听 + SPA 导航，取代被 CSP 禁的内联 onchange/整页刷新。
+  // option 的 value 已是完整 href（/drive?project_id=…）；空 value（M3 占位「当前项目」）不导航。
+  shellRoot.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLSelectElement) || !target.matches("[data-r8-drive-project-switcher]")) {
+      return;
+    }
+    const href = target.value;
+    if (href) {
+      void navigateWebRoute(href, client, locale);
+    }
+  });
+
   shellRoot.addEventListener("click", async (event) => {
     const logoutButton = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-wh-logout]") : null;
     if (logoutButton) {
