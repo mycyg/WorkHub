@@ -55,19 +55,27 @@ function detailHtml(vm: ProposalDetailVM, zh: boolean): string {
         .map((ck) => `<span class="wh-spot-check wh-spot-check--${ck.status}">${escapeHtml(ck.label)}</span>`)
         .join("")}</div>`
     : "";
-  const open = vm.status === "opened";
+  const isOpen = vm.status === "opened";
+  // 已审阅(approved 但未合并)：仍可直接合并——列表来自 attention 含 reviewed 项，
+  // 旧代码只 gate opened 导致 reviewed 进来后是死胡同(rank4)。
+  const canMerge = vm.status === "reviewed" && !!vm.review_actions.merge;
   const statusLabel: Record<string, [string, string]> = {
     opened: ["待审阅", "Open"],
     reviewed: ["已审阅", "Reviewed"],
     merged: ["已合并", "Merged"],
     rejected: ["已打回", "Rejected"]
   };
-  const actions = open
+  const actions = isOpen
     ? `<div class="wh-spot-card-actions" data-prop-actions>
         <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-prop-approve>${zh ? "通过并合并" : "Approve & merge"}</button>
         <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-prop-deny>${zh ? "打回" : "Request changes"}</button>
       </div>`
-    : `<div class="wh-spot-card-actions"><span class="wh-spot-chip wh-spot-chip--info">${escapeHtml((zh ? statusLabel[vm.status]?.[0] : statusLabel[vm.status]?.[1]) ?? vm.status)}</span></div>`;
+    : canMerge
+      ? `<div class="wh-spot-card-actions" data-prop-actions>
+        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-prop-merge>${zh ? "合并" : "Merge"}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-prop-deny>${zh ? "打回" : "Request changes"}</button>
+      </div>`
+      : `<div class="wh-spot-card-actions"><span class="wh-spot-chip wh-spot-chip--info">${escapeHtml((zh ? statusLabel[vm.status]?.[0] : statusLabel[vm.status]?.[1]) ?? vm.status)}</span></div>`;
   return `<div class="wh-spot-dash">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-prop-back style="align-self:flex-start">${zh ? "← 返回列表" : "← Back"}</button>
     <div>
@@ -117,7 +125,8 @@ export function createProposalsView(): SpotlightCapabilityView {
         try {
           const vm = await client.pages.attention({ locale: ctx.locale });
           if (disposed || gen !== loadGen) return;
-          const items = (vm.queue ?? []).filter((it) => it.kind === "proposal_review" || proposalIdFromItem(it));
+          // 只保留能解析出 proposalId 的项——否则渲染出可点却点不开的死行(rank19)。
+          const items = (vm.queue ?? []).filter((it) => !!proposalIdFromItem(it));
           if (!items.length) {
             body.innerHTML = `<div class="wh-spot-empty"><div class="wh-spot-empty-face">٩(◜◡◝)۶</div><h3 class="wh-spot-empty-title">${zh ? "没有待看的改动" : "No changes to review"}</h3><p class="wh-spot-empty-sub">${zh ? "AI 产出改动后会出现在这里和审批队列" : "AI changes show here and in approvals"}</p></div>`;
           } else {
@@ -169,6 +178,21 @@ export function createProposalsView(): SpotlightCapabilityView {
         }
       };
 
+      // 已审阅项的直接合并（不再走 review，只 merge）。
+      const mergeOnly = async () => {
+        if (busy || !currentId) return;
+        busy = true;
+        try {
+          const merge = await client.mergeProposal(currentId);
+          ctx.toast(summaryText(merge) ?? (zh ? "已合并" : "Merged"), "ok");
+          busy = false;
+          void showList();
+        } catch {
+          busy = false;
+          ctx.toast(zh ? "合并失败（可能有冲突），稍后重试" : "Merge failed (maybe a conflict)", "error");
+        }
+      };
+
       const deny = async (reason: string) => {
         if (busy || !currentId) return;
         busy = true;
@@ -198,6 +222,10 @@ export function createProposalsView(): SpotlightCapabilityView {
         }
         if (target.closest("[data-prop-approve]")) {
           void approve();
+          return;
+        }
+        if (target.closest("[data-prop-merge]")) {
+          void mergeOnly();
           return;
         }
         if (target.closest("[data-prop-deny]")) {

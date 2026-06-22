@@ -130,6 +130,8 @@ export function createAttentionView(): SpotlightCapabilityView {
       const zh = ctx.locale === "zh-CN";
       const { body, client } = ctx;
       let disposed = false;
+      // 单飞守卫：处置中禁止再次点击，避免重复 POST（第二发会 409 approval_race）。
+      let busy = false;
 
       const setSubtitleFromVm = (vm: AttentionHomeVM) => {
         const n = vm.queue?.length ?? 0;
@@ -205,6 +207,23 @@ export function createAttentionView(): SpotlightCapabilityView {
         return false;
       };
 
+      // 统一提交入口：单飞守卫 + 失败兜底 toast + 成功回拉队列。runAction 自身不再裸 await，
+      // 双击/合并冲突等失败不再被静默吞掉（rank3）。
+      const submit = async (href: string, actionId: string | undefined, reasonMd: string | undefined) => {
+        if (busy) return;
+        busy = true;
+        try {
+          const ok = await runAction(href, actionId, reasonMd);
+          if (ok && !disposed) await refresh();
+        } catch {
+          if (!disposed) {
+            ctx.toast(zh ? "操作失败（可能有冲突或已处理过），稍后重试" : "Action failed (conflict or already handled) — retry", "error");
+          }
+        } finally {
+          busy = false;
+        }
+      };
+
       body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) {
@@ -217,9 +236,7 @@ export function createAttentionView(): SpotlightCapabilityView {
           const href = reasonsEl?.dataset.attReasonHref;
           const reason = reasonBtn.dataset.attReason;
           if (href) {
-            void runAction(href, "deny", reason).then((ok) => {
-              if (ok) void refresh();
-            });
+            void submit(href, "deny", reason);
           }
           return;
         }
@@ -236,15 +253,15 @@ export function createAttentionView(): SpotlightCapabilityView {
         // 需要理由（打回）：就地展开理由小层，不立即提交。
         if (actionBtn.dataset.attRequiresReason === "true" || actionId === "deny") {
           const row = actionBtn.closest<HTMLElement>("[data-att-actionrow]");
-          if (row && !row.querySelector("[data-att-reasons]")) {
+          // 理由层是 actionrow 的兄弟节点（afterend），去重要查父容器而非 row 后代——
+          // 否则守卫恒过，重复点击会叠出多个理由层（rank10）。
+          if (row && !row.parentElement?.querySelector("[data-att-reasons]")) {
             row.insertAdjacentHTML("afterend", reasonChips(zh, href));
             ctx.requestResize();
           }
           return;
         }
-        void runAction(href, actionId, undefined).then((ok) => {
-          if (ok) void refresh();
-        });
+        void submit(href, actionId, undefined);
       });
 
       body.innerHTML = loadingHtml(zh);

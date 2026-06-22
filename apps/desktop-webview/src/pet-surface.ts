@@ -1159,8 +1159,15 @@ export async function bootDesktopPetSurface(
     const fallbackCard = currentCard;
     try {
       const result = await submitDesktopCuuAction({ client, action, locale });
-      setCard(result.card ?? fallbackCard, result.message);
-      subscribeToAgentRun(result);
+      if (!result.card && !result.agentRun) {
+        // rank2：终态决策动作(审批/合并/打回)无后续卡/流——清掉已处置的卡(否则按钮还在、会重复 POST、
+        // 下一条待拍板也永不浮现)，再主动端出下一条待你拍板，对齐 Spotlight attention 的 refresh() 行为。
+        setCard(undefined, result.message);
+        void surfacePendingDecision();
+      } else {
+        setCard(result.card ?? fallbackCard, result.message);
+        subscribeToAgentRun(result);
+      }
     } catch (error) {
       setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale));
     }

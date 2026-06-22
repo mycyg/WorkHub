@@ -36,6 +36,8 @@ export type SpotlightHandle = {
   reset: () => void;
   // 更新角标并（若在 launcher）刷新网格。
   setBadges: (badges: Partial<Record<CommandId, number>>) => void;
+  // 卸载：断开 controller 自身的 window 监听器 + 当前 view，幂等。供未来重挂/多宿主场景。
+  dispose: () => void;
 };
 
 const SEARCH_ICON =
@@ -82,6 +84,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   let badges: Partial<Record<CommandId, number>> = { ...(input.badges ?? {}) };
   let state: SpotlightState = initialSpotlightState();
   let disposeView: (() => void) | undefined;
+  // controller 自身的 window 监听器（⌘K/ESC/resize）统一挂这个 signal，dispose 时一并断开（rank25）。
+  const controllerAbort = new AbortController();
 
   const placeholder = zh ? "想做什么？派活 / 审批 / 网盘 / 项目…" : "What do you need? dispatch / approve / drive…";
   host.className = "wh-ds wh-spot-stage";
@@ -229,10 +233,11 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       return;
     }
     const prevMode = state.mode.kind;
-    const prevCap = openCapabilityId(state);
     state = next;
     const nextCap = openCapabilityId(state);
-    if (nextCap && nextCap !== prevCap) {
+    // rank6：同一能力被再次请求(桌宠/托盘/深链 navigate 到已打开的能力)也要重渲——
+    // renderCapability 会先 disposeView 再全新挂载+重拉数据，否则外部入口看起来「点了没反应」。
+    if (nextCap) {
       renderCapability(nextCap);
     } else if (!nextCap && prevMode === "capability") {
       render();
@@ -297,24 +302,30 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     }
   });
 
-  window.addEventListener("keydown", (event) => {
-    if ((event.metaKey || event.ctrlKey) && (event.key === "k" || event.key === "K")) {
-      event.preventDefault();
-      dispatch({ type: "reset" });
-      render();
-    } else if (event.key === "Escape") {
-      if (openCapabilityId(state)) {
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if ((event.metaKey || event.ctrlKey) && (event.key === "k" || event.key === "K")) {
         event.preventDefault();
-        dispatch({ type: "back" });
-      } else if (input2.value) {
-        event.preventDefault();
+        // rank20：清掉搜索框残留文本（否则框里旧词与下方全量网格对不上），dispatch 自己负责重渲，
+        // 不再额外 render() 造成 launcher 连画两遍。
         input2.value = "";
-        dispatch({ type: "setQuery", query: "" });
+        dispatch({ type: "reset" });
+      } else if (event.key === "Escape") {
+        if (openCapabilityId(state)) {
+          event.preventDefault();
+          dispatch({ type: "back" });
+        } else if (input2.value) {
+          event.preventDefault();
+          input2.value = "";
+          dispatch({ type: "setQuery", query: "" });
+        }
       }
-    }
-  });
+    },
+    { signal: controllerAbort.signal }
+  );
 
-  window.addEventListener("resize", () => requestResize());
+  window.addEventListener("resize", () => requestResize(), { signal: controllerAbort.signal });
 
   // 首屏：launcher。
   renderLauncher();
@@ -325,8 +336,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       dispatch({ type: "openCapability", id });
     },
     reset: () => {
+      input2.value = "";
       dispatch({ type: "reset" });
-      render();
     },
     setBadges: (next) => {
       badges = { ...badges, ...next };
@@ -334,6 +345,19 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0);
         requestResize();
       }
+    },
+    dispose: () => {
+      controllerAbort.abort();
+      if (resizeRaf) {
+        window.cancelAnimationFrame(resizeRaf);
+        resizeRaf = 0;
+      }
+      if (toastTimer) {
+        window.clearTimeout(toastTimer);
+        toastTimer = 0;
+      }
+      disposeView?.();
+      disposeView = undefined;
     }
   };
 }
