@@ -97,7 +97,8 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
             id: file.id,
             name: file.name,
             updated_at: file.updatedAt.toISOString(),
-            href: driveHref
+            // #5：深链到网盘并高亮这个文件(item_id)，不再所有文件都指向同一个通用网盘页。
+            href: `${driveHref}&item_id=${encodeURIComponent(file.id)}`
           }))
         },
         open_work_items: openItems.map((item) => ({

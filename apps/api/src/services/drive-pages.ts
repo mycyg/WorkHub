@@ -42,6 +42,8 @@ export type DrivePageService = {
     actor: AuthActor;
     locale?: WorkHubLocale;
     projectId?: string;
+    // #5：项目主页「最近文件」深链带 item_id → 网盘渲染时高亮该文件。
+    itemId?: string;
   }) => Promise<DrivePageVM>;
   uploadFile: (input: DriveMutationInput & {
     filename: string;
@@ -272,7 +274,7 @@ function buildDriveItemVm(input: {
   return vm;
 }
 
-function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor): DrivePageVM {
+function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, requestedItemId?: string): DrivePageVM {
   const allItems = [...rows.items, ...rows.deletedItems];
   const itemById = new Map(allItems.map((item) => [item.id, item]));
   const pathByItemId = new Map(allItems.map((item) => [item.id, itemPath(item, itemById)]));
@@ -315,7 +317,12 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor): Drive
     .filter((item) => item.kind === "folder" && !item.accepted_deliverable && item.children_count === 0)
     .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
   const deletableItem = manualFileDeleteCandidates[0] ?? emptyFolderDeleteCandidates[0];
-  const selectedItemId = deletableItem?.id ?? itemVms.find((item) => item.kind === "file")?.id ?? itemVms[0]?.id;
+  // #5：从项目主页「最近文件」深链进来时带 item_id → 优先高亮该文件(必须确实存在于清单)；
+  // 否则回退到原默认(可删项/首个文件/首项)，避免无效 id 高亮空。
+  const requestedSelected = requestedItemId && itemVms.some((item) => item.id === requestedItemId)
+    ? requestedItemId
+    : undefined;
+  const selectedItemId = requestedSelected ?? deletableItem?.id ?? itemVms.find((item) => item.kind === "file")?.id ?? itemVms[0]?.id;
   const projectId = rows.project?.id;
   const canManage = rows.project ? canManageProjectDrive(rows.project, actor) : false;
   const commentToDraft = canManage
@@ -598,7 +605,7 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
 
   return {
     async page(input) {
-      return buildDrivePage(await pageForActor(input), deps.now?.() ?? new Date(), input.actor);
+      return buildDrivePage(await pageForActor(input), deps.now?.() ?? new Date(), input.actor, input.itemId);
     },
     async uploadFile(input) {
       const actorUserId = ensureHumanActor(input);

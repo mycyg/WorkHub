@@ -104,6 +104,9 @@ export type PageRequestOptions = {
 export type DrivePageRequestOptions = PageRequestOptions & {
   projectId?: string;
   project_id?: string;
+  // #5：项目主页「最近文件」深链 → 网盘高亮该文件。
+  itemId?: string;
+  item_id?: string;
 };
 
 export type MeetingPageRequestOptions = PageRequestOptions & {

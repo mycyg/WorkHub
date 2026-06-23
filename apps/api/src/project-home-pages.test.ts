@@ -103,7 +103,8 @@ test("project home page returns project meta + open work items + actions", async
   assert.equal(vm.drive.file_count, 3, "drive file_count = true total");
   assert.equal(vm.drive.recent_files.length, 1);
   assert.equal(vm.drive.recent_files[0]?.name, "客户复盘.md");
-  assert.equal(vm.drive.recent_files[0]?.href, `/drive?project_id=${PROJ}`);
+  // #5：最近文件深链到网盘并高亮该文件(item_id)，不再都指向同一个通用网盘页。
+  assert.equal(vm.drive.recent_files[0]?.href, `/drive?project_id=${PROJ}&item_id=${FILE_1}`);
   assert.equal(vm.empty_state, undefined);
 });
 

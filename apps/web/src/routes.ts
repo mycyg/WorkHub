@@ -959,9 +959,12 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   if (match.key === "drive") {
     const params = new URLSearchParams(match.search);
     const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
+    // #5：项目主页「最近文件」深链带 item_id → 网盘高亮该文件(selected_item_id)。
+    const itemId = params.get("item_id") ?? params.get("itemId") ?? undefined;
     const drive = await client.pages.drive({
       ...withLocale(locale),
-      ...(projectId ? { projectId } : {})
+      ...(projectId ? { projectId } : {}),
+      ...(itemId ? { itemId } : {})
     });
     if (drive.empty_state === "no_project") {
       return "empty" as const;

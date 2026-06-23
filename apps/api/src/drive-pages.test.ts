@@ -542,6 +542,31 @@ test("drive page service targets the latest manual file for recycle actions", as
   assert.equal(page.actions.delete_item?.label.includes("manual-note.md"), true);
 });
 
+test("drive page service honors a requested item_id (#5 recent-file deep-link), falling back on an invalid one", async () => {
+  const pageRows = rows();
+  const service = createDrivePageService({
+    repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
+      async readPage() { return pageRows; },
+      async uploadFile() { throw new Error("not needed"); },
+      async softDeleteItem() { throw new Error("not needed"); },
+      async restoreDeletedItem() { throw new Error("not needed"); },
+      async commentToDraft() { throw new Error("not needed"); },
+      async recordDraftProposal() { throw new Error("not needed"); }
+    },
+    now: () => now
+  });
+
+  // requested folder id (a real item, not the default file pick) → highlighted
+  const focused = await service.page({ actor: actor(), locale: "zh-CN", projectId, itemId: folderId });
+  assert.equal(focused.selected_item_id, folderId, "requested item_id is honored");
+
+  // an item_id not present in the tree → falls back to the default selection (no empty/invalid highlight)
+  const fallback = await service.page({ actor: actor(), locale: "zh-CN", projectId, itemId: "91000000-0000-4000-8000-0000000000bb" });
+  assert.equal(fallback.selected_item_id, itemId, "invalid item_id falls back to the default file");
+});
+
 test("drive page service does not 403 the generic drive route on an invisible default project", async () => {
   const hiddenRows = rows();
   hiddenRows.project = {

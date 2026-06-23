@@ -293,11 +293,13 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   routes.get("/drive", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
     const projectId = c.req.query("project_id");
+    const itemId = c.req.query("item_id");
     try {
       const data = await drivePages.page({
         actor: c.var.actor,
         locale,
-        ...(projectId ? { projectId } : {})
+        ...(projectId ? { projectId } : {}),
+        ...(itemId ? { itemId } : {})
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
