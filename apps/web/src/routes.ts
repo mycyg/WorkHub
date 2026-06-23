@@ -1008,9 +1008,8 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       ...(date ? { date } : {}),
       ...(view ? { view } : {})
     });
-    if (calendar.empty_state === "no_schedule_blocks") {
-      return "empty" as const;
-    }
+    // F11/簇A：没有日程块时不塌成通用空卡(会丢左导航把用户困住)。日程组件本就渲整周(view=week 恒 7 天),
+    // 每天空块显示 calendar.empty,故照常在外壳内渲染空周视图,保留导航。
     return { key: "calendar", calendar } satisfies WebRouteSurface;
   }
   if (match.key === "replay") {
