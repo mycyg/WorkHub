@@ -84,7 +84,7 @@ export type WebRouteSurface =
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
   | { key: "intake"; session: SessionVM }
-  | { key: "intake"; start: true; project?: { id: string; name: string } }
+  | { key: "intake"; start: true; project?: { id: string; name: string }; project_unavailable?: boolean }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[] }
@@ -668,10 +668,14 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
   }
   if (surface.key === "intake") {
     if ("start" in surface) {
+      // runtime 指示当前接入起点：绑定项目时显示项目名(截断，避免长 CJK 名撑爆 chip)，否则「试点/Pilot」。
+      const intakeRuntime = surface.project
+        ? (surface.project.name.length > 16 ? `${surface.project.name.slice(0, 15)}…` : surface.project.name)
+        : (locale === "zh-CN" ? "试点" : "Pilot");
       return [
         metric(locale, "options", "0"),
         metric(locale, "queue", locale === "zh-CN" ? "待开始" : "Start"),
-        metric(locale, "runtime", locale === "zh-CN" ? "试点" : "Pilot")
+        metric(locale, "runtime", intakeRuntime)
       ];
     }
     return [
@@ -785,7 +789,12 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   if (surface.key === "intake") {
     if ("start" in surface) {
       return renderWebRouteComponent(
-        surface.project ? { key: "intake", start: true, project: surface.project } : { key: "intake", start: true },
+        {
+          key: "intake",
+          start: true,
+          ...(surface.project ? { project: surface.project } : {}),
+          ...(surface.project_unavailable ? { projectUnavailable: true } : {})
+        },
         { locale }
       );
     }
@@ -892,7 +901,8 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
           const project = await client.pages.project(projectId, withLocale(locale));
           return { key: "intake", start: true, project: { id: project.project.id, name: project.project.name } } satisfies WebRouteSurface;
         } catch {
-          return { key: "intake", start: true } satisfies WebRouteSurface;
+          // 来自的项目拉不到(已删/无权限/旧链接)：不静默切换，标记 project_unavailable → 渲染明确提示，再退化为通用起点。
+          return { key: "intake", start: true, project_unavailable: true } satisfies WebRouteSurface;
         }
       }
       return { key: "intake", start: true } satisfies WebRouteSurface;

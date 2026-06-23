@@ -1251,6 +1251,11 @@ test("R8 S4b intake start binds to an existing project when ?project_id is prese
   assert.equal(result.html.includes(`data-s4b-project-id="${projectId}"`), true);
   // existing-project start does NOT carry a bootstrap payload (it won't create a "Pilot Project")
   assert.equal(result.html.includes("data-request-json"), false);
+  // S4b-fix: the contradictory copy + shell metric are project-aware — no stale Pilot kicker/heading/body/metric vs the bound name
+  assert.equal(result.html.includes("Start work in R5 Workspace"), true, "title names the bound project");
+  assert.equal(result.html.includes("Pilot work entry"), false, "kicker no longer says Pilot");
+  assert.equal(result.html.includes("Pilot project context"), false, "card heading no longer says Pilot project context");
+  assert.equal(result.html.includes("prepares the pilot project"), false, "body no longer promises the skipped bootstrap");
 });
 
 test("R8 S4b intake start without a project keeps the generic bootstrap path (backward compatible)", async () => {
@@ -1263,6 +1268,24 @@ test("R8 S4b intake start without a project keeps the generic bootstrap path (ba
   assert.equal(result.html.includes("Pilot project"), true);
   assert.equal(result.html.includes("data-request-json"), true, "generic start still bootstraps a pilot project");
   assert.equal(result.html.includes("data-s4b-project-id"), false);
+});
+
+test("R8 S4b-fix intake with an unavailable project_id shows a notice, not a silent generic bootstrap", async () => {
+  const surface = goldPathSurfaceVm();
+  const projectId = "93000000-0000-4000-8000-0000000000ff";
+  const { client } = fakeRouteClient(surface);
+  // the requested project is gone / no access → pages.project 404s
+  client.pages.project = async () => {
+    throw new WorkHubApiError(404, "project_not_found", "没有找到这个项目。");
+  };
+  const match = resolveWebRoute(`/intake?project_id=${projectId}`);
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "en-US");
+  assert.equal(result.status, "ready");
+  // user is told the project was dropped (not silent), and falls back to a generic start they can still use
+  assert.equal(result.html.includes('data-s4b-project-unavailable="true"'), true);
+  assert.equal(result.html.includes("data-request-json"), true, "falls back to a usable generic start");
+  assert.equal(result.html.includes("data-s4b-project-id"), false, "no stale project binding");
 });
 
 test("R8 S2b project-home 404 sends the user back to the projects list, not a home dead-end", async () => {

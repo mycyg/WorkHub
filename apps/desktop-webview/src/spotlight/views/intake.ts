@@ -71,9 +71,14 @@ function questionHtml(vm: SessionVM, selected: Set<string>, zh: boolean): string
   </div>`;
 }
 
-function startHtml(zh: boolean): string {
+// projectLabel：从项目主页「新任务」进来时携带的项目名 → 起始屏直接显示「在该项目里新建」，与 web 端对齐。
+export function startHtml(zh: boolean, projectLabel?: string): string {
+  const projectPill = projectLabel
+    ? `<div class="wh-spot-row-meta" data-intake-project="${escapeHtml(projectLabel)}"><span class="wh-spot-chip wh-spot-chip--info">${escapeHtml(zh ? `项目：${projectLabel}` : `Project: ${projectLabel}`)}</span></div>`
+    : "";
   return `<div class="wh-spot-intake">
     <h3 class="wh-spot-intake-title">${zh ? "你想让 AI 帮你做点什么？" : "What should the AI take on?"}</h3>
+    ${projectPill}
     <p class="wh-spot-intake-body">${zh ? "用一句话说清楚，Cuu 会先澄清几个关键点，再去干、回头给你过目。" : "Describe it in a line — Cuu clarifies a few points, then works and brings it back for review."}</p>
     <textarea class="wh-spot-freetext" data-intent placeholder="${zh ? "例如：整理上周客户访谈，输出一页要点摘要…" : "e.g. Summarize last week's customer interviews into a one-pager…"}"></textarea>
     <div class="wh-spot-intake-actions">
@@ -116,8 +121,10 @@ export function createIntakeView(): SpotlightCapabilityView {
         if (disposed) return;
         session = null;
         selected = new Set();
-        ctx.setSubtitle(zh ? "提需求" : "New request");
-        body.innerHTML = startHtml(zh);
+        // 绑定项目时(ctx.target.label) 把上下文带进面包屑 + 起始屏，与 web 端「在 X 里派活」对齐。
+        const projectLabel = ctx.target?.label;
+        ctx.setSubtitle(projectLabel ? (zh ? `新任务 · ${projectLabel}` : `New task · ${projectLabel}`) : (zh ? "提需求" : "New request"));
+        body.innerHTML = startHtml(zh, projectLabel);
         ctx.requestResize();
         body.querySelector<HTMLTextAreaElement>("[data-intent]")?.focus();
       };

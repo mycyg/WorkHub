@@ -10,8 +10,9 @@ import type { CommandId } from "../command-palette.js";
 
 export type SpotlightApiClient = ReturnType<typeof createApiClient>;
 
-// 打开某能力时可携带的目标实体（深链/跨能力跳转用）：id 为要直接展开的实体（工作项/提议/项目）id。
-export type SpotlightTarget = { id?: string; route?: string };
+// 打开某能力时可携带的目标实体（深链/跨能力跳转用）：id 为要直接展开的实体（工作项/提议/项目）id；
+// label 为可选的人类可读名（如项目名），让目标 view 直接展示上下文而无需再拉一次。
+export type SpotlightTarget = { id?: string; route?: string; label?: string };
 
 export type SpotlightViewContext = {
   client: SpotlightApiClient;

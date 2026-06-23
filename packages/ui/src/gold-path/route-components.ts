@@ -1163,19 +1163,35 @@ function intakeProgressRows(vm: SessionVM) {
     .join("");
 }
 
-function renderIntakeStartRouteComponent(locale: WorkHubLocale, project?: { id: string; name: string } | undefined): WebRouteComponent {
+function renderIntakeStartRouteComponent(
+  locale: WorkHubLocale,
+  project?: { id: string; name: string } | undefined,
+  projectUnavailable?: boolean | undefined
+): WebRouteComponent {
+  const zh = locale === "zh-CN";
   const bootstrapPayload = {
     name: "Pilot Project",
     slug: "pilot-project",
     description: "Pilot project context created from the WorkHub intake entry."
   };
   // 带项目上下文(从项目主页「新任务」进来)：展示真实项目名、绑定到该项目、跳过「试点项目」bootstrap。
-  const projectName = project ? project.name : (locale === "zh-CN" ? "试点项目" : "Pilot project");
+  const projectName = project ? project.name : (zh ? "试点项目" : "Pilot project");
+  // 文案随是否绑定项目切换——绑定时不再说「准备试点项目」(那条 bootstrap 路径已被跳过)，避免与真实项目名自相矛盾。
+  const kicker = project ? (zh ? "项目工作入口" : "Project work entry") : routeT(locale, "intake.startKicker");
+  const title = project ? (zh ? `在「${project.name}」里派活` : `Start work in ${project.name}`) : routeT(locale, "intake.startTitle");
+  const body = project
+    ? (zh ? "新任务会直接绑定到这个项目，进入选项优先的需求澄清；不会改动已确认的交付物。" : "This task binds directly to this project, then opens option-first intake. It won't touch accepted deliverables.")
+    : routeT(locale, "intake.startBody");
+  const projectCardHeading = project ? (zh ? "项目上下文" : "Project context") : routeT(locale, "intake.startProject");
   // start 动作：有项目则带 data-s4b-project-id（browser 据此 createSession 直绑该项目、不 bootstrap）；
   // 无项目则保留原 bootstrap 负载（新建/复用「试点项目」）。两路都走 start_intake 调度。
   const startAction = project
     ? `<a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="start_intake" data-method="POST" data-s1-day0-start-intake="true" data-s4b-project-id="${escapeHtml(project.id)}">${escapeHtml(routeT(locale, "intake.startAction"))}</a>`
     : `<a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="start_intake" data-method="POST" data-s1-day0-start-intake="true" data-request-json="${jsonAttr(bootstrapPayload)}">${escapeHtml(routeT(locale, "intake.startAction"))}</a>`;
+  // 来自的项目无法访问(已删/无权限/旧链接)时不静默切换：给一条明确提示，再退化为通用起点。
+  const unavailableNotice = projectUnavailable
+    ? `<p class="wh-subtle" data-s4b-project-unavailable="true">${escapeHtml(zh ? "你来自的项目暂时不可用（可能已删除或无访问权限），已切换到通用工作起点。" : "The project you came from is unavailable (deleted or no access); switched to a generic work start.")}</p>`
+    : "";
   return createWebRouteComponent({
     key: "intake",
     css: webRouteComponentCss,
@@ -1186,18 +1202,19 @@ function renderIntakeStartRouteComponent(locale: WorkHubLocale, project?: { id: 
     html: `<section class="wh-r4-route" data-r4-route-component="intake" data-r4-route-component-source="project-bootstrap" data-r4-route-component-locale="${escapeHtml(locale)}" data-s1-day0-intake-start="true"${project ? ` data-s4b-intake-project="${escapeHtml(project.id)}"` : ""}>
       <header class="wh-r4-route-head">
         <div>
-          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "intake.startKicker"))}</span>
-          <h2>${escapeHtml(routeT(locale, "intake.startTitle"))}</h2>
-          <p>${escapeHtml(routeT(locale, "intake.startBody"))}</p>
+          <span class="wh-r4-route-kicker">${escapeHtml(kicker)}</span>
+          <h2>${escapeHtml(title)}</h2>
+          <p>${escapeHtml(body)}</p>
         </div>
         <span class="wh-r4-route-count">D0</span>
       </header>
+      ${unavailableNotice}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-s1-day0-project-context-card="true">
-          <h3>${escapeHtml(routeT(locale, "intake.startProject"))}</h3>
+          <h3>${escapeHtml(projectCardHeading)}</h3>
           <div class="wh-r4-route-meta">
             <span class="wh-pill" data-s4b-intake-project-name="${escapeHtml(projectName)}">${escapeHtml(projectName)}</span>
-            <span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "实时数据" : "Live data")}</span>
+            <span class="wh-pill">${escapeHtml(zh ? "实时数据" : "Live data")}</span>
           </div>
           <p>${escapeHtml(routeT(locale, "intake.startNext"))}</p>
           <label class="wh-r4-route-stack">
@@ -1209,8 +1226,8 @@ function renderIntakeStartRouteComponent(locale: WorkHubLocale, project?: { id: 
           <section class="wh-card wh-r4-route-card" data-s1-day0-intake-evidence="true">
             <h3>${escapeHtml(routeT(locale, "intake.progress"))}</h3>
             <div class="wh-r4-route-timeline">
-              <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.startProject"))}</strong><span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "已就绪" : "Ready")}</span></div>
-              <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.summary"))}</strong><span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "待进行" : "Next")}</span></div>
+              <div class="wh-r4-route-row"><strong>${escapeHtml(projectCardHeading)}</strong><span class="wh-pill">${escapeHtml(zh ? "已就绪" : "Ready")}</span></div>
+              <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.summary"))}</strong><span class="wh-pill">${escapeHtml(zh ? "待进行" : "Next")}</span></div>
             </div>
             <p>${escapeHtml(routeT(locale, "intake.startEvidence"))}</p>
           </section>
@@ -2883,7 +2900,7 @@ export type WebRouteComponentInput =
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
   | { key: "intake"; session: SessionVM }
-  | { key: "intake"; start: true; project?: { id: string; name: string } | undefined }
+  | { key: "intake"; start: true; project?: { id: string; name: string } | undefined; projectUnavailable?: boolean | undefined }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined }
@@ -2912,7 +2929,7 @@ export function renderWebRouteComponent(
       return renderProjectHomeRouteComponent(input.project, locale);
     case "intake":
       if ("start" in input) {
-        return renderIntakeStartRouteComponent(locale, input.project);
+        return renderIntakeStartRouteComponent(locale, input.project, input.projectUnavailable);
       }
       return renderIntakeRouteComponent(input.session, locale);
     case "approvals":

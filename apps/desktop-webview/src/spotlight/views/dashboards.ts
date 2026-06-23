@@ -134,7 +134,7 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
       <div class="wh-spot-row-sub" style="margin-top:6px">${escapeHtml(p.owner_label)} · ${escapeHtml(zh ? `进行中 ${count}` : `${count} open`)}</div>
     </div>
     <div class="wh-spot-card-actions">
-      <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-intake="${escapeHtml(p.id)}">${escapeHtml(vm.actions.new_task.label)}</button>
+      <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-intake="${escapeHtml(p.id)}" data-open-intake-name="${escapeHtml(p.name)}">${escapeHtml(vm.actions.new_task.label)}</button>
       <button type="button" class="wh-spot-act ds-pressable" data-open-drive="${escapeHtml(p.id)}">${escapeHtml(vm.actions.open_drive.label)}</button>
     </div>
     <div class="wh-spot-list ds-stagger">${rows}</div>
@@ -217,9 +217,10 @@ export function createProjectsView(): SpotlightCapabilityView {
           }
           const intakeBtn = target.closest<HTMLElement>("[data-open-intake]");
           if (intakeBtn) {
-            // 项目主页「新任务」带项目 id → 接入会话绑定到该项目；列表空态 CTA 无 id → 通用接入。
+            // 项目主页「新任务」带项目 id+名 → 接入会话绑定到该项目并展示项目名；列表空态 CTA 无 id → 通用接入。
             const pid = intakeBtn.dataset.openIntake;
-            ctx.open("intake", pid ? { id: pid } : undefined);
+            const pname = intakeBtn.dataset.openIntakeName;
+            ctx.open("intake", pid ? { id: pid, ...(pname ? { label: pname } : {}) } : undefined);
           }
         },
         { signal: ctx.signal }
