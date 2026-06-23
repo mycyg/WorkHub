@@ -102,6 +102,10 @@ export type WorkItemProjectListItemRow = {
   status: WorkItemStatus;
   priority: string;
   updatedAt: Date;
+  // 供项目主页按 canViewWorkItemRecord 过滤私有态他人事项（避免列出点进去 403 的条目）。
+  submitterUserId: string;
+  claimedByUserId: string | null;
+  workspaceId: string | null;
 };
 export type WorkItemRow = typeof workItems.$inferSelect;
 export type WorkItemAcceptanceRow = typeof workItemAcceptanceItems.$inferSelect;
@@ -544,7 +548,12 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           title: workItems.title,
           status: workItems.status,
           priority: workItems.priority,
-          updatedAt: workItems.updatedAt
+          updatedAt: workItems.updatedAt,
+          // 项目主页要按 canViewWorkItemRecord 过滤掉「点进去会 403」的私有态(intake/澄清/spec_ready)
+          // 他人事项,故清单行须带提交人/认领人/workspace 作用域,供服务层构造 WorkItemAccessRecord。
+          submitterUserId: workItems.submitterUserId,
+          claimedByUserId: workItems.claimedByUserId,
+          workspaceId: workItems.workspaceId
         })
         .from(workItems)
         .where(

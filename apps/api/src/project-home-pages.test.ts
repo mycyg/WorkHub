@@ -43,6 +43,8 @@ function projectRow(over: Partial<WorkItemProjectRow> = {}): WorkItemProjectRow 
 
 const WI_1 = "44444444-4444-4444-8444-444444444401";
 const WI_2 = "44444444-4444-4444-8444-444444444402";
+const OTHER_USER = "33333333-3333-4333-8333-3333333333ff";
+// 缺省事项由默认 actor(USER) 提交 → 即便是私有态(spec_ready)对其自身也可见(isSubmitter)。
 const openItem = (over: Partial<WorkItemProjectListItemRow> = {}): WorkItemProjectListItemRow => ({
   id: WI_1,
   code: "ALP-1",
@@ -50,20 +52,17 @@ const openItem = (over: Partial<WorkItemProjectListItemRow> = {}): WorkItemProje
   status: "spec_ready",
   priority: "normal",
   updatedAt: new Date("2026-06-23T00:00:00.000Z"),
+  submitterUserId: USER,
+  claimedByUserId: null,
+  workspaceId: WS,
   ...over
 });
 
 function repo(
   findProjectById: WorkItemDataRepository["findProjectById"],
-  listOpenByProject: WorkItemDataRepository["listOpenByProject"],
-  countOpenByProject?: WorkItemDataRepository["countOpenByProject"]
-): Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject"> {
-  return {
-    findProjectById,
-    listOpenByProject,
-    // 缺省按清单长度推导真实计数（小项目两者一致）；需要测「超过清单上限」时显式传入。
-    countOpenByProject: countOpenByProject ?? (async (projectId) => (await listOpenByProject(projectId, 10_000)).length)
-  };
+  listOpenByProject: WorkItemDataRepository["listOpenByProject"]
+): Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject"> {
+  return { findProjectById, listOpenByProject };
 }
 
 // 网盘 repo 切片假实现：缺省无文件；可传入最近文件 + 真实总数（测「超过展示上限」用）。
@@ -146,19 +145,55 @@ test("project home page flags empty_state when there is no open work", async () 
   assert.equal(vm.drive.recent_files.length, 0);
 });
 
-test("project home page header count is the true total, not the capped list length", async () => {
-  // 清单封顶只返回 2 条，但真实进行中总数 73 → 头部计数应取真实总数(与项目列表卡同口径)，前端据此提示「还有 N 条」。
+test("project home hides private-status work items the viewer can't open (no 403 dead links)", async () => {
+  // F9：他人的私有态事项(intake/澄清/spec_ready)点进去会 403——项目主页不该列出这些死链。
+  // 清单 = 1 条本人 spec_ready(可见) + 1 条他人 spec_ready(不可见) + 1 条他人非私有态(同 workspace 可见)。
   const svc = createProjectHomePageService({
     repo: repo(
-      async () => projectRow(),
-      async () => [openItem(), openItem({ id: WI_2, code: "ALP-2" })],
-      async () => 73
+      async () => projectRow({ ownerUserId: OTHER_USER }),
+      async () => [
+        openItem(),
+        openItem({ id: WI_2, code: "ALP-2", submitterUserId: OTHER_USER, status: "spec_ready" }),
+        openItem({ id: "44444444-4444-4444-8444-444444444403", code: "ALP-3", submitterUserId: OTHER_USER, status: "in_review" })
+      ]
     ),
     driveRepo: driveRepo(),
     now: () => new Date("2026-06-23T00:00:00.000Z")
   });
   const vm = await svc.page({ actor: actor(), projectId: PROJ });
-  assert.equal(vm.summary.open_work_item_count, 73, "header count = true total");
-  assert.equal(vm.open_work_items.length, 2, "list itself stays capped");
-  assert.equal(vm.empty_state, undefined);
+  const ids = vm.open_work_items.map((item) => item.id);
+  assert.deepEqual(ids, [WI_1, "44444444-4444-4444-8444-444444444403"], "本人私有态 + 他人非私有态保留;他人私有态过滤掉");
+  assert.equal(vm.summary.open_work_item_count, 2, "头部计数与可见清单一致(不计入过滤掉的死链)");
+});
+
+test("project home shows nothing (empty_state) when every open item is another user's private draft", async () => {
+  // 项目有活动但全是他人私有草稿 → 当前用户在本项目无可处理项,诚实显示空态而非一堆 403 死链。
+  const svc = createProjectHomePageService({
+    repo: repo(
+      async () => projectRow({ ownerUserId: OTHER_USER }),
+      async () => [
+        openItem({ submitterUserId: OTHER_USER, status: "ai_clarifying" }),
+        openItem({ id: WI_2, code: "ALP-2", submitterUserId: OTHER_USER, status: "spec_ready" })
+      ]
+    ),
+    driveRepo: driveRepo(),
+    now: () => new Date("2026-06-23T00:00:00.000Z")
+  });
+  const vm = await svc.page({ actor: actor(), projectId: PROJ });
+  assert.equal(vm.open_work_items.length, 0);
+  assert.equal(vm.summary.open_work_item_count, 0);
+  assert.equal(vm.empty_state, "no_open_work");
+});
+
+test("admin sees all open items on project home (incl. others' private drafts)", async () => {
+  const svc = createProjectHomePageService({
+    repo: repo(
+      async () => projectRow({ ownerUserId: OTHER_USER }),
+      async () => [openItem({ submitterUserId: OTHER_USER }), openItem({ id: WI_2, code: "ALP-2", submitterUserId: OTHER_USER })]
+    ),
+    driveRepo: driveRepo(),
+    now: () => new Date("2026-06-23T00:00:00.000Z")
+  });
+  const vm = await svc.page({ actor: actor({ isAdmin: true }), projectId: PROJ });
+  assert.equal(vm.summary.open_work_item_count, 2, "admin 可越权读 → 全部可见");
 });
