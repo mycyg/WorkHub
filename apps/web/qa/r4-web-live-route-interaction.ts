@@ -1664,9 +1664,11 @@ function identity(locale: WorkHubLocale, nickname = "R4 Live Reviewer") {
   };
 }
 
-function isEmptyApprovalProbe(request: IncomingMessage) {
+// 簇A 后:approvals/cost/notifications 等内容页空态不再塌成通用空卡(改在外壳内渲染各自空态)。
+// 仍合法塌成 "empty" 通用态的是「缺上下文」类:网盘无项目(no_project)、详情 404。用网盘 no_project 作 "empty" 态的代表探针。
+function isEmptyDriveProbe(request: IncomingMessage) {
   const referer = request.headers.referer;
-  return typeof referer === "string" && referer.includes("empty=approvals");
+  return typeof referer === "string" && referer.includes("empty=drive");
 }
 
 async function requestBody(request: IncomingMessage) {
@@ -1814,15 +1816,6 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/approvals") {
-      if (isEmptyApprovalProbe(request)) {
-        sendJson(response, 200, {
-          ...surface.page_vms.approvals,
-          items: [],
-          requests: [],
-          counts: { pending: 0, all: 0 }
-        });
-        return;
-      }
       sendJson(response, 200, surface.page_vms.approvals);
       return;
     }
@@ -1839,6 +1832,11 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/drive") {
+      if (isEmptyDriveProbe(request)) {
+        // 网盘无项目上下文 → 服务端返回 empty_state=no_project,加载器收口成通用 "empty" 态(引导去 /projects)。
+        sendJson(response, 200, { ...drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated), empty_state: "no_project" });
+        return;
+      }
       sendJson(response, 200, drivePage(surface, driveQaState, driveCommentDraftCreated, driveDraftProposalCreated));
       return;
     }
@@ -3436,8 +3434,9 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   steps.push(await captureStep(cdp, { id: "15u-notification-evidence-jump-en-desktop", url: `${baseUrl}/knowledge/search`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "knowledge" }));
 
   await setViewport(cdp, mobile);
-  await navigate(cdp, `${baseUrl}/approvals?empty=approvals`, "empty");
-  steps.push(await captureStep(cdp, { id: "16-empty-approvals-mobile", url: `${baseUrl}/approvals?empty=approvals`, viewport: mobile, expectedStatus: "empty" }));
+  // 簇A 后 approvals 空态不再塌(改在外壳内渲染,见 routes.test)；通用 "empty" 态改用仍合法塌陷的网盘无项目路径演示。
+  await navigate(cdp, `${baseUrl}/drive?empty=drive`, "empty");
+  steps.push(await captureStep(cdp, { id: "16-empty-drive-no-project-mobile", url: `${baseUrl}/drive?empty=drive`, viewport: mobile, expectedStatus: "empty" }));
 
   await setViewport(cdp, desktop);
   await navigate(cdp, `${baseUrl}/workitems/r4-live-forbidden`, "forbidden");
@@ -3800,7 +3799,7 @@ async function main() {
           step.audit.textOverflowCount === 0
         ),
       r5_2_drive_upload_recycle_operation_log:
-        proof.counts.drive === 6 &&
+        proof.counts.drive === 7 &&
         proof.counts.driveUpload === 1 &&
         proof.counts.driveDelete === 1 &&
         proof.counts.driveRestore === 1 &&
@@ -4856,10 +4855,10 @@ async function main() {
       r4_10_active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       product_shell_stays_path_mode: steps.filter((step) => step.audit.productShell).every((step) => step.audit.linkModePath),
       no_duplicate_route_loader_calls:
-        proof.counts.approvals === 5 &&
+        proof.counts.approvals === 4 &&
         proof.counts.workitem === 6 &&
         proof.counts.workitemForbidden === 1 &&
-        proof.counts.drive === 6 &&
+        proof.counts.drive === 7 &&
         proof.counts.driveDraftProposal === 1 &&
         proof.counts.meetings === 3 &&
         proof.counts.meetingWorkitem === 2 &&
