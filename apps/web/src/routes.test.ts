@@ -1498,6 +1498,28 @@ test("R4 web loader keeps auth bootstrap outside route-state swallowing", async 
   await assert.rejects(() => loadWebRoute(client, match, "en-US"), /identify first/u);
 });
 
+test("intake project-context loader rethrows not_identified (re-auth, not a degraded project_unavailable page)", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface);
+  client.pages.project = async () => {
+    throw new WorkHubApiError(401, "not_identified", "identify first");
+  };
+  const match = resolveWebRoute("/intake?project_id=93000000-0000-4000-8000-000000000001");
+  assert.ok(match);
+  await assert.rejects(() => loadWebRoute(client, match, "en-US"), /identify first/u);
+});
+
+test("drive loader rethrows not_identified from listProjects (re-auth, not a silent no-switcher page)", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface);
+  client.listProjects = async () => {
+    throw new WorkHubApiError(401, "not_identified", "identify first");
+  };
+  const match = resolveWebRoute("/drive");
+  assert.ok(match);
+  await assert.rejects(() => loadWebRoute(client, match, "en-US"), /identify first/u);
+});
+
 test("R4 web loader renders unknown routes as explicit error states", async () => {
   const surface = goldPathSurfaceVm();
   const { client, calls } = fakeRouteClient(surface);

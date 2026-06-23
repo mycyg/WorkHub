@@ -892,7 +892,11 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
         try {
           const project = await client.pages.project(projectId, withLocale(locale));
           return { key: "intake", start: true, project: { id: project.project.id, name: project.project.name } } satisfies WebRouteSurface;
-        } catch {
+        } catch (error) {
+          // 会话过期(not_identified)要冒泡到 loadWebRoute 的重认证分支,别被「项目不可用」吞掉(否则用户看到能用的接入页而非重新登录)。
+          if (error instanceof WorkHubApiError && error.code === "not_identified") {
+            throw error;
+          }
           // 来自的项目拉不到(已删/无权限/旧链接)：不静默切换，标记 project_unavailable → 渲染明确提示，再退化为通用起点。
           return { key: "intake", start: true, project_unavailable: true } satisfies WebRouteSurface;
         }
@@ -964,7 +968,11 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     let projects: ProjectListVM;
     try {
       projects = await client.listProjects();
-    } catch {
+    } catch (error) {
+      // 会话过期(not_identified)要冒泡到重认证分支,别被「退化为无切换器」吞掉。
+      if (error instanceof WorkHubApiError && error.code === "not_identified") {
+        throw error;
+      }
       projects = { generated_at: new Date().toISOString(), projects: [] };
     }
     return { key: "drive", drive, projects } satisfies WebRouteSurface;

@@ -24,6 +24,7 @@ import {
   WorkItemServiceError,
   type WorkItemService
 } from "../services/work-items.js";
+import { isUuidParam } from "./uuid-param.js";
 
 export type ApprovalRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -56,6 +57,10 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
   }
 
   async function assertCanReadApproval(id: string, actor: AuthEnv["Variables"]["actor"]) {
+    // 与所有兄弟 :id 路由一致:非 uuid 直接 404,别把 `id` 透传到 PG uuid 列引发 22P02→未处理 500(且 500/404 状态差异泄露存在性)。
+    if (!isUuidParam(id)) {
+      throw new HTTPException(404, { message: "没有找到这条审批。" });
+    }
     const approval = await service.get(id);
     if (!approval) {
       throw new HTTPException(404, { message: "没有找到这条审批。" });

@@ -13,11 +13,20 @@ import {
   WorkItemServiceError,
   type WorkItemService
 } from "../services/work-items.js";
+import { isUuidParam } from "./uuid-param.js";
 
 export type SessionRoutesDependencies = {
   auth?: AuthDependencySource;
   workItems?: WorkItemService;
 };
+
+// 与 workitems/proposals/agent-runs 一致:非 uuid 的 session id 直接 404,别透传到 PG uuid 列引发 22P02→未处理 500。
+function requireSessionId(value: string): string {
+  if (!isUuidParam(value)) {
+    throw new HTTPException(404, { message: "没有找到这个会话。" });
+  }
+  return value;
+}
 
 function handleWorkItemError(error: unknown): never {
   if (error instanceof WorkItemServiceError) {
@@ -50,7 +59,7 @@ export function createSessionRoutes(deps: SessionRoutesDependencies = {}) {
     const locale = requestLocale(c);
     try {
       const data = await workItems.getSession({
-        sessionId: c.req.param("id"),
+        sessionId: requireSessionId(c.req.param("id")),
         actor: c.var.actor,
         locale
       });
@@ -65,7 +74,7 @@ export function createSessionRoutes(deps: SessionRoutesDependencies = {}) {
     const locale = requestLocale(c);
     try {
       const data = await workItems.nextQuestion({
-        sessionId: c.req.param("id"),
+        sessionId: requireSessionId(c.req.param("id")),
         payload,
         actor: c.var.actor,
         locale
