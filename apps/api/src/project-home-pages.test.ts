@@ -97,7 +97,8 @@ test("project home page returns project meta + open work items + actions", async
   assert.equal(vm.open_work_items[0]?.href, `/workitems/${WI_1}`);
   assert.equal(vm.open_work_items[1]?.title, "ALP-2", "null title falls back to code");
   assert.equal(vm.actions.open_drive.href, `/drive?project_id=${PROJ}`);
-  assert.equal(vm.actions.new_task.href, "/intake");
+  // S4b：新任务带项目上下文，进接入起始页时绑定到本项目（不再丢进通用「试点项目」）。
+  assert.equal(vm.actions.new_task.href, `/intake?project_id=${PROJ}`);
   // 网盘切片：真实文件总数 + 最近文件（链到项目网盘）
   assert.equal(vm.drive.file_count, 3, "drive file_count = true total");
   assert.equal(vm.drive.recent_files.length, 1);

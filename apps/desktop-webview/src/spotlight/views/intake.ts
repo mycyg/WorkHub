@@ -139,7 +139,13 @@ export function createIntakeView(): SpotlightCapabilityView {
         busy = true;
         setBusy(zh ? "正在开场…" : "Starting…");
         try {
-          session = await client.createSession(intent.trim() ? { intent_text: intent.trim() } : {});
+          // S4b：从项目主页「新任务」进来时携带 ctx.target.id → 会话绑定到该项目，不丢上下文。
+          const projectId = ctx.target?.id;
+          const trimmedIntent = intent.trim();
+          session = await client.createSession({
+            ...(projectId ? { project_id: projectId } : {}),
+            ...(trimmedIntent ? { intent_text: trimmedIntent } : {})
+          });
           selected = new Set();
           busy = false;
           renderQuestion();

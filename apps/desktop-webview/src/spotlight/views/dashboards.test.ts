@@ -46,7 +46,8 @@ test("S3 desktop project-home detail renders meta, work-item buttons, CTAs and b
   assert.ok(html.includes('data-open-workitem="10000000-0000-4000-8000-000000000901"'), "work item button carries id");
   assert.ok(html.includes("Weekly report"), "work item title");
   // 入口动作：新任务 + 打开网盘（label 取自服务端 VM）
-  assert.ok(html.includes("data-open-intake"), "new-task CTA");
+  // S4b: new-task carries the project id so the intake session binds to this project
+  assert.ok(html.includes('data-open-intake="93000000-0000-4000-8000-000000000001"'), "new-task CTA carries project id");
   assert.ok(html.includes('data-open-drive="93000000-0000-4000-8000-000000000001"'), "open-drive carries project id");
   assert.ok(html.includes("新任务") && html.includes("打开网盘"), "localized action labels from VM");
   // 网盘同步是核心：项目主页直呈最近文件

@@ -641,6 +641,25 @@ function bindGoldPathNavigation(
         return;
       }
       if (bootstrapProjectActionFromHref(href) && actionTarget.dataset.s1Day0StartIntake === "true") {
+        // S4b：从项目主页「新任务」进来时动作带 data-s4b-project-id → 直接在该项目建会话，跳过「试点项目」bootstrap。
+        const existingProjectId = actionTarget.dataset.s4bProjectId;
+        const intentText = startIntentText(actionTarget, locale);
+        if (existingProjectId) {
+          try {
+            const session = await client.createSession({
+              project_id: existingProjectId,
+              intent_text: intentText
+            });
+            await navigateWebRoute(`/intake/${session.session_id}`, client, locale);
+            if (root) {
+              const body = locale === "en-US" ? "Intake is open for this project." : "已在该项目里打开接入会话。";
+              showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
+            }
+          } catch (error) {
+            showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+          }
+          return;
+        }
         const payload = actionElementJsonPayload<Parameters<BrowserApiClient["bootstrapProject"]>[0]>(actionTarget);
         if (!payload.ok) {
           showPayloadFailureNotice(shellRoot, locale, payload, actionId);
@@ -648,7 +667,6 @@ function bindGoldPathNavigation(
         }
         try {
           const project = await client.bootstrapProject(payload.payload ?? {});
-          const intentText = startIntentText(actionTarget, locale);
           const session = await client.createSession({
             project_id: project.project.id,
             intent_text: intentText

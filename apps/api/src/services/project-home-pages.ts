@@ -107,7 +107,8 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
           href: `/workitems/${encodeURIComponent(item.id)}`
         })),
         actions: {
-          new_task: { id: "new_task", label: zh ? "新任务" : "New task", method: "GET", href: "/intake" },
+          // 新任务带上项目上下文(/intake?project_id=)→ 接入起始页绑定到本项目，不再丢进通用「试点项目」。
+          new_task: { id: "new_task", label: zh ? "新任务" : "New task", method: "GET", href: `/intake?project_id=${encodeURIComponent(project.id)}` },
           open_drive: {
             id: "open_drive",
             label: zh ? "打开网盘" : "Open drive",

@@ -1234,6 +1234,37 @@ test("R8 S2b project-home route renders project meta, open-work links, CTAs, bac
   assert.equal(result.html.includes("客户复盘.md"), true);
 });
 
+test("R8 S4b intake start binds to an existing project when ?project_id is present", async () => {
+  const surface = goldPathSurfaceVm();
+  const projectId = "93000000-0000-4000-8000-000000000001";
+  const { client, calls } = fakeRouteClient(surface);
+  const match = resolveWebRoute(`/intake?project_id=${projectId}`);
+  assert.ok(match);
+  assert.equal(match.key, "intake");
+  const result = await loadWebRoute(client, match, "en-US");
+  assert.equal(result.status, "ready");
+  // loader fetched the project (name + access fence) via pages.project
+  assert.ok(calls.some((c) => c.startsWith(`project:${projectId}`)), "intake loader resolves the project");
+  // the start screen shows the REAL project name (not the hardcoded Pilot project) and binds the action to it
+  assert.equal(result.html.includes("R5 Workspace"), true);
+  assert.equal(result.html.includes(`data-s4b-intake-project="${projectId}"`), true);
+  assert.equal(result.html.includes(`data-s4b-project-id="${projectId}"`), true);
+  // existing-project start does NOT carry a bootstrap payload (it won't create a "Pilot Project")
+  assert.equal(result.html.includes("data-request-json"), false);
+});
+
+test("R8 S4b intake start without a project keeps the generic bootstrap path (backward compatible)", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface);
+  const match = resolveWebRoute("/intake");
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "en-US");
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes("Pilot project"), true);
+  assert.equal(result.html.includes("data-request-json"), true, "generic start still bootstraps a pilot project");
+  assert.equal(result.html.includes("data-s4b-project-id"), false);
+});
+
 test("R8 S2b project-home 404 sends the user back to the projects list, not a home dead-end", async () => {
   const surface = goldPathSurfaceVm();
   const projectId = "93000000-0000-4000-8000-0000000000ff";

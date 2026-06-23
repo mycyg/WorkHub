@@ -1163,12 +1163,19 @@ function intakeProgressRows(vm: SessionVM) {
     .join("");
 }
 
-function renderIntakeStartRouteComponent(locale: WorkHubLocale): WebRouteComponent {
+function renderIntakeStartRouteComponent(locale: WorkHubLocale, project?: { id: string; name: string } | undefined): WebRouteComponent {
   const bootstrapPayload = {
     name: "Pilot Project",
     slug: "pilot-project",
     description: "Pilot project context created from the WorkHub intake entry."
   };
+  // 带项目上下文(从项目主页「新任务」进来)：展示真实项目名、绑定到该项目、跳过「试点项目」bootstrap。
+  const projectName = project ? project.name : (locale === "zh-CN" ? "试点项目" : "Pilot project");
+  // start 动作：有项目则带 data-s4b-project-id（browser 据此 createSession 直绑该项目、不 bootstrap）；
+  // 无项目则保留原 bootstrap 负载（新建/复用「试点项目」）。两路都走 start_intake 调度。
+  const startAction = project
+    ? `<a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="start_intake" data-method="POST" data-s1-day0-start-intake="true" data-s4b-project-id="${escapeHtml(project.id)}">${escapeHtml(routeT(locale, "intake.startAction"))}</a>`
+    : `<a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="start_intake" data-method="POST" data-s1-day0-start-intake="true" data-request-json="${jsonAttr(bootstrapPayload)}">${escapeHtml(routeT(locale, "intake.startAction"))}</a>`;
   return createWebRouteComponent({
     key: "intake",
     css: webRouteComponentCss,
@@ -1176,7 +1183,7 @@ function renderIntakeStartRouteComponent(locale: WorkHubLocale): WebRouteCompone
     source: "project-bootstrap",
     locale,
     pageVm: "project_bootstrap",
-    html: `<section class="wh-r4-route" data-r4-route-component="intake" data-r4-route-component-source="project-bootstrap" data-r4-route-component-locale="${escapeHtml(locale)}" data-s1-day0-intake-start="true">
+    html: `<section class="wh-r4-route" data-r4-route-component="intake" data-r4-route-component-source="project-bootstrap" data-r4-route-component-locale="${escapeHtml(locale)}" data-s1-day0-intake-start="true"${project ? ` data-s4b-intake-project="${escapeHtml(project.id)}"` : ""}>
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "intake.startKicker"))}</span>
@@ -1189,7 +1196,7 @@ function renderIntakeStartRouteComponent(locale: WorkHubLocale): WebRouteCompone
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-s1-day0-project-context-card="true">
           <h3>${escapeHtml(routeT(locale, "intake.startProject"))}</h3>
           <div class="wh-r4-route-meta">
-            <span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "试点项目" : "Pilot project")}</span>
+            <span class="wh-pill" data-s4b-intake-project-name="${escapeHtml(projectName)}">${escapeHtml(projectName)}</span>
             <span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "实时数据" : "Live data")}</span>
           </div>
           <p>${escapeHtml(routeT(locale, "intake.startNext"))}</p>
@@ -1210,7 +1217,7 @@ function renderIntakeStartRouteComponent(locale: WorkHubLocale): WebRouteCompone
         </aside>
       </div>
       <div class="wh-r4-route-actions">
-        <a class="wh-btn wh-btn-primary" href="/api/projects/bootstrap" data-action-id="start_intake" data-method="POST" data-s1-day0-start-intake="true" data-request-json="${jsonAttr(bootstrapPayload)}">${escapeHtml(routeT(locale, "intake.startAction"))}</a>
+        ${startAction}
       </div>
     </section>`
   });
@@ -2876,7 +2883,7 @@ export type WebRouteComponentInput =
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
   | { key: "intake"; session: SessionVM }
-  | { key: "intake"; start: true }
+  | { key: "intake"; start: true; project?: { id: string; name: string } | undefined }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined }
@@ -2905,7 +2912,7 @@ export function renderWebRouteComponent(
       return renderProjectHomeRouteComponent(input.project, locale);
     case "intake":
       if ("start" in input) {
-        return renderIntakeStartRouteComponent(locale);
+        return renderIntakeStartRouteComponent(locale, input.project);
       }
       return renderIntakeRouteComponent(input.session, locale);
     case "approvals":

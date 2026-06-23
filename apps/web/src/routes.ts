@@ -84,7 +84,7 @@ export type WebRouteSurface =
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
   | { key: "intake"; session: SessionVM }
-  | { key: "intake"; start: true }
+  | { key: "intake"; start: true; project?: { id: string; name: string } }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[] }
@@ -784,7 +784,10 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   }
   if (surface.key === "intake") {
     if ("start" in surface) {
-      return renderWebRouteComponent({ key: "intake", start: true }, { locale });
+      return renderWebRouteComponent(
+        surface.project ? { key: "intake", start: true, project: surface.project } : { key: "intake", start: true },
+        { locale }
+      );
     }
     return renderWebRouteComponent({ key: "intake", session: surface.session }, { locale });
   }
@@ -881,6 +884,17 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   if (match.key === "intake") {
     const sessionId = match.params["sessionId"] ?? "";
     if (!sessionId) {
+      // 新任务带项目上下文(?project_id=)：拉项目名(顺带过项目级访问 fence)，绑定接入到本项目。
+      // 项目拉取失败(无权限/不存在/旧链接)优雅退化为通用接入起点，不让接入页整页报错。
+      const projectId = new URLSearchParams(match.search).get("project_id") ?? undefined;
+      if (projectId) {
+        try {
+          const project = await client.pages.project(projectId, withLocale(locale));
+          return { key: "intake", start: true, project: { id: project.project.id, name: project.project.name } } satisfies WebRouteSurface;
+        } catch {
+          return { key: "intake", start: true } satisfies WebRouteSurface;
+        }
+      }
       return { key: "intake", start: true } satisfies WebRouteSurface;
     }
     const session = await client.getSession(sessionId, withLocale(locale));
