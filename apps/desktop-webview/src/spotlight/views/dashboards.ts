@@ -162,8 +162,9 @@ export function createProjectsView(): SpotlightCapabilityView {
           const items = vm.projects;
           ctx.setSubtitle(zh ? `${items.length} 个项目` : `${items.length} project${items.length === 1 ? "" : "s"}`);
           ctx.body.innerHTML = items.length
-            ? `<div class="wh-spot-dash">${newTaskCta(zh)}<div class="wh-spot-list ds-stagger">${items.map((p) => projectCard(p, zh)).join("")}</div></div>`
-            : `<div class="wh-spot-dash">${emptyHtml("📁", zh ? "还没有项目" : "No projects yet", zh ? "派个活就会自动建项目和网盘" : "Dispatch a task to create one")}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
+            // #19：列表渲染也带 ds-anim-fade-in,与详情(projectHomeDetailHtml)进场一致——返回列表不再生硬瞬现。
+            ? `<div class="wh-spot-dash ds-anim-fade-in">${newTaskCta(zh)}<div class="wh-spot-list ds-stagger">${items.map((p) => projectCard(p, zh)).join("")}</div></div>`
+            : `<div class="wh-spot-dash ds-anim-fade-in">${emptyHtml("📁", zh ? "还没有项目" : "No projects yet", zh ? "派个活就会自动建项目和网盘" : "Dispatch a task to create one")}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
         } catch {
           if (disposed || my !== gen) return;
           ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "项目没拉到，稍后重试" : "Couldn't load projects — retry");

@@ -180,6 +180,11 @@ export const spotlightCss = [
   ".wh-spot-toast{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);max-width:calc(100% - 28px);z-index:5;display:flex;align-items:center;gap:8px;border-radius:var(--ds-radius-pill);padding:9px 15px;font:600 12.5px/1.3 var(--ds-font);color:#fff;background:rgba(40,32,70,.92);box-shadow:var(--ds-shadow-2);animation:ds-pop var(--ds-dur) var(--ds-spring) both;-webkit-app-region:no-drag}",
   ".wh-spot-toast--ok{background:linear-gradient(135deg,#1faf86,#34c79a)}",
   ".wh-spot-toast--error{background:linear-gradient(135deg,#e85d70,#ff9bb0)}",
+  // #20：toast 退场动画——移除前先播一帧缩放淡出(translateX(-50%) 居中,关键帧须带上),不再硬删。
+  ".wh-spot-toast--leaving{animation:ds-spot-toast-out var(--ds-dur-fast) var(--ds-ease) both}",
+  "@keyframes ds-spot-toast-out{from{transform:translateX(-50%) scale(1);opacity:1}to{transform:translateX(-50%) scale(.94);opacity:0}}",
+  // #18：内层面板也用真玻璃(背景模糊+饱和)而非纯白填充,与外层盒及 decision-deck 一致,强化「液态玻璃」层次。
+  ".wh-spot-cap,.wh-spot-opt,.wh-spot-row,.wh-spot-metric,.wh-spot-change,.wh-spot-bars,.wh-spot-check{backdrop-filter:blur(13px) saturate(150%);-webkit-backdrop-filter:blur(13px) saturate(150%)}",
   // 尊重「减少动态效果」系统偏好：去掉装饰性位移/缩放，保留颜色提示（苹果级无障碍）。
   "@media (prefers-reduced-motion:reduce){.wh-spot-cap,.wh-spot-act,.wh-spot-back,.wh-spot-opt,.wh-spot-reason,a.wh-spot-row{transition-duration:.01ms!important}.wh-spot-cap:hover,.wh-spot-cap:active,.wh-spot-act:active,.wh-spot-back:active,.wh-spot-opt:hover,.wh-spot-opt:active,.wh-spot-reason:active,a.wh-spot-row:hover,a.wh-spot-row:active{transform:none}}"
 ].join("");

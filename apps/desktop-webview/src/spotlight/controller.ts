@@ -253,7 +253,11 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     if (toastTimer) {
       window.clearTimeout(toastTimer);
     }
-    toastTimer = window.setTimeout(() => el.remove(), 3200);
+    // #20：到期先播退场动画(约 1 帧)再移除,toast 不再生硬消失。reduced-motion 下动画近 0ms,行为不变。
+    toastTimer = window.setTimeout(() => {
+      el.classList.add("wh-spot-toast--leaving");
+      window.setTimeout(() => el.remove(), 220);
+    }, 3200);
   };
 
   const dispatch = (action: Parameters<typeof spotlightReducer>[1]) => {
