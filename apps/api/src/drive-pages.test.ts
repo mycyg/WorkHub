@@ -618,6 +618,30 @@ test("drive page service exposes a no-project empty state instead of throwing", 
   assert.deepEqual(page.items, []);
 });
 
+test("drive page service 404s an explicit project_id that resolves to nothing (not a misleading no_project 200)", async () => {
+  const service = createDrivePageService({
+    repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
+      async readPage() {
+        // 不存在/已归档/已删项目 → repo 返回 project:null
+        return { project: null, items: [], versions: [], acceptedDeliverables: [], comments: [], deletedItems: [], operations: [], commentProposals: [] };
+      },
+      async uploadFile() { throw new Error("not needed"); },
+      async softDeleteItem() { throw new Error("not needed"); },
+      async restoreDeletedItem() { throw new Error("not needed"); },
+      async commentToDraft() { throw new Error("not needed"); },
+      async recordDraftProposal() { throw new Error("not needed"); }
+    },
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.page({ actor: actor(), locale: "zh-CN", projectId: "93000000-0000-4000-8000-0000000000ff" }),
+    (error) => error instanceof DrivePageServiceError && error.status === 404 && error.code === "drive_not_found"
+  );
+});
+
 test("drive page service creates a work item draft from a pending drive comment", async () => {
   const pageRows = rows();
   const comment = pageRows.comments[1]!;

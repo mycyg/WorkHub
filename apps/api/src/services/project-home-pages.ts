@@ -85,6 +85,8 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
           slug: project.slug,
           description: project.description ?? null,
           owner_label: project.ownerNickname,
+          // findProjectById 已过滤 archived=false AND deletedAt IS NULL（归档/已删项目在上面就 404 了），
+          // 故此处 status 当前恒为 "active"；"archived" 分支为将来「归档项目只读主页」预留，暂不可达。
           status: project.archived ? "archived" : "active"
         },
         // 头部计数取真实总数(与项目列表卡同口径)；清单本身封顶 OPEN_WORK_ITEM_LIMIT 条，超出部分由前端「还有 N 条」提示。

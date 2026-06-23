@@ -431,6 +431,12 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
       includeDeleted: true,
       operationLimit: 12
     });
+    // 显式传了 project_id 却查不到(不存在/已归档/已删) → 404，与 /workitems、/proposals、项目主页一致，
+    // 不再回 200+no_project 空态(那语义错误，且让前端无法区分"没选项目"和"项目不存在")。
+    // 不传 project_id 的裸 /drive 仍走默认项目/空态，不 404。
+    if (input.projectId && !rows.project) {
+      throw new DrivePageServiceError(404, "没有找到这个项目网盘。", "drive_not_found");
+    }
     if (rows.project && !canViewProjectDrive(rows.project, input.actor)) {
       if (!input.projectId) {
         return { project: null, items: [], versions: [], acceptedDeliverables: [], comments: [], deletedItems: [], operations: [], commentProposals: [] };
