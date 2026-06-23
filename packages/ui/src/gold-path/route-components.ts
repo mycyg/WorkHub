@@ -2571,6 +2571,10 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
     ? `<p>${escapeHtml(project.description)}</p>`
     : "";
   const openCountLabel = `${routeT(locale, "projects.openItems")} ${vm.summary.open_work_item_count}`;
+  const hiddenCount = vm.summary.open_work_item_count - vm.open_work_items.length;
+  const moreNote = hiddenCount > 0
+    ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(zh ? `还有 ${hiddenCount} 条进行中工作未显示。` : `+${hiddenCount} more open items not shown.`)}</p>`
+    : "";
   const rows = vm.open_work_items.length
     ? vm.open_work_items.map((item) => `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(item.href))}" data-r8-project-home-item="${escapeHtml(item.id)}" data-r8-project-home-item-code="${escapeHtml(item.code)}">
       <div>
@@ -2610,6 +2614,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       <section class="wh-card wh-r4-route-card" data-r8-project-home-list="true">
         <h3>${escapeHtml(routeT(locale, "projectHome.openWork"))}</h3>
         <div class="wh-r4-route-table">${rows}</div>
+        ${moreNote}
       </section>
       <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>
     </section>`

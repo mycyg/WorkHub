@@ -55,9 +55,15 @@ const openItem = (over: Partial<WorkItemProjectListItemRow> = {}): WorkItemProje
 
 function repo(
   findProjectById: WorkItemDataRepository["findProjectById"],
-  listOpenByProject: WorkItemDataRepository["listOpenByProject"]
-): Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject"> {
-  return { findProjectById, listOpenByProject };
+  listOpenByProject: WorkItemDataRepository["listOpenByProject"],
+  countOpenByProject?: WorkItemDataRepository["countOpenByProject"]
+): Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject"> {
+  return {
+    findProjectById,
+    listOpenByProject,
+    // 缺省按清单长度推导真实计数（小项目两者一致）；需要测「超过清单上限」时显式传入。
+    countOpenByProject: countOpenByProject ?? (async (projectId) => (await listOpenByProject(projectId, 10_000)).length)
+  };
 }
 
 test("project home page returns project meta + open work items + actions", async () => {
@@ -112,4 +118,20 @@ test("project home page flags empty_state when there is no open work", async () 
   const vm = await svc.page({ actor: actor(), projectId: PROJ });
   assert.equal(vm.summary.open_work_item_count, 0);
   assert.equal(vm.empty_state, "no_open_work");
+});
+
+test("project home page header count is the true total, not the capped list length", async () => {
+  // 清单封顶只返回 2 条，但真实进行中总数 73 → 头部计数应取真实总数(与项目列表卡同口径)，前端据此提示「还有 N 条」。
+  const svc = createProjectHomePageService({
+    repo: repo(
+      async () => projectRow(),
+      async () => [openItem(), openItem({ id: WI_2, code: "ALP-2" })],
+      async () => 73
+    ),
+    now: () => new Date("2026-06-23T00:00:00.000Z")
+  });
+  const vm = await svc.page({ actor: actor(), projectId: PROJ });
+  assert.equal(vm.summary.open_work_item_count, 73, "header count = true total");
+  assert.equal(vm.open_work_items.length, 2, "list itself stays capped");
+  assert.equal(vm.empty_state, undefined);
 });

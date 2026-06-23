@@ -251,6 +251,8 @@ export type WorkItemDataRepository = WorkItemRepository & WorkItemClaimHandoverR
   findFirstActiveProjectInWorkspace: (workspaceId: string) => Promise<WorkItemProjectRow | null>;
   // 项目主页(/projects/:id)的「进行中工作项」清单：非终态(merged/done/cancelled)、未删除，按最近更新倒序。
   listOpenByProject: (projectId: string, limit?: number) => Promise<WorkItemProjectListItemRow[]>;
+  // 进行中工作项的真实总数(不受清单 limit 截断)：与项目列表卡的 open_work_item_count 同口径，供主页头部计数。
+  countOpenByProject: (projectId: string) => Promise<number>;
   createWorkItem: (input: CreateStoredWorkItemInput) => Promise<WorkItemRow>;
   updateWorkItemFromSession: (input: UpdateStoredWorkItemFromSessionInput) => Promise<WorkItemRow | null>;
   insertChatMessage: (input: InsertStoredChatMessageInput) => Promise<WorkItemChatMessageRow>;
@@ -554,6 +556,20 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         )
         .orderBy(desc(workItems.updatedAt))
         .limit(limit);
+    },
+
+    async countOpenByProject(projectId) {
+      const rows = await db
+        .select({ value: sql<number>`count(*)` })
+        .from(workItems)
+        .where(
+          and(
+            eq(workItems.projectId, projectId),
+            notInArray(workItems.status, terminalWorkItemStatuses),
+            isNull(workItems.deletedAt)
+          )
+        );
+      return Number(rows[0]?.value ?? 0);
     },
 
     async findFirstActiveProject() {

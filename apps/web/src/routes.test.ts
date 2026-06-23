@@ -1194,6 +1194,52 @@ test("R4.11 web loader marks ready routes as route components", async () => {
   }
 });
 
+test("R8 S2b project-home route renders project meta, open-work links, CTAs, back link, and a +more hint", async () => {
+  const surface = goldPathSurfaceVm();
+  const projectId = "93000000-0000-4000-8000-000000000001";
+  const projectHome = {
+    ...projectHomeVm(projectId),
+    summary: { open_work_item_count: 73 } // 真实总数 73，清单只 1 条 → 应出现「还有 72 条」提示
+  };
+  const { client } = fakeRouteClient(surface, { projectHome });
+  const match = resolveWebRoute(`/projects/${projectId}`);
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r4-route-component="project-home"'), true);
+  assert.equal(result.html.includes(`data-r8-project-home="${projectId}"`), true);
+  assert.equal(result.html.includes("R5 Workspace"), true);
+  // open work item row links to /workitems/:id
+  assert.equal(result.html.includes('data-r8-project-home-item="10000000-0000-4000-8000-000000000932"'), true);
+  assert.equal(result.html.includes('href="/workitems/10000000-0000-4000-8000-000000000932"'), true);
+  // both CTAs from the server VM (localized labels), open-drive still reachable from the hub
+  assert.equal(result.html.includes('data-r8-project-home-new-task="true"'), true);
+  assert.equal(result.html.includes('data-r8-project-home-open-drive="true"'), true);
+  assert.equal(result.html.includes(`href="/drive?project_id=${projectId}"`), true);
+  // back link to the projects list (no dead-end)
+  assert.equal(result.html.includes('data-r8-project-home-back="true"'), true);
+  assert.equal(result.html.includes('href="/projects"'), true);
+  // +N more hint when true count exceeds the shown list (73 - 1 = 72)
+  assert.equal(result.html.includes('data-r8-project-home-more="72"'), true);
+});
+
+test("R8 S2b project-home 404 sends the user back to the projects list, not a home dead-end", async () => {
+  const surface = goldPathSurfaceVm();
+  const projectId = "93000000-0000-4000-8000-0000000000ff";
+  const { client } = fakeRouteClient(surface);
+  // override pages.project to throw a 404 WorkHubApiError (stale link / deleted project)
+  client.pages.project = async () => {
+    throw new WorkHubApiError(404, "project_not_found", "没有找到这个项目。");
+  };
+  const match = resolveWebRoute(`/projects/${projectId}`);
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "en-US");
+  assert.equal(result.status, "empty");
+  // the escape hatch points back to /projects (the list they came from), not "/"
+  assert.equal(result.html.includes('href="/projects"'), true);
+});
+
 test("R5.1 drive route loader renders accepted deliverables and version actions from the Drive Page VM", async () => {
   const surface = goldPathSurfaceVm();
   const drive = driveVm();

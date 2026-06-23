@@ -171,7 +171,12 @@ async function main() {
       assert.ok(openItems.every((item) => typeof item.code === "string"), "listOpenByProject rows carry code/title/status");
       const otherProjectItems = await workItemRepo.listOpenByProject(randomUUID());
       assert.equal(otherProjectItems.length, 0, "listOpenByProject is scoped to the requested project");
-      console.log("[r2-pg-redis-smoke] listOpenByProject (project hub S1) ok");
+      // countOpenByProject 与清单同口径(非终态/未删除)、同项目隔离：主页头部计数即便清单被 limit 截断也准确。
+      const openCount = await workItemRepo.countOpenByProject(defaultSeedIds.projectId);
+      assert.ok(openCount >= 1, "countOpenByProject counts the project's open work items");
+      assert.ok(openCount >= openItems.length, "countOpenByProject is the uncapped total (>= shown list)");
+      assert.equal(await workItemRepo.countOpenByProject(randomUUID()), 0, "countOpenByProject is project-scoped");
+      console.log("[r2-pg-redis-smoke] listOpenByProject + countOpenByProject (project hub S1) ok");
     }
 
     const redisTopic = `r2-smoke:${randomUUID()}`;

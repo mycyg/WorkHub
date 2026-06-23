@@ -626,7 +626,8 @@ function bindGoldPathNavigation(
         }
         try {
           const created = await client.bootstrapProject(payload.payload);
-          await navigateWebRoute(`/drive?project_id=${encodeURIComponent(created.project.id)}`, client, locale);
+          // GitHub 式落点：新建/复用项目后进它的项目主页（hub），而非直接跳网盘——主页再分流到网盘/派活。
+          await navigateWebRoute(`/projects/${encodeURIComponent(created.project.id)}`, client, locale);
           if (root) {
             // H2：区分「真新建」与「同 slug 复用已有」，别把落进现有项目误报成已创建。
             const body = created.created

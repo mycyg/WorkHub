@@ -21,7 +21,7 @@ export type ProjectHomePageService = {
 };
 
 export type ProjectHomePageServiceDependencies = {
-  repo: Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject">;
+  repo: Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject">;
   now?: () => Date;
 };
 
@@ -65,7 +65,10 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
         throw new ProjectHomePageServiceError(403, "你没有这个项目的访问权限。", "project_forbidden");
       }
       const zh = (locale ?? "zh-CN") === "zh-CN";
-      const openItems = await deps.repo.listOpenByProject(projectId, OPEN_WORK_ITEM_LIMIT);
+      const [openItems, openCount] = await Promise.all([
+        deps.repo.listOpenByProject(projectId, OPEN_WORK_ITEM_LIMIT),
+        deps.repo.countOpenByProject(projectId)
+      ]);
       const data: ProjectHomePageVM = {
         generated_at: now().toISOString(),
         project: {
@@ -76,7 +79,8 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
           owner_label: project.ownerNickname,
           status: project.archived ? "archived" : "active"
         },
-        summary: { open_work_item_count: openItems.length },
+        // 头部计数取真实总数(与项目列表卡同口径)；清单本身封顶 OPEN_WORK_ITEM_LIMIT 条，超出部分由前端「还有 N 条」提示。
+        summary: { open_work_item_count: openCount },
         open_work_items: openItems.map((item) => ({
           id: item.id,
           code: item.code,
@@ -94,7 +98,7 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
             href: `/drive?project_id=${encodeURIComponent(project.id)}`
           }
         },
-        ...(openItems.length === 0 ? { empty_state: "no_open_work" as const } : {})
+        ...(openCount === 0 ? { empty_state: "no_open_work" as const } : {})
       };
       return parseOutputContract(projectHomePageVmSchema, data, "project.home");
     }

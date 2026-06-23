@@ -1034,6 +1034,15 @@ function forbiddenOwnerLabel(error: unknown, locale: WorkHubLocale) {
   return locale === "zh-CN" ? "需要负责人授权" : "Needs owner approval";
 }
 
+// 详情路由的空/未找到态回链：项目主页这类从列表点进来的页面，回链应回到来源列表(/projects)
+// 而非把用户丢到首页死胡同。其余路由保持回首页。
+function routeStateBackHref(match: WebRouteMatch): string {
+  if (match.key === "project-home") {
+    return "/projects";
+  }
+  return "/";
+}
+
 export function renderWebRouteState(
   match: WebRouteMatch,
   status: Exclude<WebRouteLoadStatus, "ready">,
@@ -1103,7 +1112,7 @@ export async function loadWebRoute(
     if (result === "empty" || result === "error") {
       const stateInput = result === "error"
         ? { traceId: `route=${match.pathname}`, actionHref: match.pathname }
-        : { actionHref: "/" };
+        : { actionHref: routeStateBackHref(match) };
       return renderWebRouteState(match, result, locale, {
         ...stateInput
       });
@@ -1115,7 +1124,7 @@ export async function loadWebRoute(
     }
     const status = errorStatus(error);
     const stateInput = {
-      actionHref: status === "empty" ? "/" : match.pathname,
+      actionHref: status === "empty" ? routeStateBackHref(match) : match.pathname,
       ...(status === "error" ? { traceId: errorTrace(error) } : {}),
       ...(status === "forbidden" ? { ownerLabel: forbiddenOwnerLabel(error, locale) } : {})
     };

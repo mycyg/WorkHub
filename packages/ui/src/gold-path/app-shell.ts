@@ -126,6 +126,11 @@ export function resolveGoldPathPageKey(routeMap: Record<string, PageKey>, href: 
   if (route.startsWith("/approvals")) {
     return "approvals";
   }
+  if (route.startsWith("/projects/")) {
+    // 项目主页是 detail-only 路由（不在 shell 导航的 routeMap 里），与 workitem/proposal 同样
+    // 走前缀回退识别，让项目行点击走 SPA 导航而非整页刷新。/projects 列表本身已被 routeMap 命中。
+    return "project-home";
+  }
   if (route.startsWith("/workitems/")) {
     return "workitem";
   }

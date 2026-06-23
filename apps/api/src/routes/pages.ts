@@ -312,6 +312,11 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   routes.get("/project/:id", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
     const projectId = c.req.param("id");
+    // 路由 uuid 形参先校验：非 uuid 串原本直达 projects.id 的 uuid 列 → PG 22P02 → 误报 500；
+    // 与「合法但不存在」同样回 404，不泄露项目存在性（与 /workitems、/proposals 一致）。
+    if (!isUuidParam(projectId)) {
+      throw new HTTPException(404, { message: "没有找到这个项目。" });
+    }
     try {
       const data = await projectHomePages.page({ actor: c.var.actor, projectId, locale });
       return c.json(pageEnvelope(data, locale));
