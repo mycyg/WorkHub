@@ -13,6 +13,23 @@ import {
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
+// 决策卡的动作 href 分两类:导航型(看改动「查看变更」GET /proposals/:id、工作项 /workitems/:id —— 该内联打开对应能力)
+// 与提交型(POST /api/... —— 走 runAction 落库)。导航型若被当提交处理,会落到 runAction 末尾的「请到对应能力处理」
+// 死 toast(对抗审查 HIGH:决策卡「查看变更」是死按钮)。纯函数,便于单测。
+export function classifyAttentionActionHref(href: string):
+  | { kind: "navigate"; view: "proposals" | "workitem"; id: string }
+  | { kind: "submit" } {
+  const proposalId = /^\/proposals\/([^/?#]+)$/.exec(href)?.[1];
+  if (proposalId) {
+    return { kind: "navigate", view: "proposals", id: proposalId };
+  }
+  const workitemId = /^\/workitems\/([^/?#]+)$/.exec(href)?.[1];
+  if (workitemId) {
+    return { kind: "navigate", view: "workitem", id: workitemId };
+  }
+  return { kind: "submit" };
+}
+
 type Tone = "approval" | "choice" | "permission" | "handoff" | "info";
 
 function toneForKind(kind: AttentionItem["kind"]): Tone {
@@ -274,6 +291,12 @@ export function createAttentionView(): SpotlightCapabilityView {
             row.insertAdjacentHTML("afterend", reasonChips(zh, href));
             ctx.requestResize();
           }
+          return;
+        }
+        // 导航型动作(「查看变更」GET /proposals/:id、/workitems/:id)内联打开对应能力,不当 POST 动作提交。
+        const nav = classifyAttentionActionHref(href);
+        if (nav.kind === "navigate") {
+          ctx.open(nav.view, { id: nav.id, route: href });
           return;
         }
         void submit(href, actionId, undefined);
