@@ -51,6 +51,7 @@ export type GoldPathCopyKey =
   | "home.aiWorkingEmpty"
   | "home.entryTitle"
   | "home.entryText"
+  | "home.evidenceTitle"
   | "intake.kicker"
   | "intake.bodyFallback"
   | "intake.recommended"
@@ -237,6 +238,7 @@ const goldPathCopy = {
     "home.aiWorkingEmpty": "AI 都忙完啦，歇会儿~ (๑˃ᴗ˂)ﻭ",
     "home.entryTitle": "当前入口",
     "home.entryText": "主线就是这一件事，完整看板可以随时展开。",
+    "home.evidenceTitle": "支撑证据",
     "intake.kicker": "新建需求",
     "intake.bodyFallback": "先点一个选项，我再继续 (=^･ω･^=)",
     "intake.recommended": "AI 推荐",
@@ -422,6 +424,7 @@ const goldPathCopy = {
     "home.aiWorkingEmpty": "AI is all caught up (๑˃ᴗ˂)ﻭ",
     "home.entryTitle": "Current entry",
     "home.entryText": "The board is fallback only. The main path starts from this one thing.",
+    "home.evidenceTitle": "Supporting evidence",
     "intake.kicker": "Option intake",
     "intake.bodyFallback": "Pick one option and I will keep going (=^･ω･^=)",
     "intake.recommended": "AI recommends",

@@ -1150,7 +1150,7 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
           ${renderAttentionRows(queueWithoutPrimary, goldPathT(locale, "home.entryText"), locale === "zh-CN")}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-home-evidence-list="true">
-          <h3>${escapeHtml(goldPathT(locale, "empty.evidence"))}</h3>
+          <h3>${escapeHtml(goldPathT(locale, "home.evidenceTitle"))}</h3>
           ${evidenceRows}
         </section>
       </div>
