@@ -1069,6 +1069,15 @@ test("R4.14 Intake route component renders a typed option-first session without 
   assertNoMainWindowBoundaryLeak(intake.html);
 });
 
+test("R8 intake start head shows a meaningful localized badge (not the 'D0' placeholder)", () => {
+  const zh = renderWebRouteComponent({ key: "intake", start: true }, { locale: "zh-CN" });
+  const en = renderWebRouteComponent({ key: "intake", start: true }, { locale: "en-US" });
+  // 回归守卫:此前硬编码了 <span class="wh-r4-route-count">D0</span>(「Day 0」遗留占位)漏到了用户界面。
+  assert.equal(zh.html.includes(">D0<"), false, "no hardcoded D0 placeholder leaks to the UI");
+  assert.equal(zh.html.includes('data-r8-intake-badge="true">新任务<'), true);
+  assert.equal(en.html.includes('data-r8-intake-badge="true">New<'), true);
+});
+
 test("R4.14 Intake confirm component exposes create work item action with selected option payload", () => {
   const vm = {
     ...surfaceVm(),

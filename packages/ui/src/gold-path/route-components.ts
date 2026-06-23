@@ -1210,7 +1210,7 @@ function renderIntakeStartRouteComponent(
           <h2>${escapeHtml(title)}</h2>
           <p>${escapeHtml(body)}</p>
         </div>
-        <span class="wh-r4-route-count">D0</span>
+        <span class="wh-r4-route-count" data-r8-intake-badge="true">${escapeHtml(zh ? "新任务" : "New")}</span>
       </header>
       ${unavailableNotice}
       <div class="wh-r4-route-grid">
