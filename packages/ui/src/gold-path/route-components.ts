@@ -300,6 +300,7 @@ type RouteCopyKey =
   | "projects.archived"
   | "projects.openItems"
   | "projects.updated"
+  | "projects.owner"
   | "projectHome.kicker"
   | "projectHome.openWork"
   | "projectHome.empty"
@@ -482,6 +483,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projects.archived": "已归档",
     "projects.openItems": "进行中",
     "projects.updated": "更新于",
+    "projects.owner": "负责人",
     "projectHome.kicker": "项目主页",
     "projectHome.openWork": "进行中的工作",
     "projectHome.empty": "这个项目暂时没有进行中的工作。点「新任务」就能派活。",
@@ -670,6 +672,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projects.archived": "Archived",
     "projects.openItems": "Open",
     "projects.updated": "Updated",
+    "projects.owner": "Owner",
     "projectHome.kicker": "Project home",
     "projectHome.openWork": "Open work",
     "projectHome.empty": "No open work in this project yet. Hit “New task” to assign some.",
@@ -1646,8 +1649,8 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
           <h3>${escapeHtml(routeT(locale, "workitem.context"))}</h3>
           <div class="wh-r4-route-meta">
             <span class="wh-pill">${escapeHtml(vm.workitem.code)}</span>
-            <span class="wh-pill">${escapeHtml(vm.workitem.priority)}</span>
-            <span class="wh-pill">${escapeHtml(vm.workitem.mode)}</span>
+            <span class="wh-pill">${escapeHtml(attentionPriorityLabel(vm.workitem.priority, locale === "zh-CN"))}</span>
+            <span class="wh-pill">${escapeHtml(localizedEnumLabel(vm.workitem.mode, locale === "zh-CN", { worker: "执行", pm: "项目管理" }, { worker: "Worker", pm: "PM" }))}</span>
           </div>
           <p>${escapeHtml(vm.workitem.planning_note ?? vm.workitem.raw_description)}</p>
           ${renderWorkItemSourceContext(vm, locale)}
@@ -2554,7 +2557,7 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
         <strong>${escapeHtml(project.name)}</strong>
         ${descriptionLine}
         <div class="wh-r4-route-meta">
-          <span class="wh-pill">${escapeHtml(project.owner_nickname)}</span>
+          <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.owner")} · ${project.owner_nickname}`)}</span>
           <span class="wh-pill">${escapeHtml(openLabel)}</span>
           ${archivedPill}
         </div>
@@ -2638,7 +2641,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
           <h2>${escapeHtml(project.name)}</h2>
           ${descriptionLine}
           <div class="wh-r4-route-meta">
-            <span class="wh-pill">${escapeHtml(project.owner_label)}</span>
+            <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.owner")} · ${project.owner_label}`)}</span>
             <span class="wh-pill">${escapeHtml(openCountLabel)}</span>
             ${archivedPill}
           </div>

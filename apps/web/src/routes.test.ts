@@ -1329,6 +1329,19 @@ test("R5.1 drive route loader renders accepted deliverables and version actions 
   assert.equal(result.html.includes('href="/drive"'), true);
 });
 
+test("R8 cycle-review #2 drive with no project sends the user to /projects, not a home dead-end", async () => {
+  const surface = goldPathSurfaceVm();
+  // empty workspace → drive returns no_project; loader collapses to an empty state.
+  const drive = { ...driveVm(), empty_state: "no_project" as const };
+  const { client } = fakeRouteClient(surface, { drive });
+  const match = resolveWebRoute("/drive");
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "en-US");
+  assert.equal(result.status, "empty");
+  // the escape hatch points at /projects (go pick/create a project), not "/" (overview)
+  assert.equal(result.html.includes('href="/projects"'), true);
+});
+
 test("R5.2 drive route loader forwards project id query to the Page VM client", async () => {
   const surface = goldPathSurfaceVm();
   const { client, calls } = fakeRouteClient(surface, { drive: driveVm() });

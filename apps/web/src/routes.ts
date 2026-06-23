@@ -1062,9 +1062,10 @@ function forbiddenOwnerLabel(error: unknown, locale: WorkHubLocale) {
 }
 
 // 详情路由的空/未找到态回链：项目主页这类从列表点进来的页面，回链应回到来源列表(/projects)
-// 而非把用户丢到首页死胡同。其余路由保持回首页。
+// 而非把用户丢到首页死胡同。网盘/会议是项目级能力，没选到项目(空工作区)时回链也应去 /projects
+// 让用户先建/选项目，而不是回总览("回到总览"对"还没有项目"是误导)。其余路由保持回首页。
 function routeStateBackHref(match: WebRouteMatch): string {
-  if (match.key === "project-home") {
+  if (match.key === "project-home" || match.key === "drive" || match.key === "meetings") {
     return "/projects";
   }
   return "/";
