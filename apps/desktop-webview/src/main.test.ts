@@ -322,6 +322,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
       async projectHealth() {
         throw new Error("not needed");
       },
+      async project() {
+        throw new Error("not needed");
+      },
       async notifications() {
         throw new Error("not needed");
       },
