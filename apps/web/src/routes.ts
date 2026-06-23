@@ -995,9 +995,9 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   }
   if (match.key === "notifications") {
     const notifications = await client.pages.notifications(withLocale(locale));
-    if (notifications.empty_state === "no_notifications") {
-      return "empty" as const;
-    }
+    // F14：通知箱为空时**不**塌成通用空卡——通知页自带「静音偏好」设置，塌掉会让用户在没有通知时
+    // 永远够不着静音设置(且丢失左导航被困住)。组件本身优雅处理空态(每个 bucket 显示「通知箱是空的」),
+    // 故照常渲染整页(含外壳 + 静音面板),空只是空清单而已。
     return { key: "notifications", notifications } satisfies WebRouteSurface;
   }
   if (match.key === "calendar") {
