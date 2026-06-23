@@ -6,6 +6,7 @@ import type {
   CalendarPageVM,
   CostDashboardVM,
   EvidenceBubble,
+  ProjectHomePageVM,
   ProjectListItemVM,
   ScheduleBlockVM
 } from "@workhub/contracts";
@@ -92,30 +93,133 @@ function newTaskCta(zh: boolean): string {
   return `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-intake style="align-self:flex-start">${zh ? "＋ 新任务 / 交给 AI" : "＋ New task / Dispatch to AI"}</button>`;
 }
 
+// 项目主页（list→detail morph）：点项目行 → 在同一盒子内 morph 出该项目的「项目主页」
+// （元信息 + 进行中工作清单链工作项 + 新任务/打开网盘入口），镜像 web /projects/:id。盒子随内容生长。
+export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): string {
+  const p = vm.project;
+  const count = vm.summary.open_work_item_count;
+  const archived = p.status === "archived" ? `<span class="wh-spot-row-tag">${zh ? "已归档" : "Archived"}</span>` : "";
+  const desc = p.description ? `<p class="wh-spot-row-sub" style="margin-top:4px">${escapeHtml(p.description)}</p>` : "";
+  const rows = vm.open_work_items.length
+    ? vm.open_work_items
+        .map(
+          (w) =>
+            `<button type="button" class="wh-spot-row" data-open-workitem="${escapeHtml(w.id)}" style="cursor:pointer;width:100%;text-align:left">
+        <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(w.title)}</div><div class="wh-spot-row-sub">${escapeHtml(w.code)} · ${escapeHtml(w.status)} · ${escapeHtml(w.priority)}</div></div>
+      </button>`
+        )
+        .join("")
+    : emptyHtml("✅", zh ? "暂无进行中的工作" : "No open work", zh ? "点「新任务」就能派活" : "Hit New task to assign some");
+  const hidden = count - vm.open_work_items.length;
+  const moreNote = hidden > 0
+    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hidden} 条进行中工作未显示。` : `+${hidden} more open items not shown.`)}</p>`
+    : "";
+  return `<div class="wh-spot-dash ds-anim-fade-in">
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-back-to-projects style="align-self:flex-start">${zh ? "← 返回项目列表" : "← Back to projects"}</button>
+    <div>
+      <div class="wh-spot-row-title" style="font-size:17px">${escapeHtml(p.name)}${archived}</div>
+      ${desc}
+      <div class="wh-spot-row-sub" style="margin-top:6px">${escapeHtml(p.owner_label)} · ${escapeHtml(zh ? `进行中 ${count}` : `${count} open`)}</div>
+    </div>
+    <div class="wh-spot-card-actions">
+      <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-intake>${escapeHtml(vm.actions.new_task.label)}</button>
+      <button type="button" class="wh-spot-act ds-pressable" data-open-drive="${escapeHtml(p.id)}">${escapeHtml(vm.actions.open_drive.label)}</button>
+    </div>
+    <div class="wh-spot-list ds-stagger">${rows}</div>
+    ${moreNote}
+  </div>`;
+}
+
 export function createProjectsView(): SpotlightCapabilityView {
-  return readOnlyView("projects", {
-    loadingLabel: (zh) => (zh ? "正在拉项目…" : "Loading projects…"),
-    errorLabel: (zh) => (zh ? "项目没拉到，稍后重试" : "Couldn't load projects — retry"),
-    load: async (ctx, zh) => {
-      const vm = await ctx.client.listProjects();
-      const items = vm.projects;
-      const subtitle = zh ? `${items.length} 个项目` : `${items.length} project${items.length === 1 ? "" : "s"}`;
-      const html = items.length
-        ? `<div class="wh-spot-dash">${newTaskCta(zh)}<div class="wh-spot-list ds-stagger">${items.map((p) => projectCard(p, zh)).join("")}</div></div>`
-        : `<div class="wh-spot-dash">${emptyHtml("📁", zh ? "还没有项目" : "No projects yet", zh ? "派个活就会自动建项目和网盘" : "Dispatch a task to create one")}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
-      return { html, subtitle };
-    },
-    onAction: (target, ctx) => {
-      const proj = target.closest<HTMLElement>("[data-open-project]");
-      if (proj?.dataset.openProject) {
-        ctx.open("drive", { id: proj.dataset.openProject });
-        return;
+  return {
+    id: "projects",
+    mount(ctx: SpotlightViewContext) {
+      const zh = ctx.locale === "zh-CN";
+      let disposed = false;
+      // rank9 式单调代次：切换 list↔detail / 点不同项目时，使在途加载作废，避免错位渲染。
+      let gen = 0;
+
+      const renderList = async () => {
+        const my = ++gen;
+        ctx.body.innerHTML = loadingHtml(zh, zh ? "正在拉项目…" : "Loading projects…");
+        ctx.requestResize();
+        try {
+          const vm = await ctx.client.listProjects();
+          if (disposed || my !== gen) return;
+          const items = vm.projects;
+          ctx.setSubtitle(zh ? `${items.length} 个项目` : `${items.length} project${items.length === 1 ? "" : "s"}`);
+          ctx.body.innerHTML = items.length
+            ? `<div class="wh-spot-dash">${newTaskCta(zh)}<div class="wh-spot-list ds-stagger">${items.map((p) => projectCard(p, zh)).join("")}</div></div>`
+            : `<div class="wh-spot-dash">${emptyHtml("📁", zh ? "还没有项目" : "No projects yet", zh ? "派个活就会自动建项目和网盘" : "Dispatch a task to create one")}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
+        } catch {
+          if (disposed || my !== gen) return;
+          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "项目没拉到，稍后重试" : "Couldn't load projects — retry");
+        }
+        ctx.requestResize();
+      };
+
+      const renderDetail = async (projectId: string) => {
+        const my = ++gen;
+        ctx.body.innerHTML = loadingHtml(zh, zh ? "正在打开项目…" : "Opening project…");
+        ctx.requestResize();
+        try {
+          const vm = await ctx.client.pages.project(projectId, { locale: ctx.locale });
+          if (disposed || my !== gen) return;
+          ctx.setSubtitle(vm.project.name);
+          ctx.body.innerHTML = projectHomeDetailHtml(vm, zh);
+        } catch {
+          if (disposed || my !== gen) return;
+          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "项目主页没打开，稍后重试" : "Couldn't open project — retry");
+        }
+        ctx.requestResize();
+      };
+
+      ctx.body.addEventListener(
+        "click",
+        (event) => {
+          if (!(event.target instanceof HTMLElement)) return;
+          const target = event.target;
+          if (target.closest("[data-spot-retry]")) {
+            void renderList();
+            return;
+          }
+          if (target.closest("[data-back-to-projects]")) {
+            void renderList();
+            return;
+          }
+          const proj = target.closest<HTMLElement>("[data-open-project]");
+          if (proj?.dataset.openProject) {
+            void renderDetail(proj.dataset.openProject);
+            return;
+          }
+          const wi = target.closest<HTMLElement>("[data-open-workitem]");
+          if (wi?.dataset.openWorkitem) {
+            ctx.open("workitem", { id: wi.dataset.openWorkitem });
+            return;
+          }
+          const drive = target.closest<HTMLElement>("[data-open-drive]");
+          if (drive?.dataset.openDrive) {
+            ctx.open("drive", { id: drive.dataset.openDrive });
+            return;
+          }
+          if (target.closest("[data-open-intake]")) {
+            ctx.open("intake");
+          }
+        },
+        { signal: ctx.signal }
+      );
+
+      // 深链/跨能力跳转可带项目 id（ctx.target.id）→ 直接进项目主页；否则从列表起。
+      if (ctx.target?.id) {
+        void renderDetail(ctx.target.id);
+      } else {
+        void renderList();
       }
-      if (target.closest("[data-open-intake]")) {
-        ctx.open("intake");
-      }
+      return () => {
+        disposed = true;
+      };
     }
-  });
+  };
 }
 
 // —— 成本 —— //
