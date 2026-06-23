@@ -40,6 +40,11 @@ import {
   type DrivePageService
 } from "../services/drive-pages.js";
 import {
+  getDefaultProjectHomePageService,
+  ProjectHomePageServiceError,
+  type ProjectHomePageService
+} from "../services/project-home-pages.js";
+import {
   getDefaultMeetingPageService,
   MeetingPageServiceError,
   type MeetingPageService
@@ -82,6 +87,7 @@ export type PageRoutesDependencies = {
   ledgerStore?: CostLedgerStore;
   workItems?: WorkItemService;
   drivePages?: DrivePageService;
+  projectHomePages?: ProjectHomePageService;
   meetingPages?: MeetingPageService;
   scheduleNotifyPages?: ScheduleNotifyPageService;
   projectHealthPages?: ProjectHealthPageService;
@@ -179,6 +185,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const ledgerStore = deps.ledgerStore ?? getDefaultCostLedgerStore();
   const workItems = deps.workItems ?? getDefaultWorkItemService();
   const drivePages = deps.drivePages ?? getDefaultDrivePageService();
+  const projectHomePages = deps.projectHomePages ?? getDefaultProjectHomePageService();
   const meetingPages = deps.meetingPages ?? getDefaultMeetingPageService();
   const scheduleNotifyPages = deps.scheduleNotifyPages ?? createScheduleNotifyPageService();
   const projectHealthPages = deps.projectHealthPages ?? createProjectHealthPageService();
@@ -295,6 +302,21 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
       if (error instanceof DrivePageServiceError) {
+        throw new HTTPException(error.status, { message: error.message });
+      }
+      throw error;
+    }
+  });
+
+  // GitHub 式项目主页：GET /api/pages/project/:id → 项目元信息 + 进行中工作清单 + 入口动作。
+  routes.get("/project/:id", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    const projectId = c.req.param("id");
+    try {
+      const data = await projectHomePages.page({ actor: c.var.actor, projectId, locale });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof ProjectHomePageServiceError) {
         throw new HTTPException(error.status, { message: error.message });
       }
       throw error;

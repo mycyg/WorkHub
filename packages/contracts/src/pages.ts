@@ -518,6 +518,39 @@ export const projectHealthPageVmSchema = z.object({
 });
 export type ProjectHealthPageVM = z.infer<typeof projectHealthPageVmSchema>;
 
+// GitHub 式项目主页(/projects/:id)：项目即产品的「主页」——元信息 + 进行中工作清单 + 入口动作。
+export const projectHomeWorkItemVmSchema = z.object({
+  id: idSchema,
+  code: z.string().min(1),
+  title: z.string().min(1),
+  status: z.string().min(1),
+  priority: z.string().min(1),
+  href: z.string().min(1)
+});
+export type ProjectHomeWorkItemVM = z.infer<typeof projectHomeWorkItemVmSchema>;
+
+export const projectHomePageVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  project: z.object({
+    id: idSchema,
+    name: z.string().min(1),
+    slug: z.string().min(1),
+    description: z.string().nullable(),
+    owner_label: z.string().min(1),
+    status: z.enum(["active", "archived"])
+  }),
+  summary: z.object({
+    open_work_item_count: z.number().int().nonnegative()
+  }),
+  open_work_items: z.array(projectHomeWorkItemVmSchema),
+  actions: z.object({
+    new_task: actionSpecSchema,
+    open_drive: actionSpecSchema
+  }),
+  empty_state: z.enum(["no_open_work"]).optional()
+});
+export type ProjectHomePageVM = z.infer<typeof projectHomePageVmSchema>;
+
 export const replayMergeCandidateVmSchema = z.object({
   option_key: z.string().min(1),
   target_kind: z.string().min(1).optional(),
