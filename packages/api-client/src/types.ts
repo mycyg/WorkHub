@@ -29,6 +29,7 @@ import type {
   NotificationPageVM,
   PilotDay1MetricsSnapshot,
   ProjectHealthPageVM,
+  ProjectHomePageVM,
   ProjectListVM,
   NotificationList,
   Proposal,
@@ -171,6 +172,7 @@ export type PageClient = {
   notifications: (options?: PageRequestOptions) => Promise<NotificationPageVM>;
   calendar: (options?: CalendarPageRequestOptions) => Promise<CalendarPageVM>;
   projectHealth: (options?: PageRequestOptions) => Promise<ProjectHealthPageVM>;
+  project: (id: string, options?: PageRequestOptions) => Promise<ProjectHomePageVM>;
   workItem: (id: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   proposal: (id: string, options?: PageRequestOptions) => Promise<ProposalDetailVM>;
 };
