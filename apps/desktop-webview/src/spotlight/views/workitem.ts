@@ -24,9 +24,14 @@ function statusLabel(status: string, zh: boolean): string {
   return e ? (zh ? e[0] : e[1]) : status;
 }
 
-function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
+export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const w = vm.workitem;
-  const canRun = w.status === "spec_ready";
+  // #22：与 web 同口径——已有变更/已跑过就不再显示「派给 AI」，否则会出现「再跑一发」歧义按钮。
+  const canRun = w.status === "spec_ready" && !vm.latest_proposal && (vm.agent_trace_preview?.length ?? 0) === 0;
+  // #11：从网盘评论/会议洞察生成的工作项带 create_proposal_draft 动作 → 桌面也给「生成变更草稿」入口。
+  const createDraft = vm.actions.create_proposal_draft
+    ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-create-proposal="${escapeHtml(w.id)}">${zh ? "生成变更草稿" : "Create proposal draft"}</button>`
+    : "";
   const trace = vm.agent_trace_preview ?? [];
   const traceHtml = trace.length
     ? `<div class="wh-spot-trace">${trace
@@ -50,7 +55,7 @@ function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
     </div>
     ${proposal}
     ${traceHtml}
-    ${canRun ? `<div class="wh-spot-card-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-run="${escapeHtml(w.id)}">${zh ? "派给 AI 干" : "Dispatch to AI"}</button></div>` : ""}
+    ${createDraft || canRun ? `<div class="wh-spot-card-actions">${createDraft}${canRun ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-run="${escapeHtml(w.id)}">${zh ? "派给 AI 干" : "Dispatch to AI"}</button>` : ""}</div>` : ""}
   </div>`;
 }
 
@@ -66,6 +71,8 @@ export function createWorkItemView(): SpotlightCapabilityView {
       let loadGen = 0;
       // rank7：上次失败的加载器，点「重试」即重跑。
       let retry: (() => void) | undefined;
+      // #11：记住当前详情,以便「生成变更草稿」按 source_context 选 drive/meeting 客户端方法。
+      let currentDetail: WorkItemDetailVM | null = null;
 
       const showList = async () => {
         const gen = ++loadGen;
@@ -103,6 +110,7 @@ export function createWorkItemView(): SpotlightCapabilityView {
         try {
           const vm = await client.pages.workItem(id, { locale: ctx.locale });
           if (disposed || gen !== loadGen) return;
+          currentDetail = vm;
           ctx.setSubtitle(vm.workitem.code);
           body.innerHTML = detailHtml(vm, zh);
         } catch {
@@ -128,6 +136,24 @@ export function createWorkItemView(): SpotlightCapabilityView {
         const open = target.closest<HTMLElement>("[data-wi-open]");
         if (open?.dataset.wiOpen) {
           void showDetail(open.dataset.wiOpen);
+          return;
+        }
+        const draft = target.closest<HTMLElement>("[data-wi-create-proposal]");
+        if (draft?.dataset.wiCreateProposal && !busy) {
+          busy = true;
+          const id = draft.dataset.wiCreateProposal;
+          draft.textContent = zh ? "生成中…" : "Creating…";
+          // 会议洞察 → createMeetingDraftProposal；网盘评论(及其它) → createDriveDraftProposal，与 web 同分流。
+          const call = currentDetail?.source_context?.source_type === "meeting_insight"
+            ? client.createMeetingDraftProposal(id, { locale: ctx.locale })
+            : client.createDriveDraftProposal(id, { locale: ctx.locale });
+          void call
+            .then(() => ctx.toast(zh ? "已生成变更草稿" : "Proposal draft created", "ok"))
+            .catch(() => ctx.toast(zh ? "生成失败，稍后重试" : "Couldn't create draft — retry", "error"))
+            .finally(() => {
+              busy = false;
+              void showDetail(id);
+            });
           return;
         }
         const run = target.closest<HTMLElement>("[data-wi-run]");
