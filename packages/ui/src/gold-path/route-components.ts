@@ -17,6 +17,7 @@ import type {
   MeetingPageVM,
   NotificationPageVM,
   ProjectHealthPageVM,
+  ProjectHomePageVM,
   ProjectListVM,
   ReplayTraceVM,
   SessionVM,
@@ -50,8 +51,8 @@ import {
 import { goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
-// "skills"/"projects" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "settings"> | "skills" | "projects";
+// "skills"/"projects"/"project-home" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "settings"> | "skills" | "projects" | "project-home";
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -299,6 +300,10 @@ type RouteCopyKey =
   | "projects.archived"
   | "projects.openItems"
   | "projects.updated"
+  | "projectHome.kicker"
+  | "projectHome.openWork"
+  | "projectHome.empty"
+  | "projectHome.back"
   | "settings.runtime"
   | "settings.llm"
   | "settings.language"
@@ -475,6 +480,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projects.archived": "已归档",
     "projects.openItems": "进行中",
     "projects.updated": "更新于",
+    "projectHome.kicker": "项目主页",
+    "projectHome.openWork": "进行中的工作",
+    "projectHome.empty": "这个项目暂时没有进行中的工作。点「新任务」就能派活。",
+    "projectHome.back": "← 返回项目列表",
     "skills.active": "在用",
     "skills.aiAuthored": "AI 蒸馏",
     "skills.refined": "已精修",
@@ -657,6 +666,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projects.archived": "Archived",
     "projects.openItems": "Open",
     "projects.updated": "Updated",
+    "projectHome.kicker": "Project home",
+    "projectHome.openWork": "Open work",
+    "projectHome.empty": "No open work in this project yet. Hit “New task” to assign some.",
+    "projectHome.back": "← Back to projects",
     "skills.active": "Active",
     "skills.aiAuthored": "AI-distilled",
     "skills.refined": "Refined",
@@ -2505,7 +2518,7 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
       const descriptionLine = project.description
         ? `<p>${escapeHtml(project.description)}</p>`
         : `<p>${escapeHtml(`${routeT(locale, "projects.updated")} ${project.updated_at.slice(0, 10)}`)}</p>`;
-      const projectHref = `/drive?project_id=${encodeURIComponent(project.id)}`;
+      const projectHref = `/projects/${encodeURIComponent(project.id)}`;
       return `<div class="wh-r4-route-row" data-r8-project="${escapeHtml(project.id)}" data-r8-project-slug="${escapeHtml(project.slug)}" data-r8-project-archived="${escapeHtml(String(project.archived))}" data-r8-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
       <div>
         <strong>${escapeHtml(project.name)}</strong>
@@ -2542,6 +2555,63 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
       <section class="wh-card wh-r4-route-card" data-r8-projects-list="true">
         <div class="wh-r4-route-timeline">${rows}</div>
       </section>
+    </section>`
+  });
+}
+
+function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubLocale): WebRouteComponent {
+  // GitHub 式项目主页：项目头（名称 + 描述 + 负责人 + 状态 + 进行中计数）+ 入口动作（新任务 / 打开网盘）
+  // + 进行中工作清单（每条链到 /workitems/:id，带状态/优先级徽标）+ 空态。动作 href/label 取自服务端 VM（已本地化）。
+  const zh = locale === "zh-CN";
+  const project = vm.project;
+  const archivedPill = project.status === "archived"
+    ? `<span class="wh-pill" data-r8-project-home-archived="true">${escapeHtml(routeT(locale, "projects.archived"))}</span>`
+    : "";
+  const descriptionLine = project.description
+    ? `<p>${escapeHtml(project.description)}</p>`
+    : "";
+  const openCountLabel = `${routeT(locale, "projects.openItems")} ${vm.summary.open_work_item_count}`;
+  const rows = vm.open_work_items.length
+    ? vm.open_work_items.map((item) => `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(item.href))}" data-r8-project-home-item="${escapeHtml(item.id)}" data-r8-project-home-item-code="${escapeHtml(item.code)}">
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <div class="wh-r4-route-meta">
+          <span class="wh-pill">${escapeHtml(item.code)}</span>
+          <span class="wh-pill" data-tone="${escapeHtml(item.status)}">${escapeHtml(workItemStatusLabel(locale, item.status))}</span>
+          <span class="wh-pill">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span>
+        </div>
+      </div>
+    </a>`).join("")
+    : `<p class="wh-subtle" data-r8-project-home-empty="true">${escapeHtml(routeT(locale, "projectHome.empty"))}</p>`;
+  return createWebRouteComponent({
+    key: "project-home",
+    css: webRouteComponentCss,
+    primaryHrefs: [vm.actions.new_task.href, vm.actions.open_drive.href],
+    source: "page-vm",
+    locale,
+    pageVm: "project-home",
+    html: `<section class="wh-r4-route" data-r4-route-component="project-home" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r8-project-home="${escapeHtml(project.id)}" data-r8-project-home-slug="${escapeHtml(project.slug)}" data-r8-project-home-status="${escapeHtml(project.status)}" data-r8-project-home-open-count="${escapeHtml(String(vm.summary.open_work_item_count))}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "projectHome.kicker"))}</span>
+          <h2>${escapeHtml(project.name)}</h2>
+          ${descriptionLine}
+          <div class="wh-r4-route-meta">
+            <span class="wh-pill">${escapeHtml(project.owner_label)}</span>
+            <span class="wh-pill">${escapeHtml(openCountLabel)}</span>
+            ${archivedPill}
+          </div>
+        </div>
+        <div class="wh-r4-route-actions">
+          <a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(vm.actions.new_task.href))}" data-action-id="${escapeHtml(vm.actions.new_task.id)}" data-method="${escapeHtml(vm.actions.new_task.method)}" data-r8-project-home-new-task="true">${escapeHtml(vm.actions.new_task.label)}</a>
+          <a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.open_drive.href))}" data-action-id="${escapeHtml(vm.actions.open_drive.id)}" data-method="${escapeHtml(vm.actions.open_drive.method)}" data-r8-project-home-open-drive="true">${escapeHtml(vm.actions.open_drive.label)}</a>
+        </div>
+      </header>
+      <section class="wh-card wh-r4-route-card" data-r8-project-home-list="true">
+        <h3>${escapeHtml(routeT(locale, "projectHome.openWork"))}</h3>
+        <div class="wh-r4-route-table">${rows}</div>
+      </section>
+      <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>
     </section>`
   });
 }
@@ -2781,6 +2851,7 @@ function renderReplayRouteComponent(vm: ReplayTraceVM, locale: WorkHubLocale): W
 export type WebRouteComponentInput =
   | { key: "home"; attention: AttentionHomeVM }
   | { key: "projects"; projects: ProjectListVM }
+  | { key: "project-home"; project: ProjectHomePageVM }
   | { key: "intake"; session: SessionVM }
   | { key: "intake"; start: true }
   | { key: "approvals"; approvals: ApprovalCenterVM }
@@ -2807,6 +2878,8 @@ export function renderWebRouteComponent(
       return renderHomeRouteComponent(input.attention, locale);
     case "projects":
       return renderProjectsRouteComponent(input.projects, locale);
+    case "project-home":
+      return renderProjectHomeRouteComponent(input.project, locale);
     case "intake":
       if ("start" in input) {
         return renderIntakeStartRouteComponent(locale);

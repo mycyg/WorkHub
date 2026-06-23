@@ -3738,6 +3738,7 @@ async function main() {
     const routePageVmByComponent: Record<string, string> = {
       home: "attention",
       projects: "projects",
+      "project-home": "project",
       intake: "session",
       approvals: "approvals",
       workitem: "workitem",
@@ -4384,7 +4385,7 @@ async function main() {
         step.audit.routeTreeMode === "html-fallback" &&
         step.audit.routeTreeAdapter === "route-component-v1" &&
         step.audit.routeTreeActiveOnly &&
-        step.audit.routeTreeRouteCount === "16" &&
+        step.audit.routeTreeRouteCount === "17" &&
         step.audit.routeTreePageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
         step.audit.hydrationPanelPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""]

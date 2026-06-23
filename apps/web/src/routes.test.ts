@@ -13,6 +13,7 @@ import type {
   GoldPathSurfaceVM,
   MeetingPageVM,
   NotificationPageVM,
+  ProjectHomePageVM,
   ProjectListVM,
   ProposalConflict,
   ReplayTraceVM,
@@ -37,6 +38,7 @@ type RouteClientOverrides = {
   skills?: TeamSkillsPageVM;
   drive?: DrivePageVM;
   projects?: ProjectListVM;
+  projectHome?: ProjectHomePageVM;
   meetings?: MeetingPageVM;
   notifications?: NotificationPageVM;
   calendar?: CalendarPageVM;
@@ -239,6 +241,35 @@ function projectListVm(): ProjectListVM {
         open_work_item_count: 0
       }
     ]
+  };
+}
+
+function projectHomeVm(id: string): ProjectHomePageVM {
+  return {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    project: {
+      id,
+      name: "R5 Workspace",
+      slug: "r5-workspace",
+      description: "Pilot delivery workspace",
+      owner_label: "owner",
+      status: "active"
+    },
+    summary: { open_work_item_count: 1 },
+    open_work_items: [
+      {
+        id: "10000000-0000-4000-8000-000000000932",
+        code: "WH-001",
+        title: "Weekly report",
+        status: "in_progress",
+        priority: "urgent",
+        href: "/workitems/10000000-0000-4000-8000-000000000932"
+      }
+    ],
+    actions: {
+      new_task: { id: "new_task", label: "New task", method: "GET", href: "/intake" },
+      open_drive: { id: "open_drive", label: "Open drive", method: "GET", href: `/drive?project_id=${id}` }
+    }
   };
 }
 
@@ -569,6 +600,10 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
       async proposal(id: string, options?: { locale?: string }) {
         localeCall(`proposal:${id}`, options);
         return surface.page_vms.proposal;
+      },
+      async project(id: string, options?: { locale?: string }) {
+        localeCall(`project:${id}`, options);
+        return overrides.projectHome ?? projectHomeVm(id);
       }
     },
     async listProjects() {
@@ -762,6 +797,7 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.deepEqual(webRouteRegistry.map((route) => route.key), [
     "home",
     "projects",
+    "project-home",
     "intake",
     "approvals",
     "workitem",
@@ -779,6 +815,8 @@ test("R4 web route registry resolves product URL routes", () => {
   ]);
   assert.equal(resolveWebRoute("/")?.key, "home");
   assert.equal(resolveWebRoute("/projects")?.key, "projects");
+  assert.equal(resolveWebRoute("/projects/93000000-0000-4000-8000-000000000001")?.key, "project-home");
+  assert.equal(resolveWebRoute("/projects/93000000-0000-4000-8000-000000000001")?.params["id"], "93000000-0000-4000-8000-000000000001");
   assert.equal(resolveWebRoute("/dashboard/health")?.key, "health");
   assert.equal(resolveWebRoute("/approvals?filter=pending")?.key, "approvals");
   assert.equal(resolveWebRoute("/dashboard/cost")?.key, "cost");
@@ -813,6 +851,7 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
     [
       ["home", "attention"],
       ["projects", "projects"],
+      ["project-home", "project"],
       ["intake", "session"],
       ["approvals", "approvals"],
       ["workitem", "workitem"],
@@ -1103,6 +1142,7 @@ test("R4.11 web loader marks ready routes as route components", async () => {
 
   for (const [path, endpointCalls, routeComponent] of [
     ["/", ["attention:en-US"], "home"],
+    ["/projects/93000000-0000-4000-8000-000000000001", ["project:93000000-0000-4000-8000-000000000001:en-US"], "project-home"],
     ["/approvals", ["approvals:en-US"], "approvals"],
     ["/workitems/work-42", ["workItem:work-42:en-US"], "workitem"],
     ["/proposals/proposal-42", [

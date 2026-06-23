@@ -9,6 +9,7 @@ import type {
   MeetingPageVM,
   NotificationPageVM,
   ProjectHealthPageVM,
+  ProjectHomePageVM,
   ProjectListVM,
   ProposalConflict,
   ProposalDetailVM,
@@ -81,6 +82,7 @@ export type WebRouteLoadResult = WebRouteReadyResult | WebRouteStateResult;
 export type WebRouteSurface =
   | { key: "home"; attention: AttentionHomeVM }
   | { key: "projects"; projects: ProjectListVM }
+  | { key: "project-home"; project: ProjectHomePageVM }
   | { key: "intake"; session: SessionVM }
   | { key: "intake"; start: true }
   | { key: "approvals"; approvals: ApprovalCenterVM }
@@ -111,6 +113,13 @@ const routeMatchers = [
     apiBaseLabel: "/api/projects",
     regex: /^\/projects\/?(?:\?.*)?$/u,
     paramNames: []
+  },
+  {
+    key: "project-home",
+    pattern: "/projects/:id",
+    apiBaseLabel: "/api/pages/project/:id",
+    regex: /^\/projects\/([^/]+)$/u,
+    paramNames: ["id"]
   },
   {
     key: "intake",
@@ -221,6 +230,7 @@ export const webRouteRegistry: readonly WebRouteDefinition[] = routeMatchers.map
 type WebRouteTreePageVm =
   | "attention"
   | "projects"
+  | "project"
   | "session"
   | "approvals"
   | "workitem"
@@ -267,6 +277,7 @@ export type WebReactRouteTreeNode = WebRouteDefinition & {
 const routeTreePageVmByKey = {
   home: "attention",
   projects: "projects",
+  "project-home": "project",
   intake: "session",
   approvals: "approvals",
   workitem: "workitem",
@@ -441,6 +452,7 @@ function withLocale(locale: WorkHubLocale) {
 const shellPageOrder = [
   "home",
   "projects",
+  "project-home",
   "intake",
   "approvals",
   "workitem",
@@ -459,6 +471,7 @@ const shellPageOrder = [
 
 // intake 不算 detail-only：/intake（无 sessionId）就是"提需求"起点页，应常驻导航,让用户随处可发起新活。
 const detailOnlyShellPages = new Set<GoldPathRenderedPage["key"]>([
+  "project-home",
   "workitem",
   "proposal",
   "replay"
@@ -467,6 +480,7 @@ const detailOnlyShellPages = new Set<GoldPathRenderedPage["key"]>([
 const shellDefaultRoutes = {
   home: "/",
   projects: "/projects",
+  "project-home": "/projects",
   intake: "/intake",
   approvals: "/approvals",
   workitem: "/",
@@ -487,6 +501,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
   "zh-CN": {
     home: "总览",
     projects: "项目",
+    "project-home": "项目主页",
     intake: "接入",
     approvals: "审批",
     workitem: "任务详情",
@@ -505,6 +520,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
   "en-US": {
     home: "Overview",
     projects: "Projects",
+    "project-home": "Project home",
     intake: "Intake",
     approvals: "Approvals",
     workitem: "Task detail",
@@ -554,7 +570,10 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     runtime: "运行时",
     projects: "项目",
     attention: "需要关注",
-    critical: "告急"
+    critical: "告急",
+    openwork: "进行中",
+    status: "状态",
+    owner: "负责人"
   },
   "en-US": {
     primary: "Focus",
@@ -587,7 +606,10 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     runtime: "Runtime",
     projects: "Projects",
     attention: "Attention",
-    critical: "Critical"
+    critical: "Critical",
+    openwork: "Open",
+    status: "Status",
+    owner: "Owner"
   }
 };
 
@@ -634,6 +656,14 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "projects", String(surface.projects.projects.length)),
       metric(locale, "running", String(openItems)),
       metric(locale, "done", String(archived))
+    ];
+  }
+  if (surface.key === "project-home") {
+    const zh = locale === "zh-CN";
+    return [
+      metric(locale, "openwork", String(surface.project.summary.open_work_item_count)),
+      metric(locale, "status", surface.project.project.status === "archived" ? (zh ? "已归档" : "Archived") : (zh ? "进行中" : "Active")),
+      metric(locale, "owner", surface.project.project.owner_label)
     ];
   }
   if (surface.key === "intake") {
@@ -749,6 +779,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   if (surface.key === "projects") {
     return renderWebRouteComponent({ key: "projects", projects: surface.projects }, { locale });
   }
+  if (surface.key === "project-home") {
+    return renderWebRouteComponent({ key: "project-home", project: surface.project }, { locale });
+  }
   if (surface.key === "intake") {
     if ("start" in surface) {
       return renderWebRouteComponent({ key: "intake", start: true }, { locale });
@@ -838,6 +871,12 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   if (match.key === "projects") {
     const projects = await client.listProjects();
     return { key: "projects", projects } satisfies WebRouteSurface;
+  }
+  if (match.key === "project-home") {
+    // 项目主页永不塌成通用空卡:服务端 VM 自带空态(无进行中工作时 empty_state=no_open_work),
+    // 始终渲染项目头 + 入口动作本身,而不是给叶子路由用的"回到项目"死胡同。
+    const project = await client.pages.project(match.params["id"] ?? "", withLocale(locale));
+    return { key: "project-home", project } satisfies WebRouteSurface;
   }
   if (match.key === "intake") {
     const sessionId = match.params["sessionId"] ?? "";
