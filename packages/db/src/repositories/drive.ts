@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { allocateProjectCode } from "../sequences.js";
@@ -95,6 +95,13 @@ export function isActivePathUniqueViolation(error: unknown): boolean {
   );
 }
 
+// 项目主页(/projects/:id)的「最近文件」卡片用：只取文件（非文件夹）、未删除，按最近更新倒序。
+export type DriveRecentFileRow = {
+  id: string;
+  name: string;
+  updatedAt: Date;
+};
+
 export type DriveRepository = {
   readPage: (input?: {
     projectId?: string;
@@ -103,6 +110,9 @@ export type DriveRepository = {
     includeDeleted?: boolean;
     operationLimit?: number;
   }) => Promise<DrivePageRows>;
+  // 项目主页文件卡：最近文件清单（轻量，不拉版本/评论/采纳）+ 真实文件总数（不受清单 limit 截断）。
+  listRecentFilesByProject: (projectId: string, limit?: number) => Promise<DriveRecentFileRow[]>;
+  countFilesByProject: (projectId: string) => Promise<number>;
   uploadFile: (input: DriveRepositoryActor & {
     projectId: string;
     parentId?: string | null;
@@ -369,6 +379,32 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         operations,
         commentProposals
       };
+    },
+
+    async listRecentFilesByProject(projectId, limit = 5) {
+      const rows = await db
+        .select({ id: projectDriveItems.id, name: projectDriveItems.name, updatedAt: projectDriveItems.updatedAt })
+        .from(projectDriveItems)
+        .where(and(
+          eq(projectDriveItems.projectId, projectId),
+          eq(projectDriveItems.kind, "file"),
+          isNull(projectDriveItems.deletedAt)
+        ))
+        .orderBy(desc(projectDriveItems.updatedAt))
+        .limit(Math.max(1, Math.min(limit, 50)));
+      return rows;
+    },
+
+    async countFilesByProject(projectId) {
+      const rows = await db
+        .select({ value: sql<number>`count(*)` })
+        .from(projectDriveItems)
+        .where(and(
+          eq(projectDriveItems.projectId, projectId),
+          eq(projectDriveItems.kind, "file"),
+          isNull(projectDriveItems.deletedAt)
+        ));
+      return Number(rows[0]?.value ?? 0);
     },
 
     async uploadFile(input) {

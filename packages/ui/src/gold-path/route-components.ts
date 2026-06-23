@@ -304,6 +304,8 @@ type RouteCopyKey =
   | "projectHome.openWork"
   | "projectHome.empty"
   | "projectHome.back"
+  | "projectHome.files"
+  | "projectHome.noFiles"
   | "settings.runtime"
   | "settings.llm"
   | "settings.language"
@@ -484,6 +486,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projectHome.openWork": "进行中的工作",
     "projectHome.empty": "这个项目暂时没有进行中的工作。点「新任务」就能派活。",
     "projectHome.back": "← 返回项目列表",
+    "projectHome.files": "最近文件",
+    "projectHome.noFiles": "网盘里还没有文件。",
     "skills.active": "在用",
     "skills.aiAuthored": "AI 蒸馏",
     "skills.refined": "已精修",
@@ -670,6 +674,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projectHome.openWork": "Open work",
     "projectHome.empty": "No open work in this project yet. Hit “New task” to assign some.",
     "projectHome.back": "← Back to projects",
+    "projectHome.files": "Recent files",
+    "projectHome.noFiles": "No files in the drive yet.",
     "skills.active": "Active",
     "skills.aiAuthored": "AI-distilled",
     "skills.refined": "Refined",
@@ -2575,6 +2581,13 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
   const moreNote = hiddenCount > 0
     ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(zh ? `还有 ${hiddenCount} 条进行中工作未显示。` : `+${hiddenCount} more open items not shown.`)}</p>`
     : "";
+  const fileCountLabel = `${routeT(locale, "projectHome.files")} ${vm.drive.file_count}`;
+  const fileRows = vm.drive.recent_files.length
+    ? vm.drive.recent_files.map((file) => `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(file.href))}" data-r8-project-home-file="${escapeHtml(file.id)}">
+      <div><strong>${escapeHtml(file.name)}</strong></div>
+      <span class="wh-pill">${escapeHtml(file.updated_at.slice(0, 10))}</span>
+    </a>`).join("")
+    : `<p class="wh-subtle" data-r8-project-home-no-files="true">${escapeHtml(routeT(locale, "projectHome.noFiles"))}</p>`;
   const rows = vm.open_work_items.length
     ? vm.open_work_items.map((item) => `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(item.href))}" data-r8-project-home-item="${escapeHtml(item.id)}" data-r8-project-home-item-code="${escapeHtml(item.code)}">
       <div>
@@ -2615,6 +2628,11 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
         <h3>${escapeHtml(routeT(locale, "projectHome.openWork"))}</h3>
         <div class="wh-r4-route-table">${rows}</div>
         ${moreNote}
+      </section>
+      <section class="wh-card wh-r4-route-card" data-r8-project-home-files="${escapeHtml(String(vm.drive.file_count))}">
+        <h3>${escapeHtml(fileCountLabel)}</h3>
+        <div class="wh-r4-route-table">${fileRows}</div>
+        <a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(vm.actions.open_drive.href))}" data-r8-project-home-files-all="true">${escapeHtml(vm.actions.open_drive.label)} →</a>
       </section>
       <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>
     </section>`

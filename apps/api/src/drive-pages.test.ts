@@ -350,6 +350,8 @@ test("drive page service scopes the default-project lookup to the actor's worksp
   let seenWorkspaceId: string | undefined;
   let seenProjectId: string | undefined;
   const repo: DriveRepository = {
+    async listRecentFilesByProject() { return []; },
+    async countFilesByProject() { return 0; },
     async readPage(input) {
       seenWorkspaceId = input?.workspaceId;
       seenProjectId = input?.projectId;
@@ -372,6 +374,8 @@ test("drive page service scopes the default-project lookup to the actor's worksp
 test("drive page service builds project files, version history, accepted deliverable links, and comment draft state", async () => {
   let seenProjectId: string | undefined;
   const repo: DriveRepository = {
+    async listRecentFilesByProject() { return []; },
+    async countFilesByProject() { return 0; },
     async readPage(input) {
       seenProjectId = input?.projectId;
       return rows();
@@ -439,6 +443,8 @@ test("drive page service surfaces proposal links for comment-created drafts", as
   });
   const service = createDrivePageService({
     repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
       async readPage() {
         return pageRows;
       },
@@ -505,6 +511,8 @@ test("drive page service targets the latest manual file for recycle actions", as
   });
   const service = createDrivePageService({
     repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
       async readPage() {
         return pageRows;
       },
@@ -543,6 +551,8 @@ test("drive page service does not 403 the generic drive route on an invisible de
   };
   const service = createDrivePageService({
     repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
       async readPage() {
         return hiddenRows;
       },
@@ -577,6 +587,8 @@ test("drive page service does not 403 the generic drive route on an invisible de
 test("drive page service exposes a no-project empty state instead of throwing", async () => {
   const service = createDrivePageService({
     repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
       async readPage() {
         return { project: null, items: [], versions: [], acceptedDeliverables: [], comments: [], deletedItems: [], operations: [], commentProposals: [] };
       },
@@ -612,6 +624,8 @@ test("drive page service creates a work item draft from a pending drive comment"
   const calls: { projectId: string; commentId: string; actorUserId: string }[] = [];
   const service = createDrivePageService({
     repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
       async readPage() {
         return pageRows;
       },
@@ -672,6 +686,8 @@ test("drive page service creates a deterministic proposal from a drive comment d
   let detailCallCount = 0;
   const service = createDrivePageService({
     repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
       async readPage() {
         return rows();
       },
@@ -735,6 +751,8 @@ test("drive page service treats deterministic proposal conflicts as idempotent",
   let recordedProposalId: string | undefined;
   const service = createDrivePageService({
     repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
       async readPage() {
         return rows();
       },
@@ -841,6 +859,8 @@ test("drive draftToProposal self-heals a residual draft_created state and is ide
   let createFromManifestCalls = 0;
   const service = createDrivePageService({
     repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
       async readPage() {
         return rows();
       },

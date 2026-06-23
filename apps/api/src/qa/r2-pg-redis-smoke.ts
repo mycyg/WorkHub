@@ -176,7 +176,15 @@ async function main() {
       assert.ok(openCount >= 1, "countOpenByProject counts the project's open work items");
       assert.ok(openCount >= openItems.length, "countOpenByProject is the uncapped total (>= shown list)");
       assert.equal(await workItemRepo.countOpenByProject(randomUUID()), 0, "countOpenByProject is project-scoped");
-      console.log("[r2-pg-redis-smoke] listOpenByProject + countOpenByProject (project hub S1) ok");
+      // 项目主页文件卡(S4a)：最近文件清单 + 真实文件总数，同项目隔离、同口径(只数文件非文件夹/未删)。
+      const driveRepoForHub = createDriveRepository(db);
+      const recentFiles = await driveRepoForHub.listRecentFilesByProject(defaultSeedIds.projectId, 5);
+      assert.ok(Array.isArray(recentFiles), "listRecentFilesByProject returns an array");
+      assert.ok(recentFiles.every((f) => typeof f.name === "string" && f.id), "recent file rows carry id/name/updatedAt");
+      const fileCount = await driveRepoForHub.countFilesByProject(defaultSeedIds.projectId);
+      assert.ok(fileCount >= recentFiles.length, "countFilesByProject is the uncapped total (>= shown)");
+      assert.equal(await driveRepoForHub.countFilesByProject(randomUUID()), 0, "countFilesByProject is project-scoped");
+      console.log("[r2-pg-redis-smoke] listOpenByProject + countOpenByProject + drive files (project hub S1/S4a) ok");
     }
 
     const redisTopic = `r2-smoke:${randomUUID()}`;

@@ -256,6 +256,12 @@ function projectHomeVm(id: string): ProjectHomePageVM {
       status: "active"
     },
     summary: { open_work_item_count: 1 },
+    drive: {
+      file_count: 1,
+      recent_files: [
+        { id: "20000000-0000-4000-8000-000000000777", name: "客户复盘.md", updated_at: "2026-06-10T09:00:00.000Z", href: `/drive?project_id=${id}` }
+      ]
+    },
     open_work_items: [
       {
         id: "10000000-0000-4000-8000-000000000932",
@@ -1222,6 +1228,10 @@ test("R8 S2b project-home route renders project meta, open-work links, CTAs, bac
   assert.equal(result.html.includes('href="/projects"'), true);
   // +N more hint when true count exceeds the shown list (73 - 1 = 72)
   assert.equal(result.html.includes('data-r8-project-home-more="72"'), true);
+  // recent files card (drive sync is core) — file count + a recent file linking into the drive
+  assert.equal(result.html.includes('data-r8-project-home-files="1"'), true);
+  assert.equal(result.html.includes('data-r8-project-home-file="20000000-0000-4000-8000-000000000777"'), true);
+  assert.equal(result.html.includes("客户复盘.md"), true);
 });
 
 test("R8 S2b project-home 404 sends the user back to the projects list, not a home dead-end", async () => {

@@ -17,6 +17,12 @@ function vm(over: Partial<ProjectHomePageVM> = {}): ProjectHomePageVM {
       status: "active"
     },
     summary: { open_work_item_count: 2 },
+    drive: {
+      file_count: 1,
+      recent_files: [
+        { id: "20000000-0000-4000-8000-000000000777", name: "客户复盘.md", updated_at: "2026-06-22T00:00:00.000Z", href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
+      ]
+    },
     open_work_items: [
       { id: "10000000-0000-4000-8000-000000000901", code: "WH-1", title: "Weekly report", status: "in_progress", priority: "urgent", href: "/workitems/10000000-0000-4000-8000-000000000901" }
     ],
@@ -43,6 +49,9 @@ test("S3 desktop project-home detail renders meta, work-item buttons, CTAs and b
   assert.ok(html.includes("data-open-intake"), "new-task CTA");
   assert.ok(html.includes('data-open-drive="93000000-0000-4000-8000-000000000001"'), "open-drive carries project id");
   assert.ok(html.includes("新任务") && html.includes("打开网盘"), "localized action labels from VM");
+  // 网盘同步是核心：项目主页直呈最近文件
+  assert.ok(html.includes("最近文件 1"), "recent files count");
+  assert.ok(html.includes("客户复盘.md"), "recent file name");
 });
 
 test("S3 desktop project-home shows a +more hint when the true count exceeds the shown list", () => {

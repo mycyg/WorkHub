@@ -543,6 +543,16 @@ export const projectHomePageVmSchema = z.object({
     open_work_item_count: z.number().int().nonnegative()
   }),
   open_work_items: z.array(projectHomeWorkItemVmSchema),
+  // 网盘同步是核心：项目主页直接呈现该项目的「最近文件」(GitHub 仓库主页即文件列表的观感)。
+  drive: z.object({
+    file_count: z.number().int().nonnegative(),
+    recent_files: z.array(z.object({
+      id: idSchema,
+      name: z.string().min(1),
+      updated_at: isoDateTimeSchema,
+      href: z.string().min(1)
+    }))
+  }),
   actions: z.object({
     new_task: actionSpecSchema,
     open_drive: actionSpecSchema

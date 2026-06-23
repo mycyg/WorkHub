@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { WorkItemProjectListItemRow, WorkItemDataRepository, WorkItemProjectRow } from "@workhub/db";
+import type { DriveRecentFileRow, DriveRepository, WorkItemProjectListItemRow, WorkItemDataRepository, WorkItemProjectRow } from "@workhub/db";
 
 import type { AuthActor } from "./middleware/auth.js";
 import {
@@ -66,12 +66,26 @@ function repo(
   };
 }
 
+// 网盘 repo 切片假实现：缺省无文件；可传入最近文件 + 真实总数（测「超过展示上限」用）。
+function driveRepo(
+  recentFiles: DriveRecentFileRow[] = [],
+  fileCount?: number
+): Pick<DriveRepository, "listRecentFilesByProject" | "countFilesByProject"> {
+  return {
+    listRecentFilesByProject: async (_projectId, limit = 5) => recentFiles.slice(0, limit),
+    countFilesByProject: async () => fileCount ?? recentFiles.length
+  };
+}
+
+const FILE_1 = "55555555-5555-4555-8555-555555555501";
+
 test("project home page returns project meta + open work items + actions", async () => {
   const svc = createProjectHomePageService({
     repo: repo(
       async () => projectRow(),
       async () => [openItem(), openItem({ id: WI_2, code: "ALP-2", title: null })]
     ),
+    driveRepo: driveRepo([{ id: FILE_1, name: "客户复盘.md", updatedAt: new Date("2026-06-22T00:00:00.000Z") }], 3),
     now: () => new Date("2026-06-23T00:00:00.000Z")
   });
   const vm = await svc.page({ actor: actor(), projectId: PROJ, locale: "zh-CN" });
@@ -84,12 +98,18 @@ test("project home page returns project meta + open work items + actions", async
   assert.equal(vm.open_work_items[1]?.title, "ALP-2", "null title falls back to code");
   assert.equal(vm.actions.open_drive.href, `/drive?project_id=${PROJ}`);
   assert.equal(vm.actions.new_task.href, "/intake");
+  // 网盘切片：真实文件总数 + 最近文件（链到项目网盘）
+  assert.equal(vm.drive.file_count, 3, "drive file_count = true total");
+  assert.equal(vm.drive.recent_files.length, 1);
+  assert.equal(vm.drive.recent_files[0]?.name, "客户复盘.md");
+  assert.equal(vm.drive.recent_files[0]?.href, `/drive?project_id=${PROJ}`);
   assert.equal(vm.empty_state, undefined);
 });
 
 test("project home page 404 when the project is missing/archived/deleted", async () => {
   const svc = createProjectHomePageService({
-    repo: repo(async () => null, async () => [])
+    repo: repo(async () => null, async () => []),
+    driveRepo: driveRepo()
   });
   await assert.rejects(
     () => svc.page({ actor: actor(), projectId: PROJ }),
@@ -102,7 +122,8 @@ test("project home page 403 when a non-admin actor is outside the project's work
     repo: repo(
       async () => projectRow({ workspaceId: "99999999-9999-4999-8999-999999999999", ownerUserId: "someone-else" }),
       async () => []
-    )
+    ),
+    driveRepo: driveRepo()
   });
   await assert.rejects(
     () => svc.page({ actor: actor(), projectId: PROJ }),
@@ -113,11 +134,14 @@ test("project home page 403 when a non-admin actor is outside the project's work
 test("project home page flags empty_state when there is no open work", async () => {
   const svc = createProjectHomePageService({
     repo: repo(async () => projectRow(), async () => []),
+    driveRepo: driveRepo(),
     now: () => new Date("2026-06-23T00:00:00.000Z")
   });
   const vm = await svc.page({ actor: actor(), projectId: PROJ });
   assert.equal(vm.summary.open_work_item_count, 0);
   assert.equal(vm.empty_state, "no_open_work");
+  assert.equal(vm.drive.file_count, 0, "no files → drive slice still present (empty)");
+  assert.equal(vm.drive.recent_files.length, 0);
 });
 
 test("project home page header count is the true total, not the capped list length", async () => {
@@ -128,6 +152,7 @@ test("project home page header count is the true total, not the capped list leng
       async () => [openItem(), openItem({ id: WI_2, code: "ALP-2" })],
       async () => 73
     ),
+    driveRepo: driveRepo(),
     now: () => new Date("2026-06-23T00:00:00.000Z")
   });
   const vm = await svc.page({ actor: actor(), projectId: PROJ });
