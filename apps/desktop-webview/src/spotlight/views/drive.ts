@@ -19,15 +19,30 @@ function fmtSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function itemRow(item: DriveItemVM, zh: boolean): string {
+function itemRow(item: DriveItemVM, zh: boolean, canManage: boolean): string {
   const icon = item.kind === "folder" ? FOLDER_ICON : FILE_ICON;
   const meta =
     item.kind === "folder"
       ? `${item.children_count} ${zh ? "项" : "items"}`
       : `${fmtSize(item.current_version?.size_bytes)}${item.accepted_deliverable ? ` · ${zh ? "AI 交付" : "AI deliverable"}` : ""}`;
+  // AI 交付物预览/下载是 API 链接：桌面 webview 用 target=_blank 外开(与知识检索证据链一致)，不替换聚焦盒。
+  const deliverable = item.accepted_deliverable;
+  const links: string[] = [];
+  if (deliverable?.preview_href) {
+    links.push(`<a class="wh-spot-act wh-spot-act--quiet ds-pressable" href="${escapeHtml(deliverable.preview_href)}" target="_blank" rel="noreferrer">${zh ? "预览" : "Preview"}</a>`);
+  }
+  if (deliverable?.download_href) {
+    links.push(`<a class="wh-spot-act wh-spot-act--quiet ds-pressable" href="${escapeHtml(deliverable.download_href)}" target="_blank" rel="noreferrer">${zh ? "下载" : "Download"}</a>`);
+  }
+  // 删除走 client.deleteDriveItem(带 expected_current_version_id 乐观并发),仅有管理权限时出现。
+  const del = canManage
+    ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-drive-delete="${escapeHtml(item.id)}" data-drive-delete-version="${escapeHtml(item.current_version_id ?? "")}">${zh ? "删除" : "Delete"}</button>`
+    : "";
+  const actions = links.length || del ? `<div class="wh-spot-card-actions" style="margin-top:0">${links.join("")}${del}</div>` : "";
   return `<div class="wh-spot-row">
     <span class="wh-spot-file-icon">${icon}</span>
     <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(item.name)}</div><div class="wh-spot-row-sub">${escapeHtml(meta)}</div></div>
+    ${actions}
   </div>`;
 }
 
@@ -39,22 +54,27 @@ function deletedRow(item: DriveItemVM, zh: boolean): string {
   </div>`;
 }
 
-function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean): string {
+export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean): string {
   const s = vm.summary;
   const items = vm.items ?? [];
   const deleted = vm.deleted_items ?? [];
+  const canManage = vm.can_manage;
   const summary = `<div class="wh-spot-metrics">
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "文件" : "Files"}</span><span class="wh-spot-metric-v">${s.file_count}</span></div>
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "版本" : "Versions"}</span><span class="wh-spot-metric-v">${s.version_count}</span></div>
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "AI 交付" : "Deliverables"}</span><span class="wh-spot-metric-v">${s.accepted_deliverable_count}</span></div>
   </div>`;
+  // 上传与 web 端一致用样例负载(网盘上传 UX 真实文件选择是后续 L 工作);仅有 upload_file 能力时出现。
+  const uploadBtn = vm.actions.upload_file
+    ? `<div class="wh-spot-card-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-drive-upload>${zh ? "＋ 上传样例文件" : "＋ Upload sample"}</button></div>`
+    : "";
   const list = items.length
-    ? `<div class="wh-spot-list ds-stagger">${items.slice(0, 40).map((i) => itemRow(i, zh)).join("")}</div>`
+    ? `<div class="wh-spot-list ds-stagger">${items.slice(0, 40).map((i) => itemRow(i, zh, canManage)).join("")}</div>`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "这个项目还没有文件" : "No files in this project yet"}</p>`;
   const deletedBlock = deleted.length
     ? `<div class="wh-spot-drive-section"><p class="wh-spot-reasons-q">${zh ? "回收站" : "Recently deleted"}</p><div class="wh-spot-list">${deleted.slice(0, 12).map((i) => deletedRow(i, zh)).join("")}</div></div>`
     : "";
-  return `<div class="wh-spot-know">${projectChips}${summary}${list}${deletedBlock}</div>`;
+  return `<div class="wh-spot-know">${projectChips}${summary}${uploadBtn}${list}${deletedBlock}</div>`;
 }
 
 export function createDriveView(): SpotlightCapabilityView {
@@ -133,6 +153,44 @@ export function createDriveView(): SpotlightCapabilityView {
           if (busy || proj.dataset.driveProj === projectId) return;
           projectId = proj.dataset.driveProj;
           void loadDrive();
+          return;
+        }
+        const del = target.closest<HTMLElement>("[data-drive-delete]");
+        if (del?.dataset.driveDelete && projectId && !busy) {
+          busy = true;
+          const itemId = del.dataset.driveDelete;
+          const versionId = del.dataset.driveDeleteVersion || undefined;
+          del.textContent = zh ? "删除中…" : "Deleting…";
+          void ctx.client
+            .deleteDriveItem(projectId, itemId, { expected_current_version_id: versionId ?? null }, { locale: ctx.locale })
+            .then(() => ctx.toast(zh ? "已删除（在回收站可恢复）" : "Deleted (restorable in recycle bin)", "ok"))
+            .catch(() => ctx.toast(zh ? "删除失败" : "Delete failed", "error"))
+            .finally(() => {
+              busy = false;
+              void loadDrive();
+            });
+          return;
+        }
+        if (target.closest("[data-drive-upload]") && projectId && !busy) {
+          busy = true;
+          const btn = target.closest<HTMLElement>("[data-drive-upload]");
+          if (btn) btn.textContent = zh ? "上传中…" : "Uploading…";
+          void ctx.client
+            .uploadDriveFile(
+              projectId,
+              {
+                filename: zh ? "桌面-上传样例.md" : "desktop-upload-sample.md",
+                mime: "text/markdown",
+                parsed_text: zh ? "# 桌面上传样例\n\n一份可审计的项目网盘上传样例。" : "# Desktop upload sample\n\nA small auditable project drive upload sample."
+              },
+              { locale: ctx.locale }
+            )
+            .then(() => ctx.toast(zh ? "已上传" : "Uploaded", "ok"))
+            .catch(() => ctx.toast(zh ? "上传失败" : "Upload failed", "error"))
+            .finally(() => {
+              busy = false;
+              void loadDrive();
+            });
           return;
         }
         const restore = target.closest<HTMLElement>("[data-drive-restore]");
