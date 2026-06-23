@@ -1444,7 +1444,7 @@ test("R4.15 settings route keeps locale preference and device boundary markers a
   assert.equal(/sk-[0-9A-Za-z]{20,}/u.test(result.html), false);
 });
 
-test("R4 web loader renders route-state empty without fake ready content", async () => {
+test("F11/簇A: empty approvals stays a full page in the shell (no collapse to a bare card)", async () => {
   const surface = goldPathSurfaceVm();
   const emptyApprovals: ApprovalCenterVM = {
     ...surface.page_vms.approvals,
@@ -1458,10 +1458,12 @@ test("R4 web loader renders route-state empty without fake ready content", async
 
   const result = await loadWebRoute(client, match, "zh-CN");
 
-  assert.equal(result.status, "empty");
+  // 无待办时不再塌成通用空卡——渲染审批组件(自带空态兜底)于产品外壳内,保留左导航,不把用户困住。
+  assert.equal(result.status, "ready");
   assert.deepEqual(calls, ["approvals:zh-CN"]);
-  assert.equal(result.html.includes('data-route-state="empty"'), true);
-  assert.equal(result.html.includes("现在没有需要处理的事项"), true);
+  assert.equal(result.html.includes('data-r4-route-component="approvals"'), true);
+  assert.equal(result.html.includes('data-r4-product-shell="true"'), true, "product shell + nav preserved");
+  assert.equal(result.html.includes('data-route-state="empty"'), false, "no bare generic empty-state card");
 });
 
 test("R4 web loader maps forbidden and not-found API failures to route states", async () => {

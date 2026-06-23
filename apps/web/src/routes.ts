@@ -858,14 +858,6 @@ function shellSurfaceFor(surface: WebRouteSurface, match: WebRouteMatch, locale:
   };
 }
 
-function isApprovalCenterEmpty(data: ApprovalCenterVM) {
-  return data.items.length === 0 && data.requests.length === 0;
-}
-
-function isCostDashboardEmpty(data: CostDashboardVM) {
-  return Boolean(data.empty_state) && data.token_in === 0 && data.token_out === 0 && data.notices.length === 0;
-}
-
 function isReplayEmpty(data: ReplayTraceVM) {
   return data.steps.length === 0 && !data.run.handoff_md && !data.run.outcome_reason;
 }
@@ -912,16 +904,14 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   }
   if (match.key === "approvals") {
     const approvals = await client.pages.approvals(withLocale(locale));
-    if (isApprovalCenterEmpty(approvals)) {
-      return "empty" as const;
-    }
+    // F11/簇A：无待办时不塌成通用空卡(会丢左导航把用户困住)。审批组件自带空态兜底
+    // (头部 approvals.emptyTitle / 队列 reasonFallback / 详情 noSelection),照常渲染整页(含外壳)。
     return { key: "approvals", approvals } satisfies WebRouteSurface;
   }
   if (match.key === "cost") {
     const cost = await client.pages.cost(withLocale(locale));
-    if (isCostDashboardEmpty(cost)) {
-      return "empty" as const;
-    }
+    // F11/簇A：无成本数据(含 usage_not_connected)时不塌成通用空卡。成本组件自带空态兜底
+    // (cost.statusFallback 等)，照常渲染整页(含外壳 + 「用量未接入」等可操作提示)，保留导航。
     return { key: "cost", cost } satisfies WebRouteSurface;
   }
   if (match.key === "health") {
