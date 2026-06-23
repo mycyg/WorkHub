@@ -162,6 +162,18 @@ async function main() {
       mode: "worker"
     });
 
+    // 项目主页(/projects/:id)后端 S1：listOpenByProject 返回该项目的进行中工作项(spec_ready 非终态)，
+    // 且严格按项目隔离(别的项目 id 拿不到本项目的事项)。
+    {
+      const workItemRepo = createWorkItemRepository(db);
+      const openItems = await workItemRepo.listOpenByProject(defaultSeedIds.projectId);
+      assert.ok(openItems.some((item) => item.id === workItemId), "listOpenByProject returns the project's open work item");
+      assert.ok(openItems.every((item) => typeof item.code === "string"), "listOpenByProject rows carry code/title/status");
+      const otherProjectItems = await workItemRepo.listOpenByProject(randomUUID());
+      assert.equal(otherProjectItems.length, 0, "listOpenByProject is scoped to the requested project");
+      console.log("[r2-pg-redis-smoke] listOpenByProject (project hub S1) ok");
+    }
+
     const redisTopic = `r2-smoke:${randomUUID()}`;
     const redisSubscription = await redisBusB.subscribe(redisTopic);
     let redisEvent: { topic: string; type: string; data: unknown };

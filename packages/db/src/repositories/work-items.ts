@@ -94,6 +94,15 @@ export type WorkItemAccessRow = {
 };
 
 export type WorkItemProjectRow = typeof projects.$inferSelect;
+// 项目主页(/projects/:id)的「进行中工作项」行（GitHub 式项目=产品的开放工作清单）。
+export type WorkItemProjectListItemRow = {
+  id: string;
+  code: string;
+  title: string | null;
+  status: WorkItemStatus;
+  priority: string;
+  updatedAt: Date;
+};
 export type WorkItemRow = typeof workItems.$inferSelect;
 export type WorkItemAcceptanceRow = typeof workItemAcceptanceItems.$inferSelect;
 export type WorkItemAgentStepRow = typeof agentSteps.$inferSelect;
@@ -240,6 +249,8 @@ export type WorkItemDataRepository = WorkItemRepository & WorkItemClaimHandoverR
   findFirstActiveProject: () => Promise<WorkItemProjectRow | null>;
   // 缺省 project_id 的兜底必须锚定 actor 的 workspace，否则会落到全局首个项目（跨租户写入默认 seed 工作区）。
   findFirstActiveProjectInWorkspace: (workspaceId: string) => Promise<WorkItemProjectRow | null>;
+  // 项目主页(/projects/:id)的「进行中工作项」清单：非终态(merged/done/cancelled)、未删除，按最近更新倒序。
+  listOpenByProject: (projectId: string, limit?: number) => Promise<WorkItemProjectListItemRow[]>;
   createWorkItem: (input: CreateStoredWorkItemInput) => Promise<WorkItemRow>;
   updateWorkItemFromSession: (input: UpdateStoredWorkItemFromSessionInput) => Promise<WorkItemRow | null>;
   insertChatMessage: (input: InsertStoredChatMessageInput) => Promise<WorkItemChatMessageRow>;
@@ -521,6 +532,28 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         .where(and(eq(projects.id, projectId), eq(projects.archived, false), isNull(projects.deletedAt)))
         .limit(1);
       return rows[0] ?? null;
+    },
+
+    async listOpenByProject(projectId, limit = 20) {
+      return db
+        .select({
+          id: workItems.id,
+          code: workItems.code,
+          title: workItems.title,
+          status: workItems.status,
+          priority: workItems.priority,
+          updatedAt: workItems.updatedAt
+        })
+        .from(workItems)
+        .where(
+          and(
+            eq(workItems.projectId, projectId),
+            notInArray(workItems.status, terminalWorkItemStatuses),
+            isNull(workItems.deletedAt)
+          )
+        )
+        .orderBy(desc(workItems.updatedAt))
+        .limit(limit);
     },
 
     async findFirstActiveProject() {
