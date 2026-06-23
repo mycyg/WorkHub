@@ -1097,6 +1097,7 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
         <p>${escapeHtml(goldPathT(locale, "home.emptySummary"))}</p>
         <div class="wh-r4-route-actions">
           <a class="wh-btn wh-btn-primary" href="/intake" data-wh-route="/intake" data-r4-home-intake-cta="true">${escapeHtml(goldPathT(locale, "home.emptyCta"))}</a>
+          <a class="wh-btn" href="/projects" data-wh-route="/projects" data-r4-home-projects-cta="true">${escapeHtml(zh ? "浏览项目" : "Browse projects")}</a>
         </div>
       </section>`;
 
@@ -1345,6 +1346,16 @@ function approvalStepStatusLabel(status: string, zh: boolean): string {
   );
 }
 
+// #13：审批请求状态(pending/approved/denied/expired/delegated)右栏事实区原样吐枚举 token,这里本地化。
+function approvalRequestStatusLabel(status: string, zh: boolean): string {
+  return localizedEnumLabel(
+    status,
+    zh,
+    { pending: "待处理", approved: "已通过", denied: "已打回", expired: "已过期", delegated: "已转交" },
+    { pending: "Pending", approved: "Approved", denied: "Denied", expired: "Expired", delegated: "Delegated" }
+  );
+}
+
 // W2 中栏：单个事项的「变更详情」面板。deliverable 渲染 diff 表+合规检查+AI 解释+冲突；
 // permission/tool 渲染影响目标。再叠加证据、审批流程时间线、相关讨论。非选中项 hidden（不计入溢出测量）。
 function renderApprovalDetailPanel(
@@ -1434,7 +1445,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
     .map((item) => `<div class="wh-r4-route-row" data-r4-approval-request="${escapeHtml(item.id)}">
       <div>
         <strong>${escapeHtml(item.action_pattern)}</strong>
-        <p>${escapeHtml(item.status)}${item.sla_due_at ? ` SLA ${escapeHtml(item.sla_due_at)}` : ""}</p>
+        <p>${escapeHtml(approvalRequestStatusLabel(item.status, locale === "zh-CN"))}${item.sla_due_at ? ` · SLA ${escapeHtml(formatApprovalTimestamp(item.sla_due_at))}` : ""}</p>
       </div>
       <span class="wh-pill" data-r4-approval-routed="${escapeHtml(String(Boolean(item.routed_to_user_id)))}">${escapeHtml(approvalRouteLabel(item.routed_to_user_id, locale))}</span>
     </div>`)
