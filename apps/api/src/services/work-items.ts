@@ -767,6 +767,12 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     if (!canViewProjectDrive(project, actor)) {
       throw new WorkItemServiceError(404, "project_not_found", "没有找到这个项目。");
     }
+    // canViewProjectDrive 对 admin **故意**放宽 scope（admin 的项目健康看板等是跨工作区的组织级只读总览）。
+    // 但**写**(建事项/会话)必须落在 actor 自己的租户内——否则 admin 可拿别工作区的 project_id 跨租户注入。
+    // 与缺省项目路径的 `seeded.workspaceId === actor.workspaceId` 同口径;单租户下 actor 与项目同 workspace 故必过。
+    if (project.workspaceId && actor.workspaceId && project.workspaceId !== actor.workspaceId) {
+      throw new WorkItemServiceError(404, "project_not_found", "没有找到这个项目。");
+    }
   }
 
   async function resolveProject(projectId: string | undefined, actor: AuthActor) {

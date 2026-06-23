@@ -64,6 +64,10 @@ export function canViewProjectDrive(
   project: ProjectAccessRecord,
   actor: Pick<PermissionActor, "id" | "userId" | "isAdmin" | "orgId" | "workspaceId">
 ): boolean {
+  // 注意:admin 在此**故意**不受租户 scope 限制——admin 的项目健康看板等是跨工作区的组织级只读总览
+  // (project-health-pages.test「admin numeric view across projects」断言 admin 能看到别工作区的项目)。
+  // 跨租户的**写**洞(admin 拿别工作区 project_id 建工作项)由 work-items.ts assertCanCreateInProject 单独的
+  // 租户 scope 校验收口,而非在这里收紧(否则会误伤 admin 的跨工作区只读总览)。
   if (actor.isAdmin === true) {
     return true;
   }

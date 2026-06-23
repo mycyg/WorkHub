@@ -91,6 +91,7 @@ test("drive project gate allows owner, admin, and same-workspace policy actors",
   assert.equal(canViewProjectDrive(project, { id: "stranger", workspaceId: "other", orgId: "org-1" }), false);
   assert.equal(canViewProjectDrive(project, { id: "member", workspaceId: "workspace-1", orgId: "org-1" }), true);
   assert.equal(canManageProjectDrive(project, { id: "owner", userId: project.ownerUserId, workspaceId: "other", orgId: "org-1" }), true);
+  // admin 在只读路径上**故意**跨租户(组织级总览,如项目健康看板);跨租户的写由 work-items 写 fence 单独收口。
   assert.equal(canManageProjectDrive(project, { id: "admin", isAdmin: true, workspaceId: "other", orgId: "other" }), true);
 });
 
