@@ -110,6 +110,11 @@ test("escalation opened events become Cuu handoff attention", () => {
   assert.equal(toCuuState(event), "worried");
   assert.equal(attention?.kind, "escalation");
   assert.equal(attention?.source_ref.entity_type, "escalation_event");
+  // 非 budget 事件没专属 attention 时,至少给一个「查看」导航动作(指向工作项详情),不再是无按钮死卡。
+  assert.equal(attention?.actions.length, 1);
+  assert.equal(attention?.actions[0]?.id, "open");
+  assert.equal(attention?.actions[0]?.method, "GET");
+  assert.equal(attention?.actions[0]?.href, "/workitems/50000000-0000-4000-8000-000000000001");
 });
 
 test("revision feedback events keep Cuu in revision-requested handoff mode", () => {

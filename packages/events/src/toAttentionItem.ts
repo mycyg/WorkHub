@@ -110,6 +110,21 @@ function budgetActions(event: WorkHubEvent<unknown>): AttentionItem["actions"] |
   return actions;
 }
 
+// 非 budget 事件(审批/看改动/升级等)若没带专属 attention,过去 actions=[] → 决策卡渲成无按钮死卡(对抗审查 MEDIUM)。
+// 至少给一个「查看」导航动作,指向相关工作项/项目详情;桌面 attention 视图的 classifyAttentionActionHref 会把这类
+// GET /workitems|/projects/:id 当导航内联打开,web 端则正常跳转,而不是一张点不动的卡。
+function defaultOpenAction(event: WorkHubEvent<unknown>): AttentionItem["actions"] {
+  const href = event.work_item_id
+    ? `/workitems/${event.work_item_id}`
+    : event.project_id
+      ? `/projects/${event.project_id}`
+      : undefined;
+  if (!href) {
+    return [];
+  }
+  return [{ id: "open", label: "查看", style: "secondary", method: "GET", href }];
+}
+
 function titleFor(event: WorkHubEvent<unknown>, summary: string) {
   switch (event.type as EventType) {
     case eventTypes.budgetWarning:
@@ -136,7 +151,7 @@ export function toAttentionItem(event: WorkHubEvent<unknown>): AttentionItem | u
     source_ref: sourceRefFor(event),
     title: titleFor(event, summary),
     summary_text: summary,
-    actions: budgetActions(event) ?? [],
+    actions: budgetActions(event) ?? defaultOpenAction(event),
     cuu_state: toCuuState(event),
     created_at: event.ts
   };
