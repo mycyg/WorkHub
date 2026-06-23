@@ -294,6 +294,10 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     const locale = requestLocale(c);
     const projectId = c.req.query("project_id");
     const itemId = c.req.query("item_id");
+    // 非 uuid 的 project_id 原本直达 projects.id 的 uuid 列 → PG 22P02 → 误报 500；与 /project/:id 一致先校验回 404。
+    if (projectId && !isUuidParam(projectId)) {
+      throw new HTTPException(404, { message: "没有找到这个项目网盘。" });
+    }
     try {
       const data = await drivePages.page({
         actor: c.var.actor,
@@ -334,6 +338,10 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     const locale = requestLocale(c);
     const projectId = c.req.query("project_id");
     const meetingId = c.req.query("m") ?? c.req.query("meeting_id");
+    // 同 /drive：非 uuid 的 project_id 防 PG 22P02 误报 500，先校验回 404（修补既有同类缺口）。
+    if (projectId && !isUuidParam(projectId)) {
+      throw new HTTPException(404, { message: "没有找到这个项目。" });
+    }
     try {
       const data: MeetingPageVM = await meetingPages.page({
         actor: c.var.actor,

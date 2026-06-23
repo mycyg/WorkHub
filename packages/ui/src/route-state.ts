@@ -29,6 +29,9 @@ export type RouteStateCardInput = {
   traceId?: string | undefined;
   ownerLabel?: string | undefined;
   actionHref?: string | undefined;
+  // 自定义动作按钮文案：当 actionHref 被改写(如空态回链到 /projects)时,标签也要随目的地走,
+  // 否则会出现「按钮写『回到总览』却跳 /projects」的文不对题。不传则用该状态的默认文案。
+  actionLabel?: string | undefined;
 };
 
 export const r4WebRouteKeys = [
@@ -191,7 +194,7 @@ export function renderRouteStateCard(input: RouteStateCardInput) {
     <span class="wh-route-state-pill">${escapeHtml(meta)}</span>
     <h3>${escapeHtml(copy.title)}</h3>
     <p>${escapeHtml(copy.body)}</p>
-    <a class="wh-route-state-action" href="${escapeHtml(safeHref(actionHref))}">${escapeHtml(copy.action)}</a>
+    <a class="wh-route-state-action" href="${escapeHtml(safeHref(actionHref))}">${escapeHtml(input.actionLabel ?? copy.action)}</a>
   </article>`;
 }
 

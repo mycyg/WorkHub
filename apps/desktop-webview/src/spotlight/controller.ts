@@ -241,7 +241,20 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   };
 
   let toastTimer = 0;
+  // #20 退场动画的内层定时器——单独跟踪,以便替换/dispose 时清掉,避免悬挂回调/竞态(虽各自无害,从严)。
+  let toastInnerTimer = 0;
+  const clearToastTimers = () => {
+    if (toastTimer) {
+      window.clearTimeout(toastTimer);
+      toastTimer = 0;
+    }
+    if (toastInnerTimer) {
+      window.clearTimeout(toastInnerTimer);
+      toastInnerTimer = 0;
+    }
+  };
   const showToast = (message: string, tone: "ok" | "error" | "info" = "info") => {
+    clearToastTimers();
     box.querySelector(".wh-spot-toast")?.remove();
     const el = doc.createElement("div");
     el.className = `wh-spot-toast wh-spot-toast--${tone}`;
@@ -250,13 +263,10 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     el.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
     el.textContent = message;
     box.appendChild(el);
-    if (toastTimer) {
-      window.clearTimeout(toastTimer);
-    }
     // #20：到期先播退场动画(约 1 帧)再移除,toast 不再生硬消失。reduced-motion 下动画近 0ms,行为不变。
     toastTimer = window.setTimeout(() => {
       el.classList.add("wh-spot-toast--leaving");
-      window.setTimeout(() => el.remove(), 220);
+      toastInnerTimer = window.setTimeout(() => el.remove(), 220);
     }, 3200);
   };
 
@@ -400,10 +410,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         window.cancelAnimationFrame(resizeRaf);
         resizeRaf = 0;
       }
-      if (toastTimer) {
-        window.clearTimeout(toastTimer);
-        toastTimer = 0;
-      }
+      clearToastTimers();
       disposeView?.();
       disposeView = undefined;
     }

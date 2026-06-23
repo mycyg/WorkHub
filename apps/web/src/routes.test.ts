@@ -1340,6 +1340,9 @@ test("R8 cycle-review #2 drive with no project sends the user to /projects, not 
   assert.equal(result.status, "empty");
   // the escape hatch points at /projects (go pick/create a project), not "/" (overview)
   assert.equal(result.html.includes('href="/projects"'), true);
+  // and the button label matches the destination (Go to projects), not the default "Back to overview"
+  assert.equal(result.html.includes("Go to projects"), true);
+  assert.equal(result.html.includes("Back to overview"), false);
 });
 
 test("R5.2 drive route loader forwards project id query to the Page VM client", async () => {

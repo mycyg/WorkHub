@@ -34,8 +34,10 @@ function itemRow(item: DriveItemVM, zh: boolean, canManage: boolean): string {
   if (deliverable?.download_href) {
     links.push(`<a class="wh-spot-act wh-spot-act--quiet ds-pressable" href="${escapeHtml(deliverable.download_href)}" target="_blank" rel="noreferrer">${zh ? "下载" : "Download"}</a>`);
   }
-  // 删除走 client.deleteDriveItem(带 expected_current_version_id 乐观并发),仅有管理权限时出现。
-  const del = canManage
+  // 删除走 client.deleteDriveItem(带 expected_current_version_id 乐观并发)。只在服务端真会受理时才显示：
+  // 镜像 drive-pages 的候选判定(非 AI 交付物、文件或空文件夹)——否则点了必 409,徒留「删除失败」。
+  const deletable = canManage && !item.accepted_deliverable && (item.kind === "file" || item.children_count === 0);
+  const del = deletable
     ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-drive-delete="${escapeHtml(item.id)}" data-drive-delete-version="${escapeHtml(item.current_version_id ?? "")}">${zh ? "删除" : "Delete"}</button>`
     : "";
   const actions = links.length || del ? `<div class="wh-spot-card-actions" style="margin-top:0">${links.join("")}${del}</div>` : "";

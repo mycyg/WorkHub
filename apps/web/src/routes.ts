@@ -1071,11 +1071,20 @@ function routeStateBackHref(match: WebRouteMatch): string {
   return "/";
 }
 
+// 回链按钮文案随目的地走：回 /projects 时显示「去项目」而非默认的「回到总览」(否则文不对题)。
+// 回 "/"(总览)时返回 undefined,沿用该状态默认文案。
+function routeStateBackLabel(match: WebRouteMatch, locale: WorkHubLocale): string | undefined {
+  if (routeStateBackHref(match) === "/projects") {
+    return locale === "zh-CN" ? "去项目" : "Go to projects";
+  }
+  return undefined;
+}
+
 export function renderWebRouteState(
   match: WebRouteMatch,
   status: Exclude<WebRouteLoadStatus, "ready">,
   locale: WorkHubLocale,
-  input: { traceId?: string; ownerLabel?: string; actionHref?: string } = {}
+  input: { traceId?: string; ownerLabel?: string; actionHref?: string; actionLabel?: string } = {}
 ): WebRouteStateResult {
   const routeState = routeStateFromStatus(status);
   const html = `<style>${routeStateCss}${webRouteStateScreenCss}</style>
@@ -1089,7 +1098,8 @@ export function renderWebRouteState(
     route: match.pathname,
     ...(input.traceId ? { traceId: input.traceId } : {}),
     ...(input.ownerLabel ? { ownerLabel: input.ownerLabel } : {}),
-    ...(input.actionHref ? { actionHref: input.actionHref } : {})
+    ...(input.actionHref ? { actionHref: input.actionHref } : {}),
+    ...(input.actionLabel ? { actionLabel: input.actionLabel } : {})
   })}
       </section>
     </main>`;
@@ -1138,9 +1148,10 @@ export async function loadWebRoute(
   try {
     const result = await loadRouteSurface(client, match, locale);
     if (result === "empty" || result === "error") {
+      const backLabel = routeStateBackLabel(match, locale);
       const stateInput = result === "error"
         ? { traceId: `route=${match.pathname}`, actionHref: match.pathname }
-        : { actionHref: routeStateBackHref(match) };
+        : { actionHref: routeStateBackHref(match), ...(backLabel ? { actionLabel: backLabel } : {}) };
       return renderWebRouteState(match, result, locale, {
         ...stateInput
       });
@@ -1151,8 +1162,10 @@ export async function loadWebRoute(
       throw error;
     }
     const status = errorStatus(error);
+    const backLabel = status === "empty" ? routeStateBackLabel(match, locale) : undefined;
     const stateInput = {
       actionHref: status === "empty" ? routeStateBackHref(match) : match.pathname,
+      ...(backLabel ? { actionLabel: backLabel } : {}),
       ...(status === "error" ? { traceId: errorTrace(error) } : {}),
       ...(status === "forbidden" ? { ownerLabel: forbiddenOwnerLabel(error, locale) } : {})
     };
