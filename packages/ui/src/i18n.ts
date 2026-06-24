@@ -308,7 +308,8 @@ export function uiCount(locale: WorkHubLocale, count: number, zhUnit: string, en
 }
 
 export function uiHumanize(value: string) {
-  return value.replace(/_/gu, " ");
+  // 防御：上游枚举可能为 undefined/null(如 fixture 未填 run.status)，别让 label 查找崩在 .replace 上。
+  return String(value ?? "").replace(/_/gu, " ");
 }
 
 function labelFromMap(locale: WorkHubLocale, value: string, map: Record<string, Copy>) {
