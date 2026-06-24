@@ -594,7 +594,7 @@ function renderRail(vm: ProposalDetailVM, options?: UiRenderOptions) {
   const manifest = vm.manifest;
   return `<aside class="wh-proposal-rail">
     <span class="wh-kicker">${escapeHtml(uiT(locale, "generic.aiStatus"))}</span>
-    <h2>${escapeHtml(vm.status === "merged" ? uiT(locale, "proposal.railComplete") : uiT(locale, "proposal.railCarrying"))}</h2>
+    <h2>${escapeHtml(vm.status === "merged" ? uiT(locale, "proposal.railComplete") : vm.status === "rejected" ? uiT(locale, "proposal.railRejected") : uiT(locale, "proposal.railCarrying"))}</h2>
     <p class="wh-subtle">${escapeHtml(manifest.risk.human_label)}</p>
     <article class="wh-card">
       <strong>${escapeHtml(uiT(locale, "generic.rollback"))}</strong>
@@ -642,6 +642,9 @@ export function renderProposalDetail(
     <div class="wh-grid">${renderEvidence(vm.evidence_refs, { locale })}</div>
     ${vm.comments.length > 0 ? `<h2>${escapeHtml(uiT(locale, "proposal.comments"))}</h2><div class="wh-card">${vm.comments.map((comment) => `<div class="wh-row"><strong>${escapeHtml(comment.author_label)}</strong><p class="wh-subtle">${escapeHtml(comment.body)}</p></div>`).join("")}</div>` : ""}
     ${conflictCards.html}
+    ${vm.status === "merged" || vm.status === "rejected"
+      ? `<div class="wh-card" data-proposal-terminal="${escapeHtml(vm.status)}"><strong>${escapeHtml(uiT(locale, vm.status === "merged" ? "proposal.terminalMerged" : "proposal.terminalRejected"))}</strong></div>`
+      : ""}
     ${renderActions(actionList)}
   </section>`;
 
