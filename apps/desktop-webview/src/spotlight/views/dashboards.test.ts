@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ProjectHomePageVM } from "@workhub/contracts";
+import type { CostDashboardVM, ProjectHomePageVM } from "@workhub/contracts";
 
-import { projectHomeDetailHtml } from "./dashboards.js";
+import { costView, projectHomeDetailHtml } from "./dashboards.js";
 
 function vm(over: Partial<ProjectHomePageVM> = {}): ProjectHomePageVM {
   return {
@@ -66,4 +66,26 @@ test("S3 desktop project-home shows an empty state when there is no open work", 
   assert.ok(html.includes("暂无进行中的工作"), "empty state copy");
   // 空态仍保留入口动作（新任务）——不是死胡同
   assert.ok(html.includes("data-open-intake"), "new-task CTA stays in empty state");
+});
+
+test("L16: cost trend bars carry aria-labels + a visible date-range/peak caption (not tooltip-only)", () => {
+  // costView reads only a subset of the VM; cast a minimal fixture for the trend render.
+  const costVm = {
+    total_cost_cny: "1.23",
+    token_in: 100,
+    token_out: 200,
+    trend: [
+      { date: "2026-06-20", cost_cny: "0.10", tokens: 10 },
+      { date: "2026-06-21", cost_cny: "0.50", tokens: 40 },
+      { date: "2026-06-22", cost_cny: "0.30", tokens: 25 }
+    ],
+    by_workitem: []
+  } as unknown as CostDashboardVM;
+  const html = costView(costVm, true);
+  // each bar exposes its data to keyboard/screen-reader, not just the title tooltip
+  assert.match(html, /<span class="wh-spot-bar" role="img" aria-label="2026-06-21 · ¥0\.50"/u);
+  // visible caption: start–end range + peak value (peak day is 2026-06-21 @ ¥0.50)
+  assert.ok(html.includes("2026-06-20 – 2026-06-22"), "date-range caption");
+  assert.ok(html.includes("峰值 ¥0.50"), "peak caption");
+  assert.match(html, /<div class="wh-spot-bars" role="group" aria-label="近 14 天花费趋势"/u);
 });

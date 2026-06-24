@@ -242,16 +242,26 @@ export function createProjectsView(): SpotlightCapabilityView {
 }
 
 // —— 成本 —— //
-function costView(vm: CostDashboardVM, zh: boolean): string {
+export function costView(vm: CostDashboardVM, zh: boolean): string {
   const trend = vm.trend.slice(-14);
   const nums = trend.map((t) => Number(t.cost_cny) || 0);
   const max = Math.max(0.0001, ...nums);
+  // L16：成本柱原来只把日期/金额塞进 title 悬浮提示——在无边框 Tauri webview 里 title 不可靠、键盘/读屏
+  // 用户也够不到,读起来像装饰性 sparkline。给每根柱 role=img + aria-label(数据不再只在 tooltip),
+  // 柱组下补一条「起–止日期 · 峰值」可见说明,让它成为有上下文的图表而非匿名色块。
   const bars = trend
     .map((t) => {
       const h = Math.max(4, Math.round(((Number(t.cost_cny) || 0) / max) * 40));
-      return `<span class="wh-spot-bar" style="height:${h}px" title="${escapeHtml(t.date)} · ¥${escapeHtml(t.cost_cny)}"></span>`;
+      const label = `${t.date} · ¥${t.cost_cny}`;
+      return `<span class="wh-spot-bar" role="img" aria-label="${escapeHtml(label)}" style="height:${h}px" title="${escapeHtml(label)}"></span>`;
     })
     .join("");
+  const peak = trend.length
+    ? trend.reduce((best, t) => ((Number(t.cost_cny) || 0) > (Number(best.cost_cny) || 0) ? t : best))
+    : undefined;
+  const barsCaption = trend.length
+    ? `<div class="wh-spot-bars-cap"><span>${escapeHtml(trend[0]?.date ?? "")} – ${escapeHtml(trend[trend.length - 1]?.date ?? "")}</span><span>${zh ? "峰值" : "Peak"} ¥${escapeHtml(peak?.cost_cny ?? "0")}</span></div>`
+    : "";
   const labor = vm.labor_split
     ? `<div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "自我精进占比" : "Self-improvement"}</span><span class="wh-spot-metric-v">${Math.round(vm.labor_split.self_improvement_ratio * 100)}%</span></div>`
     : "";
@@ -268,7 +278,7 @@ function costView(vm: CostDashboardVM, zh: boolean): string {
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">Tokens</span><span class="wh-spot-metric-v">${(vm.token_in + vm.token_out).toLocaleString()}</span></div>
       ${labor}
     </div>
-    ${bars ? `<div class="wh-spot-bars">${bars}</div>` : ""}
+    ${bars ? `<div class="wh-spot-bars" role="group" aria-label="${zh ? "近 14 天花费趋势" : "14-day spend trend"}">${bars}</div>${barsCaption}` : ""}
     ${topItems ? `<div class="wh-spot-list">${topItems}</div>` : ""}
   </div>`;
 }

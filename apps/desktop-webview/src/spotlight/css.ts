@@ -145,6 +145,8 @@ export const spotlightCss = [
   ".wh-spot-metric-v--big{font-size:22px;color:var(--ds-accent)}",
   ".wh-spot-bars{display:flex;align-items:flex-end;gap:4px;height:48px;padding:4px 2px;border-radius:var(--ds-radius-md);background:rgba(255,255,255,.4)}",
   ".wh-spot-bar{flex:1 1 auto;min-width:3px;border-radius:3px 3px 0 0;background:linear-gradient(180deg,#7c83ff,#b57bff)}",
+  // L16：成本柱组下的可见说明(起–止日期 · 峰值),把数据从只在 title tooltip 里搬到可见+可读屏。
+  ".wh-spot-bars-cap{display:flex;justify-content:space-between;gap:8px;margin-top:5px;font:600 11px/1 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-spot-bubble{display:flex;flex-direction:column;gap:12px}",
   ".wh-spot-bubble-summary{margin:0;font:500 14px/1.6 var(--ds-font);color:var(--ds-ink);overflow-wrap:anywhere}",
   ".wh-spot-bubble-note{margin:0;font:500 12px/1.5 var(--ds-font);color:var(--ds-warn)}",
