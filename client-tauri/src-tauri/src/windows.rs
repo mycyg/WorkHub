@@ -47,12 +47,13 @@ pub fn main_window_plan() -> ShellWindowPlan {
         kind: ShellWindowKind::Main,
         title: "WorkHub".to_string(),
         route: "/".to_string(),
-        // R8 真·Spotlight：主窗 = 一个会随内容缩放的小玻璃盒（苹果聚焦风）。起始 720×480，
-        // webview 测得内容高度后经 set_spotlight_size 命令缩放窗高（top-left 锚定，向下生长）。
+        // R8 真·Spotlight：主窗 = 一个会随内容缩放的小玻璃盒（苹果聚焦风）。起始 720×64（idle
+        // 只露搜索条），webview 测得内容高度后经 set_spotlight_size 命令缩放窗高（top-left 锚定，
+        // 向下生长）。min_height 收到 48 让收起态能真正贴住搜索条，不在条下留空玻璃。
         width: 720,
-        height: 480,
+        height: 64,
         min_width: Some(420),
-        min_height: Some(160),
+        min_height: Some(48),
         resizable: true,
         visible: true,
         focus: true,
@@ -130,9 +131,9 @@ mod tests {
         assert_eq!(main.resizable, true);
         // R8 真·Spotlight：小窗随内容缩放（不再是 1180×780 全屏壳）。
         assert_eq!(main.width, 720);
-        assert_eq!(main.height, 480);
+        assert_eq!(main.height, 64);
         assert_eq!(main.min_width, Some(420));
-        assert_eq!(main.min_height, Some(160));
+        assert_eq!(main.min_height, Some(48));
         assert!(main.width <= 900);
         assert!(main.height <= 640);
     }
