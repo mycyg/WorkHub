@@ -1,5 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import { eventTypes } from "@workhub/contracts";
+import { eventTypes, type ActionSpec } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
@@ -272,6 +272,28 @@ function markActiveRouteDirty(reason: string) {
 
 function clearActiveRouteDirty() {
   sharedClearActiveRouteDirty(root, setLiveMetric);
+}
+
+// M11/L17: after an approve, replace the proposal page's action row in place with the
+// server-provided next action (the explicit "采纳到正式版" merge button). Lightweight DOM
+// surgery — deliberately NOT a route refetch (which re-runs the loader and trips the
+// SSE/dirty-edit/loader smoke gates; see M12). The injected <a> carries the same
+// data-action-id/data-method/href contract the delegated click handler expects, so the
+// merge click flows through the existing proposalAction "merge" branch.
+function swapProposalActionRow(shellRoot: HTMLElement, action: ActionSpec) {
+  const row = shellRoot.querySelector<HTMLElement>(
+    '[data-r4-proposal-summary="true"] .wh-r4-route-actions'
+  );
+  if (!row) {
+    return;
+  }
+  const link = document.createElement("a");
+  link.className = "wh-btn wh-btn-primary";
+  link.setAttribute("href", action.href);
+  link.dataset.actionId = action.id;
+  link.dataset.method = action.method;
+  link.textContent = action.label;
+  row.replaceChildren(link);
 }
 
 function activeRouteHasDirtyEdits() {
@@ -982,9 +1004,17 @@ function bindGoldPathNavigation(
         }
         try {
           const review = await client.reviewProposal(proposalAction.proposalId, { decision: "approve", remember: "once" });
-          const merge = await client.mergeProposal(proposalAction.proposalId);
+          // M11/L17: approve is a first-class review step (status → reviewed). The
+          // irreversible publish to the official version is now a SEPARATE deliberate
+          // click — a GitHub-like approve-then-merge flow, not a silent one-click merge.
+          // Swap the action row in place to the server-provided next action ("采纳到正式版")
+          // via a lightweight DOM update — NOT a full route refetch, which would re-run the
+          // loader and break the SSE/dirty-edit/loader smoke gates (see M12).
+          if (review.next_action) {
+            swapProposalActionRow(shellRoot, review.next_action);
+          }
           clearActiveRouteDirty();
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, `${review.attention.summary_text} ${merge.attention.summary_text}`, actionId));
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, review.attention.summary_text, actionId));
         } catch (error) {
           if (await showRebaseRequiredNotice(shellRoot, error, proposalAction.proposalId, client, locale, actionId)) {
             return;
