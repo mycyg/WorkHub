@@ -1136,6 +1136,20 @@ const resizeMainWindow: SpotlightResizeFn = (width, height) => {
   }
 };
 
+// M2：launcher 顶层 Esc → 隐藏主窗（关闭盒子），兑现 hello 卡「Esc 关闭」承诺。浏览器开发态无 __TAURI__ → no-op。
+const dismissMainWindow = (): void => {
+  const tauri = (globalThis as {
+    __TAURI__?: {
+      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+    };
+  }).__TAURI__;
+  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
+  if (typeof invoke === "function") {
+    void invoke("hide_main_window").catch(() => undefined);
+  }
+};
+
 // 连不上后端时渲一张清晰的玻璃「离线卡」（与旧 boot 的兜底一致）：说明需要后端、当前地址、怎么改、重试。
 function renderDesktopOfflineCard(rootEl: HTMLElement, locale: WorkHubLocale, error: unknown): void {
   const zh = locale === "zh-CN";
@@ -1201,7 +1215,7 @@ async function bootSpotlight() {
         // 桥不可用/桌宠窗未就绪：忽略，主窗照常。
       }
     })();
-    const spotlight = mountSpotlight({ host: hostEl, client, locale, resize: resizeMainWindow });
+    const spotlight = mountSpotlight({ host: hostEl, client, locale, resize: resizeMainWindow, dismiss: dismissMainWindow });
     // 以 Cuu 为核心：托盘「打开收件箱/设置」、深链、桌宠点击都会让主窗 emit "navigate"（main.rs execute_window_control）。
     // 监听它 → 把盒子直接开到对应能力（回 "/" 则回 launcher）。这是 Cuu/外部入口与盒子联动的地基。
     const shellListen = resolveDesktopShellListen();

@@ -27,6 +27,9 @@ export type MountSpotlightInput = {
   badges?: Partial<Record<CommandId, number>>;
   // 缩放原生窗口（browser.ts 注入 → invoke set_spotlight_size）。浏览器开发态可为空（no-op）。
   resize?: SpotlightResizeFn;
+  // 关闭/隐藏盒子（browser.ts 注入 → invoke hide_main_window）。M2：让 launcher 顶层 Esc 真正关闭盒子，
+  // 兑现 hello 卡「Esc 关闭」的承诺。浏览器开发态可为空（no-op）。
+  dismiss?: () => void;
 };
 
 export type SpotlightHandle = {
@@ -377,6 +380,10 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
           event.preventDefault();
           input2.value = "";
           dispatch({ type: "setQuery", query: "" });
+        } else {
+          // M2：launcher 顶层（无能力打开、查询为空）按 Esc → 真正关闭盒子，兑现「Esc 关闭」承诺。
+          event.preventDefault();
+          input.dismiss?.();
         }
       }
     },
