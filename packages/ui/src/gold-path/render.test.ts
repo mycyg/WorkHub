@@ -78,7 +78,9 @@ test("gold path renderer localizes static page chrome while keeping VM content i
   const settings = rendered.pages.find((page) => page.key === "settings");
 
   assert.equal(home?.html.includes("Needs your decision"), true);
-  assert.equal(home?.html.includes("The board is fallback only"), true);
+  // L1: home entry copy no longer promises an expandable board/kanban that doesn't exist.
+  assert.equal(home?.html.includes("The main path is this one thing"), true);
+  assert.equal(home?.html.includes("The board is fallback only"), false);
   assert.equal(home?.html.includes("Cuu ·"), false);
   assert.equal(home?.html.includes("./assets/cuu/"), false);
   assert.equal(home?.html.includes("data-cuu-asset=\"bitmap\""), false);
