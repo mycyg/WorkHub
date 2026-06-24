@@ -2708,6 +2708,12 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
     ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(zh ? `还有 ${hiddenCount} 条进行中工作未显示。` : `+${hiddenCount} more open items not shown.`)}</p>`
     : "";
   const fileCountLabel = `${routeT(locale, "projectHome.files")} ${vm.drive.file_count}`;
+  // L4：文件标题用的是总文件数(file_count)，列表只显示最近若干条；以前没有「还有 N 个未显示」的提示，
+  // 让人以为列表就是全部。仿照上方进行中工作清单的 moreNote 补一条溢出说明。
+  const hiddenFiles = vm.drive.file_count - vm.drive.recent_files.length;
+  const filesMoreNote = hiddenFiles > 0
+    ? `<p class="wh-subtle" data-r8-project-home-files-more="${escapeHtml(String(hiddenFiles))}">${escapeHtml(zh ? `还有 ${hiddenFiles} 个文件未显示，前往网盘查看全部。` : `+${hiddenFiles} more files not shown — open the drive to see all.`)}</p>`
+    : "";
   const fileRows = vm.drive.recent_files.length
     ? vm.drive.recent_files.map((file) => `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(file.href))}" data-r8-project-home-file="${escapeHtml(file.id)}">
       <div><strong>${escapeHtml(file.name)}</strong></div>
@@ -2758,6 +2764,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       <section class="wh-card wh-r4-route-card" data-r8-project-home-files="${escapeHtml(String(vm.drive.file_count))}">
         <h3>${escapeHtml(fileCountLabel)}</h3>
         <div class="wh-r4-route-table">${fileRows}</div>
+        ${filesMoreNote}
         <a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(vm.actions.open_drive.href))}" data-r8-project-home-files-all="true">${escapeHtml(vm.actions.open_drive.label)} →</a>
       </section>
       <a class="wh-r4-route-kicker" href="/projects" data-r8-project-home-back="true">${escapeHtml(routeT(locale, "projectHome.back"))}</a>

@@ -665,10 +665,13 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
   }
   if (surface.key === "project-home") {
     const zh = locale === "zh-CN";
+    // L5：这条 masthead 速览原本是 [进行中 N · 状态=进行中 · 负责人 X]——「进行中」在同一条里出现两次
+    // (开放计数 vs 项目状态)，且开放计数和负责人在下方页头 pill 已经各显示了一遍，读起来像冗余噪音。
+    // 改为三个互不重复、页头没有的事实：进行中数、文件数、项目状态(活跃中/已归档，不再与开放计数撞词)。
     return [
       metric(locale, "openwork", String(surface.project.summary.open_work_item_count)),
-      metric(locale, "status", surface.project.project.status === "archived" ? (zh ? "已归档" : "Archived") : (zh ? "进行中" : "Active")),
-      metric(locale, "owner", surface.project.project.owner_label)
+      metric(locale, "files", String(surface.project.drive.file_count)),
+      metric(locale, "status", surface.project.project.status === "archived" ? (zh ? "已归档" : "Archived") : (zh ? "活跃中" : "Active"))
     ];
   }
   if (surface.key === "intake") {
