@@ -6,7 +6,7 @@ import type {
   WorkHubLocale
 } from "@workhub/contracts";
 
-import { agentStepPhaseLabel, uiLocale, type UiRenderOptions } from "../i18n.js";
+import { agentRunStatusLabel, agentStepPhaseLabel, uiLocale, type UiRenderOptions } from "../i18n.js";
 import { overlapHunkReviewCss, renderOverlapHunkReview } from "../overlap-hunk-review.js";
 import { renderRichPatchViewer, richPatchViewerCss } from "../rich-patch-viewer.js";
 import {
@@ -304,6 +304,7 @@ export function renderAgentRunReplay(
     <h1 class="wh-title">${escapeHtml(copy(locale, "查看 AI 怎么做的", "See how AI did it"))}</h1>
     <p class="wh-subtle">${escapeHtml(run.handoff_md ?? run.outcome_reason ?? copy(locale, "关键步骤、证据、快照和成本都在这里。", "Key steps, evidence, snapshots, and cost are shown here."))}</p>
     <div class="wh-grid">
+      <article class="wh-card" data-replay-run-status="${escapeHtml(run.status)}"><strong>${escapeHtml(copy(locale, "状态", "Status"))}</strong><p class="wh-subtle">${escapeHtml(agentRunStatusLabel(locale, run.status))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(copy(locale, "步骤", "Steps"))}</strong><p class="wh-subtle">${escapeHtml(String(vm.steps.length))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(copy(locale, "正式交付物", "Accepted deliverables"))}</strong><p class="wh-subtle">${escapeHtml(String((vm.accepted_deliverables ?? []).length))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(copy(locale, "决策记录", "Decision record"))}</strong><p class="wh-subtle">${escapeHtml(String((vm.merge_timeline ?? []).length))}</p></article>
