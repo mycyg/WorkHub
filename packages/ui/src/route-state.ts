@@ -32,6 +32,10 @@ export type RouteStateCardInput = {
   // 自定义动作按钮文案：当 actionHref 被改写(如空态回链到 /projects)时,标签也要随目的地走,
   // 否则会出现「按钮写『回到总览』却跳 /projects」的文不对题。不传则用该状态的默认文案。
   actionLabel?: string | undefined;
+  // M7：个别路由的空态需要专属标题/正文（如网盘无项目时说「先创建或选择一个项目」，而不是通用的
+  // 「现在没有需要处理的事项」——后者听起来像收件箱已清空，而非「你还没有项目」）。不传则回落到通用文案。
+  titleOverride?: string | undefined;
+  bodyOverride?: string | undefined;
 };
 
 export const r4WebRouteKeys = [
@@ -203,8 +207,8 @@ export function renderRouteStateCard(input: RouteStateCardInput) {
       : input.route ?? route.route;
   return `<article class="wh-route-state-card" data-route-key="${input.routeKey}" data-route-state="${input.state}" data-locale="${locale}">
     <span class="wh-route-state-pill">${escapeHtml(meta)}</span>
-    <h3>${escapeHtml(copy.title)}</h3>
-    <p>${escapeHtml(copy.body)}</p>
+    <h3>${escapeHtml(input.titleOverride ?? copy.title)}</h3>
+    <p>${escapeHtml(input.bodyOverride ?? copy.body)}</p>
     <a class="wh-route-state-action" href="${escapeHtml(safeHref(actionHref))}">${escapeHtml(input.actionLabel ?? copy.action)}</a>
   </article>`;
 }

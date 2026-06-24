@@ -1115,6 +1115,21 @@ function routeStateBackHref(match: WebRouteMatch): string {
   return "/";
 }
 
+// M7：网盘是 GitHub 式文件同步核心,但在没有任何项目时它会塌成通用空卡「现在没有需要处理的事项」——
+// 这听起来像收件箱已清空,而不是「你还没有项目,去建一个」。给网盘空态专属文案,把它解释成文件同步入口。
+function routeStateCopyOverride(
+  match: WebRouteMatch,
+  state: RouteStateKind,
+  locale: WorkHubLocale
+): { titleOverride: string; bodyOverride: string } | undefined {
+  if (match.key === "drive" && state === "empty") {
+    return locale === "zh-CN"
+      ? { titleOverride: "网盘还没有项目", bodyOverride: "先创建或选择一个项目，文件和版本会同步到这里。" }
+      : { titleOverride: "No project for the drive yet", bodyOverride: "Create or pick a project first — files and versions will sync here." };
+  }
+  return undefined;
+}
+
 // 回链按钮文案随目的地走：回 /projects 时显示「去项目」而非默认的「回到总览」(否则文不对题)。
 // 回 "/"(总览)时返回 undefined,沿用该状态默认文案。
 function routeStateBackLabel(match: WebRouteMatch, locale: WorkHubLocale): string | undefined {
@@ -1128,7 +1143,7 @@ export function renderWebRouteState(
   match: WebRouteMatch,
   status: Exclude<WebRouteLoadStatus, "ready">,
   locale: WorkHubLocale,
-  input: { traceId?: string; ownerLabel?: string; actionHref?: string; actionLabel?: string } = {}
+  input: { traceId?: string; ownerLabel?: string; actionHref?: string; actionLabel?: string; titleOverride?: string; bodyOverride?: string } = {}
 ): WebRouteStateResult {
   const routeState = routeStateFromStatus(status);
   const html = `<style>${routeStateCss}${webRouteStateScreenCss}</style>
@@ -1143,7 +1158,9 @@ export function renderWebRouteState(
     ...(input.traceId ? { traceId: input.traceId } : {}),
     ...(input.ownerLabel ? { ownerLabel: input.ownerLabel } : {}),
     ...(input.actionHref ? { actionHref: input.actionHref } : {}),
-    ...(input.actionLabel ? { actionLabel: input.actionLabel } : {})
+    ...(input.actionLabel ? { actionLabel: input.actionLabel } : {}),
+    ...(input.titleOverride ? { titleOverride: input.titleOverride } : {}),
+    ...(input.bodyOverride ? { bodyOverride: input.bodyOverride } : {})
   })}
       </section>
     </main>`;
@@ -1198,7 +1215,8 @@ export async function loadWebRoute(
         ? { traceId: `route=${match.pathname}`, actionHref: match.pathname }
         : { actionHref: routeStateBackHref(match), ...(backLabel ? { actionLabel: backLabel } : {}) };
       return renderWebRouteState(match, result, locale, {
-        ...stateInput
+        ...stateInput,
+        ...(routeStateCopyOverride(match, result, locale) ?? {})
       });
     }
     return renderReadyRoute(result, match, locale, shellUser);
@@ -1213,7 +1231,8 @@ export async function loadWebRoute(
       actionHref: recoverable ? routeStateBackHref(match) : match.pathname,
       ...(backLabel ? { actionLabel: backLabel } : {}),
       ...(status === "error" ? { traceId: errorTrace(error) } : {}),
-      ...(status === "forbidden" ? { ownerLabel: forbiddenOwnerLabel(error, locale) } : {})
+      ...(status === "forbidden" ? { ownerLabel: forbiddenOwnerLabel(error, locale) } : {}),
+      ...(routeStateCopyOverride(match, status, locale) ?? {})
     };
     return renderWebRouteState(match, status, locale, stateInput);
   }

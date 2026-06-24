@@ -2183,6 +2183,20 @@ function renderDriveRouteComponent(
   });
 }
 
+// L27：转写/纪要为空时不能再共用「这个项目还没有会议洞察」——那是讲洞察、不是讲转写，且会议只是还在
+// 处理(processing)/处理失败(failed)时这句是错的。按会议状态给出贴合的占位，让用户分得清「还在生成 / 生成失败 / 真的没有」。
+function meetingContentFallback(kind: "transcript" | "minutes", status: string | undefined, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  const noun = kind === "transcript" ? (zh ? "转写" : "Transcript") : (zh ? "纪要" : "Minutes");
+  if (status === "processing") {
+    return zh ? `${noun}还在准备中，稍后回来查看。` : `${noun} is still being prepared — check back shortly.`;
+  }
+  if (status === "failed") {
+    return zh ? `${noun}没有生成成功。` : `${noun} could not be generated.`;
+  }
+  return zh ? `这次会议还没有${noun}内容。` : `This meeting has no ${kind} yet.`;
+}
+
 function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): WebRouteComponent {
   const projectTitle = vm.project?.name ?? (locale === "zh-CN" ? "会议洞察" : "Meeting insights");
   const selectedMeeting = vm.meetings.find((meeting) => meeting.id === vm.selected_meeting_id) ?? vm.meetings[0];
@@ -2195,8 +2209,8 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): 
       <span class="wh-pill">${escapeHtml(meetingRecordStatusLabel(meeting.status, locale))}</span>
     </a>`).join("")
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "meeting.empty"))}</p>`;
-  const transcript = selectedMeeting?.transcript_text?.trim() || routeT(locale, "meeting.empty");
-  const minutes = selectedMeeting?.minutes_md?.trim() || routeT(locale, "meeting.empty");
+  const transcript = selectedMeeting?.transcript_text?.trim() || meetingContentFallback("transcript", selectedMeeting?.status, locale);
+  const minutes = selectedMeeting?.minutes_md?.trim() || meetingContentFallback("minutes", selectedMeeting?.status, locale);
   const insightRows = selectedMeeting?.insights.length
     ? selectedMeeting.insights.map((insight) => {
       const createDraftAction = insight.actions?.create_draft;
