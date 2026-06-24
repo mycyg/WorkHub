@@ -113,7 +113,8 @@ export function createReplayView(): SpotlightCapabilityView {
           ctx.body.innerHTML = traceHtml(vm, zh, runState === "waiting_for_user");
         } catch {
           if (disposed || gen !== loadGen) return;
-          retry = () => void showTrace(runId);
+          // L14 回归修复：retry 必须带上 runState，否则重试成功后「去拍板」按钮(仅 waiting_for_user 显示)会丢失。
+          retry = () => void showTrace(runId, runState);
           ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "时间线没拉到" : "Couldn't load trace");
         }
         ctx.requestResize();
