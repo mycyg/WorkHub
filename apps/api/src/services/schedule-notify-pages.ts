@@ -283,6 +283,7 @@ function notificationItem(
 ): NotificationItemVM {
   const targetHref = safeTargetHref(row.targetUrl);
   const labels = copy(locale);
+  const bucket = bucketFor(row);
   const actions: NotificationItemVM["actions"] = {};
   if (targetHref) {
     actions.open = action("open", labels.open as string, "GET", targetHref);
@@ -292,9 +293,12 @@ function notificationItem(
   }
   if (!row.archivedAt) {
     actions.dismiss = action("notification_dismiss", labels.dismiss as string, "POST", `/api/notifications/${row.id}/dismiss`);
-    actions.complete = action("notification_complete", labels.complete as string, "POST", `/api/notifications/${row.id}/complete`);
+    // 「完成」只对 fyi 类通知给出。对「需要你决定」类,完成键会误导——它和「忽略」字节相同(都只 archive 通知),
+    // 却让用户以为决定已经做了;真正的决定要在源头(open 进去审批/回答)完成。决策项只留 open/mark_read/忽略。
+    if (bucket !== "needs_decision") {
+      actions.complete = action("notification_complete", labels.complete as string, "POST", `/api/notifications/${row.id}/complete`);
+    }
   }
-  const bucket = bucketFor(row);
   return {
     id: row.id,
     type: row.type,

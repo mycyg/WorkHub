@@ -284,6 +284,10 @@ test("schedule notify page service groups meeting insight notifications and arch
   assert.equal(page.summary.needs_decision_count, 1);
   assert.equal(page.buckets.needs_decision[0]?.source_context?.source_type, "meeting_insight");
   assert.equal(page.buckets.needs_decision[0]?.target_href?.startsWith("/api/"), false);
+  // xreview: a needs-decision item must NOT offer 「完成」(it only archives, falsely implying the decision was made);
+  // it keeps dismiss + open. The decision itself is made at the source via open.
+  assert.equal(page.buckets.needs_decision[0]?.actions.complete, undefined);
+  assert.ok(page.buckets.needs_decision[0]?.actions.dismiss, "needs-decision keeps a dismiss action");
 
   await service.dismiss(page.buckets.needs_decision[0]!.id, actor());
   assert.equal(audit.inputs.at(-1)?.action, "notification.dismiss");
