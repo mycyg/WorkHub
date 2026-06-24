@@ -339,7 +339,9 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
     generated_at: now.toISOString(),
     summary: {
       item_count: itemVms.length,
-      file_count: itemVms.filter((item) => item.kind === "file").length,
+      // file_count 取项目内文件总数(全量 count(*)),与项目主页同口径;items 树受 200 行上限,
+      // loaded 只是本页加载数。uncapped 总是 >= loaded,故 max 取真实总数;无 totalFileCount(旧/测试)时回退 loaded。
+      file_count: Math.max(itemVms.filter((item) => item.kind === "file").length, rows.totalFileCount ?? 0),
       folder_count: itemVms.filter((item) => item.kind === "folder").length,
       deleted_item_count: deletedItemVms.length,
       version_count: versionVms.length,
@@ -449,6 +451,10 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
         return { project: null, items: [], versions: [], acceptedDeliverables: [], comments: [], deletedItems: [], operations: [], commentProposals: [] };
       }
       throw new DrivePageServiceError(403, "你没有权限查看这个项目网盘。", "drive_forbidden");
+    }
+    // 取项目内文件总数(不受 items 200 行树上限影响),供 summary.file_count 与项目主页同口径。
+    if (rows.project) {
+      return { ...rows, totalFileCount: await deps.repo.countFilesByProject(rows.project.id) };
     }
     return rows;
   }

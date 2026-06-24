@@ -39,6 +39,9 @@ export type DrivePageRows = {
   deletedItems: DriveItemRow[];
   operations: DriveOperationRow[];
   commentProposals: DriveProposalRow[];
+  // 项目内文件总数(count(*), 不受 items 200 行上限影响)。drive 页 summary.file_count 用它,
+  // 与项目主页 countFilesByProject 同口径——否则 >200 文件时两页「文件 N」对不上,像文件丢了。
+  totalFileCount?: number;
 };
 
 export type DriveRepositoryActor = {

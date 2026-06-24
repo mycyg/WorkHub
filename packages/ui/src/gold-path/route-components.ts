@@ -2151,6 +2151,12 @@ function renderDriveRouteComponent(
   const driveFolderCount = vm.items.filter((item) => item.kind === "folder").length;
   const driveListedFileCount = vm.items.length - driveFolderCount;
   const driveFilesHeading = `${routeT(locale, "drive.files")} · ${locale === "zh-CN" ? `文件夹 ${driveFolderCount} · 文件 ${driveListedFileCount}` : `${driveFolderCount} folders · ${driveListedFileCount} files`}`;
+  // file_count 是项目内文件总数(全量);文件树本页最多加载 200 行。两者不等时挑明「本页只加载了前 N 个」,
+  // 让顶部「文件 N」chip(总数,与项目主页一致)和列表(本页加载数)不再像「文件丢了」。
+  const driveHiddenFileCount = vm.summary.file_count - driveListedFileCount;
+  const driveMoreFilesNote = driveHiddenFileCount > 0
+    ? `<p class="wh-subtle" data-r4-drive-more-files="${escapeHtml(String(driveHiddenFileCount))}">${escapeHtml(locale === "zh-CN" ? `本页只加载了前 ${driveListedFileCount} 个文件，共 ${vm.summary.file_count} 个。` : `Showing the first ${driveListedFileCount} of ${vm.summary.file_count} files.`)}</p>`
+    : "";
   const versionRows = vm.versions.length
     ? vm.versions.slice(0, 8).map((version) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-version="${escapeHtml(version.id)}" data-r4-drive-version-current="${escapeHtml(String(version.current))}">
       <div>
@@ -2248,6 +2254,7 @@ function renderDriveRouteComponent(
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-drive-files="true" data-r4-drive-folder-count="${escapeHtml(String(driveFolderCount))}" data-r4-drive-listed-file-count="${escapeHtml(String(driveListedFileCount))}">
           <h3>${escapeHtml(driveFilesHeading)}</h3>
           <div class="wh-r4-route-timeline">${fileRows}</div>
+          ${driveMoreFilesNote}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-drive-versions="true">
           <h3>${escapeHtml(routeT(locale, "drive.versions"))}</h3>

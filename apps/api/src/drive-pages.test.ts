@@ -567,6 +567,30 @@ test("drive page service honors a requested item_id (#5 recent-file deep-link), 
   assert.equal(fallback.selected_item_id, itemId, "invalid item_id falls back to the default file");
 });
 
+test("xreview: drive summary.file_count uses the uncapped project total, not the 200-row tree slice", async () => {
+  const pageRows = rows();
+  const loadedFiles = pageRows.items.filter((item) => item.kind === "file").length;
+  const service = createDrivePageService({
+    repo: {
+      async listRecentFilesByProject() { return []; },
+      // 项目实际有 250 个文件,但 readPage 树只加载了 loadedFiles 个(<=200)。
+      async countFilesByProject() { return 250; },
+      async readPage() { return pageRows; },
+      async uploadFile() { throw new Error("not needed"); },
+      async softDeleteItem() { throw new Error("not needed"); },
+      async restoreDeletedItem() { throw new Error("not needed"); },
+      async commentToDraft() { throw new Error("not needed"); },
+      async recordDraftProposal() { throw new Error("not needed"); }
+    },
+    now: () => now
+  });
+
+  const page = await service.page({ actor: actor(), locale: "zh-CN", projectId });
+  // 与项目主页 countFilesByProject 同口径(250),而不是树切片的 loaded 数 —— 否则 >200 文件时两页对不上。
+  assert.equal(page.summary.file_count, 250);
+  assert.ok(loadedFiles < 250, "fixture loads fewer files than the project total (the cap scenario)");
+});
+
 test("drive page service does not 403 the generic drive route on an invisible default project", async () => {
   const hiddenRows = rows();
   hiddenRows.project = {
