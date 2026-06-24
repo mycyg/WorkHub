@@ -201,6 +201,11 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     viewRoot.className = "ds-anim-fade-in";
     body.replaceChildren(viewRoot);
     requestResize();
+    // L1：进入能力后搜索框被 display:none 隐藏,焦点会掉到 <body>,键盘用户失去锚点。把焦点移到内容容器——
+    // 下一次 Tab 即落到视图第一个可交互元素,屏幕阅读器焦点也随之进入新内容。tabindex=-1 仅供编程聚焦、
+    // 不进 Tab 序列;编程聚焦不触发 :focus-visible,不会给整块内容画焦点环。
+    viewRoot.tabIndex = -1;
+    viewRoot.focus?.({ preventScroll: true });
     const viewAbort = new AbortController();
     let viewCleanup: (() => void) | undefined;
     disposeView = () => {

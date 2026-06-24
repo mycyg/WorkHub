@@ -183,6 +183,9 @@ export function createProposalsView(): SpotlightCapabilityView {
         } catch {
           busy = false;
           ctx.toast(zh ? "合并失败（可能有冲突），稍后重试" : "Merge failed (maybe a conflict)", "error");
+          // L13：approve 是 review→merge 两步。若 review 成功只是 merge 失败,提议已变 reviewed——重渲详情让它落到
+          // 「仅合并」态,否则旧的「通过并合并」按钮还在、再点会对已审阅项重复 reviewProposal(自相矛盾的陈旧视图)。
+          if (currentId) void showDetail(currentId);
         }
       };
 
