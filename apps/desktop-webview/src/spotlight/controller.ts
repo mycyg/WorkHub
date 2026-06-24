@@ -143,7 +143,10 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     const top = box.offsetHeight - body.offsetHeight; // 顶栏 + 边框
     const natural = box.offsetHeight + stagePad;
     const screenMax = Math.round((window.screen?.availHeight ?? 900) * 0.86);
-    const winH = Math.max(180, Math.min(natural, screenMax));
+    // 收起态(只有搜索框)时窗口要缩到搜索条本身(~56px),不能被 180 的下限撑出一截空白(用户反馈"未点击只有搜索框")。
+    // 下限取一个搜索条高度兜底,实际高度由 natural(随内容)决定。
+    const minH = box.dataset.collapsed === "true" ? 52 : 120;
+    const winH = Math.max(minH, Math.min(natural, screenMax));
     const bodyMax = Math.max(80, winH - stagePad - top);
     body.style.maxHeight = `${bodyMax}px`;
     const width = Math.max(360, Math.round(window.innerWidth));
