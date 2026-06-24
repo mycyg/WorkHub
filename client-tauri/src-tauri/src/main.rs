@@ -1327,14 +1327,20 @@ fn main() {
             }
             // R7 真·液态玻璃：主窗口透明 + OS 级毛玻璃（macOS vibrancy / Windows acrylic），让玻璃穿透看到桌面。
             // 失败不致命（不支持的系统/旧版本退回不透明，前端 CSS 仍有极光兜底底色），故忽略 Result。
+            // 圆角 vibrancy：第 4 个参数是圆角半径,之前为 None → 方角玻璃,会在圆角盒子四角露出方形玻璃"垫边"
+            // (用户反馈的边缘处理糟糕)。改为 Some(24.0) 匹配盒子 --ds-radius-xl(24px),让原生玻璃跟着圆角收边。
+            // WORKHUB_DISABLE_VIBRANCY(仅自动化截图验收用)置位时跳过 vibrancy——vibrancy 窗由窗口服务器合成,会被
+            // computer-use 原生截图过滤掉;关掉后窗口由 app 自身合成可被截图,配前端 VITE_WORKHUB_CAPTURE 不透明底。生产默认开 vibrancy。
             #[cfg(target_os = "macos")]
-            if let Some(main_window) = app.get_webview_window("main") {
-                let _ = window_vibrancy::apply_vibrancy(
-                    &main_window,
-                    window_vibrancy::NSVisualEffectMaterial::HudWindow,
-                    None,
-                    None,
-                );
+            if std::env::var("WORKHUB_DISABLE_VIBRANCY").is_err() {
+                if let Some(main_window) = app.get_webview_window("main") {
+                    let _ = window_vibrancy::apply_vibrancy(
+                        &main_window,
+                        window_vibrancy::NSVisualEffectMaterial::HudWindow,
+                        None,
+                        Some(24.0),
+                    );
+                }
             }
             #[cfg(target_os = "windows")]
             if let Some(main_window) = app.get_webview_window("main") {

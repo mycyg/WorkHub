@@ -7,8 +7,12 @@ export const spotlightCss = [
   "html,body{margin:0;background:transparent!important}",
   "body{overflow:hidden}",
   // 舞台：填满（小）窗口，盒子顶部对齐；四周留白 + 顶栏可拖动整窗。
-  ".wh-spot-stage{position:relative;min-height:100vh;box-sizing:border-box;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;padding:12px;gap:0;-webkit-app-region:drag}",
+  // 盒子直接铺满透明窗(padding:0),靠原生圆角 vibrancy 收边——不再留 12px 的方角玻璃"垫边"(边缘处理糟糕的根因)。
+  ".wh-spot-stage{position:relative;min-height:100vh;box-sizing:border-box;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;padding:0;gap:0;-webkit-app-region:drag}",
   ".wh-spot{position:relative;display:flex;flex-direction:column;border-radius:var(--ds-radius-xl);overflow:hidden;-webkit-app-region:no-drag}",
+  // 收起态(未点击)：只露搜索框,隐藏能力网格区与其下边线,盒子缩成一条搜索条。
+  ".wh-spot[data-collapsed=\"true\"] .wh-spot-body{display:none}",
+  ".wh-spot[data-collapsed=\"true\"] .wh-spot-top{border-bottom:0}",
   // 顶栏：搜索/标题 + 面包屑返回。顶栏空白处可拖动窗（输入/按钮 no-drag）。
   ".wh-spot-top{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--ds-glass-hairline);-webkit-app-region:drag}",
   ".wh-spot-top>*{-webkit-app-region:no-drag}",

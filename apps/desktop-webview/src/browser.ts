@@ -1184,6 +1184,12 @@ async function bootSpotlight() {
   if (!root) {
     return;
   }
+  // 仅自动化截图验收用：VITE_WORKHUB_CAPTURE 置位时给透明窗补一层不透明底,让 computer-use 能捕获盒子
+  // (需配 WORKHUB_DISABLE_VIBRANCY 关原生玻璃)。生产不设此变量 → 真·液态玻璃透明,不受影响。
+  if ((import.meta as unknown as { env?: Record<string, unknown> }).env?.VITE_WORKHUB_CAPTURE) {
+    document.documentElement.style.setProperty("background", "#0f1117", "important");
+    document.body.style.setProperty("background", "#0f1117", "important");
+  }
   let locale = browserLocale();
   setDocumentLocale(locale);
   root.innerHTML = renderGoldPathBootDocument({

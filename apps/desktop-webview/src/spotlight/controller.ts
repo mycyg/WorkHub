@@ -96,6 +96,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   const zh = locale === "zh-CN";
   let badges: Partial<Record<CommandId, number>> = { ...(input.badges ?? {}) };
   let state: SpotlightState = initialSpotlightState();
+  // 苹果聚焦盒：没点击(搜索框未聚焦)且空查询时,盒子只露一条搜索框;点击聚焦或输入才展开能力网格。
+  let searchActive = false;
   let disposeView: (() => void) | undefined;
   // 待消费的跳转目标实体：open(id, target) 设置 → 下一次 renderCapability 读入该能力 ctx 后清空（rank13/14）。
   let pendingTarget: SpotlightTarget | undefined;
@@ -136,7 +138,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     if (!input.resize) {
       return;
     }
-    const stagePad = 24; // .wh-spot-stage 上下各 12px
+    const stagePad = 0; // .wh-spot-stage 现无 padding（盒子铺满透明窗，靠圆角 vibrancy 收边）
     body.style.maxHeight = "none";
     const top = box.offsetHeight - body.offsetHeight; // 顶栏 + 边框
     const natural = box.offsetHeight + stagePad;
@@ -177,7 +179,12 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       disposeView = undefined;
     }
     box.dataset.mode = "launcher";
-    body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0);
+    // 未聚焦且空查询 → 收起,只留搜索框(data-collapsed=true);聚焦或有查询 → 展开能力网格。
+    const expanded = searchActive || state.query.trim().length > 0;
+    box.dataset.collapsed = expanded ? "false" : "true";
+    body.innerHTML = expanded
+      ? renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0)
+      : "";
     syncLauncherActiveDescendant();
     requestResize();
   };
@@ -244,8 +251,9 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     if (capId) {
       renderCapability(capId);
     } else {
+      // 从能力返回 launcher：视为已激活,展开网格 + 聚焦输入(无收起闪烁)。
+      searchActive = true;
       renderLauncher();
-      // 回到 launcher 时聚焦输入。
       input2.focus();
     }
   };
@@ -311,6 +319,27 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   // —— 交互 —— //
   input2.addEventListener("input", () => {
     dispatch({ type: "setQuery", query: input2.value });
+  });
+
+  // 聚焦搜索框 → 展开能力网格(从"只有搜索框"的收起态生长开)。
+  input2.addEventListener("focus", () => {
+    if (openCapabilityId(state) || searchActive) {
+      return;
+    }
+    searchActive = true;
+    renderLauncher();
+  });
+  // 失焦且空查询 → 收回成"只有搜索框";但若焦点移到盒内(点能力卡)则保持展开,让卡片点击照常生效。
+  input2.addEventListener("blur", (event) => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && box.contains(next)) {
+      return;
+    }
+    if (openCapabilityId(state) || !searchActive || state.query.trim().length > 0) {
+      return;
+    }
+    searchActive = false;
+    renderLauncher();
   });
 
   host.querySelector<HTMLElement>("[data-spot-back]")?.addEventListener("click", () => {
@@ -408,9 +437,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
 
   window.addEventListener("resize", () => requestResize(), { signal: controllerAbort.signal });
 
-  // 首屏：launcher。
+  // 首屏：launcher——保持"未点击=只有搜索框"的收起态(不自动聚焦),用户点搜索框才展开能力网格。
   renderLauncher();
-  input2.focus();
 
   return {
     openCapability: (id, target) => {
