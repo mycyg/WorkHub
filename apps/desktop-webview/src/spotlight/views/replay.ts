@@ -6,6 +6,7 @@ import type { AgentRunLiveVM, AgentStep, AttentionHomeVM } from "@workhub/contra
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
+import { agentRunStatusLabel } from "../labels.js";
 
 type BgRun = AttentionHomeVM["background_runs"][number];
 
@@ -50,7 +51,7 @@ function phaseLabel(phase: AgentStep["phase"], zh: boolean): string {
 function traceHtml(vm: AgentRunLiveVM, zh: boolean): string {
   const u = vm.usage;
   const header = `<div class="wh-spot-metrics">
-    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "状态" : "Status"}</span><span class="wh-spot-metric-v">${escapeHtml(vm.status)}</span></div>
+    <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "状态" : "Status"}</span><span class="wh-spot-metric-v">${escapeHtml(agentRunStatusLabel(vm.status, zh))}</span></div>
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "步数" : "Steps"}</span><span class="wh-spot-metric-v">${u.steps_used}</span></div>
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "花费" : "Cost"}</span><span class="wh-spot-metric-v">¥${escapeHtml(String(u.estimated_cost_cny))}</span></div>
   </div>`;

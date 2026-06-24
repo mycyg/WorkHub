@@ -7,22 +7,7 @@ import type { WorkItemDetailVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
-
-function statusLabel(status: string, zh: boolean): string {
-  const map: Record<string, [string, string]> = {
-    intake: ["接收中", "Intake"],
-    ai_clarifying: ["澄清中", "Clarifying"],
-    spec_ready: ["待派活", "Ready to run"],
-    in_progress: ["进行中", "In progress"],
-    in_review: ["待审阅", "In review"],
-    delivery_ready: ["待交付", "Delivery ready"],
-    accepted: ["已采纳", "Accepted"],
-    done: ["已完成", "Done"],
-    cancelled: ["已取消", "Cancelled"]
-  };
-  const e = map[status];
-  return e ? (zh ? e[0] : e[1]) : status;
-}
+import { workItemPriorityLabel, workItemStatusLabel } from "../labels.js";
 
 export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const w = vm.workitem;
@@ -45,11 +30,11 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   return `<div class="wh-spot-dash ds-anim-fade-in">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-wi-back style="align-self:flex-start">${zh ? "← 返回" : "← Back"}</button>
     <div>
-      <div class="wh-spot-card-head"><span class="wh-spot-chip wh-spot-chip--approval">${escapeHtml(statusLabel(w.status, zh))}</span><span class="wh-spot-change-path">${escapeHtml(w.code)}</span></div>
+      <div class="wh-spot-card-head"><span class="wh-spot-chip wh-spot-chip--approval">${escapeHtml(workItemStatusLabel(w.status, zh))}</span><span class="wh-spot-change-path">${escapeHtml(w.code)}</span></div>
       <h3 class="wh-spot-card-title" style="margin-top:10px">${escapeHtml(w.title ?? w.code)}</h3>
     </div>
     <div class="wh-spot-metrics">
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "优先级" : "Priority"}</span><span class="wh-spot-metric-v" style="font-size:14px">${escapeHtml(w.priority)}</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "优先级" : "Priority"}</span><span class="wh-spot-metric-v" style="font-size:14px">${escapeHtml(workItemPriorityLabel(w.priority, zh))}</span></div>
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "验收项" : "Acceptance"}</span><span class="wh-spot-metric-v">${vm.acceptance.length}</span></div>
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "交付物" : "Deliverables"}</span><span class="wh-spot-metric-v">${vm.accepted_deliverables.length}</span></div>
     </div>

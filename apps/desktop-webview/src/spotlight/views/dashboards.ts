@@ -14,6 +14,7 @@ import { escapeHtml, safeHref } from "@workhub/web-runtime";
 
 import type { CommandId } from "../../command-palette.js";
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
+import { workItemPriorityLabel, workItemStatusLabel } from "../labels.js";
 
 function loadingHtml(zh: boolean, label: string): string {
   return `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${escapeHtml(label)}</div>`;
@@ -105,7 +106,7 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
         .map(
           (w) =>
             `<button type="button" class="wh-spot-row" data-open-workitem="${escapeHtml(w.id)}" style="cursor:pointer;width:100%;text-align:left">
-        <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(w.title)}</div><div class="wh-spot-row-sub">${escapeHtml(w.code)} · ${escapeHtml(w.status)} · ${escapeHtml(w.priority)}</div></div>
+        <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(w.title)}</div><div class="wh-spot-row-sub">${escapeHtml(w.code)} · ${escapeHtml(workItemStatusLabel(w.status, zh))} · ${escapeHtml(workItemPriorityLabel(w.priority, zh))}</div></div>
       </button>`
         )
         .join("")
