@@ -129,3 +129,11 @@ test("decision deck omits the worklog strip entirely when no worklog data", () =
 test("decisionDeckCss styles the worklog strip", () => {
   assert.match(decisionDeckCss, /wh-deck-worklog/u);
 });
+
+test("M8: decision cards animate in (entrance keyframes + reduced-motion guard)", () => {
+  assert.match(decisionDeckCss, /@keyframes wh-deck-card-in/u);
+  assert.match(decisionDeckCss, /\.wh-deck-card,\.wh-deck-done\{animation:wh-deck-card-in/u);
+  // the entrance must be disabled under prefers-reduced-motion
+  assert.match(decisionDeckCss, /prefers-reduced-motion:reduce/u);
+  assert.match(decisionDeckCss, /\.wh-deck-card,\.wh-deck-done\{animation:none/u);
+});

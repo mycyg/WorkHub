@@ -196,7 +196,11 @@ export const decisionDeckCss = [
   ".gl-press{transition:transform 120ms cubic-bezier(.34,1.56,.64,1)}",
   ".gl-press:active{transform:scale(.95)}",
   ".gl-avatar{display:inline-block;will-change:transform}",
-  "@media (prefers-reduced-motion:reduce){.wh-deck-btn,.gl-press{transition-duration:.01ms!important}.wh-deck-btn:active,.gl-press:active{transform:none}}",
+  // M8：决策卡/空态卡此前是硬 DOM swap 出现（无任何过渡），对挑剔的苹果用户是最扎眼的缺口。
+  // 给卡片一个克制的「升起淡入 + 微缩放」spring-out 入场，让新决策像活的玻璃卡浮现而非页面重排。
+  "@keyframes wh-deck-card-in{from{opacity:0;transform:translateY(12px) scale(.984)}to{opacity:1;transform:none}}",
+  ".wh-deck-card,.wh-deck-done{animation:wh-deck-card-in .42s cubic-bezier(.22,1,.36,1) both}",
+  "@media (prefers-reduced-motion:reduce){.wh-deck-btn,.gl-press{transition-duration:.01ms!important}.wh-deck-btn:active,.gl-press:active{transform:none}.wh-deck-card,.wh-deck-done{animation:none!important}}",
   ".wh-deck-cuu{display:flex;align-items:center;gap:12px;justify-content:center;margin-top:26px}",
   ".wh-deck-cuu-face{font:700 22px/1 'M PLUS Rounded 1c',sans-serif}",
   ".wh-deck-cuu-line{font:700 13.5px/1.4 'Noto Sans SC',sans-serif;color:#6b6488;background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.7);border-radius:14px;border-bottom-left-radius:4px;padding:9px 14px}",

@@ -130,6 +130,11 @@ export const desktopPetSurfaceCss = [
   // 是气泡的兄弟节点、不受影响。命中测试 closest 仍含 .wh-pet-bubble：落在按钮上时 closest 为真→接管，
   // 落在空白(now none)上时 elementFromPoint 穿过气泡返回透明底→closest 为 null→穿透。
   ".wh-pet-bubble button,.wh-pet-bubble a[data-cuu-action-id],.wh-pet-bubble [data-pet-option-id],.wh-pet-bubble [data-pet-reason]{pointer-events:auto}",
+  // M8/M11：Cuu 气泡此前是硬 DOM swap 出现（无入场过渡）。给它克制的纯 opacity 淡入——只动透明度、
+  // 不动 transform/几何，避免影响穿透命中测试（命中走探针坐标，气泡本身 pointer-events:none）。
+  "@keyframes wh-pet-bubble-in{from{opacity:0}to{opacity:1}}",
+  ".wh-pet-bubble{animation:wh-pet-bubble-in .34s ease-out both}",
+  "@media (prefers-reduced-motion:reduce){.wh-pet-bubble{animation:none!important}}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1));bottom:calc(48px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=bubble],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=offline],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=trace]{min-height:calc(268px * var(--wh-pet-scale,1))}",
