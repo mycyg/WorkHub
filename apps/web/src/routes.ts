@@ -870,6 +870,24 @@ function isReplayEmpty(data: ReplayTraceVM) {
   return data.steps.length === 0 && !data.run.handoff_md && !data.run.outcome_reason;
 }
 
+// A recoverable empty state whose copy + back link are tailored by the loader using data
+// only available after the fetch (e.g. an empty replay's parent work-item id). Distinct
+// from the bare "empty" status, which routeStateBackHref/CopyOverride resolve from the URL.
+type TailoredEmptyRouteState = {
+  status: "empty";
+  actionHref: string;
+  actionLabel?: string;
+  titleOverride?: string;
+  bodyOverride?: string;
+};
+
+function isTailoredEmptyRouteState(result: unknown): result is TailoredEmptyRouteState {
+  return typeof result === "object"
+    && result !== null
+    && (result as { status?: unknown }).status === "empty"
+    && typeof (result as { actionHref?: unknown }).actionHref === "string";
+}
+
 // F15/簇A：顶部导航「知识」→ /knowledge/search 无锚点时,后端对非管理员 403(防跨项目泄露知识库)。
 // 别让 403 塌成无外壳的裸态把用户困死——合成一个「需要选范围」的知识库落地 bubble,照常在外壳内渲染
 // (保留左导航 + 搜索框 + 指引),引导用户进入具体项目/工作项检索。管理员的全局检索仍走真 API,不受影响。
@@ -1060,7 +1078,19 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   if (match.key === "replay") {
     const replay = await client.replayAgentRun(match.params["id"] ?? "", withLocale(locale));
     if (isReplayEmpty(replay)) {
-      return "empty" as const;
+      // M17: an empty replay must not collapse into the generic "现在没有需要处理的事项"
+      // card — that's the wrong frame (the user came to watch the run, not clear an inbox)
+      // and its back link drops them at the global overview. Tailor the copy and send the
+      // back link to the parent work item (always present on an agent run).
+      return {
+        status: "empty" as const,
+        actionHref: `/workitems/${replay.run.work_item_id}`,
+        actionLabel: locale === "zh-CN" ? "回到事项" : "Back to the work item",
+        titleOverride: locale === "zh-CN" ? "这次执行还没有可回放的步骤" : "No replayable steps yet",
+        bodyOverride: locale === "zh-CN"
+          ? "这次执行还没有产生可回放的轨迹。回到事项查看它的最新状态。"
+          : "This run hasn’t produced a replayable trace yet. Head back to the work item for its latest status."
+      } satisfies TailoredEmptyRouteState;
     }
     return { key: "replay", replay } satisfies WebRouteSurface;
   }
@@ -1208,6 +1238,15 @@ export async function loadWebRoute(
 ): Promise<WebRouteLoadResult> {
   try {
     const result = await loadRouteSurface(client, match, locale);
+    if (isTailoredEmptyRouteState(result)) {
+      // M17: loader-tailored empty state (custom copy + data-derived back link).
+      return renderWebRouteState(match, "empty", locale, {
+        actionHref: result.actionHref,
+        ...(result.actionLabel ? { actionLabel: result.actionLabel } : {}),
+        ...(result.titleOverride ? { titleOverride: result.titleOverride } : {}),
+        ...(result.bodyOverride ? { bodyOverride: result.bodyOverride } : {})
+      });
+    }
     if (result === "empty" || result === "error" || result === "notFound") {
       // empty / notFound 都是可恢复态:动作回到来源列表(详情页→列表)或首页;error 才给「重试」。
       const backLabel = result === "error" ? undefined : routeStateBackLabel(match, locale);

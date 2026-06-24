@@ -966,6 +966,27 @@ test("S1 Day0 /intake renders a project bootstrap start surface instead of empty
   assert.equal(result.html.includes("/intake/r4-live-session"), false);
 });
 
+test("M17 empty replay renders a tailored empty state linking back to the work item", async () => {
+  const surface = goldPathSurfaceVm();
+  const run = { ...surface.page_vms.replay.run };
+  delete run.handoff_md;
+  delete run.outcome_reason;
+  const emptyReplay: ReplayTraceVM = { ...surface.page_vms.replay, steps: [], run };
+  const { client } = fakeRouteClient(surface, { replay: emptyReplay });
+  const match = resolveWebRoute("/agent-runs/r4-route-registry-run/replay");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.html.includes('data-route-state="empty"'), true);
+  // tailored copy — not the generic "nothing needs action" wrong-frame card
+  assert.equal(result.html.includes("No replayable steps yet"), true);
+  assert.equal(result.html.includes("Nothing needs action"), false);
+  // back link goes to the parent work item, not the global overview
+  assert.equal(result.html.includes("/workitems/00000000-0000-4000-8000-000000000104"), true);
+  assert.equal(result.html.includes("Back to the work item"), true);
+});
+
 test("R4.14 knowledge route loader carries search payload into a cited fallback route component", async () => {
   const surface = goldPathSurfaceVm();
   const knowledge = routeEvidenceBubble();
