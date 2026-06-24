@@ -668,8 +668,14 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
     // L5：这条 masthead 速览原本是 [进行中 N · 状态=进行中 · 负责人 X]——「进行中」在同一条里出现两次
     // (开放计数 vs 项目状态)，且开放计数和负责人在下方页头 pill 已经各显示了一遍，读起来像冗余噪音。
     // 改为三个互不重复、页头没有的事实：进行中数、文件数、项目状态(活跃中/已归档，不再与开放计数撞词)。
+    // M5 续：进行中 chip 必须与页头「进行中 N · 你可处理 M」的头条数 N 同口径(全量 total_open_work_item_count)，
+    // 否则 chip 显可见数(1)、页头显全量(16)→同一页两个「进行中」数字打架，一无所知用户读不懂到底几件在进行。
     return [
-      metric(locale, "openwork", String(surface.project.summary.open_work_item_count)),
+      metric(
+        locale,
+        "openwork",
+        String(surface.project.summary.total_open_work_item_count ?? surface.project.summary.open_work_item_count)
+      ),
       metric(locale, "files", String(surface.project.drive.file_count)),
       metric(locale, "status", surface.project.project.status === "archived" ? (zh ? "已归档" : "Archived") : (zh ? "活跃中" : "Active"))
     ];

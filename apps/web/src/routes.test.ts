@@ -1332,6 +1332,32 @@ test("R8 S2b project-home route renders project meta, open-work links, CTAs, bac
   assert.equal(result.html.includes("客户复盘.md"), true);
 });
 
+test("M5 project-home: 进行中 stat chip uses the全量 total (matches header headline, no 1-vs-16 contradiction)", async () => {
+  const surface = goldPathSurfaceVm();
+  const projectId = "93000000-0000-4000-8000-000000000001";
+  // total(8) > 可见(3)：因可见性隐藏了 5 件他人私有态事项。
+  const projectHome = {
+    ...projectHomeVm(projectId),
+    summary: { open_work_item_count: 3, total_open_work_item_count: 8 }
+  };
+  const { client } = fakeRouteClient(surface, { projectHome });
+  const match = resolveWebRoute(`/projects/${projectId}`);
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "en-US");
+  assert.equal(result.status, "ready");
+  // 顶部 stat chip 的「进行中」用全量 8（与页头头条数同口径），而非可见数 3。
+  assert.equal(result.html.includes('data-r4-product-metric="openwork"><strong>8</strong>'), true);
+  assert.equal(result.html.includes('data-r4-product-metric="openwork"><strong>3</strong>'), false);
+  // 页头 pill 仍诚实标出「你可处理」可见数。
+  assert.equal(result.html.includes("you can handle 3"), true);
+
+  // 回退：VM 没有 total 字段时，chip 退回可见数（旧契约不破）。
+  const legacy = { ...projectHomeVm(projectId), summary: { open_work_item_count: 5 } };
+  const { client: legacyClient } = fakeRouteClient(surface, { projectHome: legacy });
+  const legacyResult = await loadWebRoute(legacyClient, resolveWebRoute(`/projects/${projectId}`)!, "en-US");
+  assert.equal(legacyResult.html.includes('data-r4-product-metric="openwork"><strong>5</strong>'), true);
+});
+
 test("R8 S4b intake start binds to an existing project when ?project_id is present", async () => {
   const surface = goldPathSurfaceVm();
   const projectId = "93000000-0000-4000-8000-000000000001";
