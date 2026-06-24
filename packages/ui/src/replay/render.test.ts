@@ -265,6 +265,13 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("写入: 新标题"), true);
   assert.equal(zh.html.includes("写入: 2 项: 原始任务项, 新增风险项"), true);
   assert.equal(zh.html.includes("策略: fast_path"), true);
+  // 合并时间线：冲突定位读成「冲突位置: <key>」而非把内部 key 当标题裸渲；冲突数药丸带单位(单复数正确)。
+  assert.equal(zh.html.includes("冲突位置: work_item:task_items"), true);
+  assert.equal(zh.html.includes("1 处冲突"), true);
+  assert.equal(zh.html.includes('data-replay-merge-conflict-count="1"'), true);
+  assert.equal(en.html.includes("Conflict at: work_item:task_items"), true);
+  assert.equal(en.html.includes("1 conflict<"), true);
+  assert.equal(en.html.includes("1 conflicts"), false);
   assert.equal(en.html.includes("Field-level targets"), true);
   assert.equal(en.html.includes("Subrecord item changes"), true);
   assert.equal(en.html.includes("Added"), true);

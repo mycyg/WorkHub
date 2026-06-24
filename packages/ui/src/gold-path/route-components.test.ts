@@ -929,6 +929,10 @@ test("S1 Day0 Proposal route component hides write actions after merge", () => {
   const proposal = renderWebRouteComponents(vm, { locale: "en-US" }).proposal;
 
   assert.ok(proposal);
+  // 状态徽章人话化(不再裸渲枚举 "merged"),原始枚举保留在 data 属性供选择器/测试用。
+  assert.equal(proposal.html.includes('data-r4-proposal-status="merged"'), true);
+  assert.equal(proposal.html.includes(">Merged</span>"), true);
+  assert.equal(proposal.html.includes('class="wh-r4-route-count" data-r4-proposal-status="merged">merged<'), false);
   assert.equal(proposal.html.includes('data-r4-proposal-action-count="0"'), true);
   assert.equal(proposal.html.includes('data-action-id="approve"'), false);
   assert.equal(proposal.html.includes('data-action-id="request_changes"'), false);
@@ -1063,7 +1067,7 @@ test("R4.14 Intake route component renders a typed option-first session without 
   assert.equal(intake.html.includes('data-request-json="{&quot;selected_option_ids&quot;:[]}"'), true);
   assert.equal(intake.html.includes('data-intake-free-text-input="true"'), true);
   assert.equal(intake.html.includes('maxlength="120"'), true);
-  assert.equal(intake.html.includes("Typing stays a collapsed fallback"), true);
+  assert.equal(intake.html.includes("Or type your own answer (optional)"), true);
   assert.equal(intake.html.includes("message-list"), false);
   assert.deepEqual(intake.primaryHrefs, ["/api/sessions/10000000-0000-4000-8000-000000000901/next-question"]);
   assertNoMainWindowBoundaryLeak(intake.html);

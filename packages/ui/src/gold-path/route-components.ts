@@ -39,12 +39,14 @@ import {
   type WebReactRouteComponentAdapter
 } from "./route-react-components.js";
 import {
+  agentStepPhaseLabel,
   budgetStatusLabel,
   changeTypeLabel,
   checkStatusLabel,
   deliverableTargetLabel,
   evidenceSourceLabel,
   previewKindLabel,
+  proposalStatusLabel,
   uiCount,
   uiHumanize,
   uiT,
@@ -571,7 +573,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.startRun": "Start AI run",
     "intake.summary": "Intake summary",
     "intake.progress": "Clarification progress",
-    "intake.freeText": "Typing stays a collapsed fallback",
+    "intake.freeText": "Or type your own answer (optional)",
     "intake.createWorkItem": "Create work item",
     "intake.continue": "Continue intake",
     "intake.stateDone": "Done",
@@ -1330,8 +1332,24 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
   const optionCards = question.options
     .map((option) => {
       const description = option.description ?? option.impact ?? "";
+      // 选项药丸：推荐项显示「推荐」；否则有风险提示就显示本地化风险等级。
+      // 此前回退到 option.risk_hint(裸 low/medium 枚举)甚至 question.input_mode(字面 "confirm"),
+      // 让一无所知用户在 AI 让他二选一的卡片上读到内部 token——无提示时干脆不渲药丸。
+      const pillText = recommended.has(option.id)
+        ? goldPathT(locale, "intake.recommended")
+        : option.risk_hint
+          ? localizedEnumLabel(
+              option.risk_hint,
+              locale === "zh-CN",
+              { low: "低风险", medium: "中风险", high: "高风险" },
+              { low: "Low risk", medium: "Medium risk", high: "High risk" }
+            )
+          : "";
+      const pill = pillText
+        ? `<div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(pillText)}</span></div>`
+        : "";
       return `<button class="wh-card wh-r4-route-card" type="button" data-option-id="${escapeHtml(option.id)}" data-intake-option-id="${escapeHtml(option.id)}" data-intake-option-selected="false" data-intake-option-mode="${escapeHtml(question.input_mode)}" data-intake-option-multi="${escapeHtml(String(allowMulti))}" data-recommended="${escapeHtml(String(recommended.has(option.id)))}">
-        <div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(recommended.has(option.id) ? goldPathT(locale, "intake.recommended") : option.risk_hint ?? question.input_mode)}</span></div>
+        ${pill}
         <h3>${escapeHtml(option.label)}</h3>
         <p>${escapeHtml(description)}</p>
       </button>`;
@@ -1679,7 +1697,7 @@ function traceRows(vm: WorkItemDetailVM, locale: WorkHubLocale) {
   return vm.agent_trace_preview.slice(0, 5)
     .map((step) => `<div class="wh-r4-route-row" data-r4-workitem-trace-step="${escapeHtml(step.id)}">
       <div>
-        <strong>${escapeHtml(`${step.step_no}. ${step.phase}`)}</strong>
+        <strong>${escapeHtml(`${step.step_no}. ${agentStepPhaseLabel(locale, step.phase)}`)}</strong>
         <p>${escapeHtml(step.output_excerpt ?? step.tool_name ?? uiT(locale, "workitem.stepFallback"))}</p>
       </div>
       <span class="wh-pill">${escapeHtml(step.tool_name ?? step.created_at)}</span>
@@ -1953,7 +1971,7 @@ function renderProposalRouteComponent(
           <h1>${escapeHtml(vm.title)}</h1>
           <p>${escapeHtml(summary)}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(vm.status)}</span>
+        <span class="wh-r4-route-count" data-r4-proposal-status="${escapeHtml(vm.status)}">${escapeHtml(proposalStatusLabel(locale, vm.status))}</span>
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-proposal-summary="true">
@@ -2899,7 +2917,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         <strong>${escapeHtml(risk.label)}</strong>
         <p>${escapeHtml(`${routeT(locale, "cost.remaining")}: ${costAmount(risk.remaining_cost_cny)}`)}</p>
       </div>
-      <span class="wh-pill">${escapeHtml(risk.status)}</span>
+      <span class="wh-pill">${escapeHtml(budgetStatusLabel(locale, risk.status))}</span>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.statusFallback"))}</p>`;
   const zhNotice = locale === "zh-CN";

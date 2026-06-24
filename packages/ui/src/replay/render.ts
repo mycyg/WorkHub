@@ -258,11 +258,13 @@ function renderMergeTimeline(vm: ReplayTraceVM, locale: WorkHubLocale) {
           const chosen = decision.chosen_option_key
             ? mergeOptionLabel(locale, decision.chosen_option_key)
             : copy(locale, "未选择", "Not chosen");
-          return `<div class="wh-list" data-replay-merge-decision="${escapeHtml(decision.id)}"><div class="wh-row"><div><strong>${escapeHtml(decision.conflict_key)}</strong><p class="wh-subtle">${escapeHtml(chosen)}</p></div></div>${candidates}</div>`;
+          return `<div class="wh-list" data-replay-merge-decision="${escapeHtml(decision.id)}"><div class="wh-row"><div><strong>${escapeHtml(`${copy(locale, "冲突位置", "Conflict at")}: ${decision.conflict_key}`)}</strong><p class="wh-subtle">${escapeHtml(chosen)}</p></div></div>${candidates}</div>`;
         }).join("")
         : `<p class="wh-subtle">${escapeHtml(copy(locale, "未选择", "Not chosen"))}</p>`;
       const targetSummary = attempt.target_keys.length > 0 ? attempt.target_keys.join(", ") : attempt.id;
-      return `<article class="wh-card" data-replay-merge-attempt="${escapeHtml(attempt.id)}" data-replay-merge-result="${escapeHtml(attempt.result)}"><strong>${escapeHtml(mergeAttemptLabel(locale, attempt.result))}</strong><p class="wh-subtle">${escapeHtml(targetSummary)}</p><div class="wh-actions"><span class="wh-pill">${escapeHtml(String(attempt.conflict_count))}</span><span class="wh-pill">${escapeHtml(attempt.created_at)}</span></div>${renderBulkActionAudit(attempt, locale)}${renderTextHunkDecisionAudit(attempt, locale)}${decisions}</article>`;
+      const conflictPill = copy(locale, `${attempt.conflict_count} 处冲突`, `${attempt.conflict_count} ${attempt.conflict_count === 1 ? "conflict" : "conflicts"}`);
+      const createdAtPill = attempt.created_at.slice(0, 16).replace("T", " ");
+      return `<article class="wh-card" data-replay-merge-attempt="${escapeHtml(attempt.id)}" data-replay-merge-result="${escapeHtml(attempt.result)}"><strong>${escapeHtml(mergeAttemptLabel(locale, attempt.result))}</strong><p class="wh-subtle">${escapeHtml(targetSummary)}</p><div class="wh-actions"><span class="wh-pill" data-replay-merge-conflict-count="${escapeHtml(String(attempt.conflict_count))}">${escapeHtml(conflictPill)}</span><span class="wh-pill">${escapeHtml(createdAtPill)}</span></div>${renderBulkActionAudit(attempt, locale)}${renderTextHunkDecisionAudit(attempt, locale)}${decisions}</article>`;
     })
     .join("");
 }

@@ -275,6 +275,15 @@ const budgetStatusLabels: Record<string, Copy> = {
   exhausted: { "zh-CN": "已用尽", "en-US": "Exhausted" }
 };
 
+// 提议状态：看改动页头此前把 opened/reviewed/merged/rejected 英文 token 直接渲染成徽章，
+// 即便中文用户也读到裸枚举（同页其它徽章如工作项/回放都已人话化）。
+const proposalStatusLabels: Record<string, Copy> = {
+  opened: { "zh-CN": "待你审阅", "en-US": "Open for review" },
+  reviewed: { "zh-CN": "已审阅", "en-US": "Reviewed" },
+  merged: { "zh-CN": "已合并", "en-US": "Merged" },
+  rejected: { "zh-CN": "已退回", "en-US": "Changes requested" }
+};
+
 const changeTypeLabels: Record<string, Copy> = {
   created: { "zh-CN": "新建", "en-US": "Created" },
   updated: { "zh-CN": "更新", "en-US": "Updated" },
@@ -349,6 +358,10 @@ export function checkStatusLabel(locale: WorkHubLocale, status: string) {
 
 export function budgetStatusLabel(locale: WorkHubLocale, status: string) {
   return labelFromMap(locale, status, budgetStatusLabels);
+}
+
+export function proposalStatusLabel(locale: WorkHubLocale, status: string) {
+  return labelFromMap(locale, status, proposalStatusLabels);
 }
 
 export function previewKindLabel(locale: WorkHubLocale, kind: string) {
