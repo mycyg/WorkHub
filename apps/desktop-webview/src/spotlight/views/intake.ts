@@ -204,7 +204,14 @@ export function createIntakeView(): SpotlightCapabilityView {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
         if (target.closest("[data-start]")) {
-          void startSession(body.querySelector<HTMLTextAreaElement>("[data-intent]")?.value ?? "");
+          // L18：空意图不要静默开一个无主题的会话。先要一句话说清要做什么（与 submit() 的兜底同口径）。
+          const intent = body.querySelector<HTMLTextAreaElement>("[data-intent]")?.value ?? "";
+          if (!intent.trim()) {
+            ctx.toast(zh ? "先用一句话说说要做什么" : "Tell me what to do in a sentence", "info");
+            body.querySelector<HTMLTextAreaElement>("[data-intent]")?.focus();
+            return;
+          }
+          void startSession(intent);
           return;
         }
         if (target.closest("[data-restart]")) {
