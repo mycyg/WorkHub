@@ -66,9 +66,10 @@ export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean): s
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "版本" : "Versions"}</span><span class="wh-spot-metric-v">${s.version_count}</span></div>
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "AI 交付" : "Deliverables"}</span><span class="wh-spot-metric-v">${s.accepted_deliverable_count}</span></div>
   </div>`;
-  // 上传与 web 端一致用样例负载(网盘上传 UX 真实文件选择是后续 L 工作);仅有 upload_file 能力时出现。
+  // L15：和 web L10 一致——这颗按钮目前写入的是固定示例文件(真实文件选择器是后续原生 Tauri 对话框工作),
+  // 因此诚实标注「插入示例文件」,别让用户以为是真实上传后凭空在核心网盘里多出一份样例。仅有 upload_file 能力时出现。
   const uploadBtn = vm.actions.upload_file
-    ? `<div class="wh-spot-card-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-drive-upload>${zh ? "＋ 上传样例文件" : "＋ Upload sample"}</button></div>`
+    ? `<div class="wh-spot-card-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-drive-upload>${zh ? "＋ 插入示例文件" : "＋ Insert sample file"}</button></div>`
     : "";
   const list = items.length
     ? `<div class="wh-spot-list ds-stagger">${items.slice(0, 40).map((i) => itemRow(i, zh, canManage)).join("")}</div>`
@@ -176,7 +177,7 @@ export function createDriveView(): SpotlightCapabilityView {
         if (target.closest("[data-drive-upload]") && projectId && !busy) {
           busy = true;
           const btn = target.closest<HTMLElement>("[data-drive-upload]");
-          if (btn) btn.textContent = zh ? "上传中…" : "Uploading…";
+          if (btn) btn.textContent = zh ? "插入中…" : "Inserting…";
           void ctx.client
             .uploadDriveFile(
               projectId,
@@ -187,8 +188,8 @@ export function createDriveView(): SpotlightCapabilityView {
               },
               { locale: ctx.locale }
             )
-            .then(() => ctx.toast(zh ? "已上传" : "Uploaded", "ok"))
-            .catch(() => ctx.toast(zh ? "上传失败" : "Upload failed", "error"))
+            .then(() => ctx.toast(zh ? "已插入示例文件" : "Sample file inserted", "ok"))
+            .catch(() => ctx.toast(zh ? "插入失败" : "Insert failed", "error"))
             .finally(() => {
               busy = false;
               void loadDrive();
