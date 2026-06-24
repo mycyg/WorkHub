@@ -95,7 +95,7 @@ export type WebRouteSurface =
   | { key: "health"; health: ProjectHealthPageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
-  | { key: "knowledge"; evidence: EvidenceBubble; source_ref?: string | undefined }
+  | { key: "knowledge"; evidence: EvidenceBubble; source_ref?: string | undefined; scope_landing?: boolean | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
   | { key: "settings"; settings: SettingsPageVM };
 
@@ -843,7 +843,7 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
     return renderWebRouteComponent({ key: "cost", cost: surface.cost }, { locale });
   }
   if (surface.key === "knowledge") {
-    return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence, sourceRef: surface.source_ref }, { locale });
+    return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence, sourceRef: surface.source_ref, scopeLanding: surface.scope_landing }, { locale });
   }
   if (surface.key === "skills") {
     return renderWebRouteComponent({ key: "skills", skills: surface.skills }, { locale });
@@ -980,7 +980,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       // 无锚点的全局检索对非管理员 403:不塌成裸 403 死胡同,改在外壳内渲染知识库落地页。
       // 带锚点(项目/工作项)的 403 是真实的越权,照常冒泡为 forbidden 态。
       if (error instanceof WorkHubApiError && error.status === 403 && !hasScope) {
-        return { key: "knowledge", evidence: knowledgeScopeLandingBubble(q, locale) } satisfies WebRouteSurface;
+        return { key: "knowledge", evidence: knowledgeScopeLandingBubble(q, locale), scope_landing: true } satisfies WebRouteSurface;
       }
       throw error;
     }

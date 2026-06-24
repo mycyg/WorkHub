@@ -203,6 +203,7 @@ type RouteCopyKey =
   | "knowledge.searchPlaceholder"
   | "knowledge.searchLabel"
   | "knowledge.searchSubmit"
+  | "knowledge.scopeLandingCta"
   | "proposal.summary"
   | "proposal.review"
   | "proposal.rollback"
@@ -396,6 +397,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "knowledge.searchPlaceholder": "搜索证据、文档、会议纪要…",
     "knowledge.searchLabel": "搜索知识库证据",
     "knowledge.searchSubmit": "搜索",
+    "knowledge.scopeLandingCta": "去项目列表",
     "proposal.summary": "AI 摘要",
     "proposal.review": "审阅动作",
     "proposal.rollback": "回滚路径",
@@ -591,6 +593,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "knowledge.searchPlaceholder": "Search evidence, docs, meeting notes…",
     "knowledge.searchLabel": "Search knowledge evidence",
     "knowledge.searchSubmit": "Search",
+    "knowledge.scopeLandingCta": "Go to projects",
     "proposal.summary": "AI summary",
     "proposal.review": "Review actions",
     "proposal.rollback": "Rollback path",
@@ -2974,8 +2977,16 @@ function renderKnowledgeAction(action: EvidenceBubble["actions"][number], vm: Ev
   return `<a class="wh-btn${action.id === "use_for_current_task" ? " wh-btn-primary" : ""}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}"${action.method ? ` data-method="${escapeHtml(action.method)}"` : ""}${payload ? ` data-request-json="${jsonAttr(payload)}"` : ""}>${escapeHtml(action.label)}</a>`;
 }
 
-function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale, sourceRef?: string): WebRouteComponent {
+function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale, sourceRef?: string, scopeLanding?: boolean): WebRouteComponent {
   const refs = vm.evidence_refs;
+  // L34：非管理员、无项目/工作项范围时落到这张「检索需先锚定范围」的引导页。此时再摆一个全局搜索框只会
+  // 让用户输入后再次 403 撞回同一页(死循环)。改为只给一条与引导文案一致的出路——去项目列表。
+  const searchBlock = scopeLanding
+    ? `<div class="wh-r4-route-actions" data-r4-knowledge-scope-landing="true"><a class="wh-btn wh-btn-primary" href="/projects" data-r4-knowledge-scope-cta="true">${escapeHtml(routeT(locale, "knowledge.scopeLandingCta"))}</a></div>`
+    : `<form class="wh-r4-knowledge-search" method="get" action="/knowledge/search" role="search" data-r4-knowledge-search-form="true">
+        <input type="search" name="q" value="${escapeHtml(vm.query_text ?? "")}" placeholder="${escapeHtml(routeT(locale, "knowledge.searchPlaceholder"))}" aria-label="${escapeHtml(routeT(locale, "knowledge.searchLabel"))}" autocomplete="off" />
+        <button class="wh-btn wh-btn-primary" type="submit">${escapeHtml(routeT(locale, "knowledge.searchSubmit"))}</button>
+      </form>`;
   const sourceRows = refs.length
     ? refs.slice(0, 6).map((ref) => `<div class="wh-r4-route-row" data-r4-knowledge-evidence-ref="${escapeHtml(ref.id)}" data-r4-knowledge-source-type="${escapeHtml(ref.source_type)}">
       <div>
@@ -3003,10 +3014,7 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(refs.length))}</span>
       </header>
-      <form class="wh-r4-knowledge-search" method="get" action="/knowledge/search" role="search" data-r4-knowledge-search-form="true">
-        <input type="search" name="q" value="${escapeHtml(vm.query_text ?? "")}" placeholder="${escapeHtml(routeT(locale, "knowledge.searchPlaceholder"))}" aria-label="${escapeHtml(routeT(locale, "knowledge.searchLabel"))}" autocomplete="off" />
-        <button class="wh-btn wh-btn-primary" type="submit">${escapeHtml(routeT(locale, "knowledge.searchSubmit"))}</button>
-      </form>
+      ${searchBlock}
       ${sourceRef ? `<p class="wh-subtle" data-r5-7-knowledge-source-ref="${escapeHtml(sourceRef)}">${escapeHtml(routeT(locale, "knowledge.fromNotice"))}: ${escapeHtml(sourceRef)}</p>` : ""}
       <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-knowledge-fallback="true">
         <h3>${escapeHtml(routeT(locale, "knowledge.sources"))}</h3>
@@ -3109,7 +3117,7 @@ export type WebRouteComponentInput =
   | { key: "health"; health: ProjectHealthPageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
-  | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined }
+  | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined; scopeLanding?: boolean | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
   | { key: "settings"; settings: SettingsPageVM };
 
@@ -3151,7 +3159,7 @@ export function renderWebRouteComponent(
     case "cost":
       return renderCostRouteComponent(input.cost, locale);
     case "knowledge":
-      return renderKnowledgeRouteComponent(input.evidence, locale, input.sourceRef);
+      return renderKnowledgeRouteComponent(input.evidence, locale, input.sourceRef, input.scopeLanding);
     case "skills":
       return renderTeamSkillsRouteComponent(input.skills, locale);
     case "settings":

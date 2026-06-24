@@ -1003,8 +1003,9 @@ test("F15 knowledge route renders an in-shell scope landing (not a bare 403) whe
   assert.equal(result.html.includes('data-r4-web-route-status="forbidden"'), false);
   assert.equal(result.html.includes("wh-web-route-state-screen"), false);
   assert.equal(result.html.includes("锚定具体项目或工作项"), true);
-  // 仍渲染搜索框,供有权限/有范围时直接检索。
-  assert.equal(result.html.includes('data-r4-knowledge-search-form="true"'), true);
+  // L34：非管理员落地页不再摆会再次 403 撞回本页的全局搜索框（死循环），改为与指引文案一致的出路——去项目列表。
+  assert.equal(result.html.includes('data-r4-knowledge-search-form="true"'), false);
+  assert.equal(result.html.includes('data-r4-knowledge-scope-cta="true"'), true);
 });
 
 test("F15 knowledge route keeps a scoped 403 as a genuine forbidden state (anchored = real denial)", async () => {
