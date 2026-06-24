@@ -1561,7 +1561,9 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
   }
   const primary = vm.items[0];
   const pendingCount = vm.counts["pending"] ?? vm.items.length;
-  const selectedRequest = primary ? vm.requests.find((req) => req.id === primary.id) : undefined;
+  // E4：删掉右栏那张独立「截止时间」卡——它绑定到 primary(首项)且服务端烘焙,客户端切换审批项时
+  // 只换了详情面板与按钮 href,这张卡不更新 → 选了 B 仍显 A 的 SLA(和正确的每行 SLA 药丸打架)。
+  // SLA 已在左栏每行药丸(选中行高亮)+ 详情时间线每步 SLA 里如实显示,这张卡纯冗余,移除即消除陈旧。
   // 左栏：待审批列表（紧凑可点选行 + 每行 SLA，primary 默认高亮）。操作按钮统一放右栏，避免重复 data-action-id。
   const queueRows = vm.items
     .map((item) => {
@@ -1626,10 +1628,6 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
           <section class="wh-card wh-r4-route-card">
             <h3>${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>
             <p>${escapeHtml(goldPathT(locale, "approvals.ruleText"))}</p>
-          </section>
-          <section class="wh-card wh-r4-route-card">
-            <h3>${escapeHtml(goldPathT(locale, "approvals.slaTitle"))}</h3>
-            <p>${escapeHtml(selectedRequest?.sla_due_at ? formatApprovalTimestamp(selectedRequest.sla_due_at) : goldPathT(locale, "approvals.slaEmpty"))}</p>
           </section>
           <section class="wh-card wh-r4-route-card">
             <h3>${escapeHtml(goldPathT(locale, "approvals.factsTitle"))}</h3>
@@ -2852,9 +2850,12 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
   const openCountLabel = totalOpen > viewableOpen
     ? `${routeT(locale, "projects.openItems")} ${totalOpen} · ${zh ? "你可处理" : "you can handle"} ${viewableOpen}`
     : `${routeT(locale, "projects.openItems")} ${totalOpen}`;
-  const hiddenCount = vm.summary.open_work_item_count - vm.open_work_items.length;
+  // 隐藏量要对全量口径算:此前用 open_work_item_count(可见数)减可见清单长度,两者同源恒等 → hiddenCount 永远 0,
+  // 这条提示从不出现。当页头显示「进行中 16 · 你可处理 3」时,用户只看到 3 行却不知另外 13 条去哪了。
+  // 改用 totalOpen 算差额,并诚实说明原因(无权限查看他人私有态事项)。
+  const hiddenCount = totalOpen - vm.open_work_items.length;
   const moreNote = hiddenCount > 0
-    ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(zh ? `还有 ${hiddenCount} 条进行中工作未显示。` : `+${hiddenCount} more open items not shown.`)}</p>`
+    ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(zh ? `还有 ${hiddenCount} 条进行中工作你暂无权限查看。` : `+${hiddenCount} more open items you cannot view.`)}</p>`
     : "";
   const fileCountLabel = `${routeT(locale, "projectHome.files")} ${vm.drive.file_count}`;
   // L4：文件标题用的是总文件数(file_count)，列表只显示最近若干条；以前没有「还有 N 个未显示」的提示，

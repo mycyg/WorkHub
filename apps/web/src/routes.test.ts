@@ -1042,6 +1042,10 @@ test("F15 knowledge route keeps a scoped 403 as a genuine forbidden state (ancho
 
   assert.equal(result.status, "forbidden");
   assert.equal(result.html.includes('data-r4-web-route-status="forbidden"'), true);
+  // xreview E1：forbidden 的 CTA 不能再回退到刚 403 的同一个 URL(死循环);要导向用户能访问的地方。
+  assert.equal(result.html.includes('href="/knowledge/search'), false);
+  assert.equal(result.html.includes('class="wh-route-state-action" href="/"'), true);
+  assert.equal(result.html.includes("去我能访问的地方"), true);
 });
 
 test("M19 knowledge route: a source_ref-only 403 (notification evidence link) lands in-shell, not a bare 403", async () => {
@@ -1350,6 +1354,9 @@ test("M5 project-home: 进行中 stat chip uses the全量 total (matches header 
   assert.equal(result.html.includes('data-r4-product-metric="openwork"><strong>3</strong>'), false);
   // 页头 pill 仍诚实标出「你可处理」可见数。
   assert.equal(result.html.includes("you can handle 3"), true);
+  // xreview E3：隐藏量提示按全量算(8 - 1 显示行 = 7)，且诚实说明原因；旧代码用可见数自减恒为 0，从不出现。
+  assert.equal(result.html.includes('data-r8-project-home-more="7"'), true);
+  assert.equal(result.html.includes("you cannot view"), true);
 
   // 回退：VM 没有 total 字段时，chip 退回可见数（旧契约不破）。
   const legacy = { ...projectHomeVm(projectId), summary: { open_work_item_count: 5 } };

@@ -582,7 +582,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     skillsActive: "激活技能",
     skillsRefined: "已精修",
     skillsAiAuthored: "AI 撰写",
-    acceptedDeliverables: "已采纳"
+    acceptedDeliverables: "已采纳",
+    activeProjects: "有进展"
   },
   "en-US": {
     primary: "Focus",
@@ -626,7 +627,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     skillsActive: "Active skills",
     skillsRefined: "Refined",
     skillsAiAuthored: "AI-authored",
-    acceptedDeliverables: "Accepted"
+    acceptedDeliverables: "Accepted",
+    activeProjects: "Active"
   }
 };
 
@@ -679,11 +681,13 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
   }
   if (surface.key === "projects") {
     const openItems = surface.projects.projects.reduce((sum, project) => sum + project.open_work_item_count, 0);
-    const archived = surface.projects.projects.filter((project) => project.archived).length;
+    // 「已归档」chip 此前恒为 0：listForWorkspace 硬过滤 archived=false 且没有任何归档动作会置 true，
+    // 是个结构性死指标。换成「有进展的项目数」(有进行中工作的项目)，一个真实、非零、不撞词的事实。
+    const activeProjects = surface.projects.projects.filter((project) => project.open_work_item_count > 0).length;
     return [
       metric(locale, "projects", String(surface.projects.projects.length)),
       metric(locale, "openwork", String(openItems)),
-      metric(locale, "archived", String(archived))
+      metric(locale, "activeProjects", String(activeProjects))
     ];
   }
   if (surface.key === "project-home") {
@@ -1298,10 +1302,17 @@ export async function loadWebRoute(
       throw error;
     }
     const status = errorStatus(error);
-    const recoverable = status === "empty" || status === "notFound";
-    const backLabel = recoverable ? routeStateBackLabel(match, locale) : undefined;
+    // forbidden 也是「可逃离」态:此前它的 CTA href 回退到 match.pathname——正是刚 403 的那个 URL,
+    // 点了又 403,永远在原地打转,唯一出口是顶部 logo。把它和 empty/notFound 一样导回用户能访问的列表/首页,
+    // 并给一个诚实的动作文案(默认的「申请访问」其实什么也不申请)。only error 仍留在原地给「重试」。
+    const escapable = status === "empty" || status === "notFound" || status === "forbidden";
+    const backLabel = status === "forbidden"
+      ? (routeStateBackLabel(match, locale) ?? (locale === "zh-CN" ? "去我能访问的地方" : "Go somewhere you can access"))
+      : (status === "empty" || status === "notFound")
+        ? routeStateBackLabel(match, locale)
+        : undefined;
     const stateInput = {
-      actionHref: recoverable ? routeStateBackHref(match) : match.pathname,
+      actionHref: escapable ? routeStateBackHref(match) : match.pathname,
       ...(backLabel ? { actionLabel: backLabel } : {}),
       ...(status === "error" ? { traceId: errorTrace(error) } : {}),
       ...(status === "forbidden" ? { ownerLabel: forbiddenOwnerLabel(error, locale) } : {}),
