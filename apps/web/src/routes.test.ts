@@ -1566,6 +1566,11 @@ test("F11/簇A: empty approvals stays a full page in the shell (no collapse to a
   assert.equal(result.html.includes('data-r4-route-component="approvals"'), true);
   assert.equal(result.html.includes('data-r4-product-shell="true"'), true, "product shell + nav preserved");
   assert.equal(result.html.includes('data-route-state="empty"'), false, "no bare generic empty-state card");
+  // 空态渲安心空态卡,不再渲三栏 master-detail 脚手架(详情「左边选一条」+ 右栏选择态卡 + 「未路由」),
+  // 否则对一无所知用户像在描述并不存在的选择。
+  assert.equal(result.html.includes('data-r4-approval-empty="true"'), true, "renders the tailored empty card");
+  assert.equal(result.html.includes('data-r4-approval-detail="true"'), false, "no select-a-row detail scaffolding when there are no approvals");
+  assert.equal(result.html.includes('data-r4-approval-action-panel="true"'), false, "no selection action panel when empty");
 });
 
 test("R4 web loader maps forbidden and not-found API failures to route states", async () => {

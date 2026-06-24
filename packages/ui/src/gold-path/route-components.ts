@@ -1495,6 +1495,38 @@ function renderApprovalDetailPanel(
 
 function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLocale): WebRouteComponent {
   const zh = locale === "zh-CN";
+  // 零审批时不渲三栏 master-detail——否则详情栏「左边选一条」无可选、右栏「你来拍板」重复同句、
+  // 「审批事实: 未路由」是对不存在选择的怪占位(扮一无所知用户复审发现)。改渲一张安心空态卡 + 通用规则卡,
+  // 仍是审批路由组件、仍在产品外壳内(保留左导航),不塌成通用空卡。
+  if (vm.items.length === 0) {
+    return createWebRouteComponent({
+      key: "approvals",
+      css: webRouteComponentCss,
+      primaryHrefs: [],
+      source: "page-vm",
+      locale,
+      pageVm: "approvals",
+      html: `<section class="wh-r4-route" data-r4-route-component="approvals" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-approval-pending="0" data-r4-approval-empty="true">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.kicker"))}</span>
+          <h1>${escapeHtml(goldPathT(locale, "approvals.emptyTitle"))}</h1>
+          <p>${escapeHtml(goldPathT(locale, "approvals.reasonFallback"))}</p>
+        </div>
+        <span class="wh-r4-route-count">0</span>
+      </header>
+      <div class="wh-r4-route-grid">
+        <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-approval-empty-card="true">
+          <p>${escapeHtml(zh ? "有需要你拍板的，Cuu 会第一时间端到这里；先安心忙别的吧 (=^･ω･^=)" : "When something needs your call, Cuu will bring it here first — carry on for now (=^･ω･^=)")}</p>
+        </section>
+        <section class="wh-card wh-r4-route-card">
+          <h3>${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>
+          <p>${escapeHtml(goldPathT(locale, "approvals.ruleText"))}</p>
+        </section>
+      </div>
+    </section>`
+    });
+  }
   const primary = vm.items[0];
   const pendingCount = vm.counts["pending"] ?? vm.items.length;
   const selectedRequest = primary ? vm.requests.find((req) => req.id === primary.id) : undefined;
