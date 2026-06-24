@@ -2867,7 +2867,10 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
   const fileRows = vm.drive.recent_files.length
     ? vm.drive.recent_files.map((file) => `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(file.href))}" data-r8-project-home-file="${escapeHtml(file.id)}">
       <div><strong>${escapeHtml(file.name)}</strong></div>
-      <span class="wh-pill">${escapeHtml(file.updated_at.slice(0, 10))}</span>
+      <div class="wh-r4-route-meta">
+        <span class="wh-pill">${escapeHtml(file.updated_at.slice(0, 10))}</span>
+        <span class="wh-pill">${escapeHtml(zh ? "在网盘中查看" : "View in drive")}</span>
+      </div>
     </a>`).join("")
     : `<p class="wh-subtle" data-r8-project-home-no-files="true">${escapeHtml(routeT(locale, "projectHome.noFiles"))}</p>`;
   const rows = vm.open_work_items.length
