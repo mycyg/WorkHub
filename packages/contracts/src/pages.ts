@@ -540,7 +540,11 @@ export const projectHomePageVmSchema = z.object({
     status: z.enum(["active", "archived"])
   }),
   summary: z.object({
-    open_work_item_count: z.number().int().nonnegative()
+    // open_work_item_count = 当前用户「可见且可处理」的进行中条数(与下方清单一致)。
+    open_work_item_count: z.number().int().nonnegative(),
+    // M5：项目全量进行中条数(同 /projects 列表卡口径,未按可见性过滤)。让头部能显示「进行中 N · 你可处理 M」,
+    // 与列表卡的数字对齐——否则列表卡显 8、主页显 3 会让用户以为数据出错。可选:旧 fixture 不带时回落只显可见数。
+    total_open_work_item_count: z.number().int().nonnegative().optional()
   }),
   open_work_items: z.array(projectHomeWorkItemVmSchema),
   // 网盘同步是核心：项目主页直接呈现该项目的「最近文件」(GitHub 仓库主页即文件列表的观感)。

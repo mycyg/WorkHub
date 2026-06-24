@@ -2773,7 +2773,14 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
   const descriptionLine = project.description
     ? `<p>${escapeHtml(project.description)}</p>`
     : "";
-  const openCountLabel = `${routeT(locale, "projects.openItems")} ${vm.summary.open_work_item_count}`;
+  // M5：头部进行中数对齐 /projects 列表卡的全量口径(total_open_work_item_count)。当存在因可见性隐藏的
+  // 他人私有态事项时(total > 可见数),显示「进行中 8 · 你可处理 3」,既不和列表卡的 8 打架,又诚实标出
+  // 用户实际能处理的 3。旧 fixture 不带 total 时回落为只显可见数(与原行为一致)。
+  const viewableOpen = vm.summary.open_work_item_count;
+  const totalOpen = vm.summary.total_open_work_item_count ?? viewableOpen;
+  const openCountLabel = totalOpen > viewableOpen
+    ? `${routeT(locale, "projects.openItems")} ${totalOpen} · ${zh ? "你可处理" : "you can handle"} ${viewableOpen}`
+    : `${routeT(locale, "projects.openItems")} ${totalOpen}`;
   const hiddenCount = vm.summary.open_work_item_count - vm.open_work_items.length;
   const moreNote = hiddenCount > 0
     ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(zh ? `还有 ${hiddenCount} 条进行中工作未显示。` : `+${hiddenCount} more open items not shown.`)}</p>`

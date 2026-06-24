@@ -23,7 +23,7 @@ export type ProjectHomePageService = {
 };
 
 export type ProjectHomePageServiceDependencies = {
-  repo: Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject">;
+  repo: Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject">;
   driveRepo: Pick<DriveRepository, "listRecentFilesByProject" | "countFilesByProject">;
   now?: () => Date;
 };
@@ -71,10 +71,13 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
       }
       const zh = (locale ?? "zh-CN") === "zh-CN";
       const driveHref = `/drive?project_id=${encodeURIComponent(project.id)}`;
-      const [openItems, recentFiles, fileCount] = await Promise.all([
+      const [openItems, recentFiles, fileCount, totalOpenCount] = await Promise.all([
         deps.repo.listOpenByProject(projectId, OPEN_WORK_ITEM_LIMIT),
         deps.driveRepo.listRecentFilesByProject(projectId, RECENT_FILE_LIMIT),
-        deps.driveRepo.countFilesByProject(projectId)
+        deps.driveRepo.countFilesByProject(projectId),
+        // M5：项目全量进行中条数(同 /projects 列表卡口径)。头部用它显示「进行中 N · 你可处理 M」,
+        // 让主页头数与列表卡对齐,同时仍诚实显示用户可处理的可见子集。
+        deps.repo.countOpenByProject(projectId)
       ]);
       // 列表只保留「点进去不会 403」的事项：私有态(intake/澄清/spec_ready)的他人事项对项目成员是
       // 隐藏的(canViewWorkItemRecord 收口),否则项目主页会列出一堆点开就「你没有权限查看」的死链。
@@ -115,7 +118,7 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
           status: project.archived ? "archived" : "active"
         },
         // 头部计数 = 当前用户在本项目「可见且可处理」的进行中条数(与下方清单一致)；清单封顶 OPEN_WORK_ITEM_LIMIT 条。
-        summary: { open_work_item_count: viewableItems.length },
+        summary: { open_work_item_count: viewableItems.length, total_open_work_item_count: totalOpenCount },
         drive: {
           file_count: fileCount,
           recent_files: recentFiles.map((file) => ({

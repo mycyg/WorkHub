@@ -60,9 +60,15 @@ const openItem = (over: Partial<WorkItemProjectListItemRow> = {}): WorkItemProje
 
 function repo(
   findProjectById: WorkItemDataRepository["findProjectById"],
-  listOpenByProject: WorkItemDataRepository["listOpenByProject"]
-): Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject"> {
-  return { findProjectById, listOpenByProject };
+  listOpenByProject: WorkItemDataRepository["listOpenByProject"],
+  countOpenByProject?: WorkItemDataRepository["countOpenByProject"]
+): Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject"> {
+  return {
+    findProjectById,
+    listOpenByProject,
+    // 默认:全量进行中数 = 清单全长(未过滤);M5 测试可显式传入 total>可见 的场景。
+    countOpenByProject: countOpenByProject ?? (async (projectId: string) => (await listOpenByProject(projectId, Number.MAX_SAFE_INTEGER)).length)
+  };
 }
 
 // 网盘 repo 切片假实现：缺省无文件；可传入最近文件 + 真实总数（测「超过展示上限」用）。
@@ -164,6 +170,9 @@ test("project home hides private-status work items the viewer can't open (no 403
   const ids = vm.open_work_items.map((item) => item.id);
   assert.deepEqual(ids, [WI_1, "44444444-4444-4444-8444-444444444403"], "本人私有态 + 他人非私有态保留;他人私有态过滤掉");
   assert.equal(vm.summary.open_work_item_count, 2, "头部计数与可见清单一致(不计入过滤掉的死链)");
+  // M5：同时暴露全量进行中数(同 /projects 列表卡口径) → 头部可显示「进行中 3 · 你可处理 2」,与列表卡的 3 对齐,
+  // 不再让用户以为数据出错(列表显 3、主页显 2)。
+  assert.equal(vm.summary.total_open_work_item_count, 3, "全量进行中数 = 列表卡口径(未按可见性过滤),含被隐藏的他人私有态");
 });
 
 test("project home shows nothing (empty_state) when every open item is another user's private draft", async () => {
