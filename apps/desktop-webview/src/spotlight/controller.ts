@@ -82,7 +82,8 @@ function renderLauncherGrid(
       </button>`;
     })
     .join("");
-  return `${hello}<div class="wh-spot-grid ds-stagger" id="wh-spot-listbox" role="listbox" aria-label="${zh ? "能力列表" : "Capabilities"}">${cards}</div>`;
+  // M7：错落入场只在初始/空查询的 launcher 播一次；边打字边过滤时不要每个按键都重放 stagger（读起来发抖）。
+  return `${hello}<div class="wh-spot-grid${showHello ? " ds-stagger" : ""}" id="wh-spot-listbox" role="listbox" aria-label="${zh ? "能力列表" : "Capabilities"}">${cards}</div>`;
 }
 
 export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
