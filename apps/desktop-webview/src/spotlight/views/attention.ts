@@ -234,11 +234,28 @@ export function createAttentionView(): SpotlightCapabilityView {
         return false;
       };
 
+      // M13：动作期间给被点按钮即时忙态(禁用 + 文案换「…中」),否则一/两段网络往返里按钮看着毫无反应,
+      // 用户以为没点上。成功会 refresh 重渲队列把按钮换掉,失败/无操作则在 finally 复原(对已分离节点是无害空操作)。
+      const markBusy = (btn: HTMLButtonElement | null, label: string) => {
+        if (!btn) return () => {};
+        const prevText = btn.textContent;
+        const prevDisabled = btn.disabled;
+        btn.disabled = true;
+        btn.setAttribute("aria-busy", "true");
+        btn.textContent = label;
+        return () => {
+          btn.disabled = prevDisabled;
+          btn.removeAttribute("aria-busy");
+          btn.textContent = prevText;
+        };
+      };
+
       // 统一提交入口：单飞守卫 + 失败兜底 toast + 成功回拉队列。runAction 自身不再裸 await，
       // 双击/合并冲突等失败不再被静默吞掉（rank3）。
-      const submit = async (href: string, actionId: string | undefined, reasonMd: string | undefined) => {
+      const submit = async (href: string, actionId: string | undefined, reasonMd: string | undefined, btn: HTMLButtonElement | null = null) => {
         if (busy) return;
         busy = true;
+        const restore = markBusy(btn, actionId === "deny" ? (zh ? "打回中…" : "Sending back…") : (zh ? "处理中…" : "Working…"));
         try {
           const ok = await runAction(href, actionId, reasonMd);
           if (ok && !disposed) await refresh();
@@ -248,6 +265,7 @@ export function createAttentionView(): SpotlightCapabilityView {
           }
         } finally {
           busy = false;
+          restore();
         }
       };
 
@@ -262,18 +280,18 @@ export function createAttentionView(): SpotlightCapabilityView {
           return;
         }
         // 1) 选了打回理由 → 以该理由打回（href 从理由层容器取，审批/看改动通用）。
-        const reasonBtn = target.closest<HTMLElement>("[data-att-reason]");
+        const reasonBtn = target.closest<HTMLButtonElement>("[data-att-reason]");
         if (reasonBtn) {
           const reasonsEl = reasonBtn.closest<HTMLElement>("[data-att-reasons]");
           const href = reasonsEl?.dataset.attReasonHref;
           const reason = reasonBtn.dataset.attReason;
           if (href) {
-            void submit(href, "deny", reason);
+            void submit(href, "deny", reason, reasonBtn);
           }
           return;
         }
         // 2) 卡片动作按钮。
-        const actionBtn = target.closest<HTMLElement>("[data-att-action-id]");
+        const actionBtn = target.closest<HTMLButtonElement>("[data-att-action-id]");
         if (!actionBtn) {
           return;
         }
@@ -299,7 +317,7 @@ export function createAttentionView(): SpotlightCapabilityView {
           ctx.open(nav.view, { id: nav.id, route: href });
           return;
         }
-        void submit(href, actionId, undefined);
+        void submit(href, actionId, undefined, actionBtn);
       });
 
       body.innerHTML = loadingHtml(zh);

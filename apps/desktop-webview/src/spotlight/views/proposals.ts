@@ -171,9 +171,27 @@ export function createProposalsView(): SpotlightCapabilityView {
         ctx.requestResize();
       };
 
-      const approve = async () => {
+      // M13：approve/merge/deny 都是 1–2 段网络往返。期间给被点按钮即时忙态(禁用 + 文案换「…中」),
+      // 否则用户点完「通过并合并」看按钮毫无反应、以为没点上(workitem 视图已有此模式)。成功会重渲列表/详情
+      // 把按钮换掉,故只在出错路径复原按钮。
+      const markBusy = (btn: HTMLButtonElement | null, label: string) => {
+        if (!btn) return () => {};
+        const prevText = btn.textContent;
+        const prevDisabled = btn.disabled;
+        btn.disabled = true;
+        btn.setAttribute("aria-busy", "true");
+        btn.textContent = label;
+        return () => {
+          btn.disabled = prevDisabled;
+          btn.removeAttribute("aria-busy");
+          btn.textContent = prevText;
+        };
+      };
+
+      const approve = async (btn: HTMLButtonElement | null = null) => {
         if (busy || !currentId) return;
         busy = true;
+        const restore = markBusy(btn, zh ? "合并中…" : "Merging…");
         try {
           const review = await client.reviewProposal(currentId, { decision: "approve", remember: "once" });
           const merge = await client.mergeProposal(currentId);
@@ -182,6 +200,7 @@ export function createProposalsView(): SpotlightCapabilityView {
           void showList();
         } catch {
           busy = false;
+          restore();
           ctx.toast(zh ? "合并失败（可能有冲突），稍后重试" : "Merge failed (maybe a conflict)", "error");
           // L13：approve 是 review→merge 两步。若 review 成功只是 merge 失败,提议已变 reviewed——重渲详情让它落到
           // 「仅合并」态,否则旧的「通过并合并」按钮还在、再点会对已审阅项重复 reviewProposal(自相矛盾的陈旧视图)。
@@ -190,9 +209,10 @@ export function createProposalsView(): SpotlightCapabilityView {
       };
 
       // 已审阅项的直接合并（不再走 review，只 merge）。
-      const mergeOnly = async () => {
+      const mergeOnly = async (btn: HTMLButtonElement | null = null) => {
         if (busy || !currentId) return;
         busy = true;
+        const restore = markBusy(btn, zh ? "合并中…" : "Merging…");
         try {
           const merge = await client.mergeProposal(currentId);
           ctx.toast(summaryText(merge) ?? (zh ? "已合并" : "Merged"), "ok");
@@ -200,13 +220,15 @@ export function createProposalsView(): SpotlightCapabilityView {
           void showList();
         } catch {
           busy = false;
+          restore();
           ctx.toast(zh ? "合并失败（可能有冲突），稍后重试" : "Merge failed (maybe a conflict)", "error");
         }
       };
 
-      const deny = async (reason: string) => {
+      const deny = async (reason: string, btn: HTMLButtonElement | null = null) => {
         if (busy || !currentId) return;
         busy = true;
+        const restore = markBusy(btn, zh ? "打回中…" : "Sending back…");
         try {
           const res = await client.reviewProposal(currentId, { decision: "request_changes", reason_md: reason, remember: "once" });
           ctx.toast(summaryText(res) ?? (zh ? "已打回" : "Sent back"), "ok");
@@ -214,6 +236,7 @@ export function createProposalsView(): SpotlightCapabilityView {
           void showList();
         } catch {
           busy = false;
+          restore();
           ctx.toast(zh ? "打回失败，稍后重试" : "Failed — retry", "error");
         }
       };
@@ -235,12 +258,14 @@ export function createProposalsView(): SpotlightCapabilityView {
           if (id) void showDetail(id);
           return;
         }
-        if (target.closest("[data-prop-approve]")) {
-          void approve();
+        const approveBtn = target.closest<HTMLButtonElement>("[data-prop-approve]");
+        if (approveBtn) {
+          void approve(approveBtn);
           return;
         }
-        if (target.closest("[data-prop-merge]")) {
-          void mergeOnly();
+        const mergeBtn = target.closest<HTMLButtonElement>("[data-prop-merge]");
+        if (mergeBtn) {
+          void mergeOnly(mergeBtn);
           return;
         }
         if (target.closest("[data-prop-deny]")) {
@@ -251,9 +276,9 @@ export function createProposalsView(): SpotlightCapabilityView {
           }
           return;
         }
-        const reason = target.closest<HTMLElement>("[data-prop-reason]");
+        const reason = target.closest<HTMLButtonElement>("[data-prop-reason]");
         if (reason?.dataset.propReason) {
-          void deny(reason.dataset.propReason);
+          void deny(reason.dataset.propReason, reason);
         }
       });
 
