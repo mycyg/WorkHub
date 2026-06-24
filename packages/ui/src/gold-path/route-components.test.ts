@@ -1182,8 +1182,9 @@ test("R4.11 Settings route component uses a typed Settings Page VM without leaki
   assert.equal(settings.html.includes('data-r4-settings-restore-requires-desktop="true"'), true);
   assert.equal(settings.html.includes('data-r4-settings-web-local-actions="false"'), true);
   assert.equal(settings.html.includes("deepseek-v4-flash"), true);
-  assert.equal(settings.html.includes("workhub.locale"), true);
-  assert.equal(settings.html.includes("/api/auth/preferences"), true);
+  // M23：本地存储键与内部端点是运维管道，普通用户看不懂、也无控制项——不再渲染到成员可见的设置页。
+  assert.equal(settings.html.includes("workhub.locale"), false);
+  assert.equal(settings.html.includes("/api/auth/preferences"), false);
   assert.equal(settings.html.includes("Server preference"), true);
   assert.equal(settings.html.includes("Synced"), true);
   assert.equal(settings.html.includes("Pet look is not configured in the Web main window"), true);

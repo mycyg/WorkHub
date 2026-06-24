@@ -3027,10 +3027,8 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           <h3>${escapeHtml(routeT(locale, "settings.runtime"))}</h3>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.runtimeStatus"))}</strong><span class="wh-pill">${escapeHtml(runtimeStatusLabel(props.runtimeStatus, locale))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.worker"))}</strong><span class="wh-pill">${escapeHtml(String(props.workerCount))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.broker"))}</strong><span class="wh-pill">${escapeHtml(props.brokerBackend)} · ${escapeHtml(boolLabel(props.brokerConfigured, locale))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.broker"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.brokerConfigured, locale))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.database"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.databaseConfigured, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.lease"))}</strong><span class="wh-pill">${escapeHtml(String(props.agentRunLeaseMs))}ms</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.recovery"))}</strong><span class="wh-pill">${escapeHtml(String(props.agentRunRecoveryIntervalMs))}ms</span></div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-settings-llm="true">
           <h3>${escapeHtml(routeT(locale, "settings.llm"))}</h3>
@@ -3049,8 +3047,6 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSource"))}</strong><span class="wh-pill">${escapeHtml(props.preferenceSource)}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSync"))}</strong><span class="wh-pill">${escapeHtml(syncLabel(props.preferenceSynced, locale))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.supported"))}</strong><span class="wh-pill">${escapeHtml(props.supportedLocales.join(" / "))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.storage"))}</strong><span class="wh-pill">${escapeHtml(props.storageKey)}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.updateEndpoint"))}</strong><span class="wh-pill">${escapeHtml(props.updateHref)}</span></div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-settings-device="true">
           <h3>${escapeHtml(routeT(locale, "settings.device"))}</h3>

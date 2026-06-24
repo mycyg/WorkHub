@@ -1502,7 +1502,9 @@ test("R4.15 settings route keeps locale preference and device boundary markers a
   assert.equal(result.html.includes('data-r4-settings-secret-safe="true"'), true);
   assert.equal(result.html.includes('data-r4-settings-restore-requires-desktop="true"'), true);
   assert.equal(result.html.includes('data-r4-settings-web-local-actions="false"'), true);
-  assert.equal(result.html.includes("/api/auth/preferences"), true);
+  // M23：设置页不再把内部端点 /api/auth/preferences、本地存储键、租约 ms 等运维管道暴露给普通用户。
+  assert.equal(result.html.includes("/api/auth/preferences"), false);
+  assert.equal(result.html.includes("workhub.locale"), false);
   assert.equal(/sk-[0-9A-Za-z]{20,}/u.test(result.html), false);
 });
 

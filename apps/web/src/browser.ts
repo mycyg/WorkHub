@@ -102,17 +102,13 @@ const postRunTerminalMaxWaitMs = 60000;
 const postRunClarityPollDelaysMs = [0, 1000, 2000, 3000, 4000];
 let postRunClarityMonitorToken = 0;
 
-function defaultPilotIntent(locale: WorkHubLocale) {
-  return locale === "en-US"
-    ? "Turn today's pilot feedback into blocker issues, proposal adoption notes, cost observations, and next owners."
-    : "把今天的试点反馈整理成：待解决的问题、采纳记录、成本观察，以及下一步负责人。";
-}
-
-function startIntentText(actionTarget: HTMLElement, locale: WorkHubLocale) {
+// L13：以前意图框留空点「开始派活」会被悄悄塞进一段固定的「试点反馈」任务——用户从没写过、也看不出
+// 自己的空输入被替换了，结果凭空创建了一条看不懂的澄清会话。改为返回真实输入(可能为空)，由调用方
+// fail-closed(和「新建项目」一样弹 field_value_required)，绝不替换用户没写的内容。占位符已给出示例引导。
+function startIntentText(actionTarget: HTMLElement) {
   const route = actionTarget.closest<HTMLElement>("[data-r4-route-component=\"intake\"]");
   const input = route?.querySelector<HTMLTextAreaElement>("[data-s1-day1-intent-input]");
-  const value = input?.value.trim();
-  return value && value.length > 0 ? value : defaultPilotIntent(locale);
+  return input?.value.trim() ?? "";
 }
 
 function sleep(ms: number) {
@@ -643,7 +639,12 @@ function bindGoldPathNavigation(
       if (bootstrapProjectActionFromHref(href) && actionTarget.dataset.s1Day0StartIntake === "true") {
         // S4b：从项目主页「新任务」进来时动作带 data-s4b-project-id → 直接在该项目建会话，跳过「试点项目」bootstrap。
         const existingProjectId = actionTarget.dataset.s4bProjectId;
-        const intentText = startIntentText(actionTarget, locale);
+        const intentText = startIntentText(actionTarget);
+        if (!intentText) {
+          // L13：意图为空就 fail-closed，提示用户先写要做什么，绝不替换成预设任务。
+          showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, actionId));
+          return;
+        }
         if (existingProjectId) {
           try {
             const session = await client.createSession({
