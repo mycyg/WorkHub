@@ -862,6 +862,24 @@ function isReplayEmpty(data: ReplayTraceVM) {
   return data.steps.length === 0 && !data.run.handoff_md && !data.run.outcome_reason;
 }
 
+// F15/簇A：顶部导航「知识」→ /knowledge/search 无锚点时,后端对非管理员 403(防跨项目泄露知识库)。
+// 别让 403 塌成无外壳的裸态把用户困死——合成一个「需要选范围」的知识库落地 bubble,照常在外壳内渲染
+// (保留左导航 + 搜索框 + 指引),引导用户进入具体项目/工作项检索。管理员的全局检索仍走真 API,不受影响。
+function knowledgeScopeLandingBubble(query: string | undefined, locale: WorkHubLocale): EvidenceBubble {
+  return {
+    id: "70000000-0000-4000-8000-0000000000a1",
+    ...(query ? { query_text: query } : {}),
+    summary_text: locale === "en-US"
+      ? "Knowledge search is scoped to a project or work item. Open a project from the left nav, or a work item's Evidence, to search within it."
+      : "知识库检索需要锚定具体项目或工作项。从左侧「项目」进入某个项目，或打开某个工作项的「证据」，即可在其范围内检索。",
+    evidence_refs: [],
+    missing_evidence_note: locale === "en-US"
+      ? "Pick a project or work item to see its evidence."
+      : "选择一个项目或工作项，就能看到它的证据。",
+    actions: []
+  };
+}
+
 async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, locale: WorkHubLocale) {
   if (match.notFound) {
     return "error" as const;
@@ -931,14 +949,28 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
     const workItemId = params.get("work_item_id") ?? params.get("workItemId") ?? undefined;
     const sourceRef = params.get("source_ref") ?? undefined;
-    const evidence = await client.searchKnowledge({
-      ...(q ? { q } : {}),
-      ...(projectId ? { project_id: projectId } : {}),
-      ...(workItemId ? { work_item_id: workItemId } : {}),
-      ...(sourceRef ? { source_ref: sourceRef } : {}),
-      limit: 6
-    }, withLocale(locale));
-    return { key: "knowledge", evidence, source_ref: sourceRef } satisfies WebRouteSurface;
+    const hasScope = Boolean(projectId || workItemId || sourceRef);
+    try {
+      const evidence = await client.searchKnowledge({
+        ...(q ? { q } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+        ...(workItemId ? { work_item_id: workItemId } : {}),
+        ...(sourceRef ? { source_ref: sourceRef } : {}),
+        limit: 6
+      }, withLocale(locale));
+      return { key: "knowledge", evidence, source_ref: sourceRef } satisfies WebRouteSurface;
+    } catch (error) {
+      // 会话过期要冒泡到重认证分支,别被落地态吞掉。
+      if (error instanceof WorkHubApiError && error.code === "not_identified") {
+        throw error;
+      }
+      // 无锚点的全局检索对非管理员 403:不塌成裸 403 死胡同,改在外壳内渲染知识库落地页。
+      // 带锚点(项目/工作项)的 403 是真实的越权,照常冒泡为 forbidden 态。
+      if (error instanceof WorkHubApiError && error.status === 403 && !hasScope) {
+        return { key: "knowledge", evidence: knowledgeScopeLandingBubble(q, locale) } satisfies WebRouteSurface;
+      }
+      throw error;
+    }
   }
   if (match.key === "workitem") {
     const workitem = await client.pages.workItem(match.params["id"] ?? "", withLocale(locale));

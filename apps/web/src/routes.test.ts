@@ -50,6 +50,7 @@ type RouteClientOverrides = {
   attentionError?: Error;
   approvalsError?: Error;
   costError?: Error;
+  knowledgeError?: Error;
 };
 
 function meetingVm(): MeetingPageVM {
@@ -626,6 +627,9 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
     },
     async searchKnowledge(payload: unknown, options?: { locale?: string }) {
       localeCall(`knowledge:${JSON.stringify(payload)}`, options);
+      if (overrides.knowledgeError) {
+        throw overrides.knowledgeError;
+      }
       return overrides.knowledge ?? routeEvidenceBubble();
     },
     async replayAgentRun(id: string, options?: { locale?: string }) {
@@ -979,6 +983,43 @@ test("R4.14 knowledge route loader carries search payload into a cited fallback 
   assert.equal(result.html.includes('data-r4-knowledge-evidence-count="1"'), true);
   assert.equal(result.html.includes('data-r4-knowledge-action-count="1"'), true);
   assert.equal(result.html.includes('data-action-id="use_for_current_task"'), true);
+});
+
+test("F15 knowledge route renders an in-shell scope landing (not a bare 403) when global search is forbidden", async () => {
+  const surface = goldPathSurfaceVm();
+  // 顶部导航「知识」→ /knowledge/search 无锚点:后端对非管理员 403。
+  const { client } = fakeRouteClient(surface, {
+    knowledgeError: new WorkHubApiError(403, "forbidden", "请在具体事项或项目内检索。")
+  });
+  const match = resolveWebRoute("/knowledge/search");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  // 关键:不塌成无外壳的裸 403 死胡同,而是在外壳内渲染知识库落地页(保留导航 + 搜索框 + 指引)。
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r4-product-shell="true"'), true);
+  assert.equal(result.html.includes('data-r4-route-component="knowledge"'), true);
+  assert.equal(result.html.includes('data-r4-web-route-status="forbidden"'), false);
+  assert.equal(result.html.includes("wh-web-route-state-screen"), false);
+  assert.equal(result.html.includes("锚定具体项目或工作项"), true);
+  // 仍渲染搜索框,供有权限/有范围时直接检索。
+  assert.equal(result.html.includes('data-r4-knowledge-search-form="true"'), true);
+});
+
+test("F15 knowledge route keeps a scoped 403 as a genuine forbidden state (anchored = real denial)", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface, {
+    knowledgeError: new WorkHubApiError(403, "forbidden", "你没有权限检索这个项目的资料。")
+  });
+  // 带项目锚点的 403 = 真实越权,照常冒泡为 forbidden 裸态(不被落地页吞掉)。
+  const match = resolveWebRoute("/knowledge/search?project_id=10000000-0000-4000-8000-000000000932");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "forbidden");
+  assert.equal(result.html.includes('data-r4-web-route-status="forbidden"'), true);
 });
 
 test("R4.13 proposal route loader carries conflict API data into advanced route UX", async () => {
