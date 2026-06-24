@@ -79,7 +79,9 @@ test("gold path renderer localizes static page chrome while keeping VM content i
 
   assert.equal(home?.html.includes("Needs your decision"), true);
   // L1: home entry copy no longer promises an expandable board/kanban that doesn't exist.
-  assert.equal(home?.html.includes("The main path is this one thing"), true);
+  // xreview C: the entry card lists the REST of the queue, so its title/empty copy say so
+  // (was the misleading singular "this one thing right now").
+  assert.equal(home?.html.includes("More in your queue") || home?.html.includes("Nothing else queued"), true);
   assert.equal(home?.html.includes("The board is fallback only"), false);
   assert.equal(home?.html.includes("Cuu ·"), false);
   assert.equal(home?.html.includes("./assets/cuu/"), false);
