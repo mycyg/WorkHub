@@ -2143,7 +2143,7 @@ function renderDriveRouteComponent(
     ? vm.versions.slice(0, 8).map((version) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-version="${escapeHtml(version.id)}" data-r4-drive-version-current="${escapeHtml(String(version.current))}">
       <div>
         <strong>${escapeHtml(`${version.filename} · v${version.version_no}`)}</strong>
-        <p>${escapeHtml(`${formatBytes(version.size_bytes, locale)} · ${version.created_at}`)}</p>
+        <p>${escapeHtml(`${formatBytes(version.size_bytes, locale)} · ${version.created_at.slice(0, 10)}`)}</p>
       </div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(driveVersionSourceLabel(version.source, locale === "zh-CN"))}</span>
@@ -2184,7 +2184,7 @@ function renderDriveRouteComponent(
       </div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(driveItemKindLabel(item.kind, locale === "zh-CN"))}</span>
-        ${item.deleted_at ? `<span class="wh-pill">${escapeHtml(item.deleted_at)}</span>` : ""}
+        ${item.deleted_at ? `<span class="wh-pill">${escapeHtml(item.deleted_at.slice(0, 10))}</span>` : ""}
       </div>
     </div>`).join("")
     : `<p class="wh-subtle">0</p>`;
@@ -2192,7 +2192,7 @@ function renderDriveRouteComponent(
     ? vm.operations.slice(0, 6).map((operation) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-drive-operation="${escapeHtml(operation.id)}" data-r5-drive-operation-type="${escapeHtml(operation.op_type)}">
       <div>
         <strong>${escapeHtml(operation.summary_text)}</strong>
-        <p>${escapeHtml(operation.created_at)}</p>
+        <p>${escapeHtml(operation.created_at.slice(0, 10))}</p>
       </div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(driveOpTypeLabel(operation.op_type, locale === "zh-CN"))}</span>
@@ -2286,7 +2286,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): 
     ? vm.meetings.slice(0, 10).map((meeting) => `<a class="wh-r4-route-row" href="/meetings?project_id=${escapeHtml(meeting.project_id)}&m=${escapeHtml(meeting.id)}" data-r5-meeting-id="${escapeHtml(meeting.id)}" data-r5-meeting-status="${escapeHtml(meeting.status)}" data-r5-meeting-selected="${escapeHtml(String(meeting.id === selectedMeeting?.id))}">
       <div>
         <strong>${escapeHtml(meeting.title)}</strong>
-        <p>${escapeHtml(`${meeting.created_at} · ${meeting.uploaded_by_label}`)}</p>
+        <p>${escapeHtml(`${formatApprovalTimestamp(meeting.created_at)} · ${meeting.uploaded_by_label}`)}</p>
       </div>
       <span class="wh-pill">${escapeHtml(meetingRecordStatusLabel(meeting.status, locale))}</span>
     </a>`).join("")
@@ -2456,7 +2456,7 @@ function renderNotificationBucket(
         ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
         <p>${escapeHtml(routeT(locale, "notifications.source"))}: ${escapeHtml(sourceContextLabel(item.source_context, locale))}</p>
         ${renderNotificationGrounding(item, locale)}
-        <p>${escapeHtml(item.created_at)}</p>
+        <p>${escapeHtml(formatApprovalTimestamp(item.created_at))}</p>
       </div>
       ${notificationActionLinks(item, locale)}
     </div>`).join("")
@@ -2674,7 +2674,7 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "calendar.kicker"))}</span>
           <h1>${escapeHtml(routeT(locale, "calendar.kicker"))}</h1>
-          <p>${escapeHtml(`${routeT(locale, "calendar.week")} · ${vm.scope.range_start} - ${vm.scope.range_end}`)}</p>
+          <p>${escapeHtml(`${routeT(locale, "calendar.week")} · ${vm.scope.range_start.slice(0, 10)} - ${vm.scope.range_end.slice(0, 10)}`)}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.block_count))}</span>
       </header>
