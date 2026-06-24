@@ -123,6 +123,16 @@ export const webRouteComponentCss = [
   ".wh-r4-route-row p{color:var(--wh-product-muted,#66728c);line-height:1.45}",
   ".wh-r4-route-row-title{color:var(--wh-product-accent,#2f6df0);text-decoration:none}",
   ".wh-r4-route-row-title:hover,.wh-r4-route-row-title:focus-visible{text-decoration:underline}",
+  // L6：项目主页「最近文件」深链到网盘并高亮该文件,但选中行以前和普通行长得一模一样(没有任何 CSS)。
+  // 仿审批选中行给一道左内边线 + 浅底,让被深链点中的文件真的看得出来。
+  ".wh-r4-route-row[data-r4-drive-item-selected=\"true\"]{border-radius:8px;box-shadow:inset 3px 0 0 var(--wh-product-blue,#4F46E5);background:var(--wh-product-blue-tint,#F5F5FE)}",
+  // L7：网盘标题写着「File tree」,但行从不按层级缩进(depth 数据有、CSS 没有),折叠不出树形。按 depth 缩进,让嵌套可见。
+  ".wh-r4-route-row[data-r4-drive-item-depth=\"1\"]{padding-left:18px}",
+  ".wh-r4-route-row[data-r4-drive-item-depth=\"2\"]{padding-left:36px}",
+  ".wh-r4-route-row[data-r4-drive-item-depth=\"3\"]{padding-left:54px}",
+  ".wh-r4-route-row[data-r4-drive-item-depth=\"4\"]{padding-left:72px}",
+  ".wh-r4-route-row[data-r4-drive-item-depth=\"5\"]{padding-left:90px}",
+  ".wh-r4-route-row[data-r4-drive-item-depth=\"6\"]{padding-left:108px}",
   ".wh-r4-route-card{display:grid;gap:10px;min-width:0;max-width:100%;overflow:hidden}",
   ".wh-r4-route-card h3{margin:0;font-size:16px;line-height:1.35;overflow-wrap:anywhere}",
   ".wh-r4-route-card p{margin:0;color:var(--wh-product-muted,#66728c);line-height:1.5;overflow-wrap:anywhere}",
@@ -400,7 +410,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.recycle": "回收站",
     "drive.operations": "操作日志",
     "drive.empty": "这个项目还没有正式交付物。",
-    "drive.upload": "上传样例",
+    "drive.upload": "插入示例文件",
     "drive.delete": "移到回收站",
     "drive.preview": "预览",
     "drive.download": "下载",
@@ -595,7 +605,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.recycle": "Recycle",
     "drive.operations": "Operation log",
     "drive.empty": "This project does not have accepted deliverables yet.",
-    "drive.upload": "Upload sample",
+    "drive.upload": "Insert sample file",
     "drive.delete": "Move to recycle",
     "drive.preview": "Preview",
     "drive.download": "Download",
@@ -2057,6 +2067,11 @@ function renderDriveRouteComponent(
       </div>`;
     }).join("")
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.empty"))}</p>`;
+  // L9：masthead 的「文件 N」与大号标题数字用的是 file_count(不含文件夹),但文件列表渲染的是 items(文件夹+文件),
+  // 数字和可见行数对不上。在列表标题上挑明「文件夹 N · 文件 M」,让标题数字与列表内容自洽。
+  const driveFolderCount = vm.items.filter((item) => item.kind === "folder").length;
+  const driveListedFileCount = vm.items.length - driveFolderCount;
+  const driveFilesHeading = `${routeT(locale, "drive.files")} · ${locale === "zh-CN" ? `文件夹 ${driveFolderCount} · 文件 ${driveListedFileCount}` : `${driveFolderCount} folders · ${driveListedFileCount} files`}`;
   const versionRows = vm.versions.length
     ? vm.versions.slice(0, 8).map((version) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-version="${escapeHtml(version.id)}" data-r4-drive-version-current="${escapeHtml(String(version.current))}">
       <div>
@@ -2151,8 +2166,8 @@ function renderDriveRouteComponent(
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.file_count))}</span>
       </header>
       <div class="wh-r4-route-grid">
-        <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-drive-files="true">
-          <h3>${escapeHtml(routeT(locale, "drive.files"))}</h3>
+        <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-drive-files="true" data-r4-drive-folder-count="${escapeHtml(String(driveFolderCount))}" data-r4-drive-listed-file-count="${escapeHtml(String(driveListedFileCount))}">
+          <h3>${escapeHtml(driveFilesHeading)}</h3>
           <div class="wh-r4-route-timeline">${fileRows}</div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-drive-versions="true">
