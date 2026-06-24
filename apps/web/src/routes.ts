@@ -41,7 +41,7 @@ import {
   type RouteStateKind
 } from "@workhub/ui";
 
-export type WebRouteLoadStatus = "idle" | "loading" | "ready" | "empty" | "error" | "forbidden";
+export type WebRouteLoadStatus = "idle" | "loading" | "ready" | "empty" | "error" | "forbidden" | "notFound";
 
 export type WebRouteMatch = {
   key: R4WebRouteKey;
@@ -358,7 +358,8 @@ const webRouteStateScreenCss = [
   ".wh-web-route-state-screen,.wh-web-route-state-screen *{box-sizing:border-box}",
   ".wh-web-route-state-wrap{width:min(560px,100%);display:grid;gap:12px;min-width:0}",
   ".wh-web-route-state-meta{display:flex;gap:8px;align-items:center;justify-content:space-between;min-width:0;flex-wrap:wrap;color:#66728c;font-size:12px;font-weight:800}",
-  ".wh-web-route-state-meta span{min-width:0;overflow-wrap:anywhere}"
+  ".wh-web-route-state-meta span{min-width:0;overflow-wrap:anywhere}",
+  ".wh-web-route-state-home{color:#4f46e5;text-decoration:none;font-weight:850}.wh-web-route-state-home:hover{text-decoration:underline}"
 ].join("");
 
 function escapeHtml(value: unknown) {
@@ -886,7 +887,9 @@ function knowledgeScopeLandingBubble(query: string | undefined, locale: WorkHubL
 
 async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, locale: WorkHubLocale) {
   if (match.notFound) {
-    return "error" as const;
+    // 未匹配的 URL(打错/失效链接)= 找不到,不是服务器出错。给「没有找到这个页面」+ 回首页,
+    // 而不是「页面加载失败 / 重试」(Retry 会反复重撞同一条死链)。
+    return "notFound" as const;
   }
   if (match.key === "home") {
     // 首页是落地页,永不塌成通用空卡：即便没有待决策事项,也渲染决策收件箱组件本身
@@ -1075,7 +1078,9 @@ function errorStatus(error: unknown): Exclude<WebRouteLoadStatus, "idle" | "load
     return "forbidden";
   }
   if (error instanceof WorkHubApiError && error.status === 404) {
-    return "empty";
+    // 404 = 这条具体内容不存在/已删,不是「暂时没有内容」的空态。给「没有找到」态(可回来源列表),
+    // 而不是误导性的「现在没有需要处理的事项」。
+    return "notFound";
   }
   return "error";
 }
@@ -1123,7 +1128,7 @@ export function renderWebRouteState(
   const html = `<style>${routeStateCss}${webRouteStateScreenCss}</style>
     <main class="wh-web-route-state-screen" data-r4-web-route-status="${escapeHtml(status)}" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}">
       <section class="wh-web-route-state-wrap">
-        <div class="wh-web-route-state-meta"><span>WorkHub Web</span><span>${escapeHtml(apiLabelFor(match))}</span></div>
+        <div class="wh-web-route-state-meta" data-r4-web-route-api="${escapeHtml(apiLabelFor(match))}"><a class="wh-web-route-state-home" href="/" data-r4-web-route-home="true">WorkHub</a></div>
         ${renderRouteStateCard({
     routeKey: match.key,
     state: routeState,
@@ -1180,8 +1185,9 @@ export async function loadWebRoute(
 ): Promise<WebRouteLoadResult> {
   try {
     const result = await loadRouteSurface(client, match, locale);
-    if (result === "empty" || result === "error") {
-      const backLabel = routeStateBackLabel(match, locale);
+    if (result === "empty" || result === "error" || result === "notFound") {
+      // empty / notFound 都是可恢复态:动作回到来源列表(详情页→列表)或首页;error 才给「重试」。
+      const backLabel = result === "error" ? undefined : routeStateBackLabel(match, locale);
       const stateInput = result === "error"
         ? { traceId: `route=${match.pathname}`, actionHref: match.pathname }
         : { actionHref: routeStateBackHref(match), ...(backLabel ? { actionLabel: backLabel } : {}) };
@@ -1195,9 +1201,10 @@ export async function loadWebRoute(
       throw error;
     }
     const status = errorStatus(error);
-    const backLabel = status === "empty" ? routeStateBackLabel(match, locale) : undefined;
+    const recoverable = status === "empty" || status === "notFound";
+    const backLabel = recoverable ? routeStateBackLabel(match, locale) : undefined;
     const stateInput = {
-      actionHref: status === "empty" ? routeStateBackHref(match) : match.pathname,
+      actionHref: recoverable ? routeStateBackHref(match) : match.pathname,
       ...(backLabel ? { actionLabel: backLabel } : {}),
       ...(status === "error" ? { traceId: errorTrace(error) } : {}),
       ...(status === "forbidden" ? { ownerLabel: forbiddenOwnerLabel(error, locale) } : {})

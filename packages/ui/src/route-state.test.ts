@@ -38,7 +38,7 @@ test("route state copy stays serious and does not leak pet or default board lang
 
 test("route state css keeps long text within frames", () => {
   assert.match(routeStateCss, /\.wh-route-state-card\{[^}]*min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word/u);
-  assert.match(routeStateCss, /\.wh-route-state-row\{[^}]*grid-template-columns:160px repeat\(4,minmax\(0,1fr\)\)/u);
+  assert.match(routeStateCss, /\.wh-route-state-row\{[^}]*grid-template-columns:160px repeat\(5,minmax\(0,1fr\)\)/u);
   assert.match(routeStateCss, /@media \(max-width:980px\)/u);
 });
 

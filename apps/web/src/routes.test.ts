@@ -1341,8 +1341,10 @@ test("R8 S2b project-home 404 sends the user back to the projects list, not a ho
   const match = resolveWebRoute(`/projects/${projectId}`);
   assert.ok(match);
   const result = await loadWebRoute(client, match, "en-US");
-  assert.equal(result.status, "empty");
-  // the escape hatch points back to /projects (the list they came from), not "/"
+  // M6/M25: a 404 detail route is "not found" (not the misleading generic "empty/nothing needs action").
+  assert.equal(result.status, "notFound");
+  assert.equal(result.html.includes('data-route-state="notFound"'), true);
+  // the escape hatch still points back to /projects (the list they came from), not "/"
   assert.equal(result.html.includes('href="/projects"'), true);
 });
 
@@ -1526,8 +1528,9 @@ test("R4 web loader maps forbidden and not-found API failures to route states", 
   const approvalsMatch = resolveWebRoute("/approvals");
   assert.ok(approvalsMatch);
   const missingResult = await loadWebRoute(missing.client, approvalsMatch, "en-US");
-  assert.equal(missingResult.status, "empty");
-  assert.equal(missingResult.html.includes("Nothing needs action right now"), true);
+  // M6/M25: a 404 is now a distinct not-found state, not the misleading generic empty.
+  assert.equal(missingResult.status, "notFound");
+  assert.equal(missingResult.html.includes("find this page"), true);
 });
 
 test("R4 web loader keeps auth bootstrap outside route-state swallowing", async () => {
@@ -1562,13 +1565,17 @@ test("drive loader rethrows not_identified from listProjects (re-auth, not a sil
   await assert.rejects(() => loadWebRoute(client, match, "en-US"), /identify first/u);
 });
 
-test("R4 web loader renders unknown routes as explicit error states", async () => {
+test("R4 web loader renders unknown routes as recoverable not-found states", async () => {
   const surface = goldPathSurfaceVm();
   const { client, calls } = fakeRouteClient(surface);
   const result = await loadWebRoute(client, createUnknownWebRouteMatch("/missing"), "en-US");
 
-  assert.equal(result.status, "error");
+  // M27: a typo'd / dead URL is "not found" (calm, recoverable to home), not a server "error"
+  // whose only action re-hits the same dead URL.
+  assert.equal(result.status, "notFound");
   assert.equal(calls.length, 0);
-  assert.equal(result.html.includes('data-route-state="error"'), true);
-  assert.equal(result.html.includes("route=/missing"), true);
+  assert.equal(result.html.includes('data-route-state="notFound"'), true);
+  assert.equal(result.html.includes("find this page"), true);
+  // recoverable: a home escape hatch is always present (no nav-less dead-end loop).
+  assert.equal(result.html.includes('data-r4-web-route-home="true"'), true);
 });

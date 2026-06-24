@@ -1,6 +1,6 @@
 import { normalizeWorkHubLocale, type WorkHubLocale } from "./gold-path/i18n.js";
 
-export type RouteStateKind = "loading" | "empty" | "error" | "forbidden";
+export type RouteStateKind = "loading" | "empty" | "error" | "forbidden" | "notFound";
 
 export type R4WebRouteKey =
   | "home"
@@ -58,16 +58,17 @@ export const r4RouteStateKinds = [
   "loading",
   "empty",
   "error",
-  "forbidden"
+  "forbidden",
+  "notFound"
 ] as const satisfies readonly RouteStateKind[];
 
 export const routeStateCss = [
   ".wh-route-state-matrix{display:grid;gap:16px;min-width:0;max-width:100%}",
-  ".wh-route-state-row{display:grid;grid-template-columns:160px repeat(4,minmax(0,1fr));gap:12px;align-items:stretch;min-width:0}",
+  ".wh-route-state-row{display:grid;grid-template-columns:160px repeat(5,minmax(0,1fr));gap:12px;align-items:stretch;min-width:0}",
   ".wh-route-state-route{border:1px solid #dfe5f1;border-radius:8px;background:#fff;padding:14px;display:grid;align-content:center;gap:6px;min-width:0;overflow-wrap:anywhere}",
   ".wh-route-state-route strong{font-size:14px}.wh-route-state-route span{font-size:12px;color:#66728c;overflow-wrap:anywhere}",
   ".wh-route-state-card{border:1px solid #dfe5f1;background:rgba(255,255,255,.94);border-radius:8px;padding:14px;display:grid;gap:10px;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 14px 38px rgba(37,51,79,.07)}",
-  ".wh-route-state-card[data-route-state=loading]{border-color:#b8c7ff}.wh-route-state-card[data-route-state=empty]{border-color:#dfe8d7}.wh-route-state-card[data-route-state=error]{border-color:#f0c5bd}.wh-route-state-card[data-route-state=forbidden]{border-color:#d8dff2}",
+  ".wh-route-state-card[data-route-state=loading]{border-color:#b8c7ff}.wh-route-state-card[data-route-state=empty]{border-color:#dfe8d7}.wh-route-state-card[data-route-state=error]{border-color:#f0c5bd}.wh-route-state-card[data-route-state=forbidden]{border-color:#d8dff2}.wh-route-state-card[data-route-state=notFound]{border-color:#e6d8f2}",
   ".wh-route-state-pill{display:inline-flex;align-items:center;max-width:100%;border-radius:999px;background:#f5f8fc;color:#66728c;font-size:11px;font-weight:800;padding:5px 8px;overflow-wrap:anywhere}",
   ".wh-route-state-card h3{margin:0;font-size:16px;line-height:1.35;overflow-wrap:anywhere}.wh-route-state-card p{margin:0;color:#66728c;font-size:13px;line-height:1.5;overflow-wrap:anywhere}",
   ".wh-route-state-action{display:inline-flex;width:max-content;max-width:100%;align-items:center;justify-content:center;border:1px solid #dfe5f1;border-radius:8px;background:#fff;color:#172033;text-decoration:none;font-weight:800;font-size:12px;padding:8px 10px;overflow-wrap:anywhere}",
@@ -136,6 +137,11 @@ const stateCopy: Record<WorkHubLocale, Record<RouteStateKind, { title: string; b
       title: "你没有权限查看",
       body: "这部分内容需要授权，请联系有权限的人开通。",
       action: "申请访问"
+    },
+    notFound: {
+      title: "没有找到这个页面",
+      body: "链接可能已经失效，或这条内容已被删除、移动。",
+      action: "返回首页"
     }
   },
   "en-US": {
@@ -158,6 +164,11 @@ const stateCopy: Record<WorkHubLocale, Record<RouteStateKind, { title: string; b
       title: "You do not have access",
       body: "The state explains who can grant access without exposing private work.",
       action: "Request access"
+    },
+    notFound: {
+      title: "We couldn't find this page",
+      body: "The link may be broken, or this item was moved or deleted.",
+      action: "Back to home"
     }
   }
 };
@@ -184,7 +195,7 @@ export function renderRouteStateCard(input: RouteStateCardInput) {
   const locale = normalizeWorkHubLocale(input.locale);
   const route = routeInfo[locale][input.routeKey];
   const copy = stateCopy[locale][input.state];
-  const actionHref = input.actionHref ?? (input.state === "empty" ? "/" : route.route);
+  const actionHref = input.actionHref ?? (input.state === "empty" || input.state === "notFound" ? "/" : route.route);
   const meta = input.state === "error"
     ? input.traceId ?? "trace_id=r4-web-route-state"
     : input.state === "forbidden"

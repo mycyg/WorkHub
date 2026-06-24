@@ -3442,8 +3442,8 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await navigate(cdp, `${baseUrl}/workitems/r4-live-forbidden`, "forbidden");
   steps.push(await captureStep(cdp, { id: "17-forbidden-workitem-desktop", url: `${baseUrl}/workitems/r4-live-forbidden`, viewport: desktop, expectedStatus: "forbidden" }));
 
-  await navigate(cdp, `${baseUrl}/missing-r4-live-route`, "error");
-  steps.push(await captureStep(cdp, { id: "18-unknown-route-error", url: `${baseUrl}/missing-r4-live-route`, viewport: desktop, expectedStatus: "error" }));
+  await navigate(cdp, `${baseUrl}/missing-r4-live-route`, "notFound");
+  steps.push(await captureStep(cdp, { id: "18-unknown-route-notfound", url: `${baseUrl}/missing-r4-live-route`, viewport: desktop, expectedStatus: "notFound" }));
 
   await navigate(cdp, `${baseUrl}/approvals`, "ready");
   await clickSelector(cdp, "[data-wh-logout]");
@@ -3762,7 +3762,7 @@ async function main() {
       history_back_forward: steps.some((step) => step.id === "04-history-back-approvals" && step.audit.pathname === "/approvals") &&
         steps.some((step) => step.id === "05-history-forward-workitem" && step.audit.pathname === "/workitems/r4-live-workitem"),
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-route-component" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
-      ready_empty_forbidden_error_routes: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
+      ready_empty_forbidden_notfound_routes: ["ready", "empty", "forbidden", "notFound"].every((status) => steps.some((step) => step.audit.status === status)),
       ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.drive && proof.meetings && proof.notifications && proof.calendar && proof.cost && proof.skills && proof.settings && proof.replay && proof.localePatch,
       r4_14_ready_routes_use_session_knowledge_endpoints:
         proof.session &&
@@ -4187,7 +4187,7 @@ async function main() {
         steps.some((step) => step.id === "14-settings-desktop-gate-en-desktop" && step.audit.pathname === "/settings" && step.audit.search === "" && step.audit.notice.kind === "desktop_required" && step.audit.notice.actionId === "open_desktop_settings"),
       r4_12_retry_access_route_states:
         steps.some((step) => step.id === "17-forbidden-workitem-desktop" && step.audit.routeState.kind === "forbidden" && step.audit.routeState.actionText === "Request access") &&
-        steps.some((step) => step.id === "18-unknown-route-error" && step.audit.routeState.kind === "error" && step.audit.routeState.actionText === "Retry"),
+        steps.some((step) => step.id === "18-unknown-route-notfound" && step.audit.routeState.kind === "notFound" && step.audit.routeState.actionText === "Back to home"),
       r4_12_mobile_notice_no_overflow:
         steps.some((step) => step.id === "11-proposal-en-mobile-scrolled-notice-route-component" && step.audit.notice.kind === "sse_refresh" && !step.audit.horizontalOverflow && step.audit.textOverflowCount === 0),
       r4_13_proposal_advanced_route_dom:
@@ -4354,7 +4354,7 @@ async function main() {
         ),
       r4_15_route_recovery_actions:
         steps.some((step) => step.id === "17-forbidden-workitem-desktop" && step.audit.routeState.kind === "forbidden" && step.audit.routeState.actionText === "Request access") &&
-        steps.some((step) => step.id === "18-unknown-route-error" && step.audit.routeState.kind === "error" && step.audit.routeState.actionText === "Retry") &&
+        steps.some((step) => step.id === "18-unknown-route-notfound" && step.audit.routeState.kind === "notFound" && step.audit.routeState.actionText === "Back to home") &&
         steps.some((step) => step.id === "14-settings-desktop-gate-en-desktop" && step.audit.notice.kind === "desktop_required"),
       r4_15_settings_mobile_no_overflow:
         steps.some((step) =>
