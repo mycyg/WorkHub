@@ -58,7 +58,25 @@ test("S3 desktop project-home detail renders meta, work-item buttons, CTAs and b
 
 test("S3 desktop project-home shows a +more hint when the true count exceeds the shown list", () => {
   const html = projectHomeDetailHtml(vm({ summary: { open_work_item_count: 50 } }), false);
-  assert.ok(html.includes("+49 more open items not shown."), "truncation hint (50 total - 1 shown)");
+  // DF-1: honest copy — the hidden items are ones the viewer has no permission to see.
+  assert.ok(html.includes("+49 more open items you cannot view."), "truncation hint (50 total - 1 shown), honest copy");
+});
+
+test("DF-1 desktop project-home open count uses the全量 total + shows 你可处理 split (matches web M5)", () => {
+  // total(8) > viewable(3): 5 items hidden by visibility. The head must read the full total
+  // (matching the /projects list card) and disclose the viewable subset, not contradict the list.
+  const html = projectHomeDetailHtml(vm({ summary: { open_work_item_count: 3, total_open_work_item_count: 8 } }), true);
+  assert.ok(html.includes("进行中 8 · 你可处理 3"), "head uses total with viewable split");
+  assert.ok(!html.includes("进行中 3 ·"), "head does not headline the viewable count");
+  // hidden = total(8) - shown(1) = 7, honest copy
+  assert.ok(html.includes("还有 7 条进行中工作你暂无权限查看。"), "more-note computed off the total");
+});
+
+test("DF-3 desktop project-home notes when recent files are fewer than the project total", () => {
+  const html = projectHomeDetailHtml(vm({ drive: { file_count: 12, recent_files: [
+    { id: "20000000-0000-4000-8000-000000000777", name: "客户复盘.md", updated_at: "2026-06-22T00:00:00.000Z", href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
+  ] } }), false);
+  assert.ok(html.includes("+11 more files not shown — open the drive."), "files overflow note (12 total - 1 shown)");
 });
 
 test("S3 desktop project-home shows an empty state when there is no open work", () => {

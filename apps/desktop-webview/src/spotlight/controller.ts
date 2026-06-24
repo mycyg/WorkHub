@@ -201,6 +201,11 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     const target = pendingTarget;
     pendingTarget = undefined;
     box.dataset.mode = "capability";
+    // SM-1：从外部入口(托盘/系统通知/Cuu 决策卡/深链)直接 openCapability 时,盒子可能仍停在 launcher
+    // mount 设的 data-collapsed="true"（idle 细搜索条）。renderCapability 不经过 render()，永不复位它，
+    // 于是 css 的 [data-collapsed=true] .wh-spot-body{display:none} + applyResize 的 52px 钳制会把整个能力
+    // 内容(审批/工作项/diff/网盘)藏起来,只剩标题栏。能力态从不是收起态,这里显式展开(同时解 52px 钳制)。
+    box.dataset.collapsed = "false";
     const cmd = commandRegistry.find((c) => c.id === id);
     titleEl.textContent = cmd ? cmd.label[zh ? "zh-CN" : "en"] : id;
     subtitleEl.textContent = "";

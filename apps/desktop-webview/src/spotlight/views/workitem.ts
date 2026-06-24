@@ -7,7 +7,7 @@ import type { WorkItemDetailVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
-import { workItemPriorityLabel, workItemStatusLabel } from "../labels.js";
+import { agentStepPhaseLabel, workItemPriorityLabel, workItemStatusLabel } from "../labels.js";
 
 export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const w = vm.workitem;
@@ -21,7 +21,7 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const traceHtml = trace.length
     ? `<div class="wh-spot-trace">${trace
         .slice(0, 8)
-        .map((s) => `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(s.phase)}${s.tool_name ? ` · ${escapeHtml(s.tool_name)}` : ""}</div>${s.output_excerpt ? `<div class="wh-spot-trace-out">${escapeHtml(s.output_excerpt)}</div>` : ""}</div>`)
+        .map((s) => `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}${s.tool_name ? ` · ${escapeHtml(s.tool_name)}` : ""}</div>${s.output_excerpt ? `<div class="wh-spot-trace-out">${escapeHtml(s.output_excerpt)}</div>` : ""}</div>`)
         .join("")}</div>`
     : "";
   const proposal = vm.latest_proposal

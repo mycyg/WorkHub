@@ -98,7 +98,10 @@ function newTaskCta(zh: boolean): string {
 // （元信息 + 进行中工作清单链工作项 + 新任务/打开网盘入口），镜像 web /projects/:id。盒子随内容生长。
 export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): string {
   const p = vm.project;
-  const count = vm.summary.open_work_item_count;
+  // DF-1：与 web M5 + /projects 列表卡同口径。summary.open_work_item_count 是「可见且可处理」数;
+  // total_open_work_item_count 是全量(含他人私有态)。头条数用全量,与列表卡一致;另标「你可处理 N」。
+  const viewableOpen = vm.summary.open_work_item_count;
+  const totalOpen = vm.summary.total_open_work_item_count ?? viewableOpen;
   const archived = p.status === "archived" ? `<span class="wh-spot-row-tag">${zh ? "已归档" : "Archived"}</span>` : "";
   const desc = p.description ? `<p class="wh-spot-row-sub" style="margin-top:4px">${escapeHtml(p.description)}</p>` : "";
   const rows = vm.open_work_items.length
@@ -111,9 +114,10 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
         )
         .join("")
     : emptyHtml("✅", zh ? "暂无进行中的工作" : "No open work", zh ? "点「新任务」就能派活" : "Hit New task to assign some");
-  const hidden = count - vm.open_work_items.length;
+  // 隐藏量按全量算(曾用可见数自减恒为 0,提示从不出现);诚实说明是无权限查看的他人私有态事项。
+  const hidden = totalOpen - vm.open_work_items.length;
   const moreNote = hidden > 0
-    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hidden} 条进行中工作未显示。` : `+${hidden} more open items not shown.`)}</p>`
+    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hidden} 条进行中工作你暂无权限查看。` : `+${hidden} more open items you cannot view.`)}</p>`
     : "";
   // 网盘同步是核心：项目主页直接呈现最近文件（点任意文件/「打开网盘」进完整文件树）。
   const fileRows = vm.drive.recent_files.length
@@ -126,13 +130,19 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
         )
         .join("")
     : `<p class="wh-spot-row-sub">${escapeHtml(zh ? "网盘里还没有文件。" : "No files in the drive yet.")}</p>`;
-  const filesBlock = `<div class="wh-spot-row-metalabel" style="margin-top:4px">${escapeHtml(zh ? `最近文件 ${vm.drive.file_count}` : `Recent files ${vm.drive.file_count}`)}</div><div class="wh-spot-list">${fileRows}</div>`;
+  // DF-3:「最近文件 N」是项目文件总数,但只列 recent_files(≤5)。超出时给「还有 N 未显示」,
+  // 否则一堆文件的项目只露几条却显示总数,像把这几条当成全部(web route-components 同款 note)。
+  const hiddenFiles = vm.drive.file_count - vm.drive.recent_files.length;
+  const filesMoreNote = hiddenFiles > 0 && vm.drive.recent_files.length > 0
+    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hiddenFiles} 个文件未显示，前往网盘查看全部。` : `+${hiddenFiles} more files not shown — open the drive.`)}</p>`
+    : "";
+  const filesBlock = `<div class="wh-spot-row-metalabel" style="margin-top:4px">${escapeHtml(zh ? `最近文件 ${vm.drive.file_count}` : `Recent files ${vm.drive.file_count}`)}</div><div class="wh-spot-list">${fileRows}</div>${filesMoreNote}`;
   return `<div class="wh-spot-dash ds-anim-fade-in">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-back-to-projects style="align-self:flex-start">${zh ? "← 返回项目列表" : "← Back to projects"}</button>
     <div>
       <div class="wh-spot-row-title" style="font-size:17px">${escapeHtml(p.name)}${archived}</div>
       ${desc}
-      <div class="wh-spot-row-sub" style="margin-top:6px">${escapeHtml(p.owner_label)} · ${escapeHtml(zh ? `进行中 ${count}` : `${count} open`)}</div>
+      <div class="wh-spot-row-sub" style="margin-top:6px">${escapeHtml(p.owner_label)} · ${escapeHtml(totalOpen > viewableOpen ? (zh ? `进行中 ${totalOpen} · 你可处理 ${viewableOpen}` : `${totalOpen} open · you can handle ${viewableOpen}`) : (zh ? `进行中 ${totalOpen}` : `${totalOpen} open`))}</div>
     </div>
     <div class="wh-spot-card-actions">
       <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-intake="${escapeHtml(p.id)}" data-open-intake-name="${escapeHtml(p.name)}">${escapeHtml(vm.actions.new_task.label)}</button>

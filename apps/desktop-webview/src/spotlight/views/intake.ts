@@ -6,6 +6,7 @@
 import type { SessionVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
+import { riskHintLabel } from "../labels.js";
 import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
 
 type Question = SessionVM["question"];
@@ -32,7 +33,11 @@ function optionsHtml(question: Question, selected: Set<string>, zh: boolean): st
     .map((option) => {
       const desc = option.description ?? option.impact ?? "";
       const isSel = selected.has(option.id);
-      const tag = recommended.has(option.id) ? (zh ? "推荐" : "Recommended") : option.risk_hint ?? "";
+      // 非推荐项的风险药丸要本地化(低/中/高风险),别裸渲 contract token low/medium/high(web 同款已修);
+      // 无 risk_hint 时不渲药丸(下方 tag ? 守卫)。
+      const tag = recommended.has(option.id)
+        ? (zh ? "推荐" : "Recommended")
+        : option.risk_hint ? riskHintLabel(option.risk_hint, zh) : "";
       return `<button type="button" class="wh-spot-opt" data-opt="${escapeHtml(option.id)}" data-sel="${isSel}">
         <span class="wh-spot-opt-check" aria-hidden="true"></span>
         <span class="wh-spot-opt-text">

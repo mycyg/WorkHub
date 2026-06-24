@@ -46,3 +46,27 @@ export function workItemPriorityLabel(priority: string, zh: boolean): string {
 export function agentRunStatusLabel(status: string, zh: boolean): string {
   return pick(agentRunStatusMap, status, zh);
 }
+
+// AI 执行阶段：与 web packages/ui i18n.ts agentStepPhaseLabels 同口径。真枚举是 think/tool_call/tool_result/final
+// （contracts enums.ts agentStepPhases）——曾在 workitem/replay 两视图被裸渲或用错键的 map 漏掉。
+const agentStepPhaseMap: Record<string, [string, string]> = {
+  think: ["思考", "Thinking"],
+  tool_call: ["调用工具", "Tool call"],
+  tool_result: ["工具结果", "Tool result"],
+  final: ["最终整理", "Final"]
+};
+
+// 选项风险等级（contracts riskLevel low/medium/high）：与 web route-components localizedEnumLabel 同口径。
+const riskHintMap: Record<string, [string, string]> = {
+  low: ["低风险", "Low risk"],
+  medium: ["中风险", "Medium risk"],
+  high: ["高风险", "High risk"]
+};
+
+export function agentStepPhaseLabel(phase: string, zh: boolean): string {
+  return pick(agentStepPhaseMap, phase, zh);
+}
+
+export function riskHintLabel(level: string, zh: boolean): string {
+  return pick(riskHintMap, level, zh);
+}

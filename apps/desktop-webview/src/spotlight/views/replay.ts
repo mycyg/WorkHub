@@ -2,11 +2,11 @@
 // 列出在跑/排队的 AI 运行（pages.attention.background_runs）→ 点开看该运行的时间线（getAgentRun trace）。
 // list→detail 都在盒子内联 morph；历史已完成运行从工作项/审批进入，这里聚焦「Cuu 正在干什么」。
 
-import type { AgentRunLiveVM, AgentStep, AttentionHomeVM } from "@workhub/contracts";
+import type { AgentRunLiveVM, AttentionHomeVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
-import { agentRunStatusLabel } from "../labels.js";
+import { agentRunStatusLabel, agentStepPhaseLabel } from "../labels.js";
 
 type BgRun = AttentionHomeVM["background_runs"][number];
 
@@ -36,18 +36,6 @@ function runListHtml(runs: BgRun[], zh: boolean): string {
     .join("")}</div>`;
 }
 
-function phaseLabel(phase: AgentStep["phase"], zh: boolean): string {
-  const map: Record<string, [string, string]> = {
-    planning: ["规划", "Planning"],
-    thinking: ["思考", "Thinking"],
-    tool_call: ["调用工具", "Tool call"],
-    verification: ["自检", "Verifying"],
-    generating_proposal: ["生成改动", "Generating"]
-  };
-  const entry = map[phase];
-  return entry ? (zh ? entry[0] : entry[1]) : phase;
-}
-
 function traceHtml(vm: AgentRunLiveVM, zh: boolean, waiting = false): string {
   const u = vm.usage;
   // L14：列表里这条运行标着「等你拍板」(waiting_for_user，仅 attention 列表态有,详情 VM 的 status 枚举不含它)。
@@ -65,7 +53,7 @@ function traceHtml(vm: AgentRunLiveVM, zh: boolean, waiting = false): string {
     ? `<div class="wh-spot-trace">${steps
         .map(
           (s) =>
-            `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(phaseLabel(s.phase, zh))}${s.tool_name ? ` · ${escapeHtml(s.tool_name)}` : ""}</div>${s.output_excerpt ? `<div class="wh-spot-trace-out">${escapeHtml(s.output_excerpt)}</div>` : ""}</div>`
+            `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}${s.tool_name ? ` · ${escapeHtml(s.tool_name)}` : ""}</div>${s.output_excerpt ? `<div class="wh-spot-trace-out">${escapeHtml(s.output_excerpt)}</div>` : ""}</div>`
         )
         .join("")}</div>`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "还没有步骤" : "No steps yet"}</p>`;
@@ -92,7 +80,10 @@ export function createReplayView(): SpotlightCapabilityView {
           const vm = await ctx.client.pages.attention({ locale: ctx.locale });
           if (disposed || gen !== loadGen) return;
           const runs = vm.background_runs ?? [];
-          ctx.setSubtitle(zh ? `${runs.length} 个在跑` : `${runs.length} active`);
+          // 「在跑」副标题只数真正在跑的(running/queued);background_runs 还含 failed / waiting_for_user,
+          // 列表会用各自药丸标出它们——把不在跑的也算「在跑」会和列表自相矛盾(web 首页同款已修)。
+          const activeRuns = runs.filter((r) => r.state === "running" || r.state === "queued").length;
+          ctx.setSubtitle(zh ? `${activeRuns} 个在跑` : `${activeRuns} active`);
           ctx.body.innerHTML = runListHtml(runs, zh);
         } catch {
           if (disposed || gen !== loadGen) return;

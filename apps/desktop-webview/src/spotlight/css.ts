@@ -11,8 +11,10 @@ export const spotlightCss = [
   ".wh-spot-stage{position:relative;min-height:100vh;box-sizing:border-box;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;padding:0;gap:0;-webkit-app-region:drag}",
   ".wh-spot{position:relative;display:flex;flex-direction:column;border-radius:var(--ds-radius-xl);overflow:hidden;-webkit-app-region:no-drag}",
   // 收起态(未点击)：只露搜索框,隐藏能力网格区与其下边线,盒子缩成一条搜索条。
-  ".wh-spot[data-collapsed=\"true\"] .wh-spot-body{display:none}",
-  ".wh-spot[data-collapsed=\"true\"] .wh-spot-top{border-bottom:0}",
+  // SM-1：限定到 launcher 模式——收起态只属于「idle 细搜索条」；能力态(data-mode=capability)绝不应被
+  // collapsed 隐藏内容,即使 dataset 残留 collapsed=true 也不藏(与 controller 显式复位互为兜底)。
+  ".wh-spot[data-mode=\"launcher\"][data-collapsed=\"true\"] .wh-spot-body{display:none}",
+  ".wh-spot[data-mode=\"launcher\"][data-collapsed=\"true\"] .wh-spot-top{border-bottom:0}",
   // 顶栏：搜索/标题 + 面包屑返回。顶栏空白处可拖动窗（输入/按钮 no-drag）。
   ".wh-spot-top{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--ds-glass-hairline);-webkit-app-region:drag}",
   ".wh-spot-top>*{-webkit-app-region:no-drag}",
