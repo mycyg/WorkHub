@@ -1734,7 +1734,11 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
             <span class="wh-pill">${escapeHtml(attentionPriorityLabel(vm.workitem.priority, locale === "zh-CN"))}</span>
             <span class="wh-pill">${escapeHtml(localizedEnumLabel(vm.workitem.mode, locale === "zh-CN", { worker: "执行", pm: "项目管理" }, { worker: "Worker", pm: "PM" }))}</span>
           </div>
-          <p>${escapeHtml(vm.workitem.planning_note ?? vm.workitem.raw_description)}</p>
+          ${(() => {
+    // L25：上下文卡正文别和头部 summary 重复(都源自 raw_description 时)；两者都空也别渲一个空 <p>。
+    const body = vm.workitem.planning_note ?? vm.workitem.raw_description ?? "";
+    return body && stripMarkdown(body) !== summary ? `<p>${escapeHtml(body)}</p>` : "";
+  })()}
           ${renderWorkItemSourceContext(vm, locale)}
           ${actions.length
     ? renderActions(actions)
