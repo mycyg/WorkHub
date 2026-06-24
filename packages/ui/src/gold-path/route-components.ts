@@ -394,7 +394,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.files": "文件列表",
     "drive.versions": "版本历史",
     "drive.accepted": "正式交付物",
-    "drive.comments": "评论草稿",
+    "drive.comments": "评论",
     "drive.recycle": "回收站",
     "drive.operations": "操作日志",
     "drive.empty": "这个项目还没有正式交付物。",
@@ -589,7 +589,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.files": "File tree",
     "drive.versions": "Version history",
     "drive.accepted": "Accepted deliverables",
-    "drive.comments": "Comment drafts",
+    "drive.comments": "Comments",
     "drive.recycle": "Recycle",
     "drive.operations": "Operation log",
     "drive.empty": "This project does not have accepted deliverables yet.",
@@ -2055,7 +2055,7 @@ function renderDriveRouteComponent(
         ${comment.proposal_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(comment.proposal_href))}" data-r5-drive-proposal-link="true" data-r5-drive-proposal-id="${escapeHtml(comment.proposal_id ?? "")}" data-r5-drive-proposal-status="${escapeHtml(comment.proposal_status ?? "")}">${escapeHtml(routeT(locale, "drive.openProposal"))}</a>` : ""}
       </div>
     </div>`).join("")
-    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.pendingDrafts"))}: 0</p>`;
+    : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无评论" : "No comments yet")}</p>`;
   const recycleRows = vm.deleted_items.length
     ? vm.deleted_items.slice(0, 5).map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}">
       <div>
@@ -2940,7 +2940,6 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           <h1>${escapeHtml(goldPathT(locale, "settings.title"))}</h1>
           <p>${escapeHtml(goldPathT(locale, "settings.summary"))}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(props.appEnv)}</span>
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">
