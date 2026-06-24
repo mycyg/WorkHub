@@ -117,9 +117,11 @@ export const spotlightCss = [
   // 只读/检索类（项目·成本·日历·知识）。
   ".wh-spot-list{display:flex;flex-direction:column;gap:7px}",
   ".wh-spot-row{display:flex;align-items:center;gap:11px;text-decoration:none;border:1px solid var(--ds-glass-border);background:rgba(255,255,255,.46);border-radius:var(--ds-radius-md);padding:11px 13px;color:var(--ds-ink)}",
-  "a.wh-spot-row{transition:transform var(--ds-dur-fast) var(--ds-ease-out),background var(--ds-dur-fast) var(--ds-ease),box-shadow var(--ds-dur-fast) var(--ds-ease);will-change:transform}",
-  "a.wh-spot-row:hover{background:rgba(255,255,255,.72);transform:translateY(-1px);box-shadow:var(--ds-shadow-1)}",
-  "a.wh-spot-row:active{transform:translateY(0) scale(.985)}",
+  // M12/M16：可点的行（不止 <a>，也含 <button> 列表/项目/文件行）都要有玻璃悬浮 + 按压反馈，苹果级触感。
+  "button.wh-spot-row{cursor:pointer;width:100%;text-align:left;font:inherit}",
+  "a.wh-spot-row,button.wh-spot-row{transition:transform var(--ds-dur-fast) var(--ds-ease-out),background var(--ds-dur-fast) var(--ds-ease),box-shadow var(--ds-dur-fast) var(--ds-ease);will-change:transform}",
+  "a.wh-spot-row:hover,button.wh-spot-row:hover{background:rgba(255,255,255,.72);transform:translateY(-1px);box-shadow:var(--ds-shadow-1)}",
+  "a.wh-spot-row:active,button.wh-spot-row:active{transform:translateY(0) scale(.985)}",
   ".wh-spot-row-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}",
   ".wh-spot-row-title{display:flex;align-items:center;gap:8px;font:600 13.5px/1.3 var(--ds-font);color:var(--ds-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-spot-row-sub{font:500 12px/1.45 var(--ds-font);color:var(--ds-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
@@ -186,5 +188,5 @@ export const spotlightCss = [
   // #18：内层面板也用真玻璃(背景模糊+饱和)而非纯白填充,与外层盒及 decision-deck 一致,强化「液态玻璃」层次。
   ".wh-spot-cap,.wh-spot-opt,.wh-spot-row,.wh-spot-metric,.wh-spot-change,.wh-spot-bars,.wh-spot-check{backdrop-filter:blur(13px) saturate(150%);-webkit-backdrop-filter:blur(13px) saturate(150%)}",
   // 尊重「减少动态效果」系统偏好：去掉装饰性位移/缩放，保留颜色提示（苹果级无障碍）。
-  "@media (prefers-reduced-motion:reduce){.wh-spot-cap,.wh-spot-act,.wh-spot-back,.wh-spot-opt,.wh-spot-reason,a.wh-spot-row{transition-duration:.01ms!important}.wh-spot-cap:hover,.wh-spot-cap:active,.wh-spot-act:active,.wh-spot-back:active,.wh-spot-opt:hover,.wh-spot-opt:active,.wh-spot-reason:active,a.wh-spot-row:hover,a.wh-spot-row:active{transform:none}}"
+  "@media (prefers-reduced-motion:reduce){.wh-spot-cap,.wh-spot-act,.wh-spot-back,.wh-spot-opt,.wh-spot-reason,a.wh-spot-row,button.wh-spot-row{transition-duration:.01ms!important}.wh-spot-cap:hover,.wh-spot-cap:active,.wh-spot-act:active,.wh-spot-back:active,.wh-spot-opt:hover,.wh-spot-opt:active,.wh-spot-reason:active,a.wh-spot-row:hover,a.wh-spot-row:active,button.wh-spot-row:hover,button.wh-spot-row:active{transform:none}}"
 ].join("");

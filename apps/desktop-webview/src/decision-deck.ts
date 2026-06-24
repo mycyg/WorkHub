@@ -188,6 +188,15 @@ export const decisionDeckCss = [
   ".wh-deck-btn--primary{flex:1;min-width:120px;justify-content:center;border:0;background:linear-gradient(135deg,#7c83ff,#b57bff);color:#fff;font-weight:800;box-shadow:0 14px 26px -8px rgba(124,131,255,.7)}",
   ".wh-deck-btn--danger{border-color:rgba(255,122,138,.5);color:#e85d70;font-weight:800}",
   ".wh-deck-btn--quiet{background:rgba(255,255,255,.4);color:#8b84ad}",
+  // M10：决策按钮要有苹果级悬浮/按压触感（之前完全没反馈）。
+  ".wh-deck-btn{transition:transform 120ms cubic-bezier(.34,1.56,.64,1),filter 120ms ease,box-shadow 120ms ease}",
+  ".wh-deck-btn:hover{filter:brightness(1.04)}",
+  ".wh-deck-btn:active{transform:scale(.96)}",
+  // M9：gl-press / gl-avatar 此前全局未定义（死类，毫无效果）。在此补上按压缩放 + 头像微动基底。
+  ".gl-press{transition:transform 120ms cubic-bezier(.34,1.56,.64,1)}",
+  ".gl-press:active{transform:scale(.95)}",
+  ".gl-avatar{display:inline-block;will-change:transform}",
+  "@media (prefers-reduced-motion:reduce){.wh-deck-btn,.gl-press{transition-duration:.01ms!important}.wh-deck-btn:active,.gl-press:active{transform:none}}",
   ".wh-deck-cuu{display:flex;align-items:center;gap:12px;justify-content:center;margin-top:26px}",
   ".wh-deck-cuu-face{font:700 22px/1 'M PLUS Rounded 1c',sans-serif}",
   ".wh-deck-cuu-line{font:700 13.5px/1.4 'Noto Sans SC',sans-serif;color:#6b6488;background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.7);border-radius:14px;border-bottom-left-radius:4px;padding:9px 14px}",
