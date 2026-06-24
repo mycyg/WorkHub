@@ -4186,7 +4186,7 @@ async function main() {
       r4_12_desktop_gate_fail_closed:
         steps.some((step) => step.id === "14-settings-desktop-gate-en-desktop" && step.audit.pathname === "/settings" && step.audit.search === "" && step.audit.notice.kind === "desktop_required" && step.audit.notice.actionId === "open_desktop_settings"),
       r4_12_retry_access_route_states:
-        steps.some((step) => step.id === "17-forbidden-workitem-desktop" && step.audit.routeState.kind === "forbidden" && step.audit.routeState.actionText === "Request access") &&
+        steps.some((step) => step.id === "17-forbidden-workitem-desktop" && step.audit.routeState.kind === "forbidden" && step.audit.routeState.actionText === "Go somewhere you can access") &&
         steps.some((step) => step.id === "18-unknown-route-notfound" && step.audit.routeState.kind === "notFound" && step.audit.routeState.actionText === "Back to home"),
       r4_12_mobile_notice_no_overflow:
         steps.some((step) => step.id === "11-proposal-en-mobile-scrolled-notice-route-component" && step.audit.notice.kind === "sse_refresh" && !step.audit.horizontalOverflow && step.audit.textOverflowCount === 0),
@@ -4353,7 +4353,7 @@ async function main() {
           step.audit.routeData.settingsLocalBoundary === "true"
         ),
       r4_15_route_recovery_actions:
-        steps.some((step) => step.id === "17-forbidden-workitem-desktop" && step.audit.routeState.kind === "forbidden" && step.audit.routeState.actionText === "Request access") &&
+        steps.some((step) => step.id === "17-forbidden-workitem-desktop" && step.audit.routeState.kind === "forbidden" && step.audit.routeState.actionText === "Go somewhere you can access") &&
         steps.some((step) => step.id === "18-unknown-route-notfound" && step.audit.routeState.kind === "notFound" && step.audit.routeState.actionText === "Back to home") &&
         steps.some((step) => step.id === "14-settings-desktop-gate-en-desktop" && step.audit.notice.kind === "desktop_required"),
       r4_15_settings_mobile_no_overflow:
