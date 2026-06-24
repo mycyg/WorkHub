@@ -38,6 +38,7 @@ export const replayCss = [
   ".wh-replay-frame{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:20px;align-items:start}",
   ".wh-replay-main,.wh-replay-rail{background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 50px rgba(37,51,79,.08);min-width:0}",
   ".wh-replay-main{padding:24px}.wh-replay-rail{padding:18px;position:sticky;top:16px}.wh-kicker{font-size:12px;color:var(--blue);font-weight:700;text-transform:uppercase;letter-spacing:0}",
+  ".wh-replay-back{display:inline-flex;align-items:center;gap:4px;margin-top:6px;color:var(--blue);text-decoration:none;font-size:13px;font-weight:600}.wh-replay-back:hover,.wh-replay-back:focus-visible{text-decoration:underline}",
   ".wh-title{font-size:30px;line-height:1.35;margin:8px 0}.wh-subtle{color:var(--muted);line-height:1.55}.wh-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-top:18px}",
   ".wh-card{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:16px;min-width:0;overflow-wrap:anywhere}.wh-list{display:grid;gap:10px;margin-top:14px}.wh-row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 0}.wh-row:first-child{border-top:0}.wh-row>div{min-width:0}",
   ".wh-title,.wh-subtle{overflow-wrap:anywhere}.wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted);max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}.wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
@@ -136,8 +137,10 @@ function renderTextHunkDecisionAudit(attempt: ReplayMergeAttemptVM, locale: Work
       <span class="wh-pill">${escapeHtml(decisionLabel(locale, decision.decision))}</span>
     </div>`)
     .join("");
+  // L24：原始 64 位十六进制摘要对普通用户是开发者黑话。改为带标签 + 截断展示（完整值留在 title 供核对），
+  // 既保留「这次结果有指纹可校验」的可信度，又不再把一长串乱码糊在用户脸上。
   const sha = attempt.text_hunk_output_sha256
-    ? `<p class="wh-replay-audit-code">${escapeHtml(attempt.text_hunk_output_sha256)}</p>`
+    ? `<p class="wh-replay-audit-code" title="${escapeHtml(attempt.text_hunk_output_sha256)}">${escapeHtml(copy(locale, "结果校验码", "Result checksum"))} · ${escapeHtml(attempt.text_hunk_output_sha256.slice(0, 12))}…</p>`
     : "";
   return `<section class="wh-replay-audit" data-replay-text-hunk-decision-audit="true" data-replay-text-hunk-decision-count="${escapeHtml(String(decisions.length))}">
     <div class="wh-replay-audit-head">
@@ -267,7 +270,7 @@ function renderMergeTimeline(vm: ReplayTraceVM, locale: WorkHubLocale) {
 function renderRail(vm: ReplayTraceVM, locale: WorkHubLocale) {
   return `<aside class="wh-replay-rail">
     <span class="wh-kicker">${escapeHtml(copy(locale, "回放摘要", "Replay summary"))}</span>
-    <article class="wh-card"><strong>Token</strong><p class="wh-subtle">${escapeHtml(String(vm.cost?.me.total_tokens ?? 0))}</p></article>
+    <article class="wh-card"><strong>${escapeHtml(copy(locale, "Token 用量", "Tokens used"))}</strong><p class="wh-subtle">${escapeHtml(String(vm.cost?.me.total_tokens ?? 0))}</p></article>
     <article class="wh-card"><strong>${escapeHtml(copy(locale, "估算成本", "Estimated cost"))}</strong><p class="wh-subtle">¥${escapeHtml(vm.cost?.me.estimated_cost_cny ?? "0")}</p></article>
     <article class="wh-card"><strong>${escapeHtml(copy(locale, "快照", "Snapshots"))}</strong><p class="wh-subtle">${escapeHtml(String(vm.snapshots.length))}</p></article>
   </aside>`;
@@ -299,8 +302,14 @@ export function renderAgentRunReplay(
       ?? objectRecord((log as { detail_json?: unknown; detailJson?: unknown }).detailJson);
     return detail?.["merge_strategy"] === "field_merge" && Array.isArray(detail["structured_field_changes"]);
   }).length;
+  // L23：回放页知道它属于哪个工作项（run.work_item_id），却从不给一条回去的路，用户看完只能靠浏览器后退。
+  // 仅 web 面渲染可见的「返回任务」链接——桌面 Spotlight 有自己的面包屑返回，且普通锚点导航会打断 Tauri webview。
+  const backToWorkItem = surface === "web" && run.work_item_id
+    ? `<a class="wh-replay-back" href="/workitems/${encodeURIComponent(run.work_item_id)}" data-replay-back-work-item="${escapeHtml(run.work_item_id)}">${escapeHtml(copy(locale, "← 返回任务", "← Back to work item"))}</a>`
+    : "";
   const main = `<section class="wh-replay-main">
     <span class="wh-kicker">${escapeHtml(copy(locale, "Replay Work", "Replay Work"))}</span>
+    ${backToWorkItem}
     <h1 class="wh-title">${escapeHtml(copy(locale, "查看 AI 怎么做的", "See how AI did it"))}</h1>
     <p class="wh-subtle">${escapeHtml(run.handoff_md ?? run.outcome_reason ?? copy(locale, "关键步骤、证据、快照和成本都在这里。", "Key steps, evidence, snapshots, and cost are shown here."))}</p>
     <div class="wh-grid">

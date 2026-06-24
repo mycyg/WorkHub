@@ -15,6 +15,7 @@ function replayWithStructuredFields(): ReplayTraceVM {
   const fixture = createP05GoldPathFixture();
   return {
     ...fixture.replay,
+    run: { ...fixture.replay.run, work_item_id: workItemId } as ReplayTraceVM["run"],
     merge_timeline: [
       {
         id: "76000000-0000-4000-8000-000000000111",
@@ -283,4 +284,14 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(en.html.includes("After: 新标题"), true);
   assert.equal(en.html.includes("After: 2 items: 原始任务项, 新增风险项"), true);
   assert.equal(en.html.includes("Decision: fast_path"), true);
+
+  // L23：web 回放给一条返回所属工作项的可见链接；桌面 Spotlight 用自己的面包屑返回，不渲染裸锚点。
+  assert.equal(zh.html.includes(`data-replay-back-work-item="${workItemId}"`), true);
+  assert.equal(zh.html.includes("返回任务"), true);
+  assert.equal(zh.html.includes(`/workitems/${workItemId}`), true);
+  assert.equal(en.html.includes("data-replay-back-work-item"), false);
+  // L24：摘要卡用本地化的「Token 用量」而非裸 "Token"；校验码带人类标签 + 截断，不再糊整串 64 位哈希。
+  assert.equal(zh.html.includes("Token 用量"), true);
+  assert.equal(zh.html.includes("结果校验码"), true);
+  assert.equal(zh.html.includes(`<p class="wh-replay-audit-code">${"c".repeat(64)}</p>`), false);
 });
