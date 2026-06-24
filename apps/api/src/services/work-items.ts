@@ -851,6 +851,13 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     async nextQuestion(input) {
       const rows = await requireDetail(input.sessionId, input.actor);
       const selectedOptionIds = input.payload.selected_option_ids ?? [];
+      // M10: "调整范围"(adjust-scope) on the confirm step is navigation back to the
+      // scope question, not a clarification answer. Re-rendering confirm would trap
+      // the user on the same screen; send them back to scope to re-choose and don't
+      // record the navigation as an answer.
+      if (selectedOptionIds.includes("adjust-scope")) {
+        return sessionVmFor(rows.workItem, "scope", input.locale);
+      }
       await repository.insertChatMessage({
         workItemId: rows.workItem.id,
         role: "user",
@@ -1186,6 +1193,11 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
 
     async nextQuestion(input) {
       const workItem = requireWorkItem(input.sessionId);
+      // M10: mirror the persistent path — "调整范围"(adjust-scope) navigates back to
+      // the scope question instead of dead-ending on confirm, and is not recorded.
+      if ((input.payload.selected_option_ids ?? []).includes("adjust-scope")) {
+        return sessionVmFor(memoryRow(workItem), "scope", input.locale);
+      }
       answers.set(input.sessionId, [...(answers.get(input.sessionId) ?? []), input.payload]);
       return sessionVmFor(memoryRow(workItem), "confirm", input.locale);
     },

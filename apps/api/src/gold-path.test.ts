@@ -446,3 +446,47 @@ test("production routes use real services and do not serve the P0.5 fixture rout
   assert.equal(proposalReview.status, 404);
   assert.equal(proposalMerge.status, 404);
 });
+
+test("M10: confirm-step '调整范围' navigates back to the scope question instead of dead-ending", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const auth = authDeps(runtimeSettings);
+  const workItems = createInMemoryWorkItemService({ now: () => now });
+  app.route("/api", createSessionRoutes({ auth, workItems }));
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const session = await app.request("/api/sessions", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ intent_text: "帮我整理客户周报模板。" })
+  });
+  assert.equal(session.status, 200);
+  const sessionBody = (await session.json()) as { data: { session_id: string } };
+  const sessionId = sessionBody.data.session_id;
+
+  // Answer the scope question → advances to the confirm step.
+  const toConfirm = await app.request(`/api/sessions/${sessionId}/next-question`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ selected_option_ids: ["document-draft"] })
+  });
+  assert.equal(toConfirm.status, 200);
+  const confirmBody = (await toConfirm.json()) as { data: { question: { input_mode: string } } };
+  assert.equal(confirmBody.data.question.input_mode, "confirm");
+
+  // Selecting "调整范围"(adjust-scope) on confirm must return to the scope question,
+  // not re-render confirm (the M10 dead-end).
+  const back = await app.request(`/api/sessions/${sessionId}/next-question`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ selected_option_ids: ["adjust-scope"] })
+  });
+  assert.equal(back.status, 200);
+  const backBody = (await back.json()) as {
+    data: { question: { input_mode: string; options: { id: string }[] } };
+  };
+  assert.equal(backBody.data.question.input_mode, "single_choice");
+  const optionIds = backBody.data.question.options.map((option) => option.id);
+  assert.equal(optionIds.includes("document-draft"), true);
+  assert.equal(optionIds.includes("adjust-scope"), false);
+});
