@@ -390,9 +390,9 @@ function conflictOptionLabel(option: ProposalConflictOption, options?: UiRenderO
 }
 
 function conflictOptionClass(option: ProposalConflictOption) {
-  if (option.id === "accept_incoming") {
-    return "wh-btn wh-btn-danger";
-  }
+  // L20：采纳 AI 的新版本（accept_incoming）以前被涂成红色 danger，让「采纳」看着像危险/破坏性操作、
+  // 「保留正式版」反而像安全选项——这与来这里就是想采纳交付物的用户意图相悖。改为中性，仅靠
+  // 「推荐」徽标引导选择，两侧都不被隐式标成危险。
   return option.recommended ? "wh-btn wh-btn-primary" : "wh-btn";
 }
 

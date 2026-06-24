@@ -1331,6 +1331,10 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
   const createAction = question.input_mode === "confirm"
     ? `<a class="wh-btn wh-btn-primary" href="/api/workitems" data-action-id="create_workitem" data-method="POST" data-intake-create-workitem="true" data-session-id="${escapeHtml(vm.session_id)}" data-request-json="${jsonAttr(createPayload)}">${escapeHtml(routeT(locale, "intake.createWorkItem"))}</a>`
     : "";
+  // L16：澄清步骤里「继续」常是用户唯一的前进按钮（非 confirm 步没有「创建任务」主按钮）。
+  // 当它是唯一前进动作时给它主按钮样式，别让第一道问题的前进键看着像被弱化的次要按钮；
+  // 到了 confirm 步则让位给「创建任务」主按钮，自身回落为次要。
+  const continueClass = createAction ? "wh-btn" : "wh-btn wh-btn-primary";
 
   return createWebRouteComponent({
     key: "intake",
@@ -1365,7 +1369,7 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
       </div>
       ${freeText}
       <div class="wh-r4-route-actions">
-        <a class="wh-btn" href="${escapeHtml(safeHref(question.submit.href))}" data-action-id="intake_continue" data-method="${escapeHtml(question.submit.method)}" data-intake-submit="next-question" data-session-id="${escapeHtml(vm.session_id)}" data-request-json="${jsonAttr(continuePayload)}">${escapeHtml(routeT(locale, "intake.continue"))}</a>
+        <a class="${continueClass}" href="${escapeHtml(safeHref(question.submit.href))}" data-action-id="intake_continue" data-method="${escapeHtml(question.submit.method)}" data-intake-submit="next-question" data-session-id="${escapeHtml(vm.session_id)}" data-request-json="${jsonAttr(continuePayload)}">${escapeHtml(routeT(locale, "intake.continue"))}</a>
         ${createAction}
       </div>
     </section>`
