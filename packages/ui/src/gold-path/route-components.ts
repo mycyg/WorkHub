@@ -109,7 +109,7 @@ export const webRouteComponentCss = [
   ".wh-r4-route{display:grid;gap:16px;min-width:0;max-width:100%;overflow:hidden}",
   ".wh-r4-route,.wh-r4-route *{box-sizing:border-box;min-width:0}",
   ".wh-r4-route-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:end}",
-  ".wh-r4-route-head h2{margin:4px 0 0;font-size:24px;line-height:1.35;letter-spacing:0;overflow-wrap:anywhere}",
+  ".wh-r4-route-head h1{margin:4px 0 0;font-size:24px;line-height:1.35;letter-spacing:0;overflow-wrap:anywhere}",
   ".wh-r4-route-head p{margin:6px 0 0;color:var(--wh-product-muted,#66728c);line-height:1.5;overflow-wrap:anywhere}",
   ".wh-r4-route-kicker{color:var(--wh-product-blue,#355cff);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}",
   ".wh-r4-route-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(260px,.8fr);gap:14px;align-items:start}",
@@ -1131,7 +1131,7 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.kicker"))}</span>
-          <h2>${escapeHtml(goldPathT(locale, "home.inboxTitle"))}</h2>
+          <h1>${escapeHtml(goldPathT(locale, "home.inboxTitle"))}</h1>
           <p>${escapeHtml(goldPathT(locale, "home.inboxSummary"))}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(decideCount))}</span>
@@ -1207,7 +1207,7 @@ function renderIntakeStartRouteComponent(
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(kicker)}</span>
-          <h2>${escapeHtml(title)}</h2>
+          <h1>${escapeHtml(title)}</h1>
           <p>${escapeHtml(body)}</p>
         </div>
         <span class="wh-r4-route-count" data-r8-intake-badge="true">${escapeHtml(zh ? "新任务" : "New")}</span>
@@ -1286,7 +1286,7 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "intake.kicker"))}</span>
-          <h2>${escapeHtml(question.title)}</h2>
+          <h1>${escapeHtml(question.title)}</h1>
           <p>${escapeHtml(question.body ?? goldPathT(locale, "intake.bodyFallback"))}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(question.options.length))}</span>
@@ -1462,7 +1462,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.kicker"))}</span>
-          <h2>${escapeHtml(primary?.title ?? goldPathT(locale, "approvals.emptyTitle"))}</h2>
+          <h1>${escapeHtml(primary?.title ?? goldPathT(locale, "approvals.emptyTitle"))}</h1>
           <p>${escapeHtml(primary?.reason_text ?? goldPathT(locale, "approvals.reasonFallback"))}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(pendingCount))}</span>
@@ -1650,7 +1650,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(uiT(locale, "workitem.kicker"))}</span>
-          <h2>${escapeHtml(title)}</h2>
+          <h1>${escapeHtml(title)}</h1>
           <p>${escapeHtml(summary)}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(workItemStatusLabel(locale, vm.workitem.status))}</span>
@@ -1785,7 +1785,7 @@ function renderProposalRouteComponent(
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(uiT(locale, "proposal.kicker"))}</span>
-          <h2>${escapeHtml(vm.title)}</h2>
+          <h1>${escapeHtml(vm.title)}</h1>
           <p>${escapeHtml(summary)}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(vm.status)}</span>
@@ -2031,7 +2031,7 @@ function renderDriveRouteComponent(
         <div>
           ${driveProjectNav}
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "drive.kicker"))}</span>
-          <h2>${escapeHtml(projectTitle)}</h2>
+          <h1>${escapeHtml(projectTitle)}</h1>
           <p>${escapeHtml(selectedItem?.path ?? routeT(locale, "drive.empty"))}</p>
           ${driveManageActions ? `<div class="wh-r4-route-actions" data-r5-drive-manage-actions="true">${driveManageActions}</div>` : ""}
         </div>
@@ -2138,7 +2138,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): 
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "meeting.kicker"))}</span>
-          <h2>${escapeHtml(projectTitle)}</h2>
+          <h1>${escapeHtml(projectTitle)}</h1>
           <p>${escapeHtml(selectedMeeting?.title ?? routeT(locale, "meeting.empty"))}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.pending_insight_count))}</span>
@@ -2313,7 +2313,7 @@ function renderNotificationsRouteComponent(vm: NotificationPageVM, locale: WorkH
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "notifications.kicker"))}</span>
-          <h2>${escapeHtml(routeT(locale, "notifications.kicker"))}</h2>
+          <h1>${escapeHtml(routeT(locale, "notifications.kicker"))}</h1>
           <p>${escapeHtml(`${notificationBucketTitle("needs_decision", locale)} ${vm.summary.needs_decision_count} · ${notificationBucketTitle("fyi", locale)} ${vm.summary.fyi_count} · ${notificationBucketTitle("done", locale)} ${vm.summary.done_count}`)}</p>
         </div>
         <div class="wh-r4-route-actions">${markAll}<span class="wh-r4-route-count">${escapeHtml(String(vm.summary.unread_count))}</span></div>
@@ -2387,7 +2387,7 @@ function renderHealthRouteComponent(vm: ProjectHealthPageVM, locale: WorkHubLoca
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "health.kicker"))}</span>
-          <h2>${escapeHtml(routeT(locale, "health.kicker"))}</h2>
+          <h1>${escapeHtml(routeT(locale, "health.kicker"))}</h1>
           <p>${escapeHtml(`${routeT(locale, "health.summary")} ${vm.summary.project_count} · ${routeT(locale, "health.attention")} ${vm.summary.attention_count} · ${routeT(locale, "health.critical")} ${vm.summary.critical_count}`)}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.project_count))}</span>
@@ -2461,7 +2461,7 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "calendar.kicker"))}</span>
-          <h2>${escapeHtml(routeT(locale, "calendar.kicker"))}</h2>
+          <h1>${escapeHtml(routeT(locale, "calendar.kicker"))}</h1>
           <p>${escapeHtml(`${routeT(locale, "calendar.week")} · ${vm.scope.range_start} - ${vm.scope.range_end}`)}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.block_count))}</span>
@@ -2538,7 +2538,7 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "skills.kicker"))}</span>
-          <h2>${escapeHtml(routeT(locale, "skills.title"))}</h2>
+          <h1>${escapeHtml(routeT(locale, "skills.title"))}</h1>
           <p>${escapeHtml(`${routeT(locale, "skills.summary")} · ${routeT(locale, "skills.active")} ${vm.totals.active} · ${routeT(locale, "skills.refined")} ${vm.totals.refined}`)}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.totals.active))}</span>
@@ -2588,7 +2588,7 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "projects.kicker"))}</span>
-          <h2>${escapeHtml(routeT(locale, "projects.title"))}</h2>
+          <h1>${escapeHtml(routeT(locale, "projects.title"))}</h1>
           <p>${escapeHtml(routeT(locale, "projects.summary"))}</p>
         </div>
         <form class="wh-r4-project-create" data-r8-project-create-form="true">
@@ -2649,7 +2649,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "projectHome.kicker"))}</span>
-          <h2>${escapeHtml(project.name)}</h2>
+          <h1>${escapeHtml(project.name)}</h1>
           ${descriptionLine}
           <div class="wh-r4-route-meta">
             <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.owner")} · ${project.owner_label}`)}</span>
@@ -2740,7 +2740,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "cost.kicker"))}</span>
-          <h2>${escapeHtml(goldPathT(locale, "cost.title"))}</h2>
+          <h1>${escapeHtml(goldPathT(locale, "cost.title"))}</h1>
           <p>${escapeHtml(goldPathT(locale, "cost.summary"))}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(costAmount(props.totalCostCny))}</span>
@@ -2809,7 +2809,7 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "knowledge.kicker"))}</span>
-          <h2>${escapeHtml(routeT(locale, "knowledge.sources"))}</h2>
+          <h1>${escapeHtml(routeT(locale, "knowledge.sources"))}</h1>
           <p>${escapeHtml(vm.summary_text)}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(refs.length))}</span>
@@ -2844,7 +2844,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "settings.kicker"))}</span>
-          <h2>${escapeHtml(goldPathT(locale, "settings.title"))}</h2>
+          <h1>${escapeHtml(goldPathT(locale, "settings.title"))}</h1>
           <p>${escapeHtml(goldPathT(locale, "settings.summary"))}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(props.appEnv)}</span>

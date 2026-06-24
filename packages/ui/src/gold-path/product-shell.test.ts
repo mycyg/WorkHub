@@ -72,9 +72,11 @@ test("R4 product shell localizes fixed product chrome", () => {
   });
 
   assert.equal(shell.html.includes("工作入口"), true);
-  assert.equal(shell.html.includes("<h1>任务详情</h1>"), true);
+  // F2 修双标题:masthead 不再渲染冗余大标题/副标题(页面标题归各 route-component 的唯一 <h1>);
+  // masthead 收成指标条,本地化页标题保留在 aria-label 上(无障碍 + 不与组件标题视觉重复)。
+  assert.equal(shell.html.includes('data-r4-product-masthead="true" aria-label="任务详情"'), true);
+  assert.equal(shell.html.includes("<h1>任务详情</h1>"), false);
   assert.equal(shell.html.includes("当前焦点"), true);
-  assert.equal(shell.html.includes("任务详情把验收项、证据、AI 工作过程和最近变更放在一起。"), true);
   assert.equal(shell.html.includes("实时数据"), true);
   assert.equal(shell.html.includes("网页版"), true);
   assert.equal(shell.html.includes('data-r4-product-route-key="workitem"'), true);
