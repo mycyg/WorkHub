@@ -1507,7 +1507,8 @@ test("R8 Team skills route component renders active skills, K2 provenance, and t
   assert.equal(en.html.includes('data-r8-skill-version="3"'), true);
   // K2 provenance 徽章。
   assert.equal(en.html.includes('data-r8-skill-refined="true"'), true);
-  assert.equal(en.html.includes("refined from v2 · +1"), true);
+  assert.equal(en.html.includes("refined from v2 · 1 edit"), true);
+  assert.equal(en.html.includes('data-r8-skill-refined-ops="1"'), true);
   assert.equal(en.html.includes("补边界情况"), true);
   assert.equal(en.html.includes("Team skills"), true);
   assert.equal(zh.html.includes("团队技能"), true);

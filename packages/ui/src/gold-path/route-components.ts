@@ -500,7 +500,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.scopes": "预算范围",
     "cost.risks": "预算风险",
     "cost.models": "模型拆解",
-    "cost.trend": "趋势",
+    "cost.trend": "统计天数",
     "cost.remaining": "剩余",
     "cost.laborSplit": "干活 vs 自进化",
     "cost.laborProduction": "干活花费",
@@ -701,7 +701,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.scopes": "Budget scopes",
     "cost.risks": "Budget risks",
     "cost.models": "Model breakdown",
-    "cost.trend": "Trend",
+    "cost.trend": "Days tracked",
     "cost.remaining": "Remaining",
     "cost.laborSplit": "Work vs self-improvement",
     "cost.laborProduction": "Production spend",
@@ -2736,7 +2736,7 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
             ? `<span class="wh-pill">${escapeHtml(`${routeT(locale, "skills.confidence")} ${Math.round(skill.confidence_score * 100)}%`)}</span>`
             : "",
           skill.provenance
-            ? `<span class="wh-pill wh-pill--accent" data-r8-skill-refined="true">${escapeHtml(`${routeT(locale, "skills.refinedFrom")}${skill.provenance.refined_from_version} · +${skill.provenance.op_count}`)}</span>`
+            ? `<span class="wh-pill wh-pill--accent" data-r8-skill-refined="true" data-r8-skill-refined-ops="${escapeHtml(String(skill.provenance.op_count))}">${escapeHtml(`${routeT(locale, "skills.refinedFrom")}${skill.provenance.refined_from_version} · ${locale === "zh-CN" ? `改了 ${skill.provenance.op_count} 处` : `${skill.provenance.op_count} ${skill.provenance.op_count === 1 ? "edit" : "edits"}`}`)}</span>`
             : ""
         ].filter(Boolean).join("");
         const rationale = skill.provenance?.rationale_md
@@ -2963,7 +2963,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     .map((item) => `<div class="wh-r4-route-row" data-r4-cost-model="${escapeHtml(`${item.provider}:${item.model}`)}">
       <div>
         <strong>${escapeHtml(item.model)}</strong>
-        <p>${escapeHtml(`${item.provider} · ${item.count}`)}</p>
+        <p>${escapeHtml(`${item.provider} · ${item.count} ${locale === "zh-CN" ? "次调用" : item.count === 1 ? "call" : "calls"}`)}</p>
       </div>
       <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
     </div>`)
@@ -3027,9 +3027,9 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-cost-metrics="true">
           <h3>${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}</h3>
           <div class="wh-r4-route-meta">
-            <span class="wh-pill">${escapeHtml(goldPathT(locale, "cost.tokenTitle"))}: ${escapeHtml(String(props.totalTokens))}</span>
+            <span class="wh-pill">${escapeHtml(`${goldPathT(locale, "cost.tokenTitle")}: ${props.totalTokens} ${locale === "zh-CN" ? "个 token" : "tokens"}`)}</span>
             <span class="wh-pill">${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}: ${escapeHtml(costAmount(props.totalCostCny))}</span>
-            <span class="wh-pill">${escapeHtml(routeT(locale, "cost.trend"))}: ${escapeHtml(String(props.trendCount))}</span>
+            <span class="wh-pill" data-r4-cost-trend-days="${escapeHtml(String(props.trendCount))}">${escapeHtml(`${routeT(locale, "cost.trend")}: ${props.trendCount}`)}</span>
           </div>
           ${notices}
         </section>
