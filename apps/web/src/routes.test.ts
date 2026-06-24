@@ -1022,6 +1022,24 @@ test("F15 knowledge route keeps a scoped 403 as a genuine forbidden state (ancho
   assert.equal(result.html.includes('data-r4-web-route-status="forbidden"'), true);
 });
 
+test("M19 knowledge route: a source_ref-only 403 (notification evidence link) lands in-shell, not a bare 403", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface, {
+    knowledgeError: new WorkHubApiError(403, "forbidden", "请在具体事项或项目内检索。")
+  });
+  // 通知里的「查相关证据」只带 source_ref(无 project/work_item)→ 后端 403。source_ref 不是真实锚点,
+  // 不应被当作越权裸态,而是落到外壳内的知识库落地页(保留导航 + 指引)。
+  const match = resolveWebRoute("/knowledge/search?q=drive%20draft&source_ref=notification:10000000-0000-4000-8000-000000000abc");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r4-route-component="knowledge"'), true);
+  assert.equal(result.html.includes('data-r4-web-route-status="forbidden"'), false);
+  assert.equal(result.html.includes("锚定具体项目或工作项"), true);
+});
+
 test("R4.13 proposal route loader carries conflict API data into advanced route UX", async () => {
   const surface = goldPathSurfaceVm();
   const conflict = routeAdvancedProposalConflict(surface);

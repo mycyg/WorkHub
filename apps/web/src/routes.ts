@@ -956,7 +956,10 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
     const workItemId = params.get("work_item_id") ?? params.get("workItemId") ?? undefined;
     const sourceRef = params.get("source_ref") ?? undefined;
-    const hasScope = Boolean(projectId || workItemId || sourceRef);
+    // M19：只有 project_id / work_item_id 才是后端认可的检索锚点。source_ref(如 notification:xxx)单独
+    // 不授权检索 → 非管理员点通知里的「查相关证据」(仅带 source_ref)会 403。把它排除出 hasScope,使这种
+    // 无真实锚点的 403 落到外壳内的知识库落地页(指引 + 导航),而不是裸 403 死胡同。
+    const hasScope = Boolean(projectId || workItemId);
     try {
       const evidence = await client.searchKnowledge({
         ...(q ? { q } : {}),
