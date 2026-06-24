@@ -121,6 +121,8 @@ export const webRouteComponentCss = [
   ".wh-r4-route-row:first-child{border-top:0;padding-top:0}",
   ".wh-r4-route-row p,.wh-r4-route-row h3,.wh-r4-route-row strong{margin:0;overflow-wrap:anywhere}",
   ".wh-r4-route-row p{color:var(--wh-product-muted,#66728c);line-height:1.45}",
+  ".wh-r4-route-row-title{color:var(--wh-product-accent,#2f6df0);text-decoration:none}",
+  ".wh-r4-route-row-title:hover,.wh-r4-route-row-title:focus-visible{text-decoration:underline}",
   ".wh-r4-route-card{display:grid;gap:10px;min-width:0;max-width:100%;overflow:hidden}",
   ".wh-r4-route-card h3{margin:0;font-size:16px;line-height:1.35;overflow-wrap:anywhere}",
   ".wh-r4-route-card p{margin:0;color:var(--wh-product-muted,#66728c);line-height:1.5;overflow-wrap:anywhere}",
@@ -2637,17 +2639,21 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
       const archivedPill = project.archived
         ? `<span class="wh-pill" data-r8-project-archived="true">${escapeHtml(routeT(locale, "projects.archived"))}</span>`
         : "";
+      // L2：更新时间是每个项目都该有的元信息——以前它只在「没有描述」时顶替描述出现，
+      // 有描述的项目就再也看不到更新时间，列表元信息前后不一致。改为始终作为一枚 pill 渲染。
       const descriptionLine = project.description
         ? `<p>${escapeHtml(project.description)}</p>`
-        : `<p>${escapeHtml(`${routeT(locale, "projects.updated")} ${project.updated_at.slice(0, 10)}`)}</p>`;
+        : "";
+      const updatedLabel = `${routeT(locale, "projects.updated")} ${project.updated_at.slice(0, 10)}`;
       const projectHref = `/projects/${encodeURIComponent(project.id)}`;
       return `<div class="wh-r4-route-row" data-r8-project="${escapeHtml(project.id)}" data-r8-project-slug="${escapeHtml(project.slug)}" data-r8-project-archived="${escapeHtml(String(project.archived))}" data-r8-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
       <div>
-        <strong>${escapeHtml(project.name)}</strong>
+        <strong><a class="wh-r4-route-row-title" href="${escapeHtml(safeHref(projectHref))}">${escapeHtml(project.name)}</a></strong>
         ${descriptionLine}
         <div class="wh-r4-route-meta">
           <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.owner")} · ${project.owner_nickname}`)}</span>
           <span class="wh-pill">${escapeHtml(openLabel)}</span>
+          <span class="wh-pill" data-r8-project-updated="true">${escapeHtml(updatedLabel)}</span>
           ${archivedPill}
         </div>
       </div>
