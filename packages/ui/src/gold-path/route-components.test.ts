@@ -1423,6 +1423,22 @@ test("R5.5 Meeting route component exposes meetings, insights, actions, and appr
   assertNoMainWindowBoundaryLeak(meetings.html);
 });
 
+test("xreview batch D: meetings empty state renders a tailored card, not phantom transcript/minutes", () => {
+  const vm = structuredClone(meetingPageVm());
+  vm.meetings = [];
+  vm.summary = { meeting_count: 0, ready_count: 0, pending_insight_count: 0, confirmed_insight_count: 0, dismissed_insight_count: 0 };
+  vm.empty_state = "no_meetings";
+  const meetings = renderWebRouteComponent({ key: "meetings", meetings: vm }, { locale: "en-US" });
+  // No phantom "this meeting has no transcript/minutes" panels for a meeting that does not exist.
+  assert.equal(meetings.html.includes('data-r5-meeting-transcript'), false);
+  assert.equal(meetings.html.includes('data-r5-meeting-minutes'), false);
+  assert.equal(meetings.html.includes('data-r5-meeting-insight-panel'), false);
+  // A single tailored empty card instead.
+  assert.equal(meetings.html.includes('data-r5-meeting-empty="true"'), true);
+  // The meeting list shell still renders (with its own empty message).
+  assert.equal(meetings.html.includes('data-r5-meeting-list="true"'), true);
+});
+
 test("R5.6 Notifications route component groups inbox buckets and exposes audited actions", () => {
   const notifications = renderWebRouteComponent({ key: "notifications", notifications: notificationPageVm() }, { locale: "en-US" });
   const zh = renderWebRouteComponent({ key: "notifications", notifications: notificationPageVm() }, { locale: "zh-CN" });

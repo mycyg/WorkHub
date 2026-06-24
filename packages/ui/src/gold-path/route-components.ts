@@ -220,6 +220,11 @@ type RouteCopyKey =
   | "drive.recycle"
   | "drive.operations"
   | "drive.empty"
+  | "drive.emptyFiles"
+  | "drive.emptyVersions"
+  | "drive.emptyRecycle"
+  | "drive.emptyOperations"
+  | "drive.selectFile"
   | "drive.upload"
   | "drive.delete"
   | "drive.preview"
@@ -414,6 +419,11 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.recycle": "回收站",
     "drive.operations": "操作日志",
     "drive.empty": "这个项目还没有正式交付物。",
+    "drive.emptyFiles": "这个项目的网盘还是空的，上传或生成文件后会出现在这里。",
+    "drive.emptyVersions": "还没有历史版本。",
+    "drive.emptyRecycle": "回收站是空的。",
+    "drive.emptyOperations": "还没有操作记录。",
+    "drive.selectFile": "从左侧选一个文件查看详情。",
     "drive.upload": "插入示例文件",
     "drive.delete": "移到回收站",
     "drive.preview": "预览",
@@ -610,6 +620,11 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.recycle": "Recycle",
     "drive.operations": "Operation log",
     "drive.empty": "This project does not have accepted deliverables yet.",
+    "drive.emptyFiles": "This project's drive is empty — uploaded or generated files will show up here.",
+    "drive.emptyVersions": "No version history yet.",
+    "drive.emptyRecycle": "The recycle bin is empty.",
+    "drive.emptyOperations": "No operations yet.",
+    "drive.selectFile": "Pick a file on the left to see its details.",
     "drive.upload": "Insert sample file",
     "drive.delete": "Move to recycle",
     "drive.preview": "Preview",
@@ -1397,12 +1412,9 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
           ${optionCards}
         </section>
         <aside class="wh-r4-route-stack">
-          <section class="wh-card wh-r4-route-card" data-r4-intake-summary="true">
-            <h3>${escapeHtml(routeT(locale, "intake.summary"))}</h3>
-            ${activeStepLabel ? `<div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(activeStepLabel)}</span></div>` : ""}
-          </section>
           <section class="wh-card wh-r4-route-card" data-r4-intake-progress="true">
             <h3>${escapeHtml(routeT(locale, "intake.progress"))}</h3>
+            ${activeStepLabel ? `<p class="wh-subtle" data-r4-intake-active-step="true">${escapeHtml(locale === "zh-CN" ? `当前：${activeStepLabel}` : `Now: ${activeStepLabel}`)}</p>` : ""}
             <div class="wh-r4-route-timeline">${intakeProgressRows(vm, locale)}</div>
           </section>
         </aside>
@@ -1947,7 +1959,7 @@ function renderProposalRouteComponent(
       </div>
       <span class="wh-pill">${escapeHtml(comment.created_at)}</span>
     </div>`).join("")
-    : `<p class="wh-subtle">${escapeHtml(uiT(locale, "proposal.comments"))}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无评论" : "No comments yet")}</p>`;
   const reactMutationEditorHost = hasFieldEditor
     ? `<div class="wh-field-editor wh-field-editor--react" data-r4-proposal-react-mutation-editor-host="structured-field-scalar" data-r4-proposal-react-mutation-editor-mounted="false" data-r4-proposal-react-mutation-editor-fallback-hidden="false"></div>`
     : "";
@@ -2135,7 +2147,7 @@ function renderDriveRouteComponent(
         </div>
       </div>`;
     }).join("")
-    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.empty"))}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyFiles"))}</p>`;
   // L9：masthead 的「文件 N」与大号标题数字用的是 file_count(不含文件夹),但文件列表渲染的是 items(文件夹+文件),
   // 数字和可见行数对不上。在列表标题上挑明「文件夹 N · 文件 M」,让标题数字与列表内容自洽。
   const driveFolderCount = vm.items.filter((item) => item.kind === "folder").length;
@@ -2152,7 +2164,7 @@ function renderDriveRouteComponent(
         ${version.current ? `<span class="wh-pill">${escapeHtml(routeT(locale, "drive.current"))}</span>` : ""}
       </div>
     </div>`).join("")
-    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.empty"))}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyVersions"))}</p>`;
   const acceptedRows = vm.accepted_deliverables.length
     ? vm.accepted_deliverables.slice(0, 6).map((accepted) => `<article class="wh-card wh-r4-route-card" data-r4-drive-accepted-deliverable="${escapeHtml(accepted.id)}">
       <div class="wh-r4-route-meta">
@@ -2189,7 +2201,7 @@ function renderDriveRouteComponent(
         ${item.deleted_at ? `<span class="wh-pill">${escapeHtml(item.deleted_at.slice(0, 10))}</span>` : ""}
       </div>
     </div>`).join("")
-    : `<p class="wh-subtle">0</p>`;
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyRecycle"))}</p>`;
   const operationRows = vm.operations.length
     ? vm.operations.slice(0, 6).map((operation) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-drive-operation="${escapeHtml(operation.id)}" data-r5-drive-operation-type="${escapeHtml(operation.op_type)}">
       <div>
@@ -2201,7 +2213,7 @@ function renderDriveRouteComponent(
         ${operation.target_path ? `<span class="wh-pill">${escapeHtml(operation.target_path)}</span>` : ""}
       </div>
     </div>`).join("")
-    : `<p class="wh-subtle">0</p>`;
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyOperations"))}</p>`;
   const primaryHrefs = [
     vm.actions.upload_file?.href,
     vm.actions.delete_item?.href,
@@ -2229,7 +2241,7 @@ function renderDriveRouteComponent(
           ${driveProjectNav}
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "drive.kicker"))}</span>
           <h1>${escapeHtml(projectTitle)}</h1>
-          <p>${escapeHtml(selectedItem?.path ?? routeT(locale, "drive.empty"))}</p>
+          <p>${escapeHtml(selectedItem?.path ?? routeT(locale, "drive.selectFile"))}</p>
           ${driveManageActions ? `<div class="wh-r4-route-actions" data-r5-drive-manage-actions="true">${driveManageActions}</div>` : ""}
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.file_count))}</span>
@@ -2359,15 +2371,15 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): 
           <h3>${escapeHtml(routeT(locale, "meeting.kicker"))}</h3>
           <div class="wh-r4-route-timeline">${meetingRows}</div>
         </section>
-        <aside class="wh-r4-route-stack" data-r5-meeting-insight-panel="true">
+        ${selectedMeeting ? `<aside class="wh-r4-route-stack" data-r5-meeting-insight-panel="true">
           <section class="wh-card wh-r4-route-card">
             <h3>${escapeHtml(routeT(locale, "meeting.insights"))}</h3>
             <div class="wh-r4-route-stack">${insightRows}</div>
             <p>${escapeHtml(routeT(locale, "meeting.approvalSafe"))}</p>
           </section>
-        </aside>
+        </aside>` : ""}
       </div>
-      <div class="wh-r4-route-grid">
+      ${selectedMeeting ? `<div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r5-meeting-transcript="true">
           <h3>${escapeHtml(routeT(locale, "meeting.transcript"))}</h3>
           <pre class="wh-r5-meeting-text">${escapeHtml(transcript)}</pre>
@@ -2376,7 +2388,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): 
           <h3>${escapeHtml(routeT(locale, "meeting.minutes"))}</h3>
           <pre class="wh-r5-meeting-text">${escapeHtml(minutes)}</pre>
         </section>
-      </div>
+      </div>` : `<div class="wh-r4-route-grid"><article class="wh-card wh-r4-route-card" data-r5-meeting-empty="true"><h3>${escapeHtml(routeT(locale, "meeting.empty"))}</h3><p class="wh-subtle">${escapeHtml(vm.can_manage ? (locale === "zh-CN" ? "上传一段会议录音或转写，Cuu 会自动整理出纪要和待办洞察。" : "Upload a recording or transcript and Cuu will draft minutes and action insights.") : (locale === "zh-CN" ? "等团队上传会议后，这里会出现转写、纪要和洞察。" : "Once a teammate uploads a meeting, transcript, minutes and insights show up here."))}</p></article></div>`}
     </section>`
   });
 }
