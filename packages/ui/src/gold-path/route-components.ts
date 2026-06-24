@@ -1633,6 +1633,24 @@ function workItemActions(vm: WorkItemDetailVM, locale: WorkHubLocale): ActionSpe
   return actions.filter((action): action is ActionSpec => Boolean(action));
 }
 
+// M15：某些状态(已升级/进行中/待审阅/终态…)在无变更申请、无运行、非待派活时本就没有用户动作。
+// 别留一个零按钮零说明的死卡——按状态给一句「为什么没动作 + 接下来会怎样」的说明。
+function workItemActionHint(status: string, zh: boolean): string {
+  const map: Record<string, [string, string]> = {
+    intake: ["AI 正在接收这条需求，稍后会请你澄清。", "AI is taking in this request; it will ask you to clarify soon."],
+    ai_clarifying: ["AI 正在和你澄清需求，去「提需求」入口继续。", "AI is clarifying with you — continue from the intake flow."],
+    in_progress: ["AI 正在处理，有进展会更新到这里。", "AI is working on this; progress will appear here."],
+    in_review: ["等待审阅，相关变更会以审批 / 变更申请的形式找你。", "Awaiting review — changes will reach you as an approval / change request."],
+    escalated: ["已升级给负责人接手，无需你额外操作。", "Escalated to an owner to take over — nothing more needed from you."],
+    delivery_ready: ["交付物已就绪，等待采纳。", "The deliverable is ready, awaiting acceptance."],
+    accepted: ["这条已采纳。", "This one was accepted."],
+    done: ["这条已完成。", "This one is done."],
+    cancelled: ["这条已取消。", "This one was cancelled."]
+  };
+  const entry = map[status];
+  return entry ? (zh ? entry[0] : entry[1]) : (zh ? "暂时没有需要你操作的动作。" : "Nothing needs your action right now.");
+}
+
 function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale) {
   const source = vm.source_context;
   if (!source) {
@@ -1718,7 +1736,9 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
           </div>
           <p>${escapeHtml(vm.workitem.planning_note ?? vm.workitem.raw_description)}</p>
           ${renderWorkItemSourceContext(vm, locale)}
-          ${renderActions(actions)}
+          ${actions.length
+    ? renderActions(actions)
+    : `<p class="wh-subtle" data-r4-workitem-action-hint="${escapeHtml(vm.workitem.status)}">${escapeHtml(workItemActionHint(vm.workitem.status, locale === "zh-CN"))}</p>`}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-workitem-deliverables="true">
           <h3>${escapeHtml(routeT(locale, "workitem.deliverables"))}</h3>
