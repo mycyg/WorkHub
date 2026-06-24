@@ -1324,6 +1324,8 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
     : "";
   const continuePayload = { selected_option_ids: [] as string[] };
   const createPayload = { session_id: vm.session_id, selected_option_ids: [] as string[] };
+  // L11：进度速览卡别把内部管道(SSE topic / stream_href)当药丸暴露给用户;改显「当前在澄清哪一步」这种人话。
+  const activeStepLabel = question.progress.find((step) => step.state === "active")?.label ?? "";
   const createAction = question.input_mode === "confirm"
     ? `<a class="wh-btn wh-btn-primary" href="/api/workitems" data-action-id="create_workitem" data-method="POST" data-intake-create-workitem="true" data-session-id="${escapeHtml(vm.session_id)}" data-request-json="${jsonAttr(createPayload)}">${escapeHtml(routeT(locale, "intake.createWorkItem"))}</a>`
     : "";
@@ -1351,11 +1353,7 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
         <aside class="wh-r4-route-stack">
           <section class="wh-card wh-r4-route-card" data-r4-intake-summary="true">
             <h3>${escapeHtml(routeT(locale, "intake.summary"))}</h3>
-            <div class="wh-r4-route-meta">
-              <span class="wh-pill">${escapeHtml(vm.topic)}</span>
-              <span class="wh-pill">${escapeHtml(vm.stream_href)}</span>
-            </div>
-            <p>${escapeHtml(routeT(locale, "intake.freeText"))}</p>
+            ${activeStepLabel ? `<div class="wh-r4-route-meta"><span class="wh-pill">${escapeHtml(activeStepLabel)}</span></div>` : ""}
           </section>
           <section class="wh-card wh-r4-route-card" data-r4-intake-progress="true">
             <h3>${escapeHtml(routeT(locale, "intake.progress"))}</h3>
