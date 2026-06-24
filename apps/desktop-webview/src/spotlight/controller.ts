@@ -76,7 +76,7 @@ function renderLauncherGrid(
       const active = index === 0;
       // rank5：组合框/列表框 ARIA——每张能力卡是 option、可读 aria-selected；输入框(combobox)
       // 用 aria-activedescendant 指向当前项，箭头键移动时屏幕阅读器能播报，无需移动 DOM 焦点。
-      return `<button type="button" id="wh-spot-opt-${index}" role="option" aria-selected="${active ? "true" : "false"}" class="wh-spot-cap" data-spot-cap="${command.id}" data-active="${active ? "true" : "false"}">
+      return `<button type="button" tabindex="-1" id="wh-spot-opt-${index}" role="option" aria-selected="${active ? "true" : "false"}" class="wh-spot-cap" data-spot-cap="${command.id}" data-active="${active ? "true" : "false"}">
         <span class="wh-spot-cap-icon" aria-hidden="true">${command.icon}</span>
         <span class="wh-spot-cap-text">
           <span class="wh-spot-cap-label">${escapeHtml(command.label[loc])}</span>
@@ -322,7 +322,14 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   // —— 交互 —— //
   input2.addEventListener("input", () => {
     dispatch({ type: "setQuery", query: input2.value });
+    box.dataset.kbd = "true"; // L5：打字也是键盘交互 → 高亮 Enter 将选中的首项(box 跨重渲存活)
   });
+  // L5：鼠标一动就退出键盘高亮模式,避免「箭头选了 A、又去 hover B」时两张都像被选中。
+  body.addEventListener("pointermove", () => {
+    if (box.dataset.kbd === "true") {
+      box.dataset.kbd = "false";
+    }
+  }, { passive: true });
 
   // 聚焦搜索框 → 展开能力网格(从"只有搜索框"的收起态生长开)。
   input2.addEventListener("focus", () => {
@@ -366,6 +373,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     if (caps.length === 0) {
       return;
     }
+    box.dataset.kbd = "true"; // L5：进入键盘导航模式 → 才显默认高亮 accent 环
     let current = caps.findIndex((c) => c.dataset.active === "true");
     if (current < 0) {
       current = 0;

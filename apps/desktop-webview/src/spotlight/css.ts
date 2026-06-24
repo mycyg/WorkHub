@@ -37,10 +37,12 @@ export const spotlightCss = [
   // 能力网格（launcher）。
   ".wh-spot-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}",
   ".wh-spot-cap{display:flex;align-items:center;gap:11px;text-align:left;border:1px solid transparent;background:rgba(255,255,255,.42);border-radius:var(--ds-radius-md);padding:11px 12px;cursor:pointer;color:var(--ds-ink);transition:transform var(--ds-dur-fast) var(--ds-ease-out),background var(--ds-dur-fast) var(--ds-ease),border-color var(--ds-dur-fast) var(--ds-ease),box-shadow var(--ds-dur-fast) var(--ds-ease);will-change:transform}",
-  ".wh-spot-cap:hover,.wh-spot-cap[data-active=\"true\"]{background:rgba(255,255,255,.72);border-color:var(--ds-glass-border)}",
+  ".wh-spot-cap:hover{background:rgba(255,255,255,.72);border-color:var(--ds-glass-border)}",
   ".wh-spot-cap:hover{transform:translateY(-1px);box-shadow:var(--ds-shadow-1)}",
   ".wh-spot-cap:active{transform:translateY(0) scale(.975)}",
-  ".wh-spot-cap[data-active=\"true\"]{box-shadow:inset 0 0 0 2px var(--ds-accent)}",
+  // L5：默认高亮(首项 data-active)只在键盘导航(box[data-kbd])下才显 accent 环+底色——否则鼠标打开时首卡
+  // 永远顶着选中环、再 hover 另一张就「两张都像被选中」,读起来像卡死的 hover。鼠标模式下只有 :hover 高亮。
+  ".wh-spot[data-kbd=\"true\"] .wh-spot-cap[data-active=\"true\"]{background:rgba(255,255,255,.72);border-color:var(--ds-glass-border);box-shadow:inset 0 0 0 2px var(--ds-accent)}",
   // rank17：键盘用户可见焦点环——Tab/聚焦任意盒内可交互元素都给清晰的 accent outline(鼠标点击不触发)。
   ".wh-spot :focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px;border-radius:var(--ds-radius-sm)}",
   ".wh-spot-cap-icon{display:inline-flex;width:24px;height:24px;flex:0 0 auto;color:var(--ds-accent)}.wh-spot-cap-icon svg{width:24px;height:24px}",
