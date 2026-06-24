@@ -1364,12 +1364,32 @@ export async function bootDesktopPetSurface(
     }
   }
 
+  // L11：尊重 OS 的「减弱动态效果」。把系统 prefers-reduced-motion 接进控制器的 reduced_motion——开了就静默 Cuu 的
+  // 4Hz 闲置微动作(不必再单独翻应用内开关);仅运行时生效、不写盘(不污染用户应用内偏好);OS 关掉时回落到应用内设的值。
+  // Tauri webview 支持 matchMedia;测试/无 matchMedia 环境安全跳过。
+  const baseReduceMotion = controller.snapshot().preferences.reduced_motion;
+  const reduceMotionQuery = typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : undefined;
+  const applyOsReduceMotion = (osReduce: boolean) => {
+    controller.setPreferences({ reduced_motion: osReduce || baseReduceMotion });
+    render();
+  };
+  const onReduceMotionChange = (event: MediaQueryListEvent) => applyOsReduceMotion(event.matches);
+  if (reduceMotionQuery) {
+    if (reduceMotionQuery.matches) {
+      applyOsReduceMotion(true);
+    }
+    reduceMotionQuery.addEventListener?.("change", onReduceMotionChange);
+  }
+
   return {
     controller,
     idleScheduler,
     pointerSensor,
     subscribed: runtime.subscribed,
     async dispose() {
+      reduceMotionQuery?.removeEventListener?.("change", onReduceMotionChange);
       window.clearInterval(idleTimer);
       if (clickThroughTimer !== undefined) {
         window.clearInterval(clickThroughTimer);
