@@ -376,7 +376,17 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       } else if (event.key === "Escape") {
         if (openCapabilityId(state)) {
           event.preventDefault();
-          dispatch({ type: "back" });
+          // M3：若当前能力视图正处于内部详情(list→detail),先退一级——点它已渲染好的「返回列表」按钮,
+          // 让 Esc 与屏幕上的面包屑返回逐级一致;只有视图没有内部详情层时,Esc 才退回 launcher(能力网格)。
+          // 这些 data-*-back 仅在各 view 的 detail HTML 里出现,list 态查不到 → 自然退回顶层。
+          const internalBack = body.querySelector<HTMLElement>(
+            "[data-wi-back],[data-prop-back],[data-run-back],[data-back-to-projects]"
+          );
+          if (internalBack) {
+            internalBack.click();
+          } else {
+            dispatch({ type: "back" });
+          }
         } else if (input2.value) {
           event.preventDefault();
           input2.value = "";

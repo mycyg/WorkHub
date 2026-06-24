@@ -732,3 +732,13 @@ test("R4.21 desktop browser uses the shared web runtime helpers", () => {
   assert.doesNotMatch(source, /function conflictsFromMergeError/u);
   assert.doesNotMatch(source, /function updateLineEditorPanelPayload/u);
 });
+
+test("M3 Spotlight ESC pops a view's internal detail before leaving the capability", () => {
+  // 没有控制器 DOM 测试床,这里以源码静态断言守住 M3：能力内 Esc 必须先点视图自己的「返回列表」按钮
+  // (data-*-back，仅 detail 态存在)，只有查不到内部详情层时才 dispatch 顶层 back 退回 launcher。
+  const source = readFileSync(new URL("./spotlight/controller.ts", import.meta.url), "utf8");
+  assert.match(source, /data-wi-back/u);
+  assert.match(source, /data-back-to-projects/u);
+  // ESC 分支里：查到内部返回按钮就点它(退一级)，否则才 dispatch 顶层 back。
+  assert.match(source, /if \(internalBack\) \{\s*internalBack\.click\(\);\s*\} else \{\s*dispatch\(\{ type: "back" \}\);/u);
+});
