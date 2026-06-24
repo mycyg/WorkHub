@@ -576,7 +576,13 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     status: "状态",
     owner: "负责人",
     archived: "已归档",
-    events: "事项"
+    events: "事项",
+    needsDecision: "需要你决定",
+    resolvedInsights: "已处理洞察",
+    skillsActive: "激活技能",
+    skillsRefined: "已精修",
+    skillsAiAuthored: "AI 撰写",
+    acceptedDeliverables: "已采纳"
   },
   "en-US": {
     primary: "Focus",
@@ -614,7 +620,13 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     status: "Status",
     owner: "Owner",
     archived: "Archived",
-    events: "Events"
+    events: "Events",
+    needsDecision: "Needs your decision",
+    resolvedInsights: "Resolved insights",
+    skillsActive: "Active skills",
+    skillsRefined: "Refined",
+    skillsAiAuthored: "AI-authored",
+    acceptedDeliverables: "Accepted"
   }
 };
 
@@ -648,10 +660,21 @@ function shellPagesFor(match: WebRouteMatch, locale: WorkHubLocale, activeMetric
 
 function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): WebProductMetric[] {
   if (surface.key === "home") {
+    // queue chip 与组件正文同口径：live /api 把 primary=queue[0] 留在 queue 里，chip 若直接用 queue.length
+    // 会和 Focus(=1) 叠成「Focus 1 · Queue 3」诱导 1+3=4 误读。去掉首决策后只数其余队列。
+    const primaryId = surface.attention.primary?.id;
+    const queueRest = primaryId
+      ? surface.attention.queue.filter((item) => item.id !== primaryId).length
+      : surface.attention.queue.length;
+    // 「AI 正在做」只数真正在跑的(running/queued)；background_runs 还含 failed / waiting_for_user，
+    // 否则 chip 显「3 在做」而正文药丸却标着一条失败、一条等你——把不在做的也算进去了。
+    const workingRuns = surface.attention.background_runs.filter(
+      (run) => run.state === "running" || run.state === "queued"
+    ).length;
     return [
       metric(locale, "primary", surface.attention.primary ? "1" : "0"),
-      metric(locale, "queue", String(surface.attention.queue.length)),
-      metric(locale, "running", String(surface.attention.background_runs.length))
+      metric(locale, "queue", String(queueRest)),
+      metric(locale, "running", String(workingRuns))
     ];
   }
   if (surface.key === "projects") {
@@ -708,7 +731,9 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
   if (surface.key === "workitem") {
     return [
       metric(locale, "trace", String(surface.workitem.agent_trace_preview.length)),
-      metric(locale, "deliverables", String(surface.workitem.accepted_deliverables.length)),
+      // chip 口径是「已采纳交付物」(accepted_deliverables)，而卡片正文列的是 AI 提议的改动(未采纳)。
+      // 用 acceptedDeliverables 标签让 chip 不再和卡片标题撞「交付物」却数字对不上。
+      metric(locale, "acceptedDeliverables", String(surface.workitem.accepted_deliverables.length)),
       metric(locale, "evidence", String(surface.workitem.evidence_refs.length))
     ];
   }
@@ -730,12 +755,14 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
     return [
       metric(locale, "meetings", String(surface.meetings.summary.meeting_count)),
       metric(locale, "pending", String(surface.meetings.summary.pending_insight_count)),
-      metric(locale, "insights", String(surface.meetings.summary.confirmed_insight_count + surface.meetings.summary.dismissed_insight_count))
+      // 这个 chip 是「已处理(确认+忽略)」洞察数，旁边已有 pending chip；旧标签「洞察」会被读成总数(和正文洞察清单打架)。
+      metric(locale, "resolvedInsights", String(surface.meetings.summary.confirmed_insight_count + surface.meetings.summary.dismissed_insight_count))
     ];
   }
   if (surface.key === "notifications") {
     return [
-      metric(locale, "pending", String(surface.notifications.summary.needs_decision_count)),
+      // 这一项就是正文「需要你决定」桶的计数；旧标签「待处理」(和审批/会议共用)让用户看不出是同一队列。
+      metric(locale, "needsDecision", String(surface.notifications.summary.needs_decision_count)),
       metric(locale, "unread", String(surface.notifications.summary.unread_count)),
       metric(locale, "done", String(surface.notifications.summary.done_count))
     ];
@@ -777,10 +804,11 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
     ];
   }
   if (surface.key === "skills") {
+    // 旧代码复用了首页的 primary/queue/running 标签(焦点/队列/后台)，在技能页是彻底错的标签。
     return [
-      metric(locale, "primary", String(surface.skills.totals.active)),
-      metric(locale, "queue", String(surface.skills.totals.refined)),
-      metric(locale, "running", String(surface.skills.totals.ai_authored))
+      metric(locale, "skillsActive", String(surface.skills.totals.active)),
+      metric(locale, "skillsRefined", String(surface.skills.totals.refined)),
+      metric(locale, "skillsAiAuthored", String(surface.skills.totals.ai_authored))
     ];
   }
   return [

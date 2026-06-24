@@ -369,7 +369,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
   "zh-CN": {
     "workitem.context": "任务上下文",
     "workitem.trace": "AI 工作过程",
-    "workitem.deliverables": "交付物入口",
+    "workitem.deliverables": "AI 提议的改动",
     "workitem.driveSource": "网盘评论来源",
     "workitem.meetingSource": "会议洞察来源",
     "workitem.openProposal": "查看变更申请",
@@ -565,7 +565,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
   "en-US": {
     "workitem.context": "Task context",
     "workitem.trace": "AI execution trace",
-    "workitem.deliverables": "Deliverable entry",
+    "workitem.deliverables": "Proposed changes",
     "workitem.driveSource": "Drive comment source",
     "workitem.meetingSource": "Meeting insight source",
     "workitem.openProposal": "Open change request",
@@ -1111,7 +1111,9 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
   // 按 id 去重得到「除首决策外的剩余队列」，避免首决策被重复计数 + 重复渲染（对两种来源都正确）。
   const queueWithoutPrimary = primary ? vm.queue.filter((item) => item.id !== primary.id) : vm.queue;
   const decideCount = queueWithoutPrimary.length + (primary ? 1 : 0);
-  const workingCount = vm.background_runs.length;
+  // 「AI 正在做」只数真正在跑的(running/queued)；background_runs 还含 failed / waiting_for_user，
+  // 列表里那些会标「失败 / 需要你」药丸——把它们算进「正在做」会和正文自相矛盾。
+  const workingCount = vm.background_runs.filter((run) => run.state === "running" || run.state === "queued").length;
   const evidenceCount = primary?.evidence_refs?.length ?? 0;
   const worklog = vm.worklog;
 
@@ -1823,7 +1825,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
     source: "page-vm",
     locale,
     pageVm: "workitem",
-    html: `<section class="wh-r4-route" data-r4-route-component="workitem" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-workitem-id="${escapeHtml(vm.workitem.id)}" data-r4-workitem-trace-count="${escapeHtml(String(vm.agent_trace_preview.length))}" data-r4-workitem-evidence-count="${escapeHtml(String(vm.evidence_refs.length))}" data-r4-workitem-acceptance-count="${escapeHtml(String(vm.acceptance.length))}" data-r4-workitem-deliverable-count="${escapeHtml(String(vm.accepted_deliverables.length + (latestProposal?.changes.length ?? 0)))}">
+    html: `<section class="wh-r4-route" data-r4-route-component="workitem" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-workitem-id="${escapeHtml(vm.workitem.id)}" data-r4-workitem-trace-count="${escapeHtml(String(vm.agent_trace_preview.length))}" data-r4-workitem-evidence-count="${escapeHtml(String(vm.evidence_refs.length))}" data-r4-workitem-acceptance-count="${escapeHtml(String(vm.acceptance.length))}" data-r4-workitem-deliverable-count="${escapeHtml(String(latestProposal?.changes.length ?? 0))}">
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(uiT(locale, "workitem.kicker"))}</span>

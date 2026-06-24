@@ -1358,6 +1358,34 @@ test("M5 project-home: 进行中 stat chip uses the全量 total (matches header 
   assert.equal(legacyResult.html.includes('data-r4-product-metric="openwork"><strong>5</strong>'), true);
 });
 
+test("xreview batch C: stat chips carry surface-specific labels (no recycled home labels)", async () => {
+  const surface = goldPathSurfaceVm();
+
+  // Skills page must NOT recycle the home inbox labels Focus/Queue/Background for skill totals.
+  const { client: skillsClient } = fakeRouteClient(surface, {
+    skills: { generated_at: "2026-06-16T00:00:00.000Z", skills: [], totals: { active: 5, refined: 2, ai_authored: 3 } }
+  });
+  const skills = await loadWebRoute(skillsClient, resolveWebRoute("/dashboard/skills")!, "en-US");
+  assert.equal(skills.status, "ready");
+  assert.equal(skills.html.includes("<strong>5</strong><span>Active skills</span>"), true);
+  assert.equal(skills.html.includes("<strong>2</strong><span>Refined</span>"), true);
+  assert.equal(skills.html.includes("<strong>3</strong><span>AI-authored</span>"), true);
+  assert.equal(skills.html.includes("<span>Focus</span>"), false);
+  assert.equal(skills.html.includes("<span>Background</span>"), false);
+
+  // Notifications "needs your decision" chip must not be labeled with the shared "Pending" id.
+  const notifications = await loadWebRoute(fakeRouteClient(surface).client, resolveWebRoute("/notifications")!, "en-US");
+  assert.equal(notifications.status, "ready");
+  assert.equal(notifications.html.includes('data-r4-product-metric="needsDecision"><strong>'), true);
+  assert.equal(notifications.html.includes("<span>Needs your decision</span>"), true);
+
+  // Workitem deliverables chip is the ACCEPTED count, labeled distinctly from the proposed-changes card.
+  const workitem = await loadWebRoute(fakeRouteClient(surface).client, resolveWebRoute("/workitems/93000000-0000-4000-8000-000000000001")!, "en-US");
+  assert.equal(workitem.status, "ready");
+  assert.equal(workitem.html.includes('data-r4-product-metric="acceptedDeliverables">'), true);
+  assert.equal(workitem.html.includes("Proposed changes"), true);
+});
+
 test("R8 S4b intake start binds to an existing project when ?project_id is present", async () => {
   const surface = goldPathSurfaceVm();
   const projectId = "93000000-0000-4000-8000-000000000001";
