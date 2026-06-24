@@ -873,19 +873,33 @@ function jsonAttr(value: unknown) {
   return escapeHtml(JSON.stringify(value));
 }
 
+// M3：决策队列里每条都要能点进去处理,不能是死文本。优先用第一个导航(GET)动作的 href,
+// 否则退回工作项/项目详情路由;实在没有目标时才退化为不可点的 div(不造死链)。
+function attentionRowHref(item: AttentionItem): string | undefined {
+  const navAction = item.actions.find((action) => action.method === "GET" && action.href);
+  if (navAction) return navAction.href;
+  if (item.work_item_id) return `/workitems/${item.work_item_id}`;
+  if (item.project_id) return `/projects/${item.project_id}`;
+  return undefined;
+}
+
 function renderAttentionRows(items: AttentionItem[], emptyCopy: string, zh: boolean) {
   if (items.length === 0) {
     return `<p class="wh-subtle">${escapeHtml(emptyCopy)}</p>`;
   }
   return items
     .slice(0, 4)
-    .map((item) => `<div class="wh-r4-route-row" data-r4-route-attention-item="${escapeHtml(item.id)}">
-      <div>
+    .map((item) => {
+      const href = attentionRowHref(item);
+      const inner = `<div>
         <strong>${escapeHtml(item.title)}</strong>
         <p>${escapeHtml(item.summary_text)}</p>
       </div>
-      <span class="wh-pill">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span>
-    </div>`)
+      <span class="wh-pill">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span>`;
+      return href
+        ? `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(href))}" data-r4-route-attention-item="${escapeHtml(item.id)}">${inner}</a>`
+        : `<div class="wh-r4-route-row" data-r4-route-attention-item="${escapeHtml(item.id)}">${inner}</div>`;
+    })
     .join("");
 }
 
@@ -2732,14 +2746,29 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       <span class="wh-pill">${escapeHtml(risk.status)}</span>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.statusFallback"))}</p>`;
+  const zhNotice = locale === "zh-CN";
   const notices = vm.notices.length
-    ? vm.notices.map((notice) => `<div class="wh-r4-route-row" data-r4-cost-notice="${escapeHtml(notice.code)}" data-r4-cost-notice-severity="${escapeHtml(notice.severity)}">
+    // M24：预算通知要把推荐动作(降级模型/暂停/联系管理员)当按钮渲出来,而不是只给一个跳回本页的自指链接;
+    // 标题用本地化严重度,而不是裸 "warning"。
+    ? vm.notices.map((notice) => {
+      const options = notice.options ?? [];
+      const optionButtons = options.length
+        ? options.map((option, index) => `<a class="wh-btn${index === 0 ? " wh-btn-primary" : ""}" href="${escapeHtml(safeHref(option.action_href))}" data-r4-cost-notice-option="${escapeHtml(option.id)}">${escapeHtml(option.label)}</a>`).join("")
+        : (notice.action_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(notice.action_href))}" data-r4-cost-notice-action="true">${escapeHtml(goldPathT(locale, "cost.title"))}</a>` : "");
+      const severityLabel = localizedEnumLabel(
+        notice.severity,
+        zhNotice,
+        { info: "提示", warning: "提醒", critical: "严重" },
+        { info: "Info", warning: "Warning", critical: "Critical" }
+      );
+      return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-cost-notice="${escapeHtml(notice.code)}" data-r4-cost-notice-severity="${escapeHtml(notice.severity)}">
       <div>
-        <strong>${escapeHtml(notice.severity)}</strong>
+        <strong>${escapeHtml(severityLabel)}</strong>
         <p>${escapeHtml(notice.message)}</p>
       </div>
-      ${notice.action_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(notice.action_href))}">${escapeHtml(goldPathT(locale, "cost.title"))}</a>` : ""}
-    </div>`).join("")
+      ${optionButtons ? `<div class="wh-r4-route-actions">${optionButtons}</div>` : ""}
+    </div>`;
+    }).join("")
     : "";
   const models = vm.model_breakdown.slice(0, 5)
     .map((item) => `<div class="wh-r4-route-row" data-r4-cost-model="${escapeHtml(`${item.provider}:${item.model}`)}">
