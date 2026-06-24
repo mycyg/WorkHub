@@ -71,7 +71,8 @@ function renderLauncherGrid(
   const cards = matches
     .map(({ command }, index) => {
       const badge = badges[command.id];
-      const badgeHtml = typeof badge === "number" && badge > 0 ? `<span class="wh-spot-cap-badge">${badge}</span>` : "";
+      // L7：角标(如待处理审批数)给无障碍标签,屏幕阅读器能播报「N 待处理」而非只读一个孤立数字。
+      const badgeHtml = typeof badge === "number" && badge > 0 ? `<span class="wh-spot-cap-badge" aria-label="${badge} ${zh ? "待处理" : "pending"}">${badge}</span>` : "";
       const active = index === 0;
       // rank5：组合框/列表框 ARIA——每张能力卡是 option、可读 aria-selected；输入框(combobox)
       // 用 aria-activedescendant 指向当前项，箭头键移动时屏幕阅读器能播报，无需移动 DOM 焦点。
