@@ -39,12 +39,14 @@ import {
   type WebReactRouteComponentAdapter
 } from "./route-react-components.js";
 import {
+  budgetStatusLabel,
   changeTypeLabel,
   checkStatusLabel,
   deliverableTargetLabel,
   evidenceSourceLabel,
   previewKindLabel,
   uiCount,
+  uiHumanize,
   uiT,
   workItemStatusLabel
 } from "../i18n.js";
@@ -167,6 +169,12 @@ type RouteCopyKey =
   | "intake.freeText"
   | "intake.createWorkItem"
   | "intake.continue"
+  | "intake.stateDone"
+  | "intake.stateActive"
+  | "intake.statePending"
+  | "health.title"
+  | "settings.boolYes"
+  | "settings.boolNo"
   | "intake.startKicker"
   | "intake.startTitle"
   | "intake.startBody"
@@ -357,6 +365,9 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "intake.freeText": "也可以展开手动输入（可选）",
     "intake.createWorkItem": "创建工作项",
     "intake.continue": "继续澄清",
+    "intake.stateDone": "已完成",
+    "intake.stateActive": "进行中",
+    "intake.statePending": "待进行",
     "intake.startKicker": "试点工作入口",
     "intake.startTitle": "从真实项目开始派活",
     "intake.startBody": "WorkHub 会先准备好试点项目，再进入选项优先的需求澄清；不会改动已确认的交付物。",
@@ -435,6 +446,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.groundingWhy": "为什么提醒我",
     "knowledge.fromNotice": "来自通知的相关资料",
     "health.kicker": "项目健康",
+    "health.title": "健康总览",
     "health.summary": "项目",
     "health.healthy": "健康",
     "health.attention": "需要关注",
@@ -501,6 +513,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.llm": "AI 运行配置",
     "settings.language": "语言",
     "settings.device": "桌面与本地能力",
+    "settings.boolYes": "是",
+    "settings.boolNo": "否",
     "settings.configured": "已配置",
     "settings.notConfigured": "未配置",
     "settings.ready": "就绪",
@@ -546,6 +560,9 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "intake.freeText": "Typing stays a collapsed fallback",
     "intake.createWorkItem": "Create work item",
     "intake.continue": "Continue intake",
+    "intake.stateDone": "Done",
+    "intake.stateActive": "In progress",
+    "intake.statePending": "Pending",
     "intake.startKicker": "Pilot work entry",
     "intake.startTitle": "Start from a real project",
     "intake.startBody": "WorkHub prepares the pilot project context first, then opens option-first intake. It will not use old smoke seed ids or modify accepted deliverables directly.",
@@ -624,6 +641,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.groundingWhy": "Why am I seeing this",
     "knowledge.fromNotice": "Search context from a notification",
     "health.kicker": "Project health",
+    "health.title": "Health overview",
     "health.summary": "Projects",
     "health.healthy": "Healthy",
     "health.attention": "Needs attention",
@@ -690,6 +708,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.llm": "AI runtime config",
     "settings.language": "Language",
     "settings.device": "Desktop and local capability",
+    "settings.boolYes": "Yes",
+    "settings.boolNo": "No",
     "settings.configured": "Configured",
     "settings.notConfigured": "Not configured",
     "settings.ready": "Ready",
@@ -783,6 +803,12 @@ function createWebRouteComponent(input: CreateWebRouteComponentInput): WebRouteC
 
 function routeT(locale: WorkHubLocale, key: RouteCopyKey) {
   return routeCopy[locale][key];
+}
+
+// 给用户看的能力布尔值用「是/否」而不是裸 true/false（设置页设备能力行）。
+// 与既有 boolLabel(已配置/未配置) 区分：设备能力不是「配置与否」语义。
+function yesNoLabel(locale: WorkHubLocale, value: boolean) {
+  return routeT(locale, value ? "settings.boolYes" : "settings.boolNo");
 }
 
 // findings[#low]：动态拼出的 copy-key（如 meeting.status.${status}）此前用 `as RouteCopyKey`
@@ -1158,11 +1184,19 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
   });
 }
 
-function intakeProgressRows(vm: SessionVM) {
+// 澄清进度步骤状态：之前把 done/active/pending 英文 token 直接渲染给中文用户。
+function intakeStepStateLabel(locale: WorkHubLocale, state: string) {
+  if (state === "done") return routeT(locale, "intake.stateDone");
+  if (state === "active") return routeT(locale, "intake.stateActive");
+  if (state === "pending") return routeT(locale, "intake.statePending");
+  return uiHumanize(state);
+}
+
+function intakeProgressRows(vm: SessionVM, locale: WorkHubLocale) {
   return vm.question.progress
     .map((step) => `<div class="wh-r4-route-row" data-r4-intake-progress-step="${escapeHtml(step.key)}" data-r4-intake-progress-state="${escapeHtml(step.state)}">
       <strong>${escapeHtml(step.label)}</strong>
-      <span class="wh-pill">${escapeHtml(step.state)}</span>
+      <span class="wh-pill">${escapeHtml(intakeStepStateLabel(locale, step.state))}</span>
     </div>`)
     .join("");
 }
@@ -1306,7 +1340,7 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
           </section>
           <section class="wh-card wh-r4-route-card" data-r4-intake-progress="true">
             <h3>${escapeHtml(routeT(locale, "intake.progress"))}</h3>
-            <div class="wh-r4-route-timeline">${intakeProgressRows(vm)}</div>
+            <div class="wh-r4-route-timeline">${intakeProgressRows(vm, locale)}</div>
           </section>
         </aside>
       </div>
@@ -1959,7 +1993,7 @@ function renderDriveRouteComponent(
   const acceptedRows = vm.accepted_deliverables.length
     ? vm.accepted_deliverables.slice(0, 6).map((accepted) => `<article class="wh-card wh-r4-route-card" data-r4-drive-accepted-deliverable="${escapeHtml(accepted.id)}">
       <div class="wh-r4-route-meta">
-        <span class="wh-pill">${escapeHtml(accepted.target_kind)}</span>
+        <span class="wh-pill">${escapeHtml(deliverableTargetLabel(locale, accepted.target_kind))}</span>
         <span class="wh-pill">v${escapeHtml(String(accepted.accepted_version))}</span>
       </div>
       <h3>${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</h3>
@@ -2387,7 +2421,7 @@ function renderHealthRouteComponent(vm: ProjectHealthPageVM, locale: WorkHubLoca
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "health.kicker"))}</span>
-          <h1>${escapeHtml(routeT(locale, "health.kicker"))}</h1>
+          <h1>${escapeHtml(routeT(locale, "health.title"))}</h1>
           <p>${escapeHtml(`${routeT(locale, "health.summary")} ${vm.summary.project_count} · ${routeT(locale, "health.attention")} ${vm.summary.attention_count} · ${routeT(locale, "health.critical")} ${vm.summary.critical_count}`)}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.project_count))}</span>
@@ -2495,7 +2529,7 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
         <p>${escapeHtml(`${usage.total_tokens}/${usage.max_tokens} tokens · ${costAmount(usage.estimated_cost_cny)}/${costAmount(usage.max_cost_cny)}`)}</p>
         <div class="wh-r4-route-meter" aria-hidden="true"><span style="width:${escapeHtml(String(Math.min(100, ratio)))}%"></span></div>
       </div>
-      <span class="wh-pill">${escapeHtml(usage.status)}</span>
+      <span class="wh-pill">${escapeHtml(budgetStatusLabel(locale, usage.status))}</span>
     </div>`;
   }).join("");
 }
@@ -2881,11 +2915,11 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-settings-device="true">
           <h3>${escapeHtml(routeT(locale, "settings.device"))}</h3>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(String(props.localExecutionBoundary))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.independentPet"))}</strong><span class="wh-pill">${escapeHtml(String(props.independentPetWindow))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.petBoundary"))}</strong><span class="wh-pill">${escapeHtml(String(!props.petModelSettingsInWeb))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(String(props.restoreRequiresDesktop))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.webLocalActions"))}</strong><span class="wh-pill">${escapeHtml(String(props.webLocalActionsEnabled))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.localExecutionBoundary))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.independentPet"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.independentPetWindow))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.petBoundary"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, !props.petModelSettingsInWeb))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.restoreRequiresDesktop))}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.webLocalActions"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.webLocalActionsEnabled))}</span></div>
           <a class="wh-btn" href="${escapeHtml(safeHref(props.restoreHref))}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
         </section>
       </div>

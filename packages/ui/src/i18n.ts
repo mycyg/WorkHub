@@ -257,7 +257,19 @@ const checkStatusLabels: Record<string, Copy> = {
   warning: { "zh-CN": "有提醒", "en-US": "Warning" },
   skipped: { "zh-CN": "已跳过", "en-US": "Skipped" },
   open: { "zh-CN": "待确认", "en-US": "Open" },
-  done: { "zh-CN": "已完成", "en-US": "Done" }
+  done: { "zh-CN": "已完成", "en-US": "Done" },
+  // 验收项的判定状态（之前漏映射，给中文用户直接渲染了 met/unmet/waived 英文 token）
+  met: { "zh-CN": "已满足", "en-US": "Met" },
+  unmet: { "zh-CN": "未满足", "en-US": "Unmet" },
+  waived: { "zh-CN": "已豁免", "en-US": "Waived" }
+};
+
+// 预算用量状态：之前成本页把 ok/warning/critical/exhausted 英文 token 直接渲染成药丸。
+const budgetStatusLabels: Record<string, Copy> = {
+  ok: { "zh-CN": "正常", "en-US": "OK" },
+  warning: { "zh-CN": "接近上限", "en-US": "Warning" },
+  critical: { "zh-CN": "严重", "en-US": "Critical" },
+  exhausted: { "zh-CN": "已用尽", "en-US": "Exhausted" }
 };
 
 const changeTypeLabels: Record<string, Copy> = {
@@ -329,6 +341,10 @@ export function changeTypeLabel(locale: WorkHubLocale, type: string) {
 
 export function checkStatusLabel(locale: WorkHubLocale, status: string) {
   return labelFromMap(locale, status, checkStatusLabels);
+}
+
+export function budgetStatusLabel(locale: WorkHubLocale, status: string) {
+  return labelFromMap(locale, status, budgetStatusLabels);
 }
 
 export function previewKindLabel(locale: WorkHubLocale, kind: string) {
