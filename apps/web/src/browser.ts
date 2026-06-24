@@ -824,11 +824,19 @@ function bindGoldPathNavigation(
           showPayloadFailureNotice(shellRoot, locale, payload, actionId);
           return;
         }
+        // M8: name the recycled target and point to recovery, so a reversible delete is
+        // never an anonymous surprise (the button already names the target pre-click).
+        const deleteTargetName = actionTarget.dataset.r5DriveDeleteName?.trim();
         try {
           const result = await client.deleteDriveItem(driveItemMutation.projectId, driveItemMutation.itemId, payload.payload ?? {}, { locale });
           await renderCurrentRoute(client, locale);
           if (root) {
-            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+            const body = deleteTargetName
+              ? (locale === "zh-CN"
+                ? `已把「${deleteTargetName}」移到回收站，可用上方「恢复」按钮找回。`
+                : `Moved “${deleteTargetName}” to the recycle bin — use the Restore button above to bring it back.`)
+              : actionSummary(result, locale);
+            showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));

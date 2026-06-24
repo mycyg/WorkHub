@@ -1376,6 +1376,10 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   assert.equal(drive.html.includes('data-action-id="drive_upload_file" data-method="POST"'), true);
   assert.equal(drive.html.includes('data-action-id="drive_delete_item" data-method="POST"'), true);
   assert.equal(drive.html.includes('data-r5-drive-delete-target="94000000-0000-4000-8000-000000000009"'), true);
+  // M8: the destructive delete button must name its (server-chosen) target so a bare
+  // "移到回收站" never recycles an unnamed file; the name also feeds the recovery notice.
+  assert.equal(drive.html.includes('data-r5-drive-delete-name="manual-note.md"'), true);
+  assert.equal(drive.html.includes("manual-note.md"), true);
   assert.equal(drive.html.includes("expected_current_version_id"), true);
   assert.equal(drive.html.includes("94000000-0000-4000-8000-000000000010"), true);
   assert.equal(drive.html.includes('data-action-id="drive_restore_item" data-method="POST"'), true);

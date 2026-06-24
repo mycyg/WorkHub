@@ -2043,6 +2043,13 @@ function renderDriveRouteComponent(
   const deletePayload = {
     expected_current_version_id: deleteTarget?.current_version_id ?? null
   };
+  // M8: a destructive action must name its target. The server picks the delete target
+  // (most-recently-touched manual file); without its name the user can't tell what a
+  // bare "移到回收站" will remove. Surface the name in the button (and a data attr the
+  // browser handler echoes into the success/recovery notice).
+  const deleteLabel = deleteTarget
+    ? (locale === "zh-CN" ? `移到回收站：${deleteTarget.name}` : `Move “${deleteTarget.name}” to recycle`)
+    : routeT(locale, "drive.delete");
   const uploadPayload = {
     filename: locale === "zh-CN" ? "R5-上传样例.md" : "r5-upload-sample.md",
     mime: "text/markdown",
@@ -2050,7 +2057,7 @@ function renderDriveRouteComponent(
   };
   const driveManageActions = [
     vm.actions.upload_file ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(vm.actions.upload_file.href))}" data-action-id="drive_upload_file" data-method="POST" data-request-json="${jsonAttr(uploadPayload)}">${escapeHtml(routeT(locale, "drive.upload"))}</a>` : "",
-    vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.delete_item.href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(routeT(locale, "drive.delete"))}</a>` : "",
+    vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.delete_item.href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-r5-drive-delete-name="${escapeHtml(deleteTarget?.name ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(deleteLabel)}</a>` : "",
     vm.actions.restore_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.restore_item.href))}" data-action-id="drive_restore_item" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""
   ].filter(Boolean).join("");
   const fileRows = vm.items.length
