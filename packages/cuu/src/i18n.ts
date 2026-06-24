@@ -145,6 +145,7 @@ export type CuuCopyKey =
   | "pet.reject.evidence"
   | "pet.reject.scope"
   | "pet.reject.format"
+  | "pet.reject.cancel"
   | "pet.evidenceTitle"
   | "pet.evidenceMore"
   | "pet.input.optionWithText"
@@ -312,6 +313,7 @@ const cuuCopy = {
     "pet.reject.evidence": "证据不足",
     "pet.reject.scope": "范围太大",
     "pet.reject.format": "交付格式要改",
+    "pet.reject.cancel": "先不打回",
     "pet.evidenceTitle": "证据",
     "pet.evidenceMore": "还有 {count} 条证据",
     "pet.input.optionWithText": "点选项即可，补充文字已折叠",
@@ -478,6 +480,7 @@ const cuuCopy = {
     "pet.reject.evidence": "Not enough evidence",
     "pet.reject.scope": "Scope is too large",
     "pet.reject.format": "Delivery format needs work",
+    "pet.reject.cancel": "Keep reviewing",
     "pet.evidenceTitle": "Evidence",
     "pet.evidenceMore": "{count} more evidence item(s)",
     "pet.input.optionWithText": "Choose an option; text is folded away",

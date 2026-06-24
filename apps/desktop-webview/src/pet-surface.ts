@@ -185,6 +185,8 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-chip[data-recommended=true]{border-color:rgba(53,92,255,.35);box-shadow:inset 3px 0 0 #355cff}",
   ".wh-pet-chip[data-selected=true]{background:#eef4ff;border-color:#355cff;color:#2444bf}",
   ".wh-pet-action[data-tone=primary],.wh-pet-reason{background:#355cff;border-color:#355cff;color:#fff}",
+  // L10：「先不打回」是退路,不是第四个拒绝理由——用安静的白底次要样式，与蓝色理由按钮区分开。
+  ".wh-pet-reason--cancel{background:#fff;border-color:rgba(38,49,70,.14);color:#5b6472;font-weight:700}",
   ".wh-pet-action[data-tone=danger]{background:#fff4f3;border-color:rgba(238,107,95,.34);color:#b42318}",
   ".wh-pet-status{min-width:0;max-width:100%;width:100%;margin:0;color:#344054;font-size:12px;line-height:1.45;font-weight:750;overflow-wrap:anywhere;word-break:break-word;white-space:normal}",
   ".wh-pet-menu{position:absolute;right:88px;bottom:72px;z-index:8;box-sizing:border-box;width:164px;display:grid;gap:8px;border:1px solid rgba(38,49,70,.16);border-radius:8px;background:rgba(255,255,255,.96);box-shadow:0 18px 44px rgba(30,39,58,.2);padding:10px;pointer-events:auto;backdrop-filter:blur(10px);overflow:hidden}",
@@ -1097,6 +1099,17 @@ export async function bootDesktopPetSurface(
       return;
     }
 
+    // L10：打回理由里的「先不打回」——清掉待提交的拒绝、复位状态、重渲回原卡片(approve/deny 按钮还在),
+    // 让用户能从这个「破坏性确认」里全身而退,而不是被三个理由按钮困住。
+    const rejectCancel = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-pet-reject-cancel]") : null;
+    if (rejectCancel && pendingAction) {
+      event.preventDefault();
+      pendingAction = undefined;
+      statusText = "";
+      render();
+      return;
+    }
+
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-pet-reason]") : null;
     if (reasonButton && pendingAction) {
       if (petActionBusy) {
@@ -1589,9 +1602,11 @@ function renderRejectReasons(locale: WorkHubLocale) {
     cuuT(locale, "pet.reject.scope"),
     cuuT(locale, "pet.reject.format")
   ];
+  // L10：打回理由里必须有一条退路——否则用户点了「打回」只看到三个理由,每个都立即提交拒绝,没法反悔退回卡片。
+  const cancel = `<button class="wh-pet-reason wh-pet-reason--cancel" type="button" data-pet-reject-cancel>${escapeHtml(cuuT(locale, "pet.reject.cancel"))}</button>`;
   return `<div class="wh-pet-reasons">${reasons
     .map((reason) => `<button class="wh-pet-reason" type="button" data-pet-reason="${escapeHtml(reason)}">${escapeHtml(reason)}</button>`)
-    .join("")}</div>`;
+    .join("")}${cancel}</div>`;
 }
 
 function renderPetProgress(steps: NonNullable<CuuCard["progress"]>) {

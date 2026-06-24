@@ -27,7 +27,7 @@ function runListHtml(runs: BgRun[], zh: boolean): string {
   return `<div class="wh-spot-list ds-stagger">${runs
     .map(
       (r) =>
-        `<button type="button" class="wh-spot-row" data-run="${escapeHtml(r.run_id)}" style="cursor:pointer;width:100%;text-align:left">
+        `<button type="button" class="wh-spot-row" data-run="${escapeHtml(r.run_id)}" data-run-state="${escapeHtml(r.state)}" style="cursor:pointer;width:100%;text-align:left">
           <span class="wh-spot-run-dot wh-spot-run-dot--${r.state}"></span>
           <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(r.title)}</div><div class="wh-spot-row-sub">${escapeHtml(r.preview_text)}</div></div>
           <span class="wh-spot-row-metalabel">${escapeHtml(stateLabel(r.state, zh))}</span>
@@ -48,8 +48,13 @@ function phaseLabel(phase: AgentStep["phase"], zh: boolean): string {
   return entry ? (zh ? entry[0] : entry[1]) : phase;
 }
 
-function traceHtml(vm: AgentRunLiveVM, zh: boolean): string {
+function traceHtml(vm: AgentRunLiveVM, zh: boolean, waiting = false): string {
   const u = vm.usage;
+  // L14：列表里这条运行标着「等你拍板」(waiting_for_user，仅 attention 列表态有,详情 VM 的 status 枚举不含它)。
+  // 用户点进来就是想处置,trace 详情却只有返回+时间线、无处可点 → 给一颗「去拍板」直达决策收件箱。
+  const decideBtn = waiting
+    ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-run-open-decision style="align-self:flex-start">${zh ? "去拍板" : "Open decision"}</button>`
+    : "";
   const header = `<div class="wh-spot-metrics">
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "状态" : "Status"}</span><span class="wh-spot-metric-v">${escapeHtml(agentRunStatusLabel(vm.status, zh))}</span></div>
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "步数" : "Steps"}</span><span class="wh-spot-metric-v">${u.steps_used}</span></div>
@@ -64,7 +69,7 @@ function traceHtml(vm: AgentRunLiveVM, zh: boolean): string {
         )
         .join("")}</div>`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "还没有步骤" : "No steps yet"}</p>`;
-  return `<div class="wh-spot-dash ds-anim-fade-in"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-run-back style="align-self:flex-start">${zh ? "← 返回运行列表" : "← Back to runs"}</button>${header}${timeline}</div>`;
+  return `<div class="wh-spot-dash ds-anim-fade-in"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-run-back style="align-self:flex-start">${zh ? "← 返回运行列表" : "← Back to runs"}</button>${header}${decideBtn}${timeline}</div>`;
 }
 
 export function createReplayView(): SpotlightCapabilityView {
@@ -97,7 +102,7 @@ export function createReplayView(): SpotlightCapabilityView {
         ctx.requestResize();
       };
 
-      const showTrace = async (runId: string) => {
+      const showTrace = async (runId: string, runState?: string) => {
         const gen = ++loadGen;
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉时间线…" : "Loading trace…"}</div>`;
         ctx.requestResize();
@@ -105,7 +110,7 @@ export function createReplayView(): SpotlightCapabilityView {
           const vm = await ctx.client.getAgentRun(runId);
           if (disposed || gen !== loadGen) return;
           ctx.setSubtitle(zh ? "运行时间线" : "Run trace");
-          ctx.body.innerHTML = traceHtml(vm, zh);
+          ctx.body.innerHTML = traceHtml(vm, zh, runState === "waiting_for_user");
         } catch {
           if (disposed || gen !== loadGen) return;
           retry = () => void showTrace(runId);
@@ -125,9 +130,13 @@ export function createReplayView(): SpotlightCapabilityView {
           void showList();
           return;
         }
+        if (target.closest("[data-run-open-decision]")) {
+          ctx.open("approvals");
+          return;
+        }
         const run = target.closest<HTMLElement>("[data-run]");
         if (run?.dataset.run) {
-          void showTrace(run.dataset.run);
+          void showTrace(run.dataset.run, run.dataset.runState);
         }
       });
 
