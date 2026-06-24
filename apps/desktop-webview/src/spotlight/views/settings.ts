@@ -29,8 +29,7 @@ function settingsHtml(vm: SettingsPageVM, zh: boolean): string {
     </div>
     <div class="wh-spot-metrics">
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "运行状态" : "Runtime"}</span><span class="wh-spot-metric-v" style="color:${runtimeOk ? "var(--ds-success)" : "var(--ds-warn)"}">${runtimeOk ? (zh ? "正常" : "Ready") : zh ? "需关注" : "Attention"}</span></div>
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "AI 模型" : "AI model"}</span><span class="wh-spot-metric-v" style="font-size:13px">${escapeHtml(vm.llm_runtime.default_model)}</span></div>
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "密钥" : "API key"}</span><span class="wh-spot-metric-v">${vm.llm_runtime.api_key_configured ? (zh ? "已配置" : "Set") : zh ? "未配置" : "Missing"}</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "AI 助手" : "AI assistant"}</span><span class="wh-spot-metric-v" style="color:${vm.llm_runtime.api_key_configured ? "var(--ds-success)" : "var(--ds-warn)"}">${vm.llm_runtime.api_key_configured ? (zh ? "已就绪" : "Ready") : zh ? "待配置" : "Not set up"}</span></div>
     </div>
     <div class="wh-spot-row" style="cursor:default">
       <div class="wh-spot-row-main">
