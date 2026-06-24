@@ -1178,6 +1178,22 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
       </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "empty.evidence"))}</p>`;
 
+  // 当收件箱完全为空(无主决策、无队列)时,「当前入口」+「支撑证据」两区只会渲染占位文案——
+  // 「专注处理它就好」却没有「它」,「没有找到证据」也无所指,对一无所知的用户像在描述并不存在的当前项。
+  // 此时隐藏这一行,空态决策卡(含提需求 CTA)已自足;有任一决策时照常显示。
+  const secondaryGrid = decideCount > 0
+    ? `<div class="wh-r4-route-grid">
+        <section class="wh-card wh-r4-route-card" data-r4-home-queue="true">
+          <h3>${escapeHtml(goldPathT(locale, "home.entryTitle"))}</h3>
+          ${renderAttentionRows(queueWithoutPrimary, goldPathT(locale, "home.entryText"), locale === "zh-CN")}
+        </section>
+        <section class="wh-card wh-r4-route-card" data-r4-home-evidence-list="true">
+          <h3>${escapeHtml(goldPathT(locale, "home.evidenceTitle"))}</h3>
+          ${evidenceRows}
+        </section>
+      </div>`
+    : "";
+
   return createWebRouteComponent({
     key: "home",
     css: webRouteComponentCss,
@@ -1204,16 +1220,7 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
           <div class="wh-r4-route-timeline">${runRows}</div>
         </section>
       </div>
-      <div class="wh-r4-route-grid">
-        <section class="wh-card wh-r4-route-card" data-r4-home-queue="true">
-          <h3>${escapeHtml(goldPathT(locale, "home.entryTitle"))}</h3>
-          ${renderAttentionRows(queueWithoutPrimary, goldPathT(locale, "home.entryText"), locale === "zh-CN")}
-        </section>
-        <section class="wh-card wh-r4-route-card" data-r4-home-evidence-list="true">
-          <h3>${escapeHtml(goldPathT(locale, "home.evidenceTitle"))}</h3>
-          ${evidenceRows}
-        </section>
-      </div>
+      ${secondaryGrid}
     </section>`
   });
 }

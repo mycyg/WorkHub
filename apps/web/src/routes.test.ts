@@ -1223,6 +1223,22 @@ test("R6 home never collapses to the generic empty card — empty attention stil
   assert.equal(result.html.includes('data-r4-home-worklog="true"'), false);
   // ③ 导航常驻"提需求"入口（intake 不再 detail-only）。
   assert.equal(result.html.includes('data-wh-page-key="intake"'), true);
+  // ④ 收件箱全空时不再渲染「当前入口 / 支撑证据」两区——它们只会显示描述不存在当前项的占位文案
+  //   （"专注处理它" / "没有找到证据"），对一无所知用户是误导。空态决策卡 + CTA 已自足。
+  assert.equal(result.html.includes('data-r4-home-queue="true"'), false);
+  assert.equal(result.html.includes('data-r4-home-evidence-list="true"'), false);
+});
+
+test("home with decisions still renders the 当前入口/支撑证据 sections (gate is empty-only)", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface);
+  const match = resolveWebRoute("/");
+  assert.ok(match);
+  const result = await loadWebRoute(client, match, "zh-CN");
+  assert.equal(result.status, "ready");
+  // 非空收件箱(默认 fixture 有 primary/queue)→ 两区照常出现,确认 decideCount>0 门没把它们一并藏掉。
+  assert.equal(result.html.includes('data-r4-home-queue="true"'), true);
+  assert.equal(result.html.includes('data-r4-home-evidence-list="true"'), true);
 });
 
 test("R4.11 web loader marks ready routes as route components", async () => {
