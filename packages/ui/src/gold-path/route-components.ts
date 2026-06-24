@@ -1089,10 +1089,15 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
   const selfEvolveLine = worklog && selfEvolved > 0
     ? `<span class="wh-r4-home-banner-evolve" data-r4-home-self-evolve="true" data-r4-home-skills-promoted="${escapeHtml(String(worklog.skills_promoted_today))}" data-r4-home-skills-refined="${escapeHtml(String(worklog.skills_refined_today))}">${escapeHtml(zh ? "还顺手自我精进：技能 +" : "Also leveled up: skills +")}${escapeHtml(String(worklog.skills_promoted_today))}${escapeHtml(zh ? " · 精修 " : " · refined ")}${escapeHtml(String(worklog.skills_refined_today))}</span>`
     : "";
-  const worklogBanner = worklog
+  // M1：战绩主行只在今天真有完成量时才显示，否则零活跃新用户首屏会读到「今天我替你扛了 0 件·自主率 0%·约省 0 小时」
+  // 这种自夸 0 的尴尬文案（与自进化行的 selfEvolved>0 门同口径）。自进化行独立成立。
+  const worklogMainLine = worklog && worklog.accepted_today > 0
+    ? `<span>${escapeHtml(zh ? "今天我替你扛了" : "AI handled today:")} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(zh ? "件 · 自主率" : "done · autonomy")} <b>${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(zh ? "约省" : "saved ≈")} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(zh ? "小时" : "h")} <span class="wh-r4-home-kao">٩(◜◡◝)۶</span></span>`
+    : "";
+  const worklogBanner = (worklogMainLine || selfEvolveLine)
     ? `<div class="wh-r4-home-banner" data-r4-home-worklog="true">
         <span class="wh-r4-home-banner-cat" aria-hidden="true"></span>
-        <span>${escapeHtml(zh ? "今天我替你扛了" : "AI handled today:")} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(zh ? "件 · 自主率" : "done · autonomy")} <b>${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(zh ? "约省" : "saved ≈")} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(zh ? "小时" : "h")} <span class="wh-r4-home-kao">٩(◜◡◝)۶</span></span>
+        ${worklogMainLine}
         ${selfEvolveLine}
       </div>`
     : "";
@@ -1521,7 +1526,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
           </section>
           <section class="wh-card wh-r4-route-card">
             <h3>${escapeHtml(goldPathT(locale, "approvals.slaTitle"))}</h3>
-            <p>${escapeHtml(selectedRequest?.sla_due_at ?? goldPathT(locale, "approvals.slaEmpty"))}</p>
+            <p>${escapeHtml(selectedRequest?.sla_due_at ? formatApprovalTimestamp(selectedRequest.sla_due_at) : goldPathT(locale, "approvals.slaEmpty"))}</p>
           </section>
           <section class="wh-card wh-r4-route-card">
             <h3>${escapeHtml(goldPathT(locale, "approvals.factsTitle"))}</h3>
@@ -2462,16 +2467,19 @@ function renderCalendarBlock(block: CalendarPageVM["blocks"][number], locale: Wo
   const link = block.target_href
     ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(block.target_href))}" data-action-id="calendar_open_target" data-r5-calendar-open-target="true">${escapeHtml(routeT(locale, "notifications.open"))}</a>`
     : "";
+  // 时间药丸：全天 → 「全天」；否则把 ISO 时间戳格式化成「YYYY-MM-DD HH:MM」(之前直接渲染裸 ISO)。
+  const timePill = block.all_day
+    ? routeT(locale, "calendar.allDay")
+    : [formatApprovalTimestamp(block.starts_at), formatApprovalTimestamp(block.ends_at)].filter(Boolean).join(" – ");
   return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-calendar-block="${escapeHtml(block.id)}" data-r5-calendar-block-kind="${escapeHtml(block.kind)}" data-r5-calendar-block-status="${escapeHtml(block.status)}" data-r5-calendar-block-severity="${escapeHtml(block.severity)}">
     <div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(scheduleKindLabel(block.kind, locale))}</span>
         <span class="wh-pill">${escapeHtml(scheduleStatusLabel(block.status, locale))}</span>
-        <span class="wh-pill">${escapeHtml(block.all_day ? routeT(locale, "calendar.allDay") : (block.starts_at ?? block.ends_at))}</span>
+        ${timePill ? `<span class="wh-pill">${escapeHtml(timePill)}</span>` : ""}
       </div>
       <strong>${escapeHtml(block.title)}</strong>
       ${block.description ? `<p>${escapeHtml(block.description)}</p>` : ""}
-      <p>${escapeHtml(block.ends_at)}</p>
     </div>
     ${link ? `<div class="wh-r4-route-actions">${link}</div>` : ""}
   </div>`;
@@ -2502,7 +2510,7 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r5-calendar-upcoming="true">
-          <h3>${escapeHtml(routeT(locale, "calendar.today"))}</h3>
+          <h3>${escapeHtml(routeT(locale, "calendar.upcoming"))}</h3>
           <div class="wh-r4-route-timeline">${vm.blocks.length ? vm.blocks.slice(0, 6).map((block) => renderCalendarBlock(block, locale)).join("") : `<p class="wh-subtle">${escapeHtml(routeT(locale, "calendar.empty"))}</p>`}</div>
         </section>
         <section class="wh-r4-route-stack" data-r5-calendar-days="true">

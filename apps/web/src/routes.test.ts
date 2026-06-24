@@ -1176,10 +1176,11 @@ test("R6 home never collapses to the generic empty card — empty attention stil
   // ① 不再塌成通用空卡：状态 ready、渲染首页决策收件箱组件本身。
   assert.equal(result.status, "ready");
   assert.equal(result.html.includes('data-r4-route-component="home"'), true);
-  // ② 战绩横幅 + 提需求 CTA 仍在；不出现"回到总览"死胡同。
-  assert.equal(result.html.includes('data-r4-home-worklog="true"'), true);
+  // ② 提需求 CTA 仍在；不出现"回到总览"死胡同。
   assert.equal(result.html.includes('data-r4-home-intake-cta="true"'), true);
   assert.equal(result.html.includes("回到总览"), false);
+  // M1：零活跃用户(accepted_today:0)不显示自夸「0 件/0%/0 小时」战绩横幅。
+  assert.equal(result.html.includes('data-r4-home-worklog="true"'), false);
   // ③ 导航常驻"提需求"入口（intake 不再 detail-only）。
   assert.equal(result.html.includes('data-wh-page-key="intake"'), true);
 });

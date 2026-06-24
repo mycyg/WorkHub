@@ -573,7 +573,9 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     critical: "告急",
     openwork: "进行中",
     status: "状态",
-    owner: "负责人"
+    owner: "负责人",
+    archived: "已归档",
+    events: "事项"
   },
   "en-US": {
     primary: "Focus",
@@ -609,7 +611,9 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     critical: "Critical",
     openwork: "Open",
     status: "Status",
-    owner: "Owner"
+    owner: "Owner",
+    archived: "Archived",
+    events: "Events"
   }
 };
 
@@ -654,8 +658,8 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
     const archived = surface.projects.projects.filter((project) => project.archived).length;
     return [
       metric(locale, "projects", String(surface.projects.projects.length)),
-      metric(locale, "running", String(openItems)),
-      metric(locale, "done", String(archived))
+      metric(locale, "openwork", String(openItems)),
+      metric(locale, "archived", String(archived))
     ];
   }
   if (surface.key === "project-home") {
@@ -730,7 +734,7 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
     return [
       metric(locale, "today", String(surface.calendar.summary.today_count)),
       metric(locale, "overdue", String(surface.calendar.summary.overdue_count)),
-      metric(locale, "queue", String(surface.calendar.summary.block_count))
+      metric(locale, "events", String(surface.calendar.summary.block_count))
     ];
   }
   if (surface.key === "health") {
