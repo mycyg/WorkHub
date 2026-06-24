@@ -1,5 +1,5 @@
 import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
-import { defaultPorts } from "@workhub/config";
+import { defaultPorts } from "@workhub/config/ports";
 import type { CreateSessionRequest, CreateWorkItemRequest, ProposalConflict, ProposalDetailVM, StartAgentRunRequest } from "@workhub/contracts";
 import { renderAgentRunLive } from "@workhub/ui/agent-run";
 import { renderGoldPathSurface, type WorkHubLocale } from "@workhub/ui/gold-path";

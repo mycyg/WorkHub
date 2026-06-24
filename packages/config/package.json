@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./ports": {
+      "types": "./src/ports.ts",
+      "import": "./src/ports.ts"
     }
   },
   "scripts": {

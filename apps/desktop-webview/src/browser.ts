@@ -1,5 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import { defaultPorts } from "@workhub/config";
+import { defaultPorts } from "@workhub/config/ports";
 import { createCuuController, type CuuControllerSnapshot } from "@workhub/cuu";
 import {
   classifyGoldPathHref,
