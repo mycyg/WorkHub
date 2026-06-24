@@ -1536,7 +1536,8 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
             <h3>${escapeHtml(goldPathT(locale, "approvals.myActions"))}</h3>
             ${primary ? renderActions(primary.actions) : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.noSelection"))}</p>`}
             ${primary ? `<label class="wh-r4-approval-field"><span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.reasonLabel"))}</span><textarea class="wh-r4-approval-reason" data-r4-approval-reason rows="2" placeholder="${escapeHtml(goldPathT(locale, "approvals.reasonPlaceholder"))}"></textarea></label>
-            <label class="wh-r4-approval-remember"><input type="checkbox" data-r4-approval-remember /> <span>${escapeHtml(goldPathT(locale, "approvals.rememberLabel"))}</span></label>` : ""}
+            <label class="wh-r4-approval-remember"><input type="checkbox" data-r4-approval-remember /> <span>${escapeHtml(goldPathT(locale, "approvals.rememberLabel"))}</span></label>
+            <p class="wh-subtle" data-r4-approval-remember-help="true">${escapeHtml(goldPathT(locale, "approvals.rememberHelp"))}</p>` : ""}
           </section>
           <section class="wh-card wh-r4-route-card">
             <h3>${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>
@@ -1588,9 +1589,40 @@ function evidenceRows(refs: EvidenceRef[], locale: WorkHubLocale, marker: string
     .join("");
 }
 
+// L22：空轨迹/空交付物文案必须看状态。一条「已完成 / 已采纳 / 已取消 / 需要负责人介入」却没留下轨迹的
+// 任务，再说「AI 已准备好，下一步会开始读取证据」就和状态徽标直接打架——一无所知的用户没法把「已完成」
+// 和「AI 即将开始」对上。终态/升级态给出贴合状态的说明，乐观文案只留给真正还在推进的状态。
+function emptyTraceCopy(status: string, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  if (status === "done" || status === "merged") {
+    return zh ? "这条任务已结束，没有记录到 AI 执行步骤。" : "This work item is finished; no AI execution steps were recorded.";
+  }
+  if (status === "cancelled") {
+    return zh ? "这条任务已取消，没有执行步骤。" : "This work item was cancelled; there are no execution steps.";
+  }
+  if (status === "escalated") {
+    return zh ? "已升级给负责人接手，暂无 AI 执行步骤。" : "Escalated to an owner to take over; no AI steps yet.";
+  }
+  return uiT(locale, "workitem.emptyTrace");
+}
+
+function emptyDeliverableCopy(status: string, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  if (status === "done" || status === "merged") {
+    return zh ? "这条任务已结束，没有待审批的交付物。" : "This work item is finished; nothing is awaiting approval.";
+  }
+  if (status === "cancelled") {
+    return zh ? "这条任务已取消，没有交付物。" : "This work item was cancelled; there is no deliverable.";
+  }
+  if (status === "escalated") {
+    return zh ? "已升级给负责人，暂无可供审批的交付物。" : "Escalated to an owner; no deliverable to approve yet.";
+  }
+  return uiT(locale, "workitem.willReadEvidence");
+}
+
 function traceRows(vm: WorkItemDetailVM, locale: WorkHubLocale) {
   if (vm.agent_trace_preview.length === 0) {
-    return `<p class="wh-subtle">${escapeHtml(uiT(locale, "workitem.emptyTrace"))}</p>`;
+    return `<p class="wh-subtle" data-r4-workitem-empty-trace-status="${escapeHtml(vm.workitem.status)}">${escapeHtml(emptyTraceCopy(vm.workitem.status, locale))}</p>`;
   }
   return vm.agent_trace_preview.slice(0, 5)
     .map((step) => `<div class="wh-r4-route-row" data-r4-workitem-trace-step="${escapeHtml(step.id)}">
@@ -1712,7 +1744,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
       </div>
       <span class="wh-pill">${escapeHtml(deliverableTargetLabel(locale, change.target_kind))}</span>
     </div>`).join("")
-    : `<p class="wh-subtle">${escapeHtml(uiT(locale, "workitem.willReadEvidence"))}</p>`;
+    : `<p class="wh-subtle" data-r4-workitem-empty-deliverable-status="${escapeHtml(vm.workitem.status)}">${escapeHtml(emptyDeliverableCopy(vm.workitem.status, locale))}</p>`;
 
   return createWebRouteComponent({
     key: "workitem",
@@ -2837,6 +2869,23 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           </div>
         </section>`
     : "";
+  // L32：没有任何用量时，整页会显示「本期用量 0 / 估算成本 ¥0 / 风险 ok」一片零——一无所知的用户分不清
+  // 究竟是 AI 免费、还没跑过、还是成本统计坏了。loader 已设 empty_state(no_agent_runs/usage_not_connected)，
+  // 这里据此显式给出可操作说明，而不是默默摆一堆 0。
+  const emptyStateCard = vm.empty_state
+    ? `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-cost-empty-state="${escapeHtml(vm.empty_state)}">
+          <h3>${escapeHtml(vm.empty_state === "usage_not_connected"
+            ? (zhNotice ? "用量统计还没接入" : "Usage tracking not connected")
+            : (zhNotice ? "还没有 AI 用量记录" : "No AI usage yet"))}</h3>
+          <p>${escapeHtml(vm.empty_state === "usage_not_connected"
+            ? (zhNotice
+              ? "下面的数字暂时都是 0，因为用量统计还没接好；接入后这里会显示真实成本。"
+              : "The figures below read 0 because usage tracking isn't connected yet — real cost will appear once it is.")
+            : (zhNotice
+              ? "下面的数字暂时都是 0。派一个任务让 AI 跑一次，这里就会出现成本。"
+              : "The figures below read 0 for now. Assign a task and let AI run once — cost will show up here."))}</p>
+        </section>`
+    : "";
 
   return createWebRouteComponent({
     key: "cost",
@@ -2855,6 +2904,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         </div>
         <span class="wh-r4-route-count">${escapeHtml(costAmount(props.totalCostCny))}</span>
       </header>
+      ${emptyStateCard}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-cost-metrics="true">
           <h3>${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}</h3>

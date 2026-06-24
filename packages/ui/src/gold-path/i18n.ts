@@ -89,6 +89,7 @@ export type GoldPathCopyKey =
   | "approvals.reasonLabel"
   | "approvals.reasonPlaceholder"
   | "approvals.rememberLabel"
+  | "approvals.rememberHelp"
   | "workitem.kicker"
   | "workitem.statusTitle"
   | "workitem.deliverableTitle"
@@ -275,7 +276,8 @@ const goldPathCopy = {
     "approvals.commentSubmit": "发表",
     "approvals.reasonLabel": "意见说明",
     "approvals.reasonPlaceholder": "可填：补充说明审批理由",
-    "approvals.rememberLabel": "记住我的审批（相同类型自动通过）",
+    "approvals.rememberLabel": "以后同类审批自动通过",
+    "approvals.rememberHelp": "「同类」指相同动作类型的 AI 变更。这是一条只对你自己生效、持续有效的规则，下次起这类审批会被自动通过。",
     "workitem.kicker": "任务详情",
     "workitem.statusTitle": "状态",
     "workitem.deliverableTitle": "交付物",
@@ -461,7 +463,8 @@ const goldPathCopy = {
     "approvals.commentSubmit": "Comment",
     "approvals.reasonLabel": "Your note",
     "approvals.reasonPlaceholder": "Optional: explain your decision",
-    "approvals.rememberLabel": "Remember my decision (auto-approve similar)",
+    "approvals.rememberLabel": "Auto-approve future requests of this type",
+    "approvals.rememberHelp": "\"This type\" means AI changes of the same action type. This is a standing rule that applies only to you; from now on such approvals pass automatically.",
     "workitem.kicker": "Work item",
     "workitem.statusTitle": "Status",
     "workitem.deliverableTitle": "Deliverable",
