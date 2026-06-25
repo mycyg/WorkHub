@@ -175,7 +175,8 @@ test("project health page bands signals per visible project and fails closed on 
   const card = page.cards[0]!;
   assert.equal(card.project_id, visibleProjectId);
   assert.equal(card.numbers_visible, false);
-  assert.equal(card.target_href, `/drive?project_id=${visibleProjectId}`);
+  // PROJ-3：「打开项目」进项目主页 hub(那里有工作项/负责人/动作并自带「打开网盘」),不再直跳网盘文件树。
+  assert.equal(card.target_href, `/projects/${visibleProjectId}`);
 
   const byKey = new Map(card.signals.map((signal) => [signal.key, signal]));
   // L[5]：非管理员的原始 count 一律服务端归零（不泄露精确待审批/失败运行数），但定性 band 仍由真实

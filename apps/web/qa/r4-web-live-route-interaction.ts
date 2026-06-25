@@ -1127,12 +1127,12 @@ function projectHealthPage(locale: WorkHubLocale): ProjectHealthPageVM {
       project_name: "区域发布资料库",
       band: "attention",
       numbers_visible: false,
-      target_href: `/drive?project_id=${meetingProjectId}`,
+      target_href: `/projects/${meetingProjectId}`,
       signals: [
-        { key: "open_work_items", count: 3, band: "healthy", target_href: "/" },
-        { key: "overdue_work_items", count: 1, band: "attention", target_href: "/calendar" },
+        { key: "open_work_items", count: 3, band: "healthy", target_href: `/projects/${meetingProjectId}` },
+        { key: "overdue_work_items", count: 1, band: "attention", target_href: `/projects/${meetingProjectId}` },
         { key: "pending_approvals", count: 1, band: "healthy", target_href: "/approvals" },
-        { key: "failed_runs", count: 0, band: "healthy", target_href: "/" },
+        { key: "failed_runs", count: 0, band: "healthy", target_href: `/projects/${meetingProjectId}` },
         { key: "pending_insights", count: 1, band: "healthy", target_href: `/meetings?project_id=${meetingProjectId}` }
       ]
     }]

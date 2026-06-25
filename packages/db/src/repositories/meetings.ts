@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { allocateProjectCode } from "../sequences.js";
@@ -101,7 +101,8 @@ async function findProject(db: WorkHubDb, projectId?: string, workspaceId?: stri
     .select()
     .from(projects)
     .where(and(...conditions))
-    .orderBy(asc(projects.createdAt))
+    // XC-4：与 drive 同口径——裸 /meetings 的默认项目按最近活跃(desc(updatedAt))挑,和 /projects 列表首项一致。
+    .orderBy(desc(projects.updatedAt))
     .limit(1);
   return rows[0] ?? null;
 }

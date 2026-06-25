@@ -83,16 +83,16 @@ function signalTargetHref(key: ProjectHealthSignalKey, projectId: string): strin
   if (key === "pending_approvals") {
     return "/approvals";
   }
-  if (key === "overdue_work_items") {
-    return "/calendar";
-  }
   if (key === "pending_insights") {
     return `/meetings?project_id=${projectId}`;
   }
-  if (key === "failed_runs") {
-    return "/";
+  // XC-2/XC-3：逾期事项、失败运行此前分别指向 /calendar(只显示本周,逾期按定义在过去→看不到)和 /(首页只显示
+  // 在跑的 run→失败的看不到),点了都落到空页。改指向该项目主页(/projects/:id)——逾期是 open 工作项的子集,
+  // 主页就列着开放工作项;失败运行也归属这个项目的上下文。比把人甩到必然为空的页面诚实得多。
+  if (key === "overdue_work_items" || key === "failed_runs") {
+    return `/projects/${projectId}`;
   }
-  return "/";
+  return `/projects/${projectId}`;
 }
 
 function signal(key: ProjectHealthSignalKey, count: number, projectId: string): ProjectHealthSignalVM {
@@ -123,9 +123,13 @@ export function createProjectHealthPageService(
       const openWorkItems = sources.openWorkItems.filter((row) =>
         row.project && visibleProjectIds.has(row.project.id) && canViewWorkItemRow(row, input.actor)
       );
+      // XC-1：health 的「待审批」必须与点进去的 /approvals 同口径——/approvals 对非管理员只显示**路由给本人**的
+      // (listPendingForUser includeAll=isAdmin)。否则成员看到非零「待审批」点进去却是空队列,像数据撒谎。管理员两边都看全。
+      const approvalActorUserId = input.actor.userId ?? input.actor.id;
       const pendingApprovals = sources.pendingApprovals.filter((row) =>
         row.project && row.workItem && visibleProjectIds.has(row.project.id) &&
-        canViewWorkItemRow({ workItem: row.workItem, project: row.project }, input.actor)
+        canViewWorkItemRow({ workItem: row.workItem, project: row.project }, input.actor) &&
+        (input.actor.isAdmin || row.approval.routedToUserId === approvalActorUserId)
       );
       const failedRuns = sources.failedRuns.filter((row) =>
         row.project && row.workItem && visibleProjectIds.has(row.project.id) &&
@@ -157,7 +161,9 @@ export function createProjectHealthPageService(
           // 待审批数 / 失败运行数。非管理员一律把 count 归零，仅保留定性 band，绝不依赖客户端遵守 numbers_visible。
           signals: input.actor.isAdmin ? signals : signals.map((signalVm) => ({ ...signalVm, count: 0 })),
           numbers_visible: input.actor.isAdmin,
-          target_href: `/drive?project_id=${project.id}`
+          // PROJ-3：「打开项目」应进项目主页 hub(/projects/:id,那里有工作项/负责人/动作,并自带「打开网盘」),
+          // 而不是直接跳进网盘文件树、绕过这个 GitHub 式的项目组织单元。
+          target_href: `/projects/${project.id}`
         };
       });
 

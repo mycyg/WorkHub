@@ -212,7 +212,9 @@ async function findProject(db: WorkHubDb, projectId?: string, workspaceId?: stri
     .select()
     .from(projects)
     .where(and(...conditions))
-    .orderBy(asc(projects.createdAt))
+    // XC-4：裸 /drive(无 project_id)挑默认项目要和 /projects 列表同序(最近活跃优先 desc(updatedAt)),
+    // 而不是最老的(asc(createdAt))。否则点全局「网盘」导航会落到最老项目的网盘,与列表首项不一致、令人困惑。
+    .orderBy(desc(projects.updatedAt))
     .limit(1);
   return rows[0] ?? null;
 }
