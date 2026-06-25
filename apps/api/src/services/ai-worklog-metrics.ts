@@ -1,6 +1,8 @@
+import { settings as runtimeSettings } from "@workhub/config";
 import {
   getSharedDatabaseClient,
   createPilotMetricsRepository,
+  type AiWorklogScope,
   type PilotDay1MetricsRows,
   type PilotMetricsRepository,
   type WorkHubDatabaseClient
@@ -20,7 +22,7 @@ const TERMINAL_RUN_STATUSES = new Set([
 ]);
 
 export type AiWorklogMetricsService = {
-  getTodayMetrics: (input?: { now?: Date }) => Promise<AiWorklogVM>;
+  getTodayMetrics: (input?: { now?: Date; workspaceId?: string }) => Promise<AiWorklogVM>;
 };
 
 function startOfToday(now: Date): Date {
@@ -87,16 +89,22 @@ export function buildAiWorklog(input: {
 
 export function createAiWorklogMetricsService(
   repository: PilotMetricsRepository,
-  options: { now?: () => Date } = {}
+  options: { now?: () => Date; defaultWorkspaceId?: string } = {}
 ): AiWorklogMetricsService {
   const now = options.now ?? (() => new Date());
+  // AUTHZ-2：判定「未打标历史行(workspace_id NULL)归谁」的基准——默认工作区。注入可测,缺省取运行时配置。
+  const defaultWorkspaceId = options.defaultWorkspaceId ?? runtimeSettings.auth.defaultWorkspaceId;
   return {
     async getTodayMetrics(input) {
       const reference = input?.now ?? now();
       const from = startOfToday(reference);
+      // AUTHZ-2：传了 workspaceId 才收口。默认工作区把 NULL 历史行算进来(includeUntagged),非默认工作区只认显式打标行。
+      const scope: AiWorklogScope | undefined = input?.workspaceId
+        ? { workspaceId: input.workspaceId, includeUntagged: input.workspaceId === defaultWorkspaceId }
+        : undefined;
       // 只读今天的 agentRuns/proposals/技能自进化事件（M5：不再为几个数字全表扫 9 张表）。
       // buildAiWorklog 只用到 rows.agentRuns / rows.proposals，其余字段补空即可。
-      const slice = await repository.readAiWorklogRows(from);
+      const slice = await repository.readAiWorklogRows(from, scope);
       return buildAiWorklog({
         rows: {
           workItems: [],

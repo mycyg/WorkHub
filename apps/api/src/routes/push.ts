@@ -1,6 +1,8 @@
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 
 import { getDefaultPushBus, getDefaultPresenceStore, type PresenceStore, type PushBus } from "../broker/index.js";
+import { isUuidParam } from "./uuid-param.js";
 import {
   getDefaultAuthDependencies,
   resolveAuthDependencies,
@@ -116,6 +118,11 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
   });
 
   routes.get("/stream/workitem/:id", async (c) => {
+    // EC-1：非 UUID 的 :id 会一路打到 PG uuid 列 → 22P02 → 500。这里先校验,和未授权一样回 403(不泄露存在性),
+    // 与 12 个用 isUuidParam/requireUuidParam 守 :id 的兄弟路由对齐。下同 req/run/session/proposal。
+    if (!isUuidParam(c.req.param("id"))) {
+      throw new HTTPException(403, { message: "cannot stream this work item" });
+    }
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "workitem", id: c.req.param("id") }, access);
@@ -123,6 +130,9 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
   });
 
   routes.get("/stream/req/:id", async (c) => {
+    if (!isUuidParam(c.req.param("id"))) {
+      throw new HTTPException(403, { message: "cannot stream this work item" });
+    }
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "workitem", id: c.req.param("id") }, access);
@@ -130,6 +140,9 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
   });
 
   routes.get("/stream/run/:id", async (c) => {
+    if (!isUuidParam(c.req.param("id"))) {
+      throw new HTTPException(403, { message: "cannot stream this agent run" });
+    }
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "run", id: c.req.param("id") }, access);
@@ -137,6 +150,9 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
   });
 
   routes.get("/stream/session/:id", async (c) => {
+    if (!isUuidParam(c.req.param("id"))) {
+      throw new HTTPException(403, { message: "cannot stream this session" });
+    }
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "session", id: c.req.param("id") }, access);
@@ -144,6 +160,9 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
   });
 
   routes.get("/stream/proposal/:id", async (c) => {
+    if (!isUuidParam(c.req.param("id"))) {
+      throw new HTTPException(403, { message: "cannot stream this proposal" });
+    }
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "proposal", id: c.req.param("id") }, access);

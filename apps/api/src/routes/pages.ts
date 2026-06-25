@@ -200,7 +200,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // 战绩是首页加分项：取数失败/无数据时静默降级（worklog 为可选字段，UI 不渲染横幅）。
     let worklog: Awaited<ReturnType<AiWorklogMetricsService["getTodayMetrics"]>> | undefined;
     try {
-      worklog = await aiWorklog.getTodayMetrics();
+      // AUTHZ-2：今日 AI 战绩按请求者工作区收口,与 /skills、listProjects 一致——否则一旦多工作区,
+      // 每个登录用户都会看到跨租户混合的聚合计数(虽只泄露数字总量,不泄露记录身份)。
+      worklog = await aiWorklog.getTodayMetrics({ workspaceId: actor.workspaceId });
     } catch {
       worklog = undefined;
     }

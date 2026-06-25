@@ -1,5 +1,5 @@
 import type { CostLedgerEntry } from "@workhub/cost";
-import { and, gte, inArray, or, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, or, type AnyColumn, type SQL } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import {
@@ -111,9 +111,20 @@ export type AiWorklogMetricsRows = {
   skillCurationEvents: SkillCurationEventRow[];
 };
 
+// AUTHZ-2：今日 AI 战绩按工作区收口。这些表的 workspace_id 是后加的可空列,历史行大量为 NULL
+// (本机真库 44 条 agent_run 里 43 条 workspace_id IS NULL)——直接 eq 会把首页横幅从 ~44 砍到 ~1。
+// 因此区分:
+//   - includeUntagged=true(请求者在默认工作区):未打标(NULL)的历史行视为默认工作区数据,一并计入;
+//   - includeUntagged=false(请求者在非默认工作区):只认显式打了本工作区标的行,NULL 不归你(闭合跨租户泄露)。
+// 不传 scope=完全不过滤(向后兼容旧调用/单测)。proposals 表无 workspace_id 列,经 work_items 联表取它的工作区。
+export type AiWorklogScope = {
+  workspaceId: string;
+  includeUntagged: boolean;
+};
+
 export type PilotMetricsRepository = {
   readDay1MetricsRows: () => Promise<PilotDay1MetricsRows>;
-  readAiWorklogRows: (since: Date) => Promise<AiWorklogMetricsRows>;
+  readAiWorklogRows: (since: Date, scope?: AiWorklogScope) => Promise<AiWorklogMetricsRows>;
 };
 
 export function createPilotMetricsRepository(db: WorkHubDb): PilotMetricsRepository {
@@ -213,7 +224,15 @@ export function createPilotMetricsRepository(db: WorkHubDb): PilotMetricsReposit
       };
     },
 
-    async readAiWorklogRows(since: Date) {
+    async readAiWorklogRows(since: Date, scope?: AiWorklogScope) {
+      // 见 AiWorklogScope 注释:不传 scope=不过滤;默认工作区把 NULL 历史行一并计入;非默认工作区只认显式打标行。
+      const inWorkspace = (col: AnyColumn) => {
+        if (!scope) {
+          return undefined;
+        }
+        const match = eq(col, scope.workspaceId);
+        return scope.includeUntagged ? or(match, isNull(col)) : match;
+      };
       const [agentRunRows, proposalRows, skillCurationEvents] = await Promise.all([
         db.select({
           id: agentRuns.id,
@@ -226,8 +245,9 @@ export function createPilotMetricsRepository(db: WorkHubDb): PilotMetricsReposit
           createdAt: agentRuns.createdAt,
           finishedAt: agentRuns.finishedAt
         }).from(agentRuns).where(
-          or(gte(agentRuns.createdAt, since), gte(agentRuns.finishedAt, since)) as SQL
+          and(or(gte(agentRuns.createdAt, since), gte(agentRuns.finishedAt, since)), inWorkspace(agentRuns.workspaceId)) as SQL
         ),
+        // proposals 无 workspace_id,经 work_items 内联取工作区(work_item FK notNull,内联不会丢活 proposal)。
         db.select({
           id: proposals.id,
           workItemId: proposals.workItemId,
@@ -237,12 +257,15 @@ export function createPilotMetricsRepository(db: WorkHubDb): PilotMetricsReposit
           reviewedAt: proposals.reviewedAt,
           mergedAt: proposals.mergedAt,
           createdAt: proposals.createdAt
-        }).from(proposals).where(gte(proposals.mergedAt, since)),
+        }).from(proposals)
+          .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
+          .where(and(gte(proposals.mergedAt, since), inWorkspace(workItems.workspaceId)) as SQL),
         // R8：今日技能自进化（新增 + 精修）——从审计日志按动作取。
         db.select({ action: auditLogs.action }).from(auditLogs).where(
           and(
             gte(auditLogs.createdAt, since),
-            inArray(auditLogs.action, ["team_skill.distilled_and_promoted", "team_skill.refined_via_patch"])
+            inArray(auditLogs.action, ["team_skill.distilled_and_promoted", "team_skill.refined_via_patch"]),
+            inWorkspace(auditLogs.workspaceId)
           ) as SQL
         )
       ]);

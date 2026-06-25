@@ -40,7 +40,9 @@ const humanReservedGuardColumns = {
   mode: workItems.mode,
   humanReserved: workItems.humanReserved,
   submitterUserId: workItems.submitterUserId,
-  claimedByUserId: workItems.claimedByUserId
+  claimedByUserId: workItems.claimedByUserId,
+  // AUTHZ-1：升级事件要发到工作项真实工作区的话题(而非硬编码 default),与订阅侧 all:<workspaceId> 对齐。
+  workspaceId: workItems.workspaceId
 };
 
 const notificationContextColumns = {
@@ -64,6 +66,9 @@ export type WorkItemHumanReservedRow = {
   humanReserved: boolean;
   submitterUserId: string;
   claimedByUserId: string | null;
+  // AUTHZ-1：可空——work_items.workspace_id 是后加列,历史行可能 NULL。消费方(human-reserved-guard)
+  // 用 `?? defaultWorkspaceId` 兜底,把未打标的升级仍发到默认工作区话题。
+  workspaceId: string | null;
 };
 
 export type WorkItemNotificationContextRow = {

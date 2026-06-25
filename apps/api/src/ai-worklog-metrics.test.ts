@@ -133,3 +133,41 @@ test("createAiWorklogMetricsService passes start-of-today as the query lower bou
   assert.equal(capturedSince?.getUTCMinutes(), 0);
   assert.equal(capturedSince?.getUTCDate(), 14);
 });
+
+test("AUTHZ-2: getTodayMetrics scopes the worklog read by the caller's workspace", async () => {
+  const now = new Date("2026-06-14T12:00:00Z");
+  const DEFAULT_WS = "00000000-0000-4000-8000-000000000002";
+  const OTHER_WS = "11111111-1111-4111-8111-111111111111";
+  const captured: Array<unknown> = [];
+  const make = () =>
+    createAiWorklogMetricsService(
+      {
+        readDay1MetricsRows: async () => emptyRows(),
+        readAiWorklogRows: async (_since: Date, scope?: unknown) => {
+          captured.push(scope);
+          return { agentRuns: [], proposals: [], skillCurationEvents: [] };
+        }
+      } as never,
+      { now: () => now, defaultWorkspaceId: DEFAULT_WS }
+    );
+
+  // 1) 不传 workspaceId → 不收口（向后兼容旧调用/单测）。
+  await make().getTodayMetrics();
+  assert.equal(captured[0], undefined, "no workspaceId → unscoped read");
+
+  // 2) 默认工作区 → 把未打标(NULL)历史行一并计入。
+  await make().getTodayMetrics({ workspaceId: DEFAULT_WS });
+  assert.deepEqual(
+    captured[1],
+    { workspaceId: DEFAULT_WS, includeUntagged: true },
+    "default workspace includes untagged legacy rows"
+  );
+
+  // 3) 非默认工作区 → 只认显式打标行，NULL 不归你（闭合跨租户聚合泄露）。
+  await make().getTodayMetrics({ workspaceId: OTHER_WS });
+  assert.deepEqual(
+    captured[2],
+    { workspaceId: OTHER_WS, includeUntagged: false },
+    "non-default workspace excludes untagged rows"
+  );
+});

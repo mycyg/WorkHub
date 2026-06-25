@@ -155,9 +155,14 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
         next_mode: "pm"
       };
       await bus?.publish(topics.workitem(input.workItemId).topic, eventTypes.escalationOpened, eventPayload);
-      // findings[#tenancy]：全局事件发到按工作区隔离的话题，与订阅侧 `all:<workspaceId>` 对齐——
-      // 否则一旦出现第二工作区，订阅 A 的 admin 会收到 B 的全局事件。单租户下 == default 工作区，行为等价。
-      await bus?.publish(topics.all(settings.auth.defaultWorkspaceId).topic, eventTypes.escalationOpened, eventPayload);
+      // AUTHZ-1：全局事件发到工作项**真实**工作区的话题，与订阅侧 `all:<workspaceId>` 对齐——
+      // 否则一旦出现第二工作区，B 的升级会漏发给 B 的 admin、却错发给 default 工作区的 admin(跨租户泄露)。
+      // 单租户下 workspaceId == default，行为等价。
+      await bus?.publish(
+        topics.all(workItem.workspaceId ?? settings.auth.defaultWorkspaceId).topic,
+        eventTypes.escalationOpened,
+        eventPayload
+      );
     }
 
     return {
