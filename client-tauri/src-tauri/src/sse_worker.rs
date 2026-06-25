@@ -21,8 +21,10 @@ pub const DEFAULT_SSE_RECONNECT_DELAY_MS: u64 = 5_000;
 /// 共享给 SSE worker 的运行时客户端令牌。webview 首启 bootstrap 拿到设备令牌后经 `set_client_token`
 /// 命令写入；worker 每次(重)连前重读它注入鉴权头——故令牌在启动后才到达也能被下一拍重连用上。
 /// 修复：config 文件/env 通常无 token，全局 /api/push/stream 之前裸连→401→每 5s 重连永远 401(Cuu「重连中」)。
+/// `.0` = 设备令牌；`.1` = 令牌变更通知（RUST-1）。set_client_token 写入令牌后 `notify_waiters()`，
+/// SSE worker 在退避 sleep 上 select! 监听它——新令牌一到即刻唤醒重连，而不是干等满一个退避周期(最长 ~60s)。
 #[derive(Default)]
-pub struct ShellClientToken(pub Mutex<Option<String>>);
+pub struct ShellClientToken(pub Mutex<Option<String>>, pub Arc<tokio::sync::Notify>);
 
 pub fn spawn_default_shell_sse_workers(
     app: tauri::AppHandle,
@@ -118,7 +120,21 @@ async fn run_sse_subscription(
             }
         }
 
-        sleep(reconnect_backoff(reconnect_delay_ms, consecutive_failures)).await;
+        // RUST-1：退避等待期间监听令牌变更——webview bootstrap 写入新令牌后立刻醒来重连并复位退避，
+        // 不再「令牌已就绪却干等满一个退避周期(最长 ~60s)」。克隆 Arc<Notify> 拿到 owned 句柄，避免跨 await 借用 State。
+        let delay = reconnect_backoff(reconnect_delay_ms, consecutive_failures);
+        let token_changed = app
+            .try_state::<ShellClientToken>()
+            .map(|state| Arc::clone(&state.1));
+        match token_changed {
+            Some(notify) => {
+                tokio::select! {
+                    _ = sleep(delay) => {}
+                    _ = notify.notified() => { consecutive_failures = 0; }
+                }
+            }
+            None => sleep(delay).await,
+        }
     }
 }
 

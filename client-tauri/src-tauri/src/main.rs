@@ -494,6 +494,8 @@ fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
     if let Ok(mut guard) = state.0.lock() {
         *guard = Some(trimmed.to_string());
     }
+    // RUST-1：唤醒在退避 sleep 上等待的 SSE worker，令牌一到即刻重连（不再干等满一个退避周期）。
+    state.1.notify_waiters();
 }
 
 // R8 真·Spotlight：webview 测得盒子内容高度后调它缩放主窗（盒子随内容生长/收缩，苹果聚焦风）。
@@ -1080,15 +1082,17 @@ fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), S
 }
 
 fn restore_pet_window_interaction_state(app: &tauri::AppHandle) -> Result<(), String> {
-    let scale_percent = {
+    // RUST-3：恢复交互只该复位 pass_through / hide_on_hover。此前 opacity 硬编码 100，会把用户特意调过的
+    // 60%/80% 透明度悄悄重置——scale 已保留、opacity 却没,口径不一致。读回用户设的 opacity 一并保留。
+    let (scale_percent, opacity_percent) = {
         let runtime_state = app.state::<Mutex<PetWindowRuntimeState>>();
         let state = runtime_state
             .lock()
             .map_err(|_| "pet runtime state is poisoned".to_string())?;
-        state.settings.scale_percent
+        (state.settings.scale_percent, state.settings.opacity_percent)
     };
     let runtime_state = app.state::<Mutex<PetWindowRuntimeState>>();
-    set_pet_window_settings(app.clone(), runtime_state, scale_percent, 100, false, false)?;
+    set_pet_window_settings(app.clone(), runtime_state, scale_percent, opacity_percent, false, false)?;
     Ok(())
 }
 

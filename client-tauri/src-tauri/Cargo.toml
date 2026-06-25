@@ -17,7 +17,7 @@ tauri = { version = "2.11.2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "sync", "macros"] }
 url = "2.5"
 window-vibrancy = "0.5"
 
