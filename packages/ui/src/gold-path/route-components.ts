@@ -2257,7 +2257,7 @@ function renderDriveRouteComponent(
           ${driveProjectNav}
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "drive.kicker"))}</span>
           <h1>${escapeHtml(projectTitle)}</h1>
-          <p>${escapeHtml(selectedItem?.path ?? routeT(locale, "drive.selectFile"))}</p>
+          <p>${escapeHtml(selectedItem?.path ?? routeT(locale, vm.items.length === 0 ? "drive.emptyFiles" : "drive.selectFile"))}</p>
           ${driveManageActions ? `<div class="wh-r4-route-actions" data-r5-drive-manage-actions="true">${driveManageActions}</div>` : ""}
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.file_count))}</span>

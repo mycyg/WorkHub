@@ -1004,9 +1004,8 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   }
   if (match.key === "health") {
     const health = await client.pages.projectHealth(withLocale(locale));
-    if (health.cards.length === 0) {
-      return "empty" as const;
-    }
+    // EDGE-1/簇A：无可见项目时也照常渲染整页(含外壳 + 组件自带的 health.empty「还没有可见的项目」落地态),
+    // 不再塌成丢左导航、文不对题的通用空卡「现在没有需要处理的事项」。与 approvals/cost/calendar/notifications 一致。
     return { key: "health", health } satisfies WebRouteSurface;
   }
   if (match.key === "knowledge") {
@@ -1047,8 +1046,19 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   }
   if (match.key === "proposal") {
     const proposal = await client.pages.proposal(match.params["id"] ?? "", withLocale(locale));
-    const result = await client.listWorkItemConflicts(proposal.work_item_id);
-    const conflicts = result.conflicts.filter((conflict) => conflict.proposal_id === proposal.proposal_id);
+    // EDGE-2：冲突列表是次要数据(它自带 assertCanReadWorkItem,可能独立 403/抖动)。它失败不该把本已加载好的
+    // 提议/合并工作台整页塌成错误卡——退化为「无冲突」即可(与 drive 的 listProjects 失败退化同模式)。
+    // 会话过期(not_identified)仍要冒泡去重认证。
+    let conflicts: ProposalConflict[] = [];
+    try {
+      const result = await client.listWorkItemConflicts(proposal.work_item_id);
+      conflicts = result.conflicts.filter((conflict) => conflict.proposal_id === proposal.proposal_id);
+    } catch (error) {
+      if (error instanceof WorkHubApiError && error.code === "not_identified") {
+        throw error;
+      }
+      conflicts = [];
+    }
     return { key: "proposal", proposal, proposal_conflicts: conflicts } satisfies WebRouteSurface;
   }
   if (match.key === "drive") {
@@ -1194,6 +1204,13 @@ function routeStateCopyOverride(
     return locale === "zh-CN"
       ? { titleOverride: "网盘还没有项目", bodyOverride: "先创建或选择一个项目，文件和版本会同步到这里。" }
       : { titleOverride: "No project for the drive yet", bodyOverride: "Create or pick a project first — files and versions will sync here." };
+  }
+  // F7：会议同样是项目维度数据,没有任何项目时塌成通用空卡「现在没有需要处理的事项」会误导成"队列已清空"。
+  // 给专属文案,解释真正的下一步是先建/选项目(与 drive 同处理)。
+  if (match.key === "meetings" && state === "empty") {
+    return locale === "zh-CN"
+      ? { titleOverride: "还没有可看的会议", bodyOverride: "先创建或选择一个项目，会议纪要和待办洞察会出现在这里。" }
+      : { titleOverride: "No meetings yet", bodyOverride: "Create or pick a project first — meeting minutes and insights will show up here." };
   }
   return undefined;
 }
