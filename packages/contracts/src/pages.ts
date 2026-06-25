@@ -160,6 +160,10 @@ export const driveItemVmSchema = z.object({
   accepted_deliverable: acceptedDeliverableVmSchema.optional(),
   children_count: z.number().int().nonnegative(),
   deleted_at: isoDateTimeSchema.optional(),
+  // F3：逐项操作端点——回收站项各带自己的 restore_href、可删项各带自己的 delete_href,让每行都能单独恢复/删除,
+  // 而不是只有一个指向 deleted[0]/单个 deletable 的全局按钮。仅在请求者有管理权时由服务端填充。
+  restore_href: z.string().min(1).optional(),
+  delete_href: z.string().min(1).optional(),
   updated_at: isoDateTimeSchema
 });
 export type DriveItemVM = z.infer<typeof driveItemVmSchema>;

@@ -333,6 +333,22 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
   const selectedItemId = requestedSelected ?? deletableItem?.id ?? itemVms.find((item) => item.kind === "file")?.id ?? itemVms[0]?.id;
   const projectId = rows.project?.id;
   const canManage = rows.project ? canManageProjectDrive(rows.project, actor) : false;
+  // F3：给每个回收站项一个自己的 restore_href、每个可删项(文件或空文件夹)一个自己的 delete_href,
+  // 让 UI 逐行渲染 Restore/Delete。此前只有全局按钮(restore 钉死 deleted[0]、delete 钉死单个 deletable),
+  // 想恢复第 2/3 个删除项或删非首选文件都点不到。端点本就是逐项的(.../items/:id/restore|delete),仅缺逐项暴露。
+  if (canManage && projectId) {
+    for (const item of deletedItemVms) {
+      item.restore_href = `/api/drive/projects/${projectId}/items/${item.id}/restore`;
+    }
+    const deletableIds = new Set(
+      [...manualFileDeleteCandidates, ...emptyFolderDeleteCandidates].map((item) => item.id)
+    );
+    for (const item of itemVms) {
+      if (deletableIds.has(item.id)) {
+        item.delete_href = `/api/drive/projects/${projectId}/items/${item.id}/delete`;
+      }
+    }
+  }
   const commentToDraft = canManage
     ? rows.comments.find((comment) => commentStatus(comment.status) === "pending_llm" && !comment.draftWorkItemId)
     : undefined;

@@ -540,6 +540,50 @@ test("drive page service targets the latest manual file for recycle actions", as
   assert.equal(page.selected_item_id, manualItemId);
   assert.equal(page.actions.delete_item?.href, `/api/drive/projects/${projectId}/items/${manualItemId}/delete`);
   assert.equal(page.actions.delete_item?.label.includes("manual-note.md"), true);
+  // F3：可删项各自带 delete_href(逐行删除按钮),不只一个全局按钮指向单个 deletable。
+  const manualVm = page.items.find((item) => item.id === manualItemId);
+  assert.equal(manualVm?.delete_href, `/api/drive/projects/${projectId}/items/${manualItemId}/delete`);
+});
+
+test("F3: each recycle-bin item gets its own restore_href (not just deleted_items[0])", async () => {
+  const pageRows = rows();
+  const deletedAt = "2026-06-14T08:00:00.000Z";
+  const mkDeleted = (id: string, name: string) => ({
+    id,
+    projectId,
+    parentId: null,
+    name,
+    kind: "file" as const,
+    currentVersionId: null,
+    createdByUserId: userId,
+    updatedByUserId: userId,
+    deletedAt: new Date(deletedAt),
+    deletedByUserId: userId,
+    createdAt: now,
+    updatedAt: now
+  });
+  const firstId = "91000000-0000-4000-8000-0000000000d1";
+  const secondId = "91000000-0000-4000-8000-0000000000d2";
+  pageRows.deletedItems = [mkDeleted(firstId, "first-deleted.md"), mkDeleted(secondId, "second-deleted.md")];
+  const service = createDrivePageService({
+    repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
+      async readPage() { return pageRows; },
+      async uploadFile() { throw new Error("not needed"); },
+      async softDeleteItem() { throw new Error("not needed"); },
+      async restoreDeletedItem() { throw new Error("not needed"); },
+      async commentToDraft() { throw new Error("not needed"); },
+      async recordDraftProposal() { throw new Error("not needed"); }
+    },
+    now: () => now
+  });
+
+  const page = await service.page({ actor: actor(), locale: "zh-CN", projectId });
+  const byId = new Map(page.deleted_items.map((item) => [item.id, item]));
+  // Both deleted items are individually restorable — not just the first.
+  assert.equal(byId.get(firstId)?.restore_href, `/api/drive/projects/${projectId}/items/${firstId}/restore`);
+  assert.equal(byId.get(secondId)?.restore_href, `/api/drive/projects/${projectId}/items/${secondId}/restore`);
 });
 
 test("drive page service honors a requested item_id (#5 recent-file deep-link), falling back on an invalid one", async () => {
