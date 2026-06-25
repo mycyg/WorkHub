@@ -2403,7 +2403,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): 
           <h3>${escapeHtml(routeT(locale, "meeting.minutes"))}</h3>
           <pre class="wh-r5-meeting-text">${escapeHtml(minutes)}</pre>
         </section>
-      </div>` : `<div class="wh-r4-route-grid"><article class="wh-card wh-r4-route-card" data-r5-meeting-empty="true"><h3>${escapeHtml(routeT(locale, "meeting.empty"))}</h3><p class="wh-subtle">${escapeHtml(vm.can_manage ? (locale === "zh-CN" ? "上传一段会议录音或转写，Cuu 会自动整理出纪要和待办洞察。" : "Upload a recording or transcript and Cuu will draft minutes and action insights.") : (locale === "zh-CN" ? "等团队上传会议后，这里会出现转写、纪要和洞察。" : "Once a teammate uploads a meeting, transcript, minutes and insights show up here."))}</p></article></div>`}
+      </div>` : `<div class="wh-r4-route-grid"><article class="wh-card wh-r4-route-card" data-r5-meeting-empty="true"><h3>${escapeHtml(routeT(locale, "meeting.empty"))}</h3><p class="wh-subtle">${escapeHtml(vm.can_manage ? (locale === "zh-CN" ? "会议录音或转写接入后，Cuu 会自动整理出纪要和待办洞察，并显示在这里。" : "Once a meeting recording or transcript is brought in, Cuu drafts the minutes and action insights here.") : (locale === "zh-CN" ? "团队的会议接入后，这里会出现转写、纪要和洞察。" : "Once a team meeting is brought in, its transcript, minutes and insights show up here."))}</p></article></div>`}
     </section>`
   });
 }
@@ -2963,9 +2963,12 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     // 标题用本地化严重度,而不是裸 "warning"。
     ? vm.notices.map((notice) => {
       const options = notice.options ?? [];
+      // INT-2：成本看板是聚合总览,这里的「降级模型/暂停/找管理员」是**建议**——真正能点的暂停/降级在具体工作项页与
+      // Cuu 卡上(那里 action_href 指向 /api/workitems/:id/pause|downgrade);看板层没有可作用的单一目标。原来给它们
+      // 配自指 href(/dashboard/cost)渲成按钮,点了只跳回本页=假动作。改成诚实的「可以这样应对」建议文字,不再撒谎。
       const optionButtons = options.length
-        ? options.map((option, index) => `<a class="wh-btn${index === 0 ? " wh-btn-primary" : ""}" href="${escapeHtml(safeHref(option.action_href))}" data-r4-cost-notice-option="${escapeHtml(option.id)}">${escapeHtml(option.label)}</a>`).join("")
-        : (notice.action_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(notice.action_href))}" data-r4-cost-notice-action="true">${escapeHtml(goldPathT(locale, "cost.title"))}</a>` : "");
+        ? `<span class="wh-subtle">${escapeHtml(zhNotice ? "可以这样应对：" : "What you can do: ")}</span>${options.map((option) => `<span class="wh-pill" data-r4-cost-notice-option="${escapeHtml(option.id)}">${escapeHtml(option.label)}</span>`).join("")}`
+        : "";
       const severityLabel = localizedEnumLabel(
         notice.severity,
         zhNotice,

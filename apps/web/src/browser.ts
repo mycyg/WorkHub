@@ -514,6 +514,12 @@ function bindGoldPathNavigation(
       const form = commentSubmit.closest<HTMLFormElement>("[data-r4-approval-comment-form]");
       const input = form?.querySelector<HTMLTextAreaElement>("[data-r4-approval-comment-input]");
       const body = input?.value.trim();
+      if (approvalId && !body) {
+        // INT-5：空(或纯空白)评论点提交此前静默无反馈——用户不知道为什么没发出去。给出「需要填写内容」提示并聚焦输入框。
+        showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, "approval_comment"));
+        input?.focus();
+        return;
+      }
       if (approvalId && body) {
         try {
           const comment = await client.postApprovalComment(approvalId, { body });

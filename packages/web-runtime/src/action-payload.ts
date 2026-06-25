@@ -275,7 +275,10 @@ export function materializeIntakePayload<T>(element: HTMLElement): ActionPayload
   updateIntakeActionPayloads(route);
   const selected = selectedIntakeOptionIds(route);
   const optionCount = Number.parseInt(route.dataset.r4IntakeOptionCount ?? "0", 10);
-  if (optionCount > 0 && selected.length === 0) {
+  // INT-4：自由文本是被主动邀请的答法(「也可以展开手动输入」)。只填了自由文本、没选项,也算有效答案——
+  // 只有当选项和自由文本都为空时才拦。否则就成了"邀请你写,却又说没选项不让过"的死路。
+  const freeText = intakeFreeTextValue(route);
+  if (optionCount > 0 && selected.length === 0 && freeText.length === 0) {
     return { ok: false, reason: "intake_option_required" };
   }
   return actionElementJsonPayload<T>(element);
