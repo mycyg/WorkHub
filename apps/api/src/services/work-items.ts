@@ -595,6 +595,7 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLoca
     : undefined;
   return workItemDetailVmSchema.parse({
     workitem: toWorkItemVm(rows.workItem),
+    ...(rows.projectName ? { project_name: rows.projectName } : {}),
     acceptance: rows.acceptance.map((item) => ({
       id: item.id,
       work_item_id: item.workItemId,

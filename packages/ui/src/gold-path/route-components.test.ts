@@ -845,6 +845,20 @@ test("R5.4 WorkItem route component exposes Drive source context and proposal dr
   assert.equal(workitem.primaryHrefs.includes("/api/drive/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"), true);
 });
 
+test("GH-2: WorkItem header shows a breadcrumb back to its parent project", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const withProject: WorkItemDetailVM = { ...base, project_name: "区域发布资料库" };
+  const projectId = withProject.workitem.project_id;
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: withProject }, { locale: "zh-CN" });
+  assert.equal(workitem.html.includes(`data-r4-workitem-project-link="${projectId}"`), true);
+  assert.equal(workitem.html.includes(`href="/projects/${projectId}"`), true);
+  assert.equal(workitem.html.includes("区域发布资料库"), true);
+
+  // Without project_name the breadcrumb degrades to the plain kicker (no broken link).
+  const noProject = renderWebRouteComponent({ key: "workitem", workitem: base }, { locale: "zh-CN" });
+  assert.equal(noProject.html.includes("data-r4-workitem-project-link"), false);
+});
+
 test("S1 Day2 WorkItem route component hides duplicate start-run once proposal or replay is available", () => {
   const vm = surfaceVm();
   const workitem = renderWebRouteComponents(vm, { locale: "en-US" }).workitem;

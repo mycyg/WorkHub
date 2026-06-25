@@ -196,6 +196,8 @@ export type InsertStoredChatMessageInput = {
 
 export type StoredWorkItemDetailRows = {
   workItem: WorkItemRow;
+  // GH-2：工作项详情头部的「← 项目名」面包屑用(工作项是项目里的工作单元,像 GitHub issue 属于 repo)。
+  projectName: string | null;
   projectOwnerUserId: string | null;
   // 读路径可见性收口用：摊平出工作项所属项目的租户/活跃度字段，
   // 让 canViewWorkItemRecord(record, actor, {workspaceId}) 能直接判定 workspace 归属，无需再补一次查询。
@@ -763,6 +765,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       const rows = await db
         .select({
           workItem: workItems,
+          projectName: projects.name,
           projectOwnerUserId: projects.ownerUserId,
           projectWorkspaceId: projects.workspaceId,
           projectArchived: projects.archived,
@@ -859,6 +862,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
 
       return {
         workItem: row.workItem,
+        projectName: row.projectName,
         projectOwnerUserId: row.projectOwnerUserId,
         projectWorkspaceId: row.projectWorkspaceId,
         projectArchived: row.projectArchived,

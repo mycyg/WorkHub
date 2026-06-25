@@ -675,6 +675,8 @@ export type WorkItemSourceContextVM = z.infer<typeof workItemSourceContextVmSche
 
 export const workItemDetailVmSchema = z.object({
   workitem: workItemSchema,
+  // GH-2：所属项目名,供详情页头部「← 项目名」面包屑链接到 /projects/:id(工作项的 project_id 在 workitem 里)。
+  project_name: z.string().min(1).optional(),
   acceptance: z.array(z.unknown()),
   agent_trace_preview: z.array(agentStepSchema),
   latest_proposal: deliverableChangeManifestSchema.optional(),

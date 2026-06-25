@@ -1848,7 +1848,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
     html: `<section class="wh-r4-route" data-r4-route-component="workitem" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-workitem-id="${escapeHtml(vm.workitem.id)}" data-r4-workitem-trace-count="${escapeHtml(String(vm.agent_trace_preview.length))}" data-r4-workitem-evidence-count="${escapeHtml(String(vm.evidence_refs.length))}" data-r4-workitem-acceptance-count="${escapeHtml(String(vm.acceptance.length))}" data-r4-workitem-deliverable-count="${escapeHtml(String(latestProposal?.changes.length ?? 0))}">
       <header class="wh-r4-route-head">
         <div>
-          <span class="wh-r4-route-kicker">${escapeHtml(uiT(locale, "workitem.kicker"))}</span>
+          ${vm.project_name && vm.workitem.project_id ? `<a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(`/projects/${vm.workitem.project_id}`))}" data-r4-workitem-project-link="${escapeHtml(vm.workitem.project_id)}">← ${escapeHtml(vm.project_name)}</a>` : `<span class="wh-r4-route-kicker">${escapeHtml(uiT(locale, "workitem.kicker"))}</span>`}
           <h1>${escapeHtml(title)}</h1>
           <p>${escapeHtml(summary)}</p>
         </div>
