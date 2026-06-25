@@ -139,8 +139,12 @@ export type CostLedgerStore = {
    * 只取该日期及以后的账目。不传则全量（pilot-metrics 等累计统计仍需全量）。
    */
   listEntries?: (options?: { sinceBucket?: string }) => MaybePromise<readonly CostLedgerEntry[]>;
-  /** 只读请求到的 scope 的账目（走索引），用于非管理员只取自己的用量、避免全表扫描。 */
-  listEntriesForScopes?: (scopeIds: LedgerScopeIds) => MaybePromise<readonly CostLedgerEntry[]>;
+  /**
+   * 只读请求到的 scope 的账目（走索引），用于非管理员只取自己的用量、避免全表扫描。
+   * DF-1：与 listEntries 同样接受 sinceBucket —— 成本看板的窗口必须与管理员侧对称，否则同一个
+   * 无标签的 total_cost_cny 对管理员=近 90 天、对普通成员=终身累计（同字段两种含义）。
+   */
+  listEntriesForScopes?: (scopeIds: LedgerScopeIds, options?: { sinceBucket?: string }) => MaybePromise<readonly CostLedgerEntry[]>;
   listRecords?: () => MaybePromise<readonly UsageRecord[]>;
   /**
    * R4 #26：按 source + 时间下界聚合 usage 成本（走 created_at 索引的 SQL SUM），用于 curation 当日预算闸门，
@@ -191,8 +195,13 @@ export function createMemoryCostLedgerStore(options: {
       const sinceBucket = options.sinceBucket;
       return entries.filter((entry) => entry.periodBucket >= sinceBucket);
     },
-    listEntriesForScopes(scopeIds) {
-      return entries.filter((entry) => entryInScopes(entry, scopeIds));
+    listEntriesForScopes(scopeIds, options) {
+      const inScope = entries.filter((entry) => entryInScopes(entry, scopeIds));
+      if (!options?.sinceBucket) {
+        return inScope;
+      }
+      const sinceBucket = options.sinceBucket;
+      return inScope.filter((entry) => entry.periodBucket >= sinceBucket);
     },
     listRecords() {
       return records;

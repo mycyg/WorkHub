@@ -178,7 +178,9 @@ export function createDbCostLedgerStore(
   }
 
   // 只查请求到的 scope（按 scope_kind+scope_id 走索引），避免每次预算/快照都全表扫描所有用户/项目（H6）。
-  async function listEntriesForScopes(scopeIds: LedgerScopeIds) {
+  // DF-1：可选 sinceBucket —— 成本看板的非管理员路径要和管理员侧同样按 period_bucket 限窗，否则总额
+  // 一边是终身累计、一边是近 90 天。预算快照(usageSnapshots)不传它,仍取全量累计。
+  async function listEntriesForScopes(scopeIds: LedgerScopeIds, options?: { sinceBucket?: string }) {
     const conds: SQL[] = [];
     if (scopeIds.workItemId) {
       conds.push(and(eq(costLedgerEntries.scopeKind, "workitem"), eq(costLedgerEntries.scopeId, scopeIds.workItemId)) as SQL);
@@ -195,7 +197,11 @@ export function createDbCostLedgerStore(
     if (conds.length === 0) {
       return [];
     }
-    const rows = await db.select().from(costLedgerEntries).where(or(...conds));
+    const scopePredicate = or(...conds) as SQL;
+    const where = options?.sinceBucket
+      ? (and(scopePredicate, gte(costLedgerEntries.periodBucket, options.sinceBucket)) as SQL)
+      : scopePredicate;
+    const rows = await db.select().from(costLedgerEntries).where(where);
     return rows.map(rowToLedgerEntry);
   }
 

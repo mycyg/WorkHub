@@ -422,12 +422,15 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     });
     // 非管理员只读自己 user scope 的账目（走索引，不全表扫描，也不带 team scope——否则会把同队他人的花费混进总额）。
     // team/me 预算卡片来自 decision.usages（与账目无关），所以团队预算状态照常可见。管理员才取全组织视图。M8/M9。
+    // DF-1：管理员与非管理员用**同一个** 90 天窗口（costDashboardSinceBucket），否则同一个无标签的
+    // total_cost_cny 对管理员=近 90 天、对普通成员=终身累计（两种含义混在一个字段里，且成员越用越慢）。
+    const costSinceBucket = costDashboardSinceBucket(new Date());
     const ledgerEntries = c.var.currentUser.isAdmin
       ? (ledgerStore.listEntries
-          ? await ledgerStore.listEntries({ sinceBucket: costDashboardSinceBucket(new Date()) })
+          ? await ledgerStore.listEntries({ sinceBucket: costSinceBucket })
           : ledgerStore.entries)
       : (ledgerStore.listEntriesForScopes
-          ? await ledgerStore.listEntriesForScopes({ userId: c.var.currentUser.id })
+          ? await ledgerStore.listEntriesForScopes({ userId: c.var.currentUser.id }, { sinceBucket: costSinceBucket })
           // L[1]：非管理员且 store 未实现按 scope 查询时 fail-closed 返回空——绝不回退到 listEntries()/entries
           // （全组织账目）。跨租户读账目宁可空，也不能 fail-open 把别人的花费泄露给普通成员。
           : []);
