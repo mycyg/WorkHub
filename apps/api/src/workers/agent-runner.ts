@@ -449,6 +449,11 @@ export function createInMemoryAgentRunQueue(options: {
       now: now()
     }));
   const runs = new Map<string, AgentRunQueueRecord>();
+  // SIR-1：每个在跑 run 的「租约视界」(ms)——最近一次成功心跳续到的 lease_expires_at。心跳写**抛错**时
+  // (transient DB error)refreshClaimInBackground 的 .catch 会吞掉,run 的内存 status 仍 running、driftedRun
+  // 永不停手;同时服务端租约静默过期→recoverExpiredClaims 重排→同进程重领,双跑双烧。这里据此判定:一旦
+  // now 越过该视界仍续不上,主动把内存 status 翻 failed(同心跳命中 0 行的 line 697 出口),让原 loop 自停。
+  const claimLeaseHorizonMs = new Map<string, number>();
   const runWorkdirs = new Map<string, string>();
   // P-COLLAB M2：run 开始时拍下的 project/ base 快照 id（按 run 暂存），
   // 开提议时写进 manifest.base.snapshot_id → createProposal 落到 branches.baseSnapshotId。
@@ -697,6 +702,8 @@ export function createInMemoryAgentRunQueue(options: {
       runs.set(run.run_id, { ...live, status: "failed", updated_at: now().toISOString() });
       return;
     }
+    // SIR-1：心跳成功续租 → 推进租约视界。后续若心跳连续抛错越过它,refreshClaimInBackground 会据此自停。
+    claimLeaseHorizonMs.set(run.run_id, leaseExpiresAt.getTime());
     runs.set(run.run_id, {
       ...live,
       ...(updated.claim ? { claim: updated.claim } : {}),
@@ -744,6 +751,19 @@ export function createInMemoryAgentRunQueue(options: {
     }
     void refreshClaim(live).catch((error) => {
       getDefaultStructuredLogger().warn("agent_run_claim_heartbeat_failed", { error });
+      // SIR-1：心跳**抛错**(返回 null 之外的失败)曾被这里静默吞掉,run 一直 running。若已越过租约视界仍续不上,
+      // 租约必已被服务端判过期、可能被重排重领——主动把本地翻 failed(等同 line 697 的「租约丢失」出口),
+      // 让 driftedRun 在下个守卫点中止原 loop,关掉与重领执行的并发重叠窗口。视界内的瞬时抖动则不动(下次心跳重试)。
+      const horizon = claimLeaseHorizonMs.get(runId);
+      const current = runs.get(runId);
+      if (current && current.status === "running" && horizon !== undefined && now().getTime() > horizon) {
+        runs.set(runId, { ...current, status: "failed", updated_at: now().toISOString() });
+        claimLeaseHorizonMs.delete(runId);
+        getDefaultStructuredLogger().warn("agent_run_claim_lease_lost", {
+          run_id: runId,
+          reason: "heartbeat_failing_past_lease_horizon"
+        });
+      }
     });
   }
 
@@ -751,8 +771,18 @@ export function createInMemoryAgentRunQueue(options: {
     if (!persistence?.heartbeatClaim || heartbeatIntervalMs <= 0) {
       return () => undefined;
     }
+    // SIR-1：初始视界 = 认领时的 lease_expires_at(没有则按 now+leaseMs 兜底),让首个心跳成功前的失窗也有判据。
+    const claimedHorizon = (() => {
+      const claim = runs.get(runId)?.claim;
+      const parsed = claim ? Date.parse(claim.lease_expires_at) : Number.NaN;
+      return Number.isFinite(parsed) ? parsed : now().getTime() + leaseMs;
+    })();
+    claimLeaseHorizonMs.set(runId, claimedHorizon);
     const timer = setInterval(() => refreshClaimInBackground(runId), heartbeatIntervalMs);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      claimLeaseHorizonMs.delete(runId);
+    };
   }
 
   function abortActorId(actor: AbortAgentRunActor) {

@@ -2670,6 +2670,83 @@ test("agent run aborts its in-flight loop when its lease is lost mid-run", async
   assert.notEqual(persisted?.status, "succeeded");
 });
 
+test("SIR-1: agent run self-aborts when heartbeat keeps THROWING past the lease horizon", async () => {
+  // 模拟：心跳写持续抛错(transient DB error,不是命中 0 行返回 null)。此前 refreshClaimInBackground 的 .catch
+  // 会静默吞掉,run 内存 status 永远 running、driftedRun 永不停手——服务端租约静默过期后会被重排重领,同进程双跑。
+  // 期望：越过租约视界后本地翻 failed,loop 自停,run 不以「成功」收尾(不污染重领方结果)。
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const heartbeatThrew = deferred<void>();
+  const releaseProvider = deferred<void>();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-heartbeat-throw-test-"));
+  let tick = 0;
+  const longProviderClient: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        await releaseProvider.promise;
+        return {
+          id: "msg-heartbeat-throw",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          usageRecord: {
+            provider: "deepseek",
+            model: "deepseek-v4-flash",
+            task: "worker",
+            inputTokens: 1,
+            outputTokens: 1,
+            estimatedCostCny: "0.001",
+            source: "agent_step",
+            createdAt: "2026-06-05T00:00:00.000Z"
+          },
+          content: [{ type: "text", text: "done" }]
+        };
+      }
+    }
+  };
+  // 心跳每次都抛错(永远续不上)。tick 每次 now() +100ms,leaseMs=300 → 数次后逻辑时钟越过租约视界。
+  let heartbeatAttempts = 0;
+  persistence.heartbeatClaim = async () => {
+    heartbeatAttempts += 1;
+    heartbeatThrew.resolve(); // 重复 resolve 无害,只取首次。
+    throw new Error("transient DB error during heartbeat");
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => new Date(now.getTime() + tick++ * 100),
+    id: () => "40000000-0000-4000-8000-00000000002b",
+    workerId: "worker-heartbeat-throw",
+    leaseMs: 300,
+    heartbeatIntervalMs: 10,
+    workdir: () => workdir,
+    client: () => longProviderClient,
+    persistence,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Heartbeat-throw abort run"
+  });
+
+  const running = queue.runNext();
+  await heartbeatThrew.promise;
+  // 给心跳几次机会把逻辑时钟推过视界并翻 failed。
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  releaseProvider.resolve();
+  const executed = await running;
+
+  assert.ok(heartbeatAttempts >= 1, "heartbeat was attempted (and threw)");
+  // 心跳持续抛错越过租约视界 → 本地自停,不以成功收尾。
+  assert.notEqual(executed?.status, "succeeded");
+  const persisted = await persistence.get(run.run_id);
+  assert.notEqual(persisted?.status, "succeeded");
+});
+
 test("agent run route auto-pumps queued work after enqueue", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-autopump-test-"));
