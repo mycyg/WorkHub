@@ -1105,6 +1105,16 @@ function meetingInsightKindLabel(kind: string, zh: boolean): string {
   );
 }
 
+// F4：把 language 卡的 preference_source 枚举(server|request|fallback)译成用户能懂的话,而不是原始内部枚举。
+function preferenceSourceLabel(source: string, zh: boolean): string {
+  return localizedEnumLabel(
+    source,
+    zh,
+    { server: "已保存在服务端", request: "本次请求设定", fallback: "默认回退" },
+    { server: "Saved on server", request: "This request", fallback: "Default fallback" }
+  );
+}
+
 function homeRunStateLabel(state: string, zh: boolean): string {
   const map: Record<string, string> = zh
     ? { queued: "排队中", running: "进行中", waiting_for_user: "等你拍板", failed: "出错了" }
@@ -1193,7 +1203,7 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
           <strong>${escapeHtml(ref.title)}</strong>
           <p>${escapeHtml(ref.excerpt ?? ref.source_id)}</p>
         </div>
-        <span class="wh-pill">${escapeHtml(ref.source_type)}</span>
+        <span class="wh-pill">${escapeHtml(evidenceSourceLabel(locale, ref.source_type))}</span>
       </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "empty.evidence"))}</p>`;
 
@@ -1712,7 +1722,7 @@ function traceRows(vm: WorkItemDetailVM, locale: WorkHubLocale) {
         <strong>${escapeHtml(`${step.step_no}. ${agentStepPhaseLabel(locale, step.phase)}`)}</strong>
         <p>${escapeHtml(step.output_excerpt ?? step.tool_name ?? uiT(locale, "workitem.stepFallback"))}</p>
       </div>
-      <span class="wh-pill">${escapeHtml(step.tool_name ?? step.created_at)}</span>
+      <span class="wh-pill">${escapeHtml(step.tool_name ?? formatApprovalTimestamp(step.created_at))}</span>
     </div>`)
     .join("");
 }
@@ -1806,7 +1816,7 @@ function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale
     </div>
     <div class="wh-r4-route-meta">
       <span class="wh-pill">${escapeHtml(meetingInsightStatusLabel(source.status, locale))}</span>
-      <span class="wh-pill">${escapeHtml(source.insight_kind)}</span>
+      <span class="wh-pill">${escapeHtml(meetingInsightKindLabel(source.insight_kind, locale === "zh-CN"))}</span>
       ${evidence}
       ${proposal}
     </div>
@@ -1955,7 +1965,7 @@ function renderProposalRouteComponent(
         <strong>${escapeHtml(comment.author_label)}</strong>
         <p>${escapeHtml(comment.body)}</p>
       </div>
-      <span class="wh-pill">${escapeHtml(comment.created_at)}</span>
+      <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(comment.created_at))}</span>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无评论" : "No comments yet")}</p>`;
   const reactMutationEditorHost = hasFieldEditor
@@ -2431,7 +2441,9 @@ function sourceContextLabel(source: NotificationPageVM["items"][number]["source_
   if (source.source_type === "schedule_event") {
     return `${routeT(locale, "calendar.scheduleEvent")} · ${source.title}`;
   }
-  return source.label;
+  // F3：剩下的 system 来源,其 label 是原始点分类型串(如 system.notice / agent_run.succeeded),过一遍
+  // 本地化器给用户看友好名,而不是机器枚举。notificationTypeLabel 对未知串也有前缀/humanize 兜底。
+  return notificationTypeLabel(source.label, locale === "zh-CN");
 }
 
 function notificationActionLinks(item: NotificationPageVM["items"][number], locale: WorkHubLocale) {
@@ -3163,7 +3175,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           <h3>${escapeHtml(routeT(locale, "settings.language"))}</h3>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.activeLocale"))}</strong><span class="wh-pill">${escapeHtml(props.activeLocale)}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceLocale"))}</strong><span class="wh-pill">${escapeHtml(props.preferenceLocale)}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSource"))}</strong><span class="wh-pill">${escapeHtml(props.preferenceSource)}</span></div>
+          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSource"))}</strong><span class="wh-pill">${escapeHtml(preferenceSourceLabel(props.preferenceSource, locale === "zh-CN"))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSync"))}</strong><span class="wh-pill">${escapeHtml(syncLabel(props.preferenceSynced, locale))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.supported"))}</strong><span class="wh-pill">${escapeHtml(props.supportedLocales.join(" / "))}</span></div>
         </section>
