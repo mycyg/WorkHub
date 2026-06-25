@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { allocateProjectCode } from "../sequences.js";
@@ -32,6 +32,10 @@ export type MeetingPageRows = {
   meetings: MeetingRecordWithUserRow[];
   insights: MeetingInsightRow[];
   insightProposals: MeetingProposalRow[];
+  // DF-3：项目内 insight 按状态的真实总数 + 会议真实总数,均 count(*) 不受 limit*5 / limit 载入上限影响。
+  // summary 的 pending/confirmed/dismissed_insight_count 与 meeting_count 用它们,否则超过上限就静默少计。
+  insightStatusCounts?: { status: string; count: number }[];
+  meetingCount?: number;
 };
 
 export type MeetingInsightDraftRows = {
@@ -178,19 +182,34 @@ export function createMeetingRepository(db: WorkHubDb): MeetingRepository {
         : [];
       const filteredInsights = insightRows;
       const draftWorkItemIds = [...new Set(filteredInsights.map((insight) => insight.createdWorkItemId).filter((id): id is string => Boolean(id)))];
-      const insightProposals = draftWorkItemIds.length
-        ? await db
-          .select()
-          .from(proposals)
-          .where(inArray(proposals.workItemId, draftWorkItemIds))
-          .orderBy(desc(proposals.createdAt))
-          .limit(100)
-        : [];
+      // DF-3：summary 计数走全量聚合,不受上面 limit*5 / limit 载入上限影响（>500 insight / >100 会议时不再静默少计）。
+      const [insightStatusRows, meetingCountRows, insightProposals] = await Promise.all([
+        db
+          .select({ status: meetingInsights.status, value: sql<number>`count(*)` })
+          .from(meetingInsights)
+          .innerJoin(meetingRecords, eq(meetingInsights.meetingId, meetingRecords.id))
+          .where(eq(meetingRecords.projectId, project.id))
+          .groupBy(meetingInsights.status),
+        db
+          .select({ value: sql<number>`count(*)` })
+          .from(meetingRecords)
+          .where(eq(meetingRecords.projectId, project.id)),
+        draftWorkItemIds.length
+          ? db
+            .select()
+            .from(proposals)
+            .where(inArray(proposals.workItemId, draftWorkItemIds))
+            .orderBy(desc(proposals.createdAt))
+            .limit(100)
+          : Promise.resolve([])
+      ]);
       return {
         project,
         meetings: meetingRows,
         insights: filteredInsights,
-        insightProposals
+        insightProposals,
+        insightStatusCounts: insightStatusRows.map((row) => ({ status: row.status, count: Number(row.value ?? 0) })),
+        meetingCount: Number(meetingCountRows[0]?.value ?? 0)
       };
     },
 

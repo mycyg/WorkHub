@@ -278,10 +278,18 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
   const allItems = [...rows.items, ...rows.deletedItems];
   const itemById = new Map(allItems.map((item) => [item.id, item]));
   const pathByItemId = new Map(allItems.map((item) => [item.id, itemPath(item, itemById)]));
+  // DF-3：优先用仓库的全量 count(*) group by parent_id;只有它缺失(旧调用/假仓库)时才回退到从已载入的
+  // (受 200 行上限截断的)items 数 —— 否则子项排在 200 之外的文件夹会读成 children_count=0,被误判空可删。
   const childrenCount = new Map<string, number>();
-  for (const item of rows.items) {
-    if (item.parentId) {
-      childrenCount.set(item.parentId, (childrenCount.get(item.parentId) ?? 0) + 1);
+  if (rows.childCountsByParent) {
+    for (const { parentId, count } of rows.childCountsByParent) {
+      childrenCount.set(parentId, count);
+    }
+  } else {
+    for (const item of rows.items) {
+      if (item.parentId) {
+        childrenCount.set(item.parentId, (childrenCount.get(item.parentId) ?? 0) + 1);
+      }
     }
   }
 
@@ -452,9 +460,14 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
       }
       throw new DrivePageServiceError(403, "你没有权限查看这个项目网盘。", "drive_forbidden");
     }
-    // 取项目内文件总数(不受 items 200 行树上限影响),供 summary.file_count 与项目主页同口径。
+    // 取项目内文件总数 + 每父文件夹真实子项数(均不受 items 200 行树上限影响),供 summary.file_count 与
+    // children_count/空文件夹删除候选用——与项目主页同口径,且避免 >200 项时把有子项的文件夹误判为空可删(DF-3)。
     if (rows.project) {
-      return { ...rows, totalFileCount: await deps.repo.countFilesByProject(rows.project.id) };
+      const [totalFileCount, childCountsByParent] = await Promise.all([
+        deps.repo.countFilesByProject(rows.project.id),
+        deps.repo.countChildrenByParent?.(rows.project.id)
+      ]);
+      return { ...rows, totalFileCount, ...(childCountsByParent ? { childCountsByParent } : {}) };
     }
     return rows;
   }

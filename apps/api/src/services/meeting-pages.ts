@@ -277,6 +277,12 @@ function buildMeetingPage(rows: MeetingPageRows, actor: AuthActor, locale: WorkH
     };
   });
   const flatInsights = meetings.flatMap((meeting) => meeting.insights);
+  // DF-3：summary 计数优先用仓库全量聚合(不受 insight 500 / 会议 100 载入上限影响);缺失(旧调用/假仓库)
+  // 才回退到从已载入子集过滤——否则超过上限就静默少计,像 insight/会议"丢了"。
+  const insightStatusCount = (status: string) =>
+    rows.insightStatusCounts
+      ? (rows.insightStatusCounts.find((row) => row.status === status)?.count ?? 0)
+      : flatInsights.filter((insight) => insight.status === status).length;
   return parseOutputContract(meetingPageVmSchema, {
     generated_at: now.toISOString(),
     project: {
@@ -287,11 +293,12 @@ function buildMeetingPage(rows: MeetingPageRows, actor: AuthActor, locale: WorkH
       status: "active"
     },
     summary: {
-      meeting_count: meetings.length,
+      meeting_count: Math.max(meetings.length, rows.meetingCount ?? 0),
+      // ready_count 仍按已载入会议算(状态明细未做全量聚合);>100 会议的极端项目里它反映已载入的 100 条。
       ready_count: meetings.filter((meeting) => meeting.status === "ready").length,
-      pending_insight_count: flatInsights.filter((insight) => insight.status === "pending").length,
-      confirmed_insight_count: flatInsights.filter((insight) => insight.status === "confirmed").length,
-      dismissed_insight_count: flatInsights.filter((insight) => insight.status === "dismissed").length
+      pending_insight_count: insightStatusCount("pending"),
+      confirmed_insight_count: insightStatusCount("confirmed"),
+      dismissed_insight_count: insightStatusCount("dismissed")
     },
     // findings[#low-F40]：can_manage 是项目级权限(admin/owner)，不该因「项目暂无会议」让 meetings.some()→false。
     // 直接问项目级 canManageProjectMeeting(空 uploadedByUserId)——admin/owner 判定不看该字段；非 owner 非 admin 仍 false。

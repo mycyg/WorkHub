@@ -591,6 +591,37 @@ test("xreview: drive summary.file_count uses the uncapped project total, not the
   assert.ok(loadedFiles < 250, "fixture loads fewer files than the project total (the cap scenario)");
 });
 
+test("DF-3: drive children_count uses the uncapped per-parent count, not the 200-row tree slice", async () => {
+  const pageRows = rows();
+  // 已载入树里该文件夹只有 1 个子项;但项目实际有 9 个(其余排在 200 行上限之外)。
+  const loadedChildren = pageRows.items.filter((item) => item.parentId === folderId).length;
+  const service = createDrivePageService({
+    repo: {
+      async listRecentFilesByProject() { return []; },
+      async countFilesByProject() { return 0; },
+      async countChildrenByParent() { return [{ parentId: folderId, count: 9 }]; },
+      async readPage() { return pageRows; },
+      async uploadFile() { throw new Error("not needed"); },
+      async softDeleteItem() { throw new Error("not needed"); },
+      async restoreDeletedItem() { throw new Error("not needed"); },
+      async commentToDraft() { throw new Error("not needed"); },
+      async recordDraftProposal() { throw new Error("not needed"); }
+    },
+    now: () => now
+  });
+
+  const page = await service.page({ actor: actor(), locale: "zh-CN", projectId });
+  const folderVm = page.items.find((item) => item.id === folderId);
+  // 全量 count(*) 口径(9)覆盖 loaded 子集数(1)——否则子项排在 200 之外的文件夹会读成 0、被误判空可删。
+  assert.equal(folderVm?.children_count, 9);
+  assert.ok(loadedChildren < 9, "fixture loads fewer children than the real per-parent count (the cap scenario)");
+  // children_count>0 → 该文件夹绝不会被列为可删的空文件夹(delete_item 不会指向它的删除端点)。
+  assert.ok(
+    !page.actions?.delete_item?.href?.includes(`/items/${folderId}/delete`),
+    "a folder with real children is never offered as an empty-folder delete candidate"
+  );
+});
+
 test("drive page service does not 403 the generic drive route on an invisible default project", async () => {
   const hiddenRows = rows();
   hiddenRows.project = {

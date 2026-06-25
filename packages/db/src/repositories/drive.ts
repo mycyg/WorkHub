@@ -42,6 +42,9 @@ export type DrivePageRows = {
   // 项目内文件总数(count(*), 不受 items 200 行上限影响)。drive 页 summary.file_count 用它,
   // 与项目主页 countFilesByProject 同口径——否则 >200 文件时两页「文件 N」对不上,像文件丢了。
   totalFileCount?: number;
+  // DF-3：每个父文件夹的真实子项数(count(*) group by parent_id, 不受 items 200 行上限影响)。
+  // children_count 此前只数已载入的 200 行 → 子项排在 200 之外的文件夹会读成 0,被误判「空文件夹」可删。
+  childCountsByParent?: { parentId: string; count: number }[];
 };
 
 export type DriveRepositoryActor = {
@@ -116,6 +119,9 @@ export type DriveRepository = {
   // 项目主页文件卡：最近文件清单（轻量，不拉版本/评论/采纳）+ 真实文件总数（不受清单 limit 截断）。
   listRecentFilesByProject: (projectId: string, limit?: number) => Promise<DriveRecentFileRow[]>;
   countFilesByProject: (projectId: string) => Promise<number>;
+  // DF-3：每个父文件夹的真实子项数(未删除),供 drive 页 children_count 与空文件夹删除候选用,不受 items 上限影响。
+  // 可选：真实 DB 仓库实现它;未实现的假仓库则 children_count 回退到从已载入子集数(服务层 buildDrivePage 已兜底)。
+  countChildrenByParent?: (projectId: string) => Promise<{ parentId: string; count: number }[]>;
   uploadFile: (input: DriveRepositoryActor & {
     projectId: string;
     parentId?: string | null;
@@ -408,6 +414,22 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           isNull(projectDriveItems.deletedAt)
         ));
       return Number(rows[0]?.value ?? 0);
+    },
+
+    async countChildrenByParent(projectId) {
+      // DF-3：每个父文件夹的真实子项数(未删除),count(*) group by parent_id,不受 items 200 行上限影响。
+      const rows = await db
+        .select({ parentId: projectDriveItems.parentId, value: sql<number>`count(*)` })
+        .from(projectDriveItems)
+        .where(and(
+          eq(projectDriveItems.projectId, projectId),
+          isNotNull(projectDriveItems.parentId),
+          isNull(projectDriveItems.deletedAt)
+        ))
+        .groupBy(projectDriveItems.parentId);
+      return rows
+        .filter((row): row is { parentId: string; value: number } => row.parentId !== null)
+        .map((row) => ({ parentId: row.parentId, count: Number(row.value ?? 0) }));
     },
 
     async uploadFile(input) {
