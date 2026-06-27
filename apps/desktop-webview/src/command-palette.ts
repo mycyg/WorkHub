@@ -251,7 +251,7 @@ export const commandPaletteCss = [
   ".wh-cmd-list{display:flex;flex-direction:column;gap:2px;max-height:min(360px,60vh);overflow-y:auto;overscroll-behavior:contain}",
   ".wh-cmd-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:0;background:transparent;border-radius:var(--ds-radius-md);padding:9px 11px;cursor:pointer;color:var(--ds-ink)}",
   ".wh-cmd-row:hover,.wh-cmd-row:focus-visible{background:rgba(255,255,255,.7)}",
-  ".wh-cmd-row[data-active=true]{background:rgba(124,131,255,.16);box-shadow:inset 0 0 0 1px rgba(124,131,255,.3)}",
+  ".wh-cmd-row[data-active=true]{background:rgba(10,132,255,.14);box-shadow:inset 0 0 0 1px rgba(10,132,255,.28)}",
   ".wh-cmd-icon{display:inline-flex;width:22px;height:22px;flex:0 0 auto;color:var(--ds-accent)}",
   ".wh-cmd-icon svg{width:22px;height:22px}",
   ".wh-cmd-text{display:flex;flex-direction:column;gap:1px;min-width:0}",
@@ -260,7 +260,7 @@ export const commandPaletteCss = [
   ".wh-cmd-badge{margin-left:auto;flex:0 0 auto;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--ds-danger);color:#fff;font:700 11px/18px var(--ds-font);text-align:center}",
   ".wh-cmd-empty{padding:18px 8px;text-align:center}",
   // 命令面板浮层（Spotlight 风：顶部居中召出）+ 背景遮罩。
-  ".wh-cmd-backdrop{position:fixed;inset:0;z-index:70;display:flex;align-items:flex-start;justify-content:center;padding:12vh 24px 24px;box-sizing:border-box;background:rgba(40,30,70,.18);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}",
+  ".wh-cmd-backdrop{position:fixed;inset:0;z-index:70;display:flex;align-items:flex-start;justify-content:center;padding:12vh 24px 24px;box-sizing:border-box;background:rgba(28,28,30,.16);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}",
   // 常驻搜索条（全 app 交互中心：点它或按 ⌘K 召出命令面板）。顶部居中、玻璃风、像一根搜索栏。
   ".wh-cmd-launcher{position:fixed;top:11px;left:50%;transform:translateX(-50%);z-index:55;-webkit-app-region:no-drag;display:inline-flex;align-items:center;gap:9px;width:min(460px,46vw);box-sizing:border-box;border:1px solid var(--ds-glass-border);background:var(--ds-glass-strong);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);border-radius:var(--ds-radius-pill);box-shadow:var(--ds-shadow-2);color:var(--ds-ink-muted);font:500 13px/1 var(--ds-font);padding:9px 14px;cursor:text;transition:transform var(--ds-dur-fast) var(--ds-spring),box-shadow var(--ds-dur-fast),border-color var(--ds-dur-fast)}",
   ".wh-cmd-launcher:hover{border-color:var(--ds-accent);box-shadow:var(--ds-shadow-3)}.wh-cmd-launcher:active{transform:translateX(-50%) scale(.99)}",

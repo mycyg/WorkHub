@@ -194,6 +194,11 @@ export type InsertStoredChatMessageInput = {
   at?: Date;
 };
 
+export type WorkItemClarificationAnswerRow = {
+  selectedOptionIds: string[];
+  freeText?: string;
+};
+
 export type StoredWorkItemDetailRows = {
   workItem: WorkItemRow;
   // GH-2：工作项详情头部的「← 项目名」面包屑用(工作项是项目里的工作单元,像 GitHub issue 属于 repo)。
@@ -268,6 +273,8 @@ export type WorkItemDataRepository = WorkItemRepository & WorkItemClaimHandoverR
   updateWorkItemFromSession: (input: UpdateStoredWorkItemFromSessionInput) => Promise<WorkItemRow | null>;
   insertChatMessage: (input: InsertStoredChatMessageInput) => Promise<WorkItemChatMessageRow>;
   listSessionSelectedOptionIds: (workItemId: string) => Promise<string[]>;
+  listSessionClarificationAnswers: (workItemId: string) => Promise<WorkItemClarificationAnswerRow[]>;
+  findLatestChatMessageByKind: (workItemId: string, kind: string) => Promise<WorkItemChatMessageRow | null>;
   findWorkItemById: (workItemId: string) => Promise<WorkItemRow | null>;
   findWorkItemAccessRecord: (workItemId: string) => Promise<WorkItemAccessRow | null>;
   readWorkItemDetail: (workItemId: string) => Promise<StoredWorkItemDetailRows | null>;
@@ -754,6 +761,37 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       return uniqueSelectedOptionIds(
         rows.flatMap((row) => selectedOptionIdsFromChatContent(row.contentJson, row.selectedOptionKey))
       );
+    },
+
+    async listSessionClarificationAnswers(workItemId) {
+      const rows = await db
+        .select({
+          contentJson: chatMessages.contentJson,
+          selectedOptionKey: chatMessages.selectedOptionKey,
+          userOtherText: chatMessages.userOtherText
+        })
+        .from(chatMessages)
+        .where(and(eq(chatMessages.workItemId, workItemId), eq(chatMessages.kind, "clarification_answer")))
+        .orderBy(asc(chatMessages.createdAt));
+      return rows.map((row) => {
+        const freeText = typeof row.contentJson.free_text === "string"
+          ? row.contentJson.free_text
+          : row.userOtherText ?? undefined;
+        return {
+          selectedOptionIds: uniqueSelectedOptionIds(selectedOptionIdsFromChatContent(row.contentJson, row.selectedOptionKey)),
+          ...(freeText ? { freeText } : {})
+        };
+      });
+    },
+
+    async findLatestChatMessageByKind(workItemId, kind) {
+      const rows = await db
+        .select()
+        .from(chatMessages)
+        .where(and(eq(chatMessages.workItemId, workItemId), eq(chatMessages.kind, kind)))
+        .orderBy(desc(chatMessages.createdAt))
+        .limit(1);
+      return rows[0] ?? null;
     },
 
     async findWorkItemById(workItemId) {

@@ -114,6 +114,23 @@ function budgetActions(event: WorkHubEvent<unknown>): AttentionItem["actions"] |
 // 至少给一个「查看」导航动作,指向相关工作项/项目详情;桌面 attention 视图的 classifyAttentionActionHref 会把这类
 // GET /workitems|/projects/:id 当导航内联打开,web 端则正常跳转,而不是一张点不动的卡。
 function defaultOpenAction(event: WorkHubEvent<unknown>): AttentionItem["actions"] {
+  if (
+    (
+      event.type === eventTypes.proposalOpened ||
+      event.type === eventTypes.proposalReviewed ||
+      event.type === eventTypes.proposalMerged ||
+      event.type === eventTypes.revisionFedback
+    ) &&
+    event.proposal_id
+  ) {
+    return [{
+      id: "open_proposal",
+      label: "查看变更申请",
+      style: "secondary",
+      method: "GET",
+      href: `/proposals/${event.proposal_id}`
+    }];
+  }
   const href = event.work_item_id
     ? `/workitems/${event.work_item_id}`
     : event.project_id

@@ -144,6 +144,24 @@ test("proposal and replay pages expose review actions, rollback, cost, and at le
   assert.equal((replay?.html.match(/wh-row/gu)?.length ?? 0) >= 5, true);
 });
 
+test("gold path proposal page hides model self narration titles", () => {
+  const vm = surfaceVm();
+  const dirty = {
+    ...vm,
+    page_vms: {
+      ...vm.page_vms,
+      proposal: {
+        ...vm.page_vms.proposal,
+        title: "完成了。让我做一个人话总结。"
+      }
+    }
+  } as unknown as GoldPathSurfaceVM;
+  const proposal = renderGoldPathSurface(dirty, "web").pages.find((page) => page.key === "proposal");
+
+  assert.equal(proposal?.html.includes("完成了。让我做一个人话总结。"), false);
+  assert.equal(proposal?.html.includes("交付物变更申请"), true);
+});
+
 test("replay page surfaces accepted deliverables with preview and download actions", () => {
   const vm = surfaceVm();
   const deliverable: AcceptedDeliverableVM = {

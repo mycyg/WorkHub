@@ -132,6 +132,11 @@ export type DriveUploadFileRequest = {
   size_bytes?: number;
   sha256?: string;
   parsed_text?: string;
+} | {
+  file: Blob;
+  filename?: string;
+  mime?: string;
+  parsed_text?: string;
 };
 
 export type DriveDeleteItemRequest = {

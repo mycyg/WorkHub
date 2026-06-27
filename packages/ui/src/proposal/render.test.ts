@@ -26,6 +26,19 @@ test("proposal renderer keeps the change package shape visible", () => {
   assert.equal(rendered.html.includes("data-requires-reason=\"true\""), true);
 });
 
+test("proposal renderer replaces model self-narration titles and shows the summary first", () => {
+  const vm = structuredClone(createP05GoldPathFixture().proposalDetail);
+  vm.title = "完成了。让我做一个人话总结。";
+  vm.manifest.title = vm.title;
+  const rendered = renderProposalDetail(vm, "desktop");
+
+  assert.equal(rendered.title, "交付物变更申请");
+  assert.equal(rendered.html.includes("<h1 class=\"wh-title\">交付物变更申请</h1>"), true);
+  assert.equal(rendered.html.includes("data-proposal-summary=\"true\""), true);
+  assert.equal(rendered.html.includes("<strong>总结</strong>"), true);
+  assert.equal(rendered.html.includes("让我做一个人话总结"), false);
+});
+
 test("proposal renderer stays non-kanban and non-git while exposing deliverable kinds", () => {
   const vm = createP05GoldPathFixture().proposalDetail;
   const rendered = renderProposalDetail(vm, "desktop");

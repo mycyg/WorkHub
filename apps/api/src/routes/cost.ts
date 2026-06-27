@@ -24,6 +24,7 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
+import { readJsonObject } from "./json-body.js";
 import { buildCostSummary } from "../pages/cost.js";
 import { getDefaultCostLedgerStore } from "../services/cost-ledger-store.js";
 import {
@@ -76,7 +77,7 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
     requireCostPolicyAdmin(c.var.currentUser.isAdmin);
     const scopeKind = scopeKindSchema.parse(c.req.param("scope"));
     const policyId = c.req.param("id");
-    const payload = budgetPolicyUpdateSchema.parse(await c.req.json().catch(() => ({})));
+    const payload = budgetPolicyUpdateSchema.parse(await readJsonObject(c));
     const before = (await policyStore.listPolicies(settings)).find((candidate) =>
       candidate.scopeKind === scopeKind && candidate.id === policyId
     );

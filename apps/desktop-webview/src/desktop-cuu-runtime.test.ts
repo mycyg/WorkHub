@@ -9,6 +9,7 @@ import { formatSseEvent } from "@workhub/events";
 import {
   bindDesktopShellCuuRuntime,
   cardFromDesktopCuuRuntimeError,
+  createDesktopCuuAnalysisCard,
   createDesktopCuuAgentLauncherCard,
   createDesktopCuuDemoScript,
   createDesktopShellScriptedListener,
@@ -620,14 +621,60 @@ test("desktop Cuu actions submit approval choices through the typed API client",
   );
 });
 
-test("desktop Cuu actions start a real agent run from an option-first launcher card", async () => {
+test("desktop Cuu actions submit proposal review choices instead of navigating to API URLs", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async reviewProposal(id: string, payload: unknown) {
+      calls.push({ id, payload });
+      return { attention: { summary_text: "已记录你的审阅意见。" } };
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    }
+  };
+  const approve = resolveDesktopCuuAction("/api/proposals/proposal-1/review", { actionId: "approve" });
+  const requestChanges = resolveDesktopCuuAction("/api/proposals/proposal-1/review", {
+    actionId: "request_changes",
+    requiresReason: true
+  });
+
+  assert.deepEqual(approve, {
+    kind: "proposal-review",
+    proposalId: "proposal-1",
+    decision: "approve",
+    requiresReason: false
+  });
+  assert.equal(requestChanges?.kind, "proposal-review");
+  assert.equal(requestChanges && "decision" in requestChanges ? requestChanges.decision : undefined, "request_changes");
+
+  assert.equal((await submitDesktopCuuAction({ client, action: approve! })).message, "已记录你的审阅意见。");
+  await assert.rejects(() => submitDesktopCuuAction({ client, action: requestChanges! }), /打回需要先选择一个原因/u);
+  assert.equal(
+    (await submitDesktopCuuAction({ client, action: requestChanges!, reasonMd: "需要补验收标准" })).message,
+    "已记录你的审阅意见。"
+  );
+  assert.deepEqual(calls, [
+    { id: "proposal-1", payload: { decision: "approve", remember: "once" } },
+    { id: "proposal-1", payload: { decision: "request_changes", reason_md: "需要补验收标准", remember: "once" } }
+  ]);
+});
+
+test("desktop Cuu actions start a real agent run from a free-text launcher card", async () => {
   const calls: unknown[] = [];
   const launcher = createDesktopCuuAgentLauncherCard();
-  const selectedChips = launcher.chips?.map((chip) => ({ ...chip, selected: chip.id === "document-draft" })) ?? [];
-  const selectedLauncher: CuuCard = {
-    ...launcher,
-    chips: selectedChips
-  };
+  const demand = "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。";
   const run: AgentRunLiveVM = {
     run_id: "10000000-0000-4000-8000-000000000301",
     work_item_id: "10000000-0000-4000-8000-000000000201",
@@ -731,40 +778,17 @@ test("desktop Cuu actions start a real agent run from an option-first launcher c
     }
   };
 
-  const unselectedAction = resolveDesktopCuuAction("/api/cuu/start-agent", {
-    actionId: "start_agent_from_cuu",
-    card: launcher
-  });
-  await assert.rejects(
-    () => submitDesktopCuuAction({ client, action: unselectedAction! }),
-    /先点一个选项/
-  );
-
   const action = resolveDesktopCuuAction("/api/cuu/start-agent", {
     actionId: "start_agent_from_cuu",
-    card: selectedLauncher
+    card: launcher,
+    freeText: demand
   });
   const result = await submitDesktopCuuAction({ client, action: action! });
 
   assert.equal(action?.kind, "cuu-start-agent");
-  assert.deepEqual(action && "selectedOptionIds" in action ? action.selectedOptionIds : undefined, ["document-draft"]);
-  assert.deepEqual(action && action.kind === "cuu-start-agent" ? action.cuuLauncherSpec : undefined, {
-    source: "cuu_desktop_launcher",
-    selected_options: [
-      {
-        id: "document-draft",
-        label: "文档/方案草稿",
-        description: "周报、说明、PR 式变更说明",
-        delivery_kind: "document_draft",
-        risk_hint: "low",
-        default_acceptance: [
-          "输出可审阅的文档或方案草稿，包含结构、正文和后续修改点。",
-          "标明依据、假设和待确认内容，不把未确认内容写成事实。"
-        ]
-      }
-    ]
-  });
-  assert.match(action && "intentText" in action ? action.intentText : "", /文档\/方案草稿/u);
+  assert.equal(action && "selectedOptionIds" in action ? action.selectedOptionIds : undefined, undefined);
+  assert.equal(action && action.kind === "cuu-start-agent" ? action.cuuLauncherSpec : undefined, undefined);
+  assert.equal(action && "intentText" in action ? action.intentText : "", demand);
   assert.equal(result.message, "Cuu 已启动：Cuu 桌面入口任务");
   assert.equal(result.card?.payload_ref?.entity_type, "agent_run");
   assert.equal(result.card?.state, "thinking");
@@ -773,33 +797,17 @@ test("desktop Cuu actions start a real agent run from an option-first launcher c
     {
       step: "createSession",
       payload: {
-        title: "Cuu 桌面入口任务",
-        intent_text: "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。\n文档/方案草稿: 周报、说明、PR 式变更说明"
+        title: demand,
+        intent_text: demand
       }
     },
     {
       step: "createWorkItem",
       payload: {
         session_id: "10000000-0000-4000-8000-000000000201",
-        title: "Cuu 桌面入口任务",
-        raw_description: "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。\n文档/方案草稿: 周报、说明、PR 式变更说明",
-        selected_option_ids: ["document-draft"],
-        cuu_launcher_spec: {
-          source: "cuu_desktop_launcher",
-          selected_options: [
-            {
-              id: "document-draft",
-              label: "文档/方案草稿",
-              description: "周报、说明、PR 式变更说明",
-              delivery_kind: "document_draft",
-              risk_hint: "low",
-              default_acceptance: [
-                "输出可审阅的文档或方案草稿，包含结构、正文和后续修改点。",
-                "标明依据、假设和待确认内容，不把未确认内容写成事实。"
-              ]
-            }
-          ]
-        },
+        title: demand,
+        raw_description: demand,
+        free_text: demand,
         kickoff_agent: true
       }
     },
@@ -807,22 +815,65 @@ test("desktop Cuu actions start a real agent run from an option-first launcher c
       step: "startAgentRun",
       workItemId: "10000000-0000-4000-8000-000000000201",
       payload: {
-        title: "Cuu 桌面入口任务"
+        title: demand
       }
     }
   ]);
 });
 
+test("desktop Cuu launcher captures a free-text demand before AI clarification", () => {
+  const launcher = createDesktopCuuAgentLauncherCard({ locale: "zh-CN" });
+
+  assert.equal(launcher.chips?.length ?? 0, 0);
+  assert.equal(launcher.input?.mode, "long_text");
+  assert.equal(launcher.input?.option_first, false);
+  assert.equal(launcher.input?.free_text_enabled, true);
+  assert.match(launcher.input?.free_text_placeholder ?? "", /需求/u);
+
+  const action = resolveDesktopCuuAction("/api/cuu/start-agent", {
+    actionId: "start_agent_from_cuu",
+    card: launcher,
+    freeText: "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。"
+  });
+
+  assert.equal(action?.kind, "cuu-start-agent");
+  assert.equal(action && action.kind === "cuu-start-agent" ? action.intentText : "", "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。");
+  assert.equal(action && action.kind === "cuu-start-agent" ? action.title : "", "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。");
+  assert.equal(action && action.kind === "cuu-start-agent" ? action.selectedOptionIds : undefined, undefined);
+  assert.equal(action && action.kind === "cuu-start-agent" ? action.cuuLauncherSpec : undefined, undefined);
+});
+
+test("desktop Cuu launcher shows an analysis card while the AI reads materials", () => {
+  const launcher = createDesktopCuuAgentLauncherCard({ locale: "zh-CN" });
+  const action = resolveDesktopCuuAction("/api/cuu/start-agent", {
+    actionId: "start_agent_from_cuu",
+    card: launcher,
+    freeText: "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。"
+  });
+
+  assert.equal(action?.kind, "cuu-start-agent");
+  if (!action || action.kind !== "cuu-start-agent") {
+    throw new Error("expected Cuu start action");
+  }
+  const card = createDesktopCuuAnalysisCard(action, { locale: "zh-CN" });
+
+  assert.equal(card.kind, "trace");
+  assert.equal(card.state, "thinking");
+  assert.match(card.title, /正在分析材料/u);
+  assert.match(card.message, /只展示反问结果/u);
+  assert.deepEqual(card.actions, []);
+  assert.match(card.sections?.[0]?.lines.join("\n") ?? "", /读取项目网盘|调用澄清模型/u);
+  assert.match(card.sections?.[1]?.lines.join("\n") ?? "", /不会显示隐藏思考/u);
+});
+
 test("desktop Cuu launcher helper returns session, work item, run, and Cuu card", async () => {
   const calls: string[] = [];
   const launcher = createDesktopCuuAgentLauncherCard({ locale: "en-US" });
-  const selectedLauncher: CuuCard = {
-    ...launcher,
-    chips: (launcher.chips ?? []).map((chip) => ({ ...chip, selected: chip.id === "structured-data" }))
-  };
+  const demand = "Use project drive files to produce a structured acceptance checklist.";
   const action = resolveDesktopCuuAction("/api/cuu/start-agent", {
     actionId: "start_agent_from_cuu",
-    card: selectedLauncher
+    card: launcher,
+    freeText: demand
   });
   const run = agentRunLive({ title: "Cuu structured task", status: "running" });
   const client = {
@@ -869,8 +920,8 @@ test("desktop Cuu launcher helper returns session, work item, run, and Cuu card"
   if (!action || action.kind !== "cuu-start-agent") {
     throw new Error("expected Cuu start action");
   }
-  assert.equal(action.cuuLauncherSpec?.selected_options[0]?.delivery_kind, "structured_data");
-  assert.match(action.cuuLauncherSpec?.selected_options[0]?.default_acceptance[0] ?? "", /structured file/u);
+  assert.equal(action.intentText, demand);
+  assert.equal(action.cuuLauncherSpec, undefined);
   const result = await startDesktopCuuAgentFromLauncher({ client, action, locale: "en-US" });
 
   assert.deepEqual(calls, ["session", "workitem", "run"]);
@@ -885,13 +936,11 @@ test("desktop Cuu launcher helper returns session, work item, run, and Cuu card"
 test("desktop Cuu launcher stops at backend clarification instead of bypassing the question", async () => {
   const calls: string[] = [];
   const launcher = createDesktopCuuAgentLauncherCard({ locale: "en-US" });
-  const selectedLauncher: CuuCard = {
-    ...launcher,
-    chips: (launcher.chips ?? []).map((chip) => ({ ...chip, selected: chip.id === "document-draft" }))
-  };
+  const demand = "Draft acceptance points from the project drive upload.";
   const action = resolveDesktopCuuAction("/api/cuu/start-agent", {
     actionId: "start_agent_from_cuu",
-    card: selectedLauncher
+    card: launcher,
+    freeText: demand
   });
   const session: SessionVM = {
     session_id: "10000000-0000-4000-8000-000000000201",
@@ -903,15 +952,11 @@ test("desktop Cuu launcher stops at backend clarification instead of bypassing t
       id: "10000000-0000-4000-8000-000000000211",
       session_id: "10000000-0000-4000-8000-000000000201",
       work_item_id: "10000000-0000-4000-8000-000000000201",
-      title: "Which delivery path should Cuu use?",
-      body: "Pick one option before Cuu creates the executable task.",
-      input_mode: "single_choice",
-      options: [
-        { id: "document-draft", label: "Document draft", description: "PR-style note or plan.", risk_hint: "low" },
-        { id: "structured-data", label: "Structured data", description: "JSON, YAML, CSV, config.", risk_hint: "low" }
-      ],
-      recommended_option_ids: ["document-draft"],
-      free_text: { enabled: true, collapsed_by_default: true, placeholder: "Optional detail", max_length: 300 },
+      title: "Which project file and acceptance standard should Cuu use?",
+      body: "AI generated this follow-up from the user request and project files.",
+      input_mode: "long_text",
+      options: [],
+      free_text: { enabled: true, collapsed_by_default: false, placeholder: "Name the file and acceptance standard.", max_length: 300 },
       progress: [
         { key: "intent", label: "Intent", state: "done" },
         { key: "scope", label: "Scope", state: "active" },
@@ -949,10 +994,10 @@ test("desktop Cuu launcher stops at backend clarification instead of bypassing t
   assert.equal(result.session.session_id, session.session_id);
   assert.equal(result.card.kind, "question");
   assert.equal(result.card.payload_ref?.entity_type, "session");
-  assert.equal(result.card.input?.option_first, true);
-  assert.equal(result.card.input?.free_text_collapsed_by_default, true);
+  assert.equal(result.card.input?.option_first, false);
+  assert.equal(result.card.input?.free_text_collapsed_by_default, false);
   assert.equal(result.card.actions[0]?.href, session.next_question_href);
-  assert.equal(result.message, "Cuu needs one more choice: Which delivery path should Cuu use?");
+  assert.equal(result.message, "Cuu needs one more detail: Which project file and acceptance standard should Cuu use?");
 
   const submitClient = {
     ...client,
@@ -1043,7 +1088,9 @@ test("desktop Cuu run stream refreshes agent cards and closes on terminal status
   }));
   await refreshed;
   assert.equal(cards[0]?.state, "thinking");
-  assert.match(cards[0]?.message ?? "", /整理证据/u);
+  assert.match(cards[0]?.message ?? "", /AI 正在思考中/u);
+  assert.doesNotMatch(cards[0]?.message ?? "", /整理证据/u);
+  assert.deepEqual(cards[0]?.sections?.[0]?.lines, ["#1 AI 正在思考中"]);
 
   source.emit(eventTypes.agentRunStep, workHubEvent({
     event_id: "10000000-0000-4000-8000-000000000502",
@@ -1281,6 +1328,10 @@ test("desktop Cuu runtime maps API and stream failures to Cuu cards", () => {
     locale: "en-US"
   });
   const genericEnglish = cardFromDesktopCuuRuntimeError(new Error("内部错误"), { locale: "en-US" });
+  const genericRunEnglish = cardFromDesktopCuuRuntimeError(new Error("内部错误"), {
+    locale: "en-US",
+    run: agentRunLive({ status: "failed" })
+  });
   const offline = cardFromDesktopCuuRuntimeError(new TypeError("Failed to fetch"), {
     run: agentRunLive({ status: "running" })
   });
@@ -1297,9 +1348,13 @@ test("desktop Cuu runtime maps API and stream failures to Cuu cards", () => {
   assert.equal(permission.title, "This step needs permission");
   assert.equal(permission.message, "Cuu cannot continue directly. Open the detail view to handle it.");
   assert.equal(budgetEnglish.message, "This task reached its budget limit and needs your decision.");
-  assert.equal(genericEnglish.message, "Cuu could not complete this step. Open the detail view to inspect the reason.");
+  assert.equal(genericEnglish.message, "Start again and Cuu will reread the request and project files.");
+  assert.equal(genericEnglish.actions.some((action) => action.id === "restart_cuu"), true);
+  assert.equal(genericEnglish.actions.some((action) => action.id === "view_replay"), false);
+  assert.equal(genericRunEnglish.message, "Cuu could not complete this step. Open the detail view to inspect the reason.");
+  assert.equal(genericRunEnglish.actions.some((action) => action.id === "view_replay"), true);
   assert.doesNotMatch(
-    `${permission.title} ${permission.message} ${budgetEnglish.message} ${genericEnglish.message}`,
+    `${permission.title} ${permission.message} ${budgetEnglish.message} ${genericEnglish.message} ${genericRunEnglish.message}`,
     /[\u3400-\u9fff]/u
   );
   assert.equal(offline.kind, "offline");
@@ -1333,7 +1388,10 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
           work_item_id: sessionId,
           title: "下一步要谁审批？",
           input_mode: "single_choice",
-          options: [],
+          options: [
+            { id: "legal", label: "法务审批", description: "先让法务确认口径。", risk_hint: "low" },
+            { id: "owner", label: "负责人审批", description: "直接交给项目负责人确认。", risk_hint: "low" }
+          ],
           free_text: { enabled: true, collapsed_by_default: true },
           progress: [],
           submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
@@ -1396,7 +1454,6 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
   assert.equal(result.card?.payload_ref?.entity_type, "session");
   assert.equal(result.card?.input?.option_first, true);
   assert.deepEqual(calls, [{ sessionId: "session-1", payload: { selected_option_ids: ["risk-first"] } }]);
-  assert.equal(resolveDesktopCuuAction("/api/proposals/proposal-1/review", { actionId: "approve" }), undefined);
 });
 
 test("desktop Cuu actions finalize confirmed sessions and start the agent run", async () => {

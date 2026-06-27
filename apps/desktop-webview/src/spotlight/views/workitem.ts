@@ -4,10 +4,11 @@
 // 历史/其它工作项从 项目/审批/看改动 进入。list→detail 盒内联 morph。
 
 import type { WorkItemDetailVM } from "@workhub/contracts";
+import { publicProposalDisplayTitle } from "@workhub/ui/proposal";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
-import { agentStepPhaseLabel, workItemPriorityLabel, workItemStatusLabel } from "../labels.js";
+import { agentStepPhaseLabel, agentStepPublicSummary, workItemPriorityLabel, workItemStatusLabel } from "../labels.js";
 
 export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const w = vm.workitem;
@@ -21,11 +22,11 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const traceHtml = trace.length
     ? `<div class="wh-spot-trace">${trace
         .slice(0, 8)
-        .map((s) => `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}${s.tool_name ? ` · ${escapeHtml(s.tool_name)}` : ""}</div>${s.output_excerpt ? `<div class="wh-spot-trace-out">${escapeHtml(s.output_excerpt)}</div>` : ""}</div>`)
+        .map((s) => `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}${s.tool_name ? ` · ${escapeHtml(s.tool_name)}` : ""}</div><div class="wh-spot-trace-out">${escapeHtml(agentStepPublicSummary(s, zh))}</div></div>`)
         .join("")}</div>`
     : "";
   const proposal = vm.latest_proposal
-    ? `<div class="wh-spot-change"><div class="wh-spot-change-head"><span class="wh-spot-chip wh-spot-chip--info">${zh ? "最新改动" : "Latest change"}</span></div><div class="wh-spot-change-sum">${escapeHtml(vm.latest_proposal.title)}</div></div>`
+    ? `<div class="wh-spot-change"><div class="wh-spot-change-head"><span class="wh-spot-chip wh-spot-chip--info">${zh ? "最新改动" : "Latest change"}</span></div><div class="wh-spot-change-sum">${escapeHtml(publicProposalDisplayTitle(vm.latest_proposal.title, zh ? "zh-CN" : "en-US"))}</div></div>`
     : "";
   return `<div class="wh-spot-dash ds-anim-fade-in">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-wi-back style="align-self:flex-start">${zh ? "← 返回" : "← Back"}</button>

@@ -31,7 +31,19 @@ test("work item renderer supports the just-created AI-working state before a pro
       ...fixture.workItemDetail.workitem,
       status: "ai_working" as const
     },
-    agent_trace_preview: fixture.replay.steps.slice(0, 2)
+    agent_trace_preview: [
+      {
+        ...fixture.replay.steps[0]!,
+        phase: "think" as const,
+        output_excerpt: "Now I understand the task and will analyze hidden reasoning."
+      },
+      {
+        ...fixture.replay.steps[1]!,
+        phase: "tool_result" as const,
+        tool_name: "read_project_file",
+        output_excerpt: "--- name: markdown-report description: raw tool payload"
+      }
+    ]
   };
   const rendered = renderWorkItemDetail(justCreated, "desktop");
 
@@ -39,6 +51,10 @@ test("work item renderer supports the just-created AI-working state before a pro
   assert.equal(rendered.cuuState, "thinking");
   assert.equal(rendered.html.includes("我开始处理了"), true);
   assert.equal(rendered.primaryHrefs.includes(`/agent-runs/${fixture.replay.run.id}/replay`), true);
+  assert.equal(rendered.html.includes("AI 正在思考中，隐藏推理内容不会展示。"), true);
+  assert.equal(rendered.html.includes("工具已返回：read_project_file"), true);
+  assert.equal(rendered.html.includes("Now I understand"), false);
+  assert.equal(rendered.html.includes("markdown-report"), false);
 });
 
 test("work item renderer localizes fixed labels and hides raw status in English", () => {

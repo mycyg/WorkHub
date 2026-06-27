@@ -45,10 +45,14 @@ export type DrivePageService = {
     // #5：项目主页「最近文件」深链带 item_id → 网盘渲染时高亮该文件。
     itemId?: string;
   }) => Promise<DrivePageVM>;
+  file: (input: DriveMutationInput & {
+    itemId: string;
+  }) => Promise<DriveStoredFile>;
   uploadFile: (input: DriveMutationInput & {
     filename: string;
     mime?: string;
     sizeBytes?: number;
+    storagePath?: string;
     sha256?: string;
     parsedText?: string;
   }) => Promise<DrivePageVM>;
@@ -81,9 +85,20 @@ export type DriveMutationInput = {
   projectId: string;
 };
 
+export type DriveStoredFile = {
+  id: string;
+  itemId: string;
+  projectId: string;
+  filename: string;
+  mime?: string;
+  sizeBytes: number;
+  storagePath: string;
+  parsedText?: string;
+};
+
 export class DrivePageServiceError extends Error {
   constructor(
-    public readonly status: 403 | 404 | 409,
+    public readonly status: 400 | 403 | 404 | 409,
     message: string,
     public readonly code = "drive_error"
   ) {
@@ -125,6 +140,16 @@ function compactText(value: string | null | undefined, max = 260) {
     return undefined;
   }
   return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+
+function isDriveTextPreview(filename: string, mime?: string | null) {
+  const normalizedMime = mime?.toLowerCase() ?? "";
+  const lower = filename.toLowerCase();
+  return normalizedMime.startsWith("text/")
+    || normalizedMime === "application/json"
+    || normalizedMime === "application/xml"
+    || normalizedMime === "application/yaml"
+    || /\.(csv|json|md|markdown|txt|tsv|html|xml|yaml|yml)$/u.test(lower);
 }
 
 function proposalActorFromAuth(actor: AuthActor): ProposalActor {
@@ -263,6 +288,12 @@ function buildDriveItemVm(input: {
   }
   if (currentVersionVm) {
     vm.current_version = currentVersionVm;
+  }
+  if (item.kind === "file" && currentVersion && !item.deletedAt) {
+    vm.download_href = `/api/drive/projects/${item.projectId}/items/${item.id}/download`;
+    if (isDriveTextPreview(currentVersion.filename, currentVersion.mime)) {
+      vm.preview_href = `/api/drive/projects/${item.projectId}/items/${item.id}/preview`;
+    }
   }
   const accepted = input.acceptedByItemId.get(item.id);
   if (accepted) {
@@ -415,7 +446,7 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
     actions: canManage && projectId ? {
       upload_file: {
         id: "drive_upload_file",
-        label: "Upload sample",
+        label: "Upload file",
         method: "POST",
         href: `/api/drive/projects/${projectId}/files`
       },
@@ -642,6 +673,28 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
     async page(input) {
       return buildDrivePage(await pageForActor(input), deps.now?.() ?? new Date(), input.actor, input.itemId);
     },
+    async file(input) {
+      const rows = await deps.repo.readFile?.({ projectId: input.projectId, itemId: input.itemId });
+      if (!rows?.project) {
+        throw new DrivePageServiceError(404, "没有找到这个项目网盘。", "drive_not_found");
+      }
+      if (!canViewProjectDrive(rows.project, input.actor)) {
+        throw new DrivePageServiceError(403, "你没有权限查看这个项目网盘。", "drive_forbidden");
+      }
+      if (!rows.item || !rows.version || rows.item.deletedAt || rows.item.kind !== "file") {
+        throw new DrivePageServiceError(404, "没有找到这个网盘文件。", "drive_file_not_found");
+      }
+      return {
+        id: rows.version.id,
+        itemId: rows.item.id,
+        projectId: rows.item.projectId,
+        filename: rows.version.filename,
+        ...(rows.version.mime ? { mime: rows.version.mime } : {}),
+        sizeBytes: rows.version.sizeBytes,
+        storagePath: rows.version.storagePath,
+        ...(rows.version.parsedText ? { parsedText: rows.version.parsedText } : {})
+      };
+    },
     async uploadFile(input) {
       const actorUserId = ensureHumanActor(input);
       await ensureCanManage(input);
@@ -653,6 +706,7 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
           filename: input.filename,
           ...(input.mime ? { mime: input.mime } : {}),
           sizeBytes: input.sizeBytes ?? Buffer.byteLength(input.parsedText ?? input.filename, "utf8"),
+          ...(input.storagePath ? { storagePath: input.storagePath } : {}),
           ...(input.sha256 ? { sha256: input.sha256 } : {}),
           ...(input.parsedText ? { parsedText: input.parsedText } : {}),
           at: deps.now?.() ?? new Date()

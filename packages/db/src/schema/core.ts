@@ -1289,7 +1289,7 @@ export const snapshots = pgTable(
     workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
     branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
     kind: varchar("kind", { length: 16 }).notNull(),
-    ref: varchar("ref", { length: 128 }).notNull(),
+    ref: varchar("ref", { length: 1024 }).notNull(),
     contentSha256: varchar("content_sha256", { length: 64 }),
     createdByKind: varchar("created_by_kind", { length: 16 }).notNull(),
     revertedAt: timestampTz("reverted_at"),

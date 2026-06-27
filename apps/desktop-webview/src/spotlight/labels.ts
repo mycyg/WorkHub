@@ -10,9 +10,13 @@ const workItemStatusMap: Record<string, [string, string]> = {
   intake: ["接收中", "Intake"],
   ai_clarifying: ["澄清中", "Clarifying"],
   spec_ready: ["待派活", "Ready to run"],
+  ai_working: ["AI 正在处理", "AI working"],
   in_progress: ["进行中", "In progress"],
   in_review: ["待审阅", "In review"],
   delivery_ready: ["待交付", "Delivery ready"],
+  escalated: ["已升级", "Escalated"],
+  pm_mode: ["人工处理", "PM mode"],
+  merged: ["已合并", "Merged"],
   accepted: ["已采纳", "Accepted"],
   done: ["已完成", "Done"],
   cancelled: ["已取消", "Cancelled"]
@@ -65,6 +69,28 @@ const riskHintMap: Record<string, [string, string]> = {
 
 export function agentStepPhaseLabel(phase: string, zh: boolean): string {
   return pick(agentStepPhaseMap, phase, zh);
+}
+
+export function agentStepPublicSummary(
+  step: { phase?: string | undefined; tool_name?: string | undefined; output_excerpt?: string | undefined },
+  zh: boolean
+): string {
+  const tool = step.tool_name?.trim();
+  const separator = zh ? "：" : ": ";
+  switch (step.phase) {
+    case "think":
+      return zh ? "AI 正在思考中，隐藏推理内容不会展示。" : "AI is thinking; hidden reasoning is not shown.";
+    case "tool_call":
+      return tool ? `${zh ? "工具调用" : "Tool call"}${separator}${tool}` : zh ? "正在调用工具。" : "Calling a tool.";
+    case "tool_result":
+      return tool
+        ? `${zh ? "工具已返回" : "Tool result received"}${separator}${tool}`
+        : zh ? "工具已返回，AI 正在整理下一步。" : "Tool result received; AI is organizing the next step.";
+    case "final":
+      return step.output_excerpt ?? (zh ? "最终输出已生成。" : "Final output is ready.");
+    default:
+      return step.output_excerpt ?? tool ?? (zh ? "记录了一个步骤。" : "Recorded one step.");
+  }
 }
 
 export function riskHintLabel(level: string, zh: boolean): string {

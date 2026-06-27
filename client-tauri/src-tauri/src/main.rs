@@ -500,14 +500,19 @@ fn set_client_token(state: tauri::State<'_, ShellClientToken>, token: String) {
 
 // R8 真·Spotlight：webview 测得盒子内容高度后调它缩放主窗（盒子随内容生长/收缩，苹果聚焦风）。
 // 只改 main 窗内尺寸，top-left 锚定不动 → 向下生长。clamp 防 webview 传来的异常值把窗口撑爆/压没。
+fn clamp_spotlight_size(width: f64, height: f64) -> (f64, f64) {
+    let safe_width = if width.is_finite() { width.clamp(420.0, 1600.0) } else { 720.0 };
+    let safe_height = if height.is_finite() { height.clamp(48.0, 1400.0) } else { 480.0 };
+    (safe_width, safe_height)
+}
+
 #[tauri::command]
 fn set_spotlight_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
         .ok_or_else(|| "main window is not available".to_string())?;
-    // 下限对齐 tauri.conf 的 minWidth=420 / minHeight=160（OS 本就会抬升），上限防越界。
-    let safe_width = if width.is_finite() { width.clamp(420.0, 1600.0) } else { 720.0 };
-    let safe_height = if height.is_finite() { height.clamp(160.0, 1400.0) } else { 480.0 };
+    // 下限对齐窗口计划的 minWidth=420 / minHeight=48，让 idle 细搜索条能真正贴住内容；上限防越界。
+    let (safe_width, safe_height) = clamp_spotlight_size(width, height);
     window
         .set_size(LogicalSize::new(safe_width, safe_height))
         .map_err(|error| format!("failed to resize main window: {error}"))?;
@@ -1414,6 +1419,13 @@ mod tests {
         for value in ["", "0", "false", "off", "no", "disabled"] {
             assert!(!workhub_sse_disabled_from_env(env_value(Some(value))));
         }
+    }
+
+    #[test]
+    fn spotlight_size_clamp_allows_idle_search_bar_height() {
+        assert_eq!(clamp_spotlight_size(720.0, 52.0), (720.0, 52.0));
+        assert_eq!(clamp_spotlight_size(200.0, 20.0), (420.0, 48.0));
+        assert_eq!(clamp_spotlight_size(f64::NAN, f64::INFINITY), (720.0, 480.0));
     }
 
     #[test]

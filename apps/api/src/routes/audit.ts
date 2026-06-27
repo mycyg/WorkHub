@@ -17,6 +17,7 @@ import {
   type AuthEnv
 } from "../middleware/auth.js";
 import { buildReplayManifestFacts, toAuditLogFact, toSnapshotVm } from "../pages/replay.js";
+import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { getDefaultAgentRunQueue } from "../workers/agent-runner.js";
@@ -89,7 +90,7 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
 
   routes.post("/agent-runs/:id/revert", createRequireLocalClientMiddleware(authSource), async (c) => {
     const runId = c.req.param("id");
-    const payload = revertAgentRunRequestSchema.parse(await c.req.json().catch(() => ({})));
+    const payload = revertAgentRunRequestSchema.parse(await readJsonObject(c));
     const snapshot = await snapshots.findSnapshotById(payload.snapshot_id);
     if (!snapshot) {
       throw new HTTPException(404, { message: "没有找到可回滚的快照。" });

@@ -274,7 +274,7 @@ function projectHomeVm(id: string): ProjectHomePageVM {
       }
     ],
     actions: {
-      new_task: { id: "new_task", label: "New task", method: "GET", href: "/intake" },
+      new_task: { id: "new_task", label: "New task", method: "GET", href: `/intake?project_id=${id}` },
       open_drive: { id: "open_drive", label: "Open drive", method: "GET", href: `/drive?project_id=${id}` }
     }
   };
@@ -861,7 +861,7 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
     [
       ["home", "attention"],
       ["projects", "projects"],
-      ["project-home", "project"],
+      ["project-home", "project-home"],
       ["intake", "session"],
       ["approvals", "approvals"],
       ["workitem", "workitem"],
@@ -1195,7 +1195,7 @@ test("R4 web loader uses detail Page VM endpoints before rendering ready routes"
   }
 });
 
-test("R6 home never collapses to the generic empty card — empty attention still renders the decision inbox + intake CTA + nav entry", async () => {
+test("R6 home never collapses to the generic empty card — empty attention still renders the project workspace + intake CTA + nav entry", async () => {
   const surface = goldPathSurfaceVm();
   const emptyAttention = {
     ...surface.page_vms.attention,
@@ -1217,10 +1217,14 @@ test("R6 home never collapses to the generic empty card — empty attention stil
   const match = resolveWebRoute("/");
   assert.ok(match);
   const result = await loadWebRoute(client, match, "zh-CN");
-  // ① 不再塌成通用空卡：状态 ready、渲染首页决策收件箱组件本身。
+  // ① 不再塌成通用空卡：状态 ready、渲染首页项目工作台组件本身。
   assert.equal(result.status, "ready");
   assert.equal(result.html.includes('data-r4-route-component="home"'), true);
-  // ② 提需求 CTA 仍在；不出现"回到总览"死胡同。
+  assert.equal(result.html.includes('data-r8-home-project-desk="true"'), true);
+  assert.equal(result.html.includes('data-r8-home-project-count="2"'), true);
+  assert.equal(result.html.includes("R5 Workspace"), true);
+  assert.equal(result.html.includes('href="/drive?project_id=93000000-0000-4000-8000-000000000001"'), true);
+  // ② 新建任务 CTA 仍在；不出现"回到总览"死胡同。
   assert.equal(result.html.includes('data-r4-home-intake-cta="true"'), true);
   assert.equal(result.html.includes("回到总览"), false);
   // M1：零活跃用户(accepted_today:0)不显示自夸「0 件/0%/0 小时」战绩横幅。
@@ -1243,6 +1247,35 @@ test("home with decisions still renders the 当前入口/支撑证据 sections (
   // 非空收件箱(默认 fixture 有 primary/queue)→ 两区照常出现,确认 decideCount>0 门没把它们一并藏掉。
   assert.equal(result.html.includes('data-r4-home-queue="true"'), true);
   assert.equal(result.html.includes('data-r4-home-evidence-list="true"'), true);
+});
+
+test("home keeps the attention queue usable when the project list is temporarily unavailable", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface);
+  client.listProjects = async () => {
+    throw new WorkHubApiError(503, "project_list_unavailable", "projects down");
+  };
+  const match = resolveWebRoute("/");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r8-home-project-desk="true"'), true);
+  assert.equal(result.html.includes('data-r8-home-projects-loaded="false"'), true);
+  assert.equal(result.html.includes("Project list syncing"), true);
+  assert.equal(result.html.includes('data-r4-home-decision="true"'), true);
+});
+
+test("home loader rethrows not_identified from listProjects (re-auth, not a stale project workspace)", async () => {
+  const surface = goldPathSurfaceVm();
+  const { client } = fakeRouteClient(surface);
+  client.listProjects = async () => {
+    throw new WorkHubApiError(401, "not_identified", "identify first");
+  };
+  const match = resolveWebRoute("/");
+  assert.ok(match);
+  await assert.rejects(() => loadWebRoute(client, match, "en-US"), /identify first/u);
 });
 
 test("R4.11 web loader marks ready routes as route components", async () => {

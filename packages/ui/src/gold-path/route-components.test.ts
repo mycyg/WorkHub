@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
@@ -59,6 +59,8 @@ function drivePageVm(): DrivePageVM {
         path: "/manual-note.md",
         depth: 0,
         current_version_id: "94000000-0000-4000-8000-000000000010",
+        preview_href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000009/preview",
+        download_href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000009/download",
         children_count: 0,
         updated_at: "2026-06-11T09:00:00.000Z"
       }
@@ -173,7 +175,7 @@ function drivePageVm(): DrivePageVM {
     actions: {
       upload_file: {
         id: "drive_upload_file",
-        label: "Upload sample",
+        label: "Upload file",
         method: "POST",
         href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/files"
       },
@@ -190,6 +192,25 @@ function drivePageVm(): DrivePageVM {
         href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000011/restore"
       }
     }
+  };
+}
+
+function homeProjectListVm(): ProjectListVM {
+  return {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    projects: [
+      {
+        id: "93000000-0000-4000-8000-000000000001",
+        name: "R5 Workspace",
+        slug: "r5-workspace",
+        description: "Pilot delivery workspace",
+        owner_nickname: "owner",
+        archived: false,
+        created_at: "2026-06-11T08:00:00.000Z",
+        updated_at: "2026-06-11T09:00:00.000Z",
+        open_work_item_count: 3
+      }
+    ]
   };
 }
 
@@ -741,6 +762,51 @@ test("R4.10 Home route component renders directly from Attention Page VM with bi
   assertNoMainWindowBoundaryLeak(en.html);
 });
 
+test("Home route leads with a project and drive workspace before the decision queue", () => {
+  const vm = surfaceVm();
+  const en = renderWebRouteComponent({
+    key: "home",
+    attention: vm.page_vms.attention,
+    projects: homeProjectListVm()
+  }, { locale: "en-US" });
+
+  assert.equal(en.html.includes('data-r8-home-project-desk="true"'), true);
+  assert.equal(en.html.includes('data-r8-home-project-count="1"'), true);
+  assert.equal(en.html.includes('data-r8-home-project="93000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(en.html.includes('href="/projects/93000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(en.html.includes('href="/drive?project_id=93000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(en.html.includes('href="/intake?project_id=93000000-0000-4000-8000-000000000001"'), true);
+  assert.ok(en.html.indexOf('data-r8-home-project-desk="true"') < en.html.indexOf('data-r4-home-decision="true"'));
+  assertNoMainWindowBoundaryLeak(en.html);
+});
+
+test("Home route surfaces partial source warnings instead of silently showing an empty queue", () => {
+  const base = surfaceVm();
+  const withWarning = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      attention: {
+        ...base.page_vms.attention,
+        primary: undefined,
+        queue: [],
+        source_warnings: [{
+          source: "approvals" as const,
+          message: "审批待办暂时加载失败。请打开审批页或稍后重试。"
+        }]
+      }
+    }
+  };
+
+  const zh = renderWebRouteComponents(withWarning, { locale: "zh-CN" }).home;
+  assert.ok(zh);
+  assert.equal(zh.html.includes('data-r4-home-source-warning="true"'), true);
+  assert.equal(zh.html.includes('data-r4-home-source-warning-count="1"'), true);
+  assert.equal(zh.html.includes('data-r4-home-source-warning-source="approvals"'), true);
+  assert.equal(zh.html.includes("审批待办暂时加载失败"), true);
+  assertNoMainWindowBoundaryLeak(zh.html);
+});
+
 test("R8 Home worklog banner surfaces today's self-evolution only when skills changed", () => {
   const base = surfaceVm();
   const withEvolution = {
@@ -931,10 +997,33 @@ test("R4.11 Proposal route component preserves review actions, rollback, changes
   assert.equal(proposal.html.includes('data-requires-reason="true"'), true);
   assert.deepEqual(proposal.primaryHrefs, [
     vm.page_vms.proposal.review_actions.approve.href,
-    vm.page_vms.proposal.review_actions.request_changes.href,
-    vm.page_vms.proposal.review_actions.merge?.href
+    vm.page_vms.proposal.review_actions.request_changes.href
   ].filter(Boolean));
   assertNoMainWindowBoundaryLeak(proposal.html);
+});
+
+test("R4.11 reviewed Proposal route component exposes only merge as the next write action", () => {
+  const vm = structuredClone(surfaceVm());
+  vm.page_vms.proposal.status = "reviewed";
+  vm.page_vms.proposal.review_actions.merge = {
+    id: "merge",
+    label: "Merge deliverable",
+    method: "POST",
+    href: `/api/proposals/${vm.page_vms.proposal.proposal_id}/merge`
+  };
+  const proposal = renderWebRouteComponents(vm, { locale: "en-US" }).proposal;
+
+  assert.ok(proposal);
+  assert.equal(proposal.html.includes('data-action-id="approve"'), false);
+  assert.equal(proposal.html.includes('data-action-id="request_changes"'), false);
+  assert.equal(proposal.html.includes('data-action-id="merge"'), true);
+  assert.deepEqual(proposal.primaryHrefs, [vm.page_vms.proposal.review_actions.merge.href]);
+  assert.equal(proposal.reactComponent?.routeKey, "proposal");
+  if (proposal.reactComponent?.routeKey !== "proposal") {
+    throw new Error("proposal route component missing");
+  }
+  assert.equal(proposal.reactComponent.props.reviewActionCount, 1);
+  assert.equal(proposal.reactComponent.props.mergeActionAvailable, true);
 });
 
 test("S1 Day0 Proposal route component hides write actions after merge", () => {
@@ -1045,7 +1134,7 @@ test("R4.19 Proposal split adapter keeps readonly props separate from advanced e
   assert.equal(proposal.reactComponent.props.evidenceRefCount, vm.page_vms.proposal.evidence_refs.length);
   assert.equal(proposal.reactComponent.props.commentCount, vm.page_vms.proposal.comments.length);
   assert.equal(proposal.reactComponent.props.conflictCount, 1);
-  assert.equal(proposal.reactComponent.props.reviewActionCount, 3);
+  assert.equal(proposal.reactComponent.props.reviewActionCount, 2);
   assert.equal(proposal.reactComponent.props.advancedFallbackPreserved, true);
   assert.equal(proposal.reactComponent.props.advancedFallbackSource, "proposal-advanced-editors-html-fallback");
   assert.equal(proposal.reactComponent.props.advancedFallbackActionCount, 1);
@@ -1390,8 +1479,15 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   assert.equal(drive.html.includes('data-r5-drive-deleted-count="1"'), true);
   assert.equal(drive.html.includes('data-r5-drive-operation-count="1"'), true);
   assert.equal(drive.html.includes("client-review.md"), true);
+  assert.equal(drive.html.includes('data-r5-drive-item-link="true"'), true);
+  assert.equal(drive.html.includes('href="/drive?project_id=94000000-0000-4000-8000-000000000001&amp;item_id=94000000-0000-4000-8000-000000000002"'), true);
+  assert.equal(drive.html.includes('data-r5-drive-item-link-id="94000000-0000-4000-8000-000000000009"'), true);
   assert.equal(drive.html.includes('data-r4-drive-version-current="true"'), true);
-  assert.equal(drive.html.includes('data-action-id="drive_upload_file" data-method="POST"'), true);
+  assert.equal(drive.html.includes('type="file"'), true);
+  assert.equal(drive.html.includes('data-drive-upload-picker="true"'), true);
+  assert.equal(drive.html.includes('data-action-href="/api/drive/projects/94000000-0000-4000-8000-000000000001/files"'), true);
+  assert.equal(drive.html.includes("Insert sample file"), false);
+  assert.equal(drive.html.includes("r5-upload-sample.md"), false);
   assert.equal(drive.html.includes('data-action-id="drive_delete_item" data-method="POST"'), true);
   assert.equal(drive.html.includes('data-r5-drive-delete-target="94000000-0000-4000-8000-000000000009"'), true);
   // M8: the destructive delete button must name its (server-chosen) target so a bare
@@ -1405,6 +1501,10 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   assert.equal(drive.html.includes('data-r5-drive-operations="true"'), true);
   assert.equal(drive.html.includes('data-action-id="drive_preview"'), true);
   assert.equal(drive.html.includes('data-action-id="drive_download"'), true);
+  assert.equal(drive.html.includes('/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000009/preview'), true);
+  assert.equal(drive.html.includes('/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000009/download'), true);
+  assert.match(drive.html, /data-action-id="drive_preview"[^>]+data-native-resource-link="true"[^>]+target="_blank"/u);
+  assert.match(drive.html, /data-action-id="drive_download"[^>]+data-native-resource-link="true"[^>]+target="_blank"/u);
   assert.equal(drive.html.includes('data-action-id="drive_restore" data-method="POST"'), true);
   assert.equal(drive.html.includes("/workitems/94000000-0000-4000-8000-000000000005"), true);
   assert.equal(drive.html.includes('data-action-id="comment_to_draft" data-method="POST"'), true);
@@ -1414,8 +1514,35 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   assert.equal(drive.html.includes('data-r5-drive-proposal-link="true"'), true);
   assert.equal(drive.html.includes("/proposals/94000000-0000-4000-8000-000000000006"), true);
   assert.equal(drive.hydration.pageVm, "drive");
-  assert.equal(drive.primaryHrefs.length, 9);
+  assert.equal(drive.primaryHrefs.length, 11);
   assertNoMainWindowBoundaryLeak(drive.html);
+});
+
+test("Drive route renders every loaded file row instead of silently truncating after twelve", () => {
+  const base = drivePageVm();
+  const items = Array.from({ length: 20 }, (_, index) => {
+    const n = index + 1;
+    return {
+      ...base.items[0],
+      id: `94000000-0000-4000-8000-${String(900 + n).padStart(12, "0")}`,
+      name: `loaded-file-${String(n).padStart(2, "0")}.md`,
+      path: `/loaded-file-${String(n).padStart(2, "0")}.md`,
+      current_version_id: `94000000-0000-4000-8000-${String(950 + n).padStart(12, "0")}`
+    };
+  }) as DrivePageVM["items"];
+  const drive = renderWebRouteComponent({
+    key: "drive",
+    drive: {
+      ...base,
+      summary: { ...base.summary, item_count: 20, file_count: 20 },
+      selected_item_id: items[0]?.id,
+      items
+    }
+  }, { locale: "en-US" });
+
+  assert.equal((drive.html.match(/data-r4-drive-item="/gu) ?? []).length, 20);
+  assert.equal(drive.html.includes("loaded-file-20.md"), true);
+  assert.equal(drive.html.includes("Showing the first 20 of 20 files."), false);
 });
 
 test("R5.5 Meeting route component exposes meetings, insights, actions, and approval-safe copy", () => {

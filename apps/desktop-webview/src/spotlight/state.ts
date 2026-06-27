@@ -79,6 +79,7 @@ const SHELL_ROUTE_CAPABILITIES: ReadonlyArray<readonly [string, CommandId]> = [
   ["/replay", "replay"],
   ["/drive", "drive"],
   ["/projects", "projects"],
+  ["/p", "projects"],
   ["/knowledge", "knowledge"],
   ["/team", "team"],
   ["/dashboard/cost", "cost"],

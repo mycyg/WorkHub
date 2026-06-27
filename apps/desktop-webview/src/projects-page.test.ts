@@ -39,8 +39,9 @@ test("projects page renders a clickable glass card with name, active count, owne
   });
   assert.match(html, /data-proj-count="1"/u);
   assert.match(html, /渠道增长/u);
-  // 整卡可点 + 携带下钻所需属性
-  assert.match(html, /class="wh-proj-card gl-press"[^>]*data-project-id="62000000-0000-4000-8000-000000000020"[^>]*data-project-slug="growth"/u);
+  // 整卡可点且键盘可达 + 携带下钻所需属性
+  assert.match(html, /<button type="button" class="wh-proj-card gl-press"[^>]*data-project-id="62000000-0000-4000-8000-000000000020"[^>]*data-project-slug="growth"/u);
+  assert.doesNotMatch(html, /<a class="wh-proj-card/u);
   assert.match(html, /wh-proj-count--active">3 个进行中</u);
   assert.match(html, /把自然增长跑起来/u);
   assert.match(html, /负责人 · 阿橘/u);

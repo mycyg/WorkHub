@@ -59,8 +59,20 @@ function fakeRoot(elements: Record<string, ReturnType<typeof fakeElement> | unde
   return {
     querySelector(selector: string) {
       return elements[selector] ?? null;
+    },
+    querySelectorAll(selector: string) {
+      const value = elements[selector];
+      return fakeNodeList(value ? [value] : []);
     }
   } as unknown as ParentNode;
+}
+
+function fakeNodeList(elements: unknown[]): NodeListOf<Element> {
+  return Object.assign(elements, {
+    item(index: number) {
+      return (elements[index] as Element | undefined) ?? null;
+    }
+  }) as unknown as NodeListOf<Element>;
 }
 
 test("Cuu QA DOM report collects exact data attributes from the pet surface", () => {
@@ -166,6 +178,58 @@ test("Cuu QA DOM report collects exact data attributes from the pet surface", ()
   });
   assert.equal(report.primary_chip.data.data_recommended, "true");
   assert.equal(report.primary_action.data.data_cuu_action_id, "approve");
+});
+
+test("Cuu QA DOM report captures every action rect for real app hit-target diagnosis", () => {
+  const approve = fakeElement(
+    {
+      "data-cuu-action-id": "approve",
+      "data-tone": "primary"
+    },
+    "Approve",
+    { x: 81, y: 197, width: 69, height: 28, right: 150, bottom: 225 },
+    { clientWidth: 67, scrollWidth: 67, clientHeight: 26, scrollHeight: 26 }
+  );
+  const requestChanges = fakeElement(
+    {
+      "data-cuu-action-id": "request_changes",
+      "data-tone": "danger",
+      "data-requires-reason": "true"
+    },
+    "Request changes",
+    { x: 156, y: 197, width: 119, height: 28, right: 275, bottom: 225 },
+    { clientWidth: 117, scrollWidth: 117, clientHeight: 26, scrollHeight: 26 }
+  );
+  const root = fakeRoot({
+    "[data-wh-surface=pet]": fakeElement({ "data-wh-surface": "pet" }),
+    "[data-cuu-action-id]": approve,
+    "[data-cuu-action-id]__all": undefined,
+    "all:[data-cuu-action-id]": undefined
+  });
+  root.querySelectorAll = ((selector: string) =>
+    fakeNodeList(selector === "[data-cuu-action-id]" ? [approve, requestChanges] : [])) as ParentNode["querySelectorAll"];
+
+  const report = collectDesktopPetQaDomSnapshot(root, "render", new Date("2026-06-08T00:00:00.000Z"));
+
+  assert.deepEqual(
+    report.actions.map((action) => ({
+      id: action.data.data_cuu_action_id,
+      text: action.text,
+      rect: action.rect
+    })),
+    [
+      {
+        id: "approve",
+        text: "Approve",
+        rect: { x: 81, y: 197, width: 69, height: 28, right: 150, bottom: 225 }
+      },
+      {
+        id: "request_changes",
+        text: "Request changes",
+        rect: { x: 156, y: 197, width: 119, height: 28, right: 275, bottom: 225 }
+      }
+    ]
+  );
 });
 
 test("Cuu QA DOM report writes through the Tauri command only when QA reporting is enabled", async () => {

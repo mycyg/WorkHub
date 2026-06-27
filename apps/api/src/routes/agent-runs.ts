@@ -39,6 +39,7 @@ import {
   WorkItemServiceError,
   type WorkItemService
 } from "../services/work-items.js";
+import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 
 function auditLogRunId(detailJson: unknown) {
@@ -194,7 +195,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
 
   routes.post("/workitems/:id/agent-runs", createCurrentUserMiddleware(authSource), async (c) => {
     const workItemId = requireUuidParam(c.req.param("id"));
-    const payload = startAgentRunRequestSchema.parse(await c.req.json().catch(() => ({})));
+    const payload = startAgentRunRequestSchema.parse(await readJsonObject(c));
     await assertCanReadWorkItem(workItemId, c.var.actor);
     const run = await queue.enqueue({
       workItemId,

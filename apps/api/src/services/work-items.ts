@@ -1,12 +1,18 @@
 import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
 import { z } from "zod";
 
 import {
+  createDriveRepository,
   getSharedDatabaseClient,
   createWorkItemRepository,
   defaultSeedIds,
   WorkItemAcceptedDeliverableRestoreError,
+  type DriveItemRow,
+  type DrivePageRows,
+  type DriveVersionRow,
+  type WorkItemClarificationAnswerRow,
   type StoredWorkItemDetailRows,
   type WorkItemDataRepository,
   type WorkItemAgentStepRow,
@@ -17,7 +23,6 @@ import {
 } from "@workhub/db";
 import {
   cuuLauncherSpecFromSelectedOptionIds,
-  defaultCuuLauncherSpecOptions,
   deliverableChangeManifestSchema,
   evidenceRefSchema,
   sessionVmSchema,
@@ -38,11 +43,13 @@ import {
   type WorkItemDetailVM,
   type WorkHubLocale
 } from "@workhub/contracts";
+import type { ProviderRegistry } from "@workhub/agent/providers";
 
 import { canViewProjectDrive, canViewWorkItemRecord } from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
 import { acceptedDeliverableToVm } from "./accepted-deliverables.js";
+import { getDefaultProviderRegistry } from "./provider-registry.js";
 
 export const knowledgeSearchRequestSchema = z.object({
   q: z.string().trim().min(1).max(500).optional(),
@@ -126,7 +133,39 @@ type ServiceOptions = {
   now?: () => Date;
   id?: () => string;
   defaultProjectId?: string;
+  clarificationGenerator?: ClarificationQuestionGenerator;
+  projectFileContext?: ProjectFileContextProvider;
+  providerRegistry?: ProviderRegistry;
 };
+
+type ClarificationFileContext = {
+  name: string;
+  path: string;
+  mime?: string | null | undefined;
+  sizeBytes?: number | undefined;
+  preview?: string | undefined;
+};
+
+export type ClarificationQuestionDraft = {
+  title: string;
+  body?: string | undefined;
+  placeholder?: string | undefined;
+};
+
+type ClarificationQuestionInput = {
+  workItem: Pick<WorkItemRow, "id" | "projectId" | "title" | "rawDescription">;
+  files: ClarificationFileContext[];
+  actor: AuthActor;
+  locale: WorkHubLocale;
+};
+
+type ClarificationQuestionGenerator = (input: ClarificationQuestionInput) => Promise<ClarificationQuestionDraft | undefined>;
+type ProjectFileContextProvider = (input: {
+  projectId: string;
+  actor: AuthActor;
+  locale: WorkHubLocale;
+  intentText: string | undefined;
+}) => Promise<ClarificationFileContext[]>;
 
 const allowedEvidenceSourceTypes = new Set<EvidenceRef["source_type"]>([
   "drive_file",
@@ -168,6 +207,8 @@ type WorkItemCopyKey =
   | "question.confirm.evidence.description"
   | "question.confirm.adjust.label"
   | "question.confirm.adjust.description"
+  | "question.clarify.title"
+  | "question.clarify.placeholder"
   | "question.scope.title"
   | "question.scope.document.label"
   | "question.scope.document.description"
@@ -203,7 +244,9 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "question.confirm.evidence.label": "先找证据",
     "question.confirm.evidence.description": "先从项目历史、文档和事项里找依据。",
     "question.confirm.adjust.label": "调整范围",
-    "question.confirm.adjust.description": "回到上一步重新选择口径。",
+    "question.confirm.adjust.description": "回到上一步补充澄清回答。",
+    "question.clarify.title": "需要先确认一个关键点",
+    "question.clarify.placeholder": "直接补一句：必须依据的文件、目标读者、输出形式或验收口径。",
     "question.scope.title": "这件事先按哪种交付方式处理？",
     "question.scope.document.label": "文档/方案草稿",
     "question.scope.document.description": "适合周报、方案、说明书、PR 式变更说明。",
@@ -219,14 +262,14 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "question.scope.ai.impact": "不用打字，保持 option-first。",
     "question.free.placeholder": "有特殊要求再补一句，不填也可以。",
     "question.progress.intent": "需求",
-    "question.progress.scope": "口径",
+    "question.progress.scope": "澄清",
     "question.progress.confirm": "确认",
     "question.progress.run": "执行",
     "evidence.useCurrent": "用这些证据继续",
     "evidence.openFull": "打开完整检索",
     "evidence.askFollowup": "换个问法再找",
     "evidence.missing": "请先上传文档、同步项目文件，或缩小检索范围。",
-    "acceptance.optionFirst": "点选澄清完成",
+    "acceptance.optionFirst": "澄清回答已纳入执行范围",
     "acceptance.evidenceBound": "证据已绑定",
     "proposalDraft.create.label": "生成变更提议"
   },
@@ -238,7 +281,9 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "question.confirm.evidence.label": "Find evidence first",
     "question.confirm.evidence.description": "Search project history, documents, and related work first.",
     "question.confirm.adjust.label": "Adjust scope",
-    "question.confirm.adjust.description": "Go back and choose a different scope.",
+    "question.confirm.adjust.description": "Go back and refine the clarification answer.",
+    "question.clarify.title": "One key detail to confirm",
+    "question.clarify.placeholder": "Add the required file, audience, output shape, or acceptance criteria.",
     "question.scope.title": "Which delivery path should this use first?",
     "question.scope.document.label": "Document / plan draft",
     "question.scope.document.description": "Best for reports, plans, manuals, and PR-style change notes.",
@@ -254,14 +299,14 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
     "question.scope.ai.impact": "No typing required; keeps the option-first flow.",
     "question.free.placeholder": "Add special requirements only if needed.",
     "question.progress.intent": "Intent",
-    "question.progress.scope": "Scope",
+    "question.progress.scope": "Clarify",
     "question.progress.confirm": "Confirm",
     "question.progress.run": "Run",
     "evidence.useCurrent": "Use this evidence",
     "evidence.openFull": "Open full search",
     "evidence.askFollowup": "Try another query",
     "evidence.missing": "Upload documents, sync project files, or narrow the search first.",
-    "acceptance.optionFirst": "Option-first clarification completed",
+    "acceptance.optionFirst": "Clarification answer is included in the execution scope",
     "acceptance.evidenceBound": "Evidence is bound",
     "proposalDraft.create.label": "Create proposal draft"
   }
@@ -277,6 +322,7 @@ const generatedAcceptanceCopy = new Map<string, string>([
   ["根据上下文选择最稳交付形态，并说明选择理由。", "Choose the most stable delivery format from context and explain why."],
   ["输出可审阅结果和后续验收步骤。", "Produce a reviewable result and follow-up acceptance steps."],
   ["点选澄清完成", workItemCopy["en-US"]["acceptance.optionFirst"]],
+  ["澄清回答已纳入执行范围", workItemCopy["en-US"]["acceptance.optionFirst"]],
   ["证据已绑定", workItemCopy["en-US"]["acceptance.evidenceBound"]],
   ["澄清必须点选优先", "Clarification must stay option-first"],
   ["交付物变更申请必须像 PR 一样可审", "Deliverable change requests must be PR-like and reviewable"],
@@ -329,6 +375,8 @@ function launcherSpecForSelectedOptions(
 function planningNoteForSelectedOptions(input: {
   selectedOptionIds: readonly string[];
   launcherSpec?: CuuLauncherWorkItemSpec | undefined;
+  clarificationAnswers?: readonly WorkItemClarificationAnswerRow[];
+  finalFreeText?: string | undefined;
 }) {
   const lines: string[] = [];
   if (input.selectedOptionIds.length) {
@@ -336,6 +384,22 @@ function planningNoteForSelectedOptions(input: {
   }
   if (input.launcherSpec?.selected_options.length) {
     lines.push(`cuu_launcher_spec: ${JSON.stringify(input.launcherSpec)}`);
+  }
+  const freeTextAnswers = (input.clarificationAnswers ?? [])
+    .map((answer) => compactText(answer.freeText, 500))
+    .filter((answer): answer is string => Boolean(answer));
+  if (freeTextAnswers.length) {
+    lines.push([
+      "clarification_answers:",
+      ...freeTextAnswers.map((answer) => `- ${answer}`)
+    ].join("\n"));
+  }
+  const finalFreeText = compactText(input.finalFreeText, 500);
+  if (finalFreeText) {
+    lines.push([
+      "final_create_note:",
+      `- ${finalFreeText}`
+    ].join("\n"));
   }
   return lines.length ? lines.join("\n") : undefined;
 }
@@ -356,9 +420,395 @@ function acceptanceItemsFromLauncherSpec(spec: CuuLauncherWorkItemSpec | undefin
   });
 }
 
+function acceptanceItemsFromClarification(locale: WorkHubLocale | undefined) {
+  return [
+    {
+      title: workItemT(locale, "acceptance.optionFirst"),
+      description: locale === "en-US"
+        ? "The user's clarification answer is carried into the planning note for AI execution."
+        : "用户的澄清回答会写入规划备注，供 AI 执行时读取。",
+      sortOrder: 0
+    },
+    {
+      title: locale === "en-US" ? "Project files and evidence must be named" : "必须标明使用的项目文件或证据",
+      description: locale === "en-US"
+        ? "The output should state which project file or evidence source it used."
+        : "交付结果需要说明使用了哪份项目文件或证据来源。",
+      sortOrder: 1
+    }
+  ];
+}
+
 function titleFromIntent(intentText: string | undefined) {
   const compact = compactText(intentText, 64);
   return compact ?? "待澄清事项";
+}
+
+const clarificationQuestionDraftSchema = z.object({
+  title: z.string().trim().min(2).max(160),
+  body: z.string().trim().max(900).optional(),
+  placeholder: z.string().trim().max(180).optional()
+});
+
+const CLARIFICATION_LLM_MAX_TOKENS = 1_600;
+const CLARIFICATION_LLM_TIMEOUT_MS = 60_000;
+
+function textFromContent(content: unknown[]) {
+  return content
+    .map((block) => {
+      if (typeof block === "string") {
+        return block;
+      }
+      if (block && typeof block === "object") {
+        const text = (block as Record<string, unknown>).text;
+        return typeof text === "string" ? text : "";
+      }
+      return "";
+    })
+    .join("\n")
+    .trim();
+}
+
+function parseJsonObject(text: string) {
+  const direct = text.trim();
+  const fenced = direct.match(/```(?:json)?\s*([\s\S]*?)```/iu)?.[1]?.trim();
+  const candidate = fenced ?? direct;
+  try {
+    return JSON.parse(candidate) as unknown;
+  } catch (error) {
+    if (fenced) {
+      throw error;
+    }
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(candidate.slice(start, end + 1)) as unknown;
+    }
+    throw error;
+  }
+}
+
+function invalidClarificationResponseError(locale: WorkHubLocale) {
+  return new WorkItemServiceError(
+    502,
+    "clarification_llm_invalid_response",
+    locale === "en-US"
+      ? "AI material analysis did not return a valid clarification question."
+      : "AI 材料分析没有返回可用的澄清反问。"
+  );
+}
+
+function clarificationFileContextFailedError(locale: WorkHubLocale) {
+  return new WorkItemServiceError(
+    502,
+    "clarification_file_context_failed",
+    locale === "en-US"
+      ? "WorkHub could not read project files, so AI cannot ask a material-based clarification question yet."
+      : "WorkHub 无法读取项目文件，暂时不能生成基于材料的澄清反问。"
+  );
+}
+
+function pickClarificationTextField(raw: unknown, keys: string[]) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  const value = raw as Record<string, unknown>;
+  for (const key of keys) {
+    const text = value[key];
+    if (typeof text === "string" && text.trim()) {
+      return text;
+    }
+  }
+  return undefined;
+}
+
+function clarificationDraftFromRawJson(raw: unknown, locale: WorkHubLocale): ClarificationQuestionDraft {
+  const questionText = pickClarificationTextField(raw, [
+    "title",
+    "question",
+    "clarification_question",
+    "clarificationQuestion",
+    "follow_up",
+    "followUp"
+  ]);
+  const bodyText = pickClarificationTextField(raw, ["body", "context"]);
+  const title = compactText(questionText ?? bodyText, 160);
+  if (!title) {
+    throw invalidClarificationResponseError(locale);
+  }
+  const draft = {
+    title,
+    body: questionText ? compactText(bodyText, 900) : undefined,
+    placeholder: compactText(pickClarificationTextField(raw, ["placeholder"]), 180)
+  };
+  const parsed = clarificationQuestionDraftSchema.safeParse(draft);
+  if (!parsed.success) {
+    throw invalidClarificationResponseError(locale);
+  }
+  return parsed.data;
+}
+
+export function parseClarificationDraftFromLlmText(text: string, locale: WorkHubLocale): ClarificationQuestionDraft {
+  let raw: unknown;
+  try {
+    raw = parseJsonObject(text);
+  } catch {
+    throw invalidClarificationResponseError(locale);
+  }
+  return clarificationDraftFromRawJson(raw, locale);
+}
+
+function parseClarificationDraftFromResponse(response: { content: unknown[] }, locale: WorkHubLocale) {
+  return parseClarificationDraftFromLlmText(textFromContent(response.content), locale);
+}
+
+function normalizeClarificationDraft(
+  draft: ClarificationQuestionDraft | undefined,
+  fallback: ClarificationQuestionDraft
+): ClarificationQuestionDraft {
+  const parsed = clarificationQuestionDraftSchema.safeParse(draft);
+  if (!parsed.success) {
+    return fallback;
+  }
+  return {
+    title: parsed.data.title,
+    body: compactText(parsed.data.body, 900) ?? fallback.body,
+    placeholder: compactText(parsed.data.placeholder, 180) ?? fallback.placeholder
+  };
+}
+
+function draftFromStoredClarificationQuestion(row: { contentJson: unknown } | null | undefined) {
+  if (!row) {
+    return undefined;
+  }
+  const parsed = clarificationQuestionDraftSchema.safeParse(row.contentJson);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function driveItemPath(item: DriveItemRow, itemsById: Map<string, DriveItemRow>) {
+  const names = [item.name];
+  let cursor = item.parentId ? itemsById.get(item.parentId) : undefined;
+  for (let depth = 0; cursor && depth < 12; depth += 1) {
+    names.push(cursor.name);
+    cursor = cursor.parentId ? itemsById.get(cursor.parentId) : undefined;
+  }
+  return names.reverse().join("/");
+}
+
+function isTextLikeDriveVersion(version: DriveVersionRow) {
+  const mime = version.mime?.toLowerCase() ?? "";
+  const lower = version.filename.toLowerCase();
+  return mime.startsWith("text/")
+    || mime.includes("json")
+    || mime.includes("markdown")
+    || /\.(txt|md|markdown|json|csv|tsv|yaml|yml|xml)$/u.test(lower);
+}
+
+async function previewForDriveVersion(version: DriveVersionRow) {
+  const embedded = compactText(version.parsedText, 700);
+  if (embedded) {
+    return embedded;
+  }
+  const previewPath = version.parsedTextPath ?? (isTextLikeDriveVersion(version) && version.sizeBytes <= 64 * 1024 ? version.storagePath : undefined);
+  if (!previewPath) {
+    return undefined;
+  }
+  try {
+    return compactText(await readFile(previewPath, "utf8"), 700);
+  } catch {
+    return undefined;
+  }
+}
+
+function currentVersionForItem(item: DriveItemRow, versions: DriveVersionRow[]) {
+  return versions.find((version) => version.itemId === item.id && version.id === item.currentVersionId)
+    ?? versions.find((version) => version.itemId === item.id);
+}
+
+function driveFileRelevanceScore(input: { item: DriveItemRow; path: string; intentText: string | undefined }) {
+  const intent = input.intentText?.toLowerCase() ?? "";
+  if (!intent) {
+    return 0;
+  }
+  const name = input.item.name.toLowerCase();
+  const path = input.path.toLowerCase();
+  if (intent.includes(path)) {
+    return 120;
+  }
+  if (intent.includes(name)) {
+    return 100;
+  }
+  return name
+    .split(/[^\p{Letter}\p{Number}_\-.]+/u)
+    .filter((token) => token.length >= 4)
+    .reduce((score, token) => score + (intent.includes(token) ? 10 : 0), 0);
+}
+
+async function fileContextFromDriveRows(rows: DrivePageRows, intentText: string | undefined): Promise<ClarificationFileContext[]> {
+  const itemsById = new Map(rows.items.map((item) => [item.id, item]));
+  const fileItems = rows.items
+    .filter((item) => item.kind === "file")
+    .map((item, index) => ({ item, index, path: driveItemPath(item, itemsById) }))
+    .sort((left, right) => {
+      const byRelevance = driveFileRelevanceScore({ item: right.item, path: right.path, intentText })
+        - driveFileRelevanceScore({ item: left.item, path: left.path, intentText });
+      return byRelevance || left.index - right.index;
+    })
+    .slice(0, 12);
+  const contexts: ClarificationFileContext[] = [];
+  for (const { item, path } of fileItems) {
+    const version = currentVersionForItem(item, rows.versions);
+    contexts.push({
+      name: item.name,
+      path,
+      ...(version?.mime ? { mime: version.mime } : {}),
+      ...(version?.sizeBytes !== undefined ? { sizeBytes: version.sizeBytes } : {}),
+      ...(version ? { preview: await previewForDriveVersion(version) } : {})
+    });
+  }
+  return contexts;
+}
+
+async function defaultProjectFileContext(input: { projectId: string; intentText: string | undefined }) {
+  const drive = createDriveRepository(getSharedDatabaseClient().db);
+  const rows = await drive.readPage({
+    projectId: input.projectId,
+    limit: 200,
+    includeDeleted: false,
+    operationLimit: 1
+  });
+  return fileContextFromDriveRows(rows, input.intentText);
+}
+
+function fallbackClarificationDraft(input: ClarificationQuestionInput): ClarificationQuestionDraft {
+  const zh = input.locale !== "en-US";
+  const intent = compactText(input.workItem.rawDescription ?? input.workItem.title, 220);
+  const topic = compactText(input.workItem.rawDescription ?? input.workItem.title, 48)?.replace(/[。.!！?？,，;；:：]+$/u, "");
+  const fileSummary = input.files.length
+    ? input.files
+      .slice(0, 5)
+      .map((file) => {
+        const size = file.sizeBytes !== undefined ? `, ${file.sizeBytes} B` : "";
+        const preview = file.preview ? `：${compactText(file.preview, 120)}` : "";
+        return `${file.path}${size}${preview}`;
+      })
+      .join("；")
+    : "";
+  if (zh) {
+    return {
+      title: input.files.length
+        ? "需要确认：这次应以哪份项目文件和哪条验收口径为准？"
+        : topic
+          ? `请确认“${topic}”的验收口径`
+          : "请确认这次任务的验收口径",
+      body: [
+        intent ? `需求：${intent}` : undefined,
+        fileSummary ? `我已看到项目文件：${fileSummary}` : "我还没有看到可引用的项目文件，会先按你的需求补齐关键约束。",
+        "请补一句最关键的约束，AI 会把它带进后续执行。"
+      ].filter(Boolean).join("\n"),
+      placeholder: workItemT(input.locale, "question.clarify.placeholder")
+    };
+  }
+  return {
+    title: input.files.length
+      ? "Confirm the source file and acceptance rule for this task"
+      : topic
+        ? `Confirm the acceptance rule for "${topic}"`
+        : "Confirm the acceptance rule for this task",
+    body: [
+      intent ? `Request: ${intent}` : undefined,
+      fileSummary ? `Project files found: ${fileSummary}` : "No usable project file is visible yet; clarify the key constraint for the AI before execution.",
+      "Add the one constraint the AI must carry into the work."
+    ].filter(Boolean).join("\n"),
+    placeholder: workItemT(input.locale, "question.clarify.placeholder")
+  };
+}
+
+function clarificationPrompt(input: ClarificationQuestionInput) {
+  const zh = input.locale !== "en-US";
+  const intent = input.workItem.rawDescription ?? input.workItem.title ?? "";
+  const files = input.files.length
+    ? input.files.map((file, index) => [
+        `${index + 1}. ${file.path}`,
+        file.mime ? `mime=${file.mime}` : undefined,
+        file.sizeBytes !== undefined ? `size=${file.sizeBytes}` : undefined,
+        file.preview ? `preview=${file.preview}` : undefined
+      ].filter(Boolean).join("\n   ")).join("\n")
+    : "No project files are currently visible.";
+  return [
+    zh
+      ? "请根据用户需求和项目文件，生成一个真正需要用户补充的澄清反问。"
+      : "Generate one useful clarification question from the user's request and project files.",
+    "Return strict JSON only:",
+    `{"title":"...","body":"...","placeholder":"..."}`,
+    zh
+      ? "规则：只问一个问题；不要问预设交付方式；不要使用“需要确认一个关键点”这类泛化标题；反问必须引用用户需求或项目文件中的具体信息；优先围绕文件依据、验收口径、目标读者、缺失输入；如果信息足够，就让用户确认你将采用的文件和假设；使用中文。"
+      : "Rules: ask exactly one question; do not ask for a preset delivery type; do not use generic titles like 'One key detail to confirm'; the question must reference concrete information from the user request or project files; prioritize source file, acceptance criteria, audience, or missing input; if enough information exists, ask the user to confirm the file and assumptions; use English.",
+    "",
+    `Request:\n${intent}`,
+    "",
+    `Project files:\n${files}`
+  ].join("\n");
+}
+
+function clarificationDraftLooksTemplated(draft: ClarificationQuestionDraft, input: ClarificationQuestionInput) {
+  const combined = `${draft.title}\n${draft.body ?? ""}`.toLowerCase();
+  if (/需要先确认一个关键点|one key detail to confirm|交付方式|交付方向|delivery path|delivery direction|文档\/方案|结构化数据|小型代码/u.test(combined)) {
+    return true;
+  }
+  const fileMatched = input.files.some((file) =>
+    [file.name, file.path]
+      .filter(Boolean)
+      .some((value) => combined.includes(value.toLowerCase()))
+  );
+  const intentTokens = (input.workItem.rawDescription ?? input.workItem.title ?? "")
+    .split(/[^\p{Letter}\p{Number}_\-.]+/u)
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length >= 4)
+    .slice(0, 12);
+  const intentMatched = intentTokens.some((token) => combined.includes(token));
+  return input.files.length > 0 ? !fileMatched && !intentMatched : !intentMatched;
+}
+
+function createLlmClarificationGenerator(registry: ProviderRegistry): ClarificationQuestionGenerator {
+  return async (input) => {
+    if (!registry.isConfigured()) {
+      throw new WorkItemServiceError(
+        503,
+        "clarification_llm_unavailable",
+        input.locale === "en-US"
+          ? "AI material analysis is not configured, so WorkHub cannot generate a real clarification question."
+          : "AI 材料分析尚未配置，WorkHub 无法生成真实澄清反问。"
+      );
+    }
+    const client = registry.get({
+      id: input.actor.userId ?? input.actor.id,
+      label: "workhub-intake-clarifier",
+      userId: input.actor.userId ?? input.actor.id,
+      workItemId: input.workItem.id
+    }, "clarify");
+    const response = await client.messages.create({
+      maxTokens: CLARIFICATION_LLM_MAX_TOKENS,
+      source: "agent_step",
+      timeoutMs: CLARIFICATION_LLM_TIMEOUT_MS,
+      system: "You are WorkHub's intake clarifier. Return strict JSON only. Never include secrets or unrelated implementation advice.",
+      messages: [{
+        role: "user",
+        content: clarificationPrompt(input)
+      }]
+    });
+    const draft = parseClarificationDraftFromResponse(response, input.locale);
+    if (clarificationDraftLooksTemplated(draft, input)) {
+      throw new WorkItemServiceError(
+        502,
+        "clarification_llm_templated_response",
+        input.locale === "en-US"
+          ? "AI material analysis returned a generic template instead of a real follow-up question."
+          : "AI 材料分析返回了泛化模板，不是真实反问。"
+      );
+    }
+    return draft;
+  };
 }
 
 // 把已加载的 detail 行摊平成 @workhub/permissions 的 WorkItemAccessRecord——
@@ -618,14 +1068,11 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLoca
   });
 }
 
-function localizedDefaultAcceptance(values: readonly string[], locale: WorkHubLocale) {
-  return values.map((value) => localizeGeneratedAcceptanceText(value, locale));
-}
-
 function questionFor(
   workItem: Pick<WorkItemRow, "id" | "title" | "rawDescription">,
   stage: "scope" | "confirm",
-  locale: WorkHubLocale = "zh-CN"
+  locale: WorkHubLocale = "zh-CN",
+  clarificationDraft?: ClarificationQuestionDraft
 ): QuestionCard {
   if (stage === "confirm") {
     return {
@@ -660,64 +1107,41 @@ function questionFor(
     };
   }
 
-  const documentDraftSpec = defaultCuuLauncherSpecOptions["document-draft"];
-  const structuredDataSpec = defaultCuuLauncherSpecOptions["structured-data"];
-  const codeTemplateSpec = defaultCuuLauncherSpecOptions["code-template"];
-  const aiDecideSpec = defaultCuuLauncherSpecOptions["let-ai-decide"];
+  const draft = normalizeClarificationDraft(
+    clarificationDraft,
+    fallbackClarificationDraft({
+      workItem: {
+        id: workItem.id,
+        projectId: defaultSeedIds.projectId,
+        title: workItem.title,
+        rawDescription: workItem.rawDescription
+      },
+      files: [],
+      actor: {
+        id: "system",
+        kind: "system",
+        label: "system",
+        isAdmin: true,
+        orgId: defaultSeedIds.orgId,
+        workspaceId: defaultSeedIds.workspaceId
+      },
+      locale
+    })
+  );
   const question: QuestionCard = {
     id: stableUuid(`${workItem.id}:question:scope`),
     session_id: workItem.id,
     work_item_id: workItem.id,
-    title: workItemT(locale, "question.scope.title"),
-    input_mode: "single_choice",
-    options: [
-      {
-        id: "document-draft",
-        label: workItemT(locale, "question.scope.document.label"),
-        description: workItemT(locale, "question.scope.document.description"),
-        impact: workItemT(locale, "question.scope.document.impact"),
-        risk_hint: "low",
-        delivery_kind: documentDraftSpec.delivery_kind,
-        default_acceptance: localizedDefaultAcceptance(documentDraftSpec.default_acceptance, locale),
-        icon: "file-text"
-      },
-      {
-        id: "structured-data",
-        label: workItemT(locale, "question.scope.data.label"),
-        description: workItemT(locale, "question.scope.data.description"),
-        impact: workItemT(locale, "question.scope.data.impact"),
-        risk_hint: "low",
-        delivery_kind: structuredDataSpec.delivery_kind,
-        default_acceptance: localizedDefaultAcceptance(structuredDataSpec.default_acceptance, locale),
-        icon: "table"
-      },
-      {
-        id: "code-template",
-        label: workItemT(locale, "question.scope.code.label"),
-        description: workItemT(locale, "question.scope.code.description"),
-        impact: workItemT(locale, "question.scope.code.impact"),
-        risk_hint: "medium",
-        delivery_kind: codeTemplateSpec.delivery_kind,
-        default_acceptance: localizedDefaultAcceptance(codeTemplateSpec.default_acceptance, locale),
-        icon: "code"
-      },
-      {
-        id: "let-ai-decide",
-        label: workItemT(locale, "question.scope.ai.label"),
-        description: workItemT(locale, "question.scope.ai.description"),
-        impact: workItemT(locale, "question.scope.ai.impact"),
-        risk_hint: "low",
-        delivery_kind: aiDecideSpec.delivery_kind,
-        default_acceptance: localizedDefaultAcceptance(aiDecideSpec.default_acceptance, locale),
-        icon: "sparkles"
-      }
-    ],
-    recommended_option_ids: ["document-draft"],
+    title: draft.title,
+    ...(draft.body ? { body: draft.body } : {}),
+    input_mode: "long_text",
+    options: [],
+    recommended_option_ids: [],
     free_text: {
       enabled: true,
-      collapsed_by_default: true,
-      placeholder: workItemT(locale, "question.free.placeholder"),
-      max_length: 300
+      collapsed_by_default: false,
+      placeholder: draft.placeholder ?? workItemT(locale, "question.clarify.placeholder"),
+      max_length: 1000
     },
     progress: [
       { key: "intent", label: workItemT(locale, "question.progress.intent"), state: "done" },
@@ -730,17 +1154,14 @@ function questionFor(
       href: `/api/sessions/${workItem.id}/next-question`
     }
   };
-  const body = compactText(workItem.rawDescription ?? workItem.title, 160);
-  if (body) {
-    question.body = body;
-  }
   return question;
 }
 
 function sessionVmFor(
   workItem: Pick<WorkItemRow, "id" | "title" | "rawDescription">,
   stage: "scope" | "confirm",
-  locale: WorkHubLocale = "zh-CN"
+  locale: WorkHubLocale = "zh-CN",
+  clarificationDraft?: ClarificationQuestionDraft
 ): SessionVM {
   return sessionVmSchema.parse({
     session_id: workItem.id,
@@ -748,7 +1169,7 @@ function sessionVmFor(
     topic: `session:${workItem.id}`,
     stream_href: `/api/push/stream/session/${workItem.id}`,
     next_question_href: `/api/sessions/${workItem.id}/next-question`,
-    question: questionFor(workItem, stage, locale)
+    question: questionFor(workItem, stage, locale, clarificationDraft)
   });
 }
 
@@ -810,11 +1231,103 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     return rows;
   }
 
+  const projectFileContext = options.projectFileContext ?? defaultProjectFileContext;
+  const clarificationGenerator = options.clarificationGenerator
+    ?? (options.providerRegistry ? createLlmClarificationGenerator(options.providerRegistry) : undefined);
+
+  async function clarificationDraftFor(
+    workItem: WorkItemRow,
+    actor: AuthActor,
+    locale: WorkHubLocale = "zh-CN"
+  ) {
+    const stored = draftFromStoredClarificationQuestion(
+      await repository.findLatestChatMessageByKind(workItem.id, "clarification_question")
+    );
+    if (stored) {
+      return stored;
+    }
+    let files: ClarificationFileContext[] = [];
+    try {
+      files = await projectFileContext({
+        projectId: workItem.projectId,
+        actor,
+        locale,
+        intentText: workItem.rawDescription ?? workItem.title ?? undefined
+      });
+    } catch (error) {
+      await repository.insertChatMessage({
+        workItemId: workItem.id,
+        role: "system",
+        kind: "clarification_file_context_error",
+        contentJson: {
+          message: error instanceof Error ? error.message : "project file context failed"
+        },
+        at: now()
+      });
+      throw clarificationFileContextFailedError(locale);
+    }
+    const input: ClarificationQuestionInput = { workItem, actor, locale, files };
+    const fallback = fallbackClarificationDraft(input);
+    let generated: ClarificationQuestionDraft | undefined;
+    if (clarificationGenerator) {
+      try {
+        generated = await clarificationGenerator(input);
+      } catch (error) {
+        await repository.insertChatMessage({
+          workItemId: workItem.id,
+          role: "system",
+          kind: "clarification_analysis_error",
+          contentJson: {
+            message: error instanceof Error ? error.message : "clarification analysis failed",
+            file_paths: files.map((file) => file.path)
+          },
+          at: now()
+        });
+        if (error instanceof WorkItemServiceError) {
+          throw error;
+        }
+        throw new WorkItemServiceError(
+          502,
+          "clarification_llm_failed",
+          locale === "en-US"
+            ? "AI material analysis failed before a real clarification question was generated."
+            : "AI 材料分析失败，尚未生成真实澄清反问。"
+        );
+      }
+      if (!generated) {
+        throw new WorkItemServiceError(
+          502,
+          "clarification_llm_empty_response",
+          locale === "en-US"
+            ? "AI material analysis returned no clarification question."
+            : "AI 材料分析没有返回澄清反问。"
+        );
+      }
+    }
+    const draft = normalizeClarificationDraft(generated, fallback);
+    await repository.insertChatMessage({
+      workItemId: workItem.id,
+      role: generated ? "assistant" : "system",
+      kind: "clarification_question",
+      contentJson: {
+        ...draft,
+        source: generated ? "llm" : "fallback",
+        file_paths: files.map((file) => file.path)
+      },
+      at: now()
+    });
+    return draft;
+  }
+
+  async function scopeSessionVmFor(workItem: WorkItemRow, actor: AuthActor, locale: WorkHubLocale = "zh-CN") {
+    return sessionVmFor(workItem, "scope", locale, await clarificationDraftFor(workItem, actor, locale));
+  }
+
   return {
     async createSession(input) {
       if (input.payload.work_item_id) {
         const rows = await requireDetail(input.payload.work_item_id, input.actor);
-        return sessionVmFor(rows.workItem, "scope", input.locale);
+        return scopeSessionVmFor(rows.workItem, input.actor, input.locale);
       }
 
       const project = await resolveProject(input.payload.project_id, input.actor);
@@ -840,13 +1353,15 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         ...(input.payload.intent_text ? { userOtherText: input.payload.intent_text } : {}),
         at: now()
       });
-      return sessionVmFor(workItem, "scope", input.locale);
+      return scopeSessionVmFor(workItem, input.actor, input.locale);
     },
 
     async getSession(input) {
       const rows = await requireDetail(input.sessionId, input.actor);
-      const selectedOptionIds = await repository.listSessionSelectedOptionIds(rows.workItem.id);
-      return sessionVmFor(rows.workItem, selectedOptionIds.length > 0 ? "confirm" : "scope", input.locale);
+      const clarificationAnswers = await repository.listSessionClarificationAnswers(rows.workItem.id);
+      return clarificationAnswers.length > 0
+        ? sessionVmFor(rows.workItem, "confirm", input.locale)
+        : scopeSessionVmFor(rows.workItem, input.actor, input.locale);
     },
 
     async nextQuestion(input) {
@@ -857,7 +1372,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
       // the user on the same screen; send them back to scope to re-choose and don't
       // record the navigation as an answer.
       if (selectedOptionIds.includes("adjust-scope")) {
-        return sessionVmFor(rows.workItem, "scope", input.locale);
+        return scopeSessionVmFor(rows.workItem, input.actor, input.locale);
       }
       await repository.insertChatMessage({
         workItemId: rows.workItem.id,
@@ -877,14 +1392,23 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     async createWorkItem(input) {
       if (input.payload.session_id) {
         const rows = await requireDetail(input.payload.session_id, input.actor);
+        const clarificationAnswers = await repository.listSessionClarificationAnswers(rows.workItem.id);
         const selectedOptionIds = mergeSelectedOptionIds(
-          await repository.listSessionSelectedOptionIds(rows.workItem.id),
+          clarificationAnswers.flatMap((answer) => answer.selectedOptionIds),
           input.payload.selected_option_ids,
           selectedOptionIdsFromLauncherSpec(input.payload.cuu_launcher_spec)
         );
         const launcherSpec = launcherSpecForSelectedOptions(selectedOptionIds, input.payload.cuu_launcher_spec);
-        const planningNote = planningNoteForSelectedOptions({ selectedOptionIds, launcherSpec });
-        const acceptanceItems = acceptanceItemsFromLauncherSpec(launcherSpec);
+        const planningNote = planningNoteForSelectedOptions({
+          selectedOptionIds,
+          launcherSpec,
+          clarificationAnswers,
+          finalFreeText: input.payload.free_text
+        });
+        const launcherAcceptanceItems = acceptanceItemsFromLauncherSpec(launcherSpec);
+        const acceptanceItems = launcherAcceptanceItems.length
+          ? launcherAcceptanceItems
+          : acceptanceItemsFromClarification(input.locale);
         const updateInput: Parameters<WorkItemDataRepository["updateWorkItemFromSession"]>[0] = {
           workItemId: rows.workItem.id,
           title: input.payload.title ?? rows.workItem.title ?? titleFromIntent(rows.workItem.rawDescription ?? undefined),
@@ -920,6 +1444,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
           kind: "workitem_finalized",
           contentJson: {
             selected_option_ids: selectedOptionIds,
+            ...(input.payload.free_text ? { free_text: input.payload.free_text } : {}),
             ...(launcherSpec ? { cuu_launcher_spec: launcherSpec } : {}),
             kickoff_agent: input.payload.kickoff_agent ?? false
           },
@@ -935,7 +1460,11 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         selectedOptionIdsFromLauncherSpec(input.payload.cuu_launcher_spec)
       );
       const launcherSpec = launcherSpecForSelectedOptions(selectedOptionIds, input.payload.cuu_launcher_spec);
-      const planningNote = planningNoteForSelectedOptions({ selectedOptionIds, launcherSpec });
+      const planningNote = planningNoteForSelectedOptions({
+        selectedOptionIds,
+        launcherSpec,
+        finalFreeText: input.payload.free_text
+      });
       const acceptanceItems = acceptanceItemsFromLauncherSpec(launcherSpec);
       const createInput: Parameters<WorkItemDataRepository["createWorkItem"]>[0] = {
         projectId: project.id,
@@ -1090,6 +1619,7 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
   let sequence = 0;
   const workItems = new Map<string, MemoryStoredWorkItem>();
   const answers = new Map<string, NextQuestionRequest[]>();
+  const questionDrafts = new Map<string, ClarificationQuestionDraft>();
   const evidence = new Map<string, EvidenceRef[]>();
   const acceptanceItems = new Map<string, Array<{
     id: string;
@@ -1109,6 +1639,15 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
   function memoryRow(workItem: MemoryStoredWorkItem): Pick<WorkItemRow, "id" | "title" | "rawDescription"> {
     return {
       id: workItem.id,
+      title: workItem.title ?? null,
+      rawDescription: workItem.raw_description ?? null
+    };
+  }
+
+  function memoryClarificationWorkItem(workItem: MemoryStoredWorkItem): Pick<WorkItemRow, "id" | "projectId" | "title" | "rawDescription"> {
+    return {
+      id: workItem.id,
+      projectId: workItem.project_id,
       title: workItem.title ?? null,
       rawDescription: workItem.raw_description ?? null
     };
@@ -1173,6 +1712,77 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
     );
   }
 
+  function clarificationAnswersForSession(sessionId: string): WorkItemClarificationAnswerRow[] {
+    return (answers.get(sessionId) ?? []).map((answer) => ({
+      selectedOptionIds: answer.selected_option_ids ?? [],
+      ...(answer.free_text ? { freeText: answer.free_text } : {})
+    }));
+  }
+
+  async function memoryClarificationDraftFor(
+    workItem: MemoryStoredWorkItem,
+    actor: AuthActor,
+    locale: WorkHubLocale = "zh-CN"
+  ) {
+    const stored = questionDrafts.get(workItem.id);
+    if (stored) {
+      return stored;
+    }
+    let files: ClarificationFileContext[] = [];
+    if (options.projectFileContext) {
+      try {
+        files = await options.projectFileContext({
+          projectId: workItem.project_id,
+          actor,
+          locale,
+          intentText: workItem.raw_description ?? workItem.title ?? undefined
+        });
+      } catch {
+        throw clarificationFileContextFailedError(locale);
+      }
+    }
+    const input: ClarificationQuestionInput = {
+      workItem: memoryClarificationWorkItem(workItem),
+      actor,
+      locale,
+      files
+    };
+    const fallback = fallbackClarificationDraft(input);
+    let generated: ClarificationQuestionDraft | undefined;
+    if (options.clarificationGenerator) {
+      try {
+        generated = await options.clarificationGenerator(input);
+      } catch (error) {
+        if (error instanceof WorkItemServiceError) {
+          throw error;
+        }
+        throw new WorkItemServiceError(
+          502,
+          "clarification_llm_failed",
+          locale === "en-US"
+            ? "AI material analysis failed before a real clarification question was generated."
+            : "AI 材料分析失败，尚未生成真实澄清反问。"
+        );
+      }
+      if (!generated || clarificationDraftLooksTemplated(generated, input)) {
+        throw new WorkItemServiceError(
+          502,
+          !generated ? "clarification_llm_empty_response" : "clarification_llm_templated_response",
+          locale === "en-US"
+            ? "AI material analysis did not produce a real follow-up question."
+            : "AI 材料分析没有产出真实反问。"
+        );
+      }
+    }
+    const draft = normalizeClarificationDraft(generated, fallback);
+    questionDrafts.set(workItem.id, draft);
+    return draft;
+  }
+
+  async function memoryScopeSessionVmFor(workItem: MemoryStoredWorkItem, actor: AuthActor, locale: WorkHubLocale = "zh-CN") {
+    return sessionVmFor(memoryRow(workItem), "scope", locale, await memoryClarificationDraftFor(workItem, actor, locale));
+  }
+
   return {
     async createSession(input) {
       const workItem = input.payload.work_item_id
@@ -1183,13 +1793,15 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
             actor: input.actor,
             status: "ai_clarifying"
       });
-      return sessionVmFor(memoryRow(workItem), "scope", input.locale);
+      return memoryScopeSessionVmFor(workItem, input.actor, input.locale);
     },
 
     async getSession(input) {
       const workItem = requireWorkItem(input.sessionId);
       const hasAnswers = (answers.get(input.sessionId) ?? []).length > 0;
-      return sessionVmFor(memoryRow(workItem), hasAnswers ? "confirm" : "scope", input.locale);
+      return hasAnswers
+        ? sessionVmFor(memoryRow(workItem), "confirm", input.locale)
+        : memoryScopeSessionVmFor(workItem, input.actor, input.locale);
     },
 
     async nextQuestion(input) {
@@ -1197,7 +1809,7 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
       // M10: mirror the persistent path — "调整范围"(adjust-scope) navigates back to
       // the scope question instead of dead-ending on confirm, and is not recorded.
       if ((input.payload.selected_option_ids ?? []).includes("adjust-scope")) {
-        return sessionVmFor(memoryRow(workItem), "scope", input.locale);
+        return memoryScopeSessionVmFor(workItem, input.actor, input.locale);
       }
       answers.set(input.sessionId, [...(answers.get(input.sessionId) ?? []), input.payload]);
       return sessionVmFor(memoryRow(workItem), "confirm", input.locale);
@@ -1222,7 +1834,13 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
             selectedOptionIdsFromLauncherSpec(input.payload.cuu_launcher_spec)
           );
       const launcherSpec = launcherSpecForSelectedOptions(selectedOptionIds, input.payload.cuu_launcher_spec);
-      const planningNote = planningNoteForSelectedOptions({ selectedOptionIds, launcherSpec });
+      const clarificationAnswers = input.payload.session_id ? clarificationAnswersForSession(workItem.id) : [];
+      const planningNote = planningNoteForSelectedOptions({
+        selectedOptionIds,
+        launcherSpec,
+        clarificationAnswers,
+        finalFreeText: input.payload.free_text
+      });
       const launcherAcceptanceItems = acceptanceItemsFromLauncherSpec(launcherSpec);
       workItem.status = input.payload.kickoff_agent ? "ai_working" : "spec_ready";
       workItem.title = input.payload.title ?? workItem.title;
@@ -1235,6 +1853,18 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
         const timestamp = at();
         acceptanceItems.set(workItem.id, launcherAcceptanceItems.map((item, index) => ({
           id: stableUuid(`${workItem.id}:launcher-acceptance:${index}:${item.title}`),
+          work_item_id: workItem.id,
+          title: item.title,
+          ...(item.description ? { description: item.description } : {}),
+          status: "open",
+          sort_order: item.sortOrder,
+          created_at: timestamp,
+          updated_at: timestamp
+        })));
+      } else if (input.payload.session_id) {
+        const timestamp = at();
+        acceptanceItems.set(workItem.id, acceptanceItemsFromClarification(input.locale).map((item, index) => ({
+          id: stableUuid(`${workItem.id}:clarification-acceptance:${index}:${item.title}`),
           work_item_id: workItem.id,
           title: item.title,
           ...(item.description ? { description: item.description } : {}),
@@ -1318,7 +1948,9 @@ let defaultWorkItemDbClient: WorkHubDatabaseClient | undefined;
 export function getDefaultWorkItemService() {
   if (!defaultWorkItemService) {
     defaultWorkItemDbClient = getSharedDatabaseClient();
-    defaultWorkItemService = createDbWorkItemService(createWorkItemRepository(defaultWorkItemDbClient.db));
+    defaultWorkItemService = createDbWorkItemService(createWorkItemRepository(defaultWorkItemDbClient.db), {
+      providerRegistry: getDefaultProviderRegistry()
+    });
   }
   return defaultWorkItemService;
 }

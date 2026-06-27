@@ -3,6 +3,7 @@
 // API：pages.drive 需 project_id（与知识检索同理先选项目）；恢复走 client.restoreDriveItem。
 
 import type { DriveItemVM, DrivePageVM } from "@workhub/contracts";
+import { defaultPorts } from "@workhub/config/ports";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
@@ -19,7 +20,175 @@ function fmtSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function itemRow(item: DriveItemVM, zh: boolean, canManage: boolean): string {
+export function driveResourceHref(href: string, apiBaseUrl?: string): string {
+  if (/^https?:\/\//iu.test(href) || !href.startsWith("/api/")) {
+    return href;
+  }
+  const base = apiBaseUrl?.trim().replace(/\/+$/u, "");
+  return base ? `${base}${href}` : href;
+}
+
+function driveResourceApiBase(): string {
+  const override = driveResourceStorage()?.getItem("workhub_api_base")?.trim();
+  return (override && override.length > 0 ? override : `http://127.0.0.1:${defaultPorts.api}`).replace(/\/+$/u, "");
+}
+
+function driveResourceStorage(): Storage | undefined {
+  return globalThis.window?.localStorage;
+}
+
+function driveResourceToken(): string | undefined {
+  const storage = driveResourceStorage();
+  return storage?.getItem("workhub_client_token") ?? storage?.getItem("yqgl_client_token") ?? undefined;
+}
+
+function storeDriveResourceToken(token: string): void {
+  const storage = driveResourceStorage();
+  storage?.setItem("workhub_client_token", token);
+  storage?.setItem("yqgl_client_token", token);
+}
+
+function clearDriveResourceToken(): void {
+  const storage = driveResourceStorage();
+  storage?.removeItem("workhub_client_token");
+  storage?.removeItem("yqgl_client_token");
+}
+
+export function driveResourceHeaders(): Headers {
+  const headers = new Headers();
+  const token = driveResourceToken();
+  if (token) {
+    headers.set("X-WorkHub-Client-Token", token);
+    headers.set("X-YQGL-Client-Token", token);
+  }
+  return headers;
+}
+
+async function refreshDriveResourceToken(apiBaseUrl: string): Promise<boolean> {
+  clearDriveResourceToken();
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/auth/desktop-bootstrap`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nickname: "WorkHub Desktop",
+        device_name: "WorkHub Desktop",
+        platform: "desktop"
+      })
+    });
+    const body = await response.json() as { client_token?: unknown };
+    if (!response.ok || typeof body.client_token !== "string" || body.client_token.length === 0) {
+      return false;
+    }
+    storeDriveResourceToken(body.client_token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function shouldRefreshDriveResourceToken(response: Response): Promise<boolean> {
+  if (response.status !== 401 && response.status !== 403) {
+    return false;
+  }
+  try {
+    const body = await response.clone().json() as { error?: { code?: unknown } };
+    const code = body.error?.code;
+    return code === "not_identified" || code === "invalid_client_token";
+  } catch {
+    return response.status === 401;
+  }
+}
+
+async function fetchDriveResource(href: string, init: RequestInit = {}, apiBaseUrl = driveResourceApiBase()): Promise<Response> {
+  const withAuth = (): RequestInit => {
+    const headers = new Headers(init.headers);
+    driveResourceHeaders().forEach((value, key) => headers.set(key, value));
+    return { ...init, credentials: "include", headers };
+  };
+  let response = await fetch(href, withAuth());
+  if (await shouldRefreshDriveResourceToken(response)) {
+    const refreshed = await refreshDriveResourceToken(apiBaseUrl);
+    if (refreshed) {
+      response = await fetch(href, withAuth());
+    }
+  }
+  return response;
+}
+
+function filenameFromContentDisposition(value: string | null, fallback: string): string {
+  if (!value) {
+    return fallback;
+  }
+  const utf8 = /filename\*=UTF-8''([^;]+)/iu.exec(value)?.[1];
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8);
+    } catch {
+      return utf8;
+    }
+  }
+  return /filename="([^"]+)"/iu.exec(value)?.[1] ?? fallback;
+}
+
+type DrivePreviewData = {
+  filename: string;
+  mime?: string;
+  size_bytes: number;
+  preview_type: "text";
+  text: string;
+  truncated?: boolean;
+  download_href: string;
+};
+
+export async function fetchDrivePreview(href: string, apiBaseUrl?: string): Promise<DrivePreviewData> {
+  const response = await fetchDriveResource(href, {}, apiBaseUrl);
+  const body = await response.json() as { ok?: boolean; data?: DrivePreviewData; error?: { message?: string } };
+  if (!response.ok || body.ok !== true || !body.data) {
+    throw new Error(body.error?.message ?? "preview failed");
+  }
+  return body.data;
+}
+
+async function downloadDriveResource(href: string, fallbackName: string): Promise<void> {
+  const response = await fetchDriveResource(href);
+  if (!response.ok) {
+    let message = "download failed";
+    try {
+      const body = await response.clone().json() as { error?: { message?: string } };
+      message = body.error?.message ?? message;
+    } catch {
+      // Non-JSON error bodies fall back to the generic action copy.
+    }
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filenameFromContentDisposition(response.headers.get("Content-Disposition"), fallbackName);
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function drivePreviewPanelHtml(preview: DrivePreviewData, zh: boolean, apiBaseUrl?: string): string {
+  return `<section class="wh-spot-drive-section" data-drive-preview-panel="true">
+    <div class="wh-spot-card-actions" style="justify-content:space-between;margin-top:0">
+      <p class="wh-spot-reasons-q" style="margin:0">${escapeHtml(zh ? `预览：${preview.filename}` : `Preview: ${preview.filename}`)}</p>
+      <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-drive-preview-close="true">${zh ? "收起" : "Close"}</button>
+    </div>
+    <pre class="wh-spot-row-sub" style="white-space:pre-wrap;max-height:260px;overflow:auto;margin:10px 0 0;padding:12px;border-radius:14px;background:rgba(255,255,255,.58)">${escapeHtml(preview.text)}</pre>
+    ${preview.truncated ? `<p class="wh-spot-row-sub">${zh ? "内容较长，仅显示前一部分。" : "Large file; showing the first part."}</p>` : ""}
+    <div class="wh-spot-card-actions">
+      <a class="wh-spot-act wh-spot-act--quiet ds-pressable" href="${escapeHtml(driveResourceHref(preview.download_href, apiBaseUrl))}" data-drive-resource="download" target="_blank" rel="noreferrer">${zh ? "下载完整文件" : "Download full file"}</a>
+    </div>
+  </section>`;
+}
+
+function itemRow(item: DriveItemVM, zh: boolean, canManage: boolean, apiBaseUrl?: string): string {
   const icon = item.kind === "folder" ? FOLDER_ICON : FILE_ICON;
   const meta =
     item.kind === "folder"
@@ -28,11 +197,13 @@ function itemRow(item: DriveItemVM, zh: boolean, canManage: boolean): string {
   // AI 交付物预览/下载是 API 链接：桌面 webview 用 target=_blank 外开(与知识检索证据链一致)，不替换聚焦盒。
   const deliverable = item.accepted_deliverable;
   const links: string[] = [];
-  if (deliverable?.preview_href) {
-    links.push(`<a class="wh-spot-act wh-spot-act--quiet ds-pressable" href="${escapeHtml(deliverable.preview_href)}" target="_blank" rel="noreferrer">${zh ? "预览" : "Preview"}</a>`);
+  const previewHref = item.preview_href ?? deliverable?.preview_href;
+  const downloadHref = item.download_href ?? deliverable?.download_href;
+  if (previewHref) {
+    links.push(`<a class="wh-spot-act wh-spot-act--quiet ds-pressable" href="${escapeHtml(driveResourceHref(previewHref, apiBaseUrl))}" data-drive-resource="preview" target="_blank" rel="noreferrer">${zh ? "预览" : "Preview"}</a>`);
   }
-  if (deliverable?.download_href) {
-    links.push(`<a class="wh-spot-act wh-spot-act--quiet ds-pressable" href="${escapeHtml(deliverable.download_href)}" target="_blank" rel="noreferrer">${zh ? "下载" : "Download"}</a>`);
+  if (downloadHref) {
+    links.push(`<a class="wh-spot-act wh-spot-act--quiet ds-pressable" href="${escapeHtml(driveResourceHref(downloadHref, apiBaseUrl))}" data-drive-resource="download" target="_blank" rel="noreferrer">${zh ? "下载" : "Download"}</a>`);
   }
   // 删除走 client.deleteDriveItem(带 expected_current_version_id 乐观并发)。只在服务端真会受理时才显示：
   // 镜像 drive-pages 的候选判定(非 AI 交付物、文件或空文件夹)——否则点了必 409,徒留「删除失败」。
@@ -56,7 +227,7 @@ function deletedRow(item: DriveItemVM, zh: boolean): string {
   </div>`;
 }
 
-export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean): string {
+export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean, apiBaseUrl?: string): string {
   const s = vm.summary;
   const items = vm.items ?? [];
   const deleted = vm.deleted_items ?? [];
@@ -66,18 +237,25 @@ export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean): s
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "版本" : "Versions"}</span><span class="wh-spot-metric-v">${s.version_count}</span></div>
     <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "AI 交付" : "Deliverables"}</span><span class="wh-spot-metric-v">${s.accepted_deliverable_count}</span></div>
   </div>`;
-  // L15：和 web L10 一致——这颗按钮目前写入的是固定示例文件(真实文件选择器是后续原生 Tauri 对话框工作),
-  // 因此诚实标注「插入示例文件」,别让用户以为是真实上传后凭空在核心网盘里多出一份样例。仅有 upload_file 能力时出现。
   const uploadBtn = vm.actions.upload_file
-    ? `<div class="wh-spot-card-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-drive-upload>${zh ? "＋ 插入示例文件" : "＋ Insert sample file"}</button></div>`
+    ? `<div class="wh-spot-card-actions"><label class="wh-spot-act wh-spot-act--primary ds-pressable wh-spot-upload-label"><span data-drive-upload-label>${zh ? "＋ 上传文件" : "＋ Upload file"}</span><input class="wh-spot-file-input" type="file" data-drive-upload-picker /></label></div>`
     : "";
   const list = items.length
-    ? `<div class="wh-spot-list ds-stagger">${items.slice(0, 40).map((i) => itemRow(i, zh, canManage)).join("")}</div>`
+    ? `<div class="wh-spot-list ds-stagger">${items.slice(0, 40).map((i) => itemRow(i, zh, canManage, apiBaseUrl)).join("")}</div>`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "这个项目还没有文件" : "No files in this project yet"}</p>`;
   const deletedBlock = deleted.length
     ? `<div class="wh-spot-drive-section"><p class="wh-spot-reasons-q">${zh ? "回收站" : "Recently deleted"}</p><div class="wh-spot-list">${deleted.slice(0, 12).map((i) => deletedRow(i, zh)).join("")}</div></div>`
     : "";
   return `<div class="wh-spot-know">${projectChips}${summary}${uploadBtn}${list}${deletedBlock}</div>`;
+}
+
+export function driveNoProjectsEmptyHtml(zh: boolean): string {
+  return `<div class="wh-spot-empty">
+    <div class="wh-spot-empty-face">📁</div>
+    <h3 class="wh-spot-empty-title">${zh ? "还没有项目" : "No projects"}</h3>
+    <p class="wh-spot-empty-sub">${zh ? "先交给 Cuu 一个任务，它会自动建立项目和网盘。" : "Dispatch a task and Cuu will create the project and drive."}</p>
+    <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-drive-open-intake="true">${zh ? "＋ 新任务 / 交给 AI" : "＋ New task / Dispatch to AI"}</button>
+  </div>`;
 }
 
 export function createDriveView(): SpotlightCapabilityView {
@@ -113,7 +291,7 @@ export function createDriveView(): SpotlightCapabilityView {
           if (disposed || gen !== loadGen) return;
           const proj = projects.find((p) => p.id === reqProjectId);
           ctx.setSubtitle(proj ? proj.name : zh ? "网盘" : "Drive");
-          ctx.body.innerHTML = driveHtml(vm, chips(), zh);
+          ctx.body.innerHTML = driveHtml(vm, chips(), zh, driveResourceApiBase());
         } catch {
           if (disposed || gen !== loadGen) return;
           retry = () => void loadDrive();
@@ -136,7 +314,7 @@ export function createDriveView(): SpotlightCapabilityView {
         }
         if (disposed) return;
         if (!projectId) {
-          ctx.body.innerHTML = `<div class="wh-spot-empty"><div class="wh-spot-empty-face">📁</div><h3 class="wh-spot-empty-title">${zh ? "还没有项目" : "No projects"}</h3><p class="wh-spot-empty-sub">${zh ? "派个活就会自动建项目和网盘" : "Dispatch a task to create one"}</p></div>`;
+          ctx.body.innerHTML = driveNoProjectsEmptyHtml(zh);
           ctx.requestResize();
           return;
         }
@@ -146,8 +324,46 @@ export function createDriveView(): SpotlightCapabilityView {
       ctx.body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
+        const resource = target.closest<HTMLAnchorElement>("a[data-drive-resource]");
+        if (resource?.href) {
+          event.preventDefault();
+          if (resource.dataset.driveResource === "preview") {
+            const label = resource.textContent;
+            resource.textContent = zh ? "预览中…" : "Opening…";
+            void fetchDrivePreview(resource.href)
+              .then((preview) => {
+                ctx.body.querySelector("[data-drive-preview-panel]")?.remove();
+                ctx.body.insertAdjacentHTML("afterbegin", drivePreviewPanelHtml(preview, zh, driveResourceApiBase()));
+                ctx.requestResize();
+              })
+              .catch((error) => ctx.toast(error instanceof Error ? error.message : zh ? "预览失败" : "Preview failed", "error"))
+              .finally(() => {
+                resource.textContent = label;
+              });
+            return;
+          }
+          const fallbackName = resource.closest(".wh-spot-row")?.querySelector(".wh-spot-row-title")?.textContent?.trim() || "download";
+          const label = resource.textContent;
+          resource.textContent = zh ? "下载中…" : "Downloading…";
+          void downloadDriveResource(resource.href, fallbackName)
+            .then(() => ctx.toast(zh ? "已开始下载" : "Download started", "ok"))
+            .catch((error) => ctx.toast(error instanceof Error ? error.message : zh ? "下载失败" : "Download failed", "error"))
+            .finally(() => {
+              resource.textContent = label;
+            });
+          return;
+        }
+        if (target.closest("[data-drive-preview-close]")) {
+          ctx.body.querySelector("[data-drive-preview-panel]")?.remove();
+          ctx.requestResize();
+          return;
+        }
         if (target.closest("[data-spot-retry]")) {
           retry?.();
+          return;
+        }
+        if (target.closest("[data-drive-open-intake]")) {
+          ctx.open("intake");
           return;
         }
         const proj = target.closest<HTMLElement>("[data-drive-proj]");
@@ -174,28 +390,6 @@ export function createDriveView(): SpotlightCapabilityView {
             });
           return;
         }
-        if (target.closest("[data-drive-upload]") && projectId && !busy) {
-          busy = true;
-          const btn = target.closest<HTMLElement>("[data-drive-upload]");
-          if (btn) btn.textContent = zh ? "插入中…" : "Inserting…";
-          void ctx.client
-            .uploadDriveFile(
-              projectId,
-              {
-                filename: zh ? "桌面-上传样例.md" : "desktop-upload-sample.md",
-                mime: "text/markdown",
-                parsed_text: zh ? "# 桌面上传样例\n\n一份可审计的项目网盘上传样例。" : "# Desktop upload sample\n\nA small auditable project drive upload sample."
-              },
-              { locale: ctx.locale }
-            )
-            .then(() => ctx.toast(zh ? "已插入示例文件" : "Sample file inserted", "ok"))
-            .catch(() => ctx.toast(zh ? "插入失败" : "Insert failed", "error"))
-            .finally(() => {
-              busy = false;
-              void loadDrive();
-            });
-          return;
-        }
         const restore = target.closest<HTMLElement>("[data-drive-restore]");
         if (restore?.dataset.driveRestore && projectId && !busy) {
           busy = true;
@@ -212,6 +406,27 @@ export function createDriveView(): SpotlightCapabilityView {
               void loadDrive();
             });
         }
+      });
+
+      ctx.body.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) || !target.matches("[data-drive-upload-picker]") || !projectId || busy) {
+          return;
+        }
+        const file = target.files?.[0];
+        if (!file) return;
+        busy = true;
+        const label = target.closest<HTMLElement>(".wh-spot-upload-label");
+        const labelText = label?.querySelector<HTMLElement>("[data-drive-upload-label]");
+        if (labelText) labelText.textContent = zh ? "上传中…" : "Uploading…";
+        void ctx.client.uploadDriveFile(projectId, { file }, { locale: ctx.locale })
+          .then(() => ctx.toast(zh ? "已上传文件" : "File uploaded", "ok"))
+          .catch(() => ctx.toast(zh ? "上传失败" : "Upload failed", "error"))
+          .finally(() => {
+            target.value = "";
+            busy = false;
+            void loadDrive();
+          });
       });
 
       return () => {

@@ -321,6 +321,29 @@
     <p>The state explains who can grant access without exposing private work.</p>
     <a class="wh-route-state-action" href="/knowledge/search">Request access</a>
   </article>
+    </div><div class="wh-route-state-row" data-route-key="skills">
+      <div class="wh-route-state-route"><strong>Team skills</strong><span>/dashboard/skills</span></div>
+      <article class="wh-route-state-card" data-route-key="skills" data-route-state="loading" data-locale="en-US">
+    <span class="wh-route-state-pill">/dashboard/skills</span>
+    <h3>Loading real data</h3>
+    <p>The page waits for the backend service instead of showing fake success.</p>
+    <a class="wh-route-state-action" href="/dashboard/skills">Keep waiting</a>
+  </article><article class="wh-route-state-card" data-route-key="skills" data-route-state="empty" data-locale="en-US">
+    <span class="wh-route-state-pill">/dashboard/skills</span>
+    <h3>Nothing needs action right now</h3>
+    <p>Empty states stay quiet and leave a create, back, or history entry.</p>
+    <a class="wh-route-state-action" href="/">Back to overview</a>
+  </article><article class="wh-route-state-card" data-route-key="skills" data-route-state="error" data-locale="en-US">
+    <span class="wh-route-state-pill">trace_id=r4-web-route-state</span>
+    <h3>This page failed to load</h3>
+    <p>The page keeps context and a trace id so users can retry and engineers can debug.</p>
+    <a class="wh-route-state-action" href="/dashboard/skills">Retry</a>
+  </article><article class="wh-route-state-card" data-route-key="skills" data-route-state="forbidden" data-locale="en-US">
+    <span class="wh-route-state-pill">Needs owner approval</span>
+    <h3>You do not have access</h3>
+    <p>The state explains who can grant access without exposing private work.</p>
+    <a class="wh-route-state-action" href="/dashboard/skills">Request access</a>
+  </article>
     </div><div class="wh-route-state-row" data-route-key="settings">
       <div class="wh-route-state-route"><strong>Settings</strong><span>/settings</span></div>
       <article class="wh-route-state-card" data-route-key="settings" data-route-state="loading" data-locale="en-US">

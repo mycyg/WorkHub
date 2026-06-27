@@ -74,6 +74,31 @@ fn tauri_windows_match_the_shell_window_contract() {
 }
 
 #[test]
+fn tauri_bundle_targets_are_platform_native_not_windows_only() {
+    let config = read_json("tauri.conf.json");
+    let targets = &config["bundle"]["targets"];
+
+    assert_eq!(
+        targets, "all",
+        "bundle targets must stay platform-native; nsis-only config cannot produce macOS app/dmg bundles"
+    );
+}
+
+#[test]
+fn macos_info_plist_overrides_legacy_carbon_requirement() {
+    let config = read_json("tauri.conf.json");
+    assert_eq!(config["bundle"]["macOS"]["infoPlist"], "Info.plist");
+
+    let plist_path = manifest_dir().join("Info.plist");
+    let raw = fs::read_to_string(&plist_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", plist_path.display()));
+
+    assert!(raw.contains("<key>LSRequiresCarbon</key>"));
+    assert!(raw.contains("<false/>"));
+    assert!(!raw.contains("<true/>"));
+}
+
+#[test]
 fn default_capability_is_local_and_window_scoped() {
     let capability = read_json("capabilities/default.json");
     let windows = capability["windows"]

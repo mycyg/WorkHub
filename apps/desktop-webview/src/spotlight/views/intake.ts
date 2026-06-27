@@ -11,6 +11,15 @@ import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-cont
 
 type Question = SessionVM["question"];
 
+export function defaultSelectedOptionIds(question: Question): Set<string> {
+  if ((question.input_mode !== "single_choice" && question.input_mode !== "confirm") || !question.options?.length) {
+    return new Set();
+  }
+  const recommended = new Set(question.recommended_option_ids ?? []);
+  const firstRecommended = question.options.find((option) => recommended.has(option.id));
+  return firstRecommended ? new Set([firstRecommended.id]) : new Set();
+}
+
 function progressHtml(question: Question): string {
   if (!question.progress?.length) {
     return "";
@@ -158,7 +167,7 @@ export function createIntakeView(): SpotlightCapabilityView {
             ...(projectId ? { project_id: projectId } : {}),
             ...(trimmedIntent ? { intent_text: trimmedIntent } : {})
           });
-          selected = new Set();
+          selected = defaultSelectedOptionIds(session.question);
           busy = false;
           renderQuestion();
         } catch (error) {
@@ -195,7 +204,7 @@ export function createIntakeView(): SpotlightCapabilityView {
             selected_option_ids: ids,
             ...(freeText ? { free_text: freeText } : {})
           });
-          selected = new Set();
+          selected = defaultSelectedOptionIds(session.question);
           busy = false;
           renderQuestion();
         } catch (error) {

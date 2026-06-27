@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { Hono, type Context } from "hono";
+import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import {
@@ -40,6 +40,7 @@ import {
   getDefaultWorkItemService,
   type WorkItemService
 } from "../services/work-items.js";
+import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 
 export type ProposalRoutesDependencies = {
@@ -49,11 +50,8 @@ export type ProposalRoutesDependencies = {
   // findings[#168/H12]：合并/评审/打回事件原本只塞进 HTTP 响应、从不 publish 到总线，其它客户端的 SSE 实时
   // 刷新因此失效。注入 PushBus 后在各操作成功后 best-effort 发布。
   bus?: Pick<PushBus, "publish">;
+  logger?: Pick<typeof console, "warn">;
 };
-
-async function readJsonBody(c: Context) {
-  return c.req.json().catch(() => ({}));
-}
 
 function actorFor(actor?: AuthActor) {
   if (!actor) {
@@ -297,7 +295,8 @@ function mergeResultFor(input: {
 // 与 agent-runner/approvals 同口径：发布失败绝不能拖垮已成功的合并/评审操作，故逐条 try/catch 吞错。
 async function publishProposalEvents(
   bus: Pick<PushBus, "publish"> | undefined,
-  events: ReadonlyArray<{ topic: string; type: string } & Record<string, unknown>>
+  events: ReadonlyArray<{ topic: string; type: string } & Record<string, unknown>>,
+  logger: Pick<typeof console, "warn"> = console
 ) {
   if (!bus) {
     return;
@@ -305,8 +304,13 @@ async function publishProposalEvents(
   for (const event of events) {
     try {
       await bus.publish(event.topic, event.type, event);
-    } catch {
-      // best-effort：丢一次实时刷新可接受，绝不让总线故障使 HTTP 操作失败。
+    } catch (error) {
+      // best-effort：丢一次实时刷新可接受，绝不让总线故障使 HTTP 操作失败；但不能无声吞掉。
+      logger.warn("WorkHub proposal event publish failed", {
+        topic: event.topic,
+        type: event.type,
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 }
@@ -326,6 +330,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   const proposals = deps.proposals ?? getDefaultProposalService();
   const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
   const bus = deps.bus ?? getDefaultPushBus();
+  const eventLogger = deps.logger ?? console;
 
   async function assertCanReadWorkItem(workItemId: string, actor: AuthActor) {
     if (!workItems) {
@@ -362,7 +367,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     // L3：先鉴权再解析请求体——否则未授权者会先收到 schema 校验 400（泄露请求体形状/字段要求），
     // 拿不到本应优先返回的 404/403。授权检查（readProposalForActor → assertCanReadWorkItem）置于解析之前。
     await readProposalForActor(c.req.param("id"), c.var.actor);
-    const payload = reviewProposalRequestSchema.parse(await readJsonBody(c));
+    const payload = reviewProposalRequestSchema.parse(await readJsonObject(c));
     let proposal: StoredProposal;
     try {
       proposal = await proposals.review({
@@ -443,7 +448,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     }
 
     // findings[#168/H12]：发布 proposal.reviewed（及打回时的 revision.fedback），让其它客户端实时刷新。
-    await publishProposalEvents(bus, [event, ...(resultBase.feedback_event ? [resultBase.feedback_event] : [])]);
+    await publishProposalEvents(bus, [event, ...(resultBase.feedback_event ? [resultBase.feedback_event] : [])], eventLogger);
     return c.json({ ok: true, data: proposalReviewResultSchema.parse(resultBase) });
   });
 
@@ -451,7 +456,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     // findings：鉴权先于请求体解析（与 /review 一致，L3 修过 review 但 merge 漏了）——未授权者发畸形 body
     // 应拿 403/404 而非泄露 schema 的 400。
     await readProposalForActor(c.req.param("id"), c.var.actor);
-    const payload = mergeProposalRequestSchema.parse(await readJsonBody(c));
+    const payload = mergeProposalRequestSchema.parse(await readJsonObject(c));
     let proposal: StoredProposal;
     try {
       proposal = await proposals.merge({
@@ -514,7 +519,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
       createdAt: nowIso()
     });
     // findings[#168/H12]：发布 proposal.merged（→ workitem topic）+ notification.created（→ user topic）。
-    await publishProposalEvents(bus, mergeResult.events);
+    await publishProposalEvents(bus, mergeResult.events, eventLogger);
     return c.json({ ok: true, data: mergeResult });
   });
 
@@ -541,6 +546,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   const proposals = deps.proposals ?? getDefaultProposalService();
   const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
   const bus = deps.bus ?? getDefaultPushBus();
+  const eventLogger = deps.logger ?? console;
 
   async function assertCanReadWorkItem(workItemId: string, actor: AuthActor) {
     if (!workItems) {
@@ -576,7 +582,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
     // findings[#15]：先鉴权再解析请求体（与 /review、/merge 一致）——未授权者发畸形 body 应拿 403/404 而非
     // 泄露 schema 的校验 422。assertCanReadWorkItem 同时承担 uuid 形参校验，置于解析之前。
     await assertCanReadWorkItem(c.req.param("id"), c.var.actor);
-    const payload = createProposalFromManifestRequestSchema.parse(await readJsonBody(c));
+    const payload = createProposalFromManifestRequestSchema.parse(await readJsonObject(c));
     try {
       const proposal = await proposals.createFromManifest({
         workItemId: c.req.param("id"),
@@ -614,7 +620,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
     // findings[#15]：先鉴权再解析请求体（与 /review、/merge 一致）——未授权者发畸形 body 应拿 403/404 而非
     // 泄露 schema 的校验 422。readProposalByMergeProposalForActor 同时承担 uuid 形参校验，置于解析之前。
     await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
-    const payload = chooseMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
+    const payload = chooseMergeProposalCandidateRequestSchema.parse(await readJsonObject(c));
     // L5：keep_current / accept_incoming 不经候选「选择 + 应用」路由——apply 只认 ai_fusion，选了它们会
     // 把变更申请永久卡在 reviewed 且冲突反复出现（死状态）。这两种解析在合并接口里内联完成：采纳来方填
     // conflict_resolution.accept_incoming_target_keys；保留现状则省略该冲突，merge 即可收口。此处 fail-closed，
@@ -643,7 +649,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
     // findings[#15]：先鉴权再解析请求体（与 /review、/merge 一致）——未授权者发畸形 body 应拿 403/404 而非
     // 泄露 schema 的校验 422。readProposalByMergeProposalForActor 同时承担 uuid 形参校验，置于解析之前。
     await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
-    const payload = applyMergeProposalCandidateRequestSchema.parse(await readJsonBody(c));
+    const payload = applyMergeProposalCandidateRequestSchema.parse(await readJsonObject(c));
     try {
       const proposal = await proposals.applyMergeCandidate({
         mergeProposalId: c.req.param("id"),
@@ -668,7 +674,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
         createdAt: nowIso()
       });
       // findings[#168/H12]：AI 融合候选采纳也是一次合并，同样发布 proposal.merged + notification。
-      await publishProposalEvents(bus, applyResult.events);
+      await publishProposalEvents(bus, applyResult.events, eventLogger);
       return c.json({ ok: true, data: applyResult });
     } catch (error) {
       handleProposalServiceError(error);

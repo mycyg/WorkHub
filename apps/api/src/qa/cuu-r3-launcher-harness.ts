@@ -4,13 +4,14 @@ import os from "node:os";
 import path from "node:path";
 
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import type { AgentLoopClient } from "@workhub/agent/loop";
 import type { WorkHubApiClient } from "@workhub/api-client";
 import { settings, type Settings } from "@workhub/config";
-import { cuuLauncherWorkItemSpecSchema, type AgentRunLiveVM, type WorkHubLocale } from "@workhub/contracts";
+import { type AgentRunLiveVM, type WorkHubLocale } from "@workhub/contracts";
 import { cardFromSessionVm, type CuuCard, type CuuLocaleOptions } from "@workhub/cuu";
 import { defaultSeedIds, type ClientDeviceAuthRow, type UserAuthRow } from "@workhub/db";
 import { InMemoryPresenceStore, InProcessPushBus } from "../broker/index.js";
@@ -104,17 +105,17 @@ export type CuuR3LauncherSmokeResult = {
     run: string | undefined;
   };
   launcher_input: {
-    mode: "single_choice";
-    option_first: true;
-    free_text_enabled: false;
+    mode: "long_text";
+    option_first: false;
+    free_text_enabled: true;
   };
   run_id: string;
   status: AgentRunLiveVM["status"];
   stream_href: string;
   stream_url: string;
   planning_note: string | null;
-  launcher_spec_delivery_kind: string;
-  launcher_acceptance_count: number;
+  clarification_answer_in_planning_note: boolean;
+  clarification_acceptance_count: number;
   api_base_url?: string;
 };
 
@@ -222,7 +223,29 @@ export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3Sm
     runSequence += 1;
     return runSequence;
   };
-  const workItems = createInMemoryWorkItemService({ now: () => cuuR3SmokeNow });
+  const workItems = createInMemoryWorkItemService({
+    now: () => cuuR3SmokeNow,
+    async projectFileContext() {
+      return [{
+        name: "workhub-app-upload.txt",
+        path: "验收材料/workhub-app-upload.txt",
+        preview: "WorkHub desktop app upload smoke"
+      }];
+    },
+    async clarificationGenerator(input) {
+      return input.locale === "en-US"
+        ? {
+            title: "Confirm the acceptance basis for workhub-app-upload.txt",
+            body: `Request: ${input.workItem.rawDescription}\nProject file: ${input.files[0]?.path}`,
+            placeholder: "Name the acceptance rule and target reviewer."
+          }
+        : {
+            title: "请确认 workhub-app-upload.txt 的验收口径",
+            body: `需求：${input.workItem.rawDescription}\n项目文件：${input.files[0]?.path}`,
+            placeholder: "请补充验收口径和目标读者。"
+          };
+    }
+  });
   const pushBus = new InProcessPushBus();
   const baseQueue = createInMemoryAgentRunQueue({
     now: () => cuuR3SmokeNow,
@@ -251,6 +274,12 @@ export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3Sm
     : baseQueue;
   const auth = createAuth();
   const app = withErrors(new Hono<AuthEnv>());
+  app.use("/api/*", cors({
+    origin: (origin) => (!origin || origin === "tauri://localhost" ? (origin ?? "*") : null),
+    credentials: true,
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-YQGL-Client-Token", "X-WorkHub-Client-Token"]
+  }));
   app.get("/api/health", (c) =>
     c.json({
       ok: true,
@@ -274,6 +303,20 @@ export function createCuuR3SmokeApp(options: CuuR3SmokeAppOptions = {}): CuuR3Sm
       logRunStream: options.logRunStream === true
     });
     return c.json({ ok: true, data });
+  });
+  app.post("/api/approvals/:id/respond", async (c) => {
+    const payload = await c.req.json().catch(() => ({})) as { decision?: unknown; reason_md?: unknown; remember?: unknown };
+    const decision = payload.decision === "deny" ? "deny" : "allow";
+    return c.json({
+      ok: true,
+      data: {
+        id: c.req.param("id"),
+        status: "responded",
+        decision,
+        ...(typeof payload.reason_md === "string" ? { reason_md: payload.reason_md } : {}),
+        remember: payload.remember === "always" ? "always" : "once"
+      }
+    });
   });
   app.use("/api/*", async (c, next) => {
     const fault = cuuR3ApiFaultForRequest(apiFault, c.req.method, new URL(c.req.url).pathname);
@@ -556,17 +599,28 @@ export async function runCuuR3LauncherToRunSmoke(input: {
   locale?: CuuLocaleOptions["locale"] | undefined;
 }): Promise<CuuR3LauncherSmokeResult> {
   const locale = input.locale ?? "zh-CN";
-  const launcher = selectChip(createDesktopCuuAgentLauncherCard({ locale }), "document-draft");
+  const launcher = createDesktopCuuAgentLauncherCard({ locale });
+  const launcherDemand = locale === "en-US"
+    ? "Use the project drive file workhub-app-upload.txt to produce three acceptance points."
+    : "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。";
+  const clarificationAnswer = locale === "en-US"
+    ? "Use workhub-app-upload.txt as the acceptance basis for the QA reviewer."
+    : "以 workhub-app-upload.txt 的 smoke 记录作为验收口径，输出给验收同学。";
   assert.deepEqual(launcher.input, {
-    mode: "single_choice",
-    option_first: true,
-    free_text_enabled: false,
-    free_text_collapsed_by_default: true
+    mode: "long_text",
+    option_first: false,
+    free_text_enabled: true,
+    free_text_collapsed_by_default: false,
+    free_text_placeholder: locale === "en-US"
+      ? "Describe the request, e.g. use project drive files to draft three acceptance points."
+      : "写下需求，例如：根据项目网盘里的文件生成三条验收要点。",
+    free_text_max_length: 1200
   });
 
   const launcherAction = resolveDesktopCuuAction(firstActionHref(launcher), {
     actionId: "start_agent_from_cuu",
-    card: launcher
+    card: launcher,
+    freeText: launcherDemand
   });
   assert.ok(launcherAction, "Expected launcher card to resolve to a desktop Cuu action.");
   assert.equal(launcherAction.kind, "cuu-start-agent");
@@ -579,10 +633,10 @@ export async function runCuuR3LauncherToRunSmoke(input: {
   assert.equal(clarification.agentRun, undefined);
   assertSessionCard(clarification.card);
 
-  const scopeCard = selectChip(clarification.card, "document-draft");
-  const scopeAction = resolveDesktopCuuAction(firstActionHref(scopeCard), {
+  const scopeAction = resolveDesktopCuuAction(firstActionHref(clarification.card), {
     actionId: "submit_option",
-    card: scopeCard
+    card: clarification.card,
+    freeText: clarificationAnswer
   });
   assert.ok(scopeAction, "Expected scope question card to resolve to a desktop Cuu action.");
   assert.equal(scopeAction.kind, "session-next-question");
@@ -635,22 +689,17 @@ export async function runCuuR3LauncherToRunSmoke(input: {
     }
   });
   const planningNote = workItemReadback.workitem.planning_note ?? "";
-  assert.match(planningNote, /^selected_options: document-draft,create-workitem$/mu);
-  const launcherSpecLine = planningNote.split("\n").find((line) => line.startsWith("cuu_launcher_spec: "));
-  assert.ok(launcherSpecLine, "Expected Cuu launcher spec JSON in planning_note.");
-  const launcherSpec = cuuLauncherWorkItemSpecSchema.parse(
-    JSON.parse(launcherSpecLine.slice("cuu_launcher_spec: ".length))
-  );
-  assert.equal(launcherSpec.selected_options[0]?.id, "document-draft");
-  assert.equal(launcherSpec.selected_options[0]?.delivery_kind, "document_draft");
-  const launcherAcceptanceCount = workItemReadback.acceptance.filter((item) => {
+  assert.match(planningNote, /^selected_options: create-workitem$/mu);
+  assert.match(planningNote, /clarification_answers:/u);
+  assert.match(planningNote, new RegExp(clarificationAnswer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
+  const clarificationAcceptanceCount = workItemReadback.acceptance.filter((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       return false;
     }
-    const description = (item as { description?: unknown }).description;
-    return typeof description === "string" && description.includes("delivery_kind=document_draft");
+    const title = (item as { title?: unknown }).title;
+    return typeof title === "string" && /澄清回答|Clarification answer|项目文件|Project files/u.test(title);
   }).length;
-  assert.equal(launcherAcceptanceCount, 2);
+  assert.equal(clarificationAcceptanceCount >= 2, true);
 
   return {
     ok: true,
@@ -665,17 +714,17 @@ export async function runCuuR3LauncherToRunSmoke(input: {
       run: started.card?.payload_ref?.entity_type
     },
     launcher_input: {
-      mode: "single_choice",
-      option_first: true,
-      free_text_enabled: false
+      mode: "long_text",
+      option_first: false,
+      free_text_enabled: true
     },
     run_id: started.agentRun.run_id,
     status: apiReadback.status,
     stream_href: apiReadback.stream_href,
     stream_url: streamUrl,
     planning_note: workItemReadback.workitem.planning_note ?? null,
-    launcher_spec_delivery_kind: launcherSpec.selected_options[0]?.delivery_kind ?? "",
-    launcher_acceptance_count: launcherAcceptanceCount,
+    clarification_answer_in_planning_note: planningNote.includes(clarificationAnswer),
+    clarification_acceptance_count: clarificationAcceptanceCount,
     ...(input.apiBaseUrl ? { api_base_url: input.apiBaseUrl } : {})
   };
 }
@@ -697,7 +746,13 @@ function assertSessionCard(card: CuuCard | undefined): asserts card is CuuCard {
   assert.ok(card, "Expected Cuu session card.");
   assert.equal(card.payload_ref?.entity_type, "session");
   assert.equal(card.kind, "question");
-  assert.ok(card.chips?.length, "Expected Cuu session card to expose option chips.");
+  assert.ok(card.input, "Expected Cuu session card to expose an input policy.");
+  if (card.input.option_first) {
+    assert.ok(card.chips?.length, "Expected option-first Cuu session card to expose option chips.");
+  } else {
+    assert.equal(card.input.mode, "long_text");
+    assert.equal(card.input.free_text_enabled, true);
+  }
 }
 
 function assertRunCard(card: CuuCard | undefined, run: AgentRunLiveVM): asserts card is CuuCard {

@@ -162,6 +162,11 @@ export function actionHrefFromElement(element: HTMLElement) {
   return element.dataset.actionHref ?? element.dataset.href ?? "";
 }
 
+export function isNativeResourceLink(element: HTMLElement) {
+  const method = element.dataset.method?.toUpperCase();
+  return element.dataset.nativeResourceLink === "true" && method !== "POST" && method !== "PUT" && method !== "DELETE";
+}
+
 export function replaceCustomFieldPlaceholder(value: unknown, customValue: string): unknown {
   if (value === "__WORKHUB_CUSTOM_FIELD_VALUE__") {
     return customValue;

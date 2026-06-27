@@ -171,6 +171,40 @@ function errorCodeFrom(body: unknown, fallback: string) {
   return fallback;
 }
 
+function isFormDataBody(body: unknown): body is FormData {
+  return typeof FormData !== "undefined" && body instanceof FormData;
+}
+
+function hasDriveUploadBlob(payload: Parameters<WorkHubApiClient["uploadDriveFile"]>[1]): payload is Extract<Parameters<WorkHubApiClient["uploadDriveFile"]>[1], { file: Blob }> {
+  return Boolean(
+    "file" in payload &&
+      payload.file &&
+      typeof payload.file === "object" &&
+      typeof (payload.file as { arrayBuffer?: unknown }).arrayBuffer === "function"
+  );
+}
+
+function filenameFromBlob(file: Blob, fallback?: string) {
+  const named = (file as { name?: unknown }).name;
+  return fallback ?? (typeof named === "string" && named.trim() ? named : "upload.bin");
+}
+
+function driveUploadBody(payload: Parameters<WorkHubApiClient["uploadDriveFile"]>[1]): NonNullable<RequestInit["body"]> {
+  if (!hasDriveUploadBlob(payload)) {
+    return JSON.stringify(payload);
+  }
+  const form = new FormData();
+  form.set("file", payload.file, filenameFromBlob(payload.file, payload.filename));
+  const mime = payload.mime ?? payload.file.type;
+  if (mime) {
+    form.set("mime", mime);
+  }
+  if (payload.parsed_text) {
+    form.set("parsed_text", payload.parsed_text);
+  }
+  return form;
+}
+
 export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubApiClient {
   const fetchFn: FetchLike = options.fetchFn ?? fetch;
   const credentials = options.credentials ?? "include";
@@ -182,7 +216,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       headers.set("X-WorkHub-Client-Token", token);
       headers.set("X-YQGL-Client-Token", token);
     }
-    if (init.body && !headers.has("Content-Type")) {
+    if (init.body && !headers.has("Content-Type") && !isFormDataBody(init.body)) {
       headers.set("Content-Type", "application/json");
     }
 
@@ -425,7 +459,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
     uploadDriveFile: (projectId, payload, options) =>
       request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/files`, options), {
         method: "POST",
-        body: JSON.stringify(payload)
+        body: driveUploadBody(payload)
       }),
     deleteDriveItem: (projectId, itemId, payload = {}, options) =>
       request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/items/${encodeURIComponent(itemId)}/delete`, options), {

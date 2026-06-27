@@ -5,7 +5,7 @@ import { appleGlassDesignSystemCss, designSystem } from "./design-system.js";
 
 test("design system exposes scoped tokens under the .wh-ds root", () => {
   // 作用域隔离：所有 token 挂在 .wh-ds 上，绝不污染全局/共享 UI。
-  assert.match(appleGlassDesignSystemCss, /\.wh-ds\{[^}]*--ds-accent:\s*#5a45d8/u);
+  assert.match(appleGlassDesignSystemCss, /\.wh-ds\{[^}]*--ds-accent:\s*#0a84ff/u);
   assert.match(appleGlassDesignSystemCss, /--ds-glass:\s*rgba\(255,255,255,\.52\)/u);
   assert.match(appleGlassDesignSystemCss, /--ds-spring:\s*cubic-bezier\(\.34,1\.56,\.64,1\)/u);
   // SF 圆体字栈（Apple 味）。
@@ -31,8 +31,9 @@ test("design system ships interactive micro-interactions (hover lift + press)", 
   assert.match(appleGlassDesignSystemCss, /\.ds-pressable:active\{transform:scale\(\.94\)\}/u);
 });
 
-test("design system primary button uses the indigo→violet gradient", () => {
-  assert.match(appleGlassDesignSystemCss, /\.ds-btn-primary\{[^}]*linear-gradient\(135deg,#7c83ff,#b57bff\)/u);
+test("design system primary button uses Apple system blue glass instead of purple", () => {
+  assert.match(appleGlassDesignSystemCss, /\.ds-btn-primary\{[^}]*linear-gradient\(135deg,#0a84ff,#64d2ff\)/u);
+  assert.doesNotMatch(appleGlassDesignSystemCss, /#5a45d8|#7c83ff|#b57bff/u);
 });
 
 test("designSystem class contract matches the emitted CSS (no name drift)", () => {

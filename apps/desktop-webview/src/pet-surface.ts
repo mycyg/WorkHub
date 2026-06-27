@@ -1,7 +1,8 @@
-import { createApiClient } from "@workhub/api-client/client";
+import { WorkHubApiError, createApiClient } from "@workhub/api-client/client";
 import {
   cardFromAgentRunLive,
   cardFromAttentionItem,
+  cardFromProposalConflict,
   createCuuController,
   createCuuIdleScheduler,
   cuuBubbleKindForState,
@@ -20,7 +21,14 @@ import {
   type CuuLocaleOptions,
   type CuuMotionHint
 } from "@workhub/cuu";
-import { normalizeWorkHubLocale, workHubLocaleStorageKey, type AgentRunLiveVM, type WorkHubLocale } from "@workhub/contracts";
+import {
+  normalizeWorkHubLocale,
+  workHubLocaleStorageKey,
+  type AgentRunLiveVM,
+  type AttentionItem,
+  type ProposalConflict,
+  type WorkHubLocale
+} from "@workhub/contracts";
 
 import {
   renderDesktopCuuCatLive2DForIdleAction,
@@ -41,6 +49,7 @@ import {
 import {
   bindDesktopShellCuuRuntime,
   cardFromDesktopCuuRuntimeError,
+  createDesktopCuuAnalysisCard,
   createDesktopCuuAgentLauncherCard,
   resolveDesktopCuuAction,
   resolveDesktopShellEmitter,
@@ -108,9 +117,10 @@ type DesktopPetRestoreState =
     };
 
 export const desktopPetSurfaceCss = [
+  ":root{--wh-pet-font:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"Helvetica Neue\",\"PingFang SC\",\"Noto Sans CJK SC\",Arial,sans-serif;--wh-pet-accent:#0a84ff;--wh-pet-accent-strong:#0066cc;--wh-pet-ink:#1d1d1f;--wh-pet-muted:#6e6e73}",
   "html,body,#root{margin:0;width:100%;height:100%;background:rgba(0,0,0,0)!important;overflow:hidden}",
   "*,*::before,*::after{box-sizing:border-box}",
-  "body{font-family:\"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",\"Noto Sans CJK SC\",sans-serif;color:#222b38;background:rgba(0,0,0,0)!important}",
+  "body{font-family:var(--wh-pet-font);color:var(--wh-pet-ink);background:rgba(0,0,0,0)!important}",
   ".wh-pet-surface{position:relative;display:block;box-sizing:border-box;width:var(--wh-pet-window-w,260px);height:var(--wh-pet-window-h,340px);border:0;background:rgba(0,0,0,0)!important;box-shadow:none;pointer-events:none;overflow:hidden;opacity:var(--wh-pet-opacity,1)}",
   ".wh-pet-surface[data-pet-window-mode=card]{width:var(--wh-pet-window-w,520px);height:var(--wh-pet-window-h,720px)}",
   ".wh-pet-body{position:absolute;right:calc(4px * var(--wh-pet-scale,1));bottom:calc(4px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1));display:flex;align-items:flex-end;justify-content:center;border:0;background:rgba(0,0,0,0)!important;box-shadow:none;padding:0;margin:0;appearance:none;cursor:grab;pointer-events:none;opacity:var(--wh-pet-hide-opacity,1);transform:translate(calc(var(--wh-pet-avoid-x-px,0px) + var(--wh-pet-hide-x-px,0px)),calc(var(--wh-pet-avoid-y-px,0px) + var(--wh-pet-hide-y-px,0px))) scale(var(--wh-pet-hide-scale,1));transition:transform 160ms ease-out,opacity 160ms ease-out}",
@@ -123,13 +133,13 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-dragging=true] .wh-pet-body{cursor:grabbing}",
   ".wh-pet-surface[data-pet-hover-avoidance=soft]:not([data-pet-dragging=true]) .wh-pet-body{transition-duration:120ms}",
   ".wh-pet-surface[data-pet-hover-hidden=true] .wh-pet-body{transition-duration:140ms}",
-  ".wh-pet-bubble{position:absolute;right:calc(254px * var(--wh-pet-scale,1));bottom:calc(36px * var(--wh-pet-scale,1));box-sizing:border-box;width:min(286px,calc(100vw - 254px));min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;font-family:'M PLUS Rounded 1c','Noto Sans SC',inherit;border:1px solid rgba(255,255,255,.7);border-radius:16px;background:rgba(255,255,255,.72);box-shadow:0 22px 50px -18px rgba(70,54,140,.45),inset 0 1px 0 rgba(255,255,255,.7);padding:11px 13px;pointer-events:none;backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-pet-bubble{position:absolute;right:calc(254px * var(--wh-pet-scale,1));bottom:calc(36px * var(--wh-pet-scale,1));box-sizing:border-box;width:min(286px,calc(100vw - 254px));min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;font-family:var(--wh-pet-font);border:1px solid rgba(255,255,255,.74);border-radius:20px;background:linear-gradient(135deg,rgba(255,255,255,.82),rgba(255,255,255,.52));box-shadow:0 24px 64px -24px rgba(31,35,53,.38),inset 0 1px 0 rgba(255,255,255,.78);padding:11px 13px;pointer-events:none;backdrop-filter:blur(32px) saturate(185%);-webkit-backdrop-filter:blur(32px) saturate(185%);overflow-wrap:anywhere;word-break:break-word}",
   // R7.1 桌宠穿透修复：气泡/卡片容器本身改 pointer-events:none —— 浅蓝空白处的点击直接穿透到下方窗口
   // （之前整块 auto 把报价单挡住）。只有真正可点的子元素重新 auto：按钮 / 动作链接 / 选项 / 理由 / 输入框。
   // 惰性 <span class=wh-pet-chip|wh-pet-action> 标签不匹配 → 保持穿透；猫(.wh-pet-body)与右键菜单(.wh-pet-menu)
   // 是气泡的兄弟节点、不受影响。命中测试 closest 仍含 .wh-pet-bubble：落在按钮上时 closest 为真→接管，
   // 落在空白(now none)上时 elementFromPoint 穿过气泡返回透明底→closest 为 null→穿透。
-  ".wh-pet-bubble button,.wh-pet-bubble a[data-cuu-action-id],.wh-pet-bubble [data-pet-option-id],.wh-pet-bubble [data-pet-reason]{pointer-events:auto}",
+  ".wh-pet-bubble button,.wh-pet-bubble a[data-cuu-action-id],.wh-pet-bubble [data-pet-option-id],.wh-pet-bubble [data-pet-reason],.wh-pet-bubble [data-pet-free-text]{pointer-events:auto}",
   // M8/M11：Cuu 气泡此前是硬 DOM swap 出现（无入场过渡）。给它克制的纯 opacity 淡入——只动透明度、
   // 不动 transform/几何，避免影响穿透命中测试（命中走探针坐标，气泡本身 pointer-events:none）。
   "@keyframes wh-pet-bubble-in{from{opacity:0}to{opacity:1}}",
@@ -138,7 +148,7 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1));bottom:calc(48px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=bubble],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=offline],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=trace]{min-height:calc(268px * var(--wh-pet-scale,1))}",
-  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));min-height:0;max-height:min(calc(320px * var(--wh-pet-scale,1)),calc(100% - calc(400px * var(--wh-pet-scale,1))));overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-gutter:stable;gap:6px;padding:10px 12px 12px}",
+  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(72px * var(--wh-pet-scale,1));right:auto;bottom:calc(372px * var(--wh-pet-scale,1));width:calc(328px * var(--wh-pet-scale,1));max-width:calc(100% - calc(104px * var(--wh-pet-scale,1)));min-height:0;max-height:calc(336px * var(--wh-pet-scale,1));overflow:hidden;overscroll-behavior:none;scrollbar-width:none;gap:6px;padding:10px 12px 12px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-title{-webkit-line-clamp:2;font-size:13px;line-height:1.28}",
@@ -154,11 +164,11 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-kicker{display:flex;align-items:center;gap:7px;color:#667085;font-size:11px;font-weight:800;min-width:0;max-width:100%;flex-wrap:wrap}",
   ".wh-pet-dot{width:8px;height:8px;border-radius:999px;background:#ff9d58;box-shadow:0 0 0 3px rgba(255,157,88,.18)}",
   ".wh-pet-emotion{max-width:100%;color:#475467;font-size:10px;line-height:1;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-  ".wh-pet-bubble[data-pet-bubble-tone=approval]{background:rgba(255,247,228,.74);border-color:rgba(245,199,117,.55)}",
+  ".wh-pet-bubble[data-pet-bubble-tone=approval]{background:linear-gradient(135deg,rgba(255,249,235,.84),rgba(255,255,255,.54));border-color:rgba(255,190,92,.48)}",
   ".wh-pet-bubble[data-pet-bubble-tone=approval] .wh-pet-emotion{color:#a15c07}",
   ".wh-pet-bubble[data-pet-bubble-tone=approval] .wh-pet-dot{background:#e0892a;box-shadow:0 0 0 3px rgba(224,137,42,.18)}",
-  ".wh-pet-bubble[data-pet-bubble-tone=chat]{background:rgba(255,255,255,.72);border-color:rgba(255,255,255,.7)}",
-  ".wh-pet-bubble[data-pet-bubble-tone=search]{background:rgba(228,238,255,.74);border-color:rgba(124,131,255,.4)}",
+  ".wh-pet-bubble[data-pet-bubble-tone=chat]{background:linear-gradient(135deg,rgba(255,255,255,.82),rgba(255,255,255,.52));border-color:rgba(255,255,255,.72)}",
+  ".wh-pet-bubble[data-pet-bubble-tone=search]{background:linear-gradient(135deg,rgba(232,243,255,.84),rgba(255,255,255,.54));border-color:rgba(10,132,255,.28)}",
   ".wh-pet-bubble[data-pet-bubble-tone=search] .wh-pet-emotion{color:#1f6fb2}",
   ".wh-pet-bubble[data-pet-bubble-tone=search] .wh-pet-dot{background:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.18)}",
   ".wh-pet-bubble[data-pet-bubble-emotion=celebrating] .wh-pet-emotion{color:#15a05a}",
@@ -171,7 +181,7 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-progress{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin:0;padding:0;list-style:none;min-width:0;max-width:100%;width:100%}",
   ".wh-pet-progress-step{display:grid;gap:3px;min-width:0;color:#98a2b3;font-size:9px;font-weight:850;line-height:1.15}",
   ".wh-pet-progress-dot{height:4px;border-radius:8px;background:rgba(152,162,179,.24)}",
-  ".wh-pet-progress-step[data-state=done] .wh-pet-progress-dot,.wh-pet-progress-step[data-state=active] .wh-pet-progress-dot{background:#355cff}",
+  ".wh-pet-progress-step[data-state=done] .wh-pet-progress-dot,.wh-pet-progress-step[data-state=active] .wh-pet-progress-dot{background:var(--wh-pet-accent)}",
   ".wh-pet-progress-step[data-state=active]{color:#344054}",
   ".wh-pet-progress-label{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-pet-section{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;border-top:1px solid rgba(38,49,70,.1);padding-top:7px;min-width:0;max-width:100%;width:100%}",
@@ -181,28 +191,35 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-section-line,.wh-pet-surface[data-pet-card-has-context=true] .wh-pet-evidence-item{-webkit-line-clamp:1}",
   ".wh-pet-evidence{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;border-top:1px solid rgba(38,49,70,.1);padding-top:7px;min-width:0;max-width:100%;width:100%}",
   ".wh-pet-input-hint{border-top:1px solid rgba(38,49,70,.1);padding-top:7px;color:#667085}",
+  ".wh-pet-free-text{box-sizing:border-box;width:100%;min-height:62px;max-height:104px;resize:none;border:1px solid rgba(60,60,67,.14);border-radius:10px;background:rgba(255,255,255,.72);box-shadow:inset 0 1px 0 rgba(255,255,255,.72);padding:8px 9px;color:var(--wh-pet-ink);font:650 12px/1.36 var(--wh-pet-font);outline:none;overflow:auto}",
+  ".wh-pet-free-text:focus{border-color:rgba(10,132,255,.44);box-shadow:0 0 0 3px rgba(10,132,255,.13),inset 0 1px 0 rgba(255,255,255,.72)}",
+  ".wh-pet-free-text::placeholder{color:#8a93a3}",
+  ".wh-pet-surface[data-pet-card-kind=question] .wh-pet-progress{grid-template-columns:repeat(4,16px);width:auto;max-width:88px}",
+  ".wh-pet-surface[data-pet-card-kind=question] .wh-pet-progress-label{display:none}",
+  ".wh-pet-surface[data-pet-card-kind=question] .wh-pet-input-hint{display:none}",
   ".wh-pet-chips,.wh-pet-actions,.wh-pet-reasons{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start;min-width:0;max-width:100%;width:100%}",
-  ".wh-pet-chip,.wh-pet-action,.wh-pet-reason{box-sizing:border-box;min-width:0;max-width:100%;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:#fff;padding:6px 8px;color:#222b38;font:800 12px/1.2 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",\"Noto Sans CJK SC\",sans-serif;text-align:left;text-decoration:none;white-space:normal;overflow-wrap:anywhere;word-break:break-word;appearance:none}",
+  ".wh-pet-chip,.wh-pet-action,.wh-pet-reason{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;min-height:28px;min-width:0;max-width:100%;border:1px solid rgba(60,60,67,.14);border-radius:10px;background:rgba(255,255,255,.72);padding:6px 8px;color:var(--wh-pet-ink);font:760 12px/1.2 var(--wh-pet-font);text-align:left;text-decoration:none;white-space:normal;overflow-wrap:anywhere;word-break:break-word;appearance:none}",
+  ".wh-pet-action{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   ".wh-pet-chip[data-pet-option-first=true]{cursor:pointer;text-align:left}",
   ".wh-pet-chip[data-tone=success]{background:#f0faf6;border-color:rgba(22,163,74,.2);color:#067647}",
   ".wh-pet-chip[data-tone=warning]{background:#fff7ed;border-color:rgba(245,158,11,.26);color:#a15c07}",
   ".wh-pet-chip[data-tone=danger]{background:#fff4f3;border-color:rgba(238,107,95,.34);color:#b42318}",
-  ".wh-pet-chip[data-recommended=true]{border-color:rgba(53,92,255,.35);box-shadow:inset 3px 0 0 #355cff}",
-  ".wh-pet-chip[data-selected=true]{background:#eef4ff;border-color:#355cff;color:#2444bf}",
-  ".wh-pet-action[data-tone=primary],.wh-pet-reason{background:#355cff;border-color:#355cff;color:#fff}",
+  ".wh-pet-chip[data-recommended=true]{border-color:rgba(10,132,255,.34);box-shadow:inset 3px 0 0 var(--wh-pet-accent)}",
+  ".wh-pet-chip[data-selected=true]{background:rgba(10,132,255,.12);border-color:var(--wh-pet-accent);color:var(--wh-pet-accent-strong)}",
+  ".wh-pet-action[data-tone=primary],.wh-pet-reason{background:var(--wh-pet-accent);border-color:var(--wh-pet-accent);color:#fff}",
   // L10：「先不打回」是退路,不是第四个拒绝理由——用安静的白底次要样式，与蓝色理由按钮区分开。
   ".wh-pet-reason--cancel{background:#fff;border-color:rgba(38,49,70,.14);color:#5b6472;font-weight:700}",
   ".wh-pet-action[data-tone=danger]{background:#fff4f3;border-color:rgba(238,107,95,.34);color:#b42318}",
   ".wh-pet-status{min-width:0;max-width:100%;width:100%;margin:0;color:#344054;font-size:12px;line-height:1.45;font-weight:750;overflow-wrap:anywhere;word-break:break-word;white-space:normal}",
-  ".wh-pet-menu{position:absolute;right:88px;bottom:72px;z-index:8;box-sizing:border-box;width:164px;display:grid;gap:8px;border:1px solid rgba(38,49,70,.16);border-radius:8px;background:rgba(255,255,255,.96);box-shadow:0 18px 44px rgba(30,39,58,.2);padding:10px;pointer-events:auto;backdrop-filter:blur(10px);overflow:hidden}",
+  ".wh-pet-menu{position:absolute;right:88px;bottom:72px;z-index:8;box-sizing:border-box;width:164px;display:grid;gap:8px;border:1px solid rgba(255,255,255,.72);border-radius:14px;background:rgba(255,255,255,.78);box-shadow:0 18px 48px -18px rgba(31,35,53,.34),inset 0 1px 0 rgba(255,255,255,.78);padding:10px;pointer-events:auto;backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%);overflow:hidden}",
   ".wh-pet-menu[hidden]{display:none}",
   ".wh-pet-menu-title{font-size:12px;line-height:1.2;font-weight:900;color:#222b38}",
   ".wh-pet-menu-group{display:grid;gap:5px;min-width:0}",
   ".wh-pet-menu-label{font-size:10px;line-height:1.1;font-weight:900;color:#667085;text-transform:uppercase}",
   ".wh-pet-menu-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;min-width:0}",
-  ".wh-pet-menu button{min-width:0;max-width:100%;border:1px solid rgba(38,49,70,.14);border-radius:8px;background:#fff;color:#222b38;padding:6px 8px;font:850 11px/1.15 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer;min-height:28px;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-pet-menu button{min-width:0;max-width:100%;border:1px solid rgba(60,60,67,.14);border-radius:10px;background:rgba(255,255,255,.68);color:var(--wh-pet-ink);padding:6px 8px;font:760 11px/1.15 var(--wh-pet-font);cursor:pointer;min-height:28px;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
   ".wh-pet-menu-row button{width:auto;min-width:0;flex:1 1 0;padding-left:6px;padding-right:6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-  ".wh-pet-menu button[aria-pressed=true]{border-color:rgba(53,92,255,.34);background:#eef4ff;color:#2444bf;box-shadow:inset 3px 0 0 #355cff}",
+  ".wh-pet-menu button[aria-pressed=true]{border-color:rgba(10,132,255,.34);background:rgba(10,132,255,.12);color:var(--wh-pet-accent-strong);box-shadow:inset 3px 0 0 var(--wh-pet-accent)}",
   ".wh-pet-menu button[data-pet-menu-danger=true]{background:#fff4f3;border-color:rgba(238,107,95,.3);color:#b42318}",
   ".wh-pet-menu-action{width:100%;text-align:left}"
 ].join("");
@@ -312,16 +329,17 @@ export function renderDesktopPetSurface(input: {
   locale?: CuuLocaleOptions["locale"];
 } = {}): DesktopPetSurfaceRender {
   const locale = input.locale ?? desktopPetLocale();
-  const compactStatusOnly = !input.card && Boolean(input.status_text);
-  const compactCard = Boolean(input.card && input.window_mode_error) || compactStatusOnly;
+  const card = normalizeDesktopPetCard(input.card, locale);
+  const compactStatusOnly = !card && Boolean(input.status_text);
+  const compactCard = Boolean(card && input.window_mode_error) || compactStatusOnly;
   const windowMode = compactCard
     ? "body_only"
-    : desktopPetWindowModeForCard(input.card, { requested_model_pack_id: input.requested_model_pack_id });
+    : desktopPetWindowModeForCard(card, { requested_model_pack_id: input.requested_model_pack_id });
   const settings = input.pet_window_settings ?? defaultDesktopPetWindowSettings();
   const pointer = normalizeDesktopPetPointerSnapshot(input.pointer_snapshot ?? defaultDesktopPetPointerSnapshot());
   const pointerSmoothingAlpha = input.pointer_smoothing_alpha ?? desktopPetPointerSmoothingAlpha;
   const scaleRatio = settings.scale_percent / 100;
-  const hoverHidden = settings.hide_on_hover && pointer.hovered && !pointer.dragging && windowMode === "body_only" && !input.card;
+  const hoverHidden = settings.hide_on_hover && pointer.hovered && !pointer.dragging && windowMode === "body_only" && !card;
   const hideX = hoverHidden ? (pointer.avoidance_x || -0.45) * 42 * scaleRatio : 0;
   const hideY = hoverHidden ? (pointer.avoidance_y || 0.24) * 24 * scaleRatio : 0;
   const avoidX = hoverHidden ? pointer.avoidance_x * 22 * scaleRatio : 0;
@@ -331,12 +349,12 @@ export function renderDesktopPetSurface(input: {
     width: Math.round(baseWindowSize.width * scaleRatio),
     height: Math.round(baseWindowSize.height * scaleRatio)
   };
-  const motion = desktopPetVisibleMotion(input.card?.motion ?? cuuMotionForState("idle"), {
-    has_card: Boolean(input.card),
+  const motion = desktopPetVisibleMotion(card?.motion ?? cuuMotionForState("idle"), {
+    has_card: Boolean(card),
     compact_card: compactCard
   }, locale);
   const displayWidth = input.display_width_px ?? Math.round((compactCard ? 150 : 230) * scaleRatio);
-  const live2d = input.card
+  const live2d = card
     ? renderDesktopCuuCatLive2DForMotion(motion, {
         display_width_px: displayWidth,
         requested_model_pack_id: input.requested_model_pack_id
@@ -347,9 +365,9 @@ export function renderDesktopPetSurface(input: {
       });
   const visualMode = "live2d_cat";
   const suppressTransientCompactBubble = compactCard && input.window_mode_status === "syncing";
-  const bubble = !suppressTransientCompactBubble && (input.card || input.status_text || input.include_reject_reasons)
+  const bubble = !suppressTransientCompactBubble && (card || input.status_text || input.include_reject_reasons)
     ? renderDesktopPetBubble({
-        card: input.card,
+        card,
         status_text: input.status_text,
         include_reject_reasons: input.include_reject_reasons,
         compact: compactCard,
@@ -361,8 +379,8 @@ export function renderDesktopPetSurface(input: {
     requested_model_pack_id: input.requested_model_pack_id,
     hide_on_hover: settings.hide_on_hover
   });
-  const cardAttrs = input.card
-    ? ` data-pet-card-kind="${escapeHtml(input.card.kind)}" data-pet-card-priority="${escapeHtml(input.card.priority)}" data-pet-card-has-context="${petCardHasContext(input.card) ? "true" : "false"}"`
+  const cardAttrs = card
+    ? ` data-pet-card-kind="${escapeHtml(card.kind)}" data-pet-card-priority="${escapeHtml(card.priority)}" data-pet-card-has-context="${petCardHasContext(card) ? "true" : "false"}"`
     : "";
   const surfaceStyle = [
     `--wh-pet-scale:${scaleRatio}`,
@@ -415,6 +433,24 @@ export function desktopPetLocale(input?: unknown): WorkHubLocale {
     ?? target.localStorage?.getItem(workHubLocaleStorageKey)
     ?? target.navigator?.language
   );
+}
+
+export function replaceDesktopPetRootHtmlPreservingLive2DFrame(root: HTMLElement, html: string) {
+  const previousFrame = root.querySelector<HTMLIFrameElement>(".wh-cuu-cat-live2d-frame");
+  const previousFrameSrc = previousFrame?.getAttribute("src");
+  root.innerHTML = html;
+  const nextFrame = root.querySelector<HTMLIFrameElement>(".wh-cuu-cat-live2d-frame");
+  if (
+    previousFrame &&
+    previousFrameSrc &&
+    nextFrame &&
+    previousFrameSrc === nextFrame.getAttribute("src") &&
+    typeof nextFrame.replaceWith === "function"
+  ) {
+    nextFrame.replaceWith(previousFrame);
+    return true;
+  }
+  return false;
 }
 
 function renderDesktopPetSettingsMenu(input: {
@@ -669,13 +705,42 @@ function selectedOptionIdsFromCard(card: CuuCard | undefined) {
   return (card?.chips ?? []).filter((chip) => chip.selected).map((chip) => chip.id);
 }
 
-function primaryDesktopCuuAction(card: CuuCard, actionId: string): DesktopCuuActionRequest {
+function desktopPetMainRouteFromHref(href: string | null | undefined) {
+  const raw = href?.trim();
+  if (!raw || raw.startsWith("#") || /^javascript:/iu.test(raw)) {
+    return undefined;
+  }
+  try {
+    const parsed = new URL(raw, "tauri://localhost");
+    const hasScheme = /^[a-z][a-z\d+.-]*:/iu.test(raw);
+    const isRelative = !hasScheme || raw.startsWith("/");
+    const isTauriLocal = parsed.protocol === "tauri:" && (!parsed.hostname || parsed.hostname === "localhost");
+    const isWorkHubLocal =
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "workhub.local");
+    if (!isRelative && !isTauriLocal && !isWorkHubLocal) {
+      return undefined;
+    }
+    const route = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return /^\/(?:approvals|dashboard|drive|files|projects|settings|workitems|agent-runs|proposals)(?:[/?#]|$)/u.test(route)
+      ? route
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function desktopPetOpenMainRouteFallback(locale: WorkHubLocale) {
+  return locale === "en-US" ? "Cuu could not open this in WorkHub." : "Cuu 暂时打不开主窗口。";
+}
+
+function primaryDesktopCuuAction(card: CuuCard, actionId: string, freeText?: string): DesktopCuuActionRequest {
   const action = card.actions.find((candidate) => candidate.id === actionId);
   if (!action) {
     throw new Error(`Unable to find Cuu action ${actionId} for ${card.id}.`);
   }
   const resolved = action?.href
-    ? resolveDesktopCuuAction(action.href, { actionId: action.id, card })
+    ? resolveDesktopCuuAction(action.href, { actionId: action.id, card, freeText })
     : undefined;
   if (!resolved) {
     throw new Error(`Unable to resolve Cuu action ${actionId} for ${card.id}.`);
@@ -807,7 +872,7 @@ export async function bootDesktopPetSurface(
       window_mode_status: windowModeStatus,
       locale
     });
-    root.innerHTML = `${liquidGlassHeadHtml}<style>${surface.css}</style>${surface.html}`;
+    replaceDesktopPetRootHtmlPreservingLive2DFrame(root, `${liquidGlassHeadHtml}<style>${surface.css}</style>${surface.html}`);
     applyRunStreamStatusAttributes();
     writeDesktopPetQaDomSnapshot(root, "render");
     lastStructuralRenderKey = structuralRenderKey;
@@ -833,7 +898,7 @@ export async function bootDesktopPetSurface(
   };
 
   const setCard = (rawCard: CuuCard | undefined, status?: string, options: { persist?: boolean } = {}) => {
-    const card = stripUnsupportedPetActions(rawCard);
+    const card = normalizeDesktopPetCard(stripUnsupportedPetActions(rawCard), locale);
     const nextRunId = agentRunIdFromPetCard(card);
     if (runStreamSubscription && nextRunId !== runStreamSubscription.runId) {
       runStreamSubscription.close();
@@ -918,10 +983,39 @@ export async function bootDesktopPetSurface(
       const item = attention.primary ?? attention.queue[0];
       if (item) {
         const message = locale === "en-US" ? "You have a decision waiting" : "有一件待你拍板";
-        setCard(cardFromAttentionItem(item), message, { persist: false });
+        setCard(cardFromAttentionItem(item, { locale }), message, { persist: false });
       }
     } catch {
       // 拉不到就保持空闲，不打断。
+    }
+  }
+
+  const currentAttentionCardId = () => {
+    return currentCard?.payload_ref?.entity_type === "attention" ? currentCard.payload_ref.entity_id : undefined;
+  };
+
+  const visibleAttentionMessage = () => {
+    return locale === "en-US" ? "Decision list updated" : "待拍板已同步";
+  };
+
+  async function refreshVisibleAttentionCard() {
+    const currentId = currentAttentionCardId();
+    if (currentCard && !currentId) {
+      return;
+    }
+    try {
+      const attention = await client.pages.attention({ locale });
+      const items = [attention.primary, ...attention.queue].filter((item): item is AttentionItem => Boolean(item));
+      const next = currentId ? items.find((item) => item.id === currentId) ?? items[0] : items[0];
+      if (next) {
+        setCard(cardFromAttentionItem(next, { locale }), visibleAttentionMessage(), { persist: false });
+        return;
+      }
+      if (currentId) {
+        setCard(undefined, visibleAttentionMessage(), { persist: false });
+      }
+    } catch {
+      // 刷新失败不打断桌宠当前状态，下一次事件/轮询还会再同步。
     }
   }
 
@@ -936,6 +1030,22 @@ export async function bootDesktopPetSurface(
       return;
     }
     void Promise.resolve(sent).catch(() => undefined);
+  };
+
+  const openMainRouteFromPet = async (route: string) => {
+    if (petWindowBridge?.focusMainRoute) {
+      await petWindowBridge.focusMainRoute(route);
+      return;
+    }
+    if (shellEmitter?.emitTo) {
+      await shellEmitter.emitTo("main", "navigate", { route });
+      return;
+    }
+    if (shellEmitter?.emit) {
+      await shellEmitter.emit("navigate", { route });
+      return;
+    }
+    throw new Error("Desktop main route bridge is unavailable.");
   };
 
   const updatePetPreferences = (
@@ -956,16 +1066,21 @@ export async function bootDesktopPetSurface(
 
   async function startRunStreamQaScenario() {
     try {
-      const launcher = selectPetCardOption(createDesktopCuuAgentLauncherCard({ locale }), "document-draft").card;
+      const demand = "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。";
+      const clarificationAnswer = "以 workhub-app-upload.txt 的 smoke 记录作为验收标准，输出给验收同学。";
+      const launcher = createDesktopCuuAgentLauncherCard({ locale });
       setCard(launcher);
-      const launcherAction = primaryDesktopCuuAction(launcher, "start_agent_from_cuu");
+      const launcherAction = primaryDesktopCuuAction(launcher, "start_agent_from_cuu", demand);
+      if (launcherAction.kind !== "cuu-start-agent") {
+        throw new Error("run-stream QA expected a Cuu start action.");
+      }
+      setCard(createDesktopCuuAnalysisCard(launcherAction, { locale }), cuuT(locale, "cuuStart.analysisMessage"));
       const clarification = await submitDesktopCuuAction({ client, action: launcherAction, locale });
       if (!clarification.card) {
         throw new Error("run-stream QA expected a clarification card.");
       }
-      const scopeCard = selectPetCardOption(clarification.card, "document-draft").card;
-      setCard(scopeCard, clarification.message);
-      const scopeAction = primaryDesktopCuuAction(scopeCard, "submit_option");
+      setCard(clarification.card, clarification.message);
+      const scopeAction = primaryDesktopCuuAction(clarification.card, "submit_option", clarificationAnswer);
       const confirmation = await submitDesktopCuuAction({ client, action: scopeAction, locale });
       if (!confirmation.card) {
         throw new Error("run-stream QA expected a confirmation card.");
@@ -1131,10 +1246,15 @@ export async function bootDesktopPetSurface(
           reasonMd: reasonButton.dataset.petReason ?? cuuT(locale, "pet.reasonDefault"),
           locale
         });
-        setCard(result.card ?? fallbackCard, result.message);
-        subscribeToAgentRun(result);
+        if (!result.card && !result.agentRun) {
+          setCard(undefined, result.message);
+          void surfacePendingDecision();
+        } else {
+          setCard(result.card ?? fallbackCard, result.message);
+          subscribeToAgentRun(result);
+        }
       } catch (error) {
-        setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale));
+        setCard(cardFromDesktopPetActionError(error, locale), actionMessage(error, locale));
       } finally {
         petActionBusy = false;
       }
@@ -1160,13 +1280,26 @@ export async function bootDesktopPetSurface(
     if (!anchor) {
       return;
     }
+    if (anchor.dataset.cuuActionId === "restart_cuu") {
+      event.preventDefault();
+      pendingAction = undefined;
+      setCard(createDesktopCuuAgentLauncherCard({ locale }), cuuT(locale, "cuuStart.restartReady"), { persist: false });
+      return;
+    }
     if (
       (anchor.dataset.cuuActionId === "submit_option" || anchor.dataset.cuuActionId === "start_agent_from_cuu")
       && currentCard?.input
-      && (currentCard.chips?.length ?? 0) > 0
     ) {
+      const freeText = root.querySelector<HTMLTextAreaElement>("[data-pet-free-text]")?.value.trim() ?? "";
+      if (!currentCard.input.option_first && currentCard.input.free_text_enabled && !freeText) {
+        event.preventDefault();
+        statusText = cuuT(locale, "pet.input.textNeeded");
+        pendingAction = undefined;
+        render();
+        return;
+      }
       const selectedOptionIds = selectedOptionIdsFromCard(currentCard);
-      if (selectedOptionIds.length === 0) {
+      if (currentCard.input.option_first && (currentCard.chips?.length ?? 0) > 0 && selectedOptionIds.length === 0) {
         event.preventDefault();
         statusText = cuuT(locale, "pet.optionRequired");
         pendingAction = undefined;
@@ -1177,16 +1310,30 @@ export async function bootDesktopPetSurface(
     const action = resolveDesktopCuuAction(anchor.getAttribute("href") ?? "", {
       actionId: anchor.dataset.cuuActionId,
       requiresReason: anchor.dataset.requiresReason === "true",
-      card: currentCard
+      card: currentCard,
+      freeText: root.querySelector<HTMLTextAreaElement>("[data-pet-free-text]")?.value.trim()
     });
     if (!action) {
+      const route = desktopPetMainRouteFromHref(anchor.getAttribute("href"));
+      if (route) {
+        event.preventDefault();
+        try {
+          await openMainRouteFromPet(route);
+        } catch {
+          statusText = desktopPetOpenMainRouteFallback(locale);
+          render();
+        }
+      }
       return;
     }
     event.preventDefault();
     // findings[30]：reason 收集触发要与 approvalDecisionFromAction 的 deny 判定一致（关键词集 OR requiresReason），
     // 而不是只看 requiresReason 标志——否则一个 requiresReason=false 的 deny 会跳过 reason 提示，到 /respond 时
     // 因缺 reason 在客户端抛错。凡 deny 一律先走 reason 提示。
-    if (action.kind === "approval-response" && action.decision === "deny") {
+    if (
+      (action.kind === "approval-response" && action.decision === "deny") ||
+      (action.kind === "proposal-review" && action.decision === "request_changes")
+    ) {
       pendingAction = action;
       statusText = cuuT(locale, "pet.reasonRequired");
       render();
@@ -1198,6 +1345,9 @@ export async function bootDesktopPetSurface(
     petActionBusy = true;
     // findings[#low]：同上——捕获 await 前的卡片做兜底，避免 await 期间 currentCard 被改写。
     const fallbackCard = currentCard;
+    if (action.kind === "cuu-start-agent") {
+      setCard(createDesktopCuuAnalysisCard(action, { locale }), cuuT(locale, "cuuStart.analysisMessage"));
+    }
     try {
       const result = await submitDesktopCuuAction({ client, action, locale });
       if (!result.card && !result.agentRun) {
@@ -1210,7 +1360,7 @@ export async function bootDesktopPetSurface(
         subscribeToAgentRun(result);
       }
     } catch (error) {
-      setCard(cardFromDesktopCuuRuntimeError(error, { locale }), actionMessage(error, locale));
+      setCard(cardFromDesktopPetActionError(error, locale), actionMessage(error, locale));
     } finally {
       petActionBusy = false;
     }
@@ -1258,6 +1408,14 @@ export async function bootDesktopPetSurface(
   });
   if (typeof maybeTrayActionUnlisten === "function") {
     trayActionUnlisten = maybeTrayActionUnlisten;
+  }
+
+  let attentionRefreshUnlisten: DesktopShellUnlisten | undefined;
+  const maybeAttentionRefreshUnlisten = await shellListen?.("attention-refresh", () => {
+    void refreshVisibleAttentionCard();
+  });
+  if (typeof maybeAttentionRefreshUnlisten === "function") {
+    attentionRefreshUnlisten = maybeAttentionRefreshUnlisten;
   }
 
   const runtime = await bindDesktopShellCuuRuntime({
@@ -1406,6 +1564,7 @@ export async function bootDesktopPetSurface(
       runStreamSubscription?.close();
       petSettingsUnlisten?.();
       trayActionUnlisten?.();
+      attentionRefreshUnlisten?.();
       await runtime.dispose();
     }
   };
@@ -1557,6 +1716,8 @@ function renderDesktopPetBubble(input: {
       : "";
   const chips = compact ? "" : (card?.chips ?? []).slice(0, 4).map((chip) => renderPetChip(chip, card)).join("");
   const actions = (card?.actions ?? []).slice(0, compact ? 1 : 3).map(renderPetAction).join("");
+  const liftActionsBeforeOptions = shouldLiftPetActionsBeforeOptions(card, compact);
+  const freeText = !compact && card?.input ? renderPetFreeText(card.input, locale) : "";
   const progress = !compact && card?.progress?.length ? renderPetProgress(card.progress) : "";
   const sections = !compact && card?.sections?.length ? renderPetSections(card.sections) : "";
   const evidence = !compact && card?.evidence_refs?.length ? renderPetEvidence(card.evidence_refs, locale) : "";
@@ -1572,7 +1733,7 @@ function renderDesktopPetBubble(input: {
   // L#82：离线整卡（非 compact）时精灵已重映射为 worried，气泡情绪也用同一有效态，避免"忧虑猫 + 待命气泡"不一致。
   const effectiveState = card && !compact && card.state === "offline" ? "worried" : card?.state;
   const emotion = effectiveState ? cuuEmotionForState(effectiveState) : undefined;
-  const tone = effectiveState ? cuuBubbleKindForState(effectiveState) : undefined;
+  const tone = effectiveState ? petBubbleToneForCard(card, effectiveState) : undefined;
   const emotionAttrs = emotion && tone ? ` data-pet-bubble-emotion="${emotion}" data-pet-bubble-tone="${tone}"` : "";
   const emotionLabel = emotion && !compact ? `<span class="wh-pet-emotion">${escapeHtml(petEmotionLabel(emotion, locale))}</span>` : "";
   return `<aside class="wh-pet-bubble" data-pet-bubble="true" role="status" aria-live="polite" aria-atomic="true"${transientAttrs} ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}${emotionAttrs}${payloadAttrs}>
@@ -1581,8 +1742,10 @@ function renderDesktopPetBubble(input: {
     ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}
     ${input.status_text && (!compact || !card) && !suppressStatusForContext ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}
     ${input.window_mode_error && !actions ? `<p class="wh-pet-status">${escapeHtml(input.window_mode_error)}</p>` : ""}
+    ${liftActionsBeforeOptions && actions ? `<div class="wh-pet-actions">${actions}</div>` : ""}
     ${chips ? `<div class="wh-pet-chips">${chips}</div>` : ""}
-    ${actions ? `<div class="wh-pet-actions">${actions}</div>` : ""}
+    ${freeText}
+    ${!liftActionsBeforeOptions && actions ? `<div class="wh-pet-actions">${actions}</div>` : ""}
     ${reasons}
     ${context ? `<div class="wh-pet-context" data-pet-context="true">${context}</div>` : ""}
   </aside>`;
@@ -1590,6 +1753,23 @@ function renderDesktopPetBubble(input: {
 
 function petCardHasContext(card: CuuCard) {
   return Boolean(card.sections?.length || card.progress?.length || card.input || card.evidence_refs?.length);
+}
+
+function petBubbleToneForCard(card: CuuCard | undefined, state: CuuCard["state"]): CuuBubbleKind {
+  if (card?.kind === "question") {
+    return "search";
+  }
+  return cuuBubbleKindForState(state);
+}
+
+function shouldLiftPetActionsBeforeOptions(card: CuuCard | undefined, compact: boolean) {
+  return Boolean(
+    card &&
+    !compact &&
+    card.kind === "question" &&
+    card.actions.length > 0 &&
+    (card.chips ?? []).some((chip) => chip.selected)
+  );
 }
 
 function shouldSuppressPetStatusForContext(card: CuuCard | undefined, compact: boolean, context: string) {
@@ -1677,6 +1857,15 @@ function renderPetInputHint(input: NonNullable<CuuCard["input"]>, locale: WorkHu
   return `<div class="wh-pet-input-hint" data-pet-input-mode="${escapeHtml(input.mode)}" data-pet-option-first="${input.option_first ? "true" : "false"}" data-pet-free-text-collapsed="${input.free_text_collapsed_by_default ? "true" : "false"}">${escapeHtml(text)}</div>`;
 }
 
+function renderPetFreeText(input: NonNullable<CuuCard["input"]>, locale: WorkHubLocale) {
+  if (!input.free_text_enabled || input.option_first) {
+    return "";
+  }
+  const placeholder = input.free_text_placeholder ?? cuuT(locale, "pet.input.textNeeded");
+  const maxLength = input.free_text_max_length ? ` maxlength="${escapeHtml(String(input.free_text_max_length))}"` : "";
+  return `<textarea class="wh-pet-free-text" data-pet-free-text="true" data-pet-input-mode="${escapeHtml(input.mode)}" data-pet-option-first="${input.option_first ? "true" : "false"}" placeholder="${escapeHtml(placeholder)}"${maxLength} aria-label="${escapeHtml(placeholder)}"></textarea>`;
+}
+
 function evidenceLabel(ref: NonNullable<CuuCard["evidence_refs"]>[number]) {
   const locator = ref.locator?.path ?? (ref.locator?.page ? `p.${ref.locator.page}` : ref.locator?.sheet ?? "");
   return locator ? `${ref.title} · ${locator}` : ref.title;
@@ -1741,6 +1930,65 @@ function clientToken() {
 
 function agentRunIdFromPetCard(card: CuuCard | undefined) {
   return card?.payload_ref?.entity_type === "agent_run" ? card.payload_ref.entity_id : undefined;
+}
+
+function normalizeDesktopPetCard(card: CuuCard | undefined, locale: WorkHubLocale) {
+  if (!card) {
+    return card;
+  }
+  let next = card;
+  if (card.kind === "question" && card.input?.mode === "long_text") {
+    const submitLabel = cuuT(locale, "question.submitAnswer");
+    const actions = card.actions.map((action) =>
+      action.id === "submit_option" && action.label !== submitLabel ? { ...action, label: submitLabel } : action
+    );
+    if (!actions.every((action, index) => action === card.actions[index])) {
+      next = { ...next, actions };
+    }
+  }
+  if (isDesktopPetProposalCard(next)) {
+    const openLabel = cuuT(locale, "proposal.openReview");
+    const actions = next.actions.map((action) =>
+      (action.id === "open" || action.id === "open_proposal" || action.id === "view") && action.label !== openLabel
+        ? { ...action, label: openLabel }
+        : action
+    );
+	    const message = desktopPetPublicProposalSummary(next.message, locale);
+	    const title = desktopPetPublicProposalTitle(next.title, locale);
+	    const sections = (next.sections ?? []).filter((section) => section.id !== "summary");
+	    next = {
+	      ...next,
+	      title,
+	      message,
+	      actions,
+	      sections
+	    };
+  }
+  return next;
+}
+
+function isDesktopPetProposalCard(card: CuuCard) {
+  return card.kind === "proposal" ||
+    card.payload_ref?.entity_type === "proposal" ||
+    card.source?.entity_type === "proposal";
+}
+
+function desktopPetStripProposalOpenedPrefix(text: string) {
+  return text.replace(/^(?:AI|Cuu)\s*已(?:生成|创建|准备好)?变更申请[：:\s]+/iu, "").trim();
+}
+
+function desktopPetIsModelSelfNarration(text: string) {
+  return /deliverable is written|(?:deliverable|file) looks (?:good and )?complete|well-structured|let me now provide|summary in chinese|as require|接下来我|我会先|我已经|完成了?[。.!！\s]*(?:让?我来?|接下来我|我(?:会|要|将|可以|已经)).{0,24}(?:总结|说明|整理|输出|回复)/iu.test(text);
+}
+
+function desktopPetPublicProposalTitle(title: string, locale: WorkHubLocale) {
+  const compact = desktopPetStripProposalOpenedPrefix(title).replace(/\s+/g, " ").trim();
+  return !compact || desktopPetIsModelSelfNarration(compact) ? cuuT(locale, "proposal.reviewTitle") : compact;
+}
+
+function desktopPetPublicProposalSummary(message: string, locale: WorkHubLocale) {
+  const compact = desktopPetStripProposalOpenedPrefix(message).replace(/\s+/g, " ").trim();
+  return !compact || desktopPetIsModelSelfNarration(compact) ? cuuT(locale, "proposal.summaryFallback") : compact;
 }
 
 function desktopPetAgentRunIsActive(run: AgentRunLiveVM) {
@@ -1842,6 +2090,22 @@ function isRestorableCuuSessionCard(value: unknown, sessionId: string): value is
 
 function actionMessage(error: unknown, locale: WorkHubLocale) {
   return error instanceof Error ? error.message : cuuT(locale, "pet.actionFail");
+}
+
+function proposalConflictCardFromApiError(error: unknown, locale: WorkHubLocale) {
+  if (!(error instanceof WorkHubApiError) || error.code !== "merge_conflict") {
+    return undefined;
+  }
+  const details = error.details as { conflicts?: unknown[] } | undefined;
+  const conflict = details?.conflicts?.[0];
+  if (!conflict || typeof conflict !== "object") {
+    return undefined;
+  }
+  return cardFromProposalConflict(conflict as ProposalConflict, { locale });
+}
+
+function cardFromDesktopPetActionError(error: unknown, locale: WorkHubLocale) {
+  return proposalConflictCardFromApiError(error, locale) ?? cardFromDesktopCuuRuntimeError(error, { locale });
 }
 
 function desktopPetQaScenarioStartsRunApiFlow(scenario: ReturnType<typeof desktopPetQaScenarioFromGlobal>) {

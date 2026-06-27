@@ -1413,15 +1413,21 @@ async function recordMergeProposals(
     mergeAttemptId: string;
     conflicts: ProposalMergeConflict[];
     acceptedTargetKeys: string[];
+    keptCurrentTargetKeys?: string[];
     candidateSupplements?: MergeProposalCandidateSupplement[];
     actor?: ProposalRepositoryActor;
     at: Date;
   }
 ) {
   const acceptedTargetKeys = new Set(input.acceptedTargetKeys);
+  const keptCurrentTargetKeys = new Set(input.keptCurrentTargetKeys ?? []);
   const supplements = supplementsByConflictKey(input.candidateSupplements);
   for (const conflict of input.conflicts) {
-    const chosen = acceptedTargetKeys.has(conflict.target_key) ? "accept_incoming" : undefined;
+    const chosen = acceptedTargetKeys.has(conflict.target_key)
+      ? "accept_incoming"
+      : keptCurrentTargetKeys.has(conflict.target_key)
+        ? "keep_current"
+        : undefined;
     const supplement = supplements.get(conflict.target_key);
     await tx.insert(mergeProposals).values({
       id: randomUUID(),
@@ -2610,7 +2616,11 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           return;
         }
         const acceptedIncomingTargetKeyList = [...new Set(input.acceptIncomingTargetKeys ?? [])];
+        const keptCurrentTargetKeyList = input.bulkAction?.action === "keep_current"
+          ? [...new Set(input.bulkAction.targetKeys)]
+          : [];
         const acceptIncomingTargetKeys = new Set(acceptedIncomingTargetKeyList);
+        const keepCurrentTargetKeys = new Set(keptCurrentTargetKeyList);
         const targetKeys = proposal.diffManifest.changes.map(targetKey);
         const currentByTargetKey = new Map<string, AcceptedDeliverableChangeRow | null>();
         const conflicts: ProposalMergeConflict[] = [];
@@ -2630,6 +2640,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             });
             if (conflict) {
               if (acceptIncomingTargetKeys.has(conflict.target_key)) {
+                resolvedConflicts.push(conflict);
+              } else if (keepCurrentTargetKeys.has(conflict.target_key)) {
                 resolvedConflicts.push(conflict);
               } else {
                 conflicts.push(conflict);
@@ -2654,6 +2666,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             mergeAttemptId,
             conflicts,
             acceptedTargetKeys: acceptedIncomingTargetKeyList,
+            keptCurrentTargetKeys: keptCurrentTargetKeyList,
             ...(input.candidateSupplements ? { candidateSupplements: input.candidateSupplements } : {}),
             ...(input.actor ? { actor: input.actor } : {}),
             at
@@ -2723,6 +2736,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           mergeAttemptId,
           conflicts: resolvedConflicts,
           acceptedTargetKeys: acceptedIncomingTargetKeyList,
+          keptCurrentTargetKeys: keptCurrentTargetKeyList,
           ...(input.candidateSupplements ? { candidateSupplements: input.candidateSupplements } : {}),
           ...(input.actor ? { actor: input.actor } : {}),
           at
@@ -2775,6 +2789,9 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         const acceptedRows: string[] = [];
         for (const change of proposal.diffManifest.changes) {
           const key = targetKey(change);
+          if (keepCurrentTargetKeys.has(key)) {
+            continue;
+          }
           const current = currentByTargetKey.get(key) ?? null;
           if (current) {
             const superseded = await tx

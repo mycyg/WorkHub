@@ -73,6 +73,7 @@ test("capabilityForShellRoute maps tray/deep-link/pet routes to capabilities", (
   // 前缀匹配带 id 的详情路由。
   assert.equal(capabilityForShellRoute("/workitems/abc-123"), "workitem");
   assert.equal(capabilityForShellRoute("/drive?project_id=x"), "drive");
+  assert.equal(capabilityForShellRoute("/p/project-7"), "projects");
   assert.equal(capabilityForShellRoute("/dashboard/cost"), "cost");
   // 回主页或无匹配 → undefined（控制器据此回 launcher）。
   assert.equal(capabilityForShellRoute("/"), undefined);
@@ -86,6 +87,7 @@ test("entityIdFromShellRoute extracts the target entity id for deep-links (rank1
   assert.equal(entityIdFromShellRoute("/agent-runs/run-9/extra"), "run-9");
   // 带 URL 编码的段要解码。
   assert.equal(entityIdFromShellRoute("/workitems/a%20b"), "a b");
+  assert.equal(entityIdFromShellRoute("/p/project-7"), "project-7");
   // 无路径 id 时回退查询参数（如网盘 project_id）。
   assert.equal(entityIdFromShellRoute("/drive?project_id=p1"), "p1");
   // 列表路由 / 无 id / 回主页 → undefined。

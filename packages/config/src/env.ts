@@ -108,7 +108,7 @@ export const envSchema = z.object({
   AGENT_RUN_ALLOW_UNSANDBOXED_COMMANDS: booleanString.default(false),
   AGENT_RUN_SKILL_CURATION_ENABLED: booleanString.default(false),
   AGENT_RUN_SKILL_CURATION_INTERVAL_MS: z.coerce.number().int().min(0).default(86400000),
-  AGENT_RUN_PROJECT_HYDRATE_ENABLED: booleanString.default(false),
+  AGENT_RUN_PROJECT_HYDRATE_ENABLED: booleanString.default(true),
   AGENT_RUN_PROJECT_HYDRATE_MAX_FILES: z.coerce.number().int().positive().default(200),
   AGENT_RUN_PROJECT_HYDRATE_MAX_BYTES: z.coerce.number().int().positive().default(33554432)
 });

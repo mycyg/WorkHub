@@ -38,11 +38,13 @@ test("F03 type conversion matrix captures the SQLite to PostgreSQL audit targets
 });
 
 test("project code allocation uses an atomic update-returning result", async () => {
+  const responses = [
+    { rows: [{ slug: "demo-project", next_seq: 7 }] },
+    { rows: [] }
+  ];
   const allocation = await allocateProjectCode(
     {
-      execute: async () => ({
-        rows: [{ slug: "demo-project", next_seq: 7 }]
-      })
+      execute: async () => responses.shift() ?? { rows: [] }
     },
     "11111111-1111-4111-8111-111111111111"
   );
@@ -50,6 +52,24 @@ test("project code allocation uses an atomic update-returning result", async () 
   assert.equal(formatProjectCode("demo-project", 7), "DEMOPROJECT-007");
   assert.equal(allocation.code, "DEMOPROJECT-007");
   assert.equal(allocation.sequence, 7);
+});
+
+test("project code allocation skips globally used work item codes", async () => {
+  const responses = [
+    { rows: [{ slug: "cuu-plan-mode-qa", next_seq: 1 }] },
+    { rows: [{ exists: 1 }] },
+    { rows: [{ slug: "cuu-plan-mode-qa", next_seq: 2 }] },
+    { rows: [] }
+  ];
+  const allocation = await allocateProjectCode(
+    {
+      execute: async () => responses.shift() ?? { rows: [] }
+    },
+    "11111111-1111-4111-8111-111111111111"
+  );
+
+  assert.equal(allocation.code, "CUUPLANMODEQ-002");
+  assert.equal(allocation.sequence, 2);
 });
 
 test("default seed fixture links org, workspace, owner, and project", () => {

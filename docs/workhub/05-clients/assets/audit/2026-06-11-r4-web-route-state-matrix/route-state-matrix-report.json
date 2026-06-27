@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-15T07:51:24.371Z",
+  "generated_at": "2026-06-19T16:43:46.798Z",
   "module": "R4.1 Web route-state matrix",
   "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-route-state-matrix",
@@ -26,6 +26,7 @@
     "replay",
     "cost",
     "knowledge",
+    "skills",
     "settings"
   ],
   "required_states": [
@@ -67,6 +68,7 @@
           "replay": 0,
           "cost": 0,
           "knowledge": 0,
+          "skills": 0,
           "settings": 0
         },
         "readyPanels": 9,
@@ -74,8 +76,8 @@
         "enCopy": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1350,
-        "scrollWidth": 1350,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
         "horizontalOverflow": false
       }
     },
@@ -111,6 +113,7 @@
           "replay": 0,
           "cost": 0,
           "knowledge": 0,
+          "skills": 0,
           "settings": 0
         },
         "readyPanels": 9,
@@ -118,8 +121,8 @@
         "enCopy": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 485,
-        "scrollWidth": 485,
+        "clientWidth": 500,
+        "scrollWidth": 500,
         "horizontalOverflow": false
       }
     },
@@ -134,12 +137,12 @@
       "html": "states-zh-desktop.html",
       "screenshot": "states-zh-desktop.png",
       "markers": {
-        "routeStateCards": 56,
+        "routeStateCards": 60,
         "routeStates": {
-          "loading": 14,
-          "empty": 14,
-          "error": 14,
-          "forbidden": 14
+          "loading": 15,
+          "empty": 15,
+          "error": 15,
+          "forbidden": 15
         },
         "routeKeys": {
           "home": 5,
@@ -155,6 +158,7 @@
           "replay": 5,
           "cost": 5,
           "knowledge": 5,
+          "skills": 5,
           "settings": 5
         },
         "readyPanels": 0,
@@ -162,8 +166,8 @@
         "enCopy": false,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 1350,
-        "scrollWidth": 1350,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
         "horizontalOverflow": false
       }
     },
@@ -178,12 +182,12 @@
       "html": "states-en-mobile.html",
       "screenshot": "states-en-mobile.png",
       "markers": {
-        "routeStateCards": 56,
+        "routeStateCards": 60,
         "routeStates": {
-          "loading": 14,
-          "empty": 14,
-          "error": 14,
-          "forbidden": 14
+          "loading": 15,
+          "empty": 15,
+          "error": 15,
+          "forbidden": 15
         },
         "routeKeys": {
           "home": 5,
@@ -199,6 +203,7 @@
           "replay": 5,
           "cost": 5,
           "knowledge": 5,
+          "skills": 5,
           "settings": 5
         },
         "readyPanels": 0,
@@ -206,8 +211,8 @@
         "enCopy": true,
         "cuuLeak": 0,
         "kanbanLeak": 0,
-        "clientWidth": 485,
-        "scrollWidth": 485,
+        "clientWidth": 500,
+        "scrollWidth": 500,
         "horizontalOverflow": false
       }
     }

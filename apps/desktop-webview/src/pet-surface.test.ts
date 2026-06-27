@@ -2,8 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { WorkHubApiError } from "@workhub/api-client";
-import { cardFromAgentRunLive, createCuuIdleScheduler, cuuMotionForState, type CuuCard } from "@workhub/cuu";
-import type { AgentRunLiveVM, SessionVM, WorkItemDetailVM } from "@workhub/contracts";
+import { cardFromAgentRunLive, cardFromAttentionItem, createCuuIdleScheduler, cuuMotionForState, type CuuCard } from "@workhub/cuu";
+import {
+  eventTypes,
+  type AgentRunLiveVM,
+  type AttentionItem,
+  type ProposalConflict,
+  type SessionVM,
+  type WorkItemDetailVM
+} from "@workhub/contracts";
 
 import {
   cardFromDesktopCuuRuntimeError,
@@ -23,6 +30,7 @@ import {
   desktopPetPointerSmoothingAlpha,
   desktopPetRunRestoreStorageKey,
   renderDesktopPetSurface,
+  replaceDesktopPetRootHtmlPreservingLive2DFrame,
   resolveDesktopSurface,
   scheduleDesktopPetFirstPaint,
   type DesktopPetSurfaceClient
@@ -36,6 +44,15 @@ import {
   pointerPatchFromEvent,
   resolveDesktopPetWindowBridge
 } from "./pet-window-bridge.js";
+
+function shellPayload(event: string, data: unknown) {
+  return {
+    event,
+    data: JSON.stringify(data),
+    stream_kind: "me",
+    stream_path: "/api/push/stream/me"
+  };
+}
 
 test("desktop pet locale accepts QA injection without overriding explicit locale", () => {
   const target = globalThis as typeof globalThis & {
@@ -71,6 +88,44 @@ test("desktop pet locale accepts QA injection without overriding explicit locale
       value: originalNavigator
     });
   }
+});
+
+test("desktop pet root replacement preserves the same Live2D iframe to avoid flicker", () => {
+  const previousFrame = {
+    getAttribute(name: string) {
+      return name === "src" ? "./cuu/live2d/hijiki/cuu-hijiki.html" : null;
+    }
+  };
+  let replacedWith: unknown;
+  const nextFrame = {
+    getAttribute(name: string) {
+      return name === "src" ? "./cuu/live2d/hijiki/cuu-hijiki.html" : null;
+    },
+    replaceWith(node: unknown) {
+      replacedWith = node;
+    }
+  };
+  let rendered = false;
+  let assignedHtml = "";
+  const root = {
+    get innerHTML() {
+      return assignedHtml;
+    },
+    set innerHTML(value: string) {
+      assignedHtml = value;
+      rendered = true;
+    },
+    querySelector(selector: string) {
+      if (selector !== ".wh-cuu-cat-live2d-frame") {
+        return null;
+      }
+      return rendered ? nextFrame : previousFrame;
+    }
+  } as unknown as HTMLElement;
+
+  assert.equal(replaceDesktopPetRootHtmlPreservingLive2DFrame(root, "<section>next</section>"), true);
+  assert.equal(assignedHtml, "<section>next</section>");
+  assert.equal(replacedWith, previousFrame);
 });
 
 function approvalCard(): CuuCard {
@@ -218,28 +273,19 @@ function petHarnessSession(stage: "scope" | "confirm"): SessionVM {
           id: "10000000-0000-4000-8000-000000000211",
           session_id: sessionId,
           work_item_id: sessionId,
-          title: "这件事先按哪种交付方式处理？",
-          body: "Cuu 会先按你点选的交付方向继续。",
-          input_mode: "single_choice",
-          options: [
-            {
-              id: "document-draft",
-              label: "文档/方案草稿",
-              description: "周报、方案、PR 式变更说明",
-              icon: "file-text"
-            },
-            {
-              id: "structured-data",
-              label: "结构化数据",
-              description: "JSON、YAML、CSV 或表格分析",
-              icon: "table"
-            }
-          ],
-          recommended_option_ids: ["document-draft"],
-          free_text: { enabled: true, collapsed_by_default: true, max_length: 300 },
+          title: "请确认 workhub-app-upload.txt 的验收口径",
+          body: "AI 已读取需求和项目网盘文件，需要你确认最终按哪条验收标准输出三条要点。",
+          input_mode: "long_text",
+          options: [],
+          free_text: {
+            enabled: true,
+            collapsed_by_default: false,
+            placeholder: "例如：以 workhub-app-upload.txt 的 smoke 记录为依据，输出给验收同学。",
+            max_length: 300
+          },
           progress: [
             { key: "intent", label: "需求", state: "done" },
-            { key: "scope", label: "口径", state: "active" },
+            { key: "scope", label: "澄清", state: "active" },
             { key: "confirm", label: "确认", state: "pending" },
             { key: "run", label: "执行", state: "pending" }
           ],
@@ -338,10 +384,10 @@ function selectHarnessOption(card: CuuCard, optionId: string): CuuCard {
   };
 }
 
-function resolveHarnessAction(card: CuuCard, actionId: string) {
+function resolveHarnessAction(card: CuuCard, actionId: string, freeText?: string) {
   const action = card.actions.find((candidate) => candidate.id === actionId);
   assert.ok(action?.href);
-  const resolved = resolveDesktopCuuAction(action.href, { actionId: action.id, card });
+  const resolved = resolveDesktopCuuAction(action.href, { actionId: action.id, card, freeText });
   assert.ok(resolved);
   return resolved;
 }
@@ -453,12 +499,15 @@ class FakePetDomElement extends FakePetDomNode {
     setProperty() {}
   };
   hidden = false;
+  value = "";
 
   constructor(
     private readonly tagName: string,
-    private readonly attributes: Record<string, string> = {}
+    private readonly attributes: Record<string, string> = {},
+    value = ""
   ) {
     super();
+    this.value = value;
     for (const [key, value] of Object.entries(attributes)) {
       if (key.startsWith("data-")) {
         this.dataset[dataAttributeToDatasetKey(key)] = value;
@@ -527,6 +576,7 @@ type FakePetDomListener = (event: FakePetDomEvent) => void | Promise<void>;
 
 class FakePetDomRoot extends FakePetDomElement {
   innerHTML = "";
+  petFreeTextValue = "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。";
   private readonly listeners = new Map<string, Set<FakePetDomListener>>();
 
   constructor() {
@@ -549,6 +599,9 @@ class FakePetDomRoot extends FakePetDomElement {
     }
     if (selector === "[data-pet-settings-menu]" && this.innerHTML.includes('data-pet-settings-menu="true"')) {
       return new FakePetDomElement("nav", { "data-pet-settings-menu": "true" }) as unknown as T;
+    }
+    if (selector === "[data-pet-free-text]" && this.innerHTML.includes('data-pet-free-text="true"')) {
+      return new FakePetDomElement("textarea", { "data-pet-free-text": "true" }, this.petFreeTextValue) as unknown as T;
     }
     return null;
   }
@@ -580,14 +633,19 @@ function fakePetTarget(attributes: Record<string, string>, tagName = "button") {
   return new FakePetDomElement(tagName, attributes);
 }
 
+async function waitForFakePetCardMode() {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 90);
+  });
+}
+
 async function completePetBootAgentRunFlow(root: FakePetDomRoot) {
   await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
-  await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
   await root.click(fakePetTarget({
     href: "/api/cuu/start-agent",
     "data-cuu-action-id": "start_agent_from_cuu"
   }, "a"));
-  await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
+  root.petFreeTextValue = "以 workhub-app-upload.txt 的 smoke 记录作为验收口径。";
   await root.click(fakePetTarget({
     href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
     "data-cuu-action-id": "submit_option"
@@ -709,9 +767,14 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(idle.html, /data-pet-menu-locale="zh-CN" aria-pressed="true"/u);
   assert.match(idle.html, /data-pet-menu-open-settings="true"/u);
   assert.doesNotMatch(idle.html, /data-pet-menu-pass-through/u);
+  assert.match(idle.css, /:root\{--wh-pet-font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","PingFang SC","Noto Sans CJK SC",Arial,sans-serif;--wh-pet-accent:#0a84ff/u);
+  assert.doesNotMatch(idle.css, /Aptos|Segoe UI/u);
+  assert.match(idle.css, /\.wh-pet-bubble\{[^}]*border-radius:20px;[^}]*background:linear-gradient\(135deg,rgba\(255,255,255,.82\),rgba\(255,255,255,.52\)\);[^}]*backdrop-filter:blur\(32px\) saturate\(185%\)/u);
   assert.match(idle.css, /\.wh-pet-menu\{[^}]*right:88px;[^}]*width:164px;[^}]*overflow:hidden/u);
+  assert.match(idle.css, /\.wh-pet-menu\{[^}]*border-radius:14px;[^}]*background:rgba\(255,255,255,.78\);[^}]*backdrop-filter:blur\(26px\) saturate\(180%\)/u);
   assert.match(idle.css, /\.wh-pet-menu-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/u);
   assert.match(idle.css, /\.wh-pet-menu button\{[^}]*min-width:0;max-width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(idle.css, /\.wh-pet-menu button\{[^}]*border-radius:10px;[^}]*font:760 11px\/1\.15 var\(--wh-pet-font\)/u);
   assert.match(idle.css, /\.wh-pet-menu-row button\{[^}]*flex:1 1 0;[^}]*padding-left:6px;padding-right:6px;[^}]*overflow:hidden;text-overflow:ellipsis/u);
   assert.match(idle.html, /class="wh-cuu-cat-live2d-frame"/u);
   assert.match(idle.html, /cuu\/live2d\/hijiki\/cuu-hijiki\.html/u);
@@ -721,7 +784,7 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(idle.css, /\.wh-cuu-cat-live2d-frame\{[^}]*pointer-events:none/u);
   // R7.1 桌宠穿透契约：气泡容器穿透(none)，惟真可点子元素 auto —— 浅蓝空白处可点穿到下方窗口。
   assert.match(idle.css, /\.wh-pet-bubble\{[^}]*pointer-events:none/u);
-  assert.match(idle.css, /\.wh-pet-bubble button,\.wh-pet-bubble a\[data-cuu-action-id\],\.wh-pet-bubble \[data-pet-option-id\],\.wh-pet-bubble \[data-pet-reason\]\{pointer-events:auto\}/u);
+  assert.match(idle.css, /\.wh-pet-bubble button,\.wh-pet-bubble a\[data-cuu-action-id\],\.wh-pet-bubble \[data-pet-option-id\],\.wh-pet-bubble \[data-pet-reason\],\.wh-pet-bubble \[data-pet-free-text\]\{pointer-events:auto\}/u);
   assert.doesNotMatch(idle.html, /wh-cuu-legacy|wh-cuu-atlas|wh-cuu-sprite|experimental_draft_probe/u);
   assert.doesNotMatch(idle.html, /data-cuu-fallback-visual-mode|data-cuu-image-motion/u);
   assert.doesNotMatch(idle.html, /wh-app-shell/u);
@@ -743,9 +806,9 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-body\{right:calc\(72px \* var\(--wh-pet-scale,1\)\);bottom:calc\(48px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*max-width:calc\(100% - calc\(128px \* var\(--wh-pet-scale,1\)\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=bubble\],\.wh-pet-surface\[data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=offline\],\.wh-pet-surface\[data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=trace\]\{min-height:calc\(268px \* var\(--wh-pet-scale,1\)\)/u);
-  assert.match(card.css, /data-pet-window-mode=card\]\[data-pet-card-has-context=true\] \.wh-pet-bubble\{left:calc\(88px \* var\(--wh-pet-scale,1\)\);right:auto;bottom:calc\(392px \* var\(--wh-pet-scale,1\)\);width:calc\(300px \* var\(--wh-pet-scale,1\)\)/u);
-  assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*min-height:0;max-height:min\(calc\(320px \* var\(--wh-pet-scale,1\)\),calc\(100% - calc\(400px \* var\(--wh-pet-scale,1\)\)\)\);overflow-y:auto;overflow-x:hidden/u);
-  assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*scrollbar-gutter:stable/u);
+  assert.match(card.css, /data-pet-window-mode=card\]\[data-pet-card-has-context=true\] \.wh-pet-bubble\{left:calc\(72px \* var\(--wh-pet-scale,1\)\);right:auto;bottom:calc\(372px \* var\(--wh-pet-scale,1\)\);width:calc\(328px \* var\(--wh-pet-scale,1\)\)/u);
+  assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*min-height:0;max-height:calc\(336px \* var\(--wh-pet-scale,1\)\);overflow:hidden;overscroll-behavior:none;scrollbar-width:none/u);
+  assert.doesNotMatch(card.css, /scrollbar-gutter:stable|overflow-y:auto/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*gap:6px;padding:10px 12px/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-title\{[^}]*-webkit-line-clamp:2;[^}]*font-size:13px/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-message\{[^}]*-webkit-line-clamp:2;[^}]*font-size:11px/u);
@@ -756,6 +819,8 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.css, /\.wh-pet-section-title,\.wh-pet-evidence-title,\.wh-pet-input-hint\{[^}]*width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
   assert.match(card.css, /\.wh-pet-chips,\.wh-pet-actions,\.wh-pet-reasons\{[^}]*min-width:0;max-width:100%;width:100%/u);
   assert.match(card.css, /\.wh-pet-chip,\.wh-pet-action,\.wh-pet-reason\{[^}]*max-width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
+  assert.match(card.css, /\.wh-pet-chip,\.wh-pet-action,\.wh-pet-reason\{[^}]*display:inline-flex;align-items:center;justify-content:center;min-height:28px/u);
+  assert.match(card.css, /\.wh-pet-action\{[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis/u);
   assert.match(card.html, /data-cuu-behavior-state="asking_approval"/u);
   assert.match(card.html, /data-cuu-behavior-phase="loop"/u);
   assert.match(card.html, /data-cuu-behavior-expected-window-mode="card"/u);
@@ -768,8 +833,8 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.html, /data-pet-bubble-emotion="approval"/u);
   assert.match(card.html, /data-pet-bubble-tone="approval"/u);
   assert.match(card.html, /class="wh-pet-emotion">等你拍板/u);
-  assert.match(card.css, /\.wh-pet-bubble\[data-pet-bubble-tone=approval\]\{[^}]*border-color:rgba\(245,199,117,\.55\)/u);
-  assert.match(card.css, /\.wh-pet-bubble\[data-pet-bubble-tone=search\]\{[^}]*border-color:rgba\(124,131,255,\.4\)/u);
+  assert.match(card.css, /\.wh-pet-bubble\[data-pet-bubble-tone=approval\]\{[^}]*border-color:rgba\(255,190,92,\.48\)/u);
+  assert.match(card.css, /\.wh-pet-bubble\[data-pet-bubble-tone=search\]\{[^}]*border-color:rgba\(10,132,255,\.28\)/u);
   assert.match(card.html, /data-pet-section-id="changes"/u);
   assert.match(card.html, /data-pet-evidence-count="2"/u);
   assert.match(card.html, /data-recommended="true"/u);
@@ -824,7 +889,7 @@ test("pet surface keeps the failed agent-run card inside the expanded Cuu frame"
   assert.doesNotMatch(surface.html, /Cuu updated progress: Cuu desktop entry task/u);
   assert.match(surface.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*bottom:calc\(392px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(surface.css, /data-pet-window-mode=card\] \.wh-pet-body\{[^}]*bottom:calc\(48px \* var\(--wh-pet-scale,1\)\)/u);
-  assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*max-height:min\(calc\(320px \* var\(--wh-pet-scale,1\)\),calc\(100% - calc\(400px \* var\(--wh-pet-scale,1\)\)\)\);overflow-y:auto;overflow-x:hidden/u);
+  assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*max-height:calc\(336px \* var\(--wh-pet-scale,1\)\);overflow:hidden;overscroll-behavior:none;scrollbar-width:none/u);
   assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-title\{[^}]*-webkit-line-clamp:2/u);
   assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-message\{[^}]*-webkit-line-clamp:2/u);
   assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-section-line,\.wh-pet-surface\[data-pet-card-has-context=true\] \.wh-pet-evidence-item\{-webkit-line-clamp:1\}/u);
@@ -971,21 +1036,77 @@ test("pet surface renders clarification cards as option-first light cards", () =
   assert.match(english.html, /aria-label="Cuu desktop pet"/u);
 });
 
-test("pet surface renders the Cuu outbound agent launcher as option-first without text input", () => {
+test("pet surface keeps the primary confirmation action visible after an option is selected", () => {
+  const selected = renderDesktopPetSurface({
+    card: selectHarnessOption(questionCard(), "minimal"),
+    locale: "zh-CN"
+  });
+  const actionIndex = selected.html.indexOf('class="wh-pet-actions"');
+  const chipsIndex = selected.html.indexOf('class="wh-pet-chips"');
+
+  assert.notEqual(actionIndex, -1);
+  assert.notEqual(chipsIndex, -1);
+  assert.ok(actionIndex < chipsIndex, "selected question cards show Confirm before the option stack");
+});
+
+test("pet surface removes duplicate proposal summaries and keeps the proposal action clickable", () => {
+  const summary = "变更摘要 本次 AgentRun 从 outputs/ 生成 1 个交付物变更草案：文本稿 1。";
+  const card = cardFromAttentionItem({
+    id: "proposal-event-runtime",
+    kind: "proposal_review",
+    priority: "normal",
+    work_item_id: "10000000-0000-4000-8000-000000000201",
+    source_ref: { entity_type: "proposal", entity_id: "proposal-1" },
+    title: `AI 已生成变更申请：${summary}`,
+    summary_text: `AI 已生成变更申请：${summary}`,
+    actions: [
+      { id: "open_proposal", label: "查看", style: "secondary", method: "GET", href: "/proposals/proposal-1" }
+    ],
+    cuu_state: "carrying_document",
+    created_at: "2026-06-10T01:00:00.000Z"
+  });
+
+  const surface = renderDesktopPetSurface({ card, locale: "zh-CN" });
+
+  assert.match(surface.html, /Cuu 等你确认变更/u);
+  assert.match(surface.html, /data-cuu-action-id="open_proposal"/u);
+  assert.match(surface.html, /href="\/proposals\/proposal-1"/u);
+  assert.match(surface.html, />查看变更申请<\/a>/u);
+  assert.match(surface.html, /data-pet-section-id="next_step"/u);
+  assert.match(surface.html, /点「查看变更申请」会打开变更详情，里面有总结、改动和确认按钮/u);
+  assert.equal((surface.html.match(/变更摘要 本次 AgentRun/g) ?? []).length, 1);
+});
+
+test("pet surface renders the Cuu outbound agent launcher as text-first without preset choices", () => {
   const launcher = renderDesktopPetSurface({ card: createDesktopCuuAgentLauncherCard(), locale: "zh-CN" });
   const english = renderDesktopPetSurface({ card: createDesktopCuuAgentLauncherCard({ locale: "en-US" }), locale: "en-US" });
 
   assert.match(launcher.html, /data-cuu-card-id="cuu-agent-launcher"/u);
   assert.match(launcher.html, /要让 Cuu 做什么/u);
-  assert.match(launcher.html, /data-pet-option-id="document-draft"/u);
+  assert.match(launcher.html, /data-pet-free-text/u);
   assert.match(launcher.html, /data-cuu-action-id="start_agent_from_cuu"/u);
   assert.match(launcher.html, /href="\/api\/cuu\/start-agent"/u);
-  assert.match(launcher.html, /data-pet-input-mode="single_choice"/u);
-  assert.doesNotMatch(launcher.html, /textarea|<input\b/iu);
+  assert.match(launcher.html, /data-pet-input-mode="long_text"/u);
+  assert.doesNotMatch(launcher.html, /data-pet-option-id="document-draft"/u);
 
   assert.match(english.html, /What should Cuu do/u);
   assert.match(english.html, /Start work/u);
-  assert.doesNotMatch(english.html, /textarea|<input\b/iu);
+  assert.match(english.html, /data-pet-free-text/u);
+});
+
+test("pet surface renders the Cuu outbound agent launcher as a free-text demand composer", () => {
+  const launcher = renderDesktopPetSurface({ card: createDesktopCuuAgentLauncherCard(), locale: "zh-CN" });
+  const english = renderDesktopPetSurface({ card: createDesktopCuuAgentLauncherCard({ locale: "en-US" }), locale: "en-US" });
+
+  assert.match(launcher.html, /data-cuu-card-id="cuu-agent-launcher"/u);
+  assert.match(launcher.html, /data-pet-free-text/u);
+  assert.match(launcher.html, /data-pet-input-mode="long_text"/u);
+  assert.match(launcher.html, /data-pet-option-first="false"/u);
+  assert.doesNotMatch(launcher.html, /data-pet-option-id="document-draft"/u);
+  assert.doesNotMatch(launcher.html, /先点一个交付方向/u);
+
+  assert.match(english.html, /data-pet-free-text/u);
+  assert.doesNotMatch(english.html, /Pick one delivery direction/u);
 });
 
 test("pet runtime harness advances launcher selections through clarification into a run card", async () => {
@@ -995,33 +1116,30 @@ test("pet runtime harness advances launcher selections through clarification int
 
   let card = createDesktopCuuAgentLauncherCard({ locale: "zh-CN" });
   let surface = renderDesktopPetSurface({ card, locale: "zh-CN" });
+  const demand = "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。";
+  const clarification = "以 workhub-app-upload.txt 的 smoke 记录作为验收口径。";
   assert.match(surface.html, /data-cuu-card-id="cuu-agent-launcher"/u);
-  assert.match(surface.html, /data-pet-option-id="document-draft"/u);
+  assert.match(surface.html, /data-pet-free-text/u);
   assert.match(surface.html, /data-cuu-action-id="start_agent_from_cuu"/u);
-  assert.doesNotMatch(surface.html, /textarea|<input\b/iu);
-
-  card = selectHarnessOption(card, "document-draft");
-  surface = renderDesktopPetSurface({ card, locale: "zh-CN" });
-  assert.match(surface.html, /data-chip-id="document-draft"[^>]+data-selected="true"/u);
+  assert.doesNotMatch(surface.html, /data-pet-option-id="document-draft"/u);
 
   const launcherResult = await submitDesktopCuuAction({
     client,
-    action: resolveHarnessAction(card, "start_agent_from_cuu"),
+    action: resolveHarnessAction(card, "start_agent_from_cuu", demand),
     locale: "zh-CN"
   });
-  assert.match(launcherResult.message, /还需要你点选/u);
+  assert.match(launcherResult.message, /还需要你补充/u);
   assert.equal(launcherResult.card?.payload_ref?.entity_type, "session");
   assert.equal(launcherResult.agentRun, undefined);
   card = launcherResult.card!;
   surface = renderDesktopPetSurface({ card, status_text: launcherResult.message, locale: "zh-CN" });
   assert.match(surface.html, /data-pet-bubble-kind="question"/u);
-  assert.match(surface.html, /data-pet-option-id="document-draft"/u);
-  assert.match(surface.html, /这件事先按哪种交付方式处理/u);
+  assert.match(surface.html, /data-pet-free-text/u);
+  assert.match(surface.html, /workhub-app-upload\.txt/u);
 
-  card = selectHarnessOption(card, "document-draft");
   const clarificationResult = await submitDesktopCuuAction({
     client,
-    action: resolveHarnessAction(card, "submit_option"),
+    action: resolveHarnessAction(card, "submit_option", clarification),
     locale: "zh-CN"
   });
   card = clarificationResult.card!;
@@ -1047,14 +1165,14 @@ test("pet runtime harness advances launcher selections through clarification int
     {
       step: "createSession",
       payload: {
-        title: "Cuu 桌面入口任务",
-        intent_text: "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。\n文档/方案草稿: 周报、说明、PR 式变更说明"
+        title: demand,
+        intent_text: demand
       }
     },
     {
       step: "nextQuestion",
       sessionId: "10000000-0000-4000-8000-000000000201",
-      payload: { selected_option_ids: ["document-draft"] }
+      payload: { free_text: clarification }
     },
     {
       step: "nextQuestion",
@@ -1099,13 +1217,9 @@ test("pet surface boot flow opens launcher, resolves clarification, confirms, an
 
         await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
         assert.match(root.innerHTML, /data-cuu-card-id="cuu-agent-launcher"/u);
-        assert.match(root.innerHTML, /data-pet-option-id="document-draft"/u);
+        assert.match(root.innerHTML, /data-pet-free-text/u);
         assert.match(root.innerHTML, /data-cuu-action-id="start_agent_from_cuu"/u);
-        assert.doesNotMatch(root.innerHTML, /textarea|<input\b/iu);
-
-        const launcherSelection = await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
-        assert.equal(launcherSelection.defaultPrevented, true);
-        assert.match(root.innerHTML, /data-chip-id="document-draft"[^>]+data-selected="true"/u);
+        assert.doesNotMatch(root.innerHTML, /data-pet-option-id="document-draft"/u);
 
         const launcherSubmit = await root.click(fakePetTarget({
           href: "/api/cuu/start-agent",
@@ -1113,13 +1227,12 @@ test("pet surface boot flow opens launcher, resolves clarification, confirms, an
         }, "a"));
         assert.equal(launcherSubmit.defaultPrevented, true);
         assert.match(root.innerHTML, /data-pet-bubble-kind="question"/u);
-        assert.match(root.innerHTML, /data-pet-option-id="document-draft"/u);
-        assert.match(root.innerHTML, /这件事先按哪种交付方式处理/u);
-        assert.doesNotMatch(root.innerHTML, /textarea|<input\b/iu);
+        assert.match(root.innerHTML, /data-pet-bubble-tone="search"/u);
+        assert.match(root.innerHTML, /data-pet-free-text/u);
+        assert.match(root.innerHTML, /workhub-app-upload\.txt/u);
+        assert.doesNotMatch(root.innerHTML, /data-pet-option-id="document-draft"/u);
 
-        const clarificationSelection = await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
-        assert.equal(clarificationSelection.defaultPrevented, true);
-        assert.match(root.innerHTML, /data-chip-id="document-draft"[^>]+data-selected="true"/u);
+        root.petFreeTextValue = "以 workhub-app-upload.txt 的 smoke 记录作为验收口径。";
 
         const clarificationSubmit = await root.click(fakePetTarget({
           href: "/api/sessions/10000000-0000-4000-8000-000000000201/next-question",
@@ -1154,14 +1267,14 @@ test("pet surface boot flow opens launcher, resolves clarification, confirms, an
     {
       step: "createSession",
       payload: {
-        title: "Cuu 桌面入口任务",
-        intent_text: "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。\n文档/方案草稿: 周报、说明、PR 式变更说明"
+        title: "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。",
+        intent_text: "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。"
       }
     },
     {
       step: "nextQuestion",
       sessionId: "10000000-0000-4000-8000-000000000201",
-      payload: { selected_option_ids: ["document-draft"] }
+      payload: { free_text: "以 workhub-app-upload.txt 的 smoke 记录作为验收口径。" }
     },
     {
       step: "nextQuestion",
@@ -1182,6 +1295,474 @@ test("pet surface boot flow opens launcher, resolves clarification, confirms, an
       payload: { title: "Cuu 桌面入口任务" }
     }
   ]);
+});
+
+test("pet surface lets users restart after a launcher clarification failure", async () => {
+  const calls: unknown[] = [];
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  const client = {
+    ...createPetHarnessClient(calls),
+    async createSession(payload: unknown): Promise<SessionVM> {
+      calls.push({ step: "createSession", payload: cloneHarnessPayload(payload) });
+      throw new Error("AI 材料分析没有返回可用的澄清反问。");
+    }
+  } as unknown as DesktopPetSurfaceClient;
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, { client });
+      try {
+        await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
+        assert.match(root.innerHTML, /data-cuu-card-id="cuu-agent-launcher"/u);
+
+        const launcherSubmit = await root.click(fakePetTarget({
+          href: "/api/cuu/start-agent",
+          "data-cuu-action-id": "start_agent_from_cuu"
+        }, "a"));
+        assert.equal(launcherSubmit.defaultPrevented, true);
+        assert.match(root.innerHTML, /这次启动没有成功/u);
+        assert.match(root.innerHTML, /可以重新开始，Cuu 会再读一次需求和项目文件/u);
+        assert.match(root.innerHTML, /data-cuu-action-id="restart_cuu"/u);
+        assert.match(root.innerHTML, />重新开始<\/a>/u);
+        assert.doesNotMatch(root.innerHTML, /查看回放|打开事项/u);
+
+        const restart = await root.click(fakePetTarget({
+          href: "/cuu/restart",
+          "data-cuu-action-id": "restart_cuu"
+        }, "a"));
+        assert.equal(restart.defaultPrevented, true);
+        assert.match(root.innerHTML, /data-cuu-card-id="cuu-agent-launcher"/u);
+        assert.match(root.innerHTML, /已回到需求输入/u);
+        assert.match(root.innerHTML, /data-pet-free-text/u);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
+test("pet surface clears an approval card after a request-changes reason succeeds", async () => {
+  const calls: unknown[] = [];
+  const handlers = new Map<string, (event: { payload: unknown }) => void>();
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => handlers.delete(eventName);
+  };
+  const approval: AttentionItem = {
+    id: "approval-runtime",
+    kind: "approval",
+    priority: "urgent",
+    source_ref: { entity_type: "approval_request", entity_id: "approval-1" },
+    title: "Review this change",
+    summary_text: "AI prepared a change request.",
+    reason_text: "Approve to deliver it.",
+    actions: [
+      { id: "approve", label: "同意", style: "primary", method: "POST", href: "/api/approvals/approval-1/respond" },
+      {
+        id: "request_changes",
+        label: "打回",
+        style: "danger",
+        method: "POST",
+        href: "/api/approvals/approval-1/respond",
+        requires_reason: true
+      }
+    ],
+    cuu_state: "asking_approval",
+    created_at: "2026-06-10T01:00:00.000Z"
+  };
+  const client = {
+    ...createPetHarnessClient(calls),
+    pages: {
+      attention: async () => ({ primary: null, queue: [] })
+    },
+    async respondApproval(id: string, payload: unknown) {
+      calls.push({ step: "respondApproval", id, payload: cloneHarnessPayload(payload) });
+      return { id, status: "responded" };
+    }
+  } as unknown as DesktopPetSurfaceClient;
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "en-US";
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, { client, listen });
+      try {
+        handlers.get("push-event")?.({
+          payload: shellPayload(eventTypes.permissionAsk, {
+            summary_text: approval.summary_text,
+            attention: approval
+          })
+        });
+        assert.match(root.innerHTML, /data-cuu-card-id="approval-runtime"/u);
+        assert.match(root.innerHTML, /data-cuu-action-id="request_changes"/u);
+
+        const requestChanges = await root.click(fakePetTarget({
+          href: "/api/approvals/approval-1/respond",
+          "data-cuu-action-id": "request_changes",
+          "data-requires-reason": "true"
+        }, "a"));
+        assert.equal(requestChanges.defaultPrevented, true);
+        assert.match(root.innerHTML, /Choose one reason so Cuu can revise with it/u);
+        assert.match(root.innerHTML, /data-pet-reason="Not enough evidence"/u);
+
+        const reason = await root.click(fakePetTarget({ "data-pet-reason": "Not enough evidence" }));
+        assert.equal(reason.defaultPrevented, false);
+        assert.match(root.innerHTML, /Sent back; Cuu will revise/u);
+        assert.doesNotMatch(root.innerHTML, /data-cuu-card-id="approval-runtime"/u);
+        assert.doesNotMatch(root.innerHTML, /data-cuu-action-id="approve"|data-cuu-action-id="request_changes"/u);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+
+  assert.deepEqual(calls, [
+    {
+      step: "respondApproval",
+      id: "approval-1",
+      payload: { decision: "deny", reason_md: "Not enough evidence", remember: "once" }
+    }
+  ]);
+});
+
+test("pet surface handles proposal review request-changes without navigating to the API URL", async () => {
+  const calls: unknown[] = [];
+  const shellEmits: unknown[] = [];
+  const handlers = new Map<string, (event: { payload: unknown }) => void>();
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => handlers.delete(eventName);
+  };
+  const shellEmitter: DesktopShellEmitter = {
+    emitTo(target, eventName, payload) {
+      shellEmits.push({ target, eventName, payload: cloneHarnessPayload(payload) });
+    }
+  };
+  const proposalReview: AttentionItem = {
+    id: "proposal-review-runtime",
+    kind: "proposal_review",
+    priority: "urgent",
+    source_ref: { entity_type: "proposal", entity_id: "proposal-1" },
+    title: "Cuu 等你确认变更",
+    summary_text: "AI 交付了一份变更，等你确认。",
+    reason_text: "确认后才会合入。",
+    actions: [
+      { id: "approve", label: "同意", style: "primary", method: "POST", href: "/api/proposals/proposal-1/review" },
+      {
+        id: "request_changes",
+        label: "打回",
+        style: "danger",
+        method: "POST",
+        href: "/api/proposals/proposal-1/review",
+        requires_reason: true
+      },
+      { id: "open_proposal", label: "打开", style: "secondary", method: "GET", href: "/proposals/proposal-1" }
+    ],
+    cuu_state: "asking_approval",
+    created_at: "2026-06-10T01:00:00.000Z"
+  };
+  const client = {
+    ...createPetHarnessClient(calls),
+    pages: {
+      attention: async () => ({ primary: null, queue: [] })
+    },
+    async reviewProposal(id: string, payload: unknown) {
+      calls.push({ step: "reviewProposal", id, payload: cloneHarnessPayload(payload) });
+      return { attention: { summary_text: "已打回；Cuu 会继续改。" } };
+    }
+  } as unknown as DesktopPetSurfaceClient;
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client,
+        listen,
+        petWindowBridge: {
+          setMode() {}
+        },
+        shellEmitter
+      });
+      try {
+        handlers.get("push-event")?.({
+          payload: shellPayload(eventTypes.permissionAsk, {
+            summary_text: proposalReview.summary_text,
+            attention: proposalReview
+          })
+        });
+        await waitForFakePetCardMode();
+        assert.match(root.innerHTML, /data-cuu-card-id="proposal-review-runtime"/u);
+        assert.match(root.innerHTML, /data-cuu-action-id="request_changes"/u);
+        assert.match(root.innerHTML, /查看变更申请/u);
+        assert.match(root.innerHTML, /确认通过/u);
+        assert.match(root.innerHTML, /打回修改/u);
+        assert.doesNotMatch(root.innerHTML, />打开<\/a>/u);
+        assert.doesNotMatch(root.innerHTML, />同意<\/a>/u);
+        assert.ok(root.innerHTML.indexOf('data-cuu-action-id="open_proposal"') < root.innerHTML.indexOf('data-cuu-action-id="approve"'));
+        assert.ok(root.innerHTML.indexOf('data-cuu-action-id="approve"') < root.innerHTML.indexOf('data-cuu-action-id="request_changes"'));
+
+        const openProposal = await root.click(fakePetTarget({
+          href: "/proposals/proposal-1",
+          "data-cuu-action-id": "open_proposal"
+        }, "a"));
+        assert.equal(openProposal.defaultPrevented, true);
+        assert.deepEqual(shellEmits, [
+          { target: "main", eventName: "navigate", payload: { route: "/proposals/proposal-1" } }
+        ]);
+        assert.match(root.innerHTML, /data-cuu-card-id="proposal-review-runtime"/u);
+
+        const requestChanges = await root.click(fakePetTarget({
+          href: "/api/proposals/proposal-1/review",
+          "data-cuu-action-id": "request_changes",
+          "data-requires-reason": "true"
+        }, "a"));
+        assert.equal(requestChanges.defaultPrevented, true);
+        assert.match(root.innerHTML, /先点一个原因，Cuu 会带着它继续改/u);
+        assert.match(root.innerHTML, /data-pet-reason="证据不足"/u);
+
+        const reason = await root.click(fakePetTarget({ "data-pet-reason": "证据不足" }));
+        assert.equal(reason.defaultPrevented, false);
+        assert.match(root.innerHTML, /已打回；Cuu 会继续改/u);
+        assert.doesNotMatch(root.innerHTML, /data-cuu-card-id="proposal-review-runtime"/u);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+
+  assert.deepEqual(calls, [
+    {
+      step: "reviewProposal",
+      id: "proposal-1",
+      payload: { decision: "request_changes", reason_md: "证据不足", remember: "once" }
+    }
+  ]);
+});
+
+test("pet surface refreshes a proposal card after the main window settles the review action", async () => {
+  const openedProposalReview: AttentionItem = {
+    id: "proposal-review-runtime",
+    kind: "proposal_review",
+    priority: "urgent",
+    source_ref: { entity_type: "proposal", entity_id: "proposal-1" },
+    title: "Cuu 等你确认变更",
+    summary_text: "AI 交付了一份变更，等你确认。",
+    reason_text: "确认后才会合入。",
+    actions: [
+      { id: "open_proposal", label: "查看变更申请", style: "secondary", method: "GET", href: "/proposals/proposal-1" },
+      { id: "approve", label: "确认通过", style: "primary", method: "POST", href: "/api/proposals/proposal-1/review" },
+      {
+        id: "request_changes",
+        label: "打回修改",
+        style: "danger",
+        method: "POST",
+        href: "/api/proposals/proposal-1/review",
+        requires_reason: true
+      }
+    ],
+    cuu_state: "asking_approval",
+    created_at: "2026-06-10T01:00:00.000Z"
+  };
+  const reviewedProposalReview: AttentionItem = {
+    ...openedProposalReview,
+    summary_text: "已确认通过，只差合入交付物。",
+    reason_text: "接下来可以合入交付物。",
+    actions: [
+      { id: "open_proposal", label: "查看变更申请", style: "secondary", method: "GET", href: "/proposals/proposal-1" },
+      { id: "merge", label: "合入交付物", style: "primary", method: "POST", href: "/api/proposals/proposal-1/merge" }
+    ]
+  };
+  let attentionQueue: AttentionItem[] = [];
+  const handlers = new Map<string, (event: { payload: unknown }) => void>();
+  const stopped: string[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => stopped.push(eventName);
+  };
+  const client = {
+    ...createPetHarnessClient([]),
+    pages: {
+      attention: async () => ({ primary: null, queue: attentionQueue })
+    }
+  } as unknown as DesktopPetSurfaceClient;
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client,
+        listen
+      });
+      try {
+        handlers.get("push-event")?.({
+          payload: shellPayload(eventTypes.permissionAsk, {
+            summary_text: openedProposalReview.summary_text,
+            attention: openedProposalReview
+          })
+        });
+        await waitForFakePetCardMode();
+        assert.match(root.innerHTML, /data-cuu-card-id="proposal-review-runtime"/u);
+        assert.match(root.innerHTML, /确认通过/u);
+        assert.match(root.innerHTML, /打回修改/u);
+        assert.doesNotMatch(root.innerHTML, /合入交付物/u);
+
+        attentionQueue = [reviewedProposalReview];
+        handlers.get("attention-refresh")?.({ payload: { reason: "spotlight-action-settled" } });
+        await waitForFakePetCardMode();
+
+        assert.match(root.innerHTML, /data-cuu-card-id="proposal-review-runtime"/u);
+        assert.match(root.innerHTML, /合入交付物/u);
+        assert.doesNotMatch(root.innerHTML, /data-cuu-action-id="approve"/u);
+        assert.doesNotMatch(root.innerHTML, /data-cuu-action-id="request_changes"/u);
+      } finally {
+        await runtime.dispose();
+      }
+      assert.ok(stopped.includes("attention-refresh"));
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
+test("pet surface renders merge conflicts as proposal conflict choices instead of a restart error", async () => {
+  const conflict: ProposalConflict = {
+    id: "conflict-workhub-upload",
+    work_item_id: "10000000-0000-4000-8000-000000000201",
+    proposal_id: "proposal-1",
+    change_id: "change-1",
+    target_key: "drive_item:outputs/acceptance-checks-workhub-app-upload.md",
+    target_kind: "text_doc",
+    change_type: "generated",
+    target_path: "outputs/acceptance-checks-workhub-app-upload.md",
+    headline: "acceptance-checks-workhub-app-upload.md 已经有正式版本",
+    summary_text: "这份变更和正式版撞车，需要先选择处理方案。",
+    existing: {
+      proposal_id: "proposal-old",
+      change_id: "change-old",
+      sha256: "a".repeat(64)
+    },
+    incoming: {
+      sha256_before: "b".repeat(64),
+      sha256_after: "c".repeat(64)
+    },
+    recommended_option_id: "keep_current",
+    options: [
+      {
+        id: "keep_current",
+        label: "保留正式版",
+        summary_text: "保留已正式采纳的版本。",
+        recommended: true,
+        action: {
+          id: "keep_current",
+          label: "保留正式版",
+          method: "POST",
+          href: "/api/proposals/proposal-1/merge",
+          request_json: { conflict_resolution: { accept_incoming_target_keys: [] } }
+        }
+      },
+      {
+        id: "accept_incoming",
+        label: "采纳这次版本",
+        summary_text: "用这次版本覆盖正式版。",
+        action: {
+          id: "accept_incoming",
+          label: "采纳这次版本",
+          method: "POST",
+          href: "/api/proposals/proposal-1/merge",
+          request_json: {
+            conflict_resolution: { accept_incoming_target_keys: ["drive_item:outputs/acceptance-checks-workhub-app-upload.md"] }
+          }
+        }
+      }
+    ]
+  };
+  const reviewedProposalReview: AttentionItem = {
+    id: "proposal-review-runtime",
+    kind: "proposal_review",
+    priority: "urgent",
+    source_ref: { entity_type: "proposal", entity_id: "proposal-1" },
+    title: "Cuu 等你确认变更",
+    summary_text: "已确认通过，只差合入交付物。",
+    reason_text: "接下来可以合入交付物。",
+    actions: [
+      { id: "open_proposal", label: "查看变更申请", style: "secondary", method: "GET", href: "/proposals/proposal-1" },
+      { id: "merge", label: "合入交付物", style: "primary", method: "POST", href: "/api/proposals/proposal-1/merge" }
+    ],
+    cuu_state: "carrying_document",
+    created_at: "2026-06-10T01:00:00.000Z"
+  };
+  const handlers = new Map<string, (event: { payload: unknown }) => void>();
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => handlers.delete(eventName);
+  };
+  const client = {
+    ...createPetHarnessClient([]),
+    pages: {
+      attention: async () => ({ primary: null, queue: [] })
+    },
+    async mergeProposal() {
+      throw new WorkHubApiError(409, "merge_conflict", "这份变更和正式版撞车，需要先选择处理方案。", {
+        conflicts: [conflict]
+      });
+    }
+  } as unknown as DesktopPetSurfaceClient;
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, { client, listen });
+      try {
+        handlers.get("push-event")?.({
+          payload: shellPayload(eventTypes.permissionAsk, {
+            summary_text: reviewedProposalReview.summary_text,
+            attention: reviewedProposalReview
+          })
+        });
+        await waitForFakePetCardMode();
+        assert.match(root.innerHTML, /合入交付物/u);
+
+        const merge = await root.click(fakePetTarget({
+          href: "/api/proposals/proposal-1/merge",
+          "data-cuu-action-id": "merge"
+        }, "a"));
+        assert.equal(merge.defaultPrevented, true);
+        assert.match(root.innerHTML, /变更撞车了/u);
+        assert.match(root.innerHTML, /保留正式版/u);
+        assert.match(root.innerHTML, /采纳这次版本/u);
+        assert.doesNotMatch(root.innerHTML, /这次启动没有成功|重新开始/u);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
 });
 
 test("pet surface syncs settings emitted by the main desktop window", async () => {
@@ -1346,13 +1927,13 @@ test("pet surface persists and restores the current session question card", asyn
       });
       try {
         await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
-        await root.click(fakePetTarget({ "data-pet-option-id": "document-draft" }));
         await root.click(fakePetTarget({
           href: "/api/cuu/start-agent",
           "data-cuu-action-id": "start_agent_from_cuu"
         }, "a"));
         assert.match(root.innerHTML, /data-pet-bubble-kind="question"/u);
-        assert.match(root.innerHTML, /这件事先按哪种交付方式处理/u);
+        assert.match(root.innerHTML, /data-pet-bubble-tone="search"/u);
+        assert.match(root.innerHTML, /请确认 workhub-app-upload\.txt 的验收口径/u);
       } finally {
         await runtime.dispose();
       }
@@ -1363,6 +1944,8 @@ test("pet surface persists and restores the current session question card", asyn
     const restoreState = JSON.parse(persisted);
     assert.equal(restoreState.entity_type, "session");
     assert.equal(restoreState.entity_id, "10000000-0000-4000-8000-000000000201");
+    restoreState.card.actions[0].label = "确认选项";
+    storage.setItem(desktopPetRunRestoreStorageKey, JSON.stringify(restoreState));
 
     await withFakePetDom(async (root) => {
       const restoreCalls: unknown[] = [];
@@ -1373,9 +1956,12 @@ test("pet surface persists and restores the current session question card", asyn
         await Promise.resolve();
         await Promise.resolve();
         assert.match(root.innerHTML, /data-pet-bubble-kind="question"/u);
+        assert.match(root.innerHTML, /data-pet-bubble-tone="search"/u);
         assert.match(root.innerHTML, /data-pet-payload-ref-entity-type="session"/u);
-        assert.match(root.innerHTML, /这件事先按哪种交付方式处理/u);
-        assert.match(root.innerHTML, /Cuu 已恢复：这件事先按哪种交付方式处理？/u);
+        assert.match(root.innerHTML, /请确认 workhub-app-upload\.txt 的验收口径/u);
+        assert.match(root.innerHTML, /Cuu 已恢复：请确认 workhub-app-upload\.txt 的验收口径/u);
+        assert.match(root.innerHTML, /提交回答/u);
+        assert.doesNotMatch(root.innerHTML, /确认选项/u);
       } finally {
         await runtime.dispose();
       }

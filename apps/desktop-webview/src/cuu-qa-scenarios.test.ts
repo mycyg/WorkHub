@@ -91,6 +91,9 @@ test("desktop pet QA scenarios cover clarify sync done and offline", () => {
   assert.equal(clarifyPayload.stream_path, "/api/push/stream/session/10000000-0000-4000-8000-000000000104");
   assert.equal(clarifyEvent.attention.kind, "clarification");
   assert.equal(clarifyEvent.attention.cuu_state, "asking_approval");
+  assert.match(clarifyEvent.attention.title, /workhub-app-upload\.txt/u);
+  assert.match(clarifyEvent.attention.summary_text, /AI 已读取需求和项目文件/u);
+  assert.doesNotMatch(`${clarifyEvent.preview_text} ${clarifyEvent.attention.title} ${clarifyEvent.attention.summary_text}`, /交付口径|交付方式|文档\/方案|结构化数据|小型代码/u);
   assert.equal(syncPayload.event, eventTypes.syncProgress);
   assert.equal(syncEvent.cuu_state, "syncing_files");
   assert.equal(syncEvent.attention.kind, "sync_conflict");

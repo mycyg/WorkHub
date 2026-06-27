@@ -87,6 +87,10 @@ export type TeamSkillsPageVM = z.infer<typeof teamSkillsPageVmSchema>;
 export const attentionHomeVmSchema = z.object({
   primary: attentionItemSchema.optional(),
   queue: z.array(attentionItemSchema),
+  source_warnings: z.array(z.object({
+    source: z.enum(["approvals", "proposals"]),
+    message: z.string().min(1)
+  })).optional(),
   background_runs: z.array(z.object({
     run_id: idSchema,
     work_item_id: idSchema.optional(),
@@ -158,6 +162,8 @@ export const driveItemVmSchema = z.object({
   current_version_id: idSchema.optional(),
   current_version: driveFileVersionVmSchema.optional(),
   accepted_deliverable: acceptedDeliverableVmSchema.optional(),
+  preview_href: z.string().min(1).optional(),
+  download_href: z.string().min(1).optional(),
   children_count: z.number().int().nonnegative(),
   deleted_at: isoDateTimeSchema.optional(),
   // F3：逐项操作端点——回收站项各带自己的 restore_href、可删项各带自己的 delete_href,让每行都能单独恢复/删除,

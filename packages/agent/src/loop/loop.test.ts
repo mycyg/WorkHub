@@ -142,6 +142,94 @@ test("AgentLoop completes when the model stops after writing outputs", async () 
   assert.equal(result.manifest?.checks.some((check) => check.id === "revert_available" && check.status === "passed"), true);
 });
 
+test("AgentLoop public success reason strips model self-narration from final text", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const finalText = [
+    "The deliverable looks complete and well-structured. Let me now provide the summary.",
+    "---",
+    "",
+    "## 完成了",
+    "",
+    "- **做了什么**：基于 `workhub-app-upload.txt` 生成三条 QA 验收要点。"
+  ].join("\n");
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000031",
+    workItemId: "50000000-0000-4000-8000-000000000031",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write acceptance points",
+    client: fakeClient([
+      {
+        id: "m1",
+        stopReason: "tool_use",
+        content: [{
+          type: "tool_use",
+          id: "tool-1",
+          name: "write_file",
+          input: { path: "outputs/acceptance.md", content: "done" }
+        }]
+      },
+      {
+        id: "m2",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: finalText }]
+      }
+    ]),
+    tools,
+    budget,
+    reviewDeliverable: false,
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000031" })
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.finalText, finalText);
+  assert.match(result.reason, /基于 `workhub-app-upload\.txt` 生成三条 QA 验收要点/u);
+  assert.doesNotMatch(result.reason, /Let me|deliverable looks complete|well-structured|---/iu);
+  assert.doesNotMatch(result.manifest?.title ?? "", /Let me|deliverable looks complete|well-structured|---/iu);
+});
+
+test("AgentLoop public success reason falls back instead of exposing Chinese self-narration", async () => {
+  const workdir = await tempWorkdir();
+  const tools = createToolRegistry(createBuiltInFileTools());
+  const loop = createAgentLoop();
+  const finalText = "完成了。让我做一个人话总结。";
+  const result = await loop.run({
+    runId: "40000000-0000-4000-8000-000000000032",
+    workItemId: "50000000-0000-4000-8000-000000000032",
+    workdir,
+    systemPrompt: "work",
+    initialUserMessage: "write acceptance points",
+    client: fakeClient([
+      {
+        id: "m1",
+        stopReason: "tool_use",
+        content: [{
+          type: "tool_use",
+          id: "tool-1",
+          name: "write_file",
+          input: { path: "outputs/acceptance.md", content: "done" }
+        }]
+      },
+      {
+        id: "m2",
+        stopReason: "end_turn",
+        content: [{ type: "text", text: finalText }]
+      }
+    ]),
+    tools,
+    budget,
+    reviewDeliverable: false,
+    snapshot: () => ({ snapshotId: "60000000-0000-4000-8000-000000000032" })
+  });
+
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.finalText, finalText);
+  assert.equal(result.reason, "交付物已生成");
+  assert.equal(result.manifest?.title, "交付物已生成");
+});
+
 test("AgentLoop escalates repeated identical tool calls as a doom loop", async () => {
   const workdir = await tempWorkdir();
   const tools = createToolRegistry(createBuiltInFileTools());

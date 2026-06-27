@@ -206,8 +206,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     } catch {
       worklog = undefined;
     }
+    const sourceWarnings: AttentionHomeVM["source_warnings"] = [];
     // 决策队列：把"这个用户当前待决策的审批"接进首页收件箱（与 /approvals 同源、同按用户路由）。
-    // 这是 W1 决策收件箱此前缺的真实数据源——没接前首页决策卡恒为空。取数失败静默降级成空队列，不拖垮首页。
+    // 这是 W1 决策收件箱此前缺的真实数据源——没接前首页决策卡恒为空。取数失败保留首页,但显式告诉用户队列未完整加载。
     let decisionQueue: AttentionHomeVM["queue"] = [];
     try {
       const pending = await approvals.listPendingForUser(c.var.currentUser, { locale });
@@ -216,6 +217,12 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       decisionQueue = (await visibleApprovalCenter(pending, workItems, c.var.actor)).items;
     } catch {
       decisionQueue = [];
+      sourceWarnings.push({
+        source: "approvals",
+        message: locale === "en-US"
+          ? "Approval decisions could not be loaded. Open Approvals or retry."
+          : "审批待办暂时加载失败。请打开审批页或稍后重试。"
+      });
     }
     // GAP-1：把「AI 已交付、待这个用户评审」的提议接进首页决策队列(proposal_review 卡),
     // 与审批同源、同按用户路由(非 admin 只看自己提交的工作项)。这是此前缺的真实数据源——
@@ -227,10 +234,16 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         ...reviewable.map((summary) => buildProposalReviewAttentionItem(summary, locale))
       ];
     } catch {
-      // 保留已有审批队列,不拖垮首页。
+      // 保留已有审批队列,不拖垮首页,但不能让用户误以为队列完整。
+      sourceWarnings.push({
+        source: "proposals",
+        message: locale === "en-US"
+          ? "Proposal reviews could not be loaded. Open Projects or retry."
+          : "变更评审暂时加载失败。请打开项目页或稍后重试。"
+      });
     }
     return c.json(pageEnvelope(
-      buildAttentionHomePage({ queue: decisionQueue, backgroundRuns: activeRuns, locale, worklog }),
+      buildAttentionHomePage({ queue: decisionQueue, sourceWarnings, backgroundRuns: activeRuns, locale, worklog }),
       locale
     ));
   });

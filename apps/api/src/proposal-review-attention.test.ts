@@ -27,6 +27,7 @@ test("opened proposal → proposal_review item with approve/request_changes/view
   assert.equal(approve?.method, "POST");
   assert.equal(approve?.href, `/api/proposals/${base.id}/review`);
   assert.equal(approve?.style, "primary");
+  assert.equal(approve?.label, "确认通过");
   assert.notEqual(approve?.requires_reason, true);
 
   const requestChanges = item.actions.find((a) => a.id === "request_changes");
@@ -51,6 +52,7 @@ test("reviewed proposal → proposal_review item exposes merge + view (no approv
   assert.equal(merge?.method, "POST");
   assert.equal(merge?.href, `/api/proposals/${base.id}/merge`);
   assert.equal(merge?.style, "primary");
+  assert.equal(merge?.label, "合入交付物");
   assert.ok(item.actions.find((a) => a.id === "open_proposal"));
   assert.equal(item.actions.find((a) => a.id === "approve"), undefined);
 });
@@ -58,6 +60,6 @@ test("reviewed proposal → proposal_review item exposes merge + view (no approv
 test("proposal_review item localizes labels (en)", () => {
   const item = buildProposalReviewAttentionItem({ ...base, status: "opened" }, "en-US");
   attentionItemSchema.parse(item);
-  assert.equal(item.actions.find((a) => a.id === "approve")?.label, "Approve");
+  assert.equal(item.actions.find((a) => a.id === "approve")?.label, "Mark approved");
   assert.match(item.summary_text, /review it/u);
 });

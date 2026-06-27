@@ -10,22 +10,22 @@
 const tokens = `.wh-ds{
   --ds-font: -apple-system, "SF Pro Text", "SF Pro Display", "PingFang SC", "M PLUS Rounded 1c", "Noto Sans SC", system-ui, sans-serif;
   /* rank12：muted/faint 之前在半透明玻璃上低于 WCAG AA(尤 faint≈2.9:1)——整体压暗一档提对比，保留层级 ink>soft>muted>faint */
-  --ds-ink: #1f1d2b; --ds-ink-soft: #403c57; --ds-ink-muted: #57536f; --ds-ink-faint: #6f6a8c;
-  --ds-accent: #5a45d8; --ds-accent-2: #b57bff; --ds-accent-soft: rgba(124,131,255,.16);
-  --ds-success: #1faf86; --ds-success-soft: rgba(31,175,134,.16);
-  --ds-warn: #d98a1f; --ds-warn-soft: rgba(217,138,31,.16);
-  --ds-danger: #e85d70; --ds-danger-soft: rgba(232,93,112,.16);
-  --ds-info: #4f89f1; --ds-info-soft: rgba(79,137,241,.16);
+  --ds-ink: #1d1d1f; --ds-ink-soft: #3a3a3c; --ds-ink-muted: #636366; --ds-ink-faint: #8e8e93;
+  --ds-accent: #0a84ff; --ds-accent-2: #64d2ff; --ds-accent-soft: rgba(10,132,255,.14);
+  --ds-success: #30d158; --ds-success-soft: rgba(48,209,88,.16);
+  --ds-warn: #ff9f0a; --ds-warn-soft: rgba(255,159,10,.16);
+  --ds-danger: #ff453a; --ds-danger-soft: rgba(255,69,58,.16);
+  --ds-info: #64d2ff; --ds-info-soft: rgba(100,210,255,.16);
   /* 玻璃表面：半透明 + backdrop blur 让底层极光/桌面透出 */
   --ds-glass: rgba(255,255,255,.52); --ds-glass-strong: rgba(255,255,255,.66); --ds-glass-quiet: rgba(255,255,255,.34);
   --ds-glass-border: rgba(255,255,255,.66); --ds-glass-hairline: rgba(255,255,255,.8);
   --ds-blur: 26px; --ds-blur-strong: 40px;
   --ds-radius-sm: 10px; --ds-radius-md: 14px; --ds-radius-lg: 18px; --ds-radius-xl: 24px; --ds-radius-pill: 999px;
   /* 柔和分层投影（Apple 风：近实远柔 + 内高光） */
-  --ds-shadow-1: 0 1px 2px rgba(40,30,90,.06), inset 0 1px 0 rgba(255,255,255,.6);
-  --ds-shadow-2: 0 10px 26px -16px rgba(40,30,90,.4), inset 0 1px 0 rgba(255,255,255,.65);
-  --ds-shadow-3: 0 24px 56px -28px rgba(40,30,90,.5), inset 0 1px 0 rgba(255,255,255,.7);
-  --ds-shadow-glow: 0 14px 26px -8px rgba(124,131,255,.6);
+  --ds-shadow-1: 0 1px 2px rgba(60,60,67,.08), inset 0 1px 0 rgba(255,255,255,.6);
+  --ds-shadow-2: 0 10px 26px -16px rgba(60,60,67,.34), inset 0 1px 0 rgba(255,255,255,.65);
+  --ds-shadow-3: 0 24px 56px -28px rgba(60,60,67,.42), inset 0 1px 0 rgba(255,255,255,.7);
+  --ds-shadow-glow: 0 14px 26px -8px rgba(10,132,255,.45);
   /* 间距 4px 网格 */
   --ds-s1: 4px; --ds-s2: 8px; --ds-s3: 12px; --ds-s4: 16px; --ds-s5: 24px; --ds-s6: 32px;
   /* 动效：时长 + 缓动（standard / 弹性 spring 带回弹 / 减速） */
@@ -79,7 +79,7 @@ const interactions = [
 const components = [
   ".wh-ds .ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--ds-s2);border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);background:var(--ds-glass-strong);color:var(--ds-ink);font:600 14px/1 var(--ds-font);padding:9px 14px;cursor:pointer;transition:transform var(--ds-dur-fast) var(--ds-spring),box-shadow var(--ds-dur-fast),filter var(--ds-dur-fast)}",
   ".wh-ds .ds-btn:hover{filter:brightness(1.03)}.wh-ds .ds-btn:active{transform:scale(.96)}",
-  ".wh-ds .ds-btn-primary{border:0;color:#fff;background:linear-gradient(135deg,#7c83ff,#b57bff);box-shadow:var(--ds-shadow-glow)}",
+  ".wh-ds .ds-btn-primary{border:0;color:#fff;background:linear-gradient(135deg,#0a84ff,#64d2ff);box-shadow:var(--ds-shadow-glow)}",
   ".wh-ds .ds-btn-danger{color:var(--ds-danger);background:var(--ds-danger-soft);border-color:transparent}",
   ".wh-ds .ds-pill{display:inline-flex;align-items:center;gap:6px;border-radius:var(--ds-radius-pill);background:var(--ds-accent-soft);color:var(--ds-accent);font:600 12px/1 var(--ds-font);padding:5px 10px}",
   ".wh-ds .ds-field{width:100%;box-sizing:border-box;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);background:rgba(255,255,255,.6);color:var(--ds-ink);font:500 14px/1.4 var(--ds-font);padding:11px 13px;transition:border-color var(--ds-dur-fast),box-shadow var(--ds-dur-fast)}",

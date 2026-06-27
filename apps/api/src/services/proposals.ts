@@ -281,6 +281,16 @@ function shouldAdoptDriveFile(change: DeliverableChange) {
     && !!change.target_ref.path;
 }
 
+function manifestTargetKey(change: DeliverableChange) {
+  if (change.target_ref.entity_id) {
+    return `${change.target_ref.entity_type}:${change.target_ref.entity_id}`;
+  }
+  if (change.target_ref.path) {
+    return `${change.target_ref.entity_type}:${change.target_ref.path.replace(/\\/gu, "/").replace(/\/{2,}/gu, "/")}`;
+  }
+  return `${change.target_ref.entity_type}:${change.id}`;
+}
+
 const maxFusionContextChars = 16_000;
 
 async function readFusionTextExcerpt(input: {
@@ -475,6 +485,7 @@ async function adoptDriveFilesForMerge(input: {
   repository: ProposalRepository;
   proposalId: string;
   storageRoot: string;
+  skipTargetKeys?: Set<string>;
 }) {
   const context = await input.repository.findMergeContext(input.proposalId);
   if (!context?.workdirRef) {
@@ -483,6 +494,9 @@ async function adoptDriveFilesForMerge(input: {
 
   const adopted: ProposalAdoptedDriveFileInput[] = [];
   for (const change of context.diffManifest.changes) {
+    if (input.skipTargetKeys?.has(manifestTargetKey(change))) {
+      continue;
+    }
     if (!shouldAdoptDriveFile(change)) {
       continue;
     }
@@ -1342,13 +1356,23 @@ function conflictToVm(conflict: {
     {
       id: "keep_current",
       label: "保留正式版",
-      summary_text: "不覆盖当前正式交付物，先回到变更申请看差异。",
+      summary_text: "不覆盖当前正式交付物，并把这个冲突标记为保留正式版。",
       recommended: recommendedOptionId === "keep_current",
       action: {
-        id: "open_proposal",
-        label: "查看变更申请",
-        method: "GET",
-        href: `/proposals/${conflict.proposal_id}`
+        id: "keep_current",
+        label: "保留正式版",
+        method: "POST",
+        href: `/api/proposals/${conflict.proposal_id}/merge`,
+        request_json: {
+          conflict_resolution: {
+            accept_incoming_target_keys: [],
+            bulk_action: {
+              action: "keep_current",
+              target_keys: [conflict.target_key],
+              conflict_count: 1
+            }
+          }
+        }
       }
     },
     {
@@ -2000,7 +2024,10 @@ export function createDbProposalService(repository: ProposalRepository, options:
       const adoptedDriveFiles = await adoptDriveFilesForMerge({
         repository,
         proposalId: input.proposalId,
-        storageRoot
+        storageRoot,
+        ...(input.conflictResolution?.bulkAction?.action === "keep_current"
+          ? { skipTargetKeys: new Set(input.conflictResolution.bulkAction.targetKeys) }
+          : {})
       });
       try {
         rows = await repository.merge({

@@ -4,14 +4,14 @@
   "audit_dir": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression",
   "screenshot": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/failed-run-card.png",
   "html": "/Users/apple/Desktop/开发项目/WorkHub/docs/workhub/05-clients/assets/audit/2026-06-11-cuu-run-card-overflow-regression/failed-run-card.html",
-  "metrics_source": "static-fallback",
+  "metrics_source": "cdp",
   "metrics": {
     "bubble": {
-      "clientHeight": 720,
-      "scrollHeight": 720,
-      "clientWidth": 520,
-      "scrollWidth": 520,
-      "overflowY": "visible",
+      "clientHeight": 245,
+      "scrollHeight": 245,
+      "clientWidth": 287,
+      "scrollWidth": 287,
+      "overflowY": "auto",
       "horizontalOverflow": false,
       "verticalOverflow": false
     },
@@ -20,12 +20,12 @@
       "scrollHeight": 720,
       "clientWidth": 520,
       "scrollWidth": 520,
-      "overflowY": "visible",
+      "overflowY": "hidden",
       "horizontalOverflow": false,
       "verticalOverflow": false
     },
-    "budgetBottomClearance": 12,
-    "bubbleGapToLive2d": 12,
+    "budgetBottomClearance": 13,
+    "bubbleGapToLive2d": 22.04,
     "statusVisible": false,
     "budgetVisible": true,
     "textClippingOffenders": []

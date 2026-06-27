@@ -70,6 +70,12 @@ export type DriveDraftProposalRows = {
   operation: DriveOperationRow;
 };
 
+export type DriveFileReadRows = {
+  project: DriveProjectRow | null;
+  item: DriveItemRow | null;
+  version: DriveVersionRow | null;
+};
+
 export class DriveRepositoryConflictError extends Error {
   constructor(
     public readonly code:
@@ -122,12 +128,17 @@ export type DriveRepository = {
   // DF-3：每个父文件夹的真实子项数(未删除),供 drive 页 children_count 与空文件夹删除候选用,不受 items 上限影响。
   // 可选：真实 DB 仓库实现它;未实现的假仓库则 children_count 回退到从已载入子集数(服务层 buildDrivePage 已兜底)。
   countChildrenByParent?: (projectId: string) => Promise<{ parentId: string; count: number }[]>;
+  readFile?: (input: {
+    projectId: string;
+    itemId: string;
+  }) => Promise<DriveFileReadRows>;
   uploadFile: (input: DriveRepositoryActor & {
     projectId: string;
     parentId?: string | null;
     filename: string;
     mime?: string;
     sizeBytes: number;
+    storagePath?: string;
     sha256?: string;
     parsedText?: string;
     parsedTextPath?: string;
@@ -321,7 +332,12 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           .select()
           .from(projectDriveItems)
           .where(and(eq(projectDriveItems.projectId, project.id), isNull(projectDriveItems.deletedAt)))
-          .orderBy(asc(projectDriveItems.parentId), asc(projectDriveItems.name), asc(projectDriveItems.createdAt))
+          .orderBy(
+            sql`${projectDriveItems.parentId} is not null`,
+            asc(projectDriveItems.parentId),
+            asc(projectDriveItems.name),
+            asc(projectDriveItems.createdAt)
+          )
           .limit(limit),
         input.includeDeleted
           ? db
@@ -434,6 +450,41 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         .map((row) => ({ parentId: row.parentId, count: Number(row.value ?? 0) }));
     },
 
+    async readFile(input) {
+      const project = await findProject(db, input.projectId);
+      if (!project) {
+        return { project: null, item: null, version: null };
+      }
+      const itemRows = await db
+        .select()
+        .from(projectDriveItems)
+        .where(and(
+          eq(projectDriveItems.id, input.itemId),
+          eq(projectDriveItems.projectId, input.projectId),
+          eq(projectDriveItems.kind, "file"),
+          isNull(projectDriveItems.deletedAt),
+          isNotNull(projectDriveItems.currentVersionId)
+        ))
+        .limit(1);
+      const item = itemRows[0] as DriveItemRow | undefined;
+      if (!item?.currentVersionId) {
+        return { project, item: item ?? null, version: null };
+      }
+      const versionRows = await db
+        .select()
+        .from(projectDriveVersions)
+        .where(and(
+          eq(projectDriveVersions.id, item.currentVersionId),
+          eq(projectDriveVersions.itemId, item.id)
+        ))
+        .limit(1);
+      return {
+        project,
+        item,
+        version: versionRows[0] as DriveVersionRow | undefined ?? null
+      };
+    },
+
     async uploadFile(input) {
       const at = input.at ?? new Date();
       let result: DriveMutationRows | null = null;
@@ -467,7 +518,7 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
 
         const itemId = randomUUID();
         const versionId = randomUUID();
-        const storagePath = `drive/${input.projectId}/${itemId}/${versionId}/${input.filename}`;
+        const storagePath = input.storagePath ?? `drive/${input.projectId}/${itemId}/${versionId}/${input.filename}`;
         let itemRows;
         try {
           itemRows = await tx

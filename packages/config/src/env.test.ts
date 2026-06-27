@@ -28,6 +28,7 @@ test("keeps provider and budget defaults available", () => {
   assert.equal(value.agentRun.leaseMs, 300000);
   assert.equal(value.agentRun.heartbeatIntervalMs, undefined);
   assert.equal(value.agentRun.recoveryIntervalMs, 30000);
+  assert.equal(value.agentRun.projectHydrateEnabled, true);
 });
 
 test("findings[#33] LLM_PROVIDER_DEFAULT is constrained to registered providers (fail-closed at parse)", () => {
@@ -48,6 +49,11 @@ test("agent run runtime intervals are configurable without serializing secrets",
   assert.equal(value.agentRun.leaseMs, 600000);
   assert.equal(value.agentRun.heartbeatIntervalMs, 15000);
   assert.equal(value.agentRun.recoveryIntervalMs, 45000);
+});
+
+test("project drive hydration is on by default and can be explicitly disabled", () => {
+  assert.equal(loadSettings({}).agentRun.projectHydrateEnabled, true);
+  assert.equal(loadSettings({ AGENT_RUN_PROJECT_HYDRATE_ENABLED: "false" }).agentRun.projectHydrateEnabled, false);
 });
 
 test("provider registry config keeps API keys out of public metadata", () => {

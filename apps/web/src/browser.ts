@@ -47,6 +47,7 @@ import {
   fieldValueRequiredNotice,
   inspectPostRunWorkItemClarity,
   intakeOptionRequiredNotice,
+  isNativeResourceLink,
   localePersistenceFailedNotice,
   markActiveRouteDirty as sharedMarkActiveRouteDirty,
   mergeConflictNotice,
@@ -456,6 +457,30 @@ function bindGoldPathNavigation(
   // option 的 value 已是完整 href（/drive?project_id=…）；空 value（M3 占位「当前项目」）不导航。
   shellRoot.addEventListener("change", (event) => {
     const target = event.target;
+    if (target instanceof HTMLInputElement && target.matches("[data-drive-upload-picker]")) {
+      const href = actionHrefFromElement(target);
+      const driveUpload = driveUploadFromHref(href);
+      const file = target.files?.[0];
+      const actionId = target.dataset.actionId ?? "drive_upload_file";
+      if (!driveUpload || !file) {
+        return;
+      }
+      showRouteNotice(shellRoot, actionPendingNotice(locale, actionId));
+      void (async () => {
+        try {
+          const result = await client.uploadDriveFile(driveUpload.projectId, { file }, { locale });
+          target.value = "";
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          }
+        } catch (error) {
+          target.value = "";
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+      })();
+      return;
+    }
     if (!(target instanceof HTMLSelectElement) || !target.matches("[data-r8-drive-project-switcher]")) {
       return;
     }
@@ -617,6 +642,9 @@ function bindGoldPathNavigation(
     if (!actionTarget) {
       return;
     }
+    if (actionTarget instanceof HTMLInputElement && actionTarget.matches("[data-drive-upload-picker]")) {
+      return;
+    }
     const href = actionHrefFromElement(actionTarget);
     if (!href) {
       return;
@@ -625,6 +653,9 @@ function bindGoldPathNavigation(
     if (actionTarget.dataset.requiresDesktop === "true") {
       event.preventDefault();
       showRouteNotice(shellRoot, desktopRequiredNotice(locale, actionId));
+      return;
+    }
+    if (isNativeResourceLink(actionTarget)) {
       return;
     }
     const action = classifyGoldPathHref(shell.routeMap, href, {

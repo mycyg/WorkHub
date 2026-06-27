@@ -220,18 +220,18 @@ function eventForScenario(
         topic: `session:${sessionId}`,
         ts,
         session_id: sessionId,
-        preview_text: "这次要按哪种交付口径整理？点一个选项即可。",
+        preview_text: "AI 已读取需求和项目文件，需要你补充 workhub-app-upload.txt 的验收标准。",
         attention: {
           id: "20000000-0000-4000-8000-000000000202",
           kind: "clarification",
           priority: "high",
           work_item_id: workItemId,
           source_ref: { entity_type: "approval_request", entity_id: approvalId },
-          title: "选一个交付口径",
-          summary_text: "Cuu 推荐先生成 PR-like 变更说明。",
-          reason_text: "不用打字，点选项即可继续。",
+          title: "请确认 workhub-app-upload.txt 的验收标准",
+          summary_text: "AI 已读取需求和项目文件，需要确认三条验收要点应面向谁、采用哪条 smoke 记录。",
+          reason_text: "隐藏思考不会展示；这里只显示工具状态和最终反问。",
           actions: [
-            { id: "submit_option", label: "确认选项", style: "primary", method: "POST", href: `/api/sessions/${sessionId}/next-question` }
+            { id: "submit_option", label: "提交回答", style: "primary", method: "POST", href: `/api/sessions/${sessionId}/next-question` }
           ],
           cuu_state: "asking_approval",
           created_at: ts

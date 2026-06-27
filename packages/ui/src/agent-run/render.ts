@@ -3,6 +3,7 @@ import type { AgentRunLiveVM, AgentStep, CuuState } from "@workhub/contracts";
 import {
   agentRunStatusLabel,
   agentStepPhaseLabel,
+  agentStepPublicSummary,
   uiCount,
   uiLocale,
   uiT,
@@ -84,7 +85,7 @@ function renderTrace(steps: AgentStep[], options?: UiRenderOptions) {
   return `<div class="wh-trace">${steps
     .map(
       (step) =>
-        `<div class="wh-step" data-phase="${escapeHtml(step.phase)}"><span class="wh-dot">${step.step_no}</span><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? uiT(locale, "agent.stepFallback"))}</p>${step.snapshot_id ? `<span class="wh-pill">${escapeHtml(uiT(locale, "generic.snapshot"))}</span>` : ""}</div></div>`
+        `<div class="wh-step" data-phase="${escapeHtml(step.phase)}"><span class="wh-dot">${step.step_no}</span><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(agentStepPublicSummary(locale, step))}</p>${step.snapshot_id ? `<span class="wh-pill">${escapeHtml(uiT(locale, "generic.snapshot"))}</span>` : ""}</div></div>`
     )
     .join("")}</div>`;
 }
@@ -117,7 +118,7 @@ export function renderAgentRunLive(
   const main = `<section class="wh-run-main" data-run-id="${escapeHtml(vm.run_id)}">
     <span class="wh-kicker">${escapeHtml(uiT(locale, "agent.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(title)}</h1>
-    <p class="wh-subtle">${escapeHtml(latestStep?.output_excerpt ?? uiT(locale, "agent.defaultSummary"))}</p>
+    <p class="wh-subtle">${escapeHtml(latestStep ? agentStepPublicSummary(locale, latestStep) : uiT(locale, "agent.defaultSummary"))}</p>
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.status"))}</strong><p><span class="${statusClass(vm.status)}">${escapeHtml(agentRunStatusLabel(locale, vm.status))}</span></p></article>
       <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.budget"))}</strong><p class="wh-subtle">${vm.usage.token_in + vm.usage.token_out} / ${vm.budget.max_tokens} ${escapeHtml(uiT(locale, "generic.tokens"))}</p></article>

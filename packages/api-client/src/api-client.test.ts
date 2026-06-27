@@ -358,6 +358,32 @@ test("api client carries locale on typed page VM requests", async () => {
   ]);
 });
 
+test("api client sends drive file uploads as multipart form data", async () => {
+  let seenBody: RequestInit["body"] | null | undefined;
+  let seenContentType: string | null = null;
+  const client = createApiClient({
+    fetchFn: async (_input, init) => {
+      seenBody = init?.body;
+      seenContentType = new Headers(init?.headers).get("Content-Type");
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.uploadDriveFile("project-1", {
+    file: new Blob(["hello drive"], { type: "text/plain" }),
+    filename: "hello.txt"
+  });
+
+  assert.equal(seenBody instanceof FormData, true);
+  assert.equal(seenContentType, null);
+  const file = (seenBody as FormData).get("file");
+  assert.equal(file instanceof Blob, true);
+  assert.equal(await (file as Blob).text(), "hello drive");
+});
+
 test("api client exposes typed push stream URLs for web and desktop clients", () => {
   const relative = createApiClient();
   const daemon = createApiClient({ baseUrl: "http://127.0.0.1:8787/" });

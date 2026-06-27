@@ -204,6 +204,13 @@
       "when": 1781512333742,
       "tag": "0028_workspace_scoped_project_slug",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1781512433742,
+      "tag": "0029_snapshot_ref_width",
+      "breakpoints": true
     }
   ]
 }

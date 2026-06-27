@@ -6,7 +6,7 @@ import type {
   WorkHubLocale
 } from "@workhub/contracts";
 
-import { agentRunStatusLabel, agentStepPhaseLabel, uiLocale, type UiRenderOptions } from "../i18n.js";
+import { agentRunStatusLabel, agentStepPhaseLabel, agentStepPublicSummary, uiLocale, type UiRenderOptions } from "../i18n.js";
 import { overlapHunkReviewCss, renderOverlapHunkReview } from "../overlap-hunk-review.js";
 import { renderRichPatchViewer, richPatchViewerCss } from "../rich-patch-viewer.js";
 import {
@@ -287,7 +287,7 @@ export function renderAgentRunReplay(
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
   const run = vm.run as ReplayTraceVM["run"] & { id?: string; work_item_id?: string };
   const steps = vm.steps
-    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? copy(locale, "记录了一个步骤。", "Recorded one step."))}</p></div><span class="wh-pill">#${escapeHtml(String(step.step_no))}</span></div>`)
+    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(agentStepPublicSummary(locale, step))}</p></div><span class="wh-pill">#${escapeHtml(String(step.step_no))}</span></div>`)
     .join("");
   const deliverables = renderDeliverables(vm, locale);
   const mergeTimeline = renderMergeTimeline(vm, locale);

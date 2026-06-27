@@ -209,7 +209,22 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
 async function ensureDefaultSeed(db: ReturnType<typeof createDatabaseClient>["db"]) {
   await db.insert(orgs).values(defaultSeedFixture.orgs).onConflictDoNothing();
   await db.insert(workspaces).values(defaultSeedFixture.workspaces).onConflictDoNothing();
-  await db.insert(users).values(defaultSeedFixture.users).onConflictDoNothing();
+  const seedUser = defaultSeedFixture.users[0];
+  if (!seedUser) {
+    throw new Error("Default seed user is missing.");
+  }
+  await db.insert(users).values(defaultSeedFixture.users).onConflictDoUpdate({
+    target: users.id,
+    set: {
+      nickname: seedUser.nickname,
+      cookieToken: seedUser.cookieToken,
+      availabilityStatus: seedUser.availabilityStatus ?? "free",
+      isAdmin: seedUser.isAdmin ?? true,
+      deletedAt: null,
+      deletedByUserId: null,
+      updatedAt: new Date()
+    }
+  });
   await db.insert(projects).values(defaultSeedFixture.projects).onConflictDoNothing();
 }
 

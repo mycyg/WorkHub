@@ -490,10 +490,14 @@ async function toStreamUser(deps: AuthDependencies, user: UserAuthRow): Promise<
 }
 
 export async function resolveStreamUser(c: Context, deps: AuthDependencies): Promise<StreamUser> {
-  const byToken = await resolveUserFromClientToken(deps, c.req.header(LOCAL_CLIENT_HEADER));
+  const clientTokenHeader = c.req.header(LOCAL_CLIENT_HEADER);
+  const byToken = await resolveUserFromClientToken(deps, clientTokenHeader);
   if (byToken) {
     await deps.touchUser?.(byToken.user.id);
     return toStreamUser(deps, byToken.user);
+  }
+  if (clientTokenHeader && clientTokenHeader.trim().length > 0) {
+    throw new HTTPException(403, { message: "invalid client token" });
   }
 
   const cookieToken = await readCookieToken(c, getAuthSettings(deps));

@@ -202,6 +202,30 @@ function replayWithStructuredFields(): ReplayTraceVM {
   };
 }
 
+test("replay renderer hides hidden reasoning and raw tool payloads", () => {
+  const vm = replayWithStructuredFields();
+  vm.steps = [
+    {
+      ...vm.steps[0]!,
+      phase: "think",
+      output_excerpt: "Now I understand the task and will analyze hidden reasoning."
+    },
+    {
+      ...vm.steps[1]!,
+      phase: "tool_result",
+      tool_name: "read_project_file",
+      output_excerpt: "--- name: markdown-report description: raw tool payload"
+    }
+  ];
+
+  const rendered = renderAgentRunReplay(vm, "web");
+
+  assert.equal(rendered.html.includes("AI 正在思考中，隐藏推理内容不会展示。"), true);
+  assert.equal(rendered.html.includes("工具已返回：read_project_file"), true);
+  assert.equal(rendered.html.includes("Now I understand"), false);
+  assert.equal(rendered.html.includes("markdown-report"), false);
+});
+
 test("replay renderer exposes structured field operation targets and writeback audit", () => {
   const vm = replayWithStructuredFields();
   const zh = renderAgentRunReplay(vm, "web");

@@ -22,4 +22,4 @@ url = "2.5"
 window-vibrancy = "0.5"
 
 [build-dependencies]
-tauri-build = "2.6.2"
+tauri-build = { version = "2.6.2", features = [] }

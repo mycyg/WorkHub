@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generated_at": "2026-06-12T17:20:59.760Z",
+  "generated_at": "2026-06-19T17:10:38.566Z",
   "module": "R5.10-dry",
   "keyless": true,
   "provider": {
@@ -32,20 +32,20 @@
     ]
   },
   "entities": {
-    "session_id": "71037fbb-b853-426a-9734-59b5660b5bee",
-    "work_item_id": "71037fbb-b853-426a-9734-59b5660b5bee",
-    "agent_run_id": "065d4aba-2e0b-440b-aa33-5d2d16abc06a",
-    "proposal_id": "6d281e40-1e6e-4525-9bda-ab73cce2bf30",
-    "merge_snapshot_id": "c5188178-ea37-48ec-b350-3d180ac57d3d",
-    "accepted_change_id": "5ffcebe4-f390-4dae-845c-9feb7eda359a",
-    "drive_version_id": "d3861093-01dd-4c9d-b4c9-7a21d4541aca"
+    "session_id": "fd50bbe9-d44f-4acd-8cba-6083a6b98793",
+    "work_item_id": "fd50bbe9-d44f-4acd-8cba-6083a6b98793",
+    "agent_run_id": "5b0ae1a2-e777-47ab-bbed-1dddd9b6f10a",
+    "proposal_id": "8b799bad-3b52-44db-9bef-2cefb911ac03",
+    "merge_snapshot_id": "c95dd72f-ea4a-43c0-b5e0-36fcf9757e4d",
+    "accepted_change_id": "82da9773-1edf-4a38-8ca6-a180dc8bb63d",
+    "drive_version_id": "f31334ab-7c95-4431-afff-f21af21bd42a"
   },
   "rest_evidence": [
     {
       "method": "GET",
       "path": "/api/pages/cost?locale=en-US",
       "status": 200,
-      "response_bytes": 4088
+      "response_bytes": 8484
     },
     {
       "method": "POST",
@@ -55,7 +55,7 @@
     },
     {
       "method": "POST",
-      "path": "/api/sessions/71037fbb-b853-426a-9734-59b5660b5bee/next-question",
+      "path": "/api/sessions/fd50bbe9-d44f-4acd-8cba-6083a6b98793/next-question",
       "status": 200,
       "response_bytes": 1599
     },
@@ -73,81 +73,81 @@
     },
     {
       "method": "POST",
-      "path": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/evidence-bindings",
+      "path": "/api/workitems/fd50bbe9-d44f-4acd-8cba-6083a6b98793/evidence-bindings",
       "status": 200,
       "response_bytes": 2558
     },
     {
       "method": "GET",
-      "path": "/api/pages/workitems/71037fbb-b853-426a-9734-59b5660b5bee?locale=zh-CN",
+      "path": "/api/pages/workitems/fd50bbe9-d44f-4acd-8cba-6083a6b98793?locale=zh-CN",
       "status": 200,
       "response_bytes": 2558
     },
     {
       "method": "POST",
-      "path": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/agent-runs",
+      "path": "/api/workitems/fd50bbe9-d44f-4acd-8cba-6083a6b98793/agent-runs",
       "status": 202,
-      "response_bytes": 1026
+      "response_bytes": 1030
     },
     {
       "method": "GET",
-      "path": "/api/agent-runs/065d4aba-2e0b-440b-aa33-5d2d16abc06a",
+      "path": "/api/agent-runs/5b0ae1a2-e777-47ab-bbed-1dddd9b6f10a",
       "status": 200,
-      "response_bytes": 2626
+      "response_bytes": 2630
     },
     {
       "method": "GET",
-      "path": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/proposals",
+      "path": "/api/workitems/fd50bbe9-d44f-4acd-8cba-6083a6b98793/proposals",
       "status": 200,
-      "response_bytes": 2785
+      "response_bytes": 2840
     },
     {
       "method": "GET",
-      "path": "/api/pages/proposals/6d281e40-1e6e-4525-9bda-ab73cce2bf30?locale=en-US",
+      "path": "/api/pages/proposals/8b799bad-3b52-44db-9bef-2cefb911ac03?locale=en-US",
       "status": 200,
       "response_bytes": 3021
     },
     {
       "method": "POST",
-      "path": "/api/proposals/6d281e40-1e6e-4525-9bda-ab73cce2bf30/review",
+      "path": "/api/proposals/8b799bad-3b52-44db-9bef-2cefb911ac03/review",
       "status": 200,
       "response_bytes": 2353
     },
     {
       "method": "POST",
-      "path": "/api/proposals/6d281e40-1e6e-4525-9bda-ab73cce2bf30/merge",
+      "path": "/api/proposals/8b799bad-3b52-44db-9bef-2cefb911ac03/merge",
       "status": 200,
       "response_bytes": 4765
     },
     {
       "method": "GET",
-      "path": "/api/pages/workitems/71037fbb-b853-426a-9734-59b5660b5bee?locale=zh-CN",
+      "path": "/api/pages/workitems/fd50bbe9-d44f-4acd-8cba-6083a6b98793?locale=zh-CN",
       "status": 200,
-      "response_bytes": 7459
+      "response_bytes": 7586
     },
     {
       "method": "GET",
-      "path": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/deliverables/5ffcebe4-f390-4dae-845c-9feb7eda359a/preview",
+      "path": "/api/workitems/fd50bbe9-d44f-4acd-8cba-6083a6b98793/deliverables/82da9773-1edf-4a38-8ca6-a180dc8bb63d/preview",
       "status": 200,
       "response_bytes": 976
     },
     {
       "method": "GET",
-      "path": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/deliverables/5ffcebe4-f390-4dae-845c-9feb7eda359a/download",
+      "path": "/api/workitems/fd50bbe9-d44f-4acd-8cba-6083a6b98793/deliverables/82da9773-1edf-4a38-8ca6-a180dc8bb63d/download",
       "status": 200,
       "response_bytes": 638
     },
     {
       "method": "GET",
-      "path": "/api/agent-runs/065d4aba-2e0b-440b-aa33-5d2d16abc06a/replay?locale=en-US",
+      "path": "/api/agent-runs/5b0ae1a2-e777-47ab-bbed-1dddd9b6f10a/replay?locale=en-US",
       "status": 200,
-      "response_bytes": 8017
+      "response_bytes": 7662
     },
     {
       "method": "GET",
       "path": "/api/pages/cost?locale=en-US",
       "status": 200,
-      "response_bytes": 4220
+      "response_bytes": 8616
     }
   ],
   "db_rows": {
@@ -175,21 +175,21 @@
     ],
     "usage_records": [
       {
-        "id": "065d4aba-2e0b-440b-aa33-5d2d16abc06a:71037fbb-b853-426a-9734-59b5660b5bee:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:agent_step:2026-06-12T17:20:59.615Z",
+        "id": "5b0ae1a2-e777-47ab-bbed-1dddd9b6f10a:fd50bbe9-d44f-4acd-8cba-6083a6b98793:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:agent_step:1:120:45:0.0006:2026-06-19T17:10:38.436Z",
         "source": "agent_step",
         "input_tokens": 120,
         "output_tokens": 45,
         "estimated_cost_cny": "0.000600"
       },
       {
-        "id": "065d4aba-2e0b-440b-aa33-5d2d16abc06a:71037fbb-b853-426a-9734-59b5660b5bee:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:agent_step:2026-06-12T17:20:59.625Z",
+        "id": "5b0ae1a2-e777-47ab-bbed-1dddd9b6f10a:fd50bbe9-d44f-4acd-8cba-6083a6b98793:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:agent_step:2:90:35:0.00046:2026-06-19T17:10:38.443Z",
         "source": "agent_step",
         "input_tokens": 90,
         "output_tokens": 35,
         "estimated_cost_cny": "0.000460"
       },
       {
-        "id": "065d4aba-2e0b-440b-aa33-5d2d16abc06a:71037fbb-b853-426a-9734-59b5660b5bee:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:review:2026-06-12T17:20:59.633Z",
+        "id": "5b0ae1a2-e777-47ab-bbed-1dddd9b6f10a:fd50bbe9-d44f-4acd-8cba-6083a6b98793:00000000-0000-4000-8000-000000000003:deepseek:deepseek-v4-flash:worker:review:no-seq:140:30:0.00052:2026-06-19T17:10:38.450Z",
         "source": "review",
         "input_tokens": 140,
         "output_tokens": 30,
@@ -197,135 +197,350 @@
       }
     ],
     "cost_page_before": {
-      "generated_at": "2026-06-12T17:20:59.517Z",
+      "generated_at": "2026-06-19T17:10:38.342Z",
       "currency": "CNY",
-      "total_cost_cny": "0.208538",
-      "token_in": 24241,
-      "token_out": 20007,
-      "unit_cost_cny": "0.000005",
+      "total_cost_cny": "1.304884",
+      "token_in": 184398,
+      "token_out": 117011,
+      "unit_cost_cny": "0.000004",
       "trend": [
         {
+          "date": "2026-06-11",
+          "cost_cny": "0.224",
+          "tokens": 76000
+        },
+        {
           "date": "2026-06-12",
-          "cost_cny": "0.208538",
-          "tokens": 44248
+          "cost_cny": "0.233362",
+          "tokens": 50069
+        },
+        {
+          "date": "2026-06-13",
+          "cost_cny": "0.138058",
+          "tokens": 28100
+        },
+        {
+          "date": "2026-06-14",
+          "cost_cny": "0.007",
+          "tokens": 2000
+        },
+        {
+          "date": "2026-06-15",
+          "cost_cny": "0.120702",
+          "tokens": 19671
+        },
+        {
+          "date": "2026-06-16",
+          "cost_cny": "0.271132",
+          "tokens": 58964
+        },
+        {
+          "date": "2026-06-19",
+          "cost_cny": "0.31063",
+          "tokens": 66605
         }
       ],
       "by_user": [
         {
           "user_id": "00000000-0000-4000-8000-000000000003",
           "label": "Current user",
-          "cost_cny": "0.625614",
-          "tokens": 132744
+          "cost_cny": "0.980124",
+          "tokens": 208914
+        },
+        {
+          "user_id": "dcba48af-0ae1-49e8-91c7-5bd12a8698cc",
+          "label": "dcba48af-0ae1-49e8-91c7-5bd12a8698cc",
+          "cost_cny": "0.06723",
+          "tokens": 11016
+        },
+        {
+          "user_id": "00000000-0000-4000-8000-000000000102",
+          "label": "00000000-0000-4000-8000-000000000102",
+          "cost_cny": "0.224",
+          "tokens": 76000
         }
       ],
       "by_team": [
         {
           "team_id": "00000000-0000-4000-8000-000000000002",
           "label": "Team budget",
-          "cost_cny": "0.208538",
-          "tokens": 44248
+          "cost_cny": "1.304884",
+          "tokens": 301409
         }
       ],
       "by_workitem": [
         {
           "workitem_id": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
           "code": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
-          "cost_cny": "0.00474",
-          "turns": 6
+          "cost_cny": "0.00158",
+          "turns": 2
         },
         {
           "workitem_id": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
           "code": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
-          "cost_cny": "0.00474",
-          "turns": 6
+          "cost_cny": "0.00158",
+          "turns": 2
         },
         {
           "workitem_id": "daedaabe-38a1-4508-bca0-1a6a60796738",
           "code": "daedaabe-38a1-4508-bca0-1a6a60796738",
-          "cost_cny": "0.00474",
-          "turns": 6
+          "cost_cny": "0.00158",
+          "turns": 2
         },
         {
           "workitem_id": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
           "code": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
-          "cost_cny": "0.00474",
-          "turns": 6
+          "cost_cny": "0.00158",
+          "turns": 2
         },
         {
           "workitem_id": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
           "code": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
-          "cost_cny": "0.010476",
-          "turns": 3
+          "cost_cny": "0.003492",
+          "turns": 1
         },
         {
           "workitem_id": "6db5dba7-8907-46e6-8891-a1afca305439",
           "code": "6db5dba7-8907-46e6-8891-a1afca305439",
-          "cost_cny": "0.14193",
-          "turns": 33
+          "cost_cny": "0.04731",
+          "turns": 11
         },
         {
           "workitem_id": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
           "code": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
-          "cost_cny": "0.004662",
-          "turns": 6
+          "cost_cny": "0.001554",
+          "turns": 2
         },
         {
           "workitem_id": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
           "code": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
-          "cost_cny": "0.00819",
-          "turns": 6
+          "cost_cny": "0.00273",
+          "turns": 2
         },
         {
           "workitem_id": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
           "code": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
-          "cost_cny": "0.014358",
-          "turns": 12
+          "cost_cny": "0.004786",
+          "turns": 4
         },
         {
           "workitem_id": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
           "code": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
-          "cost_cny": "0.06765",
-          "turns": 21
+          "cost_cny": "0.02255",
+          "turns": 7
         },
         {
           "workitem_id": "c0653922-449c-4f50-adf7-550c8b5bffca",
           "code": "c0653922-449c-4f50-adf7-550c8b5bffca",
-          "cost_cny": "0.06588",
-          "turns": 24
+          "cost_cny": "0.02196",
+          "turns": 8
         },
         {
           "workitem_id": "46d27105-fb63-4543-98af-d361886ada90",
           "code": "46d27105-fb63-4543-98af-d361886ada90",
-          "cost_cny": "0.097632",
-          "turns": 24
+          "cost_cny": "0.032544",
+          "turns": 8
         },
         {
           "workitem_id": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
           "code": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
-          "cost_cny": "0.11289",
-          "turns": 33
+          "cost_cny": "0.03763",
+          "turns": 11
         },
         {
           "workitem_id": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
           "code": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
-          "cost_cny": "0.077442",
-          "turns": 18
+          "cost_cny": "0.025814",
+          "turns": 6
         },
         {
           "workitem_id": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
           "code": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
-          "cost_cny": "0.005544",
-          "turns": 3
+          "cost_cny": "0.001848",
+          "turns": 1
+        },
+        {
+          "workitem_id": "71037fbb-b853-426a-9734-59b5660b5bee",
+          "code": "71037fbb-b853-426a-9734-59b5660b5bee",
+          "cost_cny": "0.00158",
+          "turns": 2
+        },
+        {
+          "workitem_id": "e3878fe9-c078-43eb-904f-91308fd108b5",
+          "code": "e3878fe9-c078-43eb-904f-91308fd108b5",
+          "cost_cny": "0.00158",
+          "turns": 2
+        },
+        {
+          "workitem_id": "48c5771a-8cac-41ab-8021-be0133f7b2b1",
+          "code": "48c5771a-8cac-41ab-8021-be0133f7b2b1",
+          "cost_cny": "0.021664",
+          "turns": 5
+        },
+        {
+          "workitem_id": "c7f33922-0df3-4f93-9e78-7f0b6d9ac663",
+          "code": "c7f33922-0df3-4f93-9e78-7f0b6d9ac663",
+          "cost_cny": "0.01633",
+          "turns": 5
+        },
+        {
+          "workitem_id": "e0a62309-61b1-4038-b265-ce88b9ccdc72",
+          "code": "e0a62309-61b1-4038-b265-ce88b9ccdc72",
+          "cost_cny": "0.022852",
+          "turns": 9
+        },
+        {
+          "workitem_id": "272bce9b-0187-484c-a6d9-90b04a1e5dcb",
+          "code": "272bce9b-0187-484c-a6d9-90b04a1e5dcb",
+          "cost_cny": "0.043028",
+          "turns": 10
+        },
+        {
+          "workitem_id": "9a3aa7eb-8338-4cd6-8c02-801461b75690",
+          "code": "9a3aa7eb-8338-4cd6-8c02-801461b75690",
+          "cost_cny": "0.028952",
+          "turns": 8
+        },
+        {
+          "workitem_id": "87db84b2-7556-42d0-97ec-0f6c48f44f05",
+          "code": "87db84b2-7556-42d0-97ec-0f6c48f44f05",
+          "cost_cny": "0.025144",
+          "turns": 7
+        },
+        {
+          "workitem_id": "443608d7-3659-4b01-a0b5-b143a793d111",
+          "code": "443608d7-3659-4b01-a0b5-b143a793d111",
+          "cost_cny": "0.001752",
+          "turns": 1
+        },
+        {
+          "workitem_id": "0cf530b4-c826-43b0-a807-d6c0569f54b3",
+          "code": "0cf530b4-c826-43b0-a807-d6c0569f54b3",
+          "cost_cny": "0.007",
+          "turns": 1
+        },
+        {
+          "workitem_id": "9bd55089-43b1-4da0-9226-0e52a33ff64e",
+          "code": "9bd55089-43b1-4da0-9226-0e52a33ff64e",
+          "cost_cny": "0.053472",
+          "turns": 15
+        },
+        {
+          "workitem_id": "fd16d1f5-94c6-47d2-abc4-d2df3a25bc94",
+          "code": "fd16d1f5-94c6-47d2-abc4-d2df3a25bc94",
+          "cost_cny": "0.06723",
+          "turns": 9
+        },
+        {
+          "workitem_id": "44219888-e779-4c79-acf7-2b1bf180cf71",
+          "code": "44219888-e779-4c79-acf7-2b1bf180cf71",
+          "cost_cny": "0.03791",
+          "turns": 7
+        },
+        {
+          "workitem_id": "c948ac06-0de1-469a-8bea-3c075074d0b4",
+          "code": "c948ac06-0de1-469a-8bea-3c075074d0b4",
+          "cost_cny": "0.036492",
+          "turns": 5
+        },
+        {
+          "workitem_id": "9ed0134b-d58b-4397-91de-1a4cb452914c",
+          "code": "9ed0134b-d58b-4397-91de-1a4cb452914c",
+          "cost_cny": "0.035964",
+          "turns": 8
+        },
+        {
+          "workitem_id": "4071f355-ecf6-4ea5-a4bf-dd8ea62450b1",
+          "code": "4071f355-ecf6-4ea5-a4bf-dd8ea62450b1",
+          "cost_cny": "0.042322",
+          "turns": 11
+        },
+        {
+          "workitem_id": "67b14258-f9bb-46a3-82c7-cac3b22fc7f6",
+          "code": "67b14258-f9bb-46a3-82c7-cac3b22fc7f6",
+          "cost_cny": "0.039756",
+          "turns": 8
+        },
+        {
+          "workitem_id": "e62f680d-09af-476c-b85c-193ed9265314",
+          "code": "e62f680d-09af-476c-b85c-193ed9265314",
+          "cost_cny": "0.043826",
+          "turns": 7
+        },
+        {
+          "workitem_id": "d80ab86a-f395-4301-810b-be37f09669fa",
+          "code": "d80ab86a-f395-4301-810b-be37f09669fa",
+          "cost_cny": "0.001332",
+          "turns": 1
+        },
+        {
+          "workitem_id": "8b937620-6722-4434-ac01-c890e3f2a844",
+          "code": "8b937620-6722-4434-ac01-c890e3f2a844",
+          "cost_cny": "0.007",
+          "turns": 1
+        },
+        {
+          "workitem_id": "00000000-0000-4000-8000-000000000104",
+          "code": "00000000-0000-4000-8000-000000000104",
+          "cost_cny": "0.224",
+          "turns": 1
+        },
+        {
+          "workitem_id": "193c5d57-cd11-4c4b-a32d-3e41b3251227",
+          "code": "193c5d57-cd11-4c4b-a32d-3e41b3251227",
+          "cost_cny": "0.03495",
+          "turns": 6
+        },
+        {
+          "workitem_id": "599c12ca-069f-4eca-a186-b2dabbd9a151",
+          "code": "599c12ca-069f-4eca-a186-b2dabbd9a151",
+          "cost_cny": "0.043632",
+          "turns": 10
+        },
+        {
+          "workitem_id": "9d964cf8-8b12-4914-8fbd-fb389822f351",
+          "code": "9d964cf8-8b12-4914-8fbd-fb389822f351",
+          "cost_cny": "0.065518",
+          "turns": 8
+        },
+        {
+          "workitem_id": "d94c2e0e-31b9-4853-9fd8-f1b28654196e",
+          "code": "d94c2e0e-31b9-4853-9fd8-f1b28654196e",
+          "cost_cny": "0.0396",
+          "turns": 5
+        },
+        {
+          "workitem_id": "470fa077-353e-40e5-a0ce-77b405fbe7c6",
+          "code": "470fa077-353e-40e5-a0ce-77b405fbe7c6",
+          "cost_cny": "0.049294",
+          "turns": 8
+        },
+        {
+          "workitem_id": "195a3cf8-6609-412e-95cb-482ce7a13994",
+          "code": "195a3cf8-6609-412e-95cb-482ce7a13994",
+          "cost_cny": "0.070636",
+          "turns": 7
         }
       ],
       "model_breakdown": [
         {
           "provider": "deepseek",
           "model": "deepseek-v4-flash",
-          "count": 79,
-          "cost_cny": "0.208538"
+          "count": 228,
+          "cost_cny": "1.001254"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-v4-pro",
+          "count": 56,
+          "cost_cny": "0.30363"
         }
       ],
+      "labor_split": {
+        "production_cost_cny": "1.28897",
+        "self_improvement_cost_cny": "0.015914",
+        "self_improvement_ratio": 0.01
+      },
       "budget": [
         {
           "scope": {
@@ -335,17 +550,17 @@
           "scope_label": "My AI budget today",
           "policy_id": "pcost-user-day-v0",
           "period": "day",
-          "period_start": "2026-06-12T00:00:00.000Z",
-          "period_end": "2026-06-13T00:00:00.000Z",
-          "token_in": 24241,
-          "token_out": 20007,
-          "total_tokens": 44248,
-          "max_tokens": 500000,
-          "remaining_tokens": 455752,
-          "estimated_cost_cny": "0.208538",
-          "max_cost_cny": "20",
-          "remaining_cost_cny": "19.791462",
-          "warning_ratio": 0.088496,
+          "period_start": "2026-06-19T00:00:00.000Z",
+          "period_end": "2026-06-20T00:00:00.000Z",
+          "token_in": 37035,
+          "token_out": 29570,
+          "total_tokens": 66605,
+          "max_tokens": 250000,
+          "remaining_tokens": 183395,
+          "estimated_cost_cny": "0.31063",
+          "max_cost_cny": "12.5",
+          "remaining_cost_cny": "12.18937",
+          "warning_ratio": 0.26642,
           "status": "ok"
         },
         {
@@ -356,17 +571,17 @@
           "scope_label": "Team AI budget today",
           "policy_id": "pcost-team-day-v0",
           "period": "day",
-          "period_start": "2026-06-12T00:00:00.000Z",
-          "period_end": "2026-06-13T00:00:00.000Z",
-          "token_in": 24241,
-          "token_out": 20007,
-          "total_tokens": 44248,
+          "period_start": "2026-06-19T00:00:00.000Z",
+          "period_end": "2026-06-20T00:00:00.000Z",
+          "token_in": 37035,
+          "token_out": 29570,
+          "total_tokens": 66605,
           "max_tokens": 5000000,
-          "remaining_tokens": 4955752,
-          "estimated_cost_cny": "0.208538",
+          "remaining_tokens": 4933395,
+          "estimated_cost_cny": "0.31063",
           "max_cost_cny": "200",
-          "remaining_cost_cny": "199.791462",
-          "warning_ratio": 0.0088496,
+          "remaining_cost_cny": "199.68937",
+          "warning_ratio": 0.013321,
           "status": "ok"
         },
         {
@@ -374,20 +589,20 @@
             "kind": "team",
             "team_id": "00000000-0000-4000-8000-000000000002"
           },
-          "scope_label": "团队 AI 预算",
+          "scope_label": "Team AI budget this month",
           "policy_id": "pcost-team-month-v0",
           "period": "month",
           "period_start": "2026-06-01T00:00:00.000Z",
           "period_end": "2026-07-01T00:00:00.000Z",
-          "token_in": 24241,
-          "token_out": 20007,
-          "total_tokens": 44248,
+          "token_in": 184398,
+          "token_out": 117011,
+          "total_tokens": 301409,
           "max_tokens": 50000000,
-          "remaining_tokens": 49955752,
-          "estimated_cost_cny": "0.208538",
+          "remaining_tokens": 49698591,
+          "estimated_cost_cny": "1.304884",
           "max_cost_cny": "2000",
-          "remaining_cost_cny": "1999.791462",
-          "warning_ratio": 0.00088496,
+          "remaining_cost_cny": "1998.695116",
+          "warning_ratio": 0.00602818,
           "status": "ok"
         }
       ],
@@ -395,141 +610,356 @@
       "top_exhaustion_risks": []
     },
     "cost_page_after": {
-      "generated_at": "2026-06-12T17:20:59.747Z",
+      "generated_at": "2026-06-19T17:10:38.546Z",
       "currency": "CNY",
-      "total_cost_cny": "0.210118",
-      "token_in": 24591,
-      "token_out": 20117,
-      "unit_cost_cny": "0.000005",
+      "total_cost_cny": "1.306464",
+      "token_in": 184748,
+      "token_out": 117121,
+      "unit_cost_cny": "0.000004",
       "trend": [
         {
+          "date": "2026-06-11",
+          "cost_cny": "0.224",
+          "tokens": 76000
+        },
+        {
           "date": "2026-06-12",
-          "cost_cny": "0.210118",
-          "tokens": 44708
+          "cost_cny": "0.233362",
+          "tokens": 50069
+        },
+        {
+          "date": "2026-06-13",
+          "cost_cny": "0.138058",
+          "tokens": 28100
+        },
+        {
+          "date": "2026-06-14",
+          "cost_cny": "0.007",
+          "tokens": 2000
+        },
+        {
+          "date": "2026-06-15",
+          "cost_cny": "0.120702",
+          "tokens": 19671
+        },
+        {
+          "date": "2026-06-16",
+          "cost_cny": "0.271132",
+          "tokens": 58964
+        },
+        {
+          "date": "2026-06-19",
+          "cost_cny": "0.31221",
+          "tokens": 67065
         }
       ],
       "by_user": [
         {
           "user_id": "00000000-0000-4000-8000-000000000003",
           "label": "Current user",
-          "cost_cny": "0.630354",
-          "tokens": 134124
+          "cost_cny": "0.981704",
+          "tokens": 209374
+        },
+        {
+          "user_id": "dcba48af-0ae1-49e8-91c7-5bd12a8698cc",
+          "label": "dcba48af-0ae1-49e8-91c7-5bd12a8698cc",
+          "cost_cny": "0.06723",
+          "tokens": 11016
+        },
+        {
+          "user_id": "00000000-0000-4000-8000-000000000102",
+          "label": "00000000-0000-4000-8000-000000000102",
+          "cost_cny": "0.224",
+          "tokens": 76000
         }
       ],
       "by_team": [
         {
           "team_id": "00000000-0000-4000-8000-000000000002",
           "label": "Team budget",
-          "cost_cny": "0.210118",
-          "tokens": 44708
+          "cost_cny": "1.306464",
+          "tokens": 301869
         }
       ],
       "by_workitem": [
         {
           "workitem_id": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
           "code": "ef4d7d20-01a0-4839-b3d8-59cb6c8daa90",
-          "cost_cny": "0.00474",
-          "turns": 6
+          "cost_cny": "0.00158",
+          "turns": 2
         },
         {
           "workitem_id": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
           "code": "9f0e11f7-7fb8-4549-84fb-733be89f073c",
-          "cost_cny": "0.00474",
-          "turns": 6
+          "cost_cny": "0.00158",
+          "turns": 2
         },
         {
           "workitem_id": "daedaabe-38a1-4508-bca0-1a6a60796738",
           "code": "daedaabe-38a1-4508-bca0-1a6a60796738",
-          "cost_cny": "0.00474",
-          "turns": 6
+          "cost_cny": "0.00158",
+          "turns": 2
         },
         {
           "workitem_id": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
           "code": "3f5fbe21-7bc0-4677-9360-0b57e7440d93",
-          "cost_cny": "0.00474",
-          "turns": 6
+          "cost_cny": "0.00158",
+          "turns": 2
         },
         {
           "workitem_id": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
           "code": "3e2fffda-4e1d-4585-8949-648bcbd012c7",
-          "cost_cny": "0.010476",
-          "turns": 3
+          "cost_cny": "0.003492",
+          "turns": 1
         },
         {
           "workitem_id": "6db5dba7-8907-46e6-8891-a1afca305439",
           "code": "6db5dba7-8907-46e6-8891-a1afca305439",
-          "cost_cny": "0.14193",
-          "turns": 33
+          "cost_cny": "0.04731",
+          "turns": 11
         },
         {
           "workitem_id": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
           "code": "f3feb276-8f59-4e4c-a0e8-eaa757469d85",
-          "cost_cny": "0.004662",
-          "turns": 6
+          "cost_cny": "0.001554",
+          "turns": 2
         },
         {
           "workitem_id": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
           "code": "033ccec7-98a9-4f5d-897f-fa8f2e6fc0eb",
-          "cost_cny": "0.00819",
-          "turns": 6
+          "cost_cny": "0.00273",
+          "turns": 2
         },
         {
           "workitem_id": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
           "code": "26ed26c5-2e68-47a3-94e9-62595aa92c41",
-          "cost_cny": "0.014358",
-          "turns": 12
+          "cost_cny": "0.004786",
+          "turns": 4
         },
         {
           "workitem_id": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
           "code": "464fbf4f-81bc-48ad-b2d8-5d68a1c7e01d",
-          "cost_cny": "0.06765",
-          "turns": 21
+          "cost_cny": "0.02255",
+          "turns": 7
         },
         {
           "workitem_id": "c0653922-449c-4f50-adf7-550c8b5bffca",
           "code": "c0653922-449c-4f50-adf7-550c8b5bffca",
-          "cost_cny": "0.06588",
-          "turns": 24
+          "cost_cny": "0.02196",
+          "turns": 8
         },
         {
           "workitem_id": "46d27105-fb63-4543-98af-d361886ada90",
           "code": "46d27105-fb63-4543-98af-d361886ada90",
-          "cost_cny": "0.097632",
-          "turns": 24
+          "cost_cny": "0.032544",
+          "turns": 8
         },
         {
           "workitem_id": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
           "code": "aa59ddcc-ae9c-4deb-bddb-f6fc4675723e",
-          "cost_cny": "0.11289",
-          "turns": 33
+          "cost_cny": "0.03763",
+          "turns": 11
         },
         {
           "workitem_id": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
           "code": "0541f8e6-9175-4219-9d7b-0a33d8576ebf",
-          "cost_cny": "0.077442",
-          "turns": 18
+          "cost_cny": "0.025814",
+          "turns": 6
         },
         {
           "workitem_id": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
           "code": "dfeee077-9b8e-42b1-b754-5bc4193eb7bf",
-          "cost_cny": "0.005544",
-          "turns": 3
+          "cost_cny": "0.001848",
+          "turns": 1
         },
         {
           "workitem_id": "71037fbb-b853-426a-9734-59b5660b5bee",
           "code": "71037fbb-b853-426a-9734-59b5660b5bee",
-          "cost_cny": "0.00474",
+          "cost_cny": "0.00158",
+          "turns": 2
+        },
+        {
+          "workitem_id": "e3878fe9-c078-43eb-904f-91308fd108b5",
+          "code": "e3878fe9-c078-43eb-904f-91308fd108b5",
+          "cost_cny": "0.00158",
+          "turns": 2
+        },
+        {
+          "workitem_id": "48c5771a-8cac-41ab-8021-be0133f7b2b1",
+          "code": "48c5771a-8cac-41ab-8021-be0133f7b2b1",
+          "cost_cny": "0.021664",
+          "turns": 5
+        },
+        {
+          "workitem_id": "c7f33922-0df3-4f93-9e78-7f0b6d9ac663",
+          "code": "c7f33922-0df3-4f93-9e78-7f0b6d9ac663",
+          "cost_cny": "0.01633",
+          "turns": 5
+        },
+        {
+          "workitem_id": "e0a62309-61b1-4038-b265-ce88b9ccdc72",
+          "code": "e0a62309-61b1-4038-b265-ce88b9ccdc72",
+          "cost_cny": "0.022852",
+          "turns": 9
+        },
+        {
+          "workitem_id": "272bce9b-0187-484c-a6d9-90b04a1e5dcb",
+          "code": "272bce9b-0187-484c-a6d9-90b04a1e5dcb",
+          "cost_cny": "0.043028",
+          "turns": 10
+        },
+        {
+          "workitem_id": "9a3aa7eb-8338-4cd6-8c02-801461b75690",
+          "code": "9a3aa7eb-8338-4cd6-8c02-801461b75690",
+          "cost_cny": "0.028952",
+          "turns": 8
+        },
+        {
+          "workitem_id": "87db84b2-7556-42d0-97ec-0f6c48f44f05",
+          "code": "87db84b2-7556-42d0-97ec-0f6c48f44f05",
+          "cost_cny": "0.025144",
+          "turns": 7
+        },
+        {
+          "workitem_id": "443608d7-3659-4b01-a0b5-b143a793d111",
+          "code": "443608d7-3659-4b01-a0b5-b143a793d111",
+          "cost_cny": "0.001752",
+          "turns": 1
+        },
+        {
+          "workitem_id": "0cf530b4-c826-43b0-a807-d6c0569f54b3",
+          "code": "0cf530b4-c826-43b0-a807-d6c0569f54b3",
+          "cost_cny": "0.007",
+          "turns": 1
+        },
+        {
+          "workitem_id": "9bd55089-43b1-4da0-9226-0e52a33ff64e",
+          "code": "9bd55089-43b1-4da0-9226-0e52a33ff64e",
+          "cost_cny": "0.053472",
+          "turns": 15
+        },
+        {
+          "workitem_id": "fd16d1f5-94c6-47d2-abc4-d2df3a25bc94",
+          "code": "fd16d1f5-94c6-47d2-abc4-d2df3a25bc94",
+          "cost_cny": "0.06723",
+          "turns": 9
+        },
+        {
+          "workitem_id": "44219888-e779-4c79-acf7-2b1bf180cf71",
+          "code": "44219888-e779-4c79-acf7-2b1bf180cf71",
+          "cost_cny": "0.03791",
+          "turns": 7
+        },
+        {
+          "workitem_id": "c948ac06-0de1-469a-8bea-3c075074d0b4",
+          "code": "c948ac06-0de1-469a-8bea-3c075074d0b4",
+          "cost_cny": "0.036492",
+          "turns": 5
+        },
+        {
+          "workitem_id": "9ed0134b-d58b-4397-91de-1a4cb452914c",
+          "code": "9ed0134b-d58b-4397-91de-1a4cb452914c",
+          "cost_cny": "0.035964",
+          "turns": 8
+        },
+        {
+          "workitem_id": "4071f355-ecf6-4ea5-a4bf-dd8ea62450b1",
+          "code": "4071f355-ecf6-4ea5-a4bf-dd8ea62450b1",
+          "cost_cny": "0.042322",
+          "turns": 11
+        },
+        {
+          "workitem_id": "67b14258-f9bb-46a3-82c7-cac3b22fc7f6",
+          "code": "67b14258-f9bb-46a3-82c7-cac3b22fc7f6",
+          "cost_cny": "0.039756",
+          "turns": 8
+        },
+        {
+          "workitem_id": "e62f680d-09af-476c-b85c-193ed9265314",
+          "code": "e62f680d-09af-476c-b85c-193ed9265314",
+          "cost_cny": "0.043826",
+          "turns": 7
+        },
+        {
+          "workitem_id": "d80ab86a-f395-4301-810b-be37f09669fa",
+          "code": "d80ab86a-f395-4301-810b-be37f09669fa",
+          "cost_cny": "0.001332",
+          "turns": 1
+        },
+        {
+          "workitem_id": "8b937620-6722-4434-ac01-c890e3f2a844",
+          "code": "8b937620-6722-4434-ac01-c890e3f2a844",
+          "cost_cny": "0.007",
+          "turns": 1
+        },
+        {
+          "workitem_id": "00000000-0000-4000-8000-000000000104",
+          "code": "00000000-0000-4000-8000-000000000104",
+          "cost_cny": "0.224",
+          "turns": 1
+        },
+        {
+          "workitem_id": "193c5d57-cd11-4c4b-a32d-3e41b3251227",
+          "code": "193c5d57-cd11-4c4b-a32d-3e41b3251227",
+          "cost_cny": "0.03495",
           "turns": 6
+        },
+        {
+          "workitem_id": "599c12ca-069f-4eca-a186-b2dabbd9a151",
+          "code": "599c12ca-069f-4eca-a186-b2dabbd9a151",
+          "cost_cny": "0.043632",
+          "turns": 10
+        },
+        {
+          "workitem_id": "9d964cf8-8b12-4914-8fbd-fb389822f351",
+          "code": "9d964cf8-8b12-4914-8fbd-fb389822f351",
+          "cost_cny": "0.065518",
+          "turns": 8
+        },
+        {
+          "workitem_id": "d94c2e0e-31b9-4853-9fd8-f1b28654196e",
+          "code": "d94c2e0e-31b9-4853-9fd8-f1b28654196e",
+          "cost_cny": "0.0396",
+          "turns": 5
+        },
+        {
+          "workitem_id": "470fa077-353e-40e5-a0ce-77b405fbe7c6",
+          "code": "470fa077-353e-40e5-a0ce-77b405fbe7c6",
+          "cost_cny": "0.049294",
+          "turns": 8
+        },
+        {
+          "workitem_id": "195a3cf8-6609-412e-95cb-482ce7a13994",
+          "code": "195a3cf8-6609-412e-95cb-482ce7a13994",
+          "cost_cny": "0.070636",
+          "turns": 7
+        },
+        {
+          "workitem_id": "fd50bbe9-d44f-4acd-8cba-6083a6b98793",
+          "code": "fd50bbe9-d44f-4acd-8cba-6083a6b98793",
+          "cost_cny": "0.00158",
+          "turns": 2
         }
       ],
       "model_breakdown": [
         {
           "provider": "deepseek",
           "model": "deepseek-v4-flash",
-          "count": 82,
-          "cost_cny": "0.210118"
+          "count": 231,
+          "cost_cny": "1.002834"
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-v4-pro",
+          "count": 56,
+          "cost_cny": "0.30363"
         }
       ],
+      "labor_split": {
+        "production_cost_cny": "1.29055",
+        "self_improvement_cost_cny": "0.015914",
+        "self_improvement_ratio": 0.01
+      },
       "budget": [
         {
           "scope": {
@@ -539,17 +969,17 @@
           "scope_label": "My AI budget today",
           "policy_id": "pcost-user-day-v0",
           "period": "day",
-          "period_start": "2026-06-12T00:00:00.000Z",
-          "period_end": "2026-06-13T00:00:00.000Z",
-          "token_in": 24591,
-          "token_out": 20117,
-          "total_tokens": 44708,
-          "max_tokens": 500000,
-          "remaining_tokens": 455292,
-          "estimated_cost_cny": "0.210118",
-          "max_cost_cny": "20",
-          "remaining_cost_cny": "19.789882",
-          "warning_ratio": 0.089416,
+          "period_start": "2026-06-19T00:00:00.000Z",
+          "period_end": "2026-06-20T00:00:00.000Z",
+          "token_in": 37385,
+          "token_out": 29680,
+          "total_tokens": 67065,
+          "max_tokens": 250000,
+          "remaining_tokens": 182935,
+          "estimated_cost_cny": "0.31221",
+          "max_cost_cny": "12.5",
+          "remaining_cost_cny": "12.18779",
+          "warning_ratio": 0.26826,
           "status": "ok"
         },
         {
@@ -560,17 +990,17 @@
           "scope_label": "Team AI budget today",
           "policy_id": "pcost-team-day-v0",
           "period": "day",
-          "period_start": "2026-06-12T00:00:00.000Z",
-          "period_end": "2026-06-13T00:00:00.000Z",
-          "token_in": 24591,
-          "token_out": 20117,
-          "total_tokens": 44708,
+          "period_start": "2026-06-19T00:00:00.000Z",
+          "period_end": "2026-06-20T00:00:00.000Z",
+          "token_in": 37385,
+          "token_out": 29680,
+          "total_tokens": 67065,
           "max_tokens": 5000000,
-          "remaining_tokens": 4955292,
-          "estimated_cost_cny": "0.210118",
+          "remaining_tokens": 4932935,
+          "estimated_cost_cny": "0.31221",
           "max_cost_cny": "200",
-          "remaining_cost_cny": "199.789882",
-          "warning_ratio": 0.0089416,
+          "remaining_cost_cny": "199.68779",
+          "warning_ratio": 0.013413,
           "status": "ok"
         },
         {
@@ -578,20 +1008,20 @@
             "kind": "team",
             "team_id": "00000000-0000-4000-8000-000000000002"
           },
-          "scope_label": "团队 AI 预算",
+          "scope_label": "Team AI budget this month",
           "policy_id": "pcost-team-month-v0",
           "period": "month",
           "period_start": "2026-06-01T00:00:00.000Z",
           "period_end": "2026-07-01T00:00:00.000Z",
-          "token_in": 24591,
-          "token_out": 20117,
-          "total_tokens": 44708,
+          "token_in": 184748,
+          "token_out": 117121,
+          "total_tokens": 301869,
           "max_tokens": 50000000,
-          "remaining_tokens": 49955292,
-          "estimated_cost_cny": "0.210118",
+          "remaining_tokens": 49698131,
+          "estimated_cost_cny": "1.306464",
           "max_cost_cny": "2000",
-          "remaining_cost_cny": "1999.789882",
-          "warning_ratio": 0.00089416,
+          "remaining_cost_cny": "1998.693536",
+          "warning_ratio": 0.00603738,
           "status": "ok"
         }
       ],
@@ -613,8 +1043,8 @@
   },
   "artifact": {
     "filename": "r5-10-dry-weekly-report.md",
-    "preview_href": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/deliverables/5ffcebe4-f390-4dae-845c-9feb7eda359a/preview",
-    "download_href": "/api/workitems/71037fbb-b853-426a-9734-59b5660b5bee/deliverables/5ffcebe4-f390-4dae-845c-9feb7eda359a/download",
+    "preview_href": "/api/workitems/fd50bbe9-d44f-4acd-8cba-6083a6b98793/deliverables/82da9773-1edf-4a38-8ca6-a180dc8bb63d/preview",
+    "download_href": "/api/workitems/fd50bbe9-d44f-4acd-8cba-6083a6b98793/deliverables/82da9773-1edf-4a38-8ca6-a180dc8bb63d/download",
     "preview_type": "text",
     "downloaded_bytes": 638,
     "downloaded_sha256": "c5f6a61f0dd9d8dd1ca366aa1eb06d6403897aba4a09065aa09955eb110ccf12",

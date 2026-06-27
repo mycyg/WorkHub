@@ -28,6 +28,7 @@ import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
 import { createCostRoutes } from "./routes/cost.js";
+import { jsonObjectMessage, malformedJsonMessage } from "./routes/json-body.js";
 import { ApprovalServiceError } from "./services/approvals.js";
 import { NotificationServiceError } from "./services/notifications.js";
 import {
@@ -199,6 +200,25 @@ app.route("/api/projects", createProjectRoutes());
 app.route("/api/pilot", createPilotRoutes());
 app.route("/api/ai-worklog", createAiWorklogRoutes());
 
+export function httpErrorCodeFor(error: HTTPException) {
+  if (error.status === 403 && error.message === "invalid client token") {
+    return "invalid_client_token";
+  }
+  if (error.status === 400 && error.message === malformedJsonMessage) {
+    return "malformed_json";
+  }
+  if (error.status === 400 && error.message === jsonObjectMessage) {
+    return "json_object_required";
+  }
+  const codeByStatus: Record<number, string> = {
+    400: "bad_request",
+    401: "not_identified",
+    403: "forbidden",
+    404: "not_found"
+  };
+  return codeByStatus[error.status] ?? "http_error";
+}
+
 app.onError((error, c) => {
   if (error instanceof ZodError) {
     return c.json(
@@ -215,17 +235,11 @@ app.onError((error, c) => {
   }
 
   if (error instanceof HTTPException) {
-    const codeByStatus: Record<number, string> = {
-      400: "bad_request",
-      401: "not_identified",
-      403: "forbidden",
-      404: "not_found"
-    };
     return c.json(
       {
         ok: false,
         error: {
-          code: codeByStatus[error.status] ?? "http_error",
+          code: httpErrorCodeFor(error),
           message: error.message
         }
       },

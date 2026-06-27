@@ -85,18 +85,25 @@ async function runFaultCase(apiFault: Exclude<CuuR3ApiFault, "none">) {
 }
 
 async function startRun(client: ReturnType<typeof createApiClient>) {
-  const launcher = selectChip(createDesktopCuuAgentLauncherCard({ locale: "en-US" }), "document-draft");
+  const launcher = createDesktopCuuAgentLauncherCard({ locale: "en-US" });
   const clarification = await submitDesktopCuuAction({
     client,
-    action: resolveCardAction(launcher, "start_agent_from_cuu"),
+    action: resolveCardAction(
+      launcher,
+      "start_agent_from_cuu",
+      "Use project drive file workhub-app-upload.txt to produce three acceptance points."
+    ),
     locale: "en-US"
   });
   assert.ok(clarification.card);
 
-  const scopeCard = selectChip(clarification.card, "document-draft");
   const confirmation = await submitDesktopCuuAction({
     client,
-    action: resolveCardAction(scopeCard, "submit_option"),
+    action: resolveCardAction(
+      clarification.card,
+      "submit_option",
+      "Use workhub-app-upload.txt as the acceptance basis for the QA reviewer."
+    ),
     locale: "en-US"
   });
   assert.ok(confirmation.card);
@@ -111,10 +118,10 @@ async function startRun(client: ReturnType<typeof createApiClient>) {
   return { run: started.agentRun };
 }
 
-function resolveCardAction(card: CuuCard, actionId: string) {
+function resolveCardAction(card: CuuCard, actionId: string, freeText?: string) {
   const href = card.actions[0]?.href;
   assert.ok(href);
-  const action = resolveDesktopCuuAction(href, { actionId, card });
+  const action = resolveDesktopCuuAction(href, { actionId, card, freeText });
   assert.ok(action);
   return action;
 }

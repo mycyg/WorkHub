@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-06-11T03:00:44.153Z",
+  "generated_at": "2026-06-19T16:56:42.938Z",
   "module": "R4.8 Web Redis/SSE production browser smoke",
-  "chrome_path": "/usr/bin/google-chrome",
-  "vite_url": "http://127.0.0.1:38179",
-  "api_stream_target": "http://127.0.0.1:32893",
-  "api_action_target": "http://127.0.0.1:33681",
+  "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "vite_url": "http://127.0.0.1:54288",
+  "api_stream_target": "http://127.0.0.1:54286",
+  "api_action_target": "http://127.0.0.1:54287",
   "seed": {
     "ids": {
       "userId": "00000000-0000-4000-8000-000000000102",
@@ -84,7 +84,9 @@
     "proposal": true,
     "replay": true,
     "cost": true,
-    "settingsGoldPath": true,
+    "skills": true,
+    "settings": true,
+    "noGoldPathFallback": true,
     "missingProposalEmpty": true,
     "forbiddenWorkItem": true,
     "streamMe": true,
@@ -92,24 +94,26 @@
     "streamRun": true,
     "streamProposal": true,
     "counts": {
-      "authMe": 11,
-      "goldPath": 13,
+      "authMe": 13,
+      "goldPath": 0,
       "attention": 2,
       "approvals": 4,
       "workitem": 3,
       "proposal": 1,
       "replay": 3,
       "cost": 1,
-      "streamMe": 13,
-      "streamWorkItem": 7,
-      "streamRun": 3,
+      "skills": 1,
+      "settings": 1,
+      "streamMe": 10,
+      "streamWorkItem": 6,
+      "streamRun": 2,
       "streamProposal": 1
     }
   },
   "redis": {
     "url": "redis://127.0.0.1:6379",
     "probe": {
-      "topic": "r4:redis-sse:1781146835483",
+      "topic": "r4:redis-sse:1781888193767",
       "event_type": "r4.redis.probe"
     },
     "productionMemoryFailClosed": true
@@ -120,8 +124,13 @@
       "status": 200,
       "content_type": "text/event-stream; charset=utf-8"
     },
-    "strangerWorkItem": {
-      "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
+    "ownerRun": {
+      "pathname": "/api/push/stream/run/00000000-0000-4000-8000-000000000107",
+      "status": 200,
+      "content_type": "text/event-stream; charset=utf-8"
+    },
+    "strangerRun": {
+      "pathname": "/api/push/stream/run/00000000-0000-4000-8000-000000000107",
       "status": 403,
       "content_type": "application/json"
     },
@@ -131,12 +140,13 @@
       "content_type": "application/json"
     },
     "owner_workitem_200": true,
-    "stranger_workitem_403": true,
+    "owner_run_200": true,
+    "stranger_run_403": true,
     "non_admin_all_403": true
   },
   "live_proof": {
     "approval": {
-      "api_action_target": "http://127.0.0.1:33681",
+      "api_action_target": "http://127.0.0.1:54287",
       "response": {
         "status": 200,
         "body": {
@@ -186,7 +196,7 @@
               },
               "status": "approved",
               "created_at": "2026-06-11T08:00:00.000Z",
-              "updated_at": "2026-06-11T03:00:42.785Z",
+              "updated_at": "2026-06-19T16:56:41.690Z",
               "work_item_id": "00000000-0000-4000-8000-000000000104",
               "agent_run_id": "00000000-0000-4000-8000-000000000107",
               "routed_to_user_id": "00000000-0000-4000-8000-000000000102",
@@ -243,7 +253,7 @@
         "pathname": "/agent-runs/00000000-0000-4000-8000-000000000107/replay",
         "streams": "me,run,workitem",
         "streamCount": 3,
-        "connectedCount": 6,
+        "connectedCount": 3,
         "eventCount": 1,
         "refreshCount": 1,
         "lastEvent": "agent_run.step",
@@ -258,476 +268,410 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/me"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/attention",
-      "search": "?locale=zh-CN",
-      "locale": "zh-CN",
-      "url": "http://127.0.0.1:38179/api/pages/attention?locale=zh-CN"
+      "url": "http://127.0.0.1:54288/api/auth/me"
     },
     {
       "method": "POST",
       "pathname": "/api/auth/identify",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/identify"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/attention",
-      "search": "?locale=zh-CN",
-      "locale": "zh-CN",
-      "url": "http://127.0.0.1:38179/api/pages/attention?locale=zh-CN"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/gold-path",
-      "search": "?locale=zh-CN",
-      "locale": "zh-CN",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=zh-CN"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/push/stream/me",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/approvals",
-      "search": "?locale=zh-CN",
-      "locale": "zh-CN",
-      "url": "http://127.0.0.1:38179/api/pages/approvals?locale=zh-CN"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/gold-path",
-      "search": "?locale=zh-CN",
-      "locale": "zh-CN",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=zh-CN"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/push/stream/me",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000104",
-      "search": "?locale=zh-CN",
-      "locale": "zh-CN",
-      "url": "http://127.0.0.1:38179/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=zh-CN"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/gold-path",
-      "search": "?locale=zh-CN",
-      "locale": "zh-CN",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=zh-CN"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/push/stream/me",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/approvals",
-      "search": "?locale=zh-CN",
-      "locale": "zh-CN",
-      "url": "http://127.0.0.1:38179/api/pages/approvals?locale=zh-CN"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/gold-path",
-      "search": "?locale=zh-CN",
-      "locale": "zh-CN",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=zh-CN"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/push/stream/me",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000104",
-      "search": "?locale=zh-CN",
-      "locale": "zh-CN",
-      "url": "http://127.0.0.1:38179/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=zh-CN"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/gold-path",
-      "search": "?locale=zh-CN",
-      "locale": "zh-CN",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=zh-CN"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/push/stream/me",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+      "url": "http://127.0.0.1:54288/api/auth/identify"
     },
     {
       "method": "PATCH",
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/preferences"
+      "url": "http://127.0.0.1:54288/api/auth/preferences"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/attention",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:54288/api/pages/attention?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/push/stream/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:54288/api/push/stream/me"
     },
     {
       "method": "GET",
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/me"
+      "url": "http://127.0.0.1:54288/api/auth/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/attention",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:54288/api/pages/attention?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/push/stream/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:54288/api/push/stream/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/approvals",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:54288/api/pages/approvals?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000104",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:54288/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:54288/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/approvals",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:54288/api/pages/approvals?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000104",
+      "search": "?locale=zh-CN",
+      "locale": "zh-CN",
+      "url": "http://127.0.0.1:54288/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=zh-CN"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:54288/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+    },
+    {
+      "method": "PATCH",
+      "pathname": "/api/auth/preferences",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:54288/api/auth/preferences"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:54288/api/auth/me"
     },
     {
       "method": "GET",
       "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000104",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=en-US"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/gold-path",
-      "search": "?locale=en-US",
-      "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=en-US"
+      "url": "http://127.0.0.1:54288/api/pages/workitems/00000000-0000-4000-8000-000000000104?locale=en-US"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
+      "url": "http://127.0.0.1:54288/api/push/stream/me"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+      "url": "http://127.0.0.1:54288/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
     },
     {
       "method": "GET",
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/me"
+      "url": "http://127.0.0.1:54288/api/auth/me"
     },
     {
       "method": "GET",
       "pathname": "/api/pages/proposals/00000000-0000-4000-8000-000000000108",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/proposals/00000000-0000-4000-8000-000000000108?locale=en-US"
+      "url": "http://127.0.0.1:54288/api/pages/proposals/00000000-0000-4000-8000-000000000108?locale=en-US"
     },
     {
       "method": "GET",
-      "pathname": "/api/pages/gold-path",
-      "search": "?locale=en-US",
-      "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=en-US"
+      "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/conflicts",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:54288/api/workitems/00000000-0000-4000-8000-000000000104/conflicts"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
+      "url": "http://127.0.0.1:54288/api/push/stream/me"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/proposal/00000000-0000-4000-8000-000000000108",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/proposal/00000000-0000-4000-8000-000000000108"
+      "url": "http://127.0.0.1:54288/api/push/stream/proposal/00000000-0000-4000-8000-000000000108"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+      "url": "http://127.0.0.1:54288/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
     },
     {
       "method": "GET",
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/me"
+      "url": "http://127.0.0.1:54288/api/auth/me"
     },
     {
       "method": "GET",
       "pathname": "/api/agent-runs/00000000-0000-4000-8000-000000000107/replay",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/agent-runs/00000000-0000-4000-8000-000000000107/replay"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/gold-path",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=en-US"
+      "url": "http://127.0.0.1:54288/api/agent-runs/00000000-0000-4000-8000-000000000107/replay?locale=en-US"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
+      "url": "http://127.0.0.1:54288/api/push/stream/me"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/run/00000000-0000-4000-8000-000000000107",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/run/00000000-0000-4000-8000-000000000107"
+      "url": "http://127.0.0.1:54288/api/push/stream/run/00000000-0000-4000-8000-000000000107"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+      "url": "http://127.0.0.1:54288/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
     },
     {
       "method": "GET",
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/me"
+      "url": "http://127.0.0.1:54288/api/auth/me"
     },
     {
       "method": "GET",
       "pathname": "/api/pages/cost",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/cost?locale=en-US"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/gold-path",
-      "search": "?locale=en-US",
-      "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=en-US"
+      "url": "http://127.0.0.1:54288/api/pages/cost?locale=en-US"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
+      "url": "http://127.0.0.1:54288/api/push/stream/me"
     },
     {
       "method": "GET",
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/me"
+      "url": "http://127.0.0.1:54288/api/auth/me"
     },
     {
       "method": "GET",
-      "pathname": "/api/pages/gold-path",
+      "pathname": "/api/pages/skills",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=en-US"
+      "url": "http://127.0.0.1:54288/api/pages/skills?locale=en-US"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
+      "url": "http://127.0.0.1:54288/api/push/stream/me"
     },
     {
       "method": "GET",
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/me"
+      "url": "http://127.0.0.1:54288/api/auth/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/settings",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "url": "http://127.0.0.1:54288/api/pages/settings?locale=en-US"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/push/stream/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:54288/api/push/stream/me"
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "url": "http://127.0.0.1:54288/api/auth/me"
     },
     {
       "method": "GET",
       "pathname": "/api/pages/proposals/00000000-0000-4000-8000-000000000473",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/proposals/00000000-0000-4000-8000-000000000473?locale=en-US"
+      "url": "http://127.0.0.1:54288/api/pages/proposals/00000000-0000-4000-8000-000000000473?locale=en-US"
     },
     {
       "method": "GET",
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/me"
+      "url": "http://127.0.0.1:54288/api/auth/me"
     },
     {
       "method": "GET",
       "pathname": "/api/pages/workitems/00000000-0000-4000-8000-000000000472",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/workitems/00000000-0000-4000-8000-000000000472?locale=en-US"
+      "url": "http://127.0.0.1:54288/api/pages/workitems/00000000-0000-4000-8000-000000000472?locale=en-US"
     },
     {
       "method": "GET",
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/me"
+      "url": "http://127.0.0.1:54288/api/auth/me"
     },
     {
       "method": "GET",
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/me"
+      "url": "http://127.0.0.1:54288/api/auth/me"
     },
     {
       "method": "GET",
       "pathname": "/api/pages/approvals",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/approvals?locale=en-US"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/gold-path",
-      "search": "?locale=en-US",
-      "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=en-US"
+      "url": "http://127.0.0.1:54288/api/pages/approvals?locale=en-US"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
+      "url": "http://127.0.0.1:54288/api/push/stream/me"
     },
     {
       "method": "GET",
       "pathname": "/api/pages/approvals",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/approvals?locale=en-US"
+      "url": "http://127.0.0.1:54288/api/pages/approvals?locale=en-US"
     },
     {
       "method": "GET",
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/auth/me"
+      "url": "http://127.0.0.1:54288/api/auth/me"
     },
     {
       "method": "GET",
       "pathname": "/api/agent-runs/00000000-0000-4000-8000-000000000107/replay",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/agent-runs/00000000-0000-4000-8000-000000000107/replay"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/gold-path",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=en-US"
+      "url": "http://127.0.0.1:54288/api/agent-runs/00000000-0000-4000-8000-000000000107/replay?locale=en-US"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
+      "url": "http://127.0.0.1:54288/api/push/stream/me"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/run/00000000-0000-4000-8000-000000000107",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/run/00000000-0000-4000-8000-000000000107"
+      "url": "http://127.0.0.1:54288/api/push/stream/run/00000000-0000-4000-8000-000000000107"
     },
     {
       "method": "GET",
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "",
       "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+      "url": "http://127.0.0.1:54288/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
     },
     {
       "method": "GET",
       "pathname": "/api/agent-runs/00000000-0000-4000-8000-000000000107/replay",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/agent-runs/00000000-0000-4000-8000-000000000107/replay"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/pages/gold-path",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "url": "http://127.0.0.1:38179/api/pages/gold-path?locale=en-US"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/push/stream/me",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/me"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/push/stream/run/00000000-0000-4000-8000-000000000107",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/run/00000000-0000-4000-8000-000000000107"
-    },
-    {
-      "method": "GET",
-      "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
-      "search": "",
-      "locale": null,
-      "url": "http://127.0.0.1:38179/api/push/stream/workitem/00000000-0000-4000-8000-000000000104"
+      "url": "http://127.0.0.1:54288/api/agent-runs/00000000-0000-4000-8000-000000000107/replay?locale=en-US"
     }
   ],
   "api_log_tail": {
     "stream_api": [
-      "[stream-api] WorkHub API daemon listening on http://127.0.0.1:32893"
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:40.681Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"aedca133-cee1-420d-9d63-58ab64bb556b\",\"method\":\"GET\",\"path\":\"/api/push/stream/me\",\"status\":200,\"duration_ms\":3}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:40.897Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"c5a2270f-0d7b-4094-a0a8-e5b6dd650ca4\",\"method\":\"GET\",\"path\":\"/api/auth/me\",\"status\":200,\"duration_ms\":3}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:40.903Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"6087ce20-1c37-4795-bbc3-c10488e56d37\",\"method\":\"GET\",\"path\":\"/api/pages/proposals/00000000-0000-4000-8000-000000000473\",\"status\":404,\"duration_ms\":4,\"actor\":\"P0.5 Reviewer\"}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:41.104Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"9eb67c58-0814-4607-8813-54b559aea9ac\",\"method\":\"GET\",\"path\":\"/api/auth/me\",\"status\":200,\"duration_ms\":3}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:41.112Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"14ef28a6-357a-4bf2-8738-abe1b8685d96\",\"method\":\"GET\",\"path\":\"/api/pages/workitems/00000000-0000-4000-8000-000000000472\",\"status\":403,\"duration_ms\":6,\"actor\":\"P0.5 Reviewer\"}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:41.324Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"cea25f69-00b9-411b-8097-c1922ed52f42\",\"method\":\"GET\",\"path\":\"/api/auth/me\",\"status\":200,\"duration_ms\":6}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:41.544Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"478987e9-441b-4c03-bff1-415f30093873\",\"method\":\"GET\",\"path\":\"/api/auth/me\",\"status\":200,\"duration_ms\":2}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:41.555Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"a0fd85b3-1db2-4e26-935b-70d45447b100\",\"method\":\"GET\",\"path\":\"/api/pages/approvals\",\"status\":200,\"duration_ms\":8,\"actor\":\"P0.5 Reviewer\"}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:41.567Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"6e6720e7-93a3-4b31-8f38-f8c3ddb8a86d\",\"method\":\"GET\",\"path\":\"/api/push/stream/me\",\"status\":200,\"duration_ms\":4}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:41.935Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"255e45be-2b1b-46fe-b27d-b06b0b66f16f\",\"method\":\"GET\",\"path\":\"/api/pages/approvals\",\"status\":200,\"duration_ms\":7,\"actor\":\"P0.5 Reviewer\"}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:42.099Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"563f9a48-32a1-438a-83db-f2d3e3ab7265\",\"method\":\"GET\",\"path\":\"/api/auth/me\",\"status\":200,\"duration_ms\":3}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:42.112Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"e0643314-7755-40b8-88e8-3fad564803f3\",\"method\":\"GET\",\"path\":\"/api/agent-runs/00000000-0000-4000-8000-000000000107/replay\",\"status\":200,\"duration_ms\":10,\"actor\":\"P0.5 Reviewer\"}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:42.122Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"bbf4caec-3b0b-451a-851e-f466e95e42c3\",\"method\":\"GET\",\"path\":\"/api/push/stream/me\",\"status\":200,\"duration_ms\":3}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:42.123Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"8d06d50d-9b4f-4c20-af23-9f30751f2fdb\",\"method\":\"GET\",\"path\":\"/api/push/stream/run/00000000-0000-4000-8000-000000000107\",\"status\":200,\"duration_ms\":4}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:42.126Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"dee4f0c7-0a38-4836-ab61-37e0e94ebbf7\",\"method\":\"GET\",\"path\":\"/api/push/stream/workitem/00000000-0000-4000-8000-000000000104\",\"status\":200,\"duration_ms\":7}",
+      "[stream-api] {\"ts\":\"2026-06-19T16:56:42.441Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"53a3c720-e587-4546-89ff-d3fdc55b1a3e\",\"method\":\"GET\",\"path\":\"/api/agent-runs/00000000-0000-4000-8000-000000000107/replay\",\"status\":200,\"duration_ms\":21,\"actor\":\"P0.5 Reviewer\"}"
     ],
     "action_api": [
-      "[action-api] WorkHub API daemon listening on http://127.0.0.1:33681"
+      "[action-api] {\"ts\":\"2026-06-19T16:56:35.433Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"server_started\",\"host\":\"127.0.0.1\",\"port\":54287,\"app_env\":\"test\",\"web_dist\":null}",
+      "[action-api] {\"ts\":\"2026-06-19T16:56:35.507Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"b95f4fea-13d6-496b-9158-a869b29215e7\",\"method\":\"GET\",\"path\":\"/api/health\",\"status\":200,\"duration_ms\":3}",
+      "[action-api] {\"ts\":\"2026-06-19T16:56:41.657Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"e6ec568d-ebd9-4601-9d08-ea76ac809a6b\",\"method\":\"POST\",\"path\":\"/api/auth/identify\",\"status\":200,\"duration_ms\":33}",
+      "[action-api] {\"ts\":\"2026-06-19T16:56:41.704Z\",\"level\":\"info\",\"service\":\"workhub-api\",\"event\":\"http_request\",\"request_id\":\"685f2bde-a9b6-413b-95a3-5c8ef6cee52e\",\"method\":\"POST\",\"path\":\"/api/approvals/00000000-0000-4000-8000-000000000802/respond\",\"status\":200,\"duration_ms\":45,\"actor\":\"P0.5 Reviewer\"}"
     ]
   },
   "steps": [
     {
       "id": "01-home-zh-desktop-real-api",
-      "url": "http://127.0.0.1:38179/",
+      "url": "http://127.0.0.1:54288/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -741,6 +685,51 @@
         "storedLocale": "zh-CN",
         "status": "ready",
         "routeKey": "home",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": false,
+        "activeLocale": "zh-CN",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": false,
+        "liveStreams": "me",
+        "liveStreamCount": 1,
+        "liveConnectedCount": 1,
+        "liveEventCount": 0,
+        "liveRefreshCount": 0,
+        "liveLastEvent": null,
+        "liveLastStream": null,
+        "liveReplayStepVisible": false
+      }
+    },
+    {
+      "id": "02-approvals-click-zh-desktop-real-api",
+      "url": "http://127.0.0.1:54288/approvals",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "02-approvals-click-zh-desktop-real-api.png",
+      "audit": {
+        "pathname": "/approvals",
+        "search": "",
+        "lang": "zh-CN",
+        "storedLocale": "zh-CN",
+        "status": "ready",
+        "routeKey": "approvals",
         "productShell": true,
         "linkModePath": true,
         "masthead": true,
@@ -771,14 +760,59 @@
       }
     },
     {
-      "id": "02-approvals-click-zh-desktop-real-api",
-      "url": "http://127.0.0.1:38179/approvals",
+      "id": "03-workitem-click-zh-desktop-real-api",
+      "url": "http://127.0.0.1:54288/workitems/00000000-0000-4000-8000-000000000104",
       "viewport": {
         "width": 1365,
         "height": 1120
       },
       "expectedStatus": "ready",
-      "screenshot": "02-approvals-click-zh-desktop-real-api.png",
+      "screenshot": "03-workitem-click-zh-desktop-real-api.png",
+      "audit": {
+        "pathname": "/workitems/00000000-0000-4000-8000-000000000104",
+        "search": "",
+        "lang": "zh-CN",
+        "storedLocale": "zh-CN",
+        "status": "ready",
+        "routeKey": "workitem",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "zh-CN",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": true,
+        "enChrome": false,
+        "liveStreams": "me,workitem",
+        "liveStreamCount": 2,
+        "liveConnectedCount": 2,
+        "liveEventCount": 0,
+        "liveRefreshCount": 0,
+        "liveLastEvent": null,
+        "liveLastStream": null,
+        "liveReplayStepVisible": false
+      }
+    },
+    {
+      "id": "04-history-back-approvals-real-api",
+      "url": "http://127.0.0.1:54288/approvals",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "04-history-back-approvals-real-api.png",
       "audit": {
         "pathname": "/approvals",
         "search": "",
@@ -816,98 +850,8 @@
       }
     },
     {
-      "id": "03-workitem-click-zh-desktop-real-api",
-      "url": "http://127.0.0.1:38179/workitems/00000000-0000-4000-8000-000000000104",
-      "viewport": {
-        "width": 1365,
-        "height": 1120
-      },
-      "expectedStatus": "ready",
-      "screenshot": "03-workitem-click-zh-desktop-real-api.png",
-      "audit": {
-        "pathname": "/workitems/00000000-0000-4000-8000-000000000104",
-        "search": "",
-        "lang": "zh-CN",
-        "storedLocale": "zh-CN",
-        "status": "ready",
-        "routeKey": "workitem",
-        "productShell": true,
-        "linkModePath": true,
-        "masthead": true,
-        "activeLocale": "zh-CN",
-        "pathNavigation": true,
-        "hashNavigationLeak": false,
-        "oldShellLeak": false,
-        "weeklyFixtureLeak": false,
-        "cuuLeak": false,
-        "kanbanLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
-        "horizontalOverflow": false,
-        "navHorizontalOverflow": false,
-        "textOverflowCount": 0,
-        "textOverflowSamples": [],
-        "topbarNavOverlap": false,
-        "zhChrome": true,
-        "enChrome": false,
-        "liveStreams": "me,workitem",
-        "liveStreamCount": 2,
-        "liveConnectedCount": 4,
-        "liveEventCount": 0,
-        "liveRefreshCount": 0,
-        "liveLastEvent": null,
-        "liveLastStream": null,
-        "liveReplayStepVisible": false
-      }
-    },
-    {
-      "id": "04-history-back-approvals-real-api",
-      "url": "http://127.0.0.1:38179/approvals",
-      "viewport": {
-        "width": 1365,
-        "height": 1120
-      },
-      "expectedStatus": "ready",
-      "screenshot": "04-history-back-approvals-real-api.png",
-      "audit": {
-        "pathname": "/approvals",
-        "search": "",
-        "lang": "zh-CN",
-        "storedLocale": "zh-CN",
-        "status": "ready",
-        "routeKey": "approvals",
-        "productShell": true,
-        "linkModePath": true,
-        "masthead": true,
-        "activeLocale": "zh-CN",
-        "pathNavigation": true,
-        "hashNavigationLeak": false,
-        "oldShellLeak": false,
-        "weeklyFixtureLeak": false,
-        "cuuLeak": false,
-        "kanbanLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
-        "horizontalOverflow": false,
-        "navHorizontalOverflow": false,
-        "textOverflowCount": 0,
-        "textOverflowSamples": [],
-        "topbarNavOverlap": false,
-        "zhChrome": true,
-        "enChrome": false,
-        "liveStreams": "me",
-        "liveStreamCount": 1,
-        "liveConnectedCount": 5,
-        "liveEventCount": 0,
-        "liveRefreshCount": 0,
-        "liveLastEvent": null,
-        "liveLastStream": null,
-        "liveReplayStepVisible": false
-      }
-    },
-    {
       "id": "05-history-forward-workitem-real-api",
-      "url": "http://127.0.0.1:38179/workitems/00000000-0000-4000-8000-000000000104",
+      "url": "http://127.0.0.1:54288/workitems/00000000-0000-4000-8000-000000000104",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -942,7 +886,7 @@
         "enChrome": false,
         "liveStreams": "me,workitem",
         "liveStreamCount": 2,
-        "liveConnectedCount": 7,
+        "liveConnectedCount": 3,
         "liveEventCount": 0,
         "liveRefreshCount": 0,
         "liveLastEvent": null,
@@ -952,7 +896,7 @@
     },
     {
       "id": "06-locale-toggle-en-workitem-real-api",
-      "url": "http://127.0.0.1:38179/workitems/00000000-0000-4000-8000-000000000104",
+      "url": "http://127.0.0.1:54288/workitems/00000000-0000-4000-8000-000000000104",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -997,7 +941,7 @@
     },
     {
       "id": "07-proposal-mobile-scrolled-real-api",
-      "url": "http://127.0.0.1:38179/proposals/00000000-0000-4000-8000-000000000108",
+      "url": "http://127.0.0.1:54288/proposals/00000000-0000-4000-8000-000000000108",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -1042,7 +986,7 @@
     },
     {
       "id": "08-replay-desktop-real-api",
-      "url": "http://127.0.0.1:38179/agent-runs/00000000-0000-4000-8000-000000000107/replay",
+      "url": "http://127.0.0.1:54288/agent-runs/00000000-0000-4000-8000-000000000107/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1087,7 +1031,7 @@
     },
     {
       "id": "09-cost-desktop-real-api",
-      "url": "http://127.0.0.1:38179/dashboard/cost",
+      "url": "http://127.0.0.1:54288/dashboard/cost",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1131,8 +1075,53 @@
       }
     },
     {
+      "id": "09a-skills-desktop-real-api",
+      "url": "http://127.0.0.1:54288/dashboard/skills",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "09a-skills-desktop-real-api.png",
+      "audit": {
+        "pathname": "/dashboard/skills",
+        "search": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "ready",
+        "routeKey": "skills",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "activeLocale": "en-US",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": true,
+        "liveStreams": "me",
+        "liveStreamCount": 1,
+        "liveConnectedCount": 1,
+        "liveEventCount": 0,
+        "liveRefreshCount": 0,
+        "liveLastEvent": null,
+        "liveLastStream": null,
+        "liveReplayStepVisible": false
+      }
+    },
+    {
       "id": "10-settings-mobile-route-fallback",
-      "url": "http://127.0.0.1:38179/settings",
+      "url": "http://127.0.0.1:54288/settings",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -1177,7 +1166,7 @@
     },
     {
       "id": "11-missing-proposal-empty-real-api",
-      "url": "http://127.0.0.1:38179/proposals/00000000-0000-4000-8000-000000000473",
+      "url": "http://127.0.0.1:54288/proposals/00000000-0000-4000-8000-000000000473",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -1222,7 +1211,7 @@
     },
     {
       "id": "12-forbidden-workitem-real-api",
-      "url": "http://127.0.0.1:38179/workitems/00000000-0000-4000-8000-000000000472",
+      "url": "http://127.0.0.1:54288/workitems/00000000-0000-4000-8000-000000000472",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1267,7 +1256,7 @@
     },
     {
       "id": "13-unknown-route-error",
-      "url": "http://127.0.0.1:38179/missing-r4-redis-sse-route",
+      "url": "http://127.0.0.1:54288/missing-r4-redis-sse-route",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1312,7 +1301,7 @@
     },
     {
       "id": "14-approvals-after-redis-sse-permission-decided-empty",
-      "url": "http://127.0.0.1:38179/approvals",
+      "url": "http://127.0.0.1:54288/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1357,7 +1346,7 @@
     },
     {
       "id": "15-replay-after-redis-sse-agent-step-real-api",
-      "url": "http://127.0.0.1:38179/agent-runs/00000000-0000-4000-8000-000000000107/replay",
+      "url": "http://127.0.0.1:54288/agent-runs/00000000-0000-4000-8000-000000000107/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1392,7 +1381,7 @@
         "enChrome": true,
         "liveStreams": "me,run,workitem",
         "liveStreamCount": 3,
-        "liveConnectedCount": 6,
+        "liveConnectedCount": 3,
         "liveEventCount": 1,
         "liveRefreshCount": 1,
         "liveLastEvent": "agent_run.step",

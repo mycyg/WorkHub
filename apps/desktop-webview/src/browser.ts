@@ -52,6 +52,7 @@ import {
 } from "@workhub/web-runtime";
 
 import {
+  resolveDesktopShellEmitter,
   resolveDesktopShellListen,
   type DesktopShellListen
 } from "./desktop-cuu-runtime.js";
@@ -85,6 +86,8 @@ import { glassWindowCss } from "./glass-window.js";
 import { mountSpotlight, type SpotlightResizeFn } from "./spotlight/controller.js";
 import { spotlightCss } from "./spotlight/css.js";
 import { capabilityForShellRoute, entityIdFromShellRoute } from "./spotlight/state.js";
+import { reviewProposalWithoutMerge } from "./spotlight/views/proposals.js";
+import { isStaleDesktopClientTokenError } from "./auth-recovery.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
@@ -155,7 +158,7 @@ async function ensureDesktopClientToken(client: BrowserApiClient): Promise<void>
     try {
       await client.me();
     } catch (error) {
-      if (error instanceof WorkHubApiError && error.code === "not_identified") {
+      if (isStaleDesktopClientTokenError(error)) {
         window.localStorage.removeItem("workhub_client_token");
         await bootstrapDesktopClientToken(client);
       }
@@ -619,13 +622,10 @@ function bindGoldPathNavigation(
           return;
         }
         try {
-          const review = await client.reviewProposal(proposalAction.proposalId, { decision: "approve", remember: "once" });
-          const merge = await client.mergeProposal(proposalAction.proposalId);
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, `${review.attention.summary_text} ${merge.attention.summary_text}`, actionId));
+          const review = await reviewProposalWithoutMerge(client, proposalAction.proposalId);
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(review, locale), actionId));
         } catch (error) {
-          if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
-            showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
-          }
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
         }
         input.onActionSettled?.();
         return;
@@ -1014,7 +1014,7 @@ async function boot() {
         host.innerHTML = `<style>${component.css}</style>${component.html}`;
       }
     });
-    // R7 P4:项目卡下钻——点项目卡(无 href 的 <a>,nav 管线不劫持)快照当前列表 HTML,懒拉该项目
+    // R7 P4:项目卡下钻——点项目卡按钮(nav 管线不劫持)快照当前列表 HTML,懒拉该项目
     // 文件(client.pages.drive)渲染只读玻璃文件浏览;「返回项目」(纯 button)还原列表快照。
     // 失败:还原列表 + 轻提示,绝不卡死面板。下钻态会停留在子视图(再进 projects 不重置),可接受。
     let projectsListSnapshot = "";
@@ -1110,13 +1110,13 @@ async function boot() {
     root.innerHTML =
       `<style>html,body{margin:0;background:rgba(240,242,252,.20)}</style>` +
       `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;box-sizing:border-box;font-family:'M PLUS Rounded 1c','Noto Sans SC','Segoe UI',sans-serif">` +
-      `<div style="max-width:520px;width:100%;border-radius:22px;padding:30px 30px 26px;background:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.85);box-shadow:0 26px 60px -28px rgba(70,54,140,.5);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%)">` +
-      `<div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#5a45d8,#b57bff);margin-bottom:16px;box-shadow:0 10px 22px -6px rgba(124,131,255,.7)"></div>` +
-      `<h2 style="margin:0 0 10px;font-size:20px;font-weight:900;color:#2c2746">${esc(title)}</h2>` +
-      `<p style="margin:0 0 12px;color:#5b5680;line-height:1.55">${esc(body)}</p>` +
-      `<p style="margin:0 0 18px;color:#8b84ad;font-size:13px;line-height:1.5">${esc(hint)}</p>` +
-      `<button id="wh-retry" type="button" style="border:0;border-radius:12px;padding:10px 18px;font:inherit;font-weight:800;color:#fff;background:linear-gradient(135deg,#7c83ff,#b57bff);cursor:pointer">${zh ? "重试" : "Retry"}</button>` +
-      `<p style="margin:14px 0 0;color:#aaa4c4;font-size:11px;word-break:break-all">${esc(detail)}</p>` +
+      `<div style="max-width:520px;width:100%;border-radius:22px;padding:30px 30px 26px;background:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.85);box-shadow:0 26px 60px -28px rgba(60,60,67,.32);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%)">` +
+      `<div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#0a84ff,#64d2ff);margin-bottom:16px;box-shadow:0 10px 22px -6px rgba(10,132,255,.45)"></div>` +
+      `<h2 style="margin:0 0 10px;font-size:20px;font-weight:900;color:#1d1d1f">${esc(title)}</h2>` +
+      `<p style="margin:0 0 12px;color:#3a3a3c;line-height:1.55">${esc(body)}</p>` +
+      `<p style="margin:0 0 18px;color:#636366;font-size:13px;line-height:1.5">${esc(hint)}</p>` +
+      `<button id="wh-retry" type="button" style="border:0;border-radius:12px;padding:10px 18px;font:inherit;font-weight:800;color:#fff;background:linear-gradient(135deg,#0a84ff,#64d2ff);cursor:pointer">${zh ? "重试" : "Retry"}</button>` +
+      `<p style="margin:14px 0 0;color:#8e8e93;font-size:11px;word-break:break-all">${esc(detail)}</p>` +
       `</div></div>`;
     root.querySelector<HTMLButtonElement>("#wh-retry")?.addEventListener("click", () => window.location.reload());
   }
@@ -1167,13 +1167,13 @@ function renderDesktopOfflineCard(rootEl: HTMLElement, locale: WorkHubLocale, er
   rootEl.innerHTML =
     `<style>html,body{margin:0;background:rgba(240,242,252,.20)}</style>` +
     `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;box-sizing:border-box;font-family:'M PLUS Rounded 1c','Noto Sans SC','Segoe UI',sans-serif">` +
-    `<div style="max-width:520px;width:100%;border-radius:22px;padding:30px 30px 26px;background:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.85);box-shadow:0 26px 60px -28px rgba(70,54,140,.5);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%)">` +
-    `<div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#5a45d8,#b57bff);margin-bottom:16px;box-shadow:0 10px 22px -6px rgba(124,131,255,.7)"></div>` +
-    `<h2 style="margin:0 0 10px;font-size:20px;font-weight:900;color:#2c2746">${esc(title)}</h2>` +
-    `<p style="margin:0 0 12px;color:#5b5680;line-height:1.55">${esc(bodyText)}</p>` +
-    `<p style="margin:0 0 18px;color:#8b84ad;font-size:13px;line-height:1.5">${esc(hint)}</p>` +
-    `<button id="wh-retry" type="button" style="border:0;border-radius:12px;padding:10px 18px;font:inherit;font-weight:800;color:#fff;background:linear-gradient(135deg,#7c83ff,#b57bff);cursor:pointer">${zh ? "重试" : "Retry"}</button>` +
-    `<p style="margin:14px 0 0;color:#aaa4c4;font-size:11px;word-break:break-all">${esc(detail)}</p>` +
+    `<div style="max-width:520px;width:100%;border-radius:22px;padding:30px 30px 26px;background:rgba(255,255,255,.92);border:1px solid rgba(255,255,255,.85);box-shadow:0 26px 60px -28px rgba(60,60,67,.32);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%)">` +
+    `<div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#0a84ff,#64d2ff);margin-bottom:16px;box-shadow:0 10px 22px -6px rgba(10,132,255,.45)"></div>` +
+    `<h2 style="margin:0 0 10px;font-size:20px;font-weight:900;color:#1d1d1f">${esc(title)}</h2>` +
+    `<p style="margin:0 0 12px;color:#3a3a3c;line-height:1.55">${esc(bodyText)}</p>` +
+    `<p style="margin:0 0 18px;color:#636366;font-size:13px;line-height:1.5">${esc(hint)}</p>` +
+    `<button id="wh-retry" type="button" style="border:0;border-radius:12px;padding:10px 18px;font:inherit;font-weight:800;color:#fff;background:linear-gradient(135deg,#0a84ff,#64d2ff);cursor:pointer">${zh ? "重试" : "Retry"}</button>` +
+    `<p style="margin:14px 0 0;color:#8e8e93;font-size:11px;word-break:break-all">${esc(detail)}</p>` +
     `</div></div>`;
   rootEl.querySelector<HTMLButtonElement>("#wh-retry")?.addEventListener("click", () => window.location.reload());
 }
@@ -1211,6 +1211,16 @@ async function bootSpotlight() {
     }
     // Cuu 为核心：主窗启动把桌宠偏好同步给桌宠窗（与旧 boot 一致，保持桌宠行为不回归）。
     const petWindowBridge = resolveDesktopPetWindowBridge();
+    const shellEmitter = resolveDesktopShellEmitter();
+    const notifyPetAttentionRefresh = () => {
+      const payload = { reason: "spotlight-action-settled" };
+      const sent = shellEmitter?.emitTo?.("pet", "attention-refresh", payload);
+      if (!shellEmitter?.emitTo && shellEmitter?.emit) {
+        void Promise.resolve(shellEmitter.emit("attention-refresh", payload)).catch(() => undefined);
+        return;
+      }
+      void Promise.resolve(sent).catch(() => undefined);
+    };
     const cuuController = createCuuController({ preferences: loadCuuPreferences() });
     void (async () => {
       try {
@@ -1221,7 +1231,17 @@ async function bootSpotlight() {
         // 桥不可用/桌宠窗未就绪：忽略，主窗照常。
       }
     })();
-    const spotlight = mountSpotlight({ host: hostEl, client, locale, resize: resizeMainWindow, dismiss: dismissMainWindow });
+    const spotlight = mountSpotlight({
+      host: hostEl,
+      client,
+      locale,
+      resize: resizeMainWindow,
+      dismiss: dismissMainWindow,
+      onActionSettled: () => {
+        void refreshApprovalsBadge();
+        notifyPetAttentionRefresh();
+      }
+    });
     // 以 Cuu 为核心：托盘「打开收件箱/设置」、深链、桌宠点击都会让主窗 emit "navigate"（main.rs execute_window_control）。
     // 监听它 → 把盒子直接开到对应能力（回 "/" 则回 launcher）。这是 Cuu/外部入口与盒子联动的地基。
     const shellListen = resolveDesktopShellListen();

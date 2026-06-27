@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
 import type { CalendarPageVM, DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM,
-  ProjectHealthPageVM, ProposalConflict, SessionVM, SettingsPageVM, TeamSkillsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
+  ProjectHealthPageVM, ProjectHomePageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, TeamSkillsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
 
 type Viewport = {
   width: number;
@@ -113,6 +113,9 @@ type BrowserAudit = {
   reactRuntimeDispatcherProbeActionId: string | null;
   routeSpecificMarker: boolean;
   routeData: {
+    homeProjectDesk: string | null;
+    homeProjectCount: string | null;
+    homeDriveCta: string | null;
     workitemTraceCount: string | null;
     workitemEvidenceCount: string | null;
     workitemAcceptanceCount: string | null;
@@ -163,7 +166,16 @@ type BrowserAudit = {
     replayAcceptedDeliverableCount: string | null;
     replayMergeAttemptCount: string | null;
     replayStructuredAuditCount: string | null;
+    projectsCount: string | null;
+    projectHomeId: string | null;
+    projectHomeSlug: string | null;
+    projectHomeOpenCount: string | null;
+    projectHomeItemCount: string | null;
+    projectHomeFileCount: string | null;
+    projectHomeMoreCount: string | null;
+    projectHomeFilesMoreCount: string | null;
     driveProjectId: string | null;
+    driveSelectedItemId: string | null;
     driveItemCount: string | null;
     driveVersionCount: string | null;
     driveAcceptedCount: string | null;
@@ -362,7 +374,14 @@ const outputDir = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_OUTPUT_DIR"]
   : defaultOutputDir;
 const smokeTitle = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_TITLE"] ?? "R4.5 Web Live Route Interaction Smoke";
 const reportFilename = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_REPORT_NAME"] ?? "live-route-interaction-report.json";
-const expectedLiveRouteSmokeSteps = 72;
+const expectedLiveRouteSmokeSteps = 79;
+const qaProjectId = "10000000-0000-4000-8000-000000001600";
+const qaCreatedProjectId = "10000000-0000-4000-8000-000000001691";
+const qaCreatedProjectName = "R4 Live Launch Notes";
+const qaDriveFolderId = "10000000-0000-4000-8000-000000001619";
+const qaDriveItemId = "10000000-0000-4000-8000-000000001620";
+const qaManualDriveItemId = "10000000-0000-4000-8000-000000001624";
+const qaDriveUploadFilename = "regional-launch-brief.md";
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -1139,6 +1158,118 @@ function projectHealthPage(locale: WorkHubLocale): ProjectHealthPageVM {
   };
 }
 
+function projectListPage(namedProjectCreated = false): ProjectListVM {
+  const projects: ProjectListVM["projects"] = [
+    {
+      id: qaProjectId,
+      name: "区域发布资料库",
+      slug: "regional-launch",
+      description: "Launch review tasks, synced files, and meeting follow-ups in one GitHub-like project hub.",
+      owner_nickname: "owner",
+      archived: false,
+      created_at: "2026-06-11T08:00:00.000Z",
+      updated_at: "2026-06-11T09:00:00.000Z",
+      open_work_item_count: 2
+    },
+    {
+      id: "10000000-0000-4000-8000-000000001690",
+      name: "新一代客服平台",
+      slug: "next-support-platform",
+      description: "Cross-team support automation backlog.",
+      owner_nickname: "owner",
+      archived: false,
+      created_at: "2026-06-10T08:00:00.000Z",
+      updated_at: "2026-06-10T09:00:00.000Z",
+      open_work_item_count: 1
+    }
+  ];
+  if (namedProjectCreated) {
+    projects.unshift({
+      id: qaCreatedProjectId,
+      name: qaCreatedProjectName,
+      slug: "r4-live-launch-notes",
+      description: "Fresh project created through the project index smoke.",
+      owner_nickname: "owner",
+      archived: false,
+      created_at: "2026-06-11T09:05:00.000Z",
+      updated_at: "2026-06-11T09:05:00.000Z",
+      open_work_item_count: 0
+    });
+  }
+  return {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    projects
+  };
+}
+
+function projectHomePage(projectId = qaProjectId, projectName = "区域发布资料库"): ProjectHomePageVM {
+  const isCreatedProject = projectId === qaCreatedProjectId;
+  return {
+    generated_at: "2026-06-11T09:24:00.000Z",
+    project: {
+      id: projectId,
+      name: projectName,
+      slug: "regional-launch",
+      description: "Launch review tasks, synced files, and meeting follow-ups in one GitHub-like project hub.",
+      owner_label: "owner",
+      status: "active"
+    },
+    summary: {
+      open_work_item_count: isCreatedProject ? 0 : 2,
+      total_open_work_item_count: isCreatedProject ? 0 : 3
+    },
+    open_work_items: isCreatedProject ? [] : [
+      {
+        id: "r4-live-workitem",
+        code: "RL-24",
+        title: "Regional launch review",
+        status: "in_progress",
+        priority: "high",
+        href: "/workitems/r4-live-workitem"
+      },
+      {
+        id: meetingWorkItemId,
+        code: "RL-25",
+        title: "Meeting insight follow-up",
+        status: "drafting",
+        priority: "medium",
+        href: `/workitems/${meetingWorkItemId}`
+      }
+    ],
+    drive: {
+      file_count: isCreatedProject ? 0 : 3,
+      recent_files: isCreatedProject ? [] : [
+        {
+          id: qaDriveItemId,
+          name: "regional-launch-review.md",
+          updated_at: "2026-06-11T09:20:00.000Z",
+          href: `/drive?project_id=${projectId}&item_id=${qaDriveItemId}`
+        },
+        {
+          id: qaManualDriveItemId,
+          name: qaDriveUploadFilename,
+          updated_at: "2026-06-11T09:26:00.000Z",
+          href: `/drive?project_id=${projectId}&item_id=${qaManualDriveItemId}`
+        }
+      ]
+    },
+    actions: {
+      new_task: {
+        id: "new_task",
+        label: "New task",
+        method: "GET",
+        href: `/intake?project_id=${projectId}`
+      },
+      open_drive: {
+        id: "open_drive",
+        label: "Open drive",
+        method: "GET",
+        href: `/drive?project_id=${projectId}`
+      }
+    }
+  };
+}
+
 function teamSkillsPage(): TeamSkillsPageVM {
   return {
     generated_at: "2026-06-16T02:00:00.000Z",
@@ -1262,11 +1393,11 @@ function drivePage(
   const acceptedId = accepted?.id ?? "10000000-0000-4000-8000-000000001518";
   const workItemId = accepted?.work_item_id ?? "10000000-0000-4000-8000-000000001500";
   const proposalId = accepted?.proposal_id ?? surface.page_vms.proposal.proposal_id;
-  const projectId = "10000000-0000-4000-8000-000000001600";
-  const folderId = "10000000-0000-4000-8000-000000001619";
-  const itemId = "10000000-0000-4000-8000-000000001620";
+  const projectId = qaProjectId;
+  const folderId = qaDriveFolderId;
+  const itemId = qaDriveItemId;
   const versionId = "10000000-0000-4000-8000-000000001621";
-  const manualItemId = "10000000-0000-4000-8000-000000001624";
+  const manualItemId = qaManualDriveItemId;
   const manualVersionId = "10000000-0000-4000-8000-000000001625";
   const hasManualActive = state === "uploaded" || state === "restored";
   const hasManualDeleted = state === "deleted";
@@ -1295,7 +1426,7 @@ function drivePage(
     id: manualVersionId,
     item_id: manualItemId,
     version_no: 1,
-    filename: "r5-upload-sample.md",
+    filename: qaDriveUploadFilename,
     mime: "text/markdown",
     size_bytes: 82,
     sha256: "c".repeat(64),
@@ -1309,9 +1440,9 @@ function drivePage(
     id: manualItemId,
     project_id: projectId,
     parent_id: folderId,
-    name: "r5-upload-sample.md",
+    name: qaDriveUploadFilename,
     kind: "file" as const,
-    path: "/docs/r5-upload-sample.md",
+    path: `/docs/${qaDriveUploadFilename}`,
     depth: 1,
     current_version_id: manualVersionId,
     current_version: manualVersion,
@@ -1338,8 +1469,8 @@ function drivePage(
       project_id: projectId,
       op_type: "upload_file" as const,
       target_item_id: manualItemId,
-      target_path: "/docs/r5-upload-sample.md",
-      summary_text: "Uploaded r5-upload-sample.md",
+      target_path: `/docs/${qaDriveUploadFilename}`,
+      summary_text: `Uploaded ${qaDriveUploadFilename}`,
       created_at: "2026-06-11T09:26:00.000Z"
     }]),
     ...(["deleted", "restored"].includes(state) ? [{
@@ -1347,8 +1478,8 @@ function drivePage(
       project_id: projectId,
       op_type: "delete_item" as const,
       target_item_id: manualItemId,
-      target_path: "/docs/r5-upload-sample.md",
-      summary_text: "Moved r5-upload-sample.md to recycle bin",
+      target_path: `/docs/${qaDriveUploadFilename}`,
+      summary_text: `Moved ${qaDriveUploadFilename} to recycle bin`,
       created_at: "2026-06-11T09:27:00.000Z"
     }] : []),
     ...(state === "restored" ? [{
@@ -1356,8 +1487,8 @@ function drivePage(
       project_id: projectId,
       op_type: "restore_item" as const,
       target_item_id: manualItemId,
-      target_path: "/docs/r5-upload-sample.md",
-      summary_text: "Restored r5-upload-sample.md from recycle bin",
+      target_path: `/docs/${qaDriveUploadFilename}`,
+      summary_text: `Restored ${qaDriveUploadFilename} from recycle bin`,
       created_at: "2026-06-11T09:28:00.000Z"
     }] : []),
     ...(commentDraftCreated ? [{
@@ -1701,6 +1832,7 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
   let driveQaState: DriveQaState = "initial";
   let driveCommentDraftCreated = false;
   let driveDraftProposalCreated = false;
+  let namedProjectCreated = false;
   let meetingInsightDraftCreated = false;
   let meetingDraftProposalCreated = false;
   let meetingInsightDismissed = false;
@@ -1842,31 +1974,36 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     }
     if (request.method === "GET" && url.pathname === "/api/projects") {
       // 网盘是 GitHub 式核心:面板内项目切换器需要全量项目清单。首条与 drivePage().project 同 id(当前高亮),次条提供切换目标。
+      sendJson(response, 200, projectListPage(namedProjectCreated));
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/api/projects/bootstrap") {
+      requestRecord.body = await requestBody(request);
+      const body = JSON.parse(requestRecord.body || "{}") as { name?: string; description?: string };
+      namedProjectCreated = true;
       sendJson(response, 200, {
-        generated_at: "2026-06-11T09:00:00.000Z",
-        projects: [
-          {
-            id: "10000000-0000-4000-8000-000000001600",
-            name: "区域发布资料库",
-            slug: "regional-launch",
-            owner_nickname: "owner",
-            archived: false,
-            created_at: "2026-06-11T08:00:00.000Z",
-            updated_at: "2026-06-11T09:00:00.000Z",
-            open_work_item_count: 2
-          },
-          {
-            id: "10000000-0000-4000-8000-000000001690",
-            name: "新一代客服平台",
-            slug: "next-support-platform",
-            owner_nickname: "owner",
-            archived: false,
-            created_at: "2026-06-10T08:00:00.000Z",
-            updated_at: "2026-06-10T09:00:00.000Z",
-            open_work_item_count: 1
-          }
-        ]
+        project: {
+          id: qaCreatedProjectId,
+          name: body.name?.trim() || qaCreatedProjectName,
+          slug: "r4-live-launch-notes",
+          description: body.description ?? "Fresh project created through the project index smoke.",
+          owner_nickname: "owner"
+        },
+        created: true,
+        context_ready: true
       });
+      return;
+    }
+    const projectHomeMatch = /^\/api\/pages\/project\/([^/]+)$/u.exec(url.pathname);
+    if (request.method === "GET" && projectHomeMatch?.[1]) {
+      if (projectHomeMatch[1] !== qaProjectId && projectHomeMatch[1] !== meetingProjectId && projectHomeMatch[1] !== qaCreatedProjectId) {
+        sendApiError(response, 404, "project_not_found", "Project not found.");
+        return;
+      }
+      sendJson(response, 200, projectHomePage(
+        projectHomeMatch[1],
+        projectHomeMatch[1] === qaCreatedProjectId ? qaCreatedProjectName : "区域发布资料库"
+      ));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/pages/meetings") {
@@ -2402,6 +2539,20 @@ async function clickSelector(cdp: CdpClient, selector: string) {
   await new Promise((resolve) => setTimeout(resolve, 160));
 }
 
+async function fillTextInput(cdp: CdpClient, selector: string, value: string) {
+  const filled = await cdp.evaluate<boolean>(`(() => {
+    const input = document.querySelector(${JSON.stringify(selector)});
+    if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) return false;
+    input.value = ${JSON.stringify(value)};
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  })()`);
+  if (!filled) {
+    throw new Error(`Could not fill text input: ${selector}`);
+  }
+}
+
 async function clickAndWaitForNotice(cdp: CdpClient, selector: string, kind: string, actionId?: string) {
   const clicked = await cdp.evaluate<boolean>(`(() => {
     const target = document.querySelector(${JSON.stringify(selector)});
@@ -2420,6 +2571,32 @@ async function clickAndWaitForNotice(cdp: CdpClient, selector: string, kind: str
       audit.notice.visible &&
       audit.notice.kind === kind &&
       (actionId === undefined || audit.notice.actionId === actionId)
+  );
+}
+
+async function uploadDriveFileViaInput(cdp: CdpClient, filename: string, content: string) {
+  const changed = await cdp.evaluate<boolean>(`(() => {
+    const input = document.querySelector("[data-drive-upload-picker='true']");
+    if (!(input instanceof HTMLInputElement)) return false;
+    const file = new File([${JSON.stringify(content)}], ${JSON.stringify(filename)}, { type: "text/markdown" });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  })()`);
+  if (!changed) {
+    throw new Error("Could not upload Drive file through the file picker.");
+  }
+  await waitFor<BrowserAudit>(
+    cdp,
+    `Drive file picker -> uploaded ${filename}`,
+    auditExpression(),
+    (audit) =>
+      audit.notice.visible &&
+      audit.notice.kind === "action_success" &&
+      audit.notice.actionId === "drive_upload_file"
   );
 }
 
@@ -2591,6 +2768,9 @@ function auditExpression() {
     const visiblePanels = panels.filter((panel) => !panel.hasAttribute("hidden"));
     const routeComponentKey = routeComponent ? routeComponent.getAttribute("data-r4-route-component") : null;
     const routeData = {
+      homeProjectDesk: document.querySelector("[data-r8-home-project-desk]") ? "true" : "false",
+      homeProjectCount: document.querySelector("[data-r8-home-project-desk]")?.getAttribute("data-r8-home-project-count") || null,
+      homeDriveCta: document.querySelector("[data-r8-home-drive-cta]")?.getAttribute("href") || null,
       workitemTraceCount: routeComponent?.getAttribute("data-r4-workitem-trace-count") || null,
       workitemEvidenceCount: routeComponent?.getAttribute("data-r4-workitem-evidence-count") || null,
       workitemAcceptanceCount: routeComponent?.getAttribute("data-r4-workitem-acceptance-count") || null,
@@ -2641,7 +2821,16 @@ function auditExpression() {
       replayAcceptedDeliverableCount: routeComponent?.getAttribute("data-r4-replay-accepted-deliverable-count") || null,
       replayMergeAttemptCount: routeComponent?.getAttribute("data-r4-replay-merge-attempt-count") || null,
       replayStructuredAuditCount: routeComponent?.getAttribute("data-r4-replay-structured-audit-count") || null,
+      projectsCount: routeComponent?.getAttribute("data-r8-projects-count") || null,
+      projectHomeId: routeComponent?.getAttribute("data-r8-project-home") || null,
+      projectHomeSlug: routeComponent?.getAttribute("data-r8-project-home-slug") || null,
+      projectHomeOpenCount: routeComponent?.getAttribute("data-r8-project-home-open-count") || null,
+      projectHomeItemCount: String(document.querySelectorAll("[data-r8-project-home-item]").length),
+      projectHomeFileCount: document.querySelector("[data-r8-project-home-files]")?.getAttribute("data-r8-project-home-files") || null,
+      projectHomeMoreCount: document.querySelector("[data-r8-project-home-more]")?.getAttribute("data-r8-project-home-more") || null,
+      projectHomeFilesMoreCount: document.querySelector("[data-r8-project-home-files-more]")?.getAttribute("data-r8-project-home-files-more") || null,
       driveProjectId: routeComponent?.getAttribute("data-r4-drive-project-id") || null,
+      driveSelectedItemId: document.querySelector("[data-r4-drive-item-selected='true']")?.getAttribute("data-r4-drive-item") || null,
       driveItemCount: routeComponent?.getAttribute("data-r4-drive-item-count") || null,
       driveVersionCount: routeComponent?.getAttribute("data-r4-drive-version-count") || null,
       driveAcceptedCount: routeComponent?.getAttribute("data-r4-drive-accepted-count") || null,
@@ -2785,14 +2974,27 @@ function auditExpression() {
       actionText: routeStateCard?.querySelector("a")?.textContent?.trim() || null
     };
     const routeSpecificMarker =
-      routeComponentKey === "workitem"
+      routeComponentKey === "home"
+        ? Boolean(document.querySelector("[data-r8-home-project-desk]") && document.querySelector("[data-r8-home-drive-cta]") && document.querySelector("[data-r4-home-decision]"))
+        : routeComponentKey === "workitem"
         ? Boolean(document.querySelector("[data-r4-workitem-context]") && document.querySelector("[data-r4-workitem-trace]") && document.querySelector("[data-r4-workitem-evidence]"))
         : routeComponentKey === "proposal"
           ? Boolean(document.querySelector("[data-r4-proposal-summary]") && document.querySelector("[data-r4-proposal-changes]") && document.querySelector("[data-action-id='request_changes'][data-method='POST'][data-requires-reason='true']"))
           : routeComponentKey === "cost"
             ? Boolean(document.querySelector("[data-r4-cost-metrics]") && document.querySelector("[data-r4-cost-budget]") && document.querySelector("[data-r4-cost-models]"))
             : routeComponentKey === "intake"
-              ? Boolean(document.querySelector("[data-r4-intake-options]") && document.querySelector("[data-r4-intake-progress]") && document.querySelector("[data-intake-submit='next-question']"))
+              ? Boolean(
+                (
+                  document.querySelector("[data-r4-intake-options]") &&
+                  document.querySelector("[data-r4-intake-progress]") &&
+                  document.querySelector("[data-intake-submit='next-question']")
+                ) ||
+                (
+                  document.querySelector("[data-s1-day0-intake-start]") &&
+                  document.querySelector("[data-s1-day1-intent-input]") &&
+                  document.querySelector("[data-r4-route-component-source='project-bootstrap']")
+                )
+              )
               : routeComponentKey === "knowledge"
                 ? Boolean(document.querySelector("[data-r4-knowledge-fallback]") && document.querySelector("[data-r4-knowledge-evidence-ref]") && document.querySelector("[data-action-id='use_for_current_task']"))
                 : routeComponentKey === "drive"
@@ -2834,6 +3036,10 @@ function auditExpression() {
                               document.querySelector("[data-r8-skill-refined]") &&
                               !document.querySelector("[data-r8-skills-empty]")
                           )
+                    : routeComponentKey === "projects"
+                      ? Boolean(document.querySelector("[data-r8-projects-list]") && document.querySelector("[data-r8-project-open]") && document.querySelector("[data-r8-project-create]"))
+                      : routeComponentKey === "project-home"
+                        ? Boolean(document.querySelector("[data-r8-project-home-list]") && document.querySelector("[data-r8-project-home-open-drive]") && document.querySelector("[data-r8-project-home-files]"))
                     : routeComponentKey === "settings"
                       ? Boolean(document.querySelector("[data-r4-settings-runtime]") && document.querySelector("[data-r4-settings-llm]") && document.querySelector("[data-r4-settings-device]"))
                       : Boolean(routeComponentKey);
@@ -3344,11 +3550,26 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await clickAndWaitForNotice(cdp, '[data-action-id="restore_deliverable"]', "action_success", "restore_deliverable");
   steps.push(await captureStep(cdp, { id: "15a-replay-restore-success-en-desktop", url: `${baseUrl}/agent-runs/r4-live-run/replay`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "replay" }));
 
-  await navigate(cdp, `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, "ready");
-  steps.push(await captureStep(cdp, { id: "15b-drive-en-desktop-route-component", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+  await navigate(cdp, `${baseUrl}/projects`, "ready");
+  steps.push(await captureStep(cdp, { id: "15ab-projects-en-desktop-route-component", url: `${baseUrl}/projects`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "projects" }));
+
+  await fillTextInput(cdp, "[data-r8-project-name-input]", qaCreatedProjectName);
+  await clickAndWait(cdp, "[data-r8-project-create]", `/projects/${qaCreatedProjectId}`);
+  steps.push(await captureStep(cdp, { id: "15aba-project-create-named-en-desktop", url: `${baseUrl}/projects/${qaCreatedProjectId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "project-home" }));
+
+  await navigate(cdp, `${baseUrl}/projects`, "ready");
+  await clickAndWait(cdp, `[data-r8-project-open="${qaProjectId}"]`, `/projects/${qaProjectId}`);
+  steps.push(await captureStep(cdp, { id: "15ac-project-home-en-desktop-route-component", url: `${baseUrl}/projects/${qaProjectId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "project-home" }));
+
+  await clickAndWait(cdp, "[data-r8-project-home-new-task]", "/intake");
+  steps.push(await captureStep(cdp, { id: "15ad-project-home-new-task-intake-en-desktop", url: `${baseUrl}/intake?project_id=${qaProjectId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "intake" }));
+
+  await navigate(cdp, `${baseUrl}/projects/${qaProjectId}`, "ready");
+  await clickAndWait(cdp, "[data-r8-project-home-open-drive]", "/drive");
+  steps.push(await captureStep(cdp, { id: "15b-drive-en-desktop-route-component", url: `${baseUrl}/drive?project_id=${qaProjectId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
   await clickAndWaitForNotice(cdp, '[data-action-id="comment_to_draft"]', "action_success", "comment_to_draft");
-  steps.push(await captureStep(cdp, { id: "15bb-drive-comment-to-draft-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+  steps.push(await captureStep(cdp, { id: "15bb-drive-comment-to-draft-success-en-desktop", url: `${baseUrl}/drive?project_id=${qaProjectId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
   await clickAndWait(cdp, 'a[href="/workitems/r4-live-workitem"]', "/workitems/r4-live-workitem");
   steps.push(await captureStep(cdp, { id: "15bc-drive-open-workitem-draft-en-desktop", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
@@ -3356,17 +3577,29 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await clickAndWaitForNotice(cdp, '[data-action-id="drive_draft_to_proposal"]', "action_success", "drive_draft_to_proposal");
   steps.push(await captureStep(cdp, { id: "15bd-drive-draft-to-proposal-success-en-desktop", url: `${baseUrl}/workitems/r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
 
-  await navigate(cdp, `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, "ready");
-  steps.push(await captureStep(cdp, { id: "15be-drive-proposal-link-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+  await navigate(cdp, `${baseUrl}/drive?project_id=${qaProjectId}`, "ready");
+  steps.push(await captureStep(cdp, { id: "15be-drive-proposal-link-en-desktop", url: `${baseUrl}/drive?project_id=${qaProjectId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
-  await clickAndWaitForNotice(cdp, '[data-action-id="drive_upload_file"]', "action_success", "drive_upload_file");
-  steps.push(await captureStep(cdp, { id: "15c-drive-upload-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+  await uploadDriveFileViaInput(cdp, qaDriveUploadFilename, "# Regional launch brief\n\nPrepared by field operations for the launch readiness review.");
+  steps.push(await captureStep(cdp, { id: "15c-drive-upload-success-en-desktop", url: `${baseUrl}/drive?project_id=${qaProjectId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+
+  await clickSelector(cdp, `[data-r5-drive-item-link-id="${qaManualDriveItemId}"]`);
+  await waitFor<BrowserAudit>(
+    cdp,
+    "Drive uploaded item deep-link selected",
+    auditExpression(),
+    (audit) =>
+      audit.pathname === "/drive" &&
+      audit.search.includes(`item_id=${qaManualDriveItemId}`) &&
+      audit.routeData.driveSelectedItemId === qaManualDriveItemId
+  );
+  steps.push(await captureStep(cdp, { id: "15ca-drive-uploaded-item-deeplink-en-desktop", url: `${baseUrl}/drive?project_id=${qaProjectId}&item_id=${qaManualDriveItemId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
   await clickAndWaitForNotice(cdp, '[data-action-id="drive_delete_item"]', "action_success", "drive_delete_item");
-  steps.push(await captureStep(cdp, { id: "15d-drive-delete-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+  steps.push(await captureStep(cdp, { id: "15d-drive-delete-success-en-desktop", url: `${baseUrl}/drive?project_id=${qaProjectId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
   await clickAndWaitForNotice(cdp, '[data-action-id="drive_restore_item"]', "action_success", "drive_restore_item");
-  steps.push(await captureStep(cdp, { id: "15e-drive-restore-success-en-desktop", url: `${baseUrl}/drive?project_id=10000000-0000-4000-8000-000000001600`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
+  steps.push(await captureStep(cdp, { id: "15e-drive-restore-success-en-desktop", url: `${baseUrl}/drive?project_id=${qaProjectId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "drive" }));
 
   await navigate(cdp, `${baseUrl}/meetings?project_id=${meetingProjectId}&m=${meetingId}`, "ready");
   steps.push(await captureStep(cdp, { id: "15f-meetings-insight-en-desktop", url: `${baseUrl}/meetings?project_id=${meetingProjectId}&m=${meetingId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "meetings" }));
@@ -3408,6 +3641,9 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await navigate(cdp, `${baseUrl}/calendar?date=2026-06-11&view=week`, "ready");
   steps.push(await captureStep(cdp, { id: "15q-calendar-en-desktop", url: `${baseUrl}/calendar?date=2026-06-11&view=week`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "calendar" }));
 
+  await clickAndWait(cdp, "[data-r5-calendar-open-target]", `/workitems/${meetingWorkItemId}`);
+  steps.push(await captureStep(cdp, { id: "15qa-calendar-open-target-workitem-en-desktop", url: `${baseUrl}/workitems/${meetingWorkItemId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "workitem" }));
+
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/calendar?date=2026-06-11&view=week`, "ready");
   steps.push(await captureStep(cdp, { id: "15r-calendar-en-mobile-no-overflow", url: `${baseUrl}/calendar?date=2026-06-11&view=week`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "calendar" }));
@@ -3415,6 +3651,9 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await setViewport(cdp, desktop);
   await navigate(cdp, `${baseUrl}/dashboard/health`, "ready");
   steps.push(await captureStep(cdp, { id: "15s-health-en-desktop", url: `${baseUrl}/dashboard/health`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "health" }));
+
+  await clickAndWait(cdp, "[data-r5-7-health-open-project]", `/projects/${meetingProjectId}`);
+  steps.push(await captureStep(cdp, { id: "15sa-health-open-project-en-desktop", url: `${baseUrl}/projects/${meetingProjectId}`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "project-home" }));
 
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/dashboard/health`, "ready");
@@ -3504,10 +3743,19 @@ function requestProof(requests: ApiRequestRecord[]) {
     createWorkItem: requests.some((request) => request.method === "POST" && request.pathname === "/api/workitems"),
     knowledge: requests.some((request) => request.method === "POST" && request.pathname === "/api/knowledge/search" && request.locale === "en-US"),
     evidenceBinding: requests.some((request) => request.method === "POST" && /^\/api\/workitems\/[^/]+\/evidence-bindings$/u.test(request.pathname)),
+    projects: requests.some((request) => request.pathname === "/api/projects"),
+    projectHome: requests.some((request) => request.pathname === `/api/pages/project/${qaProjectId}` && request.locale === "en-US"),
+    createNamedProject: requests.some((request) =>
+      request.method === "POST" &&
+      request.pathname === "/api/projects/bootstrap" &&
+      typeof request.body === "string" &&
+      request.body.includes(qaCreatedProjectName)
+    ),
     proposal: requests.some((request) => request.pathname === "/api/pages/proposals/r4-live-proposal"),
     conflicts: requests.some((request) => /^\/api\/workitems\/[^/]+\/conflicts$/u.test(request.pathname)),
     drive: requests.some((request) => request.pathname === "/api/pages/drive" && request.locale === "en-US"),
-    driveProjectParam: requests.some((request) => request.pathname === "/api/pages/drive" && request.search.includes("project_id=10000000-0000-4000-8000-000000001600")),
+    driveProjectParam: requests.some((request) => request.pathname === "/api/pages/drive" && request.search.includes(`project_id=${qaProjectId}`)),
+    driveItemParam: requests.some((request) => request.pathname === "/api/pages/drive" && request.search.includes(`item_id=${qaManualDriveItemId}`)),
     driveCommentDraft: requests.some((request) => request.method === "POST" && /^\/api\/drive\/projects\/[^/]+\/comments\/[^/]+\/draft$/u.test(request.pathname)),
     driveDraftProposal: requests.some((request) => request.method === "POST" && /^\/api\/drive\/workitems\/[^/]+\/proposal-draft$/u.test(request.pathname)),
     meetings: requests.some((request) => request.pathname === "/api/pages/meetings" && request.locale === "en-US"),
@@ -3561,6 +3809,9 @@ function requestProof(requests: ApiRequestRecord[]) {
       createWorkItem: count("/api/workitems", "POST"),
       knowledgeSearch: count("/api/knowledge/search", "POST"),
       evidenceBinding: countMatch(/^\/api\/workitems\/[^/]+\/evidence-bindings$/u, "POST"),
+      projects: count("/api/projects"),
+      projectHome: count(`/api/pages/project/${qaProjectId}`),
+      createNamedProject: count("/api/projects/bootstrap", "POST"),
       proposal: count("/api/pages/proposals/r4-live-proposal"),
       proposalConflicts: countMatch(/^\/api\/workitems\/[^/]+\/conflicts$/u),
       drive: count("/api/pages/drive"),
@@ -3603,6 +3854,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       createWorkItemSelection: bodyMatch(/^\/api\/workitems$/u, "POST", "create-worker"),
       knowledgeWorkItemFilter: bodyMatch(/^\/api\/knowledge\/search$/u, "POST", "r4-live-workitem"),
       evidenceBindingRefs: bodyMatch(/^\/api\/workitems\/[^/]+\/evidence-bindings$/u, "POST", "evidence_bubble_id"),
+      createNamedProjectName: bodyMatch(/^\/api\/projects\/bootstrap$/u, "POST", qaCreatedProjectName),
       textHunkOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "text_hunk_overrides"),
       textHunkFullCoverage:
         bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "hunk_index") &&
@@ -3613,10 +3865,10 @@ function requestProof(requests: ApiRequestRecord[]) {
       structuredItemOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "structured_item_overrides"),
       structuredFieldOverrides: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "structured_field_overrides"),
       customFieldValue: bodyMatch(/^\/api\/merge-proposals\/[^/]+\/apply$/u, "POST", "R4.13 custom reviewed title"),
-      driveUploadFilename: bodyMatch(/^\/api\/drive\/projects\/[^/]+\/files$/u, "POST", "r5-upload-sample.md"),
+      driveUploadFilename: bodyMatch(/^\/api\/drive\/projects\/[^/]+\/files$/u, "POST", qaDriveUploadFilename),
       driveCommentDraftRequest: requests.some((request) =>
         request.method === "POST" &&
-        /^\/api\/drive\/projects\/10000000-0000-4000-8000-000000001600\/comments\/10000000-0000-4000-8000-000000001623\/draft$/u.test(request.pathname)
+        new RegExp(`^/api/drive/projects/${qaProjectId}/comments/10000000-0000-4000-8000-000000001623/draft$`, "u").test(request.pathname)
       ),
       driveDraftProposalRequest: requests.some((request) =>
         request.method === "POST" &&
@@ -3737,7 +3989,7 @@ async function main() {
     const routePageVmByComponent: Record<string, string> = {
       home: "attention",
       projects: "projects",
-      "project-home": "project",
+      "project-home": "project-home",
       intake: "session",
       approvals: "approvals",
       workitem: "workitem",
@@ -3753,6 +4005,17 @@ async function main() {
       skills: "skills",
       settings: "settings"
     };
+    const routeAdapterPageVmTruth = (step: StepReport) => {
+      if (step.audit.routeComponent === "intake" && step.audit.routeComponentSource === "project-bootstrap") {
+        return step.audit.routeTreePageVm === "session" &&
+          step.audit.hydrationPageVm === "project_bootstrap" &&
+          step.audit.hydrationPanelPageVm === "project_bootstrap";
+      }
+      const expected = routePageVmByComponent[step.audit.routeComponent ?? ""];
+      return step.audit.routeTreePageVm === expected &&
+        step.audit.hydrationPageVm === expected &&
+        step.audit.hydrationPanelPageVm === expected;
+    };
     const migratedReactSteps = readyProductSteps.filter((step) => Boolean(step.audit.routeComponent && r4ReactComponentByRoute[step.audit.routeComponent]));
     const gates = {
       dev_server_started: Boolean(viteServer.httpServer?.listening),
@@ -3763,7 +4026,7 @@ async function main() {
         steps.some((step) => step.id === "05-history-forward-workitem" && step.audit.pathname === "/workitems/r4-live-workitem"),
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-route-component" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
       ready_empty_forbidden_notfound_routes: ["ready", "empty", "forbidden", "notFound"].every((status) => steps.some((step) => step.audit.status === status)),
-      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.proposal && proof.conflicts && proof.drive && proof.meetings && proof.notifications && proof.calendar && proof.cost && proof.skills && proof.settings && proof.replay && proof.localePatch,
+      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.projects && proof.projectHome && proof.proposal && proof.conflicts && proof.drive && proof.meetings && proof.notifications && proof.calendar && proof.cost && proof.skills && proof.settings && proof.replay && proof.localePatch,
       r4_14_ready_routes_use_session_knowledge_endpoints:
         proof.session &&
         proof.sessionEn &&
@@ -3772,7 +4035,15 @@ async function main() {
         proof.knowledge &&
         proof.evidenceBinding,
       r4_10_home_approvals_replay_route_components:
-        steps.some((step) => step.id === "01-home-zh-desktop" && step.audit.routeComponent === "home" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
+        steps.some((step) =>
+          step.id === "01-home-zh-desktop" &&
+          step.audit.routeComponent === "home" &&
+          step.audit.routeComponentSource === "page-vm" &&
+          step.audit.routeComponentActive &&
+          step.audit.routeData.homeProjectDesk === "true" &&
+          step.audit.routeData.homeProjectCount === "2" &&
+          step.audit.routeData.homeDriveCta === `/drive?project_id=${qaProjectId}`
+        ) &&
         steps.some((step) => step.id === "02-approvals-click-zh-desktop" && step.audit.routeComponent === "approvals" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive) &&
         steps.some((step) => step.id === "15-replay-en-desktop-route-component" && step.audit.routeComponent === "replay" && step.audit.routeComponentSource === "page-vm" && step.audit.routeComponentActive),
       r4_11_workitem_proposal_cost_settings_route_components:
@@ -3780,6 +4051,55 @@ async function main() {
         hasActiveComponent(steps, "11-proposal-en-mobile-scrolled-notice-route-component", "proposal") &&
         hasActiveComponent(steps, "12-cost-en-mobile-route-component", "cost") &&
         hasActiveComponent(steps, "13-settings-en-desktop-route-component", "settings"),
+      r8_projects_project_home_route_components:
+        proof.projects &&
+        proof.projectHome &&
+        proof.createNamedProject &&
+        proof.advancedPayloads.createNamedProjectName &&
+        proof.counts.projects >= 1 &&
+        proof.counts.projectHome >= 3 &&
+        proof.counts.createNamedProject === 1 &&
+        hasActiveComponent(steps, "15ab-projects-en-desktop-route-component", "projects") &&
+        hasActiveComponent(steps, "15aba-project-create-named-en-desktop", "project-home") &&
+        hasActiveComponent(steps, "15ac-project-home-en-desktop-route-component", "project-home") &&
+        steps.some((step) =>
+          step.id === "15ab-projects-en-desktop-route-component" &&
+          step.audit.routeData.projectsCount === "2" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15aba-project-create-named-en-desktop" &&
+          step.audit.notice.kind === "action_success" &&
+          step.audit.notice.actionId === "create_named_project" &&
+          step.audit.routeData.projectHomeId === qaCreatedProjectId &&
+          step.audit.routeData.projectHomeOpenCount === "0" &&
+          step.audit.routeData.projectHomeFileCount === "0" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15ac-project-home-en-desktop-route-component" &&
+          step.audit.routeData.projectHomeId === qaProjectId &&
+          step.audit.routeData.projectHomeSlug === "regional-launch" &&
+          step.audit.routeData.projectHomeOpenCount === "2" &&
+          step.audit.routeData.projectHomeItemCount === "2" &&
+          step.audit.routeData.projectHomeFileCount === "3" &&
+          step.audit.routeData.projectHomeMoreCount === "1" &&
+          step.audit.routeData.projectHomeFilesMoreCount === "1" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15ad-project-home-new-task-intake-en-desktop" &&
+          step.audit.routeComponent === "intake" &&
+          step.audit.routeComponentActive &&
+          step.audit.routeSpecificMarker &&
+          step.audit.routeComponentSource === "project-bootstrap" &&
+          step.audit.routeData.intakeOptionCount === null &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
       r5_1_drive_route_component:
         hasActiveComponent(steps, "15b-drive-en-desktop-route-component", "drive") &&
         proof.drive &&
@@ -3799,11 +4119,12 @@ async function main() {
           step.audit.textOverflowCount === 0
         ),
       r5_2_drive_upload_recycle_operation_log:
-        proof.counts.drive === 7 &&
+        proof.counts.drive === 8 &&
         proof.counts.driveUpload === 1 &&
         proof.counts.driveDelete === 1 &&
         proof.counts.driveRestore === 1 &&
         proof.advancedPayloads.driveUploadFilename &&
+        proof.driveItemParam &&
         proof.advancedPayloads.driveDeleteExpectedCurrent &&
         steps.some((step) =>
           step.id === "15c-drive-upload-success-en-desktop" &&
@@ -3813,6 +4134,17 @@ async function main() {
           step.audit.routeData.driveItemCount === "3" &&
           step.audit.routeData.driveVersionCount === "3" &&
           step.audit.routeData.driveDeletedCount === "0" &&
+          step.audit.routeData.driveOperationCount === "4" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15ca-drive-uploaded-item-deeplink-en-desktop" &&
+          step.audit.pathname === "/drive" &&
+          step.audit.search.includes(`item_id=${qaManualDriveItemId}`) &&
+          step.audit.routeData.driveSelectedItemId === qaManualDriveItemId &&
+          step.audit.routeData.driveItemCount === "3" &&
+          step.audit.routeData.driveVersionCount === "3" &&
           step.audit.routeData.driveOperationCount === "4" &&
           !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
@@ -3895,7 +4227,7 @@ async function main() {
         proof.meetingInsightDraft &&
         proof.meetingDraftProposal &&
         proof.counts.meetings === 3 &&
-        proof.counts.meetingWorkitem === 2 &&
+        proof.counts.meetingWorkitem >= 2 &&
         proof.counts.meetingInsightDraft === 1 &&
         proof.counts.meetingInsightDismiss === 0 &&
         proof.counts.meetingDraftProposal === 1 &&
@@ -4054,6 +4386,13 @@ async function main() {
           !step.audit.horizontalOverflow &&
           !step.audit.navHorizontalOverflow &&
           step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15qa-calendar-open-target-workitem-en-desktop" &&
+          step.audit.routeComponent === "workitem" &&
+          step.audit.routeData.workitemSourceContext === "meeting_insight" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
         ),
       r5_7_health_grounding_routes:
         proof.health &&
@@ -4077,6 +4416,13 @@ async function main() {
           step.audit.routeComponent === "health" &&
           !step.audit.horizontalOverflow &&
           !step.audit.navHorizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "15sa-health-open-project-en-desktop" &&
+          step.audit.routeComponent === "project-home" &&
+          step.audit.routeData.projectHomeId === meetingProjectId &&
+          !step.audit.horizontalOverflow &&
           step.audit.textOverflowCount === 0
         ) &&
         steps.some((step) =>
@@ -4385,9 +4731,7 @@ async function main() {
         step.audit.routeTreeAdapter === "route-component-v1" &&
         step.audit.routeTreeActiveOnly &&
         step.audit.routeTreeRouteCount === "17" &&
-        step.audit.routeTreePageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
-        step.audit.hydrationPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""] &&
-        step.audit.hydrationPanelPageVm === routePageVmByComponent[step.audit.routeComponent ?? ""]
+        routeAdapterPageVmTruth(step)
       ),
       r4_16_action_dispatcher_parity: readyProductSteps.every((step) =>
         step.audit.hydrationActionCount !== null &&
@@ -4858,10 +5202,13 @@ async function main() {
         proof.counts.approvals === 4 &&
         proof.counts.workitem === 6 &&
         proof.counts.workitemForbidden === 1 &&
-        proof.counts.drive === 7 &&
+        proof.counts.projects === 11 &&
+        proof.counts.projectHome === 4 &&
+        proof.counts.createNamedProject === 1 &&
+        proof.counts.drive === 8 &&
         proof.counts.driveDraftProposal === 1 &&
         proof.counts.meetings === 3 &&
-        proof.counts.meetingWorkitem === 2 &&
+        proof.counts.meetingWorkitem === 3 &&
         proof.counts.meetingInsightDraft === 1 &&
         proof.counts.meetingInsightDismiss === 0 &&
         proof.counts.meetingDraftProposal === 1 &&

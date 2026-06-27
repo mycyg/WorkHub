@@ -40,6 +40,7 @@ import {
 } from "./route-react-components.js";
 import {
   agentStepPhaseLabel,
+  agentStepPublicSummary,
   budgetStatusLabel,
   changeTypeLabel,
   checkStatusLabel,
@@ -125,6 +126,9 @@ export const webRouteComponentCss = [
   ".wh-r4-route-row p{color:var(--wh-product-muted,#66728c);line-height:1.45}",
   ".wh-r4-route-row-title{color:var(--wh-product-accent,#2f6df0);text-decoration:none}",
   ".wh-r4-route-row-title:hover,.wh-r4-route-row-title:focus-visible{text-decoration:underline}",
+  ".wh-r4-drive-item-link{display:block;color:inherit;text-decoration:none}",
+  ".wh-r4-drive-item-link strong{color:var(--wh-product-accent,#2f6df0)}",
+  ".wh-r4-drive-item-link:hover strong,.wh-r4-drive-item-link:focus-visible strong{text-decoration:underline}",
   // L6：项目主页「最近文件」深链到网盘并高亮该文件,但选中行以前和普通行长得一模一样(没有任何 CSS)。
   // 仿审批选中行给一道左内边线 + 浅底,让被深链点中的文件真的看得出来。
   ".wh-r4-route-row[data-r4-drive-item-selected=\"true\"]{border-radius:8px;box-shadow:inset 3px 0 0 var(--wh-product-blue,#4F46E5);background:var(--wh-product-blue-tint,#F5F5FE)}",
@@ -144,6 +148,7 @@ export const webRouteComponentCss = [
   ".wh-r4-route-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-start}",
   ".wh-r4-route-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}",
   ".wh-r4-route .wh-btn,.wh-r4-route .wh-pill{max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}",
+  ".wh-drive-upload-label{position:relative;cursor:pointer}.wh-drive-upload-input{position:absolute;inline-size:1px;block-size:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}",
   ".wh-r4-route details:not([open])>*:not(summary){display:none}",
   ".wh-r4-intake-free-text{width:100%;min-height:92px;resize:vertical;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:10px 12px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:#fff;overflow-wrap:anywhere}",
   ".wh-r4-knowledge-search{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 4px;min-width:0;max-width:100%}.wh-r4-knowledge-search input{flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;line-height:1.45;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:9px 12px;color:var(--wh-product-ink,#172033);background:#fff}.wh-r4-knowledge-search .wh-btn{flex:0 0 auto}",
@@ -424,7 +429,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.emptyRecycle": "回收站是空的。",
     "drive.emptyOperations": "还没有操作记录。",
     "drive.selectFile": "从左侧选一个文件查看详情。",
-    "drive.upload": "插入示例文件",
+    "drive.upload": "上传文件",
     "drive.delete": "移到回收站",
     "drive.preview": "预览",
     "drive.download": "下载",
@@ -625,7 +630,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.emptyRecycle": "The recycle bin is empty.",
     "drive.emptyOperations": "No operations yet.",
     "drive.selectFile": "Pick a file on the left to see its details.",
-    "drive.upload": "Insert sample file",
+    "drive.upload": "Upload file",
     "drive.delete": "Move to recycle",
     "drive.preview": "Preview",
     "drive.download": "Download",
@@ -1126,12 +1131,17 @@ function homeRunStateTone(state: string): string {
   return state === "failed" ? "danger" : state === "waiting_for_user" ? "warn" : "accent";
 }
 
-function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): WebRouteComponent {
+function renderHomeRouteComponent(
+  vm: AttentionHomeVM,
+  locale: WorkHubLocale,
+  projects?: ProjectListVM | undefined
+): WebRouteComponent {
   const reactComponent = createHomeReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const primary = vm.primary;
   const primaryActions = primary?.actions ?? [];
   const zh = locale === "zh-CN";
+  const sourceWarnings = vm.source_warnings ?? [];
   // 契约去歧义：fixture 里 primary 与 queue 不相交，但 live /api/pages/attention 把 primary=queue[0] 留在 queue 里。
   // 按 id 去重得到「除首决策外的剩余队列」，避免首决策被重复计数 + 重复渲染（对两种来源都正确）。
   const queueWithoutPrimary = primary ? vm.queue.filter((item) => item.id !== primary.id) : vm.queue;
@@ -1141,6 +1151,39 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
   const workingCount = vm.background_runs.filter((run) => run.state === "running" || run.state === "queued").length;
   const evidenceCount = primary?.evidence_refs?.length ?? 0;
   const worklog = vm.worklog;
+  const projectList = projects?.projects ?? [];
+  const topProject = projectList[0];
+  const projectCountLabel = projects ? String(projectList.length) : (zh ? "项目" : "Projects");
+  const projectRows = projectList.length
+    ? projectList.slice(0, 4).map((project) => `<div class="wh-r4-route-row" data-r8-home-project="${escapeHtml(project.id)}" data-r8-home-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
+        <div>
+          <strong><a class="wh-r4-route-row-title" href="/projects/${escapeHtml(encodeURIComponent(project.id))}">${escapeHtml(project.name)}</a></strong>
+          ${project.description ? `<p>${escapeHtml(project.description)}</p>` : ""}
+          <div class="wh-r4-route-meta">
+            <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.owner")} · ${project.owner_nickname}`)}</span>
+            <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.openItems")} ${project.open_work_item_count}`)}</span>
+            <span class="wh-pill">${escapeHtml(`${routeT(locale, "projects.updated")} ${project.updated_at.slice(0, 10)}`)}</span>
+          </div>
+        </div>
+        <a class="wh-btn" href="/projects/${escapeHtml(encodeURIComponent(project.id))}" data-r8-home-open-project="${escapeHtml(project.id)}">${escapeHtml(routeT(locale, "projects.open"))}</a>
+      </div>`).join("")
+    : `<p class="wh-subtle" data-r8-home-projects-empty="true">${escapeHtml(zh ? "还没有项目。先新建或打开一个项目，任务、文件和版本都会收在同一个工作区里。" : "No projects yet. Create or open a project first; tasks, files, and versions will live in that workspace.")}</p>`;
+  const projectDriveHref = topProject ? `/drive?project_id=${encodeURIComponent(topProject.id)}` : "/projects";
+  const projectIntakeHref = topProject ? `/intake?project_id=${encodeURIComponent(topProject.id)}` : "/intake";
+  const projectDesk = `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent wh-r8-home-project-desk" data-r8-home-project-desk="true" data-r8-home-project-count="${escapeHtml(String(projectList.length))}" data-r8-home-projects-loaded="${escapeHtml(String(Boolean(projects)))}">
+      <div class="wh-r4-route-meta">
+        <span class="wh-r4-route-kicker">${escapeHtml(zh ? "项目与网盘" : "Projects and drive")}</span>
+        <span class="wh-pill">${escapeHtml(projects ? (zh ? `项目 ${projectList.length}` : `${projectList.length} projects`) : (zh ? "项目清单稍后同步" : "Project list syncing"))}</span>
+      </div>
+      <h3>${escapeHtml(zh ? "先进入项目，再处理任务和文件" : "Start from a project, then work through tasks and files")}</h3>
+      <p>${escapeHtml(zh ? "每个项目像一个仓库：进行中的任务、最近文件、版本历史和网盘入口都围绕它组织。" : "Each project behaves like a repo: open work, recent files, version history, and the drive stay organized around it.")}</p>
+      <div class="wh-r4-route-actions">
+        <a class="wh-btn wh-btn-primary" href="/projects" data-r8-home-projects-cta="true">${escapeHtml(zh ? "打开项目" : "Open projects")}</a>
+        <a class="wh-btn" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-cta="true">${escapeHtml(zh ? "打开网盘" : "Open drive")}</a>
+        <a class="wh-btn" href="${escapeHtml(safeHref(projectIntakeHref))}" data-r4-home-intake-cta="true" data-r8-home-new-work-cta="true">${escapeHtml(zh ? "新建任务" : "New task")}</a>
+      </div>
+      <div class="wh-r4-route-timeline">${projectRows}</div>
+    </section>`;
 
   // R8：今日「自进化」——只在确有新增/精修时显示，避免零活动时刷存在感。
   const selfEvolved = (worklog?.skills_promoted_today ?? 0) + (worklog?.skills_refined_today ?? 0);
@@ -1158,6 +1201,14 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
         ${worklogMainLine}
         ${selfEvolveLine}
       </div>`
+    : "";
+  const sourceWarningBanner = sourceWarnings.length
+    ? `<section class="wh-card wh-r4-route-card wh-r4-home-source-warning" data-r4-home-source-warning="true" data-r4-home-source-warning-count="${escapeHtml(String(sourceWarnings.length))}">
+        <span class="wh-r4-route-kicker">${escapeHtml(zh ? "数据未完整加载" : "Some data did not load")}</span>
+        <div class="wh-r4-route-timeline">
+          ${sourceWarnings.map((warning) => `<p class="wh-subtle" data-r4-home-source-warning-source="${escapeHtml(warning.source)}">${escapeHtml(warning.message)}</p>`).join("")}
+        </div>
+      </section>`
     : "";
 
   // 真实风险计数：升级/同步冲突/预算类事项，或任何紧急项（替代之前硬编码的 0）。
@@ -1235,13 +1286,23 @@ function renderHomeRouteComponent(vm: AttentionHomeVM, locale: WorkHubLocale): W
       ${worklogBanner}
       <header class="wh-r4-route-head">
         <div>
-          <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.kicker"))}</span>
-          <h1>${escapeHtml(goldPathT(locale, "home.inboxTitle"))}</h1>
-          <p>${escapeHtml(goldPathT(locale, "home.inboxSummary"))}</p>
+          <span class="wh-r4-route-kicker">${escapeHtml(zh ? "项目工作台" : "Project workspace")}</span>
+          <h1>${escapeHtml(zh ? "项目、网盘和待办" : "Projects, drive, and attention")}</h1>
+          <p>${escapeHtml(zh ? "先从项目进入：任务、文件、版本和 AI 待办都会回到同一个项目脉络里。" : "Start from the project: tasks, files, versions, and AI attention all resolve back into one project context.")}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(String(decideCount))}</span>
+        <span class="wh-r4-route-count">${escapeHtml(projectCountLabel)}</span>
       </header>
       ${chips}
+      ${sourceWarningBanner}
+      <div class="wh-r4-route-grid">
+        ${projectDesk}
+        <section class="wh-card wh-r4-route-card" data-r8-home-drive-principle="true">
+          <span class="wh-r4-route-kicker">${escapeHtml(zh ? "文件同步" : "File sync")}</span>
+          <h3>${escapeHtml(zh ? "网盘跟着项目走" : "The drive follows the project")}</h3>
+          <p>${escapeHtml(zh ? "上传、版本、交付物恢复和评论草稿都在项目网盘里闭环，避免把文件散在全局入口。" : "Uploads, versions, deliverable restore, and comment drafts close the loop inside each project drive instead of a loose global bucket.")}</p>
+          <a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-principle-link="true">${escapeHtml(zh ? "查看项目网盘 →" : "View project drive →")}</a>
+        </section>
+      </div>
       <div class="wh-r4-route-grid">
         ${decisionCard}
         <section class="wh-card wh-r4-route-card" data-r4-home-ai-working="true">
@@ -1720,7 +1781,7 @@ function traceRows(vm: WorkItemDetailVM, locale: WorkHubLocale) {
     .map((step) => `<div class="wh-r4-route-row" data-r4-workitem-trace-step="${escapeHtml(step.id)}">
       <div>
         <strong>${escapeHtml(`${step.step_no}. ${agentStepPhaseLabel(locale, step.phase)}`)}</strong>
-        <p>${escapeHtml(step.output_excerpt ?? step.tool_name ?? uiT(locale, "workitem.stepFallback"))}</p>
+        <p>${escapeHtml(agentStepPublicSummary(locale, step))}</p>
       </div>
       <span class="wh-pill">${escapeHtml(step.tool_name ?? formatApprovalTimestamp(step.created_at))}</span>
     </div>`)
@@ -1924,16 +1985,13 @@ function renderCheck(check: DeliverableCheck, locale: WorkHubLocale) {
 }
 
 function proposalActions(vm: ProposalDetailVM) {
-  // A merged proposal is read-only: hide all write actions. Otherwise surface the
-  // full review set (approve / request changes / merge) so reviewers can act in one place.
-  if (vm.status === "merged") {
-    return [];
+  if (vm.status === "opened") {
+    return [vm.review_actions.approve, vm.review_actions.request_changes];
   }
-  return [
-    vm.review_actions.approve,
-    vm.review_actions.request_changes,
-    ...(vm.review_actions.merge ? [vm.review_actions.merge] : [])
-  ];
+  if (vm.status === "reviewed" && vm.review_actions.merge) {
+    return [vm.review_actions.merge];
+  }
+  return [];
 }
 
 function renderProposalRouteComponent(
@@ -2044,17 +2102,25 @@ function formatBytes(value: number, locale: WorkHubLocale) {
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function driveActionLinks(
-  item: NonNullable<DrivePageVM["items"][number]["accepted_deliverable"]>,
+function driveResourceActionLinks(
+  item: { preview_href?: string | undefined; download_href?: string | undefined },
   locale: WorkHubLocale
 ) {
   const links: string[] = [];
   if (item.preview_href) {
-    links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.preview_href))}" data-action-id="drive_preview">${escapeHtml(routeT(locale, "drive.preview"))}</a>`);
+    links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.preview_href))}" data-action-id="drive_preview" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(routeT(locale, "drive.preview"))}</a>`);
   }
   if (item.download_href) {
-    links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.download_href))}" data-action-id="drive_download">${escapeHtml(routeT(locale, "drive.download"))}</a>`);
+    links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.download_href))}" data-action-id="drive_download" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(routeT(locale, "drive.download"))}</a>`);
   }
+  return links;
+}
+
+function driveActionLinks(
+  item: NonNullable<DrivePageVM["items"][number]["accepted_deliverable"]>,
+  locale: WorkHubLocale
+) {
+  const links = driveResourceActionLinks(item, locale);
   if (item.restore_href) {
     links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>`);
   }
@@ -2129,29 +2195,27 @@ function renderDriveRouteComponent(
   const deleteLabel = deleteTarget
     ? (locale === "zh-CN" ? `移到回收站：${deleteTarget.name}` : `Move “${deleteTarget.name}” to recycle`)
     : routeT(locale, "drive.delete");
-  const uploadPayload = {
-    filename: locale === "zh-CN" ? "R5-上传样例.md" : "r5-upload-sample.md",
-    mime: "text/markdown",
-    parsed_text: locale === "zh-CN" ? "# R5 上传样例\n\n这是一份可审计的项目资料上传样例。" : "# R5 upload sample\n\nA small auditable project drive upload sample."
-  };
   const driveManageActions = [
-    vm.actions.upload_file ? `<a class="wh-btn wh-btn-primary" href="${escapeHtml(safeHref(vm.actions.upload_file.href))}" data-action-id="drive_upload_file" data-method="POST" data-request-json="${jsonAttr(uploadPayload)}">${escapeHtml(routeT(locale, "drive.upload"))}</a>` : "",
+    vm.actions.upload_file ? `<label class="wh-btn wh-btn-primary wh-drive-upload-label"><span>${escapeHtml(routeT(locale, "drive.upload"))}</span><input class="wh-drive-upload-input" type="file" data-drive-upload-picker="true" data-action-id="drive_upload_file" data-method="POST" data-action-href="${escapeHtml(safeHref(vm.actions.upload_file.href))}" /></label>` : "",
     vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.delete_item.href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-r5-drive-delete-name="${escapeHtml(deleteTarget?.name ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(deleteLabel)}</a>` : "",
     vm.actions.restore_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.restore_item.href))}" data-action-id="drive_restore_item" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""
   ].filter(Boolean).join("");
   const fileRows = vm.items.length
-    ? vm.items.slice(0, 12).map((item) => {
+    ? vm.items.map((item) => {
       const current = item.current_version;
       const size = current ? formatBytes(current.size_bytes, locale) : "";
+      const itemHref = safeHref(`/drive?project_id=${encodeURIComponent(vm.project?.id ?? item.project_id)}&item_id=${encodeURIComponent(item.id)}`);
+      const resourceActions = driveResourceActionLinks(item, locale).join("");
       return `<div class="wh-r4-route-row" data-r4-drive-item="${escapeHtml(item.id)}" data-r4-drive-item-kind="${escapeHtml(item.kind)}" data-r4-drive-item-depth="${escapeHtml(String(item.depth))}" data-r4-drive-item-selected="${escapeHtml(String(item.id === selectedItem?.id))}">
-        <div>
+        <a class="wh-r4-drive-item-link" href="${escapeHtml(itemHref)}" data-r5-drive-item-link="true" data-r5-drive-item-link-id="${escapeHtml(item.id)}">
           <strong>${escapeHtml(item.name)}</strong>
           <p>${escapeHtml(item.path)}</p>
-        </div>
+        </a>
         <div class="wh-r4-route-meta">
           <span class="wh-pill">${escapeHtml(driveItemKindLabel(item.kind, locale === "zh-CN"))}</span>
           ${current ? `<span class="wh-pill">v${escapeHtml(String(current.version_no))}</span>` : ""}
           ${size ? `<span class="wh-pill">${escapeHtml(size)}</span>` : ""}
+          ${resourceActions}
           ${item.delete_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.delete_href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-row-delete="${escapeHtml(item.id)}" data-request-json="${jsonAttr({ expected_current_version_id: item.current_version_id ?? null })}">${escapeHtml(routeT(locale, "drive.delete"))}</a>` : ""}
         </div>
       </div>`;
@@ -2162,7 +2226,7 @@ function renderDriveRouteComponent(
   const driveFolderCount = vm.items.filter((item) => item.kind === "folder").length;
   const driveListedFileCount = vm.items.length - driveFolderCount;
   const driveFilesHeading = `${routeT(locale, "drive.files")} · ${locale === "zh-CN" ? `文件夹 ${driveFolderCount} · 文件 ${driveListedFileCount}` : `${driveFolderCount} folders · ${driveListedFileCount} files`}`;
-  // file_count 是项目内文件总数(全量);文件树本页最多加载 200 行。两者不等时挑明「本页只加载了前 N 个」,
+  // file_count 是项目内文件总数(全量);文件树本页最多加载一批有限行。两者不等时挑明「本页只加载了前 N 个」,
   // 让顶部「文件 N」chip(总数,与项目主页一致)和列表(本页加载数)不再像「文件丢了」。
   const driveHiddenFileCount = vm.summary.file_count - driveListedFileCount;
   const driveMoreFilesNote = driveHiddenFileCount > 0
@@ -2234,6 +2298,10 @@ function renderDriveRouteComponent(
     vm.actions.upload_file?.href,
     vm.actions.delete_item?.href,
     vm.actions.restore_item?.href,
+    ...vm.items.flatMap((item) => [
+      item.preview_href,
+      item.download_href
+    ]),
     ...vm.accepted_deliverables.flatMap((accepted) => [
       accepted.preview_href,
       accepted.download_href,
@@ -3215,7 +3283,7 @@ function renderReplayRouteComponent(vm: ReplayTraceVM, locale: WorkHubLocale): W
 }
 
 export type WebRouteComponentInput =
-  | { key: "home"; attention: AttentionHomeVM }
+  | { key: "home"; attention: AttentionHomeVM; projects?: ProjectListVM | undefined }
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
   | { key: "intake"; session: SessionVM }
@@ -3241,7 +3309,7 @@ export function renderWebRouteComponent(
   const locale = normalizeWorkHubLocale(options.locale);
   switch (input.key) {
     case "home":
-      return renderHomeRouteComponent(input.attention, locale);
+      return renderHomeRouteComponent(input.attention, locale, input.projects);
     case "projects":
       return renderProjectsRouteComponent(input.projects, locale);
     case "project-home":

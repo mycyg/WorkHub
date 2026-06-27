@@ -20,6 +20,7 @@ import {
   projectDriveVersions,
   proposals,
   sessions,
+  snapshots,
   usageRecords,
   userCredentials,
   users,
@@ -125,6 +126,13 @@ test("core renamed fields are present on Drizzle table objects", () => {
   assert.equal(workItems.status.name, "status");
   assert.equal(proposals.diffManifest.name, "diff_manifest");
   assert.equal(auditLogs.undoneAt.name, "undone_at");
+});
+
+test("snapshot refs are wide enough for local absolute snapshot paths", () => {
+  assert.equal(getTableName(snapshots), "snapshots");
+  assert.equal((snapshots.ref as unknown as { config: { length: number } }).config.length, 1024);
+  const migration = readFileSync(join(process.cwd(), "migrations", "0029_snapshot_ref_width.sql"), "utf8");
+  assert.match(migration, /ALTER TABLE "snapshots" ALTER COLUMN "ref" TYPE varchar\(1024\)/u);
 });
 
 test("agent run persistence fields support DB-backed replay recovery", () => {

@@ -123,6 +123,19 @@ function stripMarkdown(value: string) {
   return value.replace(/[#*_`>-]/gu, " ").replace(/\s+/gu, " ").trim();
 }
 
+function stripProposalOpenedPrefix(text: string) {
+  return text.replace(/^(?:AI|Cuu)\s*已(?:生成|创建|准备好)?变更申请[：:\s]+/iu, "").trim();
+}
+
+function isModelSelfNarration(text: string) {
+  return /deliverable is written|(?:deliverable|file) looks (?:good and )?complete|well-structured|let me now provide|summary in chinese|as require|接下来我|我会先|我已经|完成了?[。.!！\s]*(?:让?我来?|接下来我|我(?:会|要|将|可以|已经)).{0,24}(?:总结|说明|整理|输出|回复)/iu.test(text);
+}
+
+export function publicProposalDisplayTitle(title: string, locale: WorkHubLocale) {
+  const compact = stripProposalOpenedPrefix(title).replace(/\s+/g, " ").trim();
+  return !compact || isModelSelfNarration(compact) ? uiT(locale, "proposal.displayTitleFallback") : compact;
+}
+
 function actionClass(action: ActionSpec, index: number) {
   if (action.id === "request_changes") {
     return "wh-btn wh-btn-danger";
@@ -625,10 +638,11 @@ export function renderProposalDetail(
       : [];
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
   const summary = stripMarkdown(vm.manifest.summary_md).slice(0, 260);
+  const displayTitle = publicProposalDisplayTitle(vm.title, locale);
   const main = `<section class="wh-proposal-main">
     <span class="wh-kicker">${escapeHtml(uiT(locale, "proposal.kicker"))}</span>
-    <h1 class="wh-title">${escapeHtml(vm.title)}</h1>
-    <p class="wh-subtle">${escapeHtml(summary)}</p>
+    <h1 class="wh-title">${escapeHtml(displayTitle)}</h1>
+    <article class="wh-card" data-proposal-summary="true"><strong>${escapeHtml(uiT(locale, "proposal.summaryHeading"))}</strong><p class="wh-subtle">${escapeHtml(summary)}</p></article>
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.changes"))}</strong><p class="wh-subtle">${escapeHtml(uiCount(locale, vm.manifest.changes.length, "项文件或对象", "change"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.checks"))}</strong><p class="wh-subtle">${escapeHtml(uiCount(locale, vm.manifest.checks.length, "项检查已记录", "recorded check"))}</p></article>
@@ -652,7 +666,7 @@ export function renderProposalDetail(
     surface,
     proposalId: vm.proposal_id,
     workItemId: vm.work_item_id,
-    title: vm.title,
+    title: displayTitle,
     css: proposalCss,
     html: `<div class="${rootClass}"><main class="wh-proposal"><div class="wh-proposal-frame">${main}${renderRail(vm, { locale })}</div></main></div>`,
     actionHrefs: [...actionList.map((action) => action.href), ...conflictCards.actionHrefs],

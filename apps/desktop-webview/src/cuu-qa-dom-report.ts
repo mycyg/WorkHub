@@ -48,6 +48,7 @@ export type DesktopPetQaDomSnapshot = {
   bubble: DesktopPetQaDomElementSnapshot;
   primary_chip: DesktopPetQaDomElementSnapshot;
   primary_action: DesktopPetQaDomElementSnapshot;
+  actions: DesktopPetQaDomElementSnapshot[];
   spatial_safety: DesktopPetQaDomSpatialSafety;
 };
 
@@ -104,6 +105,7 @@ export function collectDesktopPetQaDomSnapshot(
     bubble,
     primary_chip: collectDesktopPetQaDomElement(root, "[data-chip-id],[data-pet-option-id]"),
     primary_action: collectDesktopPetQaDomElement(root, "[data-cuu-action-id]"),
+    actions: collectDesktopPetQaDomElements(root, "[data-cuu-action-id]"),
     spatial_safety: collectDesktopPetQaSpatialSafety(surface, live2d, bubble)
   };
 }
@@ -133,6 +135,34 @@ function collectDesktopPetQaDomElement(root: ParentNode, selector: string): Desk
       data: {}
     };
   }
+  const text = normalizeTextContent(element.textContent);
+  const rect = collectDesktopPetQaRect(element);
+  const layout = collectDesktopPetQaLayout(element);
+  const overflowOffenders = collectDesktopPetQaOverflowOffenders(element);
+  return {
+    selector,
+    present: true,
+    data: collectDesktopPetQaDataAttributes(element),
+    ...(rect ? { rect } : {}),
+    ...(layout ? { layout } : {}),
+    ...(overflowOffenders.length ? { overflow_offenders: overflowOffenders } : {}),
+    ...(text ? { text } : {})
+  };
+}
+
+function collectDesktopPetQaDomElements(root: ParentNode, selector: string): DesktopPetQaDomElementSnapshot[] {
+  if (typeof root.querySelectorAll !== "function") {
+    return [];
+  }
+  return Array.from(root.querySelectorAll(selector) as NodeListOf<DomElementLike>).map((element) =>
+    collectDesktopPetQaElementSnapshot(element, selector)
+  );
+}
+
+function collectDesktopPetQaElementSnapshot(
+  element: DomElementLike,
+  selector: string
+): DesktopPetQaDomElementSnapshot {
   const text = normalizeTextContent(element.textContent);
   const rect = collectDesktopPetQaRect(element);
   const layout = collectDesktopPetQaLayout(element);

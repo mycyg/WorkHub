@@ -69,6 +69,8 @@ const copy = {
   },
 
   "proposal.kicker": { "zh-CN": "交付物变更申请", "en-US": "Deliverable change request" },
+  "proposal.displayTitleFallback": { "zh-CN": "交付物变更申请", "en-US": "Deliverable change request" },
+  "proposal.summaryHeading": { "zh-CN": "总结", "en-US": "Summary" },
   "proposal.railComplete": { "zh-CN": "完成啦", "en-US": "Finished" },
   "proposal.railCarrying": { "zh-CN": "带着交付物", "en-US": "Carrying a deliverable" },
   "proposal.railRejected": { "zh-CN": "已打回", "en-US": "Sent back" },
@@ -173,6 +175,15 @@ const copy = {
     "en-US": "AI is queued. Key steps will appear here after it starts."
   },
   "agent.stepFallback": { "zh-CN": "记录了一步。", "en-US": "Recorded one step." },
+  "agent.stepThinkingPublic": { "zh-CN": "AI 正在思考中，隐藏推理内容不会展示。", "en-US": "AI is thinking; hidden reasoning is not shown." },
+  "agent.stepToolCall": { "zh-CN": "工具调用", "en-US": "Tool call" },
+  "agent.stepToolCallGeneric": { "zh-CN": "正在调用工具。", "en-US": "Calling a tool." },
+  "agent.stepToolResult": { "zh-CN": "工具已返回", "en-US": "Tool result received" },
+  "agent.stepToolResultGeneric": {
+    "zh-CN": "工具已返回，AI 正在整理下一步。",
+    "en-US": "Tool result received; AI is organizing the next step."
+  },
+  "agent.stepFinalOutput": { "zh-CN": "最终输出已生成。", "en-US": "Final output is ready." },
   "agent.emptyHandoff": { "zh-CN": "暂无交接事项。", "en-US": "No handoff items yet." },
   "agent.defaultSummary": {
     "zh-CN": "AI 会把关键步骤和证据变化记录在这里。",
@@ -338,6 +349,26 @@ export function agentRunStatusLabel(locale: WorkHubLocale, status: AgentRunStatu
 
 export function agentStepPhaseLabel(locale: WorkHubLocale, phase: AgentStepPhase | string) {
   return labelFromMap(locale, phase, agentStepPhaseLabels);
+}
+
+export function agentStepPublicSummary(
+  locale: WorkHubLocale,
+  step: { phase?: AgentStepPhase | string | undefined; tool_name?: string | undefined; output_excerpt?: string | undefined }
+) {
+  const tool = step.tool_name?.trim();
+  const separator = locale === "en-US" ? ": " : "：";
+  switch (step.phase) {
+    case "think":
+      return uiT(locale, "agent.stepThinkingPublic");
+    case "tool_call":
+      return tool ? `${uiT(locale, "agent.stepToolCall")}${separator}${tool}` : uiT(locale, "agent.stepToolCallGeneric");
+    case "tool_result":
+      return tool ? `${uiT(locale, "agent.stepToolResult")}${separator}${tool}` : uiT(locale, "agent.stepToolResultGeneric");
+    case "final":
+      return step.output_excerpt ?? uiT(locale, "agent.stepFinalOutput");
+    default:
+      return step.output_excerpt ?? tool ?? uiT(locale, "agent.stepFallback");
+  }
 }
 
 export function deliverableTargetLabel(locale: WorkHubLocale, kind: DeliverableTargetKind | string) {

@@ -80,7 +80,7 @@ export type WebRouteStateResult = {
 export type WebRouteLoadResult = WebRouteReadyResult | WebRouteStateResult;
 
 export type WebRouteSurface =
-  | { key: "home"; attention: AttentionHomeVM }
+  | { key: "home"; attention: AttentionHomeVM; projects?: ProjectListVM | undefined }
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
   | { key: "intake"; session: SessionVM }
@@ -230,7 +230,7 @@ export const webRouteRegistry: readonly WebRouteDefinition[] = routeMatchers.map
 type WebRouteTreePageVm =
   | "attention"
   | "projects"
-  | "project"
+  | "project-home"
   | "session"
   | "approvals"
   | "workitem"
@@ -277,7 +277,7 @@ export type WebReactRouteTreeNode = WebRouteDefinition & {
 const routeTreePageVmByKey = {
   home: "attention",
   projects: "projects",
-  "project-home": "project",
+  "project-home": "project-home",
   intake: "session",
   approvals: "approvals",
   workitem: "workitem",
@@ -673,10 +673,12 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
     const workingRuns = surface.attention.background_runs.filter(
       (run) => run.state === "running" || run.state === "queued"
     ).length;
+    const projectCount = surface.projects?.projects.length ?? 0;
+    const openItems = surface.projects?.projects.reduce((sum, project) => sum + project.open_work_item_count, 0) ?? 0;
     return [
-      metric(locale, "primary", surface.attention.primary ? "1" : "0"),
-      metric(locale, "queue", String(queueRest)),
-      metric(locale, "running", String(workingRuns))
+      metric(locale, "projects", String(projectCount)),
+      metric(locale, "openwork", String(openItems)),
+      metric(locale, "attention", String(workingRuns + queueRest + (surface.attention.primary ? 1 : 0)))
     ];
   }
   if (surface.key === "projects") {
@@ -824,7 +826,7 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
 
 function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocale): WebRouteComponent {
   if (surface.key === "home") {
-    return renderWebRouteComponent({ key: "home", attention: surface.attention }, { locale });
+    return renderWebRouteComponent({ key: "home", attention: surface.attention, projects: surface.projects }, { locale });
   }
   if (surface.key === "projects") {
     return renderWebRouteComponent({ key: "projects", projects: surface.projects }, { locale });
@@ -951,10 +953,19 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     return "notFound" as const;
   }
   if (match.key === "home") {
-    // 首页是落地页,永不塌成通用空卡：即便没有待决策事项,也渲染决策收件箱组件本身
-    // （战绩横幅 + 计数 + 可爱空态 + 去提需求 CTA），而不是给叶子路由用的"回到总览"死胡同。
+    // 首页是项目工作台,不是 AI 收件箱孤岛：先展示项目/网盘入口,再把待决策和后台运行作为运营队列露出。
+    // 项目清单是次要数据,拉取失败不应把已可用的决策队列整页打垮。
     const attention = await client.pages.attention(withLocale(locale));
-    return { key: "home", attention } satisfies WebRouteSurface;
+    let projects: ProjectListVM | undefined;
+    try {
+      projects = await client.listProjects();
+    } catch (error) {
+      if (error instanceof WorkHubApiError && error.code === "not_identified") {
+        throw error;
+      }
+      projects = undefined;
+    }
+    return { key: "home", attention, projects } satisfies WebRouteSurface;
   }
   if (match.key === "projects") {
     const projects = await client.listProjects();

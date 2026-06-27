@@ -44,3 +44,46 @@ test("#11 desktop workitem surfaces create-proposal-draft when the action is pre
   assert.ok(detailHtml(withAction, true).includes(`data-wi-create-proposal="${WI}"`), "draft button shown when action present");
   assert.ok(!detailHtml(vm(), true).includes("data-wi-create-proposal"), "no draft button without the action");
 });
+
+test("desktop workitem latest proposal hides model self narration titles", () => {
+  const html = detailHtml(vm({
+    latest_proposal: {
+      proposal_id: "proposal-1",
+      title: "完成了。让我做一个人话总结。"
+    } as WorkItemDetailVM["latest_proposal"]
+  }), true);
+
+  assert.equal(html.includes("完成了。让我做一个人话总结。"), false);
+  assert.match(html, /交付物变更申请/u);
+});
+
+test("desktop workitem trace hides hidden reasoning and raw tool payloads", () => {
+  const html = detailHtml(vm({
+    agent_trace_preview: [
+      {
+        id: "trace-1",
+        agent_run_id: "run-1",
+        step_no: 1,
+        phase: "think",
+        input_json: {},
+        output_excerpt: "Now I understand the task and will analyze hidden reasoning.",
+        created_at: "2026-06-26T00:00:00.000Z"
+      },
+      {
+        id: "trace-2",
+        agent_run_id: "run-1",
+        step_no: 2,
+        phase: "tool_result",
+        tool_name: "read_project_file",
+        input_json: {},
+        output_excerpt: "--- name: markdown-report description: raw tool payload",
+        created_at: "2026-06-26T00:00:01.000Z"
+      }
+    ] as WorkItemDetailVM["agent_trace_preview"]
+  }), true);
+
+  assert.ok(html.includes("AI 正在思考中，隐藏推理内容不会展示。"));
+  assert.ok(html.includes("工具已返回：read_project_file"));
+  assert.equal(html.includes("Now I understand"), false);
+  assert.equal(html.includes("markdown-report"), false);
+});

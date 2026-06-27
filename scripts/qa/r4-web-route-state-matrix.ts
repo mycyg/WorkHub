@@ -535,7 +535,7 @@ async function main() {
     "",
     `- Generated: ${report.generated_at}`,
     `- Chrome: ${chromePath ?? "not captured"}`,
-    "- Scope: ready Web shell plus loading/empty/error/forbidden state matrix for home, intake, approvals, workitem, proposal, replay, cost, and settings.",
+    `- Scope: ready Web shell plus loading/empty/error/forbidden state matrix for ${r4WebRouteKeys.join(", ")}.`,
     "- Gates: screenshots captured, all route states present in zh-CN/en-US, no Cuu main-window markers, no default Kanban wording, no horizontal overflow.",
     "- Boundary: this is an R4 QA foundation. It does not yet prove the full React SPA migration or real multi-record backend data on every route.",
     ""

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { HTTPException } from "hono/http-exception";
 
-import app from "./app.js";
+import app, { httpErrorCodeFor } from "./app.js";
+import { jsonObjectMessage, malformedJsonMessage } from "./routes/json-body.js";
 
 interface HealthBody {
   ok: true;
@@ -93,4 +95,14 @@ test("unknown endpoints use the shared error shape", async () => {
   const body = (await response.json()) as ErrorBody;
   assert.equal(body.ok, false);
   assert.equal(body.error.code, "not_found");
+});
+
+test("invalid desktop client tokens use a stable recoverable error code", () => {
+  assert.equal(httpErrorCodeFor(new HTTPException(403, { message: "invalid client token" })), "invalid_client_token");
+  assert.equal(httpErrorCodeFor(new HTTPException(403, { message: "forbidden" })), "forbidden");
+});
+
+test("malformed JSON request bodies use stable client-debuggable error codes", () => {
+  assert.equal(httpErrorCodeFor(new HTTPException(400, { message: malformedJsonMessage })), "malformed_json");
+  assert.equal(httpErrorCodeFor(new HTTPException(400, { message: jsonObjectMessage })), "json_object_required");
 });

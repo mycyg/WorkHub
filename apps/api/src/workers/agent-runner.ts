@@ -874,6 +874,24 @@ export function createInMemoryAgentRunQueue(options: {
     }, run, cuuState);
   }
 
+  function stripProposalOpenedPrefix(text: string) {
+    return text.replace(/^(?:AI|Cuu)\s*已(?:生成|创建|准备好)?变更申请[：:\s]+/iu, "").trim();
+  }
+
+  function isModelSelfNarration(text: string) {
+    return /deliverable is written|(?:deliverable|file) looks (?:good and )?complete|well-structured|let me now provide|summary in chinese|as require|接下来我|我会先|我已经|完成了?[。.!！\s]*(?:让?我来?|接下来我|我(?:会|要|将|可以|已经)).{0,24}(?:总结|说明|整理|输出|回复)/iu.test(text);
+  }
+
+  function proposalOpenedPreviewText(proposal: StoredProposal) {
+    const summary = stripProposalOpenedPrefix(
+      (proposal.diff_manifest.summary_md || proposal.title || "").replace(/[#*_`>-]/gu, " ").replace(/\s+/gu, " ").trim()
+    );
+    const publicSummary = summary && !isModelSelfNarration(summary)
+      ? summary.slice(0, 140)
+      : "先看总结和改动，再决定是否采纳";
+    return `AI 已生成变更申请：${publicSummary}`;
+  }
+
   async function emitProposalOpenedEvent(run: AgentRunQueueRecord, proposal: StoredProposal) {
     if (!eventBus) {
       return;
@@ -899,7 +917,7 @@ export function createInMemoryAgentRunQueue(options: {
         work_item_id: run.work_item_id,
         run_id: run.run_id,
         proposal_id: proposal.id,
-        preview_text: `AI 已生成变更申请: ${proposal.title}`,
+        preview_text: proposalOpenedPreviewText(proposal),
         cuu_state: "carrying_document",
         data
       });
@@ -1911,7 +1929,8 @@ export function getDefaultAgentRunQueue() {
     workItemContext: getDefaultWorkItemContextProvider(),
     userMemory: getDefaultUserMemoryContextProvider(),
     teamSkills: getDefaultTeamSkillContextProvider(),
-    // 默认关闭：AGENT_RUN_PROJECT_HYDRATE_ENABLED=true 才让 AI 取材整个项目（fail-open + 预算上限）。
+    // 默认开启：项目/网盘是 WorkHub 核心语境，AI 工人应能读取 project/ 只读资料；仍可用
+    // AGENT_RUN_PROJECT_HYDRATE_ENABLED=false 显式关闭（fail-open + 预算上限）。
     hydrateProject: runtimeSettings.agentRun.projectHydrateEnabled ? getDefaultProjectHydrator() : false,
     leaseMs: runtimeSettings.agentRun.leaseMs,
     ...(runtimeSettings.agentRun.heartbeatIntervalMs

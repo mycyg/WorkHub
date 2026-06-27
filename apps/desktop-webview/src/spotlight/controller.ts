@@ -30,6 +30,8 @@ export type MountSpotlightInput = {
   // 关闭/隐藏盒子（browser.ts 注入 → invoke hide_main_window）。M2：让 launcher 顶层 Esc 真正关闭盒子，
   // 兑现 hello 卡「Esc 关闭」的承诺。浏览器开发态可为空（no-op）。
   dismiss?: () => void;
+  // 能力页写动作成功后通知壳层刷新外部入口（角标、桌宠卡片等）。
+  onActionSettled?: () => void;
 };
 
 export type SpotlightHandle = {
@@ -239,6 +241,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       },
       toast: (message, tone) => showToast(message, tone),
       requestResize,
+      ...(input.onActionSettled ? { onActionSettled: input.onActionSettled } : {}),
       signal: viewAbort.signal
     };
     const view = resolveCapabilityView(id);

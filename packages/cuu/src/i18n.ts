@@ -10,6 +10,14 @@ export type CuuCopyKey =
   | "agentRun.startedTitle"
   | "agentRun.workingTitle"
   | "agentRun.progressFallback"
+  | "agentRun.thinkingStatus"
+  | "agentRun.toolCallStatus"
+  | "agentRun.toolCallStatusGeneric"
+  | "agentRun.toolResultStatus"
+  | "agentRun.phase.think"
+  | "agentRun.phase.toolCall"
+  | "agentRun.phase.toolResult"
+  | "agentRun.phase.final"
   | "agentRun.viewReplay"
   | "agentRun.openWorkItem"
   | "agentRun.abort"
@@ -19,10 +27,23 @@ export type CuuCopyKey =
   | "agentRun.queued"
   | "question.bodyFallback"
   | "question.submit"
+  | "question.submitAnswer"
   | "evidence.missingSection"
   | "evidence.titleFound"
   | "evidence.titleDefault"
   | "proposal.changesSection"
+  | "proposal.reviewTitle"
+  | "proposal.summarySection"
+  | "proposal.summaryFallback"
+  | "proposal.nextStepSection"
+  | "proposal.nextStepOpenReview"
+  | "proposal.nextStepOpened"
+  | "proposal.nextStepReviewed"
+  | "proposal.nextStepMerged"
+  | "proposal.nextStepRejected"
+  | "proposal.openReview"
+  | "proposal.approveReview"
+  | "proposal.requestChanges"
   | "proposal.riskSection"
   | "proposal.rollbackAvailable"
   | "proposal.rollbackUnavailable"
@@ -110,6 +131,13 @@ export type CuuCopyKey =
   | "cuuStart.action"
   | "cuuStart.defaultTitle"
   | "cuuStart.defaultIntent"
+  | "cuuStart.placeholder"
+  | "cuuStart.analysisTitle"
+  | "cuuStart.analysisMessage"
+  | "cuuStart.analysisToolIntent"
+  | "cuuStart.analysisToolFiles"
+  | "cuuStart.analysisToolModel"
+  | "cuuStart.analysisPrivacy"
   | "cuuStart.started"
   | "cuuStart.restored"
   | "cuuStart.clarificationNeeded"
@@ -127,12 +155,15 @@ export type CuuCopyKey =
   | "cuuStart.errorOfflineMessage"
   | "cuuStart.errorGenericTitle"
   | "cuuStart.errorGenericMessage"
+  | "cuuStart.errorRestartMessage"
   | "cuuStart.errorChip.budget"
   | "cuuStart.errorChip.permission"
   | "cuuStart.errorChip.offline"
   | "cuuStart.errorChip.generic"
   | "cuuStart.errorViewReplay"
   | "cuuStart.errorOpenWorkItem"
+  | "cuuStart.errorRestartAction"
+  | "cuuStart.restartReady"
   | "pet.aria"
   | "pet.windowModeExpanding"
   | "pet.reducedMotionOffline"
@@ -142,6 +173,9 @@ export type CuuCopyKey =
   | "pet.reasonRequired"
   | "pet.reasonDefault"
   | "pet.actionFail"
+  | "pet.action.approve"
+  | "pet.action.requestChanges"
+  | "pet.action.open"
   | "pet.reject.evidence"
   | "pet.reject.scope"
   | "pet.reject.format"
@@ -178,6 +212,14 @@ const cuuCopy = {
     "agentRun.startedTitle": "Cuu 开始处理了",
     "agentRun.workingTitle": "Cuu 正在处理",
     "agentRun.progressFallback": "Cuu 正在整理执行进度。",
+    "agentRun.thinkingStatus": "AI 正在思考中，隐藏推理内容不会展示。",
+    "agentRun.toolCallStatus": "正在调用工具：{tool}",
+    "agentRun.toolCallStatusGeneric": "正在调用工具。",
+    "agentRun.toolResultStatus": "工具已返回，Cuu 正在整理下一步。",
+    "agentRun.phase.think": "AI 正在思考中",
+    "agentRun.phase.toolCall": "工具调用",
+    "agentRun.phase.toolResult": "工具已返回",
+    "agentRun.phase.final": "完成输出",
     "agentRun.viewReplay": "查看回放",
     "agentRun.openWorkItem": "回到任务",
     "agentRun.abort": "取消执行",
@@ -187,16 +229,29 @@ const cuuCopy = {
     "agentRun.queued": "Cuu 已排队，稍后开始处理。",
     "question.bodyFallback": "点一个选项，Cuu 就继续往下做。",
     "question.submit": "确认选项",
+    "question.submitAnswer": "提交回答",
     "evidence.missingSection": "缺口",
     "evidence.titleFound": "找到和「{query}」相关的证据",
     "evidence.titleDefault": "Cuu 找到了证据",
     "proposal.changesSection": "这次改了什么",
+    "proposal.reviewTitle": "Cuu 等你确认变更",
+    "proposal.summarySection": "总结",
+    "proposal.summaryFallback": "变更申请已生成。先看总结和改动，再决定是否采纳。",
+    "proposal.nextStepSection": "下一步",
+    "proposal.nextStepOpenReview": "点「查看变更申请」会打开变更详情，里面有总结、改动和确认按钮。",
+    "proposal.nextStepOpened": "先看总结和改动，再确认通过或打回修改。",
+    "proposal.nextStepReviewed": "已确认通过，下一步合入交付物。",
+    "proposal.nextStepMerged": "已合入正式版本。",
+    "proposal.nextStepRejected": "已打回，Cuu 会带着反馈继续修。",
+    "proposal.openReview": "查看变更申请",
+    "proposal.approveReview": "确认通过",
+    "proposal.requestChanges": "打回修改",
     "proposal.riskSection": "风险与回滚",
     "proposal.rollbackAvailable": "可回滚",
     "proposal.rollbackUnavailable": "不可完整回滚",
     "proposal.checksSection": "检查结果",
     "proposal.conflictTitle": "变更撞车了",
-    "proposal.conflictOpenProposal": "打开变更",
+    "proposal.conflictOpenProposal": "查看变更申请",
     "proposal.conflictKeepCurrent": "保留正式版",
     "proposal.conflictAcceptIncoming": "采纳这次版本",
     "proposal.conflictAiFusion": "AI 融合建议",
@@ -262,7 +317,7 @@ const cuuCopy = {
     "action.evidenceBound": "Cuu 已把这些证据放进当前任务。",
     "action.nextQuestion": "下一题：{title}",
     "cuuStart.title": "要让 Cuu 做什么？",
-    "cuuStart.message": "先点一个交付方向，Cuu 会创建事项并启动真实 AI 执行。",
+    "cuuStart.message": "先写一句真实需求，Cuu 会结合项目文件反问关键点，再创建事项执行。",
     "cuuStart.documentDraft": "文档/方案草稿",
     "cuuStart.documentDraftDesc": "周报、说明、PR 式变更说明",
     "cuuStart.documentDraftAcceptancePrimary": "输出可审阅的文档或方案草稿，包含结构、正文和后续修改点。",
@@ -277,13 +332,20 @@ const cuuCopy = {
     "cuuStart.codeTemplateAcceptanceSafety": "列出改动范围、风险点和回滚方式。",
     "cuuStart.action": "开始处理",
     "cuuStart.defaultTitle": "Cuu 桌面入口任务",
-    "cuuStart.defaultIntent": "从 Cuu 桌宠入口创建一个 AI 可执行事项，并按已选交付方向施工。",
+    "cuuStart.defaultIntent": "从 Cuu 桌宠入口创建一个 AI 可执行事项，先根据用户需求和项目文件反问关键澄清点。",
+    "cuuStart.placeholder": "写下需求，例如：根据项目网盘里的文件生成三条验收要点。",
+    "cuuStart.analysisTitle": "Cuu 正在分析材料",
+    "cuuStart.analysisMessage": "AI 正在阅读需求和项目文件，稍后只展示反问结果。",
+    "cuuStart.analysisToolIntent": "已收到你的需求",
+    "cuuStart.analysisToolFiles": "正在读取项目网盘上下文",
+    "cuuStart.analysisToolModel": "正在调用澄清模型生成反问",
+    "cuuStart.analysisPrivacy": "不会显示隐藏思考，只显示工具调用和当前状态",
     "cuuStart.started": "Cuu 已启动：{title}",
     "cuuStart.restored": "Cuu 已恢复：{title}",
-    "cuuStart.clarificationNeeded": "Cuu 还需要你点选：{title}",
+    "cuuStart.clarificationNeeded": "Cuu 还需要你补充：{title}",
     "cuuStart.unavailable": "Cuu 当前缺少启动 AI 执行的客户端能力。",
-    "cuuStart.reducedMotion": "Cuu 正在等你选择一个交付方向。",
-    "cuuStart.progressIntent": "方向",
+    "cuuStart.reducedMotion": "Cuu 正在等你写下需求。",
+    "cuuStart.progressIntent": "需求",
     "cuuStart.progressTask": "事项",
     "cuuStart.progressRun": "执行",
     "cuuStart.streamUpdated": "Cuu 更新了进度：{title}",
@@ -295,12 +357,15 @@ const cuuCopy = {
     "cuuStart.errorOfflineMessage": "连接中断或服务暂不可用，Cuu 会等连接恢复后继续。",
     "cuuStart.errorGenericTitle": "这次启动没有成功",
     "cuuStart.errorGenericMessage": "Cuu 没能完成这步操作，请打开详情查看原因。",
+    "cuuStart.errorRestartMessage": "可以重新开始，Cuu 会再读一次需求和项目文件。",
     "cuuStart.errorChip.budget": "预算",
     "cuuStart.errorChip.permission": "权限",
     "cuuStart.errorChip.offline": "离线",
     "cuuStart.errorChip.generic": "异常",
     "cuuStart.errorViewReplay": "查看回放",
     "cuuStart.errorOpenWorkItem": "打开事项",
+    "cuuStart.errorRestartAction": "重新开始",
+    "cuuStart.restartReady": "已回到需求输入。",
     "pet.aria": "Cuu 桌宠",
     "pet.windowModeExpanding": "Cuu 轻卡窗口正在展开。",
     "pet.reducedMotionOffline": "Cuu 遇到连接问题，正在提醒你。",
@@ -310,6 +375,9 @@ const cuuCopy = {
     "pet.reasonRequired": "先点一个原因，Cuu 会带着它继续改。",
     "pet.reasonDefault": "需要调整",
     "pet.actionFail": "动作提交失败，请稍后再试。",
+    "pet.action.approve": "同意",
+    "pet.action.requestChanges": "打回",
+    "pet.action.open": "打开",
     "pet.reject.evidence": "证据不足",
     "pet.reject.scope": "范围太大",
     "pet.reject.format": "交付格式要改",
@@ -345,6 +413,14 @@ const cuuCopy = {
     "agentRun.startedTitle": "Cuu started working",
     "agentRun.workingTitle": "Cuu is working",
     "agentRun.progressFallback": "Cuu is organizing the run progress.",
+    "agentRun.thinkingStatus": "AI is thinking; hidden reasoning is not shown.",
+    "agentRun.toolCallStatus": "Calling tool: {tool}",
+    "agentRun.toolCallStatusGeneric": "Calling a tool.",
+    "agentRun.toolResultStatus": "Tool result received; Cuu is organizing the next step.",
+    "agentRun.phase.think": "AI is thinking",
+    "agentRun.phase.toolCall": "Tool call",
+    "agentRun.phase.toolResult": "Tool result received",
+    "agentRun.phase.final": "Final output",
     "agentRun.viewReplay": "View replay",
     "agentRun.openWorkItem": "Back to task",
     "agentRun.abort": "Cancel run",
@@ -354,16 +430,29 @@ const cuuCopy = {
     "agentRun.queued": "Cuu is queued and will start shortly.",
     "question.bodyFallback": "Pick one option and Cuu will keep going.",
     "question.submit": "Confirm option",
+    "question.submitAnswer": "Submit answer",
     "evidence.missingSection": "Gap",
     "evidence.titleFound": "Evidence related to \"{query}\"",
     "evidence.titleDefault": "Cuu found evidence",
     "proposal.changesSection": "What changed",
+    "proposal.reviewTitle": "Cuu has a change for review",
+    "proposal.summarySection": "Summary",
+    "proposal.summaryFallback": "The change request is ready. Review the summary and changes before deciding.",
+    "proposal.nextStepSection": "Next step",
+    "proposal.nextStepOpenReview": "View change request opens the change detail with the summary, diff, and decision buttons.",
+    "proposal.nextStepOpened": "Review the summary and changes, then mark approved or request changes.",
+    "proposal.nextStepReviewed": "Approved. Merge the deliverable next.",
+    "proposal.nextStepMerged": "Merged into the official version.",
+    "proposal.nextStepRejected": "Sent back. Cuu will revise with your feedback.",
+    "proposal.openReview": "View change request",
+    "proposal.approveReview": "Mark approved",
+    "proposal.requestChanges": "Request changes",
     "proposal.riskSection": "Risk and rollback",
     "proposal.rollbackAvailable": "Rollback available",
     "proposal.rollbackUnavailable": "Not fully rollbackable",
     "proposal.checksSection": "Check results",
     "proposal.conflictTitle": "Change conflict",
-    "proposal.conflictOpenProposal": "Open change",
+    "proposal.conflictOpenProposal": "View change request",
     "proposal.conflictKeepCurrent": "Keep current",
     "proposal.conflictAcceptIncoming": "Use this version",
     "proposal.conflictAiFusion": "AI fusion draft",
@@ -423,13 +512,13 @@ const cuuCopy = {
     "notice.prefix": "Cuu: {title}",
     "action.reasonRequired": "Choose a reason before sending it back.",
     "action.approved": "Cuu got it: this step is approved.",
-    "action.denied": "Cuu sent it back with your reason and will keep revising.",
+    "action.denied": "Sent back; Cuu will revise.",
     "action.evidenceFound": "Cuu found a set of project evidence.",
     "action.noEvidence": "This evidence card has nothing bindable yet.",
     "action.evidenceBound": "Cuu added this evidence to the current task.",
     "action.nextQuestion": "Next question: {title}",
     "cuuStart.title": "What should Cuu do?",
-    "cuuStart.message": "Pick one delivery direction. Cuu will create the task and start the real AI run.",
+    "cuuStart.message": "Write the real request first. Cuu will use project files to ask the key follow-up before it runs.",
     "cuuStart.documentDraft": "Document draft",
     "cuuStart.documentDraftDesc": "Reports, briefs, PR-style change notes",
     "cuuStart.documentDraftAcceptancePrimary": "Deliver a reviewable document or plan draft with structure, body copy, and next revision points.",
@@ -444,13 +533,20 @@ const cuuCopy = {
     "cuuStart.codeTemplateAcceptanceSafety": "List change scope, risks, and rollback path.",
     "cuuStart.action": "Start work",
     "cuuStart.defaultTitle": "Cuu desktop entry task",
-    "cuuStart.defaultIntent": "Create an AI-runnable task from the Cuu desktop pet entry and work according to the selected delivery direction.",
+    "cuuStart.defaultIntent": "Create an AI-runnable task from the Cuu desktop pet entry, then ask the key clarification from the user's request and project files.",
+    "cuuStart.placeholder": "Describe the request, e.g. use project drive files to draft three acceptance points.",
+    "cuuStart.analysisTitle": "Cuu is analyzing the materials",
+    "cuuStart.analysisMessage": "AI is reading the request and project files; only the follow-up question will be shown.",
+    "cuuStart.analysisToolIntent": "Request received",
+    "cuuStart.analysisToolFiles": "Reading project-drive context",
+    "cuuStart.analysisToolModel": "Calling the clarifier model",
+    "cuuStart.analysisPrivacy": "Hidden reasoning stays hidden; only tool calls and status are shown",
     "cuuStart.started": "Cuu started: {title}",
     "cuuStart.restored": "Cuu restored: {title}",
-    "cuuStart.clarificationNeeded": "Cuu needs one more choice: {title}",
+    "cuuStart.clarificationNeeded": "Cuu needs one more detail: {title}",
     "cuuStart.unavailable": "Cuu is missing the client capability to start an AI run.",
-    "cuuStart.reducedMotion": "Cuu is waiting for a delivery direction.",
-    "cuuStart.progressIntent": "Direction",
+    "cuuStart.reducedMotion": "Cuu is waiting for your request.",
+    "cuuStart.progressIntent": "Request",
     "cuuStart.progressTask": "Task",
     "cuuStart.progressRun": "Run",
     "cuuStart.streamUpdated": "Cuu updated progress: {title}",
@@ -462,12 +558,15 @@ const cuuCopy = {
     "cuuStart.errorOfflineMessage": "The connection or service is unavailable. Cuu will continue when it recovers.",
     "cuuStart.errorGenericTitle": "This start did not finish",
     "cuuStart.errorGenericMessage": "Cuu could not complete this step. Open the detail view to inspect the reason.",
+    "cuuStart.errorRestartMessage": "Start again and Cuu will reread the request and project files.",
     "cuuStart.errorChip.budget": "Budget",
     "cuuStart.errorChip.permission": "Permission",
     "cuuStart.errorChip.offline": "Offline",
     "cuuStart.errorChip.generic": "Error",
     "cuuStart.errorViewReplay": "View replay",
     "cuuStart.errorOpenWorkItem": "Open task",
+    "cuuStart.errorRestartAction": "Start again",
+    "cuuStart.restartReady": "Back at the request input.",
     "pet.aria": "Cuu desktop pet",
     "pet.windowModeExpanding": "Cuu is expanding the light card window.",
     "pet.reducedMotionOffline": "Cuu hit a connection issue and is notifying you.",
@@ -477,6 +576,9 @@ const cuuCopy = {
     "pet.reasonRequired": "Choose one reason so Cuu can revise with it.",
     "pet.reasonDefault": "Needs adjustment",
     "pet.actionFail": "Action failed. Please try again later.",
+    "pet.action.approve": "Approve",
+    "pet.action.requestChanges": "Request changes",
+    "pet.action.open": "Open",
     "pet.reject.evidence": "Not enough evidence",
     "pet.reject.scope": "Scope is too large",
     "pet.reject.format": "Delivery format needs work",

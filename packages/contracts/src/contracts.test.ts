@@ -358,6 +358,8 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
         path: "/客户复盘.md",
         depth: 0,
         current_version_id: "92000000-0000-4000-8000-000000000003",
+        preview_href: "/api/drive/projects/92000000-0000-4000-8000-000000000001/items/92000000-0000-4000-8000-000000000002/preview",
+        download_href: "/api/drive/projects/92000000-0000-4000-8000-000000000001/items/92000000-0000-4000-8000-000000000002/download",
         children_count: 0,
         updated_at: "2026-06-11T01:00:00.000Z"
       }
@@ -465,6 +467,8 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
   });
 
   assert.equal(parsed.versions[0]?.source, "accepted_deliverable");
+  assert.equal(parsed.items[0]?.preview_href?.endsWith("/preview"), true);
+  assert.equal(parsed.items[0]?.download_href?.endsWith("/download"), true);
   assert.equal(parsed.comments[0]?.status, "proposal_created");
   assert.equal(parsed.comments[0]?.proposal_href, "/proposals/92000000-0000-4000-8000-000000000006");
   assert.equal(parsed.comments[1]?.draft_action?.method, "POST");
@@ -751,10 +755,20 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
             summary_text: "不覆盖当前正式交付物。",
             recommended: true,
             action: {
-              id: "open_proposal",
-              label: "查看变更申请",
-              method: "GET",
-              href: "/proposals/72000000-0000-4000-8000-000000000002"
+              id: "keep_current",
+              label: "保留正式版",
+              method: "POST",
+              href: "/api/proposals/72000000-0000-4000-8000-000000000002/merge",
+              request_json: {
+                conflict_resolution: {
+                  accept_incoming_target_keys: [],
+                  bulk_action: {
+                    action: "keep_current",
+                    target_keys: ["delivery:/outputs/result.md"],
+                    conflict_count: 1
+                  }
+                }
+              }
             }
           },
             {
@@ -1094,10 +1108,12 @@ test("create work item requests preserve Cuu launcher spec metadata", () => {
   const parsed = createWorkItemRequestSchema.parse({
     session_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     selected_option_ids: ["document-draft", "create-workitem"],
+    free_text: "  最终补充一句  ",
     cuu_launcher_spec: spec,
     kickoff_agent: true
   });
 
+  assert.equal(parsed.free_text, "最终补充一句");
   assert.equal(parsed.cuu_launcher_spec?.source, "cuu_desktop_launcher");
   assert.deepEqual(parsed.cuu_launcher_spec?.selected_options.map((option) => option.id), ["document-draft"]);
   assert.equal(parsed.cuu_launcher_spec?.selected_options[0]?.delivery_kind, "document_draft");

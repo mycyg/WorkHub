@@ -35,10 +35,7 @@ export function formatProjectCode(prefix: string, sequence: number) {
   return `${normalizeProjectPrefix(prefix)}-${String(sequence).padStart(3, "0")}`;
 }
 
-export async function allocateProjectCode(
-  db: SequenceExecutor,
-  projectId: string
-): Promise<ProjectCodeAllocation> {
+async function nextProjectSequence(db: SequenceExecutor, projectId: string) {
   const result = await db.execute(sql`
     update "projects"
     set "next_seq" = "next_seq" + 1
@@ -56,12 +53,38 @@ export async function allocateProjectCode(
     throw new Error("Project code allocation returned an invalid row");
   }
 
-  const prefix = normalizeProjectPrefix(row.slug);
-
   return {
-    projectId,
-    prefix,
-    sequence: row.next_seq,
-    code: formatProjectCode(prefix, row.next_seq)
+    prefix: normalizeProjectPrefix(row.slug),
+    sequence: row.next_seq
   };
+}
+
+async function workItemCodeExists(db: SequenceExecutor, code: string) {
+  const result = await db.execute(sql`
+    select 1
+    from "work_items"
+    where "code" = ${code}
+    limit 1
+  `);
+  return rowsFromResult(result).length > 0;
+}
+
+export async function allocateProjectCode(
+  db: SequenceExecutor,
+  projectId: string
+): Promise<ProjectCodeAllocation> {
+  for (let attempt = 0; attempt < 1000; attempt += 1) {
+    const { prefix, sequence } = await nextProjectSequence(db, projectId);
+    const code = formatProjectCode(prefix, sequence);
+    if (!(await workItemCodeExists(db, code))) {
+      return {
+        projectId,
+        prefix,
+        sequence,
+        code
+      };
+    }
+  }
+
+  throw new Error(`Unable to allocate a unique project code for ${projectId}`);
 }

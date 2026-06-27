@@ -24,6 +24,7 @@ import {
   mergeProposalCandidateApplyIdFromHref,
   meetingDraftProposalFromHref,
   meetingInsightActionFromHref,
+  isNativeResourceLink,
   notificationActionFromHref,
   proposalActionFromHref,
   replaceCustomFieldPlaceholder,
@@ -94,6 +95,24 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
     itemId: "i-1",
     action: "restore"
   });
+});
+
+test("drive preview/download resource links can bypass the delegated API action proxy", () => {
+  const nativeLink = {
+    dataset: {
+      nativeResourceLink: "true",
+      actionId: "drive_preview"
+    }
+  } as unknown as HTMLElement;
+  const mutationLink = {
+    dataset: {
+      actionId: "drive_restore",
+      method: "POST"
+    }
+  } as unknown as HTMLElement;
+
+  assert.equal(isNativeResourceLink(nativeLink), true);
+  assert.equal(isNativeResourceLink(mutationLink), false);
 });
 
 test("R4.21 shared runtime materializes custom field placeholders recursively", () => {

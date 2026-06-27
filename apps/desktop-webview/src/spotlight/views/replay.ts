@@ -6,7 +6,7 @@ import type { AgentRunLiveVM, AttentionHomeVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
-import { agentRunStatusLabel, agentStepPhaseLabel } from "../labels.js";
+import { agentRunStatusLabel, agentStepPhaseLabel, agentStepPublicSummary } from "../labels.js";
 
 type BgRun = AttentionHomeVM["background_runs"][number];
 
@@ -53,7 +53,7 @@ function traceHtml(vm: AgentRunLiveVM, zh: boolean, waiting = false): string {
     ? `<div class="wh-spot-trace">${steps
         .map(
           (s) =>
-            `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}${s.tool_name ? ` · ${escapeHtml(s.tool_name)}` : ""}</div>${s.output_excerpt ? `<div class="wh-spot-trace-out">${escapeHtml(s.output_excerpt)}</div>` : ""}</div>`
+            `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}${s.tool_name ? ` · ${escapeHtml(s.tool_name)}` : ""}</div><div class="wh-spot-trace-out">${escapeHtml(agentStepPublicSummary(s, zh))}</div></div>`
         )
         .join("")}</div>`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "还没有步骤" : "No steps yet"}</p>`;

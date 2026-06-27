@@ -733,6 +733,18 @@ test("R4.21 desktop browser uses the shared web runtime helpers", () => {
   assert.doesNotMatch(source, /function updateLineEditorPanelPayload/u);
 });
 
+test("desktop browser proposal review action confirms only and leaves merge as a second step", () => {
+  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+  const reviewBranchStart = source.lastIndexOf('if (proposalAction?.action === "review")');
+  const mergeBranchStart = source.indexOf('if (proposalAction?.action === "merge")');
+  assert.notEqual(reviewBranchStart, -1);
+  assert.notEqual(mergeBranchStart, -1);
+  const reviewBranch = source.slice(reviewBranchStart, mergeBranchStart);
+
+  assert.match(reviewBranch, /reviewProposalWithoutMerge\(client, proposalAction\.proposalId\)/u);
+  assert.doesNotMatch(reviewBranch, /mergeProposal/u);
+});
+
 test("M3 Spotlight ESC pops a view's internal detail before leaving the capability", () => {
   // 没有控制器 DOM 测试床,这里以源码静态断言守住 M3：能力内 Esc 必须先点视图自己的「返回列表」按钮
   // (data-*-back，仅 detail 态存在)，只有查不到内部详情层时才 dispatch 顶层 back 退回 launcher。

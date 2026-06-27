@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>R9 · Agent Army — 架构 / 现状 / 路线图</title>
+<style>
+  :root{
+    --ink:#f3f8fd;
+    --ink-soft:rgba(238,246,253,.66);
+    --ink-faint:rgba(238,246,253,.42);
+    --glass:rgba(255,255,255,.07);
+    --glass-2:rgba(255,255,255,.045);
+    --stroke:rgba(255,255,255,.14);
+    --stroke-soft:rgba(255,255,255,.08);
+    --reuse:#52e0a3;     /* 复用 */
+    --extend:#f6c453;    /* 扩展 */
+    --build:#ff7d92;     /* 新建 */
+    --shadow:0 24px 60px -28px rgba(0,0,0,.7);
+    --serif:"Georgia","Times New Roman","Songti SC","Noto Serif CJK SC",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--sans);
+    color:var(--ink);
+    background:
+      radial-gradient(1200px 620px at 80% -10%, rgba(130,190,250,.22), transparent 60%),
+      linear-gradient(180deg,#06101d 0%,#0b2138 22%,#143a5c 50%,#2d6692 76%,#bcd8ef 100%);
+    min-height:100vh;
+    padding:0 0 80px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+  .glass{
+    background:linear-gradient(180deg,var(--glass),var(--glass-2));
+    border:1px solid var(--stroke);
+    border-radius:20px;
+    box-shadow:var(--shadow), inset 0 1px 0 rgba(255,255,255,.16);
+    backdrop-filter:blur(22px) saturate(150%);
+    -webkit-backdrop-filter:blur(22px) saturate(150%);
+  }
+
+  /* ── HERO ── */
+  header{padding:78px 0 34px;text-align:center}
+  .eyebrow{font-size:13px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:22px}
+  h1{font-family:var(--serif);font-weight:500;font-size:clamp(34px,5.2vw,64px);line-height:1.08;letter-spacing:.01em}
+  h1 em{font-style:italic}
+  .sub{max-width:660px;margin:22px auto 0;font-size:17px;line-height:1.7;color:var(--ink-soft)}
+  .sub b{color:var(--ink);font-weight:600}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:44px 0 8px}
+  .stat{padding:22px 22px 20px;border-radius:18px;text-align:left}
+  .stat .n{font-family:var(--serif);font-size:42px;font-weight:500;line-height:1}
+  .stat .k{margin-top:10px;font-size:13px;color:var(--ink-soft);letter-spacing:.02em}
+  .stat .d{margin-top:3px;font-size:12px;color:var(--ink-faint)}
+  .stat.reuse .n{color:var(--reuse)} .stat.build .n{color:var(--build)}
+
+  /* ── SECTION ── */
+  section{margin-top:64px}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:6px}
+  .sec-no{font-family:var(--serif);font-size:15px;color:var(--ink-faint)}
+  .sec-title{font-family:var(--serif);font-size:clamp(24px,3vw,34px);font-weight:500}
+  .sec-desc{color:var(--ink-soft);font-size:15px;line-height:1.65;max-width:760px;margin:10px 0 26px}
+
+  /* ── 8 CONCEPT CARDS ── */
+  .grid8{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .card{padding:20px 20px 18px;border-radius:18px;position:relative;overflow:hidden;min-height:158px;display:flex;flex-direction:column}
+  .card .top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .card .idx{font-family:var(--serif);font-size:13px;color:var(--ink-faint)}
+  .badge{font-size:11px;letter-spacing:.04em;padding:3px 9px;border-radius:999px;border:1px solid currentColor;font-weight:600}
+  .badge.reuse{color:var(--reuse)} .badge.extend{color:var(--extend)} .badge.build{color:var(--build)}
+  .card h3{font-size:18px;font-weight:650;margin:14px 0 2px;letter-spacing:.01em}
+  .card .en{font-size:12px;color:var(--ink-faint);letter-spacing:.04em;margin-bottom:9px}
+  .card p{font-size:13px;line-height:1.55;color:var(--ink-soft);flex:1}
+  .card .file{font-size:11px;color:var(--ink-faint);font-family:ui-monospace,Menlo,monospace;margin-top:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card .rail{position:absolute;left:0;top:0;bottom:0;width:3px}
+  .rail.reuse{background:var(--reuse)} .rail.extend{background:var(--extend)} .rail.build{background:var(--build)}
+
+  .legend{display:flex;gap:20px;margin-top:18px;flex-wrap:wrap}
+  .legend span{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-soft)}
+  .dot{width:10px;height:10px;border-radius:3px}
+  .dot.reuse{background:var(--reuse)} .dot.extend{background:var(--extend)} .dot.build{background:var(--build)}
+
+  /* ── LOOP FLOW ── */
+  .flow{padding:30px 26px;border-radius:22px}
+  .flow-row{display:flex;align-items:stretch;gap:14px;flex-wrap:wrap;justify-content:center}
+  .node{flex:1;min-width:150px;padding:16px 16px 14px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid var(--stroke-soft);position:relative}
+  .node .tag{font-size:11px;color:var(--ink-faint);letter-spacing:.04em;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .node h4{font-size:15px;font-weight:650;margin-bottom:5px}
+  .node p{font-size:12px;line-height:1.5;color:var(--ink-soft)}
+  .node.lead{background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.04));border-color:var(--stroke)}
+  .node .pill{position:absolute;top:-10px;left:16px;font-size:10px;padding:2px 8px;border-radius:999px;background:#0c2236;border:1px solid var(--stroke);color:var(--ink-soft)}
+  .flow-arrow{display:flex;align-items:center;justify-content:center;color:var(--ink-faint);font-size:20px;padding:6px 0}
+  .subagents{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .b-build{box-shadow:inset 0 0 0 1px rgba(255,125,146,.35)}
+  .b-reuse{box-shadow:inset 0 0 0 1px rgba(82,224,163,.30)}
+  .b-extend{box-shadow:inset 0 0 0 1px rgba(246,196,83,.32)}
+  .loopback{text-align:center;margin-top:16px;font-size:12.5px;color:var(--ink-soft)}
+  .loopback b{color:var(--extend)}
+
+  /* ── ROADMAP ── */
+  .phases{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  .phase{padding:18px 20px;border-radius:16px;display:flex;gap:16px;align-items:flex-start}
+  .phase .pn{font-family:var(--serif);font-size:22px;font-weight:500;color:var(--ink);min-width:56px;line-height:1}
+  .phase .pn small{display:block;font-size:10px;letter-spacing:.06em;color:var(--ink-faint);margin-top:5px;font-family:var(--sans)}
+  .phase h4{font-size:15.5px;font-weight:650;margin-bottom:5px}
+  .phase p{font-size:12.5px;line-height:1.55;color:var(--ink-soft)}
+  .phase .chips{margin-top:9px;display:flex;gap:6px;flex-wrap:wrap}
+  .chip{font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--stroke);color:var(--ink-soft)}
+  .chip.safe{color:var(--build);border-color:rgba(255,125,146,.4)}
+  .phase.safety{box-shadow:var(--shadow),inset 0 0 0 1px rgba(255,125,146,.30)}
+
+  /* ── NOTE / FOOTER ── */
+  .note{margin-top:46px;padding:22px 24px;border-radius:18px;font-size:13.5px;line-height:1.7;color:var(--ink-soft)}
+  .note b{color:var(--ink)}
+  .redline{color:var(--build);font-weight:600}
+  footer{margin-top:48px;text-align:center;font-size:12px;color:var(--ink-faint);line-height:1.7}
+
+  @media(max-width:900px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .grid8{grid-template-columns:repeat(2,1fr)}
+    .phases{grid-template-columns:1fr}
+    .subagents{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HERO -->
+  <header>
+    <div class="eyebrow">WorkHub · R9 规划</div>
+    <h1>每个人背后,<br>一支巨型 <em>agent</em> 军团。</h1>
+    <p class="sub">不是一家没有人的公司,而是把一个意图,落到一支会自己<b>拆解、派发、自证、复盘</b>的 agent 军团。人留在中心当指挥官——<b>军团越大,越要把该人来拍的板清清楚楚交还给人。</b></p>
+
+    <div class="stats">
+      <div class="stat reuse glass">
+        <div class="n">4</div>
+        <div class="k">已建可复用</div>
+        <div class="d">judge · 预算硬拦 · 技能库 · 记忆雏形</div>
+      </div>
+      <div class="stat build glass">
+        <div class="n">3</div>
+        <div class="k">真正要新建</div>
+        <div class="d">planner+派发 · 记忆归并 · OKR</div>
+      </div>
+      <div class="stat glass">
+        <div class="n">9</div>
+        <div class="k">子系统已盘点</div>
+        <div class="d">带 file:line 真代码证据</div>
+      </div>
+      <div class="stat glass">
+        <div class="n">1</div>
+        <div class="k">红线</div>
+        <div class="d">高风险动作永远升级给人</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- SECTION 1 · 8 CONCEPTS -->
+  <section>
+    <div class="sec-head"><span class="sec-no">01</span><span class="sec-title">八个概念 × 现状映射</span></div>
+    <p class="sec-desc">R9 的四件核心资产 + meta-planner + OKR + LLM-judge + budget,逐一对照 WorkHub 真实代码。绿=直接复用,黄=扩展现有,红=完全新建。R9 的新代码量集中在红黄。</p>
+
+    <div class="grid8">
+      <div class="card glass"><div class="rail extend"></div>
+        <div class="top"><span class="idx">①</span><span class="badge extend">扩展</span></div>
+        <h3>任务</h3><div class="en">Task</div>
+        <p>work_item 带意图+验收+task_items,launcher 拆验收项。加 objective 绑定与 task_plan。</p>
+        <div class="file">services/work-items.ts:863</div>
+      </div>
+      <div class="card glass"><div class="rail build"></div>
+        <div class="top"><span class="idx">②</span><span class="badge build">新建</span></div>
+        <h3>子 agent</h3><div class="en">Sub-agent</div>
+        <p>现为 flat 单 run,无层级 spawn。加 parent_run_id + 派发器,一计划派生多并行子 run。</p>
+        <div class="file">agent-runner.ts:919</div>
+      </div>
+      <div class="card glass"><div class="rail reuse"></div>
+        <div class="top"><span class="idx">③</span><span class="badge reuse">复用</span></div>
+        <h3>技能库</h3><div class="en">Skill-library</div>
+        <p>team_skills 表 + 夜间 curation + load_skill,K1/K2/K3/K5 全在。按角色分工具子集即可。</p>
+        <div class="file">agent-skill-curation.ts</div>
+      </div>
+      <div class="card glass"><div class="rail extend"></div>
+        <div class="top"><span class="idx">④</span><span class="badge extend">扩展</span></div>
+        <h3>记忆库</h3><div class="en">Memory-library</div>
+        <p>user_memories 三类 + team_skills + 纠错回灌。加子 agent 隔离 + 冲突归并。</p>
+        <div class="file">services/user-memory.ts:76</div>
+      </div>
+      <div class="card glass"><div class="rail build"></div>
+        <div class="top"><span class="idx">⑤</span><span class="badge build">新建</span></div>
+        <h3>Meta-Planner</h3><div class="en">拆解的泛化</div>
+        <p>greenfield。读意图+OKR+记忆,产出子任务+角色+验收+预算。拆错=整链白跑,拆完先过 judge 自检。</p>
+        <div class="file">services/meta-planner.ts(新)</div>
+      </div>
+      <div class="card glass"><div class="rail build"></div>
+        <div class="top"><span class="idx">⑥</span><span class="badge build">新建</span></div>
+        <h3>OKR System</h3><div class="en">优先级记忆</div>
+        <p>greenfield。objectives/key_results + 进度对账。<b>非阻断</b>——只做观测镜头,绝不当执行闸门。</p>
+        <div class="file">services/objectives.ts(新)</div>
+      </div>
+      <div class="card glass"><div class="rail reuse"></div>
+        <div class="top"><span class="idx">⑦</span><span class="badge reuse">复用</span></div>
+        <h3>LLM-Judge</h3><div class="en">已在主 agent 里</div>
+        <p>独立 review client 反自评 + 置信矩阵 + 仅 grade5 auto-merge + fail-closed。扩展成跨 agent 仲裁 + 高风险多票。</p>
+        <div class="file">evaluation/confidence.ts:94</div>
+      </div>
+      <div class="card glass"><div class="rail reuse"></div>
+        <div class="top"><span class="idx">⑧</span><span class="badge reuse">复用</span></div>
+        <h3>预算</h3><div class="en">Budget · 硬上限</div>
+        <p>R2 atomic budget ~95%:reservation 串行化、超额 enqueue 直接 402。加 task/objective scope 即可。</p>
+        <div class="file">packages/cost/reservation.ts</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i class="dot reuse"></i>复用 · 已建,别重造</span>
+      <span><i class="dot extend"></i>扩展 · 在现有上加列/加参</span>
+      <span><i class="dot build"></i>新建 · greenfield</span>
+    </div>
+  </section>
+
+  <!-- SECTION 2 · LOOP -->
+  <section>
+    <div class="sec-head"><span class="sec-no">02</span><span class="sec-title">一个意图,变成军团循环</span></div>
+    <p class="sec-desc">对照 Matrix「一个目标变成公司循环」:CEO Office = Meta-Planner + Judge,部门 = 子 agent 角色,且 OKR 是观测不是闸门。每一步都返回可验证的证明,完事回灌记忆与技能,下次更强。</p>
+
+    <div class="flow glass">
+      <div class="flow-row">
+        <div class="node lead"><span class="pill">意图来源</span>
+          <div class="tag">User</div><h4>意图 + 约束 + 文件</h4>
+          <p>一个 work_item,带验收标准。</p>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="node lead b-build"><span class="pill">新建</span>
+          <div class="tag">⑤ Meta-Planner</div><h4>拆解 → task_plan</h4>
+          <p>子任务 + 角色 + 验收 + 预算。拆完先过 judge 自检 / 可选人确认门。</p>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="node b-build"><span class="pill">新建</span>
+          <div class="tag">Task-Dispatcher</div><h4>按 DAG 派发</h4>
+          <p>for 子任务 enqueue 子 run。复用 claim-lease,多 worker 并行抢占。</p>
+        </div>
+      </div>
+
+      <div class="flow-arrow">↓</div>
+
+      <div class="subagents">
+        <div class="node b-reuse"><div class="tag">子 agent · 研究</div><h4>角色专属工具子集</h4><p>从技能库 ③ 按角色加载工具。</p></div>
+        <div class="node b-extend"><div class="tag">子 agent · 产出</div><h4>私有记忆 L1</h4><p>各写各的 ④,互不污染。</p></div>
+        <div class="node b-reuse"><div class="tag">子 agent · 复核</div><h4>独立 review client</h4><p>反自评偏见 ⑦,已实现。</p></div>
+      </div>
+
+      <div class="flow-arrow">↓</div>
+
+      <div class="flow-row">
+        <div class="node b-reuse"><span class="pill">扩展复用</span>
+          <div class="tag">⑦ Cross-Agent Judge</div><h4>仲裁 N 份产出</h4>
+          <p>合并 / 取舍 / 打回重规划。高风险触发多票对抗。</p>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="node lead"><span class="pill">结果</span>
+          <div class="tag">证明 + 资产 + 技能记忆</div><h4>没有证明,就不算完成</h4>
+          <p>outputs/ 交付物是硬门;走提议→审批→合并,不直写生产。</p>
+        </div>
+      </div>
+
+      <div class="loopback">↺ <b>⑥ OKR 复盘(观测,非阻断)</b>:按 key result 对账 → 调优先级 · 预算 reconcile · escalated 升级给人(逃生舱)</div>
+    </div>
+  </section>
+
+  <!-- SECTION 3 · ROADMAP -->
+  <section>
+    <div class="sec-head"><span class="sec-no">03</span><span class="sec-title">分阶段建造</span></div>
+    <p class="sec-desc">先修安全洞 → 打地基(任务/派发)→ 上记忆归并 → 上仲裁/OKR → 最后玻璃指挥台。护栏先于自治,PG smoke 是唯一真库门。R9.3/9.4/9.5 可在 9.2 后并行。</p>
+
+    <div class="phases">
+      <div class="phase safety glass">
+        <div class="pn">9.0<small>安全前置</small></div>
+        <div><h4>地基盘点 + 修 escalated 死状态</h4>
+          <p>逃生舱漏洞:升级队列上 attention 首页,人能 resolve/delegate。自治的前置安全件。</p>
+          <div class="chips"><span class="chip safe">安全</span><span class="chip">复用 approvals</span></div>
+        </div>
+      </div>
+      <div class="phase glass">
+        <div class="pn">9.1<small>地基</small></div>
+        <div><h4>任务 + Meta-Planner</h4>
+          <p>task_plans 表 + 拆解服务。结果以提议落地,人可审可编辑。拆完先过 judge。</p>
+          <div class="chips"><span class="chip">复用 proposals</span><span class="chip">新建 planner</span></div>
+        </div>
+      </div>
+      <div class="phase glass">
+        <div class="pn">9.2<small>地基</small></div>
+        <div><h4>子 agent 层级派发</h4>
+          <p>agent_runs 加 parent_run_id/role/objective;派发器拓扑序 enqueue。复用 claim-lease。</p>
+          <div class="chips"><span class="chip">复用引擎</span><span class="chip">扩展 schema</span></div>
+        </div>
+      </div>
+      <div class="phase glass">
+        <div class="pn">9.3<small>并行</small></div>
+        <div><h4>记忆隔离 + 冲突归并</h4>
+          <p>三层模型;把 P-COLLAB diff3 从 proposal 搬到 memory。矛盾不静默覆盖,弹冲突提议。</p>
+          <div class="chips"><span class="chip">复用 diff3</span><span class="chip">最难一块</span></div>
+        </div>
+      </div>
+      <div class="phase glass">
+        <div class="pn">9.4<small>并行</small></div>
+        <div><h4>跨 agent 仲裁</h4>
+          <p>从单 run 自评升到比较 N 份产出 + 仲裁;高风险多票对抗。复用置信矩阵。</p>
+          <div class="chips"><span class="chip">扩展 confidence</span></div>
+        </div>
+      </div>
+      <div class="phase glass">
+        <div class="pn">9.5<small>并行</small></div>
+        <div><h4>OKR + 任务级预算</h4>
+          <p>objectives/key_results(软链接、非阻断);预算加 task/objective scope,复用 reservation。</p>
+          <div class="chips"><span class="chip">新建 OKR</span><span class="chip">复用预算</span></div>
+        </div>
+      </div>
+      <div class="phase glass">
+        <div class="pn">9.6<small>门面</small></div>
+        <div><h4>Matrix 玻璃指挥台</h4>
+          <p>新路由 agent-army + AgentArmyDashboardVM + SSE 实时 + 玻璃 UI。注意路由计数/smoke 坑。</p>
+          <div class="chips"><span class="chip">复用 route-registry</span><span class="chip">等真数据</span></div>
+        </div>
+      </div>
+      <div class="phase glass">
+        <div class="pn">9.7<small>收尾</small></div>
+        <div><h4>加固与对抗</h4>
+          <p>跨工作区隔离审计;高风险动作强制升级;happy-path 反演;多 agent review 对抗一轮。</p>
+          <div class="chips"><span class="chip safe">红线守护</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NOTE -->
+  <div class="note glass">
+    <b>成败不在「agent 跑不跑」</b>(R5.10 真 key 已验证),而在编排层四件难事:<b>拆解准不准 · 记忆烂不烂 · 证明防不防自证 · 人类阀门和预算闸拦不拦得住失控。</b>
+    <br><br>
+    <span class="redline">红线:</span>agent 绝不自动注册实体 / 办银行卡 / 接受 ToS / 处理付款——这些 KYC、法律责任卡死的高风险动作永远升级给人。「0 人公司」改成「人指挥 + 巨型军团」。自主率再高,也绝不拿信任去换。
+  </div>
+
+  <footer>
+    WorkHub · R9 Agent Army 规划包 · 起草 2026-06-23<br>
+    依据 9 子系统代码盘点(agent-engine / skill-library / memory-library / decomposition-planner / okr-objectives / judge-verification / attention-escape-hatch / budget-cost / frontend-ux)
+  </footer>
+
+</div>
+</body>
+</html>

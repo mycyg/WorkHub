@@ -10,6 +10,7 @@ import {
   type CuuCard,
   type CuuCardAction,
   type CuuCardChip,
+  type CuuCardSection,
   type CuuController,
   type CuuControllerDecision,
   type CuuLocaleOptions
@@ -26,6 +27,7 @@ import {
   type EvidenceRef,
   type GoldPathSurfaceVM,
   type MergeProposalRequest,
+  type ReviewProposalRequest,
   type StartAgentRunRequest,
   type WorkHubEvent
 } from "@workhub/contracts";
@@ -38,7 +40,14 @@ export type DesktopShellEventEnvelope = {
 };
 
 export type DesktopShellUnlisten = () => void;
-export type DesktopShellEventName = "push-event" | "sse-status" | "system-notification" | "navigate" | "tray-action" | "pet-settings";
+export type DesktopShellEventName =
+  | "push-event"
+  | "sse-status"
+  | "system-notification"
+  | "navigate"
+  | "tray-action"
+  | "pet-settings"
+  | "attention-refresh";
 
 export type DesktopShellListen = (
   eventName: DesktopShellEventName,
@@ -95,9 +104,16 @@ export type DesktopCuuActionRequest =
       requiresReason: boolean;
     }
   | {
+      kind: "proposal-review";
+      proposalId: string;
+      decision: ReviewProposalRequest["decision"];
+      requiresReason: boolean;
+    }
+  | {
       kind: "session-next-question";
       sessionId: string;
       selectedOptionIds?: string[];
+      freeText?: string;
     }
   | {
       kind: "knowledge-search";
@@ -200,6 +216,14 @@ type DesktopCuuActionClient = Pick<
   WorkHubApiClient,
   "respondApproval" | "nextQuestion" | "searchKnowledge" | "useEvidenceForWorkItem"
 > & {
+  reviewProposal?: (
+    proposalId: string,
+    payload: ReviewProposalRequest
+  ) => Promise<{
+    attention: {
+      summary_text: string;
+    };
+  }>;
   createSession?: (payload?: CreateSessionRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createSession"]>>>;
   createWorkItem?: (payload: CreateWorkItemRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>>;
   startAgentRun?: (
@@ -257,56 +281,13 @@ export function createDesktopCuuAgentLauncherCard(options: CuuLocaleOptions = {}
     title: cuuT(options.locale, "cuuStart.title"),
     message: cuuT(options.locale, "cuuStart.message"),
     priority: "normal",
-    chips: [
-      {
-        id: "document-draft",
-        label: cuuT(options.locale, "cuuStart.documentDraft"),
-        description: cuuT(options.locale, "cuuStart.documentDraftDesc"),
-        metadata: {
-          delivery_kind: "document_draft",
-          risk_hint: "low",
-          default_acceptance: [
-            cuuT(options.locale, "cuuStart.documentDraftAcceptancePrimary"),
-            cuuT(options.locale, "cuuStart.documentDraftAcceptanceEvidence")
-          ]
-        },
-        tone: "success",
-        recommended: true
-      },
-      {
-        id: "structured-data",
-        label: cuuT(options.locale, "cuuStart.structuredData"),
-        description: cuuT(options.locale, "cuuStart.structuredDataDesc"),
-        metadata: {
-          delivery_kind: "structured_data",
-          risk_hint: "low",
-          default_acceptance: [
-            cuuT(options.locale, "cuuStart.structuredDataAcceptancePrimary"),
-            cuuT(options.locale, "cuuStart.structuredDataAcceptanceEvidence")
-          ]
-        },
-        tone: "success"
-      },
-      {
-        id: "code-template",
-        label: cuuT(options.locale, "cuuStart.codeTemplate"),
-        description: cuuT(options.locale, "cuuStart.codeTemplateDesc"),
-        metadata: {
-          delivery_kind: "code_template",
-          risk_hint: "medium",
-          default_acceptance: [
-            cuuT(options.locale, "cuuStart.codeTemplateAcceptancePrimary"),
-            cuuT(options.locale, "cuuStart.codeTemplateAcceptanceSafety")
-          ]
-        },
-        tone: "warning"
-      }
-    ],
     input: {
-      mode: "single_choice",
-      option_first: true,
-      free_text_enabled: false,
-      free_text_collapsed_by_default: true
+      mode: "long_text",
+      option_first: false,
+      free_text_enabled: true,
+      free_text_collapsed_by_default: false,
+      free_text_placeholder: cuuT(options.locale, "cuuStart.placeholder"),
+      free_text_max_length: 1200
     },
     progress: [
       { key: "intent", label: cuuT(options.locale, "cuuStart.progressIntent"), state: "active", index: 0 },
@@ -321,8 +302,7 @@ export function createDesktopCuuAgentLauncherCard(options: CuuLocaleOptions = {}
         method: "POST",
         href: "/api/cuu/start-agent",
         payload: {
-          title: cuuT(options.locale, "cuuStart.defaultTitle"),
-          intent_text: cuuT(options.locale, "cuuStart.defaultIntent")
+          title: cuuT(options.locale, "cuuStart.defaultTitle")
         }
       }
     ],
@@ -334,14 +314,59 @@ export function createDesktopCuuAgentLauncherCard(options: CuuLocaleOptions = {}
   };
 }
 
+export function createDesktopCuuAnalysisCard(
+  action: DesktopCuuStartAgentAction,
+  options: CuuLocaleOptions = {}
+): CuuCard {
+  const sections: CuuCardSection[] = [
+    {
+      id: "tools",
+      title: options.locale === "en-US" ? "Tool status" : "工具状态",
+      lines: [
+        cuuT(options.locale, "cuuStart.analysisToolIntent"),
+        cuuT(options.locale, "cuuStart.analysisToolFiles"),
+        cuuT(options.locale, "cuuStart.analysisToolModel")
+      ]
+    },
+    {
+      id: "privacy",
+      title: options.locale === "en-US" ? "Visibility" : "可见内容",
+      lines: [cuuT(options.locale, "cuuStart.analysisPrivacy")]
+    }
+  ];
+  return {
+    id: "cuu-agent-analysis",
+    kind: "trace",
+    state: "thinking",
+    motion: cuuMotionForState("thinking"),
+    title: cuuT(options.locale, "cuuStart.analysisTitle"),
+    message: cuuT(options.locale, "cuuStart.analysisMessage"),
+    priority: "normal",
+    actions: [],
+    sections,
+    progress: [
+      { key: "intent", label: cuuT(options.locale, "cuuStart.progressIntent"), state: "done", index: 0 },
+      { key: "analysis", label: options.locale === "en-US" ? "Analyze" : "分析", state: "active", index: 1 },
+      { key: "task", label: cuuT(options.locale, "cuuStart.progressTask"), state: "pending", index: 2 },
+      { key: "run", label: cuuT(options.locale, "cuuStart.progressRun"), state: "pending", index: 3 }
+    ],
+    payload_ref: {
+      entity_type: "event",
+      entity_id: "cuu-agent-analysis",
+      href: "/api/cuu/start-agent"
+    },
+    source: {
+      entity_type: "event",
+      entity_id: action.title
+    }
+  };
+}
+
 export async function startDesktopCuuAgentFromLauncher(input: {
   client: DesktopCuuAgentLaunchClient;
   action: DesktopCuuStartAgentAction;
   locale?: CuuLocaleOptions["locale"];
 }): Promise<DesktopCuuAgentLaunchResult> {
-  if (!input.action.selectedOptionIds?.length) {
-    throw new Error(cuuT(input.locale, "pet.optionRequired"));
-  }
   if (!input.client.createSession || !input.client.createWorkItem || !input.client.startAgentRun) {
     throw new Error(cuuT(input.locale, "cuuStart.unavailable"));
   }
@@ -363,7 +388,8 @@ export async function startDesktopCuuAgentFromLauncher(input: {
     session_id: session.session_id,
     title: input.action.title,
     raw_description: input.action.intentText,
-    selected_option_ids: input.action.selectedOptionIds,
+    free_text: input.action.intentText,
+    ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {}),
     ...(input.action.cuuLauncherSpec ? { cuu_launcher_spec: input.action.cuuLauncherSpec } : {}),
     kickoff_agent: true,
     ...(input.action.projectId ? { project_id: input.action.projectId } : {})
@@ -518,6 +544,7 @@ export function cardFromDesktopCuuRuntimeError(
 ): CuuCard {
   const kind = desktopCuuErrorKind(error);
   const state = kind === "budget" ? "asking_approval" : kind === "offline" ? "offline" : "worried";
+  const run = options.run;
   const titleKey =
     kind === "budget"
       ? "cuuStart.errorBudgetTitle"
@@ -533,8 +560,9 @@ export function cardFromDesktopCuuRuntimeError(
         ? "cuuStart.errorPermissionMessage"
         : kind === "offline"
           ? "cuuStart.errorOfflineMessage"
-          : "cuuStart.errorGenericMessage";
-  const run = options.run;
+          : run
+            ? "cuuStart.errorGenericMessage"
+            : "cuuStart.errorRestartMessage";
   const actions: CuuCardAction[] = run
     ? [
         {
@@ -552,7 +580,17 @@ export function cardFromDesktopCuuRuntimeError(
           href: `/workitems/${run.work_item_id}`
         }
       ]
-    : [];
+    : kind === "generic"
+      ? [
+          {
+            id: "restart_cuu",
+            label: cuuT(options.locale, "cuuStart.errorRestartAction"),
+            tone: "primary",
+            method: "GET",
+            href: "/cuu/restart"
+          }
+        ]
+      : [];
 
   return {
     id: run ? `cuu-run-error-${run.run_id}` : "cuu-runtime-error",
@@ -793,7 +831,12 @@ export function renderDesktopCuuNotice(card: CuuCard, options: CuuLocaleOptions 
 
 export function resolveDesktopCuuAction(
   href: string,
-  input: { actionId?: string | undefined; requiresReason?: boolean | undefined; card?: CuuCard | undefined } = {}
+  input: {
+    actionId?: string | undefined;
+    requiresReason?: boolean | undefined;
+    card?: CuuCard | undefined;
+    freeText?: string | undefined;
+  } = {}
 ): DesktopCuuActionRequest | undefined {
   const url = new URL(href, "https://workhub.local");
   const path = url.pathname;
@@ -802,9 +845,10 @@ export function resolveDesktopCuuAction(
     const selectedChips = selectedChipsFromCard(input.card);
     const selectedOptionIds = selectedChips.map((chip) => chip.id);
     const cuuLauncherSpec = cuuLauncherSpecFromSelectedChips(selectedChips);
-    const title = stringFromUnknown(payload?.title) ?? url.searchParams.get("title") ?? titleFromSelectedChips(selectedChips);
+    const freeText = stringFromUnknown(input.freeText);
+    const title = freeText ?? stringFromUnknown(payload?.title) ?? url.searchParams.get("title") ?? titleFromSelectedChips(selectedChips);
     const selectedIntent = intentFromSelectedChips(selectedChips);
-    const payloadIntent = stringFromUnknown(payload?.intent_text) ?? url.searchParams.get("intent_text");
+    const payloadIntent = freeText ?? stringFromUnknown(payload?.intent_text) ?? url.searchParams.get("intent_text");
     const intentText = [payloadIntent, selectedIntent].filter((value): value is string => Boolean(value)).join("\n") || title;
     const projectId = stringFromUnknown(payload?.project_id) ?? url.searchParams.get("project_id") ?? undefined;
     const runTitle = stringFromUnknown(payload?.run_title) ?? url.searchParams.get("run_title") ?? undefined;
@@ -831,13 +875,25 @@ export function resolveDesktopCuuAction(
     };
   }
 
+  const proposalReviewMatch = /^\/api\/proposals\/([^/]+)\/review$/u.exec(path);
+  if (proposalReviewMatch?.[1]) {
+    return {
+      kind: "proposal-review",
+      proposalId: decodeURIComponent(proposalReviewMatch[1]),
+      decision: proposalReviewDecisionFromAction(input.actionId, input.requiresReason === true),
+      requiresReason: input.requiresReason === true
+    };
+  }
+
   const sessionMatch = /^\/api\/sessions\/([^/]+)\/next-question$/u.exec(path);
   if (sessionMatch?.[1]) {
     const selectedOptionIds = selectedOptionIdsFromCard(input.card);
+    const freeText = stringFromUnknown(input.freeText);
     return {
       kind: "session-next-question",
       sessionId: decodeURIComponent(sessionMatch[1]),
-      ...(selectedOptionIds.length ? { selectedOptionIds } : {})
+      ...(selectedOptionIds.length ? { selectedOptionIds } : {}),
+      ...(freeText ? { freeText } : {})
     };
   }
 
@@ -919,6 +975,23 @@ export async function submitDesktopCuuAction(input: {
     };
   }
 
+  if (input.action.kind === "proposal-review") {
+    if (!input.client.reviewProposal) {
+      throw new Error("Proposal review action is unavailable.");
+    }
+    if (input.action.decision === "request_changes" && !input.reasonMd?.trim()) {
+      throw new Error(cuuT(input.locale, "action.reasonRequired"));
+    }
+    const result = await input.client.reviewProposal(input.action.proposalId, {
+      decision: input.action.decision,
+      ...(input.reasonMd ? { reason_md: input.reasonMd } : {}),
+      remember: "once"
+    });
+    return {
+      message: result.attention.summary_text
+    };
+  }
+
   if (input.action.kind === "knowledge-search") {
     const bubble = await input.client.searchKnowledge({
       ...(input.action.query ? { query: input.action.query } : {}),
@@ -968,12 +1041,14 @@ export async function submitDesktopCuuAction(input: {
     throw new Error(cuuT(input.locale, "cuuStart.unavailable"));
   }
   const session = await input.client.nextQuestion(input.action.sessionId, {
-    ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {})
+    ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {}),
+    ...(input.action.freeText ? { free_text: input.action.freeText } : {})
   });
   if (shouldStartRun) {
     const workItem = await input.client.createWorkItem!({
       session_id: input.action.sessionId,
       ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {}),
+      ...(input.action.freeText ? { free_text: input.action.freeText } : {}),
       kickoff_agent: true
     });
     const run = await input.client.startAgentRun!(workItem.workitem.id, {
@@ -996,7 +1071,7 @@ function desktopCuuSessionSelectionStartsRun(action: Extract<DesktopCuuActionReq
 }
 
 function desktopCuuSessionNeedsClarification(session: Awaited<ReturnType<WorkHubApiClient["createSession"]>>) {
-  return session.question.options.length > 0;
+  return session.question.options.length > 0 || session.question.input_mode === "long_text" || session.question.free_text.enabled;
 }
 
 function selectedOptionIdsFromCard(card: CuuCard | undefined) {
@@ -1362,6 +1437,10 @@ function approvalDecisionFromAction(actionId: string | undefined, requiresReason
     return "deny";
   }
   return "allow";
+}
+
+function proposalReviewDecisionFromAction(actionId: string | undefined, requiresReason: boolean): ReviewProposalRequest["decision"] {
+  return approvalDecisionFromAction(actionId, requiresReason) === "deny" ? "request_changes" : "approve";
 }
 
 function labelForState(state: CuuCard["state"], options: CuuLocaleOptions = {}) {

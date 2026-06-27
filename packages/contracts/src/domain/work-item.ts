@@ -162,6 +162,7 @@ export const createWorkItemRequestSchema = z
     title: z.string().min(1).max(256).optional(),
     raw_description: z.string().min(1).optional(),
     selected_option_ids: z.array(z.string().min(1)).optional(),
+    free_text: z.string().trim().max(1000).optional(),
     cuu_launcher_spec: cuuLauncherWorkItemSpecSchema.optional(),
     kickoff_agent: z.boolean().optional()
   })

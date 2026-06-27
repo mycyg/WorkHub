@@ -1031,14 +1031,20 @@ class MemoryProposalRepository implements ProposalRepository {
     actor: Parameters<ProposalRepository["merge"]>[0]["actor"];
     conflicts: ReturnType<MemoryProposalRepository["conflictsForStored"]>;
     acceptedTargetKeys: string[];
+    keptCurrentTargetKeys?: string[];
     candidateSupplements?: Parameters<ProposalRepository["merge"]>[0]["candidateSupplements"];
     at: Date;
   }) {
     const acceptedTargetKeys = new Set(input.acceptedTargetKeys);
+    const keptCurrentTargetKeys = new Set(input.keptCurrentTargetKeys ?? []);
     for (const conflict of input.conflicts) {
       const supplement = input.candidateSupplements?.find((item) => item.conflictKey === conflict.target_key);
       this.mergeProposalCount += 1;
-      const chosen = acceptedTargetKeys.has(conflict.target_key) ? "accept_incoming" : null;
+      const chosen = acceptedTargetKeys.has(conflict.target_key)
+        ? "accept_incoming"
+        : keptCurrentTargetKeys.has(conflict.target_key)
+          ? "keep_current"
+          : null;
       this.mergeProposals.push({
         id: `91000000-0000-4000-8000-${String(360 + this.mergeProposalCount).padStart(12, "0")}`,
         mergeAttemptId: input.mergeAttemptId,
@@ -1060,6 +1066,7 @@ class MemoryProposalRepository implements ProposalRepository {
     result: "conflict" | "merged" | "rebased";
     conflicts: ReturnType<MemoryProposalRepository["conflictsForStored"]>;
     acceptedTargetKeys: string[];
+    keptCurrentTargetKeys?: string[];
     mergeSnapshotId?: string;
     candidateSupplements?: Parameters<ProposalRepository["merge"]>[0]["candidateSupplements"];
     at: Date;
@@ -1087,6 +1094,7 @@ class MemoryProposalRepository implements ProposalRepository {
       actor: input.actor,
       conflicts: input.conflicts,
       acceptedTargetKeys: input.acceptedTargetKeys,
+      ...(input.keptCurrentTargetKeys ? { keptCurrentTargetKeys: input.keptCurrentTargetKeys } : {}),
       candidateSupplements: input.candidateSupplements,
       at: input.at
     });
@@ -1107,8 +1115,12 @@ class MemoryProposalRepository implements ProposalRepository {
     }
     const at = input.at ?? now;
     const acceptedTargetKeys = [...new Set(input.acceptIncomingTargetKeys ?? [])];
+    const keptCurrentTargetKeys = input.bulkAction?.action === "keep_current"
+      ? [...new Set(input.bulkAction.targetKeys)]
+      : [];
+    const resolvedTargetKeys = new Set([...acceptedTargetKeys, ...keptCurrentTargetKeys]);
     const allConflicts = this.conflictsForStored(stored);
-    const conflicts = this.conflictsForStored(stored, new Set(acceptedTargetKeys));
+    const conflicts = this.conflictsForStored(stored, resolvedTargetKeys);
     if (conflicts.length > 0) {
       this.recordMergeAttempt({
         stored,
@@ -1116,13 +1128,14 @@ class MemoryProposalRepository implements ProposalRepository {
         result: "conflict",
         conflicts,
         acceptedTargetKeys,
+        keptCurrentTargetKeys,
         candidateSupplements: input.candidateSupplements,
         at
       });
       throw new ProposalRepositoryMergeConflictError(conflicts);
     }
     const mergeSnapshotId = input.mergeSnapshotId ?? "91000000-0000-4000-8000-000000000199";
-    const resolvedConflicts = allConflicts.filter((conflict) => acceptedTargetKeys.includes(conflict.target_key));
+    const resolvedConflicts = allConflicts.filter((conflict) => resolvedTargetKeys.has(conflict.target_key));
     stored.proposal.status = "merged";
     stored.proposal.mergeSnapshotId = mergeSnapshotId;
     stored.proposal.mergedAt = at;
@@ -1133,11 +1146,15 @@ class MemoryProposalRepository implements ProposalRepository {
       result: "merged",
       conflicts: resolvedConflicts,
       acceptedTargetKeys,
+      keptCurrentTargetKeys,
       mergeSnapshotId,
       candidateSupplements: input.candidateSupplements,
       at
     });
     for (const change of stored.proposal.diffManifest.changes) {
+      if (keptCurrentTargetKeys.includes(this.targetKey(change))) {
+        continue;
+      }
       this.acceptedByTargetKey.set(this.targetKey(change), {
         proposalId: stored.proposal.id,
         changeId: change.id,
@@ -1480,6 +1497,23 @@ test("proposal service blocks merge when the same target was already accepted wi
   assert.equal(conflicts.empty_state, undefined);
   assert.equal(conflict?.proposal_id, second.id);
   assert.equal(conflict?.recommended_option_id, "keep_current");
+  assert.deepEqual(
+    conflict?.options.find((option) => option.id === "keep_current")?.action?.request_json,
+    {
+      conflict_resolution: {
+        accept_incoming_target_keys: [],
+        bulk_action: {
+          action: "keep_current",
+          target_keys: [conflict?.target_key],
+          conflict_count: 1
+        }
+      }
+    }
+  );
+  assert.equal(
+    conflict?.options.find((option) => option.id === "keep_current")?.action?.href,
+    `/api/proposals/${second.id}/merge`
+  );
   assert.equal(conflict?.options.some((option) => option.id === "accept_incoming"), true);
   assert.deepEqual(
     conflict?.options.find((option) => option.id === "accept_incoming")?.action?.request_json,
@@ -1514,6 +1548,87 @@ test("proposal service blocks merge when the same target was already accepted wi
   assert.equal(resolvedCandidates.length, 1);
   assert.equal(resolvedCandidates[0]?.chosenOptionKey, "accept_incoming");
   assert.equal(resolvedCandidates[0]?.chosenByUserId, userId);
+});
+
+test("proposal service keep-current conflict action merges without overwriting the accepted deliverable", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const firstManifest = manifest(3);
+  const secondManifest = manifest(3);
+  const thirdManifest = manifest(3);
+  const secondChange = secondManifest.changes[0];
+  const thirdChange = thirdManifest.changes[0];
+  if (!secondChange || !thirdChange) {
+    throw new Error("missing fixture change");
+  }
+  secondManifest.changes = [{
+    ...secondChange,
+    id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    target_ref: { ...secondChange.target_ref, sha256_after: "b".repeat(64) },
+    human_summary: "生成了另一张同路径图片。"
+  }];
+  thirdManifest.changes = [{
+    ...thirdChange,
+    id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    target_ref: { ...thirdChange.target_ref, sha256_after: "c".repeat(64) },
+    human_summary: "生成了第三张同路径图片。"
+  }];
+
+  const first = await service.createFromManifest({
+    workItemId: firstManifest.work_item_id,
+    manifest: firstManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: first.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+  await service.merge({ proposalId: first.id, actor: { actor_kind: "human", actor_user_id: userId } });
+
+  const second = await service.createFromManifest({
+    workItemId: secondManifest.work_item_id,
+    manifest: secondManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: second.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+  await assert.rejects(
+    () => service.merge({ proposalId: second.id, actor: { actor_kind: "human", actor_user_id: userId } }),
+    /撞车/
+  );
+  const conflict = (await service.listConflicts(firstManifest.work_item_id)).conflicts[0];
+  assert.ok(conflict);
+
+  const merged = await service.merge({
+    proposalId: second.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    conflictResolution: {
+      acceptIncomingTargetKeys: [],
+      bulkAction: {
+        action: "keep_current",
+        targetKeys: [conflict.target_key],
+        conflictCount: 1
+      }
+    }
+  });
+
+  assert.equal(merged.status, "merged");
+  const keepAttempts = repository.mergeAttempts.filter((attempt) => attempt.proposalId === second.id);
+  assert.equal(keepAttempts.at(-1)?.result, "merged");
+  assert.deepEqual(keepAttempts.at(-1)?.acceptedTargetKeys, []);
+  const keepCandidates = repository.mergeProposals.filter((proposal) => proposal.mergeAttemptId === keepAttempts.at(-1)?.id);
+  assert.equal(keepCandidates[0]?.chosenOptionKey, "keep_current");
+  assert.equal(keepCandidates[0]?.chosenByUserId, userId);
+
+  const third = await service.createFromManifest({
+    workItemId: thirdManifest.work_item_id,
+    manifest: thirdManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({ proposalId: third.id, actor: { actor_kind: "human", actor_user_id: userId }, decision: "approve" });
+  await assert.rejects(
+    () => service.merge({ proposalId: third.id, actor: { actor_kind: "human", actor_user_id: userId } }),
+    /撞车/
+  );
+  const thirdConflict = repository.mergeAttempts.find((attempt) => attempt.proposalId === third.id && attempt.result === "conflict")
+    ?.conflictsJson[0] as { existing_proposal_id?: string } | undefined;
+  assert.equal(thirdConflict?.existing_proposal_id, first.id);
 });
 
 test("proposal service persists AI fusion candidates when the mediator supplies one", async () => {
@@ -3233,8 +3348,15 @@ test("findings[#168] a throwing bus does not fail the merge (best-effort publish
   const proposals = createInMemoryProposalService({ now: () => now, id: ids() });
   const workItems = allowingWorkItems();
   const throwingBus = { publish: async () => { throw new Error("bus down"); } };
+  const warnings: unknown[][] = [];
   const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api/proposals", createProposalRoutes({ auth, proposals, workItems, bus: throwingBus }));
+  app.route("/api/proposals", createProposalRoutes({
+    auth,
+    proposals,
+    workItems,
+    bus: throwingBus,
+    logger: { warn: (...args: unknown[]) => warnings.push(args) }
+  }));
   const created = await proposals.createFromManifest({
     workItemId: manifest(3).work_item_id,
     manifest: manifest(3),
@@ -3248,6 +3370,14 @@ test("findings[#168] a throwing bus does not fail the merge (best-effort publish
     method: "POST", headers, body: JSON.stringify({})
   });
   assert.equal(merge.status, 200);
+  assert.equal(warnings.some((entry) => entry[0] === "WorkHub proposal event publish failed"), true);
+  assert.equal(
+    warnings.some((entry) => {
+      const detail = entry[1] as { topic?: string; type?: string; error?: string } | undefined;
+      return detail?.type === "proposal.merged" && detail.error === "bus down";
+    }),
+    true
+  );
 });
 
 test("proposal routes expose conflict cards, choose AI candidates, and apply an AI fusion artifact", async (t) => {

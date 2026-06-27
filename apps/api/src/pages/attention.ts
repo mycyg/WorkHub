@@ -31,6 +31,7 @@ function toBackgroundRun(
 
 export function buildAttentionHomePage(input: {
   queue?: AttentionHomeVM["queue"];
+  sourceWarnings?: AttentionHomeVM["source_warnings"];
   backgroundRuns?: AgentRunQueueRecord[];
   locale?: WorkHubLocale;
   worklog?: AttentionHomeVM["worklog"];
@@ -46,6 +47,7 @@ export function buildAttentionHomePage(input: {
   return parseOutputContract(attentionHomeVmSchema, {
     primary: queue[0],
     queue,
+    source_warnings: input.sourceWarnings ?? [],
     background_runs,
     cuu_state: queue[0]?.cuu_state ?? (background_runs.length > 0 ? "thinking" : "idle"),
     ...(input.worklog ? { worklog: input.worklog } : {})

@@ -459,7 +459,8 @@ async function navigate(cdp: CdpClient, url: string, expectedStatus: string) {
     cdp,
     `${url} -> ${expectedStatus}`,
     routeStatusDebugExpression(),
-    (value) => value.status === expectedStatus || value.status === "error"
+    (value) => value.status === expectedStatus || value.status === "error",
+    30_000
   );
   if (route.status !== expectedStatus) {
     throw new Error(`${url} expected route status ${expectedStatus}, got ${route.status}: ${JSON.stringify(route)}`);
@@ -753,6 +754,9 @@ async function runScenario(cdp: CdpClient, baseUrl: string, seed: R4WebLiveApiPg
   await navigate(cdp, `${baseUrl}/dashboard/cost`, "ready");
   steps.push(await captureStep(cdp, { id: "09-cost-desktop-real-api", url: `${baseUrl}/dashboard/cost`, viewport: desktop, expectedStatus: "ready" }));
 
+  await navigate(cdp, `${baseUrl}/dashboard/skills`, "ready");
+  steps.push(await captureStep(cdp, { id: "09a-skills-desktop-real-api", url: `${baseUrl}/dashboard/skills`, viewport: desktop, expectedStatus: "ready" }));
+
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/settings`, "ready");
   steps.push(await captureStep(cdp, { id: "10-settings-mobile-route-fallback", url: `${baseUrl}/settings`, viewport: mobile, expectedStatus: "ready" }));
@@ -786,7 +790,9 @@ function requestProof(requests: ApiRequestRecord[], seed: R4WebLiveApiPgSeedResu
     proposal: has(`/api/pages/proposals/${ids.proposalId}`),
     replay: has(`/api/agent-runs/${ids.runId}/replay`),
     cost: has("/api/pages/cost"),
-    settingsGoldPath: count("/api/pages/gold-path") >= 1,
+    skills: has("/api/pages/skills"),
+    settings: has("/api/pages/settings"),
+    noGoldPathFallback: count("/api/pages/gold-path") === 0,
     missingProposalEmpty: has(`/api/pages/proposals/${ids.missingProposalId}`),
     forbiddenWorkItem: has(`/api/pages/workitems/${ids.forbiddenWorkItemId}`),
     streamMe: has("/api/push/stream/me"),
@@ -802,6 +808,8 @@ function requestProof(requests: ApiRequestRecord[], seed: R4WebLiveApiPgSeedResu
       proposal: count(`/api/pages/proposals/${ids.proposalId}`),
       replay: count(`/api/agent-runs/${ids.runId}/replay`),
       cost: count("/api/pages/cost"),
+      skills: count("/api/pages/skills"),
+      settings: count("/api/pages/settings"),
       streamMe: count("/api/push/stream/me"),
       streamWorkItem: count(`/api/push/stream/workitem/${ids.workItemId}`),
       streamRun: count(`/api/push/stream/run/${ids.runId}`),
@@ -822,6 +830,7 @@ function validateProductionMemoryBrokerFails() {
       API_HOST: "127.0.0.1",
       DATABASE_URL: settings.databaseUrl,
       COOKIE_SECRET: "r4-redis-sse-production-cookie-secret",
+      ADMIN_CLAIM_SECRET: "r4-redis-sse-production-admin-secret",
       COOKIE_SECURE: "true",
       CORS_ALLOW_ORIGINS: "https://workhub.local",
       WORKER_COUNT: "2",
@@ -897,14 +906,17 @@ async function collectTopicAuthProof(baseUrl: string, seed: R4WebLiveApiPgSeedRe
   const ownerCookie = await identifyCookie(baseUrl, "P0.5 Reviewer");
   const strangerCookie = await identifyCookie(baseUrl, "R4.7 Forbidden Reviewer");
   const ownerWorkItem = await streamStatus(baseUrl, `/api/push/stream/workitem/${seed.ids.workItemId}`, ownerCookie);
-  const strangerWorkItem = await streamStatus(baseUrl, `/api/push/stream/workitem/${seed.ids.workItemId}`, strangerCookie);
+  const ownerRun = await streamStatus(baseUrl, `/api/push/stream/run/${seed.ids.runId}`, ownerCookie);
+  const strangerRun = await streamStatus(baseUrl, `/api/push/stream/run/${seed.ids.runId}`, strangerCookie);
   const ownerAll = await streamStatus(baseUrl, "/api/push/stream", ownerCookie);
   return {
     ownerWorkItem,
-    strangerWorkItem,
+    ownerRun,
+    strangerRun,
     ownerAll,
     owner_workitem_200: ownerWorkItem.status === 200 && ownerWorkItem.content_type.includes("text/event-stream"),
-    stranger_workitem_403: strangerWorkItem.status === 403,
+    owner_run_200: ownerRun.status === 200 && ownerRun.content_type.includes("text/event-stream"),
+    stranger_run_403: strangerRun.status === 403,
     non_admin_all_403: ownerAll.status === 403
   };
 }
@@ -1164,7 +1176,7 @@ async function main() {
       vite_dev_server_started: Boolean(viteServer.httpServer?.listening),
       screenshots_captured: steps.every((step) => existsSync(path.join(outputDir, step.screenshot))) && existsSync(path.join(outputDir, "contact-sheet.png")),
       route_coverage_ready_empty_forbidden_error: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
-      required_routes_ready: ["/", "/approvals", `/workitems/${seed.ids.workItemId}`, `/proposals/${seed.ids.proposalId}`, `/agent-runs/${seed.ids.runId}/replay`, "/dashboard/cost", "/settings"]
+      required_routes_ready: ["/", "/approvals", `/workitems/${seed.ids.workItemId}`, `/proposals/${seed.ids.proposalId}`, `/agent-runs/${seed.ids.runId}/replay`, "/dashboard/cost", "/dashboard/skills", "/settings"]
         .every((pathname) => steps.some((step) => step.audit.pathname === pathname && step.audit.status === "ready")),
       ready_routes_use_live_api_endpoints:
         proof.authMe &&
@@ -1176,14 +1188,16 @@ async function main() {
         proof.proposal &&
         proof.replay &&
         proof.cost &&
-        proof.settingsGoldPath,
+        proof.skills &&
+        proof.settings &&
+        proof.noGoldPathFallback,
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-real-api" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US") && proof.localePatch,
       path_nav_clicks: steps.some((step) => step.id === "02-approvals-click-zh-desktop-real-api" && step.audit.pathname === "/approvals") &&
         steps.some((step) => step.id === "03-workitem-click-zh-desktop-real-api" && step.audit.pathname === `/workitems/${seed.ids.workItemId}`),
       history_back_forward: steps.some((step) => step.id === "04-history-back-approvals-real-api" && step.audit.pathname === "/approvals") &&
         steps.some((step) => step.id === "05-history-forward-workitem-real-api" && step.audit.pathname === `/workitems/${seed.ids.workItemId}`),
       empty_and_forbidden_from_real_api: proof.missingProposalEmpty && proof.forbiddenWorkItem,
-      topic_auth_owner_200_stranger_403: Boolean(topicAuthProof?.owner_workitem_200 && topicAuthProof.stranger_workitem_403 && topicAuthProof.non_admin_all_403),
+      topic_auth_owner_200_stranger_403: Boolean(topicAuthProof?.owner_workitem_200 && topicAuthProof.owner_run_200 && topicAuthProof.stranger_run_403 && topicAuthProof.non_admin_all_403),
       browser_connected_to_sse: proof.streamMe && proof.streamRun && proof.streamWorkItem,
       cross_worker_permission_event_delivered: Boolean(
         approvalLiveProof &&
@@ -1256,6 +1270,7 @@ async function main() {
         `- seeded work item: ${seed.ids.workItemId}`,
         `- seeded proposal: ${seed.ids.proposalId}`,
         `- seeded run: ${seed.ids.runId}`,
+        `- skills endpoint: ${String(proof.skills)}`,
         `- cross worker permission event delivered: ${String(gates.cross_worker_permission_event_delivered)}`,
         `- redis run event reconciled replay: ${String(gates.redis_run_event_reconciled_replay)}`,
         `- locale toggle reload: ${String(gates.locale_toggle_reload)}`,

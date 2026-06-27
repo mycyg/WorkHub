@@ -702,6 +702,22 @@ test("findings: current-user gate fails closed on a present-but-invalid client t
   assert.equal(badToken.status, 403);
 });
 
+test("findings: stream identity fails closed on a present-but-invalid client token (no cookie fallback)", async () => {
+  const alice = user();
+  const runtimeSettings = settings();
+  const authDeps = deps([alice], [], runtimeSettings);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.get("/stream-user", async (c) => c.json(await resolveStreamUser(c, authDeps)));
+  const cookie = await signedCookie(alice.cookieToken, runtimeSettings);
+
+  assert.equal((await app.request("/stream-user", { headers: { Cookie: cookie } })).status, 200);
+
+  const badToken = await app.request("/stream-user", {
+    headers: { Cookie: cookie, [LOCAL_CLIENT_HEADER]: "bad-token" }
+  });
+  assert.equal(badToken.status, 403);
+});
+
 test("admin nickname claim fails closed when admin secret is empty", async () => {
   const admin = user({ nickname: "owner", isAdmin: true });
   const app = withErrors(new Hono<AuthEnv>());

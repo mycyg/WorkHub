@@ -309,8 +309,36 @@ function latestSnapshotId(steps: AgentLoopStep[]) {
 }
 
 function titleFromFinalText(finalText: string) {
-  const title = finalText.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim();
+  const title = publicReasonFromFinalText(finalText);
   return title ? title.slice(0, 80) : "AgentRun 交付物变更草案";
+}
+
+function cleanMarkdownSummaryLine(line: string) {
+  return line
+    .trim()
+    .replace(/^[-*]\s+/u, "")
+    .replace(/^#+\s*/u, "")
+    .replace(/\*\*/gu, "")
+    .trim();
+}
+
+function isModelSelfNarrationLine(line: string) {
+  const compact = line.trim();
+  return /^(?:the deliverable (?:is written|looks complete(?: and well-structured)?)\.?\s*)?(?:let me|now i|i (?:will|have|need|can)|here(?:'s| is)|all done\b|the task is done\b)/iu.test(compact) ||
+    /^(?:完成了?[。.!！\s]*)?(?:让?我来?|接下来我|我(?:会|要|将|可以|已经)).{0,24}(?:总结|说明|整理|输出|回复)/u.test(compact);
+}
+
+function isLowInformationSummaryLine(line: string) {
+  return /^(?:完成了|完成|done|summary|总结|结果)$/iu.test(cleanMarkdownSummaryLine(line));
+}
+
+function publicReasonFromFinalText(finalText: string) {
+  const lines = finalText.split(/\r?\n/u).map((line) => line.trim());
+  const candidates = lines
+    .filter((line) => line && line !== "---" && !isModelSelfNarrationLine(line))
+    .map(cleanMarkdownSummaryLine)
+    .filter((line) => line && !isLowInformationSummaryLine(line));
+  return (candidates[0] ?? "交付物已生成").slice(0, 256);
 }
 
 function truncateForContext(content: string, maxChars: number) {
@@ -1074,7 +1102,7 @@ export class AgentLoop {
 
       const result = terminalResult({
         status: "succeeded",
-        reason: finalText || "AgentRun completed",
+        reason: finalText ? publicReasonFromFinalText(finalText) : "AgentRun completed",
         control: "stop",
         usage,
         steps,

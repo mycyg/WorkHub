@@ -24,7 +24,11 @@ import { createProposalRoutes } from "./routes/proposals.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
 import { createInMemoryProposalService } from "./services/proposals.js";
-import { createInMemoryWorkItemService } from "./services/work-items.js";
+import {
+  createInMemoryWorkItemService,
+  parseClarificationDraftFromLlmText,
+  WorkItemServiceError
+} from "./services/work-items.js";
 import type { AgentRunQueue, AgentRunQueueRecord } from "./workers/agent-runner.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
@@ -233,13 +237,14 @@ test("attention home decision queue is fed by the user's pending approvals", asy
   assert.equal(body.data.primary?.id, fixture.approvalCenter.items[0]?.id);
 });
 
-test("attention home degrades to an empty decision queue when the approvals lookup fails", async () => {
+test("attention home marks the decision queue as partial when the approvals lookup fails", async () => {
   const runtimeSettings = settings();
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
-    approvals: { async listPendingForUser() { throw new Error("db down"); } } as unknown as ApprovalService
+    approvals: { async listPendingForUser() { throw new Error("db down"); } } as unknown as ApprovalService,
+    proposals: { async listReviewableForUser() { return []; } } as never
   }));
 
   const response = await app.request("/api/pages/attention", {
@@ -247,9 +252,11 @@ test("attention home degrades to an empty decision queue when the approvals look
   });
 
   assert.equal(response.status, 200);
-  const body = await response.json() as { data: { queue: unknown[]; primary?: unknown } };
+  const body = await response.json() as { data: { queue: unknown[]; primary?: unknown; source_warnings: { source: string; message: string }[] } };
   assert.equal(body.data.queue.length, 0);
   assert.equal(body.data.primary, undefined);
+  assert.deepEqual(body.data.source_warnings.map((warning) => warning.source), ["approvals"]);
+  assert.match(body.data.source_warnings[0]?.message ?? "", /审批待办/u);
 });
 
 test("settings page carries server locale preference sync state without secrets", async () => {
@@ -385,26 +392,39 @@ test("production routes use real services and do not serve the P0.5 fixture rout
     body: JSON.stringify({ intent_text: "帮我整理客户周报模板。" })
   });
   assert.equal(session.status, 200);
-  const sessionBody = await session.json() as { data: { session_id: string; work_item_id: string } };
+  const sessionBody = await session.json() as {
+    data: {
+      session_id: string;
+      work_item_id: string;
+      question: { input_mode: string; title: string; body?: string; options: { id: string }[] };
+    };
+  };
+  assert.equal(sessionBody.data.question.input_mode, "long_text");
+  assert.match(sessionBody.data.question.title, /确认|澄清/u);
+  assert.match(`${sessionBody.data.question.title} ${sessionBody.data.question.body ?? ""}`, /客户周报模板/u);
+  assert.doesNotMatch(`${sessionBody.data.question.title} ${sessionBody.data.question.body ?? ""}`, /需要先确认一个关键点|交付方式|文档\/方案|结构化数据|小型代码/u);
+  assert.deepEqual(sessionBody.data.question.options.map((option) => option.id), []);
   const question = await app.request(`/api/sessions/${sessionBody.data.session_id}/next-question`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ selected_option_ids: ["document-draft"] })
+    body: JSON.stringify({ free_text: "按项目已有资料整理成可审阅的周报模板。" })
   });
   const createdWorkItem = await app.request("/api/workitems", {
     method: "POST",
     headers,
     body: JSON.stringify({
       session_id: sessionBody.data.session_id,
-      selected_option_ids: ["document-draft"]
+      free_text: "最终验收补充：输出必须给产品经理和交付负责人看。"
     })
   });
   assert.equal(question.status, 200);
   assert.equal(createdWorkItem.status, 201);
   const createdWorkItemBody = await createdWorkItem.json() as {
-    data: { workitem: { id: string; status: string } };
+    data: { workitem: { id: string; status: string; planning_note?: string } };
   };
   assert.equal(createdWorkItemBody.data.workitem.status, "spec_ready");
+  assert.match(createdWorkItemBody.data.workitem.planning_note ?? "", /周报模板/u);
+  assert.match(createdWorkItemBody.data.workitem.planning_note ?? "", /产品经理和交付负责人/u);
   const realWorkItemId = createdWorkItemBody.data.workitem.id;
   const evidence = await app.request("/api/knowledge/search", {
     method: "POST",
@@ -447,6 +467,144 @@ test("production routes use real services and do not serve the P0.5 fixture rout
   assert.equal(proposalMerge.status, 404);
 });
 
+test("session clarification question is generated from the request and project files", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const auth = authDeps(runtimeSettings);
+  const workItems = createInMemoryWorkItemService({
+    now: () => now,
+    async projectFileContext() {
+      return [{
+        name: "workhub-app-upload.txt",
+        path: "验收材料/workhub-app-upload.txt",
+        preview: "客户周报模板需要覆盖风险、进展和下周动作。"
+      }];
+    },
+    async clarificationGenerator(input) {
+      return {
+        title: "需要确认 workhub-app-upload.txt 里的哪一段作为最终验收口径？",
+        body: `需求：${input.workItem.rawDescription}\n文件：${input.files[0]?.path}`,
+        placeholder: "请补充最终验收口径。"
+      };
+    }
+  });
+  app.route("/api", createSessionRoutes({ auth, workItems }));
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const session = await app.request("/api/sessions", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ intent_text: "请读取项目网盘文件并整理验收要点。" })
+  });
+
+  assert.equal(session.status, 200);
+  const body = await session.json() as {
+    data: { question: { input_mode: string; title: string; body?: string; options: { id: string }[] } };
+  };
+  assert.equal(body.data.question.input_mode, "long_text");
+  assert.match(body.data.question.title, /workhub-app-upload\.txt/u);
+  assert.match(body.data.question.body ?? "", /项目网盘文件/u);
+  assert.match(body.data.question.body ?? "", /验收材料\/workhub-app-upload\.txt/u);
+  assert.deepEqual(body.data.question.options.map((option) => option.id), []);
+});
+
+test("AI clarification parser accepts question/context JSON from real providers", () => {
+  const body = Array.from({ length: 60 }, () => "请围绕验收材料/workhub-app-upload.txt 的风险、进展和下周动作生成验收口径。").join("");
+  const placeholder = Array.from({ length: 20 }, () => "例如：只使用 workhub-app-upload.txt，并面向验收同学输出。").join("");
+
+  const draft = parseClarificationDraftFromLlmText(JSON.stringify({
+    question: "请确认是否只使用验收材料/workhub-app-upload.txt 作为三条验收要点的唯一来源？",
+    context: body,
+    placeholder
+  }), "zh-CN");
+
+  assert.equal(draft.title, "请确认是否只使用验收材料/workhub-app-upload.txt 作为三条验收要点的唯一来源？");
+  assert.match(draft.body ?? "", /workhub-app-upload\.txt/u);
+  assert.ok((draft.body ?? "").length <= 900);
+  assert.ok((draft.placeholder ?? "").length <= 180);
+});
+
+test("AI clarification parser extracts fenced JSON without requiring exact title/body fields", () => {
+  const draft = parseClarificationDraftFromLlmText([
+    "```json",
+    JSON.stringify({
+      clarification_question: "workhub-app-upload.txt 里未写明验收对象，请确认这三条要点给谁使用？",
+      context: "用户要求输出给验收同学，项目文件名是 workhub-app-upload.txt。"
+    }),
+    "```"
+  ].join("\n"), "zh-CN");
+
+  assert.match(draft.title, /workhub-app-upload\.txt/u);
+  assert.match(draft.body ?? "", /验收同学/u);
+});
+
+test("AI clarification rejects generic preset-template follow-up questions", async () => {
+  const workItems = createInMemoryWorkItemService({
+    now: () => now,
+    async projectFileContext() {
+      return [{
+        name: "workhub-app-upload.txt",
+        path: "验收材料/workhub-app-upload.txt",
+        preview: "WorkHub desktop app upload smoke"
+      }];
+    },
+    async clarificationGenerator() {
+      return {
+        title: "这件事先按哪种交付方式处理？",
+        body: "可以选择文档/方案草稿、结构化数据或小型代码/模板。",
+        placeholder: "请选择一个方向。"
+      };
+    }
+  });
+
+  await assert.rejects(
+    () => workItems.createSession({
+      actor: {
+        kind: "human",
+        id: userId,
+        label: "gold-path-user",
+        userId,
+        isAdmin: false,
+        orgId: "00000000-0000-4000-8000-000000000001",
+        workspaceId: "00000000-0000-4000-8000-000000000002"
+      },
+      locale: "zh-CN",
+      payload: {
+        intent_text: "请读取项目网盘 workhub-app-upload.txt 并生成验收要点。"
+      }
+    }),
+    (error) => error instanceof WorkItemServiceError && error.code === "clarification_llm_templated_response"
+  );
+});
+
+test("AI clarification fails clearly when project files cannot be read", async () => {
+  const workItems = createInMemoryWorkItemService({
+    now: () => now,
+    async projectFileContext() {
+      throw new Error("drive context unavailable");
+    }
+  });
+
+  await assert.rejects(
+    () => workItems.createSession({
+      actor: {
+        kind: "human",
+        id: userId,
+        label: "gold-path-user",
+        userId,
+        isAdmin: false,
+        orgId: "00000000-0000-4000-8000-000000000001",
+        workspaceId: "00000000-0000-4000-8000-000000000002"
+      },
+      locale: "zh-CN",
+      payload: {
+        intent_text: "请读取项目网盘 workhub-app-upload.txt 并生成验收要点。"
+      }
+    }),
+    (error) => error instanceof WorkItemServiceError && error.code === "clarification_file_context_failed"
+  );
+});
+
 test("M10: confirm-step '调整范围' navigates back to the scope question instead of dead-ending", async () => {
   const runtimeSettings = settings();
   const app = withErrors(new Hono<AuthEnv>());
@@ -461,14 +619,19 @@ test("M10: confirm-step '调整范围' navigates back to the scope question inst
     body: JSON.stringify({ intent_text: "帮我整理客户周报模板。" })
   });
   assert.equal(session.status, 200);
-  const sessionBody = (await session.json()) as { data: { session_id: string } };
+  const sessionBody = (await session.json()) as {
+    data: { session_id: string; question: { input_mode: string; options: { id: string }[] } };
+  };
   const sessionId = sessionBody.data.session_id;
 
-  // Answer the scope question → advances to the confirm step.
+  assert.equal(sessionBody.data.question.input_mode, "long_text");
+  assert.deepEqual(sessionBody.data.question.options.map((option) => option.id), []);
+
+  // Answer the AI clarification question → advances to the confirm step.
   const toConfirm = await app.request(`/api/sessions/${sessionId}/next-question`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ selected_option_ids: ["document-draft"] })
+    body: JSON.stringify({ free_text: "请优先依据项目文档里的口径。" })
   });
   assert.equal(toConfirm.status, 200);
   const confirmBody = (await toConfirm.json()) as { data: { question: { input_mode: string } } };
@@ -485,8 +648,8 @@ test("M10: confirm-step '调整范围' navigates back to the scope question inst
   const backBody = (await back.json()) as {
     data: { question: { input_mode: string; options: { id: string }[] } };
   };
-  assert.equal(backBody.data.question.input_mode, "single_choice");
+  assert.equal(backBody.data.question.input_mode, "long_text");
   const optionIds = backBody.data.question.options.map((option) => option.id);
-  assert.equal(optionIds.includes("document-draft"), true);
   assert.equal(optionIds.includes("adjust-scope"), false);
+  assert.deepEqual(optionIds, []);
 });

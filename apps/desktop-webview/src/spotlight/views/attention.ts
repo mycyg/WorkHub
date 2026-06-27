@@ -1,10 +1,13 @@
 // WorkHub 桌面 · Spotlight「审批/待拍板」能力内联视图（S1 证明片）。
-// 苹果聚焦盒里直接拉 client.pages.attention 的 queue，渲成统一玻璃决策卡，approve/deny/看改动·合并
+// 苹果聚焦盒里直接拉 client.pages.attention 的 queue，渲成统一玻璃决策卡，approve/deny/看改动·合入
 // 全部内联打真 API（复用 web-runtime 的 href 分类器 + client 方法），处置后回拉 queue、盒子随内容缩放。
 // 这一片证明是「真·内联重构」而非换入口：没有 hash、没有全屏壳、动作就地落库。
 
 import type { AttentionHomeVM, AttentionItem } from "@workhub/contracts";
 import {
+  actionElementApplyPayload,
+  actionElementMergePayload,
+  actionHrefFromElement,
   approvalRespondIdFromHref,
   escapeHtml,
   proposalActionFromHref,
@@ -12,6 +15,13 @@ import {
 } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
+import {
+  classifyProposalConflictActionHref,
+  proposalListDisplayTitle,
+  proposalMergeConflictHtml,
+  reviewProposalWithoutMerge,
+  type ProposalReviewOnlyClient
+} from "./proposals.js";
 
 // 决策卡的动作 href 分两类:导航型(看改动「查看变更」GET /proposals/:id、工作项 /workitems/:id —— 该内联打开对应能力)
 // 与提交型(POST /api/... —— 走 runAction 落库)。导航型若被当提交处理,会落到 runAction 末尾的「请到对应能力处理」
@@ -94,17 +104,22 @@ function renderCard(item: AttentionItem, zh: boolean): string {
   const tone = toneForKind(item.kind);
   const desc = item.reason_text ?? item.summary_text ?? "";
   const actions = item.actions.filter((a) => !isUnsupportedDesktopAction(a.href));
+  const title = attentionCardDisplayTitle(item, zh);
   return `<article class="wh-spot-card ds-glass" data-att-id="${escapeHtml(item.id)}" data-att-tone="${tone}">
     <span class="wh-spot-card-bar wh-spot-card-bar--${tone}"></span>
     <div class="wh-spot-card-main">
       <div class="wh-spot-card-head">
         <span class="wh-spot-chip wh-spot-chip--${tone}">${escapeHtml(tagLabel(tone, zh))}</span>
       </div>
-      <h3 class="wh-spot-card-title">${escapeHtml(item.title)}</h3>
+      <h3 class="wh-spot-card-title">${escapeHtml(title)}</h3>
       ${desc ? `<p class="wh-spot-card-desc">${escapeHtml(desc)}</p>` : ""}
       <div class="wh-spot-card-actions" data-att-actionrow>${actions.map(renderAction).join("")}</div>
     </div>
   </article>`;
+}
+
+export function attentionCardDisplayTitle(item: Pick<AttentionItem, "kind" | "title">, zh: boolean) {
+  return item.kind === "proposal_review" ? proposalListDisplayTitle(item.title, zh) : item.title;
 }
 
 function renderQueue(vm: AttentionHomeVM, zh: boolean): string {
@@ -147,6 +162,14 @@ function summaryText(result: unknown): string | undefined {
   return undefined;
 }
 
+export function reviewAttentionProposalWithoutMerge(client: ProposalReviewOnlyClient, proposalId: string) {
+  return reviewProposalWithoutMerge(client, proposalId);
+}
+
+export function attentionConflictHtmlFromError(error: unknown, zh: boolean) {
+  return proposalMergeConflictHtml(error, zh);
+}
+
 export function createAttentionView(): SpotlightCapabilityView {
   return {
     id: "approvals",
@@ -184,7 +207,58 @@ export function createAttentionView(): SpotlightCapabilityView {
         }
       };
 
-      // 执行一个卡片动作（approve / deny / 看改动通过+合并）。复用 href 分类器 → client 方法。
+      const showConflictPanel = (error: unknown) => {
+        const conflictHtml = attentionConflictHtmlFromError(error, zh);
+        if (!conflictHtml) return false;
+        body.innerHTML = conflictHtml;
+        ctx.toast(zh ? "需要先处理冲突" : "Resolve conflicts first", "info");
+        ctx.requestResize();
+        return true;
+      };
+
+      const runConflictAction = async (target: HTMLElement) => {
+        const href = actionHrefFromElement(target);
+        const action = classifyProposalConflictActionHref(href);
+        if (action.kind === "detail") {
+          ctx.open("proposals", { id: action.proposalId, route: href });
+          return;
+        }
+        if (busy) return;
+        busy = true;
+        try {
+          let result: unknown;
+          if (action.kind === "apply") {
+            const payload = actionElementApplyPayload(target);
+            if (!payload.ok) {
+              ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
+              return;
+            }
+            result = await client.applyMergeProposalCandidate(action.applyId, payload.payload);
+          } else if (action.kind === "merge") {
+            const payload = actionElementMergePayload(target);
+            if (!payload.ok) {
+              ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
+              return;
+            }
+            result = await client.mergeProposal(action.proposalId, payload.payload);
+          }
+          if (!result) {
+            ctx.toast(zh ? "这个冲突动作暂时不可执行" : "This conflict action is not available", "error");
+            return;
+          }
+          ctx.toast(summaryText(result) ?? (zh ? "冲突已处理" : "Conflict resolved"), "ok");
+          ctx.onActionSettled?.();
+          await refresh();
+        } catch (error) {
+          if (!showConflictPanel(error)) {
+            ctx.toast(zh ? "冲突处理失败，稍后重试" : "Conflict action failed. Try again.", "error");
+          }
+        } finally {
+          busy = false;
+        }
+      };
+
+      // 执行一个卡片动作（approve / deny / 看改动合入）。复用 href 分类器 → client 方法。
       const runAction = async (
         href: string,
         actionId: string | undefined,
@@ -216,12 +290,8 @@ export function createAttentionView(): SpotlightCapabilityView {
             ctx.toast(summaryText(res) ?? (zh ? "已打回改改" : "Changes requested"), "ok");
             return true;
           }
-          const review = await client.reviewProposal(proposal.proposalId, { decision: "approve", remember: "once" });
-          const merge = await client.mergeProposal(proposal.proposalId);
-          ctx.toast(
-            `${summaryText(review) ?? (zh ? "已通过" : "Approved")} · ${summaryText(merge) ?? (zh ? "已合并" : "Merged")}`,
-            "ok"
-          );
+          const review = await reviewAttentionProposalWithoutMerge(client, proposal.proposalId);
+          ctx.toast(summaryText(review) ?? (zh ? "已确认通过，下一步可合入交付物" : "Approved. You can merge the deliverable next."), "ok");
           return true;
         }
         if (proposal?.action === "merge") {
@@ -258,10 +328,15 @@ export function createAttentionView(): SpotlightCapabilityView {
         const restore = markBusy(btn, actionId === "deny" ? (zh ? "打回中…" : "Sending back…") : (zh ? "处理中…" : "Working…"));
         try {
           const ok = await runAction(href, actionId, reasonMd);
+          if (ok) {
+            ctx.onActionSettled?.();
+          }
           if (ok && !disposed) await refresh();
-        } catch {
+        } catch (error) {
           if (!disposed) {
-            ctx.toast(zh ? "操作失败（可能有冲突或已处理过），稍后重试" : "Action failed (conflict or already handled) — retry", "error");
+            if (!showConflictPanel(error)) {
+              ctx.toast(zh ? "操作失败（可能有冲突或已处理过），稍后重试" : "Action failed (conflict or already handled) — retry", "error");
+            }
           }
         } finally {
           busy = false;
@@ -277,6 +352,16 @@ export function createAttentionView(): SpotlightCapabilityView {
         // 0) 重试上次失败的加载（rank7）。
         if (target.closest("[data-spot-retry]")) {
           retry?.();
+          return;
+        }
+        if (target.closest("[data-prop-back]")) {
+          void refresh();
+          return;
+        }
+        const conflictAction = target.closest<HTMLElement>("[data-prop-conflict-panel] a[href],[data-prop-conflict-panel] [data-action-href],[data-prop-conflict-panel] [data-href]");
+        if (conflictAction) {
+          event.preventDefault();
+          void runConflictAction(conflictAction);
           return;
         }
         // 1) 选了打回理由 → 以该理由打回（href 从理由层容器取，审批/看改动通用）。

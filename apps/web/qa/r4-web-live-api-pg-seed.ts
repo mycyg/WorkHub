@@ -715,6 +715,9 @@ async function runScenario(cdp: CdpClient, baseUrl: string, seed: R4WebLiveApiPg
   await navigate(cdp, `${baseUrl}/dashboard/cost`, "ready");
   steps.push(await captureStep(cdp, { id: "09-cost-desktop-real-api", url: `${baseUrl}/dashboard/cost`, viewport: desktop, expectedStatus: "ready" }));
 
+  await navigate(cdp, `${baseUrl}/dashboard/skills`, "ready");
+  steps.push(await captureStep(cdp, { id: "09a-skills-desktop-real-api", url: `${baseUrl}/dashboard/skills`, viewport: desktop, expectedStatus: "ready" }));
+
   await setViewport(cdp, mobile);
   await navigate(cdp, `${baseUrl}/settings`, "ready");
   steps.push(await captureStep(cdp, { id: "10-settings-mobile-route-fallback", url: `${baseUrl}/settings`, viewport: mobile, expectedStatus: "ready" }));
@@ -748,7 +751,9 @@ function requestProof(requests: ApiRequestRecord[], seed: R4WebLiveApiPgSeedResu
     proposal: has(`/api/pages/proposals/${ids.proposalId}`),
     replay: has(`/api/agent-runs/${ids.runId}/replay`),
     cost: has("/api/pages/cost"),
-    settingsGoldPath: count("/api/pages/gold-path") >= 1,
+    skills: has("/api/pages/skills"),
+    settings: has("/api/pages/settings"),
+    noGoldPathFallback: count("/api/pages/gold-path") === 0,
     missingProposalEmpty: has(`/api/pages/proposals/${ids.missingProposalId}`),
     forbiddenWorkItem: has(`/api/pages/workitems/${ids.forbiddenWorkItemId}`),
     counts: {
@@ -759,7 +764,10 @@ function requestProof(requests: ApiRequestRecord[], seed: R4WebLiveApiPgSeedResu
       workitem: count(`/api/pages/workitems/${ids.workItemId}`),
       proposal: count(`/api/pages/proposals/${ids.proposalId}`),
       replay: count(`/api/agent-runs/${ids.runId}/replay`),
-      cost: count("/api/pages/cost")
+      cost: count("/api/pages/cost"),
+      skills: count("/api/pages/skills"),
+      settings: count("/api/pages/settings"),
+      goldPath: count("/api/pages/gold-path")
     }
   };
 }
@@ -826,7 +834,7 @@ async function main() {
       vite_dev_server_started: Boolean(viteServer.httpServer?.listening),
       screenshots_captured: steps.every((step) => existsSync(path.join(outputDir, step.screenshot))) && existsSync(path.join(outputDir, "contact-sheet.png")),
       route_coverage_ready_empty_forbidden_error: ["ready", "empty", "forbidden", "error"].every((status) => steps.some((step) => step.audit.status === status)),
-      required_routes_ready: ["/", "/approvals", `/workitems/${seed.ids.workItemId}`, `/proposals/${seed.ids.proposalId}`, `/agent-runs/${seed.ids.runId}/replay`, "/dashboard/cost", "/settings"]
+      required_routes_ready: ["/", "/approvals", `/workitems/${seed.ids.workItemId}`, `/proposals/${seed.ids.proposalId}`, `/agent-runs/${seed.ids.runId}/replay`, "/dashboard/cost", "/dashboard/skills", "/settings"]
         .every((pathname) => steps.some((step) => step.audit.pathname === pathname && step.audit.status === "ready")),
       ready_routes_use_live_api_endpoints:
         proof.authMe &&
@@ -838,7 +846,9 @@ async function main() {
         proof.proposal &&
         proof.replay &&
         proof.cost &&
-        proof.settingsGoldPath,
+        proof.skills &&
+        proof.settings &&
+        proof.noGoldPathFallback,
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-real-api" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US") && proof.localePatch,
       path_nav_clicks: steps.some((step) => step.id === "02-approvals-click-zh-desktop-real-api" && step.audit.pathname === "/approvals") &&
         steps.some((step) => step.id === "03-workitem-click-zh-desktop-real-api" && step.audit.pathname === `/workitems/${seed.ids.workItemId}`),
@@ -883,6 +893,7 @@ async function main() {
         `- seeded work item: ${seed.ids.workItemId}`,
         `- seeded proposal: ${seed.ids.proposalId}`,
         `- seeded run: ${seed.ids.runId}`,
+        `- skills endpoint: ${String(proof.skills)}`,
         `- locale toggle reload: ${String(gates.locale_toggle_reload)}`,
         `- no text box overflow: ${String(gates.no_text_box_overflow)}`,
         ""

@@ -136,6 +136,8 @@ test("revision feedback events keep Cuu in revision-requested handoff mode", () 
   assert.equal(toCuuState(event), "revision_requested");
   assert.equal(attention?.kind, "proposal_review");
   assert.equal(attention?.source_ref.entity_type, "proposal");
+  assert.equal(attention?.actions[0]?.id, "open_proposal");
+  assert.equal(attention?.actions[0]?.href, "/proposals/60000000-0000-4000-8000-000000000001");
 });
 
 test("SSE formatting prefixes every data line and round-trips multiline payloads", () => {
