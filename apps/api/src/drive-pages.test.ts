@@ -3147,6 +3147,64 @@ test("drive upload route checks manage permission before materializing multipart
   }
 });
 
+test("drive upload route removes materialized bytes when dependency lookup fails before service ownership", async () => {
+  const dataDir = await mkdtemp(path.join(tmpdir(), "workhub-drive-upload-route-cleanup-"));
+  try {
+    const runtimeSettings = loadSettings({
+      APP_ENV: "test",
+      COOKIE_SECRET: "test-cookie-secret",
+      DATA_DIR: dataDir
+    });
+    const drivePages = {
+      async page() {
+        return minimalDrivePage();
+      },
+      async file() {
+        return unusedDriveFile();
+      },
+      get uploadFile() {
+        throw new DrivePageServiceError(409, "上传服务暂时不可用。", "drive_upload_unavailable");
+      },
+      async deleteItem() {
+        throw new Error("not needed");
+      },
+      async restoreItem() {
+        throw new Error("not needed");
+      },
+      async commentToDraft() {
+        throw new Error("not needed");
+      },
+      async draftToProposal() {
+        throw new Error("not needed");
+      }
+    } as unknown as DrivePageService;
+    const app = withErrors(new Hono<AuthEnv>());
+    app.route("/api/drive", createDriveRoutes({
+      auth: authDeps(runtimeSettings),
+      drivePages,
+      settings: runtimeSettings
+    }));
+    const form = new FormData();
+    form.set("file", new Blob(["route-owned content"], { type: "text/plain" }), "route-owned.txt");
+
+    const response = await app.request(`/api/drive/projects/${projectId}/files`, {
+      method: "POST",
+      headers: { Cookie: await cookie(runtimeSettings) },
+      body: form
+    });
+
+    assert.equal(response.status, 409);
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(body.error.code, "drive_upload_unavailable");
+    const projectUploadRoot = path.join(dataDir, "project-drive", "uploads", projectId);
+    const uploadDirs = await readDirectoryNames(projectUploadRoot);
+    assert.equal(uploadDirs.length, 1);
+    assert.deepEqual(await readDirectoryNames(path.join(projectUploadRoot, uploadDirs[0]!)), []);
+  } finally {
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("drive page service removes materialized bytes when the repository rejects before commit", async () => {
   const dataDir = await mkdtemp(path.join(tmpdir(), "workhub-drive-upload-cleanup-"));
   try {
