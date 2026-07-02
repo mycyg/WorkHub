@@ -117,9 +117,15 @@ fn macos_main_window_receives_pointer_events_with_a_native_one_alpha_hit_surface
     let raw = fs::read_to_string(&main_rs_path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", main_rs_path.display()));
 
+    // 旧断言只查全局存在 Color(0, 0, 0, 1)，这会允许 Windows/Linux 也套用一像素黑底；
+    // 3-5 的目标是只在 macOS 透明主窗上补 native hit surface，避免其他平台主窗变纯黑。
     assert!(
-        raw.contains("Color(0, 0, 0, 1)"),
-        "macOS transparent windows need a native one-alpha hit surface; CSS zero-alpha centers still click through"
+        raw.contains("#[cfg(target_os = \"macos\")]\nfn configure_main_window_hit_surface"),
+        "macOS transparent windows need a gated native one-alpha hit surface; CSS zero-alpha centers still click through"
+    );
+    assert!(
+        raw.contains("#[cfg(not(target_os = \"macos\"))]\nfn configure_main_window_hit_surface"),
+        "non-macOS main windows must not receive the one-alpha black hit surface"
     );
     assert!(
         raw.contains(".set_ignore_cursor_events(false)"),
@@ -193,17 +199,55 @@ fn default_capability_is_local_and_window_scoped() {
 
     assert_eq!(capability["identifier"], "default");
     assert_eq!(windows, HashSet::from(["main", "pet"]));
+    // 旧断言把 allow-start-resize-dragging 视为默认权限；3-1 已删除可见 resize 控件，
+    // 继续授予无人调用的 capability 只会扩大桌面运行时权限面。
     assert_eq!(
         permissions,
-        HashSet::from([
-            "core:default",
-            "core:window:allow-start-dragging",
-            "core:window:allow-start-resize-dragging"
-        ])
+        HashSet::from(["core:default", "core:window:allow-start-dragging"])
     );
     assert!(permissions.iter().all(|permission| {
         !permission.starts_with("fs:")
             && !permission.starts_with("shell:")
             && !permission.starts_with("process:")
     }));
+}
+
+#[test]
+fn main_window_control_logs_chrome_configuration_failures_without_blocking_navigation() {
+    let main_rs_path = manifest_dir().join("src/main.rs");
+    let raw = fs::read_to_string(&main_rs_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", main_rs_path.display()));
+
+    assert!(
+        !raw.contains("configure_main_window_chrome(&window)?"),
+        "tray/deep-link navigation must continue when chrome configuration is unavailable"
+    );
+    assert!(
+        raw.contains("if let Err(error) = configure_main_window_chrome(&window)"),
+        "main chrome configuration failures should be handled locally"
+    );
+    assert!(
+        raw.contains("failed to configure main window chrome; continuing window control"),
+        "the fallback must leave a diagnostic for real-device follow-up"
+    );
+    assert!(
+        raw.contains("app.emit(\"navigate\", route.clone())"),
+        "route navigation still needs to run after a chrome fallback"
+    );
+}
+
+#[test]
+fn unused_main_resize_drag_runtime_entry_is_retired() {
+    let main_rs_path = manifest_dir().join("src/main.rs");
+    let raw = fs::read_to_string(&main_rs_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", main_rs_path.display()));
+
+    assert!(
+        !raw.contains("start_main_window_resize_drag"),
+        "3-1 removed the Spotlight resize handles, so the unused resize command should not stay registered"
+    );
+    assert!(
+        !raw.contains("start_resize_dragging"),
+        "no remaining Rust path should require the retired start-resize-dragging permission"
+    );
 }

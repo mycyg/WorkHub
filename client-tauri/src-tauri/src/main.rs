@@ -42,7 +42,6 @@ use tauri::{
     Emitter, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager,
     PhysicalPosition as TauriPhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
 };
-use tauri_runtime::ResizeDirection;
 use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg(target_os = "macos")]
@@ -525,15 +524,6 @@ fn set_spotlight_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<
     Ok(())
 }
 
-fn main_window_resize_direction_from_label(direction: &str) -> Option<ResizeDirection> {
-    match direction {
-        "east" => Some(ResizeDirection::East),
-        "south" => Some(ResizeDirection::South),
-        "south-east" => Some(ResizeDirection::SouthEast),
-        _ => None,
-    }
-}
-
 #[tauri::command]
 fn start_main_window_drag(window: tauri::Window) -> Result<(), String> {
     if window.label() != "main" {
@@ -569,21 +559,6 @@ fn move_main_window_by(app: tauri::AppHandle, delta_x: f64, delta_y: f64) -> Res
             position.y + delta_y,
         ))
         .map_err(|error| format!("failed to move main window: {error}"))
-}
-
-#[tauri::command]
-fn start_main_window_resize_drag(
-    window: tauri::Window,
-    direction: String,
-) -> Result<(), String> {
-    if window.label() != "main" {
-        return Err("main window resize can only be started from the main window".to_string());
-    }
-    let direction = main_window_resize_direction_from_label(&direction)
-        .ok_or_else(|| format!("unknown main window resize direction: {direction}"))?;
-    window
-        .start_resize_dragging(direction)
-        .map_err(|error| format!("failed to start main window resize dragging: {error}"))
 }
 
 // 若窗口底边超出当前显示器工作区，则上移使其落回区内（不小于工作区顶）。失败不致命。
@@ -818,7 +793,9 @@ fn execute_window_control(
     }
 
     if plan.label == "main" {
-        configure_main_window_chrome(&window)?;
+        if let Err(error) = configure_main_window_chrome(&window) {
+            eprintln!("failed to configure main window chrome; continuing window control: {error}");
+        }
         if let Some(route) = &plan.route {
             app.emit("navigate", route.clone())
                 .map_err(|error| format!("failed to emit main window navigation: {error}"))?;
@@ -1040,13 +1017,23 @@ fn keep_pet_window_above_desktop(window: &tauri::WebviewWindow) -> Result<(), St
 }
 
 fn configure_main_window_chrome(window: &tauri::WebviewWindow) -> Result<(), String> {
-    window
-        .set_background_color(Some(Color(0, 0, 0, 1)))
-        .map_err(|error| format!("failed to make main window background transparent: {error}"))?;
+    configure_main_window_hit_surface(window)?;
     window
         .set_ignore_cursor_events(false)
         .map_err(|error| format!("failed to keep main window pointer events enabled: {error}"))?;
     configure_main_window_native_drag(window)
+}
+
+#[cfg(target_os = "macos")]
+fn configure_main_window_hit_surface(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .set_background_color(Some(Color(0, 0, 0, 1)))
+        .map_err(|error| format!("failed to make main window hit surface opaque: {error}"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn configure_main_window_hit_surface(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -1467,7 +1454,6 @@ fn main() {
             set_spotlight_size,
             start_main_window_drag,
             move_main_window_by,
-            start_main_window_resize_drag,
             show_main_window,
             hide_main_window,
             focus_main_route,
@@ -1523,23 +1509,6 @@ mod tests {
         assert_eq!(clamp_spotlight_size(720.0, 52.0), (720.0, 52.0));
         assert_eq!(clamp_spotlight_size(200.0, 20.0), (420.0, 48.0));
         assert_eq!(clamp_spotlight_size(f64::NAN, f64::INFINITY), (720.0, 480.0));
-    }
-
-    #[test]
-    fn main_window_resize_direction_accepts_spotlight_edges_only() {
-        assert_eq!(
-            main_window_resize_direction_from_label("east"),
-            Some(ResizeDirection::East)
-        );
-        assert_eq!(
-            main_window_resize_direction_from_label("south"),
-            Some(ResizeDirection::South)
-        );
-        assert_eq!(
-            main_window_resize_direction_from_label("south-east"),
-            Some(ResizeDirection::SouthEast)
-        );
-        assert_eq!(main_window_resize_direction_from_label("north"), None);
     }
 
     #[test]
