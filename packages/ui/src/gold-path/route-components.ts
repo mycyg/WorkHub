@@ -2132,7 +2132,10 @@ function driveActionLinks(
   if (item.restore_href) {
     links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>`);
   }
-  return links.length ? `<div class="wh-r4-route-actions">${links.join("")}</div>` : "";
+  const accessNotice = item.access_notice
+    ? `<p class="wh-subtle" data-r5-drive-accepted-access-note="true">${escapeHtml(item.access_notice)}</p>`
+    : "";
+  return links.length || accessNotice ? `<div class="wh-r4-route-actions">${links.join("")}${accessNotice}</div>` : "";
 }
 
 function driveItemMutationIdFromHref(href: string) {
@@ -2190,7 +2193,9 @@ function renderDriveRouteComponent(
         <strong data-r8-drive-current-project-name="true">${escapeHtml(vm.project?.name ?? routeT(locale, "drive.kicker"))}</strong>
         ${switcherOptions ? `<select class="wh-pill" data-r8-drive-project-switcher="true" aria-label="${escapeHtml(routeT(locale, "drive.switchProject"))}">${switcherOptions}</select>` : ""}
       </nav>`;
-  const selectedItem = vm.items.find((item) => item.id === vm.selected_item_id) ?? vm.items.find((item) => item.kind === "file") ?? vm.items[0];
+  const selectedActiveItem = vm.items.find((item) => item.id === vm.selected_item_id);
+  const selectedDeletedItem = vm.deleted_items.find((item) => item.id === vm.selected_item_id);
+  const selectedItem = selectedActiveItem ?? (selectedDeletedItem ? undefined : vm.items.find((item) => item.kind === "file") ?? vm.items[0]);
   const deleteTargetId = vm.actions.delete_item ? driveItemMutationIdFromHref(vm.actions.delete_item.href) : undefined;
   const deleteTarget = deleteTargetId ? vm.items.find((item) => item.id === deleteTargetId) : undefined;
   const deletePayload = {
@@ -2291,7 +2296,7 @@ function renderDriveRouteComponent(
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无评论" : "No comments yet")}</p>`;
   const recycleRows = vm.deleted_items.length
-    ? vm.deleted_items.map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}">
+    ? vm.deleted_items.map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}" data-r5-drive-recycle-selected="${escapeHtml(String(item.id === selectedDeletedItem?.id))}">
       <div>
         <strong>${escapeHtml(item.name)}</strong>
         <p>${escapeHtml(item.path)}</p>

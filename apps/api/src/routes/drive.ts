@@ -421,6 +421,7 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
       const data = await drivePages.uploadFile({
         actor: c.var.actor,
         projectId,
+        locale,
         ...(body.parentId !== undefined ? { parentId: body.parentId } : {}),
         filename: body.filename,
         ...(body.mime ? { mime: body.mime } : {}),
@@ -455,6 +456,7 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
       const data = await drivePages.deleteItem({
         actor: c.var.actor,
         projectId,
+        locale,
         itemId,
         ...(body.expected_current_version_id !== undefined ? { expectedCurrentVersionId: body.expected_current_version_id } : {})
       });
@@ -472,6 +474,7 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
     try {
       const data = await drivePages.restoreItem({
         actor: c.var.actor,
+        locale,
         projectId: requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found"),
         itemId: requireUuidParam(c.req.param("itemId"), "文件", "drive_file_not_found")
       });
@@ -489,6 +492,7 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
     try {
       const data = await drivePages.commentToDraft({
         actor: c.var.actor,
+        locale,
         projectId: requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found"),
         commentId: requireUuidParam(c.req.param("commentId"), "评论", "drive_comment_not_found")
       });

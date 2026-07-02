@@ -651,7 +651,9 @@ test("drive page service hides draft, proposal, and accepted-deliverable links w
   assert.equal(page.comments[0]?.proposal_id, undefined);
   assert.equal(page.comments[0]?.proposal_href, undefined);
   assert.equal(page.comments[0]?.proposal_status, undefined);
-  assert.equal(page.accepted_deliverables.length, 0);
+  // 旧断言把不可读交付物整行隐藏；4-4 要求保留占位行，只移除不可用链接。
+  assert.equal(page.accepted_deliverables.length, 1);
+  assert.equal(page.accepted_deliverables[0]?.access_notice, "Restricted: you need access to the backing work item to preview or download this deliverable.");
   assert.equal(page.versions[0]?.download_href, undefined);
   assert.equal(page.versions[0]?.preview_href, undefined);
   assert.equal(page.versions[0]?.restore_href, undefined);
@@ -660,7 +662,7 @@ test("drive page service hides draft, proposal, and accepted-deliverable links w
   assert.equal(page.items[1]?.preview_href, undefined);
 });
 
-test("drive page service hides unreadable accepted deliverable rows without exposing ordinary file downloads", async () => {
+test("drive page service keeps unreadable accepted deliverable placeholders without exposing ordinary file downloads", async () => {
   const pageRows = rows();
   const service = createDrivePageService({
     repo: {
@@ -708,8 +710,13 @@ test("drive page service hides unreadable accepted deliverable rows without expo
 
   const page = await service.page({ actor: actor(), locale: "en-US", projectId });
 
-  assert.equal(page.accepted_deliverables.length, 0);
-  assert.equal(page.summary.accepted_deliverable_count, 0);
+  // 旧断言把不可读交付物整行隐藏，导致用户看到 accepted count 变少且不知道文件为什么没有操作入口。
+  assert.equal(page.accepted_deliverables.length, 1);
+  assert.equal(page.accepted_deliverables[0]?.access_notice, "Restricted: you need access to the backing work item to preview or download this deliverable.");
+  assert.equal(page.accepted_deliverables[0]?.download_href, undefined);
+  assert.equal(page.accepted_deliverables[0]?.preview_href, undefined);
+  assert.equal(page.accepted_deliverables[0]?.restore_href, undefined);
+  assert.equal(page.summary.accepted_deliverable_count, 1);
   assert.equal(page.items[1]?.accepted_deliverable, undefined);
   assert.equal(page.items[1]?.download_href, undefined);
   assert.equal(page.items[1]?.preview_href, undefined);
@@ -1645,7 +1652,7 @@ test("drive page service keeps recycle-bin file current-version metadata intact"
   assert.equal(deletedVersionVm?.current, true);
 });
 
-test("drive page service honors a requested item_id (#5 recent-file deep-link) and rejects a missing target", async () => {
+test("drive page service honors a requested item_id (#5 recent-file deep-link) and falls back when the target is gone", async () => {
   const pageRows = rows();
   let readInput: Parameters<DriveRepository["readPage"]>[0];
   const service = createDrivePageService({
@@ -1670,13 +1677,9 @@ test("drive page service honors a requested item_id (#5 recent-file deep-link) a
   assert.equal(focused.selected_item_id, folderId, "requested item_id is honored");
   assert.equal(readInput?.targetItemId, folderId, "requested item_id is forwarded so the repository can include it beyond the page slice");
 
-  await assert.rejects(
-    () => service.page({ actor: actor(), locale: "zh-CN", projectId, itemId: "91000000-0000-4000-8000-0000000000bb" }),
-    (error) => error instanceof DrivePageServiceError
-      && error.status === 404
-      && error.code === "drive_file_not_found"
-      && error.message === "没有找到这个网盘文件。"
-  );
+  const fallback = await service.page({ actor: actor(), locale: "zh-CN", projectId, itemId: "91000000-0000-4000-8000-0000000000bb" });
+  // 旧断言要求整页 404；这是最近文件/外部深链的体验错误，目标消失时应回到可用网盘页。
+  assert.equal(fallback.selected_item_id, itemId);
 });
 
 test("drive page service honors a requested deleted item_id in the recycle bin", async () => {
