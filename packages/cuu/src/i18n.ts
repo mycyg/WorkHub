@@ -34,6 +34,7 @@ export type CuuCopyKey =
   | "proposal.changesSection"
   | "proposal.reviewTitle"
   | "proposal.mergeTitle"
+  | "proposal.mergeTitleNamed"
   | "proposal.mergeStatus"
   | "proposal.summarySection"
   | "proposal.summaryFallback"
@@ -238,9 +239,10 @@ const cuuCopy = {
     "proposal.changesSection": "这次改了什么",
     "proposal.reviewTitle": "Cuu 等你确认变更",
     "proposal.mergeTitle": "Cuu 等你合入变更",
+    "proposal.mergeTitleNamed": "「{title}」待合入",
     "proposal.mergeStatus": "有变更待合入",
     "proposal.summarySection": "总结",
-    "proposal.summaryFallback": "变更申请已生成。先看总结和改动，再决定是否采纳。",
+    "proposal.summaryFallback": "变更申请已生成。先看总结和改动，再决定是否合入。",
     "proposal.nextStepSection": "下一步",
     "proposal.nextStepOpenReview": "点「查看变更申请」会打开变更详情，里面有总结、改动和确认按钮。",
     "proposal.nextStepOpened": "先看总结和改动，再确认通过或打回修改。",
@@ -257,7 +259,7 @@ const cuuCopy = {
     "proposal.conflictTitle": "变更撞车了",
     "proposal.conflictOpenProposal": "查看变更申请",
     "proposal.conflictKeepCurrent": "保留正式版",
-    "proposal.conflictAcceptIncoming": "采纳这次版本",
+    "proposal.conflictAcceptIncoming": "合入这次版本",
     "proposal.conflictAiFusion": "AI 融合建议",
     "proposal.conflictApplyAiFusion": "采用 AI 融合稿",
     "proposal.conflictTargetSection": "撞车对象",
@@ -441,6 +443,7 @@ const cuuCopy = {
     "proposal.changesSection": "What changed",
     "proposal.reviewTitle": "Cuu has a change for review",
     "proposal.mergeTitle": "Cuu is ready to merge the change",
+    "proposal.mergeTitleNamed": "\"{title}\" is ready to merge",
     "proposal.mergeStatus": "Change ready to merge",
     "proposal.summarySection": "Summary",
     "proposal.summaryFallback": "The change request is ready. Review the summary and changes before deciding.",

@@ -360,7 +360,7 @@ test("reviewed proposal attention cards say merge instead of asking for approval
     priority: "normal",
     work_item_id: workItemId,
     source_ref: { entity_type: "proposal", entity_id: "proposal-reviewed" },
-    title: "Cuu 等你确认变更",
+    title: "周报草稿变更申请",
     summary_text: "已确认通过，只差合入交付物。",
     reason_text: "接下来可以合入交付物。",
     actions: [
@@ -374,11 +374,12 @@ test("reviewed proposal attention cards say merge instead of asking for approval
   const card = cardFromAttentionItem(attention);
   const english = cardFromAttentionItem(attention, { locale: "en-US" });
 
-  assert.equal(card.title, "Cuu 等你合入变更");
+  // 旧断言只钉通用「Cuu 等你合入变更」；真实队列里多张 reviewed proposal 并列时会看不出是哪份变更。
+  assert.equal(card.title, "「周报草稿变更申请」待合入");
   assert.doesNotMatch(card.title, /确认|拍板/u);
   assert.equal(card.sections?.find((section) => section.id === "next_step")?.lines[0], "已确认通过，下一步合入交付物。");
   assert.deepEqual(card.actions.map((action) => action.id), ["open_proposal", "merge"]);
-  assert.equal(english.title, "Cuu is ready to merge the change");
+  assert.equal(english.title, '"周报草稿变更申请" is ready to merge');
 });
 
 test("proposal cards replace model self-narration titles with public review copy", () => {
@@ -473,7 +474,8 @@ test("proposal cards replace model self-narration titles with public review copy
   assert.equal(fileNarrationCard.title, "Cuu 等你确认变更");
   assert.equal(chineseAttentionCard.title, "Cuu 等你确认变更");
   assert.equal(chineseProposalCard.title, "Cuu 等你确认变更");
-  assert.equal(chineseAttentionCard.message, "变更申请已生成。先看总结和改动，再决定是否采纳。");
+  // 旧断言继续使用「采纳」；proposal 流程其它状态/action 已用「合入」，Cuu 卡片里再混用会误导用户。
+  assert.equal(chineseAttentionCard.message, "变更申请已生成。先看总结和改动，再决定是否合入。");
   assert.equal(chineseAttentionCard.sections?.[0]?.title, "总结");
   assert.equal(chineseAttentionCard.sections?.[1]?.title, "下一步");
   assert.equal(chineseAttentionCard.sections?.[1]?.lines[0], "先看总结和改动，再确认通过或打回修改。");
@@ -593,6 +595,16 @@ test("proposal conflicts become option-first Cuu cards with merge payloads", () 
     conflict_resolution: { accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"] }
   });
   assert.equal(card.actions.find((action) => action.id === "ai_fusion")?.label, "采用 AI 融合稿");
+  // 旧断言允许「采纳这次版本」漏到 Cuu 冲突卡；这里统一 proposal merge 动作为「合入」。
+  assert.equal(card.actions.find((action) => action.id === "accept_incoming")?.label, "合入这次版本");
+  assert.doesNotMatch(
+    [
+      card.message,
+      ...(card.sections ?? []).flatMap((section) => section.lines),
+      ...card.actions.map((action) => action.label)
+    ].join(" "),
+    /采纳/u
+  );
   assert.equal(
     card.actions.find((action) => action.id === "ai_fusion")?.href,
     "/api/merge-proposals/10000000-0000-4000-8000-000000000309/apply"
