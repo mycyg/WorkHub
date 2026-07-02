@@ -2802,7 +2802,7 @@ test("agent run snapshot audit logs use the run tenant instead of default settin
   assert.equal(snapshotAudit?.workspaceId, runWorkspaceId);
 });
 
-test("agent run snapshot hook returns the committed snapshot when post-snapshot audit fails", async () => {
+test("agent run snapshot hook fails closed when post-snapshot audit fails", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-snapshot-audit-test-"));
   const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-snapshot-audit-root-"));
@@ -2821,16 +2821,20 @@ test("agent run snapshot hook returns the committed snapshot when post-snapshot 
     id: () => snapshotId
   });
 
-  const captured = await hook({
-    toolId: "write_file",
-    sideEffect: "sandbox_file",
-    input: { path: "outputs/result.md" },
-    workdir,
-    runId: "40000000-0000-4000-8000-000000000099",
-    workItemId
-  });
-
-  assert.equal(captured.snapshotId, snapshotId);
+  // Old assertion returned `snapshotId` even though the audit row was missing. That was
+  // wrong: tool execution treats a successful snapshot hook as permission to perform the
+  // side effect, so audit failure must stop the tool before it writes anything.
+  await assert.rejects(
+    async () => hook({
+      toolId: "write_file",
+      sideEffect: "sandbox_file",
+      input: { path: "outputs/result.md" },
+      workdir,
+      runId: "40000000-0000-4000-8000-000000000099",
+      workItemId
+    }),
+    /audit sink unavailable/u
+  );
   assert.equal(snapshots.rows.length, 1);
   assert.equal(snapshots.rows[0]?.id, snapshotId);
 });

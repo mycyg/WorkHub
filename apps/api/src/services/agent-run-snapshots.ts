@@ -81,6 +81,7 @@ export function createAgentRunSnapshotHook(options: AgentRunSnapshotHookOptions)
         workItemId: row.workItemId,
         error
       });
+      throw error;
     }
     return { snapshotId: row.id };
   };

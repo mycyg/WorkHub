@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   approvalCenterVmSchema,
   approvalPayloadSchema,
@@ -186,6 +188,9 @@ type AuditApprovalActor = {
   workspaceId?: string;
   userId?: string;
 };
+
+type CreatePermissionPolicyInput = Parameters<PermissionPolicyRepository["createPermissionPolicy"]>[0];
+type CreateAuditLogInput = Parameters<AuditLogRepository["createAuditLog"]>[0];
 
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
@@ -559,9 +564,13 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
     });
   }
 
-  async function auditPermissionPolicyAction(input: Parameters<AuditLogRepository["createAuditLog"]>[0]) {
+  async function auditPermissionPolicyAction(input: CreateAuditLogInput) {
+    await deps.auditLogs.createAuditLog(input);
+  }
+
+  async function auditPermissionPolicyActionBestEffort(input: CreateAuditLogInput) {
     try {
-      await deps.auditLogs.createAuditLog(input);
+      await auditPermissionPolicyAction(input);
     } catch (error) {
       getDefaultStructuredLogger().warn("permission_policy_audit_write_failed", {
         action: input.action,
@@ -569,6 +578,36 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         error
       });
     }
+  }
+
+  function permissionPolicyCreatedAuditInput(
+    actor: AuthActor,
+    policyId: string,
+    input: CreatePermissionPolicyInput
+  ): CreateAuditLogInput {
+    return {
+      actorKind: actor.kind,
+      actorNickname: actor.label,
+      entityType: "permission_policy",
+      entityId: policyId,
+      action: "permission_policy.created",
+      ...(actor.orgId ? { orgId: actor.orgId } : {}),
+      ...(actor.workspaceId ? { workspaceId: actor.workspaceId } : {}),
+      ...(actor.userId ? { actorUserId: actor.userId } : {}),
+      detailJson: {
+        scope_kind: input.scopeKind,
+        scope_id: input.scopeId,
+        action_pattern: input.actionPattern,
+        effect: input.effect,
+        learned_from_session: input.learnedFromSession ?? false
+      }
+    };
+  }
+
+  async function createAuditedPermissionPolicy(actor: AuthActor, input: CreatePermissionPolicyInput) {
+    const policyId = input.id ?? randomUUID();
+    await auditPermissionPolicyAction(permissionPolicyCreatedAuditInput(actor, policyId, input));
+    return deps.policies.createPermissionPolicy({ ...input, id: policyId });
   }
 
   // @mentions：解析评论正文里的 @昵称 → 活跃用户，给被点名者（排除作者本人、去重）发通知。
@@ -870,29 +909,26 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         throw new ApprovalServiceError(409, "approval_race", "这条审批已经被处理过了。");
       }
 
-      // R4 #34：决策的 CAS 已提交(updated)。其后的「学到策略 + 审计」是 post-commit 副作用——若它们瞬时
-      // 失败而让整个方法抛错，调用方得 HTTP 500，但决策其实已生效；重试又撞非 pending CAS 得 409，
-      // 既拿不回结果也不会重建策略/审计=不可恢复。故 best-effort：吞错 + warn(学到策略丢失=下次再问一次的
-      // 降级,非损坏;审计丢失记入告警通道)。与 #3 的 post-commit publish 同口径。
-      // 注：完全原子化(respondPending+createPermissionPolicy+audit 同一事务,tx-orchestrator 模式)是更彻底
-      // 的修法,跨多仓库改造、工作量较大,记入 R4 报告留待 attended 单独处理。
       let learnedPolicy: Awaited<ReturnType<typeof deps.policies.createPermissionPolicy>> | undefined;
+      // 决策 CAS 已提交(updated)。普通 approval.decided 审计和 publish 仍是 post-commit best-effort；
+      // 但 remember:'always' 新建 allow 策略会扩大 AI 后续权限，必须先写 permission_policy.created 审计。
+      // 若审计失败，方法抛错且不插入 standing permission，避免留下无审计的扩权策略。
+      if (shouldLearn) {
+        const policyInput = {
+          scopeKind: "session",
+          scopeId: updated.agentRunId ?? actor.id,
+          actionPattern: updated.actionPattern,
+          effect: "allow",
+          priority: 0,
+          learnedFromSession: true,
+          ...(actor.userId ? { createdByUserId: actor.userId } : {}),
+          orgId: actor.orgId,
+          workspaceId: actor.workspaceId
+        } as const;
+        const existingPolicy = findEquivalentActivePolicy(await deps.policies.listActivePolicies(), actor, policyInput);
+        learnedPolicy = existingPolicy ?? await createAuditedPermissionPolicy(actor, policyInput);
+      }
       try {
-        if (shouldLearn) {
-          const policyInput = {
-            scopeKind: "session",
-            scopeId: updated.agentRunId ?? actor.id,
-            actionPattern: updated.actionPattern,
-            effect: "allow",
-            priority: 0,
-            learnedFromSession: true,
-            ...(actor.userId ? { createdByUserId: actor.userId } : {}),
-            orgId: actor.orgId,
-            workspaceId: actor.workspaceId
-          } as const;
-          learnedPolicy = findEquivalentActivePolicy(await deps.policies.listActivePolicies(), actor, policyInput)
-            ?? await deps.policies.createPermissionPolicy(policyInput);
-        }
         await auditApprovalAction(updated, {
           action: "approval.decided",
           actor: {
@@ -1117,7 +1153,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       if (existing) {
         return existing;
       }
-      const policy = await deps.policies.createPermissionPolicy({
+      const policyInput = {
         scopeKind: input.scope_kind,
         scopeId: input.scope_id,
         actionPattern: input.action_pattern,
@@ -1129,26 +1165,9 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         // （否则管理员可越权往别的租户写策略）。
         orgId: actor.orgId,
         workspaceId: actor.workspaceId
-      });
-      // L23：策略创建（含 allow 授权扩权）必须留审计，与撤销(permission_policy.revoked)对称。
-      await auditPermissionPolicyAction({
-        actorKind: actor.kind,
-        actorNickname: actor.label,
-        entityType: "permission_policy",
-        entityId: policy.id ?? `${input.scope_kind}:${input.scope_id}:${input.action_pattern}`,
-        action: "permission_policy.created",
-        ...(actor.orgId ? { orgId: actor.orgId } : {}),
-        ...(actor.workspaceId ? { workspaceId: actor.workspaceId } : {}),
-        ...(actor.userId ? { actorUserId: actor.userId } : {}),
-        detailJson: {
-          scope_kind: input.scope_kind,
-          scope_id: input.scope_id,
-          action_pattern: input.action_pattern,
-          effect: input.effect,
-          learned_from_session: input.learned_from_session ?? false
-        }
-      });
-      return policy;
+      } satisfies CreatePermissionPolicyInput;
+      // L23/Batch 2-3：策略创建（含 allow 授权扩权）必须先留审计，审计写失败不得插入新策略。
+      return createAuditedPermissionPolicy(actor, policyInput);
     },
 
     async listPolicies(actor?: AuthActor) {
@@ -1188,7 +1207,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       if (!revoked) {
         throw new ApprovalServiceError(404, "permission_policy_not_found", "找不到这条权限策略。");
       }
-      await auditPermissionPolicyAction({
+      await auditPermissionPolicyActionBestEffort({
         actorKind: actor.kind,
         actorNickname: actor.label,
         entityType: "permission_policy",
