@@ -1580,7 +1580,10 @@ function renderApprovalDetailPanel(
       }).join("")}</div></section>`
     : "";
   const comments = detail?.comments ?? [];
-  const commentsSection = `<section data-r4-approval-discussion="true"><h4>${escapeHtml(goldPathT(locale, "approvals.discussionTitle"))}</h4>${comments.length
+  const commentsOverflow = detail?.comments_page_info?.has_more
+    ? `<p class="wh-subtle" data-r4-approval-comments-overflow="true">${escapeHtml(goldPathT(locale, "approvals.commentsOverflow"))}</p>`
+    : "";
+  const commentsSection = `<section data-r4-approval-discussion="true"><h4>${escapeHtml(goldPathT(locale, "approvals.discussionTitle"))}</h4>${commentsOverflow}${comments.length
     ? comments.map((comment) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-approval-comment="${escapeHtml(comment.id)}"><strong>${escapeHtml(comment.author_label)}</strong><p>${escapeHtml(comment.body)}</p></div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.commentsEmpty"))}</p>`}<form class="wh-r4-approval-comment-form" data-r4-approval-comment-form="${escapeHtml(item.id)}"><textarea class="wh-r4-approval-comment-input" data-r4-approval-comment-input rows="2" placeholder="${escapeHtml(goldPathT(locale, "approvals.commentPlaceholder"))}"></textarea><button type="submit" class="wh-btn" data-r4-approval-comment-submit="${escapeHtml(item.id)}">${escapeHtml(goldPathT(locale, "approvals.commentSubmit"))}</button></form></section>`;
 

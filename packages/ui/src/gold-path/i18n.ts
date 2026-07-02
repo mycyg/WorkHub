@@ -84,6 +84,7 @@ export type GoldPathCopyKey =
   | "approvals.timelineTitle"
   | "approvals.discussionTitle"
   | "approvals.commentsEmpty"
+  | "approvals.commentsOverflow"
   | "approvals.commentPlaceholder"
   | "approvals.commentSubmit"
   | "approvals.reasonLabel"
@@ -272,6 +273,7 @@ const goldPathCopy = {
     "approvals.timelineTitle": "审批流程",
     "approvals.discussionTitle": "相关讨论",
     "approvals.commentsEmpty": "还没有讨论，来说两句 (=^･ω･^=)",
+    "approvals.commentsOverflow": "仅显示最新的讨论，较早内容未在此处展开。",
     "approvals.commentPlaceholder": "写下你的看法…",
     "approvals.commentSubmit": "发表",
     "approvals.reasonLabel": "意见说明",
@@ -459,6 +461,7 @@ const goldPathCopy = {
     "approvals.timelineTitle": "Approval flow",
     "approvals.discussionTitle": "Discussion",
     "approvals.commentsEmpty": "No discussion yet — say something (=^･ω･^=)",
+    "approvals.commentsOverflow": "Showing the latest discussion only. Older comments are not expanded here.",
     "approvals.commentPlaceholder": "Write a comment…",
     "approvals.commentSubmit": "Comment",
     "approvals.reasonLabel": "Your note",

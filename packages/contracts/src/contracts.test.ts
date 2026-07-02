@@ -1702,12 +1702,14 @@ test("W2 approvalCenterVm items_detail is additive: parses with and without it",
       author_label: "刘梅",
       body: "建议错峰执行",
       created_at: "2026-06-14T10:24:00.000Z"
-    }]
+    }],
+    comments_page_info: { limit: 20, returned: 20, has_more: true }
   });
   assert.equal(detail.manifest_changes.length, 0);
   assert.equal(detail.checks.length, 0);
   assert.equal(detail.affected_targets.length, 0);
   assert.equal(detail.timeline[0]?.kind, "created");
+  assert.equal(detail.comments_page_info?.has_more, true);
 
   const enriched = approvalCenterVmSchema.parse({
     ...base,

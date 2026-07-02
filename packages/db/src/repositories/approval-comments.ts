@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { approvalComments } from "../schema/index.js";
@@ -25,12 +25,14 @@ export function createApprovalCommentRepository(db: WorkHubDb): ApprovalCommentR
   return {
     async listByApproval(approvalId, limit = 100) {
       // L#W2-13：封顶，热门审批的评论流不会把全部正文塞进预取的页面 VM。
-      return db
+      const cappedLimit = Math.max(1, Math.min(limit, 200));
+      const rows = await db
         .select()
         .from(approvalComments)
         .where(eq(approvalComments.approvalId, approvalId))
-        .orderBy(asc(approvalComments.createdAt))
-        .limit(Math.max(1, Math.min(limit, 200)));
+        .orderBy(desc(approvalComments.createdAt), desc(approvalComments.id))
+        .limit(cappedLimit);
+      return rows.reverse();
     },
 
     async listByApprovals(approvalIds, limitPerApproval = 20) {
@@ -47,7 +49,7 @@ export function createApprovalCommentRepository(db: WorkHubDb): ApprovalCommentR
           body: approvalComments.body,
           createdAt: approvalComments.createdAt,
           updatedAt: approvalComments.updatedAt,
-          rowNumber: sql<number>`row_number() over (partition by ${approvalComments.approvalId} order by ${approvalComments.createdAt} asc)`.as("row_number")
+          rowNumber: sql<number>`row_number() over (partition by ${approvalComments.approvalId} order by ${approvalComments.createdAt} desc, ${approvalComments.id} desc)`.as("row_number")
         })
         .from(approvalComments)
         .where(inArray(approvalComments.approvalId, approvalIds))
@@ -64,7 +66,7 @@ export function createApprovalCommentRepository(db: WorkHubDb): ApprovalCommentR
         })
         .from(ranked)
         .where(lte(ranked.rowNumber, limit))
-        .orderBy(asc(ranked.approvalId), asc(ranked.createdAt));
+        .orderBy(asc(ranked.approvalId), asc(ranked.createdAt), asc(ranked.id));
     },
 
     async create(input) {
