@@ -182,6 +182,30 @@ test("M25 override-priority deny is a cross-scope kill-switch beating narrower a
   assert.equal(resolvePermissionDecision(actor, "tool.delete_file", normal, { now }).effect, "allow");
 });
 
+test("M25 org kill-switch denies actors in another workspace of the same org", () => {
+  const actor: PermissionActor = {
+    id: "run-1",
+    isAdmin: false,
+    orgId: "org-1",
+    workspaceId: "workspace-2",
+    sessionId: "session-1"
+  };
+  const killSwitchCreatedInWorkspaceOne: PermissionPolicyRecord[] = [
+    {
+      scopeKind: "org",
+      scopeId: "org-1",
+      actionPattern: "tool.delete_file",
+      effect: "deny",
+      priority: OVERRIDE_DENY_PRIORITY,
+      orgId: "org-1",
+      workspaceId: "workspace-1"
+    },
+    { scopeKind: "session", scopeId: "session-1", actionPattern: "tool.delete_file", effect: "allow" }
+  ];
+
+  assert.equal(resolvePermissionDecision(actor, "tool.delete_file", killSwitchCreatedInWorkspaceOne, { now }).effect, "deny");
+});
+
 test("admin action fallback does not change resource write gates", () => {
   const adminActor: PermissionActor = { id: "admin", isAdmin: true, orgId: "org-1" };
   const adminUser = user({ id: "admin", isAdmin: true });

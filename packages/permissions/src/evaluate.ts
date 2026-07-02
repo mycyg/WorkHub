@@ -79,7 +79,9 @@ function policyTenantMatchesActor(policy: PermissionPolicyRecord, actor: Permiss
   if (policy.orgId && policy.orgId !== actor.orgId) {
     return false;
   }
-  if (policy.workspaceId && policy.workspaceId !== actor.workspaceId) {
+  // Org-scoped policies are org-wide even if their row carries creator workspace metadata.
+  // Narrower policies still keep the workspace tenant fence.
+  if (policy.scopeKind !== "org" && policy.workspaceId && policy.workspaceId !== actor.workspaceId) {
     return false;
   }
   return true;
