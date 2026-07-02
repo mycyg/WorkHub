@@ -63,6 +63,18 @@ test("approval center keeps the blocking decision visible without turning into a
   assert.equal(approvals?.cuuState, "asking_approval");
 });
 
+test("approval center renderer surfaces page_info when the queue is truncated", () => {
+  const vm = surfaceVm();
+  vm.page_vms.approvals.page_info = { limit: 100, returned: 100, has_more: true };
+  vm.page_vms.approvals.counts.pending = 100;
+  vm.page_vms.approvals.counts.pending_total = 137;
+  const approvals = renderGoldPathSurface(vm, "desktop", { locale: "zh-CN" }).pages.find((page) => page.key === "approvals");
+
+  assert.ok(approvals);
+  assert.equal(approvals.html.includes('data-r4-approval-page-has-more="true"'), true);
+  assert.equal(approvals.html.includes("已显示 100/137 条审批，还有更多未展开。"), true);
+});
+
 test("option intake stays option-first with collapsed free text instead of a chat wall", () => {
   const intake = renderGoldPathSurface(surfaceVm(), "desktop").pages.find((page) => page.key === "intake");
 
