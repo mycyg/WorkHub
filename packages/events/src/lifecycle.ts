@@ -67,7 +67,7 @@ export const lifecycleMilestones: Partial<Record<WorkItemStatus, LifecycleMilest
     status: "escalated",
     notificationType: "workitem.escalated",
     severity: "high",
-    recipients: ["approver"],
+    recipients: ["submitter", "approver"],
     titleTemplate: "{code} 需要你来定一下",
     bodyTemplate: "这个活我先卡住了:{reason_oneline}。我建议这么推进,看一眼?"
   },

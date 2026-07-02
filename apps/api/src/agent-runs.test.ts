@@ -605,6 +605,22 @@ class MemoryAiDecisions implements AiDecisionRepository {
   async listEscalationEventsForWorkItem(id: string) {
     return this.escalationRows.filter((row) => row.workItemId === id);
   }
+
+  async findEscalationById() {
+    return null;
+  }
+
+  async listUnresolvedEscalationsForWorkspace() {
+    return [];
+  }
+
+  async resolveEscalation() {
+    return null;
+  }
+
+  async delegateEscalation() {
+    return null;
+  }
 }
 
 function settings(): Settings {

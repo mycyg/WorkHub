@@ -948,6 +948,33 @@ test("attention approval cards localize standard action labels", () => {
   assert.equal(cardFromAttentionItem(attention).actions.find((action) => action.id === "open_proposal")?.label, "查看变更申请");
 });
 
+test("R9.0 escalation attention cards render human Cuu actions", () => {
+  const attention: AttentionItem = {
+    id: "30000000-0000-4000-8000-000000000011",
+    kind: "escalation",
+    priority: "urgent",
+    work_item_id: workItemId,
+    source_ref: { entity_type: "escalation_event", entity_id: "30000000-0000-4000-8000-000000000099" },
+    title: "《竞品价格调研》卡住了",
+    summary_text: "AI 对数据来源不确定。",
+    reason_text: "AI 对数据来源不确定。",
+    actions: [
+      { id: "escalation_retry", label: "让它重试", style: "primary", method: "POST", href: "/api/escalations/30000000-0000-4000-8000-000000000099/resolve" },
+      { id: "escalation_pm_mode", label: "转成我来做", style: "secondary", method: "POST", href: "/api/escalations/30000000-0000-4000-8000-000000000099/resolve" },
+      { id: "escalation_cancel", label: "取消这个子任务", style: "danger", method: "POST", href: "/api/escalations/30000000-0000-4000-8000-000000000099/resolve" }
+    ],
+    cuu_state: "worried",
+    created_at: ts
+  };
+
+  const card = cardFromAttentionItem(attention);
+  const english = cardFromAttentionItem(attention, { locale: "en-US" });
+
+  assert.equal(card.state, "worried");
+  assert.deepEqual(card.actions.map((action) => action.label), ["让它重试", "转成我来做", "取消这个子任务"]);
+  assert.deepEqual(english.actions.map((action) => action.label), ["Let it retry", "I'll take over", "Cancel this subtask"]);
+});
+
 test("generic permission events still map through attention into Cuu approval cards", () => {
   const event: WorkHubEvent<unknown> = {
     event_id: "event-permission",

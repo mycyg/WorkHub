@@ -7,7 +7,9 @@ import {
   addApprovalCommentRequestSchema,
   createApprovalRequestSchema,
   delegateApprovalRequestSchema,
+  delegateEscalationRequestSchema,
   permissionPolicyWriteSchema,
+  resolveEscalationRequestSchema,
   respondApprovalRequestSchema,
   useEvidenceForTaskRequestSchema
 } from "@workhub/contracts";
@@ -323,6 +325,8 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/approvals/{id}/delegate"],
     ["get", "/api/approvals/{id}/comments"],
     ["post", "/api/approvals/{id}/comments"],
+    ["post", "/api/escalations/{id}/resolve"],
+    ["post", "/api/escalations/{id}/delegate"],
     ["get", "/api/permissions"],
     ["put", "/api/permissions"],
     ["delete", "/api/permissions/{id}"],
@@ -563,6 +567,8 @@ test("OpenAPI JSON request bodies stay aligned with zod input contracts", async 
     { path: "/api/approvals/{id}/respond", method: "post", schema: respondApprovalRequestSchema },
     { path: "/api/approvals/{id}/delegate", method: "post", schema: delegateApprovalRequestSchema },
     { path: "/api/approvals/{id}/comments", method: "post", schema: addApprovalCommentRequestSchema },
+    { path: "/api/escalations/{id}/resolve", method: "post", schema: resolveEscalationRequestSchema },
+    { path: "/api/escalations/{id}/delegate", method: "post", schema: delegateEscalationRequestSchema },
     { path: "/api/workitems/{id}/evidence-bindings", method: "post", schema: useEvidenceForTaskRequestSchema }
   ] as const) {
     assertJsonRequestMatchesZodObject(body.paths, path, method, schema);
@@ -617,6 +623,8 @@ test("project and drive OpenAPI routes document runtime path and query parameter
 	    ["/api/approvals/{id}/delegate", "post", ["id"]],
 	    ["/api/approvals/{id}/comments", "get", ["id"]],
 	    ["/api/approvals/{id}/comments", "post", ["id"]],
+	    ["/api/escalations/{id}/resolve", "post", ["id"]],
+	    ["/api/escalations/{id}/delegate", "post", ["id"]],
 	    ["/api/permissions/{id}", "delete", ["id"]]
 	  ] as const) {
     for (const name of names) {
@@ -1118,6 +1126,34 @@ test("Approval and permission OpenAPI contracts document decision and policy act
     enum: ["delegate_to_requester", "delegate_target_cannot_view"]
   });
 
+  assert.deepEqual(jsonRequestSchema(body.paths, "/api/escalations/{id}/resolve", "post")?.required, ["action"]);
+  assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/escalations/{id}/resolve", "post")).sort(), [
+    "action",
+    "reason_md"
+  ]);
+  const escalationResolve = jsonResponseSchema(body.paths, "/api/escalations/{id}/resolve", "post", "200");
+  const escalationResolveData = escalationResolve?.properties?.data as {
+    required?: string[];
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.deepEqual(escalationResolveData?.required, ["escalation", "work_item_status", "attention"]);
+  assert.deepEqual(escalationResolveData?.properties?.work_item_status, {
+    type: "string",
+    enum: ["ai_working", "pm_mode", "cancelled"]
+  });
+
+  assert.deepEqual(jsonRequestSchema(body.paths, "/api/escalations/{id}/delegate", "post")?.required, ["to_user_id"]);
+  assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/escalations/{id}/delegate", "post")).sort(), [
+    "reason_md",
+    "to_user_id"
+  ]);
+  const escalationDelegate = jsonResponseSchema(body.paths, "/api/escalations/{id}/delegate", "post", "200");
+  const escalationDelegateData = escalationDelegate?.properties?.data as {
+    required?: string[];
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.deepEqual(escalationDelegateData?.required, ["escalation", "attention"]);
+
   const comments = jsonResponseSchema(body.paths, "/api/approvals/{id}/comments", "get", "200");
   assert.deepEqual(comments?.required, ["ok", "data"]);
   const commentItem = (comments?.properties?.data as { items?: { required?: string[] } } | undefined)?.items;
@@ -1246,6 +1282,27 @@ test("OpenAPI error responses document approval, meeting, and work item mutation
   assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "404", ["not_found", "delegate_target_not_found"]);
   assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "409", ["approval_race"]);
   assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "422", ["delegate_to_requester", "delegate_target_cannot_view"]);
+
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "400", ["malformed_json", "json_object_required"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "403", ["invalid_client_token", "forbidden"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "404", ["not_found", "escalation_not_found"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "409", [
+    "escalation_race",
+    "escalation_status_conflict"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "422", ["validation_error"]);
+
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "400", ["malformed_json", "json_object_required"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "403", ["invalid_client_token", "forbidden"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "404", [
+    "not_found",
+    "escalation_not_found",
+    "delegate_target_not_found"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "409", ["escalation_race"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "422", ["validation_error"]);
 
   for (const path of [
     "/api/meetings/projects/{projectId}/insights/{insightId}/draft",

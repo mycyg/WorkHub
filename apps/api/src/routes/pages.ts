@@ -63,6 +63,10 @@ import {
   type ApprovalService
 } from "../services/approvals.js";
 import {
+  createEscalationService,
+  type EscalationService
+} from "../services/escalations.js";
+import {
   getDefaultProposalService,
   type ProposalService
 } from "../services/proposals.js";
@@ -81,6 +85,7 @@ import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 export type PageRoutesDependencies = {
   auth?: AuthDependencySource;
   approvals?: ApprovalService;
+  escalations?: EscalationService;
   proposals?: ProposalService;
   queue?: AgentRunQueue;
   policyStore?: BudgetPolicyStore;
@@ -221,6 +226,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const authSettings = getAuthSettings(resolveAuthDependencies(authSource));
   const allowUnauthenticatedGoldPath = deps.allowUnauthenticatedGoldPath ?? authSettings.appEnv !== "production";
   const approvals = deps.approvals ?? createApprovalService();
+  const escalations = deps.escalations ?? createEscalationService();
   const proposals = deps.proposals ?? getDefaultProposalService();
   const queue = deps.queue ?? getDefaultAgentRunQueue();
   const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
@@ -257,12 +263,28 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // 这是 W1 决策收件箱此前缺的真实数据源——没接前首页决策卡恒为空。取数失败保留首页,但显式告诉用户队列未完整加载。
     let decisionQueue: AttentionHomeVM["queue"] = [];
     try {
+      const escalationItems = await escalations.listAttentionItems({ actor: c.var.actor, locale });
+      decisionQueue = [
+        ...escalationItems,
+        ...decisionQueue
+      ];
+    } catch {
+      sourceWarnings.push({
+        source: "escalations",
+        message: locale === "en-US"
+          ? "Escalations could not be loaded. Open Projects or retry."
+          : "升级待办暂时加载失败。请打开项目或稍后重试。"
+      });
+    }
+    try {
       const pending = await approvals.listPendingForUser(c.var.currentUser, { locale });
       // findings：决策队列要和 /approvals 一样按可读工作项过滤——否则被路由到的审批若其工作项不可读，
       // 卡片仍会在首页泄露事项信息。复用同一个 visibleApprovalCenter 收口。
-      decisionQueue = (await visibleApprovalCenter(pending, workItems, c.var.actor)).items;
+      decisionQueue = [
+        ...decisionQueue,
+        ...(await visibleApprovalCenter(pending, workItems, c.var.actor)).items
+      ];
     } catch {
-      decisionQueue = [];
       sourceWarnings.push({
         source: "approvals",
         message: locale === "en-US"

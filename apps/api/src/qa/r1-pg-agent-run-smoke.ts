@@ -17,6 +17,7 @@ import {
   createAgentRunRepository,
   createAuditLogRepository,
   createBudgetReservationRepository,
+  createAiDecisionRepository,
   createClientDeviceRepository,
   createDatabaseClient,
   createDbBudgetPolicyStore,
@@ -28,6 +29,7 @@ import {
   createUserRepository,
   defaultSeedFixture,
   defaultSeedIds,
+  escalationEvents,
   mergeAttempts,
   mergeProposals,
   orgs,
@@ -56,6 +58,7 @@ import { ZodError } from "zod";
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { createAgentRunRoutes } from "../routes/agent-runs.js";
 import { createCostRoutes } from "../routes/cost.js";
+import { createEscalationRoutes } from "../routes/escalations.js";
 import { createKnowledgeRoutes } from "../routes/knowledge.js";
 import { createPageRoutes } from "../routes/pages.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "../routes/proposals.js";
@@ -63,6 +66,7 @@ import { createSessionRoutes } from "../routes/sessions.js";
 import { createWorkItemRoutes } from "../routes/workitems.js";
 import type { MergeFusionCandidateGenerator } from "../services/merge-fusion-candidates.js";
 import { createDbAgentRunPersistence } from "../services/agent-run-persistence.js";
+import { createEscalationService, EscalationServiceError } from "../services/escalations.js";
 import { createDbProposalService, ProposalServiceError } from "../services/proposals.js";
 import { createDbWorkItemService } from "../services/work-items.js";
 import { createInMemoryAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
@@ -181,6 +185,9 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
     if (error instanceof ZodError) {
       return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
     }
+    if (error instanceof EscalationServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
+    }
     if (error instanceof HTTPException) {
       return c.json({ ok: false, error: { code: "http_error", message: error.message } }, error.status);
     }
@@ -207,9 +214,11 @@ async function main() {
   try {
     const db = client.db;
     await ensureDefaultSeed(db);
+    const userRepo = createUserRepository(db);
+    const deviceRepo = createClientDeviceRepository(db);
     const auth: AuthDependencies = {
-      users: createUserRepository(db),
-      devices: createClientDeviceRepository(db),
+      users: userRepo,
+      devices: deviceRepo,
       settings
     };
     const snapshotsRepo = createSnapshotRepository(db);
@@ -231,6 +240,17 @@ async function main() {
         body: `PG smoke deterministic clarification. Intent: ${(input.workItem.rawDescription ?? input.workItem.title ?? "").slice(0, 200)}`,
         placeholder: "例如：按需求原文执行即可。"
       })
+    });
+    const aiDecisionRepository = createAiDecisionRepository(db);
+    const escalationService = createEscalationService({
+      repository: {
+        findById: (id) => aiDecisionRepository.findEscalationById(id),
+        listUnresolvedForWorkspace: (input) => aiDecisionRepository.listUnresolvedEscalationsForWorkspace(input),
+        resolveEscalation: (input) => aiDecisionRepository.resolveEscalation(input),
+        delegateEscalation: (input) => aiDecisionRepository.delegateEscalation(input)
+      },
+      users: userRepo,
+      workItems: workItemService
     });
     const ledgerStore = createDbCostLedgerStore(db, {
       teamId: settings.auth.defaultWorkspaceId,
@@ -258,12 +278,14 @@ async function main() {
     const app = withErrors(new Hono<AuthEnv>());
     app.route("/api", createSessionRoutes({ auth, workItems: workItemService }));
     app.route("/api", createWorkItemRoutes({ auth, workItems: workItemService }));
+    app.route("/api/escalations", createEscalationRoutes({ auth, service: escalationService }));
     app.route("/api/proposals", createProposalRoutes({ auth, proposals: proposalService }));
     app.route("/api", createWorkItemProposalRoutes({ auth, proposals: proposalService }));
     app.route("/api/knowledge", createKnowledgeRoutes({ auth, workItems: workItemService }));
     app.route("/api/pages", createPageRoutes({
       auth,
       queue,
+      escalations: escalationService,
       proposals: proposalService,
       workItems: workItemService,
       policyStore,
@@ -559,6 +581,110 @@ async function main() {
     const pageTokenDelta = costPageBody.data.token_in - costPageBeforeBody.data.token_in;
     if (Math.abs(pageCostDelta - 0.007) > 0.000001 || pageTokenDelta !== 1500) {
       throw new Error(`Expected DB cost page totals, got ${JSON.stringify(costPageBody.data)}`);
+    }
+    const escalationProjectId = randomUUID();
+    const escalationWorkItemId = randomUUID();
+    const escalationEventId = randomUUID();
+    await db.insert(projects).values({
+      id: escalationProjectId,
+      workspaceId: settings.auth.defaultWorkspaceId,
+      name: "R9 escalation smoke project",
+      slug: `r9-escalation-${randomUUID().slice(0, 8)}`,
+      ownerNickname: "owner",
+      ownerUserId: seedUser.id
+    });
+    await db.insert(workItems).values({
+      id: escalationWorkItemId,
+      code: `R9-ESC-${randomUUID().slice(0, 8)}`,
+      projectId: escalationProjectId,
+      workspaceId: settings.auth.defaultWorkspaceId,
+      submitterUserId: seedUser.id,
+      title: "R9 escalation smoke",
+      rawDescription: "制造一个真实升级卡,再从 HTTP resolve 回到 ai_working。",
+      summaryMd: "R9 escalation smoke.",
+      status: "escalated",
+      mode: "worker"
+    });
+    await db.insert(escalationEvents).values({
+      id: escalationEventId,
+      workItemId: escalationWorkItemId,
+      trigger: "unqualified",
+      reasonMd: "PG smoke escalation needs a human decision before retry.",
+      handoffJson: {}
+    });
+    const attentionWithEscalation = await app.request("/api/pages/attention?locale=zh-CN", { headers });
+    if (attentionWithEscalation.status !== 200) {
+      throw new Error(`Expected attention escalation page 200, got ${attentionWithEscalation.status}: ${await attentionWithEscalation.text()}`);
+    }
+    const attentionWithEscalationBody = await attentionWithEscalation.json() as {
+      data: {
+        primary?: {
+          kind?: string;
+          source_ref?: { entity_type?: string; entity_id?: string };
+          actions?: Array<{ label?: string; href?: string }>;
+        };
+        queue: Array<{
+          kind?: string;
+          source_ref?: { entity_type?: string; entity_id?: string };
+          actions?: Array<{ label?: string; href?: string }>;
+        }>;
+      };
+    };
+    const escalationCards = [
+      attentionWithEscalationBody.data.primary,
+      ...attentionWithEscalationBody.data.queue
+    ].filter(Boolean);
+    const escalationCard = escalationCards.find((item) => item?.source_ref?.entity_id === escalationEventId);
+    if (
+      escalationCard?.kind !== "escalation"
+      || !escalationCard.actions?.some((action) =>
+        action.label === "让它重试" && action.href === `/api/escalations/${escalationEventId}/resolve`
+      )
+    ) {
+      throw new Error("Expected attention page to show the unresolved R9 escalation card with retry action.");
+    }
+    const escalationResolve = await app.request(`/api/escalations/${escalationEventId}/resolve`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ action: "retry", reason_md: "PG smoke retry path" })
+    });
+    if (escalationResolve.status !== 200) {
+      throw new Error(`Expected escalation resolve 200, got ${escalationResolve.status}: ${await escalationResolve.text()}`);
+    }
+    const escalationResolveBody = await escalationResolve.json() as {
+      data: { escalation: { resolved_at?: string }; work_item_status: string };
+    };
+    if (escalationResolveBody.data.work_item_status !== "ai_working" || !escalationResolveBody.data.escalation.resolved_at) {
+      throw new Error(`Expected escalation resolve to return ai_working + resolved_at, got ${JSON.stringify(escalationResolveBody.data)}`);
+    }
+    const [resolvedEscalationWorkItem] = await db.select().from(workItems).then((rows) =>
+      rows.filter((row) => row.id === escalationWorkItemId)
+    );
+    const [resolvedEscalationEvent] = await db.select().from(escalationEvents).then((rows) =>
+      rows.filter((row) => row.id === escalationEventId)
+    );
+    if (resolvedEscalationWorkItem?.status !== "ai_working" || !resolvedEscalationEvent?.resolvedAt) {
+      throw new Error(
+        `Expected DB escalation resolve to persist ai_working/resolvedAt, got status=${resolvedEscalationWorkItem?.status ?? "missing"}`
+      );
+    }
+    const attentionAfterEscalation = await app.request("/api/pages/attention?locale=zh-CN", { headers });
+    if (attentionAfterEscalation.status !== 200) {
+      throw new Error(`Expected post-resolve attention page 200, got ${attentionAfterEscalation.status}: ${await attentionAfterEscalation.text()}`);
+    }
+    const attentionAfterEscalationBody = await attentionAfterEscalation.json() as {
+      data: {
+        primary?: { source_ref?: { entity_id?: string } };
+        queue: Array<{ source_ref?: { entity_id?: string } }>;
+      };
+    };
+    const postResolveEscalationCard = [
+      attentionAfterEscalationBody.data.primary,
+      ...attentionAfterEscalationBody.data.queue
+    ].filter(Boolean)
+      .find((item) => item?.source_ref?.entity_id === escalationEventId);
+    if (postResolveEscalationCard) {
+      throw new Error("Expected resolved escalation to disappear from attention queue.");
     }
     const proposalRowsBeforeMerge = await db.select().from(proposals).then((rows) =>
       rows.filter((row) => row.workItemId === workItemId)
@@ -2190,6 +2316,14 @@ async function main() {
         page_token_delta: pageTokenDelta,
         user_policy_version: policyUpdateBody.data.version,
         user_policy_max_tokens: costUsageBeforeBody.data.me.max_tokens
+      },
+      escalation: {
+        work_item_id: escalationWorkItemId,
+        event_id: escalationEventId,
+        attention_card_kind: escalationCard.kind,
+        resolve_status: escalationResolveBody.data.work_item_status,
+        persisted_status: resolvedEscalationWorkItem?.status,
+        resolved_at_present: Boolean(resolvedEscalationEvent?.resolvedAt)
       },
       merge: {
         proposal_status: proposalAfterMerge.status,

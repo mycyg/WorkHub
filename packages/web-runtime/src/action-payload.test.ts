@@ -18,6 +18,7 @@ import {
   driveItemMutationFromHref,
   driveUploadFromHref,
   evidenceBindingWorkItemIdFromHref,
+  escalationActionFromHref,
   hasCustomFieldPlaceholder,
   intakeFreeTextValue,
   materializeIntakePayload,
@@ -84,6 +85,14 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   assert.deepEqual(notificationActionFromHref("/api/notifications/n-1/complete"), {
     notificationId: "n-1",
     action: "complete"
+  });
+  assert.deepEqual(escalationActionFromHref("/api/escalations/e%201/resolve"), {
+    escalationId: "e 1",
+    action: "resolve"
+  });
+  assert.deepEqual(escalationActionFromHref("/api/escalations/e-1/delegate"), {
+    escalationId: "e-1",
+    action: "delegate"
   });
   assert.deepEqual(driveItemMutationFromHref("/api/drive/projects/p-1/items/i-1/delete"), {
     projectId: "p-1",

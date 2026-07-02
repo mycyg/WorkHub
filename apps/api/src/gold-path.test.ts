@@ -459,8 +459,11 @@ test("attention home marks the decision queue as partial when the approvals look
   const body = await response.json() as { data: { queue: unknown[]; primary?: unknown; source_warnings: { source: string; message: string }[] } };
   assert.equal(body.data.queue.length, 0);
   assert.equal(body.data.primary, undefined);
-  assert.deepEqual(body.data.source_warnings.map((warning) => warning.source), ["approvals"]);
-  assert.match(body.data.source_warnings[0]?.message ?? "", /审批待办/u);
+  // R9.0: the old assertion expected only `approvals`, but `/attention` now loads unresolved
+  // escalation cards before approvals, so both degraded sources must be exposed when their
+  // default services are unavailable in this fixture.
+  assert.deepEqual(body.data.source_warnings.map((warning) => warning.source), ["escalations", "approvals"]);
+  assert.match(body.data.source_warnings.find((warning) => warning.source === "approvals")?.message ?? "", /审批待办/u);
 });
 
 test("settings page carries server locale preference sync state without secrets", async () => {

@@ -24,6 +24,7 @@ import {
   createWorkItemRequestSchema,
   cuuLauncherSpecFromSelectedOptionIds,
   confidenceGrades,
+  delegateEscalationRequestSchema,
   calendarPageVmSchema,
   drivePageVmSchema,
   identifyRequestSchema,
@@ -42,6 +43,7 @@ import {
   nextQuestionRequestSchema,
   proposalConflictListResultSchema,
   replayTracePageVmSchema,
+  resolveEscalationRequestSchema,
   respondApprovalRequestSchema,
   permissionPolicySchema,
   updateUserPreferencesRequestSchema,
@@ -65,9 +67,26 @@ test("work item statuses expose the data-model transition truth", () => {
   assert.deepEqual(confidenceGrades, ["low", "medium", "high"]);
   assert.equal(Object.keys(allowedWorkItemTransitions).length, workItemStatuses.length);
   assert.deepEqual(allowedWorkItemTransitions.intake, ["ai_clarifying", "cancelled"]);
+  assert.deepEqual(allowedWorkItemTransitions.escalated, ["ai_working", "pm_mode", "cancelled"]);
   assert.deepEqual(allowedWorkItemTransitions.done, []);
   assert.equal(escalationTriggers.includes("user_unsatisfied"), true);
   assert.equal(escalationTriggers.includes("user_rejected" as never), false);
+});
+
+test("R9.0 escalation action contracts stay narrow and human-actionable", () => {
+  assert.deepEqual(resolveEscalationRequestSchema.parse({ action: "retry" }), { action: "retry" });
+  assert.deepEqual(resolveEscalationRequestSchema.parse({ action: "pm_mode", reason_md: "I will take this over." }), {
+    action: "pm_mode",
+    reason_md: "I will take this over."
+  });
+  assert.throws(() => resolveEscalationRequestSchema.parse({ action: "done" }));
+  assert.deepEqual(delegateEscalationRequestSchema.parse({
+    to_user_id: "10000000-0000-4000-8000-000000000002",
+    reason_md: "Better owner for this blocker."
+  }), {
+    to_user_id: "10000000-0000-4000-8000-000000000002",
+    reason_md: "Better owner for this blocker."
+  });
 });
 
 test("findings[#19/H4] sessionFinalizeFromStatuses blocks resurrecting finalized items, allows clarify-phase + same-status", () => {

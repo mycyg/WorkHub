@@ -28,6 +28,7 @@ import {
   type GoldPathSurfaceVM,
   type MergeProposalRequest,
   type ReviewProposalRequest,
+  type ResolveEscalationRequest,
   type StartAgentRunRequest,
   type WorkHubEvent
 } from "@workhub/contracts";
@@ -108,6 +109,11 @@ export type DesktopCuuActionRequest =
       proposalId: string;
       decision: ReviewProposalRequest["decision"];
       requiresReason: boolean;
+    }
+  | {
+      kind: "resolve-escalation";
+      escalationId: string;
+      payload: ResolveEscalationRequest;
     }
   | {
       kind: "session-next-question";
@@ -290,6 +296,14 @@ type DesktopCuuActionClient = Pick<
   WorkHubApiClient,
   "respondApproval" | "nextQuestion" | "searchKnowledge" | "useEvidenceForWorkItem"
 > & {
+  resolveEscalation?: (
+    escalationId: string,
+    payload: ResolveEscalationRequest
+  ) => Promise<{
+    attention: {
+      summary_text: string;
+    };
+  }>;
   reviewProposal?: (
     proposalId: string,
     payload: ReviewProposalRequest
@@ -988,6 +1002,19 @@ export function resolveDesktopCuuAction(
     };
   }
 
+  const escalationResolveMatch = /^\/api\/escalations\/([^/]+)\/resolve$/u.exec(path);
+  if (escalationResolveMatch?.[1]) {
+    const payload = escalationResolvePayloadFromAction(input.actionId, input.card, href);
+    if (!payload) {
+      return undefined;
+    }
+    return {
+      kind: "resolve-escalation",
+      escalationId: decodeURIComponent(escalationResolveMatch[1]),
+      payload
+    };
+  }
+
   const proposalReviewMatch = /^\/api\/proposals\/([^/]+)\/review$/u.exec(path);
   if (proposalReviewMatch?.[1]) {
     return {
@@ -1085,6 +1112,16 @@ export async function submitDesktopCuuAction(input: {
     });
     return {
       message: input.action.decision === "allow" ? cuuT(input.locale, "action.approved") : cuuT(input.locale, "action.denied")
+    };
+  }
+
+  if (input.action.kind === "resolve-escalation") {
+    if (!input.client.resolveEscalation) {
+      throw new Error("Escalation resolve action is unavailable.");
+    }
+    const result = await input.client.resolveEscalation(input.action.escalationId, input.action.payload);
+    return {
+      message: result.attention.summary_text
     };
   }
 
@@ -1554,6 +1591,27 @@ function approvalDecisionFromAction(actionId: string | undefined, requiresReason
 
 function proposalReviewDecisionFromAction(actionId: string | undefined, requiresReason: boolean): ReviewProposalRequest["decision"] {
   return approvalDecisionFromAction(actionId, requiresReason) === "deny" ? "request_changes" : "approve";
+}
+
+function escalationResolvePayloadFromAction(
+  actionId: string | undefined,
+  card: CuuCard | undefined,
+  href: string
+): ResolveEscalationRequest | undefined {
+  const payload = actionPayloadFromCard(card, actionId, href);
+  if (payload && typeof payload === "object" && !Array.isArray(payload) && "action" in payload) {
+    return payload as ResolveEscalationRequest;
+  }
+  switch (actionId) {
+    case "escalation_retry":
+      return { action: "retry" };
+    case "escalation_pm_mode":
+      return { action: "pm_mode" };
+    case "escalation_cancel":
+      return { action: "cancel" };
+    default:
+      return undefined;
+  }
 }
 
 function labelForState(state: CuuCard["state"], options: CuuLocaleOptions = {}) {

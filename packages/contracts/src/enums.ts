@@ -25,7 +25,7 @@ export const allowedWorkItemTransitions = {
   ai_clarifying: ["spec_ready", "cancelled"],
   spec_ready: ["ai_working", "pm_mode", "cancelled"],
   ai_working: ["in_review", "escalated", "cancelled"],
-  escalated: ["pm_mode", "cancelled"],
+  escalated: ["ai_working", "pm_mode", "cancelled"],
   pm_mode: ["in_review", "cancelled"],
   in_review: ["merged", "ai_working", "pm_mode", "cancelled"],
   merged: ["done", "intake"],

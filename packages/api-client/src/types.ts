@@ -43,6 +43,8 @@ import type {
   ReviewProposalRequest,
   RespondApprovalRequest,
   DelegateApprovalRequest,
+  ResolveEscalationRequest,
+  DelegateEscalationRequest,
   AddApprovalCommentRequest,
   ApprovalCommentVM,
   MergeProposalRequest,
@@ -170,6 +172,29 @@ export type IdentityResponse = {
   availability_text?: string;
 };
 
+export type EscalationResolveResult = {
+  escalation: {
+    id: string;
+    work_item_id: string;
+    resolved_at?: string;
+  };
+  work_item_status: WorkItemDetailVM["workitem"]["status"];
+  attention: {
+    summary_text: string;
+  };
+};
+
+export type EscalationDelegateResult = {
+  escalation: {
+    id: string;
+    work_item_id: string;
+    suggested_lead_user_id: string | null;
+  };
+  attention: {
+    summary_text: string;
+  };
+};
+
 export type PageClient = {
   attention: (options?: PageRequestOptions) => Promise<AttentionHomeVM>;
   approvals: (options?: PageRequestOptions) => Promise<ApprovalCenterVM>;
@@ -231,6 +256,8 @@ export type WorkHubApiClient = {
   getAgentRunHandoff: (runId: string) => Promise<StructuredHandoff | null>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
   delegateApproval: (id: string, payload: DelegateApprovalRequest) => Promise<unknown>;
+  resolveEscalation: (id: string, payload: ResolveEscalationRequest) => Promise<EscalationResolveResult>;
+  delegateEscalation: (id: string, payload: DelegateEscalationRequest) => Promise<EscalationDelegateResult>;
   listApprovalComments: (id: string) => Promise<ApprovalCommentVM[]>;
   postApprovalComment: (id: string, payload: AddApprovalCommentRequest) => Promise<ApprovalCommentVM>;
   createProposalFromManifest: (workItemId: string, payload: CreateProposalFromManifestRequest) => Promise<Proposal>;
