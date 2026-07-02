@@ -15,6 +15,11 @@ export type RecordedQuery = {
   steps: string[];
 };
 
+export type RecordedTransaction = {
+  outcome: "resolved" | "rejected";
+  errorName?: string;
+};
+
 class RecordedQueryBuilder implements PromiseLike<unknown[]> {
   constructor(
     private readonly query: RecordedQuery,
@@ -92,6 +97,7 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
 class QueryRecorderDb {
   private readonly responses: unknown[][];
   readonly queries: RecordedQuery[] = [];
+  readonly transactions: RecordedTransaction[] = [];
 
   constructor(responses: ReadonlyArray<ReadonlyArray<unknown>>) {
     this.responses = responses.map((rows) => [...rows]);
@@ -110,7 +116,17 @@ class QueryRecorderDb {
   }
 
   async transaction<T>(callback: (tx: WorkHubDb) => T | Promise<T>): Promise<T> {
-    return callback(this as unknown as WorkHubDb);
+    try {
+      const result = await callback(this as unknown as WorkHubDb);
+      this.transactions.push({ outcome: "resolved" });
+      return result;
+    } catch (error) {
+      this.transactions.push({
+        outcome: "rejected",
+        ...(error instanceof Error ? { errorName: error.name } : {})
+      });
+      throw error;
+    }
   }
 
   private createBuilder(
@@ -136,9 +152,13 @@ class QueryRecorderDb {
 
 export function createQueryRecorder(
   responses: ReadonlyArray<ReadonlyArray<unknown>> = []
-): { db: WorkHubDb; queries: RecordedQuery[] } {
+): { db: WorkHubDb; queries: RecordedQuery[]; transactions: RecordedTransaction[] } {
   const recorder = new QueryRecorderDb(responses);
-  return { db: recorder as unknown as WorkHubDb, queries: recorder.queries };
+  return {
+    db: recorder as unknown as WorkHubDb,
+    queries: recorder.queries,
+    transactions: recorder.transactions
+  };
 }
 
 export function queryReferences(value: unknown, target: unknown): boolean {

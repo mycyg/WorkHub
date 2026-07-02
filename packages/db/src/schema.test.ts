@@ -8,6 +8,8 @@ import { getTableName } from "drizzle-orm";
 import { confidenceGrades, escalationTriggers } from "@workhub/contracts";
 import {
   acceptedDeliverableChanges,
+  agentMemory,
+  agentMemoryVersions,
   agentRuns,
   agentSteps,
   auditLogs,
@@ -32,9 +34,9 @@ import {
   workspaceMemberships
 } from "./index.js";
 
-// R9.1: the old count (50) was correct before the agent-army plan store existed; this slice
-// intentionally adds `task_plans` and `task_plan_items` as the auditable decomposition tables.
-const F02_TABLE_COUNT = 52;
+// R9.3: the old count (52) was correct before private agent memory existed; this slice
+// intentionally adds `agent_memory` and `agent_memory_versions` as L1-only memory tables.
+const F02_TABLE_COUNT = 54;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -68,9 +70,31 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("team_skills"), true);
   assert.equal(tableNames.includes("task_plans"), true);
   assert.equal(tableNames.includes("task_plan_items"), true);
+  assert.equal(tableNames.includes("agent_memory"), true);
+  assert.equal(tableNames.includes("agent_memory_versions"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
+});
+
+test("R9.3 agent memory tables expose L1 private context and append-only versions", () => {
+  assert.equal(getTableName(agentMemory), "agent_memory");
+  assert.equal(agentMemory.workspaceId.name, "workspace_id");
+  assert.equal(agentMemory.agentContextId.name, "agent_context_id");
+  assert.equal(agentMemory.category.name, "category");
+  assert.equal(agentMemory.key.name, "key");
+  assert.equal(agentMemory.valueMd.name, "value_md");
+  assert.equal(agentMemory.confidence.name, "confidence");
+  assert.equal(agentMemory.sourceRunId.name, "source_run_id");
+  assert.equal(agentMemory.baseVersion.name, "base_version");
+  assert.equal(agentMemory.currentVersion.name, "current_version");
+
+  assert.equal(getTableName(agentMemoryVersions), "agent_memory_versions");
+  assert.equal(agentMemoryVersions.memoryId.name, "memory_id");
+  assert.equal(agentMemoryVersions.version.name, "version");
+  assert.equal(agentMemoryVersions.baseVersion.name, "base_version");
+  assert.equal(agentMemoryVersions.valueMd.name, "value_md");
+  assert.equal(agentMemoryVersions.sourceRunId.name, "source_run_id");
 });
 
 test("R9.1 task plan tables expose auditable decomposition fields", () => {

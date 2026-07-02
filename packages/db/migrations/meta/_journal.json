@@ -239,6 +239,13 @@
       "when": 1781512833742,
       "tag": "0033_agent_run_active_task_items",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1781512933742,
+      "tag": "0034_agent_memory",
+      "breakpoints": true
     }
   ]
 }

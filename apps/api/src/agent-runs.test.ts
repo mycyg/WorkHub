@@ -2125,6 +2125,133 @@ test("task-plan child run prompt carries objective metadata and research role ge
   assert.equal(visibleToolNames.includes("zip_path"), false);
 });
 
+test("task-plan child run prompt reads L1 private memory alongside existing L2 and L3 context", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-memory-context-test-"));
+  const taskPlanId = "81000000-0000-4000-8000-000000000061";
+  const taskPlanItemId = "81000000-0000-4000-8000-000000000062";
+  let firstPrompt = "";
+  let firstSystemPrompt = "";
+  const client: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create(params) {
+        if (!firstPrompt) {
+          firstPrompt = String(params.messages[0]?.content ?? "");
+          firstSystemPrompt = String(params.system ?? "");
+        }
+        return {
+          id: firstPrompt ? "msg-memory-context-review" : "msg-memory-context",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          content: [{ type: "text", text: firstPrompt ? "{\"grade\": 5, \"rationale\": \"上下文充分\"}" : "Done." }]
+        };
+      }
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e5",
+    workdir: () => workdir,
+    client: () => client,
+    agentMemory: async () => [
+      "以下是该子任务自己的私有记忆，仅作为参考。",
+      "<agent_private_memory>",
+      "- [偏好] 子任务里已经确认只采官方来源",
+      "</agent_private_memory>"
+    ].join("\n"),
+    userMemory: async () => [
+      "以下是该用户既往偏好的参考材料，仅用于减少重复澄清。",
+      "<user_memory>",
+      "- [偏好] 用户喜欢 Markdown 摘要",
+      "</user_memory>"
+    ].join("\n"),
+    teamSkills: async () => ({
+      catalogAppendix: "- [团队自蒸馏] team-memory-context: 团队常用调研模板",
+      contentByKey: {
+        "team-memory-context": "# 团队常用调研模板"
+      }
+    }),
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+
+  await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    title: "Memory scoped child run",
+    taskPlanId,
+    taskPlanItemId,
+    agentRole: "research",
+    objectiveMd: "Read memory context before researching."
+  });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.status, "succeeded");
+  assert.match(firstPrompt, /<agent_private_memory>/u);
+  assert.match(firstPrompt, /只采官方来源/u);
+  assert.match(firstPrompt, /<user_memory>/u);
+  assert.match(firstPrompt, /Markdown 摘要/u);
+  assert.match(firstSystemPrompt, /team-memory-context/u);
+});
+
+test("agent-runner finalize records task-plan child preferences through the L1 memory recorder", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-memory-finalize-test-"));
+  const recorded: { run: AgentRunQueueRecord; resultStatus: string; reviewGrade: number | undefined }[] = [];
+  const client: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create(params) {
+        const isReview = String(params.system ?? "").includes("llm_review") || String(params.messages[0]?.content ?? "").includes("grade");
+        return {
+          id: isReview ? "msg-memory-finalize-review" : "msg-memory-finalize",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          content: [{ type: "text", text: isReview ? "{\"grade\": 5, \"rationale\": \"偏好信号稳定\"}" : "Done." }]
+        };
+      }
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e6",
+    workdir: () => workdir,
+    client: () => client,
+    agentMemoryRecorder: async ({ run, result }) => {
+      recorded.push({ run, resultStatus: result.status, reviewGrade: result.review?.grade });
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+
+  await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    title: "Memory finalize child run",
+    taskPlanId: "81000000-0000-4000-8000-000000000071",
+    taskPlanItemId: "81000000-0000-4000-8000-000000000072",
+    agentRole: "produce"
+  });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.status, "succeeded");
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0]?.run.task_plan_item_id, "81000000-0000-4000-8000-000000000072");
+  assert.equal(recorded[0]?.resultStatus, "succeeded");
+  assert.equal(recorded[0]?.reviewGrade, 5);
+});
+
 test("agent run settled hook fires for terminal task-plan runs and stays fail-open", async () => {
   const runtimeSettings = settings();
   const successWorkdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-settled-ok-"));

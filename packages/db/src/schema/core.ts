@@ -5,6 +5,7 @@ import type {
   TaskPlanItemRole,
   TaskPlanItemStatus,
   TaskPlanStatus,
+  UserMemoryCategory,
   WorkHubLocale,
   WorkItemMode,
   WorkItemStatus
@@ -1471,6 +1472,50 @@ export const userMemories = pgTable(
   ]
 );
 
+export const agentMemory = pgTable(
+  "agent_memory",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    // R9.3 L1: this is intentionally a task_plan_items.id, not a generic context id.
+    agentContextId: uuid("agent_context_id").notNull().references(() => taskPlanItems.id, { onDelete: "cascade" }),
+    category: varchar("category", { length: 32 }).$type<UserMemoryCategory>().notNull(),
+    key: varchar("key", { length: 256 }).notNull(),
+    valueMd: text("value_md").notNull(),
+    confidence: doublePrecision("confidence").notNull().default(0.5),
+    sourceRunId: uuid("source_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    baseVersion: integer("base_version").notNull().default(0),
+    currentVersion: integer("current_version").notNull().default(1),
+    ...timestamps()
+  },
+  (table) => [
+    uniqueIndex("agent_memory_context_key_uq").on(table.workspaceId, table.agentContextId, table.category, table.key),
+    index("agent_memory_workspace_context_idx").on(table.workspaceId, table.agentContextId),
+    index("agent_memory_source_run_id_idx").on(table.sourceRunId),
+    index("agent_memory_confidence_idx").on(table.confidence),
+    index("agent_memory_updated_at_idx").on(table.updatedAt)
+  ]
+);
+
+export const agentMemoryVersions = pgTable(
+  "agent_memory_versions",
+  {
+    id: id(),
+    memoryId: uuid("memory_id").notNull().references(() => agentMemory.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    baseVersion: integer("base_version").notNull().default(0),
+    valueMd: text("value_md").notNull(),
+    sourceRunId: uuid("source_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    createdAt: createdAt()
+  },
+  (table) => [
+    uniqueIndex("agent_memory_versions_memory_version_uq").on(table.memoryId, table.version),
+    index("agent_memory_versions_memory_id_idx").on(table.memoryId),
+    index("agent_memory_versions_source_run_id_idx").on(table.sourceRunId),
+    index("agent_memory_versions_created_at_idx").on(table.createdAt)
+  ]
+);
+
 // R6.S2 团队级技能：AI 闲时从团队真实工作（接受的交付物/升级缺口）自蒸馏的 SKILL.md，
 // workspace 维度、版本化。active 版本与 FS 预设技能合并后注入 worker prompt（赋能整个团队）。
 // 无人工预审：AI 自验通过即 active；人类仅事后 deprecate/rollback（kill-switch）。
@@ -1506,6 +1551,8 @@ export const teamSkills = pgTable(
 export const workHubTables = {
   users,
   userMemories,
+  agentMemory,
+  agentMemoryVersions,
   teamSkills,
   clientDevices,
   userProfiles,
