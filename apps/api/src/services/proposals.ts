@@ -63,6 +63,7 @@ import {
 } from "./text-hunk-materializer.js";
 import { correctionFromReview, getDefaultUserMemoryRepository } from "./user-memory.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import { getDefaultTaskPlanMergeApprovalHandler, type TaskPlanMergeApprovalHandler } from "./task-plan-approval.js";
 
 export type ProposalActor = {
   actor_kind: "human" | "ai" | "system";
@@ -72,6 +73,10 @@ export type ProposalActor = {
 
 export type StoredProposal = Proposal & {
   reviews: Review[];
+};
+
+export type ProposalServiceHooks = {
+  onMerged?: TaskPlanMergeApprovalHandler;
 };
 
 // GAP-1：首页决策队列里「待评审提议」的轻量摘要(不含 manifest/reviews)。
@@ -1623,6 +1628,7 @@ function conflictListResult(conflicts: ProposalConflict[]): ProposalConflictList
 export function createInMemoryProposalService(options: {
   now?: () => Date;
   id?: () => string;
+  onMerged?: TaskPlanMergeApprovalHandler;
 } = {}): ProposalService {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
@@ -1765,10 +1771,12 @@ export function createInMemoryProposalService(options: {
         merged_at: at,
         updated_at: at
       }, "proposal.memory");
-      return save({
+      const merged = save({
         ...updated,
         reviews: proposal.reviews
       });
+      await options.onMerged?.(merged);
+      return merged;
     },
 
     async rebase(input) {
@@ -1805,6 +1813,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
   id?: () => string;
   storageRoot?: string;
   fusionCandidateGenerator?: MergeFusionCandidateGenerator;
+  onMerged?: TaskPlanMergeApprovalHandler;
 } = {}): ProposalService {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
@@ -2129,7 +2138,9 @@ export function createDbProposalService(repository: ProposalRepository, options:
       if (!rows) {
         throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
       }
-      return storedRowsToProposal(rows);
+      const merged = storedRowsToProposal(rows);
+      await options.onMerged?.(merged);
+      return merged;
     },
 
     async rebase(input) {
@@ -2269,7 +2280,9 @@ let defaultProposalDbClient: WorkHubDatabaseClient | undefined;
 export function getDefaultProposalService() {
   if (!defaultProposalService) {
     defaultProposalDbClient = getSharedDatabaseClient();
-    defaultProposalService = createDbProposalService(createProposalRepository(defaultProposalDbClient.db));
+    defaultProposalService = createDbProposalService(createProposalRepository(defaultProposalDbClient.db), {
+      onMerged: getDefaultTaskPlanMergeApprovalHandler()
+    });
   }
   return defaultProposalService;
 }

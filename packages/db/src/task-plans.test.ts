@@ -178,3 +178,79 @@ test("R9.1 task plan repository reads through workspace scope with an honest ite
   assert.ok(queryReferences(itemQuery?.where, taskPlanItems.planId));
   assert.ok(queryParamValues(itemQuery?.where).includes(planId));
 });
+
+test("R9.1 task plan repository approves a draft only within the workspace scope", async () => {
+  const approvedRow = {
+    id: planId,
+    workItemId,
+    workspaceId,
+    status: "approved",
+    objectiveId: null,
+    budgetJson: {},
+    decompositionContextJson: {},
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now
+  };
+  const { db, queries } = createQueryRecorder([[approvedRow]]);
+  const repository = createTaskPlanRepository(db);
+
+  const result = await repository.approvePlan({
+    planId,
+    workspaceId,
+    approvedAt: now
+  });
+
+  assert.equal(result?.id, planId);
+  assert.equal(result?.status, "approved");
+  assert.equal(queries.length, 1);
+  const [query] = queries;
+  assert.equal(query?.operation, "update");
+  assert.equal(query?.targetTable, taskPlans);
+  assert.deepEqual(query?.setValue, { status: "approved", updatedAt: now });
+  assert.equal(query?.returningCalled, true);
+  assert.ok(queryReferences(query?.where, taskPlans.id));
+  assert.ok(queryReferences(query?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(query?.where, taskPlans.status));
+  assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
+  assert.ok(queryParamValues(query?.where).includes("draft"));
+});
+
+test("R9.1 task plan repository cancels only draft plans within the workspace scope", async () => {
+  const cancelledRow = {
+    id: planId,
+    workItemId,
+    workspaceId,
+    status: "cancelled",
+    objectiveId: null,
+    budgetJson: {},
+    decompositionContextJson: {},
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now
+  };
+  const { db, queries } = createQueryRecorder([[cancelledRow]]);
+  const repository = createTaskPlanRepository(db);
+
+  const result = await repository.cancelDraftPlan({
+    planId,
+    workspaceId,
+    cancelledAt: now
+  });
+
+  assert.equal(result?.id, planId);
+  assert.equal(result?.status, "cancelled");
+  assert.equal(queries.length, 1);
+  const [query] = queries;
+  assert.equal(query?.operation, "update");
+  assert.equal(query?.targetTable, taskPlans);
+  assert.deepEqual(query?.setValue, { status: "cancelled", updatedAt: now });
+  assert.equal(query?.returningCalled, true);
+  assert.ok(queryReferences(query?.where, taskPlans.id));
+  assert.ok(queryReferences(query?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(query?.where, taskPlans.status));
+  assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
+  assert.ok(queryParamValues(query?.where).includes("draft"));
+});

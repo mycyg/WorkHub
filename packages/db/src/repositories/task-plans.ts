@@ -128,6 +128,48 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         items: rows.slice(0, itemLimit),
         itemsCapped: rows.length > itemLimit
       };
+    },
+
+    async approvePlan(input: {
+      planId: string;
+      workspaceId: string;
+      approvedAt?: Date;
+    }): Promise<TaskPlanRow | null> {
+      const approvedAt = input.approvedAt ?? new Date();
+      const [row] = await db
+        .update(taskPlans)
+        .set({
+          status: "approved" satisfies TaskPlanStatus,
+          updatedAt: approvedAt
+        })
+        .where(and(
+          eq(taskPlans.id, input.planId),
+          eq(taskPlans.workspaceId, input.workspaceId),
+          eq(taskPlans.status, "draft" satisfies TaskPlanStatus)
+        ))
+        .returning();
+      return row ?? null;
+    },
+
+    async cancelDraftPlan(input: {
+      planId: string;
+      workspaceId: string;
+      cancelledAt?: Date;
+    }): Promise<TaskPlanRow | null> {
+      const cancelledAt = input.cancelledAt ?? new Date();
+      const [row] = await db
+        .update(taskPlans)
+        .set({
+          status: "cancelled" satisfies TaskPlanStatus,
+          updatedAt: cancelledAt
+        })
+        .where(and(
+          eq(taskPlans.id, input.planId),
+          eq(taskPlans.workspaceId, input.workspaceId),
+          eq(taskPlans.status, "draft" satisfies TaskPlanStatus)
+        ))
+        .returning();
+      return row ?? null;
     }
   };
 }

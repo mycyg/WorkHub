@@ -1102,6 +1102,64 @@ const createProposalResponse = {
     "422": createProposalValidationResponse
   }
 } as const;
+const createTaskPlanRequestSchema = {
+  type: "object",
+  properties: {
+    memories: {
+      type: "object",
+      properties: {
+        user: { type: "array", items: { type: "string", minLength: 1, maxLength: 1000 }, maxItems: 20 },
+        team: { type: "array", items: { type: "string", minLength: 1, maxLength: 1000 }, maxItems: 20 }
+      },
+      additionalProperties: false
+    }
+  },
+  additionalProperties: false
+} as const;
+const createTaskPlanResponseSchema = {
+  type: "object",
+  required: ["plan_id", "proposal_id", "proposal_href", "proposal"],
+  properties: {
+    plan_id: uuidStringSchema,
+    proposal_id: uuidStringSchema,
+    proposal_href: { type: "string", minLength: 1 },
+    proposal: proposalResponseSchema
+  },
+  additionalProperties: false
+} as const;
+const createTaskPlanConflictResponse = jsonErrorStatusResponse(
+  "409",
+  "Task plan decomposition needs human intervention or proposal state changed",
+  ["task_plan_decomposition_needs_human", "proposal_already_exists"]
+).responses["409"];
+const createTaskPlanValidationResponse = jsonErrorStatusResponse(
+  "422",
+  "Task plan request or work item state is invalid",
+  ["validation_error", "task_plan_workspace_missing", "manifest_workitem_mismatch"]
+).responses["422"];
+const createTaskPlanBadGatewayResponse = jsonErrorStatusResponse(
+  "502",
+  "Task plan LLM returned an invalid response",
+  ["task_plan_llm_invalid_response"]
+).responses["502"];
+const createTaskPlanUnavailableResponse = jsonErrorStatusResponse(
+  "503",
+  "Task plan LLM is not configured",
+  ["task_plan_llm_unavailable"]
+).responses["503"];
+const createTaskPlanResponse = {
+  responses: {
+    ...jsonDataStatusResponse(createTaskPlanResponseSchema, "201", "Created task plan draft and review proposal").responses,
+    "400": proposalMalformedJsonResponse,
+    "401": proposalNotIdentifiedResponse,
+    "403": proposalForbiddenResponse,
+    "404": proposalNotFoundResponse,
+    "409": createTaskPlanConflictResponse,
+    "422": createTaskPlanValidationResponse,
+    "502": createTaskPlanBadGatewayResponse,
+    "503": createTaskPlanUnavailableResponse
+  }
+} as const;
 const proposalListResponseSchema = {
   type: "array",
   items: proposalResponseSchema
@@ -4466,6 +4524,15 @@ export function getOpenApiDocument() {
           summary: "List proposals for a work item",
           parameters: [pathUuidParameter("id")],
           ...proposalListResponse
+        }
+      },
+      "/api/workitems/{id}/task-plan": {
+        post: {
+          tags: ["task-plans"],
+          summary: "Decompose a work item into a task plan proposal",
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
+          ...jsonRequestBody(createTaskPlanRequestSchema, { required: false }),
+          ...createTaskPlanResponse
         }
       },
       "/api/workitems/{id}/conflicts": {

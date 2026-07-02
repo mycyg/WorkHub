@@ -186,7 +186,7 @@ export const deliverableChangeSchema = z.object({
   id: idSchema,
   target_kind: deliverableTargetKindSchema,
   target_ref: z.object({
-    entity_type: z.enum(["work_item", "drive_item", "delivery", "spec_doc", "folder", "external"]),
+    entity_type: z.enum(["work_item", "drive_item", "delivery", "spec_doc", "folder", "task_plan", "external"]),
     entity_id: idSchema.optional(),
     // findings[#7]：这些 AI 产出的串落进定宽列，原本无 .max 上界，超长串到 INSERT 才以 PG 22001 抛未捕获 500。
     // 在契约边界按对应列宽收口，让超长 manifest 在创建时即得干净 400。path→target_path(512)；
