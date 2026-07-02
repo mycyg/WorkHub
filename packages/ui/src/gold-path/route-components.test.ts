@@ -1539,7 +1539,7 @@ test("Drive route version history follows the selected file instead of showing u
   assert.equal(drive.html.includes('data-r4-drive-version="94000000-0000-4000-8000-000000000003"'), false);
 });
 
-test("Drive route recycle bin names when more deleted items are loaded than shown", () => {
+test("Drive route recycle bin renders every loaded deleted item", () => {
   const vm = drivePageVm();
   const baseDeleted = vm.deleted_items[0]!;
   vm.deleted_items = Array.from({ length: 7 }, (_, index) => ({
@@ -1552,10 +1552,11 @@ test("Drive route recycle bin names when more deleted items are loaded than show
 
   const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "zh-CN" });
 
-  assert.equal((drive.html.match(/data-action-id="drive_restore_item"/gu) ?? []).length, 5);
-  assert.equal(drive.html.includes("deleted-6.md"), false);
-  assert.equal(drive.html.includes('data-r5-drive-recycle-more="2"'), true);
-  assert.equal(drive.html.includes("还有 2 个回收站项目未显示"), true);
+  // 旧断言把回收站固定截断为 5 行，导致第 6+ 个已加载项目永远没有还原入口；这里应渲染完整已加载清单。
+  assert.equal((drive.html.match(/data-action-id="drive_restore_item"/gu) ?? []).length, 7);
+  assert.equal(drive.html.includes("deleted-6.md"), true);
+  assert.equal(drive.html.includes("deleted-7.md"), true);
+  assert.equal(drive.html.includes("继续进入网盘查看完整回收站"), false);
 });
 
 test("Drive route renders every loaded file row instead of silently truncating after twelve", () => {

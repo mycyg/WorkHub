@@ -2282,13 +2282,8 @@ function renderDriveRouteComponent(
       </div>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无评论" : "No comments yet")}</p>`;
-  const visibleDeletedItems = vm.deleted_items.slice(0, 5);
-  const hiddenDeletedItemCount = vm.deleted_items.length - visibleDeletedItems.length;
-  const recycleMoreNote = hiddenDeletedItemCount > 0
-    ? `<p class="wh-subtle" data-r5-drive-recycle-more="${escapeHtml(String(hiddenDeletedItemCount))}">${escapeHtml(locale === "zh-CN" ? `还有 ${hiddenDeletedItemCount} 个回收站项目未显示，继续进入网盘查看完整回收站。` : `+${hiddenDeletedItemCount} recycle-bin items not shown here — open the full drive to review all.`)}</p>`
-    : "";
   const recycleRows = vm.deleted_items.length
-    ? `${visibleDeletedItems.map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}">
+    ? vm.deleted_items.map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}">
       <div>
         <strong>${escapeHtml(item.name)}</strong>
         <p>${escapeHtml(item.path)}</p>
@@ -2298,7 +2293,7 @@ function renderDriveRouteComponent(
         ${item.deleted_at ? `<span class="wh-pill">${escapeHtml(item.deleted_at.slice(0, 10))}</span>` : ""}
         ${item.restore_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore_item" data-method="POST" data-r5-drive-recycle-restore="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""}
       </div>
-    </div>`).join("")}${recycleMoreNote}`
+    </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyRecycle"))}</p>`;
   const operationRows = vm.operations.length
     ? vm.operations.slice(0, 6).map((operation) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-drive-operation="${escapeHtml(operation.id)}" data-r5-drive-operation-type="${escapeHtml(operation.op_type)}">
