@@ -2953,12 +2953,37 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
   const openCountLabel = totalOpen > viewableOpen
     ? `${routeT(locale, "projects.openItems")} ${totalOpen} · ${zh ? "你可处理" : "you can handle"} ${viewableOpen}`
     : `${routeT(locale, "projects.openItems")} ${totalOpen}`;
-  // 隐藏量要对全量口径算:此前用 open_work_item_count(可见数)减可见清单长度,两者同源恒等 → hiddenCount 永远 0,
-  // 这条提示从不出现。当页头显示「进行中 16 · 你可处理 3」时,用户只看到 3 行却不知另外 13 条去哪了。
-  // 这里不能猜测原因一定是权限：也可能只是项目主页列表截断。文案保持中性，提示去项目内看全量。
-  const hiddenCount = totalOpen - vm.open_work_items.length;
+  // 隐藏量拆成两类：total > viewable 是权限/职责范围过滤，viewable > 本页 rows 是主页摘要折叠。
+  // 旧文案让用户「进入项目查看全部」，但当前页面已经是项目主页，不能指向不存在的隐藏工作项入口。
+  const shownOpen = vm.open_work_items.length;
+  const filteredHiddenCount = Math.max(0, totalOpen - viewableOpen);
+  const collapsedOpenCount = Math.max(0, viewableOpen - shownOpen);
+  const hiddenCount = filteredHiddenCount + collapsedOpenCount;
+  const moreNoteCopy = hiddenCount > 0
+    ? (() => {
+      const parts: string[] = [];
+      if (viewableOpen > 0) {
+        parts.push(zh
+          ? `项目主页摘要展示你可处理的 ${shownOpen} / ${viewableOpen} 条进行中工作`
+          : `Project home shows ${shownOpen} of ${viewableOpen} open items you can handle`);
+      } else {
+        parts.push(zh ? "本页没有可处理的进行中工作" : "No open items are currently in your handleable list");
+      }
+      if (collapsedOpenCount > 0) {
+        parts.push(zh
+          ? `其余 ${collapsedOpenCount} 条不会在此页展开`
+          : `${collapsedOpenCount} ${collapsedOpenCount === 1 ? "is" : "are"} not expanded on this page`);
+      }
+      if (filteredHiddenCount > 0) {
+        parts.push(zh
+          ? `另有 ${filteredHiddenCount} 条因权限或职责范围未显示`
+          : `${filteredHiddenCount} more ${filteredHiddenCount === 1 ? "is" : "are"} outside your permissions or assignment scope`);
+      }
+      return `${parts.join(zh ? "；" : "; ")}${zh ? "。" : "."}`;
+    })()
+    : "";
   const moreNote = hiddenCount > 0
-    ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(zh ? `还有 ${hiddenCount} 条进行中工作未在此处显示，进入项目查看全部。` : `+${hiddenCount} more open items not shown here — open the project to review all.`)}</p>`
+    ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}" data-r8-project-home-filtered="${escapeHtml(String(filteredHiddenCount))}" data-r8-project-home-collapsed="${escapeHtml(String(collapsedOpenCount))}">${escapeHtml(moreNoteCopy)}</p>`
     : "";
   const fileCountLabel = `${routeT(locale, "projectHome.files")} ${vm.drive.file_count}`;
   // L4：文件标题用的是总文件数(file_count)，列表只显示最近若干条；以前没有「还有 N 个未显示」的提示，

@@ -1335,7 +1335,7 @@ test("R4.11 web loader marks ready routes as route components", async () => {
   }
 });
 
-test("R8 S2b project-home route renders project meta, open-work links, CTAs, back link, and a +more hint", async () => {
+test("R8 S2b project-home route renders project meta, open-work links, CTAs, back link, and a truthful hidden-work hint", async () => {
   const surface = goldPathSurfaceVm();
   const projectId = "93000000-0000-4000-8000-000000000001";
   const projectHome = {
@@ -1363,6 +1363,9 @@ test("R8 S2b project-home route renders project meta, open-work links, CTAs, bac
   assert.equal(result.html.includes('href="/projects"'), true);
   // +N more hint when true count exceeds the shown list (73 - 1 = 72)
   assert.equal(result.html.includes('data-r8-project-home-more="72"'), true);
+  // 旧断言接受 "open the project to review all"，但当前已经在项目主页且没有单独的隐藏工作项页面。
+  assert.equal(result.html.includes("Project home shows 1 of 73 open items you can handle"), true);
+  assert.equal(result.html.includes("open the project to review all"), false);
   // recent files card (drive sync is core) — file count + a recent file linking into the drive
   assert.equal(result.html.includes('data-r8-project-home-files="1"'), true);
   assert.equal(result.html.includes('data-r8-project-home-file="20000000-0000-4000-8000-000000000777"'), true);
@@ -1387,10 +1390,14 @@ test("M5 project-home: 进行中 stat chip uses the全量 total (matches header 
   assert.equal(result.html.includes('data-r4-product-metric="openwork"><strong>3</strong>'), false);
   // 页头 pill 仍诚实标出「你可处理」可见数。
   assert.equal(result.html.includes("you can handle 3"), true);
-  // xreview E3：隐藏量提示按全量算(8 - 1 显示行 = 7)，但不猜测原因是权限还是列表截断。
+  // xreview E3：隐藏量提示按全量算(8 - 1 显示行 = 7)，且拆分说明权限过滤与主页摘要折叠。
   assert.equal(result.html.includes('data-r8-project-home-more="7"'), true);
-  assert.equal(result.html.includes("more open items not shown here"), true);
-  assert.equal(result.html.includes("you cannot view"), false);
+  assert.equal(result.html.includes('data-r8-project-home-filtered="5"'), true);
+  assert.equal(result.html.includes('data-r8-project-home-collapsed="2"'), true);
+  // 旧断言要求不提权限原因，但 VM 已区分 total 与可处理数；继续中性处理会掩盖权限过滤真相。
+  assert.equal(result.html.includes("Project home shows 1 of 3 open items you can handle"), true);
+  assert.equal(result.html.includes("5 more are outside your permissions or assignment scope"), true);
+  assert.equal(result.html.includes("open the project to review all"), false);
 
   // 回退：VM 没有 total 字段时，chip 退回可见数（旧契约不破）。
   const legacy = { ...projectHomeVm(projectId), summary: { open_work_item_count: 5 } };
