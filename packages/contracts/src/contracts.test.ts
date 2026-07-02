@@ -415,6 +415,7 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
         filename: "客户复盘.md",
         mime: "text/markdown",
         size_bytes: 2048,
+        access_notice: "Restricted: you need access to the backing work item to preview or download this deliverable.",
         accepted_at: "2026-06-11T01:00:00.000Z"
       }
     ],
@@ -475,6 +476,7 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
   assert.equal(parsed.comments[0]?.status, "proposal_created");
   assert.equal(parsed.comments[0]?.proposal_href, "/proposals/92000000-0000-4000-8000-000000000006");
   assert.equal(parsed.comments[1]?.draft_action?.method, "POST");
+  assert.equal(parsed.accepted_deliverables[0]?.access_notice, "Restricted: you need access to the backing work item to preview or download this deliverable.");
   assert.equal(parsed.deleted_items[0]?.deleted_at, "2026-06-11T01:00:00.000Z");
   assert.equal(parsed.operations[0]?.op_type, "draft_to_proposal");
   assert.equal(parsed.actions.upload_file?.method, "POST");

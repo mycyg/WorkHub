@@ -1583,6 +1583,34 @@ test("Drive route recycle bin renders every loaded deleted item", () => {
   assert.equal(drive.html.includes("继续进入网盘查看完整回收站"), false);
 });
 
+test("Drive route explains restricted accepted deliverables without action links", () => {
+  const vm = drivePageVm();
+  vm.accepted_deliverables[0] = {
+    ...vm.accepted_deliverables[0]!,
+    access_notice: "Restricted: you need access to the backing work item to preview or download this deliverable.",
+    preview_href: undefined,
+    download_href: undefined,
+    restore_href: undefined
+  };
+
+  const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
+
+  assert.equal(drive.html.includes('data-r4-drive-accepted-deliverable="94000000-0000-4000-8000-000000000004"'), true);
+  assert.equal(drive.html.includes('data-r5-drive-accepted-access-note="true"'), true);
+  assert.equal(drive.html.includes("Restricted: you need access to the backing work item to preview or download this deliverable."), true);
+  assert.equal((drive.html.match(/data-action-id="drive_restore"/gu) ?? []).length, 0);
+});
+
+test("Drive route marks a recycle-bin deep link without selecting an active file row", () => {
+  const vm = drivePageVm();
+  vm.selected_item_id = "94000000-0000-4000-8000-000000000011";
+
+  const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
+
+  assert.equal(drive.html.includes('data-r4-drive-item-selected="true"'), false);
+  assert.equal(drive.html.includes('data-r5-drive-recycle-item="94000000-0000-4000-8000-000000000011" data-r5-drive-recycle-selected="true"'), true);
+});
+
 test("Drive route renders every loaded file row instead of silently truncating after twelve", () => {
   const base = drivePageVm();
   const items = Array.from({ length: 20 }, (_, index) => {

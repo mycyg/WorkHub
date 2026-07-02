@@ -124,6 +124,7 @@ export const acceptedDeliverableVmSchema = z.object({
   download_href: z.string().min(1).optional(),
   preview_href: z.string().min(1).optional(),
   restore_href: z.string().min(1).optional(),
+  access_notice: z.string().min(1).optional(),
   accepted_at: isoDateTimeSchema
 });
 export type AcceptedDeliverableVM = z.infer<typeof acceptedDeliverableVmSchema>;
