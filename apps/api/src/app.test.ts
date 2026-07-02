@@ -3,6 +3,15 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { HTTPException } from "hono/http-exception";
 
+import {
+  addApprovalCommentRequestSchema,
+  createApprovalRequestSchema,
+  delegateApprovalRequestSchema,
+  permissionPolicyWriteSchema,
+  respondApprovalRequestSchema,
+  useEvidenceForTaskRequestSchema
+} from "@workhub/contracts";
+
 import app from "./app.js";
 import { httpErrorCodeFor } from "./http-error-codes.js";
 import { jsonObjectMessage, malformedJsonMessage } from "./routes/json-body.js";
@@ -19,6 +28,10 @@ interface ErrorBody {
     code: string;
   };
 }
+
+type ZodRequestObject = {
+  shape: Record<string, { isOptional: () => boolean }>;
+};
 
 const documentedMethods = new Set(["delete", "get", "head", "options", "patch", "post", "put"]);
 const runtimeContractRouteIgnores = new Set(["/", "/openapi.json", "/api/openapi.json"]);
@@ -119,6 +132,49 @@ function jsonErrorCodeProperty(
   const error = schema?.properties?.error as { properties?: Record<string, unknown> } | undefined;
   assert.deepEqual(schema?.required, ["ok", "error"], `${method.toUpperCase()} ${path} ${status} missing error envelope`);
   return error?.properties?.code;
+}
+
+function assertJsonErrorCodes(
+  paths: Record<string, Record<string, unknown>>,
+  path: string,
+  method: string,
+  status: string,
+  codes: string[]
+) {
+  assert.deepEqual(jsonErrorCodeProperty(paths, path, method, status), {
+    type: "string",
+    enum: codes
+  }, `${method.toUpperCase()} ${path} ${status} error codes drifted`);
+}
+
+function zodPropertyNames(schema: ZodRequestObject) {
+  return Object.keys(schema.shape).sort();
+}
+
+function zodRequiredPropertyNames(schema: ZodRequestObject) {
+  return Object.entries(schema.shape)
+    .filter(([, field]) => !field.isOptional())
+    .map(([name]) => name)
+    .sort();
+}
+
+function assertJsonRequestMatchesZodObject(
+  paths: Record<string, Record<string, unknown>>,
+  path: string,
+  method: string,
+  schema: ZodRequestObject
+) {
+  const openApiSchema = jsonRequestSchema(paths, path, method);
+  assert.deepEqual(
+    Object.keys(openApiSchema?.properties ?? {}).sort(),
+    zodPropertyNames(schema),
+    `${method.toUpperCase()} ${path} request properties drifted from zod schema`
+  );
+  assert.deepEqual(
+    [...(openApiSchema?.required ?? [])].sort(),
+    zodRequiredPropertyNames(schema),
+    `${method.toUpperCase()} ${path} required request properties drifted from zod schema`
+  );
 }
 
 function responseObject(
@@ -495,6 +551,22 @@ test("core JSON mutation routes document optional bodies and nested fields accur
     "query_text",
     "summary_text"
   ]);
+});
+
+test("OpenAPI JSON request bodies stay aligned with zod input contracts", async () => {
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+
+  for (const { path, method, schema } of [
+    { path: "/api/permissions", method: "put", schema: permissionPolicyWriteSchema },
+    { path: "/api/permissions/ask", method: "post", schema: createApprovalRequestSchema },
+    { path: "/api/approvals/{id}/respond", method: "post", schema: respondApprovalRequestSchema },
+    { path: "/api/approvals/{id}/delegate", method: "post", schema: delegateApprovalRequestSchema },
+    { path: "/api/approvals/{id}/comments", method: "post", schema: addApprovalCommentRequestSchema },
+    { path: "/api/workitems/{id}/evidence-bindings", method: "post", schema: useEvidenceForTaskRequestSchema }
+  ] as const) {
+    assertJsonRequestMatchesZodObject(body.paths, path, method, schema);
+  }
 });
 
 test("project and drive OpenAPI routes document runtime path and query parameters", async () => {
@@ -1130,7 +1202,12 @@ test("Approval and permission OpenAPI contracts document decision and policy act
     properties?: Record<string, unknown>;
   } | undefined;
   assert.deepEqual(deletePermissionNotFound?.required, ["ok", "error"]);
-  assert.deepEqual(deletePermissionNotFoundError?.properties?.code, { type: "string", enum: ["not_found"] });
+  // Old assertion expected generic not_found. That was wrong because permissions.revokePolicy
+  // returns the domain code permission_policy_not_found, and clients branch on that code.
+  assert.deepEqual(deletePermissionNotFoundError?.properties?.code, {
+    type: "string",
+    enum: ["permission_policy_not_found"]
+  });
 
   assert.deepEqual(jsonRequestSchema(body.paths, "/api/permissions/ask", "post")?.required, ["action_pattern"]);
   assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/permissions/ask", "post")).sort(), [
@@ -1150,6 +1227,50 @@ test("Approval and permission OpenAPI contracts document decision and policy act
     enum: ["allowed", "denied", "escalated", "pending"]
   });
   assert.ok(askData?.properties?.approval, "POST /api/permissions/ask missing pending approval schema");
+});
+
+test("OpenAPI error responses document approval, meeting, and work item mutation status matrices", async () => {
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+
+  assertJsonErrorCodes(body.paths, "/api/workitems", "post", "409", ["workitem_state_conflict"]);
+  assertJsonErrorCodes(body.paths, "/api/permissions/{id}", "delete", "404", ["permission_policy_not_found"]);
+
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/respond", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/respond", "post", "403", ["invalid_client_token", "forbidden"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/respond", "post", "404", ["not_found"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/respond", "post", "409", ["approval_race"]);
+
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "403", ["invalid_client_token", "forbidden"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "404", ["not_found", "delegate_target_not_found"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "409", ["approval_race"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "422", ["delegate_to_requester", "delegate_target_cannot_view"]);
+
+  for (const path of [
+    "/api/meetings/projects/{projectId}/insights/{insightId}/draft",
+    "/api/meetings/projects/{projectId}/insights/{insightId}/dismiss"
+  ] as const) {
+    assertJsonErrorCodes(body.paths, path, "post", "401", ["not_identified"]);
+    assertJsonErrorCodes(body.paths, path, "post", "403", ["invalid_client_token", "meeting_forbidden"]);
+    assertJsonErrorCodes(body.paths, path, "post", "404", ["meeting_not_found", "meeting_insight_not_found"]);
+  }
+
+  assertJsonErrorCodes(body.paths, "/api/meetings/workitems/{workItemId}/proposal-draft", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/meetings/workitems/{workItemId}/proposal-draft", "post", "403", [
+    "invalid_client_token",
+    "forbidden",
+    "meeting_forbidden"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/meetings/workitems/{workItemId}/proposal-draft", "post", "404", [
+    "not_found",
+    "meeting_not_found",
+    "meeting_insight_not_found"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/meetings/workitems/{workItemId}/proposal-draft", "post", "409", [
+    "meeting_draft_source_missing",
+    "meeting_insight_dismissed"
+  ]);
 });
 
 test("Proposal OpenAPI contracts document review, merge, and conflict action payloads", async () => {
