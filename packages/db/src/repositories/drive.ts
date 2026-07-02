@@ -460,6 +460,7 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           // deletedAt 仅在确有 drive item 时才校验。
           .where(and(
             eq(acceptedDeliverableChanges.projectId, project.id),
+            isNull(acceptedDeliverableChanges.supersededAt),
             or(isNull(projectDriveItems.id), isNull(projectDriveItems.deletedAt))
           ))
           .orderBy(desc(acceptedDeliverableChanges.createdAt))
@@ -639,6 +640,32 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         acceptedDeliverables = [
           ...acceptedDeliverables,
           ...loadedAcceptedDeliverables.filter((row) => !knownAcceptedDeliverableIds.has(row.accepted.id))
+        ];
+      }
+      const loadedVersionIds = [...new Set(versions.map((version) => version.id))];
+      if (loadedItemIds.length && loadedVersionIds.length) {
+        const knownAcceptedDeliverableIds = new Set(acceptedDeliverables.map((row) => row.accepted.id));
+        const historicalAcceptedDeliverables = await db
+          .select({
+            accepted: acceptedDeliverableChanges,
+            driveItem: projectDriveItems,
+            driveVersion: projectDriveVersions
+          })
+          .from(acceptedDeliverableChanges)
+          .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+          .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
+          .where(and(
+            eq(acceptedDeliverableChanges.projectId, project.id),
+            inArray(acceptedDeliverableChanges.driveItemId, loadedItemIds),
+            inArray(acceptedDeliverableChanges.driveVersionId, loadedVersionIds),
+            isNotNull(acceptedDeliverableChanges.supersededAt),
+            or(isNull(projectDriveItems.id), isNull(projectDriveItems.deletedAt))
+          ))
+          .orderBy(desc(acceptedDeliverableChanges.createdAt))
+          .limit(Math.max(1, Math.min(loadedVersionIds.length * 2, 500)));
+        acceptedDeliverables = [
+          ...acceptedDeliverables,
+          ...historicalAcceptedDeliverables.filter((row) => !knownAcceptedDeliverableIds.has(row.accepted.id))
         ];
       }
       acceptedDeliverables = await attachAcceptedDeliverableRestoreState(db, acceptedDeliverables);

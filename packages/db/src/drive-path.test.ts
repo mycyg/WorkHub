@@ -195,15 +195,30 @@ test("drive page accepted deliverables only attach versions belonging to their d
   assert.match(source, /eq\(projectDriveVersions\.itemId,\s*acceptedDeliverableChanges\.driveItemId\)/u);
 });
 
-test("drive page readPage keeps superseded accepted rows for historical version labels", () => {
+test("drive page readPage limits current accepted rows while backfilling superseded rows for loaded version labels", () => {
   const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const acceptedStart = source.indexOf(".from(acceptedDeliverableChanges)");
+  const readPageStart = source.indexOf("async readPage");
+  assert.notEqual(readPageStart, -1);
+  const acceptedStart = source.indexOf(".from(acceptedDeliverableChanges)", readPageStart);
   const acceptedEnd = source.indexOf(".orderBy(desc(acceptedDeliverableChanges.createdAt))", acceptedStart);
   assert.notEqual(acceptedStart, -1);
   assert.notEqual(acceptedEnd, -1);
   const acceptedBlock = source.slice(acceptedStart, acceptedEnd);
 
-  assert.doesNotMatch(acceptedBlock, /isNull\(acceptedDeliverableChanges\.supersededAt\)/u);
+  // Old assertion required this main accepted-deliverable query to keep superseded rows.
+  // That was wrong: historical rows then consumed the current accepted list limit. History
+  // must be backfilled separately only for already-loaded version labels.
+  assert.match(acceptedBlock, /isNull\(acceptedDeliverableChanges\.supersededAt\)/u);
+
+  const historicalStart = source.indexOf("const historicalAcceptedDeliverables", acceptedEnd);
+  const historicalEnd = source.indexOf("acceptedDeliverables = await attachAcceptedDeliverableRestoreState", historicalStart);
+  assert.notEqual(historicalStart, -1);
+  assert.notEqual(historicalEnd, -1);
+  const historicalBlock = source.slice(historicalStart, historicalEnd);
+
+  assert.match(historicalBlock, /isNotNull\(acceptedDeliverableChanges\.supersededAt\)/u);
+  assert.match(historicalBlock, /inArray\(acceptedDeliverableChanges\.driveVersionId,\s*loadedVersionIds\)/u);
+  assert.match(historicalBlock, /\.limit\(Math\.max\(1,\s*Math\.min\(loadedVersionIds\.length \* 2,\s*500\)\)\)/u);
 });
 
 test("drive page readPage backfills current versions for every loaded file item", () => {
