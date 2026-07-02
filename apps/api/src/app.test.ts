@@ -929,6 +929,15 @@ test("Task intake and AgentRun OpenAPI responses document the execution chain", 
       "replay_href"
     ]);
     assert.ok(data?.properties?.trace, `${method.toUpperCase()} ${path} missing AgentRun trace schema`);
+    const runSchema = data?.properties?.run as { properties?: Record<string, unknown> } | undefined;
+    assert.deepEqual(runSchema?.properties?.parent_run_id, { type: "string", format: "uuid" });
+    assert.deepEqual(runSchema?.properties?.task_plan_id, { type: "string", format: "uuid" });
+    assert.deepEqual(runSchema?.properties?.task_plan_item_id, { type: "string", format: "uuid" });
+    assert.deepEqual(runSchema?.properties?.agent_role, {
+      type: "string",
+      enum: ["research", "produce", "review", "integrate"]
+    });
+    assert.deepEqual(runSchema?.properties?.objective_md, { type: "string", minLength: 1 });
   }
 
   assert.deepEqual(jsonErrorCodeProperty(body.paths, "/api/workitems/{id}/agent-runs", "post", "400"), {

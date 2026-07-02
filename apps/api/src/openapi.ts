@@ -3433,8 +3433,13 @@ const agentRunResponseSchema = {
   ],
   properties: {
     id: uuidStringSchema,
+    parent_run_id: uuidStringSchema,
     work_item_id: uuidStringSchema,
     branch_id: uuidStringSchema,
+    task_plan_id: uuidStringSchema,
+    task_plan_item_id: uuidStringSchema,
+    agent_role: { type: "string", enum: ["research", "produce", "review", "integrate"] },
+    objective_md: { type: "string", minLength: 1 },
     mode: { type: "string", enum: ["worker", "pm"] },
     actor: { type: "string", minLength: 1, maxLength: 32 },
     status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "budget_exhausted", "cancelled"] },

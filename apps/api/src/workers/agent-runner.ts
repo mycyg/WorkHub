@@ -14,7 +14,15 @@ import {
   type StructuredHandoff
 } from "@workhub/agent/loop";
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
-import { eventTypes, evidenceRefSchema, type CuuState, type EvidenceRef, type WorkItemMode, type WorkItemStatus } from "@workhub/contracts";
+import {
+  eventTypes,
+  evidenceRefSchema,
+  type CuuState,
+  type EvidenceRef,
+  type TaskPlanItemRole,
+  type WorkItemMode,
+  type WorkItemStatus
+} from "@workhub/contracts";
 import {
   createMemoryBudgetPolicyStore,
   createMemoryCostLedgerStore,
@@ -106,6 +114,11 @@ export type AgentRunQueueRecord = {
   org_id?: string;
   workspace_id?: string;
   work_item_id: string;
+  parent_run_id?: string;
+  task_plan_id?: string;
+  task_plan_item_id?: string;
+  agent_role?: TaskPlanItemRole;
+  objective_md?: string;
   actor_id: string;
   mode: WorkItemMode;
   status: AgentRunQueueStatus;
@@ -176,6 +189,11 @@ export type EnqueueAgentRunInput = {
   actorId: string;
   workspaceId?: string;
   orgId?: string;
+  parentRunId?: string;
+  taskPlanId?: string;
+  taskPlanItemId?: string;
+  agentRole?: TaskPlanItemRole;
+  objectiveMd?: string;
   title?: string;
   mode?: WorkItemMode;
 };
@@ -1595,6 +1613,11 @@ export function createInMemoryAgentRunQueue(options: {
           ...(input.orgId ? { org_id: input.orgId } : {}),
           ...(input.workspaceId ? { workspace_id: input.workspaceId } : {}),
           work_item_id: input.workItemId,
+          ...(input.parentRunId ? { parent_run_id: input.parentRunId } : {}),
+          ...(input.taskPlanId ? { task_plan_id: input.taskPlanId } : {}),
+          ...(input.taskPlanItemId ? { task_plan_item_id: input.taskPlanItemId } : {}),
+          ...(input.agentRole ? { agent_role: input.agentRole } : {}),
+          ...(input.objectiveMd ? { objective_md: input.objectiveMd } : {}),
           actor_id: input.actorId,
           mode: input.mode ?? "worker",
           status: "queued",

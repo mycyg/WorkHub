@@ -1852,6 +1852,139 @@ test("persistent agent run enqueue carries tenant ids into DB persistence", asyn
   assert.equal((captured as Record<string, unknown>).workspaceId, workspaceId);
 });
 
+test("persistent agent run enqueue carries task-plan lineage into DB persistence", async () => {
+  const runtimeSettings = settings();
+  const parentRunId = "40000000-0000-4000-8000-0000000000c0";
+  const taskPlanId = "81000000-0000-4000-8000-000000000001";
+  const taskPlanItemId = "81000000-0000-4000-8000-000000000002";
+  const objectiveMd = "Verify source evidence and produce the research memo.";
+  let captured: Record<string, unknown> | undefined;
+  let storedRun: Record<string, unknown> | undefined;
+  const repository: AgentRunRepository = {
+    async createRun(run) {
+      captured = run as unknown as Record<string, unknown>;
+      storedRun = {
+        id: run.runId,
+        orgId: run.orgId ?? null,
+        workspaceId: run.workspaceId ?? null,
+        workItemId: run.workItemId,
+        branchId: null,
+        parentRunId: captured.parentRunId ?? null,
+        taskPlanId: captured.taskPlanId ?? null,
+        taskPlanItemId: captured.taskPlanItemId ?? null,
+        agentRole: captured.agentRole ?? null,
+        objectiveMd: captured.objectiveMd ?? null,
+        mode: run.mode,
+        actor: "human",
+        actorUserId: run.actorUserId,
+        title: run.title,
+        status: run.status,
+        model: run.model,
+        turnsUsed: run.usage.stepsUsed,
+        maxTurns: run.budget.maxSteps,
+        totalTimeoutS: run.budget.totalTimeoutS,
+        maxTokens: run.budget.maxTokens,
+        maxCostCny: run.budget.maxCostCny,
+        seconds: 0,
+        tokenIn: run.usage.tokenIn,
+        tokenOut: run.usage.tokenOut,
+        costEstimate: run.usage.estimatedCostCny,
+        budgetDecisionJson: run.budgetDecisionJson,
+        outcomeReason: null,
+        handoffMd: null,
+        handoffJson: null,
+        workdirRef: null,
+        claimedBy: null,
+        claimedAt: null,
+        heartbeatAt: null,
+        leaseExpiresAt: null,
+        recoverAttempts: 0,
+        startedAt: null,
+        finishedAt: null,
+        createdAt: run.createdAt,
+        updatedAt: run.updatedAt
+      };
+      return storedRun as Awaited<ReturnType<AgentRunRepository["createRun"]>>;
+    },
+    async createRunIfWorkItemIdle(run) {
+      return this.createRun(run);
+    },
+    async updateRun() {
+      throw new Error("not used");
+    },
+    async cancelActiveRun() {
+      throw new Error("not used");
+    },
+    async replaceTrace() {
+      throw new Error("not used");
+    },
+    async setWorkdir() {
+      throw new Error("not used");
+    },
+    async findById() {
+      return storedRun
+        ? { run: storedRun, steps: [] } as unknown as Awaited<ReturnType<AgentRunRepository["findById"]>>
+        : null;
+    },
+    async listActive() {
+      return [];
+    },
+    async claimQueued() {
+      throw new Error("not used");
+    },
+    async claimNextQueued() {
+      throw new Error("not used");
+    },
+    async heartbeatClaim() {
+      throw new Error("not used");
+    },
+    async requeueExpiredClaims() {
+      throw new Error("not used");
+    }
+  };
+  const persistence = createDbAgentRunPersistence(repository);
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    persistence,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000cd"
+  });
+
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Task-plan child run",
+    parentRunId,
+    taskPlanId,
+    taskPlanItemId,
+    agentRole: "research",
+    objectiveMd
+  } as Parameters<AgentRunQueue["enqueue"]>[0] & {
+    parentRunId: string;
+    taskPlanId: string;
+    taskPlanItemId: string;
+    agentRole: "research";
+    objectiveMd: string;
+  });
+
+  assert.equal(run.parent_run_id, parentRunId);
+  assert.equal(run.task_plan_id, taskPlanId);
+  assert.equal(run.task_plan_item_id, taskPlanItemId);
+  assert.equal(run.agent_role, "research");
+  assert.equal(run.objective_md, objectiveMd);
+  assert.equal(captured?.parentRunId, parentRunId);
+  assert.equal(captured?.taskPlanId, taskPlanId);
+  assert.equal(captured?.taskPlanItemId, taskPlanItemId);
+  assert.equal(captured?.agentRole, "research");
+  assert.equal(captured?.objectiveMd, objectiveMd);
+  const persisted = await persistence.get(run.run_id);
+  assert.equal(persisted?.parent_run_id, parentRunId);
+  assert.equal(persisted?.task_plan_id, taskPlanId);
+  assert.equal(persisted?.task_plan_item_id, taskPlanItemId);
+  assert.equal(persisted?.agent_role, "research");
+  assert.equal(persisted?.objective_md, objectiveMd);
+});
+
 test("agent run queue refreshes stale cached trace from persistence", async () => {
   const runtimeSettings = settings();
   const persistence = new MemoryAgentRunPersistence();

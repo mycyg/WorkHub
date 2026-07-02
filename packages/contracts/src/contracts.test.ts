@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   allowedWorkItemTransitions,
+  agentRunSchema,
   sessionFinalizeFromStatuses,
   agentRunBudgetDecisionVmSchema,
   agentRunLiveBudgetSchema,
@@ -150,6 +151,38 @@ test("agent trace VM carries F08 replay and structured handoff fields", () => {
   });
 
   assert.equal(parsed.handoff?.budget_hit, "doom_loop");
+});
+
+test("agent run contracts carry R9.2 task-plan lineage metadata", () => {
+  const parsed = agentRunSchema.parse({
+    id: "70000000-0000-4000-8000-000000000041",
+    parent_run_id: "70000000-0000-4000-8000-000000000040",
+    work_item_id: "70000000-0000-4000-8000-000000000042",
+    task_plan_id: "70000000-0000-4000-8000-000000000043",
+    task_plan_item_id: "70000000-0000-4000-8000-000000000044",
+    agent_role: "research",
+    objective_md: "Validate the source evidence before writing the final answer.",
+    mode: "worker",
+    actor: "human",
+    status: "queued",
+    model: "deepseek-v4-flash",
+    turns_used: 0,
+    max_turns: 15,
+    token_in: 0,
+    token_out: 0,
+    created_at: "2026-06-05T00:00:00.000Z",
+    updated_at: "2026-06-05T00:00:00.000Z"
+  });
+
+  assert.equal(parsed.parent_run_id, "70000000-0000-4000-8000-000000000040");
+  assert.equal(parsed.task_plan_id, "70000000-0000-4000-8000-000000000043");
+  assert.equal(parsed.task_plan_item_id, "70000000-0000-4000-8000-000000000044");
+  assert.equal(parsed.agent_role, "research");
+  assert.equal(parsed.objective_md, "Validate the source evidence before writing the final answer.");
+  assert.throws(() => agentRunSchema.parse({
+    ...parsed,
+    agent_role: "manager"
+  }));
 });
 
 test("agent run live VMs expose start status, trace, stream, replay, and budget fields", () => {

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 
-import type { WorkItemMode } from "@workhub/contracts";
+import type { TaskPlanItemRole, WorkItemMode } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
 import { agentRuns, agentSteps } from "../schema/index.js";
@@ -47,6 +47,11 @@ export type AgentRunForPersistence = {
   orgId?: string;
   workspaceId?: string;
   workItemId: string;
+  parentRunId?: string;
+  taskPlanId?: string;
+  taskPlanItemId?: string;
+  agentRole?: TaskPlanItemRole;
+  objectiveMd?: string;
   actorUserId: string;
   mode: WorkItemMode;
   status: AgentRunStatusForPersistence;
@@ -153,6 +158,11 @@ function runInsertValues(run: AgentRunForPersistence): typeof agentRuns.$inferIn
     orgId: run.orgId,
     workspaceId: run.workspaceId,
     workItemId: run.workItemId,
+    parentRunId: run.parentRunId,
+    taskPlanId: run.taskPlanId,
+    taskPlanItemId: run.taskPlanItemId,
+    agentRole: run.agentRole,
+    objectiveMd: run.objectiveMd,
     mode: run.mode,
     actor: "human",
     actorUserId: run.actorUserId,
@@ -212,6 +222,21 @@ function runUpdateValues(run: AgentRunForPersistence): Partial<typeof agentRuns.
   const finishedAt = terminalFinishedAt(run);
   if (finishedAt) {
     values.finishedAt = finishedAt;
+  }
+  if (run.parentRunId !== undefined) {
+    values.parentRunId = run.parentRunId;
+  }
+  if (run.taskPlanId !== undefined) {
+    values.taskPlanId = run.taskPlanId;
+  }
+  if (run.taskPlanItemId !== undefined) {
+    values.taskPlanItemId = run.taskPlanItemId;
+  }
+  if (run.agentRole !== undefined) {
+    values.agentRole = run.agentRole;
+  }
+  if (run.objectiveMd !== undefined) {
+    values.objectiveMd = run.objectiveMd;
   }
   return values;
 }
