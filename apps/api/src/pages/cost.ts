@@ -45,6 +45,7 @@ function makeZeroUsage(input: {
     max_cost_cny: input.maxCostCny,
     remaining_cost_cny: input.maxCostCny,
     warning_ratio: 0,
+    enabled: true,
     status: "ok"
   };
 }
@@ -56,11 +57,14 @@ function makeInactiveUsage(input: {
   period: BudgetUsage["period"];
   generatedAt: Date;
 }): BudgetUsage {
-  return makeZeroUsage({
-    ...input,
-    maxTokens: 0,
-    maxCostCny: "0"
-  });
+  return {
+    ...makeZeroUsage({
+      ...input,
+      maxTokens: 0,
+      maxCostCny: "0"
+    }),
+    enabled: false
+  };
 }
 
 export function buildCostSummary(input: CostPageInput): CostSummaryVM {
@@ -84,7 +88,7 @@ export function buildCostSummary(input: CostPageInput): CostSummaryVM {
     period: "day",
     generatedAt
   });
-  const me = mappedUsages.find((usage) => usage.scope.kind === "user" && usage.scope.user_id === input.userId)
+  const me = mappedUsages.find((usage) => isUserDayUsage(usage, input.userId))
     ?? (hasExplicitBudgetDecision ? inactiveMe : fallbackMe);
   const fallbackTeam = makeZeroUsage({
     scope: { kind: "team", team_id: input.teamId ?? input.settings.auth.defaultWorkspaceId },
@@ -102,7 +106,8 @@ export function buildCostSummary(input: CostPageInput): CostSummaryVM {
     period: "day",
     generatedAt
   });
-  const team = mappedUsages.find((usage) => usage.scope.kind === "team")
+  const teamId = input.teamId ?? input.settings.auth.defaultWorkspaceId;
+  const team = mappedUsages.find((usage) => isTeamDayUsage(usage, teamId))
     ?? (hasExplicitBudgetDecision ? inactiveTeam : fallbackTeam);
   const scopes = hasExplicitBudgetDecision ? mappedUsages : (mappedUsages.length > 0 ? mappedUsages : [me, team]);
 
@@ -134,6 +139,8 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
   const byWorkitem = aggregateByScope(scopedEntries, "workitem");
   const modelBreakdown = aggregateByModel(uniqueEntries);
   const laborSplit = buildLaborSplit(uniqueEntries);
+  const inactiveBudgetRows = [summary.me, ...(summary.team ? [summary.team] : [])].filter((usage) => usage.enabled === false);
+  const budgetRows = uniqueBudgetRows([...summary.scopes, ...inactiveBudgetRows]);
 
   // L#51：返回前过一遍 zod schema，把契约漂移挡在服务端（与其他 page builder 一致）。
   // findings[#79]：输出边界 parse 失败是服务端装配 bug → 走 InternalContractError(500)，不是客户端 422。
@@ -167,9 +174,9 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
     })) : [],
     model_breakdown: modelBreakdown,
     ...(laborSplit ? { labor_split: laborSplit } : {}),
-    budget: summary.scopes,
+    budget: budgetRows,
     notices: summary.active_notices,
-    top_exhaustion_risks: summary.scopes
+    top_exhaustion_risks: budgetRows
       .filter((usage) => usage.status !== "ok")
       .map((usage) => ({
         scope: usage.scope,
@@ -198,6 +205,7 @@ function toApiBudgetUsage(usage: InternalBudgetUsage, locale: WorkHubLocale): Bu
     max_cost_cny: usage.maxCostCny,
     remaining_cost_cny: usage.remainingCostCny,
     warning_ratio: usage.warningRatio,
+    enabled: true,
     status: usage.status
   };
 }
@@ -295,6 +303,28 @@ function budgetNoticesFor(usages: BudgetUsage[], locale: WorkHubLocale): BudgetN
         action_href: "/dashboard/cost"
       };
     });
+}
+
+function isUserDayUsage(usage: BudgetUsage, userId: string) {
+  return usage.scope.kind === "user" && usage.scope.user_id === userId && usage.period === "day";
+}
+
+function isTeamDayUsage(usage: BudgetUsage, teamId: string) {
+  return usage.scope.kind === "team" && usage.scope.team_id === teamId && usage.period === "day";
+}
+
+function uniqueBudgetRows(usages: BudgetUsage[]) {
+  const seen = new Set<string>();
+  const unique: BudgetUsage[] = [];
+  for (const usage of usages) {
+    const key = `${usage.policy_id}:${JSON.stringify(usage.scope)}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    unique.push(usage);
+  }
+  return unique;
 }
 
 function uniqueUsageEntries(entries: readonly CostLedgerEntry[]) {

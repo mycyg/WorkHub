@@ -2828,8 +2828,17 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
     return `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.statusFallback"))}</p>`;
   }
   return vm.budget.slice(0, 5).map((usage) => {
+    if (usage.enabled === false) {
+      return `<div class="wh-r4-route-row" data-r4-cost-budget-scope="${escapeHtml(usage.policy_id)}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="false">
+      <div>
+        <strong>${escapeHtml(usage.scope_label)}</strong>
+        <p>${escapeHtml(locale === "zh-CN" ? "预算未启用" : "Budget not enabled")}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "未启用" : "Not enabled")}</span>
+    </div>`;
+    }
     const ratio = usage.max_tokens > 0 ? Math.round((usage.total_tokens / usage.max_tokens) * 100) : 0;
-    return `<div class="wh-r4-route-row" data-r4-cost-budget-scope="${escapeHtml(usage.policy_id)}" data-r4-cost-budget-status="${escapeHtml(usage.status)}">
+    return `<div class="wh-r4-route-row" data-r4-cost-budget-scope="${escapeHtml(usage.policy_id)}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="true">
       <div>
         <strong>${escapeHtml(usage.scope_label)}</strong>
         <p>${escapeHtml(`${usage.total_tokens}/${usage.max_tokens} tokens · ${costAmount(usage.estimated_cost_cny)}/${costAmount(usage.max_cost_cny)}`)}</p>

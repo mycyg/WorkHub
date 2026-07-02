@@ -1242,6 +1242,36 @@ test("R4.11 Cost route component renders dashboard values directly from Cost Pag
   assertNoMainWindowBoundaryLeak(cost.html);
 });
 
+test("Cost route component renders disabled budget policies as not enabled instead of zero quotas", () => {
+  const vm = surfaceVm();
+  vm.page_vms.cost.budget = [{
+    scope: { kind: "user", user_id: "97000000-0000-4000-8000-000000000004" },
+    scope_label: "My AI budget today",
+    policy_id: "pcost-user-day-v0:disabled",
+    period: "day",
+    period_start: "2026-06-11T00:00:00.000Z",
+    period_end: "2026-06-12T00:00:00.000Z",
+    token_in: 0,
+    token_out: 0,
+    total_tokens: 0,
+    max_tokens: 0,
+    remaining_tokens: 0,
+    estimated_cost_cny: "0",
+    max_cost_cny: "0",
+    remaining_cost_cny: "0",
+    warning_ratio: 0,
+    enabled: false,
+    status: "ok"
+  }];
+
+  const cost = renderWebRouteComponents(vm, { locale: "en-US" }).cost;
+
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r4-cost-budget-enabled="false"'), true);
+  assert.equal(cost.html.includes("Budget not enabled"), true);
+  assert.equal(cost.html.includes("0/0 tokens · ¥0/¥0"), false);
+});
+
 test("K5 Cost route component renders the work-vs-self-improvement labor split when present", () => {
   const base = surfaceVm();
   const vm = {

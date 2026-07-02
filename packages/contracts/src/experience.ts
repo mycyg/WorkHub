@@ -311,6 +311,7 @@ export const budgetUsageSchema = z.object({
   max_cost_cny: z.string(),
   remaining_cost_cny: z.string(),
   warning_ratio: z.number().min(0),
+  enabled: z.boolean().optional(),
   status: z.enum(["ok", "warning", "critical", "exhausted"])
 });
 export type BudgetUsage = z.infer<typeof budgetUsageSchema>;
