@@ -53,7 +53,7 @@ import {
   uiT,
   workItemStatusLabel
 } from "../i18n.js";
-import { goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
+import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
 // "skills"/"projects"/"project-home" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
@@ -1640,6 +1640,10 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
   }
   const primary = vm.items[0];
   const pendingCount = vm.counts["pending"] ?? vm.items.length;
+  const pageInfoNote = approvalQueuePageInfoText(locale, vm.page_info, vm.counts);
+  const pageInfoAttrs = vm.page_info
+    ? ` data-r4-approval-page-info="true" data-r4-approval-page-limit="${escapeHtml(String(vm.page_info.limit))}" data-r4-approval-page-returned="${escapeHtml(String(vm.page_info.returned))}" data-r4-approval-page-has-more="${escapeHtml(String(vm.page_info.has_more))}"`
+    : "";
   // E4：删掉右栏那张独立「截止时间」卡——它绑定到 primary(首项)且服务端烘焙,客户端切换审批项时
   // 只换了详情面板与按钮 href,这张卡不更新 → 选了 B 仍显 A 的 SLA(和正确的每行 SLA 药丸打架)。
   // SLA 已在左栏每行药丸(选中行高亮)+ 详情时间线每步 SLA 里如实显示,这张卡纯冗余,移除即消除陈旧。
@@ -1680,7 +1684,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
     source: "page-vm",
     locale,
     pageVm: "approvals",
-    html: `<section class="wh-r4-route" data-r4-route-component="approvals" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-approval-pending="${escapeHtml(String(pendingCount))}">
+    html: `<section class="wh-r4-route" data-r4-route-component="approvals" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-approval-pending="${escapeHtml(String(pendingCount))}"${pageInfoAttrs}>
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.kicker"))}</span>
@@ -1689,6 +1693,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(pendingCount))}</span>
       </header>
+      ${pageInfoNote ? `<p class="wh-subtle" data-r4-approval-page-info-note="true">${escapeHtml(pageInfoNote)}</p>` : ""}
       <div class="wh-r4-route-grid wh-r4-approvals-grid">
         <section class="wh-r4-route-stack wh-r4-approval-list" data-r4-approval-queue="true">
           ${queueRows || `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(goldPathT(locale, "approvals.reasonFallback"))}</p></article>`}

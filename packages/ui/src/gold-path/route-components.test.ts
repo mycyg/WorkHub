@@ -1499,6 +1499,18 @@ test("R4.10 Approvals route component keeps action reasons and Page VM counts vi
   assertNoMainWindowBoundaryLeak(approvals.html);
 });
 
+test("Approvals route component surfaces page_info when the queue is truncated", () => {
+  const vm = surfaceVm();
+  vm.page_vms.approvals.page_info = { limit: 100, returned: 100, has_more: true };
+  vm.page_vms.approvals.counts.pending = 100;
+  vm.page_vms.approvals.counts.pending_total = 137;
+  const approvals = renderWebRouteComponents(vm, { locale: "en-US" }).approvals;
+
+  assert.ok(approvals);
+  assert.equal(approvals.html.includes('data-r4-approval-page-has-more="true"'), true);
+  assert.equal(approvals.html.includes("Showing 100 of 137 approvals. More approvals are available."), true);
+});
+
 test("R5.1 Drive route component exposes files, versions, deliverable actions, and comment draft links", () => {
   const drive = renderWebRouteComponent({ key: "drive", drive: drivePageVm() }, { locale: "en-US" });
 

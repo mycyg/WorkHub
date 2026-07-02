@@ -14,7 +14,7 @@ import type {
 } from "@workhub/contracts";
 import { deliverableTargetLabel } from "../i18n.js";
 import { publicProposalDisplayTitle } from "../proposal/render.js";
-import { goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
+import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
 import {
   renderStructuredFieldAuditDetails,
   renderStructuredFieldOperationDetails
@@ -434,6 +434,10 @@ function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
   const approvals: ApprovalCenterVM = vm.page_vms.approvals;
   const primary = approvals.items[0];
   const request = approvals.requests[0];
+  const pageInfoNote = approvalQueuePageInfoText(locale, approvals.page_info, approvals.counts);
+  const pageInfoAttrs = approvals.page_info
+    ? ` data-r4-approval-page-info="true" data-r4-approval-page-limit="${escapeHtml(String(approvals.page_info.limit))}" data-r4-approval-page-returned="${escapeHtml(String(approvals.page_info.returned))}" data-r4-approval-page-has-more="${escapeHtml(String(approvals.page_info.has_more))}"`
+    : "";
   const requestRows = approvals.requests
     .map(
       (item) =>
@@ -449,6 +453,7 @@ function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "approvals.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(primary?.title ?? t(locale, "approvals.emptyTitle"))}</h1>
     <p class="wh-subtle">${escapeHtml(primary?.reason_text ?? t(locale, "approvals.reasonFallback"))}</p>
+    ${pageInfoNote ? `<p class="wh-subtle"${pageInfoAttrs}>${escapeHtml(pageInfoNote)}</p>` : ""}
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.pendingTitle"))}</strong><p class="wh-subtle">${approvals.counts.pending ?? approvals.items.length}${escapeHtml(t(locale, "approvals.pendingUnit"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.slaTitle"))}</strong><p class="wh-subtle">${escapeHtml(request?.sla_due_at ?? t(locale, "approvals.slaEmpty"))}</p></article>
