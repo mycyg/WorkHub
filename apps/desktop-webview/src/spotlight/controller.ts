@@ -6,6 +6,7 @@ import { escapeHtml } from "@workhub/web-runtime";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
 import { commandRegistry, type CommandId, type CommandMatch } from "../command-palette.js";
+import { renderWorkHubLiquidGlassLayer, scheduleWorkHubLiquidGlassFilterRebuild } from "../liquid-glass-filter.js";
 import { resolveCapabilityView } from "./registry.js";
 import {
   initialSpotlightState,
@@ -18,6 +19,8 @@ import {
 import type { SpotlightApiClient, SpotlightTarget, SpotlightViewContext } from "./view-context.js";
 
 export type SpotlightResizeFn = (width: number, height: number) => void;
+export type SpotlightManualDragFn = (deltaX: number, deltaY: number) => void;
+export type SpotlightResizeDirection = "east" | "south" | "south-east";
 
 export type MountSpotlightInput = {
   host: HTMLElement;
@@ -27,6 +30,10 @@ export type MountSpotlightInput = {
   badges?: Partial<Record<CommandId, number>>;
   // 缩放原生窗口（browser.ts 注入 → invoke set_spotlight_size）。浏览器开发态可为空（no-op）。
   resize?: SpotlightResizeFn;
+  // 顶栏拖动/边缘缩放（browser.ts 注入 → 原生 frameless 窗口手势）。浏览器开发态可为空（no-op）。
+  drag?: () => void;
+  dragMove?: SpotlightManualDragFn;
+  resizeDrag?: (direction: SpotlightResizeDirection) => void;
   // 关闭/隐藏盒子（browser.ts 注入 → invoke hide_main_window）。M2：让 launcher 顶层 Esc 真正关闭盒子，
   // 兑现 hello 卡「Esc 关闭」的承诺。浏览器开发态可为空（no-op）。
   dismiss?: () => void;
@@ -109,48 +116,77 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   const placeholder = zh ? "想做点什么？新任务 / 审批 / 网盘 / 项目…" : "What do you need? new task / approve / drive…";
   host.className = "wh-ds wh-spot-stage";
   host.innerHTML = `
-    <div class="wh-spot ds-glass-strong ds-anim-spring-in" data-spot-box data-mode="launcher">
-      <div class="wh-spot-top">
-        <button type="button" class="wh-spot-back" data-spot-back aria-label="${zh ? "返回" : "Back"}">${BACK_ICON}</button>
-        <div class="wh-spot-field-wrap">
-          <span class="wh-spot-field-icon">${SEARCH_ICON}</span>
-          <input class="wh-spot-field" type="search" data-spot-input role="combobox" aria-expanded="true" aria-controls="wh-spot-listbox" aria-autocomplete="list" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}" />
+    <div class="wh-spot ds-anim-spring-in" data-spot-box data-mode="launcher">
+      ${renderWorkHubLiquidGlassLayer("spotlight")}
+      <span class="wh-liquid-glass-rim" aria-hidden="true"></span>
+      <div class="wh-liquid-glass-content">
+        <div class="wh-spot-top">
+          <button type="button" class="wh-spot-back" data-spot-back aria-label="${zh ? "返回" : "Back"}">${BACK_ICON}</button>
+          <div class="wh-spot-field-wrap">
+            <span class="wh-spot-field-icon">${SEARCH_ICON}</span>
+            <input class="wh-spot-field" type="search" data-spot-input role="combobox" aria-expanded="true" aria-controls="wh-spot-listbox" aria-autocomplete="list" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}" />
+          </div>
+          <div class="wh-spot-titlewrap">
+            <span class="wh-spot-title" data-spot-title></span>
+            <span class="wh-spot-subtitle" data-spot-subtitle></span>
+          </div>
+          <kbd class="wh-spot-kbd">⌘K</kbd>
+          <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-drag-sheet" data-spot-drag-sheet></button>
         </div>
-        <div class="wh-spot-titlewrap">
-          <span class="wh-spot-title" data-spot-title></span>
-          <span class="wh-spot-subtitle" data-spot-subtitle></span>
-        </div>
-        <kbd class="wh-spot-kbd">⌘K</kbd>
+        <div class="wh-spot-body" data-spot-body></div>
       </div>
-      <div class="wh-spot-body" data-spot-body></div>
+      <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-resize wh-spot-resize--e" data-spot-resize="east"></button>
+      <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-resize wh-spot-resize--s" data-spot-resize="south"></button>
+      <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-resize wh-spot-resize--se" data-spot-resize="south-east"></button>
     </div>`;
 
   const box = host.querySelector<HTMLElement>("[data-spot-box]")!;
+  const topEl = host.querySelector<HTMLElement>(".wh-spot-top")!;
+  const dragSheet = host.querySelector<HTMLElement>("[data-spot-drag-sheet]")!;
   const input2 = host.querySelector<HTMLInputElement>("[data-spot-input]")!;
   const body = host.querySelector<HTMLElement>("[data-spot-body]")!;
   const titleEl = host.querySelector<HTMLElement>("[data-spot-title]")!;
   const subtitleEl = host.querySelector<HTMLElement>("[data-spot-subtitle]")!;
+  let suppressNextFocusExpansion = false;
+  let suppressSearchFocusUntil = 0;
+  let suppressSearchClickUntil = 0;
 
   // —— 原生窗口缩放：测内容高度，clamp 到屏幕上限，超出则盒内滚动。去抖合并多次请求。 ——
   let resizeRaf = 0;
   let lastSentW = 0;
   let lastSentH = 0;
+  let userResizeAutoUnlockAt = 0;
+  const nowMs = () => window.performance.now();
+  const focusSearch = (options: { expand: boolean }) => {
+    if (options.expand) {
+      searchActive = true;
+    }
+    suppressNextFocusExpansion = !options.expand;
+    if (doc.activeElement === input2) {
+      return;
+    }
+    input2.focus({ preventScroll: true });
+    if (doc.activeElement !== input2) {
+      suppressNextFocusExpansion = false;
+    }
+  };
   const applyResize = () => {
     resizeRaf = 0;
     if (!input.resize) {
       return;
     }
-    const stagePad = 0; // .wh-spot-stage 现无 padding（盒子铺满透明窗，靠圆角 vibrancy 收边）
+    const stagePad = 0; // .wh-spot-stage 现无 padding，玻璃盒自身贴边收边。
+    const collapsed = box.dataset.mode === "launcher" && box.dataset.collapsed === "true";
     body.style.maxHeight = "none";
-    const top = box.offsetHeight - body.offsetHeight; // 顶栏 + 边框
-    const natural = box.offsetHeight + stagePad;
+    const top = collapsed ? Math.max(48, topEl.offsetHeight) : box.offsetHeight - body.offsetHeight; // 顶栏 + 边框
+    const natural = collapsed ? top + stagePad : box.offsetHeight + stagePad;
     const screenMax = Math.round((window.screen?.availHeight ?? 900) * 0.86);
     // 收起态(只有搜索框)时窗口要缩到搜索条本身(~56px),不能被 180 的下限撑出一截空白(用户反馈"未点击只有搜索框")。
     // 下限取一个搜索条高度兜底,实际高度由 natural(随内容)决定。
-    const minH = box.dataset.collapsed === "true" ? 52 : 120;
+    const minH = collapsed ? top : 120;
     const winH = Math.max(minH, Math.min(natural, screenMax));
     const bodyMax = Math.max(80, winH - stagePad - top);
-    body.style.maxHeight = `${bodyMax}px`;
+    body.style.maxHeight = collapsed ? "0px" : `${bodyMax}px`;
     const width = Math.max(360, Math.round(window.innerWidth));
     // M1：缓存上次下发尺寸——set_size 会回弹一个 window resize 事件，若不去重就会
     // set_size→resize→requestResize→set_size 抖动。尺寸没变就不再下发。
@@ -160,12 +196,22 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     lastSentW = width;
     lastSentH = winH;
     input.resize(width, winH);
+    scheduleWorkHubLiquidGlassFilterRebuild(doc);
   };
   const requestResize = () => {
     if (resizeRaf) {
       return;
     }
     resizeRaf = window.requestAnimationFrame(applyResize);
+  };
+  const requestResizeFromWindowResize = () => {
+    scheduleWorkHubLiquidGlassFilterRebuild(doc);
+    const now = nowMs();
+    if (now < userResizeAutoUnlockAt) {
+      userResizeAutoUnlockAt = now + 700;
+      return;
+    }
+    requestResize();
   };
 
   // rank5：网格(重)渲后让 combobox 输入框的 aria-activedescendant 指向首个(默认高亮)能力项；无项则清除。
@@ -178,19 +224,24 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     }
   };
 
-  const renderLauncher = () => {
-    if (disposeView) {
-      disposeView();
-      disposeView = undefined;
-    }
-    box.dataset.mode = "launcher";
-    // 未聚焦且空查询 → 收起,只留搜索框(data-collapsed=true);聚焦或有查询 → 展开能力网格。
+  const renderLauncherBody = () => {
+    // 未主动交互且空查询 → 收起,只留搜索框(data-collapsed=true);点击或输入后才展开能力网格。
     const expanded = searchActive || state.query.trim().length > 0;
     box.dataset.collapsed = expanded ? "false" : "true";
     body.innerHTML = expanded
       ? renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0)
       : "";
     syncLauncherActiveDescendant();
+  };
+
+  const renderLauncher = () => {
+    if (disposeView) {
+      disposeView();
+      disposeView = undefined;
+    }
+    box.dataset.mode = "launcher";
+    renderLauncherBody();
+    scheduleWorkHubLiquidGlassFilterRebuild(doc);
     requestResize();
   };
 
@@ -217,6 +268,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     const viewRoot = doc.createElement("div");
     viewRoot.className = "ds-anim-fade-in";
     body.replaceChildren(viewRoot);
+    scheduleWorkHubLiquidGlassFilterRebuild(doc);
     requestResize();
     // L1：进入能力后搜索框被 display:none 隐藏,焦点会掉到 <body>,键盘用户失去锚点。把焦点移到内容容器——
     // 下一次 Tab 即落到视图第一个可交互元素,屏幕阅读器焦点也随之进入新内容。tabindex=-1 仅供编程聚焦、
@@ -265,8 +317,17 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       // 从能力返回 launcher：视为已激活,展开网格 + 聚焦输入(无收起闪烁)。
       searchActive = true;
       renderLauncher();
-      input2.focus();
+      focusSearch({ expand: true });
     }
+  };
+  const resetLauncher = () => {
+    input2.value = "";
+    searchActive = false;
+    pendingTarget = undefined;
+    state = initialSpotlightState();
+    box.dataset.kbd = "false";
+    renderLauncher();
+    focusSearch({ expand: false });
   };
 
   let toastTimer = 0;
@@ -314,9 +375,9 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     } else if (!nextCap && prevMode === "capability") {
       render();
     } else if (!nextCap) {
-      // launcher 内查询变化：只换网格，保输入焦点。
-      body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0);
-      syncLauncherActiveDescendant();
+      // launcher 内查询变化：同步收起/展开状态，保输入焦点。
+      renderLauncherBody();
+      scheduleWorkHubLiquidGlassFilterRebuild(doc);
       requestResize();
     }
   };
@@ -329,6 +390,9 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
 
   // —— 交互 —— //
   input2.addEventListener("input", () => {
+    if (!openCapabilityId(state)) {
+      searchActive = true;
+    }
     dispatch({ type: "setQuery", query: input2.value });
     box.dataset.kbd = "true"; // L5：打字也是键盘交互 → 高亮 Enter 将选中的首项(box 跨重渲存活)
   });
@@ -338,14 +402,22 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       box.dataset.kbd = "false";
     }
   }, { passive: true });
-
-  // 聚焦搜索框 → 展开能力网格(从"只有搜索框"的收起态生长开)。
+  // 程序性聚焦/窗口激活不展开；用户点击或输入才展开，避免 App 被唤起时从搜索条跳成大面板。
   input2.addEventListener("focus", () => {
-    if (openCapabilityId(state) || searchActive) {
+    if (suppressNextFocusExpansion || nowMs() < suppressSearchFocusUntil) {
+      suppressNextFocusExpansion = false;
+    }
+  });
+  input2.addEventListener("click", () => {
+    if (nowMs() < suppressSearchClickUntil) {
+      return;
+    }
+    if (openCapabilityId(state) || searchActive || state.query.trim().length > 0) {
       return;
     }
     searchActive = true;
     renderLauncher();
+    focusSearch({ expand: true });
   });
   // 失焦且空查询 → 收回成"只有搜索框";但若焦点移到盒内(点能力卡)则保持展开,让卡片点击照常生效。
   input2.addEventListener("blur", (event) => {
@@ -362,6 +434,227 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
 
   host.querySelector<HTMLElement>("[data-spot-back]")?.addEventListener("click", () => {
     dispatch({ type: "back" });
+  });
+
+  const dragExcludedSelector = "button,a,select,[contenteditable=true],[data-spot-resize]";
+  const isDragExcludedTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest(dragExcludedSelector));
+  let manualDrag:
+    | {
+        startClientX: number;
+        startClientY: number;
+        lastScreenX: number;
+        lastScreenY: number;
+        dragging: boolean;
+      }
+    | undefined;
+  topEl.addEventListener(
+    "mousedown",
+    (event) => {
+      if (event.button !== 0 || isDragExcludedTarget(event.target)) {
+        return;
+      }
+      manualDrag = {
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        lastScreenX: event.screenX,
+        lastScreenY: event.screenY,
+        dragging: false
+      };
+      suppressSearchFocusUntil = nowMs() + 700;
+      suppressSearchClickUntil = nowMs() + 900;
+    },
+    { capture: true }
+  );
+  window.addEventListener(
+    "mousemove",
+    (event) => {
+      if (!manualDrag || (event.buttons & 1) !== 1) {
+        return;
+      }
+      const moved = Math.hypot(event.clientX - manualDrag.startClientX, event.clientY - manualDrag.startClientY);
+      if (moved < 4) {
+        return;
+      }
+      manualDrag.dragging = true;
+      suppressSearchFocusUntil = nowMs() + 900;
+      suppressSearchClickUntil = nowMs() + 900;
+      event.preventDefault();
+      event.stopPropagation();
+      if (input.dragMove) {
+        input.dragMove?.(event.screenX - manualDrag.lastScreenX, event.screenY - manualDrag.lastScreenY);
+        manualDrag.lastScreenX = event.screenX;
+        manualDrag.lastScreenY = event.screenY;
+      } else {
+        input.drag?.();
+      }
+    },
+    { capture: true, signal: controllerAbort.signal }
+  );
+  window.addEventListener(
+    "mouseup",
+    (event) => {
+      if (!manualDrag) {
+        return;
+      }
+      const moved = Math.hypot(event.clientX - manualDrag.startClientX, event.clientY - manualDrag.startClientY);
+      if (!manualDrag.dragging && moved < 4) {
+        suppressSearchClickUntil = 0;
+      } else {
+        suppressSearchFocusUntil = nowMs() + 700;
+        suppressSearchClickUntil = nowMs() + 700;
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      manualDrag = undefined;
+    },
+    { capture: true, signal: controllerAbort.signal }
+  );
+  topEl.addEventListener("click", (event) => {
+    if (nowMs() >= suppressSearchClickUntil) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+  }, { capture: true, signal: controllerAbort.signal });
+
+  let dragSheetDrag:
+    | {
+        startClientX: number;
+        startClientY: number;
+        lastScreenX: number;
+        lastScreenY: number;
+        pointerId: number;
+        dragging: boolean;
+      }
+    | undefined;
+  dragSheet.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+    dragSheetDrag = {
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      lastScreenX: event.screenX,
+      lastScreenY: event.screenY,
+      pointerId: event.pointerId,
+      dragging: false
+    };
+    suppressSearchFocusUntil = nowMs() + 900;
+    suppressSearchClickUntil = nowMs() + 1100;
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      dragSheet.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture can fail in embedded webviews; window movement still falls back below.
+    }
+  }, { signal: controllerAbort.signal });
+  dragSheet.addEventListener("pointermove", (event) => {
+    if (!dragSheetDrag || (event.buttons & 1) !== 1) {
+      return;
+    }
+    if (Math.hypot(event.clientX - dragSheetDrag.startClientX, event.clientY - dragSheetDrag.startClientY) < 4) {
+      return;
+    }
+    dragSheetDrag.dragging = true;
+    suppressSearchFocusUntil = nowMs() + 900;
+    suppressSearchClickUntil = nowMs() + 900;
+    event.preventDefault();
+    event.stopPropagation();
+    if (input.dragMove) {
+      input.dragMove?.(event.screenX - dragSheetDrag.lastScreenX, event.screenY - dragSheetDrag.lastScreenY);
+      dragSheetDrag.lastScreenX = event.screenX;
+      dragSheetDrag.lastScreenY = event.screenY;
+    } else {
+      input.drag?.();
+    }
+  }, { signal: controllerAbort.signal });
+  const finishDragSheet = (event: PointerEvent) => {
+    if (!dragSheetDrag) {
+      return;
+    }
+    const wasDragging = dragSheetDrag.dragging;
+    try {
+      dragSheet.releasePointerCapture(dragSheetDrag.pointerId);
+    } catch {
+      // Harmless if the platform already ended capture during native movement.
+    }
+    dragSheetDrag = undefined;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!wasDragging) {
+      searchActive = true;
+      renderLauncher();
+      focusSearch({ expand: true });
+      return;
+    }
+    suppressSearchFocusUntil = nowMs() + 700;
+    suppressSearchClickUntil = nowMs() + 700;
+  };
+  dragSheet.addEventListener("pointerup", finishDragSheet, { signal: controllerAbort.signal });
+  dragSheet.addEventListener("pointercancel", finishDragSheet, { signal: controllerAbort.signal });
+
+  let dragStart:
+    | {
+        x: number;
+        y: number;
+        pointerId: number;
+      }
+    | undefined;
+  topEl.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+    if (isDragExcludedTarget(event.target)) {
+      return;
+    }
+    if (input.dragMove) {
+      return;
+    }
+    suppressSearchFocusUntil = nowMs() + 800;
+    suppressSearchClickUntil = nowMs() + 1000;
+    dragStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+    try {
+      topEl.setPointerCapture(event.pointerId);
+    } catch {
+      // Some embedded webviews refuse capture once native drag starts; harmless.
+    }
+  });
+  topEl.addEventListener("pointermove", (event) => {
+    if (!dragStart || (event.buttons & 1) !== 1) {
+      return;
+    }
+    if (Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) < 4) {
+      return;
+    }
+    suppressSearchClickUntil = nowMs() + 700;
+    event.preventDefault();
+    input.drag?.();
+    try {
+      topEl.releasePointerCapture(dragStart.pointerId);
+    } catch {
+      // Native dragging takes over pointer handling.
+    }
+    dragStart = undefined;
+  });
+  const clearDragStart = () => {
+    dragStart = undefined;
+  };
+  topEl.addEventListener("pointerup", clearDragStart);
+  topEl.addEventListener("pointercancel", clearDragStart);
+
+  host.querySelectorAll<HTMLElement>("[data-spot-resize]").forEach((handle) => {
+    handle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = handle.dataset.spotResize as SpotlightResizeDirection | undefined;
+      if (direction) {
+        userResizeAutoUnlockAt = nowMs() + 1600;
+        input.resizeDrag?.(direction);
+        scheduleWorkHubLiquidGlassFilterRebuild(doc);
+      }
+    });
   });
 
   body.addEventListener("click", (event) => {
@@ -424,8 +717,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         event.preventDefault();
         // rank20：清掉搜索框残留文本（否则框里旧词与下方全量网格对不上），dispatch 自己负责重渲，
         // 不再额外 render() 造成 launcher 连画两遍。
-        input2.value = "";
-        dispatch({ type: "reset" });
+        resetLauncher();
       } else if (event.key === "Escape") {
         if (openCapabilityId(state)) {
           event.preventDefault();
@@ -447,6 +739,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         } else {
           // M2：launcher 顶层（无能力打开、查询为空）按 Esc → 真正关闭盒子，兑现「Esc 关闭」承诺。
           event.preventDefault();
+          resetLauncher();
           input.dismiss?.();
         }
       }
@@ -454,18 +747,18 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     { signal: controllerAbort.signal }
   );
 
-  window.addEventListener("resize", () => requestResize(), { signal: controllerAbort.signal });
+  window.addEventListener("resize", requestResizeFromWindowResize, { signal: controllerAbort.signal });
 
-  // 首屏：launcher——保持"未点击=只有搜索框"的收起态(不自动聚焦),用户点搜索框才展开能力网格。
-  renderLauncher();
+    // 首屏：launcher——搜索框直接接键盘，但保持"只有搜索框"的收起态；输入时再自然展开能力网格。
+    renderLauncher();
+    focusSearch({ expand: false });
 
   return {
     openCapability: (id, target) => {
       openCapabilityWithTarget(id, target);
     },
     reset: () => {
-      input2.value = "";
-      dispatch({ type: "reset" });
+      resetLauncher();
     },
     setBadges: (next) => {
       badges = { ...badges, ...next };

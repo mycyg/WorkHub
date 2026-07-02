@@ -35,6 +35,7 @@ import {
   BudgetPolicyUpdateInvalidError,
   type UpdateBudgetPolicyWithAudit
 } from "../services/cost-policy-store.js";
+import { parseOutputContract } from "../pages/output-contract.js";
 
 type BudgetPolicyAuditWriter = {
   createAuditLog: (input: CreateAuditLogInput) => Promise<unknown> | unknown;
@@ -51,6 +52,17 @@ export type CostRoutesDependencies = {
 };
 
 const scopeKindSchema = z.enum(["workitem", "user", "team", "eval"]);
+
+function settingsForActor(actor: AuthEnv["Variables"]["actor"]) {
+  return {
+    ...settings,
+    auth: {
+      ...settings.auth,
+      defaultOrgId: actor.orgId,
+      defaultWorkspaceId: actor.workspaceId
+    }
+  };
+}
 
 export function createCostRoutes(deps: CostRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
@@ -69,16 +81,18 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
 
   routes.get("/policies", createCurrentUserMiddleware(authSource), async (c) => {
     requireCostPolicyAdmin(c.var.currentUser.isAdmin);
-    const data = (await policyStore.listPolicies(settings)).map(toApiBudgetPolicy);
+    const tenantSettings = settingsForActor(c.var.actor);
+    const data = (await policyStore.listPolicies(tenantSettings)).map(toApiBudgetPolicy);
     return c.json({ ok: true, data });
   });
 
   routes.put("/policies/:scope/:id", createCurrentUserMiddleware(authSource), async (c) => {
     requireCostPolicyAdmin(c.var.currentUser.isAdmin);
+    const tenantSettings = settingsForActor(c.var.actor);
     const scopeKind = scopeKindSchema.parse(c.req.param("scope"));
     const policyId = c.req.param("id");
     const payload = budgetPolicyUpdateSchema.parse(await readJsonObject(c));
-    const before = (await policyStore.listPolicies(settings)).find((candidate) =>
+    const before = (await policyStore.listPolicies(tenantSettings)).find((candidate) =>
       candidate.scopeKind === scopeKind && candidate.id === policyId
     );
     let policy: CostBudgetPolicy | undefined;
@@ -86,13 +100,13 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
       // R2 audit#1：更新 + 审计在编排器里原子完成(生产为同一 db.transaction);审计写失败回滚策略变更。
       // 只有「补丁非法」抛 BudgetPolicyUpdateInvalidError→422;审计/事务失败照旧冒泡为 500(语义不变)。
       policy = await updatePolicyWithAudit({
-        settings,
+        settings: tenantSettings,
         scopeKind,
         policyId,
         patch: toCostBudgetPolicyPatch(payload),
         buildAuditLog: (updated) => ({
-          orgId: settings.auth.defaultOrgId,
-          workspaceId: settings.auth.defaultWorkspaceId,
+          orgId: tenantSettings.auth.defaultOrgId,
+          workspaceId: tenantSettings.auth.defaultWorkspaceId,
           actorKind: "human",
           actorUserId: c.var.currentUser.id,
           actorNickname: c.var.currentUser.nickname,
@@ -123,21 +137,24 @@ export function createCostRoutes(deps: CostRoutesDependencies = {}) {
   });
 
   routes.get("/usage", createCurrentUserMiddleware(authSource), async (c) => {
-    const teamId = settings.auth.defaultWorkspaceId;
+    const tenantSettings = settingsForActor(c.var.actor);
+    const teamId = c.var.actor.workspaceId;
     const decision = decideRunBudget({
-      settings,
+      settings: tenantSettings,
       scopeIds: {
         userId: c.var.currentUser.id,
         teamId
       },
-      policies: await policyStore.listPolicies(settings),
+      policies: await policyStore.listPolicies(tenantSettings),
       usage: await ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
     });
     const data = buildCostSummary({
-      settings,
+      settings: tenantSettings,
       isAdmin: c.var.currentUser.isAdmin,
       userId: c.var.currentUser.id,
-      budgetUsages: decision.usages
+      teamId,
+      budgetUsages: decision.usages,
+      budgetNotices: decision.notice ? [decision.notice] : []
     });
     return c.json({ ok: true, data });
   });
@@ -152,7 +169,7 @@ function requireCostPolicyAdmin(isAdmin: boolean) {
 }
 
 function toApiBudgetPolicy(policy: CostBudgetPolicy): ApiBudgetPolicy {
-  return budgetPolicySchema.parse({
+  return parseOutputContract(budgetPolicySchema, {
     id: policy.id,
     scope_kind: policy.scopeKind,
     period: policy.period,
@@ -165,7 +182,7 @@ function toApiBudgetPolicy(policy: CostBudgetPolicy): ApiBudgetPolicy {
     ...(policy.modelRouteHint ? { model_route_hint: policy.modelRouteHint } : {}),
     enabled: policy.enabled,
     version: policy.version
-  });
+  }, "cost.policy");
 }
 
 function toCostBudgetPolicyPatch(payload: ApiBudgetPolicyUpdate): BudgetPolicyPatch {

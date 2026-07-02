@@ -79,7 +79,7 @@ export const envSchema = z.object({
   LLM_MAX_TOKENS_PER_STEP: z.coerce.number().int().positive().max(64000).default(8192),
 
   PROVIDER_DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com/anthropic"),
-  PROVIDER_DEEPSEEK_MODEL: z.string().min(1).default("deepseek-v4-flash"),
+  PROVIDER_DEEPSEEK_MODEL: z.preprocess(emptyToUndefined, z.string().min(1).optional()),
   PROVIDER_DEEPSEEK_COST_INPUT_CNY_PER_MTOK: z.coerce.number().min(0).default(2),
   PROVIDER_DEEPSEEK_COST_OUTPUT_CNY_PER_MTOK: z.coerce.number().min(0).default(8),
 
@@ -235,8 +235,8 @@ export function loadSettings(env: EnvInput = process.env): Settings {
     },
     providers: {
       deepseek: {
-        baseUrl: parsed.PROVIDER_DEEPSEEK_BASE_URL,
-        model: parsed.PROVIDER_DEEPSEEK_MODEL,
+        baseUrl: env.PROVIDER_DEEPSEEK_BASE_URL ? parsed.PROVIDER_DEEPSEEK_BASE_URL : parsed.LLM_BASE_URL,
+        model: parsed.PROVIDER_DEEPSEEK_MODEL ?? parsed.LLM_MODEL,
         costInputCnyPerMtok: parsed.PROVIDER_DEEPSEEK_COST_INPUT_CNY_PER_MTOK,
         costOutputCnyPerMtok: parsed.PROVIDER_DEEPSEEK_COST_OUTPUT_CNY_PER_MTOK
       }

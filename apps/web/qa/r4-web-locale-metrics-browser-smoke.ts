@@ -616,7 +616,7 @@ async function main() {
       proposal_actions_english:
         proposal.data.review_actions.approve.label === "Approve" &&
         proposal.data.review_actions.request_changes.label === "Request changes with a reason" &&
-        proposal.data.review_actions.merge?.label === "Accept into the official version",
+        proposal.data.review_actions.merge?.label === "Merge deliverable",
       replay_locale_meta_en: replay.meta?.locale === "en-US",
       replay_handoff_english: replay.data.run.handoff_md?.startsWith("Done: ") === true,
       replay_cost_scope_english: replay.data.cost?.me.scope_label === "My current AI run budget",

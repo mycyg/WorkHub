@@ -73,6 +73,32 @@ test("provider registry config keeps API keys out of public metadata", () => {
   assert.equal(publicDeepseek.models.default?.costOutputCnyPerMtok, 3);
 });
 
+test("LLM_MODEL selects the default provider model when no provider override is set", () => {
+  const value = loadSettings({
+    LLM_MODEL: "deepseek-v4-pro"
+  });
+  const registry = createProviderRegistryConfig(value);
+
+  assert.equal(value.llm.model, "deepseek-v4-pro");
+  assert.equal(value.providers.deepseek.model, "deepseek-v4-pro");
+  assert.equal(registry.providers.deepseek?.models.default?.model, "deepseek-v4-pro");
+});
+
+test("LLM_BASE_URL is the DeepSeek provider base URL unless provider URL is explicitly set", () => {
+  const inherited = loadSettings({
+    LLM_BASE_URL: "https://proxy.example/anthropic"
+  });
+  const overridden = loadSettings({
+    LLM_BASE_URL: "https://proxy.example/anthropic",
+    PROVIDER_DEEPSEEK_BASE_URL: "https://deepseek.internal/anthropic"
+  });
+
+  assert.equal(inherited.providers.deepseek.baseUrl, "https://proxy.example/anthropic");
+  assert.equal(createProviderRegistryConfig(inherited).providers.deepseek?.baseUrl, "https://proxy.example/anthropic");
+  assert.equal(overridden.providers.deepseek.baseUrl, "https://deepseek.internal/anthropic");
+  assert.equal(createProviderRegistryConfig(overridden).providers.deepseek?.baseUrl, "https://deepseek.internal/anthropic");
+});
+
 test("fails closed for weak production cookie secret", () => {
   assert.throws(() =>
     loadSettings({

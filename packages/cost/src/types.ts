@@ -87,6 +87,7 @@ export type UsageRecord = {
   runId?: string;
   workItemId?: string;
   userId?: string;
+  workspaceId?: string;
   provider: string;
   model: string;
   task: string;

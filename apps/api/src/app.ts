@@ -28,7 +28,9 @@ import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
 import { createCostRoutes } from "./routes/cost.js";
-import { jsonObjectMessage, malformedJsonMessage } from "./routes/json-body.js";
+import { ProjectServiceError } from "./services/projects.js";
+import { PilotDay1MetricsServiceError } from "./services/pilot-day1-metrics.js";
+import { httpErrorCodeFor } from "./http-error-codes.js";
 import { ApprovalServiceError } from "./services/approvals.js";
 import { NotificationServiceError } from "./services/notifications.js";
 import {
@@ -96,24 +98,37 @@ app.use("*", async (c, next) => {
 
 const MAX_REQUEST_BODY_BYTES = resolveMaxRequestBodyBytes();
 const BODY_BEARING_METHODS = new Set(["POST", "PUT", "PATCH"]);
+// R9 批次0-5：网盘上传不再整体豁免请求体上限（豁免后 drive 路由是先 formData() 全量入内存
+// 才比 32MiB，登录成员发 GB 级 body 可在 413 之前打爆进程）。改为同一中间件里给它一个
+// 更高的专属上限：32MiB 文件 + multipart 包头/JSON 封装余量；且该路由必须声明 Content-Length，
+// 堵 chunked 无声明长度的绕过（其余路由维持既有「缺声明放行、下游把关」语义不变）。
+const DRIVE_UPLOAD_BODY_LIMIT_BYTES = 34 * 1024 * 1024;
+function isDriveUploadRoute(method: string, pathname: string) {
+  return method === "POST" && /^\/api\/drive\/projects\/[^/]+\/files$/u.test(pathname);
+}
 app.use("*", async (c, next) => {
+  const pathname = new URL(c.req.url).pathname;
   if (BODY_BEARING_METHODS.has(c.req.method)) {
+    const driveUpload = isDriveUploadRoute(c.req.method, pathname);
+    const cap = driveUpload ? DRIVE_UPLOAD_BODY_LIMIT_BYTES : MAX_REQUEST_BODY_BYTES;
     const declared = c.req.header("content-length");
     if (declared) {
       const length = Number.parseInt(declared, 10);
-      if (Number.isFinite(length) && length > MAX_REQUEST_BODY_BYTES) {
+      if (Number.isFinite(length) && length > cap) {
         return c.json(
           {
             ok: false,
             error: {
               code: "payload_too_large",
-              message: `Request body exceeds the ${MAX_REQUEST_BODY_BYTES}-byte limit.`
+              message: `Request body exceeds the ${cap}-byte limit.`
             }
           },
           413
         );
       }
     }
+    // 缺 Content-Length 的 drive 上传（chunked）在路由内、鉴权之后拒（411）——
+    // 这里若直接拒会在认证前返回非 401/403，破坏 fail-closed 姿态（route-auth-posture）。
   }
   await next();
 });
@@ -200,25 +215,6 @@ app.route("/api/projects", createProjectRoutes());
 app.route("/api/pilot", createPilotRoutes());
 app.route("/api/ai-worklog", createAiWorklogRoutes());
 
-export function httpErrorCodeFor(error: HTTPException) {
-  if (error.status === 403 && error.message === "invalid client token") {
-    return "invalid_client_token";
-  }
-  if (error.status === 400 && error.message === malformedJsonMessage) {
-    return "malformed_json";
-  }
-  if (error.status === 400 && error.message === jsonObjectMessage) {
-    return "json_object_required";
-  }
-  const codeByStatus: Record<number, string> = {
-    400: "bad_request",
-    401: "not_identified",
-    403: "forbidden",
-    404: "not_found"
-  };
-  return codeByStatus[error.status] ?? "http_error";
-}
-
 app.onError((error, c) => {
   if (error instanceof ZodError) {
     return c.json(
@@ -275,6 +271,19 @@ app.onError((error, c) => {
   }
 
   if (error instanceof NotificationServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof ProjectServiceError || error instanceof PilotDay1MetricsServiceError) {
     return c.json(
       {
         ok: false,

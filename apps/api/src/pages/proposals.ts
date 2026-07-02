@@ -7,6 +7,7 @@ import {
 
 import type { StoredProposal } from "../services/proposals.js";
 import { pageT } from "./i18n.js";
+import { parseOutputContract } from "./output-contract.js";
 
 // GAP-1：把一份待评审的 AI 提议(opened/reviewed)渲染成首页决策队列里的 proposal_review 卡。
 // 动作 href 与 buildProposalDetailPage 完全一致(/api/proposals/:id/review·/merge),
@@ -74,7 +75,7 @@ export function buildProposalDetailPage(proposal: StoredProposal, locale: WorkHu
     };
   }
 
-  return proposalDetailVmSchema.parse({
+  return parseOutputContract(proposalDetailVmSchema, {
     proposal_id: proposal.id,
     work_item_id: proposal.work_item_id,
     title: proposal.title,
@@ -90,5 +91,5 @@ export function buildProposalDetailPage(proposal: StoredProposal, locale: WorkHu
         body: review.reason_md ?? "",
         created_at: review.created_at
       }))
-  });
+  }, "proposal.detail");
 }

@@ -166,6 +166,34 @@ test("long-text clarification cards ask the user to submit an answer, not confir
   assert.equal(english.actions[0]?.label, "Submit answer");
 });
 
+test("clarification attention cards do not expose internal reasoning visibility notes", () => {
+  const attention: AttentionItem = {
+    id: "30000000-0000-4000-8000-000000000104",
+    kind: "clarification",
+    priority: "high",
+    work_item_id: workItemId,
+    source_ref: { entity_type: "approval_request", entity_id: "approval-clarify" },
+    title: "请确认 workhub-app-upload.txt 的验收标准",
+    summary_text: "AI 已读取需求和项目文件，需要确认三条验收要点应面向谁、采用哪条 smoke 记录。",
+    reason_text: "隐藏思考不会展示；这里只显示工具状态和最终反问。",
+    actions: [
+      { id: "submit_option", label: "提交回答", style: "primary", method: "POST", href: "/api/sessions/session-1/next-question" }
+    ],
+    cuu_state: "asking_approval",
+    created_at: ts
+  };
+
+  const card = cardFromAttentionItem(attention);
+
+  assert.equal(card.kind, "question");
+  assert.equal(card.message, attention.summary_text);
+  assert.equal(card.input?.mode, "long_text");
+  assert.equal(card.input?.option_first, false);
+  assert.equal(card.input?.free_text_enabled, true);
+  assert.equal(card.input?.free_text_collapsed_by_default, false);
+  assert.doesNotMatch(card.message, /隐藏思考|工具状态|最终反问/u);
+});
+
 test("session VMs become option-first Cuu question cards", () => {
   const session: SessionVM = {
     session_id: "10000000-0000-4000-8000-000000000011",
@@ -323,6 +351,34 @@ test("reviewed proposal Cuu card only exposes merge as the next step", () => {
 
   assert.deepEqual(card.actions.map((action) => action.id), ["merge"]);
   assert.equal(card.actions[0]?.label, "合入交付物");
+});
+
+test("reviewed proposal attention cards say merge instead of asking for approval again", () => {
+  const attention: AttentionItem = {
+    id: "30000000-0000-4000-8000-000000000011",
+    kind: "proposal_review",
+    priority: "normal",
+    work_item_id: workItemId,
+    source_ref: { entity_type: "proposal", entity_id: "proposal-reviewed" },
+    title: "Cuu 等你确认变更",
+    summary_text: "已确认通过，只差合入交付物。",
+    reason_text: "接下来可以合入交付物。",
+    actions: [
+      { id: "open_proposal", label: "查看变更申请", style: "secondary", method: "GET", href: "/proposals/proposal-reviewed" },
+      { id: "merge", label: "合入交付物", style: "primary", method: "POST", href: "/api/proposals/proposal-reviewed/merge" }
+    ],
+    cuu_state: "carrying_document",
+    created_at: ts
+  };
+
+  const card = cardFromAttentionItem(attention);
+  const english = cardFromAttentionItem(attention, { locale: "en-US" });
+
+  assert.equal(card.title, "Cuu 等你合入变更");
+  assert.doesNotMatch(card.title, /确认|拍板/u);
+  assert.equal(card.sections?.find((section) => section.id === "next_step")?.lines[0], "已确认通过，下一步合入交付物。");
+  assert.deepEqual(card.actions.map((action) => action.id), ["open_proposal", "merge"]);
+  assert.equal(english.title, "Cuu is ready to merge the change");
 });
 
 test("proposal cards replace model self-narration titles with public review copy", () => {
@@ -738,10 +794,10 @@ test("live agent run cards hide hidden reasoning and raw tool results", () => {
   const card = cardFromAgentRunLive(live);
   const visible = JSON.stringify([card.message, card.sections]);
 
-  assert.match(visible, /AI 正在思考中/u);
+  assert.match(visible, /AI 正在整理材料/u);
   assert.match(visible, /工具调用：read_project_file/u);
   assert.match(visible, /工具已返回：read_project_file/u);
-  assert.doesNotMatch(visible, /Now I understand|hidden reasoning|markdown-report|tool_result|#3 think/u);
+  assert.doesNotMatch(visible, /Now I understand|hidden reasoning|隐藏推理|隐藏思考|markdown-report|tool_result|#3 think/u);
 });
 
 test("budget-exhausted live agent runs use budget Cuu cards", () => {
@@ -875,8 +931,9 @@ test("attention approval cards localize standard action labels", () => {
 
   assert.equal(english.actions.find((action) => action.id === "approve")?.label, "Approve");
   assert.equal(english.actions.find((action) => action.id === "request_changes")?.label, "Request changes");
-  assert.equal(english.actions.find((action) => action.id === "open_proposal")?.label, "Open");
+  assert.equal(english.actions.find((action) => action.id === "open_proposal")?.label, "View change request");
   assert.equal(cardFromAttentionItem(attention).actions.find((action) => action.id === "approve")?.label, "同意");
+  assert.equal(cardFromAttentionItem(attention).actions.find((action) => action.id === "open_proposal")?.label, "查看变更申请");
 });
 
 test("generic permission events still map through attention into Cuu approval cards", () => {

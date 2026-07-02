@@ -18,9 +18,14 @@ export type PilotRoutesDependencies = {
   metrics?: PilotDay1MetricsService;
 };
 
+const isoDateTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;
+
 function parseOptionalDate(value: string | undefined, label: string) {
   if (!value) {
     return undefined;
+  }
+  if (!isoDateTimePattern.test(value)) {
+    throw new HTTPException(422, { message: `${label} must be an ISO datetime.` });
   }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
@@ -31,7 +36,7 @@ function parseOptionalDate(value: string | undefined, label: string) {
 
 function handlePilotError(error: unknown): never {
   if (error instanceof PilotDay1MetricsServiceError) {
-    throw new HTTPException(error.status as 400, { message: error.message });
+    throw error;
   }
   throw error;
 }

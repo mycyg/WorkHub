@@ -733,6 +733,18 @@ test("R4.21 desktop browser uses the shared web runtime helpers", () => {
   assert.doesNotMatch(source, /function updateLineEditorPanelPayload/u);
 });
 
+test("desktop browser saves project context so Cuu can ask about project drive files", () => {
+  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+  const activateStart = source.indexOf("const activateRoute = (route: string) => {");
+  const activateEnd = source.indexOf("const activateFromHash", activateStart);
+  assert.notEqual(activateStart, -1);
+  assert.notEqual(activateEnd, -1);
+  const activateSource = source.slice(activateStart, activateEnd);
+
+  assert.match(source, /saveDesktopCuuProjectContextFromRoute/u);
+  assert.match(activateSource, /saveDesktopCuuProjectContextFromRoute\(route\)/u);
+});
+
 test("desktop browser proposal review action confirms only and leaves merge as a second step", () => {
   const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
   const reviewBranchStart = source.lastIndexOf('if (proposalAction?.action === "review")');
@@ -753,4 +765,121 @@ test("M3 Spotlight ESC pops a view's internal detail before leaving the capabili
   assert.match(source, /data-back-to-projects/u);
   // ESC 分支里：查到内部返回按钮就点它(退一级)，否则才 dispatch 顶层 back。
   assert.match(source, /if \(internalBack\) \{\s*internalBack\.click\(\);\s*\} else \{\s*dispatch\(\{ type: "back" \}\);/u);
+});
+
+test("Spotlight exposes native move and resize gestures instead of a fixed top search bar", () => {
+  const source = readFileSync(new URL("./spotlight/controller.ts", import.meta.url), "utf8");
+  const browserSource = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+
+  assert.match(source, /export type SpotlightManualDragFn = \(deltaX: number, deltaY: number\) => void/u);
+  assert.match(source, /drag\?: \(\) => void/u);
+  assert.match(source, /dragMove\?: SpotlightManualDragFn/u);
+  assert.match(source, /resizeDrag\?: \(direction: SpotlightResizeDirection\) => void/u);
+  assert.match(source, /renderWorkHubLiquidGlassLayer\("spotlight"\)/u);
+  assert.match(source, /class="wh-spot ds-anim-spring-in"/u);
+  // 盒子自己在 css.ts 里持有液态玻璃(渐变白底 + backdrop blur)，不再借用扁平的 ds-glass-strong 工具类。
+  assert.doesNotMatch(source, /class="wh-spot ds-glass-strong/u);
+  assert.match(source, /data-spot-box data-mode="launcher"/u);
+  assert.match(source, /class="wh-spot-drag-sheet" data-spot-drag-sheet/u);
+  assert.match(source, /class="wh-spot-field" type="search" data-spot-input role="combobox"/u);
+  assert.doesNotMatch(source, /data-tauri-drag-region/u);
+  assert.match(source, /data-spot-resize="south-east"/u);
+  assert.match(source, /focusSearch\(\{ expand: false \}\)/u);
+  assert.match(source, /suppressNextFocusExpansion = !options\.expand/u);
+  assert.match(source, /if \(suppressNextFocusExpansion \|\| nowMs\(\) < suppressSearchFocusUntil\) \{\s*suppressNextFocusExpansion = false;\s*\}/u);
+  assert.match(source, /const dragExcludedSelector = "button,a,select,\[contenteditable=true\],\[data-spot-resize\]"/u);
+  assert.match(source, /Boolean\(target\.closest\(dragExcludedSelector\)\)/u);
+  assert.doesNotMatch(source, /dragExcludedSelector = "input,textarea,button/u);
+  assert.match(source, /let userResizeAutoUnlockAt = 0/u);
+  assert.match(source, /let suppressSearchFocusUntil = 0/u);
+  assert.match(source, /let suppressSearchClickUntil = 0/u);
+  assert.match(source, /const resetLauncher = \(\) => \{/u);
+  assert.match(source, /const renderLauncherBody = \(\) => \{/u);
+  assert.match(source, /const expanded = searchActive \|\| state\.query\.trim\(\)\.length > 0/u);
+  assert.match(source, /renderLauncherBody\(\);\s*scheduleWorkHubLiquidGlassFilterRebuild\(doc\);/u);
+  assert.match(source, /input2\.addEventListener\("input", \(\) => \{\s*if \(!openCapabilityId\(state\)\) \{\s*searchActive = true;/u);
+  assert.match(source, /searchActive = false;\s*pendingTarget = undefined;\s*state = initialSpotlightState\(\);\s*box\.dataset\.kbd = "false";\s*renderLauncher\(\);\s*focusSearch\(\{ expand: false \}\);/u);
+  assert.match(source, /resetLauncher\(\);\s*input\.dismiss\?\.\(\);/u);
+  assert.match(source, /reset: \(\) => \{\s*resetLauncher\(\);\s*\}/u);
+  assert.match(source, /nowMs\(\) < suppressSearchFocusUntil/u);
+  assert.match(source, /nowMs\(\) < suppressSearchClickUntil/u);
+  assert.match(source, /userResizeAutoUnlockAt = nowMs\(\) \+ 1600/u);
+  assert.match(source, /suppressSearchFocusUntil = nowMs\(\) \+ 700/u);
+  assert.match(source, /suppressSearchClickUntil = nowMs\(\) \+ 900/u);
+  assert.match(source, /suppressSearchClickUntil = nowMs\(\) \+ 700/u);
+  assert.match(source, /if \(!manualDrag.dragging && moved < 4\) \{\s*suppressSearchClickUntil = 0;/u);
+  assert.match(source, /let manualDrag:/u);
+  assert.match(source, /dragMove\?\.\(event\.screenX - manualDrag\.lastScreenX, event\.screenY - manualDrag\.lastScreenY\)/u);
+  assert.match(source, /manualDrag\.dragging = true/u);
+  assert.match(source, /let dragSheetDrag:/u);
+  assert.match(source, /dragSheet\.addEventListener\("pointerdown"/u);
+  assert.match(source, /input\.dragMove\?\.\(event\.screenX - dragSheetDrag\.lastScreenX, event\.screenY - dragSheetDrag\.lastScreenY\)/u);
+  assert.match(source, /const wasDragging = dragSheetDrag\.dragging/u);
+  assert.match(source, /if \(!wasDragging\) \{\s*searchActive = true;\s*renderLauncher\(\);\s*focusSearch\(\{ expand: true \}\);/u);
+  assert.match(source, /topEl\.addEventListener\("click", \(event\) => \{[\s\S]*?event\.stopImmediatePropagation\(\);/u);
+  const focusStart = source.indexOf('input2.addEventListener("focus"');
+  const clickStart = source.indexOf('input2.addEventListener("click"', focusStart);
+  assert.notEqual(focusStart, -1);
+  assert.notEqual(clickStart, -1);
+  const focusSource = source.slice(focusStart, clickStart);
+  assert.doesNotMatch(focusSource, /searchActive = true|renderLauncher\(\)/u);
+  const pointerDownStart = source.indexOf('topEl.addEventListener("pointerdown"');
+  const pointerMoveStart = source.indexOf('topEl.addEventListener("pointermove"', pointerDownStart);
+  assert.notEqual(pointerDownStart, -1);
+  assert.notEqual(pointerMoveStart, -1);
+  const pointerDownSource = source.slice(pointerDownStart, pointerMoveStart);
+  assert.doesNotMatch(pointerDownSource, /input\.drag\(\)/u);
+  assert.match(source, /if \(now < userResizeAutoUnlockAt\) \{\s*userResizeAutoUnlockAt = now \+ 700;\s*return;\s*\}/u);
+  assert.match(source, /input\.drag\?\.\(\)/u);
+  assert.match(source, /input\.resizeDrag\?\.\(direction\)/u);
+  assert.match(source, /const requestResizeFromWindowResize = \(\) => \{\s*scheduleWorkHubLiquidGlassFilterRebuild\(doc\);\s*const now = nowMs\(\);/u);
+  assert.match(source, /input\.resizeDrag\?\.\(direction\);\s*scheduleWorkHubLiquidGlassFilterRebuild\(doc\);/u);
+  const mouseMoveStart = source.indexOf('"mousemove"');
+  const mouseUpStart = source.indexOf('"mouseup"', mouseMoveStart);
+  assert.notEqual(mouseMoveStart, -1);
+  assert.notEqual(mouseUpStart, -1);
+  assert.doesNotMatch(source.slice(mouseMoveStart, mouseUpStart), /scheduleWorkHubLiquidGlassFilterRebuild\(doc\)/u);
+  const dragSheetMoveStart = source.indexOf('dragSheet.addEventListener("pointermove"');
+  const dragSheetFinishStart = source.indexOf("const finishDragSheet", dragSheetMoveStart);
+  assert.notEqual(dragSheetMoveStart, -1);
+  assert.notEqual(dragSheetFinishStart, -1);
+  assert.doesNotMatch(source.slice(dragSheetMoveStart, dragSheetFinishStart), /scheduleWorkHubLiquidGlassFilterRebuild\(doc\)/u);
+  const nativeFallbackMoveStart = source.indexOf('topEl.addEventListener("pointermove"');
+  const nativeFallbackClearStart = source.indexOf("const clearDragStart", nativeFallbackMoveStart);
+  assert.notEqual(nativeFallbackMoveStart, -1);
+  assert.notEqual(nativeFallbackClearStart, -1);
+  assert.doesNotMatch(source.slice(nativeFallbackMoveStart, nativeFallbackClearStart), /scheduleWorkHubLiquidGlassFilterRebuild\(doc\)/u);
+  assert.match(browserSource, /liquidGlassFilterHtml/u);
+  assert.match(browserSource, /scheduleWorkHubLiquidGlassFilterRebuild\(document\)/u);
+  assert.match(browserSource, /const moveMainWindowBy: SpotlightManualDragFn = \(deltaX, deltaY\): void =>/u);
+  assert.match(browserSource, /invoke\("move_main_window_by", \{ deltaX, deltaY \}\)/u);
+  assert.match(browserSource, /invoke\("start_main_window_drag"\)/u);
+  assert.match(browserSource, /invoke\("start_main_window_resize_drag", \{ direction \}\)/u);
+});
+
+test("desktop offline settings edit the API base locally instead of navigating to a dead settings route", () => {
+  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+
+  const offlineStart = source.indexOf("function renderDesktopOfflineCard");
+  const bootStart = source.indexOf("async function bootSpotlight", offlineStart);
+  const offlineSource = source.slice(offlineStart, bootStart);
+
+  assert.match(offlineSource, /#wh-offline-settings/u);
+  assert.match(offlineSource, /window\.localStorage\.setItem\("workhub_api_base", next\)/u);
+  assert.match(offlineSource, /window\.localStorage\.removeItem\("workhub_api_base"\)/u);
+  assert.doesNotMatch(offlineSource, /window\.location\.hash = "#\/settings"/u);
+});
+
+test("Spotlight boot starts transparent without a legacy boot card or capture background", () => {
+  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+  const bootStart = source.indexOf("async function bootSpotlight");
+  const endStart = source.indexOf("if (root && resolveDesktopSurface() === \"pet\")", bootStart);
+  assert.notEqual(bootStart, -1);
+  assert.notEqual(endStart, -1);
+  const bootSource = source.slice(bootStart, endStart);
+
+  assert.doesNotMatch(bootSource, /renderGoldPathBootDocument/u);
+  assert.doesNotMatch(bootSource, /#0f1117/u);
+  assert.match(bootSource, /liquidGlassHeadHtml/u);
+  assert.match(bootSource, /liquidGlassFilterHtml/u);
 });

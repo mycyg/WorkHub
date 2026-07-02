@@ -30,8 +30,8 @@ export const projectListVmSchema = z.object({
 export type ProjectListVM = z.infer<typeof projectListVmSchema>;
 
 export const bootstrapProjectRequestSchema = z.object({
-  name: z.string().min(1).max(128).optional(),
-  slug: z.string().min(1).max(64).optional(),
+  name: z.string().trim().min(1).max(128).optional(),
+  slug: z.string().trim().min(1).max(64).optional(),
   description: z.string().max(2000).optional()
 });
 export type BootstrapProjectRequest = z.infer<typeof bootstrapProjectRequestSchema>;

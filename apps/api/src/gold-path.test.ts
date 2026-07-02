@@ -4,10 +4,11 @@ import test from "node:test";
 import { Hono } from "hono";
 import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 
 import { p05GoldPathIds, createP05GoldPathFixture } from "@workhub/agent/fixtures";
 import { loadSettings, type Settings } from "@workhub/config";
+import { goldPathSurfaceVmSchema } from "@workhub/contracts";
 import type {
   ClientDeviceAuthRow,
   ClientDeviceRepository,
@@ -16,18 +17,27 @@ import type {
 } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
+import { httpErrorCodeFor } from "./http-error-codes.js";
 import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createPageRoutes } from "./routes/pages.js";
+import { malformedJsonMessage } from "./routes/json-body.js";
+import { buildP05GoldPathSurfacePage } from "./pages/gold-path.js";
+import { InternalContractError } from "./pages/output-contract.js";
 import type { ApprovalService } from "./services/approvals.js";
+import { InProcessPushBus } from "./broker/memory.js";
 import { createProposalRoutes } from "./routes/proposals.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
-import { createInMemoryProposalService } from "./services/proposals.js";
+import { DrivePageServiceError } from "./services/drive-pages.js";
+import type { ProjectHomePageService } from "./services/project-home-pages.js";
+import { createInMemoryProposalService, type ProposalService } from "./services/proposals.js";
 import {
   createInMemoryWorkItemService,
+  driveTargetFileNamesFromIntent,
   parseClarificationDraftFromLlmText,
-  WorkItemServiceError
+  WorkItemServiceError,
+  type WorkItemService
 } from "./services/work-items.js";
 import type { AgentRunQueue, AgentRunQueueRecord } from "./workers/agent-runner.js";
 
@@ -159,13 +169,54 @@ function emptyQueue(): AgentRunQueue {
   };
 }
 
+function pageRun(partial: Partial<AgentRunQueueRecord> = {}): AgentRunQueueRecord {
+  const runtimeSettings = settings();
+  return {
+    run_id: "40000000-0000-4000-8000-0000000000a1",
+    workspace_id: runtimeSettings.auth.defaultWorkspaceId,
+    work_item_id: p05GoldPathIds.workItem,
+    actor_id: userId,
+    mode: "worker",
+    status: "running",
+    title: "WorkHub QA run",
+    budget: {
+      max_steps: 10,
+      total_timeout_s: 300,
+      max_tokens: 100000,
+      max_cost_cny: "3"
+    },
+    budget_decision: {
+      decision_id: "gold-path-page-budget",
+      allowed: true,
+      model_route: {
+        provider: runtimeSettings.llm.defaultProvider,
+        model: runtimeSettings.llm.model,
+        reason: "default"
+      }
+    },
+    usage: {
+      steps_used: 1,
+      token_in: 100,
+      token_out: 20,
+      estimated_cost_cny: "0.01"
+    },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString(),
+    ...partial
+  };
+}
+
 function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
   app.onError((error, c) => {
     if (error instanceof ZodError) {
       return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
     }
+    if (error instanceof WorkItemServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
+    }
     if (error instanceof HTTPException) {
-      return c.json({ ok: false, error: { code: "http_error", message: error.message } }, error.status);
+      return c.json({ ok: false, error: { code: httpErrorCodeFor(error), message: error.message } }, error.status);
     }
     throw error;
   });
@@ -211,6 +262,31 @@ test("P0.5 gold path page bundle exposes page VMs, events, and Cuu state progres
   assert.equal(body.data.cuu_states.includes("celebrating"), true);
 });
 
+test("P0.5 gold path page wraps surface VM drift as an internal contract error", () => {
+  let drift: ZodError | undefined;
+  try {
+    z.object({ fixture_id: z.string() }).parse({});
+  } catch (error) {
+    drift = error as ZodError;
+  }
+  const schema = goldPathSurfaceVmSchema as typeof goldPathSurfaceVmSchema & {
+    parse: typeof goldPathSurfaceVmSchema.parse;
+  };
+  const originalParse = schema.parse;
+  schema.parse = (() => {
+    throw drift;
+  }) as typeof goldPathSurfaceVmSchema.parse;
+
+  try {
+    assert.throws(
+      () => buildP05GoldPathSurfacePage(),
+      (error: unknown) => error instanceof InternalContractError && error.context === "gold-path.surface"
+    );
+  } finally {
+    schema.parse = originalParse;
+  }
+});
+
 test("attention home decision queue is fed by the user's pending approvals", async () => {
   const runtimeSettings = settings();
   const fixture = createP05GoldPathFixture();
@@ -235,6 +311,131 @@ test("attention home decision queue is fed by the user's pending approvals", asy
   assert.ok(fixture.approvalCenter.items.length > 0);
   assert.equal(body.data.queue.length, fixture.approvalCenter.items.length);
   assert.equal(body.data.primary?.id, fixture.approvalCenter.items[0]?.id);
+});
+
+test("attention home scopes proposal review lookup to the actor workspace", async () => {
+  const runtimeSettings = settings();
+  let captured: { user: { id: string; isAdmin: boolean; workspaceId?: string } } | undefined;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    approvals: {
+      async listPendingForUser() {
+        return {
+          items: [],
+          requests: [],
+          filters: {},
+          counts: { pending: 0, pending_total: 0 },
+          page_info: { limit: 100, returned: 0, has_more: false },
+          items_detail: {}
+        };
+      }
+    } as unknown as ApprovalService,
+    proposals: {
+      async listReviewableForUser(input: { user: { id: string; isAdmin: boolean; workspaceId?: string } }) {
+        captured = input;
+        return [];
+      }
+    } as unknown as ProposalService
+  }));
+
+  const response = await app.request("/api/pages/attention", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(captured?.user.id, userId);
+  assert.equal(captured?.user.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+});
+
+test("attention home background runs stay scoped to the actor workspace for admins", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const currentRun = pageRun({ run_id: "40000000-0000-4000-8000-0000000000a1" });
+  const foreignRun = pageRun({
+    run_id: "40000000-0000-4000-8000-0000000000a2",
+    workspace_id: "99990000-0000-4000-8000-000000000002"
+  });
+  const queue: AgentRunQueue = {
+    ...emptyQueue(),
+    async listActive() {
+      return [currentRun, foreignRun];
+    }
+  };
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings, [user({ isAdmin: true })]),
+    queue,
+    approvals: {
+      async listPendingForUser() {
+        return {
+          items: [],
+          requests: [],
+          filters: {},
+          counts: { pending: 0, pending_total: 0 },
+          page_info: { limit: 100, returned: 0, has_more: false },
+          items_detail: {}
+        };
+      }
+    } as unknown as ApprovalService,
+    proposals: { async listReviewableForUser() { return []; } } as unknown as ProposalService
+  }));
+
+  const response = await app.request("/api/pages/attention", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  const body = await response.json() as { data: { background_runs: Array<{ run_id: string }> } };
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.data.background_runs.map((run) => run.run_id), [currentRun.run_id]);
+});
+
+test("work item page route preserves work item service error codes", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const workItems = {
+    async detailPage() {
+      throw new WorkItemServiceError(409, "workitem_state_conflict", "这个事项当前状态不能打开详情。");
+    }
+  } as unknown as WorkItemService;
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    workItems
+  }));
+
+  const response = await app.request(`/api/pages/workitems/${p05GoldPathIds.workItem}`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  const body = await response.json() as { ok: false; error: { code: string; message: string } };
+
+  assert.equal(response.status, 409);
+  assert.equal(body.error.code, "workitem_state_conflict");
+  assert.equal(body.error.message, "这个事项当前状态不能打开详情。");
+});
+
+test("drive page route preserves drive service error codes", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const drivePages = {
+    async page() {
+      throw new DrivePageServiceError(409, "文件版本已经变化，请刷新后重试。", "drive_current_version_changed");
+    }
+  };
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    drivePages: drivePages as never
+  }));
+
+  const response = await app.request("/api/pages/drive", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  const body = await response.json() as { ok: false; error: { code: string; message: string } };
+
+  assert.equal(response.status, 409);
+  assert.equal(body.error.code, "drive_current_version_changed");
+  assert.equal(body.error.message, "文件版本已经变化，请刷新后重试。");
 });
 
 test("attention home marks the decision queue as partial when the approvals lookup fails", async () => {
@@ -366,6 +567,31 @@ test("P0.5 gold path preview still closes when unauthenticated preview is disabl
   assert.equal(response.status, 401);
 });
 
+test("project home route preserves project domain code for malformed project ids", async () => {
+  const runtimeSettings = settings();
+  const calls: unknown[] = [];
+  const projectHomePages: ProjectHomePageService = {
+    async page(input) {
+      calls.push(input);
+      throw new Error("project home service should not be reached");
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    projectHomePages
+  }));
+
+  const response = await app.request("/api/pages/project/not-a-project", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 404);
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(body.error.code, "project_not_found");
+  assert.deepEqual(calls, []);
+});
+
 test("production routes use real services and do not serve the P0.5 fixture route set", async () => {
   const runtimeSettings = settings();
   const app = withErrors(new Hono<AuthEnv>());
@@ -467,6 +693,52 @@ test("production routes use real services and do not serve the P0.5 fixture rout
   assert.equal(proposalMerge.status, 404);
 });
 
+test("session route publishes generated questions to the advertised session stream", async () => {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const workItems = createInMemoryWorkItemService({ now: () => now });
+  const publishedEvents: { topic: string; type: string; data: Record<string, unknown> }[] = [];
+  const app = withErrors(new Hono<AuthEnv>());
+  class CapturingSessionBus extends InProcessPushBus {
+    override async publish(topic: string, type: string, data: unknown) {
+      publishedEvents.push({ topic, type, data: data as Record<string, unknown> });
+      await super.publish(topic, type, data);
+    }
+  }
+  const bus = new CapturingSessionBus();
+  app.route("/api", createSessionRoutes({ auth, workItems, bus }));
+
+  const response = await app.request("/api/sessions", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) },
+    body: JSON.stringify({ intent_text: "生成一组三条验收要点。" })
+  });
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      session_id: string;
+      stream_href: string;
+      question: { id: string; input_mode: string };
+    };
+  };
+
+  assert.equal(response.status, 200);
+  assert.equal(body.data.stream_href, `/api/push/stream/session/${body.data.session_id}`);
+  assert.equal(publishedEvents.length, 1);
+  assert.equal(publishedEvents[0]?.topic, `session:${body.data.session_id}`);
+  assert.equal(publishedEvents[0]?.type, "session.question");
+  const eventPayload = publishedEvents[0]?.data["data"] as Record<string, unknown> | undefined;
+  assert.equal(eventPayload?.["session_id"], body.data.session_id);
+  assert.equal(eventPayload?.["question_id"], body.data.question.id);
+  assert.equal(eventPayload?.["input_mode"], "long_text");
+
+  const readback = await app.request(`/api/sessions/${body.data.session_id}`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  assert.equal(readback.status, 200);
+  assert.equal(publishedEvents.length, 1);
+});
+
 test("session clarification question is generated from the request and project files", async () => {
   const runtimeSettings = settings();
   const app = withErrors(new Hono<AuthEnv>());
@@ -508,6 +780,96 @@ test("session clarification question is generated from the request and project f
   assert.deepEqual(body.data.question.options.map((option) => option.id), []);
 });
 
+test("session route preserves AI clarification service error codes", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const auth = authDeps(runtimeSettings);
+  const workItems = {
+    async createSession() {
+      throw new WorkItemServiceError(
+        502,
+        "clarification_llm_templated_response",
+        "AI 材料分析返回了泛化模板，不是真实反问。"
+      );
+    }
+  } as unknown as WorkItemService;
+  app.route("/api", createSessionRoutes({ auth, workItems }));
+
+  const response = await app.request("/api/sessions", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: JSON.stringify({ intent_text: "请读取项目网盘 workhub-app-upload.txt 并生成验收要点。" })
+  });
+
+  assert.equal(response.status, 502);
+  const body = await response.json() as { error: { code: string; message: string } };
+  assert.equal(body.error.code, "clarification_llm_templated_response");
+  assert.match(body.error.message, /泛化模板/u);
+});
+
+test("in-memory session clarification keeps the explicit project context for QA harnesses", async () => {
+  const requestedProjectId = "10000000-0000-4000-8000-0000000000aa";
+  let contextProjectId: string | undefined;
+  const workItems = createInMemoryWorkItemService({
+    now: () => now,
+    async projectFileContext(input) {
+      contextProjectId = input.projectId;
+      return [{
+        name: "workhub-app-upload.txt",
+        path: "workhub-app-upload.txt",
+        preview: "验收材料"
+      }];
+    },
+    async clarificationGenerator(input) {
+      return {
+        title: "请确认 workhub-app-upload.txt 的三条验收要点面向谁？",
+        body: `project=${input.workItem.projectId}`,
+        placeholder: "例如：面向验收同学。"
+      };
+    }
+  });
+
+  const session = await workItems.createSession({
+    actor: {
+      kind: "human",
+      id: userId,
+      label: "gold-path-user",
+      userId,
+      isAdmin: false,
+      orgId: "00000000-0000-4000-8000-000000000001",
+      workspaceId: "00000000-0000-4000-8000-000000000002"
+    },
+    locale: "zh-CN",
+    payload: {
+      project_id: requestedProjectId,
+      intent_text: "请读取项目网盘 workhub-app-upload.txt 并生成验收要点。"
+    }
+  });
+
+  assert.equal(contextProjectId, requestedProjectId);
+  assert.match(session.question.body ?? "", new RegExp(requestedProjectId, "u"));
+});
+
+test("AI clarification extracts explicit drive filenames from the user's request", () => {
+  assert.deepEqual(
+    driveTargetFileNamesFromIntent("请根据 验收材料/workhub-app-upload.txt，结合 docs/周报-v2.md 生成验收要点。"),
+    ["workhub-app-upload.txt", "周报-v2.md"]
+  );
+  assert.deepEqual(
+    driveTargetFileNamesFromIntent("没有点名文件，只说整理项目网盘。"),
+    []
+  );
+  // R9 批次0-2 回归：版本号/小数/域名/URL 不是点名文件，禁止误报（曾把普通意图 502 掉）。
+  assert.deepEqual(
+    driveTargetFileNamesFromIntent("把 v1.2 升级到 2.0，预算 3.14 万，参考 example.com 和 https://a.io/report.md 的做法。"),
+    []
+  );
+  assert.deepEqual(
+    driveTargetFileNamesFromIntent("整理 需求.md 和 数据表.xlsx，忽略 .md 这种裸扩展名。"),
+    ["需求.md", "数据表.xlsx"]
+  );
+});
+
 test("AI clarification parser accepts question/context JSON from real providers", () => {
   const body = Array.from({ length: 60 }, () => "请围绕验收材料/workhub-app-upload.txt 的风险、进展和下周动作生成验收口径。").join("");
   const placeholder = Array.from({ length: 20 }, () => "例如：只使用 workhub-app-upload.txt，并面向验收同学输出。").join("");
@@ -536,6 +898,47 @@ test("AI clarification parser extracts fenced JSON without requiring exact title
 
   assert.match(draft.title, /workhub-app-upload\.txt/u);
   assert.match(draft.body ?? "", /验收同学/u);
+});
+
+test("AI clarification accepts material-grounded questions that mention the Markdown deliverable", async () => {
+  const workItems = createInMemoryWorkItemService({
+    now: () => now,
+    async projectFileContext() {
+      return [{
+        name: "workhub-app-upload.txt",
+        path: "验收材料/workhub-app-upload.txt",
+        preview: "验收材料要求三条要点覆盖真实 App 读取网盘、Cuu 反问和交付物回看。"
+      }];
+    },
+    async clarificationGenerator(input) {
+      return {
+        title: "请确认 workhub-app-upload.txt 中列出的三条 App 验收口径是否就是 Markdown 交付方式的全部范围？",
+        body: `我已读取 ${input.files[0]?.path}，里面提到真实 App 读取项目网盘、Cuu 根据材料反问、最终交付物回看。`,
+        placeholder: "例如：是，只围绕这三条验收。"
+      };
+    }
+  });
+
+  const session = await workItems.createSession({
+    actor: {
+      kind: "human",
+      id: userId,
+      label: "gold-path-user",
+      userId,
+      isAdmin: false,
+      orgId: "00000000-0000-4000-8000-000000000001",
+      workspaceId: "00000000-0000-4000-8000-000000000002"
+    },
+    locale: "zh-CN",
+    payload: {
+      intent_text: "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点，输出成 Markdown 交付物。"
+    }
+  });
+
+  assert.equal(session.question.input_mode, "long_text");
+  assert.match(session.question.title, /workhub-app-upload\.txt/u);
+  assert.match(session.question.title, /Markdown/u);
+  assert.deepEqual(session.question.options.map((option) => option.id), []);
 });
 
 test("AI clarification rejects generic preset-template follow-up questions", async () => {
@@ -652,4 +1055,159 @@ test("M10: confirm-step '调整范围' navigates back to the scope question inst
   const optionIds = backBody.data.question.options.map((option) => option.id);
   assert.equal(optionIds.includes("adjust-scope"), false);
   assert.deepEqual(optionIds, []);
+});
+
+test("session next-question validates session id before parsing the body", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const auth = authDeps(runtimeSettings);
+  const workItems = createInMemoryWorkItemService({ now: () => now });
+  app.route("/api", createSessionRoutes({ auth, workItems }));
+
+  const response = await app.request("/api/sessions/not-a-uuid/next-question", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: "{"
+  });
+
+  assert.equal(response.status, 404);
+});
+
+test("session create checks work item mutation before unrelated schema errors", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const auth = authDeps(runtimeSettings);
+  const workItemId = "50000000-0000-4000-8000-0000000000c4";
+  let createSessionCalled = false;
+  const workItems = {
+    assertCanMutateWorkItem: async (input: Parameters<WorkItemService["assertCanMutateWorkItem"]>[0]) => {
+      assert.equal(input.workItemId, workItemId);
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项。");
+    },
+    createSession: async () => {
+      createSessionCalled = true;
+      throw new Error("createSession must not be reached before the work item mutation gate");
+    }
+  } as unknown as WorkItemService;
+  app.route("/api", createSessionRoutes({ auth, workItems }));
+
+  const response = await app.request("/api/sessions", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: JSON.stringify({
+      work_item_id: workItemId,
+      project_id: "not-a-uuid"
+    })
+  });
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "forbidden",
+      message: "你没有权限修改这个事项。"
+    }
+  });
+  assert.equal(createSessionCalled, false);
+});
+
+test("session create route returns malformed_json for malformed request bodies", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const auth = authDeps(runtimeSettings);
+  const workItems = {
+    createSession: async () => {
+      throw new Error("createSession must not be reached for malformed JSON");
+    }
+  } as unknown as WorkItemService;
+  app.route("/api", createSessionRoutes({ auth, workItems }));
+
+  const response = await app.request("/api/sessions", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: "{"
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "malformed_json",
+      message: malformedJsonMessage
+    }
+  });
+});
+
+test("session next-question checks session access before parsing the body", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const auth = authDeps(runtimeSettings);
+  let nextQuestionCalled = false;
+  let getSessionCalled = false;
+  const workItems = {
+    getSession: async () => {
+      getSessionCalled = true;
+      throw new Error("getSession must not run before mutation gate because it can regenerate clarification");
+    },
+    assertCanMutateWorkItem: async () => {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个会话。");
+    },
+    nextQuestion: async () => {
+      nextQuestionCalled = true;
+      throw new Error("nextQuestion must not be reached for an unreadable session");
+    }
+  } as unknown as WorkItemService;
+  app.route("/api", createSessionRoutes({ auth, workItems }));
+
+  const response = await app.request("/api/sessions/50000000-0000-4000-8000-0000000000c5/next-question", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: "{"
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(getSessionCalled, false);
+  assert.equal(nextQuestionCalled, false);
+});
+
+test("session next-question checks mutation access before parsing the answer body", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const auth = authDeps(runtimeSettings);
+  let nextQuestionCalled = false;
+  const workItems = {
+    getSession: async () => ({
+      session_id: "50000000-0000-4000-8000-0000000000c6",
+      work_item_id: "50000000-0000-4000-8000-0000000000c6",
+      stage: "scope",
+      question: { title: "补充信息", input_mode: "long_text", options: [] }
+    }),
+    assertCanMutateWorkItem: async () => {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项。");
+    },
+    assertCanMutateArtifacts: async () => {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项的正式交付物。");
+    },
+    nextQuestion: async () => {
+      nextQuestionCalled = true;
+      throw new Error("nextQuestion must not be reached for a readonly session");
+    }
+  } as unknown as WorkItemService;
+  app.route("/api", createSessionRoutes({ auth, workItems }));
+
+  const response = await app.request("/api/sessions/50000000-0000-4000-8000-0000000000c6/next-question", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: "{"
+  });
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "forbidden",
+      message: "你没有权限修改这个事项。"
+    }
+  });
+  assert.equal(nextQuestionCalled, false);
 });

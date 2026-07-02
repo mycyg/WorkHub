@@ -5443,6 +5443,7 @@ name = "workhub-client-tauri"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "objc2-app-kit 0.3.2",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -5451,6 +5452,7 @@ dependencies = [
  "tauri-plugin-deep-link",
  "tauri-plugin-notification",
  "tauri-plugin-single-instance",
+ "tauri-runtime",
  "tokio",
  "url",
  "window-vibrancy 0.5.3",

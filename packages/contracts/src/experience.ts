@@ -203,6 +203,7 @@ export const deliverableChangeSchema = z.object({
     .object({
       before_excerpt: z.string().optional(),
       after_excerpt: z.string().optional(),
+      generated_content_md: z.string().optional(),
       changed_fields: z.array(z.string()).optional(),
       field_values_before: z.record(z.string(), z.unknown()).optional(),
       row_count_delta: z.number().int().optional(),

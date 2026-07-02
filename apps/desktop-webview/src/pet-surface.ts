@@ -40,6 +40,12 @@ import {
 import { writeDesktopPetQaDomSnapshot } from "./cuu-qa-dom-report.js";
 import { liquidGlassHeadHtml } from "./liquid-glass.js";
 import {
+  liquidGlassFilterCss,
+  liquidGlassFilterHtml,
+  renderWorkHubLiquidGlassLayer,
+  scheduleWorkHubLiquidGlassFilterRebuild
+} from "./liquid-glass-filter.js";
+import {
   desktopPetSettingsPayloadFromPreferences,
   desktopPetSettingsPreferencesFromPayload,
   loadCuuPreferences,
@@ -51,6 +57,7 @@ import {
   cardFromDesktopCuuRuntimeError,
   createDesktopCuuAnalysisCard,
   createDesktopCuuAgentLauncherCard,
+  loadDesktopCuuProjectContext,
   resolveDesktopCuuAction,
   resolveDesktopShellEmitter,
   resolveDesktopShellListen,
@@ -117,6 +124,7 @@ type DesktopPetRestoreState =
     };
 
 export const desktopPetSurfaceCss = [
+  liquidGlassFilterCss,
   ":root{--wh-pet-font:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",\"Helvetica Neue\",\"PingFang SC\",\"Noto Sans CJK SC\",Arial,sans-serif;--wh-pet-accent:#0a84ff;--wh-pet-accent-strong:#0066cc;--wh-pet-ink:#1d1d1f;--wh-pet-muted:#6e6e73}",
   "html,body,#root{margin:0;width:100%;height:100%;background:rgba(0,0,0,0)!important;overflow:hidden}",
   "*,*::before,*::after{box-sizing:border-box}",
@@ -133,22 +141,23 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-dragging=true] .wh-pet-body{cursor:grabbing}",
   ".wh-pet-surface[data-pet-hover-avoidance=soft]:not([data-pet-dragging=true]) .wh-pet-body{transition-duration:120ms}",
   ".wh-pet-surface[data-pet-hover-hidden=true] .wh-pet-body{transition-duration:140ms}",
-  ".wh-pet-bubble{position:absolute;right:calc(254px * var(--wh-pet-scale,1));bottom:calc(36px * var(--wh-pet-scale,1));box-sizing:border-box;width:min(286px,calc(100vw - 254px));min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;font-family:var(--wh-pet-font);border:1px solid rgba(255,255,255,.74);border-radius:20px;background:linear-gradient(135deg,rgba(255,255,255,.82),rgba(255,255,255,.52));box-shadow:0 24px 64px -24px rgba(31,35,53,.38),inset 0 1px 0 rgba(255,255,255,.78);padding:11px 13px;pointer-events:none;backdrop-filter:blur(32px) saturate(185%);-webkit-backdrop-filter:blur(32px) saturate(185%);overflow-wrap:anywhere;word-break:break-word}",
+  // 气泡本体就是磨砂白玻璃卡：半透白渐变底 + backdrop blur 给真实毛玻璃，深色字直接读在白底上。
+  // (透明窗口里 backdrop-filter 没东西可糊，所以磨砂靠这层不透明白底兜底；warp/rim 折射层在气泡内关掉。)
+  ".wh-pet-bubble{position:absolute;right:calc(254px * var(--wh-pet-scale,1));bottom:calc(36px * var(--wh-pet-scale,1));box-sizing:border-box;width:min(286px,calc(100vw - 254px));min-width:0;display:block;font-family:var(--wh-pet-font);border:1px solid rgba(255,255,255,.7);border-radius:24px;background:linear-gradient(135deg,rgba(255,255,255,.82),rgba(255,255,255,.52));box-shadow:0 24px 64px -26px rgba(31,35,53,.42),inset 0 1px 0 rgba(255,255,255,.75);padding:11px 13px;pointer-events:none;overflow:hidden;backdrop-filter:blur(40px) saturate(185%);-webkit-backdrop-filter:blur(40px) saturate(185%);overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-pet-bubble>.wh-liquid-glass-warp,.wh-pet-bubble>.wh-liquid-glass-rim{display:none}",
+  ".wh-pet-bubble>.wh-liquid-glass-content{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}",
   // R7.1 桌宠穿透修复：气泡/卡片容器本身改 pointer-events:none —— 浅蓝空白处的点击直接穿透到下方窗口
   // （之前整块 auto 把报价单挡住）。只有真正可点的子元素重新 auto：按钮 / 动作链接 / 选项 / 理由 / 输入框。
   // 惰性 <span class=wh-pet-chip|wh-pet-action> 标签不匹配 → 保持穿透；猫(.wh-pet-body)与右键菜单(.wh-pet-menu)
   // 是气泡的兄弟节点、不受影响。命中测试 closest 仍含 .wh-pet-bubble：落在按钮上时 closest 为真→接管，
   // 落在空白(now none)上时 elementFromPoint 穿过气泡返回透明底→closest 为 null→穿透。
   ".wh-pet-bubble button,.wh-pet-bubble a[data-cuu-action-id],.wh-pet-bubble [data-pet-option-id],.wh-pet-bubble [data-pet-reason],.wh-pet-bubble [data-pet-free-text]{pointer-events:auto}",
-  // M8/M11：Cuu 气泡此前是硬 DOM swap 出现（无入场过渡）。给它克制的纯 opacity 淡入——只动透明度、
-  // 不动 transform/几何，避免影响穿透命中测试（命中走探针坐标，气泡本身 pointer-events:none）。
-  "@keyframes wh-pet-bubble-in{from{opacity:0}to{opacity:1}}",
-  ".wh-pet-bubble{animation:wh-pet-bubble-in .34s ease-out both}",
-  "@media (prefers-reduced-motion:reduce){.wh-pet-bubble{animation:none!important}}",
+  // Cuu card content can update frequently while an agent is running; opacity animation on each
+  // DOM replacement makes the glass surface flash. Keep geometry stable and let content update in place.
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1));bottom:calc(48px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=bubble],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=offline],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=trace]{min-height:calc(268px * var(--wh-pet-scale,1))}",
-  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(72px * var(--wh-pet-scale,1));right:auto;bottom:calc(372px * var(--wh-pet-scale,1));width:calc(328px * var(--wh-pet-scale,1));max-width:calc(100% - calc(104px * var(--wh-pet-scale,1)));min-height:0;max-height:calc(336px * var(--wh-pet-scale,1));overflow:hidden;overscroll-behavior:none;scrollbar-width:none;gap:6px;padding:10px 12px 12px}",
+  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(72px * var(--wh-pet-scale,1));right:auto;bottom:calc(372px * var(--wh-pet-scale,1));width:calc(328px * var(--wh-pet-scale,1));max-width:calc(100% - calc(104px * var(--wh-pet-scale,1)));min-height:0;max-height:calc(336px * var(--wh-pet-scale,1));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;pointer-events:auto;gap:6px;padding:10px 12px 12px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-title{-webkit-line-clamp:2;font-size:13px;line-height:1.28}",
@@ -160,15 +169,18 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-kicker,.wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{font-size:10px}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-status{line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-layout=compact] .wh-pet-action{font-size:11px;padding:5px 7px;max-width:112px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-  ".wh-pet-bubble>*{min-width:0;max-width:100%}",
+  ".wh-pet-bubble .wh-liquid-glass-content>*{min-width:0;max-width:100%}",
+  "@keyframes wh-pet-bubble-in{from{opacity:0}to{opacity:1}}",
+  ".wh-pet-bubble{animation:wh-pet-bubble-in .34s ease-out both}",
+  "@media (prefers-reduced-motion:reduce){.wh-pet-bubble{animation:none!important}}",
+  ".wh-pet-surface[data-pet-suppress-bubble-intro=true] .wh-pet-bubble{animation:none}",
   ".wh-pet-kicker{display:flex;align-items:center;gap:7px;color:#667085;font-size:11px;font-weight:800;min-width:0;max-width:100%;flex-wrap:wrap}",
   ".wh-pet-dot{width:8px;height:8px;border-radius:999px;background:#ff9d58;box-shadow:0 0 0 3px rgba(255,157,88,.18)}",
   ".wh-pet-emotion{max-width:100%;color:#475467;font-size:10px;line-height:1;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-  ".wh-pet-bubble[data-pet-bubble-tone=approval]{background:linear-gradient(135deg,rgba(255,249,235,.84),rgba(255,255,255,.54));border-color:rgba(255,190,92,.48)}",
+  // 气泡直接复用聚焦盒(.wh-spot)的玻璃配方：同样的半透白底/亮描边/投影/blur。语气不再改底色或描边色，
+  // 只留圆点 + 表情文字色做语义提示，避免出现暖奶油底 + 黄描边那种和搜索框割裂的画风。
   ".wh-pet-bubble[data-pet-bubble-tone=approval] .wh-pet-emotion{color:#a15c07}",
   ".wh-pet-bubble[data-pet-bubble-tone=approval] .wh-pet-dot{background:#e0892a;box-shadow:0 0 0 3px rgba(224,137,42,.18)}",
-  ".wh-pet-bubble[data-pet-bubble-tone=chat]{background:linear-gradient(135deg,rgba(255,255,255,.82),rgba(255,255,255,.52));border-color:rgba(255,255,255,.72)}",
-  ".wh-pet-bubble[data-pet-bubble-tone=search]{background:linear-gradient(135deg,rgba(232,243,255,.84),rgba(255,255,255,.54));border-color:rgba(10,132,255,.28)}",
   ".wh-pet-bubble[data-pet-bubble-tone=search] .wh-pet-emotion{color:#1f6fb2}",
   ".wh-pet-bubble[data-pet-bubble-tone=search] .wh-pet-dot{background:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.18)}",
   ".wh-pet-bubble[data-pet-bubble-emotion=celebrating] .wh-pet-emotion{color:#15a05a}",
@@ -191,8 +203,8 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-section-line,.wh-pet-surface[data-pet-card-has-context=true] .wh-pet-evidence-item{-webkit-line-clamp:1}",
   ".wh-pet-evidence{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;border-top:1px solid rgba(38,49,70,.1);padding-top:7px;min-width:0;max-width:100%;width:100%}",
   ".wh-pet-input-hint{border-top:1px solid rgba(38,49,70,.1);padding-top:7px;color:#667085}",
-  ".wh-pet-free-text{box-sizing:border-box;width:100%;min-height:62px;max-height:104px;resize:none;border:1px solid rgba(60,60,67,.14);border-radius:10px;background:rgba(255,255,255,.72);box-shadow:inset 0 1px 0 rgba(255,255,255,.72);padding:8px 9px;color:var(--wh-pet-ink);font:650 12px/1.36 var(--wh-pet-font);outline:none;overflow:auto}",
-  ".wh-pet-free-text:focus{border-color:rgba(10,132,255,.44);box-shadow:0 0 0 3px rgba(10,132,255,.13),inset 0 1px 0 rgba(255,255,255,.72)}",
+  ".wh-pet-free-text{box-sizing:border-box;width:100%;min-height:62px;max-height:104px;resize:none;border:1px solid rgba(60,60,67,.14);border-radius:10px;background:rgba(255,255,255,.72);box-shadow:inset 0 1px 0 rgba(255,255,255,.7);padding:8px 9px;color:var(--wh-pet-ink);font:650 12px/1.36 var(--wh-pet-font);outline:none;overflow:auto}",
+  ".wh-pet-free-text:focus{border-color:rgba(10,132,255,.44);box-shadow:0 0 0 3px rgba(10,132,255,.13),inset 0 1px 0 rgba(255,255,255,.7)}",
   ".wh-pet-free-text::placeholder{color:#8a93a3}",
   ".wh-pet-surface[data-pet-card-kind=question] .wh-pet-progress{grid-template-columns:repeat(4,16px);width:auto;max-width:88px}",
   ".wh-pet-surface[data-pet-card-kind=question] .wh-pet-progress-label{display:none}",
@@ -211,13 +223,14 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-reason--cancel{background:#fff;border-color:rgba(38,49,70,.14);color:#5b6472;font-weight:700}",
   ".wh-pet-action[data-tone=danger]{background:#fff4f3;border-color:rgba(238,107,95,.34);color:#b42318}",
   ".wh-pet-status{min-width:0;max-width:100%;width:100%;margin:0;color:#344054;font-size:12px;line-height:1.45;font-weight:750;overflow-wrap:anywhere;word-break:break-word;white-space:normal}",
-  ".wh-pet-menu{position:absolute;right:88px;bottom:72px;z-index:8;box-sizing:border-box;width:164px;display:grid;gap:8px;border:1px solid rgba(255,255,255,.72);border-radius:14px;background:rgba(255,255,255,.78);box-shadow:0 18px 48px -18px rgba(31,35,53,.34),inset 0 1px 0 rgba(255,255,255,.78);padding:10px;pointer-events:auto;backdrop-filter:blur(26px) saturate(180%);-webkit-backdrop-filter:blur(26px) saturate(180%);overflow:hidden}",
+  // 气泡是磨砂白底，正文走原本的深色(kicker/message #667085、status/section #344054…)；不再强制白字+黑描边。
+  ".wh-pet-menu{position:absolute;right:88px;bottom:72px;z-index:8;box-sizing:border-box;width:164px;display:grid;gap:8px;border:1px solid rgba(255,255,255,.6);border-radius:14px;background:rgba(255,255,255,.92);box-shadow:0 18px 48px -18px rgba(31,35,53,.34),inset 0 1px 0 rgba(255,255,255,.8);padding:10px;pointer-events:auto;backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);overflow:hidden}",
   ".wh-pet-menu[hidden]{display:none}",
   ".wh-pet-menu-title{font-size:12px;line-height:1.2;font-weight:900;color:#222b38}",
   ".wh-pet-menu-group{display:grid;gap:5px;min-width:0}",
   ".wh-pet-menu-label{font-size:10px;line-height:1.1;font-weight:900;color:#667085;text-transform:uppercase}",
   ".wh-pet-menu-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;min-width:0}",
-  ".wh-pet-menu button{min-width:0;max-width:100%;border:1px solid rgba(60,60,67,.14);border-radius:10px;background:rgba(255,255,255,.68);color:var(--wh-pet-ink);padding:6px 8px;font:760 11px/1.15 var(--wh-pet-font);cursor:pointer;min-height:28px;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
+  ".wh-pet-menu button{min-width:0;max-width:100%;border:1px solid rgba(60,60,67,.14);border-radius:10px;background:rgba(255,255,255,.72);color:var(--wh-pet-ink);padding:6px 8px;font:760 11px/1.15 var(--wh-pet-font);cursor:pointer;min-height:28px;white-space:normal;overflow-wrap:anywhere;word-break:break-word}",
   ".wh-pet-menu-row button{width:auto;min-width:0;flex:1 1 0;padding-left:6px;padding-right:6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   ".wh-pet-menu button[aria-pressed=true]{border-color:rgba(10,132,255,.34);background:rgba(10,132,255,.12);color:var(--wh-pet-accent-strong);box-shadow:inset 3px 0 0 var(--wh-pet-accent)}",
   ".wh-pet-menu button[data-pet-menu-danger=true]{background:#fff4f3;border-color:rgba(238,107,95,.3);color:#b42318}",
@@ -326,6 +339,7 @@ export function renderDesktopPetSurface(input: {
   window_mode_error?: string | undefined;
   window_mode_status?: "syncing" | "failed" | undefined;
   requested_model_pack_id?: string | undefined;
+  suppress_bubble_intro?: boolean | undefined;
   locale?: CuuLocaleOptions["locale"];
 } = {}): DesktopPetSurfaceRender {
   const locale = input.locale ?? desktopPetLocale();
@@ -411,7 +425,7 @@ export function renderDesktopPetSurface(input: {
     live2d,
     visual_mode: visualMode,
     css: `${desktopPetSurfaceCss}${live2d.css}`,
-    html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-hide-on-hover="${settings.hide_on_hover ? "true" : "false"}" data-pet-hover-hidden="${hoverHidden ? "true" : "false"}" data-pet-hover-hide-mode="${settings.hide_on_hover ? "soft" : "off"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}" data-pet-look-x="${formatPointerNumber(pointer.look_x)}" data-pet-look-y="${formatPointerNumber(pointer.look_y)}" data-pet-hover-avoidance="${pointer.hover_avoidance}" data-pet-pointer-smoothing-alpha="${formatPointerNumber(pointerSmoothingAlpha)}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-live2d-runtime="${escapeHtml(live2d.runtime_kind)}" data-cuu-live2d-status="${escapeHtml(live2d.status)}" data-cuu-live2d-model="${escapeHtml(live2d.model_key)}" data-cuu-live2d-appearance="${escapeHtml(live2d.appearance)}" data-cuu-live2d-motion="${escapeHtml(live2d.motion_state)}" data-cuu-live2d-renderer-state="${escapeHtml(live2d.renderer_state)}" data-cuu-live2d-layer-count="native_moc" data-cuu-behavior-manifest-version="${live2d.behavior_manifest_version}" data-cuu-behavior-state="${escapeHtml(live2d.behavior_state)}" data-cuu-behavior-phase="${escapeHtml(live2d.behavior_phase)}" data-cuu-behavior-coverage="${escapeHtml(live2d.behavior_coverage)}" data-cuu-behavior-priority="${escapeHtml(live2d.behavior_priority)}" data-cuu-behavior-expected-window-mode="${escapeHtml(live2d.behavior_window_mode)}" data-cuu-behavior-expected-bubble-mode="${escapeHtml(live2d.behavior_bubble_mode)}" data-cuu-live2d-frame-url="${escapeHtml(live2d.iframe_url)}" data-cuu-live2d-model-url="${escapeHtml(live2d.model_url)}" data-cuu-model-pack="${escapeHtml(live2d.model_pack_id)}" data-cuu-model-pack-selection-reason="${escapeHtml(live2d.model_pack_selection_reason)}">
+    html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-hide-on-hover="${settings.hide_on_hover ? "true" : "false"}" data-pet-hover-hidden="${hoverHidden ? "true" : "false"}" data-pet-hover-hide-mode="${settings.hide_on_hover ? "soft" : "off"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}" data-pet-look-x="${formatPointerNumber(pointer.look_x)}" data-pet-look-y="${formatPointerNumber(pointer.look_y)}" data-pet-hover-avoidance="${pointer.hover_avoidance}" data-pet-pointer-smoothing-alpha="${formatPointerNumber(pointerSmoothingAlpha)}" data-pet-suppress-bubble-intro="${input.suppress_bubble_intro ? "true" : "false"}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-live2d-runtime="${escapeHtml(live2d.runtime_kind)}" data-cuu-live2d-status="${escapeHtml(live2d.status)}" data-cuu-live2d-model="${escapeHtml(live2d.model_key)}" data-cuu-live2d-appearance="${escapeHtml(live2d.appearance)}" data-cuu-live2d-motion="${escapeHtml(live2d.motion_state)}" data-cuu-live2d-renderer-state="${escapeHtml(live2d.renderer_state)}" data-cuu-live2d-layer-count="native_moc" data-cuu-behavior-manifest-version="${live2d.behavior_manifest_version}" data-cuu-behavior-state="${escapeHtml(live2d.behavior_state)}" data-cuu-behavior-phase="${escapeHtml(live2d.behavior_phase)}" data-cuu-behavior-coverage="${escapeHtml(live2d.behavior_coverage)}" data-cuu-behavior-priority="${escapeHtml(live2d.behavior_priority)}" data-cuu-behavior-expected-window-mode="${escapeHtml(live2d.behavior_window_mode)}" data-cuu-behavior-expected-bubble-mode="${escapeHtml(live2d.behavior_bubble_mode)}" data-cuu-live2d-frame-url="${escapeHtml(live2d.iframe_url)}" data-cuu-live2d-model-url="${escapeHtml(live2d.model_url)}" data-cuu-model-pack="${escapeHtml(live2d.model_pack_id)}" data-cuu-model-pack-selection-reason="${escapeHtml(live2d.model_pack_selection_reason)}">
       <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="${escapeHtml(cuuT(locale, "pet.aria"))}">
         ${live2d.html}
       </button>
@@ -770,6 +784,13 @@ export async function bootDesktopPetSurface(
     baseUrl: "",
     getClientToken: clientToken
   });
+  const createLauncherCard = () => {
+    const projectId = loadDesktopCuuProjectContext()?.project_id;
+    return createDesktopCuuAgentLauncherCard({
+      locale,
+      ...(projectId ? { projectId } : {})
+    });
+  };
   let currentCard: CuuCard | undefined;
   // L#83：卡片内容只在 setCard 时变；用单调递增的版本号代表结构身份，避免每帧(4Hz) JSON.stringify 整张卡片。
   let cardRevision = 0;
@@ -796,6 +817,7 @@ export async function bootDesktopPetSurface(
   let renderGeneration = 0;
   let cancelPendingFirstPaintSync: (() => void) | undefined;
   let lastStructuralRenderKey: string | undefined;
+  let lastBubbleIntroIdentityKey: string | undefined;
   let lastRunStreamStatus: DesktopCuuRunStreamStatus | undefined;
 
   const applyRunStreamStatusAttributes = () => {
@@ -830,6 +852,14 @@ export async function bootDesktopPetSurface(
     const compactCard = Boolean(currentCard && petWindowBridge && desiredMode === "card" && confirmedPetWindowMode !== "card");
     const windowModeError = compactCard ? petWindowModeError ?? cuuT(locale, "pet.windowModeExpanding") : undefined;
     const windowModeStatus = compactCard ? petWindowModeError ? "failed" : "syncing" : undefined;
+    const bubbleIntroIdentityKey = desktopPetBubbleIntroIdentityKey(currentCard, {
+      compact_card: compactCard,
+      window_mode_status: windowModeStatus
+    });
+    const suppressBubbleIntro = Boolean(
+      bubbleIntroIdentityKey &&
+      bubbleIntroIdentityKey === lastBubbleIntroIdentityKey
+    );
     const structuralRenderKey = desktopPetStructuralRenderKey({
       card_revision: currentCard ? cardRevision : 0,
       card_id: currentCard?.id,
@@ -853,6 +883,7 @@ export async function bootDesktopPetSurface(
       })
     ) {
       applyRunStreamStatusAttributes();
+      scheduleWorkHubLiquidGlassFilterRebuild(root.ownerDocument);
       writeDesktopPetQaDomSnapshot(root, "patch");
       syncPetWindowSettings(petWindowSettings);
       return;
@@ -870,12 +901,15 @@ export async function bootDesktopPetSurface(
       pointer_snapshot: pointerSnapshot,
       window_mode_error: windowModeError,
       window_mode_status: windowModeStatus,
+      suppress_bubble_intro: suppressBubbleIntro,
       locale
     });
-    replaceDesktopPetRootHtmlPreservingLive2DFrame(root, `${liquidGlassHeadHtml}<style>${surface.css}</style>${surface.html}`);
+    replaceDesktopPetRootHtmlPreservingLive2DFrame(root, `${liquidGlassHeadHtml}${liquidGlassFilterHtml}<style>${surface.css}</style>${surface.html}`);
     applyRunStreamStatusAttributes();
+    scheduleWorkHubLiquidGlassFilterRebuild(root.ownerDocument);
     writeDesktopPetQaDomSnapshot(root, "render");
     lastStructuralRenderKey = structuralRenderKey;
+    lastBubbleIntroIdentityKey = bubbleIntroIdentityKey;
     syncPetWindowSettings(petWindowSettings);
     cancelPendingFirstPaintSync?.();
     cancelPendingFirstPaintSync = scheduleDesktopPetFirstPaint(() => {
@@ -982,8 +1016,7 @@ export async function bootDesktopPetSurface(
       }
       const item = attention.primary ?? attention.queue[0];
       if (item) {
-        const message = locale === "en-US" ? "You have a decision waiting" : "有一件待你拍板";
-        setCard(cardFromAttentionItem(item, { locale }), message, { persist: false });
+        setCard(cardFromAttentionItem(item, { locale }), attentionStatusMessage(item, locale), { persist: false });
       }
     } catch {
       // 拉不到就保持空闲，不打断。
@@ -994,7 +1027,20 @@ export async function bootDesktopPetSurface(
     return currentCard?.payload_ref?.entity_type === "attention" ? currentCard.payload_ref.entity_id : undefined;
   };
 
-  const visibleAttentionMessage = () => {
+  const attentionReadyToMerge = (item: AttentionItem) => {
+    return item.actions.some((action) => action.id === "merge");
+  };
+
+  const attentionStatusMessage = (item: AttentionItem, messageLocale: WorkHubLocale) => {
+    return attentionReadyToMerge(item)
+      ? cuuT(messageLocale, "proposal.mergeStatus")
+      : messageLocale === "en-US" ? "You have a decision waiting" : "有一件待你拍板";
+  };
+
+  const visibleAttentionMessage = (item?: AttentionItem) => {
+    if (item) {
+      return attentionStatusMessage(item, locale);
+    }
     return locale === "en-US" ? "Decision list updated" : "待拍板已同步";
   };
 
@@ -1008,7 +1054,7 @@ export async function bootDesktopPetSurface(
       const items = [attention.primary, ...attention.queue].filter((item): item is AttentionItem => Boolean(item));
       const next = currentId ? items.find((item) => item.id === currentId) ?? items[0] : items[0];
       if (next) {
-        setCard(cardFromAttentionItem(next, { locale }), visibleAttentionMessage(), { persist: false });
+        setCard(cardFromAttentionItem(next, { locale }), visibleAttentionMessage(next), { persist: false });
         return;
       }
       if (currentId) {
@@ -1068,7 +1114,7 @@ export async function bootDesktopPetSurface(
     try {
       const demand = "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。";
       const clarificationAnswer = "以 workhub-app-upload.txt 的 smoke 记录作为验收标准，输出给验收同学。";
-      const launcher = createDesktopCuuAgentLauncherCard({ locale });
+      const launcher = createLauncherCard();
       setCard(launcher);
       const launcherAction = primaryDesktopCuuAction(launcher, "start_agent_from_cuu", demand);
       if (launcherAction.kind !== "cuu-start-agent") {
@@ -1265,7 +1311,7 @@ export async function bootDesktopPetSurface(
     const petBody = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-pet-drag-handle]") : null;
     if (petBody && !anchor) {
       if (!currentCard) {
-        setCard(createDesktopCuuAgentLauncherCard({ locale }));
+        setCard(createLauncherCard());
         return;
       }
       // findings[#low]：有卡片在显示时点击不该冒出 tap_bubble 闲置微动作（与指针传感器守卫相反）。
@@ -1283,7 +1329,7 @@ export async function bootDesktopPetSurface(
     if (anchor.dataset.cuuActionId === "restart_cuu") {
       event.preventDefault();
       pendingAction = undefined;
-      setCard(createDesktopCuuAgentLauncherCard({ locale }), cuuT(locale, "cuuStart.restartReady"), { persist: false });
+      setCard(createLauncherCard(), cuuT(locale, "cuuStart.restartReady"), { persist: false });
       return;
     }
     if (
@@ -1422,8 +1468,14 @@ export async function bootDesktopPetSurface(
     listen: shellListen,
     controller,
     notify(notice) {
-      setCard(notice.card);
+      setCard(notice.card, undefined, { persist: !notice.card.id.startsWith("sse-status:") });
     },
+    onDecision(decision) {
+      if (decision.reason === "dismissed_current" && !decision.snapshot.active_card) {
+        setCard(undefined);
+      }
+    },
+    retryingDelayMs: 900,
     get locale() {
       return locale;
     }
@@ -1655,6 +1707,16 @@ function desktopPetWindowSettingsKey(settings: DesktopPetWindowSettings) {
   return `${settings.scale_percent}:${settings.opacity_percent}:${settings.pass_through ? "1" : "0"}:${settings.hide_on_hover ? "1" : "0"}`;
 }
 
+function desktopPetBubbleIntroIdentityKey(
+  card: CuuCard | undefined,
+  input: { compact_card: boolean; window_mode_status?: "syncing" | "failed" | undefined }
+) {
+  if (!card || input.window_mode_status === "syncing") {
+    return undefined;
+  }
+  return `${card.kind}:${card.id}:${input.compact_card ? "compact" : "full"}`;
+}
+
 function desktopPetStructuralRenderKey(input: {
   // L#83：用卡片版本号+id 代表结构身份，不再每帧序列化整张卡片（热路径 4Hz）。
   card_revision: number;
@@ -1723,6 +1785,7 @@ function renderDesktopPetBubble(input: {
   const evidence = !compact && card?.evidence_refs?.length ? renderPetEvidence(card.evidence_refs, locale) : "";
   const inputHint = !compact && card?.input ? renderPetInputHint(card.input, locale) : "";
   const context = [progress, sections, evidence, inputHint].filter(Boolean).join("");
+  const contextBeforeActions = shouldRenderPetContextBeforeActions(card, compact, context);
   const suppressStatusForContext = shouldSuppressPetStatusForContext(card, compact, context);
   const reasons = !compact && input.include_reject_reasons ? renderRejectReasons(locale) : "";
   const payloadAttrs = card?.payload_ref
@@ -1737,17 +1800,22 @@ function renderDesktopPetBubble(input: {
   const emotionAttrs = emotion && tone ? ` data-pet-bubble-emotion="${emotion}" data-pet-bubble-tone="${tone}"` : "";
   const emotionLabel = emotion && !compact ? `<span class="wh-pet-emotion">${escapeHtml(petEmotionLabel(emotion, locale))}</span>` : "";
   return `<aside class="wh-pet-bubble" data-pet-bubble="true" role="status" aria-live="polite" aria-atomic="true"${transientAttrs} ${card ? `data-cuu-card-id="${escapeHtml(card.id)}"` : ""}${card ? ` data-pet-bubble-kind="${escapeHtml(card.kind)}" data-pet-bubble-priority="${escapeHtml(card.priority)}"` : ""}${emotionAttrs}${payloadAttrs}>
-    <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${emotionLabel}${kind}${priority}</div>
-    ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
-    ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}
-    ${input.status_text && (!compact || !card) && !suppressStatusForContext ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}
-    ${input.window_mode_error && !actions ? `<p class="wh-pet-status">${escapeHtml(input.window_mode_error)}</p>` : ""}
-    ${liftActionsBeforeOptions && actions ? `<div class="wh-pet-actions">${actions}</div>` : ""}
-    ${chips ? `<div class="wh-pet-chips">${chips}</div>` : ""}
-    ${freeText}
-    ${!liftActionsBeforeOptions && actions ? `<div class="wh-pet-actions">${actions}</div>` : ""}
-    ${reasons}
-    ${context ? `<div class="wh-pet-context" data-pet-context="true">${context}</div>` : ""}
+    ${renderWorkHubLiquidGlassLayer("pet")}
+    <span class="wh-liquid-glass-rim" aria-hidden="true"></span>
+    <div class="wh-liquid-glass-content">
+      <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${emotionLabel}${kind}${priority}</div>
+      ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
+      ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}
+      ${input.status_text && (!compact || !card) && !suppressStatusForContext ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}
+      ${input.window_mode_error && !actions ? `<p class="wh-pet-status">${escapeHtml(input.window_mode_error)}</p>` : ""}
+      ${contextBeforeActions && context ? `<div class="wh-pet-context" data-pet-context="true">${context}</div>` : ""}
+      ${liftActionsBeforeOptions && actions ? `<div class="wh-pet-actions">${actions}</div>` : ""}
+      ${chips ? `<div class="wh-pet-chips">${chips}</div>` : ""}
+      ${freeText}
+      ${!liftActionsBeforeOptions && actions ? `<div class="wh-pet-actions">${actions}</div>` : ""}
+      ${reasons}
+      ${!contextBeforeActions && context ? `<div class="wh-pet-context" data-pet-context="true">${context}</div>` : ""}
+    </div>
   </aside>`;
 }
 
@@ -1757,7 +1825,7 @@ function petCardHasContext(card: CuuCard) {
 
 function petBubbleToneForCard(card: CuuCard | undefined, state: CuuCard["state"]): CuuBubbleKind {
   if (card?.kind === "question") {
-    return "search";
+    return "chat";
   }
   return cuuBubbleKindForState(state);
 }
@@ -1778,6 +1846,15 @@ function shouldSuppressPetStatusForContext(card: CuuCard | undefined, compact: b
     !compact &&
     context &&
     (card.kind === "budget" || (card.kind === "trace" && card.state === "worried"))
+  );
+}
+
+function shouldRenderPetContextBeforeActions(card: CuuCard | undefined, compact: boolean, context: string) {
+  return Boolean(
+    card &&
+    !compact &&
+    context &&
+    (card.kind === "proposal" || card.payload_ref?.entity_type === "proposal" || card.source?.entity_type === "proposal")
   );
 }
 

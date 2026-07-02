@@ -13,12 +13,17 @@ import {
   createDesktopCuuAgentLauncherCard,
   createDesktopCuuDemoScript,
   createDesktopShellScriptedListener,
+  desktopCuuProjectContextFromRoute,
+  desktopCuuProjectContextMaxAgeMs,
+  desktopCuuProjectContextStorageKey,
   desktopCuuNoticeCss,
   desktopCuuNoticeMessage,
+  loadDesktopCuuProjectContext,
   renderDesktopCuuNotice,
   resolveDesktopCuuAction,
   resolveDesktopShellEmitter,
   resolveDesktopShellListen,
+  saveDesktopCuuProjectContextFromRoute,
   startDesktopCuuAgentFromLauncher,
   subscribeDesktopCuuAgentRunStream,
   submitDesktopCuuAction,
@@ -37,6 +42,24 @@ function shellPayload(event: string, data: unknown): DesktopShellPushPayload {
     stream_path: "/api/push/stream/me"
   };
 }
+
+test("desktop Cuu project context follows current project and drive routes", () => {
+  const projectId = "10000000-0000-4000-8000-000000000002";
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      values.set(key, value);
+    }
+  };
+
+  assert.equal(desktopCuuProjectContextFromRoute(`/projects/${projectId}`, 1_000)?.project_id, projectId);
+  assert.equal(saveDesktopCuuProjectContextFromRoute(`/drive?project_id=${projectId}`, storage, 1_000)?.project_id, projectId);
+  assert.equal(loadDesktopCuuProjectContext(storage, 1_500)?.project_id, projectId);
+  assert.equal(loadDesktopCuuProjectContext(storage, 1_000 + desktopCuuProjectContextMaxAgeMs + 1), undefined);
+  assert.equal(saveDesktopCuuProjectContextFromRoute("/settings", storage, 2_000), undefined);
+  assert.ok(values.has(desktopCuuProjectContextStorageKey));
+});
 
 function workHubEvent(input: {
   event_id: string;
@@ -263,6 +286,71 @@ test("desktop Cuu runtime forwards a live locale getter to shell-pushed cards", 
     payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "retrying" }
   });
   assert.equal(decisions[1]?.card?.title, "Connection is unstable");
+});
+
+test("desktop Cuu runtime clears the offline status card when the SSE stream reopens", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const controller = createCuuController();
+  const decisions: CuuControllerDecision[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+
+  const runtime = await bindDesktopShellCuuRuntime({
+    listen,
+    controller,
+    notify: () => {},
+    onDecision: (decision) => decisions.push(decision)
+  });
+
+  handlers.get("sse-status")?.({
+    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "retrying" }
+  });
+  assert.equal(controller.snapshot().active_card?.id, "sse-status:global:retrying");
+
+  handlers.get("sse-status")?.({
+    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "open" }
+  });
+
+  assert.equal(controller.snapshot().active_card, undefined);
+  assert.equal(decisions.at(-1)?.outcome, "idle");
+  assert.equal(decisions.at(-1)?.reason, "dismissed_current");
+
+  await runtime.dispose();
+});
+
+test("desktop Cuu runtime suppresses transient retrying status when the stream quickly reopens", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const controller = createCuuController();
+  const decisions: CuuControllerDecision[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+
+  const runtime = await bindDesktopShellCuuRuntime({
+    listen,
+    controller,
+    notify: () => {},
+    onDecision: (decision) => decisions.push(decision),
+    retryingDelayMs: 25
+  });
+
+  handlers.get("sse-status")?.({
+    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "retrying" }
+  });
+  assert.equal(controller.snapshot().active_card, undefined);
+
+  handlers.get("sse-status")?.({
+    payload: { stream_kind: "global", stream_path: "/api/push/stream", state: "open" }
+  });
+  await new Promise((resolve) => setTimeout(resolve, 35));
+
+  assert.equal(controller.snapshot().active_card, undefined);
+  assert.equal(decisions.find((decision) => decision.card?.id === "sse-status:global:retrying"), undefined);
+
+  await runtime.dispose();
 });
 
 test("desktop Cuu runtime respects do-not-disturb controller decisions", async () => {
@@ -843,6 +931,20 @@ test("desktop Cuu launcher captures a free-text demand before AI clarification",
   assert.equal(action && action.kind === "cuu-start-agent" ? action.cuuLauncherSpec : undefined, undefined);
 });
 
+test("desktop Cuu launcher keeps the current project context for AI material analysis", () => {
+  const projectId = "10000000-0000-4000-8000-000000000002";
+  const launcher = createDesktopCuuAgentLauncherCard({ locale: "zh-CN", projectId });
+
+  const action = resolveDesktopCuuAction("/api/cuu/start-agent", {
+    actionId: "start_agent_from_cuu",
+    card: launcher,
+    freeText: "请根据项目网盘 workhub-app-upload.txt 生成三条验收要点。"
+  });
+
+  assert.equal(action?.kind, "cuu-start-agent");
+  assert.equal(action && action.kind === "cuu-start-agent" ? action.projectId : undefined, projectId);
+});
+
 test("desktop Cuu launcher shows an analysis card while the AI reads materials", () => {
   const launcher = createDesktopCuuAgentLauncherCard({ locale: "zh-CN" });
   const action = resolveDesktopCuuAction("/api/cuu/start-agent", {
@@ -863,7 +965,8 @@ test("desktop Cuu launcher shows an analysis card while the AI reads materials",
   assert.match(card.message, /只展示反问结果/u);
   assert.deepEqual(card.actions, []);
   assert.match(card.sections?.[0]?.lines.join("\n") ?? "", /读取项目网盘|调用澄清模型/u);
-  assert.match(card.sections?.[1]?.lines.join("\n") ?? "", /不会显示隐藏思考/u);
+  assert.match(card.sections?.[1]?.lines.join("\n") ?? "", /只显示工具调用和当前状态/u);
+  assert.doesNotMatch(card.sections?.[1]?.lines.join("\n") ?? "", /隐藏思考|隐藏推理/u);
 });
 
 test("desktop Cuu launcher helper returns session, work item, run, and Cuu card", async () => {
@@ -1088,9 +1191,9 @@ test("desktop Cuu run stream refreshes agent cards and closes on terminal status
   }));
   await refreshed;
   assert.equal(cards[0]?.state, "thinking");
-  assert.match(cards[0]?.message ?? "", /AI 正在思考中/u);
+  assert.match(cards[0]?.message ?? "", /AI 正在整理材料/u);
   assert.doesNotMatch(cards[0]?.message ?? "", /整理证据/u);
-  assert.deepEqual(cards[0]?.sections?.[0]?.lines, ["#1 AI 正在思考中"]);
+  assert.deepEqual(cards[0]?.sections?.[0]?.lines, ["#1 AI 正在整理材料"]);
 
   source.emit(eventTypes.agentRunStep, workHubEvent({
     event_id: "10000000-0000-4000-8000-000000000502",

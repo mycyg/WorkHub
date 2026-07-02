@@ -48,6 +48,7 @@ function projectAccess(project: ScheduleNotifyProjectRow) {
     archived: project.archived,
     deletedAt: project.deletedAt,
     ownerUserId: project.ownerUserId,
+    orgId: project.orgId ?? null,
     workspaceId: project.workspaceId
   };
 }
@@ -60,7 +61,11 @@ function actorUser(actor: AuthActor) {
 }
 
 function canViewWorkItemRow(
-  row: { workItem: ProjectHealthSourceRows["openWorkItems"][number]["workItem"]; project: ScheduleNotifyProjectRow | null },
+  row: {
+    workItem: ProjectHealthSourceRows["openWorkItems"][number]["workItem"];
+    project: ScheduleNotifyProjectRow | null;
+    assignments?: Array<{ userId: string; role: string }>;
+  },
   actor: AuthActor
 ) {
   return canViewWorkItemRecord({
@@ -69,6 +74,7 @@ function canViewWorkItemRow(
     submitterUserId: row.workItem.submitterUserId,
     claimedByUserId: row.workItem.claimedByUserId,
     workspaceId: row.workItem.workspaceId,
+    assignments: row.assignments ?? [],
     project: row.project ? projectAccess(row.project) : null
   }, actorUser(actor), {
     workspaceId: actor.workspaceId
@@ -113,7 +119,15 @@ export function createProjectHealthPageService(
     async healthPage(input: { actor: AuthActor; locale: WorkHubLocale }): Promise<ProjectHealthPageVM> {
       const clock = now();
       const since = new Date(clock.getTime() - failedRunWindowDays * 24 * 60 * 60 * 1000);
-      const sources = await deps.projectHealth.readProjectHealthSources({ failedRunsSince: since });
+      const sources = await deps.projectHealth.readProjectHealthSources({
+        failedRunsSince: since,
+        actor: {
+          isAdmin: input.actor.isAdmin,
+          userId: input.actor.userId ?? input.actor.id,
+          ...(input.actor.orgId ? { orgId: input.actor.orgId } : {}),
+          ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {})
+        }
+      });
 
       const visibleProjects = sources.projects.filter((project) =>
         canViewProjectDrive(projectAccess(project), input.actor)
@@ -128,12 +142,12 @@ export function createProjectHealthPageService(
       const approvalActorUserId = input.actor.userId ?? input.actor.id;
       const pendingApprovals = sources.pendingApprovals.filter((row) =>
         row.project && row.workItem && visibleProjectIds.has(row.project.id) &&
-        canViewWorkItemRow({ workItem: row.workItem, project: row.project }, input.actor) &&
+        canViewWorkItemRow({ workItem: row.workItem, project: row.project, assignments: row.workItemAssignments ?? [] }, input.actor) &&
         (input.actor.isAdmin || row.approval.routedToUserId === approvalActorUserId)
       );
       const failedRuns = sources.failedRuns.filter((row) =>
         row.project && row.workItem && visibleProjectIds.has(row.project.id) &&
-        canViewWorkItemRow({ workItem: row.workItem, project: row.project }, input.actor)
+        canViewWorkItemRow({ workItem: row.workItem, project: row.project, assignments: row.workItemAssignments ?? [] }, input.actor)
       );
       const pendingInsights = sources.pendingInsights.filter((row) =>
         row.project && visibleProjectIds.has(row.project.id) &&

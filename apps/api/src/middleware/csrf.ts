@@ -3,11 +3,11 @@ import { HTTPException } from "hono/http-exception";
 
 import { settings as defaultSettings, type Settings } from "@workhub/config";
 
-import { LOCAL_CLIENT_HEADER } from "./auth.js";
+import { readLocalClientToken } from "./auth.js";
 
 // findings[8]：状态变更请求此前只靠 SameSite=Lax cookie 防 CSRF（CORS 只挡读取响应，不挡浏览器发出带 cookie 的写）。
 // 这是在 cookie 之上再加一层"同源守卫"，不替换 cookie，也不需要任何前端改动：
-//  - 桌面端用自定义 token header（X-YQGL-Client-Token）做 bearer 鉴权，天然免疫 CSRF；
+//  - 桌面端用自定义 token header 做 bearer 鉴权，天然免疫 CSRF；
 //  - web SPA 由 API 同源伺服，浏览器对每个跨源 mutation 必带 Sec-Fetch-Site 或 Origin 之一；
 //  - 非浏览器/服务端调用两者都不带 → 放行，仍由既有 cookie/token 鉴权把关。
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -54,9 +54,9 @@ export function createSameOriginGuardMiddleware(
     if (csrfExemptPath(c.req.url)) {
       return next();
     }
-    // (1) 本地客户端令牌（桌面）= header bearer 鉴权，免疫 CSRF。只认服务端真正用于鉴权的那个 header
-    //     （resolveUserFromClientToken 读 LOCAL_CLIENT_HEADER）——自定义 header 跨源需 CORS 预检，无法被伪造发出。
-    if (c.req.header(LOCAL_CLIENT_HEADER)) {
+    // (1) 本地客户端令牌（桌面）= header bearer 鉴权，免疫 CSRF。只认服务端真正用于鉴权的 header 集合
+    //     （readLocalClientToken）——自定义 header 跨源需 CORS 预检，无法被伪造发出。
+    if (readLocalClientToken(c)) {
       return next();
     }
     // (2) Sec-Fetch-Site：现代浏览器在每个 mutation 上都带。同源/同站/直接导航放行，明确跨站拒绝。

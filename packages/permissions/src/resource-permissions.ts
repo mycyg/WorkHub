@@ -60,25 +60,27 @@ function projectActorUserId(actor: Pick<PermissionActor, "id" | "userId">): stri
   return actor.userId ?? actor.id;
 }
 
+function projectOrgMatches(project: ProjectAccessRecord, actor: Pick<PermissionActor, "orgId">): boolean {
+  return !(project.orgId && actor.orgId && project.orgId !== actor.orgId);
+}
+
 export function canViewProjectDrive(
   project: ProjectAccessRecord,
   actor: Pick<PermissionActor, "id" | "userId" | "isAdmin" | "orgId" | "workspaceId">
 ): boolean {
-  // 注意:admin 在此**故意**不受租户 scope 限制——admin 的项目健康看板等是跨工作区的组织级只读总览
-  // (project-health-pages.test「admin numeric view across projects」断言 admin 能看到别工作区的项目)。
-  // 跨租户的**写**洞(admin 拿别工作区 project_id 建工作项)由 work-items.ts assertCanCreateInProject 单独的
-  // 租户 scope 校验收口,而非在这里收紧(否则会误伤 admin 的跨工作区只读总览)。
-  if (actor.isAdmin === true) {
-    return true;
-  }
   if (!projectIsActive(project)) {
+    return false;
+  }
+  // Admin read is an org-level overview: it can cross workspaces inside the same org,
+  // but it must not cross org boundaries or revive archived/deleted projects.
+  if (actor.isAdmin === true) {
+    return projectOrgMatches(project, actor);
+  }
+  if (!projectScopeMatches(project, actor)) {
     return false;
   }
   if (project.ownerUserId && project.ownerUserId === projectActorUserId(actor)) {
     return true;
-  }
-  if (!projectScopeMatches(project, actor)) {
-    return false;
   }
   return Boolean(project.workspaceId && actor.workspaceId && project.workspaceId === actor.workspaceId);
 }
@@ -89,6 +91,9 @@ export function canManageProjectDrive(
 ): boolean {
   if (!projectIsActive(project)) {
     return false;
+  }
+  if (actor.isAdmin === true) {
+    return projectScopeMatches(project, actor);
   }
   return canViewProjectDrive(project, actor);
 }
@@ -106,7 +111,7 @@ export function canManageProjectMeeting(
   actor: Pick<PermissionActor, "id" | "userId" | "isAdmin" | "orgId" | "workspaceId">
 ): boolean {
   if (actor.isAdmin === true) {
-    return projectIsActive(project);
+    return projectIsActive(project) && projectScopeMatches(project, actor);
   }
   if (!projectIsActive(project)) {
     return false;

@@ -161,23 +161,60 @@ export function buildCurationPrompt(analysis: SkillCurationAnalysis): string {
   ].join("\n");
 }
 
+function firstBalancedJsonObject(text: string): string | undefined {
+  const start = text.indexOf("{");
+  if (start < 0) {
+    return undefined;
+  }
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const ch = text[index]!;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+    } else if (ch === "{") {
+      depth += 1;
+    } else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(start, index + 1);
+      }
+    }
+  }
+  return undefined;
+}
+
+function parseFirstJsonObject(text: string) {
+  if (!text) {
+    return undefined;
+  }
+  const candidate = firstBalancedJsonObject(text);
+  if (!candidate) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(candidate) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 // 从 LLM 文本里抠出 JSON（容忍 ```json 围栏与前后噪声），fail-closed：解析不了就返回空。
 export function parseDistilledResponse(text: string): DistilledTeamSkillsResponse {
   const empty: DistilledTeamSkillsResponse = { distilled_skills: [] };
-  if (!text) {
-    return empty;
-  }
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/iu.exec(text);
-  const candidate = fenced?.[1] ?? text;
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start < 0 || end <= start) {
-    return empty;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(candidate.slice(start, end + 1));
-  } catch {
+  const parsed = parseFirstJsonObject(text);
+  if (!parsed) {
     return empty;
   }
   const result = distilledTeamSkillsResponseSchema.safeParse(parsed);
@@ -314,20 +351,8 @@ export function buildSkillRefinementPrompt(analysis: SkillCurationAnalysis): str
 // 从 LLM 文本里抠出 patch JSON（容忍 ```json 围栏与噪声），逐项宽松收集合法补丁，fail-closed。
 export function parseSkillEditPatchResponse(text: string): SkillEditPatchResponse {
   const empty: SkillEditPatchResponse = { patches: [] };
-  if (!text) {
-    return empty;
-  }
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/iu.exec(text);
-  const candidate = fenced?.[1] ?? text;
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start < 0 || end <= start) {
-    return empty;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(candidate.slice(start, end + 1));
-  } catch {
+  const parsed = parseFirstJsonObject(text);
+  if (!parsed) {
     return empty;
   }
   const result = skillEditPatchResponseSchema.safeParse(parsed);

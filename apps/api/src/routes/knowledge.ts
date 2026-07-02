@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
 import { normalizeWorkHubLocale, type WorkHubLocale } from "@workhub/contracts";
 
 import {
@@ -11,31 +10,17 @@ import {
 import {
   getDefaultWorkItemService,
   knowledgeSearchRequestSchema,
-  WorkItemServiceError,
   type WorkItemService
 } from "../services/work-items.js";
+import { readJsonObject } from "./json-body.js";
+import { isUuidParam } from "./uuid-param.js";
 
 export type KnowledgeRoutesDependencies = {
   auth?: AuthDependencySource;
   workItems?: WorkItemService;
 };
 
-async function readJsonBody(req: { text: () => Promise<string> }) {
-  const text = await req.text();
-  if (!text.trim()) {
-    return {};
-  }
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new HTTPException(400, { message: "知识库检索请求不是有效的 JSON。" });
-  }
-}
-
 function handleWorkItemError(error: unknown): never {
-  if (error instanceof WorkItemServiceError) {
-    throw new HTTPException(error.status as 400, { message: error.message });
-  }
   throw error;
 }
 
@@ -49,9 +34,14 @@ export function createKnowledgeRoutes(deps: KnowledgeRoutesDependencies = {}) {
   const workItems = deps.workItems ?? getDefaultWorkItemService();
 
   routes.post("/search", createCurrentUserMiddleware(authSource), async (c) => {
-    const payload = knowledgeSearchRequestSchema.parse(await readJsonBody(c.req));
     const locale = requestLocale(c);
+    const rawPayload = await readJsonObject(c);
+    const rawWorkItemId = rawPayload.work_item_id;
     try {
+      if (typeof rawWorkItemId === "string" && isUuidParam(rawWorkItemId)) {
+        await workItems.detailPage({ workItemId: rawWorkItemId, actor: c.var.actor, locale });
+      }
+      const payload = knowledgeSearchRequestSchema.parse(rawPayload);
       const data = await workItems.searchKnowledge({ payload, actor: c.var.actor, locale });
       return c.json({ ok: true, data, meta: { locale } });
     } catch (error) {

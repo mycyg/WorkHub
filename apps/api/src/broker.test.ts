@@ -102,6 +102,40 @@ test("redis bus delivers events across independent worker instances", async () =
   await Promise.all([publisher.close(), subscriber.close()]);
 });
 
+test("redis bus normalizes malformed and cross-topic payloads before delivery", async () => {
+  const redis = new FakeRedisHub();
+  const factory: RedisPubSubClientFactory = () => redis.createPubSubClient();
+  const subscriber = new RedisPushBus("redis://workhub-test", 256, factory);
+  const subscription = await subscriber.subscribe("workitem:w-normalize");
+
+  redis.publish("workitem:w-normalize", JSON.stringify({
+    topic: "user:someone-else",
+    type: "agent_run.step",
+    data: { step: 7 }
+  }));
+  redis.publish("workitem:w-normalize", "123");
+
+  const iterator = subscription[Symbol.asyncIterator]();
+  const first = await iterator.next();
+  const second = await iterator.next();
+
+  assert.equal(first.done, false);
+  assert.deepEqual(first.value, {
+    topic: "workitem:w-normalize",
+    type: "agent_run.step",
+    data: { step: 7 }
+  });
+  assert.equal(second.done, false);
+  assert.deepEqual(second.value, {
+    topic: "workitem:w-normalize",
+    type: "message",
+    data: "123"
+  });
+
+  await subscriber.unsubscribe("workitem:w-normalize", subscription);
+  await subscriber.close();
+});
+
 test("redis bus serializes unsubscribe and resubscribe for the same topic", async () => {
   const redis = new FakeRedisHub();
   const factory: RedisPubSubClientFactory = () => redis.createPubSubClient();

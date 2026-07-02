@@ -149,6 +149,7 @@ export const webRouteComponentCss = [
   ".wh-r4-route-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}",
   ".wh-r4-route .wh-btn,.wh-r4-route .wh-pill{max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}",
   ".wh-drive-upload-label{position:relative;cursor:pointer}.wh-drive-upload-input{position:absolute;inline-size:1px;block-size:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}",
+  ".wh-r5-drive-preview-panel{grid-column:1/-1}.wh-r5-drive-preview-body{margin:0;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-word;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:12px;background:rgba(247,250,254,.82);color:var(--wh-product-ink,#172033);font:13px/1.55 \"SFMono-Regular\",\"Cascadia Mono\",Consolas,monospace}",
   ".wh-r4-route details:not([open])>*:not(summary){display:none}",
   ".wh-r4-intake-free-text{width:100%;min-height:92px;resize:vertical;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:10px 12px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:#fff;overflow-wrap:anywhere}",
   ".wh-r4-knowledge-search{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 4px;min-width:0;max-width:100%}.wh-r4-knowledge-search input{flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;line-height:1.45;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:9px 12px;color:var(--wh-product-ink,#172033);background:#fff}.wh-r4-knowledge-search .wh-btn{flex:0 0 auto}",
@@ -797,6 +798,10 @@ function safeHref(value: unknown): string {
     return v;
   }
   return "#";
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values)];
 }
 
 function dataAttrs(attrs: Record<string, string>) {
@@ -2108,7 +2113,7 @@ function driveResourceActionLinks(
 ) {
   const links: string[] = [];
   if (item.preview_href) {
-    links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.preview_href))}" data-action-id="drive_preview" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(routeT(locale, "drive.preview"))}</a>`);
+    links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.preview_href))}" data-action-id="drive_preview" data-drive-preview-link="true">${escapeHtml(routeT(locale, "drive.preview"))}</a>`);
   }
   if (item.download_href) {
     links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.download_href))}" data-action-id="drive_download" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(routeT(locale, "drive.download"))}</a>`);
@@ -2197,8 +2202,7 @@ function renderDriveRouteComponent(
     : routeT(locale, "drive.delete");
   const driveManageActions = [
     vm.actions.upload_file ? `<label class="wh-btn wh-btn-primary wh-drive-upload-label"><span>${escapeHtml(routeT(locale, "drive.upload"))}</span><input class="wh-drive-upload-input" type="file" data-drive-upload-picker="true" data-action-id="drive_upload_file" data-method="POST" data-action-href="${escapeHtml(safeHref(vm.actions.upload_file.href))}" /></label>` : "",
-    vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.delete_item.href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-r5-drive-delete-name="${escapeHtml(deleteTarget?.name ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(deleteLabel)}</a>` : "",
-    vm.actions.restore_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.restore_item.href))}" data-action-id="drive_restore_item" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""
+    vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.delete_item.href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-r5-drive-delete-name="${escapeHtml(deleteTarget?.name ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(deleteLabel)}</a>` : ""
   ].filter(Boolean).join("");
   const fileRows = vm.items.length
     ? vm.items.map((item) => {
@@ -2216,7 +2220,7 @@ function renderDriveRouteComponent(
           ${current ? `<span class="wh-pill">v${escapeHtml(String(current.version_no))}</span>` : ""}
           ${size ? `<span class="wh-pill">${escapeHtml(size)}</span>` : ""}
           ${resourceActions}
-          ${item.delete_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.delete_href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-row-delete="${escapeHtml(item.id)}" data-request-json="${jsonAttr({ expected_current_version_id: item.current_version_id ?? null })}">${escapeHtml(routeT(locale, "drive.delete"))}</a>` : ""}
+          ${item.delete_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.delete_href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-row-delete="${escapeHtml(item.id)}" data-r5-drive-delete-name="${escapeHtml(item.name)}" data-request-json="${jsonAttr({ expected_current_version_id: item.current_version_id ?? null })}">${escapeHtml(routeT(locale, "drive.delete"))}</a>` : ""}
         </div>
       </div>`;
     }).join("")
@@ -2232,8 +2236,14 @@ function renderDriveRouteComponent(
   const driveMoreFilesNote = driveHiddenFileCount > 0
     ? `<p class="wh-subtle" data-r4-drive-more-files="${escapeHtml(String(driveHiddenFileCount))}">${escapeHtml(locale === "zh-CN" ? `本页只加载了前 ${driveListedFileCount} 个文件，共 ${vm.summary.file_count} 个。` : `Showing the first ${driveListedFileCount} of ${vm.summary.file_count} files.`)}</p>`
     : "";
-  const versionRows = vm.versions.length
-    ? vm.versions.slice(0, 8).map((version) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-version="${escapeHtml(version.id)}" data-r4-drive-version-current="${escapeHtml(String(version.current))}">
+  const selectedFileVersions = selectedItem?.kind === "file"
+    ? vm.versions.filter((version) => version.item_id === selectedItem.id)
+    : vm.versions;
+  const driveVersionsHeading = selectedItem?.kind === "file"
+    ? `${routeT(locale, "drive.versions")} · ${selectedItem.name}`
+    : routeT(locale, "drive.versions");
+  const versionRows = selectedFileVersions.length
+    ? selectedFileVersions.slice(0, 8).map((version) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-version="${escapeHtml(version.id)}" data-r4-drive-version-current="${escapeHtml(String(version.current))}">
       <div>
         <strong>${escapeHtml(`${version.filename} · v${version.version_no}`)}</strong>
         <p>${escapeHtml(`${formatBytes(version.size_bytes, locale)} · ${version.created_at.slice(0, 10)}`)}</p>
@@ -2269,8 +2279,13 @@ function renderDriveRouteComponent(
       </div>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无评论" : "No comments yet")}</p>`;
+  const visibleDeletedItems = vm.deleted_items.slice(0, 5);
+  const hiddenDeletedItemCount = vm.deleted_items.length - visibleDeletedItems.length;
+  const recycleMoreNote = hiddenDeletedItemCount > 0
+    ? `<p class="wh-subtle" data-r5-drive-recycle-more="${escapeHtml(String(hiddenDeletedItemCount))}">${escapeHtml(locale === "zh-CN" ? `还有 ${hiddenDeletedItemCount} 个回收站项目未显示，继续进入网盘查看完整回收站。` : `+${hiddenDeletedItemCount} recycle-bin items not shown here — open the full drive to review all.`)}</p>`
+    : "";
   const recycleRows = vm.deleted_items.length
-    ? vm.deleted_items.slice(0, 5).map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}">
+    ? `${visibleDeletedItems.map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}">
       <div>
         <strong>${escapeHtml(item.name)}</strong>
         <p>${escapeHtml(item.path)}</p>
@@ -2280,7 +2295,7 @@ function renderDriveRouteComponent(
         ${item.deleted_at ? `<span class="wh-pill">${escapeHtml(item.deleted_at.slice(0, 10))}</span>` : ""}
         ${item.restore_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore_item" data-method="POST" data-r5-drive-recycle-restore="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""}
       </div>
-    </div>`).join("")
+    </div>`).join("")}${recycleMoreNote}`
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyRecycle"))}</p>`;
   const operationRows = vm.operations.length
     ? vm.operations.slice(0, 6).map((operation) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-drive-operation="${escapeHtml(operation.id)}" data-r5-drive-operation-type="${escapeHtml(operation.op_type)}">
@@ -2294,23 +2309,24 @@ function renderDriveRouteComponent(
       </div>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyOperations"))}</p>`;
-  const primaryHrefs = [
+  const primaryHrefs = uniqueStrings([
     vm.actions.upload_file?.href,
     vm.actions.delete_item?.href,
-    vm.actions.restore_item?.href,
     ...vm.items.flatMap((item) => [
       item.preview_href,
-      item.download_href
+      item.download_href,
+      item.delete_href
     ]),
     ...vm.accepted_deliverables.flatMap((accepted) => [
       accepted.preview_href,
       accepted.download_href,
       accepted.restore_href
     ]),
+    ...vm.deleted_items.map((item) => item.restore_href),
     ...vm.comments.map((comment) => comment.draft_action?.href),
     ...vm.comments.map((comment) => comment.draft_href),
     ...vm.comments.map((comment) => comment.proposal_href)
-  ].filter((value): value is string => Boolean(value));
+  ].filter((value): value is string => Boolean(value)));
 
   return createWebRouteComponent({
     key: "drive",
@@ -2337,7 +2353,7 @@ function renderDriveRouteComponent(
           ${driveMoreFilesNote}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-drive-versions="true">
-          <h3>${escapeHtml(routeT(locale, "drive.versions"))}</h3>
+          <h3>${escapeHtml(driveVersionsHeading)}</h3>
           <div class="wh-r4-route-timeline">${versionRows}</div>
         </section>
       </div>
@@ -2941,10 +2957,10 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
     : `${routeT(locale, "projects.openItems")} ${totalOpen}`;
   // 隐藏量要对全量口径算:此前用 open_work_item_count(可见数)减可见清单长度,两者同源恒等 → hiddenCount 永远 0,
   // 这条提示从不出现。当页头显示「进行中 16 · 你可处理 3」时,用户只看到 3 行却不知另外 13 条去哪了。
-  // 改用 totalOpen 算差额,并诚实说明原因(无权限查看他人私有态事项)。
+  // 这里不能猜测原因一定是权限：也可能只是项目主页列表截断。文案保持中性，提示去项目内看全量。
   const hiddenCount = totalOpen - vm.open_work_items.length;
   const moreNote = hiddenCount > 0
-    ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(zh ? `还有 ${hiddenCount} 条进行中工作你暂无权限查看。` : `+${hiddenCount} more open items you cannot view.`)}</p>`
+    ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(zh ? `还有 ${hiddenCount} 条进行中工作未在此处显示，进入项目查看全部。` : `+${hiddenCount} more open items not shown here — open the project to review all.`)}</p>`
     : "";
   const fileCountLabel = `${routeT(locale, "projectHome.files")} ${vm.drive.file_count}`;
   // L4：文件标题用的是总文件数(file_count)，列表只显示最近若干条；以前没有「还有 N 个未显示」的提示，

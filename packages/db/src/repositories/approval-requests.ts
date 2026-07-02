@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, lte } from "drizzle-orm";
+import { and, asc, desc, eq, lte, sql } from "drizzle-orm";
 
 import type { ApprovalDecision } from "@workhub/contracts";
 
@@ -23,7 +23,8 @@ export type ApprovalRequestRepository = {
   createApprovalRequest: (input: CreateApprovalRequestInput) => Promise<ApprovalRequestRow>;
   findById: (id: string) => Promise<ApprovalRequestRow | null>;
   listPendingDue: (at: Date, limit?: number) => Promise<ApprovalRequestRow[]>;
-  listPendingForUser: (userId: string, options?: { includeAll?: boolean; limit?: number }) => Promise<ApprovalRequestRow[]>;
+  listPendingForUser: (userId: string, options?: { includeAll?: boolean; limit?: number; offset?: number }) => Promise<ApprovalRequestRow[]>;
+  countPendingForUser: (userId: string, options?: { includeAll?: boolean }) => Promise<number>;
   respondPending: (
     id: string,
     decision: ApprovalDecision,
@@ -34,7 +35,12 @@ export type ApprovalRequestRepository = {
     // 堵 respond 与 delegatePending 交错改派的 TOCTOU。admin override 传 undefined（可处理任意路由单据）。
     requireRoutedToUserId?: string
   ) => Promise<ApprovalRequestRow | null>;
-  delegatePending: (id: string, toUserId: string, at: Date) => Promise<ApprovalRequestRow | null>;
+  delegatePending: (
+    id: string,
+    toUserId: string,
+    at: Date,
+    requireRoutedToUserId?: string
+  ) => Promise<ApprovalRequestRow | null>;
   expirePending: (id: string, at: Date) => Promise<ApprovalRequestRow | null>;
 };
 
@@ -78,6 +84,7 @@ export function createApprovalRequestRepository(db: WorkHubDb): ApprovalRequestR
     async listPendingForUser(userId, options = {}) {
       // L#W2-2：封顶，避免管理员（includeAll）把全组织 pending 全量拉出再逐条 join（无界 N+1）。
       const limit = Math.max(1, Math.min(options.limit ?? 100, 200));
+      const offset = Math.max(0, options.offset ?? 0);
       return db
         .select()
         .from(approvalRequests)
@@ -87,7 +94,20 @@ export function createApprovalRequestRepository(db: WorkHubDb): ApprovalRequestR
             : and(eq(approvalRequests.status, "pending"), eq(approvalRequests.routedToUserId, userId))
         )
         .orderBy(desc(approvalRequests.createdAt))
-        .limit(limit);
+        .limit(limit)
+        .offset(offset);
+    },
+
+    async countPendingForUser(userId, options = {}) {
+      const rows = await db
+        .select({ value: sql<number>`count(*)::int` })
+        .from(approvalRequests)
+        .where(
+          options.includeAll
+            ? eq(approvalRequests.status, "pending")
+            : and(eq(approvalRequests.status, "pending"), eq(approvalRequests.routedToUserId, userId))
+        );
+      return rows[0]?.value ?? 0;
     },
 
     async respondPending(id, decision, decidedByUserId, reasonMd, at, requireRoutedToUserId) {
@@ -111,7 +131,7 @@ export function createApprovalRequestRepository(db: WorkHubDb): ApprovalRequestR
       return rows[0] ?? null;
     },
 
-    async delegatePending(id, toUserId, at) {
+    async delegatePending(id, toUserId, at, requireRoutedToUserId) {
       const rows = await db
         .update(approvalRequests)
         .set({
@@ -120,7 +140,11 @@ export function createApprovalRequestRepository(db: WorkHubDb): ApprovalRequestR
           delegatedToUserId: toUserId,
           updatedAt: at
         })
-        .where(and(eq(approvalRequests.id, id), eq(approvalRequests.status, "pending")))
+        .where(and(
+          eq(approvalRequests.id, id),
+          eq(approvalRequests.status, "pending"),
+          ...(requireRoutedToUserId ? [eq(approvalRequests.routedToUserId, requireRoutedToUserId)] : [])
+        ))
         .returning();
       return rows[0] ?? null;
     },

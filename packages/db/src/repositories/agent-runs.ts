@@ -44,6 +44,8 @@ export type AgentRunTraceForPersistence = {
 
 export type AgentRunForPersistence = {
   runId: string;
+  orgId?: string;
+  workspaceId?: string;
   workItemId: string;
   actorUserId: string;
   mode: WorkItemMode;
@@ -94,6 +96,7 @@ export type AgentRunRepository = {
   // 一旦该 run 的租约已被回收/转交给别的 worker，本次写入命中 0 行（返回 null/[]），不会覆盖新 owner 的数据。
   // 非执行路径（enqueue 建 run、abort 取消）省略此参数，保持原无守卫语义。
   updateRun: (run: AgentRunForPersistence, fencingWorkerId?: string) => Promise<AgentRunRow | null>;
+  cancelActiveRun: (run: AgentRunForPersistence) => Promise<AgentRunRow | null>;
   replaceTrace: (runId: string, trace: AgentRunTraceForPersistence[], fencingWorkerId?: string) => Promise<AgentStepRow[]>;
   setWorkdir: (runId: string, workdirRef: string, at: Date, fencingWorkerId?: string) => Promise<AgentRunRow | null>;
   findById: (runId: string) => Promise<StoredAgentRunRows | null>;
@@ -147,6 +150,8 @@ function claimUpdateValues(claim: AgentRunClaimInput): Partial<typeof agentRuns.
 function runInsertValues(run: AgentRunForPersistence): typeof agentRuns.$inferInsert {
   return {
     id: run.runId,
+    orgId: run.orgId,
+    workspaceId: run.workspaceId,
     workItemId: run.workItemId,
     mode: run.mode,
     actor: "human",
@@ -177,6 +182,8 @@ function runInsertValues(run: AgentRunForPersistence): typeof agentRuns.$inferIn
 
 function runUpdateValues(run: AgentRunForPersistence): Partial<typeof agentRuns.$inferInsert> {
   const values: Partial<typeof agentRuns.$inferInsert> = {
+    orgId: run.orgId,
+    workspaceId: run.workspaceId,
     mode: run.mode,
     actorUserId: run.actorUserId,
     title: run.title,
@@ -283,6 +290,18 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
         .where(and(
           eq(agentRuns.id, run.runId),
           fencingWorkerId ? eq(agentRuns.claimedBy, fencingWorkerId) : undefined
+        ))
+        .returning();
+      return rows[0] ?? null;
+    },
+
+    async cancelActiveRun(run) {
+      const rows = await db
+        .update(agentRuns)
+        .set(runUpdateValues(run))
+        .where(and(
+          eq(agentRuns.id, run.runId),
+          inArray(agentRuns.status, activeStatuses)
         ))
         .returning();
       return rows[0] ?? null;

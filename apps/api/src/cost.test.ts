@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { Hono } from "hono";
@@ -14,17 +15,25 @@ import type {
   LlmTransport
 } from "@workhub/agent/providers";
 import { loadSettings, type Settings } from "@workhub/config";
-import { buildUsageRecord, createMemoryBudgetPolicyStore, createMemoryCostLedgerStore, type CostLedgerStore } from "@workhub/cost";
+import {
+  buildUsageRecord,
+  createMemoryBudgetPolicyStore,
+  createMemoryCostLedgerStore,
+  type BudgetPolicyStore,
+  type CostLedgerStore
+} from "@workhub/cost";
 import type {
   ClientDeviceAuthRow,
   CreateAuditLogInput,
   ClientDeviceRepository,
   TeamSkillRow,
   UserAuthRow,
-  UserRepository
+  UserRepository,
+  WorkspaceMembershipRepository
 } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
+import { InternalContractError } from "./pages/output-contract.js";
 import { createCostRoutes } from "./routes/cost.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createApiProviderRegistry } from "./services/provider-registry.js";
@@ -151,8 +160,10 @@ function settings(): Settings {
   });
 }
 
-function authDeps(runtimeSettings: Settings): AuthDependencies {
-  return {
+function authDeps(runtimeSettings: Settings, options: {
+  tenant?: { orgId: string; workspaceId: string };
+} = {}): AuthDependencies {
+  const deps: AuthDependencies = {
     users: new MemoryUsers([
       user({
         id: adminId,
@@ -166,10 +177,21 @@ function authDeps(runtimeSettings: Settings): AuthDependencies {
     settings: runtimeSettings,
     now: () => now
   };
+  if (options.tenant) {
+    deps.memberships = {
+      async resolveDefaultTenant() {
+        return options.tenant ?? null;
+      }
+    } as unknown as WorkspaceMembershipRepository;
+  }
+  return deps;
 }
 
 function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
   app.onError((error, c) => {
+    if (error instanceof InternalContractError) {
+      return c.json({ ok: false, error: { code: "internal_contract_error", message: "internal contract error" } }, 500);
+    }
     if (error instanceof ZodError) {
       return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
     }
@@ -196,6 +218,13 @@ function captureAuditLogs() {
     }
   };
 }
+
+test("R1 PG smoke checks tenant-scoped budget policy storage ids", () => {
+  const source = readFileSync("src/qa/r1-pg-agent-run-smoke.ts", "utf8");
+
+  assert.match(source, /budgetPolicyStorageId\(\s*settings,\s*"pcost-user-day-v0"\s*\)/u);
+  assert.doesNotMatch(source, /row\.id === "pcost-user-day-v0"/u);
+});
 
 test("R2 audit#1: a failed audit write surfaces as a server error, not a 422 invalid-patch (update+audit stay atomic in production)", async () => {
   const runtimeSettings = settings();
@@ -277,6 +306,86 @@ test("cost policy routes expose configurable P-COST defaults to admins", async (
     max_cost_cny: "12.5",
     on_warning: "notify"
   });
+});
+
+test("cost policy routes fail closed as server errors when stored policies violate the response contract", async () => {
+  const runtimeSettings = settings();
+  const invalidPolicyStore: BudgetPolicyStore = {
+    async listPolicies() {
+      return [{
+        id: "pcost-invalid-row",
+        scopeKind: "user",
+        period: "day",
+        maxTokens: 1000,
+        maxCostCny: "1",
+        warningRatio: 0.95,
+        criticalRatio: 0.9,
+        onWarning: "notify",
+        onExhausted: "block_new_run",
+        enabled: true,
+        version: 1
+      }];
+    },
+    async updatePolicy() {
+      return undefined;
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/cost", createCostRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: invalidPolicyStore
+  }));
+
+  const response = await app.request("/api/cost/policies", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+
+  assert.equal(response.status, 500);
+  const body = await response.json() as { ok: false; error: { code: string } };
+  assert.equal(body.error.code, "internal_contract_error");
+});
+
+test("cost policy routes read and update policies in the admin actor workspace", async () => {
+  const runtimeSettings = settings();
+  const actorWorkspaceId = "00000000-0000-4000-8000-00000000c0b2";
+  const actorOrgId = "00000000-0000-4000-8000-00000000c0a1";
+  const baseStore = createMemoryBudgetPolicyStore();
+  const seenListWorkspaces: string[] = [];
+  const seenUpdateWorkspaces: string[] = [];
+  const policyStore = {
+    listPolicies(inputSettings: Settings) {
+      seenListWorkspaces.push(inputSettings.auth.defaultWorkspaceId);
+      return baseStore.listPolicies(inputSettings);
+    },
+    updatePolicy(inputSettings: Settings, ...args: Parameters<typeof baseStore.updatePolicy> extends [Settings, ...infer Rest] ? Rest : never) {
+      seenUpdateWorkspaces.push(inputSettings.auth.defaultWorkspaceId);
+      return baseStore.updatePolicy(inputSettings, ...args);
+    }
+  };
+  const auditLogs = captureAuditLogs();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/cost", createCostRoutes({
+    auth: authDeps(runtimeSettings, {
+      tenant: { orgId: actorOrgId, workspaceId: actorWorkspaceId }
+    }),
+    policyStore,
+    auditLogs: auditLogs.writer
+  }));
+  const headers = { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") };
+
+  const list = await app.request("/api/cost/policies", { headers });
+  assert.equal(list.status, 200);
+  const update = await app.request("/api/cost/policies/user/pcost-user-day-v0", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ max_tokens: 240000 })
+  });
+
+  assert.equal(update.status, 200);
+  assert.equal(seenListWorkspaces[0], actorWorkspaceId);
+  assert.equal(seenUpdateWorkspaces[0], actorWorkspaceId);
+  assert.equal(auditLogs.logs[0]?.orgId, actorOrgId);
+  assert.equal(auditLogs.logs[0]?.workspaceId, actorWorkspaceId);
 });
 
 test("cost policy routes fail closed for non-admins and invalid policy updates", async () => {
@@ -363,8 +472,237 @@ test("cost usage route reads budget usage from the shared ledger", async () => {
   assert.equal((body.data.active_notices[0]?.options?.length ?? 0) >= 2, true);
 });
 
+test("cost usage route uses the actor workspace for team budget usage", async () => {
+  const runtimeSettings = settings();
+  const actorWorkspaceId = "00000000-0000-4000-8000-00000000c0b2";
+  const otherWorkspaceId = "00000000-0000-4000-8000-00000000c0b3";
+  const ledgerStore = createMemoryCostLedgerStore({ teamId: actorWorkspaceId });
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000c2",
+    workItemId: "50000000-0000-4000-8000-0000000000c2",
+    userId,
+    inputTokens: 120000,
+    outputTokens: 0,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: new Date()
+  }));
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000c3",
+    workItemId: "50000000-0000-4000-8000-0000000000c3",
+    userId,
+    workspaceId: otherWorkspaceId,
+    inputTokens: 220000,
+    outputTokens: 0,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: new Date()
+  }));
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/cost", createCostRoutes({
+    auth: authDeps(runtimeSettings, {
+      tenant: { orgId: runtimeSettings.auth.defaultOrgId, workspaceId: actorWorkspaceId }
+    }),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore
+  }));
+
+  const response = await app.request("/api/cost/usage", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      me: { scope: { kind: "user"; user_id: string }; token_in: number };
+      team?: { scope: { kind: "team"; team_id: string }; token_in: number };
+    };
+  };
+  assert.equal(body.data.me.scope.user_id, userId);
+  assert.equal(body.data.me.token_in, 120000);
+  assert.equal(body.data.team?.scope.team_id, actorWorkspaceId);
+  assert.equal(body.data.team?.token_in, 120000);
+});
+
+test("cost usage route does not resurrect disabled user and team budget policies as default scopes", async () => {
+  const runtimeSettings = settings();
+  const policyStore = createMemoryBudgetPolicyStore();
+  policyStore.updatePolicy(runtimeSettings, "user", "pcost-user-day-v0", { enabled: false });
+  policyStore.updatePolicy(runtimeSettings, "team", "pcost-team-day-v0", { enabled: false });
+  policyStore.updatePolicy(runtimeSettings, "team", "pcost-team-month-v0", { enabled: false });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/cost", createCostRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore,
+    ledgerStore: createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId })
+  }));
+
+  const response = await app.request("/api/cost/usage", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      me: { policy_id: string; max_tokens: number };
+      team?: { policy_id: string; max_tokens: number };
+      scopes: { policy_id: string; scope: { kind: string } }[];
+      active_notices: unknown[];
+    };
+  };
+  assert.equal(body.data.scopes.some((usage) => usage.scope.kind === "user" || usage.scope.kind === "team"), false);
+  assert.equal(body.data.me.max_tokens, 0);
+  assert.equal(body.data.me.policy_id, "pcost-user-day-v0:disabled");
+  assert.equal(body.data.team?.max_tokens, 0);
+  assert.equal(body.data.team?.policy_id, "pcost-team-day-v0:disabled");
+  assert.deepEqual(body.data.active_notices, []);
+});
+
+test("cost usage route preserves budget policy notice actions", async () => {
+  const runtimeSettings = settings();
+  const policyStore = createMemoryBudgetPolicyStore();
+  policyStore.updatePolicy(runtimeSettings, "user", "pcost-user-day-v0", { onWarning: "notify" });
+  const ledgerStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000d1",
+    workItemId: "50000000-0000-4000-8000-0000000000d1",
+    userId,
+    inputTokens: 450000,
+    outputTokens: 0,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: new Date()
+  }));
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/cost", createCostRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore,
+    ledgerStore
+  }));
+
+  const response = await app.request("/api/cost/usage", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: { active_notices: { recommended_action: string }[] };
+  };
+  assert.equal(body.data.active_notices[0]?.recommended_action, "continue");
+});
+
+test("cost dashboard page uses the actor workspace for budget policies", async () => {
+  const runtimeSettings = settings();
+  const actorWorkspaceId = "00000000-0000-4000-8000-00000000c0d2";
+  const actorOrgId = "00000000-0000-4000-8000-00000000c0d1";
+  const baseStore = createMemoryBudgetPolicyStore();
+  const seenPolicyWorkspaces: string[] = [];
+  const policyStore = {
+    listPolicies(inputSettings: Settings) {
+      seenPolicyWorkspaces.push(inputSettings.auth.defaultWorkspaceId);
+      return baseStore.listPolicies(inputSettings);
+    },
+    updatePolicy: baseStore.updatePolicy
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings, {
+      tenant: { orgId: actorOrgId, workspaceId: actorWorkspaceId }
+    }),
+    policyStore,
+    ledgerStore: createMemoryCostLedgerStore({ teamId: actorWorkspaceId })
+  }));
+
+  const response = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(seenPolicyWorkspaces[0], actorWorkspaceId);
+});
+
+test("cost dashboard page scopes admin ledger totals to the actor workspace", async () => {
+  const runtimeSettings = settings();
+  const actorWorkspaceId = "00000000-0000-4000-8000-00000000c0e2";
+  const otherWorkspaceId = "00000000-0000-4000-8000-00000000c0e3";
+  const ledgerStore = createMemoryCostLedgerStore();
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000e1",
+    userId,
+    workspaceId: actorWorkspaceId,
+    inputTokens: 1_000_000,
+    outputTokens: 0,
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: now
+  }));
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "skill-curation",
+    workspaceId: actorWorkspaceId,
+    inputTokens: 500_000,
+    outputTokens: 0,
+    source: "curation",
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: now
+  }));
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000e2",
+    userId: "10000000-0000-4000-8000-0000000000e9",
+    workspaceId: otherWorkspaceId,
+    inputTokens: 2_000_000,
+    outputTokens: 0,
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: now
+  }));
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings, {
+      tenant: { orgId: runtimeSettings.auth.defaultOrgId, workspaceId: actorWorkspaceId }
+    }),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore
+  }));
+
+  const response = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      total_cost_cny: string;
+      token_in: number;
+      labor_split?: { production_cost_cny: string; self_improvement_cost_cny: string };
+      model_breakdown: { model: string }[];
+    };
+  };
+  assert.equal(body.data.total_cost_cny, "1.5");
+  assert.equal(body.data.token_in, 1_500_000);
+  assert.deepEqual(body.data.model_breakdown.map((item) => item.model), ["deepseek-v4-flash"]);
+  assert.equal(body.data.labor_split?.production_cost_cny, "1");
+  assert.equal(body.data.labor_split?.self_improvement_cost_cny, "0.5");
+});
+
 test("cost dashboard page aggregates ledger entries without exposing all users to non-admins", async () => {
   const runtimeSettings = settings();
+  const otherWorkspaceId = "00000000-0000-4000-8000-00000000f0f1";
   const ledgerStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
   await ledgerStore.recordUsage(buildUsageRecord({
     provider: "deepseek",
@@ -388,6 +726,20 @@ test("cost dashboard page aggregates ledger entries without exposing all users t
     userId: "10000000-0000-4000-8000-0000000000c9",
     inputTokens: 9000,
     outputTokens: 9000,
+    costTier: { inputCnyPerMtok: 4, outputCnyPerMtok: 16 },
+    createdAt: now
+  }));
+  // 同一个用户在另一个 workspace 的花费也不能混进当前 workspace 的「我的成本」。
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000b4",
+    workItemId: "50000000-0000-4000-8000-0000000000b4",
+    userId,
+    workspaceId: otherWorkspaceId,
+    inputTokens: 7000,
+    outputTokens: 7000,
     costTier: { inputCnyPerMtok: 4, outputCnyPerMtok: 16 },
     createdAt: now
   }));

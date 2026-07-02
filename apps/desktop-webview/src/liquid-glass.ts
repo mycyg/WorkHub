@@ -61,7 +61,7 @@ export const liquidGlassCss = [
   ".wh-app-content .wh-r4-runstate--warn{background:rgba(255,193,117,.22)!important;color:#b06a17!important}",
   ".wh-app-content .wh-r4-runstate--danger{background:rgba(255,69,58,.16)!important;color:#ff453a!important}",
   // —— 桌宠设置面板(主窗内浮层)玻璃 ——
-  ".wh-cuu-preferences-panel{background:rgba(255,255,255,.55)!important;backdrop-filter:blur(34px) saturate(180%)!important;-webkit-backdrop-filter:blur(34px) saturate(180%)!important;border:1px solid rgba(255,255,255,.75)!important;border-radius:20px!important;box-shadow:0 30px 66px -28px rgba(60,60,67,.34),inset 0 1px 0 rgba(255,255,255,.8)!important}",
+  ".wh-cuu-preferences{background:rgba(255,255,255,.55)!important;backdrop-filter:blur(34px) saturate(180%)!important;-webkit-backdrop-filter:blur(34px) saturate(180%)!important;border:1px solid rgba(255,255,255,.75)!important;border-radius:14px!important;box-shadow:0 30px 66px -28px rgba(60,60,67,.34),inset 0 1px 0 rgba(255,255,255,.8)!important}",
   ".wh-cuu-pref-row{border-radius:12px}.wh-cuu-pref-button{border-radius:12px!important}.wh-cuu-pref-toggle{border-radius:999px!important}",
   // —— live proposal 详情面板玻璃化(共享 renderProposalDetail 用 wh-proposal-* 类,非 gold-path 的 wh-panel) ——
   // 去掉它自带的靛蓝渐变底让极光透出;主栏/侧栏磨砂成玻璃卡(对齐 .wh-card 玻璃质感)。

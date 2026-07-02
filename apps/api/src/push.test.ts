@@ -76,7 +76,7 @@ test("push route limits the global all stream to admins", async () => {
   adminController.abort();
 });
 
-test("push route authorizes run streams through the AgentRun owner/admin gate", async () => {
+test("push route falls back to the AgentRun owner/admin gate when work item access is unavailable", async () => {
   const runtimeSettings = settings();
   const alice = user();
   const stranger = user({
@@ -108,6 +108,7 @@ test("push route authorizes run streams through the AgentRun owner/admin gate", 
       bus: new InProcessPushBus(),
       presence: new InMemoryPresenceStore(),
       agentRuns: queue,
+      workItems: false,
       stream: { heartbeatMs: 20 }
     })
   );
@@ -134,6 +135,102 @@ test("push route authorizes run streams through the AgentRun owner/admin gate", 
   assert.equal(adminResponse.status, 200);
   assert.equal(adminResponse.headers.get("content-type")?.includes("text/event-stream"), true);
   adminController.abort();
+});
+
+test("push route run streams stay scoped to the actor workspace", async () => {
+  const runWorkspaceId = "00000000-0000-4000-8000-00000000b0a1";
+  const actorWorkspaceId = "00000000-0000-4000-8000-00000000b0a2";
+  const runtimeSettings = settings({ DEFAULT_WORKSPACE_ID: actorWorkspaceId });
+  const alice = user();
+  const admin = user({
+    id: "10000000-0000-4000-8000-000000000003",
+    nickname: "admin",
+    cookieToken: "cookie-admin",
+    isAdmin: true
+  });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000043"
+  });
+  const run = await queue.enqueue({
+    workItemId: "50000000-0000-4000-8000-000000000043",
+    actorId: alice.id,
+    workspaceId: runWorkspaceId,
+    title: "Workspace A stream run"
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api/push",
+    createPushRoutes({
+      auth: deps([alice, admin], [], runtimeSettings),
+      bus: new InProcessPushBus(),
+      presence: new InMemoryPresenceStore(),
+      agentRuns: queue,
+      workItems: false,
+      stream: { heartbeatMs: 20 }
+    })
+  );
+
+  for (const token of [alice.cookieToken, admin.cookieToken]) {
+    const response = await app.request(`/api/push/stream/run/${run.run_id}`, {
+      headers: { Cookie: await signedCookie(token, runtimeSettings) }
+    });
+    assert.equal(response.status, 403, token);
+  }
+});
+
+test("push route allows run streams for users who can open the backing work item", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  const collaborator = user({
+    id: "10000000-0000-4000-8000-000000000004",
+    nickname: "run-collaborator",
+    cookieToken: "cookie-run-collaborator"
+  });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000042"
+  });
+  const runWorkItemId = "50000000-0000-4000-8000-000000000042";
+  const run = await queue.enqueue({
+    workItemId: runWorkItemId,
+    actorId: alice.id,
+    title: "Collaborative stream run"
+  });
+  const workItems = {
+    async detailPage(input: Parameters<WorkItemService["detailPage"]>[0]) {
+      if (input.workItemId !== runWorkItemId) {
+        throw new WorkItemServiceError(404, "not_found", "missing");
+      }
+      if (input.actor.id !== collaborator.id && input.actor.id !== alice.id && !input.actor.isAdmin) {
+        throw new WorkItemServiceError(403, "forbidden", "forbidden");
+      }
+      return {} as Awaited<ReturnType<WorkItemService["detailPage"]>>;
+    }
+  } as unknown as WorkItemService;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api/push",
+    createPushRoutes({
+      auth: deps([alice, collaborator], [], runtimeSettings),
+      bus: new InProcessPushBus(),
+      presence: new InMemoryPresenceStore(),
+      agentRuns: queue,
+      workItems,
+      stream: { heartbeatMs: 20 }
+    })
+  );
+
+  const controller = new AbortController();
+  const response = await app.request(`/api/push/stream/run/${run.run_id}`, {
+    headers: { Cookie: await signedCookie(collaborator.cookieToken, runtimeSettings) },
+    signal: controller.signal
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type")?.includes("text/event-stream"), true);
+  controller.abort();
 });
 
 test("push route fails closed on workitem stream when can_view is not registered", async () => {
@@ -230,6 +327,68 @@ test("findings[#170] connected frame advertises fresh resume mode even with a cu
   controller.abort();
 });
 
+test("SSE connected frame is emitted only after the topic subscription is ready", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  class GatedSubscribeBus extends InProcessPushBus {
+    public subscribeStarted = false;
+    private releaseGate: (() => void) | undefined;
+    private readonly gate = new Promise<void>((resolve) => {
+      this.releaseGate = resolve;
+    });
+
+    override async subscribe(topic: string) {
+      this.subscribeStarted = true;
+      await this.gate;
+      return super.subscribe(topic);
+    }
+
+    releaseSubscribe() {
+      this.releaseGate?.();
+    }
+  }
+  const bus = new GatedSubscribeBus();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api/push",
+    createPushRoutes({
+      auth: deps([alice], [], runtimeSettings),
+      bus,
+      presence: new InMemoryPresenceStore(),
+      access: { canViewWorkItem: async () => true },
+      stream: { heartbeatMs: 20 }
+    })
+  );
+
+  const controller = new AbortController();
+  const response = await app.request(
+    "/api/push/stream/workitem/50000000-0000-4000-8000-000000000001",
+    {
+      headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) },
+      signal: controller.signal
+    }
+  );
+  assert.equal(response.status, 200);
+  const reader = response.body!.getReader();
+  const firstRead = reader.read();
+  const early = await Promise.race([
+    firstRead.then(() => "frame"),
+    new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 20))
+  ]);
+  if (early !== "waiting") {
+    await reader.cancel();
+    controller.abort();
+    assert.equal(early, "waiting");
+  }
+  assert.equal(bus.subscribeStarted, true);
+  bus.releaseSubscribe();
+
+  const first = new TextDecoder().decode((await firstRead).value ?? new Uint8Array());
+  assert.match(first, /event: connected/u);
+  await reader.cancel();
+  controller.abort();
+});
+
 // 审计 FIX#24：心跳里的 presence.touchUser 是软状态续期，一次 Redis 抖动绝不能从心跳分支冒泡出 while
 // → finally 拆掉一条健康 SSE 流（空闲连接每 ~30s 心跳一次，一次 presence 短暂故障会群体掉线）。
 // 验证：touchUser 恒抛错时，流仍写出 connected 帧并继续心跳（: ping），不被终止。
@@ -281,6 +440,55 @@ test("FIX#24 a throwing presence.touchUser in the heartbeat does not terminate t
   assert.equal(sawPing, true);
   await reader.cancel();
   controller.abort();
+});
+
+test("SSE cleanup closes presence even when bus unsubscribe fails", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  class ThrowingUnsubscribeBus extends InProcessPushBus {
+    override async unsubscribe(topic: string, subscription: Parameters<InProcessPushBus["unsubscribe"]>[1]) {
+      await super.unsubscribe(topic, subscription);
+      throw new Error("redis unsubscribe failed");
+    }
+  }
+  class CountingPresence extends InMemoryPresenceStore {
+    public closeCalls = 0;
+    override async markStreamClosed(userId: string) {
+      this.closeCalls += 1;
+      await super.markStreamClosed(userId);
+    }
+  }
+  const presence = new CountingPresence();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route(
+    "/api/push",
+    createPushRoutes({
+      auth: deps([alice], [], runtimeSettings),
+      bus: new ThrowingUnsubscribeBus(),
+      presence,
+      access: { canViewWorkItem: async () => true },
+      stream: { heartbeatMs: 20 }
+    })
+  );
+
+  const controller = new AbortController();
+  const response = await app.request(
+    "/api/push/stream/workitem/50000000-0000-4000-8000-000000000001",
+    {
+      headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) },
+      signal: controller.signal
+    }
+  );
+  assert.equal(response.status, 200);
+  const reader = response.body!.getReader();
+  const first = new TextDecoder().decode((await reader.read()).value ?? new Uint8Array());
+  assert.match(first, /event: connected/u);
+
+  await reader.cancel();
+  controller.abort();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(presence.closeCalls, 1);
 });
 
 // 审计 FIX#2：presence 续期 + 计数不变量。FIX#2(a) 的「活跃流 TTL 续期」bug 是 Redis 实现专属

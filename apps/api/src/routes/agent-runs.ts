@@ -21,6 +21,7 @@ import {
   type AuthEnv
 } from "../middleware/auth.js";
 import {
+  AgentRunnerError,
   getDefaultAgentRunQueue,
   type AgentRunQueue,
   type AgentRunQueueRecord
@@ -58,28 +59,71 @@ function auditLogMergeAttemptId(detailJson: unknown) {
   return typeof value === "string" ? value : undefined;
 }
 
-function assertCanReadRun(run: AgentRunQueueRecord, actor: AuthActor) {
+function runReadForbidden() {
+  return new HTTPException(403, { message: "你没有权限查看这次 AI 执行。" });
+}
+
+function runScopeMatches(run: AgentRunQueueRecord, actor: AuthActor) {
+  if (run.workspace_id && run.workspace_id !== actor.workspaceId) {
+    return false;
+  }
+  if (run.org_id && run.org_id !== actor.orgId) {
+    return false;
+  }
+  return true;
+}
+
+async function assertCanReadRun(run: AgentRunQueueRecord, actor: AuthActor, workItems?: WorkItemService) {
+  if (!runScopeMatches(run, actor)) {
+    throw runReadForbidden();
+  }
   if (run.actor_id === actor.id || actor.isAdmin) {
     return;
   }
-  throw new HTTPException(403, { message: "你没有权限查看这次 AI 执行。" });
+  if (!workItems) {
+    throw runReadForbidden();
+  }
+  try {
+    await workItems.detailPage({ workItemId: run.work_item_id, actor });
+  } catch (error) {
+    if (error instanceof WorkItemServiceError && (error.status === 403 || error.status === 404)) {
+      throw runReadForbidden();
+    }
+    if (error instanceof WorkItemServiceError) {
+      throw error;
+    }
+    throw error;
+  }
 }
 
 function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
   return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
 }
 
+function parseNonNegativeIntegerQuery(value: string | undefined, label: string) {
+  if (value === undefined) {
+    return 0;
+  }
+  if (!/^\d+$/u.test(value)) {
+    throw new HTTPException(422, { message: `${label} must be a non-negative integer.` });
+  }
+  return Number.parseInt(value, 10);
+}
+
 // 路由 uuid 形参在到达 DB（uuid 列）前先校验。非 uuid 串原本直达 PG 查询 → 22P02 invalid uuid 抛未捕获
 // 500 + 误报 unhandled_error；非法即抛与「合法但不存在」同样的 404，攻击者无法据此区分存在性。
-function requireUuidParam(value: string): string {
+function requireUuidParam(value: string, missingMessage = "没有找到这次 AI 执行。"): string {
   if (!isUuidParam(value)) {
-    throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
+    throw new HTTPException(404, { message: missingMessage });
   }
   return value;
 }
 
 export type ProposalReplayAuditReader = {
-  listByWorkItem: (workItemId: string) => Promise<Array<{ proposal: { id: string } }>>;
+  listByWorkItem: (workItemId: string) => Promise<Array<{
+    proposal: { id: string; agentRunId?: string | null };
+    sourceAgentRunId?: string | null;
+  }>>;
   listMergeAttemptsByProposal: (proposalId: string) => Promise<MergeAttemptRow[]>;
   listMergeProposalsByAttempt: (mergeAttemptId: string) => Promise<MergeProposalRow[]>;
 };
@@ -117,12 +161,16 @@ function getDefaultWorkItemStatusKickoff(): WorkItemStatusKickoff {
 async function buildMergeTimelineForWorkItem(
   proposalAudit: ProposalReplayAuditReader | undefined,
   auditLogs: AuditLogRepository | undefined,
-  workItemId: string
+  workItemId: string,
+  runId: string
 ) {
   if (!proposalAudit) {
     return [];
   }
-  const proposals = await proposalAudit.listByWorkItem(workItemId);
+  const proposals = (await proposalAudit.listByWorkItem(workItemId)).filter((proposal) => {
+    const sourceRunId = proposal.sourceAgentRunId ?? proposal.proposal.agentRunId;
+    return sourceRunId === runId;
+  });
   const timeline: ReturnType<typeof toReplayMergeAttemptVm>[] = [];
   for (const proposal of proposals) {
     const proposalAuditRows = auditLogs
@@ -187,30 +235,75 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
       await replayWorkItems.detailPage({ workItemId, actor });
     } catch (error) {
       if (error instanceof WorkItemServiceError) {
-        throw new HTTPException(error.status as 400, { message: error.message });
+        throw error;
+      }
+      throw error;
+    }
+  }
+
+  async function assertCanMutateWorkItem(workItemId: string, actor: AuthActor) {
+    if (!replayWorkItems) {
+      return;
+    }
+    try {
+      await replayWorkItems.assertCanMutateWorkItem({ workItemId, actor });
+    } catch (error) {
+      if (error instanceof WorkItemServiceError) {
+        throw error;
       }
       throw error;
     }
   }
 
   routes.post("/workitems/:id/agent-runs", createCurrentUserMiddleware(authSource), async (c) => {
-    const workItemId = requireUuidParam(c.req.param("id"));
-    const payload = startAgentRunRequestSchema.parse(await readJsonObject(c));
+    const workItemId = requireUuidParam(c.req.param("id"), "没有找到这个事项。");
     await assertCanReadWorkItem(workItemId, c.var.actor);
+    await assertCanMutateWorkItem(workItemId, c.var.actor);
+    const payload = startAgentRunRequestSchema.parse(await readJsonObject(c));
     const run = await queue.enqueue({
       workItemId,
       actorId: c.var.actor.id,
+      orgId: c.var.actor.orgId,
+      workspaceId: c.var.actor.workspaceId,
       ...(payload.title ? { title: payload.title } : {}),
       ...(payload.mode ? { mode: payload.mode } : {})
     });
     // FIX#7：入队成功后把工作项 spec_ready→ai_working（CAS 守卫在仓库层；当前态非合法前驱则幂等 no-op）。
-    // 必须在 enqueue 成功之后做：若 enqueue 抛 409/402，工作项状态不该被改动。fire-and-forget——状态写失败
-    // 不拖垮已入队的 run（run 完成时 notifyRunMilestone 仍会再次尝试推进，CAS 兜底）。
+    // 必须在 enqueue 成功之后做：若 enqueue 抛 409/402，工作项状态不该被改动。若 kickoff 写入器抛错，
+    // 取消刚入队的 run 并返回失败；否则 run 可能完成了但事项仍卡在 spec_ready，最终里程碑 CAS 也会落空。
     if (kickoffWorkItemStatus) {
+      let kickoffResult: Awaited<ReturnType<WorkItemStatusKickoff>>;
       try {
-        await kickoffWorkItemStatus({ workItemId, to: "ai_working", at: new Date() });
+        kickoffResult = await kickoffWorkItemStatus({ workItemId, to: "ai_working", at: new Date() });
       } catch (error) {
+        try {
+          await queue.abort(run.run_id, {
+            id: c.var.actor.id,
+            isAdmin: c.var.actor.isAdmin,
+            canManageRun: true
+          });
+        } catch (abortError) {
+          console.warn("WorkHub agent-run kickoff rollback failed", abortError);
+        }
         console.warn("WorkHub agent-run kickoff status transition failed", error);
+        throw new HTTPException(503, { message: "AI 启动状态写入失败，请稍后重试。" });
+      }
+      if (!kickoffResult || (!kickoffResult.transitioned && kickoffResult.status !== "ai_working")) {
+        try {
+          await queue.abort(run.run_id, {
+            id: c.var.actor.id,
+            isAdmin: c.var.actor.isAdmin,
+            canManageRun: true
+          });
+        } catch (abortError) {
+          console.warn("WorkHub agent-run kickoff conflict rollback failed", abortError);
+        }
+        throw new AgentRunnerError(
+          409,
+          "agent_run_not_startable",
+          "当前事项状态不能启动 AI，请刷新后再试。",
+          { work_item_status: kickoffResult?.status ?? null }
+        );
       }
     }
     if (deps.autoRun !== false) {
@@ -230,26 +323,38 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     if (!data) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
-    assertCanReadRun(data, c.var.actor);
+    await assertCanReadRun(data, c.var.actor, replayWorkItems);
     return c.json({ ok: true, data: toAgentRunLiveVm(data) });
   });
 
   routes.get("/agent-runs/:id/trace", createCurrentUserMiddleware(authSource), async (c) => {
-    const afterRaw = c.req.query("after");
-    const after = afterRaw ? Number.parseInt(afterRaw, 10) : 0;
+    const after = parseNonNegativeIntegerQuery(c.req.query("after"), "after");
     const run = await queue.get(requireUuidParam(c.req.param("id")));
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
-    assertCanReadRun(run, c.var.actor);
-    const data = await queue.trace(run.run_id, Number.isFinite(after) ? after : 0);
+    await assertCanReadRun(run, c.var.actor, replayWorkItems);
+    const data = await queue.trace(run.run_id, after);
     return c.json({ ok: true, data: data.map((step) => toAgentStepVm(run.run_id, step)) });
   });
 
   routes.post("/agent-runs/:id/abort", createCurrentUserMiddleware(authSource), async (c) => {
-    const data = await queue.abort(requireUuidParam(c.req.param("id")), {
+    const run = await queue.get(requireUuidParam(c.req.param("id")));
+    if (!run) {
+      throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
+    }
+    if (!runScopeMatches(run, c.var.actor)) {
+      throw runReadForbidden();
+    }
+    let canManageRun = run.actor_id === c.var.actor.id || c.var.actor.isAdmin;
+    if (!canManageRun && replayWorkItems) {
+      await assertCanMutateWorkItem(run.work_item_id, c.var.actor);
+      canManageRun = true;
+    }
+    const data = await queue.abort(run.run_id, {
       id: c.var.actor.id,
-      isAdmin: c.var.actor.isAdmin
+      isAdmin: c.var.actor.isAdmin,
+      ...(canManageRun ? { canManageRun: true } : {})
     });
     return c.json({ ok: true, data: toAgentRunLiveVm(data) });
   });
@@ -259,7 +364,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
-    assertCanReadRun(run, c.var.actor);
+    await assertCanReadRun(run, c.var.actor, replayWorkItems);
     return c.json({ ok: true, data: run.handoff ?? null });
   });
 
@@ -269,7 +374,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
     if (!run) {
       throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
     }
-    assertCanReadRun(run, c.var.actor);
+    await assertCanReadRun(run, c.var.actor, replayWorkItems);
     const stores = auditStores();
     const snapshotRows = await stores.snapshots.listSnapshotsForWorkItem(run.work_item_id, { includeReverted: true });
     const auditRows = await stores.auditLogs.listAuditLogsForWorkItem(run.work_item_id);
@@ -282,7 +387,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
       const acceptedDeliverables = replayWorkItems
         ? (await replayWorkItems.detailPage({ workItemId: run.work_item_id, actor: c.var.actor })).accepted_deliverables
         : [];
-      const mergeTimeline = await buildMergeTimelineForWorkItem(replayProposalAudit, stores.auditLogs, run.work_item_id);
+      const mergeTimeline = await buildMergeTimelineForWorkItem(replayProposalAudit, stores.auditLogs, run.work_item_id, run.run_id);
       return c.json({
         ok: true,
         data: buildReplayTracePage({ run, snapshots, auditLogs, acceptedDeliverables, mergeTimeline, locale }),
@@ -290,7 +395,7 @@ export function createAgentRunRoutes(deps: AgentRunRoutesDependencies = {}) {
       });
     } catch (error) {
       if (error instanceof WorkItemServiceError) {
-        throw new HTTPException(error.status as 400, { message: error.message });
+        throw error;
       }
       throw error;
     }

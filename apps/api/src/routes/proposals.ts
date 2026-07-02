@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import {
@@ -30,6 +30,7 @@ import {
 } from "../middleware/auth.js";
 import {
   getDefaultProposalService,
+  ProposalServiceError,
   ProposalServiceMergeConflictError,
   ProposalServiceRebaseRequiredError,
   type ProposalActor,
@@ -40,13 +41,14 @@ import {
   getDefaultWorkItemService,
   type WorkItemService
 } from "../services/work-items.js";
+import { parseOutputContract } from "../pages/output-contract.js";
 import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 
 export type ProposalRoutesDependencies = {
   auth?: AuthDependencySource;
   proposals?: ProposalService;
-  workItems?: Pick<WorkItemService, "detailPage"> | false;
+  workItems?: Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts"> | false;
   // findings[#168/H12]：合并/评审/打回事件原本只塞进 HTTP 响应、从不 publish 到总线，其它客户端的 SSE 实时
   // 刷新因此失效。注入 PushBus 后在各操作成功后 best-effort 发布。
   bus?: Pick<PushBus, "publish">;
@@ -96,6 +98,17 @@ function auditActorFor(actor: ReturnType<typeof actorFor>): AuditLogFact["actor"
 
 function latestReview(proposal: StoredProposal) {
   return proposal.reviews.at(-1);
+}
+
+function confirmationRequiredResponse(c: Context<AuthEnv>) {
+  return c.json({
+    ok: false,
+    error: {
+      code: "confirmation_required",
+      message: "请确认后再执行这个变更操作。",
+      recoverable: true
+    }
+  }, 409);
 }
 
 function reasonFeedbackAudit(input: {
@@ -230,7 +243,7 @@ function mergeResultFor(input: {
   const attention = genericMergeAttention(input.proposal, input.createdAt);
   const mergeSnapshotId = input.proposal.merge_snapshot_id;
   if (!mergeSnapshotId) {
-    throw new HTTPException(500, { message: "变更申请缺少合并快照。" });
+    throw new ProposalServiceError(409, "merge_snapshot_missing", "这份变更申请缺少合并快照，请刷新后重新生成或联系管理员处理。");
   }
   const proposalMerged = makeWorkHubEvent({
     event_id: randomUUID(),
@@ -275,7 +288,7 @@ function mergeResultFor(input: {
     }
   ];
 
-  return proposalMergeResultSchema.parse({
+  return parseOutputContract(proposalMergeResultSchema, {
     proposal_id: input.proposal.id,
     work_item_id: input.proposal.work_item_id,
     status: "merged",
@@ -285,7 +298,7 @@ function mergeResultFor(input: {
     attention,
     events: [proposalMerged, notification],
     audit_logs: auditLogs
-  });
+  }, "proposal.merge-result");
 }
 
 // 直接重抛领域错误：app.onError 有 ProposalServiceError/WorkItemServiceError 专门分支，会保留真实
@@ -343,6 +356,17 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     }
   }
 
+  async function assertCanMutateWorkItem(workItemId: string, actor: AuthActor) {
+    if (!workItems) {
+      throw new HTTPException(403, { message: "没有权限修改这个事项。" });
+    }
+    try {
+      await workItems.assertCanMutateArtifacts({ workItemId, actor });
+    } catch (error) {
+      handleWorkItemAccessError(error);
+    }
+  }
+
   async function readProposalForActor(proposalId: string, actor: AuthActor) {
     // R4-1：畸形（非 UUID）proposalId 直接落 404（与不存在同形，不泄露存在性），
     // 避免冒泡到 PG uuid 列触发 22P02→未捕获 500。覆盖 /:id 及 /:id/{review,merge,rebase}。
@@ -366,7 +390,8 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   routes.post("/:id/review", authMiddleware, async (c) => {
     // L3：先鉴权再解析请求体——否则未授权者会先收到 schema 校验 400（泄露请求体形状/字段要求），
     // 拿不到本应优先返回的 404/403。授权检查（readProposalForActor → assertCanReadWorkItem）置于解析之前。
-    await readProposalForActor(c.req.param("id"), c.var.actor);
+    const proposalForAccess = await readProposalForActor(c.req.param("id"), c.var.actor);
+    await assertCanMutateWorkItem(proposalForAccess.work_item_id, c.var.actor);
     const payload = reviewProposalRequestSchema.parse(await readJsonObject(c));
     let proposal: StoredProposal;
     try {
@@ -449,14 +474,21 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
 
     // findings[#168/H12]：发布 proposal.reviewed（及打回时的 revision.fedback），让其它客户端实时刷新。
     await publishProposalEvents(bus, [event, ...(resultBase.feedback_event ? [resultBase.feedback_event] : [])], eventLogger);
-    return c.json({ ok: true, data: proposalReviewResultSchema.parse(resultBase) });
+    return c.json({ ok: true, data: parseOutputContract(proposalReviewResultSchema, resultBase, "proposal.review-result") });
   });
 
   routes.post("/:id/merge", authMiddleware, async (c) => {
     // findings：鉴权先于请求体解析（与 /review 一致，L3 修过 review 但 merge 漏了）——未授权者发畸形 body
     // 应拿 403/404 而非泄露 schema 的 400。
-    await readProposalForActor(c.req.param("id"), c.var.actor);
+    const proposalForAccess = await readProposalForActor(c.req.param("id"), c.var.actor);
+    await assertCanMutateWorkItem(proposalForAccess.work_item_id, c.var.actor);
+    if (proposalForAccess.status === "merged") {
+      throw new ProposalServiceError(409, "proposal_already_merged", "这份变更申请已经被采纳。");
+    }
     const payload = mergeProposalRequestSchema.parse(await readJsonObject(c));
+    if (payload.confirm === false) {
+      return confirmationRequiredResponse(c);
+    }
     let proposal: StoredProposal;
     try {
       proposal = await proposals.merge({
@@ -525,7 +557,8 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
 
   // P-COLLAB：对最新正式版重算冲突/候选,交回前端用既有三选项解决,然后重新采纳。不动账本。
   routes.post("/:id/rebase", authMiddleware, async (c) => {
-    await readProposalForActor(c.req.param("id"), c.var.actor);
+    const proposalForAccess = await readProposalForActor(c.req.param("id"), c.var.actor);
+    await assertCanMutateWorkItem(proposalForAccess.work_item_id, c.var.actor);
     try {
       const result = await proposals.rebase({
         proposalId: c.req.param("id"),
@@ -564,6 +597,20 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
     }
   }
 
+  async function assertCanMutateWorkItem(workItemId: string, actor: AuthActor) {
+    if (!workItems) {
+      throw new HTTPException(403, { message: "没有权限修改这个事项。" });
+    }
+    if (!isUuidParam(workItemId)) {
+      throw new HTTPException(404, { message: "没有找到这个事项。" });
+    }
+    try {
+      await workItems.assertCanMutateArtifacts({ workItemId, actor });
+    } catch (error) {
+      handleWorkItemAccessError(error);
+    }
+  }
+
   async function readProposalByMergeProposalForActor(mergeProposalId: string, actor: AuthActor) {
     // 路由 uuid 形参先校验：非 uuid 串原本直达 getByMergeProposal 的 uuid 列 → PG 22P02 → 误报 500；
     // 与「合法但不存在」同样回 404，不泄露合并建议存在性。
@@ -581,7 +628,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   routes.post("/workitems/:id/proposals", createCurrentUserMiddleware(authSource), async (c) => {
     // findings[#15]：先鉴权再解析请求体（与 /review、/merge 一致）——未授权者发畸形 body 应拿 403/404 而非
     // 泄露 schema 的校验 422。assertCanReadWorkItem 同时承担 uuid 形参校验，置于解析之前。
-    await assertCanReadWorkItem(c.req.param("id"), c.var.actor);
+    await assertCanMutateWorkItem(c.req.param("id"), c.var.actor);
     const payload = createProposalFromManifestRequestSchema.parse(await readJsonObject(c));
     try {
       const proposal = await proposals.createFromManifest({
@@ -612,14 +659,15 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
     const result = await proposals.listConflicts(c.req.param("id"));
     return c.json({
       ok: true,
-      data: proposalConflictListResultSchema.parse(result)
+      data: parseOutputContract(proposalConflictListResultSchema, result, "proposal.conflict-list")
     });
   });
 
   routes.post("/merge-proposals/:id/choose", createCurrentUserMiddleware(authSource), async (c) => {
     // findings[#15]：先鉴权再解析请求体（与 /review、/merge 一致）——未授权者发畸形 body 应拿 403/404 而非
     // 泄露 schema 的校验 422。readProposalByMergeProposalForActor 同时承担 uuid 形参校验，置于解析之前。
-    await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
+    const proposalForAccess = await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
+    await assertCanMutateWorkItem(proposalForAccess.work_item_id, c.var.actor);
     const payload = chooseMergeProposalCandidateRequestSchema.parse(await readJsonObject(c));
     // L5：keep_current / accept_incoming 不经候选「选择 + 应用」路由——apply 只认 ai_fusion，选了它们会
     // 把变更申请永久卡在 reviewed 且冲突反复出现（死状态）。这两种解析在合并接口里内联完成：采纳来方填
@@ -638,7 +686,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
       });
       return c.json({
         ok: true,
-        data: mergeProposalCandidateChoiceResultSchema.parse(result)
+        data: parseOutputContract(mergeProposalCandidateChoiceResultSchema, result, "proposal.merge-candidate-choice")
       });
     } catch (error) {
       handleProposalServiceError(error);
@@ -648,8 +696,12 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
   routes.post("/merge-proposals/:id/apply", createCurrentUserMiddleware(authSource), async (c) => {
     // findings[#15]：先鉴权再解析请求体（与 /review、/merge 一致）——未授权者发畸形 body 应拿 403/404 而非
     // 泄露 schema 的校验 422。readProposalByMergeProposalForActor 同时承担 uuid 形参校验，置于解析之前。
-    await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
+    const proposalForAccess = await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
+    await assertCanMutateWorkItem(proposalForAccess.work_item_id, c.var.actor);
     const payload = applyMergeProposalCandidateRequestSchema.parse(await readJsonObject(c));
+    if (payload.confirm === false) {
+      return confirmationRequiredResponse(c);
+    }
     try {
       const proposal = await proposals.applyMergeCandidate({
         mergeProposalId: c.req.param("id"),

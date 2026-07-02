@@ -59,6 +59,7 @@ export function usageRecordId(usage: UsageRecord) {
     usage.runId ?? "no-run",
     usage.workItemId ?? "no-workitem",
     usage.userId ?? "no-user",
+    usage.workspaceId ?? "no-workspace",
     usage.provider,
     usage.model,
     usage.task,
@@ -125,6 +126,9 @@ export function ledgerUsageSnapshots(
 }
 
 function entryInScopes(entry: CostLedgerEntry, scopeIds: LedgerScopeIds): boolean {
+  if (scopeIds.teamId && entry.scope.kind === "curation" && entry.scope.teamId === scopeIds.teamId) {
+    return true;
+  }
   return scopesFromIds(scopeIds).some((scope) => sameScope(entry.scope, scope));
 }
 
@@ -145,6 +149,12 @@ export type CostLedgerStore = {
    * 无标签的 total_cost_cny 对管理员=近 90 天、对普通成员=终身累计（同字段两种含义）。
    */
   listEntriesForScopes?: (scopeIds: LedgerScopeIds, options?: { sinceBucket?: string }) => MaybePromise<readonly CostLedgerEntry[]>;
+  /**
+   * Read all ledger entries for usage records that belong to a workspace/team.
+   * Unlike listEntriesForScopes({ teamId }), this keeps user/workitem sibling
+   * entries so admin dashboards can still render breakdowns after tenant scoping.
+   */
+  listEntriesForWorkspace?: (teamId: string, options?: { sinceBucket?: string }) => MaybePromise<readonly CostLedgerEntry[]>;
   listRecords?: () => MaybePromise<readonly UsageRecord[]>;
   /**
    * R4 #26：按 source + 时间下界聚合 usage 成本（走 created_at 索引的 SQL SUM），用于 curation 当日预算闸门，
@@ -157,10 +167,34 @@ export type CostLedgerStore = {
 export function createMemoryCostLedgerStore(options: {
   teamId?: string;
   evalSuite?: "nightly" | "release";
+  teamIdForUsage?: (usage: UsageRecord) => string | undefined;
 } = {}): CostLedgerStore {
   const records: UsageRecord[] = [];
   const entries: CostLedgerEntry[] = [];
   const entryKeys = new Set<string>();
+
+  function workspaceUsageRecordIds(teamId: string, options?: { sinceBucket?: string }) {
+    const sinceBucket = options?.sinceBucket;
+    return new Set(
+      entries
+        .filter((entry) =>
+          (!sinceBucket || entry.periodBucket >= sinceBucket) &&
+          ((entry.scope.kind === "team" && entry.scope.teamId === teamId) ||
+            (entry.scope.kind === "curation" && entry.scope.teamId === teamId))
+        )
+        .map((entry) => entry.usageRecordId)
+    );
+  }
+
+  function entriesForScopes(scopeIds: LedgerScopeIds, options?: { sinceBucket?: string }) {
+    const sinceBucket = options?.sinceBucket;
+    const workspaceUsageIds = scopeIds.teamId ? workspaceUsageRecordIds(scopeIds.teamId, options) : undefined;
+    return entries.filter((entry) =>
+      (!sinceBucket || entry.periodBucket >= sinceBucket) &&
+      (!workspaceUsageIds || workspaceUsageIds.has(entry.usageRecordId)) &&
+      entryInScopes(entry, scopeIds)
+    );
+  }
 
   return {
     get records() {
@@ -175,6 +209,7 @@ export function createMemoryCostLedgerStore(options: {
       }
       for (const entry of usageToLedgerEntries(record, {
         ...(options.teamId ? { teamId: options.teamId } : {}),
+        teamIdForUsage: options.teamIdForUsage ?? ((usage) => usage.workspaceId ?? options.teamId),
         ...(options.evalSuite ? { evalSuite: options.evalSuite } : {})
       })) {
         const key = ledgerEntryKey(entry);
@@ -186,7 +221,7 @@ export function createMemoryCostLedgerStore(options: {
       }
     },
     usageSnapshots(scopeIds, options) {
-      return ledgerUsageSnapshots(entries, scopeIds, options);
+      return ledgerUsageSnapshots(entriesForScopes(scopeIds), scopeIds, options);
     },
     listEntries(options) {
       if (!options?.sinceBucket) {
@@ -196,12 +231,14 @@ export function createMemoryCostLedgerStore(options: {
       return entries.filter((entry) => entry.periodBucket >= sinceBucket);
     },
     listEntriesForScopes(scopeIds, options) {
-      const inScope = entries.filter((entry) => entryInScopes(entry, scopeIds));
-      if (!options?.sinceBucket) {
-        return inScope;
-      }
-      const sinceBucket = options.sinceBucket;
-      return inScope.filter((entry) => entry.periodBucket >= sinceBucket);
+      return entriesForScopes(scopeIds, options);
+    },
+    listEntriesForWorkspace(teamId, options) {
+      const sinceBucket = options?.sinceBucket;
+      const workspaceUsageIds = workspaceUsageRecordIds(teamId, options);
+      return entries.filter((entry) =>
+        workspaceUsageIds.has(entry.usageRecordId) && (!sinceBucket || entry.periodBucket >= sinceBucket)
+      );
     },
     listRecords() {
       return records;

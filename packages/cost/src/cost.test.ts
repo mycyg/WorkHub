@@ -182,6 +182,28 @@ test("cost ledger reconciles usage into scoped entries and budget snapshots", as
   assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "workitem" && snapshot.period === "run")?.tokenIn, 0);
 });
 
+test("cost ledger uses a usage workspace id as the team scope when present", async () => {
+  const ledger = createMemoryCostLedgerStore({ teamId: "default-team" });
+  await ledger.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "run-tenant",
+    workItemId: "workitem-tenant",
+    userId: "user-tenant",
+    workspaceId: "workspace-b",
+    inputTokens: 1000,
+    outputTokens: 0,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: new Date("2026-06-05T00:00:00.000Z")
+  }));
+
+  assert.equal(ledger.entries.some((entry) => entry.scope.kind === "team" && entry.scope.teamId === "default-team"), false);
+  assert.equal(ledger.entries.some((entry) => entry.scope.kind === "team" && entry.scope.teamId === "workspace-b"), true);
+  const snapshots = await ledger.usageSnapshots({ teamId: "workspace-b" }, { now: new Date("2026-06-05T00:00:00.000Z") });
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "team" && snapshot.period === "day")?.tokenIn, 1000);
+});
+
 test("findings[19] distinct calls with identical tokens in the same ms are not deduped when seq differs", async () => {
   const base = {
     provider: "deepseek",

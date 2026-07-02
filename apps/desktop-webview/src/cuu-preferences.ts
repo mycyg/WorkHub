@@ -41,21 +41,21 @@ const petScaleOptions = [75, 100, 125, 150] as const satisfies readonly CuuPetSc
 const petOpacityOptions = [60, 80, 100] as const satisfies readonly CuuPetOpacityPercent[];
 
 export const desktopCuuPreferenceCss = [
-  ".wh-cuu-pref-button{position:fixed;right:18px;top:78px;z-index:40;border:1px solid rgba(53,92,255,.18);border-radius:8px;background:rgba(255,255,255,.94);box-shadow:0 12px 32px rgba(37,51,79,.12);padding:8px 10px;color:var(--wh-app-blue);font:850 12px/1 \"Aptos\",\"Segoe UI\",sans-serif;cursor:pointer}",
-  ".wh-cuu-pref-button[aria-expanded=true]{background:rgba(53,92,255,.08)}",
-  ".wh-cuu-preferences{position:fixed;right:18px;top:122px;z-index:40;width:min(340px,calc(100vw - 36px));display:grid;gap:10px;border:1px solid rgba(37,51,79,.12);border-radius:8px;background:rgba(255,255,255,.96);box-shadow:0 18px 48px rgba(37,51,79,.14);padding:12px;color:var(--wh-app-ink);font:700 12px/1.25 \"Aptos\",\"Segoe UI\",sans-serif}",
+  ".wh-cuu-pref-button{position:fixed;right:18px;top:78px;z-index:40;border:1px solid rgba(255,255,255,.28);border-radius:12px;background:transparent;backdrop-filter:blur(50px) saturate(220%) contrast(108%);-webkit-backdrop-filter:blur(50px) saturate(220%) contrast(108%);box-shadow:0 16px 42px -28px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.30);padding:8px 10px;color:var(--wh-app-blue);font:850 12px/1 \"Aptos\",\"Segoe UI\",sans-serif;cursor:pointer}",
+  ".wh-cuu-pref-button[aria-expanded=true]{background:transparent;border-color:rgba(10,132,255,.32);box-shadow:0 16px 42px -28px rgba(0,0,0,.38),inset 0 0 0 1px rgba(10,132,255,.18),inset 0 1px 0 rgba(255,255,255,.30)}",
+  ".wh-cuu-preferences{position:fixed;right:18px;top:122px;z-index:40;width:min(340px,calc(100vw - 36px));display:grid;gap:10px;border:1px solid rgba(255,255,255,.75);border-radius:14px;background:rgba(255,255,255,.55);backdrop-filter:blur(34px) saturate(180%);-webkit-backdrop-filter:blur(34px) saturate(180%);box-shadow:0 30px 66px -28px rgba(60,60,67,.34),inset 0 1px 0 rgba(255,255,255,.8);padding:12px;color:var(--wh-app-ink);font:700 12px/1.25 \"Aptos\",\"Segoe UI\",sans-serif}",
   ".wh-cuu-preferences[hidden]{display:none}.wh-cuu-preferences strong{font-size:13px}.wh-cuu-pref-row{display:grid;gap:6px}.wh-cuu-pref-options{display:flex;gap:6px;flex-wrap:wrap}",
-  ".wh-cuu-pref-options button{border:1px solid var(--wh-app-line);border-radius:8px;background:#fff;color:var(--wh-app-ink);padding:7px 9px;font-weight:800;cursor:pointer}",
-  ".wh-cuu-pref-options button[aria-pressed=true]{border-color:rgba(53,92,255,.32);background:rgba(53,92,255,.08);color:var(--wh-app-blue)}",
+  ".wh-cuu-pref-options button{border:1px solid rgba(255,255,255,.24);border-radius:10px;background:transparent;color:var(--wh-app-ink);padding:7px 9px;font-weight:800;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.20)}",
+  ".wh-cuu-pref-options button[aria-pressed=true]{border-color:rgba(53,92,255,.32);background:transparent;color:var(--wh-app-blue);box-shadow:inset 0 0 0 1px rgba(53,92,255,.16),inset 3px 0 0 var(--wh-app-blue)}",
   ".wh-cuu-pref-models{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}",
-  ".wh-cuu-pref-model{display:grid;gap:4px;min-height:54px;border:1px solid var(--wh-app-line);border-radius:8px;background:#fff;color:var(--wh-app-ink);padding:8px;text-align:left;font:800 11px/1.15 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer}",
-  ".wh-cuu-pref-model[aria-pressed=true]{border-color:rgba(53,92,255,.35);background:rgba(53,92,255,.08);color:var(--wh-app-blue);box-shadow:inset 3px 0 0 var(--wh-app-blue)}",
-  ".wh-cuu-pref-model[disabled]{cursor:not-allowed;opacity:.58;background:#f8fafc;color:#667085}",
+  ".wh-cuu-pref-model{display:grid;gap:4px;min-height:54px;border:1px solid rgba(255,255,255,.24);border-radius:10px;background:transparent;color:var(--wh-app-ink);padding:8px;text-align:left;font:800 11px/1.15 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.20)}",
+  ".wh-cuu-pref-model[aria-pressed=true]{border-color:rgba(53,92,255,.35);background:transparent;color:var(--wh-app-blue);box-shadow:inset 3px 0 0 var(--wh-app-blue),inset 0 0 0 1px rgba(53,92,255,.16)}",
+  ".wh-cuu-pref-model[disabled]{cursor:not-allowed;opacity:.58;background:transparent;color:#667085}",
   ".wh-cuu-pref-model-name,.wh-cuu-pref-model-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-cuu-pref-model-status{font-size:10px;color:#667085}",
   ".wh-cuu-pref-toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--wh-app-line);padding-top:8px}",
   ".wh-cuu-pref-toggle label{display:flex;align-items:center;gap:8px}.wh-cuu-pref-toggle input{width:16px;height:16px;accent-color:var(--wh-app-blue)}",
-  ".wh-cuu-pref-queue{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--wh-app-line);padding-top:8px}.wh-cuu-pref-queue input{width:64px;border:1px solid var(--wh-app-line);border-radius:8px;padding:6px 8px;font:800 12px/1 \"Aptos\",\"Segoe UI\",sans-serif;color:var(--wh-app-ink)}"
+  ".wh-cuu-pref-queue{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--wh-app-line);padding-top:8px}.wh-cuu-pref-queue input{width:64px;border:1px solid rgba(255,255,255,.24);border-radius:10px;background:transparent;padding:6px 8px;font:800 12px/1 \"Aptos\",\"Segoe UI\",sans-serif;color:var(--wh-app-ink);box-shadow:inset 0 1px 0 rgba(255,255,255,.20)}"
 ].join("");
 
 export const desktopPetSettingsCss = [
@@ -64,19 +64,19 @@ export const desktopPetSettingsCss = [
   ".wh-desktop-pet-settings-head>div:first-child{min-width:0}",
   ".wh-desktop-pet-settings-head h2{margin:0;font-size:18px;line-height:1.2}",
   ".wh-desktop-pet-settings-head p{margin:6px 0 0;color:var(--muted);line-height:1.5}",
-  ".wh-desktop-pet-state{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;border:1px solid var(--line);border-radius:8px;background:#f8fbff;padding:8px 10px;color:var(--muted);font-size:12px;font-weight:800;line-height:1.25;overflow-wrap:anywhere}",
+  ".wh-desktop-pet-state{display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;border:1px solid var(--line);border-radius:8px;background:transparent;padding:8px 10px;color:var(--muted);font-size:12px;font-weight:800;line-height:1.25;overflow-wrap:anywhere}",
   ".wh-desktop-pet-state span{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 4px rgba(36,166,106,.12)}",
   ".wh-desktop-pet-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}",
   ".wh-desktop-pet-setting{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px}",
   ".wh-desktop-pet-setting strong{font-size:13px}.wh-desktop-pet-setting p{margin:0;color:var(--muted);line-height:1.45}",
   ".wh-desktop-pet-options{display:flex;gap:6px;flex-wrap:wrap}",
-  ".wh-desktop-pet-options button,.wh-desktop-pet-action{min-width:0;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);padding:8px 10px;font:800 12px/1.1 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer;overflow-wrap:anywhere}",
-  ".wh-desktop-pet-options button[aria-pressed=true]{border-color:rgba(53,92,255,.34);background:rgba(53,92,255,.08);color:var(--blue);box-shadow:inset 3px 0 0 var(--blue)}",
-  ".wh-desktop-pet-toggle{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:10px}",
+  ".wh-desktop-pet-options button,.wh-desktop-pet-action{min-width:0;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);padding:8px 10px;font:800 12px/1.1 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer;overflow-wrap:anywhere}",
+  ".wh-desktop-pet-options button[aria-pressed=true]{border-color:rgba(53,92,255,.34);background:transparent;color:var(--blue);box-shadow:inset 3px 0 0 var(--blue)}",
+  ".wh-desktop-pet-toggle{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:8px;background:transparent;padding:10px}",
   ".wh-desktop-pet-toggle label{display:flex;align-items:center;gap:8px;font-weight:850}.wh-desktop-pet-toggle input{width:16px;height:16px;accent-color:var(--blue)}",
   ".wh-desktop-pet-toggle p{overflow-wrap:anywhere}",
   ".wh-desktop-pet-actions{display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px}",
-  ".wh-desktop-pet-action[data-tone=primary]{background:var(--blue);border-color:var(--blue);color:#fff}.wh-desktop-pet-action[data-tone=danger]{background:#fff4f3;border-color:#f3c5c0;color:#a94137}",
+  ".wh-desktop-pet-action[data-tone=primary]{background:var(--blue);border-color:var(--blue);color:#fff}.wh-desktop-pet-action[data-tone=danger]{background:transparent;border-color:#f3c5c0;color:#a94137}",
   "@media (max-width:760px){.wh-desktop-pet-settings-head{display:grid}.wh-desktop-pet-settings-grid{grid-template-columns:1fr}.wh-desktop-pet-state{width:fit-content}}"
 ].join("");
 

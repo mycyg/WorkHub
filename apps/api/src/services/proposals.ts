@@ -31,6 +31,7 @@ import { readSnapshotFile } from "@workhub/audit";
 import {
   getSharedDatabaseClient,
   createProposalRepository,
+  ProposalRepositoryBranchWorkItemMismatchError,
   ProposalRepositoryConflictError,
   ProposalRepositoryDuplicateTargetKeyError,
   ProposalRepositoryInvalidMergeProposalCandidateError,
@@ -61,6 +62,7 @@ import {
   type TextHunkMaterializationResult
 } from "./text-hunk-materializer.js";
 import { correctionFromReview, getDefaultUserMemoryRepository } from "./user-memory.js";
+import { parseOutputContract } from "../pages/output-contract.js";
 
 export type ProposalActor = {
   actor_kind: "human" | "ai" | "system";
@@ -130,7 +132,7 @@ export type ProposalService = {
   get: (proposalId: string) => Promise<StoredProposal | null>;
   getByMergeProposal: (mergeProposalId: string) => Promise<StoredProposal | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposal[]>;
-  listReviewableForUser: (input: { user: { id: string; isAdmin: boolean }; limit?: number }) => Promise<ReviewableProposalSummary[]>;
+  listReviewableForUser: (input: { user: { id: string; isAdmin: boolean; workspaceId?: string }; limit?: number }) => Promise<ReviewableProposalSummary[]>;
   listConflicts: (workItemId: string) => Promise<ProposalConflictListResult>;
   review: (input: {
     proposalId: string;
@@ -174,13 +176,13 @@ function cloneManifestWithIds(input: {
     base.created_at = input.createdAt;
   }
 
-  return deliverableChangeManifestSchema.parse({
+  return parseOutputContract(deliverableChangeManifestSchema, {
     ...input.manifest,
     proposal_id: input.proposalId,
     work_item_id: input.workItemId,
     branch_id: input.branchId,
     base
-  });
+  }, "proposal.manifest");
 }
 
 function iso(value: Date | string | null | undefined) {
@@ -279,6 +281,14 @@ function shouldAdoptDriveFile(change: DeliverableChange) {
     && change.target_kind !== "folder"
     && change.change_type !== "deleted"
     && !!change.target_ref.path;
+}
+
+function inlineGeneratedContentForChange(change: DeliverableChange) {
+  if (change.target_kind !== "text_doc" && change.target_kind !== "spec_doc") {
+    return undefined;
+  }
+  const content = change.machine_summary?.generated_content_md;
+  return typeof content === "string" && content.length > 0 ? content : undefined;
 }
 
 function manifestTargetKey(change: DeliverableChange) {
@@ -488,7 +498,7 @@ async function adoptDriveFilesForMerge(input: {
   skipTargetKeys?: Set<string>;
 }) {
   const context = await input.repository.findMergeContext(input.proposalId);
-  if (!context?.workdirRef) {
+  if (!context) {
     return [];
   }
 
@@ -500,22 +510,6 @@ async function adoptDriveFilesForMerge(input: {
     if (!shouldAdoptDriveFile(change)) {
       continue;
     }
-    const sourcePath = sourcePathForChange(context.workdirRef, change);
-    let sourceStat: Awaited<ReturnType<typeof stat>>;
-    try {
-      sourceStat = await stat(sourcePath);
-    } catch {
-      throw new ProposalServiceError(409, "delivery_artifact_missing", "找不到这份交付文件，不能采纳到正式版。");
-    }
-    if (!sourceStat.isFile()) {
-      continue;
-    }
-
-    const sha256 = await sha256File(sourcePath);
-    if (change.target_ref.sha256_after && change.target_ref.sha256_after !== sha256) {
-      throw new ProposalServiceError(409, "delivery_artifact_changed", "交付文件内容和审查版本不一致，需要重新生成变更申请。");
-    }
-
     const filename = filenameForChange(change);
     const storagePath = storagePathForChange({
       storageRoot: input.storageRoot,
@@ -526,14 +520,52 @@ async function adoptDriveFilesForMerge(input: {
       filename
     });
     const storageDir = path.dirname(storagePath);
-    await mkdir(storageDir, { recursive: true });
-    await copyFile(sourcePath, storagePath);
     const mime = mimeForFilename(filename);
+    if (context.workdirRef) {
+      const sourcePath = sourcePathForChange(context.workdirRef, change);
+      let sourceStat: Awaited<ReturnType<typeof stat>>;
+      try {
+        sourceStat = await stat(sourcePath);
+      } catch {
+        throw new ProposalServiceError(409, "delivery_artifact_missing", "找不到这份交付文件，不能采纳到正式版。");
+      }
+      if (!sourceStat.isFile()) {
+        continue;
+      }
+
+      const sha256 = await sha256File(sourcePath);
+      if (change.target_ref.sha256_after && change.target_ref.sha256_after !== sha256) {
+        throw new ProposalServiceError(409, "delivery_artifact_changed", "交付文件内容和审查版本不一致，需要重新生成变更申请。");
+      }
+
+      await mkdir(storageDir, { recursive: true });
+      await copyFile(sourcePath, storagePath);
+      adopted.push({
+        changeId: change.id,
+        filename,
+        storagePath,
+        sizeBytes: sourceStat.size,
+        sha256,
+        ...(mime ? { mime } : {})
+      });
+      continue;
+    }
+
+    const inlineContent = inlineGeneratedContentForChange(change);
+    if (inlineContent === undefined) {
+      continue;
+    }
+    const sha256 = sha256Text(inlineContent);
+    if (change.target_ref.sha256_after && change.target_ref.sha256_after !== sha256) {
+      throw new ProposalServiceError(409, "delivery_artifact_changed", "交付文件内容和审查版本不一致，需要重新生成变更申请。");
+    }
+    await mkdir(storageDir, { recursive: true });
+    await writeFile(storagePath, inlineContent, "utf8");
     adopted.push({
       changeId: change.id,
       filename,
       storagePath,
-      sizeBytes: sourceStat.size,
+      sizeBytes: Buffer.byteLength(inlineContent, "utf8"),
       sha256,
       ...(mime ? { mime } : {})
     });
@@ -1295,7 +1327,7 @@ async function materializeAiFusionCandidate(input: {
 }
 
 function storedRowsToProposal(rows: StoredProposalRows): StoredProposal {
-  const proposal = proposalSchema.parse({
+  const proposal = parseOutputContract(proposalSchema, {
     id: rows.proposal.id,
     work_item_id: rows.proposal.workItemId,
     branch_id: rows.proposal.branchId,
@@ -1311,10 +1343,10 @@ function storedRowsToProposal(rows: StoredProposalRows): StoredProposal {
     ...(iso(rows.proposal.mergedAt) ? { merged_at: iso(rows.proposal.mergedAt) } : {}),
     created_at: iso(rows.proposal.createdAt),
     updated_at: iso(rows.proposal.updatedAt)
-  });
+  }, "proposal.stored");
   return {
     ...proposal,
-    reviews: rows.reviews.map((row) => reviewSchema.parse({
+    reviews: rows.reviews.map((row) => parseOutputContract(reviewSchema, {
       id: row.id,
       proposal_id: row.proposalId,
       reviewer_kind: row.reviewerKind,
@@ -1324,7 +1356,7 @@ function storedRowsToProposal(rows: StoredProposalRows): StoredProposal {
       ...(iso(row.reasonFedBackAt) ? { reason_fed_back_at: iso(row.reasonFedBackAt) } : {}),
       created_at: iso(row.createdAt),
       updated_at: iso(row.updatedAt)
-    }))
+    }, "proposal.stored-review"))
   };
 }
 
@@ -1571,21 +1603,21 @@ function mergeCandidateChoiceResult(row: MergeProposalRow): MergeProposalCandida
   if (!candidate) {
     throw new ProposalServiceError(409, "merge_proposal_candidate_missing", "被选择的建议内容已经不可用。");
   }
-  return mergeProposalCandidateChoiceResultSchema.parse({
+  return parseOutputContract(mergeProposalCandidateChoiceResultSchema, {
     merge_proposal_id: row.id,
     conflict_key: row.conflictKey,
     chosen_option_key: optionKey,
     ...(row.chosenByUserId ? { chosen_by_user_id: row.chosenByUserId } : {}),
     chosen_at: chosenAt,
     candidate
-  });
+  }, "proposal.merge-candidate-choice");
 }
 
 function conflictListResult(conflicts: ProposalConflict[]): ProposalConflictListResult {
-  return proposalConflictListResultSchema.parse({
+  return parseOutputContract(proposalConflictListResultSchema, {
     conflicts,
     ...(conflicts.length === 0 ? { empty_state: "no_conflicts" } : {})
-  });
+  }, "proposal.conflict-list");
 }
 
 export function createInMemoryProposalService(options: {
@@ -1643,7 +1675,7 @@ export function createInMemoryProposalService(options: {
         updated_at: at
       };
 
-      const proposal = proposalSchema.parse(proposalBase);
+      const proposal = parseOutputContract(proposalSchema, proposalBase, "proposal.memory");
       return save({
         ...proposal,
         reviews: []
@@ -1663,7 +1695,7 @@ export function createInMemoryProposalService(options: {
     },
 
     async listReviewableForUser() {
-      // 内存双不建模工作项归属;返回所有 opened/reviewed 提议(测试/开发足够)。
+      // 内存双不建模工作项/工作区归属;返回所有 opened/reviewed 提议(测试/开发足够)。
       return [...proposals.values()]
         .filter((proposal) => proposal.status === "opened" || proposal.status === "reviewed")
         .map((proposal) => ({
@@ -1700,13 +1732,13 @@ export function createInMemoryProposalService(options: {
         created_at: at,
         updated_at: at
       };
-      const review = reviewSchema.parse(reviewBase);
-      const updated = proposalSchema.parse({
+      const review = parseOutputContract(reviewSchema, reviewBase, "proposal.memory-review");
+      const updated = parseOutputContract(proposalSchema, {
         ...proposal,
         status: input.decision === "approve" ? "reviewed" : "rejected",
         reviewed_at: at,
         updated_at: at
-      });
+      }, "proposal.memory");
       return save({
         ...updated,
         reviews: [...proposal.reviews, review]
@@ -1726,13 +1758,13 @@ export function createInMemoryProposalService(options: {
       }
 
       const at = now().toISOString();
-      const updated = proposalSchema.parse({
+      const updated = parseOutputContract(proposalSchema, {
         ...proposal,
         status: "merged",
         merge_snapshot_id: nextId(),
         merged_at: at,
         updated_at: at
-      });
+      }, "proposal.memory");
       return save({
         ...updated,
         reviews: proposal.reviews
@@ -1785,6 +1817,21 @@ export function createDbProposalService(repository: ProposalRepository, options:
       throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
     }
     return storedRowsToProposal(rows);
+  }
+
+  async function throwReviewWriteMiss(proposalId: string): Promise<never> {
+    const rows = await repository.findById(proposalId);
+    if (!rows) {
+      throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
+    }
+    const proposal = storedRowsToProposal(rows);
+    if (proposal.status === "merged") {
+      throw new ProposalServiceError(409, "proposal_already_merged", "这份变更申请已经被采纳。");
+    }
+    if (proposal.status === "rejected") {
+      throw new ProposalServiceError(409, "proposal_rejected", "这份变更申请已经被打回，不能采纳。");
+    }
+    throw new ProposalServiceError(409, "proposal_state_changed", "这份变更申请状态刚刚变了，请刷新后重试。");
   }
 
   // P-COLLAB「对一下底稿再采纳」：对着最新正式版重算冲突 + 生成 AI 融合候选(不动账本),
@@ -1879,6 +1926,9 @@ export function createDbProposalService(repository: ProposalRepository, options:
         if (error instanceof ProposalRepositoryDuplicateTargetKeyError) {
           throw new ProposalServiceError(422, error.code, "变更申请里有多处改动指向同一个对象，请合并后重试。");
         }
+        if (error instanceof ProposalRepositoryBranchWorkItemMismatchError) {
+          throw new ProposalServiceError(422, error.code, "变更申请分支不属于这个事项，请刷新后重试。");
+        }
         throw error;
       }
       return storedRowsToProposal(rows);
@@ -1903,6 +1953,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
       const rows = await repository.listReviewable({
         submitterUserId: input.user.id,
         includeAll: input.user.isAdmin,
+        ...(input.user.workspaceId ? { workspaceId: input.user.workspaceId } : {}),
         limit: input.limit ?? 50
       });
       return rows.map((row) => ({
@@ -1951,7 +2002,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
         at
       });
       if (!rows) {
-        throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
+        return await throwReviewWriteMiss(input.proposalId);
       }
       // R6.M1：用户打回并写了原因 → 沉淀为该用户的 correction 记忆（best-effort，失败不阻断审批）。
       // M26：仅当 remember === "always" 才永久沉淀（与 approvals.ts 的 shouldLearnAlways 语义一致）；
@@ -1990,12 +2041,16 @@ export function createDbProposalService(repository: ProposalRepository, options:
       const mergedAt = now();
       const allMergeConflicts = (await repository.listConflictsByWorkItem(proposal.work_item_id))
         .filter((conflict) => conflict.proposal_id === proposal.id);
-      // L#85：调用方已用 accept_incoming 处理掉的冲突，不必再花一次 LLM 调用 + 读文件去生成融合候选。
+      // L#85：调用方已明确处理掉的冲突，不必再花一次 LLM 调用 + 读文件去生成融合候选。
+      const keepCurrentTargetKeys = input.conflictResolution?.bulkAction?.action === "keep_current"
+        ? input.conflictResolution.bulkAction.targetKeys
+        : [];
       const resolvedTargetKeys = new Set<string>([
         ...(input.conflictResolution?.acceptIncomingTargetKeys ?? []),
         ...(input.conflictResolution?.bulkAction?.action === "accept_incoming"
           ? input.conflictResolution.bulkAction.targetKeys
-          : [])
+          : []),
+        ...keepCurrentTargetKeys
       ]);
       const mergeConflicts = resolvedTargetKeys.size > 0
         ? allMergeConflicts.filter((conflict) => !resolvedTargetKeys.has(conflict.target_key))

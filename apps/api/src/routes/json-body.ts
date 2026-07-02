@@ -2,17 +2,20 @@ import { HTTPException } from "hono/http-exception";
 
 type JsonRequestContext = {
   req: {
-    json: () => Promise<unknown>;
+    text: () => Promise<string>;
   };
 };
 
 export const malformedJsonMessage = "Request body is not valid JSON.";
 export const jsonObjectMessage = "Request body must be a JSON object.";
 
-export async function readJsonObject(c: JsonRequestContext): Promise<Record<string, unknown>> {
+export function jsonObjectFromText(text: string): Record<string, unknown> {
   let value: unknown;
+  if (!text.trim()) {
+    return {};
+  }
   try {
-    value = await c.req.json();
+    value = JSON.parse(text) as unknown;
   } catch {
     throw new HTTPException(400, { message: malformedJsonMessage });
   }
@@ -20,4 +23,8 @@ export async function readJsonObject(c: JsonRequestContext): Promise<Record<stri
     throw new HTTPException(400, { message: jsonObjectMessage });
   }
   return value as Record<string, unknown>;
+}
+
+export async function readJsonObject(c: JsonRequestContext): Promise<Record<string, unknown>> {
+  return jsonObjectFromText(await c.req.text());
 }

@@ -97,11 +97,11 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   });
 });
 
-test("drive preview/download resource links can bypass the delegated API action proxy", () => {
+test("drive download resource links can bypass the delegated API action proxy", () => {
   const nativeLink = {
     dataset: {
       nativeResourceLink: "true",
-      actionId: "drive_preview"
+      actionId: "drive_download"
     }
   } as unknown as HTMLElement;
   const mutationLink = {

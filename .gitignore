@@ -18,6 +18,7 @@ venv/
 *.sqlite
 *.sqlite3
 backups/
+apps/api/data/project-drive/uploads/*/*/
 .env
 .env.*
 !.env.example

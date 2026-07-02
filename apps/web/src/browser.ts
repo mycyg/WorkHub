@@ -62,6 +62,7 @@ import {
   selectionNotice,
   sessionNextQuestionIdFromHref,
   setDocumentLocale,
+  safeHref,
   showRouteNotice as showSharedRouteNotice,
   sseDirtyGuardNotice,
   sseRefreshNotice,
@@ -89,6 +90,15 @@ import {
 const root = document.getElementById("root");
 const liveLastEventIdStorageKey = "workhub.live.lastEventId";
 type BrowserApiClient = ReturnType<typeof createApiClient>;
+type DrivePreviewPayload = {
+  filename?: string | undefined;
+  mime?: string | undefined;
+  size_bytes?: number | undefined;
+  preview_type?: string | undefined;
+  text?: string | undefined;
+  truncated?: boolean | undefined;
+  download_href?: string | undefined;
+};
 const noticeTimerState: RouteNoticeTimerState = {};
 let readyRouteBindings: AbortController | undefined;
 let liveDirtyGuardCount = 0;
@@ -110,6 +120,51 @@ function startIntentText(actionTarget: HTMLElement) {
   const route = actionTarget.closest<HTMLElement>("[data-r4-route-component=\"intake\"]");
   const input = route?.querySelector<HTMLTextAreaElement>("[data-s1-day1-intent-input]");
   return input?.value.trim() ?? "";
+}
+
+function drivePreviewTitle(preview: DrivePreviewPayload, locale: WorkHubLocale) {
+  const filename = preview.filename?.trim();
+  if (locale === "en-US") {
+    return filename ? `Preview: ${filename}` : "File preview";
+  }
+  return filename ? `预览：${filename}` : "文件预览";
+}
+
+function drivePreviewFallbackText(locale: WorkHubLocale) {
+  return locale === "en-US"
+    ? "This file has no text preview. Download it to inspect the original."
+    : "这个文件暂无文本预览，请下载原文件查看。";
+}
+
+function drivePreviewPanelHtml(preview: DrivePreviewPayload, locale: WorkHubLocale) {
+  const meta = [
+    preview.preview_type ? (locale === "en-US" ? `type ${preview.preview_type}` : `类型 ${preview.preview_type}`) : "",
+    Number.isFinite(preview.size_bytes) ? (locale === "en-US" ? `${preview.size_bytes} bytes` : `${preview.size_bytes} 字节`) : "",
+    preview.truncated ? (locale === "en-US" ? "truncated" : "已截断") : ""
+  ].filter(Boolean).join(" · ");
+  const download = preview.download_href
+    ? `<a class="wh-btn" href="${escapeHtml(safeHref(preview.download_href))}" data-action-id="drive_download" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(locale === "en-US" ? "Download" : "下载")}</a>`
+    : "";
+  const text = typeof preview.text === "string" && preview.text.length > 0
+    ? preview.text
+    : drivePreviewFallbackText(locale);
+  return `<h3>${escapeHtml(drivePreviewTitle(preview, locale))}</h3>${meta ? `<p>${escapeHtml(meta)}</p>` : ""}<pre class="wh-r5-drive-preview-body">${escapeHtml(text)}</pre>${download ? `<div class="wh-r4-route-actions">${download}</div>` : ""}`;
+}
+
+function renderDrivePreviewPanel(actionTarget: HTMLElement, preview: DrivePreviewPayload, locale: WorkHubLocale) {
+  const route = actionTarget.closest<HTMLElement>("[data-r4-route-component=\"drive\"]");
+  if (!route) {
+    return false;
+  }
+  route.querySelector<HTMLElement>("[data-r5-drive-preview-panel]")?.remove();
+  const anchor = actionTarget.closest<HTMLElement>("[data-r4-drive-accepted-deliverable],[data-r4-drive-item]");
+  const panel = document.createElement("section");
+  panel.className = "wh-card wh-r4-route-card wh-r5-drive-preview-panel";
+  panel.dataset.r5DrivePreviewPanel = "true";
+  panel.innerHTML = drivePreviewPanelHtml(preview, locale);
+  (anchor ?? route).insertAdjacentElement(anchor ? "afterend" : "beforeend", panel);
+  panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  return true;
 }
 
 function sleep(ms: number) {
@@ -655,6 +710,23 @@ function bindGoldPathNavigation(
       showRouteNotice(shellRoot, desktopRequiredNotice(locale, actionId));
       return;
     }
+    if (actionId === "drive_preview") {
+      event.preventDefault();
+      try {
+        const preview = await client.request<DrivePreviewPayload>(href);
+        if (!renderDrivePreviewPanel(actionTarget, preview, locale)) {
+          showRouteNotice(
+            shellRoot,
+            actionSuccessNotice(locale, drivePreviewTitle(preview, locale), actionId),
+            `<div data-r5-drive-preview-panel="true">${drivePreviewPanelHtml(preview, locale)}</div>`,
+            0
+          );
+        }
+      } catch (error) {
+        showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+      }
+      return;
+    }
     if (isNativeResourceLink(actionTarget)) {
       return;
     }
@@ -830,7 +902,18 @@ function bindGoldPathNavigation(
             acceptedDeliverableRestore.workItemId,
             acceptedDeliverableRestore.acceptedChangeId
           );
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          if (result.accepted_deliverable.drive_href) {
+            await navigateWebRoute(result.accepted_deliverable.drive_href, client, locale);
+          } else {
+            await renderCurrentRoute(client, locale);
+          }
+          if (root) {
+            const filename = result.accepted_deliverable.filename?.trim();
+            const body = filename
+              ? (locale === "zh-CN" ? `已恢复并打开：${filename}` : `Restored and opened: ${filename}`)
+              : actionSummary(result, locale);
+            showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
+          }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
         }
@@ -870,8 +953,8 @@ function bindGoldPathNavigation(
           if (root) {
             const body = deleteTargetName
               ? (locale === "zh-CN"
-                ? `已把「${deleteTargetName}」移到回收站，可用上方「恢复」按钮找回。`
-                : `Moved “${deleteTargetName}” to the recycle bin — use the Restore button above to bring it back.`)
+                ? `已把「${deleteTargetName}」移到回收站，可在回收站中恢复。`
+                : `Moved “${deleteTargetName}” to the recycle bin — restore it from the recycle bin.`)
               : actionSummary(result, locale);
             showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
           }

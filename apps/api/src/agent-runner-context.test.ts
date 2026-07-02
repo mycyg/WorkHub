@@ -7,7 +7,7 @@ import { formatWorkItemContext } from "./workers/agent-runner.js";
 
 // findings[#6]：工单字段完全由用户控制；formatWorkItemContext 的输出最终落入 <work_item_context> 围栏，
 // 因此其输出本身必须已中和围栏标签——一行字面 </work_item_context> 不得逃逸成真定界符。
-function rowsWith(over: { rawDescription?: string; title?: string; summaryMd?: string }): StoredWorkItemDetailRows {
+function rowsWith(over: { rawDescription?: string; title?: string; summaryMd?: string; evidenceBindings?: StoredWorkItemDetailRows["evidenceBindings"] }): StoredWorkItemDetailRows {
   return {
     workItem: {
       id: "wi-1",
@@ -29,7 +29,7 @@ function rowsWith(over: { rawDescription?: string; title?: string; summaryMd?: s
     agentSteps: [],
     latestProposal: null,
     acceptedDeliverables: [],
-    evidenceBindings: [],
+    evidenceBindings: over.evidenceBindings ?? [],
     driveSourceComment: null,
     meetingSourceInsight: null
   } as unknown as StoredWorkItemDetailRows;
@@ -64,4 +64,30 @@ test("formatWorkItemContext neutralizes fence tags in the title and summary too"
 test("formatWorkItemContext leaves benign content untouched", () => {
   const out = formatWorkItemContext(rowsWith({ rawDescription: "a < b 且 c > d，<div>不是围栏标签</div>" }), project, []);
   assert.equal(out.includes("a < b 且 c > d，<div>不是围栏标签</div>"), true);
+});
+
+test("formatWorkItemContext includes bound evidence details for the worker", () => {
+  const out = formatWorkItemContext(
+    rowsWith({
+      evidenceBindings: [{
+        contentJson: {
+          evidence_refs: [{
+            id: "93000000-0000-4000-8000-000000000901",
+            source_type: "drive_file",
+            source_id: "drive-file-1",
+            title: "用户上传的验收标准",
+            excerpt: "必须输出三条验收要点，并保留 Markdown 格式。",
+            href: "/api/drive/files/drive-file-1"
+          }]
+        }
+      }] as unknown as StoredWorkItemDetailRows["evidenceBindings"]
+    }),
+    project,
+    []
+  );
+
+  assert.match(out, /Evidence bindings:/u);
+  assert.match(out, /用户上传的验收标准/u);
+  assert.match(out, /drive-file-1/u);
+  assert.match(out, /必须输出三条验收要点/u);
 });

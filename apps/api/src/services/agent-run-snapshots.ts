@@ -6,6 +6,7 @@ import type { AuditLogRepository, SnapshotRepository } from "@workhub/db";
 import type { SnapshotHook, SnapshotHookInput } from "@workhub/tools";
 
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
+import { getDefaultStructuredLogger } from "../logging.js";
 import { getDefaultAuditStores } from "./audit-stores.js";
 
 export type AgentRunSnapshotHookOptions = {
@@ -55,22 +56,32 @@ export function createAgentRunSnapshotHook(options: AgentRunSnapshotHookOptions)
       ...(snapshot.contentSha256 ? { contentSha256: snapshot.contentSha256 } : {}),
       createdByKind: snapshot.createdByKind
     });
-    await stores.auditLogs.createAuditLog({
-      orgId: options.settings.auth.defaultOrgId,
-      workspaceId: options.settings.auth.defaultWorkspaceId,
-      actorKind: "ai",
-      actorNickname: "WorkHub AI",
-      entityType: "work_item",
-      entityId: row.workItemId,
-      action: `tool.${input.toolId}.snapshot`,
-      detailJson: {
-        run_id: input.runId ?? options.run.run_id,
-        tool_id: input.toolId,
-        side_effect: input.sideEffect,
-        input_preview: preview(input.input)
-      },
-      snapshotId: row.id
-    });
+    const action = `tool.${input.toolId}.snapshot`;
+    try {
+      await stores.auditLogs.createAuditLog({
+        orgId: options.run.org_id ?? options.settings.auth.defaultOrgId,
+        workspaceId: options.run.workspace_id ?? options.settings.auth.defaultWorkspaceId,
+        actorKind: "ai",
+        actorNickname: "WorkHub AI",
+        entityType: "work_item",
+        entityId: row.workItemId,
+        action,
+        detailJson: {
+          run_id: input.runId ?? options.run.run_id,
+          tool_id: input.toolId,
+          side_effect: input.sideEffect,
+          input_preview: preview(input.input)
+        },
+        snapshotId: row.id
+      });
+    } catch (error) {
+      getDefaultStructuredLogger().warn("agent_run_snapshot_audit_write_failed", {
+        action,
+        snapshotId: row.id,
+        workItemId: row.workItemId,
+        error
+      });
+    }
     return { snapshotId: row.id };
   };
 }

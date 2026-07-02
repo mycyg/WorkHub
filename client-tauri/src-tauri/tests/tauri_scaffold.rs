@@ -74,6 +74,83 @@ fn tauri_windows_match_the_shell_window_contract() {
 }
 
 #[test]
+fn transparent_windows_declare_a_fully_transparent_webview_background() {
+    let config = read_json("tauri.conf.json");
+    let windows = config["app"]["windows"].as_array().unwrap();
+
+    for window in windows {
+        if window["transparent"].as_bool() == Some(true) {
+            assert_eq!(
+                window["backgroundColor"], "#00000000",
+                "transparent window {:?} must not let the webview fall back to a white background",
+                window["label"]
+            );
+        }
+    }
+}
+
+#[test]
+fn macos_main_window_restores_native_vibrancy_for_real_frosted_glass() {
+    // 纯透明窗里 CSS backdrop-filter 没有可糊的内容，半透白底只是奶白不带模糊——真·毛玻璃必须靠 OS vibrancy。
+    // 主窗仍保持透明（背景色 alpha≈0），vibrancy 只在 webview 之后贴一层系统材质，透出并模糊桌面。
+    let main_rs_path = manifest_dir().join("src/main.rs");
+    let raw = fs::read_to_string(&main_rs_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", main_rs_path.display()));
+
+    assert!(
+        raw.contains("apply_vibrancy("),
+        "main window must re-apply native vibrancy so the Spotlight glass actually frosts the desktop"
+    );
+    assert!(
+        raw.contains("NSVisualEffectMaterial::HudWindow"),
+        "Spotlight vibrancy should use the HudWindow material to match the glass tint"
+    );
+    assert!(
+        raw.contains("WORKHUB_DISABLE_VIBRANCY"),
+        "vibrancy must stay gated behind WORKHUB_DISABLE_VIBRANCY for automated screenshot capture"
+    );
+}
+
+#[test]
+fn macos_main_window_receives_pointer_events_with_a_native_one_alpha_hit_surface() {
+    let main_rs_path = manifest_dir().join("src/main.rs");
+    let raw = fs::read_to_string(&main_rs_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", main_rs_path.display()));
+
+    assert!(
+        raw.contains("Color(0, 0, 0, 1)"),
+        "macOS transparent windows need a native one-alpha hit surface; CSS zero-alpha centers still click through"
+    );
+    assert!(
+        raw.contains(".set_ignore_cursor_events(false)"),
+        "transparent Spotlight must keep native pointer reception enabled"
+    );
+}
+
+#[test]
+fn macos_main_window_exposes_manual_drag_fallback_for_transparent_search_center() {
+    let main_rs_path = manifest_dir().join("src/main.rs");
+    let raw = fs::read_to_string(&main_rs_path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", main_rs_path.display()));
+
+    assert!(
+        raw.contains("setMovableByWindowBackground(true)"),
+        "transparent Spotlight must enable native NSWindow background dragging after the WKWebView is attached"
+    );
+    assert!(
+        raw.contains("setMovable(true)"),
+        "background dragging depends on the NSWindow staying movable"
+    );
+    assert!(
+        raw.contains("fn move_main_window_by("),
+        "Spotlight center dragging cannot depend only on native drag regions because the search input can consume the gesture"
+    );
+    assert!(raw.contains("window.outer_position()"));
+    assert!(raw.contains("window.set_position(TauriLogicalPosition::new("));
+    assert!(raw.contains("move_main_window_by,"));
+}
+
+#[test]
 fn tauri_bundle_targets_are_platform_native_not_windows_only() {
     let config = read_json("tauri.conf.json");
     let targets = &config["bundle"]["targets"];
@@ -118,7 +195,11 @@ fn default_capability_is_local_and_window_scoped() {
     assert_eq!(windows, HashSet::from(["main", "pet"]));
     assert_eq!(
         permissions,
-        HashSet::from(["core:default", "core:window:allow-start-dragging"])
+        HashSet::from([
+            "core:default",
+            "core:window:allow-start-dragging",
+            "core:window:allow-start-resize-dragging"
+        ])
     );
     assert!(permissions.iter().all(|permission| {
         !permission.starts_with("fs:")

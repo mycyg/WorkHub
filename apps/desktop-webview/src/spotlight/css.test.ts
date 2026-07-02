@@ -39,9 +39,63 @@ test("Spotlight visual language uses Apple blue/cyan accents instead of purple g
   assert.doesNotMatch(css, /#7c83ff|#b57bff/u);
 });
 
+test("Spotlight shell keeps a translucent liquid-glass surface", () => {
+  assert.match(css, /html,body,#root\{margin:0;background:rgba\(0,0,0,0\)!important\}/u);
+  assert.match(css, /\.wh-spot\{[^}]*-webkit-app-region:no-drag;[^}]*background:linear-gradient\(135deg,rgba\(255,255,255,\.52\),rgba\(255,255,255,\.36\)\)/u);
+  assert.doesNotMatch(css, /\.wh-spot::before\{/u);
+  assert.doesNotMatch(css, /background:rgba\(255,255,255,\.0[0-9]+\)/u);
+  assert.match(css, /\.wh-spot\{[^}]*backdrop-filter:blur\(40px\) saturate\(185%\)/u);
+  assert.match(css, /\.wh-spot\{[^}]*-webkit-backdrop-filter:blur\(40px\) saturate\(185%\)/u);
+  assert.match(css, /\.wh-liquid-glass-warp\{[^}]*--wh-liquid-frost:\.6px/u);
+  assert.match(css, /\.wh-liquid-glass-refract\{[^}]*filter:none;-webkit-filter:none/u);
+  assert.doesNotMatch(css, /\.wh-liquid-glass-warp--spotlight \.wh-liquid-glass-refract\{[^}]*backdrop-filter/u);
+  assert.doesNotMatch(css, /\.wh-liquid-glass-warp--spotlight \.wh-liquid-glass-refract\{[^}]*-webkit-backdrop-filter/u);
+  assert.match(css, /\.wh-liquid-glass-warp--spotlight \.wh-liquid-glass-edge\{backdrop-filter:url\(#workhub-liquid-glass-spotlight-filter\) blur\(var\(--wh-liquid-frost\)\)/u);
+  assert.doesNotMatch(css, /(?:^|[;{])filter:url\(#workhub-liquid-glass/u);
+  assert.doesNotMatch(css, /--wh-liquid-frost:(?:1[0-9]|[2-9][0-9])px/u);
+  assert.match(css, /\.wh-liquid-glass-warp\{[^}]*background:transparent[^}]*overflow:hidden/u);
+  assert.doesNotMatch(css, /\.wh-liquid-glass-warp\{[^}]*backdrop-filter/u);
+  assert.doesNotMatch(css, /\.wh-liquid-glass-warp\{[^}]*-webkit-backdrop-filter/u);
+  assert.doesNotMatch(css, /--wh-liquid-opacity|opacity:var\(--wh-liquid-opacity/u);
+  assert.match(css, /\.wh-liquid-glass-edge--top\{left:0;right:0;top:0;height:var\(--wh-liquid-edge,12px\)/u);
+  assert.match(css, /\.wh-liquid-glass-edge--bottom\{left:0;right:0;bottom:0;height:var\(--wh-liquid-edge,12px\)/u);
+  assert.doesNotMatch(css, /-webkit-mask-composite:xor|mask-composite:exclude/u);
+  // 盒子和 Cuu 气泡同一套玻璃语言：亮玻璃描边 + 顶部内高光 + 柔投影。
+  assert.match(css, /\.wh-spot\{[^}]*border:1px solid rgba\(255,255,255,\.7\)/u);
+  assert.match(css, /\.wh-spot\{[^}]*box-shadow:0 24px 64px -26px rgba\(31,35,53,\.42\),inset 0 1px 0 rgba\(255,255,255,\.75\)/u);
+  assert.doesNotMatch(css, /wh-liquid-glass-tint|--wh-liquid-tint|mix-blend-mode:screen/u);
+  assert.match(css, /\.wh-spot>\.wh-liquid-glass-content\{display:flex;flex-direction:column/u);
+  assert.match(css, /\.wh-spot-top\{[^}]*-webkit-app-region:no-drag;cursor:grab/u);
+  assert.match(css, /\.wh-spot-top:active\{cursor:grabbing\}/u);
+  assert.match(css, /\.wh-spot-back,\.wh-spot-resize,\.wh-spot button,\.wh-spot a,\.wh-spot select,\.wh-spot textarea,\.wh-spot \[contenteditable=true\]\{-webkit-app-region:no-drag\}/u);
+  assert.doesNotMatch(css, /\.wh-spot-top>\*\{-webkit-app-region:no-drag\}/u);
+  assert.doesNotMatch(css, /\.wh-spot-field\{[^}]*-webkit-app-region/u);
+  assert.match(css, /\.wh-spot-drag-sheet\{position:absolute;inset:0;display:none;z-index:3;border:0;background:transparent;cursor:grab/u);
+  assert.match(css, /\.wh-spot\[data-mode="launcher"\]\[data-collapsed="true"\] \.wh-spot-drag-sheet\{display:block\}/u);
+  assert.match(css, /\.wh-spot-drag-sheet:active\{cursor:grabbing\}/u);
+  assert.match(css, /\.wh-spot-resize\{position:absolute;z-index:4;pointer-events:auto;background:transparent;border:0;padding:0;-webkit-app-region:no-drag\}/u);
+  assert.match(css, /input\.wh-spot-field:focus\{outline:0!important;box-shadow:none!important\}/u);
+  assert.doesNotMatch(css, /\.wh-spot-back\{[^}]*background:var\(--ds-glass\)/u);
+  assert.doesNotMatch(
+    css,
+    /\.(?:wh-spot-cap|wh-spot-opt|wh-spot-row|wh-spot-metric|wh-spot-change|wh-spot-bars|wh-spot-check|wh-spot-reason-text)\{[^}]*backdrop-filter/u
+  );
+  assert.doesNotMatch(
+    css,
+    /\.(?:wh-spot-cap|wh-spot-opt|wh-spot-row|wh-spot-metric|wh-spot-change|wh-spot-bars|wh-spot-check|wh-spot-reason-text)\{[^}]*-webkit-backdrop-filter/u
+  );
+  assert.doesNotMatch(css, /\.wh-spot \.wh-conflict-head,[^{]+\{[^}]*backdrop-filter/u);
+});
+
+test("Spotlight launcher cards stay glassy instead of white tiles", () => {
+  assert.match(css, /\.wh-spot\[data-mode="launcher"\] \.wh-spot-cap\{[^}]*background:transparent/u);
+  assert.match(css, /\.wh-spot\[data-mode="launcher"\] \.wh-spot-cap:hover\{[^}]*background:transparent/u);
+  assert.doesNotMatch(css, /background:rgba\(255,255,255,\.7[0-9]?\)|rgba\(255,255,255,\.76\)/u);
+});
+
 test("Spotlight proposal action notes and skipped checks are visibly distinct", () => {
   assert.match(css, /\.wh-spot-action-note\{[^}]*flex:1 0 100%;[^}]*font:600 12px\/1\.4 var\(--ds-font\)/u);
-  assert.match(css, /\.wh-spot-check--skipped\{background:rgba\(142,142,147,\.14\);color:var\(--ds-ink-muted\)\}/u);
+  assert.match(css, /\.wh-spot-check--skipped\{background:transparent;border-color:rgba\(142,142,147,\.18\);color:var\(--ds-ink-muted\)\}/u);
 });
 
 test("Spotlight conflict actions render as glass buttons instead of raw links", () => {
@@ -51,7 +105,7 @@ test("Spotlight conflict actions render as glass buttons instead of raw links", 
 });
 
 test("Spotlight request-changes composer has editable glass feedback controls", () => {
-  assert.match(css, /\.wh-spot-reason-text\{[^}]*min-height:72px;[^}]*resize:vertical;[^}]*background:rgba\(255,255,255,\.58\)/u);
-  assert.match(css, /\.wh-spot-reason\[data-sel="true"\]\{border-color:var\(--ds-danger\);color:var\(--ds-danger\);background:var\(--ds-danger-soft\)\}/u);
+  assert.match(css, /\.wh-spot-reason-text\{[^}]*min-height:72px;[^}]*resize:vertical;[^}]*background:transparent/u);
+  assert.match(css, /\.wh-spot-reason\[data-sel="true"\]\{border-color:var\(--ds-danger\);color:var\(--ds-danger\);background:transparent/u);
   assert.match(css, /\.wh-spot-reason-actions\{display:flex;justify-content:flex-end/u);
 });

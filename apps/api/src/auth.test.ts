@@ -7,7 +7,7 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
-import { isSessionActive } from "@workhub/db";
+import { hashSessionToken, isSessionActive } from "@workhub/db";
 import type {
   AuditLogRepository,
   AuditLogRow,
@@ -20,6 +20,7 @@ import type {
   CreateWorkspaceMembershipInput,
   CredentialRepository,
   InviteRepository,
+  MembershipRole,
   SessionRepository,
   SessionRow,
   UserAuthRow,
@@ -50,7 +51,10 @@ import {
 } from "./middleware/auth.js";
 import { hashPassword, verifyPassword } from "./auth/password.js";
 import { createAuthRoutes } from "./routes/auth.js";
+import { createClientDeviceRoutes } from "./routes/client-devices.js";
+import { httpErrorCodeFor } from "./http-error-codes.js";
 import { createAdminClaimThrottle } from "./middleware/admin-claim-throttle.js";
+import { malformedJsonMessage } from "./routes/json-body.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
 
@@ -231,6 +235,12 @@ class MemoryDevices implements ClientDeviceRepository {
   }
 }
 
+class ThrowingCleanupDevices extends MemoryDevices {
+  listByUser(): ReturnType<MemoryDevices["listByUser"]> {
+    return Promise.reject(new Error("device cleanup failed"));
+  }
+}
+
 function sessionRow(input: CreateSessionInput, seq = 1): SessionRow {
   return {
     id: input.id ?? `30000000-0000-4000-8000-${String(seq).padStart(12, "0")}`,
@@ -301,6 +311,12 @@ class MemorySessions implements SessionRepository {
     const before = this.rows.length;
     this.rows = this.rows.filter((row) => row.absoluteExpiresAt >= at);
     return before - this.rows.length;
+  }
+}
+
+class ThrowingCleanupSessions extends MemorySessions {
+  revokeAllForUser(): ReturnType<MemorySessions["revokeAllForUser"]> {
+    return Promise.reject(new Error("session cleanup failed"));
   }
 }
 
@@ -390,6 +406,12 @@ class MemoryCredentials implements CredentialRepository {
   }
 }
 
+class ThrowingCleanupCredentials extends MemoryCredentials {
+  deleteByUserId(): ReturnType<MemoryCredentials["deleteByUserId"]> {
+    return Promise.reject(new Error("credential cleanup failed"));
+  }
+}
+
 function membershipRow(input: CreateWorkspaceMembershipInput, seq = 1): WorkspaceMembershipRow {
   return {
     id: input.id ?? `50000000-0000-4000-8000-${String(seq).padStart(12, "0")}`,
@@ -428,7 +450,11 @@ class MemoryMemberships implements WorkspaceMembershipRepository {
     if (!row) {
       return null;
     }
-    return { workspaceId: row.workspaceId, orgId: this.orgByWorkspace[row.workspaceId] ?? "00000000-0000-4000-8000-0000000000fa" };
+    return {
+      workspaceId: row.workspaceId,
+      orgId: this.orgByWorkspace[row.workspaceId] ?? "00000000-0000-4000-8000-0000000000fa",
+      role: row.role as MembershipRole
+    };
   }
 
   async create(input: CreateWorkspaceMembershipInput) {
@@ -595,6 +621,16 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
   return app;
 }
 
+function withProductionHttpErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
+  app.onError((error, c) => {
+    if (error instanceof HTTPException) {
+      return c.json({ ok: false, error: { code: httpErrorCodeFor(error), message: error.message } }, error.status);
+    }
+    throw error;
+  });
+  return app;
+}
+
 async function signedCookie(cookieToken: string, runtimeSettings: Settings) {
   return generateSignedCookie(COOKIE_NAME, cookieToken, runtimeSettings.auth.cookieSecret);
 }
@@ -621,6 +657,20 @@ test("valid device token wins over a different signed cookie identity", async ()
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { id: alice.id });
   assert.deepEqual(deviceRepo.touched, ["20000000-0000-4000-8000-000000000001"]);
+});
+
+test("branded WorkHub client token header authenticates like the legacy local header", async () => {
+  const alice = user();
+  const authDeps = deps([alice], [device()]);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.get("/who", createCurrentUserMiddleware(authDeps), (c) => c.json({ id: c.var.currentUser.id }));
+
+  const response = await app.request("/who", {
+    headers: { "X-WorkHub-Client-Token": "client-token-alice" }
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { id: alice.id });
 });
 
 test("soft-deleted cookie user is treated as not identified", async () => {
@@ -700,6 +750,22 @@ test("findings: current-user gate fails closed on a present-but-invalid client t
     headers: { Cookie: cookie, [LOCAL_CLIENT_HEADER]: "bad-token" }
   });
   assert.equal(badToken.status, 403);
+});
+
+test("GET /auth/me keeps the hard 403 for revoked desktop client tokens (desktop self-heal depends on it)", async () => {
+  // R9 批次0-1：桌面端 ensureDesktopClientToken 只有在 client.me() 抛 invalid_client_token
+  // 时才会清掉本地死 token 重新 bootstrap。/me 若把它吞成 200 null，被吊销的设备将永久静默失联。
+  const alice = user();
+  const runtimeSettings = settings();
+  const authDeps = deps([alice], [device({ revokedAt: now })], runtimeSettings);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/me", {
+    headers: { [LOCAL_CLIENT_HEADER]: "client-token-alice" }
+  });
+
+  assert.equal(response.status, 403);
 });
 
 test("findings: stream identity fails closed on a present-but-invalid client token (no cookie fallback)", async () => {
@@ -831,8 +897,8 @@ test("registering without a secret stays a regular user", async () => {
   assert.equal(body.is_admin, false);
 });
 
-test("findings: malformed JSON body to /identify is a 400, not a 500", async () => {
-  const app = withErrors(new Hono<AuthEnv>());
+test("findings: malformed JSON body to /identify returns malformed_json, not a generic 400", async () => {
+  const app = withProductionHttpErrors(new Hono<AuthEnv>());
   app.route("/api/auth", createAuthRoutes(deps([], [], settings())));
 
   const response = await app.request("/api/auth/identify", {
@@ -842,6 +908,13 @@ test("findings: malformed JSON body to /identify is a 400, not a 500", async () 
   });
 
   assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "malformed_json",
+      message: malformedJsonMessage
+    }
+  });
 });
 
 test("identity exposes and updates the bilingual locale preference", async () => {
@@ -896,6 +969,61 @@ test("logout rotates the cookie token and revokes only the presented client toke
   assert.equal(response.status, 200);
   assert.notEqual(alice.cookieToken, "cookie-alice");
   assert.equal(currentDevice.revokedAt?.toISOString(), now.toISOString());
+});
+
+test("logout revokes devices presented through the branded WorkHub client token header", async () => {
+  const alice = user();
+  const currentDevice = device();
+  const authDeps = deps([alice], [currentDevice]);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/logout", {
+    method: "POST",
+    headers: { "X-WorkHub-Client-Token": "client-token-alice" }
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(currentDevice.revokedAt?.toISOString(), now.toISOString());
+});
+
+test("logout does not revoke a different user's session cookie when a client token wins identity", async () => {
+  const runtimeSettings = settings({ AUTH_MODE: "password" });
+  const alice = user({ id: "10000000-0000-4000-8000-0000000000f1", nickname: "alice-token" });
+  const bob = user({ id: "10000000-0000-4000-8000-0000000000f2", nickname: "bob-cookie" });
+  const currentDevice = device({ userId: alice.id });
+  const sessions = new MemorySessions();
+  const bobSessionToken = "bob-session-token";
+  const bobSession = await sessions.create({
+    userId: bob.id,
+    tokenHash: hashSessionToken(bobSessionToken),
+    authMethod: "password",
+    absoluteExpiresAt: new Date(now.getTime() + 60_000),
+    idleExpiresAt: new Date(now.getTime() + 60_000)
+  });
+  const authDeps: AuthDependencies = {
+    users: new MemoryUsers([alice, bob]),
+    devices: new MemoryDevices([currentDevice]),
+    sessions,
+    credentials: new MemoryCredentials(),
+    memberships: new MemoryMemberships(),
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/logout", {
+    method: "POST",
+    headers: {
+      [LOCAL_CLIENT_HEADER]: "client-token-alice",
+      Cookie: await signedCookie(bobSessionToken, runtimeSettings)
+    }
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(currentDevice.revokedAt?.toISOString(), now.toISOString());
+  assert.equal(bobSession.revokedAt, null, "logout must not revoke a session belonging to the cookie identity");
 });
 
 test("stream identity resolves without a request-scoped DB session concept", async () => {
@@ -1020,6 +1148,20 @@ test("AUTH_MODE=hybrid resolves sessions and falls back to the legacy cookieToke
   assert.equal(cookieRes.status, 200);
 });
 
+test("AUTH_MODE=hybrid disables the public nickname identify entrypoint", async () => {
+  const runtimeSettings = settings({ AUTH_MODE: "hybrid" });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(deps([], [], runtimeSettings)));
+
+  const response = await app.request("/api/auth/identify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nickname: "legacy-login" })
+  });
+
+  assert.equal(response.status, 404);
+});
+
 test("issueSessionCookie round-trips through resolveCurrentUser in password mode", async () => {
   const runtimeSettings = settings({ AUTH_MODE: "password" });
   const alice = user({ nickname: "alice" });
@@ -1059,20 +1201,23 @@ test("resolveStreamUser resolves a session cookie in password mode", async () =>
 
 // ——— R2 auth epic Phase 3b：密码注册/登录/登出路由 ———
 
-function passwordCtx(seedUsers: UserAuthRow[] = []) {
+function passwordCtx(seedUsers: UserAuthRow[] = [], seedDevices: ClientDeviceAuthRow[] = []) {
   const runtimeSettings = settings({ AUTH_MODE: "password" });
   const memUsers = new MemoryUsers(seedUsers);
+  const devices = new MemoryDevices(seedDevices);
   const sessions = new MemorySessions();
   const credentials = new MemoryCredentials();
+  const memberships = new MemoryMemberships();
   const deps: AuthDependencies = {
     users: memUsers,
-    devices: new MemoryDevices([]),
+    devices,
     sessions,
     credentials,
+    memberships,
     settings: runtimeSettings,
     now: () => now
   };
-  return { deps, sessions, credentials, users: memUsers, runtimeSettings };
+  return { deps, devices, sessions, credentials, memberships, users: memUsers, runtimeSettings };
 }
 
 function jsonPost(body: unknown) {
@@ -1080,7 +1225,7 @@ function jsonPost(body: unknown) {
 }
 
 test("POST /register bootstraps the first user as admin and sets a resolvable session cookie", async () => {
-  const { deps, credentials } = passwordCtx();
+  const { deps, credentials, memberships, runtimeSettings } = passwordCtx();
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/auth", createAuthRoutes(deps));
   app.get("/who", createCurrentUserMiddleware(deps), (c) =>
@@ -1096,6 +1241,10 @@ test("POST /register bootstraps the first user as admin and sets a resolvable se
   const body = (await res.json()) as { is_admin: boolean };
   assert.equal(body.is_admin, true, "首个注册者自举为 admin");
   assert.equal(credentials.rows.length, 1);
+  assert.equal(memberships.rows.length, 1);
+  assert.equal(memberships.rows[0]?.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(memberships.rows[0]?.role, "owner");
+  assert.equal(memberships.rows[0]?.defaultWorkspace, true);
 
   const setCookie = res.headers.get("set-cookie");
   assert.ok(setCookie, "register should set a session cookie");
@@ -1107,7 +1256,7 @@ test("POST /register bootstraps the first user as admin and sets a resolvable se
 
 test("POST /register does not auto-admin when an admin already exists, and rejects duplicate email (409)", async () => {
   const boss = user({ id: "10000000-0000-4000-8000-0000000000ad", nickname: "boss", isAdmin: true });
-  const { deps } = passwordCtx([boss]);
+  const { deps, memberships, runtimeSettings } = passwordCtx([boss]);
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/auth", createAuthRoutes(deps));
 
@@ -1118,6 +1267,10 @@ test("POST /register does not auto-admin when an admin already exists, and rejec
   }));
   assert.equal(first.status, 201);
   assert.equal(((await first.json()) as { is_admin: boolean }).is_admin, false, "已有 admin → 不自举");
+  assert.equal(memberships.rows.length, 1);
+  assert.equal(memberships.rows[0]?.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(memberships.rows[0]?.role, "member");
+  assert.equal(memberships.rows[0]?.defaultWorkspace, true);
 
   // 同邮箱（大小写不同，验 citext 语义）→ 409
   const dup = await app.request("/auth/register", jsonPost({
@@ -1225,6 +1378,51 @@ test("POST /logout revokes the active session in password mode", async () => {
   assert.equal((await app.request("/who", { headers: { Cookie: cookiePair } })).status, 401);
 });
 
+test("POST /password revokes other client device tokens but keeps the current local client", async () => {
+  const alice = user({ id: "10000000-0000-4000-8000-0000000000c3", nickname: "alice" });
+  const currentToken = "current-device-token";
+  const otherToken = "other-device-token";
+  const { deps, credentials, devices } = passwordCtx([
+    alice
+  ], [
+    device({
+      id: "20000000-0000-4000-8000-0000000000c1",
+      userId: alice.id,
+      clientTokenHash: hashClientToken(currentToken)
+    }),
+    device({
+      id: "20000000-0000-4000-8000-0000000000c2",
+      userId: alice.id,
+      clientTokenHash: hashClientToken(otherToken)
+    })
+  ]);
+  credentials.rows.push(credentialRow({
+    userId: alice.id,
+    email: "alice@example.com",
+    passwordHash: await hashPassword("old-pass-1"),
+    passwordAlgo: "scrypt"
+  }));
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+  app.get("/who", createCurrentUserMiddleware(deps), (c) => c.json({ id: c.var.currentUser.id }));
+
+  const response = await app.request("/auth/password", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      [LOCAL_CLIENT_HEADER]: currentToken
+    },
+    body: JSON.stringify({ current_password: "old-pass-1", new_password: "new-pass-1" })
+  });
+
+  assert.equal(response.status, 200);
+  const rows = await devices.listByUser(alice.id);
+  assert.equal(rows.find((row) => row.id.endsWith("c1"))?.revokedAt, null, "current local client remains usable");
+  assert.notEqual(rows.find((row) => row.id.endsWith("c2"))?.revokedAt, null, "other local client is revoked");
+  assert.equal((await app.request("/who", { headers: { [LOCAL_CLIENT_HEADER]: currentToken } })).status, 200);
+  assert.equal((await app.request("/who", { headers: { [LOCAL_CLIENT_HEADER]: otherToken } })).status, 403);
+});
+
 // ——— R2 multi-tenancy epic Phase 2：从成员关系派生 actor 租户 ———
 
 test("resolveHumanActor derives tenant from the user's default membership", async () => {
@@ -1247,6 +1445,7 @@ test("resolveHumanActor derives tenant from the user's default membership", asyn
   assert.equal(actor.orgId, orgId);
   assert.equal(actor.userId, alice.id);
   assert.equal(actor.kind, "human");
+  assert.deepEqual((actor as { roleIds?: readonly string[] }).roleIds, ["owner"]);
 });
 
 test("resolveHumanActor falls back to the single-tenant constant when there is no membership", async () => {
@@ -1316,6 +1515,34 @@ test("POST /users/:id/deactivate (admin) soft-deletes the user and revokes their
   assert.equal(sessions.rows.filter((row) => row.userId === target.id && row.revokedAt === null).length, 0, "sessions revoked");
   const targetDevices = await devices.listByUser(target.id);
   assert.equal(targetDevices.every((d) => d.revokedAt !== null), true, "devices revoked");
+});
+
+test("POST /users/:id/deactivate still succeeds when post-delete cleanup fails", async () => {
+  const runtimeSettings = settings();
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000d5", nickname: "admin", isAdmin: true });
+  const target = user({ id: "10000000-0000-4000-8000-0000000000d6", nickname: "target", cookieToken: "cookie-target-cleanup" });
+  const users = new MemoryUsers([admin, target]);
+  const deps: AuthDependencies = {
+    users,
+    devices: new ThrowingCleanupDevices([]),
+    sessions: new ThrowingCleanupSessions(),
+    credentials: new ThrowingCleanupCredentials(),
+    settings: runtimeSettings,
+    now: () => now,
+    forgetUser: () => {
+      throw new Error("presence cleanup failed");
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const res = await app.request("/auth/users/" + target.id + "/deactivate", {
+    method: "POST",
+    headers: { Cookie: await signedCookie(admin.cookieToken, runtimeSettings) }
+  });
+
+  assert.equal(res.status, 200);
+  assert.equal(await users.findActiveById(target.id), null, "target is soft-deleted even if cleanup is unavailable");
 });
 
 test("POST /users/:id/deactivate hands over the target's active claims (unassign + audit) and leaves terminal items", async () => {
@@ -1567,12 +1794,48 @@ test("invite accept rejects an invalid token (404); create requires admin (403)"
   });
   assert.equal(badAccept.status, 404);
 
+  const badLinkWithBadForm = await app.request("/auth/invites/accept", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: "not-a-real-invite-token", nickname: "", password: "short" })
+  });
+  assert.equal(badLinkWithBadForm.status, 404);
+
   const byMember = await app.request("/auth/invites", {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: await signedCookie(memberToken, runtimeSettings) },
     body: JSON.stringify({ email: "x@example.com" })
   });
   assert.equal(byMember.status, 403);
+});
+
+test("invite create derives tenant and role from the server-side admin context", async () => {
+  const admin = user({ id: "10000000-0000-4000-8000-0000000000ad", nickname: "admin", isAdmin: true });
+  const { deps, memberships, invites, runtimeSettings } = inviteCtx(admin);
+  await memberships.create({
+    workspaceId: "22220000-0000-4000-8000-0000000000ad",
+    userId: admin.id,
+    role: "owner",
+    defaultWorkspace: true
+  });
+  const { token: adminToken } = await mintSession(deps, admin, { authMethod: "password" });
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/auth", createAuthRoutes(deps));
+
+  const response = await app.request("/auth/invites", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: await signedCookie(adminToken, runtimeSettings) },
+    body: JSON.stringify({
+      email: "tenant-escape@example.com",
+      role: "owner",
+      workspace_id: "33330000-0000-4000-8000-0000000000ad"
+    })
+  });
+
+  assert.equal(response.status, 201);
+  assert.equal(invites.rows[0]?.role, "member");
+  assert.equal(invites.rows[0]?.workspaceId, "22220000-0000-4000-8000-0000000000ad");
 });
 
 // ——— 团队就绪 gap[41]：安全/身份事件审计 ———
@@ -1785,6 +2048,93 @@ test("desktop-bootstrap (nickname mode) mints a device-bound client token that t
   assert.equal(who.status, 200, "minted token authenticates a follow-up request with no cookie");
 });
 
+test("desktop-bootstrap rejects blank device names before creating a device", async () => {
+  const deviceRepo = new MemoryDevices([]);
+  const authDeps: AuthDependencies = {
+    users: new MemoryUsers([]),
+    devices: deviceRepo,
+    settings: settings(),
+    now: () => now
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/desktop-bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nickname: "WorkHub Desktop", device_name: "   ", platform: "desktop" })
+  });
+
+  assert.equal(response.status, 422);
+  assert.equal((await deviceRepo.listByUser("any")).length, 0);
+});
+
+test("client device register route returns malformed_json for malformed request bodies", async () => {
+  const alice = user();
+  const runtimeSettings = settings();
+  const deviceRepo = new MemoryDevices([]);
+  const authDeps: AuthDependencies = {
+    users: new MemoryUsers([alice]),
+    devices: deviceRepo,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withProductionHttpErrors(new Hono<AuthEnv>());
+  app.route("/api/client-devices", createClientDeviceRoutes(authDeps));
+
+  const response = await app.request("/api/client-devices/register", {
+    method: "POST",
+    headers: {
+      Cookie: await signedCookie(alice.cookieToken, runtimeSettings),
+      "Content-Type": "application/json"
+    },
+    body: "{"
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "malformed_json",
+      message: malformedJsonMessage
+    }
+  });
+  assert.equal((await deviceRepo.listByUser(alice.id)).length, 0);
+});
+
+test("client device register rejects blank device names before creating a device", async () => {
+  const alice = user();
+  const runtimeSettings = settings();
+  const deviceRepo = new MemoryDevices([]);
+  const authDeps: AuthDependencies = {
+    users: new MemoryUsers([alice]),
+    devices: deviceRepo,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/client-devices", createClientDeviceRoutes(authDeps));
+
+  const response = await app.request("/api/client-devices/register", {
+    method: "POST",
+    headers: {
+      Cookie: await signedCookie(alice.cookieToken, runtimeSettings),
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ device_name: "   ", platform: "desktop" })
+  });
+
+  assert.equal(response.status, 422);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "validation_error",
+      message: "invalid payload"
+    }
+  });
+  assert.equal((await deviceRepo.listByUser(alice.id)).length, 0);
+});
+
 test("desktop-bootstrap refuses an existing admin nickname (no unauthenticated admin device token)", async () => {
   const admin = user({ nickname: "boss", isAdmin: true });
   const app = withErrors(new Hono<AuthEnv>());
@@ -1795,6 +2145,42 @@ test("desktop-bootstrap refuses an existing admin nickname (no unauthenticated a
     body: JSON.stringify({ nickname: "boss", device_name: "x" })
   });
   assert.equal(res.status, 403, "admin nickname must not get an unauthenticated device token");
+});
+
+test("desktop-bootstrap mints a device token for an existing admin nickname with the admin secret", async () => {
+  const admin = user({ nickname: "boss", isAdmin: true });
+  const authDeps = deps([admin], [], settings({ ADMIN_CLAIM_SECRET: "let-me-in" }));
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+  app.get("/who", createCurrentUserMiddleware(authDeps), (c) =>
+    c.json({ id: c.var.currentUser.id, is_admin: c.var.currentUser.isAdmin })
+  );
+
+  const res = await app.request("/api/auth/desktop-bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      nickname: "boss",
+      admin_secret: "let-me-in",
+      device_name: "Admin Mac",
+      platform: "desktop"
+    })
+  });
+
+  assert.equal(res.status, 201);
+  const body = (await res.json()) as {
+    client_token: string;
+    identity: { id: string; is_admin: boolean };
+    device: { user_id: string; device_name: string };
+  };
+  assert.equal(body.identity.id, admin.id);
+  assert.equal(body.identity.is_admin, true);
+  assert.equal(body.device.user_id, admin.id);
+  assert.equal(body.device.device_name, "Admin Mac");
+
+  const who = await app.request("/who", { headers: { [LOCAL_CLIENT_HEADER]: body.client_token } });
+  assert.equal(who.status, 200, "admin desktop token authenticates without relying on a SameSite cookie");
+  assert.deepEqual(await who.json(), { id: admin.id, is_admin: true });
 });
 
 test("desktop-bootstrap is disabled (404) in password mode", async () => {

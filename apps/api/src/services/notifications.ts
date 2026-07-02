@@ -1,5 +1,6 @@
 import {
   eventTypes,
+  notificationSeveritySchema,
   type Notification,
   type NotificationList
 } from "@workhub/contracts";
@@ -7,13 +8,16 @@ import {
   createAuditLogRepository,
   getSharedDatabaseClient,
   createNotificationRepository,
+  createWorkItemRepository,
   createUserRepository,
   type AuditLogRepository,
   type NotificationRepository,
   type NotificationRow,
   type UserRepository,
+  type WorkItemDataRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
+import { canViewProjectDrive, canViewWorkItemRecord } from "@workhub/permissions";
 import {
   createLifecycleNotificationDrafts,
   topics,
@@ -23,6 +27,7 @@ import {
 
 import { getDefaultPushBus } from "../broker/index.js";
 import type { PushBus } from "../broker/types.js";
+import type { AuthActor } from "../middleware/auth.js";
 
 export class NotificationServiceError extends Error {
   constructor(
@@ -41,7 +46,12 @@ export type NotificationServiceDependencies = {
   // 团队就绪 must-have（通知偏好-按类型静音）：查收件人是否静音了该通知类型。
   // OPTIONAL（缺失/不实现则不静音，按今天创建）——保 DEFAULT-OFF。
   users?: Pick<UserRepository, "getMutedNotificationTypes" | "setMutedNotificationTypes">;
+  workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> & Partial<Pick<WorkItemDataRepository, "findProjectById">>;
   now?: () => Date;
+};
+
+type NotificationMutationOptions = {
+  actor?: AuthActor;
 };
 
 export type NotificationService = ReturnType<typeof createNotificationService>;
@@ -54,16 +64,58 @@ export function getDefaultNotificationServiceDependencies(): NotificationService
     notifications: createNotificationRepository(defaultDbClient.db),
     audit: createAuditLogRepository(defaultDbClient.db),
     users: createUserRepository(defaultDbClient.db),
+    workItems: createWorkItemRepository(defaultDbClient.db),
     bus: getDefaultPushBus()
   };
 }
 
-export function toNotificationResponse(row: NotificationRow): Notification {
+function coerceNotificationSeverity(value: string): Notification["severity"] {
+  const parsed = notificationSeveritySchema.safeParse(value);
+  return parsed.success ? parsed.data : "normal";
+}
+
+export function isNeedsDecisionNotification(row: Pick<NotificationRow, "archivedAt" | "severity" | "type">) {
+  if (row.archivedAt) {
+    return false;
+  }
+  return row.severity === "high" ||
+    row.severity === "urgent" ||
+    /approval|ask|pending|insight|escalated|in_review|review|decision/u.test(row.type);
+}
+
+export function normalizeMutedNotificationTypes(values: readonly unknown[]): string[] {
+  const cleaned: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || trimmed.length > 64 || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    cleaned.push(trimmed);
+  }
+  return cleaned;
+}
+
+function targetUrlBelongsToWorkItem(targetUrl: string | null, workItemId: string) {
+  if (!targetUrl) {
+    return false;
+  }
+  const escapedId = workItemId.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`^/(?:api/pages/)?workitems/${escapedId}(?:$|[/?#])`, "u").test(targetUrl);
+}
+
+export function toNotificationResponse(row: NotificationRow, options: {
+  stripUnreadableWorkItemTarget?: boolean;
+} = {}): Notification {
   const notification: Notification = {
     id: row.id,
     user_id: row.userId,
     type: row.type,
-    severity: row.severity as Notification["severity"],
+    severity: coerceNotificationSeverity(row.severity),
     title: row.title,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString()
@@ -71,13 +123,14 @@ export function toNotificationResponse(row: NotificationRow): Notification {
   if (row.body) {
     notification.body = row.body;
   }
-  if (row.targetUrl) {
+  const stripWorkItemTarget = options.stripUnreadableWorkItemTarget === true && Boolean(row.workItemId);
+  if (row.targetUrl && !(stripWorkItemTarget && targetUrlBelongsToWorkItem(row.targetUrl, row.workItemId!))) {
     notification.target_url = row.targetUrl;
   }
   if (row.projectId) {
     notification.project_id = row.projectId;
   }
-  if (row.workItemId) {
+  if (row.workItemId && !stripWorkItemTarget) {
     notification.work_item_id = row.workItemId;
   }
   if (row.dedupeKey) {
@@ -99,13 +152,101 @@ async function publishNotification(
   if (!bus) {
     return;
   }
-  await bus.publish(topics.user(row.userId).topic, eventTypes.notificationCreated, toNotificationResponse(row));
+  try {
+    await bus.publish(topics.user(row.userId).topic, eventTypes.notificationCreated, toNotificationResponse(row));
+  } catch (error) {
+    console.warn("notification_publish_failed", { notificationId: row.id, userId: row.userId, error });
+  }
 }
 
 export function createNotificationService(
   deps: NotificationServiceDependencies = getDefaultNotificationServiceDependencies()
 ) {
   const now = deps.now ?? (() => new Date());
+
+  async function readableWorkItemIdsForRows(rows: NotificationRow[], actor: AuthActor | undefined) {
+    if (!actor || !deps.workItems) {
+      return undefined;
+    }
+    const ids = [...new Set(rows.map((row) => row.workItemId).filter((id): id is string => Boolean(id)))];
+    const readable = new Set<string>();
+    for (const id of ids) {
+      const record = await deps.workItems.findWorkItemAccessRecord(id);
+      if (!record) {
+        continue;
+      }
+      if (canViewWorkItemRecord(
+        record,
+        { id: actor.userId ?? actor.id, isAdmin: actor.isAdmin },
+        { workspaceId: actor.workspaceId }
+      )) {
+        readable.add(id);
+      }
+    }
+    return readable;
+  }
+
+  async function readableProjectIdsForRows(rows: NotificationRow[], actor: AuthActor | undefined) {
+    if (!actor || !deps.workItems?.findProjectById) {
+      return undefined;
+    }
+    const ids = [...new Set(rows
+      .map((row) => row.projectId)
+      .filter((id): id is string => Boolean(id))
+    )];
+    const readable = new Set<string>();
+    for (const id of ids) {
+      const project = await deps.workItems.findProjectById(id);
+      if (!project) {
+        continue;
+      }
+      if (canViewProjectDrive(project, {
+        id: actor.userId ?? actor.id,
+        ...(actor.userId ? { userId: actor.userId } : {}),
+        isAdmin: actor.isAdmin,
+        orgId: actor.orgId,
+        workspaceId: actor.workspaceId
+      })) {
+        readable.add(id);
+      }
+    }
+    return readable;
+  }
+
+  async function visibleRowsForActorWithMetadata(rows: NotificationRow[], actor: AuthActor | undefined) {
+    const [readableWorkItemIds, readableProjectIds] = await Promise.all([
+      readableWorkItemIdsForRows(rows, actor),
+      readableProjectIdsForRows(rows, actor)
+    ]);
+    return rows.flatMap((row) => {
+      const workItemReadable = !readableWorkItemIds || !row.workItemId || readableWorkItemIds.has(row.workItemId);
+      const projectReadable = Boolean(row.projectId && readableProjectIds?.has(row.projectId));
+      const projectUnreadable = Boolean(readableProjectIds && row.projectId && !readableProjectIds.has(row.projectId));
+      if (!workItemReadable && !projectReadable) {
+        return [];
+      }
+      if (!row.workItemId && projectUnreadable) {
+        return [];
+      }
+      return [{
+        row,
+        stripUnreadableWorkItemTarget: !workItemReadable && projectReadable
+      }];
+    });
+  }
+
+  async function visibleRowsForActor(rows: NotificationRow[], actor: AuthActor | undefined) {
+    return (await visibleRowsForActorWithMetadata(rows, actor)).map((entry) => entry.row);
+  }
+
+  async function requireVisibleNotification(row: NotificationRow, actor: AuthActor | undefined) {
+    const visibleRows = await visibleRowsForActorWithMetadata([row], actor);
+    const visible = visibleRows[0];
+    if (!visible) {
+      throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
+    }
+    return visible;
+  }
 
   // 团队就绪 must-have（通知偏好-按类型静音）：收件人是否把该 TYPE 静音了。
   // CRITICAL DEFAULT-OFF：偏好查询不可用 / 抛错 / 返回空 → 一律不静音（按今天创建）。
@@ -116,7 +257,7 @@ export function createNotificationService(
     }
     try {
       const muted = await deps.users.getMutedNotificationTypes(userId);
-      return Array.isArray(muted) && muted.includes(type);
+      return Array.isArray(muted) && normalizeMutedNotificationTypes(muted).includes(type);
     } catch {
       // fail-open：任何查询异常都不静音。
       return false;
@@ -132,14 +273,18 @@ export function createNotificationService(
     if (!deps.audit) {
       return;
     }
-    await deps.audit.createAuditLog({
-      actorKind: "human",
-      actorUserId: input.userId,
-      entityType: "notification",
-      entityId: input.entityId,
-      action: input.action,
-      detailJson: input.detailJson ?? {}
-    });
+    try {
+      await deps.audit.createAuditLog({
+        actorKind: "human",
+        actorUserId: input.userId,
+        entityType: "notification",
+        entityId: input.entityId,
+        action: input.action,
+        detailJson: input.detailJson ?? {}
+      });
+    } catch (error) {
+      console.warn("notification_audit_write_failed", { action: input.action, entityId: input.entityId, error });
+    }
   }
 
   async function flushDraft(draft: NotificationDraft): Promise<NotificationRow | null> {
@@ -181,7 +326,7 @@ export function createNotificationService(
           rows.push(row);
         }
       }
-      return rows.map(toNotificationResponse);
+      return rows.map((row) => toNotificationResponse(row));
     },
 
     async notifyMilestone(context: MilestoneNotificationContext) {
@@ -231,14 +376,33 @@ export function createNotificationService(
       return toNotificationResponse(result.notification);
     },
 
-    async listForUser(userId: string): Promise<NotificationList> {
-      const rows = await deps.notifications.listForUser(userId);
-      const items = rows.map(toNotificationResponse);
+    async listForUser(input: string | { userId: string; actor?: AuthActor }): Promise<NotificationList> {
+      const userId = typeof input === "string" ? input : input.userId;
+      const actor = typeof input === "string" ? undefined : input.actor;
+      const visibleEntries: Array<{ row: NotificationRow; stripUnreadableWorkItemTarget: boolean }> = [];
+      let before: { createdAt: Date; id: string } | undefined;
+      const pageLimit = 500;
+      for (;;) {
+        const rows = await deps.notifications.listForUser(userId, before ? { limit: pageLimit, before } : { limit: pageLimit });
+        visibleEntries.push(...await visibleRowsForActorWithMetadata(rows, actor));
+        if (rows.length < pageLimit) {
+          break;
+        }
+        const last = rows.at(-1);
+        if (!last) {
+          break;
+        }
+        before = { createdAt: last.createdAt, id: last.id };
+      }
+      const items = visibleEntries.map((entry) => toNotificationResponse(
+        entry.row,
+        entry.stripUnreadableWorkItemTarget ? { stripUnreadableWorkItemTarget: true } : {}
+      ));
       return {
         items,
         counts: {
-          unread: rows.filter((row) => !row.readAt).length,
-          total: rows.length
+          unread: visibleEntries.filter((entry) => !entry.row.readAt).length,
+          total: visibleEntries.length
         }
       };
     },
@@ -248,7 +412,7 @@ export function createNotificationService(
       const muted = deps.users?.getMutedNotificationTypes
         ? await deps.users.getMutedNotificationTypes(userId)
         : [];
-      return { muted_notification_types: Array.isArray(muted) ? muted : [] };
+      return { muted_notification_types: Array.isArray(muted) ? normalizeMutedNotificationTypes(muted) : [] };
     },
 
     // 写静音类型清单。入参须先经路由校验为去重的非空字符串数组。仓库未实现则回 501。
@@ -269,10 +433,15 @@ export function createNotificationService(
         action: "notification.set_preferences",
         detailJson: { muted_notification_types: mutedNotificationTypes }
       });
-      return { muted_notification_types: updated.mutedNotificationTypes };
+      return { muted_notification_types: normalizeMutedNotificationTypes(updated.mutedNotificationTypes) };
     },
 
-    async markRead(id: string, userId: string) {
+    async markRead(id: string, userId: string, options: NotificationMutationOptions = {}) {
+      const existing = await deps.notifications.findByIdForUser(id, userId);
+      if (!existing) {
+        throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
+      }
+      const visibility = await requireVisibleNotification(existing, options.actor);
       const row = await deps.notifications.markRead(id, userId, now());
       if (!row) {
         throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
@@ -282,25 +451,50 @@ export function createNotificationService(
         entityId: id,
         action: "notification.mark_read"
       });
-      return toNotificationResponse(row);
+      return toNotificationResponse(
+        row,
+        visibility.stripUnreadableWorkItemTarget ? { stripUnreadableWorkItemTarget: true } : {}
+      );
     },
 
-    async markAllRead(userId: string) {
-      const updated = await deps.notifications.markAllRead(userId, now());
-      if (deps.audit) {
-        await deps.audit.createAuditLog({
-          actorKind: "human",
-          actorUserId: userId,
-          entityType: "notification_bulk",
-          entityId: userId,
-          action: "notification.mark_all_read",
-          detailJson: { updated }
-        });
+    async markAllRead(userId: string, options: NotificationMutationOptions = {}) {
+      const at = now();
+      let updated: number;
+      if (options.actor) {
+        updated = 0;
+        let cursor: { createdAt: Date; id: string } | undefined;
+        while (true) {
+          const rows = await deps.notifications.listForUser(userId, {
+            limit: 500,
+            unreadOnly: true,
+            ...(cursor ? { before: cursor } : {})
+          });
+          if (rows.length === 0) {
+            break;
+          }
+          const visibleRows = await visibleRowsForActor(rows, options.actor);
+          updated += await deps.notifications.markReadMany(visibleRows.map((row) => row.id), userId, at);
+          const last = rows[rows.length - 1]!;
+          cursor = { createdAt: last.createdAt, id: last.id };
+        }
+      } else {
+        updated = await deps.notifications.markAllRead(userId, at);
       }
+      await auditNotificationAction({
+        userId,
+        entityId: userId,
+        action: "notification.mark_all_read",
+        detailJson: { updated }
+      });
       return { updated };
     },
 
-    async dismiss(id: string, userId: string) {
+    async dismiss(id: string, userId: string, options: NotificationMutationOptions = {}) {
+      const existing = await deps.notifications.findByIdForUser(id, userId);
+      if (!existing) {
+        throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
+      }
+      const visibility = await requireVisibleNotification(existing, options.actor);
       const row = await deps.notifications.archive(id, userId, now());
       if (!row) {
         throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
@@ -310,10 +504,21 @@ export function createNotificationService(
         entityId: id,
         action: "notification.dismiss"
       });
-      return toNotificationResponse(row);
+      return toNotificationResponse(
+        row,
+        visibility.stripUnreadableWorkItemTarget ? { stripUnreadableWorkItemTarget: true } : {}
+      );
     },
 
-    async complete(id: string, userId: string) {
+    async complete(id: string, userId: string, options: NotificationMutationOptions = {}) {
+      const existing = await deps.notifications.findByIdForUser(id, userId);
+      if (!existing) {
+        throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
+      }
+      const visibility = await requireVisibleNotification(existing, options.actor);
+      if (isNeedsDecisionNotification(existing)) {
+        throw new NotificationServiceError(409, "notification_needs_decision", "这条通知需要先打开来源处理，不能直接标为完成。");
+      }
       const row = await deps.notifications.archive(id, userId, now());
       if (!row) {
         throw new NotificationServiceError(404, "not_found", "没有找到这条通知。");
@@ -323,7 +528,10 @@ export function createNotificationService(
         entityId: id,
         action: "notification.complete"
       });
-      return toNotificationResponse(row);
+      return toNotificationResponse(
+        row,
+        visibility.stripUnreadableWorkItemTarget ? { stripUnreadableWorkItemTarget: true } : {}
+      );
     }
   };
 }

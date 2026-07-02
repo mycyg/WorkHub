@@ -55,6 +55,12 @@ test("findings[8] same-origin guard allows same-origin, token-header, headerless
   });
   assert.equal(tokenClient.status, 200);
 
+  const brandedTokenClient = await app.request("/api/thing", {
+    method: "POST",
+    headers: { "X-WorkHub-Client-Token": "dev-token", "Sec-Fetch-Site": "cross-site" }
+  });
+  assert.equal(brandedTokenClient.status, 200);
+
   // 非浏览器/服务端：两者都不带 → 放行（cookie/token 鉴权仍把关）。
   const headerless = await app.request("/api/thing", { method: "POST" });
   assert.equal(headerless.status, 200);

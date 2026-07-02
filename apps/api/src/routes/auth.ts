@@ -22,7 +22,6 @@ import {
   WeakPasswordError
 } from "../auth/password.js";
 import {
-  LOCAL_CLIENT_HEADER,
   constantTimeEquals,
   forgetUserCookie,
   getAuthSettings,
@@ -35,6 +34,7 @@ import {
   toClientDeviceResponse,
   mintSession,
   readCookieToken,
+  readLocalClientToken,
   resolveAuthDependencies,
   resolveCurrentUser,
   resolveHumanActor,
@@ -51,27 +51,15 @@ import {
   createAdminClaimThrottle,
   type AdminClaimThrottle
 } from "../middleware/admin-claim-throttle.js";
+import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
-
-// 与 workitems/knowledge 路由同款：畸形 JSON 体应回 400 而非冒泡成 500。
-// 空体按 {} 处理，交由各请求 schema 报缺字段（仍是 400）。
-async function readJsonBody(c: { req: { text: () => Promise<string> } }) {
-  const text = await c.req.text();
-  if (!text.trim()) {
-    return {};
-  }
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new HTTPException(400, { message: "认证请求不是有效的 JSON。" });
-  }
-}
 
 // R2 auth epic：登录失败锁定策略——连续失败达上限后临时锁定，节流在线暴力破解。
 const LOGIN_MAX_ATTEMPTS = 10;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
 // 邀请链接有效期（out-of-band 分发，给足管理员转交时间）。
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const inviteAcceptTokenRequestSchema = inviteAcceptRequestSchema.pick({ token: true });
 
 function passwordModeEnabled(deps: AuthDependencies): boolean {
   return getAuthSettings(deps).auth.authMode !== "nickname";
@@ -150,6 +138,14 @@ async function auditSecurityEvent(
   }
 }
 
+async function bestEffortAuthCleanup(action: string, cleanup: () => Promise<void>): Promise<void> {
+  try {
+    await cleanup();
+  } catch (error) {
+    console.warn(`auth cleanup failed (best-effort): ${action}`, error);
+  }
+}
+
 export function createAuthRoutes(
   source: AuthDependencySource = getDefaultAuthDependencies,
   options: { adminClaimThrottle?: AdminClaimThrottle } = {}
@@ -161,7 +157,10 @@ export function createAuthRoutes(
 
   routes.post("/identify", async (c) => {
     const deps = resolveAuthDependencies(source);
-    const payload = identifyRequestSchema.parse(await readJsonBody(c));
+    if (passwordModeEnabled(deps)) {
+      throw new HTTPException(404, { message: "昵称登录在当前认证模式下不可用。" });
+    }
+    const payload = identifyRequestSchema.parse(await readJsonObject(c));
     const nickname = validateNickname(payload.nickname);
     const current = await resolveOptionalCurrentUser(c, deps);
     let { user, created } = await deps.users.getOrCreateActiveByNickname(nickname, makeCookieToken());
@@ -231,13 +230,24 @@ export function createAuthRoutes(
     if (passwordModeEnabled(deps)) {
       throw new HTTPException(404, { message: "桌面引导在当前认证模式下不可用" });
     }
-    const payload = desktopBootstrapRequestSchema.parse(await readJsonBody(c));
+    const payload = desktopBootstrapRequestSchema.parse(await readJsonObject(c));
     const nickname = validateNickname(payload.nickname);
     const { user, created } = await deps.users.getOrCreateActiveByNickname(nickname, makeCookieToken());
-    // 绝不为管理员账号无口令签发设备令牌——否则等于无口令拿到管理员设备令牌。
-    // 管理员请走 /identify（带口令）后再 /client-devices/register。
     if (user.isAdmin) {
-      throw new HTTPException(403, { message: "管理员账号请先用带口令的登录，再注册设备" });
+      const throttleKey = adminClaimClientKey(c.req.raw.headers);
+      const gate = adminClaimThrottle.check(throttleKey);
+      if (!gate.allowed) {
+        throw new HTTPException(429, {
+          message: `管理员口令尝试过于频繁，请约 ${gate.retryAfterSeconds} 秒后再试。`
+        });
+      }
+      const secret = getAuthSettings(deps).auth.adminClaimSecret;
+      const provided = payload.admin_secret ?? "";
+      if (!secret || !constantTimeEquals(provided, secret)) {
+        adminClaimThrottle.recordFailure(throttleKey);
+        throw new HTTPException(403, { message: "该昵称是管理员账号，需要管理员口令才能注册桌面设备" });
+      }
+      adminClaimThrottle.recordSuccess(throttleKey);
     }
     const token = makeClientToken();
     const device = await deps.devices.createClientDevice({
@@ -267,7 +277,7 @@ export function createAuthRoutes(
     if (!deps.credentials || !deps.sessions) {
       throw new HTTPException(501, { message: "当前运行时不支持密码认证" });
     }
-    const payload = passwordRegisterRequestSchema.parse(await readJsonBody(c));
+    const payload = passwordRegisterRequestSchema.parse(await readJsonObject(c));
     const email = payload.email.trim();
     const nickname = validateNickname(payload.nickname);
     try {
@@ -294,7 +304,7 @@ export function createAuthRoutes(
     // 该 seam 缺席，回退到原顺序写——假仓库的 createCredential 不会在 createUser 成功后失败，
     // 故顺序回退对单测语义不变（真库才有跨表失败窗口，那里走事务）。每步的 23505 在写点就地映射成
     // 对应 409（昵称 vs 邮箱），异常向上冒泡即触发事务回滚，HTTP 语义与原逐步写逐字一致。
-    const user = await runAuthWrites(deps, { users: deps.users, credentials }, async ({ users, credentials: credentialsTx }) => {
+    const user = await runAuthWrites(deps, { users: deps.users, credentials, memberships: deps.memberships }, async ({ users, credentials: credentialsTx, memberships }) => {
       // cookieToken 在会话模式下是 vestigial，但列 NOT NULL，仍生成一个。
       const created = await createUserOr409(users, { nickname, cookieToken: makeCookieToken(), isAdmin: shouldBeAdmin });
       await createCredentialOr409(credentialsTx, {
@@ -303,6 +313,14 @@ export function createAuthRoutes(
         passwordHash,
         passwordAlgo: currentPasswordAlgo()
       });
+      if (memberships) {
+        await memberships.create({
+          workspaceId: getAuthSettings(deps).auth.defaultWorkspaceId,
+          userId: created.id,
+          role: shouldBeAdmin ? "owner" : "member",
+          defaultWorkspace: true
+        });
+      }
       return created;
     });
 
@@ -339,7 +357,7 @@ export function createAuthRoutes(
     if (!deps.credentials || !deps.sessions) {
       throw new HTTPException(501, { message: "当前运行时不支持密码认证" });
     }
-    const payload = passwordLoginRequestSchema.parse(await readJsonBody(c));
+    const payload = passwordLoginRequestSchema.parse(await readJsonObject(c));
     const email = payload.email.trim();
     const now = (deps.now ?? (() => new Date()))();
     const invalid = () => new HTTPException(401, { message: "邮箱或密码不正确" });
@@ -422,7 +440,7 @@ export function createAuthRoutes(
     if (!deps.credentials || !deps.sessions) {
       throw new HTTPException(501, { message: "当前运行时不支持密码认证" });
     }
-    const payload = passwordChangeRequestSchema.parse(await readJsonBody(c));
+    const payload = passwordChangeRequestSchema.parse(await readJsonObject(c));
     try {
       validatePassword(payload.new_password);
     } catch (error) {
@@ -443,11 +461,23 @@ export function createAuthRoutes(
     if (!deps.credentials.updatePassword) {
       throw new HTTPException(501, { message: "当前运行时不支持改密" });
     }
+    const currentClientToken = readLocalClientToken(c);
+    const currentClientDevice = currentClientToken
+      ? await deps.devices.findActiveByTokenHashForUser(hashClientToken(currentClientToken), actingUser.id)
+      : null;
     await deps.credentials.updatePassword(actingUser.id, await hashPassword(payload.new_password), currentPasswordAlgo());
 
-    // 改密 = 重建信任：撤销全部旧会话（含其它设备），再为当前请求签发新会话，避免把自己也登出。
+    // 改密 = 重建信任：撤销旧会话和其它本地客户端令牌；当前请求的会话/token 保持可用，避免成功后立刻把自己踢出。
     const at = (deps.now ?? (() => new Date()))();
     await deps.sessions.revokeAllForUser(actingUser.id, at);
+    await bestEffortAuthCleanup("devices.revoke_other_for_user", async () => {
+      const devices = await deps.devices.listByUser(actingUser.id);
+      for (const device of devices) {
+        if (device.revokedAt === null && device.id !== currentClientDevice?.id) {
+          await deps.devices.revokeByIdForUser(device.id, actingUser.id, at);
+        }
+      }
+    });
     const { token } = await mintSession(deps, actingUser, { authMethod: "password" });
     await issueSessionCookie(c, token, getAuthSettings(deps));
 
@@ -476,16 +506,17 @@ export function createAuthRoutes(
     if (!deps.invites) {
       throw new HTTPException(501, { message: "当前运行时不支持邀请" });
     }
-    const payload = inviteCreateRequestSchema.parse(await readJsonBody(c));
+    const payload = inviteCreateRequestSchema.parse(await readJsonObject(c));
     const at = (deps.now ?? (() => new Date()))();
     const token = generateSessionToken();
     const expiresAt = new Date(at.getTime() + INVITE_TTL_MS);
+    const actor = await resolveHumanActor(deps, actingUser);
     const invite = await deps.invites.create({
       email: payload.email.trim(),
       tokenHash: hashSessionToken(token),
       invitedByUserId: actingUser.id,
-      role: payload.role ?? "member",
-      workspaceId: payload.workspace_id ?? null,
+      role: "member",
+      workspaceId: actor.workspaceId,
       expiresAt
     });
     // 安全事件：管理员创建邀请（赋权入口，必审）。entityId=邀请 id；actor=创建邀请的管理员。不记明文 token。
@@ -512,7 +543,14 @@ export function createAuthRoutes(
     if (!deps.invites || !deps.credentials || !deps.sessions) {
       throw new HTTPException(501, { message: "当前运行时不支持邀请" });
     }
-    const payload = inviteAcceptRequestSchema.parse(await readJsonBody(c));
+    const rawPayload = await readJsonObject(c);
+    const tokenPayload = inviteAcceptTokenRequestSchema.parse(rawPayload);
+    const at = (deps.now ?? (() => new Date()))();
+    const invite = await deps.invites.findActiveByTokenHash(hashSessionToken(tokenPayload.token), at);
+    if (!invite) {
+      throw new HTTPException(404, { message: "邀请无效或已过期" });
+    }
+    const payload = inviteAcceptRequestSchema.parse(rawPayload);
     const nickname = validateNickname(payload.nickname);
     try {
       validatePassword(payload.password);
@@ -521,11 +559,6 @@ export function createAuthRoutes(
         throw new HTTPException(400, { message: error.message });
       }
       throw error;
-    }
-    const at = (deps.now ?? (() => new Date()))();
-    const invite = await deps.invites.findActiveByTokenHash(hashSessionToken(payload.token), at);
-    if (!invite) {
-      throw new HTTPException(404, { message: "邀请无效或已过期" });
     }
     if (await deps.credentials.findByEmail(invite.email)) {
       throw new HTTPException(409, { message: "该邮箱已注册" });
@@ -586,6 +619,9 @@ export function createAuthRoutes(
 
   routes.get("/me", async (c) => {
     const deps = resolveAuthDependencies(source);
+    // R9 批次0-1：/me 对 invalid client token 必须保持抛 403——桌面端「死 token 自愈」
+    // （ensureDesktopClientToken）唯一依赖 client.me() 抛出该错才会清掉本地死 token 重新 bootstrap。
+    // 吞成 200 null 会让被吊销设备永久静默失联（rank16 回归，r9 审查 auth-core-1）。只吞 401。
     const user = await resolveOptionalCurrentUser(c, deps);
     if (!user) {
       return c.json(null);
@@ -611,7 +647,7 @@ export function createAuthRoutes(
   routes.patch("/preferences", async (c) => {
     const deps = resolveAuthDependencies(source);
     const user = await resolveCurrentUser(c, deps);
-    const payload = updateUserPreferencesRequestSchema.parse(await readJsonBody(c));
+    const payload = updateUserPreferencesRequestSchema.parse(await readJsonObject(c));
     if (!deps.users.updatePreferredLocale) {
       throw new HTTPException(501, { message: "user preferences are not available in this runtime" });
     }
@@ -630,7 +666,7 @@ export function createAuthRoutes(
     const runtimeSettings = getAuthSettings(deps);
     await deps.users.rotateCookieToken(user.id, makeCookieToken());
 
-    const rawToken = c.req.header(LOCAL_CLIENT_HEADER)?.trim();
+    const rawToken = readLocalClientToken(c);
     if (rawToken) {
       const revokedDevice = await deps.devices.revokeByTokenHash(
         hashClientToken(rawToken),
@@ -647,7 +683,7 @@ export function createAuthRoutes(
       if (cookieToken) {
         const at = (deps.now ?? (() => new Date()))();
         const session = await deps.sessions.findActiveByTokenHash(hashSessionToken(cookieToken), at);
-        if (session) {
+        if (session && session.userId === user.id) {
           await deps.sessions.revoke(session.id, at);
         }
       }
@@ -705,7 +741,7 @@ export function createAuthRoutes(
     // 用户行仍以 deletedAt 软删保留供审计，只删对停用用户已无意义的凭据。顺序写——软删成功后残留凭据无害,
     // 故删凭据失败不必回滚软删（与本路由后续撤会话/设备同为尽力而为的善后步骤）。
     if (deps.credentials) {
-      await deps.credentials.deleteByUserId(targetId);
+      await bestEffortAuthCleanup("credentials.delete_by_user", () => deps.credentials!.deleteByUserId(targetId));
     }
     // 工作交接：把被停用用户认领中的非终态事项退回可领取池（claimed_by_user_id=null），避免在岗工作卡在
     // 已消失的人身上。提交人(submitter)字段保留以保溯源，终态(merged/done/cancelled)与已软删事项不动。
@@ -732,15 +768,21 @@ export function createAuthRoutes(
     }
     // 立即切断访问：撤销全部服务端会话 + 客户端设备令牌。
     if (deps.sessions) {
-      await deps.sessions.revokeAllForUser(targetId, at);
+      await bestEffortAuthCleanup("sessions.revoke_all_for_user", async () => {
+        await deps.sessions!.revokeAllForUser(targetId, at);
+      });
     }
-    const devices = await deps.devices.listByUser(targetId);
-    for (const device of devices) {
-      if (device.revokedAt === null) {
-        await deps.devices.revokeByIdForUser(device.id, targetId, at);
+    await bestEffortAuthCleanup("devices.revoke_for_user", async () => {
+      const devices = await deps.devices.listByUser(targetId);
+      for (const device of devices) {
+        if (device.revokedAt === null) {
+          await deps.devices.revokeByIdForUser(device.id, targetId, at);
+        }
       }
-    }
-    await deps.forgetUser?.(targetId);
+    });
+    await bestEffortAuthCleanup("presence.forget_user", async () => {
+      await deps.forgetUser?.(targetId);
+    });
 
     return c.json({ ok: true });
   });

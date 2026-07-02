@@ -15,10 +15,10 @@ export const permissionPolicySchema = timestampFieldsSchema.extend({
   effect: permissionEffectSchema,
   priority: z.number().int(),
   learned_from_session: z.boolean(),
-  created_by_user_id: idSchema.optional(),
-  org_id: idSchema.optional(),
-  workspace_id: idSchema.optional(),
-  deleted_at: isoDateTimeSchema.optional()
+  created_by_user_id: idSchema.nullable().optional(),
+  org_id: idSchema.nullable().optional(),
+  workspace_id: idSchema.nullable().optional(),
+  deleted_at: isoDateTimeSchema.nullable().optional()
 });
 export type PermissionPolicy = z.infer<typeof permissionPolicySchema>;
 

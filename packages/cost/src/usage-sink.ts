@@ -9,6 +9,7 @@ export type BuildUsageRecordInput = {
   runId?: string;
   workItemId?: string;
   userId?: string;
+  workspaceId?: string;
   provider: string;
   model: string;
   task: string;
@@ -52,6 +53,9 @@ export function buildUsageRecord(input: BuildUsageRecordInput): UsageRecord {
   }
   if (input.userId) {
     record.userId = input.userId;
+  }
+  if (input.workspaceId) {
+    record.workspaceId = input.workspaceId;
   }
   if (input.actorId) {
     record.actorId = input.actorId;

@@ -10,7 +10,7 @@ import {
   type UsageSource
 } from "@workhub/cost";
 
-import { and, eq, gte, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, or, sql, type SQL } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { costLedgerEntries, usageRecords } from "../schema/index.js";
@@ -180,6 +180,21 @@ export function createDbCostLedgerStore(
   // 只查请求到的 scope（按 scope_kind+scope_id 走索引），避免每次预算/快照都全表扫描所有用户/项目（H6）。
   // DF-1：可选 sinceBucket —— 成本看板的非管理员路径要和管理员侧同样按 period_bucket 限窗，否则总额
   // 一边是终身累计、一边是近 90 天。预算快照(usageSnapshots)不传它,仍取全量累计。
+  async function usageRecordIdsForWorkspace(teamId: string, options?: { sinceBucket?: string }) {
+    const workspacePredicate = or(
+      and(eq(costLedgerEntries.scopeKind, "team"), eq(costLedgerEntries.scopeId, teamId)),
+      and(eq(costLedgerEntries.scopeKind, "curation"), eq(costLedgerEntries.scopeId, teamId))
+    ) as SQL;
+    const scopedWhere = options?.sinceBucket
+      ? (and(workspacePredicate, gte(costLedgerEntries.periodBucket, options.sinceBucket)) as SQL)
+      : workspacePredicate;
+    const usageRows = await db
+      .select({ usageRecordId: costLedgerEntries.usageRecordId })
+      .from(costLedgerEntries)
+      .where(scopedWhere);
+    return [...new Set(usageRows.map((row) => row.usageRecordId))];
+  }
+
   async function listEntriesForScopes(scopeIds: LedgerScopeIds, options?: { sinceBucket?: string }) {
     const conds: SQL[] = [];
     if (scopeIds.workItemId) {
@@ -190,6 +205,7 @@ export function createDbCostLedgerStore(
     }
     if (scopeIds.teamId) {
       conds.push(and(eq(costLedgerEntries.scopeKind, "team"), eq(costLedgerEntries.scopeId, scopeIds.teamId)) as SQL);
+      conds.push(and(eq(costLedgerEntries.scopeKind, "curation"), eq(costLedgerEntries.scopeId, scopeIds.teamId)) as SQL);
     }
     if (scopeIds.evalSuite) {
       conds.push(and(eq(costLedgerEntries.scopeKind, "eval"), eq(costLedgerEntries.scopeId, scopeIds.evalSuite)) as SQL);
@@ -197,10 +213,29 @@ export function createDbCostLedgerStore(
     if (conds.length === 0) {
       return [];
     }
-    const scopePredicate = or(...conds) as SQL;
+    let where = or(...conds) as SQL;
+    if (scopeIds.teamId) {
+      const workspaceUsageIds = await usageRecordIdsForWorkspace(scopeIds.teamId, options);
+      if (workspaceUsageIds.length === 0) {
+        return [];
+      }
+      where = and(where, inArray(costLedgerEntries.usageRecordId, workspaceUsageIds)) as SQL;
+    }
+    if (options?.sinceBucket) {
+      where = and(where, gte(costLedgerEntries.periodBucket, options.sinceBucket)) as SQL;
+    }
+    const rows = await db.select().from(costLedgerEntries).where(where);
+    return rows.map(rowToLedgerEntry);
+  }
+
+  async function listEntriesForWorkspace(teamId: string, options?: { sinceBucket?: string }) {
+    const usageRecordIds = await usageRecordIdsForWorkspace(teamId, options);
+    if (usageRecordIds.length === 0) {
+      return [];
+    }
     const where = options?.sinceBucket
-      ? (and(scopePredicate, gte(costLedgerEntries.periodBucket, options.sinceBucket)) as SQL)
-      : scopePredicate;
+      ? (and(inArray(costLedgerEntries.usageRecordId, usageRecordIds), gte(costLedgerEntries.periodBucket, options.sinceBucket)) as SQL)
+      : (inArray(costLedgerEntries.usageRecordId, usageRecordIds) as SQL);
     const rows = await db.select().from(costLedgerEntries).where(where);
     return rows.map(rowToLedgerEntry);
   }
@@ -230,6 +265,7 @@ export function createDbCostLedgerStore(
     async recordUsage(record) {
       const entries = usageToLedgerEntries(record, {
         ...(options.teamId ? { teamId: options.teamId } : {}),
+        teamIdForUsage: (usage) => usage.workspaceId ?? options.teamId,
         ...(options.evalSuite ? { evalSuite: options.evalSuite } : {})
       });
       // R4 #36：usage_records 与 cost_ledger_entries 此前是两条独立 insert——进程在二者之间崩溃会留下
@@ -265,6 +301,7 @@ export function createDbCostLedgerStore(
     },
     listEntries,
     listEntriesForScopes,
+    listEntriesForWorkspace,
     listRecords,
     sumUsageCostSince
   };

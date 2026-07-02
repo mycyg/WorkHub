@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lt, notInArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import {
@@ -7,10 +7,11 @@ import {
   projects,
   scheduleEvents,
   users,
+  workItemAssignments,
   workItems
 } from "../schema/index.js";
 
-export type ScheduleNotifyProjectRow = typeof projects.$inferSelect;
+export type ScheduleNotifyProjectRow = typeof projects.$inferSelect & { orgId?: string | null };
 export type ScheduleNotifyUserRow = typeof users.$inferSelect;
 export type ScheduleNotifyWorkItemRow = typeof workItems.$inferSelect;
 export type ScheduleNotifyMeetingRecordRow = typeof meetingRecords.$inferSelect;
@@ -20,6 +21,7 @@ export type ScheduleEventRow = typeof scheduleEvents.$inferSelect;
 export type WorkItemScheduleSourceRow = {
   workItem: ScheduleNotifyWorkItemRow;
   project: ScheduleNotifyProjectRow | null;
+  assignments?: Array<{ userId: string; role: string }>;
 };
 
 export type MeetingInsightScheduleSourceRow = {
@@ -27,12 +29,16 @@ export type MeetingInsightScheduleSourceRow = {
   meeting: ScheduleNotifyMeetingRecordRow;
   project: ScheduleNotifyProjectRow | null;
   uploadedBy: ScheduleNotifyUserRow | null;
+  linkedWorkItem?: ScheduleNotifyWorkItemRow | null;
+  linkedWorkItemProject?: ScheduleNotifyProjectRow | null;
+  linkedWorkItemAssignments?: Array<{ userId: string; role: string }>;
 };
 
 export type ScheduleEventSourceRow = {
   event: ScheduleEventRow;
   project: ScheduleNotifyProjectRow | null;
   workItem: ScheduleNotifyWorkItemRow | null;
+  workItemAssignments?: Array<{ userId: string; role: string }>;
 };
 
 export type NotificationContextRows = {
@@ -73,6 +79,85 @@ function uniqueIds(ids: string[] | undefined) {
 }
 
 export function createScheduleNotifyRepository(db: WorkHubDb): ScheduleNotifyRepository {
+  async function loadAssignmentsByWorkItemId(ids: string[]) {
+    const uniqueWorkItemIds = [...new Set(ids.filter(Boolean))];
+    if (uniqueWorkItemIds.length === 0) {
+      return new Map<string, Array<{ userId: string; role: string }>>();
+    }
+    const assignments = await db
+      .select({
+        workItemId: workItemAssignments.workItemId,
+        userId: workItemAssignments.userId,
+        role: workItemAssignments.role
+      })
+      .from(workItemAssignments)
+      .where(inArray(workItemAssignments.workItemId, uniqueWorkItemIds));
+    const assignmentsByWorkItemId = new Map<string, Array<{ userId: string; role: string }>>();
+    for (const assignment of assignments) {
+      const bucket = assignmentsByWorkItemId.get(assignment.workItemId) ?? [];
+      bucket.push({ userId: assignment.userId, role: assignment.role });
+      assignmentsByWorkItemId.set(assignment.workItemId, bucket);
+    }
+    return assignmentsByWorkItemId;
+  }
+
+  async function attachWorkItemAssignments(
+    rows: Array<{ workItem: ScheduleNotifyWorkItemRow; project: ScheduleNotifyProjectRow | null }>
+  ): Promise<WorkItemScheduleSourceRow[]> {
+    const assignmentsByWorkItemId = await loadAssignmentsByWorkItemId(rows.map((row) => row.workItem.id));
+    return rows.map((row) => ({
+      ...row,
+      assignments: assignmentsByWorkItemId.get(row.workItem.id) ?? []
+    }));
+  }
+
+  async function attachEventWorkItemAssignments(
+    rows: Array<{ event: ScheduleEventRow; project: ScheduleNotifyProjectRow | null; workItem: ScheduleNotifyWorkItemRow | null }>
+  ): Promise<ScheduleEventSourceRow[]> {
+    const assignmentsByWorkItemId = await loadAssignmentsByWorkItemId(
+      rows.map((row) => row.workItem?.id).filter((id): id is string => Boolean(id))
+    );
+    return rows.map((row) => ({
+      ...row,
+      ...(row.workItem ? { workItemAssignments: assignmentsByWorkItemId.get(row.workItem.id) ?? [] } : {})
+    }));
+  }
+
+  async function attachMeetingInsightWorkItems(rows: MeetingInsightScheduleSourceRow[]): Promise<MeetingInsightScheduleSourceRow[]> {
+    const linkedWorkItemIds = [...new Set(
+      rows
+        .map((row) => row.insight.createdWorkItemId ?? row.insight.targetWorkItemId)
+        .filter((id): id is string => Boolean(id))
+    )];
+    if (linkedWorkItemIds.length === 0) {
+      return rows;
+    }
+    const linkedRows = await db
+      .select({
+        workItem: workItems,
+        project: projects
+      })
+      .from(workItems)
+      .leftJoin(projects, eq(workItems.projectId, projects.id))
+      .where(and(inArray(workItems.id, linkedWorkItemIds), isNull(workItems.deletedAt)));
+    const assignmentsByWorkItemId = await loadAssignmentsByWorkItemId(linkedWorkItemIds);
+    const linkedById = new Map(linkedRows.map((row) => [row.workItem.id, row]));
+    return rows.map((row) => {
+      const linkedWorkItemId = row.insight.createdWorkItemId ?? row.insight.targetWorkItemId;
+      const linked = linkedWorkItemId ? linkedById.get(linkedWorkItemId) : undefined;
+      return {
+        ...row,
+        ...(linked
+          ? {
+              linkedWorkItem: linked.workItem,
+              linkedWorkItemProject: linked.project,
+              linkedWorkItemAssignments: assignmentsByWorkItemId.get(linked.workItem.id) ?? []
+            }
+          : {})
+      };
+    });
+  }
+
   return {
     async readNotificationContexts(input) {
       const workItemIds = uniqueIds(input.workItemIds);
@@ -104,13 +189,13 @@ export function createScheduleNotifyRepository(db: WorkHubDb): ScheduleNotifyRep
           .limit(meetingInsightIds.length)
         : [];
       return {
-        workItems: workItemRows,
-        meetingInsights: meetingInsightRows
+        workItems: await attachWorkItemAssignments(workItemRows),
+        meetingInsights: await attachMeetingInsightWorkItems(meetingInsightRows)
       };
     },
 
     async listMeetingInsightSources(input = {}) {
-      return db
+      const meetingInsightRows = await db
         .select({
           insight: meetingInsights,
           meeting: meetingRecords,
@@ -127,6 +212,7 @@ export function createScheduleNotifyRepository(db: WorkHubDb): ScheduleNotifyRep
         ))
         .orderBy(desc(meetingInsights.createdAt))
         .limit(clampLimit(input.limit, 80));
+      return attachMeetingInsightWorkItems(meetingInsightRows);
     },
 
     async readSchedulePageRows(input) {
@@ -139,7 +225,10 @@ export function createScheduleNotifyRepository(db: WorkHubDb): ScheduleNotifyRep
         })
         .from(scheduleEvents)
         .leftJoin(projects, eq(scheduleEvents.projectId, projects.id))
-        .leftJoin(workItems, eq(scheduleEvents.workItemId, workItems.id))
+        .leftJoin(workItems, and(
+          eq(scheduleEvents.workItemId, workItems.id),
+          isNull(workItems.deletedAt)
+        ))
         .where(and(
           gte(scheduleEvents.endAt, input.rangeStart),
           // 上界独占：rangeEnd 是下一周期 00:00，与服务层生成的 7 天 day key 对齐，避免边界块落到第 8 天而隐身。
@@ -156,22 +245,28 @@ export function createScheduleNotifyRepository(db: WorkHubDb): ScheduleNotifyRep
         .leftJoin(projects, eq(workItems.projectId, projects.id))
         .where(and(
           isNull(workItems.deletedAt),
-          // L#55：限定在窗口内（加下界）并排除已结束(done/cancelled)的事项——
+          // L#55：限定在窗口内（加下界）并排除已结束(done/merged/cancelled)的事项——
           // 否则全表扫所有历史 dueAt，且已完成/已取消的事项还会被当作"待办到期"显示。
           gte(workItems.dueAt, input.rangeStart),
           lt(workItems.dueAt, input.rangeEnd),
-          notInArray(workItems.status, ["done", "cancelled"]),
+          notInArray(workItems.status, ["done", "merged", "cancelled"]),
           or(
             eq(workItems.submitterUserId, input.actorUserId),
-            eq(workItems.claimedByUserId, input.actorUserId)
+            eq(workItems.claimedByUserId, input.actorUserId),
+            sql`exists (
+              select 1
+              from ${workItemAssignments}
+              where ${workItemAssignments.workItemId} = ${workItems.id}
+                and ${workItemAssignments.userId} = ${input.actorUserId}
+            )`
           )
         ))
         .orderBy(asc(workItems.dueAt))
         .limit(limit);
       const meetingInsightRows = await this.listMeetingInsightSources({ limit: Math.min(limit, 80) });
       return {
-        events: eventRows,
-        dueWorkItems,
+        events: await attachEventWorkItemAssignments(eventRows),
+        dueWorkItems: await attachWorkItemAssignments(dueWorkItems),
         meetingInsights: meetingInsightRows
       };
     }

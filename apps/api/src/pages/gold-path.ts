@@ -5,6 +5,7 @@ import {
 } from "@workhub/agent/fixtures";
 import { goldPathSurfaceVmSchema, type GoldPathSurfaceVM, type WorkHubLocale } from "@workhub/contracts";
 import { toCuuState } from "@workhub/events";
+import { parseOutputContract } from "./output-contract.js";
 
 export { p05GoldPathIds };
 
@@ -173,7 +174,11 @@ export function buildP05GoldPathSurfacePage(locale: WorkHubLocale = "zh-CN"): Go
     cuu_states: fixture.events.map((event) => toCuuState(event))
   };
 
-  return goldPathSurfaceVmSchema.parse(localizeGeneratedSurface(productizeSurface(surface), locale));
+  return parseOutputContract(
+    goldPathSurfaceVmSchema,
+    localizeGeneratedSurface(productizeSurface(surface), locale),
+    "gold-path.surface"
+  );
 }
 
 export function getP05GoldPathFixture() {

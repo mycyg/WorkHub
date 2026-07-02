@@ -22,6 +22,7 @@ import {
   mergeProposals,
   projectDriveItems,
   projectDriveVersions,
+  projects,
   proposals,
   reviews,
   snapshots,
@@ -41,6 +42,7 @@ export type MergeProposalRow = typeof mergeProposals.$inferSelect;
 export type StoredProposalRows = {
   proposal: ProposalRow;
   reviews: ReviewRow[];
+  sourceAgentRunId?: string | null;
 };
 
 // GAP-1：首页决策队列要展示「AI 已交付、待评审」的提议。这是该查询的轻量行(不带 manifest/reviews)。
@@ -261,6 +263,14 @@ export class ProposalRepositoryDuplicateTargetKeyError extends Error {
   }
 }
 
+export class ProposalRepositoryBranchWorkItemMismatchError extends Error {
+  public readonly code = "proposal_branch_workitem_mismatch";
+
+  constructor(public readonly branchId: string) {
+    super(`Proposal branch "${branchId}" belongs to a different work item.`);
+  }
+}
+
 // findings[#low]：service 层 findById 预检与 createFromManifest 插入之间存在 TOCTOU——并发同
 // proposal_id 时输者撞 proposals_pkey / proposals_branch_round_uq 唯一约束抛裸 23505 冒泡成 500。
 // 在仓库层翻译成 proposal_already_exists（service 映射 409），其余错误原样抛出（镜像 drive.ts）。
@@ -348,7 +358,7 @@ export type ProposalRepository = {
   findProposalByMergeProposalId: (mergeProposalId: string) => Promise<StoredProposalRows | null>;
   findById: (proposalId: string) => Promise<StoredProposalRows | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposalRows[]>;
-  listReviewable: (input: { submitterUserId?: string; includeAll: boolean; limit?: number }) => Promise<ReviewableProposalRow[]>;
+  listReviewable: (input: { submitterUserId?: string; includeAll: boolean; workspaceId?: string; limit?: number }) => Promise<ReviewableProposalRow[]>;
   listConflictsByWorkItem: (workItemId: string) => Promise<ProposalMergeConflict[]>;
   listMergeAttemptsByProposal: (proposalId: string) => Promise<MergeAttemptRow[]>;
   listMergeProposalsByAttempt: (mergeAttemptId: string) => Promise<MergeProposalRow[]>;
@@ -1646,7 +1656,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           .limit(1);
         const existingBranch = branchRows[0];
         if (existingBranch && existingBranch.workItemId !== input.workItemId) {
-          throw new Error("Proposal branch belongs to a different work item");
+          throw new ProposalRepositoryBranchWorkItemMismatchError(branchId);
         }
         if (!existingBranch) {
           await tx.insert(branches).values({
@@ -1823,21 +1833,40 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
 
     async listByWorkItem(workItemId) {
       const proposalRows = await db
-        .select()
+        .select({
+          proposal: proposals,
+          sourceAgentRunId: branches.agentRunId
+        })
         .from(proposals)
+        .innerJoin(branches, eq(proposals.branchId, branches.id))
         .where(eq(proposals.workItemId, workItemId))
         .orderBy(desc(proposals.createdAt));
       return Promise.all(
-        proposalRows.map(async (proposal) => ({
-          proposal,
-          reviews: await readReviewsForProposal(db, proposal.id)
+        proposalRows.map(async (row) => ({
+          proposal: row.proposal,
+          reviews: await readReviewsForProposal(db, row.proposal.id),
+          sourceAgentRunId: row.sourceAgentRunId
         }))
       );
     },
     // GAP-1：列出待评审(opened/reviewed)的提议给首页决策队列。inner join work_items 取提交人做鉴权——
     // 非 admin 只看自己提交的工作项的提议(与 routeApprover "proposal"→submitter 一致);admin 看全部。
     async listReviewable(input) {
-      const conditions = [inArray(proposals.status, ["opened", "reviewed"])];
+      const conditions = [
+        inArray(proposals.status, ["opened", "reviewed"]),
+        isNull(workItems.deletedAt),
+        eq(projects.archived, false),
+        isNull(projects.deletedAt)
+      ];
+      if (input.workspaceId) {
+        const workspaceCondition = or(
+          eq(workItems.workspaceId, input.workspaceId),
+          eq(projects.workspaceId, input.workspaceId)
+        );
+        if (workspaceCondition) {
+          conditions.push(workspaceCondition);
+        }
+      }
       if (!input.includeAll) {
         if (!input.submitterUserId) {
           return [];
@@ -1854,6 +1883,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         })
         .from(proposals)
         .innerJoin(workItems, eq(workItems.id, proposals.workItemId))
+        .innerJoin(projects, eq(projects.id, workItems.projectId))
         .where(and(...conditions))
         .orderBy(desc(proposals.createdAt))
         .limit(input.limit ?? 50);

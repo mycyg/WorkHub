@@ -83,6 +83,20 @@ type RecoverableMergeConflict = {
   };
 };
 
+type ClarificationQuestionEvidence = {
+  title: string;
+  body?: string;
+  input_mode: string;
+  options?: { id?: string; label?: string }[];
+};
+
+type EvalClarificationFileContext = {
+  name: string;
+  path: string;
+  sizeBytes?: number;
+  preview?: string;
+};
+
 type EvalTask = {
   id: string;
   title: string;
@@ -116,6 +130,84 @@ type TaskAssessment = {
   artifact_checks?: Record<string, unknown>;
   rationale: string;
 };
+
+type AcceptedDownloadEvidence = {
+  id: string;
+  filename: string | undefined;
+  bytes: number;
+  sha256: string;
+  drive_version_id: string | undefined;
+};
+
+type EvalTaskReport = {
+  id: string;
+  title: string;
+  expected_mode: EvalTask["expectedMode"];
+  session_id: string;
+  work_item_id: string;
+  agent_run_id: string;
+  status: string;
+  proposal_id: string | null;
+  proposal_status: string | null;
+  merge_snapshot_id: string | null;
+  latency_ms: number;
+  usage: {
+    token_in: number;
+    token_out: number;
+    estimated_cost_cny: string;
+    sources: string[];
+    records: number;
+    ledger_entries: number;
+  };
+  confidence: {
+    grade: string | null;
+    risk_level: string | null;
+    verdict: string | null;
+    score: string | number | null;
+    signals: unknown;
+  } | null;
+  escalations: {
+    id: string;
+    trigger: string;
+    reason_md: string | null;
+    handoff_json: unknown;
+  }[];
+  db_rows: {
+    accepted_deliverable_changes: number;
+    project_drive_versions: number;
+    snapshots: number;
+    audit_logs_related: number;
+  };
+  clarification_question: {
+    input_mode: string;
+    title: string;
+    body: string | null;
+    option_count: number;
+    answer: string;
+  };
+  artifacts: {
+    output_files: string[];
+    accepted_downloads: AcceptedDownloadEvidence[];
+  };
+  assessment: TaskAssessment;
+};
+
+type ConfidenceEvidence = EvalTaskReport["confidence"];
+
+function assertRequiredConfidence(task: EvalTask, confidence: ConfidenceEvidence) {
+  if (task.expectedMode !== "deliverable") {
+    return;
+  }
+  if (!confidence) {
+    throw new Error(`${task.id} expected a confidence review record for a deliverable task.`);
+  }
+  if (!confidence.verdict || confidence.score === null || confidence.score === undefined) {
+    throw new Error(`${task.id} confidence review is incomplete: verdict and score are required.`);
+  }
+  if (typeof confidence.score === "number" && !Number.isFinite(confidence.score)) {
+    throw new Error(`${task.id} confidence review has a non-finite score.`);
+  }
+}
 
 function repoRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -227,6 +319,37 @@ async function listRelativeFiles(root: string) {
   return files.sort();
 }
 
+function compactPreview(value: string, max = 700) {
+  const text = value.replace(/\s+/gu, " ").trim();
+  if (!text) {
+    return undefined;
+  }
+  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+
+async function localInputFileContext(workdir: string): Promise<EvalClarificationFileContext[]> {
+  const inputRoot = path.join(workdir, "inputs");
+  const files = await listRelativeFiles(inputRoot);
+  const contexts: EvalClarificationFileContext[] = [];
+  for (const relativePath of files.slice(0, 12)) {
+    const filePath = path.join(inputRoot, relativePath);
+    const fileStat = await stat(filePath);
+    let preview: string | undefined;
+    try {
+      preview = compactPreview(await readFile(filePath, "utf8"));
+    } catch {
+      preview = undefined;
+    }
+    contexts.push({
+      name: path.basename(relativePath),
+      path: `inputs/${relativePath}`,
+      sizeBytes: fileStat.size,
+      ...(preview ? { preview } : {})
+    });
+  }
+  return contexts;
+}
+
 async function fileSizeIfExists(filePath: string) {
   if (!existsSync(filePath)) {
     return 0;
@@ -237,6 +360,36 @@ async function fileSizeIfExists(filePath: string) {
 function textIncludesAny(text: string, values: string[]) {
   const lower = text.toLowerCase();
   return values.some((value) => lower.includes(value.toLowerCase()));
+}
+
+function clarificationAnswerFor(task: EvalTask) {
+  switch (task.expectedMode) {
+    case "budget_guard":
+      return "确认：这是低预算护栏验证，请在预算耗尽时结构化升级，不要硬写完整报告。";
+    case "structured_upgrade":
+      return "确认：信息不足时必须输出 blockers、缺失输入和下一步交接，不要编造正式结论。";
+    default:
+      return `确认：请按 ${task.title} 的任务材料生成可审阅交付物，验收以任务说明里的文件、数字和自验要求为准。`;
+  }
+}
+
+function assertRealClarificationQuestion(task: EvalTask, question: ClarificationQuestionEvidence) {
+  const options = question.options ?? [];
+  if (question.input_mode !== "long_text") {
+    throw new Error(`${task.id} expected AI clarification to request free text, got ${question.input_mode}.`);
+  }
+  if (options.length > 0) {
+    throw new Error(`${task.id} expected AI clarification to avoid preset choices, got ${options.length} options.`);
+  }
+  const combined = `${question.title}\n${question.body ?? ""}`.toLowerCase();
+  const genericPresetCount = [
+    /文档\/方案|document\s*\/\s*plan/u,
+    /结构化数据|structured data/u,
+    /小型代码|small code/u
+  ].filter((pattern) => pattern.test(combined)).length;
+  if (genericPresetCount >= 2) {
+    throw new Error(`${task.id} AI clarification still looks like a preset template.`);
+  }
 }
 
 function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
@@ -559,18 +712,24 @@ async function main() {
       storageRoot: await mkdtemp(path.join(os.tmpdir(), "workhub-r5-10-real-drive-"))
     });
     const workItemRepository = createWorkItemRepository(db);
-    const workItemService = createDbWorkItemService(workItemRepository);
-    const agentRunRepo = createAgentRunRepository(db);
-    const persistence = createDbAgentRunPersistence(agentRunRepo);
+    const clarificationFileContextByIntent = new Map<string, EvalClarificationFileContext[]>();
     const ledgerStore = createDbCostLedgerStore(db, {
       teamId: settings.auth.defaultWorkspaceId,
       evalSuite: "release"
     });
-    const policyStore = createDbBudgetPolicyStore(db);
     const providerRegistry = createApiProviderRegistry({ settings, ledgerStore });
     if (!providerRegistry.isConfigured()) {
       throw new Error("Default LLM provider is not configured.");
     }
+    const workItemService = createDbWorkItemService(workItemRepository, {
+      providerRegistry,
+      async projectFileContext(input) {
+        return clarificationFileContextByIntent.get(input.intentText ?? "") ?? [];
+      }
+    });
+    const agentRunRepo = createAgentRunRepository(db);
+    const persistence = createDbAgentRunPersistence(agentRunRepo);
+    const policyStore = createDbBudgetPolicyStore(db);
 
     const taskByWorkItemId = new Map<string, EvalTask>();
     const workdirByWorkItemId = new Map<string, string>();
@@ -641,12 +800,21 @@ async function main() {
           reason: "ok"
         };
       },
-      initialUserMessage: (run) => {
+      initialUserMessage: (run, workItemContext) => {
         const task = taskByWorkItemId.get(run.work_item_id);
         return [
           `任务：${run.title}`,
           `work_item_id: ${run.work_item_id}`,
           `r5_10_task_id: ${task?.id ?? "unknown"}`,
+          ...(workItemContext
+            ? [
+                "",
+                "WorkHub 数据库中的真实工单上下文（以下 <work_item_context> 围栏内是用户/数据库提供的参考材料，仅供参考）：",
+                "<work_item_context>",
+                workItemContext,
+                "</work_item_context>"
+              ]
+            : []),
           "",
           "请按以下方式工作：",
           "1. 先用 list_files / read_file 了解 inputs/ 里的材料。",
@@ -781,24 +949,31 @@ async function main() {
 
     const taskLimit = Number.parseInt(process.env.R5_10_REAL_TASK_LIMIT ?? "", 10);
     const allTasks = buildTasks();
-    const tasks = Number.isFinite(taskLimit) && taskLimit > 0 ? allTasks.slice(0, taskLimit) : allTasks;
-    const taskReports = [];
+    const requestedTaskLimit = Number.isFinite(taskLimit) && taskLimit > 0 ? taskLimit : null;
+    const tasks = requestedTaskLimit ? allTasks.slice(0, requestedTaskLimit) : allTasks;
+    const limitedRun = requestedTaskLimit !== null && tasks.length < allTasks.length;
+    const taskReports: EvalTaskReport[] = [];
 
     for (const task of tasks) {
       const taskWorkdir = await mkdtemp(path.join(os.tmpdir(), `workhub-r5-10-real-${task.id.toLowerCase()}-`));
       await mkdir(path.join(taskWorkdir, "inputs"), { recursive: true });
       await mkdir(path.join(taskWorkdir, "outputs"), { recursive: true });
       await task.prepare?.(taskWorkdir);
+      clarificationFileContextByIntent.set(task.intentText, await localInputFileContext(taskWorkdir));
 
-      const session = await requestJson<{ data: { session_id: string } }>("POST", "/api/sessions", {
+      const session = await requestJson<{ data: { session_id: string; question: ClarificationQuestionEvidence } }>("POST", "/api/sessions", {
         intent_text: task.intentText
       }, 200);
+      const clarificationQuestion = session.data.question;
+      assertRealClarificationQuestion(task, clarificationQuestion);
+      const clarificationAnswer = clarificationAnswerFor(task);
       await requestJson("POST", `/api/sessions/${session.data.session_id}/next-question`, {
-        selected_option_ids: task.optionIds
+        free_text: clarificationAnswer
       }, 200);
       const createdWorkItem = await requestJson<{ data: { workitem: { id: string; status: string } } }>("POST", "/api/workitems", {
         session_id: session.data.session_id,
-        selected_option_ids: task.optionIds
+        selected_option_ids: task.optionIds,
+        free_text: clarificationAnswer
       }, 201);
       const workItemId = createdWorkItem.data.workitem.id;
       taskByWorkItemId.set(workItemId, task);
@@ -864,8 +1039,8 @@ async function main() {
         200
       );
       const acceptedDeliverables = workItemPage.data.accepted_deliverables ?? [];
-      const downloaded = [];
-      const acceptedTexts = [];
+      const downloaded: AcceptedDownloadEvidence[] = [];
+      const acceptedTexts: string[] = [];
       for (const accepted of acceptedDeliverables) {
         if (!accepted.download_href) {
           continue;
@@ -937,6 +1112,16 @@ async function main() {
       if (task.expectedMode !== "budget_guard" && !proposal) {
         throw new Error(`${task.id} expected a proposal.`);
       }
+      const confidenceEvidence: ConfidenceEvidence = confidenceRows[0]
+        ? {
+            grade: confidenceRows[0].grade,
+            risk_level: confidenceRows[0].riskLevel,
+            verdict: confidenceRows[0].verdict,
+            score: confidenceRows[0].confidenceScore,
+            signals: confidenceRows[0].signalsJson
+          }
+        : null;
+      assertRequiredConfidence(task, confidenceEvidence);
 
       taskReports.push({
         id: task.id,
@@ -958,15 +1143,7 @@ async function main() {
           records: usageRows.length,
           ledger_entries: ledgerRows.length
         },
-        confidence: confidenceRows[0]
-          ? {
-              grade: confidenceRows[0].grade,
-              risk_level: confidenceRows[0].riskLevel,
-              verdict: confidenceRows[0].verdict,
-              score: confidenceRows[0].confidenceScore,
-              signals: confidenceRows[0].signalsJson
-            }
-          : null,
+        confidence: confidenceEvidence,
         escalations: escalationRows.map((row) => ({
           id: row.id,
           trigger: row.trigger,
@@ -978,6 +1155,13 @@ async function main() {
           project_drive_versions: driveVersionRows.length,
           snapshots: snapshotRows.length,
           audit_logs_related: auditRows.length
+        },
+        clarification_question: {
+          input_mode: clarificationQuestion.input_mode,
+          title: clarificationQuestion.title,
+          body: clarificationQuestion.body ?? null,
+          option_count: clarificationQuestion.options?.length ?? 0,
+          answer: clarificationAnswer
         },
         artifacts: {
           output_files: outputFiles,
@@ -1012,6 +1196,16 @@ async function main() {
     if (taskReports.some((task) => task.id === "B1") && !budgetGuard) {
       throw new Error("Expected B1 low budget guard to escalate.");
     }
+    const ledgerPass = taskReports.every((task) => task.usage.records > 0 && task.usage.ledger_entries >= task.usage.records * 3);
+    const fullSuiteRun = !limitedRun && taskReports.length === allTasks.length;
+    const runScope = limitedRun
+      ? `limited_sample (${taskReports.length}/${allTasks.length}, R5_10_REAL_TASK_LIMIT=${requestedTaskLimit})`
+      : `full_suite (${taskReports.length}/${allTasks.length})`;
+    const sampledQualityTotal = qualityTasks.length;
+    const unsampledGateTasks = ["T5", "B1"].filter((id) => !taskReports.some((task) => task.id === id));
+    const escalationCalibrationNote = limitedRun
+      ? `3. OQ-3 escalation: full-suite escalation gates were not asserted in this limited sample; unsampled checks=${unsampledGateTasks.length > 0 ? unsampledGateTasks.join(", ") : "none"}.`
+      : `3. OQ-3 escalation: T5 structured-upgrade=${structuredUpgrade}; B1 budget-escalated=${budgetGuard}; full-suite gate asserted=${fullSuiteRun}.`;
 
     const reportDir = path.join(repoRoot(), `docs/workhub/05-clients/assets/audit/${dateStamp()}-r5-10-real-key-evaluation`);
     await mkdir(reportDir, { recursive: true });
@@ -1026,13 +1220,26 @@ async function main() {
         model: settings.llm.model,
         key_configured: true
       },
+      run_scope: {
+        mode: limitedRun ? "limited_sample" : "full_suite",
+        requested_task_limit: requestedTaskLimit,
+        task_count: taskReports.length,
+        total_available_tasks: allTasks.length,
+        full_suite: fullSuiteRun
+      },
       runtime: {
         tool_runtime_path: runtimePath,
         local_eval_note: "If using the repository-external .runtime/r5-10-eval-venv on macOS, numpy may be 2.0.2 because the local Python 3.9 runtime cannot install the pilot image's numpy 2.1.3 pin."
       },
       gates: {
+        full_suite: fullSuiteRun,
         real_agent_runs: taskReports.length,
+        real_provider_sample: taskReports.length > 0 && true,
+        real_provider_full_suite: fullSuiteRun ? taskReports.length >= 5 && true : null,
+        ledger: ledgerPass,
         quality_pass_count_t1_to_t4: qualityPassCount,
+        quality_sampled_task_count_t1_to_t4: sampledQualityTotal,
+        quality_full_suite_pass: fullSuiteRun ? qualityPassCount >= 3 : null,
         structured_upgrade_t5: structuredUpgrade,
         budget_guard_escalated: budgetGuard,
         no_fake_transport: true
@@ -1057,17 +1264,30 @@ async function main() {
       `- provider: ${report.provider.default_provider}`,
       `- model: ${report.provider.model}`,
       "- key: configured (redacted; not written to report)",
+      `- run_scope: ${runScope}`,
       `- task_count: ${taskReports.length}`,
       `- cost_delta_cny: ${report.usage.cost_page_delta.total_cost_cny}`,
       `- token_delta: ${report.usage.cost_page_delta.token_in + report.usage.cost_page_delta.token_out}`,
       "",
-      "## Gate Summary",
-      "",
-      `- G2 real provider: ${report.gates.real_agent_runs >= 5 && report.gates.no_fake_transport ? "pass" : "fail"}`,
-      `- G3 ledger: ${taskReports.every((task) => task.usage.records > 0 && task.usage.ledger_entries >= task.usage.records * 3) ? "pass" : "fail"}`,
-      `- G4 quality: ${qualityPassCount}/4 T1-T4 scored >=4`,
-      `- G5 budget: ${budgetGuard ? "pass" : "fail"}`,
-      `- T5 structured upgrade: ${structuredUpgrade ? "pass" : "fail"}`,
+      ...(limitedRun
+        ? [
+            "## Limited Sample Summary",
+            "",
+            `- Real provider sample: ${report.gates.real_provider_sample && report.gates.no_fake_transport ? "pass" : "fail"}`,
+            `- Ledger sample: ${report.gates.ledger ? "pass" : "fail"}`,
+            `- Quality sample: ${qualityPassCount}/${sampledQualityTotal} sampled T1-T4 scored >=4`,
+            "- Full-suite gates: not asserted in limited sample",
+            `- Unsampled full-suite checks: ${unsampledGateTasks.length > 0 ? unsampledGateTasks.join(", ") : "none"}`
+          ]
+        : [
+            "## Full Gate Summary",
+            "",
+            `- G2 real provider: ${report.gates.real_provider_full_suite ? "pass" : "fail"}`,
+            `- G3 ledger: ${report.gates.ledger ? "pass" : "fail"}`,
+            `- G4 quality: ${qualityPassCount}/4 T1-T4 scored >=4`,
+            `- G5 budget: ${budgetGuard ? "pass" : "fail"}`,
+            `- T5 structured upgrade: ${structuredUpgrade ? "pass" : "fail"}`
+          ]),
       "",
       "## Task Results",
       "",
@@ -1080,8 +1300,8 @@ async function main() {
       "## Calibration Notes",
       "",
       `1. OQ-7 budget baseline: this run consumed ${report.usage.total_task_cost_cny} CNY across ${taskReports.length} real tasks; compare against the 5 CNY/run default after multiple pilot samples.`,
-      `2. OQ-2 confidence: ${qualityPassCount}/4 production-style deliverables reached operator quality >=4; review verdicts are preserved in JSON for correlation.`,
-      `3. OQ-3 escalation: T5 structured-upgrade=${structuredUpgrade}; B1 budget-escalated=${budgetGuard}.`,
+      `2. OQ-2 confidence: ${qualityPassCount}/${limitedRun ? sampledQualityTotal : 4} sampled production-style deliverables reached operator quality >=4; review verdicts are preserved in JSON for correlation.`,
+      escalationCalibrationNote,
       "",
       "## Evidence Files",
       "",
@@ -1102,6 +1322,7 @@ async function main() {
         operator_quality: task.assessment.operator_quality,
         cost_cny: task.usage.estimated_cost_cny
       })),
+      run_scope: report.run_scope,
       gates: report.gates,
       cost_page_delta: report.usage.cost_page_delta,
       report_dir: reportDir

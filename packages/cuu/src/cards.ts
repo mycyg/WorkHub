@@ -210,6 +210,25 @@ function proposalNextStepSection(line: string, options: CuuLocaleOptions = {}): 
   };
 }
 
+function attentionHasAction(item: AttentionItem, actionId: string) {
+  return item.actions.some((action) => action.id === actionId);
+}
+
+function stateForAttentionItem(item: AttentionItem): CuuState {
+  if ((item.kind === "proposal_review" || item.kind === "delivery_ready") && attentionHasAction(item, "merge")) {
+    return "carrying_document";
+  }
+  return item.cuu_state ?? stateByAttentionKind[item.kind];
+}
+
+function publicProposalAttentionTitle(item: AttentionItem, message: string, options: CuuLocaleOptions = {}) {
+  if (attentionHasAction(item, "merge")) {
+    return cuuT(options.locale, "proposal.mergeTitle");
+  }
+  const title = publicProposalTitle(item.title, options);
+  return title === message ? cuuT(options.locale, "proposal.reviewTitle") : title;
+}
+
 function optionalSource(input: {
   entity_type: CuuCardSource["entity_type"];
   entity_id: string;
@@ -246,8 +265,9 @@ function localizedAttentionActionLabel(
         return cuuT(options.locale, "proposal.requestChanges");
       }
       return cuuT(options.locale, "pet.action.requestChanges");
-    case "open":
     case "open_proposal":
+      return cuuT(options.locale, "proposal.openReview");
+    case "open":
     case "view":
       return item.kind === "proposal_review" || item.kind === "delivery_ready"
         ? cuuT(options.locale, "proposal.openReview")
@@ -286,6 +306,27 @@ function sortAttentionActionsForUser(actions: CuuCardAction[], item: AttentionIt
     return 3;
   };
   return [...actions].sort((a, b) => rank(a) - rank(b));
+}
+
+function isSessionNextQuestionAction(action: CuuCardAction) {
+  return action.method === "POST" && /\/api\/sessions\/[^/]+\/next-question(?:$|[?#])/u.test(action.href ?? "");
+}
+
+function clarificationInputForAttention(
+  item: AttentionItem,
+  actions: CuuCardAction[],
+  options: CuuLocaleOptions
+): CuuCardInputPolicy | undefined {
+  if (item.kind !== "clarification" || !actions.some(isSessionNextQuestionAction)) {
+    return undefined;
+  }
+  return {
+    mode: "long_text",
+    option_first: false,
+    free_text_enabled: true,
+    free_text_collapsed_by_default: false,
+    free_text_placeholder: cuuT(options.locale, "pet.input.textNeeded")
+  };
 }
 
 function mapActionSpec(action: ActionSpec, tone: CuuCardActionTone): CuuCardAction {
@@ -431,13 +472,14 @@ function cardKindForAttention(kind: AttentionItem["kind"]): CuuCardKind {
 }
 
 export function cardFromAttentionItem(item: AttentionItem, options: CuuLocaleOptions = {}): CuuCard {
-  const state = item.cuu_state ?? stateByAttentionKind[item.kind];
+  const state = stateForAttentionItem(item);
   const proposalLike = item.kind === "proposal_review" || item.kind === "delivery_ready";
   const message = proposalLike
     ? publicProposalSummary(item.reason_text ?? item.summary_text, options)
+    : item.kind === "clarification"
+      ? truncate(item.summary_text)
     : truncate(item.reason_text ?? item.summary_text);
-  const title = proposalLike ? publicProposalTitle(item.title, options) : item.title;
-  const publicTitle = proposalLike && title === message ? cuuT(options.locale, "proposal.reviewTitle") : title;
+  const publicTitle = proposalLike ? publicProposalAttentionTitle(item, message, options) : item.title;
   const proposalSections: CuuCardSection[] = proposalLike
     ? [
         {
@@ -448,6 +490,8 @@ export function cardFromAttentionItem(item: AttentionItem, options: CuuLocaleOpt
         proposalNextStepSection(proposalNextStepForAttention(item, options), options)
       ]
     : [];
+  const actions = sortAttentionActionsForUser(item.actions.map((action) => mapAttentionAction(action, item, options)), item);
+  const input = clarificationInputForAttention(item, actions, options);
   return withMotion({
     id: item.id,
     kind: cardKindForAttention(item.kind),
@@ -455,8 +499,9 @@ export function cardFromAttentionItem(item: AttentionItem, options: CuuLocaleOpt
     title: publicTitle,
     message,
     priority: item.priority,
-    actions: sortAttentionActionsForUser(item.actions.map((action) => mapAttentionAction(action, item, options)), item),
+    actions,
     ...(proposalLike ? { sections: proposalSections } : {}),
+    ...(input ? { input } : {}),
     ...(item.evidence_refs?.length ? { evidence_refs: item.evidence_refs } : {}),
     payload_ref: {
       entity_type: "attention",

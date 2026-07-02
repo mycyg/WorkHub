@@ -193,7 +193,7 @@ test("Page VM builders localize generated English copy without translating user/
     ]
   } as StoredProposal, "en-US");
   assert.equal(proposal.review_actions.request_changes.label, "Request changes with a reason");
-  assert.equal(proposal.review_actions.merge?.label, "Accept into the official version");
+  assert.equal(proposal.review_actions.merge?.label, "Merge deliverable");
   assert.equal(proposal.comments[0]?.author_label, "Owner");
   assert.equal(proposal.comments[0]?.body, "Keep this reviewer note untranslated.");
 
@@ -242,9 +242,13 @@ test("Page VM route builders localize remaining generated labels through locale"
     locale: "en-US",
     payload: { intent_text: "Keep this user text untranslated." }
   });
-  assert.equal(session.question.title, "Which delivery path should this use first?");
-  assert.equal(session.question.options[0]?.label, "Document / plan draft");
-  assert.equal(session.question.body, "Keep this user text untranslated.");
+  assert.equal(session.question.title, "Confirm the acceptance rule for \"Keep this user text untranslated\"");
+  assert.notEqual(session.question.title, "Which delivery path should this use first?");
+  assert.notEqual(session.question.options[0]?.label, "Document / plan draft");
+  assert.ok(session.question.body);
+  const questionBody = session.question.body;
+  assert.equal(questionBody.includes("Keep this user text untranslated."), true);
+  assert.equal(questionBody.includes("No usable project file is visible yet"), true);
 });
 
 test("findings: an empty-string blocker falls back to localized copy instead of 500ing the inbox", () => {

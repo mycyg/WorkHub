@@ -52,6 +52,8 @@ export function writeEventStream(
       // findings[#low]：只有 markStreamOpen 真正成功后才允许 finally 里 markStreamClosed，
       // 否则 open 抛错时会跑一次没有配对 open 的 close，把 Redis 在线计数减成负数。
       opened = true;
+      subscription = await bus.subscribe(topic);
+      const iterator = subscription[Symbol.asyncIterator]();
       await output.write(encoder.encode(formatSseEvent("connected", {
         topic,
         last_event_id: lastEventId || undefined,
@@ -60,8 +62,6 @@ export function writeEventStream(
         // (live-runtime onRefresh)，断线期间的事件靠下一条事件后的全量重拉补齐——故恒报 "fresh"，不谎称重放。
         resume_mode: "fresh"
       })));
-      subscription = await bus.subscribe(topic);
-      const iterator = subscription[Symbol.asyncIterator]();
 
       // 单条在飞 next() 跨心跳复用：每轮都新建 iterator.next() 会在心跳胜出时把上一轮的 resolver
       // 留成孤儿 waiter，导致心跳后丢掉队列里的第一条事件。缓存 pending，只在真正消费后清空。
@@ -107,10 +107,18 @@ export function writeEventStream(
       }
     } finally {
       if (subscription) {
-        await bus.unsubscribe(topic, subscription);
+        try {
+          await bus.unsubscribe(topic, subscription);
+        } catch (error) {
+          getDefaultStructuredLogger().warn("sse_unsubscribe_failed", { topic, error });
+        }
       }
       if (opened) {
-        await presence.markStreamClosed(user.id);
+        try {
+          await presence.markStreamClosed(user.id);
+        } catch (error) {
+          getDefaultStructuredLogger().warn("sse_stream_close_presence_failed", { userId: user.id, error });
+        }
       }
     }
   });

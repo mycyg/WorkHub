@@ -17,6 +17,7 @@ import {
   type WorkItemDataRepository,
   type WorkItemAgentStepRow,
   type WorkItemKnowledgeDocumentRow,
+  type WorkItemKnowledgeSearchWorkItemRow,
   type WorkItemProjectRow,
   type WorkItemRow,
   type WorkHubDatabaseClient
@@ -45,9 +46,10 @@ import {
 } from "@workhub/contracts";
 import type { ProviderRegistry } from "@workhub/agent/providers";
 
-import { canViewProjectDrive, canViewWorkItemRecord } from "@workhub/permissions";
+import { ASSIGNMENT_ROLES, canViewProjectDrive, canViewWorkItemRecord } from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
+import { parseOutputContract } from "../pages/output-contract.js";
 import { acceptedDeliverableToVm } from "./accepted-deliverables.js";
 import { getDefaultProviderRegistry } from "./provider-registry.js";
 
@@ -111,6 +113,14 @@ export type WorkItemService = {
     actor: AuthActor;
     locale?: WorkHubLocale;
   }) => Promise<WorkItemDetailVM>;
+  assertCanMutateWorkItem: (input: {
+    workItemId: string;
+    actor: AuthActor;
+  }) => Promise<void>;
+  assertCanMutateArtifacts: (input: {
+    workItemId: string;
+    actor: AuthActor;
+  }) => Promise<void>;
   acceptedDeliverableFile: (input: {
     workItemId: string;
     acceptedChangeId: string;
@@ -121,6 +131,8 @@ export type WorkItemService = {
     mime?: string;
     sizeBytes: number;
     storagePath: string;
+    sha256?: string;
+    parsedText?: string;
   }>;
   restoreAcceptedDeliverable: (input: {
     workItemId: string;
@@ -498,7 +510,17 @@ function invalidClarificationResponseError(locale: WorkHubLocale) {
   );
 }
 
-function clarificationFileContextFailedError(locale: WorkHubLocale) {
+function clarificationFileContextFailedError(locale: WorkHubLocale, missingFileNames: string[] = []) {
+  if (missingFileNames.length > 0) {
+    const names = missingFileNames.join(", ");
+    return new WorkItemServiceError(
+      502,
+      "clarification_file_context_failed",
+      locale === "en-US"
+        ? `WorkHub could not find the named project file(s): ${names}. Upload or sync them before AI asks a material-based clarification question.`
+        : `WorkHub 没有在项目网盘里找到你点名的文件：${names}。请先上传或同步文件，再生成基于材料的澄清反问。`
+    );
+  }
   return new WorkItemServiceError(
     502,
     "clarification_file_context_failed",
@@ -570,10 +592,12 @@ function normalizeClarificationDraft(
   if (!parsed.success) {
     return fallback;
   }
+  const body = compactText(parsed.data.body, 900);
+  const placeholder = compactText(parsed.data.placeholder, 180);
   return {
     title: parsed.data.title,
-    body: compactText(parsed.data.body, 900) ?? fallback.body,
-    placeholder: compactText(parsed.data.placeholder, 180) ?? fallback.placeholder
+    ...(body ? { body } : {}),
+    ...(placeholder ? { placeholder } : {})
   };
 }
 
@@ -644,6 +668,57 @@ function driveFileRelevanceScore(input: { item: DriveItemRow; path: string; inte
     .reduce((score, token) => score + (intent.includes(token) ? 10 : 0), 0);
 }
 
+// R9 批次0-2：只认「明确像文件名」的提及——扩展名必须在白名单里。
+// 旧正则把版本号(v1.2)、小数(3.14)、域名(example.com)、技术词全当点名文件，
+// 找不到就 502 阻断 intake 并连带 cancel 工单（r9 审查 services-b-1/ux-web-projects-1）。
+const DRIVE_TARGET_FILE_EXTENSIONS = new Set([
+  "txt", "md", "markdown", "json", "csv", "tsv", "yaml", "yml", "xml",
+  "doc", "docx", "xls", "xlsx", "ppt", "pptx", "pdf", "rtf",
+  "png", "jpg", "jpeg", "gif", "svg", "webp",
+  "mp3", "mp4", "mov", "wav", "zip", "tar", "gz", "7z",
+  "ts", "tsx", "js", "jsx", "mjs", "py", "rs", "go", "java", "rb", "html", "css", "scss", "sql", "sh"
+]);
+
+export function driveTargetFileNamesFromIntent(intentText: string | undefined): string[] {
+  if (!intentText) {
+    return [];
+  }
+  const names = new Set<string>();
+  // URL 不是点名文件：先把整段链接（含路径）从意图文本剥掉，再做文件名匹配。
+  const withoutUrls = intentText.replace(/(?:[a-z][a-z0-9+.-]*:\/\/|www\.)[^\s"'“”‘’<>，。；;！？]*/giu, " ");
+  for (const match of withoutUrls.matchAll(/[^\s"'“”‘’<>，。；;：:!?？]+?\.([A-Za-z][A-Za-z0-9]{0,15})/gu)) {
+    const raw = match[0]?.replace(/[),，。；;：:!?？]+$/u, "");
+    if (!raw) {
+      continue;
+    }
+    const name = raw.split(/[\\/]/u).pop()?.trim();
+    const extension = name?.split(".").pop()?.toLowerCase();
+    if (!name || !extension || !DRIVE_TARGET_FILE_EXTENSIONS.has(extension)) {
+      continue;
+    }
+    // 扩展名前必须真有主名（`.md` 单独出现不算），且主名不能是纯标点。
+    const stem = name.slice(0, name.length - extension.length - 1);
+    if (stem.length === 0 || !/[\p{Letter}\p{Number}]/u.test(stem)) {
+      continue;
+    }
+    if (name.length <= 160) {
+      names.add(name);
+    }
+  }
+  return [...names].slice(0, 8);
+}
+
+function driveContextMatchesTarget(file: ClarificationFileContext, targetFileName: string) {
+  const target = targetFileName.toLowerCase();
+  const pathName = file.path.split(/[\\/]/u).pop()?.toLowerCase();
+  return file.name.toLowerCase() === target || pathName === target;
+}
+
+function missingDriveTargetFileNames(input: { intentText: string | undefined; files: ClarificationFileContext[] }) {
+  const targets = driveTargetFileNamesFromIntent(input.intentText);
+  return targets.filter((target) => !input.files.some((file) => driveContextMatchesTarget(file, target)));
+}
+
 async function fileContextFromDriveRows(rows: DrivePageRows, intentText: string | undefined): Promise<ClarificationFileContext[]> {
   const itemsById = new Map(rows.items.map((item) => [item.id, item]));
   const fileItems = rows.items
@@ -675,7 +750,8 @@ async function defaultProjectFileContext(input: { projectId: string; intentText:
     projectId: input.projectId,
     limit: 200,
     includeDeleted: false,
-    operationLimit: 1
+    operationLimit: 1,
+    targetFileNames: driveTargetFileNamesFromIntent(input.intentText)
   });
   return fileContextFromDriveRows(rows, input.intentText);
 }
@@ -753,7 +829,19 @@ function clarificationPrompt(input: ClarificationQuestionInput) {
 
 function clarificationDraftLooksTemplated(draft: ClarificationQuestionDraft, input: ClarificationQuestionInput) {
   const combined = `${draft.title}\n${draft.body ?? ""}`.toLowerCase();
-  if (/需要先确认一个关键点|one key detail to confirm|交付方式|交付方向|delivery path|delivery direction|文档\/方案|结构化数据|小型代码/u.test(combined)) {
+  if (
+    /需要先确认一个关键点|one key detail to confirm/u.test(combined)
+    || /这件事先按(?:哪种|什么)?交付(?:方式|方向)处理/u.test(combined)
+    || /which delivery path should this use first/u.test(combined)
+  ) {
+    return true;
+  }
+  const presetBuckets = [
+    /文档\/方案|document\s*\/\s*plan/u,
+    /结构化数据|structured data/u,
+    /小型代码|small code/u
+  ].filter((pattern) => pattern.test(combined)).length;
+  if (presetBuckets >= 2) {
     return true;
   }
   const fileMatched = input.files.some((file) =>
@@ -770,6 +858,28 @@ function clarificationDraftLooksTemplated(draft: ClarificationQuestionDraft, inp
   return input.files.length > 0 ? !fileMatched && !intentMatched : !intentMatched;
 }
 
+function clarificationDraftCoversNamedDriveTargets(draft: ClarificationQuestionDraft, intentText: string | undefined) {
+  const targets = driveTargetFileNamesFromIntent(intentText);
+  if (targets.length === 0) {
+    return true;
+  }
+  const combined = `${draft.title}\n${draft.body ?? ""}`.toLowerCase();
+  return targets.every((target) => combined.includes(target.toLowerCase()));
+}
+
+function canReuseStoredClarificationDraft(
+  draft: ClarificationQuestionDraft,
+  input: ClarificationQuestionInput
+) {
+  const intentText = input.workItem.rawDescription ?? input.workItem.title ?? undefined;
+  return !clarificationDraftLooksTemplated(draft, input)
+    && clarificationDraftCoversNamedDriveTargets(draft, intentText);
+}
+
+// R9 批次0-2：删除 assertGeneratedClarificationDraftIsGrounded——
+// 「草稿必须逐字包含每个点名文件名」是伪 grounding：LLM 正常改写（换称呼/概括）就 502，
+// 文件明明已找到并喂给了模型（r9 审查 services-b-2）。覆盖度只用于复用判定的启发式。
+
 function createLlmClarificationGenerator(registry: ProviderRegistry): ClarificationQuestionGenerator {
   return async (input) => {
     if (!registry.isConfigured()) {
@@ -785,6 +895,7 @@ function createLlmClarificationGenerator(registry: ProviderRegistry): Clarificat
       id: input.actor.userId ?? input.actor.id,
       label: "workhub-intake-clarifier",
       userId: input.actor.userId ?? input.actor.id,
+      ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {}),
       workItemId: input.workItem.id
     }, "clarify");
     const response = await client.messages.create({
@@ -825,7 +936,8 @@ function detailToWorkItemAccessRecord(rows: StoredWorkItemDetailRows) {
       deletedAt: rows.projectDeletedAt,
       ownerUserId: rows.projectOwnerUserId,
       workspaceId: rows.projectWorkspaceId
-    }
+    },
+    assignments: rows.assignments
   };
 }
 
@@ -835,9 +947,6 @@ function detailToWorkItemAccessRecord(rows: StoredWorkItemDetailRows) {
 // 认领人（claimedByUserId）此前可读 spec_ready 私有态，canViewWorkItemRecord 不查认领字段，保留显式短路防回归。
 function assertCanReadDetail(rows: StoredWorkItemDetailRows, actor: AuthActor) {
   const userId = actor.userId ?? actor.id;
-  if (rows.workItem.claimedByUserId === userId) {
-    return;
-  }
   const allowed = canViewWorkItemRecord(
     detailToWorkItemAccessRecord(rows),
     { id: userId, isAdmin: actor.isAdmin },
@@ -846,9 +955,47 @@ function assertCanReadDetail(rows: StoredWorkItemDetailRows, actor: AuthActor) {
     // 真 PG 下 actor.orgId 是默认 org 实值，会把所有合法读误判成 403（r1-pg-smoke 撞红）。workspace 已是真边界。
     { workspaceId: actor.workspaceId }
   );
-  if (!allowed) {
+  const claimedByActorInScope = rows.workItem.claimedByUserId === userId
+    && !rows.projectArchived
+    && rows.projectDeletedAt == null
+    && (
+      !actor.workspaceId
+      || actor.workspaceId === rows.workItem.workspaceId
+      || actor.workspaceId === rows.projectWorkspaceId
+    );
+  if (!allowed && !claimedByActorInScope) {
     throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
   }
+}
+
+function canMutateWorkItem(rows: StoredWorkItemDetailRows, actor: AuthActor) {
+  const userId = actor.userId ?? actor.id;
+  const inWorkspace = !actor.workspaceId
+    || actor.workspaceId === rows.workItem.workspaceId
+    || actor.workspaceId === rows.projectWorkspaceId;
+  const projectActive = !rows.projectArchived && rows.projectDeletedAt == null;
+  const canWorkAssignment = rows.assignments.some(
+    (assignment) => assignment.userId === userId && (ASSIGNMENT_ROLES as readonly string[]).includes(assignment.role)
+  );
+  const ownsOrWorksItem = rows.projectOwnerUserId === userId
+    || rows.workItem.submitterUserId === userId
+    || rows.workItem.claimedByUserId === userId
+    || canWorkAssignment;
+  return projectActive && inWorkspace && (actor.isAdmin || ownsOrWorksItem);
+}
+
+function assertCanMutateWorkItemRows(rows: StoredWorkItemDetailRows, actor: AuthActor) {
+  if (canMutateWorkItem(rows, actor)) {
+    return;
+  }
+  throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项。");
+}
+
+function assertCanMutateWorkItemArtifacts(rows: StoredWorkItemDetailRows, actor: AuthActor) {
+  if (canMutateWorkItem(rows, actor)) {
+    return;
+  }
+  throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项的正式交付物。");
 }
 
 function toWorkItemVm(row: WorkItemRow): WorkItem {
@@ -919,6 +1066,18 @@ function evidenceSourceType(raw: string): EvidenceRef["source_type"] {
   return "external_url";
 }
 
+function safeEvidenceHref(value: string): string | undefined {
+  if (value.startsWith("/") && !value.startsWith("//")) {
+    return value;
+  }
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function evidenceRefFromDocument(row: WorkItemKnowledgeDocumentRow): EvidenceRef {
   const ref: EvidenceRef = {
     id: row.id,
@@ -926,9 +1085,12 @@ function evidenceRefFromDocument(row: WorkItemKnowledgeDocumentRow): EvidenceRef
     source_id: row.sourceId,
     title: row.title,
     locator: { path: row.corpusPath },
-    confidence_hint: "found",
-    href: row.sourceUrl
+    confidence_hint: "found"
   };
+  const href = safeEvidenceHref(row.sourceUrl);
+  if (href) {
+    ref.href = href;
+  }
   return ref;
 }
 
@@ -946,6 +1108,38 @@ function evidenceRefFromWorkItem(row: WorkItemRow): EvidenceRef {
     ref.excerpt = excerpt;
   }
   return ref;
+}
+
+type KnowledgeWorkItemProject = {
+  ownerUserId?: string | null;
+  workspaceId?: string | null;
+  archived?: boolean | null;
+  deletedAt?: Date | string | null;
+};
+
+function canViewKnowledgeWorkItem(row: WorkItemKnowledgeSearchWorkItemRow, actor: AuthActor, project?: KnowledgeWorkItemProject) {
+  return canViewWorkItemRecord(
+    {
+      id: row.id,
+      status: row.status,
+      submitterUserId: row.submitterUserId,
+      claimedByUserId: row.claimedByUserId,
+      workspaceId: row.workspaceId,
+      assignments: row.assignments,
+      ...(project
+        ? {
+            project: {
+              archived: project.archived ?? false,
+              deletedAt: project.deletedAt ?? null,
+              ownerUserId: project.ownerUserId ?? null,
+              workspaceId: project.workspaceId ?? row.workspaceId
+            }
+          }
+        : {})
+    },
+    { id: actor.userId ?? actor.id, isAdmin: actor.isAdmin },
+    { workspaceId: actor.workspaceId }
+  );
 }
 
 function evidenceRefsFromBindings(rows: StoredWorkItemDetailRows["evidenceBindings"]) {
@@ -967,7 +1161,11 @@ function evidenceRefsFromBindings(rows: StoredWorkItemDetailRows["evidenceBindin
   return refs;
 }
 
-function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLocale = "zh-CN"): WorkItemDetailVM {
+function buildWorkItemDetail(
+  rows: StoredWorkItemDetailRows,
+  locale: WorkHubLocale = "zh-CN",
+  options: { includeAcceptedDeliverableRestore?: boolean; includeSourceProposalDraftAction?: boolean } = {}
+): WorkItemDetailVM {
   const latestProposal = rows.latestProposal
     ? deliverableChangeManifestSchema.safeParse(rows.latestProposal.diffManifest)
     : undefined;
@@ -1033,7 +1231,12 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLoca
     }
     : undefined;
   const sourceContext = driveSourceContext ?? meetingSourceContext;
-  const createProposalAction = sourceContext && !latestProposalId
+  const canCreateSourceProposal = sourceContext
+    && !latestProposalId
+    && (sourceContext.source_type === "drive_comment"
+      ? sourceContext.status !== "dismissed"
+      : sourceContext.status === "confirmed");
+  const createProposalAction = (options.includeSourceProposalDraftAction ?? true) && canCreateSourceProposal
     ? {
       id: sourceContext.source_type === "drive_comment" ? "drive_draft_to_proposal" : "meeting_draft_to_proposal",
       label: workItemT(locale, "proposalDraft.create.label"),
@@ -1043,7 +1246,7 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLoca
         : `/api/meetings/workitems/${rows.workItem.id}/proposal-draft`
     }
     : undefined;
-  return workItemDetailVmSchema.parse({
+  return parseOutputContract(workItemDetailVmSchema, {
     workitem: toWorkItemVm(rows.workItem),
     ...(rows.projectName ? { project_name: rows.projectName } : {}),
     acceptance: rows.acceptance.map((item) => ({
@@ -1059,13 +1262,17 @@ function buildWorkItemDetail(rows: StoredWorkItemDetailRows, locale: WorkHubLoca
     })),
     agent_trace_preview: rows.agentSteps.map(toAgentStepVm),
     ...(latestProposal?.success ? { latest_proposal: latestProposal.data } : {}),
-    accepted_deliverables: rows.acceptedDeliverables.map(acceptedDeliverableToVm),
+    accepted_deliverables: rows.acceptedDeliverables.map((row) =>
+      options.includeAcceptedDeliverableRestore === undefined
+        ? acceptedDeliverableToVm(row)
+        : acceptedDeliverableToVm(row, { includeRestore: options.includeAcceptedDeliverableRestore })
+    ),
     evidence_refs: evidenceRefsFromBindings(rows.evidenceBindings),
     ...(sourceContext ? { source_context: sourceContext } : {}),
     actions: {
       ...(createProposalAction ? { create_proposal_draft: createProposalAction } : {})
     }
-  });
+  }, "work-item.detail");
 }
 
 function questionFor(
@@ -1163,14 +1370,14 @@ function sessionVmFor(
   locale: WorkHubLocale = "zh-CN",
   clarificationDraft?: ClarificationQuestionDraft
 ): SessionVM {
-  return sessionVmSchema.parse({
+  return parseOutputContract(sessionVmSchema, {
     session_id: workItem.id,
     work_item_id: workItem.id,
     topic: `session:${workItem.id}`,
     stream_href: `/api/push/stream/session/${workItem.id}`,
     next_question_href: `/api/sessions/${workItem.id}/next-question`,
     question: questionFor(workItem, stage, locale, clarificationDraft)
-  });
+  }, "work-item.session");
 }
 
 function handleMissingWorkItem(): never {
@@ -1240,11 +1447,15 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     actor: AuthActor,
     locale: WorkHubLocale = "zh-CN"
   ) {
+    const intentText = workItem.rawDescription ?? workItem.title ?? undefined;
     const stored = draftFromStoredClarificationQuestion(
       await repository.findLatestChatMessageByKind(workItem.id, "clarification_question")
     );
     if (stored) {
-      return stored;
+      const storedInput: ClarificationQuestionInput = { workItem, actor, locale, files: [] };
+      if (canReuseStoredClarificationDraft(stored, storedInput)) {
+        return stored;
+      }
     }
     let files: ClarificationFileContext[] = [];
     try {
@@ -1252,7 +1463,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         projectId: workItem.projectId,
         actor,
         locale,
-        intentText: workItem.rawDescription ?? workItem.title ?? undefined
+        intentText
       });
     } catch (error) {
       await repository.insertChatMessage({
@@ -1266,45 +1477,90 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
       });
       throw clarificationFileContextFailedError(locale);
     }
+    // R9 批次0-2：点名文件没找到不再 502（并连带 cancel 工单）——降级为留痕后继续，
+    // 让澄清反问自然向用户确认缺失的材料。识别本身有误报可能，阻断主流程代价不对称。
+    const missingFileNames = missingDriveTargetFileNames({
+      intentText,
+      files
+    });
+    if (missingFileNames.length > 0) {
+      await repository.insertChatMessage({
+        workItemId: workItem.id,
+        role: "system",
+        kind: "clarification_file_context_notice",
+        contentJson: {
+          message: "explicit project file was not loaded; continuing without it",
+          missing_file_names: missingFileNames,
+          loaded_file_paths: files.map((file) => file.path)
+        },
+        at: now()
+      });
+    }
     const input: ClarificationQuestionInput = { workItem, actor, locale, files };
+    if (!clarificationGenerator) {
+      throw new WorkItemServiceError(
+        503,
+        "clarification_llm_unavailable",
+        locale === "en-US"
+          ? "AI material analysis is not configured, so WorkHub cannot generate a real clarification question."
+          : "AI 材料分析尚未配置，WorkHub 无法生成真实澄清反问。"
+      );
+    }
     const fallback = fallbackClarificationDraft(input);
     let generated: ClarificationQuestionDraft | undefined;
-    if (clarificationGenerator) {
-      try {
-        generated = await clarificationGenerator(input);
-      } catch (error) {
-        await repository.insertChatMessage({
-          workItemId: workItem.id,
-          role: "system",
-          kind: "clarification_analysis_error",
-          contentJson: {
-            message: error instanceof Error ? error.message : "clarification analysis failed",
-            file_paths: files.map((file) => file.path)
-          },
-          at: now()
-        });
-        if (error instanceof WorkItemServiceError) {
-          throw error;
-        }
-        throw new WorkItemServiceError(
-          502,
-          "clarification_llm_failed",
-          locale === "en-US"
-            ? "AI material analysis failed before a real clarification question was generated."
-            : "AI 材料分析失败，尚未生成真实澄清反问。"
-        );
+    try {
+      generated = await clarificationGenerator(input);
+    } catch (error) {
+      await repository.insertChatMessage({
+        workItemId: workItem.id,
+        role: "system",
+        kind: "clarification_analysis_error",
+        contentJson: {
+          message: error instanceof Error ? error.message : "clarification analysis failed",
+          file_paths: files.map((file) => file.path)
+        },
+        at: now()
+      });
+      if (error instanceof WorkItemServiceError) {
+        throw error;
       }
-      if (!generated) {
-        throw new WorkItemServiceError(
-          502,
-          "clarification_llm_empty_response",
-          locale === "en-US"
-            ? "AI material analysis returned no clarification question."
-            : "AI 材料分析没有返回澄清反问。"
-        );
-      }
+      throw new WorkItemServiceError(
+        502,
+        "clarification_llm_failed",
+        locale === "en-US"
+          ? "AI material analysis failed before a real clarification question was generated."
+          : "AI 材料分析失败，尚未生成真实澄清反问。"
+      );
+    }
+    if (!generated) {
+      throw new WorkItemServiceError(
+        502,
+        "clarification_llm_empty_response",
+        locale === "en-US"
+          ? "AI material analysis returned no clarification question."
+          : "AI 材料分析没有返回澄清反问。"
+      );
     }
     const draft = normalizeClarificationDraft(generated, fallback);
+    if (generated && clarificationDraftLooksTemplated(draft, input)) {
+      await repository.insertChatMessage({
+        workItemId: workItem.id,
+        role: "system",
+        kind: "clarification_analysis_error",
+        contentJson: {
+          message: "clarification analysis returned a generic template",
+          file_paths: files.map((file) => file.path)
+        },
+        at: now()
+      });
+      throw new WorkItemServiceError(
+        502,
+        "clarification_llm_templated_response",
+        locale === "en-US"
+          ? "AI material analysis returned a generic template instead of a real follow-up question."
+          : "AI 材料分析返回了泛化模板，不是真实反问。"
+      );
+    }
     await repository.insertChatMessage({
       workItemId: workItem.id,
       role: generated ? "assistant" : "system",
@@ -1327,6 +1583,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     async createSession(input) {
       if (input.payload.work_item_id) {
         const rows = await requireDetail(input.payload.work_item_id, input.actor);
+        assertCanMutateWorkItemRows(rows, input.actor);
         return scopeSessionVmFor(rows.workItem, input.actor, input.locale);
       }
 
@@ -1342,30 +1599,48 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         status: "ai_clarifying",
         at: now()
       });
-      await repository.insertChatMessage({
-        workItemId: workItem.id,
-        role: "user",
-        kind: "intent",
-        contentJson: {
-          title,
-          intent_text: input.payload.intent_text ?? null
-        },
-        ...(input.payload.intent_text ? { userOtherText: input.payload.intent_text } : {}),
-        at: now()
-      });
-      return scopeSessionVmFor(workItem, input.actor, input.locale);
+      try {
+        await repository.insertChatMessage({
+          workItemId: workItem.id,
+          role: "user",
+          kind: "intent",
+          contentJson: {
+            title,
+            intent_text: input.payload.intent_text ?? null
+          },
+          ...(input.payload.intent_text ? { userOtherText: input.payload.intent_text } : {}),
+          at: now()
+        });
+        const session = await scopeSessionVmFor(workItem, input.actor, input.locale);
+        return session;
+      } catch (error) {
+        try {
+          await repository.updateWorkItemFromSession({
+            workItemId: workItem.id,
+            status: "cancelled",
+            planningNote: "clarification_session_failed",
+            at: now()
+          });
+        } catch (cancelError) {
+          void cancelError;
+        }
+        throw error;
+      }
     },
 
     async getSession(input) {
       const rows = await requireDetail(input.sessionId, input.actor);
+      assertCanMutateWorkItemRows(rows, input.actor);
       const clarificationAnswers = await repository.listSessionClarificationAnswers(rows.workItem.id);
-      return clarificationAnswers.length > 0
-        ? sessionVmFor(rows.workItem, "confirm", input.locale)
-        : scopeSessionVmFor(rows.workItem, input.actor, input.locale);
+      if (clarificationAnswers.length > 0) {
+        return sessionVmFor(rows.workItem, "confirm", input.locale);
+      }
+      return scopeSessionVmFor(rows.workItem, input.actor, input.locale);
     },
 
     async nextQuestion(input) {
       const rows = await requireDetail(input.sessionId, input.actor);
+      assertCanMutateWorkItemRows(rows, input.actor);
       const selectedOptionIds = input.payload.selected_option_ids ?? [];
       // M10: "调整范围"(adjust-scope) on the confirm step is navigation back to the
       // scope question, not a clarification answer. Re-rendering confirm would trap
@@ -1392,6 +1667,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     async createWorkItem(input) {
       if (input.payload.session_id) {
         const rows = await requireDetail(input.payload.session_id, input.actor);
+        assertCanMutateWorkItemRows(rows, input.actor);
         const clarificationAnswers = await repository.listSessionClarificationAnswers(rows.workItem.id);
         const selectedOptionIds = mergeSelectedOptionIds(
           clarificationAnswers.flatMap((answer) => answer.selectedOptionIds),
@@ -1412,7 +1688,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         const updateInput: Parameters<WorkItemDataRepository["updateWorkItemFromSession"]>[0] = {
           workItemId: rows.workItem.id,
           title: input.payload.title ?? rows.workItem.title ?? titleFromIntent(rows.workItem.rawDescription ?? undefined),
-          status: input.payload.kickoff_agent ? "ai_working" : "spec_ready",
+          status: "spec_ready",
           at: now()
         };
         const rawDescription = input.payload.raw_description ?? rows.workItem.rawDescription ?? undefined;
@@ -1473,7 +1749,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         title,
         rawDescription: input.payload.raw_description ?? title,
         summaryMd: input.payload.raw_description ?? `准备执行：${title}`,
-        status: input.payload.kickoff_agent ? "ai_working" : "spec_ready",
+        status: "spec_ready",
         at: now()
       };
       if (selectedOptionIds.length) {
@@ -1490,7 +1766,8 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     },
 
     async bindEvidence(input) {
-      await requireDetail(input.workItemId, input.actor);
+      const rows = await requireDetail(input.workItemId, input.actor);
+      assertCanMutateWorkItemRows(rows, input.actor);
       await repository.insertChatMessage({
         workItemId: input.workItemId,
         role: "user",
@@ -1508,15 +1785,28 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
 
     async searchKnowledge(input) {
       // 授权：检索必须锚定一个可访问的工单或项目，否则跨项目/工作空间泄露知识库与工单。
+      let explicitWorkItemId: string | undefined;
+      let projectContext: KnowledgeWorkItemProject | undefined;
       if (input.payload.work_item_id) {
-        await requireDetail(input.payload.work_item_id, input.actor); // 抛 403/404
+        const detail = await requireDetail(input.payload.work_item_id, input.actor); // 抛 403/404
+        explicitWorkItemId = input.payload.work_item_id;
+        projectContext = {
+          ownerUserId: detail.projectOwnerUserId,
+          workspaceId: detail.projectWorkspaceId,
+          archived: detail.projectArchived,
+          deletedAt: detail.projectDeletedAt
+        };
       } else if (input.payload.project_id) {
         // 与首页/网盘/项目主页同口径用 canViewProjectDrive(admin/owner/同工作区)，不再 owner-only
         // ——否则同工作区成员能看项目网盘却搜不了它的资料，前后矛盾。
         const project = await repository.findProjectById(input.payload.project_id);
-        if (!project || !canViewProjectDrive(project, input.actor)) {
+        if (!project || project.archived || project.deletedAt != null) {
+          throw new WorkItemServiceError(404, "project_not_found", "没有找到这个项目。");
+        }
+        if (!canViewProjectDrive(project, input.actor)) {
           throw new WorkItemServiceError(403, "forbidden", "你没有权限检索这个项目的资料。");
         }
+        projectContext = project;
       } else if (!input.actor.isAdmin) {
         // 既无工单也无项目 = 全局检索，非管理员禁止（避免泄露全部项目资料）。
         throw new WorkItemServiceError(403, "forbidden", "请在具体事项或项目内检索。");
@@ -1528,9 +1818,19 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
       if (input.payload.work_item_id) searchInput.workItemId = input.payload.work_item_id;
       if (input.payload.limit) searchInput.limit = input.payload.limit;
       const rows = await repository.searchKnowledge(searchInput);
+      const visibleWorkItems = rows.workItems.filter(
+        (row) => row.id === explicitWorkItemId || canViewKnowledgeWorkItem(row, input.actor, projectContext)
+      );
+      const visibleWorkItemIds = new Set(visibleWorkItems.map((row) => row.id));
+      const visibleDocuments = rows.documents.filter((row) => {
+        if (!row.workItemId) {
+          return true;
+        }
+        return row.workItemId === explicitWorkItemId || visibleWorkItemIds.has(row.workItemId);
+      });
       const refs = [
-        ...rows.documents.map(evidenceRefFromDocument),
-        ...rows.workItems.map(evidenceRefFromWorkItem)
+        ...visibleDocuments.map(evidenceRefFromDocument),
+        ...visibleWorkItems.map(evidenceRefFromWorkItem)
       ].slice(0, Math.max(1, Math.min(input.payload.limit ?? 10, 20)));
       const bubble: EvidenceBubble = {
         id: stableUuid(`evidence:${input.actor.id}:${query ?? "recent"}:${input.payload.project_id ?? ""}:${input.payload.work_item_id ?? ""}`),
@@ -1565,7 +1865,22 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     },
 
     async detailPage(input) {
-      return buildWorkItemDetail(await requireDetail(input.workItemId, input.actor), input.locale);
+      const rows = await requireDetail(input.workItemId, input.actor);
+      const canMutate = canMutateWorkItem(rows, input.actor);
+      return buildWorkItemDetail(rows, input.locale, {
+        includeAcceptedDeliverableRestore: canMutate,
+        includeSourceProposalDraftAction: canMutate
+      });
+    },
+
+    async assertCanMutateWorkItem(input) {
+      const rows = await requireDetail(input.workItemId, input.actor);
+      assertCanMutateWorkItemRows(rows, input.actor);
+    },
+
+    async assertCanMutateArtifacts(input) {
+      const rows = await requireDetail(input.workItemId, input.actor);
+      assertCanMutateWorkItemArtifacts(rows, input.actor);
     },
 
     async acceptedDeliverableFile(input) {
@@ -1579,12 +1894,15 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
         filename: row.driveVersion.filename,
         ...(row.driveVersion.mime ? { mime: row.driveVersion.mime } : {}),
         sizeBytes: row.driveVersion.sizeBytes,
-        storagePath: row.driveVersion.storagePath
+        storagePath: row.driveVersion.storagePath,
+        ...(row.driveVersion.sha256 ? { sha256: row.driveVersion.sha256 } : {}),
+        ...(row.driveVersion.parsedText ? { parsedText: row.driveVersion.parsedText } : {})
       };
     },
 
     async restoreAcceptedDeliverable(input) {
-      await requireDetail(input.workItemId, input.actor);
+      const rows = await requireDetail(input.workItemId, input.actor);
+      assertCanMutateWorkItemArtifacts(rows, input.actor);
       try {
         const row = await repository.restoreAcceptedDeliverable({
           workItemId: input.workItemId,
@@ -1664,6 +1982,7 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
   function putWorkItem(input: {
     title?: string;
     rawDescription?: string;
+    projectId?: string;
     actor: AuthActor;
     status: WorkItem["status"];
   }) {
@@ -1672,7 +1991,7 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
     const workItem: MemoryStoredWorkItem = {
       id,
       code: `MEM-${String(++sequence).padStart(3, "0")}`,
-      project_id: options.defaultProjectId ?? defaultSeedIds.projectId,
+      project_id: input.projectId ?? options.defaultProjectId ?? defaultSeedIds.projectId,
       workspace_id: "00000000-0000-4000-8000-000000000002",
       submitter_user_id: input.actor.userId ?? input.actor.id,
       title: input.title ?? titleFromIntent(input.rawDescription),
@@ -1696,13 +2015,13 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
       { id: "option-first", title: workItemT(locale, "acceptance.optionFirst"), status: answers.has(workItem.id) ? "met" : "open" },
       { id: "evidence-bound", title: workItemT(locale, "acceptance.evidenceBound"), status: (evidence.get(workItem.id)?.length ?? 0) > 0 ? "met" : "open" }
     ];
-    return workItemDetailVmSchema.parse({
+    return parseOutputContract(workItemDetailVmSchema, {
       workitem: workItem,
       acceptance: [...(acceptanceItems.get(workItem.id) ?? []), ...defaultAcceptance],
       agent_trace_preview: [],
       accepted_deliverables: [],
       evidence_refs: evidence.get(workItem.id) ?? []
-    });
+    }, "work-item.detail");
   }
 
   function selectedOptionIdsForSession(sessionId: string, current: readonly string[] | undefined) {
@@ -1724,9 +2043,18 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
     actor: AuthActor,
     locale: WorkHubLocale = "zh-CN"
   ) {
+    const intentText = workItem.raw_description ?? workItem.title ?? undefined;
     const stored = questionDrafts.get(workItem.id);
     if (stored) {
-      return stored;
+      const storedInput: ClarificationQuestionInput = {
+        workItem: memoryClarificationWorkItem(workItem),
+        actor,
+        locale,
+        files: []
+      };
+      if (canReuseStoredClarificationDraft(stored, storedInput)) {
+        return stored;
+      }
     }
     let files: ClarificationFileContext[] = [];
     if (options.projectFileContext) {
@@ -1735,12 +2063,13 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
           projectId: workItem.project_id,
           actor,
           locale,
-          intentText: workItem.raw_description ?? workItem.title ?? undefined
+          intentText
         });
       } catch {
         throw clarificationFileContextFailedError(locale);
       }
     }
+    // R9 批次0-2：与 PG 路径一致——点名文件缺失降级继续，不 502。
     const input: ClarificationQuestionInput = {
       workItem: memoryClarificationWorkItem(workItem),
       actor,
@@ -1790,6 +2119,7 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
         : putWorkItem({
             ...(input.payload.title ? { title: input.payload.title } : {}),
             ...(input.payload.intent_text ? { rawDescription: input.payload.intent_text } : {}),
+            ...(input.payload.project_id ? { projectId: input.payload.project_id } : {}),
             actor: input.actor,
             status: "ai_clarifying"
       });
@@ -1821,8 +2151,9 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
         : putWorkItem({
             ...(input.payload.title ? { title: input.payload.title } : {}),
             ...(input.payload.raw_description ? { rawDescription: input.payload.raw_description } : {}),
+            ...(input.payload.project_id ? { projectId: input.payload.project_id } : {}),
             actor: input.actor,
-            status: input.payload.kickoff_agent ? "ai_working" : "spec_ready"
+            status: "spec_ready"
           });
       const selectedOptionIds = input.payload.session_id
         ? mergeSelectedOptionIds(
@@ -1842,7 +2173,7 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
         finalFreeText: input.payload.free_text
       });
       const launcherAcceptanceItems = acceptanceItemsFromLauncherSpec(launcherSpec);
-      workItem.status = input.payload.kickoff_agent ? "ai_working" : "spec_ready";
+      workItem.status = "spec_ready";
       workItem.title = input.payload.title ?? workItem.title;
       workItem.raw_description = input.payload.raw_description ?? workItem.raw_description;
       workItem.summary_md = input.payload.raw_description ?? workItem.summary_md;
@@ -1928,6 +2259,14 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
 
     async detailPage(input) {
       return detail(requireWorkItem(input.workItemId), input.locale);
+    },
+
+    async assertCanMutateWorkItem(input) {
+      requireWorkItem(input.workItemId);
+    },
+
+    async assertCanMutateArtifacts(input) {
+      requireWorkItem(input.workItemId);
     },
 
     async acceptedDeliverableFile(input) {

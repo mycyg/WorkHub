@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import type { DriveItemVM, DrivePageVM } from "@workhub/contracts";
 
-import { driveHtml, driveNoProjectsEmptyHtml, drivePreviewPanelHtml, driveResourceHref, fetchDrivePreview } from "./drive.js";
+import { driveHtml, driveNoProjectsEmptyHtml, drivePreviewPanelHtml, driveResourceHref, driveTargetItemIdFromRoute, fetchDrivePreview } from "./drive.js";
 
 const DELIV_ID = "70000000-0000-4000-8000-000000000001";
 const PLAIN_ID = "70000000-0000-4000-8000-000000000002";
@@ -87,6 +87,36 @@ test("desktop drive lets users preview and download ordinary uploaded files", ()
   assert.match(html, /data-drive-resource="download"[^>]+target="_blank"/u);
 });
 
+test("desktop drive visibly marks the selected item from a file deep-link", () => {
+  const html = driveHtml(vm(), "", true);
+
+  assert.match(html, new RegExp(`data-drive-item="${PLAIN_ID}"[^>]+data-drive-item-selected="true"`, "u"));
+  assert.match(html, /aria-current="true"/u);
+  assert.match(html, /当前/u);
+});
+
+test("desktop drive keeps the deep-linked selected item visible even when it is beyond the first page slice", () => {
+  const manyItems = Array.from({ length: 45 }, (_, index) => ({
+    ...plainFile,
+    id: `70000000-0000-4000-8000-000000000${String(100 + index).padStart(3, "0")}`,
+    name: `普通文件-${index + 1}.md`
+  })) as DriveItemVM[];
+  const selected = {
+    ...plainFile,
+    id: "70000000-0000-4000-8000-000000000777",
+    name: "从项目最近文件打开.md"
+  } as DriveItemVM;
+
+  const html = driveHtml(vm({
+    items: [...manyItems, selected],
+    selected_item_id: selected.id
+  }), "", true);
+
+  assert.match(html, new RegExp(`data-drive-item="${selected.id}"[^>]+data-drive-item-selected="true"`, "u"));
+  assert.match(html, /从项目最近文件打开\.md/u);
+  assert.doesNotMatch(html, /普通文件-40\.md/u);
+});
+
 test("desktop drive rewrites API resource links to the desktop backend origin", () => {
   assert.equal(
     driveResourceHref("/api/drive/projects/p/items/i/preview", "http://127.0.0.1:8787/"),
@@ -98,6 +128,18 @@ test("desktop drive rewrites API resource links to the desktop backend origin", 
     html.includes(`href="http://127.0.0.1:8787/api/drive/projects/62000000-0000-4000-8000-000000000020/items/${PLAIN_ID}/preview"`),
     "desktop app uses the backend origin, not tauri://localhost/api"
   );
+});
+
+test("desktop drive extracts selected file ids from project-home deep-links", () => {
+  assert.equal(
+    driveTargetItemIdFromRoute("/drive?project_id=93000000-0000-4000-8000-000000000001&item_id=20000000-0000-4000-8000-000000000777"),
+    "20000000-0000-4000-8000-000000000777"
+  );
+  assert.equal(
+    driveTargetItemIdFromRoute("/drive?project_id=93000000-0000-4000-8000-000000000001&itemId=20000000-0000-4000-8000-000000000888"),
+    "20000000-0000-4000-8000-000000000888"
+  );
+  assert.equal(driveTargetItemIdFromRoute("/drive?project_id=93000000-0000-4000-8000-000000000001"), undefined);
 });
 
 test("desktop drive renders an inline preview panel with a token-aware download action", () => {
@@ -115,6 +157,8 @@ test("desktop drive renders an inline preview panel with a token-aware download 
   assert.match(html, /预览：manual-note\.md/u);
   assert.match(html, /# Manual note/u);
   assert.match(html, /验收要点/u);
+  assert.match(html, /class="wh-spot-row-sub wh-spot-drive-preview-text"/u);
+  assert.doesNotMatch(html, /background:rgba\(255,255,255|background:#fff|background:white/iu);
   assert.match(html, /href="http:\/\/127\.0\.0\.1:8787\/api\/drive\/projects\/p\/items\/i\/download"/u);
   assert.match(html, /data-drive-resource="download"/u);
 });
@@ -195,6 +239,26 @@ test("HIGH #1 desktop drive hides write actions for a read-only (non-manager) vi
   assert.ok(!html.includes("data-drive-delete"), "no delete buttons when read-only");
   assert.ok(!html.includes("data-drive-upload"), "no upload button when no upload_file action");
   assert.ok(html.includes("客户复盘.md"), "files still listed");
+});
+
+test("desktop drive only shows recycle restore when the server exposes a restore_href", () => {
+  const deletedPlain = {
+    ...plainFile,
+    id: "70000000-0000-4000-8000-0000000000d1",
+    name: "已删草稿.md",
+    deleted_at: "2026-06-23T00:00:00.000Z"
+  } as unknown as DriveItemVM;
+  const readOnly = driveHtml(vm({ can_manage: false, actions: {}, deleted_items: [deletedPlain] }), "", true);
+  assert.match(readOnly, /已删草稿\.md/u);
+  assert.doesNotMatch(readOnly, /data-drive-restore/u);
+
+  const manager = driveHtml(vm({
+    deleted_items: [{
+      ...deletedPlain,
+      restore_href: "/api/drive/projects/p/items/deleted/restore"
+    } as unknown as DriveItemVM]
+  }), "", true);
+  assert.match(manager, /data-drive-restore="70000000-0000-4000-8000-0000000000d1"/u);
 });
 
 test("desktop drive no-project empty state offers a direct new-task action", () => {

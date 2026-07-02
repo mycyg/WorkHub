@@ -44,9 +44,7 @@ export type PasswordChangeRequest = z.infer<typeof passwordChangeRequestSchema>;
 
 // 邀请（out-of-band）：管理员建邀请（返回一次性 token，自行拼链接分发）；收件人凭 token 接受建账号。
 export const inviteCreateRequestSchema = z.object({
-  email: z.string().email().max(320),
-  role: z.enum(["member", "admin", "owner"]).optional(),
-  workspace_id: z.string().uuid().optional()
+  email: z.string().email().max(320)
 });
 export type InviteCreateRequest = z.infer<typeof inviteCreateRequestSchema>;
 
@@ -82,7 +80,7 @@ export const logoutResponseSchema = z.object({
 export type LogoutResponse = z.infer<typeof logoutResponseSchema>;
 
 export const clientDeviceRegisterRequestSchema = z.object({
-  device_name: z.string().min(1).max(128),
+  device_name: z.string().trim().min(1).max(128),
   platform: z.string().max(64).optional()
 });
 export type ClientDeviceRegisterRequest = z.infer<typeof clientDeviceRegisterRequestSchema>;
@@ -103,7 +101,8 @@ export type ClientDeviceRegisterResponse = z.infer<typeof clientDeviceRegisterRe
 // 跨源攻击页即便能发起此 POST，也因 CORS 不反射其源而读不到响应体 → 偷不到 token（比现有 /identify 更弱）。
 export const desktopBootstrapRequestSchema = z.object({
   nickname: z.string().min(1).max(64),
-  device_name: z.string().min(1).max(128),
+  admin_secret: z.string().max(256).optional(),
+  device_name: z.string().trim().min(1).max(128),
   platform: z.string().max(64).optional()
 });
 export type DesktopBootstrapRequest = z.infer<typeof desktopBootstrapRequestSchema>;

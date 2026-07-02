@@ -6,6 +6,7 @@ import type { TeamSkillRow } from "@workhub/db";
 
 import {
   createAgentRunSkillCurationScheduler,
+  createSkillCurationProviderAdapters,
   type SkillCurationSchedulerOptions
 } from "./workers/agent-skill-curation.js";
 import {
@@ -13,6 +14,7 @@ import {
   hasCurationSignal,
   hasValidFrontmatter,
   parseDistilledResponse,
+  parseSkillEditPatchResponse,
   validateDistilledSkill,
   validateSkillEditPatch,
   type SkillCurationAnalysis
@@ -156,6 +158,53 @@ test("parseDistilledResponse tolerates fenced json and recovers partial-valid it
   assert.deepEqual(parseDistilledResponse("").distilled_skills, []);
 });
 
+test("parseDistilledResponse keeps valid skill markdown code fences inside fenced JSON", () => {
+  const contentWithFence = [
+    "---",
+    "name: 季度报告",
+    "when_to_use: 生成季度业务报告",
+    "---",
+    "",
+    "# 季度报告",
+    "",
+    "示例命令：",
+    "```bash",
+    "pnpm test",
+    "```",
+    "",
+    "按结果写结论。"
+  ].join("\n");
+  const fenced = "```json\n" + JSON.stringify({
+    distilled_skills: [skill({ content_md: contentWithFence })]
+  }) + "\n```";
+
+  const parsed = parseDistilledResponse(fenced);
+
+  assert.equal(parsed.distilled_skills.length, 1);
+  assert.match(parsed.distilled_skills[0]?.content_md ?? "", /```bash\npnpm test\n```/u);
+});
+
+test("parseSkillEditPatchResponse keeps valid patch markdown code fences inside fenced JSON", () => {
+  const fenced = "```json\n" + JSON.stringify({
+    patches: [{
+      skill_key: "quarterly-report",
+      base_version: 2,
+      ops: [{
+        op: "add_section",
+        section: "验证命令",
+        content_md: ["运行下面命令：", "```bash", "pnpm test", "```", "再记录结果。"].join("\n")
+      }],
+      rationale_md: "补充验证命令。",
+      confidence_score: 0.9
+    }]
+  }) + "\n```";
+
+  const parsed = parseSkillEditPatchResponse(fenced);
+
+  assert.equal(parsed.patches.length, 1);
+  assert.match(parsed.patches[0]?.ops[0]?.content_md ?? "", /```bash\npnpm test\n```/u);
+});
+
 test("hasCurationSignal is false on an idle workspace", () => {
   const analysis: SkillCurationAnalysis = {
     workspaceId: "ws-1",
@@ -262,6 +311,28 @@ test("scheduler promotes a valid distilled skill and audits the promotion", asyn
   assert.equal(audits[0]?.action, "team_skill.distilled_and_promoted");
 });
 
+test("scheduler keeps committed skill promotion when post-promote audit fails", async () => {
+  const promoted: string[] = [];
+  const { scheduler } = buildScheduler({
+    repository: {
+      async promote(input) {
+        promoted.push(input.skillKey);
+        return { id: `ts-${input.skillKey}`, version: 1 } as unknown as TeamSkillRow;
+      }
+    },
+    auditLog: {
+      async createAuditLog() {
+        throw new Error("audit sink unavailable");
+      }
+    }
+  });
+
+  const result = await scheduler.tick();
+
+  assert.equal(result.promoted, 1);
+  assert.deepEqual(promoted, ["quarterly-report"]);
+});
+
 test("M13 scheduler skips the whole tick (no distill spend) when the curation budget is exhausted", async () => {
   let distillCalls = 0;
   const { scheduler, promoted } = buildScheduler({
@@ -291,6 +362,52 @@ test("M13 scheduler runs distill when the curation budget is available", async (
   const result = await scheduler.tick();
   assert.equal(distillCalls, 1);
   assert.equal(result.promoted, 1);
+});
+
+test("curation provider adapters attach the analysis workspace to usage metering actors", async () => {
+  const captured: Array<{ actor: unknown; task: string; source: unknown }> = [];
+  const adapters = createSkillCurationProviderAdapters({
+    get(actor, task) {
+      return {
+        messages: {
+          create: async (params: { source?: unknown }) => {
+            const text = captured.length === 0
+              ? JSON.stringify({ distilled_skills: [] })
+              : JSON.stringify({ patches: [] });
+            captured.push({ actor, task, source: params.source });
+            return {
+              id: `msg-${task}`,
+              content: [
+                {
+                  type: "text",
+                  text
+                }
+              ]
+            };
+          }
+        }
+      } as never;
+    }
+  });
+  const analysis: SkillCurationAnalysis = {
+    workspaceId: "ws-tenant-cuu",
+    acceptedDeliverables: [{ targetKind: "document", count: 9 }],
+    escalations: [],
+    existingSkills: ["code-script"],
+    discardedSkills: [],
+    activeTeamSkillCount: 1,
+    activeSkills: [],
+    totalAccepted: 9
+  };
+
+  await adapters.distill(analysis);
+  await adapters.refine(analysis);
+
+  assert.deepEqual(captured.map((call) => call.actor), [
+    { id: "skill-curator", label: "skill-curator", workspaceId: "ws-tenant-cuu" },
+    { id: "skill-curator", label: "skill-curator", workspaceId: "ws-tenant-cuu" }
+  ]);
+  assert.deepEqual(captured.map((call) => call.source), ["curation", "curation"]);
 });
 
 test("scheduler discards a low-confidence skill and audits the reason (no promote)", async () => {
@@ -408,6 +525,41 @@ test("scheduler refines an active skill via a bounded edit patch and audits the 
   const refineAudit = audits.find((a) => a.action === "team_skill.refined_via_patch");
   assert.equal(refineAudit?.detailJson?.["skill_key"], "quarterly-report");
   assert.equal(refineAudit?.detailJson?.["to_version"], 3);
+});
+
+test("scheduler keeps committed skill refinement when post-promote audit fails", async () => {
+  const promotedInputs: string[] = [];
+  const { scheduler } = buildScheduler({
+    repository: {
+      async promote(input) {
+        promotedInputs.push(input.skillKey);
+        return { id: `ts-${input.skillKey}`, version: 3 } as unknown as TeamSkillRow;
+      }
+    },
+    auditLog: {
+      async createAuditLog() {
+        throw new Error("audit sink unavailable");
+      }
+    },
+    analyze: refineAnalyze(),
+    distill: async () => ({ distilled_skills: [] }),
+    refine: async () => ({
+      patches: [
+        {
+          skill_key: "quarterly-report",
+          base_version: 2,
+          ops: [{ op: "add_section", section: "边界情况", content_md: "数据缺口时标注假设并说明影响。" }],
+          rationale_md: "补上反复卡壳的边界情况段。",
+          confidence_score: 0.86
+        }
+      ]
+    })
+  });
+
+  const result = await scheduler.tick();
+
+  assert.equal(result.refined, 1);
+  assert.deepEqual(promotedInputs, ["quarterly-report"]);
 });
 
 test("scheduler refines each skill at most once per tick even if the model returns two patches for it (K2 guard)", async () => {

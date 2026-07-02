@@ -15,6 +15,7 @@ export type MembershipRole = "member" | "admin" | "owner";
 export type ResolvedTenant = {
   workspaceId: string;
   orgId: string;
+  role: MembershipRole;
 };
 
 export type CreateWorkspaceMembershipInput = {
@@ -80,7 +81,7 @@ export function createWorkspaceMembershipRepository(db: WorkHubDb): WorkspaceMem
 
     async resolveDefaultTenant(userId) {
       const rows = await db
-        .select({ workspaceId: workspaceMemberships.workspaceId, orgId: workspaces.orgId })
+        .select({ workspaceId: workspaceMemberships.workspaceId, orgId: workspaces.orgId, role: workspaceMemberships.role })
         .from(workspaceMemberships)
         .innerJoin(workspaces, eq(workspaceMemberships.workspaceId, workspaces.id))
         .where(
@@ -91,7 +92,8 @@ export function createWorkspaceMembershipRepository(db: WorkHubDb): WorkspaceMem
           )
         )
         .limit(1);
-      return rows[0] ?? null;
+      const row = rows[0];
+      return row ? { ...row, role: row.role as MembershipRole } : null;
     },
 
     async create(input) {

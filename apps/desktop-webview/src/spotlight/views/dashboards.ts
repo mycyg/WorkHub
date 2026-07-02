@@ -114,18 +114,19 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
         )
         .join("")
     : emptyHtml("✅", zh ? "暂无进行中的工作" : "No open work", zh ? "点「新任务」就能派活" : "Hit New task to assign some");
-  // 隐藏量按全量算(曾用可见数自减恒为 0,提示从不出现);诚实说明是无权限查看的他人私有态事项。
+  // 隐藏量按全量算(曾用可见数自减恒为 0,提示从不出现)。原因可能是列表截断或权限过滤，
+  // 当前 VM 无法区分，文案保持中性。
   const hidden = totalOpen - vm.open_work_items.length;
   const moreNote = hidden > 0
-    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hidden} 条进行中工作你暂无权限查看。` : `+${hidden} more open items you cannot view.`)}</p>`
+    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hidden} 条进行中工作未在此处显示，进入项目查看全部。` : `+${hidden} more open items not shown here — open the project to review all.`)}</p>`
     : "";
   // 网盘同步是核心：项目主页直接呈现最近文件（点任意文件/「打开网盘」进完整文件树）。
   const fileRows = vm.drive.recent_files.length
     ? vm.drive.recent_files
         .map(
           (f) =>
-            `<button type="button" class="wh-spot-row" data-open-drive="${escapeHtml(p.id)}" style="cursor:pointer;width:100%;text-align:left">
-        <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(f.name)}</div><div class="wh-spot-row-sub">${escapeHtml(f.updated_at.slice(0, 10))}</div></div>
+            `<button type="button" class="wh-spot-row" data-open-drive="${escapeHtml(p.id)}" data-open-drive-route="${escapeHtml(safeHref(f.href))}" style="cursor:pointer;width:100%;text-align:left">
+        <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(f.name)}</div><div class="wh-spot-row-sub">${escapeHtml(f.updated_at.slice(0, 10))} · ${zh ? "在网盘中查看" : "View in drive"}</div></div>
       </button>`
         )
         .join("")
@@ -224,7 +225,8 @@ export function createProjectsView(): SpotlightCapabilityView {
           }
           const drive = target.closest<HTMLElement>("[data-open-drive]");
           if (drive?.dataset.openDrive) {
-            ctx.open("drive", { id: drive.dataset.openDrive });
+            const route = drive.dataset.openDriveRoute;
+            ctx.open("drive", { id: drive.dataset.openDrive, ...(route ? { route } : {}) });
             return;
           }
           const intakeBtn = target.closest<HTMLElement>("[data-open-intake]");

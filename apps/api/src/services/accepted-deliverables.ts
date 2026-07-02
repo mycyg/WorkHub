@@ -5,13 +5,24 @@ function isPreviewableText(mime?: string | null, filename?: string | null) {
   const lower = (filename ?? "").toLowerCase();
   return !!mime?.startsWith("text/")
     || mime === "application/json"
+    || mime === "application/xml"
+    || mime === "application/yaml"
+    || mime === "application/x-yaml"
     || lower.endsWith(".md")
     || lower.endsWith(".json")
     || lower.endsWith(".csv")
-    || lower.endsWith(".txt");
+    || lower.endsWith(".txt")
+    || lower.endsWith(".tsv")
+    || lower.endsWith(".html")
+    || lower.endsWith(".xml")
+    || lower.endsWith(".yaml")
+    || lower.endsWith(".yml");
 }
 
-export function acceptedDeliverableToVm(row: DriveAcceptedDeliverableRow): AcceptedDeliverableVM {
+export function acceptedDeliverableToVm(
+  row: DriveAcceptedDeliverableRow,
+  options: { includeRestore?: boolean } = {}
+): AcceptedDeliverableVM {
   const accepted = row.accepted;
   const driveVersion = row.driveVersion;
   const filename = driveVersion?.filename ?? (accepted.targetPath ? accepted.targetPath.split(/[\\/]/u).pop() : undefined);
@@ -33,7 +44,12 @@ export function acceptedDeliverableToVm(row: DriveAcceptedDeliverableRow): Accep
     vm.sha256 = accepted.sha256After;
   }
   if (row.driveItem?.id) {
+    vm.project_id = row.driveItem.projectId;
     vm.drive_item_id = row.driveItem.id;
+    vm.drive_href = `/drive?${new URLSearchParams({
+      project_id: row.driveItem.projectId,
+      item_id: row.driveItem.id
+    }).toString()}`;
   }
   if (driveVersion) {
     vm.drive_version_id = driveVersion.id;
@@ -43,7 +59,8 @@ export function acceptedDeliverableToVm(row: DriveAcceptedDeliverableRow): Accep
     }
     vm.size_bytes = driveVersion.sizeBytes;
     vm.download_href = `/api/workitems/${accepted.workItemId}/deliverables/${accepted.id}/download`;
-    if (accepted.acceptedVersion > 1) {
+    const canRestore = row.canRestore ?? accepted.acceptedVersion > 1;
+    if (options.includeRestore !== false && canRestore) {
       vm.restore_href = `/api/workitems/${accepted.workItemId}/deliverables/${accepted.id}/restore`;
     }
     if (isPreviewableText(driveVersion.mime, driveVersion.filename)) {

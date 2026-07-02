@@ -10,6 +10,7 @@ import {
   toolControlSignalSchema,
   workItemModeSchema
 } from "../enums.js";
+import { budgetNoticeSchema } from "../experience.js";
 import { idSchema, isoDateTimeSchema, timestampFieldsSchema } from "./common.js";
 
 export const agentRunSchema = timestampFieldsSchema.extend({
@@ -107,7 +108,7 @@ export const agentRunBudgetDecisionVmSchema = z.object({
     model: z.string().min(1),
     reason: z.string().min(1)
   }),
-  notice: z.unknown().optional()
+  notice: budgetNoticeSchema.optional()
 });
 export type AgentRunBudgetDecisionVM = z.infer<typeof agentRunBudgetDecisionVmSchema>;
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 
 import type { ActorKind } from "@workhub/contracts";
 
@@ -139,7 +139,14 @@ export function createAuditLogRepository(db: WorkHubDb): AuditLogRepository {
     },
 
     async listAuditLogsForWorkItem(workItemId) {
-      return this.listAuditLogsForEntity("work_item", workItemId);
+      return db
+        .select()
+        .from(auditLogs)
+        .where(or(
+          and(eq(auditLogs.entityType, "work_item"), eq(auditLogs.entityId, workItemId)),
+          sql`${auditLogs.detailJson}->>'work_item_id' = ${workItemId}`
+        ))
+        .orderBy(desc(auditLogs.createdAt));
     },
 
     async markAuditLogUndone(id, at) {

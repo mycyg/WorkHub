@@ -38,6 +38,12 @@ export type BootstrapProjectResultRow = {
   created: boolean;
 };
 
+export class ProjectSlugOccupiedError extends Error {
+  constructor(public readonly slug: string) {
+    super("Project slug is occupied by an archived or deleted project in this workspace");
+  }
+}
+
 export type ProjectRepository = {
   bootstrapPilotProject: (input: BootstrapProjectInput) => Promise<BootstrapProjectResultRow>;
   listForWorkspace: (workspaceId: string) => Promise<ProjectListRow[]>;
@@ -144,7 +150,7 @@ export function createProjectRepository(db: WorkHubDb): ProjectRepository {
       // onConflict 落空：要么并发抢先建了同一条（回查复用），要么 slug 被同工作区的归档/软删行占用（无可复用→报错）。
       const raced = await findActive();
       if (!raced) {
-        throw new Error("Failed to create or reuse project (slug occupied by an archived/deleted row in this workspace)");
+        throw new ProjectSlugOccupiedError(input.slug);
       }
       return { project: raced, created: false };
     }

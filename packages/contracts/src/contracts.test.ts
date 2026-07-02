@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   allowedWorkItemTransitions,
   sessionFinalizeFromStatuses,
+  agentRunBudgetDecisionVmSchema,
   agentRunLiveBudgetSchema,
   agentRunLiveVmSchema,
   structuredFieldPatchSchema,
@@ -26,6 +27,7 @@ import {
   calendarPageVmSchema,
   drivePageVmSchema,
   identifyRequestSchema,
+  inviteCreateRequestSchema,
   meetingPageVmSchema,
   notificationGroundingVmSchema,
   notificationItemVmSchema,
@@ -41,6 +43,7 @@ import {
   proposalConflictListResultSchema,
   replayTracePageVmSchema,
   respondApprovalRequestSchema,
+  permissionPolicySchema,
   updateUserPreferencesRequestSchema,
   userPreferencesSchema,
   deliverableChangeManifestSchema,
@@ -679,10 +682,21 @@ test("auth contracts expose F04 identity and device shapes", () => {
   assert.equal(parsed.identity.actor_kind, "human");
 });
 
+test("invite create contract only exposes fields that the server honors", () => {
+  const parsed = inviteCreateRequestSchema.parse({
+    email: "new-user@example.com",
+    role: "owner",
+    workspace_id: "00000000-0000-4000-8000-000000000002"
+  });
+
+  assert.deepEqual(Object.keys(parsed).sort(), ["email"]);
+});
+
 test("formal event names are the only exported implementation names", () => {
   const exportedEventTypes = Object.values(eventTypes) as string[];
 
   assert.equal(eventTypes.agentRunStarted, "agent_run.started");
+  assert.equal(eventTypes.sessionQuestion, "session.question");
   assert.equal(eventTypes.confidenceScored, "confidence.scored");
   assert.equal(eventTypes.escalationOpened, "escalation.opened");
   assert.equal(eventTypes.proposalOpened, "proposal.opened");
@@ -722,6 +736,30 @@ test("findings[#7] deliverable manifest rejects over-length target_ref strings (
   assert.throws(() => deliverableChangeManifestSchema.parse(withRef({ version_after: "x".repeat(600) })));
   // 合法长度照常通过。
   assert.doesNotThrow(() => deliverableChangeManifestSchema.parse(withRef({ path: `/a/${"b".repeat(100)}` })));
+});
+
+test("deliverable manifest preserves explicit generated markdown content for text materialization", () => {
+  const base = deliverableManifestFixtures[0]!;
+  const change = base.changes[0]!;
+  const generatedContent = "# Drive comment\n\n请生成三条验收要点。";
+  const parsed = deliverableChangeManifestSchema.parse({
+    ...base,
+    changes: [{
+      ...change,
+      target_kind: "text_doc",
+      target_ref: {
+        entity_type: "delivery",
+        path: "/outputs/drive-comment.md"
+      },
+      change_type: "generated",
+      machine_summary: {
+        ...(change.machine_summary ?? {}),
+        generated_content_md: generatedContent
+      }
+    }]
+  });
+
+  assert.equal(parsed.changes[0]?.machine_summary?.generated_content_md, generatedContent);
 });
 
 test("proposal conflict cards carry option-first merge resolution payloads", () => {
@@ -1279,6 +1317,22 @@ test("cost governance contracts expose clickable budget notices and scoped usage
   });
   assert.equal(attention.kind, "budget");
   assert.equal(decision.reason, "budget_exhausted");
+  const runDecision = agentRunBudgetDecisionVmSchema.parse({
+    decision_id: decision.decision_id,
+    allowed: decision.allowed,
+    reason: decision.reason,
+    model_route: decision.model_route,
+    notice
+  });
+  assert.equal(runDecision.notice?.recommended_action, "downgrade_model");
+  assert.throws(() =>
+    agentRunBudgetDecisionVmSchema.parse({
+      decision_id: "decision-bad-notice",
+      allowed: false,
+      model_route: decision.model_route,
+      notice: { code: "budget_warning", recommended_action: "teleport" }
+    })
+  );
   assert.throws(() => budgetPolicySchema.parse({ ...policy, warning_ratio: 0.96 }));
   assert.throws(() => budgetPolicyUpdateSchema.parse({}));
   // findings[#low]：update schema 也带 warning_ratio < critical_ratio 跨字段不变量（二者同时出现时）。
@@ -1308,6 +1362,29 @@ test("approval contracts keep UI payloads human-readable and deny reasons explic
   assert.throws(() => respondApprovalRequestSchema.parse({ decision: "deny" }));
   assert.equal(respondApprovalRequestSchema.parse({ decision: "deny", reason_md: "理由" }).decision, "deny");
   assert.equal(respondApprovalRequestSchema.parse({ decision: "allow" }).decision, "allow");
+});
+
+test("permission policy contract accepts nullable API response metadata", () => {
+  const policy = permissionPolicySchema.parse({
+    id: "70000000-0000-4000-8000-000000000001",
+    scope_kind: "workspace",
+    scope_id: "00000000-0000-4000-8000-000000000002",
+    action_pattern: "tool.write_file",
+    effect: "allow",
+    priority: 0,
+    learned_from_session: false,
+    created_by_user_id: null,
+    org_id: null,
+    workspace_id: null,
+    deleted_at: null,
+    created_at: "2026-06-05T00:00:00.000Z",
+    updated_at: "2026-06-05T00:00:00.000Z"
+  });
+
+  assert.equal(policy.created_by_user_id, null);
+  assert.equal(policy.org_id, null);
+  assert.equal(policy.workspace_id, null);
+  assert.equal(policy.deleted_at, null);
 });
 
 test("B6a contract tightening: live budget max_tokens positive + structured-field patch non-empty", () => {
@@ -1634,8 +1711,11 @@ test("W2 approvalCenterVm items_detail is additive: parses with and without it",
 
   const enriched = approvalCenterVmSchema.parse({
     ...base,
+    page_info: { limit: 100, returned: 1, has_more: false },
     items_detail: { "20000000-0000-4000-8000-0000000000a1": detail }
   });
+  assert.equal(enriched.page_info?.limit, 100);
+  assert.equal(enriched.page_info?.has_more, false);
   assert.equal(enriched.items_detail["20000000-0000-4000-8000-0000000000a1"]?.kind, "deliverable");
 });
 

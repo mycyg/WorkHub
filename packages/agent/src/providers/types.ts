@@ -18,6 +18,7 @@ export type LlmActor = {
   id?: string;
   label?: string;
   userId?: string;
+  workspaceId?: string;
   runId?: string;
   workItemId?: string;
 };

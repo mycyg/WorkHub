@@ -32,7 +32,7 @@ import {
   type WorkHubEvent
 } from "@workhub/contracts";
 
-import { createDesktopShellEventBridge } from "./shell-events.js";
+import { createDesktopShellEventBridge, parseDesktopShellSseStatusPayload } from "./shell-events.js";
 import type { DesktopShellSystemNotificationPlan } from "./shell-events.js";
 
 export type DesktopShellEventEnvelope = {
@@ -136,6 +136,80 @@ export type DesktopCuuActionRequest =
       mergeProposalId: string;
       payload?: ApplyMergeProposalCandidateRequest;
     };
+
+export const desktopCuuProjectContextStorageKey = "workhub_cuu_project_context";
+export const desktopCuuProjectContextMaxAgeMs = 30 * 60 * 1000;
+
+export type DesktopCuuProjectContext = {
+  project_id: string;
+  route?: string;
+  updated_at_ms: number;
+};
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+function validProjectId(value: string | undefined | null): string | undefined {
+  const normalized = value?.trim();
+  return normalized && uuidPattern.test(normalized) ? normalized : undefined;
+}
+
+export function desktopCuuProjectContextFromRoute(route: string, now = Date.now()): DesktopCuuProjectContext | undefined {
+  const url = new URL(route || "/", "https://workhub.local");
+  const projectId = validProjectId(url.searchParams.get("project_id"))
+    ?? validProjectId(/^\/projects\/([^/?#]+)/u.exec(url.pathname)?.[1]);
+  return projectId
+    ? {
+        project_id: projectId,
+        route,
+        updated_at_ms: now
+      }
+    : undefined;
+}
+
+export function saveDesktopCuuProjectContextFromRoute(
+  route: string,
+  storage: Pick<Storage, "setItem"> | undefined = globalThis.localStorage,
+  now = Date.now()
+) {
+  const context = desktopCuuProjectContextFromRoute(route, now);
+  if (!context || !storage) {
+    return context;
+  }
+  try {
+    storage.setItem(desktopCuuProjectContextStorageKey, JSON.stringify(context));
+  } catch {
+    // Best effort only; missing storage should never block navigation.
+  }
+  return context;
+}
+
+export function loadDesktopCuuProjectContext(
+  storage: Pick<Storage, "getItem"> | undefined = globalThis.localStorage,
+  now = Date.now()
+): DesktopCuuProjectContext | undefined {
+  if (!storage) {
+    return undefined;
+  }
+  try {
+    const raw = storage.getItem(desktopCuuProjectContextStorageKey);
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = JSON.parse(raw) as Partial<DesktopCuuProjectContext>;
+    const projectId = validProjectId(parsed.project_id);
+    const updatedAt = typeof parsed.updated_at_ms === "number" ? parsed.updated_at_ms : 0;
+    if (!projectId || now - updatedAt > desktopCuuProjectContextMaxAgeMs) {
+      return undefined;
+    }
+    return {
+      project_id: projectId,
+      ...(typeof parsed.route === "string" ? { route: parsed.route } : {}),
+      updated_at_ms: updatedAt
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 export type DesktopCuuActionResult = {
   message: string;
@@ -266,7 +340,8 @@ export const desktopCuuNoticeCss = [
   ".wh-cuu-queue-badge[hidden]{display:none}.wh-cuu-queue-count{flex:0 0 auto;min-width:20px;height:20px;border-radius:999px;display:grid;place-items:center;background:var(--wh-app-blue);color:#fff;font-size:11px}.wh-cuu-queue-text{min-width:0;max-width:min(180px,calc(100vw - 96px));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--wh-app-muted)}"
 ].join("");
 
-export function createDesktopCuuAgentLauncherCard(options: CuuLocaleOptions = {}): CuuCard {
+export function createDesktopCuuAgentLauncherCard(options: CuuLocaleOptions & { projectId?: string } = {}): CuuCard {
+  const projectId = validProjectId(options.projectId);
   return {
     id: "cuu-agent-launcher",
     kind: "question",
@@ -302,7 +377,8 @@ export function createDesktopCuuAgentLauncherCard(options: CuuLocaleOptions = {}
         method: "POST",
         href: "/api/cuu/start-agent",
         payload: {
-          title: cuuT(options.locale, "cuuStart.defaultTitle")
+          title: cuuT(options.locale, "cuuStart.defaultTitle"),
+          ...(projectId ? { project_id: projectId } : {})
         }
       }
     ],
@@ -743,6 +819,7 @@ export async function bindDesktopShellCuuRuntime(input: {
   onSystemNotification?: (plan: DesktopShellSystemNotificationPlan) => void;
   now?: () => Date;
   locale?: CuuLocaleOptions["locale"];
+  retryingDelayMs?: number;
 }): Promise<DesktopShellCuuRuntime> {
   const listen = input.listen ?? resolveDesktopShellListen();
   if (!listen) {
@@ -779,13 +856,48 @@ export async function bindDesktopShellCuuRuntime(input: {
     }
   });
   const unlisten: DesktopShellUnlisten[] = [];
+  let retryingStatusTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearRetryingStatusTimer = () => {
+    if (retryingStatusTimer) {
+      clearTimeout(retryingStatusTimer);
+      retryingStatusTimer = undefined;
+    }
+  };
   const pushUnlisten = await listen("push-event", (event) => {
     bridge.handlePushPayload(event.payload);
   });
   if (typeof pushUnlisten === "function") {
     unlisten.push(pushUnlisten);
   }
+  const dismissCardIfPresent = (cardId: string) => {
+    const snapshot = controller.snapshot();
+    if (
+      snapshot.active_card?.id === cardId
+      || snapshot.queue.some((card) => card.id === cardId)
+      || snapshot.badges.some((card) => card.id === cardId)
+    ) {
+      input.onDecision?.(controller.dismiss(cardId));
+    }
+  };
   const statusUnlisten = await listen("sse-status", (event) => {
+    const payload = parseDesktopShellSseStatusPayload(event.payload);
+    if (payload?.state === "open") {
+      clearRetryingStatusTimer();
+      dismissCardIfPresent(`sse-status:${payload.stream_kind}:retrying`);
+      dismissCardIfPresent(`sse-status:${payload.stream_kind}:closed`);
+      return;
+    }
+    if (payload?.state === "closed") {
+      clearRetryingStatusTimer();
+    }
+    if (payload?.state === "retrying" && (input.retryingDelayMs ?? 0) > 0) {
+      clearRetryingStatusTimer();
+      retryingStatusTimer = setTimeout(() => {
+        retryingStatusTimer = undefined;
+        bridge.handleSseStatusPayload(event.payload);
+      }, input.retryingDelayMs);
+      return;
+    }
     bridge.handleSseStatusPayload(event.payload);
   });
   if (typeof statusUnlisten === "function") {
@@ -801,6 +913,7 @@ export async function bindDesktopShellCuuRuntime(input: {
   return {
     subscribed: true,
     async dispose() {
+      clearRetryingStatusTimer();
       for (const stop of unlisten.splice(0)) {
         stop();
       }

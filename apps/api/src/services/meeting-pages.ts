@@ -3,12 +3,14 @@ import { createHash } from "node:crypto";
 import {
   getSharedDatabaseClient,
   createMeetingRepository,
+  createWorkItemRepository,
   MeetingRepositoryConflictError,
   type MeetingInsightRow,
   type MeetingPageRows,
   type MeetingRecordRow,
   type MeetingRecordWithUserRow,
   type MeetingRepository,
+  type WorkItemDataRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
@@ -18,7 +20,7 @@ import {
   type WorkItemDetailVM,
   type WorkHubLocale
 } from "@workhub/contracts";
-import { canManageProjectMeeting, canViewProjectMeetings } from "@workhub/permissions";
+import { canManageProjectMeeting, canViewProjectMeetings, canViewWorkItemRecord } from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
@@ -56,7 +58,8 @@ export type MeetingPageService = {
 export type MeetingPageServiceDependencies = {
   repo: MeetingRepository;
   proposals?: Pick<ProposalService, "createFromManifest" | "get">;
-  workItems?: Pick<WorkItemService, "detailPage">;
+  workItems?: Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts">;
+  workItemAccess?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord">;
   now?: () => Date;
 };
 
@@ -148,6 +151,7 @@ function buildInsightVm(input: {
   latestProposal?: MeetingPageRows["insightProposals"][number];
   canManage: boolean;
   locale: WorkHubLocale;
+  linkableWorkItemIds?: ReadonlySet<string> | undefined;
 }): MeetingInsightVM {
   const reason = compactText(input.insight.confidenceReason, 420) ?? fallbackReason(input.locale);
   const status = insightStatus(input.insight.status);
@@ -157,6 +161,12 @@ function buildInsightVm(input: {
     ?? compactText(input.insight.description, 260)
     ?? "";
   const canCreateDraft = input.canManage && status === "pending" && Boolean(compactText(input.insight.confidenceReason));
+  const canLinkTarget = !input.insight.targetWorkItemId
+    || !input.linkableWorkItemIds
+    || input.linkableWorkItemIds.has(input.insight.targetWorkItemId);
+  const canLinkDraft = !input.insight.createdWorkItemId
+    || !input.linkableWorkItemIds
+    || input.linkableWorkItemIds.has(input.insight.createdWorkItemId);
   return {
     id: input.insight.id,
     meeting_id: input.insight.meetingId,
@@ -165,12 +175,12 @@ function buildInsightVm(input: {
     description: input.insight.description,
     confidence_reason: reason,
     status,
-    ...(input.insight.targetWorkItemId ? { target_work_item_id: input.insight.targetWorkItemId } : {}),
+    ...(input.insight.targetWorkItemId && canLinkTarget ? { target_work_item_id: input.insight.targetWorkItemId } : {}),
     ...(input.insight.createdWorkItemId ? {
       created_work_item_id: input.insight.createdWorkItemId,
-      draft_href: `/workitems/${input.insight.createdWorkItemId}`
+      ...(canLinkDraft ? { draft_href: `/workitems/${input.insight.createdWorkItemId}` } : {})
     } : {}),
-    ...(input.latestProposal ? {
+    ...(input.latestProposal && canLinkDraft ? {
       proposal_id: input.latestProposal.id,
       proposal_href: `/proposals/${input.latestProposal.id}`,
       proposal_status: input.latestProposal.status
@@ -212,7 +222,14 @@ function buildInsightVm(input: {
   };
 }
 
-function buildMeetingPage(rows: MeetingPageRows, actor: AuthActor, locale: WorkHubLocale, now: Date, selectedMeetingId?: string): MeetingPageVM {
+function buildMeetingPage(
+  rows: MeetingPageRows,
+  actor: AuthActor,
+  locale: WorkHubLocale,
+  now: Date,
+  selectedMeetingId?: string,
+  linkableWorkItemIds?: ReadonlySet<string>
+): MeetingPageVM {
   const canView = rows.project ? canViewProjectMeetings(rows.project, actor) : false;
   if (!rows.project || !canView) {
     return parseOutputContract(meetingPageVmSchema, {
@@ -245,6 +262,9 @@ function buildMeetingPage(rows: MeetingPageRows, actor: AuthActor, locale: WorkH
   }
   const meetings = rows.meetings.map(({ meeting, uploadedBy }: MeetingRecordWithUserRow) => {
     const canManage = canManageProjectMeeting(rows.project!, meeting, actor);
+    const canLinkMeetingWorkItem = !meeting.workItemId
+      || !linkableWorkItemIds
+      || linkableWorkItemIds.has(meeting.workItemId);
     const insights = (insightsByMeetingId.get(meeting.id) ?? []).map((insight) => {
       const latestProposal = insight.createdWorkItemId
         ? latestProposalByWorkItemId.get(insight.createdWorkItemId)
@@ -254,13 +274,14 @@ function buildMeetingPage(rows: MeetingPageRows, actor: AuthActor, locale: WorkH
         meeting,
         canManage,
         locale,
+        linkableWorkItemIds,
         ...(latestProposal ? { latestProposal } : {})
       });
     });
     return {
       id: meeting.id,
       project_id: meeting.projectId,
-      ...(meeting.workItemId ? { work_item_id: meeting.workItemId } : {}),
+      ...(meeting.workItemId && canLinkMeetingWorkItem ? { work_item_id: meeting.workItemId } : {}),
       uploaded_by_user_id: meeting.uploadedByUserId,
       uploaded_by_label: uploadedBy.nickname,
       title: meeting.title,
@@ -312,18 +333,51 @@ function buildMeetingPage(rows: MeetingPageRows, actor: AuthActor, locale: WorkH
 export function createMeetingPageService(deps: MeetingPageServiceDependencies): MeetingPageService {
   const proposalService = () => deps.proposals ?? getDefaultProposalService();
   const workItemService = () => deps.workItems ?? getDefaultWorkItemService();
+  const workItemAccess = () => deps.workItemAccess;
 
-  async function pageForActor(input: { actor: AuthActor; projectId?: string }) {
+  async function linkableWorkItemsForActor(input: { actor: AuthActor; workItemIds: Iterable<string> }) {
+    const access = workItemAccess();
+    if (!access) {
+      return undefined;
+    }
+    const uniqueIds = [...new Set([...input.workItemIds].filter(Boolean))];
+    const visible = new Set<string>();
+    const actorUserId = input.actor.userId ?? input.actor.id;
+    for (const workItemId of uniqueIds) {
+      const record = await access.findWorkItemAccessRecord(workItemId);
+      if (record && canViewWorkItemRecord(record, { id: actorUserId, isAdmin: input.actor.isAdmin }, { workspaceId: input.actor.workspaceId })) {
+        visible.add(workItemId);
+      }
+    }
+    return visible;
+  }
+
+  function linkableWorkItemIdsFromRows(rows: MeetingPageRows) {
+    return [
+      ...rows.meetings.map((row) => row.meeting.workItemId).filter((id): id is string => Boolean(id)),
+      ...rows.insights.map((insight) => insight.targetWorkItemId).filter((id): id is string => Boolean(id)),
+      ...rows.insights.map((insight) => insight.createdWorkItemId).filter((id): id is string => Boolean(id))
+    ];
+  }
+
+  async function pageForActor(input: { actor: AuthActor; projectId?: string; meetingId?: string }) {
     const rows = await deps.repo.readPage({
       ...(input.projectId ? { projectId: input.projectId } : {}),
       // 无显式 projectId 时默认项目限定在 actor 所在 workspace（M8）。
-      ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {})
+      ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {}),
+      ...(input.meetingId ? { targetMeetingId: input.meetingId } : {})
     });
+    if (!rows.project && input.projectId) {
+      throw new MeetingPageServiceError(404, "没有找到这个项目会议。", "meeting_not_found");
+    }
     if (rows.project && !canViewProjectMeetings(rows.project, input.actor)) {
       if (!input.projectId) {
         return { project: null, meetings: [], insights: [], insightProposals: [] };
       }
       throw new MeetingPageServiceError(403, "你没有权限查看这个项目会议。", "meeting_forbidden");
+    }
+    if (rows.project && input.meetingId && !rows.meetings.some((row) => row.meeting.id === input.meetingId)) {
+      throw new MeetingPageServiceError(404, "没有找到这场会议。", "meeting_not_found");
     }
     return rows;
   }
@@ -335,18 +389,68 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
     }
     const insight = rows.insights.find((candidate) => candidate.id === input.insightId);
     const meeting = insight ? rows.meetings.find((candidate) => candidate.meeting.id === insight.meetingId)?.meeting : undefined;
-    if (!insight || !meeting) {
-      throw new MeetingPageServiceError(404, "没有找到这条会议洞察。", "meeting_insight_not_found");
+    if (insight && meeting) {
+      if (!canManageProjectMeeting(rows.project, meeting, input.actor)) {
+        throw new MeetingPageServiceError(403, "你没有权限处理这条会议洞察。", "meeting_forbidden");
+      }
+      return { rows, project: rows.project, insight, meeting };
     }
-    if (!canManageProjectMeeting(rows.project, meeting, input.actor)) {
-      throw new MeetingPageServiceError(403, "你没有权限处理这条会议洞察。", "meeting_forbidden");
+
+    const context = await deps.repo.findInsightContext?.({
+      projectId: input.projectId,
+      insightId: input.insightId
+    });
+    if (context?.project) {
+      if (!canViewProjectMeetings(context.project, input.actor)) {
+        throw new MeetingPageServiceError(403, "你没有权限查看这个项目会议。", "meeting_forbidden");
+      }
+      if (!context.insight || !context.meeting) {
+        throw new MeetingPageServiceError(404, "没有找到这条会议洞察。", "meeting_insight_not_found");
+      }
+      if (!canManageProjectMeeting(context.project, context.meeting, input.actor)) {
+        throw new MeetingPageServiceError(403, "你没有权限处理这条会议洞察。", "meeting_forbidden");
+      }
+      return { rows, project: context.project, insight: context.insight, meeting: context.meeting };
     }
-    return { rows, project: rows.project, insight, meeting };
+
+    throw new MeetingPageServiceError(404, "没有找到这条会议洞察。", "meeting_insight_not_found");
+  }
+
+  async function ensureCanReadInsight(input: MeetingMutationInput & { insightId: string }) {
+    const rows = await pageForActor(input);
+    if (!rows.project) {
+      throw new MeetingPageServiceError(404, "没有找到这个项目会议。", "meeting_not_found");
+    }
+    const insight = rows.insights.find((candidate) => candidate.id === input.insightId);
+    const meeting = insight ? rows.meetings.find((candidate) => candidate.meeting.id === insight.meetingId)?.meeting : undefined;
+    if (insight && meeting) {
+      return { rows, project: rows.project, insight, meeting };
+    }
+
+    const context = await deps.repo.findInsightContext?.({
+      projectId: input.projectId,
+      insightId: input.insightId
+    });
+    if (context?.project) {
+      if (!canViewProjectMeetings(context.project, input.actor)) {
+        throw new MeetingPageServiceError(403, "你没有权限查看这个项目会议。", "meeting_forbidden");
+      }
+      if (!context.insight || !context.meeting) {
+        throw new MeetingPageServiceError(404, "没有找到这条会议洞察。", "meeting_insight_not_found");
+      }
+      return { rows, project: context.project, insight: context.insight, meeting: context.meeting };
+    }
+
+    throw new MeetingPageServiceError(404, "没有找到这条会议洞察。", "meeting_insight_not_found");
   }
 
   async function pageAfterMutation(input: MeetingMutationInput & { locale?: WorkHubLocale }) {
     const rows = await pageForActor(input);
-    return buildMeetingPage(rows, input.actor, input.locale ?? "zh-CN", deps.now?.() ?? new Date());
+    const linkableWorkItemIds = await linkableWorkItemsForActor({
+      actor: input.actor,
+      workItemIds: linkableWorkItemIdsFromRows(rows)
+    });
+    return buildMeetingPage(rows, input.actor, input.locale ?? "zh-CN", deps.now?.() ?? new Date(), undefined, linkableWorkItemIds);
   }
 
   function mutationError(error: unknown): never {
@@ -480,7 +584,12 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
 
   return {
     async page(input) {
-      return buildMeetingPage(await pageForActor(input), input.actor, input.locale ?? "zh-CN", deps.now?.() ?? new Date(), input.meetingId);
+      const rows = await pageForActor(input);
+      const linkableWorkItemIds = await linkableWorkItemsForActor({
+        actor: input.actor,
+        workItemIds: linkableWorkItemIdsFromRows(rows)
+      });
+      return buildMeetingPage(rows, input.actor, input.locale ?? "zh-CN", deps.now?.() ?? new Date(), input.meetingId, linkableWorkItemIds);
     },
     async insightToDraft(input) {
       const actorUserId = ensureHumanActor(input.actor);
@@ -527,12 +636,17 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
         actor: input.actor,
         ...(input.locale ? { locale: input.locale } : {})
       };
-      const initialPage = await workItemService().detailPage(detailInput);
+      const workItems = workItemService();
+      const initialPage = await workItems.detailPage(detailInput);
+      await workItems.assertCanMutateArtifacts({
+        workItemId: input.workItemId,
+        actor: input.actor
+      });
       const source = initialPage.source_context;
       if (!source || source.source_type !== "meeting_insight") {
         throw new MeetingPageServiceError(409, "这个事项不是从会议洞察生成的草稿。", "meeting_draft_source_missing");
       }
-      await ensureCanManageInsight({
+      await ensureCanReadInsight({
         actor: input.actor,
         projectId: source.project_id,
         insightId: source.insight_id
@@ -593,7 +707,7 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
           throw error;
         }
       }
-      return workItemService().detailPage({
+      return workItems.detailPage({
         workItemId: input.workItemId,
         actor: input.actor,
         ...(input.locale ? { locale: input.locale } : {})
@@ -609,7 +723,8 @@ export function getDefaultMeetingPageService() {
   if (!defaultMeetingPageService) {
     defaultMeetingPageDbClient = getSharedDatabaseClient();
     defaultMeetingPageService = createMeetingPageService({
-      repo: createMeetingRepository(defaultMeetingPageDbClient.db)
+      repo: createMeetingRepository(defaultMeetingPageDbClient.db),
+      workItemAccess: createWorkItemRepository(defaultMeetingPageDbClient.db)
     });
   }
   return defaultMeetingPageService;

@@ -151,6 +151,19 @@ export async function fetchDrivePreview(href: string, apiBaseUrl?: string): Prom
   return body.data;
 }
 
+export function driveTargetItemIdFromRoute(route: string | undefined): string | undefined {
+  if (!route) return undefined;
+  try {
+    const url = new URL(route.replaceAll("&amp;", "&"), "http://workhub.local");
+    return url.searchParams.get("item_id") ?? url.searchParams.get("itemId") ?? undefined;
+  } catch {
+    const query = route.replaceAll("&amp;", "&").split("?")[1];
+    if (!query) return undefined;
+    const params = new URLSearchParams(query);
+    return params.get("item_id") ?? params.get("itemId") ?? undefined;
+  }
+}
+
 async function downloadDriveResource(href: string, fallbackName: string): Promise<void> {
   const response = await fetchDriveResource(href);
   if (!response.ok) {
@@ -180,7 +193,7 @@ export function drivePreviewPanelHtml(preview: DrivePreviewData, zh: boolean, ap
       <p class="wh-spot-reasons-q" style="margin:0">${escapeHtml(zh ? `预览：${preview.filename}` : `Preview: ${preview.filename}`)}</p>
       <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-drive-preview-close="true">${zh ? "收起" : "Close"}</button>
     </div>
-    <pre class="wh-spot-row-sub" style="white-space:pre-wrap;max-height:260px;overflow:auto;margin:10px 0 0;padding:12px;border-radius:14px;background:rgba(255,255,255,.58)">${escapeHtml(preview.text)}</pre>
+    <pre class="wh-spot-row-sub wh-spot-drive-preview-text">${escapeHtml(preview.text)}</pre>
     ${preview.truncated ? `<p class="wh-spot-row-sub">${zh ? "内容较长，仅显示前一部分。" : "Large file; showing the first part."}</p>` : ""}
     <div class="wh-spot-card-actions">
       <a class="wh-spot-act wh-spot-act--quiet ds-pressable" href="${escapeHtml(driveResourceHref(preview.download_href, apiBaseUrl))}" data-drive-resource="download" target="_blank" rel="noreferrer">${zh ? "下载完整文件" : "Download full file"}</a>
@@ -188,7 +201,7 @@ export function drivePreviewPanelHtml(preview: DrivePreviewData, zh: boolean, ap
   </section>`;
 }
 
-function itemRow(item: DriveItemVM, zh: boolean, canManage: boolean, apiBaseUrl?: string): string {
+function itemRow(item: DriveItemVM, zh: boolean, canManage: boolean, selected: boolean, apiBaseUrl?: string): string {
   const icon = item.kind === "folder" ? FOLDER_ICON : FILE_ICON;
   const meta =
     item.kind === "folder"
@@ -212,19 +225,36 @@ function itemRow(item: DriveItemVM, zh: boolean, canManage: boolean, apiBaseUrl?
     ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-drive-delete="${escapeHtml(item.id)}" data-drive-delete-version="${escapeHtml(item.current_version_id ?? "")}">${zh ? "删除" : "Delete"}</button>`
     : "";
   const actions = links.length || del ? `<div class="wh-spot-card-actions" style="margin-top:0">${links.join("")}${del}</div>` : "";
-  return `<div class="wh-spot-row">
+  const current = selected ? `<span class="wh-spot-row-current">${zh ? "当前" : "Current"}</span>` : "";
+  return `<div class="wh-spot-row" data-drive-item="${escapeHtml(item.id)}" data-drive-item-selected="${selected ? "true" : "false"}"${selected ? ` aria-current="true"` : ""}>
     <span class="wh-spot-file-icon">${icon}</span>
     <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(item.name)}</div><div class="wh-spot-row-sub">${escapeHtml(meta)}</div></div>
+    ${current}
     ${actions}
   </div>`;
 }
 
 function deletedRow(item: DriveItemVM, zh: boolean): string {
+  const restore = item.restore_href
+    ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-drive-restore="${escapeHtml(item.id)}">${zh ? "恢复" : "Restore"}</button>`
+    : "";
   return `<div class="wh-spot-row">
     <span class="wh-spot-file-icon" style="color:var(--ds-ink-faint)">${item.kind === "folder" ? FOLDER_ICON : FILE_ICON}</span>
     <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(item.name)}</div><div class="wh-spot-row-sub">${zh ? "已删除" : "deleted"}</div></div>
-    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-drive-restore="${escapeHtml(item.id)}">${zh ? "恢复" : "Restore"}</button>
+    ${restore}
   </div>`;
+}
+
+function visibleDriveItems(items: readonly DriveItemVM[], selectedItemId: string | undefined): DriveItemVM[] {
+  const selected = selectedItemId ? items.find((item) => item.id === selectedItemId) : undefined;
+  if (!selected) {
+    return items.slice(0, 40);
+  }
+  const firstPage = items.slice(0, 40);
+  if (firstPage.some((item) => item.id === selected.id)) {
+    return firstPage;
+  }
+  return [selected, ...items.filter((item) => item.id !== selected.id).slice(0, 39)];
 }
 
 export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean, apiBaseUrl?: string): string {
@@ -241,7 +271,7 @@ export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean, ap
     ? `<div class="wh-spot-card-actions"><label class="wh-spot-act wh-spot-act--primary ds-pressable wh-spot-upload-label"><span data-drive-upload-label>${zh ? "＋ 上传文件" : "＋ Upload file"}</span><input class="wh-spot-file-input" type="file" data-drive-upload-picker /></label></div>`
     : "";
   const list = items.length
-    ? `<div class="wh-spot-list ds-stagger">${items.slice(0, 40).map((i) => itemRow(i, zh, canManage, apiBaseUrl)).join("")}</div>`
+    ? `<div class="wh-spot-list ds-stagger">${visibleDriveItems(items, vm.selected_item_id).map((i) => itemRow(i, zh, canManage, i.id === vm.selected_item_id, apiBaseUrl)).join("")}</div>`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "这个项目还没有文件" : "No files in this project yet"}</p>`;
   const deletedBlock = deleted.length
     ? `<div class="wh-spot-drive-section"><p class="wh-spot-reasons-q">${zh ? "回收站" : "Recently deleted"}</p><div class="wh-spot-list">${deleted.slice(0, 12).map((i) => deletedRow(i, zh)).join("")}</div></div>`
@@ -271,6 +301,7 @@ export function createDriveView(): SpotlightCapabilityView {
       let retry: (() => void) | undefined;
       let projects: { id: string; name: string }[] = [];
       let projectId: string | undefined;
+      let targetItemId = driveTargetItemIdFromRoute(ctx.target?.route);
       ctx.setSubtitle(zh ? "文件与 AI 交付物" : "Files & deliverables");
 
       const chips = (): string => {
@@ -287,7 +318,7 @@ export function createDriveView(): SpotlightCapabilityView {
         ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉文件…" : "Loading files…"}</div>`;
         ctx.requestResize();
         try {
-          const vm = await ctx.client.pages.drive({ project_id: reqProjectId, locale: ctx.locale });
+          const vm = await ctx.client.pages.drive({ project_id: reqProjectId, locale: ctx.locale, ...(targetItemId ? { itemId: targetItemId } : {}) });
           if (disposed || gen !== loadGen) return;
           const proj = projects.find((p) => p.id === reqProjectId);
           ctx.setSubtitle(proj ? proj.name : zh ? "网盘" : "Drive");
@@ -371,6 +402,7 @@ export function createDriveView(): SpotlightCapabilityView {
           // rank26：恢复进行中不切项目，否则恢复完成的回执/重载会落到另一个项目。
           if (busy || proj.dataset.driveProj === projectId) return;
           projectId = proj.dataset.driveProj;
+          targetItemId = undefined;
           void loadDrive();
           return;
         }

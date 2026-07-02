@@ -82,7 +82,8 @@ test("desktop workitem trace hides hidden reasoning and raw tool payloads", () =
     ] as WorkItemDetailVM["agent_trace_preview"]
   }), true);
 
-  assert.ok(html.includes("AI 正在思考中，隐藏推理内容不会展示。"));
+  assert.ok(html.includes("AI 正在整理材料，稍后给你下一步。"));
+  assert.equal(html.includes("隐藏推理内容"), false);
   assert.ok(html.includes("工具已返回：read_project_file"));
   assert.equal(html.includes("Now I understand"), false);
   assert.equal(html.includes("markdown-report"), false);

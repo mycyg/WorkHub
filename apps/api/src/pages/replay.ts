@@ -5,6 +5,7 @@ import {
   agentRunLiveVmSchema,
   replayMergeAttemptVmSchema,
   replayTraceVmSchema,
+  snapshotSchema,
   type AgentRun,
   type AgentRunLiveVM,
   type AgentStep,
@@ -137,7 +138,7 @@ export function toSnapshotVm(row: SnapshotRow): Snapshot {
   if (row.revertedAt) {
     snapshot.reverted_at = row.revertedAt.toISOString();
   }
-  return snapshot;
+  return parseOutputContract(snapshotSchema, snapshot, "snapshot-vm");
 }
 
 export function toAuditLogFact(row: AuditLogRow): AuditLogFact {

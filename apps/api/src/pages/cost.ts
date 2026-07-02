@@ -1,6 +1,6 @@
 import { costDashboardVmSchema, type BudgetNotice, type BudgetUsage, type CostDashboardVM, type CostSummaryVM, type WorkHubLocale } from "@workhub/contracts";
 import type { Settings } from "@workhub/config";
-import { isSelfImprovementSource, type BudgetUsage as InternalBudgetUsage, type CostLedgerEntry } from "@workhub/cost";
+import { isSelfImprovementSource, type BudgetNotice as InternalBudgetNotice, type BudgetUsage as InternalBudgetUsage, type CostLedgerEntry } from "@workhub/cost";
 import { pageT } from "./i18n.js";
 import { parseOutputContract } from "./output-contract.js";
 
@@ -8,8 +8,10 @@ type CostPageInput = {
   settings: Settings;
   isAdmin: boolean;
   userId: string;
+  teamId?: string;
   generatedAt?: Date;
   budgetUsages?: InternalBudgetUsage[];
+  budgetNotices?: InternalBudgetNotice[];
   ledgerEntries?: readonly CostLedgerEntry[];
   locale?: WorkHubLocale;
 };
@@ -47,10 +49,25 @@ function makeZeroUsage(input: {
   };
 }
 
+function makeInactiveUsage(input: {
+  scope: BudgetUsage["scope"];
+  scopeLabel: string;
+  policyId: string;
+  period: BudgetUsage["period"];
+  generatedAt: Date;
+}): BudgetUsage {
+  return makeZeroUsage({
+    ...input,
+    maxTokens: 0,
+    maxCostCny: "0"
+  });
+}
+
 export function buildCostSummary(input: CostPageInput): CostSummaryVM {
   const generatedAt = input.generatedAt ?? new Date();
   const locale = input.locale ?? "zh-CN";
   const mappedUsages = input.budgetUsages?.map((usage) => toApiBudgetUsage(usage, locale)) ?? [];
+  const hasExplicitBudgetDecision = input.budgetUsages !== undefined;
   const fallbackMe = makeZeroUsage({
     scope: { kind: "user", user_id: input.userId },
     scopeLabel: pageT(locale, "cost.scope.me"),
@@ -60,9 +77,17 @@ export function buildCostSummary(input: CostPageInput): CostSummaryVM {
     maxCostCny: input.settings.budgets.userDailyCostCny,
     generatedAt
   });
-  const me = mappedUsages.find((usage) => usage.scope.kind === "user" && usage.scope.user_id === input.userId) ?? fallbackMe;
+  const inactiveMe = makeInactiveUsage({
+    scope: { kind: "user", user_id: input.userId },
+    scopeLabel: pageT(locale, "cost.scope.me"),
+    policyId: "pcost-user-day-v0:disabled",
+    period: "day",
+    generatedAt
+  });
+  const me = mappedUsages.find((usage) => usage.scope.kind === "user" && usage.scope.user_id === input.userId)
+    ?? (hasExplicitBudgetDecision ? inactiveMe : fallbackMe);
   const fallbackTeam = makeZeroUsage({
-    scope: { kind: "team", team_id: input.settings.auth.defaultWorkspaceId },
+    scope: { kind: "team", team_id: input.teamId ?? input.settings.auth.defaultWorkspaceId },
     scopeLabel: pageT(locale, "cost.scope.team"),
     policyId: "pcost-team-day-v0",
     period: "day",
@@ -70,14 +95,22 @@ export function buildCostSummary(input: CostPageInput): CostSummaryVM {
     maxCostCny: input.settings.budgets.teamDailyCostCny,
     generatedAt
   });
-  const team = mappedUsages.find((usage) => usage.scope.kind === "team") ?? fallbackTeam;
-  const scopes = mappedUsages.length > 0 ? mappedUsages : [me, team];
+  const inactiveTeam = makeInactiveUsage({
+    scope: { kind: "team", team_id: input.teamId ?? input.settings.auth.defaultWorkspaceId },
+    scopeLabel: pageT(locale, "cost.scope.team"),
+    policyId: "pcost-team-day-v0:disabled",
+    period: "day",
+    generatedAt
+  });
+  const team = mappedUsages.find((usage) => usage.scope.kind === "team")
+    ?? (hasExplicitBudgetDecision ? inactiveTeam : fallbackTeam);
+  const scopes = hasExplicitBudgetDecision ? mappedUsages : (mappedUsages.length > 0 ? mappedUsages : [me, team]);
 
   return {
     me,
     team,
     scopes,
-    active_notices: budgetNoticesFor(scopes, locale),
+    active_notices: input.budgetNotices?.map((notice) => toApiBudgetNotice(notice, locale)) ?? budgetNoticesFor(scopes, locale),
     generated_at: generatedAt.toISOString()
   };
 }
@@ -167,6 +200,39 @@ function toApiBudgetUsage(usage: InternalBudgetUsage, locale: WorkHubLocale): Bu
     warning_ratio: usage.warningRatio,
     status: usage.status
   };
+}
+
+function toApiBudgetNotice(notice: InternalBudgetNotice, locale: WorkHubLocale): BudgetNotice {
+  const exhausted = notice.code === "budget_exhausted";
+  return {
+    code: notice.code,
+    severity: notice.severity,
+    message: pageT(locale, exhausted ? "cost.notice.exhausted" : "cost.notice.warning"),
+    scope: toApiScope(notice.scope),
+    usage_ratio: notice.usageRatio,
+    recommended_action: notice.recommendedAction,
+    ...(notice.options ? {
+      options: notice.options.map((option) => ({
+        id: option.id,
+        label: localizedBudgetActionLabel(option.id, option.label, locale),
+        action_href: option.actionHref
+      }))
+    } : {}),
+    ...(notice.actionHref ? { action_href: notice.actionHref } : {})
+  };
+}
+
+function localizedBudgetActionLabel(id: string, fallback: string, locale: WorkHubLocale) {
+  if (id === "downgrade_model") {
+    return pageT(locale, "cost.action.downgrade");
+  }
+  if (id === "pause") {
+    return pageT(locale, "cost.action.pause");
+  }
+  if (id === "ask_admin") {
+    return pageT(locale, "cost.action.askAdmin");
+  }
+  return fallback;
 }
 
 function localizedScopeLabel(usage: InternalBudgetUsage, locale: WorkHubLocale) {

@@ -28,8 +28,9 @@
         "visible": true,
         "focus": true,
         "transparent": true,
+        "backgroundColor": "#00000000",
         "decorations": false,
-        "alwaysOnTop": false
+        "alwaysOnTop": true
       },
       {
         "label": "pet",

@@ -30,6 +30,7 @@ import {
 } from "./middleware/auth.js";
 import { createAuditRoutes } from "./routes/audit.js";
 import { buildReplayEvidenceRefs } from "./pages/replay.js";
+import { InternalContractError } from "./pages/output-contract.js";
 import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 
 const now = new Date("2026-06-05T00:00:00.000Z");
@@ -59,18 +60,35 @@ function user(): UserAuthRow {
   };
 }
 
-function allowingWorkItems(): Pick<WorkItemService, "detailPage"> {
+function allowingWorkItems(): Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts"> {
   return {
     async detailPage() {
       return { workitem: {} } as unknown as Awaited<ReturnType<WorkItemService["detailPage"]>>;
+    },
+    async assertCanMutateArtifacts() {
+      return;
     }
   };
 }
 
-function denyingWorkItems(): Pick<WorkItemService, "detailPage"> {
+function denyingWorkItems(): Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts"> {
   return {
     async detailPage() {
       throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+    },
+    async assertCanMutateArtifacts() {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项的交付物。");
+    }
+  };
+}
+
+function readOnlyWorkItems(): Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts"> {
+  return {
+    async detailPage() {
+      return { workitem: {} } as unknown as Awaited<ReturnType<WorkItemService["detailPage"]>>;
+    },
+    async assertCanMutateArtifacts() {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项的交付物。");
     }
   };
 }
@@ -284,8 +302,20 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
     if (error instanceof ZodError) {
       return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
     }
+    if (error instanceof WorkItemServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
+    }
     if (error instanceof HTTPException) {
       return c.json({ ok: false, error: { code: "http_error", message: error.message } }, error.status);
+    }
+    if (error instanceof InternalContractError) {
+      return c.json({
+        ok: false,
+        error: {
+          code: "internal_contract_error",
+          message: "WorkHub hit an unexpected server error."
+        }
+      }, 500);
     }
     throw error;
   });
@@ -326,6 +356,58 @@ test("audit timeline route returns snapshots, audit logs, and rollback facts", a
   assert.equal(body.data.manifest_facts.rollback.available, true);
 });
 
+test("audit timeline route preserves work item service error codes", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const workItems = {
+    async detailPage() {
+      throw new WorkItemServiceError(409, "workitem_state_conflict", "这个事项当前状态不能查看审计。");
+    }
+  } as unknown as WorkItemService;
+  app.route("/api", createAuditRoutes({
+    auth: authDeps(runtimeSettings),
+    snapshots: new MemorySnapshots(),
+    auditLogs: new MemoryAuditLogs(),
+    workItems,
+    now: () => now
+  }));
+
+  const response = await app.request(`/api/workitems/${workItemId}/audit`, {
+    headers: {
+      Cookie: await cookie(runtimeSettings)
+    }
+  });
+  const body = await response.json() as { ok: false; error: { code: string; message: string } };
+
+  assert.equal(response.status, 409);
+  assert.equal(body.error.code, "workitem_state_conflict");
+  assert.equal(body.error.message, "这个事项当前状态不能查看审计。");
+});
+
+test("audit timeline fails closed when a stored snapshot violates the response contract", async () => {
+  const runtimeSettings = settings();
+  const snapshots = new MemorySnapshots();
+  snapshots.rows = [snapshot({ kind: "future_kind" as SnapshotRow["kind"] })];
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAuditRoutes({
+    auth: authDeps(runtimeSettings),
+    snapshots,
+    auditLogs: new MemoryAuditLogs(),
+    workItems: allowingWorkItems() as WorkItemService,
+    now: () => now
+  }));
+
+  const response = await app.request(`/api/workitems/${workItemId}/audit`, {
+    headers: {
+      Cookie: await cookie(runtimeSettings)
+    }
+  });
+  const body = await response.json() as { ok: false; error: { code: string; message: string } };
+
+  assert.equal(response.status, 500);
+  assert.equal(body.error.code, "internal_contract_error");
+});
+
 test("revert route keeps the local-client gate", async () => {
   const runtimeSettings = settings();
   const app = withErrors(new Hono<AuthEnv>());
@@ -346,6 +428,74 @@ test("revert route keeps the local-client gate", async () => {
   });
 
   assert.equal(response.status, 403);
+});
+
+test("revert route rejects malformed run ids before reading snapshots", async () => {
+  const runtimeSettings = settings();
+  const token = "local-client-token";
+  const snapshots = new MemorySnapshots();
+  let snapshotReads = 0;
+  snapshots.findSnapshotById = async () => {
+    snapshotReads += 1;
+    return snapshot();
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAuditRoutes({
+    auth: authDeps(runtimeSettings, [clientDevice(token)]),
+    snapshots,
+    auditLogs: new MemoryAuditLogs(),
+    workItems: allowingWorkItems() as WorkItemService,
+    now: () => now
+  }));
+
+  const response = await app.request("/api/agent-runs/not-a-run/revert", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      [LOCAL_CLIENT_HEADER]: token
+    },
+    body: JSON.stringify({ snapshot_id: snapshotId })
+  });
+
+  assert.equal(response.status, 404);
+  assert.equal(snapshotReads, 0);
+});
+
+test("revert route fails closed when the selected snapshot violates the restore contract", async () => {
+  const runtimeSettings = settings();
+  const token = "local-client-token";
+  const snapshots = new MemorySnapshots();
+  snapshots.rows = [snapshot({ createdByKind: "bot" as SnapshotRow["createdByKind"] })];
+  const auditLogs = new MemoryAuditLogs();
+  auditLogs.rows = [auditLog({ action: "tool.write_file.snapshot", detailJson: { run_id: agentRunId }, snapshotId })];
+  let workdirReads = 0;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAuditRoutes({
+    auth: authDeps(runtimeSettings, [clientDevice(token)]),
+    snapshots,
+    auditLogs,
+    workItems: allowingWorkItems() as WorkItemService,
+    workdirForRun: () => {
+      workdirReads += 1;
+      return "/tmp/should-not-be-reached";
+    },
+    now: () => now
+  }));
+
+  const response = await app.request(`/api/agent-runs/${agentRunId}/revert`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      [LOCAL_CLIENT_HEADER]: token
+    },
+    body: JSON.stringify({ snapshot_id: snapshotId })
+  });
+  const body = await response.json() as { ok: false; error: { code: string } };
+
+  assert.equal(response.status, 500);
+  assert.equal(body.error.code, "internal_contract_error");
+  assert.equal(workdirReads, 0);
+  assert.equal(snapshots.rows[0]?.revertedAt ?? null, null);
 });
 
 test("revert route restores the agent run workdir from the selected snapshot", async () => {
@@ -428,6 +578,51 @@ test("revert route restores the agent run workdir from the selected snapshot", a
   assert.equal(writeLog?.undoneAt?.toISOString(), now.toISOString());
 });
 
+test("revert route returns the committed restore when post-restore audit logging fails", async () => {
+  const runtimeSettings = settings();
+  const token = "local-client-token";
+  const snapshotDir = await mkdtemp(path.join(os.tmpdir(), "workhub-revert-audit-snapshot-"));
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-revert-audit-workdir-"));
+  await mkdir(path.join(snapshotDir, "outputs"), { recursive: true });
+  await writeFile(path.join(snapshotDir, "outputs", "result.md"), "before change");
+  await mkdir(path.join(workdir, "outputs"), { recursive: true });
+  await writeFile(path.join(workdir, "outputs", "result.md"), "dirty change");
+
+  const snapshots = new MemorySnapshots();
+  snapshots.rows = [snapshot({ ref: snapshotDir })];
+  const auditLogs = new MemoryAuditLogs();
+  auditLogs.rows = [auditLog({ action: "tool.write_file.snapshot", detailJson: { run_id: agentRunId }, snapshotId })];
+  auditLogs.createAuditLog = async () => {
+    throw new Error("audit sink unavailable");
+  };
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAuditRoutes({
+    auth: authDeps(runtimeSettings, [clientDevice(token)]),
+    snapshots,
+    auditLogs,
+    workItems: allowingWorkItems() as WorkItemService,
+    workdirForRun: (runId) => runId === agentRunId ? workdir : null,
+    now: () => now
+  }));
+
+  const response = await app.request(`/api/agent-runs/${agentRunId}/revert`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      [LOCAL_CLIENT_HEADER]: token
+    },
+    body: JSON.stringify({ snapshot_id: snapshotId })
+  });
+  const body = await response.json() as { ok: true; data: { status: string } };
+
+  assert.equal(response.status, 200);
+  assert.equal(body.data.status, "reverted");
+  assert.equal(await readFile(path.join(workdir, "outputs", "result.md"), "utf8"), "before change");
+  assert.equal(snapshots.rows[0]?.revertedAt?.toISOString(), now.toISOString());
+  assert.equal(auditLogs.rows[0]?.undoneAt?.toISOString(), now.toISOString());
+});
+
 test("buildReplayEvidenceRefs skips undone (reverted) audit logs", () => {
   const facts = [
     { id: "log-live", action: "tool.write_file.snapshot", entity: { entity_id: "wi-1" } },
@@ -465,6 +660,75 @@ test("revert route fails closed for a snapshot whose work item the caller cannot
   assert.equal(response.status, 403);
   // 越权被挡在还原之前：快照不应被标记 reverted。
   assert.equal(snapshots.rows[0]?.revertedAt ?? null, null);
+});
+
+test("revert route requires artifact mutation access, not just audit read access", async () => {
+  const runtimeSettings = settings();
+  const token = "local-client-token";
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  auditLogs.rows = [auditLog({ action: "tool.write_file.snapshot", detailJson: { run_id: agentRunId }, snapshotId })];
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAuditRoutes({
+    auth: authDeps(runtimeSettings, [clientDevice(token)]),
+    snapshots,
+    auditLogs,
+    workItems: readOnlyWorkItems() as WorkItemService,
+    workdirForRun: () => "/tmp/should-not-be-reached",
+    now: () => now
+  }));
+
+  const response = await app.request(`/api/agent-runs/${agentRunId}/revert`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", [LOCAL_CLIENT_HEADER]: token },
+    body: JSON.stringify({ snapshot_id: snapshotId })
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(snapshots.rows[0]?.revertedAt ?? null, null);
+});
+
+test("revert route checks snapshot mutation before unrelated schema errors", async () => {
+  const runtimeSettings = settings();
+  const token = "local-client-token";
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  auditLogs.rows = [auditLog({ action: "tool.write_file.snapshot", detailJson: { run_id: agentRunId }, snapshotId })];
+  let workdirReads = 0;
+
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createAuditRoutes({
+    auth: authDeps(runtimeSettings, [clientDevice(token)]),
+    snapshots,
+    auditLogs,
+    workItems: readOnlyWorkItems() as WorkItemService,
+    workdirForRun: () => {
+      workdirReads += 1;
+      return "/tmp/should-not-be-reached";
+    },
+    now: () => now
+  }));
+
+  const response = await app.request(`/api/agent-runs/${agentRunId}/revert`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", [LOCAL_CLIENT_HEADER]: token },
+    body: JSON.stringify({
+      snapshot_id: snapshotId,
+      reason_md: "太长".repeat(1001)
+    })
+  });
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "forbidden",
+      message: "你没有权限修改这个事项的交付物。"
+    }
+  });
+  assert.equal(snapshots.rows[0]?.revertedAt ?? null, null);
+  assert.equal(workdirReads, 0);
 });
 
 test("audit timeline fails closed for a work item the user cannot view", async () => {

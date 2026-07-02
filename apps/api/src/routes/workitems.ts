@@ -1,7 +1,7 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import { Hono, type Context } from "hono";
-import { HTTPException } from "hono/http-exception";
+import { Hono } from "hono";
 
 import {
   createWorkItemRequestSchema,
@@ -21,6 +21,7 @@ import {
   WorkItemServiceError,
   type WorkItemService
 } from "../services/work-items.js";
+import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 
 export type WorkItemRoutesDependencies = {
@@ -29,14 +30,11 @@ export type WorkItemRoutesDependencies = {
 };
 
 function handleWorkItemError(error: unknown): never {
-  if (error instanceof WorkItemServiceError) {
-    throw new HTTPException(error.status as 400, { message: error.message });
-  }
   throw error;
 }
 
 // 路由 uuid 形参先校验：非 uuid 串原本直达服务层的 uuid 列 → PG 22P02 → 误报 500；非法即抛与「合法但不存在」
-// 同样的 404（WorkItemServiceError，经 handleWorkItemError 收口），不泄露存在性。
+// 同样的 404（WorkItemServiceError，经 app.onError 收口），不泄露存在性。
 function requireWorkItemId(value: string): string {
   if (!isUuidParam(value)) {
     throw new WorkItemServiceError(404, "not_found", "没有找到这个事项。");
@@ -64,10 +62,18 @@ function isTextPreview(filename: string, mime?: string) {
   const lower = filename.toLowerCase();
   return !!mime?.startsWith("text/")
     || mime === "application/json"
+    || mime === "application/xml"
+    || mime === "application/yaml"
+    || mime === "application/x-yaml"
     || lower.endsWith(".md")
     || lower.endsWith(".json")
     || lower.endsWith(".csv")
-    || lower.endsWith(".txt");
+    || lower.endsWith(".txt")
+    || lower.endsWith(".tsv")
+    || lower.endsWith(".html")
+    || lower.endsWith(".xml")
+    || lower.endsWith(".yaml")
+    || lower.endsWith(".yml");
 }
 
 function readStoredDeliverable(storagePath: string): Promise<Buffer>;
@@ -82,21 +88,74 @@ async function readStoredDeliverable(storagePath: string, encoding?: BufferEncod
       && "code" in error
       && (error as { code?: unknown }).code === "ENOENT"
     ) {
-      throw new HTTPException(404, { message: "正式交付物文件已不存在，请重新生成或查看历史记录。" });
+      throw new WorkItemServiceError(
+        404,
+        "deliverable_file_missing",
+        "正式交付物文件已不存在，请重新生成或查看历史记录。"
+      );
     }
     throw error;
   }
 }
 
-async function readJsonBody(c: Context) {
-  const text = await c.req.text();
-  if (!text.trim()) {
-    return {};
+type WorkItemRouteDeliverableFile = Awaited<ReturnType<WorkItemService["acceptedDeliverableFile"]>>;
+
+function sha256Buffer(bytes: Buffer) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function parsedTextFallback(
+  file: WorkItemRouteDeliverableFile,
+  encoding?: BufferEncoding,
+  options: { requireComplete?: boolean } = {}
+) {
+  if (file.parsedText === undefined) {
+    throw new WorkItemServiceError(
+      404,
+      "deliverable_file_missing",
+      "正式交付物文件已不存在，请重新生成或查看历史记录。"
+    );
   }
+  const bytes = Buffer.from(file.parsedText, "utf8");
+  if (options.requireComplete) {
+    if (bytes.byteLength !== file.sizeBytes) {
+      throw new WorkItemServiceError(
+        404,
+        "deliverable_file_missing",
+        "正式交付物文件已不存在，请重新生成或查看历史记录。"
+      );
+    }
+    if (file.sha256 && sha256Buffer(bytes) !== file.sha256) {
+      throw new WorkItemServiceError(
+        404,
+        "deliverable_file_missing",
+        "正式交付物文件已不存在，请重新生成或查看历史记录。"
+      );
+    }
+  }
+  return encoding ? file.parsedText : bytes;
+}
+
+function readDeliverableContent(file: WorkItemRouteDeliverableFile): Promise<Buffer>;
+function readDeliverableContent(file: WorkItemRouteDeliverableFile, encoding: undefined, options: { requireCompleteParsedText?: boolean }): Promise<Buffer>;
+function readDeliverableContent(file: WorkItemRouteDeliverableFile, encoding: BufferEncoding): Promise<string>;
+function readDeliverableContent(file: WorkItemRouteDeliverableFile, encoding: BufferEncoding, options: { requireCompleteParsedText?: boolean }): Promise<string>;
+async function readDeliverableContent(
+  file: WorkItemRouteDeliverableFile,
+  encoding?: BufferEncoding,
+  options: { requireCompleteParsedText?: boolean } = {}
+) {
   try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new HTTPException(400, { message: "工作项请求不是有效的 JSON。" });
+    return encoding ? await readStoredDeliverable(file.storagePath, encoding) : await readStoredDeliverable(file.storagePath);
+  } catch (error) {
+    if (error instanceof WorkItemServiceError && error.code === "deliverable_file_missing") {
+      return parsedTextFallback(
+        file,
+        encoding,
+        options.requireCompleteParsedText ? { requireComplete: true } : {}
+      );
+    }
+    throw error;
   }
 }
 
@@ -106,9 +165,14 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
   const workItems = deps.workItems ?? getDefaultWorkItemService();
 
   routes.post("/workitems", createCurrentUserMiddleware(authSource), async (c) => {
-    const payload = createWorkItemRequestSchema.parse(await readJsonBody(c));
     const locale = requestLocale(c);
+    const rawPayload = await readJsonObject(c);
+    const rawSessionId = rawPayload.session_id;
     try {
+      if (typeof rawSessionId === "string" && rawSessionId.trim() && isUuidParam(rawSessionId)) {
+        await workItems.assertCanMutateWorkItem({ workItemId: rawSessionId, actor: c.var.actor });
+      }
+      const payload = createWorkItemRequestSchema.parse(rawPayload);
       const data = await workItems.createWorkItem({ payload, actor: c.var.actor, locale });
       return c.json({ ok: true, data, meta: { locale } }, 201);
     } catch (error) {
@@ -117,11 +181,13 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
   });
 
   routes.post("/workitems/:id/evidence-bindings", createCurrentUserMiddleware(authSource), async (c) => {
-    const payload = useEvidenceForTaskRequestSchema.parse(await readJsonBody(c));
     const locale = requestLocale(c);
     try {
+      const workItemId = requireWorkItemId(c.req.param("id"));
+      await workItems.assertCanMutateWorkItem({ workItemId, actor: c.var.actor });
+      const payload = useEvidenceForTaskRequestSchema.parse(await readJsonObject(c));
       const data = await workItems.bindEvidence({
-        workItemId: requireWorkItemId(c.req.param("id")),
+        workItemId,
         payload,
         actor: c.var.actor,
         locale
@@ -139,7 +205,7 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
         acceptedChangeId: requireAcceptedChangeId(c.req.param("acceptedChangeId")),
         actor: c.var.actor
       });
-      const content = await readStoredDeliverable(file.storagePath);
+      const content = await readDeliverableContent(file, undefined, { requireCompleteParsedText: true });
       return c.body(content, 200, {
         "Content-Type": file.mime ?? "application/octet-stream",
         // findings[#low]：Content-Length 取实际发出的字节数，而不是可能过期/截断的 DB sizeBytes。
@@ -159,9 +225,13 @@ export function createWorkItemRoutes(deps: WorkItemRoutesDependencies = {}) {
         actor: c.var.actor
       });
       if (!isTextPreview(file.filename, file.mime)) {
-        throw new HTTPException(415, { message: "这类正式交付物暂不支持在线预览，请下载查看。" });
+        throw new WorkItemServiceError(
+          415,
+          "deliverable_preview_unsupported",
+          "这类正式交付物暂不支持在线预览，请下载查看。"
+        );
       }
-      const text = await readStoredDeliverable(file.storagePath, "utf8");
+      const text = await readDeliverableContent(file, "utf8", { requireCompleteParsedText: true });
       const maxPreviewChars = 200000;
       return c.json({
         ok: true,

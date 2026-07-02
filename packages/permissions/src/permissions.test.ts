@@ -79,7 +79,7 @@ test("R2 multi-tenancy: work-item scope fences a public-board item to the actor'
   assert.equal(canViewWorkItemRecord(itemInA, stranger, { workspaceId: "workspace-B" }), false);
 });
 
-test("drive project gate allows owner, admin, and same-workspace policy actors", () => {
+test("drive project gate allows owner/admin only inside the active workspace", () => {
   const project = {
     archived: false,
     deletedAt: null,
@@ -90,12 +90,16 @@ test("drive project gate allows owner, admin, and same-workspace policy actors",
 
   assert.equal(canViewProjectDrive(project, { id: "stranger", workspaceId: "other", orgId: "org-1" }), false);
   assert.equal(canViewProjectDrive(project, { id: "member", workspaceId: "workspace-1", orgId: "org-1" }), true);
-  assert.equal(canManageProjectDrive(project, { id: "owner", userId: project.ownerUserId, workspaceId: "other", orgId: "org-1" }), true);
-  // admin 在只读路径上**故意**跨租户(组织级总览,如项目健康看板);跨租户的写由 work-items 写 fence 单独收口。
-  assert.equal(canManageProjectDrive(project, { id: "admin", isAdmin: true, workspaceId: "other", orgId: "other" }), true);
+  assert.equal(canViewProjectDrive(project, { id: "owner", userId: project.ownerUserId, workspaceId: "other", orgId: "org-1" }), false);
+  assert.equal(canManageProjectDrive(project, { id: "owner", userId: project.ownerUserId, workspaceId: "workspace-1", orgId: "org-1" }), true);
+  assert.equal(canManageProjectDrive(project, { id: "owner", userId: project.ownerUserId, workspaceId: "other", orgId: "org-1" }), false);
+  assert.equal(canViewProjectDrive(project, { id: "admin", isAdmin: true, workspaceId: "other", orgId: "org-1" }), true);
+  assert.equal(canViewProjectDrive(project, { id: "admin", isAdmin: true, workspaceId: "other", orgId: "other" }), false);
+  // admin 可同 org 跨 workspace 只读项目健康看板；写管理必须落在 actor 当前 workspace。
+  assert.equal(canManageProjectDrive(project, { id: "admin", isAdmin: true, workspaceId: "other", orgId: "other" }), false);
 });
 
-test("drive project write gate blocks archived projects even for admins", () => {
+test("drive project gates block archived projects even for admins", () => {
   const archived = {
     archived: true,
     deletedAt: null,
@@ -104,7 +108,7 @@ test("drive project write gate blocks archived projects even for admins", () => 
     orgId: "org-1"
   };
 
-  assert.equal(canViewProjectDrive(archived, { id: "admin", isAdmin: true }), true);
+  assert.equal(canViewProjectDrive(archived, { id: "admin", isAdmin: true }), false);
   assert.equal(canManageProjectDrive(archived, { id: "admin", isAdmin: true }), false);
 });
 
@@ -127,6 +131,27 @@ test("action gate resolves by scope, priority, specificity, and fail-safe effect
   assert.equal(resolvePermissionDecision(actor, "tool.delete_file", policies, { now }).effect, "allow");
   assert.equal(resolvePermissionDecision(actor, "tool.write_file", policies, { now }).effect, "deny");
   assert.equal(resolvePermissionDecision(actor, "tool.unknown", [], { now }).effect, "ask");
+});
+
+test("action gate ignores policies whose tenant metadata does not match the actor", () => {
+  const actor: PermissionActor = {
+    id: "run-1",
+    isAdmin: false,
+    orgId: "org-B",
+    workspaceId: "workspace-B"
+  };
+  const policies: PermissionPolicyRecord[] = [
+    {
+      scopeKind: "workspace",
+      scopeId: "workspace-B",
+      actionPattern: "tool.write_file",
+      effect: "allow",
+      orgId: "org-A",
+      workspaceId: "workspace-A"
+    }
+  ];
+
+  assert.equal(resolvePermissionDecision(actor, "tool.write_file", policies, { now }).effect, "ask");
 });
 
 test("M25 override-priority deny is a cross-scope kill-switch beating narrower allows and the admin fallback", () => {

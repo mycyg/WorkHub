@@ -5,6 +5,7 @@ import { createCuuController } from "@workhub/cuu";
 
 import {
   CUU_PREFERENCES_STORAGE_KEY,
+  desktopCuuPreferenceCss,
   desktopPetSettingsCss,
   desktopPetSettingsPayloadFromPreferences,
   desktopPetSettingsPreferencesFromPayload,
@@ -15,6 +16,7 @@ import {
   saveCuuPreferences,
   type CuuPreferenceStorage
 } from "./cuu-preferences.js";
+import { liquidGlassCss } from "./liquid-glass.js";
 
 function memoryStorage(initial: Record<string, string> = {}): CuuPreferenceStorage & { entries: Record<string, string> } {
   const entries = { ...initial };
@@ -207,6 +209,15 @@ test("Cuu preference panel renders English black and white model-pack copy only"
   assert.doesNotMatch(html, /data-cuu-model-pack-selectable="false"[^>]*disabled/u);
   assert.match(html, /Reduce motion/u);
   assert.doesNotMatch(html, /减少动效/u);
+});
+
+test("Cuu preference panel keeps an opaque frosted-white base (transparent Tauri window constraint)", () => {
+  assert.doesNotMatch(desktopPetSettingsCss, /background:(?:#fff|#f8fbff|#fff4f3|rgba\(255,255,255,\.(?:[5-9]\d?|\d{2,})\))/u);
+  // R9 批次0-3：透明 Tauri 窗里 CSS backdrop-filter 是空操作，磨砂只能来自不透白底——钉死白底不透明度下限。
+  assert.match(desktopCuuPreferenceCss, /\.wh-cuu-preferences\{[^}]*background:rgba\(255,255,255,\.55\)/u);
+  assert.doesNotMatch(desktopCuuPreferenceCss, /\.wh-cuu-preferences\{[^}]*background:transparent/u);
+  assert.match(liquidGlassCss, /\.wh-cuu-preferences\{/u);
+  assert.doesNotMatch(liquidGlassCss, /\.wh-cuu-preferences-panel/u);
 });
 
 test("desktop pet settings panel is a serious recovery surface without model choices", () => {

@@ -68,7 +68,7 @@ const riskHintMap: Record<string, [string, string]> = {
 };
 
 export function agentStepPhaseLabel(phase: string, zh: boolean): string {
-  return pick(agentStepPhaseMap, phase, zh);
+  return agentStepPhaseMap[phase]?.[zh ? 0 : 1] ?? (zh ? "步骤" : "Step");
 }
 
 export function agentStepPublicSummary(
@@ -79,7 +79,7 @@ export function agentStepPublicSummary(
   const separator = zh ? "：" : ": ";
   switch (step.phase) {
     case "think":
-      return zh ? "AI 正在思考中，隐藏推理内容不会展示。" : "AI is thinking; hidden reasoning is not shown.";
+      return zh ? "AI 正在整理材料，稍后给你下一步。" : "AI is organizing the materials and preparing the next step.";
     case "tool_call":
       return tool ? `${zh ? "工具调用" : "Tool call"}${separator}${tool}` : zh ? "正在调用工具。" : "Calling a tool.";
     case "tool_result":

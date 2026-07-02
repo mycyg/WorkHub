@@ -36,6 +36,7 @@ import {
 } from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
+import { parseOutputContract } from "../pages/output-contract.js";
 
 type MeetingInsightSourceContextVM = Extract<NotificationSourceContextVM, { source_type: "meeting_insight" }>;
 
@@ -118,6 +119,7 @@ function projectAccess(project: WorkItemScheduleSourceRow["project"] | MeetingIn
       archived: project.archived,
       deletedAt: project.deletedAt,
       ownerUserId: project.ownerUserId,
+      orgId: project.orgId ?? null,
       workspaceId: project.workspaceId
     }
     : null;
@@ -139,12 +141,16 @@ function canViewProject(project: WorkItemScheduleSourceRow["project"] | MeetingI
 }
 
 function canViewWorkItem(row: WorkItemScheduleSourceRow, actor: AuthActor) {
+  if (row.workItem.deletedAt) {
+    return false;
+  }
   return canViewWorkItemRecord({
     id: row.workItem.id,
     status: row.workItem.status,
     submitterUserId: row.workItem.submitterUserId,
     claimedByUserId: row.workItem.claimedByUserId,
     workspaceId: row.workItem.workspaceId,
+    assignments: row.assignments ?? [],
     project: projectAccess(row.project)
   }, actorUser(actor), {
     workspaceId: actor.workspaceId
@@ -238,7 +244,12 @@ function sourceContextForNotification(
   return { source_type: "system", label: row.type };
 }
 
-function groundingFor(row: NotificationRow, bucket: NotificationInboxBucket, locale: WorkHubLocale): NotificationGroundingVM {
+function groundingFor(
+  row: NotificationRow,
+  bucket: NotificationInboxBucket,
+  locale: WorkHubLocale,
+  visibleWorkItemId?: string
+): NotificationGroundingVM {
   const labels = copy(locale);
   const reason = bucket === "needs_decision"
     ? labels.groundingNeedsDecision as string
@@ -246,8 +257,8 @@ function groundingFor(row: NotificationRow, bucket: NotificationInboxBucket, loc
       ? labels.groundingDone as string
       : labels.groundingFyi as string;
   const searchParams = new URLSearchParams({ q: row.title, source_ref: `notification:${row.id}` });
-  if (row.workItemId) {
-    searchParams.set("work_item_id", row.workItemId);
+  if (visibleWorkItemId) {
+    searchParams.set("work_item_id", visibleWorkItemId);
   }
   if (row.projectId) {
     searchParams.set("project_id", row.projectId);
@@ -284,6 +295,9 @@ function notificationItem(
   const targetHref = safeTargetHref(row.targetUrl);
   const labels = copy(locale);
   const bucket = bucketFor(row);
+  const visibleWorkItemId = row.workItemId && context.workItems.has(row.workItemId)
+    ? row.workItemId
+    : undefined;
   const actions: NotificationItemVM["actions"] = {};
   if (targetHref) {
     actions.open = action("open", labels.open as string, "GET", targetHref);
@@ -306,10 +320,10 @@ function notificationItem(
     status: statusFor(row),
     inbox_bucket: bucket,
     title: row.title,
-    grounding: groundingFor(row, bucket, locale),
+    grounding: groundingFor(row, bucket, locale, visibleWorkItemId),
     target_href: targetHref,
     project_id: row.projectId ?? undefined,
-    work_item_id: row.workItemId ?? undefined,
+    work_item_id: visibleWorkItemId,
     dedupe_key: row.dedupeKey ?? undefined,
     source_context: sourceContextForNotification(row, context),
     read_at: row.readAt?.toISOString(),
@@ -332,15 +346,16 @@ function addDays(date: Date, days: number) {
 }
 
 function parseDateParam(value: string | undefined, fallback: Date) {
-  if (value && /^\d{4}-\d{2}-\d{2}$/u.test(value)) {
-    // findings[#20]：正则只验形状，"2026-13-45"/"2026-02-30" 等日历上非法的值仍匹配，new Date 得 Invalid Date，
-    // 后续 dateKey().toISOString() 抛 RangeError → 500。补「可解析 + 往返等于原串」校验，非法日期回退到 fallback。
+  if (!value) {
+    return startOfUtcDay(fallback);
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
     const parsed = new Date(`${value}T00:00:00.000Z`);
     if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value) {
       return startOfUtcDay(parsed);
     }
   }
-  return startOfUtcDay(fallback);
+  throw new ScheduleNotifyPageServiceError(422, "invalid_calendar_query", "日程日期必须是有效的 YYYY-MM-DD。");
 }
 
 function dateKey(date: Date) {
@@ -360,7 +375,10 @@ function rangeFor(input: { date?: string; view?: string }, now: Date): {
   rangeEnd: Date;
 } {
   const selected = parseDateParam(input.date, now);
-  const view: "day" | "week" = input.view === "day" ? "day" : "week";
+  const view = input.view ?? "week";
+  if (view !== "day" && view !== "week") {
+    throw new ScheduleNotifyPageServiceError(422, "invalid_calendar_query", "日程视图必须是 day 或 week。");
+  }
   const rangeStart = view === "day" ? selected : startOfWeek(selected);
   const rangeEnd = addDays(rangeStart, view === "day" ? 1 : 7);
   return { date: dateKey(selected), view, rangeStart, rangeEnd };
@@ -390,7 +408,20 @@ function isDoneWorkItem(status: string) {
   return status === "merged" || status === "done" || status === "cancelled";
 }
 
-function blockFromEvent(row: ScheduleEventSourceRow, now: Date): ScheduleBlockVM {
+function visibleEventWorkItemId(row: ScheduleEventSourceRow, actor: AuthActor) {
+  if (!row.workItem) {
+    return undefined;
+  }
+  return canViewWorkItem({
+    workItem: row.workItem,
+    project: row.project,
+    assignments: row.workItemAssignments ?? []
+  }, actor)
+    ? row.workItem.id
+    : undefined;
+}
+
+function blockFromEvent(row: ScheduleEventSourceRow, now: Date, visibleWorkItemId?: string): ScheduleBlockVM {
   const endAt = row.event.endAt;
   const status = scheduleStatus(endAt, now);
   return {
@@ -403,16 +434,16 @@ function blockFromEvent(row: ScheduleEventSourceRow, now: Date): ScheduleBlockVM
     all_day: !row.event.startAt,
     status,
     severity: severityForSchedule(status),
-    target_href: row.event.workItemId ? `/workitems/${row.event.workItemId}` : undefined,
+    ...(visibleWorkItemId ? { target_href: `/workitems/${visibleWorkItemId}` } : {}),
     project_id: row.event.projectId ?? undefined,
-    work_item_id: row.event.workItemId ?? undefined,
+    ...(visibleWorkItemId ? { work_item_id: visibleWorkItemId } : {}),
     source_context: {
       source_type: "schedule_event",
       schedule_event_id: row.event.id,
       title: row.event.title,
       event_type: row.event.eventType,
       project_id: row.event.projectId ?? undefined,
-      work_item_id: row.event.workItemId ?? undefined
+      ...(visibleWorkItemId ? { work_item_id: visibleWorkItemId } : {})
     }
   };
 }
@@ -447,7 +478,21 @@ function blockFromWorkItem(row: WorkItemScheduleSourceRow, now: Date): ScheduleB
   };
 }
 
-function blockFromMeetingInsight(row: MeetingInsightScheduleSourceRow, now: Date): ScheduleBlockVM {
+function visibleMeetingInsightWorkItemId(row: MeetingInsightScheduleSourceRow, actor: AuthActor) {
+  const linkedWorkItemId = row.insight.createdWorkItemId ?? row.insight.targetWorkItemId;
+  if (!linkedWorkItemId || !row.linkedWorkItem || row.linkedWorkItem.id !== linkedWorkItemId) {
+    return undefined;
+  }
+  return canViewWorkItem({
+    workItem: row.linkedWorkItem,
+    project: row.linkedWorkItemProject ?? row.project,
+    assignments: row.linkedWorkItemAssignments ?? []
+  }, actor)
+    ? linkedWorkItemId
+    : undefined;
+}
+
+function blockFromMeetingInsight(row: MeetingInsightScheduleSourceRow, now: Date, visibleWorkItemId?: string): ScheduleBlockVM {
   const endAt = addDays(row.insight.createdAt, row.insight.status === "pending" ? 1 : 3);
   const status = scheduleStatus(endAt, now, row.insight.status === "confirmed");
   return {
@@ -461,7 +506,7 @@ function blockFromMeetingInsight(row: MeetingInsightScheduleSourceRow, now: Date
     severity: row.insight.status === "pending" ? "high" : severityForSchedule(status),
     target_href: `/meetings?project_id=${row.meeting.projectId}&m=${row.meeting.id}&insight_id=${row.insight.id}`,
     project_id: row.meeting.projectId,
-    work_item_id: row.insight.createdWorkItemId ?? row.insight.targetWorkItemId ?? undefined,
+    ...(visibleWorkItemId ? { work_item_id: visibleWorkItemId } : {}),
     source_context: {
       source_type: "meeting_insight",
       meeting_id: row.meeting.id,
@@ -480,17 +525,22 @@ async function auditAction(
   actor: AuthActor,
   actionName: string,
   entityId: string,
-  detailJson: Record<string, unknown> = {}
+  detailJson: Record<string, unknown> = {},
+  entityType = "notification"
 ) {
-  await deps.audit.createAuditLog({
-    actorKind: actor.kind,
-    actorUserId: actor.userId ?? actor.id,
-    actorNickname: actor.label,
-    entityType: "notification",
-    entityId,
-    action: actionName,
-    detailJson
-  });
+  try {
+    await deps.audit.createAuditLog({
+      actorKind: actor.kind,
+      actorUserId: actor.userId ?? actor.id,
+      actorNickname: actor.label,
+      entityType,
+      entityId,
+      action: actionName,
+      detailJson
+    });
+  } catch (error) {
+    console.warn("schedule_notification_audit_write_failed", { action: actionName, entityId, error });
+  }
 }
 
 export function createScheduleNotifyPageService(
@@ -501,7 +551,9 @@ export function createScheduleNotifyPageService(
   async function ensureMeetingInsightNotifications(actor: AuthActor, locale: WorkHubLocale) {
     const labels = copy(locale);
     const userId = actor.userId ?? actor.id;
-    const sources = await deps.scheduleNotify.listMeetingInsightSources({ limit: 80 });
+    const sources = (await deps.scheduleNotify.listMeetingInsightSources({ limit: 240 }))
+      .filter((source) => canViewMeetingInsight(source, actor))
+      .slice(0, 80);
     // M10：读路径写放大治理——此前每次 GET /notifications 都对最多 80 个会议洞见各发一笔 createOrUpdateNotification
     // 事务（轮询/多标签页时成倍放大读端写负载）。这里先一次性批量读出用户现有通知，按 dedupeKey 建表；循环里
     // 只有"缺失或内容已变"的洞见才落库，把"每次读 ~80 个事务"降为"1 次批量读 + 极少量写"。
@@ -510,9 +562,6 @@ export function createScheduleNotifyPageService(
       existing.filter((row) => row.dedupeKey).map((row) => [row.dedupeKey as string, row])
     );
     for (const source of sources) {
-      if (!canViewMeetingInsight(source, actor)) {
-        continue;
-      }
       const pending = source.insight.status === "pending";
       const title = pending ? labels.meetingPendingTitle as string : labels.meetingConfirmedTitle as string;
       const body = pending
@@ -540,13 +589,37 @@ export function createScheduleNotifyPageService(
     }
   }
 
+  async function listNotificationRowsForPage(userId: string) {
+    const rows: NotificationRow[] = [];
+    let before: { createdAt: Date; id: string } | undefined;
+    const pageLimit = 200;
+    for (;;) {
+      const page = await deps.notifications.listForUser(userId, {
+        includeArchived: true,
+        limit: pageLimit,
+        ...(before ? { before } : {})
+      });
+      rows.push(...page);
+      if (page.length < pageLimit) {
+        break;
+      }
+      const last = page.at(-1);
+      if (!last) {
+        break;
+      }
+      const nextBefore = { createdAt: last.createdAt, id: last.id };
+      if (before && before.createdAt.getTime() === nextBefore.createdAt.getTime() && before.id === nextBefore.id) {
+        break;
+      }
+      before = nextBefore;
+    }
+    return rows;
+  }
+
   return {
     async notificationsPage(input: { actor: AuthActor; locale: WorkHubLocale }): Promise<NotificationPageVM> {
       await ensureMeetingInsightNotifications(input.actor, input.locale);
-      const rows = await deps.notifications.listForUser(input.actor.userId ?? input.actor.id, {
-        includeArchived: true,
-        limit: 200
-      });
+      const rows = await listNotificationRowsForPage(input.actor.userId ?? input.actor.id);
       const workItemIds = rows.map((row) => row.workItemId).filter((id): id is string => Boolean(id));
       const meetingInsightIds = rows.map(meetingInsightIdFromNotification).filter((id): id is string => Boolean(id));
       const contexts = await deps.scheduleNotify.readNotificationContexts({ workItemIds, meetingInsightIds });
@@ -561,11 +634,12 @@ export function createScheduleNotifyPageService(
           .map((row) => [row.insight.id, row])
       );
       const visibleRows = rows.filter((row) => {
-        if (row.workItemId && !visibleWorkItems.has(row.workItemId)) {
+        const insightId = meetingInsightIdFromNotification(row);
+        const hasVisibleMeetingInsight = Boolean(insightId && visibleMeetingInsights.has(insightId));
+        if (insightId && !hasVisibleMeetingInsight) {
           return false;
         }
-        const insightId = meetingInsightIdFromNotification(row);
-        if (insightId && !visibleMeetingInsights.has(insightId)) {
+        if (row.workItemId && !visibleWorkItems.has(row.workItemId) && !hasVisibleMeetingInsight) {
           return false;
         }
         return true;
@@ -581,7 +655,7 @@ export function createScheduleNotifyPageService(
         done: items.filter((item) => item.inbox_bucket === "done")
       };
       // L8：与 drive/meeting/health page 一致，返回前过 zod parse（fail-closed）。
-      return notificationPageVmSchema.parse({
+      return parseOutputContract(notificationPageVmSchema, {
         generated_at: now().toISOString(),
         actor_user_id: input.actor.userId ?? input.actor.id,
         summary: {
@@ -598,7 +672,7 @@ export function createScheduleNotifyPageService(
           mark_all_read: action("notification_mark_all_read", copy(input.locale).markAllRead as string, "POST", "/api/notifications/read-all")
         },
         ...(items.length === 0 ? { empty_state: "no_notifications" as const } : {})
-      });
+      }, "notifications.page");
     },
 
     async calendarPage(input: { actor: AuthActor; locale: WorkHubLocale; date?: string; view?: string }): Promise<CalendarPageVM> {
@@ -620,14 +694,15 @@ export function createScheduleNotifyPageService(
             participantIds.includes(input.actor.userId ?? input.actor.id) ||
             (row.project ? canViewProject(row.project, input.actor) : input.actor.isAdmin);
         })
-        .map((row) => blockFromEvent(row, clock));
+        .map((row) => blockFromEvent(row, clock, visibleEventWorkItemId(row, input.actor)));
       const workItemBlocks = rows.dueWorkItems
+        .filter((row) => !isDoneWorkItem(row.workItem.status))
         .filter((row) => canViewWorkItem(row, input.actor))
         .map((row) => blockFromWorkItem(row, clock))
         .filter((block): block is ScheduleBlockVM => Boolean(block));
       const meetingBlocks = rows.meetingInsights
         .filter((row) => canViewMeetingInsight(row, input.actor))
-        .map((row) => blockFromMeetingInsight(row, clock))
+        .map((row) => blockFromMeetingInsight(row, clock, visibleMeetingInsightWorkItemId(row, input.actor)))
         .filter((block) => {
           // 上界独占（与生成的 7 天 day key 对齐）：rangeEnd 是下一周期 00:00，end===rangeEnd 的块
           // 其 dateKey=rangeStart+7 不在 days 里，会让 summary 总数对不上且块在网格里隐身。
@@ -644,7 +719,7 @@ export function createScheduleNotifyPageService(
         };
       });
       // L8：返回前过 zod parse（fail-closed）。
-      return calendarPageVmSchema.parse({
+      return parseOutputContract(calendarPageVmSchema, {
         generated_at: clock.toISOString(),
         actor_user_id: input.actor.userId ?? input.actor.id,
         scope: {
@@ -664,7 +739,7 @@ export function createScheduleNotifyPageService(
         days,
         blocks,
         ...(blocks.length === 0 ? { empty_state: "no_schedule_blocks" as const } : {})
-      });
+      }, "calendar.page");
     },
 
     async markRead(id: string, actor: AuthActor) {
@@ -678,15 +753,14 @@ export function createScheduleNotifyPageService(
 
     async markAllRead(actor: AuthActor) {
       const updated = await deps.notifications.markAllRead(actor.userId ?? actor.id, now());
-      await deps.audit.createAuditLog({
-        actorKind: actor.kind,
-        actorUserId: actor.userId ?? actor.id,
-        actorNickname: actor.label,
-        entityType: "notification_bulk",
-        entityId: actor.userId ?? actor.id,
-        action: "notification.mark_all_read",
-        detailJson: { updated }
-      });
+      await auditAction(
+        deps,
+        actor,
+        "notification.mark_all_read",
+        actor.userId ?? actor.id,
+        { updated },
+        "notification_bulk"
+      );
       return { updated };
     },
 

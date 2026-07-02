@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
 
 import { bootstrapProjectRequestSchema } from "@workhub/contracts";
 
@@ -14,6 +13,7 @@ import {
   ProjectServiceError,
   type ProjectService
 } from "../services/projects.js";
+import { readJsonObject } from "./json-body.js";
 
 export type ProjectRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -22,21 +22,9 @@ export type ProjectRoutesDependencies = {
 
 function handleProjectError(error: unknown): never {
   if (error instanceof ProjectServiceError) {
-    throw new HTTPException(error.status as 400, { message: error.message });
+    throw error;
   }
   throw error;
-}
-
-async function optionalJson(req: { text: () => Promise<string> }) {
-  const text = await req.text();
-  if (!text.trim()) {
-    return {};
-  }
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new HTTPException(400, { message: "项目请求不是有效的 JSON。" });
-  }
 }
 
 export function createProjectRoutes(deps: ProjectRoutesDependencies = {}) {
@@ -54,7 +42,7 @@ export function createProjectRoutes(deps: ProjectRoutesDependencies = {}) {
   });
 
   routes.post("/bootstrap", createCurrentUserMiddleware(authSource), async (c) => {
-    const payload = bootstrapProjectRequestSchema.parse(await optionalJson(c.req));
+    const payload = bootstrapProjectRequestSchema.parse(await readJsonObject(c));
     try {
       const data = await projects.bootstrapProject({ payload, actor: c.var.actor });
       return c.json({ ok: true, data }, data.created ? 201 : 200);

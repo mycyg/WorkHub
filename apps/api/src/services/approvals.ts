@@ -27,6 +27,7 @@ import {
   type ApprovalRequestRepository,
   type ApprovalRequestRow,
   type CreateApprovalRequestInput,
+  type PermissionPolicyRecord,
   type PermissionPolicyRepository,
   type UserAuthRow,
   type UserRepository,
@@ -70,6 +71,9 @@ export function parseMentions(text: string): string[] {
   return [...seen];
 }
 
+const approvalCenterCommentsPerApproval = 20;
+const approvalCenterPageLimit = 100;
+
 export class ApprovalServiceError extends Error {
   constructor(
     public readonly status: number,
@@ -93,6 +97,51 @@ export type ApprovalExpirationResult = {
   next_action: ApprovalExpirationAction;
   escalated: boolean;
 };
+
+export type PermissionPolicyResponse = {
+  id?: string;
+  scope_kind: PermissionPolicyRecord["scopeKind"];
+  scope_id: string;
+  action_pattern: string;
+  effect: PermissionPolicyRecord["effect"];
+  priority: number;
+  learned_from_session: boolean;
+  created_by_user_id: string | null;
+  org_id: string | null;
+  workspace_id: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+function isoTimestamp(value: Date | string) {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function optionalIsoTimestamp(value: Date | string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  return isoTimestamp(value);
+}
+
+export function toPermissionPolicyResponse(policy: PermissionPolicyRecord): PermissionPolicyResponse {
+  return {
+    ...(policy.id ? { id: policy.id } : {}),
+    scope_kind: policy.scopeKind,
+    scope_id: policy.scopeId,
+    action_pattern: policy.actionPattern,
+    effect: policy.effect,
+    priority: policy.priority ?? 0,
+    learned_from_session: policy.learnedFromSession ?? false,
+    created_by_user_id: policy.createdByUserId ?? null,
+    org_id: policy.orgId ?? null,
+    workspace_id: policy.workspaceId ?? null,
+    deleted_at: optionalIsoTimestamp(policy.deletedAt),
+    created_at: isoTimestamp(policy.createdAt),
+    updated_at: isoTimestamp(policy.updatedAt)
+  };
+}
 
 export type CreateApprovalInput = {
   actor: AuthActor;
@@ -221,6 +270,47 @@ function approverId(actor: AuthActor) {
   return actor.userId ?? actor.id;
 }
 
+function permissionPolicyMatchesActorTenant(policy: PermissionPolicyRecord, actor: AuthActor) {
+  return (!policy.orgId || policy.orgId === actor.orgId) && (!policy.workspaceId || policy.workspaceId === actor.workspaceId);
+}
+
+type PermissionPolicyIdentity = {
+  scopeKind: PermissionPolicyRecord["scopeKind"];
+  scopeId: string;
+  actionPattern: string;
+  effect: PermissionPolicyRecord["effect"];
+  priority?: number;
+};
+
+function samePermissionPolicyIdentity(policy: PermissionPolicyRecord, identity: PermissionPolicyIdentity) {
+  return policy.scopeKind === identity.scopeKind
+    && policy.scopeId === identity.scopeId
+    && policy.actionPattern === identity.actionPattern
+    && policy.effect === identity.effect
+    && (policy.priority ?? 0) === (identity.priority ?? 0);
+}
+
+function findEquivalentActivePolicy(
+  policies: readonly PermissionPolicyRecord[],
+  actor: AuthActor,
+  identity: PermissionPolicyIdentity
+) {
+  return policies.find((policy) =>
+    policy.deletedAt == null
+    && permissionPolicyMatchesActorTenant(policy, actor)
+    && samePermissionPolicyIdentity(policy, identity)
+  );
+}
+
+function assertPolicyScopeWithinActorTenant(actor: AuthActor, input: PermissionPolicyWrite) {
+  if (input.scope_kind === "org" && input.scope_id !== actor.orgId) {
+    throw new ApprovalServiceError(403, "forbidden", "不能为其它组织创建权限策略。");
+  }
+  if (input.scope_kind === "workspace" && input.scope_id !== actor.workspaceId) {
+    throw new ApprovalServiceError(403, "forbidden", "不能为其它工作区创建权限策略。");
+  }
+}
+
 // W2：审批工作台逐项详情构建（join 提议 manifest + 合成路由时间线 + 读评论）。
 const APPROVAL_DECIDED_STATUSES = new Set(["approved", "rejected", "allowed", "denied", "expired", "decided"]);
 
@@ -248,7 +338,7 @@ function synthesizeApprovalTimeline(row: ApprovalRequestRow, viewerId: string, l
       id: `${row.id}:routed`,
       kind: "routed",
       label: timelineLabel("routed", zh),
-      status: decided ? "done" : "current",
+      status: decided || row.delegatedToUserId ? "done" : "current",
       ...(row.routedToUserId === viewerId ? { actor_label: youLabel } : {}),
       ...(row.slaDueAt ? { sla_due_at: row.slaDueAt.toISOString() } : {})
     });
@@ -315,9 +405,6 @@ async function buildApprovalItemDetail(
         // 关键：审批没有 workItemId（工具/权限类审批）时绝不放行——此前 `!row.workItemId` 短路会让
         // 任意 proposal_id 借审批页泄露其完整 diff_manifest（跨资源越权）。无 workItemId 即不渲染提议详情。
         proposal = candidate && row.workItemId && candidate.work_item_id === row.workItemId ? candidate : null;
-      } else if (row.workItemId) {
-        const list = await deps.proposals.listByWorkItem(row.workItemId);
-        proposal = list.find((candidate) => candidate.status === "opened" || candidate.status === "reviewed") ?? list[0] ?? null;
       }
     } catch {
       proposal = null;
@@ -359,7 +446,7 @@ async function buildApprovalItemDetail(
 }
 
 function ensureCanActOnApproval(approval: ApprovalRequestRow, actor: AuthActor) {
-  if (actor.isAdmin) {
+  if (actor.isAdmin && approval.workItemId) {
     return;
   }
   if (approval.routedToUserId !== approverId(actor)) {
@@ -463,10 +550,23 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
     });
   }
 
+  async function auditPermissionPolicyAction(input: Parameters<AuditLogRepository["createAuditLog"]>[0]) {
+    try {
+      await deps.auditLogs.createAuditLog(input);
+    } catch (error) {
+      getDefaultStructuredLogger().warn("permission_policy_audit_write_failed", {
+        action: input.action,
+        entityId: input.entityId,
+        error
+      });
+    }
+  }
+
   // @mentions：解析评论正文里的 @昵称 → 活跃用户，给被点名者（排除作者本人、去重）发通知。
   // 整体 best-effort：任何一步失败都吞掉并 warn，绝不让评论写入连带失败（与其它 notify 路径一致）。
   async function notifyCommentMentions(input: {
     approval: ApprovalRequestRow;
+    actor: AuthActor;
     body: string;
     authorUserId: string;
     authorLabel: string;
@@ -484,11 +584,23 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       const resolved = await Promise.all(nicknames.map((nickname) => findByNickname(nickname)));
       const notifiedUserIds = new Set<string>();
       const workItemId = input.approval.workItemId ?? undefined;
+      const workItem = workItemId && deps.workItems
+        ? await deps.workItems.findWorkItemAccessRecord(workItemId)
+        : null;
       const targetUrl = workItemId ? `/workitems/${workItemId}` : `/approvals/${input.approval.id}`;
       for (const target of resolved) {
         // 只通知能解析到的活跃用户（findActiveByNickname 已过滤 deletedAt）；
         // 排除作者本人，并按 userId 去重（同名两次或多个未知昵称只发一条）。
         if (!target || target.id === input.authorUserId || notifiedUserIds.has(target.id)) {
+          continue;
+        }
+        if (!workItemId && target.id !== input.approval.routedToUserId) {
+          continue;
+        }
+        if (workItemId && workItem && !canViewWorkItemRecord(toWorkItemAccessRecord(workItem), target, {
+          orgId: input.actor.orgId,
+          workspaceId: input.actor.workspaceId
+        })) {
           continue;
         }
         notifiedUserIds.add(target.id);
@@ -554,9 +666,23 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       // L37：路由目标必须是真实存在的活跃用户，否则审批会落进无人能看见的黑洞收件箱。
       // 既挡管理员经 /ask 路由到伪造 id，也挡 agent-runner 升级到已被删除的工作项负责人——
       // 两种情况都按「无有效审批人」降级为升级，而非创建一条永远不会被处理的 pending。
+      let target: UserAuthRow | null = null;
       if (deps.users) {
-        const target = await deps.users.findActiveById(input.routedToUserId);
+        target = await deps.users.findActiveById(input.routedToUserId);
         if (!target) {
+          return { outcome: "escalated", reason: "no_approver" };
+        }
+      }
+      if (input.workItemId && deps.workItems) {
+        const workItem = await deps.workItems.findWorkItemAccessRecord(input.workItemId);
+        if (!workItem) {
+          return { outcome: "escalated", reason: "no_approver" };
+        }
+        const candidate = target ?? ({ id: input.routedToUserId } as Pick<UserAuthRow, "id">);
+        if (!canViewWorkItemRecord(toWorkItemAccessRecord(workItem), candidate, {
+          orgId: input.actor.orgId,
+          workspaceId: input.actor.workspaceId
+        })) {
           return { outcome: "escalated", reason: "no_approver" };
         }
       }
@@ -583,15 +709,71 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       return { outcome: "pending", approval: toApprovalRequestResponse(approval), attention };
     },
 
-    async listPendingForUser(user: UserAuthRow, options: { locale?: WorkHubLocale } = {}) {
-      const rows = await deps.approvals.listPendingForUser(user.id, { includeAll: user.isAdmin });
+    async listPendingForUser(
+      user: UserAuthRow,
+      options: {
+        locale?: WorkHubLocale;
+        canReadWorkItem?: (workItemId: string | undefined) => Promise<boolean>;
+      } = {}
+    ) {
+      const includeAll = user.isAdmin;
+      const canReadApprovalRow = async (row: ApprovalRequestRow) => {
+        // approval_requests has no org/workspace columns. A work-item-less approval cannot be
+        // tenant-scoped safely, so keep it in the routed user's personal inbox even for admins.
+        if (!row.workItemId) {
+          return row.routedToUserId === user.id;
+        }
+        return options.canReadWorkItem ? options.canReadWorkItem(row.workItemId) : true;
+      };
+      let rows: ApprovalRequestRow[];
+      let hasMore: boolean;
+      let totalPending: number;
+      if (includeAll || options.canReadWorkItem) {
+        const visibleRows: ApprovalRequestRow[] = [];
+        let visibleTotal = 0;
+        let offset = 0;
+        const chunkLimit = approvalCenterPageLimit;
+        while (true) {
+          const chunk = await deps.approvals.listPendingForUser(user.id, {
+            includeAll,
+            limit: chunkLimit,
+            offset
+          });
+          if (chunk.length === 0) {
+            break;
+          }
+          offset += chunk.length;
+          for (const row of chunk) {
+            if (await canReadApprovalRow(row)) {
+              visibleTotal += 1;
+              if (visibleRows.length < approvalCenterPageLimit + 1) {
+                visibleRows.push(row);
+              }
+            }
+          }
+          if (chunk.length < chunkLimit) {
+            break;
+          }
+        }
+        rows = visibleRows.slice(0, approvalCenterPageLimit);
+        hasMore = visibleRows.length > approvalCenterPageLimit;
+        totalPending = visibleTotal;
+      } else {
+        const loadedRows = await deps.approvals.listPendingForUser(user.id, {
+          includeAll,
+          limit: approvalCenterPageLimit + 1
+        });
+        rows = loadedRows.slice(0, approvalCenterPageLimit);
+        hasMore = loadedRows.length > approvalCenterPageLimit;
+        totalPending = await deps.approvals.countPendingForUser(user.id, { includeAll });
+      }
       const itemOptions = options.locale ? { locale: options.locale } : {};
       const locale: WorkHubLocale = options.locale ?? "zh-CN";
       // L#W2-12：一次 IN 查询批量取所有审批的评论，再按 approvalId 分组，避免逐审批 N+1。
       const commentsByApproval = new Map<string, ApprovalCommentVM[]>();
       if (deps.approvalComments?.listByApprovals) {
         try {
-          for (const commentRow of await deps.approvalComments.listByApprovals(rows.map((row) => row.id))) {
+          for (const commentRow of await deps.approvalComments.listByApprovals(rows.map((row) => row.id), approvalCenterCommentsPerApproval)) {
             const list = commentsByApproval.get(commentRow.approvalId) ?? [];
             list.push(toApprovalCommentVm(commentRow));
             commentsByApproval.set(commentRow.approvalId, list);
@@ -610,7 +792,8 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         items: rows.map((row) => toApprovalAttentionItem(toRecord(row), itemOptions)),
         requests: rows.map(toApprovalRequestResponse),
         filters: { pending: true },
-        counts: { pending: rows.length },
+        counts: { pending: rows.length, pending_total: totalPending },
+        page_info: { limit: approvalCenterPageLimit, returned: rows.length, has_more: hasMore },
         items_detail: Object.fromEntries(detailEntries) as ApprovalCenterVM["items_detail"]
       }, "approval-center.page") satisfies ApprovalCenterVM;
     },
@@ -648,7 +831,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       let learnedPolicy: Awaited<ReturnType<typeof deps.policies.createPermissionPolicy>> | undefined;
       try {
         if (shouldLearn) {
-          learnedPolicy = await deps.policies.createPermissionPolicy({
+          const policyInput = {
             scopeKind: "session",
             scopeId: updated.agentRunId ?? actor.id,
             actionPattern: updated.actionPattern,
@@ -658,7 +841,9 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             ...(actor.userId ? { createdByUserId: actor.userId } : {}),
             orgId: actor.orgId,
             workspaceId: actor.workspaceId
-          });
+          } as const;
+          learnedPolicy = findEquivalentActivePolicy(await deps.policies.listActivePolicies(), actor, policyInput)
+            ?? await deps.policies.createPermissionPolicy(policyInput);
         }
         await auditApprovalAction(updated, {
           action: "approval.decided",
@@ -723,33 +908,41 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           }
           // target 可能未取（无 deps.users 的旧夹具）——此时回退到仅凭 id 构造可见性主体。
           const candidate = target ?? ({ id: toUserId } as Pick<UserAuthRow, "id">);
-          if (!canViewWorkItemRecord(toWorkItemAccessRecord(workItem), candidate)) {
+          if (!canViewWorkItemRecord(toWorkItemAccessRecord(workItem), candidate, {
+            orgId: actor.orgId,
+            workspaceId: actor.workspaceId
+          })) {
             throw new ApprovalServiceError(422, "delegate_target_cannot_view", "这位成员看不到这个事项，没法转交。");
           }
         }
       }
 
       const previousUserId = approval.routedToUserId;
-      const updated = await deps.approvals.delegatePending(id, toUserId, now());
+      const requiredRoutedToUserId = actor.isAdmin ? undefined : approverId(actor);
+      const updated = await deps.approvals.delegatePending(id, toUserId, now(), requiredRoutedToUserId);
       if (!updated) {
         throw new ApprovalServiceError(409, "approval_race", "这条审批已经被处理过了。");
       }
 
-      await auditApprovalAction(updated, {
-        action: "approval.delegated",
-        actor: {
-          kind: "human",
-          label: actorNickname(actor),
-          orgId: actor.orgId,
-          workspaceId: actor.workspaceId,
-          ...(actor.userId ? { userId: actor.userId } : {})
-        },
-        detail: {
-          from_user_id: previousUserId,
-          to_user_id: toUserId,
-          delegated_by_user_id: approverId(actor)
-        }
-      });
+      try {
+        await auditApprovalAction(updated, {
+          action: "approval.delegated",
+          actor: {
+            kind: "human",
+            label: actorNickname(actor),
+            orgId: actor.orgId,
+            workspaceId: actor.workspaceId,
+            ...(actor.userId ? { userId: actor.userId } : {})
+          },
+          detail: {
+            from_user_id: previousUserId,
+            to_user_id: toUserId,
+            delegated_by_user_id: approverId(actor)
+          }
+        });
+      } catch (error) {
+        getDefaultStructuredLogger().warn("approvals_post_commit_delegate_audit_failed", { id, error });
+      }
 
       const attention = toApprovalAttentionItem(toRecord(updated));
       const eventData = {
@@ -788,20 +981,25 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         authorNickname: actorNickname(actor),
         body
       });
-      await auditApprovalAction(approval, {
-        action: "approval.commented",
-        actor: {
-          kind: "human",
-          label: actorNickname(actor),
-          orgId: actor.orgId,
-          workspaceId: actor.workspaceId,
-          ...(actor.userId ? { userId: actor.userId } : {})
-        },
-        detail: { approval_id: id, comment_id: created.id }
-      });
+      try {
+        await auditApprovalAction(approval, {
+          action: "approval.commented",
+          actor: {
+            kind: "human",
+            label: actorNickname(actor),
+            orgId: actor.orgId,
+            workspaceId: actor.workspaceId,
+            ...(actor.userId ? { userId: actor.userId } : {})
+          },
+          detail: { approval_id: id, comment_id: created.id }
+        });
+      } catch (error) {
+        getDefaultStructuredLogger().warn("approvals_comment_audit_failed", { approval_id: id, comment_id: created.id, error });
+      }
       // @mentions：best-effort 给被点名的活跃用户发通知（失败不影响评论写入）。
       await notifyCommentMentions({
         approval,
+        actor,
         body,
         authorUserId: approverId(actor),
         authorLabel: actorNickname(actor),
@@ -822,15 +1020,19 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         }
         const nextAction = expirationAction(updated);
         const eventData = expirationEventData(updated, nextAction);
-        await auditApprovalAction(updated, {
-          action: "approval.expired",
-          actor: { kind: "system", label: "WorkHub" },
-          detail: {
-            next_action: nextAction,
-            escalated: nextAction === "escalate_pm",
-            routed_to_user_id: updated.routedToUserId
-          }
-        });
+        try {
+          await auditApprovalAction(updated, {
+            action: "approval.expired",
+            actor: { kind: "system", label: "WorkHub" },
+            detail: {
+              next_action: nextAction,
+              escalated: nextAction === "escalate_pm",
+              routed_to_user_id: updated.routedToUserId
+            }
+          });
+        } catch (error) {
+          getDefaultStructuredLogger().warn("approvals_post_expire_audit_failed", { id: updated.id, error });
+        }
         await publishIfAvailable(
           deps.bus,
           updated.routedToUserId ? topics.user(updated.routedToUserId).topic : undefined,
@@ -856,6 +1058,17 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       if (!actor.isAdmin) {
         throw new ApprovalServiceError(403, "forbidden", "只有管理员可以调整权限策略。");
       }
+      assertPolicyScopeWithinActorTenant(actor, input);
+      const existing = findEquivalentActivePolicy(await deps.policies.listActivePolicies(), actor, {
+        scopeKind: input.scope_kind,
+        scopeId: input.scope_id,
+        actionPattern: input.action_pattern,
+        effect: input.effect,
+        priority: input.priority
+      });
+      if (existing) {
+        return existing;
+      }
       const policy = await deps.policies.createPermissionPolicy({
         scopeKind: input.scope_kind,
         scopeId: input.scope_id,
@@ -870,7 +1083,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         workspaceId: actor.workspaceId
       });
       // L23：策略创建（含 allow 授权扩权）必须留审计，与撤销(permission_policy.revoked)对称。
-      await deps.auditLogs.createAuditLog({
+      await auditPermissionPolicyAction({
         actorKind: actor.kind,
         actorNickname: actor.label,
         entityType: "permission_policy",
@@ -890,8 +1103,9 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       return policy;
     },
 
-    async listPolicies() {
-      return deps.policies.listActivePolicies();
+    async listPolicies(actor?: AuthActor) {
+      const active = await deps.policies.listActivePolicies();
+      return actor ? active.filter((policy) => permissionPolicyMatchesActorTenant(policy, actor)) : active;
     },
 
     // M24：权限策略撤销。此前 softDeletePolicy 存在但无任何路由/服务调用它——学到的 allow 授权
@@ -903,17 +1117,30 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       const active = await deps.policies.listActivePolicies();
       const target = active.find((policy) => policy.id === id);
       // 找不到，或不属于本租户：一律当「未找到」（防跨租户撤销 + 避免存在性泄露）。
-      const tenantMismatch = Boolean(target)
-        && ((Boolean(target!.orgId) && target!.orgId !== actor.orgId)
-          || (Boolean(target!.workspaceId) && target!.workspaceId !== actor.workspaceId));
-      if (!target || tenantMismatch) {
+      if (!target || !permissionPolicyMatchesActorTenant(target, actor)) {
         throw new ApprovalServiceError(404, "permission_policy_not_found", "找不到这条权限策略。");
       }
-      const revoked = await deps.policies.softDeletePolicy(id, actor.userId ?? actor.id, now());
+      const equivalentPolicies = active.filter((policy) =>
+        policy.id
+        && permissionPolicyMatchesActorTenant(policy, actor)
+        && samePermissionPolicyIdentity(policy, target)
+      );
+      const revokedPolicyIds: string[] = [];
+      let revoked: PermissionPolicyRecord | null = null;
+      for (const policy of equivalentPolicies) {
+        const deleted = await deps.policies.softDeletePolicy(policy.id as string, actor.userId ?? actor.id, now());
+        if (!deleted) {
+          continue;
+        }
+        revokedPolicyIds.push(policy.id as string);
+        if (policy.id === id) {
+          revoked = deleted;
+        }
+      }
       if (!revoked) {
         throw new ApprovalServiceError(404, "permission_policy_not_found", "找不到这条权限策略。");
       }
-      await deps.auditLogs.createAuditLog({
+      await auditPermissionPolicyAction({
         actorKind: actor.kind,
         actorNickname: actor.label,
         entityType: "permission_policy",
@@ -927,7 +1154,8 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           scope_id: target.scopeId,
           action_pattern: target.actionPattern,
           effect: target.effect,
-          learned_from_session: target.learnedFromSession ?? false
+          learned_from_session: target.learnedFromSession ?? false,
+          ...(revokedPolicyIds.length > 1 ? { revoked_policy_ids: revokedPolicyIds } : {})
         }
       });
       return revoked;

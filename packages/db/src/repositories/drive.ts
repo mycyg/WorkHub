@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { allocateProjectCode } from "../sequences.js";
@@ -14,10 +14,11 @@ import {
   projectDriveVersions,
   proposals,
   projects,
-  workItems
+  workItems,
+  workspaces
 } from "../schema/index.js";
 
-export type DriveProjectRow = typeof projects.$inferSelect;
+export type DriveProjectRow = typeof projects.$inferSelect & { orgId?: string | null };
 export type DriveItemRow = typeof projectDriveItems.$inferSelect;
 export type DriveVersionRow = typeof projectDriveVersions.$inferSelect;
 export type DriveCommentRow = typeof projectDriveComments.$inferSelect;
@@ -28,6 +29,7 @@ export type DriveAcceptedDeliverableRow = {
   accepted: typeof acceptedDeliverableChanges.$inferSelect;
   driveItem: typeof projectDriveItems.$inferSelect | null;
   driveVersion: typeof projectDriveVersions.$inferSelect | null;
+  canRestore?: boolean;
 };
 
 export type DrivePageRows = {
@@ -39,12 +41,23 @@ export type DrivePageRows = {
   deletedItems: DriveItemRow[];
   operations: DriveOperationRow[];
   commentProposals: DriveProposalRow[];
+  // 项目内未删除 item 总数(count(*), 不受 items 200 行上限影响)。
+  totalItemCount?: number;
   // 项目内文件总数(count(*), 不受 items 200 行上限影响)。drive 页 summary.file_count 用它,
   // 与项目主页 countFilesByProject 同口径——否则 >200 文件时两页「文件 N」对不上,像文件丢了。
   totalFileCount?: number;
+  // 项目内文件夹总数(count(*), 不受 items 200 行上限影响)。与 totalFileCount 组成 summary.item_count。
+  totalFolderCount?: number;
+  totalDeletedItemCount?: number;
+  totalVersionCount?: number;
+  totalAcceptedDeliverableCount?: number;
+  totalPendingCommentCount?: number;
+  totalOperationCount?: number;
   // DF-3：每个父文件夹的真实子项数(count(*) group by parent_id, 不受 items 200 行上限影响)。
   // children_count 此前只数已载入的 200 行 → 子项排在 200 之外的文件夹会读成 0,被误判「空文件夹」可删。
   childCountsByParent?: { parentId: string; count: number }[];
+  // 回收站恢复按钮的全库冲突结果：deletedItems 可能只是分页/深链切片，活动同名 sibling 不一定在 items 中。
+  restoreBlockedItemIds?: string[];
 };
 
 export type DriveRepositoryActor = {
@@ -112,6 +125,7 @@ export type DriveRecentFileRow = {
   id: string;
   name: string;
   updatedAt: Date;
+  acceptedWorkItemIds?: string[];
 };
 
 export type DriveRepository = {
@@ -121,6 +135,8 @@ export type DriveRepository = {
     limit?: number;
     includeDeleted?: boolean;
     operationLimit?: number;
+    targetItemId?: string;
+    targetFileNames?: string[];
   }) => Promise<DrivePageRows>;
   // 项目主页文件卡：最近文件清单（轻量，不拉版本/评论/采纳）+ 真实文件总数（不受清单 limit 截断）。
   listRecentFilesByProject: (projectId: string, limit?: number) => Promise<DriveRecentFileRow[]>;
@@ -220,14 +236,19 @@ async function findProject(db: WorkHubDb, projectId?: string, workspaceId?: stri
       ? [...baseConditions, eq(projects.workspaceId, workspaceId)]
       : baseConditions;
   const rows = await db
-    .select()
+    .select({
+      project: projects,
+      orgId: workspaces.orgId
+    })
     .from(projects)
+    .leftJoin(workspaces, eq(projects.workspaceId, workspaces.id))
     .where(and(...conditions))
     // XC-4：裸 /drive(无 project_id)挑默认项目要和 /projects 列表同序(最近活跃优先 desc(updatedAt)),
     // 而不是最老的(asc(createdAt))。否则点全局「网盘」导航会落到最老项目的网盘,与列表首项不一致、令人困惑。
     .orderBy(desc(projects.updatedAt))
     .limit(1);
-  return rows[0] ?? null;
+  const row = rows[0];
+  return row ? { ...row.project, orgId: row.orgId } : null;
 }
 
 async function activeItemByName(
@@ -245,6 +266,45 @@ async function activeItemByName(
     ))
     .limit(1);
   return rows[0] ?? null;
+}
+
+function acceptedDriveVersionJoinCondition() {
+  return and(
+    eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id),
+    eq(projectDriveVersions.itemId, acceptedDeliverableChanges.driveItemId)
+  );
+}
+
+async function attachAcceptedDeliverableRestoreState<T extends DriveAcceptedDeliverableRow>(
+  db: WorkHubDb,
+  rows: T[]
+): Promise<Array<T & { canRestore: boolean }>> {
+  const restored: Array<T & { canRestore: boolean }> = [];
+  for (const row of rows) {
+    if (row.accepted.acceptedVersion <= 1) {
+      restored.push({ ...row, canRestore: false });
+      continue;
+    }
+    const previousRows = await db
+      .select({ id: acceptedDeliverableChanges.id })
+      .from(acceptedDeliverableChanges)
+      .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+      .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
+      .where(and(
+        row.accepted.projectId
+          ? eq(acceptedDeliverableChanges.projectId, row.accepted.projectId)
+          : eq(acceptedDeliverableChanges.workItemId, row.accepted.workItemId),
+        eq(acceptedDeliverableChanges.targetKey, row.accepted.targetKey),
+        lt(acceptedDeliverableChanges.acceptedVersion, row.accepted.acceptedVersion),
+        isNotNull(acceptedDeliverableChanges.supersededAt),
+        isNotNull(acceptedDeliverableChanges.driveVersionId),
+        isNotNull(projectDriveItems.id),
+        isNull(projectDriveItems.deletedAt)
+      ))
+      .limit(1);
+    restored.push({ ...row, canRestore: Boolean(previousRows[0]) });
+  }
+  return restored;
 }
 
 async function insertDriveOperation(
@@ -327,7 +387,7 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
       }
 
       const limit = clampLimit(input.limit);
-      const [items, deletedItems, versionRows, acceptedDeliverables, comments, operations] = await Promise.all([
+      const [initialItems, initialDeletedItems, initialVersionRows, initialAcceptedDeliverables, initialComments, operations, activeItemCountRows] = await Promise.all([
         db
           .select()
           .from(projectDriveItems)
@@ -362,13 +422,12 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           })
           .from(acceptedDeliverableChanges)
           .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
-          .leftJoin(projectDriveVersions, eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id))
+          .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
           // M12：按采纳记录自身的 projectId 圈定范围（而非 leftJoin 出来的 driveItem.projectId），
           // 否则非 drive 目标（driveItemId 为空，如 text_doc）的采纳会被 eq(NULL, id) 默默丢弃。
           // deletedAt 仅在确有 drive item 时才校验。
           .where(and(
             eq(acceptedDeliverableChanges.projectId, project.id),
-            isNull(acceptedDeliverableChanges.supersededAt),
             or(isNull(projectDriveItems.id), isNull(projectDriveItems.deletedAt))
           ))
           .orderBy(desc(acceptedDeliverableChanges.createdAt))
@@ -384,8 +443,184 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           .from(projectDriveOperations)
           .where(eq(projectDriveOperations.projectId, project.id))
           .orderBy(desc(projectDriveOperations.createdAt))
-          .limit(Math.max(1, Math.min(input.operationLimit ?? 20, 100)))
+          .limit(Math.max(1, Math.min(input.operationLimit ?? 20, 100))),
+        db
+          .select({ kind: projectDriveItems.kind, value: sql<number>`count(*)` })
+          .from(projectDriveItems)
+          .where(and(eq(projectDriveItems.projectId, project.id), isNull(projectDriveItems.deletedAt)))
+          .groupBy(projectDriveItems.kind)
       ]);
+      let items = initialItems;
+      let deletedItems = initialDeletedItems;
+      let versions = initialVersionRows.map((row) => row.version);
+      let acceptedDeliverables = initialAcceptedDeliverables;
+      let comments = initialComments;
+      const [
+        totalVersionCountRows,
+        totalAcceptedDeliverableCountRows,
+        totalPendingCommentCountRows,
+        totalDeletedItemCountRows,
+        totalOperationCountRows
+      ] = await Promise.all([
+        db
+          .select({ value: sql<number>`count(*)` })
+          .from(projectDriveVersions)
+          .innerJoin(projectDriveItems, eq(projectDriveVersions.itemId, projectDriveItems.id))
+          .where(and(eq(projectDriveItems.projectId, project.id), isNull(projectDriveItems.deletedAt))),
+        db
+          .select({ value: sql<number>`count(*)` })
+          .from(acceptedDeliverableChanges)
+          .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+          .where(and(
+            eq(acceptedDeliverableChanges.projectId, project.id),
+            isNull(acceptedDeliverableChanges.supersededAt),
+            or(isNull(projectDriveItems.id), isNull(projectDriveItems.deletedAt))
+          )),
+        db
+          .select({ value: sql<number>`count(*)` })
+          .from(projectDriveComments)
+          .where(and(eq(projectDriveComments.projectId, project.id), eq(projectDriveComments.status, "pending_llm"))),
+        db
+          .select({ value: sql<number>`count(*)` })
+          .from(projectDriveItems)
+          .where(and(eq(projectDriveItems.projectId, project.id), isNotNull(projectDriveItems.deletedAt))),
+        db
+          .select({ value: sql<number>`count(*)` })
+          .from(projectDriveOperations)
+          .where(eq(projectDriveOperations.projectId, project.id))
+      ]);
+      const targetSeeds: DriveItemRow[] = [];
+      const targetDeletedSeeds: DriveItemRow[] = [];
+      if (input.targetItemId) {
+        const [target] = await db
+          .select()
+          .from(projectDriveItems)
+          .where(and(
+            eq(projectDriveItems.projectId, project.id),
+            eq(projectDriveItems.id, input.targetItemId)
+          ))
+          .limit(1);
+        if (target) {
+          if (target.deletedAt && input.includeDeleted) {
+            targetDeletedSeeds.push(target);
+          } else if (!target.deletedAt) {
+            targetSeeds.push(target);
+          }
+        }
+      }
+      const targetFileNames = [...new Set(input.targetFileNames?.map((name) => name.trim()).filter(Boolean) ?? [])].slice(0, 8);
+      if (targetFileNames.length) {
+        targetSeeds.push(...await db
+          .select()
+          .from(projectDriveItems)
+          .where(and(
+            eq(projectDriveItems.projectId, project.id),
+            eq(projectDriveItems.kind, "file"),
+            inArray(projectDriveItems.name, targetFileNames),
+            isNull(projectDriveItems.deletedAt)
+          ))
+          .limit(20));
+      }
+      if (targetDeletedSeeds.length) {
+        const knownDeletedIds = new Set(deletedItems.map((item) => item.id));
+        deletedItems = [
+          ...deletedItems,
+          ...targetDeletedSeeds.filter((item) => !knownDeletedIds.has(item.id))
+        ];
+      }
+      const targetChainSeeds = [...targetSeeds, ...targetDeletedSeeds];
+      if (targetChainSeeds.length) {
+        const targetChainById = new Map<string, DriveItemRow>();
+        const seenTargetIds = new Set<string>();
+        for (const seed of targetChainSeeds) {
+          let cursor: DriveItemRow | undefined = seed;
+          while (cursor && !seenTargetIds.has(cursor.id) && targetChainById.size < 80) {
+            seenTargetIds.add(cursor.id);
+            targetChainById.set(cursor.id, cursor);
+            cursor = cursor.parentId
+              ? (await db
+                .select()
+                .from(projectDriveItems)
+                .where(and(
+                  eq(projectDriveItems.projectId, project.id),
+                  eq(projectDriveItems.id, cursor.parentId)
+                ))
+                .limit(1))[0]
+              : undefined;
+          }
+        }
+        const targetChain = [...targetChainById.values()].reverse();
+        if (targetChain.length) {
+          const loadedIds = new Set(items.map((item) => item.id));
+          items = [...items, ...targetChain.filter((item) => !item.deletedAt && !loadedIds.has(item.id))];
+          if (input.includeDeleted) {
+            const knownDeletedIds = new Set(deletedItems.map((item) => item.id));
+            const targetDeletedAncestors = targetChain.filter((item) => item.deletedAt && !knownDeletedIds.has(item.id));
+            deletedItems = [...deletedItems, ...targetDeletedAncestors];
+          }
+          const knownVersionIds = new Set(versions.map((version) => version.id));
+          const missingCurrentVersionIds = targetChain
+            .map((item) => item.currentVersionId)
+            .filter((id): id is string => typeof id === "string" && !knownVersionIds.has(id));
+          if (missingCurrentVersionIds.length) {
+            const extraVersions = await db
+              .select()
+              .from(projectDriveVersions)
+              .where(inArray(projectDriveVersions.id, missingCurrentVersionIds));
+            versions = [...versions, ...extraVersions.filter((version) => !knownVersionIds.has(version.id))];
+          }
+        }
+      }
+      const knownLoadedVersionIds = new Set(versions.map((version) => version.id));
+      const loadedItemsForVersionBackfill = [...items, ...deletedItems];
+      const missingLoadedCurrentVersionIds = [...new Set(loadedItemsForVersionBackfill
+        .map((item) => item.currentVersionId)
+        .filter((id): id is string => typeof id === "string" && !knownLoadedVersionIds.has(id)))];
+      if (missingLoadedCurrentVersionIds.length) {
+        const loadedCurrentVersions = await db
+          .select()
+          .from(projectDriveVersions)
+          .where(inArray(projectDriveVersions.id, missingLoadedCurrentVersionIds));
+        versions = [
+          ...versions,
+          ...loadedCurrentVersions.filter((version) => !knownLoadedVersionIds.has(version.id))
+        ];
+      }
+      const loadedItemIds = [...new Set(items.map((item) => item.id))];
+      if (loadedItemIds.length) {
+        const knownAcceptedDeliverableIds = new Set(acceptedDeliverables.map((row) => row.accepted.id));
+        const loadedAcceptedDeliverables = await db
+          .select({
+            accepted: acceptedDeliverableChanges,
+            driveItem: projectDriveItems,
+            driveVersion: projectDriveVersions
+          })
+          .from(acceptedDeliverableChanges)
+          .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+          .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
+          .where(and(
+            inArray(acceptedDeliverableChanges.driveItemId, loadedItemIds),
+            isNull(acceptedDeliverableChanges.supersededAt),
+            or(isNull(projectDriveItems.id), isNull(projectDriveItems.deletedAt))
+          ))
+          .orderBy(desc(acceptedDeliverableChanges.createdAt));
+        acceptedDeliverables = [
+          ...acceptedDeliverables,
+          ...loadedAcceptedDeliverables.filter((row) => !knownAcceptedDeliverableIds.has(row.accepted.id))
+        ];
+      }
+      acceptedDeliverables = await attachAcceptedDeliverableRestoreState(db, acceptedDeliverables);
+      const knownCommentIds = new Set(comments.map((comment) => comment.id));
+      const pendingComments = await db
+        .select()
+        .from(projectDriveComments)
+        .where(and(eq(projectDriveComments.projectId, project.id), eq(projectDriveComments.status, "pending_llm")))
+        .orderBy(desc(projectDriveComments.createdAt))
+        .limit(50);
+      comments = [
+        ...comments,
+        ...pendingComments.filter((comment) => !knownCommentIds.has(comment.id))
+      ];
       const draftWorkItemIds = [...new Set(comments.map((comment) => comment.draftWorkItemId).filter((id): id is string => Boolean(id)))];
       const commentProposals = draftWorkItemIds.length
         ? await db
@@ -395,22 +630,55 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           .orderBy(desc(proposals.createdAt))
           .limit(100)
         : [];
+      const totalFileCount = Number(activeItemCountRows.find((row) => row.kind === "file")?.value ?? 0);
+      const totalFolderCount = Number(activeItemCountRows.find((row) => row.kind === "folder")?.value ?? 0);
+      const restoreBlockedItemIds: string[] = [];
+      for (const item of deletedItems) {
+        if (item.parentId) {
+          const parentRows = await db
+            .select({ id: projectDriveItems.id, deletedAt: projectDriveItems.deletedAt })
+            .from(projectDriveItems)
+            .where(and(eq(projectDriveItems.id, item.parentId), eq(projectDriveItems.projectId, project.id)))
+            .limit(1);
+          if (!parentRows[0] || parentRows[0].deletedAt) {
+            restoreBlockedItemIds.push(item.id);
+            continue;
+          }
+        }
+        if (await activeItemByName(db, { projectId: project.id, parentId: item.parentId, name: item.name })) {
+          restoreBlockedItemIds.push(item.id);
+        }
+      }
 
       return {
         project,
         items,
-        versions: versionRows.map((row) => row.version),
+        versions,
         acceptedDeliverables,
         comments,
         deletedItems,
         operations,
-        commentProposals
+        commentProposals,
+        totalItemCount: totalFileCount + totalFolderCount,
+        totalFileCount,
+        totalFolderCount,
+        totalDeletedItemCount: Number(totalDeletedItemCountRows[0]?.value ?? 0),
+        totalVersionCount: Number(totalVersionCountRows[0]?.value ?? 0),
+        totalAcceptedDeliverableCount: Number(totalAcceptedDeliverableCountRows[0]?.value ?? 0),
+        totalPendingCommentCount: Number(totalPendingCommentCountRows[0]?.value ?? 0),
+        totalOperationCount: Number(totalOperationCountRows[0]?.value ?? 0),
+        restoreBlockedItemIds
       };
     },
 
     async listRecentFilesByProject(projectId, limit = 5) {
       const rows = await db
-        .select({ id: projectDriveItems.id, name: projectDriveItems.name, updatedAt: projectDriveItems.updatedAt })
+        .select({
+          id: projectDriveItems.id,
+          name: projectDriveItems.name,
+          updatedAt: projectDriveItems.updatedAt,
+          currentVersionId: projectDriveItems.currentVersionId
+        })
         .from(projectDriveItems)
         .where(and(
           eq(projectDriveItems.projectId, projectId),
@@ -418,8 +686,42 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           isNull(projectDriveItems.deletedAt)
         ))
         .orderBy(desc(projectDriveItems.updatedAt))
-        .limit(Math.max(1, Math.min(limit, 50)));
-      return rows;
+        .limit(Math.max(1, Math.min(limit, 500)));
+      if (rows.length === 0) {
+        return rows;
+      }
+      const currentVersionIds = rows
+        .map((row) => row.currentVersionId)
+        .filter((id): id is string => typeof id === "string");
+      const acceptedRows = currentVersionIds.length
+        ? await db
+          .select({
+            driveItemId: acceptedDeliverableChanges.driveItemId,
+            workItemId: acceptedDeliverableChanges.workItemId
+          })
+          .from(acceptedDeliverableChanges)
+          .where(and(
+            inArray(acceptedDeliverableChanges.driveItemId, rows.map((row) => row.id)),
+            inArray(acceptedDeliverableChanges.driveVersionId, currentVersionIds),
+            isNull(acceptedDeliverableChanges.supersededAt)
+          ))
+        : [];
+      const acceptedWorkItemsByDriveItemId = new Map<string, string[]>();
+      for (const row of acceptedRows) {
+        if (!row.driveItemId) {
+          continue;
+        }
+        const bucket = acceptedWorkItemsByDriveItemId.get(row.driveItemId) ?? [];
+        bucket.push(row.workItemId);
+        acceptedWorkItemsByDriveItemId.set(row.driveItemId, bucket);
+      }
+      return rows.map(({ currentVersionId: _currentVersionId, ...row }) => {
+        const acceptedWorkItemIds = acceptedWorkItemsByDriveItemId.get(row.id);
+        return {
+          ...row,
+          ...(acceptedWorkItemIds?.length ? { acceptedWorkItemIds } : {})
+        };
+      });
     },
 
     async countFilesByProject(projectId) {
@@ -635,7 +937,11 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           const childRows = await tx
             .select({ id: projectDriveItems.id })
             .from(projectDriveItems)
-            .where(and(eq(projectDriveItems.parentId, item.id), isNull(projectDriveItems.deletedAt)))
+            .where(and(
+              eq(projectDriveItems.projectId, input.projectId),
+              eq(projectDriveItems.parentId, item.id),
+              isNull(projectDriveItems.deletedAt)
+            ))
             .limit(1);
           if (childRows[0]) {
             throw new DriveRepositoryConflictError("drive_folder_not_empty", "文件夹里还有内容，先清空后再移到回收站。");
@@ -779,6 +1085,7 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
             eq(projectDriveComments.id, input.commentId),
             eq(projectDriveComments.projectId, input.projectId)
           ))
+          .for("update")
           .limit(1);
         const comment = commentRows[0];
         if (!comment) {
@@ -861,6 +1168,7 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           .where(and(
             eq(projectDriveComments.id, comment.id),
             eq(projectDriveComments.projectId, input.projectId),
+            eq(projectDriveComments.status, "pending_llm"),
             isNull(projectDriveComments.draftWorkItemId)
           ))
           .returning();
@@ -934,6 +1242,7 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           .from(projectDriveComments)
           .where(eq(projectDriveComments.draftWorkItemId, input.workItemId))
           .orderBy(desc(projectDriveComments.updatedAt), desc(projectDriveComments.createdAt))
+          .for("update")
           .limit(1);
         const comment = commentRows[0];
         if (!comment) {
@@ -949,19 +1258,19 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         // proposalId 的 draft_to_proposal operation），直接返回既有行，绝不重复 insert operation/audit。
         // 首次路径保持不变；重跑成为安全 no-op（self-heal 与 'proposal_already_exists' 重跑都因此安全）。
         if (comment.status === "proposal_created") {
-          const existingOps = await tx
+          const existingOperationRows = await tx
             .select()
             .from(projectDriveOperations)
             .where(and(
               eq(projectDriveOperations.projectId, comment.projectId),
-              eq(projectDriveOperations.opType, "draft_to_proposal")
+              eq(projectDriveOperations.opType, "draft_to_proposal"),
+              sql`${projectDriveOperations.payloadJson}->>'drive_comment_id' = ${comment.id}`,
+              sql`${projectDriveOperations.payloadJson}->>'work_item_id' = ${input.workItemId}`,
+              sql`${projectDriveOperations.payloadJson}->>'proposal_id' = ${input.proposalId}`
             ))
             .orderBy(desc(projectDriveOperations.createdAt))
-            .limit(50);
-          const existingOperation = existingOps.find((op) => {
-            const payload = op.payloadJson as Record<string, unknown>;
-            return payload.work_item_id === input.workItemId && payload.proposal_id === input.proposalId;
-          });
+            .limit(1);
+          const existingOperation = existingOperationRows[0];
           if (existingOperation) {
             result = { comment, operation: existingOperation };
             return;
@@ -975,7 +1284,8 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           })
           .where(and(
             eq(projectDriveComments.id, comment.id),
-            eq(projectDriveComments.draftWorkItemId, input.workItemId)
+            eq(projectDriveComments.draftWorkItemId, input.workItemId),
+            inArray(projectDriveComments.status, ["draft_created", "proposal_created"])
           ))
           .returning();
         const updatedComment = updatedComments[0] as DriveCommentRow | undefined;

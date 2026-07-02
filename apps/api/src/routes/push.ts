@@ -65,6 +65,16 @@ function canReadByWorkItemService(workItems: WorkItemService | undefined, user: 
     });
 }
 
+function runScopeMatches(run: { org_id?: string; workspace_id?: string }, user: { orgId: string; workspaceId: string }) {
+  if (run.workspace_id && run.workspace_id !== user.workspaceId) {
+    return false;
+  }
+  if (run.org_id && run.org_id !== user.orgId) {
+    return false;
+  }
+  return true;
+}
+
 function createDefaultTopicAccess(input: {
   agentRuns: AgentRunQueue;
   workItems: () => WorkItemService | undefined;
@@ -73,7 +83,16 @@ function createDefaultTopicAccess(input: {
   return {
     async canViewRun(user, id) {
       const run = await input.agentRuns.get(id);
-      return Boolean(run && (run.actor_id === user.id || user.isAdmin));
+      if (!run) {
+        return false;
+      }
+      if (!runScopeMatches(run, user)) {
+        return false;
+      }
+      if (run.actor_id === user.id || user.isAdmin) {
+        return true;
+      }
+      return canReadByWorkItemService(input.workItems(), user, run.work_item_id);
     },
     canViewWorkItem(user, id) {
       return canReadByWorkItemService(input.workItems(), user, id);

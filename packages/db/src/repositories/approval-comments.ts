@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray, lte, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { approvalComments } from "../schema/index.js";
@@ -17,7 +17,7 @@ export type CreateApprovalCommentInput = {
 export type ApprovalCommentRepository = {
   listByApproval: (approvalId: string, limit?: number) => Promise<ApprovalCommentRow[]>;
   // 批量读：一条 IN 查询取多审批的评论（审批中心页面预取，避免逐审批 N+1）。
-  listByApprovals: (approvalIds: string[]) => Promise<ApprovalCommentRow[]>;
+  listByApprovals: (approvalIds: string[], limitPerApproval?: number) => Promise<ApprovalCommentRow[]>;
   create: (input: CreateApprovalCommentInput) => Promise<ApprovalCommentRow>;
 };
 
@@ -33,15 +33,38 @@ export function createApprovalCommentRepository(db: WorkHubDb): ApprovalCommentR
         .limit(Math.max(1, Math.min(limit, 200)));
     },
 
-    async listByApprovals(approvalIds) {
+    async listByApprovals(approvalIds, limitPerApproval = 20) {
       if (approvalIds.length === 0) {
         return [];
       }
-      return db
-        .select()
+      const limit = Math.max(1, Math.min(limitPerApproval, 100));
+      const ranked = db
+        .select({
+          id: approvalComments.id,
+          approvalId: approvalComments.approvalId,
+          authorUserId: approvalComments.authorUserId,
+          authorNickname: approvalComments.authorNickname,
+          body: approvalComments.body,
+          createdAt: approvalComments.createdAt,
+          updatedAt: approvalComments.updatedAt,
+          rowNumber: sql<number>`row_number() over (partition by ${approvalComments.approvalId} order by ${approvalComments.createdAt} asc)`.as("row_number")
+        })
         .from(approvalComments)
         .where(inArray(approvalComments.approvalId, approvalIds))
-        .orderBy(asc(approvalComments.createdAt));
+        .as("ranked_approval_comments");
+      return db
+        .select({
+          id: ranked.id,
+          approvalId: ranked.approvalId,
+          authorUserId: ranked.authorUserId,
+          authorNickname: ranked.authorNickname,
+          body: ranked.body,
+          createdAt: ranked.createdAt,
+          updatedAt: ranked.updatedAt
+        })
+        .from(ranked)
+        .where(lte(ranked.rowNumber, limit))
+        .orderBy(asc(ranked.approvalId), asc(ranked.createdAt));
     },
 
     async create(input) {

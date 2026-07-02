@@ -128,7 +128,8 @@ export function createDesktopPetVisualQaReport(input: {
         "bottom:calc(372px * var(--wh-pet-scale,1))",
         "width:calc(328px * var(--wh-pet-scale,1))",
         "max-width:calc(100% - calc(104px * var(--wh-pet-scale,1)))",
-        "min-height:0;max-height:calc(336px * var(--wh-pet-scale,1));overflow:hidden;overscroll-behavior:none;scrollbar-width:none",
+        "min-height:0;max-height:calc(336px * var(--wh-pet-scale,1));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable",
+        "pointer-events:auto",
         "gap:6px;padding:10px 12px",
         ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-title{-webkit-line-clamp:2",
         ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-section-line,.wh-pet-surface[data-pet-card-has-context=true] .wh-pet-evidence-item{-webkit-line-clamp:1"

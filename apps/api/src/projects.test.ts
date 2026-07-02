@@ -4,18 +4,22 @@ import test from "node:test";
 import { Hono } from "hono";
 import { generateSignedCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
+import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
 import type {
   ClientDeviceAuthRow,
   ClientDeviceRepository,
+  ProjectRepository,
   UserAuthRow,
   UserRepository
 } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
+import { httpErrorCodeFor } from "./http-error-codes.js";
+import { malformedJsonMessage } from "./routes/json-body.js";
 import { createProjectRoutes } from "./routes/projects.js";
-import type { ProjectService } from "./services/projects.js";
+import { createProjectService, ProjectServiceError, type ProjectService } from "./services/projects.js";
 
 const now = new Date("2026-06-13T00:00:00.000Z");
 const userId = "62000000-0000-4000-8000-000000000001";
@@ -116,8 +120,14 @@ async function cookie(runtimeSettings: Settings) {
 
 function withErrors(app: Hono<AuthEnv>) {
   app.onError((error, c) => {
+    if (error instanceof ZodError) {
+      return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
+    }
+    if (error instanceof ProjectServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
+    }
     if (error instanceof HTTPException) {
-      return c.json({ ok: false, error: { code: "http_error", message: error.message } }, error.status);
+      return c.json({ ok: false, error: { code: httpErrorCodeFor(error), message: error.message } }, error.status);
     }
     throw error;
   });
@@ -186,6 +196,91 @@ test("project bootstrap is not available without identity", async () => {
   assert.equal(response.status, 401);
 });
 
+test("project bootstrap returns malformed_json for malformed request bodies", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/projects", createProjectRoutes({
+    auth: authDeps(runtimeSettings),
+    projects: {
+      async bootstrapProject() {
+        throw new Error("bootstrapProject must not be reached for malformed JSON");
+      },
+      async listProjects() {
+        throw new Error("should not be called");
+      }
+    }
+  }));
+
+  const response = await app.request("/api/projects/bootstrap", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: "{"
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "malformed_json",
+      message: malformedJsonMessage
+    }
+  });
+});
+
+test("project bootstrap rejects blank names and slugs before creating a default project", async () => {
+  const runtimeSettings = settings();
+  let bootstrapCalled = false;
+  const projects: ProjectService = {
+    async bootstrapProject() {
+      bootstrapCalled = true;
+      throw new Error("bootstrapProject must not be reached for blank project identifiers");
+    },
+    async listProjects() {
+      return { generated_at: now.toISOString(), projects: [] };
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/projects", createProjectRoutes({ auth: authDeps(runtimeSettings), projects }));
+
+  const blankName = await app.request("/api/projects/bootstrap", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "   " })
+  });
+  const blankSlug = await app.request("/api/projects/bootstrap", {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings), "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "真实项目", slug: "   " })
+  });
+
+  assert.equal(blankName.status, 422);
+  assert.equal(blankSlug.status, 422);
+  assert.equal(bootstrapCalled, false);
+});
+
+test("GET /api/projects preserves project service error codes", async () => {
+  const runtimeSettings = settings();
+  const projects: ProjectService = {
+    async bootstrapProject() {
+      throw new Error("should not be called");
+    },
+    async listProjects() {
+      throw new ProjectServiceError(403, "project_forbidden", "你没有权限查看项目。");
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/projects", createProjectRoutes({ auth: authDeps(runtimeSettings), projects }));
+
+  const response = await app.request("/api/projects", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  const body = await response.json() as { ok: false; error: { code: string; message: string } };
+
+  assert.equal(response.status, 403);
+  assert.equal(body.error.code, "project_forbidden");
+  assert.equal(body.error.message, "你没有权限查看项目。");
+});
+
 test("GET /api/projects lists the current actor's projects with open work item counts", async () => {
   const runtimeSettings = settings();
   let listedWorkspaceId = "";
@@ -247,4 +342,93 @@ test("GET /api/projects requires identity", async () => {
   const response = await app.request("/api/projects");
 
   assert.equal(response.status, 401);
+});
+
+test("project bootstrap derives a stable slug for repeated non-ascii project names", async () => {
+  const seenSlugs: string[] = [];
+  const createdBySlug = new Map<string, boolean>();
+  const repository: ProjectRepository = {
+    async bootstrapPilotProject(input) {
+      seenSlugs.push(input.slug);
+      const created = !createdBySlug.has(input.slug);
+      createdBySlug.set(input.slug, true);
+      return {
+        created,
+        project: {
+          id: `62000000-0000-4000-8000-${String(createdBySlug.size).padStart(12, "0")}`,
+          workspaceId: input.workspaceId,
+          name: input.name,
+          slug: input.slug,
+          description: input.description ?? null,
+          ownerNickname: input.ownerNickname,
+          ownerUserId: input.ownerUserId
+        } as Awaited<ReturnType<ProjectRepository["bootstrapPilotProject"]>>["project"]
+      };
+    },
+    async listForWorkspace() {
+      return [];
+    }
+  };
+  const service = createProjectService(repository, { settings: settings(), now: () => now });
+
+  const first = await service.bootstrapProject({
+    actor: {
+      kind: "human",
+      id: userId,
+      label: "day0-host",
+      userId,
+      isAdmin: true,
+      orgId: "00000000-0000-4000-8000-000000000001",
+      workspaceId: "00000000-0000-4000-8000-000000000002"
+    },
+    payload: { name: "真实项目" }
+  });
+  const retry = await service.bootstrapProject({
+    actor: {
+      kind: "human",
+      id: userId,
+      label: "day0-host",
+      userId,
+      isAdmin: true,
+      orgId: "00000000-0000-4000-8000-000000000001",
+      workspaceId: "00000000-0000-4000-8000-000000000002"
+    },
+    payload: { name: "真实项目" }
+  });
+
+  assert.equal(seenSlugs.length, 2);
+  assert.equal(seenSlugs[0], seenSlugs[1], "retrying the same Chinese name should hit the same project slug");
+  assert.match(seenSlugs[0] ?? "", /^project-[a-f0-9]{8}$/u);
+  assert.equal(first.created, true);
+  assert.equal(retry.created, false);
+});
+
+test("project bootstrap maps archived/deleted slug occupancy to a recoverable conflict", async () => {
+  const repository: ProjectRepository = {
+    async bootstrapPilotProject() {
+      throw new Error("Failed to create or reuse project (slug occupied by an archived/deleted row in this workspace)");
+    },
+    async listForWorkspace() {
+      return [];
+    }
+  };
+  const service = createProjectService(repository, { settings: settings(), now: () => now });
+
+  await assert.rejects(
+    () => service.bootstrapProject({
+      actor: {
+        kind: "human",
+        id: userId,
+        label: "day0-host",
+        userId,
+        isAdmin: true,
+        orgId: "00000000-0000-4000-8000-000000000001",
+        workspaceId: "00000000-0000-4000-8000-000000000002"
+      },
+      payload: { name: "Archived Project", slug: "archived-project" }
+    }),
+    (error: unknown) => error instanceof ProjectServiceError
+      && error.status === 409
+      && error.code === "project_slug_occupied"
+  );
 });

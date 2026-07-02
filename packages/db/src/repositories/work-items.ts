@@ -9,6 +9,7 @@ import type { EvidenceRef, WorkItemMode, WorkItemStatus } from "@workhub/contrac
 // 终态集（已交付/作废）不交接——交接它们既无意义又会抹掉「谁交付的」的溯源；与本仓 updateWorkItemFromSession
 // 注释里的「已交付/终态(merged/done/cancelled)」同一集合。done 是真正落地终态；merged/cancelled 各为交付/作废端点。
 const terminalWorkItemStatuses: WorkItemStatus[] = ["merged", "done", "cancelled"];
+const privateWorkItemStatuses: WorkItemStatus[] = ["intake", "ai_clarifying", "spec_ready"];
 
 import type { WorkHubDb } from "../client.js";
 import {
@@ -28,7 +29,8 @@ import {
   proposals,
   workItemAcceptanceItems,
   workItemAssignments,
-  workItems
+  workItems,
+  workspaces
 } from "../schema/index.js";
 import { allocateProjectCode } from "../sequences.js";
 
@@ -94,11 +96,12 @@ export type WorkItemAccessRow = {
     deletedAt: Date | null;
     ownerUserId: string | null;
     workspaceId: string | null;
+    orgId?: string | null;
   } | null;
   assignments: Array<{ userId: string; role: string }>;
 };
 
-export type WorkItemProjectRow = typeof projects.$inferSelect;
+export type WorkItemProjectRow = typeof projects.$inferSelect & { orgId?: string | null };
 // 项目主页(/projects/:id)的「进行中工作项」行（GitHub 式项目=产品的开放工作清单）。
 export type WorkItemProjectListItemRow = {
   id: string;
@@ -111,6 +114,7 @@ export type WorkItemProjectListItemRow = {
   submitterUserId: string;
   claimedByUserId: string | null;
   workspaceId: string | null;
+  assignments: Array<{ userId: string; role: string }>;
 };
 export type WorkItemRow = typeof workItems.$inferSelect;
 export type WorkItemAcceptanceRow = typeof workItemAcceptanceItems.$inferSelect;
@@ -131,6 +135,7 @@ export type WorkItemAcceptedDeliverableRow = {
   accepted: typeof acceptedDeliverableChanges.$inferSelect;
   driveItem: typeof projectDriveItems.$inferSelect | null;
   driveVersion: typeof projectDriveVersions.$inferSelect | null;
+  canRestore?: boolean;
 };
 
 type WorkHubTx = Parameters<Parameters<WorkHubDb["transaction"]>[0]>[0];
@@ -209,6 +214,7 @@ export type StoredWorkItemDetailRows = {
   projectWorkspaceId: string | null;
   projectArchived: boolean | null;
   projectDeletedAt: Date | null;
+  assignments: Array<{ userId: string; role: string }>;
   acceptance: WorkItemAcceptanceRow[];
   agentSteps: WorkItemAgentStepRow[];
   latestProposal: WorkItemProposalRow | null;
@@ -224,10 +230,13 @@ export type WorkItemKnowledgeSearchInput = {
   workItemId?: string;
   limit?: number;
 };
+export type WorkItemKnowledgeSearchWorkItemRow = WorkItemRow & {
+  assignments: Array<{ userId: string; role: string }>;
+};
 
 export type WorkItemKnowledgeSearchRows = {
   documents: WorkItemKnowledgeDocumentRow[];
-  workItems: WorkItemRow[];
+  workItems: WorkItemKnowledgeSearchWorkItemRow[];
 };
 
 export type WorkItemRepository = {
@@ -269,6 +278,11 @@ export type WorkItemDataRepository = WorkItemRepository & WorkItemClaimHandoverR
   listOpenByProject: (projectId: string, limit?: number) => Promise<WorkItemProjectListItemRow[]>;
   // 进行中工作项的真实总数(不受清单 limit 截断)：与项目列表卡的 open_work_item_count 同口径，供主页头部计数。
   countOpenByProject: (projectId: string) => Promise<number>;
+  // 项目主页「你可处理」计数：与 listOpenByProject 后的可见性过滤同口径，但不受扫描/展示上限截断。
+  countVisibleOpenByProject: (
+    projectId: string,
+    input: { viewerUserId: string; isAdmin?: boolean }
+  ) => Promise<number>;
   createWorkItem: (input: CreateStoredWorkItemInput) => Promise<WorkItemRow>;
   updateWorkItemFromSession: (input: UpdateStoredWorkItemFromSessionInput) => Promise<WorkItemRow | null>;
   insertChatMessage: (input: InsertStoredChatMessageInput) => Promise<WorkItemChatMessageRow>;
@@ -334,6 +348,13 @@ function acceptedDeliverableColumns() {
 
 type DriveFolderNode = { id: string; parentId: string | null; name: string };
 
+function acceptedDriveVersionJoinCondition() {
+  return and(
+    eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id),
+    eq(projectDriveVersions.itemId, acceptedDeliverableChanges.driveItemId)
+  );
+}
+
 // findings[#24]：原实现为算一个文件夹路径，把整个项目的 drive items 全量(所有列)拉进内存建 Map——开销随项目
 // drive 总量线性增长（不是路径深度），是潜在全表扫描悬崖。改为从该文件夹按 parentId 逐级单行上溯（≤50 跳，
 // 与旧实现的环/深度上限一致），每跳只取 id/parentId/name 三列、按主键命中。fetchParent 注入以便纯函数单测。
@@ -368,8 +389,20 @@ function acceptedDeliverableQuery(db: WorkHubDb, input: { workItemId: string; ac
     .select(acceptedDeliverableColumns())
     .from(acceptedDeliverableChanges)
     .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
-    .leftJoin(projectDriveVersions, eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id))
+    .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
     .where(and(...conditions));
+}
+
+function acceptedDeliverableById(db: WorkHubDb, acceptedChangeId: string) {
+  return db
+    .select(acceptedDeliverableColumns())
+    .from(acceptedDeliverableChanges)
+    .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+    .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
+    .where(and(
+      eq(acceptedDeliverableChanges.id, acceptedChangeId),
+      isNull(acceptedDeliverableChanges.supersededAt)
+    ));
 }
 
 function acceptedDeliverableQueryForTx(
@@ -387,8 +420,40 @@ function acceptedDeliverableQueryForTx(
     .select(acceptedDeliverableColumns())
     .from(acceptedDeliverableChanges)
     .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
-    .leftJoin(projectDriveVersions, eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id))
+    .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
     .where(and(...conditions));
+}
+
+async function attachAcceptedDeliverableRestoreState<T extends WorkItemAcceptedDeliverableRow>(
+  db: WorkHubDb,
+  rows: T[]
+): Promise<Array<T & { canRestore: boolean }>> {
+  const restored: Array<T & { canRestore: boolean }> = [];
+  for (const row of rows) {
+    if (row.accepted.acceptedVersion <= 1) {
+      restored.push({ ...row, canRestore: false });
+      continue;
+    }
+    const previousRows = await db
+      .select({ id: acceptedDeliverableChanges.id })
+      .from(acceptedDeliverableChanges)
+      .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+      .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
+      .where(and(
+        row.accepted.projectId
+          ? eq(acceptedDeliverableChanges.projectId, row.accepted.projectId)
+          : eq(acceptedDeliverableChanges.workItemId, row.accepted.workItemId),
+        eq(acceptedDeliverableChanges.targetKey, row.accepted.targetKey),
+        lt(acceptedDeliverableChanges.acceptedVersion, row.accepted.acceptedVersion),
+        isNotNull(acceptedDeliverableChanges.supersededAt),
+        isNotNull(acceptedDeliverableChanges.driveVersionId),
+        isNotNull(projectDriveItems.id),
+        isNull(projectDriveItems.deletedAt)
+      ))
+      .limit(1);
+    restored.push({ ...row, canRestore: Boolean(previousRows[0]) });
+  }
+  return restored;
 }
 
 export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository {
@@ -438,10 +503,12 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           projectArchived: projects.archived,
           projectDeletedAt: projects.deletedAt,
           projectOwnerUserId: projects.ownerUserId,
-          projectWorkspaceId: projects.workspaceId
+          projectWorkspaceId: projects.workspaceId,
+          projectOrgId: workspaces.orgId
         })
         .from(workItems)
         .innerJoin(projects, eq(workItems.projectId, projects.id))
+        .leftJoin(workspaces, eq(projects.workspaceId, workspaces.id))
         .where(eq(workItems.id, workItemId))
         .limit(1);
       const row = rows[0];
@@ -462,7 +529,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           archived: row.projectArchived,
           deletedAt: row.projectDeletedAt,
           ownerUserId: row.projectOwnerUserId,
-          workspaceId: row.projectWorkspaceId
+          workspaceId: row.projectWorkspaceId,
+          orgId: row.projectOrgId
         },
         assignments
       };
@@ -547,15 +615,20 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
 
     async findProjectById(projectId) {
       const rows = await db
-        .select()
+        .select({
+          project: projects,
+          orgId: workspaces.orgId
+        })
         .from(projects)
+        .leftJoin(workspaces, eq(projects.workspaceId, workspaces.id))
         .where(and(eq(projects.id, projectId), eq(projects.archived, false), isNull(projects.deletedAt)))
         .limit(1);
-      return rows[0] ?? null;
+      const row = rows[0];
+      return row ? { ...row.project, orgId: row.orgId } : null;
     },
 
     async listOpenByProject(projectId, limit = 20) {
-      return db
+      const rows = await db
         .select({
           id: workItems.id,
           code: workItems.code,
@@ -579,6 +652,27 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         )
         .orderBy(desc(workItems.updatedAt))
         .limit(limit);
+      if (rows.length === 0) {
+        return [];
+      }
+      const assignmentRows = await db
+        .select({
+          workItemId: workItemAssignments.workItemId,
+          userId: workItemAssignments.userId,
+          role: workItemAssignments.role
+        })
+        .from(workItemAssignments)
+        .where(inArray(workItemAssignments.workItemId, rows.map((row) => row.id)));
+      const assignmentsByWorkItemId = new Map<string, Array<{ userId: string; role: string }>>();
+      for (const assignment of assignmentRows) {
+        const bucket = assignmentsByWorkItemId.get(assignment.workItemId) ?? [];
+        bucket.push({ userId: assignment.userId, role: assignment.role });
+        assignmentsByWorkItemId.set(assignment.workItemId, bucket);
+      }
+      return rows.map((row) => ({
+        ...row,
+        assignments: assignmentsByWorkItemId.get(row.id) ?? []
+      }));
     },
 
     async countOpenByProject(projectId) {
@@ -592,6 +686,34 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             isNull(workItems.deletedAt)
           )
         );
+      return Number(rows[0]?.value ?? 0);
+    },
+
+    async countVisibleOpenByProject(projectId, input) {
+      const conditions: SQL[] = [
+        eq(workItems.projectId, projectId),
+        notInArray(workItems.status, terminalWorkItemStatuses),
+        isNull(workItems.deletedAt)
+      ];
+      if (!input.isAdmin) {
+        conditions.push(
+          or(
+            notInArray(workItems.status, privateWorkItemStatuses),
+            eq(workItems.submitterUserId, input.viewerUserId),
+            eq(workItems.claimedByUserId, input.viewerUserId),
+            sql`exists (
+              select 1
+              from ${workItemAssignments}
+              where ${workItemAssignments.workItemId} = ${workItems.id}
+                and ${workItemAssignments.userId} = ${input.viewerUserId}
+            )`
+          ) ?? trueCondition
+        );
+      }
+      const rows = await db
+        .select({ value: sql<number>`count(*)` })
+        .from(workItems)
+        .where(and(...conditions));
       return Number(rows[0]?.value ?? 0);
     },
 
@@ -836,7 +958,11 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             .limit(8)
         : [];
 
-      const [acceptance, latestProposals, acceptedDeliverables, evidenceBindings, driveSourceComments, meetingSourceInsights] = await Promise.all([
+      const [assignments, acceptance, latestProposals, acceptedDeliverables, evidenceBindings, driveSourceComments, meetingSourceInsights] = await Promise.all([
+        db
+          .select({ userId: workItemAssignments.userId, role: workItemAssignments.role })
+          .from(workItemAssignments)
+          .where(eq(workItemAssignments.workItemId, workItemId)),
         db
           .select()
           .from(workItemAcceptanceItems)
@@ -905,10 +1031,11 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         projectWorkspaceId: row.projectWorkspaceId,
         projectArchived: row.projectArchived,
         projectDeletedAt: row.projectDeletedAt,
+        assignments,
         acceptance,
         agentSteps: agentStepRows,
         latestProposal: latestProposals[0] ?? null,
-        acceptedDeliverables,
+        acceptedDeliverables: await attachAcceptedDeliverableRestoreState(db, acceptedDeliverables),
         evidenceBindings,
         driveSourceComment: driveSourceCommentWithPath,
         meetingSourceInsight: meetingSourceInsights[0] ?? null
@@ -942,6 +1069,20 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         }).limit(1);
         const current = currentRows[0];
         if (!current) {
+          const staleRows = await tx
+            .select({ supersededAt: acceptedDeliverableChanges.supersededAt })
+            .from(acceptedDeliverableChanges)
+            .where(and(
+              eq(acceptedDeliverableChanges.id, input.acceptedChangeId),
+              eq(acceptedDeliverableChanges.workItemId, input.workItemId)
+            ))
+            .limit(1);
+          if (staleRows[0]?.supersededAt) {
+            throw new WorkItemAcceptedDeliverableRestoreError(
+              "deliverable_version_changed",
+              "正式交付物版本已经变化，请刷新后重试。"
+            );
+          }
           return;
         }
         if (!current.driveItem || !current.driveVersion || !current.accepted.driveItemId || !current.accepted.driveVersionId) {
@@ -961,7 +1102,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           .select(acceptedDeliverableColumns())
           .from(acceptedDeliverableChanges)
           .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
-          .leftJoin(projectDriveVersions, eq(acceptedDeliverableChanges.driveVersionId, projectDriveVersions.id))
+          .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
           .where(and(
             // R4 #11：上一版按「项目级当前版」口径找（P-COLLAB：同 targetKey 可经不同工作项采纳，acceptedVersion
             // 是 per-(project,targetKey) 单调）。与 merge/base 查询同范围（proposals.ts: projectId 优先、回退
@@ -970,10 +1111,11 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
               ? eq(acceptedDeliverableChanges.projectId, current.accepted.projectId)
               : eq(acceptedDeliverableChanges.workItemId, current.accepted.workItemId),
             eq(acceptedDeliverableChanges.targetKey, current.accepted.targetKey),
-            eq(acceptedDeliverableChanges.driveItemId, current.driveItem.id),
             lt(acceptedDeliverableChanges.acceptedVersion, current.accepted.acceptedVersion),
             isNotNull(acceptedDeliverableChanges.supersededAt),
-            isNotNull(acceptedDeliverableChanges.driveVersionId)
+            isNotNull(acceptedDeliverableChanges.driveVersionId),
+            isNotNull(projectDriveItems.id),
+            isNull(projectDriveItems.deletedAt)
           ))
           .orderBy(desc(acceptedDeliverableChanges.acceptedVersion), desc(acceptedDeliverableChanges.createdAt))
           .limit(1);
@@ -985,33 +1127,57 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           );
         }
 
-        const updatedItems = await tx
-          .update(projectDriveItems)
-          .set({
-            currentVersionId: previous.driveVersion.id,
-            updatedByUserId: input.actorUserId,
-            updatedAt: at
-          })
-          .where(and(
-            eq(projectDriveItems.id, current.driveItem.id),
-            eq(projectDriveItems.currentVersionId, current.driveVersion.id)
-          ))
-          .returning({ id: projectDriveItems.id });
-        if (updatedItems.length === 0) {
-          throw new WorkItemAcceptedDeliverableRestoreError(
-            "deliverable_version_changed",
-            "正式交付物版本已经变化，请刷新后重试。"
-          );
+        if (previous.accepted.driveItemId === current.driveItem.id) {
+          const updatedItems = await tx
+            .update(projectDriveItems)
+            .set({
+              currentVersionId: previous.driveVersion.id,
+              updatedByUserId: input.actorUserId,
+              updatedAt: at
+            })
+            .where(and(
+              eq(projectDriveItems.id, current.driveItem.id),
+              eq(projectDriveItems.currentVersionId, current.driveVersion.id)
+            ))
+            .returning({ id: projectDriveItems.id });
+          if (updatedItems.length === 0) {
+            throw new WorkItemAcceptedDeliverableRestoreError(
+              "deliverable_version_changed",
+              "正式交付物版本已经变化，请刷新后重试。"
+            );
+          }
         }
 
         await tx
           .update(acceptedDeliverableChanges)
           .set({ supersededAt: at, updatedAt: at })
           .where(eq(acceptedDeliverableChanges.id, current.accepted.id));
-        await tx
-          .update(acceptedDeliverableChanges)
-          .set({ supersededAt: null, updatedAt: at })
-          .where(eq(acceptedDeliverableChanges.id, previous.accepted.id));
+        const newAcceptedChangeId = randomUUID();
+        await tx.insert(acceptedDeliverableChanges).values({
+          id: newAcceptedChangeId,
+          workItemId: current.accepted.workItemId,
+          ...(current.accepted.projectId ? { projectId: current.accepted.projectId } : {}),
+          proposalId: previous.accepted.proposalId,
+          ...(previous.accepted.branchId ? { branchId: previous.accepted.branchId } : {}),
+          changeId: previous.accepted.changeId,
+          targetKind: previous.accepted.targetKind,
+          targetEntityType: previous.accepted.targetEntityType,
+          ...(previous.accepted.targetEntityId ? { targetEntityId: previous.accepted.targetEntityId } : {}),
+          ...(previous.accepted.targetPath ? { targetPath: previous.accepted.targetPath } : {}),
+          targetKey: current.accepted.targetKey,
+          changeType: previous.accepted.changeType,
+          acceptedVersion: current.accepted.acceptedVersion + 1,
+          ...(previous.accepted.baseVersionRef ? { baseVersionRef: previous.accepted.baseVersionRef } : {}),
+          ...(previous.accepted.acceptedRef ? { acceptedRef: previous.accepted.acceptedRef } : {}),
+          ...(previous.accepted.driveItemId ? { driveItemId: previous.accepted.driveItemId } : {}),
+          ...(previous.accepted.driveVersionId ? { driveVersionId: previous.accepted.driveVersionId } : {}),
+          ...(current.accepted.sha256After ? { sha256Before: current.accepted.sha256After } : {}),
+          ...(previous.accepted.sha256After ? { sha256After: previous.accepted.sha256After } : {}),
+          ...(previous.accepted.previewRefJson ? { previewRefJson: previous.accepted.previewRefJson } : {}),
+          manifestChangeJson: previous.accepted.manifestChangeJson,
+          createdAt: at,
+          updatedAt: at
+        });
         await tx
           .update(workItems)
           .set({
@@ -1027,8 +1193,10 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           payloadJson: {
             work_item_id: current.accepted.workItemId,
             accepted_change_id: current.accepted.id,
-            restored_accepted_change_id: previous.accepted.id,
+            restored_accepted_change_id: newAcceptedChangeId,
+            source_accepted_change_id: previous.accepted.id,
             drive_item_id: current.driveItem.id,
+            restored_drive_item_id: previous.accepted.driveItemId,
             from_drive_version_id: current.driveVersion.id,
             to_drive_version_id: previous.driveVersion.id,
             target_key: current.accepted.targetKey
@@ -1041,29 +1209,29 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           actorKind: input.actorKind,
           actorUserId: input.actorUserId,
           entityType: "accepted_deliverable",
-          entityId: current.accepted.id,
+          entityId: newAcceptedChangeId,
           action: "accepted_deliverable.reverted",
           detailJson: {
             work_item_id: current.accepted.workItemId,
-            restored_accepted_change_id: previous.accepted.id,
+            restored_accepted_change_id: newAcceptedChangeId,
+            source_accepted_change_id: previous.accepted.id,
             drive_item_id: current.driveItem.id,
+            restored_drive_item_id: previous.accepted.driveItemId,
             from_drive_version_id: current.driveVersion.id,
             to_drive_version_id: previous.driveVersion.id,
             target_key: current.accepted.targetKey
           },
           createdAt: at
         });
-        restoredAcceptedChangeId = previous.accepted.id;
+        restoredAcceptedChangeId = newAcceptedChangeId;
       });
 
       if (!restoredAcceptedChangeId) {
         return null;
       }
-      const rows = await acceptedDeliverableQuery(db, {
-        workItemId: input.workItemId,
-        acceptedChangeId: restoredAcceptedChangeId
-      }).limit(1);
-      return rows[0] ?? null;
+      const rows = await acceptedDeliverableById(db, restoredAcceptedChangeId).limit(1);
+      const restoredRows = await attachAcceptedDeliverableRestoreState(db, rows);
+      return restoredRows[0] ?? null;
     },
 
     async searchKnowledge(input) {
@@ -1113,10 +1281,29 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           .orderBy(desc(workItems.updatedAt))
           .limit(limit)
       ]);
+      const assignmentRows = workItemRows.length
+        ? await db
+            .select({
+              workItemId: workItemAssignments.workItemId,
+              userId: workItemAssignments.userId,
+              role: workItemAssignments.role
+            })
+            .from(workItemAssignments)
+            .where(inArray(workItemAssignments.workItemId, workItemRows.map((row) => row.id)))
+        : [];
+      const assignmentsByWorkItemId = new Map<string, Array<{ userId: string; role: string }>>();
+      for (const assignment of assignmentRows) {
+        const bucket = assignmentsByWorkItemId.get(assignment.workItemId) ?? [];
+        bucket.push({ userId: assignment.userId, role: assignment.role });
+        assignmentsByWorkItemId.set(assignment.workItemId, bucket);
+      }
 
       return {
         documents,
-        workItems: workItemRows
+        workItems: workItemRows.map((row) => ({
+          ...row,
+          assignments: assignmentsByWorkItemId.get(row.id) ?? []
+        }))
       };
     }
   };

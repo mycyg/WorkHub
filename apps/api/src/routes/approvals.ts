@@ -16,7 +16,9 @@ import {
   type AuthEnv
 } from "../middleware/auth.js";
 import {
+  ApprovalServiceError,
   createApprovalService,
+  toPermissionPolicyResponse,
   type ApprovalService
 } from "../services/approvals.js";
 import {
@@ -66,11 +68,11 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
     if (!approval) {
       throw new HTTPException(404, { message: "没有找到这条审批。" });
     }
-    // L#W2-15：无 work item 的审批（工具/权限类）不能因 canReadWorkItem(undefined)=true 而对所有登录用户敞开——
-    // 这类按 id 直达的端点（respond/delegate/comments）要求管理员或被路由到的本人。
+    // L#W2-15：无 work item 的审批（工具/权限类）不能因 canReadWorkItem(undefined)=true 而对所有登录用户敞开。
+    // approval_requests 没有 org/workspace 列，admin 也没有可靠租户边界可用；这类端点按个人收件箱处理。
     if (!approval.work_item_id) {
       const actorUserId = actor.userId ?? actor.id;
-      if (!actor.isAdmin && approval.routed_to_user_id !== actorUserId) {
+      if (approval.routed_to_user_id !== actorUserId) {
         throw new HTTPException(403, { message: "你没有权限查看这条审批。" });
       }
       return approval;
@@ -79,6 +81,16 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
       throw new HTTPException(403, { message: "你没有权限查看这条审批。" });
     }
     return approval;
+  }
+
+  function assertCanActOnApproval(approval: ApprovalRequest, actor: AuthEnv["Variables"]["actor"]) {
+    if (actor.isAdmin) {
+      return;
+    }
+    const actorUserId = actor.userId ?? actor.id;
+    if (approval.routed_to_user_id !== actorUserId) {
+      throw new ApprovalServiceError(403, "forbidden", "这条审批不在你的待处理列表里。");
+    }
   }
 
   async function visibleApprovalCenter(data: ApprovalCenterVM, actor: AuthEnv["Variables"]["actor"]) {
@@ -111,11 +123,15 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
     const visibleItemsDetail = Object.fromEntries(
       Object.entries(data.items_detail).filter(([itemId]) => visibleItemIds.has(itemId))
     );
+    const pageInfo = data.page_info
+      ? { ...data.page_info, returned: visibleRequests.length }
+      : undefined;
     return {
       ...data,
       items: visibleItems,
       items_detail: visibleItemsDetail,
       requests: visibleRequests,
+      ...(pageInfo ? { page_info: pageInfo } : {}),
       counts: {
         ...data.counts,
         pending: visibleRequests.length
@@ -124,19 +140,27 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
   }
 
   routes.get("/", createCurrentUserMiddleware(authSource), async (c) => {
-    const data = await service.listPendingForUser(c.var.currentUser);
+    const data = await service.listPendingForUser(c.var.currentUser, workItems
+      ? { canReadWorkItem: (workItemId) => canReadWorkItem(workItemId, c.var.actor) }
+      : {});
     return c.json({ ok: true, data: await visibleApprovalCenter(data, c.var.actor) });
   });
 
   routes.post("/:id/respond", createCurrentUserMiddleware(authSource), async (c) => {
-    await assertCanReadApproval(c.req.param("id"), c.var.actor);
+    const approval = await assertCanReadApproval(c.req.param("id"), c.var.actor);
+    assertCanActOnApproval(approval, c.var.actor);
     const payload = respondApprovalRequestSchema.parse(await readJsonObject(c));
-    const data = await service.respond(c.req.param("id"), c.var.actor, payload);
+    const result = await service.respond(c.req.param("id"), c.var.actor, payload);
+    const data = {
+      approval: result.approval,
+      ...(result.learned_policy ? { learned_policy: toPermissionPolicyResponse(result.learned_policy) } : {})
+    };
     return c.json({ ok: true, data });
   });
 
   routes.post("/:id/delegate", createCurrentUserMiddleware(authSource), async (c) => {
-    await assertCanReadApproval(c.req.param("id"), c.var.actor);
+    const approval = await assertCanReadApproval(c.req.param("id"), c.var.actor);
+    assertCanActOnApproval(approval, c.var.actor);
     const payload = delegateApprovalRequestSchema.parse(await readJsonObject(c));
     const data = await service.delegate(c.req.param("id"), c.var.actor, payload.to_user_id);
     return c.json({ ok: true, data });

@@ -72,7 +72,8 @@ test("agent run renderer shows live trace, budget, stream and replay affordances
   assert.equal(rendered.replayHref, baseRun.replay_href);
   assert.equal(rendered.html.includes("AI 实时执行"), true);
   assert.equal(rendered.html.includes("取消执行"), true);
-  assert.equal(rendered.html.includes("AI 正在思考中，隐藏推理内容不会展示。"), true);
+  assert.equal(rendered.html.includes("AI 正在整理材料，稍后给你下一步。"), true);
+  assert.equal(rendered.html.includes("隐藏推理内容"), false);
   assert.equal(rendered.html.includes("Cuu 正在读取项目文档。"), false);
 });
 
@@ -111,7 +112,8 @@ test("agent run renderer localizes fixed labels and visible run status in Englis
   assert.equal(rendered.html.includes("Thinking"), true);
   assert.equal(rendered.html.includes(">running<"), false);
   assert.equal(rendered.html.includes("AI 实时执行"), false);
-  assert.equal(rendered.html.includes("AI is thinking; hidden reasoning is not shown."), true);
+  assert.equal(rendered.html.includes("AI is organizing the materials and preparing the next step."), true);
+  assert.equal(rendered.html.includes("hidden reasoning"), false);
   assert.equal(rendered.html.includes("Cuu 正在读取项目文档。"), false);
 });
 

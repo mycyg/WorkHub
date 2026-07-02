@@ -16,12 +16,13 @@ import type {
   UserAuthRow,
   UserRepository
 } from "@workhub/db";
-import type { MeetingPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { DeliverableChangeManifest, MeetingPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { createMeetingRoutes } from "./routes/meetings.js";
 import { createPageRoutes } from "./routes/pages.js";
-import { createMeetingPageService, type MeetingPageService } from "./services/meeting-pages.js";
+import { createMeetingPageService, MeetingPageServiceError, type MeetingPageService } from "./services/meeting-pages.js";
+import { WorkItemServiceError } from "./services/work-items.js";
 
 const now = new Date("2026-06-11T02:00:00.000Z");
 const projectId = "96000000-0000-4000-8000-000000000001";
@@ -196,6 +197,18 @@ class MutableMeetingRepo implements MeetingRepository {
   }
 }
 
+const deepLinkedMeetingId = "96000000-0000-4000-8000-0000000000aa";
+
+function deepLinkedMeetingRow(): MeetingPageRows["meetings"][number]["meeting"] {
+  return {
+    ...meetingRow(),
+    id: deepLinkedMeetingId,
+    title: "Older Retrospective Deep Link",
+    createdAt: new Date("2026-06-01T02:00:00.000Z"),
+    updatedAt: new Date("2026-06-01T02:00:00.000Z")
+  };
+}
+
 class MemoryUsers implements UserRepository {
   constructor(private readonly rows: UserAuthRow[]) {}
 
@@ -338,6 +351,67 @@ function minimalWorkItemDetail(): WorkItemDetailVM {
   };
 }
 
+function proposalManifest(): DeliverableChangeManifest {
+  return {
+    version: 0,
+    proposal_id: proposalId,
+    work_item_id: workItemId,
+    branch_id: "96000000-0000-4000-8000-000000000099",
+    title: "Meeting draft proposal",
+    summary_md: "Create a reviewable proposal from a meeting insight.",
+    author: {
+      actor_kind: "human",
+      actor_user_id: userId,
+      label: "meeting-user"
+    },
+    base: {
+      created_at: now.toISOString()
+    },
+    changes: [
+      {
+        id: "96000000-0000-4000-8000-000000000098",
+        target_kind: "text_doc",
+        target_ref: {
+          entity_type: "work_item",
+          entity_id: workItemId,
+          path: "/workitems/R5-9/meeting-insight.md"
+        },
+        change_type: "generated",
+        human_summary: "Generate a proposal draft from the meeting insight."
+      }
+    ],
+    checks: [
+      {
+        id: "meeting_insight_source",
+        label: "Meeting insight source is attached",
+        status: "passed"
+      }
+    ],
+    evidence_refs: [
+      {
+        id: "96000000-0000-4000-8000-000000000097",
+        source_type: "meeting",
+        source_id: meetingId,
+        title: "Q2 Client Proposal Review",
+        confidence_hint: "found"
+      }
+    ],
+    risk: {
+      level: "low",
+      human_label: "Preview-only proposal",
+      reversible: true
+    },
+    rollback: {
+      available: true,
+      description: "Discard the proposal."
+    },
+    review: {
+      suggested_decision: "needs_human",
+      reason_required_on_reject: true
+    }
+  };
+}
+
 test("meeting page service creates a draft from a pending insight and returns a refreshed page", async () => {
   const repo = new MutableMeetingRepo();
   const service = createMeetingPageService({
@@ -354,6 +428,172 @@ test("meeting page service creates a draft from a pending insight and returns a 
   assert.equal(refreshed.meetings[0]?.insights[0]?.status, "confirmed");
   assert.equal(refreshed.meetings[0]?.insights[0]?.draft_href, `/workitems/${workItemId}`);
   assert.equal(refreshed.meetings[0]?.insights[0]?.actions.create_draft, undefined);
+});
+
+test("meeting page service hides draft and proposal links when the actor cannot open the backing work item", async () => {
+  const pageRows = rows(insightRow({
+    status: "confirmed",
+    createdWorkItemId: workItemId,
+    confirmedByUserId: userId,
+    confirmedAt: now
+  }));
+  pageRows.insightProposals.push({
+    id: proposalId,
+    workItemId,
+    branchId: "96000000-0000-4000-8000-000000000099",
+    round: 1,
+    title: "Meeting draft proposal",
+    status: "opened",
+    diffManifest: proposalManifest(),
+    confidenceId: null,
+    mergeSnapshotId: null,
+    openedByKind: "human",
+    openedByUserId: userId,
+    reviewedAt: null,
+    mergedAt: null,
+    createdAt: now,
+    updatedAt: now
+  });
+  const service = createMeetingPageService({
+    repo: {
+      async readPage() {
+        return pageRows;
+      },
+      async insightToDraft() {
+        throw new Error("not needed");
+      },
+      async dismissInsight() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal() {
+        throw new Error("not needed");
+      }
+    },
+    workItemAccess: {
+      async findWorkItemAccessRecord() {
+        return {
+          id: workItemId,
+          status: "ai_clarifying",
+          submitterUserId: "96000000-0000-4000-8000-00000000beef",
+          claimedByUserId: null,
+          workspaceId: actor().workspaceId,
+          project: {
+            archived: false,
+            deletedAt: null,
+            ownerUserId: "96000000-0000-4000-8000-00000000feed",
+            workspaceId: actor().workspaceId
+          },
+          assignments: []
+        };
+      }
+    },
+    now: () => now
+  } as Parameters<typeof createMeetingPageService>[0] & { workItemAccess: unknown });
+
+  const page = await service.page({ actor: actor(), projectId, locale: "en-US" });
+  const insight = page.meetings[0]?.insights[0];
+
+  assert.equal(insight?.created_work_item_id, workItemId);
+  assert.equal(insight?.draft_href, undefined);
+  assert.equal(insight?.proposal_id, undefined);
+  assert.equal(insight?.proposal_href, undefined);
+  assert.equal(insight?.proposal_status, undefined);
+});
+
+test("meeting page service hides meeting work item ids when the actor cannot open the linked private work item", async () => {
+  const pageRows = rows();
+  pageRows.meetings = [{
+    meeting: {
+      ...meetingRow(),
+      workItemId
+    },
+    uploadedBy: user()
+  }];
+  const service = createMeetingPageService({
+    repo: {
+      async readPage() {
+        return pageRows;
+      },
+      async insightToDraft() {
+        throw new Error("not needed");
+      },
+      async dismissInsight() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal() {
+        throw new Error("not needed");
+      }
+    },
+    workItemAccess: {
+      async findWorkItemAccessRecord() {
+        return {
+          id: workItemId,
+          status: "spec_ready",
+          submitterUserId: "96000000-0000-4000-8000-00000000beef",
+          claimedByUserId: null,
+          workspaceId: actor().workspaceId,
+          project: {
+            archived: false,
+            deletedAt: null,
+            ownerUserId: "96000000-0000-4000-8000-00000000feed",
+            workspaceId: actor().workspaceId
+          },
+          assignments: []
+        };
+      }
+    },
+    now: () => now
+  } as Parameters<typeof createMeetingPageService>[0] & { workItemAccess: unknown });
+
+  const page = await service.page({ actor: actor(), projectId, locale: "en-US" });
+
+  assert.equal(page.meetings[0]?.id, meetingId);
+  assert.equal(page.meetings[0]?.work_item_id, undefined);
+});
+
+test("meeting page service hides target work item ids when the actor cannot open the linked private work item", async () => {
+  const pageRows = rows(insightRow({ targetWorkItemId: workItemId }));
+  const service = createMeetingPageService({
+    repo: {
+      async readPage() {
+        return pageRows;
+      },
+      async insightToDraft() {
+        throw new Error("not needed");
+      },
+      async dismissInsight() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal() {
+        throw new Error("not needed");
+      }
+    },
+    workItemAccess: {
+      async findWorkItemAccessRecord() {
+        return {
+          id: workItemId,
+          status: "spec_ready",
+          submitterUserId: "96000000-0000-4000-8000-00000000beef",
+          claimedByUserId: null,
+          workspaceId: actor().workspaceId,
+          project: {
+            archived: false,
+            deletedAt: null,
+            ownerUserId: "96000000-0000-4000-8000-00000000feed",
+            workspaceId: actor().workspaceId
+          },
+          assignments: []
+        };
+      }
+    },
+    now: () => now
+  } as Parameters<typeof createMeetingPageService>[0] & { workItemAccess: unknown });
+
+  const page = await service.page({ actor: actor(), projectId, locale: "en-US" });
+  const insight = page.meetings[0]?.insights[0];
+
+  assert.equal(insight?.id, insightId);
+  assert.equal(insight?.target_work_item_id, undefined);
 });
 
 test("meeting page service dismisses a pending insight without creating a draft", async () => {
@@ -373,6 +613,152 @@ test("meeting page service dismisses a pending insight without creating a draft"
   assert.equal(refreshed.meetings[0]?.insights[0]?.confirmed_at, undefined);
   // findings[#low-F40]：can_manage 是项目级权限——owner 即便项目里有/无会议都为 true。
   assert.equal(refreshed.can_manage, true);
+});
+
+test("meeting page service asks the repository to include a requested deep-linked meeting", async () => {
+  let readInput: (Parameters<MeetingRepository["readPage"]>[0] & { targetMeetingId?: string }) | undefined;
+  const service = createMeetingPageService({
+    repo: {
+      async readPage(input) {
+        readInput = input as typeof readInput;
+        return readInput?.targetMeetingId === deepLinkedMeetingId
+          ? {
+              ...rows(),
+              meetings: [{ meeting: deepLinkedMeetingRow(), uploadedBy: user() }],
+              insights: []
+            }
+          : rows();
+      },
+      async insightToDraft() {
+        throw new Error("not needed");
+      },
+      async dismissInsight() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal() {
+        throw new Error("not needed");
+      }
+    },
+    now: () => now
+  });
+
+  const page = await service.page({ actor: actor(), projectId, meetingId: deepLinkedMeetingId });
+
+  assert.equal(readInput?.targetMeetingId, deepLinkedMeetingId);
+  assert.equal(page.selected_meeting_id, deepLinkedMeetingId);
+  assert.equal(page.meetings[0]?.title, "Older Retrospective Deep Link");
+});
+
+test("meeting page service does not silently select the first meeting when a requested meeting is absent", async () => {
+  const service = createMeetingPageService({
+    repo: new MutableMeetingRepo(),
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.page({ actor: actor(), projectId, meetingId: deepLinkedMeetingId }),
+    (error) => {
+      assert.equal(error instanceof MeetingPageServiceError, true);
+      assert.equal((error as MeetingPageServiceError).status, 404);
+      assert.equal((error as MeetingPageServiceError).code, "meeting_not_found");
+      return true;
+    }
+  );
+});
+
+test("meeting insight mutation can authorize an insight from an older deep-linked meeting", async () => {
+  const olderInsight = insightRow({ meetingId: deepLinkedMeetingId });
+  const draftCalls: Array<{ projectId: string; insightId: string; actorUserId: string }> = [];
+  const service = createMeetingPageService({
+    repo: {
+      async readPage(input) {
+        if (input?.targetMeetingId === deepLinkedMeetingId) {
+          return {
+            ...rows(),
+            meetings: [{ meeting: deepLinkedMeetingRow(), uploadedBy: user() }],
+            insights: [olderInsight]
+          };
+        }
+        return {
+          ...rows(),
+          insights: []
+        };
+      },
+      async findInsightContext() {
+        return {
+          project: projectRow(),
+          meeting: deepLinkedMeetingRow(),
+          insight: olderInsight
+        };
+      },
+      async insightToDraft(input) {
+        draftCalls.push({
+          projectId: input.projectId,
+          insightId: input.insightId,
+          actorUserId: input.actorUserId
+        });
+        return {
+          insight: {
+            ...olderInsight,
+            status: "confirmed",
+            createdWorkItemId: workItemId,
+            confirmedByUserId: input.actorUserId,
+            confirmedAt: now,
+            updatedAt: now
+          },
+          meeting: deepLinkedMeetingRow(),
+          workItem: null,
+          created: true
+        };
+      },
+      async dismissInsight() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal() {
+        throw new Error("not needed");
+      }
+    } as MeetingRepository & {
+      findInsightContext: () => Promise<{ project: ReturnType<typeof projectRow>; meeting: ReturnType<typeof deepLinkedMeetingRow>; insight: ReturnType<typeof insightRow> }>;
+    },
+    now: () => now
+  });
+
+  const page = await service.page({ actor: actor(), projectId, meetingId: deepLinkedMeetingId });
+  assert.equal(page.meetings[0]?.insights[0]?.actions.create_draft?.href, `/api/meetings/projects/${projectId}/insights/${insightId}/draft`);
+
+  await service.insightToDraft({ actor: actor(), projectId, insightId });
+
+  assert.deepEqual(draftCalls, [{ projectId, insightId, actorUserId: userId }]);
+});
+
+test("meeting page service returns 404 when an explicit project id is absent", async () => {
+  const service = createMeetingPageService({
+    repo: {
+      async readPage() {
+        return { project: null, meetings: [], insights: [], insightProposals: [] };
+      },
+      async insightToDraft() {
+        throw new Error("not needed");
+      },
+      async dismissInsight() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal() {
+        throw new Error("not needed");
+      }
+    },
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.page({ actor: actor(), projectId }),
+    (error) => {
+      assert.equal(error instanceof MeetingPageServiceError, true);
+      assert.equal((error as MeetingPageServiceError).status, 404);
+      assert.equal((error as MeetingPageServiceError).code, "meeting_not_found");
+      return true;
+    }
+  );
 });
 
 test("meeting page route authenticates and passes project and selected meeting query", async () => {
@@ -412,6 +798,40 @@ test("meeting page route authenticates and passes project and selected meeting q
   const body = await response.json() as { data: MeetingPageVM };
   assert.equal(body.data.selected_meeting_id, meetingId);
   assert.deepEqual(calls, [{ projectId, meetingId, locale: "en-US", actorId: userId }]);
+});
+
+test("meeting page route rejects a malformed selected meeting id before loading the page", async () => {
+  const runtimeSettings = settings();
+  const calls: unknown[] = [];
+  const meetingPages: MeetingPageService = {
+    async page(input) {
+      calls.push(input);
+      return minimalMeetingPage();
+    },
+    async insightToDraft() {
+      throw new Error("not needed");
+    },
+    async dismissInsight() {
+      throw new Error("not needed");
+    },
+    async draftToProposal() {
+      throw new Error("not needed");
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    meetingPages
+  }));
+
+  const response = await app.request(`/api/pages/meetings?project_id=${projectId}&m=not-a-meeting`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 404);
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(body.error.code, "meeting_not_found");
+  assert.deepEqual(calls, []);
 });
 
 test("meeting mutation route authenticates and returns a refreshed meeting page", async () => {
@@ -454,6 +874,43 @@ test("meeting mutation route authenticates and returns a refreshed meeting page"
   assert.deepEqual(calls, [{ projectId, insightId, actorId: userId }]);
 });
 
+test("meeting mutation routes reject malformed insight ids before calling the service", async () => {
+  const runtimeSettings = settings();
+  const calls: string[] = [];
+  const meetingPages: MeetingPageService = {
+    async page() {
+      throw new Error("not needed");
+    },
+    async insightToDraft(input) {
+      calls.push(`draft:${input.insightId}`);
+      return minimalMeetingPage();
+    },
+    async dismissInsight(input) {
+      calls.push(`dismiss:${input.insightId}`);
+      return minimalMeetingPage();
+    },
+    async draftToProposal() {
+      throw new Error("not needed");
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/meetings", createMeetingRoutes({
+    auth: authDeps(runtimeSettings),
+    meetingPages
+  }));
+
+  for (const action of ["draft", "dismiss"] as const) {
+    const response = await app.request(`/api/meetings/projects/${projectId}/insights/not-an-insight/${action}`, {
+      method: "POST",
+      headers: { Cookie: await cookie(runtimeSettings) }
+    });
+    assert.equal(response.status, 404);
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(body.error.code, "meeting_insight_not_found");
+  }
+  assert.deepEqual(calls, []);
+});
+
 test("meeting draft proposal route authenticates and returns a refreshed work item VM", async () => {
   const runtimeSettings = settings();
   const calls: Array<{ workItemId: string; locale?: string; actorId?: string }> = [];
@@ -491,4 +948,162 @@ test("meeting draft proposal route authenticates and returns a refreshed work it
   const body = await response.json() as { ok: true; data: WorkItemDetailVM };
   assert.equal(body.data.source_context?.source_type, "meeting_insight");
   assert.deepEqual(calls, [{ workItemId, locale: "en-US", actorId: userId }]);
+});
+
+test("meeting draftToProposal requires artifact mutation access before creating a proposal", async () => {
+  let createFromManifestCalls = 0;
+  let recordDraftProposalCalls = 0;
+  const workItems = {
+    async detailPage() {
+      return minimalWorkItemDetail();
+    },
+    async assertCanMutateArtifacts() {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项的正式交付物。");
+    }
+  };
+  const service = createMeetingPageService({
+    repo: {
+      async readPage() {
+        return rows(insightRow({
+          status: "confirmed",
+          createdWorkItemId: workItemId,
+          confirmedByUserId: userId,
+          confirmedAt: now
+        }));
+      },
+      async insightToDraft() {
+        throw new Error("not needed");
+      },
+      async dismissInsight() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal() {
+        recordDraftProposalCalls += 1;
+        throw new Error("must not record when artifact mutation is forbidden");
+      }
+    },
+    proposals: {
+      async createFromManifest(input) {
+        createFromManifestCalls += 1;
+        return {
+          id: input.manifest.proposal_id ?? proposalId,
+          work_item_id: input.workItemId,
+          branch_id: input.manifest.branch_id ?? proposalId,
+          round: 1,
+          title: input.manifest.title,
+          status: "opened",
+          diff_manifest: input.manifest,
+          opened_by_kind: "human",
+          opened_by_user_id: userId,
+          created_at: now.toISOString(),
+          updated_at: now.toISOString(),
+          reviews: []
+        };
+      },
+      async get() {
+        return null;
+      }
+    },
+    workItems,
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.draftToProposal({ actor: actor(), workItemId }),
+    (error) => error instanceof WorkItemServiceError
+      && error.status === 403
+      && error.code === "forbidden"
+      && error.message === "你没有权限修改这个事项的正式交付物。"
+  );
+  assert.equal(createFromManifestCalls, 0);
+  assert.equal(recordDraftProposalCalls, 0);
+});
+
+test("meeting draftToProposal lets assigned work item leads create the proposal without project meeting manage rights", async () => {
+  const pageRows = rows(insightRow({
+    status: "confirmed",
+    createdWorkItemId: workItemId,
+    confirmedByUserId: "96000000-0000-4000-8000-00000000feed",
+    confirmedAt: now
+  }));
+  pageRows.project = {
+    ...pageRows.project!,
+    ownerUserId: "96000000-0000-4000-8000-00000000feed"
+  };
+  pageRows.meetings[0]!.meeting.uploadedByUserId = "96000000-0000-4000-8000-00000000feed";
+  const records: Array<{ workItemId: string; proposalId: string; actorUserId: string }> = [];
+  const manifests: DeliverableChangeManifest[] = [];
+  const sourceDetail = minimalWorkItemDetail();
+  const sourceContext = sourceDetail.source_context!;
+  const {
+    proposal_id: _proposalId,
+    proposal_href: _proposalHref,
+    proposal_status: _proposalStatus,
+    ...sourceContextWithoutProposal
+  } = sourceContext;
+  const service = createMeetingPageService({
+    repo: {
+      async readPage() {
+        return pageRows;
+      },
+      async insightToDraft() {
+        throw new Error("not needed");
+      },
+      async dismissInsight() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal(input) {
+        records.push({
+          workItemId: input.workItemId,
+          proposalId: input.proposalId,
+          actorUserId: input.actorUserId
+        });
+        return null;
+      }
+    },
+    proposals: {
+      async createFromManifest(input) {
+        manifests.push(input.manifest);
+        return {
+          id: input.manifest.proposal_id ?? proposalId,
+          work_item_id: input.workItemId,
+          branch_id: input.manifest.branch_id ?? proposalId,
+          round: 1,
+          title: input.manifest.title,
+          status: "opened",
+          diff_manifest: input.manifest,
+          opened_by_kind: "human",
+          opened_by_user_id: userId,
+          created_at: now.toISOString(),
+          updated_at: now.toISOString(),
+          reviews: []
+        };
+      },
+      async get() {
+        return null;
+      }
+    },
+    workItems: {
+      async detailPage() {
+        return {
+          ...sourceDetail,
+          source_context: sourceContextWithoutProposal
+        };
+      },
+      async assertCanMutateArtifacts() {
+        return undefined;
+      }
+    },
+    now: () => now
+  });
+
+  const result = await service.draftToProposal({ actor: actor(), locale: "zh-CN", workItemId });
+
+  assert.equal(manifests.length, 1);
+  assert.deepEqual(records, [{
+    workItemId,
+    proposalId: manifests[0]!.proposal_id!,
+    actorUserId: userId
+  }]);
+  assert.equal(result.workitem.id, workItemId);
 });

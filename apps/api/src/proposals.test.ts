@@ -16,6 +16,7 @@ import {
   type DeliverableChangeManifest
 } from "@workhub/contracts";
 import {
+  ProposalRepositoryBranchWorkItemMismatchError,
   ProposalRepositoryInvalidMergeProposalCandidateError,
   ProposalRepositoryMergeConflictError,
   ProposalRepositoryMergeProposalAlreadyChosenError,
@@ -36,6 +37,7 @@ import {
 } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
+import { InternalContractError } from "./pages/output-contract.js";
 import { buildProposalDetailPage } from "./pages/proposals.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
@@ -46,7 +48,9 @@ import {
   ProposalServiceMergeConflictError,
   ProposalServiceRebaseRequiredError,
   drivePathFromTargetPath,
-  readBaseSnapshotFusionExcerpt
+  readBaseSnapshotFusionExcerpt,
+  type ProposalService,
+  type StoredProposal
 } from "./services/proposals.js";
 import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 
@@ -143,7 +147,7 @@ function authDeps(runtimeSettings: Settings): AuthDependencies {
   };
 }
 
-function allowingWorkItems(): Pick<WorkItemService, "detailPage"> {
+function allowingWorkItems(): Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts"> {
   return {
     async detailPage() {
       return {
@@ -154,20 +158,47 @@ function allowingWorkItems(): Pick<WorkItemService, "detailPage"> {
         accepted_deliverables: [],
         evidence_refs: []
       } as unknown as Awaited<ReturnType<WorkItemService["detailPage"]>>;
+    },
+    async assertCanMutateArtifacts() {
+      return;
     }
   };
 }
 
-function denyingWorkItems(): Pick<WorkItemService, "detailPage"> {
+function denyingWorkItems(): Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts"> {
   return {
     async detailPage() {
       throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+    },
+    async assertCanMutateArtifacts() {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项。");
+    }
+  };
+}
+
+function readOnlyWorkItems(): Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts"> {
+  return {
+    async detailPage() {
+      return {
+        workitem: {},
+        acceptance: [],
+        agent_trace_preview: [],
+        latest_proposal: undefined,
+        accepted_deliverables: [],
+        evidence_refs: []
+      } as unknown as Awaited<ReturnType<WorkItemService["detailPage"]>>;
+    },
+    async assertCanMutateArtifacts() {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项。");
     }
   };
 }
 
 function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
   app.onError((error, c) => {
+    if (error instanceof InternalContractError) {
+      return c.json({ ok: false, error: { code: "internal_contract_error", message: "internal contract error" } }, 500);
+    }
     if (error instanceof ZodError) {
       return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
     }
@@ -418,7 +449,7 @@ class MemoryProposalRepository implements ProposalRepository {
   public readonly mergeAttempts: MergeAttemptRow[] = [];
   public readonly mergeProposals: MergeProposalRow[] = [];
   public readonly mergeInputs: Parameters<ProposalRepository["merge"]>[0][] = [];
-  public readonly branchRows = new Map<string, { status: string; headRef: string | null; version: number }>();
+  public readonly branchRows = new Map<string, { workItemId: string; status: string; headRef: string | null; version: number }>();
   public readonly workItemRows = new Map<string, MemoryWorkItemRow>();
   public readonly acceptanceItems = new Map<string, MemoryAcceptanceItemRow[]>();
   public readonly taskItems = new Map<string, MemoryTaskItemRow[]>();
@@ -477,11 +508,16 @@ class MemoryProposalRepository implements ProposalRepository {
         }
       };
     });
+    const branchId = input.branchId ?? manifest.branch_id ?? "91000000-0000-4000-8000-000000000152";
+    const existingBranch = this.branchRows.get(branchId);
+    if (existingBranch && existingBranch.workItemId !== input.workItemId) {
+      throw new ProposalRepositoryBranchWorkItemMismatchError(branchId);
+    }
     const stored: StoredProposalRows = {
       proposal: {
         id: input.proposalId ?? manifest.proposal_id ?? "91000000-0000-4000-8000-000000000151",
         workItemId: input.workItemId,
-        branchId: input.branchId ?? manifest.branch_id ?? "91000000-0000-4000-8000-000000000152",
+        branchId,
         round: 1,
         title: input.title ?? manifest.title,
         status: "opened",
@@ -499,6 +535,7 @@ class MemoryProposalRepository implements ProposalRepository {
     };
     this.rows.set(stored.proposal.id, stored);
     this.branchRows.set(stored.proposal.branchId, {
+      workItemId: stored.proposal.workItemId,
       status: "proposed",
       headRef: manifest.base.branch_head_ref ?? null,
       version: 0
@@ -1301,6 +1338,144 @@ test("proposal routes require work item access before read and write operations"
   assert.equal(mergeBadBody.status, 403);
 });
 
+test("proposal create rejects branch ids that belong to a different work item", async () => {
+  const { app, runtimeSettings, repository } = appWithDbProposalRoutes();
+  const itemManifest = manifest(0);
+  const foreignBranchId = "91000000-0000-4000-8000-000000009999";
+  repository.branchRows.set(foreignBranchId, {
+    workItemId: "91000000-0000-4000-8000-000000008888",
+    status: "open",
+    headRef: "refs/heads/foreign",
+    version: 0
+  });
+
+  const response = await app.request(`/api/workitems/${itemManifest.work_item_id}/proposals`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await cookie(runtimeSettings)
+    },
+    body: JSON.stringify({ manifest: itemManifest, branch_id: foreignBranchId })
+  });
+
+  assert.equal(response.status, 422);
+  const body = await response.json() as { ok: false; error: { code: string } };
+  assert.equal(body.error.code, "proposal_branch_workitem_mismatch");
+});
+
+test("db proposal merge materializes inline generated text deliverables without a workdir", async () => {
+  const storageRoot = await mkdtemp(path.join(tmpdir(), "workhub-inline-generated-proposal-"));
+  try {
+    const repository = new MemoryProposalRepository();
+    const service = createDbProposalService(repository, {
+      now: () => now,
+      id: ids(),
+      storageRoot
+    });
+    const itemManifest = manifest();
+    const generatedContent = [
+      "# Drive comment R5-7",
+      "",
+      "## 来源评论",
+      "",
+      "根据项目网盘里的文件生成三条验收要点。"
+    ].join("\n");
+    const generatedSha = sha256Text(generatedContent);
+    const sourceChange = itemManifest.changes[0]!;
+    itemManifest.changes = [{
+      ...sourceChange,
+      target_kind: "text_doc",
+      target_ref: {
+        entity_type: "delivery",
+        path: "/outputs/复盘包/drive-comment-R5-7.md",
+        sha256_after: generatedSha
+      },
+      change_type: "generated",
+      machine_summary: {
+        before_excerpt: "",
+        after_excerpt: "根据项目网盘里的文件生成三条验收要点。",
+        generated_content_md: generatedContent,
+        changed_fields: ["drive_comment.body"]
+      },
+      preview_ref: {
+        kind: "text",
+        href: `/workitems/${itemManifest.work_item_id}`
+      }
+    }];
+
+    const created = await service.createFromManifest({
+      workItemId: itemManifest.work_item_id,
+      manifest: itemManifest,
+      actor: { actor_kind: "human", actor_user_id: userId, label: "PM" }
+    });
+    await service.review({
+      proposalId: created.id,
+      actor: { actor_kind: "human", actor_user_id: userId, label: "PM" },
+      decision: "approve"
+    });
+
+    await service.merge({
+      proposalId: created.id,
+      actor: { actor_kind: "human", actor_user_id: userId, label: "PM" }
+    });
+
+    const adopted = repository.mergeInputs.at(-1)?.adoptedDriveFiles?.[0];
+    assert.ok(adopted);
+    assert.equal(adopted.filename, "drive-comment-R5-7.md");
+    assert.equal(adopted.sha256, generatedSha);
+    assert.equal(adopted.mime, "text/markdown");
+    assert.equal(await readFile(adopted.storagePath, "utf8"), generatedContent);
+  } finally {
+    await rm(storageRoot, { recursive: true, force: true });
+  }
+});
+
+test("proposal routes require mutation access before reviewing or merging readable work", async () => {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const proposals = createInMemoryProposalService({ now: () => now, id: ids() });
+  const workItems = readOnlyWorkItems();
+  const reviewManifest = manifest(0);
+  const mergeManifest = manifest(1);
+  const reviewTarget = await proposals.createFromManifest({
+    workItemId: reviewManifest.work_item_id,
+    manifest: reviewManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  const mergeTarget = await proposals.createFromManifest({
+    workItemId: mergeManifest.work_item_id,
+    manifest: mergeManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await proposals.review({
+    proposalId: mergeTarget.id,
+    actor: { actor_kind: "human", actor_user_id: userId, label: "proposal-reviewer" },
+    decision: "approve"
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/proposals", createProposalRoutes({ auth, proposals, workItems }));
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await cookie(runtimeSettings)
+  };
+
+  const review = await app.request(`/api/proposals/${reviewTarget.id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  const merge = await app.request(`/api/proposals/${mergeTarget.id}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+
+  assert.equal(review.status, 403);
+  assert.equal(merge.status, 403);
+  assert.equal((await proposals.get(reviewTarget.id))?.status, "opened");
+  assert.equal((await proposals.get(mergeTarget.id))?.status, "reviewed");
+});
+
 test("findings: a concurrent same-id insert (repo conflict) maps to 409 proposal_already_exists, not 500", async () => {
   const repository = new MemoryProposalRepository();
   // 模拟并发输者：findById 预检通过（新 id），但插入撞唯一约束 → 仓库抛 ProposalRepositoryConflictError。
@@ -1424,6 +1599,46 @@ test("findings: re-reviewing a rejected proposal is a 409 proposal_rejected, not
       }),
     (error: unknown) =>
       error instanceof ProposalServiceError && error.status === 409 && error.code === "proposal_rejected"
+  );
+});
+
+test("findings: a stale review after a concurrent merge returns proposal_already_merged instead of not_found", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = manifest(2);
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({
+    proposalId: created.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    decision: "approve"
+  });
+  repository.review = async (input) => {
+    const stored = await repository.findById(input.proposalId);
+    if (stored) {
+      stored.proposal.status = "merged";
+      stored.proposal.mergeSnapshotId = "91000000-0000-4000-8000-000000000198";
+      stored.proposal.mergedAt = now;
+      stored.proposal.updatedAt = now;
+    }
+    return null;
+  };
+
+  await assert.rejects(
+    () =>
+      service.review({
+        proposalId: created.id,
+        actor: { actor_kind: "human", actor_user_id: userId },
+        decision: "request_changes",
+        reasonMd: "请补齐证据。"
+      }),
+    (error: unknown) =>
+      error instanceof ProposalServiceError
+      && error.status === 409
+      && error.code === "proposal_already_merged"
   );
 });
 
@@ -1552,7 +1767,17 @@ test("proposal service blocks merge when the same target was already accepted wi
 
 test("proposal service keep-current conflict action merges without overwriting the accepted deliverable", async () => {
   const repository = new MemoryProposalRepository();
-  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  let fusionCalls = 0;
+  const service = createDbProposalService(repository, {
+    now: () => now,
+    id: ids(),
+    fusionCandidateGenerator: {
+      async generate() {
+        fusionCalls += 1;
+        return [];
+      }
+    }
+  });
   const firstManifest = manifest(3);
   const secondManifest = manifest(3);
   const thirdManifest = manifest(3);
@@ -1592,6 +1817,7 @@ test("proposal service keep-current conflict action merges without overwriting t
     () => service.merge({ proposalId: second.id, actor: { actor_kind: "human", actor_user_id: userId } }),
     /撞车/
   );
+  assert.equal(fusionCalls, 1);
   const conflict = (await service.listConflicts(firstManifest.work_item_id)).conflicts[0];
   assert.ok(conflict);
 
@@ -1615,6 +1841,7 @@ test("proposal service keep-current conflict action merges without overwriting t
   const keepCandidates = repository.mergeProposals.filter((proposal) => proposal.mergeAttemptId === keepAttempts.at(-1)?.id);
   assert.equal(keepCandidates[0]?.chosenOptionKey, "keep_current");
   assert.equal(keepCandidates[0]?.chosenByUserId, userId);
+  assert.equal(fusionCalls, 1);
 
   const third = await service.createFromManifest({
     workItemId: thirdManifest.work_item_id,
@@ -3210,6 +3437,325 @@ test("proposal routes create, read, and render a page VM from a DeliverableChang
   assert.equal(pageBody.data.review_actions.request_changes.requires_reason, true);
 });
 
+test("proposal detail page wraps stored proposal VM drift as an internal contract error", () => {
+  const diffManifest = manifest(0);
+  const proposal: StoredProposal = {
+    id: "not-a-uuid",
+    work_item_id: diffManifest.work_item_id,
+    branch_id: diffManifest.branch_id ?? "91000000-0000-4000-8000-000000000152",
+    round: 1,
+    title: "Drifted proposal",
+    status: "opened",
+    diff_manifest: diffManifest,
+    opened_by_kind: "ai",
+    reviews: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
+
+  assert.throws(
+    () => buildProposalDetailPage(proposal),
+    (error: unknown) => error instanceof InternalContractError && error.context === "proposal.detail"
+  );
+});
+
+test("db proposal service wraps stored proposal contract drift as an internal contract error", async () => {
+  const repository = new MemoryProposalRepository();
+  const rows = await repository.createFromManifest({
+    proposalId: "91000000-0000-4000-8000-000000000188",
+    branchId: "91000000-0000-4000-8000-000000000189",
+    workItemId: manifest(3).work_item_id,
+    manifest: manifest(3),
+    actor: { actorKind: "ai" },
+    title: "Stored proposal drift",
+    at: now
+  });
+  rows.proposal.id = "not-a-uuid";
+  const service = createDbProposalService(repository, { now: () => now });
+
+  await assert.rejects(
+    () => service.get("91000000-0000-4000-8000-000000000188"),
+    (error: unknown) => error instanceof InternalContractError && error.context === "proposal.stored"
+  );
+});
+
+test("proposal service wraps generated manifest drift as an internal contract error", async () => {
+  const service = createInMemoryProposalService({ now: () => now, id: () => "not-a-uuid" });
+  const itemManifest = manifest(1);
+  delete (itemManifest as { proposal_id?: string }).proposal_id;
+  delete (itemManifest as { branch_id?: string }).branch_id;
+
+  await assert.rejects(
+    () => service.createFromManifest({
+      workItemId: itemManifest.work_item_id,
+      manifest: itemManifest,
+      actor: { actor_kind: "ai", label: "WorkHub AI" }
+    }),
+    (error: unknown) => error instanceof InternalContractError && error.context === "proposal.manifest"
+  );
+});
+
+test("in-memory proposal service wraps review output contract drift as an internal contract error", async () => {
+  const service = createInMemoryProposalService({ now: () => now, id: () => "not-a-uuid" });
+  const itemManifest = manifest(1);
+  itemManifest.proposal_id = "91000000-0000-4000-8000-000000000191";
+  itemManifest.branch_id = "91000000-0000-4000-8000-000000000192";
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+
+  await assert.rejects(
+    () => service.review({
+      proposalId: created.id,
+      actor: { actor_kind: "human", actor_user_id: userId },
+      decision: "approve"
+    }),
+    (error: unknown) => error instanceof InternalContractError && error.context === "proposal.memory-review"
+  );
+});
+
+test("in-memory proposal service wraps merge output contract drift as an internal contract error", async () => {
+  const generatedIds = [
+    "91000000-0000-4000-8000-000000000201",
+    "not-a-uuid"
+  ];
+  const service = createInMemoryProposalService({ now: () => now, id: () => generatedIds.shift() ?? "not-a-uuid" });
+  const itemManifest = manifest(1);
+  itemManifest.proposal_id = "91000000-0000-4000-8000-000000000193";
+  itemManifest.branch_id = "91000000-0000-4000-8000-000000000194";
+  const created = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await service.review({
+    proposalId: created.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    decision: "approve"
+  });
+
+  await assert.rejects(
+    () => service.merge({
+      proposalId: created.id,
+      actor: { actor_kind: "human", actor_user_id: userId }
+    }),
+    (error: unknown) => error instanceof InternalContractError && error.context === "proposal.memory"
+  );
+});
+
+test("proposal service wraps conflict list result drift as an internal contract error", async () => {
+  const repository = {
+    ...new MemoryProposalRepository(),
+    async listConflictsByWorkItem() {
+      return [{ id: "drifted-conflict" }];
+    },
+    async listMergeAttemptsByProposals() {
+      return [];
+    },
+    async listMergeProposalsByAttempts() {
+      return [];
+    }
+  } as unknown as ProposalRepository;
+  const service = createDbProposalService(repository, { now: () => now });
+
+  await assert.rejects(
+    () => service.listConflicts(manifest(3).work_item_id),
+    (error: unknown) => error instanceof InternalContractError && error.context === "proposal.conflict-list"
+  );
+});
+
+test("proposal service wraps merge candidate choice result drift as an internal contract error", async () => {
+  const repository = {
+    ...new MemoryProposalRepository(),
+    async chooseMergeProposalCandidate() {
+      return {
+        id: "not-a-uuid",
+        mergeAttemptId: "91000000-0000-4000-8000-000000000190",
+        conflictKey: "delivery:/outputs/result.md",
+        candidatesJson: [{ option_key: "ai_fusion" }],
+        recommendedOptionKey: "ai_fusion",
+        chosenOptionKey: "ai_fusion",
+        chosenByUserId: userId,
+        chosenAt: now,
+        createdAt: now,
+        updatedAt: now
+      };
+    }
+  } as unknown as ProposalRepository;
+  const service = createDbProposalService(repository, { now: () => now });
+
+  await assert.rejects(
+    () => service.chooseMergeCandidate({
+      mergeProposalId: "91000000-0000-4000-8000-000000000191",
+      optionKey: "ai_fusion",
+      actor: { actor_kind: "human", actor_user_id: userId }
+    }),
+    (error: unknown) => error instanceof InternalContractError && error.context === "proposal.merge-candidate-choice"
+  );
+});
+
+test("proposal review route wraps response VM drift as an internal contract error", async () => {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const baseProposals = createInMemoryProposalService({ now: () => now, id: ids() });
+  const proposals: ProposalService = {
+    ...baseProposals,
+    async review(input) {
+      const reviewed = await baseProposals.review(input);
+      return {
+        ...reviewed,
+        id: "not-a-uuid"
+      };
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/proposals", createProposalRoutes({
+    auth,
+    proposals,
+    workItems: allowingWorkItems(),
+    bus: { publish: async () => undefined }
+  }));
+  const created = await baseProposals.createFromManifest({
+    workItemId: manifest(3).work_item_id,
+    manifest: manifest(3),
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+
+  const response = await app.request(`/api/proposals/${created.id}/review`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await cookie(runtimeSettings)
+    },
+    body: JSON.stringify({ decision: "approve" })
+  });
+
+  assert.equal(response.status, 500);
+  const body = await response.json() as { ok: false; error: { code: string } };
+  assert.equal(body.error.code, "internal_contract_error");
+});
+
+test("proposal merge route wraps response VM drift as an internal contract error", async () => {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const baseProposals = createInMemoryProposalService({ now: () => now, id: ids() });
+  const proposals: ProposalService = {
+    ...baseProposals,
+    async merge(input) {
+      const merged = await baseProposals.merge(input);
+      return {
+        ...merged,
+        id: "not-a-uuid"
+      };
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/proposals", createProposalRoutes({
+    auth,
+    proposals,
+    workItems: allowingWorkItems(),
+    bus: { publish: async () => undefined }
+  }));
+  const created = await baseProposals.createFromManifest({
+    workItemId: manifest(3).work_item_id,
+    manifest: manifest(3),
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await baseProposals.review({
+    proposalId: created.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    decision: "approve"
+  });
+
+  const response = await app.request(`/api/proposals/${created.id}/merge`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await cookie(runtimeSettings)
+    },
+    body: JSON.stringify({})
+  });
+
+  assert.equal(response.status, 500);
+  const body = await response.json() as { ok: false; error: { code: string } };
+  assert.equal(body.error.code, "internal_contract_error");
+});
+
+test("proposal conflict list route wraps response VM drift as an internal contract error", async () => {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const baseProposals = createInMemoryProposalService({ now: () => now, id: ids() });
+  const proposals: ProposalService = {
+    ...baseProposals,
+    async listConflicts() {
+      return { conflicts: [{ id: "drifted-conflict" }] } as never;
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createWorkItemProposalRoutes({
+    auth,
+    proposals,
+    workItems: allowingWorkItems()
+  }));
+
+  const response = await app.request(`/api/workitems/${manifest(3).work_item_id}/conflicts`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 500);
+  const body = await response.json() as { ok: false; error: { code: string } };
+  assert.equal(body.error.code, "internal_contract_error");
+});
+
+test("merge proposal candidate choice route wraps response VM drift as an internal contract error", async () => {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const baseProposals = createInMemoryProposalService({ now: () => now, id: ids() });
+  const created = await baseProposals.createFromManifest({
+    workItemId: manifest(3).work_item_id,
+    manifest: manifest(3),
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  const proposals: ProposalService = {
+    ...baseProposals,
+    async getByMergeProposal() {
+      return created;
+    },
+    async chooseMergeCandidate() {
+      return {
+        merge_proposal_id: "not-a-uuid",
+        conflict_key: "delivery:/outputs/result.md",
+        chosen_option_key: "ai_fusion",
+        chosen_by_user_id: userId,
+        chosen_at: now.toISOString(),
+        candidate: { option_key: "ai_fusion" }
+      } as never;
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createWorkItemProposalRoutes({
+    auth,
+    proposals,
+    workItems: allowingWorkItems()
+  }));
+  const mergeProposalId = "91000000-0000-4000-8000-000000000177";
+
+  const response = await app.request(`/api/merge-proposals/${mergeProposalId}/choose`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await cookie(runtimeSettings)
+    },
+    body: JSON.stringify({ option_key: "ai_fusion" })
+  });
+
+  assert.equal(response.status, 500);
+  const body = await response.json() as { ok: false; error: { code: string } };
+  assert.equal(body.error.code, "internal_contract_error");
+});
+
 test("proposal review requires reasons for changes and feeds them back into the next agent context", async () => {
   const { app, runtimeSettings } = appWithProposalRoutes();
   const created = await createProposal(app, runtimeSettings, manifest(2));
@@ -3284,8 +3830,7 @@ test("approved proposal can be merged with proposal events, audit facts, and rol
 
   const merge = await app.request(`/api/proposals/${proposalId}/merge`, {
     method: "POST",
-    headers,
-    body: JSON.stringify({})
+    headers
   });
 
   assert.equal(merge.status, 200);
@@ -3307,6 +3852,41 @@ test("approved proposal can be merged with proposal events, audit facts, and rol
   assert.equal(mergeBody.data.events.some((event) => event.type === "notification.created"), true);
   assert.equal(mergeBody.data.audit_logs.some((log) => log.action === "proposal.merged" && log.snapshot_id), true);
   assert.equal(mergeBody.data.attention.cuu_state, "celebrating");
+});
+
+test("proposal merge confirm:false does not merge or publish events", async () => {
+  const { app, runtimeSettings, bus } = appWithProposalRoutes();
+  const created = await createProposal(app, runtimeSettings, manifest(3));
+  const proposalId = created.data.id;
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await cookie(runtimeSettings)
+  };
+
+  const review = await app.request(`/api/proposals/${proposalId}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  assert.equal(review.status, 200);
+
+  const merge = await app.request(`/api/proposals/${proposalId}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ confirm: false })
+  });
+
+  assert.equal(merge.status, 409);
+  const mergeBody = await merge.json() as { ok: false; error: { code: string; recoverable?: boolean } };
+  assert.equal(mergeBody.error.code, "confirmation_required");
+  assert.equal(mergeBody.error.recoverable, true);
+  assert.equal(bus.events.some((event) => event.type === "proposal.merged"), false);
+
+  const page = await app.request(`/api/pages/proposals/${proposalId}`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  const pageBody = await page.json() as { ok: true; data: { status: string } };
+  assert.equal(pageBody.data.status, "reviewed");
 });
 
 test("findings[#168] review and merge publish their events to the bus (live refresh for other clients)", async () => {
@@ -3340,6 +3920,43 @@ test("findings[#168] review and merge publish their events to the bus (live refr
     true
   );
   assert.equal(bus.events.some((event) => event.type === "notification.created" && event.topic.startsWith("user:")), true);
+});
+
+test("proposal merge does not republish events when the proposal is already merged", async () => {
+  const { app, runtimeSettings, bus } = appWithProposalRoutes();
+  const created = await createProposal(app, runtimeSettings, manifest(3));
+  const proposalId = created.data.id;
+  const headers = { "Content-Type": "application/json", Cookie: await cookie(runtimeSettings) };
+
+  const review = await app.request(`/api/proposals/${proposalId}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  assert.equal(review.status, 200);
+
+  const firstMerge = await app.request(`/api/proposals/${proposalId}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(firstMerge.status, 200);
+  const eventCountAfterFirstMerge = bus.events.length;
+  const mergedEventsAfterFirstMerge = bus.events.filter((event) => event.type === "proposal.merged").length;
+  const notificationEventsAfterFirstMerge = bus.events.filter((event) => event.type === "notification.created").length;
+
+  const secondMerge = await app.request(`/api/proposals/${proposalId}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+
+  assert.equal(secondMerge.status, 409);
+  const secondBody = await secondMerge.json() as { ok: false; error: { code: string } };
+  assert.equal(secondBody.error.code, "proposal_already_merged");
+  assert.equal(bus.events.length, eventCountAfterFirstMerge);
+  assert.equal(bus.events.filter((event) => event.type === "proposal.merged").length, mergedEventsAfterFirstMerge);
+  assert.equal(bus.events.filter((event) => event.type === "notification.created").length, notificationEventsAfterFirstMerge);
 });
 
 test("findings[#168] a throwing bus does not fail the merge (best-effort publish)", async () => {
@@ -3378,6 +3995,44 @@ test("findings[#168] a throwing bus does not fail the merge (best-effort publish
     }),
     true
   );
+});
+
+test("proposal merge reports a typed contract error when the merged snapshot is missing", async () => {
+  const runtimeSettings = settings();
+  const auth = authDeps(runtimeSettings);
+  const baseProposals = createInMemoryProposalService({ now: () => now, id: ids() });
+  const proposals: ProposalService = {
+    ...baseProposals,
+    async merge(input) {
+      const merged = await baseProposals.merge(input);
+      const { merge_snapshot_id: _mergeSnapshotId, ...withoutSnapshot } = merged;
+      return withoutSnapshot as StoredProposal;
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/proposals", createProposalRoutes({ auth, proposals, workItems: allowingWorkItems() }));
+
+  const created = await baseProposals.createFromManifest({
+    workItemId: manifest(3).work_item_id,
+    manifest: manifest(3),
+    actor: { actor_kind: "ai", label: "WorkHub AI" }
+  });
+  await baseProposals.review({
+    proposalId: created.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    decision: "approve"
+  });
+
+  const response = await app.request(`/api/proposals/${created.id}/merge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: await cookie(runtimeSettings) },
+    body: JSON.stringify({})
+  });
+
+  assert.equal(response.status, 409);
+  const body = await response.json() as { ok: false; error: { code: string; message: string } };
+  assert.equal(body.error.code, "merge_snapshot_missing");
+  assert.match(body.error.message, /缺少合并快照/u);
 });
 
 test("proposal routes expose conflict cards, choose AI candidates, and apply an AI fusion artifact", async (t) => {
@@ -3530,6 +4185,17 @@ test("proposal routes expose conflict cards, choose AI candidates, and apply an 
   assert.equal(mergeProposalId, repository.mergeProposals[0]?.id);
   assert.equal(aiFusionOption?.action?.href, `/api/merge-proposals/${mergeProposalId}/apply`);
   assert.deepEqual(aiFusionOption?.action?.request_json, { confirm: true });
+
+  const rejectedApply = await app.request(`/api/merge-proposals/${mergeProposalId}/apply`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ confirm: false })
+  });
+  assert.equal(rejectedApply.status, 409);
+  const rejectedApplyBody = await rejectedApply.json() as { ok: false; error: { code: string; recoverable?: boolean } };
+  assert.equal(rejectedApplyBody.error.code, "confirmation_required");
+  assert.equal(rejectedApplyBody.error.recoverable, true);
+  assert.equal(repository.mergeProposals.find((proposal) => proposal.id === mergeProposalId)?.chosenOptionKey, null);
 
   const conflicts = await app.request(`/api/workitems/${secondManifest.work_item_id}/conflicts`, {
     headers: { Cookie: await cookie(runtimeSettings) }

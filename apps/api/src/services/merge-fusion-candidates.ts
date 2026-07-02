@@ -109,7 +109,20 @@ function textFromContent(content: unknown[]) {
 function parseJsonObject(text: string) {
   const direct = text.trim();
   const fenced = direct.match(/```(?:json)?\s*([\s\S]*?)```/iu)?.[1]?.trim();
-  return JSON.parse(fenced ?? direct) as unknown;
+  const candidate = fenced ?? direct;
+  try {
+    return JSON.parse(candidate) as unknown;
+  } catch (error) {
+    if (fenced) {
+      throw error;
+    }
+    const start = candidate.indexOf("{");
+    const end = candidate.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(candidate.slice(start, end + 1)) as unknown;
+    }
+    throw error;
+  }
 }
 
 // findings[#low robustness]：整体响应 schema 不过时，逐项宽松收集合法候选（一项坏不连累全体）——

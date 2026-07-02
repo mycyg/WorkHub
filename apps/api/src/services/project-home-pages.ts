@@ -23,7 +23,7 @@ export type ProjectHomePageService = {
 };
 
 export type ProjectHomePageServiceDependencies = {
-  repo: Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject">;
+  repo: Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject" | "countVisibleOpenByProject" | "findWorkItemAccessRecord">;
   driveRepo: Pick<DriveRepository, "listRecentFilesByProject" | "countFilesByProject">;
   now?: () => Date;
 };
@@ -38,10 +38,12 @@ export class ProjectHomePageServiceError extends Error {
   }
 }
 
-// 展示清单最多 50 条(项目进行中工作通常远小于此)；可见过滤后 open_work_item_count 取可见清单长度，超 50 的极端项目会封顶。
+// 展示清单最多 50 条(项目进行中工作通常远小于此)；内部多扫一点再做可见过滤，避免前 50 条全是他人私有草稿时误报空主页。
 const OPEN_WORK_ITEM_LIMIT = 50;
+const OPEN_WORK_ITEM_SCAN_LIMIT = 200;
 // 最近文件卡只展示前几条（file_count 给真实总数）；超出由「打开网盘」进完整文件树。
 const RECENT_FILE_LIMIT = 5;
+const RECENT_FILE_SCAN_LIMIT = 200;
 
 export function createProjectHomePageService(deps: ProjectHomePageServiceDependencies): ProjectHomePageService {
   const now = deps.now ?? (() => new Date());
@@ -56,6 +58,7 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
           archived: project.archived,
           deletedAt: project.deletedAt,
           ownerUserId: project.ownerUserId,
+          orgId: project.orgId ?? null,
           workspaceId: project.workspaceId
         },
         {
@@ -71,40 +74,75 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
       }
       const zh = (locale ?? "zh-CN") === "zh-CN";
       const driveHref = `/drive?project_id=${encodeURIComponent(project.id)}`;
-      const [openItems, recentFiles, fileCount, totalOpenCount] = await Promise.all([
-        deps.repo.listOpenByProject(projectId, OPEN_WORK_ITEM_LIMIT),
-        deps.driveRepo.listRecentFilesByProject(projectId, RECENT_FILE_LIMIT),
+      const viewerUserId = actor.userId ?? actor.id;
+      const actorInProjectWorkspace = !project.workspaceId || !actor.workspaceId || project.workspaceId === actor.workspaceId;
+      const canCreateInProject = actorInProjectWorkspace && !project.archived && project.deletedAt == null;
+      const newTaskHref = canCreateInProject ? `/intake?project_id=${encodeURIComponent(project.id)}` : "/intake";
+      const [openItems, recentFiles, fileCount, totalOpenCount, rawVisibleOpenCount] = await Promise.all([
+        deps.repo.listOpenByProject(projectId, OPEN_WORK_ITEM_SCAN_LIMIT),
+        deps.driveRepo.listRecentFilesByProject(projectId, RECENT_FILE_SCAN_LIMIT),
         deps.driveRepo.countFilesByProject(projectId),
         // M5：项目全量进行中条数(同 /projects 列表卡口径)。头部用它显示「进行中 N · 你可处理 M」,
         // 让主页头数与列表卡对齐,同时仍诚实显示用户可处理的可见子集。
-        deps.repo.countOpenByProject(projectId)
+        deps.repo.countOpenByProject(projectId),
+        deps.repo.countVisibleOpenByProject(projectId, {
+          viewerUserId,
+          isAdmin: actor.isAdmin
+        })
       ]);
+      const visibleOpenCount = actorInProjectWorkspace ? rawVisibleOpenCount : 0;
+      const readableRecentFiles = [];
+      for (const file of recentFiles) {
+        const acceptedWorkItemIds = file.acceptedWorkItemIds ?? [];
+        if (acceptedWorkItemIds.length === 0) {
+          readableRecentFiles.push(file);
+          continue;
+        }
+        let readable = false;
+        for (const workItemId of acceptedWorkItemIds) {
+          const record = await deps.repo.findWorkItemAccessRecord(workItemId);
+          if (record && canViewWorkItemRecord(record, { id: viewerUserId, isAdmin: actor.isAdmin }, { workspaceId: actor.workspaceId })) {
+            readable = true;
+            break;
+          }
+        }
+        if (readable) {
+          readableRecentFiles.push(file);
+        }
+      }
       // 列表只保留「点进去不会 403」的事项：私有态(intake/澄清/spec_ready)的他人事项对项目成员是
       // 隐藏的(canViewWorkItemRecord 收口),否则项目主页会列出一堆点开就「你没有权限查看」的死链。
       // 与详情页 assertCanReadDetail 同口径:认领人短路 + canViewWorkItemRecord(按 workspace 作用域)。
       // 头部计数随之取「可见条数」,与清单一致(诚实反映用户在本项目能处理多少),不再用全量 countOpenByProject。
-      const viewerUserId = actor.userId ?? actor.id;
-      const viewableItems = openItems.filter(
-        (item) =>
-          item.claimedByUserId === viewerUserId ||
-          canViewWorkItemRecord(
-            {
-              id: item.id,
-              status: item.status,
-              submitterUserId: item.submitterUserId,
-              claimedByUserId: item.claimedByUserId,
-              workspaceId: item.workspaceId,
-              project: {
-                archived: project.archived,
-                deletedAt: project.deletedAt,
-                ownerUserId: project.ownerUserId,
-                workspaceId: project.workspaceId
-              }
-            },
-            { id: viewerUserId, isAdmin: actor.isAdmin },
-            { workspaceId: actor.workspaceId }
-          )
-      );
+      const visibleOpenItems = openItems.filter((item) => {
+        const itemInActorWorkspace = !actor.workspaceId
+          || actor.workspaceId === item.workspaceId
+          || actor.workspaceId === project.workspaceId;
+        const claimedByActorInScope = item.claimedByUserId === viewerUserId
+          && itemInActorWorkspace
+          && !project.archived
+          && project.deletedAt == null;
+        return claimedByActorInScope || canViewWorkItemRecord(
+          {
+            id: item.id,
+            status: item.status,
+            submitterUserId: item.submitterUserId,
+            claimedByUserId: item.claimedByUserId,
+            workspaceId: item.workspaceId,
+            assignments: item.assignments,
+            project: {
+              archived: project.archived,
+              deletedAt: project.deletedAt,
+              ownerUserId: project.ownerUserId,
+              orgId: project.orgId ?? null,
+              workspaceId: project.workspaceId
+            }
+          },
+          { id: viewerUserId, isAdmin: actor.isAdmin },
+          { workspaceId: actor.workspaceId }
+        );
+      });
+      const viewableItems = visibleOpenItems.slice(0, OPEN_WORK_ITEM_LIMIT);
       const data: ProjectHomePageVM = {
         generated_at: now().toISOString(),
         project: {
@@ -117,11 +155,11 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
           // 故此处 status 当前恒为 "active"；"archived" 分支为将来「归档项目只读主页」预留，暂不可达。
           status: project.archived ? "archived" : "active"
         },
-        // 头部计数 = 当前用户在本项目「可见且可处理」的进行中条数(与下方清单一致)；清单封顶 OPEN_WORK_ITEM_LIMIT 条。
-        summary: { open_work_item_count: viewableItems.length, total_open_work_item_count: totalOpenCount },
+        // 头部计数 = 当前用户在本项目「可见且可处理」的进行中条数；下方清单只是展示切片，不能反向截断计数。
+        summary: { open_work_item_count: visibleOpenCount, total_open_work_item_count: totalOpenCount },
         drive: {
           file_count: fileCount,
-          recent_files: recentFiles.map((file) => ({
+          recent_files: readableRecentFiles.slice(0, RECENT_FILE_LIMIT).map((file) => ({
             id: file.id,
             name: file.name,
             updated_at: file.updatedAt.toISOString(),
@@ -138,8 +176,9 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
           href: `/workitems/${encodeURIComponent(item.id)}`
         })),
         actions: {
-          // 新任务带上项目上下文(/intake?project_id=)→ 接入起始页绑定到本项目，不再丢进通用「试点项目」。
-          new_task: { id: "new_task", label: zh ? "新任务" : "New task", method: "GET", href: `/intake?project_id=${encodeURIComponent(project.id)}` },
+          // 同 workspace 的新任务带项目上下文(/intake?project_id=)；只读跨 workspace 项目仍给通用 intake 入口，
+          // 避免前端 action 合同变成 optional，也避免把新任务错误写回不可管理的项目。
+          new_task: { id: "new_task", label: zh ? "新任务" : "New task", method: "GET", href: newTaskHref },
           open_drive: {
             id: "open_drive",
             label: zh ? "打开网盘" : "Open drive",
@@ -147,7 +186,7 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
             href: `/drive?project_id=${encodeURIComponent(project.id)}`
           }
         },
-        ...(viewableItems.length === 0 ? { empty_state: "no_open_work" as const } : {})
+        ...(visibleOpenCount === 0 ? { empty_state: "no_open_work" as const } : {})
       };
       return parseOutputContract(projectHomePageVmSchema, data, "project.home");
     }

@@ -238,7 +238,8 @@ export function desktopCuuCardFromShellSseStatus(
       {
         id: payload.state,
         label: retrying ? cuuT(options.locale, "offline.retryingChip") : cuuT(options.locale, "offline.closedChip"),
-        tone: "warning"
+        // 离线/重连只是状态提示，用中性 chip（细灰描边），不上黄色 warning 调，和聚焦盒玻璃统一。
+        tone: "neutral"
       }
     ],
     actions: [],

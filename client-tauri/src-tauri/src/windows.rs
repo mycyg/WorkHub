@@ -57,13 +57,13 @@ pub fn main_window_plan() -> ShellWindowPlan {
         resizable: true,
         visible: true,
         focus: true,
-        // R7 真·液态玻璃：主窗口透明，配合 main.rs 的 window-vibrancy(macOS vibrancy / Windows acrylic)
-        // 让玻璃穿透看到桌面。前端 liquid-glass.ts 把 app 底色改半透明放行 OS 毛玻璃。
+        // 真·液态玻璃：主窗口保持完全透明，不叠原生 material；光学表面由 WebView
+        // 内的 SVG displacement + backdrop/filter/highlight 层负责。
         transparent: true,
         // R8 彻底重构：主窗 = 只剩透明玻璃命令盒（搜索框即整个 app）。去掉 OS 标题栏 chrome → frameless，
         // 盒外空白由前端 -webkit-app-region:drag 拖动整窗；退出走 ⌘Q / Dock。
         decorations: false,
-        always_on_top: false,
+        always_on_top: true,
         skip_taskbar: false,
     }
 }
@@ -122,11 +122,12 @@ mod tests {
 
         assert_eq!(main.label, "main");
         assert_eq!(main.route, "/");
-        // R7 真·液态玻璃：主窗口透明（配合 window-vibrancy 穿透看桌面）。
+        // 真·液态玻璃：主窗口透明，不依赖原生 vibrancy 底材。
         assert_eq!(main.transparent, true);
         // R8：主窗 frameless（去 OS 标题栏，只剩透明玻璃聚焦盒）。
         assert_eq!(main.decorations, false);
-        assert_eq!(main.always_on_top, false);
+        // WorkHub Spotlight should behave like Cuu: it stays above normal app windows when opened.
+        assert_eq!(main.always_on_top, true);
         assert_eq!(main.skip_taskbar, false);
         assert_eq!(main.resizable, true);
         // R8 真·Spotlight：小窗随内容缩放（不再是 1180×780 全屏壳）。

@@ -76,7 +76,7 @@ function registryWithFakeTransport() {
 
 test("provider registry injects the routed model and records create usage once", async () => {
   const { registry, transport, usageSink } = registryWithFakeTransport();
-  const client = registry.get({ id: "actor-1", runId: "run-1", userId: "user-1" }, "worker");
+  const client = registry.get({ id: "actor-1", runId: "run-1", userId: "user-1", workspaceId: "workspace-b" }, "worker");
 
   const response = await client.messages.create({
     maxTokens: 1000,
@@ -87,6 +87,7 @@ test("provider registry injects the routed model and records create usage once",
   assert.equal(transport.calls[0]?.model, "deepseek-v4-flash");
   assert.equal(usageSink.records.length, 1);
   assert.equal(usageSink.records[0]?.estimatedCostCny, "0.0006");
+  assert.equal(usageSink.records[0]?.workspaceId, "workspace-b");
   assert.equal(JSON.stringify(usageSink.records[0]).includes("secret-provider-key"), false);
 });
 

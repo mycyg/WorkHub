@@ -22,11 +22,12 @@ import type {
   UserRepository
 } from "@workhub/db";
 
-import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
+import { COOKIE_NAME, hashClientToken, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import {
   ApprovalServiceError,
   createApprovalService,
-  parseMentions
+  parseMentions,
+  type ApprovalService
 } from "./services/approvals.js";
 import type { NotificationService } from "./services/notifications.js";
 import type { StoredProposal } from "./services/proposals.js";
@@ -53,6 +54,21 @@ function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
     isAdmin: false,
     deletedAt: null,
     deletedByUserId: null,
+    createdAt: now,
+    updatedAt: now,
+    ...partial
+  };
+}
+
+function device(partial: Partial<ClientDeviceAuthRow> = {}): ClientDeviceAuthRow {
+  return {
+    id: "20000000-0000-4000-8000-000000000001",
+    userId,
+    deviceName: "WorkHub Desktop",
+    clientTokenHash: hashClientToken("client-token-alice"),
+    platform: "desktop",
+    lastSeenAt: now,
+    revokedAt: null,
     createdAt: now,
     updatedAt: now,
     ...partial
@@ -109,10 +125,17 @@ class MemoryApprovals implements ApprovalRequestRepository {
       .slice(0, limit);
   }
 
-  async listPendingForUser(id: string, options: { includeAll?: boolean } = {}) {
+  async listPendingForUser(id: string, options: { includeAll?: boolean; limit?: number; offset?: number } = {}) {
+    const offset = options.offset ?? 0;
+    return this.rows
+      .filter((approval) => approval.status === "pending" && (options.includeAll || approval.routedToUserId === id))
+      .slice(offset, offset + (options.limit ?? this.rows.length));
+  }
+
+  async countPendingForUser(id: string, options: { includeAll?: boolean } = {}) {
     return this.rows.filter(
       (approval) => approval.status === "pending" && (options.includeAll || approval.routedToUserId === id)
-    );
+    ).length;
   }
 
   async respondPending(
@@ -139,8 +162,12 @@ class MemoryApprovals implements ApprovalRequestRepository {
     return approval;
   }
 
-  async delegatePending(id: string, toUserId: string, at: Date) {
-    const approval = this.rows.find((candidate) => candidate.id === id && candidate.status === "pending") ?? null;
+  async delegatePending(id: string, toUserId: string, at: Date, requireRoutedToUserId?: string) {
+    const approval = this.rows.find((candidate) =>
+      candidate.id === id
+      && candidate.status === "pending"
+      && (requireRoutedToUserId === undefined || candidate.routedToUserId === requireRoutedToUserId)
+    ) ?? null;
     if (!approval) {
       return null;
     }
@@ -158,6 +185,24 @@ class MemoryApprovals implements ApprovalRequestRepository {
     approval.status = "expired";
     approval.updatedAt = at;
     return approval;
+  }
+}
+
+class RacingDelegateApprovals extends MemoryApprovals {
+  private raced = false;
+
+  constructor(private readonly routedToUserIdAfterRace: string) {
+    super();
+  }
+
+  override async delegatePending(id: string, toUserId: string, at: Date, requireRoutedToUserId?: string) {
+    const approval = await this.findById(id);
+    if (approval && !this.raced) {
+      this.raced = true;
+      approval.routedToUserId = this.routedToUserIdAfterRace;
+      approval.delegatedToUserId = this.routedToUserIdAfterRace;
+    }
+    return super.delegatePending(id, toUserId, at, requireRoutedToUserId);
   }
 }
 
@@ -184,7 +229,9 @@ class MemoryPolicies implements PermissionPolicyRepository {
       createdByUserId: input.createdByUserId ?? null,
       orgId: input.orgId ?? null,
       workspaceId: input.workspaceId ?? null,
-      deletedAt: null
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now
     };
     this.rows.push(policy);
     return policy;
@@ -196,6 +243,7 @@ class MemoryPolicies implements PermissionPolicyRepository {
       return null;
     }
     policy.deletedAt = at;
+    policy.updatedAt = at;
     assert.equal(typeof deletedByUserId, "string");
     return policy;
   }
@@ -247,6 +295,12 @@ class MemoryAuditLogs implements AuditLogRepository {
     }
     row.undoneAt = at;
     return row;
+  }
+}
+
+class ThrowingAuditLogs extends MemoryAuditLogs {
+  override async createAuditLog(_input: Parameters<AuditLogRepository["createAuditLog"]>[0]): Promise<AuditLogRow> {
+    throw new Error("audit sink unavailable");
   }
 }
 
@@ -363,13 +417,89 @@ test("L37 ask still creates a pending approval when the routed user exists", asy
   assert.equal(approvals.rows.length, 1);
 });
 
+test("ask escalates when the routed user cannot view the approval work item", async () => {
+  const approvals = new MemoryApprovals();
+  const policyRepo = new MemoryPolicies([]);
+  const auditLogs = new MemoryAuditLogs();
+  const bus = new RecordingBus();
+  const otherWorkspaceId = "99990000-0000-4000-8000-0000000000a5";
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies: policyRepo,
+    bus,
+    users: { findActiveById: async () => user({ id: approverId }) },
+    workItems: {
+      findWorkItemAccessRecord: async () => ({
+        id: "50000000-0000-4000-8000-0000000000a5",
+        status: "in_review",
+        submitterUserId: "10000000-0000-4000-8000-0000000000ee",
+        claimedByUserId: null,
+        workspaceId: otherWorkspaceId,
+        project: {
+          id: "70000000-0000-4000-8000-0000000000a5",
+          workspaceId: otherWorkspaceId,
+          orgId,
+          ownerUserId: "10000000-0000-4000-8000-0000000000ee",
+          archived: false,
+          deletedAt: null
+        },
+        assignments: []
+      }) as never
+    },
+    now: () => now
+  });
+
+  const result = await service.createApproval({
+    actor,
+    kind: "tool",
+    workItemId: "50000000-0000-4000-8000-0000000000a5",
+    actionPattern: "tool.write_file",
+    routedToUserId: approverId
+  });
+
+  assert.equal(result.outcome, "escalated");
+  assert.equal(approvals.rows.length, 0);
+});
+
+test("ask escalates when the approval work item no longer exists", async () => {
+  const approvals = new MemoryApprovals();
+  const policyRepo = new MemoryPolicies([]);
+  const auditLogs = new MemoryAuditLogs();
+  const bus = new RecordingBus();
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies: policyRepo,
+    bus,
+    users: { findActiveById: async () => user({ id: approverId }) },
+    workItems: {
+      findWorkItemAccessRecord: async () => null
+    },
+    now: () => now
+  });
+
+  const result = await service.createApproval({
+    actor,
+    kind: "tool",
+    workItemId: "50000000-0000-4000-8000-0000000000a6",
+    actionPattern: "tool.write_file",
+    routedToUserId: approverId
+  });
+
+  assert.equal(result.outcome, "escalated");
+  assert.equal(approvals.rows.length, 0);
+});
+
 test("allow policy skips approval creation while no policy defaults to ask", async () => {
   const deps = serviceDeps([
     {
       scopeKind: "session",
       scopeId: "60000000-0000-4000-8000-000000000001",
       actionPattern: "tool.write_file",
-      effect: "allow"
+      effect: "allow",
+      createdAt: now,
+      updatedAt: now
     }
   ]);
 
@@ -422,6 +552,43 @@ test("deny requires a reason and remember always refuses to learn high-risk appr
 
   assert.equal(deps.policyRepo.rows.length, 1);
   assert.equal(deps.policyRepo.rows[0]?.learnedFromSession, true);
+});
+
+test("remember always reuses an equivalent active policy instead of duplicating learned policies", async () => {
+  const existingId = "70000000-0000-4000-8000-0000000000b1";
+  const deps = serviceDeps([{
+    id: existingId,
+    scopeKind: "session",
+    scopeId: actor.id,
+    actionPattern: "tool.write_file",
+    effect: "allow",
+    priority: 0,
+    learnedFromSession: true,
+    createdByUserId: approverId,
+    orgId,
+    workspaceId,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now
+  }]);
+  const approval = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    routedToUserId: approverId,
+    payloadJson: {
+      ui: {
+        summary_text: "AI 想更新文件，需要你确认。",
+        risk: { level: "medium", human_label: "可回滚" }
+      },
+      raw_args: {}
+    }
+  });
+
+  const result = await deps.service.respond(approval.id, actor, { decision: "allow", remember: "always" });
+
+  assert.equal(result.learned_policy?.id, existingId);
+  assert.equal(deps.policyRepo.rows.length, 1);
+  const decidedAudit = deps.auditLogs.rows.find((entry) => entry.action === "approval.decided");
+  assert.equal((decidedAudit?.detailJson as Record<string, unknown> | undefined)?.learned_policy_id, existingId);
 });
 
 test("remember always does not create a learned policy after an approval race", async () => {
@@ -495,6 +662,27 @@ test("approval decisions, delegation, and expiry are audited with identity ancho
   assert.equal(deps.auditLogs.rows[2]?.detailJson["next_action"], "escalate_pm");
 });
 
+test("expireDueApprovals returns committed expirations when post-expire audit fails", async () => {
+  const deps = serviceDeps();
+  deps.auditLogs.createAuditLog = async () => {
+    throw new Error("audit sink unavailable");
+  };
+  const due = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: approverId,
+    slaDueAt: new Date("2026-06-04T23:59:00.000Z")
+  });
+
+  const results = await deps.service.expireDueApprovals();
+  const stored = await deps.approvals.findById(due.id);
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0]?.approval.status, "expired");
+  assert.equal(results[0]?.next_action, "escalate_pm");
+  assert.equal(stored?.status, "expired");
+});
+
 // 审计 FIX#3：respond/delegate 在 CAS 提交「之后」才发总线事件。生产默认 Redis 总线 publish 会在抖动时抛——
 // 决策已落库后若让它冒泡，HTTP 500 + 重试撞 409，决策永远拿不回。验证 publish 抛错时方法仍返回已提交结果（不 500）。
 test("FIX#3 respond returns the committed decision even when the bus publish throws", async () => {
@@ -561,6 +749,82 @@ test("FIX#3 delegate returns the committed reassignment even when the bus publis
   assert.equal(auditLogs.rows.some((row) => row.action === "approval.delegated"), true);
 });
 
+test("delegate returns the committed reassignment even when post-commit audit write throws", async () => {
+  const approvals = new MemoryApprovals();
+  const auditLogs = new ThrowingAuditLogs();
+  const policyRepo = new MemoryPolicies();
+  const bus = new RecordingBus();
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies: policyRepo,
+    bus,
+    now: () => now
+  });
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: approverId
+  });
+  const toUserId = "10000000-0000-4000-8000-000000000003";
+
+  const result = await service.delegate(seeded.id, actor, toUserId);
+
+  assert.equal(result.approval.routed_to_user_id, toUserId);
+  assert.equal((await approvals.findById(seeded.id))?.routedToUserId, toUserId);
+  assert.equal(bus.events.some((event) => event.type === "permission.reassigned"), true);
+});
+
+test("delegate rejects a target outside the actor workspace even when the work item is otherwise public", async () => {
+  const approvals = new MemoryApprovals();
+  const auditLogs = new MemoryAuditLogs();
+  const policyRepo = new MemoryPolicies();
+  const bus = new RecordingBus();
+  const targetUserId = "10000000-0000-4000-8000-0000000000d3";
+  const otherWorkspaceId = "99990000-0000-4000-8000-0000000000d3";
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies: policyRepo,
+    bus,
+    users: {
+      findActiveById: async () => user({ id: targetUserId })
+    },
+    workItems: {
+      findWorkItemAccessRecord: async () => ({
+        id: "50000000-0000-4000-8000-0000000000d3",
+        status: "in_review",
+        submitterUserId: "10000000-0000-4000-8000-0000000000ee",
+        claimedByUserId: null,
+        workspaceId: otherWorkspaceId,
+        project: {
+          id: "70000000-0000-4000-8000-0000000000d3",
+          workspaceId: otherWorkspaceId,
+          orgId,
+          ownerUserId: "10000000-0000-4000-8000-0000000000ee",
+          archived: false,
+          deletedAt: null
+        },
+        assignments: []
+      }) as never
+    },
+    now: () => now
+  });
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-0000000000d3",
+    routedToUserId: approverId
+  });
+
+  await assert.rejects(
+    () => service.delegate(seeded.id, actor, targetUserId),
+    (error) => error instanceof ApprovalServiceError &&
+      error.status === 422 &&
+      error.code === "delegate_target_cannot_view"
+  );
+  assert.equal((await approvals.findById(seeded.id))?.routedToUserId, approverId);
+});
+
 test("findings[#27] respondPending CAS rejects a stale decision after the request was delegated away (TOCTOU)", async () => {
   const approvals = new MemoryApprovals();
   const userA = approverId;
@@ -581,6 +845,41 @@ test("findings[#27] respondPending CAS rejects a stale decision after the reques
   // 现路由人 B（或 admin override 传 undefined）可正常决策。
   const ok = await approvals.respondPending(req.id, "allow", userB, null, now, userB);
   assert.equal(ok?.status, "approved");
+});
+
+test("findings[#172] delegatePending CAS rejects stale delegation after the request was rerouted (TOCTOU)", async () => {
+  const userB = "10000000-0000-4000-8000-000000000003";
+  const userC = "10000000-0000-4000-8000-000000000004";
+  const approvals = new RacingDelegateApprovals(userB);
+  const policyRepo = new MemoryPolicies();
+  const auditLogs = new MemoryAuditLogs();
+  const bus = new RecordingBus();
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies: policyRepo,
+    bus,
+    now: () => now
+  });
+  const req = await approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-000000000001",
+    routedToUserId: approverId
+  });
+
+  await assert.rejects(
+    service.delegate(req.id, actor, userC),
+    (error: unknown) =>
+      error instanceof ApprovalServiceError
+      && error.status === 409
+      && error.code === "approval_race"
+  );
+  const still = await approvals.findById(req.id);
+  assert.equal(still?.status, "pending");
+  assert.equal(still?.routedToUserId, userB);
+  assert.equal(still?.delegatedToUserId, userB);
+  assert.equal(auditLogs.rows.some((entry) => entry.action === "approval.delegated"), false);
+  assert.equal(bus.events.some((event) => event.type === "permission.reassigned"), false);
 });
 
 test("SLA expiry never auto-allows approvals and emits private expiration events", async () => {
@@ -686,12 +985,16 @@ class MemoryUsers implements UserRepository {
 }
 
 class MemoryDevices implements ClientDeviceRepository {
-  async findActiveByTokenHash() {
-    return null;
+  constructor(private rows: ClientDeviceAuthRow[] = []) {}
+
+  async findActiveByTokenHash(tokenHash: string) {
+    return this.rows.find((row) => row.clientTokenHash === tokenHash && row.revokedAt === null) ?? null;
   }
 
-  async findActiveByTokenHashForUser() {
-    return null;
+  async findActiveByTokenHashForUser(tokenHash: string, targetUserId: string) {
+    return this.rows.find(
+      (row) => row.clientTokenHash === tokenHash && row.userId === targetUserId && row.revokedAt === null
+    ) ?? null;
   }
 
   async createClientDevice(): Promise<ClientDeviceAuthRow> {
@@ -702,8 +1005,13 @@ class MemoryDevices implements ClientDeviceRepository {
     return [];
   }
 
-  async touchLastSeen() {
-    return null;
+  async touchLastSeen(deviceId: string, at: Date) {
+    const row = this.rows.find((candidate) => candidate.id === deviceId) ?? null;
+    if (!row) {
+      return null;
+    }
+    row.lastSeenAt = at;
+    return row;
   }
 
   async revokeByIdForUser() {
@@ -722,19 +1030,19 @@ function settings(): Settings {
   });
 }
 
-function authDeps(runtimeSettings: Settings): AuthDependencies {
+function authDeps(runtimeSettings: Settings, devices: ClientDeviceAuthRow[] = []): AuthDependencies {
   return {
     users: new MemoryUsers([user({ isAdmin: true })]),
-    devices: new MemoryDevices(),
+    devices: new MemoryDevices(devices),
     settings: runtimeSettings,
     now: () => now
   };
 }
 
-function nonAdminAuthDeps(runtimeSettings: Settings): AuthDependencies {
+function nonAdminAuthDeps(runtimeSettings: Settings, devices: ClientDeviceAuthRow[] = []): AuthDependencies {
   return {
     users: new MemoryUsers([user({ isAdmin: false })]),
-    devices: new MemoryDevices(),
+    devices: new MemoryDevices(devices),
     settings: runtimeSettings,
     now: () => now
   };
@@ -747,6 +1055,9 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
     }
     if (error instanceof HTTPException) {
       return c.json({ ok: false, error: { code: "http_error", message: error.message } }, error.status);
+    }
+    if (error instanceof WorkItemServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
     }
     if (error instanceof ApprovalServiceError) {
       return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
@@ -783,7 +1094,7 @@ test("approval routes filter and block requests whose work item is not visible",
   const deps = serviceDeps();
   const visibleWithoutWorkItem = await deps.approvals.createApprovalRequest({
     actionPattern: "tool.inspect",
-    routedToUserId: approverId
+    routedToUserId: userId
   });
   const hiddenWorkItemApproval = await deps.approvals.createApprovalRequest({
     id: "40000000-0000-4000-8000-000000000777",
@@ -803,7 +1114,13 @@ test("approval routes filter and block requests whose work item is not visible",
   };
 
   const list = await app.request("/api/approvals", { headers });
-  const listBody = await list.json() as { data: { requests: Array<{ id: string }>; counts: { pending: number } } };
+  const listBody = await list.json() as {
+    data: {
+      requests: Array<{ id: string }>;
+      counts: { pending: number; pending_total: number };
+      page_info?: { has_more: boolean };
+    };
+  };
   const respond = await app.request(`/api/approvals/${hiddenWorkItemApproval.id}/respond`, {
     method: "POST",
     headers,
@@ -818,6 +1135,8 @@ test("approval routes filter and block requests whose work item is not visible",
   assert.equal(list.status, 200);
   assert.deepEqual(listBody.data.requests.map((request) => request.id), [visibleWithoutWorkItem.id]);
   assert.equal(listBody.data.counts.pending, 1);
+  assert.equal(listBody.data.counts.pending_total, 1);
+  assert.equal(listBody.data.page_info?.has_more, false);
   assert.equal(respond.status, 403);
   assert.equal(delegate.status, 403);
 
@@ -834,6 +1153,131 @@ test("approval routes filter and block requests whose work item is not visible",
   });
 
   assert.equal(allowed.status, 200);
+});
+
+test("approval routes keep work-item-less approvals in the routed user's inbox even for admins", async () => {
+  const runtimeSettings = settings();
+  const deps = serviceDeps();
+  const adminOwnApproval = await deps.approvals.createApprovalRequest({
+    id: "40000000-0000-4000-8000-000000000781",
+    actionPattern: "tool.inspect",
+    routedToUserId: userId
+  });
+  const otherUserApproval = await deps.approvals.createApprovalRequest({
+    id: "40000000-0000-4000-8000-000000000782",
+    actionPattern: "tool.shell.approve",
+    routedToUserId: approverId
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/approvals", createApprovalRoutes({
+    auth: authDeps(runtimeSettings),
+    service: deps.service,
+    workItems: allowingWorkItems()
+  }));
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+  };
+
+  const list = await app.request("/api/approvals", { headers });
+  const listBody = await list.json() as {
+    data: {
+      requests: Array<{ id: string }>;
+      counts: { pending: number; pending_total: number };
+    };
+  };
+  const respond = await app.request(`/api/approvals/${otherUserApproval.id}/respond`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "allow", remember: "once" })
+  });
+
+  assert.equal(list.status, 200);
+  assert.deepEqual(listBody.data.requests.map((request) => request.id), [adminOwnApproval.id]);
+  assert.equal(listBody.data.counts.pending, 1);
+  assert.equal(listBody.data.counts.pending_total, 1);
+  assert.equal(respond.status, 403);
+  assert.equal((await deps.approvals.findById(otherUserApproval.id))?.status, "pending");
+});
+
+test("approval routes paginate after filtering hidden work item approvals", async () => {
+  const runtimeSettings = settings();
+  const deps = serviceDeps();
+  for (let index = 0; index < 101; index += 1) {
+    await deps.approvals.createApprovalRequest({
+      id: `40000000-0000-4000-8000-${String(800 + index).padStart(12, "0")}`,
+      actionPattern: "tool.write_file",
+      workItemId: `50000000-0000-4000-8000-${String(800 + index).padStart(12, "0")}`,
+      routedToUserId: approverId
+    });
+  }
+  const visibleWithoutWorkItem = await deps.approvals.createApprovalRequest({
+    id: "40000000-0000-4000-8000-000000000999",
+    actionPattern: "tool.inspect",
+    routedToUserId: userId
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/approvals", createApprovalRoutes({
+    auth: authDeps(runtimeSettings),
+    service: deps.service,
+    workItems: denyingWorkItems()
+  }));
+
+  const list = await app.request("/api/approvals", {
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+    }
+  });
+  const listBody = await list.json() as {
+    data: {
+      requests: Array<{ id: string }>;
+      counts: { pending: number; pending_total: number };
+      page_info?: { returned: number; has_more: boolean };
+    };
+  };
+
+  assert.equal(list.status, 200);
+  assert.deepEqual(listBody.data.requests.map((request) => request.id), [visibleWithoutWorkItem.id]);
+  assert.equal(listBody.data.counts.pending, 1);
+  assert.equal(listBody.data.counts.pending_total, 1);
+  assert.equal(listBody.data.page_info?.returned, 1);
+  assert.equal(listBody.data.page_info?.has_more, false);
+});
+
+test("approval respond and delegate check action ownership before body schema", async () => {
+  const runtimeSettings = settings();
+  const deps = serviceDeps();
+  const routedElsewhere = await deps.approvals.createApprovalRequest({
+    id: "40000000-0000-4000-8000-000000000778",
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-000000000778",
+    routedToUserId: approverId
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/approvals", createApprovalRoutes({
+    auth: nonAdminAuthDeps(runtimeSettings),
+    service: deps.service,
+    workItems: allowingWorkItems()
+  }));
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+  };
+
+  const respond = await app.request(`/api/approvals/${routedElsewhere.id}/respond`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ remember: "once" })
+  });
+  const delegate = await app.request(`/api/approvals/${routedElsewhere.id}/delegate`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+
+  assert.equal(respond.status, 403);
+  assert.equal(delegate.status, 403);
 });
 
 test("permission policy writes keep the local-client device gate", async () => {
@@ -882,6 +1326,412 @@ test("permission policy reads succeed for an admin", async () => {
   assert.equal(response.status, 200);
 });
 
+test("permission policy reads return snake_case API records", async () => {
+  const runtimeSettings = settings();
+  const policyId = "70000000-0000-4000-8000-0000000000e1";
+  const deps = serviceDeps([{
+    id: policyId,
+    scopeKind: "workspace",
+    scopeId: workspaceId,
+    actionPattern: "tool.write_file",
+    effect: "ask",
+    priority: 4,
+    learnedFromSession: true,
+    createdByUserId: approverId,
+    orgId,
+    workspaceId,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now
+  }]);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/permissions", createPermissionRoutes({ auth: authDeps(runtimeSettings), service: deps.service }));
+
+  const response = await app.request("/api/permissions", {
+    headers: { Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret) }
+  });
+  const body = await response.json() as { data: Array<Record<string, unknown>> };
+  const policy = body.data[0]!;
+
+  assert.equal(response.status, 200);
+  assert.equal(policy.id, policyId);
+  assert.equal(policy.scope_kind, "workspace");
+  assert.equal(policy.scope_id, workspaceId);
+  assert.equal(policy.action_pattern, "tool.write_file");
+  assert.equal(policy.effect, "ask");
+  assert.equal(policy.priority, 4);
+  assert.equal(policy.learned_from_session, true);
+  assert.equal(policy.created_by_user_id, approverId);
+  assert.equal(policy.org_id, orgId);
+  assert.equal(policy.workspace_id, workspaceId);
+  assert.equal(policy.deleted_at, null);
+  assert.equal(policy.created_at, now.toISOString());
+  assert.equal(policy.updated_at, now.toISOString());
+  assert.equal(policy.scopeKind, undefined);
+  assert.equal(policy.scopeId, undefined);
+  assert.equal(policy.actionPattern, undefined);
+  assert.equal(policy.learnedFromSession, undefined);
+});
+
+test("approval respond learned_policy returns snake_case API records", async () => {
+  const runtimeSettings = settings();
+  const deps = serviceDeps();
+  const approval = await deps.approvals.createApprovalRequest({
+    id: "40000000-0000-4000-8000-0000000000e2",
+    actionPattern: "tool.write_file",
+    routedToUserId: userId
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/approvals", createApprovalRoutes({ auth: authDeps(runtimeSettings), service: deps.service }));
+
+  const response = await app.request(`/api/approvals/${approval.id}/respond`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+    },
+    body: JSON.stringify({ decision: "allow", remember: "always" })
+  });
+  const body = await response.json() as { data: { learned_policy?: Record<string, unknown> } };
+  const policy = body.data.learned_policy!;
+
+  assert.equal(response.status, 200);
+  assert.equal(policy.scope_kind, "session");
+  assert.equal(policy.scope_id, userId);
+  assert.equal(policy.action_pattern, "tool.write_file");
+  assert.equal(policy.effect, "allow");
+  assert.equal(policy.priority, 0);
+  assert.equal(policy.learned_from_session, true);
+  assert.equal(policy.created_by_user_id, userId);
+  assert.equal(policy.org_id, orgId);
+  assert.equal(policy.workspace_id, workspaceId);
+  assert.equal(policy.deleted_at, null);
+  assert.equal(policy.created_at, now.toISOString());
+  assert.equal(policy.updated_at, now.toISOString());
+  assert.equal(policy.scopeKind, undefined);
+  assert.equal(policy.scopeId, undefined);
+  assert.equal(policy.actionPattern, undefined);
+  assert.equal(policy.learnedFromSession, undefined);
+});
+
+test("permission policy delete rejects malformed ids before calling the service", async () => {
+  const runtimeSettings = settings();
+  const calls: string[] = [];
+  const service = {
+    async listPolicies() {
+      return [];
+    },
+    async createPolicy() {
+      throw new Error("not needed");
+    },
+    async revokePolicy(_actor: unknown, id: string) {
+      calls.push(id);
+      return {
+        id: "70000000-0000-4000-8000-0000000000d1",
+        scope_kind: "org",
+        scope_id: orgId,
+        action_pattern: "tool.*",
+        effect: "ask",
+        priority: 0,
+        learned_from_session: false,
+        created_at: now.toISOString(),
+        updated_at: now.toISOString()
+      };
+    }
+  } as unknown as ApprovalService;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/permissions", createPermissionRoutes({
+    auth: authDeps(runtimeSettings, [device()]),
+    service
+  }));
+
+  const response = await app.request("/api/permissions/not-a-policy", {
+    method: "DELETE",
+    headers: {
+      "X-WorkHub-Client-Token": "client-token-alice",
+      Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+    }
+  });
+
+  assert.equal(response.status, 404);
+  assert.deepEqual(calls, []);
+});
+
+test("permission policy delete returns service 404s as client-visible 404 responses", async () => {
+  const runtimeSettings = settings();
+  const service = {
+    async listPolicies() {
+      return [];
+    },
+    async createPolicy() {
+      throw new Error("not needed");
+    },
+    async revokePolicy() {
+      throw new ApprovalServiceError(404, "permission_policy_not_found", "找不到这条权限策略。");
+    }
+  } as unknown as ApprovalService;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/permissions", createPermissionRoutes({
+    auth: authDeps(runtimeSettings, [device()]),
+    service
+  }));
+
+  const response = await app.request("/api/permissions/70000000-0000-4000-8000-0000000000ff", {
+    method: "DELETE",
+    headers: {
+      "X-WorkHub-Client-Token": "client-token-alice",
+      Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+    }
+  });
+  const body = await response.json() as { ok: boolean; error?: { code?: string } };
+
+  assert.equal(response.status, 404);
+  assert.equal(body.ok, false);
+  assert.equal(body.error?.code, "permission_policy_not_found");
+});
+
+test("permission ask route rejects approvals for work items the caller cannot read", async () => {
+  const runtimeSettings = settings();
+  let createApprovalCalled = false;
+  const service = {
+    async listPolicies() {
+      return [];
+    },
+    async createPolicy() {
+      throw new Error("not needed");
+    },
+    async revokePolicy() {
+      throw new Error("not needed");
+    },
+    async createApproval() {
+      createApprovalCalled = true;
+      throw new Error("createApproval must not be reached for an unreadable work item");
+    }
+  } as unknown as ApprovalService;
+  const workItems = {
+    detailPage: async () => {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+    }
+  } as unknown as WorkItemService;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/permissions", createPermissionRoutes({
+    auth: nonAdminAuthDeps(runtimeSettings),
+    service,
+    workItems
+  }));
+
+  const response = await app.request("/api/permissions/ask", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+    },
+    body: JSON.stringify({
+      kind: "tool",
+      action_pattern: "tool.write_file",
+      work_item_id: "50000000-0000-4000-8000-0000000000c5",
+      routed_to_user_id: userId,
+      payload_json: { raw_args: {} }
+    })
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(createApprovalCalled, false);
+});
+
+test("permission ask route preserves work item service error codes", async () => {
+  const runtimeSettings = settings();
+  let createApprovalCalled = false;
+  const service = {
+    async listPolicies() {
+      return [];
+    },
+    async createPolicy() {
+      throw new Error("not needed");
+    },
+    async revokePolicy() {
+      throw new Error("not needed");
+    },
+    async createApproval() {
+      createApprovalCalled = true;
+      throw new Error("createApproval must not be reached when work item validation fails");
+    }
+  } as unknown as ApprovalService;
+  const workItems = {
+    detailPage: async () => {
+      throw new WorkItemServiceError(409, "workitem_state_conflict", "这个事项当前状态不能申请审批。");
+    }
+  } as unknown as WorkItemService;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/permissions", createPermissionRoutes({
+    auth: nonAdminAuthDeps(runtimeSettings),
+    service,
+    workItems
+  }));
+
+  const response = await app.request("/api/permissions/ask", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+    },
+    body: JSON.stringify({
+      kind: "tool",
+      action_pattern: "tool.write_file",
+      work_item_id: "50000000-0000-4000-8000-0000000000c5",
+      routed_to_user_id: userId,
+      payload_json: { raw_args: {} }
+    })
+  });
+  const body = await response.json() as { ok: false; error: { code: string; message: string } };
+
+  assert.equal(response.status, 409);
+  assert.equal(body.error.code, "workitem_state_conflict");
+  assert.equal(body.error.message, "这个事项当前状态不能申请审批。");
+  assert.equal(createApprovalCalled, false);
+});
+
+test("permission ask route checks readable work item before unrelated body schema errors", async () => {
+  const runtimeSettings = settings();
+  let createApprovalCalled = false;
+  const service = {
+    async listPolicies() {
+      return [];
+    },
+    async createPolicy() {
+      throw new Error("not needed");
+    },
+    async revokePolicy() {
+      throw new Error("not needed");
+    },
+    async createApproval() {
+      createApprovalCalled = true;
+      throw new Error("createApproval must not be reached for an unreadable work item");
+    }
+  } as unknown as ApprovalService;
+  const workItems = {
+    detailPage: async () => {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+    }
+  } as unknown as WorkItemService;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/permissions", createPermissionRoutes({
+    auth: nonAdminAuthDeps(runtimeSettings),
+    service,
+    workItems
+  }));
+
+  const response = await app.request("/api/permissions/ask", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+    },
+    body: JSON.stringify({
+      kind: "tool",
+      work_item_id: "50000000-0000-4000-8000-0000000000c5",
+      payload_json: { raw_args: {} }
+    })
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(createApprovalCalled, false);
+});
+
+test("permission ask route requires self-routing when no work item can prove recipient visibility", async () => {
+  const runtimeSettings = settings();
+  let createApprovalCalled = false;
+  const service = {
+    async listPolicies() {
+      return [];
+    },
+    async createPolicy() {
+      throw new Error("not needed");
+    },
+    async revokePolicy() {
+      throw new Error("not needed");
+    },
+    async createApproval() {
+      createApprovalCalled = true;
+      throw new Error("createApproval must not be reached for cross-user work-item-less approvals");
+    }
+  } as unknown as ApprovalService;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/permissions", createPermissionRoutes({
+    auth: authDeps(runtimeSettings),
+    service
+  }));
+
+  const response = await app.request("/api/permissions/ask", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+    },
+    body: JSON.stringify({
+      kind: "tool",
+      action_pattern: "tool.shell.approve",
+      routed_to_user_id: approverId,
+      payload_json: { raw_args: { command: "cat private.txt" } }
+    })
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(createApprovalCalled, false);
+});
+
+test("permission ask route redacts matched policy internals from public allow decisions", async () => {
+  const runtimeSettings = settings();
+  const deps = serviceDeps([
+    {
+      id: "70000000-0000-4000-8000-0000000000a1",
+      scopeKind: "workspace",
+      scopeId: workspaceId,
+      actionPattern: "tool.write_file",
+      effect: "allow",
+      priority: 7,
+      learnedFromSession: true,
+      createdAt: now,
+      updatedAt: now,
+      orgId,
+      workspaceId
+    }
+  ]);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/permissions", createPermissionRoutes({
+    auth: nonAdminAuthDeps(runtimeSettings),
+    service: deps.service
+  }));
+
+  const response = await app.request("/api/permissions/ask", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+    },
+    body: JSON.stringify({
+      kind: "tool",
+      action_pattern: "tool.write_file",
+      routed_to_user_id: userId,
+      payload_json: { raw_args: {} }
+    })
+  });
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      outcome: string;
+      decision?: Record<string, unknown>;
+    };
+  };
+
+  assert.equal(response.status, 200);
+  assert.equal(body.data.outcome, "allowed");
+  assert.deepEqual(body.data.decision, {
+    effect: "allow",
+    action_pattern: "tool.write_file"
+  });
+});
+
 test("L23 createPolicy emits a permission_policy.created audit", async () => {
   const deps = serviceDeps();
   const adminActor = { ...actor, isAdmin: true };
@@ -900,6 +1750,150 @@ test("L23 createPolicy emits a permission_policy.created audit", async () => {
   assert.equal((audit?.detailJson as Record<string, unknown> | undefined)?.action_pattern, "tool.delete_file");
 });
 
+test("permission policy writes return committed rows when audit logging fails", async () => {
+  const deps = serviceDeps();
+  deps.auditLogs.createAuditLog = async () => {
+    throw new Error("audit sink unavailable");
+  };
+  const adminActor = { ...actor, isAdmin: true };
+
+  const created = await deps.service.createPolicy(adminActor, {
+    scope_kind: "workspace",
+    scope_id: workspaceId,
+    action_pattern: "tool.write_file",
+    effect: "allow",
+    priority: 0,
+    learned_from_session: false
+  });
+
+  assert.equal(created.effect, "allow");
+  assert.ok(created.id);
+  assert.equal(deps.policyRepo.rows.length, 1);
+  assert.equal(deps.policyRepo.rows[0]?.id, created.id);
+
+  const revoked = await deps.service.revokePolicy(adminActor, created.id);
+  assert.equal(revoked.deletedAt ? new Date(revoked.deletedAt).toISOString() : null, now.toISOString());
+  assert.equal((await deps.service.listPolicies(adminActor)).length, 0);
+});
+
+test("permission policy list is scoped to the admin actor tenant", async () => {
+  const currentPolicyId = "70000000-0000-4000-8000-0000000000c1";
+  const legacyPolicyId = "70000000-0000-4000-8000-0000000000c2";
+  const foreignPolicyId = "70000000-0000-4000-8000-0000000000c3";
+  const deps = serviceDeps([
+    {
+      id: currentPolicyId,
+      scopeKind: "workspace",
+      scopeId: workspaceId,
+      actionPattern: "tool.write_file",
+      effect: "ask",
+      priority: 0,
+      learnedFromSession: false,
+      orgId,
+      workspaceId,
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: legacyPolicyId,
+      scopeKind: "org",
+      scopeId: orgId,
+      actionPattern: "tool.read_file",
+      effect: "allow",
+      priority: 0,
+      learnedFromSession: false,
+      orgId: null,
+      workspaceId: null,
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: foreignPolicyId,
+      scopeKind: "workspace",
+      scopeId: "99990000-0000-4000-8000-000000000001",
+      actionPattern: "tool.delete_file",
+      effect: "deny",
+      priority: 0,
+      learnedFromSession: false,
+      orgId,
+      workspaceId: "99990000-0000-4000-8000-000000000001",
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now
+    }
+  ]);
+
+  const visible = await deps.service.listPolicies({ ...actor, isAdmin: true });
+
+  assert.deepEqual(visible.map((policy) => policy.id), [currentPolicyId, legacyPolicyId]);
+});
+
+test("permission policy creation rejects org or workspace scopes outside the admin tenant", async () => {
+  const deps = serviceDeps();
+  const adminActor = { ...actor, isAdmin: true };
+
+  await assert.rejects(
+    () => deps.service.createPolicy(adminActor, {
+      scope_kind: "workspace",
+      scope_id: "99990000-0000-4000-8000-000000000001",
+      action_pattern: "tool.write_file",
+      effect: "allow",
+      priority: 0,
+      learned_from_session: false
+    }),
+    (error: unknown) => error instanceof ApprovalServiceError && error.status === 403
+  );
+
+  await assert.rejects(
+    () => deps.service.createPolicy(adminActor, {
+      scope_kind: "org",
+      scope_id: "99990000-0000-4000-8000-000000000002",
+      action_pattern: "tool.write_file",
+      effect: "allow",
+      priority: 0,
+      learned_from_session: false
+    }),
+    (error: unknown) => error instanceof ApprovalServiceError && error.status === 403
+  );
+
+  assert.deepEqual(deps.policyRepo.rows, []);
+  assert.deepEqual(deps.auditLogs.rows, []);
+});
+
+test("permission policy creation reuses an equivalent active policy instead of duplicating it", async () => {
+  const existingId = "70000000-0000-4000-8000-0000000000d0";
+  const deps = serviceDeps([{
+    id: existingId,
+    scopeKind: "workspace",
+    scopeId: workspaceId,
+    actionPattern: "tool.write_file",
+    effect: "allow",
+    priority: 0,
+    learnedFromSession: false,
+    createdByUserId: approverId,
+    orgId,
+    workspaceId,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now
+  }]);
+  const adminActor = { ...actor, isAdmin: true };
+
+  const created = await deps.service.createPolicy(adminActor, {
+    scope_kind: "workspace",
+    scope_id: workspaceId,
+    action_pattern: "tool.write_file",
+    effect: "allow",
+    priority: 0,
+    learned_from_session: true
+  });
+
+  assert.equal(created.id, existingId);
+  assert.equal(deps.policyRepo.rows.length, 1);
+});
+
 test("M24 revokePolicy soft-deletes a policy and audits it; admin-only; 404 on unknown", async () => {
   const policyId = "70000000-0000-4000-8000-0000000000d1";
   const seeded: PermissionPolicyRecord[] = [{
@@ -913,7 +1907,9 @@ test("M24 revokePolicy soft-deletes a policy and audits it; admin-only; 404 on u
     createdByUserId: approverId,
     orgId,
     workspaceId,
-    deletedAt: null
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now
   }];
   const deps = serviceDeps(seeded);
   const adminActor = { ...actor, isAdmin: true };
@@ -939,6 +1935,53 @@ test("M24 revokePolicy soft-deletes a policy and audits it; admin-only; 404 on u
   );
 });
 
+test("revokePolicy removes equivalent duplicate active policies left by older remember-always retries", async () => {
+  const policyId = "70000000-0000-4000-8000-0000000000d2";
+  const duplicateId = "70000000-0000-4000-8000-0000000000d3";
+  const deps = serviceDeps([
+    {
+      id: policyId,
+      scopeKind: "session",
+      scopeId: actor.id,
+      actionPattern: "tool.write_file",
+      effect: "allow",
+      priority: 0,
+      learnedFromSession: true,
+      createdByUserId: approverId,
+      orgId,
+      workspaceId,
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: duplicateId,
+      scopeKind: "session",
+      scopeId: actor.id,
+      actionPattern: "tool.write_file",
+      effect: "allow",
+      priority: 0,
+      learnedFromSession: true,
+      createdByUserId: approverId,
+      orgId,
+      workspaceId,
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now
+    }
+  ]);
+  const adminActor = { ...actor, isAdmin: true };
+
+  const revoked = await deps.service.revokePolicy(adminActor, policyId);
+
+  assert.equal(revoked.id, policyId);
+  assert.deepEqual((await deps.service.listPolicies(adminActor)).map((policy) => policy.id), []);
+  assert.deepEqual(
+    deps.policyRepo.rows.map((policy) => [policy.id, Boolean(policy.deletedAt)]),
+    [[policyId, true], [duplicateId, true]]
+  );
+});
+
 test("W2 listPendingForUser builds items_detail: deliverable joins manifest, tool degrades, comments+timeline", async () => {
   const approvals = new MemoryApprovals();
   const manifest = deliverableManifestFixtures[0]!;
@@ -951,7 +1994,7 @@ test("W2 listPendingForUser builds items_detail: deliverable joins manifest, too
   });
   const toolRow = await approvals.createApprovalRequest({
     actionPattern: "tool.publish_external",
-    routedToUserId: approverId,
+    routedToUserId: userId,
     payloadJson: { ui: { summary_text: "对外发布", affected_targets: ["公众号", "官网"] }, raw_args: {} }
   });
 
@@ -1006,6 +2049,103 @@ test("W2 listPendingForUser builds items_detail: deliverable joins manifest, too
   assert.equal(tool?.manifest_changes.length, 0);
 });
 
+test("delegated pending approval timeline marks only delegated as current", async () => {
+  const approvals = new MemoryApprovals();
+  const delegated = await approvals.createApprovalRequest({
+    actionPattern: "tool.publish_external",
+    routedToUserId: userId,
+    payloadJson: { raw_args: {} }
+  });
+  delegated.delegatedToUserId = userId;
+  delegated.updatedAt = now;
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    now: () => now
+  });
+
+  const vm = await service.listPendingForUser(user());
+  const detail = vm.items_detail[delegated.id];
+  const currentSteps = detail?.timeline.filter((step) => step.status === "current") ?? [];
+
+  assert.deepEqual(currentSteps.map((step) => step.kind), ["delegated"]);
+  assert.equal(detail?.timeline.find((step) => step.kind === "routed")?.status, "done");
+});
+
+test("W2 listPendingForUser caps prefetched comments per approval", async () => {
+  const approvals = new MemoryApprovals();
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "proposal.review.weekly",
+    workItemId: "50000000-0000-4000-8000-000000000c20",
+    routedToUserId: approverId
+  });
+  const comments: ApprovalCommentRow[] = Array.from({ length: 25 }, (_, index) => ({
+    id: `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    approvalId: seeded.id,
+    authorUserId: approverId,
+    authorNickname: "审批人",
+    body: `comment ${index + 1}`,
+    createdAt: new Date(now.getTime() + index),
+    updatedAt: new Date(now.getTime() + index)
+  }));
+  let seenLimit: number | undefined;
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    approvalComments: {
+      listByApproval: async () => comments,
+      listByApprovals: async (_ids, limit) => {
+        seenLimit = limit;
+        return comments.slice(0, limit ?? comments.length);
+      },
+      create: async () => {
+        throw new Error("not needed");
+      }
+    },
+    now: () => now
+  });
+
+  const vm = await service.listPendingForUser(user({ isAdmin: true }));
+  const detail = vm.items_detail[seeded.id];
+
+  assert.equal(seenLimit, 20);
+  assert.equal(detail?.comments.length, 20);
+  assert.equal(detail?.comments.at(-1)?.body, "comment 20");
+});
+
+test("W2 listPendingForUser exposes when the approval queue has more than the first page", async () => {
+  const approvals = new MemoryApprovals();
+  for (let index = 0; index < 101; index += 1) {
+    await approvals.createApprovalRequest({
+      actionPattern: "tool.publish_external",
+      routedToUserId: userId,
+      payloadJson: { raw_args: { index } }
+    });
+  }
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    now: () => now
+  });
+
+  const vm = await service.listPendingForUser(user({ isAdmin: true }));
+  const pageInfo = (vm as { page_info?: { has_more?: boolean; limit?: number; returned?: number } }).page_info;
+
+  assert.equal(vm.requests.length, 100);
+  assert.equal(vm.items.length, 100);
+  assert.equal(vm.counts.pending, 100);
+  assert.equal(vm.counts.pending_total, 101);
+  assert.equal(pageInfo?.limit, 100);
+  assert.equal(pageInfo?.returned, 100);
+  assert.equal(pageInfo?.has_more, true);
+});
+
 test("W2 approval without a work item never leaks a payload proposal_id's manifest (IDOR guard)", async () => {
   const approvals = new MemoryApprovals();
   const manifest = deliverableManifestFixtures[0]!;
@@ -1013,7 +2153,7 @@ test("W2 approval without a work item never leaks a payload proposal_id's manife
   // 工具/权限类审批：无 workItemId，但 payload 里塞了一个属于别处 work item 的 proposal_id。
   const toolRow = await approvals.createApprovalRequest({
     actionPattern: "tool.publish_external",
-    routedToUserId: approverId,
+    routedToUserId: userId,
     payloadJson: { raw_args: { proposal_id: leakProposalId } }
   });
   const foreignProposal = {
@@ -1038,6 +2178,47 @@ test("W2 approval without a work item never leaks a payload proposal_id's manife
   const detail = vm.items_detail[toolRow.id];
   // 关键：不渲染成 deliverable，也不暴露 foreignProposal 的 manifest。
   assert.notEqual(detail?.kind, "deliverable");
+  assert.equal(detail?.manifest_changes.length, 0);
+  assert.equal(detail?.proposal_id, undefined);
+});
+
+test("tool approval with a work item does not fall back to an unrelated proposal detail", async () => {
+  const approvals = new MemoryApprovals();
+  const manifest = deliverableManifestFixtures[0]!;
+  const workItemId = "50000000-0000-4000-8000-0000000009b1";
+  const proposalId = "30000000-0000-4000-8000-0000000009b2";
+  const toolRow = await approvals.createApprovalRequest({
+    workItemId,
+    actionPattern: "tool.write_file",
+    routedToUserId: approverId,
+    payloadJson: {
+      ui: { summary_text: "写入交付文件", affected_targets: ["workhub-app-upload.txt"] },
+      raw_args: {}
+    }
+  });
+  const sameWorkItemProposal = {
+    id: proposalId,
+    work_item_id: workItemId,
+    status: "opened",
+    diff_manifest: manifest
+  } as unknown as StoredProposal;
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    proposals: {
+      get: async () => null,
+      listByWorkItem: async () => [sameWorkItemProposal]
+    },
+    now: () => now
+  });
+
+  const vm = await service.listPendingForUser(user({ isAdmin: true }));
+  const detail = vm.items_detail[toolRow.id];
+
+  assert.equal(detail?.kind, "tool");
+  assert.deepEqual(detail?.affected_targets, ["workhub-app-upload.txt"]);
   assert.equal(detail?.manifest_changes.length, 0);
   assert.equal(detail?.proposal_id, undefined);
 });
@@ -1215,6 +2396,177 @@ test("W2 approval comment @mentions notify active mentioned users, not the autho
   assert.equal(new Set(mentionNotifications.map((entry) => entry.dedupeKey)).size, mentionNotifications.length);
 });
 
+test("approval comment mention skips users who cannot open the approval work item", async () => {
+  const approvals = new MemoryApprovals();
+  const aliceId = "10000000-0000-4000-8000-00000000a11c3";
+  const bobId = "10000000-0000-4000-8000-00000000b0b00";
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "proposal.review.weekly",
+    workItemId: "50000000-0000-4000-8000-0000000000c4",
+    routedToUserId: approverId
+  });
+  const mentionNotifications: { userId: string; body?: string; targetUrl?: string }[] = [];
+  const usersByNickname: Record<string, UserAuthRow | null> = {
+    alice: user({ id: aliceId, nickname: "alice", cookieToken: "cookie-a" }),
+    bob: user({ id: bobId, nickname: "bob", cookieToken: "cookie-b" })
+  };
+
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    users: {
+      findActiveById: async (id) => Object.values(usersByNickname).find((candidate) => candidate?.id === id) ?? null,
+      findActiveByNickname: async (nickname) => usersByNickname[nickname] ?? null
+    },
+    workItems: {
+      findWorkItemAccessRecord: async () => ({
+        id: seeded.workItemId,
+        status: "spec_ready",
+        submitterUserId: "10000000-0000-4000-8000-0000000000ee",
+        claimedByUserId: null,
+        workspaceId,
+        project: {
+          id: "70000000-0000-4000-8000-0000000000c4",
+          workspaceId,
+          orgId,
+          ownerUserId: "10000000-0000-4000-8000-0000000000ee",
+          archived: false,
+          deletedAt: null
+        },
+        assignments: [{ userId: bobId, role: "member" }]
+      }) as never
+    },
+    approvalComments: {
+      listByApproval: async () => [],
+      listByApprovals: async () => [],
+      create: async (input) => ({
+        id: "20000000-0000-4000-8000-0000000000c8",
+        approvalId: input.approvalId,
+        authorUserId: input.authorUserId,
+        authorNickname: input.authorNickname,
+        body: input.body,
+        createdAt: now,
+        updatedAt: now
+      })
+    },
+    notifications: {
+      createMentionNotification: async (input) => {
+        mentionNotifications.push({
+          userId: input.userId,
+          body: input.body,
+          ...(input.targetUrl ? { targetUrl: input.targetUrl } : {})
+        });
+        return {} as Awaited<ReturnType<NotificationService["createMentionNotification"]>>;
+      }
+    },
+    now: () => now
+  });
+
+  await service.addComment(seeded.id, actor, "私有事项细节：请 @alice 和 @bob 看一下");
+
+  assert.deepEqual(mentionNotifications.map((entry) => entry.userId), [bobId]);
+  assert.equal(mentionNotifications[0]?.targetUrl, `/workitems/${seeded.workItemId}`);
+  assert.match(mentionNotifications[0]?.body ?? "", /私有事项细节/u);
+});
+
+test("approval comment mention skips users who cannot open a work-item-less approval", async () => {
+  const approvals = new MemoryApprovals();
+  const unreachableUserId = "10000000-0000-4000-8000-00000000a11c3";
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.shell.approve",
+    routedToUserId: approverId
+  });
+  const mentionNotifications: { userId: string; targetUrl?: string }[] = [];
+
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    users: {
+      findActiveById: async () => null,
+      findActiveByNickname: async (nickname) =>
+        nickname === "alice"
+          ? user({ id: unreachableUserId, nickname: "alice", cookieToken: "cookie-a" })
+          : null
+    },
+    approvalComments: {
+      listByApproval: async () => [],
+      listByApprovals: async () => [],
+      create: async (input) => ({
+        id: "20000000-0000-4000-8000-0000000000d1",
+        approvalId: input.approvalId,
+        authorUserId: input.authorUserId,
+        authorNickname: input.authorNickname,
+        body: input.body,
+        createdAt: now,
+        updatedAt: now
+      })
+    },
+    notifications: {
+      createMentionNotification: async (input) => {
+        mentionNotifications.push({ userId: input.userId, ...(input.targetUrl ? { targetUrl: input.targetUrl } : {}) });
+        return {} as Awaited<ReturnType<NotificationService["createMentionNotification"]>>;
+      }
+    },
+    now: () => now
+  });
+
+  await service.addComment(seeded.id, actor, "这个无事项审批请 @alice 看一下");
+
+  assert.deepEqual(mentionNotifications, []);
+});
+
+test("approval comment mention skips admins who cannot open a work-item-less approval", async () => {
+  const approvals = new MemoryApprovals();
+  const adminId = "10000000-0000-4000-8000-00000000ad01";
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.shell.approve",
+    routedToUserId: approverId
+  });
+  const mentionNotifications: { userId: string; targetUrl?: string }[] = [];
+
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    users: {
+      findActiveById: async () => null,
+      findActiveByNickname: async (nickname) =>
+        nickname === "admin"
+          ? user({ id: adminId, nickname: "admin", cookieToken: "cookie-admin", isAdmin: true })
+          : null
+    },
+    approvalComments: {
+      listByApproval: async () => [],
+      listByApprovals: async () => [],
+      create: async (input) => ({
+        id: "20000000-0000-4000-8000-0000000000d2",
+        approvalId: input.approvalId,
+        authorUserId: input.authorUserId,
+        authorNickname: input.authorNickname,
+        body: input.body,
+        createdAt: now,
+        updatedAt: now
+      })
+    },
+    notifications: {
+      createMentionNotification: async (input) => {
+        mentionNotifications.push({ userId: input.userId, ...(input.targetUrl ? { targetUrl: input.targetUrl } : {}) });
+        return {} as Awaited<ReturnType<NotificationService["createMentionNotification"]>>;
+      }
+    },
+    now: () => now
+  });
+
+  await service.addComment(seeded.id, actor, "这个无事项审批请 @admin 看一下");
+
+  assert.deepEqual(mentionNotifications, []);
+});
+
 test("W2 approval comment mention notify failure does not fail the comment write", async () => {
   const approvals = new MemoryApprovals();
   const seeded = await approvals.createApprovalRequest({
@@ -1254,4 +2606,42 @@ test("W2 approval comment mention notify failure does not fail the comment write
 
   const created = await service.addComment(seeded.id, actor, "看一下 @alice");
   assert.equal(created.body, "看一下 @alice");
+});
+
+test("approval comment audit failure does not fail the already-written comment", async () => {
+  const approvals = new MemoryApprovals();
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "proposal.review.weekly",
+    workItemId: "50000000-0000-4000-8000-0000000000c6",
+    routedToUserId: approverId
+  });
+  const auditLogs = new MemoryAuditLogs();
+  auditLogs.createAuditLog = async () => {
+    throw new Error("audit backend down after comment commit");
+  };
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    approvalComments: {
+      listByApproval: async () => [],
+      listByApprovals: async () => [],
+      create: async (input) => ({
+        id: "20000000-0000-4000-8000-0000000000c9",
+        approvalId: input.approvalId,
+        authorUserId: input.authorUserId,
+        authorNickname: input.authorNickname,
+        body: input.body,
+        createdAt: now,
+        updatedAt: now
+      })
+    },
+    now: () => now
+  });
+
+  const created = await service.addComment(seeded.id, actor, "评论已经写入");
+
+  assert.equal(created.id, "20000000-0000-4000-8000-0000000000c9");
+  assert.equal(created.body, "评论已经写入");
 });

@@ -65,6 +65,9 @@ function makeUsageRecord(route: ProviderRoute, actor: LlmActor | undefined, resp
   if (actor?.userId) {
     input.userId = actor.userId;
   }
+  if (actor?.workspaceId) {
+    input.workspaceId = actor.workspaceId;
+  }
   return buildUsageRecord(input);
 }
 

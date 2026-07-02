@@ -3,6 +3,7 @@ import { pilotDay1MetricsSnapshotSchema, type PilotDay1Metric, type PilotDay1Met
 import type { CostLedgerEntry } from "@workhub/cost";
 
 import type { AuthActor } from "../middleware/auth.js";
+import { parseOutputContract } from "../pages/output-contract.js";
 
 export class PilotDay1MetricsServiceError extends Error {
   constructor(
@@ -290,7 +291,7 @@ export function buildPilotDay1MetricsSnapshot(input: {
     ]
   };
 
-  return pilotDay1MetricsSnapshotSchema.parse(snapshot);
+  return parseOutputContract(pilotDay1MetricsSnapshotSchema, snapshot, "pilot.day1-metrics");
 }
 
 export function createPilotDay1MetricsService(

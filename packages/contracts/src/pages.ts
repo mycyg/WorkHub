@@ -114,11 +114,13 @@ export const acceptedDeliverableVmSchema = z.object({
   accepted_version: z.number().int().positive(),
   target_path: z.string().optional(),
   sha256: z.string().length(64).optional(),
+  project_id: idSchema.optional(),
   drive_item_id: idSchema.optional(),
   drive_version_id: idSchema.optional(),
   filename: z.string().min(1).optional(),
   mime: z.string().min(1).optional(),
   size_bytes: z.number().int().nonnegative().optional(),
+  drive_href: z.string().min(1).optional(),
   download_href: z.string().min(1).optional(),
   preview_href: z.string().min(1).optional(),
   restore_href: z.string().min(1).optional(),
@@ -744,6 +746,11 @@ export const approvalCenterVmSchema = z.object({
   requests: z.array(approvalRequestSchema),
   filters: z.record(z.string(), z.unknown()),
   counts: z.record(z.string(), z.number().int().nonnegative()),
+  page_info: z.object({
+    limit: z.number().int().positive(),
+    returned: z.number().int().nonnegative(),
+    has_more: z.boolean()
+  }).optional(),
   // 逐 item.id 的详情（预取，左栏点选时客户端就地切换；旧调用方默认空对象）。
   items_detail: z.record(z.string(), approvalDetailVmSchema).default({})
 });

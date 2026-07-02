@@ -14,7 +14,7 @@ import {
   type StructuredHandoff
 } from "@workhub/agent/loop";
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
-import { eventTypes, type CuuState, type WorkItemMode, type WorkItemStatus } from "@workhub/contracts";
+import { eventTypes, evidenceRefSchema, type CuuState, type EvidenceRef, type WorkItemMode, type WorkItemStatus } from "@workhub/contracts";
 import {
   createMemoryBudgetPolicyStore,
   createMemoryCostLedgerStore,
@@ -103,6 +103,8 @@ export type AgentRunTraceStepRecord = {
 
 export type AgentRunQueueRecord = {
   run_id: string;
+  org_id?: string;
+  workspace_id?: string;
   work_item_id: string;
   actor_id: string;
   mode: WorkItemMode;
@@ -172,11 +174,13 @@ export class AgentRunnerError extends Error {
 export type EnqueueAgentRunInput = {
   workItemId: string;
   actorId: string;
+  workspaceId?: string;
+  orgId?: string;
   title?: string;
   mode?: WorkItemMode;
 };
 
-export type AbortAgentRunActor = string | { id: string; isAdmin?: boolean };
+export type AbortAgentRunActor = string | { id: string; isAdmin?: boolean; canManageRun?: boolean };
 
 export type BudgetDecisionInput = EnqueueAgentRunInput & {
   settings: Settings;
@@ -205,7 +209,8 @@ export type AgentRunPersistence = {
   createRunIfWorkItemIdle?: (run: AgentRunQueueRecord) => Promise<boolean>;
   // workerId（可选）：执行循环把自己的 workerId 透传下去，让持久层对写入加 `claimedBy = workerId` 守卫；
   // 租约被回收/转交后本 worker 的写入即变空操作，不会污染新 owner 的数据。abort/enqueue 等非执行路径不传。
-  updateRun: (run: AgentRunQueueRecord, workerId?: string) => Promise<void>;
+  updateRun: (run: AgentRunQueueRecord, workerId?: string) => Promise<boolean | void>;
+  cancelActiveRun?: (run: AgentRunQueueRecord) => Promise<AgentRunQueueRecord | null>;
   replaceTrace: (runId: string, trace: AgentRunTraceStepRecord[], workerId?: string) => Promise<void>;
   setWorkdir: (runId: string, workdir: string, at: Date, workerId?: string) => Promise<void>;
   get: (runId: string) => Promise<AgentRunQueueRecord | null>;
@@ -266,6 +271,42 @@ function indentedBlock(value: string) {
   return value.split(/\r?\n/u).map((line) => `  ${line}`).join("\n");
 }
 
+function evidenceRefsFromContextBindings(rows: StoredWorkItemDetailRows["evidenceBindings"]) {
+  const refs: EvidenceRef[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const rawRefs = row.contentJson.evidence_refs;
+    if (!Array.isArray(rawRefs)) {
+      continue;
+    }
+    for (const rawRef of rawRefs) {
+      const parsed = evidenceRefSchema.safeParse(rawRef);
+      if (parsed.success && !seen.has(parsed.data.id)) {
+        refs.push(parsed.data);
+        seen.add(parsed.data.id);
+      }
+    }
+  }
+  return refs;
+}
+
+function formatEvidenceRefForContext(ref: EvidenceRef, index: number) {
+  const parts = [
+    `${index + 1}. ${ref.title}`,
+    `source=${ref.source_type}:${ref.source_id}`
+  ];
+  if (ref.locator?.path) {
+    parts.push(`path=${ref.locator.path}`);
+  }
+  if (ref.href) {
+    parts.push(`href=${ref.href}`);
+  }
+  const excerpt = compactContextText(ref.excerpt, 420);
+  return excerpt
+    ? `${parts.join("; ")}\n     excerpt: ${excerpt}`
+    : parts.join("; ");
+}
+
 // findings[#6]：工单字段（title/rawDescription/summaryMd/planningNote/acceptance）完全由用户控制；
 // 正文里一行字面 </work_item_context> 就能闭合下游围栏并注入指令。导出供单测，输出本身即已中和围栏标签。
 // neutralizeFenceTags 幂等：在 defaultInitialUserMessage 的围栏边界二次调用不会重复改动（防御纵深，零代价）。
@@ -310,7 +351,20 @@ export function formatWorkItemContext(
     ].join("\n"));
   }
   if (rows.evidenceBindings.length > 0) {
-    lines.push(`- Evidence bindings available: ${rows.evidenceBindings.length}. Use them as context; do not invent missing facts.`);
+    const evidenceRefs = evidenceRefsFromContextBindings(rows.evidenceBindings);
+    if (evidenceRefs.length > 0) {
+      const shown = evidenceRefs.slice(0, 8);
+      lines.push([
+        "- Evidence bindings:",
+        ...shown.map((ref, index) => `  ${formatEvidenceRefForContext(ref, index)}`),
+        ...(evidenceRefs.length > shown.length
+          ? [`  …[已省略 ${evidenceRefs.length - shown.length} 条证据，共 ${evidenceRefs.length} 条]`]
+          : []),
+        "  Use these as context; do not invent missing facts."
+      ].join("\n"));
+    } else {
+      lines.push(`- Evidence bindings available: ${rows.evidenceBindings.length}. Use them as context; do not invent missing facts.`);
+    }
   }
   if (rows.driveSourceComment) {
     lines.push(`- Drive source: ${rows.driveSourceComment.folderPath ?? rows.driveSourceComment.comment.folderId ?? "linked drive comment"}`);
@@ -428,26 +482,37 @@ export function createInMemoryAgentRunQueue(options: {
   const reservationRepo = options.reservationRepo || undefined;
   const reservationLeaseMs = leaseMs * (maxRecoverAttempts + 1);
   const decideBudget = options.decideBudget ?? (async (input: BudgetDecisionInput) =>
-    decideRunBudget({
-      settings: input.settings,
-      scopeIds: {
-        workItemId: input.workItemId,
-        userId: input.actorId,
-        teamId: input.settings.auth.defaultWorkspaceId
-      },
-      policies: await policyStore.listPolicies(input.settings),
-      usage: await (options.usage?.(input) ?? ledgerStore.usageSnapshots({
-        workItemId: input.workItemId,
-        userId: input.actorId,
-        teamId: input.settings.auth.defaultWorkspaceId
-      }, { now: now() })),
-      modelRoute: {
-        provider: input.settings.llm.defaultProvider,
-        model: input.settings.llm.model,
-        reason: "default"
-      },
-      now: now()
-    }));
+    {
+      const scopedSettings = {
+        ...input.settings,
+        auth: {
+          ...input.settings.auth,
+          defaultOrgId: input.orgId ?? input.settings.auth.defaultOrgId,
+          defaultWorkspaceId: input.workspaceId ?? input.settings.auth.defaultWorkspaceId
+        }
+      };
+      const teamId = scopedSettings.auth.defaultWorkspaceId;
+      return decideRunBudget({
+        settings: scopedSettings,
+        scopeIds: {
+          workItemId: input.workItemId,
+          userId: input.actorId,
+          teamId
+        },
+        policies: await policyStore.listPolicies(scopedSettings),
+        usage: await (options.usage?.(input) ?? ledgerStore.usageSnapshots({
+          workItemId: input.workItemId,
+          userId: input.actorId,
+          teamId
+        }, { now: now() })),
+        modelRoute: {
+          provider: scopedSettings.llm.defaultProvider,
+          model: scopedSettings.llm.model,
+          reason: "default"
+        },
+        now: now()
+      });
+    });
   const runs = new Map<string, AgentRunQueueRecord>();
   // SIR-1：每个在跑 run 的「租约视界」(ms)——最近一次成功心跳续到的 lease_expires_at。心跳写**抛错**时
   // (transient DB error)refreshClaimInBackground 的 .catch 会吞掉,run 的内存 status 仍 running、driftedRun
@@ -458,6 +523,7 @@ export function createInMemoryAgentRunQueue(options: {
   // P-COLLAB M2：run 开始时拍下的 project/ base 快照 id（按 run 暂存），
   // 开提议时写进 manifest.base.snapshot_id → createProposal 落到 branches.baseSnapshotId。
   const runBaseSnapshotIds = new Map<string, string>();
+  const runAbortControllers = new Map<string, AbortController>();
   const startingWorkItems = new Set<string>();
   const tracePersistenceChains = new Map<string, Promise<void>>();
   // 内存里只保留有限条已结束的 run 作为读缓存；活跃(queued/running)的永不剔除。
@@ -517,6 +583,7 @@ export function createInMemoryAgentRunQueue(options: {
     return getDefaultProviderRegistry().get({
       id: input.run.actor_id,
       userId: input.run.actor_id,
+      ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
       runId: input.run.run_id,
       workItemId: input.run.work_item_id
     }, "worker");
@@ -528,6 +595,7 @@ export function createInMemoryAgentRunQueue(options: {
     return getDefaultProviderRegistry().get({
       id: input.run.actor_id,
       userId: input.run.actor_id,
+      ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
       runId: input.run.run_id,
       workItemId: input.run.work_item_id
     }, "review");
@@ -615,6 +683,7 @@ export function createInMemoryAgentRunQueue(options: {
         runs.delete(runId);
         runWorkdirs.delete(runId);
         runBaseSnapshotIds.delete(runId);
+        runAbortControllers.delete(runId);
       }
     }
   }
@@ -643,12 +712,33 @@ export function createInMemoryAgentRunQueue(options: {
   // fencingWorkerId：执行循环传 workerId 给写入加租约守卫（见 AgentRunPersistence 注释）；
   // abort/enqueue 等非执行路径省略，保持无守卫写入。
   async function persistRun(run: AgentRunQueueRecord, fencingWorkerId?: string) {
-    await persistence?.updateRun(run, fencingWorkerId);
+    const updated = await persistence?.updateRun(run, fencingWorkerId);
+    return updated !== false;
+  }
+
+  async function persistCancellation(run: AgentRunQueueRecord) {
+    if (!persistence?.cancelActiveRun) {
+      await persistRun(run);
+      return run;
+    }
+    const cancelled = await persistence.cancelActiveRun(run);
+    if (cancelled) {
+      return cancelled;
+    }
+    const fresh = await persistence.get(run.run_id);
+    if (fresh) {
+      runs.set(run.run_id, fresh);
+    }
+    throw new AgentRunnerError(409, "agent_run_already_settled", "这次 AI 执行已经结束。");
   }
 
   async function persistRunWithTrace(run: AgentRunQueueRecord, fencingWorkerId?: string) {
-    await persistRun(run, fencingWorkerId);
+    const persisted = await persistRun(run, fencingWorkerId);
+    if (!persisted) {
+      return false;
+    }
     await queueTracePersistence(run, fencingWorkerId);
+    return true;
   }
 
   function queueTracePersistence(run: AgentRunQueueRecord, fencingWorkerId?: string) {
@@ -699,6 +789,11 @@ export function createInMemoryAgentRunQueue(options: {
       // 同时后续写入会被持久层的 claimedBy fencing 拒绝，不会污染接手的新 owner。
       // 注意：心跳的瞬时 DB 错误会 throw 并被 refreshClaimInBackground 的 .catch 吞掉，不会走到这里，
       // 因此 updated 为 null 必定意味着「行不再匹配 id+running+claimedBy」，即真正的租约丢失。
+      const persisted = await persistence?.get(run.run_id);
+      if (persisted && TERMINAL_RUN_STATUSES.has(persisted.status)) {
+        runs.set(run.run_id, persisted);
+        return;
+      }
       runs.set(run.run_id, { ...live, status: "failed", updated_at: now().toISOString() });
       return;
     }
@@ -728,19 +823,28 @@ export function createInMemoryAgentRunQueue(options: {
     for (const run of recovered) {
       // 转死信的（status=failed）与重排的（status=queued）打不同 action：死信值得人盯（poison run）。
       const deadLettered = run.status === "failed";
-      await auditLogs.createAuditLog({
-        actorKind: "system",
-        actorNickname: "agent-run-recovery",
-        entityType: "agent_run",
-        entityId: run.run_id,
-        action: deadLettered ? "agent_run.dead_lettered_stale_claim" : "agent_run.requeued_stale_claim",
-        detailJson: {
-          run_id: run.run_id,
-          work_item_id: run.work_item_id,
-          ...(deadLettered ? { dead_lettered: true } : {}),
-          requeued_at: recoveredAt.toISOString()
-        }
-      });
+      const action = deadLettered ? "agent_run.dead_lettered_stale_claim" : "agent_run.requeued_stale_claim";
+      try {
+        await auditLogs.createAuditLog({
+          actorKind: "system",
+          actorNickname: "agent-run-recovery",
+          entityType: "agent_run",
+          entityId: run.run_id,
+          action,
+          detailJson: {
+            run_id: run.run_id,
+            work_item_id: run.work_item_id,
+            ...(deadLettered ? { dead_lettered: true } : {}),
+            requeued_at: recoveredAt.toISOString()
+          }
+        });
+      } catch (error) {
+        getDefaultStructuredLogger().warn("agent_run_recovery_audit_write_failed", {
+          action,
+          runId: run.run_id,
+          error
+        });
+      }
     }
   }
 
@@ -793,9 +897,21 @@ export function createInMemoryAgentRunQueue(options: {
     return typeof actor === "object" && actor.isAdmin === true;
   }
 
+  function abortActorCanManageRun(actor: AbortAgentRunActor) {
+    return typeof actor === "object" && actor.canManageRun === true;
+  }
+
   function driftedRun(runId: string) {
     const live = runs.get(runId);
     return live && live.status !== "running" ? live : null;
+  }
+
+  function abortInFlightProvider(runId: string) {
+    const controller = runAbortControllers.get(runId);
+    if (!controller || controller.signal.aborted) {
+      return;
+    }
+    controller.abort(new AgentRunnerError(409, "agent_run_cancelled", "这次 AI 执行已经取消。"));
   }
 
   function runUpdatedAtMs(run: AgentRunQueueRecord) {
@@ -822,6 +938,19 @@ export function createInMemoryAgentRunQueue(options: {
       runs.set(run.run_id, run);
     }
     return run;
+  }
+
+  async function returnPersistedAfterLostClaim(run: AgentRunQueueRecord) {
+    const persisted = await persistence?.get(run.run_id);
+    if (persisted) {
+      runs.set(persisted.run_id, persisted);
+      return persisted;
+    }
+    return updateRun({
+      ...run,
+      status: "failed",
+      updated_at: now().toISOString()
+    });
   }
 
   async function emitRunEvent(
@@ -872,6 +1001,27 @@ export function createInMemoryAgentRunQueue(options: {
         control: result.control
       }
     }, run, cuuState);
+  }
+
+  async function emitRunStatusEvent(
+    run: AgentRunQueueRecord,
+    input: {
+      kind: "done" | "requeued";
+      status: AgentRunQueueStatus;
+      previewText: string;
+      cuuState: CuuState;
+    }
+  ) {
+    await emitRunEvent({
+      type: eventTypes.agentRunStep,
+      previewText: input.previewText,
+      data: {
+        run_id: run.run_id,
+        work_item_id: run.work_item_id,
+        kind: input.kind,
+        status: input.status
+      }
+    }, run, input.cuuState);
   }
 
   function stripProposalOpenedPrefix(text: string) {
@@ -998,76 +1148,8 @@ export function createInMemoryAgentRunQueue(options: {
           status: "running",
           updated_at: now().toISOString()
         });
-    if (run.status !== "running") {
-      await persistRun(current, workerId);
-    }
-    const executionInput = { run: current, settings };
-    const client = await (options.client ?? defaultClient)(executionInput);
-    // findings[#4]：独立评审客户端（'review' 任务类路由）。复用工人 client 提供者时也据它派生评审客户端，
-    // 保持测试/自定义注入路径一致；默认走 'review' 路由（未单独配则回退默认模型，行为不变）。
-    const reviewClient = options.reviewClient
-      ? await options.reviewClient(executionInput)
-      : options.client
-        ? client
-        : await defaultReviewClient(executionInput);
-    const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
-    runWorkdirs.set(current.run_id, workdir);
-    current = updateRun({
-      ...current,
-      workdir_ref: workdir,
-      updated_at: now().toISOString()
-    });
-    await persistence?.setWorkdir(current.run_id, workdir, now(), workerId);
-    // P-COLLAB M1：把项目现有文件物化进 workdir/project/（只读参考区），让 AI 能读整个项目。
-    // fail-open：物化失败不影响 run（照常以空 workdir 跑）。默认关闭，由 hydrateProject 提供者决定。
-    let projectFileCount = 0;
-    if (hydrateProject) {
-      try {
-        const hydrated = await hydrateProject(current, workdir);
-        projectFileCount = hydrated?.files ?? 0;
-      } catch (error) {
-        getDefaultStructuredLogger().warn("agent_run_project_hydrate_failed", { error });
-      }
-    }
-    // P-COLLAB M2：物化出 project/（只读祖先态）后,趁 AI 还没动手,拍一份 kind:"base" 快照。
-    // 它就是这次工作副本的"共同祖先",日后三方合并/对底稿(rebase)拿它当 diff3 base。
-    // fail-open：拍照失败不影响 run（baseSnapshotId 留空,合并回退到 accepted-history 祖先）。
-    if (projectFileCount > 0 && options.snapshots) {
-      try {
-        const baseSnapshotRoot =
-          options.snapshotRoot ?? path.join(settings.dataDir, "snapshots", "agent-runs", current.run_id);
-        const baseSnapshot = await createSnapshotService({ snapshotRoot: baseSnapshotRoot, now })
-          .takeSandboxFileSnapshot({
-            workItemId: current.work_item_id,
-            workdir: path.join(workdir, "project"),
-            kind: "base",
-            createdByKind: "system"
-          });
-        const baseRow = await options.snapshots.createSnapshot({
-          id: baseSnapshot.id,
-          workItemId: baseSnapshot.workItemId,
-          kind: baseSnapshot.kind,
-          ref: baseSnapshot.ref,
-          ...(baseSnapshot.contentSha256 ? { contentSha256: baseSnapshot.contentSha256 } : {}),
-          createdByKind: baseSnapshot.createdByKind
-        });
-        runBaseSnapshotIds.set(current.run_id, baseRow.id);
-      } catch (error) {
-        getDefaultStructuredLogger().warn("agent_run_base_snapshot_capture_failed", { error });
-      }
-    }
-    const snapshot = options.snapshot ?? createAgentRunSnapshotHook({
-      run: current,
-      settings,
-      ...(options.snapshotRoot ? { snapshotRoot: options.snapshotRoot } : {}),
-      ...(options.snapshotId ? { id: options.snapshotId } : {}),
-      ...(options.snapshots ? { snapshots: options.snapshots } : {}),
-      ...(options.auditLogs ? { auditLogs: options.auditLogs } : {}),
-      now
-    });
-    const loop = createAgentLoop();
-
-    const stopClaimHeartbeat = startClaimHeartbeat(current.run_id);
+    const abortController = new AbortController();
+    let stopClaimHeartbeat = () => {};
 
     // FIX#3：本 worker 是否已漂移下此 run（租约被回收/转交、或被取消）。与既有 fencing 同源：
     // 在每个 `return drifted` 出口（循环后/捕获后）置位，让 finally 据此跳过对账。漂移后预留已归新 owner，
@@ -1076,6 +1158,80 @@ export function createInMemoryAgentRunQueue(options: {
     // 无法在 finally 时凭 status 区分「漂移」与「本 worker 正常落终态」），故用显式 flag。
     let workerDrifted = false;
     try {
+      if (run.status !== "running") {
+        const persisted = await persistRun(current, workerId);
+        if (!persisted) {
+          workerDrifted = true;
+          return returnPersistedAfterLostClaim(current);
+        }
+      }
+      runAbortControllers.set(current.run_id, abortController);
+      const executionInput = { run: current, settings };
+      const client = await (options.client ?? defaultClient)(executionInput);
+      // findings[#4]：独立评审客户端（'review' 任务类路由）。复用工人 client 提供者时也据它派生评审客户端，
+      // 保持测试/自定义注入路径一致；默认走 'review' 路由（未单独配则回退默认模型，行为不变）。
+      const reviewClient = options.reviewClient
+        ? await options.reviewClient(executionInput)
+        : options.client
+          ? client
+          : await defaultReviewClient(executionInput);
+      const workdir = await (options.workdir ?? defaultWorkdir)(executionInput);
+      runWorkdirs.set(current.run_id, workdir);
+      current = updateRun({
+        ...current,
+        workdir_ref: workdir,
+        updated_at: now().toISOString()
+      });
+      await persistence?.setWorkdir(current.run_id, workdir, now(), workerId);
+      // P-COLLAB M1：把项目现有文件物化进 workdir/project/（只读参考区），让 AI 能读整个项目。
+      // fail-open：物化失败不影响 run（照常以空 workdir 跑）。默认关闭，由 hydrateProject 提供者决定。
+      let projectFileCount = 0;
+      if (hydrateProject) {
+        try {
+          const hydrated = await hydrateProject(current, workdir);
+          projectFileCount = hydrated?.files ?? 0;
+        } catch (error) {
+          getDefaultStructuredLogger().warn("agent_run_project_hydrate_failed", { error });
+        }
+      }
+      // P-COLLAB M2：物化出 project/（只读祖先态）后,趁 AI 还没动手,拍一份 kind:"base" 快照。
+      // 它就是这次工作副本的"共同祖先",日后三方合并/对底稿(rebase)拿它当 diff3 base。
+      // fail-open：拍照失败不影响 run（baseSnapshotId 留空,合并回退到 accepted-history 祖先）。
+      if (projectFileCount > 0 && options.snapshots) {
+        try {
+          const baseSnapshotRoot =
+            options.snapshotRoot ?? path.join(settings.dataDir, "snapshots", "agent-runs", current.run_id);
+          const baseSnapshot = await createSnapshotService({ snapshotRoot: baseSnapshotRoot, now })
+            .takeSandboxFileSnapshot({
+              workItemId: current.work_item_id,
+              workdir: path.join(workdir, "project"),
+              kind: "base",
+              createdByKind: "system"
+            });
+          const baseRow = await options.snapshots.createSnapshot({
+            id: baseSnapshot.id,
+            workItemId: baseSnapshot.workItemId,
+            kind: baseSnapshot.kind,
+            ref: baseSnapshot.ref,
+            ...(baseSnapshot.contentSha256 ? { contentSha256: baseSnapshot.contentSha256 } : {}),
+            createdByKind: baseSnapshot.createdByKind
+          });
+          runBaseSnapshotIds.set(current.run_id, baseRow.id);
+        } catch (error) {
+          getDefaultStructuredLogger().warn("agent_run_base_snapshot_capture_failed", { error });
+        }
+      }
+      const snapshot = options.snapshot ?? createAgentRunSnapshotHook({
+        run: current,
+        settings,
+        ...(options.snapshotRoot ? { snapshotRoot: options.snapshotRoot } : {}),
+        ...(options.snapshotId ? { id: options.snapshotId } : {}),
+        ...(options.snapshots ? { snapshots: options.snapshots } : {}),
+        ...(options.auditLogs ? { auditLogs: options.auditLogs } : {}),
+        now
+      });
+      const loop = createAgentLoop();
+      stopClaimHeartbeat = startClaimHeartbeat(current.run_id);
       const resolvedWorkItemContext = await workItemContext?.(current);
       const resolvedUserMemory = await userMemory?.(current);
       const resolvedTeamSkills = await teamSkills?.(current);
@@ -1112,6 +1268,7 @@ export function createInMemoryAgentRunQueue(options: {
         budget: toAgentLoopBudget(current.budget, resolveWorkerContextWindowTokens()),
         maxTokensPerStep: settings.llm.maxTokensPerStep,
         requireDeliverable: options.requireDeliverable ?? true,
+        signal: abortController.signal,
         ...(options.commandRunner ? { commandRunner: options.commandRunner } : {}),
         snapshot,
         recorder: {
@@ -1156,7 +1313,11 @@ export function createInMemoryAgentRunQueue(options: {
       // 先落定运行成功状态，再开提议。否则 openProposalFromManifest 抛错（manifest 不匹配/
       // 提议已存在/DB 写失败）会被外层 catch 当作"run 失败"、丢掉本已成功的交付物。
       current = updateRun(finalizeExecutedRun(current, result, now()));
-      await persistRunWithTrace(current, workerId);
+      const finalPersisted = await persistRunWithTrace(current, workerId);
+      if (!finalPersisted) {
+        workerDrifted = true;
+        return returnPersistedAfterLostClaim(current);
+      }
       await emitFinalRunEvent(current, result);
       // FIX#5：成功且有 manifest 且接了 proposalSink → 本次会开出可审阅提议。据此告诉置信记录器：
       // 即便低置信 escalate，也别把工作项推到 escalated（有提议要审），只记升级/注意力事件；
@@ -1202,7 +1363,11 @@ export function createInMemoryAgentRunQueue(options: {
         ],
         updated_at: now().toISOString()
       });
-      await persistRunWithTrace(current, workerId);
+      const failurePersisted = await persistRunWithTrace(current, workerId);
+      if (!failurePersisted) {
+        workerDrifted = true;
+        return returnPersistedAfterLostClaim(current);
+      }
       await emitRunEvent({
         type: eventTypes.agentRunFailed,
         previewText: failureReason,
@@ -1243,6 +1408,7 @@ export function createInMemoryAgentRunQueue(options: {
       await notifyRunMilestone(current, current.trace.at(-1)?.output_excerpt ?? "AI 执行中断,需要人工查看。");
       return current;
     } finally {
+      runAbortControllers.delete(current.run_id);
       stopClaimHeartbeat();
       // R2 原子预算：终态对账——把该 run 的 active 预留翻 settled、写实际用量，释放未用持有量。
       // best-effort：失败/漏掉由 releaseExpired（租约过期）兜底。
@@ -1426,6 +1592,8 @@ export function createInMemoryAgentRunQueue(options: {
         const at = now().toISOString();
         const run: AgentRunQueueRecord = {
           run_id: nextId(),
+          ...(input.orgId ? { org_id: input.orgId } : {}),
+          ...(input.workspaceId ? { workspace_id: input.workspaceId } : {}),
           work_item_id: input.workItemId,
           actor_id: input.actorId,
           mode: input.mode ?? "worker",
@@ -1513,7 +1681,7 @@ export function createInMemoryAgentRunQueue(options: {
       if (!run) {
         throw new AgentRunnerError(404, "not_found", "没有找到这次 AI 执行。");
       }
-      if (run.actor_id !== abortActorId(actor) && !abortActorIsAdmin(actor)) {
+      if (run.actor_id !== abortActorId(actor) && !abortActorIsAdmin(actor) && !abortActorCanManageRun(actor)) {
         throw new AgentRunnerError(403, "agent_run_abort_forbidden", "只有发起人或管理员可以取消这次 AI 执行。");
       }
       if (!["queued", "running"].includes(run.status)) {
@@ -1524,9 +1692,21 @@ export function createInMemoryAgentRunQueue(options: {
         status: "cancelled",
         updated_at: now().toISOString()
       };
-      runs.set(runId, updated);
-      await persistRun(updated);
-      return updated;
+      const cancelled = await persistCancellation(updated);
+      runs.set(runId, cancelled);
+      abortInFlightProvider(runId);
+      if (reservationRepo) {
+        await reservationRepo
+          .reconcile(runId, cancelled.usage.token_in + cancelled.usage.token_out, cancelled.usage.estimated_cost_cny, now())
+          .catch((error) => getDefaultStructuredLogger().warn("agent_run_budget_abort_reconcile_failed", { error }));
+      }
+      await emitRunStatusEvent(cancelled, {
+        kind: "done",
+        status: "cancelled",
+        previewText: "这次 AI 执行已取消。",
+        cuuState: "worried"
+      });
+      return cancelled;
     },
 
     async listActive() {
@@ -1561,6 +1741,23 @@ export function createInMemoryAgentRunQueue(options: {
         runs.set(run.run_id, live && live.trace.length > run.trace.length ? { ...run, trace: live.trace } : run);
       }
       await auditRecoveredClaims(recovered, recoveredAt);
+      for (const run of recovered) {
+        if (run.status === "queued") {
+          await emitRunStatusEvent(run, {
+            kind: "requeued",
+            status: "queued",
+            previewText: "AI 执行租约已恢复，正在重新排队。",
+            cuuState: "thinking"
+          });
+        } else if (run.status === "failed") {
+          await emitRunStatusEvent(run, {
+            kind: "done",
+            status: "failed",
+            previewText: "AI 多次崩溃，已转人工接手。",
+            cuuState: "worried"
+          });
+        }
+      }
       // FIX#10：死信 run（转 failed、不再重排）会把工作项永远卡在 ai_working（执行 worker 已崩，谁也不会再
       // 替它落终态）。这里对每个死信 run 把工作项 ai_working→escalated（CAS 守卫，合法前驱）并发一条里程碑
       // 通知「AI 多次崩溃，已转人工接手」，让人接管。仅对死信(status==="failed")处理；重排(status==="queued")

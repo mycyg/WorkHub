@@ -11,6 +11,7 @@ import {
   acceptedDeliverableChanges,
   branches,
   budgetPolicies,
+  budgetPolicyStorageId,
   budgetReservations,
   costLedgerEntries,
   createAgentRunRepository,
@@ -467,8 +468,9 @@ async function main() {
     ) {
       throw new Error(`Expected cost policy readback to use DB override, got ${JSON.stringify(userPolicyAfter)}`);
     }
+    const userDayPolicyStorageId = budgetPolicyStorageId(settings, "pcost-user-day-v0");
     const [budgetPolicyRows, budgetPolicyAuditRows] = await Promise.all([
-      db.select().from(budgetPolicies).then((rows) => rows.filter((row) => row.id === "pcost-user-day-v0")),
+      db.select().from(budgetPolicies).then((rows) => rows.filter((row) => row.id === userDayPolicyStorageId)),
       db.select().from(auditLogs).then((rows) =>
         rows.filter((row) =>
           row.entityType === "budget_policy"

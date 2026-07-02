@@ -1,6 +1,6 @@
 import { applyBudgetPolicyPatch, defaultBudgetPoliciesFromSettings, type BudgetPolicy, type BudgetPolicyPatch, type BudgetPolicyStore } from "@workhub/cost";
 import type { Settings } from "@workhub/config";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { budgetPolicies } from "../schema/index.js";
@@ -14,6 +14,22 @@ export class BudgetPolicyVersionConflictError extends Error {
 }
 
 export type BudgetPolicyRow = typeof budgetPolicies.$inferSelect;
+const budgetPolicyStorageSeparator = "::";
+
+export function budgetPolicyStorageId(settings: Settings, logicalId: string) {
+  return [
+    settings.auth.defaultOrgId,
+    settings.auth.defaultWorkspaceId,
+    logicalId
+  ].join(budgetPolicyStorageSeparator);
+}
+
+function budgetPolicyLogicalId(row: Pick<BudgetPolicyRow, "id" | "orgId" | "workspaceId">) {
+  const prefix = row.orgId && row.workspaceId
+    ? `${row.orgId}${budgetPolicyStorageSeparator}${row.workspaceId}${budgetPolicyStorageSeparator}`
+    : "";
+  return prefix && row.id.startsWith(prefix) ? row.id.slice(prefix.length) : row.id;
+}
 
 function normalizeNumericString(value: string) {
   return value.replace(/(\.\d*?)0+$/u, "$1").replace(/\.$/u, "");
@@ -29,7 +45,7 @@ function optionalRouteHint(value: string | null): BudgetPolicy["modelRouteHint"]
 function rowToBudgetPolicy(row: BudgetPolicyRow): BudgetPolicy {
   const modelRouteHint = optionalRouteHint(row.modelRouteHint);
   return {
-    id: row.id,
+    id: budgetPolicyLogicalId(row),
     scopeKind: row.scopeKind as BudgetPolicy["scopeKind"],
     period: row.period as BudgetPolicy["period"],
     maxTokens: row.maxTokens,
@@ -46,7 +62,7 @@ function rowToBudgetPolicy(row: BudgetPolicyRow): BudgetPolicy {
 
 function policyInsert(policy: BudgetPolicy, settings: Settings): typeof budgetPolicies.$inferInsert {
   return {
-    id: policy.id,
+    id: budgetPolicyStorageId(settings, policy.id),
     orgId: settings.auth.defaultOrgId,
     workspaceId: settings.auth.defaultWorkspaceId,
     scopeKind: policy.scopeKind,
@@ -63,18 +79,38 @@ function policyInsert(policy: BudgetPolicy, settings: Settings): typeof budgetPo
   };
 }
 
-function mergeDefaultPolicies(settings: Settings, rows: BudgetPolicyRow[]) {
-  const overrides = new Map(rows.map((row) => [row.id, rowToBudgetPolicy(row)]));
-  return defaultBudgetPoliciesFromSettings(settings).map((policy) => overrides.get(policy.id) ?? policy);
+export function mergeDefaultPoliciesForSettings(settings: Settings, rows: BudgetPolicyRow[]) {
+  const overrides = new Map<string, { policy: BudgetPolicy; rank: number }>();
+  for (const row of rows) {
+    if (
+      row.orgId !== settings.auth.defaultOrgId
+      || row.workspaceId !== settings.auth.defaultWorkspaceId
+    ) {
+      continue;
+    }
+    const policy = rowToBudgetPolicy(row);
+    const rank = row.id === budgetPolicyStorageId(settings, policy.id) ? 2 : 1;
+    const current = overrides.get(policy.id);
+    if (!current || rank >= current.rank) {
+      overrides.set(policy.id, { policy, rank });
+    }
+  }
+  return defaultBudgetPoliciesFromSettings(settings).map((policy) => overrides.get(policy.id)?.policy ?? policy);
 }
 
 export function createDbBudgetPolicyStore(db: WorkHubDb): BudgetPolicyStore {
-  async function listRows() {
-    return db.select().from(budgetPolicies);
+  async function listRows(settings: Settings) {
+    return db
+      .select()
+      .from(budgetPolicies)
+      .where(and(
+        eq(budgetPolicies.orgId, settings.auth.defaultOrgId),
+        eq(budgetPolicies.workspaceId, settings.auth.defaultWorkspaceId)
+      ));
   }
 
   async function listPolicies(settings: Settings) {
-    return mergeDefaultPolicies(settings, await listRows());
+    return mergeDefaultPoliciesForSettings(settings, await listRows(settings));
   }
 
   return {

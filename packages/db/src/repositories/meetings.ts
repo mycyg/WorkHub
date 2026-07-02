@@ -45,6 +45,12 @@ export type MeetingInsightDraftRows = {
   created: boolean;
 };
 
+export type MeetingInsightContextRows = {
+  project: MeetingProjectRow | null;
+  meeting: MeetingRecordRow | null;
+  insight: MeetingInsightRow | null;
+};
+
 export type MeetingRepositoryActor = {
   actorKind: "human" | "ai" | "system" | string;
   actorUserId: string;
@@ -67,7 +73,12 @@ export type MeetingRepository = {
     projectId?: string;
     workspaceId?: string;
     limit?: number;
+    targetMeetingId?: string;
   }) => Promise<MeetingPageRows>;
+  findInsightContext?: (input: {
+    projectId: string;
+    insightId: string;
+  }) => Promise<MeetingInsightContextRows>;
   insightToDraft: (input: MeetingRepositoryActor & {
     projectId: string;
     insightId: string;
@@ -162,7 +173,7 @@ export function createMeetingRepository(db: WorkHubDb): MeetingRepository {
         };
       }
       const limit = clampLimit(input.limit);
-      const meetingRows = await db
+      const initialMeetingRows = await db
         .select({
           meeting: meetingRecords,
           uploadedBy: users
@@ -172,6 +183,24 @@ export function createMeetingRepository(db: WorkHubDb): MeetingRepository {
         .where(eq(meetingRecords.projectId, project.id))
         .orderBy(desc(meetingRecords.createdAt))
         .limit(limit);
+      let meetingRows = initialMeetingRows;
+      if (input.targetMeetingId && !meetingRows.some((row) => row.meeting.id === input.targetMeetingId)) {
+        const [targetMeeting] = await db
+          .select({
+            meeting: meetingRecords,
+            uploadedBy: users
+          })
+          .from(meetingRecords)
+          .innerJoin(users, eq(meetingRecords.uploadedByUserId, users.id))
+          .where(and(
+            eq(meetingRecords.projectId, project.id),
+            eq(meetingRecords.id, input.targetMeetingId)
+          ))
+          .limit(1);
+        if (targetMeeting) {
+          meetingRows = [...meetingRows, targetMeeting];
+        }
+      }
       const meetingIds = meetingRows.map((row) => row.meeting.id);
       const insightRows = meetingIds.length
         ? await db
@@ -214,6 +243,31 @@ export function createMeetingRepository(db: WorkHubDb): MeetingRepository {
       };
     },
 
+    async findInsightContext(input) {
+      const project = await findProject(db, input.projectId);
+      if (!project) {
+        return { project: null, meeting: null, insight: null };
+      }
+      const rows = await db
+        .select({
+          insight: meetingInsights,
+          meeting: meetingRecords
+        })
+        .from(meetingInsights)
+        .innerJoin(meetingRecords, eq(meetingInsights.meetingId, meetingRecords.id))
+        .where(and(
+          eq(meetingInsights.id, input.insightId),
+          eq(meetingRecords.projectId, input.projectId)
+        ))
+        .limit(1);
+      const row = rows[0];
+      return {
+        project,
+        meeting: row?.meeting ?? null,
+        insight: row?.insight ?? null
+      };
+    },
+
     async insightToDraft(input) {
       const at = input.at ?? new Date();
       let result: MeetingInsightDraftRows | null = null;
@@ -233,6 +287,7 @@ export function createMeetingRepository(db: WorkHubDb): MeetingRepository {
             eq(meetingInsights.id, input.insightId),
             eq(meetingRecords.projectId, input.projectId)
           ))
+          .for("update")
           .limit(1);
         const source = rows[0];
         if (!source) {
@@ -457,6 +512,7 @@ export function createMeetingRepository(db: WorkHubDb): MeetingRepository {
           .innerJoin(meetingRecords, eq(meetingInsights.meetingId, meetingRecords.id))
           .where(eq(meetingInsights.createdWorkItemId, input.workItemId))
           .orderBy(desc(meetingInsights.updatedAt), desc(meetingInsights.createdAt))
+          .for("update")
           .limit(1);
         const source = rows[0];
         if (!source) {

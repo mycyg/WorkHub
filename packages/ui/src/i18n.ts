@@ -175,7 +175,7 @@ const copy = {
     "en-US": "AI is queued. Key steps will appear here after it starts."
   },
   "agent.stepFallback": { "zh-CN": "记录了一步。", "en-US": "Recorded one step." },
-  "agent.stepThinkingPublic": { "zh-CN": "AI 正在思考中，隐藏推理内容不会展示。", "en-US": "AI is thinking; hidden reasoning is not shown." },
+  "agent.stepThinkingPublic": { "zh-CN": "AI 正在整理材料，稍后给你下一步。", "en-US": "AI is organizing the materials and preparing the next step." },
   "agent.stepToolCall": { "zh-CN": "工具调用", "en-US": "Tool call" },
   "agent.stepToolCallGeneric": { "zh-CN": "正在调用工具。", "en-US": "Calling a tool." },
   "agent.stepToolResult": { "zh-CN": "工具已返回", "en-US": "Tool result received" },

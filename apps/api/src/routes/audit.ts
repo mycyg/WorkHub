@@ -21,6 +21,7 @@ import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { getDefaultAgentRunQueue } from "../workers/agent-runner.js";
+import { getDefaultStructuredLogger } from "../logging.js";
 import { getDefaultWorkItemService, WorkItemServiceError, type WorkItemService } from "../services/work-items.js";
 
 export type AuditRoutesDependencies = {
@@ -56,7 +57,21 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
       await workItems.detailPage({ workItemId, actor });
     } catch (error) {
       if (error instanceof WorkItemServiceError) {
-        throw new HTTPException(error.status as 403, { message: error.message });
+        throw error;
+      }
+      throw error;
+    }
+  }
+
+  async function assertCanMutateWorkItemArtifacts(workItemId: string, actor: AuthEnv["Variables"]["actor"]) {
+    if (!workItems) {
+      throw new HTTPException(403, { message: "你没有权限修改这个事项的交付物。" });
+    }
+    try {
+      await workItems.assertCanMutateArtifacts({ workItemId, actor });
+    } catch (error) {
+      if (error instanceof WorkItemServiceError) {
+        throw error;
       }
       throw error;
     }
@@ -90,14 +105,31 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
 
   routes.post("/agent-runs/:id/revert", createRequireLocalClientMiddleware(authSource), async (c) => {
     const runId = c.req.param("id");
-    const payload = revertAgentRunRequestSchema.parse(await readJsonObject(c));
-    const snapshot = await snapshots.findSnapshotById(payload.snapshot_id);
+    if (!isUuidParam(runId)) {
+      throw new HTTPException(404, { message: "没有找到这次 AI 执行。" });
+    }
+    const rawPayload = await readJsonObject(c);
+    const rawSnapshotId = rawPayload.snapshot_id;
+    let snapshot: SnapshotRow | null = null;
+    let snapshotMutationChecked = false;
+    if (typeof rawSnapshotId === "string" && isUuidParam(rawSnapshotId)) {
+      snapshot = await snapshots.findSnapshotById(rawSnapshotId);
+      if (!snapshot) {
+        throw new HTTPException(404, { message: "没有找到可回滚的快照。" });
+      }
+      // 资源级 fail-closed：还原是破坏性写操作，必须确认调用方对该快照所属事项有交付物修改权限，
+      // 否则普通只读成员也能回滚别人事项的快照（越权）。
+      await assertCanMutateWorkItemArtifacts(snapshot.workItemId, c.var.actor);
+      snapshotMutationChecked = true;
+    }
+    const payload = revertAgentRunRequestSchema.parse(rawPayload);
+    snapshot ??= await snapshots.findSnapshotById(payload.snapshot_id);
     if (!snapshot) {
       throw new HTTPException(404, { message: "没有找到可回滚的快照。" });
     }
-    // 资源级 fail-closed：还原是破坏性写操作，必须确认调用方对该快照所属事项可见，
-    // 否则任意本地客户端可回滚别人事项的快照（越权）。
-    await assertCanReadWorkItem(snapshot.workItemId, c.var.actor);
+    if (!snapshotMutationChecked) {
+      await assertCanMutateWorkItemArtifacts(snapshot.workItemId, c.var.actor);
+    }
     const snapshotAuditRows = await auditLogs.listAuditLogsForWorkItem(snapshot.workItemId);
     const belongsToRun = snapshotAuditRows.some((row) =>
       row.snapshotId === snapshot.id && detailJson(row.detailJson).run_id === runId
@@ -106,6 +138,7 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
       throw new HTTPException(404, { message: "这个快照不属于这次 AI 执行。" });
     }
 
+    const snapshotRef = toSnapshotRef(snapshot);
     const workdir = await workdirForRun(runId);
     if (!workdir) {
       throw new HTTPException(409, { message: "没有找到这次 AI 执行的本地工作目录,无法还原文件。" });
@@ -113,7 +146,7 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
 
     try {
       await revertFileSnapshot({
-        snapshot: toSnapshotRef(snapshot),
+        snapshot: snapshotRef,
         workdir
       });
     } catch (error) {
@@ -132,25 +165,34 @@ export function createAuditRoutes(deps: AuditRoutesDependencies = {}) {
       }
     }
     const actor = c.var.actor;
-    await auditLogs.createAuditLog({
-      orgId: actor.orgId,
-      workspaceId: actor.workspaceId,
-      actorKind: actor.kind,
-      ...(actor.userId ? { actorUserId: actor.userId } : {}),
-      actorNickname: actor.label,
-      // findings[21]：revert 是对该 work item 交付物的破坏性改动，必须挂在 work_item 实体上，
-      // 才能和它撤销的那些写入一道出现在 work-item 审计时间线 / 回放视图里（run_id 仍存于 detailJson）。
-      entityType: "work_item",
-      entityId: snapshot.workItemId,
-      action: "snapshot.reverted",
-      detailJson: {
-        snapshot_id: snapshot.id,
-        run_id: runId,
-        workdir_restored: true,
-        ...(payload.reason_md ? { reason_md: payload.reason_md } : {})
-      },
-      snapshotId: snapshot.id
-    });
+    try {
+      await auditLogs.createAuditLog({
+        orgId: actor.orgId,
+        workspaceId: actor.workspaceId,
+        actorKind: actor.kind,
+        ...(actor.userId ? { actorUserId: actor.userId } : {}),
+        actorNickname: actor.label,
+        // findings[21]：revert 是对该 work item 交付物的破坏性改动，必须挂在 work_item 实体上，
+        // 才能和它撤销的那些写入一道出现在 work-item 审计时间线 / 回放视图里（run_id 仍存于 detailJson）。
+        entityType: "work_item",
+        entityId: snapshot.workItemId,
+        action: "snapshot.reverted",
+        detailJson: {
+          snapshot_id: snapshot.id,
+          run_id: runId,
+          workdir_restored: true,
+          ...(payload.reason_md ? { reason_md: payload.reason_md } : {})
+        },
+        snapshotId: snapshot.id
+      });
+    } catch (error) {
+      getDefaultStructuredLogger().warn("snapshot_revert_audit_write_failed", {
+        snapshotId: snapshot.id,
+        workItemId: snapshot.workItemId,
+        runId,
+        error
+      });
+    }
 
     return c.json({
       ok: true,
@@ -171,29 +213,16 @@ function detailJson(value: unknown): Record<string, unknown> {
 }
 
 function toSnapshotRef(row: SnapshotRow): SnapshotRef {
+  const snapshot = toSnapshotVm(row);
   return {
-    id: row.id,
-    workItemId: row.workItemId,
-    ...(row.branchId ? { branchId: row.branchId } : {}),
-    kind: toSnapshotKind(row.kind),
-    ref: row.ref,
-    ...(row.contentSha256 ? { contentSha256: row.contentSha256 } : {}),
-    createdByKind: toSnapshotActorKind(row.createdByKind),
-    createdAt: row.createdAt.toISOString(),
-    ...(row.revertedAt ? { revertedAt: row.revertedAt.toISOString() } : {})
+    id: snapshot.id,
+    workItemId: snapshot.work_item_id,
+    ...(snapshot.branch_id ? { branchId: snapshot.branch_id } : {}),
+    kind: snapshot.kind,
+    ref: snapshot.ref,
+    ...(snapshot.content_sha256 ? { contentSha256: snapshot.content_sha256 } : {}),
+    createdByKind: snapshot.created_by_kind,
+    createdAt: snapshot.created_at,
+    ...(snapshot.reverted_at ? { revertedAt: snapshot.reverted_at } : {})
   };
-}
-
-function toSnapshotKind(value: string): SnapshotRef["kind"] {
-  if (value === "pre_step" || value === "merge" || value === "manual" || value === "base") {
-    return value;
-  }
-  throw new Error(`Unsupported snapshot kind: ${value}`);
-}
-
-function toSnapshotActorKind(value: string): SnapshotRef["createdByKind"] {
-  if (value === "human" || value === "ai" || value === "system") {
-    return value;
-  }
-  throw new Error(`Unsupported snapshot actor kind: ${value}`);
 }

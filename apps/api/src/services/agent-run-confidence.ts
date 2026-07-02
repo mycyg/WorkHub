@@ -69,6 +69,21 @@ function actorOrg(settings: Settings) {
   };
 }
 
+async function auditConfidenceAction(
+  auditLogs: AuditLogRepository,
+  input: Parameters<AuditLogRepository["createAuditLog"]>[0]
+) {
+  try {
+    await auditLogs.createAuditLog(input);
+  } catch (error) {
+    getDefaultStructuredLogger().warn("agent_run_confidence_audit_write_failed", {
+      action: input.action,
+      entityId: input.entityId,
+      error
+    });
+  }
+}
+
 export function createAgentRunConfidenceRecorder(
   options: AgentRunConfidenceRecorderOptions = {}
 ): AgentRunConfidenceRecorder {
@@ -104,7 +119,7 @@ export function createAgentRunConfidenceRecorder(
       rationaleMd: assessment.rationaleMd
     });
 
-    await auditLogs.createAuditLog({
+    await auditConfidenceAction(auditLogs, {
       ...tenant,
       actorKind: "ai",
       actorNickname: "AI 工人",
@@ -133,7 +148,7 @@ export function createAgentRunConfidenceRecorder(
       reasonMd: assessment.escalation.reasonMd,
       handoffJson: assessment.escalation.handoffJson
     });
-    await auditLogs.createAuditLog({
+    await auditConfidenceAction(auditLogs, {
       ...tenant,
       actorKind: "ai",
       actorNickname: "AI 工人",

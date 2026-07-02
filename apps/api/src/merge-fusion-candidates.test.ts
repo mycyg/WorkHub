@@ -133,6 +133,37 @@ test("LLM merge mediator turns strict JSON into an ai_fusion candidate", async (
   assert.equal(result[0]?.candidates[0]?.quality_gate?.status, "passed");
 });
 
+test("LLM merge mediator salvages unfenced JSON when providers add surrounding prose", async () => {
+  const generator = createLlmMergeFusionCandidateGenerator({
+    registry: fakeRegistry([
+      "我会给出可合并的 JSON：",
+      JSON.stringify({
+        candidates: [
+          {
+            conflict_key: "delivery:/outputs/report.md",
+            rationale_md: "融合正式版结论和本次新增证据。",
+            merged_value: { proposed_resolution_md: "正式结论 + 新增证据说明" },
+            recommend: true
+          }
+        ]
+      }),
+      "以上是建议。"
+    ].join("\n"))
+  });
+
+  const result = await generator.generate({
+    proposalId: "92000000-0000-4000-8000-000000000001",
+    workItemId: "92000000-0000-4000-8000-000000000002",
+    proposalTitle: "客户周报草稿",
+    manifest: manifest(),
+    conflicts: [conflict()]
+  });
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.recommendedOptionKey, "ai_fusion");
+  assert.equal(result[0]?.candidates[0]?.source, "llm");
+});
+
 test("LLM merge mediator adds structured field patch quality metadata", async () => {
   let prompt = "";
   const inputManifest = structuredManifest();

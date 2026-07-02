@@ -75,10 +75,20 @@ function policyAppliesToActor(policy: PermissionPolicyRecord, actor: PermissionA
   }
 }
 
+function policyTenantMatchesActor(policy: PermissionPolicyRecord, actor: PermissionActor) {
+  if (policy.orgId && policy.orgId !== actor.orgId) {
+    return false;
+  }
+  if (policy.workspaceId && policy.workspaceId !== actor.workspaceId) {
+    return false;
+  }
+  return true;
+}
+
 // findings[#12]：去掉 isExpired/expiresAt TTL 死代码——permission_policies 没有 expires_at 列、expiresAt 从未被
 // 写入，isExpired 恒为 false，徒增「策略会过期」的误导。仅按软删 + scope 适配判活。
 function isActivePolicy(policy: PermissionPolicyRecord, actor: PermissionActor) {
-  return policy.deletedAt == null && policyAppliesToActor(policy, actor);
+  return policy.deletedAt == null && policyTenantMatchesActor(policy, actor) && policyAppliesToActor(policy, actor);
 }
 
 function rankPolicy(policy: PermissionPolicyRecord): CandidateRank {

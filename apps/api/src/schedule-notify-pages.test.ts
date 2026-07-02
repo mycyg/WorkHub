@@ -3,18 +3,21 @@ import test from "node:test";
 
 import type {
   AuditLogRepository,
+  AuditLogRow,
   CreateAuditLogInput,
   CreateNotificationInput,
   MeetingInsightScheduleSourceRow,
   NotificationRepository,
   NotificationRow,
   NotificationWriteResult,
+  ScheduleEventSourceRow,
   ScheduleNotifyRepository,
   WorkItemScheduleSourceRow
 } from "@workhub/db";
 
-import { createScheduleNotifyPageService } from "./services/schedule-notify-pages.js";
+import { createScheduleNotifyPageService, ScheduleNotifyPageServiceError } from "./services/schedule-notify-pages.js";
 import type { AuthActor } from "./middleware/auth.js";
+import { InternalContractError } from "./pages/output-contract.js";
 
 const now = new Date("2026-06-11T10:00:00.000Z");
 const userId = "82000000-0000-4000-8000-000000000001";
@@ -33,6 +36,14 @@ function actor(): AuthActor {
     isAdmin: false,
     orgId: "82000000-0000-4000-8000-000000000007",
     workspaceId
+  };
+}
+
+function driftedActor(): AuthActor {
+  return {
+    ...actor(),
+    id: "not-a-uuid",
+    userId: "not-a-uuid"
   };
 }
 
@@ -190,13 +201,24 @@ class MemoryNotifications implements NotificationRepository {
     return { notification: row, created: true, resurfaced: true };
   }
 
-  async listForUser() {
+  async listForUser(
+    _userId?: string,
+    _options: { includeArchived?: boolean; limit?: number; before?: { createdAt: Date; id: string } } = {}
+  ) {
     return this.rows;
+  }
+
+  async findByIdForUser(id: string, userId: string) {
+    return this.rows.find((item) => item.id === id && item.userId === userId) ?? null;
   }
 
   async markRead(id: string) {
     const row = this.rows.find((item) => item.id === id);
     return row ? { ...row, readAt: now, updatedAt: now } : null;
+  }
+
+  async markReadMany(ids: string[]) {
+    return ids.length;
   }
 
   async markAllRead() {
@@ -213,23 +235,260 @@ class MemoryNotifications implements NotificationRepository {
   }
 }
 
+class EmptyNotifications extends MemoryNotifications {
+  rows: NotificationRow[] = [];
+}
+
+class LimitRespectingNotifications extends MemoryNotifications {
+  override async listForUser(
+    userId: string,
+    options: { includeArchived?: boolean; limit?: number; before?: { createdAt: Date; id: string } } = {}
+  ) {
+    return this.rows
+      .filter((item) => item.userId === userId)
+      .filter((item) => options.includeArchived || !item.archivedAt)
+      .filter((item) => !options.before ||
+        item.createdAt.getTime() < options.before.createdAt.getTime() ||
+        (item.createdAt.getTime() === options.before.createdAt.getTime() && item.id < options.before.id)
+      )
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id))
+      .slice(0, options.limit ?? this.rows.length);
+  }
+}
+
 class MemoryScheduleNotify implements ScheduleNotifyRepository {
-  async readNotificationContexts() {
+  async readNotificationContexts(): ReturnType<ScheduleNotifyRepository["readNotificationContexts"]> {
     return {
       workItems: [],
       meetingInsights: [meetingInsightSource()]
     };
   }
 
-  async listMeetingInsightSources() {
+  async listMeetingInsightSources(): ReturnType<ScheduleNotifyRepository["listMeetingInsightSources"]> {
     return [meetingInsightSource()];
   }
 
-  async readSchedulePageRows() {
+  async readSchedulePageRows(): ReturnType<ScheduleNotifyRepository["readSchedulePageRows"]> {
     return {
       events: [],
       dueWorkItems: [workItemSource()],
       meetingInsights: [meetingInsightSource()]
+    };
+  }
+}
+
+class NoMeetingInsightScheduleNotify extends MemoryScheduleNotify {
+  async listMeetingInsightSources(): ReturnType<ScheduleNotifyRepository["listMeetingInsightSources"]> {
+    return [];
+  }
+}
+
+class HiddenFirstMeetingInsightScheduleNotify extends MemoryScheduleNotify {
+  private hiddenSource(index: number): MeetingInsightScheduleSourceRow {
+    const source = meetingInsightSource();
+    if (!source.project) {
+      throw new Error("meeting insight fixture must have a project");
+    }
+    return {
+      ...source,
+      insight: {
+        ...source.insight,
+        id: `82000000-0000-4000-8000-1000000000${index.toString(16).padStart(2, "0")}`
+      },
+      project: {
+        ...source.project,
+        workspaceId: "82000000-0000-4000-8000-000000000099",
+        ownerUserId: "82000000-0000-4000-8000-000000000098"
+      }
+    };
+  }
+
+  async listMeetingInsightSources(input?: { limit?: number }): ReturnType<ScheduleNotifyRepository["listMeetingInsightSources"]> {
+    const sources = [
+      ...Array.from({ length: 80 }, (_, index) => this.hiddenSource(index)),
+      meetingInsightSource()
+    ];
+    return sources.slice(0, input?.limit ?? sources.length);
+  }
+}
+
+class MeetingInsightWithPrivateWorkItemScheduleNotify extends MemoryScheduleNotify {
+  async readNotificationContexts(): ReturnType<ScheduleNotifyRepository["readNotificationContexts"]> {
+    const source = workItemSource();
+    const privateWorkItemSource: WorkItemScheduleSourceRow = {
+      ...source,
+      workItem: {
+        ...source.workItem,
+        status: "intake",
+        submitterUserId: "82000000-0000-4000-8000-000000000099",
+        claimedByUserId: null,
+        claimedByNickname: null
+      }
+    };
+    return {
+      workItems: [privateWorkItemSource],
+      meetingInsights: [meetingInsightSource()]
+    };
+  }
+
+  async listMeetingInsightSources(): ReturnType<ScheduleNotifyRepository["listMeetingInsightSources"]> {
+    return [];
+  }
+}
+
+class AssignedPrivateWorkItemScheduleNotify extends MemoryScheduleNotify {
+  private assignedPrivateSource(): WorkItemScheduleSourceRow {
+    const source = workItemSource();
+    return {
+      ...source,
+      assignments: [{ userId, role: "lead" }],
+      workItem: {
+        ...source.workItem,
+        status: "spec_ready",
+        submitterUserId: "82000000-0000-4000-8000-000000000099",
+        claimedByUserId: null,
+        claimedByNickname: null
+      }
+    } as WorkItemScheduleSourceRow;
+  }
+
+  async readNotificationContexts(): ReturnType<ScheduleNotifyRepository["readNotificationContexts"]> {
+    return {
+      workItems: [this.assignedPrivateSource()],
+      meetingInsights: []
+    };
+  }
+
+  async listMeetingInsightSources(): ReturnType<ScheduleNotifyRepository["listMeetingInsightSources"]> {
+    return [];
+  }
+
+  async readSchedulePageRows(): ReturnType<ScheduleNotifyRepository["readSchedulePageRows"]> {
+    return {
+      events: [],
+      dueWorkItems: [this.assignedPrivateSource()],
+      meetingInsights: []
+    };
+  }
+}
+
+class ScheduleEventWithPrivateWorkItemScheduleNotify extends MemoryScheduleNotify {
+  async listMeetingInsightSources(): ReturnType<ScheduleNotifyRepository["listMeetingInsightSources"]> {
+    return [];
+  }
+
+  async readSchedulePageRows(): ReturnType<ScheduleNotifyRepository["readSchedulePageRows"]> {
+    const source = workItemSource();
+    const privateSource: WorkItemScheduleSourceRow = {
+      ...source,
+      workItem: {
+        ...source.workItem,
+        status: "spec_ready",
+        submitterUserId: "82000000-0000-4000-8000-000000000099",
+        claimedByUserId: null,
+        claimedByNickname: null
+      }
+    };
+    const event: ScheduleEventSourceRow = {
+      event: {
+        id: "82000000-0000-4000-8000-000000000017",
+        projectId,
+        workItemId,
+        createdByUserId: "82000000-0000-4000-8000-000000000099",
+        title: "Private work review",
+        description: "Review the private work item.",
+        eventType: "review",
+        startAt: null,
+        endAt: new Date("2026-06-11T15:00:00.000Z"),
+        participantUserIdsJson: [],
+        createdAt: now,
+        updatedAt: now
+      },
+      project: privateSource.project,
+      workItem: privateSource.workItem
+    };
+    return {
+      events: [event],
+      dueWorkItems: [],
+      meetingInsights: []
+    };
+  }
+}
+
+class ScheduleEventWithDeletedWorkItemScheduleNotify extends MemoryScheduleNotify {
+  async listMeetingInsightSources(): ReturnType<ScheduleNotifyRepository["listMeetingInsightSources"]> {
+    return [];
+  }
+
+  async readSchedulePageRows(): ReturnType<ScheduleNotifyRepository["readSchedulePageRows"]> {
+    const source = workItemSource();
+    const event: ScheduleEventSourceRow = {
+      event: {
+        id: "82000000-0000-4000-8000-000000000018",
+        projectId,
+        workItemId,
+        createdByUserId: userId,
+        title: "Deleted work review",
+        description: "This event used to point to a deleted work item.",
+        eventType: "review",
+        startAt: null,
+        endAt: new Date("2026-06-11T16:00:00.000Z"),
+        participantUserIdsJson: [],
+        createdAt: now,
+        updatedAt: now
+      },
+      project: source.project,
+      workItem: {
+        ...source.workItem,
+        deletedAt: new Date("2026-06-11T09:00:00.000Z"),
+        deletedByUserId: userId
+      }
+    };
+    return {
+      events: [event],
+      dueWorkItems: [],
+      meetingInsights: []
+    };
+  }
+}
+
+class MeetingInsightCalendarWithPrivateWorkItemScheduleNotify extends MemoryScheduleNotify {
+  async listMeetingInsightSources(): ReturnType<ScheduleNotifyRepository["listMeetingInsightSources"]> {
+    return [];
+  }
+
+  async readSchedulePageRows(): ReturnType<ScheduleNotifyRepository["readSchedulePageRows"]> {
+    return {
+      events: [],
+      dueWorkItems: [],
+      meetingInsights: [{
+        ...meetingInsightSource(),
+        insight: {
+          ...meetingInsightSource().insight,
+          targetWorkItemId: workItemId
+        }
+      }]
+    };
+  }
+}
+
+class MergedWorkItemScheduleNotify extends MemoryScheduleNotify {
+  async listMeetingInsightSources(): ReturnType<ScheduleNotifyRepository["listMeetingInsightSources"]> {
+    return [];
+  }
+
+  async readSchedulePageRows(): ReturnType<ScheduleNotifyRepository["readSchedulePageRows"]> {
+    const source = workItemSource();
+    return {
+      events: [],
+      dueWorkItems: [{
+        ...source,
+        workItem: {
+          ...source.workItem,
+          status: "merged"
+        }
+      }],
+      meetingInsights: []
     };
   }
 }
@@ -270,6 +529,24 @@ class MemoryAudit implements AuditLogRepository {
   }
 }
 
+class ThrowingAudit implements AuditLogRepository {
+  async createAuditLog(_input: CreateAuditLogInput): Promise<AuditLogRow> {
+    throw new Error("audit sink unavailable");
+  }
+
+  async listAuditLogsForEntity() {
+    return [];
+  }
+
+  async listAuditLogsForWorkItem() {
+    return [];
+  }
+
+  async markAuditLogUndone() {
+    return null;
+  }
+}
+
 test("schedule notify page service groups meeting insight notifications and archives actions", async () => {
   const notifications = new MemoryNotifications();
   const audit = new MemoryAudit();
@@ -291,6 +568,72 @@ test("schedule notify page service groups meeting insight notifications and arch
 
   await service.dismiss(page.buckets.needs_decision[0]!.id, actor());
   assert.equal(audit.inputs.at(-1)?.action, "notification.dismiss");
+});
+
+test("notifications page summary scans past the first repository page", async () => {
+  const notifications = new LimitRespectingNotifications();
+  notifications.rows = Array.from({ length: 201 }, (_value, index) => notification({
+    id: `82000000-0000-4000-8000-${(index + 100).toString(16).padStart(12, "0")}`,
+    type: "system.notice",
+    severity: "normal",
+    title: `系统通知 ${index + 1}`,
+    body: "普通通知",
+    targetUrl: null,
+    projectId: null,
+    workItemId: null,
+    dedupeKey: `system:${index + 1}`,
+    createdAt: new Date(now.getTime() - index),
+    updatedAt: new Date(now.getTime() - index)
+  }));
+  const service = createScheduleNotifyPageService({
+    notifications,
+    scheduleNotify: new NoMeetingInsightScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  const page = await service.notificationsPage({ actor: actor(), locale: "zh-CN" });
+
+  assert.equal(page.summary.total_count, 201);
+  assert.equal(page.summary.unread_count, 201);
+  assert.equal(page.items.length, 201);
+});
+
+test("meeting insight notification refresh overfetches before visibility filtering", async () => {
+  const notifications = new EmptyNotifications();
+  const service = createScheduleNotifyPageService({
+    notifications,
+    scheduleNotify: new HiddenFirstMeetingInsightScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  const page = await service.notificationsPage({ actor: actor(), locale: "zh-CN" });
+
+  assert.equal(page.summary.total_count, 1);
+  assert.equal(page.items[0]?.dedupe_key, `meeting_insight:${insightId}`);
+  assert.equal(notifications.upsertCalls, 1);
+});
+
+test("schedule notify page actions return committed results even when post-write audit fails", async () => {
+  const service = createScheduleNotifyPageService({
+    notifications: new MemoryNotifications(),
+    scheduleNotify: new MemoryScheduleNotify(),
+    audit: new ThrowingAudit(),
+    now: () => now
+  });
+
+  const read = await service.markRead("82000000-0000-4000-8000-000000000010", actor());
+  assert.equal(read.readAt?.toISOString(), now.toISOString());
+
+  const allRead = await service.markAllRead(actor());
+  assert.equal(allRead.updated, 1);
+
+  const dismissed = await service.dismiss("82000000-0000-4000-8000-000000000010", actor());
+  assert.equal(dismissed.archivedAt?.toISOString(), now.toISOString());
+
+  const completed = await service.complete("82000000-0000-4000-8000-000000000010", actor());
+  assert.equal(completed.archivedAt?.toISOString(), now.toISOString());
 });
 
 test("M10 repeat notifications read does not re-upsert unchanged meeting-insight notifications", async () => {
@@ -337,6 +680,178 @@ test("findings: a drifted severity value clamps to normal instead of 500ing the 
   const drifted = allItems.find((item) => item.id === "82000000-0000-4000-8000-000000000015");
   assert.ok(drifted, "drifted-severity row still renders");
   assert.equal(drifted!.severity, "normal");
+});
+
+test("schedule notify pages wrap VM assembly drift as internal contract errors", async () => {
+  const service = createScheduleNotifyPageService({
+    notifications: new EmptyNotifications(),
+    scheduleNotify: new MemoryScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.notificationsPage({ actor: driftedActor(), locale: "zh-CN" }),
+    (error: unknown) => error instanceof InternalContractError && error.context === "notifications.page"
+  );
+  await assert.rejects(
+    () => service.calendarPage({ actor: driftedActor(), locale: "zh-CN", date: "2026-06-11", view: "day" }),
+    (error: unknown) => error instanceof InternalContractError && error.context === "calendar.page"
+  );
+});
+
+test("meeting insight notification stays visible when its attached work item is private", async () => {
+  const notifications = new MemoryNotifications();
+  notifications.rows = [notification({ workItemId })];
+  const service = createScheduleNotifyPageService({
+    notifications,
+    scheduleNotify: new MeetingInsightWithPrivateWorkItemScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  const page = await service.notificationsPage({ actor: actor(), locale: "zh-CN" });
+  const item = page.items.find((candidate) => candidate.id === "82000000-0000-4000-8000-000000000010");
+  assert.ok(item, "visible meeting insight notification is not hidden by an unreadable linked work item");
+  assert.equal(item.source_context?.source_type, "meeting_insight");
+  assert.equal(item.work_item_id, undefined);
+  assert.ok(item.grounding);
+  assert.equal(item.grounding.evidence_refs[0]?.href.includes("work_item_id="), false);
+});
+
+test("assigned private work item notifications and calendar blocks stay visible to the assignee", async () => {
+  const notifications = new MemoryNotifications();
+  notifications.rows = [
+    notification({
+      id: "82000000-0000-4000-8000-000000000016",
+      type: "workitem.due",
+      severity: "normal",
+      title: "Assigned private due",
+      body: null,
+      targetUrl: `/workitems/${workItemId}`,
+      workItemId,
+      dedupeKey: "assigned-private-due"
+    })
+  ];
+  const service = createScheduleNotifyPageService({
+    notifications,
+    scheduleNotify: new AssignedPrivateWorkItemScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  const inbox = await service.notificationsPage({ actor: actor(), locale: "zh-CN" });
+  const item = inbox.items.find((candidate) => candidate.id === "82000000-0000-4000-8000-000000000016");
+  assert.ok(item, "assigned private work item notification should not disappear from the inbox");
+  assert.equal(item!.work_item_id, workItemId);
+  assert.equal(item!.source_context?.source_type, "work_item");
+  assert.equal(item!.actions.open?.href, `/workitems/${workItemId}`);
+  assert.equal(item!.grounding?.evidence_refs[0]?.href.includes(`work_item_id=${workItemId}`) ?? false, true);
+
+  const calendar = await service.calendarPage({ actor: actor(), locale: "zh-CN", date: "2026-06-11", view: "day" });
+  const block = calendar.blocks.find((candidate) => candidate.work_item_id === workItemId);
+  assert.ok(block, "assigned private work item due date should show on the assignee calendar");
+  assert.equal(block!.target_href, `/workitems/${workItemId}`);
+});
+
+test("calendar schedule events do not expose dead work-item links for unreadable private work", async () => {
+  const service = createScheduleNotifyPageService({
+    notifications: new MemoryNotifications(),
+    scheduleNotify: new ScheduleEventWithPrivateWorkItemScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  const calendar = await service.calendarPage({ actor: actor(), locale: "zh-CN", date: "2026-06-11", view: "day" });
+  const block = calendar.blocks.find((candidate) => candidate.id === "82000000-0000-4000-8000-000000000017");
+  if (!block) {
+    throw new Error("project-visible schedule event still appears");
+  }
+  assert.equal(block.target_href, undefined);
+  assert.equal(block.work_item_id, undefined);
+  const sourceContext = block.source_context;
+  if (!sourceContext) {
+    throw new Error("schedule event block should carry source context");
+  }
+  assert.equal(sourceContext.source_type, "schedule_event");
+  assert.equal("work_item_id" in sourceContext ? sourceContext.work_item_id : undefined, undefined);
+});
+
+test("calendar schedule events do not expose dead work-item links for soft-deleted work", async () => {
+  const service = createScheduleNotifyPageService({
+    notifications: new MemoryNotifications(),
+    scheduleNotify: new ScheduleEventWithDeletedWorkItemScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  const calendar = await service.calendarPage({ actor: actor(), locale: "zh-CN", date: "2026-06-11", view: "day" });
+  const block = calendar.blocks.find((candidate) => candidate.id === "82000000-0000-4000-8000-000000000018");
+  if (!block) {
+    throw new Error("project-visible schedule event still appears");
+  }
+  assert.equal(block.target_href, undefined);
+  assert.equal(block.work_item_id, undefined);
+  const sourceContext = block.source_context;
+  if (!sourceContext) {
+    throw new Error("schedule event block should carry source context");
+  }
+  assert.equal("work_item_id" in sourceContext ? sourceContext.work_item_id : undefined, undefined);
+});
+
+test("calendar page rejects malformed date and view queries instead of silently changing scope", async () => {
+  const service = createScheduleNotifyPageService({
+    notifications: new MemoryNotifications(),
+    scheduleNotify: new MemoryScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  for (const input of [
+    { date: "2026-02-30", view: "day" },
+    { date: "not-a-date", view: "day" },
+    { date: "2026-06-11", view: "agenda" }
+  ]) {
+    await assert.rejects(
+      () => service.calendarPage({ actor: actor(), locale: "zh-CN", ...input }),
+      (error: unknown) =>
+        error instanceof ScheduleNotifyPageServiceError &&
+        error.status === 422 &&
+        error.code === "invalid_calendar_query"
+    );
+  }
+});
+
+test("calendar meeting followups do not expose unreadable private work item ids", async () => {
+  const service = createScheduleNotifyPageService({
+    notifications: new MemoryNotifications(),
+    scheduleNotify: new MeetingInsightCalendarWithPrivateWorkItemScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  const calendar = await service.calendarPage({ actor: actor(), locale: "zh-CN", date: "2026-06-12", view: "day" });
+  const block = calendar.blocks.find((candidate) => candidate.id === insightId);
+  if (!block) {
+    throw new Error("meeting followup still appears on the calendar");
+  }
+  assert.equal(block.kind, "meeting_followup");
+  assert.equal(block.target_href, `/meetings?project_id=${projectId}&m=${meetingId}&insight_id=${insightId}`);
+  assert.equal(block.work_item_id, undefined);
+});
+
+test("calendar page does not show merged work items as active due blocks", async () => {
+  const service = createScheduleNotifyPageService({
+    notifications: new MemoryNotifications(),
+    scheduleNotify: new MergedWorkItemScheduleNotify(),
+    audit: new MemoryAudit(),
+    now: () => now
+  });
+
+  const page = await service.calendarPage({ actor: actor(), locale: "zh-CN", date: "2026-06-11", view: "day" });
+
+  assert.equal(page.summary.block_count, 0);
+  assert.equal(page.empty_state, "no_schedule_blocks");
 });
 
 test("schedule notify page service builds calendar blocks from due work and meeting followups", async () => {

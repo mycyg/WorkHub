@@ -52,6 +52,8 @@ function toPersistenceRun(run: AgentRunQueueRecord): AgentRunForPersistence {
   const handoffText = handoffMd(run.handoff);
   return {
     runId: run.run_id,
+    ...(run.org_id ? { orgId: run.org_id } : {}),
+    ...(run.workspace_id ? { workspaceId: run.workspace_id } : {}),
     workItemId: run.work_item_id,
     actorUserId: run.actor_id,
     mode: run.mode,
@@ -192,6 +194,8 @@ function toQueueRun(rows: StoredAgentRunRows): AgentRunQueueRecord {
     : undefined;
   return {
     run_id: rows.run.id,
+    ...(rows.run.orgId ? { org_id: rows.run.orgId } : {}),
+    ...(rows.run.workspaceId ? { workspace_id: rows.run.workspaceId } : {}),
     work_item_id: rows.run.workItemId,
     actor_id: rows.run.actorUserId ?? rows.run.actor,
     mode: rows.run.mode,
@@ -257,7 +261,17 @@ export function createDbAgentRunPersistence(repository: AgentRunRepository): Age
     },
 
     async updateRun(run, workerId) {
-      await repository.updateRun(toPersistenceRun(run), workerId);
+      const row = await repository.updateRun(toPersistenceRun(run), workerId);
+      return Boolean(row);
+    },
+
+    async cancelActiveRun(run) {
+      const row = await repository.cancelActiveRun(toPersistenceRun(run));
+      if (!row) {
+        return null;
+      }
+      const rows = await repository.findById(row.id);
+      return rows ? toQueueRun(rows) : null;
     },
 
     async replaceTrace(runId, trace, workerId) {

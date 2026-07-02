@@ -21,6 +21,8 @@ export type PermissionPolicyRecord = {
   orgId?: string | null;
   workspaceId?: string | null;
   deletedAt?: Date | string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
 };
 
 export type CreatePermissionPolicyInput = {
@@ -54,7 +56,9 @@ export function toPermissionPolicyRecord(row: PermissionPolicyRow): PermissionPo
     createdByUserId: row.createdByUserId,
     orgId: row.orgId,
     workspaceId: row.workspaceId,
-    deletedAt: row.deletedAt
+    deletedAt: row.deletedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
   };
 }
 

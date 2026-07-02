@@ -1,4 +1,5 @@
 import { settings } from "@workhub/config";
+import type { ProviderRegistry } from "@workhub/agent/providers";
 import {
   getSharedDatabaseClient,
   createTeamSkillRepository,
@@ -100,6 +101,18 @@ export function createAgentRunSkillCurationScheduler(
   let lastTickAt: string | undefined;
   let lastErrorMessage: string | undefined;
 
+  async function auditSkillCurationAction(input: Parameters<typeof options.auditLog.createAuditLog>[0]) {
+    try {
+      await options.auditLog.createAuditLog(input);
+    } catch (error) {
+      getDefaultStructuredLogger().warn("skill_curation_audit_write_failed", {
+        action: input.action,
+        entityId: input.entityId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
   // K2：精修激活技能——给 curator 当前正文，要受限编辑补丁，应用后晋升新版本。
   async function refineWorkspaceSkills(analysis: SkillCurationAnalysis): Promise<number> {
     if (!options.refine || analysis.activeSkills.length === 0) {
@@ -126,7 +139,7 @@ export function createAgentRunSkillCurationScheduler(
         currentContentMd: active.contentMd
       });
       if (!validation.ok) {
-        await options.auditLog.createAuditLog({
+        await auditSkillCurationAction({
           workspaceId: analysis.workspaceId,
           actorKind: "ai",
           actorNickname: "skill-curator",
@@ -155,7 +168,7 @@ export function createAgentRunSkillCurationScheduler(
       });
       refined += 1;
       refinedKeys.add(active.skillKey);
-      await options.auditLog.createAuditLog({
+      await auditSkillCurationAction({
         workspaceId: analysis.workspaceId,
         actorKind: "ai",
         actorNickname: "skill-curator",
@@ -200,7 +213,7 @@ export function createAgentRunSkillCurationScheduler(
       });
       if (!validation.ok) {
         discarded += 1;
-        await options.auditLog.createAuditLog({
+        await auditSkillCurationAction({
           workspaceId,
           actorKind: "ai",
           actorNickname: "skill-curator",
@@ -214,7 +227,7 @@ export function createAgentRunSkillCurationScheduler(
       if (promoted >= budget) {
         // K3：合格但本夜预算已用尽 → 推迟（独立审计动作，不进 K1 的「勿再重提」记忆，下夜可再来）。
         deferred += 1;
-        await options.auditLog.createAuditLog({
+        await auditSkillCurationAction({
           workspaceId,
           actorKind: "ai",
           actorNickname: "skill-curator",
@@ -240,7 +253,7 @@ export function createAgentRunSkillCurationScheduler(
       });
       promoted += 1;
       promotedKeysThisBatch.push(skill.skill_key);
-      await options.auditLog.createAuditLog({
+      await auditSkillCurationAction({
         workspaceId,
         actorKind: "ai",
         actorNickname: "skill-curator",
@@ -409,6 +422,36 @@ function extractText(content: unknown[]): string {
     .join("\n");
 }
 
+function skillCuratorActor(workspaceId: string) {
+  return { id: "skill-curator", label: "skill-curator", workspaceId };
+}
+
+export function createSkillCurationProviderAdapters(providerRegistry: Pick<ProviderRegistry, "get">) {
+  return {
+    distill: async (analysis: SkillCurationAnalysis) => {
+      const client = providerRegistry.get(skillCuratorActor(analysis.workspaceId), "assistant");
+      const response = await client.messages.create({
+        maxTokens: 4000,
+        // K5：技能蒸馏花费记为 "curation"（自进化），成本面板与「干活」分账。
+        source: "curation",
+        system: buildCurationSystemPrompt(),
+        messages: [{ role: "user", content: buildCurationPrompt(analysis) }]
+      });
+      return parseDistilledResponse(extractText(response.content));
+    },
+    refine: async (analysis: SkillCurationAnalysis) => {
+      const client = providerRegistry.get(skillCuratorActor(analysis.workspaceId), "assistant");
+      const response = await client.messages.create({
+        maxTokens: 4000,
+        source: "curation",
+        system: buildRefinementSystemPrompt(),
+        messages: [{ role: "user", content: buildSkillRefinementPrompt(analysis) }]
+      });
+      return parseSkillEditPatchResponse(extractText(response.content));
+    }
+  };
+}
+
 let defaultScheduler: AgentRunSkillCurationScheduler | undefined;
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
@@ -422,6 +465,7 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
   const auditStores = getDefaultAuditStores();
   const presetSkillKeys = listSkills().map((skill) => skill.id);
   const providerRegistry = getDefaultProviderRegistry();
+  const providerAdapters = createSkillCurationProviderAdapters(providerRegistry);
 
   defaultScheduler = createAgentRunSkillCurationScheduler({
     repository,
@@ -485,28 +529,9 @@ export function getDefaultAgentRunSkillCurationScheduler(): AgentRunSkillCuratio
         totalAccepted: acceptedDeliverables.reduce((sum, row) => sum + row.count, 0)
       };
     },
-    distill: async (analysis) => {
-      const client = providerRegistry.get({ id: "skill-curator", label: "skill-curator" }, "assistant");
-      const response = await client.messages.create({
-        maxTokens: 4000,
-        // K5：技能蒸馏花费记为 "curation"（自进化），成本面板与「干活」分账。
-        source: "curation",
-        system: buildCurationSystemPrompt(),
-        messages: [{ role: "user", content: buildCurationPrompt(analysis) }]
-      });
-      return parseDistilledResponse(extractText(response.content));
-    },
+    distill: providerAdapters.distill,
     // K2：精修步——给激活技能要受限编辑补丁（同样记为 "curation" 自进化花费）。
-    refine: async (analysis) => {
-      const client = providerRegistry.get({ id: "skill-curator", label: "skill-curator" }, "assistant");
-      const response = await client.messages.create({
-        maxTokens: 4000,
-        source: "curation",
-        system: buildRefinementSystemPrompt(),
-        messages: [{ role: "user", content: buildSkillRefinementPrompt(analysis) }]
-      });
-      return parseSkillEditPatchResponse(extractText(response.content));
-    }
+    refine: providerAdapters.refine
   });
   return defaultScheduler;
 }

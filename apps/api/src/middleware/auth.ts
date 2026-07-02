@@ -39,6 +39,7 @@ import { getDefaultPresenceStore } from "../broker/presence.js";
 
 export const COOKIE_NAME = authDefaults.cookieName;
 export const LOCAL_CLIENT_HEADER = authDefaults.localClientHeader;
+const BRANDED_LOCAL_CLIENT_HEADER = "X-WorkHub-Client-Token";
 
 export type AuthActor = {
   kind: ActorKind;
@@ -48,6 +49,7 @@ export type AuthActor = {
   isAdmin: boolean;
   orgId: string;
   workspaceId: string;
+  roleIds?: readonly string[];
 };
 
 export type StreamUser = {
@@ -320,7 +322,8 @@ export async function resolveHumanActor(deps: AuthDependencies, user: UserAuthRo
         userId: user.id,
         isAdmin: user.isAdmin,
         orgId: tenant.orgId,
-        workspaceId: tenant.workspaceId
+        workspaceId: tenant.workspaceId,
+        roleIds: [tenant.role]
       };
     }
   }
@@ -411,8 +414,12 @@ async function resolveUserFromCookie(
   return deps.users.findActiveByCookieToken(cookieToken);
 }
 
+export function readLocalClientToken(c: Context) {
+  return c.req.header(LOCAL_CLIENT_HEADER)?.trim() || c.req.header(BRANDED_LOCAL_CLIENT_HEADER)?.trim();
+}
+
 export async function resolveCurrentUser(c: Context, deps: AuthDependencies) {
-  const clientTokenHeader = c.req.header(LOCAL_CLIENT_HEADER);
+  const clientTokenHeader = readLocalClientToken(c);
   const byToken = await resolveUserFromClientToken(deps, clientTokenHeader);
   if (byToken) {
     await deps.touchUser?.(byToken.user.id);
@@ -451,7 +458,7 @@ export async function resolveOptionalCurrentUser(c: Context, deps: AuthDependenc
 }
 
 export async function resolveCurrentClientDevice(c: Context, deps: AuthDependencies, user: UserAuthRow) {
-  const token = c.req.header(LOCAL_CLIENT_HEADER)?.trim();
+  const token = readLocalClientToken(c);
   if (!token) {
     throw new HTTPException(403, { message: "local client required" });
   }
@@ -470,7 +477,7 @@ export async function resolveCurrentClientDevice(c: Context, deps: AuthDependenc
 }
 
 export async function resolveOptionalLocalClient(c: Context, deps: AuthDependencies, user: UserAuthRow) {
-  if (!c.req.header(LOCAL_CLIENT_HEADER)?.trim()) {
+  if (!readLocalClientToken(c)) {
     return null;
   }
   return resolveCurrentClientDevice(c, deps, user);
@@ -490,7 +497,7 @@ async function toStreamUser(deps: AuthDependencies, user: UserAuthRow): Promise<
 }
 
 export async function resolveStreamUser(c: Context, deps: AuthDependencies): Promise<StreamUser> {
-  const clientTokenHeader = c.req.header(LOCAL_CLIENT_HEADER);
+  const clientTokenHeader = readLocalClientToken(c);
   const byToken = await resolveUserFromClientToken(deps, clientTokenHeader);
   if (byToken) {
     await deps.touchUser?.(byToken.user.id);

@@ -42,7 +42,11 @@ use tauri::{
     Emitter, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager,
     PhysicalPosition as TauriPhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
 };
+use tauri_runtime::ResizeDirection;
 use tauri_plugin_deep_link::DeepLinkExt;
+
+#[cfg(target_os = "macos")]
+use objc2_app_kit::NSWindow;
 
 const WORKHUB_DISABLE_SSE_ENV: &str = "WORKHUB_DISABLE_SSE";
 const WORKHUB_CUU_QA_HIDE_ON_HOVER_ENV: &str = "WORKHUB_CUU_QA_HIDE_ON_HOVER";
@@ -521,6 +525,67 @@ fn set_spotlight_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<
     Ok(())
 }
 
+fn main_window_resize_direction_from_label(direction: &str) -> Option<ResizeDirection> {
+    match direction {
+        "east" => Some(ResizeDirection::East),
+        "south" => Some(ResizeDirection::South),
+        "south-east" => Some(ResizeDirection::SouthEast),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+fn start_main_window_drag(window: tauri::Window) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("main window drag can only be started from the main window".to_string());
+    }
+    window
+        .start_dragging()
+        .map_err(|error| format!("failed to start main window dragging: {error}"))
+}
+
+#[tauri::command]
+fn move_main_window_by(app: tauri::AppHandle, delta_x: f64, delta_y: f64) -> Result<(), String> {
+    if !delta_x.is_finite() || !delta_y.is_finite() {
+        return Ok(());
+    }
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window is not available".to_string())?;
+    let monitor = match window.current_monitor() {
+        Ok(Some(monitor)) => Some(monitor),
+        _ => window.primary_monitor().ok().flatten(),
+    };
+    let scale = monitor
+        .map(|monitor| valid_scale_factor(monitor.scale_factor()))
+        .unwrap_or(1.0);
+    let position = window
+        .outer_position()
+        .map_err(|error| format!("failed to read main window position: {error}"))?
+        .to_logical::<f64>(scale);
+    window
+        .set_position(TauriLogicalPosition::new(
+            position.x + delta_x,
+            position.y + delta_y,
+        ))
+        .map_err(|error| format!("failed to move main window: {error}"))
+}
+
+#[tauri::command]
+fn start_main_window_resize_drag(
+    window: tauri::Window,
+    direction: String,
+) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("main window resize can only be started from the main window".to_string());
+    }
+    let direction = main_window_resize_direction_from_label(&direction)
+        .ok_or_else(|| format!("unknown main window resize direction: {direction}"))?;
+    window
+        .start_resize_dragging(direction)
+        .map_err(|error| format!("failed to start main window resize dragging: {error}"))
+}
+
 // 若窗口底边超出当前显示器工作区，则上移使其落回区内（不小于工作区顶）。失败不致命。
 fn keep_window_bottom_in_work_area(window: &tauri::WebviewWindow, height_logical: f64) {
     let monitor = match window.current_monitor() {
@@ -753,6 +818,7 @@ fn execute_window_control(
     }
 
     if plan.label == "main" {
+        configure_main_window_chrome(&window)?;
         if let Some(route) = &plan.route {
             app.emit("navigate", route.clone())
                 .map_err(|error| format!("failed to emit main window navigation: {error}"))?;
@@ -971,6 +1037,35 @@ fn keep_pet_window_above_desktop(window: &tauri::WebviewWindow) -> Result<(), St
     window
         .set_always_on_top(true)
         .map_err(|error| format!("failed to keep pet window above desktop: {error}"))
+}
+
+fn configure_main_window_chrome(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .set_background_color(Some(Color(0, 0, 0, 1)))
+        .map_err(|error| format!("failed to make main window background transparent: {error}"))?;
+    window
+        .set_ignore_cursor_events(false)
+        .map_err(|error| format!("failed to keep main window pointer events enabled: {error}"))?;
+    configure_main_window_native_drag(window)
+}
+
+#[cfg(target_os = "macos")]
+fn configure_main_window_native_drag(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let ns_window = window
+        .ns_window()
+        .map_err(|error| format!("failed to read main NSWindow handle: {error}"))?;
+    if ns_window.is_null() {
+        return Err("main NSWindow handle is null".to_string());
+    }
+    let ns_window: &NSWindow = unsafe { &*ns_window.cast() };
+    ns_window.setMovable(true);
+    ns_window.setMovableByWindowBackground(true);
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn configure_main_window_native_drag(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
 }
 
 // R8 真·Spotlight：启动时把主窗摆到屏幕上方居中（苹果聚焦盒的位置），之后随内容向下生长。失败不致命。
@@ -1334,25 +1429,24 @@ fn main() {
                 spawn_default_shell_sse_workers(app.handle().clone(), shell_config)
                     .map_err(|error| format!("failed to start WorkHub SSE worker: {error:?}"))?;
             }
-            // R7 真·液态玻璃：主窗口透明 + OS 级毛玻璃（macOS vibrancy / Windows acrylic），让玻璃穿透看到桌面。
-            // 失败不致命（不支持的系统/旧版本退回不透明，前端 CSS 仍有极光兜底底色），故忽略 Result。
-            // 圆角 vibrancy：第 4 个参数是圆角半径,之前为 None → 方角玻璃,会在圆角盒子四角露出方形玻璃"垫边"
-            // (用户反馈的边缘处理糟糕)。改为 Some(24.0) 匹配盒子 --ds-radius-xl(24px),让原生玻璃跟着圆角收边。
-            // WORKHUB_DISABLE_VIBRANCY(仅自动化截图验收用)置位时跳过 vibrancy——vibrancy 窗由窗口服务器合成,会被
-            // computer-use 原生截图过滤掉;关掉后窗口由 app 自身合成可被截图,配前端 VITE_WORKHUB_CAPTURE 不透明底。生产默认开 vibrancy。
-            #[cfg(target_os = "macos")]
-            if std::env::var("WORKHUB_DISABLE_VIBRANCY").is_err() {
-                if let Some(main_window) = app.get_webview_window("main") {
+            // 主窗口保持透明 + 原生拖拽，且贴一层 OS 级毛玻璃（macOS vibrancy / Windows acrylic）让玻璃真正"磨砂"
+            // 透出桌面 —— 纯透明窗里 CSS backdrop-filter 无内容可糊，半透白底也只是奶白不带模糊，真·毛玻璃必须靠原生材质。
+            // 失败不致命（不支持的系统退回半透白底 ds-glass-strong 兜底），故忽略 Result。第 4 参数=圆角半径，对齐盒子 24px。
+            // WORKHUB_DISABLE_VIBRANCY（仅自动化截图验收用）置位时跳过——vibrancy 窗由窗口服务器合成会被原生截图过滤掉。
+            if let Some(main_window) = app.get_webview_window("main") {
+                let _ = configure_main_window_chrome(&main_window);
+                #[cfg(target_os = "macos")]
+                if std::env::var("WORKHUB_DISABLE_VIBRANCY").is_err() {
+                    // state=Active 强制毛玻璃常亮：默认 FollowsWindowActiveState 会让窗口"没被点中(非 key)"时
+                    // vibrancy 退成扁平不透明材质 —— 表现就是"点一下才有毛玻璃"。聚焦盒不抢焦点也要一直是玻璃。
                     let _ = window_vibrancy::apply_vibrancy(
                         &main_window,
                         window_vibrancy::NSVisualEffectMaterial::HudWindow,
-                        None,
+                        Some(window_vibrancy::NSVisualEffectState::Active),
                         Some(24.0),
                     );
                 }
-            }
-            #[cfg(target_os = "windows")]
-            if let Some(main_window) = app.get_webview_window("main") {
+                #[cfg(target_os = "windows")]
                 let _ = window_vibrancy::apply_acrylic(&main_window, Some((24, 24, 32, 120)));
             }
             // R8 真·Spotlight：把主窗摆到屏幕上方居中（聚焦盒位置）；之后 set_spotlight_size 随内容缩放。
@@ -1371,6 +1465,9 @@ fn main() {
             set_pet_window_click_through,
             set_client_token,
             set_spotlight_size,
+            start_main_window_drag,
+            move_main_window_by,
+            start_main_window_resize_drag,
             show_main_window,
             hide_main_window,
             focus_main_route,
@@ -1426,6 +1523,23 @@ mod tests {
         assert_eq!(clamp_spotlight_size(720.0, 52.0), (720.0, 52.0));
         assert_eq!(clamp_spotlight_size(200.0, 20.0), (420.0, 48.0));
         assert_eq!(clamp_spotlight_size(f64::NAN, f64::INFINITY), (720.0, 480.0));
+    }
+
+    #[test]
+    fn main_window_resize_direction_accepts_spotlight_edges_only() {
+        assert_eq!(
+            main_window_resize_direction_from_label("east"),
+            Some(ResizeDirection::East)
+        );
+        assert_eq!(
+            main_window_resize_direction_from_label("south"),
+            Some(ResizeDirection::South)
+        );
+        assert_eq!(
+            main_window_resize_direction_from_label("south-east"),
+            Some(ResizeDirection::SouthEast)
+        );
+        assert_eq!(main_window_resize_direction_from_label("north"), None);
     }
 
     #[test]

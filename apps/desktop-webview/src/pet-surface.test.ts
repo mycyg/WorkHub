@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { WorkHubApiError } from "@workhub/api-client";
@@ -15,6 +16,7 @@ import {
 import {
   cardFromDesktopCuuRuntimeError,
   createDesktopCuuAgentLauncherCard,
+  desktopCuuProjectContextStorageKey,
   resolveDesktopCuuAction,
   submitDesktopCuuAction,
   type DesktopShellEmitter,
@@ -29,6 +31,7 @@ import {
   desktopPetLocale,
   desktopPetPointerSmoothingAlpha,
   desktopPetRunRestoreStorageKey,
+  desktopPetSurfaceCss,
   renderDesktopPetSurface,
   replaceDesktopPetRootHtmlPreservingLive2DFrame,
   resolveDesktopSurface,
@@ -126,6 +129,73 @@ test("desktop pet root replacement preserves the same Live2D iframe to avoid fli
   assert.equal(replaceDesktopPetRootHtmlPreservingLive2DFrame(root, "<section>next</section>"), true);
   assert.equal(assignedHtml, "<section>next</section>");
   assert.equal(replacedWith, previousFrame);
+});
+
+test("desktop pet bubble is a real frosted-white glass card with dark text", () => {
+  // 气泡本体是磨砂白玻璃卡：半透白渐变底 + backdrop blur，深色字直接读在白底上（透明窗里只靠这层不透明白底兜底）。
+  assert.match(
+    desktopPetSurfaceCss,
+    /\.wh-pet-bubble\{[^}]*background:linear-gradient\(135deg,rgba\(255,255,255,\.82\),rgba\(255,255,255,\.52\)\)/u
+  );
+  // 气泡与聚焦盒(.wh-spot)同一套玻璃语言：亮玻璃描边 .7 + 24px 圆角 + blur40 + 同款柔投影/顶高光。
+  assert.match(desktopPetSurfaceCss, /\.wh-pet-bubble\{[^}]*border:1px solid rgba\(255,255,255,\.7\)/u);
+  assert.match(desktopPetSurfaceCss, /\.wh-pet-bubble\{[^}]*border-radius:24px/u);
+  assert.match(desktopPetSurfaceCss, /\.wh-pet-bubble\{[^}]*box-shadow:0 24px 64px -26px rgba\(31,35,53,\.42\),inset 0 1px 0 rgba\(255,255,255,\.75\)/u);
+  assert.match(desktopPetSurfaceCss, /\.wh-pet-bubble\{[^}]*backdrop-filter:blur\(40px\) saturate\(185%\)/u);
+  assert.match(desktopPetSurfaceCss, /\.wh-pet-bubble\{[^}]*-webkit-backdrop-filter:blur\(40px\) saturate\(185%\)/u);
+  // 气泡内关掉冗余的 SVG warp/rim 折射层，避免边缘接缝与 rim 双描边。
+  assert.match(desktopPetSurfaceCss, /\.wh-pet-bubble>\.wh-liquid-glass-warp,\.wh-pet-bubble>\.wh-liquid-glass-rim\{display:none\}/u);
+  assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-warp\{[^}]*--wh-liquid-frost:\.6px/u);
+  assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-refract\{[^}]*filter:none;-webkit-filter:none/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*backdrop-filter/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*-webkit-backdrop-filter/u);
+  assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-edge\{backdrop-filter:url\(#workhub-liquid-glass-pet-filter\) blur\(var\(--wh-liquid-frost\)\)/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /(?:^|[;{])filter:url\(#workhub-liquid-glass/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /--wh-liquid-frost:(?:1[0-9]|[2-9][0-9])px/u);
+  assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-warp\{[^}]*background:transparent[^}]*overflow:hidden/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-liquid-glass-warp\{[^}]*backdrop-filter/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-liquid-glass-warp\{[^}]*-webkit-backdrop-filter/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /--wh-liquid-opacity|opacity:var\(--wh-liquid-opacity/u);
+  // R9 批次0-3：入场淡入是 apple 味必备微动画（M8/M11），恢复；同卡进度更新用 suppress 属性关掉重播。
+  assert.match(desktopPetSurfaceCss, /@keyframes wh-pet-bubble-in\{from\{opacity:0\}to\{opacity:1\}\}/u);
+  assert.match(desktopPetSurfaceCss, /data-pet-suppress-bubble-intro=true\] \.wh-pet-bubble\{animation:none\}/u);
+  assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-edge--top\{left:0;right:0;top:0;height:var\(--wh-liquid-edge,12px\)/u);
+  assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-edge--right\{top:0;right:0;bottom:0;width:var\(--wh-liquid-edge,12px\)/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /-webkit-mask-composite:xor|mask-composite:exclude/u);
+  assert.match(desktopPetSurfaceCss, /\.wh-pet-bubble>\.wh-liquid-glass-content\{display:grid;grid-template-columns:minmax\(0,1fr\);gap:8px/u);
+  // 气泡是磨砂白底，正文走原本深色（kicker/message #667085、status/section #344054…），不再强制白字/黑描边。
+  assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-pet-bubble>\.wh-liquid-glass-content\{[^}]*text-shadow/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /-webkit-text-stroke:\.16px rgba\(255,255,255,\.44\)/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-pet-bubble :is\([^)]+\.wh-pet-title[^}]+color:rgba\(255,255,255/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /-webkit-text-stroke:\.34px rgba\(0,0,0/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /wh-liquid-glass-tint|--wh-liquid-tint|mix-blend-mode/u);
+  // 三种语气气泡各自的磨砂底回归（approval 暖白 / chat 白 / search 冰蓝）。
+  // 气泡直接复用聚焦盒玻璃配方：语气不再改气泡底色或描边色（不再有暖奶油底/黄描边/蓝描边），只留圆点+表情色。
+  assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-pet-bubble\[data-pet-bubble-tone=(?:approval|search|chat)\]\{[^}]*background/u);
+  assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-pet-bubble\[data-pet-bubble-tone=(?:approval|search|chat)\]\{[^}]*border-color/u);
+  assert.doesNotMatch(
+    desktopPetSurfaceCss,
+    /\.(?:wh-pet-kind|wh-pet-priority|wh-pet-free-text|wh-pet-chip|wh-pet-action|wh-pet-reason)\{[^}]*backdrop-filter/u
+  );
+  assert.doesNotMatch(
+    desktopPetSurfaceCss,
+    /\.(?:wh-pet-kind|wh-pet-priority|wh-pet-free-text|wh-pet-chip|wh-pet-action|wh-pet-reason)\{[^}]*-webkit-backdrop-filter/u
+  );
+});
+
+test("desktop pet surface clears a stale Cuu card when the runtime dismisses the active card", () => {
+  const source = readFileSync(new URL("./pet-surface.ts", import.meta.url), "utf8");
+  const runtimeStart = source.indexOf("const runtime = await bindDesktopShellCuuRuntime");
+  const runtimeEnd = source.indexOf("let samplingCursor", runtimeStart);
+  assert.notEqual(runtimeStart, -1);
+  assert.notEqual(runtimeEnd, -1);
+  const runtimeBindingSource = source.slice(runtimeStart, runtimeEnd);
+
+  assert.match(runtimeBindingSource, /onDecision\(decision\)/u);
+  assert.match(runtimeBindingSource, /decision\.reason === "dismissed_current"/u);
+  assert.match(runtimeBindingSource, /setCard\(undefined/u);
+  assert.match(runtimeBindingSource, /notice\.card\.id\.startsWith\("sse-status:"\)/u);
+  assert.match(runtimeBindingSource, /retryingDelayMs:\s*900/u);
 });
 
 function approvalCard(): CuuCard {
@@ -769,9 +839,13 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.doesNotMatch(idle.html, /data-pet-menu-pass-through/u);
   assert.match(idle.css, /:root\{--wh-pet-font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","PingFang SC","Noto Sans CJK SC",Arial,sans-serif;--wh-pet-accent:#0a84ff/u);
   assert.doesNotMatch(idle.css, /Aptos|Segoe UI/u);
-  assert.match(idle.css, /\.wh-pet-bubble\{[^}]*border-radius:20px;[^}]*background:linear-gradient\(135deg,rgba\(255,255,255,.82\),rgba\(255,255,255,.52\)\);[^}]*backdrop-filter:blur\(32px\) saturate\(185%\)/u);
+  assert.match(idle.css, /\.wh-pet-bubble\{[^}]*border-radius:24px;[^}]*background:linear-gradient\(135deg,rgba\(255,255,255,\.82\),rgba\(255,255,255,\.52\)\)/u);
+  assert.doesNotMatch(idle.css, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*backdrop-filter/u);
+  assert.doesNotMatch(idle.css, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*-webkit-backdrop-filter/u);
+  assert.match(idle.css, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-edge\{backdrop-filter:url\(#workhub-liquid-glass-pet-filter\) blur\(var\(--wh-liquid-frost\)\)/u);
+  assert.doesNotMatch(idle.css, /(?:^|[;{])filter:url\(#workhub-liquid-glass/u);
   assert.match(idle.css, /\.wh-pet-menu\{[^}]*right:88px;[^}]*width:164px;[^}]*overflow:hidden/u);
-  assert.match(idle.css, /\.wh-pet-menu\{[^}]*border-radius:14px;[^}]*background:rgba\(255,255,255,.78\);[^}]*backdrop-filter:blur\(26px\) saturate\(180%\)/u);
+  assert.match(idle.css, /\.wh-pet-menu\{[^}]*border-radius:14px;[^}]*background:rgba\(255,255,255,\.92\);[^}]*backdrop-filter:blur\(30px\) saturate\(180%\)/u);
   assert.match(idle.css, /\.wh-pet-menu-row\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/u);
   assert.match(idle.css, /\.wh-pet-menu button\{[^}]*min-width:0;max-width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
   assert.match(idle.css, /\.wh-pet-menu button\{[^}]*border-radius:10px;[^}]*font:760 11px\/1\.15 var\(--wh-pet-font\)/u);
@@ -793,6 +867,10 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(statusOnly.html, /data-pet-window-mode="body_only"/u);
   assert.match(statusOnly.html, /data-pet-card-layout="compact"/u);
   assert.match(statusOnly.html, /data-pet-bubble-transient="true"/u);
+  assert.match(statusOnly.html, /wh-liquid-glass-warp wh-liquid-glass-warp--pet/u);
+  assert.match(statusOnly.html, /wh-liquid-glass-edge wh-liquid-glass-edge--top/u);
+  assert.match(statusOnly.html, /wh-liquid-glass-edge wh-liquid-glass-edge--right/u);
+  assert.match(statusOnly.html, /class="wh-liquid-glass-content"/u);
   assert.match(statusOnly.html, /<p class="wh-pet-status">Cuu look updated\.<\/p>/u);
   assert.match(statusOnly.css, /data-pet-card-layout=compact\] \.wh-pet-bubble\{left:auto;right:calc\(8px \* var\(--wh-pet-scale,1\)\);top:auto;bottom:calc\(224px \* var\(--wh-pet-scale,1\)\);width:calc\(150px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(statusOnly.css, /data-pet-card-layout=compact\] \.wh-pet-status\{line-height:1\.25;display:-webkit-box;-webkit-line-clamp:2/u);
@@ -807,13 +885,15 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*max-width:calc\(100% - calc\(128px \* var\(--wh-pet-scale,1\)\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=bubble\],\.wh-pet-surface\[data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=offline\],\.wh-pet-surface\[data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=trace\]\{min-height:calc\(268px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\]\[data-pet-card-has-context=true\] \.wh-pet-bubble\{left:calc\(72px \* var\(--wh-pet-scale,1\)\);right:auto;bottom:calc\(372px \* var\(--wh-pet-scale,1\)\);width:calc\(328px \* var\(--wh-pet-scale,1\)\)/u);
-  assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*min-height:0;max-height:calc\(336px \* var\(--wh-pet-scale,1\)\);overflow:hidden;overscroll-behavior:none;scrollbar-width:none/u);
-  assert.doesNotMatch(card.css, /scrollbar-gutter:stable|overflow-y:auto/u);
+  assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*min-height:0;max-height:calc\(336px \* var\(--wh-pet-scale,1\)\);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable/u);
+  assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*pointer-events:auto/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*gap:6px;padding:10px 12px/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-title\{[^}]*-webkit-line-clamp:2;[^}]*font-size:13px/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-message\{[^}]*-webkit-line-clamp:2;[^}]*font-size:11px/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-section-line,\.wh-pet-surface\[data-pet-card-has-context=true\] \.wh-pet-evidence-item\{-webkit-line-clamp:1\}/u);
-  assert.match(card.css, /\.wh-pet-bubble>\*\{min-width:0;max-width:100%\}/u);
+  assert.match(card.css, /\.wh-pet-bubble>\.wh-liquid-glass-content\{display:grid;grid-template-columns:minmax\(0,1fr\);gap:8px/u);
+  assert.match(card.css, /\.wh-pet-bubble \.wh-liquid-glass-content>\*\{min-width:0;max-width:100%\}/u);
+  assert.match(card.css, /\.wh-pet-menu button\{[^}]*background:rgba\(255,255,255,\.72\)/u);
   assert.match(card.css, /\.wh-pet-progress\{[^}]*min-width:0;max-width:100%;width:100%/u);
   assert.match(card.css, /\.wh-pet-progress-label\{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap/u);
   assert.match(card.css, /\.wh-pet-section-title,\.wh-pet-evidence-title,\.wh-pet-input-hint\{[^}]*width:100%;[^}]*white-space:normal;overflow-wrap:anywhere;word-break:break-word/u);
@@ -833,8 +913,7 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.html, /data-pet-bubble-emotion="approval"/u);
   assert.match(card.html, /data-pet-bubble-tone="approval"/u);
   assert.match(card.html, /class="wh-pet-emotion">等你拍板/u);
-  assert.match(card.css, /\.wh-pet-bubble\[data-pet-bubble-tone=approval\]\{[^}]*border-color:rgba\(255,190,92,\.48\)/u);
-  assert.match(card.css, /\.wh-pet-bubble\[data-pet-bubble-tone=search\]\{[^}]*border-color:rgba\(10,132,255,\.28\)/u);
+  assert.doesNotMatch(card.css, /\.wh-pet-bubble\[data-pet-bubble-tone=(?:approval|search)\]\{[^}]*border-color/u);
   assert.match(card.html, /data-pet-section-id="changes"/u);
   assert.match(card.html, /data-pet-evidence-count="2"/u);
   assert.match(card.html, /data-recommended="true"/u);
@@ -889,7 +968,7 @@ test("pet surface keeps the failed agent-run card inside the expanded Cuu frame"
   assert.doesNotMatch(surface.html, /Cuu updated progress: Cuu desktop entry task/u);
   assert.match(surface.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*bottom:calc\(392px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(surface.css, /data-pet-window-mode=card\] \.wh-pet-body\{[^}]*bottom:calc\(48px \* var\(--wh-pet-scale,1\)\)/u);
-  assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*max-height:calc\(336px \* var\(--wh-pet-scale,1\)\);overflow:hidden;overscroll-behavior:none;scrollbar-width:none/u);
+  assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*max-height:calc\(336px \* var\(--wh-pet-scale,1\)\);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable/u);
   assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-title\{[^}]*-webkit-line-clamp:2/u);
   assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-message\{[^}]*-webkit-line-clamp:2/u);
   assert.match(surface.css, /data-pet-card-has-context=true\] \.wh-pet-section-line,\.wh-pet-surface\[data-pet-card-has-context=true\] \.wh-pet-evidence-item\{-webkit-line-clamp:1\}/u);
@@ -1075,6 +1154,10 @@ test("pet surface removes duplicate proposal summaries and keeps the proposal ac
   assert.match(surface.html, /data-pet-section-id="next_step"/u);
   assert.match(surface.html, /点「查看变更申请」会打开变更详情，里面有总结、改动和确认按钮/u);
   assert.equal((surface.html.match(/变更摘要 本次 AgentRun/g) ?? []).length, 1);
+  assert.ok(
+    surface.html.indexOf('data-pet-section-id="next_step"') < surface.html.indexOf('data-cuu-action-id="open_proposal"'),
+    "proposal cards explain the next step before showing the open action"
+  );
 });
 
 test("pet surface renders the Cuu outbound agent launcher as text-first without preset choices", () => {
@@ -1227,7 +1310,7 @@ test("pet surface boot flow opens launcher, resolves clarification, confirms, an
         }, "a"));
         assert.equal(launcherSubmit.defaultPrevented, true);
         assert.match(root.innerHTML, /data-pet-bubble-kind="question"/u);
-        assert.match(root.innerHTML, /data-pet-bubble-tone="search"/u);
+        assert.match(root.innerHTML, /data-pet-bubble-tone="chat"/u);
         assert.match(root.innerHTML, /data-pet-free-text/u);
         assert.match(root.innerHTML, /workhub-app-upload\.txt/u);
         assert.doesNotMatch(root.innerHTML, /data-pet-option-id="document-draft"/u);
@@ -1295,6 +1378,55 @@ test("pet surface boot flow opens launcher, resolves clarification, confirms, an
       payload: { title: "Cuu 桌面入口任务" }
     }
   ]);
+});
+
+test("pet surface passes the current project context into Cuu launcher sessions", async () => {
+  const calls: unknown[] = [];
+  const projectId = "10000000-0000-4000-8000-000000000002";
+  const target = globalThis as typeof globalThis & {
+    localStorage?: Storage;
+  };
+  const originalLocalStorage = target.localStorage;
+  const storage = createFakeLocalStorage({
+    [desktopCuuProjectContextStorageKey]: JSON.stringify({
+      project_id: projectId,
+      route: `/drive?project_id=${projectId}`,
+      updated_at_ms: Date.now()
+    })
+  });
+  Object.defineProperty(target, "localStorage", {
+    value: storage,
+    configurable: true
+  });
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient(calls)
+      });
+
+      try {
+        await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
+        const launcherSubmit = await root.click(fakePetTarget({
+          href: "/api/cuu/start-agent",
+          "data-cuu-action-id": "start_agent_from_cuu"
+        }, "a"));
+        assert.equal(launcherSubmit.defaultPrevented, true);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    Object.defineProperty(target, "localStorage", {
+      value: originalLocalStorage,
+      configurable: true
+    });
+  }
+
+  assert.equal(
+    (calls[0] as { payload?: { project_id?: string } } | undefined)?.payload?.project_id,
+    projectId
+  );
 });
 
 test("pet surface lets users restart after a launcher clarification failure", async () => {
@@ -1590,6 +1722,7 @@ test("pet surface refreshes a proposal card after the main window settles the re
     ]
   };
   let attentionQueue: AttentionItem[] = [];
+  const calls: Array<{ step: string; id: string; payload: unknown }> = [];
   const handlers = new Map<string, (event: { payload: unknown }) => void>();
   const stopped: string[] = [];
   const listen: DesktopShellListen = (eventName, handler) => {
@@ -1600,6 +1733,11 @@ test("pet surface refreshes a proposal card after the main window settles the re
     ...createPetHarnessClient([]),
     pages: {
       attention: async () => ({ primary: null, queue: attentionQueue })
+    },
+    async mergeProposal(id: string, payload: unknown) {
+      calls.push({ step: "mergeProposal", id, payload: cloneHarnessPayload(payload) });
+      attentionQueue = [];
+      return { attention: { summary_text: "已合入交付物。" } };
     }
   } as unknown as DesktopPetSurfaceClient;
   const target = globalThis as typeof globalThis & {
@@ -1632,9 +1770,22 @@ test("pet surface refreshes a proposal card after the main window settles the re
         await waitForFakePetCardMode();
 
         assert.match(root.innerHTML, /data-cuu-card-id="proposal-review-runtime"/u);
+        assert.match(root.innerHTML, /Cuu 等你合入变更/u);
+        assert.match(root.innerHTML, /有变更待合入/u);
         assert.match(root.innerHTML, /合入交付物/u);
+        assert.doesNotMatch(root.innerHTML, /有一件待你拍板/u);
         assert.doesNotMatch(root.innerHTML, /data-cuu-action-id="approve"/u);
         assert.doesNotMatch(root.innerHTML, /data-cuu-action-id="request_changes"/u);
+
+        const merge = await root.click(fakePetTarget({
+          href: "/api/proposals/proposal-1/merge",
+          "data-cuu-action-id": "merge"
+        }, "a"));
+        await waitForFakePetCardMode();
+
+        assert.equal(merge.defaultPrevented, true);
+        assert.deepEqual(calls, [{ step: "mergeProposal", id: "proposal-1", payload: {} }]);
+        assert.doesNotMatch(root.innerHTML, /data-cuu-card-id="proposal-review-runtime"/u);
       } finally {
         await runtime.dispose();
       }
@@ -1932,7 +2083,7 @@ test("pet surface persists and restores the current session question card", asyn
           "data-cuu-action-id": "start_agent_from_cuu"
         }, "a"));
         assert.match(root.innerHTML, /data-pet-bubble-kind="question"/u);
-        assert.match(root.innerHTML, /data-pet-bubble-tone="search"/u);
+        assert.match(root.innerHTML, /data-pet-bubble-tone="chat"/u);
         assert.match(root.innerHTML, /请确认 workhub-app-upload\.txt 的验收口径/u);
       } finally {
         await runtime.dispose();
@@ -1956,7 +2107,7 @@ test("pet surface persists and restores the current session question card", asyn
         await Promise.resolve();
         await Promise.resolve();
         assert.match(root.innerHTML, /data-pet-bubble-kind="question"/u);
-        assert.match(root.innerHTML, /data-pet-bubble-tone="search"/u);
+        assert.match(root.innerHTML, /data-pet-bubble-tone="chat"/u);
         assert.match(root.innerHTML, /data-pet-payload-ref-entity-type="session"/u);
         assert.match(root.innerHTML, /请确认 workhub-app-upload\.txt 的验收口径/u);
         assert.match(root.innerHTML, /Cuu 已恢复：请确认 workhub-app-upload\.txt 的验收口径/u);
@@ -2256,6 +2407,22 @@ test("pet surface keeps completion cards as anchored celebration tips", () => {
   assert.match(card.html, /data-cuu-behavior-expected-bubble-mode="tip"/u);
   assert.match(card.html, /data-cuu-action-id="view_replay"/u);
   assert.equal(desktopPetWindowModeForCard(completionCard()), "card");
+});
+
+test("pet surface keeps same-card progress updates from animating the bubble opacity", () => {
+  const runCard = cardFromAgentRunLive(petHarnessRun(), { locale: "zh-CN" });
+  const firstRender = renderDesktopPetSurface({ card: runCard, status_text: "Cuu 开始处理了" });
+  const progressUpdate = renderDesktopPetSurface({
+    card: runCard,
+    status_text: "Cuu 更新了进度：正在整理下一步",
+    suppress_bubble_intro: true
+  });
+
+  assert.match(firstRender.html, /data-pet-suppress-bubble-intro="false"/u);
+  assert.match(progressUpdate.html, /data-pet-suppress-bubble-intro="true"/u);
+  // R9 批次0-3：入场动画恢复为常驻 CSS，同卡更新靠 data-pet-suppress-bubble-intro 属性抑制重播。
+  assert.match(firstRender.css, /animation:wh-pet-bubble-in \.34s ease-out both/u);
+  assert.match(progressUpdate.css, /data-pet-suppress-bubble-intro=true\] \.wh-pet-bubble\{animation:none/u);
 });
 
 test("pet surface anchors full card bubbles near the Cuu body instead of the left window edge", () => {

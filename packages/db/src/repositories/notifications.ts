@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { notifications } from "../schema/index.js";
@@ -28,8 +28,15 @@ export type NotificationWriteResult = {
 
 export type NotificationRepository = {
   createOrUpdateNotification: (input: CreateNotificationInput, at: Date) => Promise<NotificationWriteResult>;
-  listForUser: (userId: string, options?: { includeArchived?: boolean; limit?: number }) => Promise<NotificationRow[]>;
+  findByIdForUser: (id: string, userId: string) => Promise<NotificationRow | null>;
+  listForUser: (userId: string, options?: {
+    includeArchived?: boolean;
+    limit?: number;
+    unreadOnly?: boolean;
+    before?: { createdAt: Date; id: string };
+  }) => Promise<NotificationRow[]>;
   markRead: (id: string, userId: string, at: Date) => Promise<NotificationRow | null>;
+  markReadMany: (ids: string[], userId: string, at: Date) => Promise<number>;
   markAllRead: (userId: string, at: Date) => Promise<number>;
   archive: (id: string, userId: string, at: Date) => Promise<NotificationRow | null>;
 };
@@ -142,16 +149,32 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
       });
     },
 
+    async findByIdForUser(id, userId) {
+      const rows = await db
+        .select()
+        .from(notifications)
+        .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+        .limit(1);
+      return rows[0] ?? null;
+    },
+
     async listForUser(userId, options = {}) {
+      const conditions = [
+        eq(notifications.userId, userId),
+        ...(options.includeArchived ? [] : [isNull(notifications.archivedAt)]),
+        ...(options.unreadOnly ? [isNull(notifications.readAt)] : []),
+        ...(options.before
+          ? [or(
+              lt(notifications.createdAt, options.before.createdAt),
+              and(eq(notifications.createdAt, options.before.createdAt), lt(notifications.id, options.before.id))
+            )!]
+          : [])
+      ];
       return db
         .select()
         .from(notifications)
-        .where(
-          options.includeArchived
-            ? eq(notifications.userId, userId)
-            : and(eq(notifications.userId, userId), isNull(notifications.archivedAt))
-        )
-        .orderBy(desc(notifications.createdAt))
+        .where(and(...conditions))
+        .orderBy(desc(notifications.createdAt), desc(notifications.id))
         .limit(Math.max(1, Math.min(options.limit ?? 200, 500)));
     },
 
@@ -162,6 +185,18 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
         .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
         .returning();
       return rows[0] ?? null;
+    },
+
+    async markReadMany(ids, userId, at) {
+      if (ids.length === 0) {
+        return 0;
+      }
+      const rows = await db
+        .update(notifications)
+        .set({ readAt: at, updatedAt: at })
+        .where(and(eq(notifications.userId, userId), inArray(notifications.id, ids), isNull(notifications.readAt)))
+        .returning({ id: notifications.id });
+      return rows.length;
     },
 
     async markAllRead(userId, at) {

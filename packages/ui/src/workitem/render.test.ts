@@ -51,7 +51,8 @@ test("work item renderer supports the just-created AI-working state before a pro
   assert.equal(rendered.cuuState, "thinking");
   assert.equal(rendered.html.includes("我开始处理了"), true);
   assert.equal(rendered.primaryHrefs.includes(`/agent-runs/${fixture.replay.run.id}/replay`), true);
-  assert.equal(rendered.html.includes("AI 正在思考中，隐藏推理内容不会展示。"), true);
+  assert.equal(rendered.html.includes("AI 正在整理材料，稍后给你下一步。"), true);
+  assert.equal(rendered.html.includes("隐藏推理内容"), false);
   assert.equal(rendered.html.includes("工具已返回：read_project_file"), true);
   assert.equal(rendered.html.includes("Now I understand"), false);
   assert.equal(rendered.html.includes("markdown-report"), false);

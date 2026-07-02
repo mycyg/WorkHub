@@ -1,14 +1,18 @@
 import { createHash } from "node:crypto";
+import { rm } from "node:fs/promises";
 
 import {
   getSharedDatabaseClient,
   createDriveRepository,
+  createWorkItemRepository,
   DriveRepositoryConflictError,
   type DriveItemRow,
   type DriveOperationRow,
   type DrivePageRows,
   type DriveRepository,
   type DriveVersionRow,
+  type WorkItemAccessRow,
+  type WorkItemDataRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
@@ -21,7 +25,7 @@ import {
   type WorkItemDetailVM,
   type WorkHubLocale
 } from "@workhub/contracts";
-import { canManageProjectDrive, canViewProjectDrive } from "@workhub/permissions";
+import { ASSIGNMENT_ROLES, canManageProjectDrive, canViewProjectDrive, canViewWorkItemRecord } from "@workhub/permissions";
 
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
@@ -49,6 +53,7 @@ export type DrivePageService = {
     itemId: string;
   }) => Promise<DriveStoredFile>;
   uploadFile: (input: DriveMutationInput & {
+    parentId?: string | null;
     filename: string;
     mime?: string;
     sizeBytes?: number;
@@ -76,7 +81,8 @@ export type DrivePageService = {
 export type DrivePageServiceDependencies = {
   repo: DriveRepository;
   proposals?: Pick<ProposalService, "createFromManifest" | "get">;
-  workItems?: Pick<WorkItemService, "detailPage">;
+  workItems?: Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts">;
+  workItemAccess?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord">;
   now?: () => Date;
 };
 
@@ -93,12 +99,18 @@ export type DriveStoredFile = {
   mime?: string;
   sizeBytes: number;
   storagePath: string;
+  sha256?: string;
   parsedText?: string;
+};
+
+type WorkItemLinkAccess = {
+  readable: ReadonlySet<string>;
+  restorable: ReadonlySet<string>;
 };
 
 export class DrivePageServiceError extends Error {
   constructor(
-    public readonly status: 400 | 403 | 404 | 409,
+    public readonly status: 400 | 403 | 404 | 409 | 413,
     message: string,
     public readonly code = "drive_error"
   ) {
@@ -132,6 +144,10 @@ function stableUuid(input: string) {
     `${variant}${hex.slice(18, 20)}`,
     hex.slice(20, 32)
   ].join("-");
+}
+
+function sha256Text(value: string) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
 function compactText(value: string | null | undefined, max = 260) {
@@ -205,6 +221,58 @@ function versionToVm(
   return vm;
 }
 
+function filterAcceptedDeliverableLinks(
+  accepted: AcceptedDeliverableVM,
+  linkAccess?: WorkItemLinkAccess
+): AcceptedDeliverableVM {
+  if (!linkAccess) {
+    return accepted;
+  }
+  if (!linkAccess.readable.has(accepted.work_item_id)) {
+    const {
+      download_href: _downloadHref,
+      preview_href: _previewHref,
+      restore_href: _restoreHref,
+      ...rest
+    } = accepted;
+    return rest;
+  }
+  if (linkAccess.restorable.has(accepted.work_item_id)) {
+    return accepted;
+  }
+  const {
+    restore_href: _restoreHref,
+    ...rest
+  } = accepted;
+  return rest;
+}
+
+function acceptedDeliverableVersionMarker(accepted: AcceptedDeliverableVM): AcceptedDeliverableVM {
+  const {
+    download_href: _downloadHref,
+    preview_href: _previewHref,
+    restore_href: _restoreHref,
+    ...marker
+  } = accepted;
+  return marker;
+}
+
+function canMutateAcceptedDeliverables(record: WorkItemAccessRow, actor: AuthActor) {
+  const actorUserId = actor.userId ?? actor.id;
+  const inWorkspace = !actor.workspaceId
+    || actor.workspaceId === record.workspaceId
+    || actor.workspaceId === record.project?.workspaceId;
+  const projectActive = Boolean(record.project && !record.project.archived && record.project.deletedAt == null);
+  const canWorkAssignment = record.assignments?.some(
+    (assignment) => assignment.userId === actorUserId && (ASSIGNMENT_ROLES as readonly string[]).includes(assignment.role)
+  ) ?? false;
+  const ownsOrWorksItem = record.project?.ownerUserId === actorUserId
+    || record.submitterUserId === actorUserId
+    || record.claimedByUserId === actorUserId
+    || canWorkAssignment;
+  return projectActive && inWorkspace && (actor.isAdmin === true || ownsOrWorksItem);
+}
+
 function commentStatus(status: string): "pending_llm" | "draft_created" | "proposal_created" | "dismissed" {
   if (status === "draft_created" || status === "proposal_created" || status === "dismissed") {
     return status;
@@ -265,6 +333,7 @@ function buildDriveItemVm(input: {
   versionById: Map<string, DriveVersionRow>;
   versionVmById: Map<string, DriveFileVersionVM>;
   acceptedByItemId: Map<string, AcceptedDeliverableVM & { drive_item_id: string }>;
+  protectedAcceptedItemIds: ReadonlySet<string>;
 }): DriveItemVM {
   const item = input.item;
   const path = input.pathByItemId.get(item.id) ?? `/${item.name}`;
@@ -289,13 +358,22 @@ function buildDriveItemVm(input: {
   if (currentVersionVm) {
     vm.current_version = currentVersionVm;
   }
+  const accepted = input.acceptedByItemId.get(item.id);
   if (item.kind === "file" && currentVersion && !item.deletedAt) {
-    vm.download_href = `/api/drive/projects/${item.projectId}/items/${item.id}/download`;
-    if (isDriveTextPreview(currentVersion.filename, currentVersion.mime)) {
-      vm.preview_href = `/api/drive/projects/${item.projectId}/items/${item.id}/preview`;
+    if (accepted) {
+      if (accepted.download_href) {
+        vm.download_href = accepted.download_href;
+      }
+      if (accepted.preview_href) {
+        vm.preview_href = accepted.preview_href;
+      }
+    } else if (!input.protectedAcceptedItemIds.has(item.id)) {
+      vm.download_href = `/api/drive/projects/${item.projectId}/items/${item.id}/download`;
+      if (isDriveTextPreview(currentVersion.filename, currentVersion.mime)) {
+        vm.preview_href = `/api/drive/projects/${item.projectId}/items/${item.id}/preview`;
+      }
     }
   }
-  const accepted = input.acceptedByItemId.get(item.id);
   if (accepted) {
     vm.accepted_deliverable = accepted;
   }
@@ -305,7 +383,13 @@ function buildDriveItemVm(input: {
   return vm;
 }
 
-function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, requestedItemId?: string): DrivePageVM {
+function buildDrivePage(
+  rows: DrivePageRows,
+  now: Date,
+  actor: AuthActor,
+  requestedItemId?: string,
+  linkAccess?: WorkItemLinkAccess
+): DrivePageVM {
   const allItems = [...rows.items, ...rows.deletedItems];
   const itemById = new Map(allItems.map((item) => [item.id, item]));
   const pathByItemId = new Map(allItems.map((item) => [item.id, itemPath(item, itemById)]));
@@ -324,9 +408,24 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
     }
   }
 
-  const acceptedDeliverables = rows.acceptedDeliverables.map(acceptedDeliverableToVm);
+  const rawAcceptedDeliverableVms = rows.acceptedDeliverables
+    .map((row) => acceptedDeliverableToVm(row))
+    .map((accepted, index) => {
+      const filtered = filterAcceptedDeliverableLinks(accepted, linkAccess);
+      return rows.acceptedDeliverables[index]?.accepted.supersededAt
+        ? acceptedDeliverableVersionMarker(filtered)
+        : filtered;
+    });
+  const visibleAcceptedDeliverableVms = rawAcceptedDeliverableVms.filter(
+    (accepted) => !linkAccess || linkAccess.readable.has(accepted.work_item_id)
+  );
+  const acceptedDeliverables = rawAcceptedDeliverableVms.filter(
+    (accepted, index) =>
+      (!linkAccess || linkAccess.readable.has(accepted.work_item_id))
+      && rows.acceptedDeliverables[index]?.accepted.supersededAt == null
+  );
   const acceptedByVersionId = new Map(
-    acceptedDeliverables
+    visibleAcceptedDeliverableVms
       .filter((accepted): accepted is AcceptedDeliverableVM & { drive_version_id: string } => !!accepted.drive_version_id)
       .map((accepted) => [accepted.drive_version_id, accepted])
   );
@@ -338,19 +437,32 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
       acceptedByItemId.set(accepted.drive_item_id, accepted as AcceptedDeliverableVM & { drive_item_id: string });
     }
   }
+  const protectedAcceptedItemIds = new Set(
+    rows.acceptedDeliverables
+      .filter((row) => row.accepted.supersededAt == null)
+      .filter((row) => row.driveItem?.id)
+      .filter((row) => linkAccess && !linkAccess.readable.has(row.accepted.workItemId))
+      .map((row) => row.driveItem!.id)
+  );
   const versionById = new Map(rows.versions.map((version) => [version.id, version]));
-  const currentVersionIdByItemId = new Map(rows.items.map((item) => [item.id, item.currentVersionId]));
+  const currentVersionIdByItemId = new Map(allItems.map((item) => [item.id, item.currentVersionId]));
   const versionVms = rows.versions.map((version) =>
     versionToVm(version, currentVersionIdByItemId.get(version.itemId) ?? null, acceptedByVersionId)
   );
   const versionVmById = new Map(versionVms.map((version) => [version.id, version]));
-  const itemVmInput = { pathByItemId, childrenCount, versionById, versionVmById, acceptedByItemId };
+  const itemVmInput = { pathByItemId, childrenCount, versionById, versionVmById, acceptedByItemId, protectedAcceptedItemIds };
   const itemVms: DriveItemVM[] = rows.items.map((item) => buildDriveItemVm({ item, ...itemVmInput }));
   const deletedItemVms: DriveItemVM[] = rows.deletedItems.map((item) => buildDriveItemVm({ item, ...itemVmInput }));
+  const loadedFileCount = itemVms.filter((item) => item.kind === "file").length;
+  const loadedFolderCount = itemVms.filter((item) => item.kind === "folder").length;
+  const totalFileCount = Math.max(loadedFileCount, rows.totalFileCount ?? 0);
+  const totalFolderCount = Math.max(loadedFolderCount, rows.totalFolderCount ?? 0);
+  const totalItemCount = Math.max(itemVms.length, rows.totalItemCount ?? totalFileCount + totalFolderCount);
+  const totalDeletedItemCount = Math.max(deletedItemVms.length, rows.totalDeletedItemCount ?? 0);
 
-  const pendingCommentCount = rows.comments.filter((comment) => commentStatus(comment.status) === "pending_llm").length;
+  const loadedPendingCommentCount = rows.comments.filter((comment) => commentStatus(comment.status) === "pending_llm").length;
   const manualFileDeleteCandidates = itemVms
-    .filter((item) => item.kind === "file" && !item.accepted_deliverable)
+    .filter((item) => item.kind === "file" && !item.accepted_deliverable && !protectedAcceptedItemIds.has(item.id))
     .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at));
   const emptyFolderDeleteCandidates = itemVms
     .filter((item) => item.kind === "folder" && !item.accepted_deliverable && item.children_count === 0)
@@ -358,7 +470,8 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
   const deletableItem = manualFileDeleteCandidates[0] ?? emptyFolderDeleteCandidates[0];
   // #5：从项目主页「最近文件」深链进来时带 item_id → 优先高亮该文件(必须确实存在于清单)；
   // 否则回退到原默认(可删项/首个文件/首项)，避免无效 id 高亮空。
-  const requestedSelected = requestedItemId && itemVms.some((item) => item.id === requestedItemId)
+  const selectableItemVms = [...itemVms, ...deletedItemVms];
+  const requestedSelected = requestedItemId && selectableItemVms.some((item) => item.id === requestedItemId)
     ? requestedItemId
     : undefined;
   const selectedItemId = requestedSelected ?? deletableItem?.id ?? itemVms.find((item) => item.kind === "file")?.id ?? itemVms[0]?.id;
@@ -368,8 +481,15 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
   // 让 UI 逐行渲染 Restore/Delete。此前只有全局按钮(restore 钉死 deleted[0]、delete 钉死单个 deletable),
   // 想恢复第 2/3 个删除项或删非首选文件都点不到。端点本就是逐项的(.../items/:id/restore|delete),仅缺逐项暴露。
   if (canManage && projectId) {
+    const deletedItemIds = new Set(deletedItemVms.map((item) => item.id));
+    const activeNameKeys = new Set(itemVms.map((item) => `${item.parent_id ?? ""}\u0000${item.name}`));
+    const restoreBlockedItemIds = new Set(rows.restoreBlockedItemIds ?? []);
     for (const item of deletedItemVms) {
-      item.restore_href = `/api/drive/projects/${projectId}/items/${item.id}/restore`;
+      const parentStillDeleted = item.parent_id ? deletedItemIds.has(item.parent_id) : false;
+      const activeNameConflict = activeNameKeys.has(`${item.parent_id ?? ""}\u0000${item.name}`);
+      if (!parentStillDeleted && !activeNameConflict && !restoreBlockedItemIds.has(item.id)) {
+        item.restore_href = `/api/drive/projects/${projectId}/items/${item.id}/restore`;
+      }
     }
     const deletableIds = new Set(
       [...manualFileDeleteCandidates, ...emptyFolderDeleteCandidates].map((item) => item.id)
@@ -393,16 +513,17 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
   const data: DrivePageVM = {
     generated_at: now.toISOString(),
     summary: {
-      item_count: itemVms.length,
-      // file_count 取项目内文件总数(全量 count(*)),与项目主页同口径;items 树受 200 行上限,
-      // loaded 只是本页加载数。uncapped 总是 >= loaded,故 max 取真实总数;无 totalFileCount(旧/测试)时回退 loaded。
-      file_count: Math.max(itemVms.filter((item) => item.kind === "file").length, rows.totalFileCount ?? 0),
-      folder_count: itemVms.filter((item) => item.kind === "folder").length,
-      deleted_item_count: deletedItemVms.length,
-      version_count: versionVms.length,
-      accepted_deliverable_count: acceptedDeliverables.length,
-      pending_comment_count: pendingCommentCount,
-      operation_count: rows.operations.length
+      // item/file/folder 三个主统计都取项目内 active 总数；items 树只是当前加载窗口，避免 >limit 时出现 file_count > item_count。
+      item_count: totalItemCount,
+      file_count: totalFileCount,
+      folder_count: totalFolderCount,
+      deleted_item_count: totalDeletedItemCount,
+      version_count: Math.max(versionVms.length, rows.totalVersionCount ?? 0),
+      accepted_deliverable_count: linkAccess
+        ? acceptedDeliverables.length
+        : Math.max(acceptedDeliverables.length, rows.totalAcceptedDeliverableCount ?? 0),
+      pending_comment_count: Math.max(loadedPendingCommentCount, rows.totalPendingCommentCount ?? 0),
+      operation_count: Math.max(rows.operations.length, rows.totalOperationCount ?? 0)
     },
     can_manage: canManage,
     ...(selectedItemId ? { selected_item_id: selectedItemId } : {}),
@@ -414,6 +535,7 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
       const folderPath = comment.folderId ? pathByItemId.get(comment.folderId) : undefined;
       const canCreateDraft = canManage && projectId && commentStatus(comment.status) === "pending_llm" && !comment.draftWorkItemId;
       const proposal = comment.draftWorkItemId ? latestProposalByWorkItemId.get(comment.draftWorkItemId) : undefined;
+      const canLinkDraft = !comment.draftWorkItemId || !linkAccess || linkAccess.readable.has(comment.draftWorkItemId);
       return {
         id: comment.id,
         project_id: comment.projectId,
@@ -425,9 +547,9 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
         created_at: comment.createdAt.toISOString(),
         ...(comment.draftWorkItemId ? {
           draft_work_item_id: comment.draftWorkItemId,
-          draft_href: `/workitems/${comment.draftWorkItemId}`
+          ...(canLinkDraft ? { draft_href: `/workitems/${comment.draftWorkItemId}` } : {})
         } : {}),
-        ...(proposal ? {
+        ...(proposal && canLinkDraft ? {
           proposal_id: proposal.id,
           proposal_href: `/proposals/${proposal.id}`,
           proposal_status: proposal.status
@@ -456,12 +578,6 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
         method: "POST",
         href: `/api/drive/projects/${projectId}/items/${deletableItem.id}/delete`
       } : undefined,
-      restore_item: deletedItemVms[0] ? {
-        id: "drive_restore_item",
-        label: "Restore item",
-        method: "POST",
-        href: `/api/drive/projects/${projectId}/items/${deletedItemVms[0].id}/restore`
-      } : undefined,
       comment_to_draft: commentToDraft ? {
         id: "drive_comment_to_draft",
         label: "Create draft",
@@ -486,14 +602,63 @@ function buildDrivePage(rows: DrivePageRows, now: Date, actor: AuthActor, reques
 export function createDrivePageService(deps: DrivePageServiceDependencies): DrivePageService {
   const proposalService = () => deps.proposals ?? getDefaultProposalService();
   const workItemService = () => deps.workItems ?? getDefaultWorkItemService();
+  const workItemAccess = () => deps.workItemAccess;
 
-  async function pageForActor(input: { actor: AuthActor; projectId?: string }) {
+  async function workItemLinkAccessForActor(input: { actor: AuthActor; workItemIds: Iterable<string> }) {
+    const access = workItemAccess();
+    if (!access) {
+      return undefined;
+    }
+    const uniqueIds = [...new Set([...input.workItemIds].filter(Boolean))];
+    const readable = new Set<string>();
+    const restorable = new Set<string>();
+    const actorUserId = input.actor.userId ?? input.actor.id;
+    for (const workItemId of uniqueIds) {
+      const record = await access.findWorkItemAccessRecord(workItemId);
+      if (record && canViewWorkItemRecord(record, { id: actorUserId, isAdmin: input.actor.isAdmin }, { workspaceId: input.actor.workspaceId })) {
+        readable.add(workItemId);
+        if (canMutateAcceptedDeliverables(record, input.actor)) {
+          restorable.add(workItemId);
+        }
+      }
+    }
+    return { readable, restorable };
+  }
+
+  async function assertAcceptedDriveFileReadable(input: { actor: AuthActor; projectId: string; itemId: string; versionId: string }) {
+    if (!workItemAccess()) {
+      return;
+    }
+    const rows = await deps.repo.readPage({
+      projectId: input.projectId,
+      targetItemId: input.itemId,
+      includeDeleted: false,
+      operationLimit: 1
+    });
+    const workItemIds = rows.acceptedDeliverables
+      .filter((row) => row.accepted.driveItemId === input.itemId)
+      .filter((row) => row.accepted.driveVersionId === input.versionId)
+      .map((row) => row.accepted.workItemId);
+    if (workItemIds.length === 0) {
+      return;
+    }
+    const linkAccess = await workItemLinkAccessForActor({
+      actor: input.actor,
+      workItemIds
+    });
+    if (!workItemIds.some((workItemId) => linkAccess?.readable.has(workItemId))) {
+      throw new DrivePageServiceError(403, "你没有权限查看这个正式交付物文件。", "drive_forbidden");
+    }
+  }
+
+  async function pageForActor(input: { actor: AuthActor; projectId?: string; itemId?: string }) {
     const rows = await deps.repo.readPage({
       ...(input.projectId ? { projectId: input.projectId } : {}),
       // 无显式 projectId 时，默认项目限定在 actor 所在 workspace（M8：否则全库取最老项目，多租户落空）。
       ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {}),
       includeDeleted: true,
-      operationLimit: 12
+      operationLimit: 12,
+      ...(input.itemId ? { targetItemId: input.itemId } : {})
     });
     // 显式传了 project_id 却查不到(不存在/已归档/已删) → 404，与 /workitems、/proposals、项目主页一致，
     // 不再回 200+no_project 空态(那语义错误，且让前端无法区分"没选项目"和"项目不存在")。
@@ -537,8 +702,19 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
     return rows.project;
   }
 
-  async function pageAfterMutation(input: DriveMutationInput) {
-    return buildDrivePage(await pageForActor(input), deps.now?.() ?? new Date(), input.actor);
+  async function pageAfterMutation(input: DriveMutationInput, targetItemId?: string) {
+    const rows = await pageForActor({
+      ...input,
+      ...(targetItemId ? { itemId: targetItemId } : {})
+    });
+    const linkAccess = await workItemLinkAccessForActor({
+      actor: input.actor,
+      workItemIds: [
+        ...rows.comments.map((comment) => comment.draftWorkItemId).filter((id): id is string => Boolean(id)),
+        ...rows.acceptedDeliverables.map((accepted) => accepted.accepted.workItemId)
+      ]
+    });
+    return buildDrivePage(rows, deps.now?.() ?? new Date(), input.actor, targetItemId, linkAccess);
   }
 
   function mutationError(error: unknown): never {
@@ -546,6 +722,13 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
       throw new DrivePageServiceError(409, error.message, error.code);
     }
     throw error;
+  }
+
+  async function cleanupRejectedUpload(storagePath?: string) {
+    if (!storagePath) {
+      return;
+    }
+    await rm(storagePath, { force: true }).catch(() => undefined);
   }
 
   function driveDraftProposalManifest(input: {
@@ -563,8 +746,22 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
     const branchId = stableUuid(`drive-draft-branch:${workItem.id}:${source.comment_id}`);
     const changeId = stableUuid(`drive-draft-change:${workItem.id}:${source.comment_id}`);
     const evidenceId = stableUuid(`drive-draft-evidence:${source.comment_id}`);
-    const targetPath = `${source.folder_path ?? "/Drive"}/drive-comment-${workItem.code}.md`.replace(/\/{2,}/gu, "/");
+    const drivePath = `${source.folder_path ?? "/Drive"}/drive-comment-${workItem.code}.md`.replace(/\/{2,}/gu, "/");
+    const targetPath = `/outputs${drivePath.startsWith("/") ? drivePath : `/${drivePath}`}`;
     const sourcePreview = compactText(source.body, 240) ?? "Drive comment";
+    const sourceBody = source.body.trim().length > 0 ? source.body.trim() : "（空评论）";
+    const generatedContent = [
+      `# ${titleBase}`,
+      "",
+      "## 来源评论",
+      "",
+      sourceBody,
+      "",
+      "## 交付建议",
+      "",
+      "请基于这条网盘评论完善后续交付物，并在审阅后采纳到项目网盘。"
+    ].join("\n");
+    const generatedSha = sha256Text(generatedContent);
     const actorUserId = input.actor.kind === "human" ? input.actor.userId ?? input.actor.id : undefined;
     return {
       version: 0 as const,
@@ -590,15 +787,16 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
           id: changeId,
           target_kind: "text_doc" as const,
           target_ref: {
-            entity_type: "drive_item" as const,
-            ...(source.folder_id ? { entity_id: source.folder_id } : {}),
-            path: targetPath
+            entity_type: "delivery" as const,
+            path: targetPath,
+            sha256_after: generatedSha
           },
           change_type: "generated" as const,
           human_summary: "Generate a proposal draft from the Drive comment.",
           machine_summary: {
             before_excerpt: "",
             after_excerpt: sourcePreview,
+            generated_content_md: generatedContent,
             changed_fields: ["drive_comment.body"]
           },
           preview_ref: {
@@ -671,7 +869,22 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
 
   return {
     async page(input) {
-      return buildDrivePage(await pageForActor(input), deps.now?.() ?? new Date(), input.actor, input.itemId);
+      const rows = await pageForActor(input);
+      if (
+        input.itemId
+        && !rows.items.some((item) => item.id === input.itemId)
+        && !rows.deletedItems.some((item) => item.id === input.itemId)
+      ) {
+        throw new DrivePageServiceError(404, "没有找到这个网盘文件。", "drive_file_not_found");
+      }
+      const linkAccess = await workItemLinkAccessForActor({
+        actor: input.actor,
+        workItemIds: [
+          ...rows.comments.map((comment) => comment.draftWorkItemId).filter((id): id is string => Boolean(id)),
+          ...rows.acceptedDeliverables.map((accepted) => accepted.accepted.workItemId)
+        ]
+      });
+      return buildDrivePage(rows, deps.now?.() ?? new Date(), input.actor, input.itemId, linkAccess);
     },
     async file(input) {
       const rows = await deps.repo.readFile?.({ projectId: input.projectId, itemId: input.itemId });
@@ -684,6 +897,12 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
       if (!rows.item || !rows.version || rows.item.deletedAt || rows.item.kind !== "file") {
         throw new DrivePageServiceError(404, "没有找到这个网盘文件。", "drive_file_not_found");
       }
+      await assertAcceptedDriveFileReadable({
+        actor: input.actor,
+        projectId: input.projectId,
+        itemId: input.itemId,
+        versionId: rows.version.id
+      });
       return {
         id: rows.version.id,
         itemId: rows.item.id,
@@ -692,17 +911,20 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
         ...(rows.version.mime ? { mime: rows.version.mime } : {}),
         sizeBytes: rows.version.sizeBytes,
         storagePath: rows.version.storagePath,
+        ...(rows.version.sha256 ? { sha256: rows.version.sha256 } : {}),
         ...(rows.version.parsedText ? { parsedText: rows.version.parsedText } : {})
       };
     },
     async uploadFile(input) {
-      const actorUserId = ensureHumanActor(input);
-      await ensureCanManage(input);
+      let committed = false;
       try {
+        const actorUserId = ensureHumanActor(input);
+        await ensureCanManage(input);
         const created = await deps.repo.uploadFile({
           actorKind: input.actor.kind,
           actorUserId,
           projectId: input.projectId,
+          ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
           filename: input.filename,
           ...(input.mime ? { mime: input.mime } : {}),
           sizeBytes: input.sizeBytes ?? Buffer.byteLength(input.parsedText ?? input.filename, "utf8"),
@@ -714,8 +936,12 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
         if (!created) {
           throw new DrivePageServiceError(404, "没有找到这个项目网盘。", "drive_not_found");
         }
-        return pageAfterMutation(input);
+        committed = true;
+        return await pageAfterMutation(input, created.item.id);
       } catch (error) {
+        if (!committed) {
+          await cleanupRejectedUpload(input.storagePath);
+        }
         mutationError(error);
       }
     },
@@ -732,7 +958,7 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
           at: deps.now?.() ?? new Date()
         });
         if (!deleted) {
-          throw new DrivePageServiceError(404, "没有找到这个网盘项目。", "drive_not_found");
+          throw new DrivePageServiceError(404, "没有找到这个网盘文件。", "drive_file_not_found");
         }
         return pageAfterMutation(input);
       } catch (error) {
@@ -751,9 +977,9 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
           at: deps.now?.() ?? new Date()
         });
         if (!restored) {
-          throw new DrivePageServiceError(404, "没有找到这个回收站项目。", "drive_not_found");
+          throw new DrivePageServiceError(404, "没有找到这个回收站文件。", "drive_file_not_found");
         }
-        return pageAfterMutation(input);
+        return pageAfterMutation(input, restored.item.id);
       } catch (error) {
         mutationError(error);
       }
@@ -787,7 +1013,12 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
         actor: input.actor,
         ...(input.locale ? { locale: input.locale } : {})
       };
-      const initialPage = await workItemService().detailPage(detailInput);
+      const workItems = workItemService();
+      const initialPage = await workItems.detailPage(detailInput);
+      await workItems.assertCanMutateArtifacts({
+        workItemId: input.workItemId,
+        actor: input.actor
+      });
       const source = initialPage.source_context;
       if (!source || source.source_type !== "drive_comment") {
         throw new DrivePageServiceError(409, "这个事项不是从网盘评论生成的草稿。", "drive_draft_source_missing");
@@ -812,7 +1043,7 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
             proposalId: existingProposalId,
             at: deps.now?.() ?? new Date()
           });
-          return workItemService().detailPage({
+          return workItems.detailPage({
             workItemId: input.workItemId,
             actor: input.actor,
             ...(input.locale ? { locale: input.locale } : {})
@@ -859,7 +1090,7 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
           throw error;
         }
       }
-      return workItemService().detailPage({
+      return workItems.detailPage({
         workItemId: input.workItemId,
         actor: input.actor,
         ...(input.locale ? { locale: input.locale } : {})
@@ -875,7 +1106,8 @@ export function getDefaultDrivePageService() {
   if (!defaultDrivePageService) {
     defaultDrivePageDbClient = getSharedDatabaseClient();
     defaultDrivePageService = createDrivePageService({
-      repo: createDriveRepository(defaultDrivePageDbClient.db)
+      repo: createDriveRepository(defaultDrivePageDbClient.db),
+      workItemAccess: createWorkItemRepository(defaultDrivePageDbClient.db)
     });
   }
   return defaultDrivePageService;

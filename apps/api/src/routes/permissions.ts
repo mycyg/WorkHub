@@ -15,14 +15,22 @@ import {
 } from "../middleware/auth.js";
 import {
   createApprovalService,
+  toPermissionPolicyResponse,
   type CreateApprovalInput,
   type ApprovalService
 } from "../services/approvals.js";
+import {
+  getDefaultWorkItemService,
+  WorkItemServiceError,
+  type WorkItemService
+} from "../services/work-items.js";
 import { readJsonObject } from "./json-body.js";
+import { isUuidParam } from "./uuid-param.js";
 
 export type PermissionRoutesDependencies = {
   auth?: AuthDependencySource;
   service?: ApprovalService;
+  workItems?: Pick<WorkItemService, "detailPage"> | false;
 };
 
 export function createPermissionRoutes(deps: PermissionRoutesDependencies = {}) {
@@ -37,32 +45,76 @@ export function createPermissionRoutes(deps: PermissionRoutesDependencies = {}) 
     }
   }
 
+  async function assertCanReadWorkItem(workItemId: string, actor: AuthEnv["Variables"]["actor"]) {
+    const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
+    if (!workItems) {
+      throw new HTTPException(403, { message: "你没有权限查看这个事项。" });
+    }
+    try {
+      await workItems.detailPage({ workItemId, actor });
+    } catch (error) {
+      if (error instanceof WorkItemServiceError) {
+        throw error;
+      }
+      throw error;
+    }
+  }
+
+  function toPublicApprovalCreationResult(data: Awaited<ReturnType<ApprovalService["createApproval"]>>) {
+    if (data.outcome !== "allowed" && data.outcome !== "denied") {
+      return data;
+    }
+    return {
+      outcome: data.outcome,
+      decision: {
+        effect: data.decision.effect,
+        action_pattern: data.decision.actionPattern,
+        ...(data.decision.reason ? { reason: data.decision.reason } : {})
+      }
+    };
+  }
+
   routes.get("/", createCurrentUserMiddleware(authSource), async (c) => {
     requireAdmin(c);
-    const data = await service.listPolicies();
+    const data = (await service.listPolicies(c.var.actor)).map(toPermissionPolicyResponse);
     return c.json({ ok: true, data });
   });
 
   routes.put("/", createRequireLocalClientMiddleware(authSource), async (c) => {
     requireAdmin(c);
     const payload = permissionPolicyWriteSchema.parse(await readJsonObject(c));
-    const data = await service.createPolicy(c.var.actor, payload);
+    const data = toPermissionPolicyResponse(await service.createPolicy(c.var.actor, payload));
     return c.json({ ok: true, data });
   });
 
   // M24：撤销权限策略（含学到的 allow 授权）。与 PUT 同样要求本地客户端 + admin。
   routes.delete("/:id", createRequireLocalClientMiddleware(authSource), async (c) => {
     requireAdmin(c);
-    const data = await service.revokePolicy(c.var.actor, c.req.param("id"));
+    const policyId = c.req.param("id");
+    if (!isUuidParam(policyId)) {
+      throw new HTTPException(404, { message: "找不到这条权限策略。" });
+    }
+    const data = toPermissionPolicyResponse(await service.revokePolicy(c.var.actor, policyId));
     return c.json({ ok: true, data });
   });
 
   routes.post("/ask", createCurrentUserMiddleware(authSource), async (c) => {
-    const payload = createApprovalRequestSchema.parse(await readJsonObject(c));
+    const rawPayload = await readJsonObject(c);
+    const rawWorkItemId = rawPayload.work_item_id;
+    if (typeof rawWorkItemId === "string" && isUuidParam(rawWorkItemId)) {
+      await assertCanReadWorkItem(rawWorkItemId, c.var.actor);
+    }
+    const payload = createApprovalRequestSchema.parse(rawPayload);
+    if (!payload.work_item_id && payload.routed_to_user_id && payload.routed_to_user_id !== c.var.currentUser.id) {
+      throw new HTTPException(403, { message: "无事项上下文的审批只能路由给自己。" });
+    }
     // 防止任意用户把待审批塞进别人的收件箱：非管理员只能把 /ask 路由给自己。
     // 服务端的合法升级（agent-runner → 路由给工作项负责人）走 service.createApproval 直连，不经此 HTTP 路由。
     if (payload.routed_to_user_id && payload.routed_to_user_id !== c.var.currentUser.id && !c.var.currentUser.isAdmin) {
       throw new HTTPException(403, { message: "你只能把审批请求路由给自己。" });
+    }
+    if (payload.work_item_id && payload.work_item_id !== rawWorkItemId) {
+      await assertCanReadWorkItem(payload.work_item_id, c.var.actor);
     }
     const input: CreateApprovalInput = {
       actor: c.var.actor,
@@ -83,7 +135,7 @@ export function createPermissionRoutes(deps: PermissionRoutesDependencies = {}) 
       input.slaDueAt = new Date(payload.sla_due_at);
     }
     const data = await service.createApproval(input);
-    return c.json({ ok: true, data });
+    return c.json({ ok: true, data: toPublicApprovalCreationResult(data) });
   });
 
   return routes;

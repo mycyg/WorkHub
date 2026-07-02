@@ -86,6 +86,21 @@ function actorOrg(settings: Settings) {
   };
 }
 
+async function publishEscalationEvent(
+  bus: Pick<PushBus, "publish"> | undefined,
+  topic: string,
+  payload: Record<string, unknown>
+) {
+  if (!bus) {
+    return;
+  }
+  try {
+    await bus.publish(topic, eventTypes.escalationOpened, payload);
+  } catch (error) {
+    console.warn("human_reserved_escalation_publish_failed", { topic, error });
+  }
+}
+
 export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}): HumanReservedGuard {
   const settings = options.settings ?? runtimeSettings;
   const stores = options.workItems && options.decisions && options.auditLogs
@@ -130,21 +145,25 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
         at: now()
       });
 
-      await auditLogs.createAuditLog({
-        ...actorOrg(settings),
-        actorKind: "system",
-        actorNickname: "WorkHub",
-        entityType: "work_item",
-        entityId: input.workItemId,
-        action: "escalation.opened",
-        detailJson: {
-          escalation_id: escalation.id,
-          trigger: escalation.trigger,
-          source: "human_reserved",
-          requested_by_user_id: input.actorId,
-          reason_preview: escalation.reasonMd.slice(0, 160)
-        }
-      });
+      try {
+        await auditLogs.createAuditLog({
+          ...actorOrg(settings),
+          actorKind: "system",
+          actorNickname: "WorkHub",
+          entityType: "work_item",
+          entityId: input.workItemId,
+          action: "escalation.opened",
+          detailJson: {
+            escalation_id: escalation.id,
+            trigger: escalation.trigger,
+            source: "human_reserved",
+            requested_by_user_id: input.actorId,
+            reason_preview: escalation.reasonMd.slice(0, 160)
+          }
+        });
+      } catch (error) {
+        console.warn("human_reserved_escalation_audit_failed", { workItemId: input.workItemId, error });
+      }
 
       const eventPayload = {
         work_item_id: input.workItemId,
@@ -154,13 +173,13 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
         source: "human_reserved",
         next_mode: "pm"
       };
-      await bus?.publish(topics.workitem(input.workItemId).topic, eventTypes.escalationOpened, eventPayload);
+      await publishEscalationEvent(bus, topics.workitem(input.workItemId).topic, eventPayload);
       // AUTHZ-1：全局事件发到工作项**真实**工作区的话题，与订阅侧 `all:<workspaceId>` 对齐——
       // 否则一旦出现第二工作区，B 的升级会漏发给 B 的 admin、却错发给 default 工作区的 admin(跨租户泄露)。
       // 单租户下 workspaceId == default，行为等价。
-      await bus?.publish(
+      await publishEscalationEvent(
+        bus,
         topics.all(workItem.workspaceId ?? settings.auth.defaultWorkspaceId).topic,
-        eventTypes.escalationOpened,
         eventPayload
       );
     }

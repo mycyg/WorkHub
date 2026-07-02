@@ -8,6 +8,7 @@ import {
   createPilotDay1MetricsService,
   PilotDay1MetricsServiceError
 } from "./services/pilot-day1-metrics.js";
+import { InternalContractError } from "./pages/output-contract.js";
 import type { AuthActor } from "./middleware/auth.js";
 
 const from = new Date("2026-06-13T00:00:00.000Z");
@@ -156,6 +157,22 @@ test("Day1 metrics snapshot counts closed loop, adoption, cost, conflicts and no
   assert.equal(byId.get("conflict_count")?.value, "1");
   assert.equal(byId.get("notification_density")?.value, "1");
   assert.equal(snapshot.gates.second_user_path_observed, true);
+});
+
+test("Day1 metrics snapshot wraps output contract drift as an internal contract error", () => {
+  const base = rows();
+  const drifted: PilotDay1MetricsRows = {
+    ...base,
+    costLedgerEntries: [
+      { ...base.costLedgerEntries[0]!, tokenIn: Number.NaN },
+      ...base.costLedgerEntries.slice(1)
+    ]
+  };
+
+  assert.throws(
+    () => buildPilotDay1MetricsSnapshot({ rows: drifted, from, to, generatedAt }),
+    (error: unknown) => error instanceof InternalContractError && error.context === "pilot.day1-metrics"
+  );
 });
 
 test("Day1 metrics service is admin-only and rejects invalid ranges", async () => {

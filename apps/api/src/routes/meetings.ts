@@ -43,10 +43,10 @@ function meetingErrorResponse(c: Context<AuthEnv>, error: MeetingPageServiceErro
 }
 
 // 路由 uuid 形参在到达 DB（uuid 列）前先校验。非 uuid 串原本直达 PG 查询 → 22P02 invalid uuid 抛未捕获
-// 500；非法即抛 MeetingPageServiceError(404)，经既有 catch 走 meetingErrorResponse——与「合法但不存在」同样 404。
-function requireUuidParam(value: string, label: string): string {
+// 500；非法即抛 MeetingPageServiceError(404)，经既有 catch 走 meetingErrorResponse，并保留领域错误码。
+function requireUuidParam(value: string, label: string, code = "meeting_not_found"): string {
   if (!isUuidParam(value)) {
-    throw new MeetingPageServiceError(404, `没有找到这个${label}。`, "not_found");
+    throw new MeetingPageServiceError(404, `没有找到这个${label}。`, code);
   }
   return value;
 }
@@ -62,7 +62,7 @@ export function createMeetingRoutes(deps: MeetingRoutesDependencies = {}) {
       const data = await meetingPages.insightToDraft({
         actor: c.var.actor,
         projectId: requireUuidParam(c.req.param("projectId"), "项目"),
-        insightId: c.req.param("insightId"),
+        insightId: requireUuidParam(c.req.param("insightId"), "会议洞察", "meeting_insight_not_found"),
         locale
       });
       return c.json(pageEnvelope(data, locale));
@@ -80,7 +80,7 @@ export function createMeetingRoutes(deps: MeetingRoutesDependencies = {}) {
       const data = await meetingPages.dismissInsight({
         actor: c.var.actor,
         projectId: requireUuidParam(c.req.param("projectId"), "项目"),
-        insightId: c.req.param("insightId"),
+        insightId: requireUuidParam(c.req.param("insightId"), "会议洞察", "meeting_insight_not_found"),
         locale
       });
       return c.json(pageEnvelope(data, locale));

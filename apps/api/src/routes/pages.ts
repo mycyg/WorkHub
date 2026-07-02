@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 
 import { settings } from "@workhub/config";
@@ -109,6 +109,17 @@ function costDashboardSinceBucket(now: Date): string {
   return cutoff.toISOString().slice(0, 10);
 }
 
+function settingsForActor(actor: AuthEnv["Variables"]["actor"]) {
+  return {
+    ...settings,
+    auth: {
+      ...settings.auth,
+      defaultOrgId: actor.orgId,
+      defaultWorkspaceId: actor.workspaceId
+    }
+  };
+}
+
 function pageEnvelope<T>(data: T, locale: WorkHubLocale) {
   return {
     ok: true,
@@ -117,6 +128,19 @@ function pageEnvelope<T>(data: T, locale: WorkHubLocale) {
       locale
     }
   } as const;
+}
+
+function pageServiceErrorResponse(
+  c: Context<AuthEnv>,
+  error: { status: number; code: string; message: string }
+) {
+  return c.json({
+    ok: false,
+    error: {
+      code: error.code,
+      message: error.message
+    }
+  }, error.status as 400);
 }
 
 async function canReadWorkItem(
@@ -159,6 +183,9 @@ async function visibleApprovalCenter(
   // 详情（ai_reason/风险/payload）原样回传（此前只过滤了 items/requests 却 `...data` 带出整张 items_detail）。
   // 与 routes/approvals.ts 的同名 helper 对齐。
   const visibleItemIds = new Set(visibleItems.map((item) => item.id));
+  const pageInfo = data.page_info
+    ? { ...data.page_info, returned: visibleRequests.length }
+    : undefined;
   return {
     ...data,
     items: visibleItems,
@@ -166,6 +193,7 @@ async function visibleApprovalCenter(
       Object.entries(data.items_detail).filter(([itemId]) => visibleItemIds.has(itemId))
     ),
     requests: visibleRequests,
+    ...(pageInfo ? { page_info: pageInfo } : {}),
     counts: {
       ...data.counts,
       pending: visibleRequests.length
@@ -194,9 +222,13 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
-    // 只展示请求者自己的在跑 AI（管理员看全部）。否则首页 background_runs 会泄露所有用户的活跃 run。
+    // 只展示请求者当前工作区里的在跑 AI：管理员看本工作区全部，普通用户只看自己的。
+    // 历史内存/旧持久化 run 可能没有 workspace_id；保留旧单租户可见性，避免滚动升级期间首页突然空白。
     const actor = c.var.actor;
-    const activeRuns = (await queue.listActive()).filter((run) => actor.isAdmin || run.actor_id === actor.id);
+    const activeRuns = (await queue.listActive()).filter((run) => {
+      const inWorkspace = !run.workspace_id || run.workspace_id === actor.workspaceId;
+      return inWorkspace && (actor.isAdmin || run.actor_id === actor.id);
+    });
     // 战绩是首页加分项：取数失败/无数据时静默降级（worklog 为可选字段，UI 不渲染横幅）。
     let worklog: Awaited<ReturnType<AiWorklogMetricsService["getTodayMetrics"]>> | undefined;
     try {
@@ -228,7 +260,13 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // 与审批同源、同按用户路由(非 admin 只看自己提交的工作项)。这是此前缺的真实数据源——
     // 没接前 AI 干完活、提议 opened 只进通知中心,决策卡牌(今日待办)看不到。取数失败静默降级。
     try {
-      const reviewable = await proposals.listReviewableForUser({ user: c.var.currentUser });
+      const reviewable = await proposals.listReviewableForUser({
+        user: {
+          id: c.var.currentUser.id,
+          isAdmin: c.var.currentUser.isAdmin,
+          workspaceId: c.var.actor.workspaceId
+        }
+      });
       decisionQueue = [
         ...decisionQueue,
         ...reviewable.map((summary) => buildProposalReviewAttentionItem(summary, locale))
@@ -262,7 +300,10 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
 
   routes.get("/approvals", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
-    const data = await approvals.listPendingForUser(c.var.currentUser, { locale });
+    const data = await approvals.listPendingForUser(c.var.currentUser, {
+      locale,
+      canReadWorkItem: (workItemId) => canReadWorkItem(workItems, workItemId, c.var.actor)
+    });
     return c.json(pageEnvelope(await visibleApprovalCenter(data, workItems, c.var.actor), locale));
   });
 
@@ -282,7 +323,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
       if (error instanceof WorkItemServiceError) {
-        throw new HTTPException(error.status as 400, { message: error.message });
+        throw error;
       }
       throw error;
     }
@@ -311,7 +352,10 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     const itemId = c.req.query("item_id");
     // 非 uuid 的 project_id 原本直达 projects.id 的 uuid 列 → PG 22P02 → 误报 500；与 /project/:id 一致先校验回 404。
     if (projectId && !isUuidParam(projectId)) {
-      throw new HTTPException(404, { message: "没有找到这个项目网盘。" });
+      return pageServiceErrorResponse(c, new DrivePageServiceError(404, "没有找到这个项目网盘。", "drive_not_found"));
+    }
+    if (itemId && !isUuidParam(itemId)) {
+      return pageServiceErrorResponse(c, new DrivePageServiceError(404, "没有找到这个网盘文件。", "drive_file_not_found"));
     }
     try {
       const data = await drivePages.page({
@@ -323,7 +367,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
       if (error instanceof DrivePageServiceError) {
-        throw new HTTPException(error.status, { message: error.message });
+        return pageServiceErrorResponse(c, error);
       }
       throw error;
     }
@@ -334,16 +378,16 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     const locale = requestLocale(c);
     const projectId = c.req.param("id");
     // 路由 uuid 形参先校验：非 uuid 串原本直达 projects.id 的 uuid 列 → PG 22P02 → 误报 500；
-    // 与「合法但不存在」同样回 404，不泄露项目存在性（与 /workitems、/proposals 一致）。
+    // 与「合法但不存在」同样回 404，并保留项目主页领域错误码。
     if (!isUuidParam(projectId)) {
-      throw new HTTPException(404, { message: "没有找到这个项目。" });
+      return pageServiceErrorResponse(c, new ProjectHomePageServiceError(404, "没有找到这个项目。", "project_not_found"));
     }
     try {
       const data = await projectHomePages.page({ actor: c.var.actor, projectId, locale });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
       if (error instanceof ProjectHomePageServiceError) {
-        throw new HTTPException(error.status, { message: error.message });
+        return pageServiceErrorResponse(c, error);
       }
       throw error;
     }
@@ -353,9 +397,12 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     const locale = requestLocale(c);
     const projectId = c.req.query("project_id");
     const meetingId = c.req.query("m") ?? c.req.query("meeting_id");
-    // 同 /drive：非 uuid 的 project_id 防 PG 22P02 误报 500，先校验回 404（修补既有同类缺口）。
+    // 同 /drive：非 uuid 的 project_id 防 PG 22P02 误报 500，先校验回 404，并保留会议页领域错误码。
     if (projectId && !isUuidParam(projectId)) {
-      throw new HTTPException(404, { message: "没有找到这个项目。" });
+      return pageServiceErrorResponse(c, new MeetingPageServiceError(404, "没有找到这个项目会议。", "meeting_not_found"));
+    }
+    if (meetingId && !isUuidParam(meetingId)) {
+      return pageServiceErrorResponse(c, new MeetingPageServiceError(404, "没有找到这场会议。", "meeting_not_found"));
     }
     try {
       const data: MeetingPageVM = await meetingPages.page({
@@ -367,7 +414,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
       if (error instanceof MeetingPageServiceError) {
-        throw new HTTPException(error.status, { message: error.message });
+        return pageServiceErrorResponse(c, error);
       }
       throw error;
     }
@@ -383,7 +430,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
       if (error instanceof ScheduleNotifyPageServiceError) {
-        throw new HTTPException(error.status as 400, { message: error.message });
+        return pageServiceErrorResponse(c, error);
       }
       throw error;
     }
@@ -403,7 +450,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
       if (error instanceof ScheduleNotifyPageServiceError) {
-        throw new HTTPException(error.status as 400, { message: error.message });
+        return pageServiceErrorResponse(c, error);
       }
       throw error;
     }
@@ -420,39 +467,46 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
 
   routes.get("/cost", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
+    const tenantSettings = settingsForActor(c.var.actor);
     // R2 多租户 Phase 4：团队预算卡片按 actor 工作区取（取代写死常量；单租户经 seed 解析==默认工作区零变化）。
     // 注意：非管理员账目仍走下方 user-scope fail-closed；管理员全组织账目的工作区围栏需 cost_ledger_entries
     // 加 denormalized workspace_id 列（Phase 4 deeper，待 2nd-tenant 才有意义，见 plan）。
     const teamId = c.var.actor.workspaceId;
     const decision = decideRunBudget({
-      settings,
+      settings: tenantSettings,
       scopeIds: {
         userId: c.var.currentUser.id,
         teamId
       },
-      policies: await policyStore.listPolicies(settings),
+      policies: await policyStore.listPolicies(tenantSettings),
       usage: await ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
     });
     // 非管理员只读自己 user scope 的账目（走索引，不全表扫描，也不带 team scope——否则会把同队他人的花费混进总额）。
-    // team/me 预算卡片来自 decision.usages（与账目无关），所以团队预算状态照常可见。管理员才取全组织视图。M8/M9。
+    // team/me 预算卡片来自 decision.usages（与账目无关），所以团队预算状态照常可见。管理员看当前 workspace 的团队账目。
     // DF-1：管理员与非管理员用**同一个** 90 天窗口（costDashboardSinceBucket），否则同一个无标签的
     // total_cost_cny 对管理员=近 90 天、对普通成员=终身累计（两种含义混在一个字段里，且成员越用越慢）。
     const costSinceBucket = costDashboardSinceBucket(new Date());
     const ledgerEntries = c.var.currentUser.isAdmin
-      ? (ledgerStore.listEntries
-          ? await ledgerStore.listEntries({ sinceBucket: costSinceBucket })
-          : ledgerStore.entries)
-      : (ledgerStore.listEntriesForScopes
-          ? await ledgerStore.listEntriesForScopes({ userId: c.var.currentUser.id }, { sinceBucket: costSinceBucket })
-          // L[1]：非管理员且 store 未实现按 scope 查询时 fail-closed 返回空——绝不回退到 listEntries()/entries
+      ? (ledgerStore.listEntriesForWorkspace
+          ? await ledgerStore.listEntriesForWorkspace(teamId, { sinceBucket: costSinceBucket })
+          : ledgerStore.listEntriesForScopes
+            ? await ledgerStore.listEntriesForScopes({ teamId }, { sinceBucket: costSinceBucket })
+            : ledgerStore.listEntries
+              ? await ledgerStore.listEntries({ sinceBucket: costSinceBucket })
+              : ledgerStore.entries)
+      : (ledgerStore.listEntriesForWorkspace
+          ? await ledgerStore.listEntriesForWorkspace(teamId, { sinceBucket: costSinceBucket })
+          // L[1]：非管理员且 store 未实现按 workspace 查询时 fail-closed 返回空——绝不回退到 listEntries()/entries
           // （全组织账目）。跨租户读账目宁可空，也不能 fail-open 把别人的花费泄露给普通成员。
           : []);
     const data = buildCostDashboardPage({
-      settings,
+      settings: tenantSettings,
       isAdmin: c.var.currentUser.isAdmin,
       userId: c.var.currentUser.id,
+      teamId,
       locale,
       budgetUsages: decision.usages,
+      budgetNotices: decision.notice ? [decision.notice] : [],
       ledgerEntries
     });
     return c.json(pageEnvelope(data, locale));

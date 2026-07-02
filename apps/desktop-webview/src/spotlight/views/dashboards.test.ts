@@ -20,7 +20,7 @@ function vm(over: Partial<ProjectHomePageVM> = {}): ProjectHomePageVM {
     drive: {
       file_count: 1,
       recent_files: [
-        { id: "20000000-0000-4000-8000-000000000777", name: "客户复盘.md", updated_at: "2026-06-22T00:00:00.000Z", href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
+        { id: "20000000-0000-4000-8000-000000000777", name: "客户复盘.md", updated_at: "2026-06-22T00:00:00.000Z", href: "/drive?project_id=93000000-0000-4000-8000-000000000001&item_id=20000000-0000-4000-8000-000000000777" }
       ]
     },
     open_work_items: [
@@ -58,8 +58,8 @@ test("S3 desktop project-home detail renders meta, work-item buttons, CTAs and b
 
 test("S3 desktop project-home shows a +more hint when the true count exceeds the shown list", () => {
   const html = projectHomeDetailHtml(vm({ summary: { open_work_item_count: 50 } }), false);
-  // DF-1: honest copy — the hidden items are ones the viewer has no permission to see.
-  assert.ok(html.includes("+49 more open items you cannot view."), "truncation hint (50 total - 1 shown), honest copy");
+  assert.ok(html.includes("+49 more open items not shown here — open the project to review all."), "truncation hint (50 total - 1 shown)");
+  assert.ok(!html.includes("you cannot view"), "does not guess this is a permission problem");
 });
 
 test("DF-1 desktop project-home open count uses the全量 total + shows 你可处理 split (matches web M5)", () => {
@@ -68,8 +68,9 @@ test("DF-1 desktop project-home open count uses the全量 total + shows 你可�
   const html = projectHomeDetailHtml(vm({ summary: { open_work_item_count: 3, total_open_work_item_count: 8 } }), true);
   assert.ok(html.includes("进行中 8 · 你可处理 3"), "head uses total with viewable split");
   assert.ok(!html.includes("进行中 3 ·"), "head does not headline the viewable count");
-  // hidden = total(8) - shown(1) = 7, honest copy
-  assert.ok(html.includes("还有 7 条进行中工作你暂无权限查看。"), "more-note computed off the total");
+  // hidden = total(8) - shown(1) = 7, but the route cannot know whether this is permissions or list truncation.
+  assert.ok(html.includes("还有 7 条进行中工作未在此处显示，进入项目查看全部。"), "more-note computed off the total");
+  assert.ok(!html.includes("暂无权限查看"), "does not guess this is a permission problem");
 });
 
 test("DF-3 desktop project-home notes when recent files are fewer than the project total", () => {
@@ -77,6 +78,16 @@ test("DF-3 desktop project-home notes when recent files are fewer than the proje
     { id: "20000000-0000-4000-8000-000000000777", name: "客户复盘.md", updated_at: "2026-06-22T00:00:00.000Z", href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
   ] } }), false);
   assert.ok(html.includes("+11 more files not shown — open the drive."), "files overflow note (12 total - 1 shown)");
+});
+
+test("desktop project-home recent files keep their file deep-link when opening drive", () => {
+  const html = projectHomeDetailHtml(vm(), true);
+
+  assert.ok(html.includes('data-open-drive="93000000-0000-4000-8000-000000000001"'), "recent file still opens the project drive");
+  assert.ok(
+    html.includes('data-open-drive-route="/drive?project_id=93000000-0000-4000-8000-000000000001&amp;item_id=20000000-0000-4000-8000-000000000777"'),
+    "recent file preserves its item_id deep-link"
+  );
 });
 
 test("S3 desktop project-home shows an empty state when there is no open work", () => {

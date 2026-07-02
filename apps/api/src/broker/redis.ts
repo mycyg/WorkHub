@@ -109,7 +109,16 @@ export class RedisPushBus implements PushBus {
   private dispatch(topic: string, raw: string) {
     let event: PushEvent;
     try {
-      event = JSON.parse(raw) as PushEvent;
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && typeof (parsed as { type?: unknown }).type === "string") {
+        event = {
+          topic,
+          type: (parsed as { type: string }).type,
+          data: (parsed as { data?: unknown }).data
+        };
+      } else {
+        event = { topic, type: "message", data: raw };
+      }
     } catch {
       event = { topic, type: "message", data: raw };
     }

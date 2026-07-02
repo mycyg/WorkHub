@@ -61,6 +61,7 @@ function drivePageVm(): DrivePageVM {
         current_version_id: "94000000-0000-4000-8000-000000000010",
         preview_href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000009/preview",
         download_href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000009/download",
+        delete_href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000009/delete",
         children_count: 0,
         updated_at: "2026-06-11T09:00:00.000Z"
       }
@@ -128,6 +129,7 @@ function drivePageVm(): DrivePageVM {
         depth: 0,
         children_count: 0,
         deleted_at: "2026-06-11T08:00:00.000Z",
+        restore_href: "/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000011/restore",
         updated_at: "2026-06-11T08:00:00.000Z"
       }
     ],
@@ -1493,17 +1495,24 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   // M8: the destructive delete button must name its (server-chosen) target so a bare
   // "移到回收站" never recycles an unnamed file; the name also feeds the recovery notice.
   assert.equal(drive.html.includes('data-r5-drive-delete-name="manual-note.md"'), true);
+  assert.equal(drive.html.includes('data-r5-drive-row-delete="94000000-0000-4000-8000-000000000009"'), true);
+  assert.equal(drive.primaryHrefs.includes("/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000009/delete"), true);
   assert.equal(drive.html.includes("manual-note.md"), true);
   assert.equal(drive.html.includes("expected_current_version_id"), true);
   assert.equal(drive.html.includes("94000000-0000-4000-8000-000000000010"), true);
-  assert.equal(drive.html.includes('data-action-id="drive_restore_item" data-method="POST"'), true);
+  assert.equal((drive.html.match(/data-action-id="drive_restore_item"/gu) ?? []).length, 1);
+  assert.equal(drive.html.includes('data-r5-drive-recycle-restore="94000000-0000-4000-8000-000000000011"'), true);
   assert.equal(drive.html.includes('data-r5-drive-recycle="true"'), true);
   assert.equal(drive.html.includes('data-r5-drive-operations="true"'), true);
   assert.equal(drive.html.includes('data-action-id="drive_preview"'), true);
   assert.equal(drive.html.includes('data-action-id="drive_download"'), true);
   assert.equal(drive.html.includes('/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000009/preview'), true);
   assert.equal(drive.html.includes('/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-000000000009/download'), true);
-  assert.match(drive.html, /data-action-id="drive_preview"[^>]+data-native-resource-link="true"[^>]+target="_blank"/u);
+  const previewLink = drive.html.match(/<a class="wh-btn" href="[^"]+\/preview"[^>]+data-action-id="drive_preview"[^>]*>/u)?.[0] ?? "";
+  assert.notEqual(previewLink, "");
+  assert.match(previewLink, /data-drive-preview-link="true"/u);
+  assert.doesNotMatch(previewLink, /data-native-resource-link="true"/u);
+  assert.doesNotMatch(previewLink, /target="_blank"/u);
   assert.match(drive.html, /data-action-id="drive_download"[^>]+data-native-resource-link="true"[^>]+target="_blank"/u);
   assert.equal(drive.html.includes('data-action-id="drive_restore" data-method="POST"'), true);
   assert.equal(drive.html.includes("/workitems/94000000-0000-4000-8000-000000000005"), true);
@@ -1516,6 +1525,37 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   assert.equal(drive.hydration.pageVm, "drive");
   assert.equal(drive.primaryHrefs.length, 11);
   assertNoMainWindowBoundaryLeak(drive.html);
+});
+
+test("Drive route version history follows the selected file instead of showing unrelated project versions", () => {
+  const vm = drivePageVm();
+  vm.selected_item_id = "94000000-0000-4000-8000-000000000009";
+
+  const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
+
+  assert.equal(drive.html.includes("Version history · manual-note.md"), true);
+  assert.equal((drive.html.match(/data-r4-drive-version="/gu) ?? []).length, 1);
+  assert.equal(drive.html.includes('data-r4-drive-version="94000000-0000-4000-8000-000000000010"'), true);
+  assert.equal(drive.html.includes('data-r4-drive-version="94000000-0000-4000-8000-000000000003"'), false);
+});
+
+test("Drive route recycle bin names when more deleted items are loaded than shown", () => {
+  const vm = drivePageVm();
+  const baseDeleted = vm.deleted_items[0]!;
+  vm.deleted_items = Array.from({ length: 7 }, (_, index) => ({
+    ...baseDeleted,
+    id: `94000000-0000-4000-8000-0000000000${20 + index}`,
+    name: `deleted-${index + 1}.md`,
+    path: `/deleted-${index + 1}.md`,
+    restore_href: `/api/drive/projects/94000000-0000-4000-8000-000000000001/items/94000000-0000-4000-8000-0000000000${20 + index}/restore`
+  }));
+
+  const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "zh-CN" });
+
+  assert.equal((drive.html.match(/data-action-id="drive_restore_item"/gu) ?? []).length, 5);
+  assert.equal(drive.html.includes("deleted-6.md"), false);
+  assert.equal(drive.html.includes('data-r5-drive-recycle-more="2"'), true);
+  assert.equal(drive.html.includes("还有 2 个回收站项目未显示"), true);
 });
 
 test("Drive route renders every loaded file row instead of silently truncating after twelve", () => {
