@@ -17,7 +17,7 @@
 2. **透明窗玻璃约束（第三次踩了）：** 透明 macOS Tauri 窗里 CSS `backdrop-filter` 是空操作。毛玻璃只能来自 ① main 窗原生 vibrancy（HudWindow，main.rs 已接）或 ② ≥.55 不透明白底（pet 窗无 vibrancy，气泡 .82/.52、面板 .55 是实测下限）。任何「transparent + backdrop-filter」的新样式在真机上都是坏的，测试绿不代表对。
 3. **读路径三件套：** 任何列表读路径必须 ① 有硬上限（cap，超出用 `*_capped`/page_info 诚实表达，禁止假装数完了）② 鉴权尽量进 SQL 或批量判定（用已有的 `workItems.canReadWorkItems`）③ 禁止循环内 `await` 单查（N+1）。参考批次 1 的改法照抄。
 4. **改产线行为必须同步 smoke（你上一轮 CI 红了两个 job 没发现）：** 见「五、验证清单」。改了 intake/proposal/drive/审批的行为，先想 r1-pg-smoke 和 web-live-route-smoke 的哪个步骤/精确门会受影响，同 commit 更新并注明原因。web smoke 有精确请求计数门（步数/每端点 GET 次数），改交互必然要动它们——这是设计，不是烦人。
-5. **docs 计数 gate：** `docs/workhub/**/*.md` 增删必须同 commit 改 README 第 6 行 `**N 篇文档已落盘**` 计数（当前 179）。`pnpm qa:r2-release-gate` 本地能跑。
+5. **docs 计数 gate：** `docs/workhub/**/*.md` 增删必须同 commit 改 README 第 6 行 `**N 篇文档已落盘**` 计数（当前 180）。`pnpm qa:r2-release-gate` 本地能跑。
 6. **小批量提交：** 每完成一个编号任务就跑全量验证并 commit + push，逐 job 核 CI conclusion（`gh run view <id> --json jobs`，**不要只看 exit code**）。禁止再堆两万行未提交改动。禁止 `git add -A`——只 add 自己改的文件。
 7. **禁止伪测试：** 「读源码文本做正则匹配」的测试不算覆盖（上一轮 6 个新测试文件全是这种，已被点名）。测试必须驱动行为：调函数/打路由/查返回值。
 8. **不删不改既有守卫时先考古：** 动 auth/csrf/permissions/human-reserved-guard 前先 `git log -p` 看那行为什么存在。历史上每个「看起来多余」的守卫都对应一次真实事故。
@@ -73,7 +73,7 @@
 1. **桌面 Spotlight S2–S12**（`r8-desktop-spotlight-rebuild` 记忆/文档）：桌宠决策信箱、能力内联 morph、删死码。依赖批次 3 收口。
 2. **web GitHub 化 P3–P5**（`r8-web-github-refactor-plan`）：Drive 项目切换、引导、导航重排。
 3. **桌面端图文验收报告**：复用 `reference/wh-report/capture.mjs` CDP 截图管道。
-4. **R9 Agent Army**（`r9-agent-army/` 六篇规划文档已落）：「每人背后一支 agent 军团」。实施顺序：① meta-planner + 子 agent 派发（复用已有 judge/预算/技能/记忆四子系统，盘点见规划包）② 记忆冲突归并 ③ OKR 对齐。红线不变：高风险动作必须升级给人审批（human-reserved-guard 是产品底线，任何「提效」都不许绕）。**启动条件：批次 2 收口 + 桌面真机验收通过。**
+4. **R9 Agent Army**：执行级施工图已落 [`r9-agent-army-implementation-plan-2026-07-02.md`](./r9-agent-army-implementation-plan-2026-07-02.md)（R9.0 逃生舱→R9.1 计划→R9.2 派发→R9.3 记忆→R9.4 仲裁→R9.5 OKR+预算→R9.6 指挥台→R9.7 加固，逐切片带迁移号/文件落点/验收门），设计依据 `r9-agent-army/` 四篇。红线不变：高风险动作必须升级给人（human-reserved-guard 底线不许绕）。**启动条件：批次 2 收口。**
 
 ## 四、施工顺序与提交粒度
 
