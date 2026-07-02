@@ -54,6 +54,11 @@ const SEARCH_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/></svg>';
 const BACK_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+const DRAG_EXCLUDED_SELECTOR = "input,textarea,button,a,select,[contenteditable=true]";
+
+export function isSpotlightDragExcludedTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(DRAG_EXCLUDED_SELECTOR));
+}
 
 function renderLauncherGrid(
   matches: CommandMatch[],
@@ -425,8 +430,6 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     dispatch({ type: "back" });
   });
 
-  const dragExcludedSelector = "button,a,select,[contenteditable=true]";
-  const isDragExcludedTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest(dragExcludedSelector));
   let manualDrag:
     | {
         startClientX: number;
@@ -439,7 +442,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   topEl.addEventListener(
     "mousedown",
     (event) => {
-      if (event.button !== 0 || isDragExcludedTarget(event.target)) {
+      if (event.button !== 0 || isSpotlightDragExcludedTarget(event.target)) {
         return;
       }
       manualDrag = {
@@ -595,7 +598,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     if (event.button !== 0) {
       return;
     }
-    if (isDragExcludedTarget(event.target)) {
+    if (isSpotlightDragExcludedTarget(event.target)) {
       return;
     }
     if (input.dragMove) {

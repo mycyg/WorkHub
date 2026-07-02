@@ -789,9 +789,10 @@ test("Spotlight exposes native move and resize gestures instead of a fixed top s
   assert.match(source, /focusSearch\(\{ expand: false \}\)/u);
   assert.match(source, /suppressNextFocusExpansion = !options\.expand/u);
   assert.match(source, /if \(suppressNextFocusExpansion \|\| nowMs\(\) < suppressSearchFocusUntil\) \{\s*suppressNextFocusExpansion = false;\s*\}/u);
-  assert.match(source, /const dragExcludedSelector = "button,a,select,\[contenteditable=true\]"/u);
-  assert.match(source, /Boolean\(target\.closest\(dragExcludedSelector\)\)/u);
-  assert.doesNotMatch(source, /dragExcludedSelector = "input,textarea,button/u);
+  // 3-2: the old selector assertion omitted input/textarea, but that let text selection in the
+  // search box or composers start a window drag instead of selecting editable text.
+  assert.match(source, /const DRAG_EXCLUDED_SELECTOR = "input,textarea,button,a,select,\[contenteditable=true\]"/u);
+  assert.match(source, /Boolean\(target\.closest\(DRAG_EXCLUDED_SELECTOR\)\)/u);
   assert.doesNotMatch(source, /userResizeAutoUnlockAt/u);
   assert.match(source, /let suppressSearchFocusUntil = 0/u);
   assert.match(source, /let suppressSearchClickUntil = 0/u);
