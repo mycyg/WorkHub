@@ -149,7 +149,9 @@ test("desktop pet bubble is a real frosted-white glass card with dark text", () 
   assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-refract\{[^}]*filter:none;-webkit-filter:none/u);
   assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*backdrop-filter/u);
   assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*-webkit-backdrop-filter/u);
-  assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-edge\{backdrop-filter:url\(#workhub-liquid-glass-pet-filter\) blur\(var\(--wh-liquid-frost\)\)/u);
+  // 3-4: the old assertion pinned a hidden SVG edge filter; pet bubbles hide the warp/rim,
+  // so the generated-map filter could never be seen and should not stay in the CSS.
+  assert.doesNotMatch(desktopPetSurfaceCss, /url\(#workhub-liquid-glass-pet-filter/u);
   assert.doesNotMatch(desktopPetSurfaceCss, /(?:^|[;{])filter:url\(#workhub-liquid-glass/u);
   assert.doesNotMatch(desktopPetSurfaceCss, /--wh-liquid-frost:(?:1[0-9]|[2-9][0-9])px/u);
   assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-warp\{[^}]*background:transparent[^}]*overflow:hidden/u);
@@ -842,7 +844,8 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(idle.css, /\.wh-pet-bubble\{[^}]*border-radius:24px;[^}]*background:linear-gradient\(135deg,rgba\(255,255,255,\.82\),rgba\(255,255,255,\.52\)\)/u);
   assert.doesNotMatch(idle.css, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*backdrop-filter/u);
   assert.doesNotMatch(idle.css, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*-webkit-backdrop-filter/u);
-  assert.match(idle.css, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-edge\{backdrop-filter:url\(#workhub-liquid-glass-pet-filter\) blur\(var\(--wh-liquid-frost\)\)/u);
+  // 3-4: same as the static CSS assertion above; hidden pet warp should not keep SVG filters alive.
+  assert.doesNotMatch(idle.css, /url\(#workhub-liquid-glass-pet-filter/u);
   assert.doesNotMatch(idle.css, /(?:^|[;{])filter:url\(#workhub-liquid-glass/u);
   assert.match(idle.css, /\.wh-pet-menu\{[^}]*right:88px;[^}]*width:164px;[^}]*overflow:hidden/u);
   assert.match(idle.css, /\.wh-pet-menu\{[^}]*border-radius:14px;[^}]*background:rgba\(255,255,255,\.92\);[^}]*backdrop-filter:blur\(30px\) saturate\(180%\)/u);

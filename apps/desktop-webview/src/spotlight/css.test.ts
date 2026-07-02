@@ -50,7 +50,9 @@ test("Spotlight shell keeps a translucent liquid-glass surface", () => {
   assert.match(css, /\.wh-liquid-glass-refract\{[^}]*filter:none;-webkit-filter:none/u);
   assert.doesNotMatch(css, /\.wh-liquid-glass-warp--spotlight \.wh-liquid-glass-refract\{[^}]*backdrop-filter/u);
   assert.doesNotMatch(css, /\.wh-liquid-glass-warp--spotlight \.wh-liquid-glass-refract\{[^}]*-webkit-backdrop-filter/u);
-  assert.match(css, /\.wh-liquid-glass-warp--spotlight \.wh-liquid-glass-edge\{backdrop-filter:url\(#workhub-liquid-glass-spotlight-filter\) blur\(var\(--wh-liquid-frost\)\)/u);
+  // 3-4: the old assertion pinned a hidden SVG edge filter; Spotlight hides the warp/rim, so
+  // generating and referencing that filter only burned CPU without contributing pixels.
+  assert.doesNotMatch(css, /url\(#workhub-liquid-glass-spotlight-filter/u);
   assert.doesNotMatch(css, /(?:^|[;{])filter:url\(#workhub-liquid-glass/u);
   assert.doesNotMatch(css, /--wh-liquid-frost:(?:1[0-9]|[2-9][0-9])px/u);
   assert.match(css, /\.wh-liquid-glass-warp\{[^}]*background:transparent[^}]*overflow:hidden/u);
