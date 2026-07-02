@@ -377,12 +377,15 @@ function toApprovalCommentVm(row: ApprovalCommentRow): ApprovalCommentVM {
   return { id: row.id, author_label: row.authorNickname, body: row.body, created_at: row.createdAt.toISOString() };
 }
 
+type ApprovalCommentPageInfo = NonNullable<ApprovalDetailVM["comments_page_info"]>;
+
 async function buildApprovalItemDetail(
   row: ApprovalRequestRow,
   deps: ApprovalServiceDependencies,
   viewerId: string,
   locale: WorkHubLocale,
-  prefetchedComments?: ApprovalCommentVM[]
+  prefetchedComments?: ApprovalCommentVM[],
+  prefetchedCommentsPageInfo?: ApprovalCommentPageInfo
 ): Promise<ApprovalDetailVM> {
   // L#W2-4：safeParse——一条畸形 payload 不能 500 掉整页（与 toApprovalAttentionItem 一致地降级）。
   const parsedPayload = approvalPayloadSchema.safeParse(row.payloadJson ?? { raw_args: {} });
@@ -431,7 +434,8 @@ async function buildApprovalItemDetail(
       conflicts,
       affected_targets: [],
       timeline,
-      comments
+      comments,
+      ...(prefetchedCommentsPageInfo ? { comments_page_info: prefetchedCommentsPageInfo } : {})
     };
   }
 
@@ -445,7 +449,8 @@ async function buildApprovalItemDetail(
     conflicts: [],
     affected_targets: payload.ui?.affected_targets ?? [],
     timeline,
-    comments
+    comments,
+    ...(prefetchedCommentsPageInfo ? { comments_page_info: prefetchedCommentsPageInfo } : {})
   };
 }
 
@@ -797,21 +802,34 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       const locale: WorkHubLocale = options.locale ?? "zh-CN";
       // L#W2-12：一次 IN 查询批量取所有审批的评论，再按 approvalId 分组，避免逐审批 N+1。
       const commentsByApproval = new Map<string, ApprovalCommentVM[]>();
+      const commentsPageInfoByApproval = new Map<string, ApprovalCommentPageInfo>();
       if (deps.approvalComments?.listByApprovals) {
         try {
-          for (const commentRow of await deps.approvalComments.listByApprovals(rows.map((row) => row.id), approvalCenterCommentsPerApproval)) {
+          for (const commentRow of await deps.approvalComments.listByApprovals(rows.map((row) => row.id), approvalCenterCommentsPerApproval + 1)) {
             const list = commentsByApproval.get(commentRow.approvalId) ?? [];
             list.push(toApprovalCommentVm(commentRow));
             commentsByApproval.set(commentRow.approvalId, list);
           }
+          for (const row of rows) {
+            const prefetched = commentsByApproval.get(row.id) ?? [];
+            const hasMoreComments = prefetched.length > approvalCenterCommentsPerApproval;
+            const visibleComments = hasMoreComments ? prefetched.slice(-approvalCenterCommentsPerApproval) : prefetched;
+            commentsByApproval.set(row.id, visibleComments);
+            commentsPageInfoByApproval.set(row.id, {
+              limit: approvalCenterCommentsPerApproval,
+              returned: visibleComments.length,
+              has_more: hasMoreComments
+            });
+          }
         } catch {
           commentsByApproval.clear();
+          commentsPageInfoByApproval.clear();
         }
       }
       // W2 inc3：逐项构建详情（join proposal.diff_manifest + 合成路由时间线 + 预取评论）。
       const detailEntries = await Promise.all(
         rows.map(async (row) =>
-          [row.id, await buildApprovalItemDetail(row, deps, user.id, locale, commentsByApproval.get(row.id) ?? [])] as const)
+          [row.id, await buildApprovalItemDetail(row, deps, user.id, locale, commentsByApproval.get(row.id) ?? [], commentsPageInfoByApproval.get(row.id))] as const)
       );
       // findings[#79 同类]：返回前过 fail-closed 输出契约校验（装配走样 → 500，不甩 422）。
       // routes-a-2 修法：pending_total_capped 是 0/1 布尔标记（counts schema 只收数字，见 packages/contracts

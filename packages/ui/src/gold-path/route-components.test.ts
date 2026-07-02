@@ -1849,6 +1849,14 @@ test("R5.9 product shell shows the current user chip with logout and admin tag",
 
 test("W2 approval workbench renders diff/checks/timeline/discussion markers + reason/remember controls", () => {
   const vm = surfaceVm();
+  const firstApprovalId = vm.page_vms.approvals.items[0]?.id;
+  assert.ok(firstApprovalId);
+  const firstDetail = vm.page_vms.approvals.items_detail[firstApprovalId];
+  assert.ok(firstDetail);
+  vm.page_vms.approvals.items_detail[firstApprovalId] = {
+    ...firstDetail,
+    comments_page_info: { limit: 20, returned: 20, has_more: true }
+  };
   const approvals = renderWebRouteComponents(vm, { locale: "zh-CN" }).approvals;
   assert.ok(approvals);
   const html = approvals.html;
@@ -1864,6 +1872,8 @@ test("W2 approval workbench renders diff/checks/timeline/discussion markers + re
   // 相关讨论：评论行 + 发表表单。
   assert.equal(html.includes('data-r4-approval-discussion="true"'), true);
   assert.equal(html.includes("data-r4-approval-comment="), true);
+  assert.equal(html.includes('data-r4-approval-comments-overflow="true"'), true);
+  assert.equal(html.includes("仅显示最新的讨论"), true);
   assert.equal(html.includes("data-r4-approval-comment-form="), true);
   // 右栏决策面板：理由框 + 记住勾选（默认未勾）。
   assert.equal(html.includes("data-r4-approval-reason"), true);

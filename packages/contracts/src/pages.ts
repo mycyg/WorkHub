@@ -737,7 +737,12 @@ export const approvalDetailVmSchema = z.object({
   conflicts: z.array(approvalConflictRowSchema).default([]),
   affected_targets: z.array(z.string()).default([]),
   timeline: z.array(approvalRoutingStepSchema).default([]),
-  comments: z.array(approvalCommentVmSchema).default([])
+  comments: z.array(approvalCommentVmSchema).default([]),
+  comments_page_info: z.object({
+    limit: z.number().int().positive(),
+    returned: z.number().int().nonnegative(),
+    has_more: z.boolean()
+  }).optional()
 });
 export type ApprovalDetailVM = z.infer<typeof approvalDetailVmSchema>;
 

@@ -2114,7 +2114,7 @@ test("delegated pending approval timeline marks only delegated as current", asyn
   assert.equal(detail?.timeline.find((step) => step.kind === "routed")?.status, "done");
 });
 
-test("W2 listPendingForUser caps prefetched comments per approval", async () => {
+test("W2 listPendingForUser shows the latest prefetched comments and exposes overflow", async () => {
   const approvals = new MemoryApprovals();
   const seeded = await approvals.createApprovalRequest({
     actionPattern: "proposal.review.weekly",
@@ -2140,7 +2140,7 @@ test("W2 listPendingForUser caps prefetched comments per approval", async () => 
       listByApproval: async () => comments,
       listByApprovals: async (_ids, limit) => {
         seenLimit = limit;
-        return comments.slice(0, limit ?? comments.length);
+        return comments.slice(-(limit ?? comments.length));
       },
       create: async () => {
         throw new Error("not needed");
@@ -2151,10 +2151,17 @@ test("W2 listPendingForUser caps prefetched comments per approval", async () => 
 
   const vm = await service.listPendingForUser(user({ isAdmin: true }));
   const detail = vm.items_detail[seeded.id];
+  const pageInfo = detail?.comments_page_info;
 
-  assert.equal(seenLimit, 20);
+  // Old assertion expected `comment 20` as the last visible row because prefetch kept the
+  // oldest 20 comments. That was wrong: comment 21+ could be written successfully and then
+  // disappear from the approval center. The center now asks for one extra latest row so it
+  // can display a capped latest window and honestly report overflow.
+  assert.equal(seenLimit, 21);
   assert.equal(detail?.comments.length, 20);
-  assert.equal(detail?.comments.at(-1)?.body, "comment 20");
+  assert.equal(detail?.comments[0]?.body, "comment 6");
+  assert.equal(detail?.comments.at(-1)?.body, "comment 25");
+  assert.deepEqual(pageInfo, { limit: 20, returned: 20, has_more: true });
 });
 
 test("W2 listPendingForUser exposes when the approval queue has more than the first page", async () => {
