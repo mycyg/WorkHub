@@ -1505,12 +1505,6 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     const stored = draftFromStoredClarificationQuestion(
       await repository.findLatestChatMessageByKind(workItem.id, "clarification_question")
     );
-    if (stored) {
-      const storedInput: ClarificationQuestionInput = { workItem, actor, locale, files: [] };
-      if (canReuseStoredClarificationDraft(stored, storedInput)) {
-        return stored;
-      }
-    }
     let files: ClarificationFileContext[] = [];
     try {
       files = await projectFileContext({
@@ -1551,6 +1545,9 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
       });
     }
     const input: ClarificationQuestionInput = { workItem, actor, locale, files };
+    if (stored && canReuseStoredClarificationDraft(stored, input)) {
+      return stored;
+    }
     if (!clarificationGenerator) {
       throw new WorkItemServiceError(
         503,
@@ -2101,17 +2098,6 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
   ) {
     const intentText = workItem.raw_description ?? workItem.title ?? undefined;
     const stored = questionDrafts.get(workItem.id);
-    if (stored) {
-      const storedInput: ClarificationQuestionInput = {
-        workItem: memoryClarificationWorkItem(workItem),
-        actor,
-        locale,
-        files: []
-      };
-      if (canReuseStoredClarificationDraft(stored, storedInput)) {
-        return stored;
-      }
-    }
     let files: ClarificationFileContext[] = [];
     if (options.projectFileContext) {
       try {
@@ -2132,6 +2118,9 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
       locale,
       files
     };
+    if (stored && canReuseStoredClarificationDraft(stored, input)) {
+      return stored;
+    }
     const fallback = fallbackClarificationDraft(input);
     let generated: ClarificationQuestionDraft | undefined;
     if (options.clarificationGenerator) {

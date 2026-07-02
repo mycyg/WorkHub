@@ -431,6 +431,65 @@ test("persistent intake ignores stale stored generic clarification templates and
   assert.doesNotMatch(session.question.title, /交付方向|文档\/方案|结构化数据|小型代码/u);
 });
 
+test("persistent intake reuses stored clarification when the current file context would validate it", async () => {
+  let generatorCalls = 0;
+  const repo: WorkItemDataRepository = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return detailRows({
+        status: "ai_clarifying",
+        submitterUserId: userId,
+        title: "请整理预算偏差说明",
+        rawDescription: "请整理预算偏差说明"
+      });
+    },
+    async findLatestChatMessageByKind() {
+      return {
+        id: "93000000-0000-4000-8000-000000000703",
+        workItemId,
+        role: "assistant",
+        kind: "clarification_question",
+        contentJson: {
+          title: "请确认 Q3预算复盘.xlsx 中的偏差说明面向董事会还是财务复盘？",
+          body: "我已看到 Q3预算复盘.xlsx，需要确认这份说明的目标读者。",
+          placeholder: "例如：面向董事会。"
+        },
+        selectedOptionKey: null,
+        userOtherText: null,
+        createdAt: now,
+        updatedAt: now
+      };
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, {
+    now: () => now,
+    async projectFileContext() {
+      return [{
+        name: "Q3预算复盘.xlsx",
+        path: "财务/Q3预算复盘.xlsx",
+        preview: "预算偏差说明、董事会口径、财务复盘口径。"
+      }];
+    },
+    async clarificationGenerator() {
+      generatorCalls += 1;
+      return {
+        title: "请确认财务/Q3预算复盘.xlsx 的预算偏差说明使用董事会口径还是财务复盘口径？",
+        body: "我已看到财务/Q3预算复盘.xlsx，需要确认口径。",
+        placeholder: "例如：董事会口径。"
+      };
+    }
+  });
+
+  const session = await service.createSession({
+    actor,
+    locale: "zh-CN",
+    payload: { work_item_id: workItemId }
+  });
+
+  assert.equal(generatorCalls, 0);
+  assert.equal(session.question.title, "请确认 Q3预算复盘.xlsx 中的偏差说明面向董事会还是财务复盘？");
+});
+
 test("persistent intake accepts a rephrased clarification even when it does not quote the named file verbatim", async () => {
   // R9 批次0-2：文件已找到并喂给了模型，LLM 换个说法不逐字引用文件名是正常改写，
   // 不允许因此 502 阻断 intake（旧 clarification_llm_missing_named_file 已删除）。
