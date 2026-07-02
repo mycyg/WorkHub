@@ -733,17 +733,9 @@ test("R4.21 desktop browser uses the shared web runtime helpers", () => {
   assert.doesNotMatch(source, /function updateLineEditorPanelPayload/u);
 });
 
-test("desktop browser saves project context so Cuu can ask about project drive files", () => {
-  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
-  const activateStart = source.indexOf("const activateRoute = (route: string) => {");
-  const activateEnd = source.indexOf("const activateFromHash", activateStart);
-  assert.notEqual(activateStart, -1);
-  assert.notEqual(activateEnd, -1);
-  const activateSource = source.slice(activateStart, activateEnd);
-
-  assert.match(source, /saveDesktopCuuProjectContextFromRoute/u);
-  assert.match(activateSource, /saveDesktopCuuProjectContextFromRoute\(route\)/u);
-});
+// The old project-context assertion was wrong: it grepped deprecated gold-path
+// activateRoute text while the production desktop shell is bootSpotlight().
+// Production behavior is covered by spotlight-shell-navigation.test.ts.
 
 test("desktop browser proposal review action confirms only and leaves merge as a second step", () => {
   const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
