@@ -480,6 +480,20 @@ async function main() {
     if (taskPlanItemRows.length !== 3) {
       throw new Error(`Expected 3 task plan items, got ${taskPlanItemRows.length}`);
     }
+    const taskPlanWorkItemPage = await app.request(`/api/pages/workitems/${taskPlanWorkItemId}`, { headers });
+    if (taskPlanWorkItemPage.status !== 200) {
+      throw new Error(`Expected task-plan work item page 200, got ${taskPlanWorkItemPage.status}: ${await taskPlanWorkItemPage.text()}`);
+    }
+    const taskPlanWorkItemPageBody = await taskPlanWorkItemPage.json() as {
+      data: { task_plan?: { status: string; items: unknown[]; items_capped: boolean } };
+    };
+    const taskPlanPagePlan = taskPlanWorkItemPageBody.data.task_plan;
+    if (!taskPlanPagePlan || taskPlanPagePlan.status !== "approved") {
+      throw new Error(`Expected work item page task_plan approved, got ${taskPlanPagePlan?.status ?? "missing"}`);
+    }
+    if (taskPlanPagePlan.items.length !== 3 || taskPlanPagePlan.items_capped) {
+      throw new Error(`Expected work item page task_plan to expose 3 uncapped items, got ${taskPlanPagePlan.items.length}`);
+    }
     const knowledge = await app.request("/api/knowledge/search", {
       method: "POST",
       headers,
@@ -2468,7 +2482,9 @@ async function main() {
         proposal_id: taskPlanCreateBody.data.proposal_id,
         proposal_title: taskPlanCreateBody.data.proposal.title,
         status: taskPlanRow.status,
-        item_count: taskPlanItemRows.length
+        item_count: taskPlanItemRows.length,
+        page_status: taskPlanPagePlan.status,
+        page_item_count: taskPlanPagePlan.items.length
       },
       merge: {
         proposal_status: proposalAfterMerge.status,

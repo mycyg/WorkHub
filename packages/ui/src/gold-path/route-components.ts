@@ -23,6 +23,7 @@ import type {
   SessionVM,
   SettingsPageVM,
   TeamSkillsPageVM,
+  TaskPlanVM,
   GoldPathSurfaceVM,
   WorkItemDetailVM
 } from "@workhub/contracts";
@@ -48,6 +49,9 @@ import {
   evidenceSourceLabel,
   previewKindLabel,
   proposalStatusLabel,
+  taskPlanItemRoleLabel,
+  taskPlanItemStatusLabel,
+  taskPlanStatusLabel,
   uiCount,
   uiHumanize,
   uiT,
@@ -1835,6 +1839,68 @@ function workItemActions(vm: WorkItemDetailVM, locale: WorkHubLocale): ActionSpe
   return actions.filter((action): action is ActionSpec => Boolean(action));
 }
 
+function taskPlanDependencyLabel(plan: TaskPlanVM, item: TaskPlanVM["items"][number], locale: WorkHubLocale) {
+  if (item.depends_on.length === 0) {
+    return locale === "zh-CN" ? "无依赖" : "No dependencies";
+  }
+  const sequenceById = new Map(plan.items.map((candidate, index) => [candidate.id, index + 1]));
+  return item.depends_on
+    .map((id) => {
+      const seq = sequenceById.get(id);
+      return seq ? `#${seq}` : (locale === "zh-CN" ? "未知" : "Unknown");
+    })
+    .join(", ");
+}
+
+function renderTaskPlanPanel(
+  plan: TaskPlanVM | undefined,
+  latestProposal: WorkItemDetailVM["latest_proposal"],
+  locale: WorkHubLocale
+) {
+  if (!plan) {
+    return "";
+  }
+  const waitingForApproval = plan.status === "draft" || plan.status === "proposed";
+  const reviewHref = latestProposal?.proposal_id ? `/proposals/${latestProposal.proposal_id}` : undefined;
+  const reviewBanner = waitingForApproval
+    ? `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-task-plan-awaiting-approval="true">
+        <strong>${escapeHtml(locale === "zh-CN" ? "计划等你批准" : "Plan awaiting approval")}</strong>
+        ${reviewHref ? `<a class="wh-pill" href="${escapeHtml(safeHref(reviewHref))}">${escapeHtml(locale === "zh-CN" ? "去审批" : "Review")}</a>` : ""}
+      </div>`
+    : "";
+  const rows = plan.items.length
+    ? plan.items.map((item, index) => {
+        const dependsLabel = taskPlanDependencyLabel(plan, item, locale);
+        const displaySeq = index + 1;
+        return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-task-plan-item="${escapeHtml(item.id)}" data-r9-task-plan-role="${escapeHtml(item.role)}" data-r9-task-plan-budget="${escapeHtml(String(item.budget_share_pct))}" data-r9-task-plan-depends="${escapeHtml(dependsLabel)}">
+          <div>
+            <strong>${escapeHtml(`${displaySeq}. ${item.title}`)}</strong>
+            <p>${escapeHtml(item.acceptance_md)}</p>
+          </div>
+          <div class="wh-r4-route-meta">
+            <span class="wh-pill">${escapeHtml(taskPlanItemRoleLabel(locale, item.role))}</span>
+            <span class="wh-pill">${escapeHtml(taskPlanItemStatusLabel(locale, item.status))}</span>
+            <span class="wh-pill">${escapeHtml(`${item.budget_share_pct}%`)}</span>
+            <span class="wh-pill">${escapeHtml(dependsLabel)}</span>
+          </div>
+        </div>`;
+      }).join("")
+    : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无子任务。" : "No subtasks yet.")}</p>`;
+  const capped = plan.items_capped
+    ? `<p class="wh-subtle" data-r9-task-plan-items-capped-note="true">${escapeHtml(locale === "zh-CN" ? "仅显示前 50 个子任务。" : "Showing the first 50 subtasks.")}</p>`
+    : "";
+  return `<section class="wh-card wh-r4-route-card" data-r9-task-plan-panel="true" data-r9-task-plan-status="${escapeHtml(plan.status)}" data-r9-task-plan-items-capped="${escapeHtml(String(plan.items_capped))}">
+    <h3>${escapeHtml(locale === "zh-CN" ? "任务计划" : "Task plan")}</h3>
+    <div class="wh-r4-route-meta">
+      <span class="wh-pill">${escapeHtml(taskPlanStatusLabel(locale, plan.status))}</span>
+      <span class="wh-pill">${escapeHtml(uiCount(locale, plan.items.length, "个子任务", "subtask"))}</span>
+    </div>
+    ${reviewBanner}
+    <div class="wh-r4-route-timeline">${rows}</div>
+    ${capped}
+  </section>`;
+}
+
 // M15：某些状态(已升级/进行中/待审阅/终态…)在无变更申请、无运行、非待派活时本就没有用户动作。
 // 别留一个零按钮零说明的死卡——按状态给一句「为什么没动作 + 接下来会怎样」的说明。
 function workItemActionHint(status: string, zh: boolean): string {
@@ -1951,6 +2017,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
           <div class="wh-r4-route-timeline">${deliverableRows}</div>
         </section>
       </div>
+      ${renderTaskPlanPanel(vm.task_plan, latestProposal, locale)}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-workitem-acceptance="true">
           <h3>${escapeHtml(uiT(locale, "workitem.acceptanceTitle"))}</h3>

@@ -12,6 +12,7 @@ const terminalWorkItemStatuses: WorkItemStatus[] = ["merged", "done", "cancelled
 const privateWorkItemStatuses: WorkItemStatus[] = ["intake", "ai_clarifying", "spec_ready"];
 
 import type { WorkHubDb } from "../client.js";
+import type { TaskPlanWithItems } from "./task-plans.js";
 import {
   acceptedDeliverableChanges,
   agentRuns,
@@ -27,6 +28,8 @@ import {
   projectDriveVersions,
   projects,
   proposals,
+  taskPlanItems,
+  taskPlans,
   workItemAcceptanceItems,
   workItemAssignments,
   workItems,
@@ -220,6 +223,7 @@ export type StoredWorkItemDetailRows = {
   latestProposal: WorkItemProposalRow | null;
   acceptedDeliverables: WorkItemAcceptedDeliverableRow[];
   evidenceBindings: WorkItemChatMessageRow[];
+  taskPlan?: TaskPlanWithItems | null;
   driveSourceComment: WorkItemDriveSourceCommentRow | null;
   meetingSourceInsight: WorkItemMeetingSourceInsightRow | null;
 };
@@ -1021,7 +1025,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             .limit(8)
         : [];
 
-      const [assignments, acceptance, latestProposals, acceptedDeliverables, evidenceBindings, driveSourceComments, meetingSourceInsights] = await Promise.all([
+      const detailWorkspaceId = row.workItem.workspaceId ?? row.projectWorkspaceId;
+      const [assignments, acceptance, latestProposals, acceptedDeliverables, evidenceBindings, driveSourceComments, meetingSourceInsights, latestTaskPlans] = await Promise.all([
         db
           .select({ userId: workItemAssignments.userId, role: workItemAssignments.role })
           .from(workItemAssignments)
@@ -1064,8 +1069,37 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           .innerJoin(meetingRecords, eq(meetingInsights.meetingId, meetingRecords.id))
           .where(eq(meetingInsights.createdWorkItemId, workItemId))
           .orderBy(desc(meetingInsights.updatedAt), desc(meetingInsights.createdAt))
-          .limit(1)
+          .limit(1),
+        detailWorkspaceId
+          ? db
+              .select({ plan: taskPlans })
+              .from(taskPlans)
+              .where(and(
+                eq(taskPlans.workItemId, workItemId),
+                eq(taskPlans.workspaceId, detailWorkspaceId),
+                notInArray(taskPlans.status, ["cancelled"])
+              ))
+              .orderBy(desc(taskPlans.updatedAt), desc(taskPlans.createdAt), desc(taskPlans.id))
+              .limit(1)
+          : Promise.resolve([])
       ]);
+
+      const latestTaskPlan = latestTaskPlans[0]?.plan ?? null;
+      const taskPlanItemRows = latestTaskPlan
+        ? await db
+            .select()
+            .from(taskPlanItems)
+            .where(eq(taskPlanItems.planId, latestTaskPlan.id))
+            .orderBy(asc(taskPlanItems.seq), asc(taskPlanItems.id))
+            .limit(51)
+        : [];
+      const taskPlan = latestTaskPlan
+        ? {
+            plan: latestTaskPlan,
+            items: taskPlanItemRows.slice(0, 50),
+            itemsCapped: taskPlanItemRows.length > 50
+          }
+        : null;
 
       const driveSourceComment = driveSourceComments[0] ?? null;
       let driveSourceCommentWithPath: WorkItemDriveSourceCommentRow | null = null;
@@ -1100,6 +1134,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         latestProposal: latestProposals[0] ?? null,
         acceptedDeliverables: await attachAcceptedDeliverableRestoreState(db, acceptedDeliverables),
         evidenceBindings,
+        taskPlan,
         driveSourceComment: driveSourceCommentWithPath,
         meetingSourceInsight: meetingSourceInsights[0] ?? null
       };

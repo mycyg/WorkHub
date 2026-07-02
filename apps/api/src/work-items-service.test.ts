@@ -1356,6 +1356,75 @@ test("assigned users can open private work item details in their workspace", asy
   assert.equal(vm.workitem.id, workItemId);
 });
 
+test("work item detail includes the latest task plan snapshot for presentation", async () => {
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const researchId = "93000000-0000-4000-8000-000000000902";
+  const produceId = "93000000-0000-4000-8000-000000000903";
+  const repo = repository();
+  repo.readWorkItemDetail = async () => ({
+    ...detailRows({
+      status: "in_review",
+      submitterUserId: userId,
+      claimedByUserId: null
+    }),
+    taskPlan: {
+      plan: {
+        id: planId,
+        workItemId,
+        workspaceId: defaultSeedIds.workspaceId,
+        status: "approved",
+        objectiveId: null,
+        budgetJson: { total_share_pct: 100 },
+        decompositionContextJson: { source: "meta_planner" },
+        createdByUserId: userId,
+        createdAt: now,
+        updatedAt: now
+      },
+      items: [
+        {
+          id: researchId,
+          planId,
+          parentItemId: null,
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          objectiveMd: "查清三类竞品的最新打法。",
+          acceptanceMd: "列出至少 3 条可核验来源。",
+          budgetSharePct: 35,
+          dependsOn: [],
+          status: "pending",
+          createdAt: now,
+          updatedAt: now
+        },
+        {
+          id: produceId,
+          planId,
+          parentItemId: null,
+          seq: 2,
+          title: "产出短报告",
+          role: "produce",
+          objectiveMd: "把证据整理成短报告。",
+          acceptanceMd: "报告包含结论、证据和下一步建议。",
+          budgetSharePct: 65,
+          dependsOn: [researchId],
+          status: "pending",
+          createdAt: now,
+          updatedAt: now
+        }
+      ],
+      itemsCapped: false
+    }
+  } as unknown as StoredWorkItemDetailRows);
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  const vm = await service.detailPage({ workItemId, actor, locale: "zh-CN" });
+
+  assert.equal(vm.task_plan?.status, "approved");
+  assert.equal(vm.task_plan?.items[0]?.role, "research");
+  assert.equal(vm.task_plan?.items[1]?.depends_on[0], researchId);
+  assert.equal(vm.task_plan?.items_capped, false);
+});
+
 test("work item detail hides accepted-deliverable restore links for read-only viewers", async () => {
   const repo = repository();
   repo.readWorkItemDetail = async () => ({

@@ -45,6 +45,66 @@ test("#11 desktop workitem surfaces create-proposal-draft when the action is pre
   assert.ok(!detailHtml(vm(), true).includes("data-wi-create-proposal"), "no draft button without the action");
 });
 
+test("desktop workitem renders a compact read-only task plan summary", () => {
+  const html = detailHtml(vm({
+    task_plan: {
+      id: "93000000-0000-4000-8000-000000000901",
+      work_item_id: WI,
+      workspace_id: "93000000-0000-4000-8000-000000000001",
+      status: "approved",
+      objective_id: null,
+      budget_json: { total_share_pct: 100 },
+      decomposition_context_json: { source: "meta_planner" },
+      created_by: "93000000-0000-4000-8000-000000000301",
+      created_at: "2026-07-03T00:00:00.000Z",
+      updated_at: "2026-07-03T00:01:00.000Z",
+      items_capped: false,
+      items: [
+        {
+          id: "93000000-0000-4000-8000-000000000902",
+          plan_id: "93000000-0000-4000-8000-000000000901",
+          parent_item_id: null,
+          seq: 0,
+          title: "整理竞品证据",
+          role: "research",
+          objective_md: "查清三类竞品的最新打法。",
+          acceptance_md: "列出至少 3 条可核验来源。",
+          budget_share_pct: 35,
+          depends_on: [],
+          status: "pending",
+          created_at: "2026-07-03T00:00:00.000Z",
+          updated_at: "2026-07-03T00:00:00.000Z"
+        },
+        {
+          id: "93000000-0000-4000-8000-000000000903",
+          plan_id: "93000000-0000-4000-8000-000000000901",
+          parent_item_id: null,
+          seq: 1,
+          title: "产出短报告",
+          role: "produce",
+          objective_md: "把证据整理成短报告。",
+          acceptance_md: "报告包含结论、证据和下一步建议。",
+          budget_share_pct: 65,
+          depends_on: ["93000000-0000-4000-8000-000000000902"],
+          status: "pending",
+          created_at: "2026-07-03T00:00:00.000Z",
+          updated_at: "2026-07-03T00:00:00.000Z"
+        }
+      ]
+    }
+  }), true);
+
+  assert.ok(html.includes('data-spot-task-plan="true"'));
+  assert.ok(html.includes('data-spot-task-plan-status="approved"'));
+  assert.ok(html.includes('data-spot-task-plan-item="93000000-0000-4000-8000-000000000902"'));
+  assert.ok(html.includes("任务计划"));
+  assert.ok(html.includes("1. 调研 · 35%"));
+  assert.equal(html.includes("0. 调研 · 35%"), false);
+  assert.ok(html.includes("调研"));
+  assert.ok(html.includes("整理竞品证据"));
+  assert.ok(html.includes("65%"));
+});
+
 test("desktop workitem latest proposal hides model self narration titles", () => {
   const html = detailHtml(vm({
     latest_proposal: {
