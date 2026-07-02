@@ -67,13 +67,14 @@ test("Spotlight shell keeps a translucent liquid-glass surface", () => {
   assert.match(css, /\.wh-spot>\.wh-liquid-glass-content\{display:flex;flex-direction:column/u);
   assert.match(css, /\.wh-spot-top\{[^}]*-webkit-app-region:no-drag;cursor:grab/u);
   assert.match(css, /\.wh-spot-top:active\{cursor:grabbing\}/u);
-  assert.match(css, /\.wh-spot-back,\.wh-spot-resize,\.wh-spot button,\.wh-spot a,\.wh-spot select,\.wh-spot textarea,\.wh-spot \[contenteditable=true\]\{-webkit-app-region:no-drag\}/u);
+  // 3-1: the old assertion included `.wh-spot-resize`, but that pinned a fake manual-resize affordance
+  // whose dragged size could be overwritten by render-driven auto-resize.
+  assert.match(css, /\.wh-spot-back,\.wh-spot button,\.wh-spot a,\.wh-spot select,\.wh-spot textarea,\.wh-spot \[contenteditable=true\]\{-webkit-app-region:no-drag\}/u);
   assert.doesNotMatch(css, /\.wh-spot-top>\*\{-webkit-app-region:no-drag\}/u);
   assert.doesNotMatch(css, /\.wh-spot-field\{[^}]*-webkit-app-region/u);
   assert.match(css, /\.wh-spot-drag-sheet\{position:absolute;inset:0;display:none;z-index:3;border:0;background:transparent;cursor:grab/u);
   assert.match(css, /\.wh-spot\[data-mode="launcher"\]\[data-collapsed="true"\] \.wh-spot-drag-sheet\{display:block\}/u);
   assert.match(css, /\.wh-spot-drag-sheet:active\{cursor:grabbing\}/u);
-  assert.match(css, /\.wh-spot-resize\{position:absolute;z-index:4;pointer-events:auto;background:transparent;border:0;padding:0;-webkit-app-region:no-drag\}/u);
   assert.match(css, /input\.wh-spot-field:focus\{outline:0!important;box-shadow:none!important\}/u);
   assert.doesNotMatch(css, /\.wh-spot-back\{[^}]*background:var\(--ds-glass\)/u);
   assert.doesNotMatch(
@@ -85,6 +86,11 @@ test("Spotlight shell keeps a translucent liquid-glass surface", () => {
     /\.(?:wh-spot-cap|wh-spot-opt|wh-spot-row|wh-spot-metric|wh-spot-change|wh-spot-bars|wh-spot-check|wh-spot-reason-text)\{[^}]*-webkit-backdrop-filter/u
   );
   assert.doesNotMatch(css, /\.wh-spot \.wh-conflict-head,[^{]+\{[^}]*backdrop-filter/u);
+});
+
+test("Spotlight shell does not expose manual resize hit zones without durable resize state", () => {
+  assert.doesNotMatch(css, /\.wh-spot-resize/u);
+  assert.doesNotMatch(css, /cursor:(?:ew|ns|nwse)-resize/u);
 });
 
 test("Spotlight launcher cards stay glassy instead of white tiles", () => {

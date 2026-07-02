@@ -89,7 +89,6 @@ import { glassWindowCss } from "./glass-window.js";
 import {
   mountSpotlight,
   type SpotlightManualDragFn,
-  type SpotlightResizeDirection,
   type SpotlightResizeFn
 } from "./spotlight/controller.js";
 import { spotlightCss } from "./spotlight/css.js";
@@ -1120,7 +1119,7 @@ const resizeMainWindow: SpotlightResizeFn = (width, height) => {
   }
 };
 
-// 搜索条像系统 Spotlight 一样可拖动，边缘热区可缩放；浏览器开发态无 __TAURI__ → no-op。
+// 搜索条像系统 Spotlight 一样可拖动；浏览器开发态无 __TAURI__ → no-op。
 const dragMainWindow = (): void => {
   const tauri = (globalThis as {
     __TAURI__?: {
@@ -1144,19 +1143,6 @@ const moveMainWindowBy: SpotlightManualDragFn = (deltaX, deltaY): void => {
   const invoke = tauri?.core?.invoke ?? tauri?.invoke;
   if (typeof invoke === "function") {
     void invoke("move_main_window_by", { deltaX, deltaY }).catch(() => undefined);
-  }
-};
-
-const resizeMainWindowFromEdge = (direction: SpotlightResizeDirection): void => {
-  const tauri = (globalThis as {
-    __TAURI__?: {
-      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    };
-  }).__TAURI__;
-  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
-  if (typeof invoke === "function") {
-    void invoke("start_main_window_resize_drag", { direction }).catch(() => undefined);
   }
 };
 
@@ -1252,7 +1238,6 @@ async function bootSpotlight() {
       resize: resizeMainWindow,
       drag: dragMainWindow,
       dragMove: moveMainWindowBy,
-      resizeDrag: resizeMainWindowFromEdge,
       dismiss: dismissMainWindow,
       onActionSettled: () => {
         void refreshApprovalsBadge();

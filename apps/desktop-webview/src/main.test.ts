@@ -771,10 +771,12 @@ test("Spotlight exposes native move and resize gestures instead of a fixed top s
   const source = readFileSync(new URL("./spotlight/controller.ts", import.meta.url), "utf8");
   const browserSource = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
 
+  // 3-1: the old assertions required invisible resize handles, but those handles were not backed by
+  // durable resize state and render-driven auto-resize could overwrite the user's dragged size.
   assert.match(source, /export type SpotlightManualDragFn = \(deltaX: number, deltaY: number\) => void/u);
   assert.match(source, /drag\?: \(\) => void/u);
   assert.match(source, /dragMove\?: SpotlightManualDragFn/u);
-  assert.match(source, /resizeDrag\?: \(direction: SpotlightResizeDirection\) => void/u);
+  assert.doesNotMatch(source, /resizeDrag\?:/u);
   assert.match(source, /renderWorkHubLiquidGlassLayer\("spotlight"\)/u);
   assert.match(source, /class="wh-spot ds-anim-spring-in"/u);
   // 盒子自己在 css.ts 里持有液态玻璃(渐变白底 + backdrop blur)，不再借用扁平的 ds-glass-strong 工具类。
@@ -783,14 +785,14 @@ test("Spotlight exposes native move and resize gestures instead of a fixed top s
   assert.match(source, /class="wh-spot-drag-sheet" data-spot-drag-sheet/u);
   assert.match(source, /class="wh-spot-field" type="search" data-spot-input role="combobox"/u);
   assert.doesNotMatch(source, /data-tauri-drag-region/u);
-  assert.match(source, /data-spot-resize="south-east"/u);
+  assert.doesNotMatch(source, /data-spot-resize/u);
   assert.match(source, /focusSearch\(\{ expand: false \}\)/u);
   assert.match(source, /suppressNextFocusExpansion = !options\.expand/u);
   assert.match(source, /if \(suppressNextFocusExpansion \|\| nowMs\(\) < suppressSearchFocusUntil\) \{\s*suppressNextFocusExpansion = false;\s*\}/u);
-  assert.match(source, /const dragExcludedSelector = "button,a,select,\[contenteditable=true\],\[data-spot-resize\]"/u);
+  assert.match(source, /const dragExcludedSelector = "button,a,select,\[contenteditable=true\]"/u);
   assert.match(source, /Boolean\(target\.closest\(dragExcludedSelector\)\)/u);
   assert.doesNotMatch(source, /dragExcludedSelector = "input,textarea,button/u);
-  assert.match(source, /let userResizeAutoUnlockAt = 0/u);
+  assert.doesNotMatch(source, /userResizeAutoUnlockAt/u);
   assert.match(source, /let suppressSearchFocusUntil = 0/u);
   assert.match(source, /let suppressSearchClickUntil = 0/u);
   assert.match(source, /const resetLauncher = \(\) => \{/u);
@@ -803,7 +805,6 @@ test("Spotlight exposes native move and resize gestures instead of a fixed top s
   assert.match(source, /reset: \(\) => \{\s*resetLauncher\(\);\s*\}/u);
   assert.match(source, /nowMs\(\) < suppressSearchFocusUntil/u);
   assert.match(source, /nowMs\(\) < suppressSearchClickUntil/u);
-  assert.match(source, /userResizeAutoUnlockAt = nowMs\(\) \+ 1600/u);
   assert.match(source, /suppressSearchFocusUntil = nowMs\(\) \+ 700/u);
   assert.match(source, /suppressSearchClickUntil = nowMs\(\) \+ 900/u);
   assert.match(source, /suppressSearchClickUntil = nowMs\(\) \+ 700/u);
@@ -829,11 +830,8 @@ test("Spotlight exposes native move and resize gestures instead of a fixed top s
   assert.notEqual(pointerMoveStart, -1);
   const pointerDownSource = source.slice(pointerDownStart, pointerMoveStart);
   assert.doesNotMatch(pointerDownSource, /input\.drag\(\)/u);
-  assert.match(source, /if \(now < userResizeAutoUnlockAt\) \{\s*userResizeAutoUnlockAt = now \+ 700;\s*return;\s*\}/u);
   assert.match(source, /input\.drag\?\.\(\)/u);
-  assert.match(source, /input\.resizeDrag\?\.\(direction\)/u);
-  assert.match(source, /const requestResizeFromWindowResize = \(\) => \{\s*scheduleWorkHubLiquidGlassFilterRebuild\(doc\);\s*const now = nowMs\(\);/u);
-  assert.match(source, /input\.resizeDrag\?\.\(direction\);\s*scheduleWorkHubLiquidGlassFilterRebuild\(doc\);/u);
+  assert.match(source, /const requestResizeFromWindowResize = \(\) => \{\s*scheduleWorkHubLiquidGlassFilterRebuild\(doc\);\s*requestResize\(\);\s*\};/u);
   const mouseMoveStart = source.indexOf('"mousemove"');
   const mouseUpStart = source.indexOf('"mouseup"', mouseMoveStart);
   assert.notEqual(mouseMoveStart, -1);
@@ -854,7 +852,7 @@ test("Spotlight exposes native move and resize gestures instead of a fixed top s
   assert.match(browserSource, /const moveMainWindowBy: SpotlightManualDragFn = \(deltaX, deltaY\): void =>/u);
   assert.match(browserSource, /invoke\("move_main_window_by", \{ deltaX, deltaY \}\)/u);
   assert.match(browserSource, /invoke\("start_main_window_drag"\)/u);
-  assert.match(browserSource, /invoke\("start_main_window_resize_drag", \{ direction \}\)/u);
+  assert.doesNotMatch(browserSource, /start_main_window_resize_drag/u);
 });
 
 test("desktop offline settings edit the API base locally instead of navigating to a dead settings route", () => {
