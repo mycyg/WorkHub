@@ -88,9 +88,7 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
 
   async createRunIfWorkItemIdle(run: AgentRunQueueRecord) {
     const existing = [...this.rows.values()].find(
-      (candidate) =>
-        candidate.work_item_id === run.work_item_id &&
-        (candidate.status === "queued" || candidate.status === "running")
+      (candidate) => agentRunActiveConflict(candidate, run)
     );
     if (existing) {
       return false;
@@ -221,6 +219,17 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
     }
     return recovered;
   }
+}
+
+function agentRunActiveConflict(candidate: AgentRunQueueRecord, input: AgentRunQueueRecord | { work_item_id: string; task_plan_item_id?: string }) {
+  if (candidate.status !== "queued" && candidate.status !== "running") {
+    return false;
+  }
+  if (input.task_plan_item_id) {
+    return candidate.task_plan_item_id === input.task_plan_item_id
+      || (candidate.work_item_id === input.work_item_id && !candidate.task_plan_item_id);
+  }
+  return candidate.work_item_id === input.work_item_id;
 }
 
 function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
@@ -1788,6 +1797,62 @@ test("persistent agent run enqueue rejects duplicate active work item across que
   assert.equal((await persistence.listActive()).length, 1);
 });
 
+test("task-plan child runs may share a work item but not a task-plan item", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const runIds = [
+    "40000000-0000-4000-8000-0000000000e1",
+    "40000000-0000-4000-8000-0000000000e2",
+    "40000000-0000-4000-8000-0000000000e3"
+  ];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => {
+      const value = runIds.shift();
+      if (!value) {
+        throw new Error("missing run id fixture");
+      }
+      return value;
+    },
+    persistence,
+    eventBus: false
+  });
+  const taskPlanId = "81000000-0000-4000-8000-000000000041";
+  const firstItemId = "81000000-0000-4000-8000-000000000042";
+  const secondItemId = "81000000-0000-4000-8000-000000000043";
+
+  await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Task-plan child A",
+    taskPlanId,
+    taskPlanItemId: firstItemId,
+    agentRole: "research"
+  });
+  await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Task-plan child B",
+    taskPlanId,
+    taskPlanItemId: secondItemId,
+    agentRole: "produce"
+  });
+
+  await assert.rejects(
+    queue.enqueue({
+      workItemId,
+      actorId: userId,
+      title: "Task-plan child A duplicate",
+      taskPlanId,
+      taskPlanItemId: firstItemId,
+      agentRole: "research"
+    }),
+    (error) => error instanceof AgentRunnerError && error.code === "agent_run_already_active"
+  );
+  assert.deepEqual((await queue.listActive()).map((run) => run.task_plan_item_id).sort(), [firstItemId, secondItemId].sort());
+});
+
 test("persistent agent run enqueue carries tenant ids into DB persistence", async () => {
   const runtimeSettings = settings();
   const orgId = "00000000-0000-4000-8000-00000000a0b1";
@@ -1983,6 +2048,177 @@ test("persistent agent run enqueue carries task-plan lineage into DB persistence
   assert.equal(persisted?.task_plan_item_id, taskPlanItemId);
   assert.equal(persisted?.agent_role, "research");
   assert.equal(persisted?.objective_md, objectiveMd);
+});
+
+test("task-plan child run prompt carries objective metadata and research role gets read-only tools", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-task-plan-test-"));
+  const taskPlanId = "81000000-0000-4000-8000-000000000011";
+  const taskPlanItemId = "81000000-0000-4000-8000-000000000012";
+  const objectiveMd = [
+    "Objective:",
+    "Summarize three reliable sources.",
+    "",
+    "Acceptance:",
+    "Every claim cites a source."
+  ].join("\n");
+  let firstPrompt = "";
+  let visibleToolNames: string[] = [];
+  const client: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create(params) {
+        if (!firstPrompt) {
+          firstPrompt = String(params.messages[0]?.content ?? "");
+          visibleToolNames = ((params.tools ?? []) as { name?: string }[])
+            .map((tool) => tool.name)
+            .filter((name): name is string => Boolean(name));
+        }
+        return {
+          id: "msg-task-plan-readonly",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          content: [{ type: "text", text: "Sources inspected." }]
+        };
+      }
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000de",
+    workdir: () => workdir,
+    client: () => client,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Research child run",
+    taskPlanId,
+    taskPlanItemId,
+    agentRole: "research",
+    objectiveMd
+  });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "succeeded");
+  assert.match(firstPrompt, /Task-plan assignment/u);
+  assert.match(firstPrompt, /Agent role: research/u);
+  assert.match(firstPrompt, /Summarize three reliable sources/u);
+  assert.match(firstPrompt, /Every claim cites a source/u);
+  assert.equal(visibleToolNames.includes("list_files"), true);
+  assert.equal(visibleToolNames.includes("read_file"), true);
+  assert.equal(visibleToolNames.includes("load_skill"), true);
+  assert.equal(visibleToolNames.includes("write_file"), false);
+  assert.equal(visibleToolNames.includes("write_base64_file"), false);
+  assert.equal(visibleToolNames.includes("mkdir"), false);
+  assert.equal(visibleToolNames.includes("move_path"), false);
+  assert.equal(visibleToolNames.includes("delete_path"), false);
+  assert.equal(visibleToolNames.includes("run_command"), false);
+  assert.equal(visibleToolNames.includes("zip_path"), false);
+});
+
+test("agent run settled hook fires for terminal task-plan runs and stays fail-open", async () => {
+  const runtimeSettings = settings();
+  const successWorkdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-settled-ok-"));
+  const failureWorkdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-settled-fail-"));
+  const settledStatuses: string[] = [];
+  const successQueue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000df",
+    workdir: () => successWorkdir,
+    client: () => ({
+      model: "deepseek-v4-flash",
+      messages: {
+        async create() {
+          return {
+            id: "msg-settled-ok",
+            stopReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            content: [{ type: "text", text: "Done." }]
+          };
+        }
+      }
+    }),
+    runSettled: async (run) => {
+      settledStatuses.push(run.status);
+      throw new Error("settled hook backend unavailable");
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+  const successRun = await successQueue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Settled success child",
+    taskPlanId: "81000000-0000-4000-8000-000000000021",
+    taskPlanItemId: "81000000-0000-4000-8000-000000000022",
+    agentRole: "produce"
+  });
+
+  const success = await successQueue.runNext();
+
+  assert.equal(success?.run_id, successRun.run_id);
+  assert.equal(success?.status, "succeeded");
+  assert.deepEqual(settledStatuses, ["succeeded"]);
+
+  const failureQueue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e0",
+    workdir: () => failureWorkdir,
+    client: () => noDeliverableAgentClient(),
+    runSettled: async (run) => { settledStatuses.push(run.status); },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+  await failureQueue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Settled failure child",
+    taskPlanId: "81000000-0000-4000-8000-000000000031",
+    taskPlanItemId: "81000000-0000-4000-8000-000000000032",
+    agentRole: "review"
+  });
+
+  const failure = await failureQueue.runNext();
+
+  assert.equal(failure?.status, "failed");
+  assert.deepEqual(settledStatuses, ["succeeded", "failed"]);
+
+  const cancelQueue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e4",
+    runSettled: async (run) => { settledStatuses.push(run.status); },
+    eventBus: false
+  });
+  const cancelRun = await cancelQueue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Settled cancelled child",
+    taskPlanId: "81000000-0000-4000-8000-000000000051",
+    taskPlanItemId: "81000000-0000-4000-8000-000000000052",
+    agentRole: "review"
+  });
+
+  const cancelled = await cancelQueue.abort(cancelRun.run_id, userId);
+
+  assert.equal(cancelled.status, "cancelled");
+  assert.deepEqual(settledStatuses, ["succeeded", "failed", "cancelled"]);
 });
 
 test("agent run queue refreshes stale cached trace from persistence", async () => {

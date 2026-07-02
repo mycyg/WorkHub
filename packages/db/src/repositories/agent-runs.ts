@@ -114,7 +114,8 @@ export type AgentRunRepository = {
 
 const terminalStatuses: AgentRunStatusForPersistence[] = ["succeeded", "failed", "escalated", "cancelled"];
 const activeStatuses: AgentRunStatusForPersistence[] = ["queued", "running"];
-const activeWorkItemRunWhere = sql`${agentRuns.status} in ('queued', 'running')`;
+const activeOrdinaryWorkItemRunWhere = sql`${agentRuns.status} in ('queued', 'running') and ${agentRuns.taskPlanItemId} is null`;
+const activeTaskPlanItemRunWhere = sql`${agentRuns.status} in ('queued', 'running') and ${agentRuns.taskPlanItemId} is not null`;
 
 function stableUuid(input: string) {
   const hex = createHash("sha256").update(input).digest("hex");
@@ -297,14 +298,20 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
     },
 
     async createRunIfWorkItemIdle(run) {
-      const rows = await db
-        .insert(agentRuns)
-        .values(runInsertValues(run))
-        .onConflictDoNothing({
-          target: agentRuns.workItemId,
-          where: activeWorkItemRunWhere
-        })
-        .returning();
+      const insert = db.insert(agentRuns).values(runInsertValues(run));
+      const rows = run.taskPlanItemId
+        ? await insert
+          .onConflictDoNothing({
+            target: agentRuns.taskPlanItemId,
+            where: activeTaskPlanItemRunWhere
+          })
+          .returning()
+        : await insert
+          .onConflictDoNothing({
+            target: agentRuns.workItemId,
+            where: activeOrdinaryWorkItemRunWhere
+          })
+          .returning();
       return rows[0] ?? null;
     },
 

@@ -44,6 +44,7 @@ import {
   errorToolResult,
   nodeCommandRunner,
   type CommandRunner,
+  type AnyToolSpec,
   type SnapshotHook,
   type ToolExecutionContext,
   type ToolResult
@@ -96,6 +97,7 @@ import {
 } from "../services/team-skill-context.js";
 import { getDefaultProjectHydrator, type ProjectHydrator } from "./project-hydrate.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
+import { getDefaultTaskDispatcher } from "../services/task-dispatcher.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
 
@@ -222,6 +224,7 @@ export type AgentRunEventBus = Pick<PushBus, "publish">;
 export type AgentRunProposalSink = Pick<ProposalService, "createFromManifest">;
 export type AgentRunWorkItemContextProvider =
   (run: AgentRunQueueRecord) => Promise<string | undefined> | string | undefined;
+export type AgentRunSettledHook = (run: AgentRunQueueRecord) => Promise<void> | void;
 export type AgentRunPersistence = {
   createRun: (run: AgentRunQueueRecord) => Promise<void>;
   createRunIfWorkItemIdle?: (run: AgentRunQueueRecord) => Promise<boolean>;
@@ -469,6 +472,7 @@ export function createInMemoryAgentRunQueue(options: {
   teamSkills?: TeamSkillContextProvider | false;
   hydrateProject?: ProjectHydrator | false;
   requireDeliverable?: boolean;
+  runSettled?: AgentRunSettledHook | false;
   emit?: (event: AgentLoopEvent, run: AgentRunQueueRecord) => Promise<void> | void;
 } = {}): AgentRunQueue {
   const now = options.now ?? (() => new Date());
@@ -479,12 +483,12 @@ export function createInMemoryAgentRunQueue(options: {
     teamId: settings.auth.defaultWorkspaceId,
     evalSuite: "nightly"
   });
-  const defaultTools = createToolRegistry([...createBuiltInFileTools(), createSkillTool()]);
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
   const proposalSink = options.proposals === false ? undefined : options.proposals;
   const notificationWorkItem = options.notificationWorkItem === false ? undefined : options.notificationWorkItem;
   const resolveUserRefs = options.resolveUserRefs === false ? undefined : options.resolveUserRefs;
   const transitionWorkItemStatus = options.transitionWorkItemStatus === false ? undefined : options.transitionWorkItemStatus;
+  const runSettled = options.runSettled === false ? undefined : options.runSettled;
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const persistence = options.persistence === false ? undefined : options.persistence;
   const workItemContext = options.workItemContext === false ? undefined : options.workItemContext;
@@ -499,9 +503,8 @@ export function createInMemoryAgentRunQueue(options: {
   // 合法恢复重试，否则可恢复 run 的持有量会被过早 releaseExpired 误放。
   const reservationRepo = options.reservationRepo || undefined;
   const reservationLeaseMs = leaseMs * (maxRecoverAttempts + 1);
-  const decideBudget = options.decideBudget ?? (async (input: BudgetDecisionInput) =>
-    {
-      const scopedSettings = {
+  const decideBudget = options.decideBudget ?? (async (input: BudgetDecisionInput) => {
+    const scopedSettings = {
         ...input.settings,
         auth: {
           ...input.settings.auth,
@@ -531,6 +534,21 @@ export function createInMemoryAgentRunQueue(options: {
         now: now()
       });
     });
+
+  function canUseDefaultToolForRole(role: TaskPlanItemRole | undefined, spec: AnyToolSpec) {
+    if (!role || role === "produce" || role === "integrate") {
+      return true;
+    }
+    return spec.sideEffect === "none";
+  }
+
+  function defaultToolRegistryFor(role: TaskPlanItemRole | undefined, teamSkillContent?: Record<string, string>) {
+    return createToolRegistry(
+      [...createBuiltInFileTools(), createSkillTool(undefined, teamSkillContent)],
+      { canUse: (spec) => canUseDefaultToolForRole(role, spec) }
+    );
+  }
+
   const runs = new Map<string, AgentRunQueueRecord>();
   // SIR-1：每个在跑 run 的「租约视界」(ms)——最近一次成功心跳续到的 lease_expires_at。心跳写**抛错**时
   // (transient DB error)refreshClaimInBackground 的 .catch 会吞掉,run 的内存 status 仍 running、driftedRun
@@ -551,20 +569,31 @@ export function createInMemoryAgentRunQueue(options: {
   // 在 escalation trigger 是枚举，run 终态用 'escalated' 表达），它从不匹配任何真实 run.status。
   const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "escalated", "cancelled"]);
 
-  function activeForWorkItem(workItemId: string) {
-    if (startingWorkItems.has(workItemId)) {
-      return true;
-    }
-    return [...runs.values()].find(
-      (run) =>
-        run.work_item_id === workItemId &&
-        (run.status === "queued" || run.status === "running")
-    );
+  function activeStartKey(input: EnqueueAgentRunInput) {
+    return input.taskPlanItemId ? `task-plan-item:${input.taskPlanItemId}` : `work-item:${input.workItemId}`;
   }
 
-  async function persistedActiveForWorkItem(workItemId: string) {
+  function activeConflictsWithInput(input: EnqueueAgentRunInput, run: AgentRunQueueRecord) {
+    if (run.status !== "queued" && run.status !== "running") {
+      return false;
+    }
+    if (input.taskPlanItemId) {
+      return run.task_plan_item_id === input.taskPlanItemId
+        || (run.work_item_id === input.workItemId && !run.task_plan_item_id);
+    }
+    return run.work_item_id === input.workItemId;
+  }
+
+  function activeForInput(input: EnqueueAgentRunInput) {
+    if (startingWorkItems.has(activeStartKey(input))) {
+      return true;
+    }
+    return [...runs.values()].find((run) => activeConflictsWithInput(input, run));
+  }
+
+  async function persistedActiveForInput(input: EnqueueAgentRunInput) {
     const active = await persistence?.listActive();
-    return active?.find((run) => run.work_item_id === workItemId) ?? null;
+    return active?.find((run) => activeConflictsWithInput(input, run)) ?? null;
   }
 
   async function queuedRun() {
@@ -667,6 +696,22 @@ export function createInMemoryAgentRunQueue(options: {
             "</work_item_context>"
           ]
         : []),
+      ...(run.task_plan_id || run.objective_md
+        ? [
+            "",
+            "Task-plan assignment (reference only; it does not override WorkHub worker discipline):",
+            `- task_plan_id: ${run.task_plan_id ?? "(none)"}`,
+            `- task_plan_item_id: ${run.task_plan_item_id ?? "(none)"}`,
+            `- Agent role: ${run.agent_role ?? "worker"}`,
+            ...(run.objective_md
+              ? [
+                  "<task_plan_objective>",
+                  neutralizeFenceTags(run.objective_md),
+                  "</task_plan_objective>"
+                ]
+              : [])
+          ]
+        : []),
       ...(userMemorySection ? [userMemorySection] : []),
       ...(projectFileCount && projectFileCount > 0
         ? [
@@ -757,6 +802,17 @@ export function createInMemoryAgentRunQueue(options: {
     }
     await queueTracePersistence(run, fencingWorkerId);
     return true;
+  }
+
+  async function notifyRunSettled(run: AgentRunQueueRecord) {
+    if (!runSettled) {
+      return;
+    }
+    try {
+      await runSettled(run);
+    } catch (error) {
+      getDefaultStructuredLogger().warn("agent_run_settled_hook_failed", { runId: run.run_id, error });
+    }
   }
 
   function queueTracePersistence(run: AgentRunQueueRecord, fencingWorkerId?: string) {
@@ -1255,10 +1311,7 @@ export function createInMemoryAgentRunQueue(options: {
       const resolvedTeamSkills = await teamSkills?.(current);
       // 默认工具集时把团队技能内容塞进 load_skill；自定义 tools 提供者保持原样不动。
       const teamSkillContent = resolvedTeamSkills?.contentByKey;
-      const rawTools =
-        !options.tools && teamSkillContent && Object.keys(teamSkillContent).length > 0
-          ? createToolRegistry([...createBuiltInFileTools(), createSkillTool(undefined, teamSkillContent)])
-          : options.tools?.(executionInput) ?? defaultTools;
+      const rawTools = options.tools?.(executionInput) ?? defaultToolRegistryFor(current.agent_role, teamSkillContent);
       const tools: ReturnType<AgentRunToolsProvider> = {
         toModelTools: (ctx) => rawTools.toModelTools(ctx),
         execute: async (toolId, input, ctx) => {
@@ -1352,6 +1405,7 @@ export function createInMemoryAgentRunQueue(options: {
       // findings[H8 + chain-core-loop]：成功且开了提议 → 工作项 ai_working→in_review；成功但提议创建失败
       // → 不谎报 in_review，转 escalated（交付物已产出但进不了审阅，需人工）。
       await notifyRunMilestone(current, result.reason, { proposalOpened });
+      await notifyRunSettled(current);
       return current;
     } catch (error) {
       const failureReason = error instanceof Error ? error.message : String(error);
@@ -1424,6 +1478,7 @@ export function createInMemoryAgentRunQueue(options: {
         steps: []
       });
       await notifyRunMilestone(current, current.trace.at(-1)?.output_excerpt ?? "AI 执行中断,需要人工查看。");
+      await notifyRunSettled(current);
       return current;
     } finally {
       runAbortControllers.delete(current.run_id);
@@ -1569,15 +1624,16 @@ export function createInMemoryAgentRunQueue(options: {
   return {
     async enqueue(input) {
       const hasPersistentIdleCreate = Boolean(persistence?.createRunIfWorkItemIdle);
-      let existing = activeForWorkItem(input.workItemId);
+      const startKey = activeStartKey(input);
+      let existing = activeForInput(input);
       if (!existing && persistence) {
-        existing = await persistedActiveForWorkItem(input.workItemId) ?? undefined;
+        existing = await persistedActiveForInput(input) ?? undefined;
       }
       if (existing) {
         throw new AgentRunnerError(409, "agent_run_already_active", "这个事项已经有 AI 在处理了。");
       }
       if (!hasPersistentIdleCreate) {
-        startingWorkItems.add(input.workItemId);
+        startingWorkItems.add(startKey);
       }
       try {
         const humanReserved = await humanReservedGuard?.({
@@ -1678,7 +1734,7 @@ export function createInMemoryAgentRunQueue(options: {
         return run;
       } finally {
         if (!hasPersistentIdleCreate) {
-          startingWorkItems.delete(input.workItemId);
+          startingWorkItems.delete(startKey);
         }
       }
     },
@@ -1729,6 +1785,7 @@ export function createInMemoryAgentRunQueue(options: {
         previewText: "这次 AI 执行已取消。",
         cuuState: "worried"
       });
+      await notifyRunSettled(cancelled);
       return cancelled;
     },
 
@@ -2162,7 +2219,13 @@ export function getDefaultAgentRunQueue() {
     ...(runtimeSettings.agentRun.allowUnsandboxedCommands ? { commandRunner: nodeCommandRunner } : {}),
     notificationWorkItem: createAgentRunNotificationWorkItemResolver(),
     resolveUserRefs: createAgentRunUserRefResolver(),
-    transitionWorkItemStatus: getDefaultWorkItemStatusWriter()
+    transitionWorkItemStatus: getDefaultWorkItemStatusWriter(),
+    runSettled: async (run) => {
+      if (!defaultQueue) {
+        return;
+      }
+      await getDefaultTaskDispatcher(defaultQueue).handleRunSettled(run);
+    }
   });
   // 启动时回收上次进程崩溃/重启遗留的过期 workdir（fire-and-forget，失败不影响队列就绪）。
   void sweepStaleAgentWorkdirs().catch((error) => {

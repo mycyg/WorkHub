@@ -254,3 +254,197 @@ test("R9.1 task plan repository cancels only draft plans within the workspace sc
   assert.ok(queryParamValues(query?.where).includes(workspaceId));
   assert.ok(queryParamValues(query?.where).includes("draft"));
 });
+
+test("R9.2 task plan repository starts dispatching only approved plans within the workspace scope", async () => {
+  const dispatchingRow = {
+    id: planId,
+    workItemId,
+    workspaceId,
+    status: "dispatching",
+    objectiveId: null,
+    budgetJson: {},
+    decompositionContextJson: {},
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now
+  };
+  const { db, queries } = createQueryRecorder([[dispatchingRow]]);
+  const repository = createTaskPlanRepository(db);
+
+  const result = await repository.startDispatchingPlan({
+    planId,
+    workspaceId,
+    startedAt: now
+  });
+
+  assert.equal(result?.id, planId);
+  assert.equal(result?.status, "dispatching");
+  const [query] = queries;
+  assert.equal(query?.operation, "update");
+  assert.equal(query?.targetTable, taskPlans);
+  assert.deepEqual(query?.setValue, { status: "dispatching", updatedAt: now });
+  assert.equal(query?.returningCalled, true);
+  assert.ok(queryReferences(query?.where, taskPlans.id));
+  assert.ok(queryReferences(query?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(query?.where, taskPlans.status));
+  assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
+  assert.ok(queryParamValues(query?.where).includes("approved"));
+});
+
+test("R9.2 task plan repository uses CAS when marking items dispatched", async () => {
+  const dispatchedItem = {
+    id: firstItemId,
+    planId,
+    parentItemId: null,
+    seq: 1,
+    title: "查资料",
+    role: "research",
+    objectiveMd: "查清背景。",
+    acceptanceMd: "列出来源。",
+    budgetSharePct: 40,
+    dependsOn: [],
+    status: "dispatched",
+    createdAt: now,
+    updatedAt: now
+  };
+  const { db, queries } = createQueryRecorder([[dispatchedItem]]);
+  const repository = createTaskPlanRepository(db);
+
+  const result = await repository.markItemDispatched({
+    planId,
+    itemId: firstItemId,
+    dispatchedAt: now
+  });
+
+  assert.equal(result?.id, firstItemId);
+  assert.equal(result?.status, "dispatched");
+  const [query] = queries;
+  assert.equal(query?.operation, "update");
+  assert.equal(query?.targetTable, taskPlanItems);
+  assert.deepEqual(query?.setValue, { status: "dispatched", updatedAt: now });
+  assert.equal(query?.returningCalled, true);
+  assert.ok(queryReferences(query?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(query?.where, taskPlanItems.id));
+  assert.ok(queryReferences(query?.where, taskPlanItems.status));
+  assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(firstItemId));
+  assert.ok(queryParamValues(query?.where).includes("pending"));
+});
+
+test("R9.2 task plan repository settles only dispatched items", async () => {
+  const succeededItem = {
+    id: firstItemId,
+    planId,
+    parentItemId: null,
+    seq: 1,
+    title: "查资料",
+    role: "research",
+    objectiveMd: "查清背景。",
+    acceptanceMd: "列出来源。",
+    budgetSharePct: 40,
+    dependsOn: [],
+    status: "succeeded",
+    createdAt: now,
+    updatedAt: now
+  };
+  const { db, queries } = createQueryRecorder([[succeededItem]]);
+  const repository = createTaskPlanRepository(db);
+
+  const result = await repository.settleDispatchedItem({
+    planId,
+    itemId: firstItemId,
+    status: "succeeded",
+    settledAt: now
+  });
+
+  assert.equal(result?.id, firstItemId);
+  assert.equal(result?.status, "succeeded");
+  const [query] = queries;
+  assert.equal(query?.operation, "update");
+  assert.equal(query?.targetTable, taskPlanItems);
+  assert.deepEqual(query?.setValue, { status: "succeeded", updatedAt: now });
+  assert.equal(query?.returningCalled, true);
+  assert.ok(queryReferences(query?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(query?.where, taskPlanItems.id));
+  assert.ok(queryReferences(query?.where, taskPlanItems.status));
+  assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(firstItemId));
+  assert.ok(queryParamValues(query?.where).includes("dispatched"));
+});
+
+test("R9.2 task plan repository skips pending items in one bounded set update", async () => {
+  const skippedItem = {
+    id: secondItemId,
+    planId,
+    parentItemId: null,
+    seq: 2,
+    title: "写初稿",
+    role: "produce",
+    objectiveMd: "写出初稿。",
+    acceptanceMd: "初稿包含结论。",
+    budgetSharePct: 60,
+    dependsOn: [firstItemId],
+    status: "skipped",
+    createdAt: now,
+    updatedAt: now
+  };
+  const { db, queries } = createQueryRecorder([[skippedItem]]);
+  const repository = createTaskPlanRepository(db);
+
+  const result = await repository.skipPendingItems({
+    planId,
+    itemIds: [secondItemId],
+    skippedAt: now
+  });
+
+  assert.deepEqual(result.map((row) => row.id), [secondItemId]);
+  const [query] = queries;
+  assert.equal(query?.operation, "update");
+  assert.equal(query?.targetTable, taskPlanItems);
+  assert.deepEqual(query?.setValue, { status: "skipped", updatedAt: now });
+  assert.equal(query?.returningCalled, true);
+  assert.ok(queryReferences(query?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(query?.where, taskPlanItems.id));
+  assert.ok(queryReferences(query?.where, taskPlanItems.status));
+  assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(secondItemId));
+  assert.ok(queryParamValues(query?.where).includes("pending"));
+});
+
+test("R9.2 task plan repository marks dispatching plans done only within workspace scope", async () => {
+  const doneRow = {
+    id: planId,
+    workItemId,
+    workspaceId,
+    status: "done",
+    objectiveId: null,
+    budgetJson: {},
+    decompositionContextJson: {},
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now
+  };
+  const { db, queries } = createQueryRecorder([[doneRow]]);
+  const repository = createTaskPlanRepository(db);
+
+  const result = await repository.markPlanDone({
+    planId,
+    workspaceId,
+    doneAt: now
+  });
+
+  assert.equal(result?.id, planId);
+  assert.equal(result?.status, "done");
+  const [query] = queries;
+  assert.equal(query?.operation, "update");
+  assert.equal(query?.targetTable, taskPlans);
+  assert.deepEqual(query?.setValue, { status: "done", updatedAt: now });
+  assert.equal(query?.returningCalled, true);
+  assert.ok(queryReferences(query?.where, taskPlans.id));
+  assert.ok(queryReferences(query?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(query?.where, taskPlans.status));
+  assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
+  assert.ok(queryParamValues(query?.where).includes("dispatching"));
+});

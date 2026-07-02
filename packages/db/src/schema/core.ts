@@ -1132,7 +1132,10 @@ export const agentRuns = pgTable(
     index("agent_runs_status_idx").on(table.status),
     uniqueIndex("agent_runs_work_item_active_uq")
       .on(table.workItemId)
-      .where(sql`${table.status} in ('queued', 'running')`),
+      .where(sql`${table.status} in ('queued', 'running') and ${table.taskPlanItemId} is null`),
+    uniqueIndex("agent_runs_task_plan_item_active_uq")
+      .on(table.taskPlanItemId)
+      .where(sql`${table.status} in ('queued', 'running') and ${table.taskPlanItemId} is not null`),
     index("agent_runs_claim_idx").on(table.status, table.leaseExpiresAt, table.createdAt),
     index("agent_runs_claimed_by_idx").on(table.claimedBy)
   ]

@@ -1,6 +1,7 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 
 import type {
+  TaskPlanItemStatus,
   TaskPlanItemRole,
   TaskPlanStatus
 } from "@workhub/contracts";
@@ -128,6 +129,114 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         items: rows.slice(0, itemLimit),
         itemsCapped: rows.length > itemLimit
       };
+    },
+
+    async startDispatchingPlan(input: {
+      planId: string;
+      workspaceId: string;
+      startedAt?: Date;
+    }): Promise<TaskPlanRow | null> {
+      const startedAt = input.startedAt ?? new Date();
+      const [row] = await db
+        .update(taskPlans)
+        .set({
+          status: "dispatching" satisfies TaskPlanStatus,
+          updatedAt: startedAt
+        })
+        .where(and(
+          eq(taskPlans.id, input.planId),
+          eq(taskPlans.workspaceId, input.workspaceId),
+          eq(taskPlans.status, "approved" satisfies TaskPlanStatus)
+        ))
+        .returning();
+      return row ?? null;
+    },
+
+    async markItemDispatched(input: {
+      planId: string;
+      itemId: string;
+      dispatchedAt?: Date;
+    }): Promise<TaskPlanItemRow | null> {
+      const dispatchedAt = input.dispatchedAt ?? new Date();
+      const [row] = await db
+        .update(taskPlanItems)
+        .set({
+          status: "dispatched" satisfies TaskPlanItemStatus,
+          updatedAt: dispatchedAt
+        })
+        .where(and(
+          eq(taskPlanItems.planId, input.planId),
+          eq(taskPlanItems.id, input.itemId),
+          eq(taskPlanItems.status, "pending" satisfies TaskPlanItemStatus)
+        ))
+        .returning();
+      return row ?? null;
+    },
+
+    async settleDispatchedItem(input: {
+      planId: string;
+      itemId: string;
+      status: Extract<TaskPlanItemStatus, "succeeded" | "failed">;
+      settledAt?: Date;
+    }): Promise<TaskPlanItemRow | null> {
+      const settledAt = input.settledAt ?? new Date();
+      const [row] = await db
+        .update(taskPlanItems)
+        .set({
+          status: input.status,
+          updatedAt: settledAt
+        })
+        .where(and(
+          eq(taskPlanItems.planId, input.planId),
+          eq(taskPlanItems.id, input.itemId),
+          eq(taskPlanItems.status, "dispatched" satisfies TaskPlanItemStatus)
+        ))
+        .returning();
+      return row ?? null;
+    },
+
+    async skipPendingItems(input: {
+      planId: string;
+      itemIds: string[];
+      skippedAt?: Date;
+    }): Promise<TaskPlanItemRow[]> {
+      if (input.itemIds.length === 0) {
+        return [];
+      }
+      const skippedAt = input.skippedAt ?? new Date();
+      return db
+        .update(taskPlanItems)
+        .set({
+          status: "skipped" satisfies TaskPlanItemStatus,
+          updatedAt: skippedAt
+        })
+        .where(and(
+          eq(taskPlanItems.planId, input.planId),
+          inArray(taskPlanItems.id, input.itemIds),
+          eq(taskPlanItems.status, "pending" satisfies TaskPlanItemStatus)
+        ))
+        .returning();
+    },
+
+    async markPlanDone(input: {
+      planId: string;
+      workspaceId: string;
+      doneAt?: Date;
+    }): Promise<TaskPlanRow | null> {
+      const doneAt = input.doneAt ?? new Date();
+      const [row] = await db
+        .update(taskPlans)
+        .set({
+          status: "done" satisfies TaskPlanStatus,
+          updatedAt: doneAt
+        })
+        .where(and(
+          eq(taskPlans.id, input.planId),
+          eq(taskPlans.workspaceId, input.workspaceId),
+          eq(taskPlans.status, "dispatching" satisfies TaskPlanStatus)
+        ))
+        .returning();
+      return row ?? null;
     },
 
     async approvePlan(input: {
