@@ -202,6 +202,9 @@ function driveUploadBody(payload: Parameters<WorkHubApiClient["uploadDriveFile"]
   if (payload.parsed_text) {
     form.set("parsed_text", payload.parsed_text);
   }
+  if (typeof payload.parent_id === "string" && payload.parent_id.trim()) {
+    form.set("parent_id", payload.parent_id.trim());
+  }
   return form;
 }
 

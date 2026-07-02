@@ -82,6 +82,10 @@ import {
   type WebRouteReadyResult
 } from "./routes.js";
 import {
+  acceptedDeliverableRestoreFollowUp,
+  driveUploadPayloadFromPicker
+} from "./drive-actions.js";
+import {
   mountReactRouteIsland,
   setReactRouteDirtyHandler,
   unmountReactRouteIsland
@@ -523,7 +527,7 @@ function bindGoldPathNavigation(
       showRouteNotice(shellRoot, actionPendingNotice(locale, actionId));
       void (async () => {
         try {
-          const result = await client.uploadDriveFile(driveUpload.projectId, { file }, { locale });
+          const result = await client.uploadDriveFile(driveUpload.projectId, driveUploadPayloadFromPicker(target, file), { locale });
           target.value = "";
           await renderCurrentRoute(client, locale);
           if (root) {
@@ -902,17 +906,10 @@ function bindGoldPathNavigation(
             acceptedDeliverableRestore.workItemId,
             acceptedDeliverableRestore.acceptedChangeId
           );
-          if (result.accepted_deliverable.drive_href) {
-            await navigateWebRoute(result.accepted_deliverable.drive_href, client, locale);
-          } else {
-            await renderCurrentRoute(client, locale);
-          }
+          const followUp = acceptedDeliverableRestoreFollowUp(result, locale, actionSummary(result, locale));
+          await renderCurrentRoute(client, locale);
           if (root) {
-            const filename = result.accepted_deliverable.filename?.trim();
-            const body = filename
-              ? (locale === "zh-CN" ? `已恢复并打开：${filename}` : `Restored and opened: ${filename}`)
-              : actionSummary(result, locale);
-            showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
+            showRouteNotice(root, actionSuccessNotice(locale, followUp.noticeBody, actionId));
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));

@@ -374,7 +374,8 @@ test("api client sends drive file uploads as multipart form data", async () => {
 
   await client.uploadDriveFile("project-1", {
     file: new Blob(["hello drive"], { type: "text/plain" }),
-    filename: "hello.txt"
+    filename: "hello.txt",
+    parent_id: "folder-1"
   });
 
   assert.equal(seenBody instanceof FormData, true);
@@ -382,6 +383,7 @@ test("api client sends drive file uploads as multipart form data", async () => {
   const file = (seenBody as FormData).get("file");
   assert.equal(file instanceof Blob, true);
   assert.equal(await (file as Blob).text(), "hello drive");
+  assert.equal((seenBody as FormData).get("parent_id"), "folder-1");
 });
 
 test("api client exposes typed push stream URLs for web and desktop clients", () => {

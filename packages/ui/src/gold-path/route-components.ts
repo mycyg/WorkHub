@@ -148,7 +148,7 @@ export const webRouteComponentCss = [
   ".wh-r4-route-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-start}",
   ".wh-r4-route-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}",
   ".wh-r4-route .wh-btn,.wh-r4-route .wh-pill{max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}",
-  ".wh-drive-upload-label{position:relative;cursor:pointer}.wh-drive-upload-input{position:absolute;inline-size:1px;block-size:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}",
+  ".wh-drive-upload-control{display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:100%}.wh-drive-upload-label{position:relative;cursor:pointer}.wh-drive-upload-input{position:absolute;inline-size:1px;block-size:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}",
   ".wh-r5-drive-preview-panel{grid-column:1/-1}.wh-r5-drive-preview-body{margin:0;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-word;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:12px;background:rgba(247,250,254,.82);color:var(--wh-product-ink,#172033);font:13px/1.55 \"SFMono-Regular\",\"Cascadia Mono\",Consolas,monospace}",
   ".wh-r4-route details:not([open])>*:not(summary){display:none}",
   ".wh-r4-intake-free-text{width:100%;min-height:92px;resize:vertical;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:10px 12px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:#fff;overflow-wrap:anywhere}",
@@ -2203,8 +2203,16 @@ function renderDriveRouteComponent(
   const deleteLabel = deleteTarget
     ? (locale === "zh-CN" ? `移到回收站：${deleteTarget.name}` : `Move “${deleteTarget.name}” to recycle`)
     : routeT(locale, "drive.delete");
+  const uploadFolders = vm.items.filter((item) => item.kind === "folder");
+  const selectedUploadParentId = selectedItem?.kind === "folder" ? selectedItem.id : selectedItem?.parent_id ?? "";
+  const uploadParentSelect = uploadFolders.length
+    ? `<select class="wh-pill" data-drive-upload-parent-select="true" aria-label="${escapeHtml(locale === "zh-CN" ? "上传到文件夹" : "Upload to folder")}"><option value="">${escapeHtml(locale === "zh-CN" ? "网盘根目录" : "Drive root")}</option>${uploadFolders.map((folder) => {
+      const selected = folder.id === selectedUploadParentId ? " selected" : "";
+      return `<option value="${escapeHtml(folder.id)}"${selected}>${escapeHtml(folder.name)}</option>`;
+    }).join("")}</select>`
+    : "";
   const driveManageActions = [
-    vm.actions.upload_file ? `<label class="wh-btn wh-btn-primary wh-drive-upload-label"><span>${escapeHtml(routeT(locale, "drive.upload"))}</span><input class="wh-drive-upload-input" type="file" data-drive-upload-picker="true" data-action-id="drive_upload_file" data-method="POST" data-action-href="${escapeHtml(safeHref(vm.actions.upload_file.href))}" /></label>` : "",
+    vm.actions.upload_file ? `<span class="wh-drive-upload-control" data-drive-upload-control="true"><label class="wh-btn wh-btn-primary wh-drive-upload-label"><span>${escapeHtml(routeT(locale, "drive.upload"))}</span><input class="wh-drive-upload-input" type="file" data-drive-upload-picker="true" data-action-id="drive_upload_file" data-method="POST" data-action-href="${escapeHtml(safeHref(vm.actions.upload_file.href))}" /></label>${uploadParentSelect}</span>` : "",
     vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.delete_item.href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-r5-drive-delete-name="${escapeHtml(deleteTarget?.name ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(deleteLabel)}</a>` : ""
   ].filter(Boolean).join("");
   const fileRows = vm.items.length

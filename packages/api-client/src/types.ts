@@ -132,11 +132,13 @@ export type DriveUploadFileRequest = {
   size_bytes?: number;
   sha256?: string;
   parsed_text?: string;
+  parent_id?: string | null;
 } | {
   file: Blob;
   filename?: string;
   mime?: string;
   parsed_text?: string;
+  parent_id?: string | null;
 };
 
 export type DriveDeleteItemRequest = {

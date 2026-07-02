@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import type { AcceptedDeliverableRestoreResult } from "@workhub/contracts";
+
+import { acceptedDeliverableRestoreFollowUp, driveUploadPayloadFromPicker } from "./drive-actions.js";
 
 const browserSource = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
 
@@ -12,13 +15,44 @@ function browserActionBlock(startMarker: string, endMarker: string) {
   return browserSource.slice(start, end);
 }
 
-test("accepted deliverable restore opens the restored drive file before showing success", () => {
-  const block = browserActionBlock("const acceptedDeliverableRestore = acceptedDeliverableRestoreFromHref(href);", "const driveUpload = driveUploadFromHref(href);");
+test("accepted deliverable restore refreshes the current route instead of jumping to drive", () => {
+  const result = {
+    accepted_deliverable: {
+      id: "94000000-0000-4000-8000-000000000004",
+      work_item_id: "94000000-0000-4000-8000-000000000005",
+      proposal_id: "94000000-0000-4000-8000-000000000006",
+      change_id: "94000000-0000-4000-8000-000000000007",
+      target_kind: "text_doc",
+      target_key: "drive:/deliverables/client-review.md",
+      change_type: "updated",
+      accepted_version: 2,
+      filename: "client-review.md",
+      drive_href: "/drive?project_id=94000000-0000-4000-8000-000000000001&item_id=94000000-0000-4000-8000-000000000002",
+      restore_href: "/api/workitems/94000000-0000-4000-8000-000000000005/deliverables/94000000-0000-4000-8000-000000000004/restore",
+      accepted_at: "2026-06-11T09:00:00.000Z"
+    }
+  } satisfies AcceptedDeliverableRestoreResult;
 
-  assert.match(block, /result\.accepted_deliverable\.drive_href/u);
-  assert.match(block, /await navigateWebRoute\(result\.accepted_deliverable\.drive_href, client, locale\);/u);
-  assert.match(block, /showRouteNotice\(root, actionSuccessNotice/u);
-  assert.doesNotMatch(block, /showRouteNotice\(shellRoot, actionSuccessNotice/u);
+  const followUp = acceptedDeliverableRestoreFollowUp(result, "en-US", "Restored deliverable");
+
+  assert.deepEqual(followUp, {
+    kind: "refresh_current",
+    noticeBody: "Restored: client-review.md"
+  });
+});
+
+test("drive upload picker payload carries the selected parent folder id", () => {
+  const file = new Blob(["folder upload"], { type: "text/plain" });
+  const picker = {
+    closest: () => ({
+      querySelector: () => ({ value: "94000000-0000-4000-8000-000000000020" })
+    })
+  } as unknown as HTMLInputElement;
+
+  const payload = driveUploadPayloadFromPicker(picker, file);
+
+  assert.equal(payload.file, file);
+  assert.equal(payload.parent_id, "94000000-0000-4000-8000-000000000020");
 });
 
 test("drive preview is rendered in-place instead of opening the API JSON envelope", () => {

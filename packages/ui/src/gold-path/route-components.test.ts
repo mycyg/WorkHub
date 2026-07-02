@@ -1527,6 +1527,30 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   assertNoMainWindowBoundaryLeak(drive.html);
 });
 
+test("Drive route upload picker exposes project folders as parent targets", () => {
+  const vm = drivePageVm();
+  vm.summary.item_count = 3;
+  vm.summary.folder_count = 1;
+  vm.items.unshift({
+    id: "94000000-0000-4000-8000-000000000020",
+    project_id: "94000000-0000-4000-8000-000000000001",
+    name: "Research",
+    kind: "folder",
+    path: "/Research",
+    depth: 0,
+    children_count: 1,
+    updated_at: "2026-06-11T09:00:00.000Z"
+  });
+  vm.selected_item_id = "94000000-0000-4000-8000-000000000020";
+
+  const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
+
+  assert.equal(drive.html.includes('data-drive-upload-control="true"'), true);
+  assert.equal(drive.html.includes('data-drive-upload-parent-select="true"'), true);
+  assert.equal(drive.html.includes('<option value="">Drive root</option>'), true);
+  assert.equal(drive.html.includes('value="94000000-0000-4000-8000-000000000020" selected>Research</option>'), true);
+});
+
 test("Drive route version history follows the selected file instead of showing unrelated project versions", () => {
   const vm = drivePageVm();
   vm.selected_item_id = "94000000-0000-4000-8000-000000000009";
