@@ -16,7 +16,9 @@
 | 0-4 | release gate docs.count 修正（README 计数与实际一致） | gate 红 | `pnpm qa:r2-release-gate` 绿 |
 | 0-5 | drive 上传 body：读 body 前按 Content-Length 预检（32MiB+余量），JSON 分支回到全局 1MiB | auth-core-2 簇 | 声明超限请求在读 body 前 413 |
 
-## 批次 1 · 性能反模式收口（核心读路径）
+## 批次 1 · 性能反模式收口（核心读路径）——✅ 已全部完成（2026-07-02，commit 6f57d3ef）
+
+> 实施记录：1-1 审批中心扫描 cap 500+`pending_total_capped` 诚实截断、可见性改轻量批量 `canReadWorkItems`、workItemId 去重、路由层去二遍检查；1-2 通知输出 200 封顶（扫描 ≤3×cap）、通知页回单次有界查询、鉴权并发化；1-3 drive readPage 批量化（数百串行 SQL→2）、下载/预览窄查询（~14→1）、项目主页 recent files 批量；1-4 cost-ledger IN→SQL 子查询、非管理员回 user-scope；1-5 audit 时间线 limit 200+谓词收窄+0030 表达式索引。**附带修复两个 codex 没同步的 CI 红 smoke**：r1-pg-smoke（intake 必须真 AI 反问→注入确定性生成器）、web-live-route-smoke（proposal GitHub 式两段流→场景补 approve 步+QA 服务器对齐真实 review 响应+回收站逐行 restore_href+7 个精确门按新语义更新）。typecheck/全量测试/gate/双 smoke 全绿。
 
 统一手法：把「全量翻页 + 逐行 detailPage/鉴权」改回「SQL 内联鉴权 + 硬上限 + 批量判定」。历史上 DF-2 已为项目健康页做过同款改造（逐 actor 鉴权进 SQL），照抄。
 
