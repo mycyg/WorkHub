@@ -15,10 +15,22 @@ type RecordedCall = {
   params: LlmCreateParams;
 };
 
+type QueuedJudgeResponse = {
+  body: unknown;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
+};
+
+function isQueuedJudgeResponse(response: unknown): response is QueuedJudgeResponse {
+  return Boolean(response && typeof response === "object" && "body" in response);
+}
+
 class RecordingRegistry {
   public readonly calls: RecordedCall[] = [];
 
-  constructor(private readonly responses: unknown[]) {}
+  constructor(private readonly responses: Array<unknown | QueuedJudgeResponse>) {}
 
   isConfigured() {
     return true;
@@ -33,10 +45,13 @@ class RecordingRegistry {
           if (!response) {
             throw new Error("unexpected LLM call");
           }
+          const body = isQueuedJudgeResponse(response) ? response.body : response;
           return {
             id: `judge-${this.calls.length}`,
-            content: [{ type: "text", text: JSON.stringify(response) }],
-            usage: { inputTokens: 12, outputTokens: 8 }
+            content: [{ type: "text", text: JSON.stringify(body) }],
+            usage: isQueuedJudgeResponse(response) && response.usage
+              ? response.usage
+              : { inputTokens: 12, outputTokens: 8 }
           };
         }
       }
@@ -273,4 +288,136 @@ test("R9.4 cross-agent judge fails closed instead of silently dropping extra chi
   assert.equal(result.decision, "escalate");
   assert.equal(result.escalationReason, "invalid_input");
   assert.match(result.summaryMd, /silently ignoring extra child outputs/);
+});
+
+test("R9.4 high-risk arbitration uses 2-of-3 adversarial votes and records plan-budget tokens", async () => {
+  const registry = new RecordingRegistry([
+    {
+      body: {
+        decision: "accept_one",
+        selected_candidate_id: "candidate-b",
+        confidence: "high",
+        reasons: ["Candidate B preserves the approved proposal state."],
+        summary_md: "Correctness vote picks candidate-b."
+      },
+      usage: { inputTokens: 101, outputTokens: 11 }
+    },
+    {
+      body: {
+        decision: "accept_one",
+        selected_candidate_id: "candidate-b",
+        confidence: "medium",
+        reasons: ["Candidate B is safer under rollback review."],
+        summary_md: "Safety vote picks candidate-b."
+      },
+      usage: { inputTokens: 103, outputTokens: 13 }
+    },
+    {
+      body: {
+        decision: "replan",
+        confidence: "medium",
+        reasons: ["The operator view wants one more retry."],
+        summary_md: "Operations vote asks for replan."
+      },
+      usage: { inputTokens: 107, outputTokens: 17 }
+    }
+  ]);
+  const budgetCalls: Array<Parameters<NonNullable<CrossAgentJudgeInput["planBudgetUsage"]>["recordJudgeUsage"]>[0]> = [];
+  const judge = createCrossAgentJudge({ providerRegistry: registry as unknown as ProviderRegistry });
+
+  const result = await judge.arbitrate({
+    ...baseInput(),
+    riskLevel: "high",
+    planBudgetUsage: {
+      recordJudgeUsage: async (input) => {
+        budgetCalls.push(input);
+      }
+    }
+  });
+
+  assert.equal(registry.calls.length, 3);
+  assert.equal(new Set(registry.calls.map((call) => String(call.params.system))).size, 3);
+  assert.ok(registry.calls.every((call) => String(call.params.system).includes("2-of-3 high-risk adversarial vote")));
+  assert.deepEqual(registry.calls.map((call) => call.params.seq), [0, 1, 2]);
+  assert.equal(result.decision, "accept_one");
+  assert.equal(result.selectedCandidateId, "candidate-b");
+  assert.equal(result.confidence, "medium");
+  assert.equal(result.votes?.length, 3);
+  assert.equal(result.usage?.calls, 3);
+  assert.equal(result.usage?.inputTokens, 311);
+  assert.equal(result.usage?.outputTokens, 41);
+  assert.equal(result.usage?.totalTokens, 352);
+  assert.equal(budgetCalls.length, 1);
+  assert.equal(budgetCalls[0]?.planId, "plan-r9");
+  assert.equal(budgetCalls[0]?.taskPlanItemId, "item-r9");
+  assert.equal(budgetCalls[0]?.riskLevel, "high");
+  assert.equal(budgetCalls[0]?.voteCount, 3);
+  assert.equal(budgetCalls[0]?.totalTokens, 352);
+});
+
+test("R9.4 high-risk arbitration escalates when any adversarial vote escalates", async () => {
+  const registry = new RecordingRegistry([
+    {
+      decision: "accept_one",
+      selected_candidate_id: "candidate-b",
+      confidence: "high",
+      reasons: ["Candidate B is well supported."],
+      summary_md: "First vote picks candidate-b."
+    },
+    {
+      decision: "escalate",
+      confidence: "medium",
+      reasons: ["Financial/legal impact requires a human decision."],
+      summary_md: "Second vote escalates."
+    },
+    {
+      decision: "accept_one",
+      selected_candidate_id: "candidate-b",
+      confidence: "high",
+      reasons: ["Candidate B passes acceptance."],
+      summary_md: "Third vote picks candidate-b."
+    }
+  ]);
+  const judge = createCrossAgentJudge({ providerRegistry: registry as unknown as ProviderRegistry });
+
+  const result = await judge.arbitrate({
+    ...baseInput(),
+    riskLevel: "high"
+  });
+
+  assert.equal(registry.calls.length, 3);
+  assert.equal(result.decision, "escalate");
+  assert.equal(result.escalationReason, "multi_vote_escalated");
+  assert.equal(result.proposalReview.decision, "request_changes");
+  assert.match(result.proposalReview.reasonMd, /multi_vote_escalated/);
+});
+
+test("R9.4 non-high-risk arbitration does not spend the 2-of-3 vote budget", async () => {
+  const registry = new RecordingRegistry([
+    {
+      decision: "accept_one",
+      selected_candidate_id: "candidate-b",
+      confidence: "high",
+      reasons: ["Single judge path is enough for medium risk."],
+      summary_md: "Medium-risk single vote picks candidate-b."
+    },
+    {
+      decision: "escalate",
+      confidence: "medium",
+      reasons: ["should not be called"],
+      summary_md: "should not be called"
+    }
+  ]);
+  const judge = createCrossAgentJudge({ providerRegistry: registry as unknown as ProviderRegistry });
+
+  const result = await judge.arbitrate({
+    ...baseInput(),
+    riskLevel: "medium"
+  });
+
+  assert.equal(registry.calls.length, 1);
+  assert.equal(result.decision, "accept_one");
+  assert.equal(result.selectedCandidateId, "candidate-b");
+  assert.equal(result.votes, undefined);
+  assert.equal(result.usage?.calls, 1);
 });
