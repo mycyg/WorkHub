@@ -23,7 +23,6 @@ import {
 } from "../services/approvals.js";
 import {
   getDefaultWorkItemService,
-  WorkItemServiceError,
   type WorkItemService
 } from "../services/work-items.js";
 import { readJsonObject } from "./json-body.js";
@@ -32,7 +31,7 @@ import { isUuidParam } from "./uuid-param.js";
 export type ApprovalRoutesDependencies = {
   auth?: AuthDependencySource;
   service?: ApprovalService;
-  workItems?: Pick<WorkItemService, "detailPage"> | false;
+  workItems?: Pick<WorkItemService, "canReadWorkItems"> | false;
 };
 
 export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
@@ -41,6 +40,8 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
   const service = deps.service ?? createApprovalService();
   const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
 
+  // routes-a-2/routes-b-1/services-a-2/xlink-authz-4/ux-web-govern-6：可见性判定改用轻量批量接口
+  // （workItems.canReadWorkItems，一次 IN 查询 access record）而不是逐次完整 detailPage 装配只为拿一个 boolean。
   async function canReadWorkItem(workItemId: string | undefined, actor: AuthEnv["Variables"]["actor"]) {
     if (!workItemId) {
       return true;
@@ -48,15 +49,8 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
     if (!workItems) {
       return false;
     }
-    try {
-      await workItems.detailPage({ workItemId, actor });
-      return true;
-    } catch (error) {
-      if (error instanceof WorkItemServiceError && (error.status === 403 || error.status === 404)) {
-        return false;
-      }
-      throw error;
-    }
+    const visible = await workItems.canReadWorkItems({ workItemIds: [workItemId], actor });
+    return visible.has(workItemId);
   }
 
   async function assertCanReadApproval(id: string, actor: AuthEnv["Variables"]["actor"]) {
@@ -93,12 +87,20 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
     }
   }
 
-  async function visibleApprovalCenter(data: ApprovalCenterVM, actor: AuthEnv["Variables"]["actor"]) {
+  // routes-b-1/xlink-authz-4：`alreadyFiltered` lets callers that already passed `canReadWorkItem` into
+  // service.listPendingForUser skip this second full detailPage pass over the same rows — the service applied
+  // the identical predicate (with its own workItemId cache) already, so re-running it here was pure duplicate
+  // work with no additional safety. Callers that did NOT inject a predicate (e.g. /attention's decision queue,
+  // which calls listPendingForUser without options.canReadWorkItem) still need this filter — leave it real for them.
+  async function visibleApprovalCenter(data: ApprovalCenterVM, actor: AuthEnv["Variables"]["actor"], alreadyFiltered = false) {
     const visibleRequests: ApprovalRequest[] = [];
     const visibleRequestIds = new Set<string>();
     // L#W2-14：按 work_item_id 去重可见性判定——多条审批常指向同一事项，避免对同一 work item 重复 detailPage（N+1）。
     const workItemVisibility = new Map<string, boolean>();
     const canRead = async (workItemId: string | undefined) => {
+      if (alreadyFiltered) {
+        return true;
+      }
       const cacheKey = workItemId ?? "";
       const cached = workItemVisibility.get(cacheKey);
       if (cached !== undefined) {
@@ -143,7 +145,11 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
     const data = await service.listPendingForUser(c.var.currentUser, workItems
       ? { canReadWorkItem: (workItemId) => canReadWorkItem(workItemId, c.var.actor) }
       : {});
-    return c.json({ ok: true, data: await visibleApprovalCenter(data, c.var.actor) });
+    // routes-b-1：service already ran the same canReadWorkItem predicate (with its own per-workItemId cache)
+    // when `workItems` is wired, so this second pass would just repeat every detailPage call. Only re-filter
+    // (alreadyFiltered=false) when no predicate was injected — i.e. workItems is unavailable and rows came back
+    // unfiltered (canReadApprovalRow degrades to `true` in that case, see services/approvals.ts).
+    return c.json({ ok: true, data: await visibleApprovalCenter(data, c.var.actor, Boolean(workItems)) });
   });
 
   routes.post("/:id/respond", createCurrentUserMiddleware(authSource), async (c) => {

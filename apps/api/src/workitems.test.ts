@@ -201,6 +201,11 @@ function workItemServiceFor(input: {
     async detailPage() {
       throw new Error("not needed");
     },
+    // routes-a-2 fallout: canReadWorkItems is a new required WorkItemService method (R9 批次1-1); this fixture
+    // only exercises accepted-deliverable download/restore routes, not approval-center visibility.
+    async canReadWorkItems() {
+      throw new Error("not needed");
+    },
     async assertCanMutateWorkItem() {
       return;
     },

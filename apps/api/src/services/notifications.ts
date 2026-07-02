@@ -170,10 +170,13 @@ export function createNotificationService(
     }
     const ids = [...new Set(rows.map((row) => row.workItemId).filter((id): id is string => Boolean(id)))];
     const readable = new Set<string>();
-    for (const id of ids) {
-      const record = await deps.workItems.findWorkItemAccessRecord(id);
+    // 批量化：去重后的 workItemId 集合并发查一次（而非逐条串行 await），避免 N+1 读放大；
+    // findWorkItemAccessRecord 本身仍是单行查询（不动 work-items 仓库），但并发发出。
+    const records = await Promise.all(ids.map((id) => deps.workItems!.findWorkItemAccessRecord(id)));
+    ids.forEach((id, index) => {
+      const record = records[index];
       if (!record) {
-        continue;
+        return;
       }
       if (canViewWorkItemRecord(
         record,
@@ -182,7 +185,7 @@ export function createNotificationService(
       )) {
         readable.add(id);
       }
-    }
+    });
     return readable;
   }
 
@@ -195,10 +198,13 @@ export function createNotificationService(
       .filter((id): id is string => Boolean(id))
     )];
     const readable = new Set<string>();
-    for (const id of ids) {
-      const project = await deps.workItems.findProjectById(id);
+    // 批量化：同上，去重后的 projectId 集合并发查一次。
+    const findProjectById = deps.workItems.findProjectById;
+    const projects = await Promise.all(ids.map((id) => findProjectById(id)));
+    ids.forEach((id, index) => {
+      const project = projects[index];
       if (!project) {
-        continue;
+        return;
       }
       if (canViewProjectDrive(project, {
         id: actor.userId ?? actor.id,
@@ -209,7 +215,7 @@ export function createNotificationService(
       })) {
         readable.add(id);
       }
-    }
+    });
     return readable;
   }
 
@@ -379,13 +385,24 @@ export function createNotificationService(
     async listForUser(input: string | { userId: string; actor?: AuthActor }): Promise<NotificationList> {
       const userId = typeof input === "string" ? input : input.userId;
       const actor = typeof input === "string" ? undefined : input.actor;
+      // R9 批次1-2 性能收口：恢复输出硬上限(与旧 repo 默认一致=200)。actor 存在时通知需要按可见性
+      // 过滤才知道"哪些真正可见"，所以仍要翻页扫描——但扫描本身也要有界，否则老账号几千条历史通知
+      // 会被整页翻穿。上限=3×输出上限，足够越过一批不可见的通知去找更早的可见通知（回归测试：
+      // 500 条不可见 + 1 条可见时仍能找到），但不会真的翻完全量历史。
+      const outputCap = 200;
+      const scanCap = outputCap * 3;
       const visibleEntries: Array<{ row: NotificationRow; stripUnreadableWorkItemTarget: boolean }> = [];
       let before: { createdAt: Date; id: string } | undefined;
-      const pageLimit = 500;
+      let scanned = 0;
+      const pageLimit = 200;
       for (;;) {
         const rows = await deps.notifications.listForUser(userId, before ? { limit: pageLimit, before } : { limit: pageLimit });
+        scanned += rows.length;
         visibleEntries.push(...await visibleRowsForActorWithMetadata(rows, actor));
         if (rows.length < pageLimit) {
+          break;
+        }
+        if (visibleEntries.length >= outputCap || scanned >= scanCap) {
           break;
         }
         const last = rows.at(-1);
@@ -394,15 +411,17 @@ export function createNotificationService(
         }
         before = { createdAt: last.createdAt, id: last.id };
       }
-      const items = visibleEntries.map((entry) => toNotificationResponse(
+      const capped = visibleEntries.slice(0, outputCap);
+      const items = capped.map((entry) => toNotificationResponse(
         entry.row,
         entry.stripUnreadableWorkItemTarget ? { stripUnreadableWorkItemTarget: true } : {}
       ));
       return {
         items,
         counts: {
-          unread: visibleEntries.filter((entry) => !entry.row.readAt).length,
-          total: visibleEntries.length
+          // 计数口径与实际返回的 items 一致（如实反映"这次返回了多少"，不虚报未扫描到的历史总量）。
+          unread: capped.filter((entry) => !entry.row.readAt).length,
+          total: capped.length
         }
       };
     },

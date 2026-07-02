@@ -570,7 +570,10 @@ test("schedule notify page service groups meeting insight notifications and arch
   assert.equal(audit.inputs.at(-1)?.action, "notification.dismiss");
 });
 
-test("notifications page summary scans past the first repository page", async () => {
+test("notifications page summary caps at the repository page limit instead of scanning full history", async () => {
+  // R9 批次1-2 性能收口回归：通知页读路径必须是单次有界查询(旧行为=limit 200)，不能翻页扫穿
+  // 用户全部历史。201 条历史通知 → 页面只应看到前 200 条(按 createdAt desc)，计数口径与
+  // 实际返回的 items 一致，不虚报第 201 条的存在。
   const notifications = new LimitRespectingNotifications();
   notifications.rows = Array.from({ length: 201 }, (_value, index) => notification({
     id: `82000000-0000-4000-8000-${(index + 100).toString(16).padStart(12, "0")}`,
@@ -594,9 +597,11 @@ test("notifications page summary scans past the first repository page", async ()
 
   const page = await service.notificationsPage({ actor: actor(), locale: "zh-CN" });
 
-  assert.equal(page.summary.total_count, 201);
-  assert.equal(page.summary.unread_count, 201);
-  assert.equal(page.items.length, 201);
+  assert.equal(page.summary.total_count, 200);
+  assert.equal(page.summary.unread_count, 200);
+  assert.equal(page.items.length, 200);
+  // 保留的是最新的 200 条(index 0..199)，第 201 条(最旧, index 200)被截断在外。
+  assert.equal(page.items.some((item) => item.dedupe_key === "system:201"), false);
 });
 
 test("meeting insight notification refresh overfetches before visibility filtering", async () => {

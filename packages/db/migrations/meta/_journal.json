@@ -211,6 +211,13 @@
       "when": 1781512433742,
       "tag": "0029_snapshot_ref_width",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1781512533742,
+      "tag": "0030_audit_logs_detail_work_item_idx",
+      "breakpoints": true
     }
   ]
 }

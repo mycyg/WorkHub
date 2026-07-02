@@ -589,31 +589,14 @@ export function createScheduleNotifyPageService(
     }
   }
 
+  // R9 批次1-2 性能收口：codex 曾把这里改成 `pageLimit=200; for(;;)` 无上限翻完该用户全部通知历史
+  // (含已归档，通知从不物理删除)。改回原语义——单次有界查询，输出上限=200(与旧行为一致)，
+  // includeArchived:true 是页面消费方原本就要的语义(不是新加的)，同样限量。
   async function listNotificationRowsForPage(userId: string) {
-    const rows: NotificationRow[] = [];
-    let before: { createdAt: Date; id: string } | undefined;
-    const pageLimit = 200;
-    for (;;) {
-      const page = await deps.notifications.listForUser(userId, {
-        includeArchived: true,
-        limit: pageLimit,
-        ...(before ? { before } : {})
-      });
-      rows.push(...page);
-      if (page.length < pageLimit) {
-        break;
-      }
-      const last = page.at(-1);
-      if (!last) {
-        break;
-      }
-      const nextBefore = { createdAt: last.createdAt, id: last.id };
-      if (before && before.createdAt.getTime() === nextBefore.createdAt.getTime() && before.id === nextBefore.id) {
-        break;
-      }
-      before = nextBefore;
-    }
-    return rows;
+    return deps.notifications.listForUser(userId, {
+      includeArchived: true,
+      limit: 200
+    });
   }
 
   return {

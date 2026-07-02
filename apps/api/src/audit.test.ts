@@ -199,8 +199,21 @@ class MemoryAuditLogs implements AuditLogRepository {
     return this.rows.filter((row) => row.entityType === entityType && row.entityId === entityId);
   }
 
-  async listAuditLogsForWorkItem(id: string) {
-    return this.listAuditLogsForEntity("work_item", id);
+  async listAuditLogsForWorkItem(id: string, options: { limit?: number } = {}) {
+    const rows = this.rows
+      .filter((row) => {
+        if (row.entityType === "work_item" && row.entityId === id) {
+          return true;
+        }
+        if (row.entityType === "approval_request" || row.entityType === "agent_run") {
+          return (row.detailJson as Record<string, unknown>)["work_item_id"] === id;
+        }
+        return false;
+      })
+      .slice()
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const limit = options.limit ?? 200;
+    return rows.slice(0, limit);
   }
 
   async markAuditLogUndone(id: string, at: Date) {
@@ -354,6 +367,45 @@ test("audit timeline route returns snapshots, audit logs, and rollback facts", a
   assert.equal(body.data.snapshots.length, 1);
   assert.equal(body.data.audit_logs.length, 1);
   assert.equal(body.data.manifest_facts.rollback.available, true);
+});
+
+// db-repos-7: listAuditLogsForWorkItem 曾经无 limit 对 audit_logs 无界扫描/无界返回；这里
+// 灌入超过默认上限（200）的行数，断言路由返回的时间线被截断到最新的那部分，而不是全量吐出。
+test("audit timeline route caps the number of returned audit logs and keeps the newest first", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  const auditLogs = new MemoryAuditLogs();
+  auditLogs.rows = [];
+  const rowCount = 260;
+  for (let i = 0; i < rowCount; i += 1) {
+    auditLogs.rows.push(auditLog({
+      id: `81000000-0000-4000-8000-9${String(i).padStart(11, "0")}`,
+      action: `tool.write_file_${i}`,
+      createdAt: new Date(now.getTime() + i * 1000)
+    }));
+  }
+  app.route("/api", createAuditRoutes({
+    auth: authDeps(runtimeSettings),
+    snapshots: new MemorySnapshots(),
+    auditLogs,
+    workItems: allowingWorkItems() as WorkItemService,
+    now: () => now
+  }));
+
+  const response = await app.request(`/api/workitems/${workItemId}/audit`, {
+    headers: {
+      Cookie: await cookie(runtimeSettings)
+    }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    data: { audit_logs: AuditLogRow[] };
+  };
+  assert.equal(body.data.audit_logs.length, 200);
+  // 最新的（createdAt 最大，i = rowCount - 1）必须在时间线里，最旧的必须被截掉。
+  assert.ok(body.data.audit_logs.some((row) => row.action === `tool.write_file_${rowCount - 1}`));
+  assert.ok(!body.data.audit_logs.some((row) => row.action === "tool.write_file_0"));
 });
 
 test("audit timeline route preserves work item service error codes", async () => {

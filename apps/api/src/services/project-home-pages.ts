@@ -23,7 +23,7 @@ export type ProjectHomePageService = {
 };
 
 export type ProjectHomePageServiceDependencies = {
-  repo: Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject" | "countVisibleOpenByProject" | "findWorkItemAccessRecord">;
+  repo: Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject" | "countVisibleOpenByProject" | "findWorkItemAccessRecords">;
   driveRepo: Pick<DriveRepository, "listRecentFilesByProject" | "countFilesByProject">;
   now?: () => Date;
 };
@@ -91,6 +91,15 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
         })
       ]);
       const visibleOpenCount = actorInProjectWorkspace ? rawVisibleOpenCount : 0;
+      // services-b-5/ux-web-projects-5：可见性过滤原是逐文件×逐 acceptedWorkItemId 的串行 N+1（最坏
+      // ~200 个候选文件 x 多个 work item id）。先收集全部去重 id 一次批量查，再在内存里逐文件判定——
+      // 结果集与判定逻辑（第一个可读 work item 即命中）保持不变，只是把 N 次往返压成 1 次批量查询。
+      const allAcceptedWorkItemIds = [...new Set(
+        recentFiles.flatMap((file) => file.acceptedWorkItemIds ?? [])
+      )];
+      const accessRecords = allAcceptedWorkItemIds.length
+        ? await deps.repo.findWorkItemAccessRecords(allAcceptedWorkItemIds)
+        : new Map();
       const readableRecentFiles = [];
       for (const file of recentFiles) {
         const acceptedWorkItemIds = file.acceptedWorkItemIds ?? [];
@@ -98,14 +107,10 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
           readableRecentFiles.push(file);
           continue;
         }
-        let readable = false;
-        for (const workItemId of acceptedWorkItemIds) {
-          const record = await deps.repo.findWorkItemAccessRecord(workItemId);
-          if (record && canViewWorkItemRecord(record, { id: viewerUserId, isAdmin: actor.isAdmin }, { workspaceId: actor.workspaceId })) {
-            readable = true;
-            break;
-          }
-        }
+        const readable = acceptedWorkItemIds.some((workItemId) => {
+          const record = accessRecords.get(workItemId);
+          return Boolean(record) && canViewWorkItemRecord(record!, { id: viewerUserId, isAdmin: actor.isAdmin }, { workspaceId: actor.workspaceId });
+        });
         if (readable) {
           readableRecentFiles.push(file);
         }

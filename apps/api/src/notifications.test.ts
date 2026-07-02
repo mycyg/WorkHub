@@ -728,6 +728,108 @@ test("notification list scans past capped hidden rows to find older visible noti
   assert.deepEqual(list.items.map((item) => item.id), [visible.id]);
 });
 
+// R9 批次1-2 性能收口回归：codex 曾把 listForUser 改成 `pageLimit=500; for(;;)` 无上限翻完全量历史。
+// 构造超过 cap(200) 的可见通知，断言响应硬封顶在 200 条且计数口径与实际返回一致(不虚报未截断的总量)。
+test("notification list output is capped even when far more than the cap is visible", async () => {
+  const userId = "90000000-0000-4000-8000-000000000002";
+  const actor = {
+    kind: "human" as const,
+    id: userId,
+    userId,
+    label: "notif-reader",
+    isAdmin: false,
+    orgId: "org-1",
+    workspaceId: "workspace-1"
+  };
+  const rows = Array.from({ length: 350 }, (_value, index) => row({
+    id: `90000000-0000-4000-8000-${(index + 800).toString(16).padStart(12, "0")}`,
+    userId,
+    type: "system.notice",
+    severity: "normal",
+    workItemId: null,
+    targetUrl: null,
+    dedupeKey: `capped-${index}`,
+    createdAt: new Date(now.getTime() - index)
+  }));
+  const service = createNotificationService({
+    notifications: new VisibilityNotifications(rows),
+    now: () => now
+  });
+
+  const list = await service.listForUser({ userId, actor });
+
+  assert.equal(list.items.length, 200);
+  assert.equal(list.counts.total, 200);
+  assert.equal(list.counts.unread, 200);
+  // 保留最新的 200 条(index 0..199)，不是随机/无序截断。
+  assert.deepEqual(list.items.map((item) => item.dedupe_key), rows.slice(0, 200).map((entry) => entry.dedupeKey));
+});
+
+// R9 批次1-2 性能收口回归：readableWorkItemIdsForRows/readableProjectIdsForRows 必须批量化(并发)查询，
+// 不能对去重后的每个 id 逐条 await 串行查库；否则老账号一次 GET 会触发成百上千次单行查询。
+// 用一个"若还在排队等待前一条完成才被调用就会抛错"的桩仓库钉住并发行为。
+test("notification list issues work item and project access checks concurrently, not serially", async () => {
+  const userId = "90000000-0000-4000-8000-000000000002";
+  const actor = {
+    kind: "human" as const,
+    id: userId,
+    userId,
+    label: "notif-reader",
+    isAdmin: false,
+    orgId: "org-1",
+    workspaceId: "workspace-1"
+  };
+  const workItemIds = Array.from({ length: 12 }, (_value, index) =>
+    `91000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, "0")}`);
+  const rows = workItemIds.map((workItemId, index) => row({
+    id: `90000000-0000-4000-8000-${(index + 900).toString(16).padStart(12, "0")}`,
+    userId,
+    type: "workitem.escalated",
+    severity: "high",
+    workItemId,
+    targetUrl: `/workitems/${workItemId}`,
+    dedupeKey: `concurrent-${index}`,
+    createdAt: new Date(now.getTime() - index)
+  }));
+
+  let inFlight = 0;
+  let maxInFlight = 0;
+
+  const service = createNotificationService({
+    notifications: new VisibilityNotifications(rows),
+    now: () => now,
+    workItems: {
+      async findWorkItemAccessRecord(id: string) {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        // 让所有并发调用先都进来排队，再逐个放行——若实现是逐条串行 await，
+        // maxInFlight 会恒为 1；批量化后应观察到多条同时在途。
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        inFlight -= 1;
+        return {
+          id,
+          status: "ai_clarifying",
+          submitterUserId: "90000000-0000-4000-8000-00000000aaaa",
+          claimedByUserId: userId,
+          workspaceId: "workspace-1",
+          project: {
+            archived: false,
+            deletedAt: null,
+            ownerUserId: "90000000-0000-4000-8000-00000000bbbb",
+            workspaceId: "workspace-1"
+          },
+          assignments: []
+        };
+      }
+    }
+  });
+
+  const list = await service.listForUser({ userId, actor });
+
+  assert.equal(list.items.length, workItemIds.length);
+  assert.ok(maxInFlight > 1, `expected concurrent access checks, saw max in-flight = ${maxInFlight}`);
+});
+
 test("notification mutations reject unreadable work item notifications before mutating", async () => {
   const userId = "90000000-0000-4000-8000-000000000002";
   const hiddenNotificationId = "90000000-0000-4000-8000-000000000031";

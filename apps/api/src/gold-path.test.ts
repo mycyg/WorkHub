@@ -297,7 +297,10 @@ test("attention home decision queue is fed by the user's pending approvals", asy
     // 决策队列必须接真实的"用户待决策审批"源；这里用 gold-path 审批中心做替身。
     approvals: { async listPendingForUser() { return fixture.approvalCenter; } } as unknown as ApprovalService,
     // 决策队列现在按可读工作项收口（findings）；注入放行所有工作项的 workItems，让 fixture 审批项保持可见。
-    workItems: { async detailPage() { return {}; } } as never
+    // routes-a-2 修法：可见性判定换成批量 canReadWorkItems（不再逐次 detailPage），这里的桩要跟着换，
+    // 否则 visibleApprovalCenter 调用一个不存在的方法、运行时 undefined 短路成「不可见」，队列会被误判成空
+    // （这不是 fixture 该测的东西——测试意图是"放行所有工作项"，旧断言 0 而非 1 是桩没跟上实现换代产生的假失败）。
+    workItems: { async canReadWorkItems(input: { workItemIds: string[] }) { return new Set(input.workItemIds); } } as never
   }));
 
   const response = await app.request("/api/pages/attention", {

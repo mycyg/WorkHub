@@ -143,34 +143,48 @@ function pageServiceErrorResponse(
   }, error.status as 400);
 }
 
+// routes-a-2/routes-b-1/services-a-2/xlink-authz-4/ux-web-govern-6：可见性判定改用轻量批量接口
+// （workItems.canReadWorkItems，一次 IN 查询 access record，不构建整页 detailPage VM），而不是逐次
+// 完整装配工作项详情只为拿一个 boolean。单个 workItemId 时退化成一个只含 1 个元素的批量调用。
 async function canReadWorkItem(
-  workItems: Pick<WorkItemService, "detailPage">,
+  workItems: Pick<WorkItemService, "canReadWorkItems">,
   workItemId: string | undefined,
   actor: AuthEnv["Variables"]["actor"]
 ) {
   if (!workItemId) {
     return true;
   }
-  try {
-    await workItems.detailPage({ workItemId, actor });
-    return true;
-  } catch (error) {
-    if (error instanceof WorkItemServiceError && (error.status === 403 || error.status === 404)) {
-      return false;
-    }
-    throw error;
-  }
+  const visible = await workItems.canReadWorkItems({ workItemIds: [workItemId], actor });
+  return visible.has(workItemId);
 }
 
+// routes-b-1/xlink-authz-4：`alreadyFiltered` skips the redundant per-row detailPage re-check when the caller
+// already injected the identical canReadWorkItem predicate into approvals.listPendingForUser (the /approvals
+// route below does; /attention's decisionQueue does not, so it still needs this filter for real).
 async function visibleApprovalCenter(
   data: ApprovalCenterVM,
-  workItems: Pick<WorkItemService, "detailPage">,
-  actor: AuthEnv["Variables"]["actor"]
+  workItems: Pick<WorkItemService, "canReadWorkItems">,
+  actor: AuthEnv["Variables"]["actor"],
+  alreadyFiltered = false
 ) {
   const visibleRequests: ApprovalRequest[] = [];
   const visibleRequestIds = new Set<string>();
+  // routes-b-1：按 work_item_id 去重的可见性缓存，避免同一工作项的多条审批重复 detailPage
+  // （即便 alreadyFiltered=false 也只判一次；此前这里没有缓存，是双重 N+1 的第二层）。
+  const workItemVisibility = new Map<string, boolean>();
   for (const request of data.requests) {
-    if (await canReadWorkItem(workItems, request.work_item_id, actor)) {
+    if (alreadyFiltered) {
+      visibleRequests.push(request);
+      visibleRequestIds.add(request.id);
+      continue;
+    }
+    const cacheKey = request.work_item_id ?? "";
+    let allowed = workItemVisibility.get(cacheKey);
+    if (allowed === undefined) {
+      allowed = await canReadWorkItem(workItems, request.work_item_id, actor);
+      workItemVisibility.set(cacheKey, allowed);
+    }
+    if (allowed) {
       visibleRequests.push(request);
       visibleRequestIds.add(request.id);
     }
@@ -304,7 +318,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       locale,
       canReadWorkItem: (workItemId) => canReadWorkItem(workItems, workItemId, c.var.actor)
     });
-    return c.json(pageEnvelope(await visibleApprovalCenter(data, workItems, c.var.actor), locale));
+    // routes-b-1：service.listPendingForUser already applied this exact canReadWorkItem predicate
+    // (with its own per-workItemId dedupe) while scanning, so skip the second detailPage pass here.
+    return c.json(pageEnvelope(await visibleApprovalCenter(data, workItems, c.var.actor, true), locale));
   });
 
   routes.get("/workitems/:id", createCurrentUserMiddleware(authSource), async (c) => {
@@ -481,8 +497,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       policies: await policyStore.listPolicies(tenantSettings),
       usage: await ledgerStore.usageSnapshots({ userId: c.var.currentUser.id, teamId })
     });
-    // 非管理员只读自己 user scope 的账目（走索引，不全表扫描，也不带 team scope——否则会把同队他人的花费混进总额）。
-    // team/me 预算卡片来自 decision.usages（与账目无关），所以团队预算状态照常可见。管理员看当前 workspace 的团队账目。
+    // 非管理员只读自己 user scope 的账目（走 scope_kind+scope_id 索引 + 工作区子查询半连接，不全表扫描、
+    // 不拉整个工作区再在内存过滤）。team/me 预算卡片来自 decision.usages（与账目无关），所以团队预算状态
+    // 照常可见。管理员看当前 workspace 的团队账目。
     // DF-1：管理员与非管理员用**同一个** 90 天窗口（costDashboardSinceBucket），否则同一个无标签的
     // total_cost_cny 对管理员=近 90 天、对普通成员=终身累计（两种含义混在一个字段里，且成员越用越慢）。
     const costSinceBucket = costDashboardSinceBucket(new Date());
@@ -494,9 +511,11 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
             : ledgerStore.listEntries
               ? await ledgerStore.listEntries({ sinceBucket: costSinceBucket })
               : ledgerStore.entries)
-      : (ledgerStore.listEntriesForWorkspace
-          ? await ledgerStore.listEntriesForWorkspace(teamId, { sinceBucket: costSinceBucket })
-          // L[1]：非管理员且 store 未实现按 workspace 查询时 fail-closed 返回空——绝不回退到 listEntries()/entries
+      // routes-b-2/contracts-pkgs-4：非管理员回到按 { userId, teamId } 的窄 scope 查询——只取本人 user-scope
+      // 条目并叠加工作区围栏（listEntriesForScopes 内部对 teamId 走子查询半连接，不拉全工作区）。
+      : (ledgerStore.listEntriesForScopes
+          ? await ledgerStore.listEntriesForScopes({ userId: c.var.currentUser.id, teamId }, { sinceBucket: costSinceBucket })
+          // L[1]：非管理员且 store 未实现按 scope 查询时 fail-closed 返回空——绝不回退到 listEntries()/entries
           // （全组织账目）。跨租户读账目宁可空，也不能 fail-open 把别人的花费泄露给普通成员。
           : []);
     const data = buildCostDashboardPage({

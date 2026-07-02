@@ -222,7 +222,15 @@ async function main() {
       fusionCandidateGenerator: deterministicFusionGenerator()
     });
     const workItemRepository = createWorkItemRepository(db);
-    const workItemService = createDbWorkItemService(workItemRepository);
+    // codex 把 intake 改为「必须真 AI 反问，无 provider 直接 503」但没同步本 smoke——
+    // 与 fusionCandidateGenerator 同款：注入确定性澄清生成器（引用意图原文以通过反模板校验）。
+    const workItemService = createDbWorkItemService(workItemRepository, {
+      clarificationGenerator: async (input) => ({
+        title: `请确认「${(input.workItem.title ?? "").slice(0, 60)}」的交付重点与验收口径？`,
+        body: `PG smoke deterministic clarification. Intent: ${(input.workItem.rawDescription ?? input.workItem.title ?? "").slice(0, 200)}`,
+        placeholder: "例如：按需求原文执行即可。"
+      })
+    });
     const ledgerStore = createDbCostLedgerStore(db, {
       teamId: settings.auth.defaultWorkspaceId,
       evalSuite: "nightly"

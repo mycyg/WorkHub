@@ -148,6 +148,14 @@ export type DriveRepository = {
     projectId: string;
     itemId: string;
   }) => Promise<DriveFileReadRows>;
+  // services-a-5：下载/预览鉴权只需要「这个 item+version 挂在哪些 work item 的采纳交付物上」，
+  // 不必跑整页 readPage（200 items + 5 个 count 聚合 + 祖先链）。按 driveItemId+driveVersionId 直查，
+  // 命中走 acceptedDeliverableChanges 上 driveItemId/driveVersionId 均有索引的点查，未实现时服务层退回 readPage。
+  findAcceptedDeliverableWorkItemIds?: (input: {
+    projectId: string;
+    driveItemId: string;
+    driveVersionId: string;
+  }) => Promise<string[]>;
   uploadFile: (input: DriveRepositoryActor & {
     projectId: string;
     parentId?: string | null;
@@ -275,36 +283,60 @@ function acceptedDriveVersionJoinCondition() {
   );
 }
 
+// db-repos-5/xlink-authz-2：原先对每条 acceptedVersion>1 的采纳记录逐行 await 一条『上一版是否存在』查询
+// （最多 limit=200 条 → 最多 200 次串行往返）。改成一次批量查询：按涉及到的 targetKey 集合把所有候选
+// 「上一版」行一次取回，再在内存里按每行自己的 (projectId|workItemId, targetKey, acceptedVersion) 精确匹配——
+// 判定条件与原逐行查询逐字一致，只是把 N 次 DB 往返压成 1 次。
 async function attachAcceptedDeliverableRestoreState<T extends DriveAcceptedDeliverableRow>(
   db: WorkHubDb,
   rows: T[]
 ): Promise<Array<T & { canRestore: boolean }>> {
-  const restored: Array<T & { canRestore: boolean }> = [];
-  for (const row of rows) {
-    if (row.accepted.acceptedVersion <= 1) {
-      restored.push({ ...row, canRestore: false });
-      continue;
-    }
-    const previousRows = await db
-      .select({ id: acceptedDeliverableChanges.id })
-      .from(acceptedDeliverableChanges)
-      .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
-      .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
-      .where(and(
-        row.accepted.projectId
-          ? eq(acceptedDeliverableChanges.projectId, row.accepted.projectId)
-          : eq(acceptedDeliverableChanges.workItemId, row.accepted.workItemId),
-        eq(acceptedDeliverableChanges.targetKey, row.accepted.targetKey),
-        lt(acceptedDeliverableChanges.acceptedVersion, row.accepted.acceptedVersion),
-        isNotNull(acceptedDeliverableChanges.supersededAt),
-        isNotNull(acceptedDeliverableChanges.driveVersionId),
-        isNotNull(projectDriveItems.id),
-        isNull(projectDriveItems.deletedAt)
-      ))
-      .limit(1);
-    restored.push({ ...row, canRestore: Boolean(previousRows[0]) });
+  const candidateRows = rows.filter((row) => row.accepted.acceptedVersion > 1);
+  if (candidateRows.length === 0) {
+    return rows.map((row) => ({ ...row, canRestore: false }));
   }
-  return restored;
+  const targetKeys = [...new Set(candidateRows.map((row) => row.accepted.targetKey))];
+  const previousCandidates = await db
+    .select({
+      targetKey: acceptedDeliverableChanges.targetKey,
+      projectId: acceptedDeliverableChanges.projectId,
+      workItemId: acceptedDeliverableChanges.workItemId,
+      acceptedVersion: acceptedDeliverableChanges.acceptedVersion
+    })
+    .from(acceptedDeliverableChanges)
+    .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+    .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
+    .where(and(
+      inArray(acceptedDeliverableChanges.targetKey, targetKeys),
+      isNotNull(acceptedDeliverableChanges.supersededAt),
+      isNotNull(acceptedDeliverableChanges.driveVersionId),
+      isNotNull(projectDriveItems.id),
+      isNull(projectDriveItems.deletedAt)
+    ));
+  // 按 targetKey 分桶，桶内保留每个 (projectId|workItemId 作用域) 出现过的最大 acceptedVersion 集合，
+  // 判定时只需检查是否存在一个 < row.accepted.acceptedVersion 的候选版本，无需全量比较。
+  const candidatesByTargetKey = new Map<string, typeof previousCandidates>();
+  for (const candidate of previousCandidates) {
+    const bucket = candidatesByTargetKey.get(candidate.targetKey);
+    if (bucket) {
+      bucket.push(candidate);
+    } else {
+      candidatesByTargetKey.set(candidate.targetKey, [candidate]);
+    }
+  }
+  return rows.map((row) => {
+    if (row.accepted.acceptedVersion <= 1) {
+      return { ...row, canRestore: false };
+    }
+    const bucket = candidatesByTargetKey.get(row.accepted.targetKey) ?? [];
+    const canRestore = bucket.some((candidate) => {
+      const scopeMatches = row.accepted.projectId
+        ? candidate.projectId === row.accepted.projectId
+        : candidate.workItemId === row.accepted.workItemId;
+      return scopeMatches && candidate.acceptedVersion < row.accepted.acceptedVersion;
+    });
+    return { ...row, canRestore };
+  });
 }
 
 async function insertDriveOperation(
@@ -632,20 +664,55 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         : [];
       const totalFileCount = Number(activeItemCountRows.find((row) => row.kind === "file")?.value ?? 0);
       const totalFolderCount = Number(activeItemCountRows.find((row) => row.kind === "folder")?.value ?? 0);
+      // db-repos-5/xlink-authz-2：原先对每个回收站项逐个 await『查父行』+『查同名活动冲突』（deletedItems
+      // 上限 200 → 最多 ~400 次串行往返）。改成两次批量查询：一次按去重后的 parentId 集合取回所有父行，
+      // 一次按去重后的 parentId 集合取回该范围内全部活动 item（用于按 (parentId, name) 在内存里判同名冲突，
+      // 根 level 项单独用一次按 name 的批量查询）。判定条件与原逐行查询逐字一致。
+      const parentIds = [...new Set(deletedItems.map((item) => item.parentId).filter((id): id is string => Boolean(id)))];
+      const parentRowsById = new Map<string, { id: string; deletedAt: Date | null }>();
+      if (parentIds.length) {
+        const parentRows = await db
+          .select({ id: projectDriveItems.id, deletedAt: projectDriveItems.deletedAt })
+          .from(projectDriveItems)
+          .where(and(inArray(projectDriveItems.id, parentIds), eq(projectDriveItems.projectId, project.id)));
+        for (const row of parentRows) {
+          parentRowsById.set(row.id, row);
+        }
+      }
+      const hasRootLevelDeletedItem = deletedItems.some((item) => !item.parentId);
+      const activeSiblingsByParentKey = new Map<string, Set<string>>();
+      if (parentIds.length || hasRootLevelDeletedItem) {
+        const activeSiblingRows = await db
+          .select({ parentId: projectDriveItems.parentId, name: projectDriveItems.name })
+          .from(projectDriveItems)
+          .where(and(
+            eq(projectDriveItems.projectId, project.id),
+            isNull(projectDriveItems.deletedAt),
+            parentIds.length
+              ? or(inArray(projectDriveItems.parentId, parentIds), isNull(projectDriveItems.parentId))
+              : isNull(projectDriveItems.parentId)
+          ));
+        for (const row of activeSiblingRows) {
+          const key = row.parentId ?? "";
+          const names = activeSiblingsByParentKey.get(key);
+          if (names) {
+            names.add(row.name);
+          } else {
+            activeSiblingsByParentKey.set(key, new Set([row.name]));
+          }
+        }
+      }
       const restoreBlockedItemIds: string[] = [];
       for (const item of deletedItems) {
         if (item.parentId) {
-          const parentRows = await db
-            .select({ id: projectDriveItems.id, deletedAt: projectDriveItems.deletedAt })
-            .from(projectDriveItems)
-            .where(and(eq(projectDriveItems.id, item.parentId), eq(projectDriveItems.projectId, project.id)))
-            .limit(1);
-          if (!parentRows[0] || parentRows[0].deletedAt) {
+          const parentRow = parentRowsById.get(item.parentId);
+          if (!parentRow || parentRow.deletedAt) {
             restoreBlockedItemIds.push(item.id);
             continue;
           }
         }
-        if (await activeItemByName(db, { projectId: project.id, parentId: item.parentId, name: item.name })) {
+        const siblingNames = activeSiblingsByParentKey.get(item.parentId ?? "");
+        if (siblingNames?.has(item.name)) {
           restoreBlockedItemIds.push(item.id);
         }
       }
@@ -669,6 +736,20 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         totalOperationCount: Number(totalOperationCountRows[0]?.value ?? 0),
         restoreBlockedItemIds
       };
+    },
+
+    async findAcceptedDeliverableWorkItemIds(input) {
+      // 与 readPage 里 acceptedDeliverables 的初始查询同口径：不按 supersededAt 过滤（historical 版本
+      // 标签也要能查到自己的采纳记录），只按 projectId + driveItemId + driveVersionId 精确匹配。
+      const rows = await db
+        .select({ workItemId: acceptedDeliverableChanges.workItemId })
+        .from(acceptedDeliverableChanges)
+        .where(and(
+          eq(acceptedDeliverableChanges.projectId, input.projectId),
+          eq(acceptedDeliverableChanges.driveItemId, input.driveItemId),
+          eq(acceptedDeliverableChanges.driveVersionId, input.driveVersionId)
+        ));
+      return [...new Set(rows.map((row) => row.workItemId))];
     },
 
     async listRecentFilesByProject(projectId, limit = 5) {

@@ -1067,24 +1067,21 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
   return app;
 }
 
-function allowingWorkItems(): Pick<WorkItemService, "detailPage"> {
+// routes-a-2/routes-b-1/services-a-2/xlink-authz-4/ux-web-govern-6：可见性判定改用轻量批量接口
+// canReadWorkItems（一次 IN 查询 access record）取代逐次 detailPage 整页装配——这两个夹具原先靠
+// detailPage 成功/抛 403 来模拟可见/不可见，现在直接控制批量返回的 Set 即可，语义不变。
+function allowingWorkItems(): Pick<WorkItemService, "canReadWorkItems"> {
   return {
-    async detailPage() {
-      return {
-        workitem: {},
-        acceptance: [],
-        agent_trace_preview: [],
-        accepted_deliverables: [],
-        evidence_refs: []
-      } as unknown as Awaited<ReturnType<WorkItemService["detailPage"]>>;
+    async canReadWorkItems(input) {
+      return new Set(input.workItemIds);
     }
   };
 }
 
-function denyingWorkItems(): Pick<WorkItemService, "detailPage"> {
+function denyingWorkItems(): Pick<WorkItemService, "canReadWorkItems"> {
   return {
-    async detailPage() {
-      throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
+    async canReadWorkItems() {
+      return new Set();
     }
   };
 }
@@ -1243,6 +1240,49 @@ test("approval routes paginate after filtering hidden work item approvals", asyn
   assert.equal(listBody.data.counts.pending_total, 1);
   assert.equal(listBody.data.page_info?.returned, 1);
   assert.equal(listBody.data.page_info?.has_more, false);
+});
+
+test("routes-b-1/xlink-authz-4: GET /api/approvals judges each work item once and does not re-check rows the service already filtered", async () => {
+  const runtimeSettings = settings();
+  const deps = serviceDeps();
+  const sharedWorkItemId = "50000000-0000-4000-8000-000000000bb1";
+  for (let index = 0; index < 4; index += 1) {
+    await deps.approvals.createApprovalRequest({
+      id: `40000000-0000-4000-8000-${String(900 + index).padStart(12, "0")}`,
+      actionPattern: "tool.write_file",
+      workItemId: sharedWorkItemId,
+      routedToUserId: userId
+    });
+  }
+  let canReadWorkItemsCalls = 0;
+  const seenIds: string[][] = [];
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/approvals", createApprovalRoutes({
+    auth: authDeps(runtimeSettings),
+    service: deps.service,
+    workItems: {
+      async canReadWorkItems(input) {
+        canReadWorkItemsCalls += 1;
+        seenIds.push(input.workItemIds);
+        return new Set(input.workItemIds);
+      }
+    }
+  }));
+
+  const list = await app.request("/api/approvals", {
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-alice", runtimeSettings.auth.cookieSecret)
+    }
+  });
+  const listBody = await list.json() as { data: { requests: Array<{ id: string }> } };
+
+  assert.equal(list.status, 200);
+  assert.equal(listBody.data.requests.length, 4);
+  // 服务层扫描时按 workItemId 去重，只应该调用一次 canReadWorkItems（batch 里只含这一个 workItemId）——
+  // 而不是每条审批各调一次（旧行为 4 次），也不该在路由层 visibleApprovalCenter 里再重复一遍（旧行为共 8 次）。
+  assert.equal(canReadWorkItemsCalls, 1);
+  assert.deepEqual(seenIds[0], [sharedWorkItemId]);
 });
 
 test("approval respond and delegate check action ownership before body schema", async () => {
@@ -2144,6 +2184,78 @@ test("W2 listPendingForUser exposes when the approval queue has more than the fi
   assert.equal(pageInfo?.limit, 100);
   assert.equal(pageInfo?.returned, 100);
   assert.equal(pageInfo?.has_more, true);
+});
+
+test("routes-a-2/services-a-2/ux-web-govern-6: listPendingForUser caps the visibility scan instead of translating the whole pending table", async () => {
+  const approvals = new MemoryApprovals();
+  // 造 3 倍于 approvalCenterScanCap(=500) 的 pending 行，全部指向不同 work item、全部可见——
+  // 旧实现会 while(true) 翻完全部 1500 行；新实现必须在扫到 500 行左右就停，不管还剩多少。
+  const totalRows = 1500;
+  for (let index = 0; index < totalRows; index += 1) {
+    await approvals.createApprovalRequest({
+      actionPattern: "tool.write_file",
+      workItemId: `50000000-0000-4000-8000-${String(100000 + index).padStart(12, "0")}`,
+      routedToUserId: userId,
+      payloadJson: { raw_args: { index } }
+    });
+  }
+  let canReadCalls = 0;
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    now: () => now
+  });
+
+  const vm = await service.listPendingForUser(user({ isAdmin: true }), {
+    canReadWorkItem: async () => {
+      canReadCalls += 1;
+      return true;
+    }
+  });
+  const pageInfo = (vm as { page_info?: { has_more?: boolean } }).page_info;
+  const counts = vm.counts as { pending_total: number; pending_total_capped?: number };
+
+  // 扫描必须封顶：不能对全部 1500 行都跑一次 canReadWorkItem（否则就是旧的无界翻页）。
+  assert.ok(canReadCalls < totalRows, `expected scan to stop before exhausting all ${totalRows} rows, got ${canReadCalls} canReadWorkItem calls`);
+  // 如实标记为估计值：被封顶截断时 pending_total_capped=1，不能假装数完了组织的真实总数（1500）。
+  assert.equal(counts.pending_total_capped, 1);
+  assert.notEqual(counts.pending_total, totalRows);
+  assert.equal(pageInfo?.has_more, true);
+});
+
+test("routes-a-2/routes-b-1/services-a-2/xlink-authz-4: listPendingForUser judges each work item's visibility once even with multiple pending approvals on it", async () => {
+  const approvals = new MemoryApprovals();
+  const sharedWorkItemId = "50000000-0000-4000-8000-000000000aa1";
+  // 5 条审批都挂在同一个工作项上——去重后 canReadWorkItem 应该只被调用 1 次，而不是 5 次。
+  for (let index = 0; index < 5; index += 1) {
+    await approvals.createApprovalRequest({
+      actionPattern: "tool.write_file",
+      workItemId: sharedWorkItemId,
+      routedToUserId: userId,
+      payloadJson: { raw_args: { index } }
+    });
+  }
+  const seenWorkItemIds: string[] = [];
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    now: () => now
+  });
+
+  const vm = await service.listPendingForUser(user({ isAdmin: true }), {
+    canReadWorkItem: async (workItemId) => {
+      seenWorkItemIds.push(workItemId ?? "");
+      return true;
+    }
+  });
+
+  assert.equal(vm.requests.length, 5);
+  // 同一 workItemId 只应该被判定一次（去重缓存生效），而不是每条审批都重新调用。
+  assert.deepEqual(seenWorkItemIds, [sharedWorkItemId]);
 });
 
 test("W2 approval without a work item never leaks a payload proposal_id's manifest (IDOR guard)", async () => {

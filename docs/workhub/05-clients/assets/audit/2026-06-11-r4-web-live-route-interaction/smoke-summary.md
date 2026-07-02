@@ -1,7 +1,7 @@
 # R4.5 Web Live Route Interaction Smoke
 
 - ok: true
-- steps: 79
+- steps: 80
 - path nav clicks: true
 - history back/forward: true
 - locale toggle reload: true

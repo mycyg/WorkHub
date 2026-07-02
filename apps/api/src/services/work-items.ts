@@ -113,6 +113,13 @@ export type WorkItemService = {
     actor: AuthActor;
     locale?: WorkHubLocale;
   }) => Promise<WorkItemDetailVM>;
+  // routes-a-2/routes-b-1/services-a-2/xlink-authz-4/ux-web-govern-6：审批中心可见性判定此前借用 detailPage
+  // （整页 VM 装配：assignments/proposals/acceptance/agent trace 等一堆 join）只为算一个 boolean，且逐行调用无
+  // 去重。改成批量、轻量的访问记录判定——一次 IN 查询把一批 workItemId 的可见性判完，返回可读的那部分 id 集合。
+  canReadWorkItems: (input: {
+    workItemIds: string[];
+    actor: AuthActor;
+  }) => Promise<Set<string>>;
   assertCanMutateWorkItem: (input: {
     workItemId: string;
     actor: AuthActor;
@@ -941,29 +948,56 @@ function detailToWorkItemAccessRecord(rows: StoredWorkItemDetailRows) {
   };
 }
 
-// A2 同源收口（读路径）：旧的 ad-hoc 判定只看 submitter/claimer/owner，忽略 workspace 归属——
-// admin 可越租户读全组织工作项，与权限契约漂移。改用读路径同款 canViewWorkItemRecord，
-// 传 actor 的 {orgId, workspaceId} 作用域；单租户下 actor 与工作项同属默认 workspace，故对旧放行的用例仍放行。
-// 认领人（claimedByUserId）此前可读 spec_ready 私有态，canViewWorkItemRecord 不查认领字段，保留显式短路防回归。
-function assertCanReadDetail(rows: StoredWorkItemDetailRows, actor: AuthActor) {
+// routes-a-2/routes-b-1/services-a-2/xlink-authz-4/ux-web-govern-6：assertCanReadDetail 的判定谓词抽出成
+// 一个只依赖「摊平后的可见性记录」的纯函数，让批量的轻量判定（canReadWorkItemAccessRow，走 findWorkItemAccessRecords
+// 而非整页 readWorkItemDetail）能复用同一套口径——两条路径（detailPage 的 403 抛出 vs 审批中心的批量 boolean）
+// 必须是同一个判定，否则会出现「detailPage 说能看，审批中心过滤说不能看」的不一致，或反过来放宽可见性。
+function canReadWorkItemAccessRow(
+  row: {
+    status: StoredWorkItemDetailRows["workItem"]["status"];
+    submitterUserId: string;
+    claimedByUserId: string | null;
+    workspaceId: string | null;
+    project: { archived: boolean | null; deletedAt: Date | null; ownerUserId: string | null; workspaceId: string | null } | null;
+    assignments: Array<{ userId: string; role: string }>;
+  },
+  actor: AuthActor
+): boolean {
   const userId = actor.userId ?? actor.id;
   const allowed = canViewWorkItemRecord(
-    detailToWorkItemAccessRecord(rows),
+    {
+      id: "" /* unused by canViewWorkItemRecord */,
+      status: row.status,
+      submitterUserId: row.submitterUserId,
+      claimedByUserId: row.claimedByUserId,
+      workspaceId: row.workspaceId,
+      ...(row.project ? { project: row.project } : {}),
+      assignments: row.assignments
+    },
     { id: userId, isAdmin: actor.isAdmin },
     // 仅按 workspace 作用域（workspace = 硬租户边界）。**不传 orgId**：work_items/projects 无 orgId 列，
     // 记录侧 orgId 恒为 undefined，而 scopeMatches 在「scope.orgId 有值、记录 orgId 为空」时判否——
     // 真 PG 下 actor.orgId 是默认 org 实值，会把所有合法读误判成 403（r1-pg-smoke 撞红）。workspace 已是真边界。
     { workspaceId: actor.workspaceId }
   );
-  const claimedByActorInScope = rows.workItem.claimedByUserId === userId
-    && !rows.projectArchived
-    && rows.projectDeletedAt == null
+  const claimedByActorInScope = row.claimedByUserId === userId
+    && !row.project?.archived
+    && row.project?.deletedAt == null
     && (
       !actor.workspaceId
-      || actor.workspaceId === rows.workItem.workspaceId
-      || actor.workspaceId === rows.projectWorkspaceId
+      || actor.workspaceId === row.workspaceId
+      || actor.workspaceId === row.project?.workspaceId
     );
-  if (!allowed && !claimedByActorInScope) {
+  return allowed || claimedByActorInScope;
+}
+
+// A2 同源收口（读路径）：旧的 ad-hoc 判定只看 submitter/claimer/owner，忽略 workspace 归属——
+// admin 可越租户读全组织工作项，与权限契约漂移。改用读路径同款 canViewWorkItemRecord，
+// 传 actor 的 {orgId, workspaceId} 作用域；单租户下 actor 与工作项同属默认 workspace，故对旧放行的用例仍放行。
+// 认领人（claimedByUserId）此前可读 spec_ready 私有态，canViewWorkItemRecord 不查认领字段，保留显式短路防回归。
+function assertCanReadDetail(rows: StoredWorkItemDetailRows, actor: AuthActor) {
+  const allowed = canReadWorkItemAccessRow(detailToWorkItemAccessRecord(rows), actor);
+  if (!allowed) {
     throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
   }
 }
@@ -1438,6 +1472,26 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
     return rows;
   }
 
+  // routes-a-2/routes-b-1/services-a-2/xlink-authz-4/ux-web-govern-6：批量、轻量的可见性判定——
+  // 一次 findWorkItemAccessRecords（IN 查询 workItems + IN 查询 assignments，两次往返，不管 workItemIds 有多少个）
+  // 换掉此前审批中心每行一次 detailPage（整页 VM：assignments/proposals/acceptance/agent trace 等 ~10 条查询）。
+  // 找不到的 workItemId 不算可见（fail-closed，与 detailPage 404→false 的旧行为一致）。
+  async function canReadWorkItems(input: { workItemIds: string[]; actor: AuthActor }): Promise<Set<string>> {
+    const uniqueIds = [...new Set(input.workItemIds)];
+    if (uniqueIds.length === 0) {
+      return new Set();
+    }
+    const records = await repository.findWorkItemAccessRecords(uniqueIds);
+    const visible = new Set<string>();
+    for (const workItemId of uniqueIds) {
+      const record = records.get(workItemId);
+      if (record && canReadWorkItemAccessRow(record, input.actor)) {
+        visible.add(workItemId);
+      }
+    }
+    return visible;
+  }
+
   const projectFileContext = options.projectFileContext ?? defaultProjectFileContext;
   const clarificationGenerator = options.clarificationGenerator
     ?? (options.providerRegistry ? createLlmClarificationGenerator(options.providerRegistry) : undefined);
@@ -1873,6 +1927,8 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
       });
     },
 
+    canReadWorkItems,
+
     async assertCanMutateWorkItem(input) {
       const rows = await requireDetail(input.workItemId, input.actor);
       assertCanMutateWorkItemRows(rows, input.actor);
@@ -2259,6 +2315,12 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
 
     async detailPage(input) {
       return detail(requireWorkItem(input.workItemId), input.locale);
+    },
+
+    // In-memory fixture has no actor-based access model (requireWorkItem only checks existence) — mirror that:
+    // any workItemId that exists in the map is "visible". Matches detailPage's lack of restriction above.
+    async canReadWorkItems(input) {
+      return new Set(input.workItemIds.filter((id) => workItems.has(id)));
     },
 
     async assertCanMutateWorkItem(input) {

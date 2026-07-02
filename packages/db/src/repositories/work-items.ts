@@ -291,6 +291,10 @@ export type WorkItemDataRepository = WorkItemRepository & WorkItemClaimHandoverR
   findLatestChatMessageByKind: (workItemId: string, kind: string) => Promise<WorkItemChatMessageRow | null>;
   findWorkItemById: (workItemId: string) => Promise<WorkItemRow | null>;
   findWorkItemAccessRecord: (workItemId: string) => Promise<WorkItemAccessRow | null>;
+  // R9 批次1-3：网盘/项目主页可见性过滤要对一批 work item id 批量判权，避免每个 id 一次 findWorkItemAccessRecord
+  // 的串行往返（drive readPage 的 workItemLinkAccessForActor、project-home 的 recent files 过滤都是这个形状）。
+  // 一次 IN 查询 + 一次 assignments IN 查询，结果按 workItemId 装进 Map，未命中的 id 不在 Map 里。
+  findWorkItemAccessRecords: (workItemIds: string[]) => Promise<Map<string, WorkItemAccessRow>>;
   readWorkItemDetail: (workItemId: string) => Promise<StoredWorkItemDetailRows | null>;
   findAcceptedDeliverableFile: (
     workItemId: string,
@@ -534,6 +538,65 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         },
         assignments
       };
+    },
+
+    async findWorkItemAccessRecords(workItemIds) {
+      const uniqueIds = [...new Set(workItemIds)];
+      const result = new Map<string, WorkItemAccessRow>();
+      if (uniqueIds.length === 0) {
+        return result;
+      }
+      const [rows, assignmentRows] = await Promise.all([
+        db
+          .select({
+            id: workItems.id,
+            status: workItems.status,
+            submitterUserId: workItems.submitterUserId,
+            claimedByUserId: workItems.claimedByUserId,
+            workspaceId: workItems.workspaceId,
+            projectArchived: projects.archived,
+            projectDeletedAt: projects.deletedAt,
+            projectOwnerUserId: projects.ownerUserId,
+            projectWorkspaceId: projects.workspaceId,
+            projectOrgId: workspaces.orgId
+          })
+          .from(workItems)
+          .innerJoin(projects, eq(workItems.projectId, projects.id))
+          .leftJoin(workspaces, eq(projects.workspaceId, workspaces.id))
+          .where(inArray(workItems.id, uniqueIds)),
+        db
+          .select({
+            workItemId: workItemAssignments.workItemId,
+            userId: workItemAssignments.userId,
+            role: workItemAssignments.role
+          })
+          .from(workItemAssignments)
+          .where(inArray(workItemAssignments.workItemId, uniqueIds))
+      ]);
+      const assignmentsByWorkItemId = new Map<string, Array<{ userId: string; role: string }>>();
+      for (const row of assignmentRows) {
+        const list = assignmentsByWorkItemId.get(row.workItemId) ?? [];
+        list.push({ userId: row.userId, role: row.role });
+        assignmentsByWorkItemId.set(row.workItemId, list);
+      }
+      for (const row of rows) {
+        result.set(row.id, {
+          id: row.id,
+          status: row.status,
+          submitterUserId: row.submitterUserId,
+          claimedByUserId: row.claimedByUserId,
+          workspaceId: row.workspaceId,
+          project: {
+            archived: row.projectArchived,
+            deletedAt: row.projectDeletedAt,
+            ownerUserId: row.projectOwnerUserId,
+            workspaceId: row.projectWorkspaceId,
+            orgId: row.projectOrgId
+          },
+          assignments: assignmentsByWorkItemId.get(row.id) ?? []
+        });
+      }
+      return result;
     },
 
     async markHumanReservedPmMode(input) {

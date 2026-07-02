@@ -65,7 +65,7 @@ function repo(
   findProjectById: WorkItemDataRepository["findProjectById"],
   listOpenByProject: WorkItemDataRepository["listOpenByProject"],
   countOpenByProject?: WorkItemDataRepository["countOpenByProject"]
-): Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject" | "countVisibleOpenByProject" | "findWorkItemAccessRecord"> {
+): Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject" | "countVisibleOpenByProject" | "findWorkItemAccessRecords"> {
   return {
     findProjectById,
     listOpenByProject,
@@ -81,7 +81,7 @@ function repo(
         || !["intake", "ai_clarifying", "spec_ready"].includes(item.status)
       ).length;
     },
-    findWorkItemAccessRecord: async () => null
+    findWorkItemAccessRecords: async () => new Map()
   };
 }
 
@@ -175,11 +175,11 @@ test("project home hides recent accepted-deliverable files the viewer cannot ope
   const svc = createProjectHomePageService({
     repo: {
       ...baseRepo,
-      async findWorkItemAccessRecord(workItemId: string) {
-        assert.equal(workItemId, WI_2);
-        return {
+      async findWorkItemAccessRecords(workItemIds: string[]) {
+        assert.deepEqual(workItemIds, [WI_2]);
+        return new Map([[WI_2, {
           id: WI_2,
-          status: "spec_ready",
+          status: "spec_ready" as const,
           submitterUserId: OTHER_USER,
           claimedByUserId: null,
           workspaceId: WS,
@@ -190,7 +190,7 @@ test("project home hides recent accepted-deliverable files the viewer cannot ope
             workspaceId: WS
           },
           assignments: []
-        };
+        }]]);
       }
     } as unknown as Parameters<typeof createProjectHomePageService>[0]["repo"],
     driveRepo: driveRepo([acceptedRecentFile, manualFile], 2),
@@ -222,10 +222,11 @@ test("project home scans past unreadable accepted-deliverable recent files", asy
   const svc = createProjectHomePageService({
     repo: {
       ...baseRepo,
-      async findWorkItemAccessRecord() {
-        return {
+      async findWorkItemAccessRecords(workItemIds: string[]) {
+        assert.deepEqual(workItemIds, [WI_2]);
+        return new Map([[WI_2, {
           id: WI_2,
-          status: "spec_ready",
+          status: "spec_ready" as const,
           submitterUserId: OTHER_USER,
           claimedByUserId: null,
           workspaceId: WS,
@@ -236,7 +237,7 @@ test("project home scans past unreadable accepted-deliverable recent files", asy
             workspaceId: WS
           },
           assignments: []
-        };
+        }]]);
       }
     } as unknown as Parameters<typeof createProjectHomePageService>[0]["repo"],
     driveRepo: driveRepo([...hiddenAcceptedFiles, readableFile], 51),

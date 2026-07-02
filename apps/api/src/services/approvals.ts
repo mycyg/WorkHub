@@ -73,6 +73,10 @@ export function parseMentions(text: string): string[] {
 
 const approvalCenterCommentsPerApproval = 20;
 const approvalCenterPageLimit = 100;
+// routes-a-2/routes-b-1/services-a-2/xlink-authz-4/ux-web-govern-6：可见性扫描必须封顶——旧实现是
+// `while(true)+offset` 无界翻页，admin/大收件箱用户每次打开审批中心 = 全表 pending 扫描 + 逐行 detailPage。
+// 封顶到「几页」量级（5 倍页大小），超出如实通过 pending_total_capped 告知前端总数是下限估计，不假装数完了。
+const approvalCenterScanCap = approvalCenterPageLimit * 5;
 
 export class ApprovalServiceError extends Error {
   constructor(
@@ -717,23 +721,41 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       } = {}
     ) {
       const includeAll = user.isAdmin;
-      const canReadApprovalRow = async (row: ApprovalRequestRow) => {
+      // routes-a-2/services-a-2/xlink-authz-4/ux-web-govern-6：按 workItemId 去重的可见性缓存——多条审批
+      // 常指向同一工作项，之前每一行都重新调用一次（重量级）canReadWorkItem，这里改成只判一次并复用结果。
+      const workItemVisibility = new Map<string, Promise<boolean>>();
+      const canReadApprovalRow = (row: ApprovalRequestRow) => {
         // approval_requests has no org/workspace columns. A work-item-less approval cannot be
         // tenant-scoped safely, so keep it in the routed user's personal inbox even for admins.
         if (!row.workItemId) {
-          return row.routedToUserId === user.id;
+          return Promise.resolve(row.routedToUserId === user.id);
         }
-        return options.canReadWorkItem ? options.canReadWorkItem(row.workItemId) : true;
+        if (!options.canReadWorkItem) {
+          return Promise.resolve(true);
+        }
+        const cached = workItemVisibility.get(row.workItemId);
+        if (cached) {
+          return cached;
+        }
+        const pending = options.canReadWorkItem(row.workItemId);
+        workItemVisibility.set(row.workItemId, pending);
+        return pending;
       };
       let rows: ApprovalRequestRow[];
       let hasMore: boolean;
       let totalPending: number;
+      let totalPendingCapped = false;
       if (includeAll || options.canReadWorkItem) {
         const visibleRows: ApprovalRequestRow[] = [];
         let visibleTotal = 0;
         let offset = 0;
+        let scanned = 0;
         const chunkLimit = approvalCenterPageLimit;
-        while (true) {
+        // routes-a-2/services-a-2/ux-web-govern-6：旧实现 `while(true)+offset` 无界翻页全组织 pending——
+        // repo 层 L#W2-2 的 limit≤200 封顶被这个循环绕过。改成硬上限 approvalCenterScanCap：扫到这么多原始
+        // pending 行就停，不管翻完没有；若真被封顶截断，totalPendingCapped=true，pending_total 如实标记为
+        // 「扫描范围内的可见数」（下限估计），而不是假装数完了组织的真实总数。
+        while (scanned < approvalCenterScanCap) {
           const chunk = await deps.approvals.listPendingForUser(user.id, {
             includeAll,
             limit: chunkLimit,
@@ -743,6 +765,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             break;
           }
           offset += chunk.length;
+          scanned += chunk.length;
           for (const row of chunk) {
             if (await canReadApprovalRow(row)) {
               visibleTotal += 1;
@@ -754,9 +777,12 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           if (chunk.length < chunkLimit) {
             break;
           }
+          if (scanned >= approvalCenterScanCap) {
+            totalPendingCapped = true;
+          }
         }
         rows = visibleRows.slice(0, approvalCenterPageLimit);
-        hasMore = visibleRows.length > approvalCenterPageLimit;
+        hasMore = visibleRows.length > approvalCenterPageLimit || totalPendingCapped;
         totalPending = visibleTotal;
       } else {
         const loadedRows = await deps.approvals.listPendingForUser(user.id, {
@@ -788,11 +814,15 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           [row.id, await buildApprovalItemDetail(row, deps, user.id, locale, commentsByApproval.get(row.id) ?? [])] as const)
       );
       // findings[#79 同类]：返回前过 fail-closed 输出契约校验（装配走样 → 500，不甩 422）。
+      // routes-a-2 修法：pending_total_capped 是 0/1 布尔标记（counts schema 只收数字，见 packages/contracts
+      // approvalCenterVmSchema.counts = record<string, number>），=1 时前端应把 pending_total 理解为「扫描范围
+      // 内的可见下限」而非组织真实总数——不新增 page_info 字段是因为该 schema 已固定 {limit,returned,has_more}，
+      // 本次改动范围不含 packages/contracts。
       return parseOutputContract(approvalCenterVmSchema, {
         items: rows.map((row) => toApprovalAttentionItem(toRecord(row), itemOptions)),
         requests: rows.map(toApprovalRequestResponse),
         filters: { pending: true },
-        counts: { pending: rows.length, pending_total: totalPending },
+        counts: { pending: rows.length, pending_total: totalPending, pending_total_capped: totalPendingCapped ? 1 : 0 },
         page_info: { limit: approvalCenterPageLimit, returned: rows.length, has_more: hasMore },
         items_detail: Object.fromEntries(detailEntries) as ApprovalCenterVM["items_detail"]
       }, "approval-center.page") satisfies ApprovalCenterVM;

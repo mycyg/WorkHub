@@ -180,7 +180,11 @@ export function createDbCostLedgerStore(
   // 只查请求到的 scope（按 scope_kind+scope_id 走索引），避免每次预算/快照都全表扫描所有用户/项目（H6）。
   // DF-1：可选 sinceBucket —— 成本看板的非管理员路径要和管理员侧同样按 period_bucket 限窗，否则总额
   // 一边是终身累计、一边是近 90 天。预算快照(usageSnapshots)不传它,仍取全量累计。
-  async function usageRecordIdsForWorkspace(teamId: string, options?: { sinceBucket?: string }) {
+  // db-repos-2/contracts-pkgs-1 修复：不再把整个工作区的 usage_record_id 物化进应用内存再 inArray()（超
+  // 65535 个绑定参数会直接抛错，且随账本增长线性变慢）。改为返回一个 SQL 子查询 SELECT，交给调用方直接
+  // inArray(col, subquery) —— drizzle 会生成 `col IN (SELECT ...)` 半连接，整段在 PG 内部执行，永远只有
+  // 常数个绑定参数，扫描量与工作区大小无关（走 scope_kind+scope_id 索引）。
+  function workspaceUsageRecordIdsQuery(teamId: string, options?: { sinceBucket?: string }) {
     const workspacePredicate = or(
       and(eq(costLedgerEntries.scopeKind, "team"), eq(costLedgerEntries.scopeId, teamId)),
       and(eq(costLedgerEntries.scopeKind, "curation"), eq(costLedgerEntries.scopeId, teamId))
@@ -188,11 +192,7 @@ export function createDbCostLedgerStore(
     const scopedWhere = options?.sinceBucket
       ? (and(workspacePredicate, gte(costLedgerEntries.periodBucket, options.sinceBucket)) as SQL)
       : workspacePredicate;
-    const usageRows = await db
-      .select({ usageRecordId: costLedgerEntries.usageRecordId })
-      .from(costLedgerEntries)
-      .where(scopedWhere);
-    return [...new Set(usageRows.map((row) => row.usageRecordId))];
+    return db.select({ usageRecordId: costLedgerEntries.usageRecordId }).from(costLedgerEntries).where(scopedWhere);
   }
 
   async function listEntriesForScopes(scopeIds: LedgerScopeIds, options?: { sinceBucket?: string }) {
@@ -215,11 +215,8 @@ export function createDbCostLedgerStore(
     }
     let where = or(...conds) as SQL;
     if (scopeIds.teamId) {
-      const workspaceUsageIds = await usageRecordIdsForWorkspace(scopeIds.teamId, options);
-      if (workspaceUsageIds.length === 0) {
-        return [];
-      }
-      where = and(where, inArray(costLedgerEntries.usageRecordId, workspaceUsageIds)) as SQL;
+      // 子查询半连接：不先把 id 列表拉回应用层，PG 直接在同一条语句里做 IN (SELECT ...)。
+      where = and(where, inArray(costLedgerEntries.usageRecordId, workspaceUsageRecordIdsQuery(scopeIds.teamId, options))) as SQL;
     }
     if (options?.sinceBucket) {
       where = and(where, gte(costLedgerEntries.periodBucket, options.sinceBucket)) as SQL;
@@ -229,13 +226,10 @@ export function createDbCostLedgerStore(
   }
 
   async function listEntriesForWorkspace(teamId: string, options?: { sinceBucket?: string }) {
-    const usageRecordIds = await usageRecordIdsForWorkspace(teamId, options);
-    if (usageRecordIds.length === 0) {
-      return [];
-    }
+    const membershipWhere = inArray(costLedgerEntries.usageRecordId, workspaceUsageRecordIdsQuery(teamId, options)) as SQL;
     const where = options?.sinceBucket
-      ? (and(inArray(costLedgerEntries.usageRecordId, usageRecordIds), gte(costLedgerEntries.periodBucket, options.sinceBucket)) as SQL)
-      : (inArray(costLedgerEntries.usageRecordId, usageRecordIds) as SQL);
+      ? (and(membershipWhere, gte(costLedgerEntries.periodBucket, options.sinceBucket)) as SQL)
+      : membershipWhere;
     const rows = await db.select().from(costLedgerEntries).where(where);
     return rows.map(rowToLedgerEntry);
   }

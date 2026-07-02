@@ -260,14 +260,16 @@ test("drive page readPage hydrates deleted target ancestors into the recycle-bin
 
 test("drive page readPage blocks child restore links when the deleted parent is outside the loaded slice", () => {
   const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("const restoreBlockedItemIds");
+  const start = source.indexOf("const parentIds = [...new Set(deletedItems");
   const end = source.indexOf("return {", start);
   assert.notEqual(start, -1);
   assert.notEqual(end, -1);
   const body = source.slice(start, end);
 
-  assert.match(body, /parentRows/u);
-  assert.match(body, /parentRows\[0\]\.deletedAt/u);
+  // db-repos-5：restoreBlocked 判定改为批量查询（parentRowsById 一次 inArray 取回全部父行），
+  // 逐行仍按「父行缺失或已删」拦截还原——只是不再逐条串行查询。
+  assert.match(body, /parentRowsById/u);
+  assert.match(body, /!parentRow \|\| parentRow\.deletedAt/u);
   assert.match(body, /restoreBlockedItemIds\.push\(item\.id\)/u);
 });
 

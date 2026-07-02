@@ -374,7 +374,8 @@ const outputDir = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_OUTPUT_DIR"]
   : defaultOutputDir;
 const smokeTitle = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_TITLE"] ?? "R4.5 Web Live Route Interaction Smoke";
 const reportFilename = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_REPORT_NAME"] ?? "live-route-interaction-report.json";
-const expectedLiveRouteSmokeSteps = 79;
+// R9：proposal 两段流（approve→merge）新增 08b approve 步。
+const expectedLiveRouteSmokeSteps = 80;
 const qaProjectId = "10000000-0000-4000-8000-000000001600";
 const qaCreatedProjectId = "10000000-0000-4000-8000-000000001691";
 const qaCreatedProjectName = "R4 Live Launch Notes";
@@ -1452,7 +1453,10 @@ function drivePage(
   const deletedManualItem = {
     ...manualItem,
     deleted_at: "2026-06-11T09:27:00.000Z",
-    updated_at: "2026-06-11T09:27:00.000Z"
+    updated_at: "2026-06-11T09:27:00.000Z",
+    // 对齐真实 drive VM（xreview-r2 F3 逐行还原）：回收站行自带 restore_href，
+    // 渲染层只对带 href 的行渲「还原」按钮（data-action-id="drive_restore_item"）。
+    restore_href: `/api/drive/projects/${projectId}/items/${manualItemId}/restore`
   };
   const operations = [
     {
@@ -2241,6 +2245,31 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
     const proposalReviewMatch = /^\/api\/proposals\/([^/]+)\/review$/u.exec(url.pathname);
     if (request.method === "POST" && proposalReviewMatch?.[1]) {
       requestRecord.body = await requestBody(request);
+      // 对齐真实 API（routes/proposals.ts）：approve 的响应携带 next_action=merge，
+      // web 端 M11/L17 两段流靠它把动作行原地换成「采纳到正式版」——merge 按钮只在确认后出现。
+      const reviewDecision = (() => {
+        try {
+          return (JSON.parse(requestRecord.body ?? "{}") as { decision?: string }).decision;
+        } catch {
+          return undefined;
+        }
+      })();
+      if (reviewDecision === "approve") {
+        sendJson(response, 200, {
+          attention: {
+            summary_text: currentLocale === "en-US"
+              ? "Confirmed. You can now accept it into the official version."
+              : "已确认。接下来可以采纳到正式版本。"
+          },
+          next_action: {
+            id: "merge",
+            label: currentLocale === "en-US" ? "Accept into official version" : "采纳到正式版",
+            method: "POST",
+            href: `/api/proposals/${proposalReviewMatch[1]}/merge`
+          }
+        });
+        return;
+      }
       sendJson(response, 200, {
         attention: {
           summary_text: currentLocale === "en-US"
@@ -2979,7 +3008,7 @@ function auditExpression() {
         : routeComponentKey === "workitem"
         ? Boolean(document.querySelector("[data-r4-workitem-context]") && document.querySelector("[data-r4-workitem-trace]") && document.querySelector("[data-r4-workitem-evidence]"))
         : routeComponentKey === "proposal"
-          ? Boolean(document.querySelector("[data-r4-proposal-summary]") && document.querySelector("[data-r4-proposal-changes]") && document.querySelector("[data-action-id='request_changes'][data-method='POST'][data-requires-reason='true']"))
+          ? Boolean(document.querySelector("[data-r4-proposal-summary]") && document.querySelector("[data-r4-proposal-changes]") && (document.querySelector("[data-action-id='request_changes'][data-method='POST'][data-requires-reason='true']") || document.querySelector("[data-action-id='merge'][data-method='POST']")))
           : routeComponentKey === "cost"
             ? Boolean(document.querySelector("[data-r4-cost-metrics]") && document.querySelector("[data-r4-cost-budget]") && document.querySelector("[data-r4-cost-models]"))
             : routeComponentKey === "intake"
@@ -3483,6 +3512,11 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await clickAndWaitForNotice(cdp, "[data-review-reason]", "action_success", "request_changes");
   steps.push(await captureStep(cdp, { id: "08-proposal-request-changes-success-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
 
+  // GitHub 式两段流（M11/L17）：merge 按钮不再在 opened 态直出，必须先 approve，
+  // 由响应里的 next_action 原地换出「采纳到正式版」再点。
+  await clickAndWaitForNotice(cdp, '[data-action-id="approve"]', "action_success", "approve");
+  steps.push(await captureStep(cdp, { id: "08b-proposal-approve-success-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
+
   await clickAndWaitForNotice(cdp, '[data-action-id="merge"]', "action_success", "merge");
   steps.push(await captureStep(cdp, { id: "09-proposal-merge-success-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
 
@@ -3913,10 +3947,10 @@ function vmDomValueMatches(steps: StepReport[], surface: GoldPathSurfaceVM) {
       workitem.workitemAcceptanceCount === String(surface.page_vms.workitem.acceptance.length) &&
       proposal &&
       proposal.proposalChangeCount === String(surface.page_vms.proposal.manifest.changes.length) &&
+      // 两段流：opened 态动作行只渲 approve+request_changes，merge 在确认后由 next_action 原地换入。
       proposal.proposalActionCount === String([
         surface.page_vms.proposal.review_actions.approve,
-        surface.page_vms.proposal.review_actions.request_changes,
-        surface.page_vms.proposal.review_actions.merge
+        surface.page_vms.proposal.review_actions.request_changes
       ].filter(Boolean).length) &&
       proposal.proposalEvidenceCount === String(surface.page_vms.proposal.evidence_refs.length) &&
       proposal.proposalConflictCount === String(proposalConflictsFromSurface(surface).length) &&
@@ -4518,7 +4552,8 @@ async function main() {
         proof.counts.approvalRespond === 2,
       r4_12_reason_gate_blocks_without_reason:
         steps.some((step) => step.id === "07-proposal-reason-gate-en-desktop" && step.audit.notice.kind === "reason_required" && step.audit.notice.reasonButtonCount >= 3) &&
-        proof.counts.proposalReview === 1,
+        // 两段流下 review POST=2：带理由的 request_changes + approve（无需理由）；仍证明无理由点击被门拦住没偷跑 POST。
+        proof.counts.proposalReview === 2,
       r4_12_request_changes_success_notice:
         steps.some((step) => step.id === "08-proposal-request-changes-success-en-desktop" && step.audit.notice.kind === "action_success" && step.audit.notice.actionId === "request_changes" && step.audit.notice.locale === "en-US"),
       r4_12_merge_success_notice:
@@ -4949,7 +4984,7 @@ async function main() {
           step.audit.routeData.proposalChangeCount === String(surface.page_vms.proposal.manifest.changes.length) &&
           step.audit.routeData.proposalEvidenceCount === String(surface.page_vms.proposal.evidence_refs.length) &&
           step.audit.routeData.proposalConflictCount === "2" &&
-          step.audit.routeData.proposalReadonlyReviewActionCount === "3" &&
+          step.audit.routeData.proposalReadonlyReviewActionCount === "2" &&
           step.audit.reactComponentActionCount === step.audit.hydrationActionCount &&
           step.audit.reactComponentActionCount === step.audit.hydrationPanelActionCount
         ),
@@ -5226,13 +5261,14 @@ async function main() {
         proof.counts.proposal === 2 &&
         proof.counts.proposalConflicts === 2 &&
         proof.counts.approvalRespond === 2 &&
-        proof.counts.proposalReview === 1 &&
+        proof.counts.proposalReview === 2 &&
         proof.counts.proposalMerge === 1 &&
         proof.counts.mergeApply === 4 &&
         proof.counts.acceptedDeliverableRestore === 1 &&
         proof.counts.cost === 2 &&
         proof.counts.settings === 1 &&
-        proof.counts.replay === 1 &&
+        // 交付物还原成功后当前路由重渲（renderCurrentRoute）→ replay loader 合法地取了两次。
+        proof.counts.replay === 2 &&
         proof.counts.preferencePatch === 4 &&
         proof.counts.preferenceFailureArmed === 1 &&
         proof.counts.qaEmit === 4 &&

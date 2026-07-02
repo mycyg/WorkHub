@@ -725,6 +725,11 @@ function workItemsWithAcceptedDeliverables(deliverables: AcceptedDeliverableVM[]
         actions: {}
       };
     },
+    // routes-a-2 fallout: canReadWorkItems is a new required WorkItemService method (R9 批次1-1); this fixture
+    // doesn't exercise approval-center visibility, so a permissive stub is enough to satisfy the interface.
+    async canReadWorkItems(input) {
+      return new Set(input.workItemIds);
+    },
     async assertCanMutateArtifacts() {
       return;
     },

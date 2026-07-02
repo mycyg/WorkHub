@@ -147,7 +147,7 @@ function authDeps(runtimeSettings: Settings): AuthDependencies {
   };
 }
 
-function allowingWorkItems(): Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts"> {
+function allowingWorkItems(): Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts" | "canReadWorkItems"> {
   return {
     async detailPage() {
       return {
@@ -161,17 +161,25 @@ function allowingWorkItems(): Pick<WorkItemService, "detailPage" | "assertCanMut
     },
     async assertCanMutateArtifacts() {
       return;
+    },
+    // R9 批次1-1：路由层可见性改走轻量批量接口（接口扩方法，非行为变化）；allowing=全可见。
+    async canReadWorkItems({ workItemIds }: { workItemIds: string[] }) {
+      return new Set(workItemIds);
     }
   };
 }
 
-function denyingWorkItems(): Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts"> {
+function denyingWorkItems(): Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts" | "canReadWorkItems"> {
   return {
     async detailPage() {
       throw new WorkItemServiceError(403, "forbidden", "你没有权限查看这个事项。");
     },
     async assertCanMutateArtifacts() {
       throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项。");
+    },
+    // denying=全不可见，与 detailPage 403 语义一致。
+    async canReadWorkItems() {
+      return new Set<string>();
     }
   };
 }

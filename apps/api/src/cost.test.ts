@@ -700,6 +700,65 @@ test("cost dashboard page scopes admin ledger totals to the actor workspace", as
   assert.equal(body.data.labor_split?.self_improvement_cost_cny, "0.5");
 });
 
+test("routes-b-2/contracts-pkgs-4: non-admin cost page calls the narrow user-scope query, not a full workspace scan", async () => {
+  const runtimeSettings = settings();
+  const baseStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await baseStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000ba",
+    workItemId: "50000000-0000-4000-8000-0000000000ba",
+    userId,
+    inputTokens: 1000,
+    outputTokens: 500,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: now
+  }));
+  const scopesCalls: unknown[] = [];
+  const workspaceCalls: unknown[] = [];
+  const spyStore: CostLedgerStore = {
+    records: baseStore.records,
+    entries: baseStore.entries,
+    recordUsage: (record) => baseStore.recordUsage(record),
+    usageSnapshots: (scopeIds, options) => baseStore.usageSnapshots(scopeIds, options),
+    listEntries: (options) => baseStore.listEntries!(options),
+    listEntriesForScopes: (scopeIds, options) => {
+      scopesCalls.push(scopeIds);
+      return baseStore.listEntriesForScopes!(scopeIds, options);
+    },
+    listEntriesForWorkspace: (teamId, options) => {
+      workspaceCalls.push(teamId);
+      return baseStore.listEntriesForWorkspace!(teamId, options);
+    }
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore: spyStore
+  }));
+
+  const userResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+  assert.equal(userResponse.status, 200);
+
+  // 非管理员必须走 listEntriesForScopes({ userId, teamId })（走索引 + 子查询半连接），绝不能调用
+  // listEntriesForWorkspace（拉整个工作区再靠内存过滤）。
+  assert.equal(workspaceCalls.length, 0);
+  assert.equal(scopesCalls.length, 1);
+  assert.deepEqual(scopesCalls[0], { userId, teamId: runtimeSettings.auth.defaultWorkspaceId });
+
+  const adminResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+  assert.equal(adminResponse.status, 200);
+  // 管理员路径语义不变：仍走 listEntriesForWorkspace（保留 team/user/workitem 同胞条目供拆分展示）。
+  assert.equal(workspaceCalls.length, 1);
+  assert.equal(workspaceCalls[0], runtimeSettings.auth.defaultWorkspaceId);
+});
+
 test("cost dashboard page aggregates ledger entries without exposing all users to non-admins", async () => {
   const runtimeSettings = settings();
   const otherWorkspaceId = "00000000-0000-4000-8000-00000000f0f1";

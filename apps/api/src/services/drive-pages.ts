@@ -82,7 +82,11 @@ export type DrivePageServiceDependencies = {
   repo: DriveRepository;
   proposals?: Pick<ProposalService, "createFromManifest" | "get">;
   workItems?: Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts">;
-  workItemAccess?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord">;
+  // xlink-authz-2：findWorkItemAccessRecords（批量）是可选的——真实仓库都实现了它，workItemLinkAccessForActor
+  // 命中即用一次批量查询；未实现时（部分测试假仓库只给单条方法）退回并发单查，语义不变、只是慢一点。
+  workItemAccess?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> & {
+    findWorkItemAccessRecords?: WorkItemDataRepository["findWorkItemAccessRecords"];
+  };
   now?: () => Date;
 };
 
@@ -613,8 +617,16 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
     const readable = new Set<string>();
     const restorable = new Set<string>();
     const actorUserId = input.actor.userId ?? input.actor.id;
+    // xlink-authz-2：原先对每个 work item id 串行 await findWorkItemAccessRecord（一个页面可能挂几十个
+    // 采纳交付物/评论草稿），改用一次批量查询（fake repo 没实现批量接口时退回逐条查，语义不变）。
+    const recordsByWorkItemId = access.findWorkItemAccessRecords
+      ? await access.findWorkItemAccessRecords(uniqueIds)
+      : new Map(
+        (await Promise.all(uniqueIds.map(async (workItemId) => [workItemId, await access.findWorkItemAccessRecord(workItemId)] as const)))
+          .filter((entry): entry is [string, NonNullable<typeof entry[1]>] => Boolean(entry[1]))
+      );
     for (const workItemId of uniqueIds) {
-      const record = await access.findWorkItemAccessRecord(workItemId);
+      const record = recordsByWorkItemId.get(workItemId);
       if (record && canViewWorkItemRecord(record, { id: actorUserId, isAdmin: input.actor.isAdmin }, { workspaceId: input.actor.workspaceId })) {
         readable.add(workItemId);
         if (canMutateAcceptedDeliverables(record, input.actor)) {
@@ -629,16 +641,24 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
     if (!workItemAccess()) {
       return;
     }
-    const rows = await deps.repo.readPage({
-      projectId: input.projectId,
-      targetItemId: input.itemId,
-      includeDeleted: false,
-      operationLimit: 1
-    });
-    const workItemIds = rows.acceptedDeliverables
-      .filter((row) => row.accepted.driveItemId === input.itemId)
-      .filter((row) => row.accepted.driveVersionId === input.versionId)
-      .map((row) => row.accepted.workItemId);
+    // services-a-5：下载/预览是网盘热路径，原先每次都跑一趟完整 readPage（200 items + 5 个 count
+    // 聚合 + 祖先链）只为过滤出这个 item+version 挂在哪些采纳交付物上。改用窄方法直查；
+    // 仓库未实现窄方法时（如某些测试假仓库）退回原 readPage 路径，结果集完全一致。
+    const workItemIds = deps.repo.findAcceptedDeliverableWorkItemIds
+      ? await deps.repo.findAcceptedDeliverableWorkItemIds({
+        projectId: input.projectId,
+        driveItemId: input.itemId,
+        driveVersionId: input.versionId
+      })
+      : (await deps.repo.readPage({
+        projectId: input.projectId,
+        targetItemId: input.itemId,
+        includeDeleted: false,
+        operationLimit: 1
+      })).acceptedDeliverables
+        .filter((row) => row.accepted.driveItemId === input.itemId)
+        .filter((row) => row.accepted.driveVersionId === input.versionId)
+        .map((row) => row.accepted.workItemId);
     if (workItemIds.length === 0) {
       return;
     }
