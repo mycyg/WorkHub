@@ -20,6 +20,7 @@ const workspaceId = "95000000-0000-4000-8000-000000000103";
 const orgId = "95000000-0000-4000-8000-000000000104";
 const actorId = "95000000-0000-4000-8000-000000000105";
 const parentRunId = "95000000-0000-4000-8000-000000000106";
+const objectiveId = "95000000-0000-4000-8000-000000000107";
 const researchItemId = "95000000-0000-4000-8000-000000000201";
 const produceItemId = "95000000-0000-4000-8000-000000000202";
 const reviewItemId = "95000000-0000-4000-8000-000000000203";
@@ -30,7 +31,7 @@ function plan(status: TaskPlanRow["status"] = "approved"): TaskPlanRow {
     workItemId,
     workspaceId,
     status,
-    objectiveId: null,
+    objectiveId,
     budgetJson: { total_share_pct: 100 },
     decompositionContextJson: { source: "test" },
     createdByUserId: actorId,
@@ -218,6 +219,7 @@ test("R9.2 dispatcher enqueues ready task-plan items as ordinary child runs with
   assert.equal(queue.inputs[0]?.workItemId, workItemId);
   assert.equal(queue.inputs[0]?.parentRunId, parentRunId);
   assert.equal(queue.inputs[0]?.taskPlanId, planId);
+  assert.equal(queue.inputs[0]?.objectiveId, objectiveId);
   assert.equal(queue.inputs[0]?.workspaceId, workspaceId);
   assert.equal(queue.inputs[0]?.orgId, orgId);
   assert.match(queue.inputs[0]?.objectiveMd ?? "", /Research objective\./u);

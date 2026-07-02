@@ -47,8 +47,12 @@ test("default budget mirrors P-COST v0 values from settings", () => {
   assert.equal(budget.totalTimeoutSeconds, 300);
   assert.equal(budget.maxTokens, 120000);
   assert.equal(budget.maxCostCny, "5");
+  // R9.5 adds task/objective budgets as first-class default scopes; the old five-policy list was correct only
+  // before child task plans and OKR objectives became budget boundaries.
   assert.deepEqual(policies.map((policy) => policy.id), [
     "pcost-workitem-run-v0",
+    "pcost-task-run-v0",
+    "pcost-objective-month-v0",
     "pcost-user-day-v0",
     "pcost-team-day-v0",
     "pcost-team-month-v0",
@@ -60,6 +64,74 @@ test("default budget mirrors P-COST v0 values from settings", () => {
   assert.equal(policies.find((policy) => policy.id === "pcost-eval-day-v0")?.scopeKind, "eval");
   assert.equal(policies.find((policy) => policy.id === "pcost-eval-day-v0")?.maxCostCny, "80");
   assert.equal(allowWithDefaultBudget(settings, { provider: "deepseek", model: "m", reason: "default" }).allowed, true);
+});
+
+test("R9.5 task and objective scopes participate in ledger snapshots and budget decisions", async () => {
+  const settings = loadSettings({});
+  const taskPlanId = "95000000-0000-4000-8000-000000000501";
+  const objectiveId = "95000000-0000-4000-8000-000000000502";
+  const ledger = createMemoryCostLedgerStore({ teamId: "workspace-r95" });
+  await ledger.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "95000000-0000-4000-8000-000000000503",
+    workItemId: "95000000-0000-4000-8000-000000000504",
+    userId: "95000000-0000-4000-8000-000000000505",
+    workspaceId: "workspace-r95",
+    taskPlanId,
+    objectiveId,
+    inputTokens: 900,
+    outputTokens: 100,
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: new Date("2026-07-03T00:00:00.000Z")
+  }));
+
+  assert.deepEqual(ledger.entries.map((entry) => entry.scope.kind).sort(), [
+    "objective",
+    "task",
+    "team",
+    "user",
+    "workitem"
+  ]);
+  const snapshots = await ledger.usageSnapshots({ taskPlanId, objectiveId }, {
+    now: new Date("2026-07-03T00:00:00.000Z")
+  });
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "task" && snapshot.period === "day")?.tokenIn, 900);
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "objective" && snapshot.period === "month")?.tokenOut, 100);
+
+  const decision = decideRunBudget({
+    settings,
+    decisionId: "decision-r95-objective",
+    now: new Date("2026-07-03T00:00:00.000Z"),
+    scopeIds: { taskPlanId, objectiveId },
+    policies: [
+      {
+        id: "pcost-objective-month-v0",
+        scopeKind: "objective",
+        period: "month",
+        maxTokens: 1000,
+        maxCostCny: "99",
+        warningRatio: 0.8,
+        criticalRatio: 0.95,
+        onWarning: "notify",
+        onExhausted: "block_new_run",
+        modelRouteHint: "balanced",
+        enabled: true,
+        version: 1
+      }
+    ],
+    usage: snapshots
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.deepEqual(decision.limitingScope, { kind: "objective", objectiveId });
+  assert.equal(decision.notice?.recommendedAction, "add_budget");
+  assert.deepEqual(decision.notice?.options?.map((option) => option.id), [
+    "add_budget",
+    "finish_current_output",
+    "close_scope"
+  ]);
 });
 
 test("budget policy store updates policies without mutating settings defaults", () => {

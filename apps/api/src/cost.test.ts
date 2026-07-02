@@ -275,8 +275,12 @@ test("cost policy routes expose configurable P-COST defaults to admins", async (
     ok: true;
     data: { id: string; scope_kind: string; max_tokens: number; max_cost_cny: string; version: number }[];
   };
-  assert.equal(listBody.data.length, 5);
+  // R9.5 adds task-plan and objective budget defaults; the old 5-policy
+  // assertion only covered pre-army user/team/work-item/eval scopes.
+  assert.equal(listBody.data.length, 7);
   assert.equal(listBody.data.find((policy) => policy.id === "pcost-workitem-run-v0")?.max_tokens, 120000);
+  assert.equal(listBody.data.find((policy) => policy.id === "pcost-task-run-v0")?.scope_kind, "task");
+  assert.equal(listBody.data.find((policy) => policy.id === "pcost-objective-month-v0")?.scope_kind, "objective");
   // eval 套件日预算策略现已存在（M21：此前 eval 在决策层无上限）。
   assert.equal(listBody.data.find((policy) => policy.id === "pcost-eval-day-v0")?.scope_kind, "eval");
 
@@ -595,6 +599,71 @@ test("cost dashboard page marks disabled budget rows instead of hiding them behi
   assert.deepEqual(disabledRows.map((usage) => usage.policy_id).sort(), ["pcost-team-day-v0:disabled", "pcost-user-day-v0:disabled"]);
   assert.equal(disabledRows.every((usage) => usage.max_tokens === 0 && usage.max_cost_cny === "0"), true);
   assert.deepEqual(body.data.top_exhaustion_risks, []);
+});
+
+test("R9.5 cost dashboard aggregates army task plans and objectives from scoped ledger rows", async () => {
+  const runtimeSettings = settings();
+  const taskPlanId = "95000000-0000-4000-8000-000000000701";
+  const objectiveId = "95000000-0000-4000-8000-000000000702";
+  const ledgerStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "95000000-0000-4000-8000-000000000703",
+    workItemId: "95000000-0000-4000-8000-000000000704",
+    userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    taskPlanId,
+    objectiveId,
+    inputTokens: 1000,
+    outputTokens: 500,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: now
+  }));
+  const scopesCalls: unknown[] = [];
+  const spyStore: CostLedgerStore = {
+    records: ledgerStore.records,
+    entries: ledgerStore.entries,
+    recordUsage: (record) => ledgerStore.recordUsage(record),
+    usageSnapshots: (scopeIds, options) => ledgerStore.usageSnapshots(scopeIds, options),
+    listEntriesForScopes: (scopeIds, options) => {
+      scopesCalls.push(scopeIds);
+      return ledgerStore.listEntriesForScopes!(scopeIds, options);
+    },
+    listEntriesForWorkspace: (teamId, options) => ledgerStore.listEntriesForWorkspace!(teamId, options)
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore: spyStore
+  }));
+
+  const response = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      by_task_plan: { task_plan_id: string; cost_cny: string; tokens: number; child_runs: number }[];
+      by_objective: { objective_id: string; cost_cny: string; tokens: number }[];
+    };
+  };
+  assert.deepEqual(scopesCalls, [{ userId, teamId: runtimeSettings.auth.defaultWorkspaceId }]);
+  assert.deepEqual(body.data.by_task_plan, [{
+    task_plan_id: taskPlanId,
+    cost_cny: "0.006",
+    tokens: 1500,
+    child_runs: 1
+  }]);
+  assert.deepEqual(body.data.by_objective, [{
+    objective_id: objectiveId,
+    cost_cny: "0.006",
+    tokens: 1500
+  }]);
 });
 
 test("cost usage route preserves budget policy notice actions", async () => {

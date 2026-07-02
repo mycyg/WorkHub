@@ -62,6 +62,34 @@ export function defaultBudgetPoliciesFromSettings(settings: Settings): BudgetPol
       version: 1
     },
     {
+      id: "pcost-task-run-v0",
+      scopeKind: "task",
+      period: "run",
+      maxTokens: settings.budgets.runTokens,
+      maxCostCny: settings.budgets.runCostCny,
+      warningRatio: 0.8,
+      criticalRatio: 0.95,
+      onWarning: "downgrade_model",
+      onExhausted: "handoff_current_run",
+      modelRouteHint: "balanced",
+      enabled: true,
+      version: 1
+    },
+    {
+      id: "pcost-objective-month-v0",
+      scopeKind: "objective",
+      period: "month",
+      maxTokens: settings.budgets.teamMonthlyTokens,
+      maxCostCny: settings.budgets.teamMonthlyCostCny,
+      warningRatio: 0.8,
+      criticalRatio: 0.95,
+      onWarning: "notify",
+      onExhausted: "block_new_run",
+      modelRouteHint: "balanced",
+      enabled: true,
+      version: 1
+    },
+    {
       id: "pcost-user-day-v0",
       scopeKind: "user",
       period: "day",

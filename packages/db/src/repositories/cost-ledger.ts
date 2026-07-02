@@ -30,6 +30,10 @@ function scopeId(scope: BudgetScope) {
   switch (scope.kind) {
     case "workitem":
       return scope.workitemId;
+    case "task":
+      return scope.taskPlanId;
+    case "objective":
+      return scope.objectiveId;
     case "user":
       return scope.userId;
     case "team":
@@ -45,6 +49,10 @@ function scopeJson(scope: BudgetScope): Record<string, unknown> {
   switch (scope.kind) {
     case "workitem":
       return { kind: "workitem", workitemId: scope.workitemId };
+    case "task":
+      return { kind: "task", taskPlanId: scope.taskPlanId };
+    case "objective":
+      return { kind: "objective", objectiveId: scope.objectiveId };
     case "user":
       return { kind: "user", userId: scope.userId };
     case "team":
@@ -60,6 +68,10 @@ function rowToScope(row: CostLedgerEntryRow): BudgetScope {
   switch (row.scopeKind) {
     case "workitem":
       return { kind: "workitem", workitemId: row.scopeId };
+    case "task":
+      return { kind: "task", taskPlanId: row.scopeId };
+    case "objective":
+      return { kind: "objective", objectiveId: row.scopeId };
     case "user":
       return { kind: "user", userId: row.scopeId };
     case "team":
@@ -78,6 +90,8 @@ function usageInsert(record: UsageRecord): typeof usageRecords.$inferInsert {
     id: usageRecordId(record),
     ...(record.runId ? { runId: record.runId } : {}),
     ...(record.workItemId ? { workItemId: record.workItemId } : {}),
+    ...(record.taskPlanId ? { taskPlanId: record.taskPlanId } : {}),
+    ...(record.objectiveId ? { objectiveId: record.objectiveId } : {}),
     ...(record.userId ? { userId: record.userId } : {}),
     ...(record.actorId ? { actorId: record.actorId } : {}),
     provider: record.provider,
@@ -98,6 +112,8 @@ function ledgerInsert(entry: CostLedgerEntry): typeof costLedgerEntries.$inferIn
     ...(entry.policyId ? { policyId: entry.policyId } : {}),
     ...(entry.runId ? { runId: entry.runId } : {}),
     ...(entry.workItemId ? { workItemId: entry.workItemId } : {}),
+    ...(entry.taskPlanId ? { taskPlanId: entry.taskPlanId } : {}),
+    ...(entry.objectiveId ? { objectiveId: entry.objectiveId } : {}),
     ...(entry.userId ? { userId: entry.userId } : {}),
     ...(entry.teamId ? { teamId: entry.teamId } : {}),
     scopeKind: entry.scope.kind,
@@ -120,6 +136,8 @@ function rowToUsageRecord(row: UsageRecordRow): UsageRecord {
   return {
     ...(row.runId ? { runId: row.runId } : {}),
     ...(row.workItemId ? { workItemId: row.workItemId } : {}),
+    ...(row.taskPlanId ? { taskPlanId: row.taskPlanId } : {}),
+    ...(row.objectiveId ? { objectiveId: row.objectiveId } : {}),
     ...(row.userId ? { userId: row.userId } : {}),
     provider: row.provider,
     model: row.model,
@@ -141,6 +159,8 @@ function rowToLedgerEntry(row: CostLedgerEntryRow): CostLedgerEntry {
     ...(row.policyId ? { policyId: row.policyId } : {}),
     ...(row.runId ? { runId: row.runId } : {}),
     ...(row.workItemId ? { workItemId: row.workItemId } : {}),
+    ...(row.taskPlanId ? { taskPlanId: row.taskPlanId } : {}),
+    ...(row.objectiveId ? { objectiveId: row.objectiveId } : {}),
     ...(row.userId ? { userId: row.userId } : {}),
     ...(row.teamId ? { teamId: row.teamId } : {}),
     scope: rowToScope(row),
@@ -199,6 +219,12 @@ export function createDbCostLedgerStore(
     const conds: SQL[] = [];
     if (scopeIds.workItemId) {
       conds.push(and(eq(costLedgerEntries.scopeKind, "workitem"), eq(costLedgerEntries.scopeId, scopeIds.workItemId)) as SQL);
+    }
+    if (scopeIds.taskPlanId) {
+      conds.push(and(eq(costLedgerEntries.scopeKind, "task"), eq(costLedgerEntries.scopeId, scopeIds.taskPlanId)) as SQL);
+    }
+    if (scopeIds.objectiveId) {
+      conds.push(and(eq(costLedgerEntries.scopeKind, "objective"), eq(costLedgerEntries.scopeId, scopeIds.objectiveId)) as SQL);
     }
     if (scopeIds.userId) {
       conds.push(and(eq(costLedgerEntries.scopeKind, "user"), eq(costLedgerEntries.scopeId, scopeIds.userId)) as SQL);

@@ -1401,6 +1401,20 @@ test("cost governance contracts expose clickable budget notices and scoped usage
     enabled: true,
     version: 1
   });
+  const objectivePolicy = budgetPolicySchema.parse({
+    id: "pcost-objective-month-v0",
+    scope_kind: "objective",
+    period: "month",
+    max_tokens: 1000000,
+    max_cost_cny: "200",
+    warning_ratio: 0.8,
+    critical_ratio: 0.95,
+    on_warning: "notify",
+    on_exhausted: "block_new_run",
+    model_route_hint: "balanced",
+    enabled: true,
+    version: 1
+  });
   const usage = budgetUsageSchema.parse({
     scope: { kind: "workitem", workitem_id: "74000000-0000-4000-8000-000000000001" },
     scope_label: "生成周报模板",
@@ -1419,6 +1433,24 @@ test("cost governance contracts expose clickable budget notices and scoped usage
     warning_ratio: 0.84,
     enabled: false,
     status: "warning"
+  });
+  const taskUsage = budgetUsageSchema.parse({
+    scope: { kind: "task", task_plan_id: "74000000-0000-4000-8000-000000000002" },
+    scope_label: "军团计划预算",
+    policy_id: "pcost-task-run-v0",
+    period: "run",
+    period_start: "2026-06-05T00:00:00.000Z",
+    period_end: "2026-06-05T00:05:00.000Z",
+    token_in: 10,
+    token_out: 2,
+    total_tokens: 12,
+    max_tokens: 120000,
+    remaining_tokens: 119988,
+    estimated_cost_cny: "0.1",
+    max_cost_cny: "5",
+    remaining_cost_cny: "4.9",
+    warning_ratio: 0.01,
+    status: "ok"
   });
   const notice = budgetNoticeSchema.parse({
     code: "budget_warning",
@@ -1454,12 +1486,21 @@ test("cost governance contracts expose clickable budget notices and scoped usage
       message: "AI 预算已经用完，先暂停新的自动执行。",
       scope: usage.scope,
       usage_ratio: 1,
-      recommended_action: "pause"
+      // R9.5 army budget exhaustion must present an explicit budget-choice card; the old
+      // pause-only fixture hid the add-budget / finish-current / close-scope decision surface.
+      recommended_action: "add_budget",
+      options: [
+        { id: "add_budget", label: "追加预算继续", action_href: "/dashboard/cost" },
+        { id: "finish_current_output", label: "就用现有产出收尾", action_href: "/workitems/demo" },
+        { id: "close_scope", label: "整体收工", action_href: "/workitems/demo" }
+      ]
     }
   });
 
   assert.equal(policy.scope_kind, "workitem");
+  assert.equal(objectivePolicy.scope_kind, "objective");
   assert.equal(usage.status, "warning");
+  assert.equal(taskUsage.scope.kind, "task");
   assert.equal(usage.enabled, false);
   assert.equal(notice.options?.length, 2);
   const attention = attentionItemSchema.parse({

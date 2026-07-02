@@ -1660,6 +1660,80 @@ test("agent run enqueue uses the actor workspace for team budget snapshots", asy
   assert.deepEqual(run.budget_decision.notice?.scope, { kind: "team", team_id: actorWorkspaceId });
 });
 
+test("R9.5 objective budget exhaustion blocks the next child enqueue and publishes a budget card event", async () => {
+  const runtimeSettings = settings();
+  const taskPlanId = "95000000-0000-4000-8000-000000000601";
+  const objectiveId = "95000000-0000-4000-8000-000000000602";
+  const policyStore = createMemoryBudgetPolicyStore();
+  const objectivePolicy = policyStore.updatePolicy(runtimeSettings, "objective", "pcost-objective-month-v0", {
+    maxTokens: 1000,
+    maxCostCny: "50",
+    onExhausted: "block_new_run"
+  });
+  assert.ok(objectivePolicy, "R9.5 objective budget policy should be available for overrides");
+  const ledgerStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "95000000-0000-4000-8000-000000000603",
+    workItemId,
+    userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    taskPlanId,
+    objectiveId,
+    inputTokens: 1000,
+    outputTokens: 1,
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: now
+  }));
+  const events: { topic: string; type: string; data: WorkHubEvent<unknown> }[] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    policyStore,
+    ledgerStore,
+    now: () => now,
+    id: () => "95000000-0000-4000-8000-000000000604",
+    eventBus: {
+      async publish(topic, type, data) {
+        events.push({ topic, type, data: data as WorkHubEvent<unknown> });
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => queue.enqueue({
+      workItemId,
+      actorId: userId,
+      workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+      taskPlanId,
+      taskPlanItemId: "95000000-0000-4000-8000-000000000605",
+      objectiveId,
+      title: "Objective child run"
+    }),
+    (error: unknown) =>
+      error instanceof AgentRunnerError &&
+      error.status === 402 &&
+      error.code === "budget_exhausted" &&
+      (error.details?.scope as { kind?: string; objective_id?: string } | undefined)?.kind === "objective" &&
+      (error.details?.scope as { kind?: string; objective_id?: string } | undefined)?.objective_id === objectiveId &&
+      error.details?.recommended_action === "add_budget"
+  );
+
+  assert.equal((await queue.listActive()).length, 0);
+  assert.deepEqual(events.map((event) => [event.topic, event.type]), [
+    [topics.workitem(workItemId).topic, eventTypes.budgetExhausted],
+    [topics.user(userId).topic, eventTypes.budgetExhausted]
+  ]);
+  const notice = events[0]?.data.data as { recommended_action?: string; options?: { id: string; label: string }[] };
+  assert.equal(notice.recommended_action, "add_budget");
+  assert.deepEqual(notice.options?.map((option) => [option.id, option.label]), [
+    ["add_budget", "追加预算继续"],
+    ["finish_current_output", "就用现有产出收尾"],
+    ["close_scope", "整体收工"]
+  ]);
+});
+
 test("agent run enqueue reads budget policies from the actor workspace", async () => {
   const runtimeSettings = settings();
   const actorWorkspaceId = "00000000-0000-4000-8000-00000000a9c2";

@@ -137,6 +137,8 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
   const byUser = aggregateByScope(scopedEntries, "user");
   const byTeam = aggregateByScope(scopedEntries, "team");
   const byWorkitem = aggregateByScope(scopedEntries, "workitem");
+  const byTaskPlan = aggregateByTaskPlan(uniqueEntries);
+  const byObjective = aggregateByObjective(uniqueEntries);
   const modelBreakdown = aggregateByModel(uniqueEntries);
   const laborSplit = buildLaborSplit(uniqueEntries);
   const inactiveBudgetRows = [summary.me, ...(summary.team ? [summary.team] : [])].filter((usage) => usage.enabled === false);
@@ -172,6 +174,17 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
       cost_cny: formatCny(item.cost),
       turns: item.turns
     })) : [],
+    by_task_plan: byTaskPlan.map((item) => ({
+      task_plan_id: item.id,
+      cost_cny: formatCny(item.cost),
+      tokens: item.tokens,
+      child_runs: item.childRuns
+    })),
+    by_objective: byObjective.map((item) => ({
+      objective_id: item.id,
+      cost_cny: formatCny(item.cost),
+      tokens: item.tokens
+    })),
     model_breakdown: modelBreakdown,
     ...(laborSplit ? { labor_split: laborSplit } : {}),
     budget: budgetRows,
@@ -231,6 +244,9 @@ function toApiBudgetNotice(notice: InternalBudgetNotice, locale: WorkHubLocale):
 }
 
 function localizedBudgetActionLabel(id: string, fallback: string, locale: WorkHubLocale) {
+  if (id === "add_budget" || id === "finish_current_output" || id === "close_scope") {
+    return fallback;
+  }
   if (id === "downgrade_model") {
     return pageT(locale, "cost.action.downgrade");
   }
@@ -272,6 +288,10 @@ function toApiScope(scope: InternalBudgetUsage["scope"]): BudgetUsage["scope"] {
   switch (scope.kind) {
     case "workitem":
       return { kind: "workitem", workitem_id: scope.workitemId };
+    case "task":
+      return { kind: "task", task_plan_id: scope.taskPlanId };
+    case "objective":
+      return { kind: "objective", objective_id: scope.objectiveId };
     case "user":
       return { kind: "user", user_id: scope.userId };
     case "team":
@@ -390,6 +410,42 @@ function aggregateByScope(entries: readonly CostLedgerEntry[], kind: "user" | "t
     current.cost += parseCny(entry.estimatedCostCny);
     current.tokens += entry.tokenIn + entry.tokenOut;
     current.turns += entry.source === "agent_step" ? 1 : 0;
+    buckets.set(id, current);
+  }
+  return [...buckets.entries()].map(([id, value]) => ({ id, ...value }));
+}
+
+function aggregateByTaskPlan(entries: readonly CostLedgerEntry[]) {
+  const buckets = new Map<string, { cost: number; tokens: number; runIds: Set<string> }>();
+  for (const entry of entries) {
+    const id = entry.taskPlanId ?? (entry.scope.kind === "task" ? entry.scope.taskPlanId : undefined);
+    if (!id) {
+      continue;
+    }
+    const current = buckets.get(id) ?? { cost: 0, tokens: 0, runIds: new Set<string>() };
+    current.cost += parseCny(entry.estimatedCostCny);
+    current.tokens += entry.tokenIn + entry.tokenOut;
+    current.runIds.add(entry.runId ?? entry.usageRecordId);
+    buckets.set(id, current);
+  }
+  return [...buckets.entries()].map(([id, value]) => ({
+    id,
+    cost: value.cost,
+    tokens: value.tokens,
+    childRuns: value.runIds.size
+  }));
+}
+
+function aggregateByObjective(entries: readonly CostLedgerEntry[]) {
+  const buckets = new Map<string, { cost: number; tokens: number }>();
+  for (const entry of entries) {
+    const id = entry.objectiveId ?? (entry.scope.kind === "objective" ? entry.scope.objectiveId : undefined);
+    if (!id) {
+      continue;
+    }
+    const current = buckets.get(id) ?? { cost: 0, tokens: 0 };
+    current.cost += parseCny(entry.estimatedCostCny);
+    current.tokens += entry.tokenIn + entry.tokenOut;
     buckets.set(id, current);
   }
   return [...buckets.entries()].map(([id, value]) => ({ id, ...value }));

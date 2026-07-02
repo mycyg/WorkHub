@@ -2439,6 +2439,18 @@ const budgetScopeResponseSchema = {
     },
     {
       type: "object",
+      required: ["kind", "task_plan_id"],
+      properties: { kind: { type: "string", const: "task" }, task_plan_id: uuidStringSchema },
+      additionalProperties: false
+    },
+    {
+      type: "object",
+      required: ["kind", "objective_id"],
+      properties: { kind: { type: "string", const: "objective" }, objective_id: uuidStringSchema },
+      additionalProperties: false
+    },
+    {
+      type: "object",
       required: ["kind", "user_id"],
       properties: { kind: { type: "string", const: "user" }, user_id: uuidStringSchema },
       additionalProperties: false
@@ -2512,7 +2524,7 @@ const budgetNoticeResponseSchema = {
     message: { type: "string", minLength: 1 },
     scope: budgetScopeResponseSchema,
     usage_ratio: { type: "number", minimum: 0 },
-    recommended_action: { type: "string", enum: ["continue", "downgrade_model", "pause", "ask_admin"] },
+    recommended_action: { type: "string", enum: ["continue", "downgrade_model", "pause", "ask_admin", "add_budget"] },
     options: {
       type: "array",
       items: {
@@ -2570,7 +2582,7 @@ const budgetPolicyResponseSchema = {
   ],
   properties: {
     id: { type: "string", minLength: 1 },
-    scope_kind: { type: "string", enum: ["workitem", "user", "team", "eval"] },
+    scope_kind: { type: "string", enum: ["workitem", "task", "objective", "user", "team", "eval"] },
     period: { type: "string", enum: ["run", "day", "month"] },
     max_tokens: { type: "integer", minimum: 1 },
     max_cost_cny: { type: "string", pattern: "^\\d+(\\.\\d+)?$" },
@@ -2671,6 +2683,8 @@ const costDashboardPageResponseSchema = {
     "by_user",
     "by_team",
     "by_workitem",
+    "by_task_plan",
+    "by_objective",
     "model_breakdown",
     "budget",
     "notices",
@@ -2687,6 +2701,8 @@ const costDashboardPageResponseSchema = {
     by_user: { type: "array", items: { type: "object", additionalProperties: true } },
     by_team: { type: "array", items: { type: "object", additionalProperties: true } },
     by_workitem: { type: "array", items: { type: "object", additionalProperties: true } },
+    by_task_plan: { type: "array", items: { type: "object", additionalProperties: true } },
+    by_objective: { type: "array", items: { type: "object", additionalProperties: true } },
     model_breakdown: { type: "array", items: { type: "object", additionalProperties: true } },
     labor_split: { type: "object", additionalProperties: true },
     budget: { type: "array", items: { type: "object", additionalProperties: true } },
@@ -3438,6 +3454,7 @@ const agentRunResponseSchema = {
     branch_id: uuidStringSchema,
     task_plan_id: uuidStringSchema,
     task_plan_item_id: uuidStringSchema,
+    objective_id: uuidStringSchema,
     agent_role: { type: "string", enum: ["research", "produce", "review", "integrate"] },
     objective_md: { type: "string", minLength: 1 },
     mode: { type: "string", enum: ["worker", "pm"] },

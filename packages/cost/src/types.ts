@@ -1,5 +1,7 @@
 export type BudgetScope =
   | { kind: "workitem"; workitemId: string }
+  | { kind: "task"; taskPlanId: string }
+  | { kind: "objective"; objectiveId: string }
   | { kind: "user"; userId: string }
   | { kind: "team"; teamId: string }
   // 技能蒸馏(自我提升)用量自成 scope，与 eval 一样和团队生产预算隔离：findings[#164] curation 花费
@@ -55,7 +57,7 @@ export type BudgetNotice = {
   message: string;
   scope: BudgetScope;
   usageRatio: number;
-  recommendedAction: "continue" | "downgrade_model" | "pause" | "ask_admin";
+  recommendedAction: "continue" | "downgrade_model" | "pause" | "ask_admin" | "add_budget";
   options?: { id: string; label: string; actionHref: string }[];
   actionHref?: string;
 };
@@ -86,6 +88,8 @@ export function isSelfImprovementSource(source: UsageSource): boolean {
 export type UsageRecord = {
   runId?: string;
   workItemId?: string;
+  taskPlanId?: string;
+  objectiveId?: string;
   userId?: string;
   workspaceId?: string;
   provider: string;
@@ -109,6 +113,8 @@ export type CostLedgerEntry = {
   policyId?: string;
   runId?: string;
   workItemId?: string;
+  taskPlanId?: string;
+  objectiveId?: string;
   userId?: string;
   teamId?: string;
   scope: BudgetScope;

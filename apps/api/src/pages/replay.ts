@@ -63,6 +63,7 @@ export function toAgentRunVm(run: AgentRunQueueRecord, locale: WorkHubLocale = "
     work_item_id: run.work_item_id,
     ...(run.task_plan_id ? { task_plan_id: run.task_plan_id } : {}),
     ...(run.task_plan_item_id ? { task_plan_item_id: run.task_plan_item_id } : {}),
+    ...(run.objective_id ? { objective_id: run.objective_id } : {}),
     ...(run.agent_role ? { agent_role: run.agent_role } : {}),
     ...(run.objective_md ? { objective_md: run.objective_md } : {}),
     mode: run.mode,

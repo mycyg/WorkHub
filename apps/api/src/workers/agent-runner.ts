@@ -125,6 +125,7 @@ export type AgentRunQueueRecord = {
   parent_run_id?: string;
   task_plan_id?: string;
   task_plan_item_id?: string;
+  objective_id?: string;
   agent_role?: TaskPlanItemRole;
   objective_md?: string;
   actor_id: string;
@@ -200,6 +201,7 @@ export type EnqueueAgentRunInput = {
   parentRunId?: string;
   taskPlanId?: string;
   taskPlanItemId?: string;
+  objectiveId?: string;
   agentRole?: TaskPlanItemRole;
   objectiveMd?: string;
   title?: string;
@@ -527,12 +529,16 @@ export function createInMemoryAgentRunQueue(options: {
         settings: scopedSettings,
         scopeIds: {
           workItemId: input.workItemId,
+          ...(input.taskPlanId ? { taskPlanId: input.taskPlanId } : {}),
+          ...(input.objectiveId ? { objectiveId: input.objectiveId } : {}),
           userId: input.actorId,
           teamId
         },
         policies: await policyStore.listPolicies(scopedSettings),
         usage: await (options.usage?.(input) ?? ledgerStore.usageSnapshots({
           workItemId: input.workItemId,
+          ...(input.taskPlanId ? { taskPlanId: input.taskPlanId } : {}),
+          ...(input.objectiveId ? { objectiveId: input.objectiveId } : {}),
           userId: input.actorId,
           teamId
         }, { now: now() })),
@@ -642,7 +648,9 @@ export function createInMemoryAgentRunQueue(options: {
       userId: input.run.actor_id,
       ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
       runId: input.run.run_id,
-      workItemId: input.run.work_item_id
+      workItemId: input.run.work_item_id,
+      ...(input.run.task_plan_id ? { taskPlanId: input.run.task_plan_id } : {}),
+      ...(input.run.objective_id ? { objectiveId: input.run.objective_id } : {})
     }, "worker");
   }
 
@@ -654,7 +662,9 @@ export function createInMemoryAgentRunQueue(options: {
       userId: input.run.actor_id,
       ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
       runId: input.run.run_id,
-      workItemId: input.run.work_item_id
+      workItemId: input.run.work_item_id,
+      ...(input.run.task_plan_id ? { taskPlanId: input.run.task_plan_id } : {}),
+      ...(input.run.objective_id ? { objectiveId: input.run.objective_id } : {})
     }, "review");
   }
 
@@ -1641,6 +1651,34 @@ export function createInMemoryAgentRunQueue(options: {
     }
   }
 
+  async function emitBudgetNotice(input: EnqueueAgentRunInput, decision: BudgetDecisionTrace) {
+    if (!eventBus || !decision.notice) {
+      return;
+    }
+    const eventType = decision.notice.code === "budget_exhausted" ? eventTypes.budgetExhausted : eventTypes.budgetWarning;
+    const topicsToPublish = [
+      topics.workitem(input.workItemId).topic,
+      topics.user(input.actorId).topic
+    ];
+    const notice = toQueueBudgetNotice(decision.notice);
+    const envelope = makeWorkHubEvent({
+      type: eventType,
+      topic: topicsToPublish[0]!,
+      actor: { actor_kind: "ai", label: "WorkHub AI" },
+      work_item_id: input.workItemId,
+      preview_text: notice.message,
+      cuu_state: decision.notice.code === "budget_exhausted" ? "asking_approval" : "worried",
+      data: notice
+    });
+    try {
+      for (const topic of topicsToPublish) {
+        await eventBus.publish(topic, eventType, { ...envelope, topic });
+      }
+    } catch (error) {
+      getDefaultStructuredLogger().warn("agent_run_budget_notice_publish_failed", { error });
+    }
+  }
+
   return {
     async enqueue(input) {
       const hasPersistentIdleCreate = Boolean(persistence?.createRunIfWorkItemIdle);
@@ -1676,6 +1714,7 @@ export function createInMemoryAgentRunQueue(options: {
         }
         const decision = await decideBudget({ ...input, settings });
         if (!decision.allowed) {
+          await emitBudgetNotice(input, decision);
           throw new AgentRunnerError(
             402,
             "budget_exhausted",
@@ -1692,6 +1731,7 @@ export function createInMemoryAgentRunQueue(options: {
           ...(input.parentRunId ? { parent_run_id: input.parentRunId } : {}),
           ...(input.taskPlanId ? { task_plan_id: input.taskPlanId } : {}),
           ...(input.taskPlanItemId ? { task_plan_item_id: input.taskPlanItemId } : {}),
+          ...(input.objectiveId ? { objective_id: input.objectiveId } : {}),
           ...(input.agentRole ? { agent_role: input.agentRole } : {}),
           ...(input.objectiveMd ? { objective_md: input.objectiveMd } : {}),
           actor_id: input.actorId,
@@ -1743,6 +1783,7 @@ export function createInMemoryAgentRunQueue(options: {
                 getDefaultStructuredLogger().warn("agent_run_budget_reserve_compensation_persist_failed", { error })
               );
               runs.delete(run.run_id);
+              await emitBudgetNotice(input, decision);
               throw new AgentRunnerError(402, "budget_exhausted", decision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。", {
                 ...budgetErrorDetails(decision),
                 reserved_limiting_scope: toQueueBudgetScope(reserved.limitingScope),
@@ -1887,6 +1928,8 @@ export function createInMemoryAgentRunQueue(options: {
 
 type QueueBudgetScope =
   | { kind: "workitem"; workitem_id: string }
+  | { kind: "task"; task_plan_id: string }
+  | { kind: "objective"; objective_id: string }
   | { kind: "user"; user_id: string }
   | { kind: "team"; team_id: string }
   | { kind: "curation"; team_id: string }
@@ -2073,6 +2116,10 @@ function budgetScopeId(scope: BudgetScope): string {
   switch (scope.kind) {
     case "workitem":
       return scope.workitemId;
+    case "task":
+      return scope.taskPlanId;
+    case "objective":
+      return scope.objectiveId;
     case "user":
       return scope.userId;
     case "team":
@@ -2130,6 +2177,10 @@ function toQueueBudgetScope(scope: BudgetScope): QueueBudgetScope {
   switch (scope.kind) {
     case "workitem":
       return { kind: "workitem", workitem_id: scope.workitemId };
+    case "task":
+      return { kind: "task", task_plan_id: scope.taskPlanId };
+    case "objective":
+      return { kind: "objective", objective_id: scope.objectiveId };
     case "user":
       return { kind: "user", user_id: scope.userId };
     case "team":

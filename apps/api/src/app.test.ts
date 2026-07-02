@@ -1931,7 +1931,9 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
     ["/api/pages/approvals", ["items", "requests", "filters", "counts", "items_detail"]],
     ["/api/pages/notifications", ["generated_at", "actor_user_id", "summary", "buckets", "items"]],
     ["/api/pages/health", ["generated_at", "actor_user_id", "viewer_scope", "summary", "cards"]],
-    ["/api/pages/cost", ["generated_at", "currency", "total_cost_cny", "token_in", "token_out", "trend", "by_user", "by_team", "by_workitem", "model_breakdown", "budget", "notices", "top_exhaustion_risks"]],
+    // R9.5 cost dashboards must expose army task/objective aggregates; the old required-field list
+    // only covered pre-army user/team/workitem buckets and would let the OpenAPI contract drift.
+    ["/api/pages/cost", ["generated_at", "currency", "total_cost_cny", "token_in", "token_out", "trend", "by_user", "by_team", "by_workitem", "by_task_plan", "by_objective", "model_breakdown", "budget", "notices", "top_exhaustion_risks"]],
     ["/api/pages/skills", ["generated_at", "skills", "totals"]],
     ["/api/pages/settings", ["generated_at", "locale", "runtime", "llm_runtime", "budgets", "language", "device"]]
   ] as const) {

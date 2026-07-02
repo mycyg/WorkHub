@@ -7,6 +7,8 @@ type MaybePromise<T> = T | Promise<T>;
 
 export type LedgerScopeIds = {
   workItemId?: string;
+  taskPlanId?: string;
+  objectiveId?: string;
   userId?: string;
   teamId?: string;
   evalSuite?: "nightly" | "release";
@@ -42,6 +44,12 @@ export function usageToLedgerEntry(
   if (usage.workItemId) {
     entry.workItemId = usage.workItemId;
   }
+  if (usage.taskPlanId) {
+    entry.taskPlanId = usage.taskPlanId;
+  }
+  if (usage.objectiveId) {
+    entry.objectiveId = usage.objectiveId;
+  }
   if (usage.userId) {
     entry.userId = usage.userId;
   }
@@ -58,6 +66,8 @@ export function usageRecordId(usage: UsageRecord) {
   return [
     usage.runId ?? "no-run",
     usage.workItemId ?? "no-workitem",
+    usage.taskPlanId ?? "no-task-plan",
+    usage.objectiveId ?? "no-objective",
     usage.userId ?? "no-user",
     usage.workspaceId ?? "no-workspace",
     usage.provider,
@@ -262,6 +272,12 @@ function scopesForUsage(usage: UsageRecord, options: ReconcileUsageOptions) {
   if (usage.workItemId) {
     scopes.push({ kind: "workitem", workitemId: usage.workItemId });
   }
+  if (usage.taskPlanId) {
+    scopes.push({ kind: "task", taskPlanId: usage.taskPlanId });
+  }
+  if (usage.objectiveId) {
+    scopes.push({ kind: "objective", objectiveId: usage.objectiveId });
+  }
   if (usage.userId) {
     scopes.push({ kind: "user", userId: usage.userId });
   }
@@ -276,6 +292,12 @@ function scopesFromIds(scopeIds: LedgerScopeIds) {
   const scopes: BudgetScope[] = [];
   if (scopeIds.workItemId) {
     scopes.push({ kind: "workitem", workitemId: scopeIds.workItemId });
+  }
+  if (scopeIds.taskPlanId) {
+    scopes.push({ kind: "task", taskPlanId: scopeIds.taskPlanId });
+  }
+  if (scopeIds.objectiveId) {
+    scopes.push({ kind: "objective", objectiveId: scopeIds.objectiveId });
   }
   if (scopeIds.userId) {
     scopes.push({ kind: "user", userId: scopeIds.userId });
@@ -296,6 +318,10 @@ function sameScope(left: BudgetScope, right: BudgetScope) {
   switch (left.kind) {
     case "workitem":
       return right.kind === "workitem" && left.workitemId === right.workitemId;
+    case "task":
+      return right.kind === "task" && left.taskPlanId === right.taskPlanId;
+    case "objective":
+      return right.kind === "objective" && left.objectiveId === right.objectiveId;
     case "user":
       return right.kind === "user" && left.userId === right.userId;
     case "team":
@@ -315,6 +341,10 @@ function scopeKey(scope: BudgetScope) {
   switch (scope.kind) {
     case "workitem":
       return `workitem:${scope.workitemId}`;
+    case "task":
+      return `task:${scope.taskPlanId}`;
+    case "objective":
+      return `objective:${scope.objectiveId}`;
     case "user":
       return `user:${scope.userId}`;
     case "team":

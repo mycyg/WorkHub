@@ -681,9 +681,17 @@ async function main() {
     const policyListBeforeBody = await policyListBefore.json() as {
       data: { id: string; scope_kind: string; max_tokens: number; max_cost_cny: string; version: number }[];
     };
-    // 5 条默认策略：workitem-run / user-day / team-day / team-month / eval-day（M21 新增 eval 上限）。
-    if (policyListBeforeBody.data.length !== 5) {
-      throw new Error(`Expected 5 default P-COST policies, got ${policyListBeforeBody.data.length}`);
+    // R9.5 新增 task-plan 与 objective 预算域；旧的 5 条断言只覆盖军团预算前的默认策略。
+    if (policyListBeforeBody.data.length !== 7) {
+      throw new Error(`Expected 7 default P-COST policies, got ${policyListBeforeBody.data.length}`);
+    }
+    const taskPolicyBefore = policyListBeforeBody.data.find((policy) => policy.id === "pcost-task-run-v0");
+    const objectivePolicyBefore = policyListBeforeBody.data.find((policy) => policy.id === "pcost-objective-month-v0");
+    if (taskPolicyBefore?.scope_kind !== "task" || objectivePolicyBefore?.scope_kind !== "objective") {
+      throw new Error(`Expected task/objective P-COST defaults, got ${JSON.stringify({
+        task: taskPolicyBefore,
+        objective: objectivePolicyBefore
+      })}`);
     }
     const userPolicyBefore = policyListBeforeBody.data.find((policy) => policy.id === "pcost-user-day-v0");
     if (!userPolicyBefore || userPolicyBefore.scope_kind !== "user") {

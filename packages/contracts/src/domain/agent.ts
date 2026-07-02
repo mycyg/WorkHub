@@ -21,6 +21,7 @@ export const agentRunSchema = timestampFieldsSchema.extend({
   branch_id: idSchema.optional(),
   task_plan_id: idSchema.optional(),
   task_plan_item_id: idSchema.optional(),
+  objective_id: idSchema.optional(),
   agent_role: taskPlanItemRoleSchema.optional(),
   objective_md: z.string().min(1).optional(),
   mode: workItemModeSchema,

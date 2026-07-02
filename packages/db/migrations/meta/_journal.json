@@ -260,6 +260,13 @@
       "when": 1781513133742,
       "tag": "0036_objectives",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1781513233742,
+      "tag": "0037_cost_task_objective_scope",
+      "breakpoints": true
     }
   ]
 }

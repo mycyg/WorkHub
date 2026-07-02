@@ -21,6 +21,8 @@ export type LlmActor = {
   workspaceId?: string;
   runId?: string;
   workItemId?: string;
+  taskPlanId?: string;
+  objectiveId?: string;
 };
 
 export type LlmUsage = {
