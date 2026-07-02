@@ -20,7 +20,6 @@ import type { SpotlightApiClient, SpotlightTarget, SpotlightViewContext } from "
 
 export type SpotlightResizeFn = (width: number, height: number) => void;
 export type SpotlightManualDragFn = (deltaX: number, deltaY: number) => void;
-export type SpotlightResizeDirection = "east" | "south" | "south-east";
 
 export type MountSpotlightInput = {
   host: HTMLElement;
@@ -33,7 +32,6 @@ export type MountSpotlightInput = {
   // 顶栏拖动/边缘缩放（browser.ts 注入 → 原生 frameless 窗口手势）。浏览器开发态可为空（no-op）。
   drag?: () => void;
   dragMove?: SpotlightManualDragFn;
-  resizeDrag?: (direction: SpotlightResizeDirection) => void;
   // 关闭/隐藏盒子（browser.ts 注入 → invoke hide_main_window）。M2：让 launcher 顶层 Esc 真正关闭盒子，
   // 兑现 hello 卡「Esc 关闭」的承诺。浏览器开发态可为空（no-op）。
   dismiss?: () => void;
@@ -135,9 +133,6 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         </div>
         <div class="wh-spot-body" data-spot-body></div>
       </div>
-      <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-resize wh-spot-resize--e" data-spot-resize="east"></button>
-      <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-resize wh-spot-resize--s" data-spot-resize="south"></button>
-      <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-resize wh-spot-resize--se" data-spot-resize="south-east"></button>
     </div>`;
 
   const box = host.querySelector<HTMLElement>("[data-spot-box]")!;
@@ -155,7 +150,6 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   let resizeRaf = 0;
   let lastSentW = 0;
   let lastSentH = 0;
-  let userResizeAutoUnlockAt = 0;
   const nowMs = () => window.performance.now();
   const focusSearch = (options: { expand: boolean }) => {
     if (options.expand) {
@@ -206,11 +200,6 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   };
   const requestResizeFromWindowResize = () => {
     scheduleWorkHubLiquidGlassFilterRebuild(doc);
-    const now = nowMs();
-    if (now < userResizeAutoUnlockAt) {
-      userResizeAutoUnlockAt = now + 700;
-      return;
-    }
     requestResize();
   };
 
@@ -436,7 +425,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     dispatch({ type: "back" });
   });
 
-  const dragExcludedSelector = "button,a,select,[contenteditable=true],[data-spot-resize]";
+  const dragExcludedSelector = "button,a,select,[contenteditable=true]";
   const isDragExcludedTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest(dragExcludedSelector));
   let manualDrag:
     | {
@@ -643,19 +632,6 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   };
   topEl.addEventListener("pointerup", clearDragStart);
   topEl.addEventListener("pointercancel", clearDragStart);
-
-  host.querySelectorAll<HTMLElement>("[data-spot-resize]").forEach((handle) => {
-    handle.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const direction = handle.dataset.spotResize as SpotlightResizeDirection | undefined;
-      if (direction) {
-        userResizeAutoUnlockAt = nowMs() + 1600;
-        input.resizeDrag?.(direction);
-        scheduleWorkHubLiquidGlassFilterRebuild(doc);
-      }
-    });
-  });
 
   body.addEventListener("click", (event) => {
     const target = event.target;
