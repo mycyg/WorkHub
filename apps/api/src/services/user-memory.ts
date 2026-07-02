@@ -70,14 +70,17 @@ export function getDefaultUserMemoryRepository(): UserMemoryRepository {
   return defaultRepository;
 }
 
-export type UserMemoryContextProvider = (run: { actor_id: string }) => Promise<string | undefined>;
+export type UserMemoryContextProvider = (run: { actor_id: string; workspace_id?: string }) => Promise<string | undefined>;
 
 // 给 agent-runner 用的默认提供者：取该用户 top-N 记忆、touch 之、拼成 prompt 段。失败静默降级。
 export function getDefaultUserMemoryContextProvider(): UserMemoryContextProvider {
   return async (run) => {
     try {
       const repository = getDefaultUserMemoryRepository();
-      const rows = await repository.listForUser(run.actor_id, { limit: USER_MEMORY_PROMPT_TOP_N });
+      const rows = await repository.listForUser(run.actor_id, {
+        limit: USER_MEMORY_PROMPT_TOP_N,
+        ...(run.workspace_id ? { workspaceId: run.workspace_id } : {})
+      });
       if (rows.length === 0) {
         return undefined;
       }

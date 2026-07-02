@@ -1443,7 +1443,7 @@ export const auditLogs = pgTable(
 );
 
 // R6.M1 用户级 memory：个人偏好/纠正/常用上下文，注入 worker prompt 减少重复澄清。
-// 全局 user_id 维度（workspace_id 预留多租户）；用户自助可删（软删 deletedAt）。
+// R9.3.3：workspace_id 已参与 L2 key；旧全局记忆保留为 workspace_id IS NULL 的 fallback。
 export const userMemories = pgTable(
   "user_memories",
   {
@@ -1461,7 +1461,12 @@ export const userMemories = pgTable(
     ...timestamps()
   },
   (table) => [
-    uniqueIndex("user_memories_key_uq").on(table.userId, table.category, table.key).where(sql`${table.deletedAt} is null`),
+    uniqueIndex("user_memories_workspace_key_uq")
+      .on(table.userId, table.workspaceId, table.category, table.key)
+      .where(sql`${table.deletedAt} is null and ${table.workspaceId} is not null`),
+    uniqueIndex("user_memories_global_key_uq")
+      .on(table.userId, table.category, table.key)
+      .where(sql`${table.deletedAt} is null and ${table.workspaceId} is null`),
     index("user_memories_user_id_idx").on(table.userId),
     index("user_memories_workspace_id_idx").on(table.workspaceId),
     index("user_memories_category_idx").on(table.category),

@@ -2,9 +2,12 @@ import { neutralizeFenceTags, type AgentLoopResult } from "@workhub/agent/loop";
 import type { LlmActor, ProviderRegistry } from "@workhub/agent/providers";
 import {
   AGENT_MEMORY_PROMPT_TOP_N,
+  eventTypes,
+  type AttentionItem,
   userMemoryCategorySchema,
   type UserMemoryCategory
 } from "@workhub/contracts";
+import { makeWorkHubEvent, topics } from "@workhub/events";
 import {
   createAgentMemoryRepository,
   getSharedDatabaseClient,
@@ -18,6 +21,7 @@ import {
 import { z } from "zod";
 
 import { getDefaultStructuredLogger } from "../logging.js";
+import { getDefaultPushBus, type PushBus } from "../broker/index.js";
 import { getDefaultProviderRegistry } from "./provider-registry.js";
 import { getDefaultUserMemoryRepository } from "./user-memory.js";
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
@@ -86,6 +90,7 @@ export type PromoteMemoryResult =
       status: "conflict";
       decision: AgentMemoryPromotionDecision;
       candidateMemoryIds: string[];
+      memoryConflict?: AgentMemoryConflictProposal;
     }
   | {
       status: "discarded";
@@ -108,9 +113,27 @@ export type PromoteMemoryInput = {
   l1EntryId: string;
   actor?: LlmActor;
   agentMemoryRepository?: Pick<AgentMemoryRepository, "readPromotionContext">;
-  userMemoryRepository?: Pick<UserMemoryRepository, "upsert">;
+  userMemoryRepository?: Pick<UserMemoryRepository, "mergeUpsert">;
+  bus?: Pick<PushBus, "publish"> | false;
   judge?: AgentMemoryPromotionJudge;
   providerRegistry?: Pick<ProviderRegistry, "isConfigured" | "get">;
+};
+
+export type AgentMemoryConflictProposal = {
+  kind: "memory_conflict";
+  workspace_id: string;
+  user_id: string;
+  category: UserMemoryCategory;
+  key: string;
+  current_value_md: string;
+  incoming_value_md: string;
+  base_value_md?: string | null;
+  candidate_memory_ids: string[];
+  attention: AttentionItem;
+  resolution_options: Array<{
+    id: "keep_current" | "accept_incoming" | "merge_both" | "edit_memory";
+    label: string;
+  }>;
 };
 
 const memoryPromotionDecisionSchema = z.object({
@@ -266,6 +289,94 @@ function sourceRunIdPatch(row: AgentMemoryRow) {
   return row.sourceRunId ? { sourceRunId: row.sourceRunId } : {};
 }
 
+function buildMemoryConflictProposal(input: {
+  workspaceId: string;
+  userId: string;
+  category: UserMemoryCategory;
+  key: string;
+  currentValueMd: string;
+  incomingValueMd: string;
+  baseValueMd?: string | null;
+  candidateMemoryIds: string[];
+  sourceRunId?: string | null;
+  fallbackId: string;
+}): AgentMemoryConflictProposal {
+  const label = CATEGORY_LABEL[input.category] ?? input.category;
+  const sourceRef: AttentionItem["source_ref"] = input.sourceRunId
+    ? { entity_type: "agent_run", entity_id: input.sourceRunId }
+    : { entity_type: "notification", entity_id: input.fallbackId };
+  return {
+    kind: "memory_conflict",
+    workspace_id: input.workspaceId,
+    user_id: input.userId,
+    category: input.category,
+    key: input.key,
+    current_value_md: input.currentValueMd,
+    incoming_value_md: input.incomingValueMd,
+    ...(input.baseValueMd !== undefined ? { base_value_md: input.baseValueMd } : {}),
+    candidate_memory_ids: input.candidateMemoryIds,
+    attention: {
+      id: input.fallbackId,
+      kind: "sync_conflict",
+      priority: "normal",
+      source_ref: sourceRef,
+      title: "记忆偏好有冲突",
+      summary_text: `${label}「${input.key}」出现两种说法，需要确认后再晋升。`,
+      actions: [{
+        id: "open_settings",
+        label: "打开设置",
+        style: "secondary",
+        method: "GET",
+        href: "/settings"
+      }],
+      cuu_state: "worried",
+      created_at: new Date().toISOString()
+    },
+    resolution_options: [
+      { id: "keep_current", label: "保留当前记忆" },
+      { id: "accept_incoming", label: "采用新记忆" },
+      { id: "merge_both", label: "合并两条" },
+      { id: "edit_memory", label: "手动编辑" }
+    ]
+  };
+}
+
+async function publishMemoryConflict(
+  bus: Pick<PushBus, "publish"> | undefined,
+  userId: string,
+  conflict: AgentMemoryConflictProposal,
+  sourceRunId?: string | null
+) {
+  if (!bus) {
+    return;
+  }
+  const topic = topics.user(userId).topic;
+  const event = makeWorkHubEvent({
+    type: eventTypes.syncConflict,
+    topic,
+    ...(sourceRunId ? { run_id: sourceRunId } : {}),
+    preview_text: conflict.attention.summary_text,
+    attention: conflict.attention,
+    data: {
+      kind: conflict.kind,
+      workspace_id: conflict.workspace_id,
+      user_id: conflict.user_id,
+      category: conflict.category,
+      key: conflict.key,
+      current_value_md: conflict.current_value_md,
+      incoming_value_md: conflict.incoming_value_md,
+      ...(conflict.base_value_md !== undefined ? { base_value_md: conflict.base_value_md } : {}),
+      candidate_memory_ids: conflict.candidate_memory_ids,
+      resolution_options: conflict.resolution_options
+    }
+  });
+  try {
+    await bus.publish(topic, eventTypes.syncConflict, event);
+  } catch (error) {
+    getDefaultStructuredLogger().warn("agent_memory_conflict_publish_failed", { topic, error });
+  }
+}
+
 export async function promoteMemory(input: PromoteMemoryInput): Promise<PromoteMemoryResult> {
   const agentMemoryRepository = input.agentMemoryRepository ?? getDefaultAgentMemoryRepository();
   const context = await agentMemoryRepository.readPromotionContext({
@@ -309,19 +420,46 @@ export async function promoteMemory(input: PromoteMemoryInput): Promise<PromoteM
   }
 
   const userMemoryRepository = input.userMemoryRepository ?? getDefaultUserMemoryRepository();
-  const userMemory = await userMemoryRepository.upsert({
+  const mergeResult = await userMemoryRepository.mergeUpsert({
     userId: context.sourceActorUserId,
     workspaceId: input.workspaceId,
     category: decision.category ?? context.entry.category,
     key: decision.key ?? context.entry.key,
     valueMd: decision.valueMd ?? context.entry.valueMd,
+    baseValueMd: context.entry.valueMd,
     confidence: decision.confidence,
     ...sourceRunIdPatch(context.entry)
   });
+  if (mergeResult.status === "conflict") {
+    const memoryConflict = buildMemoryConflictProposal({
+      workspaceId: input.workspaceId,
+      userId: context.sourceActorUserId,
+      category: mergeResult.incoming.category,
+      key: mergeResult.incoming.key,
+      currentValueMd: mergeResult.current.valueMd,
+      incomingValueMd: mergeResult.incoming.valueMd,
+      ...(mergeResult.baseValueMd !== undefined ? { baseValueMd: mergeResult.baseValueMd } : {}),
+      candidateMemoryIds,
+      sourceRunId: context.entry.sourceRunId,
+      fallbackId: context.entry.id
+    });
+    await publishMemoryConflict(
+      input.bus === false ? undefined : input.bus ?? getDefaultPushBus(),
+      context.sourceActorUserId,
+      memoryConflict,
+      context.entry.sourceRunId
+    );
+    return {
+      status: "conflict",
+      decision,
+      candidateMemoryIds,
+      memoryConflict
+    };
+  }
   return {
     status: "promoted",
     decision,
-    userMemory,
+    userMemory: mergeResult.userMemory,
     candidateMemoryIds
   };
 }

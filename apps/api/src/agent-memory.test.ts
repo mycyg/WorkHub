@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { AgentMemoryRow } from "@workhub/db";
+import type { AgentMemoryRow, UserMemoryRow } from "@workhub/db";
 
 import {
   buildAgentMemoryPromptSection,
@@ -33,6 +33,25 @@ function memoryRow(over: Partial<AgentMemoryRow>): AgentMemoryRow {
     updatedAt: new Date("2026-07-03T00:00:00.000Z"),
     ...over
   } as AgentMemoryRow;
+}
+
+function userMemoryRow(over: Partial<UserMemoryRow>): UserMemoryRow {
+  return {
+    id: "83000000-0000-4000-8000-000000000401",
+    userId,
+    workspaceId,
+    category: "preference",
+    key: "concise_approach",
+    valueMd: "用户喜欢短答案。",
+    confidence: 0.8,
+    sourceRunId: runId,
+    deletedAt: null,
+    lastUsedAt: null,
+    expiresAt: null,
+    createdAt: new Date("2026-07-03T00:00:00.000Z"),
+    updatedAt: new Date("2026-07-03T00:00:00.000Z"),
+    ...over
+  } as UserMemoryRow;
 }
 
 function run(over: Partial<AgentRunQueueRecord>): AgentRunQueueRecord {
@@ -135,23 +154,11 @@ test("promoteMemory writes high-confidence L1 entries to user L2 through the pro
       })
     },
     userMemoryRepository: {
-      upsert: async (input) => {
+      // R9.3.3：旧断言只要求 promotion 调用覆盖式 upsert 是错的；L2 写入必须经过 base+diff3 merge gate，
+      // 否则高置信晋升会静默覆盖同 key 的既有用户记忆。
+      mergeUpsert: async (input) => {
         writes.push(input);
-        return {
-          id: "83000000-0000-4000-8000-000000000203",
-          userId: input.userId,
-          workspaceId: input.workspaceId ?? null,
-          category: input.category,
-          key: input.key,
-          valueMd: input.valueMd,
-          confidence: input.confidence ?? 0.8,
-          sourceRunId: input.sourceRunId ?? null,
-          deletedAt: null,
-          lastUsedAt: null,
-          expiresAt: null,
-          createdAt: new Date("2026-07-03T00:00:00.000Z"),
-          updatedAt: new Date("2026-07-03T00:00:00.000Z")
-        };
+        return { status: "upserted", userMemory: userMemoryRow({ valueMd: input.valueMd, confidence: input.confidence ?? 0.8 }) };
       }
     },
     judge: async () => ({
@@ -173,9 +180,66 @@ test("promoteMemory writes high-confidence L1 entries to user L2 through the pro
     category: "preference",
     key: "concise_approach",
     valueMd: "用户喜欢短答案。",
+    baseValueMd: "用户喜欢短答案。",
     confidence: 0.91,
     sourceRunId: runId
   });
+});
+
+test("promoteMemory returns a memory_conflict payload when L2 diff3 cannot reconcile a promoted memory", async () => {
+  const entry = memoryRow({ key: "concise_approach", valueMd: "用户喜欢短答案。", confidence: 0.8 });
+  const current = userMemoryRow({ valueMd: "用户喜欢详细解释。" });
+  const published: Array<{ topic: string; type: string; data: unknown }> = [];
+
+  const result = await promoteMemory({
+    workspaceId,
+    l1EntryId: entry.id,
+    agentMemoryRepository: {
+      readPromotionContext: async () => ({
+        entry,
+        planId: "83000000-0000-4000-8000-000000000501",
+        sourceActorUserId: userId,
+        candidates: [entry],
+        capped: false
+      })
+    },
+    userMemoryRepository: {
+      mergeUpsert: async (input) => ({
+        status: "conflict",
+        current,
+        incoming: input,
+        baseValueMd: "用户喜欢短答案。"
+      })
+    },
+    bus: {
+      publish: async (topic, type, data) => {
+        published.push({ topic, type, data });
+      }
+    },
+    judge: async () => ({
+      decision: "promote",
+      targetScope: "user",
+      category: "preference",
+      key: "concise_approach",
+      valueMd: "用户喜欢只给结论。",
+      confidence: 0.95,
+      reasons: ["same plan has strong but overlapping evidence"]
+    })
+  });
+
+  assert.equal(result.status, "conflict");
+  assert.equal(result.memoryConflict?.attention.kind, "sync_conflict");
+  assert.equal(result.memoryConflict?.attention.source_ref.entity_type, "agent_run");
+  assert.equal(result.memoryConflict?.current_value_md, "用户喜欢详细解释。");
+  assert.equal(result.memoryConflict?.incoming_value_md, "用户喜欢只给结论。");
+  assert.equal(published.length, 1);
+  assert.equal(published[0]?.topic, `user:${userId}`);
+  assert.equal(published[0]?.type, "sync.conflict");
+  assert.equal((published[0]?.data as { attention?: { kind?: string } }).attention?.kind, "sync_conflict");
+  assert.deepEqual(
+    result.memoryConflict?.resolution_options.map((option) => option.id),
+    ["keep_current", "accept_incoming", "merge_both", "edit_memory"]
+  );
 });
 
 test("promoteMemory does not write L2 for conflicts, noise, low confidence, or unsupported team targets", async () => {
@@ -193,7 +257,7 @@ test("promoteMemory does not write L2 for conflicts, noise, low confidence, or u
       })
     },
     userMemoryRepository: {
-      upsert: async () => {
+      mergeUpsert: async () => {
         throw new Error("user_memories must not be written");
       }
     }
