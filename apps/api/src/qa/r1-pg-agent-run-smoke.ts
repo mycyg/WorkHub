@@ -21,6 +21,7 @@ import {
   createDatabaseClient,
   createDbBudgetPolicyStore,
   createDbCostLedgerStore,
+  createDriveRepository,
   createProposalRepository,
   createWorkItemRepository,
   createSnapshotRepository,
@@ -665,6 +666,209 @@ async function main() {
     const restorePreviewBody = await restorePreview.json() as { data: { text: string } };
     if (!restorePreviewBody.data.text.includes("R1 PG smoke deliverable") || restorePreviewBody.data.text.includes("v2")) {
       throw new Error("Expected restored preview to show the first accepted deliverable content.");
+    }
+
+    const limitedProjectId = randomUUID();
+    const limitedWorkItemId = randomUUID();
+    const limitedBranchId = randomUUID();
+    const limitedProposalId = randomUUID();
+    const limitedDriveItemId = randomUUID();
+    const limitedDriveVersionId = randomUUID();
+    const limitedWantedDriveItemId = randomUUID();
+    const limitedWantedDriveVersionId = randomUUID();
+    const limitedLoadedCurrentAcceptedId = randomUUID();
+    const limitedWantedCurrentAcceptedId = randomUUID();
+    await db.insert(projects).values({
+      id: limitedProjectId,
+      workspaceId: settings.auth.defaultWorkspaceId,
+      name: "R9 current accepted limit smoke",
+      slug: `r9-current-accepted-${randomUUID().slice(0, 8)}`,
+      ownerNickname: "owner",
+      ownerUserId: seedUser.id
+    });
+    await db.insert(workItems).values({
+      id: limitedWorkItemId,
+      code: `R9-ACCEPTED-${randomUUID().slice(0, 8)}`,
+      projectId: limitedProjectId,
+      workspaceId: settings.auth.defaultWorkspaceId,
+      submitterUserId: seedUser.id,
+      title: "R9 current accepted limit smoke",
+      rawDescription: "History accepted rows must not consume the drive page current accepted limit.",
+      summaryMd: "R9 accepted limit smoke.",
+      status: "merged",
+      mode: "worker"
+    });
+    await db.insert(branches).values({
+      id: limitedBranchId,
+      workItemId: limitedWorkItemId,
+      actorKind: "ai",
+      actorUserId: seedUser.id,
+      status: "merged"
+    });
+    const limitedManifestChange: DeliverableChangeManifest["changes"][number] = {
+      ...firstChange,
+      id: randomUUID(),
+      target_ref: {
+        ...firstChange.target_ref,
+        entity_id: limitedDriveItemId,
+        path: "/r9/current-limit.md",
+        sha256_after: "c".repeat(64)
+      },
+      human_summary: "R9 current accepted limit row."
+    };
+    const limitedWantedManifestChange: DeliverableChangeManifest["changes"][number] = {
+      ...limitedManifestChange,
+      id: randomUUID(),
+      target_ref: {
+        ...limitedManifestChange.target_ref,
+        entity_id: limitedWantedDriveItemId,
+        path: "/r9/wanted-current.md",
+        sha256_after: "d".repeat(64)
+      },
+      human_summary: "R9 wanted current accepted row."
+    };
+    await db.insert(proposals).values({
+      id: limitedProposalId,
+      workItemId: limitedWorkItemId,
+      branchId: limitedBranchId,
+      round: 1,
+      title: "R9 current accepted limit proposal",
+      status: "merged",
+      diffManifest: {
+        ...proposalBeforeMerge.diffManifest,
+        work_item_id: limitedWorkItemId,
+        branch_id: limitedBranchId,
+        proposal_id: limitedProposalId,
+        title: "R9 current accepted limit proposal",
+        changes: [limitedManifestChange, limitedWantedManifestChange]
+      },
+      openedByKind: "ai",
+      openedByUserId: seedUser.id,
+      reviewedAt: new Date("2026-07-02T00:00:00.000Z"),
+      mergedAt: new Date("2026-07-02T00:01:00.000Z")
+    });
+    await db.insert(projectDriveItems).values({
+      id: limitedDriveItemId,
+      projectId: limitedProjectId,
+      parentId: null,
+      name: "aaa-loaded-current.md",
+      kind: "file",
+      currentVersionId: limitedDriveVersionId,
+      createdByUserId: seedUser.id,
+      updatedByUserId: seedUser.id,
+      createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-01T00:00:00.000Z")
+    });
+    await db.insert(projectDriveItems).values({
+      id: limitedWantedDriveItemId,
+      projectId: limitedProjectId,
+      parentId: null,
+      name: "zzz-wanted-current.md",
+      kind: "file",
+      currentVersionId: limitedWantedDriveVersionId,
+      createdByUserId: seedUser.id,
+      updatedByUserId: seedUser.id,
+      createdAt: new Date("2026-07-01T00:10:00.000Z"),
+      updatedAt: new Date("2026-07-01T00:10:00.000Z")
+    });
+    await db.insert(projectDriveVersions).values({
+      id: limitedDriveVersionId,
+      itemId: limitedDriveItemId,
+      versionNo: 1,
+      filename: "aaa-loaded-current.md",
+      mime: "text/markdown",
+      sizeBytes: 128,
+      storagePath: "drive/r9/aaa-loaded-current.md",
+      sha256: "c".repeat(64),
+      parsedText: "R9 current accepted limit",
+      createdByUserId: seedUser.id,
+      createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-01T00:00:00.000Z")
+    });
+    await db.insert(projectDriveVersions).values({
+      id: limitedWantedDriveVersionId,
+      itemId: limitedWantedDriveItemId,
+      versionNo: 1,
+      filename: "zzz-wanted-current.md",
+      mime: "text/markdown",
+      sizeBytes: 256,
+      storagePath: "drive/r9/zzz-wanted-current.md",
+      sha256: "d".repeat(64),
+      parsedText: "R9 wanted current accepted limit",
+      createdByUserId: seedUser.id,
+      createdAt: new Date("2026-07-01T00:10:00.000Z"),
+      updatedAt: new Date("2026-07-01T00:10:00.000Z")
+    });
+    const acceptedLimitBase = {
+      workItemId: limitedWorkItemId,
+      projectId: limitedProjectId,
+      proposalId: limitedProposalId,
+      branchId: limitedBranchId,
+      targetKind: limitedManifestChange.target_kind,
+      targetEntityType: limitedManifestChange.target_ref.entity_type,
+      targetEntityId: limitedDriveItemId,
+      changeType: limitedManifestChange.change_type,
+      acceptedVersion: 1,
+      acceptedRef: limitedDriveVersionId,
+      driveItemId: limitedDriveItemId,
+      driveVersionId: limitedDriveVersionId,
+      sha256After: "c".repeat(64),
+      previewRefJson: limitedManifestChange.preview_ref,
+      manifestChangeJson: limitedManifestChange
+    };
+    await db.insert(acceptedDeliverableChanges).values({
+      ...acceptedLimitBase,
+      id: limitedLoadedCurrentAcceptedId,
+      changeId: randomUUID(),
+      targetPath: "/r9/aaa-loaded-current.md",
+      targetKey: "drive:/r9/aaa-loaded-current.md",
+      supersededAt: null,
+      createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-01T00:00:00.000Z")
+    });
+    await db.insert(acceptedDeliverableChanges).values({
+      ...acceptedLimitBase,
+      id: limitedWantedCurrentAcceptedId,
+      changeId: randomUUID(),
+      targetEntityId: limitedWantedDriveItemId,
+      targetPath: "/r9/zzz-wanted-current.md",
+      targetKey: "drive:/r9/zzz-wanted-current.md",
+      acceptedRef: limitedWantedDriveVersionId,
+      driveItemId: limitedWantedDriveItemId,
+      driveVersionId: limitedWantedDriveVersionId,
+      sha256After: "d".repeat(64),
+      previewRefJson: limitedWantedManifestChange.preview_ref,
+      manifestChangeJson: limitedWantedManifestChange,
+      supersededAt: null,
+      createdAt: new Date("2026-07-01T00:10:00.000Z"),
+      updatedAt: new Date("2026-07-01T00:10:00.000Z")
+    });
+    await db.insert(acceptedDeliverableChanges).values([0, 1, 2].map((index) => ({
+      ...acceptedLimitBase,
+      id: randomUUID(),
+      changeId: randomUUID(),
+      targetPath: `/r9/history-${index}.md`,
+      targetKey: `drive:/r9/history-${index}.md`,
+      supersededAt: new Date(`2026-07-02T00:0${index}:00.000Z`),
+      createdAt: new Date(`2026-07-02T00:0${index}:00.000Z`),
+      updatedAt: new Date(`2026-07-02T00:0${index}:30.000Z`)
+    })));
+    const limitedDrivePage = await createDriveRepository(db).readPage({
+      projectId: limitedProjectId,
+      workspaceId: settings.auth.defaultWorkspaceId,
+      limit: 1
+    });
+    const limitedCurrentIds = limitedDrivePage.acceptedDeliverables
+      .filter((row) => row.accepted.supersededAt === null)
+      .map((row) => row.accepted.id);
+    if (limitedDrivePage.totalAcceptedDeliverableCount !== 2 || !limitedCurrentIds.includes(limitedWantedCurrentAcceptedId)) {
+      throw new Error(`Expected readPage(limit=1) to let the current accepted main query pick the newest current row, got ${JSON.stringify({
+        totalAcceptedDeliverableCount: limitedDrivePage.totalAcceptedDeliverableCount,
+        acceptedIds: limitedDrivePage.acceptedDeliverables.map((row) => ({
+          id: row.accepted.id,
+          supersededAt: row.accepted.supersededAt?.toISOString() ?? null
+        }))
+      })}`);
     }
 
     const restartedPersistence = createDbAgentRunPersistence(createAgentRunRepository(db));

@@ -428,11 +428,30 @@ function buildDrivePage(
       (!linkAccess || linkAccess.readable.has(accepted.work_item_id))
       && rows.acceptedDeliverables[index]?.accepted.supersededAt == null
   );
-  const acceptedByVersionId = new Map(
-    visibleAcceptedDeliverableVms
-      .filter((accepted): accepted is AcceptedDeliverableVM & { drive_version_id: string } => !!accepted.drive_version_id)
-      .map((accepted) => [accepted.drive_version_id, accepted])
-  );
+  const visibleAcceptedVersionCandidates = rawAcceptedDeliverableVms
+    .map((accepted, index) => ({
+      accepted,
+      row: rows.acceptedDeliverables[index]
+    }))
+    .filter((entry): entry is {
+      accepted: AcceptedDeliverableVM & { drive_version_id: string };
+      row: NonNullable<DrivePageRows["acceptedDeliverables"][number]>;
+    } =>
+      !!entry.row
+      && !!entry.accepted.drive_version_id
+      && (!linkAccess || linkAccess.readable.has(entry.accepted.work_item_id))
+    );
+  const acceptedByVersionId = new Map<string, AcceptedDeliverableVM & { drive_version_id: string }>();
+  for (const { accepted, row } of visibleAcceptedVersionCandidates) {
+    if (row.accepted.supersededAt == null && !acceptedByVersionId.has(accepted.drive_version_id)) {
+      acceptedByVersionId.set(accepted.drive_version_id, accepted);
+    }
+  }
+  for (const { accepted } of visibleAcceptedVersionCandidates) {
+    if (!acceptedByVersionId.has(accepted.drive_version_id)) {
+      acceptedByVersionId.set(accepted.drive_version_id, accepted);
+    }
+  }
   // findings[#low]：同一 drive_item_id 可能有多条已采纳交付（多版本）。acceptedDeliverables 是
   // newest-first，而 new Map(entries) 是 last-wins → 会留下最旧的一条。改 first-wins 保留最新。
   const acceptedByItemId = new Map<string, AcceptedDeliverableVM & { drive_item_id: string }>();
