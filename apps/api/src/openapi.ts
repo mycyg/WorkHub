@@ -1544,7 +1544,7 @@ const permissionForbiddenResponse = jsonErrorStatusResponse(
 const permissionPolicyNotFoundResponse = jsonErrorStatusResponse(
   "404",
   "Permission policy was not found",
-  ["not_found"]
+  ["permission_policy_not_found"]
 ).responses["404"];
 const permissionPolicyListResponse = {
   responses: {
@@ -1650,12 +1650,17 @@ const approvalListResponse = {
 const approvalRespondResponse = {
   responses: {
     "200": jsonDataResponse(approvalRespondResultResponseSchema, "Approval decision result").responses["200"],
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
+    "404": approvalNotFoundResponse,
     "409": approvalRaceResponse
   }
 } as const;
 const approvalDelegateResponse = {
   responses: {
     "200": jsonDataResponse(approvalDelegateResultResponseSchema, "Delegated approval result").responses["200"],
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
     "404": approvalDelegateNotFoundResponse,
     "422": approvalDelegateSemanticResponse,
     "409": approvalRaceResponse
@@ -2157,6 +2162,31 @@ const meetingPageResponseSchema = {
   },
   additionalProperties: false
 } as const;
+const meetingMutationNotIdentifiedResponse = jsonErrorStatusResponse(
+  "401",
+  "Meeting mutation requires an authenticated user",
+  ["not_identified"]
+).responses["401"];
+const meetingInsightForbiddenResponse = jsonErrorStatusResponse(
+  "403",
+  "Meeting insight is not visible or mutable by the current user",
+  ["invalid_client_token", "meeting_forbidden"]
+).responses["403"];
+const meetingInsightNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Meeting project or insight was not found",
+  ["meeting_not_found", "meeting_insight_not_found"]
+).responses["404"];
+const meetingDraftProposalForbiddenResponse = jsonErrorStatusResponse(
+  "403",
+  "Meeting-created work item draft is not visible or mutable by the current user",
+  ["invalid_client_token", "forbidden", "meeting_forbidden"]
+).responses["403"];
+const meetingDraftProposalNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Meeting-created work item draft or source insight was not found",
+  ["not_found", "meeting_not_found", "meeting_insight_not_found"]
+).responses["404"];
 const notificationPageItemResponseSchema = {
   type: "object",
   required: ["id", "type", "severity", "status", "inbox_bucket", "title", "created_at", "updated_at"],
@@ -4212,6 +4242,9 @@ export function getOpenApiDocument() {
           ],
           responses: {
             ...jsonOkResponse(meetingPageResponseSchema).responses,
+            "401": meetingMutationNotIdentifiedResponse,
+            "403": meetingInsightForbiddenResponse,
+            "404": meetingInsightNotFoundResponse,
             ...jsonErrorStatusResponse("409", "Meeting insight cannot be converted to a draft in its current state", [
               "meeting_insight_not_pending",
               "meeting_insight_draft_missing",
@@ -4230,6 +4263,9 @@ export function getOpenApiDocument() {
           ],
           responses: {
             ...jsonOkResponse(meetingPageResponseSchema).responses,
+            "401": meetingMutationNotIdentifiedResponse,
+            "403": meetingInsightForbiddenResponse,
+            "404": meetingInsightNotFoundResponse,
             ...jsonErrorStatusResponse("409", "Meeting insight cannot be dismissed in its current state", [
               "meeting_insight_not_pending"
             ]).responses
@@ -4243,6 +4279,9 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("workItemId")],
           responses: {
             ...jsonOkResponse(workItemDetailResponseSchema).responses,
+            "401": meetingMutationNotIdentifiedResponse,
+            "403": meetingDraftProposalForbiddenResponse,
+            "404": meetingDraftProposalNotFoundResponse,
             ...jsonErrorStatusResponse("409", "Meeting insight draft cannot create a proposal in its current state", [
               "meeting_draft_source_missing",
               "meeting_insight_dismissed"
