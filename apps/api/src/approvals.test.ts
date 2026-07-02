@@ -554,6 +554,34 @@ test("deny requires a reason and remember always refuses to learn high-risk appr
   assert.equal(deps.policyRepo.rows[0]?.learnedFromSession, true);
 });
 
+test("remember always fails closed when learned allow policy audit logging fails", async () => {
+  const deps = serviceDeps();
+  const approval = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    routedToUserId: approverId,
+    payloadJson: {
+      ui: {
+        summary_text: "AI 想更新文件，需要你确认。",
+        risk: { level: "medium", human_label: "可回滚" }
+      },
+      raw_args: {}
+    }
+  });
+  const originalCreateAuditLog = deps.auditLogs.createAuditLog.bind(deps.auditLogs);
+  deps.auditLogs.createAuditLog = async (input) => {
+    if (input.action === "permission_policy.created") {
+      throw new Error("audit sink unavailable");
+    }
+    return originalCreateAuditLog(input);
+  };
+
+  await assert.rejects(
+    () => deps.service.respond(approval.id, actor, { decision: "allow", remember: "always" }),
+    /audit sink unavailable/u
+  );
+  assert.equal(deps.policyRepo.rows.length, 0);
+});
+
 test("remember always reuses an equivalent active policy instead of duplicating learned policies", async () => {
   const existingId = "70000000-0000-4000-8000-0000000000b1";
   const deps = serviceDeps([{
@@ -1790,30 +1818,28 @@ test("L23 createPolicy emits a permission_policy.created audit", async () => {
   assert.equal((audit?.detailJson as Record<string, unknown> | undefined)?.action_pattern, "tool.delete_file");
 });
 
-test("permission policy writes return committed rows when audit logging fails", async () => {
+test("permission policy allow creation fails closed when audit logging fails", async () => {
   const deps = serviceDeps();
   deps.auditLogs.createAuditLog = async () => {
     throw new Error("audit sink unavailable");
   };
   const adminActor = { ...actor, isAdmin: true };
 
-  const created = await deps.service.createPolicy(adminActor, {
-    scope_kind: "workspace",
-    scope_id: workspaceId,
-    action_pattern: "tool.write_file",
-    effect: "allow",
-    priority: 0,
-    learned_from_session: false
-  });
-
-  assert.equal(created.effect, "allow");
-  assert.ok(created.id);
-  assert.equal(deps.policyRepo.rows.length, 1);
-  assert.equal(deps.policyRepo.rows[0]?.id, created.id);
-
-  const revoked = await deps.service.revokePolicy(adminActor, created.id);
-  assert.equal(revoked.deletedAt ? new Date(revoked.deletedAt).toISOString() : null, now.toISOString());
-  assert.equal((await deps.service.listPolicies(adminActor)).length, 0);
+  // Old assertion expected a committed allow policy even when the audit sink failed.
+  // That was wrong: allow policies expand what AI may do, so missing audit evidence must
+  // block the expansion instead of leaving an unaudited standing permission behind.
+  await assert.rejects(
+    () => deps.service.createPolicy(adminActor, {
+      scope_kind: "workspace",
+      scope_id: workspaceId,
+      action_pattern: "tool.write_file",
+      effect: "allow",
+      priority: 0,
+      learned_from_session: false
+    }),
+    /audit sink unavailable/u
+  );
+  assert.equal(deps.policyRepo.rows.length, 0);
 });
 
 test("permission policy list is scoped to the admin actor tenant", async () => {
