@@ -1250,6 +1250,36 @@ test("claimed work item access still respects the actor workspace scope", async 
   );
 });
 
+test("claimer can read an archived-project work item without widening access to other users", async () => {
+  const repo = repository();
+  repo.readWorkItemDetail = async () => ({
+    ...detailRows({
+      status: "spec_ready",
+      submitterUserId: "93000000-0000-4000-8000-000000000888",
+      claimedByUserId: userId
+    }),
+    projectArchived: true
+  } as unknown as StoredWorkItemDetailRows);
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  const vm = await service.detailPage({ workItemId, actor, locale: "zh-CN" });
+
+  assert.equal(vm.workitem.id, workItemId);
+  await assert.rejects(
+    () => service.detailPage({
+      workItemId,
+      actor: {
+        ...actor,
+        id: "93000000-0000-4000-8000-000000000999",
+        userId: "93000000-0000-4000-8000-000000000999",
+        label: "stranger"
+      },
+      locale: "zh-CN"
+    }),
+    (error) => error instanceof WorkItemServiceError && error.status === 403
+  );
+});
+
 test("assigned users can open private work item details in their workspace", async () => {
   const repo = repository();
   repo.readWorkItemDetail = async () => ({
