@@ -284,6 +284,12 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
     proposals,
     id: ids([planId]),
     now: () => now,
+    objectives: {
+      async planningContextForWorkItem(input) {
+        plannerInputs.push({ objectiveLookup: input });
+        return { lines: ["Objective: Raise R9 review quality (40%)"], capped: false };
+      }
+    },
     planner: {
       async createDraft(input) {
         plannerInputs.push(input);
@@ -359,7 +365,12 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   assert.equal(taskPlans.rows.get(planId)?.status, "draft");
   assert.equal(taskPlans.rows.get(planId)?.input.items.length, 3);
   assert.equal(workItems.mutations.includes(workItemId), true);
-  assert.equal(plannerInputs.length, 1);
+  assert.equal(plannerInputs.length, 2);
+  assert.deepEqual(plannerInputs[0], { objectiveLookup: { workspaceId, workItemId } });
+  assert.deepEqual(
+    (plannerInputs[1] as { memories?: { objectives?: string[] } }).memories?.objectives,
+    ["Objective: Raise R9 review quality (40%)"]
+  );
 
   const reviewed = await app.request(`/api/proposals/${proposalId}/review`, {
     method: "POST",

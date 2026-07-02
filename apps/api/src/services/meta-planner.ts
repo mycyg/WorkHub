@@ -43,6 +43,7 @@ export type MetaPlannerCreateDraftInput = {
   memories?: {
     user?: string[];
     team?: string[];
+    objectives?: string[];
   };
 };
 
@@ -145,6 +146,8 @@ function plannerPrompt(input: MetaPlannerCreateDraftInput, feedback: readonly st
     `Work item:\n${intent || "No description provided."}`,
     "",
     `Acceptance:\n${compactLines(input.acceptance, "No acceptance criteria provided.")}`,
+    "",
+    `Objective context:\n${compactLines(input.memories?.objectives, "None")}`,
     "",
     `User memories:\n${compactLines(input.memories?.user, "None")}`,
     "",

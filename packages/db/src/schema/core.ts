@@ -30,6 +30,8 @@ import {
 
 type JsonObject = Record<string, unknown>;
 type JsonArray = unknown[];
+type ObjectiveStatus = "active" | "paused" | "done" | "archived";
+type KeyResultStatus = "active" | "done" | "at_risk" | "cancelled";
 
 const id = () => uuid("id").primaryKey();
 const timestampTz = (name: string) => timestamp(name, { withTimezone: true });
@@ -695,6 +697,66 @@ export const workItemProgressUpdates = pgTable(
     index("work_item_progress_updates_workspace_id_idx").on(table.workspaceId),
     index("work_item_progress_updates_actor_user_id_idx").on(table.actorUserId),
     index("work_item_progress_updates_kind_idx").on(table.kind)
+  ]
+);
+
+export const objectives = pgTable(
+  "objectives",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 256 }).notNull(),
+    descriptionMd: text("description_md"),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    status: varchar("status", { length: 16 }).$type<ObjectiveStatus>().notNull().default("active"),
+    progressPercent: integer("progress_percent").notNull().default(0),
+    progressUpdatedAt: timestampTz("progress_updated_at"),
+    ...timestamps()
+  },
+  (table) => [
+    index("objectives_workspace_status_idx").on(table.workspaceId, table.status),
+    index("objectives_workspace_updated_idx").on(table.workspaceId, table.updatedAt),
+    index("objectives_owner_user_id_idx").on(table.ownerUserId)
+  ]
+);
+
+export const keyResults = pgTable(
+  "key_results",
+  {
+    id: id(),
+    objectiveId: uuid("objective_id").notNull().references(() => objectives.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    title: varchar("title", { length: 256 }).notNull(),
+    targetValue: numeric("target_value", { precision: 14, scale: 4 }),
+    currentValue: numeric("current_value", { precision: 14, scale: 4 }),
+    unit: varchar("unit", { length: 32 }),
+    status: varchar("status", { length: 16 }).$type<KeyResultStatus>().notNull().default("active"),
+    progressPercent: integer("progress_percent").notNull().default(0),
+    ...timestamps()
+  },
+  (table) => [
+    uniqueIndex("key_results_objective_seq_uq").on(table.objectiveId, table.seq),
+    index("key_results_workspace_objective_idx").on(table.workspaceId, table.objectiveId),
+    index("key_results_workspace_status_idx").on(table.workspaceId, table.status)
+  ]
+);
+
+export const objectiveWorkItemLinks = pgTable(
+  "objective_work_item_links",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    objectiveId: uuid("objective_id").notNull().references(() => objectives.id, { onDelete: "cascade" }),
+    workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+    linkedByUserId: uuid("linked_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt()
+  },
+  (table) => [
+    uniqueIndex("objective_work_item_links_objective_work_item_uq").on(table.objectiveId, table.workItemId),
+    index("objective_work_item_links_workspace_objective_idx").on(table.workspaceId, table.objectiveId),
+    index("objective_work_item_links_workspace_work_item_idx").on(table.workspaceId, table.workItemId),
+    index("objective_work_item_links_linked_by_user_id_idx").on(table.linkedByUserId)
   ]
 );
 
@@ -1580,6 +1642,9 @@ export const workHubTables = {
   workItemWorkspaces,
   workItemWorkspaceItems,
   workItemProgressUpdates,
+  objectives,
+  keyResults,
+  objectiveWorkItemLinks,
   taskPlans,
   taskPlanItems,
   workItemTaskPlans,

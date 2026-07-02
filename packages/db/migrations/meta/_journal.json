@@ -253,6 +253,13 @@
       "when": 1781513033742,
       "tag": "0035_user_memory_workspace_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1781513133742,
+      "tag": "0036_objectives",
+      "breakpoints": true
     }
   ]
 }

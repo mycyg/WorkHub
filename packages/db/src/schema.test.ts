@@ -17,6 +17,9 @@ import {
   costLedgerEntries,
   mergeAttempts,
   mergeProposals,
+  keyResults,
+  objectiveWorkItemLinks,
+  objectives,
   projectDriveItems,
   projectDriveOperations,
   projectDriveVersions,
@@ -34,9 +37,9 @@ import {
   workspaceMemberships
 } from "./index.js";
 
-// R9.3: the old count (52) was correct before private agent memory existed; this slice
-// intentionally adds `agent_memory` and `agent_memory_versions` as L1-only memory tables.
-const F02_TABLE_COUNT = 54;
+// R9.5.1: the old count (54) was correct before OKR planning lenses existed; this slice
+// intentionally adds objectives, key_results, and objective_work_item_links as non-blocking OKR tables.
+const F02_TABLE_COUNT = 57;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -72,9 +75,47 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("task_plan_items"), true);
   assert.equal(tableNames.includes("agent_memory"), true);
   assert.equal(tableNames.includes("agent_memory_versions"), true);
+  assert.equal(tableNames.includes("objectives"), true);
+  assert.equal(tableNames.includes("key_results"), true);
+  assert.equal(tableNames.includes("objective_work_item_links"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
+});
+
+test("R9.5 OKR tables expose non-blocking planning and progress fields", () => {
+  assert.equal(getTableName(objectives), "objectives");
+  assert.equal(objectives.workspaceId.name, "workspace_id");
+  assert.equal(objectives.title.name, "title");
+  assert.equal(objectives.descriptionMd.name, "description_md");
+  assert.equal(objectives.ownerUserId.name, "owner_user_id");
+  assert.equal(objectives.status.name, "status");
+  assert.equal(objectives.progressPercent.name, "progress_percent");
+  assert.equal(objectives.progressUpdatedAt.name, "progress_updated_at");
+
+  assert.equal(getTableName(keyResults), "key_results");
+  assert.equal(keyResults.objectiveId.name, "objective_id");
+  assert.equal(keyResults.workspaceId.name, "workspace_id");
+  assert.equal(keyResults.seq.name, "seq");
+  assert.equal(keyResults.title.name, "title");
+  assert.equal(keyResults.targetValue.name, "target_value");
+  assert.equal(keyResults.currentValue.name, "current_value");
+  assert.equal(keyResults.unit.name, "unit");
+  assert.equal(keyResults.status.name, "status");
+  assert.equal(keyResults.progressPercent.name, "progress_percent");
+
+  assert.equal(getTableName(objectiveWorkItemLinks), "objective_work_item_links");
+  assert.equal(objectiveWorkItemLinks.workspaceId.name, "workspace_id");
+  assert.equal(objectiveWorkItemLinks.objectiveId.name, "objective_id");
+  assert.equal(objectiveWorkItemLinks.workItemId.name, "work_item_id");
+  assert.equal(objectiveWorkItemLinks.linkedByUserId.name, "linked_by_user_id");
+
+  const migration = readFileSync(join(process.cwd(), "migrations", "0036_objectives.sql"), "utf8");
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "objectives"/u);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "key_results"/u);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "objective_work_item_links"/u);
+  assert.match(migration, /objective_work_item_links_objective_work_item_uq/u);
+  assert.match(migration, /objectives_status_ck/u);
 });
 
 test("R9.3 agent memory tables expose L1 private context and append-only versions", () => {

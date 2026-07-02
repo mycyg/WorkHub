@@ -12,6 +12,9 @@ import {
   confidenceRecords,
   deliveries,
   meetingRecords,
+  keyResults,
+  objectiveWorkItemLinks,
+  objectives,
   orgs,
   permissionPolicies,
   projectDriveItems,
@@ -49,6 +52,7 @@ export const workspacesRelations = relations(workspaces, ({ many, one }) => ({
   org: one(orgs, { fields: [workspaces.orgId], references: [orgs.id] }),
   projects: many(projects),
   taskPlans: many(taskPlans),
+  objectives: many(objectives),
   agentMemory: many(agentMemory),
   permissionPolicies: many(permissionPolicies)
 }));
@@ -76,6 +80,7 @@ export const workItemsRelations = relations(workItems, ({ many, one }) => ({
   agentRuns: many(agentRuns),
   acceptanceItems: many(workItemAcceptanceItems),
   agentTaskPlans: many(taskPlans),
+  objectiveLinks: many(objectiveWorkItemLinks),
   taskPlans: many(workItemTaskPlans),
   comments: many(comments)
 }));
@@ -134,6 +139,7 @@ export const workItemTaskPlansRelations = relations(workItemTaskPlans, ({ many, 
 export const taskPlansRelations = relations(taskPlans, ({ many, one }) => ({
   workItem: one(workItems, { fields: [taskPlans.workItemId], references: [workItems.id] }),
   workspace: one(workspaces, { fields: [taskPlans.workspaceId], references: [workspaces.id] }),
+  objective: one(objectives, { fields: [taskPlans.objectiveId], references: [objectives.id] }),
   createdBy: one(users, { fields: [taskPlans.createdByUserId], references: [users.id] }),
   items: many(taskPlanItems)
 }));
@@ -158,6 +164,26 @@ export const agentMemoryRelations = relations(agentMemory, ({ many, one }) => ({
 export const agentMemoryVersionsRelations = relations(agentMemoryVersions, ({ one }) => ({
   memory: one(agentMemory, { fields: [agentMemoryVersions.memoryId], references: [agentMemory.id] }),
   sourceRun: one(agentRuns, { fields: [agentMemoryVersions.sourceRunId], references: [agentRuns.id] })
+}));
+
+export const objectivesRelations = relations(objectives, ({ many, one }) => ({
+  workspace: one(workspaces, { fields: [objectives.workspaceId], references: [workspaces.id] }),
+  owner: one(users, { fields: [objectives.ownerUserId], references: [users.id] }),
+  keyResults: many(keyResults),
+  workItemLinks: many(objectiveWorkItemLinks),
+  taskPlans: many(taskPlans)
+}));
+
+export const keyResultsRelations = relations(keyResults, ({ one }) => ({
+  objective: one(objectives, { fields: [keyResults.objectiveId], references: [objectives.id] }),
+  workspace: one(workspaces, { fields: [keyResults.workspaceId], references: [workspaces.id] })
+}));
+
+export const objectiveWorkItemLinksRelations = relations(objectiveWorkItemLinks, ({ one }) => ({
+  workspace: one(workspaces, { fields: [objectiveWorkItemLinks.workspaceId], references: [workspaces.id] }),
+  objective: one(objectives, { fields: [objectiveWorkItemLinks.objectiveId], references: [objectives.id] }),
+  workItem: one(workItems, { fields: [objectiveWorkItemLinks.workItemId], references: [workItems.id] }),
+  linkedBy: one(users, { fields: [objectiveWorkItemLinks.linkedByUserId], references: [users.id] })
 }));
 
 export const workItemAcceptanceItemsRelations = relations(workItemAcceptanceItems, ({ one }) => ({

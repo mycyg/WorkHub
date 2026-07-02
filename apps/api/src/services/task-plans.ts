@@ -16,6 +16,7 @@ import type {
 
 import { getDefaultProviderRegistry } from "./provider-registry.js";
 import { createMetaPlanner, type MetaPlanner, type MetaPlannerDraftItem } from "./meta-planner.js";
+import { getDefaultObjectiveService, type ObjectiveService } from "./objectives.js";
 import {
   getDefaultProposalService,
   type ProposalService,
@@ -51,6 +52,7 @@ export type CreateTaskPlanProposalInput = {
   memories?: {
     user?: string[];
     team?: string[];
+    objectives?: string[];
   };
 };
 
@@ -67,6 +69,7 @@ export type TaskPlanWorkflowOptions = {
   taskPlans: TaskPlanWorkflowRepository;
   proposals: Pick<ProposalService, "createFromManifest">;
   planner: MetaPlanner;
+  objectives?: Pick<ObjectiveService, "planningContextForWorkItem">;
   id?: () => string;
   now?: () => Date;
 };
@@ -194,6 +197,13 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
       if (!createdByUserId) {
         throw new TaskPlanServiceError(403, "task_plan_actor_missing", "缺少计划创建人，不能生成任务计划。");
       }
+      const objectiveContext = options.objectives
+        ? await options.objectives.planningContextForWorkItem({ workspaceId, workItemId: workItem.id })
+        : { lines: [], capped: false };
+      const memories = {
+        ...(input.memories ?? {}),
+        ...(objectiveContext.lines.length > 0 ? { objectives: objectiveContext.lines } : {})
+      };
       const draft = await options.planner.createDraft({
         actor: {
           ...input.actor,
@@ -210,7 +220,7 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
           ...(workItem.summary_md ? { summaryMd: workItem.summary_md } : {})
         },
         acceptance: acceptanceText(input.detail.acceptance),
-        ...(input.memories ? { memories: input.memories } : {})
+        ...(Object.keys(memories).length > 0 ? { memories } : {})
       });
       const planId = nextId();
       const createdAt = now();
@@ -268,7 +278,8 @@ export function getDefaultTaskPlanWorkflowService() {
     defaultTaskPlanWorkflowService = createTaskPlanWorkflowService({
       taskPlans: createTaskPlanRepository(getSharedDatabaseClient().db),
       proposals: getDefaultProposalService(),
-      planner: createMetaPlanner({ providerRegistry: getDefaultProviderRegistry() })
+      planner: createMetaPlanner({ providerRegistry: getDefaultProviderRegistry() }),
+      objectives: getDefaultObjectiveService()
     });
   }
   return defaultTaskPlanWorkflowService;
