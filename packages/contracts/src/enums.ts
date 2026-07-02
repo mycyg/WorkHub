@@ -46,6 +46,18 @@ export const workItemModes = ["worker", "pm"] as const;
 export const workItemModeSchema = z.enum(workItemModes);
 export type WorkItemMode = z.infer<typeof workItemModeSchema>;
 
+export const taskPlanStatuses = ["draft", "proposed", "approved", "dispatching", "done", "cancelled"] as const;
+export const taskPlanStatusSchema = z.enum(taskPlanStatuses);
+export type TaskPlanStatus = z.infer<typeof taskPlanStatusSchema>;
+
+export const taskPlanItemRoles = ["research", "produce", "review", "integrate"] as const;
+export const taskPlanItemRoleSchema = z.enum(taskPlanItemRoles);
+export type TaskPlanItemRole = z.infer<typeof taskPlanItemRoleSchema>;
+
+export const taskPlanItemStatuses = ["pending", "dispatched", "succeeded", "failed", "skipped"] as const;
+export const taskPlanItemStatusSchema = z.enum(taskPlanItemStatuses);
+export type TaskPlanItemStatus = z.infer<typeof taskPlanItemStatusSchema>;
+
 export const confidenceGrades = ["low", "medium", "high"] as const;
 export const confidenceGradeSchema = z.enum(confidenceGrades);
 export type ConfidenceGrade = z.infer<typeof confidenceGradeSchema>;

@@ -7,6 +7,7 @@ export * from "./identity.js";
 export * from "./auth.js";
 export * from "./approval.js";
 export * from "./escalation.js";
+export * from "./task-plan.js";
 export * from "./notification.js";
 export * from "./audit.js";
 export * from "./replay.js";

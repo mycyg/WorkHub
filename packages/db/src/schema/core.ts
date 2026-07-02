@@ -2,6 +2,9 @@ import type {
   DeliverableChange,
   DeliverableChangeManifest,
   RiskLevel,
+  TaskPlanItemRole,
+  TaskPlanItemStatus,
+  TaskPlanStatus,
   WorkHubLocale,
   WorkItemMode,
   WorkItemStatus
@@ -691,6 +694,52 @@ export const workItemProgressUpdates = pgTable(
     index("work_item_progress_updates_workspace_id_idx").on(table.workspaceId),
     index("work_item_progress_updates_actor_user_id_idx").on(table.actorUserId),
     index("work_item_progress_updates_kind_idx").on(table.kind)
+  ]
+);
+
+export const taskPlans = pgTable(
+  "task_plans",
+  {
+    id: id(),
+    workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 16 }).$type<TaskPlanStatus>().notNull().default("draft"),
+    objectiveId: uuid("objective_id"),
+    budgetJson: jsonb("budget_json").$type<JsonObject>().notNull().default({}),
+    decompositionContextJson: jsonb("decomposition_context_json").$type<JsonObject>().notNull().default({}),
+    createdByUserId: uuid("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
+    ...timestamps()
+  },
+  (table) => [
+    index("task_plans_work_item_id_idx").on(table.workItemId),
+    index("task_plans_workspace_status_idx").on(table.workspaceId, table.status),
+    index("task_plans_work_item_status_idx").on(table.workItemId, table.status),
+    index("task_plans_created_by_idx").on(table.createdByUserId),
+    index("task_plans_created_at_idx").on(table.createdAt)
+  ]
+);
+
+export const taskPlanItems = pgTable(
+  "task_plan_items",
+  {
+    id: id(),
+    planId: uuid("plan_id").notNull().references(() => taskPlans.id, { onDelete: "cascade" }),
+    parentItemId: uuid("parent_item_id").references((): AnyPgColumn => taskPlanItems.id, { onDelete: "set null" }),
+    seq: integer("seq").notNull(),
+    title: varchar("title", { length: 256 }).notNull(),
+    role: varchar("role", { length: 16 }).$type<TaskPlanItemRole>().notNull(),
+    objectiveMd: text("objective_md").notNull(),
+    acceptanceMd: text("acceptance_md").notNull(),
+    budgetSharePct: integer("budget_share_pct").notNull(),
+    dependsOn: uuid("depends_on").array().$type<string[]>().notNull().default(sql`'{}'::uuid[]`),
+    status: varchar("status", { length: 16 }).$type<TaskPlanItemStatus>().notNull().default("pending"),
+    ...timestamps()
+  },
+  (table) => [
+    index("task_plan_items_plan_seq_idx").on(table.planId, table.seq),
+    index("task_plan_items_parent_item_id_idx").on(table.parentItemId),
+    index("task_plan_items_status_idx").on(table.status),
+    index("task_plan_items_role_idx").on(table.role)
   ]
 );
 
@@ -1468,6 +1517,8 @@ export const workHubTables = {
   workItemWorkspaces,
   workItemWorkspaceItems,
   workItemProgressUpdates,
+  taskPlans,
+  taskPlanItems,
   workItemTaskPlans,
   workItemTaskItems,
   workItemAcceptanceItems,

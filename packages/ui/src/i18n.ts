@@ -4,6 +4,9 @@ import {
   type AgentStepPhase,
   type DeliverableTargetKind,
   type EvidenceSourceType,
+  type TaskPlanItemRole,
+  type TaskPlanItemStatus,
+  type TaskPlanStatus,
   type WorkHubLocale,
   type WorkItemStatus
 } from "@workhub/contracts";
@@ -225,6 +228,30 @@ const workItemStatusLabels = {
   cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
 } satisfies Record<WorkItemStatus, Copy>;
 
+const taskPlanStatusLabels = {
+  draft: { "zh-CN": "草稿", "en-US": "Draft" },
+  proposed: { "zh-CN": "待审阅", "en-US": "Proposed" },
+  approved: { "zh-CN": "已批准", "en-US": "Approved" },
+  dispatching: { "zh-CN": "派发中", "en-US": "Dispatching" },
+  done: { "zh-CN": "已完成", "en-US": "Done" },
+  cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
+} satisfies Record<TaskPlanStatus, Copy>;
+
+const taskPlanItemRoleLabels = {
+  research: { "zh-CN": "调研", "en-US": "Research" },
+  produce: { "zh-CN": "产出", "en-US": "Produce" },
+  review: { "zh-CN": "复核", "en-US": "Review" },
+  integrate: { "zh-CN": "整合", "en-US": "Integrate" }
+} satisfies Record<TaskPlanItemRole, Copy>;
+
+const taskPlanItemStatusLabels = {
+  pending: { "zh-CN": "待派发", "en-US": "Pending" },
+  dispatched: { "zh-CN": "已派发", "en-US": "Dispatched" },
+  succeeded: { "zh-CN": "已成功", "en-US": "Succeeded" },
+  failed: { "zh-CN": "失败", "en-US": "Failed" },
+  skipped: { "zh-CN": "已跳过", "en-US": "Skipped" }
+} satisfies Record<TaskPlanItemStatus, Copy>;
+
 const agentRunStatusLabels = {
   queued: { "zh-CN": "排队中", "en-US": "Queued" },
   running: { "zh-CN": "执行中", "en-US": "Running" },
@@ -341,6 +368,18 @@ function labelFromMap(locale: WorkHubLocale, value: string, map: Record<string, 
 
 export function workItemStatusLabel(locale: WorkHubLocale, status: WorkItemStatus | string) {
   return labelFromMap(locale, status, workItemStatusLabels);
+}
+
+export function taskPlanStatusLabel(locale: WorkHubLocale, status: TaskPlanStatus | string) {
+  return labelFromMap(locale, status, taskPlanStatusLabels);
+}
+
+export function taskPlanItemRoleLabel(locale: WorkHubLocale, role: TaskPlanItemRole | string) {
+  return labelFromMap(locale, role, taskPlanItemRoleLabels);
+}
+
+export function taskPlanItemStatusLabel(locale: WorkHubLocale, status: TaskPlanItemStatus | string) {
+  return labelFromMap(locale, status, taskPlanItemStatusLabels);
 }
 
 export function agentRunStatusLabel(locale: WorkHubLocale, status: AgentRunStatus | string) {
