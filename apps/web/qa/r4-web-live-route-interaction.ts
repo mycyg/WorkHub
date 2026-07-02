@@ -2584,6 +2584,15 @@ async function fillTextInput(cdp: CdpClient, selector: string, value: string) {
 
 async function clickAndWaitForNotice(cdp: CdpClient, selector: string, kind: string, actionId?: string) {
   const clicked = await cdp.evaluate<boolean>(`(() => {
+    // Several proposal advanced-edit actions share apply_ai_fusion. The old wait accepted an
+    // already-visible same-action notice as the next action's completion, so CI could click ahead
+    // while the previous request was still in flight.
+    const staleNotice = document.querySelector("[data-wh-app-notice]");
+    if (staleNotice instanceof HTMLElement) {
+      staleNotice.hidden = true;
+      delete staleNotice.dataset.r4NoticeKind;
+      delete staleNotice.dataset.r4NoticeActionId;
+    }
     const target = document.querySelector(${JSON.stringify(selector)});
     if (!target) return false;
     target.click();
