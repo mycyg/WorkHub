@@ -1,7 +1,7 @@
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { AddressInfo } from "node:net";
@@ -11,6 +11,7 @@ import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
 import type { CalendarPageVM, DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM,
   ProjectHealthPageVM, ProjectHomePageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, TeamSkillsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
+import { launchChrome, type CdpClient } from "../src/chrome-launch.js";
 
 type Viewport = {
   width: number;
@@ -340,14 +341,6 @@ type StepReport = {
   expectedStatus: string;
   screenshot: string;
   audit: BrowserAudit;
-};
-
-type CdpMessage = {
-  id?: number;
-  method?: string;
-  params?: unknown;
-  result?: unknown;
-  error?: { message?: string };
 };
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -2387,115 +2380,6 @@ function chromeCandidates() {
 
 function findChrome() {
   return chromeCandidates().find((candidate) => existsSync(candidate));
-}
-
-async function waitForDebugTarget(port: number) {
-  const deadline = Date.now() + 15_000;
-  let lastError: unknown;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
-      const pages = await response.json() as Array<{ type?: string; webSocketDebuggerUrl?: string }>;
-      const page = pages.find((item) => item.type === "page" && item.webSocketDebuggerUrl);
-      if (page?.webSocketDebuggerUrl) {
-        return page.webSocketDebuggerUrl;
-      }
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 120));
-  }
-  throw new Error(`Timed out waiting for Chrome CDP target: ${String(lastError)}`);
-}
-
-class CdpClient {
-  private nextId = 1;
-  private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
-
-  constructor(private readonly socket: WebSocket) {
-    socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data)) as CdpMessage;
-      if (!message.id) {
-        return;
-      }
-      const waiter = this.pending.get(message.id);
-      if (!waiter) {
-        return;
-      }
-      this.pending.delete(message.id);
-      if (message.error) {
-        waiter.reject(new Error(message.error.message ?? "CDP command failed"));
-      } else {
-        waiter.resolve(message.result);
-      }
-    });
-  }
-
-  static async connect(url: string) {
-    const socket = new WebSocket(url);
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true });
-      socket.addEventListener("error", () => reject(new Error("Chrome CDP websocket failed to open")), { once: true });
-    });
-    return new CdpClient(socket);
-  }
-
-  send<T = unknown>(method: string, params: Record<string, unknown> = {}) {
-    const id = this.nextId++;
-    const payload = JSON.stringify({ id, method, params });
-    return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
-      this.socket.send(payload);
-    });
-  }
-
-  async evaluate<T>(expression: string) {
-    const result = await this.send<{
-      result?: { value?: T };
-      exceptionDetails?: { text?: string };
-    }>("Runtime.evaluate", {
-      expression,
-      awaitPromise: true,
-      returnByValue: true
-    });
-    if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.text ?? `Evaluation failed: ${expression}`);
-    }
-    return result.result?.value as T;
-  }
-
-  close() {
-    this.socket.close();
-  }
-}
-
-function chromeExtraArgs() {
-  // CI（GitHub Actions ubuntu runner）需要 --no-sandbox --disable-dev-shm-usage；本地默认为空。
-  return (process.env["WORKHUB_QA_CHROME_EXTRA_ARGS"] ?? "")
-    .split(/\s+/u)
-    .filter((arg) => arg.startsWith("--"));
-}
-
-async function launchChrome(chromePath: string, debugPort: number, userDataDir: string) {
-  await rm(userDataDir, { recursive: true, force: true });
-  await mkdir(userDataDir, { recursive: true });
-  const child = spawn(chromePath, [
-    "--headless=new",
-    ...chromeExtraArgs(),
-    "--disable-gpu",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--force-device-scale-factor=1",
-    `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${userDataDir}`,
-    "--window-size=1365,1100",
-    "about:blank"
-  ], { stdio: "ignore" }) as ChildProcessWithoutNullStreams;
-  const websocketUrl = await waitForDebugTarget(debugPort);
-  const cdp = await CdpClient.connect(websocketUrl);
-  await cdp.send("Page.enable");
-  await cdp.send("Runtime.enable");
-  return { child, cdp };
 }
 
 async function setViewport(cdp: CdpClient, viewport: Viewport) {
@@ -5429,7 +5313,14 @@ async function main() {
   }
 }
 
-void main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+function isDirectInvocation() {
+  const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : undefined;
+  return invokedPath === import.meta.url;
+}
+
+if (isDirectInvocation()) {
+  void main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
