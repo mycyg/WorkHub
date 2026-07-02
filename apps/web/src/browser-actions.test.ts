@@ -4,6 +4,7 @@ import test from "node:test";
 import type { AcceptedDeliverableRestoreResult } from "@workhub/contracts";
 
 import { acceptedDeliverableRestoreFollowUp, driveUploadPayloadFromPicker } from "./drive-actions.js";
+import { drivePreviewPanelHtml } from "./drive-preview.js";
 
 const browserSource = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
 
@@ -62,4 +63,26 @@ test("drive preview is rendered in-place instead of opening the API JSON envelop
   assert.match(block, /await client\.request<DrivePreviewPayload>\(href\);/u);
   assert.match(block, /data-r5-drive-preview-panel/u);
   assert.match(block, /renderDrivePreviewPanel/u);
+});
+
+test("drive preview panel localizes type and size metadata", () => {
+  const zh = drivePreviewPanelHtml({
+    filename: "brief.md",
+    preview_type: "text",
+    size_bytes: 2048,
+    text: "正文"
+  }, "zh-CN");
+  const en = drivePreviewPanelHtml({
+    filename: "brief.md",
+    preview_type: "text",
+    size_bytes: 2048,
+    text: "Body"
+  }, "en-US");
+
+  assert.equal(zh.includes("类型 text"), false);
+  assert.equal(zh.includes("2048 字节"), false);
+  assert.equal(zh.includes("文本预览 · 2 KB"), true);
+  assert.equal(en.includes("type text"), false);
+  assert.equal(en.includes("2048 bytes"), false);
+  assert.equal(en.includes("Text preview · 2 KB"), true);
 });

@@ -1255,6 +1255,7 @@ test("cost governance contracts expose clickable budget notices and scoped usage
     max_cost_cny: "5",
     remaining_cost_cny: "0.8",
     warning_ratio: 0.84,
+    enabled: false,
     status: "warning"
   });
   const notice = budgetNoticeSchema.parse({
@@ -1297,6 +1298,7 @@ test("cost governance contracts expose clickable budget notices and scoped usage
 
   assert.equal(policy.scope_kind, "workitem");
   assert.equal(usage.status, "warning");
+  assert.equal(usage.enabled, false);
   assert.equal(notice.options?.length, 2);
   const attention = attentionItemSchema.parse({
     id: "75000000-0000-4000-8000-000000000001",
