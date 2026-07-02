@@ -2721,7 +2721,7 @@ R4 验收：
 
 ### R4.2 已落：Web route registry + loader
 
-1. 已阅读 `web-app.md`、`page-concepts.md`、本篇 R4、[`r4-01-web-route-state-matrix-plan-2026-06-11.md`](./r4-01-web-route-state-matrix-plan-2026-06-11.md) 与 Web 概念图：`web-ai-first-home.png`、`web-workitem-detail.png`、`web-approval-center.png`、`web-deliverable-change-request.png`、`r0-governance-boundary-concept.svg`。
+1. 已阅读 `web-app.md`、`page-concepts.md`、本篇 R4、[`r4-01-web-route-state-matrix-plan-2026-06-11.md`](./archive/r4-01-web-route-state-matrix-plan-2026-06-11.md) 与 Web 概念图：`web-ai-first-home.png`、`web-workitem-detail.png`、`web-approval-center.png`、`web-deliverable-change-request.png`、`r0-governance-boundary-concept.svg`。
 2. 已新增 `apps/web/src/routes.ts`：注册 `/`、`/intake/:sessionId`、`/approvals`、`/workitems/:id`、`/proposals/:id`、`/agent-runs/:id/replay`、`/dashboard/cost`、`/settings`，统一 `idle/loading/ready/empty/error/forbidden` loader 状态。
 3. 已改 `apps/web/src/browser.ts`：启动时按 `window.location.pathname` 进入 route loader；`not_identified` 仍由 boot identity flow 处理；ready route 用 `history.pushState/popstate` 跳转，不再只靠 hash panel。
 4. 已改 `packages/ui/src/gold-path/app-shell.ts`：新增 `linkMode="path"`，默认 hash 兼容不破坏旧测试。
@@ -2733,7 +2733,7 @@ R4 验收：
 
 ### R4.3 已落：Web multi-record Page VM visual QA
 
-1. 已阅读 [`r4-02-web-route-registry-loader-plan-2026-06-11.md`](./r4-02-web-route-registry-loader-plan-2026-06-11.md)、`web-app.md`、本篇 R4 与 Web 概念图。
+1. 已阅读 [`r4-02-web-route-registry-loader-plan-2026-06-11.md`](./archive/r4-02-web-route-registry-loader-plan-2026-06-11.md)、`web-app.md`、本篇 R4 与 Web 概念图。
 2. 已扩展 `apps/web/src/routes.test.ts`：新增 `/workitems/:id`、`/proposals/:id`、`/agent-runs/:id/replay` 的 endpoint-first 测试，`@workhub/web test` 当前 11/11。
 3. 已新增 `scripts/qa/r4-web-multi-record-page-vm.ts` 与 root `pnpm qa:r4-web-multi-record-page-vm`。
 4. 多记录 QA surface 会替换 `客户周报/weekly` 单场景文案，覆盖 `区域发布复盘包`、`法务条款复核`、`预算复核包`、`跨区发布资料包`、`发布复盘资料包变更申请`、`跨区发布资料包已完成`。
@@ -2743,7 +2743,7 @@ R4 验收：
 
 ### R4.4 已落：Web product shell baseline
 
-1. 已阅读 [`r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md`](./r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md)、`web-app.md`、`page-concepts.md`、`shared-ui-kit.md`、本篇 R4 与 Web 概念图。
+1. 已阅读 [`r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md`](./archive/r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md)、`web-app.md`、`page-concepts.md`、`shared-ui-kit.md`、本篇 R4 与 Web 概念图。
 2. 已新增 `packages/ui/src/gold-path/product-shell.ts`，渲染 Web product shell baseline：topbar、path nav、masthead、metrics、route panels、right rail，并保留 `data-wh-*` browser hooks。
 3. 已改 `apps/web/src/routes.ts`：ready route 使用 `renderWebProductShell()`；empty/error/forbidden 继续走 R4 route-state helper。
 4. 已新增 `packages/ui/src/gold-path/product-shell.test.ts`，覆盖产品壳 marker、双语固定 chrome、path href、无旧 `.wh-app-root`、无 Cuu、无默认 Kanban、移动端 CSS。
@@ -2754,7 +2754,7 @@ R4 验收：
 
 ### R4.5 已落：Web live route interaction smoke
 
-1. 已阅读 [`r4-04-web-product-shell-baseline-plan-2026-06-11.md`](./r4-04-web-product-shell-baseline-plan-2026-06-11.md)、`web-app.md`、`page-concepts.md`、本篇 R4 与 Web 概念图。
+1. 已阅读 [`r4-04-web-product-shell-baseline-plan-2026-06-11.md`](./archive/r4-04-web-product-shell-baseline-plan-2026-06-11.md)、`web-app.md`、`page-concepts.md`、本篇 R4 与 Web 概念图。
 2. 已修 `apps/web/src/browser.ts` ready route listener 生命周期：用 `AbortController` 管理 locale / line editor / navigation listener，进入 loading/error 或重新 ready 前先 abort，防止连续跳转后重复 loader 或重复 POST。
 3. 已新增 `apps/web/qa/r4-web-live-route-interaction.ts`，用 Vite dev server + mock API + Chrome CDP 跑真实浏览器交互。
 4. 已新增 root `pnpm qa:r4-web-live-route-interaction`，由 `@workhub/web` 包持有 Vite 依赖和 QA 执行入口。
@@ -2765,7 +2765,7 @@ R4 验收：
 
 ### R4.6 已落：Rust system-string i18n
 
-1. 已阅读 [`r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md`](./r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md)、`desktop-pet-tauri.md`、`i18n-locale-contract-p1-1.md`、`pet-right-click-settings-menu-p1-4.md`、`pet-settings-recovery-p1-5.md` 与 desktop/Cuu 概念图。
+1. 已阅读 [`r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md`](./archive/r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md)、`desktop-pet-tauri.md`、`i18n-locale-contract-p1-1.md`、`pet-right-click-settings-menu-p1-4.md`、`pet-settings-recovery-p1-5.md` 与 desktop/Cuu 概念图。
 2. 已新增 Rust `client-tauri/src-tauri/src/locale.rs`：`WorkHubLocale` 与 TS contract 保持 `zh-CN/en-US`，`WORKHUB_LOCALE` 和 config `locale` 成为 Rust shell 系统串入口。
 3. 已把 tray/menu/tooltip 改为 locale-aware：`tray_menu_items(locale)`、`tray_menu_action_plan_by_id_for_locale()`、`tray_tooltip(locale)`；action id、window control、route、focus 不变。
 4. 已把 system notification fallback title/body 改为 locale-aware，并通过 SSE worker 传入 `config.locale`；payload 的动态 `title/body/summary_text/message/preview_text` 保持原文。
@@ -2811,7 +2811,7 @@ R4 验收：
 
 ### R4.10 已落：Web route componentization first slice
 
-1. 已阅读 [`r4-10-web-route-componentization-plan-2026-06-11.md`](./r4-10-web-route-componentization-plan-2026-06-11.md)、R4.9 计划、`web-app.md`、`page-concepts.md` 与 Web 概念图：`web-ai-first-home.png`、`web-approval-center.png`、`web-workitem-detail.png`、`web-deliverable-change-request.png`。
+1. 已阅读 [`r4-10-web-route-componentization-plan-2026-06-11.md`](./archive/r4-10-web-route-componentization-plan-2026-06-11.md)、R4.9 计划、`web-app.md`、`page-concepts.md` 与 Web 概念图：`web-ai-first-home.png`、`web-approval-center.png`、`web-workitem-detail.png`、`web-deliverable-change-request.png`。
 2. 已新增 `packages/ui/src/gold-path/route-components.ts`：Home / Approvals / Replay 三个显式 Web route component，带 `data-r4-route-component`、`source=page-vm` 与 locale marker。
 3. 已改 `packages/ui/src/gold-path/product-shell.ts`：支持 `routeComponents` 与 `renderActivePanelOnly`，Web ready route 在 R4.10 模式下只渲染当前 active panel，不再把其它 GoldPath shared HTML hidden panels 塞进主窗口。
 4. 已改 `apps/web/src/routes.ts`：ready route 注入 `renderWebRouteComponents(surface,{ locale })`；typed Page VM endpoint 仍先于 render，`/api/pages/gold-path` 只作为 shell/template/nav metadata。
@@ -2823,7 +2823,7 @@ R4 验收：
 
 ### R4.11 已落：Web route componentization second slice
 
-1. 已阅读 [`r4-11-web-route-componentization-second-slice-plan-2026-06-11.md`](./r4-11-web-route-componentization-second-slice-plan-2026-06-11.md)、R4.10 计划、`web-app.md`、`page-concepts.md` 与 Web 概念图：`web-workitem-detail.png`、`web-deliverable-change-request.png`、`web-ai-first-home.png`、`web-approval-center.png`。
+1. 已阅读 [`r4-11-web-route-componentization-second-slice-plan-2026-06-11.md`](./archive/r4-11-web-route-componentization-second-slice-plan-2026-06-11.md)、R4.10 计划、`web-app.md`、`page-concepts.md` 与 Web 概念图：`web-workitem-detail.png`、`web-deliverable-change-request.png`、`web-ai-first-home.png`、`web-approval-center.png`。
 2. 已新增 Settings typed Page VM：`packages/contracts/src/pages.ts` 定义 `settingsPageVmSchema`，`apps/api/src/pages/settings.ts` 构建安全 VM，`apps/api/src/routes/pages.ts` 暴露 `/api/pages/settings`，`packages/api-client` 增加 `pages.settings()`。
 3. 已扩展 `packages/ui/src/gold-path/route-components.ts`：WorkItem / Proposal / Cost / Settings 四个显式 route components，均带 `data-r4-route-component`、`source=page-vm`、locale marker 与 route-specific counts。
 4. 已改 `apps/web/src/routes.ts`：`/settings` 先读 `client.pages.settings({ locale })`，再读 `gold-path` shell metadata；所有 ready route 继续 active-only product panel。
@@ -2836,7 +2836,7 @@ R4 验收：
 
 ### R4.12 已落：Web action / notice locale route UX
 
-1. 已阅读 [`r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md`](./r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md)、R4.11 计划、`web-app.md`、`page-concepts.md` 与 Web 概念图：`web-workitem-detail.png`、`web-deliverable-change-request.png`、`web-approval-center.png`、`web-ai-first-home.png`。
+1. 已阅读 [`r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md`](./archive/r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md)、R4.11 计划、`web-app.md`、`page-concepts.md` 与 Web 概念图：`web-workitem-detail.png`、`web-deliverable-change-request.png`、`web-approval-center.png`、`web-ai-first-home.png`。
 2. 已改 `apps/web/src/browser.ts`：新增 `RouteNoticeVM` 与统一 `showRouteNotice()`，所有 notice DOM 都带 `kind/tone/source/locale/actionId/eventType/stream` 审计字段。
 3. 已接 action dataflow：Approval allow/deny、Proposal request changes/merge、merge conflict、desktop-only action、unknown API pending、option selection 与 SSE refresh 均复用同一 notice contract。
 4. 已保留 reason gate：Approval deny 与 Proposal request changes 没有 reason 时不发 mutation；reason button 提交后才调用 typed API client。
@@ -2848,7 +2848,7 @@ R4 验收：
 
 ### R4.13 已落：Proposal advanced route UX convergence
 
-1. 已阅读 [`r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md`](./r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md)、R4.12 竣工记录、`web-app.md`、`page-concepts.md` 与概念图：`web-deliverable-change-request.png`、`web-workitem-detail.png`、`web-approval-center.png`。
+1. 已阅读 [`r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md`](./archive/r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md)、R4.12 竣工记录、`web-app.md`、`page-concepts.md` 与概念图：`web-deliverable-change-request.png`、`web-workitem-detail.png`、`web-approval-center.png`。
 2. 已复用 `packages/ui/src/proposal/render.ts`、`route-line-editor.ts`、`overlap-hunk-review.ts`、`subrecord-item-diff.ts` 的现有高级 helper，把 conflict workbench、line editor、field editor、subrecord editor 收敛到 Proposal active-only route component。
 3. 已改 `apps/web/src/routes.ts`：Proposal route 先读 Proposal Page VM，再读 `/api/workitems/:id/conflicts` 并按 `proposal_id` 过滤，注入 `proposal_conflicts` route surface；`ProposalDetailVM` 合同不被冲突缓存污染。
 4. 已改 `packages/ui/src/gold-path/route-components.ts`：Proposal route component 暴露 `data-r4-proposal-conflicts`、`data-r4-proposal-line-editor`、`data-r4-proposal-field-editor`、`data-r4-proposal-subrecord-editor`，并把高级 action href 纳入 primary hrefs。
@@ -2860,7 +2860,7 @@ R4 验收：
 
 ### R4.14 已落：Option Intake / Knowledge route componentization
 
-1. 已阅读 [`r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md`](./r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md)、`web-app.md`、`page-concepts.md`、`knowledge-base.md`、`requirements-workitem.md` 与概念图：`web-option-first-intake-wizard.png`、`web-project-drive-meetings-knowledge.png`、`web-project-attention-workspace.png`。
+1. 已阅读 [`r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md`](./archive/r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md)、`web-app.md`、`page-concepts.md`、`knowledge-base.md`、`requirements-workitem.md` 与概念图：`web-option-first-intake-wizard.png`、`web-project-drive-meetings-knowledge.png`、`web-project-attention-workspace.png`。
 2. 已新增 `GET /api/sessions/:id` 与 typed `client.getSession()`，Web `/intake/:sessionId` loader 先读 `SessionVM` 再注入 `intake_session` route surface。
 3. 已新增 Intake route component：`data-r4-route-component="intake"`、`source=session-vm`、option count、progress count、collapsed free text、confirm/create action payload marker；空选项不发 mutation。
 4. 已新增 Knowledge route：`/knowledge/search` 解析 query/project/work item filter，调用 typed `searchKnowledge()` 并注入 `knowledge_evidence`；component 显示 evidence refs、open links、missing evidence note 与 bind payload。
@@ -2872,7 +2872,7 @@ R4 验收：
 
 ### R4.15 已落：Settings / locale / device boundary hardening
 
-1. 已阅读 [`r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md`](./r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md)、R4.14 竣工记录、`web-app.md`、`desktop-pet-tauri.md`、`i18n-locale-contract-p1-1.md`、`i18n-user-locale-preference-p1-3.md`、`pet-settings-recovery-p1-5.md` 与概念图：`web-operations-pages-atlas.png`、`desktop-support-pages-atlas.png`、`desktop-device-setup-update.png`。
+1. 已阅读 [`r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md`](./archive/r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md)、R4.14 竣工记录、`web-app.md`、`desktop-pet-tauri.md`、`i18n-locale-contract-p1-1.md`、`i18n-user-locale-preference-p1-3.md`、`pet-settings-recovery-p1-5.md` 与概念图：`web-operations-pages-atlas.png`、`desktop-support-pages-atlas.png`、`desktop-device-setup-update.png`。
 2. 概念图审查结论：`desktop-device-setup-update.png` 中旧橘猫只作为 device/setup 信息架构参考，不作为当前视觉真相；Web/desktop 主窗继续无 Cuu 本体、无模型预览。
 3. 已扩展 `SettingsPageVM`：runtime status、secret-safe LLM configured state、language preference/source/sync/update href、desktop restore boundary 与 `web_local_actions_enabled=false` 进入 typed contract。
 4. 已改 `/api/pages/settings` dataflow：服务端从当前用户偏好注入 server preference，Page VM 能表达 request/server/fallback source 和 preference synced state。
@@ -2887,7 +2887,7 @@ R4 验收：
 
 ### R4.16 已落：React route tree / hydration boundary
 
-1. 已阅读 [`r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md`](./r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md)、R4.15 竣工记录、`web-app.md`、`page-concepts.md`、`i18n-locale-contract-p1-1.md` 与概念/证据：`web-operations-pages-atlas.png`、R4.15 settings/browser smoke contact sheet。
+1. 已阅读 [`r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md`](./archive/r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md)、R4.15 竣工记录、`web-app.md`、`page-concepts.md`、`i18n-locale-contract-p1-1.md` 与概念/证据：`web-operations-pages-atlas.png`、R4.15 settings/browser smoke contact sheet。
 2. 已复用现有 active-only route component 架构，不引入 React runtime、不调用 `hydrateRoot()`，先建立 React-compatible route tree / hydration boundary，避免非 React SSR HTML 的 hydration mismatch。
 3. 已扩展 `packages/ui/src/gold-path/route-components.ts`：`WebRouteComponent` 增加 `hydration` 元数据，统一 wrapper 输出 `data-r4-hydration-boundary/route/source/locale/page-vm/action-count/adapter`，并保留原 `data-r4-route-component` markers。
 4. 已扩展 `packages/ui/src/gold-path/product-shell.ts`：active panel 暴露 `data-r4-hydration-panel`、root id、route、mode、Page VM、action count；ready route 仍只渲染一个 active panel。
@@ -2900,7 +2900,7 @@ R4 验收：
 
 ### R4.17 已落：React route component first migration
 
-1. 已阅读 [`r4-17-react-route-component-first-migration-plan-2026-06-11.md`](./r4-17-react-route-component-first-migration-plan-2026-06-11.md)、R4.16 竣工记录、`web-app.md`、`page-concepts.md` 与概念/证据：`web-operations-pages-atlas.png`、R4.16 route adapter hydration boundary contact sheet。
+1. 已阅读 [`r4-17-react-route-component-first-migration-plan-2026-06-11.md`](./archive/r4-17-react-route-component-first-migration-plan-2026-06-11.md)、R4.16 竣工记录、`web-app.md`、`page-concepts.md` 与概念/证据：`web-operations-pages-atlas.png`、R4.16 route adapter hydration boundary contact sheet。
 2. 已选择 Home / Settings 作为首批低风险迁移 route：Home 验证 AI-first typed Page VM props，Settings 作为 secret/device boundary 哨兵；暂不触碰 Proposal advanced、Intake、Knowledge。
 3. 已新增 `packages/ui/src/gold-path/route-react-components.ts`：定义 Home / Settings React-compatible adapter、typed props、component name、fallback state、action hrefs、fingerprint 与 marker attrs。
 4. 已扩展 `packages/ui/src/gold-path/route-components.ts`：Home / Settings 由 adapter 提供 props/action hrefs，并在 route section 与 hydration root 暴露 `data-r4-react-component-*`、`data-r4-hydration-react-component-*`。
@@ -2913,7 +2913,7 @@ R4 验收：
 
 ### R4.18 已落：React route migration expansion
 
-1. 已阅读 [`r4-18-react-route-migration-expansion-plan-2026-06-11.md`](./r4-18-react-route-migration-expansion-plan-2026-06-11.md)、R4.17 竣工记录、`web-app.md`、`page-concepts.md` 与 R4.17 browser smoke contact sheet，确认本轮只扩展 Cost / Replay，不迁 Proposal advanced / Intake / Knowledge。
+1. 已阅读 [`r4-18-react-route-migration-expansion-plan-2026-06-11.md`](./archive/r4-18-react-route-migration-expansion-plan-2026-06-11.md)、R4.17 竣工记录、`web-app.md`、`page-concepts.md` 与 R4.17 browser smoke contact sheet，确认本轮只扩展 Cost / Replay，不迁 Proposal advanced / Intake / Knowledge。
 2. 已扩展 `packages/ui/src/gold-path/route-react-components.ts`：新增 `CostRouteComponent` 与 `ReplayRouteComponent` adapter props、component name、fallback state、action hrefs 与 fingerprint。
 3. 已扩展 `packages/ui/src/gold-path/route-components.ts`：Cost / Replay route section 输出 `data-r4-react-component-*` 与 hydration markers；Replay 暴露 run/work item/step/accepted deliverable/merge/structured audit counts。
 4. 已补 Replay accepted deliverable restore 单一路径：restore link 增加 `data-action-id="restore_deliverable"`，Web delegated dispatcher 解析 restore href 并调用 typed `restoreAcceptedDeliverable()`。
@@ -2926,7 +2926,7 @@ R4 验收：
 
 ### R4 中期审查已落：front-end runtime spike gate
 
-1. 已新增 [`r4-mid-review-upgrade-audit-2026-06-11.md`](./r4-mid-review-upgrade-audit-2026-06-11.md)，收敛 7 条保持项、4 条 P0、7 条 P1 与 6 条 P2，并逐条记录文件/行号证据、返工面和建议阶段。
+1. 已新增 [`r4-mid-review-upgrade-audit-2026-06-11.md`](./archive/r4-mid-review-upgrade-audit-2026-06-11.md)，收敛 7 条保持项、4 条 P0、7 条 P1 与 6 条 P2，并逐条记录文件/行号证据、返工面和建议阶段。
 2. P0-1 判定 R4.16-R4.18 没有真 React dependency/mount；R4.19 前必须先证明 Home route 可由真实 `createRoot` mount，且 props update 和 delegated dispatcher 不互相打架。
 3. P0-2 判定当前 SSE 任何事件触发整页重渲会清空 DOM 编辑态；R4.19 必须新增 dirty edit guard，未提交编辑时只提示刷新，不得清掉 line editor/intake/custom input。
 4. P0-3 判定生产导航 chrome 仍依赖 P0.5 fixture surface、正则替换和手写中英 map；R4.19 冻结新增 fixture chrome 依赖，R4.20 集中退役。
@@ -2935,7 +2935,7 @@ R4 验收：
 
 ### R4.19-pre 已落：true React mount spike
 
-1. 已阅读 [`r4-mid-review-upgrade-audit-2026-06-11.md`](./r4-mid-review-upgrade-audit-2026-06-11.md)、R4.18 竣工记录、R4.19 计划、`web-app.md`、`page-concepts.md` 与 `web-operations-pages-atlas.png`，确认本轮只证明运行时合同，不改视觉。
+1. 已阅读 [`r4-mid-review-upgrade-audit-2026-06-11.md`](./archive/r4-mid-review-upgrade-audit-2026-06-11.md)、R4.18 竣工记录、R4.19 计划、`web-app.md`、`page-concepts.md` 与 `web-operations-pages-atlas.png`，确认本轮只证明运行时合同，不改视觉。
 2. 已为 `@workhub/web` 引入 React 18 / ReactDOM 18 与对应类型包；`packages/ui` 继续保持 HTML renderer 和 typed adapter，不新增 React dependency。
 3. 已新增 `apps/web/src/react-route-mount.ts`：在 `#wh-r4-hydration-home` 下用 `createRoot()` 真挂载 hidden Home probe，记录 `react-18-createRoot`、mount count、props update count 与 dispatcher probe action id。
 4. 已改 `apps/web/src/browser.ts`：ready render 后挂载 Home React island；Home SSE refresh 成功时只重新取 Page VM 并 `root.render(newProps)` 更新 probe，标记 `r4LiveRefreshMode=react-props`，不整页 `innerHTML` 重渲。
@@ -2946,7 +2946,7 @@ R4 验收：
 
 ### R4.19 已落：Proposal advanced split migration
 
-1. 已阅读 [`r4-19-proposal-advanced-split-migration-plan-2026-06-11.md`](./r4-19-proposal-advanced-split-migration-plan-2026-06-11.md)、[`r4-mid-review-upgrade-audit-2026-06-11.md`](./r4-mid-review-upgrade-audit-2026-06-11.md)、R4.19-pre 竣工记录、R4.13 advanced plan、`web-app.md`、`page-concepts.md` 与概念图：`web-deliverable-change-request.png`、`web-operations-pages-atlas.png`。
+1. 已阅读 [`r4-19-proposal-advanced-split-migration-plan-2026-06-11.md`](./archive/r4-19-proposal-advanced-split-migration-plan-2026-06-11.md)、[`r4-mid-review-upgrade-audit-2026-06-11.md`](./archive/r4-mid-review-upgrade-audit-2026-06-11.md)、R4.19-pre 竣工记录、R4.13 advanced plan、`web-app.md`、`page-concepts.md` 与概念图：`web-deliverable-change-request.png`、`web-operations-pages-atlas.png`。
 2. 已扩展 `packages/ui/src/gold-path/route-react-components.ts`：新增 `ProposalRouteComponent` split adapter，readonly props 来自 typed Proposal Page VM 与 conflicts API，advanced fallback 状态进入 props/fingerprint。
 3. 已扩展 `packages/ui/src/gold-path/route-components.ts`：Proposal route section 与 hydration root 暴露 split adapter marker、readonly action count、advanced fallback boundary、line/field/subrecord fallback marker。
 4. 已扩展 `apps/web/src/routes.ts`：`webReactRouteTree.proposal` 标记为 React-compatible split component；runtime mount 仍只在 Home probe 生效。
@@ -2954,11 +2954,11 @@ R4 验收：
 6. 已扩展 tests 与 browser smoke：`@workhub/ui test` 52/52、`@workhub/web test` 20/20、`@workhub/api-client test` 9/9、`pnpm typecheck`、`pnpm test` 与 R4.19 Chrome smoke 42 步通过。
 7. R4.19 gates 全部通过：`r4_19_proposal_split_component_marker`、`r4_19_proposal_advanced_fallback_boundary`、`r4_19_proposal_readonly_props_parity`、`r4_19_dirty_edit_sse_guard`、`r4_19_no_new_fixture_chrome`。
 8. Bug / 数据流审查：Proposal mutation editors 继续走现有 delegated dispatcher；dirty guard 证明 line decision/search/custom field 在 `proposal.merged` SSE 后不丢；gold-path fixture 请求次数被锁定，R4.19 不新增 chrome fixture 依赖。
-9. 边界：R4.19 不是 Proposal mutation editor 真迁移，不解决 app 级 SSE 长连接、Last-Event-ID 或 fixture chrome 退役；这些进入 [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./r4-20-dataflow-foundation-plan-2026-06-11.md)。
+9. 边界：R4.19 不是 Proposal mutation editor 真迁移，不解决 app 级 SSE 长连接、Last-Event-ID 或 fixture chrome 退役；这些进入 [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./archive/r4-20-dataflow-foundation-plan-2026-06-11.md)。
 
 ### R4.20 已落：dataflow foundation
 
-1. 已阅读 [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./r4-20-dataflow-foundation-plan-2026-06-11.md)、R4.19 竣工记录、R4.19-pre true React mount spike、R4 中期审查、R4.8 Redis/SSE plan、`web-app.md`、`page-concepts.md` 与概念/证据：`web-operations-pages-atlas.png`、R4.19 contact sheet、R4.8 Redis/SSE contact sheet。
+1. 已阅读 [`r4-20-dataflow-foundation-plan-2026-06-11.md`](./archive/r4-20-dataflow-foundation-plan-2026-06-11.md)、R4.19 竣工记录、R4.19-pre true React mount spike、R4 中期审查、R4.8 Redis/SSE plan、`web-app.md`、`page-concepts.md` 与概念/证据：`web-operations-pages-atlas.png`、R4.19 contact sheet、R4.8 Redis/SSE contact sheet。
 2. 已改 `apps/web/src/routes.ts`：ready route 不再请求 `/api/pages/gold-path`；每个 route 只读取自身 typed Page VM（Proposal 额外读 conflicts），再用 product shell locale copy、route registry 和 active metrics 组装真实 chrome。
 3. 已改 `packages/ui/src/gold-path/product-shell.ts` 与 `route-components.ts`：product shell 可消费不带完整 fixture VM 的 shell surface；route component renderer 增加 active-only API，Replay 不再需要完整 demo surface。
 4. 已改 `apps/web/src/browser.ts`：SSE runtime 从 ready route AbortController 拆出，按 URL 复用 EventSource，route switch 只同步 target set；dirty guard 与 Home React `react-props` update 继续作为特殊刷新路径。
@@ -2967,22 +2967,22 @@ R4 验收：
 7. 已扩展 R4 live browser smoke：新增 `r4_20_app_level_sse_runtime`、`r4_20_route_switch_does_not_rebuild_all_event_sources`、`r4_20_page_vm_local_refetch`、`r4_20_shell_chrome_no_gold_path_fixture_dependency`、`r4_20_last_event_id_or_cursor_contract`、`r4_20_dirty_guard_regression`、`r4_20_home_react_props_update_regression`、`r4_20_no_new_fixture_chrome`。
 8. 验收：`@workhub/events test` 13/13、`@workhub/ui typecheck`、`@workhub/web typecheck`、`@workhub/web test` 20/20、`@workhub/api typecheck`、`@workhub/api test` 105/105、`pnpm typecheck` 与 42 步 Chrome smoke 通过；report 关键计数 `goldPath=0`、`sseProposal=1`、`proposal=2`、`proposalConflicts=2`、`qaEmit=4`。
 9. Bug / 数据流审查：P0-3 fixture chrome 已退役第一段；P0-4 EventSource 整建整拆已退役第一段；SSE 仍只触发 REST/Page VM reconcile，不承诺历史 replay；Proposal dirty edit 和 Home React props 回归均通过。
-10. 边界：R4.20 不迁 Proposal mutation editor，不抽 Web/desktop shared runtime；desktop-webview dispatcher drift 与单体 smoke 膨胀进入 [`r4-21-shared-web-runtime-plan-2026-06-11.md`](./r4-21-shared-web-runtime-plan-2026-06-11.md)。
+10. 边界：R4.20 不迁 Proposal mutation editor，不抽 Web/desktop shared runtime；desktop-webview dispatcher drift 与单体 smoke 膨胀进入 [`r4-21-shared-web-runtime-plan-2026-06-11.md`](./archive/r4-21-shared-web-runtime-plan-2026-06-11.md)。
 
 ### R4.21 已落：shared web runtime
 
-1. 已阅读 [`r4-21-shared-web-runtime-plan-2026-06-11.md`](./r4-21-shared-web-runtime-plan-2026-06-11.md)、R4.20 竣工记录、R4 中期审查 P1-1、`web-app.md`、`desktop-pet-tauri.md`、`page-concepts.md` 与 R4.20 contact sheet，确认本轮只抽共享运行时，不改视觉。
+1. 已阅读 [`r4-21-shared-web-runtime-plan-2026-06-11.md`](./archive/r4-21-shared-web-runtime-plan-2026-06-11.md)、R4.20 竣工记录、R4 中期审查 P1-1、`web-app.md`、`desktop-pet-tauri.md`、`page-concepts.md` 与 R4.20 contact sheet，确认本轮只抽共享运行时，不改视觉。
 2. 已新增 `packages/web-runtime`：共享 HTML/CSS escape、browser locale persistence、structured route notices、action href parser、payload materializer、dirty marker、route line editor binding 与可注入 app-level live runtime。
 3. 已改 `apps/web/src/browser.ts`：Web 继续拥有 route orchestration 与 typed API sequencing，但 notice/payload/dirty/line-editor/live runtime 调用 shared package；R4.20 app-level SSE、Page VM local refetch、cursor、dirty guard 与 Home `react-props` 语义保持不变。
 4. 已改 `apps/desktop-webview/src/browser.ts`：删除旧 proposal parser、merge conflict extractor、line editor payload updater 等重复实现，接入 shared locale、notice、payload 与 line editor helpers；locale persistence failure 现在显示结构化 notice。
 5. 已补 tests 与 QA gates：`@workhub/web-runtime` typecheck/test 9/9、`@workhub/web` typecheck/test 20/20、`@workhub/ui` test 52/52、`@workhub/desktop-webview` typecheck/test 85/85、`pnpm typecheck`、`pnpm test` 与 R4 42 步 Chrome smoke 均通过。
 6. R4.21 gates 全部通过：`r4_21_shared_runtime_dispatcher_parity`、`r4_21_shared_notice_locale_parity`、`r4_21_r4_20_sse_runtime_regression`、`r4_21_dirty_guard_regression`、`r4_21_no_new_browser_smoke_sprawl`。
 7. Bug / 数据流审查：Web 与 desktop-webview 不再各自维护 action parser/notice/line-editor 主真相源；SSE payload 仍只触发 REST/Page VM reconcile；dirty route 仍显示 notice + 手动刷新，不清空未提交编辑态。
-8. 边界：R4.21 不迁 Proposal mutation editor，不把 desktop-webview 直接升级成完整 Web Page VM route loader，也不改变 Cuu/pet/Rust 边界；第一段可见 React controlled-state 迁移进入 [`r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md`](./r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md)。
+8. 边界：R4.21 不迁 Proposal mutation editor，不把 desktop-webview 直接升级成完整 Web Page VM route loader，也不改变 Cuu/pet/Rust 边界；第一段可见 React controlled-state 迁移进入 [`r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md`](./archive/r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md)。
 
 ### R4.22 已落：Proposal mutation editor migration
 
-1. 已阅读 [`r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md`](./r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md)、R4.19-pre/R4.19/R4.20/R4.21 竣工记录、`web-app.md`、`page-concepts.md`、`web-deliverable-change-request.png`、`web-operations-pages-atlas.png` 与 R4 live route contact sheet。
+1. 已阅读 [`r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md`](./archive/r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md)、R4.19-pre/R4.19/R4.20/R4.21 竣工记录、`web-app.md`、`page-concepts.md`、`web-deliverable-change-request.png`、`web-operations-pages-atlas.png` 与 R4 live route contact sheet。
 2. 已选择 structured field scalar editor 作为第一段 visible React mutation editor；没有直接迁整个 line editor，避免把复杂 hunk/search/scope/bulk state 一次性压进同一轮。
 3. 已改 `packages/ui/src/gold-path/route-components.ts`：Proposal advanced conflict review 增加 React mutation editor host，HTML structured field fallback 继续输出并可审计。
 4. 已改 `apps/web/src/routes.ts`：`webReactRouteTree.proposal.hydration.runtimeMount` 标记 `react-18-visible-mutation-editor`、`ProposalMutationEditor` 与 `structured-field-scalar`。
@@ -2990,11 +2990,11 @@ R4 验收：
 6. 已扩展 tests 与 browser smoke：Web route tests 覆盖 R4.22 host/runtime/payload/fallback，UI route tests 覆盖 host marker；browser smoke 新增 visible React mutation editor、controlled state survives SSE、single dispatcher、HTML fallback boundary、no-new-smoke-sprawl gates。
 7. 验收通过：`@workhub/web-runtime` typecheck/test 9/9、`@workhub/web` typecheck/test 21/21、`@workhub/ui` typecheck/test 52/52、`@workhub/desktop-webview` typecheck/test 85/85、`pnpm typecheck`、`pnpm test` 与 R4 42 步 Chrome smoke。
 8. Bug / 数据流审查：React editor 不直接 fetch；SSE 仍只触发 REST/Page VM reconcile；dirty route 保留 React controlled input 并显示手动刷新；HTML fallback preserved/hidden，未迁移 line/subrecord/bulk editor 继续保留 fallback marker。
-9. 边界：R4.22 不迁 Proposal line editor，不改后端 merge/apply 语义，也不改变 Proposal 首屏视觉。line editor 的 hunk decision/search/scope 最小迁移进入 [`r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md`](./r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md)。
+9. 边界：R4.22 不迁 Proposal line editor，不改后端 merge/apply 语义，也不改变 Proposal 首屏视觉。line editor 的 hunk decision/search/scope 最小迁移进入 [`r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md`](./archive/r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md)。
 
 ### R4.23 已落：Proposal line editor React migration
 
-1. 已阅读 [`r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md`](./r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md)、R4.19-pre/R4.19/R4.20/R4.21/R4.22 竣工记录、`r1-route-line-editor.md`、`web-app.md`、`page-concepts.md`、`web-deliverable-change-request.png` 与 R4 live route contact sheet。
+1. 已阅读 [`r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md`](./archive/r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md)、R4.19-pre/R4.19/R4.20/R4.21/R4.22 竣工记录、`r1-route-line-editor.md`、`web-app.md`、`page-concepts.md`、`web-deliverable-change-request.png` 与 R4 live route contact sheet。
 2. 已选择 text hunk line editor 的 hunk decision/search/current file panel 作为第二段 visible React mutation island；没有迁 subrecord/bulk workbench，避免扩大高风险编辑态。
 3. 已改 `packages/ui/src/gold-path/route-components.ts`：Proposal advanced conflict review 增加 `data-r4-proposal-react-line-editor-host="text-hunk"`，HTML line editor fallback 继续输出并可审计。
 4. 已改 `apps/web/src/routes.ts`：`webReactRouteTree.proposal.hydration.runtimeMount` 标记 `lineEditor: "text-hunk"`，ready root 暴露 `data-r4-route-tree-runtime-line-editor="text-hunk"`。
@@ -3002,17 +3002,17 @@ R4 验收：
 6. 已扩展 tests 与 browser smoke：Web route tests 覆盖 R4.23 host/runtime/payload/fallback；browser smoke 新增 visible React line editor、hunk state survives SSE、payload parity、HTML fallback boundary、single dispatcher、no-new-smoke-sprawl gates。
 7. 验收通过：`@workhub/web-runtime` typecheck/test、`@workhub/web` typecheck/test、`@workhub/ui` typecheck/test、`@workhub/desktop-webview` typecheck/test、`pnpm typecheck`、`pnpm test` 与 R4 42 步 Chrome smoke。
 8. Bug / 数据流审查：React line editor 不直接 fetch；SSE 仍只触发 REST/Page VM reconcile；dirty route 保留 hunk decision/search 与 structured field input；HTML fallback preserved/hidden，未迁移 subrecord/bulk editor 继续保留 fallback marker。
-9. 边界：R4.23 不改后端 merge/apply 语义、不改变 Proposal 首屏视觉，也不宣称整个 Web 已完全 React 化。R4 收尾进入 [`r4-24-web-runtime-finalization-plan-2026-06-11.md`](./r4-24-web-runtime-finalization-plan-2026-06-11.md)。
+9. 边界：R4.23 不改后端 merge/apply 语义、不改变 Proposal 首屏视觉，也不宣称整个 Web 已完全 React 化。R4 收尾进入 [`r4-24-web-runtime-finalization-plan-2026-06-11.md`](./archive/r4-24-web-runtime-finalization-plan-2026-06-11.md)。
 
 ### R4.24 已落：Web runtime finalization
 
-1. 已阅读 [`r4-24-web-runtime-finalization-plan-2026-06-11.md`](./r4-24-web-runtime-finalization-plan-2026-06-11.md)、中期审查清单、R4.20-R4.23 竣工记录、`web-app.md`、`page-concepts.md`、R4 live route contact sheet 与 Drive 概念图。
+1. 已阅读 [`r4-24-web-runtime-finalization-plan-2026-06-11.md`](./archive/r4-24-web-runtime-finalization-plan-2026-06-11.md)、中期审查清单、R4.20-R4.23 竣工记录、`web-app.md`、`page-concepts.md`、R4 live route contact sheet 与 Drive 概念图。
 2. 已改 `apps/web/src/browser.ts`：生产导航不再写 `#/...`；boot 遇到 legacy hash route 时用 `webRouteHref()` canonicalize 到 path URL；route navigation 比较 pathname + search。
 3. 已改 `apps/web/src/routes.ts`：`normalizePathname()` / `normalizeSearch()` 不再把 hash 当 route truth；`webRouteHref()` 仍支持 legacy `#/path?query` 到 path 的迁移。
 4. 已扩展 `apps/web/src/routes.test.ts`：`resolveWebRoute("/#/approvals")` 回 home，普通 hash anchor 不再保留为 route href，legacy hash canonicalization 可测试。
 5. 已扩展 browser smoke：新增 `locationHash` audit、`r4_24_no_hash_write` 与 `r4_24_r4_23_react_line_editor_regression` gates，继续保护 R4.23 dirty guard/payload parity。
 6. 已治理根 README 与 docs README：短状态 + 最近里程碑表，规格树文档计数更新到 117。
-7. 已新增 [`r5-01-drive-business-slice-decision-2026-06-11.md`](./r5-01-drive-business-slice-decision-2026-06-11.md)：R5 第一条业务纵切选择 M-DRIVE。
+7. 已新增 [`r5-01-drive-business-slice-decision-2026-06-11.md`](./archive/r5-01-drive-business-slice-decision-2026-06-11.md)：R5 第一条业务纵切选择 M-DRIVE。
 8. Bug / 数据流审查：hash route drift 已收敛；SSE/Page VM 真相源、dirty guard、single dispatcher、fallback boundary 与 no-overflow/no-secret/no-Cuu 继续作为 regression 门。
 9. 边界：R4.24 不新增 Proposal editor 面，不宣称 Meeting/Schedule 完成，也不把 Drive 视为已实现；它完成的是 R5 开工前的 runtime/governance 收尾。
 

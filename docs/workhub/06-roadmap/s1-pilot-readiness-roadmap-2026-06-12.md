@@ -23,7 +23,7 @@ depends_on:
 
 ## 1. 为什么是现在（战略依据）
 
-[R4 中期审查](./r4-mid-review-upgrade-audit-2026-06-11.md)总评的核心判断：这个项目的风险不是方向错，而是"洞察很好 → 摊子铺开 → 最难的事被自然推迟 → 外围打磨吞掉工期"。R5.1–R5.8 已把六业务模块全部立起来、把浏览器回归门送进 CI——**外围债务已基本清完，现在是把工期押回核心反转验证的最佳时点**：
+[R4 中期审查](./archive/r4-mid-review-upgrade-audit-2026-06-11.md)总评的核心判断：这个项目的风险不是方向错，而是"洞察很好 → 摊子铺开 → 最难的事被自然推迟 → 外围打磨吞掉工期"。R5.1–R5.8 已把六业务模块全部立起来、把浏览器回归门送进 CI——**外围债务已基本清完，现在是把工期押回核心反转验证的最佳时点**：
 
 - "AI 是默认劳动力，人是审批者"这个核心反转，至今没有被任何真实使用验证过；
 - agent 引擎（4400 行）相对桌宠（5.4 万行）的投入失衡，矫正方式不是砍桌宠，而是**把劳动力做实并证明它**；
@@ -47,9 +47,9 @@ depends_on:
 
 | # | 差距 | 现状证据 | 消除于 |
 |---|---|---|---|
-| G1 | ~~**Web 端无注册流**~~ **已消除（R5.9）**：注册屏 + 登出 + deep link 保持，自动注册已删除 | [`r5-09-onboarding-minimal-plan-2026-06-12.md`](./r5-09-onboarding-minimal-plan-2026-06-12.md) 竣工记录 | ✅ |
+| G1 | ~~**Web 端无注册流**~~ **已消除（R5.9）**：注册屏 + 登出 + deep link 保持，自动注册已删除 | [`r5-09-onboarding-minimal-plan-2026-06-12.md`](./archive/r5-09-onboarding-minimal-plan-2026-06-12.md) 竣工记录 | ✅ |
 | G2 | ~~**真实 LLM 质量/成本/时延仍待真 key 验证**~~ **已消除（R5.10）**：R5.10-dry 证明管线；R5.10-real 使用 DeepSeek 真 provider 跑完 T1–T5 + B1，T1–T4 人工质量 `4/4 >= 4`，T5 结构化升级，B1 预算护栏升级，真实成本 `0.142346 CNY / 30103 tokens / 6 runs` | [`r5-10-dry-agent-pipeline-report.json`](../05-clients/assets/audit/2026-06-13-r5-10-dry-agent-pipeline/r5-10-dry-agent-pipeline-report.json) + [`r5-10-real-llm-validation-report-2026-06-13.md`](../05-clients/assets/audit/2026-06-13-r5-10-real-key-evaluation/r5-10-real-llm-validation-report-2026-06-13.md) | ✅ |
-| G3 | ~~**部署包不存在**~~ **已消除（R5.11）**：单镜像 + compose 全栈 + DEPLOY.md + 结构化日志 + CI `pilot-stack-smoke` 真实部署门（三跑抓出三个冷启动真 bug 含 admin 自举缺口） | [`r5-11-pilot-deploy-package-plan-2026-06-12.md`](./r5-11-pilot-deploy-package-plan-2026-06-12.md) 竣工记录 | ✅ |
+| G3 | ~~**部署包不存在**~~ **已消除（R5.11）**：单镜像 + compose 全栈 + DEPLOY.md + 结构化日志 + CI `pilot-stack-smoke` 真实部署门（三跑抓出三个冷启动真 bug 含 admin 自举缺口） | [`r5-11-pilot-deploy-package-plan-2026-06-12.md`](./archive/r5-11-pilot-deploy-package-plan-2026-06-12.md) 竣工记录 | ✅ |
 
 ## 3. 北极星成功指标（pilot 报告的骨架）
 

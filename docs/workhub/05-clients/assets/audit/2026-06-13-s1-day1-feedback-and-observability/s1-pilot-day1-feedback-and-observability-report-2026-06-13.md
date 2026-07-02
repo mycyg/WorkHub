@@ -5,8 +5,8 @@ status: pass
 owner: workflow
 date: 2026-06-13
 depends_on:
-  - ../../../../06-roadmap/s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md
-  - ../../../../06-roadmap/s1-pilot-week-runbook-2026-06-12.md
+  - ../../../../06-roadmap/archive/s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md
+  - ../../../../06-roadmap/archive/s1-pilot-week-runbook-2026-06-12.md
 ---
 
 # S1 Day 1 Feedback and Observability Report
@@ -96,4 +96,4 @@ Notes:
 
 ## Next
 
-进入 [`s1-pilot-day2-feedback-hardening-plan-2026-06-13.md`](../../../../06-roadmap/s1-pilot-day2-feedback-hardening-plan-2026-06-13.md)：先修 post-run WorkItem 刷新/notice 和 QA idempotency，再邀请下一批 1-3 个真实用户。
+进入 [`s1-pilot-day2-feedback-hardening-plan-2026-06-13.md`](../../../../06-roadmap/archive/s1-pilot-day2-feedback-hardening-plan-2026-06-13.md)：先修 post-run WorkItem 刷新/notice 和 QA idempotency，再邀请下一批 1-3 个真实用户。

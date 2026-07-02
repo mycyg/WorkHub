@@ -5,8 +5,8 @@ status: passed
 owner: workflow
 date: 2026-06-13
 depends_on:
-  - ../../../../06-roadmap/s1-pilot-launch-gate-plan-2026-06-13.md
-  - ../../../../06-roadmap/s1-pilot-week-runbook-2026-06-12.md
+  - ../../../../06-roadmap/archive/s1-pilot-launch-gate-plan-2026-06-13.md
+  - ../../../../06-roadmap/archive/s1-pilot-week-runbook-2026-06-12.md
   - ../../../../06-roadmap/s1-pilot-readiness-roadmap-2026-06-12.md
 ---
 
@@ -100,7 +100,7 @@ depends_on:
 
 Launch Gate 通过后，下一模块不是扩业务面，而是启动受控 Day 0：
 
-1. 用 [`s1-pilot-day0-real-work-entry-plan-2026-06-13.md`](../../../../06-roadmap/s1-pilot-day0-real-work-entry-plan-2026-06-13.md) 做下一施工入口。
+1. 用 [`s1-pilot-day0-real-work-entry-plan-2026-06-13.md`](../../../../06-roadmap/archive/s1-pilot-day0-real-work-entry-plan-2026-06-13.md) 做下一施工入口。
 2. 把“真实用户从 UI 发起任务 / 项目种子”设为 Day 0 首个硬门，避免只靠 QA 脚本创建数据。
 3. 用本次 compose 栈继续跑一条主持人可见的真实 work item：提交 → agent run → proposal → approval/merge → replay → cost。
 4. Day 0 通过后再按 Pilot Week runbook 邀请更多使用者。

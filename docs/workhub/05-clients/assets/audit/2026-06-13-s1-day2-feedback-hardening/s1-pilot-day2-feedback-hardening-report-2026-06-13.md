@@ -5,7 +5,7 @@ status: pass
 owner: workflow
 date: 2026-06-13
 depends_on:
-  - ../../../../06-roadmap/s1-pilot-day2-feedback-hardening-plan-2026-06-13.md
+  - ../../../../06-roadmap/archive/s1-pilot-day2-feedback-hardening-plan-2026-06-13.md
 ---
 
 # S1 Day 2 Feedback Hardening Report

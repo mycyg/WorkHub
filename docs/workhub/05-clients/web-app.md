@@ -131,7 +131,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.6 R4.1 Web route-state matrix foundation（2026-06-11 已落）
 
-本轮把 R4 的“四态 + 双语 + 无 Cuu 主窗 + 不横向溢出”从文字要求变成可复跑 QA foundation。详细计划与验收见 [`../06-roadmap/r4-01-web-route-state-matrix-plan-2026-06-11.md`](../06-roadmap/r4-01-web-route-state-matrix-plan-2026-06-11.md)。
+本轮把 R4 的“四态 + 双语 + 无 Cuu 主窗 + 不横向溢出”从文字要求变成可复跑 QA foundation。详细计划与验收见 [`../06-roadmap/archive/r4-01-web-route-state-matrix-plan-2026-06-11.md`](../06-roadmap/archive/r4-01-web-route-state-matrix-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -142,7 +142,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.7 R4.2 Web route registry + loader（2026-06-11 已落）
 
-本轮把 R4.1 的静态四态基础接入浏览器入口。详细计划与验收见 [`../06-roadmap/r4-02-web-route-registry-loader-plan-2026-06-11.md`](../06-roadmap/r4-02-web-route-registry-loader-plan-2026-06-11.md)。
+本轮把 R4.1 的静态四态基础接入浏览器入口。详细计划与验收见 [`../06-roadmap/archive/r4-02-web-route-registry-loader-plan-2026-06-11.md`](../06-roadmap/archive/r4-02-web-route-registry-loader-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -156,7 +156,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.8 R4.3 Web multi-record Page VM visual QA（2026-06-11 已落）
 
-本轮把 R4.2 的 route loader 证据从单场景 preview 推进到多记录 Page VM visual QA。详细计划与验收见 [`../06-roadmap/r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md`](../06-roadmap/r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md)。
+本轮把 R4.2 的 route loader 证据从单场景 preview 推进到多记录 Page VM visual QA。详细计划与验收见 [`../06-roadmap/archive/r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md`](../06-roadmap/archive/r4-03-web-multi-record-page-vm-visual-qa-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -170,7 +170,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.9 R4.4 Web product shell baseline（2026-06-11 已落）
 
-本轮把 R4.3 的 ready route 从旧 preview shell 切到 Web 产品壳 baseline。详细计划与验收见 [`../06-roadmap/r4-04-web-product-shell-baseline-plan-2026-06-11.md`](../06-roadmap/r4-04-web-product-shell-baseline-plan-2026-06-11.md)。
+本轮把 R4.3 的 ready route 从旧 preview shell 切到 Web 产品壳 baseline。详细计划与验收见 [`../06-roadmap/archive/r4-04-web-product-shell-baseline-plan-2026-06-11.md`](../06-roadmap/archive/r4-04-web-product-shell-baseline-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -184,7 +184,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.10 R4.5 Web live route interaction smoke（2026-06-11 已落）
 
-本轮把 R4.4 的截图基线推进到真实浏览器事件链路。详细计划与验收见 [`../06-roadmap/r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md`](../06-roadmap/r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md)。
+本轮把 R4.4 的截图基线推进到真实浏览器事件链路。详细计划与验收见 [`../06-roadmap/archive/r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md`](../06-roadmap/archive/r4-05-web-live-route-interaction-smoke-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -198,7 +198,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.11 R4.6 Rust system-string i18n（2026-06-11 已落）
 
-本轮把 Web/desktop/pet 已有 locale contract 延伸到 Rust shell 系统层。详细计划与验收见 [`../06-roadmap/r4-06-rust-system-string-i18n-plan-2026-06-11.md`](../06-roadmap/r4-06-rust-system-string-i18n-plan-2026-06-11.md)。
+本轮把 Web/desktop/pet 已有 locale contract 延伸到 Rust shell 系统层。详细计划与验收见 [`../06-roadmap/archive/r4-06-rust-system-string-i18n-plan-2026-06-11.md`](../06-roadmap/archive/r4-06-rust-system-string-i18n-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -212,7 +212,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.12 R4.7 Web live API / PG seed smoke（2026-06-11 已通过远端 PG gate）
 
-本轮把 R4.5 的 mock API live-browser smoke 推进到真实 API daemon + Postgres seed 的可复跑脚本。详细计划与验收状态见 [`../06-roadmap/r4-07-web-live-api-pg-seed-smoke-2026-06-11.md`](../06-roadmap/r4-07-web-live-api-pg-seed-smoke-2026-06-11.md)。
+本轮把 R4.5 的 mock API live-browser smoke 推进到真实 API daemon + Postgres seed 的可复跑脚本。详细计划与验收状态见 [`../06-roadmap/archive/r4-07-web-live-api-pg-seed-smoke-2026-06-11.md`](../06-roadmap/archive/r4-07-web-live-api-pg-seed-smoke-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -226,7 +226,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.13 R4.8 Redis/SSE production browser smoke（2026-06-11 已通过远端 Redis gate）
 
-本轮把 R4.7 的真实 API/PG 浏览器 smoke 推进到 Redis broker + 多 worker SSE refresh。详细计划与验收状态见 [`../06-roadmap/r4-08-redis-sse-production-browser-smoke-2026-06-11.md`](../06-roadmap/r4-08-redis-sse-production-browser-smoke-2026-06-11.md)。
+本轮把 R4.7 的真实 API/PG 浏览器 smoke 推进到 Redis broker + 多 worker SSE refresh。详细计划与验收状态见 [`../06-roadmap/archive/r4-08-redis-sse-production-browser-smoke-2026-06-11.md`](../06-roadmap/archive/r4-08-redis-sse-production-browser-smoke-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -241,7 +241,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.14 R4.9 Web locale Page VM + shell metrics consistency（2026-06-11 已通过远端 locale metrics gate）
 
-本轮把 R4.8 留下的“只回 `meta.locale`、但 Page VM 动态系统标签仍未本地化”和“shell 顶部指标从 DOM 猜数”两个风险收口。详细计划与验收状态见 [`../06-roadmap/r4-09-web-locale-page-vm-shell-metrics-2026-06-11.md`](../06-roadmap/r4-09-web-locale-page-vm-shell-metrics-2026-06-11.md)。
+本轮把 R4.8 留下的“只回 `meta.locale`、但 Page VM 动态系统标签仍未本地化”和“shell 顶部指标从 DOM 猜数”两个风险收口。详细计划与验收状态见 [`../06-roadmap/archive/r4-09-web-locale-page-vm-shell-metrics-2026-06-11.md`](../06-roadmap/archive/r4-09-web-locale-page-vm-shell-metrics-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -255,7 +255,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.15 R4.10 Web route componentization first slice（2026-06-11 已落）
 
-本轮把 R4.9 仍依赖全量 shared HTML renderer panels 的高频 ready route，推进到显式 route component。详细计划与验收状态见 [`../06-roadmap/r4-10-web-route-componentization-plan-2026-06-11.md`](../06-roadmap/r4-10-web-route-componentization-plan-2026-06-11.md)。
+本轮把 R4.9 仍依赖全量 shared HTML renderer panels 的高频 ready route，推进到显式 route component。详细计划与验收状态见 [`../06-roadmap/archive/r4-10-web-route-componentization-plan-2026-06-11.md`](../06-roadmap/archive/r4-10-web-route-componentization-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -269,7 +269,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.16 R4.11 Web route componentization second slice（2026-06-11 已落）
 
-本轮把 R4.10 之后的剩余高频 ready route 继续拆成显式 route components。详细计划与验收状态见 [`../06-roadmap/r4-11-web-route-componentization-second-slice-plan-2026-06-11.md`](../06-roadmap/r4-11-web-route-componentization-second-slice-plan-2026-06-11.md)。
+本轮把 R4.10 之后的剩余高频 ready route 继续拆成显式 route components。详细计划与验收状态见 [`../06-roadmap/archive/r4-11-web-route-componentization-second-slice-plan-2026-06-11.md`](../06-roadmap/archive/r4-11-web-route-componentization-second-slice-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -283,7 +283,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.17 R4.12 Web action / notice locale route UX（2026-06-11 已落）
 
-本轮把 browser glue 里的动作反馈收敛成可审计、双语、可截图的 route notice contract。详细计划与验收状态见 [`../06-roadmap/r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md`](../06-roadmap/r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md)。
+本轮把 browser glue 里的动作反馈收敛成可审计、双语、可截图的 route notice contract。详细计划与验收状态见 [`../06-roadmap/archive/r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md`](../06-roadmap/archive/r4-12-web-action-notice-locale-route-ux-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -296,7 +296,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.18 R4.13 Proposal advanced route UX convergence（2026-06-11 已落）
 
-本轮把 Proposal 高级冲突能力从 shared helper 收敛进 Web active-only route component。详细计划与验收状态见 [`../06-roadmap/r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md`](../06-roadmap/r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md)。
+本轮把 Proposal 高级冲突能力从 shared helper 收敛进 Web active-only route component。详细计划与验收状态见 [`../06-roadmap/archive/r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md`](../06-roadmap/archive/r4-13-proposal-advanced-route-ux-convergence-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -309,7 +309,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.19 R4.14 Option Intake / Knowledge route componentization（2026-06-11 已落）
 
-本轮把 Option Intake 与 Knowledge fallback 从共享 gold-path/demo 页面推进成真实 Web active-only route component。详细计划与验收状态见 [`../06-roadmap/r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md`](../06-roadmap/r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md)。
+本轮把 Option Intake 与 Knowledge fallback 从共享 gold-path/demo 页面推进成真实 Web active-only route component。详细计划与验收状态见 [`../06-roadmap/archive/r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md`](../06-roadmap/archive/r4-14-option-intake-knowledge-route-componentization-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -322,7 +322,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.20 R4.15 Settings / locale / device boundary hardening（2026-06-11 已落）
 
-本轮把 Settings 从“只显示 configured 状态”的 route component，推进到可审计的 runtime / language / desktop boundary surface。详细计划与验收状态见 [`../06-roadmap/r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md`](../06-roadmap/r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md)。
+本轮把 Settings 从“只显示 configured 状态”的 route component，推进到可审计的 runtime / language / desktop boundary surface。详细计划与验收状态见 [`../06-roadmap/archive/r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md`](../06-roadmap/archive/r4-15-settings-locale-device-boundary-hardening-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -335,7 +335,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.21 R4.16 React route tree / hydration boundary（2026-06-11 已落）
 
-本轮没有引入真实 React runtime，也没有改视觉；它先把当前 HTML route components 包进可审计的 route adapter / hydration boundary，为 R4.17 真组件迁移铺轨。详细计划与验收状态见 [`../06-roadmap/r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md`](../06-roadmap/r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md)。
+本轮没有引入真实 React runtime，也没有改视觉；它先把当前 HTML route components 包进可审计的 route adapter / hydration boundary，为 R4.17 真组件迁移铺轨。详细计划与验收状态见 [`../06-roadmap/archive/r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md`](../06-roadmap/archive/r4-16-react-route-tree-hydration-boundary-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -348,7 +348,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.22 R4.17 React route component first migration（2026-06-11 已落）
 
-本轮把 Home / Settings 作为首批低风险 route，迁入 React-compatible component adapter。详细计划与验收状态见 [`../06-roadmap/r4-17-react-route-component-first-migration-plan-2026-06-11.md`](../06-roadmap/r4-17-react-route-component-first-migration-plan-2026-06-11.md)。
+本轮把 Home / Settings 作为首批低风险 route，迁入 React-compatible component adapter。详细计划与验收状态见 [`../06-roadmap/archive/r4-17-react-route-component-first-migration-plan-2026-06-11.md`](../06-roadmap/archive/r4-17-react-route-component-first-migration-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -361,7 +361,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.23 R4.18 React Route Migration Expansion（2026-06-11 已落）
 
-本轮把 Cost / Replay 扩展到同一 React-compatible component adapter，并补齐 Replay accepted deliverable restore 的 single dispatcher proof。详细计划与验收状态见 [`../06-roadmap/r4-18-react-route-migration-expansion-plan-2026-06-11.md`](../06-roadmap/r4-18-react-route-migration-expansion-plan-2026-06-11.md)。
+本轮把 Cost / Replay 扩展到同一 React-compatible component adapter，并补齐 Replay accepted deliverable restore 的 single dispatcher proof。详细计划与验收状态见 [`../06-roadmap/archive/r4-18-react-route-migration-expansion-plan-2026-06-11.md`](../06-roadmap/archive/r4-18-react-route-migration-expansion-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -374,7 +374,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.24 R4.19-pre True React Mount Spike（2026-06-11 已落）
 
-本轮只验证运行时合同，不改视觉。详细计划与验收状态见 [`../06-roadmap/r4-19-pre-true-react-mount-spike-plan-2026-06-11.md`](../06-roadmap/r4-19-pre-true-react-mount-spike-plan-2026-06-11.md)。
+本轮只验证运行时合同，不改视觉。详细计划与验收状态见 [`../06-roadmap/archive/r4-19-pre-true-react-mount-spike-plan-2026-06-11.md`](../06-roadmap/archive/r4-19-pre-true-react-mount-spike-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -387,7 +387,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.25 R4.19 Proposal Advanced Split Migration（2026-06-11 已落）
 
-本轮把 Proposal route 做成 split adapter：readonly summary / review metadata / counts / action hrefs 进入 `ProposalRouteComponent` props，mutation-heavy editors 继续保留在 HTML fallback。详细计划与验收状态见 [`../06-roadmap/r4-19-proposal-advanced-split-migration-plan-2026-06-11.md`](../06-roadmap/r4-19-proposal-advanced-split-migration-plan-2026-06-11.md)。
+本轮把 Proposal route 做成 split adapter：readonly summary / review metadata / counts / action hrefs 进入 `ProposalRouteComponent` props，mutation-heavy editors 继续保留在 HTML fallback。详细计划与验收状态见 [`../06-roadmap/archive/r4-19-proposal-advanced-split-migration-plan-2026-06-11.md`](../06-roadmap/archive/r4-19-proposal-advanced-split-migration-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -401,7 +401,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.26 R4.20 Dataflow Foundation（2026-06-11 已落）
 
-本轮把 Web 前端运行时从“ready render 重建所有 EventSource + 重拉 gold-path fixture chrome”改成“app-level SSE runtime + active Page VM source”。详细计划与验收状态见 [`../06-roadmap/r4-20-dataflow-foundation-plan-2026-06-11.md`](../06-roadmap/r4-20-dataflow-foundation-plan-2026-06-11.md)。
+本轮把 Web 前端运行时从“ready render 重建所有 EventSource + 重拉 gold-path fixture chrome”改成“app-level SSE runtime + active Page VM source”。详细计划与验收状态见 [`../06-roadmap/archive/r4-20-dataflow-foundation-plan-2026-06-11.md`](../06-roadmap/archive/r4-20-dataflow-foundation-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -415,7 +415,7 @@ Replay Work 不再只显示步骤、成本、快照和正式交付物。当前 `
 
 ### 0.27 R4.21 Shared Web Runtime（2026-06-11 已落）
 
-R4.21 把 Web 与 desktop-webview 最容易继续分叉的浏览器运行时抽成 `@workhub/web-runtime`。详细计划与验收状态见 [`../06-roadmap/r4-21-shared-web-runtime-plan-2026-06-11.md`](../06-roadmap/r4-21-shared-web-runtime-plan-2026-06-11.md)。
+R4.21 把 Web 与 desktop-webview 最容易继续分叉的浏览器运行时抽成 `@workhub/web-runtime`。详细计划与验收状态见 [`../06-roadmap/archive/r4-21-shared-web-runtime-plan-2026-06-11.md`](../06-roadmap/archive/r4-21-shared-web-runtime-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -428,7 +428,7 @@ R4.21 把 Web 与 desktop-webview 最容易继续分叉的浏览器运行时抽�
 
 ### 0.28 R4.22 Proposal Mutation Editor Migration（2026-06-11 已落）
 
-R4.22 把 Proposal advanced 区的 structured field scalar editor 迁成第一段真实可见 React mutation editor。详细计划与验收状态见 [`../06-roadmap/r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md`](../06-roadmap/r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md)。
+R4.22 把 Proposal advanced 区的 structured field scalar editor 迁成第一段真实可见 React mutation editor。详细计划与验收状态见 [`../06-roadmap/archive/r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md`](../06-roadmap/archive/r4-22-proposal-mutation-editor-migration-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -442,7 +442,7 @@ R4.22 把 Proposal advanced 区的 structured field scalar editor 迁成第一�
 
 ### 0.29 R4.23 Proposal Line Editor React Migration（2026-06-11 已落）
 
-R4.23 把 Proposal advanced 区的 text hunk line editor 迁成第二段真实可见 React mutation island。详细计划与验收状态见 [`../06-roadmap/r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md`](../06-roadmap/r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md)。
+R4.23 把 Proposal advanced 区的 text hunk line editor 迁成第二段真实可见 React mutation island。详细计划与验收状态见 [`../06-roadmap/archive/r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md`](../06-roadmap/archive/r4-23-proposal-line-editor-react-migration-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|
@@ -457,7 +457,7 @@ R4.23 把 Proposal advanced 区的 text hunk line editor 迁成第二段真实�
 
 ### 0.30 R4.24 Web Runtime Finalization（2026-06-11 已落）
 
-R4.24 把 R4 收尾风险从运行时和治理层面清掉。详细计划与验收状态见 [`../06-roadmap/r4-24-web-runtime-finalization-plan-2026-06-11.md`](../06-roadmap/r4-24-web-runtime-finalization-plan-2026-06-11.md)。
+R4.24 把 R4 收尾风险从运行时和治理层面清掉。详细计划与验收状态见 [`../06-roadmap/archive/r4-24-web-runtime-finalization-plan-2026-06-11.md`](../06-roadmap/archive/r4-24-web-runtime-finalization-plan-2026-06-11.md)。
 
 | 项 | 当前实现 | 后续目标 |
 |---|---|---|

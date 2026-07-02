@@ -5,8 +5,8 @@ status: pass
 owner: workflow
 date: 2026-06-13
 depends_on:
-  - ../../../../06-roadmap/s1-pilot-day0-real-work-entry-plan-2026-06-13.md
-  - ../../../../06-roadmap/s1-pilot-week-runbook-2026-06-12.md
+  - ../../../../06-roadmap/archive/s1-pilot-day0-real-work-entry-plan-2026-06-13.md
+  - ../../../../06-roadmap/archive/s1-pilot-week-runbook-2026-06-12.md
 ---
 
 # S1 Day 0 Real Work Entry Report
@@ -74,4 +74,4 @@ depends_on:
 
 ## Next
 
-进入 [`s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md`](../../../../06-roadmap/s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md)：不扩业务面，先把真实用户反馈、每日指标、异常 triage 和 Pilot Week report 输入源固化。
+进入 [`s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md`](../../../../06-roadmap/archive/s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md)：不扩业务面，先把真实用户反馈、每日指标、异常 triage 和 Pilot Week report 输入源固化。

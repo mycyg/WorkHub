@@ -5,8 +5,8 @@ status: active-day3-preflight-ready
 owner: workflow
 date: 2026-06-13
 depends_on:
-  - ../../../../06-roadmap/s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md
-  - ../../../../06-roadmap/s1-pilot-day2-feedback-hardening-plan-2026-06-13.md
+  - ../../../../06-roadmap/archive/s1-pilot-day1-feedback-and-observability-plan-2026-06-13.md
+  - ../../../../06-roadmap/archive/s1-pilot-day2-feedback-hardening-plan-2026-06-13.md
   - ../../../../06-roadmap/s1-pilot-day3-expansion-plan-2026-06-13.md
 ---
 

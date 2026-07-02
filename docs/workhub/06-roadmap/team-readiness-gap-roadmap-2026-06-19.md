@@ -7,7 +7,7 @@ date: 2026-06-19
 
 # WorkHub 团队就绪度差距路线图（R3，2026-06-19）
 
-> 来源：R3 多智能体团队就绪度分析（71 条已现实核查的缺口，见 [`full-codebase-audit-round3-2026-06-19.md`](./full-codebase-audit-round3-2026-06-19.md)）。本轮 `fix all` 已落地其中可有界、无需产品拍板的项（标 ✅）；其余按 must→should→nice 排序，标注工本、做法、是否需产品决策。**标 [EPIC] 的是多周专项 + 多需产品/基建决策，不在自动循环里硬建（避免回归绿库），应各自单独 plan-first PR。**
+> 来源：R3 多智能体团队就绪度分析（71 条已现实核查的缺口，见 [`full-codebase-audit-round3-2026-06-19.md`](./archive/full-codebase-audit-round3-2026-06-19.md)）。本轮 `fix all` 已落地其中可有界、无需产品拍板的项（标 ✅）；其余按 must→should→nice 排序，标注工本、做法、是否需产品决策。**标 [EPIC] 的是多周专项 + 多需产品/基建决策，不在自动循环里硬建（避免回归绿库），应各自单独 plan-first PR。**
 
 ## ✅ 本轮已落地（6，全 CI 绿）
 
@@ -35,7 +35,7 @@ date: 2026-06-19
 
 ## multi-tenancy-isolation
 
-**现状**：WorkHub is structurally multi-tenant and has a real, staged defense-in-depth program (docs/workhub/06-roadmap/r2-epic-multi-tenancy-plan-2026-06-18.md tracks it; Phases 1–3a done, Phase 4 in progress). Concretely verified: MEMBERSHIP MODEL (real): packages/db/migrations/0024_workspace_memberships.sql + schema/core.ts:156 define workspace_memberships(workspace_id→workspaces, user_id→users, role mem
+**现状**：WorkHub is structurally multi-tenant and has a real, staged defense-in-depth program (docs/workhub/06-roadmap/archive/r2-epic-multi-tenancy-plan-2026-06-18.md tracks it; Phases 1–3a done, Phase 4 in progress). Concretely verified: MEMBERSHIP MODEL (real): packages/db/migrations/0024_workspace_memberships.sql + schema/core.ts:156 define workspace_memberships(workspace_id→workspaces, user_id→users, role mem
 
 | 重要度 | 工本 | 状态 | 缺口 | 做法/备注 |
 |--------|------|------|------|----------|
