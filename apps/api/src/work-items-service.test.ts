@@ -1425,6 +1425,110 @@ test("work item detail includes the latest task plan snapshot for presentation",
   assert.equal(vm.task_plan?.items_capped, false);
 });
 
+test("R9.2 work item detail exposes task-plan child run visibility and decision jumps", async () => {
+  const repo = repository();
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const researchId = "93000000-0000-4000-8000-000000000902";
+  const reviewId = "93000000-0000-4000-8000-000000000903";
+  repo.readWorkItemDetail = async () => ({
+    ...detailRows({ status: "ai_working", submitterUserId: userId }),
+    taskPlan: {
+      plan: {
+        id: planId,
+        workItemId,
+        workspaceId: defaultSeedIds.workspaceId,
+        status: "dispatching",
+        objectiveId: null,
+        budgetJson: { total_share_pct: 100, max_cost_cny: "3.000000" },
+        decompositionContextJson: { source: "meta_planner" },
+        createdByUserId: userId,
+        createdAt: now,
+        updatedAt: now
+      },
+      items: [
+        {
+          id: researchId,
+          planId,
+          parentItemId: null,
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          objectiveMd: "查清三类竞品的最新打法。",
+          acceptanceMd: "列出至少 3 条可核验来源。",
+          budgetSharePct: 35,
+          dependsOn: [],
+          status: "succeeded",
+          createdAt: now,
+          updatedAt: now
+        },
+        {
+          id: reviewId,
+          planId,
+          parentItemId: null,
+          seq: 2,
+          title: "复核风险",
+          role: "review",
+          objectiveMd: "确认结论风险。",
+          acceptanceMd: "列出风险和是否需要负责人决定。",
+          budgetSharePct: 25,
+          dependsOn: [researchId],
+          status: "failed",
+          createdAt: now,
+          updatedAt: now
+        }
+      ],
+      itemsCapped: false,
+      runs: [
+        {
+          id: "93000000-0000-4000-8000-000000000911",
+          parentRunId: null,
+          workItemId,
+          taskPlanId: planId,
+          taskPlanItemId: researchId,
+          agentRole: "research",
+          title: "整理竞品证据",
+          status: "succeeded",
+          costEstimate: "0.450000",
+          outcomeReason: null,
+          createdAt: now,
+          updatedAt: now,
+          finishedAt: now
+        },
+        {
+          id: "93000000-0000-4000-8000-000000000912",
+          parentRunId: null,
+          workItemId,
+          taskPlanId: planId,
+          taskPlanItemId: reviewId,
+          agentRole: "review",
+          title: "复核风险",
+          status: "escalated",
+          costEstimate: "0.800000",
+          outcomeReason: "needs_owner_decision",
+          createdAt: now,
+          updatedAt: now,
+          finishedAt: now
+        }
+      ],
+      runsCapped: false
+    }
+  } as unknown as StoredWorkItemDetailRows);
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  const vm = await service.detailPage({ workItemId, actor, locale: "zh-CN" });
+
+  assert.equal(vm.agent_team?.plan_id, planId);
+  assert.equal(vm.agent_team?.completed_count, 1);
+  assert.equal(vm.agent_team?.total_count, 2);
+  assert.equal(vm.agent_team?.cost_used_cny, "1.250000");
+  assert.equal(vm.agent_team?.cost_budget_cny, "3.000000");
+  assert.equal(vm.agent_team?.items[0]?.status, "succeeded");
+  assert.equal(vm.agent_team?.items[0]?.action?.href, "/agent-runs/93000000-0000-4000-8000-000000000911/replay");
+  assert.equal(vm.agent_team?.items[1]?.status, "needs_human");
+  assert.equal(vm.agent_team?.items[1]?.decision_href, "/attention");
+  assert.equal(vm.agent_team?.items[1]?.action?.label, "去决策");
+});
+
 test("work item detail hides accepted-deliverable restore links for read-only viewers", async () => {
   const repo = repository();
   repo.readWorkItemDetail = async () => ({

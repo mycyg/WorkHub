@@ -2,6 +2,7 @@ import type {
   AgentStep,
   CuuState,
   EvidenceRef,
+  WorkItemAgentTeamVM,
   WorkItemDetailVM,
   WorkItemStatus
 } from "@workhub/contracts";
@@ -11,6 +12,7 @@ import {
   agentStepPublicSummary,
   checkStatusLabel,
   evidenceSourceLabel,
+  taskPlanItemRoleLabel,
   uiCount,
   uiLocale,
   uiT,
@@ -46,6 +48,7 @@ export const workItemCss = [
   ".wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted)}.wh-pill-run{background:#eaf6f4;color:var(--teal)}.wh-pill-review{background:#fff6e8;color:var(--amber)}.wh-pill-done{background:#eaf8f0;color:var(--green)}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:700}.wh-btn-primary{background:var(--blue);border-color:var(--blue);color:#fff}",
   ".wh-trace{display:grid;gap:8px}.wh-trace-dot{width:22px;height:22px;border-radius:999px;background:#edf1ff;color:var(--blue);display:grid;place-items:center;font-size:12px;flex:0 0 auto}.wh-trace-row{display:flex;gap:10px;align-items:flex-start}",
+  ".wh-agent-team{display:grid;gap:12px}.wh-agent-head{display:flex;justify-content:space-between;gap:10px;align-items:center}.wh-agent-meter{height:8px;border-radius:999px;background:#e7edf7;overflow:hidden}.wh-agent-meter span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--green),var(--amber));max-width:100%}.wh-agent-row{display:grid;gap:7px;border-top:1px solid var(--line);padding-top:12px}.wh-agent-row:first-child{border-top:0;padding-top:0}.wh-agent-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.wh-agent-dot{font-size:12px}.wh-agent-dot--succeeded{color:var(--green)}.wh-agent-dot--needs_human,.wh-agent-dot--failed{color:var(--amber)}.wh-agent-dot--dispatched{color:var(--blue)}.wh-agent-dot--skipped,.wh-agent-dot--pending{color:var(--muted)}",
   ".wh-desktop .wh-frame{max-width:980px;grid-template-columns:minmax(0,1fr) 260px}.wh-desktop .wh-workitem{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-frame{grid-template-columns:1fr}.wh-rail{position:static}.wh-title{font-size:24px}}"
 ].join("");
 
@@ -104,6 +107,66 @@ function renderTrace(steps: AgentStep[], options?: UiRenderOptions) {
     .join("")}</div>`;
 }
 
+function agentTeamTitle(team: WorkItemAgentTeamVM, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
+  const ratio = `${team.completed_count}/${team.total_count}`;
+  if (team.status === "done") {
+    return locale === "zh-CN" ? `军团已完成 ${ratio}` : `Team completed ${ratio}`;
+  }
+  return locale === "zh-CN" ? `军团推进中 ${ratio}` : `Team in progress ${ratio}`;
+}
+
+function agentTeamStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], options?: UiRenderOptions) {
+  const locale = uiLocale(options);
+  const labels: Record<WorkItemAgentTeamVM["items"][number]["status"], { "zh-CN": string; "en-US": string }> = {
+    pending: { "zh-CN": "待派发", "en-US": "Pending" },
+    dispatched: { "zh-CN": "派发中", "en-US": "Dispatched" },
+    succeeded: { "zh-CN": "已成功", "en-US": "Succeeded" },
+    failed: { "zh-CN": "失败", "en-US": "Failed" },
+    needs_human: { "zh-CN": "等你决定", "en-US": "Needs decision" },
+    skipped: { "zh-CN": "已跳过", "en-US": "Skipped" }
+  };
+  return labels[status][locale];
+}
+
+function renderAgentTeam(team: WorkItemAgentTeamVM, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
+  const burnPct = team.cost_burn_pct ?? 0;
+  const burnWidth = `width:${Math.min(Math.max(burnPct, 0), 100)}%`;
+  const rows = team.items.map((item) => {
+    const action = item.action
+      ? `<a class="wh-pill" href="${escapeHtml(safeHref(item.action.href))}" data-r9-agent-team-action="${escapeHtml(item.action.kind)}">${escapeHtml(item.action.label)}</a>`
+      : "";
+    const waiting = item.waiting_for_seq.length
+      ? `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? `等待 ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")} 完成` : `Waiting for ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")}`)}</p>`
+      : "";
+    const cost = item.cost_estimate_cny ? `<span class="wh-pill">${escapeHtml(`¥${item.cost_estimate_cny}`)}</span>` : "";
+    return `<div class="wh-agent-row" data-r9-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-r9-agent-team-status="${escapeHtml(item.status)}">
+      <strong>${escapeHtml(`#${item.seq} ${item.title}`)}</strong>
+      ${waiting}
+      <div class="wh-agent-meta">
+        <span class="wh-agent-dot wh-agent-dot--${escapeHtml(item.status)}">●</span>
+        <span class="wh-pill">${escapeHtml(taskPlanItemRoleLabel(locale, item.role))}</span>
+        <span class="wh-pill">${escapeHtml(agentTeamStatusLabel(item.status, { locale }))}</span>
+        ${cost}
+        ${action}
+      </div>
+    </div>`;
+  }).join("");
+  const capped = team.runs_capped
+    ? `<p class="wh-subtle" data-r9-agent-team-runs-capped-note="true">${escapeHtml(locale === "zh-CN" ? "仅显示前 100 个子运行。" : "Showing the first 100 child runs.")}</p>`
+    : "";
+  return `<div class="wh-agent-team" data-r9-agent-team-panel="true" data-r9-agent-team-plan-id="${escapeHtml(team.plan_id)}">
+    <div class="wh-agent-head">
+      <strong>${escapeHtml(agentTeamTitle(team, { locale }))}</strong>
+      <span class="wh-pill">${escapeHtml(`¥${team.cost_used_cny}`)}</span>
+    </div>
+    ${team.cost_budget_cny ? `<div class="wh-agent-meter" aria-label="${escapeHtml(`${burnPct}%`)}"><span style="${escapeHtml(burnWidth)}"></span></div>` : ""}
+    ${rows || `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无子运行。" : "No child runs yet.")}</p>`}
+    ${capped}
+  </div>`;
+}
+
 function evidenceRows(evidenceRefs: EvidenceRef[], options?: UiRenderOptions) {
   const locale = uiLocale(options);
   if (evidenceRefs.length === 0) {
@@ -135,11 +198,12 @@ function acceptanceRows(items: unknown[], options?: UiRenderOptions) {
 function primaryHrefs(vm: WorkItemDetailVM) {
   const proposalId = vm.latest_proposal?.proposal_id;
   const runId = vm.agent_trace_preview[0]?.agent_run_id;
-  return [
+  return Array.from(new Set([
     proposalId ? `/proposals/${proposalId}` : undefined,
     runId ? `/agent-runs/${runId}/replay` : undefined,
-    vm.workitem.status === "spec_ready" ? `/api/workitems/${vm.workitem.id}/agent-runs` : undefined
-  ].filter((value): value is string => Boolean(value));
+    vm.workitem.status === "spec_ready" ? `/api/workitems/${vm.workitem.id}/agent-runs` : undefined,
+    ...(vm.agent_team?.items.map((item) => item.action?.href).filter((value): value is string => Boolean(value)) ?? [])
+  ].filter((value): value is string => Boolean(value))));
 }
 
 export function renderWorkItemDetail(
@@ -164,7 +228,7 @@ export function renderWorkItemDetail(
       <article class="wh-card"><strong>${escapeHtml(uiT(locale, "generic.evidence"))}</strong><p class="wh-subtle">${escapeHtml(uiCount(locale, vm.evidence_refs.length, "条来源", "source"))}</p></article>
     </div>
     <h2>${escapeHtml(uiT(locale, "workitem.liveTitle"))}</h2>
-    <article class="wh-card">${renderTrace(vm.agent_trace_preview, { locale })}</article>
+    <article class="wh-card">${vm.agent_team ? renderAgentTeam(vm.agent_team, { locale }) : renderTrace(vm.agent_trace_preview, { locale })}</article>
     <h2>${escapeHtml(uiT(locale, "workitem.acceptanceTitle"))}</h2>
     <article class="wh-card">${acceptanceRows(vm.acceptance, { locale })}</article>
     <h2>${escapeHtml(uiT(locale, "generic.evidence"))}</h2>

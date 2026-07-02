@@ -987,6 +987,80 @@ test("R9.1 WorkItem route component renders the approved task plan snapshot", ()
   assert.equal(workitem.html.includes("列出至少 3 条可核验来源。"), true);
 });
 
+test("R9.2 WorkItem route component renders the task-plan run tree without inline decisions", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const researchId = "93000000-0000-4000-8000-000000000902";
+  const reviewId = "93000000-0000-4000-8000-000000000903";
+  const runTreeVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      plan_id: planId,
+      status: "dispatching",
+      completed_count: 1,
+      total_count: 2,
+      cost_used_cny: "1.250000",
+      cost_budget_cny: "3.000000",
+      cost_burn_pct: 42,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: researchId,
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          plan_status: "succeeded",
+          status: "succeeded",
+          budget_share_pct: 35,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.450000",
+          run_id: "93000000-0000-4000-8000-000000000911",
+          run_status: "succeeded",
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000911/replay",
+          action: {
+            kind: "view_output",
+            label: "看产出",
+            href: "/agent-runs/93000000-0000-4000-8000-000000000911/replay"
+          }
+        },
+        {
+          task_plan_item_id: reviewId,
+          seq: 2,
+          title: "复核风险",
+          role: "review",
+          plan_status: "failed",
+          status: "needs_human",
+          budget_share_pct: 25,
+          depends_on: [researchId],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.800000",
+          run_id: "93000000-0000-4000-8000-000000000912",
+          run_status: "escalated",
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000912/replay",
+          decision_href: "/attention",
+          action: {
+            kind: "decide",
+            label: "去决策",
+            href: "/attention"
+          }
+        }
+      ]
+    }
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: runTreeVm }, { locale: "zh-CN" });
+
+  assert.equal(workitem.html.includes('data-r9-agent-team-panel="true"'), true);
+  assert.equal(workitem.html.includes(`data-r9-agent-team-plan-id="${planId}"`), true);
+  assert.equal(workitem.html.includes("军团推进中 1/2"), true);
+  assert.equal(workitem.html.includes('data-r9-agent-team-item="93000000-0000-4000-8000-000000000902"'), true);
+  assert.equal(workitem.html.includes('data-r9-agent-team-status="needs_human"'), true);
+  assert.equal(workitem.html.includes("看产出"), true);
+  assert.equal(workitem.html.includes("去决策"), true);
+  assert.equal(workitem.html.includes('href="/attention"'), true);
+  assert.equal(workitem.html.includes("data-r9-agent-team-inline-decision"), false);
+});
+
 test("R5.4 WorkItem route component exposes Drive source context and proposal draft action", () => {
   const vm = surfaceVm();
   const draftVm: WorkItemDetailVM = {

@@ -72,6 +72,7 @@ import type { MergeFusionCandidateGenerator } from "../services/merge-fusion-can
 import { createDbAgentRunPersistence } from "../services/agent-run-persistence.js";
 import { createEscalationService, EscalationServiceError } from "../services/escalations.js";
 import { createDbProposalService, ProposalServiceError } from "../services/proposals.js";
+import { createTaskDispatcher } from "../services/task-dispatcher.js";
 import { createTaskPlanMergeApprovalHandler, createTaskPlanWorkflowService, TaskPlanServiceError } from "../services/task-plans.js";
 import { createDbWorkItemService } from "../services/work-items.js";
 import { createInMemoryAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
@@ -493,6 +494,79 @@ async function main() {
     }
     if (taskPlanPagePlan.items.length !== 3 || taskPlanPagePlan.items_capped) {
       throw new Error(`Expected work item page task_plan to expose 3 uncapped items, got ${taskPlanPagePlan.items.length}`);
+    }
+    const taskPlanDispatcher = createTaskDispatcher({
+      repository: taskPlanRepository,
+      queue,
+      escalationSink: false,
+      completionSink: false
+    });
+    const orderedTaskPlanItems = [...taskPlanItemRows].sort((a, b) => a.seq - b.seq);
+    const initialDispatch = await taskPlanDispatcher.dispatch({
+      planId: taskPlanCreateBody.data.plan_id,
+      workspaceId: settings.auth.defaultWorkspaceId,
+      actorId: seedUser.id
+    });
+    if (initialDispatch.enqueuedItemIds.length !== 1 || initialDispatch.enqueuedItemIds[0] !== orderedTaskPlanItems[0]?.id) {
+      throw new Error(`Expected task dispatcher to enqueue the first ready child only, got ${JSON.stringify(initialDispatch.enqueuedItemIds)}`);
+    }
+    async function runTaskPlanChild(itemId: string, expectedStatus: "succeeded" | "failed") {
+      const childRuns = await db.select().from(agentRuns).then((rows) =>
+        rows.filter((row) => row.taskPlanId === taskPlanCreateBody.data.plan_id && row.taskPlanItemId === itemId)
+          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      );
+      const childRun = childRuns.at(-1);
+      if (!childRun) {
+        throw new Error(`Expected task-plan child run for item ${itemId}`);
+      }
+      const executedChild = await queue.run(childRun.id);
+      if (executedChild.status !== expectedStatus) {
+        throw new Error(`Expected task-plan child run ${itemId} to ${expectedStatus}, got ${executedChild.status}`);
+      }
+      const settled = await taskPlanDispatcher.handleRunSettled(executedChild);
+      if (settled?.settledItemId !== itemId) {
+        throw new Error(`Expected dispatcher settled item ${itemId}, got ${settled?.settledItemId ?? "missing"}`);
+      }
+      return { runId: executedChild.run_id, settled };
+    }
+    if (!orderedTaskPlanItems[0]) {
+      throw new Error("Missing first ordered task-plan item.");
+    }
+    // R9.2 role filtering makes research/review read-only. This deterministic client writes a file, so the
+    // first research child is expected to fail; the smoke validates partial-failure visibility and dependent skips.
+    const failedResearch = await runTaskPlanChild(orderedTaskPlanItems[0].id, "failed");
+    const childReplayRunIds = [failedResearch.runId];
+    if (failedResearch.settled.dispatch.enqueuedItemIds.length !== 0 || failedResearch.settled.dispatch.skippedItemIds.length !== 2) {
+      throw new Error(`Expected failed research child to skip two dependents without enqueueing more, got ${JSON.stringify(failedResearch.settled.dispatch)}`);
+    }
+    const taskPlanWorkItemPageAfterDispatch = await app.request(`/api/pages/workitems/${taskPlanWorkItemId}`, { headers });
+    if (taskPlanWorkItemPageAfterDispatch.status !== 200) {
+      throw new Error(`Expected task-plan work item page after dispatch 200, got ${taskPlanWorkItemPageAfterDispatch.status}: ${await taskPlanWorkItemPageAfterDispatch.text()}`);
+    }
+    const taskPlanWorkItemPageAfterDispatchBody = await taskPlanWorkItemPageAfterDispatch.json() as {
+      data: {
+        task_plan?: { status: string };
+        agent_team?: {
+          status: string;
+          completed_count: number;
+          total_count: number;
+          runs_capped: boolean;
+          items: Array<{ status: string; action?: { kind: string; href: string } }>;
+        };
+      };
+    };
+    const taskPlanPageAgentTeam = taskPlanWorkItemPageAfterDispatchBody.data.agent_team;
+    if (
+      !taskPlanPageAgentTeam
+      || taskPlanPageAgentTeam.status !== "done"
+      || taskPlanPageAgentTeam.completed_count !== 0
+      || taskPlanPageAgentTeam.total_count !== 3
+      || taskPlanPageAgentTeam.runs_capped
+      || taskPlanPageAgentTeam.items[0]?.status !== "failed"
+      || taskPlanPageAgentTeam.items[0]?.action?.kind !== "decide"
+      || taskPlanPageAgentTeam.items.slice(1).some((item) => item.status !== "skipped")
+    ) {
+      throw new Error(`Expected task-plan agent_team to expose failed research plus skipped dependents, got ${JSON.stringify(taskPlanPageAgentTeam)}`);
     }
     const knowledge = await app.request("/api/knowledge/search", {
       method: "POST",
@@ -2484,7 +2558,11 @@ async function main() {
         status: taskPlanRow.status,
         item_count: taskPlanItemRows.length,
         page_status: taskPlanPagePlan.status,
-        page_item_count: taskPlanPagePlan.items.length
+        page_item_count: taskPlanPagePlan.items.length,
+        agent_team_status: taskPlanPageAgentTeam.status,
+        agent_team_completed: taskPlanPageAgentTeam.completed_count,
+        agent_team_total: taskPlanPageAgentTeam.total_count,
+        child_replay_run_ids: childReplayRunIds
       },
       merge: {
         proposal_status: proposalAfterMerge.status,

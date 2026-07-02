@@ -1093,11 +1093,35 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             .orderBy(asc(taskPlanItems.seq), asc(taskPlanItems.id))
             .limit(51)
         : [];
+      const taskPlanRunRows = latestTaskPlan
+        ? await db
+            .select({
+              id: agentRuns.id,
+              parentRunId: agentRuns.parentRunId,
+              workItemId: agentRuns.workItemId,
+              taskPlanId: agentRuns.taskPlanId,
+              taskPlanItemId: agentRuns.taskPlanItemId,
+              agentRole: agentRuns.agentRole,
+              title: agentRuns.title,
+              status: agentRuns.status,
+              costEstimate: agentRuns.costEstimate,
+              outcomeReason: agentRuns.outcomeReason,
+              createdAt: agentRuns.createdAt,
+              updatedAt: agentRuns.updatedAt,
+              finishedAt: agentRuns.finishedAt
+            })
+            .from(agentRuns)
+            .where(and(eq(agentRuns.workItemId, workItemId), eq(agentRuns.taskPlanId, latestTaskPlan.id)))
+            .orderBy(asc(agentRuns.createdAt), asc(agentRuns.id))
+            .limit(101)
+        : [];
       const taskPlan = latestTaskPlan
         ? {
             plan: latestTaskPlan,
             items: taskPlanItemRows.slice(0, 50),
-            itemsCapped: taskPlanItemRows.length > 50
+            itemsCapped: taskPlanItemRows.length > 50,
+            runs: taskPlanRunRows.slice(0, 100),
+            runsCapped: taskPlanRunRows.length > 100
           }
         : null;
 

@@ -78,3 +78,75 @@ test("work item renderer localizes fixed labels and hides raw status in English"
   assert.equal(rendered.html.includes("AI has started"), true);
   assert.equal(rendered.html.includes("AI 会先读证据"), false);
 });
+
+test("R9.2 work item renderer shows the task-plan run tree in the AI working slot", () => {
+  const fixture = createP05GoldPathFixture();
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const detail = {
+    ...fixture.workItemDetail,
+    workitem: {
+      ...fixture.workItemDetail.workitem,
+      status: "ai_working" as const
+    },
+    agent_team: {
+      plan_id: planId,
+      status: "dispatching" as const,
+      completed_count: 1,
+      total_count: 2,
+      cost_used_cny: "1.250000",
+      cost_budget_cny: "3.000000",
+      cost_burn_pct: 42,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000902",
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research" as const,
+          plan_status: "succeeded" as const,
+          status: "succeeded" as const,
+          budget_share_pct: 35,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.450000",
+          run_id: "93000000-0000-4000-8000-000000000911",
+          run_status: "succeeded" as const,
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000911/replay",
+          action: {
+            kind: "view_output" as const,
+            label: "看产出",
+            href: "/agent-runs/93000000-0000-4000-8000-000000000911/replay"
+          }
+        },
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000903",
+          seq: 2,
+          title: "复核风险",
+          role: "review" as const,
+          plan_status: "failed" as const,
+          status: "needs_human" as const,
+          budget_share_pct: 25,
+          depends_on: ["93000000-0000-4000-8000-000000000902"],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.800000",
+          run_id: "93000000-0000-4000-8000-000000000912",
+          run_status: "escalated" as const,
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000912/replay",
+          decision_href: "/attention",
+          action: {
+            kind: "decide" as const,
+            label: "去决策",
+            href: "/attention"
+          }
+        }
+      ]
+    }
+  };
+  const rendered = renderWorkItemDetail(detail, "web");
+
+  assert.equal(rendered.html.includes('data-r9-agent-team-panel="true"'), true);
+  assert.equal(rendered.html.includes("军团推进中 1/2"), true);
+  assert.equal(rendered.html.includes("整理竞品证据"), true);
+  assert.equal(rendered.html.includes("去决策"), true);
+  assert.equal(rendered.primaryHrefs.includes("/attention"), true);
+});

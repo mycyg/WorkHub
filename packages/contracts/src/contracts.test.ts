@@ -577,6 +577,88 @@ test("work item detail VM carries Drive source context and proposal draft action
   assert.equal(parsed.actions.create_proposal_draft?.method, "POST");
 });
 
+test("R9.2 work item detail VM carries the approved task plan run tree for visibility", () => {
+  const parsed = workItemDetailVmSchema.parse({
+    workitem: {
+      id: "92000000-0000-4000-8000-000000000005",
+      code: "R9-2",
+      project_id: "92000000-0000-4000-8000-000000000001",
+      submitter_user_id: "92000000-0000-4000-8000-000000000011",
+      status: "ai_working",
+      priority: "normal",
+      sync_state: "synced",
+      version: 1,
+      mode: "worker",
+      human_reserved: false,
+      created_at: "2026-07-03T00:00:00.000Z",
+      updated_at: "2026-07-03T00:00:00.000Z"
+    },
+    acceptance: [],
+    agent_trace_preview: [],
+    evidence_refs: [],
+    agent_team: {
+      plan_id: "92000000-0000-4000-8000-000000000101",
+      status: "dispatching",
+      completed_count: 2,
+      total_count: 4,
+      cost_used_cny: "1.250000",
+      cost_budget_cny: "3.000000",
+      cost_burn_pct: 42,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: "92000000-0000-4000-8000-000000000102",
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          plan_status: "succeeded",
+          status: "succeeded",
+          budget_share_pct: 35,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.450000",
+          run_id: "92000000-0000-4000-8000-000000000201",
+          run_status: "succeeded",
+          replay_href: "/agent-runs/92000000-0000-4000-8000-000000000201/replay",
+          action: {
+            kind: "view_output",
+            label: "看产出",
+            href: "/agent-runs/92000000-0000-4000-8000-000000000201/replay"
+          }
+        },
+        {
+          task_plan_item_id: "92000000-0000-4000-8000-000000000103",
+          seq: 2,
+          title: "复核结论风险",
+          role: "review",
+          plan_status: "failed",
+          status: "needs_human",
+          budget_share_pct: 25,
+          depends_on: ["92000000-0000-4000-8000-000000000102"],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.800000",
+          run_id: "92000000-0000-4000-8000-000000000202",
+          run_status: "escalated",
+          replay_href: "/agent-runs/92000000-0000-4000-8000-000000000202/replay",
+          decision_href: "/attention",
+          action: {
+            kind: "decide",
+            label: "去决策",
+            href: "/attention"
+          }
+        }
+      ]
+    },
+    actions: {}
+  });
+
+  assert.equal(parsed.agent_team?.plan_id, "92000000-0000-4000-8000-000000000101");
+  assert.equal(parsed.agent_team?.completed_count, 2);
+  assert.equal(parsed.agent_team?.items[0]?.action?.kind, "view_output");
+  assert.equal(parsed.agent_team?.items[1]?.status, "needs_human");
+  assert.equal(parsed.agent_team?.items[1]?.decision_href, "/attention");
+});
+
 test("meeting page VM carries insight actions, evidence, and proposal links", () => {
   const parsed = meetingPageVmSchema.parse({
     generated_at: "2026-06-11T01:10:00.000Z",

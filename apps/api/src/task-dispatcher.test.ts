@@ -265,7 +265,8 @@ test("R9.2 dispatcher skips dependency-failed pending items and escalates the pl
   const escalations: string[] = [];
   const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
     item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "dispatched" }),
-    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", dependsOn: [researchItemId] })
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", dependsOn: [researchItemId] }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", dependsOn: [produceItemId] })
   ]);
   const queue = new CapturingQueue();
   const dispatcher = createTaskDispatcher({
@@ -284,6 +285,7 @@ test("R9.2 dispatcher skips dependency-failed pending items and escalates the pl
   assert.equal(result?.settledItemId, researchItemId);
   assert.equal(repository.items.find((candidate) => candidate.id === researchItemId)?.status, "failed");
   assert.equal(repository.items.find((candidate) => candidate.id === produceItemId)?.status, "skipped");
+  assert.equal(repository.items.find((candidate) => candidate.id === reviewItemId)?.status, "skipped");
   assert.deepEqual(queue.inputs, []);
   assert.deepEqual(escalations, ["dependency_failed"]);
 });

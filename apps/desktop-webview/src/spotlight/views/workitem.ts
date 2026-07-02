@@ -3,7 +3,7 @@
 // 点开 pages.workItem(id) → 统一玻璃详情（状态/验收/最新改动/AI 轨迹）+ spec_ready 时一键派活 startAgentRun。
 // 历史/其它工作项从 项目/审批/看改动 进入。list→detail 盒内联 morph。
 
-import type { WorkItemDetailVM } from "@workhub/contracts";
+import type { WorkItemAgentTeamVM, WorkItemDetailVM } from "@workhub/contracts";
 import { taskPlanItemRoleLabel, taskPlanStatusLabel } from "@workhub/ui";
 import { publicProposalDisplayTitle } from "@workhub/ui/proposal";
 import { escapeHtml } from "@workhub/web-runtime";
@@ -34,6 +34,55 @@ function taskPlanHtml(vm: WorkItemDetailVM, zh: boolean): string {
   </div>`;
 }
 
+function agentTeamTitle(team: WorkItemAgentTeamVM, zh: boolean) {
+  const ratio = `${team.completed_count}/${team.total_count}`;
+  if (team.status === "done") {
+    return zh ? `军团已完成 ${ratio}` : `Team completed ${ratio}`;
+  }
+  return zh ? `军团推进中 ${ratio}` : `Team in progress ${ratio}`;
+}
+
+function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], zh: boolean) {
+  const labels: Record<WorkItemAgentTeamVM["items"][number]["status"], [string, string]> = {
+    pending: ["待派发", "Pending"],
+    dispatched: ["派发中", "Dispatched"],
+    succeeded: ["已成功", "Succeeded"],
+    failed: ["失败", "Failed"],
+    needs_human: ["等你决定", "Needs decision"],
+    skipped: ["已跳过", "Skipped"]
+  };
+  const [cn, en] = labels[status];
+  return zh ? cn : en;
+}
+
+function agentTeamHtml(vm: WorkItemDetailVM, zh: boolean): string {
+  const team = vm.agent_team;
+  if (!team) {
+    return "";
+  }
+  const locale = zh ? "zh-CN" : "en-US";
+  const rows = team.items.slice(0, 4).map((item) => {
+    const action = item.action ? `<span class="wh-spot-chip wh-spot-chip--info">${escapeHtml(item.action.label)}</span>` : "";
+    const cost = item.cost_estimate_cny ? `<span class="wh-spot-change-path">${escapeHtml(`¥${item.cost_estimate_cny}`)}</span>` : "";
+    return `<div class="wh-spot-trace-step" data-spot-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-spot-agent-team-status="${escapeHtml(item.status)}">
+      <div class="wh-spot-trace-phase">${escapeHtml(`#${item.seq} ${taskPlanItemRoleLabel(locale, item.role)} · ${agentTeamItemStatusLabel(item.status, zh)}`)}</div>
+      <div class="wh-spot-trace-out">${escapeHtml(item.title)}</div>
+      <div class="wh-spot-change-head">${cost}${action}</div>
+    </div>`;
+  }).join("");
+  const capped = team.runs_capped
+    ? `<div class="wh-spot-change-path" data-spot-agent-team-capped="true">${zh ? "仅显示前 100 个子运行" : "Showing first 100 child runs"}</div>`
+    : "";
+  return `<div class="wh-spot-change" data-spot-agent-team="true" data-spot-agent-team-status="${escapeHtml(team.status)}">
+    <div class="wh-spot-change-head">
+      <span class="wh-spot-chip wh-spot-chip--info">${escapeHtml(agentTeamTitle(team, zh))}</span>
+      <span class="wh-spot-change-path">${escapeHtml(`¥${team.cost_used_cny}`)}</span>
+    </div>
+    <div class="wh-spot-trace">${rows || `<div class="wh-spot-change-path">${zh ? "暂无子运行" : "No child runs yet"}</div>`}</div>
+    ${capped}
+  </div>`;
+}
+
 export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const w = vm.workitem;
   // #22：与 web 同口径——已有变更/已跑过就不再显示「派给 AI」，否则会出现「再跑一发」歧义按钮。
@@ -53,6 +102,7 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
     ? `<div class="wh-spot-change"><div class="wh-spot-change-head"><span class="wh-spot-chip wh-spot-chip--info">${zh ? "最新改动" : "Latest change"}</span></div><div class="wh-spot-change-sum">${escapeHtml(publicProposalDisplayTitle(vm.latest_proposal.title, zh ? "zh-CN" : "en-US"))}</div></div>`
     : "";
   const taskPlan = taskPlanHtml(vm, zh);
+  const agentTeam = agentTeamHtml(vm, zh);
   return `<div class="wh-spot-dash ds-anim-fade-in">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-wi-back style="align-self:flex-start">${zh ? "← 返回" : "← Back"}</button>
     <div>
@@ -64,6 +114,7 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "验收项" : "Acceptance"}</span><span class="wh-spot-metric-v">${vm.acceptance.length}</span></div>
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "交付物" : "Deliverables"}</span><span class="wh-spot-metric-v">${vm.accepted_deliverables.length}</span></div>
     </div>
+    ${agentTeam}
     ${taskPlan}
     ${proposal}
     ${traceHtml}
