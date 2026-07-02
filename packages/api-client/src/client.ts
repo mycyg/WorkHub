@@ -7,6 +7,8 @@ import type {
   IdentityResponse,
   CalendarPageRequestOptions,
   DrivePageRequestOptions,
+  EscalationDelegateResult,
+  EscalationResolveResult,
   PageRequestOptions,
   PilotDay1MetricsRequestOptions,
   MeetingPageRequestOptions,
@@ -413,6 +415,16 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       }),
     delegateApproval: (id, payload) =>
       request(`/api/approvals/${encodeURIComponent(id)}/delegate`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    resolveEscalation: (id, payload) =>
+      request<EscalationResolveResult>(`/api/escalations/${encodeURIComponent(id)}/resolve`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    delegateEscalation: (id, payload) =>
+      request<EscalationDelegateResult>(`/api/escalations/${encodeURIComponent(id)}/delegate`, {
         method: "POST",
         body: JSON.stringify(payload)
       }),

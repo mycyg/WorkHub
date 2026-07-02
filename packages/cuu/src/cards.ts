@@ -267,10 +267,16 @@ function localizedAttentionActionLabel(
   item: AttentionItem,
   options: CuuLocaleOptions
 ) {
-  if (item.kind !== "approval" && item.kind !== "proposal_review" && item.kind !== "delivery_ready") {
+  if (item.kind !== "approval" && item.kind !== "proposal_review" && item.kind !== "delivery_ready" && item.kind !== "escalation") {
     return action.label;
   }
   switch (action.id) {
+    case "escalation_retry":
+      return options.locale === "en-US" ? "Let it retry" : "让它重试";
+    case "escalation_pm_mode":
+      return options.locale === "en-US" ? "I'll take over" : "转成我来做";
+    case "escalation_cancel":
+      return options.locale === "en-US" ? "Cancel this subtask" : "取消这个子任务";
     case "approve":
     case "allow":
       if (item.kind === "proposal_review" || item.kind === "delivery_ready") {

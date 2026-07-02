@@ -759,6 +759,55 @@ test("desktop Cuu actions submit proposal review choices instead of navigating t
   ]);
 });
 
+test("desktop Cuu actions resolve escalation cards with action-specific payloads", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async resolveEscalation(id: string, payload: unknown) {
+      calls.push({ id, payload });
+      return { attention: { summary_text: "我会再让它试一次。" } };
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    }
+  };
+  const retry = resolveDesktopCuuAction("/api/escalations/escalation-1/resolve", { actionId: "escalation_retry" });
+  const pmMode = resolveDesktopCuuAction("/api/escalations/escalation-1/resolve", { actionId: "escalation_pm_mode" });
+  const cancel = resolveDesktopCuuAction("/api/escalations/escalation-1/resolve", { actionId: "escalation_cancel" });
+
+  assert.deepEqual(retry, {
+    kind: "resolve-escalation",
+    escalationId: "escalation-1",
+    payload: { action: "retry" }
+  });
+  assert.deepEqual(pmMode, {
+    kind: "resolve-escalation",
+    escalationId: "escalation-1",
+    payload: { action: "pm_mode" }
+  });
+  assert.deepEqual(cancel, {
+    kind: "resolve-escalation",
+    escalationId: "escalation-1",
+    payload: { action: "cancel" }
+  });
+
+  assert.equal((await submitDesktopCuuAction({ client, action: retry! })).message, "我会再让它试一次。");
+  assert.deepEqual(calls, [
+    { id: "escalation-1", payload: { action: "retry" } }
+  ]);
+});
+
 test("desktop Cuu actions start a real agent run from a free-text launcher card", async () => {
   const calls: unknown[] = [];
   const launcher = createDesktopCuuAgentLauncherCard();

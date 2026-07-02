@@ -43,6 +43,7 @@ import {
   driveUploadFromHref,
   eventListenerOptions,
   evidenceBindingWorkItemIdFromHref,
+  escalationActionFromHref,
   escapeHtml,
   fieldValueRequiredNotice,
   inspectPostRunWorkItemClarity,
@@ -99,6 +100,19 @@ import {
 const root = document.getElementById("root");
 const liveLastEventIdStorageKey = "workhub.live.lastEventId";
 type BrowserApiClient = ReturnType<typeof createApiClient>;
+
+function escalationResolvePayloadFromActionId(actionId: string | undefined) {
+  if (actionId === "escalation_retry") {
+    return { action: "retry" as const };
+  }
+  if (actionId === "escalation_pm_mode") {
+    return { action: "pm_mode" as const };
+  }
+  if (actionId === "escalation_cancel") {
+    return { action: "cancel" as const };
+  }
+  return undefined;
+}
 const noticeTimerState: RouteNoticeTimerState = {};
 let readyRouteBindings: AbortController | undefined;
 let liveDirtyGuardCount = 0;
@@ -1046,6 +1060,24 @@ function bindGoldPathNavigation(
           await renderCurrentRoute(client, locale);
           if (root) {
             showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "notification_complete"));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
+      const escalationAction = escalationActionFromHref(href);
+      if (escalationAction?.action === "resolve") {
+        const payload = escalationResolvePayloadFromActionId(actionId);
+        if (!payload) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, new Error(locale === "en-US" ? "This escalation action is not available." : "这个升级动作暂不可用。"), actionId));
+          return;
+        }
+        try {
+          const result = await client.resolveEscalation(escalationAction.escalationId, payload);
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));

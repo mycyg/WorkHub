@@ -1590,16 +1590,96 @@ const approvalDelegateResultResponseSchema = {
   },
   additionalProperties: false
 } as const;
+const resolveEscalationRequestBodySchema = {
+  type: "object",
+  required: ["action"],
+  properties: {
+    action: { type: "string", enum: ["retry", "pm_mode", "cancel"] },
+    reason_md: { type: "string", minLength: 1, maxLength: 2000 }
+  },
+  additionalProperties: false
+} as const;
+const delegateEscalationRequestBodySchema = {
+  type: "object",
+  required: ["to_user_id"],
+  properties: {
+    to_user_id: uuidStringSchema,
+    reason_md: { type: "string", minLength: 1, maxLength: 2000 }
+  },
+  additionalProperties: false
+} as const;
+const escalationResolveResultResponseSchema = {
+  type: "object",
+  required: ["escalation", "work_item_status", "attention"],
+  properties: {
+    escalation: {
+      type: "object",
+      required: ["id", "work_item_id", "resolved_at"],
+      properties: {
+        id: uuidStringSchema,
+        work_item_id: uuidStringSchema,
+        resolved_at: dateTimeStringSchema
+      },
+      additionalProperties: false
+    },
+    work_item_status: { type: "string", enum: ["ai_working", "pm_mode", "cancelled"] },
+    attention: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: false
+} as const;
+const escalationDelegateResultResponseSchema = {
+  type: "object",
+  required: ["escalation", "attention"],
+  properties: {
+    escalation: {
+      type: "object",
+      required: ["id", "work_item_id", "suggested_lead_user_id"],
+      properties: {
+        id: uuidStringSchema,
+        work_item_id: uuidStringSchema,
+        suggested_lead_user_id: uuidStringSchema
+      },
+      additionalProperties: false
+    },
+    attention: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: false
+} as const;
 const approvalRaceResponse = jsonErrorStatusResponse(
   "409",
   "Approval was already handled before this action completed",
   ["approval_race"]
 ).responses["409"];
+const escalationMalformedJsonResponse = jsonErrorStatusResponse(
+  "400",
+  "Escalation request body must be a JSON object",
+  ["malformed_json", "json_object_required"]
+).responses["400"];
 const approvalDelegateNotFoundResponse = jsonErrorStatusResponse(
   "404",
   "Approval or delegate target was not found",
   ["not_found", "delegate_target_not_found"]
 ).responses["404"];
+const escalationResolveNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Escalation was not found",
+  ["not_found", "escalation_not_found"]
+).responses["404"];
+const escalationDelegateNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Escalation or delegate target was not found",
+  ["not_found", "escalation_not_found", "delegate_target_not_found"]
+).responses["404"];
+const escalationRaceResponse = jsonErrorStatusResponse(
+  "409",
+  "Escalation was already handled before this action completed",
+  ["escalation_race", "escalation_status_conflict"]
+).responses["409"];
+const escalationDelegateRaceResponse = jsonErrorStatusResponse(
+  "409",
+  "Escalation delegation raced with another handler",
+  ["escalation_race"]
+).responses["409"];
 const approvalDelegateSemanticResponse = jsonErrorStatusResponse(
   "422",
   "Approval delegation target is not valid for this request",
@@ -1635,6 +1715,11 @@ const approvalValidationResponse = jsonErrorStatusResponse(
   "Approval comment request body is not valid",
   ["validation_error"]
 ).responses["422"];
+const escalationValidationResponse = jsonErrorStatusResponse(
+  "422",
+  "Escalation request body is not valid",
+  ["validation_error"]
+).responses["422"];
 const approvalCommentsUnavailableResponse = jsonErrorStatusResponse(
   "503",
   "Approval comments are not available in this deployment",
@@ -1664,6 +1749,28 @@ const approvalDelegateResponse = {
     "404": approvalDelegateNotFoundResponse,
     "422": approvalDelegateSemanticResponse,
     "409": approvalRaceResponse
+  }
+} as const;
+const escalationResolveResponse = {
+  responses: {
+    "200": jsonDataResponse(escalationResolveResultResponseSchema, "Escalation resolution result").responses["200"],
+    "400": escalationMalformedJsonResponse,
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
+    "404": escalationResolveNotFoundResponse,
+    "409": escalationRaceResponse,
+    "422": escalationValidationResponse
+  }
+} as const;
+const escalationDelegateResponse = {
+  responses: {
+    "200": jsonDataResponse(escalationDelegateResultResponseSchema, "Delegated escalation result").responses["200"],
+    "400": escalationMalformedJsonResponse,
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
+    "404": escalationDelegateNotFoundResponse,
+    "409": escalationDelegateRaceResponse,
+    "422": escalationValidationResponse
   }
 } as const;
 const approvalCommentListResponse = {
@@ -2607,7 +2714,7 @@ const attentionHomePageResponseSchema = {
         type: "object",
         required: ["source", "message"],
         properties: {
-          source: { type: "string", enum: ["approvals", "proposals"] },
+          source: { type: "string", enum: ["approvals", "proposals", "escalations"] },
           message: { type: "string", minLength: 1 }
         },
         additionalProperties: false
@@ -3914,6 +4021,24 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           ...jsonRequestBody(addApprovalCommentRequestBodySchema),
           ...approvalCommentCreateResponse
+        }
+      },
+      "/api/escalations/{id}/resolve": {
+        post: {
+          tags: ["escalations"],
+          summary: "Resolve an unresolved escalation by retrying, taking over, or cancelling",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(resolveEscalationRequestBodySchema),
+          ...escalationResolveResponse
+        }
+      },
+      "/api/escalations/{id}/delegate": {
+        post: {
+          tags: ["escalations"],
+          summary: "Delegate an unresolved escalation to another active user",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(delegateEscalationRequestBodySchema),
+          ...escalationDelegateResponse
         }
       },
       "/api/permissions": {

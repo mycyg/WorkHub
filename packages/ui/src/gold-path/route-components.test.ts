@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { AttentionItem, CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
@@ -780,6 +780,46 @@ test("Home route leads with a project and drive workspace before the decision qu
   assert.equal(en.html.includes('href="/intake?project_id=93000000-0000-4000-8000-000000000001"'), true);
   assert.ok(en.html.indexOf('data-r8-home-project-desk="true"') < en.html.indexOf('data-r4-home-decision="true"'));
   assertNoMainWindowBoundaryLeak(en.html);
+});
+
+test("R9.0 Home route renders escalation cards with human action labels", () => {
+  const base = surfaceVm();
+  const escalation: AttentionItem = {
+    id: "94000000-0000-4000-8000-000000000101",
+    kind: "escalation",
+    priority: "urgent",
+    work_item_id: "94000000-0000-4000-8000-000000000102",
+    project_id: "94000000-0000-4000-8000-000000000103",
+    source_ref: {
+      entity_type: "escalation_event",
+      entity_id: "94000000-0000-4000-8000-000000000101"
+    },
+    title: "《竞品价格调研》卡住了",
+    summary_text: "AI 对数据来源不确定。",
+    reason_text: "AI 对数据来源不确定。",
+    actions: [
+      { id: "escalation_retry", label: "让它重试", style: "primary", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000101/resolve" },
+      { id: "escalation_pm_mode", label: "转成我来做", style: "secondary", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000101/resolve" },
+      { id: "escalation_cancel", label: "取消这个子任务", style: "danger", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000101/resolve" }
+    ],
+    cuu_state: "worried",
+    created_at: "2026-07-02T16:00:00.000Z"
+  };
+  const home = renderWebRouteComponent({
+    key: "home",
+    attention: {
+      ...base.page_vms.attention,
+      primary: escalation,
+      queue: [escalation]
+    }
+  }, { locale: "zh-CN" });
+
+  assert.equal(home.html.includes("《竞品价格调研》卡住了"), true);
+  assert.equal(home.html.includes("让它重试"), true);
+  assert.equal(home.html.includes("转成我来做"), true);
+  assert.equal(home.html.includes("取消这个子任务"), true);
+  assert.equal(home.html.includes(">pm_mode<"), false);
+  assertNoMainWindowBoundaryLeak(home.html);
 });
 
 test("Home route surfaces partial source warnings instead of silently showing an empty queue", () => {

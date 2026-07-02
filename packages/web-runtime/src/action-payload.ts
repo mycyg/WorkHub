@@ -155,6 +155,18 @@ export function notificationActionFromHref(href: string) {
   };
 }
 
+export function escalationActionFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/escalations\/([^/]+)\/(resolve|delegate)$/u.exec(path);
+  if (!match?.[1] || !match[2]) {
+    return undefined;
+  }
+  return {
+    escalationId: decodeURIComponent(match[1]),
+    action: match[2] as "resolve" | "delegate"
+  };
+}
+
 export function actionHrefFromElement(element: HTMLElement) {
   if (element instanceof HTMLAnchorElement) {
     return element.getAttribute("href") ?? "";

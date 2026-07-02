@@ -31,6 +31,7 @@ import {
   browserLocale,
   conflictsFromMergeError,
   createWorkItemActionFromHref,
+  escalationActionFromHref,
   fieldValueRequiredNotice,
   intakeOptionRequiredNotice,
   localePersistenceFailedNotice,
@@ -98,6 +99,19 @@ import { isStaleDesktopClientTokenError } from "./auth-recovery.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
+
+function escalationResolvePayloadFromActionId(actionId: string | undefined) {
+  if (actionId === "escalation_retry") {
+    return { action: "retry" as const };
+  }
+  if (actionId === "escalation_pm_mode") {
+    return { action: "pm_mode" as const };
+  }
+  if (actionId === "escalation_cancel") {
+    return { action: "cancel" as const };
+  }
+  return undefined;
+}
 type DesktopSessionVM = Awaited<ReturnType<BrowserApiClient["createSession"]>>;
 const noticeTimerState: RouteNoticeTimerState = {};
 let plainNoticeTimer: number | undefined;
@@ -588,6 +602,22 @@ function bindGoldPathNavigation(
     }
     if (action.kind === "api-action") {
       event.preventDefault();
+      const escalationAction = escalationActionFromHref(href);
+      if (escalationAction?.action === "resolve") {
+        const payload = escalationResolvePayloadFromActionId(actionId);
+        if (!payload) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, new Error(locale === "en-US" ? "This escalation action is not available." : "这个升级动作暂不可用。"), actionId));
+          return;
+        }
+        try {
+          const result = await client.resolveEscalation(escalationAction.escalationId, payload);
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        input.onActionSettled?.();
+        return;
+      }
       const mergeProposalCandidateApplyId = mergeProposalCandidateApplyIdFromHref(href);
       if (mergeProposalCandidateApplyId) {
         const payload = actionElementApplyPayload(actionTarget);

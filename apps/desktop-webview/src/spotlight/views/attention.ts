@@ -10,6 +10,7 @@ import {
   actionHrefFromElement,
   approvalRespondIdFromHref,
   escapeHtml,
+  escalationActionFromHref,
   proposalActionFromHref,
   safeHref
 } from "@workhub/web-runtime";
@@ -41,6 +42,19 @@ export function classifyAttentionActionHref(href: string):
 }
 
 type Tone = "approval" | "choice" | "permission" | "handoff" | "info";
+
+function escalationResolvePayloadFromActionId(actionId: string | undefined) {
+  if (actionId === "escalation_retry") {
+    return { action: "retry" as const };
+  }
+  if (actionId === "escalation_pm_mode") {
+    return { action: "pm_mode" as const };
+  }
+  if (actionId === "escalation_cancel") {
+    return { action: "cancel" as const };
+  }
+  return undefined;
+}
 
 function toneForKind(kind: AttentionItem["kind"]): Tone {
   switch (kind) {
@@ -264,6 +278,17 @@ export function createAttentionView(): SpotlightCapabilityView {
         actionId: string | undefined,
         reasonMd: string | undefined
       ): Promise<boolean> => {
+        const escalation = escalationActionFromHref(href);
+        if (escalation?.action === "resolve") {
+          const payload = escalationResolvePayloadFromActionId(actionId);
+          if (!payload) {
+            ctx.toast(zh ? "这个升级动作暂不可用" : "This escalation action is not available", "error");
+            return false;
+          }
+          const res = await client.resolveEscalation(escalation.escalationId, payload);
+          ctx.toast(summaryText(res) ?? (zh ? "升级已处理" : "Escalation handled"), "ok");
+          return true;
+        }
         const approvalId = approvalRespondIdFromHref(href);
         if (approvalId) {
           if (actionId === "deny" || reasonMd) {
