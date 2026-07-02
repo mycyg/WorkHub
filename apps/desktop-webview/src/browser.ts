@@ -77,6 +77,7 @@ import {
   resolveDesktopPetWindowBridge
 } from "./pet-window-bridge.js";
 import { parseDesktopShellNavigatePayload } from "./shell-events.js";
+import { handleDesktopSpotlightShellNavigate } from "./spotlight-shell-navigation.js";
 import { appleGlassDesignSystemCss } from "./design-system.js";
 import {
   commandPaletteCss,
@@ -92,7 +93,6 @@ import {
   type SpotlightResizeFn
 } from "./spotlight/controller.js";
 import { spotlightCss } from "./spotlight/css.js";
-import { capabilityForShellRoute, entityIdFromShellRoute } from "./spotlight/state.js";
 import { reviewProposalWithoutMerge } from "./spotlight/views/proposals.js";
 import { isStaleDesktopClientTokenError } from "./auth-recovery.js";
 
@@ -1249,15 +1249,10 @@ async function bootSpotlight() {
     // 监听它 → 把盒子直接开到对应能力（回 "/" 则回 launcher）。这是 Cuu/外部入口与盒子联动的地基。
     const shellListen = resolveDesktopShellListen();
     void shellListen?.("navigate", (event) => {
-      const parsed = parseDesktopShellNavigatePayload(event.payload);
-      const cap = parsed ? capabilityForShellRoute(parsed.route) : undefined;
-      if (cap && parsed) {
-        // rank13：携带路由里的实体 id，让 workitem/proposals/replay 直接打开该项而非落到列表。
-        const id = entityIdFromShellRoute(parsed.route);
-        spotlight.openCapability(cap, id ? { id, route: parsed.route } : { route: parsed.route });
-      } else {
-        spotlight.reset();
-      }
+      handleDesktopSpotlightShellNavigate(event.payload, {
+        spotlight,
+        saveProjectContextFromRoute: saveDesktopCuuProjectContextFromRoute
+      });
     });
     // rank12：把「待你拍板」实时条数喂给 launcher 审批角标——盒子的核心承诺是一眼看到有几条待决策。
     // 启动拉一次 + 每 30s + 窗口重新聚焦时刷新；best-effort，失败不更新角标、不影响盒子。
