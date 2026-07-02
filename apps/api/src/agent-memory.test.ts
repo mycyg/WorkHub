@@ -6,6 +6,7 @@ import type { AgentMemoryRow } from "@workhub/db";
 import {
   buildAgentMemoryPromptSection,
   extractPreferenceMemory,
+  promoteMemory,
   preferenceMemoryCandidatesFromRun
 } from "./services/agent-memory.js";
 import type { AgentRunQueueRecord } from "./workers/agent-runner.js";
@@ -115,4 +116,124 @@ test("extractPreferenceMemory writes through the L1 repository instead of user_m
 
   assert.equal(writes.length, 1);
   assert.equal((writes[0] as { agentContextId: string }).agentContextId, taskPlanItemId);
+});
+
+test("promoteMemory writes high-confidence L1 entries to user L2 through the promotion gate", async () => {
+  const writes: unknown[] = [];
+  const entry = memoryRow({ key: "concise_approach", valueMd: "用户喜欢短答案。", confidence: 0.8 });
+
+  const result = await promoteMemory({
+    workspaceId,
+    l1EntryId: entry.id,
+    agentMemoryRepository: {
+      readPromotionContext: async () => ({
+        entry,
+        planId: "83000000-0000-4000-8000-000000000201",
+        sourceActorUserId: userId,
+        candidates: [entry, memoryRow({ id: "83000000-0000-4000-8000-000000000202", valueMd: "短答案更好。" })],
+        capped: false
+      })
+    },
+    userMemoryRepository: {
+      upsert: async (input) => {
+        writes.push(input);
+        return {
+          id: "83000000-0000-4000-8000-000000000203",
+          userId: input.userId,
+          workspaceId: input.workspaceId ?? null,
+          category: input.category,
+          key: input.key,
+          valueMd: input.valueMd,
+          confidence: input.confidence ?? 0.8,
+          sourceRunId: input.sourceRunId ?? null,
+          deletedAt: null,
+          lastUsedAt: null,
+          expiresAt: null,
+          createdAt: new Date("2026-07-03T00:00:00.000Z"),
+          updatedAt: new Date("2026-07-03T00:00:00.000Z")
+        };
+      }
+    },
+    judge: async () => ({
+      decision: "promote",
+      targetScope: "user",
+      category: "preference",
+      key: "concise_approach",
+      valueMd: "用户喜欢短答案。",
+      confidence: 0.91,
+      reasons: ["same plan has consistent evidence"]
+    })
+  });
+
+  assert.equal(result.status, "promoted");
+  assert.equal(writes.length, 1);
+  assert.deepEqual(writes[0], {
+    userId,
+    workspaceId,
+    category: "preference",
+    key: "concise_approach",
+    valueMd: "用户喜欢短答案。",
+    confidence: 0.91,
+    sourceRunId: runId
+  });
+});
+
+test("promoteMemory does not write L2 for conflicts, noise, low confidence, or unsupported team targets", async () => {
+  const entry = memoryRow({ key: "concise_approach", valueMd: "用户喜欢短答案。" });
+  const baseInput = {
+    workspaceId,
+    l1EntryId: entry.id,
+    agentMemoryRepository: {
+      readPromotionContext: async () => ({
+        entry,
+        planId: "83000000-0000-4000-8000-000000000301",
+        sourceActorUserId: userId,
+        candidates: [entry],
+        capped: false
+      })
+    },
+    userMemoryRepository: {
+      upsert: async () => {
+        throw new Error("user_memories must not be written");
+      }
+    }
+  };
+
+  const conflict = await promoteMemory({
+    ...baseInput,
+    judge: async () => ({ decision: "conflict", targetScope: "user", confidence: 0.96, reasons: ["contradiction"] })
+  });
+  const noise = await promoteMemory({
+    ...baseInput,
+    judge: async () => ({ decision: "noise", targetScope: "user", confidence: 0.99, reasons: ["too specific"] })
+  });
+  const lowConfidence = await promoteMemory({
+    ...baseInput,
+    judge: async () => ({
+      decision: "promote",
+      targetScope: "user",
+      category: "preference",
+      key: "concise_approach",
+      valueMd: "用户喜欢短答案。",
+      confidence: 0.79,
+      reasons: ["not enough evidence"]
+    })
+  });
+  const teamTarget = await promoteMemory({
+    ...baseInput,
+    judge: async () => ({
+      decision: "promote",
+      targetScope: "team",
+      category: "preference",
+      key: "concise_approach",
+      valueMd: "用户喜欢短答案。",
+      confidence: 0.95,
+      reasons: ["team-wide signal"]
+    })
+  });
+
+  assert.equal(conflict.status, "conflict");
+  assert.equal(noise.status, "discarded");
+  assert.equal(lowConfidence.status, "discarded");
+  assert.equal(teamTarget.status, "unsupported_target");
 });

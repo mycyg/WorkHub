@@ -5,7 +5,7 @@ import {
   AgentMemoryWriteConflict,
   createAgentMemoryRepository
 } from "./repositories/agent-memory.js";
-import { agentMemory, agentMemoryVersions } from "./schema/index.js";
+import { agentMemory, agentMemoryVersions, agentRuns, taskPlanItems } from "./schema/index.js";
 import { createQueryRecorder, queryParamValues, queryReferences } from "./test-query-recorder.js";
 
 const now = new Date("2026-07-03T00:00:00.000Z");
@@ -14,6 +14,8 @@ const versionId = "83000000-0000-4000-8000-000000000002";
 const workspaceId = "83000000-0000-4000-8000-000000000003";
 const taskPlanItemId = "83000000-0000-4000-8000-000000000004";
 const runId = "83000000-0000-4000-8000-000000000005";
+const planId = "83000000-0000-4000-8000-000000000006";
+const userId = "83000000-0000-4000-8000-000000000007";
 
 const memoryRow = {
   id: memoryId,
@@ -128,4 +130,54 @@ test("R9.3 agent memory repository rolls back appended versions on optimistic wr
   assert.equal(versionInsert?.targetTable, agentMemoryVersions);
   assert.equal(update?.targetTable, agentMemory);
   assert.ok(queryReferences(update?.where, agentMemory.currentVersion));
+});
+
+test("R9.3 memory promotion context reads same-plan L1 candidates with source actor and workspace filters", async () => {
+  const sibling = {
+    ...memoryRow,
+    id: "83000000-0000-4000-8000-000000000008",
+    agentContextId: "83000000-0000-4000-8000-000000000009",
+    valueMd: "用户偏好短答案。"
+  };
+  const { db, queries } = createQueryRecorder([
+    [{
+      memory: memoryRow,
+      item: { id: taskPlanItemId, planId },
+      sourceRun: { id: runId, actorUserId: userId }
+    }],
+    [{ memory: memoryRow }, { memory: sibling }]
+  ]);
+  const repository = createAgentMemoryRepository(db);
+
+  const result = await repository.readPromotionContext({
+    workspaceId,
+    memoryId,
+    limit: 1
+  });
+
+  assert.equal(result?.entry.id, memoryId);
+  assert.equal(result?.planId, planId);
+  assert.equal(result?.sourceActorUserId, userId);
+  assert.equal(result?.candidates.length, 1);
+  assert.equal(result?.capped, true);
+  assert.equal(queries.length, 2);
+  const [entryQuery, candidatesQuery] = queries;
+  assert.equal(entryQuery?.fromTable, agentMemory);
+  assert.equal(entryQuery?.joins.length, 2);
+  assert.equal(entryQuery?.joins[0]?.table, taskPlanItems);
+  assert.equal(entryQuery?.joins[1]?.table, agentRuns);
+  assert.ok(queryReferences(entryQuery?.joins[1]?.on, agentRuns.workspaceId));
+  assert.ok(queryReferences(entryQuery?.where, agentMemory.workspaceId));
+  assert.ok(queryReferences(entryQuery?.where, agentMemory.id));
+  assert.ok(queryParamValues(entryQuery?.where).includes(workspaceId));
+  assert.ok(queryParamValues(entryQuery?.where).includes(memoryId));
+
+  assert.equal(candidatesQuery?.fromTable, agentMemory);
+  assert.equal(candidatesQuery?.joins[0]?.table, taskPlanItems);
+  assert.equal(candidatesQuery?.limit, 2);
+  assert.ok(queryReferences(candidatesQuery?.where, agentMemory.workspaceId));
+  assert.ok(queryReferences(candidatesQuery?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(candidatesQuery?.where, agentMemory.category));
+  assert.ok(queryReferences(candidatesQuery?.where, agentMemory.key));
+  assert.ok(queryParamValues(candidatesQuery?.where).includes(planId));
 });

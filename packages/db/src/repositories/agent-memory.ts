@@ -8,7 +8,7 @@ import {
 } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { agentMemory, agentMemoryVersions } from "../schema/index.js";
+import { agentMemory, agentMemoryVersions, agentRuns, taskPlanItems } from "../schema/index.js";
 
 export type AgentMemoryRow = typeof agentMemory.$inferSelect;
 export type AgentMemoryVersionRow = typeof agentMemoryVersions.$inferSelect;
@@ -54,14 +54,30 @@ export type AgentMemoryVersionListResult = {
   capped: boolean;
 };
 
+export type AgentMemoryPromotionContext = {
+  entry: AgentMemoryRow;
+  planId: string;
+  sourceActorUserId?: string;
+  candidates: AgentMemoryRow[];
+  capped: boolean;
+};
+
+export type ReadAgentMemoryPromotionContextInput = {
+  workspaceId: string;
+  memoryId: string;
+  limit?: number;
+};
+
 export type AgentMemoryRepository = {
   upsertPrivateMemory: (input: UpsertAgentMemoryInput) => Promise<AgentMemoryRow>;
   listPrivateForContext: (input: ListPrivateAgentMemoryInput) => Promise<AgentMemoryListResult>;
   listVersions: (input: ListAgentMemoryVersionsInput) => Promise<AgentMemoryVersionListResult>;
+  readPromotionContext: (input: ReadAgentMemoryPromotionContextInput) => Promise<AgentMemoryPromotionContext | undefined>;
 };
 
 const DEFAULT_LIMIT = AGENT_MEMORY_PROMPT_TOP_N;
 const MAX_LIMIT = 50;
+const MAX_PROMOTION_CANDIDATES = 20;
 
 function boundedLimit(input: number | undefined) {
   if (!Number.isFinite(input)) {
@@ -200,6 +216,49 @@ export function createAgentMemoryRepository(db: WorkHubDb): AgentMemoryRepositor
         .limit(limit + 1);
       return {
         rows: rows.slice(0, limit).map((row) => row.version),
+        capped: rows.length > limit
+      };
+    },
+
+    async readPromotionContext(input) {
+      const limit = Math.min(Math.max(Math.floor(input.limit ?? MAX_PROMOTION_CANDIDATES), 1), MAX_PROMOTION_CANDIDATES);
+      const [entry] = await db
+        .select({
+          memory: agentMemory,
+          item: taskPlanItems,
+          sourceRun: agentRuns
+        })
+        .from(agentMemory)
+        .innerJoin(taskPlanItems, eq(agentMemory.agentContextId, taskPlanItems.id))
+        .leftJoin(agentRuns, and(
+          eq(agentMemory.sourceRunId, agentRuns.id),
+          eq(agentRuns.workspaceId, input.workspaceId)
+        ))
+        .where(and(
+          eq(agentMemory.workspaceId, input.workspaceId),
+          eq(agentMemory.id, input.memoryId)
+        ))
+        .limit(1);
+      if (!entry) {
+        return undefined;
+      }
+      const rows = await db
+        .select({ memory: agentMemory })
+        .from(agentMemory)
+        .innerJoin(taskPlanItems, eq(agentMemory.agentContextId, taskPlanItems.id))
+        .where(and(
+          eq(agentMemory.workspaceId, input.workspaceId),
+          eq(taskPlanItems.planId, entry.item.planId),
+          eq(agentMemory.category, entry.memory.category),
+          eq(agentMemory.key, entry.memory.key)
+        ))
+        .orderBy(desc(agentMemory.confidence), desc(agentMemory.updatedAt), asc(agentMemory.id))
+        .limit(limit + 1);
+      return {
+        entry: entry.memory,
+        planId: entry.item.planId,
+        ...(entry.sourceRun?.actorUserId ? { sourceActorUserId: entry.sourceRun.actorUserId } : {}),
+        candidates: rows.slice(0, limit).map((row) => row.memory),
         capped: rows.length > limit
       };
     }
