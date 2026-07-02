@@ -414,11 +414,12 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
       });
       const body = await readUploadBody(c, { projectId, settings: runtimeSettings });
       storagePathForCleanup = body.storagePath;
-      // Once the service starts, it owns cleanup decisions. The repository may commit the
-      // storage path before the service refreshes the page VM; route-level cleanup after
-      // that point can delete a DB-referenced file.
+      const uploadFile = drivePages.uploadFile.bind(drivePages);
+      // Once the service method is captured, it owns cleanup decisions. The repository may
+      // commit the storage path before the service refreshes the page VM; route-level cleanup
+      // after that point can delete a DB-referenced file.
       storagePathForCleanup = undefined;
-      const data = await drivePages.uploadFile({
+      const data = await uploadFile({
         actor: c.var.actor,
         projectId,
         locale,
