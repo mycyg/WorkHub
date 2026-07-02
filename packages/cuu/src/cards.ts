@@ -173,9 +173,21 @@ function publicProposalTitle(title: string, options: CuuLocaleOptions = {}) {
   return isModelSelfNarrationTitle(compact) ? cuuT(options.locale, "proposal.reviewTitle") : compact;
 }
 
+function normalizeProposalMergeVerb(text: string, options: CuuLocaleOptions = {}) {
+  if (options.locale === "en-US") {
+    return text;
+  }
+  return text
+    .replaceAll("采纳这次版本", "合入这次版本")
+    .replaceAll("正式采纳", "正式合入")
+    .replaceAll("是否采纳", "是否合入");
+}
+
 function publicProposalSummary(text: string | undefined, options: CuuLocaleOptions = {}) {
   const compact = truncate(stripProposalOpenedPrefix(text ?? ""), 180);
-  return !compact || isModelSelfNarrationTitle(compact) ? cuuT(options.locale, "proposal.summaryFallback") : compact;
+  return !compact || isModelSelfNarrationTitle(compact)
+    ? cuuT(options.locale, "proposal.summaryFallback")
+    : normalizeProposalMergeVerb(compact, options);
 }
 
 function proposalNextStepForStatus(status: ProposalDetailVM["status"], options: CuuLocaleOptions = {}) {
@@ -222,10 +234,17 @@ function stateForAttentionItem(item: AttentionItem): CuuState {
 }
 
 function publicProposalAttentionTitle(item: AttentionItem, message: string, options: CuuLocaleOptions = {}) {
-  if (attentionHasAction(item, "merge")) {
-    return cuuT(options.locale, "proposal.mergeTitle");
-  }
   const title = publicProposalTitle(item.title, options);
+  if (attentionHasAction(item, "merge")) {
+    if (
+      title === message
+      || title === cuuT(options.locale, "proposal.reviewTitle")
+      || title === cuuT(options.locale, "proposal.mergeTitle")
+    ) {
+      return cuuT(options.locale, "proposal.mergeTitle");
+    }
+    return cuuFormat(options.locale, "proposal.mergeTitleNamed", { title });
+  }
   return title === message ? cuuT(options.locale, "proposal.reviewTitle") : title;
 }
 
@@ -776,7 +795,7 @@ export function cardFromProposalConflict(conflict: ProposalConflict, options: Cu
     {
       id: "versions",
       title: cuuT(options.locale, "proposal.conflictVersionSection"),
-      lines: conflict.options.map((option) => option.summary_text)
+      lines: conflict.options.map((option) => normalizeProposalMergeVerb(option.summary_text, options))
     }
   ];
   const actions = [
@@ -795,7 +814,7 @@ export function cardFromProposalConflict(conflict: ProposalConflict, options: Cu
     kind: "proposal",
     state: "asking_approval",
     title: cuuT(options.locale, "proposal.conflictTitle"),
-    message: truncate(conflict.summary_text),
+    message: truncate(normalizeProposalMergeVerb(conflict.summary_text, options)),
     priority: "high",
     actions,
     chips: [
