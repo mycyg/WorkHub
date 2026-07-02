@@ -980,8 +980,8 @@ function canReadWorkItemAccessRow(
     // 真 PG 下 actor.orgId 是默认 org 实值，会把所有合法读误判成 403（r1-pg-smoke 撞红）。workspace 已是真边界。
     { workspaceId: actor.workspaceId }
   );
+  // Read-only claimer continuity survives project archival; mutation paths still require an active project.
   const claimedByActorInScope = row.claimedByUserId === userId
-    && !row.project?.archived
     && row.project?.deletedAt == null
     && (
       !actor.workspaceId
