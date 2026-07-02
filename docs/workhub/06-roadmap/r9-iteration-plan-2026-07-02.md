@@ -72,6 +72,18 @@
 | 5-2 | openapi.ts：修 4 处已知漂移；建「从 zod 契约派生或 CI 比对」机制，不再手维护 4500 行 | openapi-1..4 |
 | 5-3 | 快照/替换所有被迁就的测试断言（以 git log -p 原断言为准逐个复核） | test-integrity-1 |
 
+### 5-3 断言复核记录（2026-07-02）
+
+`test-integrity` JSON 清单只有两条已确认项：`test-integrity-2` 是 DB 源码 grep 伪测试债，已由 5-1 改成行为测试；`test-integrity-1` 是桌宠玻璃约束测试被改写迁就实现。
+
+以 `git log -p` 逐项复核后，当前约束为：
+
+- `32d2efb7` 的批次 0 止血已经把 `apps/desktop-webview/src/pet-surface.test.ts` 中被削弱的桌宠气泡断言恢复到 `.wh-pet-bubble` 白底 `rgba(255,255,255,.82/.52)`，并恢复入场淡入动画；当前实现 `apps/desktop-webview/src/pet-surface.ts` 同步保持 `.82/.52`。
+- 后续 `a2ef86e3` 只改掉隐藏 SVG filter 相关断言，且在 `pet-surface.test.ts`、`spotlight/css.test.ts`、`liquid-glass-filter.test.ts` 中逐条写明旧断言为什么错：这些 `url(#workhub-liquid-glass-*)` 层在生产消费方被隐藏，继续钉住它们只会保留死的生成贴图路径。
+- 后续 `b2fb61cf` 改掉 Spotlight 手动 resize 命中区相关断言，已写明旧断言为什么错：旧断言钉住了没有持久 resize 状态支撑的假 affordance。
+
+复核命令：`pnpm exec node --import tsx --test src/pet-surface.test.ts src/liquid-glass-filter.test.ts src/spotlight/css.test.ts`（`apps/desktop-webview`）通过 `56/56`。5-3 不再替换额外断言，只保留这份可回溯记录。
+
 ## 流程红线（写进协作规范，防复发）
 
 1. **无人值守 agent 产出必须过对抗式审查才能进 main**——本轮 84 真发现即为代价证明。
