@@ -168,7 +168,7 @@ test("R9.4 task dispatch arbitration sink judges child proposal outputs and revi
         selectedCandidateId: proposalBId,
         proposalReview: {
           decision: "approve",
-          reasonMd: "R9.4 cross-agent judge selected Draft B."
+          reasonMd: "AI 复核选择 Draft B。"
         }
       } satisfies CrossAgentArbitrationResult;
     }
@@ -224,10 +224,12 @@ test("R9.4 task dispatch arbitration sink judges child proposal outputs and revi
     proposalId: proposalBId,
     actor: {
       actor_kind: "ai",
-      label: "R9 cross-agent judge"
+      // R9.7: the old expected label exposed `cross-agent judge`; proposal review actor labels are user-visible.
+      label: "WorkHub AI review"
     },
     decision: "approve",
-    reasonMd: "R9.4 cross-agent judge selected Draft B.",
+    // R9.7: the old expected reason exposed `cross-agent judge`; persisted review copy must be product-facing.
+    reasonMd: "AI 复核选择 Draft B。",
     remember: "once"
   }]);
 });

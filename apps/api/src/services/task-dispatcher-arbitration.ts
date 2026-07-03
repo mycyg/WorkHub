@@ -137,7 +137,7 @@ export function createTaskDispatchArbitrationSink(options: TaskDispatchArbitrati
     const judgeInput: CrossAgentJudgeInput = {
       actor: {
         id: "r9-cross-agent-judge",
-        label: "R9 cross-agent judge",
+        label: "WorkHub AI review",
         workspaceId: input.plan.workspaceId,
         workItemId: input.plan.workItemId,
         taskPlanId: input.plan.id
@@ -159,7 +159,7 @@ export function createTaskDispatchArbitrationSink(options: TaskDispatchArbitrati
       proposalId: target.proposalId,
       actor: {
         actor_kind: "ai",
-        label: "R9 cross-agent judge"
+        label: "WorkHub AI review"
       },
       decision: reviewDecision(result),
       reasonMd: result.proposalReview.reasonMd,

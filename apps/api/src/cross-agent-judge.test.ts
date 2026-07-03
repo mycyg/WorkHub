@@ -107,7 +107,7 @@ test("R9.4 cross-agent judge arbitrates contradictory outputs into an auditable 
         "Candidate B checks the latest review row and proposal status.",
         "Candidate A contradicts the accepted review state."
       ],
-      summary_md: "采纳 candidate-b：它按验收标准核对了最新 review 状态。"
+      summary_md: "Raw judge decision: accept_one\nDecision: accept_one\nConfidence: high\n采纳 candidate-b：它按验收标准核对了最新 review 状态。"
     }
   ]);
   const reviewCalls: Array<Parameters<NonNullable<CrossAgentJudgeInput["proposalReviews"]>["review"]>[0]> = [];
@@ -141,7 +141,10 @@ test("R9.4 cross-agent judge arbitrates contradictory outputs into an auditable 
   assert.equal(reviewCalls[0]?.proposalId, "proposal-r9");
   assert.equal(reviewCalls[0]?.decision, "approve");
   assert.equal(reviewCalls[0]?.actor.actor_kind, "ai");
+  assert.equal(reviewCalls[0]?.actor.label, "WorkHub AI review");
+  assert.match(reviewCalls[0]?.reasonMd ?? "", /AI 复核结果/);
   assert.match(reviewCalls[0]?.reasonMd ?? "", /Candidate B checks/);
+  assert.doesNotMatch(reviewCalls[0]?.reasonMd ?? "", /cross-agent judge|Raw judge|Decision:|Confidence:|accept_one|judge_|low_confidence|multi_vote_/iu);
 });
 
 test("R9.4 cross-agent judge sends low confidence arbitration to human review", async () => {
@@ -171,7 +174,9 @@ test("R9.4 cross-agent judge sends low confidence arbitration to human review", 
   assert.equal(result.confidence, "low");
   assert.equal(result.escalationReason, "low_confidence");
   assert.equal(result.proposalReview.decision, "request_changes");
-  assert.match(result.proposalReview.reasonMd, /low confidence|低置信/i);
+  // R9.7: the old assertion pinned `low confidence`, but confidence is an internal review token forbidden in user-visible proposal copy.
+  assert.match(result.proposalReview.reasonMd, /把握不足/u);
+  assert.doesNotMatch(result.proposalReview.reasonMd, /confidence|low_confidence|judge/iu);
   assert.equal(reviewCalls[0]?.decision, "request_changes");
 });
 
@@ -203,7 +208,9 @@ test("R9.4 cross-agent judge fails closed when judge client is the same context 
   assert.equal(result.confidence, "low");
   assert.equal(result.escalationReason, "judge_not_independent");
   assert.equal(result.proposalReview.decision, "request_changes");
-  assert.match(result.proposalReview.reasonMd, /judge_not_independent/);
+  // R9.7: the old assertion pinned `judge_not_independent`, but raw escalation enums must not leak into proposal review copy.
+  assert.match(result.proposalReview.reasonMd, /复核来源不独立/u);
+  assert.doesNotMatch(result.proposalReview.reasonMd, /judge_not_independent|judge|confidence/iu);
   assert.equal(reviewCalls[0]?.decision, "request_changes");
 });
 
@@ -233,7 +240,9 @@ test("R9.4 cross-agent judge fails closed when a worker client context is not au
   assert.equal(result.decision, "escalate");
   assert.equal(result.confidence, "low");
   assert.equal(result.escalationReason, "judge_not_independent");
-  assert.match(result.proposalReview.reasonMd, /missing worker client\/context/i);
+  // R9.7: the old assertion pinned backend provenance terms (`worker client/context`) instead of user-facing review copy.
+  assert.match(result.proposalReview.reasonMd, /缺少可审计来源/u);
+  assert.doesNotMatch(result.proposalReview.reasonMd, /worker client|context|judge_not_independent|judge|confidence/iu);
 });
 
 test("R9.4 cross-agent judge preserves an explicit judge escalation as human review", async () => {
@@ -254,7 +263,9 @@ test("R9.4 cross-agent judge preserves an explicit judge escalation as human rev
   assert.equal(result.confidence, "medium");
   assert.equal(result.escalationReason, "judge_escalated");
   assert.equal(result.proposalReview.decision, "request_changes");
-  assert.match(result.proposalReview.reasonMd, /judge_escalated/);
+  // R9.7: the old assertion pinned `judge_escalated`, but proposal review copy must say what the user should do.
+  assert.match(result.proposalReview.reasonMd, /人工确认/u);
+  assert.doesNotMatch(result.proposalReview.reasonMd, /judge_escalated|judge|confidence/iu);
 });
 
 test("R9.4 cross-agent judge fails closed instead of silently dropping extra child outputs", async () => {
@@ -389,7 +400,9 @@ test("R9.4 high-risk arbitration escalates when any adversarial vote escalates",
   assert.equal(result.decision, "escalate");
   assert.equal(result.escalationReason, "multi_vote_escalated");
   assert.equal(result.proposalReview.decision, "request_changes");
-  assert.match(result.proposalReview.reasonMd, /multi_vote_escalated/);
+  // R9.7: the old assertion pinned `multi_vote_escalated`, but high-risk review copy must be human-readable.
+  assert.match(result.proposalReview.reasonMd, /高风险复核/u);
+  assert.doesNotMatch(result.proposalReview.reasonMd, /multi_vote_escalated|judge|confidence/iu);
 });
 
 test("R9.4 non-high-risk arbitration does not spend the 2-of-3 vote budget", async () => {

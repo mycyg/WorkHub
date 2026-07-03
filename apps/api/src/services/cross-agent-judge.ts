@@ -276,8 +276,87 @@ function judgePrompt(input: CrossAgentJudgeInput, perspective?: typeof HIGH_RISK
 function reviewActor(): ProposalActor {
   return {
     actor_kind: "ai",
-    label: "R9 cross-agent judge"
+    label: "WorkHub AI review"
   };
+}
+
+function decisionLabel(decision: CrossAgentJudgeDecision) {
+  switch (decision) {
+    case "accept_one":
+      return "采用其中一份输出";
+    case "merge":
+      return "合并多份输出";
+    case "replan":
+      return "需要重新规划";
+    case "escalate":
+      return "需要人工确认";
+  }
+}
+
+function assuranceLabel(confidence: ConfidenceGrade) {
+  switch (confidence) {
+    case "high":
+      return "把握较高";
+    case "medium":
+      return "需要复核";
+    case "low":
+      return "把握不足";
+  }
+}
+
+function escalationReasonLabel(reason: CrossAgentArbitrationResult["escalationReason"]) {
+  switch (reason) {
+    case "invalid_input":
+      return "输入不完整，已转人工确认。";
+    case "judge_not_independent":
+      return "复核来源不独立，已转人工确认。";
+    case "judge_unavailable":
+      return "AI 复核暂不可用，已转人工确认。";
+    case "judge_invalid_response":
+      return "AI 复核结果不可读，已转人工确认。";
+    case "judge_escalated":
+      return "AI 建议人工确认。";
+    case "low_confidence":
+      return "把握不足，已转人工确认。";
+    case "multi_vote_escalated":
+      return "高风险复核中有视角建议人工确认。";
+    case "multi_vote_split":
+      return "高风险复核没有形成一致结论。";
+    case undefined:
+      return undefined;
+  }
+}
+
+function publicReviewCopy(value: string) {
+  return value
+    .replace(/R9\.4\s+cross-agent judge arbitration/gi, "AI 复核")
+    .replace(/cross-agent judge/gi, "AI 复核")
+    .replace(/judge_not_independent/g, "复核来源不独立")
+    .replace(/judge_invalid_response/g, "复核结果不可读")
+    .replace(/judge_unavailable/g, "AI 复核暂不可用")
+    .replace(/judge_escalated/g, "建议人工确认")
+    .replace(/low_confidence/g, "把握不足")
+    .replace(/multi_vote_escalated/g, "高风险复核需人工确认")
+    .replace(/multi_vote_split/g, "高风险复核未形成一致结论")
+    .replace(/\baccept_one\b/g, "采用其中一份输出")
+    .replace(/\bmerge\b/g, "合并")
+    .replace(/\breplan\b/g, "重新规划")
+    .replace(/\bescalate\b/g, "需要人工确认")
+    .replace(/Raw judge decision:/gi, "原始复核结论：")
+    .replace(/\bDecision:/gi, "结论：")
+    .replace(/\bConfidence:/gi, "把握程度：")
+    .replace(/Selected candidate:/gi, "采用输出：")
+    .replace(/Escalation reason:/gi, "需要人工处理：")
+    .replace(/high-risk 2-of-3 adversarial vote/gi, "高风险复核")
+    .replace(/\blow confidence\b/gi, "把握不足")
+    .replace(/\bconfidence\b/gi, "把握程度")
+    .replace(/worker client\/context/gi, "可审计来源")
+    .replace(/client\/context/gi, "来源")
+    .replace(/missing 可审计来源 reference/gi, "缺少可审计来源")
+    .replace(/\bcontext\b/gi, "来源")
+    .replace(/missing 来源 provenance/gi, "缺少可审计来源")
+    .replace(/failed closed/gi, "已停止自动处理")
+    .replace(/\bjudge\b/gi, "AI 复核");
 }
 
 function reviewReason(input: {
@@ -285,17 +364,16 @@ function reviewReason(input: {
   rawDecision?: CrossAgentJudgeDecision;
 }) {
   const lines = [
-    "R9.4 cross-agent judge arbitration",
-    `Decision: ${input.result.decision}`,
-    input.rawDecision && input.rawDecision !== input.result.decision ? `Raw judge decision: ${input.rawDecision}` : undefined,
-    `Confidence: ${input.result.confidence}`,
-    input.result.selectedCandidateId ? `Selected candidate: ${input.result.selectedCandidateId}` : undefined,
-    input.result.escalationReason ? `Escalation reason: ${input.result.escalationReason}` : undefined,
+    "AI 复核结果",
+    `结论：${decisionLabel(input.result.decision)}`,
+    `把握程度：${assuranceLabel(input.result.confidence)}`,
+    input.result.selectedCandidateId ? `采用输出：${publicReviewCopy(input.result.selectedCandidateId)}` : undefined,
+    input.result.escalationReason ? `需要人工处理：${escalationReasonLabel(input.result.escalationReason)}` : undefined,
     "",
-    "Reasons:",
-    ...input.result.reasons.map((reason) => `- ${reason}`),
+    "依据：",
+    ...input.result.reasons.map((reason) => `- ${publicReviewCopy(reason)}`),
     "",
-    input.result.summaryMd
+    publicReviewCopy(input.result.summaryMd)
   ].filter((value): value is string => typeof value === "string");
   return lines.join("\n");
 }
