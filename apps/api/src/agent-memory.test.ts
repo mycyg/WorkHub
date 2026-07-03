@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { AgentMemoryRow, UserMemoryRow } from "@workhub/db";
+import type { AgentMemoryRow, CreateMemoryConflictInput, MemoryConflictRow, UserMemoryRow } from "@workhub/db";
 import type { DeliverableChangeManifest } from "@workhub/contracts";
 
 import {
@@ -54,6 +54,29 @@ function userMemoryRow(over: Partial<UserMemoryRow>): UserMemoryRow {
     updatedAt: new Date("2026-07-03T00:00:00.000Z"),
     ...over
   } as UserMemoryRow;
+}
+
+function memoryConflictRow(over: Partial<MemoryConflictRow>): MemoryConflictRow {
+  return {
+    id: "83000000-0000-4000-8000-000000000701",
+    workspaceId,
+    userId,
+    sourceRunId: runId,
+    category: "preference",
+    key: "concise_approach",
+    currentValueMd: "用户喜欢详细解释。",
+    incomingValueMd: "用户喜欢只给结论。",
+    baseValueMd: "用户喜欢短答案。",
+    candidateMemoryIds: ["83000000-0000-4000-8000-000000000101"],
+    status: "open",
+    resolution: null,
+    resolvedValueMd: null,
+    resolvedByUserId: null,
+    resolvedAt: null,
+    createdAt: new Date("2026-07-03T00:00:00.000Z"),
+    updatedAt: new Date("2026-07-03T00:00:00.000Z"),
+    ...over
+  } as MemoryConflictRow;
 }
 
 function run(over: Partial<AgentRunQueueRecord>): AgentRunQueueRecord {
@@ -284,6 +307,7 @@ test("promoteMemory returns a memory_conflict payload when L2 diff3 cannot recon
   const entry = memoryRow({ key: "concise_approach", valueMd: "用户喜欢短答案。", confidence: 0.8 });
   const current = userMemoryRow({ valueMd: "用户喜欢详细解释。" });
   const published: Array<{ topic: string; type: string; data: unknown }> = [];
+  const saved: unknown[] = [];
 
   const result = await promoteMemory({
     workspaceId,
@@ -304,6 +328,21 @@ test("promoteMemory returns a memory_conflict payload when L2 diff3 cannot recon
         incoming: input,
         baseValueMd: "用户喜欢短答案。"
       })
+    },
+    memoryConflictRepository: {
+      createOrUpdateOpen: async (input) => {
+        saved.push(input);
+        return memoryConflictRow({
+          ...(input.id ? { id: input.id } : {}),
+          category: input.category,
+          key: input.key,
+          currentValueMd: input.currentValueMd,
+          incomingValueMd: input.incomingValueMd,
+          baseValueMd: input.baseValueMd ?? null,
+          candidateMemoryIds: input.candidateMemoryIds,
+          sourceRunId: input.sourceRunId ?? null
+        });
+      }
     },
     bus: {
       publish: async (topic, type, data) => {
@@ -326,6 +365,7 @@ test("promoteMemory returns a memory_conflict payload when L2 diff3 cannot recon
   assert.equal(result.memoryConflict?.attention.source_ref.entity_type, "agent_run");
   assert.equal(result.memoryConflict?.current_value_md, "用户喜欢详细解释。");
   assert.equal(result.memoryConflict?.incoming_value_md, "用户喜欢只给结论。");
+  assert.equal(saved.length, 1);
   assert.equal(published.length, 1);
   assert.equal(published[0]?.topic, `user:${userId}`);
   assert.equal(published[0]?.type, "sync.conflict");
@@ -334,6 +374,84 @@ test("promoteMemory returns a memory_conflict payload when L2 diff3 cannot recon
     result.memoryConflict?.resolution_options.map((option) => option.id),
     ["keep_current", "accept_incoming", "merge_both", "edit_memory"]
   );
+});
+
+test("promoteMemory persists judge-level memory conflicts into durable sync_conflict attention", async () => {
+  const entry = memoryRow({ key: "reply_style", valueMd: "回复只给结论。" });
+  const sibling = memoryRow({
+    id: "83000000-0000-4000-8000-000000000702",
+    key: "reply_style",
+    valueMd: "回复要详细解释。"
+  });
+  const saved: unknown[] = [];
+  const published: Array<{ type: string; data: unknown }> = [];
+
+  const result = await promoteMemory({
+    workspaceId,
+    l1EntryId: entry.id,
+    agentMemoryRepository: {
+      readPromotionContext: async () => ({
+        entry,
+        planId: "83000000-0000-4000-8000-000000000703",
+        sourceActorUserId: userId,
+        candidates: [sibling, entry],
+        capped: false
+      })
+    },
+    userMemoryRepository: {
+      mergeUpsert: async () => {
+        throw new Error("judge-level conflict must not write L2");
+      }
+    },
+    memoryConflictRepository: {
+      createOrUpdateOpen: async (input) => {
+        saved.push(input);
+        return memoryConflictRow({
+          ...(input.id ? { id: input.id } : {}),
+          key: input.key,
+          currentValueMd: input.currentValueMd,
+          incomingValueMd: input.incomingValueMd,
+          baseValueMd: input.baseValueMd ?? null,
+          candidateMemoryIds: input.candidateMemoryIds
+        });
+      }
+    },
+    bus: {
+      publish: async (_topic, type, data) => {
+        published.push({ type, data });
+      }
+    },
+    judge: async () => ({
+      decision: "conflict",
+      targetScope: "user",
+      category: "preference",
+      key: "reply_style",
+      valueMd: "回复只给结论。",
+      confidence: 0.96,
+      reasons: ["same-plan sibling says the opposite"]
+    })
+  });
+
+  assert.equal(result.status, "conflict");
+  assert.equal(result.memoryConflict?.attention.kind, "sync_conflict");
+  assert.equal(result.memoryConflict?.attention.priority, "high");
+  assert.deepEqual(
+    result.memoryConflict?.attention.actions.map((action) => action.id),
+    ["keep_current", "accept_incoming", "merge_both", "open_settings"]
+  );
+  assert.equal(saved.length, 1);
+  assert.deepEqual(saved[0], {
+    id: entry.id,
+    workspaceId,
+    userId,
+    sourceRunId: runId,
+    category: "preference",
+    key: "reply_style",
+    currentValueMd: "回复要详细解释。",
+    incomingValueMd: "回复只给结论。",
+    candidateMemoryIds: [sibling.id, entry.id]
+  });
+  assert.equal(published[0]?.type, "sync.conflict");
 });
 
 test("promoteMemory does not write L2 for conflicts, noise, low confidence, or unsupported team targets", async () => {
@@ -354,6 +472,20 @@ test("promoteMemory does not write L2 for conflicts, noise, low confidence, or u
       mergeUpsert: async () => {
         throw new Error("user_memories must not be written");
       }
+    },
+    memoryConflictRepository: {
+      // R9.3.3: judge-level conflicts now persist a sync_conflict card; the old
+      // test only proved "no L2 write" and accidentally assumed conflicts were silent.
+      createOrUpdateOpen: async (input: CreateMemoryConflictInput) => memoryConflictRow({
+        ...(input.id ? { id: input.id } : {}),
+        category: input.category,
+        key: input.key,
+        currentValueMd: input.currentValueMd,
+        incomingValueMd: input.incomingValueMd,
+        baseValueMd: input.baseValueMd ?? null,
+        candidateMemoryIds: input.candidateMemoryIds,
+        sourceRunId: input.sourceRunId ?? null
+      })
     }
   };
 

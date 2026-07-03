@@ -1593,6 +1593,33 @@ export const agentMemoryVersions = pgTable(
   ]
 );
 
+export const memoryConflicts = pgTable(
+  "memory_conflicts",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    sourceRunId: uuid("source_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    category: varchar("category", { length: 32 }).$type<UserMemoryCategory>().notNull(),
+    key: varchar("key", { length: 256 }).notNull(),
+    currentValueMd: text("current_value_md").notNull(),
+    incomingValueMd: text("incoming_value_md").notNull(),
+    baseValueMd: text("base_value_md"),
+    candidateMemoryIds: jsonb("candidate_memory_ids").$type<string[]>().notNull().default([]),
+    status: varchar("status", { length: 16 }).$type<"open" | "resolved">().notNull().default("open"),
+    resolution: varchar("resolution", { length: 32 }).$type<"keep_current" | "accept_incoming" | "merge_both" | "edit_memory">(),
+    resolvedValueMd: text("resolved_value_md"),
+    resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    resolvedAt: timestampTz("resolved_at"),
+    ...timestamps()
+  },
+  (table) => [
+    index("memory_conflicts_workspace_user_status_idx").on(table.workspaceId, table.userId, table.status),
+    index("memory_conflicts_source_run_id_idx").on(table.sourceRunId),
+    index("memory_conflicts_created_at_idx").on(table.createdAt)
+  ]
+);
+
 // R6.S2 团队级技能：AI 闲时从团队真实工作（接受的交付物/升级缺口）自蒸馏的 SKILL.md，
 // workspace 维度、版本化。active 版本与 FS 预设技能合并后注入 worker prompt（赋能整个团队）。
 // 无人工预审：AI 自验通过即 active；人类仅事后 deprecate/rollback（kill-switch）。
@@ -1630,6 +1657,7 @@ export const workHubTables = {
   userMemories,
   agentMemory,
   agentMemoryVersions,
+  memoryConflicts,
   teamSkills,
   clientDevices,
   userProfiles,

@@ -95,7 +95,7 @@ export const attentionHomeVmSchema = z.object({
   primary: attentionItemSchema.optional(),
   queue: z.array(attentionItemSchema),
   source_warnings: z.array(z.object({
-    source: z.enum(["approvals", "proposals", "escalations"]),
+    source: z.enum(["approvals", "proposals", "escalations", "sync_conflicts"]),
     message: z.string().min(1)
   })).optional(),
   background_runs: z.array(z.object({

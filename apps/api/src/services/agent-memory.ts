@@ -10,9 +10,11 @@ import {
 import { makeWorkHubEvent, topics } from "@workhub/events";
 import {
   createAgentMemoryRepository,
+  createMemoryConflictRepository,
   getSharedDatabaseClient,
   type AgentMemoryRepository,
   type AgentMemoryRow,
+  type MemoryConflictRepository,
   type UpsertAgentMemoryInput,
   type UserMemoryRepository,
   type UserMemoryRow,
@@ -120,6 +122,7 @@ export type PromoteMemoryInput = {
   actor?: LlmActor;
   agentMemoryRepository?: Pick<AgentMemoryRepository, "readPromotionContext">;
   userMemoryRepository?: Pick<UserMemoryRepository, "mergeUpsert">;
+  memoryConflictRepository?: Pick<MemoryConflictRepository, "createOrUpdateOpen">;
   bus?: Pick<PushBus, "publish"> | false;
   judge?: AgentMemoryPromotionJudge;
   providerRegistry?: Pick<ProviderRegistry, "isConfigured" | "get">;
@@ -326,17 +329,41 @@ function buildMemoryConflictProposal(input: {
     attention: {
       id: input.fallbackId,
       kind: "sync_conflict",
-      priority: "normal",
+      priority: "high",
       source_ref: sourceRef,
-      title: "记忆偏好有冲突",
+      title: "Cuu 学到了两条打架的偏好",
       summary_text: `${label}「${input.key}」出现两种说法，需要确认后再晋升。`,
-      actions: [{
-        id: "open_settings",
-        label: "打开设置",
-        style: "secondary",
-        method: "GET",
-        href: "/settings"
-      }],
+      reason_text: `A：${input.currentValueMd}\nB：${input.incomingValueMd}`,
+      actions: [
+        {
+          id: "keep_current",
+          label: "要 A",
+          style: "secondary",
+          method: "POST",
+          href: `/api/memory-conflicts/${input.fallbackId}/resolve/keep_current`
+        },
+        {
+          id: "accept_incoming",
+          label: "要 B",
+          style: "primary",
+          method: "POST",
+          href: `/api/memory-conflicts/${input.fallbackId}/resolve/accept_incoming`
+        },
+        {
+          id: "merge_both",
+          label: "合并两条",
+          style: "secondary",
+          method: "POST",
+          href: `/api/memory-conflicts/${input.fallbackId}/resolve/merge_both`
+        },
+        {
+          id: "open_settings",
+          label: "打开设置",
+          style: "quiet",
+          method: "GET",
+          href: "/settings"
+        }
+      ],
       cuu_state: "worried",
       created_at: new Date().toISOString()
     },
@@ -385,6 +412,45 @@ async function publishMemoryConflict(
   }
 }
 
+async function persistMemoryConflict(input: {
+  repository: Pick<MemoryConflictRepository, "createOrUpdateOpen">;
+  workspaceId: string;
+  userId: string;
+  category: UserMemoryCategory;
+  key: string;
+  currentValueMd: string;
+  incomingValueMd: string;
+  baseValueMd?: string | null;
+  candidateMemoryIds: string[];
+  sourceRunId?: string | null;
+  fallbackId: string;
+}) {
+  const row = await input.repository.createOrUpdateOpen({
+    id: input.fallbackId,
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    sourceRunId: input.sourceRunId ?? null,
+    category: input.category,
+    key: input.key,
+    currentValueMd: input.currentValueMd,
+    incomingValueMd: input.incomingValueMd,
+    ...(input.baseValueMd !== undefined ? { baseValueMd: input.baseValueMd } : {}),
+    candidateMemoryIds: input.candidateMemoryIds
+  });
+  return buildMemoryConflictProposal({
+    workspaceId: row.workspaceId,
+    userId: row.userId,
+    category: row.category,
+    key: row.key,
+    currentValueMd: row.currentValueMd,
+    incomingValueMd: row.incomingValueMd,
+    ...(row.baseValueMd !== null ? { baseValueMd: row.baseValueMd } : {}),
+    candidateMemoryIds: row.candidateMemoryIds,
+    sourceRunId: row.sourceRunId,
+    fallbackId: row.id
+  });
+}
+
 export async function promoteMemory(input: PromoteMemoryInput): Promise<PromoteMemoryResult> {
   const agentMemoryRepository = input.agentMemoryRepository ?? getDefaultAgentMemoryRepository();
   const context = await agentMemoryRepository.readPromotionContext({
@@ -412,7 +478,30 @@ export async function promoteMemory(input: PromoteMemoryInput): Promise<PromoteM
   });
 
   if (decision.decision === "conflict") {
-    return { status: "conflict", decision, candidateMemoryIds };
+    const conflictUserId = context.sourceActorUserId ?? input.actor?.userId ?? input.actor?.id;
+    if (!conflictUserId) {
+      return { status: "discarded", reason: "missing_source_actor", decision, candidateMemoryIds };
+    }
+    const sibling = context.candidates.find((row) => row.id !== context.entry.id);
+    const memoryConflict = await persistMemoryConflict({
+      repository: input.memoryConflictRepository ?? getDefaultMemoryConflictRepository(),
+      workspaceId: input.workspaceId,
+      userId: conflictUserId,
+      category: decision.category ?? context.entry.category,
+      key: decision.key ?? context.entry.key,
+      currentValueMd: sibling?.valueMd ?? context.entry.valueMd,
+      incomingValueMd: decision.valueMd ?? context.entry.valueMd,
+      candidateMemoryIds,
+      sourceRunId: context.entry.sourceRunId,
+      fallbackId: context.entry.id
+    });
+    await publishMemoryConflict(
+      input.bus === false ? undefined : input.bus ?? getDefaultPushBus(),
+      memoryConflict.user_id,
+      memoryConflict,
+      context.entry.sourceRunId
+    );
+    return { status: "conflict", decision, candidateMemoryIds, memoryConflict };
   }
   if (decision.decision === "noise") {
     return { status: "discarded", reason: "noise", decision, candidateMemoryIds };
@@ -439,7 +528,8 @@ export async function promoteMemory(input: PromoteMemoryInput): Promise<PromoteM
     ...sourceRunIdPatch(context.entry)
   });
   if (mergeResult.status === "conflict") {
-    const memoryConflict = buildMemoryConflictProposal({
+    const memoryConflict = await persistMemoryConflict({
+      repository: input.memoryConflictRepository ?? getDefaultMemoryConflictRepository(),
       workspaceId: input.workspaceId,
       userId: context.sourceActorUserId,
       category: mergeResult.incoming.category,
@@ -474,11 +564,18 @@ export async function promoteMemory(input: PromoteMemoryInput): Promise<PromoteM
 
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 let defaultRepository: AgentMemoryRepository | undefined;
+let defaultMemoryConflictRepository: MemoryConflictRepository | undefined;
 
 function getDefaultAgentMemoryRepository(): AgentMemoryRepository {
   defaultDbClient = defaultDbClient ?? getSharedDatabaseClient();
   defaultRepository = defaultRepository ?? createAgentMemoryRepository(defaultDbClient.db);
   return defaultRepository;
+}
+
+function getDefaultMemoryConflictRepository(): MemoryConflictRepository {
+  defaultDbClient = defaultDbClient ?? getSharedDatabaseClient();
+  defaultMemoryConflictRepository = defaultMemoryConflictRepository ?? createMemoryConflictRepository(defaultDbClient.db);
+  return defaultMemoryConflictRepository;
 }
 
 export function getDefaultAgentMemoryContextProvider(): AgentMemoryContextProvider {

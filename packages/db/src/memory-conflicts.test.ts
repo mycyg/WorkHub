@@ -1,0 +1,80 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { memoryConflicts } from "./schema/index.js";
+import { createMemoryConflictRepository, type MemoryConflictRow } from "./repositories/memory-conflicts.js";
+import { createQueryRecorder, queryParamValues, queryReferences } from "./test-query-recorder.js";
+
+const conflictId = "85000000-0000-4000-8000-000000000001";
+const workspaceId = "85000000-0000-4000-8000-000000000002";
+const userId = "85000000-0000-4000-8000-000000000003";
+const sourceRunId = "85000000-0000-4000-8000-000000000004";
+const now = new Date("2026-07-03T10:30:00.000Z");
+
+function row(over: Partial<MemoryConflictRow> = {}): MemoryConflictRow {
+  return {
+    id: conflictId,
+    workspaceId,
+    userId,
+    sourceRunId,
+    category: "preference",
+    key: "reply_style",
+    currentValueMd: "回复要详细解释。",
+    incomingValueMd: "回复只给结论。",
+    baseValueMd: "回复要简洁。",
+    candidateMemoryIds: ["85000000-0000-4000-8000-000000000101"],
+    status: "open",
+    resolution: null,
+    resolvedValueMd: null,
+    resolvedByUserId: null,
+    resolvedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...over
+  } as MemoryConflictRow;
+}
+
+test("R9.3 memory conflict repository lists only open user/workspace cards with an honest cap", async () => {
+  const { db, queries } = createQueryRecorder([
+    [row(), row({ id: "85000000-0000-4000-8000-000000000005" })]
+  ]);
+  const repository = createMemoryConflictRepository(db);
+
+  const result = await repository.listOpenForUser({ workspaceId, userId, limit: 1 });
+
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.capped, true);
+  const query = queries[0];
+  assert.equal(query?.fromTable, memoryConflicts);
+  assert.equal(query?.limit, 2);
+  assert.ok(queryReferences(query?.where, memoryConflicts.workspaceId));
+  assert.ok(queryReferences(query?.where, memoryConflicts.userId));
+  assert.ok(queryReferences(query?.where, memoryConflicts.status));
+  assert.deepEqual(queryParamValues(query?.where).slice(0, 3), [workspaceId, userId, "open"]);
+});
+
+test("R9.3 memory conflict repository resolves only the actor's open workspace card", async () => {
+  const resolvedAt = new Date("2026-07-03T10:35:00.000Z");
+  const { db, queries } = createQueryRecorder([
+    [row({ status: "resolved", resolution: "accept_incoming", resolvedAt, resolvedByUserId: userId })]
+  ]);
+  const repository = createMemoryConflictRepository(db);
+
+  const result = await repository.resolve({
+    workspaceId,
+    userId,
+    conflictId,
+    resolution: "accept_incoming",
+    resolvedValueMd: "回复只给结论。",
+    resolvedAt
+  });
+
+  assert.equal(result?.status, "resolved");
+  const update = queries[0];
+  assert.equal(update?.targetTable, memoryConflicts);
+  assert.ok(queryReferences(update?.where, memoryConflicts.id));
+  assert.ok(queryReferences(update?.where, memoryConflicts.workspaceId));
+  assert.ok(queryReferences(update?.where, memoryConflicts.userId));
+  assert.ok(queryReferences(update?.where, memoryConflicts.status));
+  assert.deepEqual(queryParamValues(update?.where).slice(0, 4), [conflictId, workspaceId, userId, "open"]);
+});

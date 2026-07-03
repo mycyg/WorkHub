@@ -18,6 +18,7 @@ import {
   mergeAttempts,
   mergeProposals,
   keyResults,
+  memoryConflicts,
   objectiveWorkItemLinks,
   objectives,
   projectDriveItems,
@@ -37,9 +38,9 @@ import {
   workspaceMemberships
 } from "./index.js";
 
-// R9.5.1: the old count (54) was correct before OKR planning lenses existed; this slice
-// intentionally adds objectives, key_results, and objective_work_item_links as non-blocking OKR tables.
-const F02_TABLE_COUNT = 57;
+// R9.7.26: the old count (57) was correct before durable R9.3 memory-conflict attention cards existed.
+// This slice intentionally adds memory_conflicts so sync_conflict decisions survive beyond transient SSE events.
+const F02_TABLE_COUNT = 58;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -75,6 +76,7 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("task_plan_items"), true);
   assert.equal(tableNames.includes("agent_memory"), true);
   assert.equal(tableNames.includes("agent_memory_versions"), true);
+  assert.equal(tableNames.includes("memory_conflicts"), true);
   assert.equal(tableNames.includes("objectives"), true);
   assert.equal(tableNames.includes("key_results"), true);
   assert.equal(tableNames.includes("objective_work_item_links"), true);
@@ -116,6 +118,24 @@ test("R9.5 OKR tables expose non-blocking planning and progress fields", () => {
   assert.match(migration, /CREATE TABLE IF NOT EXISTS "objective_work_item_links"/u);
   assert.match(migration, /objective_work_item_links_objective_work_item_uq/u);
   assert.match(migration, /objectives_status_ck/u);
+});
+
+test("R9.3 memory conflicts expose durable sync_conflict decision fields", () => {
+  assert.equal(getTableName(memoryConflicts), "memory_conflicts");
+  assert.equal(memoryConflicts.workspaceId.name, "workspace_id");
+  assert.equal(memoryConflicts.userId.name, "user_id");
+  assert.equal(memoryConflicts.sourceRunId.name, "source_run_id");
+  assert.equal(memoryConflicts.currentValueMd.name, "current_value_md");
+  assert.equal(memoryConflicts.incomingValueMd.name, "incoming_value_md");
+  assert.equal(memoryConflicts.candidateMemoryIds.name, "candidate_memory_ids");
+  assert.equal(memoryConflicts.status.name, "status");
+  assert.equal(memoryConflicts.resolution.name, "resolution");
+  assert.equal(memoryConflicts.resolvedByUserId.name, "resolved_by_user_id");
+
+  const migration = readFileSync(join(process.cwd(), "migrations", "0038_memory_conflicts.sql"), "utf8");
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "memory_conflicts"/u);
+  assert.match(migration, /memory_conflicts_workspace_user_status_idx/u);
+  assert.match(migration, /memory_conflicts_status_ck/u);
 });
 
 test("R9.5 task/objective cost scope migration is replay-safe", () => {

@@ -352,6 +352,64 @@ test("attention home scopes proposal review lookup to the actor workspace", asyn
   assert.equal(captured?.user.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
 });
 
+test("attention home includes durable memory conflict cards as sync_conflict decisions", async () => {
+  const runtimeSettings = settings();
+  let capturedWorkspaceId: string | undefined;
+  const conflictId = "40000000-0000-4000-8000-0000000000d1";
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    approvals: {
+      async listPendingForUser() {
+        return {
+          items: [],
+          requests: [],
+          filters: {},
+          counts: { pending: 0, pending_total: 0 },
+          page_info: { limit: 100, returned: 0, has_more: false },
+          items_detail: {}
+        };
+      }
+    } as unknown as ApprovalService,
+    proposals: {
+      async listReviewableForUser() {
+        return [];
+      }
+    } as unknown as ProposalService,
+    memoryConflicts: {
+      async listAttentionItems(input: { actor: AuthEnv["Variables"]["actor"] }) {
+        capturedWorkspaceId = input.actor.workspaceId;
+        return [{
+          id: conflictId,
+          kind: "sync_conflict" as const,
+          priority: "high" as const,
+          source_ref: { entity_type: "notification" as const, entity_id: conflictId },
+          title: "Cuu 学到了两条打架的偏好",
+          summary_text: "回复风格出现两种说法，需要确认。",
+          actions: [
+            { id: "keep_current", label: "要 A", style: "secondary" as const, method: "POST" as const, href: `/api/memory-conflicts/${conflictId}/resolve/keep_current` },
+            { id: "accept_incoming", label: "要 B", style: "primary" as const, method: "POST" as const, href: `/api/memory-conflicts/${conflictId}/resolve/accept_incoming` }
+          ],
+          cuu_state: "worried" as const,
+          created_at: "2026-07-03T00:00:00.000Z"
+        }];
+      }
+    }
+  }));
+
+  const response = await app.request("/api/pages/attention?locale=zh-CN", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as { data: { primary?: AttentionItem; queue: AttentionItem[] } };
+  assert.equal(capturedWorkspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(body.data.primary?.id, conflictId);
+  assert.equal(body.data.primary?.kind, "sync_conflict");
+  assert.deepEqual(body.data.primary?.actions.map((action) => action.id), ["keep_current", "accept_incoming"]);
+});
+
 test("attention home preserves task-plan proposal reviews as plan_review cards", async () => {
   const runtimeSettings = settings();
   const planProposalId = "40000000-0000-4000-8000-0000000000b1";
@@ -493,6 +551,7 @@ test("attention home marks the decision queue as partial when the approvals look
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
     approvals: { async listPendingForUser() { throw new Error("db down"); } } as unknown as ApprovalService,
+    memoryConflicts: { async listAttentionItems() { return []; } },
     proposals: { async listReviewableForUser() { return []; } } as never
   }));
 

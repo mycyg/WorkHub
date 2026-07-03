@@ -69,6 +69,10 @@ import {
   type EscalationService
 } from "../services/escalations.js";
 import {
+  createMemoryConflictService,
+  type MemoryConflictService
+} from "../services/memory-conflicts.js";
+import {
   getDefaultProposalService,
   type ProposalService
 } from "../services/proposals.js";
@@ -88,6 +92,7 @@ export type PageRoutesDependencies = {
   auth?: AuthDependencySource;
   approvals?: ApprovalService;
   escalations?: EscalationService;
+  memoryConflicts?: Pick<MemoryConflictService, "listAttentionItems">;
   proposals?: ProposalService;
   queue?: AgentRunQueue;
   policyStore?: BudgetPolicyStore;
@@ -236,6 +241,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const allowUnauthenticatedGoldPath = deps.allowUnauthenticatedGoldPath ?? authSettings.appEnv !== "production";
   const approvals = deps.approvals ?? createApprovalService();
   const escalations = deps.escalations ?? createEscalationService();
+  const memoryConflicts = deps.memoryConflicts ?? createMemoryConflictService();
   const proposals = deps.proposals ?? getDefaultProposalService();
   const queue = deps.queue ?? getDefaultAgentRunQueue();
   const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
@@ -258,6 +264,11 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     let count = 0;
     try {
       count += (await escalations.listAttentionItems({ actor: input.actor, locale: input.locale })).length;
+    } catch {
+      count += 0;
+    }
+    try {
+      count += (await memoryConflicts.listAttentionItems({ actor: input.actor, locale: input.locale })).length;
     } catch {
       count += 0;
     }
@@ -379,6 +390,20 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         message: locale === "en-US"
           ? "Escalations could not be loaded. Open Projects or retry."
           : "升级待办暂时加载失败。请打开项目或稍后重试。"
+      });
+    }
+    try {
+      const memoryConflictItems = await memoryConflicts.listAttentionItems({ actor: c.var.actor, locale });
+      decisionQueue = [
+        ...decisionQueue,
+        ...memoryConflictItems
+      ];
+    } catch {
+      sourceWarnings.push({
+        source: "sync_conflicts",
+        message: locale === "en-US"
+          ? "Memory conflicts could not be loaded. Open Settings or retry."
+          : "记忆冲突暂时加载失败。请打开设置或稍后重试。"
       });
     }
     try {
