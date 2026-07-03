@@ -173,6 +173,59 @@ test("R9.2 desktop workitem renders a compressed read-only army run tree", () =>
   assert.ok(html.includes("去决策"));
 });
 
+test("R9.7 desktop workitem agent team avoids dispatch internals", () => {
+  const runTree = {
+    agent_team: {
+      plan_id: "93000000-0000-4000-8000-000000000901",
+      status: "dispatching",
+      completed_count: 0,
+      total_count: 2,
+      cost_used_cny: "0.250000",
+      cost_budget_cny: "1.000000",
+      cost_burn_pct: 25,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000902",
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          plan_status: "pending",
+          status: "pending",
+          budget_share_pct: 40,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.250000"
+        },
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000903",
+          seq: 2,
+          title: "产出短报告",
+          role: "produce",
+          plan_status: "dispatched",
+          status: "dispatched",
+          budget_share_pct: 60,
+          depends_on: ["93000000-0000-4000-8000-000000000902"],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.500000",
+          run_id: "93000000-0000-4000-8000-000000000912",
+          run_status: "running",
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000912/replay"
+        }
+      ]
+    }
+  } satisfies Pick<WorkItemDetailVM, "agent_team">;
+  const zh = detailHtml(vm(runTree), true);
+  const en = detailHtml(vm(runTree), false);
+
+  assert.doesNotMatch(zh, /派发/u);
+  assert.doesNotMatch(en, /Dispatch/u);
+  assert.match(zh, /待开始/u);
+  assert.match(zh, /进行中/u);
+  assert.match(en, /Waiting/u);
+  assert.match(en, /In progress/u);
+});
+
 test("desktop workitem latest proposal hides model self narration titles", () => {
   const html = detailHtml(vm({
     latest_proposal: {

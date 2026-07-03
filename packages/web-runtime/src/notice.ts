@@ -114,6 +114,12 @@ export function actionSuccessNotice(locale: WorkHubLocale, body: string, actionI
   };
 }
 
+export function taskPlanDraftedNoticeBody(locale: WorkHubLocale): string {
+  return locale === "en-US"
+    ? "Task plan drafted. Review the plan before work starts."
+    : "任务计划已生成，请先审阅再开始执行。";
+}
+
 export function actionErrorNotice(locale: WorkHubLocale, error: unknown, actionId?: string): RouteNoticeVM {
   return {
     kind: "action_error",

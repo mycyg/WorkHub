@@ -14,7 +14,8 @@ import {
   reasonRequiredNotice,
   selectionNotice,
   sseDirtyGuardNotice,
-  sseRefreshNotice
+  sseRefreshNotice,
+  taskPlanDraftedNoticeBody
 } from "./notice.js";
 
 test("R4.21 notice factories produce structured bilingual QA hooks", () => {
@@ -40,4 +41,11 @@ test("R4.21 dirty guard refresh action escapes href and label", () => {
   const html = dirtyGuardRefreshAction("en-US", "/proposals/p-1?x=<bad>");
   assert.match(html, /data-r4-dirty-refresh="true"/u);
   assert.match(html, /\/proposals\/p-1\?x=&lt;bad&gt;/u);
+});
+
+test("R9.7 task-plan drafted notices avoid dispatch internals", () => {
+  assert.equal(taskPlanDraftedNoticeBody("zh-CN").includes("派发"), false);
+  assert.equal(taskPlanDraftedNoticeBody("en-US").includes("dispatch"), false);
+  assert.equal(taskPlanDraftedNoticeBody("zh-CN"), "任务计划已生成，请先审阅再开始执行。");
+  assert.equal(taskPlanDraftedNoticeBody("en-US"), "Task plan drafted. Review the plan before work starts.");
 });

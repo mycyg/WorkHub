@@ -4,7 +4,7 @@
 // 历史/其它工作项从 项目/审批/看改动 进入。list→detail 盒内联 morph。
 
 import type { WorkItemAgentTeamVM, WorkItemDetailVM } from "@workhub/contracts";
-import { taskPlanItemRoleLabel, taskPlanStatusLabel } from "@workhub/ui";
+import { taskPlanItemRoleLabel, taskPlanItemStatusLabel, taskPlanStatusLabel } from "@workhub/ui";
 import { publicProposalDisplayTitle } from "@workhub/ui/proposal";
 import { escapeHtml } from "@workhub/web-runtime";
 
@@ -43,16 +43,10 @@ function agentTeamTitle(team: WorkItemAgentTeamVM, zh: boolean) {
 }
 
 function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], zh: boolean) {
-  const labels: Record<WorkItemAgentTeamVM["items"][number]["status"], [string, string]> = {
-    pending: ["待派发", "Pending"],
-    dispatched: ["派发中", "Dispatched"],
-    succeeded: ["已成功", "Succeeded"],
-    failed: ["失败", "Failed"],
-    needs_human: ["等你决定", "Needs decision"],
-    skipped: ["已跳过", "Skipped"]
-  };
-  const [cn, en] = labels[status];
-  return zh ? cn : en;
+  if (status === "needs_human") {
+    return zh ? "等你决定" : "Needs decision";
+  }
+  return taskPlanItemStatusLabel(zh ? "zh-CN" : "en-US", status);
 }
 
 function agentTeamHtml(vm: WorkItemDetailVM, zh: boolean): string {

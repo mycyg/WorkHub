@@ -69,6 +69,7 @@ import {
   sseDirtyGuardNotice,
   sseRefreshNotice,
   startAgentRunActionFromHref,
+  taskPlanDraftedNoticeBody,
   updateIntakeActionPayloads,
   type ActionPayloadResult,
   type RouteNoticeTimerState,
@@ -843,10 +844,7 @@ function bindGoldPathNavigation(
           const result = await client.createTaskPlan(createTaskPlan.workItemId, {}, { locale });
           await navigateWebRoute(result.proposal_href || `/workitems/${createTaskPlan.workItemId}`, client, locale);
           if (root) {
-            const body = locale === "en-US"
-              ? "Task plan drafted. Review the plan before dispatch."
-              : "任务计划已生成，请先审阅再派发。";
-            showRouteNotice(root, actionSuccessNotice(locale, body, actionId ?? "create_task_plan"));
+            showRouteNotice(root, actionSuccessNotice(locale, taskPlanDraftedNoticeBody(locale), actionId ?? "create_task_plan"));
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "create_task_plan"));
