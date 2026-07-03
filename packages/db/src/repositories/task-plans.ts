@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type {
   TaskPlanItemStatus,
@@ -114,6 +114,21 @@ const MAX_DASHBOARD_RUN_LIMIT = 500;
 const DEFAULT_DASHBOARD_ESCALATION_LIMIT = 5;
 const MAX_DASHBOARD_ESCALATION_LIMIT = 20;
 const DASHBOARD_PLAN_STATUSES = ["proposed", "approved", "dispatching"] satisfies TaskPlanStatus[];
+const taskPlanItemColumns = {
+  id: taskPlanItems.id,
+  planId: taskPlanItems.planId,
+  parentItemId: taskPlanItems.parentItemId,
+  seq: taskPlanItems.seq,
+  title: taskPlanItems.title,
+  role: taskPlanItems.role,
+  objectiveMd: taskPlanItems.objectiveMd,
+  acceptanceMd: taskPlanItems.acceptanceMd,
+  budgetSharePct: taskPlanItems.budgetSharePct,
+  dependsOn: taskPlanItems.dependsOn,
+  status: taskPlanItems.status,
+  createdAt: taskPlanItems.createdAt,
+  updatedAt: taskPlanItems.updatedAt
+};
 
 function boundedItemLimit(input: number | undefined) {
   if (!Number.isFinite(input)) {
@@ -127,6 +142,16 @@ function boundedLimit(input: number | undefined, fallback: number, max: number) 
     return fallback;
   }
   return Math.min(Math.max(Math.floor(input ?? fallback), 0), max);
+}
+
+function parentPlanWorkspacePredicate(input: { planId: string; workspaceId: string }) {
+  return sql`exists (
+    select 1
+    from ${taskPlans}
+    where ${eq(taskPlans.id, taskPlanItems.planId)}
+      and ${eq(taskPlans.id, input.planId)}
+      and ${eq(taskPlans.workspaceId, input.workspaceId)}
+  )`;
 }
 
 export function createTaskPlanRepository(db: WorkHubDb) {
@@ -189,9 +214,13 @@ export function createTaskPlanRepository(db: WorkHubDb) {
 
       const itemLimit = boundedItemLimit(input.itemLimit);
       const rows = await db
-        .select()
+        .select(taskPlanItemColumns)
         .from(taskPlanItems)
-        .where(eq(taskPlanItems.planId, input.planId))
+        .innerJoin(taskPlans, eq(taskPlans.id, taskPlanItems.planId))
+        .where(and(
+          eq(taskPlanItems.planId, input.planId),
+          eq(taskPlans.workspaceId, input.workspaceId)
+        ))
         .orderBy(asc(taskPlanItems.seq), asc(taskPlanItems.id))
         .limit(itemLimit + 1);
 
@@ -258,9 +287,13 @@ export function createTaskPlanRepository(db: WorkHubDb) {
       }
 
       const itemRows = await db
-        .select()
+        .select(taskPlanItemColumns)
         .from(taskPlanItems)
-        .where(inArray(taskPlanItems.planId, planIds))
+        .innerJoin(taskPlans, eq(taskPlans.id, taskPlanItems.planId))
+        .where(and(
+          eq(taskPlans.workspaceId, input.workspaceId),
+          inArray(taskPlanItems.planId, planIds)
+        ))
         .orderBy(asc(taskPlanItems.planId), asc(taskPlanItems.seq), asc(taskPlanItems.id))
         .limit(itemLimit + 1);
       const runRows = await db
@@ -342,6 +375,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
 
     async markItemDispatched(input: {
       planId: string;
+      workspaceId: string;
       itemId: string;
       dispatchedAt?: Date;
     }): Promise<TaskPlanItemRow | null> {
@@ -354,6 +388,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         })
         .where(and(
           eq(taskPlanItems.planId, input.planId),
+          parentPlanWorkspacePredicate(input),
           eq(taskPlanItems.id, input.itemId),
           eq(taskPlanItems.status, "pending" satisfies TaskPlanItemStatus)
         ))
@@ -363,6 +398,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
 
     async settleDispatchedItem(input: {
       planId: string;
+      workspaceId: string;
       itemId: string;
       status: Extract<TaskPlanItemStatus, "succeeded" | "failed">;
       settledAt?: Date;
@@ -376,6 +412,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         })
         .where(and(
           eq(taskPlanItems.planId, input.planId),
+          parentPlanWorkspacePredicate(input),
           eq(taskPlanItems.id, input.itemId),
           eq(taskPlanItems.status, "dispatched" satisfies TaskPlanItemStatus)
         ))
@@ -385,6 +422,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
 
     async skipPendingItems(input: {
       planId: string;
+      workspaceId: string;
       itemIds: string[];
       skippedAt?: Date;
     }): Promise<TaskPlanItemRow[]> {
@@ -400,6 +438,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         })
         .where(and(
           eq(taskPlanItems.planId, input.planId),
+          parentPlanWorkspacePredicate(input),
           inArray(taskPlanItems.id, input.itemIds),
           eq(taskPlanItems.status, "pending" satisfies TaskPlanItemStatus)
         ))

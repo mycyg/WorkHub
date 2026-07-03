@@ -137,7 +137,8 @@ class MemoryTaskDispatcherRepository implements TaskDispatcherRepository {
     return this.row;
   }
 
-  async markItemDispatched(input: { planId: string; itemId: string; dispatchedAt?: Date }) {
+  async markItemDispatched(input: { planId: string; workspaceId: string; itemId: string; dispatchedAt?: Date }) {
+    assert.equal(input.workspaceId, this.row.workspaceId);
     if (this.markDispatchedMisses.has(input.itemId)) {
       return null;
     }
@@ -152,10 +153,12 @@ class MemoryTaskDispatcherRepository implements TaskDispatcherRepository {
 
   async settleDispatchedItem(input: {
     planId: string;
+    workspaceId: string;
     itemId: string;
     status: "succeeded" | "failed";
     settledAt?: Date;
   }) {
+    assert.equal(input.workspaceId, this.row.workspaceId);
     const current = this.items.find((candidate) => candidate.planId === input.planId && candidate.id === input.itemId);
     if (!current || current.status !== "dispatched") {
       return null;
@@ -165,7 +168,8 @@ class MemoryTaskDispatcherRepository implements TaskDispatcherRepository {
     return current;
   }
 
-  async skipPendingItems(input: { planId: string; itemIds: string[]; skippedAt?: Date }) {
+  async skipPendingItems(input: { planId: string; workspaceId: string; itemIds: string[]; skippedAt?: Date }) {
+    assert.equal(input.workspaceId, this.row.workspaceId);
     const updated: TaskPlanItemRow[] = [];
     for (const current of this.items) {
       if (current.planId === input.planId && input.itemIds.includes(current.id) && current.status === "pending") {

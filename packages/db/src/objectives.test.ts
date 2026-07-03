@@ -148,14 +148,17 @@ test("R9.5 objective repository creates objectives and key results in one transa
 });
 
 test("R9.5 objective repository stores work item links as optional soft links", async () => {
-  const { db, queries } = createQueryRecorder([[{
-    id: linkId,
-    workspaceId,
-    objectiveId,
-    workItemId,
-    linkedByUserId: userId,
-    createdAt: now
-  }]]);
+  const { db, queries } = createQueryRecorder([
+    [{ objectiveId, workItemId }],
+    [{
+      id: linkId,
+      workspaceId,
+      objectiveId,
+      workItemId,
+      linkedByUserId: userId,
+      createdAt: now
+    }]
+  ]);
   const repository = createObjectiveRepository(db);
 
   const link = await repository.linkWorkItem({
@@ -168,7 +171,24 @@ test("R9.5 objective repository stores work item links as optional soft links", 
   });
 
   assert.equal(link.id, linkId);
-  const [query] = queries;
+  assert.equal(queries.length, 2);
+  const [scopeQuery, query] = queries;
+  assert.equal(scopeQuery?.fromTable, objectives);
+  assert.deepEqual(scopeQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", workItems]
+  ]);
+  assert.equal(scopeQuery?.limit, 1);
+  // R9.7 redline: the previous insert assertion trusted the caller-supplied
+  // workspace_id. The objective and work item must be proven in the same workspace first.
+  assert.ok(queryReferences(scopeQuery?.where, objectives.workspaceId));
+  assert.ok(queryReferences(scopeQuery?.where, objectives.id));
+  assert.ok(queryReferences(scopeQuery?.where, workItems.workspaceId));
+  assert.ok(queryReferences(scopeQuery?.where, workItems.id));
+  assert.ok(queryReferences(scopeQuery?.where, workItems.deletedAt));
+  assert.ok(queryParamValues(scopeQuery?.where).includes(workspaceId));
+  assert.ok(queryParamValues(scopeQuery?.where).includes(objectiveId));
+  assert.ok(queryParamValues(scopeQuery?.where).includes(workItemId));
+
   assert.equal(query?.operation, "insert");
   assert.equal(query?.targetTable, objectiveWorkItemLinks);
   assert.deepEqual(query?.valuesValue, {
@@ -180,6 +200,34 @@ test("R9.5 objective repository stores work item links as optional soft links", 
     createdAt: now
   });
   assert.equal(query?.returningCalled, true);
+});
+
+test("R9.7 objective repository refuses cross-workspace work item links", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+  const repository = createObjectiveRepository(db);
+
+  await assert.rejects(
+    repository.linkWorkItem({
+      id: linkId,
+      workspaceId,
+      objectiveId,
+      workItemId,
+      linkedByUserId: userId,
+      now
+    }),
+    { name: "ObjectiveLinkScopeMismatch" }
+  );
+
+  assert.equal(queries.length, 1);
+  const [scopeQuery] = queries;
+  assert.equal(scopeQuery?.fromTable, objectives);
+  assert.deepEqual(scopeQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", workItems]
+  ]);
+  assert.ok(queryReferences(scopeQuery?.where, objectives.workspaceId));
+  assert.ok(queryReferences(scopeQuery?.where, workItems.workspaceId));
+  assert.ok(queryReferences(scopeQuery?.where, workItems.deletedAt));
+  assert.ok(queryParamValues(scopeQuery?.where).includes(workspaceId));
 });
 
 test("R9.5 objective repository returns empty planning context for unlinked work items", async () => {

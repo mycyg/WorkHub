@@ -8,7 +8,7 @@ import {
 } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { agentMemory, agentMemoryVersions, agentRuns, taskPlanItems } from "../schema/index.js";
+import { agentMemory, agentMemoryVersions, agentRuns, taskPlanItems, taskPlans } from "../schema/index.js";
 
 export type AgentMemoryRow = typeof agentMemory.$inferSelect;
 export type AgentMemoryVersionRow = typeof agentMemoryVersions.$inferSelect;
@@ -17,6 +17,13 @@ export class AgentMemoryWriteConflict extends Error {
   constructor() {
     super("agent_memory_write_conflict");
     this.name = "AgentMemoryWriteConflict";
+  }
+}
+
+export class AgentMemoryContextNotFound extends Error {
+  constructor() {
+    super("agent_memory_context_not_found");
+    this.name = "AgentMemoryContextNotFound";
   }
 }
 
@@ -94,10 +101,34 @@ function sourceRunPatch(sourceRunId: string | undefined) {
   return sourceRunId ? { sourceRunId } : {};
 }
 
+async function assertAgentContextInWorkspace(db: WorkHubDb, input: { workspaceId: string; agentContextId: string }) {
+  const [context] = await db
+    .select({
+      item: {
+        id: taskPlanItems.id
+      },
+      plan: {
+        id: taskPlans.id,
+        workspaceId: taskPlans.workspaceId
+      }
+    })
+    .from(taskPlanItems)
+    .innerJoin(taskPlans, eq(taskPlans.id, taskPlanItems.planId))
+    .where(and(
+      eq(taskPlanItems.id, input.agentContextId),
+      eq(taskPlans.workspaceId, input.workspaceId)
+    ))
+    .limit(1);
+  if (!context) {
+    throw new AgentMemoryContextNotFound();
+  }
+}
+
 export function createAgentMemoryRepository(db: WorkHubDb): AgentMemoryRepository {
   return {
     async upsertPrivateMemory(input) {
       const at = input.now ?? new Date();
+      await assertAgentContextInWorkspace(db, input);
       const [existing] = await db
         .select()
         .from(agentMemory)
@@ -230,13 +261,15 @@ export function createAgentMemoryRepository(db: WorkHubDb): AgentMemoryRepositor
         })
         .from(agentMemory)
         .innerJoin(taskPlanItems, eq(agentMemory.agentContextId, taskPlanItems.id))
+        .innerJoin(taskPlans, eq(taskPlans.id, taskPlanItems.planId))
         .leftJoin(agentRuns, and(
           eq(agentMemory.sourceRunId, agentRuns.id),
           eq(agentRuns.workspaceId, input.workspaceId)
         ))
         .where(and(
           eq(agentMemory.workspaceId, input.workspaceId),
-          eq(agentMemory.id, input.memoryId)
+          eq(agentMemory.id, input.memoryId),
+          eq(taskPlans.workspaceId, input.workspaceId)
         ))
         .limit(1);
       if (!entry) {
@@ -246,8 +279,10 @@ export function createAgentMemoryRepository(db: WorkHubDb): AgentMemoryRepositor
         .select({ memory: agentMemory })
         .from(agentMemory)
         .innerJoin(taskPlanItems, eq(agentMemory.agentContextId, taskPlanItems.id))
+        .innerJoin(taskPlans, eq(taskPlans.id, taskPlanItems.planId))
         .where(and(
           eq(agentMemory.workspaceId, input.workspaceId),
+          eq(taskPlans.workspaceId, input.workspaceId),
           eq(taskPlanItems.planId, entry.item.planId),
           eq(agentMemory.category, entry.memory.category),
           eq(agentMemory.key, entry.memory.key)

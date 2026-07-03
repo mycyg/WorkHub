@@ -32,17 +32,20 @@ export type TaskDispatcherRepository = {
   }) => Promise<TaskPlanRow | null>;
   markItemDispatched: (input: {
     planId: string;
+    workspaceId: string;
     itemId: string;
     dispatchedAt?: Date;
   }) => Promise<TaskPlanItemRow | null>;
   settleDispatchedItem: (input: {
     planId: string;
+    workspaceId: string;
     itemId: string;
     status: SettledItemStatus;
     settledAt?: Date;
   }) => Promise<TaskPlanItemRow | null>;
   skipPendingItems: (input: {
     planId: string;
+    workspaceId: string;
     itemIds: string[];
     skippedAt?: Date;
   }) => Promise<TaskPlanItemRow[]>;
@@ -337,7 +340,12 @@ export function createTaskDispatcher(options: {
 
     if (hasDependencyCycle(items)) {
       const toSkip = pendingItems(items).map((item) => item.id);
-      const skipped = await options.repository.skipPendingItems({ planId: plan.id, itemIds: toSkip, skippedAt: at });
+      const skipped = await options.repository.skipPendingItems({
+        planId: plan.id,
+        workspaceId: plan.workspaceId,
+        itemIds: toSkip,
+        skippedAt: at
+      });
       updateLocalItems(items, skipped);
       result.skippedItemIds.push(...skipped.map((item) => item.id));
       await bestEffortEscalate(escalationSink, {
@@ -355,6 +363,7 @@ export function createTaskDispatcher(options: {
     if (blocked.length > 0) {
       const skipped = await options.repository.skipPendingItems({
         planId: plan.id,
+        workspaceId: plan.workspaceId,
         itemIds: blocked.map((item) => item.id),
         skippedAt: at
       });
@@ -372,6 +381,7 @@ export function createTaskDispatcher(options: {
     for (const item of readyPendingItems(items)) {
       const dispatched = await options.repository.markItemDispatched({
         planId: plan.id,
+        workspaceId: plan.workspaceId,
         itemId: item.id,
         dispatchedAt: at
       });
@@ -417,6 +427,7 @@ export function createTaskDispatcher(options: {
     const at = now();
     const settled = await options.repository.settleDispatchedItem({
       planId: run.task_plan_id,
+      workspaceId: run.workspace_id,
       itemId: run.task_plan_item_id,
       status: settledStatus,
       settledAt: at

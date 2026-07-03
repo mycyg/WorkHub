@@ -5,7 +5,7 @@ import {
   AgentMemoryWriteConflict,
   createAgentMemoryRepository
 } from "./repositories/agent-memory.js";
-import { agentMemory, agentMemoryVersions, agentRuns, taskPlanItems } from "./schema/index.js";
+import { agentMemory, agentMemoryVersions, agentRuns, taskPlanItems, taskPlans } from "./schema/index.js";
 import { createQueryRecorder, queryParamValues, queryReferences } from "./test-query-recorder.js";
 
 const now = new Date("2026-07-03T00:00:00.000Z");
@@ -34,6 +34,7 @@ const memoryRow = {
 
 test("R9.3 agent memory repository writes new L1 memory with an append-only version", async () => {
   const { db, queries } = createQueryRecorder([
+    [{ item: { id: taskPlanItemId }, plan: { id: planId, workspaceId } }],
     [],
     [memoryRow],
     [{ id: versionId, memoryId, version: 1, baseVersion: 0, valueMd: memoryRow.valueMd, sourceRunId: runId, createdAt: now }]
@@ -52,8 +53,20 @@ test("R9.3 agent memory repository writes new L1 memory with an append-only vers
   });
 
   assert.equal(result.id, memoryId);
-  assert.equal(queries.length, 3);
-  const [lookup, memoryInsert, versionInsert] = queries;
+  assert.equal(queries.length, 4);
+  const [contextQuery, lookup, memoryInsert, versionInsert] = queries;
+  assert.equal(contextQuery?.fromTable, taskPlanItems);
+  assert.deepEqual(contextQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", taskPlans]
+  ]);
+  assert.equal(contextQuery?.limit, 1);
+  // R9.7 redline: a supplied agent_context_id is only safe after proving that
+  // its parent task plan belongs to the memory workspace.
+  assert.ok(queryReferences(contextQuery?.where, taskPlanItems.id));
+  assert.ok(queryReferences(contextQuery?.where, taskPlans.workspaceId));
+  assert.ok(queryParamValues(contextQuery?.where).includes(taskPlanItemId));
+  assert.ok(queryParamValues(contextQuery?.where).includes(workspaceId));
+
   assert.equal(lookup?.fromTable, agentMemory);
   assert.equal(lookup?.limit, 1);
   assert.ok(queryReferences(lookup?.where, agentMemory.workspaceId));
@@ -75,6 +88,34 @@ test("R9.3 agent memory repository writes new L1 memory with an append-only vers
   assert.equal(version.memoryId, inserted.id);
   assert.equal(version.version, 1);
   assert.equal(version.baseVersion, 0);
+});
+
+test("R9.7 agent memory repository refuses L1 writes outside the workspace task-plan context", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+  const repository = createAgentMemoryRepository(db);
+
+  await assert.rejects(
+    repository.upsertPrivateMemory({
+      workspaceId,
+      agentContextId: taskPlanItemId,
+      category: "preference",
+      key: "concise_approach",
+      valueMd: memoryRow.valueMd,
+      now
+    }),
+    { name: "AgentMemoryContextNotFound" }
+  );
+
+  assert.equal(queries.length, 1);
+  const [contextQuery] = queries;
+  assert.equal(contextQuery?.fromTable, taskPlanItems);
+  assert.deepEqual(contextQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", taskPlans]
+  ]);
+  assert.ok(queryReferences(contextQuery?.where, taskPlanItems.id));
+  assert.ok(queryReferences(contextQuery?.where, taskPlans.workspaceId));
+  assert.ok(queryParamValues(contextQuery?.where).includes(taskPlanItemId));
+  assert.ok(queryParamValues(contextQuery?.where).includes(workspaceId));
 });
 
 test("R9.3 agent memory repository reads only one task-plan-item context with an honest cap", async () => {
@@ -101,6 +142,7 @@ test("R9.3 agent memory repository reads only one task-plan-item context with an
 
 test("R9.3 agent memory repository rolls back appended versions on optimistic write conflicts", async () => {
   const { db, queries, transactions } = createQueryRecorder([
+    [{ item: { id: taskPlanItemId }, plan: { id: planId, workspaceId } }],
     [memoryRow],
     [{ id: versionId, memoryId, version: 2, baseVersion: 1, valueMd: "新偏好", sourceRunId: runId, createdAt: now }],
     []
@@ -125,8 +167,8 @@ test("R9.3 agent memory repository rolls back appended versions on optimistic wr
     outcome: "rejected",
     errorName: "AgentMemoryWriteConflict"
   });
-  assert.equal(queries.length, 3);
-  const [, versionInsert, update] = queries;
+  assert.equal(queries.length, 4);
+  const [, , versionInsert, update] = queries;
   assert.equal(versionInsert?.targetTable, agentMemoryVersions);
   assert.equal(update?.targetTable, agentMemory);
   assert.ok(queryReferences(update?.where, agentMemory.currentVersion));
@@ -163,21 +205,28 @@ test("R9.3 memory promotion context reads same-plan L1 candidates with source ac
   assert.equal(queries.length, 2);
   const [entryQuery, candidatesQuery] = queries;
   assert.equal(entryQuery?.fromTable, agentMemory);
-  assert.equal(entryQuery?.joins.length, 2);
+  assert.equal(entryQuery?.joins.length, 3);
   assert.equal(entryQuery?.joins[0]?.table, taskPlanItems);
-  assert.equal(entryQuery?.joins[1]?.table, agentRuns);
-  assert.ok(queryReferences(entryQuery?.joins[1]?.on, agentRuns.workspaceId));
+  assert.equal(entryQuery?.joins[1]?.table, taskPlans);
+  assert.equal(entryQuery?.joins[2]?.table, agentRuns);
+  assert.ok(queryReferences(entryQuery?.joins[2]?.on, agentRuns.workspaceId));
   assert.ok(queryReferences(entryQuery?.where, agentMemory.workspaceId));
   assert.ok(queryReferences(entryQuery?.where, agentMemory.id));
+  // R9.7 redline: entry joins used to trust the task-plan item id alone; the
+  // parent task_plans.workspace_id must also be pinned before deriving planId.
+  assert.ok(queryReferences(entryQuery?.where, taskPlans.workspaceId));
   assert.ok(queryParamValues(entryQuery?.where).includes(workspaceId));
   assert.ok(queryParamValues(entryQuery?.where).includes(memoryId));
 
   assert.equal(candidatesQuery?.fromTable, agentMemory);
   assert.equal(candidatesQuery?.joins[0]?.table, taskPlanItems);
+  assert.equal(candidatesQuery?.joins[1]?.table, taskPlans);
   assert.equal(candidatesQuery?.limit, 2);
   assert.ok(queryReferences(candidatesQuery?.where, agentMemory.workspaceId));
   assert.ok(queryReferences(candidatesQuery?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(candidatesQuery?.where, taskPlans.workspaceId));
   assert.ok(queryReferences(candidatesQuery?.where, agentMemory.category));
   assert.ok(queryReferences(candidatesQuery?.where, agentMemory.key));
+  assert.ok(queryParamValues(candidatesQuery?.where).includes(workspaceId));
   assert.ok(queryParamValues(candidatesQuery?.where).includes(planId));
 });

@@ -161,7 +161,6 @@ test("R9.1 task plan repository reads through workspace scope with an honest ite
   });
 
   assert.equal(result?.plan.id, planId);
-  assert.deepEqual(result?.items, [firstItem]);
   assert.equal(result?.itemsCapped, true);
   assert.equal(queries.length, 2);
 
@@ -179,10 +178,18 @@ test("R9.1 task plan repository reads through workspace scope with an honest ite
   assert.ok(queryParamValues(planQuery?.where).includes(workspaceId));
 
   assert.equal(itemQuery?.fromTable, taskPlanItems);
+  assert.deepEqual(itemQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", taskPlans]
+  ]);
   assert.equal(itemQuery?.limit, 2);
   assert.ok(itemQuery && itemQuery.steps.indexOf("where") < itemQuery.steps.indexOf("limit"));
+  // R9.7 redline: the old assertion only pinned task_plan_items.plan_id. Because
+  // task_plan_items has no workspace_id, every child read must also prove the parent plan workspace.
   assert.ok(queryReferences(itemQuery?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(itemQuery?.where, taskPlans.workspaceId));
   assert.ok(queryParamValues(itemQuery?.where).includes(planId));
+  assert.ok(queryParamValues(itemQuery?.where).includes(workspaceId));
+  assert.deepEqual(result?.items, [firstItem]);
 });
 
 test("R9.1 task plan repository approves a draft only within the workspace scope", async () => {
@@ -319,6 +326,7 @@ test("R9.2 task plan repository uses CAS when marking items dispatched", async (
 
   const result = await repository.markItemDispatched({
     planId,
+    workspaceId,
     itemId: firstItemId,
     dispatchedAt: now
   });
@@ -330,10 +338,14 @@ test("R9.2 task plan repository uses CAS when marking items dispatched", async (
   assert.equal(query?.targetTable, taskPlanItems);
   assert.deepEqual(query?.setValue, { status: "dispatched", updatedAt: now });
   assert.equal(query?.returningCalled, true);
+  // R9.7 redline: the pre-hardening CAS assertion only scoped by plan_id. Parent
+  // workspace proof is required because task_plan_items does not carry workspace_id.
   assert.ok(queryReferences(query?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(query?.where, taskPlans.workspaceId));
   assert.ok(queryReferences(query?.where, taskPlanItems.id));
   assert.ok(queryReferences(query?.where, taskPlanItems.status));
   assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
   assert.ok(queryParamValues(query?.where).includes(firstItemId));
   assert.ok(queryParamValues(query?.where).includes("pending"));
 });
@@ -359,6 +371,7 @@ test("R9.2 task plan repository settles only dispatched items", async () => {
 
   const result = await repository.settleDispatchedItem({
     planId,
+    workspaceId,
     itemId: firstItemId,
     status: "succeeded",
     settledAt: now
@@ -371,10 +384,14 @@ test("R9.2 task plan repository settles only dispatched items", async () => {
   assert.equal(query?.targetTable, taskPlanItems);
   assert.deepEqual(query?.setValue, { status: "succeeded", updatedAt: now });
   assert.equal(query?.returningCalled, true);
+  // R9.7 redline: the old dispatched-item guard relied on plan_id alone; the
+  // child update must also be tied back to the parent task_plans.workspace_id.
   assert.ok(queryReferences(query?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(query?.where, taskPlans.workspaceId));
   assert.ok(queryReferences(query?.where, taskPlanItems.id));
   assert.ok(queryReferences(query?.where, taskPlanItems.status));
   assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
   assert.ok(queryParamValues(query?.where).includes(firstItemId));
   assert.ok(queryParamValues(query?.where).includes("dispatched"));
 });
@@ -400,6 +417,7 @@ test("R9.2 task plan repository skips pending items in one bounded set update", 
 
   const result = await repository.skipPendingItems({
     planId,
+    workspaceId,
     itemIds: [secondItemId],
     skippedAt: now
   });
@@ -410,10 +428,14 @@ test("R9.2 task plan repository skips pending items in one bounded set update", 
   assert.equal(query?.targetTable, taskPlanItems);
   assert.deepEqual(query?.setValue, { status: "skipped", updatedAt: now });
   assert.equal(query?.returningCalled, true);
+  // R9.7 redline: skipping pending children was previously bounded but not
+  // workspace-pinned; the parent plan workspace is now part of the guard.
   assert.ok(queryReferences(query?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(query?.where, taskPlans.workspaceId));
   assert.ok(queryReferences(query?.where, taskPlanItems.id));
   assert.ok(queryReferences(query?.where, taskPlanItems.status));
   assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
   assert.ok(queryParamValues(query?.where).includes(secondItemId));
   assert.ok(queryParamValues(query?.where).includes("pending"));
 });
@@ -538,9 +560,6 @@ test("R9.6 task plan repository reads dashboard plans with capped batched joins"
   assert.equal(result.itemsCapped, false);
   assert.equal(result.runsCapped, false);
   assert.equal(result.escalationsCapped, false);
-  assert.deepEqual(result.items.map((item) => item.id), [firstItemId]);
-  assert.deepEqual(result.runs.map((run) => run.id), [firstRunId]);
-  assert.deepEqual(result.escalations.map((escalation) => escalation.id), [escalationId]);
   assert.equal(queries.length, 4);
 
   const [planQuery, itemQuery, runQuery, escalationQuery] = queries;
@@ -557,9 +576,16 @@ test("R9.6 task plan repository reads dashboard plans with capped batched joins"
   assert.ok(queryParamValues(planQuery?.where).includes("dispatching"));
 
   assert.equal(itemQuery?.fromTable, taskPlanItems);
+  assert.deepEqual(itemQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", taskPlans]
+  ]);
   assert.equal(itemQuery?.limit, 3);
+  // R9.7 redline: dashboard child reads used the already-visible plan id list
+  // but did not independently pin the parent workspace in SQL.
   assert.ok(queryReferences(itemQuery?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(itemQuery?.where, taskPlans.workspaceId));
   assert.ok(queryParamValues(itemQuery?.where).includes(planId));
+  assert.ok(queryParamValues(itemQuery?.where).includes(workspaceId));
 
   assert.equal(runQuery?.fromTable, agentRuns);
   assert.equal(runQuery?.limit, 4);
@@ -576,4 +602,7 @@ test("R9.6 task plan repository reads dashboard plans with capped batched joins"
   assert.ok(queryReferences(escalationQuery?.where, workItems.workspaceId));
   assert.ok(queryReferences(escalationQuery?.where, escalationEvents.resolvedAt));
   assert.ok(queryParamValues(escalationQuery?.where).includes(workspaceId));
+  assert.deepEqual(result.items.map((item) => item.id), [firstItemId]);
+  assert.deepEqual(result.runs.map((run) => run.id), [firstRunId]);
+  assert.deepEqual(result.escalations.map((escalation) => escalation.id), [escalationId]);
 });

@@ -89,6 +89,13 @@ export type ObjectiveRepository = {
   }) => Promise<ObjectiveRow | null>;
 };
 
+export class ObjectiveLinkScopeMismatch extends Error {
+  constructor() {
+    super("objective_link_scope_mismatch");
+    this.name = "ObjectiveLinkScopeMismatch";
+  }
+}
+
 const DEFAULT_OBJECTIVE_LIMIT = 5;
 const MAX_OBJECTIVE_LIMIT = 20;
 const DEFAULT_KEY_RESULT_LIMIT = 8;
@@ -170,6 +177,24 @@ export function createObjectiveRepository(db: WorkHubDb): ObjectiveRepository {
     },
 
     async linkWorkItem(input) {
+      const [scope] = await db
+        .select({
+          objectiveId: objectives.id,
+          workItemId: workItems.id
+        })
+        .from(objectives)
+        .innerJoin(workItems, eq(workItems.id, input.workItemId))
+        .where(and(
+          eq(objectives.workspaceId, input.workspaceId),
+          eq(objectives.id, input.objectiveId),
+          eq(workItems.workspaceId, input.workspaceId),
+          eq(workItems.id, input.workItemId),
+          isNull(workItems.deletedAt)
+        ))
+        .limit(1);
+      if (!scope) {
+        throw new ObjectiveLinkScopeMismatch();
+      }
       const [link] = await db
         .insert(objectiveWorkItemLinks)
         .values({
