@@ -980,6 +980,7 @@ export function createInMemoryAgentRunQueue(options: {
         taskPlanItemId: run.task_plan_item_id,
         error
       });
+      throw error;
     }
   }
 

@@ -5354,3 +5354,74 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
     true
   );
 });
+
+test("R9.7 dead-letter recovery fails closed when the decision inbox write fails", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const auditLogs = new MemoryAuditLogs();
+  const milestoneNotifications: { newStatus: string }[] = [];
+  const notifications: AgentRunNotificationPublisher = {
+    async notifyMilestone(context) {
+      milestoneNotifications.push({ newStatus: context.newStatus });
+      return [];
+    }
+  };
+  const recoveredAt = new Date("2026-06-05T00:10:00.000Z");
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const decisions: Pick<AiDecisionRepository, "createEscalationEvent"> = {
+    async createEscalationEvent() {
+      throw new Error("decision inbox unavailable");
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => recoveredAt,
+    id: () => "40000000-0000-4000-8000-00000000004c",
+    workerId: "worker-deadletter-r9-7",
+    leaseMs: 60_000,
+    maxRecoverAttempts: 1,
+    persistence,
+    auditLogs,
+    decisions,
+    confidence: false,
+    proposals: false,
+    notifications,
+    notificationWorkItem: async () => ({
+      id: workItemId,
+      code: "WH-22",
+      title: "Poison run with failed inbox",
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: userId,
+      projectOwnerUserId: projectOwnerId
+    }),
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+  const taskPlanId = "81000000-0000-4000-8000-000000000093";
+  const taskPlanItemId = "81000000-0000-4000-8000-000000000094";
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Poison run with failed inbox",
+    taskPlanId,
+    taskPlanItemId
+  });
+  const expiredLease = {
+    claimedAt: new Date("2026-06-05T00:00:00.000Z"),
+    heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
+    leaseExpiresAt: new Date("2026-06-05T00:01:00.000Z")
+  };
+
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-1", ...expiredLease });
+  await queue.recoverExpiredClaims();
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
+
+  await assert.rejects(queue.recoverExpiredClaims(), /decision inbox unavailable/u);
+  assert.equal(status.statuses.get(workItemId), "ai_working", "do not show escalated without a matching attention card");
+  assert.deepEqual(milestoneNotifications, [], "do not publish a handoff milestone when the inbox card was not persisted");
+  assert.equal(
+    auditLogs.rows.some((row) => row.action === "agent_run.dead_lettered_stale_claim"),
+    true,
+    "the dead-letter audit still records the poison run for operators"
+  );
+});
