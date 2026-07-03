@@ -419,10 +419,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "intake.stateActive": "进行中",
     "intake.statePending": "待进行",
     "intake.startKicker": "试点工作入口",
-    "intake.startTitle": "从真实项目开始派活",
+    "intake.startTitle": "从真实项目开始新任务",
     "intake.startBody": "WorkHub 会先准备好试点项目，再进入选项优先的需求澄清；不会改动已确认的交付物。",
     "intake.startProject": "试点项目",
-    "intake.startAction": "开始派活",
+    "intake.startAction": "开始新任务",
     "intake.startNext": "下一步：选择工作类型，让 AI 开始干活。",
     "intake.startEvidence": "证据与成本会进入回放和成本页。",
     "intake.startIntent": "真实任务",
@@ -559,7 +559,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projects.kicker": "项目即产品",
     "projects.title": "项目",
     "projects.summary": "把每个项目当成一个产品来管理：进行中工作项、负责人和最近更新一目了然。",
-    "projects.empty": "还没有项目。新建一个项目就能开始派活。",
+    "projects.empty": "还没有项目。新建一个项目就能开始任务。",
     "projects.new": "新建项目",
     "projects.namePlaceholder": "新项目名称",
     "projects.create": "创建",
@@ -570,7 +570,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "projects.owner": "负责人",
     "projectHome.kicker": "项目主页",
     "projectHome.openWork": "进行中的工作",
-    "projectHome.empty": "这个项目暂时没有进行中的工作。点「新任务」就能派活。",
+    "projectHome.empty": "这个项目暂时没有进行中的工作。点「新任务」创建下一项工作。",
     "projectHome.back": "← 返回项目列表",
     "projectHome.files": "最近文件",
     "projectHome.noFiles": "网盘里还没有文件。",
@@ -1411,7 +1411,7 @@ function renderIntakeStartRouteComponent(
   const projectName = project ? project.name : (zh ? "试点项目" : "Pilot project");
   // 文案随是否绑定项目切换——绑定时不再说「准备试点项目」(那条 bootstrap 路径已被跳过)，避免与真实项目名自相矛盾。
   const kicker = project ? (zh ? "项目工作入口" : "Project work entry") : routeT(locale, "intake.startKicker");
-  const title = project ? (zh ? `在「${project.name}」里派活` : `Start work in ${project.name}`) : routeT(locale, "intake.startTitle");
+  const title = project ? (zh ? `在「${project.name}」里新建任务` : `Start work in ${project.name}`) : routeT(locale, "intake.startTitle");
   const body = project
     ? (zh ? "新任务会直接绑定到这个项目，进入选项优先的需求澄清；不会改动已确认的交付物。" : "This task binds directly to this project, then opens option-first intake. It won't touch accepted deliverables.")
     : routeT(locale, "intake.startBody");

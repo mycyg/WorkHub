@@ -83,6 +83,32 @@ test("R4 product shell localizes fixed product chrome", () => {
   assert.equal(shell.html.includes('aria-pressed="true" title="中文"'), true);
 });
 
+test("R9.7 product shell project rail avoids dispatch wording", () => {
+  const rendered = renderedSurface("zh-CN");
+  const template = rendered.pages[0];
+  if (!template) {
+    throw new Error("rendered surface missing home page");
+  }
+  rendered.pages.push({
+    ...template,
+    key: "projects",
+    route: "/projects",
+    title: "项目",
+    html: '<section data-r8-projects-count="0"></section>',
+    primaryHrefs: []
+  });
+  const shell = renderWebProductShell(rendered, {
+    appName: "WorkHub",
+    surfaceLabel: "Web R4",
+    currentRoute: "/projects",
+    locale: "zh-CN",
+    linkMode: "path"
+  });
+
+  assert.equal(shell.html.includes("项目"), true);
+  assert.doesNotMatch(shell.html, /派活|派发/u);
+});
+
 test("R4 product shell defaults to path navigation without hash fallback", () => {
   const shell = renderWebProductShell(renderedSurface(), {
     appName: "WorkHub",

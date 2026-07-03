@@ -1509,6 +1509,45 @@ test("R8 intake start head shows a meaningful localized badge (not the 'D0' plac
   assert.equal(en.html.includes('data-r8-intake-badge="true">New<'), true);
 });
 
+test("R9.7 web task entry and project empty states avoid dispatch wording", () => {
+  const intake = renderWebRouteComponent({ key: "intake", start: true }, { locale: "zh-CN" });
+  const projectIntake = renderWebRouteComponent({
+    key: "intake",
+    start: true,
+    project: { id: "93000000-0000-4000-8000-000000000001", name: "R5 Workspace" }
+  }, { locale: "zh-CN" });
+  const projects = renderWebRouteComponent({
+    key: "projects",
+    projects: { generated_at: "2026-06-11T09:00:00.000Z", projects: [] }
+  }, { locale: "zh-CN" });
+  const projectHome = renderWebRouteComponent({
+    key: "project-home",
+    project: {
+      generated_at: "2026-06-11T09:00:00.000Z",
+      project: {
+        id: "93000000-0000-4000-8000-000000000001",
+        name: "R5 Workspace",
+        slug: "r5-workspace",
+        description: null,
+        owner_label: "owner",
+        status: "active"
+      },
+      summary: { open_work_item_count: 0, total_open_work_item_count: 0 },
+      open_work_items: [],
+      drive: { file_count: 0, recent_files: [] },
+      actions: {
+        new_task: { id: "new_task", label: "新任务", method: "GET", href: "/intake?project_id=93000000-0000-4000-8000-000000000001" },
+        open_drive: { id: "open_drive", label: "打开网盘", method: "GET", href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
+      },
+      empty_state: "no_open_work"
+    }
+  }, { locale: "zh-CN" });
+
+  const html = [intake.html, projectIntake.html, projects.html, projectHome.html].join("\n");
+  assert.match(html, /新任务/u);
+  assert.doesNotMatch(html, /派活|派发/u);
+});
+
 test("R4.14 Intake confirm component exposes create work item action with selected option payload", () => {
   const vm = {
     ...surfaceVm(),
