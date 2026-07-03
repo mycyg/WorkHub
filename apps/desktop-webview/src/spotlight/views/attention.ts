@@ -11,6 +11,7 @@ import {
   approvalRespondIdFromHref,
   escapeHtml,
   escalationActionFromHref,
+  memoryConflictActionFromHref,
   proposalActionFromHref,
   safeHref
 } from "@workhub/web-runtime";
@@ -188,6 +189,18 @@ export function reviewAttentionProposalWithoutMerge(client: ProposalReviewOnlyCl
   return reviewProposalWithoutMerge(client, proposalId);
 }
 
+type MemoryConflictActionClient = {
+  resolveMemoryConflict: (id: string, payload: { resolution: "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" }) => Promise<unknown>;
+};
+
+export function resolveAttentionMemoryConflictAction(client: MemoryConflictActionClient, href: string) {
+  const action = memoryConflictActionFromHref(href);
+  if (!action) {
+    return undefined;
+  }
+  return client.resolveMemoryConflict(action.conflictId, { resolution: action.resolution });
+}
+
 export function attentionConflictHtmlFromError(error: unknown, zh: boolean) {
   return proposalMergeConflictHtml(error, zh);
 }
@@ -295,6 +308,11 @@ export function createAttentionView(): SpotlightCapabilityView {
           }
           const res = await client.resolveEscalation(escalation.escalationId, payload);
           ctx.toast(summaryText(res) ?? (zh ? "升级已处理" : "Escalation handled"), "ok");
+          return true;
+        }
+        const memoryConflict = await resolveAttentionMemoryConflictAction(client, href);
+        if (memoryConflict) {
+          ctx.toast(summaryText(memoryConflict) ?? (zh ? "偏好冲突已处理" : "Memory conflict handled"), "ok");
           return true;
         }
         const approvalId = approvalRespondIdFromHref(href);

@@ -258,6 +258,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async delegateEscalation() {
       throw new Error("not needed");
     },
+    async resolveMemoryConflict() {
+      throw new Error("not needed");
+    },
     async listApprovalComments() {
       throw new Error("not needed");
     },

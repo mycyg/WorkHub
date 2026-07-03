@@ -100,6 +100,17 @@ export type WorkHubApiClientOptions = {
   requestTimeoutMs?: number;
 };
 
+export type MemoryConflictResolution = "keep_current" | "accept_incoming" | "merge_both" | "edit_memory";
+
+export type ResolveMemoryConflictRequest = {
+  resolution: MemoryConflictResolution;
+  value_md?: string;
+};
+
+export type MemoryConflictResolveResult = {
+  conflict: unknown;
+};
+
 export type PageRequestOptions = {
   locale?: WorkHubLocale;
 };
@@ -260,6 +271,7 @@ export type WorkHubApiClient = {
   delegateApproval: (id: string, payload: DelegateApprovalRequest) => Promise<unknown>;
   resolveEscalation: (id: string, payload: ResolveEscalationRequest) => Promise<EscalationResolveResult>;
   delegateEscalation: (id: string, payload: DelegateEscalationRequest) => Promise<EscalationDelegateResult>;
+  resolveMemoryConflict: (id: string, payload: ResolveMemoryConflictRequest) => Promise<MemoryConflictResolveResult>;
   listApprovalComments: (id: string) => Promise<ApprovalCommentVM[]>;
   postApprovalComment: (id: string, payload: AddApprovalCommentRequest) => Promise<ApprovalCommentVM>;
   createProposalFromManifest: (workItemId: string, payload: CreateProposalFromManifestRequest) => Promise<Proposal>;

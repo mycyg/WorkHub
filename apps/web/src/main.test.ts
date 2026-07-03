@@ -201,6 +201,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async delegateEscalation() {
       throw new Error("not needed");
     },
+    async resolveMemoryConflict() {
+      throw new Error("not needed");
+    },
     async listApprovalComments() {
       throw new Error("not needed");
     },

@@ -96,6 +96,7 @@ import {
   setReactRouteDirtyHandler,
   unmountReactRouteIsland
 } from "./react-route-mount.js";
+import { resolveWebMemoryConflictAction } from "./attention-actions.js";
 
 const root = document.getElementById("root");
 const liveLastEventIdStorageKey = "workhub.live.lastEventId";
@@ -1082,6 +1083,19 @@ function bindGoldPathNavigation(
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
         }
+        return;
+      }
+      try {
+        const memoryConflictResult = await resolveWebMemoryConflictAction(client, href);
+        if (memoryConflictResult) {
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(memoryConflictResult, locale), actionId));
+          }
+          return;
+        }
+      } catch (error) {
+        showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
         return;
       }
       const mergeProposalCandidateApplyId = mergeProposalCandidateApplyIdFromHref(href);

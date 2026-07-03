@@ -9,6 +9,7 @@ import {
   attentionTagLabelForKind,
   attentionConflictHtmlFromError,
   classifyAttentionActionHref,
+  resolveAttentionMemoryConflictAction,
   reviewAttentionProposalWithoutMerge
 } from "./attention.js";
 
@@ -57,6 +58,22 @@ test("attention proposal approval reviews only and never merges in the same clic
 
   assert.deepEqual(calls, ['review:proposal-1:{"decision":"approve","remember":"once"}']);
   assert.equal(result.attention.summary_text, "已确认通过");
+});
+
+test("attention sync-conflict actions resolve through the typed client", async () => {
+  const calls: unknown[] = [];
+  const result = await resolveAttentionMemoryConflictAction({
+    async resolveMemoryConflict(id: string, payload: unknown) {
+      calls.push({ id, payload });
+      return { attention: { summary_text: "偏好已确认" } };
+    }
+  }, "/api/memory-conflicts/conflict%202/resolve/merge_both") as { attention: { summary_text: string } };
+
+  assert.deepEqual(calls, [{
+    id: "conflict 2",
+    payload: { resolution: "merge_both" }
+  }]);
+  assert.equal(result.attention.summary_text, "偏好已确认");
 });
 
 test("attention proposal review cards hide model self narration in their title", () => {
