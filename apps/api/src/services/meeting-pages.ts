@@ -59,7 +59,7 @@ export type MeetingPageServiceDependencies = {
   repo: MeetingRepository;
   proposals?: Pick<ProposalService, "createFromManifest" | "get">;
   workItems?: Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts">;
-  workItemAccess?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord">;
+  workItemAccess?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> & Partial<Pick<WorkItemDataRepository, "findWorkItemAccessRecords">>;
   now?: () => Date;
 };
 
@@ -343,8 +343,11 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
     const uniqueIds = [...new Set([...input.workItemIds].filter(Boolean))];
     const visible = new Set<string>();
     const actorUserId = input.actor.userId ?? input.actor.id;
+    const recordsByWorkItemId = access.findWorkItemAccessRecords
+      ? await access.findWorkItemAccessRecords(uniqueIds)
+      : new Map(await Promise.all(uniqueIds.map(async (workItemId) => [workItemId, await access.findWorkItemAccessRecord(workItemId)] as const)));
     for (const workItemId of uniqueIds) {
-      const record = await access.findWorkItemAccessRecord(workItemId);
+      const record = recordsByWorkItemId.get(workItemId);
       if (record && canViewWorkItemRecord(record, { id: actorUserId, isAdmin: input.actor.isAdmin }, { workspaceId: input.actor.workspaceId })) {
         visible.add(workItemId);
       }
