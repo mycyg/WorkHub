@@ -72,7 +72,7 @@ import type { MergeFusionCandidateGenerator } from "../services/merge-fusion-can
 import { createDbAgentRunPersistence } from "../services/agent-run-persistence.js";
 import { createEscalationService, EscalationServiceError } from "../services/escalations.js";
 import { createDbProposalService, ProposalServiceError } from "../services/proposals.js";
-import { createTaskDispatcher } from "../services/task-dispatcher.js";
+import { createDbTaskDispatchEscalationSink, createTaskDispatcher } from "../services/task-dispatcher.js";
 import { createTaskPlanMergeApprovalHandler, createTaskPlanWorkflowService, TaskPlanServiceError } from "../services/task-plans.js";
 import { createDbWorkItemService } from "../services/work-items.js";
 import { createInMemoryAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
@@ -498,7 +498,7 @@ async function main() {
     const taskPlanDispatcher = createTaskDispatcher({
       repository: taskPlanRepository,
       queue,
-      escalationSink: false,
+      escalationSink: createDbTaskDispatchEscalationSink(aiDecisionRepository),
       completionSink: false
     });
     const orderedTaskPlanItems = [...taskPlanItemRows].sort((a, b) => a.seq - b.seq);
@@ -538,6 +538,18 @@ async function main() {
     const childReplayRunIds = [failedResearch.runId];
     if (failedResearch.settled.dispatch.enqueuedItemIds.length !== 0 || failedResearch.settled.dispatch.skippedItemIds.length !== 2) {
       throw new Error(`Expected failed research child to skip two dependents without enqueueing more, got ${JSON.stringify(failedResearch.settled.dispatch)}`);
+    }
+    const taskDispatchEscalations = await db.select().from(escalationEvents).then((rows) =>
+      rows.filter((row) => row.workItemId === taskPlanWorkItemId)
+    );
+    const hasDependencyFailureEscalation = taskDispatchEscalations.some((row) => {
+      const handoff = row.handoffJson as { source?: string; reason?: string; skipped_item_ids?: string[] };
+      return handoff.source === "task_dispatcher"
+        && handoff.reason === "dependency_failed"
+        && handoff.skipped_item_ids?.length === 2;
+    });
+    if (!hasDependencyFailureEscalation) {
+      throw new Error(`Expected task dispatcher to persist dependency failure attention, got ${JSON.stringify(taskDispatchEscalations)}`);
     }
     const taskPlanWorkItemPageAfterDispatch = await app.request(`/api/pages/workitems/${taskPlanWorkItemId}`, { headers });
     if (taskPlanWorkItemPageAfterDispatch.status !== 200) {

@@ -296,6 +296,39 @@ test("R9.2 dispatcher skips dependency-failed pending items and escalates the pl
   assert.deepEqual(escalations, ["dependency_failed"]);
 });
 
+test("R9.7 dispatcher does not complete dependency-failed plans when attention persistence fails", async () => {
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "dispatched" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", dependsOn: [researchItemId] }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", dependsOn: [produceItemId] })
+  ]);
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    escalationSink: async () => {
+      throw new Error("dependency attention write failed");
+    }
+  });
+
+  await assert.rejects(
+    dispatcher.handleRunSettled(run({
+      status: "failed",
+      taskPlanItemId: researchItemId,
+      workspaceId
+    })),
+    /dependency attention write failed/u
+  );
+
+  assert.equal(repository.row.status, "dispatching");
+  assert.equal(repository.doneCalls, 0);
+  assert.equal(repository.items.find((candidate) => candidate.id === researchItemId)?.status, "failed");
+  assert.equal(repository.items.find((candidate) => candidate.id === produceItemId)?.status, "skipped");
+  assert.equal(repository.items.find((candidate) => candidate.id === reviewItemId)?.status, "skipped");
+  assert.deepEqual(queue.inputs, []);
+});
+
 test("R9.7 dispatcher surfaces partial child-run failure in attention before completing the terminal plan", async () => {
   const escalations: { reason: string; skippedItemIds: string[]; failedItemIds?: string[] }[] = [];
   const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
@@ -432,4 +465,67 @@ test("R9.2 dispatcher skips cyclic plans and escalates without enqueueing childr
   assert.equal(repository.items.every((candidate) => candidate.status === "skipped"), true);
   assert.deepEqual(queue.inputs, []);
   assert.deepEqual(escalations, ["cycle"]);
+});
+
+test("R9.7 dispatcher does not complete cyclic plans when attention persistence fails", async () => {
+  const repository = new MemoryTaskDispatcherRepository(plan(), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", dependsOn: [produceItemId] }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", dependsOn: [researchItemId] })
+  ]);
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    escalationSink: async () => {
+      throw new Error("cycle attention write failed");
+    }
+  });
+
+  await assert.rejects(
+    dispatcher.dispatch({ planId, workspaceId, actorId }),
+    /cycle attention write failed/u
+  );
+
+  assert.equal(repository.row.status, "dispatching");
+  assert.equal(repository.doneCalls, 0);
+  assert.equal(repository.items.every((candidate) => candidate.status === "skipped"), true);
+  assert.deepEqual(queue.inputs, []);
+});
+
+test("R9.7 dispatcher fails closed when child run enqueue fails after item dispatch CAS", async () => {
+  const escalations: { reason: string; failedItemIds?: string[]; failedRunId?: string }[] = [];
+  const repository = new MemoryTaskDispatcherRepository(plan(), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research" })
+  ]);
+  const queue: Pick<AgentRunQueue, "enqueue"> = {
+    async enqueue() {
+      throw new Error("budget exhausted before child run persisted");
+    }
+  };
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    escalationSink: async (input) => {
+      escalations.push({
+        reason: input.reason,
+        ...(input.failedItemIds ? { failedItemIds: input.failedItemIds } : {}),
+        ...(input.failedRunId ? { failedRunId: input.failedRunId } : {})
+      });
+    }
+  });
+
+  await assert.rejects(
+    dispatcher.dispatch({ planId, workspaceId, actorId }),
+    /budget exhausted before child run persisted/u
+  );
+
+  assert.equal(repository.row.status, "dispatching");
+  assert.equal(repository.doneCalls, 0);
+  assert.equal(repository.items.find((candidate) => candidate.id === researchItemId)?.status, "failed");
+  assert.deepEqual(escalations, [{
+    reason: "partial_failure",
+    failedItemIds: [researchItemId]
+  }]);
 });

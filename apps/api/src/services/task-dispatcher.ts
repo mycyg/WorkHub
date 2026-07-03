@@ -233,24 +233,6 @@ function terminalStatusForRun(run: AgentRunQueueRecord): SettledItemStatus | nul
   return null;
 }
 
-async function bestEffortEscalate(
-  sink: TaskDispatchEscalationSink | undefined,
-  input: Parameters<TaskDispatchEscalationSink>[0]
-) {
-  if (!sink || (input.reason !== "partial_failure" && input.skippedItemIds.length === 0)) {
-    return;
-  }
-  try {
-    await sink(input);
-  } catch (error) {
-    getDefaultStructuredLogger().warn("task_dispatch_escalation_failed", {
-      planId: input.plan.id,
-      reason: input.reason,
-      error
-    });
-  }
-}
-
 async function requireEscalation(
   sink: TaskDispatchEscalationSink | undefined,
   input: Parameters<TaskDispatchEscalationSink>[0]
@@ -369,7 +351,7 @@ export function createTaskDispatcher(options: {
       });
       updateLocalItems(items, skipped);
       result.skippedItemIds.push(...skipped.map((item) => item.id));
-      await bestEffortEscalate(escalationSink, {
+      await requireEscalation(escalationSink, {
         plan,
         items,
         skippedItemIds: result.skippedItemIds,
@@ -390,7 +372,7 @@ export function createTaskDispatcher(options: {
       });
       updateLocalItems(items, skipped);
       result.skippedItemIds.push(...skipped.map((item) => item.id));
-      await bestEffortEscalate(escalationSink, {
+      await requireEscalation(escalationSink, {
         plan,
         items,
         skippedItemIds: result.skippedItemIds,
@@ -411,20 +393,42 @@ export function createTaskDispatcher(options: {
         continue;
       }
       updateLocalItemStatus(items, item.id, "dispatched", at);
-      await options.queue.enqueue({
-        workItemId: plan.workItemId,
-        actorId: input.actorId ?? plan.createdByUserId,
-        ...(input.orgId ? { orgId: input.orgId } : {}),
-        workspaceId: plan.workspaceId,
-        ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
-        taskPlanId: plan.id,
-        taskPlanItemId: item.id,
-        ...(plan.objectiveId ? { objectiveId: plan.objectiveId } : {}),
-        agentRole: item.role,
-        objectiveMd: taskObjective(item),
-        title: item.title,
-        mode: "worker"
-      });
+      try {
+        await options.queue.enqueue({
+          workItemId: plan.workItemId,
+          actorId: input.actorId ?? plan.createdByUserId,
+          ...(input.orgId ? { orgId: input.orgId } : {}),
+          workspaceId: plan.workspaceId,
+          ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
+          taskPlanId: plan.id,
+          taskPlanItemId: item.id,
+          ...(plan.objectiveId ? { objectiveId: plan.objectiveId } : {}),
+          agentRole: item.role,
+          objectiveMd: taskObjective(item),
+          title: item.title,
+          mode: "worker"
+        });
+      } catch (error) {
+        const failed = await options.repository.settleDispatchedItem({
+          planId: plan.id,
+          workspaceId: plan.workspaceId,
+          itemId: item.id,
+          status: "failed",
+          settledAt: at
+        });
+        if (failed) {
+          updateLocalItems(items, [failed]);
+          await requireEscalation(escalationSink, {
+            plan,
+            items,
+            skippedItemIds: [],
+            failedItemIds: [item.id],
+            reason: "partial_failure",
+            at
+          });
+        }
+        throw error;
+      }
       result.enqueuedItemIds.push(item.id);
     }
 
