@@ -2327,7 +2327,9 @@ test("cost OpenAPI routes document budget usage, policies, and update payloads",
   assert.deepEqual(policiesForbiddenError?.properties?.code, { type: "string", enum: ["forbidden"] });
 
   assert.deepEqual(operationParameters(body.paths, "/api/cost/policies/{scope}/{id}", "put"), [
-    { name: "scope", in: "path", required: true, schema: { type: "string", enum: ["workitem", "user", "team", "eval"] } },
+    // R9.5 added task/objective policy overrides; the old path enum documented only
+    // pre-army scopes even though the runtime route already accepts the new scopes.
+    { name: "scope", in: "path", required: true, schema: { type: "string", enum: ["workitem", "task", "objective", "user", "team", "eval"] } },
     { name: "id", in: "path", required: true, schema: { type: "string", minLength: 1 } }
   ]);
   assert.equal(jsonRequestBodyRequired(body.paths, "/api/cost/policies/{scope}/{id}", "put"), true);

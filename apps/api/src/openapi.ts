@@ -2615,7 +2615,7 @@ const costPolicyScopePathParameter = {
   name: "scope",
   in: "path",
   required: true,
-  schema: { type: "string", enum: ["workitem", "user", "team", "eval"] }
+  schema: { type: "string", enum: ["workitem", "task", "objective", "user", "team", "eval"] }
 } as const;
 const costPolicyIdPathParameter = {
   name: "id",
