@@ -9,7 +9,7 @@ function pick(map: Record<string, [string, string]>, value: string, zh: boolean)
 const workItemStatusMap: Record<string, [string, string]> = {
   intake: ["接收中", "Intake"],
   ai_clarifying: ["澄清中", "Clarifying"],
-  spec_ready: ["待派活", "Ready to run"],
+  spec_ready: ["规格已就绪", "Spec ready"],
   ai_working: ["AI 正在处理", "AI working"],
   in_progress: ["进行中", "In progress"],
   in_review: ["待审阅", "In review"],

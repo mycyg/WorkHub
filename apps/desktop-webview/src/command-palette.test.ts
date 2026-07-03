@@ -94,3 +94,14 @@ test("render escapes the query (no HTML injection via the search box)", () => {
   assert.doesNotMatch(html, /<img src=x/u);
   assert.match(html, /&quot;&gt;&lt;img/u);
 });
+
+test("R9.7 command palette uses new-task wording instead of dispatch copy", () => {
+  const zh = renderCommandPalette({ query: "", locale: "zh-CN" });
+  const en = renderCommandPalette({ query: "", locale: "en" });
+
+  assert.doesNotMatch(zh, /派活/u);
+  assert.doesNotMatch(en, /Dispatch|dispatch/u);
+  assert.match(zh, /新任务 \/ 交给 AI/u);
+  assert.match(en, /New task/u);
+  assert.equal(matchCommands("dispatch", "en")[0]?.command.id, "intake");
+});

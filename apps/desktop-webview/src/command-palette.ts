@@ -48,7 +48,7 @@ const ic = (inner: string) =>
 export const commandRegistry: DesktopCommand[] = [
   {
     id: "intake",
-    label: { "zh-CN": "新任务 / 交给 AI", en: "Dispatch a task" },
+    label: { "zh-CN": "新任务 / 交给 AI", en: "New task / Ask AI" },
     hint: { "zh-CN": "说清需求，AI 来做，你过目", en: "Clarify, let AI work, you review" },
     keywords: ["派活", "新任务", "提需求", "干活", "澄清", "dispatch", "new task", "intake", "clarify"],
     icon: ic('<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'),
@@ -219,7 +219,7 @@ export function renderCommandPalette(input: CommandPaletteRenderInput = {}): str
   const query = input.query ?? "";
   const matches = matchCommands(query, loc);
   const ds = designSystem;
-  const placeholder = loc === "zh-CN" ? "想做什么？派活 / 审批 / 网盘 / 项目…" : "What do you need? dispatch / approve / drive…";
+  const placeholder = loc === "zh-CN" ? "想做什么？新任务 / 审批 / 网盘 / 项目…" : "What do you need? new task / approve / drive…";
   const emptyHint = loc === "zh-CN" ? "没有匹配的能力，换个说法试试" : "No matching capability — try another phrase";
 
   const rows =
