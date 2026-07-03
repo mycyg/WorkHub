@@ -11,10 +11,12 @@ import {
 } from "@workhub/contracts";
 import {
   createAiDecisionRepository,
+  createWorkspaceMembershipRepository,
   createUserRepository,
   getSharedDatabaseClient,
   type EscalationServiceRow as DbEscalationServiceRow,
-  type UserRepository
+  type UserRepository,
+  type WorkspaceMembershipRepository
 } from "@workhub/db";
 
 import type { AuthActor } from "../middleware/auth.js";
@@ -44,6 +46,7 @@ export type EscalationService = ReturnType<typeof createEscalationService>;
 type EscalationServiceDependencies = {
   repository?: EscalationRepository;
   users?: Pick<UserRepository, "findActiveById"> | false;
+  memberships?: Pick<WorkspaceMembershipRepository, "findActiveForUserWorkspace"> | false;
   workItems?: Pick<WorkItemService, "canReadWorkItems"> | false;
   now?: () => Date;
 };
@@ -64,6 +67,11 @@ function getDefaultEscalationRepository(): EscalationRepository {
 function getDefaultUsers() {
   defaultDbClient ??= getSharedDatabaseClient();
   return createUserRepository(defaultDbClient.db);
+}
+
+function getDefaultMemberships() {
+  defaultDbClient ??= getSharedDatabaseClient();
+  return createWorkspaceMembershipRepository(defaultDbClient.db);
 }
 
 function compactText(value: string, max = 220) {
@@ -159,6 +167,7 @@ export function buildEscalationAttentionItem(row: EscalationServiceRow, locale: 
 export function createEscalationService(deps: EscalationServiceDependencies = {}) {
   const repository = deps.repository ?? getDefaultEscalationRepository();
   const users = deps.users === false ? undefined : deps.users ?? getDefaultUsers();
+  const memberships = deps.memberships === false ? undefined : deps.memberships ?? getDefaultMemberships();
   const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
   const now = deps.now ?? (() => new Date());
 
@@ -210,6 +219,12 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       if (users) {
         const target = await users.findActiveById(payload.to_user_id);
         if (!target) {
+          throw new EscalationServiceError(404, "delegate_target_not_found", "找不到要转派的成员。");
+        }
+      }
+      if (memberships) {
+        const targetMembership = await memberships.findActiveForUserWorkspace(payload.to_user_id, actor.workspaceId);
+        if (!targetMembership) {
           throw new EscalationServiceError(404, "delegate_target_not_found", "找不到要转派的成员。");
         }
       }

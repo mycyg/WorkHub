@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { UserAuthRow } from "@workhub/db";
+
 import type { AuthActor } from "../middleware/auth.js";
 import {
   buildEscalationAttentionItem,
@@ -14,6 +16,7 @@ const escalationId = "94000000-0000-4000-8000-000000000101";
 const workItemId = "94000000-0000-4000-8000-000000000102";
 const projectId = "94000000-0000-4000-8000-000000000103";
 const userId = "12000000-0000-4000-8000-000000000011";
+const delegateTargetUserId = "12000000-0000-4000-8000-000000000012";
 
 function actor(): AuthActor {
   return {
@@ -136,5 +139,35 @@ test("R9.7 escalation service refuses legacy null-workspace rows", async () => {
 
   assert.deepEqual(items, []);
   assert.deepEqual(repository.resolveCalls, []);
+  assert.deepEqual(repository.delegateCalls, []);
+});
+
+test("R9.7 escalation delegation requires the target to be an active workspace member", async () => {
+  const repository = new MemoryEscalationRepository();
+  const membershipCalls: Array<{ userId: string; workspaceId: string }> = [];
+  const service = createEscalationService({
+    repository,
+    users: {
+      async findActiveById(id: string) {
+        return id === delegateTargetUserId ? ({ id, deletedAt: null } as UserAuthRow) : null;
+      }
+    },
+    memberships: {
+      async findActiveForUserWorkspace(userId: string, workspaceId: string) {
+        membershipCalls.push({ userId, workspaceId });
+        return null;
+      }
+    },
+    now: () => now
+  });
+
+  await assert.rejects(
+    service.delegate(escalationId, actor(), { to_user_id: delegateTargetUserId }),
+    (error: unknown) => error instanceof Error
+      && (error as { status?: number; code?: string }).status === 404
+      && (error as { code?: string }).code === "delegate_target_not_found"
+  );
+
+  assert.deepEqual(membershipCalls, [{ userId: delegateTargetUserId, workspaceId: actor().workspaceId }]);
   assert.deepEqual(repository.delegateCalls, []);
 });
