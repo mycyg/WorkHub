@@ -32,6 +32,7 @@ export * from "./repositories/meetings.js";
 export * from "./repositories/schedule-notify.js";
 export * from "./repositories/project-health.js";
 export * from "./repositories/agent-runs.js";
+export * from "./repositories/task-plan-arbitration.js";
 export * from "./repositories/cost-ledger.js";
 export * from "./repositories/budget-policies.js";
 export * from "./repositories/budget-reservations.js";

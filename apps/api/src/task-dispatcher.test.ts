@@ -5,6 +5,7 @@ import type { TaskPlanItemRow, TaskPlanRow, TaskPlanWithItems } from "@workhub/d
 
 import {
   createTaskDispatcher,
+  type TaskDispatchArbitrationSink,
   type TaskDispatcherRepository
 } from "./services/task-dispatcher.js";
 import type {
@@ -411,6 +412,46 @@ test("R9.7 dispatcher surfaces partial child-run failure immediately while sibli
     failedItemIds: [researchItemId],
     failedRunId: failedRun.run_id
   }]);
+});
+
+test("R9.4 dispatcher arbitrates sibling successful outputs before completing the plan", async () => {
+  const events: string[] = [];
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "succeeded" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "succeeded" }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", status: "dispatched" })
+  ]);
+  const markPlanDone = repository.markPlanDone.bind(repository);
+  repository.markPlanDone = async (input) => {
+    events.push("done");
+    return markPlanDone(input);
+  };
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    arbitrationSink: (async (input) => {
+      events.push("arbitrate");
+      assert.equal(input.plan.id, planId);
+      assert.equal(input.at, now);
+      assert.deepEqual(
+        input.items
+          .filter((candidate) => candidate.status === "succeeded")
+          .map((candidate) => candidate.id),
+        [researchItemId, produceItemId, reviewItemId]
+      );
+    }) satisfies TaskDispatchArbitrationSink
+  });
+
+  const result = await dispatcher.handleRunSettled(run({
+    status: "succeeded",
+    taskPlanItemId: reviewItemId,
+    workspaceId
+  }));
+
+  assert.equal(result?.dispatch.completed, true);
+  assert.deepEqual(events, ["arbitrate", "done"]);
 });
 
 test("R9.7 dispatcher does not complete a partial-failed plan when attention persistence fails", async () => {

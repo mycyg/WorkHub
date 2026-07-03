@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createTaskPlanArbitrationRepository } from "./repositories/task-plan-arbitration.js";
 import { createTaskPlanRepository } from "./repositories/task-plans.js";
 import {
   agentRuns,
+  branches,
   escalationEvents,
   objectiveWorkItemLinks,
   objectives,
+  proposals,
   taskPlanItems,
   taskPlans,
   workItems
@@ -111,6 +114,47 @@ test("R9.1 task plan repository writes draft plans and items in one transaction"
       updatedAt: now
     }
   ]);
+});
+
+test("R9.4 arbitration repository reads child proposals with plan workspace scope and hard cap", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+  const repository = createTaskPlanArbitrationRepository(db);
+
+  await repository.listCandidates({
+    planId,
+    workspaceId,
+    workItemId,
+    limit: 9
+  });
+
+  assert.equal(queries.length, 1);
+  const [query] = queries;
+  assert.equal(query?.operation, "select");
+  assert.equal(query?.fromTable, agentRuns);
+  assert.deepEqual(query?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", taskPlanItems],
+    ["inner", branches],
+    ["inner", proposals]
+  ]);
+  assert.equal(query?.limit, 9);
+  assert.ok(queryReferences(query?.where, agentRuns.taskPlanId));
+  assert.ok(queryReferences(query?.where, agentRuns.workspaceId));
+  assert.ok(queryReferences(query?.where, agentRuns.workItemId));
+  assert.ok(queryReferences(query?.where, agentRuns.status));
+  assert.ok(queryReferences(query?.joins[0]?.on, taskPlanItems.id));
+  assert.ok(queryReferences(query?.joins[0]?.on, agentRuns.taskPlanItemId));
+  assert.ok(queryReferences(query?.joins[0]?.on, taskPlanItems.planId));
+  assert.ok(queryReferences(query?.joins[1]?.on, branches.agentRunId));
+  assert.ok(queryReferences(query?.joins[1]?.on, agentRuns.id));
+  assert.ok(queryReferences(query?.joins[1]?.on, branches.workItemId));
+  assert.ok(queryReferences(query?.joins[2]?.on, proposals.branchId));
+  assert.ok(queryReferences(query?.joins[2]?.on, branches.id));
+  assert.ok(queryReferences(query?.joins[2]?.on, proposals.workItemId));
+  assert.ok(queryReferences(query?.joins[2]?.on, proposals.status));
+  assert.ok(queryParamValues(query?.where).includes(planId));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
+  assert.ok(queryParamValues(query?.where).includes(workItemId));
+  assert.ok(queryParamValues(query?.where).includes("succeeded"));
 });
 
 test("R9.7 task plan repository rejects objectives outside the plan work item scope", async () => {

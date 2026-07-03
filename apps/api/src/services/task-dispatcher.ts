@@ -1,6 +1,8 @@
 import {
   createAiDecisionRepository,
   createAuditLogRepository,
+  createProposalRepository,
+  createTaskPlanArbitrationRepository,
   createTaskPlanRepository,
   getSharedDatabaseClient,
   type AiDecisionRepository,
@@ -15,6 +17,13 @@ import type {
   AgentRunQueue,
   AgentRunQueueRecord
 } from "../workers/agent-runner.js";
+import { createCrossAgentJudge } from "./cross-agent-judge.js";
+import { getDefaultProviderRegistry } from "./provider-registry.js";
+import { createDbProposalService } from "./proposals.js";
+import {
+  createDbTaskDispatchArbitrationCandidateStore,
+  createTaskDispatchArbitrationSink
+} from "./task-dispatcher-arbitration.js";
 
 type SettledItemStatus = Extract<TaskPlanItemRow["status"], "succeeded" | "failed">;
 type EscalationReason = "cycle" | "dependency_failed" | "partial_failure";
@@ -93,6 +102,12 @@ export type TaskDispatchCompletionSink = (input: {
   plan: TaskPlanRow;
   items: TaskPlanItemRow[];
   summaryMd: string;
+  at: Date;
+}) => Promise<void> | void;
+
+export type TaskDispatchArbitrationSink = (input: {
+  plan: TaskPlanRow;
+  items: TaskPlanItemRow[];
   at: Date;
 }) => Promise<void> | void;
 
@@ -182,6 +197,10 @@ function allTerminal(items: TaskPlanItemRow[]) {
   return items.length > 0 && items.every((item) => TERMINAL_ITEM_STATUSES.has(item.status));
 }
 
+function hasArbitrableOutputs(items: TaskPlanItemRow[]) {
+  return items.filter((item) => item.status === "succeeded").length >= 2;
+}
+
 function taskObjective(item: TaskPlanItemRow) {
   return [
     "Objective:",
@@ -269,16 +288,36 @@ async function bestEffortComplete(
   }
 }
 
+async function requireArbitration(
+  sink: TaskDispatchArbitrationSink | undefined,
+  input: Parameters<TaskDispatchArbitrationSink>[0]
+) {
+  if (!sink) {
+    return;
+  }
+  try {
+    await sink(input);
+  } catch (error) {
+    getDefaultStructuredLogger().warn("task_dispatch_arbitration_failed", {
+      planId: input.plan.id,
+      error
+    });
+    throw error;
+  }
+}
+
 export function createTaskDispatcher(options: {
   repository: TaskDispatcherRepository;
   queue: Pick<AgentRunQueue, "enqueue">;
   escalationSink?: TaskDispatchEscalationSink | false;
   completionSink?: TaskDispatchCompletionSink | false;
+  arbitrationSink?: TaskDispatchArbitrationSink | false;
   now?: () => Date;
 }) {
   const now = options.now ?? (() => new Date());
   const escalationSink = options.escalationSink === false ? undefined : options.escalationSink;
   const completionSink = options.completionSink === false ? undefined : options.completionSink;
+  const arbitrationSink = options.arbitrationSink === false ? undefined : options.arbitrationSink;
 
   async function loadPlan(input: { planId: string; workspaceId: string }) {
     const loaded = await options.repository.getPlanWithItems({
@@ -298,6 +337,13 @@ export function createTaskDispatcher(options: {
   async function maybeCompletePlan(plan: TaskPlanRow, items: TaskPlanItemRow[], at: Date) {
     if (!allTerminal(items)) {
       return false;
+    }
+    if (hasArbitrableOutputs(items)) {
+      await requireArbitration(arbitrationSink, {
+        plan,
+        items,
+        at
+      });
     }
     const done = await options.repository.markPlanDone({
       planId: plan.id,
@@ -556,11 +602,20 @@ let defaultTaskDispatcher: TaskDispatcher | undefined;
 export function getDefaultTaskDispatcher(queue: Pick<AgentRunQueue, "enqueue">) {
   if (!defaultTaskDispatcher) {
     const dbClient = getSharedDatabaseClient();
+    const providerRegistry = getDefaultProviderRegistry();
+    const reviewRoute = providerRegistry.routeFor("review");
+    const proposals = createDbProposalService(createProposalRepository(dbClient.db));
     defaultTaskDispatcher = createTaskDispatcher({
       repository: createTaskPlanRepository(dbClient.db),
       queue,
       escalationSink: createDbTaskDispatchEscalationSink(createAiDecisionRepository(dbClient.db)),
-      completionSink: createDbTaskDispatchCompletionSink(createAuditLogRepository(dbClient.db))
+      completionSink: createDbTaskDispatchCompletionSink(createAuditLogRepository(dbClient.db)),
+      arbitrationSink: createTaskDispatchArbitrationSink({
+        candidates: createDbTaskDispatchArbitrationCandidateStore(createTaskPlanArbitrationRepository(dbClient.db)),
+        judge: createCrossAgentJudge({ providerRegistry }),
+        proposalReviews: proposals,
+        judgeClientRef: `${reviewRoute.provider.name}:${reviewRoute.model.model}:review`
+      })
     });
   }
   return defaultTaskDispatcher;
