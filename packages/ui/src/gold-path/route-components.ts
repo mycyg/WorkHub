@@ -343,7 +343,7 @@ type RouteCopyKey =
   | "skills.aiAuthored"
   | "skills.refined"
   | "skills.version"
-  | "skills.confidence"
+  | "skills.readiness"
   | "skills.refinedFrom"
   | "skills.authoredBy"
   | "projects.kicker"
@@ -578,7 +578,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.aiAuthored": "AI 蒸馏",
     "skills.refined": "已精修",
     "skills.version": "版本",
-    "skills.confidence": "置信",
+    "skills.readiness": "成熟度",
     "skills.refinedFrom": "精修自 v",
     "skills.authoredBy": "来源",
     "settings.runtime": "运行时",
@@ -796,7 +796,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.aiAuthored": "AI-distilled",
     "skills.refined": "Refined",
     "skills.version": "Version",
-    "skills.confidence": "Confidence",
+    "skills.readiness": "Readiness",
     "skills.refinedFrom": "refined from v",
     "skills.authoredBy": "Source",
     "settings.runtime": "Runtime",
@@ -3168,7 +3168,7 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
             ? `<span class="wh-pill">${escapeHtml(routeT(locale, "skills.aiAuthored"))}</span>`
             : "",
           skill.confidence_score !== undefined
-            ? `<span class="wh-pill">${escapeHtml(`${routeT(locale, "skills.confidence")} ${Math.round(skill.confidence_score * 100)}%`)}</span>`
+            ? `<span class="wh-pill">${escapeHtml(`${routeT(locale, "skills.readiness")} ${Math.round(skill.confidence_score * 100)}%`)}</span>`
             : "",
           skill.provenance
             ? `<span class="wh-pill wh-pill--accent" data-r8-skill-refined="true" data-r8-skill-refined-ops="${escapeHtml(String(skill.provenance.op_count))}">${escapeHtml(`${routeT(locale, "skills.refinedFrom")}${skill.provenance.refined_from_version} · ${locale === "zh-CN" ? `改了 ${skill.provenance.op_count} 处` : `${skill.provenance.op_count} ${skill.provenance.op_count === 1 ? "edit" : "edits"}`}`)}</span>`
