@@ -3,6 +3,8 @@
 // 这些能力以「看」为主（知识带检索框），故用一个共享的 read-only 装载器；写动作类（网盘/工作项/回放）另立。
 
 import type {
+  AgentArmyDashboardPlanVM,
+  AgentArmyDashboardVM,
   CalendarPageVM,
   CostDashboardVM,
   EvidenceBubble,
@@ -22,6 +24,160 @@ function loadingHtml(zh: boolean, label: string): string {
 
 function emptyHtml(face: string, title: string, sub: string): string {
   return `<div class="wh-spot-empty"><div class="wh-spot-empty-face">${face}</div><h3 class="wh-spot-empty-title">${escapeHtml(title)}</h3><p class="wh-spot-empty-sub">${escapeHtml(sub)}</p></div>`;
+}
+
+function pctWidth(value: number | undefined): string {
+  if (!Number.isFinite(value ?? 0)) {
+    return "0";
+  }
+  return String(Math.max(0, Math.min(100, Math.round(value ?? 0))));
+}
+
+function cny(value: string | undefined): string {
+  return value ? `¥${value}` : "¥0";
+}
+
+function taskPlanRoleLabel(role: AgentArmyDashboardPlanVM["roles"][number]["role"], zh: boolean): string {
+  switch (role) {
+    case "research":
+      return zh ? "调研" : "Research";
+    case "produce":
+      return zh ? "产出" : "Produce";
+    case "review":
+      return zh ? "复核" : "Review";
+    case "integrate":
+      return zh ? "整合" : "Integrate";
+    default:
+      return zh ? "子任务" : "Subtask";
+  }
+}
+
+function agentTeamStatusLabel(status: AgentArmyDashboardPlanVM["statuses"][number]["status"], zh: boolean): string {
+  switch (status) {
+    case "pending":
+      return zh ? "待派发" : "Pending";
+    case "dispatched":
+      return zh ? "推进中" : "Running";
+    case "succeeded":
+      return zh ? "已完成" : "Done";
+    case "failed":
+      return zh ? "失败" : "Failed";
+    case "needs_human":
+      return zh ? "等你决定" : "Needs you";
+    case "skipped":
+      return zh ? "已跳过" : "Skipped";
+    default:
+      return zh ? "子任务" : "Subtask";
+  }
+}
+
+function taskPlanStatusLabel(status: AgentArmyDashboardPlanVM["status"], zh: boolean): string {
+  switch (status) {
+    case "draft":
+      return zh ? "草稿" : "Draft";
+    case "proposed":
+      return zh ? "待批准" : "Proposed";
+    case "approved":
+      return zh ? "已批准" : "Approved";
+    case "dispatching":
+      return zh ? "推进中" : "Dispatching";
+    case "done":
+      return zh ? "已收工" : "Done";
+    case "cancelled":
+      return zh ? "已取消" : "Cancelled";
+    default:
+      return zh ? "分工计划" : "Task plan";
+  }
+}
+
+function agentArmyPlanRow(plan: AgentArmyDashboardPlanVM, zh: boolean): string {
+  const roles = plan.roles
+    .map((role) => `<span class="wh-spot-row-tag">${escapeHtml(`${taskPlanRoleLabel(role.role, zh)} ${role.count}`)}</span>`)
+    .join("");
+  const statuses = plan.statuses
+    .map((status) => `<span class="wh-spot-row-tag">${escapeHtml(`${agentTeamStatusLabel(status.status, zh)} ${status.count}`)}</span>`)
+    .join("");
+  const blocker = plan.oldest_blocker
+    ? `<div class="wh-spot-row-sub">${escapeHtml(plan.oldest_blocker.label)}</div>`
+    : "";
+  return `<button type="button" class="wh-spot-row" data-open-agent-plan="${escapeHtml(plan.plan_id)}" style="cursor:pointer;width:100%;text-align:left">
+    <div class="wh-spot-row-main">
+      <div class="wh-spot-row-title">${escapeHtml(plan.work_item_title)}</div>
+      <div class="wh-spot-row-sub">${escapeHtml(`${plan.work_item_code} · ${taskPlanStatusLabel(plan.status, zh)} · ${plan.progress.label}`)}</div>
+      <div class="wh-spot-row-sub">${roles}${statuses}</div>
+      ${blocker}
+    </div>
+    <div class="wh-spot-row-meta"><span class="wh-spot-row-badge">${escapeHtml(plan.progress.label)}</span><span class="wh-spot-row-metalabel">${escapeHtml(cny(plan.cost.used_cny))}</span></div>
+  </button>`;
+}
+
+export function agentArmyPlanDetailHtml(plan: AgentArmyDashboardPlanVM, zh: boolean): string {
+  const roles = plan.roles
+    .map((role) => `<span class="wh-spot-row-tag">${escapeHtml(`${taskPlanRoleLabel(role.role, zh)} ${role.count}`)}</span>`)
+    .join("");
+  const statuses = plan.statuses
+    .map((status) => `<span class="wh-spot-row-tag">${escapeHtml(`${agentTeamStatusLabel(status.status, zh)} ${status.count}`)}</span>`)
+    .join("");
+  const blocker = plan.oldest_blocker
+    ? `<div class="wh-spot-card-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-capability="approvals">${escapeHtml(zh ? "去决策收件箱" : "Open inbox")}</button></div><p class="wh-spot-row-sub">${escapeHtml(plan.oldest_blocker.label)}</p>`
+    : "";
+  return `<div class="wh-spot-dash ds-anim-fade-in" data-spot-agent-plan-detail="${escapeHtml(plan.plan_id)}">
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-back-to-agent-armies style="align-self:flex-start">${zh ? "← 返回小队列表" : "← Back to squads"}</button>
+    <div>
+      <div class="wh-spot-row-title" style="font-size:17px">${escapeHtml(plan.work_item_title)}</div>
+      <div class="wh-spot-row-sub">${escapeHtml(`${plan.work_item_code} · ${taskPlanStatusLabel(plan.status, zh)} · ${plan.progress.label}`)}</div>
+    </div>
+    <div class="wh-spot-metrics">
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "进度" : "Progress"}</span><span class="wh-spot-metric-v wh-spot-metric-v--big">${escapeHtml(plan.progress.label)}</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "成本" : "Cost"}</span><span class="wh-spot-metric-v">${escapeHtml(`${cny(plan.cost.used_cny)}${plan.cost.budget_cny ? `/${cny(plan.cost.budget_cny)}` : ""}`)}</span></div>
+      <div class="wh-spot-metric" aria-label="${escapeHtml(zh ? `判官通过 ${plan.judge.pass_rate_pct}%` : `Judge pass ${plan.judge.pass_rate_pct}%`)}"><span class="wh-spot-metric-k">${zh ? "判官通过" : "Judge pass"}</span><span class="wh-spot-metric-v">${escapeHtml(String(plan.judge.pass_rate_pct))}%</span></div>
+    </div>
+    <div class="wh-spot-bars" aria-hidden="true"><span class="wh-spot-bar" style="height:8px;width:${escapeHtml(pctWidth(plan.cost.burn_pct))}%"></span></div>
+    <div class="wh-spot-row-sub">${roles}${statuses}</div>
+    ${blocker}
+    <div class="wh-spot-card-actions">
+      <button type="button" class="wh-spot-act ds-pressable" data-open-workitem="${escapeHtml(plan.work_item_id)}">${escapeHtml(zh ? "打开工作项" : "Open work item")}</button>
+    </div>
+  </div>`;
+}
+
+export function agentArmyDashboardView(vm: AgentArmyDashboardVM, zh: boolean): string {
+  const kpis = [
+    { id: "active_team_count", label: zh ? "进行中小队" : "Active squads", value: String(vm.kpis.active_team_count) },
+    { id: "waiting_decision", label: zh ? "等你决策" : "Needs you", value: String(vm.kpis.waiting_decision_count), capability: "approvals" },
+    { id: "today_cost", label: zh ? "今日成本" : "Today cost", value: cny(vm.kpis.today_cost_cny) },
+    { id: "autonomy_rate", label: zh ? "自治率" : "Autonomy", value: `${vm.kpis.autonomy_rate_pct}%` }
+  ].map((item) => {
+    const body = `<span class="wh-spot-metric-k">${escapeHtml(item.label)}</span><span class="wh-spot-metric-v">${escapeHtml(item.value)}</span>`;
+    return item.capability
+      ? `<button type="button" class="wh-spot-metric" data-spot-agent-kpi="${escapeHtml(item.id)}" data-open-capability="${escapeHtml(item.capability)}">${body}</button>`
+      : `<div class="wh-spot-metric" data-spot-agent-kpi="${escapeHtml(item.id)}">${body}</div>`;
+  }).join("");
+  const shownPlans = vm.plans.slice(0, 5);
+  const rows = shownPlans.map((plan) => agentArmyPlanRow(plan, zh)).join("");
+  const hiddenCount = Math.max(0, vm.page_info.returned - shownPlans.length);
+  const capped = vm.page_info.plans_capped || hiddenCount > 0
+    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hiddenCount} 个小队未在这里显示，打开工作项查看详情。` : `+${hiddenCount} more squads not shown here — open work items for detail.`)}</p>`
+    : "";
+  const empty = vm.empty_state === "no_agent_armies"
+    ? `<div data-spot-agent-dashboard-empty="no_agent_armies">${emptyHtml("Cuu", zh ? "还没有 Cuu 的小队在跑" : "No Cuu squads are running yet.", zh ? "下次遇到大活儿，Cuu 会先给你一份分工方案。" : "Next time there is a large task, Cuu will draft a plan first.")}<div style="text-align:center"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-capability="intake">${zh ? "新任务 / 交给 AI" : "New task"}</button></div></div>`
+    : "";
+  const recent = vm.recent_escalations.length
+    ? `<div class="wh-spot-list">${vm.recent_escalations.map((item) => `<button type="button" class="wh-spot-row" data-open-capability="approvals" style="cursor:pointer;width:100%;text-align:left">
+        <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(item.title)}</div><div class="wh-spot-row-sub">${escapeHtml(item.reason_preview)}</div></div>
+      </button>`).join("")}</div>`
+    : `<p class="wh-spot-row-sub">${escapeHtml(zh ? "最近没有需要你拍板的军团事件。" : "No recent squad decisions.")}</p>`;
+  return `<div class="wh-spot-dash ds-anim-fade-in" data-spot-agent-dashboard="true" data-spot-agent-dashboard-plan-count="${escapeHtml(String(vm.plans.length))}">
+    <div>
+      <div class="wh-spot-row-title" style="font-size:17px">${escapeHtml(zh ? "Cuu 的小队" : "Cuu's squads")}</div>
+      <div class="wh-spot-row-sub">${escapeHtml(zh ? "只看进展；拍板仍回决策收件箱。" : "Observe progress; decisions stay in the inbox.")}</div>
+    </div>
+    <div class="wh-spot-metrics">${kpis}</div>
+    ${empty}
+    ${rows ? `<div class="wh-spot-list ds-stagger">${rows}</div>${capped}` : ""}
+    <div class="wh-spot-row-metalabel">${escapeHtml(zh ? "最近动态" : "Recent activity")}</div>
+    ${recent}
+  </div>`;
 }
 
 // 共享只读装载器：先渲 loading → 拉数据 → 渲内容（带副标题）；失败渲错误。
@@ -304,6 +460,85 @@ export function createCostView(): SpotlightCapabilityView {
       return { html: costView(vm, zh), subtitle: `¥${vm.total_cost_cny} · ${zh ? "累计" : "total"}` };
     }
   });
+}
+
+// —— Agent Army —— //
+export function createAgentsView(): SpotlightCapabilityView {
+  return {
+    id: "agents",
+    mount(ctx: SpotlightViewContext) {
+      const zh = ctx.locale === "zh-CN";
+      let disposed = false;
+      let vm: AgentArmyDashboardVM | undefined;
+
+      const renderList = async () => {
+        ctx.body.innerHTML = loadingHtml(zh, zh ? "正在拉 Cuu 的小队…" : "Loading Cuu's squads…");
+        ctx.requestResize();
+        try {
+          vm = await ctx.client.pages.agents({ locale: ctx.locale });
+          if (disposed) return;
+          ctx.setSubtitle(zh ? `${vm.kpis.active_team_count} 个小队` : `${vm.kpis.active_team_count} squad${vm.kpis.active_team_count === 1 ? "" : "s"}`);
+          const directPlan = ctx.target?.id
+            ? vm.plans.find((plan) => plan.plan_id === ctx.target?.id || plan.work_item_id === ctx.target?.id)
+            : undefined;
+          ctx.body.innerHTML = directPlan ? agentArmyPlanDetailHtml(directPlan, zh) : agentArmyDashboardView(vm, zh);
+        } catch {
+          if (disposed) return;
+          ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "小队看板没拉到，稍后重试" : "Couldn't load squads — retry");
+        }
+        ctx.requestResize();
+      };
+
+      ctx.body.addEventListener(
+        "click",
+        (event) => {
+          if (!(event.target instanceof HTMLElement)) return;
+          const target = event.target;
+          if (target.closest("[data-spot-retry]")) {
+            void renderList();
+            return;
+          }
+          if (target.closest("[data-back-to-agent-armies]")) {
+            if (vm) {
+              ctx.setSubtitle(zh ? `${vm.kpis.active_team_count} 个小队` : `${vm.kpis.active_team_count} squad${vm.kpis.active_team_count === 1 ? "" : "s"}`);
+              ctx.body.innerHTML = agentArmyDashboardView(vm, zh);
+              ctx.requestResize();
+            } else {
+              void renderList();
+            }
+            return;
+          }
+          const planButton = target.closest<HTMLElement>("[data-open-agent-plan]");
+          const planId = planButton?.dataset.openAgentPlan;
+          if (planId && vm) {
+            const plan = vm.plans.find((candidate) => candidate.plan_id === planId);
+            if (plan) {
+              ctx.setSubtitle(plan.work_item_code);
+              ctx.body.innerHTML = agentArmyPlanDetailHtml(plan, zh);
+              ctx.requestResize();
+            }
+            return;
+          }
+          const workitem = target.closest<HTMLElement>("[data-open-workitem]");
+          if (workitem?.dataset.openWorkitem) {
+            ctx.open("workitem", { id: workitem.dataset.openWorkitem });
+            return;
+          }
+          const capability = target.closest<HTMLElement>("[data-open-capability]");
+          const id = capability?.dataset.openCapability as CommandId | undefined;
+          if (id) {
+            ctx.open(id);
+          }
+        },
+        { signal: ctx.signal }
+      );
+
+      void renderList();
+      return () => {
+        disposed = true;
+      };
+    }
+  };
 }
 
 // —— 团队日历 —— //

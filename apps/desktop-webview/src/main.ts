@@ -52,8 +52,10 @@ export const desktopWebviewSurface = {
     "/api/notifications/:id/complete",
     "/api/pages/approvals",
     "/api/pages/cost",
+    "/api/pages/agents",
     "/api/pages/settings",
     "/api/agent-runs/:id/replay",
+    "/dashboard/agents",
     "/settings"
   ],
   consumesTypedClient: "@workhub/api-client",
@@ -126,6 +128,10 @@ export function loadDesktopAgentRunReplay(client: WorkHubApiClient, runId: strin
 
 export async function renderDesktopAgentRunReplay(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
   return renderAgentRunReplay(await loadDesktopAgentRunReplay(client, runId), "desktop", locale ? { locale } : undefined);
+}
+
+export function loadDesktopAgentArmyDashboard(client: WorkHubApiClient, locale?: WorkHubLocale) {
+  return client.pages.agents(locale ? { locale } : undefined);
 }
 
 export async function renderDesktopAgentRunLive(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {

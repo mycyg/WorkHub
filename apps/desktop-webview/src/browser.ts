@@ -229,6 +229,7 @@ const COMMAND_ROUTE: Record<CommandId, string> = {
   replay: "/agent-runs",
   knowledge: "/knowledge",
   cost: "/dashboard/cost",
+  agents: "/dashboard/agents",
   team: "/team",
   settings: "/settings"
 };

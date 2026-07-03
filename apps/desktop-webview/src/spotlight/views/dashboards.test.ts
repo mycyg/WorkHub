@@ -1,9 +1,67 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { CostDashboardVM, ProjectHomePageVM } from "@workhub/contracts";
+import type { AgentArmyDashboardVM, CostDashboardVM, ProjectHomePageVM } from "@workhub/contracts";
 
-import { costView, projectHomeDetailHtml } from "./dashboards.js";
+import { agentArmyDashboardView, agentArmyPlanDetailHtml, costView, projectHomeDetailHtml } from "./dashboards.js";
+
+function agentArmyVm(over: Partial<AgentArmyDashboardVM> = {}): AgentArmyDashboardVM {
+  return {
+    generated_at: "2026-07-03T00:00:00.000Z",
+    kpis: {
+      active_team_count: 1,
+      waiting_decision_count: 1,
+      today_cost_cny: "1.25",
+      autonomy_rate_pct: 67
+    },
+    plans: [{
+      plan_id: "93000000-0000-4000-8000-000000000901",
+      work_item_id: "93000000-0000-4000-8000-000000000101",
+      work_item_code: "WH-901",
+      work_item_title: "竞品价格调研",
+      work_item_href: "/workitems/93000000-0000-4000-8000-000000000101",
+      status: "dispatching",
+      progress: { completed: 2, total: 4, label: "2/4" },
+      roles: [
+        { role: "research", count: 2 },
+        { role: "review", count: 1 }
+      ],
+      statuses: [
+        { status: "dispatched", count: 2 },
+        { status: "needs_human", count: 1 }
+      ],
+      cost: { used_cny: "0.80", budget_cny: "2.00", burn_pct: 40 },
+      judge: { passed: 3, total: 4, pass_rate_pct: 75 },
+      oldest_blocker: {
+        kind: "needs_human",
+        label: "卡在：来源可信度复核 · 2h",
+        age_seconds: 7200,
+        href: "/attention"
+      },
+      updated_at: "2026-07-03T00:05:00.000Z"
+    }],
+    recent_escalations: [{
+      id: "93000000-0000-4000-8000-000000000777",
+      plan_id: "93000000-0000-4000-8000-000000000901",
+      work_item_id: "93000000-0000-4000-8000-000000000101",
+      title: "竞品调研卡住了",
+      reason_preview: "AI 对数据来源不确定",
+      created_at: "2026-07-03T00:06:00.000Z",
+      href: "/attention"
+    }],
+    page_info: {
+      plan_limit: 20,
+      returned: 1,
+      plans_capped: false,
+      items_capped: false,
+      runs_capped: false,
+      escalation_limit: 5,
+      escalation_returned: 1,
+      escalations_capped: false
+    },
+    ...over
+  };
+}
 
 function vm(over: Partial<ProjectHomePageVM> = {}): ProjectHomePageVM {
   return {
@@ -117,4 +175,43 @@ test("L16: cost trend bars carry aria-labels + a visible date-range/peak caption
   assert.ok(html.includes("2026-06-20 – 2026-06-22"), "date-range caption");
   assert.ok(html.includes("峰值 ¥0.50"), "peak caption");
   assert.match(html, /<div class="wh-spot-bars" role="group" aria-label="近 14 天花费趋势"/u);
+});
+
+test("R9.6 desktop agent army list renders compressed plan rows and KPI decisions link", () => {
+  const html = agentArmyDashboardView(agentArmyVm(), true);
+
+  assert.match(html, /data-spot-agent-dashboard="true"/u);
+  assert.match(html, /data-spot-agent-kpi="waiting_decision"/u);
+  assert.match(html, /data-open-capability="approvals"/u);
+  assert.match(html, /data-open-agent-plan="93000000-0000-4000-8000-000000000901"/u);
+  assert.ok(html.includes("竞品价格调研"), "plan title");
+  assert.ok(html.includes("2/4"), "progress label");
+  assert.ok(html.includes("调研 2"), "localized role badge");
+  assert.ok(html.includes("等你决定 1"), "localized status badge");
+  assert.ok(html.includes("卡在：来源可信度复核 · 2h"), "oldest blocker");
+  assert.ok(html.includes("最近动态"), "recent escalation section");
+  assert.doesNotMatch(html, /backdrop-filter|transparent/u);
+});
+
+test("R9.6 desktop agent army empty state has an intake CTA without fake plans", () => {
+  const html = agentArmyDashboardView(agentArmyVm({ plans: [], recent_escalations: [], empty_state: "no_agent_armies" }), false);
+
+  assert.match(html, /data-spot-agent-dashboard-empty="no_agent_armies"/u);
+  assert.ok(html.includes("No Cuu squads are running yet."), "english empty copy");
+  assert.match(html, /data-open-capability="intake"/u);
+  assert.doesNotMatch(html, /data-open-agent-plan=/u);
+});
+
+test("R9.6 desktop agent army detail morph keeps decisions in the inbox", () => {
+  const plan = agentArmyVm().plans[0];
+  assert.ok(plan);
+  const html = agentArmyPlanDetailHtml(plan, false);
+
+  assert.match(html, /data-spot-agent-plan-detail="93000000-0000-4000-8000-000000000901"/u);
+  assert.match(html, /data-back-to-agent-armies/u);
+  assert.match(html, /data-open-workitem="93000000-0000-4000-8000-000000000101"/u);
+  assert.match(html, /data-open-capability="approvals"/u);
+  assert.ok(html.includes("Needs you"), "decision status label");
+  assert.ok(html.includes("Judge pass 75%"), "judge metric");
+  assert.ok(!html.includes("Approve"), "detail view does not embed decision actions");
 });

@@ -75,6 +75,7 @@ test("capabilityForShellRoute maps tray/deep-link/pet routes to capabilities", (
   assert.equal(capabilityForShellRoute("/drive?project_id=x"), "drive");
   assert.equal(capabilityForShellRoute("/p/project-7"), "projects");
   assert.equal(capabilityForShellRoute("/dashboard/cost"), "cost");
+  assert.equal(capabilityForShellRoute("/dashboard/agents"), "agents");
   // 回主页或无匹配 → undefined（控制器据此回 launcher）。
   assert.equal(capabilityForShellRoute("/"), undefined);
   assert.equal(capabilityForShellRoute("/unknown-thing"), undefined);

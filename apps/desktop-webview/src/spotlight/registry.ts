@@ -5,6 +5,7 @@
 import type { CommandId } from "../command-palette.js";
 import { createAttentionView } from "./views/attention.js";
 import {
+  createAgentsView,
   createCalendarView,
   createCostView,
   createKnowledgeView,
@@ -24,6 +25,7 @@ const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   approvals: createAttentionView,
   intake: createIntakeView,
   projects: createProjectsView,
+  agents: createAgentsView,
   cost: createCostView,
   team: createCalendarView,
   knowledge: createKnowledgeView,

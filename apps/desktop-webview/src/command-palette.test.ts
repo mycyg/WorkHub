@@ -13,6 +13,9 @@ test("registry covers every backend capability surface", () => {
   assert.deepEqual(
     ids,
     [
+      // R9.6 adds the live-only Agent Army command-center ability; the old list
+      // was complete only before the desktop command center existed.
+      "agents",
       "approvals",
       "cost",
       "drive",
@@ -45,11 +48,15 @@ test("fuzzy router: one phrase reaches the right capability (zh + en + alias)", 
   assert.equal(matchCommands("网盘", "zh-CN")[0]?.command.id, "drive");
   assert.equal(matchCommands("审批", "zh-CN")[0]?.command.id, "approvals");
   assert.equal(matchCommands("成本", "zh-CN")[0]?.command.id, "cost");
+  assert.equal(matchCommands("军团", "zh-CN")[0]?.command.id, "agents");
+  assert.equal(matchCommands("小队", "zh-CN")[0]?.command.id, "agents");
   // 英文/别名
   assert.equal(matchCommands("approve", "en")[0]?.command.id, "approvals");
   assert.equal(matchCommands("diff", "en")[0]?.command.id, "proposals");
   assert.equal(matchCommands("pr", "en")[0]?.command.id, "proposals");
   assert.equal(matchCommands("files", "en")[0]?.command.id, "drive");
+  assert.equal(matchCommands("agents", "en")[0]?.command.id, "agents");
+  assert.equal(matchCommands("army", "en")[0]?.command.id, "agents");
 });
 
 test("ranking: exact/prefix beats substring beats subsequence", () => {

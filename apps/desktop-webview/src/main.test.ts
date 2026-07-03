@@ -3,7 +3,15 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { WorkHubApiClient } from "@workhub/api-client";
-import { eventTypes, type AgentRunLiveVM, type GoldPathSurfaceVM, type ProposalConflict, type SessionVM, type WorkHubEvent } from "@workhub/contracts";
+import {
+  eventTypes,
+  type AgentArmyDashboardVM,
+  type AgentRunLiveVM,
+  type GoldPathSurfaceVM,
+  type ProposalConflict,
+  type SessionVM,
+  type WorkHubEvent
+} from "@workhub/contracts";
 
 import {
   loadDesktopAgentRunCuuCard,
@@ -15,6 +23,7 @@ import {
   desktopWebviewSurface,
   renderDesktopAgentRunReplay,
   renderDesktopAgentRunLive,
+  loadDesktopAgentArmyDashboard,
   loadDesktopIntakeCuuCard,
   loadDesktopProposalConflictCuuCards,
   loadDesktopProposalCuuCard,
@@ -101,7 +110,46 @@ const liveRun = {
   replay_href: "/api/agent-runs/40000000-0000-4000-8000-000000000025/replay"
 } satisfies AgentRunLiveVM;
 
-function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSession): WorkHubApiClient {
+type DesktopTestSurface = GoldPathSurfaceVM & {
+  page_vms: GoldPathSurfaceVM["page_vms"] & { agents?: AgentArmyDashboardVM };
+};
+
+const agentArmyDashboard: AgentArmyDashboardVM = {
+  generated_at: "2026-07-03T00:00:00.000Z",
+  kpis: {
+    active_team_count: 1,
+    waiting_decision_count: 1,
+    today_cost_cny: "0.80",
+    autonomy_rate_pct: 67
+  },
+  plans: [{
+    plan_id: "93000000-0000-4000-8000-000000000901",
+    work_item_id: "93000000-0000-4000-8000-000000000101",
+    work_item_code: "WH-901",
+    work_item_title: "竞品价格调研",
+    work_item_href: "/workitems/93000000-0000-4000-8000-000000000101",
+    status: "dispatching",
+    progress: { completed: 2, total: 4, label: "2/4" },
+    roles: [{ role: "research", count: 2 }],
+    statuses: [{ status: "dispatched", count: 2 }],
+    cost: { used_cny: "0.80", budget_cny: "2.00", burn_pct: 40 },
+    judge: { passed: 3, total: 4, pass_rate_pct: 75 },
+    updated_at: "2026-07-03T00:05:00.000Z"
+  }],
+  recent_escalations: [],
+  page_info: {
+    plan_limit: 20,
+    returned: 1,
+    plans_capped: false,
+    items_capped: false,
+    runs_capped: false,
+    escalation_limit: 5,
+    escalation_returned: 0,
+    escalations_capped: false
+  }
+};
+
+function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSession): WorkHubApiClient {
   return {
     async health() {
       throw new Error("not needed");
@@ -311,7 +359,7 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
         throw new Error("not needed");
       },
       async agents() {
-        throw new Error("not needed");
+        return surface.page_vms.agents ?? agentArmyDashboard;
       },
       async skills() {
         throw new Error("not needed");
@@ -590,7 +638,8 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
         budget: [],
         notices: [],
         top_exhaustion_risks: []
-      }
+      },
+      agents: agentArmyDashboard
     },
     events: [],
     cuu_states: ["carrying_document"]
@@ -598,6 +647,8 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
 
   assert.equal(desktopWebviewSurface.pages.includes("/api/pages/gold-path"), true);
   assert.equal(desktopWebviewSurface.pages.includes("/api/pages/drive"), true);
+  assert.equal(desktopWebviewSurface.pages.includes("/api/pages/agents"), true);
+  assert.equal(desktopWebviewSurface.pages.includes("/dashboard/agents"), true);
   assert.equal(desktopWebviewSurface.pages.includes("/api/drive/workitems/:workItemId/proposal-draft"), true);
   assert.equal(desktopWebviewSurface.pages.includes("/settings"), true);
   assert.equal(desktopWebviewSurface.cuuCardAdapter, "@workhub/cuu");
@@ -614,6 +665,7 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   assert.equal((await loadDesktopAgentRunReplay(fakeClient(surface), "run")).run.handoff_md, "Cuu 完成了草稿生成。");
   assert.equal((await renderDesktopAgentRunReplay(fakeClient(surface), "run")).html.includes("查看 AI 怎么做的"), true);
   assert.equal((await renderDesktopAgentRunReplay(fakeClient(surface), "run", "en-US")).html.includes("See how AI did it"), true);
+  assert.equal((await loadDesktopAgentArmyDashboard(fakeClient(surface), "en-US")).plans[0]?.work_item_title, "竞品价格调研");
   assert.equal((await loadDesktopWorkItemCuuCard(fakeClient(surface), "work")).state, "carrying_document");
   assert.equal((await loadDesktopProposalCuuCard(fakeClient(surface), "proposal")).state, "carrying_document");
 
