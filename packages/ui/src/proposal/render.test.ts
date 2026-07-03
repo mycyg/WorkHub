@@ -39,6 +39,15 @@ test("proposal renderer replaces model self-narration titles and shows the summa
   assert.equal(rendered.html.includes("让我做一个人话总结"), false);
 });
 
+test("R9.7 proposal renderer hides task-plan internals from persisted summaries", () => {
+  const vm = structuredClone(createP05GoldPathFixture().proposalDetail);
+  vm.manifest.summary_md = "先生成任务计划，等待人工审阅后再派发。WorkHub Meta-Planner judge confidence high.";
+
+  const rendered = renderProposalDetail(vm, "web");
+
+  assert.doesNotMatch(rendered.html, /派发|dispatch|Meta-Planner|judge|confidence/iu);
+});
+
 test("proposal renderer stays non-kanban and non-git while exposing deliverable kinds", () => {
   const vm = createP05GoldPathFixture().proposalDetail;
   const rendered = renderProposalDetail(vm, "desktop");

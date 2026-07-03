@@ -123,6 +123,22 @@ function stripMarkdown(value: string) {
   return value.replace(/[#*_`>-]/gu, " ").replace(/\s+/gu, " ").trim();
 }
 
+function normalizePublicProposalCopy(value: string, locale: WorkHubLocale) {
+  return value
+    .replaceAll("进入派发", "开始执行")
+    .replaceAll("自动派发", "自动开始执行")
+    .replaceAll("可派发", "可执行")
+    .replaceAll("派发", "开始执行")
+    .replace(/\bdispatch(?:ed|ing)?\b/gi, locale === "en-US" ? "start work" : "开始执行")
+    .replace(/\bMeta[-\s]?Planner\b/gi, "WorkHub AI")
+    .replace(/\bjudge\b/gi, locale === "en-US" ? "AI review" : "AI 复核")
+    .replace(/\bconfidence\b/gi, locale === "en-US" ? "assurance" : "把握程度");
+}
+
+export function publicProposalSummaryText(markdown: string, locale: WorkHubLocale, maxLength = 260) {
+  return stripMarkdown(normalizePublicProposalCopy(markdown, locale)).slice(0, maxLength);
+}
+
 function stripProposalOpenedPrefix(text: string) {
   return text.replace(/^(?:AI|Cuu)\s*已(?:生成|创建|准备好)?变更申请[：:\s]+/iu, "").trim();
 }
@@ -637,7 +653,7 @@ export function renderProposalDetail(
       ? [vm.review_actions.merge]
       : [];
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
-  const summary = stripMarkdown(vm.manifest.summary_md).slice(0, 260);
+  const summary = publicProposalSummaryText(vm.manifest.summary_md, locale, 260);
   const displayTitle = publicProposalDisplayTitle(vm.title, locale);
   const main = `<section class="wh-proposal-main">
     <span class="wh-kicker">${escapeHtml(uiT(locale, "proposal.kicker"))}</span>

@@ -4,7 +4,7 @@
 // list→detail 全在盒子内联 morph。
 
 import type { AttentionItem, DeliverableChange, ProposalDetailVM } from "@workhub/contracts";
-import { publicProposalDisplayTitle, renderProposalConflictCards } from "@workhub/ui/proposal";
+import { publicProposalDisplayTitle, publicProposalSummaryText, renderProposalConflictCards } from "@workhub/ui/proposal";
 import {
   actionElementApplyPayload,
   actionElementMergePayload,
@@ -73,6 +73,7 @@ function stripMarkdownLine(value: string) {
 }
 
 function publicProposalSummary(markdown: string, zh: boolean) {
+  const locale = zh ? "zh-CN" : "en-US";
   const headingPattern = zh
     ? /^(?:变更摘要|审查提示|审查建议|总结)$/u
     : /^(?:change summary|review notes?|review hints?|summary)$/iu;
@@ -80,7 +81,7 @@ function publicProposalSummary(markdown: string, zh: boolean) {
     .split(/\r?\n/u)
     .map(stripMarkdownLine)
     .filter((line) => line && !headingPattern.test(line));
-  return lines.join(" ").replace(/\s+/gu, " ").trim().slice(0, 320) ||
+  return publicProposalSummaryText(lines.join(" ").replace(/\s+/gu, " ").trim(), locale, 320) ||
     (zh ? "先看总结和改动，再决定是否采纳。" : "Review the summary and changes before deciding.");
 }
 

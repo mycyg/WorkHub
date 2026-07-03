@@ -72,6 +72,17 @@ test("desktop proposal detail hides model self narration and shows a plain summa
   assert.match(html, /本次从 outputs\/ 生成 1 个交付物变更草案/u);
 });
 
+test("R9.7 desktop proposal detail hides task-plan internals from persisted summaries", () => {
+  const html = detailHtml(proposalVm({
+    manifest: {
+      ...proposalVm().manifest,
+      summary_md: "先生成任务计划，等待人工审阅后再派发。WorkHub Meta-Planner judge confidence high."
+    }
+  }), true);
+
+  assert.doesNotMatch(html, /派发|dispatch|Meta-Planner|judge|confidence/iu);
+});
+
 test("desktop proposal list title hides model self narration", () => {
   assert.equal(proposalListDisplayTitle("The file looks good and complete. Let me now provide the summary.", true), "交付物变更申请");
   assert.equal(proposalListDisplayTitle("完成了。让我做一个人话总结。", false), "Deliverable change request");
