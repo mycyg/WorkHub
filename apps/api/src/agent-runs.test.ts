@@ -3001,7 +3001,10 @@ test("R9.7 high-risk legal, finance, and identity tool calls are stopped by huma
   const cases = [
     { toolId: "legal_accept_terms", category: "legal" },
     { toolId: "finance_payment_release", category: "finance" },
-    { toolId: "identity_register_account", category: "identity" }
+    { toolId: "identity_register_account", category: "identity" },
+    { toolId: "acceptTerms", category: "legal" },
+    { toolId: "bankTransfer", category: "finance" },
+    { toolId: "passportKycSubmit", category: "identity" }
   ] as const;
 
   for (const [index, testCase] of cases.entries()) {

@@ -79,7 +79,12 @@ const highRiskToolTokens: Record<HumanReservedToolRiskCategory, readonly string[
 };
 
 function toolIdTokens(toolId: string) {
-  return toolId.toLowerCase().split(/[^a-z0-9]+/u).filter(Boolean);
+  return toolId
+    .replace(/([A-Z]+)([A-Z][a-z])/gu, "$1 $2")
+    .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/u)
+    .filter(Boolean);
 }
 
 export function classifyHumanReservedToolCall(input: Pick<HumanReservedToolCall, "toolId">): HumanReservedToolRiskCategory | null {
