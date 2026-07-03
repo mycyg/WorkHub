@@ -11,6 +11,7 @@ import type { AgentRunRow } from "./agent-runs.js";
 import {
   agentRuns,
   escalationEvents,
+  objectiveWorkItemLinks,
   objectives,
   taskPlanItems,
   taskPlans,
@@ -60,6 +61,13 @@ export type CreateDraftTaskPlanInput = {
   items: CreateTaskPlanItemInput[];
   now?: Date;
 };
+
+export class TaskPlanObjectiveScopeMismatch extends Error {
+  constructor() {
+    super("Task plan objective must be linked to the plan work item in the same workspace.");
+    this.name = "TaskPlanObjectiveScopeMismatch";
+  }
+}
 
 export type TaskPlanWithItems = {
   plan: TaskPlanRow;
@@ -159,6 +167,27 @@ export function createTaskPlanRepository(db: WorkHubDb) {
     async createDraftPlan(input: CreateDraftTaskPlanInput): Promise<void> {
       const now = input.now ?? new Date();
       await db.transaction(async (tx) => {
+        if (input.objectiveId) {
+          const [scope] = await tx
+            .select({ objectiveId: objectives.id })
+            .from(objectives)
+            .innerJoin(objectiveWorkItemLinks, eq(objectiveWorkItemLinks.objectiveId, objectives.id))
+            .innerJoin(workItems, eq(workItems.id, objectiveWorkItemLinks.workItemId))
+            .where(and(
+              eq(objectives.id, input.objectiveId),
+              eq(objectives.workspaceId, input.workspaceId),
+              eq(objectiveWorkItemLinks.objectiveId, input.objectiveId),
+              eq(objectiveWorkItemLinks.workItemId, input.workItemId),
+              eq(objectiveWorkItemLinks.workspaceId, input.workspaceId),
+              eq(workItems.id, input.workItemId),
+              eq(workItems.workspaceId, input.workspaceId),
+              isNull(workItems.deletedAt)
+            ))
+            .limit(1);
+          if (!scope) {
+            throw new TaskPlanObjectiveScopeMismatch();
+          }
+        }
         await tx.insert(taskPlans).values({
           id: input.id,
           workItemId: input.workItemId,

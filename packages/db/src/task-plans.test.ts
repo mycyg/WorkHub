@@ -5,6 +5,7 @@ import { createTaskPlanRepository } from "./repositories/task-plans.js";
 import {
   agentRuns,
   escalationEvents,
+  objectiveWorkItemLinks,
   objectives,
   taskPlanItems,
   taskPlans,
@@ -110,6 +111,47 @@ test("R9.1 task plan repository writes draft plans and items in one transaction"
       updatedAt: now
     }
   ]);
+});
+
+test("R9.7 task plan repository rejects objectives outside the plan work item scope", async () => {
+  const { db, queries, transactions } = createQueryRecorder([[]]);
+  const repository = createTaskPlanRepository(db);
+
+  await assert.rejects(
+    () => repository.createDraftPlan({
+      id: planId,
+      workItemId,
+      workspaceId,
+      objectiveId,
+      createdByUserId: userId,
+      items: [],
+      now
+    }),
+    { name: "TaskPlanObjectiveScopeMismatch" }
+  );
+
+  assert.equal(transactions[0]?.outcome, "rejected");
+  assert.equal(transactions[0]?.errorName, "TaskPlanObjectiveScopeMismatch");
+  assert.equal(queries.length, 1);
+  const [scopeQuery] = queries;
+  assert.equal(scopeQuery?.operation, "select");
+  assert.equal(scopeQuery?.fromTable, objectives);
+  assert.deepEqual(scopeQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", objectiveWorkItemLinks],
+    ["inner", workItems]
+  ]);
+  assert.equal(scopeQuery?.limit, 1);
+  assert.ok(queryReferences(scopeQuery?.where, objectives.id));
+  assert.ok(queryReferences(scopeQuery?.where, objectives.workspaceId));
+  assert.ok(queryReferences(scopeQuery?.where, objectiveWorkItemLinks.objectiveId));
+  assert.ok(queryReferences(scopeQuery?.where, objectiveWorkItemLinks.workItemId));
+  assert.ok(queryReferences(scopeQuery?.where, objectiveWorkItemLinks.workspaceId));
+  assert.ok(queryReferences(scopeQuery?.where, workItems.id));
+  assert.ok(queryReferences(scopeQuery?.where, workItems.workspaceId));
+  assert.ok(queryReferences(scopeQuery?.where, workItems.deletedAt));
+  assert.ok(queryParamValues(scopeQuery?.where).includes(objectiveId));
+  assert.ok(queryParamValues(scopeQuery?.where).includes(workItemId));
+  assert.ok(queryParamValues(scopeQuery?.where).includes(workspaceId));
 });
 
 test("R9.1 task plan repository reads through workspace scope with an honest item cap", async () => {
