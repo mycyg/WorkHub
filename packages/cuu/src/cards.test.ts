@@ -980,6 +980,8 @@ test("R9.7 plan_review attention cards render as plan proposal Cuu cards", () =>
   assert.equal(card.state, "asking_approval");
   assert.equal(card.title, "《短剧选题调研》的分工计划等你过目");
   assert.deepEqual(card.actions.map((action) => action.label), ["查看计划提议", "确认计划", "打回重拆"]);
+  assert.doesNotMatch(card.message, /派发|dispatch/iu);
+  assert.doesNotMatch(card.sections?.find((section) => section.id === "summary")?.lines.join("\n") ?? "", /派发|dispatch/iu);
   assert.equal(card.sections?.find((section) => section.id === "next_step")?.lines[0], "先确认计划；不满意就打回重拆。");
   assert.deepEqual(english.actions.map((action) => action.label), ["View plan proposal", "Approve plan", "Request replan"]);
 });

@@ -185,7 +185,11 @@ function normalizeProposalMergeVerb(text: string, options: CuuLocaleOptions = {}
 }
 
 function publicProposalSummary(text: string | undefined, options: CuuLocaleOptions = {}) {
-  const compact = truncate(stripProposalOpenedPrefix(text ?? ""), 180);
+  const compact = truncate(stripProposalOpenedPrefix(text ?? "")
+    .replaceAll("进入派发", "开始执行")
+    .replaceAll("自动派发", "自动开始执行")
+    .replaceAll("派发", "开始执行")
+    .replace(/\bdispatch(?:ed|ing)?\b/gi, options.locale === "en-US" ? "start work" : "开始执行"), 180);
   return !compact || isModelSelfNarrationTitle(compact)
     ? cuuT(options.locale, "proposal.summaryFallback")
     : normalizeProposalMergeVerb(compact, options);
