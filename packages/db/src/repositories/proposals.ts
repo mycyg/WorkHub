@@ -91,6 +91,7 @@ export type MergeProposalInput = {
   acceptIncomingTargetKeys?: string[];
   bulkAction?: ProposalMergeBulkActionInput;
   candidateSupplements?: MergeProposalCandidateSupplement[];
+  workItemStatusAfterMerge?: "merged" | "ai_working";
   at?: Date;
 };
 
@@ -2808,12 +2809,13 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             updatedAt: at
           })
           .where(eq(branches.id, proposal.branchId));
+        const workItemStatusAfterMerge = input.workItemStatusAfterMerge ?? "merged";
         await tx
           .update(workItems)
           .set({
-            status: "merged",
+            status: workItemStatusAfterMerge,
             mainBranchId: proposal.branchId,
-            acceptedAt: at,
+            ...(workItemStatusAfterMerge === "merged" ? { acceptedAt: at } : {}),
             version: sql`${workItems.version} + 1`,
             updatedAt: at
           })

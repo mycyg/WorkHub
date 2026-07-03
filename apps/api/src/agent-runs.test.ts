@@ -2454,6 +2454,8 @@ test("agent run settled hook fires for terminal task-plan runs and requires task
   assert.deepEqual(settledStatuses, ["succeeded"]);
   assert.deepEqual(settledTaskPlanIds, ["81000000-0000-4000-8000-000000000021"]);
   assert.deepEqual(settledTaskPlanItemIds, ["81000000-0000-4000-8000-000000000022"]);
+  const persistedSuccess = await successQueue.get(successRun.run_id);
+  assert.equal(persistedSuccess?.status, "succeeded", "settlement failure must not rewrite an already-succeeded run to failed");
 
   const failureQueue = createInMemoryAgentRunQueue({
     settings: runtimeSettings,
@@ -5391,6 +5393,7 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
   const auditLogs = new MemoryAuditLogs();
   const decisions = new MemoryAiDecisions();
   const milestoneNotifications: { newStatus: string }[] = [];
+  const settledRuns: { status: string; taskPlanItemId: string | undefined }[] = [];
   const notifications: AgentRunNotificationPublisher = {
     async notifyMilestone(context) {
       milestoneNotifications.push({ newStatus: context.newStatus });
@@ -5422,7 +5425,10 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
       projectOwnerUserId: projectOwnerId
     }),
     eventBus: false,
-    transitionWorkItemStatus: status.writer
+    transitionWorkItemStatus: status.writer,
+    runSettled: async (run) => {
+      settledRuns.push({ status: run.status, taskPlanItemId: run.task_plan_item_id });
+    }
   });
   const taskPlanId = "81000000-0000-4000-8000-000000000091";
   const taskPlanItemId = "81000000-0000-4000-8000-000000000092";
@@ -5460,6 +5466,7 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
   assert.equal(decisions.escalationRows[0]?.handoffJson["source"], "agent_run_recovery");
   assert.equal(decisions.escalationRows[0]?.handoffJson["task_plan_id"], taskPlanId);
   assert.equal(decisions.escalationRows[0]?.handoffJson["task_plan_item_id"], taskPlanItemId);
+  assert.deepEqual(settledRuns, [{ status: "failed", taskPlanItemId }], "dead-lettered task-plan children must settle their plan item");
   // 死信审计动作仍照常打。
   assert.equal(
     auditLogs.rows.some((row) => row.action === "agent_run.dead_lettered_stale_claim"),

@@ -281,6 +281,7 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
     id: ids([proposalId, branchId, reviewId, mergeSnapshotId]),
     onMerged: createTaskPlanMergeApprovalHandler({ taskPlans })
   });
+  const dispatchedPlans: Array<{ planId: string; workspaceId: string; orgId?: string; actorId?: string }> = [];
   const plannerInputs: unknown[] = [];
   const service = createTaskPlanWorkflowService({
     taskPlans,
@@ -336,7 +337,17 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   });
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api", createTaskPlanRoutes({ auth: authDeps(runtimeSettings), service, workItems }));
-  app.route("/api/proposals", createProposalRoutes({ auth: authDeps(runtimeSettings), proposals, workItems }));
+  app.route("/api/proposals", createProposalRoutes({
+    auth: authDeps(runtimeSettings),
+    proposals,
+    workItems,
+    taskPlanDispatcher: {
+      async dispatch(input: { planId: string; workspaceId: string; orgId?: string; actorId?: string }) {
+        dispatchedPlans.push(input);
+        return { planId: input.planId, enqueuedItemIds: ["95000000-0000-4000-8000-000000000601"], skippedItemIds: [], casMissItemIds: [], completed: false };
+      }
+    }
+  }));
   const headers = {
     cookie: await cookie(runtimeSettings),
     "content-type": "application/json"
@@ -390,6 +401,7 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   });
   assert.equal(merged.status, 200);
   assert.equal(taskPlans.rows.get(planId)?.status, "approved");
+  assert.deepEqual(dispatchedPlans, [{ planId, workspaceId, orgId: "00000000-0000-4000-8000-000000000001", actorId: userId }]);
   assert.notEqual(workItems.status, "cancelled");
 });
 

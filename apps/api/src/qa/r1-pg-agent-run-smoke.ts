@@ -339,11 +339,17 @@ async function main() {
       notifications: false,
       eventBus: false
     });
+    const taskPlanDispatcher = createTaskDispatcher({
+      repository: taskPlanRepository,
+      queue,
+      escalationSink: createDbTaskDispatchEscalationSink(aiDecisionRepository),
+      completionSink: false
+    });
     const app = withErrors(new Hono<AuthEnv>());
     app.route("/api", createSessionRoutes({ auth, workItems: workItemService }));
     app.route("/api", createWorkItemRoutes({ auth, workItems: workItemService }));
     app.route("/api/escalations", createEscalationRoutes({ auth, service: escalationService }));
-    app.route("/api/proposals", createProposalRoutes({ auth, proposals: proposalService }));
+    app.route("/api/proposals", createProposalRoutes({ auth, proposals: proposalService, taskPlanDispatcher }));
     app.route("/api", createWorkItemProposalRoutes({ auth, proposals: proposalService }));
     app.route("/api", createTaskPlanRoutes({ auth, service: taskPlanService, workItems: workItemService }));
     app.route("/api/knowledge", createKnowledgeRoutes({ auth, workItems: workItemService }));
@@ -472,8 +478,10 @@ async function main() {
       rows.filter((row) => row.id === taskPlanCreateBody.data.plan_id)
     );
     const taskPlanRow = taskPlanRows[0];
-    if (taskPlanRow?.status !== "approved") {
-      throw new Error(`Expected task plan approved after merge, got ${taskPlanRow?.status ?? "missing"}`);
+    // The old assertion expected `approved` here. That was wrong once approval became product-wired to dispatch:
+    // the merge route now starts the dispatcher immediately, so the observable plan state is `dispatching`.
+    if (taskPlanRow?.status !== "dispatching") {
+      throw new Error(`Expected task plan dispatching after merge, got ${taskPlanRow?.status ?? "missing"}`);
     }
     const taskPlanItemRows = await db.select().from(taskPlanItems).then((rows) =>
       rows.filter((row) => row.planId === taskPlanCreateBody.data.plan_id)
@@ -489,26 +497,19 @@ async function main() {
       data: { task_plan?: { status: string; items: unknown[]; items_capped: boolean } };
     };
     const taskPlanPagePlan = taskPlanWorkItemPageBody.data.task_plan;
-    if (!taskPlanPagePlan || taskPlanPagePlan.status !== "approved") {
-      throw new Error(`Expected work item page task_plan approved, got ${taskPlanPagePlan?.status ?? "missing"}`);
+    // Same lifecycle as above: approved is an intermediate write, but the route-visible product state is dispatching.
+    if (!taskPlanPagePlan || taskPlanPagePlan.status !== "dispatching") {
+      throw new Error(`Expected work item page task_plan dispatching, got ${taskPlanPagePlan?.status ?? "missing"}`);
     }
     if (taskPlanPagePlan.items.length !== 3 || taskPlanPagePlan.items_capped) {
       throw new Error(`Expected work item page task_plan to expose 3 uncapped items, got ${taskPlanPagePlan.items.length}`);
     }
-    const taskPlanDispatcher = createTaskDispatcher({
-      repository: taskPlanRepository,
-      queue,
-      escalationSink: createDbTaskDispatchEscalationSink(aiDecisionRepository),
-      completionSink: false
-    });
     const orderedTaskPlanItems = [...taskPlanItemRows].sort((a, b) => a.seq - b.seq);
-    const initialDispatch = await taskPlanDispatcher.dispatch({
-      planId: taskPlanCreateBody.data.plan_id,
-      workspaceId: settings.auth.defaultWorkspaceId,
-      actorId: seedUser.id
-    });
-    if (initialDispatch.enqueuedItemIds.length !== 1 || initialDispatch.enqueuedItemIds[0] !== orderedTaskPlanItems[0]?.id) {
-      throw new Error(`Expected task dispatcher to enqueue the first ready child only, got ${JSON.stringify(initialDispatch.enqueuedItemIds)}`);
+    const autoDispatchedRuns = await db.select().from(agentRuns).then((rows) =>
+      rows.filter((row) => row.taskPlanId === taskPlanCreateBody.data.plan_id)
+    );
+    if (autoDispatchedRuns.length !== 1 || autoDispatchedRuns[0]?.taskPlanItemId !== orderedTaskPlanItems[0]?.id) {
+      throw new Error(`Expected merge route to auto-dispatch the first ready child only, got ${JSON.stringify(autoDispatchedRuns.map((row) => row.taskPlanItemId))}`);
     }
     async function runTaskPlanChild(itemId: string, expectedStatus: "succeeded" | "failed") {
       const childRuns = await db.select().from(agentRuns).then((rows) =>

@@ -1507,7 +1507,10 @@ export function createInMemoryAgentRunQueue(options: {
     } catch (error) {
       const failureReason = error instanceof Error ? error.message : String(error);
       const settlementFailed = isSettledHookError(error);
-      const drifted = settlementFailed ? null : driftedRun(current.run_id);
+      if (settlementFailed) {
+        throw error;
+      }
+      const drifted = driftedRun(current.run_id);
       if (drifted) {
         workerDrifted = true;
         return drifted;
@@ -1980,6 +1983,7 @@ export function createInMemoryAgentRunQueue(options: {
         if (run.status === "failed") {
           await openDeadLetterEscalation(run, recoveredAt);
           await notifyRunMilestone(run, "AI 多次崩溃，已转人工接手。");
+          await notifyRunSettled(run);
         }
       }
       // R2 原子预算：与认领恢复同节奏扫一遍过期预留，释放崩溃/失租 run 占住的额度。

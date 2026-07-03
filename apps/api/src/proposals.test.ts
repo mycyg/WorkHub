@@ -1245,9 +1245,12 @@ class MemoryProposalRepository implements ProposalRepository {
     }
     const workItem = this.workItemRows.get(stored.proposal.workItemId);
     if (workItem) {
-      workItem.status = "merged";
+      const workItemStatusAfterMerge = input.workItemStatusAfterMerge ?? "merged";
+      workItem.status = workItemStatusAfterMerge;
       workItem.mainBranchId = stored.proposal.branchId;
-      workItem.acceptedAt = at;
+      if (workItemStatusAfterMerge === "merged") {
+        workItem.acceptedAt = at;
+      }
       workItem.version += 1;
     }
     return stored;
@@ -1393,6 +1396,42 @@ test("reviewable proposal summaries mark task-plan manifests as plan_review", as
   });
 
   assert.equal(reviewable.find((item) => item.id === proposal.id)?.review_kind, "plan_review");
+});
+
+test("R9.7 task-plan proposal merge keeps the parent work item active for child dispatch", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = taskPlanManifest();
+  repository.workItemRows.set(itemManifest.work_item_id, {
+    status: "in_review",
+    mainBranchId: null,
+    acceptedAt: null,
+    version: 0,
+    title: "Agent army task",
+    summaryMd: null,
+    priority: "normal",
+    dueAt: null
+  });
+  const proposal = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub Meta-Planner" },
+    title: "计划提议"
+  });
+  await service.review({
+    proposalId: proposal.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    decision: "approve"
+  });
+
+  await service.merge({
+    proposalId: proposal.id,
+    actor: { actor_kind: "human", actor_user_id: userId }
+  });
+
+  const workItem = repository.workItemRows.get(itemManifest.work_item_id);
+  assert.equal(workItem?.status, "ai_working");
+  assert.equal(workItem?.acceptedAt, null, "approving a plan must not mark deliverables accepted before child runs execute");
 });
 
 test("proposal create rejects branch ids that belong to a different work item", async () => {

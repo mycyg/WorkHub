@@ -63,7 +63,11 @@ import {
 } from "./text-hunk-materializer.js";
 import { correctionFromReview, getDefaultUserMemoryRepository } from "./user-memory.js";
 import { parseOutputContract } from "../pages/output-contract.js";
-import { getDefaultTaskPlanMergeApprovalHandler, type TaskPlanMergeApprovalHandler } from "./task-plan-approval.js";
+import {
+  getDefaultTaskPlanMergeApprovalHandler,
+  taskPlanApprovalTarget,
+  type TaskPlanMergeApprovalHandler
+} from "./task-plan-approval.js";
 
 export type ProposalActor = {
   actor_kind: "human" | "ai" | "system";
@@ -2056,6 +2060,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
       if (proposal.status !== "reviewed") {
         throw new ProposalServiceError(409, "proposal_not_reviewed", "这份变更申请需要先确认，再采纳到正式版。");
       }
+      const taskPlanTarget = taskPlanApprovalTarget(proposal);
 
       let rows: StoredProposalRows | null;
       const mergedAt = now();
@@ -2117,6 +2122,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
             ? { bulkAction: input.conflictResolution.bulkAction }
             : {}),
           ...(candidateSupplements.length > 0 ? { candidateSupplements } : {}),
+          ...(taskPlanTarget ? { workItemStatusAfterMerge: "ai_working" as const } : {}),
           at: mergedAt
         });
       } catch (error) {

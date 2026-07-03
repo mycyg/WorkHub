@@ -41,14 +41,25 @@ import {
   getDefaultWorkItemService,
   type WorkItemService
 } from "../services/work-items.js";
+import { taskPlanApprovalTarget } from "../services/task-plan-approval.js";
 import { parseOutputContract } from "../pages/output-contract.js";
 import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
+
+type TaskPlanRouteDispatcher = {
+  dispatch: (input: {
+    planId: string;
+    workspaceId: string;
+    orgId?: string;
+    actorId?: string;
+  }) => Promise<unknown>;
+};
 
 export type ProposalRoutesDependencies = {
   auth?: AuthDependencySource;
   proposals?: ProposalService;
   workItems?: Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts"> | false;
+  taskPlanDispatcher?: TaskPlanRouteDispatcher | false;
   // findings[#168/H12]：合并/评审/打回事件原本只塞进 HTTP 响应、从不 publish 到总线，其它客户端的 SSE 实时
   // 刷新因此失效。注入 PushBus 后在各操作成功后 best-effort 发布。
   bus?: Pick<PushBus, "publish">;
@@ -336,12 +347,23 @@ function handleWorkItemAccessError(error: unknown): never {
   throw error;
 }
 
+async function dispatchWithDefaultTaskDispatcher(input: Parameters<TaskPlanRouteDispatcher["dispatch"]>[0]) {
+  const [{ getDefaultAgentRunQueue }, { getDefaultTaskDispatcher }] = await Promise.all([
+    import("../workers/agent-runner.js"),
+    import("../services/task-dispatcher.js")
+  ]);
+  return getDefaultTaskDispatcher(getDefaultAgentRunQueue()).dispatch(input);
+}
+
 export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const authMiddleware = createCurrentUserMiddleware(authSource);
   const proposals = deps.proposals ?? getDefaultProposalService();
   const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
+  const taskPlanDispatcher = deps.taskPlanDispatcher === false
+    ? undefined
+    : deps.taskPlanDispatcher ?? { dispatch: dispatchWithDefaultTaskDispatcher };
   const bus = deps.bus ?? getDefaultPushBus();
   const eventLogger = deps.logger ?? console;
 
@@ -543,6 +565,15 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
         }, 409);
       }
       handleProposalServiceError(error);
+    }
+    const taskPlanTarget = taskPlanApprovalTarget(proposal);
+    if (taskPlanTarget && taskPlanDispatcher) {
+      await taskPlanDispatcher.dispatch({
+        planId: taskPlanTarget.planId,
+        workspaceId: taskPlanTarget.workspaceId,
+        orgId: c.var.actor.orgId,
+        actorId: c.var.actor.userId ?? c.var.actor.id
+      });
     }
     const mergeResult = mergeResultFor({
       proposal,

@@ -21,7 +21,7 @@ export class TaskPlanApprovalError extends Error {
   }
 }
 
-function taskPlanTarget(proposal: StoredProposal) {
+export function taskPlanApprovalTarget(proposal: StoredProposal) {
   const change = proposal.diff_manifest.changes.find((item) =>
     item.target_kind === "structured_record"
     && item.target_ref.entity_type === "task_plan"
@@ -57,7 +57,7 @@ export function createTaskPlanMergeApprovalHandler(input: {
 }): TaskPlanMergeApprovalHandler {
   const now = input.now ?? (() => new Date());
   return async (proposal) => {
-    const target = taskPlanTarget(proposal);
+    const target = taskPlanApprovalTarget(proposal);
     if (!target) {
       return null;
     }
