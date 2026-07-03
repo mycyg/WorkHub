@@ -52,7 +52,7 @@ function row(partial: Partial<EscalationServiceRow> = {}): EscalationServiceRow 
 class MemoryEscalationRepository implements EscalationRepository {
   public resolveCalls: Array<{ escalationId: string; targetStatus: string; taskPlanAction?: string }> = [];
   public reopenCalls: Array<{ escalationId: string; targetStatus: string }> = [];
-  public delegateCalls: Array<{ escalationId: string; toUserId: string }> = [];
+  public delegateCalls: Array<{ escalationId: string; toUserId: string; workspaceId?: string }> = [];
 
   constructor(
     private readonly options: {
@@ -86,8 +86,12 @@ class MemoryEscalationRepository implements EscalationRepository {
     return row({ resolvedAt: null, workItemStatus: input.targetStatus as EscalationServiceRow["workItemStatus"] });
   }
 
-  async delegateEscalation(input: { escalationId: string; toUserId: string }) {
-    this.delegateCalls.push({ escalationId: input.escalationId, toUserId: input.toUserId });
+  async delegateEscalation(input: { escalationId: string; toUserId: string; workspaceId?: string }) {
+    this.delegateCalls.push({
+      escalationId: input.escalationId,
+      toUserId: input.toUserId,
+      ...(input.workspaceId ? { workspaceId: input.workspaceId } : {})
+    });
     return row({ suggestedLeadUserId: "12000000-0000-4000-8000-000000000012" });
   }
 }
@@ -300,4 +304,41 @@ test("R9.7 escalation delegation requires the target to be an active workspace m
 
   assert.deepEqual(membershipCalls, [{ userId: delegateTargetUserId, workspaceId: actor().workspaceId }]);
   assert.deepEqual(repository.delegateCalls, []);
+});
+
+test("R9.7 escalation delegation passes actor workspace to the repository mutation", async () => {
+  const repository = new MemoryEscalationRepository();
+  const service = createEscalationService({
+    repository,
+    users: {
+      async findActiveById(id: string) {
+        return id === delegateTargetUserId ? ({ id, deletedAt: null } as UserAuthRow) : null;
+      }
+    },
+    memberships: {
+      async findActiveForUserWorkspace(userId: string, workspaceId: string) {
+        return userId === delegateTargetUserId && workspaceId === actor().workspaceId
+          ? {
+              id: "93000000-0000-4000-8000-000000000301",
+              userId,
+              workspaceId,
+              role: "member",
+              defaultWorkspace: false,
+              deletedAt: null,
+              createdAt: now,
+              updatedAt: now
+            }
+          : null;
+      }
+    },
+    now: () => now
+  });
+
+  await service.delegate(escalationId, actor(), { to_user_id: delegateTargetUserId });
+
+  assert.deepEqual(repository.delegateCalls, [{
+    escalationId,
+    toUserId: delegateTargetUserId,
+    workspaceId: actor().workspaceId
+  }]);
 });

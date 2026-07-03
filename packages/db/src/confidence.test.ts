@@ -11,6 +11,7 @@ const escalationId = "94000000-0000-4000-8000-000000000203";
 const taskPlanId = "94000000-0000-4000-8000-000000000204";
 const taskPlanItemId = "94000000-0000-4000-8000-000000000205";
 const agentRunId = "94000000-0000-4000-8000-000000000206";
+const delegateTargetUserId = "94000000-0000-4000-8000-000000000207";
 const now = new Date("2026-07-03T12:00:00.000Z");
 
 test("R9.7 unresolved escalation listing excludes legacy null-workspace rows", async () => {
@@ -79,6 +80,63 @@ test("R9.7 resolving a child retry resets the task-plan item before work-item re
   assert.ok(queryReferences(planUpdate?.where, taskPlans.id));
   assert.ok(queryReferences(planUpdate?.where, taskPlans.workspaceId));
   assert.equal(workItemUpdate?.targetTable, workItems);
+});
+
+test("R9.7 escalation resolution mutations are fenced by workspace", async () => {
+  const updatedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId: null,
+    handoffJson: {}
+  };
+  const { db, queries } = createQueryRecorder([
+    [updatedEscalation],
+    [{ id: workItemId }],
+    []
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  await repository.resolveEscalation({
+    escalationId,
+    targetStatus: "pm_mode",
+    workspaceId,
+    at: now
+  });
+
+  const [escalationUpdate, workItemUpdate] = queries;
+  assert.equal(escalationUpdate?.targetTable, escalationEvents);
+  assert.ok(queryReferences(escalationUpdate?.where, escalationEvents.id));
+  assert.ok(queryReferences(escalationUpdate?.where, escalationEvents.resolvedAt));
+  assert.ok(queryReferences(escalationUpdate?.where, workItems.workspaceId));
+  assert.ok(queryParamValues(escalationUpdate?.where).includes(workspaceId));
+  assert.equal(workItemUpdate?.targetTable, workItems);
+  assert.ok(queryReferences(workItemUpdate?.where, workItems.id));
+  assert.ok(queryReferences(workItemUpdate?.where, workItems.status));
+  assert.ok(queryReferences(workItemUpdate?.where, workItems.deletedAt));
+  assert.ok(queryReferences(workItemUpdate?.where, workItems.workspaceId));
+  assert.ok(queryParamValues(workItemUpdate?.where).includes(workspaceId));
+});
+
+test("R9.7 escalation delegation mutation is fenced by workspace", async () => {
+  const { db, queries } = createQueryRecorder([
+    [{ id: escalationId }],
+    []
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  await repository.delegateEscalation({
+    escalationId,
+    toUserId: delegateTargetUserId,
+    workspaceId,
+    at: now
+  });
+
+  const [escalationUpdate] = queries;
+  assert.equal(escalationUpdate?.targetTable, escalationEvents);
+  assert.ok(queryReferences(escalationUpdate?.where, escalationEvents.id));
+  assert.ok(queryReferences(escalationUpdate?.where, escalationEvents.resolvedAt));
+  assert.ok(queryReferences(escalationUpdate?.where, workItems.workspaceId));
+  assert.ok(queryParamValues(escalationUpdate?.where).includes(workspaceId));
 });
 
 test("R9.7 child retry resolution fails closed when the target item is stale", async () => {

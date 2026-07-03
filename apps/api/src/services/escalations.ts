@@ -32,17 +32,17 @@ export type EscalationRepository = {
   resolveEscalation: (input: {
     escalationId: string;
     targetStatus: WorkItemStatus;
-    workspaceId?: string;
+    workspaceId: string;
     taskPlanAction?: ResolveEscalationRequest["action"];
     at: Date;
   }) => Promise<EscalationServiceRow | null>;
   reopenEscalation?: (input: {
     escalationId: string;
     targetStatus: WorkItemStatus;
-    workspaceId?: string;
+    workspaceId: string;
     at: Date;
   }) => Promise<EscalationServiceRow | null>;
-  delegateEscalation: (input: { escalationId: string; toUserId: string; at: Date }) => Promise<EscalationServiceRow | null>;
+  delegateEscalation: (input: { escalationId: string; toUserId: string; workspaceId: string; at: Date }) => Promise<EscalationServiceRow | null>;
 };
 
 export class EscalationServiceError extends Error {
@@ -354,6 +354,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       const row = await repository.delegateEscalation({
         escalationId: id,
         toUserId: payload.to_user_id,
+        workspaceId: actor.workspaceId,
         at: now()
       });
       if (!row) {

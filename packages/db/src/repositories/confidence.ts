@@ -61,7 +61,7 @@ export type EscalationServiceRow = {
 export type ResolveEscalationInput = {
   escalationId: string;
   targetStatus: WorkItemStatus;
-  workspaceId?: string;
+  workspaceId: string;
   taskPlanAction?: "retry" | "pm_mode" | "cancel";
   at: Date;
 };
@@ -69,6 +69,7 @@ export type ResolveEscalationInput = {
 export type DelegateEscalationInput = {
   escalationId: string;
   toUserId: string;
+  workspaceId: string;
   at: Date;
 };
 
@@ -84,7 +85,7 @@ export type AiDecisionRepository = {
   reopenEscalation?: (input: {
     escalationId: string;
     targetStatus: WorkItemStatus;
-    workspaceId?: string;
+    workspaceId: string;
     at: Date;
   }) => Promise<EscalationServiceRow | null>;
   delegateEscalation: (input: DelegateEscalationInput) => Promise<EscalationServiceRow | null>;
@@ -179,6 +180,16 @@ function scopedTaskPlanItemPredicate(input: {
       and ${eq(taskPlans.id, input.planId)}
       and ${eq(taskPlans.workItemId, input.workItemId)}
       ${input.workspaceId ? sql`and ${eq(taskPlans.workspaceId, input.workspaceId)}` : sql``}
+  )`;
+}
+
+function scopedEscalationEventPredicate(input: { workspaceId: string }) {
+  return sql`exists (
+    select 1
+    from ${workItems}
+    where ${eq(workItems.id, escalationEvents.workItemId)}
+      and ${eq(workItems.workspaceId, input.workspaceId)}
+      and ${isNull(workItems.deletedAt)}
   )`;
 }
 
@@ -296,7 +307,11 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
         const updatedEscalations = await tx
           .update(escalationEvents)
           .set({ resolvedAt: input.at })
-          .where(and(eq(escalationEvents.id, input.escalationId), isNull(escalationEvents.resolvedAt)))
+          .where(and(
+            eq(escalationEvents.id, input.escalationId),
+            isNull(escalationEvents.resolvedAt),
+            scopedEscalationEventPredicate(input)
+          ))
           .returning({
             id: escalationEvents.id,
             workItemId: escalationEvents.workItemId,
@@ -323,7 +338,7 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
                 scopedTaskPlanItemPredicate({
                   planId: taskTarget.planId,
                   workItemId: updatedEscalation.workItemId,
-                  ...(input.workspaceId ? { workspaceId: input.workspaceId } : {})
+                  workspaceId: input.workspaceId
                 }),
                 inArray(taskPlanItems.id, taskTarget.itemIds),
                 inArray(taskPlanItems.status, ["failed", "skipped"])
@@ -339,7 +354,7 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
               .where(and(
                 eq(taskPlans.id, taskTarget.planId),
                 eq(taskPlans.workItemId, updatedEscalation.workItemId),
-                input.workspaceId ? eq(taskPlans.workspaceId, input.workspaceId) : undefined,
+                eq(taskPlans.workspaceId, input.workspaceId),
                 inArray(taskPlans.status, ["dispatching", "done"])
               ))
               .returning({ id: taskPlans.id });
@@ -356,7 +371,7 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
                 .where(and(
                   eq(agentRuns.id, updatedEscalation.agentRunId),
                   eq(agentRuns.workItemId, updatedEscalation.workItemId),
-                  input.workspaceId ? eq(agentRuns.workspaceId, input.workspaceId) : undefined,
+                  eq(agentRuns.workspaceId, input.workspaceId),
                   eq(agentRuns.taskPlanId, taskTarget.planId),
                   inArray(agentRuns.taskPlanItemId, taskTarget.itemIds),
                   inArray(agentRuns.status, ["queued", "running"])
@@ -374,7 +389,7 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
                 scopedTaskPlanItemPredicate({
                   planId: taskTarget.planId,
                   workItemId: updatedEscalation.workItemId,
-                  ...(input.workspaceId ? { workspaceId: input.workspaceId } : {})
+                  workspaceId: input.workspaceId
                 }),
                 inArray(taskPlanItems.id, taskTarget.itemIds),
                 inArray(taskPlanItems.status, ["pending", "dispatched", "failed", "skipped"])
@@ -392,6 +407,7 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
           })
           .where(and(
             eq(workItems.id, updatedEscalation.workItemId),
+            eq(workItems.workspaceId, input.workspaceId),
             inArray(workItems.status, predecessors),
             isNull(workItems.deletedAt)
           ))
@@ -403,7 +419,11 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
           .select(escalationServiceColumns)
           .from(escalationEvents)
           .innerJoin(workItems, eq(escalationEvents.workItemId, workItems.id))
-          .where(eq(escalationEvents.id, updatedEscalation.id))
+          .where(and(
+            eq(escalationEvents.id, updatedEscalation.id),
+            isNull(workItems.deletedAt),
+            eq(workItems.workspaceId, input.workspaceId)
+          ))
           .limit(1);
         const row = rows[0];
         return row ? toEscalationServiceRow(row) : null;
@@ -419,7 +439,11 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
         const reopenedEscalations = await tx
           .update(escalationEvents)
           .set({ resolvedAt: null })
-          .where(and(eq(escalationEvents.id, input.escalationId), isNotNull(escalationEvents.resolvedAt)))
+          .where(and(
+            eq(escalationEvents.id, input.escalationId),
+            isNotNull(escalationEvents.resolvedAt),
+            scopedEscalationEventPredicate(input)
+          ))
           .returning({ id: escalationEvents.id, workItemId: escalationEvents.workItemId });
         const reopenedEscalation = reopenedEscalations[0];
         if (!reopenedEscalation) {
@@ -434,7 +458,7 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
           })
           .where(and(
             eq(workItems.id, reopenedEscalation.workItemId),
-            input.workspaceId ? eq(workItems.workspaceId, input.workspaceId) : undefined,
+            eq(workItems.workspaceId, input.workspaceId),
             inArray(workItems.status, predecessors),
             isNull(workItems.deletedAt)
           ))
@@ -446,7 +470,11 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
           .select(escalationServiceColumns)
           .from(escalationEvents)
           .innerJoin(workItems, eq(escalationEvents.workItemId, workItems.id))
-          .where(eq(escalationEvents.id, reopenedEscalation.id))
+          .where(and(
+            eq(escalationEvents.id, reopenedEscalation.id),
+            isNull(workItems.deletedAt),
+            eq(workItems.workspaceId, input.workspaceId)
+          ))
           .limit(1);
         const row = rows[0];
         return row ? toEscalationServiceRow(row) : null;
@@ -457,7 +485,11 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
       const rows = await db
         .update(escalationEvents)
         .set({ suggestedLeadUserId: input.toUserId })
-        .where(and(eq(escalationEvents.id, input.escalationId), isNull(escalationEvents.resolvedAt)))
+        .where(and(
+          eq(escalationEvents.id, input.escalationId),
+          isNull(escalationEvents.resolvedAt),
+          scopedEscalationEventPredicate(input)
+        ))
         .returning({ id: escalationEvents.id });
       const updated = rows[0];
       if (!updated) {
