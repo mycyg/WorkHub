@@ -47,7 +47,8 @@ import {
   type AnyToolSpec,
   type SnapshotHook,
   type ToolExecutionContext,
-  type ToolResult
+  type ToolResult,
+  type ToolSideEffect
 } from "@workhub/tools";
 import {
   makeWorkHubEvent,
@@ -80,7 +81,12 @@ import {
   createAgentRunConfidenceRecorder,
   type AgentRunConfidenceRecorder
 } from "../services/agent-run-confidence.js";
-import { classifyHumanReservedToolCall, createHumanReservedGuard, type HumanReservedGuard } from "../services/human-reserved-guard.js";
+import {
+  classifyHumanReservedToolCall,
+  createHumanReservedGuard,
+  type HumanReservedGuard,
+  type HumanReservedToolRiskCategory
+} from "../services/human-reserved-guard.js";
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
 import {
   createAgentRunNotificationWorkItemResolver,
@@ -559,6 +565,28 @@ export function createInMemoryAgentRunQueue(options: {
       return true;
     }
     return spec.sideEffect === "none";
+  }
+
+  function isToolSideEffect(value: unknown): value is ToolSideEffect {
+    return value === "none" || value === "sandbox_file" || value === "business_write" || value === "external_effect";
+  }
+
+  function rememberVisibleToolSideEffects(tools: unknown[]) {
+    const sideEffects = new Map<string, ToolSideEffect>();
+    for (const tool of tools) {
+      if (!tool || typeof tool !== "object") {
+        continue;
+      }
+      const metadata = tool as Record<string, unknown>;
+      if (typeof metadata.name === "string" && isToolSideEffect(metadata.side_effect)) {
+        sideEffects.set(metadata.name, metadata.side_effect);
+      }
+    }
+    return sideEffects;
+  }
+
+  function sideEffectRiskCategory(sideEffect: ToolSideEffect | undefined): HumanReservedToolRiskCategory | null {
+    return sideEffect === "external_effect" ? "external" : null;
   }
 
   function defaultToolRegistryFor(role: TaskPlanItemRole | undefined, teamSkillContent?: Record<string, string>) {
@@ -1377,13 +1405,18 @@ export function createInMemoryAgentRunQueue(options: {
       // 默认工具集时把团队技能内容塞进 load_skill；自定义 tools 提供者保持原样不动。
       const teamSkillContent = resolvedTeamSkills?.contentByKey;
       const rawTools = options.tools?.(executionInput) ?? defaultToolRegistryFor(current.agent_role, teamSkillContent);
+      let visibleToolSideEffects = new Map<string, ToolSideEffect>();
       const tools: ReturnType<AgentRunToolsProvider> = {
-        toModelTools: (ctx) => rawTools.toModelTools(ctx),
+        toModelTools: async (ctx) => {
+          const modelTools = await rawTools.toModelTools(ctx);
+          visibleToolSideEffects = rememberVisibleToolSideEffects(modelTools);
+          return modelTools;
+        },
         execute: async (toolId, input, ctx) => {
           if (driftedRun(current.run_id)) {
             return errorToolResult("这次 AI 执行已经取消，已跳过后续工具执行。");
           }
-          const riskCategory = classifyHumanReservedToolCall({ toolId });
+          const riskCategory = classifyHumanReservedToolCall({ toolId }) ?? sideEffectRiskCategory(visibleToolSideEffects.get(toolId));
           if (riskCategory && humanReservedGuard) {
             const humanReserved = await humanReservedGuard({
               workItemId: current.work_item_id,

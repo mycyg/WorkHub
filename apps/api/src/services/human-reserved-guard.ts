@@ -26,7 +26,7 @@ export type HumanReservedGuardInput = {
   toolCall?: HumanReservedToolCall;
 };
 
-export type HumanReservedToolRiskCategory = "legal" | "finance" | "identity" | "publish";
+export type HumanReservedToolRiskCategory = "legal" | "finance" | "identity" | "publish" | "external";
 
 export type HumanReservedToolCall = {
   toolId: string;
@@ -76,7 +76,8 @@ const highRiskToolTokens: Record<HumanReservedToolRiskCategory, readonly string[
   legal: ["legal", "contract", "contracts", "terms", "tos", "signature", "sign"],
   finance: ["finance", "financial", "payment", "payments", "payout", "bank", "banking", "card", "wire", "payroll", "invoice"],
   identity: ["identity", "identities", "kyc", "passport", "idv", "credential", "credentials"],
-  publish: ["publish", "publishing", "published"]
+  publish: ["publish", "publishing", "published"],
+  external: []
 };
 
 const identityRegistrationActionTokens = ["create", "register", "registration", "signup", "open"] as const;
@@ -124,7 +125,7 @@ function hasExternalPublishingIntent(tokens: ReadonlySet<string>) {
 
 export function classifyHumanReservedToolCall(input: Pick<HumanReservedToolCall, "toolId">): HumanReservedToolRiskCategory | null {
   const tokens = new Set(toolIdTokens(input.toolId));
-  for (const category of ["legal", "finance", "identity", "publish"] as const) {
+  for (const category of ["legal", "finance", "identity", "publish", "external"] as const) {
     if (highRiskToolTokens[category].some((token) => tokens.has(token))) {
       return category;
     }
@@ -146,7 +147,8 @@ const toolRiskLabels: Record<HumanReservedToolRiskCategory, string> = {
   legal: "法务",
   finance: "财务",
   identity: "身份",
-  publish: "对外发布"
+  publish: "对外发布",
+  external: "外部系统"
 };
 
 function toolInputShape(input: unknown) {
@@ -184,7 +186,7 @@ function highRiskToolHandoff(row: WorkItemHumanReservedRow, toolCall: HumanReser
   return {
     done: [`已拦截${toolRiskLabels[category]}类高风险工具调用。`],
     todo: ["请负责人确认是否允许该动作，并由人执行或改写任务边界。"],
-    blockers: ["法务、财务、身份、对外发布类高风险动作不能由 AI 工人自动执行。"],
+    blockers: ["法务、财务、身份、对外发布、外部系统类高风险动作不能由 AI 工人自动执行。"],
     artifacts: [],
     source: "tool_call",
     risk_category: category,

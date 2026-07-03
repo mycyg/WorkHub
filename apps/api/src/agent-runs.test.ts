@@ -3159,7 +3159,11 @@ test("human-reserved guard audits and publishes escalation in the work item's wo
 
 test("R9.7 high-risk legal, finance, identity, and publishing tool calls are stopped by human-reserved guard", async () => {
   const runtimeSettings = settings();
-  const cases = [
+  const cases: readonly {
+    toolId: string;
+    category: "legal" | "finance" | "identity" | "publish" | "external";
+    sideEffect?: "business_write" | "external_effect";
+  }[] = [
     { toolId: "legal_accept_terms", category: "legal" },
     { toolId: "finance_payment_release", category: "finance" },
     { toolId: "identity_register_account", category: "identity" },
@@ -3174,8 +3178,9 @@ test("R9.7 high-risk legal, finance, identity, and publishing tool calls are sto
     { toolId: "sendNewsletter", category: "publish" },
     { toolId: "sendEmail", category: "publish" },
     { toolId: "sendCustomerEmail", category: "publish" },
-    { toolId: "postCompanyAnnouncement", category: "publish" }
-  ] as const;
+    { toolId: "postCompanyAnnouncement", category: "publish" },
+    { toolId: "crmNotifyCustomer", category: "external", sideEffect: "external_effect" }
+  ];
 
   for (const [index, testCase] of cases.entries()) {
     const caseWorkItemId = `50000000-0000-4000-8000-${String(120 + index).padStart(12, "0")}`;
@@ -3192,6 +3197,9 @@ test("R9.7 high-risk legal, finance, identity, and publishing tool calls are sto
     const auditLogs = new MemoryAuditLogs();
     const events: { topic: string; type: string; data: Record<string, unknown> }[] = [];
     let toolExecutions = 0;
+    // Keep vocabulary cases on business_write so the tool-id classifier remains exercised;
+    // external_effect has its own metadata fail-closed regression case in this table.
+    const sideEffect = testCase.sideEffect ?? "business_write";
     const client: AgentLoopClient = {
       model: "deepseek-v4-flash",
       messages: {
@@ -3223,7 +3231,7 @@ test("R9.7 high-risk legal, finance, identity, and publishing tool calls are sto
             name: testCase.toolId,
             description: "High-risk external action used only by this regression test.",
             input_schema: { type: "object" },
-            side_effect: "external_effect"
+            side_effect: sideEffect
           }
         ],
         async execute() {
