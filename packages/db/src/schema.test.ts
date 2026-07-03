@@ -118,6 +118,17 @@ test("R9.5 OKR tables expose non-blocking planning and progress fields", () => {
   assert.match(migration, /objectives_status_ck/u);
 });
 
+test("R9.5 task/objective cost scope migration is replay-safe", () => {
+  const migration = readFileSync(join(process.cwd(), "migrations", "0037_cost_task_objective_scope.sql"), "utf8");
+
+  assert.match(migration, /ALTER TABLE "agent_runs" ADD COLUMN IF NOT EXISTS "objective_id"/u);
+  assert.match(migration, /ALTER TABLE "usage_records" ADD COLUMN IF NOT EXISTS "task_plan_id"/u);
+  assert.match(migration, /ALTER TABLE "usage_records" ADD COLUMN IF NOT EXISTS "objective_id"/u);
+  assert.match(migration, /ALTER TABLE "cost_ledger_entries" ADD COLUMN IF NOT EXISTS "task_plan_id"/u);
+  assert.match(migration, /ALTER TABLE "cost_ledger_entries" ADD COLUMN IF NOT EXISTS "objective_id"/u);
+  assert.equal((migration.match(/CREATE INDEX IF NOT EXISTS/gu) ?? []).length, 5);
+});
+
 test("R9.3 agent memory tables expose L1 private context and append-only versions", () => {
   assert.equal(getTableName(agentMemory), "agent_memory");
   assert.equal(agentMemory.workspaceId.name, "workspace_id");

@@ -149,6 +149,14 @@ addGate(
 
 addGate(
   gates,
+  "workflow.migration-audit",
+  "CI runs the real migration audit instead of a placeholder",
+  includesAll(workflow, ["migration-audit:", "node-version: 22", "pnpm audit:migrations"]),
+  "verify.yml migration-audit job"
+);
+
+addGate(
+  gates,
   "workflow.r1-smoke",
   "CI keeps the R1 PostgreSQL smoke job wired",
   includesAll(workflow, ["r1-pg-smoke:", "postgres:16", "pnpm qa:r1-pg-smoke"]),

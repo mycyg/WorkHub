@@ -33,6 +33,26 @@ for (const expected of ['"work_items"', '"proposals"', '"agent_runs"', '"audit_l
   }
 }
 
+for (const migrationFile of migrationFiles) {
+  const ordinal = Number.parseInt(migrationFile.slice(0, 4), 10);
+  if (!Number.isFinite(ordinal) || ordinal < 36) {
+    continue;
+  }
+  const migrationText = readFileSync(join(migrationsDir, migrationFile), "utf8");
+  const statements = migrationText
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+  for (const statement of statements) {
+    if (/^ALTER\s+TABLE\b[\s\S]*\bADD\s+COLUMN\b/i.test(statement) && !/\bADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\b/i.test(statement)) {
+      throw new Error(`${migrationFile} has non-replay-safe ADD COLUMN; use ADD COLUMN IF NOT EXISTS`);
+    }
+    if (/^CREATE\s+(?:UNIQUE\s+)?INDEX\b/i.test(statement) && !/^CREATE\s+(?:UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS\b/i.test(statement)) {
+      throw new Error(`${migrationFile} has non-replay-safe CREATE INDEX; use CREATE INDEX IF NOT EXISTS`);
+    }
+  }
+}
+
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
     const absolute = join(dir, entry);
