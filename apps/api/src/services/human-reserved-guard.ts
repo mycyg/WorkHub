@@ -78,6 +78,9 @@ const highRiskToolTokens: Record<HumanReservedToolRiskCategory, readonly string[
   identity: ["identity", "identities", "kyc", "passport", "idv", "credential", "credentials"]
 };
 
+const identityRegistrationActionTokens = ["create", "register", "registration", "signup", "open"] as const;
+const identityRegistrationSubjectTokens = ["account", "accounts", "entity", "entities", "company", "companies"] as const;
+
 function toolIdTokens(toolId: string) {
   return toolId
     .replace(/([A-Z]+)([A-Z][a-z])/gu, "$1 $2")
@@ -87,12 +90,23 @@ function toolIdTokens(toolId: string) {
     .filter(Boolean);
 }
 
+function hasAnyToken(tokens: ReadonlySet<string>, candidates: readonly string[]) {
+  return candidates.some((token) => tokens.has(token));
+}
+
+function hasIdentityRegistrationIntent(tokens: ReadonlySet<string>) {
+  return hasAnyToken(tokens, identityRegistrationActionTokens) && hasAnyToken(tokens, identityRegistrationSubjectTokens);
+}
+
 export function classifyHumanReservedToolCall(input: Pick<HumanReservedToolCall, "toolId">): HumanReservedToolRiskCategory | null {
   const tokens = new Set(toolIdTokens(input.toolId));
   for (const category of ["legal", "finance", "identity"] as const) {
     if (highRiskToolTokens[category].some((token) => tokens.has(token))) {
       return category;
     }
+  }
+  if (hasIdentityRegistrationIntent(tokens)) {
+    return "identity";
   }
   return null;
 }
