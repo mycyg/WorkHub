@@ -179,6 +179,7 @@ test("R9.2 work item detail reads child runs for the latest task plan with a cap
     id: "93000000-0000-4000-8000-000000000911",
     parentRunId: null,
     workItemId,
+    workspaceId,
     taskPlanId: planId,
     taskPlanItemId: researchId,
     agentRole: "research",
@@ -194,6 +195,7 @@ test("R9.2 work item detail reads child runs for the latest task plan with a cap
     id: "93000000-0000-4000-8000-000000000912",
     parentRunId: null,
     workItemId,
+    workspaceId,
     taskPlanId: planId,
     taskPlanItemId: produceId,
     agentRole: "produce",
@@ -236,7 +238,9 @@ test("R9.2 work item detail reads child runs for the latest task plan with a cap
   const runQuery = queries.find((query) => query.fromTable === agentRuns && query.limit === 101);
   assert.ok(runQuery, "task plan run tree query should be capped and scoped to the latest plan");
   assert.ok(queryReferences(runQuery.where, agentRuns.workItemId));
+  assert.ok(queryReferences(runQuery.where, agentRuns.workspaceId));
   assert.ok(queryReferences(runQuery.where, agentRuns.taskPlanId));
   assert.ok(queryParamValues(runQuery.where).includes(workItemId));
+  assert.ok(queryParamValues(runQuery.where).includes(workspaceId));
   assert.ok(queryParamValues(runQuery.where).includes(planId));
 });

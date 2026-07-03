@@ -718,6 +718,7 @@ export const workItemAgentTeamItemVmSchema = z.object({
   waiting_for_seq: z.array(z.number().int().positive()).default([]),
   cost_estimate_cny: z.string().optional(),
   run_id: idSchema.optional(),
+  run_workspace_id: idSchema.optional(),
   parent_run_id: idSchema.optional(),
   run_status: agentRunStatusSchema.optional(),
   replay_href: z.string().min(1).optional(),

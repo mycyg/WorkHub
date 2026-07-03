@@ -568,6 +568,7 @@ test("R9.6 task plan repository reads dashboard plans with capped batched joins"
     id: firstRunId,
     parentRunId: null,
     workItemId,
+    workspaceId,
     taskPlanId: planId,
     taskPlanItemId: firstItemId,
     agentRole: "research",

@@ -619,6 +619,7 @@ test("R9.2 work item detail VM carries the approved task plan run tree for visib
           waiting_for_seq: [],
           cost_estimate_cny: "0.450000",
           run_id: "92000000-0000-4000-8000-000000000201",
+          run_workspace_id: "92000000-0000-4000-8000-000000000001",
           run_status: "succeeded",
           replay_href: "/agent-runs/92000000-0000-4000-8000-000000000201/replay",
           action: {
@@ -639,6 +640,7 @@ test("R9.2 work item detail VM carries the approved task plan run tree for visib
           waiting_for_seq: [],
           cost_estimate_cny: "0.800000",
           run_id: "92000000-0000-4000-8000-000000000202",
+          run_workspace_id: "92000000-0000-4000-8000-000000000001",
           run_status: "escalated",
           replay_href: "/agent-runs/92000000-0000-4000-8000-000000000202/replay",
           decision_href: "/attention",
@@ -656,6 +658,7 @@ test("R9.2 work item detail VM carries the approved task plan run tree for visib
   assert.equal(parsed.agent_team?.plan_id, "92000000-0000-4000-8000-000000000101");
   assert.equal(parsed.agent_team?.completed_count, 2);
   assert.equal(parsed.agent_team?.items[0]?.action?.kind, "view_output");
+  assert.equal(parsed.agent_team?.items[0]?.run_workspace_id, "92000000-0000-4000-8000-000000000001");
   assert.equal(parsed.agent_team?.items[1]?.status, "needs_human");
   assert.equal(parsed.agent_team?.items[1]?.decision_href, "/attention");
 });

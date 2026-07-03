@@ -26,6 +26,7 @@ export type TaskPlanRunRow = Pick<AgentRunRow,
   "id"
   | "parentRunId"
   | "workItemId"
+  | "workspaceId"
   | "taskPlanId"
   | "taskPlanItemId"
   | "agentRole"
@@ -330,6 +331,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
           id: agentRuns.id,
           parentRunId: agentRuns.parentRunId,
           workItemId: agentRuns.workItemId,
+          workspaceId: agentRuns.workspaceId,
           taskPlanId: agentRuns.taskPlanId,
           taskPlanItemId: agentRuns.taskPlanItemId,
           agentRole: agentRuns.agentRole,

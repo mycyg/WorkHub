@@ -1099,6 +1099,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
               id: agentRuns.id,
               parentRunId: agentRuns.parentRunId,
               workItemId: agentRuns.workItemId,
+              workspaceId: agentRuns.workspaceId,
               taskPlanId: agentRuns.taskPlanId,
               taskPlanItemId: agentRuns.taskPlanItemId,
               agentRole: agentRuns.agentRole,
@@ -1111,7 +1112,11 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
               finishedAt: agentRuns.finishedAt
             })
             .from(agentRuns)
-            .where(and(eq(agentRuns.workItemId, workItemId), eq(agentRuns.taskPlanId, latestTaskPlan.id)))
+            .where(and(
+              eq(agentRuns.workItemId, workItemId),
+              eq(agentRuns.workspaceId, latestTaskPlan.workspaceId),
+              eq(agentRuns.taskPlanId, latestTaskPlan.id)
+            ))
             .orderBy(asc(agentRuns.createdAt), asc(agentRuns.id))
             .limit(101)
         : [];

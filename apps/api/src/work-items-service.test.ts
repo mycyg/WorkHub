@@ -1483,6 +1483,7 @@ test("R9.2 work item detail exposes task-plan child run visibility and decision 
           id: "93000000-0000-4000-8000-000000000911",
           parentRunId: null,
           workItemId,
+          workspaceId: defaultSeedIds.workspaceId,
           taskPlanId: planId,
           taskPlanItemId: researchId,
           agentRole: "research",
@@ -1498,6 +1499,7 @@ test("R9.2 work item detail exposes task-plan child run visibility and decision 
           id: "93000000-0000-4000-8000-000000000912",
           parentRunId: null,
           workItemId,
+          workspaceId: defaultSeedIds.workspaceId,
           taskPlanId: planId,
           taskPlanItemId: reviewId,
           agentRole: "review",
@@ -1505,6 +1507,22 @@ test("R9.2 work item detail exposes task-plan child run visibility and decision 
           status: "escalated",
           costEstimate: "0.800000",
           outcomeReason: "needs_owner_decision",
+          createdAt: now,
+          updatedAt: now,
+          finishedAt: now
+        },
+        {
+          id: "93000000-0000-4000-8000-000000000913",
+          parentRunId: null,
+          workItemId,
+          workspaceId: "93000000-0000-4000-8000-000000000999",
+          taskPlanId: planId,
+          taskPlanItemId: reviewId,
+          agentRole: "review",
+          title: "外部工作区复核",
+          status: "succeeded",
+          costEstimate: "9.000000",
+          outcomeReason: null,
           createdAt: now,
           updatedAt: now,
           finishedAt: now
@@ -1523,6 +1541,7 @@ test("R9.2 work item detail exposes task-plan child run visibility and decision 
   assert.equal(vm.agent_team?.cost_used_cny, "1.250000");
   assert.equal(vm.agent_team?.cost_budget_cny, "3.000000");
   assert.equal(vm.agent_team?.items[0]?.status, "succeeded");
+  assert.equal(vm.agent_team?.items[0]?.run_workspace_id, defaultSeedIds.workspaceId);
   assert.equal(vm.agent_team?.items[0]?.action?.href, "/agent-runs/93000000-0000-4000-8000-000000000911/replay");
   assert.equal(vm.agent_team?.items[1]?.status, "needs_human");
   assert.equal(vm.agent_team?.items[1]?.decision_href, "/attention");

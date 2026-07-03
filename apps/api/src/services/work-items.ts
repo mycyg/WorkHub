@@ -1302,7 +1302,11 @@ function taskPlanAgentTeamToVm(
   if (!rows) {
     return undefined;
   }
-  const runs = rows.runs ?? [];
+  const runs = (rows.runs ?? []).filter((run) =>
+    run.workspaceId === rows.plan.workspaceId
+    && run.workItemId === rows.plan.workItemId
+    && run.taskPlanId === rows.plan.id
+  );
   const latestByItem = latestRunByTaskPlanItem(runs);
   const displaySeqByItemId = new Map(rows.items.map((item, index) => [item.id, index + 1]));
   const completedCount = rows.items.filter((item) => item.status === "succeeded").length;
@@ -1350,6 +1354,7 @@ function taskPlanAgentTeamToVm(
         ...(run?.costEstimate ? { cost_estimate_cny: run.costEstimate } : {}),
         ...(run ? {
           run_id: run.id,
+          run_workspace_id: run.workspaceId,
           ...(run.parentRunId ? { parent_run_id: run.parentRunId } : {}),
           run_status: run.status,
           replay_href: replayHref
