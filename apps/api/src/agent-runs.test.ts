@@ -2978,6 +2978,109 @@ test("agent run enqueue opens user_forbidden escalation for human-reserved worke
   assert.equal(decisions.escalationRows.length, 1);
 });
 
+test("R9.7 high-risk legal, finance, and identity tool calls are stopped by human-reserved guard", async () => {
+  const runtimeSettings = settings();
+  const cases = [
+    { toolId: "legal_accept_terms", category: "legal" },
+    { toolId: "finance_payment_release", category: "finance" },
+    { toolId: "identity_register_account", category: "identity" }
+  ] as const;
+
+  for (const [index, testCase] of cases.entries()) {
+    const caseWorkItemId = `50000000-0000-4000-8000-${String(120 + index).padStart(12, "0")}`;
+    const caseRunId = `40000000-0000-4000-8000-${String(120 + index).padStart(12, "0")}`;
+    const workItems = new MemoryWorkItems([
+      humanReservedWorkItemRow({
+        id: caseWorkItemId,
+        code: `WH-RISK-${index + 1}`,
+        humanReserved: false,
+        status: "ai_working"
+      })
+    ]);
+    const decisions = new MemoryAiDecisions();
+    const auditLogs = new MemoryAuditLogs();
+    const events: { topic: string; type: string; data: Record<string, unknown> }[] = [];
+    let toolExecutions = 0;
+    const client: AgentLoopClient = {
+      model: "deepseek-v4-flash",
+      messages: {
+        async create() {
+          return {
+            id: `msg-risk-${index}`,
+            stopReason: "tool_use",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            content: [
+              {
+                type: "tool_use",
+                id: `tool-risk-${index}`,
+                name: testCase.toolId,
+                input: { target: "external-system", amount_cny: 100 }
+              }
+            ]
+          };
+        }
+      }
+    };
+    const queue = createInMemoryAgentRunQueue({
+      settings: runtimeSettings,
+      now: () => now,
+      id: () => caseRunId,
+      client: () => client,
+      tools: () => ({
+        toModelTools: () => [
+          {
+            name: testCase.toolId,
+            description: "High-risk external action used only by this regression test.",
+            input_schema: { type: "object" },
+            side_effect: "external_effect"
+          }
+        ],
+        async execute() {
+          toolExecutions += 1;
+          return { ok: true, isError: false, content: "unsafe action executed" };
+        }
+      }),
+      humanReserved: createHumanReservedGuard({
+        workItems,
+        decisions,
+        auditLogs,
+        settings: runtimeSettings,
+        now: () => now,
+        bus: {
+          async publish(topic, type, data) {
+            events.push({ topic, type, data: data as Record<string, unknown> });
+          }
+        }
+      }),
+      confidence: false,
+      proposals: false,
+      notifications: false,
+      eventBus: false,
+      transitionWorkItemStatus: workItems.transitionWorkItemStatus.bind(workItems)
+    });
+
+    const queued = await queue.enqueue({ workItemId: caseWorkItemId, actorId: userId, title: "High-risk tool run" });
+    const executed = await queue.runNext();
+
+    assert.equal(queued.run_id, caseRunId);
+    assert.equal(toolExecutions, 0, `${testCase.toolId} must not execute before human review`);
+    assert.equal(executed?.status, "failed", `${testCase.toolId} must stop the run instead of letting the model continue`);
+    assert.equal(decisions.escalationRows.length, 1, `${testCase.toolId} must open a decision inbox escalation`);
+    assert.equal(decisions.escalationRows[0]?.workItemId, caseWorkItemId);
+    assert.equal(decisions.escalationRows[0]?.agentRunId, caseRunId);
+    assert.equal(decisions.escalationRows[0]?.trigger, "user_forbidden");
+    assert.equal(decisions.escalationRows[0]?.handoffJson["source"], "tool_call");
+    assert.equal(decisions.escalationRows[0]?.handoffJson["risk_category"], testCase.category);
+    assert.equal(decisions.escalationRows[0]?.handoffJson["tool_id"], testCase.toolId);
+    assert.equal(workItems.rows.get(caseWorkItemId)?.status, "escalated");
+    assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
+    assert.deepEqual(events.map((event) => [event.topic, event.type]), [
+      [`workitem:${caseWorkItemId}`, "escalation.opened"],
+      [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened"]
+    ]);
+  }
+});
+
 test("human-reserved guard returns the committed escalation when audit or publish fails", async () => {
   const runtimeSettings = settings();
 

@@ -19,18 +19,30 @@ import type { PushBus } from "../broker/types.js";
 export type HumanReservedGuardInput = {
   workItemId: string;
   actorId: string;
+  agentRunId?: string;
   mode?: "worker" | "pm";
   title?: string;
   settings: Settings;
+  toolCall?: HumanReservedToolCall;
+};
+
+export type HumanReservedToolRiskCategory = "legal" | "finance" | "identity";
+
+export type HumanReservedToolCall = {
+  toolId: string;
+  input: unknown;
+  riskCategory?: HumanReservedToolRiskCategory;
 };
 
 export type HumanReservedGuardResult = {
   workItemId: string;
   escalationId: string;
   trigger: "user_forbidden";
-  source: "work_item";
+  source: "work_item" | "tool_call";
   reasonMd: string;
   reused: boolean;
+  riskCategory?: HumanReservedToolRiskCategory;
+  toolId?: string;
 };
 
 export type HumanReservedGuard = (input: HumanReservedGuardInput) => Promise<HumanReservedGuardResult | null>;
@@ -60,8 +72,50 @@ function titleFor(row: WorkItemHumanReservedRow, fallbackTitle?: string) {
   return row.title ?? fallbackTitle ?? row.code;
 }
 
+const highRiskToolTokens: Record<HumanReservedToolRiskCategory, readonly string[]> = {
+  legal: ["legal", "contract", "contracts", "terms", "tos", "signature", "sign"],
+  finance: ["finance", "financial", "payment", "payments", "payout", "bank", "banking", "card", "wire", "payroll", "invoice"],
+  identity: ["identity", "identities", "kyc", "passport", "idv", "credential", "credentials"]
+};
+
+function toolIdTokens(toolId: string) {
+  return toolId.toLowerCase().split(/[^a-z0-9]+/u).filter(Boolean);
+}
+
+export function classifyHumanReservedToolCall(input: Pick<HumanReservedToolCall, "toolId">): HumanReservedToolRiskCategory | null {
+  const tokens = new Set(toolIdTokens(input.toolId));
+  for (const category of ["legal", "finance", "identity"] as const) {
+    if (highRiskToolTokens[category].some((token) => tokens.has(token))) {
+      return category;
+    }
+  }
+  return null;
+}
+
 function buildHumanReservedReason(row: WorkItemHumanReservedRow, fallbackTitle?: string) {
   return `这个事项「${titleFor(row, fallbackTitle)}」已标记为人工处理。我不会让 AI 工人自动施工，已经把它转给人来接手。`;
+}
+
+const toolRiskLabels: Record<HumanReservedToolRiskCategory, string> = {
+  legal: "法务",
+  finance: "财务",
+  identity: "身份"
+};
+
+function toolInputShape(input: unknown) {
+  if (Array.isArray(input)) {
+    return { kind: "array", length: input.length };
+  }
+  if (input && typeof input === "object") {
+    const keys = Object.keys(input as Record<string, unknown>);
+    return { kind: "object", keys: keys.slice(0, 12), key_count: keys.length };
+  }
+  return { kind: typeof input };
+}
+
+function buildHighRiskToolReason(row: WorkItemHumanReservedRow, toolCall: HumanReservedToolCall, category: HumanReservedToolRiskCategory, fallbackTitle?: string) {
+  const label = toolRiskLabels[category];
+  return `这个事项「${titleFor(row, fallbackTitle)}」请求执行${label}类高风险动作。我已经停止自动工具调用，并转给人确认。`;
 }
 
 function humanReservedHandoff(row: WorkItemHumanReservedRow) {
@@ -71,6 +125,25 @@ function humanReservedHandoff(row: WorkItemHumanReservedRow) {
     blockers: ["用户明确不让 AI 工人自动施工。"],
     artifacts: [],
     source: "work_item",
+    work_item: {
+      id: row.id,
+      code: row.code,
+      previous_status: row.status
+    }
+  };
+}
+
+function highRiskToolHandoff(row: WorkItemHumanReservedRow, toolCall: HumanReservedToolCall, category: HumanReservedToolRiskCategory, agentRunId?: string) {
+  return {
+    done: [`已拦截${toolRiskLabels[category]}类高风险工具调用。`],
+    todo: ["请负责人确认是否允许该动作，并由人执行或改写任务边界。"],
+    blockers: ["法务、财务、身份类高风险动作不能由 AI 工人自动执行。"],
+    artifacts: [],
+    source: "tool_call",
+    risk_category: category,
+    tool_id: toolCall.toolId,
+    input_shape: toolInputShape(toolCall.input),
+    ...(agentRunId ? { agent_run_id: agentRunId } : {}),
     work_item: {
       id: row.id,
       code: row.code,
@@ -121,29 +194,40 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
       return null;
     }
 
+    const toolRiskCategory = input.toolCall
+      ? input.toolCall.riskCategory ?? classifyHumanReservedToolCall(input.toolCall)
+      : null;
     const workItem = await workItems.findWorkItemForHumanReservedGuard(input.workItemId);
-    if (!workItem?.humanReserved) {
+    if (!workItem || (!workItem.humanReserved && !toolRiskCategory)) {
       return null;
     }
 
-    const reasonMd = buildHumanReservedReason(workItem, input.title);
+    const source = toolRiskCategory && input.toolCall ? "tool_call" : "work_item";
+    const reasonMd = source === "tool_call" && input.toolCall && toolRiskCategory
+      ? buildHighRiskToolReason(workItem, input.toolCall, toolRiskCategory, input.title)
+      : buildHumanReservedReason(workItem, input.title);
     const existing = (await decisions.listEscalationEventsForWorkItem(input.workItemId)).find(
       (event) => event.trigger === "user_forbidden" && !event.resolvedAt
     );
     const escalation = existing ?? (await decisions.createEscalationEvent({
       workItemId: input.workItemId,
+      ...(input.agentRunId ? { agentRunId: input.agentRunId } : {}),
       trigger: "user_forbidden",
       reasonMd,
-      handoffJson: humanReservedHandoff(workItem)
+      handoffJson: source === "tool_call" && input.toolCall && toolRiskCategory
+        ? highRiskToolHandoff(workItem, input.toolCall, toolRiskCategory, input.agentRunId)
+        : humanReservedHandoff(workItem)
     }));
 
     if (!existing) {
-      // #18：状态写入只在首次预留时发生。已有未结升级时再次触发不得重写状态——否则版本号空转
-      // (version++ / updatedAt churn) 且无任何审计轨迹（静默写），还可能把后续状态硬拉回 pm_mode。
-      await workItems.markHumanReservedPmMode({
-        workItemId: input.workItemId,
-        at: now()
-      });
+      if (workItem.humanReserved) {
+        // #18：状态写入只在首次预留时发生。已有未结升级时再次触发不得重写状态——否则版本号空转
+        // (version++ / updatedAt churn) 且无任何审计轨迹（静默写），还可能把后续状态硬拉回 pm_mode。
+        await workItems.markHumanReservedPmMode({
+          workItemId: input.workItemId,
+          at: now()
+        });
+      }
 
       try {
         await auditLogs.createAuditLog({
@@ -156,9 +240,12 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
           detailJson: {
             escalation_id: escalation.id,
             trigger: escalation.trigger,
-            source: "human_reserved",
+            source: source === "tool_call" ? "human_reserved_tool_call" : "human_reserved",
             requested_by_user_id: input.actorId,
-            reason_preview: escalation.reasonMd.slice(0, 160)
+            reason_preview: escalation.reasonMd.slice(0, 160),
+            ...(source === "tool_call" && input.toolCall && toolRiskCategory
+              ? { tool_id: input.toolCall.toolId, risk_category: toolRiskCategory }
+              : {})
           }
         });
       } catch (error) {
@@ -170,7 +257,7 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
         escalation_id: escalation.id,
         trigger: escalation.trigger,
         reason_preview: escalation.reasonMd.slice(0, 160),
-        source: "human_reserved",
+        source: source === "tool_call" ? "human_reserved_tool_call" : "human_reserved",
         next_mode: "pm"
       };
       await publishEscalationEvent(bus, topics.workitem(input.workItemId).topic, eventPayload);
@@ -188,9 +275,11 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
       workItemId: input.workItemId,
       escalationId: escalation.id,
       trigger: "user_forbidden",
-      source: "work_item",
+      source,
       reasonMd: escalation.reasonMd,
-      reused: Boolean(existing)
+      reused: Boolean(existing),
+      ...(toolRiskCategory ? { riskCategory: toolRiskCategory } : {}),
+      ...(input.toolCall ? { toolId: input.toolCall.toolId } : {})
     };
   };
 }

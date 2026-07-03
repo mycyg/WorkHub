@@ -80,7 +80,7 @@ import {
   createAgentRunConfidenceRecorder,
   type AgentRunConfidenceRecorder
 } from "../services/agent-run-confidence.js";
-import { createHumanReservedGuard, type HumanReservedGuard } from "../services/human-reserved-guard.js";
+import { classifyHumanReservedToolCall, createHumanReservedGuard, type HumanReservedGuard } from "../services/human-reserved-guard.js";
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
 import {
   createAgentRunNotificationWorkItemResolver,
@@ -1370,6 +1370,33 @@ export function createInMemoryAgentRunQueue(options: {
         execute: async (toolId, input, ctx) => {
           if (driftedRun(current.run_id)) {
             return errorToolResult("这次 AI 执行已经取消，已跳过后续工具执行。");
+          }
+          const riskCategory = classifyHumanReservedToolCall({ toolId });
+          if (riskCategory && humanReservedGuard) {
+            const humanReserved = await humanReservedGuard({
+              workItemId: current.work_item_id,
+              actorId: current.actor_id,
+              agentRunId: current.run_id,
+              mode: current.mode,
+              title: current.title,
+              settings,
+              toolCall: { toolId, input, riskCategory }
+            });
+            if (humanReserved) {
+              throw new AgentRunnerError(
+                409,
+                "human_reserved_tool_call",
+                "高风险工具调用已停止，并已转给负责人确认。",
+                {
+                  escalation_id: humanReserved.escalationId,
+                  trigger: humanReserved.trigger,
+                  source: humanReserved.source,
+                  risk_category: humanReserved.riskCategory,
+                  tool_id: humanReserved.toolId,
+                  suggested_action: "pm_mode"
+                }
+              );
+            }
           }
           return rawTools.execute(toolId, input, ctx);
         }
