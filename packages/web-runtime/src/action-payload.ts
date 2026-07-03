@@ -66,6 +66,12 @@ export function startAgentRunActionFromHref(href: string) {
   return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
 }
 
+export function createTaskPlanActionFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/workitems\/([^/]+)\/task-plan$/u.exec(path);
+  return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
+}
+
 export function evidenceBindingWorkItemIdFromHref(href: string) {
   const path = hrefPathname(href);
   const match = /^\/api\/workitems\/([^/]+)\/evidence-bindings$/u.exec(path);

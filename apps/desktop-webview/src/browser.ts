@@ -30,6 +30,7 @@ import {
   bootstrapProjectActionFromHref,
   browserLocale,
   conflictsFromMergeError,
+  createTaskPlanActionFromHref,
   createWorkItemActionFromHref,
   escalationActionFromHref,
   fieldValueRequiredNotice,
@@ -730,6 +731,21 @@ function bindGoldPathNavigation(
           window.location.hash = `/workitems/${created.workitem.id}`;
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "create_workitem"));
+        }
+        input.onActionSettled?.();
+        return;
+      }
+      const createTaskPlan = createTaskPlanActionFromHref(href);
+      if (createTaskPlan) {
+        try {
+          const result = await client.createTaskPlan(createTaskPlan.workItemId, {}, { locale });
+          const body = locale === "en-US"
+            ? "Task plan drafted. Review the plan before dispatch."
+            : "任务计划已生成，请先审阅再派发。";
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, body, actionId ?? "create_task_plan"));
+          window.location.hash = result.proposal_href || `/workitems/${createTaskPlan.workItemId}`;
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "create_task_plan"));
         }
         input.onActionSettled?.();
         return;

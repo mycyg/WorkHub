@@ -189,6 +189,7 @@ type RouteCopyKey =
   | "workitem.meetingSource"
   | "workitem.openProposal"
   | "workitem.openReplay"
+  | "workitem.createTaskPlan"
   | "workitem.startRun"
   | "intake.summary"
   | "intake.progress"
@@ -407,6 +408,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.meetingSource": "会议洞察来源",
     "workitem.openProposal": "查看变更申请",
     "workitem.openReplay": "查看回放",
+    "workitem.createTaskPlan": "生成任务计划",
     "workitem.startRun": "开始 AI 执行",
     "intake.summary": "接入摘要",
     "intake.progress": "澄清进度",
@@ -624,6 +626,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.meetingSource": "Meeting insight source",
     "workitem.openProposal": "Open change request",
     "workitem.openReplay": "Open replay",
+    "workitem.createTaskPlan": "Draft task plan",
     "workitem.startRun": "Start AI run",
     "intake.summary": "Intake summary",
     "intake.progress": "Clarification progress",
@@ -1860,7 +1863,12 @@ function traceRows(vm: WorkItemDetailVM, locale: WorkHubLocale) {
 function workItemActions(vm: WorkItemDetailVM, locale: WorkHubLocale): ActionSpec[] {
   const proposalId = vm.latest_proposal?.proposal_id;
   const runId = vm.agent_trace_preview[0]?.agent_run_id;
-  const canStartRun = vm.workitem.status === "spec_ready" && !proposalId && vm.agent_trace_preview.length === 0;
+  const canDraftTaskPlan =
+    vm.workitem.status === "spec_ready" &&
+    !proposalId &&
+    !vm.task_plan &&
+    !vm.agent_team &&
+    vm.agent_trace_preview.length === 0;
   const actions: Array<ActionSpec | undefined> = [
     vm.actions.create_proposal_draft,
     proposalId
@@ -1879,12 +1887,12 @@ function workItemActions(vm: WorkItemDetailVM, locale: WorkHubLocale): ActionSpe
         href: `/agent-runs/${runId}/replay`
       }
       : undefined,
-    canStartRun
+    canDraftTaskPlan
       ? {
-        id: "start_agent_run",
-        label: routeT(locale, "workitem.startRun"),
+        id: "create_task_plan",
+        label: routeT(locale, "workitem.createTaskPlan"),
         method: "POST" as const,
-        href: `/api/workitems/${vm.workitem.id}/agent-runs`
+        href: `/api/workitems/${vm.workitem.id}/task-plan`
       }
       : undefined
   ];

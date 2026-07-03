@@ -378,6 +378,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    createTaskPlan: (workItemId, payload = {}, options) =>
+      request(withPageLocale(`/api/workitems/${encodeURIComponent(workItemId)}/task-plan`, options), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     startAgentRun: (workItemId, payload = {}) =>
       request(`/api/workitems/${encodeURIComponent(workItemId)}/agent-runs`, {
         method: "POST",

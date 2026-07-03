@@ -20,20 +20,23 @@ function vm(over: Partial<WorkItemDetailVM> = {}): WorkItemDetailVM {
   } as unknown as WorkItemDetailVM;
 }
 
-test("#22 desktop workitem shows Dispatch only when spec_ready with no proposal/trace", () => {
-  assert.ok(detailHtml(vm(), true).includes(`data-wi-run="${WI}"`), "dispatch shown for clean spec_ready");
+test("#22 desktop workitem drafts a task plan only when spec_ready with no proposal/trace", () => {
+  // Old assertion expected a direct start-run button. That was wrong for R9.1:
+  // one intent must become a task-plan proposal and wait for human review before dispatch.
+  assert.ok(detailHtml(vm(), true).includes(`data-wi-task-plan="${WI}"`), "task-plan draft shown for clean spec_ready");
+  assert.ok(!detailHtml(vm(), true).includes("data-wi-run"), "no direct run button before plan review");
   // a latest proposal already exists → no re-run button (matches web gate)
   assert.ok(
-    !detailHtml(vm({ latest_proposal: { proposal_id: "p", title: "x" } as WorkItemDetailVM["latest_proposal"] }), true).includes("data-wi-run"),
-    "no dispatch once a proposal exists"
+    !detailHtml(vm({ latest_proposal: { proposal_id: "p", title: "x" } as WorkItemDetailVM["latest_proposal"] }), true).includes("data-wi-task-plan"),
+    "no task-plan draft once a proposal exists"
   );
   // already has trace → no dispatch
   assert.ok(
-    !detailHtml(vm({ agent_trace_preview: [{ phase: "think" } as unknown as WorkItemDetailVM["agent_trace_preview"][number]] }), true).includes("data-wi-run"),
-    "no dispatch once a run has traced"
+    !detailHtml(vm({ agent_trace_preview: [{ phase: "think" } as unknown as WorkItemDetailVM["agent_trace_preview"][number]] }), true).includes("data-wi-task-plan"),
+    "no task-plan draft once a run has traced"
   );
   // not spec_ready → no dispatch
-  assert.ok(!detailHtml(vm({ workitem: { id: WI, code: "WH-1", title: "t", status: "merged", priority: "normal" } as WorkItemDetailVM["workitem"] }), true).includes("data-wi-run"), "no dispatch when not spec_ready");
+  assert.ok(!detailHtml(vm({ workitem: { id: WI, code: "WH-1", title: "t", status: "merged", priority: "normal" } as WorkItemDetailVM["workitem"] }), true).includes("data-wi-task-plan"), "no task-plan draft when not spec_ready");
 });
 
 test("#11 desktop workitem surfaces create-proposal-draft when the action is present", () => {

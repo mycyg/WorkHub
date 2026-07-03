@@ -111,6 +111,20 @@ export type MemoryConflictResolveResult = {
   conflict: unknown;
 };
 
+export type CreateTaskPlanRequest = {
+  memories?: {
+    user?: string[];
+    team?: string[];
+  };
+};
+
+export type CreateTaskPlanResult = {
+  plan_id: string;
+  proposal_id: string;
+  proposal_href: string;
+  proposal: Proposal;
+};
+
 export type PageRequestOptions = {
   locale?: WorkHubLocale;
 };
@@ -262,6 +276,7 @@ export type WorkHubApiClient = {
   createSession: (payload?: CreateSessionRequest) => Promise<SessionVM>;
   getSession: (id: string, options?: PageRequestOptions) => Promise<SessionVM>;
   createWorkItem: (payload: CreateWorkItemRequest) => Promise<WorkItemDetailVM>;
+  createTaskPlan: (workItemId: string, payload?: CreateTaskPlanRequest, options?: PageRequestOptions) => Promise<CreateTaskPlanResult>;
   startAgentRun: (workItemId: string, payload?: StartAgentRunRequest) => Promise<AgentRunLiveVM>;
   getAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
   getAgentRunTrace: (runId: string, after?: number) => Promise<AgentStep[]>;

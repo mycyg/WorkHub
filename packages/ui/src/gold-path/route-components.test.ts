@@ -1068,6 +1068,23 @@ test("R9.1 WorkItem route component renders the approved task plan snapshot", ()
   assert.equal(workitem.html.includes("列出至少 3 条可核验来源。"), true);
 });
 
+test("R9.1 WorkItem route component drafts a task plan before any agent run", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const cleanSpecReady: WorkItemDetailVM = {
+    ...base,
+    workitem: { ...base.workitem, status: "spec_ready" },
+    latest_proposal: undefined,
+    agent_trace_preview: [],
+    task_plan: undefined,
+    agent_team: undefined
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: cleanSpecReady }, { locale: "en-US" });
+
+  assert.equal(workitem.html.includes('data-action-id="create_task_plan" data-method="POST"'), true);
+  assert.equal(workitem.html.includes(`/api/workitems/${cleanSpecReady.workitem.id}/task-plan`), true);
+  assert.equal(workitem.html.includes('data-action-id="start_agent_run"'), false);
+});
+
 test("R9.2 WorkItem route component renders the task-plan run tree without inline decisions", () => {
   const base = surfaceVm().page_vms.workitem;
   const planId = "93000000-0000-4000-8000-000000000901";

@@ -179,6 +179,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
       const body = (
         String(input).includes("/next-question") ||
         String(input).includes("/auth/preferences") ||
+        String(input).includes("/task-plan") ||
         String(input).includes("/memory-conflicts/")
       ) && typeof init?.body === "string"
         ? ` ${init.body}`
@@ -210,6 +211,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.getSession("session-1");
   await client.createWorkItem({ session_id: "session-1", selected_option_ids: ["risk-first"] });
   await client.startAgentRun("work-1", { title: "AI 开始整理周报" });
+  await client.createTaskPlan("work-1", { memories: { user: ["Prefer concise plans."] } }, { locale: "en-US" });
   await client.getAgentRun("run-1");
   await client.getAgentRunTrace("run-1", 2);
   await client.getAgentRunHandoff("run-1");
@@ -270,6 +272,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/sessions/session-1",
     "POST /api/workitems",
     "POST /api/workitems/work-1/agent-runs",
+    'POST /api/workitems/work-1/task-plan?locale=en-US {"memories":{"user":["Prefer concise plans."]}}',
     "GET /api/agent-runs/run-1",
     "GET /api/agent-runs/run-1/trace?after=2",
     "GET /api/agent-runs/run-1/handoff",

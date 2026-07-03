@@ -1,4 +1,4 @@
-import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
+import { createApiClient, type CreateTaskPlanRequest, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config/ports";
 import type { CreateSessionRequest, CreateWorkItemRequest, ProposalConflict, ProposalDetailVM, StartAgentRunRequest } from "@workhub/contracts";
 import { renderAgentRunLive } from "@workhub/ui/agent-run";
@@ -21,6 +21,7 @@ export const webSurface = {
     "/api/sessions",
     "/api/sessions/:id",
     "/api/workitems",
+    "/api/workitems/:id/task-plan",
     "/api/workitems/:id/agent-runs",
     "/api/agent-runs/:id",
     "/api/agent-runs/:id/trace",
@@ -102,6 +103,15 @@ export function loadWebWorkItemDetail(client: WorkHubApiClient, workItemId: stri
 
 export async function renderWebWorkItemDetail(client: WorkHubApiClient, workItemId: string, locale?: WorkHubLocale) {
   return renderWorkItemDetail(await loadWebWorkItemDetail(client, workItemId, locale), "web", locale ? { locale } : undefined);
+}
+
+export function createWebTaskPlan(
+  client: WorkHubApiClient = webApiClient,
+  workItemId: string,
+  payload: CreateTaskPlanRequest = {},
+  locale?: WorkHubLocale
+) {
+  return client.createTaskPlan(workItemId, payload, locale ? { locale } : undefined);
 }
 
 export function startWebAgentRun(

@@ -1,6 +1,6 @@
 // WorkHub 桌面 · Spotlight「工作项」能力内联视图。
 // 无全局 work-item 列表端点 → 列表借 pages.attention.background_runs（在跑/排队的工作项，去重）；
-// 点开 pages.workItem(id) → 统一玻璃详情（状态/验收/最新改动/AI 轨迹）+ spec_ready 时一键派活 startAgentRun。
+// 点开 pages.workItem(id) → 统一玻璃详情（状态/验收/最新改动/AI 轨迹）+ spec_ready 时先生成任务计划给人审。
 // 历史/其它工作项从 项目/审批/看改动 进入。list→detail 盒内联 morph。
 
 import type { WorkItemAgentTeamVM, WorkItemDetailVM } from "@workhub/contracts";
@@ -85,8 +85,12 @@ function agentTeamHtml(vm: WorkItemDetailVM, zh: boolean): string {
 
 export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const w = vm.workitem;
-  // #22：与 web 同口径——已有变更/已跑过就不再显示「派给 AI」，否则会出现「再跑一发」歧义按钮。
-  const canRun = w.status === "spec_ready" && !vm.latest_proposal && (vm.agent_trace_preview?.length ?? 0) === 0;
+  const canDraftTaskPlan =
+    w.status === "spec_ready" &&
+    !vm.latest_proposal &&
+    !vm.task_plan &&
+    !vm.agent_team &&
+    (vm.agent_trace_preview?.length ?? 0) === 0;
   // #11：从网盘评论/会议洞察生成的工作项带 create_proposal_draft 动作 → 桌面也给「生成变更草稿」入口。
   const createDraft = vm.actions.create_proposal_draft
     ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-create-proposal="${escapeHtml(w.id)}">${zh ? "生成变更草稿" : "Create proposal draft"}</button>`
@@ -118,7 +122,7 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
     ${taskPlan}
     ${proposal}
     ${traceHtml}
-    ${createDraft || canRun ? `<div class="wh-spot-card-actions">${createDraft}${canRun ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-run="${escapeHtml(w.id)}">${zh ? "派给 AI 干" : "Dispatch to AI"}</button>` : ""}</div>` : ""}
+    ${createDraft || canDraftTaskPlan ? `<div class="wh-spot-card-actions">${createDraft}${canDraftTaskPlan ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-task-plan="${escapeHtml(w.id)}">${zh ? "生成任务计划" : "Draft task plan"}</button>` : ""}</div>` : ""}
   </div>`;
 }
 
@@ -219,20 +223,25 @@ export function createWorkItemView(): SpotlightCapabilityView {
             });
           return;
         }
-        const run = target.closest<HTMLElement>("[data-wi-run]");
-        if (run?.dataset.wiRun && !busy) {
+        const taskPlan = target.closest<HTMLElement>("[data-wi-task-plan]");
+        if (taskPlan?.dataset.wiTaskPlan && !busy) {
           busy = true;
-          const id = run.dataset.wiRun;
-          run.textContent = zh ? "派活中…" : "Dispatching…";
+          const id = taskPlan.dataset.wiTaskPlan;
+          taskPlan.textContent = zh ? "生成计划中…" : "Drafting plan…";
+          let openedProposal = false;
           void client
-            .startAgentRun(id)
-            .then(() => {
-              ctx.toast(zh ? "已派给 AI，Cuu 开干了" : "Dispatched to AI", "ok");
+            .createTaskPlan(id, {}, { locale: ctx.locale })
+            .then((result) => {
+              ctx.toast(zh ? "任务计划已生成，请先审阅" : "Task plan drafted. Review it first.", "ok");
+              ctx.open("proposals", { id: result.proposal_id, route: result.proposal_href });
+              openedProposal = true;
             })
-            .catch(() => ctx.toast(zh ? "派活失败，稍后重试" : "Dispatch failed — retry", "error"))
+            .catch(() => ctx.toast(zh ? "生成计划失败，稍后重试" : "Couldn't draft plan — retry", "error"))
             .finally(() => {
               busy = false;
-              void showDetail(id);
+              if (!openedProposal) {
+                void showDetail(id);
+              }
             });
         }
       });

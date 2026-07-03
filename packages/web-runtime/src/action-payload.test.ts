@@ -11,6 +11,7 @@ import {
   approvalRespondIdFromHref,
   bootstrapProjectActionFromHref,
   conflictsFromMergeError,
+  createTaskPlanActionFromHref,
   createNamedProjectActionFromHref,
   createWorkItemActionFromHref,
   driveCommentDraftFromHref,
@@ -45,6 +46,7 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   assert.equal(bootstrapProjectActionFromHref("/api/projects/bootstrap"), true);
   assert.equal(createNamedProjectActionFromHref("/api/projects/bootstrap"), true);
   assert.equal(createNamedProjectActionFromHref("/api/projects"), false);
+  assert.deepEqual(createTaskPlanActionFromHref("/api/workitems/w%201/task-plan"), { workItemId: "w 1" });
   assert.deepEqual(startAgentRunActionFromHref("/api/workitems/w%201/agent-runs"), { workItemId: "w 1" });
   assert.equal(evidenceBindingWorkItemIdFromHref("/api/workitems/w-1/evidence-bindings"), "w-1");
   assert.deepEqual(acceptedDeliverableRestoreFromHref("/api/workitems/w-1/deliverables/ac-1/restore"), {

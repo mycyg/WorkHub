@@ -17,6 +17,7 @@ import {
   loadDesktopAgentRunCuuCard,
   loadDesktopAgentRunReplay,
   loadDesktopAgentRunTrace,
+  createDesktopTaskPlan,
   createDesktopWorkItem,
   createDesktopWorkItemCuuCard,
   desktopCuuCardFromEvent,
@@ -230,6 +231,46 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     },
     async createWorkItem() {
       return surface.page_vms.workitem;
+    },
+    async createTaskPlan() {
+      return {
+        plan_id: "70000000-0000-4000-8000-000000000021",
+        proposal_id: "70000000-0000-4000-8000-000000000022",
+        proposal_href: "/proposals/70000000-0000-4000-8000-000000000022",
+        proposal: {
+          id: "70000000-0000-4000-8000-000000000022",
+          work_item_id: "50000000-0000-4000-8000-000000000021",
+          branch_id: "70000000-0000-4000-8000-000000000023",
+          round: 1,
+          title: "任务计划",
+          status: "opened",
+          diff_manifest: {
+            version: 0,
+            work_item_id: "50000000-0000-4000-8000-000000000021",
+            title: "任务计划",
+            summary_md: "先生成任务计划，等待人工审阅后再派发。",
+            author: { actor_kind: "ai", label: "Cuu" },
+            base: {},
+            risk: { level: "low", human_label: "低风险", reversible: true },
+            rollback: { available: true, description: "关闭提案即可回滚。" },
+            evidence_refs: [],
+            review: { reason_required_on_reject: true },
+            changes: [
+              {
+                id: "task-plan",
+                human_summary: "生成任务计划草案",
+                target_kind: "structured_record",
+                change_type: "generated",
+                target_ref: { entity_type: "work_item", id: "50000000-0000-4000-8000-000000000021" }
+              }
+            ],
+            checks: []
+          },
+          opened_by_kind: "ai",
+          created_at: "2026-06-05T01:00:00.000Z",
+          updated_at: "2026-06-05T01:00:00.000Z"
+        }
+      };
     },
     async startAgentRun() {
       return liveRun;
@@ -744,6 +785,21 @@ test("desktop webview creates work items through the typed client and maps the r
   assert.equal(created.workitem.status, "ai_working");
   assert.equal(card.kind, "trace");
   assert.equal(card.state, "thinking");
+});
+
+test("desktop webview drafts task plans through the typed client before agent runs", async () => {
+  const surface = { page_vms: { workitem: {}, proposal: {} } } as unknown as GoldPathSurfaceVM;
+  const client = fakeClient(surface);
+  const result = await createDesktopTaskPlan(
+    client,
+    "50000000-0000-4000-8000-000000000021",
+    { memories: { user: ["Prefer concise plans."] } },
+    "en-US"
+  );
+
+  assert.equal(desktopWebviewSurface.pages.includes("/api/workitems/:id/task-plan"), true);
+  assert.equal(result.plan_id, "70000000-0000-4000-8000-000000000021");
+  assert.equal(result.proposal_href, "/proposals/70000000-0000-4000-8000-000000000022");
 });
 
 test("desktop webview starts agent runs and renders the live trace with Cuu state", async () => {
