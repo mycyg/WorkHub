@@ -136,6 +136,11 @@ test("R9.3 memory conflicts expose durable sync_conflict decision fields", () =>
   assert.match(migration, /CREATE TABLE IF NOT EXISTS "memory_conflicts"/u);
   assert.match(migration, /memory_conflicts_workspace_user_status_idx/u);
   assert.match(migration, /memory_conflicts_status_ck/u);
+
+  const uniqueMigration = readFileSync(join(process.cwd(), "migrations", "0039_memory_conflicts_open_unique.sql"), "utf8");
+  assert.match(uniqueMigration, /duplicate_open_conflicts/u);
+  assert.match(uniqueMigration, /CREATE UNIQUE INDEX IF NOT EXISTS "memory_conflicts_open_user_key_uq"/u);
+  assert.match(uniqueMigration, /WHERE "status" = 'open'/u);
 });
 
 test("R9.5 task/objective cost scope migration is replay-safe", () => {

@@ -26,6 +26,18 @@ export type MemoryConflictServiceDependencies = {
   now?: () => Date;
 };
 
+type ResolveMemoryConflictInput = {
+  actor: AuthActor;
+  conflictId: string;
+  resolution: MemoryConflictResolution;
+  valueMd?: string;
+};
+
+type MemoryConflictDecisionStores = {
+  conflicts: Pick<MemoryConflictRepository, "findOpenForUser" | "resolve">;
+  userMemories: Pick<UserMemoryRepository, "upsert">;
+};
+
 function userIdFor(actor: AuthActor) {
   return actor.userId ?? actor.id;
 }
@@ -111,10 +123,54 @@ function getDefaultUserMemoryRepository() {
   return defaultUserMemoryRepository;
 }
 
+async function resolveWithStores(
+  stores: MemoryConflictDecisionStores,
+  input: ResolveMemoryConflictInput,
+  resolvedAt: Date
+) {
+  const userId = userIdFor(input.actor);
+  const row = await stores.conflicts.findOpenForUser({
+    workspaceId: input.actor.workspaceId,
+    userId,
+    conflictId: input.conflictId
+  });
+  if (!row) {
+    throw new MemoryConflictServiceError(404, "memory_conflict_not_found", "这张记忆冲突卡不存在或已经处理。");
+  }
+
+  const valueMd = resolvedValue(row, input.resolution, input.valueMd);
+  const resolved = await stores.conflicts.resolve({
+    workspaceId: input.actor.workspaceId,
+    userId,
+    conflictId: input.conflictId,
+    resolution: input.resolution,
+    resolvedValueMd: valueMd,
+    resolvedAt
+  });
+  if (!resolved) {
+    throw new MemoryConflictServiceError(409, "memory_conflict_status_changed", "这张记忆冲突卡已经被处理，请刷新。");
+  }
+
+  if (input.resolution !== "keep_current") {
+    await stores.userMemories.upsert({
+      userId,
+      workspaceId: input.actor.workspaceId,
+      category: row.category,
+      key: row.key,
+      valueMd,
+      confidence: 0.9,
+      ...(row.sourceRunId ? { sourceRunId: row.sourceRunId } : {})
+    });
+  }
+
+  return { conflict: resolved };
+}
+
 export function createMemoryConflictService(deps: MemoryConflictServiceDependencies = {}) {
   const conflicts = deps.conflicts ?? getDefaultMemoryConflictRepository();
   const userMemories = deps.userMemories ?? getDefaultUserMemoryRepository();
   const now = deps.now ?? (() => new Date());
+  const hasCustomDecisionStore = Boolean(deps.conflicts || deps.userMemories);
 
   return {
     async listAttentionItems(input: { actor: AuthActor; locale: WorkHubLocale }): Promise<AttentionItem[]> {
@@ -126,47 +182,17 @@ export function createMemoryConflictService(deps: MemoryConflictServiceDependenc
       return result.rows.map((row) => buildMemoryConflictAttentionItem(row, input.locale));
     },
 
-    async resolve(input: {
-      actor: AuthActor;
-      conflictId: string;
-      resolution: MemoryConflictResolution;
-      valueMd?: string;
-    }) {
-      const userId = userIdFor(input.actor);
-      const row = await conflicts.findOpenForUser({
-        workspaceId: input.actor.workspaceId,
-        userId,
-        conflictId: input.conflictId
-      });
-      if (!row) {
-        throw new MemoryConflictServiceError(404, "memory_conflict_not_found", "这张记忆冲突卡不存在或已经处理。");
+    async resolve(input: ResolveMemoryConflictInput) {
+      const resolvedAt = now();
+      if (!hasCustomDecisionStore) {
+        return getSharedDatabaseClient().db.transaction((tx) =>
+          resolveWithStores({
+            conflicts: createMemoryConflictRepository(tx),
+            userMemories: createUserMemoryRepository(tx)
+          }, input, resolvedAt)
+        );
       }
-
-      const valueMd = resolvedValue(row, input.resolution, input.valueMd);
-      if (input.resolution !== "keep_current") {
-        await userMemories.upsert({
-          userId,
-          workspaceId: input.actor.workspaceId,
-          category: row.category,
-          key: row.key,
-          valueMd,
-          confidence: 0.9,
-          ...(row.sourceRunId ? { sourceRunId: row.sourceRunId } : {})
-        });
-      }
-
-      const resolved = await conflicts.resolve({
-        workspaceId: input.actor.workspaceId,
-        userId,
-        conflictId: input.conflictId,
-        resolution: input.resolution,
-        resolvedValueMd: valueMd,
-        resolvedAt: now()
-      });
-      if (!resolved) {
-        throw new MemoryConflictServiceError(409, "memory_conflict_status_changed", "这张记忆冲突卡已经被处理，请刷新。");
-      }
-      return { conflict: resolved };
+      return resolveWithStores({ conflicts, userMemories }, input, resolvedAt);
     }
   };
 }

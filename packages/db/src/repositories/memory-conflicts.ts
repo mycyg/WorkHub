@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import type { UserMemoryCategory } from "@workhub/contracts";
 
@@ -65,12 +65,6 @@ export function createMemoryConflictRepository(db: WorkHubDb): MemoryConflictRep
     async createOrUpdateOpen(input) {
       const now = input.now ?? new Date();
       const id = input.id ?? randomUUID();
-      const existing = await db
-        .select()
-        .from(memoryConflicts)
-        .where(and(eq(memoryConflicts.id, id), eq(memoryConflicts.workspaceId, input.workspaceId), eq(memoryConflicts.userId, input.userId)))
-        .limit(1);
-
       const values = {
         workspaceId: input.workspaceId,
         userId: input.userId,
@@ -89,21 +83,22 @@ export function createMemoryConflictRepository(db: WorkHubDb): MemoryConflictRep
         updatedAt: now
       };
 
-      if (existing[0]) {
-        const rows = await db
-          .update(memoryConflicts)
-          .set(values)
-          .where(and(eq(memoryConflicts.id, id), eq(memoryConflicts.workspaceId, input.workspaceId), eq(memoryConflicts.userId, input.userId)))
-          .returning();
-        return rows[0] ?? existing[0];
-      }
-
       const rows = await db
         .insert(memoryConflicts)
         .values({
           id,
           ...values,
           createdAt: now
+        })
+        .onConflictDoUpdate({
+          target: [
+            memoryConflicts.workspaceId,
+            memoryConflicts.userId,
+            memoryConflicts.category,
+            memoryConflicts.key
+          ],
+          targetWhere: sql`${memoryConflicts.status} = 'open'`,
+          set: values
         })
         .returning();
       return rows[0]!;

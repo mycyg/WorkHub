@@ -11,6 +11,7 @@ export type RecordedQuery = {
   lock?: string;
   setValue?: unknown;
   valuesValue?: unknown;
+  onConflict?: unknown;
   returningCalled?: boolean;
   steps: string[];
 };
@@ -77,6 +78,12 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
   values(value: unknown): this {
     this.query.valuesValue = value;
     this.query.steps.push("values");
+    return this;
+  }
+
+  onConflictDoUpdate(config: unknown): this {
+    this.query.onConflict = config;
+    this.query.steps.push("onConflictDoUpdate");
     return this;
   }
 

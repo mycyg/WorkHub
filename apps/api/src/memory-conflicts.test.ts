@@ -5,7 +5,8 @@ import type { MemoryConflictRow } from "@workhub/db";
 
 import {
   buildMemoryConflictAttentionItem,
-  createMemoryConflictService
+  createMemoryConflictService,
+  MemoryConflictServiceError
 } from "./services/memory-conflicts.js";
 import type { AuthActor } from "./middleware/auth.js";
 
@@ -115,4 +116,37 @@ test("memory conflict accept-incoming writes L2 and closes the inbox card", asyn
     sourceRunId
   }]);
   assert.equal((resolved[0] as { resolution?: string }).resolution, "accept_incoming");
+});
+
+test("stale memory conflict resolution does not write L2 before closing the card", async () => {
+  const writes: unknown[] = [];
+  const service = createMemoryConflictService({
+    now: () => now,
+    conflicts: {
+      listOpenForUser: async () => ({ rows: [], capped: false }),
+      findOpenForUser: async () => row(),
+      resolve: async () => null,
+      createOrUpdateOpen: async () => {
+        throw new Error("not needed");
+      }
+    },
+    userMemories: {
+      upsert: async (input) => {
+        writes.push(input);
+        return {} as never;
+      }
+    }
+  });
+
+  await assert.rejects(
+    service.resolve({
+      actor: actor(),
+      conflictId,
+      resolution: "accept_incoming"
+    }),
+    (error) => error instanceof MemoryConflictServiceError
+      && error.status === 409
+      && error.code === "memory_conflict_status_changed"
+  );
+  assert.deepEqual(writes, []);
 });

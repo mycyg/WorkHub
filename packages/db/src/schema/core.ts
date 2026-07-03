@@ -1614,6 +1614,9 @@ export const memoryConflicts = pgTable(
     ...timestamps()
   },
   (table) => [
+    uniqueIndex("memory_conflicts_open_user_key_uq")
+      .on(table.workspaceId, table.userId, table.category, table.key)
+      .where(sql`${table.status} = 'open'`),
     index("memory_conflicts_workspace_user_status_idx").on(table.workspaceId, table.userId, table.status),
     index("memory_conflicts_source_run_id_idx").on(table.sourceRunId),
     index("memory_conflicts_created_at_idx").on(table.createdAt)
