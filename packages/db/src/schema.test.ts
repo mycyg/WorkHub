@@ -42,6 +42,17 @@ import {
 // This slice intentionally adds memory_conflicts so sync_conflict decisions survive beyond transient SSE events.
 const F02_TABLE_COUNT = 58;
 
+function inlineForeignKeyNames(table: object): string[] {
+  const inlineForeignKeysSymbol = Object.getOwnPropertySymbols(table).find((symbol) =>
+    String(symbol) === "Symbol(drizzle:PgInlineForeignKeys)"
+  );
+  if (!inlineForeignKeysSymbol) {
+    return [];
+  }
+  const foreignKeys = (table as { [key: symbol]: Array<{ getName(): string }> })[inlineForeignKeysSymbol] ?? [];
+  return foreignKeys.map((foreignKey) => foreignKey.getName()).sort();
+}
+
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
     const absolute = join(dir, entry);
@@ -180,6 +191,7 @@ test("R9.1 task plan tables expose auditable decomposition fields", () => {
   assert.equal(taskPlans.workspaceId.name, "workspace_id");
   assert.equal(taskPlans.status.name, "status");
   assert.equal(taskPlans.objectiveId.name, "objective_id");
+  assert.equal(inlineForeignKeyNames(taskPlans).includes("task_plans_objective_id_objectives_id_fk"), true);
   assert.equal(taskPlans.budgetJson.name, "budget_json");
   assert.equal(taskPlans.decompositionContextJson.name, "decomposition_context_json");
   assert.equal(taskPlans.createdByUserId.name, "created_by");
@@ -194,6 +206,14 @@ test("R9.1 task plan tables expose auditable decomposition fields", () => {
   assert.equal(taskPlanItems.budgetSharePct.name, "budget_share_pct");
   assert.equal(taskPlanItems.dependsOn.name, "depends_on");
   assert.equal(taskPlanItems.status.name, "status");
+
+  const objectiveFkMigration = readFileSync(join(process.cwd(), "migrations", "0040_task_plan_objective_fk.sql"), "utf8");
+  assert.match(objectiveFkMigration, /UPDATE "task_plans"[\s\S]+SET "objective_id" = NULL/u);
+  assert.match(objectiveFkMigration, /NOT EXISTS \([\s\S]+FROM "objectives"/u);
+  assert.match(objectiveFkMigration, /SELECT 1[\s\S]+FROM "pg_constraint"[\s\S]+"conname" = 'task_plans_objective_id_objectives_id_fk'/u);
+  assert.match(objectiveFkMigration, /ALTER TABLE "task_plans"/u);
+  assert.match(objectiveFkMigration, /ADD CONSTRAINT "task_plans_objective_id_objectives_id_fk"/u);
+  assert.match(objectiveFkMigration, /FOREIGN KEY \("objective_id"\) REFERENCES "objectives"\("id"\) ON DELETE set null/u);
 });
 
 test("merge attempts persist conflict decisions for replayable proposal audit", () => {

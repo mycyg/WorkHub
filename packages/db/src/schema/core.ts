@@ -767,7 +767,7 @@ export const taskPlans = pgTable(
     workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     status: varchar("status", { length: 16 }).$type<TaskPlanStatus>().notNull().default("draft"),
-    objectiveId: uuid("objective_id"),
+    objectiveId: uuid("objective_id").references(() => objectives.id, { onDelete: "set null" }),
     budgetJson: jsonb("budget_json").$type<JsonObject>().notNull().default({}),
     decompositionContextJson: jsonb("decomposition_context_json").$type<JsonObject>().notNull().default({}),
     createdByUserId: uuid("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
