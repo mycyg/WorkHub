@@ -22,6 +22,7 @@ const secondItemId = "91000000-0000-4000-8000-000000000012";
 const objectiveId = "91000000-0000-4000-8000-000000000013";
 const firstRunId = "91000000-0000-4000-8000-000000000014";
 const escalationId = "91000000-0000-4000-8000-000000000015";
+const runlessEscalationId = "91000000-0000-4000-8000-000000000016";
 
 test("R9.1 task plan repository writes draft plans and items in one transaction", async () => {
   const { db, queries } = createQueryRecorder();
@@ -544,11 +545,19 @@ test("R9.6 task plan repository reads dashboard plans with capped batched joins"
     reasonMd: "证据互相冲突。",
     createdAt: now
   };
+  const runlessEscalationRow = {
+    id: runlessEscalationId,
+    workItemId,
+    planId,
+    runId: null,
+    reasonMd: "依赖图需要人工调整。",
+    createdAt: now
+  };
   const { db, queries } = createQueryRecorder([
     [{ plan: planRow, workItem: workItemRow, objective: objectiveRow }],
     [itemRow],
     [runRow],
-    [escalationRow]
+    [escalationRow, runlessEscalationRow]
   ]);
   const repository = createTaskPlanRepository(db);
 
@@ -557,7 +566,7 @@ test("R9.6 task plan repository reads dashboard plans with capped batched joins"
     planLimit: 1,
     itemLimit: 2,
     runLimit: 3,
-    escalationLimit: 1
+    escalationLimit: 2
   });
 
   assert.equal(result.plans[0]?.plan.id, planId);
@@ -599,15 +608,25 @@ test("R9.6 task plan repository reads dashboard plans with capped batched joins"
   assert.ok(queryParamValues(runQuery?.where).includes(workspaceId));
 
   assert.equal(escalationQuery?.fromTable, escalationEvents);
+  // R9.7: dependency/cycle escalations are plan-level and intentionally have no
+  // agent_run_id, so the dashboard query must not inner-join them away.
   assert.deepEqual(escalationQuery?.joins.map((join) => [join.kind, join.table]), [
-    ["inner", agentRuns],
-    ["inner", workItems]
+    ["left", agentRuns],
+    ["inner", workItems],
+    ["left", taskPlans]
   ]);
-  assert.equal(escalationQuery?.limit, 2);
+  assert.equal(escalationQuery?.limit, 3);
+  const [, , planLevelJoin] = escalationQuery?.joins ?? [];
+  assert.ok(queryReferences(planLevelJoin?.on, taskPlans.id));
+  assert.ok(queryReferences(planLevelJoin?.on, taskPlans.workItemId));
+  assert.ok(queryReferences(planLevelJoin?.on, taskPlans.workspaceId));
+  assert.ok(queryReferences(planLevelJoin?.on, escalationEvents.handoffJson));
   assert.ok(queryReferences(escalationQuery?.where, workItems.workspaceId));
   assert.ok(queryReferences(escalationQuery?.where, escalationEvents.resolvedAt));
+  assert.ok(queryReferences(escalationQuery?.where, agentRuns.taskPlanId));
+  assert.ok(queryReferences(escalationQuery?.where, taskPlans.id));
   assert.ok(queryParamValues(escalationQuery?.where).includes(workspaceId));
   assert.deepEqual(result.items.map((item) => item.id), [firstItemId]);
   assert.deepEqual(result.runs.map((run) => run.id), [firstRunId]);
-  assert.deepEqual(result.escalations.map((escalation) => escalation.id), [escalationId]);
+  assert.deepEqual(result.escalations.map((escalation) => escalation.id), [escalationId, runlessEscalationId]);
 });

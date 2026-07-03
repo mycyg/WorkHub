@@ -34,6 +34,7 @@ const escalationId = "96000000-0000-4000-8000-000000000008";
 const hiddenPlanId = "96000000-0000-4000-8000-000000000009";
 const hiddenRunId = "96000000-0000-4000-8000-00000000000a";
 const hiddenWorkItemId = "96000000-0000-4000-8000-00000000000b";
+const runlessEscalationId = "96000000-0000-4000-8000-00000000000c";
 
 function runtimeSettings(): Settings {
   return loadSettings({
@@ -275,14 +276,24 @@ test("R9.6 agent army dashboard aggregates observable plan state from rows and c
         finishedAt: null
       }
     ],
-    escalations: [{
-      id: escalationId,
-      workItemId,
-      planId,
-      runId: secondRunId,
-      reasonMd: "证据互相冲突，需要人判断。",
-      createdAt: new Date("2026-07-02T22:00:00.000Z")
-    }],
+    escalations: [
+      {
+        id: escalationId,
+        workItemId,
+        planId,
+        runId: secondRunId,
+        reasonMd: "证据互相冲突，需要人判断。",
+        createdAt: new Date("2026-07-02T22:00:00.000Z")
+      },
+      {
+        id: runlessEscalationId,
+        workItemId,
+        planId,
+        runId: null,
+        reasonMd: "依赖图需要人工调整。",
+        createdAt: new Date("2026-07-02T21:00:00.000Z")
+      }
+    ],
     ledgerEntries: ledger.entries,
     pageInfo: {
       planLimit: 20,
@@ -312,8 +323,11 @@ test("R9.6 agent army dashboard aggregates observable plan state from rows and c
   assert.equal(vm.plans[0]?.cost.budget_cny, "3");
   assert.equal(vm.plans[0]?.judge.pass_rate_pct, 100);
   assert.equal(vm.plans[0]?.oldest_blocker?.href, "/attention");
-  assert.match(vm.plans[0]?.oldest_blocker?.label ?? "", /竞品复核/u);
+  assert.match(vm.plans[0]?.oldest_blocker?.label ?? "", /竞品资料梳理/u);
   assert.equal(vm.recent_escalations[0]?.href, "/attention");
+  assert.equal(vm.recent_escalations[1]?.id, runlessEscalationId);
+  assert.match(vm.recent_escalations[1]?.title ?? "", /竞品资料梳理/u);
+  assert.equal(vm.page_info.escalation_returned, 2);
   assert.equal(vm.empty_state, undefined);
 });
 

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import type {
   TaskPlanItemStatus,
@@ -319,23 +319,32 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         ))
         .orderBy(desc(agentRuns.updatedAt), desc(agentRuns.createdAt), desc(agentRuns.id))
         .limit(runLimit + 1);
+      const handoffTaskPlanId = sql<string>`${escalationEvents.handoffJson}->>'task_plan_id'`;
       const escalationRows = await db
         .select({
           id: escalationEvents.id,
           workItemId: escalationEvents.workItemId,
-          planId: agentRuns.taskPlanId,
+          planId: sql<string | null>`coalesce(${agentRuns.taskPlanId}::text, ${taskPlans.id}::text)`,
           runId: agentRuns.id,
           reasonMd: escalationEvents.reasonMd,
           createdAt: escalationEvents.createdAt
         })
         .from(escalationEvents)
-        .innerJoin(agentRuns, eq(escalationEvents.agentRunId, agentRuns.id))
+        .leftJoin(agentRuns, eq(escalationEvents.agentRunId, agentRuns.id))
         .innerJoin(workItems, eq(escalationEvents.workItemId, workItems.id))
+        .leftJoin(taskPlans, and(
+          sql`${taskPlans.id}::text = ${handoffTaskPlanId}`,
+          eq(taskPlans.workItemId, escalationEvents.workItemId),
+          eq(taskPlans.workspaceId, input.workspaceId)
+        ))
         .where(and(
           eq(workItems.workspaceId, input.workspaceId),
           isNull(workItems.deletedAt),
           isNull(escalationEvents.resolvedAt),
-          inArray(agentRuns.taskPlanId, planIds)
+          or(
+            inArray(agentRuns.taskPlanId, planIds),
+            inArray(taskPlans.id, planIds)
+          )
         ))
         .orderBy(desc(escalationEvents.createdAt), desc(escalationEvents.id))
         .limit(escalationLimit + 1);
