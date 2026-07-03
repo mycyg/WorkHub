@@ -306,9 +306,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         ? ledgerStore.listEntriesForWorkspace(teamId, { sinceBucket })
         : ledgerStore.listEntriesForScopes
           ? ledgerStore.listEntriesForScopes({ teamId }, { sinceBucket })
-          : ledgerStore.listEntries
-            ? ledgerStore.listEntries({ sinceBucket })
-            : ledgerStore.entries;
+          : [];
     }
     return ledgerStore.listEntriesForScopes
       ? ledgerStore.listEntriesForScopes({ userId: input.currentUser.id, teamId }, { sinceBucket })
@@ -660,9 +658,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
           ? await ledgerStore.listEntriesForWorkspace(teamId, { sinceBucket: costSinceBucket })
           : ledgerStore.listEntriesForScopes
             ? await ledgerStore.listEntriesForScopes({ teamId }, { sinceBucket: costSinceBucket })
-            : ledgerStore.listEntries
-              ? await ledgerStore.listEntries({ sinceBucket: costSinceBucket })
-              : ledgerStore.entries)
+            // R9.7：管理员账目同样必须有 workspace-scoped reader；缺失时 fail-closed，
+            // 不能回退到 listEntries()/entries 的全组织账本。
+            : [])
       // routes-b-2/contracts-pkgs-4：非管理员回到按 { userId, teamId } 的窄 scope 查询——只取本人 user-scope
       // 条目并叠加工作区围栏（listEntriesForScopes 内部对 teamId 走子查询半连接，不拉全工作区）。
       : (ledgerStore.listEntriesForScopes

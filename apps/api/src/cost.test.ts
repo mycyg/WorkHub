@@ -993,6 +993,57 @@ test("L[1] cost dashboard fails closed (empty) for a non-admin when the store la
   assert.equal(userBody.data.by_user.length, 0);
 });
 
+test("R9.7 cost dashboard fails closed for an admin when the store lacks workspace-filtered reads", async () => {
+  const runtimeSettings = settings();
+  const fullStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await fullStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000e2",
+    workItemId: "50000000-0000-4000-8000-0000000000e2",
+    userId,
+    inputTokens: 1000,
+    outputTokens: 500,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: now
+  }));
+  await fullStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000e3",
+    workItemId: "50000000-0000-4000-8000-0000000000e3",
+    userId: "10000000-0000-4000-8000-0000000000c9",
+    inputTokens: 9000,
+    outputTokens: 9000,
+    costTier: { inputCnyPerMtok: 4, outputCnyPerMtok: 16 },
+    createdAt: now
+  }));
+  const storeWithoutWorkspaceReads: CostLedgerStore = {
+    records: fullStore.records,
+    entries: fullStore.entries,
+    recordUsage: (record) => fullStore.recordUsage(record),
+    usageSnapshots: (scopeIds, options) => fullStore.usageSnapshots(scopeIds, options),
+    listEntries: () => fullStore.listEntries!()
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore: storeWithoutWorkspaceReads
+  }));
+
+  const adminResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+
+  assert.equal(adminResponse.status, 200);
+  const adminBody = await adminResponse.json() as { ok: true; data: { token_in: number; by_user: unknown[] } };
+  assert.equal(adminBody.data.token_in, 0);
+  assert.equal(adminBody.data.by_user.length, 0);
+});
+
 test("api provider registry records create and stream usage into the shared cost ledger", async () => {
   const runtimeSettings = loadSettings({
     APP_ENV: "test",
