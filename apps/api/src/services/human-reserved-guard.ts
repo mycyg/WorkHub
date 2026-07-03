@@ -26,7 +26,7 @@ export type HumanReservedGuardInput = {
   toolCall?: HumanReservedToolCall;
 };
 
-export type HumanReservedToolRiskCategory = "legal" | "finance" | "identity";
+export type HumanReservedToolRiskCategory = "legal" | "finance" | "identity" | "publish";
 
 export type HumanReservedToolCall = {
   toolId: string;
@@ -75,11 +75,14 @@ function titleFor(row: WorkItemHumanReservedRow, fallbackTitle?: string) {
 const highRiskToolTokens: Record<HumanReservedToolRiskCategory, readonly string[]> = {
   legal: ["legal", "contract", "contracts", "terms", "tos", "signature", "sign"],
   finance: ["finance", "financial", "payment", "payments", "payout", "bank", "banking", "card", "wire", "payroll", "invoice"],
-  identity: ["identity", "identities", "kyc", "passport", "idv", "credential", "credentials"]
+  identity: ["identity", "identities", "kyc", "passport", "idv", "credential", "credentials"],
+  publish: ["publish", "publishing", "published"]
 };
 
 const identityRegistrationActionTokens = ["create", "register", "registration", "signup", "open"] as const;
 const identityRegistrationSubjectTokens = ["account", "accounts", "entity", "entities", "company", "companies"] as const;
+const externalPublishActionTokens = ["post", "posting", "share", "send"] as const;
+const externalPublishChannelTokens = ["external", "public", "social", "media", "website", "blog", "twitter", "linkedin", "wechat"] as const;
 
 function toolIdTokens(toolId: string) {
   return toolId
@@ -98,15 +101,22 @@ function hasIdentityRegistrationIntent(tokens: ReadonlySet<string>) {
   return hasAnyToken(tokens, identityRegistrationActionTokens) && hasAnyToken(tokens, identityRegistrationSubjectTokens);
 }
 
+function hasExternalPublishingIntent(tokens: ReadonlySet<string>) {
+  return hasAnyToken(tokens, externalPublishActionTokens) && hasAnyToken(tokens, externalPublishChannelTokens);
+}
+
 export function classifyHumanReservedToolCall(input: Pick<HumanReservedToolCall, "toolId">): HumanReservedToolRiskCategory | null {
   const tokens = new Set(toolIdTokens(input.toolId));
-  for (const category of ["legal", "finance", "identity"] as const) {
+  for (const category of ["legal", "finance", "identity", "publish"] as const) {
     if (highRiskToolTokens[category].some((token) => tokens.has(token))) {
       return category;
     }
   }
   if (hasIdentityRegistrationIntent(tokens)) {
     return "identity";
+  }
+  if (hasExternalPublishingIntent(tokens)) {
+    return "publish";
   }
   return null;
 }
@@ -118,7 +128,8 @@ function buildHumanReservedReason(row: WorkItemHumanReservedRow, fallbackTitle?:
 const toolRiskLabels: Record<HumanReservedToolRiskCategory, string> = {
   legal: "法务",
   finance: "财务",
-  identity: "身份"
+  identity: "身份",
+  publish: "对外发布"
 };
 
 function toolInputShape(input: unknown) {
@@ -156,7 +167,7 @@ function highRiskToolHandoff(row: WorkItemHumanReservedRow, toolCall: HumanReser
   return {
     done: [`已拦截${toolRiskLabels[category]}类高风险工具调用。`],
     todo: ["请负责人确认是否允许该动作，并由人执行或改写任务边界。"],
-    blockers: ["法务、财务、身份类高风险动作不能由 AI 工人自动执行。"],
+    blockers: ["法务、财务、身份、对外发布类高风险动作不能由 AI 工人自动执行。"],
     artifacts: [],
     source: "tool_call",
     risk_category: category,

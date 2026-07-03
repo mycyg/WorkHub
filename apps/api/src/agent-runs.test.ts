@@ -3157,7 +3157,7 @@ test("human-reserved guard audits and publishes escalation in the work item's wo
   ]);
 });
 
-test("R9.7 high-risk legal, finance, and identity tool calls are stopped by human-reserved guard", async () => {
+test("R9.7 high-risk legal, finance, identity, and publishing tool calls are stopped by human-reserved guard", async () => {
   const runtimeSettings = settings();
   const cases = [
     { toolId: "legal_accept_terms", category: "legal" },
@@ -3167,7 +3167,9 @@ test("R9.7 high-risk legal, finance, and identity tool calls are stopped by huma
     { toolId: "bankTransfer", category: "finance" },
     { toolId: "passportKycSubmit", category: "identity" },
     { toolId: "createAccount", category: "identity" },
-    { toolId: "registerEntity", category: "identity" }
+    { toolId: "registerEntity", category: "identity" },
+    { toolId: "publishExternalPost", category: "publish" },
+    { toolId: "socialMediaPost", category: "publish" }
   ] as const;
 
   for (const [index, testCase] of cases.entries()) {
