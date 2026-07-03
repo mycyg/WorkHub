@@ -169,3 +169,46 @@ test("R9.1 meta planner escalates bad decomposition instead of silently cancelli
   );
   assert.equal(registry.calls.length, 4);
 });
+
+test("R9.7 meta planner prompts and escalation copy avoid dispatch wording", async () => {
+  for (const locale of ["zh-CN", "en-US"] as const) {
+    const registry = new RecordingRegistry([
+      validPlan(["a", "b", "c"]),
+      { decision: "retry", confidence: "low", reasons: ["template tasks"] },
+      validPlan(["a2", "b2", "c2"]),
+      { decision: "retry", confidence: "low", reasons: ["acceptance is still unmeasurable"] }
+    ]);
+    const planner = createMetaPlanner({
+      providerRegistry: registry as unknown as ProviderRegistry,
+      id: idSequence([
+        "95000000-0000-4000-8000-000000000501",
+        "95000000-0000-4000-8000-000000000502",
+        "95000000-0000-4000-8000-000000000503",
+        "95000000-0000-4000-8000-000000000504",
+        "95000000-0000-4000-8000-000000000505",
+        "95000000-0000-4000-8000-000000000506"
+      ])
+    });
+
+    await assert.rejects(
+      planner.createDraft({
+        actor: { id: userId, userId, workspaceId, label: "Planner PM" },
+        locale,
+        workItem: {
+          id: workItemId,
+          workspaceId,
+          title: locale === "zh-CN" ? "调研并产出短报告" : "Research and write a short report",
+          rawDescription: locale === "zh-CN" ? "请拆解成可执行计划" : "Please decompose this into a reviewable plan"
+        },
+        acceptance: ["needs human-visible plan review"],
+        memories: {}
+      }),
+      (error: unknown) => error instanceof MetaPlannerServiceError
+        && error.code === "task_plan_decomposition_needs_human"
+        && !/dispatch|派发/iu.test(error.message)
+    );
+
+    const prompts = registry.calls.map((call) => String(call.params.messages[0]?.content ?? "")).join("\n");
+    assert.doesNotMatch(prompts, /dispatch|派发/iu);
+  }
+});

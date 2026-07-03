@@ -134,8 +134,8 @@ function plannerPrompt(input: MetaPlannerCreateDraftInput, feedback: readonly st
   ].filter(Boolean).join("\n");
   return [
     zh
-      ? "把这个 WorkHub 工作项拆成可审计、可派发的任务计划。"
-      : "Decompose this WorkHub work item into an auditable dispatch plan.",
+      ? "把这个 WorkHub 工作项拆成可审计、可执行的任务计划。"
+      : "Decompose this WorkHub work item into an auditable execution plan.",
     "Return strict JSON only with this shape:",
     "{\"items\":[{\"key\":\"short-stable-key\",\"title\":\"...\",\"role\":\"research|produce|review|integrate\",\"objective_md\":\"...\",\"acceptance_md\":\"...\",\"budget_share_pct\":40,\"depends_on\":[\"other-key\"]}]}",
     zh
@@ -244,7 +244,7 @@ function needsHuman(locale: WorkHubLocale) {
     409,
     "task_plan_decomposition_needs_human",
     locale === "en-US"
-      ? "The AI could not produce a measurable task plan after one retry. Please review the work item before dispatch."
+      ? "The AI could not produce a measurable task plan after one retry. Please review the work item plan before starting work."
       : "AI 重拆一次后仍未产出可验收的任务计划，请先由人确认计划。"
   );
 }
