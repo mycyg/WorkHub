@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { CalendarPageVM, DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM,
+import type { AgentArmyDashboardVM, CalendarPageVM, DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM,
   ProjectHealthPageVM, ProjectHomePageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, TeamSkillsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
 import { launchChrome, type CdpClient } from "../src/chrome-launch.js";
 
@@ -257,6 +257,15 @@ type BrowserAudit = {
     skillCardCount: string | null;
     skillRefinedBadge: string | null;
     skillEmpty: string | null;
+    agentPlanCount: string | null;
+    agentRecentCount: string | null;
+    agentActiveTeams: string | null;
+    agentWaitingDecision: string | null;
+    agentKpiCount: string | null;
+    agentPlanCardCount: string | null;
+    agentRecentAccordion: string | null;
+    agentMobileMode: string | null;
+    agentEmpty: string | null;
     notificationGrounding: string | null;
     notificationEvidenceSearchRef: string | null;
     knowledgeSourceRef: string | null;
@@ -367,8 +376,8 @@ const outputDir = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_OUTPUT_DIR"]
   : defaultOutputDir;
 const smokeTitle = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_TITLE"] ?? "R4.5 Web Live Route Interaction Smoke";
 const reportFilename = process.env["WORKHUB_R4_WEB_ROUTE_SMOKE_REPORT_NAME"] ?? "live-route-interaction-report.json";
-// R9：proposal 两段流（approve→merge）新增 08b approve 步。
-const expectedLiveRouteSmokeSteps = 80;
+// R9.6：Agent Army dashboard 加入 typed Page VM route，desktop/mobile 各一条 live route 步骤。
+const expectedLiveRouteSmokeSteps = 82;
 const qaProjectId = "10000000-0000-4000-8000-000000001600";
 const qaCreatedProjectId = "10000000-0000-4000-8000-000000001691";
 const qaCreatedProjectName = "R4 Live Launch Notes";
@@ -742,6 +751,66 @@ function productSurface(): GoldPathSurfaceVM {
     ...surface,
     proposal_conflicts: r4AdvancedProposalConflicts(surface)
   });
+}
+
+function agentArmyDashboardVm(overrides: Partial<AgentArmyDashboardVM> = {}): AgentArmyDashboardVM {
+  return {
+    generated_at: "2026-07-03T00:00:00.000Z",
+    kpis: {
+      active_team_count: 1,
+      waiting_decision_count: 2,
+      today_cost_cny: "1.25",
+      autonomy_rate_pct: 67
+    },
+    plans: [{
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      work_item_code: "DEMO-960",
+      work_item_title: "竞品资料梳理",
+      work_item_href: "/workitems/96000000-0000-4000-8000-000000000002",
+      objective_id: "96000000-0000-4000-8000-000000000003",
+      objective_title: "季度上市策略",
+      status: "dispatching",
+      progress: { completed: 1, total: 2, label: "1/2" },
+      roles: [
+        { role: "research", count: 1 },
+        { role: "review", count: 1 }
+      ],
+      statuses: [
+        { status: "succeeded", count: 1 },
+        { status: "needs_human", count: 1 }
+      ],
+      cost: { used_cny: "1.25", budget_cny: "3", burn_pct: 42 },
+      judge: { passed: 1, total: 1, pass_rate_pct: 100 },
+      oldest_blocker: {
+        kind: "needs_human",
+        label: "卡在: 竞品复核 · 2h",
+        age_seconds: 7200,
+        href: "/attention"
+      },
+      updated_at: "2026-07-03T00:00:00.000Z"
+    }],
+    recent_escalations: [{
+      id: "96000000-0000-4000-8000-000000000008",
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      title: "竞品复核需要人判断",
+      reason_preview: "证据互相冲突，需要人判断。",
+      created_at: "2026-07-02T22:00:00.000Z",
+      href: "/attention"
+    }],
+    page_info: {
+      plan_limit: 20,
+      returned: 1,
+      plans_capped: false,
+      items_capped: false,
+      runs_capped: false,
+      escalation_limit: 5,
+      escalation_returned: 1,
+      escalations_capped: false
+    },
+    ...overrides
+  };
 }
 
 const driveDraftProposalId = "10000000-0000-4000-8000-000000001631";
@@ -1952,6 +2021,10 @@ function createMockApiServer(surface: GoldPathSurfaceVM, requestLog: ApiRequestR
       sendJson(response, 200, surface.page_vms.cost);
       return;
     }
+    if (request.method === "GET" && url.pathname === "/api/pages/agents") {
+      sendJson(response, 200, agentArmyDashboardVm());
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/api/pages/skills") {
       sendJson(response, 200, teamSkillsPage());
       return;
@@ -2407,7 +2480,14 @@ async function waitFor<T>(
     }
     await new Promise((resolve) => setTimeout(resolve, 120));
   }
-  throw new Error(`Timed out waiting for ${label}; last value=${JSON.stringify(lastValue)}`);
+  const diagnostic = await cdp.evaluate<string>(`(() => JSON.stringify({
+    href: location.href,
+    readyState: document.readyState,
+    title: document.title,
+    body: document.body?.innerText?.slice(0, 500) ?? "",
+    rootHtml: document.getElementById("root")?.innerHTML.slice(0, 800) ?? ""
+  }))()`).catch((error: unknown) => `diagnostic_failed:${error instanceof Error ? error.message : String(error)}`);
+  throw new Error(`Timed out waiting for ${label}; last value=${JSON.stringify(lastValue)}; diagnostic=${diagnostic}`);
 }
 
 async function navigate(cdp: CdpClient, url: string, expectedStatus: string) {
@@ -2833,6 +2913,15 @@ function auditExpression() {
       skillCardCount: String(document.querySelectorAll("[data-r8-skill]").length),
       skillRefinedBadge: document.querySelector("[data-r8-skill-refined]") ? "true" : "false",
       skillEmpty: document.querySelector("[data-r8-skills-empty]") ? "true" : "false",
+      agentPlanCount: routeComponent?.getAttribute("data-r9-agent-dashboard-plan-count") || null,
+      agentRecentCount: routeComponent?.getAttribute("data-r9-agent-dashboard-recent-count") || null,
+      agentActiveTeams: document.querySelector("[data-r9-agent-kpi='active_team_count'] strong")?.textContent?.trim() || null,
+      agentWaitingDecision: document.querySelector("[data-r9-agent-kpi='waiting_decision'] strong")?.textContent?.trim() || null,
+      agentKpiCount: String(document.querySelectorAll("[data-r9-agent-kpi]").length),
+      agentPlanCardCount: String(document.querySelectorAll("[data-r9-agent-plan-card]").length),
+      agentRecentAccordion: document.querySelector("[data-r9-agent-recent-activity='accordion']") ? "true" : "false",
+      agentMobileMode: routeComponent?.getAttribute("data-r9-agent-dashboard-mobile") || null,
+      agentEmpty: document.querySelector("[data-r9-agent-dashboard-empty]") ? "true" : "false",
       notificationGrounding: document.querySelector("[data-r5-7-notification-grounding]") ? "true" : "false",
       notificationEvidenceSearchRef: document.querySelector("[data-r5-7-notification-evidence-ref='knowledge_search']")?.getAttribute("href") || null,
       knowledgeSourceRef: document.querySelector("[data-r5-7-knowledge-source-ref]")?.getAttribute("data-r5-7-knowledge-source-ref") || null,
@@ -2957,6 +3046,15 @@ function auditExpression() {
                             document.querySelector("[data-r8-skill]") &&
                               document.querySelector("[data-r8-skill-refined]") &&
                               !document.querySelector("[data-r8-skills-empty]")
+                          )
+                        : routeComponentKey === "agents"
+                          ? Boolean(
+                            document.querySelector("[data-r9-agent-dashboard='true']") &&
+                              document.querySelector("[data-r9-agent-kpi='active_team_count']") &&
+                              document.querySelector("[data-r9-agent-kpi='waiting_decision']") &&
+                              document.querySelector("[data-r9-agent-plan-card]") &&
+                              document.querySelector("[data-r9-agent-recent-activity='accordion']") &&
+                              !document.querySelector("[data-r9-agent-dashboard-empty]")
                           )
                     : routeComponentKey === "projects"
                       ? Boolean(document.querySelector("[data-r8-projects-list]") && document.querySelector("[data-r8-project-open]") && document.querySelector("[data-r8-project-create]"))
@@ -3446,6 +3544,14 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   steps.push(await captureStep(cdp, { id: "12a-cost-budget-warning-notice-en-mobile", url: `${baseUrl}/dashboard/cost`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "cost" }));
 
   await setViewport(cdp, desktop);
+  await navigate(cdp, `${baseUrl}/dashboard/agents`, "ready");
+  steps.push(await captureStep(cdp, { id: "12aa-agents-en-desktop-route-component", url: `${baseUrl}/dashboard/agents`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "agents" }));
+
+  await setViewport(cdp, mobile);
+  await navigate(cdp, `${baseUrl}/dashboard/agents`, "ready");
+  steps.push(await captureStep(cdp, { id: "12ab-agents-en-mobile-no-overflow", url: `${baseUrl}/dashboard/agents`, viewport: mobile, expectedStatus: "ready", expectedRouteComponent: "agents" }));
+
+  await setViewport(cdp, desktop);
   await navigate(cdp, `${baseUrl}/knowledge/search?q=regional&workItemId=r4-live-workitem`, "ready");
   steps.push(await captureStep(cdp, { id: "12b-knowledge-fallback-en-desktop-route-component", url: `${baseUrl}/knowledge/search?q=regional&workItemId=r4-live-workitem`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "knowledge" }));
 
@@ -3718,6 +3824,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       typeof request.body === "string" &&
       request.body.includes(`notification:${notificationMeetingId}`)
     ),
+    agents: requests.some((request) => request.pathname === "/api/pages/agents" && request.locale === "en-US"),
     skills: requests.some((request) => request.pathname === "/api/pages/skills" && request.locale === "en-US"),
     cost: requests.some((request) => request.pathname === "/api/pages/cost" && request.locale === "en-US"),
     settings: requests.some((request) => request.pathname === "/api/pages/settings" && request.locale === "en-US"),
@@ -3766,6 +3873,7 @@ function requestProof(requests: ApiRequestRecord[]) {
       identify: count("/api/auth/identify", "POST"),
       logout: count("/api/auth/logout", "POST"),
       health: count("/api/pages/health"),
+      agents: count("/api/pages/agents"),
       skills: count("/api/pages/skills"),
       cost: count("/api/pages/cost"),
       settings: count("/api/pages/settings"),
@@ -3830,9 +3938,11 @@ function vmDomValueMatches(steps: StepReport[], surface: GoldPathSurfaceVM) {
   const workitem = byId.get("03-workitem-click-zh-desktop-route-component")?.audit.routeData;
   const proposal = byId.get("11-proposal-en-mobile-scrolled-notice-route-component")?.audit.routeData;
   const cost = byId.get("12-cost-en-mobile-route-component")?.audit.routeData;
+  const agents = byId.get("12aa-agents-en-desktop-route-component")?.audit.routeData;
   const skills = byId.get("15v-skills-en-desktop-route-component")?.audit.routeData;
   const settings = byId.get("13-settings-en-desktop-route-component")?.audit.routeData;
   const skillsVm = teamSkillsPage();
+  const agentsVm = agentArmyDashboardVm();
   return Boolean(
     workitem &&
       workitem.workitemTraceCount === String(surface.page_vms.workitem.agent_trace_preview.length) &&
@@ -3852,6 +3962,16 @@ function vmDomValueMatches(steps: StepReport[], surface: GoldPathSurfaceVM) {
       cost.costTotalCny === surface.page_vms.cost.total_cost_cny &&
       cost.costBudgetCount === String(surface.page_vms.cost.budget.length) &&
       cost.costModelCount === String(surface.page_vms.cost.model_breakdown.length) &&
+      agents &&
+      agents.agentPlanCount === String(agentsVm.plans.length) &&
+      agents.agentRecentCount === String(agentsVm.recent_escalations.length) &&
+      agents.agentActiveTeams === String(agentsVm.kpis.active_team_count) &&
+      agents.agentWaitingDecision === String(agentsVm.kpis.waiting_decision_count) &&
+      agents.agentKpiCount === "4" &&
+      agents.agentPlanCardCount === "1" &&
+      agents.agentRecentAccordion === "true" &&
+      agents.agentMobileMode === "single-column" &&
+      agents.agentEmpty === "false" &&
       skills &&
       skills.skillActiveCount === String(skillsVm.totals.active) &&
       skills.skillAiAuthoredCount === String(skillsVm.totals.ai_authored) &&
@@ -3928,6 +4048,7 @@ async function main() {
       health: "health",
       replay: "replay",
       cost: "cost",
+      agents: "agents",
       knowledge: "evidence",
       skills: "skills",
       settings: "settings"
@@ -3953,7 +4074,7 @@ async function main() {
         steps.some((step) => step.id === "05-history-forward-workitem" && step.audit.pathname === "/workitems/r4-live-workitem"),
       locale_toggle_reload: steps.some((step) => step.id === "06-locale-toggle-en-workitem-route-component" && step.audit.lang === "en-US" && step.audit.enChrome && step.audit.activeLocale === "en-US"),
       ready_empty_forbidden_notfound_routes: ["ready", "empty", "forbidden", "notFound"].every((status) => steps.some((step) => step.audit.status === status)),
-      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.projects && proof.projectHome && proof.proposal && proof.conflicts && proof.drive && proof.meetings && proof.notifications && proof.calendar && proof.cost && proof.skills && proof.settings && proof.replay && proof.localePatch,
+      ready_routes_use_page_vm_endpoints: proof.attention && proof.approvals && proof.workitem && proof.workitemEn && proof.projects && proof.projectHome && proof.proposal && proof.conflicts && proof.drive && proof.meetings && proof.notifications && proof.calendar && proof.cost && proof.agents && proof.skills && proof.settings && proof.replay && proof.localePatch,
       r4_14_ready_routes_use_session_knowledge_endpoints:
         proof.session &&
         proof.sessionEn &&
@@ -4387,6 +4508,32 @@ async function main() {
           !step.audit.navHorizontalOverflow &&
           step.audit.textOverflowCount === 0
         ),
+      r9_6_agent_army_route_component:
+        proof.agents &&
+        proof.counts.agents === 2 &&
+        steps.some((step) =>
+          step.id === "12aa-agents-en-desktop-route-component" &&
+          step.audit.routeComponent === "agents" &&
+          step.audit.routeComponentSource === "page-vm" &&
+          step.audit.routeData.agentPlanCount === "1" &&
+          step.audit.routeData.agentRecentCount === "1" &&
+          step.audit.routeData.agentActiveTeams === "1" &&
+          step.audit.routeData.agentWaitingDecision === "2" &&
+          step.audit.routeData.agentKpiCount === "4" &&
+          step.audit.routeData.agentPlanCardCount === "1" &&
+          step.audit.routeData.agentRecentAccordion === "true" &&
+          step.audit.routeData.agentEmpty === "false" &&
+          !step.audit.horizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ) &&
+        steps.some((step) =>
+          step.id === "12ab-agents-en-mobile-no-overflow" &&
+          step.audit.routeComponent === "agents" &&
+          step.audit.routeData.agentMobileMode === "single-column" &&
+          !step.audit.horizontalOverflow &&
+          !step.audit.navHorizontalOverflow &&
+          step.audit.textOverflowCount === 0
+        ),
       r5_9_onboarding_routes:
         proof.identifyRegistration &&
         proof.identifySecondUser &&
@@ -4658,7 +4805,8 @@ async function main() {
         step.audit.routeTreeMode === "html-fallback" &&
         step.audit.routeTreeAdapter === "route-component-v1" &&
         step.audit.routeTreeActiveOnly &&
-        step.audit.routeTreeRouteCount === "17" &&
+        // R9.6 adds /dashboard/agents to the live route tree; the old exact count 17 was pre-dashboard.
+        step.audit.routeTreeRouteCount === "18" &&
         routeAdapterPageVmTruth(step)
       ),
       r4_16_action_dispatcher_parity: readyProductSteps.every((step) =>
@@ -5159,6 +5307,7 @@ async function main() {
         proof.counts.mergeApply === 4 &&
         proof.counts.acceptedDeliverableRestore === 1 &&
         proof.counts.cost === 2 &&
+        proof.counts.agents === 2 &&
         proof.counts.settings === 1 &&
         // 交付物还原成功后当前路由重渲（renderCurrentRoute）→ replay loader 合法地取了两次。
         proof.counts.replay === 2 &&

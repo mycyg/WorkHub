@@ -53,8 +53,10 @@ export const webSurface = {
     "/api/notifications/preferences",
     "/api/pages/approvals",
     "/api/pages/cost",
+    "/api/pages/agents",
     "/api/pages/settings",
     "/api/agent-runs/:id/replay",
+    "/dashboard/agents",
     "/settings"
   ],
   consumesTypedClient: "@workhub/api-client"

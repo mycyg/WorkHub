@@ -519,6 +519,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       attention: (options) => request(withPageLocale("/api/pages/attention", options)),
       approvals: (options) => request(withPageLocale("/api/pages/approvals", options)),
       cost: (options) => request(withPageLocale("/api/pages/cost", options)),
+      agents: (options) => request(withPageLocale("/api/pages/agents", options)),
       skills: (options) => request(withPageLocale("/api/pages/skills", options)),
       settings: (options) => request(withPageLocale("/api/pages/settings", options)),
       goldPath: (options) => request(withPageLocale("/api/pages/gold-path", options)),

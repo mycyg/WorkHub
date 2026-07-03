@@ -86,6 +86,9 @@ function pageAliases(page: GoldPathRenderedPage) {
   if (page.key === "cost") {
     aliases.add("/dashboard/cost");
   }
+  if (page.key === "agents") {
+    aliases.add("/dashboard/agents");
+  }
   if (page.key === "knowledge") {
     aliases.add("/knowledge");
     aliases.add("/knowledge/search");

@@ -301,6 +301,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
       async cost() {
         throw new Error("not needed");
       },
+      async agents() {
+        throw new Error("not needed");
+      },
       async skills() {
         throw new Error("not needed");
       },

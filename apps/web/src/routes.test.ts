@@ -4,6 +4,7 @@ import test from "node:test";
 import { WorkHubApiError, type WorkHubApiClient } from "@workhub/api-client";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
 import type {
+  AgentArmyDashboardVM,
   ApprovalCenterVM,
   AttentionHomeVM,
   CalendarPageVM,
@@ -35,6 +36,7 @@ type RouteClientOverrides = {
   attention?: AttentionHomeVM;
   approvals?: ApprovalCenterVM;
   cost?: CostDashboardVM;
+  agents?: AgentArmyDashboardVM;
   skills?: TeamSkillsPageVM;
   drive?: DrivePageVM;
   projects?: ProjectListVM;
@@ -544,6 +546,66 @@ function goldPathSurfaceVm(): GoldPathSurfaceVM {
   };
 }
 
+function agentArmyDashboardVm(overrides: Partial<AgentArmyDashboardVM> = {}): AgentArmyDashboardVM {
+  return {
+    generated_at: "2026-07-03T00:00:00.000Z",
+    kpis: {
+      active_team_count: 1,
+      waiting_decision_count: 2,
+      today_cost_cny: "1.25",
+      autonomy_rate_pct: 67
+    },
+    plans: [{
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      work_item_code: "DEMO-960",
+      work_item_title: "竞品资料梳理",
+      work_item_href: "/workitems/96000000-0000-4000-8000-000000000002",
+      objective_id: "96000000-0000-4000-8000-000000000003",
+      objective_title: "季度上市策略",
+      status: "dispatching",
+      progress: { completed: 1, total: 2, label: "1/2" },
+      roles: [
+        { role: "research", count: 1 },
+        { role: "review", count: 1 }
+      ],
+      statuses: [
+        { status: "succeeded", count: 1 },
+        { status: "needs_human", count: 1 }
+      ],
+      cost: { used_cny: "1.25", budget_cny: "3", burn_pct: 42 },
+      judge: { passed: 1, total: 1, pass_rate_pct: 100 },
+      oldest_blocker: {
+        kind: "needs_human",
+        label: "卡在: 竞品复核 · 2h",
+        age_seconds: 7200,
+        href: "/attention"
+      },
+      updated_at: "2026-07-03T00:00:00.000Z"
+    }],
+    recent_escalations: [{
+      id: "96000000-0000-4000-8000-000000000008",
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      title: "竞品复核需要人判断",
+      reason_preview: "证据互相冲突，需要人判断。",
+      created_at: "2026-07-02T22:00:00.000Z",
+      href: "/attention"
+    }],
+    page_info: {
+      plan_limit: 20,
+      returned: 1,
+      plans_capped: false,
+      items_capped: false,
+      runs_capped: false,
+      escalation_limit: 5,
+      escalation_returned: 1,
+      escalations_capped: false
+    },
+    ...overrides
+  };
+}
+
 function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverrides = {}) {
   const calls: string[] = [];
   const localeCall = (name: string, options?: { locale?: string; projectId?: string }) => {
@@ -571,6 +633,10 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
           throw overrides.costError;
         }
         return overrides.cost ?? surface.page_vms.cost;
+      },
+      async agents(options?: { locale?: string }) {
+        localeCall("agents", options);
+        return overrides.agents ?? agentArmyDashboardVm();
       },
       async skills(options?: { locale?: string }) {
         localeCall("skills", options);
@@ -804,6 +870,7 @@ function routeStructuredProposalConflict(surface: GoldPathSurfaceVM): ProposalCo
 }
 
 test("R4 web route registry resolves product URL routes", () => {
+  // R9.6 adds the live-only Agent Army dashboard to the product route set; the old fixed list was pre-dashboard.
   assert.deepEqual(webRouteRegistry.map((route) => route.key), [
     "home",
     "projects",
@@ -819,6 +886,7 @@ test("R4 web route registry resolves product URL routes", () => {
     "health",
     "replay",
     "cost",
+    "agents",
     "knowledge",
     "skills",
     "settings"
@@ -830,6 +898,7 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/dashboard/health")?.key, "health");
   assert.equal(resolveWebRoute("/approvals?filter=pending")?.key, "approvals");
   assert.equal(resolveWebRoute("/dashboard/cost")?.key, "cost");
+  assert.equal(resolveWebRoute("/dashboard/agents")?.key, "agents");
   assert.equal(resolveWebRoute("/drive")?.key, "drive");
   assert.equal(resolveWebRoute("/meetings?project_id=95000000-0000-4000-8000-000000000001")?.key, "meetings");
   assert.equal(resolveWebRoute("/notifications")?.key, "notifications");
@@ -844,6 +913,64 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(resolveWebRoute("/unknown"), undefined);
   assert.equal(webRouteHref("https://workhub.local/proposals/p-1?tab=diff#top"), "/proposals/p-1?tab=diff");
   assert.equal(webRouteHref("https://workhub.local/#/agent-runs/run-1/replay?from=old"), "/agent-runs/run-1/replay?from=old");
+});
+
+test("R9.6 web route loads Agent Army dashboard through the typed Page VM endpoint", async () => {
+  const { client, calls } = fakeRouteClient(goldPathSurfaceVm());
+  const match = resolveWebRoute("/dashboard/agents");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls, ["agents:zh-CN"]);
+  assert.equal(result.html.includes('data-r4-web-route-status="ready"'), true);
+  assert.equal(result.html.includes('data-r4-route-component="agents"'), true);
+  assert.equal(result.html.includes('data-r9-agent-dashboard="true"'), true);
+  assert.equal(result.html.includes('data-r9-agent-dashboard-plan-count="1"'), true);
+  assert.equal(result.html.includes('data-r9-agent-dashboard-recent-count="1"'), true);
+  assert.equal(result.html.includes('data-r9-agent-kpi="waiting_decision"'), true);
+  assert.equal(result.html.includes('href="/"'), true);
+  assert.equal(result.html.includes('href="/workitems/96000000-0000-4000-8000-000000000002"'), true);
+  assert.equal(result.html.includes("智能代理军团"), true);
+  assert.equal(result.html.includes("竞品资料梳理"), true);
+  assert.equal(result.html.includes("卡在: 竞品复核"), true);
+  assert.equal(result.html.includes("追加预算继续"), false);
+});
+
+test("R9.6 web Agent Army dashboard renders an honest empty state without fake plan cards", async () => {
+  const emptyAgents = agentArmyDashboardVm({
+    kpis: {
+      active_team_count: 0,
+      waiting_decision_count: 0,
+      today_cost_cny: "0",
+      autonomy_rate_pct: 0
+    },
+    plans: [],
+    recent_escalations: [],
+    page_info: {
+      plan_limit: 20,
+      returned: 0,
+      plans_capped: false,
+      items_capped: false,
+      runs_capped: false,
+      escalation_limit: 5,
+      escalation_returned: 0,
+      escalations_capped: false
+    },
+    empty_state: "no_agent_armies"
+  });
+  const { client } = fakeRouteClient(goldPathSurfaceVm(), { agents: emptyAgents });
+  const match = resolveWebRoute("/dashboard/agents");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r9-agent-dashboard-empty="no_agent_armies"'), true);
+  assert.equal(result.html.includes("还没有军团在跑"), true);
+  assert.equal(result.html.includes('href="/intake"'), true);
+  assert.equal(result.html.includes('data-r9-agent-plan-card='), false);
 });
 
 test("R4.24 web route helpers canonicalize legacy hash routes without treating hash as route truth", () => {
@@ -873,6 +1000,8 @@ test("R4.16 web route tree declares hydration fallback boundaries for every prod
       ["health", "health"],
       ["replay", "replay"],
       ["cost", "cost"],
+      // R9.6 adds the live-only Agent Army dashboard; the old route tree inventory was pre-dashboard.
+      ["agents", "agents"],
       ["knowledge", "evidence"],
       ["skills", "skills"],
       ["settings", "settings"]

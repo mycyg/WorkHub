@@ -1,5 +1,6 @@
 import { WorkHubApiError, type WorkHubApiClient } from "@workhub/api-client";
 import type {
+  AgentArmyDashboardVM,
   ApprovalCenterVM,
   AttentionHomeVM,
   CalendarPageVM,
@@ -95,6 +96,7 @@ export type WebRouteSurface =
   | { key: "health"; health: ProjectHealthPageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
+  | { key: "agents"; agents: AgentArmyDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble; source_ref?: string | undefined; scope_landing?: boolean | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
   | { key: "settings"; settings: SettingsPageVM };
@@ -199,6 +201,13 @@ const routeMatchers = [
     paramNames: []
   },
   {
+    key: "agents",
+    pattern: "/dashboard/agents",
+    apiBaseLabel: "/api/pages/agents",
+    regex: /^\/dashboard\/agents$/u,
+    paramNames: []
+  },
+  {
     key: "knowledge",
     pattern: "/knowledge/search",
     apiBaseLabel: "/api/knowledge/search",
@@ -242,6 +251,7 @@ type WebRouteTreePageVm =
   | "health"
   | "replay"
   | "cost"
+  | "agents"
   | "evidence"
   | "skills"
   | "settings";
@@ -289,6 +299,7 @@ const routeTreePageVmByKey = {
   health: "health",
   replay: "replay",
   cost: "cost",
+  agents: "agents",
   knowledge: "evidence",
   skills: "skills",
   settings: "settings"
@@ -465,6 +476,7 @@ const shellPageOrder = [
   "health",
   "replay",
   "cost",
+  "agents",
   "knowledge",
   "skills",
   "settings"
@@ -493,6 +505,7 @@ const shellDefaultRoutes = {
   health: "/dashboard/health",
   replay: "/",
   cost: "/dashboard/cost",
+  agents: "/dashboard/agents",
   knowledge: "/knowledge/search",
   skills: "/dashboard/skills",
   settings: "/settings"
@@ -514,6 +527,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     health: "项目健康",
     replay: "执行回放",
     cost: "成本",
+    agents: "智能代理军团",
     knowledge: "知识证据",
     skills: "团队技能",
     settings: "设置"
@@ -533,6 +547,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     health: "Project health",
     replay: "Execution replay",
     cost: "Cost",
+    agents: "Agent Army",
     knowledge: "Knowledge evidence",
     skills: "Team skills",
     settings: "Settings"
@@ -566,6 +581,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     tokens: "Tokens",
     cost: "成本",
     budget: "预算",
+    agentTeams: "军团",
+    autonomy: "自治率",
     options: "选项",
     refs: "来源",
     runtime: "运行时",
@@ -611,6 +628,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     tokens: "Tokens",
     cost: "Cost",
     budget: "Budget",
+    agentTeams: "Teams",
+    autonomy: "Autonomy",
     options: "Options",
     refs: "Sources",
     runtime: "Runtime",
@@ -802,6 +821,13 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "budget", String(surface.cost.budget.length))
     ];
   }
+  if (surface.key === "agents") {
+    return [
+      metric(locale, "agentTeams", String(surface.agents.kpis.active_team_count)),
+      metric(locale, "needsDecision", String(surface.agents.kpis.waiting_decision_count)),
+      metric(locale, "autonomy", `${surface.agents.kpis.autonomy_rate_pct}%`)
+    ];
+  }
   if (surface.key === "knowledge") {
     return [
       metric(locale, "refs", String(surface.evidence.evidence_refs.length)),
@@ -881,6 +907,9 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   }
   if (surface.key === "cost") {
     return renderWebRouteComponent({ key: "cost", cost: surface.cost }, { locale });
+  }
+  if (surface.key === "agents") {
+    return renderWebRouteComponent({ key: "agents", agents: surface.agents }, { locale });
   }
   if (surface.key === "knowledge") {
     return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence, sourceRef: surface.source_ref, scopeLanding: surface.scope_landing }, { locale });
@@ -1012,6 +1041,10 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     // F11/簇A：无成本数据(含 usage_not_connected)时不塌成通用空卡。成本组件自带空态兜底
     // (cost.statusFallback 等)，照常渲染整页(含外壳 + 「用量未接入」等可操作提示)，保留导航。
     return { key: "cost", cost } satisfies WebRouteSurface;
+  }
+  if (match.key === "agents") {
+    const agents = await client.pages.agents(withLocale(locale));
+    return { key: "agents", agents } satisfies WebRouteSurface;
   }
   if (match.key === "health") {
     const health = await client.pages.projectHealth(withLocale(locale));

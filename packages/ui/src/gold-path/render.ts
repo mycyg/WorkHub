@@ -26,7 +26,7 @@ export type GoldPathRenderOptions = {
 };
 
 export type GoldPathRenderedPage = {
-  key: "home" | "projects" | "project-home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "skills" | "settings";
+  key: "home" | "projects" | "project-home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "agents" | "knowledge" | "skills" | "settings";
   route: string;
   title: string;
   html: string;
@@ -99,6 +99,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     health: "项目健康",
     replay: "执行回放",
     cost: "成本看板",
+    agents: "智能代理军团",
     knowledge: "证据检索",
     skills: "团队技能",
     settings: "设置"
@@ -118,6 +119,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     health: "Project Health",
     replay: "Replay Work",
     cost: "Cost Dashboard",
+    agents: "Agent Army",
     knowledge: "Evidence Search",
     skills: "Team Skills",
     settings: "Settings"

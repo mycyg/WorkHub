@@ -313,6 +313,7 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.pages.attention({ locale: "en-US" });
   await client.pages.approvals({ locale: "en-US" });
   await client.pages.cost({ locale: "en-US" });
+  await client.pages.agents({ locale: "en-US" });
   await client.pages.settings({ locale: "en-US" });
   await client.pages.drive({ locale: "en-US", projectId: "project 1" });
   await client.pages.meetings({ locale: "en-US", project_id: "project 1", meeting_id: "meeting 1" });
@@ -337,6 +338,8 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/pages/attention?locale=en-US",
     "/api/pages/approvals?locale=en-US",
     "/api/pages/cost?locale=en-US",
+    // R9.6 adds the Agent Army dashboard Page VM; the old locale-call list was pre-dashboard.
+    "/api/pages/agents?locale=en-US",
     "/api/pages/settings?locale=en-US",
     "/api/pages/drive?locale=en-US&project_id=project+1",
     "/api/pages/meetings?locale=en-US&project_id=project+1&m=meeting+1",

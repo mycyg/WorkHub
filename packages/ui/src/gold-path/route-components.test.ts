@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { AttentionItem, CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { AgentArmyDashboardVM, AttentionItem, CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
@@ -554,6 +554,66 @@ function surfaceVm(): GoldPathSurfaceVM {
     },
     events: fixture.events,
     cuu_states: []
+  };
+}
+
+function agentArmyDashboardVm(overrides: Partial<AgentArmyDashboardVM> = {}): AgentArmyDashboardVM {
+  return {
+    generated_at: "2026-07-03T00:00:00.000Z",
+    kpis: {
+      active_team_count: 1,
+      waiting_decision_count: 2,
+      today_cost_cny: "1.25",
+      autonomy_rate_pct: 67
+    },
+    plans: [{
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      work_item_code: "DEMO-960",
+      work_item_title: "竞品资料梳理",
+      work_item_href: "/workitems/96000000-0000-4000-8000-000000000002",
+      objective_id: "96000000-0000-4000-8000-000000000003",
+      objective_title: "季度上市策略",
+      status: "dispatching",
+      progress: { completed: 1, total: 2, label: "1/2" },
+      roles: [
+        { role: "research", count: 1 },
+        { role: "review", count: 1 }
+      ],
+      statuses: [
+        { status: "succeeded", count: 1 },
+        { status: "needs_human", count: 1 }
+      ],
+      cost: { used_cny: "1.25", budget_cny: "3", burn_pct: 42 },
+      judge: { passed: 1, total: 1, pass_rate_pct: 100 },
+      oldest_blocker: {
+        kind: "needs_human",
+        label: "卡在: 竞品复核 · 2h",
+        age_seconds: 7200,
+        href: "/attention"
+      },
+      updated_at: "2026-07-03T00:00:00.000Z"
+    }],
+    recent_escalations: [{
+      id: "96000000-0000-4000-8000-000000000008",
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      title: "竞品复核需要人判断",
+      reason_preview: "证据互相冲突，需要人判断。",
+      created_at: "2026-07-02T22:00:00.000Z",
+      href: "/attention"
+    }],
+    page_info: {
+      plan_limit: 20,
+      returned: 1,
+      plans_capped: false,
+      items_capped: false,
+      runs_capped: false,
+      escalation_limit: 5,
+      escalation_returned: 1,
+      escalations_capped: false
+    },
+    ...overrides
   };
 }
 
@@ -1420,6 +1480,62 @@ test("R4.11 Cost route component renders dashboard values directly from Cost Pag
   assert.equal(cost.html.includes("Budget and cost"), true);
   assert.equal(cost.html.includes("Budget scopes"), true);
   assertNoMainWindowBoundaryLeak(cost.html);
+});
+
+test("R9.6 Agent Army route component renders observable dashboard cards without decision actions", () => {
+  const agents = renderWebRouteComponent({ key: "agents", agents: agentArmyDashboardVm() }, { locale: "zh-CN" });
+
+  assert.ok(agents);
+  assert.equal(agents.key, "agents");
+  assert.equal(agents.html.includes('data-r4-route-component="agents"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-dashboard="true"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-dashboard-mobile="single-column"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-dashboard-plan-count="1"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-kpi="active_team_count"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-kpi="waiting_decision"'), true);
+  assert.equal(agents.html.includes('href="/"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-plan-card="96000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(agents.html.includes('href="/workitems/96000000-0000-4000-8000-000000000002"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-recent-activity="accordion"'), true);
+  assert.equal(agents.html.includes("智能代理军团"), true);
+  assert.equal(agents.html.includes("竞品资料梳理"), true);
+  assert.equal(agents.html.includes("卡在: 竞品复核"), true);
+  assert.equal(agents.html.includes("追加预算继续"), false);
+  assertNoMainWindowBoundaryLeak(agents.html);
+});
+
+test("R9.6 Agent Army route component renders empty state without fake plan cards", () => {
+  const agents = renderWebRouteComponent({
+    key: "agents",
+    agents: agentArmyDashboardVm({
+      kpis: {
+        active_team_count: 0,
+        waiting_decision_count: 0,
+        today_cost_cny: "0",
+        autonomy_rate_pct: 0
+      },
+      plans: [],
+      recent_escalations: [],
+      page_info: {
+        plan_limit: 20,
+        returned: 0,
+        plans_capped: false,
+        items_capped: false,
+        runs_capped: false,
+        escalation_limit: 5,
+        escalation_returned: 0,
+        escalations_capped: false
+      },
+      empty_state: "no_agent_armies"
+    })
+  }, { locale: "zh-CN" });
+
+  assert.ok(agents);
+  assert.equal(agents.html.includes('data-r9-agent-dashboard-empty="no_agent_armies"'), true);
+  assert.equal(agents.html.includes("还没有军团在跑"), true);
+  assert.equal(agents.html.includes('href="/intake"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-plan-card='), false);
+  assertNoMainWindowBoundaryLeak(agents.html);
 });
 
 test("Cost route component renders disabled budget policies as not enabled instead of zero quotas", () => {

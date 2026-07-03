@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-07-02T23:51:40.325Z",
+  "generated_at": "2026-07-03T01:24:34.598Z",
   "module": "R4.5 Web Live Route Interaction Smoke",
   "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "vite_url": "http://127.0.0.1:49614",
-  "api_target": "http://127.0.0.1:49613",
+  "vite_url": "http://127.0.0.1:64906",
+  "api_target": "http://127.0.0.1:64905",
   "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction",
   "contact_sheet": "contact-sheet.png",
   "gates": {
@@ -26,6 +26,7 @@
     "r5_6_schedule_notify_routes": true,
     "r5_7_health_grounding_routes": true,
     "r8_skills_route_component": true,
+    "r9_6_agent_army_route_component": true,
     "r5_9_onboarding_routes": true,
     "r4_11_route_component_source_truth": true,
     "r4_11_route_specific_markers": true,
@@ -164,6 +165,7 @@
     "logout": true,
     "health": true,
     "knowledgeSourceRef": true,
+    "agents": true,
     "skills": true,
     "cost": true,
     "settings": true,
@@ -212,6 +214,7 @@
       "identify": 2,
       "logout": 1,
       "health": 2,
+      "agents": 2,
       "skills": 2,
       "cost": 2,
       "settings": 1,
@@ -248,7 +251,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/",
+      "referer": "http://127.0.0.1:64906/",
       "body": null
     },
     {
@@ -256,7 +259,7 @@
       "pathname": "/api/auth/identify",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/",
+      "referer": "http://127.0.0.1:64906/",
       "body": "{\"nickname\":\"R4 Live Reviewer\"}"
     },
     {
@@ -264,7 +267,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/",
+      "referer": "http://127.0.0.1:64906/",
       "body": "{\"locale\":\"zh-CN\"}"
     },
     {
@@ -272,7 +275,7 @@
       "pathname": "/api/pages/attention",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49614/",
+      "referer": "http://127.0.0.1:64906/",
       "body": null
     },
     {
@@ -280,7 +283,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/",
+      "referer": "http://127.0.0.1:64906/",
       "body": null
     },
     {
@@ -288,7 +291,7 @@
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/",
+      "referer": "http://127.0.0.1:64906/",
       "body": null
     },
     {
@@ -296,7 +299,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=budget.warning&stream=me",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/",
+      "referer": "http://127.0.0.1:64906/",
       "body": null
     },
     {
@@ -304,7 +307,7 @@
       "pathname": "/api/pages/attention",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49614/",
+      "referer": "http://127.0.0.1:64906/",
       "body": null
     },
     {
@@ -312,7 +315,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/",
+      "referer": "http://127.0.0.1:64906/",
       "body": null
     },
     {
@@ -320,7 +323,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/intake/r4-live-session",
+      "referer": "http://127.0.0.1:64906/intake/r4-live-session",
       "body": null
     },
     {
@@ -328,7 +331,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49614/intake/r4-live-session",
+      "referer": "http://127.0.0.1:64906/intake/r4-live-session",
       "body": null
     },
     {
@@ -336,7 +339,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/intake/r4-live-session",
+      "referer": "http://127.0.0.1:64906/intake/r4-live-session",
       "body": null
     },
     {
@@ -344,7 +347,7 @@
       "pathname": "/api/push/stream/session/r4-live-session",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/intake/r4-live-session",
+      "referer": "http://127.0.0.1:64906/intake/r4-live-session",
       "body": null
     },
     {
@@ -352,7 +355,7 @@
       "pathname": "/api/sessions/10000000-0000-4000-8000-000000001414/next-question",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/intake/r4-live-session",
+      "referer": "http://127.0.0.1:64906/intake/r4-live-session",
       "body": "{\"selected_option_ids\":[\"risk-first\"]}"
     },
     {
@@ -360,7 +363,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49614/intake/r4-live-session",
+      "referer": "http://127.0.0.1:64906/intake/r4-live-session",
       "body": null
     },
     {
@@ -368,7 +371,7 @@
       "pathname": "/api/workitems",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/intake/r4-live-session",
+      "referer": "http://127.0.0.1:64906/intake/r4-live-session",
       "body": "{\"session_id\":\"10000000-0000-4000-8000-000000001414\",\"selected_option_ids\":[\"create-worker\"]}"
     },
     {
@@ -376,7 +379,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -384,7 +387,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -392,7 +395,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": null
     },
     {
@@ -400,7 +403,7 @@
       "pathname": "/api/approvals/00000000-0000-4000-8000-000000000802/respond",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": "{\"decision\":\"deny\",\"reason_md\":\"证据不足\",\"remember\":\"once\"}"
     },
     {
@@ -408,7 +411,7 @@
       "pathname": "/api/approvals/00000000-0000-4000-8000-000000000802/respond",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": "{\"decision\":\"allow\",\"remember\":\"once\"}"
     },
     {
@@ -416,7 +419,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -424,7 +427,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -432,7 +435,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": null
     },
     {
@@ -440,7 +443,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -448,7 +451,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -456,7 +459,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": "{\"locale\":\"en-US\"}"
     },
     {
@@ -464,7 +467,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -472,7 +475,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -480,7 +483,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -488,7 +491,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -496,7 +499,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -504,7 +507,7 @@
       "pathname": "/api/pages/proposals/r4-live-proposal",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -512,7 +515,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/conflicts",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -520,7 +523,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -528,7 +531,7 @@
       "pathname": "/api/push/stream/proposal/r4-live-proposal",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -536,7 +539,7 @@
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -544,7 +547,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=proposal.merged&stream=proposal",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -552,7 +555,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000913/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"text_hunk_overrides\":{\"hunks\":[{\"hunk_index\":0,\"start_line\":2,\"end_line\":2,\"decision\":\"keep_current\"}]}}"
     },
     {
@@ -560,7 +563,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"task_plan_scope\":{\"target_plan_id\":\"10000000-0000-4000-8000-000000000929\"}}"
     },
     {
@@ -568,7 +571,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"structured_item_overrides\":{\"items\":[{\"field\":\"task_items\",\"item_id\":\"10000000-0000-4000-8000-000000000925\",\"decision\":\"accept_incoming\"}]},\"task_plan_scope\":{\"target_plan_id\":\"10000000-0000-4000-8000-000000000928\"}}"
     },
     {
@@ -576,7 +579,7 @@
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"structured_field_overrides\":{\"operations\":[{\"field\":\"title\",\"decision\":\"custom\",\"value\":\"R4.13 custom reviewed title\"}]}}"
     },
     {
@@ -584,7 +587,7 @@
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/review",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": "{\"decision\":\"request_changes\",\"reason_md\":\"Evidence is not enough\",\"remember\":\"once\"}"
     },
     {
@@ -592,7 +595,7 @@
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/review",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": "{\"decision\":\"approve\",\"remember\":\"once\"}"
     },
     {
@@ -600,7 +603,7 @@
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/merge",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": "{}"
     },
     {
@@ -608,7 +611,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=proposal.merged&stream=proposal",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -616,7 +619,7 @@
       "pathname": "/api/pages/proposals/r4-live-proposal",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -624,7 +627,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/conflicts",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -632,7 +635,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/dashboard/cost",
+      "referer": "http://127.0.0.1:64906/dashboard/cost",
       "body": null
     },
     {
@@ -640,7 +643,7 @@
       "pathname": "/api/pages/cost",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/dashboard/cost",
+      "referer": "http://127.0.0.1:64906/dashboard/cost",
       "body": null
     },
     {
@@ -648,7 +651,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_3",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/dashboard/cost",
+      "referer": "http://127.0.0.1:64906/dashboard/cost",
       "body": null
     },
     {
@@ -656,7 +659,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=budget.warning&stream=me",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/dashboard/cost",
+      "referer": "http://127.0.0.1:64906/dashboard/cost",
       "body": null
     },
     {
@@ -664,7 +667,7 @@
       "pathname": "/api/pages/cost",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/dashboard/cost",
+      "referer": "http://127.0.0.1:64906/dashboard/cost",
       "body": null
     },
     {
@@ -672,7 +675,55 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/dashboard/agents",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/agents",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:64906/dashboard/agents",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/push/stream/me",
+      "search": "?last_event_id=evt_r4_20_4",
+      "locale": null,
+      "referer": "http://127.0.0.1:64906/dashboard/agents",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "referer": "http://127.0.0.1:64906/dashboard/agents",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/pages/agents",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:64906/dashboard/agents",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/push/stream/me",
+      "search": "?last_event_id=evt_r4_20_4",
+      "locale": null,
+      "referer": "http://127.0.0.1:64906/dashboard/agents",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/auth/me",
+      "search": "",
+      "locale": null,
+      "referer": "http://127.0.0.1:64906/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": null
     },
     {
@@ -680,7 +731,7 @@
       "pathname": "/api/knowledge/search",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": "{\"q\":\"regional\",\"work_item_id\":\"r4-live-workitem\",\"limit\":6}"
     },
     {
@@ -688,7 +739,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": null
     },
     {
@@ -696,7 +747,7 @@
       "pathname": "/api/workitems/r4-live-workitem/evidence-bindings",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": "{\"evidence_bubble_id\":\"10000000-0000-4000-8000-000000001424\",\"evidence_refs\":[{\"id\":\"10000000-0000-4000-8000-000000001425\",\"source_type\":\"meeting\",\"source_id\":\"regional-sync\",\"title\":\"Regional launch sync\",\"excerpt\":\"Supply delay is the blocker that needs the closest follow-up.\",\"href\":\"/knowledge/sources/regional-sync\"},{\"id\":\"10000000-0000-4000-8000-000000001426\",\"source_type\":\"drive_file\",\"source_id\":\"drive:regional-launch-review\",\"title\":\"Regional launch review draft\",\"excerpt\":\"The draft records metrics, risks, and next actions.\",\"href\":\"/knowledge/sources/regional-launch-review\"}]}"
     },
     {
@@ -704,7 +755,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/intake/r4-live-session",
+      "referer": "http://127.0.0.1:64906/intake/r4-live-session",
       "body": null
     },
     {
@@ -712,7 +763,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/intake/r4-live-session",
+      "referer": "http://127.0.0.1:64906/intake/r4-live-session",
       "body": null
     },
     {
@@ -720,7 +771,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/intake/r4-live-session",
+      "referer": "http://127.0.0.1:64906/intake/r4-live-session",
       "body": null
     },
     {
@@ -728,7 +779,7 @@
       "pathname": "/api/push/stream/session/r4-live-session",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/intake/r4-live-session",
+      "referer": "http://127.0.0.1:64906/intake/r4-live-session",
       "body": null
     },
     {
@@ -736,7 +787,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/settings",
+      "referer": "http://127.0.0.1:64906/settings",
       "body": null
     },
     {
@@ -744,7 +795,7 @@
       "pathname": "/api/pages/settings",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/settings",
+      "referer": "http://127.0.0.1:64906/settings",
       "body": null
     },
     {
@@ -752,7 +803,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/settings",
+      "referer": "http://127.0.0.1:64906/settings",
       "body": null
     },
     {
@@ -760,7 +811,7 @@
       "pathname": "/api/__qa/fail-next-preference-patch",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/settings",
+      "referer": "http://127.0.0.1:64906/settings",
       "body": null
     },
     {
@@ -768,7 +819,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/settings",
+      "referer": "http://127.0.0.1:64906/settings",
       "body": "{\"locale\":\"zh-CN\"}"
     },
     {
@@ -776,7 +827,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:64906/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -784,7 +835,7 @@
       "pathname": "/api/agent-runs/r4-live-run/replay",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:64906/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -792,7 +843,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:64906/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -800,7 +851,7 @@
       "pathname": "/api/push/stream/run/r4-live-run",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:64906/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -808,7 +859,7 @@
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:64906/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -816,7 +867,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/deliverables/10000000-0000-4000-8000-000000001518/restore",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:64906/agent-runs/r4-live-run/replay",
       "body": ""
     },
     {
@@ -824,7 +875,7 @@
       "pathname": "/api/agent-runs/r4-live-run/replay",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:64906/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -832,7 +883,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/projects",
+      "referer": "http://127.0.0.1:64906/projects",
       "body": null
     },
     {
@@ -840,7 +891,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/projects",
+      "referer": "http://127.0.0.1:64906/projects",
       "body": null
     },
     {
@@ -848,7 +899,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/projects",
+      "referer": "http://127.0.0.1:64906/projects",
       "body": null
     },
     {
@@ -856,7 +907,7 @@
       "pathname": "/api/projects/bootstrap",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/projects",
+      "referer": "http://127.0.0.1:64906/projects",
       "body": "{\"name\":\"R4 Live Launch Notes\"}"
     },
     {
@@ -864,7 +915,7 @@
       "pathname": "/api/pages/project/10000000-0000-4000-8000-000000001691",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/projects/10000000-0000-4000-8000-000000001691",
+      "referer": "http://127.0.0.1:64906/projects/10000000-0000-4000-8000-000000001691",
       "body": null
     },
     {
@@ -872,7 +923,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/projects",
+      "referer": "http://127.0.0.1:64906/projects",
       "body": null
     },
     {
@@ -880,7 +931,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/projects",
+      "referer": "http://127.0.0.1:64906/projects",
       "body": null
     },
     {
@@ -888,7 +939,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/projects",
+      "referer": "http://127.0.0.1:64906/projects",
       "body": null
     },
     {
@@ -896,7 +947,7 @@
       "pathname": "/api/pages/project/10000000-0000-4000-8000-000000001600",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/projects/10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/projects/10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -904,7 +955,7 @@
       "pathname": "/api/pages/project/10000000-0000-4000-8000-000000001600",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/intake?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/intake?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -912,7 +963,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/projects/10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/projects/10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -920,7 +971,7 @@
       "pathname": "/api/pages/project/10000000-0000-4000-8000-000000001600",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/projects/10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/projects/10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -928,7 +979,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/projects/10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/projects/10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -936,7 +987,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -944,7 +995,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -952,7 +1003,7 @@
       "pathname": "/api/drive/projects/10000000-0000-4000-8000-000000001600/comments/10000000-0000-4000-8000-000000001623/draft",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": ""
     },
     {
@@ -960,7 +1011,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -968,7 +1019,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -976,7 +1027,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -984,7 +1035,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -992,7 +1043,7 @@
       "pathname": "/api/drive/workitems/r4-live-workitem/proposal-draft",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": ""
     },
     {
@@ -1000,7 +1051,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -1008,7 +1059,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1016,7 +1067,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1024,7 +1075,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1032,7 +1083,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1040,15 +1091,15 @@
       "pathname": "/api/drive/projects/10000000-0000-4000-8000-000000001600/files",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
-      "body": "------WebKitFormBoundaryPVgMu4hlbuXtbpNd\r\nContent-Disposition: form-data; name=\"file\"; filename=\"regional-launch-brief.md\"\r\nContent-Type: text/markdown\r\n\r\n# Regional launch brief\n\nPrepared by field operations for the launch readiness review.\r\n------WebKitFormBoundaryPVgMu4hlbuXtbpNd\r\nContent-Disposition: form-data; name=\"mime\"\r\n\r\ntext/markdown\r\n------WebKitFormBoundaryPVgMu4hlbuXtbpNd\r\nContent-Disposition: form-data; name=\"parent_id\"\r\n\r\n10000000-0000-4000-8000-000000001619\r\n------WebKitFormBoundaryPVgMu4hlbuXtbpNd--\r\n"
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "body": "------WebKitFormBoundaryMYMoM97JSYFAoA7S\r\nContent-Disposition: form-data; name=\"file\"; filename=\"regional-launch-brief.md\"\r\nContent-Type: text/markdown\r\n\r\n# Regional launch brief\n\nPrepared by field operations for the launch readiness review.\r\n------WebKitFormBoundaryMYMoM97JSYFAoA7S\r\nContent-Disposition: form-data; name=\"mime\"\r\n\r\ntext/markdown\r\n------WebKitFormBoundaryMYMoM97JSYFAoA7S\r\nContent-Disposition: form-data; name=\"parent_id\"\r\n\r\n10000000-0000-4000-8000-000000001619\r\n------WebKitFormBoundaryMYMoM97JSYFAoA7S--\r\n"
     },
     {
       "method": "GET",
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1056,7 +1107,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1064,7 +1115,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1072,7 +1123,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1080,7 +1131,7 @@
       "pathname": "/api/drive/projects/10000000-0000-4000-8000-000000001600/items/10000000-0000-4000-8000-000000001624/delete",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": "{\"expected_current_version_id\":\"10000000-0000-4000-8000-000000001625\"}"
     },
     {
@@ -1088,7 +1139,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1096,7 +1147,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1104,7 +1155,7 @@
       "pathname": "/api/drive/projects/10000000-0000-4000-8000-000000001600/items/10000000-0000-4000-8000-000000001624/restore",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": ""
     },
     {
@@ -1112,7 +1163,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1120,7 +1171,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1128,7 +1179,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:64906/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1136,7 +1187,7 @@
       "pathname": "/api/pages/meetings",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:64906/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1144,7 +1195,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:64906/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1152,7 +1203,7 @@
       "pathname": "/api/meetings/projects/10000000-0000-4000-8000-000000001600/insights/10000000-0000-4000-8000-000000001701/draft",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:64906/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": ""
     },
     {
@@ -1160,7 +1211,7 @@
       "pathname": "/api/pages/meetings",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:64906/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1168,7 +1219,7 @@
       "pathname": "/api/pages/workitems/10000000-0000-4000-8000-000000001730",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:64906/workitems/10000000-0000-4000-8000-000000001730",
       "body": null
     },
     {
@@ -1176,7 +1227,7 @@
       "pathname": "/api/push/stream/workitem/10000000-0000-4000-8000-000000001730",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:64906/workitems/10000000-0000-4000-8000-000000001730",
       "body": null
     },
     {
@@ -1184,7 +1235,7 @@
       "pathname": "/api/meetings/workitems/10000000-0000-4000-8000-000000001730/proposal-draft",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:64906/workitems/10000000-0000-4000-8000-000000001730",
       "body": ""
     },
     {
@@ -1192,7 +1243,7 @@
       "pathname": "/api/pages/workitems/10000000-0000-4000-8000-000000001730",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:64906/workitems/10000000-0000-4000-8000-000000001730",
       "body": null
     },
     {
@@ -1200,7 +1251,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:64906/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1208,7 +1259,7 @@
       "pathname": "/api/pages/meetings",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:64906/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1216,7 +1267,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:64906/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1224,7 +1275,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1232,7 +1283,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1240,7 +1291,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1248,7 +1299,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1256,7 +1307,7 @@
       "pathname": "/api/notifications/10000000-0000-4000-8000-000000001801/read",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1264,7 +1315,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1272,7 +1323,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1280,7 +1331,7 @@
       "pathname": "/api/notifications/10000000-0000-4000-8000-000000001801/dismiss",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1288,7 +1339,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1296,7 +1347,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1304,7 +1355,7 @@
       "pathname": "/api/notifications/read-all",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1312,7 +1363,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1320,7 +1371,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1328,7 +1379,7 @@
       "pathname": "/api/notifications/10000000-0000-4000-8000-000000001802/complete",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1336,7 +1387,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1344,7 +1395,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1352,7 +1403,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1360,7 +1411,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1368,7 +1419,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1376,7 +1427,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1384,7 +1435,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:64906/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1392,7 +1443,7 @@
       "pathname": "/api/pages/calendar",
       "search": "?locale=en-US&date=2026-06-11&view=week",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:64906/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1400,7 +1451,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:64906/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1408,7 +1459,7 @@
       "pathname": "/api/pages/workitems/10000000-0000-4000-8000-000000001730",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:64906/workitems/10000000-0000-4000-8000-000000001730",
       "body": null
     },
     {
@@ -1416,7 +1467,7 @@
       "pathname": "/api/push/stream/workitem/10000000-0000-4000-8000-000000001730",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:64906/workitems/10000000-0000-4000-8000-000000001730",
       "body": null
     },
     {
@@ -1424,7 +1475,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:64906/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1432,7 +1483,7 @@
       "pathname": "/api/pages/calendar",
       "search": "?locale=en-US&date=2026-06-11&view=week",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:64906/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1440,7 +1491,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:64906/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1448,7 +1499,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/dashboard/health",
+      "referer": "http://127.0.0.1:64906/dashboard/health",
       "body": null
     },
     {
@@ -1456,7 +1507,7 @@
       "pathname": "/api/pages/health",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/dashboard/health",
+      "referer": "http://127.0.0.1:64906/dashboard/health",
       "body": null
     },
     {
@@ -1464,7 +1515,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/dashboard/health",
+      "referer": "http://127.0.0.1:64906/dashboard/health",
       "body": null
     },
     {
@@ -1472,7 +1523,7 @@
       "pathname": "/api/pages/project/10000000-0000-4000-8000-000000001600",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/projects/10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:64906/projects/10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1480,7 +1531,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/dashboard/health",
+      "referer": "http://127.0.0.1:64906/dashboard/health",
       "body": null
     },
     {
@@ -1488,7 +1539,7 @@
       "pathname": "/api/pages/health",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/dashboard/health",
+      "referer": "http://127.0.0.1:64906/dashboard/health",
       "body": null
     },
     {
@@ -1496,7 +1547,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/dashboard/health",
+      "referer": "http://127.0.0.1:64906/dashboard/health",
       "body": null
     },
     {
@@ -1504,7 +1555,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/dashboard/skills",
+      "referer": "http://127.0.0.1:64906/dashboard/skills",
       "body": null
     },
     {
@@ -1512,7 +1563,7 @@
       "pathname": "/api/pages/skills",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/dashboard/skills",
+      "referer": "http://127.0.0.1:64906/dashboard/skills",
       "body": null
     },
     {
@@ -1520,7 +1571,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/dashboard/skills",
+      "referer": "http://127.0.0.1:64906/dashboard/skills",
       "body": null
     },
     {
@@ -1528,7 +1579,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/dashboard/skills",
+      "referer": "http://127.0.0.1:64906/dashboard/skills",
       "body": null
     },
     {
@@ -1536,7 +1587,7 @@
       "pathname": "/api/pages/skills",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/dashboard/skills",
+      "referer": "http://127.0.0.1:64906/dashboard/skills",
       "body": null
     },
     {
@@ -1544,7 +1595,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/dashboard/skills",
+      "referer": "http://127.0.0.1:64906/dashboard/skills",
       "body": null
     },
     {
@@ -1552,7 +1603,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1560,7 +1611,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1568,7 +1619,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1576,7 +1627,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/notifications",
+      "referer": "http://127.0.0.1:64906/notifications",
       "body": null
     },
     {
@@ -1584,7 +1635,7 @@
       "pathname": "/api/knowledge/search",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/knowledge/search?q=regional%20launch&work_item_id=10000000-0000-4000-8000-000000001730&source_ref=notification:10000000-0000-4000-8000-000000001801",
+      "referer": "http://127.0.0.1:64906/knowledge/search?q=regional%20launch&work_item_id=10000000-0000-4000-8000-000000001730&source_ref=notification:10000000-0000-4000-8000-000000001801",
       "body": "{\"q\":\"regional launch\",\"work_item_id\":\"10000000-0000-4000-8000-000000001730\",\"source_ref\":\"notification:10000000-0000-4000-8000-000000001801\",\"limit\":6}"
     },
     {
@@ -1592,7 +1643,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/drive?empty=drive",
+      "referer": "http://127.0.0.1:64906/drive?empty=drive",
       "body": null
     },
     {
@@ -1600,7 +1651,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/drive?empty=drive",
+      "referer": "http://127.0.0.1:64906/drive?empty=drive",
       "body": null
     },
     {
@@ -1608,7 +1659,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-forbidden",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-forbidden",
       "body": null
     },
     {
@@ -1616,7 +1667,7 @@
       "pathname": "/api/pages/workitems/r4-live-forbidden",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/workitems/r4-live-forbidden",
+      "referer": "http://127.0.0.1:64906/workitems/r4-live-forbidden",
       "body": null
     },
     {
@@ -1624,7 +1675,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/missing-r4-live-route",
+      "referer": "http://127.0.0.1:64906/missing-r4-live-route",
       "body": null
     },
     {
@@ -1632,7 +1683,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": null
     },
     {
@@ -1640,7 +1691,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": null
     },
     {
@@ -1648,7 +1699,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": null
     },
     {
@@ -1656,7 +1707,7 @@
       "pathname": "/api/auth/logout",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": null
     },
     {
@@ -1664,7 +1715,7 @@
       "pathname": "/api/auth/identify",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": "{\"nickname\":\"Pilot Two\"}"
     },
     {
@@ -1672,7 +1723,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": "{\"locale\":\"en-US\"}"
     },
     {
@@ -1680,7 +1731,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": null
     },
     {
@@ -1688,14 +1739,14 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:49614/approvals",
+      "referer": "http://127.0.0.1:64906/approvals",
       "body": null
     }
   ],
   "steps": [
     {
       "id": "00-onboarding-zh-desktop",
-      "url": "http://127.0.0.1:49614/",
+      "url": "http://127.0.0.1:64906/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -1932,6 +1983,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -2014,7 +2074,7 @@
     },
     {
       "id": "00a-onboarding-zh-mobile-no-overflow",
-      "url": "http://127.0.0.1:49614/",
+      "url": "http://127.0.0.1:64906/",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -2251,6 +2311,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -2333,7 +2402,7 @@
     },
     {
       "id": "01-home-zh-desktop",
-      "url": "http://127.0.0.1:49614/",
+      "url": "http://127.0.0.1:64906/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2380,7 +2449,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "HomeRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -2570,6 +2639,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -2652,7 +2730,7 @@
     },
     {
       "id": "01r-home-react-dispatcher-probe-zh-desktop",
-      "url": "http://127.0.0.1:49614/",
+      "url": "http://127.0.0.1:64906/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2699,7 +2777,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "HomeRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -2889,6 +2967,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -2971,7 +3058,7 @@
     },
     {
       "id": "01s-home-react-sse-props-update-zh-desktop",
-      "url": "http://127.0.0.1:49614/",
+      "url": "http://127.0.0.1:64906/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3018,7 +3105,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "HomeRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -3208,6 +3295,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -3290,7 +3386,7 @@
     },
     {
       "id": "01a-intake-zh-desktop-route-component",
-      "url": "http://127.0.0.1:49614/intake/r4-live-session",
+      "url": "http://127.0.0.1:64906/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3337,7 +3433,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -3527,6 +3623,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -3609,7 +3714,7 @@
     },
     {
       "id": "01b-intake-empty-fail-closed-zh-desktop",
-      "url": "http://127.0.0.1:49614/intake/r4-live-session",
+      "url": "http://127.0.0.1:64906/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3656,7 +3761,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -3846,6 +3951,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -3928,7 +4042,7 @@
     },
     {
       "id": "01c-intake-next-question-success-zh-desktop",
-      "url": "http://127.0.0.1:49614/intake/r4-live-session",
+      "url": "http://127.0.0.1:64906/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3975,7 +4089,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -4165,6 +4279,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -4247,7 +4370,7 @@
     },
     {
       "id": "01d-intake-create-workitem-success-zh-desktop",
-      "url": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4294,7 +4417,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -4484,6 +4607,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -4566,7 +4698,7 @@
     },
     {
       "id": "02-approvals-click-zh-desktop",
-      "url": "http://127.0.0.1:49614/approvals",
+      "url": "http://127.0.0.1:64906/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4613,7 +4745,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -4803,6 +4935,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -4885,7 +5026,7 @@
     },
     {
       "id": "02a-approval-deny-reason-gate-zh-desktop",
-      "url": "http://127.0.0.1:49614/approvals",
+      "url": "http://127.0.0.1:64906/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4932,7 +5073,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -5122,6 +5263,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -5204,7 +5354,7 @@
     },
     {
       "id": "02b-approval-deny-success-zh-desktop",
-      "url": "http://127.0.0.1:49614/approvals",
+      "url": "http://127.0.0.1:64906/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5251,7 +5401,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -5441,6 +5591,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -5523,7 +5682,7 @@
     },
     {
       "id": "02c-approval-approve-success-zh-desktop",
-      "url": "http://127.0.0.1:49614/approvals",
+      "url": "http://127.0.0.1:64906/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5570,7 +5729,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -5760,6 +5919,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -5842,7 +6010,7 @@
     },
     {
       "id": "03-workitem-click-zh-desktop-route-component",
-      "url": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5889,7 +6057,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -6079,6 +6247,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -6161,7 +6338,7 @@
     },
     {
       "id": "04-history-back-approvals",
-      "url": "http://127.0.0.1:49614/approvals",
+      "url": "http://127.0.0.1:64906/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6208,7 +6385,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -6398,6 +6575,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -6480,7 +6666,7 @@
     },
     {
       "id": "05-history-forward-workitem",
-      "url": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6527,7 +6713,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -6717,6 +6903,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -6799,7 +6994,7 @@
     },
     {
       "id": "06-locale-toggle-en-workitem-route-component",
-      "url": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6846,7 +7041,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -7036,6 +7231,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -7118,7 +7322,7 @@
     },
     {
       "id": "06a-proposal-advanced-review-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7165,7 +7369,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -7355,6 +7559,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -7437,7 +7650,7 @@
     },
     {
       "id": "06aa-proposal-dirty-edit-sse-guard-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7484,7 +7697,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -7674,6 +7887,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -7756,7 +7978,7 @@
     },
     {
       "id": "06b-proposal-line-editor-apply-success-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7803,7 +8025,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -7993,6 +8215,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -8075,7 +8306,7 @@
     },
     {
       "id": "06c-proposal-task-plan-apply-success-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8122,7 +8353,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -8312,6 +8543,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -8394,7 +8634,7 @@
     },
     {
       "id": "06d-proposal-subrecord-apply-success-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8441,7 +8681,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -8631,6 +8871,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -8713,7 +8962,7 @@
     },
     {
       "id": "06e-proposal-custom-field-empty-fail-closed-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8760,7 +9009,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -8950,6 +9199,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -9032,7 +9290,7 @@
     },
     {
       "id": "06f-proposal-custom-field-apply-success-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9079,7 +9337,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -9269,6 +9527,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -9351,7 +9618,7 @@
     },
     {
       "id": "06g-proposal-structured-field-editor-visual-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 3000
@@ -9398,7 +9665,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -9588,6 +9855,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -9670,7 +9946,7 @@
     },
     {
       "id": "07-proposal-reason-gate-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9717,7 +9993,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -9907,6 +10183,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -9989,7 +10274,7 @@
     },
     {
       "id": "08-proposal-request-changes-success-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -10036,7 +10321,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -10226,6 +10511,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -10308,7 +10602,7 @@
     },
     {
       "id": "08b-proposal-approve-success-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -10355,7 +10649,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -10545,6 +10839,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -10627,7 +10930,7 @@
     },
     {
       "id": "09-proposal-merge-success-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -10674,7 +10977,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -10864,6 +11167,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -10946,7 +11258,7 @@
     },
     {
       "id": "10-proposal-sse-refresh-notice-en-desktop",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -10993,7 +11305,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -11183,6 +11495,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -11265,7 +11586,7 @@
     },
     {
       "id": "11-proposal-en-mobile-scrolled-notice-route-component",
-      "url": "http://127.0.0.1:49614/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:64906/proposals/r4-live-proposal",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -11312,7 +11633,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ProposalRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -11502,6 +11823,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -11584,7 +11914,7 @@
     },
     {
       "id": "12-cost-en-mobile-route-component",
-      "url": "http://127.0.0.1:49614/dashboard/cost",
+      "url": "http://127.0.0.1:64906/dashboard/cost",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -11631,7 +11961,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "CostRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -11821,6 +12151,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -11903,7 +12242,7 @@
     },
     {
       "id": "12a-cost-budget-warning-notice-en-mobile",
-      "url": "http://127.0.0.1:49614/dashboard/cost",
+      "url": "http://127.0.0.1:64906/dashboard/cost",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -11950,7 +12289,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "CostRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -12140,6 +12479,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -12221,8 +12569,664 @@
       }
     },
     {
+      "id": "12aa-agents-en-desktop-route-component",
+      "url": "http://127.0.0.1:64906/dashboard/agents",
+      "viewport": {
+        "width": 1365,
+        "height": 1120
+      },
+      "expectedStatus": "ready",
+      "screenshot": "12aa-agents-en-desktop-route-component.png",
+      "audit": {
+        "pathname": "/dashboard/agents",
+        "search": "",
+        "locationHash": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "ready",
+        "routeKey": "agents",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "routeComponent": "agents",
+        "routeComponentSource": "page-vm",
+        "routeComponentPanel": "agents",
+        "routeComponentActive": true,
+        "hydrationBoundary": true,
+        "hydrationRoute": "agents",
+        "hydrationSource": "page-vm",
+        "hydrationMode": "html-fallback",
+        "hydrationPageVm": "agents",
+        "hydrationActionCount": "3",
+        "hydrationAdapter": "route-component-v1",
+        "hydrationReactComponent": null,
+        "hydrationReactComponentRoute": null,
+        "hydrationReactComponentMode": null,
+        "hydrationReactComponentPropsSource": null,
+        "hydrationReactComponentFallback": false,
+        "hydrationReactComponentAdapter": null,
+        "hydrationPanel": true,
+        "hydrationPanelRoute": "agents",
+        "hydrationPanelMode": "html-fallback",
+        "hydrationPanelPageVm": "agents",
+        "hydrationPanelActionCount": "3",
+        "hydrationPanelCount": 1,
+        "reactRouteTree": true,
+        "routeTreeKey": "agents",
+        "routeTreePageVm": "agents",
+        "routeTreeMode": "html-fallback",
+        "routeTreeAdapter": "route-component-v1",
+        "routeTreeActiveOnly": true,
+        "routeTreeRouteCount": "18",
+        "routeTreeReactComponent": "",
+        "routeTreeReactComponentAdapter": "",
+        "routeTreeReactComponentFallback": false,
+        "routeTreeRuntimeMount": false,
+        "routeTreeRuntimeStrategy": "",
+        "routeTreeRuntimePropsUpdate": "",
+        "routeTreeRuntimeDispatcher": "",
+        "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
+        "reactComponentName": null,
+        "reactComponentRoute": null,
+        "reactComponentMode": null,
+        "reactComponentPropsSource": null,
+        "reactComponentPageVm": null,
+        "reactComponentLocale": null,
+        "reactComponentHtmlFallback": false,
+        "reactComponentAdapter": null,
+        "reactComponentActionCount": null,
+        "reactComponentFingerprint": null,
+        "reactRuntimeMounted": true,
+        "reactRuntimeRoute": "",
+        "reactRuntimeComponent": "",
+        "reactRuntimeName": null,
+        "reactRuntimePropsSource": null,
+        "reactRuntimeFingerprint": null,
+        "reactRuntimeLastUpdateReason": null,
+        "reactRuntimeMountCount": null,
+        "reactRuntimePropsUpdateCount": null,
+        "reactRuntimePrimaryActionCount": null,
+        "reactRuntimeQueueCount": null,
+        "reactRuntimeVisibleMutationEditor": "false",
+        "reactRuntimeMutationEditorKind": null,
+        "reactRuntimeControlledField": null,
+        "reactRuntimeControlledValue": null,
+        "reactRuntimeHtmlFallbackPreserved": "false",
+        "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
+        "reactRuntimeDispatcherProbe": false,
+        "reactRuntimeDispatcherProbeActionId": null,
+        "routeSpecificMarker": true,
+        "routeData": {
+          "homeProjectDesk": "false",
+          "homeProjectCount": null,
+          "homeDriveCta": null,
+          "workitemTraceCount": null,
+          "workitemEvidenceCount": null,
+          "workitemAcceptanceCount": null,
+          "workitemSourceContext": null,
+          "workitemSourceCommentId": null,
+          "workitemSourceMeetingId": null,
+          "workitemSourceInsightId": null,
+          "workitemSourceProposalId": null,
+          "workitemCreateProposalAction": null,
+          "proposalChangeCount": null,
+          "proposalActionCount": null,
+          "proposalEvidenceCount": null,
+          "proposalConflictCount": null,
+          "proposalSplitAdapter": null,
+          "proposalReadonlyReviewActionCount": null,
+          "proposalAdvancedFallbackPreserved": null,
+          "proposalAdvancedFallbackActionCount": null,
+          "proposalLineEditorFallback": null,
+          "proposalFieldEditorFallback": null,
+          "proposalSubrecordEditorFallback": null,
+          "proposalLineEditorFileCount": null,
+          "proposalLineEditorHunkCount": null,
+          "proposalStructuredFieldEditorCount": null,
+          "proposalSubrecordItemCount": null,
+          "proposalAdvancedConflicts": null,
+          "proposalAdvancedFallback": null,
+          "proposalAdvancedFallbackSource": null,
+          "proposalAdvancedFallbackBoundaryActionCount": null,
+          "proposalAdvancedLineEditor": null,
+          "proposalAdvancedFieldEditor": null,
+          "proposalAdvancedSubrecordEditor": null,
+          "proposalLineEditorSelectedDecision": null,
+          "proposalLineEditorSearchValue": null,
+          "proposalCustomFieldValue": null,
+          "routeDirty": null,
+          "routeDirtyReason": null,
+          "intakeOptionCount": null,
+          "intakeProgressCount": null,
+          "intakeFreeTextCollapsed": null,
+          "intakeInputMode": null,
+          "intakeOptionFirst": null,
+          "intakeSelectedCount": "0",
+          "knowledgeEvidenceCount": null,
+          "knowledgeMissing": null,
+          "knowledgeActionCount": null,
+          "replayRunId": null,
+          "replayStepCount": null,
+          "replayAcceptedDeliverableCount": null,
+          "replayMergeAttemptCount": null,
+          "replayStructuredAuditCount": null,
+          "projectsCount": null,
+          "projectHomeId": null,
+          "projectHomeSlug": null,
+          "projectHomeOpenCount": null,
+          "projectHomeItemCount": "0",
+          "projectHomeFileCount": null,
+          "projectHomeMoreCount": null,
+          "projectHomeFilesMoreCount": null,
+          "driveProjectId": null,
+          "driveSelectedItemId": null,
+          "driveItemCount": null,
+          "driveVersionCount": null,
+          "driveAcceptedCount": null,
+          "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
+          "driveProposalLink": "false",
+          "driveProposalHref": null,
+          "driveProposalStatus": null,
+          "meetingProjectId": null,
+          "meetingSelectedId": null,
+          "meetingCount": null,
+          "meetingPendingInsights": null,
+          "meetingConfirmedInsights": null,
+          "meetingDismissedInsights": null,
+          "meetingCanManage": null,
+          "meetingInsightId": null,
+          "meetingInsightStatus": null,
+          "meetingDraftLink": "false",
+          "meetingDraftHref": null,
+          "meetingProposalLink": "false",
+          "meetingProposalHref": null,
+          "meetingProposalStatus": null,
+          "notificationTotalCount": null,
+          "notificationUnreadCount": null,
+          "notificationNeedsDecisionCount": null,
+          "notificationFyiCount": null,
+          "notificationDoneCount": null,
+          "notificationUrgentCount": null,
+          "notificationNeedsBucketCount": null,
+          "notificationFyiBucketCount": null,
+          "notificationDoneBucketCount": null,
+          "notificationMeetingItemStatus": null,
+          "notificationMeetingSourceType": null,
+          "notificationDriveItemStatus": null,
+          "notificationMeetingOpenHref": null,
+          "notificationDriveOpenHref": null,
+          "notificationMarkReadAction": "false",
+          "notificationMarkAllReadAction": "false",
+          "notificationDismissAction": "false",
+          "notificationCompleteAction": "false",
+          "calendarDate": null,
+          "calendarView": null,
+          "calendarBlockCount": null,
+          "calendarTodayCount": null,
+          "calendarOverdueCount": null,
+          "calendarWorkItemBlock": null,
+          "calendarMeetingBlock": null,
+          "calendarDayCount": null,
+          "calendarOpenTarget": "false",
+          "costTotalTokens": null,
+          "costTotalCny": null,
+          "costBudgetCount": null,
+          "costModelCount": null,
+          "costNoticeCount": null,
+          "settingsRuntimeStatus": null,
+          "settingsPetModelInWeb": null,
+          "settingsWorkerCount": null,
+          "settingsActiveLocale": null,
+          "settingsPreferenceLocale": null,
+          "settingsPreferenceSource": null,
+          "settingsPreferenceSynced": null,
+          "settingsSecretSafe": null,
+          "settingsRestoreRequiresDesktop": null,
+          "settingsWebLocalActions": null,
+          "settingsLocalBoundary": null,
+          "healthViewerScope": null,
+          "healthProjectCount": null,
+          "healthAttentionCount": null,
+          "healthCardBand": null,
+          "healthBandsOnly": "false",
+          "healthOpenProject": "false",
+          "healthSignalCount": "0",
+          "skillActiveCount": null,
+          "skillAiAuthoredCount": null,
+          "skillRefinedCount": null,
+          "skillCardCount": "0",
+          "skillRefinedBadge": "false",
+          "skillEmpty": "false",
+          "agentPlanCount": "1",
+          "agentRecentCount": "1",
+          "agentActiveTeams": "1",
+          "agentWaitingDecision": "2",
+          "agentKpiCount": "4",
+          "agentPlanCardCount": "1",
+          "agentRecentAccordion": "true",
+          "agentMobileMode": "single-column",
+          "agentEmpty": "false",
+          "notificationGrounding": "false",
+          "notificationEvidenceSearchRef": null,
+          "knowledgeSourceRef": null,
+          "onboardingScreen": "false",
+          "onboardingLocale": null,
+          "onboardingNicknameInput": "false",
+          "onboardingAdminToggle": "false",
+          "onboardingTarget": null,
+          "currentUserChip": "R4 Live Reviewer",
+          "currentUserAdmin": "true",
+          "logoutAction": "true"
+        },
+        "notice": {
+          "visible": false,
+          "kind": null,
+          "tone": null,
+          "source": null,
+          "locale": null,
+          "actionId": null,
+          "eventType": null,
+          "stream": null,
+          "title": "",
+          "body": "",
+          "reasonButtonCount": 0
+        },
+        "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
+          "runtime": "app-level",
+          "streamCount": "1",
+          "activeSourceCount": "1",
+          "openCount": "1",
+          "closeCount": "0",
+          "reuseCount": "0",
+          "connectedCount": "1",
+          "eventCount": null,
+          "refreshCount": null,
+          "lastEvent": null,
+          "lastStream": null,
+          "lastEventId": "evt_r4_20_4",
+          "lastEventIdSource": null,
+          "cursorStrategy": "sse-id-and-query-last_event_id",
+          "lastOpenHadCursor": "true",
+          "refreshMode": null,
+          "reactPropsEvent": null,
+          "reactPropsStream": null,
+          "reactPropsUpdateCount": null,
+          "routeDirty": "false",
+          "dirtyRoute": null,
+          "dirtyReason": null,
+          "dirtyGuardCount": null,
+          "dirtyPendingEvent": null,
+          "dirtyPendingStream": null
+        },
+        "routeState": {
+          "kind": null,
+          "actionText": null
+        },
+        "panelCount": 1,
+        "visiblePanelCount": 1,
+        "activeLocale": "en-US",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "secretLeak": false,
+        "clientWidth": 1365,
+        "scrollWidth": 1365,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": true
+      }
+    },
+    {
+      "id": "12ab-agents-en-mobile-no-overflow",
+      "url": "http://127.0.0.1:64906/dashboard/agents",
+      "viewport": {
+        "width": 390,
+        "height": 1180
+      },
+      "expectedStatus": "ready",
+      "screenshot": "12ab-agents-en-mobile-no-overflow.png",
+      "audit": {
+        "pathname": "/dashboard/agents",
+        "search": "",
+        "locationHash": "",
+        "lang": "en-US",
+        "storedLocale": "en-US",
+        "status": "ready",
+        "routeKey": "agents",
+        "productShell": true,
+        "linkModePath": true,
+        "masthead": true,
+        "routeComponent": "agents",
+        "routeComponentSource": "page-vm",
+        "routeComponentPanel": "agents",
+        "routeComponentActive": true,
+        "hydrationBoundary": true,
+        "hydrationRoute": "agents",
+        "hydrationSource": "page-vm",
+        "hydrationMode": "html-fallback",
+        "hydrationPageVm": "agents",
+        "hydrationActionCount": "3",
+        "hydrationAdapter": "route-component-v1",
+        "hydrationReactComponent": null,
+        "hydrationReactComponentRoute": null,
+        "hydrationReactComponentMode": null,
+        "hydrationReactComponentPropsSource": null,
+        "hydrationReactComponentFallback": false,
+        "hydrationReactComponentAdapter": null,
+        "hydrationPanel": true,
+        "hydrationPanelRoute": "agents",
+        "hydrationPanelMode": "html-fallback",
+        "hydrationPanelPageVm": "agents",
+        "hydrationPanelActionCount": "3",
+        "hydrationPanelCount": 1,
+        "reactRouteTree": true,
+        "routeTreeKey": "agents",
+        "routeTreePageVm": "agents",
+        "routeTreeMode": "html-fallback",
+        "routeTreeAdapter": "route-component-v1",
+        "routeTreeActiveOnly": true,
+        "routeTreeRouteCount": "18",
+        "routeTreeReactComponent": "",
+        "routeTreeReactComponentAdapter": "",
+        "routeTreeReactComponentFallback": false,
+        "routeTreeRuntimeMount": false,
+        "routeTreeRuntimeStrategy": "",
+        "routeTreeRuntimePropsUpdate": "",
+        "routeTreeRuntimeDispatcher": "",
+        "routeTreeRuntimeMutationEditor": "",
+        "routeTreeRuntimeLineEditor": "",
+        "reactComponentName": null,
+        "reactComponentRoute": null,
+        "reactComponentMode": null,
+        "reactComponentPropsSource": null,
+        "reactComponentPageVm": null,
+        "reactComponentLocale": null,
+        "reactComponentHtmlFallback": false,
+        "reactComponentAdapter": null,
+        "reactComponentActionCount": null,
+        "reactComponentFingerprint": null,
+        "reactRuntimeMounted": true,
+        "reactRuntimeRoute": "",
+        "reactRuntimeComponent": "",
+        "reactRuntimeName": null,
+        "reactRuntimePropsSource": null,
+        "reactRuntimeFingerprint": null,
+        "reactRuntimeLastUpdateReason": null,
+        "reactRuntimeMountCount": null,
+        "reactRuntimePropsUpdateCount": null,
+        "reactRuntimePrimaryActionCount": null,
+        "reactRuntimeQueueCount": null,
+        "reactRuntimeVisibleMutationEditor": "false",
+        "reactRuntimeMutationEditorKind": null,
+        "reactRuntimeControlledField": null,
+        "reactRuntimeControlledValue": null,
+        "reactRuntimeHtmlFallbackPreserved": "false",
+        "reactRuntimeHtmlFallbackHidden": "false",
+        "reactRuntimeVisibleLineEditor": "false",
+        "reactRuntimeLineEditorKind": null,
+        "reactRuntimeLineEditorSelectedDecision": null,
+        "reactRuntimeLineEditorSearchValue": null,
+        "reactRuntimeLineEditorHtmlFallbackPreserved": "false",
+        "reactRuntimeLineEditorHtmlFallbackHidden": "false",
+        "reactRuntimeDispatcherProbe": false,
+        "reactRuntimeDispatcherProbeActionId": null,
+        "routeSpecificMarker": true,
+        "routeData": {
+          "homeProjectDesk": "false",
+          "homeProjectCount": null,
+          "homeDriveCta": null,
+          "workitemTraceCount": null,
+          "workitemEvidenceCount": null,
+          "workitemAcceptanceCount": null,
+          "workitemSourceContext": null,
+          "workitemSourceCommentId": null,
+          "workitemSourceMeetingId": null,
+          "workitemSourceInsightId": null,
+          "workitemSourceProposalId": null,
+          "workitemCreateProposalAction": null,
+          "proposalChangeCount": null,
+          "proposalActionCount": null,
+          "proposalEvidenceCount": null,
+          "proposalConflictCount": null,
+          "proposalSplitAdapter": null,
+          "proposalReadonlyReviewActionCount": null,
+          "proposalAdvancedFallbackPreserved": null,
+          "proposalAdvancedFallbackActionCount": null,
+          "proposalLineEditorFallback": null,
+          "proposalFieldEditorFallback": null,
+          "proposalSubrecordEditorFallback": null,
+          "proposalLineEditorFileCount": null,
+          "proposalLineEditorHunkCount": null,
+          "proposalStructuredFieldEditorCount": null,
+          "proposalSubrecordItemCount": null,
+          "proposalAdvancedConflicts": null,
+          "proposalAdvancedFallback": null,
+          "proposalAdvancedFallbackSource": null,
+          "proposalAdvancedFallbackBoundaryActionCount": null,
+          "proposalAdvancedLineEditor": null,
+          "proposalAdvancedFieldEditor": null,
+          "proposalAdvancedSubrecordEditor": null,
+          "proposalLineEditorSelectedDecision": null,
+          "proposalLineEditorSearchValue": null,
+          "proposalCustomFieldValue": null,
+          "routeDirty": null,
+          "routeDirtyReason": null,
+          "intakeOptionCount": null,
+          "intakeProgressCount": null,
+          "intakeFreeTextCollapsed": null,
+          "intakeInputMode": null,
+          "intakeOptionFirst": null,
+          "intakeSelectedCount": "0",
+          "knowledgeEvidenceCount": null,
+          "knowledgeMissing": null,
+          "knowledgeActionCount": null,
+          "replayRunId": null,
+          "replayStepCount": null,
+          "replayAcceptedDeliverableCount": null,
+          "replayMergeAttemptCount": null,
+          "replayStructuredAuditCount": null,
+          "projectsCount": null,
+          "projectHomeId": null,
+          "projectHomeSlug": null,
+          "projectHomeOpenCount": null,
+          "projectHomeItemCount": "0",
+          "projectHomeFileCount": null,
+          "projectHomeMoreCount": null,
+          "projectHomeFilesMoreCount": null,
+          "driveProjectId": null,
+          "driveSelectedItemId": null,
+          "driveItemCount": null,
+          "driveVersionCount": null,
+          "driveAcceptedCount": null,
+          "driveCommentCount": null,
+          "driveDeletedCount": null,
+          "driveOperationCount": null,
+          "driveCanManage": null,
+          "driveProposalLink": "false",
+          "driveProposalHref": null,
+          "driveProposalStatus": null,
+          "meetingProjectId": null,
+          "meetingSelectedId": null,
+          "meetingCount": null,
+          "meetingPendingInsights": null,
+          "meetingConfirmedInsights": null,
+          "meetingDismissedInsights": null,
+          "meetingCanManage": null,
+          "meetingInsightId": null,
+          "meetingInsightStatus": null,
+          "meetingDraftLink": "false",
+          "meetingDraftHref": null,
+          "meetingProposalLink": "false",
+          "meetingProposalHref": null,
+          "meetingProposalStatus": null,
+          "notificationTotalCount": null,
+          "notificationUnreadCount": null,
+          "notificationNeedsDecisionCount": null,
+          "notificationFyiCount": null,
+          "notificationDoneCount": null,
+          "notificationUrgentCount": null,
+          "notificationNeedsBucketCount": null,
+          "notificationFyiBucketCount": null,
+          "notificationDoneBucketCount": null,
+          "notificationMeetingItemStatus": null,
+          "notificationMeetingSourceType": null,
+          "notificationDriveItemStatus": null,
+          "notificationMeetingOpenHref": null,
+          "notificationDriveOpenHref": null,
+          "notificationMarkReadAction": "false",
+          "notificationMarkAllReadAction": "false",
+          "notificationDismissAction": "false",
+          "notificationCompleteAction": "false",
+          "calendarDate": null,
+          "calendarView": null,
+          "calendarBlockCount": null,
+          "calendarTodayCount": null,
+          "calendarOverdueCount": null,
+          "calendarWorkItemBlock": null,
+          "calendarMeetingBlock": null,
+          "calendarDayCount": null,
+          "calendarOpenTarget": "false",
+          "costTotalTokens": null,
+          "costTotalCny": null,
+          "costBudgetCount": null,
+          "costModelCount": null,
+          "costNoticeCount": null,
+          "settingsRuntimeStatus": null,
+          "settingsPetModelInWeb": null,
+          "settingsWorkerCount": null,
+          "settingsActiveLocale": null,
+          "settingsPreferenceLocale": null,
+          "settingsPreferenceSource": null,
+          "settingsPreferenceSynced": null,
+          "settingsSecretSafe": null,
+          "settingsRestoreRequiresDesktop": null,
+          "settingsWebLocalActions": null,
+          "settingsLocalBoundary": null,
+          "healthViewerScope": null,
+          "healthProjectCount": null,
+          "healthAttentionCount": null,
+          "healthCardBand": null,
+          "healthBandsOnly": "false",
+          "healthOpenProject": "false",
+          "healthSignalCount": "0",
+          "skillActiveCount": null,
+          "skillAiAuthoredCount": null,
+          "skillRefinedCount": null,
+          "skillCardCount": "0",
+          "skillRefinedBadge": "false",
+          "skillEmpty": "false",
+          "agentPlanCount": "1",
+          "agentRecentCount": "1",
+          "agentActiveTeams": "1",
+          "agentWaitingDecision": "2",
+          "agentKpiCount": "4",
+          "agentPlanCardCount": "1",
+          "agentRecentAccordion": "true",
+          "agentMobileMode": "single-column",
+          "agentEmpty": "false",
+          "notificationGrounding": "false",
+          "notificationEvidenceSearchRef": null,
+          "knowledgeSourceRef": null,
+          "onboardingScreen": "false",
+          "onboardingLocale": null,
+          "onboardingNicknameInput": "false",
+          "onboardingAdminToggle": "false",
+          "onboardingTarget": null,
+          "currentUserChip": "R4 Live Reviewer",
+          "currentUserAdmin": "true",
+          "logoutAction": "true"
+        },
+        "notice": {
+          "visible": false,
+          "kind": null,
+          "tone": null,
+          "source": null,
+          "locale": null,
+          "actionId": null,
+          "eventType": null,
+          "stream": null,
+          "title": "",
+          "body": "",
+          "reasonButtonCount": 0
+        },
+        "live": {
+          "sharedRuntime": "@workhub/web-runtime",
+          "sharedLiveRuntime": "true",
+          "sharedActionRuntime": "notice-payload-line-editor",
+          "runtime": "app-level",
+          "streamCount": "1",
+          "activeSourceCount": "1",
+          "openCount": "1",
+          "closeCount": "0",
+          "reuseCount": "0",
+          "connectedCount": "1",
+          "eventCount": null,
+          "refreshCount": null,
+          "lastEvent": null,
+          "lastStream": null,
+          "lastEventId": "evt_r4_20_4",
+          "lastEventIdSource": null,
+          "cursorStrategy": "sse-id-and-query-last_event_id",
+          "lastOpenHadCursor": "true",
+          "refreshMode": null,
+          "reactPropsEvent": null,
+          "reactPropsStream": null,
+          "reactPropsUpdateCount": null,
+          "routeDirty": "false",
+          "dirtyRoute": null,
+          "dirtyReason": null,
+          "dirtyGuardCount": null,
+          "dirtyPendingEvent": null,
+          "dirtyPendingStream": null
+        },
+        "routeState": {
+          "kind": null,
+          "actionText": null
+        },
+        "panelCount": 1,
+        "visiblePanelCount": 1,
+        "activeLocale": "en-US",
+        "pathNavigation": true,
+        "hashNavigationLeak": false,
+        "oldShellLeak": false,
+        "weeklyFixtureLeak": false,
+        "cuuLeak": false,
+        "kanbanLeak": false,
+        "secretLeak": false,
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "horizontalOverflow": false,
+        "navHorizontalOverflow": false,
+        "textOverflowCount": 0,
+        "textOverflowSamples": [],
+        "topbarNavOverlap": false,
+        "zhChrome": false,
+        "enChrome": true
+      }
+    },
+    {
       "id": "12b-knowledge-fallback-en-desktop-route-component",
-      "url": "http://127.0.0.1:49614/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "url": "http://127.0.0.1:64906/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -12269,7 +13273,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -12459,6 +13463,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -12541,7 +13554,7 @@
     },
     {
       "id": "12c-knowledge-bind-success-en-desktop",
-      "url": "http://127.0.0.1:49614/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "url": "http://127.0.0.1:64906/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -12588,7 +13601,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -12778,6 +13791,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -12860,7 +13882,7 @@
     },
     {
       "id": "12d-intake-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:49614/intake/r4-live-session",
+      "url": "http://127.0.0.1:64906/intake/r4-live-session",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -12907,7 +13929,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -13097,6 +14119,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -13179,7 +14210,7 @@
     },
     {
       "id": "13-settings-en-desktop-route-component",
-      "url": "http://127.0.0.1:49614/settings",
+      "url": "http://127.0.0.1:64906/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -13226,7 +14257,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "SettingsRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -13416,6 +14447,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -13498,7 +14538,7 @@
     },
     {
       "id": "13a-settings-locale-persistence-fail-closed-en-desktop",
-      "url": "http://127.0.0.1:49614/settings",
+      "url": "http://127.0.0.1:64906/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -13545,7 +14585,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "SettingsRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -13735,6 +14775,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -13817,7 +14866,7 @@
     },
     {
       "id": "14-settings-desktop-gate-en-desktop",
-      "url": "http://127.0.0.1:49614/settings",
+      "url": "http://127.0.0.1:64906/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -13864,7 +14913,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "SettingsRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -14054,6 +15103,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -14136,7 +15194,7 @@
     },
     {
       "id": "14a-settings-en-mobile-boundary-no-overflow",
-      "url": "http://127.0.0.1:49614/settings",
+      "url": "http://127.0.0.1:64906/settings",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -14183,7 +15241,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "SettingsRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -14373,6 +15431,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -14455,7 +15522,7 @@
     },
     {
       "id": "15-replay-en-desktop-route-component",
-      "url": "http://127.0.0.1:49614/agent-runs/r4-live-run/replay",
+      "url": "http://127.0.0.1:64906/agent-runs/r4-live-run/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -14502,7 +15569,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ReplayRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -14692,6 +15759,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -14774,7 +15850,7 @@
     },
     {
       "id": "15a-replay-restore-success-en-desktop",
-      "url": "http://127.0.0.1:49614/agent-runs/r4-live-run/replay",
+      "url": "http://127.0.0.1:64906/agent-runs/r4-live-run/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -14821,7 +15897,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "ReplayRouteComponent",
         "routeTreeReactComponentAdapter": "react-compatible-route-component-v1",
         "routeTreeReactComponentFallback": true,
@@ -15011,6 +16087,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -15093,7 +16178,7 @@
     },
     {
       "id": "15ab-projects-en-desktop-route-component",
-      "url": "http://127.0.0.1:49614/projects",
+      "url": "http://127.0.0.1:64906/projects",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -15140,7 +16225,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -15330,6 +16415,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -15412,7 +16506,7 @@
     },
     {
       "id": "15aba-project-create-named-en-desktop",
-      "url": "http://127.0.0.1:49614/projects/10000000-0000-4000-8000-000000001691",
+      "url": "http://127.0.0.1:64906/projects/10000000-0000-4000-8000-000000001691",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -15459,7 +16553,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -15649,6 +16743,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -15731,7 +16834,7 @@
     },
     {
       "id": "15ac-project-home-en-desktop-route-component",
-      "url": "http://127.0.0.1:49614/projects/10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:64906/projects/10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -15778,7 +16881,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -15968,6 +17071,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -16050,7 +17162,7 @@
     },
     {
       "id": "15ad-project-home-new-task-intake-en-desktop",
-      "url": "http://127.0.0.1:49614/intake?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:64906/intake?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -16097,7 +17209,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -16287,6 +17399,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -16369,7 +17490,7 @@
     },
     {
       "id": "15b-drive-en-desktop-route-component",
-      "url": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -16416,7 +17537,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -16606,6 +17727,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -16688,7 +17818,7 @@
     },
     {
       "id": "15bb-drive-comment-to-draft-success-en-desktop",
-      "url": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -16735,7 +17865,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -16925,6 +18055,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -17007,7 +18146,7 @@
     },
     {
       "id": "15bc-drive-open-workitem-draft-en-desktop",
-      "url": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -17054,7 +18193,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -17244,6 +18383,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -17326,7 +18474,7 @@
     },
     {
       "id": "15bd-drive-draft-to-proposal-success-en-desktop",
-      "url": "http://127.0.0.1:49614/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:64906/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -17373,7 +18521,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -17563,6 +18711,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -17645,7 +18802,7 @@
     },
     {
       "id": "15be-drive-proposal-link-en-desktop",
-      "url": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -17692,7 +18849,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -17882,6 +19039,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -17964,7 +19130,7 @@
     },
     {
       "id": "15c-drive-upload-success-en-desktop",
-      "url": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -18011,7 +19177,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -18201,6 +19367,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -18283,7 +19458,7 @@
     },
     {
       "id": "15ca-drive-uploaded-item-deeplink-en-desktop",
-      "url": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "url": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -18330,7 +19505,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -18520,6 +19695,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -18602,7 +19786,7 @@
     },
     {
       "id": "15d-drive-delete-success-en-desktop",
-      "url": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -18649,7 +19833,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -18839,6 +20023,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -18921,7 +20114,7 @@
     },
     {
       "id": "15e-drive-restore-success-en-desktop",
-      "url": "http://127.0.0.1:49614/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:64906/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -18968,7 +20161,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -19158,6 +20351,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -19240,7 +20442,7 @@
     },
     {
       "id": "15f-meetings-insight-en-desktop",
-      "url": "http://127.0.0.1:49614/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "url": "http://127.0.0.1:64906/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -19287,7 +20489,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -19477,6 +20679,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -19559,7 +20770,7 @@
     },
     {
       "id": "15g-meeting-insight-draft-en-desktop",
-      "url": "http://127.0.0.1:49614/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "url": "http://127.0.0.1:64906/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -19606,7 +20817,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -19796,6 +21007,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -19878,7 +21098,7 @@
     },
     {
       "id": "15h-meeting-workitem-source-en-desktop",
-      "url": "http://127.0.0.1:49614/workitems/10000000-0000-4000-8000-000000001730",
+      "url": "http://127.0.0.1:64906/workitems/10000000-0000-4000-8000-000000001730",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -19925,7 +21145,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -20115,6 +21335,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -20197,7 +21426,7 @@
     },
     {
       "id": "15i-meeting-draft-proposal-en-desktop",
-      "url": "http://127.0.0.1:49614/workitems/10000000-0000-4000-8000-000000001730",
+      "url": "http://127.0.0.1:64906/workitems/10000000-0000-4000-8000-000000001730",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -20244,7 +21473,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -20434,6 +21663,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -20516,7 +21754,7 @@
     },
     {
       "id": "15j-meetings-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:49614/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "url": "http://127.0.0.1:64906/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -20563,7 +21801,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -20753,6 +21991,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -20835,7 +22082,7 @@
     },
     {
       "id": "15k-notifications-en-desktop",
-      "url": "http://127.0.0.1:49614/notifications",
+      "url": "http://127.0.0.1:64906/notifications",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -20882,7 +22129,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -21072,6 +22319,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "true",
           "notificationEvidenceSearchRef": "/knowledge/search?q=regional%20launch&work_item_id=10000000-0000-4000-8000-000000001730&source_ref=notification:10000000-0000-4000-8000-000000001801",
           "knowledgeSourceRef": null,
@@ -21154,7 +22410,7 @@
     },
     {
       "id": "15l-notification-mark-read-en-desktop",
-      "url": "http://127.0.0.1:49614/notifications",
+      "url": "http://127.0.0.1:64906/notifications",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -21201,7 +22457,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -21391,6 +22647,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "true",
           "notificationEvidenceSearchRef": "/knowledge/search?q=regional%20launch&work_item_id=10000000-0000-4000-8000-000000001730&source_ref=notification:10000000-0000-4000-8000-000000001801",
           "knowledgeSourceRef": null,
@@ -21473,7 +22738,7 @@
     },
     {
       "id": "15m-notification-dismiss-en-desktop",
-      "url": "http://127.0.0.1:49614/notifications",
+      "url": "http://127.0.0.1:64906/notifications",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -21520,7 +22785,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -21710,6 +22975,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "true",
           "notificationEvidenceSearchRef": "/knowledge/search?q=drive%20draft&source_ref=notification:10000000-0000-4000-8000-000000001802",
           "knowledgeSourceRef": null,
@@ -21792,7 +23066,7 @@
     },
     {
       "id": "15n-notification-mark-all-read-en-desktop",
-      "url": "http://127.0.0.1:49614/notifications",
+      "url": "http://127.0.0.1:64906/notifications",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -21839,7 +23113,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -22029,6 +23303,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "true",
           "notificationEvidenceSearchRef": "/knowledge/search?q=drive%20draft&source_ref=notification:10000000-0000-4000-8000-000000001802",
           "knowledgeSourceRef": null,
@@ -22111,7 +23394,7 @@
     },
     {
       "id": "15o-notification-complete-en-desktop",
-      "url": "http://127.0.0.1:49614/notifications",
+      "url": "http://127.0.0.1:64906/notifications",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -22158,7 +23441,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -22348,6 +23631,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "true",
           "notificationEvidenceSearchRef": "/knowledge/search?q=regional%20launch&work_item_id=10000000-0000-4000-8000-000000001730&source_ref=notification:10000000-0000-4000-8000-000000001801",
           "knowledgeSourceRef": null,
@@ -22430,7 +23722,7 @@
     },
     {
       "id": "15p-notifications-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:49614/notifications",
+      "url": "http://127.0.0.1:64906/notifications",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -22477,7 +23769,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -22667,6 +23959,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "true",
           "notificationEvidenceSearchRef": "/knowledge/search?q=regional%20launch&work_item_id=10000000-0000-4000-8000-000000001730&source_ref=notification:10000000-0000-4000-8000-000000001801",
           "knowledgeSourceRef": null,
@@ -22749,7 +24050,7 @@
     },
     {
       "id": "15q-calendar-en-desktop",
-      "url": "http://127.0.0.1:49614/calendar?date=2026-06-11&view=week",
+      "url": "http://127.0.0.1:64906/calendar?date=2026-06-11&view=week",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -22796,7 +24097,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -22986,6 +24287,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -23068,7 +24378,7 @@
     },
     {
       "id": "15qa-calendar-open-target-workitem-en-desktop",
-      "url": "http://127.0.0.1:49614/workitems/10000000-0000-4000-8000-000000001730",
+      "url": "http://127.0.0.1:64906/workitems/10000000-0000-4000-8000-000000001730",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -23115,7 +24425,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -23305,6 +24615,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -23387,7 +24706,7 @@
     },
     {
       "id": "15r-calendar-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:49614/calendar?date=2026-06-11&view=week",
+      "url": "http://127.0.0.1:64906/calendar?date=2026-06-11&view=week",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -23434,7 +24753,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -23624,6 +24943,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -23706,7 +25034,7 @@
     },
     {
       "id": "15s-health-en-desktop",
-      "url": "http://127.0.0.1:49614/dashboard/health",
+      "url": "http://127.0.0.1:64906/dashboard/health",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -23753,7 +25081,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -23943,6 +25271,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -24025,7 +25362,7 @@
     },
     {
       "id": "15sa-health-open-project-en-desktop",
-      "url": "http://127.0.0.1:49614/projects/10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:64906/projects/10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -24072,7 +25409,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -24262,6 +25599,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -24344,7 +25690,7 @@
     },
     {
       "id": "15t-health-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:49614/dashboard/health",
+      "url": "http://127.0.0.1:64906/dashboard/health",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -24391,7 +25737,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -24581,6 +25927,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -24663,7 +26018,7 @@
     },
     {
       "id": "15v-skills-en-desktop-route-component",
-      "url": "http://127.0.0.1:49614/dashboard/skills",
+      "url": "http://127.0.0.1:64906/dashboard/skills",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -24710,7 +26065,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -24900,6 +26255,15 @@
           "skillCardCount": "2",
           "skillRefinedBadge": "true",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -24982,7 +26346,7 @@
     },
     {
       "id": "15w-skills-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:49614/dashboard/skills",
+      "url": "http://127.0.0.1:64906/dashboard/skills",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -25029,7 +26393,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -25219,6 +26583,15 @@
           "skillCardCount": "2",
           "skillRefinedBadge": "true",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -25301,7 +26674,7 @@
     },
     {
       "id": "15u-notification-evidence-jump-en-desktop",
-      "url": "http://127.0.0.1:49614/knowledge/search",
+      "url": "http://127.0.0.1:64906/knowledge/search",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -25348,7 +26721,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -25538,6 +26911,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": "notification:10000000-0000-4000-8000-000000001801",
@@ -25620,7 +27002,7 @@
     },
     {
       "id": "16-empty-drive-no-project-mobile",
-      "url": "http://127.0.0.1:49614/drive?empty=drive",
+      "url": "http://127.0.0.1:64906/drive?empty=drive",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -25857,6 +27239,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -25939,7 +27330,7 @@
     },
     {
       "id": "17-forbidden-workitem-desktop",
-      "url": "http://127.0.0.1:49614/workitems/r4-live-forbidden",
+      "url": "http://127.0.0.1:64906/workitems/r4-live-forbidden",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -26176,6 +27567,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -26258,7 +27658,7 @@
     },
     {
       "id": "18-unknown-route-notfound",
-      "url": "http://127.0.0.1:49614/missing-r4-live-route",
+      "url": "http://127.0.0.1:64906/missing-r4-live-route",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -26495,6 +27895,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -26577,7 +27986,7 @@
     },
     {
       "id": "19-logout-onboarding-en-desktop",
-      "url": "http://127.0.0.1:49614/approvals",
+      "url": "http://127.0.0.1:64906/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -26814,6 +28223,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,
@@ -26896,7 +28314,7 @@
     },
     {
       "id": "19a-second-user-deeplink-en-desktop",
-      "url": "http://127.0.0.1:49614/approvals",
+      "url": "http://127.0.0.1:64906/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -26943,7 +28361,7 @@
         "routeTreeMode": "html-fallback",
         "routeTreeAdapter": "route-component-v1",
         "routeTreeActiveOnly": true,
-        "routeTreeRouteCount": "17",
+        "routeTreeRouteCount": "18",
         "routeTreeReactComponent": "",
         "routeTreeReactComponentAdapter": "",
         "routeTreeReactComponentFallback": false,
@@ -27133,6 +28551,15 @@
           "skillCardCount": "0",
           "skillRefinedBadge": "false",
           "skillEmpty": "false",
+          "agentPlanCount": null,
+          "agentRecentCount": null,
+          "agentActiveTeams": null,
+          "agentWaitingDecision": null,
+          "agentKpiCount": "0",
+          "agentPlanCardCount": "0",
+          "agentRecentAccordion": "false",
+          "agentMobileMode": null,
+          "agentEmpty": "false",
           "notificationGrounding": "false",
           "notificationEvidenceSearchRef": null,
           "knowledgeSourceRef": null,

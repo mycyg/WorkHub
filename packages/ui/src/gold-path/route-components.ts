@@ -1,5 +1,6 @@
 import type {
   ActionSpec,
+  AgentArmyDashboardVM,
   ApprovalCenterVM,
   ApprovalDetailVM,
   AttentionAction,
@@ -61,8 +62,8 @@ import {
 import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
-// "skills"/"projects"/"project-home" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "settings"> | "skills" | "projects" | "project-home";
+// "agents"/"skills"/"projects"/"project-home" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "settings"> | "agents" | "skills" | "projects" | "project-home";
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -317,6 +318,22 @@ type RouteCopyKey =
   | "cost.laborProduction"
   | "cost.laborSelfImprovement"
   | "cost.laborSelfImprovementRatio"
+  | "agents.kicker"
+  | "agents.title"
+  | "agents.summary"
+  | "agents.active"
+  | "agents.waiting"
+  | "agents.todayCost"
+  | "agents.autonomy"
+  | "agents.plans"
+  | "agents.recent"
+  | "agents.noRecent"
+  | "agents.empty"
+  | "agents.start"
+  | "agents.cost"
+  | "agents.judge"
+  | "agents.roles"
+  | "agents.statuses"
   | "skills.kicker"
   | "skills.title"
   | "skills.summary"
@@ -517,6 +534,22 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.laborProduction": "干活花费",
     "cost.laborSelfImprovement": "自进化花费",
     "cost.laborSelfImprovementRatio": "自进化占比",
+    "agents.kicker": "智能代理军团",
+    "agents.title": "智能代理军团",
+    "agents.summary": "观察正在推进的分工计划；需要人决定的事仍回到总览处理。",
+    "agents.active": "进行中军团",
+    "agents.waiting": "等你决策",
+    "agents.todayCost": "今日成本",
+    "agents.autonomy": "自治率",
+    "agents.plans": "活跃计划",
+    "agents.recent": "最近动态",
+    "agents.noRecent": "还没有升级或决策动态。",
+    "agents.empty": "还没有军团在跑。下次遇到大任务，系统会先生成一份分工计划。",
+    "agents.start": "发起新任务",
+    "agents.cost": "成本",
+    "agents.judge": "判官通过率",
+    "agents.roles": "角色",
+    "agents.statuses": "状态",
     "skills.kicker": "团队技能库",
     "skills.title": "团队技能",
     "skills.summary": "AI 沉淀并持续打磨的可复用技能",
@@ -718,6 +751,22 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.laborProduction": "Production spend",
     "cost.laborSelfImprovement": "Self-improvement spend",
     "cost.laborSelfImprovementRatio": "Self-improvement share",
+    "agents.kicker": "Agent Army",
+    "agents.title": "Agent Army",
+    "agents.summary": "Observe active task plans; decisions still go through the overview inbox.",
+    "agents.active": "Active teams",
+    "agents.waiting": "Needs your decision",
+    "agents.todayCost": "Today cost",
+    "agents.autonomy": "Autonomy",
+    "agents.plans": "Active plans",
+    "agents.recent": "Recent activity",
+    "agents.noRecent": "No escalations or decision activity yet.",
+    "agents.empty": "No agent armies are running yet. Next time there is a large task, WorkHub will draft a task plan first.",
+    "agents.start": "Start a task",
+    "agents.cost": "Cost",
+    "agents.judge": "Judge pass rate",
+    "agents.roles": "Roles",
+    "agents.statuses": "Statuses",
     "skills.kicker": "Team skill library",
     "skills.title": "Team skills",
     "skills.summary": "Reusable skills the AI distills and keeps refining",
@@ -2994,6 +3043,113 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
   }).join("");
 }
 
+function agentDashboardStatusLabel(locale: WorkHubLocale, status: string) {
+  const labels: Record<string, Record<WorkHubLocale, string>> = {
+    pending: { "zh-CN": "待派发", "en-US": "Pending" },
+    dispatched: { "zh-CN": "已派发", "en-US": "Dispatched" },
+    succeeded: { "zh-CN": "已成功", "en-US": "Succeeded" },
+    failed: { "zh-CN": "失败", "en-US": "Failed" },
+    skipped: { "zh-CN": "已跳过", "en-US": "Skipped" },
+    needs_human: { "zh-CN": "需要你判断", "en-US": "Needs review" }
+  };
+  return labels[status]?.[locale] ?? taskPlanItemStatusLabel(locale, status);
+}
+
+function pctWidth(value: number | undefined) {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+  return String(Math.max(0, Math.min(100, Math.round(value ?? 0))));
+}
+
+function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHubLocale): WebRouteComponent {
+  const kpis = [
+    { id: "active_team_count", label: routeT(locale, "agents.active"), value: String(vm.kpis.active_team_count) },
+    { id: "waiting_decision", label: routeT(locale, "agents.waiting"), value: String(vm.kpis.waiting_decision_count), href: "/" },
+    { id: "today_cost", label: routeT(locale, "agents.todayCost"), value: costAmount(vm.kpis.today_cost_cny) },
+    { id: "autonomy_rate", label: routeT(locale, "agents.autonomy"), value: `${vm.kpis.autonomy_rate_pct}%` }
+  ].map((item) => {
+    const body = `<strong>${escapeHtml(item.value)}</strong><span>${escapeHtml(item.label)}</span>`;
+    return item.href
+      ? `<a class="wh-card wh-r4-route-card" data-r9-agent-kpi="${escapeHtml(item.id)}" href="${escapeHtml(safeHref(item.href))}">${body}</a>`
+      : `<section class="wh-card wh-r4-route-card" data-r9-agent-kpi="${escapeHtml(item.id)}">${body}</section>`;
+  }).join("");
+
+  const planCards = vm.plans.map((plan) => {
+    const roles = plan.roles.map((role) => `<span class="wh-pill">${escapeHtml(`${taskPlanItemRoleLabel(locale, role.role)} ${role.count}`)}</span>`).join("");
+    const statuses = plan.statuses.map((status) => `<span class="wh-pill">${escapeHtml(`${agentDashboardStatusLabel(locale, status.status)} ${status.count}`)}</span>`).join("");
+    const burn = plan.cost.burn_pct ?? 0;
+    const blocker = plan.oldest_blocker
+      ? `<p class="wh-subtle" data-r9-agent-plan-blocker="true">${escapeHtml(plan.oldest_blocker.label)}</p>`
+      : "";
+    return `<a class="wh-card wh-r4-route-card" data-r9-agent-plan-card="${escapeHtml(plan.plan_id)}" href="${escapeHtml(safeHref(plan.work_item_href))}">
+      <div class="wh-r4-route-row">
+        <div>
+          <strong>${escapeHtml(plan.work_item_title)}</strong>
+          <p>${escapeHtml(`${plan.work_item_code} · ${taskPlanStatusLabel(locale, plan.status)} · ${plan.progress.label}`)}</p>
+        </div>
+        <span class="wh-pill">${escapeHtml(plan.progress.label)}</span>
+      </div>
+      <div class="wh-r4-route-meter" aria-hidden="true"><span style="width:${escapeHtml(pctWidth(burn))}%"></span></div>
+      <div class="wh-r4-route-meta" data-r9-agent-plan-roles="true">${roles}</div>
+      <div class="wh-r4-route-meta" data-r9-agent-plan-statuses="true">${statuses}</div>
+      <p class="wh-subtle">${escapeHtml(`${routeT(locale, "agents.cost")}: ${costAmount(plan.cost.used_cny)}${plan.cost.budget_cny ? `/${costAmount(plan.cost.budget_cny)}` : ""} · ${routeT(locale, "agents.judge")}: ${plan.judge.pass_rate_pct}%`)}</p>
+      ${blocker}
+    </a>`;
+  }).join("");
+
+  const empty = vm.empty_state === "no_agent_armies"
+    ? `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r9-agent-dashboard-empty="no_agent_armies">
+        <p>${escapeHtml(routeT(locale, "agents.empty"))}</p>
+        <div class="wh-r4-route-actions"><a class="wh-btn wh-btn-primary" href="/intake">${escapeHtml(routeT(locale, "agents.start"))}</a></div>
+      </section>`
+    : "";
+  const recent = vm.recent_escalations.length
+    ? vm.recent_escalations.map((item) => `<div class="wh-r4-route-row" data-r9-agent-recent-item="${escapeHtml(item.id)}">
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <p>${escapeHtml(item.reason_preview)}</p>
+      </div>
+      <a class="wh-pill" href="${escapeHtml(safeHref(item.href))}">${escapeHtml(routeT(locale, "agents.waiting"))}</a>
+    </div>`).join("")
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "agents.noRecent"))}</p>`;
+
+  return createWebRouteComponent({
+    key: "agents",
+    css: webRouteComponentCss,
+    primaryHrefs: [
+      "/",
+      ...vm.plans.map((plan) => plan.work_item_href),
+      ...vm.recent_escalations.map((item) => item.href)
+    ],
+    source: "page-vm",
+    locale,
+    pageVm: "agents",
+    html: `<section class="wh-r4-route" data-r4-route-component="agents" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r9-agent-dashboard="true" data-r9-agent-dashboard-mobile="single-column" data-r9-agent-dashboard-plan-count="${escapeHtml(String(vm.plans.length))}" data-r9-agent-dashboard-recent-count="${escapeHtml(String(vm.recent_escalations.length))}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "agents.kicker"))}</span>
+          <h1>${escapeHtml(routeT(locale, "agents.title"))}</h1>
+          <p>${escapeHtml(routeT(locale, "agents.summary"))}</p>
+        </div>
+        <span class="wh-r4-route-count">${escapeHtml(String(vm.kpis.active_team_count))}</span>
+      </header>
+      <div class="wh-r4-route-grid" data-r9-agent-dashboard-kpis="true">${kpis}</div>
+      ${empty}
+      <div class="wh-r4-route-grid">
+        <section class="wh-r4-route-card" data-r9-agent-dashboard-plans="true">
+          <h3>${escapeHtml(routeT(locale, "agents.plans"))}</h3>
+          <div class="wh-r4-route-grid">${planCards}</div>
+        </section>
+        <details class="wh-card wh-r4-route-card" data-r9-agent-recent-activity="accordion" open>
+          <summary>${escapeHtml(routeT(locale, "agents.recent"))}</summary>
+          <div class="wh-r4-route-timeline">${recent}</div>
+        </details>
+      </div>
+    </section>`
+  });
+}
+
 function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLocale): WebRouteComponent {
   const cards = vm.skills.length
     ? vm.skills.map((skill) => {
@@ -3504,6 +3660,7 @@ export type WebRouteComponentInput =
   | { key: "health"; health: ProjectHealthPageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
+  | { key: "agents"; agents: AgentArmyDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined; scopeLanding?: boolean | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
   | { key: "settings"; settings: SettingsPageVM };
@@ -3545,6 +3702,8 @@ export function renderWebRouteComponent(
       return renderReplayRouteComponent(input.replay, locale);
     case "cost":
       return renderCostRouteComponent(input.cost, locale);
+    case "agents":
+      return renderAgentArmyRouteComponent(input.agents, locale);
     case "knowledge":
       return renderKnowledgeRouteComponent(input.evidence, locale, input.sourceRef, input.scopeLanding);
     case "skills":
