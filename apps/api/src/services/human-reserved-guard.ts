@@ -94,6 +94,9 @@ const externalPublishChannelTokens = [
   "wechat",
   "press",
   "newsletter",
+  "email",
+  "emails",
+  "mail",
   "announcement",
   "announcements"
 ] as const;

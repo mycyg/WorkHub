@@ -3172,6 +3172,8 @@ test("R9.7 high-risk legal, finance, identity, and publishing tool calls are sto
     { toolId: "socialMediaPost", category: "publish" },
     { toolId: "sendPressRelease", category: "publish" },
     { toolId: "sendNewsletter", category: "publish" },
+    { toolId: "sendEmail", category: "publish" },
+    { toolId: "sendCustomerEmail", category: "publish" },
     { toolId: "postCompanyAnnouncement", category: "publish" }
   ] as const;
 
