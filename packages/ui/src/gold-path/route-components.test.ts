@@ -882,6 +882,27 @@ test("R9.0 Home route renders escalation cards with human action labels", () => 
   assertNoMainWindowBoundaryLeak(home.html);
 });
 
+test("R9.7 approval workbench localizes plan_review attention kind", () => {
+  const vm = surfaceVm();
+  const first = vm.page_vms.approvals.items[0];
+  assert.ok(first);
+  vm.page_vms.approvals.items[0] = {
+    ...first,
+    kind: "plan_review",
+    source_ref: { entity_type: "proposal", entity_id: "94000000-0000-4000-8000-000000000111" },
+    title: "《短剧选题调研》的分工计划等你过目",
+    summary_text: "拆成 4 个子任务，等你确认。"
+  };
+
+  const approvals = renderWebRouteComponents(vm, { locale: "zh-CN" }).approvals;
+
+  assert.ok(approvals);
+  assert.equal(approvals.html.includes("计划审阅"), true);
+  assert.equal(approvals.html.includes("plan_review"), false);
+  assert.equal(approvals.html.includes("Plan Review"), false);
+  assertNoMainWindowBoundaryLeak(approvals.html);
+});
+
 test("Home route surfaces partial source warnings instead of silently showing an empty queue", () => {
   const base = surfaceVm();
   const withWarning = {

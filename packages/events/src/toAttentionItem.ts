@@ -49,6 +49,21 @@ function findUuid(data: unknown, keys: string[]) {
   return undefined;
 }
 
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function isTaskPlanProposalEvent(event: WorkHubEvent<unknown>) {
+  const data = recordValue(event.data);
+  const manifest = recordValue(data?.["manifest"]);
+  const changes = Array.isArray(manifest?.["changes"]) ? manifest["changes"] : [];
+  return changes.some((change) => {
+    const record = recordValue(change);
+    const targetRef = recordValue(record?.["target_ref"]);
+    return record?.["target_kind"] === "structured_record" && targetRef?.["entity_type"] === "task_plan";
+  });
+}
+
 function kindFor(event: WorkHubEvent<unknown>): AttentionItem["kind"] {
   switch (event.type as EventType) {
     case eventTypes.permissionAsk:
@@ -56,7 +71,7 @@ function kindFor(event: WorkHubEvent<unknown>): AttentionItem["kind"] {
     case eventTypes.proposalOpened:
     case eventTypes.proposalReviewed:
     case eventTypes.revisionFedback:
-      return "proposal_review";
+      return isTaskPlanProposalEvent(event) ? "plan_review" : "proposal_review";
     case eventTypes.agentRunEscalated:
     case eventTypes.escalationOpened:
       return "escalation";
@@ -125,7 +140,7 @@ function defaultOpenAction(event: WorkHubEvent<unknown>): AttentionItem["actions
   ) {
     return [{
       id: "open_proposal",
-      label: "查看变更申请",
+      label: isTaskPlanProposalEvent(event) ? "查看计划提议" : "查看变更申请",
       style: "secondary",
       method: "GET",
       href: `/proposals/${event.proposal_id}`
@@ -159,9 +174,10 @@ export function toAttentionItem(event: WorkHubEvent<unknown>): AttentionItem | u
   }
 
   const summary = event.preview_text ?? "WorkHub 有新的状态更新。";
+  const kind = kindFor(event);
   return {
     id: event.event_id,
-    kind: kindFor(event),
+    kind,
     priority: priorityFor(event),
     ...(event.work_item_id ? { work_item_id: event.work_item_id } : {}),
     ...(event.project_id ? { project_id: event.project_id } : {}),
@@ -169,7 +185,7 @@ export function toAttentionItem(event: WorkHubEvent<unknown>): AttentionItem | u
     title: titleFor(event, summary),
     summary_text: summary,
     actions: budgetActions(event) ?? defaultOpenAction(event),
-    cuu_state: toCuuState(event),
+    cuu_state: kind === "plan_review" ? "asking_approval" : toCuuState(event),
     created_at: event.ts
   };
 }

@@ -8,7 +8,7 @@ import { z, ZodError } from "zod";
 
 import { p05GoldPathIds, createP05GoldPathFixture } from "@workhub/agent/fixtures";
 import { loadSettings, type Settings } from "@workhub/config";
-import { goldPathSurfaceVmSchema } from "@workhub/contracts";
+import { goldPathSurfaceVmSchema, type AttentionItem } from "@workhub/contracts";
 import type {
   ClientDeviceAuthRow,
   ClientDeviceRepository,
@@ -350,6 +350,51 @@ test("attention home scopes proposal review lookup to the actor workspace", asyn
   assert.equal(response.status, 200);
   assert.equal(captured?.user.id, userId);
   assert.equal(captured?.user.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+});
+
+test("attention home preserves task-plan proposal reviews as plan_review cards", async () => {
+  const runtimeSettings = settings();
+  const planProposalId = "40000000-0000-4000-8000-0000000000b1";
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    approvals: {
+      async listPendingForUser() {
+        return {
+          items: [],
+          requests: [],
+          filters: {},
+          counts: { pending: 0, pending_total: 0 },
+          page_info: { limit: 100, returned: 0, has_more: false },
+          items_detail: {}
+        };
+      }
+    } as unknown as ApprovalService,
+    proposals: {
+      async listReviewableForUser() {
+        return [{
+          id: planProposalId,
+          work_item_id: "40000000-0000-4000-8000-0000000000b2",
+          title: "《短剧选题调研》的分工计划等你过目",
+          status: "opened" as const,
+          created_at: "2026-07-03T00:00:00.000Z",
+          review_kind: "plan_review" as const
+        }];
+      }
+    } as unknown as ProposalService
+  }));
+
+  const response = await app.request("/api/pages/attention?locale=zh-CN", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as { data: { primary?: AttentionItem; queue: AttentionItem[] } };
+  assert.equal(body.data.primary?.kind, "plan_review");
+  assert.equal(body.data.primary?.source_ref.entity_id, planProposalId);
+  assert.equal(body.data.primary?.summary_text, "任务已拆成分工计划，等你确认后再进入派发。");
+  assert.equal(body.data.primary?.actions.find((action) => action.id === "open_proposal")?.label, "查看计划提议");
 });
 
 test("attention home background runs stay scoped to the actor workspace for admins", async () => {

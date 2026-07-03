@@ -51,6 +51,7 @@ export type ReviewableProposalRow = {
   workItemId: string;
   title: string;
   status: string;
+  diffManifest: DeliverableChangeManifest;
   createdAt: Date;
 };
 
@@ -1879,6 +1880,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           workItemId: proposals.workItemId,
           title: proposals.title,
           status: proposals.status,
+          diffManifest: proposals.diffManifest,
           createdAt: proposals.createdAt
         })
         .from(proposals)

@@ -948,6 +948,42 @@ test("attention approval cards localize standard action labels", () => {
   assert.equal(cardFromAttentionItem(attention).actions.find((action) => action.id === "open_proposal")?.label, "查看变更申请");
 });
 
+test("R9.7 plan_review attention cards render as plan proposal Cuu cards", () => {
+  const attention: AttentionItem = {
+    id: "30000000-0000-4000-8000-000000000021",
+    kind: "plan_review",
+    priority: "normal",
+    work_item_id: workItemId,
+    source_ref: { entity_type: "proposal", entity_id: "proposal-plan" },
+    title: "《短剧选题调研》的分工计划等你过目",
+    summary_text: "任务已拆成分工计划，等你确认后再进入派发。",
+    actions: [
+      { id: "approve", label: "确认计划", style: "primary", method: "POST", href: "/api/proposals/proposal-plan/review" },
+      {
+        id: "request_changes",
+        label: "打回重拆",
+        style: "danger",
+        method: "POST",
+        href: "/api/proposals/proposal-plan/review",
+        requires_reason: true
+      },
+      { id: "open_proposal", label: "查看计划提议", style: "secondary", method: "GET", href: "/proposals/proposal-plan" }
+    ],
+    cuu_state: "asking_approval",
+    created_at: ts
+  };
+
+  const card = cardFromAttentionItem(attention);
+  const english = cardFromAttentionItem(attention, { locale: "en-US" });
+
+  assert.equal(card.kind, "proposal");
+  assert.equal(card.state, "asking_approval");
+  assert.equal(card.title, "《短剧选题调研》的分工计划等你过目");
+  assert.deepEqual(card.actions.map((action) => action.label), ["查看计划提议", "确认计划", "打回重拆"]);
+  assert.equal(card.sections?.find((section) => section.id === "next_step")?.lines[0], "先确认计划；不满意就打回重拆。");
+  assert.deepEqual(english.actions.map((action) => action.label), ["View plan proposal", "Approve plan", "Request replan"]);
+});
+
 test("R9.0 escalation attention cards render human Cuu actions", () => {
   const attention: AttentionItem = {
     id: "30000000-0000-4000-8000-000000000011",

@@ -81,6 +81,11 @@ test("attention escalation cards do not label retry/cancel actions as assignment
   assert.equal(attentionTagLabelForKind("escalation", false), "Needs action");
 });
 
+test("attention plan_review cards use explicit plan-review labels", () => {
+  assert.equal(attentionTagLabelForKind("plan_review", true), "计划审阅");
+  assert.equal(attentionTagLabelForKind("plan_review", false), "Plan review");
+});
+
 test("attention proposal merge conflict renders actionable choices instead of a generic failure", () => {
   const conflict: ProposalConflict = {
     id: "conflict-1",

@@ -140,6 +140,42 @@ test("revision feedback events keep Cuu in revision-requested handoff mode", () 
   assert.equal(attention?.actions[0]?.href, "/proposals/60000000-0000-4000-8000-000000000001");
 });
 
+test("task-plan proposal events become plan_review attention", () => {
+  const proposalId = "60000000-0000-4000-8000-000000000021";
+  const planId = "60000000-0000-4000-8000-000000000022";
+  const event = makeWorkHubEvent({
+    event_id: "30000000-0000-4000-8000-000000000021",
+    type: eventTypes.proposalOpened,
+    topic: topics.workitem("50000000-0000-4000-8000-000000000001").topic,
+    ts: new Date("2026-06-05T00:04:00.000Z"),
+    work_item_id: "50000000-0000-4000-8000-000000000001",
+    proposal_id: proposalId,
+    preview_text: "请先确认这份任务拆解计划。",
+    data: {
+      proposal_id: proposalId,
+      manifest: {
+        version: 0,
+        work_item_id: "50000000-0000-4000-8000-000000000001",
+        title: "计划提议",
+        summary_md: "请先确认这份任务拆解计划。",
+        changes: [{
+          id: planId,
+          target_kind: "structured_record",
+          target_ref: { entity_type: "task_plan", entity_id: planId },
+          change_type: "generated",
+          human_summary: "新增可审的任务计划草稿。"
+        }]
+      }
+    }
+  });
+  const attention = toAttentionItem(event);
+
+  assert.equal(attention?.kind, "plan_review");
+  assert.equal(attention?.cuu_state, "asking_approval");
+  assert.equal(attention?.source_ref.entity_type, "proposal");
+  assert.equal(attention?.actions[0]?.id, "open_proposal");
+});
+
 test("SSE formatting prefixes every data line and round-trips multiline payloads", () => {
   const frame = formatSseEvent("agent_run.step", "line 1\r\nline 2");
 

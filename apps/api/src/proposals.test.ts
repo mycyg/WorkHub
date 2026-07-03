@@ -252,6 +252,36 @@ function structuredManifest(): DeliverableChangeManifest {
   return structuredClone(fixture);
 }
 
+function taskPlanManifest(): DeliverableChangeManifest {
+  const base = manifest();
+  const change = base.changes[0];
+  if (!change) {
+    throw new Error("missing base change fixture");
+  }
+  const planId = "91000000-0000-4000-8000-000000000991";
+  return {
+    ...base,
+    title: "计划提议",
+    summary_md: "请先确认这份任务拆解计划。",
+    changes: [{
+      ...change,
+      id: planId,
+      target_kind: "structured_record",
+      target_ref: {
+        entity_type: "task_plan",
+        entity_id: planId,
+        path: `/workspaces/92000000-0000-4000-8000-000000000001/task-plans/${planId}`
+      },
+      change_type: "generated",
+      human_summary: "新增可审的任务计划草稿。",
+      machine_summary: {
+        changed_fields: ["task_plan_items"],
+        generated_content_md: "1. 调研证据\n2. 产出短报告"
+      }
+    }]
+  };
+}
+
 function ids() {
   const values = [
     "91000000-0000-4000-8000-000000000101",
@@ -654,6 +684,7 @@ class MemoryProposalRepository implements ProposalRepository {
         workItemId: row.proposal.workItemId,
         title: row.proposal.title,
         status: row.proposal.status,
+        diffManifest: row.proposal.diffManifest,
         createdAt: row.proposal.createdAt
       }));
   }
@@ -1344,6 +1375,24 @@ test("proposal routes require work item access before read and write operations"
   assert.equal(merge.status, 403);
   assert.equal(reviewBadBody.status, 403);
   assert.equal(mergeBadBody.status, 403);
+});
+
+test("reviewable proposal summaries mark task-plan manifests as plan_review", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = taskPlanManifest();
+  const proposal = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub Meta-Planner" },
+    title: "计划提议"
+  });
+
+  const reviewable = await service.listReviewableForUser({
+    user: { id: userId, isAdmin: true }
+  });
+
+  assert.equal(reviewable.find((item) => item.id === proposal.id)?.review_kind, "plan_review");
 });
 
 test("proposal create rejects branch ids that belong to a different work item", async () => {

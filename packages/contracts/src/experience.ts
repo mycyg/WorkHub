@@ -62,6 +62,7 @@ export const attentionItemSchema = z.object({
   kind: z.enum([
     "clarification",
     "approval",
+    "plan_review",
     "proposal_review",
     "escalation",
     "sync_conflict",

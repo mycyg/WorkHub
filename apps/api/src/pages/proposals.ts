@@ -6,6 +6,7 @@ import {
 } from "@workhub/contracts";
 
 import type { StoredProposal } from "../services/proposals.js";
+import type { ReviewableProposalSummary } from "../services/proposals.js";
 import { pageT } from "./i18n.js";
 import { parseOutputContract } from "./output-contract.js";
 
@@ -13,35 +14,39 @@ import { parseOutputContract } from "./output-contract.js";
 // 动作 href 与 buildProposalDetailPage 完全一致(/api/proposals/:id/review·/merge),
 // 复用前端既有的提议 review·merge 点击管线;opened→通过/打回/查看,reviewed→采纳/查看。
 export function buildProposalReviewAttentionItem(
-  summary: { id: string; work_item_id: string; title: string; status: "opened" | "reviewed"; created_at: string },
+  summary: Omit<ReviewableProposalSummary, "review_kind"> & { review_kind?: ReviewableProposalSummary["review_kind"] },
   locale: WorkHubLocale = "zh-CN"
 ): AttentionItem {
   const reviewed = summary.status === "reviewed";
+  const reviewKind = summary.review_kind ?? "proposal_review";
+  const planReview = reviewKind === "plan_review";
   const viewAction: AttentionItem["actions"][number] = {
     id: "open_proposal",
-    label: pageT(locale, "proposal.action.view"),
+    label: pageT(locale, planReview ? "proposal.action.viewPlan" : "proposal.action.view"),
     style: "secondary",
     method: "GET",
     href: `/proposals/${summary.id}`
   };
   const actions: AttentionItem["actions"] = reviewed
     ? [
-        { id: "merge", label: pageT(locale, "proposal.action.merge"), style: "primary", method: "POST", href: `/api/proposals/${summary.id}/merge` },
+        { id: "merge", label: pageT(locale, planReview ? "proposal.action.mergePlan" : "proposal.action.merge"), style: "primary", method: "POST", href: `/api/proposals/${summary.id}/merge` },
         viewAction
       ]
     : [
-        { id: "approve", label: pageT(locale, "proposal.action.approve"), style: "primary", method: "POST", href: `/api/proposals/${summary.id}/review` },
-        { id: "request_changes", label: pageT(locale, "proposal.action.requestChanges"), style: "danger", method: "POST", href: `/api/proposals/${summary.id}/review`, requires_reason: true },
+        { id: "approve", label: pageT(locale, planReview ? "proposal.action.approvePlan" : "proposal.action.approve"), style: "primary", method: "POST", href: `/api/proposals/${summary.id}/review` },
+        { id: "request_changes", label: pageT(locale, planReview ? "proposal.action.requestPlanChanges" : "proposal.action.requestChanges"), style: "danger", method: "POST", href: `/api/proposals/${summary.id}/review`, requires_reason: true },
         viewAction
       ];
   return {
     id: summary.id,
-    kind: "proposal_review",
+    kind: reviewKind,
     priority: "normal",
     work_item_id: summary.work_item_id,
     source_ref: { entity_type: "proposal", entity_id: summary.id },
     title: summary.title,
-    summary_text: pageT(locale, reviewed ? "attention.proposalReview.reviewed" : "attention.proposalReview.opened"),
+    summary_text: pageT(locale, reviewed
+      ? (planReview ? "attention.planReview.reviewed" : "attention.proposalReview.reviewed")
+      : (planReview ? "attention.planReview.opened" : "attention.proposalReview.opened")),
     actions,
     cuu_state: reviewed ? "carrying_document" : "asking_approval",
     created_at: summary.created_at

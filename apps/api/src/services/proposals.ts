@@ -85,6 +85,7 @@ export type ReviewableProposalSummary = {
   work_item_id: string;
   title: string;
   status: "opened" | "reviewed";
+  review_kind: "proposal_review" | "plan_review";
   created_at: string;
 };
 
@@ -188,6 +189,14 @@ function cloneManifestWithIds(input: {
     branch_id: input.branchId,
     base
   }, "proposal.manifest");
+}
+
+function reviewKindForManifest(manifest: DeliverableChangeManifest): ReviewableProposalSummary["review_kind"] {
+  return manifest.changes.some((change) =>
+    change.target_kind === "structured_record" && change.target_ref.entity_type === "task_plan"
+  )
+    ? "plan_review"
+    : "proposal_review";
 }
 
 function iso(value: Date | string | null | undefined) {
@@ -1709,6 +1718,7 @@ export function createInMemoryProposalService(options: {
           work_item_id: proposal.work_item_id,
           title: proposal.title,
           status: proposal.status === "reviewed" ? ("reviewed" as const) : ("opened" as const),
+          review_kind: reviewKindForManifest(proposal.diff_manifest),
           created_at: proposal.created_at
         }));
     },
@@ -1970,6 +1980,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
         work_item_id: row.workItemId,
         title: row.title,
         status: row.status === "reviewed" ? ("reviewed" as const) : ("opened" as const),
+        review_kind: reviewKindForManifest(row.diffManifest),
         created_at: row.createdAt.toISOString()
       }));
     },

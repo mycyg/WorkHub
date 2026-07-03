@@ -1527,6 +1527,27 @@ test("cost governance contracts expose clickable budget notices and scoped usage
     created_at: "2026-06-05T00:00:00.000Z"
   });
   assert.equal(attention.kind, "budget");
+  const planReviewAttention = attentionItemSchema.parse({
+    id: "75000000-0000-4000-8000-000000000011",
+    kind: "plan_review",
+    priority: "normal",
+    work_item_id: "75000000-0000-4000-8000-000000000012",
+    source_ref: { entity_type: "proposal", entity_id: "75000000-0000-4000-8000-000000000013" },
+    title: "《短剧选题调研》的分工计划等你过目",
+    summary_text: "拆成 4 个子任务 · 预计 ¥0.8 · 2 个并行",
+    actions: [
+      {
+        id: "open_proposal",
+        label: "查看计划提议",
+        style: "primary",
+        method: "GET",
+        href: "/proposals/75000000-0000-4000-8000-000000000013"
+      }
+    ],
+    cuu_state: "asking_approval",
+    created_at: "2026-06-05T00:00:00.000Z"
+  });
+  assert.equal(planReviewAttention.kind, "plan_review");
   assert.equal(decision.reason, "budget_exhausted");
   const runDecision = agentRunBudgetDecisionVmSchema.parse({
     decision_id: decision.decision_id,

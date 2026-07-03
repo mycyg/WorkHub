@@ -59,6 +59,7 @@ function escalationResolvePayloadFromActionId(actionId: string | undefined) {
 function toneForKind(kind: AttentionItem["kind"]): Tone {
   switch (kind) {
     case "approval":
+    case "plan_review":
     case "proposal_review":
       return "approval";
     case "clarification":
@@ -88,6 +89,9 @@ function tagLabel(tone: Tone, zh: boolean): string {
 }
 
 export function attentionTagLabelForKind(kind: AttentionItem["kind"], zh: boolean): string {
+  if (kind === "plan_review") {
+    return zh ? "计划审阅" : "Plan review";
+  }
   return tagLabel(toneForKind(kind), zh);
 }
 

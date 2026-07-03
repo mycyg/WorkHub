@@ -134,6 +134,7 @@ export type CuuCard = {
 const stateByAttentionKind: Record<AttentionItem["kind"], CuuState> = {
   clarification: "asking_approval",
   approval: "asking_approval",
+  plan_review: "asking_approval",
   proposal_review: "carrying_document",
   escalation: "worried",
   sync_conflict: "worried",
@@ -204,6 +205,9 @@ function proposalNextStepForStatus(status: ProposalDetailVM["status"], options: 
 }
 
 function proposalNextStepForAttention(item: AttentionItem, options: CuuLocaleOptions = {}) {
+  if (item.kind === "plan_review") {
+    return cuuT(options.locale, "proposal.planNextStepOpened");
+  }
   const actionIds = new Set(item.actions.map((action) => action.id));
   if (actionIds.has("merge")) {
     return cuuT(options.locale, "proposal.nextStepReviewed");
@@ -226,8 +230,12 @@ function attentionHasAction(item: AttentionItem, actionId: string) {
   return item.actions.some((action) => action.id === actionId);
 }
 
+function isProposalLikeAttentionKind(kind: AttentionItem["kind"]) {
+  return kind === "plan_review" || kind === "proposal_review" || kind === "delivery_ready";
+}
+
 function stateForAttentionItem(item: AttentionItem): CuuState {
-  if ((item.kind === "proposal_review" || item.kind === "delivery_ready") && attentionHasAction(item, "merge")) {
+  if (isProposalLikeAttentionKind(item.kind) && attentionHasAction(item, "merge")) {
     return "carrying_document";
   }
   return item.cuu_state ?? stateByAttentionKind[item.kind];
@@ -267,7 +275,7 @@ function localizedAttentionActionLabel(
   item: AttentionItem,
   options: CuuLocaleOptions
 ) {
-  if (item.kind !== "approval" && item.kind !== "proposal_review" && item.kind !== "delivery_ready" && item.kind !== "escalation") {
+  if (item.kind !== "approval" && !isProposalLikeAttentionKind(item.kind) && item.kind !== "escalation") {
     return action.label;
   }
   switch (action.id) {
@@ -279,23 +287,31 @@ function localizedAttentionActionLabel(
       return options.locale === "en-US" ? "Cancel this subtask" : "取消这个子任务";
     case "approve":
     case "allow":
-      if (item.kind === "proposal_review" || item.kind === "delivery_ready") {
+      if (item.kind === "plan_review") {
+        return cuuT(options.locale, "proposal.approvePlanReview");
+      }
+      if (isProposalLikeAttentionKind(item.kind)) {
         return cuuT(options.locale, "proposal.approveReview");
       }
       return cuuT(options.locale, "pet.action.approve");
     case "request_changes":
     case "deny":
     case "reject":
-      if (item.kind === "proposal_review" || item.kind === "delivery_ready") {
+      if (item.kind === "plan_review") {
+        return cuuT(options.locale, "proposal.requestReplan");
+      }
+      if (isProposalLikeAttentionKind(item.kind)) {
         return cuuT(options.locale, "proposal.requestChanges");
       }
       return cuuT(options.locale, "pet.action.requestChanges");
     case "open_proposal":
-      return cuuT(options.locale, "proposal.openReview");
+      return item.kind === "plan_review"
+        ? cuuT(options.locale, "proposal.openPlanReview")
+        : cuuT(options.locale, "proposal.openReview");
     case "open":
     case "view":
-      return item.kind === "proposal_review" || item.kind === "delivery_ready"
-        ? cuuT(options.locale, "proposal.openReview")
+      return isProposalLikeAttentionKind(item.kind)
+        ? cuuT(options.locale, item.kind === "plan_review" ? "proposal.openPlanReview" : "proposal.openReview")
         : cuuT(options.locale, "pet.action.open");
     default:
       return action.label;
@@ -315,7 +331,7 @@ function mapAttentionAction(action: AttentionAction, item: AttentionItem, option
 }
 
 function sortAttentionActionsForUser(actions: CuuCardAction[], item: AttentionItem) {
-  if (item.kind !== "proposal_review" && item.kind !== "delivery_ready") {
+  if (!isProposalLikeAttentionKind(item.kind)) {
     return actions;
   }
   const rank = (action: CuuCardAction) => {
@@ -484,6 +500,7 @@ function cardKindForAttention(kind: AttentionItem["kind"]): CuuCardKind {
       return "question";
     case "approval":
       return "approval";
+    case "plan_review":
     case "proposal_review":
     case "delivery_ready":
       return "proposal";
@@ -502,7 +519,7 @@ function cardKindForAttention(kind: AttentionItem["kind"]): CuuCardKind {
 
 export function cardFromAttentionItem(item: AttentionItem, options: CuuLocaleOptions = {}): CuuCard {
   const state = stateForAttentionItem(item);
-  const proposalLike = item.kind === "proposal_review" || item.kind === "delivery_ready";
+  const proposalLike = isProposalLikeAttentionKind(item.kind);
   const message = proposalLike
     ? publicProposalSummary(item.reason_text ?? item.summary_text, options)
     : item.kind === "clarification"

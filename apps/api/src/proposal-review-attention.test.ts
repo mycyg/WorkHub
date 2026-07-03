@@ -63,3 +63,19 @@ test("proposal_review item localizes labels (en)", () => {
   assert.equal(item.actions.find((a) => a.id === "approve")?.label, "Mark approved");
   assert.match(item.summary_text, /review it/u);
 });
+
+test("task-plan proposals render as plan_review attention with plan-specific copy", () => {
+  const item = buildProposalReviewAttentionItem({
+    ...base,
+    title: "《短剧选题调研》的分工计划等你过目",
+    status: "opened",
+    review_kind: "plan_review"
+  }, "zh-CN");
+
+  attentionItemSchema.parse(item);
+  assert.equal(item.kind, "plan_review");
+  assert.equal(item.summary_text, "任务已拆成分工计划，等你确认后再进入派发。");
+  assert.equal(item.actions.find((a) => a.id === "approve")?.label, "确认计划");
+  assert.equal(item.actions.find((a) => a.id === "request_changes")?.label, "打回重拆");
+  assert.equal(item.actions.find((a) => a.id === "open_proposal")?.label, "查看计划提议");
+});

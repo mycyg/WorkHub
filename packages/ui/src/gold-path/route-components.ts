@@ -1043,6 +1043,7 @@ function attentionKindLabel(kind: string, zh: boolean): string {
     {
       clarification: "待澄清",
       approval: "待审批",
+      plan_review: "计划审阅",
       proposal_review: "待审查",
       escalation: "已升级",
       sync_conflict: "撞车冲突",
@@ -1054,6 +1055,7 @@ function attentionKindLabel(kind: string, zh: boolean): string {
     {
       clarification: "Clarification",
       approval: "Approval",
+      plan_review: "Plan review",
       proposal_review: "Review",
       escalation: "Escalated",
       sync_conflict: "Conflict",
