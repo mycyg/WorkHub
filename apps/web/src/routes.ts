@@ -106,7 +106,7 @@ const routeMatchers = [
     key: "home",
     pattern: "/",
     apiBaseLabel: "/api/pages/attention",
-    regex: /^\/$/u,
+    regex: /^\/(?:attention)?$/u,
     paramNames: []
   },
   {

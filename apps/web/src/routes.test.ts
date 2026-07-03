@@ -915,6 +915,20 @@ test("R4 web route registry resolves product URL routes", () => {
   assert.equal(webRouteHref("https://workhub.local/#/agent-runs/run-1/replay?from=old"), "/agent-runs/run-1/replay?from=old");
 });
 
+test("R9.7 web resolves emitted /attention links to the decision inbox", async () => {
+  const { client, calls } = fakeRouteClient(goldPathSurfaceVm());
+  const match = resolveWebRoute("/attention");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(match.key, "home");
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls, ["attention:zh-CN"]);
+  assert.equal(result.html.includes('data-r4-route-component="home"'), true);
+  assert.equal(result.html.includes('data-r4-product-masthead="true"'), false);
+});
+
 test("R9.6 web route loads Agent Army dashboard through the typed Page VM endpoint", async () => {
   const { client, calls } = fakeRouteClient(goldPathSurfaceVm());
   const match = resolveWebRoute("/dashboard/agents");
