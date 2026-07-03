@@ -232,7 +232,7 @@ const taskPlanStatusLabels = {
   draft: { "zh-CN": "草稿", "en-US": "Draft" },
   proposed: { "zh-CN": "待审阅", "en-US": "Proposed" },
   approved: { "zh-CN": "已批准", "en-US": "Approved" },
-  dispatching: { "zh-CN": "派发中", "en-US": "Dispatching" },
+  dispatching: { "zh-CN": "推进中", "en-US": "In progress" },
   done: { "zh-CN": "已完成", "en-US": "Done" },
   cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
 } satisfies Record<TaskPlanStatus, Copy>;
@@ -245,8 +245,8 @@ const taskPlanItemRoleLabels = {
 } satisfies Record<TaskPlanItemRole, Copy>;
 
 const taskPlanItemStatusLabels = {
-  pending: { "zh-CN": "待派发", "en-US": "Pending" },
-  dispatched: { "zh-CN": "已派发", "en-US": "Dispatched" },
+  pending: { "zh-CN": "待开始", "en-US": "Waiting" },
+  dispatched: { "zh-CN": "进行中", "en-US": "In progress" },
   succeeded: { "zh-CN": "已成功", "en-US": "Succeeded" },
   failed: { "zh-CN": "失败", "en-US": "Failed" },
   skipped: { "zh-CN": "已跳过", "en-US": "Skipped" }

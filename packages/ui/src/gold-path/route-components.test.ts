@@ -1159,6 +1159,50 @@ test("R9.2 WorkItem route component renders the task-plan run tree without inlin
   assert.equal(workitem.html.includes("data-r9-agent-team-inline-decision"), false);
 });
 
+test("R9.7 WorkItem route component avoids dispatch internals and unavailable pause controls", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const dispatchedId = "93000000-0000-4000-8000-000000000904";
+  const runTreeVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      plan_id: planId,
+      status: "dispatching",
+      completed_count: 1,
+      total_count: 3,
+      cost_used_cny: "1.250000",
+      cost_budget_cny: "3.000000",
+      cost_burn_pct: 42,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: dispatchedId,
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          plan_status: "dispatched",
+          status: "dispatched",
+          budget_share_pct: 35,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.450000",
+          run_id: "93000000-0000-4000-8000-000000000914",
+          run_status: "running",
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000914/replay"
+        }
+      ]
+    }
+  };
+
+  const zh = renderWebRouteComponent({ key: "workitem", workitem: runTreeVm }, { locale: "zh-CN" });
+  const en = renderWebRouteComponent({ key: "workitem", workitem: runTreeVm }, { locale: "en-US" });
+
+  assert.equal(zh.html.includes("派发"), false);
+  assert.equal(en.html.includes("Dispatch"), false);
+  assert.equal(zh.html.includes('data-r9-agent-team-pause="true"'), false);
+  assert.equal(en.html.includes('data-r9-agent-team-pause="true"'), false);
+});
+
 test("R5.4 WorkItem route component exposes Drive source context and proposal draft action", () => {
   const vm = surfaceVm();
   const draftVm: WorkItemDetailVM = {

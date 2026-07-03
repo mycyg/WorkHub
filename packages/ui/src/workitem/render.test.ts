@@ -150,3 +150,46 @@ test("R9.2 work item renderer shows the task-plan run tree in the AI working slo
   assert.equal(rendered.html.includes("去决策"), true);
   assert.equal(rendered.primaryHrefs.includes("/attention"), true);
 });
+
+test("R9.7 work item renderer avoids dispatch wording in visible task-plan states", () => {
+  const fixture = createP05GoldPathFixture();
+  const detail = {
+    ...fixture.workItemDetail,
+    workitem: {
+      ...fixture.workItemDetail.workitem,
+      status: "ai_working" as const
+    },
+    agent_team: {
+      plan_id: "93000000-0000-4000-8000-000000000901",
+      status: "dispatching" as const,
+      completed_count: 0,
+      total_count: 1,
+      cost_used_cny: "0.250000",
+      cost_budget_cny: "1.000000",
+      cost_burn_pct: 25,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000904",
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research" as const,
+          plan_status: "dispatched" as const,
+          status: "dispatched" as const,
+          budget_share_pct: 35,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.450000",
+          run_id: "93000000-0000-4000-8000-000000000914",
+          run_status: "running" as const,
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000914/replay"
+        }
+      ]
+    }
+  };
+  const zh = renderWorkItemDetail(detail, "web", { locale: "zh-CN" });
+  const en = renderWorkItemDetail(detail, "web", { locale: "en-US" });
+
+  assert.equal(zh.html.includes("派发"), false);
+  assert.equal(en.html.includes("Dispatch"), false);
+});

@@ -1971,8 +1971,8 @@ function agentTeamTitle(team: WorkItemAgentTeamVM, locale: WorkHubLocale) {
 
 function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], locale: WorkHubLocale) {
   const labels: Record<WorkItemAgentTeamVM["items"][number]["status"], { "zh-CN": string; "en-US": string }> = {
-    pending: { "zh-CN": "待派发", "en-US": "Pending" },
-    dispatched: { "zh-CN": "派发中", "en-US": "Dispatched" },
+    pending: { "zh-CN": "待开始", "en-US": "Waiting" },
+    dispatched: { "zh-CN": "进行中", "en-US": "In progress" },
     succeeded: { "zh-CN": "已成功", "en-US": "Succeeded" },
     failed: { "zh-CN": "失败", "en-US": "Failed" },
     needs_human: { "zh-CN": "等你决定", "en-US": "Needs decision" },
@@ -2020,7 +2020,6 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
   return `<section class="wh-card wh-r4-route-card" data-r9-agent-team-panel="true" data-r9-agent-team-plan-id="${escapeHtml(team.plan_id)}" data-r9-agent-team-status="${escapeHtml(team.status)}">
     <div class="wh-r4-route-card-head">
       <h3>${escapeHtml(agentTeamTitle(team, locale))}</h3>
-      <button type="button" class="wh-pill" disabled data-r9-agent-team-pause="true">${escapeHtml(locale === "zh-CN" ? "暂停派发" : "Pause dispatch")}</button>
     </div>
     <div class="wh-r4-route-meta">
       <span class="wh-pill">${escapeHtml(`¥${team.cost_used_cny}`)}</span>
@@ -3055,8 +3054,8 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
 
 function agentDashboardStatusLabel(locale: WorkHubLocale, status: string) {
   const labels: Record<string, Record<WorkHubLocale, string>> = {
-    pending: { "zh-CN": "待派发", "en-US": "Pending" },
-    dispatched: { "zh-CN": "已派发", "en-US": "Dispatched" },
+    pending: { "zh-CN": "待开始", "en-US": "Waiting" },
+    dispatched: { "zh-CN": "进行中", "en-US": "In progress" },
     succeeded: { "zh-CN": "已成功", "en-US": "Succeeded" },
     failed: { "zh-CN": "失败", "en-US": "Failed" },
     skipped: { "zh-CN": "已跳过", "en-US": "Skipped" },

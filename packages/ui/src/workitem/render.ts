@@ -119,8 +119,8 @@ function agentTeamTitle(team: WorkItemAgentTeamVM, options?: UiRenderOptions) {
 function agentTeamStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], options?: UiRenderOptions) {
   const locale = uiLocale(options);
   const labels: Record<WorkItemAgentTeamVM["items"][number]["status"], { "zh-CN": string; "en-US": string }> = {
-    pending: { "zh-CN": "待派发", "en-US": "Pending" },
-    dispatched: { "zh-CN": "派发中", "en-US": "Dispatched" },
+    pending: { "zh-CN": "待开始", "en-US": "Waiting" },
+    dispatched: { "zh-CN": "进行中", "en-US": "In progress" },
     succeeded: { "zh-CN": "已成功", "en-US": "Succeeded" },
     failed: { "zh-CN": "失败", "en-US": "Failed" },
     needs_human: { "zh-CN": "等你决定", "en-US": "Needs decision" },

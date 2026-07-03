@@ -27,3 +27,10 @@ test("R9.1 task plan enum labels are bilingual and do not leak raw machine value
     assert.notEqual(taskPlanItemStatusLabel("en-US", status), status);
   }
 });
+
+test("R9.7 task plan labels use user-facing progress language instead of dispatch internals", () => {
+  assert.equal(taskPlanStatusLabel("zh-CN", "dispatching").includes("派发"), false);
+  assert.equal(taskPlanStatusLabel("en-US", "dispatching").includes("Dispatch"), false);
+  assert.equal(taskPlanItemStatusLabel("zh-CN", "pending").includes("派发"), false);
+  assert.equal(taskPlanItemStatusLabel("en-US", "dispatched").includes("Dispatch"), false);
+});
