@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import type {
   ConfidenceGrade,
@@ -214,7 +214,7 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
         .where(and(
           isNull(escalationEvents.resolvedAt),
           isNull(workItems.deletedAt),
-          or(isNull(workItems.workspaceId), eq(workItems.workspaceId, input.workspaceId))
+          eq(workItems.workspaceId, input.workspaceId)
         ))
         .orderBy(desc(escalationEvents.createdAt), desc(escalationEvents.id))
         .limit(input.limit ?? 50);

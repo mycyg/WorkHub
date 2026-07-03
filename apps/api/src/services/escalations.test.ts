@@ -46,13 +46,24 @@ function row(partial: Partial<EscalationServiceRow> = {}): EscalationServiceRow 
 
 class MemoryEscalationRepository implements EscalationRepository {
   public resolveCalls: Array<{ escalationId: string; targetStatus: string }> = [];
+  public delegateCalls: Array<{ escalationId: string; toUserId: string }> = [];
+
+  constructor(
+    private readonly options: {
+      findRow?: EscalationServiceRow | null;
+      listRows?: EscalationServiceRow[];
+    } = {}
+  ) {}
 
   async findById(id: string) {
-    return id === escalationId ? row() : null;
+    if (id !== escalationId) {
+      return null;
+    }
+    return this.options.findRow === undefined ? row() : this.options.findRow;
   }
 
   async listUnresolvedForWorkspace() {
-    return [row()];
+    return this.options.listRows ?? [row()];
   }
 
   async resolveEscalation(input: { escalationId: string; targetStatus: string }) {
@@ -60,7 +71,8 @@ class MemoryEscalationRepository implements EscalationRepository {
     return row({ resolvedAt: now, workItemStatus: input.targetStatus as EscalationServiceRow["workItemStatus"] });
   }
 
-  async delegateEscalation() {
+  async delegateEscalation(input: { escalationId: string; toUserId: string }) {
+    this.delegateCalls.push({ escalationId: input.escalationId, toUserId: input.toUserId });
     return row({ suggestedLeadUserId: "12000000-0000-4000-8000-000000000012" });
   }
 }
@@ -93,4 +105,36 @@ test("R9.0 escalation resolve actions map to the work-item state machine", async
     "pm_mode",
     "cancelled"
   ]);
+});
+
+test("R9.7 escalation service refuses legacy null-workspace rows", async () => {
+  const repository = new MemoryEscalationRepository({
+    findRow: row({ workspaceId: null }),
+    listRows: [row({ workspaceId: null })]
+  });
+  const service = createEscalationService({
+    repository,
+    users: false,
+    workItems: false,
+    now: () => now
+  });
+
+  await assert.rejects(
+    service.resolve(escalationId, actor(), { action: "retry" }),
+    (error: unknown) => error instanceof Error
+      && error.name === "Error"
+      && (error as { status?: number; code?: string }).status === 403
+      && (error as { code?: string }).code === "forbidden"
+  );
+  await assert.rejects(
+    service.delegate(escalationId, actor(), { to_user_id: "12000000-0000-4000-8000-000000000012" }),
+    (error: unknown) => error instanceof Error
+      && (error as { status?: number; code?: string }).status === 403
+      && (error as { code?: string }).code === "forbidden"
+  );
+  const items = await service.listAttentionItems({ actor: actor(), locale: "zh-CN" });
+
+  assert.deepEqual(items, []);
+  assert.deepEqual(repository.resolveCalls, []);
+  assert.deepEqual(repository.delegateCalls, []);
 });

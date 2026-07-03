@@ -96,7 +96,7 @@ function actionSummary(action: ResolveEscalationRequest["action"], locale: WorkH
 }
 
 function workspaceMatches(row: EscalationServiceRow, actor: AuthActor) {
-  return !row.workspaceId || row.workspaceId === actor.workspaceId;
+  return row.workspaceId === actor.workspaceId;
 }
 
 function ensureWorkspace(row: EscalationServiceRow, actor: AuthActor) {
