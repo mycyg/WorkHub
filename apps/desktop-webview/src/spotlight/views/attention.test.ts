@@ -6,6 +6,7 @@ import type { ProposalConflict } from "@workhub/contracts";
 
 import {
   attentionCardDisplayTitle,
+  attentionTagLabelForKind,
   attentionConflictHtmlFromError,
   classifyAttentionActionHref,
   reviewAttentionProposalWithoutMerge
@@ -73,6 +74,11 @@ test("attention proposal review cards hide model self narration in their title",
     }, true),
     "审批预算"
   );
+});
+
+test("attention escalation cards do not label retry/cancel actions as assignment", () => {
+  assert.equal(attentionTagLabelForKind("escalation", true), "需处理");
+  assert.equal(attentionTagLabelForKind("escalation", false), "Needs action");
 });
 
 test("attention proposal merge conflict renders actionable choices instead of a generic failure", () => {

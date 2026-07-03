@@ -34,7 +34,7 @@ function tagLabel(tone: DeckTagTone, zh: boolean) {
     case "permission":
       return zh ? "要你授权" : "Allow?";
     case "handoff":
-      return zh ? "派给谁好" : "Assign";
+      return zh ? "需处理" : "Needs action";
     default:
       return zh ? "看一眼" : "Heads-up";
   }

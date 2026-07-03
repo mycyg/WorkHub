@@ -81,10 +81,14 @@ function tagLabel(tone: Tone, zh: boolean): string {
     case "permission":
       return zh ? "要你授权" : "Allow?";
     case "handoff":
-      return zh ? "派给谁" : "Assign";
+      return zh ? "需处理" : "Needs action";
     default:
       return zh ? "看一眼" : "Heads-up";
   }
+}
+
+export function attentionTagLabelForKind(kind: AttentionItem["kind"], zh: boolean): string {
+  return tagLabel(toneForKind(kind), zh);
 }
 
 function actionBtnClass(style: AttentionItem["actions"][number]["style"]): string {
@@ -123,7 +127,7 @@ function renderCard(item: AttentionItem, zh: boolean): string {
     <span class="wh-spot-card-bar wh-spot-card-bar--${tone}"></span>
     <div class="wh-spot-card-main">
       <div class="wh-spot-card-head">
-        <span class="wh-spot-chip wh-spot-chip--${tone}">${escapeHtml(tagLabel(tone, zh))}</span>
+        <span class="wh-spot-chip wh-spot-chip--${tone}">${escapeHtml(attentionTagLabelForKind(item.kind, zh))}</span>
       </div>
       <h3 class="wh-spot-card-title">${escapeHtml(title)}</h3>
       ${desc ? `<p class="wh-spot-card-desc">${escapeHtml(desc)}</p>` : ""}

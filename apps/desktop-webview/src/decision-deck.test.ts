@@ -52,7 +52,9 @@ test("decision deck maps kinds to glass tones and localizes tags (en)", () => {
   assert.match(perm, /Allow\?/u);
   const handoff = renderDecisionDeckHtml({ items: [item({ kind: "escalation" })], locale: "en-US" });
   assert.match(handoff, /wh-deck-tag--handoff/u);
-  assert.match(handoff, /Assign/u);
+  // R9.7: the old "Assign" assertion was wrong because escalation actions are retry/PM-mode/cancel,
+  // not a user delegation flow.
+  assert.match(handoff, /Needs action/u);
   assert.ok(decisionDeckCss.includes(".wh-deck-card{"));
 });
 
