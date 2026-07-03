@@ -5,6 +5,7 @@ import { eventTypes } from "@workhub/contracts";
 
 import {
   buildDeliverableChangeManifestFromOutputs,
+  hasNonEmptyOutputDeliverables,
   type BuildDeliverableChangeManifestInput
 } from "../deliverables/index.js";
 import type { LlmMessage, LlmStreamEvent } from "../providers/types.js";
@@ -55,17 +56,7 @@ function textFromBlocks(blocks: AgentAssistantBlock[]) {
 }
 
 async function hasDeliverables(workdir: string) {
-  const outputs = path.join(workdir, "outputs");
-  try {
-    const outputStat = await stat(outputs);
-    if (!outputStat.isDirectory()) {
-      return false;
-    }
-    const entries = await readdir(outputs);
-    return entries.length > 0;
-  } catch {
-    return false;
-  }
+  return hasNonEmptyOutputDeliverables(workdir);
 }
 
 function parseCny(value: string | undefined) {

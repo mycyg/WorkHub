@@ -131,3 +131,15 @@ test("throws when outputs has no deliverables", async () => {
     /No deliverables found under outputs/
   );
 });
+
+test("throws when outputs contains only empty artifacts", async () => {
+  const workdir = await tempWorkdir();
+  const outputs = path.join(workdir, "outputs");
+  await mkdir(path.join(outputs, "empty-folder"), { recursive: true });
+  await writeFile(path.join(outputs, "empty.md"), "", "utf8");
+
+  await assert.rejects(
+    () => buildDeliverableChangeManifestFromOutputs({ workdir, workItemId }),
+    /No non-empty deliverables found under outputs/
+  );
+});

@@ -1099,6 +1099,69 @@ function noDeliverableAgentClient(): AgentLoopClient {
   };
 }
 
+function emptyArtifactAgentClient(): AgentLoopClient {
+  const responses = [
+    {
+      id: "msg-empty-artifact-1",
+      stopReason: "tool_use",
+      usage: { inputTokens: 10, outputTokens: 20 },
+      usageRecord: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        task: "worker",
+        inputTokens: 10,
+        outputTokens: 20,
+        estimatedCostCny: "0.001",
+        source: "agent_step",
+        createdAt: "2026-06-05T00:00:00.000Z"
+      },
+      content: [
+        {
+          type: "tool_use",
+          id: "tool-empty-artifact-1",
+          name: "write_file",
+          input: { path: "outputs/empty.md", content: "" }
+        }
+      ]
+    },
+    {
+      id: "msg-empty-artifact-2",
+      stopReason: "end_turn",
+      usage: { inputTokens: 5, outputTokens: 5 },
+      usageRecord: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        task: "worker",
+        inputTokens: 5,
+        outputTokens: 5,
+        estimatedCostCny: "0.002",
+        source: "agent_step",
+        createdAt: "2026-06-05T00:00:01.000Z"
+      },
+      content: [{ type: "text", text: "交付完成" }]
+    },
+    {
+      id: "msg-empty-artifact-review",
+      stopReason: "end_turn",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      content: [{ type: "text", text: "{\"grade\": 5, \"rationale\": \"可直接采纳\"}" }]
+    }
+  ] satisfies Awaited<ReturnType<AgentLoopClient["messages"]["create"]>>[];
+
+  return {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        const response = responses.shift();
+        if (!response) {
+          throw new Error("No fake AgentLoop response queued");
+        }
+        return response;
+      }
+    }
+  };
+}
+
 function singleToolThenDoneAgentClient(): AgentLoopClient {
   let calls = 0;
   return {
@@ -4935,6 +4998,55 @@ function faithfulWorkItemStatusWriter(initial: Record<string, WorkItemStatus>) {
   };
   return { writer, statuses, calls };
 }
+
+test("R9.7 fake-done empty artifact opens attention instead of a proposal", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-r97-empty-artifact-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r97-empty-artifact-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => "76000000-0000-4000-8000-000000000701"
+  });
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000701",
+    workdir: () => workdir,
+    client: () => emptyArtifactAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: createAgentRunConfidenceRecorder({
+      decisions,
+      auditLogs,
+      settings: runtimeSettings,
+      transitionWorkItemStatus: async (input) => {
+        await status.writer(input);
+      }
+    }),
+    notifications: false,
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Fake-done empty artifact run" });
+  const executed = await queue.runNext();
+  const opened = await proposals.listByWorkItem(workItemId);
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "failed");
+  assert.equal(opened.length, 0, "empty artifacts must not become reviewable proposals");
+  assert.equal(decisions.escalationRows.length, 1, "fake-done empty artifacts must appear in attention");
+  assert.equal(decisions.escalationRows[0]?.workItemId, workItemId);
+  assert.equal(status.statuses.get(workItemId), "escalated");
+  assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
+});
 
 test("FIX#5: a succeeded+manifest run with an escalate verdict ends in_review with an open proposal (not escalated) and notifies once", async () => {
   const runtimeSettings = settings();
