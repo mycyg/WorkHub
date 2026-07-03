@@ -4,6 +4,7 @@ import test from "node:test";
 import type { AttentionItem } from "@workhub/contracts";
 
 import { buildAttentionHomePage } from "./pages/attention.js";
+import { buildProposalReviewAttentionItem } from "./pages/proposals.js";
 
 const createdAt = "2026-07-03T00:00:00.000Z";
 
@@ -58,4 +59,25 @@ test("attention home sorts R9 decision cards before choosing the primary card", 
     plan.id,
     proposal.id
   ]);
+});
+
+test("R9.7 plan review attention copy avoids dispatch wording", () => {
+  const baseSummary = {
+    id: "93000000-0000-4000-8000-000000000001",
+    work_item_id: "94000000-0000-4000-8000-000000000001",
+    title: "短剧选题调研分工计划",
+    review_kind: "plan_review" as const,
+    created_at: createdAt
+  };
+  const cards = [
+    buildProposalReviewAttentionItem({ ...baseSummary, status: "opened" }, "zh-CN"),
+    buildProposalReviewAttentionItem({ ...baseSummary, status: "reviewed" }, "zh-CN"),
+    buildProposalReviewAttentionItem({ ...baseSummary, status: "opened" }, "en-US"),
+    buildProposalReviewAttentionItem({ ...baseSummary, status: "reviewed" }, "en-US")
+  ];
+
+  for (const card of cards) {
+    assert.equal(card.kind, "plan_review");
+    assert.doesNotMatch(card.summary_text, /dispatch|派发/iu);
+  }
 });

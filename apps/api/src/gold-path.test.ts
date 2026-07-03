@@ -451,7 +451,8 @@ test("attention home preserves task-plan proposal reviews as plan_review cards",
   const body = await response.json() as { data: { primary?: AttentionItem; queue: AttentionItem[] } };
   assert.equal(body.data.primary?.kind, "plan_review");
   assert.equal(body.data.primary?.source_ref.entity_id, planProposalId);
-  assert.equal(body.data.primary?.summary_text, "任务已拆成分工计划，等你确认后再进入派发。");
+  // R9.7: the old assertion leaked internal "派发" terminology into user-facing plan-review copy.
+  assert.equal(body.data.primary?.summary_text, "任务已拆成分工计划，等你确认后再开始执行。");
   assert.equal(body.data.primary?.actions.find((action) => action.id === "open_proposal")?.label, "查看计划提议");
 });
 

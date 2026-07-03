@@ -74,7 +74,8 @@ test("task-plan proposals render as plan_review attention with plan-specific cop
 
   attentionItemSchema.parse(item);
   assert.equal(item.kind, "plan_review");
-  assert.equal(item.summary_text, "任务已拆成分工计划，等你确认后再进入派发。");
+  // R9.7: the old expected copy exposed internal "派发" workflow wording to the decision inbox.
+  assert.equal(item.summary_text, "任务已拆成分工计划，等你确认后再开始执行。");
   assert.equal(item.actions.find((a) => a.id === "approve")?.label, "确认计划");
   assert.equal(item.actions.find((a) => a.id === "request_changes")?.label, "打回重拆");
   assert.equal(item.actions.find((a) => a.id === "open_proposal")?.label, "查看计划提议");
