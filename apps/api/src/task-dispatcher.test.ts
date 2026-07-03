@@ -4,6 +4,7 @@ import test from "node:test";
 import type { TaskPlanItemRow, TaskPlanRow, TaskPlanWithItems } from "@workhub/db";
 
 import {
+  createDbTaskDispatchEscalationSink,
   createTaskDispatcher,
   type TaskDispatchArbitrationSink,
   type TaskDispatcherRepository
@@ -192,6 +193,13 @@ class MemoryTaskDispatcherRepository implements TaskDispatcherRepository {
   }
 }
 
+class CappedTaskDispatcherRepository extends MemoryTaskDispatcherRepository {
+  async getPlanWithItems(input: { planId: string; workspaceId: string; itemLimit?: number }): Promise<TaskPlanWithItems | null> {
+    const loaded = await super.getPlanWithItems(input);
+    return loaded ? { ...loaded, itemsCapped: true } : null;
+  }
+}
+
 class CapturingQueue implements Pick<AgentRunQueue, "enqueue"> {
   public readonly inputs: EnqueueAgentRunInput[] = [];
 
@@ -204,6 +212,44 @@ class CapturingQueue implements Pick<AgentRunQueue, "enqueue"> {
     });
   }
 }
+
+test("R9.7 dispatcher user-facing errors avoid dispatch wording", async () => {
+  const repository = new CappedTaskDispatcherRepository(plan(), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research" })
+  ]);
+  const dispatcher = createTaskDispatcher({ repository, queue: new CapturingQueue(), now: () => now });
+
+  await assert.rejects(
+    dispatcher.dispatch({ planId, workspaceId, actorId }),
+    (error: unknown) => error instanceof Error
+      && (error as { code?: string }).code === "task_plan_items_capped"
+      && !/dispatch|派发/iu.test(error.message)
+  );
+});
+
+test("R9.7 dispatcher escalation attention copy avoids dispatch wording", async () => {
+  const reasons: string[] = [];
+  const sink = createDbTaskDispatchEscalationSink({
+    async createEscalationEvent(input) {
+      reasons.push(input.reasonMd);
+      return {} as Awaited<ReturnType<Parameters<typeof createDbTaskDispatchEscalationSink>[0]["createEscalationEvent"]>>;
+    }
+  });
+
+  await sink({
+    plan: plan("dispatching"),
+    items: [
+      item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "skipped" }),
+      item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "skipped" })
+    ],
+    skippedItemIds: [researchItemId, produceItemId],
+    reason: "cycle",
+    at: now
+  });
+
+  assert.equal(reasons.length, 1);
+  assert.doesNotMatch(reasons.join("\n"), /dispatch|派发/iu);
+});
 
 test("R9.2 dispatcher enqueues ready task-plan items as ordinary child runs with lineage and acceptance", async () => {
   const repository = new MemoryTaskDispatcherRepository(plan(), [

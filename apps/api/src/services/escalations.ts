@@ -316,7 +316,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
             workspaceId: actor.workspaceId,
             at: now()
           });
-          throw new EscalationServiceError(503, "task_dispatch_retry_failed", "重试派发失败，请稍后再试。");
+          throw new EscalationServiceError(503, "task_dispatch_retry_failed", "重试执行失败，请稍后再试。");
         }
       }
       return {

@@ -330,7 +330,7 @@ export function createTaskDispatcher(options: {
       throw new TaskDispatcherError(404, "task_plan_not_found", "没有找到这个任务计划。");
     }
     if (loaded.itemsCapped) {
-      throw new TaskDispatcherError(409, "task_plan_items_capped", "任务计划子项超过派发上限，请先拆小。");
+      throw new TaskDispatcherError(409, "task_plan_items_capped", "任务计划子项超过执行上限，请先拆小。");
     }
     return loaded;
   }
@@ -553,7 +553,7 @@ export function createDbTaskDispatchEscalationSink(
 ): TaskDispatchEscalationSink {
   return async (input) => {
     const reasonMd = input.reason === "cycle"
-      ? "任务计划依赖图存在循环，已跳过未派发的子任务，请人工调整计划后重试。"
+      ? "任务计划依赖图存在循环，已跳过尚未开始的子任务，请人工调整计划后重试。"
       : input.reason === "partial_failure"
         ? "任务计划已有子任务失败，请在决策收件箱选择重试、转人工或改计划。"
         : "任务计划的上游子任务失败或被跳过，依赖它的子任务已跳过，请人工决定是否重试或改计划。";

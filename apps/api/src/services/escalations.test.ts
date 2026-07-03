@@ -226,6 +226,7 @@ test("R9.7 child escalation retry reopens the card when redispatch fails", async
     (error: unknown) => error instanceof Error
       && (error as { status?: number; code?: string }).status === 503
       && (error as { code?: string }).code === "task_dispatch_retry_failed"
+      && !/dispatch|派发/iu.test(error.message)
   );
 
   assert.deepEqual(repository.resolveCalls, [{
