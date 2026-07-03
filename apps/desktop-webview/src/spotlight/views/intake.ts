@@ -197,7 +197,7 @@ export function createIntakeView(): SpotlightCapabilityView {
             ctx.setSubtitle(zh ? "已创建" : "Created");
             body.innerHTML = doneHtml(created.workitem.code ?? "", created.workitem.title ?? "", zh);
             ctx.requestResize();
-            ctx.toast(zh ? "工作项已创建（待你过目，未自动派活）" : "Work item created (awaiting your review)", "ok");
+            ctx.toast(zh ? "工作项已创建（待你过目）" : "Work item created (awaiting your review)", "ok");
             return;
           }
           session = await client.nextQuestion(session.session_id, {
