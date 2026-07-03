@@ -212,6 +212,33 @@ test("R9.6 desktop agent army detail morph keeps decisions in the inbox", () => 
   assert.match(html, /data-open-workitem="93000000-0000-4000-8000-000000000101"/u);
   assert.match(html, /data-open-capability="approvals"/u);
   assert.ok(html.includes("Needs you"), "decision status label");
-  assert.ok(html.includes("Judge pass 75%"), "judge metric");
+  // R9.7 review fix: the old assertion pinned "Judge pass", which exposed internal
+  // arbitration terminology on the user-facing desktop command center.
+  assert.ok(html.includes("Review pass rate 75%"), "review metric");
   assert.ok(!html.includes("Approve"), "detail view does not embed decision actions");
+});
+
+test("R9.7 desktop agent army command center avoids dispatch and judge internals", () => {
+  const plan = agentArmyVm({
+    plans: [{
+      ...agentArmyVm().plans[0]!,
+      statuses: [
+        { status: "pending", count: 1 },
+        { status: "dispatched", count: 2 }
+      ]
+    }]
+  }).plans[0];
+  assert.ok(plan);
+
+  const zhList = agentArmyDashboardView(agentArmyVm({ plans: [plan] }), true);
+  const enList = agentArmyDashboardView(agentArmyVm({ plans: [plan] }), false);
+  const zhDetail = agentArmyPlanDetailHtml(plan, true);
+  const enDetail = agentArmyPlanDetailHtml(plan, false);
+
+  assert.doesNotMatch(zhList + zhDetail, /判官|派发/u);
+  assert.doesNotMatch(enList + enDetail, /Judge|Dispatch/u);
+  assert.ok(zhDetail.includes("复核通过率 75%"), "zh review metric");
+  assert.ok(enDetail.includes("Review pass rate 75%"), "en review metric");
+  assert.ok(enList.includes("Waiting 1"), "en pending status");
+  assert.ok(enList.includes("In progress 2"), "en active status");
 });

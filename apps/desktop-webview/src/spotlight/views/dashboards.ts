@@ -55,9 +55,9 @@ function taskPlanRoleLabel(role: AgentArmyDashboardPlanVM["roles"][number]["role
 function agentTeamStatusLabel(status: AgentArmyDashboardPlanVM["statuses"][number]["status"], zh: boolean): string {
   switch (status) {
     case "pending":
-      return zh ? "待派发" : "Pending";
+      return zh ? "待开始" : "Waiting";
     case "dispatched":
-      return zh ? "推进中" : "Running";
+      return zh ? "进行中" : "In progress";
     case "succeeded":
       return zh ? "已完成" : "Done";
     case "failed":
@@ -80,7 +80,7 @@ function taskPlanStatusLabel(status: AgentArmyDashboardPlanVM["status"], zh: boo
     case "approved":
       return zh ? "已批准" : "Approved";
     case "dispatching":
-      return zh ? "推进中" : "Dispatching";
+      return zh ? "推进中" : "In progress";
     case "done":
       return zh ? "已收工" : "Done";
     case "cancelled":
@@ -130,7 +130,7 @@ export function agentArmyPlanDetailHtml(plan: AgentArmyDashboardPlanVM, zh: bool
     <div class="wh-spot-metrics">
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "进度" : "Progress"}</span><span class="wh-spot-metric-v wh-spot-metric-v--big">${escapeHtml(plan.progress.label)}</span></div>
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "成本" : "Cost"}</span><span class="wh-spot-metric-v">${escapeHtml(`${cny(plan.cost.used_cny)}${plan.cost.budget_cny ? `/${cny(plan.cost.budget_cny)}` : ""}`)}</span></div>
-      <div class="wh-spot-metric" aria-label="${escapeHtml(zh ? `判官通过 ${plan.judge.pass_rate_pct}%` : `Judge pass ${plan.judge.pass_rate_pct}%`)}"><span class="wh-spot-metric-k">${zh ? "判官通过" : "Judge pass"}</span><span class="wh-spot-metric-v">${escapeHtml(String(plan.judge.pass_rate_pct))}%</span></div>
+      <div class="wh-spot-metric" aria-label="${escapeHtml(zh ? `复核通过率 ${plan.judge.pass_rate_pct}%` : `Review pass rate ${plan.judge.pass_rate_pct}%`)}"><span class="wh-spot-metric-k">${zh ? "复核通过率" : "Review pass rate"}</span><span class="wh-spot-metric-v">${escapeHtml(String(plan.judge.pass_rate_pct))}%</span></div>
     </div>
     <div class="wh-spot-bars" aria-hidden="true"><span class="wh-spot-bar" style="height:8px;width:${escapeHtml(pctWidth(plan.cost.burn_pct))}%"></span></div>
     <div class="wh-spot-row-sub">${roles}${statuses}</div>
