@@ -5153,6 +5153,7 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
   const runtimeSettings = settings();
   const persistence = new MemoryAgentRunPersistence();
   const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
   const milestoneNotifications: { newStatus: string }[] = [];
   const notifications: AgentRunNotificationPublisher = {
     async notifyMilestone(context) {
@@ -5172,6 +5173,7 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
     maxRecoverAttempts: 1,
     persistence,
     auditLogs,
+    decisions,
     confidence: false,
     proposals: false,
     notifications,
@@ -5186,7 +5188,15 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
     eventBus: false,
     transitionWorkItemStatus: status.writer
   });
-  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Poison run" });
+  const taskPlanId = "81000000-0000-4000-8000-000000000091";
+  const taskPlanItemId = "81000000-0000-4000-8000-000000000092";
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Poison run",
+    taskPlanId,
+    taskPlanItemId
+  });
   const expiredLease = {
     claimedAt: new Date("2026-06-05T00:00:00.000Z"),
     heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
@@ -5199,6 +5209,7 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
   assert.equal(firstRecover[0]?.status, "queued");
   assert.equal(status.statuses.get(workItemId), "ai_working", "requeue must not touch the work item");
   assert.deepEqual(milestoneNotifications, [], "requeue must not notify");
+  assert.equal(decisions.escalationRows.length, 0, "requeue is recoverable, so it must not open a decision card");
 
   // 第二次过期（已达上限）：转死信 failed → 工作项 ai_working→escalated + 一条「转人工」里程碑通知。
   await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
@@ -5206,6 +5217,13 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
   assert.equal(secondRecover[0]?.status, "failed");
   assert.equal(status.statuses.get(workItemId), "escalated", "dead-letter advances the stuck item to escalated");
   assert.deepEqual(milestoneNotifications, [{ newStatus: "escalated" }]);
+  assert.equal(decisions.escalationRows.length, 1, "dead-lettered child runs must appear in the decision inbox");
+  assert.equal(decisions.escalationRows[0]?.workItemId, workItemId);
+  assert.equal(decisions.escalationRows[0]?.agentRunId, queued.run_id);
+  assert.equal(decisions.escalationRows[0]?.trigger, "doom_loop");
+  assert.equal(decisions.escalationRows[0]?.handoffJson["source"], "agent_run_recovery");
+  assert.equal(decisions.escalationRows[0]?.handoffJson["task_plan_id"], taskPlanId);
+  assert.equal(decisions.escalationRows[0]?.handoffJson["task_plan_item_id"], taskPlanItemId);
   // 死信审计动作仍照常打。
   assert.equal(
     auditLogs.rows.some((row) => row.action === "agent_run.dead_lettered_stale_claim"),

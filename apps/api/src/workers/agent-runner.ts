@@ -56,8 +56,9 @@ import {
   type LifecycleUserRef,
   type LifecycleWorkItemRef
 } from "@workhub/events";
-import { getSharedDatabaseClient, createWorkItemRepository } from "@workhub/db";
+import { createAiDecisionRepository, getSharedDatabaseClient, createWorkItemRepository } from "@workhub/db";
 import type {
+  AiDecisionRepository,
   AuditLogRepository,
   BudgetReservationRepository,
   BudgetReservationScopeInput,
@@ -445,6 +446,7 @@ export function createInMemoryAgentRunQueue(options: {
   snapshotId?: () => string;
   snapshots?: SnapshotRepository;
   auditLogs?: AuditLogRepository | false;
+  decisions?: Pick<AiDecisionRepository, "createEscalationEvent"> | false;
   confidence?: AgentRunConfidenceRecorder | false;
   humanReserved?: HumanReservedGuard | false;
   proposals?: AgentRunProposalSink | false;
@@ -514,6 +516,7 @@ export function createInMemoryAgentRunQueue(options: {
   // R2 原子预算：可选预留仓库（false/未传 → undefined，整段预留逻辑跳过）。预留租约要覆盖 run 租约 + 全部
   // 合法恢复重试，否则可恢复 run 的持有量会被过早 releaseExpired 误放。
   const reservationRepo = options.reservationRepo || undefined;
+  const decisions = options.decisions === false ? undefined : options.decisions;
   const reservationLeaseMs = leaseMs * (maxRecoverAttempts + 1);
   const decideBudget = options.decideBudget ?? (async (input: BudgetDecisionInput) => {
     const scopedSettings = {
@@ -941,6 +944,33 @@ export function createInMemoryAgentRunQueue(options: {
           error
         });
       }
+    }
+  }
+
+  async function openDeadLetterEscalation(run: AgentRunQueueRecord, recoveredAt: Date) {
+    if (!decisions || !run.task_plan_id || !run.task_plan_item_id) {
+      return;
+    }
+    try {
+      await decisions.createEscalationEvent({
+        workItemId: run.work_item_id,
+        agentRunId: run.run_id,
+        trigger: "doom_loop",
+        reasonMd: "子任务心跳超时且多次恢复失败，已停止自动重试，请在决策收件箱选择重试、转人工或取消。",
+        handoffJson: {
+          source: "agent_run_recovery",
+          task_plan_id: run.task_plan_id,
+          task_plan_item_id: run.task_plan_item_id,
+          recovered_at: recoveredAt.toISOString()
+        }
+      });
+    } catch (error) {
+      getDefaultStructuredLogger().warn("agent_run_dead_letter_escalation_failed", {
+        runId: run.run_id,
+        taskPlanId: run.task_plan_id,
+        taskPlanItemId: run.task_plan_item_id,
+        error
+      });
     }
   }
 
@@ -1905,6 +1935,7 @@ export function createInMemoryAgentRunQueue(options: {
       // 仍会被下次执行接手，不动其状态。复用 notifyRunMilestone：failed 终态 → newStatus=escalated + 通知。
       for (const run of recovered) {
         if (run.status === "failed") {
+          await openDeadLetterEscalation(run, recoveredAt);
           await notifyRunMilestone(run, "AI 多次崩溃，已转人工接手。");
         }
       }
@@ -2264,6 +2295,7 @@ function getDefaultWorkItemStatusWriter() {
 export function getDefaultAgentRunQueue() {
   defaultQueue ??= createInMemoryAgentRunQueue({
     confidence: createAgentRunConfidenceRecorder(),
+    decisions: createAiDecisionRepository(getSharedDatabaseClient().db),
     humanReserved: createHumanReservedGuard(),
     policyStore: getDefaultBudgetPolicyStore(),
     ledgerStore: getDefaultCostLedgerStore(),
