@@ -42,7 +42,7 @@ export class TaskPlanServiceError extends Error {
 export type TaskPlanWorkflowRepository = {
   createDraftPlan: (input: CreateDraftTaskPlanInput) => Promise<void>;
   cancelDraftPlan: (input: { planId: string; workspaceId: string; cancelledAt?: Date }) => Promise<TaskPlanRow | null>;
-  approvePlan: (input: { planId: string; workspaceId: string; approvedAt?: Date }) => Promise<TaskPlanRow | null>;
+  approvePlan: (input: { planId: string; workspaceId: string; workItemId: string; approvedAt?: Date }) => Promise<TaskPlanRow | null>;
 };
 
 export type CreateTaskPlanProposalInput = {

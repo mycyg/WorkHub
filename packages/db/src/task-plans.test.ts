@@ -192,7 +192,7 @@ test("R9.1 task plan repository reads through workspace scope with an honest ite
   assert.deepEqual(result?.items, [firstItem]);
 });
 
-test("R9.1 task plan repository approves a draft only within the workspace scope", async () => {
+test("R9.1 task plan repository approves a draft only within the workspace and work item scope", async () => {
   const approvedRow = {
     id: planId,
     workItemId,
@@ -211,6 +211,7 @@ test("R9.1 task plan repository approves a draft only within the workspace scope
   const result = await repository.approvePlan({
     planId,
     workspaceId,
+    workItemId,
     approvedAt: now
   });
 
@@ -224,9 +225,13 @@ test("R9.1 task plan repository approves a draft only within the workspace scope
   assert.equal(query?.returningCalled, true);
   assert.ok(queryReferences(query?.where, taskPlans.id));
   assert.ok(queryReferences(query?.where, taskPlans.workspaceId));
+  // R9.7: the old workspace-only assertion missed forged task-plan manifests that
+  // approved a different work item's draft inside the same workspace.
+  assert.ok(queryReferences(query?.where, taskPlans.workItemId));
   assert.ok(queryReferences(query?.where, taskPlans.status));
   assert.ok(queryParamValues(query?.where).includes(planId));
   assert.ok(queryParamValues(query?.where).includes(workspaceId));
+  assert.ok(queryParamValues(query?.where).includes(workItemId));
   assert.ok(queryParamValues(query?.where).includes("draft"));
 });
 

@@ -6,7 +6,7 @@ import {
 } from "@workhub/db";
 
 export type TaskPlanApprovalRepository = {
-  approvePlan: (input: { planId: string; workspaceId: string; approvedAt?: Date }) => Promise<TaskPlanRow | null>;
+  approvePlan: (input: { planId: string; workspaceId: string; workItemId: string; approvedAt?: Date }) => Promise<TaskPlanRow | null>;
 };
 
 export type TaskPlanMergeApprovalHandler = (proposal: StoredProposal) => Promise<TaskPlanRow | null>;
@@ -46,7 +46,8 @@ function taskPlanTarget(proposal: StoredProposal) {
   }
   return {
     planId: change.target_ref.entity_id,
-    workspaceId
+    workspaceId,
+    workItemId: proposal.work_item_id
   };
 }
 

@@ -469,6 +469,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
     async approvePlan(input: {
       planId: string;
       workspaceId: string;
+      workItemId: string;
       approvedAt?: Date;
     }): Promise<TaskPlanRow | null> {
       const approvedAt = input.approvedAt ?? new Date();
@@ -481,6 +482,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         .where(and(
           eq(taskPlans.id, input.planId),
           eq(taskPlans.workspaceId, input.workspaceId),
+          eq(taskPlans.workItemId, input.workItemId),
           eq(taskPlans.status, "draft" satisfies TaskPlanStatus)
         ))
         .returning();
