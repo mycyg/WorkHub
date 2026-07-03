@@ -101,6 +101,24 @@ function sourceRunPatch(sourceRunId: string | undefined) {
   return sourceRunId ? { sourceRunId } : {};
 }
 
+function privateMemoryKeyCondition(input: {
+  workspaceId: string;
+  agentContextId: string;
+  category: UserMemoryCategory;
+  key: string;
+}) {
+  return and(
+    eq(agentMemory.workspaceId, input.workspaceId),
+    eq(agentMemory.agentContextId, input.agentContextId),
+    eq(agentMemory.category, input.category),
+    eq(agentMemory.key, input.key)
+  );
+}
+
+function privateMemoryConflictTarget() {
+  return [agentMemory.workspaceId, agentMemory.agentContextId, agentMemory.category, agentMemory.key];
+}
+
 async function assertAgentContextInWorkspace(db: WorkHubDb, input: { workspaceId: string; agentContextId: string }) {
   const [context] = await db
     .select({
@@ -124,26 +142,75 @@ async function assertAgentContextInWorkspace(db: WorkHubDb, input: { workspaceId
   }
 }
 
+async function findPrivateMemoryByKey(db: WorkHubDb, input: {
+  workspaceId: string;
+  agentContextId: string;
+  category: UserMemoryCategory;
+  key: string;
+}) {
+  const [existing] = await db
+    .select()
+    .from(agentMemory)
+    .where(privateMemoryKeyCondition(input))
+    .limit(1);
+  return existing;
+}
+
+async function appendPrivateMemoryVersion(
+  db: WorkHubDb,
+  existing: AgentMemoryRow,
+  input: UpsertAgentMemoryInput,
+  at: Date
+) {
+  const nextVersion = existing.currentVersion + 1;
+  const baseVersion = input.baseVersion ?? existing.currentVersion;
+  return db.transaction(async (tx) => {
+    await tx
+      .insert(agentMemoryVersions)
+      .values({
+        id: randomUUID(),
+        memoryId: existing.id,
+        version: nextVersion,
+        baseVersion,
+        valueMd: input.valueMd,
+        ...sourceRunPatch(input.sourceRunId),
+        createdAt: at
+      })
+      .returning();
+    const [updated] = await tx
+      .update(agentMemory)
+      .set({
+        valueMd: input.valueMd,
+        confidence: input.confidence ?? Math.min(1, existing.confidence + 0.1),
+        ...sourceRunPatch(input.sourceRunId),
+        baseVersion,
+        currentVersion: nextVersion,
+        updatedAt: at
+      })
+      .where(and(
+        eq(agentMemory.id, existing.id),
+        eq(agentMemory.workspaceId, input.workspaceId),
+        eq(agentMemory.currentVersion, existing.currentVersion)
+      ))
+      .returning();
+    if (!updated) {
+      throw new AgentMemoryWriteConflict();
+    }
+    return updated;
+  });
+}
+
 export function createAgentMemoryRepository(db: WorkHubDb): AgentMemoryRepository {
   return {
     async upsertPrivateMemory(input) {
       const at = input.now ?? new Date();
       await assertAgentContextInWorkspace(db, input);
-      const [existing] = await db
-        .select()
-        .from(agentMemory)
-        .where(and(
-          eq(agentMemory.workspaceId, input.workspaceId),
-          eq(agentMemory.agentContextId, input.agentContextId),
-          eq(agentMemory.category, input.category),
-          eq(agentMemory.key, input.key)
-        ))
-        .limit(1);
+      const existing = await findPrivateMemoryByKey(db, input);
 
       if (!existing) {
         const memoryId = randomUUID();
         const baseVersion = input.baseVersion ?? 0;
-        const [inserted] = await db.transaction(async (tx) => {
+        const inserted = await db.transaction(async (tx) => {
           const insertedRows = await tx
             .insert(agentMemory)
             .values({
@@ -160,7 +227,12 @@ export function createAgentMemoryRepository(db: WorkHubDb): AgentMemoryRepositor
               createdAt: at,
               updatedAt: at
             })
+            .onConflictDoNothing({ target: privateMemoryConflictTarget() })
             .returning();
+          const inserted = insertedRows[0];
+          if (!inserted) {
+            return undefined;
+          }
           await tx
             .insert(agentMemoryVersions)
             .values({
@@ -173,47 +245,19 @@ export function createAgentMemoryRepository(db: WorkHubDb): AgentMemoryRepositor
               createdAt: at
             })
             .returning();
-          return insertedRows;
+          return inserted;
         });
-        return inserted!;
-      }
-
-      const nextVersion = existing.currentVersion + 1;
-      const baseVersion = input.baseVersion ?? existing.currentVersion;
-      return db.transaction(async (tx) => {
-        await tx
-          .insert(agentMemoryVersions)
-          .values({
-            id: randomUUID(),
-            memoryId: existing.id,
-            version: nextVersion,
-            baseVersion,
-            valueMd: input.valueMd,
-            ...sourceRunPatch(input.sourceRunId),
-            createdAt: at
-          })
-          .returning();
-        const [updated] = await tx
-          .update(agentMemory)
-          .set({
-            valueMd: input.valueMd,
-            confidence: input.confidence ?? Math.min(1, existing.confidence + 0.1),
-            ...sourceRunPatch(input.sourceRunId),
-            baseVersion,
-            currentVersion: nextVersion,
-            updatedAt: at
-          })
-          .where(and(
-            eq(agentMemory.id, existing.id),
-            eq(agentMemory.workspaceId, input.workspaceId),
-            eq(agentMemory.currentVersion, existing.currentVersion)
-          ))
-          .returning();
-        if (!updated) {
+        if (inserted) {
+          return inserted;
+        }
+        const conflictWinner = await findPrivateMemoryByKey(db, input);
+        if (!conflictWinner) {
           throw new AgentMemoryWriteConflict();
         }
-        return updated;
-      });
+        return appendPrivateMemoryVersion(db, conflictWinner, input, at);
+      }
+
+      return appendPrivateMemoryVersion(db, existing, input, at);
     },
 
     async listPrivateForContext(input) {

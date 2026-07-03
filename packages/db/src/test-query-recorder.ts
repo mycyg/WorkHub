@@ -87,6 +87,12 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
     return this;
   }
 
+  onConflictDoNothing(config?: unknown): this {
+    this.query.onConflict = config ?? {};
+    this.query.steps.push("onConflictDoNothing");
+    return this;
+  }
+
   returning(): Promise<unknown[]> {
     this.query.returningCalled = true;
     this.query.steps.push("returning");

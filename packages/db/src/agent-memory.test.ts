@@ -174,6 +174,58 @@ test("R9.3 agent memory repository rolls back appended versions on optimistic wr
   assert.ok(queryReferences(update?.where, agentMemory.currentVersion));
 });
 
+test("R9.7 agent memory repository appends when a concurrent first L1 write wins the unique key", async () => {
+  const updatedRow = {
+    ...memoryRow,
+    valueMd: "并发输家补充偏好",
+    baseVersion: 1,
+    currentVersion: 2,
+    updatedAt: now
+  };
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ item: { id: taskPlanItemId }, plan: { id: planId, workspaceId } }],
+    [],
+    [],
+    [memoryRow],
+    [{ id: versionId, memoryId, version: 2, baseVersion: 1, valueMd: updatedRow.valueMd, sourceRunId: runId, createdAt: now }],
+    [updatedRow]
+  ]);
+  const repository = createAgentMemoryRepository(db);
+
+  const result = await repository.upsertPrivateMemory({
+    workspaceId,
+    agentContextId: taskPlanItemId,
+    category: "preference",
+    key: "concise_approach",
+    valueMd: updatedRow.valueMd,
+    sourceRunId: runId,
+    now
+  });
+
+  assert.equal(result.id, memoryId);
+  assert.equal(result.currentVersion, 2);
+  assert.deepEqual(transactions.map((transaction) => transaction.outcome), ["resolved", "resolved"]);
+  assert.equal(queries.length, 6);
+  const [, lookup, memoryInsert, conflictLookup, versionInsert, update] = queries;
+  assert.equal(lookup?.fromTable, agentMemory);
+  assert.equal(memoryInsert?.targetTable, agentMemory);
+  assert.ok(memoryInsert?.steps.includes("onConflictDoNothing"));
+  assert.ok(queryReferences((memoryInsert?.onConflict as { target?: unknown })?.target, agentMemory.workspaceId));
+  assert.ok(queryReferences((memoryInsert?.onConflict as { target?: unknown })?.target, agentMemory.agentContextId));
+  assert.ok(queryReferences((memoryInsert?.onConflict as { target?: unknown })?.target, agentMemory.category));
+  assert.ok(queryReferences((memoryInsert?.onConflict as { target?: unknown })?.target, agentMemory.key));
+
+  assert.equal(conflictLookup?.fromTable, agentMemory);
+  assert.equal(conflictLookup?.limit, 1);
+  assert.equal(versionInsert?.targetTable, agentMemoryVersions);
+  const version = versionInsert?.valuesValue as { memoryId: string; version: number; baseVersion: number };
+  assert.equal(version.memoryId, memoryId);
+  assert.equal(version.version, 2);
+  assert.equal(version.baseVersion, 1);
+  assert.equal(update?.targetTable, agentMemory);
+  assert.ok(queryReferences(update?.where, agentMemory.currentVersion));
+});
+
 test("R9.3 memory promotion context reads same-plan L1 candidates with source actor and workspace filters", async () => {
   const sibling = {
     ...memoryRow,
