@@ -247,7 +247,11 @@ function projectCard(p: ProjectListItemVM, zh: boolean): string {
 
 // rank14：可点的「新任务」CTA——空态/有项目都给一个去派活的入口（开 intake 能力）。
 function newTaskCta(zh: boolean): string {
-  return `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-intake style="align-self:flex-start">${zh ? "＋ 新任务 / 交给 AI" : "＋ New task / Dispatch to AI"}</button>`;
+  return `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-intake style="align-self:flex-start">${zh ? "＋ 新任务 / 交给 AI" : "＋ New task / Ask AI"}</button>`;
+}
+
+export function projectListEmptyHtml(zh: boolean): string {
+  return `<div class="wh-spot-dash ds-anim-fade-in">${emptyHtml("📁", zh ? "还没有项目" : "No projects yet", zh ? "新建任务后会自动建立项目和网盘" : "Create a task to create one")}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
 }
 
 // 项目主页（list→detail morph）：点项目行 → 在同一盒子内 morph 出该项目的「项目主页」
@@ -269,7 +273,7 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
       </button>`
         )
         .join("")
-    : emptyHtml("✅", zh ? "暂无进行中的工作" : "No open work", zh ? "点「新任务」就能派活" : "Hit New task to assign some");
+    : emptyHtml("✅", zh ? "暂无进行中的工作" : "No open work", zh ? "点「新任务」创建下一项工作" : "Use New task to create work");
   // 隐藏量按全量算(曾用可见数自减恒为 0,提示从不出现)。原因可能是列表截断或权限过滤，
   // 当前 VM 无法区分，文案保持中性。
   const hidden = totalOpen - vm.open_work_items.length;
@@ -332,7 +336,7 @@ export function createProjectsView(): SpotlightCapabilityView {
           ctx.body.innerHTML = items.length
             // #19：列表渲染也带 ds-anim-fade-in,与详情(projectHomeDetailHtml)进场一致——返回列表不再生硬瞬现。
             ? `<div class="wh-spot-dash ds-anim-fade-in">${newTaskCta(zh)}<div class="wh-spot-list ds-stagger">${items.map((p) => projectCard(p, zh)).join("")}</div></div>`
-            : `<div class="wh-spot-dash ds-anim-fade-in">${emptyHtml("📁", zh ? "还没有项目" : "No projects yet", zh ? "派个活就会自动建项目和网盘" : "Dispatch a task to create one")}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
+            : projectListEmptyHtml(zh);
         } catch {
           if (disposed || my !== gen) return;
           ctx.body.innerHTML = spotlightErrorHtml(zh, zh ? "项目没拉到，稍后重试" : "Couldn't load projects — retry");
@@ -588,6 +592,10 @@ function bubbleHtml(bubble: EvidenceBubble, zh: boolean): string {
 }
 
 // 知识检索 API 要求在具体项目/事项内检索（裸查询 403）。故先选项目再搜。
+export function knowledgeNoProjectsEmptyHtml(zh: boolean): string {
+  return emptyHtml("🔍", zh ? "还没有可检索的项目" : "No project to search", zh ? "新建任务后，证据会沉淀在项目里" : "Create a task first — evidence accrues per project");
+}
+
 export function createKnowledgeView(): SpotlightCapabilityView {
   return {
     id: "knowledge",
@@ -620,7 +628,7 @@ export function createKnowledgeView(): SpotlightCapabilityView {
 
       const renderShell = (resultHtml: string) => {
         if (!projects.length) {
-          ctx.body.innerHTML = emptyHtml("🔍", zh ? "还没有可检索的项目" : "No project to search", zh ? "先派个活建项目，证据会沉淀在项目里" : "Dispatch a task first — evidence accrues per project");
+          ctx.body.innerHTML = knowledgeNoProjectsEmptyHtml(zh);
           ctx.requestResize();
           return;
         }

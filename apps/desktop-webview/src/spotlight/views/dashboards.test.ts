@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import type { AgentArmyDashboardVM, CostDashboardVM, ProjectHomePageVM } from "@workhub/contracts";
 
-import { agentArmyDashboardView, agentArmyPlanDetailHtml, costView, projectHomeDetailHtml } from "./dashboards.js";
+import { agentArmyDashboardView, agentArmyPlanDetailHtml, costView, knowledgeNoProjectsEmptyHtml, projectHomeDetailHtml, projectListEmptyHtml } from "./dashboards.js";
 
 function agentArmyVm(over: Partial<AgentArmyDashboardVM> = {}): AgentArmyDashboardVM {
   return {
@@ -153,6 +153,27 @@ test("S3 desktop project-home shows an empty state when there is no open work", 
   assert.ok(html.includes("暂无进行中的工作"), "empty state copy");
   // 空态仍保留入口动作（新任务）——不是死胡同
   assert.ok(html.includes("data-open-intake"), "new-task CTA stays in empty state");
+});
+
+test("R9.7 desktop dashboard generic empty states avoid dispatch copy", () => {
+  const zhProjectList = projectListEmptyHtml(true);
+  const enProjectList = projectListEmptyHtml(false);
+  const zhProjectHome = projectHomeDetailHtml(vm({ summary: { open_work_item_count: 0 }, open_work_items: [] }), true);
+  const enProjectHome = projectHomeDetailHtml(vm({ summary: { open_work_item_count: 0 }, open_work_items: [] }), false);
+  const zhKnowledge = knowledgeNoProjectsEmptyHtml(true);
+  const enKnowledge = knowledgeNoProjectsEmptyHtml(false);
+  const zh = `${zhProjectList}${zhProjectHome}${zhKnowledge}`;
+  const en = `${enProjectList}${enProjectHome}${enKnowledge}`;
+
+  assert.doesNotMatch(zh, /派活|派个活/u);
+  assert.doesNotMatch(en, /Dispatch|dispatch/u);
+  assert.match(zhProjectList, /新建任务后/u);
+  assert.match(enProjectList, /Create a task/u);
+  assert.match(zhProjectHome, /点「新任务」创建/u);
+  assert.match(enProjectHome, /Use New task/u);
+  assert.match(zhKnowledge, /新建任务后/u);
+  assert.match(enKnowledge, /Create a task/u);
+  assert.match(enProjectList, /New task \/ Ask AI/u);
 });
 
 test("L16: cost trend bars carry aria-labels + a visible date-range/peak caption (not tooltip-only)", () => {
