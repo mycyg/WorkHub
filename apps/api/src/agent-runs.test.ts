@@ -3061,6 +3061,49 @@ test("agent run enqueue opens user_forbidden escalation for human-reserved worke
   assert.equal(decisions.escalationRows.length, 1);
 });
 
+test("human-reserved guard audits and publishes escalation in the work item's workspace", async () => {
+  const runtimeSettings = settings();
+  const nonDefaultWorkspaceId = "00000000-0000-4000-8000-000000000202";
+  assert.notEqual(nonDefaultWorkspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  const workItems = new MemoryWorkItems([
+    humanReservedWorkItemRow({
+      workspaceId: nonDefaultWorkspaceId
+    })
+  ]);
+  const decisions = new MemoryAiDecisions();
+  const auditLogs = new MemoryAuditLogs();
+  const events: { topic: string; type: string; data: Record<string, unknown> }[] = [];
+  const guard = createHumanReservedGuard({
+    workItems,
+    decisions,
+    auditLogs,
+    settings: runtimeSettings,
+    now: () => now,
+    bus: {
+      async publish(topic, type, data) {
+        events.push({ topic, type, data: data as Record<string, unknown> });
+      }
+    }
+  });
+
+  const result = await guard({
+    workItemId,
+    actorId: userId,
+    mode: "worker",
+    title: "Manual-only worker run",
+    settings: runtimeSettings
+  });
+
+  assert.equal(result?.trigger, "user_forbidden");
+  const audit = auditLogs.rows.find((row) => row.action === "escalation.opened");
+  assert.equal(audit?.workspaceId, nonDefaultWorkspaceId);
+  assert.equal(audit?.orgId, runtimeSettings.auth.defaultOrgId);
+  assert.deepEqual(events.map((event) => [event.topic, event.type]), [
+    [`workitem:${workItemId}`, "escalation.opened"],
+    [`all:${nonDefaultWorkspaceId}`, "escalation.opened"]
+  ]);
+});
+
 test("R9.7 high-risk legal, finance, and identity tool calls are stopped by human-reserved guard", async () => {
   const runtimeSettings = settings();
   const cases = [

@@ -157,10 +157,10 @@ function highRiskToolHandoff(row: WorkItemHumanReservedRow, toolCall: HumanReser
   };
 }
 
-function actorOrg(settings: Settings) {
+function auditTenantForWorkItem(settings: Settings, row: WorkItemHumanReservedRow) {
   return {
     orgId: settings.auth.defaultOrgId,
-    workspaceId: settings.auth.defaultWorkspaceId
+    workspaceId: row.workspaceId ?? settings.auth.defaultWorkspaceId
   };
 }
 
@@ -236,7 +236,7 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
 
       try {
         await auditLogs.createAuditLog({
-          ...actorOrg(settings),
+          ...auditTenantForWorkItem(settings, workItem),
           actorKind: "system",
           actorNickname: "WorkHub",
           entityType: "work_item",
