@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { defaultSelectedOptionIds, startHtml } from "./intake.js";
+import { defaultSelectedOptionIds, doneHtml, startHtml } from "./intake.js";
 
 test("S4b desktop intake start shows the bound project when a label is supplied", () => {
   const html = startHtml(true, "客户复盘项目");
@@ -71,4 +71,14 @@ test("desktop intake defaults the recommended confirm action", () => {
     submit: { method: "POST", href: "/create" }
   });
   assert.deepEqual([...selected], ["create"]);
+});
+
+test("R9.7 desktop intake created state avoids dispatch copy", () => {
+  const zh = doneHtml("WH-9", "客户访谈摘要", true);
+  const en = doneHtml("WH-9", "Interview summary", false);
+
+  assert.doesNotMatch(zh, /派活/u);
+  assert.doesNotMatch(en, /Dispatch|dispatch/u);
+  assert.match(zh, /再建一个任务/u);
+  assert.match(en, /Create another task/u);
 });

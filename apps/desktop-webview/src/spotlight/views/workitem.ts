@@ -120,6 +120,15 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   </div>`;
 }
 
+export function workItemListHtml(items: Array<{ id: string; title: string }>, zh: boolean): string {
+  if (!items.length) {
+    return `<div class="wh-spot-empty"><div class="wh-spot-empty-face">(=･ｪ･=)</div><h3 class="wh-spot-empty-title">${zh ? "暂无进行中的工作项" : "No active work items"}</h3><p class="wh-spot-empty-sub">${zh ? "新建一个任务，或从 项目 / 审批 进入具体工作项" : "Create a task, or open one from Projects / Approvals"}</p></div>`;
+  }
+  return `<div class="wh-spot-list ds-stagger">${items
+    .map((it) => `<button type="button" class="wh-spot-row" data-wi-open="${escapeHtml(it.id)}" style="cursor:pointer;width:100%;text-align:left"><div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(it.title)}</div></div></button>`)
+    .join("")}</div>`;
+}
+
 export function createWorkItemView(): SpotlightCapabilityView {
   return {
     id: "workitem",
@@ -148,12 +157,10 @@ export function createWorkItemView(): SpotlightCapabilityView {
             .filter((r) => r.work_item_id && !seen.has(r.work_item_id) && seen.add(r.work_item_id))
             .map((r) => ({ id: r.work_item_id as string, title: r.title }));
           if (!items.length) {
-            body.innerHTML = `<div class="wh-spot-empty"><div class="wh-spot-empty-face">(=･ｪ･=)</div><h3 class="wh-spot-empty-title">${zh ? "暂无进行中的工作项" : "No active work items"}</h3><p class="wh-spot-empty-sub">${zh ? "派个活，或从 项目 / 审批 进入具体工作项" : "Dispatch a task, or open one from Projects / Approvals"}</p></div>`;
+            body.innerHTML = workItemListHtml([], zh);
           } else {
             ctx.setSubtitle(zh ? `${items.length} 个进行中` : `${items.length} active`);
-            body.innerHTML = `<div class="wh-spot-list ds-stagger">${items
-              .map((it) => `<button type="button" class="wh-spot-row" data-wi-open="${escapeHtml(it.id)}" style="cursor:pointer;width:100%;text-align:left"><div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(it.title)}</div></div></button>`)
-              .join("")}</div>`;
+            body.innerHTML = workItemListHtml(items, zh);
           }
         } catch {
           if (!disposed && gen === loadGen) {

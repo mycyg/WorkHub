@@ -101,13 +101,13 @@ export function startHtml(zh: boolean, projectLabel?: string): string {
   </div>`;
 }
 
-function doneHtml(code: string, title: string, zh: boolean): string {
+export function doneHtml(code: string, title: string, zh: boolean): string {
   return `<div class="wh-spot-empty">
     <div class="wh-spot-empty-face">(=^･ω･^=)✓</div>
     <h3 class="wh-spot-empty-title">${zh ? "工作项已创建" : "Work item created"}</h3>
     <p class="wh-spot-empty-sub">${escapeHtml(code ? `${code} · ${title}` : title)}</p>
     <div class="wh-spot-intake-actions" style="justify-content:center">
-      <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-restart>${zh ? "再派一个" : "Dispatch another"}</button>
+      <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-restart>${zh ? "再建一个任务" : "Create another task"}</button>
     </div>
   </div>`;
 }

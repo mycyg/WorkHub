@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import type { WorkItemDetailVM } from "@workhub/contracts";
 
-import { detailHtml } from "./workitem.js";
+import { detailHtml, workItemListHtml } from "./workitem.js";
 
 const WI = "10000000-0000-4000-8000-000000000901";
 
@@ -268,4 +268,14 @@ test("desktop workitem trace hides hidden reasoning and raw tool payloads", () =
   assert.ok(html.includes("工具已返回：read_project_file"));
   assert.equal(html.includes("Now I understand"), false);
   assert.equal(html.includes("markdown-report"), false);
+});
+
+test("R9.7 desktop workitem empty list avoids dispatch copy", () => {
+  const zh = workItemListHtml([], true);
+  const en = workItemListHtml([], false);
+
+  assert.doesNotMatch(zh, /派活/u);
+  assert.doesNotMatch(en, /Dispatch|dispatch/u);
+  assert.match(zh, /新建一个任务/u);
+  assert.match(en, /Create a task/u);
 });
