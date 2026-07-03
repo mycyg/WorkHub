@@ -309,7 +309,7 @@ async function requireArbitration(
 
 export function createTaskDispatcher(options: {
   repository: TaskDispatcherRepository;
-  queue: Pick<AgentRunQueue, "enqueue">;
+  queue: Pick<AgentRunQueue, "enqueue"> & Partial<Pick<AgentRunQueue, "runNext">>;
   escalationSink?: TaskDispatchEscalationSink | false;
   completionSink?: TaskDispatchCompletionSink | false;
   arbitrationSink?: TaskDispatchArbitrationSink | false;
@@ -319,6 +319,15 @@ export function createTaskDispatcher(options: {
   const escalationSink = options.escalationSink === false ? undefined : options.escalationSink;
   const completionSink = options.completionSink === false ? undefined : options.completionSink;
   const arbitrationSink = options.arbitrationSink === false ? undefined : options.arbitrationSink;
+
+  function pumpQueuedRun() {
+    if (!options.queue.runNext) {
+      return;
+    }
+    void options.queue.runNext().catch((error) => {
+      getDefaultStructuredLogger().warn("task_dispatch_child_run_pump_failed", { error });
+    });
+  }
 
   async function loadPlan(input: { planId: string; workspaceId: string }) {
     const loaded = await options.repository.getPlanWithItems({
@@ -478,6 +487,7 @@ export function createTaskDispatcher(options: {
         throw error;
       }
       result.enqueuedItemIds.push(item.id);
+      pumpQueuedRun();
     }
 
     result.completed = await maybeCompletePlan(plan, items, at);

@@ -61,3 +61,15 @@ test("route state card carries trace and owner context without exposing private 
   assert.equal(forbidden.includes("需要项目负责人授权"), true);
   assert.equal(forbidden.includes("你没有权限查看"), true);
 });
+
+test("route state loading actions retry the concrete route instead of a path template", () => {
+  const html = renderRouteStateCard({
+    routeKey: "intake",
+    state: "loading",
+    locale: "en-US",
+    route: "/intake/real-session-id"
+  });
+
+  assert.equal(html.includes('href="/intake/real-session-id"'), true);
+  assert.equal(html.includes('href="/intake/:sessionId"'), false);
+});

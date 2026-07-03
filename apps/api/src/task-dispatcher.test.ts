@@ -200,8 +200,10 @@ class CappedTaskDispatcherRepository extends MemoryTaskDispatcherRepository {
   }
 }
 
-class CapturingQueue implements Pick<AgentRunQueue, "enqueue"> {
+class CapturingQueue implements Pick<AgentRunQueue, "enqueue" | "runNext"> {
   public readonly inputs: EnqueueAgentRunInput[] = [];
+  public runNextCalls = 0;
+  public runNextResult: AgentRunQueueRecord | null = null;
 
   async enqueue(input: EnqueueAgentRunInput) {
     this.inputs.push(structuredClone(input));
@@ -210,6 +212,11 @@ class CapturingQueue implements Pick<AgentRunQueue, "enqueue"> {
       ...(input.taskPlanItemId ? { taskPlanItemId: input.taskPlanItemId } : {}),
       ...(input.workspaceId ? { workspaceId: input.workspaceId } : {})
     });
+  }
+
+  async runNext() {
+    this.runNextCalls += 1;
+    return this.runNextResult;
   }
 }
 
@@ -277,6 +284,20 @@ test("R9.2 dispatcher enqueues ready task-plan items as ordinary child runs with
   assert.match(queue.inputs[0]?.objectiveMd ?? "", /Research acceptance\./u);
   assert.match(queue.inputs[0]?.objectiveMd ?? "", /Budget share: 35%/u);
   assert.equal(repository.items.find((candidate) => candidate.id === produceItemId)?.status, "pending");
+});
+
+test("R9.2 dispatcher pumps queued child runs after enqueueing ready task-plan items", async () => {
+  const repository = new MemoryTaskDispatcherRepository(plan(), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research" }),
+    item({ id: reviewItemId, seq: 1, title: "Review", role: "review" })
+  ]);
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({ repository, queue, now: () => now });
+
+  const result = await dispatcher.dispatch({ planId, workspaceId, orgId, actorId });
+
+  assert.deepEqual(result.enqueuedItemIds, [researchItemId, reviewItemId]);
+  assert.equal(queue.runNextCalls, 2);
 });
 
 test("R9.2 dispatcher respects item CAS misses and does not duplicate child enqueue", async () => {

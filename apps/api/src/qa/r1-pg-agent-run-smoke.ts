@@ -75,7 +75,7 @@ import { createDbProposalService, ProposalServiceError } from "../services/propo
 import { createDbTaskDispatchEscalationSink, createTaskDispatcher } from "../services/task-dispatcher.js";
 import { createTaskPlanMergeApprovalHandler, createTaskPlanWorkflowService, TaskPlanServiceError } from "../services/task-plans.js";
 import { createDbWorkItemService } from "../services/work-items.js";
-import { createInMemoryAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
+import { AgentRunnerError, createInMemoryAgentRunQueue, type AgentRunQueue, type AgentRunQueueRecord } from "../workers/agent-runner.js";
 
 function sha256Text(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -512,7 +512,7 @@ async function main() {
     if (autoDispatchedRuns.length !== 1 || autoDispatchedRuns[0]?.taskPlanItemId !== orderedTaskPlanItems[0]?.id) {
       throw new Error(`Expected merge route to auto-dispatch the first ready child only, got ${JSON.stringify(autoDispatchedRuns.map((row) => row.taskPlanItemId))}`);
     }
-    async function runTaskPlanChild(itemId: string, expectedStatus: "succeeded" | "failed") {
+    async function latestTaskPlanChildRun(itemId: string) {
       const childRuns = await db.select().from(agentRuns).then((rows) =>
         rows.filter((row) => row.taskPlanId === taskPlanCreateBody.data.plan_id && row.taskPlanItemId === itemId)
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
@@ -521,7 +521,37 @@ async function main() {
       if (!childRun) {
         throw new Error(`Expected task-plan child run for item ${itemId}`);
       }
-      const executedChild = await queue.run(childRun.id);
+      const persistedChildRun = await persistence.get(childRun.id);
+      if (!persistedChildRun) {
+        throw new Error(`Expected persisted task-plan child run for item ${itemId}`);
+      }
+      return persistedChildRun;
+    }
+    async function waitForTaskPlanChildRun(itemId: string) {
+      let childRun = await latestTaskPlanChildRun(itemId);
+      for (let attempt = 0; (childRun.status === "queued" || childRun.status === "running") && attempt < 20; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        childRun = await latestTaskPlanChildRun(itemId);
+      }
+      return childRun;
+    }
+    async function runTaskPlanChild(itemId: string, expectedStatus: "succeeded" | "failed") {
+      let executedChild: AgentRunQueueRecord = await latestTaskPlanChildRun(itemId);
+      // The old smoke asserted this child was still queued and always ran it manually. That was wrong after
+      // task-plan merge started pumping child runs itself: the product-visible behavior is the settled child
+      // run plus dispatcher attention, regardless of whether the pump or this smoke observes it first.
+      if (executedChild.status === "queued") {
+        try {
+          executedChild = await queue.run(executedChild.run_id);
+        } catch (error) {
+          if (!(error instanceof AgentRunnerError) || error.code !== "agent_run_not_queued") {
+            throw error;
+          }
+          executedChild = await waitForTaskPlanChildRun(itemId);
+        }
+      } else if (executedChild.status === "running") {
+        executedChild = await waitForTaskPlanChildRun(itemId);
+      }
       if (executedChild.status !== expectedStatus) {
         throw new Error(`Expected task-plan child run ${itemId} to ${expectedStatus}, got ${executedChild.status}`);
       }

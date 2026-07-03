@@ -203,7 +203,7 @@ export function renderRouteStateCard(input: RouteStateCardInput) {
   const locale = normalizeWorkHubLocale(input.locale);
   const route = routeInfo[locale][input.routeKey];
   const copy = stateCopy[locale][input.state];
-  const actionHref = input.actionHref ?? (input.state === "empty" || input.state === "notFound" ? "/" : route.route);
+  const actionHref = input.actionHref ?? (input.state === "empty" || input.state === "notFound" ? "/" : input.route ?? route.route);
   const meta = input.state === "error"
     ? input.traceId ?? "trace_id=r4-web-route-state"
     : input.state === "forbidden"

@@ -288,6 +288,13 @@
       "when": 1783080600000,
       "tag": "0040_task_plan_objective_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1783113366000,
+      "tag": "0041_chat_message_kind_width",
+      "breakpoints": true
     }
   ]
 }

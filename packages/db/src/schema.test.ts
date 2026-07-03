@@ -14,6 +14,7 @@ import {
   agentSteps,
   auditLogs,
   budgetPolicies,
+  chatMessages,
   costLedgerEntries,
   mergeAttempts,
   mergeProposals,
@@ -282,6 +283,16 @@ test("snapshot refs are wide enough for local absolute snapshot paths", () => {
   assert.equal((snapshots.ref as unknown as { config: { length: number } }).config.length, 1024);
   const migration = readFileSync(join(process.cwd(), "migrations", "0029_snapshot_ref_width.sql"), "utf8");
   assert.match(migration, /ALTER TABLE "snapshots" ALTER COLUMN "ref" TYPE varchar\(1024\)/u);
+});
+
+test("chat message kinds fit file-context notice events from real intake", () => {
+  assert.equal(getTableName(chatMessages), "chat_messages");
+  assert.ok(
+    (chatMessages.kind as unknown as { config: { length: number } }).config.length >=
+      "clarification_file_context_notice".length
+  );
+  const migration = readFileSync(join(process.cwd(), "migrations", "0041_chat_message_kind_width.sql"), "utf8");
+  assert.match(migration, /ALTER TABLE "chat_messages" ALTER COLUMN "kind" TYPE varchar\(64\)/u);
 });
 
 test("agent run persistence fields support DB-backed replay recovery", () => {

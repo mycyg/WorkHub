@@ -898,7 +898,7 @@ export const chatMessages = pgTable(
     id: id(),
     workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
     role: varchar("role", { length: 16 }).notNull(),
-    kind: varchar("kind", { length: 32 }).notNull(),
+    kind: varchar("kind", { length: 64 }).notNull(),
     contentJson: jsonb("content_json").$type<JsonObject>().notNull(),
     selectedOptionKey: varchar("selected_option_key", { length: 64 }),
     userOtherText: text("user_other_text"),
