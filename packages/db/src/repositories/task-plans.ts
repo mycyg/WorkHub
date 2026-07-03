@@ -70,6 +70,13 @@ export class TaskPlanObjectiveScopeMismatch extends Error {
   }
 }
 
+export class TaskPlanWorkItemScopeMismatch extends Error {
+  constructor() {
+    super("Task plan work item must exist in the requested workspace.");
+    this.name = "TaskPlanWorkItemScopeMismatch";
+  }
+}
+
 export type TaskPlanWithItems = {
   plan: TaskPlanRow;
   items: TaskPlanItemRow[];
@@ -168,6 +175,18 @@ export function createTaskPlanRepository(db: WorkHubDb) {
     async createDraftPlan(input: CreateDraftTaskPlanInput): Promise<void> {
       const now = input.now ?? new Date();
       await db.transaction(async (tx) => {
+        const [workItemScope] = await tx
+          .select({ workItemId: workItems.id })
+          .from(workItems)
+          .where(and(
+            eq(workItems.id, input.workItemId),
+            eq(workItems.workspaceId, input.workspaceId),
+            isNull(workItems.deletedAt)
+          ))
+          .limit(1);
+        if (!workItemScope) {
+          throw new TaskPlanWorkItemScopeMismatch();
+        }
         if (input.objectiveId) {
           const [scope] = await tx
             .select({ objectiveId: objectives.id })
