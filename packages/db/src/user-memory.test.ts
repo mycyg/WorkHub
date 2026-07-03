@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createUserMemoryRepository, type UserMemoryRow } from "./repositories/user-memory.js";
-import { createQueryRecorder, queryParamValues } from "./test-query-recorder.js";
+import { userMemories } from "./schema/index.js";
+import { createQueryRecorder, queryParamValues, queryReferences } from "./test-query-recorder.js";
 
 const userId = "84000000-0000-4000-8000-000000000001";
 const workspaceId = "84000000-0000-4000-8000-000000000002";
@@ -47,6 +48,28 @@ test("upsert lookup scopes L2 memories by workspace before updating", async () =
   assert.deepEqual(queryParamValues(lookup?.where).slice(0, 4), [userId, workspaceId, "preference", "style"]);
 });
 
+test("R9.7 upsert update keeps the L2 memory workspace fence", async () => {
+  const existing = row({ valueMd: "旧偏好。" });
+  const updated = row({ valueMd: "新偏好。", confidence: 0.9 });
+  const { db, queries } = createQueryRecorder([[existing], [updated]]);
+
+  const repository = createUserMemoryRepository(db);
+  await repository.upsert({
+    userId,
+    workspaceId,
+    category: "preference",
+    key: "style",
+    valueMd: "新偏好。",
+    confidence: 0.9
+  });
+
+  const update = queries.find((query) => query.operation === "update");
+  assert.equal(update?.targetTable, userMemories);
+  assert.ok(queryReferences(update?.where, userMemories.id));
+  assert.ok(queryReferences(update?.where, userMemories.workspaceId));
+  assert.deepEqual(queryParamValues(update?.where).slice(0, 2), [existing.id, workspaceId]);
+});
+
 test("listForUser injects only global and current-workspace L2 memories", async () => {
   const { db, queries } = createQueryRecorder([[row({}), row({ id: "84000000-0000-4000-8000-000000000102", workspaceId: null })]]);
   const repository = createUserMemoryRepository(db);
@@ -63,6 +86,39 @@ test("listForUser injects only global and current-workspace L2 memories", async 
   assert.ok(queryParamValues(query?.where).includes(workspaceId));
   assert.ok(queryParamValues(query?.where).includes("preference"));
   assert.equal(query?.limit, 8);
+});
+
+test("R9.7 touch marks only visible L2 memories as used", async () => {
+  const touchedAt = new Date("2026-07-03T00:10:00.000Z");
+  const { db, queries } = createQueryRecorder([[]]);
+  const repository = createUserMemoryRepository(db);
+
+  await repository.touch(["84000000-0000-4000-8000-000000000101"], touchedAt, { workspaceId });
+
+  const update = queries[0];
+  assert.equal(update?.targetTable, userMemories);
+  assert.ok(queryReferences(update?.where, userMemories.id));
+  assert.ok(queryReferences(update?.where, userMemories.workspaceId));
+  assert.deepEqual(queryParamValues(update?.where).slice(0, 2), ["84000000-0000-4000-8000-000000000101", workspaceId]);
+});
+
+test("R9.7 soft delete removes only visible L2 memories", async () => {
+  const deletedAt = new Date("2026-07-03T00:20:00.000Z");
+  const { db, queries } = createQueryRecorder([[{ id: "84000000-0000-4000-8000-000000000101" }]]);
+  const repository = createUserMemoryRepository(db);
+
+  await repository.softDeleteForUser(userId, "84000000-0000-4000-8000-000000000101", deletedAt, { workspaceId });
+
+  const update = queries[0];
+  assert.equal(update?.targetTable, userMemories);
+  assert.ok(queryReferences(update?.where, userMemories.id));
+  assert.ok(queryReferences(update?.where, userMemories.userId));
+  assert.ok(queryReferences(update?.where, userMemories.workspaceId));
+  assert.ok(queryReferences(update?.where, userMemories.deletedAt));
+  assert.deepEqual(
+    queryParamValues(update?.where).slice(0, 3),
+    ["84000000-0000-4000-8000-000000000101", userId, workspaceId]
+  );
 });
 
 test("mergeUpsert automatically merges non-overlapping L2 memory edits with a base snapshot", async () => {

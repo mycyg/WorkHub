@@ -84,7 +84,11 @@ export function getDefaultUserMemoryContextProvider(): UserMemoryContextProvider
       if (rows.length === 0) {
         return undefined;
       }
-      await repository.touch(rows.map((row) => row.id));
+      await repository.touch(
+        rows.map((row) => row.id),
+        undefined,
+        run.workspace_id ? { workspaceId: run.workspace_id } : undefined
+      );
       return buildUserMemoryPromptSection(rows);
     } catch {
       return undefined;

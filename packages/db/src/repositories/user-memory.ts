@@ -45,8 +45,8 @@ export type UserMemoryRepository = {
   upsert: (input: UpsertUserMemoryInput) => Promise<UserMemoryRow>;
   mergeUpsert: (input: MergeUserMemoryInput) => Promise<UserMemoryMergeResult>;
   listForUser: (userId: string, options?: ListUserMemoriesOptions) => Promise<UserMemoryRow[]>;
-  touch: (ids: string[], at?: Date) => Promise<void>;
-  softDeleteForUser: (userId: string, id: string, at?: Date) => Promise<boolean>;
+  touch: (ids: string[], at?: Date, scope?: { workspaceId?: string }) => Promise<void>;
+  softDeleteForUser: (userId: string, id: string, at?: Date, scope?: { workspaceId?: string }) => Promise<boolean>;
   prune: (now?: Date) => Promise<number>;
   countActiveForUser: (userId: string) => Promise<number>;
 };
@@ -64,6 +64,12 @@ function memoryKeyConditions(input: Pick<UpsertUserMemoryInput, "userId" | "work
     eq(userMemories.key, input.key),
     isNull(userMemories.deletedAt)
   ];
+}
+
+function workspaceVisibilityCondition(workspaceId: string | undefined) {
+  return workspaceId
+    ? or(eq(userMemories.workspaceId, workspaceId), isNull(userMemories.workspaceId))
+    : isNull(userMemories.workspaceId);
 }
 
 async function findExistingMemory(db: WorkHubDb, input: UpsertUserMemoryInput): Promise<UserMemoryRow | undefined> {
@@ -91,7 +97,10 @@ async function updateMemory(
       ...(input.sourceRunId ? { sourceRunId: input.sourceRunId } : {}),
       updatedAt: now
     })
-    .where(eq(userMemories.id, prev.id))
+    .where(and(
+      eq(userMemories.id, prev.id),
+      input.workspaceId ? eq(userMemories.workspaceId, input.workspaceId) : isNull(userMemories.workspaceId)
+    ))
     .returning();
   return updated[0]!;
 }
@@ -206,22 +215,33 @@ export function createUserMemoryRepository(db: WorkHubDb): UserMemoryRepository 
       return rows;
     },
 
-    async touch(ids, at) {
+    async touch(ids, at, scope = {}) {
       if (ids.length === 0) {
         return;
       }
       const now = at ?? new Date();
       for (const id of ids) {
-        await db.update(userMemories).set({ lastUsedAt: now }).where(eq(userMemories.id, id));
+        await db
+          .update(userMemories)
+          .set({ lastUsedAt: now })
+          .where(and(
+            eq(userMemories.id, id),
+            workspaceVisibilityCondition(scope.workspaceId)
+          ));
       }
     },
 
-    async softDeleteForUser(userId, id, at) {
+    async softDeleteForUser(userId, id, at, scope = {}) {
       const now = at ?? new Date();
       const updated = await db
         .update(userMemories)
         .set({ deletedAt: now, updatedAt: now })
-        .where(and(eq(userMemories.id, id), eq(userMemories.userId, userId), isNull(userMemories.deletedAt)))
+        .where(and(
+          eq(userMemories.id, id),
+          eq(userMemories.userId, userId),
+          workspaceVisibilityCondition(scope.workspaceId),
+          isNull(userMemories.deletedAt)
+        ))
         .returning({ id: userMemories.id });
       return updated.length > 0;
     },
