@@ -4220,6 +4220,55 @@ test("agent run queue dead-letters a run that keeps crashing past the recover-at
   assert.equal(deadLetterAudit?.entityId, queued.run_id);
 });
 
+test("R9.7 dead-lettered standalone runs appear in attention", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  const recoveredAt = new Date("2026-06-05T00:10:00.000Z");
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => recoveredAt,
+    id: () => "40000000-0000-4000-8000-00000000004d",
+    workerId: "worker-deadletter-standalone",
+    leaseMs: 60_000,
+    maxRecoverAttempts: 1,
+    persistence,
+    auditLogs,
+    decisions,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Standalone poison run" });
+  const expiredLease = {
+    claimedAt: new Date("2026-06-05T00:00:00.000Z"),
+    heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
+    leaseExpiresAt: new Date("2026-06-05T00:01:00.000Z")
+  };
+
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-1", ...expiredLease });
+  await queue.recoverExpiredClaims();
+  assert.equal(decisions.escalationRows.length, 0, "recoverable stale runs must not open attention");
+
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
+  const deadLettered = await queue.recoverExpiredClaims();
+
+  assert.equal(deadLettered[0]?.status, "failed");
+  assert.equal(status.statuses.get(workItemId), "escalated");
+  assert.equal(decisions.escalationRows.length, 1, "standalone stuck runs must appear in the decision inbox");
+  assert.equal(decisions.escalationRows[0]?.workItemId, workItemId);
+  assert.equal(decisions.escalationRows[0]?.agentRunId, queued.run_id);
+  assert.equal(decisions.escalationRows[0]?.trigger, "doom_loop");
+  assert.equal(decisions.escalationRows[0]?.handoffJson["source"], "agent_run_recovery");
+  assert.equal(decisions.escalationRows[0]?.handoffJson["recovered_at"], recoveredAt.toISOString());
+  assert.equal("task_plan_id" in decisions.escalationRows[0]!.handoffJson, false);
+  assert.equal("task_plan_item_id" in decisions.escalationRows[0]!.handoffJson, false);
+});
+
 test("sweepStaleAgentWorkdirs removes only stale workhub-agent dirs", async () => {
   const parent = await mkdtemp(path.join(os.tmpdir(), "workhub-sweep-test-"));
   const stale = path.join(parent, "workhub-agent-stale");

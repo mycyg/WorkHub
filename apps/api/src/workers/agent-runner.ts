@@ -957,7 +957,7 @@ export function createInMemoryAgentRunQueue(options: {
   }
 
   async function openDeadLetterEscalation(run: AgentRunQueueRecord, recoveredAt: Date) {
-    if (!decisions || !run.task_plan_id || !run.task_plan_item_id) {
+    if (!decisions) {
       return;
     }
     try {
@@ -965,19 +965,21 @@ export function createInMemoryAgentRunQueue(options: {
         workItemId: run.work_item_id,
         agentRunId: run.run_id,
         trigger: "doom_loop",
-        reasonMd: "子任务心跳超时且多次恢复失败，已停止自动重试，请在决策收件箱选择重试、转人工或取消。",
+        reasonMd: run.task_plan_id && run.task_plan_item_id
+          ? "子任务心跳超时且多次恢复失败，已停止自动重试，请在决策收件箱选择重试、转人工或取消。"
+          : "AI 执行心跳超时且多次恢复失败，已停止自动重试，请在决策收件箱选择重试、转人工或取消。",
         handoffJson: {
           source: "agent_run_recovery",
-          task_plan_id: run.task_plan_id,
-          task_plan_item_id: run.task_plan_item_id,
+          ...(run.task_plan_id ? { task_plan_id: run.task_plan_id } : {}),
+          ...(run.task_plan_item_id ? { task_plan_item_id: run.task_plan_item_id } : {}),
           recovered_at: recoveredAt.toISOString()
         }
       });
     } catch (error) {
       getDefaultStructuredLogger().warn("agent_run_dead_letter_escalation_failed", {
         runId: run.run_id,
-        taskPlanId: run.task_plan_id,
-        taskPlanItemId: run.task_plan_item_id,
+        ...(run.task_plan_id ? { taskPlanId: run.task_plan_id } : {}),
+        ...(run.task_plan_item_id ? { taskPlanItemId: run.task_plan_item_id } : {}),
         error
       });
       throw error;
