@@ -3,6 +3,9 @@ import test from "node:test";
 
 import { createTaskPlanRepository } from "./repositories/task-plans.js";
 import {
+  agentRuns,
+  escalationEvents,
+  objectives,
   taskPlanItems,
   taskPlans,
   workItems
@@ -16,6 +19,9 @@ const workspaceId = "91000000-0000-4000-8000-000000000003";
 const userId = "91000000-0000-4000-8000-000000000004";
 const firstItemId = "91000000-0000-4000-8000-000000000011";
 const secondItemId = "91000000-0000-4000-8000-000000000012";
+const objectiveId = "91000000-0000-4000-8000-000000000013";
+const firstRunId = "91000000-0000-4000-8000-000000000014";
+const escalationId = "91000000-0000-4000-8000-000000000015";
 
 test("R9.1 task plan repository writes draft plans and items in one transaction", async () => {
   const { db, queries } = createQueryRecorder();
@@ -447,4 +453,127 @@ test("R9.2 task plan repository marks dispatching plans done only within workspa
   assert.ok(queryParamValues(query?.where).includes(planId));
   assert.ok(queryParamValues(query?.where).includes(workspaceId));
   assert.ok(queryParamValues(query?.where).includes("dispatching"));
+});
+
+test("R9.6 task plan repository reads dashboard plans with capped batched joins", async () => {
+  const planRow = {
+    id: planId,
+    workItemId,
+    workspaceId,
+    status: "dispatching",
+    objectiveId,
+    budgetJson: { max_cost_cny: "3.000000" },
+    decompositionContextJson: { judge: { decision: "approve" } },
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now
+  };
+  const workItemRow = {
+    id: workItemId,
+    code: "DEMO-960",
+    title: "竞品资料梳理",
+    status: "ai_working"
+  };
+  const objectiveRow = {
+    id: objectiveId,
+    title: "季度上市策略",
+    progressPercent: 40
+  };
+  const itemRow = {
+    id: firstItemId,
+    planId,
+    parentItemId: null,
+    seq: 1,
+    title: "竞品调研",
+    role: "research",
+    objectiveMd: "查清背景。",
+    acceptanceMd: "列出来源。",
+    budgetSharePct: 50,
+    dependsOn: [],
+    status: "succeeded",
+    createdAt: now,
+    updatedAt: now
+  };
+  const runRow = {
+    id: firstRunId,
+    parentRunId: null,
+    workItemId,
+    taskPlanId: planId,
+    taskPlanItemId: firstItemId,
+    agentRole: "research",
+    title: "竞品调研",
+    status: "succeeded",
+    costEstimate: "1.250000",
+    outcomeReason: null,
+    createdAt: now,
+    updatedAt: now,
+    finishedAt: now
+  };
+  const escalationRow = {
+    id: escalationId,
+    workItemId,
+    planId,
+    runId: firstRunId,
+    reasonMd: "证据互相冲突。",
+    createdAt: now
+  };
+  const { db, queries } = createQueryRecorder([
+    [{ plan: planRow, workItem: workItemRow, objective: objectiveRow }],
+    [itemRow],
+    [runRow],
+    [escalationRow]
+  ]);
+  const repository = createTaskPlanRepository(db);
+
+  const result = await repository.listDashboardPlans({
+    workspaceId,
+    planLimit: 1,
+    itemLimit: 2,
+    runLimit: 3,
+    escalationLimit: 1
+  });
+
+  assert.equal(result.plans[0]?.plan.id, planId);
+  assert.equal(result.plansCapped, false);
+  assert.equal(result.itemsCapped, false);
+  assert.equal(result.runsCapped, false);
+  assert.equal(result.escalationsCapped, false);
+  assert.deepEqual(result.items.map((item) => item.id), [firstItemId]);
+  assert.deepEqual(result.runs.map((run) => run.id), [firstRunId]);
+  assert.deepEqual(result.escalations.map((escalation) => escalation.id), [escalationId]);
+  assert.equal(queries.length, 4);
+
+  const [planQuery, itemQuery, runQuery, escalationQuery] = queries;
+  assert.equal(planQuery?.fromTable, taskPlans);
+  assert.deepEqual(planQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", workItems],
+    ["left", objectives]
+  ]);
+  assert.equal(planQuery?.limit, 2);
+  assert.ok(queryReferences(planQuery?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(planQuery?.where, workItems.workspaceId));
+  assert.ok(queryReferences(planQuery?.where, workItems.deletedAt));
+  assert.ok(queryParamValues(planQuery?.where).includes(workspaceId));
+  assert.ok(queryParamValues(planQuery?.where).includes("dispatching"));
+
+  assert.equal(itemQuery?.fromTable, taskPlanItems);
+  assert.equal(itemQuery?.limit, 3);
+  assert.ok(queryReferences(itemQuery?.where, taskPlanItems.planId));
+  assert.ok(queryParamValues(itemQuery?.where).includes(planId));
+
+  assert.equal(runQuery?.fromTable, agentRuns);
+  assert.equal(runQuery?.limit, 4);
+  assert.ok(queryReferences(runQuery?.where, agentRuns.workspaceId));
+  assert.ok(queryReferences(runQuery?.where, agentRuns.taskPlanId));
+  assert.ok(queryParamValues(runQuery?.where).includes(workspaceId));
+
+  assert.equal(escalationQuery?.fromTable, escalationEvents);
+  assert.deepEqual(escalationQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", agentRuns],
+    ["inner", workItems]
+  ]);
+  assert.equal(escalationQuery?.limit, 2);
+  assert.ok(queryReferences(escalationQuery?.where, workItems.workspaceId));
+  assert.ok(queryReferences(escalationQuery?.where, escalationEvents.resolvedAt));
+  assert.ok(queryParamValues(escalationQuery?.where).includes(workspaceId));
 });

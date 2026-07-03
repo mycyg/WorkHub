@@ -2712,6 +2712,29 @@ const costDashboardPageResponseSchema = {
   },
   additionalProperties: false
 } as const;
+const agentArmyDashboardPageResponseSchema = {
+  type: "object",
+  required: ["generated_at", "kpis", "plans", "recent_escalations", "page_info"],
+  properties: {
+    generated_at: dateTimeStringSchema,
+    kpis: {
+      type: "object",
+      required: ["active_team_count", "waiting_decision_count", "today_cost_cny", "autonomy_rate_pct"],
+      properties: {
+        active_team_count: { type: "integer", minimum: 0 },
+        waiting_decision_count: { type: "integer", minimum: 0 },
+        today_cost_cny: { type: "string" },
+        autonomy_rate_pct: { type: "integer", minimum: 0, maximum: 100 }
+      },
+      additionalProperties: false
+    },
+    plans: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: true } },
+    recent_escalations: { type: "array", maxItems: 5, items: { type: "object", additionalProperties: true } },
+    page_info: { type: "object", additionalProperties: true },
+    empty_state: { type: "string", enum: ["no_agent_armies"] }
+  },
+  additionalProperties: false
+} as const;
 const teamSkillPageItemResponseSchema = {
   type: "object",
   required: ["skill_key", "name", "when_to_use", "version", "source_kind", "created_by_kind", "sample_count", "updated_at"],
@@ -4237,6 +4260,14 @@ export function getOpenApiDocument() {
           summary: "Project health page VM with permission-filtered signal bands per project",
           parameters: [localeQueryParameter],
           ...jsonAuthenticatedPageResponse(projectHealthPageResponseSchema)
+        }
+      },
+      "/api/pages/agents": {
+        get: {
+          tags: ["pages"],
+          summary: "Agent army dashboard page VM",
+          parameters: [localeQueryParameter],
+          ...jsonAuthenticatedPageResponse(agentArmyDashboardPageResponseSchema)
         }
       },
       "/api/pages/skills": {

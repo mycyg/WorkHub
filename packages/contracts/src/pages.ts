@@ -739,6 +739,80 @@ export const workItemAgentTeamVmSchema = z.object({
 });
 export type WorkItemAgentTeamVM = z.infer<typeof workItemAgentTeamVmSchema>;
 
+export const agentArmyDashboardPlanVmSchema = z.object({
+  plan_id: idSchema,
+  work_item_id: idSchema,
+  work_item_code: z.string().min(1),
+  work_item_title: z.string().min(1).max(256),
+  work_item_href: z.string().min(1),
+  objective_id: idSchema.optional(),
+  objective_title: z.string().min(1).max(256).optional(),
+  status: taskPlanStatusSchema,
+  progress: z.object({
+    completed: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    label: z.string().min(1).max(32)
+  }),
+  roles: z.array(z.object({
+    role: taskPlanItemRoleSchema,
+    count: z.number().int().nonnegative()
+  })),
+  statuses: z.array(z.object({
+    status: workItemAgentTeamItemStatusSchema,
+    count: z.number().int().nonnegative()
+  })),
+  cost: z.object({
+    used_cny: z.string(),
+    budget_cny: z.string().optional(),
+    burn_pct: z.number().int().nonnegative().optional()
+  }),
+  judge: z.object({
+    passed: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    pass_rate_pct: z.number().int().min(0).max(100)
+  }),
+  oldest_blocker: z.object({
+    kind: z.enum(["needs_human", "budget", "stalled"]),
+    label: z.string().min(1).max(128),
+    age_seconds: z.number().int().nonnegative(),
+    href: z.string().min(1).optional()
+  }).optional(),
+  updated_at: isoDateTimeSchema
+});
+export type AgentArmyDashboardPlanVM = z.infer<typeof agentArmyDashboardPlanVmSchema>;
+
+export const agentArmyDashboardVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  kpis: z.object({
+    active_team_count: z.number().int().nonnegative(),
+    waiting_decision_count: z.number().int().nonnegative(),
+    today_cost_cny: z.string(),
+    autonomy_rate_pct: z.number().int().min(0).max(100)
+  }),
+  plans: z.array(agentArmyDashboardPlanVmSchema).max(20),
+  recent_escalations: z.array(z.object({
+    id: idSchema,
+    plan_id: idSchema.optional(),
+    work_item_id: idSchema,
+    title: z.string().min(1).max(128),
+    reason_preview: z.string().min(1).max(200),
+    created_at: isoDateTimeSchema,
+    href: z.string().min(1)
+  })).max(5),
+  page_info: z.object({
+    plan_limit: z.number().int().positive(),
+    returned: z.number().int().nonnegative(),
+    plans_capped: z.boolean(),
+    items_capped: z.boolean(),
+    runs_capped: z.boolean(),
+    escalation_limit: z.number().int().positive(),
+    escalation_returned: z.number().int().nonnegative(),
+    escalations_capped: z.boolean()
+  }),
+  empty_state: z.enum(["no_agent_armies"]).optional()
+});
+export type AgentArmyDashboardVM = z.infer<typeof agentArmyDashboardVmSchema>;
+
 export const workItemDetailVmSchema = z.object({
   workitem: workItemSchema,
   // GH-2：所属项目名,供详情页头部「← 项目名」面包屑链接到 /projects/:id(工作项的 project_id 在 workitem 里)。

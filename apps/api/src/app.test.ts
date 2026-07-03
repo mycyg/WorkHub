@@ -343,6 +343,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["get", "/api/pages/calendar"],
     ["get", "/api/pages/health"],
     ["get", "/api/pages/cost"],
+    ["get", "/api/pages/agents"],
     ["get", "/api/pages/skills"],
     ["get", "/api/pages/settings"],
     ["get", "/api/drive/projects/{projectId}/items/{itemId}/download"],
@@ -1918,6 +1919,7 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
     "/api/pages/notifications",
     "/api/pages/health",
     "/api/pages/cost",
+    "/api/pages/agents",
     "/api/pages/skills",
     "/api/pages/settings"
   ] as const) {
@@ -1934,6 +1936,7 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
     // R9.5 cost dashboards must expose army task/objective aggregates; the old required-field list
     // only covered pre-army user/team/workitem buckets and would let the OpenAPI contract drift.
     ["/api/pages/cost", ["generated_at", "currency", "total_cost_cny", "token_in", "token_out", "trend", "by_user", "by_team", "by_workitem", "by_task_plan", "by_objective", "model_breakdown", "budget", "notices", "top_exhaustion_risks"]],
+    ["/api/pages/agents", ["generated_at", "kpis", "plans", "recent_escalations", "page_info"]],
     ["/api/pages/skills", ["generated_at", "skills", "totals"]],
     ["/api/pages/settings", ["generated_at", "locale", "runtime", "llm_runtime", "budgets", "language", "device"]]
   ] as const) {
@@ -1954,6 +1957,7 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
     "/api/pages/notifications",
     "/api/pages/health",
     "/api/pages/cost",
+    "/api/pages/agents",
     "/api/pages/skills",
     "/api/pages/settings"
   ] as const) {

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   allowedWorkItemTransitions,
+  agentArmyDashboardVmSchema,
   agentRunSchema,
   sessionFinalizeFromStatuses,
   agentRunBudgetDecisionVmSchema,
@@ -1547,6 +1548,63 @@ test("cost governance contracts expose clickable budget notices and scoped usage
   assert.doesNotThrow(() => budgetPolicyUpdateSchema.parse({ warning_ratio: 0.8, critical_ratio: 0.95 }));
   // 单字段更新仍放行（合并不变量由服务端守卫兜底）。
   assert.doesNotThrow(() => budgetPolicyUpdateSchema.parse({ warning_ratio: 0.99 }));
+});
+
+test("R9.6 agent army dashboard VM exposes observable plans without embedding decisions", () => {
+  const parsed = agentArmyDashboardVmSchema.parse({
+    generated_at: "2026-07-03T00:00:00.000Z",
+    kpis: {
+      active_team_count: 1,
+      waiting_decision_count: 2,
+      today_cost_cny: "1.25",
+      autonomy_rate_pct: 67
+    },
+    plans: [{
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      work_item_code: "DEMO-960",
+      work_item_title: "竞品资料梳理",
+      work_item_href: "/workitems/96000000-0000-4000-8000-000000000002",
+      objective_id: "96000000-0000-4000-8000-000000000003",
+      objective_title: "季度上市策略",
+      status: "dispatching",
+      progress: { completed: 2, total: 4, label: "2/4" },
+      roles: [{ role: "research", count: 2 }, { role: "produce", count: 1 }],
+      statuses: [{ status: "succeeded", count: 2 }, { status: "needs_human", count: 1 }],
+      cost: { used_cny: "1.25", budget_cny: "3", burn_pct: 42 },
+      judge: { passed: 1, total: 1, pass_rate_pct: 100 },
+      oldest_blocker: {
+        kind: "needs_human",
+        label: "卡在: 竞品复核 · 2h",
+        age_seconds: 7200,
+        href: "/attention"
+      },
+      updated_at: "2026-07-03T00:00:00.000Z"
+    }],
+    recent_escalations: [{
+      id: "96000000-0000-4000-8000-000000000004",
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      title: "竞品复核需要人判断",
+      reason_preview: "证据互相冲突。",
+      created_at: "2026-07-03T00:00:00.000Z",
+      href: "/attention"
+    }],
+    page_info: {
+      plan_limit: 20,
+      returned: 1,
+      plans_capped: false,
+      items_capped: false,
+      runs_capped: false,
+      escalation_limit: 5,
+      escalation_returned: 1,
+      escalations_capped: false
+    }
+  });
+
+  assert.equal(parsed.kpis.waiting_decision_count, 2);
+  assert.equal(parsed.plans[0]?.oldest_blocker?.href, "/attention");
+  assert.equal(parsed.plans[0]?.roles[0]?.role, "research");
 });
 
 test("approval contracts keep UI payloads human-readable and deny reasons explicit", () => {

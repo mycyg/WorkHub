@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import type {
   TaskPlanItemStatus,
@@ -9,6 +9,9 @@ import type {
 import type { WorkHubDb } from "../client.js";
 import type { AgentRunRow } from "./agent-runs.js";
 import {
+  agentRuns,
+  escalationEvents,
+  objectives,
   taskPlanItems,
   taskPlans,
   workItems
@@ -66,14 +69,64 @@ export type TaskPlanWithItems = {
   runsCapped?: boolean;
 };
 
+export type TaskPlanDashboardPlanRow = {
+  plan: TaskPlanRow;
+  workItem: {
+    id: string;
+    code: string;
+    title: string | null;
+    status: string;
+  };
+  objective: {
+    id: string | null;
+    title: string | null;
+    progressPercent: number | null;
+  } | null;
+};
+
+export type TaskPlanDashboardEscalationRow = {
+  id: string;
+  workItemId: string;
+  planId: string | null;
+  runId: string | null;
+  reasonMd: string;
+  createdAt: Date;
+};
+
+export type TaskPlanDashboardRead = {
+  plans: TaskPlanDashboardPlanRow[];
+  plansCapped: boolean;
+  items: TaskPlanItemRow[];
+  itemsCapped: boolean;
+  runs: TaskPlanRunRow[];
+  runsCapped: boolean;
+  escalations: TaskPlanDashboardEscalationRow[];
+  escalationsCapped: boolean;
+};
+
 const DEFAULT_ITEM_LIMIT = 50;
 const MAX_ITEM_LIMIT = 100;
+const DEFAULT_DASHBOARD_PLAN_LIMIT = 20;
+const MAX_DASHBOARD_PLAN_LIMIT = 50;
+const DEFAULT_DASHBOARD_ITEM_LIMIT = 50;
+const DEFAULT_DASHBOARD_RUN_LIMIT = 200;
+const MAX_DASHBOARD_RUN_LIMIT = 500;
+const DEFAULT_DASHBOARD_ESCALATION_LIMIT = 5;
+const MAX_DASHBOARD_ESCALATION_LIMIT = 20;
+const DASHBOARD_PLAN_STATUSES = ["proposed", "approved", "dispatching"] satisfies TaskPlanStatus[];
 
 function boundedItemLimit(input: number | undefined) {
   if (!Number.isFinite(input)) {
     return DEFAULT_ITEM_LIMIT;
   }
   return Math.min(Math.max(Math.floor(input ?? DEFAULT_ITEM_LIMIT), 0), MAX_ITEM_LIMIT);
+}
+
+function boundedLimit(input: number | undefined, fallback: number, max: number) {
+  if (!Number.isFinite(input)) {
+    return fallback;
+  }
+  return Math.min(Math.max(Math.floor(input ?? fallback), 0), max);
 }
 
 export function createTaskPlanRepository(db: WorkHubDb) {
@@ -146,6 +199,123 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         plan: row.plan,
         items: rows.slice(0, itemLimit),
         itemsCapped: rows.length > itemLimit
+      };
+    },
+
+    async listDashboardPlans(input: {
+      workspaceId: string;
+      planLimit?: number;
+      itemLimit?: number;
+      runLimit?: number;
+      escalationLimit?: number;
+    }): Promise<TaskPlanDashboardRead> {
+      const planLimit = boundedLimit(input.planLimit, DEFAULT_DASHBOARD_PLAN_LIMIT, MAX_DASHBOARD_PLAN_LIMIT);
+      const itemLimit = boundedLimit(input.itemLimit, DEFAULT_DASHBOARD_ITEM_LIMIT, MAX_ITEM_LIMIT);
+      const runLimit = boundedLimit(input.runLimit, DEFAULT_DASHBOARD_RUN_LIMIT, MAX_DASHBOARD_RUN_LIMIT);
+      const escalationLimit = boundedLimit(input.escalationLimit, DEFAULT_DASHBOARD_ESCALATION_LIMIT, MAX_DASHBOARD_ESCALATION_LIMIT);
+      const planRows = await db
+        .select({
+          plan: taskPlans,
+          workItem: {
+            id: workItems.id,
+            code: workItems.code,
+            title: workItems.title,
+            status: workItems.status
+          },
+          objective: {
+            id: objectives.id,
+            title: objectives.title,
+            progressPercent: objectives.progressPercent
+          }
+        })
+        .from(taskPlans)
+        .innerJoin(workItems, eq(workItems.id, taskPlans.workItemId))
+        .leftJoin(objectives, and(
+          eq(objectives.id, taskPlans.objectiveId),
+          eq(objectives.workspaceId, input.workspaceId)
+        ))
+        .where(and(
+          eq(taskPlans.workspaceId, input.workspaceId),
+          eq(workItems.workspaceId, input.workspaceId),
+          isNull(workItems.deletedAt),
+          inArray(taskPlans.status, DASHBOARD_PLAN_STATUSES)
+        ))
+        .orderBy(desc(taskPlans.updatedAt), desc(taskPlans.createdAt), desc(taskPlans.id))
+        .limit(planLimit + 1);
+      const plans = planRows.slice(0, planLimit) as TaskPlanDashboardPlanRow[];
+      const planIds = plans.map((row) => row.plan.id);
+      if (planIds.length === 0) {
+        return {
+          plans: [],
+          plansCapped: planRows.length > planLimit,
+          items: [],
+          itemsCapped: false,
+          runs: [],
+          runsCapped: false,
+          escalations: [],
+          escalationsCapped: false
+        };
+      }
+
+      const itemRows = await db
+        .select()
+        .from(taskPlanItems)
+        .where(inArray(taskPlanItems.planId, planIds))
+        .orderBy(asc(taskPlanItems.planId), asc(taskPlanItems.seq), asc(taskPlanItems.id))
+        .limit(itemLimit + 1);
+      const runRows = await db
+        .select({
+          id: agentRuns.id,
+          parentRunId: agentRuns.parentRunId,
+          workItemId: agentRuns.workItemId,
+          taskPlanId: agentRuns.taskPlanId,
+          taskPlanItemId: agentRuns.taskPlanItemId,
+          agentRole: agentRuns.agentRole,
+          title: agentRuns.title,
+          status: agentRuns.status,
+          costEstimate: agentRuns.costEstimate,
+          outcomeReason: agentRuns.outcomeReason,
+          createdAt: agentRuns.createdAt,
+          updatedAt: agentRuns.updatedAt,
+          finishedAt: agentRuns.finishedAt
+        })
+        .from(agentRuns)
+        .where(and(
+          eq(agentRuns.workspaceId, input.workspaceId),
+          inArray(agentRuns.taskPlanId, planIds)
+        ))
+        .orderBy(desc(agentRuns.updatedAt), desc(agentRuns.createdAt), desc(agentRuns.id))
+        .limit(runLimit + 1);
+      const escalationRows = await db
+        .select({
+          id: escalationEvents.id,
+          workItemId: escalationEvents.workItemId,
+          planId: agentRuns.taskPlanId,
+          runId: agentRuns.id,
+          reasonMd: escalationEvents.reasonMd,
+          createdAt: escalationEvents.createdAt
+        })
+        .from(escalationEvents)
+        .innerJoin(agentRuns, eq(escalationEvents.agentRunId, agentRuns.id))
+        .innerJoin(workItems, eq(escalationEvents.workItemId, workItems.id))
+        .where(and(
+          eq(workItems.workspaceId, input.workspaceId),
+          isNull(workItems.deletedAt),
+          isNull(escalationEvents.resolvedAt),
+          inArray(agentRuns.taskPlanId, planIds)
+        ))
+        .orderBy(desc(escalationEvents.createdAt), desc(escalationEvents.id))
+        .limit(escalationLimit + 1);
+
+      return {
+        plans,
+        plansCapped: planRows.length > planLimit,
+        items: itemRows.slice(0, itemLimit) as TaskPlanItemRow[],
+        itemsCapped: itemRows.length > itemLimit,
+        runs: runRows.slice(0, runLimit) as TaskPlanRunRow[],
+        runsCapped: runRows.length > runLimit,
+        escalations: escalationRows.slice(0, escalationLimit) as TaskPlanDashboardEscalationRow[],
+        escalationsCapped: escalationRows.length > escalationLimit
       };
     },
 

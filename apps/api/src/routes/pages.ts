@@ -5,6 +5,7 @@ import { settings } from "@workhub/config";
 import { decideRunBudget, type BudgetPolicyStore, type CostLedgerStore } from "@workhub/cost";
 import {
   normalizeWorkHubLocale,
+  type AgentArmyDashboardVM,
   type ApprovalCenterVM,
   type AttentionHomeVM,
   type CalendarPageVM,
@@ -23,11 +24,12 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
-import { createTeamSkillRepository, getSharedDatabaseClient, type TeamSkillRepository } from "@workhub/db";
+import { createTaskPlanRepository, createTeamSkillRepository, getSharedDatabaseClient, type TeamSkillRepository } from "@workhub/db";
 
 import { isUuidParam } from "./uuid-param.js";
 
 import { buildAttentionHomePage } from "../pages/attention.js";
+import { buildAgentArmyDashboardPage } from "../pages/agent-army.js";
 import { getDefaultAiWorklogMetricsService, type AiWorklogMetricsService } from "../services/ai-worklog-metrics.js";
 import { buildCostDashboardPage } from "../pages/cost.js";
 import { buildTeamSkillsPage } from "../pages/team-skills.js";
@@ -98,6 +100,13 @@ export type PageRoutesDependencies = {
   projectHealthPages?: ProjectHealthPageService;
   aiWorklog?: AiWorklogMetricsService;
   teamSkills?: Pick<TeamSkillRepository, "listActive">;
+  agentArmyDashboard?: {
+    page: (input: {
+      actor: AuthEnv["Variables"]["actor"];
+      currentUser: AuthEnv["Variables"]["currentUser"];
+      locale: WorkHubLocale;
+    }) => Promise<AgentArmyDashboardVM>;
+  };
   allowUnauthenticatedGoldPath?: boolean;
 };
 
@@ -239,6 +248,102 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const projectHealthPages = deps.projectHealthPages ?? createProjectHealthPageService();
   const aiWorklog = deps.aiWorklog ?? getDefaultAiWorklogMetricsService();
   const teamSkills = deps.teamSkills ?? createTeamSkillRepository(getSharedDatabaseClient().db);
+  const taskPlans = createTaskPlanRepository(getSharedDatabaseClient().db);
+
+  async function attentionDecisionCount(input: {
+    actor: AuthEnv["Variables"]["actor"];
+    currentUser: AuthEnv["Variables"]["currentUser"];
+    locale: WorkHubLocale;
+  }) {
+    let count = 0;
+    try {
+      count += (await escalations.listAttentionItems({ actor: input.actor, locale: input.locale })).length;
+    } catch {
+      count += 0;
+    }
+    try {
+      const pending = await approvals.listPendingForUser(input.currentUser, {
+        locale: input.locale,
+        canReadWorkItem: (workItemId) => canReadWorkItem(workItems, workItemId, input.actor)
+      });
+      count += (await visibleApprovalCenter(pending, workItems, input.actor, true)).items.length;
+    } catch {
+      count += 0;
+    }
+    try {
+      count += (await proposals.listReviewableForUser({
+        user: {
+          id: input.currentUser.id,
+          isAdmin: input.currentUser.isAdmin,
+          workspaceId: input.actor.workspaceId
+        }
+      })).length;
+    } catch {
+      count += 0;
+    }
+    return count;
+  }
+
+  async function ledgerEntriesForActor(input: {
+    actor: AuthEnv["Variables"]["actor"];
+    currentUser: AuthEnv["Variables"]["currentUser"];
+  }) {
+    const teamId = input.actor.workspaceId;
+    const sinceBucket = costDashboardSinceBucket(new Date());
+    if (input.currentUser.isAdmin) {
+      return ledgerStore.listEntriesForWorkspace
+        ? ledgerStore.listEntriesForWorkspace(teamId, { sinceBucket })
+        : ledgerStore.listEntriesForScopes
+          ? ledgerStore.listEntriesForScopes({ teamId }, { sinceBucket })
+          : ledgerStore.listEntries
+            ? ledgerStore.listEntries({ sinceBucket })
+            : ledgerStore.entries;
+    }
+    return ledgerStore.listEntriesForScopes
+      ? ledgerStore.listEntriesForScopes({ userId: input.currentUser.id, teamId }, { sinceBucket })
+      : [];
+  }
+
+  const agentArmyDashboard = deps.agentArmyDashboard ?? {
+    async page(input: {
+      actor: AuthEnv["Variables"]["actor"];
+      currentUser: AuthEnv["Variables"]["currentUser"];
+      locale: WorkHubLocale;
+    }) {
+      const rows = await taskPlans.listDashboardPlans({ workspaceId: input.actor.workspaceId });
+      const visibleWorkItems = await workItems.canReadWorkItems({
+        workItemIds: rows.plans.map((row) => row.workItem.id),
+        actor: input.actor
+      });
+      const visiblePlans = rows.plans.filter((row) => visibleWorkItems.has(row.workItem.id));
+      const visiblePlanIds = new Set(visiblePlans.map((row) => row.plan.id));
+      const visibleWorkItemIds = new Set(visiblePlans.map((row) => row.workItem.id));
+      let worklog: Awaited<ReturnType<AiWorklogMetricsService["getTodayMetrics"]>> | undefined;
+      try {
+        worklog = await aiWorklog.getTodayMetrics({ workspaceId: input.actor.workspaceId });
+      } catch {
+        worklog = undefined;
+      }
+      return buildAgentArmyDashboardPage({
+        locale: input.locale,
+        attentionCount: await attentionDecisionCount(input),
+        autonomyRatePct: worklog?.autonomy_rate ?? 0,
+        plans: visiblePlans,
+        items: rows.items.filter((item) => visiblePlanIds.has(item.planId)),
+        runs: rows.runs.filter((run) => run.taskPlanId ? visiblePlanIds.has(run.taskPlanId) : false),
+        escalations: rows.escalations.filter((escalation) => visibleWorkItemIds.has(escalation.workItemId)),
+        ledgerEntries: await ledgerEntriesForActor(input),
+        pageInfo: {
+          planLimit: 20,
+          plansCapped: rows.plansCapped,
+          itemsCapped: rows.itemsCapped,
+          runsCapped: rows.runsCapped,
+          escalationLimit: 5,
+          escalationsCapped: rows.escalationsCapped
+        }
+      });
+    }
+  };
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
@@ -549,6 +654,16 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       budgetUsages: decision.usages,
       budgetNotices: decision.notice ? [decision.notice] : [],
       ledgerEntries
+    });
+    return c.json(pageEnvelope(data, locale));
+  });
+
+  routes.get("/agents", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    const data = await agentArmyDashboard.page({
+      actor: c.var.actor,
+      currentUser: c.var.currentUser,
+      locale
     });
     return c.json(pageEnvelope(data, locale));
   });
