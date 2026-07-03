@@ -179,7 +179,69 @@ function escalationActions(id: string, locale: WorkHubLocale): AttentionItem["ac
   ];
 }
 
+function budgetNoticeFromHandoff(row: EscalationServiceRow) {
+  const notice = row.handoffJson["notice"];
+  return notice && typeof notice === "object" ? notice as {
+    message?: string;
+    recommended_action?: string;
+    action_href?: string;
+    options?: Array<{ id?: string; label?: string; action_href?: string }>;
+  } : undefined;
+}
+
+function budgetActions(row: EscalationServiceRow, locale: WorkHubLocale): AttentionItem["actions"] {
+  const notice = budgetNoticeFromHandoff(row);
+  const options = Array.isArray(notice?.options) ? notice.options : [];
+  const actions = options
+    .filter((option): option is { id: string; label: string; action_href: string } =>
+      Boolean(option.id && option.label && option.action_href)
+    )
+    .map((option, index) => ({
+      id: option.id,
+      label: option.label,
+      style: option.id === notice?.recommended_action || index === 0 ? "primary" as const : "secondary" as const,
+      method: "GET" as const,
+      href: option.action_href
+    }));
+  if (actions.length > 0) {
+    return actions;
+  }
+  return [{
+    id: "open_cost",
+    label: locale === "en-US" ? "Open budget" : "查看预算",
+    style: "primary",
+    method: "GET",
+    href: notice?.action_href ?? "/dashboard/cost"
+  }];
+}
+
+function buildBudgetAttentionItem(row: EscalationServiceRow, locale: WorkHubLocale): AttentionItem {
+  const zh = locale === "zh-CN";
+  const notice = budgetNoticeFromHandoff(row);
+  const reason = compactText(notice?.message ?? row.reasonMd);
+  return {
+    id: row.id,
+    kind: "budget",
+    priority: "high",
+    work_item_id: row.workItemId,
+    project_id: row.projectId,
+    source_ref: {
+      entity_type: "budget_notice",
+      entity_id: row.id
+    },
+    title: zh ? `《${row.title}》预算需要处理` : `"${row.title}" needs a budget decision`,
+    summary_text: reason,
+    reason_text: reason,
+    actions: budgetActions(row, locale),
+    cuu_state: "asking_approval",
+    created_at: row.createdAt.toISOString()
+  };
+}
+
 export function buildEscalationAttentionItem(row: EscalationServiceRow, locale: WorkHubLocale): AttentionItem {
+  if (row.trigger === "budget_exhausted" || row.handoffJson["attention_kind"] === "budget") {
+    return buildBudgetAttentionItem(row, locale);
+  }
   const zh = locale === "zh-CN";
   const title = zh ? `《${row.title}》卡住了` : `"${row.title}" needs a decision`;
   const reason = compactText(row.reasonMd);

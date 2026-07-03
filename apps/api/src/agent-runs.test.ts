@@ -1431,6 +1431,59 @@ test("agent run enqueue returns budget_exhausted before queueing new work", asyn
   assert.equal((await queue.listActive()).length, 0);
 });
 
+test("R9.7 budget exhaustion persists a durable budget decision before rejecting enqueue", async () => {
+  const runtimeSettings = settings();
+  const durableEvents: Parameters<AiDecisionRepository["createEscalationEvent"]>[0][] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000027",
+    usage: () => [
+      {
+        policyId: "pcost-user-day-v0",
+        scope: { kind: "user", userId },
+        tokenIn: 500000,
+        tokenOut: 1,
+        estimatedCostCny: "20"
+      }
+    ],
+    eventBus: false,
+    decisions: {
+      async createEscalationEvent(input) {
+        durableEvents.push(input);
+        return {
+          id: "73000000-0000-4000-8000-000000000027",
+          workItemId: input.workItemId,
+          agentRunId: null,
+          confidenceId: null,
+          trigger: input.trigger,
+          reasonMd: input.reasonMd,
+          handoffJson: input.handoffJson ?? {},
+          suggestedLeadUserId: null,
+          createdAt: now,
+          resolvedAt: null
+        } as EscalationEventRow;
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => queue.enqueue({ workItemId, actorId: userId, title: "Budget blocked run" }),
+    (error: unknown) => error instanceof AgentRunnerError && error.status === 402 && error.code === "budget_exhausted"
+  );
+
+  assert.equal((await queue.listActive()).length, 0);
+  assert.equal(durableEvents.length, 1);
+  const [event] = durableEvents;
+  assert.equal(event?.workItemId, workItemId);
+  assert.equal(event?.trigger, "budget_exhausted");
+  assert.equal(event?.reasonMd, "AI 预算已经用完，先暂停新的自动执行。");
+  assert.equal(event?.handoffJson?.["attention_kind"], "budget");
+  assert.equal((event?.handoffJson?.["notice"] as { code?: string } | undefined)?.code, "budget_exhausted");
+  assert.equal((event?.handoffJson?.["notice"] as { recommended_action?: string } | undefined)?.recommended_action, "ask_admin");
+  assert.equal(event?.handoffJson?.["actor_id"], userId);
+});
+
 test("agent run enqueue reserves budget, denies an over-cap concurrent start, and compensates the queued run", async () => {
   const runtimeSettings = settings();
   // 默认拒绝（模拟并发在飞已占满该 scope 的预留）；之后切允许验证补偿释放了 work-item 槽。

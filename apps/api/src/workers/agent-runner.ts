@@ -1727,8 +1727,42 @@ export function createInMemoryAgentRunQueue(options: {
     }
   }
 
+  async function persistBudgetDecision(input: EnqueueAgentRunInput, decision: BudgetDecisionTrace) {
+    if (!decisions || decision.notice?.code !== "budget_exhausted") {
+      return;
+    }
+    const notice = toQueueBudgetNotice(decision.notice);
+    try {
+      await decisions.createEscalationEvent({
+        workItemId: input.workItemId,
+        trigger: "budget_exhausted",
+        reasonMd: notice.message,
+        handoffJson: {
+          attention_kind: "budget",
+          notice,
+          budget_decision: toQueueBudgetDecision(decision),
+          actor_id: input.actorId,
+          ...(input.orgId ? { org_id: input.orgId } : {}),
+          ...(input.workspaceId ? { workspace_id: input.workspaceId } : {}),
+          ...(input.taskPlanId ? { task_plan_id: input.taskPlanId } : {}),
+          ...(input.taskPlanItemId ? { task_plan_item_id: input.taskPlanItemId } : {}),
+          ...(input.objectiveId ? { objective_id: input.objectiveId } : {})
+        }
+      });
+    } catch (error) {
+      getDefaultStructuredLogger().warn("agent_run_budget_decision_persist_failed", {
+        workItemId: input.workItemId,
+        error
+      });
+    }
+  }
+
   async function emitBudgetNotice(input: EnqueueAgentRunInput, decision: BudgetDecisionTrace) {
-    if (!eventBus || !decision.notice) {
+    if (!decision.notice) {
+      return;
+    }
+    await persistBudgetDecision(input, decision);
+    if (!eventBus) {
       return;
     }
     const eventType = decision.notice.code === "budget_exhausted" ? eventTypes.budgetExhausted : eventTypes.budgetWarning;
