@@ -2326,11 +2326,13 @@ test("agent-runner finalize records task-plan child preferences through the L1 m
   assert.equal(recorded[0]?.reviewGrade, 5);
 });
 
-test("agent run settled hook fires for terminal task-plan runs and stays fail-open", async () => {
+test("agent run settled hook fires for terminal task-plan runs and requires task-plan settlement", async () => {
   const runtimeSettings = settings();
   const successWorkdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-settled-ok-"));
   const failureWorkdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-settled-fail-"));
   const settledStatuses: string[] = [];
+  const settledTaskPlanIds: Array<string | undefined> = [];
+  const settledTaskPlanItemIds: Array<string | undefined> = [];
   const successQueue = createInMemoryAgentRunQueue({
     settings: runtimeSettings,
     now: () => now,
@@ -2351,6 +2353,8 @@ test("agent run settled hook fires for terminal task-plan runs and stays fail-op
     }),
     runSettled: async (run) => {
       settledStatuses.push(run.status);
+      settledTaskPlanIds.push(run.task_plan_id);
+      settledTaskPlanItemIds.push(run.task_plan_item_id);
       throw new Error("settled hook backend unavailable");
     },
     confidence: false,
@@ -2367,12 +2371,26 @@ test("agent run settled hook fires for terminal task-plan runs and stays fail-op
     taskPlanItemId: "81000000-0000-4000-8000-000000000022",
     agentRole: "produce"
   });
+  assert.equal(successRun.task_plan_id, "81000000-0000-4000-8000-000000000021");
+  assert.equal(successRun.task_plan_item_id, "81000000-0000-4000-8000-000000000022");
 
-  const success = await successQueue.runNext();
-
-  assert.equal(success?.run_id, successRun.run_id);
-  assert.equal(success?.status, "succeeded");
+  // Old assertion expected fail-open success here. That was wrong for task-plan child runs:
+  // the settled hook is the only state-machine write that marks the plan item terminal and unlocks attention/downstream work.
+  let settledError: unknown;
+  try {
+    await successQueue.runNext();
+  } catch (error) {
+    settledError = error;
+  }
+  assert.ok(
+    settledError instanceof AgentRunnerError
+      && settledError.code === "agent_run_settled_hook_failed"
+      && settledError.details?.run_id === successRun.run_id,
+    `expected task-plan settlement failure, got ${JSON.stringify({ error: settledError, settledTaskPlanIds, settledTaskPlanItemIds })}`
+  );
   assert.deepEqual(settledStatuses, ["succeeded"]);
+  assert.deepEqual(settledTaskPlanIds, ["81000000-0000-4000-8000-000000000021"]);
+  assert.deepEqual(settledTaskPlanItemIds, ["81000000-0000-4000-8000-000000000022"]);
 
   const failureQueue = createInMemoryAgentRunQueue({
     settings: runtimeSettings,

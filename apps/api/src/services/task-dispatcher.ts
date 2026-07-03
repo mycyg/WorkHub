@@ -84,6 +84,7 @@ export type TaskDispatchEscalationSink = (input: {
   items: TaskPlanItemRow[];
   skippedItemIds: string[];
   failedItemIds?: string[];
+  failedRunId?: string;
   reason: EscalationReason;
   at: Date;
 }) => Promise<void> | void;
@@ -181,12 +182,6 @@ function allTerminal(items: TaskPlanItemRow[]) {
   return items.length > 0 && items.every((item) => TERMINAL_ITEM_STATUSES.has(item.status));
 }
 
-function terminalPartialFailure(items: TaskPlanItemRow[]) {
-  const failed = items.filter((item) => item.status === "failed");
-  const skipped = items.filter((item) => item.status === "skipped");
-  return failed.length > 0 && skipped.length === 0 ? failed : [];
-}
-
 function taskObjective(item: TaskPlanItemRow) {
   return [
     "Objective:",
@@ -256,6 +251,25 @@ async function bestEffortEscalate(
   }
 }
 
+async function requireEscalation(
+  sink: TaskDispatchEscalationSink | undefined,
+  input: Parameters<TaskDispatchEscalationSink>[0]
+) {
+  if (!sink) {
+    throw new TaskDispatcherError(500, "task_dispatch_escalation_sink_missing", "任务计划需要人工关注，但决策收件箱写入器未配置。");
+  }
+  try {
+    await sink(input);
+  } catch (error) {
+    getDefaultStructuredLogger().warn("task_dispatch_escalation_failed", {
+      planId: input.plan.id,
+      reason: input.reason,
+      error
+    });
+    throw error;
+  }
+}
+
 async function bestEffortComplete(
   sink: TaskDispatchCompletionSink | undefined,
   input: Parameters<TaskDispatchCompletionSink>[0]
@@ -310,17 +324,6 @@ export function createTaskDispatcher(options: {
     });
     if (!done) {
       return false;
-    }
-    const failedItems = terminalPartialFailure(items);
-    if (failedItems.length > 0) {
-      await bestEffortEscalate(escalationSink, {
-        plan: done,
-        items,
-        skippedItemIds: [],
-        failedItemIds: failedItems.map((item) => item.id),
-        reason: "partial_failure",
-        at
-      });
     }
     await bestEffortComplete(completionSink, {
       plan: done,
@@ -453,6 +456,23 @@ export function createTaskDispatcher(options: {
     if (!settled) {
       return null;
     }
+    if (settledStatus === "failed") {
+      const loaded = await loadPlan({
+        planId: run.task_plan_id,
+        workspaceId: run.workspace_id
+      });
+      if (blockedByFailedDependency(loaded.items).length === 0) {
+        await requireEscalation(escalationSink, {
+          plan: loaded.plan,
+          items: loaded.items,
+          skippedItemIds: [],
+          failedItemIds: [run.task_plan_item_id],
+          failedRunId: run.run_id,
+          reason: "partial_failure",
+          at
+        });
+      }
+    }
     const dispatchResult = await dispatch({
       planId: run.task_plan_id,
       workspaceId: run.workspace_id,
@@ -483,10 +503,11 @@ export function createDbTaskDispatchEscalationSink(
     const reasonMd = input.reason === "cycle"
       ? "任务计划依赖图存在循环，已跳过未派发的子任务，请人工调整计划后重试。"
       : input.reason === "partial_failure"
-        ? "任务计划已有子任务失败，但其他子任务已结束。请在决策收件箱选择重试、转人工或改计划。"
+        ? "任务计划已有子任务失败，请在决策收件箱选择重试、转人工或改计划。"
         : "任务计划的上游子任务失败或被跳过，依赖它的子任务已跳过，请人工决定是否重试或改计划。";
     await decisions.createEscalationEvent({
       workItemId: input.plan.workItemId,
+      ...(input.failedRunId ? { agentRunId: input.failedRunId } : {}),
       trigger: input.reason === "cycle" ? "doom_loop" : "unqualified",
       reasonMd,
       handoffJson: {
@@ -494,6 +515,7 @@ export function createDbTaskDispatchEscalationSink(
         reason: input.reason,
         task_plan_id: input.plan.id,
         ...(input.failedItemIds ? { failed_item_ids: input.failedItemIds } : {}),
+        ...(input.failedRunId ? { failed_run_id: input.failedRunId } : {}),
         skipped_item_ids: input.skippedItemIds
       }
     });

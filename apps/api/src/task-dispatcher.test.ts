@@ -335,6 +335,82 @@ test("R9.7 dispatcher surfaces partial child-run failure in attention before com
   }]);
 });
 
+test("R9.7 dispatcher surfaces partial child-run failure immediately while sibling children continue", async () => {
+  const escalations: { reason: string; skippedItemIds: string[]; failedItemIds?: string[]; failedRunId?: string }[] = [];
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "dispatched" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "dispatched" }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", status: "dispatched" })
+  ]);
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    escalationSink: async (input) => {
+      escalations.push({
+        reason: input.reason,
+        skippedItemIds: input.skippedItemIds,
+        ...(input.failedItemIds ? { failedItemIds: input.failedItemIds } : {}),
+        ...(input.failedRunId ? { failedRunId: input.failedRunId } : {})
+      });
+    }
+  });
+
+  const failedRun = run({
+    status: "failed",
+    taskPlanItemId: researchItemId,
+    workspaceId
+  });
+  const result = await dispatcher.handleRunSettled(failedRun);
+
+  assert.equal(result?.settledItemId, researchItemId);
+  assert.equal(result?.dispatch.completed, false);
+  assert.equal(repository.row.status, "dispatching");
+  assert.equal(repository.doneCalls, 0);
+  assert.equal(repository.items.find((candidate) => candidate.id === researchItemId)?.status, "failed");
+  assert.equal(repository.items.find((candidate) => candidate.id === produceItemId)?.status, "dispatched");
+  assert.equal(repository.items.find((candidate) => candidate.id === reviewItemId)?.status, "dispatched");
+  assert.deepEqual(queue.inputs, []);
+  assert.deepEqual(escalations, [{
+    reason: "partial_failure",
+    skippedItemIds: [],
+    failedItemIds: [researchItemId],
+    failedRunId: failedRun.run_id
+  }]);
+});
+
+test("R9.7 dispatcher does not complete a partial-failed plan when attention persistence fails", async () => {
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "dispatched" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "succeeded" }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", status: "succeeded" })
+  ]);
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    escalationSink: async () => {
+      throw new Error("attention write failed");
+    }
+  });
+
+  await assert.rejects(
+    dispatcher.handleRunSettled(run({
+      status: "failed",
+      taskPlanItemId: researchItemId,
+      workspaceId
+    })),
+    /attention write failed/u
+  );
+
+  assert.equal(repository.row.status, "dispatching");
+  assert.equal(repository.doneCalls, 0);
+  assert.equal(repository.items.find((candidate) => candidate.id === researchItemId)?.status, "failed");
+  assert.deepEqual(queue.inputs, []);
+});
+
 test("R9.2 dispatcher skips cyclic plans and escalates without enqueueing children", async () => {
   const escalations: string[] = [];
   const repository = new MemoryTaskDispatcherRepository(plan(), [

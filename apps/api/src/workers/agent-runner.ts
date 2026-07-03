@@ -829,6 +829,10 @@ export function createInMemoryAgentRunQueue(options: {
     return true;
   }
 
+  function isSettledHookError(error: unknown) {
+    return error instanceof AgentRunnerError && error.code === "agent_run_settled_hook_failed";
+  }
+
   async function notifyRunSettled(run: AgentRunQueueRecord) {
     if (!runSettled) {
       return;
@@ -837,6 +841,11 @@ export function createInMemoryAgentRunQueue(options: {
       await runSettled(run);
     } catch (error) {
       getDefaultStructuredLogger().warn("agent_run_settled_hook_failed", { runId: run.run_id, error });
+      throw new AgentRunnerError(503, "agent_run_settled_hook_failed", "AI 运行已结束，但后续状态更新失败，请重试结算。", {
+        run_id: run.run_id,
+        ...(run.task_plan_id ? { task_plan_id: run.task_plan_id } : {}),
+        ...(run.task_plan_item_id ? { task_plan_item_id: run.task_plan_item_id } : {})
+      });
     }
   }
 
@@ -1496,7 +1505,8 @@ export function createInMemoryAgentRunQueue(options: {
       return current;
     } catch (error) {
       const failureReason = error instanceof Error ? error.message : String(error);
-      const drifted = driftedRun(current.run_id);
+      const settlementFailed = isSettledHookError(error);
+      const drifted = settlementFailed ? null : driftedRun(current.run_id);
       if (drifted) {
         workerDrifted = true;
         return drifted;
@@ -1565,7 +1575,12 @@ export function createInMemoryAgentRunQueue(options: {
         steps: []
       });
       await notifyRunMilestone(current, current.trace.at(-1)?.output_excerpt ?? "AI 执行中断,需要人工查看。");
-      await notifyRunSettled(current);
+      if (!settlementFailed) {
+        await notifyRunSettled(current);
+      }
+      if (settlementFailed) {
+        throw error;
+      }
       return current;
     } finally {
       runAbortControllers.delete(current.run_id);
