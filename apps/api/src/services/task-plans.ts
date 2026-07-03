@@ -231,6 +231,7 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
         id: planId,
         workItemId: workItem.id,
         workspaceId,
+        ...(objectiveContext.objectiveId ? { objectiveId: objectiveContext.objectiveId } : {}),
         budgetJson,
         decompositionContextJson: draft.decompositionContext,
         createdByUserId,

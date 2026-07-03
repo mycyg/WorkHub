@@ -42,6 +42,7 @@ const reviewId = "95000000-0000-4000-8000-000000000508";
 const mergeSnapshotId = "95000000-0000-4000-8000-000000000509";
 const foreignWorkItemId = "95000000-0000-4000-8000-000000000510";
 const foreignPlanId = "95000000-0000-4000-8000-000000000511";
+const objectiveId = "95000000-0000-4000-8000-000000000512";
 
 function user(): UserAuthRow {
   return {
@@ -289,7 +290,7 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
     objectives: {
       async planningContextForWorkItem(input) {
         plannerInputs.push({ objectiveLookup: input });
-        return { lines: ["Objective: Raise R9 review quality (40%)"], capped: false };
+        return { lines: ["Objective: Raise R9 review quality (40%)"], capped: false, objectiveId };
       }
     },
     planner: {
@@ -365,6 +366,7 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   assert.equal(createdBody.data.proposal.diff_manifest.changes[0]?.target_ref.entity_type, "task_plan");
   assert.equal(createdBody.data.proposal.diff_manifest.changes[0]?.target_ref.entity_id, planId);
   assert.equal(taskPlans.rows.get(planId)?.status, "draft");
+  assert.equal(taskPlans.rows.get(planId)?.input.objectiveId, objectiveId);
   assert.equal(taskPlans.rows.get(planId)?.input.items.length, 3);
   assert.equal(workItems.mutations.includes(workItemId), true);
   assert.equal(plannerInputs.length, 2);

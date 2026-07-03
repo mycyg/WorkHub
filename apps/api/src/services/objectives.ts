@@ -17,6 +17,7 @@ export type ObjectiveRepository = Pick<
 export type ObjectivePlanningContextForPlanner = {
   lines: string[];
   capped: boolean;
+  objectiveId?: string;
 };
 
 export type ObjectiveRefreshResult = {
@@ -74,9 +75,11 @@ export function buildObjectivePlanningLines(input: ObjectivePlanningContextResul
   if (input.objectivesCapped || input.keyResultsCapped) {
     lines.push("Objective context capped; more OKR rows exist outside this planning prompt.");
   }
+  const firstObjectiveId = input.objectives[0]?.objective.id;
   return {
     lines,
-    capped: input.objectivesCapped || input.keyResultsCapped
+    capped: input.objectivesCapped || input.keyResultsCapped,
+    ...(firstObjectiveId ? { objectiveId: firstObjectiveId } : {})
   };
 }
 

@@ -55,6 +55,7 @@ test("R9.5 objective planning lines are concise and honest about capped context"
   });
 
   assert.equal(lines.capped, true);
+  assert.equal(lines.objectiveId, objectiveId);
   assert.equal(lines.lines.length, 3);
   assert.match(lines.lines[0] ?? "", /Objective: Raise R9 review quality/);
   assert.match(lines.lines[0] ?? "", /40%/);
