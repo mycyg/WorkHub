@@ -81,8 +81,22 @@ const highRiskToolTokens: Record<HumanReservedToolRiskCategory, readonly string[
 
 const identityRegistrationActionTokens = ["create", "register", "registration", "signup", "open"] as const;
 const identityRegistrationSubjectTokens = ["account", "accounts", "entity", "entities", "company", "companies"] as const;
-const externalPublishActionTokens = ["post", "posting", "share", "send"] as const;
-const externalPublishChannelTokens = ["external", "public", "social", "media", "website", "blog", "twitter", "linkedin", "wechat"] as const;
+const externalPublishActionTokens = ["post", "posting", "share", "send", "release"] as const;
+const externalPublishChannelTokens = [
+  "external",
+  "public",
+  "social",
+  "media",
+  "website",
+  "blog",
+  "twitter",
+  "linkedin",
+  "wechat",
+  "press",
+  "newsletter",
+  "announcement",
+  "announcements"
+] as const;
 
 function toolIdTokens(toolId: string) {
   return toolId

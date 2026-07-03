@@ -3169,7 +3169,10 @@ test("R9.7 high-risk legal, finance, identity, and publishing tool calls are sto
     { toolId: "createAccount", category: "identity" },
     { toolId: "registerEntity", category: "identity" },
     { toolId: "publishExternalPost", category: "publish" },
-    { toolId: "socialMediaPost", category: "publish" }
+    { toolId: "socialMediaPost", category: "publish" },
+    { toolId: "sendPressRelease", category: "publish" },
+    { toolId: "sendNewsletter", category: "publish" },
+    { toolId: "postCompanyAnnouncement", category: "publish" }
   ] as const;
 
   for (const [index, testCase] of cases.entries()) {
