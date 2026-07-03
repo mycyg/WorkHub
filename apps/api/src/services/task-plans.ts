@@ -116,10 +116,10 @@ function taskPlanManifest(input: {
     version: 0,
     work_item_id: input.workItemId,
     title: "计划提议",
-    summary_md: "请先确认这份任务拆解计划，通过后 WorkHub 才会进入派发。",
+    summary_md: "请先确认这份任务拆解计划，通过后 WorkHub 才会开始执行。",
     author: {
       actor_kind: "ai",
-      label: "WorkHub Meta-Planner"
+      label: "WorkHub AI"
     },
     base: {
       created_at: input.createdAt.toISOString()
@@ -147,10 +147,10 @@ function taskPlanManifest(input: {
         detail: "每个子任务都有验收标准，依赖无环，预算份额合计 100。"
       },
       {
-        id: "judge",
-        label: "LLM judge 快评",
+        id: "review",
+        label: "快速复核",
         status: "passed",
-        detail: "计划已通过快速复核，仍需人审后才能派发。"
+        detail: "计划已通过快速复核，仍需人审后才能开始执行。"
       }
     ],
     evidence_refs: [],
@@ -161,7 +161,7 @@ function taskPlanManifest(input: {
     },
     rollback: {
       available: false,
-      description: "计划未派发前可重新生成；通过后可在后续派发阶段取消。"
+      description: "计划开始执行前可重新生成；通过后可在后续执行阶段取消。"
     },
     review: {
       suggested_decision: "needs_human",
@@ -252,7 +252,7 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
           manifest,
           actor: {
             actor_kind: "ai",
-            label: "WorkHub Meta-Planner"
+            label: "WorkHub AI"
           },
           title: "计划提议"
         });

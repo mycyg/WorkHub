@@ -366,6 +366,9 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
       proposal: {
         title: string;
         diff_manifest: {
+          summary_md?: string;
+          checks?: { detail?: string }[];
+          rollback?: { description?: string };
           changes: { target_ref: { entity_type: string; entity_id?: string } }[];
         };
       };
@@ -374,6 +377,7 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   assert.equal(createdBody.data.plan_id, planId);
   assert.equal(createdBody.data.proposal_id, proposalId);
   assert.equal(createdBody.data.proposal.title, "计划提议");
+  assert.doesNotMatch(JSON.stringify(createdBody.data.proposal.diff_manifest), /dispatch|派发|meta-planner|judge|判官/iu);
   assert.equal(createdBody.data.proposal.diff_manifest.changes[0]?.target_ref.entity_type, "task_plan");
   assert.equal(createdBody.data.proposal.diff_manifest.changes[0]?.target_ref.entity_id, planId);
   assert.equal(taskPlans.rows.get(planId)?.status, "draft");
