@@ -34,10 +34,12 @@ function row(partial: Partial<EscalationServiceRow> = {}): EscalationServiceRow 
   return {
     id: escalationId,
     workItemId,
+    agentRunId: null,
     projectId,
     title: "竞品价格调研",
     reasonMd: "AI 对数据来源不确定。",
     trigger: "unqualified",
+    handoffJson: {},
     suggestedLeadUserId: null,
     createdAt: now,
     resolvedAt: null,
@@ -48,7 +50,8 @@ function row(partial: Partial<EscalationServiceRow> = {}): EscalationServiceRow 
 }
 
 class MemoryEscalationRepository implements EscalationRepository {
-  public resolveCalls: Array<{ escalationId: string; targetStatus: string }> = [];
+  public resolveCalls: Array<{ escalationId: string; targetStatus: string; taskPlanAction?: string }> = [];
+  public reopenCalls: Array<{ escalationId: string; targetStatus: string }> = [];
   public delegateCalls: Array<{ escalationId: string; toUserId: string }> = [];
 
   constructor(
@@ -69,9 +72,18 @@ class MemoryEscalationRepository implements EscalationRepository {
     return this.options.listRows ?? [row()];
   }
 
-  async resolveEscalation(input: { escalationId: string; targetStatus: string }) {
-    this.resolveCalls.push({ escalationId: input.escalationId, targetStatus: input.targetStatus });
+  async resolveEscalation(input: { escalationId: string; targetStatus: string; taskPlanAction?: string }) {
+    this.resolveCalls.push({
+      escalationId: input.escalationId,
+      targetStatus: input.targetStatus,
+      ...(input.taskPlanAction ? { taskPlanAction: input.taskPlanAction } : {})
+    });
     return row({ resolvedAt: now, workItemStatus: input.targetStatus as EscalationServiceRow["workItemStatus"] });
+  }
+
+  async reopenEscalation(input: { escalationId: string; targetStatus: string }) {
+    this.reopenCalls.push({ escalationId: input.escalationId, targetStatus: input.targetStatus });
+    return row({ resolvedAt: null, workItemStatus: input.targetStatus as EscalationServiceRow["workItemStatus"] });
   }
 
   async delegateEscalation(input: { escalationId: string; toUserId: string }) {
@@ -108,6 +120,94 @@ test("R9.0 escalation resolve actions map to the work-item state machine", async
     "pm_mode",
     "cancelled"
   ]);
+});
+
+test("R9.7 child escalation retry resets the task slice and dispatches the plan", async () => {
+  const taskPlanId = "94000000-0000-4000-8000-000000000201";
+  const taskPlanItemId = "94000000-0000-4000-8000-000000000202";
+  const repository = new MemoryEscalationRepository({
+    findRow: row({
+      agentRunId: "94000000-0000-4000-8000-000000000203",
+      handoffJson: {
+        source: "agent_run_recovery",
+        task_plan_id: taskPlanId,
+        task_plan_item_id: taskPlanItemId
+      }
+    })
+  });
+  const dispatchCalls: Array<{ planId: string; workspaceId: string; orgId?: string; actorId?: string }> = [];
+  const service = createEscalationService({
+    repository,
+    taskDispatcher: {
+      async dispatch(input) {
+        dispatchCalls.push(input);
+        return {
+          planId: input.planId,
+          enqueuedItemIds: [taskPlanItemId],
+          skippedItemIds: [],
+          casMissItemIds: [],
+          completed: false
+        };
+      }
+    },
+    now: () => now
+  });
+
+  const resolved = await service.resolve(escalationId, actor(), { action: "retry" });
+
+  assert.equal(resolved.work_item_status, "ai_working");
+  assert.deepEqual(repository.resolveCalls, [{
+    escalationId,
+    targetStatus: "ai_working",
+    taskPlanAction: "retry"
+  }]);
+  assert.deepEqual(dispatchCalls, [{
+    planId: taskPlanId,
+    workspaceId: actor().workspaceId,
+    orgId: actor().orgId,
+    actorId: actor().userId
+  }]);
+});
+
+test("R9.7 child escalation retry reopens the card when redispatch fails", async () => {
+  const taskPlanId = "94000000-0000-4000-8000-000000000211";
+  const taskPlanItemId = "94000000-0000-4000-8000-000000000212";
+  const repository = new MemoryEscalationRepository({
+    findRow: row({
+      agentRunId: "94000000-0000-4000-8000-000000000213",
+      handoffJson: {
+        source: "agent_run_recovery",
+        task_plan_id: taskPlanId,
+        task_plan_item_id: taskPlanItemId
+      }
+    })
+  });
+  const service = createEscalationService({
+    repository,
+    taskDispatcher: {
+      async dispatch() {
+        throw new Error("dispatch unavailable");
+      }
+    },
+    now: () => now
+  });
+
+  await assert.rejects(
+    service.resolve(escalationId, actor(), { action: "retry" }),
+    (error: unknown) => error instanceof Error
+      && (error as { status?: number; code?: string }).status === 503
+      && (error as { code?: string }).code === "task_dispatch_retry_failed"
+  );
+
+  assert.deepEqual(repository.resolveCalls, [{
+    escalationId,
+    targetStatus: "ai_working",
+    taskPlanAction: "retry"
+  }]);
+  assert.deepEqual(repository.reopenCalls, [{
+    escalationId,
+    targetStatus: "escalated"
+  }]);
 });
 
 test("R9.7 escalation service refuses legacy null-workspace rows", async () => {

@@ -20,6 +20,8 @@ import {
 } from "@workhub/db";
 
 import type { AuthActor } from "../middleware/auth.js";
+import { getDefaultAgentRunQueue } from "../workers/agent-runner.js";
+import { getDefaultTaskDispatcher, type TaskDispatcher } from "./task-dispatcher.js";
 import { getDefaultWorkItemService, type WorkItemService } from "./work-items.js";
 
 export type EscalationServiceRow = DbEscalationServiceRow;
@@ -27,7 +29,19 @@ export type EscalationServiceRow = DbEscalationServiceRow;
 export type EscalationRepository = {
   findById: (id: string) => Promise<EscalationServiceRow | null>;
   listUnresolvedForWorkspace: (input: { workspaceId: string; limit?: number }) => Promise<EscalationServiceRow[]>;
-  resolveEscalation: (input: { escalationId: string; targetStatus: WorkItemStatus; at: Date }) => Promise<EscalationServiceRow | null>;
+  resolveEscalation: (input: {
+    escalationId: string;
+    targetStatus: WorkItemStatus;
+    workspaceId?: string;
+    taskPlanAction?: ResolveEscalationRequest["action"];
+    at: Date;
+  }) => Promise<EscalationServiceRow | null>;
+  reopenEscalation?: (input: {
+    escalationId: string;
+    targetStatus: WorkItemStatus;
+    workspaceId?: string;
+    at: Date;
+  }) => Promise<EscalationServiceRow | null>;
   delegateEscalation: (input: { escalationId: string; toUserId: string; at: Date }) => Promise<EscalationServiceRow | null>;
 };
 
@@ -48,6 +62,7 @@ type EscalationServiceDependencies = {
   users?: Pick<UserRepository, "findActiveById"> | false;
   memberships?: Pick<WorkspaceMembershipRepository, "findActiveForUserWorkspace"> | false;
   workItems?: Pick<WorkItemService, "canReadWorkItems"> | false;
+  taskDispatcher?: Pick<TaskDispatcher, "dispatch"> | false;
   now?: () => Date;
 };
 
@@ -60,6 +75,7 @@ function getDefaultEscalationRepository(): EscalationRepository {
     findById: (id) => repo.findEscalationById(id),
     listUnresolvedForWorkspace: (input) => repo.listUnresolvedEscalationsForWorkspace(input),
     resolveEscalation: (input) => repo.resolveEscalation(input),
+    reopenEscalation: (input) => repo.reopenEscalation?.(input) ?? Promise.resolve(null),
     delegateEscalation: (input) => repo.delegateEscalation(input)
   };
 }
@@ -90,6 +106,28 @@ function resolveTargetStatus(action: ResolveEscalationRequest["action"]): WorkIt
     return "pm_mode";
   }
   return "cancelled";
+}
+
+function taskPlanIdFromHandoff(row: EscalationServiceRow) {
+  const value = row.handoffJson["task_plan_id"];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function hasTaskPlanResolutionTarget(row: EscalationServiceRow) {
+  if (!taskPlanIdFromHandoff(row)) {
+    return false;
+  }
+  if (typeof row.handoffJson["task_plan_item_id"] === "string") {
+    return true;
+  }
+  return ["failed_item_ids", "skipped_item_ids"].some((key) => {
+    const value = row.handoffJson[key];
+    return Array.isArray(value) && value.some((item) => typeof item === "string" && item.trim().length > 0);
+  });
+}
+
+function defaultTaskDispatcher() {
+  return getDefaultTaskDispatcher(getDefaultAgentRunQueue());
 }
 
 function actionSummary(action: ResolveEscalationRequest["action"], locale: WorkHubLocale) {
@@ -169,6 +207,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
   const users = deps.users === false ? undefined : deps.users ?? getDefaultUsers();
   const memberships = deps.memberships === false ? undefined : deps.memberships ?? getDefaultMemberships();
   const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
+  const injectedTaskDispatcher = deps.taskDispatcher === false ? undefined : deps.taskDispatcher;
   const now = deps.now ?? (() => new Date());
 
   return {
@@ -180,11 +219,15 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       }
       ensureWorkspace(existing, actor);
       const targetStatus = resolveTargetStatus(payload.action);
+      const taskPlanId = taskPlanIdFromHandoff(existing);
+      const taskPlanAction = hasTaskPlanResolutionTarget(existing) ? payload.action : undefined;
       let row: EscalationServiceRow | null;
       try {
         row = await repository.resolveEscalation({
           escalationId: id,
           targetStatus,
+          workspaceId: actor.workspaceId,
+          ...(taskPlanAction ? { taskPlanAction } : {}),
           at: now()
         });
       } catch (error) {
@@ -195,6 +238,24 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       }
       if (!row) {
         throw new EscalationServiceError(409, "escalation_race", "这条升级已经被处理过了。");
+      }
+      if (taskPlanAction === "retry" && taskPlanId) {
+        try {
+          await (injectedTaskDispatcher ?? defaultTaskDispatcher()).dispatch({
+            planId: taskPlanId,
+            workspaceId: actor.workspaceId,
+            orgId: actor.orgId,
+            ...(actor.userId ? { actorId: actor.userId } : {})
+          });
+        } catch {
+          await repository.reopenEscalation?.({
+            escalationId: id,
+            targetStatus: "escalated",
+            workspaceId: actor.workspaceId,
+            at: now()
+          });
+          throw new EscalationServiceError(503, "task_dispatch_retry_failed", "重试派发失败，请稍后再试。");
+        }
       }
       return {
         escalation: {

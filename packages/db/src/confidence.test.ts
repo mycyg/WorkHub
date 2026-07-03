@@ -2,10 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createAiDecisionRepository } from "./repositories/confidence.js";
-import { escalationEvents, workItems } from "./schema/index.js";
+import { agentRuns, escalationEvents, taskPlanItems, taskPlans, workItems } from "./schema/index.js";
 import { createQueryRecorder, queryParamValues, queryReferences, queryTextFragments } from "./test-query-recorder.js";
 
 const workspaceId = "94000000-0000-4000-8000-000000000201";
+const workItemId = "94000000-0000-4000-8000-000000000202";
+const escalationId = "94000000-0000-4000-8000-000000000203";
+const taskPlanId = "94000000-0000-4000-8000-000000000204";
+const taskPlanItemId = "94000000-0000-4000-8000-000000000205";
+const agentRunId = "94000000-0000-4000-8000-000000000206";
+const now = new Date("2026-07-03T12:00:00.000Z");
 
 test("R9.7 unresolved escalation listing excludes legacy null-workspace rows", async () => {
   const { db, queries } = createQueryRecorder([[]]);
@@ -29,4 +35,172 @@ test("R9.7 unresolved escalation listing excludes legacy null-workspace rows", a
     2,
     "only unresolved escalation and live work-item null checks are allowed; workspace null rows must not match"
   );
+});
+
+test("R9.7 resolving a child retry resets the task-plan item before work-item retry", async () => {
+  const updatedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId,
+    handoffJson: {
+      task_plan_id: taskPlanId,
+      task_plan_item_id: taskPlanItemId
+    }
+  };
+  const { db, queries } = createQueryRecorder([
+    [updatedEscalation],
+    [{ id: taskPlanItemId }],
+    [{ id: taskPlanId }],
+    [{ id: workItemId }],
+    []
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  await repository.resolveEscalation({
+    escalationId,
+    targetStatus: "ai_working",
+    workspaceId,
+    taskPlanAction: "retry",
+    at: now
+  });
+
+  const [escalationUpdate, itemUpdate, planUpdate, workItemUpdate] = queries;
+  assert.equal(escalationUpdate?.targetTable, escalationEvents);
+  assert.equal(itemUpdate?.targetTable, taskPlanItems);
+  assert.deepEqual(itemUpdate?.setValue, { status: "pending", updatedAt: now });
+  assert.ok(queryReferences(itemUpdate?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(itemUpdate?.where, taskPlanItems.id));
+  assert.ok(queryReferences(itemUpdate?.where, taskPlanItems.status));
+  assert.ok(queryReferences(itemUpdate?.where, taskPlans.workspaceId));
+  assert.ok(queryParamValues(itemUpdate?.where).includes(taskPlanId));
+  assert.ok(queryParamValues(itemUpdate?.where).includes(taskPlanItemId));
+  assert.equal(planUpdate?.targetTable, taskPlans);
+  assert.deepEqual(planUpdate?.setValue, { status: "dispatching", updatedAt: now });
+  assert.ok(queryReferences(planUpdate?.where, taskPlans.id));
+  assert.ok(queryReferences(planUpdate?.where, taskPlans.workspaceId));
+  assert.equal(workItemUpdate?.targetTable, workItems);
+});
+
+test("R9.7 child retry resolution fails closed when the target item is stale", async () => {
+  const updatedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId,
+    handoffJson: {
+      task_plan_id: taskPlanId,
+      task_plan_item_id: taskPlanItemId
+    }
+  };
+  const { db, queries, transactions } = createQueryRecorder([
+    [updatedEscalation],
+    []
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  await assert.rejects(
+    repository.resolveEscalation({
+      escalationId,
+      targetStatus: "ai_working",
+      workspaceId,
+      taskPlanAction: "retry",
+      at: now
+    }),
+    /task_plan_resolution_conflict/
+  );
+
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "Error" }]);
+  assert.deepEqual(queries.map((query) => query.targetTable ?? query.fromTable), [
+    escalationEvents,
+    taskPlanItems
+  ]);
+});
+
+test("R9.7 child retry resolution fails closed when the plan cannot be resumed", async () => {
+  const updatedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId,
+    handoffJson: {
+      task_plan_id: taskPlanId,
+      task_plan_item_id: taskPlanItemId
+    }
+  };
+  const { db, queries, transactions } = createQueryRecorder([
+    [updatedEscalation],
+    [{ id: taskPlanItemId }],
+    []
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  await assert.rejects(
+    repository.resolveEscalation({
+      escalationId,
+      targetStatus: "ai_working",
+      workspaceId,
+      taskPlanAction: "retry",
+      at: now
+    }),
+    /task_plan_resolution_conflict/
+  );
+
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "Error" }]);
+  assert.deepEqual(queries.map((query) => query.targetTable ?? query.fromTable), [
+    escalationEvents,
+    taskPlanItems,
+    taskPlans
+  ]);
+});
+
+test("R9.7 resolving a child cancel cancels the active child run and skips child/dependents", async () => {
+  const skippedDependentId = "94000000-0000-4000-8000-000000000207";
+  const failedDependentId = "94000000-0000-4000-8000-000000000208";
+  const updatedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId,
+    handoffJson: {
+      task_plan_id: taskPlanId,
+      task_plan_item_id: taskPlanItemId,
+      failed_item_ids: [failedDependentId],
+      skipped_item_ids: [skippedDependentId]
+    }
+  };
+  const { db, queries } = createQueryRecorder([
+    [updatedEscalation],
+    [],
+    [{ id: taskPlanItemId }, { id: skippedDependentId }, { id: failedDependentId }],
+    [{ id: workItemId }],
+    []
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  await repository.resolveEscalation({
+    escalationId,
+    targetStatus: "cancelled",
+    workspaceId,
+    taskPlanAction: "cancel",
+    at: now
+  });
+
+  const [, runUpdate, itemUpdate, workItemUpdate] = queries;
+  assert.equal(runUpdate?.targetTable, agentRuns);
+  assert.deepEqual(runUpdate?.setValue, { status: "cancelled", finishedAt: now, updatedAt: now });
+  assert.ok(queryReferences(runUpdate?.where, agentRuns.id));
+  assert.ok(queryReferences(runUpdate?.where, agentRuns.workspaceId));
+  assert.ok(queryReferences(runUpdate?.where, agentRuns.workItemId));
+  assert.ok(queryReferences(runUpdate?.where, agentRuns.taskPlanId));
+  assert.ok(queryReferences(runUpdate?.where, agentRuns.taskPlanItemId));
+  assert.ok(queryReferences(runUpdate?.where, agentRuns.status));
+  assert.ok(queryParamValues(runUpdate?.where).includes(agentRunId));
+  assert.equal(itemUpdate?.targetTable, taskPlanItems);
+  assert.deepEqual(itemUpdate?.setValue, { status: "skipped", updatedAt: now });
+  assert.ok(queryReferences(itemUpdate?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(itemUpdate?.where, taskPlanItems.id));
+  assert.ok(queryReferences(itemUpdate?.where, taskPlanItems.status));
+  assert.ok(queryReferences(itemUpdate?.where, taskPlans.workspaceId));
+  assert.ok(queryParamValues(itemUpdate?.where).includes(taskPlanId));
+  assert.ok(queryParamValues(itemUpdate?.where).includes(taskPlanItemId));
+  assert.ok(queryParamValues(itemUpdate?.where).includes(skippedDependentId));
+  assert.ok(queryParamValues(itemUpdate?.where).includes(failedDependentId));
+  assert.equal(workItemUpdate?.targetTable, workItems);
 });

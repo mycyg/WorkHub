@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 import type {
   ConfidenceGrade,
@@ -12,7 +12,7 @@ import type {
 import { allowedWorkItemTransitions } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { confidenceRecords, escalationEvents, workItems } from "../schema/index.js";
+import { agentRuns, confidenceRecords, escalationEvents, taskPlanItems, taskPlans, workItems } from "../schema/index.js";
 
 export type ConfidenceRecordRow = typeof confidenceRecords.$inferSelect;
 export type EscalationEventRow = typeof escalationEvents.$inferSelect;
@@ -45,10 +45,12 @@ export type CreateEscalationEventInput = {
 export type EscalationServiceRow = {
   id: string;
   workItemId: string;
+  agentRunId: string | null;
   projectId: string;
   title: string;
   reasonMd: string;
   trigger: EscalationTrigger | string;
+  handoffJson: Record<string, unknown>;
   suggestedLeadUserId: string | null;
   createdAt: Date;
   resolvedAt: Date | null;
@@ -59,6 +61,8 @@ export type EscalationServiceRow = {
 export type ResolveEscalationInput = {
   escalationId: string;
   targetStatus: WorkItemStatus;
+  workspaceId?: string;
+  taskPlanAction?: "retry" | "pm_mode" | "cancel";
   at: Date;
 };
 
@@ -77,16 +81,24 @@ export type AiDecisionRepository = {
   findEscalationById: (id: string) => Promise<EscalationServiceRow | null>;
   listUnresolvedEscalationsForWorkspace: (input: { workspaceId: string; limit?: number }) => Promise<EscalationServiceRow[]>;
   resolveEscalation: (input: ResolveEscalationInput) => Promise<EscalationServiceRow | null>;
+  reopenEscalation?: (input: {
+    escalationId: string;
+    targetStatus: WorkItemStatus;
+    workspaceId?: string;
+    at: Date;
+  }) => Promise<EscalationServiceRow | null>;
   delegateEscalation: (input: DelegateEscalationInput) => Promise<EscalationServiceRow | null>;
 };
 
 const escalationServiceColumns = {
   id: escalationEvents.id,
   workItemId: escalationEvents.workItemId,
+  agentRunId: escalationEvents.agentRunId,
   projectId: workItems.projectId,
   title: workItems.title,
   reasonMd: escalationEvents.reasonMd,
   trigger: escalationEvents.trigger,
+  handoffJson: escalationEvents.handoffJson,
   suggestedLeadUserId: escalationEvents.suggestedLeadUserId,
   createdAt: escalationEvents.createdAt,
   resolvedAt: escalationEvents.resolvedAt,
@@ -97,10 +109,12 @@ const escalationServiceColumns = {
 type EscalationServiceSelectRow = {
   id: string;
   workItemId: string;
+  agentRunId: string | null;
   projectId: string;
   title: string | null;
   reasonMd: string;
   trigger: string;
+  handoffJson: Record<string, unknown> | null;
   suggestedLeadUserId: string | null;
   createdAt: Date;
   resolvedAt: Date | null;
@@ -111,6 +125,7 @@ type EscalationServiceSelectRow = {
 function toEscalationServiceRow(row: EscalationServiceSelectRow): EscalationServiceRow {
   return {
     ...row,
+    handoffJson: row.handoffJson ?? {},
     title: row.title?.trim() || "当前事项",
     workItemStatus: row.workItemStatus as WorkItemStatus
   };
@@ -120,6 +135,57 @@ function predecessorsForStatus(to: WorkItemStatus) {
   return (Object.entries(allowedWorkItemTransitions) as [WorkItemStatus, readonly WorkItemStatus[]][])
     .filter(([, targets]) => targets.includes(to))
     .map(([from]) => from);
+}
+
+function textField(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function textArrayField(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
+function taskPlanResolutionTarget(handoffJson: Record<string, unknown>) {
+  const planId = textField(handoffJson["task_plan_id"]);
+  if (!planId) {
+    return null;
+  }
+  const itemIds = [
+    textField(handoffJson["task_plan_item_id"]),
+    ...textArrayField(handoffJson["failed_item_ids"]),
+    ...textArrayField(handoffJson["skipped_item_ids"])
+  ].filter((value): value is string => Boolean(value));
+  const uniqueItemIds = [...new Set(itemIds)];
+  if (uniqueItemIds.length === 0) {
+    return null;
+  }
+  return {
+    planId,
+    itemIds: uniqueItemIds
+  };
+}
+
+function scopedTaskPlanItemPredicate(input: {
+  planId: string;
+  workItemId: string;
+  workspaceId?: string;
+}) {
+  return sql`exists (
+    select 1
+    from ${taskPlans}
+    where ${eq(taskPlans.id, taskPlanItems.planId)}
+      and ${eq(taskPlans.id, input.planId)}
+      and ${eq(taskPlans.workItemId, input.workItemId)}
+      ${input.workspaceId ? sql`and ${eq(taskPlans.workspaceId, input.workspaceId)}` : sql``}
+  )`;
+}
+
+function requireResolutionRows(rows: unknown[], expected: number) {
+  if (rows.length !== expected) {
+    throw new Error("task_plan_resolution_conflict");
+  }
 }
 
 export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository {
@@ -231,10 +297,91 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
           .update(escalationEvents)
           .set({ resolvedAt: input.at })
           .where(and(eq(escalationEvents.id, input.escalationId), isNull(escalationEvents.resolvedAt)))
-          .returning({ id: escalationEvents.id, workItemId: escalationEvents.workItemId });
+          .returning({
+            id: escalationEvents.id,
+            workItemId: escalationEvents.workItemId,
+            agentRunId: escalationEvents.agentRunId,
+            handoffJson: escalationEvents.handoffJson
+          });
         const updatedEscalation = updatedEscalations[0];
         if (!updatedEscalation) {
           return null;
+        }
+        const taskTarget = input.taskPlanAction
+          ? taskPlanResolutionTarget((updatedEscalation.handoffJson ?? {}) as Record<string, unknown>)
+          : null;
+        if (taskTarget) {
+          if (input.taskPlanAction === "retry") {
+            const resetItems = await tx
+              .update(taskPlanItems)
+              .set({
+                status: "pending",
+                updatedAt: input.at
+              })
+              .where(and(
+                eq(taskPlanItems.planId, taskTarget.planId),
+                scopedTaskPlanItemPredicate({
+                  planId: taskTarget.planId,
+                  workItemId: updatedEscalation.workItemId,
+                  ...(input.workspaceId ? { workspaceId: input.workspaceId } : {})
+                }),
+                inArray(taskPlanItems.id, taskTarget.itemIds),
+                inArray(taskPlanItems.status, ["failed", "skipped"])
+              ))
+              .returning({ id: taskPlanItems.id });
+            requireResolutionRows(resetItems, taskTarget.itemIds.length);
+            const resumedPlans = await tx
+              .update(taskPlans)
+              .set({
+                status: "dispatching",
+                updatedAt: input.at
+              })
+              .where(and(
+                eq(taskPlans.id, taskTarget.planId),
+                eq(taskPlans.workItemId, updatedEscalation.workItemId),
+                input.workspaceId ? eq(taskPlans.workspaceId, input.workspaceId) : undefined,
+                inArray(taskPlans.status, ["dispatching", "done"])
+              ))
+              .returning({ id: taskPlans.id });
+            requireResolutionRows(resumedPlans, 1);
+          } else {
+            if (updatedEscalation.agentRunId) {
+              await tx
+                .update(agentRuns)
+                .set({
+                  status: "cancelled",
+                  finishedAt: input.at,
+                  updatedAt: input.at
+                })
+                .where(and(
+                  eq(agentRuns.id, updatedEscalation.agentRunId),
+                  eq(agentRuns.workItemId, updatedEscalation.workItemId),
+                  input.workspaceId ? eq(agentRuns.workspaceId, input.workspaceId) : undefined,
+                  eq(agentRuns.taskPlanId, taskTarget.planId),
+                  inArray(agentRuns.taskPlanItemId, taskTarget.itemIds),
+                  inArray(agentRuns.status, ["queued", "running"])
+                ))
+                .returning();
+            }
+            const skippedItems = await tx
+              .update(taskPlanItems)
+              .set({
+                status: "skipped",
+                updatedAt: input.at
+              })
+              .where(and(
+                eq(taskPlanItems.planId, taskTarget.planId),
+                scopedTaskPlanItemPredicate({
+                  planId: taskTarget.planId,
+                  workItemId: updatedEscalation.workItemId,
+                  ...(input.workspaceId ? { workspaceId: input.workspaceId } : {})
+                }),
+                inArray(taskPlanItems.id, taskTarget.itemIds),
+                inArray(taskPlanItems.status, ["pending", "dispatched", "failed", "skipped"])
+              ))
+              .returning({ id: taskPlanItems.id });
+            requireResolutionRows(skippedItems, taskTarget.itemIds.length);
+          }
         }
         const updatedWorkItems = await tx
           .update(workItems)
@@ -257,6 +404,49 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
           .from(escalationEvents)
           .innerJoin(workItems, eq(escalationEvents.workItemId, workItems.id))
           .where(eq(escalationEvents.id, updatedEscalation.id))
+          .limit(1);
+        const row = rows[0];
+        return row ? toEscalationServiceRow(row) : null;
+      });
+    },
+
+    async reopenEscalation(input) {
+      const predecessors = predecessorsForStatus(input.targetStatus);
+      if (predecessors.length === 0) {
+        throw new Error("escalation_status_transition_conflict");
+      }
+      return db.transaction(async (tx) => {
+        const reopenedEscalations = await tx
+          .update(escalationEvents)
+          .set({ resolvedAt: null })
+          .where(and(eq(escalationEvents.id, input.escalationId), isNotNull(escalationEvents.resolvedAt)))
+          .returning({ id: escalationEvents.id, workItemId: escalationEvents.workItemId });
+        const reopenedEscalation = reopenedEscalations[0];
+        if (!reopenedEscalation) {
+          return null;
+        }
+        const updatedWorkItems = await tx
+          .update(workItems)
+          .set({
+            status: input.targetStatus,
+            version: sql`${workItems.version} + 1`,
+            updatedAt: input.at
+          })
+          .where(and(
+            eq(workItems.id, reopenedEscalation.workItemId),
+            input.workspaceId ? eq(workItems.workspaceId, input.workspaceId) : undefined,
+            inArray(workItems.status, predecessors),
+            isNull(workItems.deletedAt)
+          ))
+          .returning({ id: workItems.id });
+        if (!updatedWorkItems[0]) {
+          throw new Error("escalation_status_transition_conflict");
+        }
+        const rows = await tx
+          .select(escalationServiceColumns)
+          .from(escalationEvents)
+          .innerJoin(workItems, eq(escalationEvents.workItemId, workItems.id))
+          .where(eq(escalationEvents.id, reopenedEscalation.id))
           .limit(1);
         const row = rows[0];
         return row ? toEscalationServiceRow(row) : null;
