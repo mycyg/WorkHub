@@ -1538,6 +1538,7 @@ test("R9.6 Agent Army route component renders observable dashboard cards without
   assert.equal(agents.html.includes("智能代理军团"), true);
   assert.equal(agents.html.includes("竞品资料梳理"), true);
   assert.equal(agents.html.includes("卡在: 竞品复核"), true);
+  assert.equal(agents.html.includes("判官"), false);
   assert.equal(agents.html.includes("追加预算继续"), false);
   assertNoMainWindowBoundaryLeak(agents.html);
 });
@@ -1602,6 +1603,7 @@ test("Cost route component renders disabled budget policies as not enabled inste
 
   assert.ok(cost);
   assert.equal(cost.html.includes('data-r4-cost-budget-enabled="false"'), true);
+  assert.equal(cost.html.includes("pcost-user-day-v0:disabled"), false);
   assert.equal(cost.html.includes("Budget not enabled"), true);
   assert.equal(cost.html.includes("0/0 tokens · ¥0/¥0"), false);
 });
