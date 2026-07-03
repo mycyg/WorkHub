@@ -659,7 +659,8 @@ test("R9.6 task plan repository reads dashboard plans with capped batched joins"
     ["left", taskPlans]
   ]);
   assert.equal(escalationQuery?.limit, 3);
-  const [, , planLevelJoin] = escalationQuery?.joins ?? [];
+  const [runJoin, , planLevelJoin] = escalationQuery?.joins ?? [];
+  assert.ok(queryReferences(runJoin?.on, agentRuns.workspaceId));
   assert.ok(queryReferences(planLevelJoin?.on, taskPlans.id));
   assert.ok(queryReferences(planLevelJoin?.on, taskPlans.workItemId));
   assert.ok(queryReferences(planLevelJoin?.on, taskPlans.workspaceId));

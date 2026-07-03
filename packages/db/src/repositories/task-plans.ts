@@ -361,7 +361,11 @@ export function createTaskPlanRepository(db: WorkHubDb) {
           createdAt: escalationEvents.createdAt
         })
         .from(escalationEvents)
-        .leftJoin(agentRuns, eq(escalationEvents.agentRunId, agentRuns.id))
+        .leftJoin(agentRuns, and(
+          eq(escalationEvents.agentRunId, agentRuns.id),
+          eq(agentRuns.workspaceId, input.workspaceId),
+          eq(agentRuns.workItemId, escalationEvents.workItemId)
+        ))
         .innerJoin(workItems, eq(escalationEvents.workItemId, workItems.id))
         .leftJoin(taskPlans, and(
           sql`${taskPlans.id}::text = ${handoffTaskPlanId}`,
