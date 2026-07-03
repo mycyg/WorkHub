@@ -17,7 +17,7 @@ import type {
 } from "../workers/agent-runner.js";
 
 type SettledItemStatus = Extract<TaskPlanItemRow["status"], "succeeded" | "failed">;
-type EscalationReason = "cycle" | "dependency_failed";
+type EscalationReason = "cycle" | "dependency_failed" | "partial_failure";
 
 export type TaskDispatcherRepository = {
   getPlanWithItems: (input: {
@@ -83,6 +83,7 @@ export type TaskDispatchEscalationSink = (input: {
   plan: TaskPlanRow;
   items: TaskPlanItemRow[];
   skippedItemIds: string[];
+  failedItemIds?: string[];
   reason: EscalationReason;
   at: Date;
 }) => Promise<void> | void;
@@ -180,6 +181,12 @@ function allTerminal(items: TaskPlanItemRow[]) {
   return items.length > 0 && items.every((item) => TERMINAL_ITEM_STATUSES.has(item.status));
 }
 
+function terminalPartialFailure(items: TaskPlanItemRow[]) {
+  const failed = items.filter((item) => item.status === "failed");
+  const skipped = items.filter((item) => item.status === "skipped");
+  return failed.length > 0 && skipped.length === 0 ? failed : [];
+}
+
 function taskObjective(item: TaskPlanItemRow) {
   return [
     "Objective:",
@@ -235,7 +242,7 @@ async function bestEffortEscalate(
   sink: TaskDispatchEscalationSink | undefined,
   input: Parameters<TaskDispatchEscalationSink>[0]
 ) {
-  if (!sink || input.skippedItemIds.length === 0) {
+  if (!sink || (input.reason !== "partial_failure" && input.skippedItemIds.length === 0)) {
     return;
   }
   try {
@@ -303,6 +310,17 @@ export function createTaskDispatcher(options: {
     });
     if (!done) {
       return false;
+    }
+    const failedItems = terminalPartialFailure(items);
+    if (failedItems.length > 0) {
+      await bestEffortEscalate(escalationSink, {
+        plan: done,
+        items,
+        skippedItemIds: [],
+        failedItemIds: failedItems.map((item) => item.id),
+        reason: "partial_failure",
+        at
+      });
     }
     await bestEffortComplete(completionSink, {
       plan: done,
@@ -462,16 +480,20 @@ export function createDbTaskDispatchEscalationSink(
   decisions: Pick<AiDecisionRepository, "createEscalationEvent">
 ): TaskDispatchEscalationSink {
   return async (input) => {
+    const reasonMd = input.reason === "cycle"
+      ? "任务计划依赖图存在循环，已跳过未派发的子任务，请人工调整计划后重试。"
+      : input.reason === "partial_failure"
+        ? "任务计划已有子任务失败，但其他子任务已结束。请在决策收件箱选择重试、转人工或改计划。"
+        : "任务计划的上游子任务失败或被跳过，依赖它的子任务已跳过，请人工决定是否重试或改计划。";
     await decisions.createEscalationEvent({
       workItemId: input.plan.workItemId,
       trigger: input.reason === "cycle" ? "doom_loop" : "unqualified",
-      reasonMd: input.reason === "cycle"
-        ? "任务计划依赖图存在循环，已跳过未派发的子任务，请人工调整计划后重试。"
-        : "任务计划的上游子任务失败或被跳过，依赖它的子任务已跳过，请人工决定是否重试或改计划。",
+      reasonMd,
       handoffJson: {
         source: "task_dispatcher",
         reason: input.reason,
         task_plan_id: input.plan.id,
+        ...(input.failedItemIds ? { failed_item_ids: input.failedItemIds } : {}),
         skipped_item_ids: input.skippedItemIds
       }
     });

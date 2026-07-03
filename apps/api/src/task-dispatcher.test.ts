@@ -296,6 +296,45 @@ test("R9.2 dispatcher skips dependency-failed pending items and escalates the pl
   assert.deepEqual(escalations, ["dependency_failed"]);
 });
 
+test("R9.7 dispatcher surfaces partial child-run failure in attention before completing the terminal plan", async () => {
+  const escalations: { reason: string; skippedItemIds: string[]; failedItemIds?: string[] }[] = [];
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "dispatched" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "succeeded" }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", status: "succeeded" })
+  ]);
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    escalationSink: async (input) => {
+      escalations.push({
+        reason: input.reason,
+        skippedItemIds: input.skippedItemIds,
+        ...(input.failedItemIds ? { failedItemIds: input.failedItemIds } : {})
+      });
+    }
+  });
+
+  const result = await dispatcher.handleRunSettled(run({
+    status: "failed",
+    taskPlanItemId: researchItemId,
+    workspaceId
+  }));
+
+  assert.equal(result?.settledItemId, researchItemId);
+  assert.equal(result?.dispatch.completed, true);
+  assert.equal(repository.row.status, "done");
+  assert.equal(repository.doneCalls, 1);
+  assert.deepEqual(queue.inputs, []);
+  assert.deepEqual(escalations, [{
+    reason: "partial_failure",
+    skippedItemIds: [],
+    failedItemIds: [researchItemId]
+  }]);
+});
+
 test("R9.2 dispatcher skips cyclic plans and escalates without enqueueing children", async () => {
   const escalations: string[] = [];
   const repository = new MemoryTaskDispatcherRepository(plan(), [
