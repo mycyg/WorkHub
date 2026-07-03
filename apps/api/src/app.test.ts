@@ -2028,6 +2028,72 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
   assert.deepEqual(pageErrorCode("/api/pages/meetings", "404"), { type: "string", enum: ["meeting_not_found"] });
 });
 
+test("R9.7 Agent Army OpenAPI schema documents nested dashboard VM fields", async () => {
+  type OpenApiSchema = {
+    additionalProperties?: boolean;
+    items?: OpenApiSchema;
+    maxItems?: number;
+    properties?: Record<string, OpenApiSchema>;
+    required?: string[];
+    type?: string;
+  };
+
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+  const data = jsonResponseSchema(body.paths, "/api/pages/agents", "get", "200")
+    ?.properties?.data as OpenApiSchema | undefined;
+
+  const plans = data?.properties?.plans;
+  const plan = plans?.items;
+  assert.equal(plans?.maxItems, 20);
+  assert.equal(plan?.additionalProperties, false);
+  assert.deepEqual(plan?.required, [
+    "plan_id",
+    "work_item_id",
+    "work_item_code",
+    "work_item_title",
+    "work_item_href",
+    "status",
+    "progress",
+    "roles",
+    "statuses",
+    "cost",
+    "judge",
+    "updated_at"
+  ]);
+
+  const progress = plan?.properties?.progress;
+  assert.deepEqual(progress?.required, ["completed", "total", "label"]);
+  const roles = plan?.properties?.roles;
+  assert.deepEqual(roles?.items?.required, ["role", "count"]);
+  const statuses = plan?.properties?.statuses;
+  assert.deepEqual(statuses?.items?.required, ["status", "count"]);
+  const cost = plan?.properties?.cost;
+  assert.deepEqual(cost?.required, ["used_cny"]);
+  const judge = plan?.properties?.judge;
+  assert.deepEqual(judge?.required, ["passed", "total", "pass_rate_pct"]);
+  const blocker = plan?.properties?.oldest_blocker;
+  assert.deepEqual(blocker?.required, ["kind", "label", "age_seconds"]);
+
+  const recentEscalation = data?.properties?.recent_escalations?.items;
+  assert.equal(data?.properties?.recent_escalations?.maxItems, 5);
+  assert.equal(recentEscalation?.additionalProperties, false);
+  assert.deepEqual(recentEscalation?.required, ["id", "work_item_id", "title", "reason_preview", "created_at", "href"]);
+
+  const pageInfo = data?.properties?.page_info;
+  assert.equal(pageInfo?.additionalProperties, false);
+  assert.deepEqual(pageInfo?.required, [
+    "plan_limit",
+    "returned",
+    "plans_capped",
+    "items_capped",
+    "runs_capped",
+    "escalation_limit",
+    "escalation_returned",
+    "escalations_capped"
+  ]);
+});
+
 test("work item and proposal page OpenAPI routes document id parameters and page VM envelopes", async () => {
   const response = await app.request("/api/openapi.json");
   const body = await response.json() as { paths: Record<string, Record<string, unknown>> };

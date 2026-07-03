@@ -2798,6 +2798,137 @@ const costDashboardPageResponseSchema = {
   },
   additionalProperties: false
 } as const;
+const taskPlanStatusResponseSchema = { type: "string", enum: ["draft", "proposed", "approved", "dispatching", "done", "cancelled"] } as const;
+const taskPlanItemRoleResponseSchema = { type: "string", enum: ["research", "produce", "review", "integrate"] } as const;
+const agentArmyItemStatusResponseSchema = { type: "string", enum: ["pending", "dispatched", "succeeded", "failed", "needs_human", "skipped"] } as const;
+const agentArmyDashboardCountByRoleResponseSchema = {
+  type: "object",
+  required: ["role", "count"],
+  properties: {
+    role: taskPlanItemRoleResponseSchema,
+    count: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const agentArmyDashboardCountByStatusResponseSchema = {
+  type: "object",
+  required: ["status", "count"],
+  properties: {
+    status: agentArmyItemStatusResponseSchema,
+    count: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const agentArmyDashboardPlanResponseSchema = {
+  type: "object",
+  required: [
+    "plan_id",
+    "work_item_id",
+    "work_item_code",
+    "work_item_title",
+    "work_item_href",
+    "status",
+    "progress",
+    "roles",
+    "statuses",
+    "cost",
+    "judge",
+    "updated_at"
+  ],
+  properties: {
+    plan_id: uuidStringSchema,
+    work_item_id: uuidStringSchema,
+    work_item_code: { type: "string", minLength: 1 },
+    work_item_title: { type: "string", minLength: 1, maxLength: 256 },
+    work_item_href: { type: "string", minLength: 1 },
+    objective_id: uuidStringSchema,
+    objective_title: { type: "string", minLength: 1, maxLength: 256 },
+    status: taskPlanStatusResponseSchema,
+    progress: {
+      type: "object",
+      required: ["completed", "total", "label"],
+      properties: {
+        completed: { type: "integer", minimum: 0 },
+        total: { type: "integer", minimum: 0 },
+        label: { type: "string", minLength: 1, maxLength: 32 }
+      },
+      additionalProperties: false
+    },
+    roles: { type: "array", items: agentArmyDashboardCountByRoleResponseSchema },
+    statuses: { type: "array", items: agentArmyDashboardCountByStatusResponseSchema },
+    cost: {
+      type: "object",
+      required: ["used_cny"],
+      properties: {
+        used_cny: { type: "string" },
+        budget_cny: { type: "string" },
+        burn_pct: { type: "integer", minimum: 0 }
+      },
+      additionalProperties: false
+    },
+    judge: {
+      type: "object",
+      required: ["passed", "total", "pass_rate_pct"],
+      properties: {
+        passed: { type: "integer", minimum: 0 },
+        total: { type: "integer", minimum: 0 },
+        pass_rate_pct: { type: "integer", minimum: 0, maximum: 100 }
+      },
+      additionalProperties: false
+    },
+    oldest_blocker: {
+      type: "object",
+      required: ["kind", "label", "age_seconds"],
+      properties: {
+        kind: { type: "string", enum: ["needs_human", "budget", "stalled"] },
+        label: { type: "string", minLength: 1, maxLength: 128 },
+        age_seconds: { type: "integer", minimum: 0 },
+        href: { type: "string", minLength: 1 }
+      },
+      additionalProperties: false
+    },
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const agentArmyDashboardRecentEscalationResponseSchema = {
+  type: "object",
+  required: ["id", "work_item_id", "title", "reason_preview", "created_at", "href"],
+  properties: {
+    id: uuidStringSchema,
+    plan_id: uuidStringSchema,
+    work_item_id: uuidStringSchema,
+    title: { type: "string", minLength: 1, maxLength: 128 },
+    reason_preview: { type: "string", minLength: 1, maxLength: 200 },
+    created_at: dateTimeStringSchema,
+    href: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+} as const;
+const agentArmyDashboardPageInfoResponseSchema = {
+  type: "object",
+  required: [
+    "plan_limit",
+    "returned",
+    "plans_capped",
+    "items_capped",
+    "runs_capped",
+    "escalation_limit",
+    "escalation_returned",
+    "escalations_capped"
+  ],
+  properties: {
+    plan_limit: { type: "integer", minimum: 1 },
+    returned: { type: "integer", minimum: 0 },
+    plans_capped: { type: "boolean" },
+    items_capped: { type: "boolean" },
+    runs_capped: { type: "boolean" },
+    escalation_limit: { type: "integer", minimum: 1 },
+    escalation_returned: { type: "integer", minimum: 0 },
+    escalations_capped: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const;
 const agentArmyDashboardPageResponseSchema = {
   type: "object",
   required: ["generated_at", "kpis", "plans", "recent_escalations", "page_info"],
@@ -2814,9 +2945,9 @@ const agentArmyDashboardPageResponseSchema = {
       },
       additionalProperties: false
     },
-    plans: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: true } },
-    recent_escalations: { type: "array", maxItems: 5, items: { type: "object", additionalProperties: true } },
-    page_info: { type: "object", additionalProperties: true },
+    plans: { type: "array", maxItems: 20, items: agentArmyDashboardPlanResponseSchema },
+    recent_escalations: { type: "array", maxItems: 5, items: agentArmyDashboardRecentEscalationResponseSchema },
+    page_info: agentArmyDashboardPageInfoResponseSchema,
     empty_state: { type: "string", enum: ["no_agent_armies"] }
   },
   additionalProperties: false
