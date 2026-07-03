@@ -46,6 +46,12 @@ export type AgentMemoryRecorder = (input: {
   result: AgentLoopResult;
 }) => Promise<void> | void;
 
+export type AgentMemoryPromoter = (input: {
+  workspaceId: string;
+  l1EntryId: string;
+  actor?: LlmActor;
+}) => Promise<PromoteMemoryResult>;
+
 export class AgentMemoryPromotionError extends Error {
   constructor(
     public readonly status: number,
@@ -278,11 +284,13 @@ export async function extractPreferenceMemory(input: {
   run: AgentRunQueueRecord;
   result: AgentLoopResult;
   repository: Pick<AgentMemoryRepository, "upsertPrivateMemory">;
-}) {
+}): Promise<AgentMemoryRow[]> {
   const candidates = preferenceMemoryCandidatesFromRun(input);
+  const rows: AgentMemoryRow[] = [];
   for (const candidate of candidates) {
-    await input.repository.upsertPrivateMemory(candidate);
+    rows.push(await input.repository.upsertPrivateMemory(candidate));
   }
+  return rows;
 }
 
 function sourceRunIdPatch(row: AgentMemoryRow) {
@@ -493,16 +501,46 @@ export function getDefaultAgentMemoryContextProvider(): AgentMemoryContextProvid
   };
 }
 
-export function getDefaultAgentMemoryRecorder(): AgentMemoryRecorder {
+export function createAgentMemoryRecorder(input: {
+  repository?: Pick<AgentMemoryRepository, "upsertPrivateMemory">;
+  promote?: AgentMemoryPromoter | false;
+} = {}): AgentMemoryRecorder {
   return async ({ run, result }) => {
+    let rows: AgentMemoryRow[] = [];
     try {
-      await extractPreferenceMemory({
+      rows = await extractPreferenceMemory({
         run,
         result,
-        repository: getDefaultAgentMemoryRepository()
+        repository: input.repository ?? getDefaultAgentMemoryRepository()
       });
     } catch (error) {
       getDefaultStructuredLogger().warn("agent_memory_extract_failed", { runId: run.run_id, error });
+      return;
+    }
+
+    if (input.promote === false || !run.workspace_id) {
+      return;
+    }
+    const promote = input.promote ?? ((promotionInput) => promoteMemory(promotionInput));
+    for (const row of rows) {
+      try {
+        await promote({
+          workspaceId: run.workspace_id,
+          l1EntryId: row.id,
+          actor: {
+            workspaceId: run.workspace_id,
+            runId: run.run_id,
+            workItemId: run.work_item_id,
+            ...(run.task_plan_id ? { taskPlanId: run.task_plan_id } : {})
+          }
+        });
+      } catch (error) {
+        getDefaultStructuredLogger().warn("agent_memory_promote_failed", { runId: run.run_id, memoryId: row.id, error });
+      }
     }
   };
+}
+
+export function getDefaultAgentMemoryRecorder(): AgentMemoryRecorder {
+  return createAgentMemoryRecorder();
 }
