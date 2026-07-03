@@ -454,6 +454,46 @@ test("R9.4 dispatcher arbitrates sibling successful outputs before completing th
   assert.deepEqual(events, ["arbitrate", "done"]);
 });
 
+test("R9.7 dispatcher does not mark completion when durable completion persistence fails", async () => {
+  const events: string[] = [];
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "succeeded" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "failed" }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", status: "dispatched" })
+  ]);
+  const markPlanDone = repository.markPlanDone.bind(repository);
+  repository.markPlanDone = async (input) => {
+    events.push("done");
+    return markPlanDone(input);
+  };
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    completionSink: async (input) => {
+      events.push("completion");
+      assert.equal(input.plan.id, planId);
+      assert.equal(input.summaryMd.includes("Task plan"), true);
+      throw new Error("completion audit failed");
+    }
+  });
+
+  await assert.rejects(
+    dispatcher.handleRunSettled(run({
+      status: "succeeded",
+      taskPlanItemId: reviewItemId,
+      workspaceId
+    })),
+    /completion audit failed/u
+  );
+
+  assert.deepEqual(events, ["completion"]);
+  assert.equal(repository.row.status, "dispatching");
+  assert.equal(repository.doneCalls, 0);
+  assert.deepEqual(queue.inputs, []);
+});
+
 test("R9.7 dispatcher does not complete a partial-failed plan when attention persistence fails", async () => {
   const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
     item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "dispatched" }),

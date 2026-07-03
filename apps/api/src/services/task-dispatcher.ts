@@ -271,7 +271,7 @@ async function requireEscalation(
   }
 }
 
-async function bestEffortComplete(
+async function requireCompletion(
   sink: TaskDispatchCompletionSink | undefined,
   input: Parameters<TaskDispatchCompletionSink>[0]
 ) {
@@ -281,10 +281,11 @@ async function bestEffortComplete(
   try {
     await sink(input);
   } catch (error) {
-    getDefaultStructuredLogger().warn("task_dispatch_completion_timeline_failed", {
+    getDefaultStructuredLogger().warn("task_dispatch_completion_failed", {
       planId: input.plan.id,
       error
     });
+    throw error;
   }
 }
 
@@ -345,6 +346,13 @@ export function createTaskDispatcher(options: {
         at
       });
     }
+    const completedPlan: TaskPlanRow = { ...plan, status: "done", updatedAt: at };
+    await requireCompletion(completionSink, {
+      plan: completedPlan,
+      items,
+      summaryMd: completionSummary(completedPlan, items),
+      at
+    });
     const done = await options.repository.markPlanDone({
       planId: plan.id,
       workspaceId: plan.workspaceId,
@@ -353,12 +361,6 @@ export function createTaskDispatcher(options: {
     if (!done) {
       return false;
     }
-    await bestEffortComplete(completionSink, {
-      plan: done,
-      items,
-      summaryMd: completionSummary(done, items),
-      at
-    });
     return true;
   }
 
