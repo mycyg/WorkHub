@@ -55,9 +55,24 @@ const SEARCH_ICON =
 const BACK_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
 const DRAG_EXCLUDED_SELECTOR = "input,textarea,button,a,select,[contenteditable=true]";
+export const SPOTLIGHT_INTERNAL_BACK_SELECTOR = "[data-wi-back],[data-prop-back],[data-run-back],[data-back-to-projects]";
+
+type SpotlightInternalBackHost = {
+  querySelector(selector: string): { click: () => void } | null;
+};
 
 export function isSpotlightDragExcludedTarget(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest(DRAG_EXCLUDED_SELECTOR));
+}
+
+export function handleSpotlightCapabilityEscape(body: SpotlightInternalBackHost, topLevelBack: () => void) {
+  const internalBack = body.querySelector(SPOTLIGHT_INTERNAL_BACK_SELECTOR);
+  if (internalBack) {
+    internalBack.click();
+    return "internal_back" as const;
+  }
+  topLevelBack();
+  return "top_back" as const;
 }
 
 function renderLauncherGrid(
@@ -703,14 +718,9 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
           // M3：若当前能力视图正处于内部详情(list→detail),先退一级——点它已渲染好的「返回列表」按钮,
           // 让 Esc 与屏幕上的面包屑返回逐级一致;只有视图没有内部详情层时,Esc 才退回 launcher(能力网格)。
           // 这些 data-*-back 仅在各 view 的 detail HTML 里出现,list 态查不到 → 自然退回顶层。
-          const internalBack = body.querySelector<HTMLElement>(
-            "[data-wi-back],[data-prop-back],[data-run-back],[data-back-to-projects]"
-          );
-          if (internalBack) {
-            internalBack.click();
-          } else {
+          handleSpotlightCapabilityEscape(body, () => {
             dispatch({ type: "back" });
-          }
+          });
         } else if (input2.value) {
           event.preventDefault();
           input2.value = "";
