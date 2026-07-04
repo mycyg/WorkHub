@@ -102,6 +102,27 @@ test("R9.7 touch marks only visible L2 memories as used", async () => {
   assert.deepEqual(queryParamValues(update?.where).slice(0, 2), ["84000000-0000-4000-8000-000000000101", workspaceId]);
 });
 
+test("R9.7 touch batches multiple visible L2 memories into one update", async () => {
+  const touchedAt = new Date("2026-07-03T00:10:00.000Z");
+  const firstId = "84000000-0000-4000-8000-000000000101";
+  const secondId = "84000000-0000-4000-8000-000000000102";
+  const { db, queries } = createQueryRecorder([[]]);
+  const repository = createUserMemoryRepository(db);
+
+  await repository.touch([firstId, secondId], touchedAt, { workspaceId });
+
+  const updates = queries.filter((query) => query.operation === "update");
+  assert.equal(updates.length, 1, "prompt-context touch must not issue one update per returned memory");
+  const [update] = updates;
+  assert.equal(update?.targetTable, userMemories);
+  assert.ok(queryReferences(update?.where, userMemories.id));
+  assert.ok(queryReferences(update?.where, userMemories.workspaceId));
+  const values = queryParamValues(update?.where);
+  assert.equal(values.includes(firstId), true);
+  assert.equal(values.includes(secondId), true);
+  assert.equal(values.includes(workspaceId), true);
+});
+
 test("R9.7 soft delete removes only visible L2 memories", async () => {
   const deletedAt = new Date("2026-07-03T00:20:00.000Z");
   const { db, queries } = createQueryRecorder([[{ id: "84000000-0000-4000-8000-000000000101" }]]);

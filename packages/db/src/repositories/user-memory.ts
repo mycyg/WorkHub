@@ -220,15 +220,13 @@ export function createUserMemoryRepository(db: WorkHubDb): UserMemoryRepository 
         return;
       }
       const now = at ?? new Date();
-      for (const id of ids) {
-        await db
-          .update(userMemories)
-          .set({ lastUsedAt: now })
-          .where(and(
-            eq(userMemories.id, id),
-            workspaceVisibilityCondition(scope.workspaceId)
-          ));
-      }
+      await db
+        .update(userMemories)
+        .set({ lastUsedAt: now })
+        .where(and(
+          inArray(userMemories.id, ids),
+          workspaceVisibilityCondition(scope.workspaceId)
+        ));
     },
 
     async softDeleteForUser(userId, id, at, scope = {}) {
