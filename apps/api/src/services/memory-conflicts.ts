@@ -111,8 +111,14 @@ function resolvedValue(row: MemoryConflictRow, resolution: MemoryConflictResolut
     case "accept_incoming":
       return row.incomingValueMd;
     case "merge_both":
-    case "edit_memory":
       return mergedValue(row, override);
+    case "edit_memory": {
+      const edited = override?.trim();
+      if (!edited) {
+        throw new MemoryConflictServiceError(400, "memory_conflict_edit_value_required", "手动编辑记忆时必须提交编辑后的内容。");
+      }
+      return edited;
+    }
   }
 }
 

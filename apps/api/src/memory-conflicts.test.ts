@@ -202,3 +202,49 @@ test("stale memory conflict version does not resolve or write stale L2", async (
   assert.deepEqual(resolved, []);
   assert.deepEqual(writes, []);
 });
+
+test("edit-memory resolution requires a human-edited value before resolving L2", async () => {
+  const writes: unknown[] = [];
+  const resolved: unknown[] = [];
+  const service = createMemoryConflictService({
+    now: () => now,
+    conflicts: {
+      listOpenForUser: async () => ({ rows: [], capped: false }),
+      findOpenForUser: async () => row(),
+      resolve: async (input) => {
+        resolved.push(input);
+        return row({
+          status: "resolved",
+          resolution: input.resolution,
+          resolvedValueMd: input.resolvedValueMd ?? null,
+          resolvedAt: input.resolvedAt ?? now,
+          resolvedByUserId: userId
+        });
+      },
+      createOrUpdateOpen: async () => {
+        throw new Error("not needed");
+      }
+    },
+    userMemories: {
+      upsert: async (input) => {
+        writes.push(input);
+        return {} as never;
+      }
+    }
+  });
+
+  await assert.rejects(
+    service.resolve({
+      actor: actor(),
+      conflictId,
+      resolution: "edit_memory",
+      expectedUpdatedAt: now
+    }),
+    (error) => error instanceof MemoryConflictServiceError
+      && error.status === 400
+      && error.code === "memory_conflict_edit_value_required"
+  );
+
+  assert.deepEqual(resolved, []);
+  assert.deepEqual(writes, []);
+});
