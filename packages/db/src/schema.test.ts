@@ -13,6 +13,7 @@ import {
   agentSteps,
   auditLogs,
   budgetPolicies,
+  budgetReservations,
   chatMessages,
   costLedgerEntries,
   mergeAttempts,
@@ -210,6 +211,15 @@ test("R9.1 task plan tables expose auditable decomposition fields", () => {
   assert.equal(taskPlanItems.budgetSharePct.name, "budget_share_pct");
   assert.equal(taskPlanItems.dependsOn.name, "depends_on");
   assert.equal(taskPlanItems.status.name, "status");
+});
+
+test("R9.7 budget reservations keep workspace scope referentially valid", () => {
+  assert.equal(getTableName(budgetReservations), "budget_reservations");
+  assert.equal(budgetReservations.workspaceId.name, "workspace_id");
+  assert.equal(
+    inlineForeignKeyNames(budgetReservations).includes("budget_reservations_workspace_id_workspaces_id_fk"),
+    true
+  );
 });
 
 test("merge attempts persist conflict decisions for replayable proposal audit", () => {

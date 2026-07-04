@@ -1313,7 +1313,7 @@ export const budgetReservations = pgTable(
   {
     id: id(),
     runId: uuid("run_id").references(() => agentRuns.id, { onDelete: "cascade" }).notNull(),
-    workspaceId: uuid("workspace_id").notNull(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     scopeKind: varchar("scope_kind", { length: 16 }).notNull(),
     scopeId: varchar("scope_id", { length: 128 }).notNull(),
     period: varchar("period", { length: 16 }).notNull(),
