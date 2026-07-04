@@ -208,6 +208,58 @@ test("R9.7 escalation delegation mutation is fenced by workspace", async () => {
   assert.ok(queryParamValues(escalationUpdate?.where).includes(workspaceId));
 });
 
+test("R9.7 reopening a child retry escalation does not require parent work item transition", async () => {
+  const reopenedEscalation = {
+    id: escalationId,
+    workItemId,
+    handoffJson: {
+      task_plan_id: taskPlanId,
+      task_plan_item_id: taskPlanItemId
+    }
+  };
+  const reopenedRow = {
+    id: escalationId,
+    workItemId,
+    agentRunId,
+    projectId: "94000000-0000-4000-8000-000000000209",
+    title: "子任务重试失败",
+    reasonMd: "需要重新显示给用户。",
+    trigger: "doom_loop",
+    handoffJson: reopenedEscalation.handoffJson,
+    suggestedLeadUserId: null,
+    createdAt: now,
+    resolvedAt: null,
+    workItemStatus: "escalated",
+    workspaceId
+  };
+  const { db, queries } = createQueryRecorder([
+    [reopenedEscalation],
+    [reopenedRow]
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  const row = await repository.reopenEscalation?.({
+    escalationId,
+    targetStatus: "escalated",
+    workspaceId,
+    at: now
+  });
+
+  assert.equal(row?.id, escalationId);
+  assert.deepEqual(queries.map((query) => query.targetTable ?? query.fromTable), [
+    escalationEvents,
+    escalationEvents
+  ]);
+  const [escalationUpdate] = queries;
+  assert.equal(escalationUpdate?.targetTable, escalationEvents);
+  assert.deepEqual((escalationUpdate?.setValue as { resolvedAt?: Date | null })?.resolvedAt, null);
+  assert.equal(
+    queries.some((query) => query.targetTable === workItems),
+    false,
+    "task-scoped retry compensation must not fail just because the parent is already escalated"
+  );
+});
+
 test("R9.7 child retry resolution fails closed when the target item is stale", async () => {
   const updatedEscalation = {
     id: escalationId,

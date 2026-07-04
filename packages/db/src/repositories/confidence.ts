@@ -476,27 +476,34 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
             isNotNull(escalationEvents.resolvedAt),
             scopedEscalationEventPredicate(input)
           ))
-          .returning({ id: escalationEvents.id, workItemId: escalationEvents.workItemId });
+          .returning({
+            id: escalationEvents.id,
+            workItemId: escalationEvents.workItemId,
+            handoffJson: escalationEvents.handoffJson
+          });
         const reopenedEscalation = reopenedEscalations[0];
         if (!reopenedEscalation) {
           return null;
         }
-        const updatedWorkItems = await tx
-          .update(workItems)
-          .set({
-            status: input.targetStatus,
-            version: sql`${workItems.version} + 1`,
-            updatedAt: input.at
-          })
-          .where(and(
-            eq(workItems.id, reopenedEscalation.workItemId),
-            eq(workItems.workspaceId, input.workspaceId),
-            inArray(workItems.status, predecessors),
-            isNull(workItems.deletedAt)
-          ))
-          .returning({ id: workItems.id });
-        if (!updatedWorkItems[0]) {
-          throw new Error("escalation_status_transition_conflict");
+        const taskTarget = taskPlanResolutionTarget((reopenedEscalation.handoffJson ?? {}) as Record<string, unknown>);
+        if (!taskTarget) {
+          const updatedWorkItems = await tx
+            .update(workItems)
+            .set({
+              status: input.targetStatus,
+              version: sql`${workItems.version} + 1`,
+              updatedAt: input.at
+            })
+            .where(and(
+              eq(workItems.id, reopenedEscalation.workItemId),
+              eq(workItems.workspaceId, input.workspaceId),
+              inArray(workItems.status, predecessors),
+              isNull(workItems.deletedAt)
+            ))
+            .returning({ id: workItems.id });
+          if (!updatedWorkItems[0]) {
+            throw new Error("escalation_status_transition_conflict");
+          }
         }
         const rows = await tx
           .select(escalationServiceColumns)
