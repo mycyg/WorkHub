@@ -615,7 +615,8 @@ function bindGoldPathNavigation(
         try {
           const result = await client.resolveBudgetDecision(
             escalationAction.escalationId,
-            escalationAction.budgetActionId
+            escalationAction.budgetActionId,
+            { locale }
           );
           showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
         } catch (error) {
@@ -631,7 +632,7 @@ function bindGoldPathNavigation(
           return;
         }
         try {
-          const result = await client.resolveEscalation(escalationAction.escalationId, payload);
+          const result = await client.resolveEscalation(escalationAction.escalationId, payload, { locale });
           showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));

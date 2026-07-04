@@ -200,13 +200,13 @@ function escalationCard(): AttentionItem {
 }
 
 class MemoryEscalations implements EscalationService {
-  public resolveCalls: Array<{ id: string; actor: AuthActor; payload: unknown }> = [];
-  public delegateCalls: Array<{ id: string; actor: AuthActor; payload: unknown }> = [];
-  public budgetDecisionCalls: Array<{ id: string; actor: AuthActor; actionId: string }> = [];
+  public resolveCalls: Array<{ id: string; actor: AuthActor; payload: unknown; locale?: WorkHubLocale }> = [];
+  public delegateCalls: Array<{ id: string; actor: AuthActor; payload: unknown; locale?: WorkHubLocale }> = [];
+  public budgetDecisionCalls: Array<{ id: string; actor: AuthActor; actionId: string; locale?: WorkHubLocale }> = [];
   public listCalls: Array<{ actor: AuthActor; locale: WorkHubLocale }> = [];
 
-  async resolve(id: string, actor: AuthActor, payload: ResolveEscalationRequest) {
-    this.resolveCalls.push({ id, actor, payload });
+  async resolve(id: string, actor: AuthActor, payload: ResolveEscalationRequest, locale?: WorkHubLocale) {
+    this.resolveCalls.push({ id, actor, payload, ...(locale ? { locale } : {}) });
     return {
       escalation: { id, work_item_id: workItemId, resolved_at: now.toISOString() },
       work_item_status: "pm_mode" as const,
@@ -214,16 +214,16 @@ class MemoryEscalations implements EscalationService {
     };
   }
 
-  async delegate(id: string, actor: AuthActor, payload: DelegateEscalationRequest) {
-    this.delegateCalls.push({ id, actor, payload });
+  async delegate(id: string, actor: AuthActor, payload: DelegateEscalationRequest, locale?: WorkHubLocale) {
+    this.delegateCalls.push({ id, actor, payload, ...(locale ? { locale } : {}) });
     return {
       escalation: { id, work_item_id: workItemId, suggested_lead_user_id: payload.to_user_id ?? null },
       attention: { summary_text: "已转派升级。" }
     };
   }
 
-  async resolveBudgetDecision(id: string, actor: AuthActor, actionId: string) {
-    this.budgetDecisionCalls.push({ id, actor, actionId });
+  async resolveBudgetDecision(id: string, actor: AuthActor, actionId: string, locale?: WorkHubLocale) {
+    this.budgetDecisionCalls.push({ id, actor, actionId, ...(locale ? { locale } : {}) });
     return {
       escalation: { id, work_item_id: workItemId, resolved_at: now.toISOString() },
       work_item_status: "ai_working" as const,
@@ -253,28 +253,30 @@ test("R9.0 escalation routes parse resolve and delegate actions under auth", asy
 
   const resolved = await app.request(`/api/escalations/${escalationId}/resolve`, {
     method: "POST",
-    headers: { Cookie: await cookie(runtimeSettings) },
+    headers: { Cookie: await cookie(runtimeSettings), "Accept-Language": "en-US" },
     body: JSON.stringify({ action: "pm_mode", reason_md: "我来接手。" })
   });
   assert.equal(resolved.status, 200);
   assert.equal(service.resolveCalls[0]?.id, escalationId);
   assert.equal(service.resolveCalls[0]?.actor.userId, userId);
+  assert.equal(service.resolveCalls[0]?.locale, "en-US");
   assert.deepEqual(service.resolveCalls[0]?.payload, { action: "pm_mode", reason_md: "我来接手。" });
 
   const targetUserId = "12000000-0000-4000-8000-000000000012";
   const delegated = await app.request(`/api/escalations/${escalationId}/delegate`, {
     method: "POST",
-    headers: { Cookie: await cookie(runtimeSettings) },
+    headers: { Cookie: await cookie(runtimeSettings), "Accept-Language": "en-US" },
     body: JSON.stringify({ to_user_id: targetUserId, reason_md: "请同事接手来源核验。" })
   });
   assert.equal(delegated.status, 200);
   assert.equal(service.delegateCalls[0]?.id, escalationId);
+  assert.equal(service.delegateCalls[0]?.locale, "en-US");
   assert.deepEqual(service.delegateCalls[0]?.payload, {
     to_user_id: targetUserId,
     reason_md: "请同事接手来源核验。"
   });
 
-  const budgetDecision = await app.request(`/api/escalations/${escalationId}/budget-actions/add_budget`, {
+  const budgetDecision = await app.request(`/api/escalations/${escalationId}/budget-actions/add_budget?locale=en-US`, {
     method: "POST",
     headers: { Cookie: await cookie(runtimeSettings) }
   });
@@ -282,6 +284,7 @@ test("R9.0 escalation routes parse resolve and delegate actions under auth", asy
   assert.equal(service.budgetDecisionCalls[0]?.id, escalationId);
   assert.equal(service.budgetDecisionCalls[0]?.actor.userId, userId);
   assert.equal(service.budgetDecisionCalls[0]?.actionId, "add_budget");
+  assert.equal(service.budgetDecisionCalls[0]?.locale, "en-US");
 });
 
 test("R9.0 attention home includes unresolved escalation cards before lower-priority decisions", async () => {

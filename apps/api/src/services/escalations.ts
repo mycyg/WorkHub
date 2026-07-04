@@ -148,6 +148,14 @@ function actionSummary(action: ResolveEscalationRequest["action"], locale: WorkH
   return "已取消这个子任务。";
 }
 
+function budgetDecisionSummary(locale: WorkHubLocale) {
+  return locale === "en-US" ? "Budget choice recorded." : "已记录预算选择。";
+}
+
+function delegateSummary(locale: WorkHubLocale) {
+  return locale === "en-US" ? "Escalation delegated." : "已转派升级。";
+}
+
 function workspaceMatches(row: EscalationServiceRow, actor: AuthActor) {
   return row.workspaceId === actor.workspaceId;
 }
@@ -294,7 +302,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
   const now = deps.now ?? (() => new Date());
 
   return {
-    async resolve(id: string, actor: AuthActor, input: ResolveEscalationRequest) {
+    async resolve(id: string, actor: AuthActor, input: ResolveEscalationRequest, locale: WorkHubLocale = "zh-CN") {
       const payload = resolveEscalationRequestSchema.parse(input);
       const existing = await repository.findById(id);
       if (!existing) {
@@ -348,12 +356,12 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
         },
         work_item_status: row.workItemStatus,
         attention: {
-          summary_text: actionSummary(payload.action, "zh-CN")
+          summary_text: actionSummary(payload.action, locale)
         }
       };
     },
 
-    async resolveBudgetDecision(id: string, actor: AuthActor, actionId: string) {
+    async resolveBudgetDecision(id: string, actor: AuthActor, actionId: string, locale: WorkHubLocale = "zh-CN") {
       const normalizedActionId = actionId.trim();
       const existing = await repository.findById(id);
       if (!existing) {
@@ -383,12 +391,12 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
         },
         work_item_status: row.workItemStatus,
         attention: {
-          summary_text: "已记录预算选择。"
+          summary_text: budgetDecisionSummary(locale)
         }
       };
     },
 
-    async delegate(id: string, actor: AuthActor, input: DelegateEscalationRequest) {
+    async delegate(id: string, actor: AuthActor, input: DelegateEscalationRequest, locale: WorkHubLocale = "zh-CN") {
       const payload = delegateEscalationRequestSchema.parse(input);
       const existing = await repository.findById(id);
       if (!existing) {
@@ -423,7 +431,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
           suggested_lead_user_id: row.suggestedLeadUserId
         },
         attention: {
-          summary_text: "已转派升级。"
+          summary_text: delegateSummary(locale)
         }
       };
     },

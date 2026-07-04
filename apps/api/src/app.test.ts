@@ -1140,6 +1140,10 @@ test("Approval and permission OpenAPI contracts document decision and policy act
   });
 
   assert.deepEqual(jsonRequestSchema(body.paths, "/api/escalations/{id}/resolve", "post")?.required, ["action"]);
+  assert.deepEqual(operationParameters(body.paths, "/api/escalations/{id}/resolve", "post"), [
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+    { name: "locale", in: "query", required: false, schema: { type: "string", enum: ["zh-CN", "en-US"] } }
+  ]);
   assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/escalations/{id}/resolve", "post")).sort(), [
     "action",
     "reason_md"
@@ -1156,18 +1160,11 @@ test("Approval and permission OpenAPI contracts document decision and policy act
   });
 
   assert.equal(jsonRequestBodyRequired(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post"), false);
-  assert.deepEqual(parameterByName(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "id"), {
-    name: "id",
-    in: "path",
-    required: true,
-    schema: { type: "string", format: "uuid" }
-  });
-  assert.deepEqual(parameterByName(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "actionId"), {
-    name: "actionId",
-    in: "path",
-    required: true,
-    schema: { type: "string", minLength: 1, maxLength: 64 }
-  });
+  assert.deepEqual(operationParameters(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post"), [
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+    { name: "actionId", in: "path", required: true, schema: { type: "string", minLength: 1, maxLength: 64 } },
+    { name: "locale", in: "query", required: false, schema: { type: "string", enum: ["zh-CN", "en-US"] } }
+  ]);
   const escalationBudget = jsonResponseSchema(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "200");
   const escalationBudgetData = escalationBudget?.properties?.data as {
     required?: string[];
@@ -1215,6 +1212,10 @@ test("Approval and permission OpenAPI contracts document decision and policy act
   });
 
   assert.deepEqual(jsonRequestSchema(body.paths, "/api/escalations/{id}/delegate", "post")?.required, ["to_user_id"]);
+  assert.deepEqual(operationParameters(body.paths, "/api/escalations/{id}/delegate", "post"), [
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+    { name: "locale", in: "query", required: false, schema: { type: "string", enum: ["zh-CN", "en-US"] } }
+  ]);
   assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/escalations/{id}/delegate", "post")).sort(), [
     "reason_md",
     "to_user_id"

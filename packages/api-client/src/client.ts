@@ -408,18 +408,18 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    resolveEscalation: (id, payload) =>
-      request<EscalationResolveResult>(`/api/escalations/${encodeURIComponent(id)}/resolve`, {
+    resolveEscalation: (id, payload, options) =>
+      request<EscalationResolveResult>(withPageLocale(`/api/escalations/${encodeURIComponent(id)}/resolve`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    resolveBudgetDecision: (id, actionId) =>
+    resolveBudgetDecision: (id, actionId, options) =>
       request<EscalationResolveResult>(
-        `/api/escalations/${encodeURIComponent(id)}/budget-actions/${encodeURIComponent(actionId)}`,
+        withPageLocale(`/api/escalations/${encodeURIComponent(id)}/budget-actions/${encodeURIComponent(actionId)}`, options),
         { method: "POST" }
       ),
-    delegateEscalation: (id, payload) =>
-      request<EscalationDelegateResult>(`/api/escalations/${encodeURIComponent(id)}/delegate`, {
+    delegateEscalation: (id, payload, options) =>
+      request<EscalationDelegateResult>(withPageLocale(`/api/escalations/${encodeURIComponent(id)}/delegate`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),

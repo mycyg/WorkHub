@@ -4383,7 +4383,7 @@ export function getOpenApiDocument() {
         post: {
           tags: ["escalations"],
           summary: "Resolve an unresolved escalation by retrying, taking over, or cancelling",
-          parameters: [pathUuidParameter("id")],
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
           ...jsonRequestBody(resolveEscalationRequestBodySchema),
           ...escalationResolveResponse
         }
@@ -4399,7 +4399,8 @@ export function getOpenApiDocument() {
               in: "path",
               required: true,
               schema: { type: "string", minLength: 1, maxLength: 64 }
-            }
+            },
+            localeQueryParameter
           ],
           ...escalationBudgetResolveResponse
         }
@@ -4408,7 +4409,7 @@ export function getOpenApiDocument() {
         post: {
           tags: ["escalations"],
           summary: "Delegate an unresolved escalation to another active user",
-          parameters: [pathUuidParameter("id")],
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
           ...jsonRequestBody(delegateEscalationRequestBodySchema),
           ...escalationDelegateResponse
         }

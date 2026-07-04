@@ -765,8 +765,8 @@ test("desktop Cuu actions resolve escalation cards with action-specific payloads
     async respondApproval() {
       throw new Error("not needed");
     },
-    async resolveEscalation(id: string, payload: unknown) {
-      calls.push({ id, payload });
+    async resolveEscalation(id: string, payload: unknown, options?: unknown) {
+      calls.push({ id, payload, options });
       return { attention: { summary_text: "我会再让它试一次。" } };
     },
     async nextQuestion() {
@@ -804,7 +804,7 @@ test("desktop Cuu actions resolve escalation cards with action-specific payloads
 
   assert.equal((await submitDesktopCuuAction({ client, action: retry! })).message, "我会再让它试一次。");
   assert.deepEqual(calls, [
-    { id: "escalation-1", payload: { action: "retry" } }
+    { id: "escalation-1", payload: { action: "retry" }, options: { locale: "zh-CN" } }
   ]);
 });
 

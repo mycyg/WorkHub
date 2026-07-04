@@ -3,8 +3,10 @@ import { HTTPException } from "hono/http-exception";
 
 import {
   delegateEscalationRequestSchema,
+  normalizeWorkHubLocale,
   resolveEscalationRequestSchema
 } from "@workhub/contracts";
+import type { WorkHubLocale } from "@workhub/contracts";
 
 import {
   createCurrentUserMiddleware,
@@ -31,6 +33,10 @@ function requireEscalationId(id: string) {
   return id;
 }
 
+function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
+  return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
+}
+
 export function createEscalationRoutes(deps: EscalationRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
@@ -39,21 +45,21 @@ export function createEscalationRoutes(deps: EscalationRoutesDependencies = {}) 
   routes.post("/:id/resolve", createCurrentUserMiddleware(authSource), async (c) => {
     const id = requireEscalationId(c.req.param("id"));
     const payload = resolveEscalationRequestSchema.parse(await readJsonObject(c));
-    const data = await service.resolve(id, c.var.actor, payload);
+    const data = await service.resolve(id, c.var.actor, payload, requestLocale(c));
     return c.json({ ok: true, data });
   });
 
   routes.post("/:id/budget-actions/:actionId", createCurrentUserMiddleware(authSource), async (c) => {
     const id = requireEscalationId(c.req.param("id"));
     const actionId = c.req.param("actionId");
-    const data = await service.resolveBudgetDecision(id, c.var.actor, actionId);
+    const data = await service.resolveBudgetDecision(id, c.var.actor, actionId, requestLocale(c));
     return c.json({ ok: true, data });
   });
 
   routes.post("/:id/delegate", createCurrentUserMiddleware(authSource), async (c) => {
     const id = requireEscalationId(c.req.param("id"));
     const payload = delegateEscalationRequestSchema.parse(await readJsonObject(c));
-    const data = await service.delegate(id, c.var.actor, payload);
+    const data = await service.delegate(id, c.var.actor, payload, requestLocale(c));
     return c.json({ ok: true, data });
   });
 

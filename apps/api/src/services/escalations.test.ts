@@ -200,6 +200,54 @@ test("R9.7 budget decision actions resolve the budget row without mutating work 
   assert.equal(result.attention.summary_text, "已记录预算选择。");
 });
 
+test("R9.7 escalation mutation success summaries honor the requested locale", async () => {
+  const budgetRow = row({
+    trigger: "budget_exhausted",
+    workItemStatus: "ai_working",
+    handoffJson: {
+      attention_kind: "budget",
+      notice: {
+        options: [
+          { id: "finish_current_output", label: "Finish with current output", action_href: "/workitems/demo" }
+        ]
+      }
+    }
+  });
+  const budgetRepository = new MemoryEscalationRepository({ findRow: budgetRow });
+  const budgetService = createEscalationService({ repository: budgetRepository, now: () => now });
+
+  const budget = await budgetService.resolveBudgetDecision(
+    escalationId,
+    actor(),
+    "finish_current_output",
+    "en-US"
+  );
+
+  assert.equal(budget.attention.summary_text, "Budget choice recorded.");
+
+  const resolveRepository = new MemoryEscalationRepository();
+  const resolveService = createEscalationService({ repository: resolveRepository, now: () => now });
+  const resolved = await resolveService.resolve(escalationId, actor(), { action: "pm_mode" }, "en-US");
+
+  assert.equal(resolved.attention.summary_text, "This task is now in human mode.");
+
+  const delegateRepository = new MemoryEscalationRepository();
+  const delegateService = createEscalationService({
+    repository: delegateRepository,
+    users: false,
+    memberships: false,
+    now: () => now
+  });
+  const delegated = await delegateService.delegate(
+    escalationId,
+    actor(),
+    { to_user_id: delegateTargetUserId },
+    "en-US"
+  );
+
+  assert.equal(delegated.attention.summary_text, "Escalation delegated.");
+});
+
 test("R9.7 budget decision actions reject options not present on the durable notice", async () => {
   const repository = new MemoryEscalationRepository({
     findRow: row({

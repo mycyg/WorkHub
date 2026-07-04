@@ -15,7 +15,7 @@ import {
   type CuuControllerDecision,
   type CuuLocaleOptions
 } from "@workhub/cuu";
-import { WorkHubApiError, type WorkHubApiClient } from "@workhub/api-client";
+import { WorkHubApiError, type PageRequestOptions, type WorkHubApiClient } from "@workhub/api-client";
 import {
   cuuLauncherSpecOptionSchema,
   eventTypes,
@@ -298,7 +298,8 @@ type DesktopCuuActionClient = Pick<
 > & {
   resolveEscalation?: (
     escalationId: string,
-    payload: ResolveEscalationRequest
+    payload: ResolveEscalationRequest,
+    options?: PageRequestOptions
   ) => Promise<{
     attention: {
       summary_text: string;
@@ -1119,7 +1120,9 @@ export async function submitDesktopCuuAction(input: {
     if (!input.client.resolveEscalation) {
       throw new Error("Escalation resolve action is unavailable.");
     }
-    const result = await input.client.resolveEscalation(input.action.escalationId, input.action.payload);
+    const result = await input.client.resolveEscalation(input.action.escalationId, input.action.payload, {
+      locale: input.locale ?? "zh-CN"
+    });
     return {
       message: result.attention.summary_text
     };

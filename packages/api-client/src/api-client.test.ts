@@ -341,6 +341,9 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.createMeetingInsightDraft("project 1", "insight 1", { locale: "zh-CN" });
   await client.dismissMeetingInsight("project 1", "insight 1", { locale: "en-US" });
   await client.createMeetingDraftProposal("work 1", { locale: "zh-CN" });
+  await client.resolveEscalation("esc 1", { action: "retry" }, { locale: "en-US" });
+  await client.resolveBudgetDecision("esc 1", "finish_current_output", { locale: "en-US" });
+  await client.delegateEscalation("esc 1", { to_user_id: "user 1" }, { locale: "en-US" });
 
   assert.deepEqual(calls, [
     "/api/pages/gold-path?locale=en-US",
@@ -366,7 +369,10 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/drive/workitems/work%201/proposal-draft?locale=en-US",
     "/api/meetings/projects/project%201/insights/insight%201/draft?locale=zh-CN",
     "/api/meetings/projects/project%201/insights/insight%201/dismiss?locale=en-US",
-    "/api/meetings/workitems/work%201/proposal-draft?locale=zh-CN"
+    "/api/meetings/workitems/work%201/proposal-draft?locale=zh-CN",
+    "/api/escalations/esc%201/resolve?locale=en-US",
+    "/api/escalations/esc%201/budget-actions/finish_current_output?locale=en-US",
+    "/api/escalations/esc%201/delegate?locale=en-US"
   ]);
 });
 
