@@ -1367,6 +1367,7 @@ test("OpenAPI error responses document approval, meeting, and work item mutation
     "escalation_status_conflict"
   ]);
   assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "422", ["validation_error"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "503", ["task_dispatch_retry_failed"]);
   assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "401", ["not_identified"]);
   assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "403", [
     "invalid_client_token",

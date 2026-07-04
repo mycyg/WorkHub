@@ -1809,6 +1809,11 @@ const escalationRaceResponse = jsonErrorStatusResponse(
   "Escalation was already handled before this action completed",
   ["escalation_race", "escalation_status_conflict"]
 ).responses["409"];
+const escalationRetryUnavailableResponse = jsonErrorStatusResponse(
+  "503",
+  "Escalation retry dispatch failed after reopening the escalation",
+  ["task_dispatch_retry_failed"]
+).responses["503"];
 const escalationDelegateRaceResponse = jsonErrorStatusResponse(
   "409",
   "Escalation delegation raced with another handler",
@@ -1918,7 +1923,8 @@ const escalationResolveResponse = {
     "403": approvalReadForbiddenResponse,
     "404": escalationResolveNotFoundResponse,
     "409": escalationRaceResponse,
-    "422": escalationValidationResponse
+    "422": escalationValidationResponse,
+    "503": escalationRetryUnavailableResponse
   }
 } as const;
 const escalationBudgetResolveResponse = {
