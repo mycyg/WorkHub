@@ -66,6 +66,13 @@ export type ResolveEscalationInput = {
   at: Date;
 };
 
+export type ResolveBudgetDecisionInput = {
+  escalationId: string;
+  workspaceId: string;
+  actionId: string;
+  at: Date;
+};
+
 export type DelegateEscalationInput = {
   escalationId: string;
   toUserId: string;
@@ -82,6 +89,7 @@ export type AiDecisionRepository = {
   findEscalationById: (id: string) => Promise<EscalationServiceRow | null>;
   listUnresolvedEscalationsForWorkspace: (input: { workspaceId: string; limit?: number }) => Promise<EscalationServiceRow[]>;
   resolveEscalation: (input: ResolveEscalationInput) => Promise<EscalationServiceRow | null>;
+  resolveBudgetDecision: (input: ResolveBudgetDecisionInput) => Promise<EscalationServiceRow | null>;
   reopenEscalation?: (input: {
     escalationId: string;
     targetStatus: WorkItemStatus;
@@ -430,6 +438,28 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
         const row = rows[0];
         return row ? toEscalationServiceRow(row) : null;
       });
+    },
+
+    async resolveBudgetDecision(input) {
+      const rows = await db
+        .update(escalationEvents)
+        .set({
+          resolvedAt: input.at,
+          handoffJson: sql`${escalationEvents.handoffJson} || ${JSON.stringify({
+            budget_resolution: {
+              action_id: input.actionId,
+              resolved_at: input.at.toISOString()
+            }
+          })}::jsonb`
+        })
+        .where(and(
+          eq(escalationEvents.id, input.escalationId),
+          isNull(escalationEvents.resolvedAt),
+          scopedEscalationEventPredicate(input)
+        ))
+        .returning({ id: escalationEvents.id });
+      const updated = rows[0];
+      return updated ? this.findEscalationById(updated.id) : null;
     },
 
     async reopenEscalation(input) {

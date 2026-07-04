@@ -97,6 +97,11 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
     escalationId: "e-1",
     action: "delegate"
   });
+  assert.deepEqual(escalationActionFromHref("/api/escalations/e%201/budget-actions/finish_current_output"), {
+    escalationId: "e 1",
+    action: "budget",
+    budgetActionId: "finish_current_output"
+  });
   assert.deepEqual(memoryConflictActionFromHref("/api/memory-conflicts/m%201/resolve/keep_current"), {
     conflictId: "m 1",
     resolution: "keep_current"

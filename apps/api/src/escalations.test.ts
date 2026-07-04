@@ -201,6 +201,7 @@ function escalationCard(): AttentionItem {
 class MemoryEscalations implements EscalationService {
   public resolveCalls: Array<{ id: string; actor: AuthActor; payload: unknown }> = [];
   public delegateCalls: Array<{ id: string; actor: AuthActor; payload: unknown }> = [];
+  public budgetDecisionCalls: Array<{ id: string; actor: AuthActor; actionId: string }> = [];
   public listCalls: Array<{ actor: AuthActor; locale: WorkHubLocale }> = [];
 
   async resolve(id: string, actor: AuthActor, payload: ResolveEscalationRequest) {
@@ -217,6 +218,15 @@ class MemoryEscalations implements EscalationService {
     return {
       escalation: { id, work_item_id: workItemId, suggested_lead_user_id: payload.to_user_id ?? null },
       attention: { summary_text: "已转派升级。" }
+    };
+  }
+
+  async resolveBudgetDecision(id: string, actor: AuthActor, actionId: string) {
+    this.budgetDecisionCalls.push({ id, actor, actionId });
+    return {
+      escalation: { id, work_item_id: workItemId, resolved_at: now.toISOString() },
+      work_item_status: "ai_working" as const,
+      attention: { summary_text: "已记录预算选择。" }
     };
   }
 
@@ -262,6 +272,15 @@ test("R9.0 escalation routes parse resolve and delegate actions under auth", asy
     to_user_id: targetUserId,
     reason_md: "请同事接手来源核验。"
   });
+
+  const budgetDecision = await app.request(`/api/escalations/${escalationId}/budget-actions/add_budget`, {
+    method: "POST",
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+  assert.equal(budgetDecision.status, 200);
+  assert.equal(service.budgetDecisionCalls[0]?.id, escalationId);
+  assert.equal(service.budgetDecisionCalls[0]?.actor.userId, userId);
+  assert.equal(service.budgetDecisionCalls[0]?.actionId, "add_budget");
 });
 
 test("R9.0 attention home includes unresolved escalation cards before lower-priority decisions", async () => {

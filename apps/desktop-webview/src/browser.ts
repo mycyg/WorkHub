@@ -606,6 +606,19 @@ function bindGoldPathNavigation(
     if (action.kind === "api-action") {
       event.preventDefault();
       const escalationAction = escalationActionFromHref(href);
+      if (escalationAction?.action === "budget") {
+        try {
+          const result = await client.resolveBudgetDecision(
+            escalationAction.escalationId,
+            escalationAction.budgetActionId
+          );
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        input.onActionSettled?.();
+        return;
+      }
       if (escalationAction?.action === "resolve") {
         const payload = escalationResolvePayloadFromActionId(actionId);
         if (!payload) {

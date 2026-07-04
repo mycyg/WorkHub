@@ -296,6 +296,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async resolveEscalation() {
       throw new Error("not needed");
     },
+    async resolveBudgetDecision() {
+      throw new Error("not needed");
+    },
     async delegateEscalation() {
       throw new Error("not needed");
     },

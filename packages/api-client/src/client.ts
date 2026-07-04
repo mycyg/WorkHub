@@ -413,6 +413,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    resolveBudgetDecision: (id, actionId) =>
+      request<EscalationResolveResult>(
+        `/api/escalations/${encodeURIComponent(id)}/budget-actions/${encodeURIComponent(actionId)}`,
+        { method: "POST" }
+      ),
     delegateEscalation: (id, payload) =>
       request<EscalationDelegateResult>(`/api/escalations/${encodeURIComponent(id)}/delegate`, {
         method: "POST",

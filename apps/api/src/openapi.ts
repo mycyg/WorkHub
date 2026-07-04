@@ -1672,6 +1672,40 @@ const escalationResolveResultResponseSchema = {
   },
   additionalProperties: false
 } as const;
+const workItemStatusResponseSchema = {
+  type: "string",
+  enum: [
+    "intake",
+    "ai_clarifying",
+    "spec_ready",
+    "ai_working",
+    "escalated",
+    "pm_mode",
+    "in_review",
+    "merged",
+    "done",
+    "cancelled"
+  ]
+} as const;
+const escalationBudgetResolveResultResponseSchema = {
+  type: "object",
+  required: ["escalation", "work_item_status", "attention"],
+  properties: {
+    escalation: {
+      type: "object",
+      required: ["id", "work_item_id", "resolved_at"],
+      properties: {
+        id: uuidStringSchema,
+        work_item_id: uuidStringSchema,
+        resolved_at: dateTimeStringSchema
+      },
+      additionalProperties: false
+    },
+    work_item_status: workItemStatusResponseSchema,
+    attention: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: false
+} as const;
 const memoryConflictResolutionResponseSchema = {
   type: "string",
   enum: ["keep_current", "accept_incoming", "merge_both", "edit_memory"]
@@ -1780,6 +1814,11 @@ const escalationDelegateRaceResponse = jsonErrorStatusResponse(
   "Escalation delegation raced with another handler",
   ["escalation_race"]
 ).responses["409"];
+const escalationBudgetActionUnavailableResponse = jsonErrorStatusResponse(
+  "422",
+  "Budget action is not available for this escalation",
+  ["budget_action_not_available"]
+).responses["422"];
 const approvalDelegateSemanticResponse = jsonErrorStatusResponse(
   "422",
   "Approval delegation target is not valid for this request",
@@ -1880,6 +1919,16 @@ const escalationResolveResponse = {
     "404": escalationResolveNotFoundResponse,
     "409": escalationRaceResponse,
     "422": escalationValidationResponse
+  }
+} as const;
+const escalationBudgetResolveResponse = {
+  responses: {
+    "200": jsonDataResponse(escalationBudgetResolveResultResponseSchema, "Budget decision result").responses["200"],
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
+    "404": escalationResolveNotFoundResponse,
+    "409": escalationDelegateRaceResponse,
+    "422": escalationBudgetActionUnavailableResponse
   }
 } as const;
 const memoryConflictResolveResponse = {
@@ -4337,6 +4386,22 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           ...jsonRequestBody(resolveEscalationRequestBodySchema),
           ...escalationResolveResponse
+        }
+      },
+      "/api/escalations/{id}/budget-actions/{actionId}": {
+        post: {
+          tags: ["escalations"],
+          summary: "Resolve a durable budget escalation by recording the selected budget action",
+          parameters: [
+            pathUuidParameter("id"),
+            {
+              name: "actionId",
+              in: "path",
+              required: true,
+              schema: { type: "string", minLength: 1, maxLength: 64 }
+            }
+          ],
+          ...escalationBudgetResolveResponse
         }
       },
       "/api/escalations/{id}/delegate": {

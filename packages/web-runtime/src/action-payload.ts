@@ -163,6 +163,14 @@ export function notificationActionFromHref(href: string) {
 
 export function escalationActionFromHref(href: string) {
   const path = hrefPathname(href);
+  const budgetMatch = /^\/api\/escalations\/([^/]+)\/budget-actions\/([^/]+)$/u.exec(path);
+  if (budgetMatch?.[1] && budgetMatch[2]) {
+    return {
+      escalationId: decodeURIComponent(budgetMatch[1]),
+      action: "budget" as const,
+      budgetActionId: decodeURIComponent(budgetMatch[2])
+    };
+  }
   const match = /^\/api\/escalations\/([^/]+)\/(resolve|delegate)$/u.exec(path);
   if (!match?.[1] || !match[2]) {
     return undefined;

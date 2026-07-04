@@ -311,6 +311,7 @@ async function main() {
         findById: (id) => aiDecisionRepository.findEscalationById(id),
         listUnresolvedForWorkspace: (input) => aiDecisionRepository.listUnresolvedEscalationsForWorkspace(input),
         resolveEscalation: (input) => aiDecisionRepository.resolveEscalation(input),
+        resolveBudgetDecision: (input) => aiDecisionRepository.resolveBudgetDecision(input),
         reopenEscalation: (input) => aiDecisionRepository.reopenEscalation?.(input) ?? Promise.resolve(null),
         delegateEscalation: (input) => aiDecisionRepository.delegateEscalation(input)
       },

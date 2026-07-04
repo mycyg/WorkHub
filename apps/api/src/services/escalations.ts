@@ -36,6 +36,12 @@ export type EscalationRepository = {
     taskPlanAction?: ResolveEscalationRequest["action"];
     at: Date;
   }) => Promise<EscalationServiceRow | null>;
+  resolveBudgetDecision: (input: {
+    escalationId: string;
+    workspaceId: string;
+    actionId: string;
+    at: Date;
+  }) => Promise<EscalationServiceRow | null>;
   reopenEscalation?: (input: {
     escalationId: string;
     targetStatus: WorkItemStatus;
@@ -75,6 +81,7 @@ function getDefaultEscalationRepository(): EscalationRepository {
     findById: (id) => repo.findEscalationById(id),
     listUnresolvedForWorkspace: (input) => repo.listUnresolvedEscalationsForWorkspace(input),
     resolveEscalation: (input) => repo.resolveEscalation(input),
+    resolveBudgetDecision: (input) => repo.resolveBudgetDecision(input),
     reopenEscalation: (input) => repo.reopenEscalation?.(input) ?? Promise.resolve(null),
     delegateEscalation: (input) => repo.delegateEscalation(input)
   };
@@ -189,19 +196,33 @@ function budgetNoticeFromHandoff(row: EscalationServiceRow) {
   } : undefined;
 }
 
+function isBudgetEscalation(row: EscalationServiceRow) {
+  return row.trigger === "budget_exhausted" || row.handoffJson["attention_kind"] === "budget";
+}
+
+function availableBudgetActionIds(row: EscalationServiceRow) {
+  const notice = budgetNoticeFromHandoff(row);
+  const options = Array.isArray(notice?.options) ? notice.options : [];
+  return new Set(
+    options
+      .map((option) => option.id)
+      .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+  );
+}
+
 function budgetActions(row: EscalationServiceRow, locale: WorkHubLocale): AttentionItem["actions"] {
   const notice = budgetNoticeFromHandoff(row);
   const options = Array.isArray(notice?.options) ? notice.options : [];
   const actions = options
-    .filter((option): option is { id: string; label: string; action_href: string } =>
-      Boolean(option.id && option.label && option.action_href)
+    .filter((option): option is { id: string; label: string; action_href?: string } =>
+      Boolean(option.id && option.label)
     )
     .map((option, index) => ({
       id: option.id,
       label: option.label,
       style: option.id === notice?.recommended_action || index === 0 ? "primary" as const : "secondary" as const,
-      method: "GET" as const,
-      href: option.action_href
+      method: "POST" as const,
+      href: `/api/escalations/${row.id}/budget-actions/${encodeURIComponent(option.id)}`
     }));
   if (actions.length > 0) {
     return actions;
@@ -328,6 +349,41 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
         work_item_status: row.workItemStatus,
         attention: {
           summary_text: actionSummary(payload.action, "zh-CN")
+        }
+      };
+    },
+
+    async resolveBudgetDecision(id: string, actor: AuthActor, actionId: string) {
+      const normalizedActionId = actionId.trim();
+      const existing = await repository.findById(id);
+      if (!existing) {
+        throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
+      }
+      ensureWorkspace(existing, actor);
+      if (!isBudgetEscalation(existing)) {
+        throw new EscalationServiceError(422, "budget_action_not_available", "这条预算选择已经不可用。");
+      }
+      if (!normalizedActionId || normalizedActionId.length > 64 || !availableBudgetActionIds(existing).has(normalizedActionId)) {
+        throw new EscalationServiceError(422, "budget_action_not_available", "这条预算选择已经不可用。");
+      }
+      const row = await repository.resolveBudgetDecision({
+        escalationId: id,
+        workspaceId: actor.workspaceId,
+        actionId: normalizedActionId,
+        at: now()
+      });
+      if (!row) {
+        throw new EscalationServiceError(409, "escalation_race", "这条升级已经被处理过了。");
+      }
+      return {
+        escalation: {
+          id: row.id,
+          work_item_id: row.workItemId,
+          resolved_at: row.resolvedAt?.toISOString()
+        },
+        work_item_status: row.workItemStatus,
+        attention: {
+          summary_text: "已记录预算选择。"
         }
       };
     },

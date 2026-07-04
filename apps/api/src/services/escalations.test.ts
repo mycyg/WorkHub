@@ -53,6 +53,7 @@ class MemoryEscalationRepository implements EscalationRepository {
   public resolveCalls: Array<{ escalationId: string; targetStatus: string; taskPlanAction?: string }> = [];
   public reopenCalls: Array<{ escalationId: string; targetStatus: string }> = [];
   public delegateCalls: Array<{ escalationId: string; toUserId: string; workspaceId?: string }> = [];
+  public budgetDecisionCalls: Array<{ escalationId: string; workspaceId: string; actionId: string }> = [];
 
   constructor(
     private readonly options: {
@@ -94,6 +95,23 @@ class MemoryEscalationRepository implements EscalationRepository {
     });
     return row({ suggestedLeadUserId: "12000000-0000-4000-8000-000000000012" });
   }
+
+  async resolveBudgetDecision(input: { escalationId: string; workspaceId: string; actionId: string }) {
+    this.budgetDecisionCalls.push({
+      escalationId: input.escalationId,
+      workspaceId: input.workspaceId,
+      actionId: input.actionId
+    });
+    return row({
+      trigger: "budget_exhausted",
+      resolvedAt: now,
+      workItemStatus: "ai_working",
+      handoffJson: {
+        attention_kind: "budget",
+        budget_resolution: { action_id: input.actionId }
+      }
+    });
+  }
 }
 
 test("R9.0 escalation attention cards expose three human decisions without raw enum copy", () => {
@@ -134,10 +152,79 @@ test("R9.7 budget exhaustion rows render as budget decision cards", () => {
   assert.equal(item.priority, "high");
   assert.equal(item.source_ref.entity_type, "budget_notice");
   assert.equal(item.title, "《竞品价格调研》预算需要处理");
+  // Old assertion expected GET navigation links, but budget options are durable
+  // decisions; GET only opened a page and left the persisted budget row unresolved.
   assert.deepEqual(item.actions.map((action) => [action.id, action.label, action.method, action.href]), [
-    ["add_budget", "追加预算继续", "GET", "/dashboard/cost?objectiveId=obj-1"],
-    ["finish_current_output", "就用现有产出收尾", "GET", "/workitems/demo"]
+    ["add_budget", "追加预算继续", "POST", `/api/escalations/${escalationId}/budget-actions/add_budget`],
+    ["finish_current_output", "就用现有产出收尾", "POST", `/api/escalations/${escalationId}/budget-actions/finish_current_output`]
   ]);
+});
+
+test("R9.7 budget decision actions resolve the budget row without mutating work item state", async () => {
+  const budgetRow = row({
+    trigger: "budget_exhausted",
+    workItemStatus: "ai_working",
+    handoffJson: {
+      attention_kind: "budget",
+      notice: {
+        code: "budget_exhausted",
+        severity: "critical",
+        message: "AI 预算已经用完，先暂停新的自动执行。",
+        recommended_action: "add_budget",
+        options: [
+          { id: "add_budget", label: "追加预算继续", action_href: "/dashboard/cost?objectiveId=obj-1" },
+          { id: "finish_current_output", label: "就用现有产出收尾", action_href: "/workitems/demo" }
+        ]
+      }
+    }
+  });
+  const repository = new MemoryEscalationRepository({ findRow: budgetRow });
+  const service = createEscalationService({ repository, now: () => now }) as ReturnType<typeof createEscalationService> & {
+    resolveBudgetDecision: (id: string, actor: AuthActor, actionId: string) => Promise<{
+      escalation: { id: string; work_item_id: string; resolved_at?: string };
+      work_item_status: EscalationServiceRow["workItemStatus"];
+      attention: { summary_text: string };
+    }>;
+  };
+
+  const result = await service.resolveBudgetDecision(escalationId, actor(), "finish_current_output");
+
+  assert.deepEqual(repository.budgetDecisionCalls, [{
+    escalationId,
+    workspaceId: actor().workspaceId,
+    actionId: "finish_current_output"
+  }]);
+  assert.deepEqual(repository.resolveCalls, []);
+  assert.equal(result.escalation.id, escalationId);
+  assert.equal(result.work_item_status, "ai_working");
+  assert.equal(result.attention.summary_text, "已记录预算选择。");
+});
+
+test("R9.7 budget decision actions reject options not present on the durable notice", async () => {
+  const repository = new MemoryEscalationRepository({
+    findRow: row({
+      trigger: "budget_exhausted",
+      handoffJson: {
+        attention_kind: "budget",
+        notice: {
+          options: [
+            { id: "add_budget", label: "追加预算继续", action_href: "/dashboard/cost?objectiveId=obj-1" }
+          ]
+        }
+      }
+    })
+  });
+  const service = createEscalationService({ repository, now: () => now }) as ReturnType<typeof createEscalationService> & {
+    resolveBudgetDecision: (id: string, actor: AuthActor, actionId: string) => Promise<unknown>;
+  };
+
+  await assert.rejects(
+    service.resolveBudgetDecision(escalationId, actor(), "close_scope"),
+    (error: unknown) => error instanceof Error
+      && (error as { status?: number; code?: string }).status === 422
+      && (error as { code?: string }).code === "budget_action_not_available"
+  );
+  assert.deepEqual(repository.budgetDecisionCalls, []);
 });
 
 test("R9.0 escalation resolve actions map to the work-item state machine", async () => {

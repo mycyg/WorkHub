@@ -300,6 +300,11 @@ export function createAttentionView(): SpotlightCapabilityView {
         reasonMd: string | undefined
       ): Promise<boolean> => {
         const escalation = escalationActionFromHref(href);
+        if (escalation?.action === "budget") {
+          const res = await client.resolveBudgetDecision(escalation.escalationId, escalation.budgetActionId);
+          ctx.toast(summaryText(res) ?? (zh ? "预算选择已记录" : "Budget decision recorded"), "ok");
+          return true;
+        }
         if (escalation?.action === "resolve") {
           const payload = escalationResolvePayloadFromActionId(actionId);
           if (!payload) {

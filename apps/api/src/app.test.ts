@@ -326,6 +326,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["get", "/api/approvals/{id}/comments"],
     ["post", "/api/approvals/{id}/comments"],
     ["post", "/api/escalations/{id}/resolve"],
+    ["post", "/api/escalations/{id}/budget-actions/{actionId}"],
     ["post", "/api/escalations/{id}/delegate"],
     ["post", "/api/memory-conflicts/{id}/resolve/{resolution}"],
     ["get", "/api/permissions"],
@@ -1154,6 +1155,30 @@ test("Approval and permission OpenAPI contracts document decision and policy act
     enum: ["ai_working", "pm_mode", "cancelled"]
   });
 
+  assert.equal(jsonRequestBodyRequired(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post"), false);
+  assert.deepEqual(parameterByName(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "id"), {
+    name: "id",
+    in: "path",
+    required: true,
+    schema: { type: "string", format: "uuid" }
+  });
+  assert.deepEqual(parameterByName(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "actionId"), {
+    name: "actionId",
+    in: "path",
+    required: true,
+    schema: { type: "string", minLength: 1, maxLength: 64 }
+  });
+  const escalationBudget = jsonResponseSchema(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "200");
+  const escalationBudgetData = escalationBudget?.properties?.data as {
+    required?: string[];
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.deepEqual(escalationBudgetData?.required, ["escalation", "work_item_status", "attention"]);
+  assert.deepEqual(escalationBudgetData?.properties?.work_item_status, {
+    type: "string",
+    enum: ["intake", "ai_clarifying", "spec_ready", "ai_working", "escalated", "pm_mode", "in_review", "merged", "done", "cancelled"]
+  });
+
   assert.equal(jsonRequestBodyRequired(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post"), false);
   assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post")).sort(), [
     "value_md"
@@ -1339,6 +1364,19 @@ test("OpenAPI error responses document approval, meeting, and work item mutation
     "escalation_status_conflict"
   ]);
   assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "422", ["validation_error"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "403", [
+    "invalid_client_token",
+    "forbidden"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "404", [
+    "not_found",
+    "escalation_not_found"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "409", ["escalation_race"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "422", [
+    "budget_action_not_available"
+  ]);
   assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "400", [
     "malformed_json",
     "json_object_required"

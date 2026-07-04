@@ -225,6 +225,17 @@ export function queryTextFragments(value: unknown): string[] {
   return fragments;
 }
 
+export function queryRawStrings(value: unknown): string[] {
+  const fragments: string[] = [];
+  visitSqlTree(value, (node) => {
+    if (typeof node === "string") {
+      fragments.push(node);
+    }
+    return false;
+  });
+  return fragments;
+}
+
 function constructorName(value: unknown): string | undefined {
   return value && typeof value === "object"
     ? (value as { constructor?: { name?: string } }).constructor?.name

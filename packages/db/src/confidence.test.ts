@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { createAiDecisionRepository } from "./repositories/confidence.js";
 import { agentRuns, escalationEvents, taskPlanItems, taskPlans, workItems } from "./schema/index.js";
-import { createQueryRecorder, queryParamValues, queryReferences, queryTextFragments } from "./test-query-recorder.js";
+import { createQueryRecorder, queryParamValues, queryRawStrings, queryReferences, queryTextFragments } from "./test-query-recorder.js";
 
 const workspaceId = "94000000-0000-4000-8000-000000000201";
 const workItemId = "94000000-0000-4000-8000-000000000202";
@@ -117,6 +117,73 @@ test("R9.7 escalation resolution mutations are fenced by workspace", async () =>
   assert.ok(queryReferences(workItemUpdate?.where, workItems.deletedAt));
   assert.ok(queryReferences(workItemUpdate?.where, workItems.workspaceId));
   assert.ok(queryParamValues(workItemUpdate?.where).includes(workspaceId));
+});
+
+test("R9.7 budget decision resolution records the action without mutating the work item", async () => {
+  const resolvedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId: null,
+    projectId: "94000000-0000-4000-8000-000000000209",
+    title: "预算测试",
+    reasonMd: "预算耗尽。",
+    trigger: "budget_exhausted",
+    handoffJson: {
+      attention_kind: "budget",
+      notice: {
+        options: [
+          { id: "finish_current_output", label: "就用现有产出收尾" }
+        ]
+      },
+      budget_resolution: {
+        action_id: "finish_current_output",
+        resolved_at: now.toISOString()
+      }
+    },
+    suggestedLeadUserId: null,
+    createdAt: now,
+    resolvedAt: now,
+    workItemStatus: "ai_working",
+    workspaceId
+  };
+  const { db, queries } = createQueryRecorder([
+    [{ id: escalationId }],
+    [resolvedEscalation]
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  const row = await repository.resolveBudgetDecision({
+    escalationId,
+    workspaceId,
+    actionId: "finish_current_output",
+    at: now
+  });
+
+  assert.equal(row?.id, escalationId);
+  assert.equal(row?.workItemStatus, "ai_working");
+  assert.deepEqual(row?.handoffJson["budget_resolution"], {
+    action_id: "finish_current_output",
+    resolved_at: now.toISOString()
+  });
+  const [escalationUpdate, escalationLookup] = queries;
+  assert.equal(escalationUpdate?.targetTable, escalationEvents);
+  assert.deepEqual((escalationUpdate?.setValue as { resolvedAt?: Date })?.resolvedAt, now);
+  const handoffUpdate = (escalationUpdate?.setValue as { handoffJson?: unknown })?.handoffJson;
+  assert.ok(queryReferences(handoffUpdate, escalationEvents.handoffJson));
+  assert.ok(queryTextFragments(handoffUpdate).includes(" || "));
+  assert.ok(queryTextFragments(handoffUpdate).includes("::jsonb"));
+  assert.ok(queryRawStrings(handoffUpdate).includes(JSON.stringify({
+    budget_resolution: {
+      action_id: "finish_current_output",
+      resolved_at: now.toISOString()
+    }
+  })));
+  assert.ok(queryReferences(escalationUpdate?.where, escalationEvents.id));
+  assert.ok(queryReferences(escalationUpdate?.where, escalationEvents.resolvedAt));
+  assert.ok(queryReferences(escalationUpdate?.where, workItems.workspaceId));
+  assert.ok(queryParamValues(escalationUpdate?.where).includes(workspaceId));
+  assert.equal(escalationLookup?.fromTable, escalationEvents);
+  assert.equal(queries.some((query) => query.targetTable === workItems), false);
 });
 
 test("R9.7 escalation delegation mutation is fenced by workspace", async () => {

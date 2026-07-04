@@ -1083,6 +1083,21 @@ function bindGoldPathNavigation(
         return;
       }
       const escalationAction = escalationActionFromHref(href);
+      if (escalationAction?.action === "budget") {
+        try {
+          const result = await client.resolveBudgetDecision(
+            escalationAction.escalationId,
+            escalationAction.budgetActionId
+          );
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
       if (escalationAction?.action === "resolve") {
         const payload = escalationResolvePayloadFromActionId(actionId);
         if (!payload) {

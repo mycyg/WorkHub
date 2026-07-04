@@ -43,6 +43,13 @@ export function createEscalationRoutes(deps: EscalationRoutesDependencies = {}) 
     return c.json({ ok: true, data });
   });
 
+  routes.post("/:id/budget-actions/:actionId", createCurrentUserMiddleware(authSource), async (c) => {
+    const id = requireEscalationId(c.req.param("id"));
+    const actionId = c.req.param("actionId");
+    const data = await service.resolveBudgetDecision(id, c.var.actor, actionId);
+    return c.json({ ok: true, data });
+  });
+
   routes.post("/:id/delegate", createCurrentUserMiddleware(authSource), async (c) => {
     const id = requireEscalationId(c.req.param("id"));
     const payload = delegateEscalationRequestSchema.parse(await readJsonObject(c));

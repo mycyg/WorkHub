@@ -285,6 +285,7 @@ export type WorkHubApiClient = {
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
   delegateApproval: (id: string, payload: DelegateApprovalRequest) => Promise<unknown>;
   resolveEscalation: (id: string, payload: ResolveEscalationRequest) => Promise<EscalationResolveResult>;
+  resolveBudgetDecision: (id: string, actionId: string) => Promise<EscalationResolveResult>;
   delegateEscalation: (id: string, payload: DelegateEscalationRequest) => Promise<EscalationDelegateResult>;
   resolveMemoryConflict: (id: string, payload: ResolveMemoryConflictRequest) => Promise<MemoryConflictResolveResult>;
   listApprovalComments: (id: string) => Promise<ApprovalCommentVM[]>;

@@ -627,6 +627,10 @@ class MemoryAiDecisions implements AiDecisionRepository {
     return null;
   }
 
+  async resolveBudgetDecision() {
+    return null;
+  }
+
   async delegateEscalation() {
     return null;
   }
