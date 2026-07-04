@@ -5,6 +5,7 @@ import {
   getSharedDatabaseClient,
   createTaskPlanRepository,
   type CreateDraftTaskPlanInput,
+  TaskPlanDraftAlreadyExists,
   type TaskPlanRow
 } from "@workhub/db";
 import type {
@@ -40,6 +41,7 @@ export class TaskPlanServiceError extends Error {
 }
 
 export type TaskPlanWorkflowRepository = {
+  findDraftPlanForWorkItem?: (input: { workItemId: string; workspaceId: string }) => Promise<TaskPlanRow | null>;
   createDraftPlan: (input: CreateDraftTaskPlanInput) => Promise<void>;
   cancelDraftPlan: (input: { planId: string; workspaceId: string; cancelledAt?: Date }) => Promise<TaskPlanRow | null>;
   approvePlan: (input: { planId: string; workspaceId: string; workItemId: string; approvedAt?: Date }) => Promise<TaskPlanRow | null>;
@@ -186,6 +188,7 @@ function toCreateItems(items: readonly MetaPlannerDraftItem[]) {
 export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions): TaskPlanWorkflowService {
   const nextId = options.id ?? randomUUID;
   const now = options.now ?? (() => new Date());
+  const inFlightDrafts = new Map<string, Promise<CreateTaskPlanProposalResult>>();
   return {
     async createPlanProposal(input) {
       const workItem = input.detail.workitem;
@@ -197,76 +200,104 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
       if (!createdByUserId) {
         throw new TaskPlanServiceError(403, "task_plan_actor_missing", "缺少计划创建人，不能生成任务计划。");
       }
-      const objectiveContext = options.objectives
-        ? await options.objectives.planningContextForWorkItem({ workspaceId, workItemId: workItem.id })
-        : { lines: [], capped: false };
-      const memories = {
-        ...(input.memories ?? {}),
-        ...(objectiveContext.lines.length > 0 ? { objectives: objectiveContext.lines } : {})
-      };
-      const draft = await options.planner.createDraft({
-        actor: {
-          ...input.actor,
-          userId: createdByUserId,
-          workspaceId,
-          workItemId: workItem.id
-        },
-        ...(input.locale ? { locale: input.locale } : {}),
-        workItem: {
-          id: workItem.id,
-          workspaceId,
-          ...(workItem.title ? { title: workItem.title } : {}),
-          ...(workItem.raw_description ? { rawDescription: workItem.raw_description } : {}),
-          ...(workItem.summary_md ? { summaryMd: workItem.summary_md } : {})
-        },
-        acceptance: acceptanceText(input.detail.acceptance),
-        ...(Object.keys(memories).length > 0 ? { memories } : {})
-      });
-      const planId = nextId();
-      const createdAt = now();
-      const budgetJson: JsonObject = {
-        total_share_pct: draft.items.reduce((sum, item) => sum + item.budgetSharePct, 0)
-      };
-      await options.taskPlans.createDraftPlan({
-        id: planId,
+      const existingDraft = await options.taskPlans.findDraftPlanForWorkItem?.({
         workItemId: workItem.id,
-        workspaceId,
-        ...(objectiveContext.objectiveId ? { objectiveId: objectiveContext.objectiveId } : {}),
-        budgetJson,
-        decompositionContextJson: draft.decompositionContext,
-        createdByUserId,
-        items: toCreateItems(draft.items),
-        now: createdAt
+        workspaceId
       });
-      const manifest = taskPlanManifest({
-        planId,
-        workspaceId,
-        workItemId: workItem.id,
-        items: draft.items,
-        createdAt
-      });
-      let proposal: StoredProposal;
-      try {
-        proposal = await options.proposals.createFromManifest({
-          workItemId: workItem.id,
-          manifest,
+      if (existingDraft) {
+        throw new TaskPlanServiceError(409, "task_plan_draft_exists", "这个事项已有待审任务计划，请刷新后处理已有计划。");
+      }
+      const draftKey = `${workspaceId}:${workItem.id}`;
+      if (inFlightDrafts.has(draftKey)) {
+        throw new TaskPlanServiceError(409, "task_plan_draft_in_progress", "任务计划正在生成，请稍后刷新查看。");
+      }
+      const creation = (async () => {
+        const objectiveContext = options.objectives
+          ? await options.objectives.planningContextForWorkItem({ workspaceId, workItemId: workItem.id })
+          : { lines: [], capped: false };
+        const memories = {
+          ...(input.memories ?? {}),
+          ...(objectiveContext.lines.length > 0 ? { objectives: objectiveContext.lines } : {})
+        };
+        const draft = await options.planner.createDraft({
           actor: {
-            actor_kind: "ai",
-            label: "WorkHub AI"
+            ...input.actor,
+            userId: createdByUserId,
+            workspaceId,
+            workItemId: workItem.id
           },
-          title: "计划提议"
+          ...(input.locale ? { locale: input.locale } : {}),
+          workItem: {
+            id: workItem.id,
+            workspaceId,
+            ...(workItem.title ? { title: workItem.title } : {}),
+            ...(workItem.raw_description ? { rawDescription: workItem.raw_description } : {}),
+            ...(workItem.summary_md ? { summaryMd: workItem.summary_md } : {})
+          },
+          acceptance: acceptanceText(input.detail.acceptance),
+          ...(Object.keys(memories).length > 0 ? { memories } : {})
         });
-      } catch (error) {
-        await options.taskPlans.cancelDraftPlan({
+        const planId = nextId();
+        const createdAt = now();
+        const budgetJson: JsonObject = {
+          total_share_pct: draft.items.reduce((sum, item) => sum + item.budgetSharePct, 0)
+        };
+        try {
+          await options.taskPlans.createDraftPlan({
+            id: planId,
+            workItemId: workItem.id,
+            workspaceId,
+            ...(objectiveContext.objectiveId ? { objectiveId: objectiveContext.objectiveId } : {}),
+            budgetJson,
+            decompositionContextJson: draft.decompositionContext,
+            createdByUserId,
+            items: toCreateItems(draft.items),
+            now: createdAt
+          });
+        } catch (error) {
+          if (error instanceof TaskPlanDraftAlreadyExists) {
+            throw new TaskPlanServiceError(409, "task_plan_draft_exists", "这个事项已有待审任务计划，请刷新后处理已有计划。");
+          }
+          throw error;
+        }
+        const manifest = taskPlanManifest({
           planId,
           workspaceId,
-          cancelledAt: now()
+          workItemId: workItem.id,
+          items: draft.items,
+          createdAt
         });
-        throw error;
-      }
-      return {
-        planId,
-        proposal
+        let proposal: StoredProposal;
+        try {
+          proposal = await options.proposals.createFromManifest({
+            workItemId: workItem.id,
+            manifest,
+            actor: {
+              actor_kind: "ai",
+              label: "WorkHub AI"
+            },
+            title: "计划提议"
+          });
+        } catch (error) {
+          await options.taskPlans.cancelDraftPlan({
+            planId,
+            workspaceId,
+            cancelledAt: now()
+          });
+          throw error;
+        }
+        return {
+          planId,
+          proposal
+        };
+      })();
+      inFlightDrafts.set(draftKey, creation);
+      try {
+        return await creation;
+      } finally {
+        if (inFlightDrafts.get(draftKey) === creation) {
+          inFlightDrafts.delete(draftKey);
+        }
       };
     }
   };

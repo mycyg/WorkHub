@@ -182,6 +182,16 @@ function ids(values: string[]) {
   };
 }
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 function detail(status = "spec_ready"): WorkItemDetailVM {
   const iso = now.toISOString();
   return {
@@ -229,6 +239,15 @@ class WorkItems implements Pick<WorkItemService, "detailPage" | "assertCanMutate
 
 class MemoryTaskPlans implements TaskPlanWorkflowRepository {
   public readonly rows = new Map<string, { status: TaskPlanStatus; input: CreateDraftTaskPlanInput }>();
+
+  async findDraftPlanForWorkItem(input: { workItemId: string; workspaceId: string }): Promise<TaskPlanRow | null> {
+    for (const [planId, row] of this.rows) {
+      if (row.status === "draft" && row.input.workItemId === input.workItemId && row.input.workspaceId === input.workspaceId) {
+        return this.rowFor(planId, now);
+      }
+    }
+    return null;
+  }
 
   async createDraftPlan(input: CreateDraftTaskPlanInput) {
     this.rows.set(input.id, { status: "draft", input });
@@ -625,4 +644,105 @@ test("R9.1 task-plan workflow cancels its draft when proposal creation fails", a
       && error.code === "proposal_already_exists"
   );
   assert.equal(taskPlans.rows.get(planId)?.status, "cancelled");
+});
+
+test("R9.7 task-plan workflow rejects a second draft request while the first planner call is still running", async () => {
+  const taskPlans = new MemoryTaskPlans();
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: ids([proposalId, branchId, reviewId, mergeSnapshotId])
+  });
+  const plannerStarted = deferred();
+  const releasePlanner = deferred();
+  let plannerCalls = 0;
+  const service = createTaskPlanWorkflowService({
+    taskPlans,
+    proposals,
+    id: ids([planId]),
+    now: () => now,
+    planner: {
+      async createDraft() {
+        plannerCalls += 1;
+        plannerStarted.resolve();
+        await releasePlanner.promise;
+        return {
+          items: [{
+            id: "95000000-0000-4000-8000-000000000901",
+            seq: 0,
+            title: "整理 R9.7 验证结果",
+            role: "produce" as const,
+            objectiveMd: "整理真实用户验证暴露的结果。",
+            acceptanceMd: "只生成一份待审计划。",
+            budgetSharePct: 100,
+            dependsOn: []
+          }],
+          decompositionContext: { source: "single-flight-test" }
+        };
+      }
+    }
+  });
+
+  const first = service.createPlanProposal({
+    detail: detail(),
+    actor: { id: userId, userId, workspaceId, label: "Planner PM" },
+    locale: "zh-CN"
+  });
+  await plannerStarted.promise;
+
+  await assert.rejects(
+    service.createPlanProposal({
+      detail: detail(),
+      actor: { id: userId, userId, workspaceId, label: "Planner PM" },
+      locale: "zh-CN"
+    }),
+    (error: unknown) => error instanceof TaskPlanServiceError
+      && error.status === 409
+      && error.code === "task_plan_draft_in_progress"
+  );
+  assert.equal(plannerCalls, 1);
+
+  releasePlanner.resolve();
+  const firstResult = await first;
+  assert.equal(firstResult.planId, planId);
+  assert.equal(taskPlans.rows.size, 1);
+});
+
+test("R9.7 task-plan workflow rejects a new draft when the work item already has one", async () => {
+  const taskPlans = new MemoryTaskPlans();
+  await taskPlans.createDraftPlan({
+    id: planId,
+    workItemId,
+    workspaceId,
+    budgetJson: {},
+    decompositionContextJson: {},
+    createdByUserId: userId,
+    items: [],
+    now
+  });
+  let plannerCalls = 0;
+  const service = createTaskPlanWorkflowService({
+    taskPlans,
+    proposals: createInMemoryProposalService({ now: () => now, id: ids([proposalId, branchId, reviewId, mergeSnapshotId]) }),
+    id: ids([foreignPlanId]),
+    now: () => now,
+    planner: {
+      async createDraft() {
+        plannerCalls += 1;
+        throw new Error("planner must not run when a draft already exists");
+      }
+    }
+  });
+
+  await assert.rejects(
+    service.createPlanProposal({
+      detail: detail(),
+      actor: { id: userId, userId, workspaceId, label: "Planner PM" },
+      locale: "zh-CN"
+    }),
+    (error: unknown) => error instanceof TaskPlanServiceError
+      && error.status === 409
+      && error.code === "task_plan_draft_exists"
+  );
+  assert.equal(plannerCalls, 0);
+  assert.deepEqual([...taskPlans.rows.keys()], [planId]);
 });

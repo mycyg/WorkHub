@@ -77,6 +77,13 @@ export class TaskPlanWorkItemScopeMismatch extends Error {
   }
 }
 
+export class TaskPlanDraftAlreadyExists extends Error {
+  constructor() {
+    super("A draft task plan already exists for this work item.");
+    this.name = "TaskPlanDraftAlreadyExists";
+  }
+}
+
 export type TaskPlanWithItems = {
   plan: TaskPlanRow;
   items: TaskPlanItemRow[];
@@ -183,9 +190,22 @@ export function createTaskPlanRepository(db: WorkHubDb) {
             eq(workItems.workspaceId, input.workspaceId),
             isNull(workItems.deletedAt)
           ))
+          .for("update")
           .limit(1);
         if (!workItemScope) {
           throw new TaskPlanWorkItemScopeMismatch();
+        }
+        const [existingDraft] = await tx
+          .select({ id: taskPlans.id })
+          .from(taskPlans)
+          .where(and(
+            eq(taskPlans.workItemId, input.workItemId),
+            eq(taskPlans.workspaceId, input.workspaceId),
+            eq(taskPlans.status, "draft" satisfies TaskPlanStatus)
+          ))
+          .limit(1);
+        if (existingDraft) {
+          throw new TaskPlanDraftAlreadyExists();
         }
         if (input.objectiveId) {
           const [scope] = await tx
@@ -239,6 +259,27 @@ export function createTaskPlanRepository(db: WorkHubDb) {
           updatedAt: now
         })));
       });
+    },
+
+    async findDraftPlanForWorkItem(input: {
+      workItemId: string;
+      workspaceId: string;
+    }): Promise<TaskPlanRow | null> {
+      const [row] = await db
+        .select({ plan: taskPlans })
+        .from(taskPlans)
+        .innerJoin(workItems, eq(workItems.id, taskPlans.workItemId))
+        .where(and(
+          eq(taskPlans.workItemId, input.workItemId),
+          eq(taskPlans.workspaceId, input.workspaceId),
+          eq(taskPlans.status, "draft" satisfies TaskPlanStatus),
+          eq(workItems.id, input.workItemId),
+          eq(workItems.workspaceId, input.workspaceId),
+          isNull(workItems.deletedAt)
+        ))
+        .orderBy(desc(taskPlans.updatedAt), desc(taskPlans.createdAt), desc(taskPlans.id))
+        .limit(1);
+      return row?.plan ?? null;
     },
 
     async getPlanWithItems(input: {

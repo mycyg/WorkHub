@@ -18,6 +18,7 @@ import { createQueryRecorder, queryParamValues, queryReferences } from "./test-q
 
 const now = new Date("2026-07-03T00:00:00.000Z");
 const planId = "91000000-0000-4000-8000-000000000001";
+const foreignPlanId = "91000000-0000-4000-8000-000000000005";
 const workItemId = "91000000-0000-4000-8000-000000000002";
 const workspaceId = "91000000-0000-4000-8000-000000000003";
 const userId = "91000000-0000-4000-8000-000000000004";
@@ -29,7 +30,7 @@ const escalationId = "91000000-0000-4000-8000-000000000015";
 const runlessEscalationId = "91000000-0000-4000-8000-000000000016";
 
 test("R9.1 task plan repository writes draft plans and items in one transaction", async () => {
-  const { db, queries } = createQueryRecorder([[{ workItemId }]]);
+  const { db, queries } = createQueryRecorder([[{ workItemId }], []]);
   const repository = createTaskPlanRepository(db);
 
   await repository.createDraftPlan({
@@ -64,18 +65,28 @@ test("R9.1 task plan repository writes draft plans and items in one transaction"
     now
   });
 
-  // R9.7 redline: the old assertion expected only plan/item inserts. That was wrong
-  // because it allowed task_plans to trust caller-supplied workItemId + workspaceId.
-  assert.equal(queries.length, 3);
-  const [scopeQuery, planInsert, itemInsert] = queries;
+  // R9.7 redline: the old assertion expected only scope + plan/item inserts. That was wrong
+  // because it missed the duplicate-draft guard required for slow double-click retries.
+  assert.equal(queries.length, 4);
+  const [scopeQuery, duplicateQuery, planInsert, itemInsert] = queries;
   assert.equal(scopeQuery?.operation, "select");
   assert.equal(scopeQuery?.fromTable, workItems);
   assert.equal(scopeQuery?.limit, 1);
+  assert.equal(scopeQuery?.lock, "update");
   assert.ok(queryReferences(scopeQuery?.where, workItems.id));
   assert.ok(queryReferences(scopeQuery?.where, workItems.workspaceId));
   assert.ok(queryReferences(scopeQuery?.where, workItems.deletedAt));
   assert.ok(queryParamValues(scopeQuery?.where).includes(workItemId));
   assert.ok(queryParamValues(scopeQuery?.where).includes(workspaceId));
+  assert.equal(duplicateQuery?.operation, "select");
+  assert.equal(duplicateQuery?.fromTable, taskPlans);
+  assert.equal(duplicateQuery?.limit, 1);
+  assert.ok(queryReferences(duplicateQuery?.where, taskPlans.workItemId));
+  assert.ok(queryReferences(duplicateQuery?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(duplicateQuery?.where, taskPlans.status));
+  assert.ok(queryParamValues(duplicateQuery?.where).includes(workItemId));
+  assert.ok(queryParamValues(duplicateQuery?.where).includes(workspaceId));
+  assert.ok(queryParamValues(duplicateQuery?.where).includes("draft"));
   assert.equal(planInsert?.operation, "insert");
   assert.equal(planInsert?.targetTable, taskPlans);
   assert.deepEqual(planInsert?.valuesValue, {
@@ -124,6 +135,64 @@ test("R9.1 task plan repository writes draft plans and items in one transaction"
       updatedAt: now
     }
   ]);
+});
+
+test("R9.7 task plan repository rejects duplicate draft plans for one work item", async () => {
+  const { db, queries, transactions } = createQueryRecorder([[{ workItemId }], [{ id: planId }]]);
+  const repository = createTaskPlanRepository(db);
+
+  await assert.rejects(
+    () => repository.createDraftPlan({
+      id: foreignPlanId,
+      workItemId,
+      workspaceId,
+      createdByUserId: userId,
+      items: [],
+      now
+    }),
+    { name: "TaskPlanDraftAlreadyExists" }
+  );
+
+  assert.equal(queries.length, 2);
+  assert.equal(queries[0]?.lock, "update");
+  assert.equal(queries[1]?.fromTable, taskPlans);
+  assert.ok(queryReferences(queries[1]?.where, taskPlans.workItemId));
+  assert.ok(queryReferences(queries[1]?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(queries[1]?.where, taskPlans.status));
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "TaskPlanDraftAlreadyExists" }]);
+});
+
+test("R9.7 task plan repository finds an existing draft in the same workspace work item", async () => {
+  const draftPlan = {
+    id: planId,
+    workItemId,
+    workspaceId,
+    status: "draft",
+    objectiveId: null,
+    budgetJson: {},
+    decompositionContextJson: {},
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now
+  };
+  const { db, queries } = createQueryRecorder([[{ plan: draftPlan }]]);
+  const repository = createTaskPlanRepository(db);
+
+  const found = await repository.findDraftPlanForWorkItem({ workItemId, workspaceId });
+
+  assert.equal(found, draftPlan);
+  const query = queries[0];
+  assert.equal(query?.fromTable, taskPlans);
+  assert.deepEqual(query?.joins.map((join) => [join.kind, join.table]), [["inner", workItems]]);
+  assert.equal(query?.limit, 1);
+  assert.ok(queryReferences(query?.where, taskPlans.workItemId));
+  assert.ok(queryReferences(query?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(query?.where, taskPlans.status));
+  assert.ok(queryReferences(query?.where, workItems.workspaceId));
+  assert.ok(queryReferences(query?.where, workItems.deletedAt));
+  assert.ok(queryParamValues(query?.where).includes(workItemId));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
+  assert.ok(queryParamValues(query?.where).includes("draft"));
 });
 
 test("R9.7 task plan repository rejects draft plans for work items outside the workspace", async () => {
@@ -198,7 +267,7 @@ test("R9.4 arbitration repository reads child proposals with plan workspace scop
 });
 
 test("R9.7 task plan repository rejects objectives outside the plan work item scope", async () => {
-  const { db, queries, transactions } = createQueryRecorder([[{ workItemId }], []]);
+  const { db, queries, transactions } = createQueryRecorder([[{ workItemId }], [], []]);
   const repository = createTaskPlanRepository(db);
 
   await assert.rejects(
@@ -216,18 +285,24 @@ test("R9.7 task plan repository rejects objectives outside the plan work item sc
 
   assert.equal(transactions[0]?.outcome, "rejected");
   assert.equal(transactions[0]?.errorName, "TaskPlanObjectiveScopeMismatch");
-  // R9.7 redline: the old assertion only checked objective scoping. That missed
-  // the base work_item workspace proof required even before objective linkage.
-  assert.equal(queries.length, 2);
-  const [workItemScopeQuery, scopeQuery] = queries;
+  // R9.7 redline: the old assertion only checked work-item + objective scoping. That
+  // missed the duplicate-draft guard required before objective linkage on slow retries.
+  assert.equal(queries.length, 3);
+  const [workItemScopeQuery, duplicateQuery, scopeQuery] = queries;
   assert.equal(workItemScopeQuery?.operation, "select");
   assert.equal(workItemScopeQuery?.fromTable, workItems);
   assert.equal(workItemScopeQuery?.limit, 1);
+  assert.equal(workItemScopeQuery?.lock, "update");
   assert.ok(queryReferences(workItemScopeQuery?.where, workItems.id));
   assert.ok(queryReferences(workItemScopeQuery?.where, workItems.workspaceId));
   assert.ok(queryReferences(workItemScopeQuery?.where, workItems.deletedAt));
   assert.ok(queryParamValues(workItemScopeQuery?.where).includes(workItemId));
   assert.ok(queryParamValues(workItemScopeQuery?.where).includes(workspaceId));
+  assert.equal(duplicateQuery?.operation, "select");
+  assert.equal(duplicateQuery?.fromTable, taskPlans);
+  assert.ok(queryReferences(duplicateQuery?.where, taskPlans.workItemId));
+  assert.ok(queryReferences(duplicateQuery?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(duplicateQuery?.where, taskPlans.status));
   assert.equal(scopeQuery?.operation, "select");
   assert.equal(scopeQuery?.fromTable, objectives);
   assert.deepEqual(scopeQuery?.joins.map((join) => [join.kind, join.table]), [

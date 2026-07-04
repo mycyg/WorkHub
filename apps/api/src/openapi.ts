@@ -1129,8 +1129,8 @@ const createTaskPlanResponseSchema = {
 } as const;
 const createTaskPlanConflictResponse = jsonErrorStatusResponse(
   "409",
-  "Task plan decomposition needs human intervention or proposal state changed",
-  ["task_plan_decomposition_needs_human", "proposal_already_exists"]
+  "Task plan decomposition needs human intervention, an existing draft, or proposal state changed",
+  ["task_plan_decomposition_needs_human", "task_plan_draft_exists", "task_plan_draft_in_progress", "proposal_already_exists"]
 ).responses["409"];
 const createTaskPlanValidationResponse = jsonErrorStatusResponse(
   "422",
