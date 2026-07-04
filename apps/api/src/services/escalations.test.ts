@@ -139,6 +139,17 @@ test("R9.7 budget exhaustion rows render as budget decision cards", () => {
         code: "budget_exhausted",
         severity: "critical",
         message: "AI 预算已经用完，先暂停新的自动执行。",
+        usage: {
+          scope_label: "目标预算",
+          period: "month",
+          total_tokens: 1001,
+          max_tokens: 1000,
+          remaining_tokens: 0,
+          estimated_cost_cny: "51",
+          max_cost_cny: "50",
+          remaining_cost_cny: "0",
+          status: "exhausted"
+        },
         recommended_action: "add_budget",
         options: [
           { id: "add_budget", label: "追加预算继续", action_href: "/dashboard/cost?objectiveId=obj-1" },
@@ -152,6 +163,9 @@ test("R9.7 budget exhaustion rows render as budget decision cards", () => {
   assert.equal(item.priority, "high");
   assert.equal(item.source_ref.entity_type, "budget_notice");
   assert.equal(item.title, "《竞品价格调研》预算需要处理");
+  assert.equal(item.summary_text.includes("目标预算"), true);
+  assert.equal(item.reason_text?.includes("1001/1000 令牌"), true);
+  assert.equal(item.reason_text?.includes("¥51/¥50"), true);
   // R9.7 review: the old assertion made every budget option POST to resolve the card, but
   // `add_budget` does not itself update a budget policy. Only applied terminal choices may resolve.
   assert.deepEqual(item.actions.map((action) => [action.id, action.label, action.method, action.href]), [

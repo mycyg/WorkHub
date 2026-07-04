@@ -70,7 +70,8 @@ export function decideRunBudget(input: DecideRunBudgetInput): BudgetDecisionTrac
       severity: "critical",
       scope: limiting.usage.scope,
       usageRatio: maxRatio,
-      policy: limiting.policy
+      policy: limiting.policy,
+      usage: limiting.usage
     });
     return {
       decisionId: input.decisionId ?? randomUUID(),
@@ -98,7 +99,8 @@ export function decideRunBudget(input: DecideRunBudgetInput): BudgetDecisionTrac
         severity: "critical",
         scope: limiting.usage.scope,
         usageRatio: maxRatio,
-        policy: limiting.policy
+        policy: limiting.policy,
+        usage: limiting.usage
       }),
       usages,
       limitingUsage: limiting.usage
@@ -118,7 +120,8 @@ export function decideRunBudget(input: DecideRunBudgetInput): BudgetDecisionTrac
         severity: "warning",
         scope: limiting.usage.scope,
         usageRatio: maxRatio,
-        policy: limiting.policy
+        policy: limiting.policy,
+        usage: limiting.usage
       }),
       usages,
       limitingUsage: limiting.usage
@@ -265,6 +268,7 @@ function budgetNotice(input: {
   scope: BudgetScope;
   usageRatio: number;
   policy: BudgetPolicy;
+  usage?: BudgetUsage;
 }): BudgetNotice {
   const exhausted = input.code === "budget_exhausted";
   const armyScopeExhausted = exhausted && (input.scope.kind === "task" || input.scope.kind === "objective");
@@ -295,9 +299,24 @@ function budgetNotice(input: {
     message: exhausted ? "AI 预算已经用完，先暂停新的自动执行。" : "AI 预算快用完了，建议先选择更省的执行方式。",
     scope: input.scope,
     usageRatio: input.usageRatio,
+    ...(input.usage ? { usage: budgetNoticeUsage(input.usage) } : {}),
     recommendedAction,
     options,
     actionHref
+  };
+}
+
+function budgetNoticeUsage(usage: BudgetUsage): NonNullable<BudgetNotice["usage"]> {
+  return {
+    scopeLabel: usage.scopeLabel,
+    period: usage.period,
+    totalTokens: usage.totalTokens,
+    maxTokens: usage.maxTokens,
+    remainingTokens: usage.remainingTokens,
+    estimatedCostCny: usage.estimatedCostCny,
+    maxCostCny: usage.maxCostCny,
+    remainingCostCny: usage.remainingCostCny,
+    status: usage.status
   };
 }
 

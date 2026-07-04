@@ -194,14 +194,29 @@ function escalationActions(id: string, locale: WorkHubLocale): AttentionItem["ac
   ];
 }
 
+type BudgetNoticeHandoffUsage = {
+  scope_label?: string;
+  period?: "run" | "day" | "month";
+  total_tokens?: number;
+  max_tokens?: number;
+  remaining_tokens?: number;
+  estimated_cost_cny?: string;
+  max_cost_cny?: string;
+  remaining_cost_cny?: string;
+  status?: string;
+};
+
+type BudgetNoticeHandoff = {
+  message?: string;
+  recommended_action?: string;
+  action_href?: string;
+  options?: Array<{ id?: string; label?: string; action_href?: string }>;
+  usage?: BudgetNoticeHandoffUsage;
+};
+
 function budgetNoticeFromHandoff(row: EscalationServiceRow) {
   const notice = row.handoffJson["notice"];
-  return notice && typeof notice === "object" ? notice as {
-    message?: string;
-    recommended_action?: string;
-    action_href?: string;
-    options?: Array<{ id?: string; label?: string; action_href?: string }>;
-  } : undefined;
+  return notice && typeof notice === "object" ? notice as BudgetNoticeHandoff : undefined;
 }
 
 function isBudgetEscalation(row: EscalationServiceRow) {
@@ -265,7 +280,9 @@ function budgetActions(row: EscalationServiceRow, locale: WorkHubLocale): Attent
 function buildBudgetAttentionItem(row: EscalationServiceRow, locale: WorkHubLocale): AttentionItem {
   const zh = locale === "zh-CN";
   const notice = budgetNoticeFromHandoff(row);
-  const reason = compactText(notice?.message ?? row.reasonMd);
+  const baseReason = compactText(notice?.message ?? row.reasonMd);
+  const usageReason = budgetUsageReason(notice?.usage, locale);
+  const reason = compactText([baseReason, usageReason].filter(Boolean).join(zh ? "\n" : "\n"));
   return {
     id: row.id,
     kind: "budget",
@@ -283,6 +300,54 @@ function buildBudgetAttentionItem(row: EscalationServiceRow, locale: WorkHubLoca
     cuu_state: "asking_approval",
     created_at: row.createdAt.toISOString()
   };
+}
+
+function budgetUsageReason(
+  usage: BudgetNoticeHandoffUsage | undefined,
+  locale: WorkHubLocale
+) {
+  if (!usage || typeof usage !== "object") {
+    return "";
+  }
+  const totalTokens = typeof usage.total_tokens === "number" ? usage.total_tokens : undefined;
+  const maxTokens = typeof usage.max_tokens === "number" ? usage.max_tokens : undefined;
+  const remainingTokens = typeof usage.remaining_tokens === "number" ? usage.remaining_tokens : undefined;
+  const usedCost = typeof usage.estimated_cost_cny === "string" ? usage.estimated_cost_cny : undefined;
+  const maxCost = typeof usage.max_cost_cny === "string" ? usage.max_cost_cny : undefined;
+  const remainingCost = typeof usage.remaining_cost_cny === "string" ? usage.remaining_cost_cny : undefined;
+  if (totalTokens === undefined || maxTokens === undefined || remainingTokens === undefined || !usedCost || !maxCost || !remainingCost) {
+    return "";
+  }
+  const scopeLabel = typeof usage.scope_label === "string" && usage.scope_label.trim() ? usage.scope_label.trim() : undefined;
+  const period = usage.period === "run" || usage.period === "day" || usage.period === "month" ? usage.period : undefined;
+  const label = [scopeLabel, period ? budgetPeriodLabel(locale, period) : ""].filter(Boolean).join(locale === "zh-CN" ? "（" : " ");
+  const suffix = scopeLabel && period && locale === "zh-CN" ? "）" : "";
+  if (locale === "en-US") {
+    const prefix = label ? `${label}: ` : "";
+    return `${prefix}used ${totalTokens}/${maxTokens} tokens, cost ${formatBudgetCny(usedCost)}/${formatBudgetCny(maxCost)}, remaining ${remainingTokens} tokens / ${formatBudgetCny(remainingCost)}.`;
+  }
+  const prefix = scopeLabel ? `${label}${suffix}：` : "";
+  return `${prefix}已用 ${totalTokens}/${maxTokens} 令牌，费用 ${formatBudgetCny(usedCost)}/${formatBudgetCny(maxCost)}，剩余 ${remainingTokens} 令牌 / ${formatBudgetCny(remainingCost)}。`;
+}
+
+function budgetPeriodLabel(locale: WorkHubLocale, period: "run" | "day" | "month") {
+  if (locale === "en-US") {
+    if (period === "run") return "run";
+    if (period === "day") return "day";
+    return "month";
+  }
+  if (period === "run") return "本次";
+  if (period === "day") return "今日";
+  return "本月";
+}
+
+function formatBudgetCny(value: string) {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    return `¥${value}`;
+  }
+  const fixed = parsed < 1 && parsed > 0 ? parsed.toFixed(2) : parsed.toFixed(2).replace(/\.00$/u, "").replace(/(\.\d)0$/u, "$1");
+  return `¥${fixed}`;
 }
 
 export function buildEscalationAttentionItem(row: EscalationServiceRow, locale: WorkHubLocale): AttentionItem {

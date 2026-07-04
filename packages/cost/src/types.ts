@@ -51,12 +51,25 @@ export type BudgetUsage = {
   status: "ok" | "warning" | "critical" | "exhausted";
 };
 
+export type BudgetNoticeUsage = {
+  scopeLabel: string;
+  period: BudgetUsage["period"];
+  totalTokens: number;
+  maxTokens: number;
+  remainingTokens: number;
+  estimatedCostCny: string;
+  maxCostCny: string;
+  remainingCostCny: string;
+  status: BudgetUsage["status"];
+};
+
 export type BudgetNotice = {
   code: "budget_warning" | "budget_exhausted";
   severity: "info" | "warning" | "critical";
   message: string;
   scope: BudgetScope;
   usageRatio: number;
+  usage?: BudgetNoticeUsage;
   recommendedAction: "continue" | "downgrade_model" | "pause" | "ask_admin" | "add_budget";
   options?: { id: string; label: string; actionHref: string }[];
   actionHref?: string;

@@ -1502,8 +1502,32 @@ test("R9.7 budget exhaustion persists a durable budget decision before rejecting
   assert.equal(event?.trigger, "budget_exhausted");
   assert.equal(event?.reasonMd, "AI 预算已经用完，先暂停新的自动执行。");
   assert.equal(event?.handoffJson?.["attention_kind"], "budget");
-  assert.equal((event?.handoffJson?.["notice"] as { code?: string } | undefined)?.code, "budget_exhausted");
-  assert.equal((event?.handoffJson?.["notice"] as { recommended_action?: string } | undefined)?.recommended_action, "ask_admin");
+  const persistedNotice = event?.handoffJson?.["notice"] as {
+    code?: string;
+    recommended_action?: string;
+    usage?: {
+      scope_label?: string;
+      period?: string;
+      total_tokens?: number;
+      max_tokens?: number;
+      remaining_tokens?: number;
+      estimated_cost_cny?: string;
+      max_cost_cny?: string;
+      remaining_cost_cny?: string;
+      status?: string;
+    };
+  } | undefined;
+  assert.equal(persistedNotice?.code, "budget_exhausted");
+  assert.equal(persistedNotice?.recommended_action, "ask_admin");
+  assert.equal(persistedNotice?.usage?.scope_label, "我的 AI 日预算");
+  assert.equal(persistedNotice?.usage?.period, "day");
+  assert.equal(persistedNotice?.usage?.total_tokens, 500001);
+  assert.equal(persistedNotice?.usage?.max_tokens, 500000);
+  assert.equal(persistedNotice?.usage?.remaining_tokens, 0);
+  assert.equal(persistedNotice?.usage?.estimated_cost_cny, "20");
+  assert.equal(persistedNotice?.usage?.max_cost_cny, "20");
+  assert.equal(persistedNotice?.usage?.remaining_cost_cny, "0");
+  assert.equal(persistedNotice?.usage?.status, "exhausted");
   assert.equal(event?.handoffJson?.["actor_id"], userId);
 });
 

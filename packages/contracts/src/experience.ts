@@ -391,12 +391,26 @@ export const runBudgetSchema = z.object({
 });
 export type RunBudget = z.infer<typeof runBudgetSchema>;
 
+export const budgetNoticeUsageSchema = z.object({
+  scope_label: z.string().min(1),
+  period: z.enum(["run", "day", "month"]),
+  total_tokens: z.number().int().nonnegative(),
+  max_tokens: z.number().int().nonnegative(),
+  remaining_tokens: z.number().int().nonnegative(),
+  estimated_cost_cny: z.string(),
+  max_cost_cny: z.string(),
+  remaining_cost_cny: z.string(),
+  status: z.enum(["ok", "warning", "critical", "exhausted"])
+});
+export type BudgetNoticeUsage = z.infer<typeof budgetNoticeUsageSchema>;
+
 export const budgetNoticeSchema = z.object({
   code: z.enum(["budget_warning", "budget_exhausted"]),
   severity: z.enum(["info", "warning", "critical"]),
   message: z.string().min(1),
   scope: budgetScopeSchema,
   usage_ratio: z.number().min(0),
+  usage: budgetNoticeUsageSchema.optional(),
   recommended_action: z.enum(["continue", "downgrade_model", "pause", "ask_admin", "add_budget"]),
   options: z
     .array(z.object({

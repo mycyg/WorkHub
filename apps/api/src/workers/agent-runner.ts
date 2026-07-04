@@ -2113,9 +2113,22 @@ type QueueBudgetNotice = {
   message: string;
   scope: QueueBudgetScope;
   usage_ratio: number;
+  usage?: QueueBudgetNoticeUsage;
   recommended_action: BudgetNotice["recommendedAction"];
   options?: { id: string; label: string; action_href: string }[];
   action_href?: string;
+};
+
+type QueueBudgetNoticeUsage = {
+  scope_label: string;
+  period: NonNullable<BudgetNotice["usage"]>["period"];
+  total_tokens: number;
+  max_tokens: number;
+  remaining_tokens: number;
+  estimated_cost_cny: string;
+  max_cost_cny: string;
+  remaining_cost_cny: string;
+  status: NonNullable<BudgetNotice["usage"]>["status"];
 };
 
 type PublicBudgetScope =
@@ -2293,6 +2306,7 @@ function toQueueBudgetNotice(notice: BudgetNotice): QueueBudgetNotice {
     message: notice.message,
     scope: toQueueBudgetScope(notice.scope),
     usage_ratio: notice.usageRatio,
+    ...(notice.usage ? { usage: toQueueBudgetNoticeUsage(notice.usage) } : {}),
     recommended_action: notice.recommendedAction,
     ...(notice.options
       ? {
@@ -2314,6 +2328,7 @@ function toPublicBudgetNotice(notice: BudgetNotice): PublicBudgetNotice {
     message: notice.message,
     scope: toPublicBudgetScope(notice.scope),
     usage_ratio: notice.usageRatio,
+    ...(notice.usage ? { usage: toQueueBudgetNoticeUsage(notice.usage) } : {}),
     recommended_action: notice.recommendedAction,
     ...(notice.options
       ? {
@@ -2390,6 +2405,20 @@ function budgetErrorDetails(decision: BudgetDecisionTrace): Record<string, unkno
         }
       : {}),
     recommended_action: decision.notice?.recommendedAction ?? "pause"
+  };
+}
+
+function toQueueBudgetNoticeUsage(usage: NonNullable<BudgetNotice["usage"]>): QueueBudgetNoticeUsage {
+  return {
+    scope_label: usage.scopeLabel,
+    period: usage.period,
+    total_tokens: usage.totalTokens,
+    max_tokens: usage.maxTokens,
+    remaining_tokens: usage.remainingTokens,
+    estimated_cost_cny: usage.estimatedCostCny,
+    max_cost_cny: usage.maxCostCny,
+    remaining_cost_cny: usage.remainingCostCny,
+    status: usage.status
   };
 }
 

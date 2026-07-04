@@ -1462,6 +1462,17 @@ test("cost governance contracts expose clickable budget notices and scoped usage
     message: "预算快用完了。",
     scope: usage.scope,
     usage_ratio: usage.warning_ratio,
+    usage: {
+      scope_label: usage.scope_label,
+      period: usage.period,
+      total_tokens: usage.total_tokens,
+      max_tokens: usage.max_tokens,
+      remaining_tokens: usage.remaining_tokens,
+      estimated_cost_cny: usage.estimated_cost_cny,
+      max_cost_cny: usage.max_cost_cny,
+      remaining_cost_cny: usage.remaining_cost_cny,
+      status: usage.status
+    },
     recommended_action: "downgrade_model",
     options: [
       { id: "continue_low_cost", label: "继续但降级模型", action_href: "/api/workitems/demo/agent-runs" },
@@ -1507,6 +1518,7 @@ test("cost governance contracts expose clickable budget notices and scoped usage
   assert.equal(taskUsage.scope.kind, "task");
   assert.equal(usage.enabled, false);
   assert.equal(notice.options?.length, 2);
+  assert.equal((notice as { usage?: { total_tokens?: number } }).usage?.total_tokens, 104000);
   const attention = attentionItemSchema.parse({
     id: "75000000-0000-4000-8000-000000000001",
     kind: "budget",
