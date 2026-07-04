@@ -3,7 +3,8 @@ import { test } from "node:test";
 
 import type { WorkItemDetailVM } from "@workhub/contracts";
 
-import { detailHtml, workItemListHtml } from "./workitem.js";
+import { createWorkItemView, detailHtml, workItemListHtml } from "./workitem.js";
+import type { SpotlightTarget, SpotlightViewContext } from "../view-context.js";
 
 const WI = "10000000-0000-4000-8000-000000000901";
 
@@ -18,6 +19,45 @@ function vm(over: Partial<WorkItemDetailVM> = {}): WorkItemDetailVM {
     actions: {},
     ...over
   } as unknown as WorkItemDetailVM;
+}
+
+class FakeElement {
+  public dataset: Record<string, string> = {};
+  public textContent = "";
+
+  constructor(private readonly selectors = new Set<string>(), dataset: Record<string, string> = {}) {
+    this.dataset = dataset;
+  }
+
+  closest<T extends Element = Element>(selector: string): T | null {
+    return this.selectors.has(selector) ? (this as unknown as T) : null;
+  }
+}
+
+class FakeBody extends FakeElement {
+  public innerHTML = "";
+  private readonly clickListeners: Array<(event: { target: unknown; preventDefault: () => void }) => void> = [];
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    if (type !== "click") return;
+    this.clickListeners.push((event) => {
+      if (typeof listener === "function") {
+        listener(event as unknown as Event);
+      } else {
+        listener.handleEvent(event as unknown as Event);
+      }
+    });
+  }
+
+  click(target: FakeElement) {
+    for (const listener of this.clickListeners) {
+      listener({ target, preventDefault() {} });
+    }
+  }
+}
+
+function tick() {
+  return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 test("#22 desktop workitem drafts a task plan only when spec_ready with no proposal/trace", () => {
@@ -171,6 +211,100 @@ test("R9.2 desktop workitem renders a compressed read-only army run tree", () =>
   assert.ok(html.includes('data-spot-agent-team-item="93000000-0000-4000-8000-000000000903"'));
   assert.ok(html.includes("复核"));
   assert.ok(html.includes("去决策"));
+});
+
+test("desktop workitem agent-team actions route to replay and decision inbox", async () => {
+  const globals = globalThis as typeof globalThis & { HTMLElement: typeof HTMLElement };
+  const previousHTMLElement = globals.HTMLElement;
+  globals.HTMLElement = FakeElement as unknown as typeof HTMLElement;
+  const body = new FakeBody();
+  const replayRunId = "93000000-0000-4000-8000-000000000911";
+  const replayHref = `/agent-runs/${replayRunId}/replay`;
+  const detail = vm({
+    workitem: { id: WI, code: "WH-1", title: "Weekly report", status: "ai_working", priority: "normal" } as WorkItemDetailVM["workitem"],
+    agent_team: {
+      plan_id: "93000000-0000-4000-8000-000000000901",
+      status: "dispatching",
+      completed_count: 1,
+      total_count: 2,
+      cost_used_cny: "1.250000",
+      cost_budget_cny: "3.000000",
+      cost_burn_pct: 42,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000902",
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          plan_status: "succeeded",
+          status: "succeeded",
+          budget_share_pct: 35,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.450000",
+          run_id: replayRunId,
+          run_status: "succeeded",
+          replay_href: replayHref,
+          action: { kind: "view_output", label: "看产出", href: replayHref }
+        },
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000903",
+          seq: 2,
+          title: "复核风险",
+          role: "review",
+          plan_status: "failed",
+          status: "needs_human",
+          budget_share_pct: 25,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.800000",
+          run_id: "93000000-0000-4000-8000-000000000912",
+          run_status: "escalated",
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000912/replay",
+          decision_href: "/attention",
+          action: { kind: "decide", label: "去决策", href: "/attention" }
+        }
+      ]
+    }
+  });
+  const opens: Array<{ id: string; target?: SpotlightTarget }> = [];
+
+  try {
+    await createWorkItemView().mount({
+      body: body as unknown as HTMLElement,
+      locale: "zh-CN",
+      target: { id: WI },
+      client: {
+        pages: {
+          async workItem() {
+            return detail;
+          }
+        }
+      },
+      back() {},
+      open(id: string, target?: SpotlightTarget) {
+        opens.push(target ? { id, target } : { id });
+      },
+      setSubtitle() {},
+      toast() {},
+      requestResize() {},
+      signal: new AbortController().signal
+    } as unknown as SpotlightViewContext);
+    await tick();
+
+    assert.match(body.innerHTML, /data-spot-agent-team-action="view_output"/u);
+    assert.match(body.innerHTML, new RegExp(`data-spot-agent-team-action-href="${replayHref}"`, "u"));
+    body.click(new FakeElement(new Set(["[data-spot-agent-team-action-href]"]), { spotAgentTeamActionHref: replayHref }));
+    body.click(new FakeElement(new Set(["[data-spot-agent-team-action-href]"]), { spotAgentTeamActionHref: "/attention" }));
+
+    assert.deepEqual(opens, [
+      { id: "replay", target: { id: replayRunId, route: replayHref } },
+      { id: "approvals", target: { route: "/attention" } }
+    ]);
+  } finally {
+    globals.HTMLElement = previousHTMLElement;
+  }
 });
 
 test("R9.7 desktop workitem agent team avoids dispatch internals", () => {

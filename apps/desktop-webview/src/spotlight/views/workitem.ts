@@ -6,9 +6,9 @@
 import type { WorkItemAgentTeamVM, WorkItemDetailVM } from "@workhub/contracts";
 import { taskPlanItemRoleLabel, taskPlanItemStatusLabel, taskPlanStatusLabel } from "@workhub/ui";
 import { publicProposalDisplayTitle } from "@workhub/ui/proposal";
-import { escapeHtml } from "@workhub/web-runtime";
+import { escapeHtml, safeHref } from "@workhub/web-runtime";
 
-import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
+import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightTarget, type SpotlightViewContext } from "../view-context.js";
 import { agentStepPhaseLabel, agentStepPublicSummary, workItemPriorityLabel, workItemStatusLabel } from "../labels.js";
 
 function taskPlanHtml(vm: WorkItemDetailVM, zh: boolean): string {
@@ -49,6 +49,18 @@ function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["
   return taskPlanItemStatusLabel(zh ? "zh-CN" : "en-US", status);
 }
 
+function agentTeamActionTarget(href: string): { view: "replay" | "approvals"; target: SpotlightTarget } | undefined {
+  const safe = safeHref(href);
+  const replayId = /^\/agent-runs\/([^/?#]+)\/replay$/u.exec(safe)?.[1];
+  if (replayId) {
+    return { view: "replay", target: { id: decodeURIComponent(replayId), route: safe } };
+  }
+  if (safe === "/attention") {
+    return { view: "approvals", target: { route: safe } };
+  }
+  return undefined;
+}
+
 function agentTeamHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const team = vm.agent_team;
   if (!team) {
@@ -56,7 +68,9 @@ function agentTeamHtml(vm: WorkItemDetailVM, zh: boolean): string {
   }
   const locale = zh ? "zh-CN" : "en-US";
   const rows = team.items.slice(0, 4).map((item) => {
-    const action = item.action ? `<span class="wh-spot-chip wh-spot-chip--info">${escapeHtml(item.action.label)}</span>` : "";
+    const action = item.action
+      ? `<button type="button" class="wh-spot-chip wh-spot-chip--info ds-pressable" data-spot-agent-team-action="${escapeHtml(item.action.kind)}" data-spot-agent-team-action-href="${escapeHtml(safeHref(item.action.href))}">${escapeHtml(item.action.label)}</button>`
+      : "";
     const cost = item.cost_estimate_cny ? `<span class="wh-spot-change-path">${escapeHtml(`¥${item.cost_estimate_cny}`)}</span>` : "";
     return `<div class="wh-spot-trace-step" data-spot-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-spot-agent-team-status="${escapeHtml(item.status)}">
       <div class="wh-spot-trace-phase">${escapeHtml(`#${item.seq} ${taskPlanItemRoleLabel(locale, item.role)} · ${agentTeamItemStatusLabel(item.status, zh)}`)}</div>
@@ -204,6 +218,17 @@ export function createWorkItemView(): SpotlightCapabilityView {
         const open = target.closest<HTMLElement>("[data-wi-open]");
         if (open?.dataset.wiOpen) {
           void showDetail(open.dataset.wiOpen);
+          return;
+        }
+        const agentAction = target.closest<HTMLElement>("[data-spot-agent-team-action-href]");
+        if (agentAction?.dataset.spotAgentTeamActionHref) {
+          event.preventDefault();
+          const actionTarget = agentTeamActionTarget(agentAction.dataset.spotAgentTeamActionHref);
+          if (actionTarget) {
+            ctx.open(actionTarget.view, actionTarget.target);
+          } else {
+            ctx.toast(zh ? "这个入口暂时打不开" : "This action is not available here", "error");
+          }
           return;
         }
         const draft = target.closest<HTMLElement>("[data-wi-create-proposal]");
