@@ -11,6 +11,7 @@ import { createServer as createViteServer, type ViteDevServer } from "vite";
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
 import type { AgentArmyDashboardVM, CalendarPageVM, DrivePageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM,
   ProjectHealthPageVM, ProjectHomePageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, TeamSkillsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
+import { isExpectedActionNotice, noticeSequence, shouldRetryTransportActionNotice } from "../src/browser-action-notice.js";
 import { launchChrome, type CdpClient } from "../src/chrome-launch.js";
 
 type Viewport = {
@@ -2575,40 +2576,56 @@ async function fillTextInput(cdp: CdpClient, selector: string, value: string) {
 }
 
 async function clickAndWaitForNotice(cdp: CdpClient, selector: string, kind: string, actionId?: string) {
-  const previousNoticeSeq = await cdp.evaluate<number>(`(() => {
+  let previousNoticeSeq = await cdp.evaluate<number>(`(() => {
     const notice = document.querySelector("[data-wh-app-notice]");
     const raw = notice?.getAttribute("data-r4-notice-seq") || "0";
     const parsed = Number.parseInt(raw, 10);
     return Number.isFinite(parsed) ? parsed : 0;
   })()`);
-  const clicked = await cdp.evaluate<boolean>(`(() => {
-    // Several proposal advanced-edit actions share apply_ai_fusion. The old wait accepted an
-    // already-visible same-action notice as the next action's completion, so CI could click ahead
-    // while the previous request was still in flight.
-    const staleNotice = document.querySelector("[data-wh-app-notice]");
-    if (staleNotice instanceof HTMLElement) {
-      staleNotice.hidden = true;
-      delete staleNotice.dataset.r4NoticeKind;
-      delete staleNotice.dataset.r4NoticeActionId;
+  const maxTransportAttempts = 2;
+  let lastAudit: BrowserAudit | undefined;
+  for (let attempt = 1; attempt <= maxTransportAttempts; attempt += 1) {
+    const clicked = await cdp.evaluate<boolean>(`(() => {
+      // Several proposal advanced-edit actions share apply_ai_fusion. The old wait accepted an
+      // already-visible same-action notice as the next action's completion, so CI could click ahead
+      // while the previous request was still in flight.
+      const staleNotice = document.querySelector("[data-wh-app-notice]");
+      if (staleNotice instanceof HTMLElement) {
+        staleNotice.hidden = true;
+        delete staleNotice.dataset.r4NoticeKind;
+        delete staleNotice.dataset.r4NoticeActionId;
+      }
+      const target = document.querySelector(${JSON.stringify(selector)});
+      if (!target) return false;
+      target.click();
+      return true;
+    })()`);
+    if (!clicked) {
+      throw new Error(`Could not click selector: ${selector}`);
     }
-    const target = document.querySelector(${JSON.stringify(selector)});
-    if (!target) return false;
-    target.click();
-    return true;
-  })()`);
-  if (!clicked) {
-    throw new Error(`Could not click selector: ${selector}`);
+    const audit = await waitFor<BrowserAudit>(
+      cdp,
+      `${selector} -> notice ${kind}`,
+      auditExpression(),
+      (value) =>
+        isExpectedActionNotice({ notice: value.notice, previousSeq: previousNoticeSeq, kind, actionId }) ||
+        shouldRetryTransportActionNotice({ notice: value.notice, previousSeq: previousNoticeSeq, actionId })
+    );
+    if (isExpectedActionNotice({ notice: audit.notice, previousSeq: previousNoticeSeq, kind, actionId })) {
+      return;
+    }
+    lastAudit = audit;
+    if (
+      attempt < maxTransportAttempts &&
+      shouldRetryTransportActionNotice({ notice: audit.notice, previousSeq: previousNoticeSeq, actionId })
+    ) {
+      previousNoticeSeq = noticeSequence(audit.notice.seq);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      continue;
+    }
+    break;
   }
-  await waitFor<BrowserAudit>(
-    cdp,
-    `${selector} -> notice ${kind}`,
-    auditExpression(),
-    (audit) =>
-      audit.notice.visible &&
-      Number.parseInt(audit.notice.seq ?? "0", 10) > previousNoticeSeq &&
-      audit.notice.kind === kind &&
-      (actionId === undefined || audit.notice.actionId === actionId)
-  );
+  throw new Error(`Unexpected notice for ${selector} -> notice ${kind}; last value=${JSON.stringify(lastAudit)}`);
 }
 
 async function uploadDriveFileViaInput(cdp: CdpClient, filename: string, content: string) {

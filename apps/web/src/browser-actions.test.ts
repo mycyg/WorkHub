@@ -4,6 +4,7 @@ import type { AcceptedDeliverableRestoreResult } from "@workhub/contracts";
 
 import { acceptedDeliverableRestoreFollowUp, driveUploadPayloadFromPicker } from "./drive-actions.js";
 import { drivePreviewPanelHtml, renderDrivePreviewPanel } from "./drive-preview.js";
+import { shouldRetryTransportActionNotice } from "./browser-action-notice.js";
 
 class FakeElement {
   className = "";
@@ -136,4 +137,54 @@ test("drive preview panel localizes type and size metadata", () => {
   assert.equal(en.includes("type text"), false);
   assert.equal(en.includes("2048 bytes"), false);
   assert.equal(en.includes("Text preview · 2 KB"), true);
+});
+
+test("R4 smoke retries only fresh same-action transport notice failures", () => {
+  assert.equal(shouldRetryTransportActionNotice({
+    notice: {
+      visible: true,
+      seq: "4",
+      kind: "action_error",
+      actionId: "apply_ai_fusion",
+      body: "Failed to fetch"
+    },
+    previousSeq: 3,
+    actionId: "apply_ai_fusion"
+  }), true);
+
+  assert.equal(shouldRetryTransportActionNotice({
+    notice: {
+      visible: true,
+      seq: "3",
+      kind: "action_error",
+      actionId: "apply_ai_fusion",
+      body: "Failed to fetch"
+    },
+    previousSeq: 3,
+    actionId: "apply_ai_fusion"
+  }), false);
+
+  assert.equal(shouldRetryTransportActionNotice({
+    notice: {
+      visible: true,
+      seq: "4",
+      kind: "action_error",
+      actionId: "apply_ai_fusion",
+      body: "field_value_required"
+    },
+    previousSeq: 3,
+    actionId: "apply_ai_fusion"
+  }), false);
+
+  assert.equal(shouldRetryTransportActionNotice({
+    notice: {
+      visible: true,
+      seq: "4",
+      kind: "action_error",
+      actionId: "request_changes",
+      body: "Failed to fetch"
+    },
+    previousSeq: 3,
+    actionId: "apply_ai_fusion"
+  }), false);
 });
