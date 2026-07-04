@@ -1874,7 +1874,7 @@ function traceRows(vm: WorkItemDetailVM, locale: WorkHubLocale) {
         <strong>${escapeHtml(`${step.step_no}. ${agentStepPhaseLabel(locale, step.phase)}`)}</strong>
         <p>${escapeHtml(agentStepPublicSummary(locale, step))}</p>
       </div>
-      <span class="wh-pill">${escapeHtml(step.tool_name ?? formatApprovalTimestamp(step.created_at))}</span>
+      <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(step.created_at) || agentStepPhaseLabel(locale, step.phase))}</span>
     </div>`)
     .join("");
 }

@@ -1002,6 +1002,32 @@ test("R4.11 WorkItem route component keeps task context, trace, acceptance, and 
   assertNoMainWindowBoundaryLeak(workitem.html);
 });
 
+test("R9.7 WorkItem trace route component does not render machine tool names as visible pills", () => {
+  const vm = surfaceVm();
+  const firstStep = vm.page_vms.workitem.agent_trace_preview[0];
+  assert.ok(firstStep);
+  const workitem = renderWebRouteComponents({
+    ...vm,
+    page_vms: {
+      ...vm.page_vms,
+      workitem: {
+        ...vm.page_vms.workitem,
+        agent_trace_preview: [{
+          ...firstStep,
+          phase: "think",
+          tool_name: "read_project_file",
+          output_excerpt: "Reviewed the project context.",
+          created_at: "2026-07-03T10:24:00.000Z"
+        }]
+      }
+    }
+  }, { locale: "en-US" }).workitem;
+
+  assert.ok(workitem);
+  assert.equal(workitem.html.includes("<span class=\"wh-pill\">read_project_file</span>"), false);
+  assert.equal(workitem.html.includes("<span class=\"wh-pill\">2026-07-03 10:24</span>"), true);
+});
+
 test("R9.1 WorkItem route component renders the approved task plan snapshot", () => {
   const base = surfaceVm().page_vms.workitem;
   const planVm: WorkItemDetailVM = {
