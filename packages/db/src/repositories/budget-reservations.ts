@@ -33,6 +33,7 @@ export type BudgetReservationScopeInput = {
 };
 
 export type ReserveRunBudgetInput = {
+  workspaceId: string;
   runId: string;
   leaseExpiresAt: Date;
   scopes: BudgetReservationScopeInput[];
@@ -43,6 +44,7 @@ export type ReserveRunBudgetResult =
   | { ok: false; limitingScope: BudgetScope; limit: "tokens" | "cost" };
 
 export type ScopeBucketKey = {
+  workspaceId: string;
   scopeKind: BudgetScope["kind"];
   scopeId: string;
   periodBucket: string;
@@ -62,11 +64,20 @@ export type BudgetReservationRepository = {
 };
 
 function lockKey(key: ScopeBucketKey): string {
-  return `budget-reserve:${key.scopeKind}:${key.scopeId}:${key.periodBucket}`;
+  return `budget-reserve:${key.workspaceId}:${key.scopeKind}:${key.scopeId}:${key.periodBucket}`;
 }
 
 function bucketMapKey(key: ScopeBucketKey): string {
-  return `${key.scopeKind}:${key.scopeId}:${key.periodBucket}`;
+  return `${key.workspaceId}:${key.scopeKind}:${key.scopeId}:${key.periodBucket}`;
+}
+
+function scopeBucketKey(workspaceId: string, scope: BudgetReservationScopeInput): ScopeBucketKey {
+  return {
+    workspaceId,
+    scopeKind: scope.scopeKind,
+    scopeId: scope.scopeId,
+    periodBucket: scope.periodBucket
+  };
 }
 
 function toReservationRow(row: typeof budgetReservations.$inferSelect): ReservationRow {
@@ -89,10 +100,12 @@ export function createBudgetReservationRepository(db: WorkHubDb): BudgetReservat
         return { ok: true };
       }
       // 稳定顺序加锁，避免并发 reserver 交叉加锁互锁。
-      const ordered = [...input.scopes].sort((left, right) => lockKey(left).localeCompare(lockKey(right)));
+      const ordered = [...input.scopes].sort((left, right) =>
+        lockKey(scopeBucketKey(input.workspaceId, left)).localeCompare(lockKey(scopeBucketKey(input.workspaceId, right)))
+      );
       return db.transaction(async (tx) => {
         for (const scope of ordered) {
-          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey(scope)})::bigint)`);
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey(scopeBucketKey(input.workspaceId, scope))})::bigint)`);
         }
         const checks: ReservationScopeCheck[] = [];
         for (const scope of ordered) {
@@ -104,6 +117,7 @@ export function createBudgetReservationRepository(db: WorkHubDb): BudgetReservat
               and(
                 eq(budgetReservations.scopeKind, scope.scopeKind),
                 eq(budgetReservations.scopeId, scope.scopeId),
+                eq(budgetReservations.workspaceId, input.workspaceId),
                 eq(budgetReservations.periodBucket, scope.periodBucket),
                 eq(budgetReservations.status, "active"),
                 ne(budgetReservations.runId, input.runId)
@@ -133,6 +147,7 @@ export function createBudgetReservationRepository(db: WorkHubDb): BudgetReservat
             ordered.map((scope) => ({
               id: randomUUID(),
               runId: input.runId,
+              workspaceId: input.workspaceId,
               scopeKind: scope.scopeKind,
               scopeId: scope.scopeId,
               period: scope.period,
@@ -186,6 +201,7 @@ export function createBudgetReservationRepository(db: WorkHubDb): BudgetReservat
           and(
             eq(budgetReservations.scopeKind, key.scopeKind),
             eq(budgetReservations.scopeId, key.scopeId),
+            eq(budgetReservations.workspaceId, key.workspaceId),
             eq(budgetReservations.periodBucket, key.periodBucket)
           ) as SQL
       );

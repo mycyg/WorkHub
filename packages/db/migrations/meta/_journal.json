@@ -295,6 +295,13 @@
       "when": 1783113366000,
       "tag": "0041_chat_message_kind_width",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1783164286000,
+      "tag": "0042_budget_reservations_workspace",
+      "breakpoints": true
     }
   ]
 }

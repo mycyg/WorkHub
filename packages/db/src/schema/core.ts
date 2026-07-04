@@ -1313,6 +1313,7 @@ export const budgetReservations = pgTable(
   {
     id: id(),
     runId: uuid("run_id").references(() => agentRuns.id, { onDelete: "cascade" }).notNull(),
+    workspaceId: uuid("workspace_id").notNull(),
     scopeKind: varchar("scope_kind", { length: 16 }).notNull(),
     scopeId: varchar("scope_id", { length: 128 }).notNull(),
     period: varchar("period", { length: 16 }).notNull(),
@@ -1332,7 +1333,7 @@ export const budgetReservations = pgTable(
       .where(sql`${table.status} = 'active'`),
     // outstanding SUM(est-actual) 读取按 (scope,bucket) 索引，不扫 settled/expired 行。
     index("budget_reservations_scope_bucket_active_idx")
-      .on(table.scopeKind, table.scopeId, table.periodBucket)
+      .on(table.workspaceId, table.scopeKind, table.scopeId, table.periodBucket)
       .where(sql`${table.status} = 'active'`),
     // 租约过期清扫。
     index("budget_reservations_lease_idx")

@@ -1908,6 +1908,7 @@ export function createInMemoryAgentRunQueue(options: {
           const reserveScopes = buildReserveScopes(decision, now());
           if (reserveScopes.length > 0) {
             const reserved = await reservationRepo.reserve({
+              workspaceId: input.workspaceId ?? settings.auth.defaultWorkspaceId,
               runId: run.run_id,
               leaseExpiresAt: new Date(now().getTime() + reservationLeaseMs),
               scopes: reserveScopes
