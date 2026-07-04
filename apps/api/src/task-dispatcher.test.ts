@@ -648,7 +648,7 @@ test("R9.7 dispatcher persists decision attention when arbitration blocks a term
   }]);
 });
 
-test("R9.7 dispatcher does not mark completion when durable completion persistence fails", async () => {
+test("R9.7 dispatcher keeps the done CAS authoritative when completion side effects fail", async () => {
   const events: string[] = [];
   const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
     item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "succeeded" }),
@@ -682,9 +682,44 @@ test("R9.7 dispatcher does not mark completion when durable completion persisten
     /completion audit failed/u
   );
 
-  assert.deepEqual(events, ["completion"]);
+  // R9.7 review: the old assertion expected the completion audit side effect to run before
+  // `markPlanDone()`, but that allowed a CAS miss to emit a false completion record.
+  assert.deepEqual(events, ["done", "completion"]);
+  assert.equal(repository.row.status, "done");
+  assert.equal(repository.doneCalls, 1);
+  assert.deepEqual(queue.inputs, []);
+});
+
+test("R9.7 dispatcher does not emit completion side effects when markPlanDone CAS misses", async () => {
+  const events: string[] = [];
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "succeeded" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "succeeded" }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", status: "dispatched" })
+  ]);
+  repository.markPlanDone = async () => {
+    events.push("done-cas-miss");
+    return null;
+  };
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    completionSink: async () => {
+      events.push("completion");
+    }
+  });
+
+  const result = await dispatcher.handleRunSettled(run({
+    status: "succeeded",
+    taskPlanItemId: reviewItemId,
+    workspaceId
+  }));
+
+  assert.equal(result?.dispatch.completed, false);
   assert.equal(repository.row.status, "dispatching");
-  assert.equal(repository.doneCalls, 0);
+  assert.deepEqual(events, ["done-cas-miss"]);
   assert.deepEqual(queue.inputs, []);
 });
 

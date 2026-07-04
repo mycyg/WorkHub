@@ -374,13 +374,6 @@ export function createTaskDispatcher(options: {
         return false;
       }
     }
-    const completedPlan: TaskPlanRow = { ...plan, status: "done", updatedAt: at };
-    await requireCompletion(completionSink, {
-      plan: completedPlan,
-      items,
-      summaryMd: completionSummary(completedPlan, items),
-      at
-    });
     const done = await options.repository.markPlanDone({
       planId: plan.id,
       workspaceId: plan.workspaceId,
@@ -389,6 +382,12 @@ export function createTaskDispatcher(options: {
     if (!done) {
       return false;
     }
+    await requireCompletion(completionSink, {
+      plan: done,
+      items,
+      summaryMd: completionSummary(done, items),
+      at
+    });
     return true;
   }
 
