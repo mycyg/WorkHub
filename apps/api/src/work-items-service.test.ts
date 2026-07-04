@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1341,14 +1340,6 @@ test("in-memory work item detail wraps VM assembly drift as an internal contract
       }
     }),
     (error: unknown) => error instanceof InternalContractError && error.context === "work-item.detail"
-  );
-});
-
-test("accepted deliverable restore finds previous versions by project target instead of same drive item", () => {
-  const source = readFileSync("../../packages/db/src/repositories/work-items.ts", "utf8");
-  assert.doesNotMatch(
-    source,
-    /eq\(acceptedDeliverableChanges\.driveItemId,\s*current\.driveItem\.id\)/u
   );
 });
 

@@ -3,7 +3,12 @@ import test from "node:test";
 
 import { createWorkItemRepository } from "./repositories/work-items.js";
 import {
+  acceptedDeliverableChanges,
   agentRuns,
+  auditLogs,
+  projectDriveItems,
+  projectDriveOperations,
+  projectDriveVersions,
   taskPlanItems,
   taskPlans,
   workItems
@@ -18,6 +23,42 @@ const submitterId = "93000000-0000-4000-8000-000000000301";
 const planId = "93000000-0000-4000-8000-000000000901";
 const researchId = "93000000-0000-4000-8000-000000000902";
 const produceId = "93000000-0000-4000-8000-000000000903";
+const acceptedChangeId = "93000000-0000-4000-8000-000000000904";
+const previousAcceptedChangeId = "93000000-0000-4000-8000-000000000905";
+const currentDriveItemId = "93000000-0000-4000-8000-000000000906";
+const previousDriveItemId = "93000000-0000-4000-8000-000000000907";
+const currentDriveVersionId = "93000000-0000-4000-8000-000000000908";
+const previousDriveVersionId = "93000000-0000-4000-8000-000000000909";
+
+function acceptedDeliverable(overrides: Record<string, unknown> = {}) {
+  return {
+    id: acceptedChangeId,
+    workItemId,
+    projectId,
+    proposalId: "93000000-0000-4000-8000-000000000910",
+    branchId: null,
+    changeId: "change-1",
+    targetKind: "file",
+    targetEntityType: "project_drive_item",
+    targetEntityId: null,
+    targetPath: "outputs/report.md",
+    targetKey: "delivery:/outputs/report.md",
+    changeType: "replace",
+    acceptedVersion: 3,
+    baseVersionRef: null,
+    acceptedRef: "outputs/report.md",
+    driveItemId: currentDriveItemId,
+    driveVersionId: currentDriveVersionId,
+    sha256Before: "before-current",
+    sha256After: "after-current",
+    previewRefJson: null,
+    manifestChangeJson: { kind: "file" },
+    supersededAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
 
 test("R9.1 work item detail reads the latest task plan through workspace scope with capped items", async () => {
   const workItem = {
@@ -110,6 +151,93 @@ test("R9.1 work item detail reads the latest task plan through workspace scope w
   assert.ok(queryReferences(itemQuery?.where, taskPlanItems.planId));
   assert.ok(queryParamValues(itemQuery?.where).includes(planId));
   assert.equal(queries[0]?.fromTable, workItems);
+});
+
+test("accepted deliverable restore finds previous versions by project target instead of same drive item", async () => {
+  const currentAccepted = acceptedDeliverable();
+  const previousAccepted = acceptedDeliverable({
+    id: previousAcceptedChangeId,
+    workItemId: "93000000-0000-4000-8000-000000000999",
+    driveItemId: previousDriveItemId,
+    driveVersionId: previousDriveVersionId,
+    acceptedVersion: 2,
+    sha256After: "after-previous",
+    supersededAt: now
+  });
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ projectId }],
+    [],
+    [{
+      accepted: currentAccepted,
+      driveItem: {
+        id: currentDriveItemId,
+        projectId,
+        currentVersionId: currentDriveVersionId,
+        deletedAt: null
+      },
+      driveVersion: { id: currentDriveVersionId }
+    }],
+    [{
+      accepted: previousAccepted,
+      driveItem: {
+        id: previousDriveItemId,
+        projectId,
+        currentVersionId: previousDriveVersionId,
+        deletedAt: null
+      },
+      driveVersion: { id: previousDriveVersionId }
+    }],
+    [],
+    [],
+    [],
+    [],
+    [],
+    []
+  ]);
+  const repository = createWorkItemRepository(db);
+
+  await repository.restoreAcceptedDeliverable({
+    workItemId,
+    acceptedChangeId,
+    actorKind: "human",
+    actorUserId: submitterId,
+    at: now
+  });
+
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  const previousVersionQuery = queries.find((query) =>
+    query.fromTable === acceptedDeliverableChanges &&
+    query.orderBy.length === 2 &&
+    query.limit === 1
+  );
+  assert.ok(previousVersionQuery, "restore should query the previous accepted version");
+  assert.deepEqual(previousVersionQuery.joins.map((join) => [join.kind, join.table]), [
+    ["left", projectDriveItems],
+    ["left", projectDriveVersions]
+  ]);
+  // R9.7: the old assertion grepped repository source for absence of a current-drive-item predicate.
+  // That was wrong because source text did not prove the actual restore query can cross drive items
+  // while staying scoped to the same project target and earlier accepted version.
+  assert.ok(queryReferences(previousVersionQuery.where, acceptedDeliverableChanges.projectId));
+  assert.ok(queryReferences(previousVersionQuery.where, acceptedDeliverableChanges.targetKey));
+  assert.ok(queryReferences(previousVersionQuery.where, acceptedDeliverableChanges.acceptedVersion));
+  assert.ok(queryReferences(previousVersionQuery.where, acceptedDeliverableChanges.supersededAt));
+  assert.ok(queryReferences(previousVersionQuery.where, acceptedDeliverableChanges.driveVersionId));
+  assert.ok(queryReferences(previousVersionQuery.where, projectDriveItems.id));
+  assert.ok(queryReferences(previousVersionQuery.where, projectDriveItems.deletedAt));
+  assert.equal(queryReferences(previousVersionQuery.where, acceptedDeliverableChanges.driveItemId), false);
+  assert.equal(queryParamValues(previousVersionQuery.where).includes(currentDriveItemId), false);
+  assert.ok(queryParamValues(previousVersionQuery.where).includes(projectId));
+  assert.ok(queryParamValues(previousVersionQuery.where).includes(currentAccepted.targetKey));
+  assert.ok(queryParamValues(previousVersionQuery.where).includes(currentAccepted.acceptedVersion));
+
+  const insertedAccepted = queries.find((query) =>
+    query.operation === "insert" && query.targetTable === acceptedDeliverableChanges
+  );
+  assert.equal((insertedAccepted?.valuesValue as { driveItemId?: string } | undefined)?.driveItemId, previousDriveItemId);
+  assert.equal(queries.some((query) => query.operation === "update" && query.targetTable === projectDriveItems), false);
+  assert.ok(queries.some((query) => query.operation === "insert" && query.targetTable === projectDriveOperations));
+  assert.ok(queries.some((query) => query.operation === "insert" && query.targetTable === auditLogs));
 });
 
 test("R9.2 work item detail reads child runs for the latest task plan with a capped plan-scoped query", async () => {
