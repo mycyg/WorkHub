@@ -289,6 +289,15 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     };
   }
 
+  function dashboardSourceLowerBoundWarning(locale: WorkHubLocale): DashboardSourceWarning {
+    return {
+      source: "approvals",
+      message: locale === "en-US"
+        ? "Approval decisions exceeded the dashboard scan cap; this KPI shows a visible lower bound. Open Approvals to review everything."
+        : "审批待办超过仪表盘扫描上限；这里显示的是可见下限，请打开审批页查看全部。"
+    };
+  }
+
   async function attentionDecisionSummary(input: {
     actor: AuthEnv["Variables"]["actor"];
     currentUser: AuthEnv["Variables"]["currentUser"];
@@ -311,7 +320,15 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         locale: input.locale,
         canReadWorkItem: (workItemId) => canReadWorkItem(workItems, workItemId, input.actor)
       });
-      count += (await visibleApprovalCenter(pending, workItems, input.actor, true)).items.length;
+      const visiblePending = await visibleApprovalCenter(pending, workItems, input.actor, true);
+      const visibleCount = Math.max(visiblePending.items.length, visiblePending.requests.length);
+      const lowerBoundTotal = pending.counts.pending_total;
+      count += typeof lowerBoundTotal === "number"
+        ? Math.max(visibleCount, lowerBoundTotal)
+        : visibleCount;
+      if (pending.counts.pending_total_capped === 1) {
+        sourceWarnings.push(dashboardSourceLowerBoundWarning(input.locale));
+      }
     } catch {
       sourceWarnings.push(dashboardSourceWarning("approvals", input.locale));
     }

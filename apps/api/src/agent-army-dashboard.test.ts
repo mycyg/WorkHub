@@ -567,6 +567,113 @@ test("R9.7 /api/pages/agents marks failed attention count sources instead of loo
   assert.match(body.data.source_warnings[1]?.message ?? "", /审批待办/u);
 });
 
+test("R9.7 /api/pages/agents counts capped approval lower-bound totals in the decision KPI", async () => {
+  const settings = runtimeSettings();
+  const approvalId = testUuid(0x300);
+  const attentionId = testUuid(0x301);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(settings),
+    taskPlans: {
+      async listDashboardPlans() {
+        return {
+          plans: [],
+          plansCapped: false,
+          items: [],
+          itemsCapped: false,
+          runs: [],
+          runsCapped: false,
+          escalations: [],
+          escalationsCapped: false
+        };
+      }
+    },
+    workItems: {
+      async canReadWorkItems() {
+        return new Set<string>();
+      }
+    },
+    ledgerStore: {
+      async listEntriesForScopes() {
+        return [];
+      }
+    },
+    aiWorklog: {
+      async getTodayMetrics() {
+        return {
+          runs_today: 0,
+          autonomy_rate: 0,
+          accepted_today: 0,
+          saved_hours_estimate: 0,
+          generated_at: now.toISOString()
+        };
+      }
+    },
+    escalations: {
+      async listAttentionItems() {
+        return [];
+      }
+    },
+    memoryConflicts: {
+      async listAttentionItems() {
+        return [];
+      }
+    },
+    approvals: {
+      async listPendingForUser() {
+        return {
+          items: [{
+            id: attentionId,
+            kind: "approval",
+            priority: "high",
+            work_item_id: workItemId,
+            source_ref: { entity_type: "approval_request", entity_id: approvalId },
+            title: "审批待办",
+            summary_text: "需要人工审批",
+            actions: [{ id: "open", label: "打开", style: "primary", method: "GET", href: "/approvals" }],
+            created_at: now.toISOString()
+          }],
+          requests: [{
+            id: approvalId,
+            work_item_id: workItemId,
+            action_pattern: "tool.write_file",
+            payload_json: {},
+            status: "pending",
+            routed_to_user_id: userId,
+            created_at: now.toISOString(),
+            updated_at: now.toISOString()
+          }],
+          filters: { pending: true },
+          counts: { pending: 1, pending_total: 125, pending_total_capped: 1 },
+          page_info: { limit: 100, returned: 1, has_more: true },
+          items_detail: {}
+        };
+      }
+    },
+    proposals: {
+      async listReviewableForUser() {
+        return [];
+      }
+    }
+  } as never));
+
+  const response = await app.request("/api/pages/agents?locale=zh-CN", {
+    headers: { Cookie: await cookie(settings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      kpis: { waiting_decision_count: number };
+      source_warnings: Array<{ source: string; message: string }>;
+    };
+  };
+  assert.equal(body.data.kpis.waiting_decision_count, 125);
+  assert.deepEqual(body.data.source_warnings.map((warning) => warning.source), ["approvals"]);
+  assert.match(body.data.source_warnings[0]?.message ?? "", /下限/u);
+});
+
 test("R9.7 /api/pages/agents applies visibility before the public plan cap", async () => {
   const settings = runtimeSettings();
   const hiddenCandidates = Array.from({ length: 20 }, (_, index) => dashboardPlanFixture(index + 1));
