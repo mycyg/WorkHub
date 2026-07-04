@@ -75,6 +75,16 @@ const snapshotId = "70000000-0000-4000-8000-000000000025";
 const confidenceId = "72000000-0000-4000-8000-000000000025";
 const escalationId = "73000000-0000-4000-8000-000000000025";
 
+function assertNoRawBudgetBoundaryIds(value: unknown, rawIds: string[]) {
+  const serialized = JSON.stringify(value) ?? "";
+  for (const field of ["task_plan_id", "taskPlanId", "task_plan_item_id", "taskPlanItemId", "objective_id", "objectiveId"]) {
+    assert.equal(serialized.includes(field), false, `${field} leaked through public budget payload`);
+  }
+  for (const id of rawIds) {
+    assert.equal(serialized.includes(id), false, `${id} leaked through public budget payload`);
+  }
+}
+
 class MemoryAgentRunPersistence implements AgentRunPersistence {
   public readonly rows = new Map<string, AgentRunQueueRecord>();
   public readonly traceWrites: AgentRunTraceStepRecord[][] = [];
@@ -1817,10 +1827,17 @@ test("R9.5 objective budget exhaustion blocks the next child enqueue and publish
     createdAt: now
   }));
   const events: { topic: string; type: string; data: WorkHubEvent<unknown> }[] = [];
+  const durableEvents: Parameters<AiDecisionRepository["createEscalationEvent"]>[0][] = [];
   const queue = createInMemoryAgentRunQueue({
     settings: runtimeSettings,
     policyStore,
     ledgerStore,
+    decisions: {
+      async createEscalationEvent(input) {
+        durableEvents.push(input);
+        return null as unknown as EscalationEventRow;
+      }
+    },
     now: () => now,
     id: () => "95000000-0000-4000-8000-000000000604",
     eventBus: {
@@ -1830,8 +1847,9 @@ test("R9.5 objective budget exhaustion blocks the next child enqueue and publish
     }
   });
 
-  await assert.rejects(
-    () => queue.enqueue({
+  let rejected: unknown;
+  try {
+    await queue.enqueue({
       workItemId,
       actorId: userId,
       workspaceId: runtimeSettings.auth.defaultWorkspaceId,
@@ -1839,15 +1857,19 @@ test("R9.5 objective budget exhaustion blocks the next child enqueue and publish
       taskPlanItemId: "95000000-0000-4000-8000-000000000605",
       objectiveId,
       title: "Objective child run"
-    }),
-    (error: unknown) =>
-      error instanceof AgentRunnerError &&
-      error.status === 402 &&
-      error.code === "budget_exhausted" &&
-      (error.details?.scope as { kind?: string; objective_id?: string } | undefined)?.kind === "objective" &&
-      (error.details?.scope as { kind?: string; objective_id?: string } | undefined)?.objective_id === objectiveId &&
-      error.details?.recommended_action === "add_budget"
-  );
+    });
+  } catch (error) {
+    rejected = error;
+  }
+
+  assert.ok(rejected instanceof AgentRunnerError);
+  assert.equal(rejected.status, 402);
+  assert.equal(rejected.code, "budget_exhausted");
+  // Old assertion expected `scope.objective_id`, but that leaked a raw budget
+  // boundary id through public errors/events. R9.7 only exposes the boundary kind.
+  assert.deepEqual(rejected.details?.scope, { kind: "objective" });
+  assert.equal(rejected.details?.recommended_action, "add_budget");
+  assertNoRawBudgetBoundaryIds(rejected.details, [taskPlanId, objectiveId]);
 
   assert.equal((await queue.listActive()).length, 0);
   assert.deepEqual(events.map((event) => [event.topic, event.type]), [
@@ -1855,12 +1877,58 @@ test("R9.5 objective budget exhaustion blocks the next child enqueue and publish
     [topics.user(userId).topic, eventTypes.budgetExhausted]
   ]);
   const notice = events[0]?.data.data as { recommended_action?: string; options?: { id: string; label: string }[] };
+  assertNoRawBudgetBoundaryIds(notice, [taskPlanId, objectiveId]);
+  assertNoRawBudgetBoundaryIds(durableEvents[0]?.handoffJson?.["notice"], [taskPlanId, objectiveId]);
+  assertNoRawBudgetBoundaryIds(durableEvents[0]?.handoffJson?.["budget_decision"], [taskPlanId, objectiveId]);
   assert.equal(notice.recommended_action, "add_budget");
   assert.deepEqual(notice.options?.map((option) => [option.id, option.label]), [
     ["add_budget", "追加预算继续"],
     ["finish_current_output", "就用现有产出收尾"],
     ["close_scope", "整体收工"]
   ]);
+});
+
+test("R9.7 reservation budget rejection public details do not leak task-plan ids", async () => {
+  const runtimeSettings = settings();
+  const taskPlanId = "95000000-0000-4000-8000-000000000701";
+  const taskPlanItemId = "95000000-0000-4000-8000-000000000702";
+  const fakeReservationRepo = {
+    reserve: async () => ({ ok: false, limitingScope: { kind: "task", taskPlanId }, limit: "tokens" }),
+    reconcile: async () => 0,
+    releaseExpired: async () => 0,
+    refreshLease: async () => 0,
+    outstandingForScopes: async () => new Map()
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    reservationRepo: fakeReservationRepo as unknown as BudgetReservationRepository,
+    now: () => now,
+    id: () => "95000000-0000-4000-8000-000000000704",
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  let rejected: unknown;
+  try {
+    await queue.enqueue({
+      workItemId,
+      actorId: userId,
+      workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+      taskPlanId,
+      taskPlanItemId,
+      title: "Task child run"
+    });
+  } catch (error) {
+    rejected = error;
+  }
+
+  assert.ok(rejected instanceof AgentRunnerError);
+  assert.equal(rejected.status, 402);
+  assert.equal(rejected.code, "budget_exhausted");
+  assert.deepEqual(rejected.details?.reserved_limiting_scope, { kind: "task" });
+  assertNoRawBudgetBoundaryIds(rejected.details, [taskPlanId, taskPlanItemId]);
 });
 
 test("agent run enqueue reads budget policies from the actor workspace", async () => {

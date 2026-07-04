@@ -1770,7 +1770,7 @@ export function createInMemoryAgentRunQueue(options: {
     if (!decisions || decision.notice?.code !== "budget_exhausted") {
       return;
     }
-    const notice = toQueueBudgetNotice(decision.notice);
+    const notice = toPublicBudgetNotice(decision.notice);
     try {
       await decisions.createEscalationEvent({
         workItemId: input.workItemId,
@@ -1779,7 +1779,7 @@ export function createInMemoryAgentRunQueue(options: {
         handoffJson: {
           attention_kind: "budget",
           notice,
-          budget_decision: toQueueBudgetDecision(decision),
+          budget_decision: toPublicBudgetDecision(decision),
           actor_id: input.actorId,
           ...(input.orgId ? { org_id: input.orgId } : {}),
           ...(input.workspaceId ? { workspace_id: input.workspaceId } : {}),
@@ -1809,7 +1809,7 @@ export function createInMemoryAgentRunQueue(options: {
       topics.workitem(input.workItemId).topic,
       topics.user(input.actorId).topic
     ];
-    const notice = toQueueBudgetNotice(decision.notice);
+    const notice = toPublicBudgetNotice(decision.notice);
     const envelope = makeWorkHubEvent({
       type: eventType,
       topic: topicsToPublish[0]!,
@@ -1935,7 +1935,7 @@ export function createInMemoryAgentRunQueue(options: {
               await emitBudgetNotice(input, decision);
               throw new AgentRunnerError(402, "budget_exhausted", decision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。", {
                 ...budgetErrorDetails(decision),
-                reserved_limiting_scope: toQueueBudgetScope(reserved.limitingScope),
+                reserved_limiting_scope: toPublicBudgetScope(reserved.limitingScope),
                 reserved_limit: reserved.limit
               });
             }
@@ -2112,6 +2112,19 @@ type QueueBudgetNotice = {
   action_href?: string;
 };
 
+type PublicBudgetScope =
+  | { kind: "workitem" }
+  | { kind: "task" }
+  | { kind: "objective" }
+  | { kind: "user" }
+  | { kind: "team" }
+  | { kind: "curation" }
+  | { kind: "eval"; suite: "nightly" | "release" };
+
+type PublicBudgetNotice = Omit<QueueBudgetNotice, "scope"> & {
+  scope: PublicBudgetScope;
+};
+
 function toQueueRunBudget(budget: RunBudget): AgentRunQueueRecord["budget"] {
   return {
     max_steps: budget.maxSteps,
@@ -2257,6 +2270,16 @@ function toQueueBudgetDecision(decision: BudgetDecision): AgentRunQueueRecord["b
   };
 }
 
+function toPublicBudgetDecision(decision: BudgetDecision): Record<string, unknown> {
+  return {
+    decision_id: decision.decisionId,
+    allowed: decision.allowed,
+    ...(decision.reason ? { reason: decision.reason } : {}),
+    model_route: decision.modelRoute,
+    ...(decision.notice ? { notice: toPublicBudgetNotice(decision.notice) } : {})
+  };
+}
+
 function toQueueBudgetNotice(notice: BudgetNotice): QueueBudgetNotice {
   return {
     code: notice.code,
@@ -2276,6 +2299,31 @@ function toQueueBudgetNotice(notice: BudgetNotice): QueueBudgetNotice {
       : {}),
     ...(notice.actionHref ? { action_href: notice.actionHref } : {})
   };
+}
+
+function toPublicBudgetNotice(notice: BudgetNotice): PublicBudgetNotice {
+  return {
+    code: notice.code,
+    severity: notice.severity,
+    message: notice.message,
+    scope: toPublicBudgetScope(notice.scope),
+    usage_ratio: notice.usageRatio,
+    recommended_action: notice.recommendedAction,
+    ...(notice.options
+      ? {
+          options: notice.options.map((option) => ({
+            id: option.id,
+            label: option.label,
+            action_href: publicBudgetActionHref(notice.scope, option.actionHref)
+          }))
+        }
+      : {}),
+    ...(notice.actionHref ? { action_href: publicBudgetActionHref(notice.scope, notice.actionHref) } : {})
+  };
+}
+
+function publicBudgetActionHref(scope: BudgetScope, href: string): string {
+  return scope.kind === "task" || scope.kind === "objective" ? "/dashboard/cost" : href;
 }
 
 function budgetScopeId(scope: BudgetScope): string {
@@ -2327,7 +2375,7 @@ function buildReserveScopes(decision: BudgetDecisionTrace, at: Date): BudgetRese
 function budgetErrorDetails(decision: BudgetDecisionTrace): Record<string, unknown> {
   const usage = decision.limitingUsage;
   return {
-    ...(decision.limitingScope ? { scope: toQueueBudgetScope(decision.limitingScope) } : {}),
+    ...(decision.limitingScope ? { scope: toPublicBudgetScope(decision.limitingScope) } : {}),
     ...(usage
       ? {
           policy_id: usage.policyId,
@@ -2337,6 +2385,15 @@ function budgetErrorDetails(decision: BudgetDecisionTrace): Record<string, unkno
       : {}),
     recommended_action: decision.notice?.recommendedAction ?? "pause"
   };
+}
+
+function toPublicBudgetScope(scope: BudgetScope): PublicBudgetScope {
+  switch (scope.kind) {
+    case "eval":
+      return { kind: "eval", suite: scope.suite };
+    default:
+      return { kind: scope.kind };
+  }
 }
 
 function toQueueBudgetScope(scope: BudgetScope): QueueBudgetScope {
