@@ -17,7 +17,6 @@ import { renderProposalConflictCards, renderProposalDetail, proposalCss } from "
 import {
   actionElementApplyPayload,
   actionElementCreateWorkItemPayload,
-  actionElementMergePayload,
   actionElementNextQuestionPayload,
   actionErrorNotice,
   actionHrefFromElement,
@@ -81,6 +80,7 @@ import {
 } from "./pet-window-bridge.js";
 import { parseDesktopShellNavigatePayload } from "./shell-events.js";
 import { handleDesktopSpotlightShellNavigate } from "./spotlight-shell-navigation.js";
+import { handleDesktopProposalAction } from "./desktop-proposal-actions.js";
 import { appleGlassDesignSystemCss } from "./design-system.js";
 import {
   commandPaletteCss,
@@ -96,7 +96,6 @@ import {
   type SpotlightResizeFn
 } from "./spotlight/controller.js";
 import { spotlightCss } from "./spotlight/css.js";
-import { reviewProposalWithoutMerge } from "./spotlight/views/proposals.js";
 import { isStaleDesktopClientTokenError } from "./auth-recovery.js";
 
 const root = document.getElementById("root");
@@ -667,38 +666,28 @@ function bindGoldPathNavigation(
         input.onActionSettled?.();
         return;
       }
-      const proposalAction = proposalActionFromHref(href);
-      if (proposalAction?.action === "review") {
-        if (action.requiresReason) {
-          pendingReviewHref = href;
-          pendingReviewActionId = actionId ?? "request_changes";
-          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingReviewActionId), reviewReasonButtons(locale));
-          return;
-        }
-        try {
-          const review = await reviewProposalWithoutMerge(client, proposalAction.proposalId);
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(review, locale), actionId));
-        } catch (error) {
-          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
-        }
-        input.onActionSettled?.();
-        return;
-      }
-      if (proposalAction?.action === "merge") {
-        const payload = actionElementMergePayload(actionTarget);
-        if (!payload.ok) {
-          showPayloadFailureNotice(shellRoot, locale, payload, actionId);
-          return;
-        }
-        try {
-          const merge = await client.mergeProposal(proposalAction.proposalId, payload.payload);
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
-        } catch (error) {
-          if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
-            showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
-          }
-        }
-        input.onActionSettled?.();
+      const handledProposalAction = await handleDesktopProposalAction({
+        href,
+        actionTarget,
+        actionId,
+        requiresReason: action.requiresReason,
+        locale,
+        client,
+        showRouteNotice: (notice, extraHtml, timeoutMs) => {
+          showRouteNotice(shellRoot, notice, extraHtml, timeoutMs);
+        },
+        showPayloadFailureNotice: (payload, failedActionId) => {
+          showPayloadFailureNotice(shellRoot, locale, payload, failedActionId);
+        },
+        showMergeConflictNotice: (error, failedActionId) =>
+          showMergeConflictNotice(shellRoot, error, locale, failedActionId),
+        setPendingReview: (pendingHref, pendingActionId) => {
+          pendingReviewHref = pendingHref;
+          pendingReviewActionId = pendingActionId;
+        },
+        onActionSettled: input.onActionSettled
+      });
+      if (handledProposalAction) {
         return;
       }
       // 提需求起点：bootstrap 项目 + 起真实澄清会话，渲交互式 scope 题（替换 fixture 预览）。

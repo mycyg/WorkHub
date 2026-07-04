@@ -38,6 +38,10 @@ import {
   startDesktopAgentRunCuuCard,
   startDesktopIntakeSession
 } from "./main.js";
+import {
+  handleDesktopProposalAction,
+  type DesktopProposalActionClient
+} from "./desktop-proposal-actions.js";
 
 const intakeSession: SessionVM = {
   session_id: "10000000-0000-4000-8000-000000000201",
@@ -149,6 +153,23 @@ const agentArmyDashboard: AgentArmyDashboardVM = {
     escalations_capped: false
   }
 };
+
+function fakeDesktopProposalClient(calls: Array<{ method: string; id: string; payload: unknown }>): DesktopProposalActionClient {
+  return {
+    async reviewProposal(id: string, payload: unknown) {
+      calls.push({ method: "reviewProposal", id, payload });
+      return { attention: { summary_text: "已审阅" } };
+    },
+    async mergeProposal(id: string, payload: unknown) {
+      calls.push({ method: "mergeProposal", id, payload });
+      return { attention: { summary_text: "已合入" } };
+    }
+  } as unknown as DesktopProposalActionClient;
+}
+
+function fakeDesktopActionTarget(dataset: Record<string, string>): HTMLElement {
+  return { dataset } as unknown as HTMLElement;
+}
 
 function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSession): WorkHubApiClient {
   return {
@@ -844,33 +865,78 @@ test("desktop webview exposes the shared Cuu event adapter for the Rust shell", 
   assert.equal(card.motion.sprite_state, "asking_approval_bounce");
 });
 
-test("R4.21 desktop browser uses the shared web runtime helpers", () => {
-  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+// R9.7: the old assertions read browser.ts and matched import/branch strings.
+// That was wrong because source regexes can pass while desktop clicks still call the wrong API.
+test("desktop proposal review action confirms only and leaves merge as a second step", async () => {
+  const calls: Array<{ method: string; id: string; payload: unknown }> = [];
+  let settled = 0;
 
-  assert.match(source, /@workhub\/web-runtime/u);
-  assert.match(source, /bindRouteLineEditor\(root\)/u);
-  assert.match(source, /actionElementMergePayload/u);
-  assert.match(source, /showRouteNotice\(shellRoot, reasonRequiredNotice/u);
-  assert.doesNotMatch(source, /function proposalActionFromHref/u);
-  assert.doesNotMatch(source, /function conflictsFromMergeError/u);
-  assert.doesNotMatch(source, /function updateLineEditorPanelPayload/u);
+  const handled = await handleDesktopProposalAction({
+    href: "/api/proposals/proposal-1/review",
+    actionTarget: fakeDesktopActionTarget({}),
+    actionId: "approve",
+    requiresReason: false,
+    locale: "zh-CN",
+    client: fakeDesktopProposalClient(calls),
+    showRouteNotice: () => undefined,
+    showPayloadFailureNotice: () => undefined,
+    showMergeConflictNotice: () => false,
+    onActionSettled: () => { settled += 1; }
+  });
+
+  assert.equal(handled, true);
+  assert.deepEqual(calls, [
+    { method: "reviewProposal", id: "proposal-1", payload: { decision: "approve", remember: "once" } }
+  ]);
+  assert.equal(settled, 1);
+});
+
+test("desktop proposal action handler uses shared merge payload and reason-required behavior", async () => {
+  const calls: Array<{ method: string; id: string; payload: unknown }> = [];
+  const notices: string[] = [];
+  let pendingReview: { href: string; actionId: string } | undefined;
+  let settled = 0;
+
+  const mergeHandled = await handleDesktopProposalAction({
+    href: "/api/proposals/proposal-2/merge",
+    actionTarget: fakeDesktopActionTarget({ requestJson: "{\"reviewed_by\":\"desktop\"}" }),
+    actionId: "merge",
+    requiresReason: false,
+    locale: "zh-CN",
+    client: fakeDesktopProposalClient(calls),
+    showRouteNotice: (notice) => { notices.push(notice.kind); },
+    showPayloadFailureNotice: () => undefined,
+    showMergeConflictNotice: () => false,
+    onActionSettled: () => { settled += 1; }
+  });
+
+  const reviewHandled = await handleDesktopProposalAction({
+    href: "/api/proposals/proposal-3/review",
+    actionTarget: fakeDesktopActionTarget({}),
+    actionId: "request_changes",
+    requiresReason: true,
+    locale: "zh-CN",
+    client: fakeDesktopProposalClient(calls),
+    showRouteNotice: (notice) => { notices.push(notice.kind); },
+    showPayloadFailureNotice: () => undefined,
+    showMergeConflictNotice: () => false,
+    setPendingReview: (href, actionId) => { pendingReview = { href, actionId }; },
+    onActionSettled: () => { settled += 1; }
+  });
+
+  assert.equal(mergeHandled, true);
+  assert.equal(reviewHandled, true);
+  assert.deepEqual(calls, [
+    { method: "mergeProposal", id: "proposal-2", payload: { reviewed_by: "desktop" } }
+  ]);
+  assert.deepEqual(pendingReview, { href: "/api/proposals/proposal-3/review", actionId: "request_changes" });
+  assert.deepEqual(notices, ["action_success", "reason_required"]);
+  assert.equal(settled, 1);
 });
 
 // The old project-context assertion was wrong: it grepped deprecated gold-path
 // activateRoute text while the production desktop shell is bootSpotlight().
 // Production behavior is covered by spotlight-shell-navigation.test.ts.
-
-test("desktop browser proposal review action confirms only and leaves merge as a second step", () => {
-  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
-  const reviewBranchStart = source.lastIndexOf('if (proposalAction?.action === "review")');
-  const mergeBranchStart = source.indexOf('if (proposalAction?.action === "merge")');
-  assert.notEqual(reviewBranchStart, -1);
-  assert.notEqual(mergeBranchStart, -1);
-  const reviewBranch = source.slice(reviewBranchStart, mergeBranchStart);
-
-  assert.match(reviewBranch, /reviewProposalWithoutMerge\(client, proposalAction\.proposalId\)/u);
-  assert.doesNotMatch(reviewBranch, /mergeProposal/u);
-});
 
 test("M3 Spotlight ESC pops a view's internal detail before leaving the capability", () => {
   // 没有控制器 DOM 测试床,这里以源码静态断言守住 M3：能力内 Esc 必须先点视图自己的「返回列表」按钮
