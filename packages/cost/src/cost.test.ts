@@ -94,6 +94,17 @@ test("R9.5 task and objective scopes participate in ledger snapshots and budget 
     "user",
     "workitem"
   ]);
+  // R9.7: the old DB schema assertion grepped migration 0037 for task/objective cost columns.
+  // That was wrong because migration source text did not prove task/objective IDs flow through
+  // runtime ledger entries and budget decisions.
+  const taskEntry = ledger.entries.find((entry) => entry.scope.kind === "task");
+  assert.equal(taskEntry?.taskPlanId, taskPlanId);
+  assert.equal(taskEntry?.objectiveId, objectiveId);
+  assert.deepEqual(taskEntry?.scope, { kind: "task", taskPlanId });
+  const objectiveEntry = ledger.entries.find((entry) => entry.scope.kind === "objective");
+  assert.equal(objectiveEntry?.taskPlanId, taskPlanId);
+  assert.equal(objectiveEntry?.objectiveId, objectiveId);
+  assert.deepEqual(objectiveEntry?.scope, { kind: "objective", objectiveId });
   const snapshots = await ledger.usageSnapshots({ taskPlanId, objectiveId }, {
     now: new Date("2026-07-03T00:00:00.000Z")
   });

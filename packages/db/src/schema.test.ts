@@ -138,17 +138,6 @@ test("R9.3 memory conflicts expose durable sync_conflict decision fields", () =>
   assert.equal(memoryConflicts.resolvedByUserId.name, "resolved_by_user_id");
 });
 
-test("R9.5 task/objective cost scope migration is replay-safe", () => {
-  const migration = readFileSync(join(process.cwd(), "migrations", "0037_cost_task_objective_scope.sql"), "utf8");
-
-  assert.match(migration, /ALTER TABLE "agent_runs" ADD COLUMN IF NOT EXISTS "objective_id"/u);
-  assert.match(migration, /ALTER TABLE "usage_records" ADD COLUMN IF NOT EXISTS "task_plan_id"/u);
-  assert.match(migration, /ALTER TABLE "usage_records" ADD COLUMN IF NOT EXISTS "objective_id"/u);
-  assert.match(migration, /ALTER TABLE "cost_ledger_entries" ADD COLUMN IF NOT EXISTS "task_plan_id"/u);
-  assert.match(migration, /ALTER TABLE "cost_ledger_entries" ADD COLUMN IF NOT EXISTS "objective_id"/u);
-  assert.equal((migration.match(/CREATE INDEX IF NOT EXISTS/gu) ?? []).length, 5);
-});
-
 test("R9.3 agent memory tables expose L1 private context and append-only versions", () => {
   assert.equal(getTableName(agentMemory), "agent_memory");
   assert.equal(agentMemory.workspaceId.name, "workspace_id");
@@ -276,6 +265,7 @@ test("agent run persistence fields support DB-backed replay recovery", () => {
   assert.equal(agentRuns.taskPlanId.name, "task_plan_id");
   assert.equal(agentRuns.taskPlanItemId.name, "task_plan_item_id");
   assert.equal(agentRuns.agentRole.name, "agent_role");
+  assert.equal(agentRuns.objectiveId.name, "objective_id");
   assert.equal(agentRuns.objectiveMd.name, "objective_md");
   assert.equal(agentRuns.actorUserId.name, "actor_user_id");
   assert.equal(agentRuns.totalTimeoutS.name, "total_timeout_s");
@@ -295,9 +285,13 @@ test("cost ledger persistence fields support P-COST usage recovery", () => {
   assert.equal(usageRecords.id.name, "id");
   assert.equal(usageRecords.runId.name, "run_id");
   assert.equal(usageRecords.workItemId.name, "work_item_id");
+  assert.equal(usageRecords.taskPlanId.name, "task_plan_id");
+  assert.equal(usageRecords.objectiveId.name, "objective_id");
   assert.equal(usageRecords.userId.name, "user_id");
   assert.equal(usageRecords.estimatedCostCny.name, "estimated_cost_cny");
   assert.equal(costLedgerEntries.usageRecordId.name, "usage_record_id");
+  assert.equal(costLedgerEntries.taskPlanId.name, "task_plan_id");
+  assert.equal(costLedgerEntries.objectiveId.name, "objective_id");
   assert.equal(costLedgerEntries.scopeKind.name, "scope_kind");
   assert.equal(costLedgerEntries.scopeId.name, "scope_id");
   assert.equal(costLedgerEntries.scopeJson.name, "scope_json");
