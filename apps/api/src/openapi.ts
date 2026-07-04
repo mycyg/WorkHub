@@ -2849,7 +2849,138 @@ const costDashboardPageResponseSchema = {
 } as const;
 const taskPlanStatusResponseSchema = { type: "string", enum: ["draft", "proposed", "approved", "dispatching", "done", "cancelled"] } as const;
 const taskPlanItemRoleResponseSchema = { type: "string", enum: ["research", "produce", "review", "integrate"] } as const;
+const taskPlanItemStatusResponseSchema = { type: "string", enum: ["pending", "dispatched", "succeeded", "failed", "skipped"] } as const;
 const agentArmyItemStatusResponseSchema = { type: "string", enum: ["pending", "dispatched", "succeeded", "failed", "needs_human", "skipped"] } as const;
+const taskPlanItemResponseSchema = {
+  type: "object",
+  required: [
+    "id",
+    "plan_id",
+    "seq",
+    "title",
+    "role",
+    "objective_md",
+    "acceptance_md",
+    "budget_share_pct",
+    "depends_on",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  properties: {
+    id: uuidStringSchema,
+    plan_id: uuidStringSchema,
+    parent_item_id: { anyOf: [uuidStringSchema, { type: "null" }] },
+    seq: { type: "integer", minimum: 0 },
+    title: { type: "string", minLength: 1, maxLength: 256 },
+    role: taskPlanItemRoleResponseSchema,
+    objective_md: { type: "string", minLength: 1 },
+    acceptance_md: { type: "string", minLength: 1 },
+    budget_share_pct: { type: "integer", minimum: 0, maximum: 100 },
+    depends_on: { type: "array", items: uuidStringSchema },
+    status: taskPlanItemStatusResponseSchema,
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const taskPlanVmResponseSchema = {
+  type: "object",
+  required: [
+    "id",
+    "work_item_id",
+    "workspace_id",
+    "status",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "items",
+    "items_capped"
+  ],
+  properties: {
+    id: uuidStringSchema,
+    work_item_id: uuidStringSchema,
+    workspace_id: uuidStringSchema,
+    status: taskPlanStatusResponseSchema,
+    objective_id: { anyOf: [uuidStringSchema, { type: "null" }] },
+    budget_json: { type: "object", additionalProperties: true },
+    decomposition_context_json: { type: "object", additionalProperties: true },
+    created_by: uuidStringSchema,
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema,
+    items: { type: "array", items: taskPlanItemResponseSchema, maxItems: 50 },
+    items_capped: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const;
+const workItemAgentTeamActionResponseSchema = {
+  type: "object",
+  required: ["kind", "label", "href"],
+  properties: {
+    kind: { type: "string", enum: ["view_output", "decide"] },
+    label: { type: "string", minLength: 1, maxLength: 48 },
+    href: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+} as const;
+const workItemAgentTeamItemResponseSchema = {
+  type: "object",
+  required: [
+    "task_plan_item_id",
+    "seq",
+    "title",
+    "role",
+    "plan_status",
+    "status",
+    "budget_share_pct",
+    "depends_on",
+    "waiting_for_seq"
+  ],
+  properties: {
+    task_plan_item_id: uuidStringSchema,
+    seq: { type: "integer", minimum: 1 },
+    title: { type: "string", minLength: 1, maxLength: 256 },
+    role: taskPlanItemRoleResponseSchema,
+    plan_status: taskPlanItemStatusResponseSchema,
+    status: agentArmyItemStatusResponseSchema,
+    budget_share_pct: { type: "integer", minimum: 0, maximum: 100 },
+    depends_on: { type: "array", items: uuidStringSchema },
+    waiting_for_seq: { type: "array", items: { type: "integer", minimum: 1 } },
+    cost_estimate_cny: { type: "string" },
+    run_id: uuidStringSchema,
+    run_workspace_id: uuidStringSchema,
+    parent_run_id: uuidStringSchema,
+    run_status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "cancelled"] },
+    replay_href: { type: "string", minLength: 1 },
+    decision_href: { type: "string", minLength: 1 },
+    action: workItemAgentTeamActionResponseSchema
+  },
+  additionalProperties: false
+} as const;
+const workItemAgentTeamResponseSchema = {
+  type: "object",
+  required: [
+    "plan_id",
+    "status",
+    "completed_count",
+    "total_count",
+    "cost_used_cny",
+    "runs_capped",
+    "items"
+  ],
+  properties: {
+    plan_id: uuidStringSchema,
+    status: taskPlanStatusResponseSchema,
+    completed_count: { type: "integer", minimum: 0 },
+    total_count: { type: "integer", minimum: 0 },
+    cost_used_cny: { type: "string" },
+    cost_budget_cny: { type: "string" },
+    cost_burn_pct: { type: "integer", minimum: 0 },
+    runs_capped: { type: "boolean" },
+    items: { type: "array", items: workItemAgentTeamItemResponseSchema, maxItems: 50 }
+  },
+  additionalProperties: false
+} as const;
 const agentArmyDashboardCountByRoleResponseSchema = {
   type: "object",
   required: ["role", "count"],
@@ -3198,6 +3329,8 @@ const workItemDetailResponseSchema = {
     latest_proposal: { type: "object", additionalProperties: true },
     accepted_deliverables: { type: "array", items: acceptedDeliverableVmResponseSchema },
     evidence_refs: { type: "array", items: { type: "object", additionalProperties: true } },
+    task_plan: taskPlanVmResponseSchema,
+    agent_team: workItemAgentTeamResponseSchema,
     source_context: { type: "object", additionalProperties: true },
     actions: {
       type: "object",

@@ -2167,6 +2167,50 @@ test("work item and proposal page OpenAPI routes document id parameters and page
     "evidence_refs",
     "actions"
   ]);
+  const taskPlanSchema = workItemData?.properties?.task_plan as { required?: string[]; properties?: Record<string, unknown> } | undefined;
+  assert.deepEqual(taskPlanSchema?.required, [
+    "id",
+    "work_item_id",
+    "workspace_id",
+    "status",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "items",
+    "items_capped"
+  ]);
+  assert.deepEqual(taskPlanSchema?.properties?.status, {
+    type: "string",
+    enum: ["draft", "proposed", "approved", "dispatching", "done", "cancelled"]
+  });
+  const agentTeamSchema = workItemData?.properties?.agent_team as { required?: string[]; properties?: Record<string, unknown> } | undefined;
+  assert.deepEqual(agentTeamSchema?.required, [
+    "plan_id",
+    "status",
+    "completed_count",
+    "total_count",
+    "cost_used_cny",
+    "runs_capped",
+    "items"
+  ]);
+  const agentTeamItems = agentTeamSchema?.properties?.items as { type?: string; maxItems?: number; items?: { required?: string[]; properties?: Record<string, unknown> } } | undefined;
+  assert.equal(agentTeamItems?.type, "array");
+  assert.equal(agentTeamItems?.maxItems, 50);
+  assert.deepEqual(agentTeamItems?.items?.required, [
+    "task_plan_item_id",
+    "seq",
+    "title",
+    "role",
+    "plan_status",
+    "status",
+    "budget_share_pct",
+    "depends_on",
+    "waiting_for_seq"
+  ]);
+  assert.deepEqual(agentTeamItems?.items?.properties?.status, {
+    type: "string",
+    enum: ["pending", "dispatched", "succeeded", "failed", "needs_human", "skipped"]
+  });
   const pageErrorCode = (path: string, status: string) => {
     const schema = jsonResponseSchema(body.paths, path, "get", status);
     const error = schema?.properties?.error as { properties?: Record<string, unknown> } | undefined;
