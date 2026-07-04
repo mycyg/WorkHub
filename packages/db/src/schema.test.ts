@@ -388,18 +388,25 @@ test("R2 auth foundation: credential + session tables expose the password/sessio
   assert.equal(users.deletedByUserId.name, "deleted_by_user_id");
 });
 
-test("migration 0023 provisions citext email, session token uniqueness, and the users offboard column", () => {
-  const migration = readFileSync(
-    join(process.cwd(), "migrations", "0023_auth_credentials_sessions.sql"),
-    "utf8"
-  );
-  assert.match(migration, /CREATE EXTENSION IF NOT EXISTS citext/u);
-  assert.match(migration, /"email" citext NOT NULL/u);
-  assert.match(migration, /user_credentials_email_uq/u);
-  assert.match(migration, /sessions_token_hash_uq/u);
-  // partial index：仅未撤销会话进过期清扫索引。
-  assert.match(migration, /sessions_idle_expires_idx[\s\S]*WHERE "revoked_at" IS NULL/u);
-  assert.match(migration, /ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "deleted_by_user_id"/u);
+test("auth credential/session schema config exposes uniqueness, cleanup, and offboard contracts", () => {
+  // R9.7: the old assertion grepped migration 0023 for citext/index/offboard SQL.
+  // That was wrong because migration source text did not prove the current Drizzle schema
+  // used by auth repositories exposes these uniqueness and cleanup contracts.
+  const credentialIndexes = getTableConfig(userCredentials).indexes;
+  const emailUniqueIndex = credentialIndexes.find((index) => index.config.name === "user_credentials_email_uq");
+  assert.equal(emailUniqueIndex?.config.unique, true);
+  assert.deepEqual(emailUniqueIndex?.config.columns.map(columnName), ["email"]);
+
+  const sessionIndexes = getTableConfig(sessions).indexes;
+  const tokenHashIndex = sessionIndexes.find((index) => index.config.name === "sessions_token_hash_uq");
+  assert.equal(tokenHashIndex?.config.unique, true);
+  assert.deepEqual(tokenHashIndex?.config.columns.map(columnName), ["token_hash"]);
+
+  const idleExpiresIndex = sessionIndexes.find((index) => index.config.name === "sessions_idle_expires_idx");
+  assert.deepEqual(idleExpiresIndex?.config.columns.map(columnName), ["idle_expires_at"]);
+  assert.deepEqual(sqlColumnNames(idleExpiresIndex?.config.where), ["revoked_at"]);
+  assert.equal(sqlChunkText(idleExpiresIndex?.config.where).includes("is null"), true);
+  assert.equal(users.deletedByUserId.name, "deleted_by_user_id");
 });
 
 test("R2 multi-tenancy foundation: workspace_memberships exposes the membership contract", () => {
