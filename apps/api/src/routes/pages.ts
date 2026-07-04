@@ -66,6 +66,7 @@ import {
 } from "../services/approvals.js";
 import {
   createEscalationService,
+  type EscalationAttentionPage,
   type EscalationService
 } from "../services/escalations.js";
 import {
@@ -289,6 +290,33 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     };
   }
 
+  function escalationCapWarning(locale: WorkHubLocale) {
+    return {
+      source: "escalations" as const,
+      message: locale === "en-US"
+        ? "Escalation decisions exceeded the visible scan cap; this queue is a lower bound."
+        : "升级待办超过可见扫描上限；这里显示的是可见下限。"
+    };
+  }
+
+  async function listEscalationAttentionPage(input: {
+    actor: AuthEnv["Variables"]["actor"];
+    locale: WorkHubLocale;
+  }): Promise<EscalationAttentionPage> {
+    if ("listAttentionPage" in escalations && typeof escalations.listAttentionPage === "function") {
+      return escalations.listAttentionPage(input);
+    }
+    const items = await escalations.listAttentionItems(input);
+    return {
+      items,
+      page_info: {
+        limit: items.length,
+        returned: items.length,
+        has_more: false
+      }
+    };
+  }
+
   function dashboardSourceLowerBoundWarning(locale: WorkHubLocale): DashboardSourceWarning {
     return {
       source: "approvals",
@@ -306,7 +334,11 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     let count = 0;
     const sourceWarnings: DashboardSourceWarnings = [];
     try {
-      count += (await escalations.listAttentionItems({ actor: input.actor, locale: input.locale })).length;
+      const escalationPage = await listEscalationAttentionPage({ actor: input.actor, locale: input.locale });
+      count += escalationPage.items.length;
+      if (escalationPage.page_info.has_more) {
+        sourceWarnings.push(escalationCapWarning(input.locale));
+      }
     } catch {
       sourceWarnings.push(dashboardSourceWarning("escalations", input.locale));
     }
@@ -434,11 +466,14 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // 这是 W1 决策收件箱此前缺的真实数据源——没接前首页决策卡恒为空。取数失败保留首页,但显式告诉用户队列未完整加载。
     let decisionQueue: AttentionHomeVM["queue"] = [];
     try {
-      const escalationItems = await escalations.listAttentionItems({ actor: c.var.actor, locale });
+      const escalationPage = await listEscalationAttentionPage({ actor: c.var.actor, locale });
       decisionQueue = [
-        ...escalationItems,
+        ...escalationPage.items,
         ...decisionQueue
       ];
+      if (escalationPage.page_info.has_more) {
+        sourceWarnings.push(escalationCapWarning(locale));
+      }
     } catch {
       sourceWarnings.push({
         source: "escalations",

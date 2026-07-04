@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { AttentionItem } from "@workhub/contracts";
 import type { UserAuthRow } from "@workhub/db";
 
 import type { AuthActor } from "../middleware/auth.js";
@@ -54,6 +55,7 @@ class MemoryEscalationRepository implements EscalationRepository {
   public reopenCalls: Array<{ escalationId: string; targetStatus: string }> = [];
   public delegateCalls: Array<{ escalationId: string; toUserId: string; workspaceId?: string }> = [];
   public budgetDecisionCalls: Array<{ escalationId: string; workspaceId: string; actionId: string }> = [];
+  public listCalls: Array<{ workspaceId: string; limit?: number }> = [];
 
   constructor(
     private readonly options: {
@@ -69,8 +71,9 @@ class MemoryEscalationRepository implements EscalationRepository {
     return this.options.findRow === undefined ? row() : this.options.findRow;
   }
 
-  async listUnresolvedForWorkspace() {
-    return this.options.listRows ?? [row()];
+  async listUnresolvedForWorkspace(input: { workspaceId: string; limit?: number }) {
+    this.listCalls.push(input);
+    return (this.options.listRows ?? [row()]).slice(0, input.limit ?? 50);
   }
 
   async resolveEscalation(input: { escalationId: string; targetStatus: string; taskPlanAction?: string }) {
@@ -452,6 +455,68 @@ test("R9.7 escalation service refuses legacy null-workspace rows", async () => {
   assert.deepEqual(items, []);
   assert.deepEqual(repository.resolveCalls, []);
   assert.deepEqual(repository.delegateCalls, []);
+});
+
+test("R9.7 escalation attention scans past unreadable rows before applying the visible page limit", async () => {
+  const hiddenRows = Array.from({ length: 50 }, (_, index) => row({
+    id: `94000000-0000-4000-8000-${(0x200 + index).toString(16).padStart(12, "0")}`,
+    workItemId: `94000000-0000-4000-8000-${(0x300 + index).toString(16).padStart(12, "0")}`,
+    title: `hidden ${index}`
+  }));
+  const visible = row({
+    id: "94000000-0000-4000-8000-0000000002ff",
+    workItemId: "94000000-0000-4000-8000-0000000003ff",
+    title: "可读的升级"
+  });
+  const repository = new MemoryEscalationRepository({ listRows: [...hiddenRows, visible] });
+  const service = createEscalationService({
+    repository,
+    users: false,
+    workItems: {
+      async canReadWorkItems(input: { workItemIds: string[]; actor: AuthActor }) {
+        assert.equal(input.actor.workspaceId, actor().workspaceId);
+        assert.equal(input.workItemIds.includes(visible.workItemId), true);
+        return new Set([visible.workItemId]);
+      }
+    },
+    now: () => now
+  });
+
+  const items = await service.listAttentionItems({ actor: actor(), locale: "zh-CN" });
+
+  assert.equal(repository.listCalls[0]?.workspaceId, actor().workspaceId);
+  assert.equal((repository.listCalls[0]?.limit ?? 0) > 50, true);
+  assert.deepEqual(items.map((item) => item.id), [visible.id]);
+});
+
+test("R9.7 escalation attention page reports when the unresolved scan is capped", async () => {
+  const rows = Array.from({ length: 101 }, (_, index) => row({
+    id: `94000000-0000-4000-8000-${(0x500 + index).toString(16).padStart(12, "0")}`,
+    workItemId: `94000000-0000-4000-8000-${(0x600 + index).toString(16).padStart(12, "0")}`,
+    title: `visible ${index}`
+  }));
+  const repository = new MemoryEscalationRepository({ listRows: rows });
+  const service = createEscalationService({
+    repository,
+    users: false,
+    workItems: false,
+    now: () => now
+  }) as ReturnType<typeof createEscalationService> & {
+    listAttentionPage: (input: { actor: AuthActor; locale: "zh-CN" }) => Promise<{
+      items: AttentionItem[];
+      page_info: { limit: number; returned: number; has_more: boolean };
+    }>;
+  };
+
+  const page = await service.listAttentionPage({ actor: actor(), locale: "zh-CN" });
+
+  assert.equal(page.items.length, 50);
+  assert.deepEqual(page.page_info, {
+    limit: 50,
+    returned: 50,
+    has_more: true
+  });
+  assert.equal(repository.listCalls[0]?.limit, 101);
 });
 
 test("R9.7 escalation delegation requires the target to be an active workspace member", async () => {

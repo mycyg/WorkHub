@@ -235,6 +235,18 @@ class MemoryEscalations implements EscalationService {
     this.listCalls.push(input);
     return [escalationCard()];
   }
+
+  async listAttentionPage(input: { actor: AuthActor; locale: WorkHubLocale }) {
+    const items = await this.listAttentionItems(input);
+    return {
+      items,
+      page_info: {
+        limit: 50,
+        returned: items.length,
+        has_more: false
+      }
+    };
+  }
 }
 
 test("R9.0 escalation routes parse resolve and delegate actions under auth", async () => {

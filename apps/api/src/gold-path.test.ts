@@ -413,6 +413,72 @@ test("attention home includes durable memory conflict cards as sync_conflict dec
   assert.deepEqual(body.data.primary?.actions.map((action) => action.id), ["keep_current", "accept_incoming"]);
 });
 
+test("attention home warns when unresolved escalation attention is capped", async () => {
+  const runtimeSettings = settings();
+  const escalationId = "40000000-0000-4000-8000-0000000000e1";
+  const card: AttentionItem = {
+    id: escalationId,
+    kind: "escalation",
+    priority: "urgent",
+    source_ref: { entity_type: "escalation_event", entity_id: escalationId },
+    title: "《竞品资料梳理》卡住了",
+    summary_text: "需要你判断下一步。",
+    actions: [{
+      id: "escalation_retry",
+      label: "让它重试",
+      style: "primary",
+      method: "POST",
+      href: `/api/escalations/${escalationId}/resolve`
+    }],
+    created_at: "2026-07-03T00:00:00.000Z"
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    escalations: {
+      async listAttentionPage() {
+        return {
+          items: [card],
+          page_info: { limit: 50, returned: 1, has_more: true }
+        };
+      },
+      async listAttentionItems() {
+        return [card];
+      }
+    } as never,
+    approvals: {
+      async listPendingForUser() {
+        return {
+          items: [],
+          requests: [],
+          filters: {},
+          counts: { pending: 0, pending_total: 0 },
+          page_info: { limit: 100, returned: 0, has_more: false },
+          items_detail: {}
+        };
+      }
+    } as unknown as ApprovalService,
+    memoryConflicts: { async listAttentionItems() { return []; } },
+    proposals: { async listReviewableForUser() { return []; } } as unknown as ProposalService
+  }));
+
+  const response = await app.request("/api/pages/attention?locale=zh-CN", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    data: {
+      queue: AttentionItem[];
+      source_warnings?: Array<{ source: string; message: string }>;
+    };
+  };
+  assert.equal(body.data.queue[0]?.id, escalationId);
+  assert.equal(body.data.source_warnings?.[0]?.source, "escalations");
+  assert.match(body.data.source_warnings?.[0]?.message ?? "", /上限/u);
+});
+
 test("attention home preserves task-plan proposal reviews as plan_review cards", async () => {
   const runtimeSettings = settings();
   const planProposalId = "40000000-0000-4000-8000-0000000000b1";

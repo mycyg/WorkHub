@@ -26,6 +26,18 @@ import { getDefaultWorkItemService, type WorkItemService } from "./work-items.js
 
 export type EscalationServiceRow = DbEscalationServiceRow;
 
+const ESCALATION_ATTENTION_PAGE_LIMIT = 50;
+const ESCALATION_ATTENTION_SCAN_LIMIT = 100;
+
+export type EscalationAttentionPage = {
+  items: AttentionItem[];
+  page_info: {
+    limit: number;
+    returned: number;
+    has_more: boolean;
+  };
+};
+
 export type EscalationRepository = {
   findById: (id: string) => Promise<EscalationServiceRow | null>;
   listUnresolvedForWorkspace: (input: { workspaceId: string; limit?: number }) => Promise<EscalationServiceRow[]>;
@@ -384,6 +396,33 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
   const injectedTaskDispatcher = deps.taskDispatcher === false ? undefined : deps.taskDispatcher;
   const now = deps.now ?? (() => new Date());
 
+  async function listAttentionPage(input: { actor: AuthActor; locale: WorkHubLocale }): Promise<EscalationAttentionPage> {
+    const fetchedRows = await repository.listUnresolvedForWorkspace({
+      workspaceId: input.actor.workspaceId,
+      limit: ESCALATION_ATTENTION_SCAN_LIMIT + 1
+    });
+    const workspaceRows = fetchedRows.filter((row) => workspaceMatches(row, input.actor));
+    const scanCapped = workspaceRows.length > ESCALATION_ATTENTION_SCAN_LIMIT;
+    const scanRows = workspaceRows.slice(0, ESCALATION_ATTENTION_SCAN_LIMIT);
+    let readableRows = scanRows;
+    if (workItems && scanRows.length > 0) {
+      const readable = await workItems.canReadWorkItems({
+        workItemIds: [...new Set(scanRows.map((row) => row.workItemId))],
+        actor: input.actor
+      });
+      readableRows = scanRows.filter((row) => readable.has(row.workItemId));
+    }
+    const pageRows = readableRows.slice(0, ESCALATION_ATTENTION_PAGE_LIMIT);
+    return {
+      items: pageRows.map((row) => buildEscalationAttentionItem(row, input.locale)),
+      page_info: {
+        limit: ESCALATION_ATTENTION_PAGE_LIMIT,
+        returned: pageRows.length,
+        has_more: scanCapped || readableRows.length > ESCALATION_ATTENTION_PAGE_LIMIT
+      }
+    };
+  }
+
   return {
     async resolve(id: string, actor: AuthActor, input: ResolveEscalationRequest, locale: WorkHubLocale = "zh-CN") {
       const payload = resolveEscalationRequestSchema.parse(input);
@@ -522,24 +561,12 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       };
     },
 
+    async listAttentionPage(input: { actor: AuthActor; locale: WorkHubLocale }) {
+      return listAttentionPage(input);
+    },
+
     async listAttentionItems(input: { actor: AuthActor; locale: WorkHubLocale }) {
-      const rows = (await repository.listUnresolvedForWorkspace({
-        workspaceId: input.actor.workspaceId,
-        limit: 50
-      })).filter((row) => workspaceMatches(row, input.actor));
-      if (rows.length === 0) {
-        return [];
-      }
-      if (!workItems) {
-        return rows.map((row) => buildEscalationAttentionItem(row, input.locale));
-      }
-      const readable = await workItems.canReadWorkItems({
-        workItemIds: [...new Set(rows.map((row) => row.workItemId))],
-        actor: input.actor
-      });
-      return rows
-        .filter((row) => readable.has(row.workItemId))
-        .map((row) => buildEscalationAttentionItem(row, input.locale));
+      return (await listAttentionPage(input)).items;
     }
   };
 }
