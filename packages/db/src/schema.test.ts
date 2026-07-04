@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { getTableName } from "drizzle-orm";
+import { getTableConfig } from "drizzle-orm/pg-core";
 
 import { confidenceGrades, escalationTriggers } from "@workhub/contracts";
 import {
@@ -52,6 +53,44 @@ function inlineForeignKeyNames(table: object): string[] {
   }
   const foreignKeys = (table as { [key: symbol]: Array<{ getName(): string }> })[inlineForeignKeysSymbol] ?? [];
   return foreignKeys.map((foreignKey) => foreignKey.getName()).sort();
+}
+
+function chunkRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function columnName(value: unknown): string | undefined {
+  const record = chunkRecord(value);
+  return typeof record?.["name"] === "string" ? record["name"] : undefined;
+}
+
+function sqlChunkText(value: unknown): string {
+  const record = chunkRecord(value);
+  if (!record) {
+    return "";
+  }
+  const chunkValue = record["value"];
+  if (Array.isArray(chunkValue)) {
+    return chunkValue.filter((part): part is string => typeof part === "string").join("");
+  }
+  const queryChunks = record["queryChunks"];
+  if (Array.isArray(queryChunks)) {
+    return queryChunks.map(sqlChunkText).join("");
+  }
+  return "";
+}
+
+function sqlColumnNames(value: unknown): string[] {
+  const direct = columnName(value);
+  if (direct) {
+    return [direct];
+  }
+  const record = chunkRecord(value);
+  const queryChunks = record?.["queryChunks"];
+  if (!Array.isArray(queryChunks)) {
+    return [];
+  }
+  return queryChunks.flatMap(sqlColumnNames);
 }
 
 function* walk(dir: string): Generator<string> {
@@ -227,10 +266,18 @@ test("drive tables expose soft-delete, version pointer, and operation log fields
   assert.equal(projectDriveOperations.opType.name, "op_type");
   assert.equal(projectDriveOperations.payloadJson.name, "payload_json");
   assert.equal(projectDriveOperations.undoneAt.name, "undone_at");
-  const activePathMigration = readFileSync(join(process.cwd(), "migrations", "0011_bitter_magneto.sql"), "utf8");
-  assert.match(activePathMigration, /project_drive_items_active_path_uq/u);
-  assert.match(activePathMigration, /coalesce\("parent_id"/u);
-  assert.match(activePathMigration, /deleted_at" is null/u);
+  // R9.7: the old assertion grepped migration 0011 for active-path unique-index SQL.
+  // That was wrong because migration source text did not prove the current Drizzle schema
+  // still enforces one active path per project/folder/name.
+  const activePathIndex = getTableConfig(projectDriveItems).indexes.find(
+    (index) => index.config.name === "project_drive_items_active_path_uq"
+  );
+  assert.equal(activePathIndex?.config.unique, true);
+  assert.deepEqual(activePathIndex?.config.columns.map(columnName), ["project_id", undefined, "name"]);
+  assert.deepEqual(sqlColumnNames(activePathIndex?.config.columns[1]), ["parent_id"]);
+  assert.equal(sqlChunkText(activePathIndex?.config.columns[1]).includes("coalesce("), true);
+  assert.deepEqual(sqlColumnNames(activePathIndex?.config.where), ["deleted_at"]);
+  assert.equal(sqlChunkText(activePathIndex?.config.where).includes("is null"), true);
 });
 
 test("core renamed fields are present on Drizzle table objects", () => {
