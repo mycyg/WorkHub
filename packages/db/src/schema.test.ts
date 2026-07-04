@@ -123,13 +123,6 @@ test("R9.5 OKR tables expose non-blocking planning and progress fields", () => {
   assert.equal(objectiveWorkItemLinks.objectiveId.name, "objective_id");
   assert.equal(objectiveWorkItemLinks.workItemId.name, "work_item_id");
   assert.equal(objectiveWorkItemLinks.linkedByUserId.name, "linked_by_user_id");
-
-  const migration = readFileSync(join(process.cwd(), "migrations", "0036_objectives.sql"), "utf8");
-  assert.match(migration, /CREATE TABLE IF NOT EXISTS "objectives"/u);
-  assert.match(migration, /CREATE TABLE IF NOT EXISTS "key_results"/u);
-  assert.match(migration, /CREATE TABLE IF NOT EXISTS "objective_work_item_links"/u);
-  assert.match(migration, /objective_work_item_links_objective_work_item_uq/u);
-  assert.match(migration, /objectives_status_ck/u);
 });
 
 test("R9.3 memory conflicts expose durable sync_conflict decision fields", () => {

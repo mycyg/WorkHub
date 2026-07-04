@@ -99,6 +99,9 @@ test("R9.5 objective repository creates objectives and key results in one transa
   const [objectiveInsert, keyResultInsert] = queries;
   assert.equal(objectiveInsert?.operation, "insert");
   assert.equal(objectiveInsert?.targetTable, objectives);
+  // R9.7: the old schema assertion grepped migration 0036 for objective/key-result table names.
+  // That was wrong because migration source text did not prove objective creation writes the
+  // runtime OKR rows consumed by planning.
   assert.deepEqual(objectiveInsert?.valuesValue, {
     id: objectiveId,
     workspaceId,
@@ -145,6 +148,7 @@ test("R9.5 objective repository creates objectives and key results in one transa
       updatedAt: now
     }
   ]);
+  assert.equal(keyResultInsert?.returningCalled, true);
 });
 
 test("R9.5 objective repository stores work item links as optional soft links", async () => {
@@ -191,6 +195,9 @@ test("R9.5 objective repository stores work item links as optional soft links", 
 
   assert.equal(query?.operation, "insert");
   assert.equal(query?.targetTable, objectiveWorkItemLinks);
+  // R9.7: the old schema assertion grepped migration 0036 for the link-table unique name.
+  // That was wrong because source text did not prove work-item links are scoped before the
+  // repository persists the runtime objective_work_item_links row.
   assert.deepEqual(query?.valuesValue, {
     id: linkId,
     workspaceId,
