@@ -418,17 +418,24 @@ test("R2 multi-tenancy foundation: workspace_memberships exposes the membership 
   assert.equal(workspaceMemberships.deletedAt.name, "deleted_at");
 });
 
-test("migration 0024/0025 provision memberships with one-default-per-user and an idempotent seed", () => {
-  const table = readFileSync(join(process.cwd(), "migrations", "0024_workspace_memberships.sql"), "utf8");
-  // 每用户至多一个 default workspace（partial unique）。
-  assert.match(table, /workspace_memberships_user_default_uq[\s\S]*WHERE "default_workspace" AND "deleted_at" IS NULL/u);
-  // 每 (ws,user) 至多一条 active 成员行。
-  assert.match(table, /workspace_memberships_ws_user_uq[\s\S]*WHERE "deleted_at" IS NULL/u);
+test("workspace membership schema config exposes active and default uniqueness contracts", () => {
+  // R9.7: the old assertion grepped migrations 0024/0025 for index and seed SQL.
+  // That was wrong because SQL source text did not prove the current Drizzle schema
+  // used by membership repositories preserves the active/default uniqueness contracts;
+  // seed SQL replay/idempotency belongs to migration-audit rather than a schema unit test.
+  const indexes = getTableConfig(workspaceMemberships).indexes;
 
-  const seed = readFileSync(join(process.cwd(), "migrations", "0025_seed_default_memberships.sql"), "utf8");
-  assert.match(seed, /INSERT INTO "workspace_memberships"/u);
-  assert.match(seed, /ON CONFLICT DO NOTHING/u); // 幂等
-  assert.match(seed, /EXISTS \(SELECT 1 FROM "workspaces"/u); // FK 守卫
+  const activeMembershipIndex = indexes.find((index) => index.config.name === "workspace_memberships_ws_user_uq");
+  assert.equal(activeMembershipIndex?.config.unique, true);
+  assert.deepEqual(activeMembershipIndex?.config.columns.map(columnName), ["workspace_id", "user_id"]);
+  assert.deepEqual(sqlColumnNames(activeMembershipIndex?.config.where), ["deleted_at"]);
+  assert.equal(sqlChunkText(activeMembershipIndex?.config.where).includes("is null"), true);
+
+  const defaultMembershipIndex = indexes.find((index) => index.config.name === "workspace_memberships_user_default_uq");
+  assert.equal(defaultMembershipIndex?.config.unique, true);
+  assert.deepEqual(defaultMembershipIndex?.config.columns.map(columnName), ["user_id"]);
+  assert.deepEqual(sqlColumnNames(defaultMembershipIndex?.config.where), ["default_workspace", "deleted_at"]);
+  assert.equal(sqlChunkText(defaultMembershipIndex?.config.where).includes("is null"), true);
 });
 
 test("R2 auth invite foundation: user_invites exposes the out-of-band invite contract", () => {
@@ -443,12 +450,20 @@ test("R2 auth invite foundation: user_invites exposes the out-of-band invite con
   assert.equal(userInvites.acceptedUserId.name, "accepted_user_id");
 });
 
-test("migration 0026 provisions citext invite email, unique token hash, and a pending-only index", () => {
-  const migration = readFileSync(join(process.cwd(), "migrations", "0026_user_invites.sql"), "utf8");
-  assert.match(migration, /"email" citext NOT NULL/u);
-  assert.match(migration, /user_invites_token_hash_uq/u);
-  // 待接受清单 partial index：未接受 ∧ 未撤销。
-  assert.match(migration, /user_invites_pending_idx[\s\S]*WHERE "accepted_at" IS NULL AND "deleted_at" IS NULL/u);
+test("user invite schema config exposes token uniqueness and pending lookup contracts", () => {
+  // R9.7: the old assertion grepped migration 0026 for citext and partial-index SQL.
+  // That was wrong because migration source text did not prove the current invite
+  // repository schema exposes the unique token and pending-invite lookup contracts.
+  const indexes = getTableConfig(userInvites).indexes;
+
+  const tokenHashIndex = indexes.find((index) => index.config.name === "user_invites_token_hash_uq");
+  assert.equal(tokenHashIndex?.config.unique, true);
+  assert.deepEqual(tokenHashIndex?.config.columns.map(columnName), ["token_hash"]);
+
+  const pendingIndex = indexes.find((index) => index.config.name === "user_invites_pending_idx");
+  assert.deepEqual(pendingIndex?.config.columns.map(columnName), ["email", "expires_at"]);
+  assert.deepEqual(sqlColumnNames(pendingIndex?.config.where), ["accepted_at", "deleted_at"]);
+  assert.equal(sqlChunkText(pendingIndex?.config.where).includes("is null and"), true);
 });
 
 test("team-readiness notification prefs: users exposes the per-type mute column with a default-off empty array", () => {
@@ -456,16 +471,12 @@ test("team-readiness notification prefs: users exposes the per-type mute column 
   assert.equal(users.mutedNotificationTypes.name, "muted_notification_types");
 });
 
-test("migration 0027 adds the muted notification types column default-off (idempotent)", () => {
-  const migration = readFileSync(
-    join(process.cwd(), "migrations", "0027_user_notification_prefs.sql"),
-    "utf8"
-  );
-  // 加列、jsonb、NOT NULL、默认空数组、IF NOT EXISTS 幂等。
-  assert.match(
-    migration,
-    /ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "muted_notification_types" jsonb NOT NULL DEFAULT '\[\]'::jsonb/u
-  );
+test("notification preference schema config exposes default-off muted types", () => {
+  // R9.7: the old assertion grepped migration 0027 for ALTER TABLE text.
+  // That was wrong because SQL source text did not prove the current users table
+  // schema exposes a non-null default-off muted notification preference column.
+  assert.equal(users.mutedNotificationTypes.notNull, true);
+  assert.deepEqual(users.mutedNotificationTypes.default, []);
 });
 
 test("enum drift is closed in the shared contract package", () => {
