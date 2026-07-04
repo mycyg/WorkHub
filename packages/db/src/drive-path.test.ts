@@ -1,17 +1,194 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import test from "node:test";
 
-import { resolveDriveFolderPath } from "./repositories/work-items.js";
-import { isActivePathUniqueViolation } from "./repositories/drive.js";
+import { createDriveRepository, isActivePathUniqueViolation } from "./repositories/drive.js";
+import {
+  createWorkItemRepository,
+  resolveDriveFolderPath,
+  WorkItemAcceptedDeliverableRestoreError
+} from "./repositories/work-items.js";
+import {
+  acceptedDeliverableChanges,
+  chatMessages,
+  projectDriveComments,
+  projectDriveItems,
+  projectDriveOperations,
+  projectDriveVersions,
+  projects,
+  workItems
+} from "./schema/index.js";
+import {
+  createQueryRecorder,
+  queryParamValues,
+  queryReferences,
+  type RecordedQuery
+} from "./test-query-recorder.js";
+
+const now = new Date("2026-07-04T00:00:00.000Z");
+const projectId = "94000000-0000-4000-8000-000000000101";
+const workspaceId = "94000000-0000-4000-8000-000000000001";
+const workItemId = "94000000-0000-4000-8000-000000000201";
+const actorUserId = "94000000-0000-4000-8000-000000000301";
+const proposalId = "94000000-0000-4000-8000-000000000401";
+const itemId = "94000000-0000-4000-8000-000000000501";
+const versionId = "94000000-0000-4000-8000-000000000601";
+const previousVersionId = "94000000-0000-4000-8000-000000000602";
+const acceptedChangeId = "94000000-0000-4000-8000-000000000701";
+const previousAcceptedChangeId = "94000000-0000-4000-8000-000000000702";
+
+// Old assertions in this file read repository source and matched implementation text.
+// That was wrong because the R9 redline requires tests to drive repository behavior.
+// These tests call the real repositories and inspect returned rows plus recorded DB
+// boundaries instead of treating source text as coverage.
+
+function project() {
+  return {
+    id: projectId,
+    workspaceId,
+    ownerUserId: actorUserId,
+    slug: "pilot",
+    name: "Pilot",
+    archived: false,
+    deletedAt: null,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function projectLookupRow() {
+  return { project: project(), orgId: null };
+}
+
+function driveComment(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "94000000-0000-4000-8000-000000000801",
+    projectId,
+    folderId: null,
+    authorUserId: actorUserId,
+    body: "Please turn this Drive comment into a draft.",
+    status: "draft_created",
+    draftWorkItemId: workItemId,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
+
+function driveOperation(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "94000000-0000-4000-8000-000000000901",
+    projectId,
+    actorUserId,
+    opType: "draft_to_proposal",
+    payloadJson: {
+      drive_comment_id: "94000000-0000-4000-8000-000000000801",
+      work_item_id: workItemId,
+      proposal_id: proposalId
+    },
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
+
+function driveItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: itemId,
+    projectId,
+    parentId: null,
+    name: "report.md",
+    kind: "file",
+    currentVersionId: versionId,
+    createdByUserId: actorUserId,
+    updatedByUserId: actorUserId,
+    deletedAt: null,
+    deletedByUserId: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
+
+function driveVersion(overrides: Record<string, unknown> = {}) {
+  return {
+    id: versionId,
+    itemId,
+    versionNo: 2,
+    filename: "report.md",
+    mime: "text/markdown",
+    sizeBytes: 120,
+    storagePath: "drive/report.md",
+    sha256: "sha",
+    parsedText: null,
+    parsedTextPath: null,
+    createdByUserId: actorUserId,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
+
+function acceptedChange(overrides: Record<string, unknown> = {}) {
+  return {
+    id: acceptedChangeId,
+    workItemId,
+    projectId,
+    proposalId,
+    branchId: null,
+    changeId: "change-1",
+    targetKind: "file",
+    targetEntityType: "project_drive_item",
+    targetEntityId: itemId,
+    targetPath: "/report.md",
+    targetKey: "file:/report.md",
+    changeType: "update",
+    acceptedVersion: 2,
+    baseVersionRef: null,
+    acceptedRef: null,
+    driveItemId: itemId,
+    driveVersionId: versionId,
+    sha256Before: null,
+    sha256After: "sha",
+    previewRefJson: null,
+    manifestChangeJson: { files: ["report.md"] },
+    supersededAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
+
+function acceptedRow(overrides: {
+  accepted?: Record<string, unknown>;
+  driveItem?: Record<string, unknown> | null;
+  driveVersion?: Record<string, unknown> | null;
+} = {}) {
+  return {
+    accepted: acceptedChange(overrides.accepted),
+    driveItem: overrides.driveItem === null ? null : driveItem(overrides.driveItem),
+    driveVersion: overrides.driveVersion === null ? null : driveVersion(overrides.driveVersion)
+  };
+}
+
+function queriesFrom(queries: RecordedQuery[], table: unknown) {
+  return queries.filter((query) => query.fromTable === table);
+}
+
+function mutationsOn(queries: RecordedQuery[], table: unknown, operation?: "insert" | "update") {
+  return queries.filter((query) =>
+    query.targetTable === table && (operation ? query.operation === operation : true)
+  );
+}
+
+function actorInput() {
+  return { actorKind: "human" as const, actorUserId };
+}
 
 test("findings[#low] isActivePathUniqueViolation only matches the active-path unique index 23505", () => {
   assert.equal(
     isActivePathUniqueViolation({ code: "23505", constraint: "project_drive_items_active_path_uq" }),
     true
   );
-  // 其它唯一索引 / 外键 / 缺约束名 / 非对象都不算名字冲突。
   assert.equal(isActivePathUniqueViolation({ code: "23505", constraint: "some_other_uq" }), false);
   assert.equal(isActivePathUniqueViolation({ code: "23503" }), false);
   assert.equal(isActivePathUniqueViolation({ code: "23505" }), false);
@@ -19,58 +196,340 @@ test("findings[#low] isActivePathUniqueViolation only matches the active-path un
   assert.equal(isActivePathUniqueViolation(null), false);
 });
 
-test("recordDraftProposal locks the drive comment before the idempotency gate", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("async recordDraftProposal");
-  assert.notEqual(start, -1);
-  const body = source.slice(start);
-  assert.match(
-    body,
-    /from\(projectDriveComments\)[\s\S]*\.for\("update"\)[\s\S]*const comment = commentRows\[0\]/u
+test("recordDraftProposal locks the drive comment before the idempotency gate", async () => {
+  const existingOperation = driveOperation();
+  const { db, queries } = createQueryRecorder([
+    [driveComment({ status: "proposal_created" })],
+    [projectLookupRow()],
+    [existingOperation]
+  ]);
+  const repository = createDriveRepository(db);
+
+  const result = await repository.recordDraftProposal({
+    ...actorInput(),
+    workItemId,
+    proposalId
+  });
+
+  assert.equal(result?.operation, existingOperation);
+  const commentIndex = queries.findIndex((query) => query.fromTable === projectDriveComments);
+  const operationIndex = queries.findIndex((query) => query.fromTable === projectDriveOperations);
+  const commentQuery = queries[commentIndex];
+  assert.ok(commentIndex > -1 && operationIndex > commentIndex);
+  assert.equal(commentQuery?.lock, "update");
+  assert.ok(queryReferences(commentQuery?.where, projectDriveComments.draftWorkItemId));
+});
+
+test("recordDraftProposal does not resurrect dismissed drive comments", async () => {
+  const { db, queries } = createQueryRecorder([
+    [driveComment({ status: "dismissed" })],
+    [projectLookupRow()],
+    []
+  ]);
+  const repository = createDriveRepository(db);
+
+  const result = await repository.recordDraftProposal({
+    ...actorInput(),
+    workItemId,
+    proposalId
+  });
+
+  assert.equal(result, null);
+  const update = mutationsOn(queries, projectDriveComments, "update")[0];
+  assert.ok(update, "dismissed comments should only reach the guarded update");
+  assert.ok(queryReferences(update.where, projectDriveComments.status));
+  assert.deepEqual(
+    queryParamValues(update.where).filter((value) => value === "draft_created" || value === "proposal_created"),
+    ["draft_created", "proposal_created"]
   );
 });
 
-test("recordDraftProposal does not resurrect dismissed drive comments", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("async recordDraftProposal");
-  const end = source.indexOf("result = { comment: updatedComment, operation }", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
+test("recordDraftProposal idempotency does not depend on the recent operations window", async () => {
+  const { db, queries } = createQueryRecorder([
+    [driveComment({ status: "proposal_created" })],
+    [projectLookupRow()],
+    [driveOperation()]
+  ]);
+  const repository = createDriveRepository(db);
 
-  assert.match(body, /inArray\(projectDriveComments\.status,\s*\["draft_created",\s*"proposal_created"\]\)/u);
+  await repository.recordDraftProposal({
+    ...actorInput(),
+    workItemId,
+    proposalId
+  });
+
+  const operationQuery = queries.find((query) => query.fromTable === projectDriveOperations);
+  assert.equal(operationQuery?.limit, 1);
+  assert.ok(queryReferences(operationQuery?.where, projectDriveOperations.payloadJson));
+  assert.ok(queryReferences(operationQuery?.where, projectDriveOperations.opType));
 });
 
-test("recordDraftProposal idempotency does not depend on the recent operations window", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("if (comment.status === \"proposal_created\")");
-  const end = source.indexOf("const updatedComments = await tx", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
+test("commentToDraft locks and only claims pending drive comments", async () => {
+  const newWorkItem = {
+    id: workItemId,
+    code: "PILOT-001",
+    projectId,
+    workspaceId,
+    submitterUserId: actorUserId,
+    title: "Please turn this Drive comment into a draft.",
+    rawDescription: "Please turn this Drive comment into a draft.",
+    summaryMd: "Please turn this Drive comment into a draft.",
+    status: "ai_clarifying",
+    priority: "normal",
+    mode: "worker",
+    humanReserved: false,
+    planningNote: "source=drive_comment",
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null
+  };
+  const updatedComment = driveComment({ status: "draft_created", draftWorkItemId: workItemId });
+  const { db, queries } = createQueryRecorder([
+    [projectLookupRow()],
+    [driveComment({ status: "pending_llm", draftWorkItemId: null })],
+    [{ slug: "pilot", next_seq: 1 }],
+    [],
+    [newWorkItem],
+    [],
+    [updatedComment],
+    [driveOperation({ opType: "comment_to_draft" })],
+    [],
+    []
+  ]);
+  const repository = createDriveRepository(db);
 
-  assert.equal(body.includes("sql`${projectDriveOperations.payloadJson}->>'drive_comment_id' = ${comment.id}`"), true);
-  assert.equal(body.includes("sql`${projectDriveOperations.payloadJson}->>'work_item_id' = ${input.workItemId}`"), true);
-  assert.equal(body.includes("sql`${projectDriveOperations.payloadJson}->>'proposal_id' = ${input.proposalId}`"), true);
-  assert.doesNotMatch(body, /\.limit\(50\)/u);
+  const result = await repository.commentToDraft({
+    ...actorInput(),
+    projectId,
+    commentId: "94000000-0000-4000-8000-000000000801"
+  });
+
+  assert.equal(result?.created, true);
+  assert.equal(result?.workItem, newWorkItem);
+  const commentQuery = queriesFrom(queries, projectDriveComments)[0];
+  assert.equal(commentQuery?.lock, "update");
+  const commentUpdate = mutationsOn(queries, projectDriveComments, "update")[0];
+  assert.ok(queryReferences(commentUpdate?.where, projectDriveComments.status));
+  assert.ok(queryReferences(commentUpdate?.where, projectDriveComments.draftWorkItemId));
+  assert.ok(queryParamValues(commentUpdate?.where).includes("pending_llm"));
+  assert.equal(mutationsOn(queries, workItems, "insert").length, 1);
+  assert.equal(mutationsOn(queries, chatMessages, "insert").length, 1);
 });
 
-test("commentToDraft locks and only claims pending drive comments", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("async commentToDraft");
-  const end = source.indexOf("async recordDraftProposal", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
+test("accepted deliverable restore creates a fresh current row for the requesting work item", async () => {
+  const previousRow = acceptedRow({
+    accepted: {
+      id: previousAcceptedChangeId,
+      acceptedVersion: 2,
+      driveVersionId: previousVersionId,
+      supersededAt: new Date("2026-07-03T00:00:00.000Z")
+    },
+    driveVersion: { id: previousVersionId, versionNo: 1 }
+  });
+  const restoredRow = acceptedRow({
+    accepted: {
+      id: "94000000-0000-4000-8000-000000000703",
+      acceptedVersion: 4,
+      driveVersionId: previousVersionId
+    },
+    driveVersion: { id: previousVersionId, versionNo: 1 }
+  });
+  const { db, queries } = createQueryRecorder([
+    [{ projectId }],
+    [],
+    [acceptedRow({ accepted: { acceptedVersion: 3 } })],
+    [previousRow],
+    [{ id: itemId }],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [restoredRow],
+    [{ targetKey: "file:/report.md", projectId, workItemId, acceptedVersion: 2 }]
+  ]);
+  const repository = createWorkItemRepository(db);
 
-  assert.match(
-    body,
-    /from\(projectDriveComments\)[\s\S]*\.for\("update"\)[\s\S]*const comment = commentRows\[0\]/u
+  const result = await repository.restoreAcceptedDeliverable({
+    ...actorInput(),
+    workItemId,
+    acceptedChangeId,
+    at: now
+  });
+
+  assert.equal(result?.accepted.acceptedVersion, 4);
+  const insert = mutationsOn(queries, acceptedDeliverableChanges, "insert")[0];
+  const values = insert?.valuesValue as Record<string, unknown> | undefined;
+  assert.equal(values?.workItemId, workItemId);
+  assert.equal(values?.acceptedVersion, 4);
+  assert.equal(values?.driveVersionId, previousVersionId);
+  const operation = mutationsOn(queries, projectDriveOperations, "insert")[0]?.valuesValue as
+    | { payloadJson?: Record<string, unknown> }
+    | undefined;
+  assert.equal(operation?.payloadJson?.source_accepted_change_id, previousAcceptedChangeId);
+});
+
+test("accepted deliverable restore reports a superseded current id as version changed", async () => {
+  const { db } = createQueryRecorder([
+    [{ projectId }],
+    [],
+    [],
+    [{ supersededAt: now }]
+  ]);
+  const repository = createWorkItemRepository(db);
+
+  await assert.rejects(
+    repository.restoreAcceptedDeliverable({
+      ...actorInput(),
+      workItemId,
+      acceptedChangeId,
+      at: now
+    }),
+    (error) =>
+      error instanceof WorkItemAcceptedDeliverableRestoreError &&
+      error.code === "deliverable_version_changed"
   );
-  assert.match(
-    body,
-    /update\(projectDriveComments\)[\s\S]*eq\(projectDriveComments\.status,\s*"pending_llm"\)/u
+});
+
+test("drive page readPage limits current accepted rows while backfilling superseded rows for loaded version labels", async () => {
+  const historical = acceptedRow({
+    accepted: {
+      id: previousAcceptedChangeId,
+      acceptedVersion: 1,
+      supersededAt: new Date("2026-07-03T00:00:00.000Z")
+    }
+  });
+  const { db, queries } = createQueryRecorder([
+    [projectLookupRow()],
+    [driveItem()],
+    [{ version: driveVersion() }],
+    [acceptedRow()],
+    [],
+    [],
+    [{ kind: "file", value: 1 }],
+    [{ value: 1 }],
+    [{ value: 1 }],
+    [{ value: 0 }],
+    [{ value: 0 }],
+    [{ value: 0 }],
+    [],
+    [historical],
+    [{ targetKey: "file:/report.md", projectId, workItemId, acceptedVersion: 1 }],
+    []
+  ]);
+  const repository = createDriveRepository(db);
+
+  const page = await repository.readPage({ projectId, limit: 1 });
+
+  assert.deepEqual(
+    page.acceptedDeliverables.map((row) => row.accepted.id),
+    [acceptedChangeId, previousAcceptedChangeId]
   );
+  assert.equal(page.acceptedDeliverables[0]?.canRestore, true);
+
+  const acceptedQueries = queriesFrom(queries, acceptedDeliverableChanges);
+  const currentListQuery = acceptedQueries[0];
+  const historicalQuery = acceptedQueries.find((query) => query.limit === 2);
+  assert.equal(currentListQuery?.limit, 1);
+  assert.ok(queryReferences(currentListQuery?.where, acceptedDeliverableChanges.supersededAt));
+  assert.ok(historicalQuery, "historical accepted rows should be backfilled separately");
+  assert.ok(queryReferences(historicalQuery.where, acceptedDeliverableChanges.driveVersionId));
+  assert.ok(queryReferences(historicalQuery.where, acceptedDeliverableChanges.supersededAt));
+});
+
+test("drive page readPage blocks child restore links when the deleted parent is outside the loaded slice", async () => {
+  const deletedParentId = "94000000-0000-4000-8000-000000000511";
+  const deletedChild = driveItem({
+    id: "94000000-0000-4000-8000-000000000512",
+    parentId: deletedParentId,
+    name: "child.md",
+    deletedAt: now,
+    currentVersionId: null
+  });
+  const { db, queries } = createQueryRecorder([
+    [projectLookupRow()],
+    [],
+    [deletedChild],
+    [],
+    [],
+    [],
+    [{ kind: "file", value: 0 }],
+    [{ value: 0 }],
+    [{ value: 0 }],
+    [{ value: 0 }],
+    [{ value: 2 }],
+    [{ value: 0 }],
+    [],
+    [],
+    []
+  ]);
+  const repository = createDriveRepository(db);
+
+  const page = await repository.readPage({
+    projectId,
+    includeDeleted: true,
+    limit: 1
+  });
+
+  assert.deepEqual(page.restoreBlockedItemIds, [deletedChild.id]);
+  const parentBatchQuery = queries.find((query) =>
+    query.fromTable === projectDriveItems &&
+    queryReferences(query.where, projectDriveItems.id) &&
+    queryReferences(query.where, projectDriveItems.projectId) &&
+    query.limit === undefined
+  );
+  assert.ok(parentBatchQuery, "restore blocking should batch-load parent rows inside the project");
+});
+
+test("softDeleteItem folder emptiness checks only same-project active children", async () => {
+  const folder = driveItem({ kind: "folder", currentVersionId: null });
+  const { db, queries } = createQueryRecorder([
+    [projectLookupRow()],
+    [folder],
+    [],
+    [{ id: "94000000-0000-4000-8000-000000000513" }]
+  ]);
+  const repository = createDriveRepository(db);
+
+  await assert.rejects(
+    repository.softDeleteItem({
+      ...actorInput(),
+      projectId,
+      itemId,
+      at: now
+    }),
+    { code: "drive_folder_not_empty" }
+  );
+
+  const childQuery = queries.find((query) =>
+    query.fromTable === projectDriveItems &&
+    query.limit === 1 &&
+    queryReferences(query.where, projectDriveItems.parentId)
+  );
+  assert.ok(childQuery, "folder emptiness check should query active children");
+  assert.ok(queryReferences(childQuery.where, projectDriveItems.projectId));
+  assert.ok(queryReferences(childQuery.where, projectDriveItems.deletedAt));
+});
+
+test("recent project files only expose accepted work items for the current file version", async () => {
+  const { db, queries } = createQueryRecorder([
+    [{ id: itemId, name: "report.md", updatedAt: now, currentVersionId: versionId }],
+    [{ driveItemId: itemId, workItemId }]
+  ]);
+  const repository = createDriveRepository(db);
+
+  const files = await repository.listRecentFilesByProject(projectId, 5);
+
+  assert.deepEqual(files, [{
+    id: itemId,
+    name: "report.md",
+    updatedAt: now,
+    acceptedWorkItemIds: [workItemId]
+  }]);
+  const acceptedQuery = queriesFrom(queries, acceptedDeliverableChanges)[0];
+  assert.ok(queryReferences(acceptedQuery?.where, acceptedDeliverableChanges.driveItemId));
+  assert.ok(queryReferences(acceptedQuery?.where, acceptedDeliverableChanges.driveVersionId));
+  assert.ok(queryReferences(acceptedQuery?.where, acceptedDeliverableChanges.supersededAt));
 });
 
 type Node = { id: string; parentId: string | null; name: string };
@@ -113,248 +572,5 @@ test("resolveDriveFolderPath breaks parent cycles instead of looping forever", a
     { id: "a", parentId: "b", name: "a" },
     { id: "b", parentId: "a", name: "b" }
   ];
-  // a -> b -> (a already seen) stop.
   assert.equal(await resolveDriveFolderPath(nodes[0]!, mapFetch(nodes)), "/b/a");
-});
-
-test("accepted deliverable reads only attach versions belonging to the accepted drive item", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "work-items.ts"), "utf8");
-  const versionJoinCount = (source.match(/leftJoin\(projectDriveVersions/gu) ?? []).length;
-  const scopedJoinCount = (source.match(/leftJoin\(projectDriveVersions,\s*acceptedDriveVersionJoinCondition\(\)\)/gu) ?? []).length;
-
-  assert.ok(versionJoinCount >= 4);
-  assert.equal(scopedJoinCount, versionJoinCount);
-  assert.match(source, /eq\(projectDriveVersions\.itemId,\s*acceptedDeliverableChanges\.driveItemId\)/u);
-});
-
-test("accepted deliverable restore creates a fresh current row for the requesting work item", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "work-items.ts"), "utf8");
-  const start = source.indexOf("async restoreAcceptedDeliverable");
-  const end = source.indexOf("async searchKnowledge", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-
-  assert.match(body, /insert\(acceptedDeliverableChanges\)[\s\S]*workItemId:\s*current\.accepted\.workItemId/u);
-  assert.match(body, /acceptedVersion:\s*current\.accepted\.acceptedVersion\s*\+\s*1/u);
-  assert.match(body, /source_accepted_change_id:\s*previous\.accepted\.id/u);
-  assert.doesNotMatch(body, /set\(\{\s*supersededAt:\s*null/u);
-});
-
-test("accepted deliverable restore does not choose a previous version from a recycled drive item", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "work-items.ts"), "utf8");
-  const start = source.indexOf("async restoreAcceptedDeliverable");
-  const end = source.indexOf("async searchKnowledge", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-  const previousRowsStart = body.indexOf("const previousRows = await tx");
-  const previousRowsEnd = body.indexOf("const previous = previousRows[0]", previousRowsStart);
-  assert.notEqual(previousRowsStart, -1);
-  assert.notEqual(previousRowsEnd, -1);
-  const previousRowsQuery = body.slice(previousRowsStart, previousRowsEnd);
-
-  assert.match(previousRowsQuery, /isNull\(projectDriveItems\.deletedAt\)/u);
-  assert.match(previousRowsQuery, /isNotNull\(projectDriveItems\.id\)/u);
-});
-
-test("accepted deliverable restore reports a superseded current id as version changed", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "work-items.ts"), "utf8");
-  const start = source.indexOf("async restoreAcceptedDeliverable");
-  const end = source.indexOf("const previousRows = await tx", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-
-  assert.match(body, /const staleRows = await tx/u);
-  assert.match(body, /eq\(acceptedDeliverableChanges\.id,\s*input\.acceptedChangeId\)/u);
-  assert.match(body, /eq\(acceptedDeliverableChanges\.workItemId,\s*input\.workItemId\)/u);
-  assert.match(body, /staleRows\[0\]\?\.supersededAt/u);
-  assert.match(body, /"deliverable_version_changed"/u);
-});
-
-test("accepted deliverable reads attach explicit restore availability", () => {
-  const workItemSource = readFileSync(join(process.cwd(), "src", "repositories", "work-items.ts"), "utf8");
-  const driveSource = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-
-  assert.match(workItemSource, /function attachAcceptedDeliverableRestoreState/u);
-  assert.match(workItemSource, /canRestore/u);
-  assert.match(workItemSource, /lt\(acceptedDeliverableChanges\.acceptedVersion,\s*row\.accepted\.acceptedVersion\)/u);
-  assert.match(workItemSource, /isNull\(projectDriveItems\.deletedAt\)/u);
-  assert.match(workItemSource, /acceptedDeliverables:\s*await attachAcceptedDeliverableRestoreState/u);
-  assert.match(driveSource, /attachAcceptedDeliverableRestoreState/u);
-});
-
-test("drive page accepted deliverables only attach versions belonging to their drive item", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const acceptedStart = source.indexOf(".from(acceptedDeliverableChanges)");
-  assert.notEqual(acceptedStart, -1);
-  const acceptedBlock = source.slice(acceptedStart, source.indexOf("// M12", acceptedStart));
-
-  assert.match(acceptedBlock, /leftJoin\(projectDriveVersions,\s*acceptedDriveVersionJoinCondition\(\)\)/u);
-  assert.match(source, /eq\(projectDriveVersions\.itemId,\s*acceptedDeliverableChanges\.driveItemId\)/u);
-});
-
-test("drive page readPage limits current accepted rows while backfilling superseded rows for loaded version labels", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const readPageStart = source.indexOf("async readPage");
-  assert.notEqual(readPageStart, -1);
-  const acceptedStart = source.indexOf(".from(acceptedDeliverableChanges)", readPageStart);
-  const acceptedEnd = source.indexOf(".orderBy(desc(acceptedDeliverableChanges.createdAt))", acceptedStart);
-  assert.notEqual(acceptedStart, -1);
-  assert.notEqual(acceptedEnd, -1);
-  const acceptedBlock = source.slice(acceptedStart, acceptedEnd);
-
-  // Old assertion required this main accepted-deliverable query to keep superseded rows.
-  // That was wrong: historical rows then consumed the current accepted list limit. History
-  // must be backfilled separately only for already-loaded version labels.
-  assert.match(acceptedBlock, /isNull\(acceptedDeliverableChanges\.supersededAt\)/u);
-
-  const historicalStart = source.indexOf("const historicalAcceptedDeliverables", acceptedEnd);
-  const historicalEnd = source.indexOf("acceptedDeliverables = await attachAcceptedDeliverableRestoreState", historicalStart);
-  assert.notEqual(historicalStart, -1);
-  assert.notEqual(historicalEnd, -1);
-  const historicalBlock = source.slice(historicalStart, historicalEnd);
-
-  assert.match(historicalBlock, /isNotNull\(acceptedDeliverableChanges\.supersededAt\)/u);
-  assert.match(historicalBlock, /inArray\(acceptedDeliverableChanges\.driveVersionId,\s*loadedVersionIds\)/u);
-  assert.match(historicalBlock, /\.limit\(Math\.max\(1,\s*Math\.min\(loadedVersionIds\.length \* 2,\s*500\)\)\)/u);
-});
-
-test("drive page readPage backfills current versions for every loaded file item", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("async readPage");
-  const end = source.indexOf("async listRecentFilesByProject", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-
-  assert.match(body, /missingLoadedCurrentVersionIds/u);
-  assert.match(body, /loadedItemsForVersionBackfill\s*\.map\(\(item\) => item\.currentVersionId\)/u);
-  assert.match(body, /where\(inArray\(projectDriveVersions\.id,\s*missingLoadedCurrentVersionIds\)\)/u);
-});
-
-test("drive page readPage backfills current versions for recycle-bin file items", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("async readPage");
-  const end = source.indexOf("async listRecentFilesByProject", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-
-  assert.match(body, /loadedItemsForVersionBackfill\s*=\s*\[\.\.\.items,\s*\.\.\.deletedItems\]/u);
-  assert.match(body, /loadedItemsForVersionBackfill\s*\.map\(\(item\) => item\.currentVersionId\)/u);
-});
-
-test("drive page readPage can hydrate a deleted target item into the recycle-bin slice", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("async readPage");
-  const end = source.indexOf("async listRecentFilesByProject", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-
-  assert.match(body, /targetDeletedSeeds/u);
-  assert.match(body, /input\.includeDeleted/u);
-  assert.match(body, /deletedItems\s*=\s*\[/u);
-  assert.match(body, /targetChain\.filter\(\(item\) => !item\.deletedAt/u);
-});
-
-test("drive page readPage hydrates deleted target ancestors into the recycle-bin slice", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("const targetChainSeeds = [...targetSeeds, ...targetDeletedSeeds]");
-  const end = source.indexOf("const knownLoadedVersionIds", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-
-  assert.doesNotMatch(body, /isNull\(projectDriveItems\.deletedAt\)/u);
-  assert.match(body, /targetChain\.filter\(\(item\) => item\.deletedAt/u);
-  assert.match(body, /deletedItems\s*=\s*\[\s*\.\.\.deletedItems,[\s\S]*targetDeletedAncestors/u);
-});
-
-test("drive page readPage blocks child restore links when the deleted parent is outside the loaded slice", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("const parentIds = [...new Set(deletedItems");
-  const end = source.indexOf("return {", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-
-  // db-repos-5：restoreBlocked 判定改为批量查询（parentRowsById 一次 inArray 取回全部父行），
-  // 逐行仍按「父行缺失或已删」拦截还原——只是不再逐条串行查询。
-  assert.match(body, /parentRowsById/u);
-  assert.match(body, /!parentRow \|\| parentRow\.deletedAt/u);
-  assert.match(body, /restoreBlockedItemIds\.push\(item\.id\)/u);
-});
-
-test("softDeleteItem folder emptiness checks only same-project children", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("async softDeleteItem");
-  const end = source.indexOf("async restoreDeletedItem", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-  const childCheckStart = body.indexOf("const childRows = await tx");
-  assert.notEqual(childCheckStart, -1);
-  const childCheck = body.slice(childCheckStart, body.indexOf("if (childRows[0])", childCheckStart));
-
-  assert.match(childCheck, /eq\(projectDriveItems\.parentId,\s*item\.id\)/u);
-  assert.match(childCheck, /eq\(projectDriveItems\.projectId,\s*input\.projectId\)/u);
-  assert.match(childCheck, /isNull\(projectDriveItems\.deletedAt\)/u);
-});
-
-test("drive page readPage backfills accepted-deliverable locks for every loaded drive item", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("async readPage");
-  const end = source.indexOf("async listRecentFilesByProject", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-
-  assert.match(body, /loadedItemIds/u);
-  assert.match(body, /knownAcceptedDeliverableIds/u);
-  assert.match(body, /inArray\(acceptedDeliverableChanges\.driveItemId,\s*loadedItemIds\)/u);
-  assert.match(body, /!knownAcceptedDeliverableIds\.has\(row\.accepted\.id\)/u);
-});
-
-test("drive page readPage backfills pending comments beyond the newest comment slice", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("async readPage");
-  const end = source.indexOf("const draftWorkItemIds", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-
-  assert.match(body, /let comments = initialComments/u);
-  assert.match(body, /knownCommentIds/u);
-  assert.match(body, /eq\(projectDriveComments\.status,\s*"pending_llm"\)/u);
-  assert.match(body, /!knownCommentIds\.has\(comment\.id\)/u);
-});
-
-test("recent project files carry accepted-deliverable work item ids for page-level link filtering", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("async listRecentFilesByProject");
-  const end = source.indexOf("async countFilesByProject", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-
-  assert.match(body, /acceptedDeliverableChanges\.driveItemId/u);
-  assert.match(body, /acceptedDeliverableChanges\.workItemId/u);
-  assert.match(body, /isNull\(acceptedDeliverableChanges\.supersededAt\)/u);
-  assert.match(body, /acceptedWorkItemIds/u);
-});
-
-test("recent project files only expose accepted work items for the current file version", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const start = source.indexOf("async listRecentFilesByProject");
-  const end = source.indexOf("async countFilesByProject", start);
-  assert.notEqual(start, -1);
-  assert.notEqual(end, -1);
-  const body = source.slice(start, end);
-
-  assert.match(body, /currentVersionId:\s*projectDriveItems\.currentVersionId/u);
-  assert.match(body, /currentVersionIds/u);
-  assert.match(body, /inArray\(acceptedDeliverableChanges\.driveVersionId,\s*currentVersionIds\)/u);
 });

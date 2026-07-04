@@ -1,12 +1,14 @@
 import type { WorkHubDb } from "./client.js";
 
 export type RecordedQuery = {
-  operation: "select" | "insert" | "update";
+  operation: "select" | "insert" | "update" | "execute";
   fromTable?: unknown;
   targetTable?: unknown;
+  rawQuery?: unknown;
   joins: Array<{ kind: "inner" | "left"; table: unknown; on: unknown }>;
   where?: unknown;
   orderBy: unknown[];
+  groupBy: unknown[];
   limit?: number;
   lock?: string;
   setValue?: unknown;
@@ -54,6 +56,12 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
   orderBy(...values: unknown[]): this {
     this.query.orderBy.push(...values);
     this.query.steps.push("orderBy");
+    return this;
+  }
+
+  groupBy(...values: unknown[]): this {
+    this.query.groupBy.push(...values);
+    this.query.steps.push("groupBy");
     return this;
   }
 
@@ -128,6 +136,19 @@ class QueryRecorderDb {
     return this.createBuilder("update", { targetTable: table });
   }
 
+  async execute(query: unknown): Promise<unknown[]> {
+    const response = this.responses.shift() ?? [];
+    this.queries.push({
+      operation: "execute",
+      rawQuery: query,
+      joins: [],
+      orderBy: [],
+      groupBy: [],
+      steps: ["execute"]
+    });
+    return [...response];
+  }
+
   async transaction<T>(callback: (tx: WorkHubDb) => T | Promise<T>): Promise<T> {
     try {
       const result = await callback(this as unknown as WorkHubDb);
@@ -150,6 +171,7 @@ class QueryRecorderDb {
       operation,
       joins: [],
       orderBy: [],
+      groupBy: [],
       steps: [operation]
     };
     if ("selection" in values) {
