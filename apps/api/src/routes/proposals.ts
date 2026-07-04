@@ -95,6 +95,7 @@ function proposalActorFor(actor?: AuthActor): ProposalActor {
   return {
     actor_kind: resolved.actor_kind,
     ...(resolved.actor_user_id ? { actor_user_id: resolved.actor_user_id } : {}),
+    ...(actor?.workspaceId ? { workspaceId: actor.workspaceId } : {}),
     ...(resolved.label ? { label: resolved.label } : {})
   };
 }

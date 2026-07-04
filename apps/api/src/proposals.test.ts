@@ -23,6 +23,7 @@ import {
   ProposalRepositoryRebaseRequiredError,
   ProposalRepositoryStaleBaseError,
   ProposalRepositoryUnsupportedMergeProposalApplyError,
+  type UpsertUserMemoryInput,
   type MergeAttemptRow,
   type MergeProposalCandidateApplicationContext,
   type MergeProposalRow,
@@ -3896,6 +3897,57 @@ test("proposal review requires reasons for changes and feeds them back into the 
   assert.equal(body.data.feedback_event?.data.reason_fed_back, true);
   assert.equal(body.data.audit_logs?.some((log) => log.action === "reason_fed_back"), true);
   assert.equal(body.data.audit_logs?.[0]?.detail_json.reason_fed_back, true);
+});
+
+test("proposal review remember-always stores corrections inside the authenticated workspace", async () => {
+  const memoryWrites: UpsertUserMemoryInput[] = [];
+  const userMemoryRepository = {
+    async upsert(input: UpsertUserMemoryInput) {
+      memoryWrites.push(input);
+      return {
+        id: "91000000-0000-4000-8000-000000000861",
+        userId: input.userId,
+        workspaceId: input.workspaceId ?? null,
+        category: input.category,
+        key: input.key,
+        valueMd: input.valueMd,
+        confidence: input.confidence ?? 0.9,
+        sourceRunId: input.sourceRunId ?? null,
+        lastUsedAt: null,
+        expiresAt: null,
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now
+      };
+    }
+  };
+  const { app, runtimeSettings } = appWithDbProposalRoutes({ userMemoryRepository });
+  const created = await createProposal(app, runtimeSettings, manifest(2));
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await cookie(runtimeSettings)
+  };
+
+  const response = await app.request(`/api/proposals/${created.data.id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      decision: "request_changes",
+      reason_md: "请补齐数据来源和口径说明。",
+      remember: "always"
+    })
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(memoryWrites.length, 1);
+  assert.deepEqual(memoryWrites[0], {
+    userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    category: "correction",
+    key: `proposal:${created.data.id}`,
+    valueMd: "请补齐数据来源和口径说明。",
+    confidence: 0.9
+  });
 });
 
 test("approved proposal can be merged with proposal events, audit facts, and rollback payload", async () => {

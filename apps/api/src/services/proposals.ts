@@ -46,6 +46,7 @@ import {
   type MergeProposalRow,
   type ProposalRepository,
   type StoredProposalRows,
+  type UserMemoryRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
@@ -74,6 +75,7 @@ import {
 export type ProposalActor = {
   actor_kind: "human" | "ai" | "system";
   actor_user_id?: string;
+  workspaceId?: string;
   label?: string;
 };
 
@@ -1835,6 +1837,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
   id?: () => string;
   storageRoot?: string;
   fusionCandidateGenerator?: MergeFusionCandidateGenerator;
+  userMemoryRepository?: Pick<UserMemoryRepository, "upsert">;
   onMerged?: TaskPlanMergeApprovalHandler;
   onRejected?: TaskPlanReviewRejectionHandler;
 } = {}): ProposalService {
@@ -2044,12 +2047,13 @@ export function createDbProposalService(repository: ProposalRepository, options:
         try {
           const memory = correctionFromReview({
             reviewerUserId: input.actor.actor_user_id ?? null,
+            ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {}),
             decision: input.decision,
             reasonMd: input.reasonMd,
             proposalId: input.proposalId
           });
           if (memory) {
-            await getDefaultUserMemoryRepository().upsert(memory);
+            await (options.userMemoryRepository ?? getDefaultUserMemoryRepository()).upsert(memory);
           }
         } catch {
           // 记忆沉淀失败不影响审批结果

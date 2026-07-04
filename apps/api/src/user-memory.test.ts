@@ -76,6 +76,17 @@ test("correctionFromReview captures a request_changes reason as a correction", (
   assert.equal(memory?.confidence, 0.9);
 });
 
+test("correctionFromReview scopes proposal corrections to the review workspace", () => {
+  const memory = correctionFromReview({
+    reviewerUserId: "u-9",
+    workspaceId: "ws-7",
+    decision: "request_changes",
+    reasonMd: "  预算口径要按季度，不要按月  ",
+    proposalId: "p-7"
+  });
+  assert.equal(memory?.workspaceId, "ws-7");
+});
+
 test("correctionFromReview ignores approvals, missing reviewer, and empty reasons", () => {
   assert.equal(correctionFromReview({ reviewerUserId: "u-9", decision: "approve", reasonMd: "ok", proposalId: "p-1" }), null);
   assert.equal(correctionFromReview({ reviewerUserId: null, decision: "request_changes", reasonMd: "x", proposalId: "p-1" }), null);

@@ -39,6 +39,7 @@ export function buildUserMemoryPromptSection(rows: UserMemoryRow[]): string {
 // WRITE 规则：用户打回(request_changes)并写了原因 → 存为 correction 记忆（v0 无 LLM 蒸馏）。
 export function correctionFromReview(input: {
   reviewerUserId?: string | null;
+  workspaceId?: string;
   decision: "approve" | "request_changes";
   reasonMd?: string | undefined;
   proposalId: string;
@@ -52,6 +53,7 @@ export function correctionFromReview(input: {
   }
   return {
     userId: input.reviewerUserId,
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
     category: "correction",
     key: `proposal:${input.proposalId}`,
     valueMd: reason.length > 400 ? `${reason.slice(0, 400)}…` : reason,
