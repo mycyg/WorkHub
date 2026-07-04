@@ -237,6 +237,35 @@ class WorkItems implements Pick<WorkItemService, "detailPage" | "assertCanMutate
   }
 }
 
+test("R9.7 task-plan route maps duplicate draft workflow errors without the test error shim", async () => {
+  const runtimeSettings = settings();
+  const workItems = new WorkItems();
+  const app = new Hono<AuthEnv>();
+  app.route("/api", createTaskPlanRoutes({
+    auth: authDeps(runtimeSettings),
+    workItems,
+    service: {
+      async createPlanProposal() {
+        throw new TaskPlanServiceError(409, "task_plan_draft_in_progress", "任务计划正在生成，请稍后刷新查看。");
+      }
+    }
+  }));
+  const response = await app.request(`/api/workitems/${workItemId}/task-plan`, {
+    method: "POST",
+    headers: {
+      cookie: await cookie(runtimeSettings),
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({})
+  });
+
+  assert.equal(response.status, 409);
+  const body = await response.json() as { ok: boolean; error: { code: string; message: string } };
+  assert.equal(body.ok, false);
+  assert.equal(body.error.code, "task_plan_draft_in_progress");
+  assert.match(body.error.message, /正在生成/);
+});
+
 class MemoryTaskPlans implements TaskPlanWorkflowRepository {
   public readonly rows = new Map<string, { status: TaskPlanStatus; input: CreateDraftTaskPlanInput }>();
 

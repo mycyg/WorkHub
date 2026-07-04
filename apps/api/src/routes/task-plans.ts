@@ -13,6 +13,7 @@ import {
 } from "../middleware/auth.js";
 import {
   getDefaultTaskPlanWorkflowService,
+  TaskPlanServiceError,
   type TaskPlanWorkflowService
 } from "../services/task-plans.js";
 import {
@@ -80,12 +81,20 @@ export function createTaskPlanRoutes(deps: TaskPlanRoutesDependencies = {}) {
     const payload = taskPlanRequestSchema.parse(await readJsonObject(c));
     const detail = await workItems.detailPage({ workItemId, actor: c.var.actor });
     const memories = memoriesForPlanner(payload.memories);
-    const result = await service.createPlanProposal({
-      detail,
-      actor: actorForPlanner(c.var.actor),
-      locale: normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language")),
-      ...(memories ? { memories } : {})
-    });
+    let result;
+    try {
+      result = await service.createPlanProposal({
+        detail,
+        actor: actorForPlanner(c.var.actor),
+        locale: normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language")),
+        ...(memories ? { memories } : {})
+      });
+    } catch (error) {
+      if (error instanceof TaskPlanServiceError) {
+        return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
+      }
+      throw error;
+    }
     const { reviews: _reviews, ...proposal } = result.proposal;
     return c.json({
       ok: true,
