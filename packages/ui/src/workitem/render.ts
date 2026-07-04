@@ -14,6 +14,7 @@ import {
   evidenceSourceLabel,
   taskPlanItemRoleLabel,
   uiCount,
+  uiFormatCny,
   uiLocale,
   uiT,
   workItemStatusLabel,
@@ -140,7 +141,7 @@ function renderAgentTeam(team: WorkItemAgentTeamVM, options?: UiRenderOptions) {
     const waiting = item.waiting_for_seq.length
       ? `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? `等待 ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")} 完成` : `Waiting for ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")}`)}</p>`
       : "";
-    const cost = item.cost_estimate_cny ? `<span class="wh-pill">${escapeHtml(`¥${item.cost_estimate_cny}`)}</span>` : "";
+    const cost = item.cost_estimate_cny ? `<span class="wh-pill">${escapeHtml(uiFormatCny(item.cost_estimate_cny))}</span>` : "";
     return `<div class="wh-agent-row" data-r9-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-r9-agent-team-status="${escapeHtml(item.status)}">
       <strong>${escapeHtml(`#${item.seq} ${item.title}`)}</strong>
       ${waiting}
@@ -159,7 +160,7 @@ function renderAgentTeam(team: WorkItemAgentTeamVM, options?: UiRenderOptions) {
   return `<div class="wh-agent-team" data-r9-agent-team-panel="true" data-r9-agent-team-plan-id="${escapeHtml(team.plan_id)}">
     <div class="wh-agent-head">
       <strong>${escapeHtml(agentTeamTitle(team, { locale }))}</strong>
-      <span class="wh-pill">${escapeHtml(`¥${team.cost_used_cny}`)}</span>
+      <span class="wh-pill">${escapeHtml(uiFormatCny(team.cost_used_cny))}</span>
     </div>
     ${team.cost_budget_cny ? `<div class="wh-agent-meter" aria-label="${escapeHtml(`${burnPct}%`)}"><span style="${escapeHtml(burnWidth)}"></span></div>` : ""}
     ${rows || `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无子运行。" : "No child runs yet.")}</p>`}

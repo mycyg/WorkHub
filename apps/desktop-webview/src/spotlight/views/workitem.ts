@@ -4,7 +4,7 @@
 // 历史/其它工作项从 项目/审批/看改动 进入。list→detail 盒内联 morph。
 
 import type { WorkItemAgentTeamVM, WorkItemDetailVM } from "@workhub/contracts";
-import { taskPlanItemRoleLabel, taskPlanItemStatusLabel, taskPlanStatusLabel } from "@workhub/ui";
+import { taskPlanItemRoleLabel, taskPlanItemStatusLabel, taskPlanStatusLabel, uiFormatCny } from "@workhub/ui";
 import { publicProposalDisplayTitle } from "@workhub/ui/proposal";
 import { escapeHtml, safeHref } from "@workhub/web-runtime";
 
@@ -71,7 +71,7 @@ function agentTeamHtml(vm: WorkItemDetailVM, zh: boolean): string {
     const action = item.action
       ? `<button type="button" class="wh-spot-chip wh-spot-chip--info ds-pressable" data-spot-agent-team-action="${escapeHtml(item.action.kind)}" data-spot-agent-team-action-href="${escapeHtml(safeHref(item.action.href))}">${escapeHtml(item.action.label)}</button>`
       : "";
-    const cost = item.cost_estimate_cny ? `<span class="wh-spot-change-path">${escapeHtml(`¥${item.cost_estimate_cny}`)}</span>` : "";
+    const cost = item.cost_estimate_cny ? `<span class="wh-spot-change-path">${escapeHtml(uiFormatCny(item.cost_estimate_cny))}</span>` : "";
     return `<div class="wh-spot-trace-step" data-spot-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-spot-agent-team-status="${escapeHtml(item.status)}">
       <div class="wh-spot-trace-phase">${escapeHtml(`#${item.seq} ${taskPlanItemRoleLabel(locale, item.role)} · ${agentTeamItemStatusLabel(item.status, zh)}`)}</div>
       <div class="wh-spot-trace-out">${escapeHtml(item.title)}</div>
@@ -84,7 +84,7 @@ function agentTeamHtml(vm: WorkItemDetailVM, zh: boolean): string {
   return `<div class="wh-spot-change" data-spot-agent-team="true" data-spot-agent-team-status="${escapeHtml(team.status)}">
     <div class="wh-spot-change-head">
       <span class="wh-spot-chip wh-spot-chip--info">${escapeHtml(agentTeamTitle(team, zh))}</span>
-      <span class="wh-spot-change-path">${escapeHtml(`¥${team.cost_used_cny}`)}</span>
+      <span class="wh-spot-change-path">${escapeHtml(uiFormatCny(team.cost_used_cny))}</span>
     </div>
     <div class="wh-spot-trace">${rows || `<div class="wh-spot-change-path">${zh ? "暂无子运行" : "No child runs yet"}</div>`}</div>
     ${capped}

@@ -55,6 +55,7 @@ import {
   taskPlanItemStatusLabel,
   taskPlanStatusLabel,
   uiCount,
+  uiFormatCny,
   uiHumanize,
   uiT,
   workItemStatusLabel
@@ -1997,7 +1998,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
           ? `<a class="wh-pill" href="${escapeHtml(safeHref(item.action.href))}" data-r9-agent-team-action="${escapeHtml(item.action.kind)}">${escapeHtml(item.action.label)}</a>`
           : "";
         const cost = item.cost_estimate_cny
-          ? `<span class="wh-pill">${escapeHtml(`¥${item.cost_estimate_cny}`)}</span>`
+          ? `<span class="wh-pill">${escapeHtml(uiFormatCny(item.cost_estimate_cny))}</span>`
           : "";
         return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-r9-agent-team-status="${escapeHtml(item.status)}" data-r9-agent-team-role="${escapeHtml(item.role)}">
           <div>
@@ -2022,7 +2023,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
       <h3>${escapeHtml(agentTeamTitle(team, locale))}</h3>
     </div>
     <div class="wh-r4-route-meta">
-      <span class="wh-pill">${escapeHtml(`¥${team.cost_used_cny}`)}</span>
+      <span class="wh-pill">${escapeHtml(uiFormatCny(team.cost_used_cny))}</span>
       ${team.cost_budget_cny ? `<span class="wh-pill">${escapeHtml(`${burnPct}%`)}</span>` : ""}
     </div>
     ${team.cost_budget_cny ? `<div class="wh-r4-route-meter" data-r9-agent-team-burn="${escapeHtml(burnTone)}" aria-label="${escapeHtml(`${burnPct}%`)}"><span style="${escapeHtml(burnStyle)}"></span></div>` : ""}
@@ -3023,7 +3024,7 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
 }
 
 function costAmount(value: string) {
-  return `¥${value}`;
+  return uiFormatCny(value);
 }
 
 function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {

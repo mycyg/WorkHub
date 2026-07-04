@@ -149,6 +149,10 @@ test("R9.2 work item renderer shows the task-plan run tree in the AI working slo
   assert.equal(rendered.html.includes("整理竞品证据"), true);
   assert.equal(rendered.html.includes("去决策"), true);
   assert.equal(rendered.primaryHrefs.includes("/attention"), true);
+  assert.equal(rendered.html.includes("¥1.25"), true);
+  assert.equal(rendered.html.includes("¥0.45"), true);
+  assert.equal(rendered.html.includes("¥1.250000"), false);
+  assert.equal(rendered.html.includes("¥0.450000"), false);
 });
 
 test("R9.7 work item renderer avoids dispatch wording in visible task-plan states", () => {

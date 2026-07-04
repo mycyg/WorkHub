@@ -362,6 +362,22 @@ export function uiHumanize(value: string) {
   return String(value ?? "").replace(/_/gu, " ");
 }
 
+export function uiFormatCny(value: string | number | null | undefined) {
+  const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
+  if (!Number.isFinite(parsed)) {
+    const fallback = String(value ?? "0").trim() || "0";
+    return `¥${fallback}`;
+  }
+  if (parsed > 0 && parsed < 0.005) {
+    return "<¥0.01";
+  }
+  const amount = new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0
+  }).format(parsed);
+  return `¥${amount}`;
+}
+
 function labelFromMap(locale: WorkHubLocale, value: string, map: Record<string, Copy>) {
   return map[value]?.[locale] ?? uiHumanize(value);
 }

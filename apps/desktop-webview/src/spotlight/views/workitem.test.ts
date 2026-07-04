@@ -211,6 +211,10 @@ test("R9.2 desktop workitem renders a compressed read-only army run tree", () =>
   assert.ok(html.includes('data-spot-agent-team-item="93000000-0000-4000-8000-000000000903"'));
   assert.ok(html.includes("复核"));
   assert.ok(html.includes("去决策"));
+  assert.ok(html.includes("¥1.25"));
+  assert.ok(html.includes("¥0.45"));
+  assert.equal(html.includes("¥1.250000"), false);
+  assert.equal(html.includes("¥0.450000"), false);
 });
 
 test("desktop workitem agent-team actions route to replay and decision inbox", async () => {

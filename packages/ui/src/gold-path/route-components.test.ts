@@ -563,7 +563,7 @@ function agentArmyDashboardVm(overrides: Partial<AgentArmyDashboardVM> = {}): Ag
     kpis: {
       active_team_count: 1,
       waiting_decision_count: 2,
-      today_cost_cny: "1.25",
+      today_cost_cny: "0.006",
       autonomy_rate_pct: 67
     },
     plans: [{
@@ -584,7 +584,7 @@ function agentArmyDashboardVm(overrides: Partial<AgentArmyDashboardVM> = {}): Ag
         { status: "succeeded", count: 1 },
         { status: "needs_human", count: 1 }
       ],
-      cost: { used_cny: "1.25", budget_cny: "3", burn_pct: 42 },
+      cost: { used_cny: "0.006", budget_cny: "3.000000", burn_pct: 42 },
       judge: { passed: 1, total: 1, pass_rate_pct: 100 },
       oldest_blocker: {
         kind: "needs_human",
@@ -1157,6 +1157,10 @@ test("R9.2 WorkItem route component renders the task-plan run tree without inlin
   assert.equal(workitem.html.includes("去决策"), true);
   assert.equal(workitem.html.includes('href="/attention"'), true);
   assert.equal(workitem.html.includes("data-r9-agent-team-inline-decision"), false);
+  assert.equal(workitem.html.includes("¥1.25"), true);
+  assert.equal(workitem.html.includes("¥0.45"), true);
+  assert.equal(workitem.html.includes("¥1.250000"), false);
+  assert.equal(workitem.html.includes("¥0.450000"), false);
 });
 
 test("R9.7 WorkItem route component avoids dispatch internals and unavailable pause controls", () => {
@@ -1621,6 +1625,10 @@ test("R9.6 Agent Army route component renders observable dashboard cards without
   assert.equal(agents.html.includes("智能代理军团"), true);
   assert.equal(agents.html.includes("竞品资料梳理"), true);
   assert.equal(agents.html.includes("卡在: 竞品复核"), true);
+  assert.equal(agents.html.includes("¥0.01"), true);
+  assert.equal(agents.html.includes("¥3"), true);
+  assert.equal(agents.html.includes("¥0.006"), false);
+  assert.equal(agents.html.includes("¥3.000000"), false);
   assert.equal(agents.html.includes("判官"), false);
   assert.equal(agents.html.includes("追加预算继续"), false);
   assertNoMainWindowBoundaryLeak(agents.html);
