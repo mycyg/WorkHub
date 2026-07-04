@@ -36,6 +36,8 @@ export type RouteNoticeTimerState = {
   timer?: number | undefined;
 };
 
+let routeNoticeSequence = 0;
+
 export function resetRouteNoticeDataset(notice: HTMLElement) {
   delete notice.dataset.r4NoticeActionId;
   delete notice.dataset.r4NoticeEventType;
@@ -59,6 +61,8 @@ export function showRouteNotice(
   }
   resetRouteNoticeDataset(notice);
   notice.dataset.r4RouteNotice = "true";
+  routeNoticeSequence += 1;
+  notice.dataset.r4NoticeSeq = String(routeNoticeSequence);
   notice.dataset.r4NoticeKind = vm.kind;
   notice.dataset.r4NoticeTone = vm.tone;
   notice.dataset.r4NoticeSource = vm.source;

@@ -280,6 +280,7 @@ type BrowserAudit = {
   };
   notice: {
     visible: boolean;
+    seq: string | null;
     kind: string | null;
     tone: string | null;
     source: string | null;
@@ -350,6 +351,12 @@ type StepReport = {
   expectedStatus: string;
   screenshot: string;
   audit: BrowserAudit;
+};
+
+type RouteStatusProbe = {
+  status: string;
+  body: string;
+  rootHtml: string;
 };
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
@@ -2490,15 +2497,36 @@ async function waitFor<T>(
   throw new Error(`Timed out waiting for ${label}; last value=${JSON.stringify(lastValue)}; diagnostic=${diagnostic}`);
 }
 
+function routeStatusProbeExpression() {
+  return `(() => ({
+    status: document.querySelector('[data-r4-web-route-status]')?.getAttribute('data-r4-web-route-status') || '',
+    body: document.body?.innerText?.slice(0, 500) ?? '',
+    rootHtml: document.getElementById("root")?.innerHTML.slice(0, 800) ?? ''
+  }))()`;
+}
+
+function isTransientRouteTransportFailure(value: RouteStatusProbe) {
+  return value.status === "error" && value.body.includes("Failed to fetch");
+}
+
 async function navigate(cdp: CdpClient, url: string, expectedStatus: string) {
-  await cdp.send("Page.navigate", { url });
-  await waitFor<string>(
-    cdp,
-    `${url} -> ${expectedStatus}`,
-    "document.querySelector('[data-r4-web-route-status]')?.getAttribute('data-r4-web-route-status') || ''",
-    (value) => value === expectedStatus,
-    30_000
-  );
+  let lastProbe: RouteStatusProbe | undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await cdp.send("Page.navigate", { url });
+    const probe = await waitFor<RouteStatusProbe>(
+      cdp,
+      `${url} -> ${expectedStatus}`,
+      routeStatusProbeExpression(),
+      (value) => value.status === expectedStatus || isTransientRouteTransportFailure(value),
+      30_000
+    );
+    if (probe.status === expectedStatus) {
+      return;
+    }
+    lastProbe = probe;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error(`Timed out waiting for ${url} -> ${expectedStatus}; last value=${JSON.stringify(lastProbe)}`);
 }
 
 async function clickAndWait(cdp: CdpClient, selector: string, pathname: string, expectedStatus = "ready") {
@@ -2547,6 +2575,12 @@ async function fillTextInput(cdp: CdpClient, selector: string, value: string) {
 }
 
 async function clickAndWaitForNotice(cdp: CdpClient, selector: string, kind: string, actionId?: string) {
+  const previousNoticeSeq = await cdp.evaluate<number>(`(() => {
+    const notice = document.querySelector("[data-wh-app-notice]");
+    const raw = notice?.getAttribute("data-r4-notice-seq") || "0";
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  })()`);
   const clicked = await cdp.evaluate<boolean>(`(() => {
     // Several proposal advanced-edit actions share apply_ai_fusion. The old wait accepted an
     // already-visible same-action notice as the next action's completion, so CI could click ahead
@@ -2571,6 +2605,7 @@ async function clickAndWaitForNotice(cdp: CdpClient, selector: string, kind: str
     auditExpression(),
     (audit) =>
       audit.notice.visible &&
+      Number.parseInt(audit.notice.seq ?? "0", 10) > previousNoticeSeq &&
       audit.notice.kind === kind &&
       (actionId === undefined || audit.notice.actionId === actionId)
   );
@@ -2938,6 +2973,7 @@ function auditExpression() {
     const noticeVisible = Boolean(noticeElement && !noticeElement.hasAttribute("hidden"));
     const notice = {
       visible: noticeVisible,
+      seq: noticeElement?.getAttribute("data-r4-notice-seq") || null,
       kind: noticeElement?.getAttribute("data-r4-notice-kind") || null,
       tone: noticeElement?.getAttribute("data-r4-notice-tone") || null,
       source: noticeElement?.getAttribute("data-r4-notice-source") || null,

@@ -13,6 +13,7 @@ import {
   mergeConflictNotice,
   reasonRequiredNotice,
   selectionNotice,
+  showRouteNotice,
   startAgentRunQueuedNoticeBody,
   sseDirtyGuardNotice,
   sseRefreshNotice,
@@ -60,4 +61,33 @@ test("R9.7 start-run notices avoid raw run identifiers", () => {
   assert.equal(en, "AI started. WorkHub will refresh this task and surface Proposal or Replay when available.");
   assert.equal(zh.includes(rawRunId), false);
   assert.equal(en.includes(rawRunId), false);
+});
+
+test("R9.7 route notices expose a monotonic sequence for live smoke freshness", () => {
+  const originalWindow = globalThis.window;
+  const fakeTimers = {
+    clearTimeout: () => undefined,
+    setTimeout: () => 1
+  };
+  (globalThis as unknown as { window: unknown }).window = fakeTimers;
+  const notice = {
+    dataset: {} as Record<string, string>,
+    hidden: true,
+    innerHTML: "",
+    insertAdjacentHTML: (_position: InsertPosition, html: string) => {
+      notice.innerHTML += html;
+    }
+  } as HTMLElement;
+  const shellRoot = {
+    querySelector: (selector: string) => selector === "[data-wh-app-notice]" ? notice : null
+  } as HTMLElement;
+  try {
+    showRouteNotice(shellRoot, actionSuccessNotice("en-US", "first", "apply_ai_fusion"), undefined, 4600, {});
+    assert.equal(notice.dataset.r4NoticeSeq, "1");
+
+    showRouteNotice(shellRoot, actionSuccessNotice("en-US", "second", "apply_ai_fusion"), undefined, 4600, {});
+    assert.equal(notice.dataset.r4NoticeSeq, "2");
+  } finally {
+    (globalThis as unknown as { window: unknown }).window = originalWindow;
+  }
 });
