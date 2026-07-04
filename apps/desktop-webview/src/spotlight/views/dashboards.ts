@@ -12,6 +12,7 @@ import type {
   ProjectListItemVM,
   ScheduleBlockVM
 } from "@workhub/contracts";
+import { uiFormatCny } from "@workhub/ui";
 import { escapeHtml, safeHref } from "@workhub/web-runtime";
 
 import type { CommandId } from "../../command-palette.js";
@@ -34,7 +35,7 @@ function pctWidth(value: number | undefined): string {
 }
 
 function cny(value: string | undefined): string {
-  return value ? `¥${value}` : "¥0";
+  return uiFormatCny(value);
 }
 
 function taskPlanRoleLabel(role: AgentArmyDashboardPlanVM["roles"][number]["role"], zh: boolean): string {
@@ -436,7 +437,7 @@ export function costView(vm: CostDashboardVM, zh: boolean): string {
   const bars = trend
     .map((t) => {
       const h = Math.max(4, Math.round(((Number(t.cost_cny) || 0) / max) * 40));
-      const label = `${t.date} · ¥${t.cost_cny}`;
+      const label = `${t.date} · ${cny(t.cost_cny)}`;
       return `<span class="wh-spot-bar" role="img" aria-label="${escapeHtml(label)}" style="height:${h}px" title="${escapeHtml(label)}"></span>`;
     })
     .join("");
@@ -444,7 +445,7 @@ export function costView(vm: CostDashboardVM, zh: boolean): string {
     ? trend.reduce((best, t) => ((Number(t.cost_cny) || 0) > (Number(best.cost_cny) || 0) ? t : best))
     : undefined;
   const barsCaption = trend.length
-    ? `<div class="wh-spot-bars-cap"><span>${escapeHtml(trend[0]?.date ?? "")} – ${escapeHtml(trend[trend.length - 1]?.date ?? "")}</span><span>${zh ? "峰值" : "Peak"} ¥${escapeHtml(peak?.cost_cny ?? "0")}</span></div>`
+    ? `<div class="wh-spot-bars-cap"><span>${escapeHtml(trend[0]?.date ?? "")} – ${escapeHtml(trend[trend.length - 1]?.date ?? "")}</span><span>${zh ? "峰值" : "Peak"} ${escapeHtml(cny(peak?.cost_cny ?? "0"))}</span></div>`
     : "";
   const labor = vm.labor_split
     ? `<div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "自我精进占比" : "Self-improvement"}</span><span class="wh-spot-metric-v">${Math.round(vm.labor_split.self_improvement_ratio * 100)}%</span></div>`
@@ -453,12 +454,12 @@ export function costView(vm: CostDashboardVM, zh: boolean): string {
     .slice(0, 5)
     .map(
       (w) =>
-        `<div class="wh-spot-row"><div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(w.code)}</div><div class="wh-spot-row-sub">${w.turns} ${zh ? "轮" : "turns"}</div></div><div class="wh-spot-row-meta">¥${escapeHtml(w.cost_cny)}</div></div>`
+        `<div class="wh-spot-row"><div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(w.code)}</div><div class="wh-spot-row-sub">${w.turns} ${zh ? "轮" : "turns"}</div></div><div class="wh-spot-row-meta">${escapeHtml(cny(w.cost_cny))}</div></div>`
     )
     .join("");
   return `<div class="wh-spot-dash">
     <div class="wh-spot-metrics">
-      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "累计花费" : "Total spend"}</span><span class="wh-spot-metric-v wh-spot-metric-v--big">¥${escapeHtml(vm.total_cost_cny)}</span></div>
+      <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "累计花费" : "Total spend"}</span><span class="wh-spot-metric-v wh-spot-metric-v--big">${escapeHtml(cny(vm.total_cost_cny))}</span></div>
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">Tokens</span><span class="wh-spot-metric-v">${(vm.token_in + vm.token_out).toLocaleString()}</span></div>
       ${labor}
     </div>
@@ -473,7 +474,7 @@ export function createCostView(): SpotlightCapabilityView {
     errorLabel: (zh) => (zh ? "成本没拉到，稍后重试" : "Couldn't load cost — retry"),
     load: async (ctx, zh) => {
       const vm = await ctx.client.pages.cost({ locale: ctx.locale });
-      return { html: costView(vm, zh), subtitle: `¥${vm.total_cost_cny} · ${zh ? "累计" : "total"}` };
+      return { html: costView(vm, zh), subtitle: `${cny(vm.total_cost_cny)} · ${zh ? "累计" : "total"}` };
     }
   });
 }

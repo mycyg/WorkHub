@@ -3,7 +3,8 @@ import { test } from "node:test";
 
 import type { AgentArmyDashboardVM, CostDashboardVM, ProjectHomePageVM } from "@workhub/contracts";
 
-import { agentArmyDashboardView, agentArmyPlanDetailHtml, costView, knowledgeNoProjectsEmptyHtml, projectHomeDetailHtml, projectListEmptyHtml } from "./dashboards.js";
+import type { SpotlightViewContext } from "../view-context.js";
+import { agentArmyDashboardView, agentArmyPlanDetailHtml, costView, createCostView, knowledgeNoProjectsEmptyHtml, projectHomeDetailHtml, projectListEmptyHtml } from "./dashboards.js";
 
 function agentArmyVm(over: Partial<AgentArmyDashboardVM> = {}): AgentArmyDashboardVM {
   return {
@@ -191,11 +192,63 @@ test("L16: cost trend bars carry aria-labels + a visible date-range/peak caption
   } as unknown as CostDashboardVM;
   const html = costView(costVm, true);
   // each bar exposes its data to keyboard/screen-reader, not just the title tooltip
-  assert.match(html, /<span class="wh-spot-bar" role="img" aria-label="2026-06-21 · ¥0\.50"/u);
-  // visible caption: start–end range + peak value (peak day is 2026-06-21 @ ¥0.50)
+  // R9.7: the old assertion pinned the fixture's backend string `¥0.50`; after the
+  // shared display formatter landed, this test should pin accessibility, not raw precision.
+  assert.match(html, /<span class="wh-spot-bar" role="img" aria-label="2026-06-21 · ¥0\.5"/u);
+  // visible caption: start-end range + display-formatted peak value
   assert.ok(html.includes("2026-06-20 – 2026-06-22"), "date-range caption");
-  assert.ok(html.includes("峰值 ¥0.50"), "peak caption");
+  assert.ok(html.includes("峰值 ¥0.5"), "peak caption");
   assert.match(html, /<div class="wh-spot-bars" role="group" aria-label="近 14 天花费趋势"/u);
+});
+
+test("R9.7 desktop cost dashboard formats raw CNY precision before rendering", async () => {
+  const costVm = {
+    total_cost_cny: "1.250000",
+    token_in: 100,
+    token_out: 200,
+    trend: [
+      { date: "2026-07-01", cost_cny: "0.006", tokens: 10 },
+      { date: "2026-07-02", cost_cny: "2.000000", tokens: 40 }
+    ],
+    by_workitem: [
+      { work_item_id: "93000000-0000-4000-8000-000000000101", code: "WH-101", title: "竞品价格调研", cost_cny: "3.000000", turns: 2 }
+    ]
+  } as unknown as CostDashboardVM;
+  const html = costView(costVm, true);
+
+  assert.ok(html.includes("¥1.25"), "total cost is display formatted");
+  assert.ok(html.includes("2026-07-01 · ¥0.01"), "trend label rounds fractional cents up");
+  assert.ok(html.includes("峰值 ¥2"), "peak caption is display formatted");
+  assert.ok(html.includes(">¥3</div>"), "work item row is display formatted");
+  assert.doesNotMatch(html, /¥(?:1\.250000|0\.006|2\.000000|3\.000000)/u);
+
+  let subtitle = "";
+  let resolveSubtitle!: () => void;
+  const subtitleReady = new Promise<void>((resolve) => {
+    resolveSubtitle = resolve;
+  });
+  const view = createCostView();
+  const body = {
+    innerHTML: "",
+    addEventListener: () => {}
+  };
+  view.mount({
+    client: { pages: { cost: async () => costVm } },
+    locale: "zh-CN",
+    body,
+    back: () => {},
+    open: () => {},
+    setSubtitle: (value: string) => {
+      subtitle = value;
+      resolveSubtitle();
+    },
+    toast: () => {},
+    requestResize: () => {},
+    signal: new AbortController().signal
+  } as unknown as SpotlightViewContext);
+  await subtitleReady;
+
+  assert.equal(subtitle, "¥1.25 · 累计");
 });
 
 test("R9.6 desktop agent army list renders compressed plan rows and KPI decisions link", () => {
