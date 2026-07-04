@@ -258,6 +258,37 @@ test("R9.7 dispatcher escalation attention copy avoids dispatch wording", async 
   assert.doesNotMatch(reasons.join("\n"), /dispatch|派发/iu);
 });
 
+test("R9.7 dispatcher arbitration-blocked attention carries judge context", async () => {
+  const events: Array<Parameters<Parameters<typeof createDbTaskDispatchEscalationSink>[0]["createEscalationEvent"]>[0]> = [];
+  const sink = createDbTaskDispatchEscalationSink({
+    async createEscalationEvent(input) {
+      events.push(input);
+      return {} as Awaited<ReturnType<Parameters<typeof createDbTaskDispatchEscalationSink>[0]["createEscalationEvent"]>>;
+    }
+  });
+
+  await sink({
+    plan: plan("dispatching"),
+    items: [
+      item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "succeeded" }),
+      item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "succeeded" })
+    ],
+    skippedItemIds: [],
+    reason: "arbitration_blocked",
+    arbitrationReason: "replan",
+    reasonMd: "The child outputs contradict the acceptance criteria.",
+    at: now
+  } as Parameters<typeof sink>[0]);
+
+  assert.equal(events.length, 1);
+  assert.match(events[0]?.reasonMd ?? "", /仲裁/u);
+  assert.match(events[0]?.reasonMd ?? "", /acceptance criteria/u);
+  assert.doesNotMatch(events[0]?.reasonMd ?? "", /dispatch|派发/iu);
+  assert.equal(events[0]?.handoffJson?.reason, "arbitration_blocked");
+  assert.equal(events[0]?.handoffJson?.arbitration_reason, "replan");
+  assert.equal(events[0]?.handoffJson?.arbitration_reason_md, "The child outputs contradict the acceptance criteria.");
+});
+
 test("R9.2 dispatcher enqueues ready task-plan items as ordinary child runs with lineage and acceptance", async () => {
   const repository = new MemoryTaskDispatcherRepository(plan(), [
     item({ id: researchItemId, seq: 0, title: "Research", role: "research", budgetSharePct: 35 }),
@@ -545,7 +576,12 @@ test("R9.7 dispatcher keeps terminal plans open when arbitration requests change
         reason: "request_changes",
         reasonMd: "The accepted child outputs contradict each other."
       };
-    }) satisfies TaskDispatchArbitrationSink
+    }) satisfies TaskDispatchArbitrationSink,
+    // R9.7: the old no-sink setup only proved the plan stayed open; it missed that a blocked terminal plan
+    // must also become visible in the decision inbox so a human can resolve the arbitration.
+    escalationSink: async (input) => {
+      events.push(`attention:${input.reason}`);
+    }
   });
 
   const result = await dispatcher.handleRunSettled(run({
@@ -557,8 +593,59 @@ test("R9.7 dispatcher keeps terminal plans open when arbitration requests change
   assert.equal(result?.dispatch.completed, false);
   assert.equal(repository.row.status, "dispatching");
   assert.equal(repository.doneCalls, 0);
-  assert.deepEqual(events, ["arbitrate"]);
+  assert.deepEqual(events, ["arbitrate", "attention:arbitration_blocked"]);
   assert.deepEqual(queue.inputs, []);
+});
+
+test("R9.7 dispatcher persists decision attention when arbitration blocks a terminal plan", async () => {
+  const escalations: Array<{
+    reason: string;
+    skippedItemIds: string[];
+    arbitrationReason?: string;
+    reasonMd?: string;
+  }> = [];
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "succeeded" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "succeeded" }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", status: "dispatched" })
+  ]);
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    arbitrationSink: (async () => ({
+      completion: "blocked",
+      reason: "escalate",
+      reasonMd: "The child outputs need a human tie-break."
+    })) satisfies TaskDispatchArbitrationSink,
+    escalationSink: async (input) => {
+      const arbitration = input as typeof input & { arbitrationReason?: string; reasonMd?: string };
+      escalations.push({
+        reason: input.reason,
+        skippedItemIds: input.skippedItemIds,
+        ...(arbitration.arbitrationReason ? { arbitrationReason: arbitration.arbitrationReason } : {}),
+        ...(arbitration.reasonMd ? { reasonMd: arbitration.reasonMd } : {})
+      });
+    }
+  });
+
+  const result = await dispatcher.handleRunSettled(run({
+    status: "succeeded",
+    taskPlanItemId: reviewItemId,
+    workspaceId
+  }));
+
+  assert.equal(result?.dispatch.completed, false);
+  assert.equal(repository.row.status, "dispatching");
+  assert.equal(repository.doneCalls, 0);
+  assert.deepEqual(queue.inputs, []);
+  assert.deepEqual(escalations, [{
+    reason: "arbitration_blocked",
+    skippedItemIds: [],
+    arbitrationReason: "escalate",
+    reasonMd: "The child outputs need a human tie-break."
+  }]);
 });
 
 test("R9.7 dispatcher does not mark completion when durable completion persistence fails", async () => {

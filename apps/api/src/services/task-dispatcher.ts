@@ -26,7 +26,8 @@ import {
 } from "./task-dispatcher-arbitration.js";
 
 type SettledItemStatus = Extract<TaskPlanItemRow["status"], "succeeded" | "failed">;
-type EscalationReason = "cycle" | "dependency_failed" | "partial_failure";
+type ArbitrationBlockedReason = "request_changes" | "replan" | "escalate";
+type EscalationReason = "cycle" | "dependency_failed" | "partial_failure" | "arbitration_blocked";
 
 export type TaskDispatcherRepository = {
   getPlanWithItems: (input: {
@@ -94,6 +95,8 @@ export type TaskDispatchEscalationSink = (input: {
   skippedItemIds: string[];
   failedItemIds?: string[];
   failedRunId?: string;
+  arbitrationReason?: ArbitrationBlockedReason;
+  reasonMd?: string;
   reason: EscalationReason;
   at: Date;
 }) => Promise<void> | void;
@@ -107,7 +110,7 @@ export type TaskDispatchCompletionSink = (input: {
 
 export type TaskDispatchArbitrationResult =
   | { completion: "proceed" }
-  | { completion: "blocked"; reason: "request_changes" | "replan" | "escalate"; reasonMd?: string };
+  | { completion: "blocked"; reason: ArbitrationBlockedReason; reasonMd?: string };
 
 export type TaskDispatchArbitrationSink = (input: {
   plan: TaskPlanRow;
@@ -359,6 +362,15 @@ export function createTaskDispatcher(options: {
         at
       });
       if (arbitration.completion === "blocked") {
+        await requireEscalation(escalationSink, {
+          plan,
+          items,
+          skippedItemIds: [],
+          reason: "arbitration_blocked",
+          arbitrationReason: arbitration.reason,
+          ...(arbitration.reasonMd ? { reasonMd: arbitration.reasonMd } : {}),
+          at
+        });
         return false;
       }
     }
@@ -569,11 +581,17 @@ export function createDbTaskDispatchEscalationSink(
   decisions: Pick<AiDecisionRepository, "createEscalationEvent">
 ): TaskDispatchEscalationSink {
   return async (input) => {
+    const arbitrationReasonMd = input.reasonMd?.trim();
     const reasonMd = input.reason === "cycle"
       ? "任务计划依赖图存在循环，已跳过尚未开始的子任务，请人工调整计划后重试。"
       : input.reason === "partial_failure"
         ? "任务计划已有子任务失败，请在决策收件箱选择重试、转人工或改计划。"
-        : "任务计划的上游子任务失败或被跳过，依赖它的子任务已跳过，请人工决定是否重试或改计划。";
+        : input.reason === "arbitration_blocked"
+          ? [
+            "跨 Agent 仲裁未通过，请在决策收件箱选择重试、转人工或改计划。",
+            arbitrationReasonMd ? `仲裁理由：${arbitrationReasonMd}` : undefined
+          ].filter((line): line is string => Boolean(line)).join("\n")
+          : "任务计划的上游子任务失败或被跳过，依赖它的子任务已跳过，请人工决定是否重试或改计划。";
     await decisions.createEscalationEvent({
       workItemId: input.plan.workItemId,
       ...(input.failedRunId ? { agentRunId: input.failedRunId } : {}),
@@ -585,6 +603,8 @@ export function createDbTaskDispatchEscalationSink(
         task_plan_id: input.plan.id,
         ...(input.failedItemIds ? { failed_item_ids: input.failedItemIds } : {}),
         ...(input.failedRunId ? { failed_run_id: input.failedRunId } : {}),
+        ...(input.arbitrationReason ? { arbitration_reason: input.arbitrationReason } : {}),
+        ...(arbitrationReasonMd ? { arbitration_reason_md: arbitrationReasonMd } : {}),
         skipped_item_ids: input.skippedItemIds
       }
     });
