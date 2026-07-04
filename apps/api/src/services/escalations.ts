@@ -218,6 +218,12 @@ function availableBudgetActionIds(row: EscalationServiceRow) {
   );
 }
 
+const resolvableBudgetActionIds = new Set(["finish_current_output"]);
+
+function isResolvableBudgetActionId(actionId: string) {
+  return resolvableBudgetActionIds.has(actionId);
+}
+
 function budgetActions(row: EscalationServiceRow, locale: WorkHubLocale): AttentionItem["actions"] {
   const notice = budgetNoticeFromHandoff(row);
   const options = Array.isArray(notice?.options) ? notice.options : [];
@@ -225,13 +231,25 @@ function budgetActions(row: EscalationServiceRow, locale: WorkHubLocale): Attent
     .filter((option): option is { id: string; label: string; action_href?: string } =>
       Boolean(option.id && option.label)
     )
-    .map((option, index) => ({
-      id: option.id,
-      label: option.label,
-      style: option.id === notice?.recommended_action || index === 0 ? "primary" as const : "secondary" as const,
-      method: "POST" as const,
-      href: `/api/escalations/${row.id}/budget-actions/${encodeURIComponent(option.id)}`
-    }));
+    .map((option, index) => {
+      const style = option.id === notice?.recommended_action || index === 0 ? "primary" as const : "secondary" as const;
+      if (!isResolvableBudgetActionId(option.id)) {
+        return {
+          id: option.id,
+          label: option.label,
+          style,
+          method: "GET" as const,
+          href: option.action_href ?? notice?.action_href ?? "/dashboard/cost"
+        };
+      }
+      return {
+        id: option.id,
+        label: option.label,
+        style,
+        method: "POST" as const,
+        href: `/api/escalations/${row.id}/budget-actions/${encodeURIComponent(option.id)}`
+      };
+    });
   if (actions.length > 0) {
     return actions;
   }
@@ -373,6 +391,9 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       }
       if (!normalizedActionId || normalizedActionId.length > 64 || !availableBudgetActionIds(existing).has(normalizedActionId)) {
         throw new EscalationServiceError(422, "budget_action_not_available", "这条预算选择已经不可用。");
+      }
+      if (!isResolvableBudgetActionId(normalizedActionId)) {
+        throw new EscalationServiceError(422, "budget_action_requires_budget_update", "请先在预算页完成对应调整。");
       }
       const row = await repository.resolveBudgetDecision({
         escalationId: id,

@@ -1375,8 +1375,11 @@ test("OpenAPI error responses document approval, meeting, and work item mutation
     "escalation_not_found"
   ]);
   assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "409", ["escalation_race"]);
+  // R9.7 review: the old assertion documented only missing-option failures, but
+  // unapplied choices such as `add_budget` now fail closed instead of resolving the card.
   assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "422", [
-    "budget_action_not_available"
+    "budget_action_not_available",
+    "budget_action_requires_budget_update"
   ]);
   assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "400", [
     "malformed_json",

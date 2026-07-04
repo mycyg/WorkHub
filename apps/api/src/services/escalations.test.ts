@@ -152,10 +152,10 @@ test("R9.7 budget exhaustion rows render as budget decision cards", () => {
   assert.equal(item.priority, "high");
   assert.equal(item.source_ref.entity_type, "budget_notice");
   assert.equal(item.title, "《竞品价格调研》预算需要处理");
-  // Old assertion expected GET navigation links, but budget options are durable
-  // decisions; GET only opened a page and left the persisted budget row unresolved.
+  // R9.7 review: the old assertion made every budget option POST to resolve the card, but
+  // `add_budget` does not itself update a budget policy. Only applied terminal choices may resolve.
   assert.deepEqual(item.actions.map((action) => [action.id, action.label, action.method, action.href]), [
-    ["add_budget", "追加预算继续", "POST", `/api/escalations/${escalationId}/budget-actions/add_budget`],
+    ["add_budget", "追加预算继续", "GET", "/dashboard/cost?objectiveId=obj-1"],
     ["finish_current_output", "就用现有产出收尾", "POST", `/api/escalations/${escalationId}/budget-actions/finish_current_output`]
   ]);
 });
@@ -271,6 +271,35 @@ test("R9.7 budget decision actions reject options not present on the durable not
     (error: unknown) => error instanceof Error
       && (error as { status?: number; code?: string }).status === 422
       && (error as { code?: string }).code === "budget_action_not_available"
+  );
+  assert.deepEqual(repository.budgetDecisionCalls, []);
+});
+
+test("R9.7 budget decision actions reject unapplied budget policy choices", async () => {
+  const repository = new MemoryEscalationRepository({
+    findRow: row({
+      trigger: "budget_exhausted",
+      handoffJson: {
+        attention_kind: "budget",
+        notice: {
+          recommended_action: "add_budget",
+          options: [
+            { id: "add_budget", label: "追加预算继续", action_href: "/dashboard/cost?objectiveId=obj-1" },
+            { id: "finish_current_output", label: "就用现有产出收尾", action_href: "/workitems/demo" }
+          ]
+        }
+      }
+    })
+  });
+  const service = createEscalationService({ repository, now: () => now }) as ReturnType<typeof createEscalationService> & {
+    resolveBudgetDecision: (id: string, actor: AuthActor, actionId: string) => Promise<unknown>;
+  };
+
+  await assert.rejects(
+    service.resolveBudgetDecision(escalationId, actor(), "add_budget"),
+    (error: unknown) => error instanceof Error
+      && (error as { status?: number; code?: string }).status === 422
+      && (error as { code?: string }).code === "budget_action_requires_budget_update"
   );
   assert.deepEqual(repository.budgetDecisionCalls, []);
 });

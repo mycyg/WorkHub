@@ -1817,7 +1817,7 @@ const escalationDelegateRaceResponse = jsonErrorStatusResponse(
 const escalationBudgetActionUnavailableResponse = jsonErrorStatusResponse(
   "422",
   "Budget action is not available for this escalation",
-  ["budget_action_not_available"]
+  ["budget_action_not_available", "budget_action_requires_budget_update"]
 ).responses["422"];
 const approvalDelegateSemanticResponse = jsonErrorStatusResponse(
   "422",
