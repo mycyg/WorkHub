@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import test from "node:test";
 
 import { getTableName } from "drizzle-orm";
@@ -43,6 +41,8 @@ import {
 // R9.7.26: the old count (57) was correct before durable R9.3 memory-conflict attention cards existed.
 // This slice intentionally adds memory_conflicts so sync_conflict decisions survive beyond transient SSE events.
 const F02_TABLE_COUNT = 58;
+
+type WorkHubTable = (typeof workHubTables)[keyof typeof workHubTables];
 
 function inlineForeignKeyNames(table: object): string[] {
   const inlineForeignKeysSymbol = Object.getOwnPropertySymbols(table).find((symbol) =>
@@ -93,16 +93,8 @@ function sqlColumnNames(value: unknown): string[] {
   return queryChunks.flatMap(sqlColumnNames);
 }
 
-function* walk(dir: string): Generator<string> {
-  for (const entry of readdirSync(dir)) {
-    const absolute = join(dir, entry);
-    const stat = statSync(absolute);
-    if (stat.isDirectory()) {
-      yield* walk(absolute);
-    } else if (entry.endsWith(".ts")) {
-      yield absolute;
-    }
-  }
+function tableColumnNames(table: WorkHubTable): string[] {
+  return getTableConfig(table).columns.map((column) => column.name);
 }
 
 test("F02 declares the full table graph expected by the plan", () => {
@@ -485,17 +477,15 @@ test("enum drift is closed in the shared contract package", () => {
   assert.equal(escalationTriggers.includes("user_rejected" as never), false);
 });
 
-test("schema source does not reintroduce old field/table names", () => {
-  const forbidden = ["requirement" + "_id", "requirements" + ".id", "\"requirements\""];
-  const sourceRoot = join(process.cwd(), "src");
+test("schema metadata keeps retired requirement tables and fields out of the active graph", () => {
+  // R9.7: the old assertion walked src text looking for retired names.
+  // That was wrong because source-text absence did not prove the live Drizzle schema
+  // graph excluded retired tables/columns, while also flagging harmless comments or docs.
+  const tableNames = Object.values(workHubTables).map((table) => getTableName(table) as string).sort();
+  assert.deepEqual(tableNames.filter((name) => name.includes("requirement")), []);
+  assert.equal(tableNames.includes("revision_requests"), false);
+  assert.equal(tableNames.includes("activity_log"), false);
 
-  for (const file of walk(sourceRoot)) {
-    if (file.endsWith(".test.ts")) {
-      continue;
-    }
-    const text = readFileSync(file, "utf8");
-    for (const pattern of forbidden) {
-      assert.equal(text.includes(pattern), false, `${file} contains ${pattern}`);
-    }
-  }
+  const columnNames = new Set(Object.values(workHubTables).flatMap(tableColumnNames));
+  assert.equal(columnNames.has("requirement_id"), false);
 });
