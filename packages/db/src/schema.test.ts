@@ -207,14 +207,6 @@ test("R9.1 task plan tables expose auditable decomposition fields", () => {
   assert.equal(taskPlanItems.budgetSharePct.name, "budget_share_pct");
   assert.equal(taskPlanItems.dependsOn.name, "depends_on");
   assert.equal(taskPlanItems.status.name, "status");
-
-  const objectiveFkMigration = readFileSync(join(process.cwd(), "migrations", "0040_task_plan_objective_fk.sql"), "utf8");
-  assert.match(objectiveFkMigration, /UPDATE "task_plans"[\s\S]+SET "objective_id" = NULL/u);
-  assert.match(objectiveFkMigration, /NOT EXISTS \([\s\S]+FROM "objectives"/u);
-  assert.match(objectiveFkMigration, /SELECT 1[\s\S]+FROM "pg_constraint"[\s\S]+"conname" = 'task_plans_objective_id_objectives_id_fk'/u);
-  assert.match(objectiveFkMigration, /ALTER TABLE "task_plans"/u);
-  assert.match(objectiveFkMigration, /ADD CONSTRAINT "task_plans_objective_id_objectives_id_fk"/u);
-  assert.match(objectiveFkMigration, /FOREIGN KEY \("objective_id"\) REFERENCES "objectives"\("id"\) ON DELETE set null/u);
 });
 
 test("merge attempts persist conflict decisions for replayable proposal audit", () => {

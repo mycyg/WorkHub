@@ -162,6 +162,66 @@ test("R9.7 task plan repository rejects duplicate draft plans for one work item"
   assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "TaskPlanDraftAlreadyExists" }]);
 });
 
+test("R9.1 task plan repository persists a linked objective only after scoped validation", async () => {
+  const { db, queries, transactions } = createQueryRecorder([[{ workItemId }], [], [{ objectiveId }], []]);
+  const repository = createTaskPlanRepository(db);
+
+  await repository.createDraftPlan({
+    id: planId,
+    workItemId,
+    workspaceId,
+    objectiveId,
+    createdByUserId: userId,
+    budgetJson: { max_cost_cny: "8.000000" },
+    decompositionContextJson: { objective: "linked" },
+    items: [],
+    now
+  });
+
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  assert.equal(queries.length, 4);
+  const [workItemScopeQuery, duplicateQuery, objectiveScopeQuery, planInsert] = queries;
+  assert.equal(workItemScopeQuery?.operation, "select");
+  assert.equal(workItemScopeQuery?.fromTable, workItems);
+  assert.equal(workItemScopeQuery?.lock, "update");
+  assert.equal(duplicateQuery?.operation, "select");
+  assert.equal(duplicateQuery?.fromTable, taskPlans);
+  assert.equal(objectiveScopeQuery?.operation, "select");
+  assert.equal(objectiveScopeQuery?.fromTable, objectives);
+  assert.deepEqual(objectiveScopeQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", objectiveWorkItemLinks],
+    ["inner", workItems]
+  ]);
+  assert.ok(queryReferences(objectiveScopeQuery?.where, objectives.id));
+  assert.ok(queryReferences(objectiveScopeQuery?.where, objectives.workspaceId));
+  assert.ok(queryReferences(objectiveScopeQuery?.where, objectiveWorkItemLinks.objectiveId));
+  assert.ok(queryReferences(objectiveScopeQuery?.where, objectiveWorkItemLinks.workItemId));
+  assert.ok(queryReferences(objectiveScopeQuery?.where, objectiveWorkItemLinks.workspaceId));
+  assert.ok(queryReferences(objectiveScopeQuery?.where, workItems.id));
+  assert.ok(queryReferences(objectiveScopeQuery?.where, workItems.workspaceId));
+  assert.ok(queryReferences(objectiveScopeQuery?.where, workItems.deletedAt));
+  assert.ok(queryParamValues(objectiveScopeQuery?.where).includes(objectiveId));
+  assert.ok(queryParamValues(objectiveScopeQuery?.where).includes(workItemId));
+  assert.ok(queryParamValues(objectiveScopeQuery?.where).includes(workspaceId));
+  assert.equal(planInsert?.operation, "insert");
+  assert.equal(planInsert?.targetTable, taskPlans);
+  // R9.7: the old schema assertion grepped migration 0040 for an objective FK.
+  // That was wrong because migration source text did not prove draft-plan writes validate and persist
+  // the objective only for the same workspace work item at runtime.
+  assert.deepEqual(planInsert?.valuesValue, {
+    id: planId,
+    workItemId,
+    workspaceId,
+    status: "draft",
+    objectiveId,
+    budgetJson: { max_cost_cny: "8.000000" },
+    decompositionContextJson: { objective: "linked" },
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now
+  });
+});
+
 test("R9.7 task plan repository finds an existing draft in the same workspace work item", async () => {
   const draftPlan = {
     id: planId,
