@@ -12,7 +12,7 @@ import type {
   ReplayMergeCandidateVM,
   ReplayTraceVM
 } from "@workhub/contracts";
-import { deliverableTargetLabel } from "../i18n.js";
+import { budgetStatusLabel, deliverableTargetLabel, uiFormatCny } from "../i18n.js";
 import { publicProposalDisplayTitle } from "../proposal/render.js";
 import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
 import {
@@ -670,21 +670,24 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
 
 function renderCost(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const cost = vm.page_vms.cost;
-  const noticeCards = cost.notices.map((notice) => `<article class="wh-card"><strong>${escapeHtml(notice.severity)}</strong><p class="wh-subtle">${escapeHtml(notice.message)}</p></article>`).join("");
+  const noticeCards = cost.notices.map((notice) => `<article class="wh-card"><strong>${escapeHtml(budgetStatusLabel(locale, notice.severity))}</strong><p class="wh-subtle">${escapeHtml(notice.message)}</p></article>`).join("");
   const nearestRisk = cost.top_exhaustion_risks[0];
   const zh = locale === "zh-CN";
   // K5 对齐:把「干活 vs 自进化（夜间技能蒸馏）」分账显性化（与 web cost labor_split 一致）。仅有账目时显示。
   const laborSplit = cost.labor_split;
   const laborCard = laborSplit
-    ? `<article class="wh-card" data-r8-cost-labor-split="true" data-r8-cost-self-improvement-ratio="${escapeHtml(String(laborSplit.self_improvement_ratio))}"><strong>${escapeHtml(zh ? "干活 vs 自进化" : "Work vs self-improvement")}</strong><p class="wh-subtle">${escapeHtml(`${zh ? "干活" : "Production"} ¥${laborSplit.production_cost_cny} · ${zh ? "自进化" : "Self-improvement"} ¥${laborSplit.self_improvement_cost_cny}（${Math.round(laborSplit.self_improvement_ratio * 100)}%）`)}</p></article>`
+    ? `<article class="wh-card" data-r8-cost-labor-split="true" data-r8-cost-self-improvement-ratio="${escapeHtml(String(laborSplit.self_improvement_ratio))}"><strong>${escapeHtml(zh ? "干活 vs 自进化" : "Work vs self-improvement")}</strong><p class="wh-subtle">${escapeHtml(`${zh ? "干活" : "Production"} ${uiFormatCny(laborSplit.production_cost_cny)} · ${zh ? "自进化" : "Self-improvement"} ${uiFormatCny(laborSplit.self_improvement_cost_cny)}（${Math.round(laborSplit.self_improvement_ratio * 100)}%）`)}</p></article>`
     : "";
+  const statusText = nearestRisk
+    ? budgetStatusLabel(locale, nearestRisk.status)
+    : cost.empty_state ?? t(locale, "cost.statusFallback");
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "cost.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(t(locale, "cost.title"))}</h1>
     <p class="wh-subtle">${escapeHtml(t(locale, "cost.summary"))}</p>
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.tokenTitle"))}</strong><p class="wh-subtle">${cost.token_in + cost.token_out}</p></article>
-      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.estimatedTitle"))}</strong><p class="wh-subtle">¥${escapeHtml(cost.total_cost_cny)}</p></article>
-      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.statusTitle"))}</strong><p class="wh-subtle">${escapeHtml(nearestRisk?.status ?? cost.empty_state ?? t(locale, "cost.statusFallback"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.estimatedTitle"))}</strong><p class="wh-subtle">${escapeHtml(uiFormatCny(cost.total_cost_cny))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.statusTitle"))}</strong><p class="wh-subtle">${escapeHtml(statusText)}</p></article>
     </div>
     ${laborCard ? `<div class="wh-list">${laborCard}</div>` : ""}
     <div class="wh-list">${noticeCards}</div>`;

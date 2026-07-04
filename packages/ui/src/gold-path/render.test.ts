@@ -513,3 +513,39 @@ test("gold path cost page renders the K5 work-vs-self-improvement labor split wh
   const plain = renderGoldPathSurface(base as unknown as GoldPathSurfaceVM, "desktop").pages.find((page) => page.key === "cost");
   assert.equal(plain?.html.includes('data-r8-cost-labor-split="true"'), false);
 });
+
+test("gold path cost page formats CNY values and hides raw budget status", () => {
+  const base = surfaceVm();
+  const risk = base.page_vms.cost.top_exhaustion_risks[0];
+  assert.ok(risk);
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: {
+        ...base.page_vms.cost,
+        total_cost_cny: "1.250000",
+        labor_split: {
+          production_cost_cny: "0.800000",
+          self_improvement_cost_cny: "0.006",
+          self_improvement_ratio: 0.2
+        },
+        notices: [{ ...base.page_vms.cost.notices[0]!, severity: "warning" }],
+        top_exhaustion_risks: [{ ...risk, status: "warning" }]
+      }
+    }
+  } as unknown as GoldPathSurfaceVM;
+
+  const cost = renderGoldPathSurface(vm, "desktop", { locale: "zh-CN" }).pages.find((page) => page.key === "cost");
+
+  assert.ok(cost);
+  assert.equal(cost.html.includes("¥1.250000"), false);
+  assert.equal(cost.html.includes("¥0.800000"), false);
+  assert.equal(cost.html.includes("¥0.006"), false);
+  assert.equal(cost.html.includes("<strong>warning</strong>"), false);
+  assert.equal(cost.html.includes("<p class=\"wh-subtle\">warning</p>"), false);
+  assert.equal(cost.html.includes("¥1.25"), true);
+  assert.equal(cost.html.includes("干活 ¥0.8 · 自进化 ¥0.01"), true);
+  assert.equal(cost.html.includes("<strong>接近上限</strong>"), true);
+  assert.equal(cost.html.includes("<p class=\"wh-subtle\">接近上限</p>"), true);
+});
