@@ -157,6 +157,7 @@ function emptyQueue(): AgentRunQueue {
     async trace() { return []; },
     async abort() { throw new Error("not needed"); },
     async recoverExpiredClaims() { return []; },
+    async recoverUnsettledTaskPlanRuns() { return []; },
     async run() { throw new Error("not needed"); },
     async listActive() { return []; }
   };

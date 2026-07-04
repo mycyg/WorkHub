@@ -256,6 +256,7 @@ export type AgentRunPersistence = {
   claimNextQueued?: (claim: AgentRunClaimLease) => Promise<AgentRunQueueRecord | null>;
   heartbeatClaim?: (input: AgentRunHeartbeatLease) => Promise<AgentRunQueueRecord | null>;
   requeueExpiredClaims?: (input: AgentRunRequeueExpiredLeases) => Promise<AgentRunQueueRecord[]>;
+  listUnsettledTaskPlanRuns?: (input: { limit: number }) => Promise<AgentRunQueueRecord[]>;
 };
 
 export type AgentRunClaimLease = {
@@ -286,10 +287,13 @@ export type AgentRunQueue = {
   trace: (runId: string, after?: number) => Promise<AgentRunTraceStepRecord[]>;
   abort: (runId: string, actor: AbortAgentRunActor) => Promise<AgentRunQueueRecord>;
   listActive: () => Promise<AgentRunQueueRecord[]>;
+  recoverUnsettledTaskPlanRuns: () => Promise<AgentRunQueueRecord[]>;
   recoverExpiredClaims: () => Promise<AgentRunQueueRecord[]>;
   run: (runId: string) => Promise<AgentRunQueueRecord>;
   runNext: () => Promise<AgentRunQueueRecord | null>;
 };
+
+const UNSETTLED_TASK_PLAN_RUN_RECOVERY_LIMIT = 20;
 
 function compactContextText(value: string | null | undefined, maxChars = 1400) {
   const text = value?.trim();
@@ -2006,6 +2010,21 @@ export function createInMemoryAgentRunQueue(options: {
         }
       }
       return [...byId.values()];
+    },
+
+    async recoverUnsettledTaskPlanRuns() {
+      if (!persistence?.listUnsettledTaskPlanRuns || !runSettled) {
+        return [];
+      }
+      const candidates = await persistence.listUnsettledTaskPlanRuns({
+        limit: UNSETTLED_TASK_PLAN_RUN_RECOVERY_LIMIT
+      });
+      const settled: AgentRunQueueRecord[] = [];
+      for (const run of candidates) {
+        await notifyRunSettled(run);
+        settled.push(run);
+      }
+      return settled;
     },
 
     async recoverExpiredClaims() {

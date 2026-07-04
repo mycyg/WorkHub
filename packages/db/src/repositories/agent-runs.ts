@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 
-import type { TaskPlanItemRole, WorkItemMode } from "@workhub/contracts";
+import type { TaskPlanItemRole, TaskPlanItemStatus, WorkItemMode } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { agentRuns, agentSteps } from "../schema/index.js";
+import { agentRuns, agentSteps, taskPlanItems } from "../schema/index.js";
 
 export type AgentRunRow = typeof agentRuns.$inferSelect;
 export type AgentStepRow = typeof agentSteps.$inferSelect;
@@ -111,6 +111,7 @@ export type AgentRunRepository = {
   claimNextQueued: (claim: AgentRunClaimInput) => Promise<StoredAgentRunRows | null>;
   heartbeatClaim: (input: AgentRunHeartbeatInput) => Promise<AgentRunRow | null>;
   requeueExpiredClaims: (input: AgentRunRequeueStaleInput) => Promise<AgentRunRow[]>;
+  listUnsettledTaskPlanRuns: (input: { limit: number }) => Promise<StoredAgentRunRows[]>;
 };
 
 const terminalStatuses: AgentRunStatusForPersistence[] = ["succeeded", "failed", "escalated", "cancelled"];
@@ -261,6 +262,28 @@ async function readStoredAgentRun(db: WorkHubDb, runId: string): Promise<StoredA
   return { run, steps };
 }
 
+async function attachStepsToRuns(db: WorkHubDb, runRows: AgentRunRow[]): Promise<StoredAgentRunRows[]> {
+  if (runRows.length === 0) {
+    return [];
+  }
+  const runIds = runRows.map((row) => row.id);
+  const allSteps = await db
+    .select()
+    .from(agentSteps)
+    .where(inArray(agentSteps.agentRunId, runIds))
+    .orderBy(asc(agentSteps.agentRunId), asc(agentSteps.seq), asc(agentSteps.createdAt));
+  const stepsByRun = new Map<string, AgentStepRow[]>();
+  for (const step of allSteps) {
+    const list = stepsByRun.get(step.agentRunId);
+    if (list) {
+      list.push(step);
+    } else {
+      stepsByRun.set(step.agentRunId, [step]);
+    }
+  }
+  return runRows.map((run) => ({ run, steps: stepsByRun.get(run.id) ?? [] }));
+}
+
 export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
   async function claimById(runId: string, claim: AgentRunClaimInput) {
     return db.transaction(async (tx) => {
@@ -404,25 +427,7 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
         .from(agentRuns)
         .where(inArray(agentRuns.status, activeStatuses))
         .orderBy(asc(agentRuns.createdAt));
-      if (runRows.length === 0) {
-        return [];
-      }
-      const runIds = runRows.map((row) => row.id);
-      const allSteps = await db
-        .select()
-        .from(agentSteps)
-        .where(inArray(agentSteps.agentRunId, runIds))
-        .orderBy(asc(agentSteps.seq), asc(agentSteps.createdAt));
-      const stepsByRun = new Map<string, typeof allSteps>();
-      for (const step of allSteps) {
-        const list = stepsByRun.get(step.agentRunId);
-        if (list) {
-          list.push(step);
-        } else {
-          stepsByRun.set(step.agentRunId, [step]);
-        }
-      }
-      return runRows.map((run) => ({ run, steps: stepsByRun.get(run.id) ?? [] }));
+      return attachStepsToRuns(db, runRows);
     },
 
     claimQueued(runId, claim) {
@@ -518,6 +523,24 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
           .returning();
         return [...deadLettered, ...requeued];
       });
+    },
+
+    async listUnsettledTaskPlanRuns(input) {
+      const limit = Math.max(0, Math.min(Math.floor(input.limit), 100));
+      if (limit === 0) {
+        return [];
+      }
+      const rows = await db
+        .select({ run: agentRuns })
+        .from(agentRuns)
+        .innerJoin(taskPlanItems, eq(taskPlanItems.id, agentRuns.taskPlanItemId))
+        .where(and(
+          inArray(agentRuns.status, terminalStatuses),
+          eq(taskPlanItems.status, "dispatched" satisfies TaskPlanItemStatus)
+        ))
+        .orderBy(asc(agentRuns.updatedAt), asc(agentRuns.id))
+        .limit(limit);
+      return attachStepsToRuns(db, rows.map((row) => row.run));
     }
   };
 }

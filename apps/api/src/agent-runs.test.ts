@@ -58,6 +58,7 @@ import {
   type AgentRunPersistence,
   type AgentRunQueue,
   type AgentRunQueueRecord,
+  type AgentRunQueueStatus,
   type AgentRunRequeueExpiredLeases,
   type AgentRunTraceStepRecord,
   type BudgetDecisionProvider
@@ -140,6 +141,14 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
   async listActive() {
     return [...this.rows.values()]
       .filter((run) => run.status === "queued" || run.status === "running")
+      .map((run) => structuredClone(run));
+  }
+
+  async listUnsettledTaskPlanRuns(input: { limit: number }) {
+    const terminalStatuses = new Set<AgentRunQueueStatus>(["succeeded", "failed", "escalated", "cancelled"]);
+    return [...this.rows.values()]
+      .filter((run) => Boolean(run.task_plan_item_id) && terminalStatuses.has(run.status))
+      .slice(0, input.limit)
       .map((run) => structuredClone(run));
   }
 
@@ -2090,6 +2099,9 @@ test("persistent agent run enqueue carries tenant ids into DB persistence", asyn
     },
     async requeueExpiredClaims() {
       throw new Error("not used");
+    },
+    async listUnsettledTaskPlanRuns() {
+      throw new Error("not used");
     }
   };
   const queue = createInMemoryAgentRunQueue({
@@ -2198,6 +2210,9 @@ test("persistent agent run enqueue carries task-plan lineage into DB persistence
       throw new Error("not used");
     },
     async requeueExpiredClaims() {
+      throw new Error("not used");
+    },
+    async listUnsettledTaskPlanRuns() {
       throw new Error("not used");
     }
   };
@@ -2562,6 +2577,65 @@ test("agent run settled hook fires for terminal task-plan runs and requires task
   assert.deepEqual(settledStatuses, ["succeeded", "failed", "cancelled"]);
 });
 
+test("R9.7 terminal task-plan runs with failed settlement are retried by queue recovery", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-settlement-retry-"));
+  const persistence = new MemoryAgentRunPersistence();
+  const settledRunIds: string[] = [];
+  let failFirstSettlement = true;
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e5",
+    workdir: () => workdir,
+    client: () => ({
+      model: "deepseek-v4-flash",
+      messages: {
+        async create() {
+          return {
+            id: "msg-settlement-retry",
+            stopReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            content: [{ type: "text", text: "Done." }]
+          };
+        }
+      }
+    }),
+    persistence,
+    runSettled: async (run) => {
+      settledRunIds.push(run.run_id);
+      if (failFirstSettlement) {
+        failFirstSettlement = false;
+        throw new Error("task-plan settlement temporarily unavailable");
+      }
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Retryable settled child",
+    taskPlanId: "81000000-0000-4000-8000-000000000061",
+    taskPlanItemId: "81000000-0000-4000-8000-000000000062",
+    agentRole: "produce"
+  });
+
+  await assert.rejects(
+    queue.runNext(),
+    (error) => error instanceof AgentRunnerError && error.code === "agent_run_settled_hook_failed"
+  );
+  assert.equal((await queue.get(run.run_id))?.status, "succeeded");
+
+  const recovered = await queue.recoverUnsettledTaskPlanRuns();
+
+  assert.deepEqual(recovered.map((candidate) => candidate.run_id), [run.run_id]);
+  assert.deepEqual(settledRunIds, [run.run_id, run.run_id]);
+});
+
 test("agent run queue refreshes stale cached trace from persistence", async () => {
   const runtimeSettings = settings();
   const persistence = new MemoryAgentRunPersistence();
@@ -2660,6 +2734,9 @@ test("agent run route auto-pump drains through runNext instead of direct run id"
       return [queuedRun];
     },
     async recoverExpiredClaims() {
+      return [];
+    },
+    async recoverUnsettledTaskPlanRuns() {
       return [];
     },
     async run() {
@@ -4379,6 +4456,71 @@ test("agent run recovery scheduler ticks once, recovers stale claims, and drains
     error_count: 0,
     last_tick_at: now.toISOString()
   });
+});
+
+test("R9.7 recovery scheduler retries unsettled terminal task-plan runs before stale-claim drain", async () => {
+  const recoveredRun: AgentRunQueueRecord = {
+    run_id: "40000000-0000-4000-8000-000000000044",
+    work_item_id: workItemId,
+    actor_id: userId,
+    mode: "worker",
+    status: "succeeded",
+    title: "Unsettled terminal child",
+    task_plan_id: "81000000-0000-4000-8000-000000000071",
+    task_plan_item_id: "81000000-0000-4000-8000-000000000072",
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "test",
+        model: "test",
+        reason: "default"
+      }
+    },
+    usage: {
+      steps_used: 1,
+      token_in: 1,
+      token_out: 1,
+      estimated_cost_cny: "0"
+    },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
+  let settlementRecoveryCalls = 0;
+  let staleRecoveryCalls = 0;
+  const scheduler = createAgentRunRecoveryScheduler({
+    intervalMs: 0,
+    now: () => now,
+    queue: {
+      async recoverUnsettledTaskPlanRuns() {
+        settlementRecoveryCalls += 1;
+        return [recoveredRun];
+      },
+      async recoverExpiredClaims() {
+        staleRecoveryCalls += 1;
+        return [];
+      },
+      async runNext() {
+        return null;
+      }
+    }
+  });
+
+  const result = await scheduler.tick();
+
+  assert.equal(settlementRecoveryCalls, 1);
+  assert.equal(staleRecoveryCalls, 1);
+  assert.equal(result.unsettled_settled, 1);
+  assert.equal(result.recovered, 0);
+  assert.equal(result.drained, 0);
+  assert.equal(scheduler.stats().unsettled_settled_count, 1);
 });
 
 test("#25: recovery drain budget counts only requeued runs, not dead-lettered ones", async () => {

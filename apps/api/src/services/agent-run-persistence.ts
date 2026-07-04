@@ -309,6 +309,11 @@ export function createDbAgentRunPersistence(repository: AgentRunRepository): Age
       return rows.map(toQueueRun);
     },
 
+    async listUnsettledTaskPlanRuns(input) {
+      const rows = await repository.listUnsettledTaskPlanRuns(input);
+      return rows.map(toQueueRun);
+    },
+
     async claimQueued(runId, claim) {
       const rows = await repository.claimQueued(runId, claimForRepository(claim));
       return rows ? toQueueRun(rows) : null;

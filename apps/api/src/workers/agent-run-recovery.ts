@@ -4,6 +4,7 @@ import { getDefaultStructuredLogger } from "../logging.js";
 import { getDefaultAgentRunQueue, type AgentRunQueue } from "./agent-runner.js";
 
 export type AgentRunRecoveryTickResult = {
+  unsettled_settled: number;
   recovered: number;
   /** 本 tick 恢复记录里被重新入队（status==='queued'）、可被 runNext 放行的条数。 */
   requeued: number;
@@ -22,6 +23,7 @@ export type AgentRunRecoveryScheduler = {
     running: boolean;
     tick_count: number;
     recovered_count: number;
+    unsettled_settled_count?: number;
     requeued_count: number;
     dead_lettered_count: number;
     drained_count: number;
@@ -32,7 +34,7 @@ export type AgentRunRecoveryScheduler = {
 };
 
 export function createAgentRunRecoveryScheduler(options: {
-  queue: Pick<AgentRunQueue, "recoverExpiredClaims" | "runNext">;
+  queue: Pick<AgentRunQueue, "recoverExpiredClaims" | "runNext"> & Partial<Pick<AgentRunQueue, "recoverUnsettledTaskPlanRuns">>;
   intervalMs?: number;
   autoDrain?: boolean;
   maxDrainPerTick?: number;
@@ -47,6 +49,7 @@ export function createAgentRunRecoveryScheduler(options: {
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
   let tickCount = 0;
+  let unsettledSettledCount = 0;
   let recoveredCount = 0;
   let requeuedCount = 0;
   let deadLetteredCount = 0;
@@ -59,6 +62,7 @@ export function createAgentRunRecoveryScheduler(options: {
     const startedAt = now();
     if (running) {
       return {
+        unsettled_settled: 0,
         recovered: 0,
         requeued: 0,
         dead_lettered: 0,
@@ -70,6 +74,9 @@ export function createAgentRunRecoveryScheduler(options: {
 
     running = true;
     try {
+      const unsettledSettled = options.queue.recoverUnsettledTaskPlanRuns
+        ? await options.queue.recoverUnsettledTaskPlanRuns()
+        : [];
       const recovered = await options.queue.recoverExpiredClaims();
       // 恢复记录是 dead-letter(status==='failed') 与 requeued(status==='queued') 的并集。
       // runNext 只放行重新入队的那些；死信永远拿不回来，绝不能进 drain 预算（否则空 runNext 白跑）。
@@ -89,12 +96,14 @@ export function createAgentRunRecoveryScheduler(options: {
       }
       const finishedAt = now();
       tickCount += 1;
+      unsettledSettledCount += unsettledSettled.length;
       recoveredCount += recovered.length;
       requeuedCount += requeued;
       deadLetteredCount += deadLettered;
       drainedCount += drained;
       lastTickAt = finishedAt.toISOString();
       return {
+        unsettled_settled: unsettledSettled.length,
         recovered: recovered.length,
         requeued,
         dead_lettered: deadLettered,
@@ -140,6 +149,7 @@ export function createAgentRunRecoveryScheduler(options: {
       running,
       tick_count: tickCount,
       recovered_count: recoveredCount,
+      ...(unsettledSettledCount > 0 ? { unsettled_settled_count: unsettledSettledCount } : {}),
       requeued_count: requeuedCount,
       dead_lettered_count: deadLetteredCount,
       drained_count: drainedCount,
