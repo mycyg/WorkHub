@@ -307,7 +307,7 @@ test("promoteMemory returns a memory_conflict payload when L2 diff3 cannot recon
   const entry = memoryRow({ key: "concise_approach", valueMd: "用户喜欢短答案。", confidence: 0.8 });
   const current = userMemoryRow({ valueMd: "用户喜欢详细解释。" });
   const published: Array<{ topic: string; type: string; data: unknown }> = [];
-  const saved: unknown[] = [];
+  const saved: CreateMemoryConflictInput[] = [];
 
   const result = await promoteMemory({
     workspaceId,
@@ -366,6 +366,8 @@ test("promoteMemory returns a memory_conflict payload when L2 diff3 cannot recon
   assert.equal(result.memoryConflict?.current_value_md, "用户喜欢详细解释。");
   assert.equal(result.memoryConflict?.incoming_value_md, "用户喜欢只给结论。");
   assert.equal(saved.length, 1);
+  assert.equal(saved[0]?.id, undefined);
+  assert.equal(result.memoryConflict?.attention.id, "83000000-0000-4000-8000-000000000701");
   assert.equal(published.length, 1);
   assert.equal(published[0]?.topic, `user:${userId}`);
   assert.equal(published[0]?.type, "sync.conflict");
@@ -383,7 +385,7 @@ test("promoteMemory persists judge-level memory conflicts into durable sync_conf
     key: "reply_style",
     valueMd: "回复要详细解释。"
   });
-  const saved: unknown[] = [];
+  const saved: CreateMemoryConflictInput[] = [];
   const published: Array<{ type: string; data: unknown }> = [];
 
   const result = await promoteMemory({
@@ -440,8 +442,10 @@ test("promoteMemory persists judge-level memory conflicts into durable sync_conf
     ["keep_current", "accept_incoming", "merge_both", "open_settings"]
   );
   assert.equal(saved.length, 1);
+  // R9.7: the old assertion expected the durable conflict id to reuse the L1 entry id.
+  // That was wrong because once that card is resolved, a later conflict for the same L1 entry
+  // needs a fresh memory_conflicts row instead of colliding with the resolved card's primary key.
   assert.deepEqual(saved[0], {
-    id: entry.id,
     workspaceId,
     userId,
     sourceRunId: runId,
@@ -451,6 +455,16 @@ test("promoteMemory persists judge-level memory conflicts into durable sync_conf
     incomingValueMd: "回复只给结论。",
     candidateMemoryIds: [sibling.id, entry.id]
   });
+  assert.equal(result.memoryConflict?.attention.id, "83000000-0000-4000-8000-000000000701");
+  assert.deepEqual(
+    result.memoryConflict?.attention.actions.map((action) => action.href),
+    [
+      "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/keep_current",
+      "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/accept_incoming",
+      "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/merge_both",
+      "/settings"
+    ]
+  );
   assert.equal(published[0]?.type, "sync.conflict");
 });
 

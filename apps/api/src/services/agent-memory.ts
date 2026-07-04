@@ -423,10 +423,8 @@ async function persistMemoryConflict(input: {
   baseValueMd?: string | null;
   candidateMemoryIds: string[];
   sourceRunId?: string | null;
-  fallbackId: string;
 }) {
   const row = await input.repository.createOrUpdateOpen({
-    id: input.fallbackId,
     workspaceId: input.workspaceId,
     userId: input.userId,
     sourceRunId: input.sourceRunId ?? null,
@@ -493,7 +491,6 @@ export async function promoteMemory(input: PromoteMemoryInput): Promise<PromoteM
       incomingValueMd: decision.valueMd ?? context.entry.valueMd,
       candidateMemoryIds,
       sourceRunId: context.entry.sourceRunId,
-      fallbackId: context.entry.id
     });
     await publishMemoryConflict(
       input.bus === false ? undefined : input.bus ?? getDefaultPushBus(),
@@ -539,7 +536,6 @@ export async function promoteMemory(input: PromoteMemoryInput): Promise<PromoteM
       ...(mergeResult.baseValueMd !== undefined ? { baseValueMd: mergeResult.baseValueMd } : {}),
       candidateMemoryIds,
       sourceRunId: context.entry.sourceRunId,
-      fallbackId: context.entry.id
     });
     await publishMemoryConflict(
       input.bus === false ? undefined : input.bus ?? getDefaultPushBus(),
