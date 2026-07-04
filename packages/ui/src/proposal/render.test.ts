@@ -437,6 +437,10 @@ test("proposal renderer exposes a folded bulk conflict review only for multiple 
   assert.equal(rendered.html.includes("data-workbench-target-key=\"drive_item:docs/summary.md\""), true);
   assert.equal(rendered.html.includes(`data-workbench-target-key=\"work_item:${vm.work_item_id}:task_items\"`), true);
   assert.equal(rendered.html.includes("data-workbench-target-kind=\"structured_record\""), true);
+  assert.equal(rendered.html.includes("<span class=\"wh-pill\">text_doc</span>"), false);
+  assert.equal(rendered.html.includes("<span class=\"wh-pill\">structured_record</span>"), false);
+  assert.equal(rendered.html.includes("<span class=\"wh-pill\">文档</span>"), true);
+  assert.equal(rendered.html.includes("<span class=\"wh-pill\">结构化记录</span>"), true);
   assert.equal(rendered.html.includes("data-workbench-recommended-option=\"keep_current\""), true);
   assert.equal(rendered.html.includes("data-workbench-recommended-option=\"accept_incoming\""), true);
   assert.equal(rendered.html.includes("批量冲突检查"), true);
@@ -461,6 +465,8 @@ test("proposal renderer exposes a folded bulk conflict review only for multiple 
   assert.equal(english.html.includes("One thing first by default"), true);
   assert.equal(english.html.includes("Keep all current"), true);
   assert.equal(english.html.includes("Use all incoming"), true);
+  assert.equal(english.html.includes("<span class=\"wh-pill\">Text document</span>"), true);
+  assert.equal(english.html.includes("<span class=\"wh-pill\">Structured record</span>"), true);
 });
 
 test("findings: conflicts whose ids collapse to the same safeId still get distinct line-editor panel ids", () => {

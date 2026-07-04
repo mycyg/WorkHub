@@ -505,7 +505,7 @@ function renderConflictWorkbench(conflicts: ProposalConflict[], options?: UiRend
       : conflict.recommended_option_id;
     return `<div class="wh-conflict-workbench-row" data-workbench-conflict-id="${escapeHtml(conflict.id)}" data-workbench-target-key="${escapeHtml(conflict.target_key)}" data-workbench-target-kind="${escapeHtml(conflict.target_kind)}" data-workbench-recommended-option="${escapeHtml(conflict.recommended_option_id)}">
       <span class="wh-conflict-workbench-target">${escapeHtml(target)}</span>
-      <span class="wh-pill">${escapeHtml(conflict.target_kind)}</span>
+      <span class="wh-pill">${escapeHtml(deliverableTargetLabel(locale, conflict.target_kind))}</span>
       <span class="wh-pill">${escapeHtml(uiT(locale, "proposal.conflictWorkbenchRecommended"))}: ${escapeHtml(recommended)}</span>
     </div>`;
   }).join("");
