@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { HTTPException } from "hono/http-exception";
 
 import {
@@ -2978,7 +2979,37 @@ test("malformed JSON request bodies use stable client-debuggable error codes", (
   assert.equal(httpErrorCodeFor(new HTTPException(429, { message: "Too many attempts." })), "rate_limited");
 });
 
-test("isolated route tests do not import the production app just for HTTP error codes", () => {
+function appImportGuardRegisterUrl() {
+  const loaderSource = `
+export async function resolve(specifier, context, nextResolve) {
+  const result = await nextResolve(specifier, context);
+  if (result.url.endsWith("/apps/api/src/app.ts") || result.url.endsWith("/apps/api/src/app.js")) {
+    throw new Error("production app import forbidden in isolated route test guard");
+  }
+  return result;
+}
+`;
+  const registerSource = `
+import { register } from "node:module";
+register(${JSON.stringify(`data:text/javascript,${encodeURIComponent(loaderSource)}`)}, import.meta.url);
+`;
+  return `data:text/javascript,${encodeURIComponent(registerSource)}`;
+}
+
+function childRouteTestEnv() {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    APP_ENV: "test"
+  };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("NODE_TEST_")) {
+      delete env[key];
+    }
+  }
+  return env;
+}
+
+test("isolated route tests execute with production app imports forbidden", () => {
   const routeTestFiles = [
     "auth.test.ts",
     "gold-path.test.ts",
@@ -2986,9 +3017,23 @@ test("isolated route tests do not import the production app just for HTTP error 
     "notifications-routes.test.ts",
     "projects.test.ts"
   ];
-  const offenders = routeTestFiles.filter((file) =>
-    readFileSync(new URL(file, import.meta.url), "utf8").includes('from "./app.js"')
-  );
+  // R9.7 review: the old guard grepped test source for `from "./app.js"`.
+  // That was wrong because source text does not prove isolated route tests can execute without the production app.
+  const result = spawnSync(process.execPath, [
+    "--import",
+    "tsx",
+    "--import",
+    appImportGuardRegisterUrl(),
+    "--test",
+    ...routeTestFiles
+  ], {
+    cwd: fileURLToPath(new URL(".", import.meta.url)),
+    encoding: "utf8",
+    env: childRouteTestEnv()
+  });
 
-  assert.deepEqual(offenders, []);
+  if (result.error) {
+    throw result.error;
+  }
+  assert.equal(result.status, 0, [result.stdout, result.stderr].filter(Boolean).join("\n"));
 });
