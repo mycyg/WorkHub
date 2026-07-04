@@ -616,7 +616,7 @@ test("cost dashboard page marks disabled budget rows instead of hiding them behi
   assert.deepEqual(body.data.top_exhaustion_risks, []);
 });
 
-test("R9.5 cost dashboard aggregates army task plans and objectives from scoped ledger rows", async () => {
+test("R9.5 cost dashboard keeps army task plan and objective breakdowns admin-only", async () => {
   const runtimeSettings = settings();
   const taskPlanId = "95000000-0000-4000-8000-000000000701";
   const objectiveId = "95000000-0000-4000-8000-000000000702";
@@ -668,13 +668,29 @@ test("R9.5 cost dashboard aggregates army task plans and objectives from scoped 
     };
   };
   assert.deepEqual(scopesCalls, [{ userId, teamId: runtimeSettings.auth.defaultWorkspaceId }]);
-  assert.deepEqual(body.data.by_task_plan, [{
+  // R9.7 review: the old assertion exposed raw task_plan_id/objective_id breakdowns to non-admins.
+  // Ordinary members still see their scoped totals, but plan/objective attribution is an admin breakdown like by_user/team/workitem.
+  assert.deepEqual(body.data.by_task_plan, []);
+  assert.deepEqual(body.data.by_objective, []);
+
+  const adminResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+  assert.equal(adminResponse.status, 200);
+  const adminBody = await adminResponse.json() as {
+    ok: true;
+    data: {
+      by_task_plan: { task_plan_id: string; cost_cny: string; tokens: number; child_runs: number }[];
+      by_objective: { objective_id: string; cost_cny: string; tokens: number }[];
+    };
+  };
+  assert.deepEqual(adminBody.data.by_task_plan, [{
     task_plan_id: taskPlanId,
     cost_cny: "0.006",
     tokens: 1500,
     child_runs: 1
   }]);
-  assert.deepEqual(body.data.by_objective, [{
+  assert.deepEqual(adminBody.data.by_objective, [{
     objective_id: objectiveId,
     cost_cny: "0.006",
     tokens: 1500

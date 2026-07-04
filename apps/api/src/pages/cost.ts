@@ -174,17 +174,17 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
       cost_cny: formatCny(item.cost),
       turns: item.turns
     })) : [],
-    by_task_plan: byTaskPlan.map((item) => ({
+    by_task_plan: input.isAdmin ? byTaskPlan.map((item) => ({
       task_plan_id: item.id,
       cost_cny: formatCny(item.cost),
       tokens: item.tokens,
       child_runs: item.childRuns
-    })),
-    by_objective: byObjective.map((item) => ({
+    })) : [],
+    by_objective: input.isAdmin ? byObjective.map((item) => ({
       objective_id: item.id,
       cost_cny: formatCny(item.cost),
       tokens: item.tokens
-    })),
+    })) : [],
     model_breakdown: modelBreakdown,
     ...(laborSplit ? { labor_split: laborSplit } : {}),
     budget: budgetRows,
