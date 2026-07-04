@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -16,6 +19,15 @@ import type { ProviderRegistry } from "@workhub/agent/providers";
 
 import type { AuthActor } from "./middleware/auth.js";
 import { InternalContractError } from "./pages/output-contract.js";
+import {
+  assertR5_10RequiredConfidence,
+  buildR5_10InitialUserMessage,
+  buildR5_10RunScopeSummary,
+  collectR5_10LocalInputFileContext,
+  createR5_10ClarificationAnswerPayload,
+  createR5_10WorkItemServiceOptions,
+  selectR5_10TasksForRun
+} from "./qa/r5-10-real-key-evaluation-contract.js";
 import { createDbWorkItemService, createInMemoryWorkItemService, WorkItemServiceError } from "./services/work-items.js";
 
 const now = new Date("2026-06-26T00:00:00.000Z");
@@ -909,60 +921,154 @@ test("persistent intake passes the actor workspace into AI clarification usage",
   assert.equal(seenActor?.workspaceId, defaultSeedIds.workspaceId);
 });
 
-test("real-key evaluation wires the provider registry into WorkItem clarification", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(
-    source,
-    /createDbWorkItemService\(workItemRepository,\s*\{[\s\S]*providerRegistry[\s\S]*\}\)/u
+test("real-key evaluation wires the provider registry into WorkItem clarification", async () => {
+  const providerRegistry = { isConfigured: () => true } as unknown as ProviderRegistry;
+  const context = [{
+    name: "workhub-app-upload.txt",
+    path: "inputs/workhub-app-upload.txt",
+    preview: "真实 App 验收"
+  }];
+  const options = createR5_10WorkItemServiceOptions(
+    providerRegistry,
+    new Map([["请根据项目网盘 workhub-app-upload.txt 生成验收要点。", context]])
   );
+
+  // R9.7: the old assertion grepped r5-10-real-key-evaluation.ts for `providerRegistry`.
+  // That was wrong because source text did not prove the helper passes the registry and file context at runtime.
+  assert.equal(options.providerRegistry, providerRegistry);
+  assert.deepEqual(
+    await options.projectFileContext?.({ intentText: "请根据项目网盘 workhub-app-upload.txt 生成验收要点。" }),
+    context
+  );
+  assert.deepEqual(await options.projectFileContext?.({ intentText: "没有预置文件的任务" }), []);
 });
 
 test("real-key evaluation answers AI clarification with free text before applying task presets", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(source, /const clarificationQuestion = session\.data\.question/u);
-  assert.match(
-    source,
-    /\/api\/sessions\/\$\{session\.data\.session_id\}\/next-question`[\s\S]{0,160}free_text: clarificationAnswer/u
-  );
-  assert.doesNotMatch(
-    source,
-    /\/api\/sessions\/\$\{session\.data\.session_id\}\/next-question`[\s\S]{0,160}selected_option_ids: task\.optionIds/u
-  );
+  const payload = createR5_10ClarificationAnswerPayload("请优先输出适合项目验收的要点。");
+
+  // R9.7: the old assertion grepped request-body source around `/next-question`.
+  // That was wrong because source text did not prove the clarification payload omits preset option ids.
+  assert.deepEqual(payload, { free_text: "请优先输出适合项目验收的要点。" });
+  assert.equal(Object.hasOwn(payload, "selected_option_ids"), false);
 });
 
 test("real-key evaluation labels limited samples instead of applying full-suite gates", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(source, /const limitedRun = /u);
-  assert.match(source, /R5_10_REAL_TASK_LIMIT/u);
-  assert.match(source, /run_scope/u);
-  assert.match(source, /full_suite/u);
-  assert.match(source, /Limited Sample Summary/u);
-  assert.match(source, /Full Gate Summary/u);
-  assert.match(source, /full-suite escalation gates were not asserted in this limited sample/u);
+  const selected = selectR5_10TasksForRun(["T1", "T2", "T3"], "2");
+  const limited = buildR5_10RunScopeSummary({
+    limitedRun: selected.limitedRun,
+    requestedTaskLimit: selected.requestedTaskLimit,
+    taskCount: selected.tasks.length,
+    totalTaskCount: 3,
+    realProviderSamplePass: true,
+    realProviderFullSuitePass: null,
+    ledgerPass: false,
+    qualityPassCount: 1,
+    sampledQualityTotal: 2,
+    structuredUpgrade: false,
+    budgetGuard: false,
+    unsampledGateTasks: ["T5", "B1"]
+  });
+  const full = buildR5_10RunScopeSummary({
+    limitedRun: false,
+    requestedTaskLimit: null,
+    taskCount: 3,
+    totalTaskCount: 3,
+    realProviderSamplePass: true,
+    realProviderFullSuitePass: true,
+    ledgerPass: true,
+    qualityPassCount: 3,
+    sampledQualityTotal: 3,
+    structuredUpgrade: true,
+    budgetGuard: true,
+    unsampledGateTasks: []
+  });
+
+  // R9.7: the old assertion grepped report-source strings for limited/full suite labels.
+  // That was wrong because source text did not prove the limit selection or report sections agree.
+  assert.deepEqual(selected.tasks, ["T1", "T2"]);
+  assert.equal(selected.requestedTaskLimit, 2);
+  assert.equal(selected.limitedRun, true);
+  assert.deepEqual(limited.reportRunScope, {
+    mode: "limited_sample",
+    requested_task_limit: 2,
+    task_count: 2,
+    total_available_tasks: 3,
+    full_suite: false
+  });
+  assert.match(limited.runScope, /limited_sample \(2\/3, R5_10_REAL_TASK_LIMIT=2\)/u);
+  assert.equal(limited.markdownGateSummary.includes("## Limited Sample Summary"), true);
+  assert.equal(limited.markdownGateSummary.includes("- Ledger sample: fail"), true);
+  assert.match(limited.escalationCalibrationNote, /full-suite escalation gates were not asserted/u);
+  assert.deepEqual(full.reportRunScope, {
+    mode: "full_suite",
+    requested_task_limit: null,
+    task_count: 3,
+    total_available_tasks: 3,
+    full_suite: true
+  });
+  assert.equal(full.markdownGateSummary.includes("## Full Gate Summary"), true);
+  assert.equal(full.markdownGateSummary.includes("- G2 real provider: pass"), true);
 });
 
-test("real-key evaluation feeds prepared input files into AI clarification", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(source, /function localInputFileContext/u);
-  assert.match(source, /const clarificationFileContextByIntent = new Map/u);
-  assert.match(source, /projectFileContext/u);
-  assert.match(source, /clarificationFileContextByIntent\.set\(task\.intentText/u);
+test("real-key evaluation feeds prepared input files into AI clarification", async () => {
+  const workdir = await mkdtemp(join(tmpdir(), "workhub-r5-10-context-"));
+  await mkdir(join(workdir, "inputs", "nested"), { recursive: true });
+  await writeFile(join(workdir, "inputs", "brief.txt"), "  真实   App\n验收  ", "utf8");
+  await writeFile(join(workdir, "inputs", "nested", "metrics.csv"), "metric,value\npass,3\n", "utf8");
+
+  const context = await collectR5_10LocalInputFileContext(workdir);
+
+  // R9.7: the old assertion grepped for `localInputFileContext` and the intent map.
+  // That was wrong because source text did not prove prepared files become clarification context rows.
+  assert.deepEqual(
+    context.map((item) => ({ name: item.name, path: item.path, preview: item.preview })),
+    [
+      { name: "brief.txt", path: "inputs/brief.txt", preview: "真实 App 验收" },
+      { name: "metrics.csv", path: "inputs/nested/metrics.csv", preview: "metric,value pass,3" }
+    ]
+  );
+  assert.equal(typeof context[0]?.sizeBytes, "number");
 });
 
 test("real-key evaluation keeps resolved work item context in the execution prompt", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(source, /initialUserMessage:\s*\(run,\s*workItemContext\)/u);
-  assert.match(source, /workItemContext\s*\?\s*\[/u);
-  assert.match(source, /<work_item_context>/u);
-  assert.match(source, /workItemContext,/u);
+  const message = buildR5_10InitialUserMessage({
+    runTitle: "生成客户验收要点",
+    workItemId: workItemId,
+    taskId: "T1",
+    taskPrompt: "请根据 inputs/brief.txt 生成验收要点。",
+    workItemContext: "用户上传了 workhub-app-upload.txt。"
+  });
+  const noContext = buildR5_10InitialUserMessage({
+    runTitle: "生成客户验收要点",
+    workItemId: workItemId,
+    taskId: "T1",
+    taskPrompt: "请根据 inputs/brief.txt 生成验收要点。"
+  });
+
+  // R9.7: the old assertion grepped the queue `initialUserMessage` source.
+  // That was wrong because source text did not prove resolved work-item context appears in the actual prompt.
+  assert.match(message, /work_item_id: 93000000-0000-4000-8000-000000000201/u);
+  assert.match(message, /r5_10_task_id: T1/u);
+  assert.match(message, /<work_item_context>\n用户上传了 workhub-app-upload.txt。\n<\/work_item_context>/u);
+  assert.match(message, /请根据 inputs\/brief\.txt 生成验收要点。/u);
+  assert.doesNotMatch(noContext, /<work_item_context>/u);
 });
 
 test("real-key evaluation fails deliverable samples with incomplete confidence reviews", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(source, /function assertRequiredConfidence/u);
-  assert.match(source, /task\.expectedMode !== "deliverable"/u);
-  assert.match(source, /confidence review is incomplete/u);
-  assert.match(source, /assertRequiredConfidence\(task,\s*confidenceEvidence\)/u);
+  // R9.7: the old assertion grepped for `assertRequiredConfidence(...)`.
+  // That was wrong because source text did not prove deliverable confidence failures are thrown.
+  assert.doesNotThrow(() => assertR5_10RequiredConfidence({ id: "T5", expectedMode: "structured_upgrade" }, null));
+  assert.throws(
+    () => assertR5_10RequiredConfidence({ id: "T1", expectedMode: "deliverable" }, null),
+    /expected a confidence review record/u
+  );
+  assert.throws(
+    () => assertR5_10RequiredConfidence({ id: "T1", expectedMode: "deliverable" }, { verdict: null, score: null }),
+    /confidence review is incomplete/u
+  );
+  assert.doesNotThrow(() =>
+    assertR5_10RequiredConfidence({ id: "T1", expectedMode: "deliverable" }, { verdict: "pass", score: "4" })
+  );
 });
 
 test("kickoff_agent finalize does not show ai_working before an AgentRun is actually queued", async () => {
