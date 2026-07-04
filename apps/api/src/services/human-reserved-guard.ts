@@ -255,9 +255,16 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
     const reasonMd = source === "tool_call" && input.toolCall && toolRiskCategory
       ? buildHighRiskToolReason(workItem, input.toolCall, toolRiskCategory, input.title)
       : buildHumanReservedReason(workItem, input.title);
-    const existing = (await decisions.listEscalationEventsForWorkItem(input.workItemId)).find(
+    const unresolvedUserForbidden = (await decisions.listEscalationEventsForWorkItem(input.workItemId)).filter(
       (event) => event.trigger === "user_forbidden" && !event.resolvedAt
     );
+    const existing = source === "tool_call" && input.toolCall && toolRiskCategory
+      ? unresolvedUserForbidden.find((event) =>
+        event.handoffJson["source"] === "tool_call" &&
+        event.handoffJson["tool_id"] === input.toolCall?.toolId &&
+        event.handoffJson["risk_category"] === toolRiskCategory
+      )
+      : unresolvedUserForbidden.find((event) => event.handoffJson["source"] !== "tool_call");
     const escalation = existing ?? (await decisions.createEscalationEvent({
       workItemId: input.workItemId,
       ...(input.agentRunId ? { agentRunId: input.agentRunId } : {}),
@@ -268,8 +275,8 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
         : humanReservedHandoff(workItem)
     }));
 
-    if (!existing) {
-      if (workItem.humanReserved) {
+    if (!existing || source === "tool_call") {
+      if (!existing && source === "work_item" && workItem.humanReserved) {
         // #18：状态写入只在首次预留时发生。已有未结升级时再次触发不得重写状态——否则版本号空转
         // (version++ / updatedAt churn) 且无任何审计轨迹（静默写），还可能把后续状态硬拉回 pm_mode。
         await workItems.markHumanReservedPmMode({
@@ -307,7 +314,10 @@ export function createHumanReservedGuard(options: HumanReservedGuardOptions = {}
         trigger: escalation.trigger,
         reason_preview: escalation.reasonMd.slice(0, 160),
         source: source === "tool_call" ? "human_reserved_tool_call" : "human_reserved",
-        next_mode: "pm"
+        next_mode: "pm",
+        ...(source === "tool_call" && input.toolCall && toolRiskCategory
+          ? { tool_id: input.toolCall.toolId, risk_category: toolRiskCategory, ...(input.agentRunId ? { agent_run_id: input.agentRunId } : {}) }
+          : {})
       };
       await publishEscalationEvent(bus, topics.workitem(input.workItemId).topic, eventPayload);
       // AUTHZ-1：全局事件发到工作项**真实**工作区的话题，与订阅侧 `all:<workspaceId>` 对齐——

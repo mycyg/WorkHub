@@ -3537,6 +3537,84 @@ test("#18: human-reserved guard does not re-mark pm_mode or re-version when an u
   assert.equal(events.length, eventsAfterFirst, "no second escalation event published");
 });
 
+test("R9.7 high-risk tool calls create durable evidence instead of reusing a generic human-reserved escalation", async () => {
+  const runtimeSettings = settings();
+  const workItems = new MemoryWorkItems([humanReservedWorkItemRow()]);
+  const decisions = new MemoryAiDecisions();
+  const auditLogs = new MemoryAuditLogs();
+  let markCalls = 0;
+  const baseMark = workItems.markHumanReservedPmMode.bind(workItems);
+  workItems.markHumanReservedPmMode = async (input) => {
+    markCalls += 1;
+    return baseMark(input);
+  };
+  const events: { topic: string; type: string; data: Record<string, unknown> }[] = [];
+  const guard = createHumanReservedGuard({
+    workItems,
+    decisions,
+    auditLogs,
+    settings: runtimeSettings,
+    now: () => now,
+    bus: {
+      async publish(topic, type, data) {
+        events.push({ topic, type, data: data as Record<string, unknown> });
+      }
+    }
+  });
+
+  const generic = await guard({ workItemId, actorId: userId, mode: "worker", settings: runtimeSettings });
+  assert.ok(generic, "first trigger creates the generic human-reserved escalation");
+  assert.equal(generic?.source, "work_item");
+  assert.equal(decisions.escalationRows.length, 1);
+  assert.equal(markCalls, 1);
+
+  const toolCall = await guard({
+    workItemId,
+    actorId: userId,
+    agentRunId: "40000000-0000-4000-8000-000000000201",
+    mode: "worker",
+    title: "Release vendor payment",
+    settings: runtimeSettings,
+    toolCall: {
+      toolId: "finance_payment_release",
+      input: { vendor_id: "vendor-1", amount_cny: 1000, bank_account: "secret" }
+    }
+  });
+
+  assert.ok(toolCall, "high-risk tool calls still return an escalation result");
+  assert.equal(toolCall?.source, "tool_call");
+  assert.equal(toolCall?.reused, false, "a generic reservation is not enough evidence for a specific tool call");
+  assert.notEqual(toolCall?.escalationId, generic?.escalationId);
+  assert.equal(markCalls, 1, "tool-call evidence must not re-mark pm_mode");
+  assert.equal(decisions.escalationRows.length, 2, "tool-call evidence gets its own durable decision-inbox card");
+  const toolEscalation = decisions.escalationRows[1];
+  assert.equal(toolEscalation?.trigger, "user_forbidden");
+  assert.equal(toolEscalation?.agentRunId, "40000000-0000-4000-8000-000000000201");
+  assert.equal(toolEscalation?.handoffJson["source"], "tool_call");
+  assert.equal(toolEscalation?.handoffJson["risk_category"], "finance");
+  assert.equal(toolEscalation?.handoffJson["tool_id"], "finance_payment_release");
+  assert.deepEqual(toolEscalation?.handoffJson["input_shape"], {
+    kind: "object",
+    keys: ["vendor_id", "amount_cny", "bank_account"],
+    key_count: 3
+  });
+  assert.equal(auditLogs.rows.filter((row) => row.action === "escalation.opened").length, 2);
+  assert.deepEqual(auditLogs.rows[1]?.detailJson, {
+    escalation_id: toolEscalation?.id,
+    trigger: "user_forbidden",
+    source: "human_reserved_tool_call",
+    requested_by_user_id: userId,
+    reason_preview: toolEscalation?.reasonMd.slice(0, 160),
+    tool_id: "finance_payment_release",
+    risk_category: "finance"
+  });
+  assert.equal(events.length, 4, "the tool-specific escalation is published alongside the existing generic card");
+  assert.deepEqual(events.slice(2).map((event) => [event.topic, event.type, event.data.source, event.data.tool_id]), [
+    [`workitem:${workItemId}`, "escalation.opened", "human_reserved_tool_call", "finance_payment_release"],
+    [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened", "human_reserved_tool_call", "finance_payment_release"]
+  ]);
+});
+
 test("agent run queue executes a queued AgentLoop run and records trace for replay", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-test-"));
