@@ -2,16 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { WorkHubApiError } from "@workhub/api-client/client";
-import type { ProposalConflict } from "@workhub/contracts";
+import type { AttentionHomeVM, ProposalConflict } from "@workhub/contracts";
 
 import {
   attentionCardDisplayTitle,
   attentionTagLabelForKind,
   attentionConflictHtmlFromError,
   classifyAttentionActionHref,
+  createAttentionView,
   resolveAttentionMemoryConflictAction,
   reviewAttentionProposalWithoutMerge
 } from "./attention.js";
+import type { SpotlightViewContext } from "../view-context.js";
+
+function tick() {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
 
 test("classifyAttentionActionHref routes proposal/workitem detail hrefs to inline navigation (no dead button)", () => {
   // 对抗审查 HIGH:决策卡「查看变更」是 GET /proposals/:id,之前落到 runAction 末尾死 toast。现走 ctx.open。
@@ -101,6 +107,51 @@ test("attention escalation cards do not label retry/cancel actions as assignment
 test("attention plan_review cards use explicit plan-review labels", () => {
   assert.equal(attentionTagLabelForKind("plan_review", true), "计划审阅");
   assert.equal(attentionTagLabelForKind("plan_review", false), "Plan review");
+});
+
+test("desktop attention view surfaces source warnings instead of showing all clear", async () => {
+  const body = {
+    innerHTML: "",
+    addEventListener() {}
+  } as unknown as HTMLElement;
+  const vm: AttentionHomeVM = {
+    primary: undefined,
+    queue: [],
+    source_warnings: [{
+      source: "approvals",
+      message: "Approval decisions could not be loaded. Open Approvals or retry."
+    }],
+    background_runs: [],
+    cuu_state: "worried"
+  };
+  let subtitle = "";
+
+  await createAttentionView().mount({
+    body,
+    locale: "en-US",
+    client: {
+      pages: {
+        async attention() {
+          return vm;
+        }
+      }
+    },
+    back() {},
+    open() {},
+    setSubtitle(text: string) {
+      subtitle = text;
+    },
+    toast() {},
+    requestResize() {},
+    signal: new AbortController().signal
+  } as unknown as SpotlightViewContext);
+  await tick();
+
+  assert.match(body.innerHTML, /data-spot-attention-source-warnings="1"/u);
+  assert.match(body.innerHTML, /data-spot-attention-source-warning="approvals"/u);
+  assert.match(body.innerHTML, /Approval decisions could not be loaded/u);
+  assert.doesNotMatch(body.innerHTML, /All clear/u);
+  assert.notEqual(subtitle, "all done");
 });
 
 test("attention proposal merge conflict renders actionable choices instead of a generic failure", () => {

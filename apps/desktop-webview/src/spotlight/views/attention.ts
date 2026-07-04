@@ -145,13 +145,28 @@ export function attentionCardDisplayTitle(item: Pick<AttentionItem, "kind" | "ti
   return item.kind === "proposal_review" ? proposalListDisplayTitle(item.title, zh) : item.title;
 }
 
-function renderQueue(vm: AttentionHomeVM, zh: boolean): string {
+function renderSourceWarnings(vm: AttentionHomeVM, zh: boolean): string {
+  const sourceWarnings = vm.source_warnings ?? [];
+  if (sourceWarnings.length === 0) {
+    return "";
+  }
+  return `<div class="wh-spot-list" data-spot-attention-source-warnings="${escapeHtml(String(sourceWarnings.length))}">
+    ${sourceWarnings.map((warning) => `<div class="wh-spot-row" data-spot-attention-source-warning="${escapeHtml(warning.source)}">
+      <div class="wh-spot-row-main">
+        <div class="wh-spot-row-title">${escapeHtml(zh ? "决策来源未完全加载" : "Decision sources are partially loaded")}</div>
+        <div class="wh-spot-row-sub">${escapeHtml(warning.message)}</div>
+      </div>
+    </div>`).join("")}
+  </div>`;
+}
+
+function renderQueue(vm: AttentionHomeVM, zh: boolean, hasSourceWarnings = false): string {
   const items = vm.queue ?? [];
   if (items.length === 0) {
     return `<div class="wh-spot-empty">
       <div class="wh-spot-empty-face">٩(◜◡◝)۶</div>
-      <h3 class="wh-spot-empty-title">${zh ? "全部搞定啦" : "All clear"}</h3>
-      <p class="wh-spot-empty-sub">${zh ? "有要你拍板的，Cuu 会第一时间端过来" : "Cuu will bring the next call straight to you"}</p>
+      <h3 class="wh-spot-empty-title">${hasSourceWarnings ? (zh ? "当前没有已加载的待办" : "No loaded decisions") : (zh ? "全部搞定啦" : "All clear")}</h3>
+      <p class="wh-spot-empty-sub">${hasSourceWarnings ? (zh ? "部分来源暂时不可用，请稍后重试。" : "Some sources are unavailable. Retry in a moment.") : (zh ? "有要你拍板的，Cuu 会第一时间端过来" : "Cuu will bring the next call straight to you")}</p>
     </div>`;
   }
   return `<div class="wh-spot-cards ds-stagger">${items.map((item) => renderCard(item, zh)).join("")}</div>`;
@@ -219,12 +234,18 @@ export function createAttentionView(): SpotlightCapabilityView {
 
       const setSubtitleFromVm = (vm: AttentionHomeVM) => {
         const n = vm.queue?.length ?? 0;
+        const hasSourceWarnings = (vm.source_warnings?.length ?? 0) > 0;
+        if (n === 0 && hasSourceWarnings) {
+          ctx.setSubtitle(zh ? "部分待办未加载" : "partially loaded");
+          return;
+        }
         ctx.setSubtitle(n > 0 ? (zh ? `${n} 条待你拍板` : `${n} waiting on you`) : zh ? "都处理完了" : "all done");
       };
 
       const render = (vm: AttentionHomeVM) => {
         if (disposed) return;
-        body.innerHTML = renderQueue(vm, zh);
+        const hasSourceWarnings = (vm.source_warnings?.length ?? 0) > 0;
+        body.innerHTML = `${renderSourceWarnings(vm, zh)}${renderQueue(vm, zh, hasSourceWarnings)}`;
         setSubtitleFromVm(vm);
         ctx.requestResize();
       };
