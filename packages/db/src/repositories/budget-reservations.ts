@@ -210,9 +210,14 @@ export function createBudgetReservationRepository(db: WorkHubDb): BudgetReservat
         .select()
         .from(budgetReservations)
         .where(and(eq(budgetReservations.status, "active"), where ? sql`(${where})` : undefined));
-      const mapped = rows.map(toReservationRow);
       for (const key of keys) {
-        result.set(bucketMapKey(key), outstandingForBucket(mapped, key));
+        // The pure cost helper keys by scope/bucket only. Keep the tenant
+        // dimension at the repository boundary so multi-workspace batches with
+        // the same logical scope id cannot cross-count active reservations.
+        const scopedRows = rows
+          .filter((row) => row.workspaceId === key.workspaceId)
+          .map(toReservationRow);
+        result.set(bucketMapKey(key), outstandingForBucket(scopedRows, key));
       }
       return result;
     }
