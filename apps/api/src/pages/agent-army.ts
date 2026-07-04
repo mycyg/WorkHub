@@ -18,6 +18,7 @@ type AgentArmyDashboardPageInput = {
   generatedAt?: Date;
   locale?: WorkHubLocale;
   attentionCount: number;
+  sourceWarnings?: NonNullable<AgentArmyDashboardVM["source_warnings"]>;
   autonomyRatePct?: number;
   plans: TaskPlanDashboardPlanRow[];
   items: TaskPlanItemRow[];
@@ -299,6 +300,7 @@ export function buildAgentArmyDashboardPage(input: AgentArmyDashboardPageInput):
         href: "/attention"
       };
     }),
+    source_warnings: input.sourceWarnings ?? [],
     page_info: {
       plan_limit: input.pageInfo.planLimit,
       returned: input.plans.length,

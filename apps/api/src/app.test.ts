@@ -2118,6 +2118,13 @@ test("R9.7 Agent Army OpenAPI schema documents nested dashboard VM fields", asyn
   assert.equal(data?.properties?.recent_escalations?.maxItems, 5);
   assert.equal(recentEscalation?.additionalProperties, false);
   assert.deepEqual(recentEscalation?.required, ["id", "work_item_id", "title", "reason_preview", "created_at", "href"]);
+  const sourceWarnings = data?.properties?.source_warnings;
+  assert.equal(sourceWarnings?.items?.additionalProperties, false);
+  assert.deepEqual(sourceWarnings?.items?.required, ["source", "message"]);
+  assert.deepEqual(sourceWarnings?.items?.properties?.source, {
+    type: "string",
+    enum: ["approvals", "proposals", "escalations", "sync_conflicts"]
+  });
 
   const pageInfo = data?.properties?.page_info;
   assert.equal(pageInfo?.additionalProperties, false);

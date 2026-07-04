@@ -3083,6 +3083,13 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
       ? `<a class="wh-card wh-r4-route-card" data-r9-agent-kpi="${escapeHtml(item.id)}" href="${escapeHtml(safeHref(item.href))}">${body}</a>`
       : `<section class="wh-card wh-r4-route-card" data-r9-agent-kpi="${escapeHtml(item.id)}">${body}</section>`;
   }).join("");
+  const sourceWarnings = vm.source_warnings ?? [];
+  const warningStrip = sourceWarnings.length
+    ? `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r9-agent-source-warnings="${escapeHtml(String(sourceWarnings.length))}">
+        <h3>${escapeHtml(locale === "zh-CN" ? "决策数据未完全加载" : "Decision data is partially loaded")}</h3>
+        <div class="wh-r4-route-timeline">${sourceWarnings.map((warning) => `<p class="wh-subtle" data-r9-agent-source-warning="${escapeHtml(warning.source)}">${escapeHtml(warning.message)}</p>`).join("")}</div>
+      </section>`
+    : "";
 
   const planCards = vm.plans.map((plan) => {
     const roles = plan.roles.map((role) => `<span class="wh-pill">${escapeHtml(`${taskPlanItemRoleLabel(locale, role.role)} ${role.count}`)}</span>`).join("");
@@ -3144,6 +3151,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
         <span class="wh-r4-route-count">${escapeHtml(String(vm.kpis.active_team_count))}</span>
       </header>
       <div class="wh-r4-route-grid" data-r9-agent-dashboard-kpis="true">${kpis}</div>
+      ${warningStrip}
       ${empty}
       <div class="wh-r4-route-grid">
         <section class="wh-r4-route-card" data-r9-agent-dashboard-plans="true">

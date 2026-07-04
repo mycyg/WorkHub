@@ -2978,6 +2978,15 @@ const agentArmyDashboardPageInfoResponseSchema = {
   },
   additionalProperties: false
 } as const;
+const attentionSourceWarningResponseSchema = {
+  type: "object",
+  required: ["source", "message"],
+  properties: {
+    source: { type: "string", enum: ["approvals", "proposals", "escalations", "sync_conflicts"] },
+    message: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+} as const;
 const agentArmyDashboardPageResponseSchema = {
   type: "object",
   required: ["generated_at", "kpis", "plans", "recent_escalations", "page_info"],
@@ -2996,6 +3005,7 @@ const agentArmyDashboardPageResponseSchema = {
     },
     plans: { type: "array", maxItems: 20, items: agentArmyDashboardPlanResponseSchema },
     recent_escalations: { type: "array", maxItems: 5, items: agentArmyDashboardRecentEscalationResponseSchema },
+    source_warnings: { type: "array", items: attentionSourceWarningResponseSchema },
     page_info: agentArmyDashboardPageInfoResponseSchema,
     empty_state: { type: "string", enum: ["no_agent_armies"] }
   },
@@ -3060,15 +3070,7 @@ const attentionHomePageResponseSchema = {
     queue: { type: "array", items: { type: "object", additionalProperties: true } },
     source_warnings: {
       type: "array",
-      items: {
-        type: "object",
-        required: ["source", "message"],
-        properties: {
-          source: { type: "string", enum: ["approvals", "proposals", "escalations", "sync_conflicts"] },
-          message: { type: "string", minLength: 1 }
-        },
-        additionalProperties: false
-      }
+      items: attentionSourceWarningResponseSchema
     },
     background_runs: {
       type: "array",

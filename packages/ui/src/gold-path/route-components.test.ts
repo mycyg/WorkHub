@@ -1660,6 +1660,24 @@ test("R9.6 Agent Army route component renders empty state without fake plan card
   assertNoMainWindowBoundaryLeak(agents.html);
 });
 
+test("R9.7 Agent Army route component shows attention source warnings beside the KPI", () => {
+  const agents = renderWebRouteComponent({
+    key: "agents",
+    agents: agentArmyDashboardVm({
+      source_warnings: [{
+        source: "sync_conflicts",
+        message: "记忆冲突暂时加载失败。请打开设置或稍后重试。"
+      }]
+    })
+  }, { locale: "zh-CN" });
+
+  assert.ok(agents);
+  assert.equal(agents.html.includes('data-r9-agent-source-warnings="1"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-source-warning="sync_conflicts"'), true);
+  assert.equal(agents.html.includes("记忆冲突暂时加载失败"), true);
+  assertNoMainWindowBoundaryLeak(agents.html);
+});
+
 test("Cost route component renders disabled budget policies as not enabled instead of zero quotas", () => {
   const vm = surfaceVm();
   vm.page_vms.cost.budget = [{

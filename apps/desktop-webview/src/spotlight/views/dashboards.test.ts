@@ -223,6 +223,19 @@ test("R9.6 desktop agent army empty state has an intake CTA without fake plans",
   assert.doesNotMatch(html, /data-open-agent-plan=/u);
 });
 
+test("R9.7 desktop agent army dashboard surfaces attention source warnings", () => {
+  const html = agentArmyDashboardView(agentArmyVm({
+    source_warnings: [{
+      source: "approvals",
+      message: "Approval decisions could not be loaded. Open Approvals or retry."
+    }]
+  }), false);
+
+  assert.match(html, /data-spot-agent-source-warnings="1"/u);
+  assert.match(html, /data-spot-agent-source-warning="approvals"/u);
+  assert.ok(html.includes("Approval decisions could not be loaded."), "warning copy");
+});
+
 test("R9.6 desktop agent army detail morph keeps decisions in the inbox", () => {
   const plan = agentArmyVm().plans[0];
   assert.ok(plan);

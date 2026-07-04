@@ -1614,6 +1614,10 @@ test("R9.6 agent army dashboard VM exposes observable plans without embedding de
       created_at: "2026-07-03T00:00:00.000Z",
       href: "/attention"
     }],
+    source_warnings: [{
+      source: "sync_conflicts",
+      message: "记忆冲突暂时加载失败。"
+    }],
     page_info: {
       plan_limit: 20,
       returned: 1,
@@ -1629,6 +1633,7 @@ test("R9.6 agent army dashboard VM exposes observable plans without embedding de
   assert.equal(parsed.kpis.waiting_decision_count, 2);
   assert.equal(parsed.plans[0]?.oldest_blocker?.href, "/attention");
   assert.equal(parsed.plans[0]?.roles[0]?.role, "research");
+  assert.equal(parsed.source_warnings?.[0]?.source, "sync_conflicts");
 });
 
 test("approval contracts keep UI payloads human-readable and deny reasons explicit", () => {

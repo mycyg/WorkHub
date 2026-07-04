@@ -105,6 +105,7 @@ export type PageRoutesDependencies = {
   projectHealthPages?: ProjectHealthPageService;
   aiWorklog?: AiWorklogMetricsService;
   teamSkills?: Pick<TeamSkillRepository, "listActive">;
+  taskPlans?: Pick<ReturnType<typeof createTaskPlanRepository>, "listDashboardPlans">;
   agentArmyDashboard?: {
     page: (input: {
       actor: AuthEnv["Variables"]["actor"];
@@ -254,23 +255,53 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const projectHealthPages = deps.projectHealthPages ?? createProjectHealthPageService();
   const aiWorklog = deps.aiWorklog ?? getDefaultAiWorklogMetricsService();
   const teamSkills = deps.teamSkills ?? createTeamSkillRepository(getSharedDatabaseClient().db);
-  const taskPlans = createTaskPlanRepository(getSharedDatabaseClient().db);
+  const taskPlans = deps.taskPlans ?? createTaskPlanRepository(getSharedDatabaseClient().db);
 
-  async function attentionDecisionCount(input: {
+  type DashboardSourceWarning = NonNullable<AgentArmyDashboardVM["source_warnings"]>[number];
+  type DashboardSourceWarnings = DashboardSourceWarning[];
+
+  function dashboardSourceWarning(source: DashboardSourceWarning["source"], locale: WorkHubLocale): DashboardSourceWarning {
+    const messages: Record<DashboardSourceWarning["source"], { en: string; zh: string }> = {
+      escalations: {
+        en: "Escalations could not be loaded. Open Attention or retry.",
+        zh: "升级待办暂时加载失败。请打开决策收件箱或稍后重试。"
+      },
+      sync_conflicts: {
+        en: "Memory conflicts could not be loaded. Open Settings or retry.",
+        zh: "记忆冲突暂时加载失败。请打开设置或稍后重试。"
+      },
+      approvals: {
+        en: "Approval decisions could not be loaded. Open Approvals or retry.",
+        zh: "审批待办暂时加载失败。请打开审批页或稍后重试。"
+      },
+      proposals: {
+        en: "Proposal reviews could not be loaded. Open Attention or retry.",
+        zh: "变更评审暂时加载失败。请打开决策收件箱或稍后重试。"
+      }
+    };
+    const message = messages[source];
+    return {
+      source,
+      message: locale === "en-US" ? message.en : message.zh
+    };
+  }
+
+  async function attentionDecisionSummary(input: {
     actor: AuthEnv["Variables"]["actor"];
     currentUser: AuthEnv["Variables"]["currentUser"];
     locale: WorkHubLocale;
   }) {
     let count = 0;
+    const sourceWarnings: DashboardSourceWarnings = [];
     try {
       count += (await escalations.listAttentionItems({ actor: input.actor, locale: input.locale })).length;
     } catch {
-      count += 0;
+      sourceWarnings.push(dashboardSourceWarning("escalations", input.locale));
     }
     try {
       count += (await memoryConflicts.listAttentionItems({ actor: input.actor, locale: input.locale })).length;
     } catch {
-      count += 0;
+      sourceWarnings.push(dashboardSourceWarning("sync_conflicts", input.locale));
     }
     try {
       const pending = await approvals.listPendingForUser(input.currentUser, {
@@ -279,7 +310,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       });
       count += (await visibleApprovalCenter(pending, workItems, input.actor, true)).items.length;
     } catch {
-      count += 0;
+      sourceWarnings.push(dashboardSourceWarning("approvals", input.locale));
     }
     try {
       count += (await proposals.listReviewableForUser({
@@ -290,9 +321,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         }
       })).length;
     } catch {
-      count += 0;
+      sourceWarnings.push(dashboardSourceWarning("proposals", input.locale));
     }
-    return count;
+    return { count, sourceWarnings };
   }
 
   async function ledgerEntriesForActor(input: {
@@ -333,9 +364,11 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       } catch {
         worklog = undefined;
       }
+      const attention = await attentionDecisionSummary(input);
       return buildAgentArmyDashboardPage({
         locale: input.locale,
-        attentionCount: await attentionDecisionCount(input),
+        attentionCount: attention.count,
+        sourceWarnings: attention.sourceWarnings,
         autonomyRatePct: worklog?.autonomy_rate ?? 0,
         plans: visiblePlans,
         items: rows.items.filter((item) => visiblePlanIds.has(item.planId)),

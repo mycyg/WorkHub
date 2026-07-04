@@ -159,6 +159,17 @@ export function agentArmyDashboardView(vm: AgentArmyDashboardVM, zh: boolean): s
   const capped = vm.page_info.plans_capped || hiddenCount > 0
     ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hiddenCount} 个小队未在这里显示，打开工作项查看详情。` : `+${hiddenCount} more squads not shown here — open work items for detail.`)}</p>`
     : "";
+  const sourceWarnings = vm.source_warnings ?? [];
+  const warnings = sourceWarnings.length
+    ? `<div class="wh-spot-list" data-spot-agent-source-warnings="${escapeHtml(String(sourceWarnings.length))}">
+        ${sourceWarnings.map((warning) => `<div class="wh-spot-row" data-spot-agent-source-warning="${escapeHtml(warning.source)}">
+          <div class="wh-spot-row-main">
+            <div class="wh-spot-row-title">${escapeHtml(zh ? "决策数据未完全加载" : "Decision data is partially loaded")}</div>
+            <div class="wh-spot-row-sub">${escapeHtml(warning.message)}</div>
+          </div>
+        </div>`).join("")}
+      </div>`
+    : "";
   const empty = vm.empty_state === "no_agent_armies"
     ? `<div data-spot-agent-dashboard-empty="no_agent_armies">${emptyHtml("Cuu", zh ? "还没有 Cuu 的小队在跑" : "No Cuu squads are running yet.", zh ? "下次遇到大活儿，Cuu 会先给你一份分工方案。" : "Next time there is a large task, Cuu will draft a plan first.")}<div style="text-align:center"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-open-capability="intake">${zh ? "新任务 / 交给 AI" : "New task"}</button></div></div>`
     : "";
@@ -173,6 +184,7 @@ export function agentArmyDashboardView(vm: AgentArmyDashboardVM, zh: boolean): s
       <div class="wh-spot-row-sub">${escapeHtml(zh ? "只看进展；拍板仍回决策收件箱。" : "Observe progress; decisions stay in the inbox.")}</div>
     </div>
     <div class="wh-spot-metrics">${kpis}</div>
+    ${warnings}
     ${empty}
     ${rows ? `<div class="wh-spot-list ds-stagger">${rows}</div>${capped}` : ""}
     <div class="wh-spot-row-metalabel">${escapeHtml(zh ? "最近动态" : "Recent activity")}</div>

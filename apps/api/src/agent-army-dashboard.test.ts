@@ -186,6 +186,10 @@ test("R9.6 agent army dashboard aggregates observable plan state from rows and c
     generatedAt: now,
     locale: "zh-CN",
     attentionCount: 2,
+    sourceWarnings: [{
+      source: "sync_conflicts",
+      message: "记忆冲突暂时加载失败。请打开设置或稍后重试。"
+    }],
     autonomyRatePct: 67,
     plans: [{
       plan: {
@@ -329,6 +333,10 @@ test("R9.6 agent army dashboard aggregates observable plan state from rows and c
   assert.equal(vm.recent_escalations[0]?.href, "/attention");
   assert.equal(vm.recent_escalations[1]?.id, runlessEscalationId);
   assert.match(vm.recent_escalations[1]?.title ?? "", /竞品资料梳理/u);
+  assert.deepEqual(vm.source_warnings, [{
+    source: "sync_conflicts",
+    message: "记忆冲突暂时加载失败。请打开设置或稍后重试。"
+  }]);
   assert.equal(vm.page_info.escalation_returned, 2);
   assert.equal(vm.empty_state, undefined);
 });
@@ -405,4 +413,84 @@ test("R9.6 /api/pages/agents returns the dashboard VM through auth and locale en
   assert.deepEqual(calls, [{ actorId: userId, locale: "en-US" }]);
   assert.equal(body.meta.locale, "en-US");
   assert.equal(body.data.empty_state, "no_agent_armies");
+});
+
+test("R9.7 /api/pages/agents marks failed attention count sources instead of looking empty", async () => {
+  const settings = runtimeSettings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(settings),
+    taskPlans: {
+      async listDashboardPlans() {
+        return {
+          plans: [],
+          plansCapped: false,
+          items: [],
+          itemsCapped: false,
+          runs: [],
+          runsCapped: false,
+          escalations: [],
+          escalationsCapped: false
+        };
+      }
+    },
+    workItems: {
+      async canReadWorkItems() {
+        return new Set<string>();
+      }
+    },
+    ledgerStore: {
+      async listEntriesForScopes() {
+        return [];
+      }
+    },
+    aiWorklog: {
+      async getTodayMetrics() {
+        return {
+          runs_today: 0,
+          autonomy_rate: 0,
+          accepted_today: 0,
+          saved_hours_estimate: 0,
+          generated_at: now.toISOString()
+        };
+      }
+    },
+    escalations: {
+      async listAttentionItems() {
+        throw new Error("escalation source down");
+      }
+    },
+    memoryConflicts: {
+      async listAttentionItems() {
+        return [];
+      }
+    },
+    approvals: {
+      async listPendingForUser() {
+        throw new Error("approval source down");
+      }
+    },
+    proposals: {
+      async listReviewableForUser() {
+        return [];
+      }
+    }
+  } as never));
+
+  const response = await app.request("/api/pages/agents?locale=zh-CN", {
+    headers: { Cookie: await cookie(settings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      kpis: { waiting_decision_count: number };
+      source_warnings: Array<{ source: string; message: string }>;
+    };
+  };
+  assert.equal(body.data.kpis.waiting_decision_count, 0);
+  assert.deepEqual(body.data.source_warnings.map((warning) => warning.source), ["escalations", "approvals"]);
+  assert.match(body.data.source_warnings[0]?.message ?? "", /升级待办/u);
+  assert.match(body.data.source_warnings[1]?.message ?? "", /审批待办/u);
 });

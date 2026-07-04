@@ -91,13 +91,16 @@ export const teamSkillsPageVmSchema = z.object({
 });
 export type TeamSkillsPageVM = z.infer<typeof teamSkillsPageVmSchema>;
 
+export const attentionSourceWarningSchema = z.object({
+  source: z.enum(["approvals", "proposals", "escalations", "sync_conflicts"]),
+  message: z.string().min(1)
+});
+export type AttentionSourceWarning = z.infer<typeof attentionSourceWarningSchema>;
+
 export const attentionHomeVmSchema = z.object({
   primary: attentionItemSchema.optional(),
   queue: z.array(attentionItemSchema),
-  source_warnings: z.array(z.object({
-    source: z.enum(["approvals", "proposals", "escalations", "sync_conflicts"]),
-    message: z.string().min(1)
-  })).optional(),
+  source_warnings: z.array(attentionSourceWarningSchema).optional(),
   background_runs: z.array(z.object({
     run_id: idSchema,
     work_item_id: idSchema.optional(),
@@ -800,6 +803,7 @@ export const agentArmyDashboardVmSchema = z.object({
     created_at: isoDateTimeSchema,
     href: z.string().min(1)
   })).max(5),
+  source_warnings: z.array(attentionSourceWarningSchema).optional(),
   page_info: z.object({
     plan_limit: z.number().int().positive(),
     returned: z.number().int().nonnegative(),
