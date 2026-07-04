@@ -105,6 +105,31 @@ async function updateMemory(
   return updated[0]!;
 }
 
+async function updateMemoryIfCurrent(
+  db: WorkHubDb,
+  prev: UserMemoryRow,
+  input: UpsertUserMemoryInput,
+  valueMd: string,
+  now: Date
+) {
+  const confidence = input.confidence ?? Math.min(1, prev.confidence + 0.1);
+  const updated = await db
+    .update(userMemories)
+    .set({
+      valueMd,
+      confidence,
+      ...(input.sourceRunId ? { sourceRunId: input.sourceRunId } : {}),
+      updatedAt: now
+    })
+    .where(and(
+      eq(userMemories.id, prev.id),
+      input.workspaceId ? eq(userMemories.workspaceId, input.workspaceId) : isNull(userMemories.workspaceId),
+      eq(userMemories.valueMd, prev.valueMd)
+    ))
+    .returning();
+  return updated[0];
+}
+
 async function insertMemory(db: WorkHubDb, input: UpsertUserMemoryInput) {
   const inserted = await db
     .insert(userMemories)
@@ -166,14 +191,27 @@ export function createUserMemoryRepository(db: WorkHubDb): UserMemoryRepository 
         await evictOverCap(db, input.userId, now, input.workspaceId);
         return { status: "upserted", userMemory: inserted };
       }
+      const updateOrConflict = async (status: "upserted" | "merged", valueMd: string): Promise<UserMemoryMergeResult> => {
+        const updated = await updateMemoryIfCurrent(db, existing, input, valueMd, now);
+        if (updated) {
+          return { status, userMemory: updated };
+        }
+        const current = await findExistingMemory(db, input);
+        return {
+          status: "conflict",
+          current: current ?? existing,
+          incoming: input,
+          ...(input.baseValueMd !== undefined ? { baseValueMd: input.baseValueMd } : {})
+        };
+      };
       if (existing.valueMd === input.valueMd) {
-        return { status: "upserted", userMemory: await updateMemory(db, existing, input, input.valueMd, now) };
+        return updateOrConflict("upserted", input.valueMd);
       }
       if (input.baseValueMd && existing.valueMd === input.baseValueMd) {
-        return { status: "upserted", userMemory: await updateMemory(db, existing, input, input.valueMd, now) };
+        return updateOrConflict("upserted", input.valueMd);
       }
       if (input.baseValueMd && input.valueMd === input.baseValueMd) {
-        return { status: "upserted", userMemory: await updateMemory(db, existing, input, existing.valueMd, now) };
+        return updateOrConflict("upserted", existing.valueMd);
       }
       if (input.baseValueMd) {
         const merged = textDiff3Merge({
@@ -182,7 +220,7 @@ export function createUserMemoryRepository(db: WorkHubDb): UserMemoryRepository 
           incoming: { text: input.valueMd, truncated: false }
         });
         if (merged) {
-          return { status: "merged", userMemory: await updateMemory(db, existing, input, merged.mergedText, now) };
+          return updateOrConflict("merged", merged.mergedText);
         }
       }
       return {

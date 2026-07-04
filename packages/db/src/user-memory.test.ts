@@ -165,6 +165,32 @@ test("mergeUpsert automatically merges non-overlapping L2 memory edits with a ba
   assert.equal(result.userMemory.valueMd, merged);
 });
 
+test("R9.7 mergeUpsert updates only the L2 value it merged from", async () => {
+  const base = "回复要简洁。";
+  const incoming = "回复只给结论。";
+  const existing = row({ valueMd: base });
+  const { db, queries } = createQueryRecorder([[existing], [row({ valueMd: incoming })]]);
+  const repository = createUserMemoryRepository(db);
+
+  const result = await repository.mergeUpsert({
+    userId,
+    workspaceId,
+    category: "preference",
+    key: "style",
+    baseValueMd: base,
+    valueMd: incoming,
+    confidence: 0.95
+  });
+
+  assert.equal(result.status, "upserted");
+  const update = queries.find((query) => query.operation === "update");
+  assert.equal(update?.targetTable, userMemories);
+  assert.ok(queryReferences(update?.where, userMemories.id));
+  assert.ok(queryReferences(update?.where, userMemories.workspaceId));
+  assert.ok(queryReferences(update?.where, userMemories.valueMd));
+  assert.equal(queryParamValues(update?.where).includes(base), true);
+});
+
 test("mergeUpsert returns a conflict instead of overwriting overlapping L2 memory edits", async () => {
   const existing = row({ valueMd: "回复要详细解释。" });
   const { db, queries } = createQueryRecorder([[existing]]);
