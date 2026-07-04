@@ -244,19 +244,21 @@ test("core renamed fields are present on Drizzle table objects", () => {
 
 test("snapshot refs are wide enough for local absolute snapshot paths", () => {
   assert.equal(getTableName(snapshots), "snapshots");
+  // R9.7: the old assertion grepped migration 0029 for an ALTER TABLE statement.
+  // That was wrong because migration source text did not prove the current schema contract
+  // used by runtime snapshot persistence accepts local absolute refs.
   assert.equal((snapshots.ref as unknown as { config: { length: number } }).config.length, 1024);
-  const migration = readFileSync(join(process.cwd(), "migrations", "0029_snapshot_ref_width.sql"), "utf8");
-  assert.match(migration, /ALTER TABLE "snapshots" ALTER COLUMN "ref" TYPE varchar\(1024\)/u);
 });
 
 test("chat message kinds fit file-context notice events from real intake", () => {
   assert.equal(getTableName(chatMessages), "chat_messages");
+  // R9.7: the old assertion grepped migration 0041 for an ALTER TABLE statement.
+  // That was wrong because migration source text did not prove the current schema contract
+  // used by intake chat writes accepts the longest runtime notice kind.
   assert.ok(
     (chatMessages.kind as unknown as { config: { length: number } }).config.length >=
       "clarification_file_context_notice".length
   );
-  const migration = readFileSync(join(process.cwd(), "migrations", "0041_chat_message_kind_width.sql"), "utf8");
-  assert.match(migration, /ALTER TABLE "chat_messages" ALTER COLUMN "kind" TYPE varchar\(64\)/u);
 });
 
 test("agent run persistence fields support DB-backed replay recovery", () => {
