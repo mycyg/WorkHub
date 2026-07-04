@@ -8,5 +8,8 @@ export function resolveWebMemoryConflictAction(client: MemoryConflictActionClien
   if (!action) {
     return undefined;
   }
-  return client.resolveMemoryConflict(action.conflictId, { resolution: action.resolution });
+  return client.resolveMemoryConflict(action.conflictId, {
+    resolution: action.resolution,
+    expected_updated_at: action.expectedUpdatedAt
+  });
 }

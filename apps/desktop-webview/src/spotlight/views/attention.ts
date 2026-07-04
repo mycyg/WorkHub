@@ -205,7 +205,13 @@ export function reviewAttentionProposalWithoutMerge(client: ProposalReviewOnlyCl
 }
 
 type MemoryConflictActionClient = {
-  resolveMemoryConflict: (id: string, payload: { resolution: "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" }) => Promise<unknown>;
+  resolveMemoryConflict: (
+    id: string,
+    payload: {
+      resolution: "keep_current" | "accept_incoming" | "merge_both" | "edit_memory";
+      expected_updated_at: string;
+    }
+  ) => Promise<unknown>;
 };
 
 export function resolveAttentionMemoryConflictAction(client: MemoryConflictActionClient, href: string) {
@@ -213,7 +219,10 @@ export function resolveAttentionMemoryConflictAction(client: MemoryConflictActio
   if (!action) {
     return undefined;
   }
-  return client.resolveMemoryConflict(action.conflictId, { resolution: action.resolution });
+  return client.resolveMemoryConflict(action.conflictId, {
+    resolution: action.resolution,
+    expected_updated_at: action.expectedUpdatedAt
+  });
 }
 
 export function attentionConflictHtmlFromError(error: unknown, zh: boolean) {

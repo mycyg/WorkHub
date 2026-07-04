@@ -104,6 +104,7 @@ export type MemoryConflictResolution = "keep_current" | "accept_incoming" | "mer
 
 export type ResolveMemoryConflictRequest = {
   resolution: MemoryConflictResolution;
+  expected_updated_at: string;
   value_md?: string;
 };
 

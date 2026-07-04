@@ -73,11 +73,11 @@ test("attention sync-conflict actions resolve through the typed client", async (
       calls.push({ id, payload });
       return { attention: { summary_text: "偏好已确认" } };
     }
-  }, "/api/memory-conflicts/conflict%202/resolve/merge_both") as { attention: { summary_text: string } };
+  }, "/api/memory-conflicts/conflict%202/resolve/merge_both?expected_updated_at=2026-07-03T10%3A40%3A00.000Z") as { attention: { summary_text: string } };
 
   assert.deepEqual(calls, [{
     id: "conflict 2",
-    payload: { resolution: "merge_both" }
+    payload: { resolution: "merge_both", expected_updated_at: "2026-07-03T10:40:00.000Z" }
   }]);
   assert.equal(result.attention.summary_text, "偏好已确认");
 });

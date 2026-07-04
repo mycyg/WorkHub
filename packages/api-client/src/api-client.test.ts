@@ -216,7 +216,11 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.getAgentRunTrace("run-1", 2);
   await client.getAgentRunHandoff("run-1");
   await client.abortAgentRun("run-1");
-  await client.resolveMemoryConflict("memory-conflict-1", { resolution: "merge_both", value_md: "合并后的偏好。" });
+  await client.resolveMemoryConflict("memory-conflict-1", {
+    resolution: "merge_both",
+    value_md: "合并后的偏好。",
+    expected_updated_at: "2026-07-03T10:40:00.000Z"
+  });
   await client.createProposalFromManifest("work-1", { manifest: deliverableManifestFixtures[0]! });
   await client.listWorkItemProposals("work-1");
   await client.listWorkItemConflicts("work-1");
@@ -277,7 +281,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/agent-runs/run-1/trace?after=2",
     "GET /api/agent-runs/run-1/handoff",
     "POST /api/agent-runs/run-1/abort",
-    'POST /api/memory-conflicts/memory-conflict-1/resolve/merge_both {"value_md":"合并后的偏好。"}',
+    'POST /api/memory-conflicts/memory-conflict-1/resolve/merge_both {"value_md":"合并后的偏好。","expected_updated_at":"2026-07-03T10:40:00.000Z"}',
     "POST /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/conflicts",

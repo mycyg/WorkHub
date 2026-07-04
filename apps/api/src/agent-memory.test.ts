@@ -456,12 +456,14 @@ test("promoteMemory persists judge-level memory conflicts into durable sync_conf
     candidateMemoryIds: [sibling.id, entry.id]
   });
   assert.equal(result.memoryConflict?.attention.id, "83000000-0000-4000-8000-000000000701");
+  // R9.7 review: the old href assertion only proved the durable conflict id was linked.
+  // That was wrong because resolving an overwritten open card needs the card version token too.
   assert.deepEqual(
     result.memoryConflict?.attention.actions.map((action) => action.href),
     [
-      "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/keep_current",
-      "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/accept_incoming",
-      "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/merge_both",
+      "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/keep_current?expected_updated_at=2026-07-03T00%3A00%3A00.000Z",
+      "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/accept_incoming?expected_updated_at=2026-07-03T00%3A00%3A00.000Z",
+      "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/merge_both?expected_updated_at=2026-07-03T00%3A00%3A00.000Z",
       "/settings"
     ]
   );

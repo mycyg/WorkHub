@@ -45,6 +45,7 @@ export type MemoryConflictRepository = {
     workspaceId: string;
     userId: string;
     conflictId: string;
+    expectedUpdatedAt: Date;
     resolution: MemoryConflictResolution;
     resolvedValueMd?: string | null;
     resolvedAt?: Date;
@@ -139,7 +140,10 @@ export function createMemoryConflictRepository(db: WorkHubDb): MemoryConflictRep
           resolvedAt,
           updatedAt: resolvedAt
         })
-        .where(and(...openConflictConditions(input)))
+        .where(and(
+          ...openConflictConditions(input),
+          eq(memoryConflicts.updatedAt, input.expectedUpdatedAt)
+        ))
         .returning();
       return rows[0] ?? null;
     }

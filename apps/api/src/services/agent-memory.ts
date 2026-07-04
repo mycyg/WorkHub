@@ -311,11 +311,16 @@ function buildMemoryConflictProposal(input: {
   candidateMemoryIds: string[];
   sourceRunId?: string | null;
   fallbackId: string;
+  updatedAt: Date;
 }): AgentMemoryConflictProposal {
   const label = CATEGORY_LABEL[input.category] ?? input.category;
   const sourceRef: AttentionItem["source_ref"] = input.sourceRunId
     ? { entity_type: "agent_run", entity_id: input.sourceRunId }
     : { entity_type: "notification", entity_id: input.fallbackId };
+  const resolveHref = (resolution: "keep_current" | "accept_incoming" | "merge_both") => {
+    const query = new URLSearchParams({ expected_updated_at: input.updatedAt.toISOString() });
+    return `/api/memory-conflicts/${input.fallbackId}/resolve/${resolution}?${query.toString()}`;
+  };
   return {
     kind: "memory_conflict",
     workspace_id: input.workspaceId,
@@ -340,21 +345,21 @@ function buildMemoryConflictProposal(input: {
           label: "要 A",
           style: "secondary",
           method: "POST",
-          href: `/api/memory-conflicts/${input.fallbackId}/resolve/keep_current`
+          href: resolveHref("keep_current")
         },
         {
           id: "accept_incoming",
           label: "要 B",
           style: "primary",
           method: "POST",
-          href: `/api/memory-conflicts/${input.fallbackId}/resolve/accept_incoming`
+          href: resolveHref("accept_incoming")
         },
         {
           id: "merge_both",
           label: "合并两条",
           style: "secondary",
           method: "POST",
-          href: `/api/memory-conflicts/${input.fallbackId}/resolve/merge_both`
+          href: resolveHref("merge_both")
         },
         {
           id: "open_settings",
@@ -445,7 +450,8 @@ async function persistMemoryConflict(input: {
     ...(row.baseValueMd !== null ? { baseValueMd: row.baseValueMd } : {}),
     candidateMemoryIds: row.candidateMemoryIds,
     sourceRunId: row.sourceRunId,
-    fallbackId: row.id
+    fallbackId: row.id,
+    updatedAt: row.updatedAt
   });
 }
 

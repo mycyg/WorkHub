@@ -1180,7 +1180,10 @@ test("Approval and permission OpenAPI contracts document decision and policy act
   });
 
   assert.equal(jsonRequestBodyRequired(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post"), false);
+  // R9.7 review: the old assertion only documented `value_md`, but resolving a sync-conflict
+  // without the card version lets a stale UI click decide a newer overwritten memory conflict.
   assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post")).sort(), [
+    "expected_updated_at",
     "value_md"
   ]);
   assert.deepEqual(parameterByName(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "resolution"), {

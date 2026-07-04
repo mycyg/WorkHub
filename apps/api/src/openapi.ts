@@ -1713,7 +1713,8 @@ const memoryConflictResolutionResponseSchema = {
 const memoryConflictResolveRequestBodySchema = {
   type: "object",
   properties: {
-    value_md: { type: "string", minLength: 1, maxLength: 4000 }
+    value_md: { type: "string", minLength: 1, maxLength: 4000 },
+    expected_updated_at: { type: "string", format: "date-time" }
   },
   additionalProperties: false
 } as const;

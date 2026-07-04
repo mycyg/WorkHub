@@ -21,6 +21,10 @@ function hrefPathname(href: string, origin = globalThis.location?.origin ?? "htt
   return new URL(href, origin).pathname;
 }
 
+function hrefSearchParams(href: string, origin = globalThis.location?.origin ?? "http://workhub.local") {
+  return new URL(href, origin).searchParams;
+}
+
 export function proposalActionFromHref(href: string) {
   const path = hrefPathname(href);
   const match = /^\/api\/proposals\/([^/]+)\/(review|merge)$/u.exec(path);
@@ -187,9 +191,14 @@ export function memoryConflictActionFromHref(href: string) {
   if (!match?.[1] || !match[2]) {
     return undefined;
   }
+  const expectedUpdatedAt = hrefSearchParams(href).get("expected_updated_at") ?? undefined;
+  if (!expectedUpdatedAt) {
+    return undefined;
+  }
   return {
     conflictId: decodeURIComponent(match[1]),
-    resolution: match[2] as "keep_current" | "accept_incoming" | "merge_both" | "edit_memory"
+    resolution: match[2] as "keep_current" | "accept_incoming" | "merge_both" | "edit_memory",
+    expectedUpdatedAt
   };
 }
 

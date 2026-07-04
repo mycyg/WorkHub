@@ -102,14 +102,19 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
     action: "budget",
     budgetActionId: "finish_current_output"
   });
-  assert.deepEqual(memoryConflictActionFromHref("/api/memory-conflicts/m%201/resolve/keep_current"), {
+  assert.deepEqual(memoryConflictActionFromHref("/api/memory-conflicts/m%201/resolve/keep_current?expected_updated_at=2026-07-03T10%3A40%3A00.000Z"), {
     conflictId: "m 1",
-    resolution: "keep_current"
+    resolution: "keep_current",
+    expectedUpdatedAt: "2026-07-03T10:40:00.000Z"
   });
-  assert.deepEqual(memoryConflictActionFromHref("https://workhub.local/api/memory-conflicts/m-2/resolve/merge_both"), {
+  assert.deepEqual(memoryConflictActionFromHref("https://workhub.local/api/memory-conflicts/m-2/resolve/merge_both?expected_updated_at=2026-07-03T10%3A41%3A00.000Z"), {
     conflictId: "m-2",
-    resolution: "merge_both"
+    resolution: "merge_both",
+    expectedUpdatedAt: "2026-07-03T10:41:00.000Z"
   });
+  // R9.7 review: the old assertion accepted memory-conflict POST hrefs with no version.
+  // That was wrong because stale cards need an updated_at token before the client can resolve.
+  assert.equal(memoryConflictActionFromHref("https://workhub.local/api/memory-conflicts/m-2/resolve/merge_both"), undefined);
   assert.equal(memoryConflictActionFromHref("/api/memory-conflicts/m-1/resolve/delete_everything"), undefined);
   assert.deepEqual(driveItemMutationFromHref("/api/drive/projects/p-1/items/i-1/delete"), {
     projectId: "p-1",

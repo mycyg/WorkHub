@@ -30,6 +30,7 @@ type ResolveMemoryConflictInput = {
   actor: AuthActor;
   conflictId: string;
   resolution: MemoryConflictResolution;
+  expectedUpdatedAt: Date;
   valueMd?: string;
 };
 
@@ -59,6 +60,11 @@ function action(
   return { id, label, style, method, href };
 }
 
+function resolveHref(row: MemoryConflictRow, resolution: MemoryConflictResolution) {
+  const query = new URLSearchParams({ expected_updated_at: row.updatedAt.toISOString() });
+  return `/api/memory-conflicts/${row.id}/resolve/${resolution}?${query.toString()}`;
+}
+
 export function buildMemoryConflictAttentionItem(row: MemoryConflictRow, locale: WorkHubLocale): AttentionItem {
   const zh = locale !== "en-US";
   const label = categoryLabel(row.category, locale);
@@ -77,9 +83,9 @@ export function buildMemoryConflictAttentionItem(row: MemoryConflictRow, locale:
       ? `A：${row.currentValueMd}\nB：${row.incomingValueMd}`
       : `A: ${row.currentValueMd}\nB: ${row.incomingValueMd}`,
     actions: [
-      action("keep_current", zh ? "要 A" : "Keep A", "secondary", "POST", `/api/memory-conflicts/${row.id}/resolve/keep_current`),
-      action("accept_incoming", zh ? "要 B" : "Use B", "primary", "POST", `/api/memory-conflicts/${row.id}/resolve/accept_incoming`),
-      action("merge_both", zh ? "合并两条" : "Merge both", "secondary", "POST", `/api/memory-conflicts/${row.id}/resolve/merge_both`),
+      action("keep_current", zh ? "要 A" : "Keep A", "secondary", "POST", resolveHref(row, "keep_current")),
+      action("accept_incoming", zh ? "要 B" : "Use B", "primary", "POST", resolveHref(row, "accept_incoming")),
+      action("merge_both", zh ? "合并两条" : "Merge both", "secondary", "POST", resolveHref(row, "merge_both")),
       action("open_settings", zh ? "打开设置" : "Open settings", "quiet", "GET", "/settings")
     ],
     cuu_state: "worried",
@@ -137,12 +143,16 @@ async function resolveWithStores(
   if (!row) {
     throw new MemoryConflictServiceError(404, "memory_conflict_not_found", "这张记忆冲突卡不存在或已经处理。");
   }
+  if (row.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) {
+    throw new MemoryConflictServiceError(409, "memory_conflict_status_changed", "这张记忆冲突卡已经更新，请刷新。");
+  }
 
   const valueMd = resolvedValue(row, input.resolution, input.valueMd);
   const resolved = await stores.conflicts.resolve({
     workspaceId: input.actor.workspaceId,
     userId,
     conflictId: input.conflictId,
+    expectedUpdatedAt: input.expectedUpdatedAt,
     resolution: input.resolution,
     resolvedValueMd: valueMd,
     resolvedAt

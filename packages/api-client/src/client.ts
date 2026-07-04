@@ -424,7 +424,10 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         body: JSON.stringify(payload)
       }),
     resolveMemoryConflict: (id, payload) => {
-      const body = payload.value_md ? { value_md: payload.value_md } : {};
+      const body = {
+        ...(payload.value_md ? { value_md: payload.value_md } : {}),
+        expected_updated_at: payload.expected_updated_at
+      };
       return request<MemoryConflictResolveResult>(`/api/memory-conflicts/${encodeURIComponent(id)}/resolve/${encodeURIComponent(payload.resolution)}`, {
         method: "POST",
         body: JSON.stringify(body)

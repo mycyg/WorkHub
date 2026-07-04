@@ -67,6 +67,7 @@ test("R9.3 memory conflict repository resolves only the actor's open workspace c
     workspaceId,
     userId,
     conflictId,
+    expectedUpdatedAt: now,
     resolution: "accept_incoming",
     resolvedValueMd: "回复只给结论。",
     resolvedAt
@@ -79,7 +80,9 @@ test("R9.3 memory conflict repository resolves only the actor's open workspace c
   assert.ok(queryReferences(update?.where, memoryConflicts.workspaceId));
   assert.ok(queryReferences(update?.where, memoryConflicts.userId));
   assert.ok(queryReferences(update?.where, memoryConflicts.status));
+  assert.ok(queryReferences(update?.where, memoryConflicts.updatedAt));
   assert.deepEqual(queryParamValues(update?.where).slice(0, 4), [conflictId, workspaceId, userId, "open"]);
+  assert.ok(queryParamValues(update?.where).some((value) => value === now));
 });
 
 test("R9.3 memory conflict repository deduplicates one open card per user key", async () => {
