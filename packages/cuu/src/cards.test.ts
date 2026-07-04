@@ -899,6 +899,8 @@ test("budget notices and budget events become actionable Cuu cards", () => {
   assert.equal(card.kind, "budget");
   assert.equal(card.state, "asking_approval");
   assert.equal(card.actions[0]?.tone, "primary");
+  assert.equal(card.chips?.[0]?.description, "当前任务");
+  assert.notEqual(card.chips?.[0]?.description, workItemId);
   assert.equal(attentionCard.kind, "budget");
   assert.equal(attentionCard.state, "asking_approval");
   assert.equal(eventCard.id, "event-budget");
@@ -910,6 +912,8 @@ test("budget notices and budget events become actionable Cuu cards", () => {
   assert.equal(english.title, "Budget exhausted");
   assert.equal(english.actions[0]?.label, "Handle budget");
   assert.equal(english.chips?.[0]?.label, "Task budget");
+  assert.equal(english.chips?.[0]?.description, "Current task");
+  assert.notEqual(english.chips?.[0]?.description, workItemId);
   assert.equal(english.chips?.[1]?.description, "Budget usage");
 });
 

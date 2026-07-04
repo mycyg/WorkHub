@@ -66,6 +66,7 @@ import {
   setDocumentLocale,
   safeHref,
   showRouteNotice as showSharedRouteNotice,
+  startAgentRunQueuedNoticeBody,
   sseDirtyGuardNotice,
   sseRefreshNotice,
   startAgentRunActionFromHref,
@@ -843,10 +844,7 @@ function bindGoldPathNavigation(
           await navigateWebRoute(`/workitems/${startAgentRun.workItemId}`, client, locale);
           const monitorToken = ++postRunClarityMonitorToken;
           if (root) {
-            const body = locale === "en-US"
-              ? `AI run queued: ${run.run_id}. WorkHub will refresh this task, then surface Proposal or Replay.`
-              : `AI 执行已排队：${run.run_id}。WorkHub 会刷新任务，并把 Proposal 或 Replay 露出来。`;
-            showRouteNotice(root, actionSuccessNotice(locale, body, actionId ?? "start_agent_run"));
+            showRouteNotice(root, actionSuccessNotice(locale, startAgentRunQueuedNoticeBody(locale), actionId ?? "start_agent_run"));
           }
           void monitorPostRunWorkItemClarity({
             client,

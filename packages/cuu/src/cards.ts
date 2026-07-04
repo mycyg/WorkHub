@@ -401,19 +401,19 @@ function evidenceById(evidenceRefs: EvidenceRef[]) {
 function budgetScopeChip(scope: BudgetScope, options: CuuLocaleOptions = {}): CuuCardChip {
   switch (scope.kind) {
     case "workitem":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.workitem"), description: scope.workitem_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.workitem"), description: cuuT(options.locale, "budget.scopeDesc.workitem") };
     case "task":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.task"), description: scope.task_plan_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.task"), description: cuuT(options.locale, "budget.scopeDesc.task") };
     case "objective":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.objective"), description: scope.objective_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.objective"), description: cuuT(options.locale, "budget.scopeDesc.objective") };
     case "user":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.user"), description: scope.user_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.user"), description: cuuT(options.locale, "budget.scopeDesc.user") };
     case "team":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.team"), description: scope.team_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.team"), description: cuuT(options.locale, "budget.scopeDesc.team") };
     case "curation":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.curation"), description: scope.team_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.curation"), description: cuuT(options.locale, "budget.scopeDesc.curation") };
     case "eval":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.eval"), description: scope.suite };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.eval"), description: cuuT(options.locale, "budget.scopeDesc.eval") };
   }
 }
 

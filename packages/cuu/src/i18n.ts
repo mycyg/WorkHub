@@ -79,6 +79,13 @@ export type CuuCopyKey =
   | "budget.scope.team"
   | "budget.scope.curation"
   | "budget.scope.eval"
+  | "budget.scopeDesc.workitem"
+  | "budget.scopeDesc.task"
+  | "budget.scopeDesc.objective"
+  | "budget.scopeDesc.user"
+  | "budget.scopeDesc.team"
+  | "budget.scopeDesc.curation"
+  | "budget.scopeDesc.eval"
   | "budget.handle"
   | "budget.view"
   | "budget.exhaustedTitle"
@@ -290,6 +297,13 @@ const cuuCopy = {
     "budget.scope.team": "团队预算",
     "budget.scope.curation": "蒸馏预算",
     "budget.scope.eval": "评测预算",
+    "budget.scopeDesc.workitem": "当前任务",
+    "budget.scopeDesc.task": "当前任务计划",
+    "budget.scopeDesc.objective": "当前目标",
+    "budget.scopeDesc.user": "当前用户",
+    "budget.scopeDesc.team": "当前团队",
+    "budget.scopeDesc.curation": "团队蒸馏范围",
+    "budget.scopeDesc.eval": "评测范围",
     "budget.handle": "处理预算",
     "budget.view": "查看预算",
     "budget.exhaustedTitle": "预算用完了",
@@ -500,6 +514,13 @@ const cuuCopy = {
     "budget.scope.team": "Team budget",
     "budget.scope.curation": "Curation budget",
     "budget.scope.eval": "Eval budget",
+    "budget.scopeDesc.workitem": "Current task",
+    "budget.scopeDesc.task": "Current task plan",
+    "budget.scopeDesc.objective": "Current objective",
+    "budget.scopeDesc.user": "Current user",
+    "budget.scopeDesc.team": "Current team",
+    "budget.scopeDesc.curation": "Team curation scope",
+    "budget.scopeDesc.eval": "Evaluation scope",
     "budget.handle": "Handle budget",
     "budget.view": "View budget",
     "budget.exhaustedTitle": "Budget exhausted",

@@ -45,6 +45,7 @@ import {
   sessionNextQuestionIdFromHref,
   setDocumentLocale,
   showRouteNotice as showSharedRouteNotice,
+  startAgentRunQueuedNoticeBody,
   startAgentRunActionFromHref,
   taskPlanDraftedNoticeBody,
   updateIntakeActionPayloads,
@@ -761,11 +762,8 @@ function bindGoldPathNavigation(
       const startAgentRun = startAgentRunActionFromHref(href);
       if (startAgentRun) {
         try {
-          const run = await client.startAgentRun(startAgentRun.workItemId);
-          const body = locale === "en-US"
-            ? `AI run queued: ${run.run_id}.`
-            : `AI 执行已排队：${run.run_id}。`;
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, body, actionId ?? "start_agent_run"));
+          await client.startAgentRun(startAgentRun.workItemId);
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, startAgentRunQueuedNoticeBody(locale), actionId ?? "start_agent_run"));
           window.location.hash = `/workitems/${startAgentRun.workItemId}`;
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "start_agent_run"));

@@ -120,6 +120,12 @@ export function taskPlanDraftedNoticeBody(locale: WorkHubLocale): string {
     : "任务计划已生成，请先审阅再开始执行。";
 }
 
+export function startAgentRunQueuedNoticeBody(locale: WorkHubLocale): string {
+  return locale === "en-US"
+    ? "AI started. WorkHub will refresh this task and surface Proposal or Replay when available."
+    : "AI 已开始处理，WorkHub 会刷新任务，并在有 Proposal 或 Replay 时提醒你。";
+}
+
 export function actionErrorNotice(locale: WorkHubLocale, error: unknown, actionId?: string): RouteNoticeVM {
   return {
     kind: "action_error",

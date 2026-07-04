@@ -13,6 +13,7 @@ import {
   mergeConflictNotice,
   reasonRequiredNotice,
   selectionNotice,
+  startAgentRunQueuedNoticeBody,
   sseDirtyGuardNotice,
   sseRefreshNotice,
   taskPlanDraftedNoticeBody
@@ -48,4 +49,15 @@ test("R9.7 task-plan drafted notices avoid dispatch internals", () => {
   assert.equal(taskPlanDraftedNoticeBody("en-US").includes("dispatch"), false);
   assert.equal(taskPlanDraftedNoticeBody("zh-CN"), "任务计划已生成，请先审阅再开始执行。");
   assert.equal(taskPlanDraftedNoticeBody("en-US"), "Task plan drafted. Review the plan before work starts.");
+});
+
+test("R9.7 start-run notices avoid raw run identifiers", () => {
+  const rawRunId = "40000000-0000-4000-8000-000000000025";
+  const zh = startAgentRunQueuedNoticeBody("zh-CN");
+  const en = startAgentRunQueuedNoticeBody("en-US");
+
+  assert.equal(zh, "AI 已开始处理，WorkHub 会刷新任务，并在有 Proposal 或 Replay 时提醒你。");
+  assert.equal(en, "AI started. WorkHub will refresh this task and surface Proposal or Replay when available.");
+  assert.equal(zh.includes(rawRunId), false);
+  assert.equal(en.includes(rawRunId), false);
 });
