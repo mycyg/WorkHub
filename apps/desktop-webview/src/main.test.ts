@@ -42,6 +42,8 @@ import {
   handleDesktopProposalAction,
   type DesktopProposalActionClient
 } from "./desktop-proposal-actions.js";
+import { bindDesktopOfflineCard } from "./desktop-offline-card.js";
+import { renderDesktopSpotlightBootShell } from "./desktop-spotlight-boot.js";
 import { handleSpotlightCapabilityEscape, SPOTLIGHT_INTERNAL_BACK_SELECTOR } from "./spotlight/controller.js";
 
 const intakeSession: SessionVM = {
@@ -170,6 +172,38 @@ function fakeDesktopProposalClient(calls: Array<{ method: string; id: string; pa
 
 function fakeDesktopActionTarget(dataset: Record<string, string>): HTMLElement {
   return { dataset } as unknown as HTMLElement;
+}
+
+type FakeDesktopDomEvent = { preventDefault?: () => void };
+
+type FakeDesktopDomElement = {
+  value?: string;
+  addEventListener: (type: string, handler: (event: FakeDesktopDomEvent) => void) => void;
+  dispatch: (type: string, event?: FakeDesktopDomEvent) => void;
+  focus?: (options?: FocusOptions) => void;
+  removeAttribute?: (name: string) => void;
+};
+
+function fakeDesktopDomElement(extra: Partial<FakeDesktopDomElement> = {}): FakeDesktopDomElement {
+  const listeners = new Map<string, (event: FakeDesktopDomEvent) => void>();
+  return {
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    dispatch(type, event = {}) {
+      listeners.get(type)?.(event);
+    },
+    ...extra
+  };
+}
+
+function fakeDesktopRoot(nodes: Record<string, FakeDesktopDomElement | null>) {
+  return {
+    innerHTML: "",
+    querySelector(selector: string) {
+      return nodes[selector] ?? null;
+    }
+  } as unknown as HTMLElement;
 }
 
 function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSession): WorkHubApiClient {
@@ -1057,7 +1091,8 @@ test("Spotlight exposes native move and resize gestures instead of a fixed top s
   assert.notEqual(nativeFallbackMoveStart, -1);
   assert.notEqual(nativeFallbackClearStart, -1);
   assert.doesNotMatch(source.slice(nativeFallbackMoveStart, nativeFallbackClearStart), /scheduleWorkHubLiquidGlassFilterRebuild\(doc\)/u);
-  assert.match(browserSource, /liquidGlassFilterHtml/u);
+  // R9.7: the old assertion required browser.ts itself to import `liquidGlassFilterHtml`.
+  // That was wrong because the boot shell HTML is now behavior-tested through renderDesktopSpotlightBootShell().
   assert.match(browserSource, /scheduleWorkHubLiquidGlassFilterRebuild\(document\)/u);
   assert.match(browserSource, /const moveMainWindowBy: SpotlightManualDragFn = \(deltaX, deltaY\): void =>/u);
   assert.match(browserSource, /invoke\("move_main_window_by", \{ deltaX, deltaY \}\)/u);
@@ -1065,29 +1100,85 @@ test("Spotlight exposes native move and resize gestures instead of a fixed top s
   assert.doesNotMatch(browserSource, /start_main_window_resize_drag/u);
 });
 
+// R9.7: the old offline-settings assertion grepped browser.ts for localStorage calls.
+// That was wrong because source regexes can pass while the rendered offline card still navigates or leaves controls unbound.
 test("desktop offline settings edit the API base locally instead of navigating to a dead settings route", () => {
-  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+  const storageCalls: Array<{ method: "setItem" | "removeItem"; key: string; value?: string }> = [];
+  const reloads: string[] = [];
+  const rebuilds: string[] = [];
+  const focusCalls: FocusOptions[] = [];
+  const removedAttributes: string[] = [];
+  let submitPrevented = 0;
 
-  const offlineStart = source.indexOf("function renderDesktopOfflineCard");
-  const bootStart = source.indexOf("async function bootSpotlight", offlineStart);
-  const offlineSource = source.slice(offlineStart, bootStart);
+  const retry = fakeDesktopDomElement();
+  const openSettings = fakeDesktopDomElement();
+  const defaultApi = fakeDesktopDomElement();
+  const form = fakeDesktopDomElement({
+    removeAttribute(name) {
+      removedAttributes.push(name);
+    }
+  });
+  const apiInput = fakeDesktopDomElement({
+    value: "https://workhub.example///",
+    focus(options) {
+      focusCalls.push(options ?? {});
+    }
+  });
+  const root = fakeDesktopRoot({
+    "#wh-retry": retry,
+    "#wh-open-settings": openSettings,
+    "#wh-default-api": defaultApi,
+    "#wh-offline-settings": form,
+    "#wh-api-base": apiInput
+  });
 
-  assert.match(offlineSource, /#wh-offline-settings/u);
-  assert.match(offlineSource, /window\.localStorage\.setItem\("workhub_api_base", next\)/u);
-  assert.match(offlineSource, /window\.localStorage\.removeItem\("workhub_api_base"\)/u);
-  assert.doesNotMatch(offlineSource, /window\.location\.hash = "#\/settings"/u);
+  bindDesktopOfflineCard(root, {
+    apiBase: "http://127.0.0.1:8787",
+    detail: "ECONNREFUSED",
+    locale: "zh-CN",
+    storage: {
+      setItem(key, value) {
+        storageCalls.push({ method: "setItem", key, value });
+      },
+      removeItem(key) {
+        storageCalls.push({ method: "removeItem", key });
+      }
+    },
+    reload: () => { reloads.push("reload"); },
+    scheduleRebuild: () => { rebuilds.push("rebuild"); }
+  });
+
+  assert.match(root.innerHTML, /id="wh-offline-settings"/u);
+  assert.doesNotMatch(root.innerHTML, /#\/settings/u);
+
+  openSettings.dispatch("click");
+  assert.deepEqual(removedAttributes, ["hidden"]);
+  assert.deepEqual(focusCalls, [{ preventScroll: true }]);
+
+  form.dispatch("submit", { preventDefault: () => { submitPrevented += 1; } });
+  assert.equal(submitPrevented, 1);
+  assert.deepEqual(storageCalls, [
+    { method: "setItem", key: "workhub_api_base", value: "https://workhub.example" }
+  ]);
+  assert.deepEqual(reloads, ["reload"]);
+
+  defaultApi.dispatch("click");
+  assert.deepEqual(storageCalls.at(-1), { method: "removeItem", key: "workhub_api_base" });
+  assert.deepEqual(reloads, ["reload", "reload"]);
+
+  retry.dispatch("click");
+  assert.deepEqual(reloads, ["reload", "reload", "reload"]);
+  assert.deepEqual(rebuilds, ["rebuild"]);
 });
 
 test("Spotlight boot starts transparent without a legacy boot card or capture background", () => {
-  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
-  const bootStart = source.indexOf("async function bootSpotlight");
-  const endStart = source.indexOf("if (root && resolveDesktopSurface() === \"pet\")", bootStart);
-  assert.notEqual(bootStart, -1);
-  assert.notEqual(endStart, -1);
-  const bootSource = source.slice(bootStart, endStart);
+  // R9.7: the old boot assertion grepped browser.ts for omitted legacy calls.
+  // That was wrong because source regexes can pass while boot still renders a stale opaque shell.
+  const html = renderDesktopSpotlightBootShell();
 
-  assert.doesNotMatch(bootSource, /renderGoldPathBootDocument/u);
-  assert.doesNotMatch(bootSource, /#0f1117/u);
-  assert.match(bootSource, /liquidGlassHeadHtml/u);
-  assert.match(bootSource, /liquidGlassFilterHtml/u);
+  assert.match(html, /data-spot-host/u);
+  assert.match(html, /M\+PLUS\+Rounded\+1c/u);
+  assert.match(html, /\.wh-spot/u);
+  assert.doesNotMatch(html, /wh-app-root/u);
+  assert.doesNotMatch(html, /#0f1117/u);
 });

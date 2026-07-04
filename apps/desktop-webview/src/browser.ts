@@ -66,10 +66,11 @@ import {
   loadCuuPreferences,
   saveCuuPreferences
 } from "./cuu-preferences.js";
-import { renderDesktopOfflineCardHtml } from "./desktop-offline-card.js";
+import { bindDesktopOfflineCard } from "./desktop-offline-card.js";
+import { renderDesktopSpotlightBootShell } from "./desktop-spotlight-boot.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import { liquidGlassCss, liquidGlassHeadHtml } from "./liquid-glass.js";
-import { liquidGlassFilterHtml, scheduleWorkHubLiquidGlassFilterRebuild } from "./liquid-glass-filter.js";
+import { scheduleWorkHubLiquidGlassFilterRebuild } from "./liquid-glass-filter.js";
 import { renderDecisionDeckHtml, decisionDeckCss } from "./decision-deck.js";
 import { renderTeamCalendarHtml, teamCalendarCss } from "./team-calendar.js";
 import { renderProjectsListHtml, projectsPageCss } from "./projects-page.js";
@@ -95,7 +96,6 @@ import {
   type SpotlightManualDragFn,
   type SpotlightResizeFn
 } from "./spotlight/controller.js";
-import { spotlightCss } from "./spotlight/css.js";
 import { isStaleDesktopClientTokenError } from "./auth-recovery.js";
 
 const root = document.getElementById("root");
@@ -1211,29 +1211,15 @@ const dismissMainWindow = (): void => {
 function renderDesktopOfflineCard(rootEl: HTMLElement, locale: WorkHubLocale, error: unknown): void {
   const apiBase = resolveDesktopApiBase();
   const detail = error instanceof Error ? error.message : String(error);
-    rootEl.innerHTML = renderDesktopOfflineCardHtml({ apiBase, detail, locale });
-    rootEl.querySelector<HTMLButtonElement>("#wh-retry")?.addEventListener("click", () => window.location.reload());
-    rootEl.querySelector<HTMLButtonElement>("#wh-open-settings")?.addEventListener("click", () => {
-      const form = rootEl.querySelector<HTMLFormElement>("#wh-offline-settings");
-      form?.removeAttribute("hidden");
-      rootEl.querySelector<HTMLInputElement>("#wh-api-base")?.focus({ preventScroll: true });
-    });
-    rootEl.querySelector<HTMLButtonElement>("#wh-default-api")?.addEventListener("click", () => {
-      window.localStorage.removeItem("workhub_api_base");
-      window.location.reload();
-    });
-    rootEl.querySelector<HTMLFormElement>("#wh-offline-settings")?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const next = rootEl.querySelector<HTMLInputElement>("#wh-api-base")?.value.trim().replace(/\/+$/u, "") ?? "";
-      if (next.length > 0) {
-        window.localStorage.setItem("workhub_api_base", next);
-      } else {
-        window.localStorage.removeItem("workhub_api_base");
-      }
-      window.location.reload();
-    });
-    scheduleWorkHubLiquidGlassFilterRebuild(document);
-  }
+  bindDesktopOfflineCard(rootEl, {
+    apiBase,
+    detail,
+    locale,
+    storage: window.localStorage,
+    reload: () => window.location.reload(),
+    scheduleRebuild: () => scheduleWorkHubLiquidGlassFilterRebuild(document)
+  });
+}
 
 // R8 彻底重构主窗：苹果聚焦搜索式「会生长的玻璃盒」就是整个 app（替代旧的 gold-path 全屏壳 boot()）。
 // 复用跨域鉴权地基（client token bootstrap）+ locale；挂 Spotlight 控制器；把桌宠偏好同步给桌宠窗（Cuu 为核心）。
@@ -1251,7 +1237,7 @@ async function bootSpotlight() {
     // 跨源鉴权地基：先确保有 client token（goldPath/pages 才返回 LIVE 数据），并把令牌推给 Rust 壳（SSE /me 鉴权）。
     await ensureDesktopClientToken(client);
     locale = await resolveBootLocale(client, locale);
-    root.innerHTML = `${liquidGlassHeadHtml}${liquidGlassFilterHtml}<style>${appleGlassDesignSystemCss}${spotlightCss}</style><div data-spot-host></div>`;
+    root.innerHTML = renderDesktopSpotlightBootShell();
     const hostEl = root.querySelector<HTMLElement>("[data-spot-host]");
     if (!hostEl) {
       return;
