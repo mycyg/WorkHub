@@ -91,6 +91,7 @@ import {
 import {
   drivePreviewPanelHtml,
   drivePreviewTitle,
+  renderDrivePreviewPanel,
   type DrivePreviewPayload
 } from "./drive-preview.js";
 import {
@@ -137,22 +138,6 @@ function startIntentText(actionTarget: HTMLElement) {
   const route = actionTarget.closest<HTMLElement>("[data-r4-route-component=\"intake\"]");
   const input = route?.querySelector<HTMLTextAreaElement>("[data-s1-day1-intent-input]");
   return input?.value.trim() ?? "";
-}
-
-function renderDrivePreviewPanel(actionTarget: HTMLElement, preview: DrivePreviewPayload, locale: WorkHubLocale) {
-  const route = actionTarget.closest<HTMLElement>("[data-r4-route-component=\"drive\"]");
-  if (!route) {
-    return false;
-  }
-  route.querySelector<HTMLElement>("[data-r5-drive-preview-panel]")?.remove();
-  const anchor = actionTarget.closest<HTMLElement>("[data-r4-drive-accepted-deliverable],[data-r4-drive-item]");
-  const panel = document.createElement("section");
-  panel.className = "wh-card wh-r4-route-card wh-r5-drive-preview-panel";
-  panel.dataset.r5DrivePreviewPanel = "true";
-  panel.innerHTML = drivePreviewPanelHtml(preview, locale);
-  (anchor ?? route).insertAdjacentElement(anchor ? "afterend" : "beforeend", panel);
-  panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  return true;
 }
 
 function sleep(ms: number) {
