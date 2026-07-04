@@ -52,7 +52,6 @@ test("R9.7 resolving a child retry resets the task-plan item before work-item re
     [updatedEscalation],
     [{ id: taskPlanItemId }],
     [{ id: taskPlanId }],
-    [{ id: workItemId }],
     []
   ]);
   const repository = createAiDecisionRepository(db);
@@ -65,7 +64,7 @@ test("R9.7 resolving a child retry resets the task-plan item before work-item re
     at: now
   });
 
-  const [escalationUpdate, itemUpdate, planUpdate, workItemUpdate] = queries;
+  const [escalationUpdate, itemUpdate, planUpdate] = queries;
   assert.equal(escalationUpdate?.targetTable, escalationEvents);
   assert.equal(itemUpdate?.targetTable, taskPlanItems);
   assert.deepEqual(itemUpdate?.setValue, { status: "pending", updatedAt: now });
@@ -79,7 +78,10 @@ test("R9.7 resolving a child retry resets the task-plan item before work-item re
   assert.deepEqual(planUpdate?.setValue, { status: "dispatching", updatedAt: now });
   assert.ok(queryReferences(planUpdate?.where, taskPlans.id));
   assert.ok(queryReferences(planUpdate?.where, taskPlans.workspaceId));
-  assert.equal(workItemUpdate?.targetTable, workItems);
+  // R9.7: the old assertion expected a parent work_items update here, but this
+  // escalation is scoped to a child task-plan item; retry must not mutate the
+  // parent work item status/version.
+  assert.equal(queries.some((query) => query.targetTable === workItems), false);
 });
 
 test("R9.7 escalation resolution mutations are fenced by workspace", async () => {
@@ -227,7 +229,6 @@ test("R9.7 resolving a child cancel cancels the active child run and skips child
     [updatedEscalation],
     [],
     [{ id: taskPlanItemId }, { id: skippedDependentId }, { id: failedDependentId }],
-    [{ id: workItemId }],
     []
   ]);
   const repository = createAiDecisionRepository(db);
@@ -240,7 +241,7 @@ test("R9.7 resolving a child cancel cancels the active child run and skips child
     at: now
   });
 
-  const [, runUpdate, itemUpdate, workItemUpdate] = queries;
+  const [, runUpdate, itemUpdate] = queries;
   assert.equal(runUpdate?.targetTable, agentRuns);
   assert.deepEqual(runUpdate?.setValue, { status: "cancelled", finishedAt: now, updatedAt: now });
   assert.ok(queryReferences(runUpdate?.where, agentRuns.id));
@@ -260,5 +261,7 @@ test("R9.7 resolving a child cancel cancels the active child run and skips child
   assert.ok(queryParamValues(itemUpdate?.where).includes(taskPlanItemId));
   assert.ok(queryParamValues(itemUpdate?.where).includes(skippedDependentId));
   assert.ok(queryParamValues(itemUpdate?.where).includes(failedDependentId));
-  assert.equal(workItemUpdate?.targetTable, workItems);
+  // R9.7: the old assertion expected child cancel to cancel the parent
+  // work_items row too, but child escalation actions must stay task-scoped.
+  assert.equal(queries.some((query) => query.targetTable === workItems), false);
 });

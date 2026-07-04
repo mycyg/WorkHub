@@ -398,22 +398,24 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
             requireResolutionRows(skippedItems, taskTarget.itemIds.length);
           }
         }
-        const updatedWorkItems = await tx
-          .update(workItems)
-          .set({
-            status: input.targetStatus,
-            version: sql`${workItems.version} + 1`,
-            updatedAt: input.at
-          })
-          .where(and(
-            eq(workItems.id, updatedEscalation.workItemId),
-            eq(workItems.workspaceId, input.workspaceId),
-            inArray(workItems.status, predecessors),
-            isNull(workItems.deletedAt)
-          ))
-          .returning({ id: workItems.id });
-        if (!updatedWorkItems[0]) {
-          throw new Error("escalation_status_transition_conflict");
+        if (!taskTarget) {
+          const updatedWorkItems = await tx
+            .update(workItems)
+            .set({
+              status: input.targetStatus,
+              version: sql`${workItems.version} + 1`,
+              updatedAt: input.at
+            })
+            .where(and(
+              eq(workItems.id, updatedEscalation.workItemId),
+              eq(workItems.workspaceId, input.workspaceId),
+              inArray(workItems.status, predecessors),
+              isNull(workItems.deletedAt)
+            ))
+            .returning({ id: workItems.id });
+          if (!updatedWorkItems[0]) {
+            throw new Error("escalation_status_transition_conflict");
+          }
         }
         const rows = await tx
           .select(escalationServiceColumns)
