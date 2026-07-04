@@ -65,8 +65,10 @@ import { correctionFromReview, getDefaultUserMemoryRepository } from "./user-mem
 import { parseOutputContract } from "../pages/output-contract.js";
 import {
   getDefaultTaskPlanMergeApprovalHandler,
+  getDefaultTaskPlanReviewRejectionHandler,
   taskPlanApprovalTarget,
-  type TaskPlanMergeApprovalHandler
+  type TaskPlanMergeApprovalHandler,
+  type TaskPlanReviewRejectionHandler
 } from "./task-plan-approval.js";
 
 export type ProposalActor = {
@@ -81,6 +83,7 @@ export type StoredProposal = Proposal & {
 
 export type ProposalServiceHooks = {
   onMerged?: TaskPlanMergeApprovalHandler;
+  onRejected?: TaskPlanReviewRejectionHandler;
 };
 
 // GAP-1：首页决策队列里「待评审提议」的轻量摘要(不含 manifest/reviews)。
@@ -1642,6 +1645,7 @@ export function createInMemoryProposalService(options: {
   now?: () => Date;
   id?: () => string;
   onMerged?: TaskPlanMergeApprovalHandler;
+  onRejected?: TaskPlanReviewRejectionHandler;
 } = {}): ProposalService {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
@@ -1759,10 +1763,14 @@ export function createInMemoryProposalService(options: {
         reviewed_at: at,
         updated_at: at
       }, "proposal.memory");
-      return save({
+      const reviewed = save({
         ...updated,
         reviews: [...proposal.reviews, review]
       });
+      if (input.decision !== "approve") {
+        await options.onRejected?.(reviewed);
+      }
+      return reviewed;
     },
 
     async merge(input) {
@@ -1828,6 +1836,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
   storageRoot?: string;
   fusionCandidateGenerator?: MergeFusionCandidateGenerator;
   onMerged?: TaskPlanMergeApprovalHandler;
+  onRejected?: TaskPlanReviewRejectionHandler;
 } = {}): ProposalService {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
@@ -2046,7 +2055,11 @@ export function createDbProposalService(repository: ProposalRepository, options:
           // 记忆沉淀失败不影响审批结果
         }
       }
-      return storedRowsToProposal(rows);
+      const reviewed = storedRowsToProposal(rows);
+      if (input.decision !== "approve") {
+        await options.onRejected?.(reviewed);
+      }
+      return reviewed;
     },
 
     async merge(input) {
@@ -2298,7 +2311,8 @@ export function getDefaultProposalService() {
   if (!defaultProposalService) {
     defaultProposalDbClient = getSharedDatabaseClient();
     defaultProposalService = createDbProposalService(createProposalRepository(defaultProposalDbClient.db), {
-      onMerged: getDefaultTaskPlanMergeApprovalHandler()
+      onMerged: getDefaultTaskPlanMergeApprovalHandler(),
+      onRejected: getDefaultTaskPlanReviewRejectionHandler()
     });
   }
   return defaultProposalService;

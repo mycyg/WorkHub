@@ -9,7 +9,12 @@ export type TaskPlanApprovalRepository = {
   approvePlan: (input: { planId: string; workspaceId: string; workItemId: string; approvedAt?: Date }) => Promise<TaskPlanRow | null>;
 };
 
+export type TaskPlanRejectionRepository = {
+  cancelDraftPlan: (input: { planId: string; workspaceId: string; cancelledAt?: Date }) => Promise<TaskPlanRow | null>;
+};
+
 export type TaskPlanMergeApprovalHandler = (proposal: StoredProposal) => Promise<TaskPlanRow | null>;
+export type TaskPlanReviewRejectionHandler = (proposal: StoredProposal) => Promise<TaskPlanRow | null>;
 
 export class TaskPlanApprovalError extends Error {
   constructor(
@@ -76,11 +81,45 @@ export function createTaskPlanMergeApprovalHandler(input: {
   };
 }
 
+export function createTaskPlanReviewRejectionHandler(input: {
+  taskPlans: TaskPlanRejectionRepository;
+  now?: () => Date;
+}): TaskPlanReviewRejectionHandler {
+  const now = input.now ?? (() => new Date());
+  return async (proposal) => {
+    const target = taskPlanApprovalTarget(proposal);
+    if (!target) {
+      return null;
+    }
+    const cancelled = await input.taskPlans.cancelDraftPlan({
+      planId: target.planId,
+      workspaceId: target.workspaceId,
+      cancelledAt: now()
+    });
+    if (!cancelled) {
+      throw new TaskPlanApprovalError(
+        409,
+        "task_plan_rejection_failed",
+        "任务计划提议已打回，但对应草稿未能取消。"
+      );
+    }
+    return cancelled;
+  };
+}
+
 let defaultTaskPlanApprovalHandler: TaskPlanMergeApprovalHandler | undefined;
+let defaultTaskPlanReviewRejectionHandler: TaskPlanReviewRejectionHandler | undefined;
 
 export function getDefaultTaskPlanMergeApprovalHandler() {
   defaultTaskPlanApprovalHandler ??= createTaskPlanMergeApprovalHandler({
     taskPlans: createTaskPlanRepository(getSharedDatabaseClient().db)
   });
   return defaultTaskPlanApprovalHandler;
+}
+
+export function getDefaultTaskPlanReviewRejectionHandler() {
+  defaultTaskPlanReviewRejectionHandler ??= createTaskPlanReviewRejectionHandler({
+    taskPlans: createTaskPlanRepository(getSharedDatabaseClient().db)
+  });
+  return defaultTaskPlanReviewRejectionHandler;
 }

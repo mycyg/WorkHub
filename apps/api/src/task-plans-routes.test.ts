@@ -23,6 +23,7 @@ import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/pro
 import { createTaskPlanRoutes } from "./routes/task-plans.js";
 import {
   createTaskPlanMergeApprovalHandler,
+  createTaskPlanReviewRejectionHandler,
   createTaskPlanWorkflowService,
   TaskPlanServiceError,
   type TaskPlanWorkflowRepository
@@ -43,6 +44,9 @@ const mergeSnapshotId = "95000000-0000-4000-8000-000000000509";
 const foreignWorkItemId = "95000000-0000-4000-8000-000000000510";
 const foreignPlanId = "95000000-0000-4000-8000-000000000511";
 const objectiveId = "95000000-0000-4000-8000-000000000512";
+const regeneratedPlanId = "95000000-0000-4000-8000-000000000513";
+const regeneratedProposalId = "95000000-0000-4000-8000-000000000514";
+const regeneratedBranchId = "95000000-0000-4000-8000-000000000515";
 
 function user(): UserAuthRow {
   return {
@@ -455,6 +459,87 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   assert.equal(taskPlans.rows.get(planId)?.status, "approved");
   assert.deepEqual(dispatchedPlans, [{ planId, workspaceId, orgId: "00000000-0000-4000-8000-000000000001", actorId: userId }]);
   assert.notEqual(workItems.status, "cancelled");
+});
+
+test("R9.7 task-plan rejection cancels the draft so the work item can regenerate a plan", async () => {
+  const runtimeSettings = settings();
+  const workItems = new WorkItems();
+  const taskPlans = new MemoryTaskPlans();
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: ids([proposalId, branchId, reviewId, regeneratedProposalId, regeneratedBranchId]),
+    onRejected: createTaskPlanReviewRejectionHandler({ taskPlans })
+  });
+  const plannerInputs: unknown[] = [];
+  const service = createTaskPlanWorkflowService({
+    taskPlans,
+    proposals,
+    id: ids([planId, regeneratedPlanId]),
+    now: () => now,
+    planner: {
+      async createDraft(input) {
+        plannerInputs.push(input);
+        return {
+          items: [{
+            id: plannerInputs.length === 1
+              ? "95000000-0000-4000-8000-000000000651"
+              : "95000000-0000-4000-8000-000000000652",
+            seq: 0,
+            title: "重生成任务计划",
+            role: "produce" as const,
+            objectiveMd: "用户打回后按反馈重新生成任务计划。",
+            acceptanceMd: "旧 draft 不再阻止新的任务计划。",
+            budgetSharePct: 100,
+            dependsOn: []
+          }],
+          decompositionContext: { judge: "approved" }
+        };
+      }
+    }
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createTaskPlanRoutes({ auth: authDeps(runtimeSettings), service, workItems }));
+  app.route("/api/proposals", createProposalRoutes({
+    auth: authDeps(runtimeSettings),
+    proposals,
+    workItems,
+    taskPlanDispatcher: false
+  }));
+  const headers = {
+    cookie: await cookie(runtimeSettings),
+    "content-type": "application/json"
+  };
+
+  const created = await app.request(`/api/workitems/${workItemId}/task-plan`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(created.status, 201);
+  const createdBody = await created.json() as { data: { proposal_id: string; plan_id: string } };
+  assert.equal(createdBody.data.plan_id, planId);
+  assert.equal(taskPlans.rows.get(planId)?.status, "draft");
+
+  const rejected = await app.request(`/api/proposals/${createdBody.data.proposal_id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "request_changes", reason_md: "请把产出和复核拆得更清楚。" })
+  });
+  assert.equal(rejected.status, 200);
+
+  const regenerated = await app.request(`/api/workitems/${workItemId}/task-plan`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+
+  assert.equal(regenerated.status, 201);
+  const regeneratedBody = await regenerated.json() as { data: { proposal_id: string; plan_id: string } };
+  assert.equal(regeneratedBody.data.plan_id, regeneratedPlanId);
+  assert.equal(regeneratedBody.data.proposal_id, regeneratedProposalId);
+  assert.equal(taskPlans.rows.get(planId)?.status, "cancelled");
+  assert.equal(taskPlans.rows.get(regeneratedPlanId)?.status, "draft");
+  assert.equal(plannerInputs.length, 2);
 });
 
 test("R9.1 task-plan merge fails loudly when approval does not update the plan", async () => {

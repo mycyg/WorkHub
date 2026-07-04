@@ -25,6 +25,7 @@ import {
 } from "./proposals.js";
 export {
   createTaskPlanMergeApprovalHandler,
+  createTaskPlanReviewRejectionHandler,
   TaskPlanApprovalError
 } from "./task-plan-approval.js";
 
