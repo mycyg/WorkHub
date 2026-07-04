@@ -277,29 +277,31 @@ export function buildAgentArmyDashboardPage(input: AgentArmyDashboardPageInput):
     };
   });
 
+  const recentEscalations = input.escalations.map((escalation) => {
+    const row = input.plans.find((candidate) => candidate.plan.id === escalation.planId);
+    const run = input.runs.find((candidate) => candidate.id === escalation.runId);
+    const titleBase = run?.title ?? row?.workItem.title ?? row?.workItem.code ?? (locale === "en-US" ? "Agent task" : "子任务");
+    return {
+      id: escalation.id,
+      ...(escalation.planId ? { plan_id: escalation.planId } : {}),
+      work_item_id: escalation.workItemId,
+      title: locale === "en-US" ? `${titleBase} needs review` : `${titleBase}需要人判断`,
+      reason_preview: reasonPreview(escalation.reasonMd),
+      created_at: escalation.createdAt.toISOString(),
+      href: "/attention"
+    };
+  });
+
   return parseOutputContract(agentArmyDashboardVmSchema, {
     generated_at: generatedAt.toISOString(),
     kpis: {
       active_team_count: input.plans.length,
-      waiting_decision_count: input.attentionCount,
+      waiting_decision_count: Math.max(input.attentionCount, recentEscalations.length),
       today_cost_cny: formatCny(todayCost),
       autonomy_rate_pct: input.autonomyRatePct ?? 0
     },
     plans,
-    recent_escalations: input.escalations.map((escalation) => {
-      const row = input.plans.find((candidate) => candidate.plan.id === escalation.planId);
-      const run = input.runs.find((candidate) => candidate.id === escalation.runId);
-      const titleBase = run?.title ?? row?.workItem.title ?? row?.workItem.code ?? (locale === "en-US" ? "Agent task" : "子任务");
-      return {
-        id: escalation.id,
-        ...(escalation.planId ? { plan_id: escalation.planId } : {}),
-        work_item_id: escalation.workItemId,
-        title: locale === "en-US" ? `${titleBase} needs review` : `${titleBase}需要人判断`,
-        reason_preview: reasonPreview(escalation.reasonMd),
-        created_at: escalation.createdAt.toISOString(),
-        href: "/attention"
-      };
-    }),
+    recent_escalations: recentEscalations,
     source_warnings: input.sourceWarnings ?? [],
     page_info: {
       plan_limit: input.pageInfo.planLimit,

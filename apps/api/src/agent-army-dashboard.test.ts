@@ -396,6 +396,49 @@ test("R9.6 agent army dashboard returns an honest empty state without fake plans
   assert.deepEqual(vm.recent_escalations, []);
 });
 
+test("R9.7 agent army dashboard KPI never undercounts returned escalation rows", () => {
+  const plan = dashboardPlanFixture(30);
+  const vm = buildAgentArmyDashboardPage({
+    generatedAt: now,
+    locale: "en-US",
+    attentionCount: 0,
+    autonomyRatePct: 0,
+    plans: [plan],
+    items: [],
+    runs: [],
+    escalations: [
+      {
+        id: escalationId,
+        workItemId: plan.workItem.id,
+        planId: plan.plan.id,
+        runId: null,
+        reasonMd: "Needs review.",
+        createdAt: now
+      },
+      {
+        id: runlessEscalationId,
+        workItemId: plan.workItem.id,
+        planId: plan.plan.id,
+        runId: null,
+        reasonMd: "Dependency is blocked.",
+        createdAt: now
+      }
+    ],
+    ledgerEntries: [],
+    pageInfo: {
+      planLimit: 20,
+      plansCapped: false,
+      itemsCapped: false,
+      runsCapped: false,
+      escalationLimit: 5,
+      escalationsCapped: false
+    }
+  });
+
+  assert.equal(vm.recent_escalations.length, 2);
+  assert.equal(vm.kpis.waiting_decision_count, 2);
+});
+
 test("R9.6 /api/pages/agents returns the dashboard VM through auth and locale envelope", async () => {
   const settings = runtimeSettings();
   const calls: Array<{ actorId: string; locale: string }> = [];
