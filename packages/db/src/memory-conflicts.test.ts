@@ -47,6 +47,9 @@ test("R9.3 memory conflict repository lists only open user/workspace cards with 
   const query = queries[0];
   assert.equal(query?.fromTable, memoryConflicts);
   assert.equal(query?.limit, 2);
+  // R9.7: the old schema assertion grepped migration 0038 for memory_conflicts index/status text.
+  // That was wrong because migration source text did not prove the repository reads only open
+  // workspace/user cards with an honest cap at runtime.
   assert.ok(queryReferences(query?.where, memoryConflicts.workspaceId));
   assert.ok(queryReferences(query?.where, memoryConflicts.userId));
   assert.ok(queryReferences(query?.where, memoryConflicts.status));
@@ -117,6 +120,16 @@ test("R9.3 memory conflict repository deduplicates one open card per user key", 
   assert.equal(inserts.length, 2);
   const secondInsert = inserts[1];
   assert.equal(secondInsert?.targetTable, memoryConflicts);
+  const secondValues = secondInsert?.valuesValue as { status?: unknown; resolution?: unknown; resolvedValueMd?: unknown; resolvedByUserId?: unknown; resolvedAt?: unknown } | undefined;
+  assert.equal(secondValues?.status, "open");
+  assert.equal(secondValues?.resolution, null);
+  assert.equal(secondValues?.resolvedValueMd, null);
+  assert.equal(secondValues?.resolvedByUserId, null);
+  assert.equal(secondValues?.resolvedAt, null);
+  assert.equal(secondInsert?.returningCalled, true);
+  // R9.7: the old schema assertion grepped migration 0039 for the open-card unique index.
+  // That was wrong because source text did not prove conflict creation uses the open-only
+  // upsert target and resets stale resolution fields for the runtime row.
   assert.ok(
     queryReferences((secondInsert?.onConflict as { target?: unknown })?.target, memoryConflicts.workspaceId),
     "open conflict upsert must target workspace_id"
