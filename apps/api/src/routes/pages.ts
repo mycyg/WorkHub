@@ -116,6 +116,9 @@ export type PageRoutesDependencies = {
   allowUnauthenticatedGoldPath?: boolean;
 };
 
+const AGENT_DASHBOARD_PUBLIC_PLAN_LIMIT = 20;
+const AGENT_DASHBOARD_VISIBILITY_CANDIDATE_LIMIT = 50;
+
 function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
   return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
 }
@@ -350,12 +353,16 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       currentUser: AuthEnv["Variables"]["currentUser"];
       locale: WorkHubLocale;
     }) {
-      const rows = await taskPlans.listDashboardPlans({ workspaceId: input.actor.workspaceId });
+      const rows = await taskPlans.listDashboardPlans({
+        workspaceId: input.actor.workspaceId,
+        planLimit: AGENT_DASHBOARD_VISIBILITY_CANDIDATE_LIMIT
+      });
       const visibleWorkItems = await workItems.canReadWorkItems({
         workItemIds: rows.plans.map((row) => row.workItem.id),
         actor: input.actor
       });
-      const visiblePlans = rows.plans.filter((row) => visibleWorkItems.has(row.workItem.id));
+      const visiblePlanCandidates = rows.plans.filter((row) => visibleWorkItems.has(row.workItem.id));
+      const visiblePlans = visiblePlanCandidates.slice(0, AGENT_DASHBOARD_PUBLIC_PLAN_LIMIT);
       const visiblePlanIds = new Set(visiblePlans.map((row) => row.plan.id));
       const visibleWorkItemIds = new Set(visiblePlans.map((row) => row.workItem.id));
       let worklog: Awaited<ReturnType<AiWorklogMetricsService["getTodayMetrics"]>> | undefined;
@@ -376,8 +383,8 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         escalations: rows.escalations.filter((escalation) => visibleWorkItemIds.has(escalation.workItemId)),
         ledgerEntries: await ledgerEntriesForActor(input),
         pageInfo: {
-          planLimit: 20,
-          plansCapped: rows.plansCapped,
+          planLimit: AGENT_DASHBOARD_PUBLIC_PLAN_LIMIT,
+          plansCapped: rows.plansCapped || visiblePlanCandidates.length > AGENT_DASHBOARD_PUBLIC_PLAN_LIMIT,
           itemsCapped: rows.itemsCapped,
           runsCapped: rows.runsCapped,
           escalationLimit: 5,

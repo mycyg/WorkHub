@@ -149,6 +149,35 @@ async function cookie(settings: Settings) {
   return generateSignedCookie(COOKIE_NAME, "cookie-army-user", settings.auth.cookieSecret);
 }
 
+function testUuid(offset: number) {
+  return `96000000-0000-4000-8000-${offset.toString(16).padStart(12, "0")}`;
+}
+
+function dashboardPlanFixture(index: number) {
+  const itemId = testUuid(0x200 + index);
+  return {
+    plan: {
+      id: testUuid(0x100 + index),
+      workItemId: itemId,
+      workspaceId,
+      status: "dispatching" as const,
+      objectiveId: null,
+      budgetJson: {},
+      decompositionContextJson: {},
+      createdByUserId: userId,
+      createdAt: now,
+      updatedAt: new Date(now.getTime() - index)
+    },
+    workItem: {
+      id: itemId,
+      code: `DEMO-${index}`,
+      title: `候选任务 ${index}`,
+      status: "ai_working"
+    },
+    objective: null
+  };
+}
+
 test("R9.6 agent army dashboard aggregates observable plan state from rows and cost ledger", async () => {
   const ledger = createMemoryCostLedgerStore({ teamId: workspaceId });
   await ledger.recordUsage(buildUsageRecord({
@@ -493,4 +522,95 @@ test("R9.7 /api/pages/agents marks failed attention count sources instead of loo
   assert.deepEqual(body.data.source_warnings.map((warning) => warning.source), ["escalations", "approvals"]);
   assert.match(body.data.source_warnings[0]?.message ?? "", /升级待办/u);
   assert.match(body.data.source_warnings[1]?.message ?? "", /审批待办/u);
+});
+
+test("R9.7 /api/pages/agents applies visibility before the public plan cap", async () => {
+  const settings = runtimeSettings();
+  const hiddenCandidates = Array.from({ length: 20 }, (_, index) => dashboardPlanFixture(index + 1));
+  const visibleCandidate = dashboardPlanFixture(21);
+  const requestedPlanLimits: Array<number | undefined> = [];
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(settings),
+    taskPlans: {
+      async listDashboardPlans(input: { planLimit?: number }) {
+        requestedPlanLimits.push(input.planLimit);
+        const plans = input.planLimit && input.planLimit > 20
+          ? [...hiddenCandidates, visibleCandidate]
+          : hiddenCandidates;
+        return {
+          plans,
+          plansCapped: false,
+          items: [],
+          itemsCapped: false,
+          runs: [],
+          runsCapped: false,
+          escalations: [],
+          escalationsCapped: false
+        };
+      }
+    },
+    workItems: {
+      async canReadWorkItems() {
+        return new Set([visibleCandidate.workItem.id]);
+      }
+    },
+    ledgerStore: {
+      async listEntriesForScopes() {
+        return [];
+      }
+    },
+    aiWorklog: {
+      async getTodayMetrics() {
+        return {
+          runs_today: 0,
+          autonomy_rate: 0,
+          accepted_today: 0,
+          saved_hours_estimate: 0,
+          generated_at: now.toISOString()
+        };
+      }
+    },
+    escalations: {
+      async listAttentionItems() {
+        return [];
+      }
+    },
+    memoryConflicts: {
+      async listAttentionItems() {
+        return [];
+      }
+    },
+    approvals: {
+      async listPendingForUser() {
+        return { requests: [], counts: { pending: 0, total: 0 }, page_info: { limit: 100, returned: 0, has_more: false } };
+      }
+    },
+    proposals: {
+      async listReviewableForUser() {
+        return [];
+      }
+    }
+  } as never));
+
+  const response = await app.request("/api/pages/agents?locale=zh-CN", {
+    headers: { Cookie: await cookie(settings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      plans: Array<{ plan_id: string; work_item_id: string }>;
+      page_info: { plan_limit: number; returned: number; plans_capped: boolean };
+      empty_state?: string;
+    };
+  };
+  assert.deepEqual(requestedPlanLimits, [50]);
+  assert.equal(body.data.empty_state, undefined);
+  assert.deepEqual(body.data.plans.map((plan) => plan.plan_id), [visibleCandidate.plan.id]);
+  assert.deepEqual(body.data.plans.map((plan) => plan.work_item_id), [visibleCandidate.workItem.id]);
+  assert.equal(body.data.page_info.plan_limit, 20);
+  assert.equal(body.data.page_info.returned, 1);
+  assert.equal(body.data.page_info.plans_capped, false);
 });
