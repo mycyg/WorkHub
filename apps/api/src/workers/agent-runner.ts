@@ -1793,6 +1793,11 @@ export function createInMemoryAgentRunQueue(options: {
         workItemId: input.workItemId,
         error
       });
+      throw new AgentRunnerError(
+        503,
+        "budget_decision_persist_failed",
+        "预算决策卡片写入失败，请稍后重试。"
+      );
     }
   }
 

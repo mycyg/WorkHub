@@ -1507,6 +1507,45 @@ test("R9.7 budget exhaustion persists a durable budget decision before rejecting
   assert.equal(event?.handoffJson?.["actor_id"], userId);
 });
 
+test("R9.7 budget exhaustion fails closed when the durable budget decision cannot be persisted", async () => {
+  const runtimeSettings = settings();
+  const publishedEvents: { topic: string; type: string }[] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000b7",
+    usage: () => [
+      {
+        policyId: "pcost-user-day-v0",
+        scope: { kind: "user", userId },
+        tokenIn: 500000,
+        tokenOut: 1,
+        estimatedCostCny: "20"
+      }
+    ],
+    decisions: {
+      async createEscalationEvent() {
+        throw new Error("decision store down");
+      }
+    },
+    eventBus: {
+      async publish(topic, type) {
+        publishedEvents.push({ topic, type });
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => queue.enqueue({ workItemId, actorId: userId, title: "Budget blocked run" }),
+    (error: unknown) => error instanceof AgentRunnerError
+      && error.status === 503
+      && error.code === "budget_decision_persist_failed"
+  );
+
+  assert.equal((await queue.listActive()).length, 0);
+  assert.deepEqual(publishedEvents, [], "transient budget events need a durable decision-inbox card first");
+});
+
 test("agent run enqueue reserves budget, denies an over-cap concurrent start, and compensates the queued run", async () => {
   const runtimeSettings = settings();
   // 默认拒绝（模拟并发在飞已占满该 scope 的预留）；之后切允许验证补偿释放了 work-item 槽。

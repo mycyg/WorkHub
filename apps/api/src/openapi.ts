@@ -3927,7 +3927,7 @@ const agentRunValidationResponse = jsonErrorStatusResponse(
 const agentRunKickoffUnavailableResponse = jsonErrorStatusResponse(
   "503",
   "Agent run kickoff status transition failed",
-  ["http_error"]
+  ["http_error", "budget_decision_persist_failed"]
 ).responses["503"];
 const startAgentRunResponse = {
   responses: {

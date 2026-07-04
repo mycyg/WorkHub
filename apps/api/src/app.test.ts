@@ -960,9 +960,11 @@ test("Task intake and AgentRun OpenAPI responses document the execution chain", 
     type: "string",
     enum: ["validation_error"]
   });
+  // R9.7 review: the old 503 contract only documented kickoff HTTP failures, but
+  // budget exhaustion must also fail closed if its durable decision card cannot persist.
   assert.deepEqual(jsonErrorCodeProperty(body.paths, "/api/workitems/{id}/agent-runs", "post", "503"), {
     type: "string",
-    enum: ["http_error"]
+    enum: ["http_error", "budget_decision_persist_failed"]
   });
 
   for (const [path, method] of [
