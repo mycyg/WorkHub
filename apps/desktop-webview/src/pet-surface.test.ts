@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { WorkHubApiError } from "@workhub/api-client";
@@ -31,7 +30,10 @@ import {
   desktopPetLocale,
   desktopPetPointerSmoothingAlpha,
   desktopPetRunRestoreStorageKey,
+  desktopPetRuntimeRetryingDelayMs,
   desktopPetSurfaceCss,
+  handleDesktopPetRuntimeDecision,
+  handleDesktopPetRuntimeNotice,
   renderDesktopPetSurface,
   replaceDesktopPetRootHtmlPreservingLive2DFrame,
   resolveDesktopSurface,
@@ -185,19 +187,38 @@ test("desktop pet bubble is a real frosted-white glass card with dark text", () 
   );
 });
 
-test("desktop pet surface clears a stale Cuu card when the runtime dismisses the active card", () => {
-  const source = readFileSync(new URL("./pet-surface.ts", import.meta.url), "utf8");
-  const runtimeStart = source.indexOf("const runtime = await bindDesktopShellCuuRuntime");
-  const runtimeEnd = source.indexOf("let samplingCursor", runtimeStart);
-  assert.notEqual(runtimeStart, -1);
-  assert.notEqual(runtimeEnd, -1);
-  const runtimeBindingSource = source.slice(runtimeStart, runtimeEnd);
+test("desktop pet runtime notices keep SSE retry cards transient and clear dismissed active cards", () => {
+  const calls: Array<{
+    cardId?: string | undefined;
+    persist?: boolean | undefined;
+  }> = [];
+  const persistentCard = approvalCard();
+  const sseStatusCard = {
+    ...approvalCard(),
+    id: "sse-status:global:retrying"
+  };
+  const setCard = (card: CuuCard | undefined, _message?: string, options?: { persist?: boolean }) => {
+    calls.push({ cardId: card?.id, persist: options?.persist });
+  };
 
-  assert.match(runtimeBindingSource, /onDecision\(decision\)/u);
-  assert.match(runtimeBindingSource, /decision\.reason === "dismissed_current"/u);
-  assert.match(runtimeBindingSource, /setCard\(undefined/u);
-  assert.match(runtimeBindingSource, /notice\.card\.id\.startsWith\("sse-status:"\)/u);
-  assert.match(runtimeBindingSource, /retryingDelayMs:\s*900/u);
+  handleDesktopPetRuntimeNotice({ card: persistentCard, message: "ready", html: "<p>ready</p>" }, setCard);
+  handleDesktopPetRuntimeNotice({ card: sseStatusCard, message: "retrying", html: "<p>retrying</p>" }, setCard);
+  const cleared = handleDesktopPetRuntimeDecision({ reason: "dismissed_current", snapshot: {} }, setCard);
+  const kept = handleDesktopPetRuntimeDecision(
+    { reason: "dismissed_current", snapshot: { active_card: persistentCard } },
+    setCard
+  );
+
+  // R9.7: the old assertion grepped pet-surface.ts for runtime-binding source text.
+  // That was wrong because source text did not prove notice persistence or dismissed-card clearing behavior.
+  assert.equal(desktopPetRuntimeRetryingDelayMs, 900);
+  assert.equal(cleared, true);
+  assert.equal(kept, false);
+  assert.deepEqual(calls, [
+    { cardId: "approval-card", persist: true },
+    { cardId: "sse-status:global:retrying", persist: false },
+    { cardId: undefined, persist: undefined }
+  ]);
 });
 
 function approvalCard(): CuuCard {

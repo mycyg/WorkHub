@@ -14,6 +14,7 @@ import {
   type CuuCard,
   type CuuEmotion,
   type CuuController,
+  type CuuControllerDecision,
   type CuuControllerPreferences,
   type CuuIdleMicroAction,
   type CuuIdleScheduler,
@@ -64,6 +65,7 @@ import {
   subscribeDesktopCuuAgentRunStream,
   submitDesktopCuuAction,
   type DesktopCuuActionRequest,
+  type DesktopCuuNotice,
   type DesktopCuuRunStreamStatus,
   type DesktopCuuRunStreamSubscription,
   type DesktopShellEmitter,
@@ -105,6 +107,38 @@ export type DesktopPetSurfaceRuntime = {
 export type DesktopPetSurfaceClient = ReturnType<typeof createApiClient>;
 
 export const desktopPetRunRestoreStorageKey = "workhub.cuu.currentRun.v1";
+export const desktopPetRuntimeRetryingDelayMs = 900;
+
+export type DesktopPetRuntimeSetCard = (
+  card: CuuCard | undefined,
+  message?: string | undefined,
+  options?: { persist?: boolean }
+) => void;
+
+export type DesktopPetRuntimeDecision = {
+  reason: CuuControllerDecision["reason"];
+  snapshot: {
+    active_card?: CuuCard;
+  };
+};
+
+export function handleDesktopPetRuntimeNotice(
+  notice: DesktopCuuNotice,
+  setCard: DesktopPetRuntimeSetCard
+) {
+  setCard(notice.card, undefined, { persist: !notice.card.id.startsWith("sse-status:") });
+}
+
+export function handleDesktopPetRuntimeDecision(
+  decision: DesktopPetRuntimeDecision,
+  setCard: DesktopPetRuntimeSetCard
+) {
+  if (decision.reason === "dismissed_current" && !decision.snapshot.active_card) {
+    setCard(undefined);
+    return true;
+  }
+  return false;
+}
 
 type DesktopPetRestoreState =
   | {
@@ -1468,14 +1502,12 @@ export async function bootDesktopPetSurface(
     listen: shellListen,
     controller,
     notify(notice) {
-      setCard(notice.card, undefined, { persist: !notice.card.id.startsWith("sse-status:") });
+      handleDesktopPetRuntimeNotice(notice, setCard);
     },
     onDecision(decision) {
-      if (decision.reason === "dismissed_current" && !decision.snapshot.active_card) {
-        setCard(undefined);
-      }
+      handleDesktopPetRuntimeDecision(decision, setCard);
     },
-    retryingDelayMs: 900,
+    retryingDelayMs: desktopPetRuntimeRetryingDelayMs,
     get locale() {
       return locale;
     }
