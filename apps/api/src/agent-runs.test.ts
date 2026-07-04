@@ -1620,6 +1620,44 @@ test("agent run enqueue reserves budget, denies an over-cap concurrent start, an
   assert.equal(reserveInputs.length, 2);
 });
 
+test("agent run enqueue compensates a persisted queued run when budget reservation throws", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const fakeReservationRepo = {
+    reserve: async () => {
+      throw new Error("reservation store offline");
+    },
+    reconcile: async () => 0,
+    releaseExpired: async () => 0,
+    refreshLease: async () => 0,
+    outstandingForScopes: async () => new Map()
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000032",
+    persistence,
+    reservationRepo: fakeReservationRepo as unknown as BudgetReservationRepository,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  await assert.rejects(
+    () => queue.enqueue({ workItemId, actorId: userId, title: "reservation backend fails" }),
+    (error: unknown) => error instanceof AgentRunnerError
+      && error.status === 503
+      && error.code === "budget_reservation_failed"
+  );
+
+  assert.equal((await queue.listActive()).length, 0);
+  const persisted = [...persistence.rows.values()];
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0]?.status, "failed");
+  assert.equal(persisted[0]?.trace.at(-1)?.control_signal, "escalate");
+});
+
 test("agent run abort releases reserved budget immediately", async () => {
   const runtimeSettings = settings();
   const reconciled: Array<{ runId: string; tokens: number; cost: string }> = [];

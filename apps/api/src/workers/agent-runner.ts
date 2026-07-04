@@ -861,6 +861,28 @@ export function createInMemoryAgentRunQueue(options: {
     return true;
   }
 
+  async function failUnstartedRun(run: AgentRunQueueRecord, outputExcerpt: string) {
+    const failedRun = updateRun({
+      ...run,
+      status: "failed",
+      trace: [
+        {
+          id: `${run.run_id}:final:budget`,
+          step_no: 1,
+          phase: "final",
+          output_excerpt: outputExcerpt,
+          control_signal: "escalate",
+          created_at: now().toISOString()
+        }
+      ],
+      updated_at: now().toISOString()
+    });
+    await persistRunWithTrace(failedRun).catch((error) =>
+      getDefaultStructuredLogger().warn("agent_run_budget_reserve_compensation_persist_failed", { runId: run.run_id, error })
+    );
+    runs.delete(run.run_id);
+  }
+
   function isSettledHookError(error: unknown) {
     return error instanceof AgentRunnerError && error.code === "agent_run_settled_hook_failed";
   }
@@ -1908,36 +1930,31 @@ export function createInMemoryAgentRunQueue(options: {
         runs.set(run.run_id, run);
         // R2 原子预算：run 行已落（reservations.run_id FK 需要它），现在原子预留。被并发在飞占满 → 拒绝；
         // 补偿：把刚建的 queued run 置 failed（enqueue 非执行路径不传 workerId → 无 fencing，无条件落），
-        // 释放 work-item active 槽 + 防止它被后续 claim 执行；抛与 decideBudget 同款 402 budget_exhausted。
+        // 释放 work-item active 槽 + 防止它被后续 claim 执行。业务性超额抛与 decideBudget 同款 402；
+        // reservation 后端异常则 fail-closed 成 503，不能留下无预留 queued run。
         if (reservationRepo) {
           const reserveScopes = buildReserveScopes(decision, now());
           if (reserveScopes.length > 0) {
-            const reserved = await reservationRepo.reserve({
-              workspaceId: input.workspaceId ?? settings.auth.defaultWorkspaceId,
-              runId: run.run_id,
-              leaseExpiresAt: new Date(now().getTime() + reservationLeaseMs),
-              scopes: reserveScopes
-            });
-            if (!reserved.ok) {
-              const failedRun = updateRun({
-                ...run,
-                status: "failed",
-                trace: [
-                  {
-                    id: `${run.run_id}:final:budget`,
-                    step_no: 1,
-                    phase: "final",
-                    output_excerpt: "AI 预算已被并发在飞执行占满，本次未启动。",
-                    control_signal: "escalate",
-                    created_at: now().toISOString()
-                  }
-                ],
-                updated_at: now().toISOString()
+            let reserved: Awaited<ReturnType<BudgetReservationRepository["reserve"]>>;
+            try {
+              reserved = await reservationRepo.reserve({
+                workspaceId: input.workspaceId ?? settings.auth.defaultWorkspaceId,
+                runId: run.run_id,
+                leaseExpiresAt: new Date(now().getTime() + reservationLeaseMs),
+                scopes: reserveScopes
               });
-              await persistRunWithTrace(failedRun).catch((error) =>
-                getDefaultStructuredLogger().warn("agent_run_budget_reserve_compensation_persist_failed", { error })
+            } catch (error) {
+              await failUnstartedRun(run, "AI 预算预留服务暂时不可用，本次未启动。");
+              getDefaultStructuredLogger().warn("agent_run_budget_reserve_failed", { runId: run.run_id, error });
+              throw new AgentRunnerError(
+                503,
+                "budget_reservation_failed",
+                "AI 预算预留服务暂时不可用，请稍后重试。",
+                { run_id: run.run_id }
               );
-              runs.delete(run.run_id);
+            }
+            if (!reserved.ok) {
+              await failUnstartedRun(run, "AI 预算已被并发在飞执行占满，本次未启动。");
               await emitBudgetNotice(input, decision);
               throw new AgentRunnerError(402, "budget_exhausted", decision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。", {
                 ...budgetErrorDetails(decision),
