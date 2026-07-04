@@ -1010,6 +1010,24 @@ function approvalRouteLabel(routedToUserId: string | undefined, locale: WorkHubL
   return locale === "zh-CN" ? "已路由" : "Routed";
 }
 
+function approvalActionLabel(actionPattern: string, locale: WorkHubLocale) {
+  const zh = locale === "zh-CN";
+  const normalized = actionPattern.toLowerCase();
+  if (normalized.startsWith("tool.")) {
+    return zh ? "工具审批" : "Tool approval";
+  }
+  if (normalized.includes("permission") || normalized.includes("policy")) {
+    return zh ? "权限审批" : "Permission approval";
+  }
+  if (normalized.includes("budget") || normalized.includes("cost")) {
+    return zh ? "预算审批" : "Budget approval";
+  }
+  if (normalized.includes("proposal") || normalized.includes("deliverable") || normalized.includes("document")) {
+    return zh ? "变更审批" : "Change approval";
+  }
+  return zh ? "审批请求" : "Approval request";
+}
+
 function homePriorityPill(priority: string, zh: boolean): string {
   const map: Record<string, [string, string]> = zh
     ? { urgent: ["紧急", "danger"], high: ["较高", "warn"], normal: ["常规", "muted"], low: ["低", "muted"] }
@@ -1730,7 +1748,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
   const requestRows = vm.requests
     .map((item) => `<div class="wh-r4-route-row" data-r4-approval-request="${escapeHtml(item.id)}">
       <div>
-        <strong>${escapeHtml(item.action_pattern)}</strong>
+        <strong>${escapeHtml(approvalActionLabel(item.action_pattern, locale))}</strong>
         <p>${escapeHtml(approvalRequestStatusLabel(item.status, locale === "zh-CN"))}${item.sla_due_at ? ` · SLA ${escapeHtml(formatApprovalTimestamp(item.sla_due_at))}` : ""}</p>
       </div>
       <span class="wh-pill" data-r4-approval-routed="${escapeHtml(String(Boolean(item.routed_to_user_id)))}">${escapeHtml(approvalRouteLabel(item.routed_to_user_id, locale))}</span>

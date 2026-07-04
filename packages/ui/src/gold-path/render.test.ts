@@ -75,6 +75,26 @@ test("approval center renderer surfaces page_info when the queue is truncated", 
   assert.equal(approvals.html.includes("已显示 100/137 条审批，还有更多未展开。"), true);
 });
 
+test("approval center renderer does not leak raw approval facts", () => {
+  const vm = surfaceVm();
+  const request = vm.page_vms.approvals.requests[0];
+  assert.ok(request);
+  request.action_pattern = "tool.write_file";
+  request.status = "pending";
+  request.routed_to_user_id = "96000000-0000-4000-8000-000000000011";
+  request.sla_due_at = "2026-07-05T00:00:00.000Z";
+
+  const approvals = renderGoldPathSurface(vm, "web", { locale: "en-US" }).pages.find((page) => page.key === "approvals");
+
+  assert.ok(approvals);
+  assert.equal(approvals.html.includes("tool.write_file"), false);
+  assert.equal(approvals.html.includes("96000000-0000-4000-8000-000000000011"), false);
+  assert.equal(approvals.html.includes("2026-07-05T00:00:00.000Z"), false);
+  assert.equal(approvals.html.includes("<strong>Tool approval</strong>"), true);
+  assert.equal(approvals.html.includes("Pending · SLA 2026-07-05 00:00"), true);
+  assert.equal(approvals.html.includes(">Routed</span>"), true);
+});
+
 test("option intake stays option-first with collapsed free text instead of a chat wall", () => {
   const intake = renderGoldPathSurface(surfaceVm(), "desktop").pages.find((page) => page.key === "intake");
 

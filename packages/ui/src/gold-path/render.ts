@@ -79,6 +79,52 @@ function href(value: string) {
   return escapeHtml(safe);
 }
 
+function approvalFactActionLabel(actionPattern: string, locale: WorkHubLocale) {
+  const zh = locale === "zh-CN";
+  const normalized = actionPattern.toLowerCase();
+  if (normalized.startsWith("tool.")) {
+    return zh ? "工具审批" : "Tool approval";
+  }
+  if (normalized.includes("permission") || normalized.includes("policy")) {
+    return zh ? "权限审批" : "Permission approval";
+  }
+  if (normalized.includes("budget") || normalized.includes("cost")) {
+    return zh ? "预算审批" : "Budget approval";
+  }
+  if (normalized.includes("proposal") || normalized.includes("deliverable") || normalized.includes("document")) {
+    return zh ? "变更审批" : "Change approval";
+  }
+  return zh ? "审批请求" : "Approval request";
+}
+
+function approvalFactStatusLabel(status: string, locale: WorkHubLocale) {
+  const zh = locale === "zh-CN";
+  const labels: Record<string, [string, string]> = {
+    approved: ["已通过", "Approved"],
+    delegated: ["已转交", "Delegated"],
+    denied: ["已打回", "Denied"],
+    expired: ["已过期", "Expired"],
+    pending: ["待处理", "Pending"]
+  };
+  const label = labels[status];
+  return label ? (zh ? label[0] : label[1]) : (zh ? "状态待确认" : "Status pending review");
+}
+
+function approvalFactRouteLabel(routedToUserId: string | undefined, locale: WorkHubLocale) {
+  if (!routedToUserId) {
+    return t(locale, "approvals.unrouted");
+  }
+  return locale === "zh-CN" ? "已路由" : "Routed";
+}
+
+function formatApprovalFactTimestamp(iso: string | undefined) {
+  if (!iso) {
+    return "";
+  }
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(iso);
+  return match ? `${match[1]} ${match[2]}` : iso;
+}
+
 function t(locale: WorkHubLocale, key: GoldPathCopyKey) {
   return goldPathT(locale, key);
 }
@@ -443,7 +489,7 @@ function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
   const requestRows = approvals.requests
     .map(
       (item) =>
-        `<div class="wh-row"><div><strong>${escapeHtml(item.action_pattern)}</strong><p class="wh-subtle">${escapeHtml(item.status)}${item.sla_due_at ? ` · SLA ${escapeHtml(item.sla_due_at)}` : ""}</p></div><span class="wh-pill">${escapeHtml(item.routed_to_user_id ?? t(locale, "approvals.unrouted"))}</span></div>`
+        `<div class="wh-row"><div><strong>${escapeHtml(approvalFactActionLabel(item.action_pattern, locale))}</strong><p class="wh-subtle">${escapeHtml(approvalFactStatusLabel(item.status, locale))}${item.sla_due_at ? ` · SLA ${escapeHtml(formatApprovalFactTimestamp(item.sla_due_at))}` : ""}</p></div><span class="wh-pill">${escapeHtml(approvalFactRouteLabel(item.routed_to_user_id, locale))}</span></div>`
     )
     .join("");
   const queueCards = approvals.items
@@ -458,7 +504,7 @@ function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
     ${pageInfoNote ? `<p class="wh-subtle"${pageInfoAttrs}>${escapeHtml(pageInfoNote)}</p>` : ""}
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.pendingTitle"))}</strong><p class="wh-subtle">${approvals.counts.pending ?? approvals.items.length}${escapeHtml(t(locale, "approvals.pendingUnit"))}</p></article>
-      <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.slaTitle"))}</strong><p class="wh-subtle">${escapeHtml(request?.sla_due_at ?? t(locale, "approvals.slaEmpty"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.slaTitle"))}</strong><p class="wh-subtle">${escapeHtml(formatApprovalFactTimestamp(request?.sla_due_at) || t(locale, "approvals.slaEmpty"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.ruleTitle"))}</strong><p class="wh-subtle">${escapeHtml(t(locale, "approvals.ruleText"))}</p></article>
     </div>
     <div class="wh-list">${queueCards}</div>
