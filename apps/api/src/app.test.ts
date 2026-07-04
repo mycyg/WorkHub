@@ -2206,6 +2206,13 @@ test("attention and gold path page OpenAPI routes document locale and page VM en
     "source_warnings",
     "worklog"
   ]);
+  const sourceWarnings = attentionData?.properties?.source_warnings as {
+    items?: { properties?: { source?: unknown } };
+  } | undefined;
+  assert.deepEqual(sourceWarnings?.items?.properties?.source, {
+    type: "string",
+    enum: ["approvals", "proposals", "escalations", "sync_conflicts"]
+  });
 
   const goldPathResponse = jsonResponseSchema(body.paths, "/api/pages/gold-path", "get", "200");
   const goldPathData = goldPathResponse?.properties?.data as { required?: string[]; properties?: Record<string, unknown> } | undefined;

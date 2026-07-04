@@ -3064,7 +3064,7 @@ const attentionHomePageResponseSchema = {
         type: "object",
         required: ["source", "message"],
         properties: {
-          source: { type: "string", enum: ["approvals", "proposals", "escalations"] },
+          source: { type: "string", enum: ["approvals", "proposals", "escalations", "sync_conflicts"] },
           message: { type: "string", minLength: 1 }
         },
         additionalProperties: false
