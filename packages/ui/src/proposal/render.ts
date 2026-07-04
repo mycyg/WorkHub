@@ -28,6 +28,10 @@ import {
 } from "../overlap-hunk-review.js";
 import { renderRichPatchViewer, richPatchViewerCss } from "../rich-patch-viewer.js";
 import { renderRouteLineEditor, routeLineEditorCss } from "../route-line-editor.js";
+import {
+  compactStructuredFieldLabels,
+  structuredFieldLabel
+} from "../structured-field-labels.js";
 import { renderStructuredFieldOperationDetails } from "../structured-field-details.js";
 import { renderSubrecordItemDiff, subrecordItemDiffCss } from "../subrecord-item-diff.js";
 
@@ -189,13 +193,6 @@ function stringArrayField(record: Record<string, unknown> | undefined, key: stri
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-function compactFieldList(fields: string[]) {
-  if (fields.length <= 8) {
-    return fields.join(", ");
-  }
-  return `${fields.slice(0, 8).join(", ")} +${fields.length - 8}`;
-}
-
 function dryRunStatusLabel(locale: WorkHubLocale, status: string) {
   const labels: Record<WorkHubLocale, Record<string, string>> = {
     "zh-CN": {
@@ -262,6 +259,7 @@ function renderStructuredFieldEditor(input: {
   const href = input.option.action.href;
   const rows = operations.map((operation) => {
     const field = String(operation["field"]);
+    const label = structuredFieldLabel(input.locale, field);
     const acceptOnly = structuredFieldOverridePayload({ operations, field, mode: "accept_only" });
     const keepCurrent = structuredFieldOverridePayload({ operations, field, mode: "keep_current" });
     const customTemplate = structuredFieldOverridePayload({
@@ -271,7 +269,7 @@ function renderStructuredFieldEditor(input: {
       customValue: "__WORKHUB_CUSTOM_FIELD_VALUE__"
     });
     return `<div class="wh-field-editor-row" data-proposal-structured-field-editor-row="${escapeHtml(field)}">
-      <strong>${escapeHtml(uiT(input.locale, "proposal.fieldEditorField"))}: ${escapeHtml(field)}</strong>
+      <strong>${escapeHtml(uiT(input.locale, "proposal.fieldEditorField"))}: ${escapeHtml(label)}</strong>
       <div class="wh-field-editor-actions">
         <a class="wh-btn" href="${escapeHtml(safeHref(href))}" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="accept_only" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-request-json="${escapeHtml(JSON.stringify(acceptOnly))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorAcceptOnly"))}</a>
         <a class="wh-btn" href="${escapeHtml(safeHref(href))}" data-action-id="${escapeHtml(input.option.action?.id ?? "apply_ai_fusion")}" data-field-editor-action="keep_current" data-structured-field="${escapeHtml(field)}" data-method="${escapeHtml(method)}" data-request-json="${escapeHtml(JSON.stringify(keepCurrent))}">${escapeHtml(uiT(input.locale, "proposal.fieldEditorKeep"))}</a>
@@ -306,13 +304,13 @@ function renderStructuredRecordPatch(option: ProposalConflictOption, options?: U
   const dryRunStatus = typeof dryRun?.["status"] === "string" ? dryRun["status"] : "";
   const dryRunIssueCount = Array.isArray(dryRun?.["issues"]) ? dryRun["issues"].length : 0;
   const mergedLine = mergedFields.length > 0
-    ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchFields"))}: ${escapeHtml(compactFieldList(mergedFields))}</p>`
+    ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchFields"))}: ${escapeHtml(compactStructuredFieldLabels(locale, mergedFields))}</p>`
     : "";
   const missingLine = missingFields.length > 0
-    ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchMissing"))}: ${escapeHtml(compactFieldList(missingFields))}</p>`
+    ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchMissing"))}: ${escapeHtml(compactStructuredFieldLabels(locale, missingFields))}</p>`
     : "";
   const unknownLine = unknownFields.length > 0
-    ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchUnknown"))}: ${escapeHtml(compactFieldList(unknownFields))}</p>`
+    ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchUnknown"))}: ${escapeHtml(compactStructuredFieldLabels(locale, unknownFields))}</p>`
     : "";
   const dryRunLine = dryRunStatus
     ? `<p class="wh-structured-fields">${escapeHtml(uiT(locale, "proposal.structuredPatchDryRun"))}: ${escapeHtml(dryRunStatusLabel(locale, dryRunStatus))} · ${escapeHtml(uiT(locale, "proposal.structuredPatchIssues"))}: ${escapeHtml(String(dryRunIssueCount))}</p>`

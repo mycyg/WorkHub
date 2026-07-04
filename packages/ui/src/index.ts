@@ -5,6 +5,7 @@ export * from "./rich-patch-viewer.js";
 export * from "./route-state.js";
 export * from "./onboarding.js";
 export * from "./route-line-editor.js";
+export * from "./structured-field-labels.js";
 export * from "./subrecord-item-diff.js";
 export * from "./intake/index.js";
 export * from "./proposal/index.js";

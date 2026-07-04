@@ -7,7 +7,7 @@ import {
   type HomeRouteComponentProps,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
-import { uiCount, uiT } from "@workhub/ui";
+import { structuredFieldLabel, uiCount, uiT } from "@workhub/ui";
 import { safeHref } from "@workhub/web-runtime";
 import type { ProposalConflict, ProposalConflictOption } from "@workhub/contracts";
 
@@ -140,7 +140,7 @@ type StructuredFieldOperation = {
   value: unknown;
 };
 
-type ProposalMutationEditorProps = {
+export type ProposalMutationEditorProps = {
   locale: WorkHubLocale;
   conflictId: string;
   field: string;
@@ -259,11 +259,12 @@ function proposalMutationEditorProps(conflicts: ProposalConflict[], locale: Work
   return undefined;
 }
 
-function ProposalMutationEditor(input: ProposalMutationEditorProps) {
+export function ProposalMutationEditor(input: ProposalMutationEditorProps) {
   const [customValue, setCustomValue] = useState("");
   const title = uiT(input.locale, "proposal.fieldEditorTitle");
   const body = uiT(input.locale, "proposal.fieldEditorBody");
   const fieldLabel = uiT(input.locale, "proposal.fieldEditorField");
+  const readableField = structuredFieldLabel(input.locale, input.field);
   const placeholder = uiT(input.locale, "proposal.fieldEditorCustomPlaceholder");
   return createElement(
     "details",
@@ -289,7 +290,7 @@ function ProposalMutationEditor(input: ProposalMutationEditorProps) {
           "data-r4-proposal-react-field-row": input.field,
           "data-proposal-structured-field-editor-row": input.field
         },
-        createElement("strong", null, `${fieldLabel}: ${input.field}`),
+        createElement("strong", null, `${fieldLabel}: ${readableField}`),
         createElement(
           "div",
           { className: "wh-field-editor-actions" },
