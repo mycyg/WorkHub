@@ -807,9 +807,11 @@ test("live agent run cards hide hidden reasoning and raw tool results", () => {
   const visible = JSON.stringify([card.message, card.sections]);
 
   assert.match(visible, /AI 正在整理材料/u);
-  assert.match(visible, /工具调用：read_project_file/u);
-  assert.match(visible, /工具已返回：read_project_file/u);
-  assert.doesNotMatch(visible, /Now I understand|hidden reasoning|隐藏推理|隐藏思考|markdown-report|tool_result|#3 think/u);
+  assert.match(visible, /工具调用/u);
+  assert.match(visible, /工具已返回/u);
+  // R9.7 review: the old assertion expected raw `read_project_file` in visible copy,
+  // but machine tool ids belong in payloads/logs, not user-facing Cuu cards.
+  assert.doesNotMatch(visible, /read_project_file|Now I understand|hidden reasoning|隐藏推理|隐藏思考|markdown-report|tool_result|#3 think/u);
 });
 
 test("budget-exhausted live agent runs use budget Cuu cards", () => {

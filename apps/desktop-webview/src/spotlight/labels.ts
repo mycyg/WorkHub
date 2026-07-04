@@ -75,21 +75,17 @@ export function agentStepPublicSummary(
   step: { phase?: string | undefined; tool_name?: string | undefined; output_excerpt?: string | undefined },
   zh: boolean
 ): string {
-  const tool = step.tool_name?.trim();
-  const separator = zh ? "：" : ": ";
   switch (step.phase) {
     case "think":
       return zh ? "AI 正在整理材料，稍后给你下一步。" : "AI is organizing the materials and preparing the next step.";
     case "tool_call":
-      return tool ? `${zh ? "工具调用" : "Tool call"}${separator}${tool}` : zh ? "正在调用工具。" : "Calling a tool.";
+      return zh ? "正在调用工具。" : "Calling a tool.";
     case "tool_result":
-      return tool
-        ? `${zh ? "工具已返回" : "Tool result received"}${separator}${tool}`
-        : zh ? "工具已返回，AI 正在整理下一步。" : "Tool result received; AI is organizing the next step.";
+      return zh ? "工具已返回，AI 正在整理下一步。" : "Tool result received; AI is organizing the next step.";
     case "final":
       return step.output_excerpt ?? (zh ? "最终输出已生成。" : "Final output is ready.");
     default:
-      return step.output_excerpt ?? tool ?? (zh ? "记录了一个步骤。" : "Recorded one step.");
+      return step.output_excerpt ?? (zh ? "记录了一个步骤。" : "Recorded one step.");
   }
 }
 

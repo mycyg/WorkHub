@@ -53,7 +53,10 @@ test("work item renderer supports the just-created AI-working state before a pro
   assert.equal(rendered.primaryHrefs.includes(`/agent-runs/${fixture.replay.run.id}/replay`), true);
   assert.equal(rendered.html.includes("AI 正在整理材料，稍后给你下一步。"), true);
   assert.equal(rendered.html.includes("隐藏推理内容"), false);
-  assert.equal(rendered.html.includes("工具已返回：read_project_file"), true);
+  // R9.7 review: the old assertion expected a raw tool id in visible copy; users need
+  // the public tool-result state, while `tool_name` stays an internal trace field.
+  assert.equal(rendered.html.includes("工具已返回：read_project_file"), false);
+  assert.equal(rendered.html.includes("工具已返回，AI 正在整理下一步。"), true);
   assert.equal(rendered.html.includes("Now I understand"), false);
   assert.equal(rendered.html.includes("markdown-report"), false);
 });

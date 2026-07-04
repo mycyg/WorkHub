@@ -176,6 +176,27 @@ test("proposal and replay pages expose review actions, rollback, cost, and at le
   assert.equal((replay?.html.match(/wh-row/gu)?.length ?? 0) >= 5, true);
 });
 
+test("gold path replay hides raw tool ids from visible step summaries", () => {
+  const vm = surfaceVm();
+  const firstStep = vm.page_vms.replay.steps[0]!;
+  vm.page_vms.replay.steps = [
+    {
+      ...firstStep,
+      phase: "tool_result",
+      tool_name: "read_project_file",
+      output_excerpt: undefined
+    }
+  ];
+
+  const replay = renderGoldPathSurface(vm, "web").pages.find((page) => page.key === "replay");
+
+  assert.equal(replay?.html.includes("工具结果"), true);
+  // R9.7 review: falling back to raw `tool_name` made machine ids visible in the old
+  // replay surface; the fallback must be localized user copy instead.
+  assert.equal(replay?.html.includes("read_project_file"), false);
+  assert.equal(replay?.html.includes("工具已返回，AI 正在整理下一步。"), true);
+});
+
 test("gold path proposal page hides model self narration titles", () => {
   const vm = surfaceVm();
   const dirty = {

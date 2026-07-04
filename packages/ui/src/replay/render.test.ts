@@ -222,7 +222,10 @@ test("replay renderer hides hidden reasoning and raw tool payloads", () => {
 
   assert.equal(rendered.html.includes("AI 正在整理材料，稍后给你下一步。"), true);
   assert.equal(rendered.html.includes("隐藏推理内容"), false);
-  assert.equal(rendered.html.includes("工具已返回：read_project_file"), true);
+  // R9.7 review: the old assertion expected a raw tool id in visible copy; replay
+  // should show a public tool-result summary and keep `tool_name` internal.
+  assert.equal(rendered.html.includes("工具已返回：read_project_file"), false);
+  assert.equal(rendered.html.includes("工具已返回，AI 正在整理下一步。"), true);
   assert.equal(rendered.html.includes("Now I understand"), false);
   assert.equal(rendered.html.includes("markdown-report"), false);
 });

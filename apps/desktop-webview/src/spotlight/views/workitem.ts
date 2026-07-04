@@ -107,7 +107,7 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const traceHtml = trace.length
     ? `<div class="wh-spot-trace">${trace
         .slice(0, 8)
-        .map((s) => `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}${s.tool_name ? ` · ${escapeHtml(s.tool_name)}` : ""}</div><div class="wh-spot-trace-out">${escapeHtml(agentStepPublicSummary(s, zh))}</div></div>`)
+        .map((s) => `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}</div><div class="wh-spot-trace-out">${escapeHtml(agentStepPublicSummary(s, zh))}</div></div>`)
         .join("")}</div>`
     : "";
   const proposal = vm.latest_proposal

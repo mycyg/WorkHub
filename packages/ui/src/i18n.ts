@@ -410,19 +410,17 @@ export function agentStepPublicSummary(
   locale: WorkHubLocale,
   step: { phase?: AgentStepPhase | string | undefined; tool_name?: string | undefined; output_excerpt?: string | undefined }
 ) {
-  const tool = step.tool_name?.trim();
-  const separator = locale === "en-US" ? ": " : "：";
   switch (step.phase) {
     case "think":
       return uiT(locale, "agent.stepThinkingPublic");
     case "tool_call":
-      return tool ? `${uiT(locale, "agent.stepToolCall")}${separator}${tool}` : uiT(locale, "agent.stepToolCallGeneric");
+      return uiT(locale, "agent.stepToolCallGeneric");
     case "tool_result":
-      return tool ? `${uiT(locale, "agent.stepToolResult")}${separator}${tool}` : uiT(locale, "agent.stepToolResultGeneric");
+      return uiT(locale, "agent.stepToolResultGeneric");
     case "final":
       return step.output_excerpt ?? uiT(locale, "agent.stepFinalOutput");
     default:
-      return step.output_excerpt ?? tool ?? uiT(locale, "agent.stepFallback");
+      return step.output_excerpt ?? uiT(locale, "agent.stepFallback");
   }
 }
 

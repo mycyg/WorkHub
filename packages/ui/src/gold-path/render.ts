@@ -12,7 +12,7 @@ import type {
   ReplayMergeCandidateVM,
   ReplayTraceVM
 } from "@workhub/contracts";
-import { budgetStatusLabel, deliverableTargetLabel, uiFormatCny } from "../i18n.js";
+import { agentStepPhaseLabel, agentStepPublicSummary, budgetStatusLabel, deliverableTargetLabel, uiFormatCny } from "../i18n.js";
 import { publicProposalDisplayTitle } from "../proposal/render.js";
 import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
 import {
@@ -588,7 +588,7 @@ function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, l
 function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const replay: ReplayTraceVM = vm.page_vms.replay;
   const steps = replay.steps
-    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(step.phase)}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? t(locale, "replay.stepFallback"))}</p></div><span class="wh-pill">#${step.step_no}</span></div>`)
+    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(agentStepPublicSummary(locale, step))}</p></div><span class="wh-pill">#${escapeHtml(String(step.step_no))}</span></div>`)
     .join("");
   const acceptedDeliverables = replay.accepted_deliverables ?? [];
   const deliverableHrefs = acceptedDeliverables

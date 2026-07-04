@@ -1005,21 +1005,14 @@ function stateForAgentRun(status: AgentRunLiveVM["status"]): CuuState {
 
 type AgentRunTraceStep = AgentRunLiveVM["trace"][number];
 
-function agentRunToolSuffix(step: AgentRunTraceStep, options: CuuLocaleOptions) {
-  if (!step.tool_name) {
-    return "";
-  }
-  return `${options.locale === "en-US" ? ": " : "："}${step.tool_name}`;
-}
-
 function publicAgentRunTraceLine(step: AgentRunTraceStep, options: CuuLocaleOptions) {
   switch (step.phase) {
     case "think":
       return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.think")}`;
     case "tool_call":
-      return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.toolCall")}${agentRunToolSuffix(step, options)}`;
+      return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.toolCall")}`;
     case "tool_result":
-      return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.toolResult")}${agentRunToolSuffix(step, options)}`;
+      return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.toolResult")}`;
     case "final":
       return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.final")}${step.output_excerpt ? `${options.locale === "en-US" ? ": " : "："}${truncate(step.output_excerpt, 120)}` : ""}`;
     default:
@@ -1035,9 +1028,7 @@ function publicAgentRunStepMessage(step: AgentRunTraceStep | undefined, options:
     case "think":
       return cuuT(options.locale, "agentRun.thinkingStatus");
     case "tool_call":
-      return step.tool_name
-        ? cuuFormat(options.locale, "agentRun.toolCallStatus", { tool: step.tool_name })
-        : cuuT(options.locale, "agentRun.toolCallStatusGeneric");
+      return cuuT(options.locale, "agentRun.toolCallStatusGeneric");
     case "tool_result":
       return cuuT(options.locale, "agentRun.toolResultStatus");
     case "final":
