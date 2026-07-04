@@ -150,8 +150,15 @@ addGate(
 addGate(
   gates,
   "workflow.migration-audit",
-  "CI runs the real migration audit instead of a placeholder",
-  includesAll(workflow, ["migration-audit:", "node-version: 22", "pnpm audit:migrations"]),
+  "CI runs the real PostgreSQL migration replay audit instead of a placeholder",
+  includesAll(workflow, [
+    "migration-audit:",
+    "postgres:16",
+    "DATABASE_URL: postgresql+psycopg://workhub:workhub@127.0.0.1:5432/workhub",
+    "WORKHUB_MIGRATION_AUDIT_REQUIRE_DB: \"true\"",
+    "node-version: 22",
+    "pnpm audit:migrations"
+  ]),
   "verify.yml migration-audit job"
 );
 

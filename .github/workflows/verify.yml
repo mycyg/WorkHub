@@ -284,6 +284,23 @@ jobs:
 
   migration-audit:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: workhub
+          POSTGRES_USER: workhub
+          POSTGRES_PASSWORD: workhub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U workhub -d workhub"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql+psycopg://workhub:workhub@127.0.0.1:5432/workhub
+      WORKHUB_MIGRATION_AUDIT_REQUIRE_DB: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
