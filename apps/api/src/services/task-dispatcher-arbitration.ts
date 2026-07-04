@@ -13,7 +13,7 @@ import type {
   CrossAgentPlanBudgetUsageStore,
   CrossAgentProposalReviewStore
 } from "./cross-agent-judge.js";
-import type { TaskDispatchArbitrationSink } from "./task-dispatcher.js";
+import type { TaskDispatchArbitrationResult, TaskDispatchArbitrationSink } from "./task-dispatcher.js";
 
 const ARBITRATION_CANDIDATE_LIMIT = 8;
 
@@ -125,6 +125,28 @@ function reviewDecision(result: CrossAgentArbitrationResult) {
   return result.decision === "accept_one" ? result.proposalReview.decision : "request_changes";
 }
 
+function blockedReason(result: CrossAgentArbitrationResult): Extract<TaskDispatchArbitrationResult, { completion: "blocked" }>["reason"] {
+  if (result.decision === "replan") {
+    return "replan";
+  }
+  if (result.decision === "escalate") {
+    return "escalate";
+  }
+  return "request_changes";
+}
+
+function completionResult(result: CrossAgentArbitrationResult): TaskDispatchArbitrationResult {
+  const decision = reviewDecision(result);
+  if (decision === "approve") {
+    return { completion: "proceed" };
+  }
+  return {
+    completion: "blocked",
+    reason: blockedReason(result),
+    reasonMd: result.proposalReview.reasonMd
+  };
+}
+
 export function createTaskDispatchArbitrationSink(options: TaskDispatchArbitrationSinkOptions): TaskDispatchArbitrationSink {
   return async (input) => {
     const candidates = await options.candidates.listArbitrationCandidates({
@@ -165,6 +187,7 @@ export function createTaskDispatchArbitrationSink(options: TaskDispatchArbitrati
       reasonMd: result.proposalReview.reasonMd,
       remember: "once"
     });
+    return completionResult(result);
   };
 }
 

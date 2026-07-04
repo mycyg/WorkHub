@@ -233,3 +233,91 @@ test("R9.4 task dispatch arbitration sink judges child proposal outputs and revi
     remember: "once"
   }]);
 });
+
+test("R9.7 task dispatch arbitration sink blocks completion when judge requests human changes", async () => {
+  const reviewCalls: Array<Parameters<CrossAgentProposalReviewStore["review"]>[0]> = [];
+  const candidates: TaskDispatchArbitrationCandidateStore = {
+    async listArbitrationCandidates() {
+      return [
+        {
+          proposalId: proposalAId,
+          proposalTitle: "Draft A",
+          producerRunId: runAId,
+          taskPlanItemId: researchItemId,
+          producerClientRef: "deepseek:worker:run-a",
+          producerContextRef: `agent-run:${runAId}`,
+          manifest: manifest({
+            proposalId: proposalAId,
+            title: "Draft A",
+            summaryMd: "Claims the source is current without a citation."
+          })
+        },
+        {
+          proposalId: proposalBId,
+          proposalTitle: "Draft B",
+          producerRunId: runBId,
+          taskPlanItemId: produceItemId,
+          producerClientRef: "deepseek:worker:run-b",
+          producerContextRef: `agent-run:${runBId}`,
+          manifest: manifest({
+            proposalId: proposalBId,
+            title: "Draft B",
+            summaryMd: "Cites a contradictory source."
+          })
+        }
+      ];
+    }
+  };
+  const judge: CrossAgentJudgeService = {
+    async arbitrate() {
+      return {
+        decision: "escalate",
+        confidence: "medium",
+        reasons: ["The two outputs cite incompatible source-of-truth tables."],
+        summaryMd: "需要人工判断哪条链路才是正式口径。",
+        escalationReason: "judge_escalated",
+        proposalReview: {
+          decision: "request_changes",
+          reasonMd: "AI 复核建议人工确认。"
+        }
+      } satisfies CrossAgentArbitrationResult;
+    }
+  };
+  const proposalReviews: CrossAgentProposalReviewStore = {
+    async review(input) {
+      reviewCalls.push(input);
+    }
+  };
+  const sink = createTaskDispatchArbitrationSink({
+    candidates,
+    judge,
+    proposalReviews,
+    judgeClientRef: "deepseek:review:judge-client"
+  });
+
+  const result = await sink({
+    plan: plan(),
+    items: [
+      item({
+        id: researchItemId,
+        seq: 0,
+        title: "Research",
+        acceptanceMd: "Use current competitor prices."
+      }),
+      item({
+        id: produceItemId,
+        seq: 1,
+        title: "Produce",
+        acceptanceMd: "Cite the source for each price."
+      })
+    ],
+    at: now
+  });
+
+  assert.deepEqual(reviewCalls.map((call) => call.decision), ["request_changes"]);
+  assert.deepEqual(result, {
+    completion: "blocked",
+    reason: "escalate",
+    reasonMd: "AI 复核建议人工确认。"
+  });
+});

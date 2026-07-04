@@ -105,11 +105,15 @@ export type TaskDispatchCompletionSink = (input: {
   at: Date;
 }) => Promise<void> | void;
 
+export type TaskDispatchArbitrationResult =
+  | { completion: "proceed" }
+  | { completion: "blocked"; reason: "request_changes" | "replan" | "escalate"; reasonMd?: string };
+
 export type TaskDispatchArbitrationSink = (input: {
   plan: TaskPlanRow;
   items: TaskPlanItemRow[];
   at: Date;
-}) => Promise<void> | void;
+}) => Promise<TaskDispatchArbitrationResult | void> | TaskDispatchArbitrationResult | void;
 
 export class TaskDispatcherError extends Error {
   constructor(
@@ -292,12 +296,12 @@ async function requireCompletion(
 async function requireArbitration(
   sink: TaskDispatchArbitrationSink | undefined,
   input: Parameters<TaskDispatchArbitrationSink>[0]
-) {
+): Promise<TaskDispatchArbitrationResult> {
   if (!sink) {
-    return;
+    return { completion: "proceed" };
   }
   try {
-    await sink(input);
+    return await sink(input) ?? { completion: "proceed" };
   } catch (error) {
     getDefaultStructuredLogger().warn("task_dispatch_arbitration_failed", {
       planId: input.plan.id,
@@ -349,11 +353,14 @@ export function createTaskDispatcher(options: {
       return false;
     }
     if (hasArbitrableOutputs(items)) {
-      await requireArbitration(arbitrationSink, {
+      const arbitration = await requireArbitration(arbitrationSink, {
         plan,
         items,
         at
       });
+      if (arbitration.completion === "blocked") {
+        return false;
+      }
     }
     const completedPlan: TaskPlanRow = { ...plan, status: "done", updatedAt: at };
     await requireCompletion(completionSink, {
