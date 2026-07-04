@@ -82,6 +82,12 @@ import {
 import { parseDesktopShellNavigatePayload } from "./shell-events.js";
 import { handleDesktopSpotlightShellNavigate } from "./spotlight-shell-navigation.js";
 import { handleDesktopProposalAction } from "./desktop-proposal-actions.js";
+import {
+  dismissDesktopMainWindow,
+  dragDesktopMainWindow,
+  moveDesktopMainWindowBy as moveDesktopMainWindowByCommand,
+  resizeDesktopMainWindow
+} from "./desktop-window-controls.js";
 import { appleGlassDesignSystemCss } from "./design-system.js";
 import {
   commandPaletteCss,
@@ -1154,57 +1160,21 @@ async function boot() {
 
 // R8 真·Spotlight：把内容高度同步给原生壳，缩放主窗（盒子随内容生长/收缩）。浏览器开发态无 __TAURI__ → no-op。
 const resizeMainWindow: SpotlightResizeFn = (width, height) => {
-  const tauri = (globalThis as {
-    __TAURI__?: {
-      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    };
-  }).__TAURI__;
-  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
-  if (typeof invoke === "function") {
-    void invoke("set_spotlight_size", { width, height }).catch(() => undefined);
-  }
+  resizeDesktopMainWindow(width, height);
 };
 
 // 搜索条像系统 Spotlight 一样可拖动；浏览器开发态无 __TAURI__ → no-op。
 const dragMainWindow = (): void => {
-  const tauri = (globalThis as {
-    __TAURI__?: {
-      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    };
-  }).__TAURI__;
-  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
-  if (typeof invoke === "function") {
-    void invoke("start_main_window_drag").catch(() => undefined);
-  }
+  dragDesktopMainWindow();
 };
 
 const moveMainWindowBy: SpotlightManualDragFn = (deltaX, deltaY): void => {
-  const tauri = (globalThis as {
-    __TAURI__?: {
-      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    };
-  }).__TAURI__;
-  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
-  if (typeof invoke === "function") {
-    void invoke("move_main_window_by", { deltaX, deltaY }).catch(() => undefined);
-  }
+  moveDesktopMainWindowByCommand(deltaX, deltaY);
 };
 
 // M2：launcher 顶层 Esc → 隐藏主窗（关闭盒子），兑现 hello 卡「Esc 关闭」承诺。浏览器开发态无 __TAURI__ → no-op。
 const dismissMainWindow = (): void => {
-  const tauri = (globalThis as {
-    __TAURI__?: {
-      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    };
-  }).__TAURI__;
-  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
-  if (typeof invoke === "function") {
-    void invoke("hide_main_window").catch(() => undefined);
-  }
+  dismissDesktopMainWindow();
 };
 
 // 连不上后端时渲一张清晰的玻璃「离线卡」（与旧 boot 的兜底一致）：说明需要后端、当前地址、怎么改、重试。

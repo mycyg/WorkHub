@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { WorkHubApiClient } from "@workhub/api-client";
@@ -42,9 +41,19 @@ import {
   handleDesktopProposalAction,
   type DesktopProposalActionClient
 } from "./desktop-proposal-actions.js";
+import {
+  dismissDesktopMainWindow,
+  dragDesktopMainWindow,
+  moveDesktopMainWindowBy,
+  resizeDesktopMainWindow
+} from "./desktop-window-controls.js";
 import { bindDesktopOfflineCard } from "./desktop-offline-card.js";
 import { renderDesktopSpotlightBootShell } from "./desktop-spotlight-boot.js";
-import { handleSpotlightCapabilityEscape, SPOTLIGHT_INTERNAL_BACK_SELECTOR } from "./spotlight/controller.js";
+import {
+  handleSpotlightCapabilityEscape,
+  renderSpotlightShellHtml,
+  SPOTLIGHT_INTERNAL_BACK_SELECTOR
+} from "./spotlight/controller.js";
 
 const intakeSession: SessionVM = {
   session_id: "10000000-0000-4000-8000-000000000201",
@@ -1010,94 +1019,48 @@ test("M3 Spotlight ESC falls back to top-level back when the view has no interna
   assert.deepEqual(topBack, ["top_back"]);
 });
 
-test("Spotlight exposes native move and resize gestures instead of a fixed top search bar", () => {
-  const source = readFileSync(new URL("./spotlight/controller.ts", import.meta.url), "utf8");
-  const browserSource = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+test("Spotlight shell renders native drag affordances without dead resize handles", () => {
+  const html = renderSpotlightShellHtml("en-US");
 
-  // 3-1: the old assertions required invisible resize handles, but those handles were not backed by
-  // durable resize state and render-driven auto-resize could overwrite the user's dragged size.
-  assert.match(source, /export type SpotlightManualDragFn = \(deltaX: number, deltaY: number\) => void/u);
-  assert.match(source, /drag\?: \(\) => void/u);
-  assert.match(source, /dragMove\?: SpotlightManualDragFn/u);
-  assert.doesNotMatch(source, /resizeDrag\?:/u);
-  assert.match(source, /renderWorkHubLiquidGlassLayer\("spotlight"\)/u);
-  assert.match(source, /class="wh-spot ds-anim-spring-in"/u);
-  // 盒子自己在 css.ts 里持有液态玻璃(渐变白底 + backdrop blur)，不再借用扁平的 ds-glass-strong 工具类。
-  assert.doesNotMatch(source, /class="wh-spot ds-glass-strong/u);
-  assert.match(source, /data-spot-box data-mode="launcher"/u);
-  assert.match(source, /class="wh-spot-drag-sheet" data-spot-drag-sheet/u);
-  assert.match(source, /class="wh-spot-field" type="search" data-spot-input role="combobox"/u);
-  assert.doesNotMatch(source, /data-tauri-drag-region/u);
-  assert.doesNotMatch(source, /data-spot-resize/u);
-  assert.match(source, /focusSearch\(\{ expand: false \}\)/u);
-  assert.match(source, /suppressNextFocusExpansion = !options\.expand/u);
-  assert.match(source, /if \(suppressNextFocusExpansion \|\| nowMs\(\) < suppressSearchFocusUntil\) \{\s*suppressNextFocusExpansion = false;\s*\}/u);
-  // 3-2: the old selector assertion omitted input/textarea, but that let text selection in the
-  // search box or composers start a window drag instead of selecting editable text.
-  assert.match(source, /const DRAG_EXCLUDED_SELECTOR = "input,textarea,button,a,select,\[contenteditable=true\]"/u);
-  assert.match(source, /Boolean\(target\.closest\(DRAG_EXCLUDED_SELECTOR\)\)/u);
-  assert.doesNotMatch(source, /userResizeAutoUnlockAt/u);
-  assert.match(source, /let suppressSearchFocusUntil = 0/u);
-  assert.match(source, /let suppressSearchClickUntil = 0/u);
-  assert.match(source, /const resetLauncher = \(\) => \{/u);
-  assert.match(source, /const renderLauncherBody = \(\) => \{/u);
-  assert.match(source, /const expanded = searchActive \|\| state\.query\.trim\(\)\.length > 0/u);
-  assert.match(source, /renderLauncherBody\(\);\s*scheduleWorkHubLiquidGlassFilterRebuild\(doc\);/u);
-  assert.match(source, /input2\.addEventListener\("input", \(\) => \{\s*if \(!openCapabilityId\(state\)\) \{\s*searchActive = true;/u);
-  assert.match(source, /searchActive = false;\s*pendingTarget = undefined;\s*state = initialSpotlightState\(\);\s*box\.dataset\.kbd = "false";\s*renderLauncher\(\);\s*focusSearch\(\{ expand: false \}\);/u);
-  assert.match(source, /resetLauncher\(\);\s*input\.dismiss\?\.\(\);/u);
-  assert.match(source, /reset: \(\) => \{\s*resetLauncher\(\);\s*\}/u);
-  assert.match(source, /nowMs\(\) < suppressSearchFocusUntil/u);
-  assert.match(source, /nowMs\(\) < suppressSearchClickUntil/u);
-  assert.match(source, /suppressSearchFocusUntil = nowMs\(\) \+ 700/u);
-  assert.match(source, /suppressSearchClickUntil = nowMs\(\) \+ 900/u);
-  assert.match(source, /suppressSearchClickUntil = nowMs\(\) \+ 700/u);
-  assert.match(source, /if \(!manualDrag.dragging && moved < 4\) \{\s*suppressSearchClickUntil = 0;/u);
-  assert.match(source, /let manualDrag:/u);
-  assert.match(source, /dragMove\?\.\(event\.screenX - manualDrag\.lastScreenX, event\.screenY - manualDrag\.lastScreenY\)/u);
-  assert.match(source, /manualDrag\.dragging = true/u);
-  assert.match(source, /let dragSheetDrag:/u);
-  assert.match(source, /dragSheet\.addEventListener\("pointerdown"/u);
-  assert.match(source, /input\.dragMove\?\.\(event\.screenX - dragSheetDrag\.lastScreenX, event\.screenY - dragSheetDrag\.lastScreenY\)/u);
-  assert.match(source, /const wasDragging = dragSheetDrag\.dragging/u);
-  assert.match(source, /if \(!wasDragging\) \{\s*searchActive = true;\s*renderLauncher\(\);\s*focusSearch\(\{ expand: true \}\);/u);
-  assert.match(source, /topEl\.addEventListener\("click", \(event\) => \{[\s\S]*?event\.stopImmediatePropagation\(\);/u);
-  const focusStart = source.indexOf('input2.addEventListener("focus"');
-  const clickStart = source.indexOf('input2.addEventListener("click"', focusStart);
-  assert.notEqual(focusStart, -1);
-  assert.notEqual(clickStart, -1);
-  const focusSource = source.slice(focusStart, clickStart);
-  assert.doesNotMatch(focusSource, /searchActive = true|renderLauncher\(\)/u);
-  const pointerDownStart = source.indexOf('topEl.addEventListener("pointerdown"');
-  const pointerMoveStart = source.indexOf('topEl.addEventListener("pointermove"', pointerDownStart);
-  assert.notEqual(pointerDownStart, -1);
-  assert.notEqual(pointerMoveStart, -1);
-  const pointerDownSource = source.slice(pointerDownStart, pointerMoveStart);
-  assert.doesNotMatch(pointerDownSource, /input\.drag\(\)/u);
-  assert.match(source, /input\.drag\?\.\(\)/u);
-  assert.match(source, /const requestResizeFromWindowResize = \(\) => \{\s*scheduleWorkHubLiquidGlassFilterRebuild\(doc\);\s*requestResize\(\);\s*\};/u);
-  const mouseMoveStart = source.indexOf('"mousemove"');
-  const mouseUpStart = source.indexOf('"mouseup"', mouseMoveStart);
-  assert.notEqual(mouseMoveStart, -1);
-  assert.notEqual(mouseUpStart, -1);
-  assert.doesNotMatch(source.slice(mouseMoveStart, mouseUpStart), /scheduleWorkHubLiquidGlassFilterRebuild\(doc\)/u);
-  const dragSheetMoveStart = source.indexOf('dragSheet.addEventListener("pointermove"');
-  const dragSheetFinishStart = source.indexOf("const finishDragSheet", dragSheetMoveStart);
-  assert.notEqual(dragSheetMoveStart, -1);
-  assert.notEqual(dragSheetFinishStart, -1);
-  assert.doesNotMatch(source.slice(dragSheetMoveStart, dragSheetFinishStart), /scheduleWorkHubLiquidGlassFilterRebuild\(doc\)/u);
-  const nativeFallbackMoveStart = source.indexOf('topEl.addEventListener("pointermove"');
-  const nativeFallbackClearStart = source.indexOf("const clearDragStart", nativeFallbackMoveStart);
-  assert.notEqual(nativeFallbackMoveStart, -1);
-  assert.notEqual(nativeFallbackClearStart, -1);
-  assert.doesNotMatch(source.slice(nativeFallbackMoveStart, nativeFallbackClearStart), /scheduleWorkHubLiquidGlassFilterRebuild\(doc\)/u);
-  // R9.7: the old assertion required browser.ts itself to import `liquidGlassFilterHtml`.
-  // That was wrong because the boot shell HTML is now behavior-tested through renderDesktopSpotlightBootShell().
-  assert.match(browserSource, /scheduleWorkHubLiquidGlassFilterRebuild\(document\)/u);
-  assert.match(browserSource, /const moveMainWindowBy: SpotlightManualDragFn = \(deltaX, deltaY\): void =>/u);
-  assert.match(browserSource, /invoke\("move_main_window_by", \{ deltaX, deltaY \}\)/u);
-  assert.match(browserSource, /invoke\("start_main_window_drag"\)/u);
-  assert.doesNotMatch(browserSource, /start_main_window_resize_drag/u);
+  // R9.7: the old native-drag assertion grepped spotlight/controller.ts for local variable names.
+  // That was wrong because source text did not prove the shell HTML exposed the expected controls.
+  assert.match(html, /class="wh-spot ds-anim-spring-in"/u);
+  assert.match(html, /data-spot-box data-mode="launcher"/u);
+  assert.match(html, /wh-liquid-glass/u);
+  assert.match(html, /class="wh-spot-drag-sheet" data-spot-drag-sheet/u);
+  assert.match(html, /class="wh-spot-field" type="search" data-spot-input role="combobox"/u);
+  assert.doesNotMatch(html, /data-tauri-drag-region/u);
+  assert.doesNotMatch(html, /data-spot-resize/u);
+  assert.doesNotMatch(html, /ds-glass-strong/u);
+});
+
+test("desktop native window commands invoke movement without resize-drag plumbing", () => {
+  const calls: Array<{ command: string; args?: Record<string, unknown> | undefined }> = [];
+  const scope = {
+    __TAURI__: {
+      core: {
+        invoke(command: string, args?: Record<string, unknown>) {
+          calls.push({ command, args });
+          return Promise.resolve();
+        }
+      }
+    }
+  };
+
+  // R9.7: the old native-command assertion grepped browser.ts for invoke strings.
+  // That was wrong because source text did not prove the injected commands call Tauri with the right payloads.
+  assert.equal(resizeDesktopMainWindow(480, 320, scope), true);
+  assert.equal(dragDesktopMainWindow(scope), true);
+  assert.equal(moveDesktopMainWindowBy(12, -8, scope), true);
+  assert.equal(dismissDesktopMainWindow(scope), true);
+  assert.equal(dragDesktopMainWindow({}), false);
+  assert.deepEqual(calls, [
+    { command: "set_spotlight_size", args: { width: 480, height: 320 } },
+    { command: "start_main_window_drag", args: undefined },
+    { command: "move_main_window_by", args: { deltaX: 12, deltaY: -8 } },
+    { command: "hide_main_window", args: undefined }
+  ]);
+  assert.equal(calls.some((call) => call.command === "start_main_window_resize_drag"), false);
 });
 
 // R9.7: the old offline-settings assertion grepped browser.ts for localStorage calls.

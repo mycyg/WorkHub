@@ -75,6 +75,32 @@ export function handleSpotlightCapabilityEscape(body: SpotlightInternalBackHost,
   return "top_back" as const;
 }
 
+export function renderSpotlightShellHtml(locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  const placeholder = zh ? "想做点什么？新任务 / 审批 / 网盘 / 项目…" : "What do you need? new task / approve / drive…";
+  return `
+    <div class="wh-spot ds-anim-spring-in" data-spot-box data-mode="launcher">
+      ${renderWorkHubLiquidGlassLayer("spotlight")}
+      <span class="wh-liquid-glass-rim" aria-hidden="true"></span>
+      <div class="wh-liquid-glass-content">
+        <div class="wh-spot-top">
+          <button type="button" class="wh-spot-back" data-spot-back aria-label="${zh ? "返回" : "Back"}">${BACK_ICON}</button>
+          <div class="wh-spot-field-wrap">
+            <span class="wh-spot-field-icon">${SEARCH_ICON}</span>
+            <input class="wh-spot-field" type="search" data-spot-input role="combobox" aria-expanded="true" aria-controls="wh-spot-listbox" aria-autocomplete="list" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}" />
+          </div>
+          <div class="wh-spot-titlewrap">
+            <span class="wh-spot-title" data-spot-title></span>
+            <span class="wh-spot-subtitle" data-spot-subtitle></span>
+          </div>
+          <kbd class="wh-spot-kbd">⌘K</kbd>
+          <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-drag-sheet" data-spot-drag-sheet></button>
+        </div>
+        <div class="wh-spot-body" data-spot-body></div>
+      </div>
+    </div>`;
+}
+
 function renderLauncherGrid(
   matches: CommandMatch[],
   locale: WorkHubLocale,
@@ -131,29 +157,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   // controller 自身的 window 监听器（⌘K/ESC/resize）统一挂这个 signal，dispose 时一并断开（rank25）。
   const controllerAbort = new AbortController();
 
-  const placeholder = zh ? "想做点什么？新任务 / 审批 / 网盘 / 项目…" : "What do you need? new task / approve / drive…";
   host.className = "wh-ds wh-spot-stage";
-  host.innerHTML = `
-    <div class="wh-spot ds-anim-spring-in" data-spot-box data-mode="launcher">
-      ${renderWorkHubLiquidGlassLayer("spotlight")}
-      <span class="wh-liquid-glass-rim" aria-hidden="true"></span>
-      <div class="wh-liquid-glass-content">
-        <div class="wh-spot-top">
-          <button type="button" class="wh-spot-back" data-spot-back aria-label="${zh ? "返回" : "Back"}">${BACK_ICON}</button>
-          <div class="wh-spot-field-wrap">
-            <span class="wh-spot-field-icon">${SEARCH_ICON}</span>
-            <input class="wh-spot-field" type="search" data-spot-input role="combobox" aria-expanded="true" aria-controls="wh-spot-listbox" aria-autocomplete="list" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}" />
-          </div>
-          <div class="wh-spot-titlewrap">
-            <span class="wh-spot-title" data-spot-title></span>
-            <span class="wh-spot-subtitle" data-spot-subtitle></span>
-          </div>
-          <kbd class="wh-spot-kbd">⌘K</kbd>
-          <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-drag-sheet" data-spot-drag-sheet></button>
-        </div>
-        <div class="wh-spot-body" data-spot-body></div>
-      </div>
-    </div>`;
+  host.innerHTML = renderSpotlightShellHtml(locale);
 
   const box = host.querySelector<HTMLElement>("[data-spot-box]")!;
   const topEl = host.querySelector<HTMLElement>(".wh-spot-top")!;
