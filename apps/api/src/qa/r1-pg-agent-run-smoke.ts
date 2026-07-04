@@ -11,7 +11,6 @@ import {
   acceptedDeliverableChanges,
   branches,
   budgetPolicies,
-  budgetPolicyStorageId,
   budgetReservations,
   costLedgerEntries,
   createAgentRunRepository,
@@ -76,6 +75,7 @@ import { createDbTaskDispatchEscalationSink, createTaskDispatcher } from "../ser
 import { createTaskPlanMergeApprovalHandler, createTaskPlanWorkflowService, TaskPlanServiceError } from "../services/task-plans.js";
 import { createDbWorkItemService } from "../services/work-items.js";
 import { AgentRunnerError, createInMemoryAgentRunQueue, type AgentRunQueue, type AgentRunQueueRecord } from "../workers/agent-runner.js";
+import { selectTenantScopedBudgetPolicyRows } from "./r1-pg-budget-policy.js";
 
 function sha256Text(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -777,9 +777,10 @@ async function main() {
     ) {
       throw new Error(`Expected cost policy readback to use DB override, got ${JSON.stringify(userPolicyAfter)}`);
     }
-    const userDayPolicyStorageId = budgetPolicyStorageId(settings, "pcost-user-day-v0");
     const [budgetPolicyRows, budgetPolicyAuditRows] = await Promise.all([
-      db.select().from(budgetPolicies).then((rows) => rows.filter((row) => row.id === userDayPolicyStorageId)),
+      db.select().from(budgetPolicies).then((rows) =>
+        selectTenantScopedBudgetPolicyRows(settings, "pcost-user-day-v0", rows)
+      ),
       db.select().from(auditLogs).then((rows) =>
         rows.filter((row) =>
           row.entityType === "budget_policy"

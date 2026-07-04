@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { Hono } from "hono";
@@ -31,9 +30,11 @@ import type {
   UserRepository,
   WorkspaceMembershipRepository
 } from "@workhub/db";
+import { budgetPolicyStorageId } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { InternalContractError } from "./pages/output-contract.js";
+import { selectTenantScopedBudgetPolicyRows } from "./qa/r1-pg-budget-policy.js";
 import { createCostRoutes } from "./routes/cost.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createApiProviderRegistry } from "./services/provider-registry.js";
@@ -219,11 +220,25 @@ function captureAuditLogs() {
   };
 }
 
-test("R1 PG smoke checks tenant-scoped budget policy storage ids", () => {
-  const source = readFileSync("src/qa/r1-pg-agent-run-smoke.ts", "utf8");
+test("R1 PG smoke selects tenant-scoped budget policy storage rows", () => {
+  const runtimeSettings = settings();
+  const logicalId = "pcost-user-day-v0";
+  const scopedId = budgetPolicyStorageId(runtimeSettings, logicalId);
+  const otherTenantId = budgetPolicyStorageId(loadSettings({
+    APP_ENV: "test",
+    COOKIE_SECRET: "test-cookie-secret",
+    DEFAULT_ORG_ID: runtimeSettings.auth.defaultOrgId,
+    DEFAULT_WORKSPACE_ID: "00000000-0000-4000-8000-00000000c057"
+  }), logicalId);
+  const rows = [
+    { id: logicalId, marker: "public-id" },
+    { id: scopedId, marker: "current-tenant" },
+    { id: otherTenantId, marker: "other-tenant" }
+  ];
 
-  assert.match(source, /budgetPolicyStorageId\(\s*settings,\s*"pcost-user-day-v0"\s*\)/u);
-  assert.doesNotMatch(source, /row\.id === "pcost-user-day-v0"/u);
+  // R9.7: the old assertion grepped r1-pg-agent-run-smoke.ts for `budgetPolicyStorageId(...)`.
+  // That was wrong because source text did not prove the smoke selected the scoped DB row at runtime.
+  assert.deepEqual(selectTenantScopedBudgetPolicyRows(runtimeSettings, logicalId, rows), [rows[1]]);
 });
 
 test("R2 audit#1: a failed audit write surfaces as a server error, not a 422 invalid-patch (update+audit stay atomic in production)", async () => {
