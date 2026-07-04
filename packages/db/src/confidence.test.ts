@@ -50,6 +50,12 @@ test("R9.7 resolving a child retry resets the task-plan item before work-item re
   };
   const { db, queries } = createQueryRecorder([
     [updatedEscalation],
+    [{
+      planStatus: "dispatching",
+      itemId: taskPlanItemId,
+      itemStatus: "failed"
+    }],
+    [{ id: escalationId }],
     [{ id: taskPlanItemId }],
     [{ id: taskPlanId }],
     []
@@ -64,8 +70,13 @@ test("R9.7 resolving a child retry resets the task-plan item before work-item re
     at: now
   });
 
-  const [escalationUpdate, itemUpdate, planUpdate] = queries;
+  // R9.7 review: the old assertion expected retry to reset the child item immediately
+  // after resolving the card. That was wrong because a later dispatcher failure needs
+  // the pre-reset task-plan state to reopen the same decision without losing failure facts.
+  const [escalationUpdate, snapshotQuery, snapshotUpdate, itemUpdate, planUpdate] = queries;
   assert.equal(escalationUpdate?.targetTable, escalationEvents);
+  assert.equal(snapshotQuery?.fromTable, taskPlanItems);
+  assert.equal(snapshotUpdate?.targetTable, escalationEvents);
   assert.equal(itemUpdate?.targetTable, taskPlanItems);
   assert.deepEqual(itemUpdate?.setValue, { status: "pending", updatedAt: now });
   assert.ok(queryReferences(itemUpdate?.where, taskPlanItems.planId));
@@ -82,6 +93,63 @@ test("R9.7 resolving a child retry resets the task-plan item before work-item re
   // escalation is scoped to a child task-plan item; retry must not mutate the
   // parent work item status/version.
   assert.equal(queries.some((query) => query.targetTable === workItems), false);
+});
+
+test("R9.7 resolving a child retry records a rollback snapshot before resetting task items", async () => {
+  const skippedItemId = "94000000-0000-4000-8000-000000000208";
+  const updatedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId,
+    handoffJson: {
+      task_plan_id: taskPlanId,
+      task_plan_item_id: taskPlanItemId,
+      skipped_item_ids: [skippedItemId]
+    }
+  };
+  const { db, queries } = createQueryRecorder([
+    [updatedEscalation],
+    [{
+      planStatus: "done",
+      itemId: taskPlanItemId,
+      itemStatus: "failed"
+    }, {
+      planStatus: "done",
+      itemId: skippedItemId,
+      itemStatus: "skipped"
+    }],
+    [{ id: escalationId }],
+    [{ id: taskPlanItemId }, { id: skippedItemId }],
+    [{ id: taskPlanId }],
+    []
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  await repository.resolveEscalation({
+    escalationId,
+    targetStatus: "ai_working",
+    workspaceId,
+    taskPlanAction: "retry",
+    at: now
+  });
+
+  const [, snapshotQuery, snapshotUpdate, itemUpdate] = queries;
+  assert.equal(snapshotQuery?.fromTable, taskPlanItems);
+  assert.deepEqual(snapshotQuery?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", taskPlans]
+  ]);
+  assert.ok(queryReferences(snapshotQuery?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(snapshotQuery?.where, taskPlanItems.id));
+  assert.ok(queryReferences(snapshotQuery?.where, taskPlans.workspaceId));
+  assert.ok(queryParamValues(snapshotQuery?.where).includes(taskPlanId));
+  assert.ok(queryParamValues(snapshotQuery?.where).includes(taskPlanItemId));
+  assert.ok(queryParamValues(snapshotQuery?.where).includes(skippedItemId));
+  assert.equal(snapshotUpdate?.targetTable, escalationEvents);
+  const snapshotSet = snapshotUpdate?.setValue as { handoffJson?: unknown } | undefined;
+  assert.ok(queryReferences(snapshotSet?.handoffJson, escalationEvents.handoffJson));
+  assert.ok(queryRawStrings(snapshotSet?.handoffJson).some((fragment) => fragment.includes("retry_rollback")));
+  assert.equal(itemUpdate?.targetTable, taskPlanItems);
+  assert.deepEqual(itemUpdate?.setValue, { status: "pending", updatedAt: now });
 });
 
 test("R9.7 escalation resolution mutations are fenced by workspace", async () => {
@@ -260,6 +328,76 @@ test("R9.7 reopening a child retry escalation does not require parent work item 
   );
 });
 
+test("R9.7 reopening a failed child retry restores the task-plan rollback snapshot", async () => {
+  const skippedItemId = "94000000-0000-4000-8000-000000000208";
+  const reopenedEscalation = {
+    id: escalationId,
+    workItemId,
+    handoffJson: {
+      task_plan_id: taskPlanId,
+      task_plan_item_id: taskPlanItemId,
+      skipped_item_ids: [skippedItemId],
+      retry_rollback: {
+        plan_status: "done",
+        item_statuses: {
+          [taskPlanItemId]: "failed",
+          [skippedItemId]: "skipped"
+        }
+      }
+    }
+  };
+  const reopenedRow = {
+    id: escalationId,
+    workItemId,
+    agentRunId,
+    projectId: "94000000-0000-4000-8000-000000000209",
+    title: "子任务重试失败",
+    reasonMd: "需要重新显示给用户。",
+    trigger: "doom_loop",
+    handoffJson: reopenedEscalation.handoffJson,
+    suggestedLeadUserId: null,
+    createdAt: now,
+    resolvedAt: null,
+    workItemStatus: "escalated",
+    workspaceId
+  };
+  const { db, queries } = createQueryRecorder([
+    [reopenedEscalation],
+    [{ id: taskPlanItemId }],
+    [{ id: skippedItemId }],
+    [{ id: taskPlanId }],
+    [reopenedRow]
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  const row = await repository.reopenEscalation?.({
+    escalationId,
+    targetStatus: "escalated",
+    workspaceId,
+    at: now
+  });
+
+  assert.equal(row?.id, escalationId);
+  assert.deepEqual(queries.map((query) => query.targetTable ?? query.fromTable), [
+    escalationEvents,
+    taskPlanItems,
+    taskPlanItems,
+    taskPlans,
+    escalationEvents
+  ]);
+  const [, failedRestore, skippedRestore, planRestore] = queries;
+  assert.deepEqual(failedRestore?.setValue, { status: "failed", updatedAt: now });
+  assert.ok(queryParamValues(failedRestore?.where).includes(taskPlanItemId));
+  assert.deepEqual(skippedRestore?.setValue, { status: "skipped", updatedAt: now });
+  assert.ok(queryParamValues(skippedRestore?.where).includes(skippedItemId));
+  assert.deepEqual(planRestore?.setValue, { status: "done", updatedAt: now });
+  assert.equal(
+    queries.some((query) => query.targetTable === workItems),
+    false,
+    "task-scoped retry compensation must restore task-plan state without mutating the parent work item"
+  );
+});
+
 test("R9.7 child retry resolution fails closed when the target item is stale", async () => {
   const updatedEscalation = {
     id: escalationId,
@@ -306,6 +444,12 @@ test("R9.7 child retry resolution fails closed when the plan cannot be resumed",
   };
   const { db, queries, transactions } = createQueryRecorder([
     [updatedEscalation],
+    [{
+      planStatus: "dispatching",
+      itemId: taskPlanItemId,
+      itemStatus: "failed"
+    }],
+    [{ id: escalationId }],
     [{ id: taskPlanItemId }],
     []
   ]);
@@ -323,7 +467,12 @@ test("R9.7 child retry resolution fails closed when the plan cannot be resumed",
   );
 
   assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "Error" }]);
+  // R9.7 review: the old assertion expected the plan-resume failure path to only
+  // contain item reset + plan resume. That missed the required rollback snapshot
+  // that lets dispatch-failure compensation restore the child state.
   assert.deepEqual(queries.map((query) => query.targetTable ?? query.fromTable), [
+    escalationEvents,
+    taskPlanItems,
     escalationEvents,
     taskPlanItems,
     taskPlans

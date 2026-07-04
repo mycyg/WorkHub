@@ -7,6 +7,8 @@ import type {
   ConfidenceVerdict,
   EscalationTrigger,
   RiskLevel,
+  TaskPlanItemStatus,
+  TaskPlanStatus,
   WorkItemStatus
 } from "@workhub/contracts";
 import { allowedWorkItemTransitions } from "@workhub/contracts";
@@ -176,6 +178,39 @@ function taskPlanResolutionTarget(handoffJson: Record<string, unknown>) {
   };
 }
 
+function isRollbackPlanStatus(value: unknown): value is Extract<TaskPlanStatus, "dispatching" | "done"> {
+  return value === "dispatching" || value === "done";
+}
+
+function isRollbackItemStatus(value: unknown): value is Extract<TaskPlanItemStatus, "failed" | "skipped"> {
+  return value === "failed" || value === "skipped";
+}
+
+function retryRollbackFromHandoff(handoffJson: Record<string, unknown>) {
+  const raw = handoffJson["retry_rollback"];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  if (!isRollbackPlanStatus(record["plan_status"])) {
+    return null;
+  }
+  const itemStatusRaw = record["item_statuses"];
+  if (!itemStatusRaw || typeof itemStatusRaw !== "object" || Array.isArray(itemStatusRaw)) {
+    return null;
+  }
+  const itemStatuses = Object.fromEntries(
+    Object.entries(itemStatusRaw as Record<string, unknown>)
+      .filter((entry): entry is [string, Extract<TaskPlanItemStatus, "failed" | "skipped">] =>
+        typeof entry[0] === "string" && entry[0].trim().length > 0 && isRollbackItemStatus(entry[1])
+      )
+  );
+  return {
+    planStatus: record["plan_status"],
+    itemStatuses
+  };
+}
+
 function scopedTaskPlanItemPredicate(input: {
   planId: string;
   workItemId: string;
@@ -335,6 +370,45 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
           : null;
         if (taskTarget) {
           if (input.taskPlanAction === "retry") {
+            const snapshotRows = await tx
+              .select({
+                planStatus: taskPlans.status,
+                itemId: taskPlanItems.id,
+                itemStatus: taskPlanItems.status
+              })
+              .from(taskPlanItems)
+              .innerJoin(taskPlans, eq(taskPlans.id, taskPlanItems.planId))
+              .where(and(
+                eq(taskPlanItems.planId, taskTarget.planId),
+                eq(taskPlans.id, taskTarget.planId),
+                eq(taskPlans.workItemId, updatedEscalation.workItemId),
+                eq(taskPlans.workspaceId, input.workspaceId),
+                inArray(taskPlanItems.id, taskTarget.itemIds),
+                inArray(taskPlanItems.status, ["failed", "skipped"])
+              ));
+            requireResolutionRows(snapshotRows, taskTarget.itemIds.length);
+            const planStatus = snapshotRows[0]?.planStatus;
+            if (!isRollbackPlanStatus(planStatus)) {
+              throw new Error("task_plan_resolution_conflict");
+            }
+            const snapshotItems = Object.fromEntries(snapshotRows.map((row) => [row.itemId, row.itemStatus]));
+            const snapshotWrites = await tx
+              .update(escalationEvents)
+              .set({
+                handoffJson: sql`${escalationEvents.handoffJson} || ${JSON.stringify({
+                  retry_rollback: {
+                    plan_status: planStatus,
+                    item_statuses: snapshotItems,
+                    captured_at: input.at.toISOString()
+                  }
+                })}::jsonb`
+              })
+              .where(and(
+                eq(escalationEvents.id, updatedEscalation.id),
+                scopedEscalationEventPredicate(input)
+              ))
+              .returning({ id: escalationEvents.id });
+            requireResolutionRows(snapshotWrites, 1);
             const resetItems = await tx
               .update(taskPlanItems)
               .set({
@@ -503,6 +577,48 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
             .returning({ id: workItems.id });
           if (!updatedWorkItems[0]) {
             throw new Error("escalation_status_transition_conflict");
+          }
+        } else {
+          const rollback = retryRollbackFromHandoff((reopenedEscalation.handoffJson ?? {}) as Record<string, unknown>);
+          if (rollback) {
+            for (const status of ["failed", "skipped"] satisfies Array<Extract<TaskPlanItemStatus, "failed" | "skipped">>) {
+              const itemIds = taskTarget.itemIds.filter((id) => rollback.itemStatuses[id] === status);
+              if (itemIds.length === 0) {
+                continue;
+              }
+              const restoredItems = await tx
+                .update(taskPlanItems)
+                .set({
+                  status,
+                  updatedAt: input.at
+                })
+                .where(and(
+                  eq(taskPlanItems.planId, taskTarget.planId),
+                  scopedTaskPlanItemPredicate({
+                    planId: taskTarget.planId,
+                    workItemId: reopenedEscalation.workItemId,
+                    workspaceId: input.workspaceId
+                  }),
+                  inArray(taskPlanItems.id, itemIds),
+                  inArray(taskPlanItems.status, ["pending", "failed", "skipped"])
+                ))
+                .returning({ id: taskPlanItems.id });
+              requireResolutionRows(restoredItems, itemIds.length);
+            }
+            const restoredPlans = await tx
+              .update(taskPlans)
+              .set({
+                status: rollback.planStatus,
+                updatedAt: input.at
+              })
+              .where(and(
+                eq(taskPlans.id, taskTarget.planId),
+                eq(taskPlans.workItemId, reopenedEscalation.workItemId),
+                eq(taskPlans.workspaceId, input.workspaceId),
+                inArray(taskPlans.status, ["dispatching", "done"])
+              ))
+              .returning({ id: taskPlans.id });
+            requireResolutionRows(restoredPlans, 1);
           }
         }
         const rows = await tx
