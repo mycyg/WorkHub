@@ -461,6 +461,100 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   assert.notEqual(workItems.status, "cancelled");
 });
 
+test("R9.7 task-plan merge still reports the durable merge when post-approval dispatch fails", async () => {
+  const runtimeSettings = settings();
+  const workItems = new WorkItems();
+  const taskPlans = new MemoryTaskPlans();
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: ids([proposalId, branchId, reviewId, mergeSnapshotId]),
+    onMerged: createTaskPlanMergeApprovalHandler({ taskPlans })
+  });
+  const service = createTaskPlanWorkflowService({
+    taskPlans,
+    proposals,
+    id: ids([planId]),
+    now: () => now,
+    planner: {
+      async createDraft() {
+        return {
+          items: [{
+            id: "95000000-0000-4000-8000-000000000611",
+            seq: 0,
+            title: "执行首个子任务",
+            role: "produce" as const,
+            objectiveMd: "验证合并后 dispatch 失败不会让 HTTP 响应伪装成未合并。",
+            acceptanceMd: "合并结果和通知事件仍然可见。",
+            budgetSharePct: 100,
+            dependsOn: []
+          }],
+          decompositionContext: { judge: "approved" }
+        };
+      }
+    }
+  });
+  const publishedEvents: string[] = [];
+  const warnings: Array<{ message: string; detail: unknown }> = [];
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createTaskPlanRoutes({ auth: authDeps(runtimeSettings), service, workItems }));
+  app.route("/api/proposals", createProposalRoutes({
+    auth: authDeps(runtimeSettings),
+    proposals,
+    workItems,
+    taskPlanDispatcher: {
+      async dispatch() {
+        throw Object.assign(new Error("dispatch unavailable"), { status: 503, code: "task_dispatch_failed" });
+      }
+    },
+    bus: {
+      async publish(_topic, type) {
+        publishedEvents.push(type);
+      }
+    },
+    logger: {
+      warn(message, detail) {
+        warnings.push({ message, detail });
+      }
+    }
+  }));
+  const headers = {
+    cookie: await cookie(runtimeSettings),
+    "content-type": "application/json"
+  };
+
+  const created = await app.request(`/api/workitems/${workItemId}/task-plan`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(created.status, 201);
+  const createdBody = await created.json() as { data: { proposal_id: string } };
+
+  const reviewed = await app.request(`/api/proposals/${createdBody.data.proposal_id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  assert.equal(reviewed.status, 200);
+
+  const merged = await app.request(`/api/proposals/${createdBody.data.proposal_id}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+
+  assert.equal(merged.status, 200);
+  const body = await merged.json() as { data: { status: string; proposal_id: string } };
+  assert.equal(body.data.status, "merged");
+  assert.equal(body.data.proposal_id, createdBody.data.proposal_id);
+  assert.equal(taskPlans.rows.get(planId)?.status, "approved");
+  assert.deepEqual(
+    publishedEvents.filter((type) => type === "proposal.merged" || type === "notification.created"),
+    ["proposal.merged", "notification.created"]
+  );
+  assert.equal(warnings[0]?.message, "WorkHub task-plan dispatch after proposal merge failed");
+});
+
 test("R9.7 task-plan rejection cancels the draft so the work item can regenerate a plan", async () => {
   const runtimeSettings = settings();
   const workItems = new WorkItems();

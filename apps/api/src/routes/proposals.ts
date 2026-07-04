@@ -568,12 +568,21 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     }
     const taskPlanTarget = taskPlanApprovalTarget(proposal);
     if (taskPlanTarget && taskPlanDispatcher) {
-      await taskPlanDispatcher.dispatch({
-        planId: taskPlanTarget.planId,
-        workspaceId: taskPlanTarget.workspaceId,
-        orgId: c.var.actor.orgId,
-        actorId: c.var.actor.userId ?? c.var.actor.id
-      });
+      try {
+        await taskPlanDispatcher.dispatch({
+          planId: taskPlanTarget.planId,
+          workspaceId: taskPlanTarget.workspaceId,
+          orgId: c.var.actor.orgId,
+          actorId: c.var.actor.userId ?? c.var.actor.id
+        });
+      } catch (error) {
+        eventLogger.warn("WorkHub task-plan dispatch after proposal merge failed", {
+          proposalId: proposal.id,
+          workItemId: proposal.work_item_id,
+          planId: taskPlanTarget.planId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
     }
     const mergeResult = mergeResultFor({
       proposal,
