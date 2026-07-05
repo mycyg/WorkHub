@@ -84,6 +84,13 @@ export class TaskPlanDraftAlreadyExists extends Error {
   }
 }
 
+export class TaskPlanItemGraphMismatch extends Error {
+  constructor() {
+    super("Task plan item parent and dependency links must point to items in the same draft plan.");
+    this.name = "TaskPlanItemGraphMismatch";
+  }
+}
+
 export type TaskPlanWithItems = {
   plan: TaskPlanRow;
   items: TaskPlanItemRow[];
@@ -177,10 +184,29 @@ function parentPlanWorkspacePredicate(input: { planId: string; workspaceId: stri
   )`;
 }
 
+function validateDraftItemGraph(items: CreateTaskPlanItemInput[]) {
+  const itemIds = new Set(items.map((item) => item.id));
+  if (itemIds.size !== items.length) {
+    throw new TaskPlanItemGraphMismatch();
+  }
+  for (const item of items) {
+    const parentItemId = item.parentItemId ?? null;
+    if (parentItemId && (parentItemId === item.id || !itemIds.has(parentItemId))) {
+      throw new TaskPlanItemGraphMismatch();
+    }
+    for (const dependencyId of item.dependsOn ?? []) {
+      if (dependencyId === item.id || !itemIds.has(dependencyId)) {
+        throw new TaskPlanItemGraphMismatch();
+      }
+    }
+  }
+}
+
 export function createTaskPlanRepository(db: WorkHubDb) {
   return {
     async createDraftPlan(input: CreateDraftTaskPlanInput): Promise<void> {
       const now = input.now ?? new Date();
+      validateDraftItemGraph(input.items);
       await db.transaction(async (tx) => {
         const [workItemScope] = await tx
           .select({ workItemId: workItems.id })

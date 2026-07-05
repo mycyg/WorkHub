@@ -162,6 +162,65 @@ test("R9.7 task plan repository rejects duplicate draft plans for one work item"
   assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "TaskPlanDraftAlreadyExists" }]);
 });
 
+test("R9.7 task plan repository rejects parent links outside the draft item graph", async () => {
+  const { db, queries, transactions } = createQueryRecorder([[{ workItemId }], [], [], []]);
+  const repository = createTaskPlanRepository(db);
+
+  await assert.rejects(
+    () => repository.createDraftPlan({
+      id: planId,
+      workItemId,
+      workspaceId,
+      createdByUserId: userId,
+      items: [{
+        id: firstItemId,
+        parentItemId: foreignPlanId,
+        seq: 1,
+        title: "查资料",
+        role: "research",
+        objectiveMd: "查清背景。",
+        acceptanceMd: "列出来源。",
+        budgetSharePct: 40,
+        dependsOn: []
+      }],
+      now
+    }),
+    { name: "TaskPlanItemGraphMismatch" }
+  );
+
+  assert.deepEqual(queries, []);
+  assert.deepEqual(transactions, []);
+});
+
+test("R9.7 task plan repository rejects dependency links outside the draft item graph", async () => {
+  const { db, queries, transactions } = createQueryRecorder([[{ workItemId }], [], [], []]);
+  const repository = createTaskPlanRepository(db);
+
+  await assert.rejects(
+    () => repository.createDraftPlan({
+      id: planId,
+      workItemId,
+      workspaceId,
+      createdByUserId: userId,
+      items: [{
+        id: firstItemId,
+        seq: 1,
+        title: "查资料",
+        role: "research",
+        objectiveMd: "查清背景。",
+        acceptanceMd: "列出来源。",
+        budgetSharePct: 40,
+        dependsOn: [secondItemId]
+      }],
+      now
+    }),
+    { name: "TaskPlanItemGraphMismatch" }
+  );
+
+  assert.deepEqual(queries, []);
+  assert.deepEqual(transactions, []);
+});
+
 test("R9.1 task plan repository persists a linked objective only after scoped validation", async () => {
   const { db, queries, transactions } = createQueryRecorder([[{ workItemId }], [], [{ objectiveId }], []]);
   const repository = createTaskPlanRepository(db);
