@@ -95,6 +95,12 @@ export type AgentRunRequeueStaleInput = {
   maxRecoverAttempts: number;
 };
 
+export type AgentRunRestoreDeadLetterClaimInput = {
+  runId: string;
+  restoredAt: Date;
+  claim: AgentRunClaimInput;
+};
+
 export type AgentRunRepository = {
   createRun: (run: AgentRunForPersistence) => Promise<AgentRunRow>;
   createRunIfWorkItemIdle: (run: AgentRunForPersistence) => Promise<AgentRunRow | null>;
@@ -111,6 +117,7 @@ export type AgentRunRepository = {
   claimNextQueued: (claim: AgentRunClaimInput) => Promise<StoredAgentRunRows | null>;
   heartbeatClaim: (input: AgentRunHeartbeatInput) => Promise<AgentRunRow | null>;
   requeueExpiredClaims: (input: AgentRunRequeueStaleInput) => Promise<AgentRunRow[]>;
+  restoreDeadLetterClaim: (input: AgentRunRestoreDeadLetterClaimInput) => Promise<AgentRunRow | null>;
   listUnsettledTaskPlanRuns: (input: { limit: number }) => Promise<StoredAgentRunRows[]>;
 };
 
@@ -523,6 +530,26 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
           .returning();
         return [...deadLettered, ...requeued];
       });
+    },
+
+    async restoreDeadLetterClaim(input) {
+      const [row] = await db
+        .update(agentRuns)
+        .set({
+          status: "running",
+          claimedBy: input.claim.workerId,
+          claimedAt: input.claim.claimedAt,
+          heartbeatAt: input.claim.heartbeatAt,
+          leaseExpiresAt: input.claim.leaseExpiresAt,
+          finishedAt: null,
+          updatedAt: input.restoredAt
+        })
+        .where(and(
+          eq(agentRuns.id, input.runId),
+          eq(agentRuns.status, "failed")
+        ))
+        .returning();
+      return row ?? null;
     },
 
     async listUnsettledTaskPlanRuns(input) {

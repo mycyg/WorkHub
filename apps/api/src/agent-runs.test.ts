@@ -60,6 +60,7 @@ import {
   type AgentRunQueueRecord,
   type AgentRunQueueStatus,
   type AgentRunRequeueExpiredLeases,
+  type AgentRunRestoreDeadLetterClaim,
   type AgentRunTraceStepRecord,
   type BudgetDecisionProvider
 } from "./workers/agent-runner.js";
@@ -237,6 +238,26 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
       }
     }
     return recovered;
+  }
+
+  async restoreDeadLetterClaim(input: AgentRunRestoreDeadLetterClaim) {
+    const run = this.rows.get(input.runId);
+    if (!run || run.status !== "failed") {
+      return null;
+    }
+    const restored: AgentRunQueueRecord = {
+      ...structuredClone(run),
+      status: "running",
+      claim: {
+        claimed_by: input.claim.workerId,
+        claimed_at: input.claim.claimedAt.toISOString(),
+        heartbeat_at: input.claim.heartbeatAt.toISOString(),
+        lease_expires_at: input.claim.leaseExpiresAt.toISOString()
+      },
+      updated_at: input.restoredAt.toISOString()
+    };
+    this.rows.set(run.run_id, structuredClone(restored));
+    return structuredClone(restored);
   }
 }
 
@@ -2346,6 +2367,9 @@ test("persistent agent run enqueue carries tenant ids into DB persistence", asyn
     async requeueExpiredClaims() {
       throw new Error("not used");
     },
+    async restoreDeadLetterClaim() {
+      throw new Error("not used");
+    },
     async listUnsettledTaskPlanRuns() {
       throw new Error("not used");
     }
@@ -2456,6 +2480,9 @@ test("persistent agent run enqueue carries task-plan lineage into DB persistence
       throw new Error("not used");
     },
     async requeueExpiredClaims() {
+      throw new Error("not used");
+    },
+    async restoreDeadLetterClaim() {
       throw new Error("not used");
     },
     async listUnsettledTaskPlanRuns() {
@@ -6175,4 +6202,56 @@ test("R9.7 dead-letter recovery fails closed when the decision inbox write fails
     true,
     "the dead-letter audit still records the poison run for operators"
   );
+});
+
+test("R9.7 dead-letter recovery remains retryable until attention is durable", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  let failInbox = true;
+  const recoveredAt = new Date("2026-06-05T00:10:00.000Z");
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => recoveredAt,
+    id: () => "40000000-0000-4000-8000-00000000004e",
+    workerId: "worker-deadletter-retryable",
+    leaseMs: 60_000,
+    maxRecoverAttempts: 1,
+    persistence,
+    auditLogs,
+    decisions: {
+      async createEscalationEvent(input) {
+        if (failInbox) {
+          throw new Error("decision inbox unavailable once");
+        }
+        return decisions.createEscalationEvent(input);
+      }
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Retryable standalone poison run" });
+  const expiredLease = {
+    claimedAt: new Date("2026-06-05T00:00:00.000Z"),
+    heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
+    leaseExpiresAt: new Date("2026-06-05T00:01:00.000Z")
+  };
+
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-1", ...expiredLease });
+  await queue.recoverExpiredClaims();
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
+  await assert.rejects(queue.recoverExpiredClaims(), /decision inbox unavailable once/u);
+  failInbox = false;
+
+  const recovered = await queue.recoverExpiredClaims();
+
+  assert.equal(recovered[0]?.status, "failed");
+  assert.equal(status.statuses.get(workItemId), "escalated");
+  assert.equal(decisions.escalationRows.length, 1);
+  assert.equal(decisions.escalationRows[0]?.agentRunId, queued.run_id);
 });

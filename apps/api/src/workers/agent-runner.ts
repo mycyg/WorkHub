@@ -256,6 +256,7 @@ export type AgentRunPersistence = {
   claimNextQueued?: (claim: AgentRunClaimLease) => Promise<AgentRunQueueRecord | null>;
   heartbeatClaim?: (input: AgentRunHeartbeatLease) => Promise<AgentRunQueueRecord | null>;
   requeueExpiredClaims?: (input: AgentRunRequeueExpiredLeases) => Promise<AgentRunQueueRecord[]>;
+  restoreDeadLetterClaim?: (input: AgentRunRestoreDeadLetterClaim) => Promise<AgentRunQueueRecord | null>;
   listUnsettledTaskPlanRuns?: (input: { limit: number }) => Promise<AgentRunQueueRecord[]>;
 };
 
@@ -278,6 +279,12 @@ export type AgentRunRequeueExpiredLeases = {
   requeuedAt: Date;
   // 已被恢复 >= 此次数的过期 run 转死信 failed，不再重排（防 poison run 无限重跑）。
   maxRecoverAttempts: number;
+};
+
+export type AgentRunRestoreDeadLetterClaim = {
+  runId: string;
+  restoredAt: Date;
+  claim: AgentRunClaimLease;
 };
 
 export type AgentRunQueue = {
@@ -1040,6 +1047,28 @@ export function createInMemoryAgentRunQueue(options: {
       });
       throw error;
     }
+  }
+
+  async function restoreDeadLetterRetrySurface(run: AgentRunQueueRecord, recoveredAt: Date) {
+    if (!persistence?.restoreDeadLetterClaim) {
+      return;
+    }
+    const staleAt = new Date(recoveredAt.getTime() - 1);
+    const restored = await persistence.restoreDeadLetterClaim({
+      runId: run.run_id,
+      restoredAt: recoveredAt,
+      claim: {
+        workerId: `${workerId}:dead-letter-retry`,
+        claimedAt: staleAt,
+        heartbeatAt: staleAt,
+        leaseExpiresAt: staleAt
+      }
+    });
+    if (!restored) {
+      return;
+    }
+    const live = runs.get(restored.run_id);
+    runs.set(restored.run_id, live && live.trace.length > restored.trace.length ? { ...restored, trace: live.trace } : restored);
   }
 
   function refreshClaimInBackground(runId: string) {
@@ -2107,7 +2136,19 @@ export function createInMemoryAgentRunQueue(options: {
       // 仍会被下次执行接手，不动其状态。复用 notifyRunMilestone：failed 终态 → newStatus=escalated + 通知。
       for (const run of recovered) {
         if (run.status === "failed") {
-          await openDeadLetterEscalation(run, recoveredAt);
+          try {
+            await openDeadLetterEscalation(run, recoveredAt);
+          } catch (error) {
+            try {
+              await restoreDeadLetterRetrySurface(run, recoveredAt);
+            } catch (restoreError) {
+              getDefaultStructuredLogger().warn("agent_run_dead_letter_retry_restore_failed", {
+                runId: run.run_id,
+                restoreError
+              });
+            }
+            throw error;
+          }
           await notifyRunMilestone(run, "AI 多次崩溃，已转人工接手。");
           await notifyRunSettled(run);
         }

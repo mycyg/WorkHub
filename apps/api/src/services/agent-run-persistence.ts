@@ -332,6 +332,15 @@ export function createDbAgentRunPersistence(repository: AgentRunRepository): Age
     async requeueExpiredClaims(input) {
       const rows = await repository.requeueExpiredClaims(requeueForRepository(input));
       return rows.map((run) => toQueueRun({ run, steps: [] }));
+    },
+
+    async restoreDeadLetterClaim(input) {
+      const row = await repository.restoreDeadLetterClaim({
+        runId: input.runId,
+        restoredAt: input.restoredAt,
+        claim: claimForRepository(input.claim)
+      });
+      return row ? toQueueRun({ run: row, steps: [] }) : null;
     }
   };
 }
