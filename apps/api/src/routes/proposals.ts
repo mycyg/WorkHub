@@ -315,10 +315,20 @@ function taskPlanMergeAttention(proposal: StoredProposal, createdAt: string, dis
     summary_text: dispatch ? "任务计划已批准，子任务会开始执行。" : "任务计划已批准，暂不开始执行。",
     reason_text: dispatch ? "后续执行会继续进入可审计的事项流。" : "计划保持已批准状态，需要时可以再手动开始。",
     actions: [
+      ...(!dispatch
+        ? [{
+            id: "start_task_plan",
+            label: "开始执行计划",
+            style: "primary" as const,
+            method: "POST" as const,
+            href: `/api/proposals/${proposal.id}/merge`,
+            request_json: { dispatch: true }
+          }]
+        : []),
       {
         id: "open_proposal",
         label: "查看计划提议",
-        style: "primary",
+        style: dispatch ? "primary" : "secondary",
         method: "GET",
         href: `/proposals/${proposal.id}`
       }

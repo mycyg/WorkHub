@@ -52,6 +52,7 @@ export type CuuCopyKey =
   | "proposal.approvePlanReview"
   | "proposal.approvePlanAndStart"
   | "proposal.approvePlanHold"
+  | "proposal.startHeldPlan"
   | "proposal.requestChanges"
   | "proposal.requestReplan"
   | "proposal.riskSection"
@@ -273,6 +274,7 @@ const cuuCopy = {
     "proposal.approvePlanReview": "确认计划",
     "proposal.approvePlanAndStart": "批准并开始执行",
     "proposal.approvePlanHold": "批准但先不跑",
+    "proposal.startHeldPlan": "开始执行计划",
     "proposal.requestChanges": "打回修改",
     "proposal.requestReplan": "打回重拆",
     "proposal.riskSection": "风险与回滚",
@@ -493,6 +495,7 @@ const cuuCopy = {
     "proposal.approvePlanReview": "Approve plan",
     "proposal.approvePlanAndStart": "Approve and start",
     "proposal.approvePlanHold": "Approve but hold",
+    "proposal.startHeldPlan": "Start plan",
     "proposal.requestChanges": "Request changes",
     "proposal.requestReplan": "Request replan",
     "proposal.riskSection": "Risk and rollback",

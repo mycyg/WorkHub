@@ -659,9 +659,30 @@ test("R9.7 task-plan merge can approve without dispatching when held", async () 
   });
 
   assert.equal(merged.status, 200);
-  const body = await merged.json() as { ok: true; data: { status: string; attention: { summary_text: string } } };
+  const body = await merged.json() as {
+    ok: true;
+    data: {
+      status: string;
+      attention: {
+        summary_text: string;
+        actions: Array<{
+          id: string;
+          label: string;
+          method: string;
+          href: string;
+          request_json?: Record<string, unknown>;
+        }>;
+      };
+    };
+  };
   assert.equal(body.data.status, "merged");
   assert.equal(body.data.attention.summary_text, "任务计划已批准，暂不开始执行。");
+  const startAction = body.data.attention.actions.find((action) => action.id === "start_task_plan");
+  assert.equal(startAction?.label, "开始执行计划");
+  assert.equal(startAction?.method, "POST");
+  assert.equal(startAction?.href, `/api/proposals/${createdBody.data.proposal_id}/merge`);
+  assert.deepEqual(startAction?.request_json, { dispatch: true });
+  assert.equal(JSON.stringify(body.data.attention.actions).includes("派发"), false);
   assert.equal(taskPlans.rows.get(planId)?.status, "approved");
 });
 

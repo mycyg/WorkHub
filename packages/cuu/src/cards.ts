@@ -302,6 +302,8 @@ function localizedAttentionActionLabel(
       return cuuT(options.locale, "proposal.approvePlanAndStart");
     case "approve_hold":
       return cuuT(options.locale, "proposal.approvePlanHold");
+    case "start_task_plan":
+      return cuuT(options.locale, "proposal.startHeldPlan");
     case "request_replan":
       return cuuT(options.locale, "proposal.requestReplan");
     case "request_changes":
@@ -315,13 +317,13 @@ function localizedAttentionActionLabel(
       }
       return cuuT(options.locale, "pet.action.requestChanges");
     case "open_proposal":
-      return item.kind === "plan_review"
+      return item.kind === "plan_review" || attentionHasAction(item, "start_task_plan")
         ? cuuT(options.locale, "proposal.openPlanReview")
         : cuuT(options.locale, "proposal.openReview");
     case "open":
     case "view":
       return isProposalLikeAttentionKind(item.kind)
-        ? cuuT(options.locale, item.kind === "plan_review" ? "proposal.openPlanReview" : "proposal.openReview")
+        ? cuuT(options.locale, item.kind === "plan_review" || attentionHasAction(item, "start_task_plan") ? "proposal.openPlanReview" : "proposal.openReview")
         : cuuT(options.locale, "pet.action.open");
     default:
       return action.label;
@@ -349,7 +351,7 @@ function sortAttentionActionsForUser(actions: CuuCardAction[], item: AttentionIt
     if (action.id === "open" || action.id === "open_proposal" || action.id === "view") {
       return 0;
     }
-    if (action.id === "approve" || action.id === "allow" || action.id === "approve_and_dispatch") {
+    if (action.id === "approve" || action.id === "allow" || action.id === "approve_and_dispatch" || action.id === "start_task_plan") {
       return 1;
     }
     if (action.id === "approve_hold") {
