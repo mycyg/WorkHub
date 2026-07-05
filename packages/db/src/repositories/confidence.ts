@@ -72,6 +72,7 @@ export type ResolveBudgetDecisionInput = {
   escalationId: string;
   workspaceId: string;
   actionId: string;
+  targetStatus: WorkItemStatus;
   at: Date;
 };
 
@@ -176,6 +177,20 @@ function taskPlanResolutionTarget(handoffJson: Record<string, unknown>) {
     planId,
     itemIds: uniqueItemIds
   };
+}
+
+function budgetTaskPlanId(handoffJson: Record<string, unknown>) {
+  return textField(handoffJson["task_plan_id"]);
+}
+
+function budgetTaskPlanTerminalStatus(actionId: string): Extract<TaskPlanStatus, "done" | "cancelled"> | null {
+  if (actionId === "finish_current_output") {
+    return "done";
+  }
+  if (actionId === "close_scope") {
+    return "cancelled";
+  }
+  return null;
 }
 
 function isRollbackPlanStatus(value: unknown): value is Extract<TaskPlanStatus, "dispatching" | "done"> {
@@ -515,25 +530,121 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
     },
 
     async resolveBudgetDecision(input) {
-      const rows = await db
-        .update(escalationEvents)
-        .set({
-          resolvedAt: input.at,
-          handoffJson: sql`${escalationEvents.handoffJson} || ${JSON.stringify({
-            budget_resolution: {
-              action_id: input.actionId,
-              resolved_at: input.at.toISOString()
-            }
-          })}::jsonb`
-        })
-        .where(and(
-          eq(escalationEvents.id, input.escalationId),
-          isNull(escalationEvents.resolvedAt),
-          scopedEscalationEventPredicate(input)
-        ))
-        .returning({ id: escalationEvents.id });
-      const updated = rows[0];
-      return updated ? this.findEscalationById(updated.id) : null;
+      const predecessors = predecessorsForStatus(input.targetStatus);
+      if (predecessors.length === 0) {
+        throw new Error("escalation_status_transition_conflict");
+      }
+      return db.transaction(async (tx) => {
+        const updatedEscalations = await tx
+          .update(escalationEvents)
+          .set({
+            resolvedAt: input.at,
+            handoffJson: sql`${escalationEvents.handoffJson} || ${JSON.stringify({
+              budget_resolution: {
+                action_id: input.actionId,
+                target_status: input.targetStatus,
+                resolved_at: input.at.toISOString()
+              }
+            })}::jsonb`
+          })
+          .where(and(
+            eq(escalationEvents.id, input.escalationId),
+            isNull(escalationEvents.resolvedAt),
+            scopedEscalationEventPredicate(input)
+          ))
+          .returning({
+            id: escalationEvents.id,
+            workItemId: escalationEvents.workItemId,
+            handoffJson: escalationEvents.handoffJson
+          });
+        const updatedEscalation = updatedEscalations[0];
+        if (!updatedEscalation) {
+          return null;
+        }
+
+        const planId = budgetTaskPlanId((updatedEscalation.handoffJson ?? {}) as Record<string, unknown>);
+        const terminalPlanStatus = planId ? budgetTaskPlanTerminalStatus(input.actionId) : null;
+        if (planId && terminalPlanStatus) {
+          await tx
+            .update(agentRuns)
+            .set({
+              status: "cancelled",
+              finishedAt: input.at,
+              updatedAt: input.at
+            })
+            .where(and(
+              eq(agentRuns.workItemId, updatedEscalation.workItemId),
+              eq(agentRuns.workspaceId, input.workspaceId),
+              eq(agentRuns.taskPlanId, planId),
+              inArray(agentRuns.status, ["queued", "running"])
+            ))
+            .returning({ id: agentRuns.id });
+          await tx
+            .update(taskPlanItems)
+            .set({
+              status: "skipped",
+              updatedAt: input.at
+            })
+            .where(and(
+              eq(taskPlanItems.planId, planId),
+              scopedTaskPlanItemPredicate({
+                planId,
+                workItemId: updatedEscalation.workItemId,
+                workspaceId: input.workspaceId
+              }),
+              inArray(taskPlanItems.status, ["pending", "dispatched", "failed", "skipped"])
+            ))
+            .returning({ id: taskPlanItems.id });
+          const planPredecessors: TaskPlanStatus[] = terminalPlanStatus === "done"
+            ? ["approved", "dispatching", "done"]
+            : ["draft", "proposed", "approved", "dispatching", "done"];
+          const updatedPlans = await tx
+            .update(taskPlans)
+            .set({
+              status: terminalPlanStatus,
+              updatedAt: input.at
+            })
+            .where(and(
+              eq(taskPlans.id, planId),
+              eq(taskPlans.workItemId, updatedEscalation.workItemId),
+              eq(taskPlans.workspaceId, input.workspaceId),
+              inArray(taskPlans.status, planPredecessors)
+            ))
+            .returning({ id: taskPlans.id });
+          requireResolutionRows(updatedPlans, 1);
+        }
+
+        const updatedWorkItems = await tx
+          .update(workItems)
+          .set({
+            status: input.targetStatus,
+            version: sql`${workItems.version} + 1`,
+            updatedAt: input.at
+          })
+          .where(and(
+            eq(workItems.id, updatedEscalation.workItemId),
+            eq(workItems.workspaceId, input.workspaceId),
+            inArray(workItems.status, predecessors),
+            isNull(workItems.deletedAt)
+          ))
+          .returning({ id: workItems.id });
+        if (!updatedWorkItems[0]) {
+          throw new Error("escalation_status_transition_conflict");
+        }
+
+        const rows = await tx
+          .select(escalationServiceColumns)
+          .from(escalationEvents)
+          .innerJoin(workItems, eq(escalationEvents.workItemId, workItems.id))
+          .where(and(
+            eq(escalationEvents.id, updatedEscalation.id),
+            isNull(workItems.deletedAt),
+            eq(workItems.workspaceId, input.workspaceId)
+          ))
+          .limit(1);
+        const row = rows[0];
+        return row ? toEscalationServiceRow(row) : null;
+      });
     },
 
     async reopenEscalation(input) {

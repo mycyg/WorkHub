@@ -60,7 +60,12 @@ class MemoryEscalationRepository implements EscalationRepository {
   public resolveCalls: Array<{ escalationId: string; targetStatus: string; taskPlanAction?: string }> = [];
   public reopenCalls: Array<{ escalationId: string; targetStatus: string }> = [];
   public delegateCalls: Array<{ escalationId: string; toUserId: string; workspaceId?: string }> = [];
-  public budgetDecisionCalls: Array<{ escalationId: string; workspaceId: string; actionId: string }> = [];
+  public budgetDecisionCalls: Array<{
+    escalationId: string;
+    workspaceId: string;
+    actionId: string;
+    targetStatus: EscalationServiceRow["workItemStatus"];
+  }> = [];
   public listCalls: Array<{ workspaceId: string; limit?: number }> = [];
 
   constructor(
@@ -105,16 +110,17 @@ class MemoryEscalationRepository implements EscalationRepository {
     return row({ suggestedLeadUserId: "12000000-0000-4000-8000-000000000012" });
   }
 
-  async resolveBudgetDecision(input: { escalationId: string; workspaceId: string; actionId: string }) {
+  async resolveBudgetDecision(input: { escalationId: string; workspaceId: string; actionId: string; targetStatus: EscalationServiceRow["workItemStatus"] }) {
     this.budgetDecisionCalls.push({
       escalationId: input.escalationId,
       workspaceId: input.workspaceId,
-      actionId: input.actionId
+      actionId: input.actionId,
+      targetStatus: input.targetStatus
     });
     return row({
       trigger: "budget_exhausted",
       resolvedAt: now,
-      workItemStatus: "ai_working",
+      workItemStatus: input.targetStatus,
       handoffJson: {
         attention_kind: "budget",
         budget_resolution: { action_id: input.actionId }
@@ -162,7 +168,8 @@ test("R9.7 budget exhaustion rows render as budget decision cards", () => {
         recommended_action: "add_budget",
         options: [
           { id: "add_budget", label: "追加预算继续", action_href: "/dashboard/cost?objectiveId=obj-1" },
-          { id: "finish_current_output", label: "就用现有产出收尾", action_href: "/workitems/demo" }
+          { id: "finish_current_output", label: "就用现有产出收尾", action_href: "/workitems/demo" },
+          { id: "close_scope", label: "整体收工", action_href: "/workitems/demo" }
         ]
       }
     }
@@ -179,11 +186,12 @@ test("R9.7 budget exhaustion rows render as budget decision cards", () => {
   // `add_budget` does not itself update a budget policy. Only applied terminal choices may resolve.
   assert.deepEqual(item.actions.map((action) => [action.id, action.label, action.method, action.href]), [
     ["add_budget", "追加预算继续", "GET", "/dashboard/cost?objectiveId=obj-1"],
-    ["finish_current_output", "就用现有产出收尾", "POST", `/api/escalations/${escalationId}/budget-actions/finish_current_output`]
+    ["finish_current_output", "就用现有产出收尾", "POST", `/api/escalations/${escalationId}/budget-actions/finish_current_output`],
+    ["close_scope", "整体收工", "POST", `/api/escalations/${escalationId}/budget-actions/close_scope`]
   ]);
 });
 
-test("R9.7 budget decision actions resolve the budget row without mutating work item state", async () => {
+test("R9.7 budget terminal actions apply scope state transitions", async () => {
   const budgetRow = row({
     trigger: "budget_exhausted",
     workItemStatus: "ai_working",
@@ -196,7 +204,8 @@ test("R9.7 budget decision actions resolve the budget row without mutating work 
         recommended_action: "add_budget",
         options: [
           { id: "add_budget", label: "追加预算继续", action_href: "/dashboard/cost?objectiveId=obj-1" },
-          { id: "finish_current_output", label: "就用现有产出收尾", action_href: "/workitems/demo" }
+          { id: "finish_current_output", label: "就用现有产出收尾", action_href: "/workitems/demo" },
+          { id: "close_scope", label: "整体收工", action_href: "/workitems/demo" }
         ]
       }
     }
@@ -211,15 +220,25 @@ test("R9.7 budget decision actions resolve the budget row without mutating work 
   };
 
   const result = await service.resolveBudgetDecision(escalationId, actor(), "finish_current_output");
+  const closed = await service.resolveBudgetDecision(escalationId, actor(), "close_scope");
 
+  // R9.7 review: the old assertion expected this path to only record a receipt.
+  // That closed the human card while leaving automation state unchanged.
   assert.deepEqual(repository.budgetDecisionCalls, [{
     escalationId,
     workspaceId: actor().workspaceId,
-    actionId: "finish_current_output"
+    actionId: "finish_current_output",
+    targetStatus: "in_review"
+  }, {
+    escalationId,
+    workspaceId: actor().workspaceId,
+    actionId: "close_scope",
+    targetStatus: "cancelled"
   }]);
   assert.deepEqual(repository.resolveCalls, []);
   assert.equal(result.escalation.id, escalationId);
-  assert.equal(result.work_item_status, "ai_working");
+  assert.equal(result.work_item_status, "in_review");
+  assert.equal(closed.work_item_status, "cancelled");
   assert.equal(result.attention.summary_text, "已记录预算选择。");
 });
 

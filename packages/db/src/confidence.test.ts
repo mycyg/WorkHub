@@ -187,7 +187,7 @@ test("R9.7 escalation resolution mutations are fenced by workspace", async () =>
   assert.ok(queryParamValues(workItemUpdate?.where).includes(workspaceId));
 });
 
-test("R9.7 budget decision resolution records the action without mutating the work item", async () => {
+test("R9.7 finish-current-output budget decision moves the work item to review", async () => {
   const resolvedEscalation = {
     id: escalationId,
     workItemId,
@@ -205,17 +205,19 @@ test("R9.7 budget decision resolution records the action without mutating the wo
       },
       budget_resolution: {
         action_id: "finish_current_output",
+        target_status: "in_review",
         resolved_at: now.toISOString()
       }
     },
     suggestedLeadUserId: null,
     createdAt: now,
     resolvedAt: now,
-    workItemStatus: "ai_working",
+    workItemStatus: "in_review",
     workspaceId
   };
   const { db, queries } = createQueryRecorder([
-    [{ id: escalationId }],
+    [{ id: escalationId, workItemId, handoffJson: {} }],
+    [{ id: workItemId }],
     [resolvedEscalation]
   ]);
   const repository = createAiDecisionRepository(db);
@@ -224,16 +226,18 @@ test("R9.7 budget decision resolution records the action without mutating the wo
     escalationId,
     workspaceId,
     actionId: "finish_current_output",
+    targetStatus: "in_review",
     at: now
   });
 
   assert.equal(row?.id, escalationId);
-  assert.equal(row?.workItemStatus, "ai_working");
+  assert.equal(row?.workItemStatus, "in_review");
   assert.deepEqual(row?.handoffJson["budget_resolution"], {
     action_id: "finish_current_output",
+    target_status: "in_review",
     resolved_at: now.toISOString()
   });
-  const [escalationUpdate, escalationLookup] = queries;
+  const [escalationUpdate] = queries;
   assert.equal(escalationUpdate?.targetTable, escalationEvents);
   assert.deepEqual((escalationUpdate?.setValue as { resolvedAt?: Date })?.resolvedAt, now);
   const handoffUpdate = (escalationUpdate?.setValue as { handoffJson?: unknown })?.handoffJson;
@@ -243,6 +247,7 @@ test("R9.7 budget decision resolution records the action without mutating the wo
   assert.ok(queryRawStrings(handoffUpdate).includes(JSON.stringify({
     budget_resolution: {
       action_id: "finish_current_output",
+      target_status: "in_review",
       resolved_at: now.toISOString()
     }
   })));
@@ -250,8 +255,94 @@ test("R9.7 budget decision resolution records the action without mutating the wo
   assert.ok(queryReferences(escalationUpdate?.where, escalationEvents.resolvedAt));
   assert.ok(queryReferences(escalationUpdate?.where, workItems.workspaceId));
   assert.ok(queryParamValues(escalationUpdate?.where).includes(workspaceId));
+  const workItemUpdate = queries.find((query) => query.targetTable === workItems);
+  // R9.7 review: the old assertion explicitly expected no work-item mutation,
+  // but that dismissed the budget card without applying "finish current output"
+  // semantics. The terminal choice must stop automation and enter review.
+  assert.equal(workItemUpdate?.targetTable, workItems);
+  const workItemSet = workItemUpdate?.setValue as { status?: string; version?: unknown; updatedAt?: Date } | undefined;
+  assert.equal(workItemSet?.status, "in_review");
+  assert.ok(queryReferences(workItemSet?.version, workItems.version));
+  assert.equal(workItemSet?.updatedAt, now);
+  assert.ok(queryReferences(workItemUpdate?.where, workItems.id));
+  assert.ok(queryReferences(workItemUpdate?.where, workItems.workspaceId));
+  assert.ok(queryReferences(workItemUpdate?.where, workItems.status));
+  assert.ok(queryReferences(workItemUpdate?.where, workItems.deletedAt));
+  assert.ok(queryParamValues(workItemUpdate?.where).includes(workItemId));
+  assert.ok(queryParamValues(workItemUpdate?.where).includes(workspaceId));
+  const escalationLookup = queries.find((query) => query.fromTable === escalationEvents);
   assert.equal(escalationLookup?.fromTable, escalationEvents);
-  assert.equal(queries.some((query) => query.targetTable === workItems), false);
+});
+
+test("R9.7 finish-current-output budget decision skips remaining task-plan work", async () => {
+  const resolvedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId: null,
+    projectId: "94000000-0000-4000-8000-000000000209",
+    title: "预算测试",
+    reasonMd: "预算耗尽。",
+    trigger: "budget_exhausted",
+    handoffJson: {
+      attention_kind: "budget",
+      task_plan_id: taskPlanId,
+      budget_resolution: {
+        action_id: "finish_current_output",
+        resolved_at: now.toISOString()
+      }
+    },
+    suggestedLeadUserId: null,
+    createdAt: now,
+    resolvedAt: now,
+    workItemStatus: "in_review",
+    workspaceId
+  };
+  const { db, queries } = createQueryRecorder([
+    [{ id: escalationId, workItemId, handoffJson: { task_plan_id: taskPlanId } }],
+    [],
+    [{ id: taskPlanItemId }],
+    [{ id: taskPlanId }],
+    [{ id: workItemId }],
+    [resolvedEscalation]
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  const row = await repository.resolveBudgetDecision({
+    escalationId,
+    workspaceId,
+    actionId: "finish_current_output",
+    targetStatus: "in_review",
+    at: now
+  });
+
+  assert.equal(row?.workItemStatus, "in_review");
+  assert.deepEqual(queries.map((query) => query.targetTable ?? query.fromTable), [
+    escalationEvents,
+    agentRuns,
+    taskPlanItems,
+    taskPlans,
+    workItems,
+    escalationEvents
+  ]);
+  const [, runUpdate, itemUpdate, planUpdate, workItemUpdate] = queries;
+  assert.equal(runUpdate?.targetTable, agentRuns);
+  assert.deepEqual(runUpdate?.setValue, { status: "cancelled", finishedAt: now, updatedAt: now });
+  assert.ok(queryReferences(runUpdate?.where, agentRuns.taskPlanId));
+  assert.ok(queryReferences(runUpdate?.where, agentRuns.status));
+  assert.equal(itemUpdate?.targetTable, taskPlanItems);
+  assert.deepEqual(itemUpdate?.setValue, { status: "skipped", updatedAt: now });
+  assert.ok(queryReferences(itemUpdate?.where, taskPlanItems.planId));
+  assert.ok(queryReferences(itemUpdate?.where, taskPlanItems.status));
+  assert.ok(queryReferences(itemUpdate?.where, taskPlans.workspaceId));
+  assert.equal(planUpdate?.targetTable, taskPlans);
+  assert.deepEqual(planUpdate?.setValue, { status: "done", updatedAt: now });
+  assert.ok(queryReferences(planUpdate?.where, taskPlans.id));
+  assert.ok(queryReferences(planUpdate?.where, taskPlans.workspaceId));
+  assert.equal(workItemUpdate?.targetTable, workItems);
+  const workItemSet = workItemUpdate?.setValue as { status?: string; version?: unknown; updatedAt?: Date } | undefined;
+  assert.equal(workItemSet?.status, "in_review");
+  assert.ok(queryReferences(workItemSet?.version, workItems.version));
+  assert.equal(workItemSet?.updatedAt, now);
 });
 
 test("R9.7 escalation delegation mutation is fenced by workspace", async () => {

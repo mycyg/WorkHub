@@ -52,6 +52,7 @@ export type EscalationRepository = {
     escalationId: string;
     workspaceId: string;
     actionId: string;
+    targetStatus: WorkItemStatus;
     at: Date;
   }) => Promise<EscalationServiceRow | null>;
   reopenEscalation?: (input: {
@@ -245,10 +246,13 @@ function availableBudgetActionIds(row: EscalationServiceRow) {
   );
 }
 
-const resolvableBudgetActionIds = new Set(["finish_current_output"]);
+const budgetActionTargetStatus = new Map<string, WorkItemStatus>([
+  ["finish_current_output", "in_review"],
+  ["close_scope", "cancelled"]
+]);
 
 function isResolvableBudgetActionId(actionId: string) {
-  return resolvableBudgetActionIds.has(actionId);
+  return budgetActionTargetStatus.has(actionId);
 }
 
 function budgetActions(row: EscalationServiceRow, locale: WorkHubLocale): AttentionItem["actions"] {
@@ -517,6 +521,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
         escalationId: id,
         workspaceId: actor.workspaceId,
         actionId: normalizedActionId,
+        targetStatus: budgetActionTargetStatus.get(normalizedActionId)!,
         at: now()
       });
       if (!row) {
