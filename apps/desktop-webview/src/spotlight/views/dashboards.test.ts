@@ -289,6 +289,33 @@ test("R9.7 desktop agent army dashboard surfaces attention source warnings", () 
   assert.ok(html.includes("Approval decisions could not be loaded."), "warning copy");
 });
 
+test("R9.7 desktop agent army capped list never shows zero hidden squads", () => {
+  const base = agentArmyVm().plans[0];
+  assert.ok(base);
+  const plans = Array.from({ length: 5 }, (_, index) => ({
+    ...base,
+    plan_id: `93000000-0000-4000-8000-0000000009${String(index).padStart(2, "0")}`,
+    work_item_id: `93000000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
+    work_item_code: `WH-9${index}`,
+    work_item_title: `竞品价格调研 ${index + 1}`
+  }));
+  const cappedVm = agentArmyVm({
+    plans,
+    page_info: {
+      ...agentArmyVm().page_info,
+      returned: 5,
+      plans_capped: true
+    }
+  });
+  const html = agentArmyDashboardView(cappedVm, false);
+  const zhHtml = agentArmyDashboardView(cappedVm, true);
+
+  assert.match(html, /More squads are not shown here/u);
+  assert.match(zhHtml, /还有更多小队未在这里显示/u);
+  assert.doesNotMatch(html, /\+0 more squads/u);
+  assert.doesNotMatch(zhHtml, /还有 0 个小队/u);
+});
+
 test("R9.6 desktop agent army detail morph keeps decisions in the inbox", () => {
   const plan = agentArmyVm().plans[0];
   assert.ok(plan);

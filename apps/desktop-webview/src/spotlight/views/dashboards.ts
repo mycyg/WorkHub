@@ -91,6 +91,17 @@ function taskPlanStatusLabel(status: AgentArmyDashboardPlanVM["status"], zh: boo
   }
 }
 
+function agentArmyCappedCopy(hiddenCount: number, zh: boolean): string {
+  if (hiddenCount > 0) {
+    return zh
+      ? `还有 ${hiddenCount} 个小队未在这里显示，打开工作项查看详情。`
+      : `+${hiddenCount} more squads not shown here — open work items for detail.`;
+  }
+  return zh
+    ? "还有更多小队未在这里显示，打开工作项查看详情。"
+    : "More squads are not shown here — open work items for detail.";
+}
+
 function agentArmyPlanRow(plan: AgentArmyDashboardPlanVM, zh: boolean): string {
   const roles = plan.roles
     .map((role) => `<span class="wh-spot-row-tag">${escapeHtml(`${taskPlanRoleLabel(role.role, zh)} ${role.count}`)}</span>`)
@@ -158,7 +169,7 @@ export function agentArmyDashboardView(vm: AgentArmyDashboardVM, zh: boolean): s
   const rows = shownPlans.map((plan) => agentArmyPlanRow(plan, zh)).join("");
   const hiddenCount = Math.max(0, vm.page_info.returned - shownPlans.length);
   const capped = vm.page_info.plans_capped || hiddenCount > 0
-    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hiddenCount} 个小队未在这里显示，打开工作项查看详情。` : `+${hiddenCount} more squads not shown here — open work items for detail.`)}</p>`
+    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(agentArmyCappedCopy(hiddenCount, zh))}</p>`
     : "";
   const sourceWarnings = vm.source_warnings ?? [];
   const warnings = sourceWarnings.length
