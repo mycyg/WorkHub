@@ -7,7 +7,7 @@ import type { UserAuthRow } from "@workhub/db";
 import type { AuthActor } from "../middleware/auth.js";
 import {
   buildEscalationAttentionItem,
-  createEscalationService,
+  createEscalationService as createEscalationServiceImpl,
   type EscalationRepository,
   type EscalationServiceRow
 } from "./escalations.js";
@@ -48,6 +48,12 @@ function row(partial: Partial<EscalationServiceRow> = {}): EscalationServiceRow 
     workspaceId: actor().workspaceId,
     ...partial
   };
+}
+
+function createEscalationService(
+  deps: Parameters<typeof createEscalationServiceImpl>[0] = {}
+): ReturnType<typeof createEscalationServiceImpl> {
+  return createEscalationServiceImpl({ workItems: false, ...deps });
 }
 
 class MemoryEscalationRepository implements EscalationRepository {
@@ -455,6 +461,83 @@ test("R9.7 escalation service refuses legacy null-workspace rows", async () => {
   assert.deepEqual(items, []);
   assert.deepEqual(repository.resolveCalls, []);
   assert.deepEqual(repository.delegateCalls, []);
+});
+
+test("R9.7 escalation direct mutations require work-item readability", async () => {
+  const readChecks: Array<{ workItemIds: string[]; actorWorkspaceId: string }> = [];
+  const hiddenWorkItems = {
+    async canReadWorkItems(input: { workItemIds: string[]; actor: AuthActor }) {
+      readChecks.push({
+        workItemIds: input.workItemIds,
+        actorWorkspaceId: input.actor.workspaceId
+      });
+      return new Set<string>();
+    }
+  };
+
+  const resolveRepository = new MemoryEscalationRepository();
+  const resolveService = createEscalationService({
+    repository: resolveRepository,
+    workItems: hiddenWorkItems,
+    now: () => now
+  });
+
+  await assert.rejects(
+    resolveService.resolve(escalationId, actor(), { action: "retry" }),
+    (error: unknown) => error instanceof Error
+      && (error as { status?: number; code?: string }).status === 403
+      && (error as { code?: string }).code === "forbidden"
+  );
+  assert.deepEqual(resolveRepository.resolveCalls, []);
+
+  const budgetRepository = new MemoryEscalationRepository({
+    findRow: row({
+      trigger: "budget_exhausted",
+      handoffJson: {
+        attention_kind: "budget",
+        notice: {
+          options: [
+            { id: "finish_current_output", label: "就用现有产出收尾", action_href: "/workitems/demo" }
+          ]
+        }
+      }
+    })
+  });
+  const budgetService = createEscalationService({
+    repository: budgetRepository,
+    workItems: hiddenWorkItems,
+    now: () => now
+  });
+
+  await assert.rejects(
+    budgetService.resolveBudgetDecision(escalationId, actor(), "finish_current_output"),
+    (error: unknown) => error instanceof Error
+      && (error as { status?: number; code?: string }).status === 403
+      && (error as { code?: string }).code === "forbidden"
+  );
+  assert.deepEqual(budgetRepository.budgetDecisionCalls, []);
+
+  const delegateRepository = new MemoryEscalationRepository();
+  const delegateService = createEscalationService({
+    repository: delegateRepository,
+    users: false,
+    memberships: false,
+    workItems: hiddenWorkItems,
+    now: () => now
+  });
+
+  await assert.rejects(
+    delegateService.delegate(escalationId, actor(), { to_user_id: delegateTargetUserId }),
+    (error: unknown) => error instanceof Error
+      && (error as { status?: number; code?: string }).status === 403
+      && (error as { code?: string }).code === "forbidden"
+  );
+  assert.deepEqual(delegateRepository.delegateCalls, []);
+  assert.deepEqual(readChecks, [
+    { workItemIds: [workItemId], actorWorkspaceId: actor().workspaceId },
+    { workItemIds: [workItemId], actorWorkspaceId: actor().workspaceId },
+    { workItemIds: [workItemId], actorWorkspaceId: actor().workspaceId }
+  ]);
 });
 
 test("R9.7 escalation attention scans past unreadable rows before applying the visible page limit", async () => {

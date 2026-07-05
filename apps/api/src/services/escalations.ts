@@ -423,6 +423,20 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
     };
   }
 
+  async function ensureReadableEscalation(row: EscalationServiceRow, actor: AuthActor) {
+    ensureWorkspace(row, actor);
+    if (!workItems) {
+      return;
+    }
+    const readable = await workItems.canReadWorkItems({
+      workItemIds: [row.workItemId],
+      actor
+    });
+    if (!readable.has(row.workItemId)) {
+      throw new EscalationServiceError(403, "forbidden", "你没有权限处理这条升级。");
+    }
+  }
+
   return {
     async resolve(id: string, actor: AuthActor, input: ResolveEscalationRequest, locale: WorkHubLocale = "zh-CN") {
       const payload = resolveEscalationRequestSchema.parse(input);
@@ -430,7 +444,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       if (!existing) {
         throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
       }
-      ensureWorkspace(existing, actor);
+      await ensureReadableEscalation(existing, actor);
       const targetStatus = resolveTargetStatus(payload.action);
       const taskPlanId = taskPlanIdFromHandoff(existing);
       const taskPlanAction = hasTaskPlanResolutionTarget(existing) ? payload.action : undefined;
@@ -489,7 +503,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       if (!existing) {
         throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
       }
-      ensureWorkspace(existing, actor);
+      await ensureReadableEscalation(existing, actor);
       if (!isBudgetEscalation(existing)) {
         throw new EscalationServiceError(422, "budget_action_not_available", "这条预算选择已经不可用。");
       }
@@ -527,7 +541,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       if (!existing) {
         throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
       }
-      ensureWorkspace(existing, actor);
+      await ensureReadableEscalation(existing, actor);
       if (users) {
         const target = await users.findActiveById(payload.to_user_id);
         if (!target) {
