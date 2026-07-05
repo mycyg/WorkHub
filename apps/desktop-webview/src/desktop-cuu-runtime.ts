@@ -226,11 +226,12 @@ export type DesktopCuuActionResult = {
 export type DesktopCuuStartAgentAction = Extract<DesktopCuuActionRequest, { kind: "cuu-start-agent" }>;
 
 export type DesktopCuuAgentLaunchClient = {
-  createSession?: (payload?: CreateSessionRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createSession"]>>>;
-  createWorkItem?: (payload: CreateWorkItemRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>>;
+  createSession?: (payload?: CreateSessionRequest, options?: PageRequestOptions) => Promise<Awaited<ReturnType<WorkHubApiClient["createSession"]>>>;
+  createWorkItem?: (payload: CreateWorkItemRequest, options?: PageRequestOptions) => Promise<Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>>;
   startAgentRun?: (
     workItemId: string,
-    payload?: StartAgentRunRequest
+    payload?: StartAgentRunRequest,
+    options?: PageRequestOptions
   ) => Promise<Awaited<ReturnType<WorkHubApiClient["startAgentRun"]>>>;
 };
 
@@ -466,7 +467,8 @@ export async function startDesktopCuuAgentFromLauncher(input: {
     intent_text: input.action.intentText,
     ...(input.action.projectId ? { project_id: input.action.projectId } : {})
   };
-  const session = await input.client.createSession(sessionPayload);
+  const localeOptions = input.locale ? { locale: input.locale } : undefined;
+  const session = await input.client.createSession(sessionPayload, localeOptions);
   if (desktopCuuSessionNeedsClarification(session)) {
     return {
       outcome: "clarification",
@@ -484,13 +486,13 @@ export async function startDesktopCuuAgentFromLauncher(input: {
     ...(input.action.cuuLauncherSpec ? { cuu_launcher_spec: input.action.cuuLauncherSpec } : {}),
     kickoff_agent: true,
     ...(input.action.projectId ? { project_id: input.action.projectId } : {})
-  });
+  }, localeOptions);
   const workItemId = workItem.workitem.id;
   const runPayload: StartAgentRunRequest = {
     title: input.action.runTitle ?? input.action.title,
     ...(input.action.mode ? { mode: input.action.mode } : {})
   };
-  const run = await input.client.startAgentRun(workItemId, runPayload);
+  const run = await input.client.startAgentRun(workItemId, runPayload, localeOptions);
   return {
     outcome: "started",
     session,
@@ -1084,7 +1086,7 @@ export function resolveDesktopCuuAction(
 }
 
 export async function submitDesktopCuuAction(input: {
-  client: DesktopCuuActionClient;
+  client: DesktopCuuActionClient & DesktopCuuAgentLaunchClient;
   action: DesktopCuuActionRequest;
   reasonMd?: string | undefined;
   locale?: CuuLocaleOptions["locale"];
@@ -1198,15 +1200,16 @@ export async function submitDesktopCuuAction(input: {
     ...(input.action.freeText ? { free_text: input.action.freeText } : {})
   }, input.locale ? { locale: input.locale } : undefined);
   if (shouldStartRun) {
+    const localeOptions = input.locale ? { locale: input.locale } : undefined;
     const workItem = await input.client.createWorkItem!({
       session_id: input.action.sessionId,
       ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {}),
       ...(input.action.freeText ? { free_text: input.action.freeText } : {}),
       kickoff_agent: true
-    });
+    }, localeOptions);
     const run = await input.client.startAgentRun!(workItem.workitem.id, {
       title: workItem.workitem.title
-    });
+    }, localeOptions);
     return {
       message: cuuFormat(input.locale, "cuuStart.started", { title: run.title }),
       card: cardFromAgentRunLive(run, input),

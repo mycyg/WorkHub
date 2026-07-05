@@ -367,14 +367,14 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    createSession: (payload = {}) =>
-      request("/api/sessions", {
+    createSession: (payload = {}, options) =>
+      request(withPageLocale("/api/sessions", options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
     getSession: (id, options) => request(withPageLocale(`/api/sessions/${encodeURIComponent(id)}`, options)),
-    createWorkItem: (payload) =>
-      request("/api/workitems", {
+    createWorkItem: (payload, options) =>
+      request(withPageLocale("/api/workitems", options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
@@ -383,8 +383,8 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    startAgentRun: (workItemId, payload = {}) =>
-      request(`/api/workitems/${encodeURIComponent(workItemId)}/agent-runs`, {
+    startAgentRun: (workItemId, payload = {}, options) =>
+      request(withPageLocale(`/api/workitems/${encodeURIComponent(workItemId)}/agent-runs`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),

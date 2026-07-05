@@ -857,8 +857,8 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
     replay_href: "/api/agent-runs/10000000-0000-4000-8000-000000000301/replay"
   };
   const client = {
-    async createSession(payload: unknown): Promise<SessionVM> {
-      calls.push({ step: "createSession", payload });
+    async createSession(payload: unknown, options?: unknown): Promise<SessionVM> {
+      calls.push({ step: "createSession", payload, options });
       return {
         session_id: "10000000-0000-4000-8000-000000000201",
         work_item_id: "10000000-0000-4000-8000-000000000201",
@@ -879,8 +879,8 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
         }
       };
     },
-    async createWorkItem(payload: unknown) {
-      calls.push({ step: "createWorkItem", payload });
+    async createWorkItem(payload: unknown, options?: unknown) {
+      calls.push({ step: "createWorkItem", payload, options });
       return {
         workitem: {
           id: "10000000-0000-4000-8000-000000000201",
@@ -894,8 +894,8 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
         evidence_refs: []
       } as unknown as WorkItemDetailVM;
     },
-    async startAgentRun(workItemId: string, payload: unknown) {
-      calls.push({ step: "startAgentRun", workItemId, payload });
+    async startAgentRun(workItemId: string, payload: unknown, options?: unknown) {
+      calls.push({ step: "startAgentRun", workItemId, payload, options });
       return run;
     },
     async respondApproval() {
@@ -920,7 +920,7 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
     card: launcher,
     freeText: demand
   });
-  const result = await submitDesktopCuuAction({ client, action: action! });
+  const result = await submitDesktopCuuAction({ client, action: action!, locale: "zh-CN" });
 
   assert.equal(action?.kind, "cuu-start-agent");
   assert.equal(action && "selectedOptionIds" in action ? action.selectedOptionIds : undefined, undefined);
@@ -930,13 +930,17 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
   assert.equal(result.card?.payload_ref?.entity_type, "agent_run");
   assert.equal(result.card?.state, "thinking");
   assert.equal(result.agentRun?.run_id, run.run_id);
+  // R9.7: the old assertion only checked payloads, but launcher-created sessions
+  // render user-visible follow-up/confirm cards; omitting locale options let zh flows
+  // silently fall back to English after the first clarification.
   assert.deepEqual(calls, [
     {
       step: "createSession",
       payload: {
         title: demand,
         intent_text: demand
-      }
+      },
+      options: { locale: "zh-CN" }
     },
     {
       step: "createWorkItem",
@@ -946,14 +950,16 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
         raw_description: demand,
         free_text: demand,
         kickoff_agent: true
-      }
+      },
+      options: { locale: "zh-CN" }
     },
     {
       step: "startAgentRun",
       workItemId: "10000000-0000-4000-8000-000000000201",
       payload: {
         title: demand
-      }
+      },
+      options: { locale: "zh-CN" }
     }
   ]);
 });

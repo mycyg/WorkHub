@@ -274,11 +274,11 @@ export type WorkHubApiClient = {
     mutedNotificationTypes: string[]
   ) => Promise<{ muted_notification_types: string[] }>;
   bootstrapProject: (payload?: BootstrapProjectRequest) => Promise<BootstrapProjectResult>;
-  createSession: (payload?: CreateSessionRequest) => Promise<SessionVM>;
+  createSession: (payload?: CreateSessionRequest, options?: PageRequestOptions) => Promise<SessionVM>;
   getSession: (id: string, options?: PageRequestOptions) => Promise<SessionVM>;
-  createWorkItem: (payload: CreateWorkItemRequest) => Promise<WorkItemDetailVM>;
+  createWorkItem: (payload: CreateWorkItemRequest, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   createTaskPlan: (workItemId: string, payload?: CreateTaskPlanRequest, options?: PageRequestOptions) => Promise<CreateTaskPlanResult>;
-  startAgentRun: (workItemId: string, payload?: StartAgentRunRequest) => Promise<AgentRunLiveVM>;
+  startAgentRun: (workItemId: string, payload?: StartAgentRunRequest, options?: PageRequestOptions) => Promise<AgentRunLiveVM>;
   getAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
   getAgentRunTrace: (runId: string, after?: number) => Promise<AgentStep[]>;
   abortAgentRun: (runId: string) => Promise<AgentRunLiveVM>;

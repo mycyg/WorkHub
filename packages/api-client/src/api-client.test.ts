@@ -399,6 +399,29 @@ test("api client carries locale on session next-question requests", async () => 
   ]);
 });
 
+test("api client carries locale on session creation and launch requests", async () => {
+  const calls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push(`${init?.method ?? "GET"} ${input}${typeof init?.body === "string" ? ` ${init.body}` : ""}`);
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.createSession({ intent_text: "整理 R9 记录" }, { locale: "zh-CN" });
+  await client.createWorkItem({ session_id: "session 1" }, { locale: "zh-CN" });
+  await client.startAgentRun("work 1", { title: "整理 R9 记录" }, { locale: "zh-CN" });
+
+  assert.deepEqual(calls, [
+    'POST /api/sessions?locale=zh-CN {"intent_text":"整理 R9 记录"}',
+    'POST /api/workitems?locale=zh-CN {"session_id":"session 1"}',
+    'POST /api/workitems/work%201/agent-runs?locale=zh-CN {"title":"整理 R9 记录"}'
+  ]);
+});
+
 test("api client sends drive file uploads as multipart form data", async () => {
   let seenBody: RequestInit["body"] | null | undefined;
   let seenContentType: string | null = null;
