@@ -117,7 +117,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     health: { label: "Project health", route: "/dashboard/health" },
     replay: { label: "Run replay", route: "/agent-runs/:id/replay" },
     cost: { label: "Cost dashboard", route: "/dashboard/cost" },
-    agents: { label: "Agent Army", route: "/dashboard/agents" },
+    agents: { label: "Agent teams", route: "/dashboard/agents" },
     knowledge: { label: "Evidence search", route: "/knowledge/search" },
     skills: { label: "Team skills", route: "/dashboard/skills" },
     settings: { label: "Settings", route: "/settings" }

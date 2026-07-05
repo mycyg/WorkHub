@@ -547,7 +547,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     health: "Project health",
     replay: "Execution replay",
     cost: "Cost",
-    agents: "Agent Army",
+    agents: "Agent teams",
     knowledge: "Knowledge evidence",
     skills: "Team skills",
     settings: "Settings"

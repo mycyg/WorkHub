@@ -952,6 +952,18 @@ test("R9.6 web route loads Agent Army dashboard through the typed Page VM endpoi
   assert.equal(result.html.includes("追加预算继续"), false);
 });
 
+test("R9.7 web Agent dashboard shell uses product-facing Agent team copy", async () => {
+  const { client } = fakeRouteClient(goldPathSurfaceVm());
+  const match = resolveWebRoute("/dashboard/agents");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes("Agent teams"), true);
+  assert.equal(result.html.includes("Agent Army"), false);
+});
+
 test("R9.6 web Agent Army dashboard renders an honest empty state without fake plan cards", async () => {
   const emptyAgents = agentArmyDashboardVm({
     kpis: {
