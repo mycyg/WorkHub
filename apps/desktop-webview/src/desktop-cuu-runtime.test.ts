@@ -1608,6 +1608,98 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
   assert.deepEqual(calls, [{ sessionId: "session-1", payload: { selected_option_ids: ["risk-first"] } }]);
 });
 
+test("desktop Cuu session actions preserve the current locale for follow-up questions", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async nextQuestion(sessionId: string, payload: unknown, options?: unknown) {
+      calls.push({ sessionId, payload, options });
+      const session: SessionVM = {
+        session_id: sessionId,
+        work_item_id: sessionId,
+        topic: `session:${sessionId}`,
+        stream_href: `/api/push/stream/session/${sessionId}`,
+        next_question_href: `/api/sessions/${sessionId}/next-question`,
+        question: {
+          id: "question-confirm",
+          session_id: sessionId,
+          work_item_id: sessionId,
+          title: "是否按这个方向创建事项？",
+          body: "点确认后会进入可执行事项；如果需要更多依据，可以先去检索项目证据。",
+          input_mode: "confirm",
+          options: [
+            { id: "create-workitem", label: "创建事项", description: "确认后，事项会进入可执行状态，AI 可以继续处理。" },
+            { id: "search-evidence-first", label: "先找证据", description: "先从项目历史、文档和事项里找依据。" },
+            { id: "adjust-scope", label: "调整范围", description: "回到上一步补充澄清回答。" }
+          ],
+          free_text: { enabled: true, collapsed_by_default: true },
+          progress: [],
+          submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
+        }
+      };
+      return session;
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    }
+  };
+  const card: CuuCard = {
+    id: "question-card",
+    kind: "question",
+    state: "asking_approval",
+    motion: {
+      state: "asking_approval",
+      sprite_state: "asking_approval_bounce",
+      emphasis: "urgent",
+      loop: true,
+      reduced_motion_fallback: "Cuu 等你选择一个澄清选项。"
+    },
+    title: "R9验收记录来源确认",
+    message: "请提供源文件。",
+    priority: "high",
+    chips: [
+      { id: "source-provided", label: "已提供来源", selected: true }
+    ],
+    input: {
+      mode: "single_choice",
+      option_first: true,
+      free_text_enabled: true,
+      free_text_collapsed_by_default: true
+    },
+    actions: [
+      {
+        id: "submit_option",
+        label: "确认选项",
+        tone: "primary",
+        method: "POST",
+        href: "/api/sessions/session-1/next-question"
+      }
+    ]
+  };
+  const action = resolveDesktopCuuAction("/api/sessions/session-1/next-question", { actionId: "submit_option", card });
+
+  const result = await submitDesktopCuuAction({ client, action: action!, locale: "zh-CN" });
+
+  assert.deepEqual(calls, [
+    {
+      sessionId: "session-1",
+      payload: { selected_option_ids: ["source-provided"] },
+      options: { locale: "zh-CN" }
+    }
+  ]);
+  assert.equal(result.message, "下一题：是否按这个方向创建事项？");
+  assert.equal(result.card?.title, "是否按这个方向创建事项？");
+  assert.doesNotMatch(JSON.stringify(result.card), /Create work item|Find evidence first|Adjust scope/u);
+});
+
 test("desktop Cuu actions finalize confirmed sessions and start the agent run", async () => {
   const calls: unknown[] = [];
   const run = agentRunLive({ title: "Confirmed Cuu run", status: "queued" });

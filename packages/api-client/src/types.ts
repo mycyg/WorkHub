@@ -306,7 +306,7 @@ export type WorkHubApiClient = {
     id: string,
     payload?: ApplyMergeProposalCandidateRequest
   ) => Promise<ProposalMergeResult>;
-  nextQuestion: (sessionId: string, payload?: NextQuestionRequest) => Promise<SessionVM>;
+  nextQuestion: (sessionId: string, payload?: NextQuestionRequest, options?: PageRequestOptions) => Promise<SessionVM>;
   searchKnowledge: (payload?: unknown, options?: PageRequestOptions) => Promise<EvidenceBubble>;
   useEvidenceForWorkItem: (workItemId: string, payload: UseEvidenceForTaskRequest) => Promise<WorkItemDetailVM>;
   restoreAcceptedDeliverable: (

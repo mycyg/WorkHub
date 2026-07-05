@@ -380,6 +380,25 @@ test("api client carries locale on typed page VM requests", async () => {
   ]);
 });
 
+test("api client carries locale on session next-question requests", async () => {
+  const calls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push(`${init?.method ?? "GET"} ${input}${typeof init?.body === "string" ? ` ${init.body}` : ""}`);
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.nextQuestion("session 1", { selected_option_ids: ["risk-first"] }, { locale: "zh-CN" });
+
+  assert.deepEqual(calls, [
+    'POST /api/sessions/session%201/next-question?locale=zh-CN {"selected_option_ids":["risk-first"]}'
+  ]);
+});
+
 test("api client sends drive file uploads as multipart form data", async () => {
   let seenBody: RequestInit["body"] | null | undefined;
   let seenContentType: string | null = null;

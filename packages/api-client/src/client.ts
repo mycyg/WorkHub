@@ -472,8 +472,8 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    nextQuestion: (sessionId, payload = {}) =>
-      request(`/api/sessions/${encodeURIComponent(sessionId)}/next-question`, {
+    nextQuestion: (sessionId, payload = {}, options) =>
+      request(withPageLocale(`/api/sessions/${encodeURIComponent(sessionId)}/next-question`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),

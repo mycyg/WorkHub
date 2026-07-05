@@ -1196,7 +1196,7 @@ export async function submitDesktopCuuAction(input: {
   const session = await input.client.nextQuestion(input.action.sessionId, {
     ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {}),
     ...(input.action.freeText ? { free_text: input.action.freeText } : {})
-  });
+  }, input.locale ? { locale: input.locale } : undefined);
   if (shouldStartRun) {
     const workItem = await input.client.createWorkItem!({
       session_id: input.action.sessionId,
