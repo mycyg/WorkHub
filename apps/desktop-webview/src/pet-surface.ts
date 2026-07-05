@@ -191,7 +191,7 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1));bottom:calc(48px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=bubble],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=offline],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=trace]{min-height:calc(268px * var(--wh-pet-scale,1))}",
-  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(72px * var(--wh-pet-scale,1));right:auto;bottom:calc(372px * var(--wh-pet-scale,1));width:calc(328px * var(--wh-pet-scale,1));max-width:calc(100% - calc(104px * var(--wh-pet-scale,1)));min-height:0;max-height:calc(336px * var(--wh-pet-scale,1));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;pointer-events:auto;gap:6px;padding:10px 12px 12px}",
+  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(72px * var(--wh-pet-scale,1));right:auto;bottom:calc(380px * var(--wh-pet-scale,1));width:calc(328px * var(--wh-pet-scale,1));max-width:calc(100% - calc(104px * var(--wh-pet-scale,1)));min-height:0;max-height:calc(336px * var(--wh-pet-scale,1));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;pointer-events:auto;gap:6px;padding:10px 12px 12px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-title{-webkit-line-clamp:2;font-size:13px;line-height:1.28}",
@@ -2198,6 +2198,9 @@ function isRestorableCuuSessionCard(value: unknown, sessionId: string): value is
 }
 
 function actionMessage(error: unknown, locale: WorkHubLocale) {
+  if (error instanceof WorkHubApiError) {
+    return cardFromDesktopPetActionError(error, locale).message;
+  }
   return error instanceof Error ? error.message : cuuT(locale, "pet.actionFail");
 }
 

@@ -908,7 +908,9 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-body\{right:calc\(72px \* var\(--wh-pet-scale,1\)\);bottom:calc\(48px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*max-width:calc\(100% - calc\(128px \* var\(--wh-pet-scale,1\)\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=bubble\],\.wh-pet-surface\[data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=offline\],\.wh-pet-surface\[data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=trace\]\{min-height:calc\(268px \* var\(--wh-pet-scale,1\)\)/u);
-  assert.match(card.css, /data-pet-window-mode=card\]\[data-pet-card-has-context=true\] \.wh-pet-bubble\{left:calc\(72px \* var\(--wh-pet-scale,1\)\);right:auto;bottom:calc\(372px \* var\(--wh-pet-scale,1\)\);width:calc\(328px \* var\(--wh-pet-scale,1\)\)/u);
+  // R9.7 real-user smoke: the old 372px assertion was wrong because Chrome/CDP measured only
+  // 2.04px between the context bubble and Live2D body, failing `bubble_clear_of_live2d`.
+  assert.match(card.css, /data-pet-window-mode=card\]\[data-pet-card-has-context=true\] \.wh-pet-bubble\{left:calc\(72px \* var\(--wh-pet-scale,1\)\);right:auto;bottom:calc\(380px \* var\(--wh-pet-scale,1\)\);width:calc\(328px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*min-height:0;max-height:calc\(336px \* var\(--wh-pet-scale,1\)\);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*pointer-events:auto/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*gap:6px;padding:10px 12px/u);
@@ -1814,6 +1816,47 @@ test("pet surface refreshes a proposal card after the main window settles the re
         await runtime.dispose();
       }
       assert.ok(stopped.includes("attention-refresh"));
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
+test("pet surface hides backend English diagnostics on zh launcher clarification failures", async () => {
+  const calls: unknown[] = [];
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  const client = {
+    ...createPetHarnessClient(calls),
+    async createSession(payload: unknown): Promise<SessionVM> {
+      calls.push({ step: "createSession", payload: cloneHarnessPayload(payload) });
+      throw new WorkHubApiError(
+        502,
+        "clarification_llm_templated_response",
+        "AI material analysis returned a generic template instead of a real follow-up question."
+      );
+    }
+  } as unknown as DesktopPetSurfaceClient;
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, { client });
+      try {
+        await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
+        const launcherSubmit = await root.click(fakePetTarget({
+          href: "/api/cuu/start-agent",
+          "data-cuu-action-id": "start_agent_from_cuu"
+        }, "a"));
+        assert.equal(launcherSubmit.defaultPrevented, true);
+        assert.match(root.innerHTML, /这次启动没有成功/u);
+        assert.match(root.innerHTML, /可以重新开始，Cuu 会再读一次需求和项目文件/u);
+        assert.doesNotMatch(root.innerHTML, /generic template|real follow-up question|AI material analysis/iu);
+      } finally {
+        await runtime.dispose();
+      }
     });
   } finally {
     target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;

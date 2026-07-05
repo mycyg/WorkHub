@@ -125,7 +125,9 @@ export function createDesktopPetVisualQaReport(input: {
         "width:calc(300px * var(--wh-pet-scale,1))",
         "max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)))",
         ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(72px * var(--wh-pet-scale,1));right:auto",
-        "bottom:calc(372px * var(--wh-pet-scale,1))",
+        // R9.7 real-user smoke: 372px left only 2.04px before Live2D in Chrome/CDP, so
+        // the visual QA contract now pins the >=8px-safe 380px anchor.
+        "bottom:calc(380px * var(--wh-pet-scale,1))",
         "width:calc(328px * var(--wh-pet-scale,1))",
         "max-width:calc(100% - calc(104px * var(--wh-pet-scale,1)))",
         "min-height:0;max-height:calc(336px * var(--wh-pet-scale,1));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable",
