@@ -259,7 +259,10 @@ test("proposal detail becomes a PR-like Cuu deliverable card", () => {
           human_summary: "新增 weekly-report.md"
         }
       ],
-      checks: [{ id: "scope", label: "file-only 范围", status: "passed", detail: "未触碰外部发送。" }],
+      checks: [
+        { id: "scope", label: "file-only 范围", status: "passed", detail: "未触碰外部发送。" },
+        { id: "budget", label: "预算提醒", status: "warning", detail: "接近本次预算线。" }
+      ],
       evidence_refs: [
         {
           id: "evidence-1",
@@ -297,12 +300,24 @@ test("proposal detail becomes a PR-like Cuu deliverable card", () => {
   assert.equal(card.sections?.[0]?.title, "总结");
   assert.equal(card.sections?.[0]?.lines[0], "新增一份周报草稿，并附上证据与回滚说明。");
   assert.equal(card.sections?.some((section) => section.title === "风险与回滚"), true);
+  const zhChecks = card.sections?.find((section) => section.title === "检查结果");
+  assert.deepEqual(zhChecks?.lines, [
+    "file-only 范围: 通过 - 未触碰外部发送。",
+    "预算提醒: 有提醒 - 接近本次预算线。"
+  ]);
+  assert.equal(zhChecks?.lines.some((line) => /: (?:passed|warning)(?:\b| -)/u.test(line)), false);
   assert.equal(card.chips?.[0]?.label, "docs/weekly-report.md");
   assert.equal(card.evidence_refs?.[0]?.title, "原始需求");
 
   const english = cardFromProposalDetail(proposal, { locale: "en-US" });
   assert.equal(english.sections?.some((section) => section.title === "Risk and rollback"), true);
   assert.equal(english.sections?.some((section) => section.lines.includes("Rollback available")), true);
+  const enChecks = english.sections?.find((section) => section.title === "Check results");
+  assert.deepEqual(enChecks?.lines, [
+    "file-only 范围: Passed - 未触碰外部发送。",
+    "预算提醒: Warning - 接近本次预算线。"
+  ]);
+  assert.equal(enChecks?.lines.some((line) => /: (?:passed|warning)(?:\b| -)/u.test(line)), false);
 });
 
 test("reviewed proposal Cuu card only exposes merge as the next step", () => {

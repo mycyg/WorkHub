@@ -434,6 +434,10 @@ function budgetStatusLabel(status: CostDashboardVM["top_exhaustion_risks"][numbe
   return cuuT(options.locale, `cost.status.${status}`);
 }
 
+function proposalCheckStatusLabel(status: ProposalDetailVM["manifest"]["checks"][number]["status"], options: CuuLocaleOptions) {
+  return cuuT(options.locale, `proposal.checkStatus.${status}`);
+}
+
 const budgetActionLabels = {
   "zh-CN": {
     add_budget: "追加预算继续",
@@ -785,7 +789,9 @@ export function cardFromProposalDetail(vm: ProposalDetailVM, options: CuuLocaleO
     sections.push({
       id: "checks",
       title: cuuT(options.locale, "proposal.checksSection"),
-      lines: checks.map((check) => `${check.label}: ${check.status}${check.detail ? ` - ${check.detail}` : ""}`)
+      lines: checks.map((check) =>
+        `${check.label}: ${proposalCheckStatusLabel(check.status, options)}${check.detail ? ` - ${check.detail}` : ""}`
+      )
     });
   }
 

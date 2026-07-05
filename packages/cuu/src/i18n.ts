@@ -59,6 +59,10 @@ export type CuuCopyKey =
   | "proposal.rollbackAvailable"
   | "proposal.rollbackUnavailable"
   | "proposal.checksSection"
+  | "proposal.checkStatus.passed"
+  | "proposal.checkStatus.failed"
+  | "proposal.checkStatus.warning"
+  | "proposal.checkStatus.skipped"
   | "proposal.conflictTitle"
   | "proposal.conflictOpenProposal"
   | "proposal.conflictKeepCurrent"
@@ -285,6 +289,10 @@ const cuuCopy = {
     "proposal.rollbackAvailable": "可回滚",
     "proposal.rollbackUnavailable": "不可完整回滚",
     "proposal.checksSection": "检查结果",
+    "proposal.checkStatus.passed": "通过",
+    "proposal.checkStatus.failed": "未通过",
+    "proposal.checkStatus.warning": "有提醒",
+    "proposal.checkStatus.skipped": "已跳过",
     "proposal.conflictTitle": "变更撞车了",
     "proposal.conflictOpenProposal": "查看变更申请",
     "proposal.conflictKeepCurrent": "保留正式版",
@@ -510,6 +518,10 @@ const cuuCopy = {
     "proposal.rollbackAvailable": "Rollback available",
     "proposal.rollbackUnavailable": "Not fully rollbackable",
     "proposal.checksSection": "Check results",
+    "proposal.checkStatus.passed": "Passed",
+    "proposal.checkStatus.failed": "Failed",
+    "proposal.checkStatus.warning": "Warning",
+    "proposal.checkStatus.skipped": "Skipped",
     "proposal.conflictTitle": "Change conflict",
     "proposal.conflictOpenProposal": "View change request",
     "proposal.conflictKeepCurrent": "Keep current",
