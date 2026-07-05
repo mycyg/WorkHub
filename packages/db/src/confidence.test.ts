@@ -38,6 +38,16 @@ test("R9.7 unresolved escalation listing excludes legacy null-workspace rows", a
   );
 });
 
+test("R9.7 unresolved escalation listing clamps direct repository callers to the scan probe cap", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+  const repository = createAiDecisionRepository(db);
+
+  await repository.listUnresolvedEscalationsForWorkspace({ workspaceId, limit: 10_000 });
+
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0]?.limit, 101);
+});
+
 test("R9.7 escalation direct lookup is scoped to the workspace before service auth", async () => {
   const { db, queries } = createQueryRecorder([[]]);
   const repository = createAiDecisionRepository(db);

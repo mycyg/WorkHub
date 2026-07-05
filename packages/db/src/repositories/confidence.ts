@@ -16,6 +16,9 @@ import { allowedWorkItemTransitions } from "@workhub/contracts";
 import type { WorkHubDb } from "../client.js";
 import { agentRuns, confidenceRecords, escalationEvents, taskPlanItems, taskPlans, workItems } from "../schema/index.js";
 
+const DEFAULT_UNRESOLVED_ESCALATION_LIMIT = 50;
+const MAX_UNRESOLVED_ESCALATION_SCAN_LIMIT = 101;
+
 export type ConfidenceRecordRow = typeof confidenceRecords.$inferSelect;
 export type EscalationEventRow = typeof escalationEvents.$inferSelect;
 
@@ -151,6 +154,13 @@ function predecessorsForStatus(to: WorkItemStatus) {
 
 function textField(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function boundedUnresolvedEscalationLimit(input: number | undefined) {
+  if (!Number.isFinite(input)) {
+    return DEFAULT_UNRESOLVED_ESCALATION_LIMIT;
+  }
+  return Math.max(1, Math.min(Math.floor(input ?? DEFAULT_UNRESOLVED_ESCALATION_LIMIT), MAX_UNRESOLVED_ESCALATION_SCAN_LIMIT));
 }
 
 function textArrayField(value: unknown) {
@@ -343,6 +353,7 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
     },
 
     async listUnresolvedEscalationsForWorkspace(input) {
+      const limit = boundedUnresolvedEscalationLimit(input.limit);
       const rows = await db
         .select(escalationServiceColumns)
         .from(escalationEvents)
@@ -353,7 +364,7 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
           eq(workItems.workspaceId, input.workspaceId)
         ))
         .orderBy(desc(escalationEvents.createdAt), desc(escalationEvents.id))
-        .limit(input.limit ?? 50);
+        .limit(limit);
       return rows.map((row) => toEscalationServiceRow(row));
     },
 
