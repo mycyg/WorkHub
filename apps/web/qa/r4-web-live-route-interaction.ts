@@ -13,6 +13,7 @@ import type { AgentArmyDashboardVM, CalendarPageVM, DrivePageVM, EvidenceBubble,
   ProjectHealthPageVM, ProjectHomePageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, TeamSkillsPageVM, WorkHubLocale, WorkItemDetailVM } from "@workhub/contracts";
 import { isExpectedActionNotice, noticeSequence, shouldRetryTransportActionNotice } from "../src/browser-action-notice.js";
 import { launchChrome, type CdpClient } from "../src/chrome-launch.js";
+import { contactSheetFreshness } from "../src/r4-smoke-contact-sheet.js";
 
 type Viewport = {
   width: number;
@@ -4084,6 +4085,7 @@ async function main() {
     chrome = await launchChrome(chromePath, debugPort, userDataDir);
     const steps = await runScenario(chrome.cdp, baseUrl);
     await navigateFileAndCaptureContactSheet(chrome.cdp, steps);
+    const contactSheetFresh = await contactSheetFreshness({ outputDir, steps });
     const proof = requestProof(requests);
     const readyProductSteps = steps.filter((step) => step.audit.productShell && step.audit.status === "ready");
     const routePageVmByComponent: Record<string, string> = {
@@ -4121,6 +4123,7 @@ async function main() {
     const gates = {
       dev_server_started: Boolean(viteServer.httpServer?.listening),
       screenshots_captured: steps.every((step) => existsSync(path.join(outputDir, step.screenshot))) && existsSync(path.join(outputDir, "contact-sheet.png")),
+      contact_sheet_fresh: contactSheetFresh.ok,
       path_nav_clicks: steps.some((step) => step.id === "02-approvals-click-zh-desktop" && step.audit.pathname === "/approvals") &&
         steps.some((step) => step.id === "03-workitem-click-zh-desktop-route-component" && step.audit.pathname === "/workitems/r4-live-workitem"),
       history_back_forward: steps.some((step) => step.id === "04-history-back-approvals" && step.audit.pathname === "/approvals") &&
@@ -5386,6 +5389,7 @@ async function main() {
       api_target: apiTarget,
       output_dir: path.relative(repoRoot, outputDir).replace(/\\/gu, "/"),
       contact_sheet: "contact-sheet.png",
+      contact_sheet_freshness: contactSheetFresh,
       gates,
       request_proof: proof,
       api_requests: requests,
@@ -5399,6 +5403,7 @@ async function main() {
         "",
         `- ok: ${String(Object.values(gates).every(Boolean))}`,
         `- steps: ${String(steps.length)}`,
+        `- contact sheet fresh: ${String(gates.contact_sheet_fresh)}`,
         `- path nav clicks: ${String(gates.path_nav_clicks)}`,
         `- history back/forward: ${String(gates.history_back_forward)}`,
         `- locale toggle reload: ${String(gates.locale_toggle_reload)}`,
