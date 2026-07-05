@@ -1687,6 +1687,40 @@ test("R9.6 Agent Army route component renders observable dashboard cards without
   assertNoMainWindowBoundaryLeak(agents.html);
 });
 
+test("R9.7 web agent dashboard uses product-facing Agent team copy", () => {
+  const agents = renderWebRouteComponent({ key: "agents", agents: agentArmyDashboardVm() }, { locale: "en-US" });
+  const emptyAgents = renderWebRouteComponent({
+    key: "agents",
+    agents: agentArmyDashboardVm({
+      kpis: {
+        active_team_count: 0,
+        waiting_decision_count: 0,
+        today_cost_cny: "0",
+        autonomy_rate_pct: 0
+      },
+      plans: [],
+      recent_escalations: [],
+      page_info: {
+        plan_limit: 20,
+        returned: 0,
+        plans_capped: false,
+        items_capped: false,
+        runs_capped: false,
+        escalation_limit: 5,
+        escalation_returned: 0,
+        escalations_capped: false
+      },
+      empty_state: "no_agent_armies"
+    })
+  }, { locale: "en-US" });
+
+  assert.ok(agents);
+  assert.ok(emptyAgents);
+  assert.match(agents.html, /Agent teams/u);
+  assert.match(emptyAgents.html, /No agent teams are running yet/u);
+  assert.doesNotMatch(`${agents.html}\n${emptyAgents.html}`, /Agent Army|agent armies/u);
+});
+
 test("R9.6 Agent Army route component renders empty state without fake plan cards", () => {
   const agents = renderWebRouteComponent({
     key: "agents",
