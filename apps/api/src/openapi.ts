@@ -1673,7 +1673,21 @@ const escalationResolveResultResponseSchema = {
       },
       additionalProperties: false
     },
-    work_item_status: { type: "string", enum: ["ai_working", "pm_mode", "cancelled"] },
+    work_item_status: {
+      type: "string",
+      enum: [
+        "intake",
+        "ai_clarifying",
+        "spec_ready",
+        "ai_working",
+        "escalated",
+        "pm_mode",
+        "in_review",
+        "merged",
+        "done",
+        "cancelled"
+      ]
+    },
     attention: { type: "object", additionalProperties: true }
   },
   additionalProperties: false
@@ -3896,7 +3910,7 @@ const agentRunResponseSchema = {
     objective_md: { type: "string", minLength: 1 },
     mode: { type: "string", enum: ["worker", "pm"] },
     actor: { type: "string", minLength: 1, maxLength: 32 },
-    status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "budget_exhausted", "cancelled"] },
+    status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "cancelled"] },
     model: { type: "string", minLength: 1, maxLength: 128 },
     turns_used: { type: "integer", minimum: 0 },
     max_turns: { type: "integer", minimum: 1 },
@@ -3976,7 +3990,7 @@ const agentRunLiveResponseSchema = {
     run_id: uuidStringSchema,
     work_item_id: uuidStringSchema,
     title: { type: "string", minLength: 1 },
-    status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "budget_exhausted", "cancelled"] },
+    status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "cancelled"] },
     budget: agentRunBudgetResponseSchema,
     budget_decision: agentRunBudgetDecisionResponseSchema,
     usage: agentRunUsageResponseSchema,
@@ -4573,7 +4587,8 @@ export function getOpenApiDocument() {
               in: "path",
               required: true,
               schema: memoryConflictResolutionResponseSchema
-            }
+            },
+            optionalDateTimeQueryParameter("expected_updated_at")
           ],
           ...jsonRequestBody(memoryConflictResolveRequestBodySchema, { required: false }),
           ...memoryConflictResolveResponse

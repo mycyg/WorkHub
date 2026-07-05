@@ -55,9 +55,6 @@ function cuuStateFor(vm: AgentRunLiveVM): CuuState {
   if (vm.status === "succeeded") {
     return "celebrating";
   }
-  if (vm.status === "budget_exhausted") {
-    return "asking_approval";
-  }
   if (vm.status === "failed" || vm.status === "escalated") {
     return "worried";
   }
@@ -68,7 +65,7 @@ function statusClass(status: AgentRunLiveVM["status"]) {
   if (status === "succeeded") {
     return "wh-pill wh-pill-done";
   }
-  if (status === "failed" || status === "escalated" || status === "budget_exhausted") {
+  if (status === "failed" || status === "escalated") {
     return "wh-pill wh-pill-danger";
   }
   if (status === "queued" || status === "running") {

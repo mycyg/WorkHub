@@ -994,9 +994,6 @@ function stateForAgentRun(status: AgentRunLiveVM["status"]): CuuState {
   if (status === "succeeded") {
     return "celebrating";
   }
-  if (status === "budget_exhausted") {
-    return "asking_approval";
-  }
   if (status === "failed" || status === "escalated") {
     return "worried";
   }
@@ -1042,12 +1039,11 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM, options: CuuLocaleOptio
   const state = stateForAgentRun(vm.status);
   const latestStep = vm.trace.at(-1);
   const active = vm.status === "queued" || vm.status === "running";
-  const budgetExhausted = vm.status === "budget_exhausted";
   const actions: CuuCardAction[] = [
     {
       id: "view_replay",
       label: cuuT(options.locale, "agentRun.viewReplay"),
-      tone: state === "celebrating" || budgetExhausted ? "primary" : "secondary",
+      tone: state === "celebrating" ? "primary" : "secondary",
       method: "GET",
       href: `/agent-runs/${vm.run_id}/replay`
     },
@@ -1098,11 +1094,9 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM, options: CuuLocaleOptio
 
   return withMotion({
     id: vm.run_id,
-    kind: budgetExhausted ? "budget" : state === "celebrating" ? "completion" : "trace",
+    kind: state === "celebrating" ? "completion" : "trace",
     state,
-    title: budgetExhausted
-      ? cuuT(options.locale, "budget.exhaustedTitle")
-      : state === "celebrating"
+    title: state === "celebrating"
         ? cuuT(options.locale, "agentRun.doneTitle")
         : state === "worried"
           ? cuuT(options.locale, "agentRun.attentionTitle")
@@ -1110,7 +1104,7 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM, options: CuuLocaleOptio
     message: truncate(
       publicAgentRunStepMessage(latestStep, options) ??
         vm.run.handoff_md ??
-        cuuT(options.locale, budgetExhausted ? "cuuStart.errorBudgetMessage" : "agentRun.progressFallback")
+        cuuT(options.locale, "agentRun.progressFallback")
     ),
     priority: state === "worried" || state === "asking_approval" ? "high" : "normal",
     actions,

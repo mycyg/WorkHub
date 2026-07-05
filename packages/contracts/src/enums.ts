@@ -106,7 +106,6 @@ export const agentRunStatuses = [
   "succeeded",
   "failed",
   "escalated",
-  "budget_exhausted",
   "cancelled"
 ] as const;
 export const agentRunStatusSchema = z.enum(agentRunStatuses);

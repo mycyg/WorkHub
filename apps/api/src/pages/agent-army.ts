@@ -98,7 +98,7 @@ function latestRun(runs: readonly TaskPlanRunRow[]) {
 }
 
 function dashboardStatus(item: TaskPlanItemRow, run: TaskPlanRunRow | undefined): WorkItemAgentTeamItemStatus {
-  if (run?.status === "escalated" || run?.status === "budget_exhausted") {
+  if (run?.status === "escalated") {
     return "needs_human";
   }
   if (run?.status === "succeeded") {

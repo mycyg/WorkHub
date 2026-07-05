@@ -912,6 +912,10 @@ test("Task intake and AgentRun OpenAPI responses document the execution chain", 
     "title"
   ]);
 
+  const persistedAgentRunStatusSchema = {
+    type: "string",
+    enum: ["queued", "running", "succeeded", "failed", "escalated", "cancelled"]
+  };
   for (const [path, method, status] of [
     ["/api/workitems/{id}/agent-runs", "post", "202"],
     ["/api/agent-runs/{id}", "get", "200"],
@@ -934,7 +938,12 @@ test("Task intake and AgentRun OpenAPI responses document the execution chain", 
       "replay_href"
     ]);
     assert.ok(data?.properties?.trace, `${method.toUpperCase()} ${path} missing AgentRun trace schema`);
+    // R9.7 review: the old response contract let `budget_exhausted` appear as a
+    // persisted run status. That was wrong because budget exhaustion rejects the
+    // start request with HTTP 402 and opens a budget card instead of saving a run.
+    assert.deepEqual(data?.properties?.status, persistedAgentRunStatusSchema);
     const runSchema = data?.properties?.run as { properties?: Record<string, unknown> } | undefined;
+    assert.deepEqual(runSchema?.properties?.status, persistedAgentRunStatusSchema);
     assert.deepEqual(runSchema?.properties?.parent_run_id, { type: "string", format: "uuid" });
     assert.deepEqual(runSchema?.properties?.task_plan_id, { type: "string", format: "uuid" });
     assert.deepEqual(runSchema?.properties?.task_plan_item_id, { type: "string", format: "uuid" });
@@ -1157,9 +1166,12 @@ test("Approval and permission OpenAPI contracts document decision and policy act
     properties?: Record<string, unknown>;
   } | undefined;
   assert.deepEqual(escalationResolveData?.required, ["escalation", "work_item_status", "attention"]);
+  // R9.7 review: the old assertion only allowed direct work-item resolve statuses,
+  // but task-scoped escalation resolution returns the unchanged parent work item status
+  // (for example `escalated`) while mutating the task plan instead.
   assert.deepEqual(escalationResolveData?.properties?.work_item_status, {
     type: "string",
-    enum: ["ai_working", "pm_mode", "cancelled"]
+    enum: ["intake", "ai_clarifying", "spec_ready", "ai_working", "escalated", "pm_mode", "in_review", "merged", "done", "cancelled"]
   });
 
   assert.equal(jsonRequestBodyRequired(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post"), false);
@@ -1191,6 +1203,12 @@ test("Approval and permission OpenAPI contracts document decision and policy act
     in: "path",
     required: true,
     schema: { type: "string", enum: ["keep_current", "accept_incoming", "merge_both", "edit_memory"] }
+  });
+  assert.deepEqual(parameterByName(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "expected_updated_at"), {
+    name: "expected_updated_at",
+    in: "query",
+    required: false,
+    schema: { type: "string", format: "date-time" }
   });
   const memoryConflictResolve = jsonResponseSchema(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "200");
   const memoryConflictResolveData = memoryConflictResolve?.properties?.data as {

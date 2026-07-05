@@ -74,7 +74,7 @@ function agentRunLive(status: AgentRunLiveVM["status"] = "running"): AgentRunLiv
     budget: { max_steps: 15, total_timeout_s: 300, max_tokens: 120000, max_cost_cny: "5" },
     budget_decision: {
       decision_id: "decision-run",
-      allowed: status !== "budget_exhausted",
+      allowed: true,
       model_route: { provider: "deepseek", model: "deepseek-v4-flash", reason: "default" }
     },
     usage: { steps_used: 1, token_in: 10, token_out: 20, estimated_cost_cny: "0.003" },
@@ -814,14 +814,17 @@ test("live agent run cards hide hidden reasoning and raw tool results", () => {
   assert.doesNotMatch(visible, /read_project_file|Now I understand|hidden reasoning|隐藏推理|隐藏思考|markdown-report|tool_result|#3 think/u);
 });
 
-test("budget-exhausted live agent runs use budget Cuu cards", () => {
-  const card = cardFromAgentRunLive(agentRunLive("budget_exhausted"), { locale: "en-US" });
+test("budget-exhausted notices use budget Cuu cards", () => {
+  // R9.7 review: the old assertion constructed `AgentRunLiveVM.status =
+  // "budget_exhausted"`, but budget exhaustion rejects enqueue with 402 and
+  // opens a BudgetNotice; it is not a persisted live run status.
+  const card = cardFromBudgetNotice(budgetNotice, "budget-card", { locale: "en-US" });
 
   assert.equal(card.kind, "budget");
   assert.equal(card.state, "asking_approval");
   assert.equal(card.title, "Budget exhausted");
-  assert.equal(card.message, "This task reached its budget limit and needs your decision.");
-  assert.equal(card.actions.find((action) => action.id === "view_replay")?.tone, "primary");
+  assert.equal(card.message, budgetNotice.message);
+  assert.equal(card.actions.find((action) => action.id === "pause")?.tone, "primary");
   assert.equal(card.actions.some((action) => action.id === "abort_agent_run"), false);
 });
 

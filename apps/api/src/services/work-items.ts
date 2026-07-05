@@ -1274,7 +1274,7 @@ function agentTeamItemStatus(
   item: TaskPlanWithItems["items"][number],
   run: TaskPlanRunForTeam | undefined
 ): WorkItemAgentTeamVM["items"][number]["status"] {
-  if (run?.status === "escalated" || run?.status === "budget_exhausted") {
+  if (run?.status === "escalated") {
     return "needs_human";
   }
   if (run?.status === "queued" || run?.status === "running") {

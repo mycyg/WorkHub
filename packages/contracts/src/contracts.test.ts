@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   allowedWorkItemTransitions,
   agentArmyDashboardVmSchema,
+  agentRunStatuses,
   agentRunSchema,
   sessionFinalizeFromStatuses,
   agentRunBudgetDecisionVmSchema,
@@ -73,6 +74,17 @@ test("work item statuses expose the data-model transition truth", () => {
   assert.deepEqual(allowedWorkItemTransitions.done, []);
   assert.equal(escalationTriggers.includes("user_unsatisfied"), true);
   assert.equal(escalationTriggers.includes("user_rejected" as never), false);
+});
+
+test("R9.7 agent run statuses only include persisted queue states", () => {
+  assert.deepEqual(agentRunStatuses, [
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "escalated",
+    "cancelled"
+  ]);
 });
 
 test("R9.0 escalation action contracts stay narrow and human-actionable", () => {

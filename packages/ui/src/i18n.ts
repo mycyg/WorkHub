@@ -258,7 +258,6 @@ const agentRunStatusLabels = {
   succeeded: { "zh-CN": "已完成", "en-US": "Succeeded" },
   failed: { "zh-CN": "失败", "en-US": "Failed" },
   escalated: { "zh-CN": "已升级", "en-US": "Escalated" },
-  budget_exhausted: { "zh-CN": "预算已用尽", "en-US": "Budget exhausted" },
   cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
 } satisfies Record<AgentRunStatus, Copy>;
 
