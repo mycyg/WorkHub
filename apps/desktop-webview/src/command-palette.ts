@@ -80,8 +80,8 @@ export const commandRegistry: DesktopCommand[] = [
   },
   {
     id: "agents",
-    label: { "zh-CN": "军团 / 小队", en: "Agent Army" },
-    hint: { "zh-CN": "Cuu 的分工计划与子任务进展", en: "Plans, subtasks, blockers" },
+    label: { "zh-CN": "Cuu 的小队", en: "Cuu's squad" },
+    hint: { "zh-CN": "分工方案、子任务和卡点", en: "Plans, subtasks, blockers" },
     keywords: ["军团", "小队", "分工", "计划", "agents", "agent army", "army", "squad", "task plan"],
     icon: ic('<circle cx="7" cy="8" r="2.5"/><circle cx="17" cy="8" r="2.5"/><circle cx="12" cy="16" r="2.5"/><path d="M9 9.5l2 4M15 9.5l-2 4M9.5 16h5"/>'),
     action: { kind: "open-window", target: "agents" }

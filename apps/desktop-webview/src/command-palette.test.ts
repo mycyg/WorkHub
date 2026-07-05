@@ -105,3 +105,14 @@ test("R9.7 command palette uses new-task wording instead of dispatch copy", () =
   assert.match(en, /New task/u);
   assert.equal(matchCommands("dispatch", "en")[0]?.command.id, "intake");
 });
+
+test("R9.7 desktop agents command uses Cuu squad wording instead of Agent Army copy", () => {
+  const zh = renderCommandPalette({ query: "军团", locale: "zh-CN" });
+  const en = renderCommandPalette({ query: "agents", locale: "en" });
+
+  assert.match(zh, /Cuu 的小队/u);
+  assert.match(en, /Cuu&#39;s squad/u);
+  assert.doesNotMatch(zh + en, /Agent Army/u);
+  assert.equal(matchCommands("army", "en")[0]?.command.id, "agents");
+  assert.equal(matchCommands("agent army", "en")[0]?.command.id, "agents");
+});
