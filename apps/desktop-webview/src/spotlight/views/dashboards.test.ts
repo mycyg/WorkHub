@@ -117,7 +117,10 @@ test("S3 desktop project-home detail renders meta, work-item buttons, CTAs and b
 
 test("S3 desktop project-home shows a +more hint when the true count exceeds the shown list", () => {
   const html = projectHomeDetailHtml(vm({ summary: { open_work_item_count: 50 } }), false);
-  assert.ok(html.includes("+49 more open items not shown here — open the project to review all."), "truncation hint (50 total - 1 shown)");
+  // Old assertion was wrong: this detail view is already the project, so "open the project"
+  // pointed users to a nonexistent next step instead of stating the cap/visibility boundary.
+  assert.ok(html.includes("+49 more open items are not shown here (list cap or visibility filter)."), "truncation hint (50 total - 1 shown)");
+  assert.ok(!html.includes("open the project to review all"), "does not promise a missing open-project action");
   assert.ok(!html.includes("you cannot view"), "does not guess this is a permission problem");
 });
 
@@ -128,7 +131,9 @@ test("DF-1 desktop project-home open count uses the全量 total + shows 你可�
   assert.ok(html.includes("进行中 8 · 你可处理 3"), "head uses total with viewable split");
   assert.ok(!html.includes("进行中 3 ·"), "head does not headline the viewable count");
   // hidden = total(8) - shown(1) = 7, but the route cannot know whether this is permissions or list truncation.
-  assert.ok(html.includes("还有 7 条进行中工作未在此处显示，进入项目查看全部。"), "more-note computed off the total");
+  // 旧断言错因：详情页已经是项目主页，提示“进入项目查看全部”指向了不存在的下一步。
+  assert.ok(html.includes("还有 7 条进行中工作未在此处显示（可能是列表截断或权限过滤）。"), "more-note computed off the total");
+  assert.ok(!html.includes("进入项目查看全部"), "does not point to a missing project-entry action");
   assert.ok(!html.includes("暂无权限查看"), "does not guess this is a permission problem");
 });
 
@@ -136,7 +141,10 @@ test("DF-3 desktop project-home notes when recent files are fewer than the proje
   const html = projectHomeDetailHtml(vm({ drive: { file_count: 12, recent_files: [
     { id: "20000000-0000-4000-8000-000000000777", name: "客户复盘.md", updated_at: "2026-06-22T00:00:00.000Z", href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
   ] } }), false);
-  assert.ok(html.includes("+11 more files not shown — open the drive."), "files overflow note (12 total - 1 shown)");
+  // Old assertion was incomplete: it allowed generic drive guidance without proving the card
+  // actually carried a matching Open Drive entry for the user to take.
+  assert.ok(html.includes("+11 more files not shown here — use Open drive to review the full file tree."), "files overflow note (12 total - 1 shown)");
+  assert.ok(html.includes('data-open-drive="93000000-0000-4000-8000-000000000001"'), "files overflow note has a real drive entry on the card");
 });
 
 test("desktop project-home recent files keep their file deep-link when opening drive", () => {

@@ -302,7 +302,7 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
   // 当前 VM 无法区分，文案保持中性。
   const hidden = totalOpen - vm.open_work_items.length;
   const moreNote = hidden > 0
-    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hidden} 条进行中工作未在此处显示，进入项目查看全部。` : `+${hidden} more open items not shown here — open the project to review all.`)}</p>`
+    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hidden} 条进行中工作未在此处显示（可能是列表截断或权限过滤）。` : `+${hidden} more open items are not shown here (list cap or visibility filter).`)}</p>`
     : "";
   // 网盘同步是核心：项目主页直接呈现最近文件（点任意文件/「打开网盘」进完整文件树）。
   const fileRows = vm.drive.recent_files.length
@@ -319,7 +319,7 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
   // 否则一堆文件的项目只露几条却显示总数,像把这几条当成全部(web route-components 同款 note)。
   const hiddenFiles = vm.drive.file_count - vm.drive.recent_files.length;
   const filesMoreNote = hiddenFiles > 0 && vm.drive.recent_files.length > 0
-    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hiddenFiles} 个文件未显示，前往网盘查看全部。` : `+${hiddenFiles} more files not shown — open the drive.`)}</p>`
+    ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hiddenFiles} 个文件未显示，可用「打开网盘」查看完整文件树。` : `+${hiddenFiles} more files not shown here — use Open drive to review the full file tree.`)}</p>`
     : "";
   const filesBlock = `<div class="wh-spot-row-metalabel" style="margin-top:4px">${escapeHtml(zh ? `最近文件 ${vm.drive.file_count}` : `Recent files ${vm.drive.file_count}`)}</div><div class="wh-spot-list">${fileRows}</div>${filesMoreNote}`;
   return `<div class="wh-spot-dash ds-anim-fade-in">
