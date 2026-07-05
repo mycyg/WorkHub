@@ -1563,6 +1563,14 @@ export function createInMemoryAgentRunQueue(options: {
         workerDrifted = true;
         return drifted;
       }
+      // R9.7：failed/no-deliverable/fake-done 结果必须先写 durable attention，再落 terminal 状态。
+      // 否则 confidence/escalation 写失败会被吞掉，run 已经 terminal，后续 recovery 没有可重试面。
+      const proposalWillOpen = Boolean(proposalSink && result.status === "succeeded" && result.manifest);
+      const confidenceBeforeTerminal = result.status === "failed";
+      const preTerminalConfidenceId = confidenceBeforeTerminal
+        ? await recordRunConfidence(current, result, { proposalWillOpen, failClosed: true })
+        : undefined;
+
       // 先落定运行成功状态，再开提议。否则 openProposalFromManifest 抛错（manifest 不匹配/
       // 提议已存在/DB 写失败）会被外层 catch 当作"run 失败"、丢掉本已成功的交付物。
       current = updateRun(finalizeExecutedRun(current, result, now()));
@@ -1575,8 +1583,9 @@ export function createInMemoryAgentRunQueue(options: {
       // FIX#5：成功且有 manifest 且接了 proposalSink → 本次会开出可审阅提议。据此告诉置信记录器：
       // 即便低置信 escalate，也别把工作项推到 escalated（有提议要审），只记升级/注意力事件；
       // 最终状态由 notifyRunMilestone 这个唯一写入者落到 in_review。与 openProposalFromManifest 的开提议门同口径。
-      const proposalWillOpen = Boolean(proposalSink && current.status === "succeeded" && result.manifest);
-      const confidenceId = await recordRunConfidence(current, result, { proposalWillOpen });
+      const confidenceId = confidenceBeforeTerminal
+        ? preTerminalConfidenceId
+        : await recordRunConfidence(current, result, { proposalWillOpen });
       let proposalOpened = false;
       try {
         await openProposalFromManifest(current, result, confidenceId);
@@ -1597,6 +1606,9 @@ export function createInMemoryAgentRunQueue(options: {
       await notifyRunSettled(current);
       return current;
     } catch (error) {
+      if (isFailClosedConfidenceError(error)) {
+        throw error;
+      }
       const failureReason = error instanceof Error ? error.message : String(error);
       const settlementFailed = isSettledHookError(error);
       if (settlementFailed) {
@@ -1706,7 +1718,7 @@ export function createInMemoryAgentRunQueue(options: {
   async function recordRunConfidence(
     run: AgentRunQueueRecord,
     result: AgentLoopResult,
-    opts: { proposalWillOpen?: boolean } = {}
+    opts: { proposalWillOpen?: boolean; failClosed?: boolean } = {}
   ): Promise<string | undefined> {
     if (options.confidence === false || !options.confidence) {
       return undefined;
@@ -1716,8 +1728,27 @@ export function createInMemoryAgentRunQueue(options: {
       return recorded?.confidenceId;
     } catch (error) {
       getDefaultStructuredLogger().warn("agent_run_confidence_record_failed", { error });
+      if (opts.failClosed) {
+        throw markFailClosedConfidenceError(error);
+      }
       return undefined;
     }
+  }
+
+  const failClosedConfidenceErrors = new WeakSet<object>();
+
+  function markFailClosedConfidenceError(error: unknown) {
+    if (error && typeof error === "object") {
+      failClosedConfidenceErrors.add(error);
+      return error;
+    }
+    const wrapped = new Error(String(error));
+    failClosedConfidenceErrors.add(wrapped);
+    return wrapped;
+  }
+
+  function isFailClosedConfidenceError(error: unknown) {
+    return Boolean(error && typeof error === "object" && failClosedConfidenceErrors.has(error));
   }
 
   async function notifyRunMilestone(run: AgentRunQueueRecord, reasonOneline: string, opts: { proposalOpened?: boolean } = {}) {

@@ -5709,6 +5709,58 @@ test("R9.7 fake-done empty artifact opens attention instead of a proposal", asyn
   assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
 });
 
+test("R9.7 fake-done attention failure keeps the run retryable", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-r97-empty-artifact-attention-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r97-empty-artifact-attention-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  decisions.createEscalationEvent = async () => {
+    throw new Error("decision inbox unavailable for fake-done");
+  };
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => "76000000-0000-4000-8000-000000000702"
+  });
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000702",
+    workdir: () => workdir,
+    client: () => emptyArtifactAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: createAgentRunConfidenceRecorder({
+      decisions,
+      auditLogs,
+      settings: runtimeSettings,
+      transitionWorkItemStatus: async (input) => {
+        await status.writer(input);
+      }
+    }),
+    notifications: false,
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Fake-done attention outage run" });
+
+  await assert.rejects(queue.runNext(), /decision inbox unavailable for fake-done/u);
+
+  const live = await queue.get(queued.run_id);
+  const opened = await proposals.listByWorkItem(workItemId);
+  assert.equal(live?.status, "running");
+  assert.equal(opened.length, 0);
+  assert.equal(decisions.confidenceRows.length, 1);
+  assert.equal(decisions.escalationRows.length, 0);
+  assert.equal(status.statuses.get(workItemId), "ai_working");
+});
+
 test("FIX#5: a succeeded+manifest run with an escalate verdict ends in_review with an open proposal (not escalated) and notifies once", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-fix5-test-"));
