@@ -298,6 +298,12 @@ function localizedAttentionActionLabel(
         return cuuT(options.locale, "proposal.approveReview");
       }
       return cuuT(options.locale, "pet.action.approve");
+    case "approve_and_dispatch":
+      return cuuT(options.locale, "proposal.approvePlanAndStart");
+    case "approve_hold":
+      return cuuT(options.locale, "proposal.approvePlanHold");
+    case "request_replan":
+      return cuuT(options.locale, "proposal.requestReplan");
     case "request_changes":
     case "deny":
     case "reject":
@@ -330,7 +336,8 @@ function mapAttentionAction(action: AttentionAction, item: AttentionItem, option
     method: action.method,
     href: action.href,
     ...(action.requires_desktop ? { requires_desktop: action.requires_desktop } : {}),
-    ...(action.requires_reason ? { requires_reason: action.requires_reason } : {})
+    ...(action.requires_reason ? { requires_reason: action.requires_reason } : {}),
+    ...(action.request_json ? { payload: action.request_json } : {})
   };
 }
 
@@ -342,13 +349,16 @@ function sortAttentionActionsForUser(actions: CuuCardAction[], item: AttentionIt
     if (action.id === "open" || action.id === "open_proposal" || action.id === "view") {
       return 0;
     }
-    if (action.id === "approve" || action.id === "allow") {
+    if (action.id === "approve" || action.id === "allow" || action.id === "approve_and_dispatch") {
       return 1;
     }
-    if (action.id === "request_changes" || action.id === "deny" || action.id === "reject") {
+    if (action.id === "approve_hold") {
       return 2;
     }
-    return 3;
+    if (action.id === "request_replan" || action.id === "request_changes" || action.id === "deny" || action.id === "reject") {
+      return 3;
+    }
+    return 4;
   };
   return [...actions].sort((a, b) => rank(a) - rank(b));
 }
@@ -382,7 +392,8 @@ function mapActionSpec(action: ActionSpec, tone: CuuCardActionTone): CuuCardActi
     method: action.method,
     href: action.href,
     ...(action.requires_desktop ? { requires_desktop: action.requires_desktop } : {}),
-    ...(action.requires_reason ? { requires_reason: action.requires_reason } : {})
+    ...(action.requires_reason ? { requires_reason: action.requires_reason } : {}),
+    ...(action.request_json ? { payload: action.request_json } : {})
   };
 }
 
@@ -714,7 +725,12 @@ export function cardFromProposalDetail(vm: ProposalDetailVM, options: CuuLocaleO
       title: cuuT(options.locale, "proposal.summarySection"),
       lines: [publicProposalSummary(vm.manifest.summary_md, options)]
     },
-    proposalNextStepSection(proposalNextStepForStatus(vm.status, options), options),
+    proposalNextStepSection(
+      vm.status === "reviewed" && vm.review_actions.approve_hold
+        ? cuuT(options.locale, "proposal.planNextStepReviewed")
+        : proposalNextStepForStatus(vm.status, options),
+      options
+    ),
     {
       id: "changes",
       title: cuuT(options.locale, "proposal.changesSection"),
@@ -749,7 +765,10 @@ export function cardFromProposalDetail(vm: ProposalDetailVM, options: CuuLocaleO
         mapActionSpec(vm.review_actions.request_changes, "danger")
       ]
     : vm.status === "reviewed" && vm.review_actions.merge
-      ? [mapActionSpec(vm.review_actions.merge, "primary")]
+      ? [
+          mapActionSpec(vm.review_actions.merge, "primary"),
+          ...(vm.review_actions.approve_hold ? [mapActionSpec(vm.review_actions.approve_hold, "secondary")] : [])
+        ]
       : [];
 
   return withMotion({

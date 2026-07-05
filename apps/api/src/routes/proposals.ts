@@ -112,6 +112,13 @@ function latestReview(proposal: StoredProposal) {
   return proposal.reviews.at(-1);
 }
 
+function isTaskPlanProposal(proposal: StoredProposal) {
+  return proposal.diff_manifest.changes.some((item) =>
+    item.target_kind === "structured_record"
+    && item.target_ref.entity_type === "task_plan"
+  );
+}
+
 function confirmationRequiredResponse(c: Context<AuthEnv>) {
   return c.json({
     ok: false,
@@ -187,31 +194,60 @@ function genericReviewAttention(input: {
   createdAt: string;
 }): AttentionItem {
   const approve = input.decision === "approve";
+  const planReview = isTaskPlanProposal(input.proposal);
   return {
     id: randomUUID(),
-    kind: "proposal_review",
+    kind: planReview ? "plan_review" : "proposal_review",
     priority: approve ? "normal" : "high",
     work_item_id: input.proposal.work_item_id,
     source_ref: { entity_type: "proposal", entity_id: input.proposal.id },
     title: approve ? `${input.proposal.title} 已通过确认` : `${input.proposal.title} 需要修改`,
     summary_text: approve
-      ? "接下来可以把这份交付物变更采纳到正式版本。"
-      : input.reason ?? "这份变更申请已被打回，原因会回灌给下一轮 AI。",
-    reason_text: approve ? "这是一份可审计的交付物变更申请。" : "打回原因已进入下一轮上下文。",
+      ? (planReview ? "计划已确认，可以选择立即开始执行或先暂缓。" : "接下来可以把这份交付物变更采纳到正式版本。")
+      : input.reason ?? (planReview ? "这份任务计划已被打回，原因会回灌给下一轮 AI。" : "这份变更申请已被打回，原因会回灌给下一轮 AI。"),
+    reason_text: approve
+      ? (planReview ? "这是一份可审计的任务计划提议。" : "这是一份可审计的交付物变更申请。")
+      : "打回原因已进入下一轮上下文。",
     actions: approve
-      ? [
-          {
-            id: "merge",
-            label: "采纳到正式版",
-            style: "primary",
-            method: "POST",
-            href: `/api/proposals/${input.proposal.id}/merge`
-          }
-        ]
+      ? (planReview
+          ? [
+              {
+                id: "approve_and_dispatch",
+                label: "批准并开始执行",
+                style: "primary",
+                method: "POST",
+                href: `/api/proposals/${input.proposal.id}/merge`,
+                request_json: { dispatch: true }
+              },
+              {
+                id: "approve_hold",
+                label: "批准但先不跑",
+                style: "secondary",
+                method: "POST",
+                href: `/api/proposals/${input.proposal.id}/merge`,
+                request_json: { dispatch: false }
+              },
+              {
+                id: "open_proposal",
+                label: "查看计划提议",
+                style: "secondary",
+                method: "GET",
+                href: `/proposals/${input.proposal.id}`
+              }
+            ]
+          : [
+              {
+                id: "merge",
+                label: "采纳到正式版",
+                style: "primary",
+                method: "POST",
+                href: `/api/proposals/${input.proposal.id}/merge`
+              }
+            ])
       : [
           {
             id: "open_proposal",
-            label: "查看变更申请",
+            label: planReview ? "查看计划提议" : "查看变更申请",
             style: "primary",
             method: "GET",
             href: `/proposals/${input.proposal.id}`
@@ -246,13 +282,38 @@ function genericMergeAttention(proposal: StoredProposal, createdAt: string): Att
   };
 }
 
+function taskPlanMergeAttention(proposal: StoredProposal, createdAt: string, dispatch: boolean): AttentionItem {
+  return {
+    id: randomUUID(),
+    kind: "delivery_ready",
+    priority: "normal",
+    work_item_id: proposal.work_item_id,
+    source_ref: { entity_type: "proposal", entity_id: proposal.id },
+    title: `${proposal.title} 已批准`,
+    summary_text: dispatch ? "任务计划已批准，子任务会开始执行。" : "任务计划已批准，暂不开始执行。",
+    reason_text: dispatch ? "后续执行会继续进入可审计的事项流。" : "计划保持已批准状态，需要时可以再手动开始。",
+    actions: [
+      {
+        id: "open_proposal",
+        label: "查看计划提议",
+        style: "primary",
+        method: "GET",
+        href: `/proposals/${proposal.id}`
+      }
+    ],
+    cuu_state: dispatch ? "carrying_document" : "asking_approval",
+    created_at: createdAt
+  };
+}
+
 function mergeResultFor(input: {
   proposal: StoredProposal;
   actor: ReturnType<typeof actorFor>;
   userId: string;
   createdAt: string;
+  attention?: AttentionItem;
 }) {
-  const attention = genericMergeAttention(input.proposal, input.createdAt);
+  const attention = input.attention ?? genericMergeAttention(input.proposal, input.createdAt);
   const mergeSnapshotId = input.proposal.merge_snapshot_id;
   if (!mergeSnapshotId) {
     throw new ProposalServiceError(409, "merge_snapshot_missing", "这份变更申请缺少合并快照，请刷新后重新生成或联系管理员处理。");
@@ -464,11 +525,13 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
       resultBase.reason_md = payload.reason_md;
     }
     if (payload.decision === "approve") {
+      const planReview = isTaskPlanProposal(proposal);
       resultBase.next_action = {
-        id: "merge",
-        label: "采纳到正式版",
+        id: planReview ? "approve_and_dispatch" : "merge",
+        label: planReview ? "批准并开始执行" : "采纳到正式版",
         method: "POST",
-        href: `/api/proposals/${proposal.id}/merge`
+        href: `/api/proposals/${proposal.id}/merge`,
+        ...(planReview ? { request_json: { dispatch: true } } : {})
       };
     } else if (payload.reason_md) {
       const review = latestReview(proposal);
@@ -568,7 +631,8 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
       handleProposalServiceError(error);
     }
     const taskPlanTarget = taskPlanApprovalTarget(proposal);
-    if (taskPlanTarget && taskPlanDispatcher) {
+    const shouldDispatchTaskPlan = Boolean(taskPlanTarget && payload.dispatch !== false);
+    if (shouldDispatchTaskPlan && taskPlanTarget && taskPlanDispatcher) {
       try {
         await taskPlanDispatcher.dispatch({
           planId: taskPlanTarget.planId,
@@ -591,11 +655,13 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
         );
       }
     }
+    const createdAt = nowIso();
     const mergeResult = mergeResultFor({
       proposal,
       actor: actorFor(c.var.actor),
       userId: c.var.currentUser.id,
-      createdAt: nowIso()
+      createdAt,
+      ...(taskPlanTarget ? { attention: taskPlanMergeAttention(proposal, createdAt, payload.dispatch !== false) } : {})
     });
     // findings[#168/H12]：发布 proposal.merged（→ workitem topic）+ notification.created（→ user topic）。
     await publishProposalEvents(bus, mergeResult.events, eventLogger);

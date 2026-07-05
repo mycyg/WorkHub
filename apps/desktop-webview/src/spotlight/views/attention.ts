@@ -110,7 +110,8 @@ function renderAction(action: AttentionItem["actions"][number]): string {
     `data-att-action-id="${escapeHtml(action.id)}"`,
     `data-att-href="${escapeHtml(safeHref(action.href))}"`,
     action.method ? `data-att-method="${escapeHtml(action.method)}"` : "",
-    action.requires_reason ? `data-att-requires-reason="true"` : ""
+    action.requires_reason ? `data-att-requires-reason="true"` : "",
+    action.request_json ? `data-request-json="${escapeHtml(JSON.stringify(action.request_json))}"` : ""
   ]
     .filter(Boolean)
     .join(" ");
@@ -327,7 +328,8 @@ export function createAttentionView(): SpotlightCapabilityView {
       const runAction = async (
         href: string,
         actionId: string | undefined,
-        reasonMd: string | undefined
+        reasonMd: string | undefined,
+        actionTarget?: HTMLElement
       ): Promise<boolean> => {
         const escalation = escalationActionFromHref(href);
         if (escalation?.action === "budget") {
@@ -381,7 +383,12 @@ export function createAttentionView(): SpotlightCapabilityView {
           return true;
         }
         if (proposal?.action === "merge") {
-          const merge = await client.mergeProposal(proposal.proposalId);
+          const payload = actionTarget ? actionElementMergePayload(actionTarget) : { ok: true as const };
+          if (!payload.ok) {
+            ctx.toast(zh ? "这个计划动作缺少必要参数" : "This plan action is missing details", "error");
+            return false;
+          }
+          const merge = await client.mergeProposal(proposal.proposalId, payload.payload);
           ctx.toast(summaryText(merge) ?? (zh ? "已合并" : "Merged"), "ok");
           return true;
         }
@@ -413,7 +420,7 @@ export function createAttentionView(): SpotlightCapabilityView {
         busy = true;
         const restore = markBusy(btn, actionId === "deny" ? (zh ? "打回中…" : "Sending back…") : (zh ? "处理中…" : "Working…"));
         try {
-          const ok = await runAction(href, actionId, reasonMd);
+          const ok = await runAction(href, actionId, reasonMd, btn ?? undefined);
           if (ok) {
             ctx.onActionSettled?.();
           }

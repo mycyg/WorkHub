@@ -310,20 +310,32 @@ function clearActiveRouteDirty() {
 // SSE/dirty-edit/loader smoke gates; see M12). The injected <a> carries the same
 // data-action-id/data-method/href contract the delegated click handler expects, so the
 // merge click flows through the existing proposalAction "merge" branch.
-function swapProposalActionRow(shellRoot: HTMLElement, action: ActionSpec) {
+type ProposalRowAction = Pick<ActionSpec, "id" | "label" | "method" | "href" | "request_json">;
+
+function swapProposalActionRow(shellRoot: HTMLElement, actions: ProposalRowAction | ProposalRowAction[]) {
   const row = shellRoot.querySelector<HTMLElement>(
     '[data-r4-proposal-summary="true"] .wh-r4-route-actions'
   );
   if (!row) {
     return;
   }
-  const link = document.createElement("a");
-  link.className = "wh-btn wh-btn-primary";
-  link.setAttribute("href", action.href);
-  link.dataset.actionId = action.id;
-  link.dataset.method = action.method;
-  link.textContent = action.label;
-  row.replaceChildren(link);
+  const nextActions = Array.isArray(actions) ? actions : [actions];
+  const links = nextActions.map((action, index) => {
+    const link = document.createElement("a");
+    link.className = index === 0 ? "wh-btn wh-btn-primary" : "wh-btn";
+    link.setAttribute("href", action.href);
+    link.dataset.actionId = action.id;
+    link.dataset.method = action.method;
+    if (action.request_json) {
+      link.dataset.requestJson = JSON.stringify(action.request_json);
+    }
+    link.textContent = action.label;
+    return link;
+  });
+  if (links.length === 0) {
+    return;
+  }
+  row.replaceChildren(...links);
 }
 
 function activeRouteHasDirtyEdits() {
@@ -1162,7 +1174,12 @@ function bindGoldPathNavigation(
           // Swap the action row in place to the server-provided next action ("采纳到正式版")
           // via a lightweight DOM update — NOT a full route refetch, which would re-run the
           // loader and break the SSE/dirty-edit/loader smoke gates (see M12).
-          if (review.next_action) {
+          const planMergeActions = review.attention.kind === "plan_review"
+            ? review.attention.actions.filter((item) => proposalActionFromHref(item.href)?.action === "merge")
+            : [];
+          if (planMergeActions.length > 0) {
+            swapProposalActionRow(shellRoot, planMergeActions);
+          } else if (review.next_action) {
             swapProposalActionRow(shellRoot, review.next_action);
           }
           clearActiveRouteDirty();

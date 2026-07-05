@@ -10,6 +10,7 @@ import {
   agentRunBudgetDecisionVmSchema,
   agentRunLiveBudgetSchema,
   agentRunLiveVmSchema,
+  actionSpecSchema,
   structuredFieldPatchSchema,
   agentRunTraceVmSchema,
   attentionItemSchema,
@@ -1073,6 +1074,21 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
     "delivery:/outputs/result.md",
     "drive_item:docs/brief.md"
   ]);
+
+  const heldPlanRequest = mergeProposalRequestSchema.parse({
+    confirm: true,
+    dispatch: false
+  });
+  assert.equal(heldPlanRequest.dispatch, false);
+
+  const heldPlanAction = actionSpecSchema.parse({
+    id: "approve_hold",
+    label: "批准但先不跑",
+    method: "POST",
+    href: "/api/proposals/72000000-0000-4000-8000-000000000002/merge",
+    request_json: { dispatch: false }
+  });
+  assert.deepEqual(heldPlanAction.request_json, { dispatch: false });
 });
 
 test("merge proposal candidate choices are explicit and replayable", () => {

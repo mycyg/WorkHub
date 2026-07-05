@@ -41,7 +41,8 @@ export const actionSpecSchema = z.object({
   method: z.enum(["GET", "POST", "PUT", "DELETE"]),
   href: z.string().min(1),
   requires_desktop: z.boolean().optional(),
-  requires_reason: z.boolean().optional()
+  requires_reason: z.boolean().optional(),
+  request_json: z.record(z.string(), z.unknown()).optional()
 });
 export type ActionSpec = z.infer<typeof actionSpecSchema>;
 
@@ -910,7 +911,8 @@ export const proposalDetailVmSchema = z.object({
   review_actions: z.object({
     approve: actionSpecSchema,
     request_changes: actionSpecSchema,
-    merge: actionSpecSchema.optional()
+    merge: actionSpecSchema.optional(),
+    approve_hold: actionSpecSchema.optional()
   }),
   comments: z.array(z.object({
     id: idSchema,

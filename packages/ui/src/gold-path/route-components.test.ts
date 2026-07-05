@@ -891,13 +891,40 @@ test("R9.7 approval workbench localizes plan_review attention kind", () => {
     kind: "plan_review",
     source_ref: { entity_type: "proposal", entity_id: "94000000-0000-4000-8000-000000000111" },
     title: "《短剧选题调研》的分工计划等你过目",
-    summary_text: "拆成 4 个子任务，等你确认。"
+    summary_text: "计划已确认，可以批准为待开始计划。",
+    actions: [
+      {
+        id: "approve_and_dispatch",
+        label: "批准并开始执行",
+        style: "primary",
+        method: "POST",
+        href: "/api/proposals/94000000-0000-4000-8000-000000000111/merge",
+        request_json: { dispatch: true }
+      },
+      {
+        id: "approve_hold",
+        label: "批准但先不跑",
+        style: "secondary",
+        method: "POST",
+        href: "/api/proposals/94000000-0000-4000-8000-000000000111/merge",
+        request_json: { dispatch: false }
+      },
+      {
+        id: "open_proposal",
+        label: "查看计划提议",
+        style: "secondary",
+        method: "GET",
+        href: "/proposals/94000000-0000-4000-8000-000000000111"
+      }
+    ]
   };
 
   const approvals = renderWebRouteComponents(vm, { locale: "zh-CN" }).approvals;
 
   assert.ok(approvals);
   assert.equal(approvals.html.includes("计划审阅"), true);
+  assert.equal(approvals.html.includes("data-action-id=\"approve_hold\""), true);
+  assert.equal(approvals.html.includes("&quot;dispatch&quot;:false"), true);
   assert.equal(approvals.html.includes("plan_review"), false);
   assert.equal(approvals.html.includes("Plan Review"), false);
   assertNoMainWindowBoundaryLeak(approvals.html);

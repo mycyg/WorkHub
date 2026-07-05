@@ -3,7 +3,8 @@ import test from "node:test";
 
 import { attentionItemSchema } from "@workhub/contracts";
 
-import { buildProposalReviewAttentionItem } from "./pages/proposals.js";
+import { buildProposalDetailPage, buildProposalReviewAttentionItem } from "./pages/proposals.js";
+import type { StoredProposal } from "./services/proposals.js";
 
 const base = {
   id: "80000000-0000-4000-8000-000000000001",
@@ -77,6 +78,78 @@ test("task-plan proposals render as plan_review attention with plan-specific cop
   // R9.7: the old expected copy exposed internal "派发" workflow wording to the decision inbox.
   assert.equal(item.summary_text, "任务已拆成分工计划，等你确认后再开始执行。");
   assert.equal(item.actions.find((a) => a.id === "approve")?.label, "确认计划");
-  assert.equal(item.actions.find((a) => a.id === "request_changes")?.label, "打回重拆");
+  assert.equal(item.actions.find((a) => a.id === "request_replan")?.label, "打回重拆");
   assert.equal(item.actions.find((a) => a.id === "open_proposal")?.label, "查看计划提议");
+});
+
+test("reviewed task-plan proposals expose explicit start-or-hold decisions", () => {
+  const item = buildProposalReviewAttentionItem({
+    ...base,
+    title: "《短剧选题调研》的分工计划等你过目",
+    status: "reviewed",
+    review_kind: "plan_review"
+  }, "zh-CN");
+
+  attentionItemSchema.parse(item);
+  assert.deepEqual(item.actions.map((action) => action.id), [
+    "approve_and_dispatch",
+    "approve_hold",
+    "open_proposal"
+  ]);
+  assert.equal(item.actions.find((a) => a.id === "approve_and_dispatch")?.label, "批准并开始执行");
+  assert.equal(item.actions.find((a) => a.id === "approve_hold")?.label, "批准但先不跑");
+  assert.deepEqual(item.actions.find((a) => a.id === "approve_hold")?.request_json, { dispatch: false });
+});
+
+test("reviewed task-plan proposal pages expose approve-and-start plus hold actions", () => {
+  const planId = "82000000-0000-4000-8000-000000000001";
+  const proposal: StoredProposal = {
+    id: base.id,
+    work_item_id: base.work_item_id,
+    branch_id: "83000000-0000-4000-8000-000000000001",
+    round: 1,
+    title: "《短剧选题调研》的分工计划等你过目",
+    status: "reviewed",
+    diff_manifest: {
+      version: 0,
+      work_item_id: base.work_item_id,
+      title: "计划提议",
+      summary_md: "任务已拆成分工计划，等你确认。",
+      author: { actor_kind: "ai", label: "WorkHub Meta-Planner" },
+      base: { created_at: base.created_at },
+      changes: [{
+        id: planId,
+        target_kind: "structured_record",
+        target_ref: {
+          entity_type: "task_plan",
+          entity_id: planId,
+          path: `/workspaces/84000000-0000-4000-8000-000000000001/task-plans/${planId}`
+        },
+        change_type: "generated",
+        human_summary: "生成分工计划。",
+        machine_summary: { changed_fields: ["task_plan_items"] }
+      }],
+      checks: [],
+      evidence_refs: [],
+      risk: { level: "low", human_label: "低风险", reversible: true },
+      rollback: { available: false, description: "计划提议不需要回滚文件。" },
+      review: { suggested_decision: "needs_human", reason_required_on_reject: true }
+    },
+    confidence_id: undefined,
+    merge_snapshot_id: "85000000-0000-4000-8000-000000000001",
+    opened_by_kind: "ai",
+    opened_by_user_id: undefined,
+    reviewed_at: base.created_at,
+    merged_at: undefined,
+    created_at: base.created_at,
+    updated_at: base.created_at,
+    reviews: []
+  };
+
+  const page = buildProposalDetailPage(proposal, "zh-CN");
+
+  assert.equal(page.review_actions.merge?.id, "approve_and_dispatch");
+  assert.equal(page.review_actions.merge?.label, "批准并开始执行");
+  assert.equal(page.review_actions.approve_hold?.label, "批准但先不跑");
+  assert.deepEqual(page.review_actions.approve_hold?.request_json, { dispatch: false });
 });

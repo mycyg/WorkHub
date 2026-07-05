@@ -959,12 +959,13 @@ function renderActions(actions: (AttentionAction | ActionSpec)[]) {
       const reason = action.requires_reason ? " data-requires-reason=\"true\"" : "";
       const method = "method" in action ? ` data-method="${escapeHtml(action.method)}"` : "";
       const desktop = action.requires_desktop ? " data-requires-desktop=\"true\"" : "";
+      const requestJson = action.request_json ? ` data-request-json="${jsonAttr(action.request_json)}"` : "";
       const postRunNext = action.id === "open_proposal"
         ? " data-s1-day2-post-run-next-action=\"proposal\""
         : action.id === "open_replay"
           ? " data-s1-day2-post-run-next-action=\"replay\""
           : "";
-      return `<a class="${actionClass(action, index)}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}"${reason}${method}${desktop}${postRunNext}>${escapeHtml(action.label)}</a>`;
+      return `<a class="${actionClass(action, index)}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}"${reason}${method}${desktop}${requestJson}${postRunNext}>${escapeHtml(action.label)}</a>`;
     })
     .join("")}</div>`;
 }
@@ -2219,7 +2220,10 @@ function proposalActions(vm: ProposalDetailVM) {
     return [vm.review_actions.approve, vm.review_actions.request_changes];
   }
   if (vm.status === "reviewed" && vm.review_actions.merge) {
-    return [vm.review_actions.merge];
+    return [
+      vm.review_actions.merge,
+      ...(vm.review_actions.approve_hold ? [vm.review_actions.approve_hold] : [])
+    ];
   }
   return [];
 }

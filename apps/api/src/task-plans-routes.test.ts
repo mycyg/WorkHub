@@ -556,6 +556,83 @@ test("R9.7 task-plan merge does not report success when post-approval dispatch f
   assert.equal(warnings[0]?.message, "WorkHub task-plan dispatch after proposal merge failed");
 });
 
+test("R9.7 task-plan merge can approve without dispatching when held", async () => {
+  const runtimeSettings = settings();
+  const workItems = new WorkItems();
+  const taskPlans = new MemoryTaskPlans();
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: ids([proposalId, branchId, reviewId, mergeSnapshotId]),
+    onMerged: createTaskPlanMergeApprovalHandler({ taskPlans })
+  });
+  const service = createTaskPlanWorkflowService({
+    taskPlans,
+    proposals,
+    id: ids([planId]),
+    now: () => now,
+    planner: {
+      async createDraft() {
+        return {
+          items: [{
+            id: "95000000-0000-4000-8000-000000000622",
+            seq: 0,
+            title: "执行首个子任务",
+            role: "produce" as const,
+            objectiveMd: "验证批准但暂缓时不会启动子任务。",
+            acceptanceMd: "计划变成 approved，dispatcher 不被调用。",
+            budgetSharePct: 100,
+            dependsOn: []
+          }],
+          decompositionContext: { judge: "approved" }
+        };
+      }
+    }
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createTaskPlanRoutes({ auth: authDeps(runtimeSettings), service, workItems }));
+  app.route("/api/proposals", createProposalRoutes({
+    auth: authDeps(runtimeSettings),
+    proposals,
+    workItems,
+    taskPlanDispatcher: {
+      async dispatch() {
+        throw Object.assign(new Error("dispatch should not run for approve_hold"), { status: 503, code: "unexpected_dispatch" });
+      }
+    }
+  }));
+  const headers = {
+    cookie: await cookie(runtimeSettings),
+    "content-type": "application/json"
+  };
+
+  const created = await app.request(`/api/workitems/${workItemId}/task-plan`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(created.status, 201);
+  const createdBody = await created.json() as { data: { proposal_id: string } };
+
+  const reviewed = await app.request(`/api/proposals/${createdBody.data.proposal_id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+  assert.equal(reviewed.status, 200);
+
+  const merged = await app.request(`/api/proposals/${createdBody.data.proposal_id}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ dispatch: false })
+  });
+
+  assert.equal(merged.status, 200);
+  const body = await merged.json() as { ok: true; data: { status: string; attention: { summary_text: string } } };
+  assert.equal(body.data.status, "merged");
+  assert.equal(body.data.attention.summary_text, "任务计划已批准，暂不开始执行。");
+  assert.equal(taskPlans.rows.get(planId)?.status, "approved");
+});
+
 test("R9.7 task-plan rejection cancels the draft so the work item can regenerate a plan", async () => {
   const runtimeSettings = settings();
   const workItems = new WorkItems();

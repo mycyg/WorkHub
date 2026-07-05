@@ -81,7 +81,10 @@ const actionSpecSchema = {
     id: { type: "string", minLength: 1 },
     label: { type: "string", minLength: 1 },
     method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"] },
-    href: { type: "string", minLength: 1 }
+    href: { type: "string", minLength: 1 },
+    requires_desktop: { type: "boolean" },
+    requires_reason: { type: "boolean" },
+    request_json: { type: "object", additionalProperties: true }
   },
   additionalProperties: false
 } as const;
@@ -914,7 +917,8 @@ const proposalDetailPageResponseSchema = {
       properties: {
         approve: actionSpecSchema,
         request_changes: actionSpecSchema,
-        merge: actionSpecSchema
+        merge: actionSpecSchema,
+        approve_hold: actionSpecSchema
       },
       additionalProperties: false
     },
@@ -1228,6 +1232,7 @@ const mergeProposalRequestBodySchema = {
   type: "object",
   properties: {
     confirm: { type: "boolean", default: true },
+    dispatch: { type: "boolean", default: true },
     conflict_resolution: {
       type: "object",
       properties: {

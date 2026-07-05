@@ -10,6 +10,10 @@ import type { ReviewableProposalSummary } from "../services/proposals.js";
 import { pageT } from "./i18n.js";
 import { parseOutputContract } from "./output-contract.js";
 
+function isTaskPlanProposal(proposal: Pick<StoredProposal, "diff_manifest">) {
+  return proposal.diff_manifest.changes.some((change) => change.target_ref.entity_type === "task_plan");
+}
+
 // GAP-1：把一份待评审的 AI 提议(opened/reviewed)渲染成首页决策队列里的 proposal_review 卡。
 // 动作 href 与 buildProposalDetailPage 完全一致(/api/proposals/:id/review·/merge),
 // 复用前端既有的提议 review·merge 点击管线;opened→通过/打回/查看,reviewed→采纳/查看。
@@ -28,13 +32,19 @@ export function buildProposalReviewAttentionItem(
     href: `/proposals/${summary.id}`
   };
   const actions: AttentionItem["actions"] = reviewed
-    ? [
-        { id: "merge", label: pageT(locale, planReview ? "proposal.action.mergePlan" : "proposal.action.merge"), style: "primary", method: "POST", href: `/api/proposals/${summary.id}/merge` },
-        viewAction
-      ]
+    ? (planReview
+        ? [
+            { id: "approve_and_dispatch", label: pageT(locale, "proposal.action.approvePlanAndStart"), style: "primary", method: "POST", href: `/api/proposals/${summary.id}/merge`, request_json: { dispatch: true } },
+            { id: "approve_hold", label: pageT(locale, "proposal.action.approvePlanHold"), style: "secondary", method: "POST", href: `/api/proposals/${summary.id}/merge`, request_json: { dispatch: false } },
+            viewAction
+          ]
+        : [
+            { id: "merge", label: pageT(locale, "proposal.action.merge"), style: "primary", method: "POST", href: `/api/proposals/${summary.id}/merge` },
+            viewAction
+          ])
     : [
         { id: "approve", label: pageT(locale, planReview ? "proposal.action.approvePlan" : "proposal.action.approve"), style: "primary", method: "POST", href: `/api/proposals/${summary.id}/review` },
-        { id: "request_changes", label: pageT(locale, planReview ? "proposal.action.requestPlanChanges" : "proposal.action.requestChanges"), style: "danger", method: "POST", href: `/api/proposals/${summary.id}/review`, requires_reason: true },
+        { id: planReview ? "request_replan" : "request_changes", label: pageT(locale, planReview ? "proposal.action.requestPlanChanges" : "proposal.action.requestChanges"), style: "danger", method: "POST", href: `/api/proposals/${summary.id}/review`, requires_reason: true },
         viewAction
       ];
   return {
@@ -54,16 +64,17 @@ export function buildProposalReviewAttentionItem(
 }
 
 export function buildProposalDetailPage(proposal: StoredProposal, locale: WorkHubLocale = "zh-CN"): ProposalDetailVM {
+  const planReview = isTaskPlanProposal(proposal);
   const requestChangesAction: ProposalDetailVM["review_actions"]["request_changes"] = {
-    id: "request_changes",
-    label: pageT(locale, "proposal.action.requestChanges"),
+    id: planReview ? "request_replan" : "request_changes",
+    label: pageT(locale, planReview ? "proposal.action.requestPlanChanges" : "proposal.action.requestChanges"),
     method: "POST",
     href: `/api/proposals/${proposal.id}/review`,
     requires_reason: true
   };
   const approveAction: ProposalDetailVM["review_actions"]["approve"] = {
     id: "approve",
-    label: pageT(locale, "proposal.action.approve"),
+    label: pageT(locale, planReview ? "proposal.action.approvePlan" : "proposal.action.approve"),
     method: "POST",
     href: `/api/proposals/${proposal.id}/review`
   };
@@ -73,11 +84,21 @@ export function buildProposalDetailPage(proposal: StoredProposal, locale: WorkHu
   };
   if (proposal.status === "reviewed") {
     reviewActions.merge = {
-      id: "merge",
-      label: pageT(locale, "proposal.action.merge"),
+      id: planReview ? "approve_and_dispatch" : "merge",
+      label: pageT(locale, planReview ? "proposal.action.approvePlanAndStart" : "proposal.action.merge"),
       method: "POST",
-      href: `/api/proposals/${proposal.id}/merge`
+      href: `/api/proposals/${proposal.id}/merge`,
+      ...(planReview ? { request_json: { dispatch: true } } : {})
     };
+    if (planReview) {
+      reviewActions.approve_hold = {
+        id: "approve_hold",
+        label: pageT(locale, "proposal.action.approvePlanHold"),
+        method: "POST",
+        href: `/api/proposals/${proposal.id}/merge`,
+        request_json: { dispatch: false }
+      };
+    }
   }
 
   return parseOutputContract(proposalDetailVmSchema, {

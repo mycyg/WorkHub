@@ -1564,7 +1564,9 @@ test("Proposal OpenAPI contracts document review, merge, and conflict action pay
 
   assert.equal(jsonRequestBodyRequired(body.paths, "/api/proposals/{id}/merge", "post"), false);
   const mergeRequest = jsonRequestSchema(body.paths, "/api/proposals/{id}/merge", "post");
-  assert.deepEqual(Object.keys(mergeRequest?.properties ?? {}).sort(), ["confirm", "conflict_resolution"]);
+  // R9.7: the old key set was wrong because approve-hold needs a documented dispatch:false merge request.
+  assert.deepEqual(Object.keys(mergeRequest?.properties ?? {}).sort(), ["confirm", "conflict_resolution", "dispatch"]);
+  assert.deepEqual(mergeRequest?.properties?.dispatch, { type: "boolean", default: true });
   for (const [path, method] of [
     ["/api/proposals/{id}/merge", "post"],
     ["/api/merge-proposals/{id}/apply", "post"]
@@ -2264,6 +2266,11 @@ test("work item and proposal page OpenAPI routes document id parameters and page
     "review_actions",
     "comments"
   ]);
+  const proposalReviewActions = (proposalData?.properties?.review_actions as { properties?: Record<string, unknown> } | undefined)?.properties;
+  const approveHoldAction = proposalReviewActions?.approve_hold as { properties?: Record<string, unknown> } | undefined;
+  assert.ok(approveHoldAction);
+  assert.ok(approveHoldAction?.properties?.request_json);
+  assert.ok(proposalReviewActions?.merge);
   assert.deepEqual(pageErrorCode("/api/pages/proposals/{id}", "403"), { type: "string", enum: ["forbidden"] });
   assert.deepEqual(pageErrorCode("/api/pages/proposals/{id}", "404"), { type: "string", enum: ["not_found"] });
 });

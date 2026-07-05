@@ -45,10 +45,13 @@ export type CuuCopyKey =
   | "proposal.nextStepMerged"
   | "proposal.nextStepRejected"
   | "proposal.planNextStepOpened"
+  | "proposal.planNextStepReviewed"
   | "proposal.openReview"
   | "proposal.openPlanReview"
   | "proposal.approveReview"
   | "proposal.approvePlanReview"
+  | "proposal.approvePlanAndStart"
+  | "proposal.approvePlanHold"
   | "proposal.requestChanges"
   | "proposal.requestReplan"
   | "proposal.riskSection"
@@ -263,10 +266,13 @@ const cuuCopy = {
     "proposal.nextStepMerged": "已合入正式版本。",
     "proposal.nextStepRejected": "已打回，Cuu 会带着反馈继续修。",
     "proposal.planNextStepOpened": "先确认计划；不满意就打回重拆。",
+    "proposal.planNextStepReviewed": "计划已确认，可以开始执行，也可以先暂缓。",
     "proposal.openReview": "查看变更申请",
     "proposal.openPlanReview": "查看计划提议",
     "proposal.approveReview": "确认通过",
     "proposal.approvePlanReview": "确认计划",
+    "proposal.approvePlanAndStart": "批准并开始执行",
+    "proposal.approvePlanHold": "批准但先不跑",
     "proposal.requestChanges": "打回修改",
     "proposal.requestReplan": "打回重拆",
     "proposal.riskSection": "风险与回滚",
@@ -480,10 +486,13 @@ const cuuCopy = {
     "proposal.nextStepMerged": "Merged into the official version.",
     "proposal.nextStepRejected": "Sent back. Cuu will revise with your feedback.",
     "proposal.planNextStepOpened": "Review the plan; request a replan if it needs changes.",
+    "proposal.planNextStepReviewed": "Plan approved. Start it now or hold it for later.",
     "proposal.openReview": "View change request",
     "proposal.openPlanReview": "View plan proposal",
     "proposal.approveReview": "Mark approved",
     "proposal.approvePlanReview": "Approve plan",
+    "proposal.approvePlanAndStart": "Approve and start",
+    "proposal.approvePlanHold": "Approve but hold",
     "proposal.requestChanges": "Request changes",
     "proposal.requestReplan": "Request replan",
     "proposal.riskSection": "Risk and rollback",

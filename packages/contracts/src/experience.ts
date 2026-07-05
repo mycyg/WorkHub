@@ -53,7 +53,8 @@ export const attentionActionSchema = z.object({
   method: z.enum(["GET", "POST"]),
   href: z.string().min(1),
   requires_desktop: z.boolean().optional(),
-  requires_reason: z.boolean().optional()
+  requires_reason: z.boolean().optional(),
+  request_json: z.record(z.string(), z.unknown()).optional()
 });
 export type AttentionAction = z.infer<typeof attentionActionSchema>;
 

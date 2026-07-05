@@ -993,6 +993,38 @@ test("R9.7 plan_review attention cards render as plan proposal Cuu cards", () =>
   assert.doesNotMatch(card.sections?.find((section) => section.id === "summary")?.lines.join("\n") ?? "", /派发|dispatch/iu);
   assert.equal(card.sections?.find((section) => section.id === "next_step")?.lines[0], "先确认计划；不满意就打回重拆。");
   assert.deepEqual(english.actions.map((action) => action.label), ["View plan proposal", "Approve plan", "Request replan"]);
+
+  const reviewed: AttentionItem = {
+    ...attention,
+    id: "30000000-0000-4000-8000-000000000022",
+    summary_text: "计划已确认，可以批准为待开始计划。",
+    actions: [
+      {
+        id: "approve_and_dispatch",
+        label: "批准并开始执行",
+        style: "primary",
+        method: "POST",
+        href: "/api/proposals/proposal-plan/merge",
+        request_json: { dispatch: true }
+      },
+      {
+        id: "approve_hold",
+        label: "批准但先不跑",
+        style: "secondary",
+        method: "POST",
+        href: "/api/proposals/proposal-plan/merge",
+        request_json: { dispatch: false }
+      },
+      { id: "open_proposal", label: "查看计划提议", style: "secondary", method: "GET", href: "/proposals/proposal-plan" }
+    ]
+  };
+  const reviewedCard = cardFromAttentionItem(reviewed, { locale: "en-US" });
+  assert.deepEqual(reviewedCard.actions.map((action) => action.label), [
+    "View plan proposal",
+    "Approve and start",
+    "Approve but hold"
+  ]);
+  assert.deepEqual(reviewedCard.actions.find((action) => action.id === "approve_hold")?.payload, { dispatch: false });
 });
 
 test("R9.0 escalation attention cards render human Cuu actions", () => {

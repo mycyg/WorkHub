@@ -104,6 +104,13 @@ export function detailHtml(vm: ProposalDetailVM, zh: boolean): string {
   const isOpen = vm.status === "opened";
   // 已审阅(approved 但未合并)：下一步只做合入，避免把“确认通过”和“打回”混在同一状态里。
   const canMerge = vm.status === "reviewed" && !!vm.review_actions.merge;
+  const mergePayload = vm.review_actions.merge?.request_json
+    ? ` data-request-json="${escapeHtml(JSON.stringify(vm.review_actions.merge.request_json))}"`
+    : "";
+  const holdAction = vm.review_actions.approve_hold;
+  const holdButton = holdAction
+    ? `<button type="button" class="wh-spot-act ds-pressable" data-prop-merge${holdAction.request_json ? ` data-request-json="${escapeHtml(JSON.stringify(holdAction.request_json))}"` : ""}>${escapeHtml(holdAction.label)}</button>`
+    : "";
   const statusLabel: Record<string, [string, string]> = {
     opened: ["待审阅", "Open"],
     reviewed: ["已审阅", "Reviewed"],
@@ -118,8 +125,9 @@ export function detailHtml(vm: ProposalDetailVM, zh: boolean): string {
       </div>`
     : canMerge
       ? `<div class="wh-spot-card-actions" data-prop-actions>
-        <p class="wh-spot-action-note">${zh ? "已确认通过，只差合入交付物。" : "Approved; only the deliverable merge remains."}</p>
-        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-prop-merge>${zh ? "合入交付物" : "Merge deliverable"}</button>
+        <p class="wh-spot-action-note">${holdAction ? (zh ? "已确认通过，可以开始执行，也可以先暂缓。" : "Approved; start now or hold it for later.") : (zh ? "已确认通过，只差合入交付物。" : "Approved; only the deliverable merge remains.")}</p>
+        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-prop-merge${mergePayload}>${escapeHtml(vm.review_actions.merge?.label ?? (zh ? "合入交付物" : "Merge deliverable"))}</button>
+        ${holdButton}
       </div>`
       : `<div class="wh-spot-card-actions"><span class="wh-spot-chip wh-spot-chip--info">${escapeHtml((zh ? statusLabel[vm.status]?.[0] : statusLabel[vm.status]?.[1]) ?? vm.status)}</span></div>`;
   return `<div class="wh-spot-dash ds-anim-fade-in">
@@ -336,9 +344,16 @@ export function createProposalsView(): SpotlightCapabilityView {
       const mergeOnly = async (btn: HTMLButtonElement | null = null) => {
         if (busy || !currentId) return;
         busy = true;
-        const restore = markBusy(btn, zh ? "合入中…" : "Merging…");
+        const restore = markBusy(btn, zh ? "处理中…" : "Working…");
         try {
-          const merge = await client.mergeProposal(currentId);
+          const payload = btn ? actionElementMergePayload(btn) : { ok: true as const };
+          if (!payload.ok) {
+            ctx.toast(zh ? "这个合入动作缺少必要参数" : "This merge action is missing details", "error");
+            busy = false;
+            restore();
+            return;
+          }
+          const merge = await client.mergeProposal(currentId, payload.payload);
           ctx.toast(summaryText(merge) ?? (zh ? "已合并" : "Merged"), "ok");
           ctx.onActionSettled?.();
           busy = false;
