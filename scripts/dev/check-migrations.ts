@@ -30,6 +30,7 @@ type PgClientLike = {
 type PgPoolLike = {
   connect: () => Promise<PgClientLike>;
   end: () => Promise<void>;
+  on?: (event: "error", listener: (error: Error, client?: unknown) => void) => unknown;
 };
 
 type PgPoolConstructor = new (options: { connectionString: string; max?: number; connectionTimeoutMillis?: number }) => PgPoolLike;
@@ -82,6 +83,36 @@ function loadPgPool(root: string): PgPoolConstructor {
   return (requireFromDbPackage("pg") as { Pool: PgPoolConstructor }).Pool;
 }
 
+function serializePoolError(error: Error) {
+  return {
+    name: error.name,
+    message: error.message,
+    ...("code" in error ? { code: (error as Error & { code?: unknown }).code } : {}),
+    ...("severity" in error ? { severity: (error as Error & { severity?: unknown }).severity } : {})
+  };
+}
+
+export function attachMigrationAuditIdlePoolErrorHandler(pool: Pick<PgPoolLike, "on">, label: string) {
+  if (typeof pool.on !== "function") {
+    return;
+  }
+  pool.on("error", (error: Error, client?: unknown) => {
+    const processId =
+      client && typeof client === "object" && typeof (client as { processID?: unknown }).processID === "number"
+        ? (client as { processID: number }).processID
+        : undefined;
+    process.stderr.write(`${JSON.stringify({
+      ts: new Date().toISOString(),
+      level: "warn",
+      service: "workhub-migration-audit",
+      event: "migration_audit_pg_pool_idle_client_error",
+      pool: label,
+      error: serializePoolError(error),
+      ...(typeof processId === "number" ? { process_id: processId } : {})
+    })}\n`);
+  });
+}
+
 async function executeMigrationFile(client: PgClientLike, migrationsDir: string, file: string, phase: "fresh" | "replay") {
   try {
     await client.query(readFileSync(join(migrationsDir, file), "utf8"));
@@ -97,6 +128,7 @@ async function runPostgresMigrationReplay(plan: MigrationReplayPlan) {
     max: 1,
     connectionTimeoutMillis: 10_000
   });
+  attachMigrationAuditIdlePoolErrorHandler(adminPool, "admin");
   let scratchCreated = false;
 
   try {
@@ -113,6 +145,7 @@ async function runPostgresMigrationReplay(plan: MigrationReplayPlan) {
       max: 1,
       connectionTimeoutMillis: 10_000
     });
+    attachMigrationAuditIdlePoolErrorHandler(scratchPool, "scratch");
     try {
       const scratchClient = await scratchPool.connect();
       try {

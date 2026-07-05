@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { runMigrationAudit, type MigrationReplayPlan } from "../../../scripts/dev/check-migrations.js";
+import {
+  attachMigrationAuditIdlePoolErrorHandler,
+  runMigrationAudit,
+  type MigrationReplayPlan
+} from "../../../scripts/dev/check-migrations.js";
 
 async function writeRequiredMigrationAuditSkeleton(root: string) {
   const migrationsDir = path.join(root, "packages", "db", "migrations");
@@ -87,5 +92,36 @@ test("migration audit replays all migrations fresh, then R9 migrations against t
     assert.deepEqual(captured?.existingDatabaseReplayFiles, ["0031_r9_replay_safe.sql"]);
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("migration audit pools handle forced-cleanup idle client errors without crashing", () => {
+  const pool = new EventEmitter();
+  const originalWrite = process.stderr.write;
+  const writes: string[] = [];
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    writes.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+
+  try {
+    attachMigrationAuditIdlePoolErrorHandler(pool, "scratch");
+
+    assert.equal(pool.listenerCount("error"), 1);
+    assert.doesNotThrow(() => {
+      pool.emit(
+        "error",
+        Object.assign(new Error("terminating connection due to administrator command"), {
+          code: "57P01",
+          severity: "FATAL"
+        }),
+        { processID: 94 }
+      );
+    });
+    assert.match(writes.join(""), /migration_audit_pg_pool_idle_client_error/);
+    assert.match(writes.join(""), /57P01/);
+    assert.match(writes.join(""), /scratch/);
+  } finally {
+    process.stderr.write = originalWrite;
   }
 });
