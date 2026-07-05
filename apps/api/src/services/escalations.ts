@@ -134,16 +134,7 @@ function taskPlanIdFromHandoff(row: EscalationServiceRow) {
 }
 
 function hasTaskPlanResolutionTarget(row: EscalationServiceRow) {
-  if (!taskPlanIdFromHandoff(row)) {
-    return false;
-  }
-  if (typeof row.handoffJson["task_plan_item_id"] === "string") {
-    return true;
-  }
-  return ["failed_item_ids", "skipped_item_ids"].some((key) => {
-    const value = row.handoffJson[key];
-    return Array.isArray(value) && value.some((item) => typeof item === "string" && item.trim().length > 0);
-  });
+  return Boolean(taskPlanIdFromHandoff(row));
 }
 
 function defaultTaskDispatcher() {

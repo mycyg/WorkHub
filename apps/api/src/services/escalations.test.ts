@@ -408,6 +408,52 @@ test("R9.7 child escalation retry resets the task slice and dispatches the plan"
   }]);
 });
 
+test("R9.7 plan-level arbitration retry dispatches the task plan without child item ids", async () => {
+  const taskPlanId = "94000000-0000-4000-8000-000000000204";
+  const repository = new MemoryEscalationRepository({
+    findRow: row({
+      handoffJson: {
+        source: "task_dispatcher",
+        reason: "arbitration_blocked",
+        task_plan_id: taskPlanId,
+        skipped_item_ids: [],
+        arbitration_reason: "escalate"
+      }
+    })
+  });
+  const dispatchCalls: Array<{ planId: string; workspaceId: string; orgId?: string; actorId?: string }> = [];
+  const service = createEscalationService({
+    repository,
+    taskDispatcher: {
+      async dispatch(input) {
+        dispatchCalls.push(input);
+        return {
+          planId: input.planId,
+          enqueuedItemIds: [],
+          skippedItemIds: [],
+          casMissItemIds: [],
+          completed: true
+        };
+      }
+    },
+    now: () => now
+  });
+
+  await service.resolve(escalationId, actor(), { action: "retry" });
+
+  assert.deepEqual(repository.resolveCalls, [{
+    escalationId,
+    targetStatus: "ai_working",
+    taskPlanAction: "retry"
+  }]);
+  assert.deepEqual(dispatchCalls, [{
+    planId: taskPlanId,
+    workspaceId: actor().workspaceId,
+    orgId: actor().orgId,
+    actorId: actor().userId
+  }]);
+});
+
 test("R9.7 child escalation retry reopens the card when redispatch fails", async () => {
   const taskPlanId = "94000000-0000-4000-8000-000000000211";
   const taskPlanItemId = "94000000-0000-4000-8000-000000000212";

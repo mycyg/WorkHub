@@ -170,9 +170,6 @@ function taskPlanResolutionTarget(handoffJson: Record<string, unknown>) {
     ...textArrayField(handoffJson["skipped_item_ids"])
   ].filter((value): value is string => Boolean(value));
   const uniqueItemIds = [...new Set(itemIds)];
-  if (uniqueItemIds.length === 0) {
-    return null;
-  }
   return {
     planId,
     itemIds: uniqueItemIds
@@ -385,63 +382,65 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
           : null;
         if (taskTarget) {
           if (input.taskPlanAction === "retry") {
-            const snapshotRows = await tx
-              .select({
-                planStatus: taskPlans.status,
-                itemId: taskPlanItems.id,
-                itemStatus: taskPlanItems.status
-              })
-              .from(taskPlanItems)
-              .innerJoin(taskPlans, eq(taskPlans.id, taskPlanItems.planId))
-              .where(and(
-                eq(taskPlanItems.planId, taskTarget.planId),
-                eq(taskPlans.id, taskTarget.planId),
-                eq(taskPlans.workItemId, updatedEscalation.workItemId),
-                eq(taskPlans.workspaceId, input.workspaceId),
-                inArray(taskPlanItems.id, taskTarget.itemIds),
-                inArray(taskPlanItems.status, ["failed", "skipped"])
-              ));
-            requireResolutionRows(snapshotRows, taskTarget.itemIds.length);
-            const planStatus = snapshotRows[0]?.planStatus;
-            if (!isRollbackPlanStatus(planStatus)) {
-              throw new Error("task_plan_resolution_conflict");
+            if (taskTarget.itemIds.length > 0) {
+              const snapshotRows = await tx
+                .select({
+                  planStatus: taskPlans.status,
+                  itemId: taskPlanItems.id,
+                  itemStatus: taskPlanItems.status
+                })
+                .from(taskPlanItems)
+                .innerJoin(taskPlans, eq(taskPlans.id, taskPlanItems.planId))
+                .where(and(
+                  eq(taskPlanItems.planId, taskTarget.planId),
+                  eq(taskPlans.id, taskTarget.planId),
+                  eq(taskPlans.workItemId, updatedEscalation.workItemId),
+                  eq(taskPlans.workspaceId, input.workspaceId),
+                  inArray(taskPlanItems.id, taskTarget.itemIds),
+                  inArray(taskPlanItems.status, ["failed", "skipped"])
+                ));
+              requireResolutionRows(snapshotRows, taskTarget.itemIds.length);
+              const planStatus = snapshotRows[0]?.planStatus;
+              if (!isRollbackPlanStatus(planStatus)) {
+                throw new Error("task_plan_resolution_conflict");
+              }
+              const snapshotItems = Object.fromEntries(snapshotRows.map((row) => [row.itemId, row.itemStatus]));
+              const snapshotWrites = await tx
+                .update(escalationEvents)
+                .set({
+                  handoffJson: sql`${escalationEvents.handoffJson} || ${JSON.stringify({
+                    retry_rollback: {
+                      plan_status: planStatus,
+                      item_statuses: snapshotItems,
+                      captured_at: input.at.toISOString()
+                    }
+                  })}::jsonb`
+                })
+                .where(and(
+                  eq(escalationEvents.id, updatedEscalation.id),
+                  scopedEscalationEventPredicate(input)
+                ))
+                .returning({ id: escalationEvents.id });
+              requireResolutionRows(snapshotWrites, 1);
+              const resetItems = await tx
+                .update(taskPlanItems)
+                .set({
+                  status: "pending",
+                  updatedAt: input.at
+                })
+                .where(and(
+                  eq(taskPlanItems.planId, taskTarget.planId),
+                  scopedTaskPlanItemPredicate({
+                    planId: taskTarget.planId,
+                    workItemId: updatedEscalation.workItemId,
+                    workspaceId: input.workspaceId
+                  }),
+                  inArray(taskPlanItems.id, taskTarget.itemIds),
+                  inArray(taskPlanItems.status, ["failed", "skipped"])
+                ))
+                .returning({ id: taskPlanItems.id });
+              requireResolutionRows(resetItems, taskTarget.itemIds.length);
             }
-            const snapshotItems = Object.fromEntries(snapshotRows.map((row) => [row.itemId, row.itemStatus]));
-            const snapshotWrites = await tx
-              .update(escalationEvents)
-              .set({
-                handoffJson: sql`${escalationEvents.handoffJson} || ${JSON.stringify({
-                  retry_rollback: {
-                    plan_status: planStatus,
-                    item_statuses: snapshotItems,
-                    captured_at: input.at.toISOString()
-                  }
-                })}::jsonb`
-              })
-              .where(and(
-                eq(escalationEvents.id, updatedEscalation.id),
-                scopedEscalationEventPredicate(input)
-              ))
-              .returning({ id: escalationEvents.id });
-            requireResolutionRows(snapshotWrites, 1);
-            const resetItems = await tx
-              .update(taskPlanItems)
-              .set({
-                status: "pending",
-                updatedAt: input.at
-              })
-              .where(and(
-                eq(taskPlanItems.planId, taskTarget.planId),
-                scopedTaskPlanItemPredicate({
-                  planId: taskTarget.planId,
-                  workItemId: updatedEscalation.workItemId,
-                  workspaceId: input.workspaceId
-                }),
-                inArray(taskPlanItems.id, taskTarget.itemIds),
-                inArray(taskPlanItems.status, ["failed", "skipped"])
-              ))
-              .returning({ id: taskPlanItems.id });
-            requireResolutionRows(resetItems, taskTarget.itemIds.length);
             const resumedPlans = await tx
               .update(taskPlans)
               .set({
@@ -452,12 +451,22 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
                 eq(taskPlans.id, taskTarget.planId),
                 eq(taskPlans.workItemId, updatedEscalation.workItemId),
                 eq(taskPlans.workspaceId, input.workspaceId),
-                inArray(taskPlans.status, ["dispatching", "done"])
+                inArray(taskPlans.status, ["approved", "dispatching", "done"])
               ))
               .returning({ id: taskPlans.id });
             requireResolutionRows(resumedPlans, 1);
           } else {
             if (updatedEscalation.agentRunId) {
+              const agentRunPredicates = [
+                eq(agentRuns.id, updatedEscalation.agentRunId),
+                eq(agentRuns.workItemId, updatedEscalation.workItemId),
+                eq(agentRuns.workspaceId, input.workspaceId),
+                eq(agentRuns.taskPlanId, taskTarget.planId),
+                inArray(agentRuns.status, ["queued", "running"])
+              ];
+              if (taskTarget.itemIds.length > 0) {
+                agentRunPredicates.push(inArray(agentRuns.taskPlanItemId, taskTarget.itemIds));
+              }
               await tx
                 .update(agentRuns)
                 .set({
@@ -465,34 +474,44 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
                   finishedAt: input.at,
                   updatedAt: input.at
                 })
-                .where(and(
-                  eq(agentRuns.id, updatedEscalation.agentRunId),
-                  eq(agentRuns.workItemId, updatedEscalation.workItemId),
-                  eq(agentRuns.workspaceId, input.workspaceId),
-                  eq(agentRuns.taskPlanId, taskTarget.planId),
-                  inArray(agentRuns.taskPlanItemId, taskTarget.itemIds),
-                  inArray(agentRuns.status, ["queued", "running"])
-                ))
+                .where(and(...agentRunPredicates))
                 .returning();
             }
-            const skippedItems = await tx
-              .update(taskPlanItems)
-              .set({
-                status: "skipped",
-                updatedAt: input.at
-              })
-              .where(and(
-                eq(taskPlanItems.planId, taskTarget.planId),
-                scopedTaskPlanItemPredicate({
-                  planId: taskTarget.planId,
-                  workItemId: updatedEscalation.workItemId,
-                  workspaceId: input.workspaceId
-                }),
-                inArray(taskPlanItems.id, taskTarget.itemIds),
-                inArray(taskPlanItems.status, ["pending", "dispatched", "failed", "skipped"])
-              ))
-              .returning({ id: taskPlanItems.id });
-            requireResolutionRows(skippedItems, taskTarget.itemIds.length);
+            if (taskTarget.itemIds.length > 0) {
+              const skippedItems = await tx
+                .update(taskPlanItems)
+                .set({
+                  status: "skipped",
+                  updatedAt: input.at
+                })
+                .where(and(
+                  eq(taskPlanItems.planId, taskTarget.planId),
+                  scopedTaskPlanItemPredicate({
+                    planId: taskTarget.planId,
+                    workItemId: updatedEscalation.workItemId,
+                    workspaceId: input.workspaceId
+                  }),
+                  inArray(taskPlanItems.id, taskTarget.itemIds),
+                  inArray(taskPlanItems.status, ["pending", "dispatched", "failed", "skipped"])
+                ))
+                .returning({ id: taskPlanItems.id });
+              requireResolutionRows(skippedItems, taskTarget.itemIds.length);
+            } else {
+              const cancelledPlans = await tx
+                .update(taskPlans)
+                .set({
+                  status: "cancelled",
+                  updatedAt: input.at
+                })
+                .where(and(
+                  eq(taskPlans.id, taskTarget.planId),
+                  eq(taskPlans.workItemId, updatedEscalation.workItemId),
+                  eq(taskPlans.workspaceId, input.workspaceId),
+                  inArray(taskPlans.status, ["approved", "dispatching", "done"])
+                ))
+                .returning({ id: taskPlans.id });
+              requireResolutionRows(cancelledPlans, 1);
+            }
           }
         }
         if (!taskTarget) {

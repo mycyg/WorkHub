@@ -152,6 +152,72 @@ test("R9.7 resolving a child retry records a rollback snapshot before resetting 
   assert.deepEqual(itemUpdate?.setValue, { status: "pending", updatedAt: now });
 });
 
+test("R9.7 resolving a plan-level arbitration retry resumes the plan without mutating the parent work item", async () => {
+  const updatedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId: null,
+    handoffJson: {
+      source: "task_dispatcher",
+      reason: "arbitration_blocked",
+      task_plan_id: taskPlanId,
+      skipped_item_ids: []
+    }
+  };
+  const resolvedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId: null,
+    projectId: "94000000-0000-4000-8000-000000000209",
+    title: "仲裁测试",
+    reasonMd: "仲裁未通过。",
+    trigger: "unqualified",
+    handoffJson: updatedEscalation.handoffJson,
+    suggestedLeadUserId: null,
+    createdAt: now,
+    resolvedAt: now,
+    workItemStatus: "escalated",
+    workspaceId
+  };
+  const { db, queries } = createQueryRecorder([
+    [updatedEscalation],
+    [{ id: taskPlanId }],
+    [resolvedEscalation]
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  const row = await repository.resolveEscalation({
+    escalationId,
+    targetStatus: "ai_working",
+    workspaceId,
+    taskPlanAction: "retry",
+    at: now
+  });
+
+  assert.equal(row?.id, escalationId);
+  assert.equal(row?.workItemStatus, "escalated");
+  assert.deepEqual(queries.map((query) => query.targetTable ?? query.fromTable), [
+    escalationEvents,
+    taskPlans,
+    escalationEvents
+  ]);
+  const [, planUpdate] = queries;
+  assert.equal(planUpdate?.targetTable, taskPlans);
+  assert.deepEqual(planUpdate?.setValue, { status: "dispatching", updatedAt: now });
+  assert.ok(queryReferences(planUpdate?.where, taskPlans.id));
+  assert.ok(queryReferences(planUpdate?.where, taskPlans.workItemId));
+  assert.ok(queryReferences(planUpdate?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(planUpdate?.where, taskPlans.status));
+  assert.ok(queryParamValues(planUpdate?.where).includes(taskPlanId));
+  assert.ok(queryParamValues(planUpdate?.where).includes(workItemId));
+  assert.ok(queryParamValues(planUpdate?.where).includes(workspaceId));
+  assert.equal(
+    queries.some((query) => query.targetTable === workItems),
+    false,
+    "plan-level arbitration retry must redispatch the plan without mutating the parent work item"
+  );
+});
+
 test("R9.7 escalation resolution mutations are fenced by workspace", async () => {
   const updatedEscalation = {
     id: escalationId,
