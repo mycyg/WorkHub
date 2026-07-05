@@ -1024,6 +1024,41 @@ fn configure_main_window_chrome(window: &tauri::WebviewWindow) -> Result<(), Str
     configure_main_window_native_drag(window)
 }
 
+#[derive(Clone, Copy)]
+enum MainWindowStartupFallbackStep {
+    Chrome,
+    MacosVibrancy,
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    WindowsAcrylic,
+}
+
+impl MainWindowStartupFallbackStep {
+    fn action(self) -> &'static str {
+        match self {
+            Self::Chrome => "configure main window chrome during startup",
+            Self::MacosVibrancy => "apply main window macOS vibrancy",
+            Self::WindowsAcrylic => "apply main window Windows acrylic",
+        }
+    }
+}
+
+fn main_window_startup_fallback_message(
+    step: MainWindowStartupFallbackStep,
+    error: impl std::fmt::Display,
+) -> String {
+    format!(
+        "failed to {}; continuing with CSS glass fallback: {error}",
+        step.action()
+    )
+}
+
+fn log_main_window_startup_fallback(
+    step: MainWindowStartupFallbackStep,
+    error: impl std::fmt::Display,
+) {
+    eprintln!("{}", main_window_startup_fallback_message(step, error));
+}
+
 #[cfg(target_os = "macos")]
 fn configure_main_window_hit_surface(window: &tauri::WebviewWindow) -> Result<(), String> {
     window
@@ -1418,23 +1453,37 @@ fn main() {
             }
             // 主窗口保持透明 + 原生拖拽，且贴一层 OS 级毛玻璃（macOS vibrancy / Windows acrylic）让玻璃真正"磨砂"
             // 透出桌面 —— 纯透明窗里 CSS backdrop-filter 无内容可糊，半透白底也只是奶白不带模糊，真·毛玻璃必须靠原生材质。
-            // 失败不致命（不支持的系统退回半透白底 ds-glass-strong 兜底），故忽略 Result。第 4 参数=圆角半径，对齐盒子 24px。
+            // 失败不致命（不支持的系统退回半透白底 ds-glass-strong 兜底），但必须留下真机诊断。第 4 参数=圆角半径，对齐盒子 24px。
             // WORKHUB_DISABLE_VIBRANCY（仅自动化截图验收用）置位时跳过——vibrancy 窗由窗口服务器合成会被原生截图过滤掉。
             if let Some(main_window) = app.get_webview_window("main") {
-                let _ = configure_main_window_chrome(&main_window);
+                if let Err(error) = configure_main_window_chrome(&main_window) {
+                    log_main_window_startup_fallback(MainWindowStartupFallbackStep::Chrome, error);
+                }
                 #[cfg(target_os = "macos")]
                 if std::env::var("WORKHUB_DISABLE_VIBRANCY").is_err() {
                     // state=Active 强制毛玻璃常亮：默认 FollowsWindowActiveState 会让窗口"没被点中(非 key)"时
                     // vibrancy 退成扁平不透明材质 —— 表现就是"点一下才有毛玻璃"。聚焦盒不抢焦点也要一直是玻璃。
-                    let _ = window_vibrancy::apply_vibrancy(
+                    if let Err(error) = window_vibrancy::apply_vibrancy(
                         &main_window,
                         window_vibrancy::NSVisualEffectMaterial::HudWindow,
                         Some(window_vibrancy::NSVisualEffectState::Active),
                         Some(24.0),
-                    );
+                    ) {
+                        log_main_window_startup_fallback(
+                            MainWindowStartupFallbackStep::MacosVibrancy,
+                            error,
+                        );
+                    }
                 }
                 #[cfg(target_os = "windows")]
-                let _ = window_vibrancy::apply_acrylic(&main_window, Some((24, 24, 32, 120)));
+                if let Err(error) =
+                    window_vibrancy::apply_acrylic(&main_window, Some((24, 24, 32, 120)))
+                {
+                    log_main_window_startup_fallback(
+                        MainWindowStartupFallbackStep::WindowsAcrylic,
+                        error,
+                    );
+                }
             }
             // R8 真·Spotlight：把主窗摆到屏幕上方居中（聚焦盒位置）；之后 set_spotlight_size 随内容缩放。
             if let Some(main_window) = app.get_webview_window("main") {
@@ -1487,6 +1536,31 @@ mod tests {
                 .find(|(key, _)| *key == name)
                 .map(|(_, value)| value.to_string())
         }
+    }
+
+    #[test]
+    fn main_window_startup_fallback_messages_keep_real_device_diagnostics() {
+        assert_eq!(
+            main_window_startup_fallback_message(
+                MainWindowStartupFallbackStep::Chrome,
+                "main NSWindow handle is null"
+            ),
+            "failed to configure main window chrome during startup; continuing with CSS glass fallback: main NSWindow handle is null"
+        );
+        assert_eq!(
+            main_window_startup_fallback_message(
+                MainWindowStartupFallbackStep::MacosVibrancy,
+                "visual effect view failed"
+            ),
+            "failed to apply main window macOS vibrancy; continuing with CSS glass fallback: visual effect view failed"
+        );
+        assert_eq!(
+            main_window_startup_fallback_message(
+                MainWindowStartupFallbackStep::WindowsAcrylic,
+                "composition unavailable"
+            ),
+            "failed to apply main window Windows acrylic; continuing with CSS glass fallback: composition unavailable"
+        );
     }
 
     #[test]
