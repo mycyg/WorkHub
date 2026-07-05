@@ -39,7 +39,7 @@ export type EscalationAttentionPage = {
 };
 
 export type EscalationRepository = {
-  findById: (id: string) => Promise<EscalationServiceRow | null>;
+  findById: (input: { id: string; workspaceId: string }) => Promise<EscalationServiceRow | null>;
   listUnresolvedForWorkspace: (input: { workspaceId: string; limit?: number }) => Promise<EscalationServiceRow[]>;
   resolveEscalation: (input: {
     escalationId: string;
@@ -91,7 +91,7 @@ function getDefaultEscalationRepository(): EscalationRepository {
   defaultDbClient ??= getSharedDatabaseClient();
   const repo = createAiDecisionRepository(defaultDbClient.db);
   return {
-    findById: (id) => repo.findEscalationById(id),
+    findById: (input) => repo.findEscalationById(input),
     listUnresolvedForWorkspace: (input) => repo.listUnresolvedEscalationsForWorkspace(input),
     resolveEscalation: (input) => repo.resolveEscalation(input),
     resolveBudgetDecision: (input) => repo.resolveBudgetDecision(input),
@@ -435,7 +435,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
   return {
     async resolve(id: string, actor: AuthActor, input: ResolveEscalationRequest, locale: WorkHubLocale = "zh-CN") {
       const payload = resolveEscalationRequestSchema.parse(input);
-      const existing = await repository.findById(id);
+      const existing = await repository.findById({ id, workspaceId: actor.workspaceId });
       if (!existing) {
         throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
       }
@@ -494,7 +494,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
 
     async resolveBudgetDecision(id: string, actor: AuthActor, actionId: string, locale: WorkHubLocale = "zh-CN") {
       const normalizedActionId = actionId.trim();
-      const existing = await repository.findById(id);
+      const existing = await repository.findById({ id, workspaceId: actor.workspaceId });
       if (!existing) {
         throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
       }
@@ -533,7 +533,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
 
     async delegate(id: string, actor: AuthActor, input: DelegateEscalationRequest, locale: WorkHubLocale = "zh-CN") {
       const payload = delegateEscalationRequestSchema.parse(input);
-      const existing = await repository.findById(id);
+      const existing = await repository.findById({ id, workspaceId: actor.workspaceId });
       if (!existing) {
         throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
       }

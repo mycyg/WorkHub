@@ -89,7 +89,7 @@ export type AiDecisionRepository = {
   findConfidenceRecordForAgentRun: (agentRunId: string) => Promise<ConfidenceRecordRow | null>;
   createEscalationEvent: (input: CreateEscalationEventInput) => Promise<EscalationEventRow>;
   listEscalationEventsForWorkItem: (workItemId: string) => Promise<EscalationEventRow[]>;
-  findEscalationById: (id: string) => Promise<EscalationServiceRow | null>;
+  findEscalationById: (input: { id: string; workspaceId: string }) => Promise<EscalationServiceRow | null>;
   listUnresolvedEscalationsForWorkspace: (input: { workspaceId: string; limit?: number }) => Promise<EscalationServiceRow[]>;
   resolveEscalation: (input: ResolveEscalationInput) => Promise<EscalationServiceRow | null>;
   resolveBudgetDecision: (input: ResolveBudgetDecisionInput) => Promise<EscalationServiceRow | null>;
@@ -327,12 +327,16 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
         .orderBy(desc(escalationEvents.createdAt));
     },
 
-    async findEscalationById(id) {
+    async findEscalationById(input) {
       const rows = await db
         .select(escalationServiceColumns)
         .from(escalationEvents)
         .innerJoin(workItems, eq(escalationEvents.workItemId, workItems.id))
-        .where(and(eq(escalationEvents.id, id), isNull(workItems.deletedAt)))
+        .where(and(
+          eq(escalationEvents.id, input.id),
+          eq(workItems.workspaceId, input.workspaceId),
+          isNull(workItems.deletedAt)
+        ))
         .limit(1);
       const row = rows[0];
       return row ? toEscalationServiceRow(row) : null;
@@ -780,7 +784,7 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
       if (!updated) {
         return null;
       }
-      return this.findEscalationById(updated.id);
+      return this.findEscalationById({ id: updated.id, workspaceId: input.workspaceId });
     }
   };
 }

@@ -57,6 +57,7 @@ function createEscalationService(
 }
 
 class MemoryEscalationRepository implements EscalationRepository {
+  public findCalls: Array<string | { id: string; workspaceId: string }> = [];
   public resolveCalls: Array<{ escalationId: string; targetStatus: string; taskPlanAction?: string }> = [];
   public reopenCalls: Array<{ escalationId: string; targetStatus: string }> = [];
   public delegateCalls: Array<{ escalationId: string; toUserId: string; workspaceId?: string }> = [];
@@ -75,7 +76,9 @@ class MemoryEscalationRepository implements EscalationRepository {
     } = {}
   ) {}
 
-  async findById(id: string) {
+  async findById(input: string | { id: string; workspaceId: string }) {
+    this.findCalls.push(input);
+    const id = typeof input === "string" ? input : input.id;
     if (id !== escalationId) {
       return null;
     }
@@ -128,6 +131,15 @@ class MemoryEscalationRepository implements EscalationRepository {
     });
   }
 }
+
+test("R9.7 escalation resolve scopes the initial read to the actor workspace", async () => {
+  const repository = new MemoryEscalationRepository();
+  const service = createEscalationService({ repository, now: () => now });
+
+  await service.resolve(escalationId, actor(), { action: "retry" });
+
+  assert.deepEqual(repository.findCalls, [{ id: escalationId, workspaceId: actor().workspaceId }]);
+});
 
 test("R9.0 escalation attention cards expose three human decisions without raw enum copy", () => {
   const item = buildEscalationAttentionItem(row(), "zh-CN");

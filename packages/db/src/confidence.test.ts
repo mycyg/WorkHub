@@ -38,6 +38,25 @@ test("R9.7 unresolved escalation listing excludes legacy null-workspace rows", a
   );
 });
 
+test("R9.7 escalation direct lookup is scoped to the workspace before service auth", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+  const repository = createAiDecisionRepository(db);
+
+  await repository.findEscalationById({ id: escalationId, workspaceId });
+
+  assert.equal(queries.length, 1);
+  const [query] = queries;
+  assert.equal(query?.fromTable, escalationEvents);
+  assert.deepEqual(query?.joins.map((join) => [join.kind, join.table]), [
+    ["inner", workItems]
+  ]);
+  assert.ok(queryReferences(query?.where, escalationEvents.id));
+  assert.ok(queryReferences(query?.where, workItems.workspaceId));
+  assert.ok(queryReferences(query?.where, workItems.deletedAt));
+  assert.ok(queryParamValues(query?.where).includes(escalationId));
+  assert.ok(queryParamValues(query?.where).includes(workspaceId));
+});
+
 test("R9.7 resolving a child retry resets the task-plan item before work-item retry", async () => {
   const updatedEscalation = {
     id: escalationId,

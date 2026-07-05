@@ -308,7 +308,7 @@ async function main() {
     const aiDecisionRepository = createAiDecisionRepository(db);
     const escalationService = createEscalationService({
       repository: {
-        findById: (id) => aiDecisionRepository.findEscalationById(id),
+        findById: (input) => aiDecisionRepository.findEscalationById(input),
         listUnresolvedForWorkspace: (input) => aiDecisionRepository.listUnresolvedEscalationsForWorkspace(input),
         resolveEscalation: (input) => aiDecisionRepository.resolveEscalation(input),
         resolveBudgetDecision: (input) => aiDecisionRepository.resolveBudgetDecision(input),
