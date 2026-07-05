@@ -651,7 +651,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
         throw new ProposalServiceError(
           503,
           "task_plan_dispatch_failed",
-          "任务计划已经批准，但派发子任务失败，请稍后刷新后重试。"
+          "任务计划已经批准，但子任务启动失败，请稍后刷新后重试。"
         );
       }
     }

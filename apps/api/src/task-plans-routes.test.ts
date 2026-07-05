@@ -546,8 +546,10 @@ test("R9.7 task-plan merge does not report success when post-approval dispatch f
   // R9.7 redline: the old assertion expected HTTP 200 because the proposal merge was durable,
   // but that hid a failed child-run dispatch from the user and left no decision-inbox recovery path.
   assert.equal(merged.status, 503);
-  const body = await merged.json() as { error: { code: string } };
+  const body = await merged.json() as { error: { code: string; message: string } };
   assert.equal(body.error.code, "task_plan_dispatch_failed");
+  assert.equal(body.error.message, "任务计划已经批准，但子任务启动失败，请稍后刷新后重试。");
+  assert.equal(body.error.message.includes("派发"), false);
   assert.equal(taskPlans.rows.get(planId)?.status, "approved");
   assert.deepEqual(
     publishedEvents.filter((type) => type === "proposal.merged" || type === "notification.created"),
