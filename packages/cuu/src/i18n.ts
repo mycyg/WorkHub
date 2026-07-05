@@ -101,6 +101,10 @@ export type CuuCopyKey =
   | "cost.input"
   | "cost.output"
   | "cost.remaining"
+  | "cost.status.ok"
+  | "cost.status.warning"
+  | "cost.status.critical"
+  | "cost.status.exhausted"
   | "cost.title"
   | "cost.notConnected"
   | "cost.usedToday"
@@ -323,6 +327,10 @@ const cuuCopy = {
     "cost.input": "输入",
     "cost.output": "输出",
     "cost.remaining": "还剩 ¥{cost}",
+    "cost.status.ok": "正常",
+    "cost.status.warning": "接近上限",
+    "cost.status.critical": "严重",
+    "cost.status.exhausted": "已用尽",
     "cost.title": "AI 成本与预算",
     "cost.notConnected": "成本数据还没有接入。",
     "cost.usedToday": "今天已使用 ¥{cost}。",
@@ -544,6 +552,10 @@ const cuuCopy = {
     "cost.input": "Input",
     "cost.output": "Output",
     "cost.remaining": "¥{cost} remaining",
+    "cost.status.ok": "OK",
+    "cost.status.warning": "Warning",
+    "cost.status.critical": "Critical",
+    "cost.status.exhausted": "Exhausted",
     "cost.title": "AI cost and budget",
     "cost.notConnected": "Cost data is not connected yet.",
     "cost.usedToday": "Used ¥{cost} today.",

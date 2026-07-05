@@ -7,6 +7,7 @@ import {
   type AgentRunLiveVM,
   type AttentionItem,
   type BudgetNotice,
+  type CostDashboardVM,
   type EvidenceBubble,
   type ProposalConflict,
   type ProposalDetailVM,
@@ -30,7 +31,8 @@ import {
   cardFromReplayTrace,
   cardFromSessionVm,
   cardFromAgentRunLive,
-  cardFromWorkItemDetail
+  cardFromWorkItemDetail,
+  cardFromCostDashboard
 } from "./index.js";
 
 const ts = "2026-06-05T01:00:00.000Z";
@@ -868,6 +870,43 @@ test("replay cost cards localize remaining budget labels", () => {
 
   assert.match(costLines, /¥4\.997 remaining/u);
   assert.doesNotMatch(costLines, /剩余/u);
+});
+
+test("cost dashboard cards localize budget risk statuses", () => {
+  const costDashboard: CostDashboardVM = {
+    generated_at: ts,
+    currency: "CNY",
+    total_cost_cny: "1.25",
+    token_in: 100,
+    token_out: 50,
+    trend: [],
+    by_user: [],
+    by_team: [],
+    by_workitem: [],
+    by_task_plan: [],
+    by_objective: [],
+    model_breakdown: [],
+    budget: [],
+    notices: [],
+    top_exhaustion_risks: [
+      {
+        scope: { kind: "user", user_id: "10000000-0000-4000-8000-000000000201" },
+        label: "Personal budget",
+        remaining_cost_cny: "0.50",
+        status: "warning"
+      }
+    ]
+  };
+
+  const zh = cardFromCostDashboard(costDashboard, { locale: "zh-CN" });
+  const en = cardFromCostDashboard(costDashboard, { locale: "en-US" });
+  const zhRisk = zh.sections?.find((section) => section.id === "risks")?.lines.join(" ") ?? "";
+  const enRisk = en.sections?.find((section) => section.id === "risks")?.lines.join(" ") ?? "";
+
+  assert.match(zhRisk, /接近上限/u);
+  assert.doesNotMatch(zhRisk, /\(warning\)/u);
+  assert.match(enRisk, /Warning/u);
+  assert.doesNotMatch(enRisk, /\(warning\)/u);
 });
 
 test("budget notices and budget events become actionable Cuu cards", () => {

@@ -430,6 +430,10 @@ function budgetScopeChip(scope: BudgetScope, options: CuuLocaleOptions = {}): Cu
   }
 }
 
+function budgetStatusLabel(status: CostDashboardVM["top_exhaustion_risks"][number]["status"], options: CuuLocaleOptions) {
+  return cuuT(options.locale, `cost.status.${status}`);
+}
+
 function dataStringField(data: unknown, key: string) {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     return undefined;
@@ -1207,7 +1211,7 @@ export function cardFromCostDashboard(vm: CostDashboardVM, options: CuuLocaleOpt
       title: cuuT(options.locale, "cost.risksSection"),
       lines: vm.top_exhaustion_risks
         .slice(0, 4)
-        .map((risk) => `${risk.label}: ${cuuFormat(options.locale, "cost.remaining", { cost: risk.remaining_cost_cny })} (${risk.status})`)
+        .map((risk) => `${risk.label}: ${cuuFormat(options.locale, "cost.remaining", { cost: risk.remaining_cost_cny })} (${budgetStatusLabel(risk.status, options)})`)
     });
   }
 
