@@ -495,6 +495,7 @@ test("R9.7 task-plan merge does not report success when post-approval dispatch f
   });
   const publishedEvents: string[] = [];
   const warnings: Array<{ message: string; detail: unknown }> = [];
+  const dispatchedPlans: Array<{ planId: string; workspaceId: string; orgId?: string; actorId?: string }> = [];
   const app = withErrors(new Hono<AuthEnv>());
   app.route("/api", createTaskPlanRoutes({ auth: authDeps(runtimeSettings), service, workItems }));
   app.route("/api/proposals", createProposalRoutes({
@@ -502,8 +503,18 @@ test("R9.7 task-plan merge does not report success when post-approval dispatch f
     proposals,
     workItems,
     taskPlanDispatcher: {
-      async dispatch() {
-        throw Object.assign(new Error("dispatch unavailable"), { status: 503, code: "task_dispatch_failed" });
+      async dispatch(input) {
+        dispatchedPlans.push(input);
+        if (dispatchedPlans.length === 1) {
+          throw Object.assign(new Error("dispatch unavailable"), { status: 503, code: "task_dispatch_failed" });
+        }
+        return {
+          planId: input.planId,
+          enqueuedItemIds: ["95000000-0000-4000-8000-000000000611"],
+          skippedItemIds: [],
+          casMissItemIds: [],
+          completed: false
+        };
       }
     },
     bus: {
@@ -556,6 +567,25 @@ test("R9.7 task-plan merge does not report success when post-approval dispatch f
     []
   );
   assert.equal(warnings[0]?.message, "WorkHub task-plan dispatch after proposal merge failed");
+
+  const retry = await app.request(`/api/proposals/${createdBody.data.proposal_id}/merge`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+
+  assert.equal(retry.status, 200);
+  const retryBody = await retry.json() as { ok: true; data: { status: string; attention: { summary_text: string } } };
+  assert.equal(retryBody.data.status, "merged");
+  assert.equal(retryBody.data.attention.summary_text, "任务计划已批准，子任务会开始执行。");
+  assert.deepEqual(dispatchedPlans, [
+    { planId, workspaceId, orgId: "00000000-0000-4000-8000-000000000001", actorId: userId },
+    { planId, workspaceId, orgId: "00000000-0000-4000-8000-000000000001", actorId: userId }
+  ]);
+  assert.deepEqual(
+    publishedEvents.filter((type) => type === "proposal.merged" || type === "notification.created"),
+    ["proposal.merged", "notification.created"]
+  );
 });
 
 test("R9.7 task-plan merge can approve without dispatching when held", async () => {

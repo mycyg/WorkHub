@@ -52,8 +52,18 @@ type TaskPlanRouteDispatcher = {
     workspaceId: string;
     orgId?: string;
     actorId?: string;
-  }) => Promise<unknown>;
+  }) => Promise<TaskPlanRouteDispatchResult | undefined>;
 };
+
+type TaskPlanRouteDispatchResult = {
+  planId: string;
+  enqueuedItemIds?: string[];
+  skippedItemIds?: string[];
+  casMissItemIds?: string[];
+  completed?: boolean;
+};
+
+type TaskPlanApprovalTarget = NonNullable<ReturnType<typeof taskPlanApprovalTarget>>;
 
 export type ProposalRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -116,6 +126,18 @@ function isTaskPlanProposal(proposal: StoredProposal) {
   return proposal.diff_manifest.changes.some((item) =>
     item.target_kind === "structured_record"
     && item.target_ref.entity_type === "task_plan"
+  );
+}
+
+function taskPlanDispatchAdvanced(result: TaskPlanRouteDispatchResult | undefined) {
+  return Boolean(
+    result
+    && (
+      result.completed === true
+      || (result.enqueuedItemIds?.length ?? 0) > 0
+      || (result.skippedItemIds?.length ?? 0) > 0
+      || (result.casMissItemIds?.length ?? 0) > 0
+    )
   );
 }
 
@@ -451,6 +473,37 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     }
   }
 
+  async function dispatchMergedTaskPlan(input: {
+    proposal: StoredProposal;
+    target: TaskPlanApprovalTarget;
+    actor: AuthActor;
+  }) {
+    if (!taskPlanDispatcher) {
+      return undefined;
+    }
+    try {
+      return await taskPlanDispatcher.dispatch({
+        planId: input.target.planId,
+        workspaceId: input.target.workspaceId,
+        orgId: input.actor.orgId,
+        actorId: input.actor.userId ?? input.actor.id
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      eventLogger.warn("WorkHub task-plan dispatch after proposal merge failed", {
+        proposalId: input.proposal.id,
+        workItemId: input.proposal.work_item_id,
+        planId: input.target.planId,
+        error: message
+      });
+      throw new ProposalServiceError(
+        503,
+        "task_plan_dispatch_failed",
+        "任务计划已经批准，但子任务启动失败，请稍后刷新后重试。"
+      );
+    }
+  }
+
   async function readProposalForActor(proposalId: string, actor: AuthActor) {
     // R4-1：畸形（非 UUID）proposalId 直接落 404（与不存在同形，不泄露存在性），
     // 避免冒泡到 PG uuid 列触发 22P02→未捕获 500。覆盖 /:id 及 /:id/{review,merge,rebase}。
@@ -568,10 +621,30 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     // 应拿 403/404 而非泄露 schema 的 400。
     const proposalForAccess = await readProposalForActor(c.req.param("id"), c.var.actor);
     await assertCanMutateWorkItem(proposalForAccess.work_item_id, c.var.actor);
+    const payload = mergeProposalRequestSchema.parse(await readJsonObject(c));
     if (proposalForAccess.status === "merged") {
+      const taskPlanTarget = taskPlanApprovalTarget(proposalForAccess);
+      if (taskPlanTarget && payload.confirm !== false && payload.dispatch !== false) {
+        const dispatchResult = await dispatchMergedTaskPlan({
+          proposal: proposalForAccess,
+          target: taskPlanTarget,
+          actor: c.var.actor
+        });
+        if (taskPlanDispatchAdvanced(dispatchResult)) {
+          const createdAt = nowIso();
+          const mergeResult = mergeResultFor({
+            proposal: proposalForAccess,
+            actor: actorFor(c.var.actor),
+            userId: c.var.currentUser.id,
+            createdAt,
+            attention: taskPlanMergeAttention(proposalForAccess, createdAt, true)
+          });
+          await publishProposalEvents(bus, mergeResult.events, eventLogger);
+          return c.json({ ok: true, data: mergeResult });
+        }
+      }
       throw new ProposalServiceError(409, "proposal_already_merged", "这份变更申请已经被采纳。");
     }
-    const payload = mergeProposalRequestSchema.parse(await readJsonObject(c));
     if (payload.confirm === false) {
       return confirmationRequiredResponse(c);
     }
@@ -632,28 +705,12 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     }
     const taskPlanTarget = taskPlanApprovalTarget(proposal);
     const shouldDispatchTaskPlan = Boolean(taskPlanTarget && payload.dispatch !== false);
-    if (shouldDispatchTaskPlan && taskPlanTarget && taskPlanDispatcher) {
-      try {
-        await taskPlanDispatcher.dispatch({
-          planId: taskPlanTarget.planId,
-          workspaceId: taskPlanTarget.workspaceId,
-          orgId: c.var.actor.orgId,
-          actorId: c.var.actor.userId ?? c.var.actor.id
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        eventLogger.warn("WorkHub task-plan dispatch after proposal merge failed", {
-          proposalId: proposal.id,
-          workItemId: proposal.work_item_id,
-          planId: taskPlanTarget.planId,
-          error: message
-        });
-        throw new ProposalServiceError(
-          503,
-          "task_plan_dispatch_failed",
-          "任务计划已经批准，但子任务启动失败，请稍后刷新后重试。"
-        );
-      }
+    if (shouldDispatchTaskPlan && taskPlanTarget) {
+      await dispatchMergedTaskPlan({
+        proposal,
+        target: taskPlanTarget,
+        actor: c.var.actor
+      });
     }
     const createdAt = nowIso();
     const mergeResult = mergeResultFor({
