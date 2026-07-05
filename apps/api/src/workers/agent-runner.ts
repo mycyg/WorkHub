@@ -973,7 +973,9 @@ export function createInMemoryAgentRunQueue(options: {
     // 仍在生效的预留，导致无预留的重跑集体超预算。与入队时 reserve 用的 reservationLeaseMs 保持同一视界。
     if (reservationRepo) {
       const reservationLeaseExpiresAt = new Date(heartbeatAt.getTime() + reservationLeaseMs);
-      await reservationRepo.refreshLease(run.run_id, reservationLeaseExpiresAt).catch(() => {});
+      await reservationRepo
+        .refreshLease(run.workspace_id ?? settings.auth.defaultWorkspaceId, run.run_id, reservationLeaseExpiresAt)
+        .catch(() => {});
     }
   }
 
@@ -1659,7 +1661,13 @@ export function createInMemoryAgentRunQueue(options: {
         const settled = runs.get(runId);
         if (settled) {
           await reservationRepo
-            .reconcile(runId, settled.usage.token_in + settled.usage.token_out, settled.usage.estimated_cost_cny, now())
+            .reconcile(
+              settled.workspace_id ?? settings.auth.defaultWorkspaceId,
+              runId,
+              settled.usage.token_in + settled.usage.token_out,
+              settled.usage.estimated_cost_cny,
+              now()
+            )
             .catch((error) => getDefaultStructuredLogger().warn("agent_run_budget_reconcile_failed", { error }));
         }
       }
@@ -2010,7 +2018,13 @@ export function createInMemoryAgentRunQueue(options: {
       abortInFlightProvider(runId);
       if (reservationRepo) {
         await reservationRepo
-          .reconcile(runId, cancelled.usage.token_in + cancelled.usage.token_out, cancelled.usage.estimated_cost_cny, now())
+          .reconcile(
+            cancelled.workspace_id ?? settings.auth.defaultWorkspaceId,
+            runId,
+            cancelled.usage.token_in + cancelled.usage.token_out,
+            cancelled.usage.estimated_cost_cny,
+            now()
+          )
           .catch((error) => getDefaultStructuredLogger().warn("agent_run_budget_abort_reconcile_failed", { error }));
       }
       await emitRunStatusEvent(cancelled, {

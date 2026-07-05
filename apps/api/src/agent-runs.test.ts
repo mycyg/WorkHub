@@ -1731,11 +1731,12 @@ test("agent run enqueue compensates a persisted queued run when budget reservati
 
 test("agent run abort releases reserved budget immediately", async () => {
   const runtimeSettings = settings();
-  const reconciled: Array<{ runId: string; tokens: number; cost: string }> = [];
+  const actorWorkspaceId = "00000000-0000-4000-8000-00000000b071";
+  const reconciled: Array<{ workspaceId: string; runId: string; tokens: number; cost: string }> = [];
   const fakeReservationRepo = {
     reserve: async () => ({ ok: true }),
-    reconcile: async (runId: string, tokens: number, cost: string) => {
-      reconciled.push({ runId, tokens, cost });
+    reconcile: async (workspaceId: string, runId: string, tokens: number, cost: string) => {
+      reconciled.push({ workspaceId, runId, tokens, cost });
       return 1;
     },
     releaseExpired: async () => 0,
@@ -1753,11 +1754,13 @@ test("agent run abort releases reserved budget immediately", async () => {
     eventBus: false
   });
 
-  const run = await queue.enqueue({ workItemId, actorId: userId, title: "Abort reserved run" });
+  const run = await queue.enqueue({ workItemId, actorId: userId, workspaceId: actorWorkspaceId, title: "Abort reserved run" });
   const aborted = await queue.abort(run.run_id, userId);
 
   assert.equal(aborted.status, "cancelled");
-  assert.deepEqual(reconciled, [{ runId: run.run_id, tokens: 0, cost: "0" }]);
+  // Old assertion checked only runId, but reservation lifecycle writes are tenant-scoped
+  // and must carry the actor workspace to avoid settling another workspace's same-id row.
+  assert.deepEqual(reconciled, [{ workspaceId: actorWorkspaceId, runId: run.run_id, tokens: 0, cost: "0" }]);
 });
 
 test("agent run abort publishes a cancelled status event to the run stream", async () => {
@@ -1796,11 +1799,12 @@ test("agent run abort publishes a cancelled status event to the run stream", asy
 
 test("agent run startup provider errors fail the run and reconcile reserved budget", async () => {
   const runtimeSettings = settings();
-  const reconciled: Array<{ runId: string; tokens: number; cost: string }> = [];
+  const actorWorkspaceId = "00000000-0000-4000-8000-00000000b072";
+  const reconciled: Array<{ workspaceId: string; runId: string; tokens: number; cost: string }> = [];
   const fakeReservationRepo = {
     reserve: async () => ({ ok: true }),
-    reconcile: async (runId: string, tokens: number, cost: string) => {
-      reconciled.push({ runId, tokens, cost });
+    reconcile: async (workspaceId: string, runId: string, tokens: number, cost: string) => {
+      reconciled.push({ workspaceId, runId, tokens, cost });
       return 1;
     },
     releaseExpired: async () => 0,
@@ -1821,14 +1825,16 @@ test("agent run startup provider errors fail the run and reconcile reserved budg
     eventBus: false
   });
 
-  const run = await queue.enqueue({ workItemId, actorId: userId, title: "Provider init fails" });
+  const run = await queue.enqueue({ workItemId, actorId: userId, workspaceId: actorWorkspaceId, title: "Provider init fails" });
   const executed = await queue.runNext();
   const stored = await queue.get(run.run_id);
 
   assert.equal(executed?.status, "failed");
   assert.equal(stored?.status, "failed");
   assert.equal(stored?.trace.at(-1)?.output_excerpt, "provider missing before loop");
-  assert.deepEqual(reconciled, [{ runId: run.run_id, tokens: 0, cost: "0" }]);
+  // Old assertion checked only runId, but provider-failure settlement releases
+  // tenant-scoped budget reservations and must include the run workspace.
+  assert.deepEqual(reconciled, [{ workspaceId: actorWorkspaceId, runId: run.run_id, tokens: 0, cost: "0" }]);
 });
 
 test("agent run abort does not overwrite a run that settled during cancellation", async () => {

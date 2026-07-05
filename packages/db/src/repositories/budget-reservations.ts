@@ -54,11 +54,11 @@ export type BudgetReservationRepository = {
   /** 原子预留：全允则插入 active 行返回 ok；任一受限 scope 越限则整体回滚返回 limitingScope。重试幂等。 */
   reserve: (input: ReserveRunBudgetInput) => Promise<ReserveRunBudgetResult>;
   /** 终态对账：把该 run 的 active 预留行翻 settled 并写实际用量（实际已在 ledger 计费，这里只释放持有量）。 */
-  reconcile: (runId: string, actualTokens: number, actualCostCny: string, at?: Date) => Promise<number>;
+  reconcile: (workspaceId: string, runId: string, actualTokens: number, actualCostCny: string, at?: Date) => Promise<number>;
   /** 租约过期清扫：active 且 lease<now 的行翻 expired，释放被崩溃 run 占住的额度。返回释放条数。 */
   releaseExpired: (now: Date) => Promise<number>;
   /** 刷新某 run 所有 active 预留行的租约（与 run 心跳同步）。 */
-  refreshLease: (runId: string, leaseExpiresAt: Date) => Promise<number>;
+  refreshLease: (workspaceId: string, runId: string, leaseExpiresAt: Date) => Promise<number>;
   /** 成本看板用：按 (scope,bucket) 读在飞 outstanding（Σ active 行 est-actual）。 */
   outstandingForScopes: (keys: ScopeBucketKey[]) => Promise<Map<string, OutstandingTotals>>;
 };
@@ -163,11 +163,15 @@ export function createBudgetReservationRepository(db: WorkHubDb): BudgetReservat
       });
     },
 
-    async reconcile(runId, actualTokens, actualCostCny, at) {
+    async reconcile(workspaceId, runId, actualTokens, actualCostCny, at) {
       const rows = await db
         .update(budgetReservations)
         .set({ status: "settled", actualTokens, actualCostCny, updatedAt: at ?? new Date() })
-        .where(and(eq(budgetReservations.runId, runId), eq(budgetReservations.status, "active")))
+        .where(and(
+          eq(budgetReservations.workspaceId, workspaceId),
+          eq(budgetReservations.runId, runId),
+          eq(budgetReservations.status, "active")
+        ))
         .returning({ id: budgetReservations.id });
       return rows.length;
     },
@@ -181,11 +185,15 @@ export function createBudgetReservationRepository(db: WorkHubDb): BudgetReservat
       return rows.length;
     },
 
-    async refreshLease(runId, leaseExpiresAt) {
+    async refreshLease(workspaceId, runId, leaseExpiresAt) {
       const rows = await db
         .update(budgetReservations)
         .set({ leaseExpiresAt, updatedAt: new Date() })
-        .where(and(eq(budgetReservations.runId, runId), eq(budgetReservations.status, "active")))
+        .where(and(
+          eq(budgetReservations.workspaceId, workspaceId),
+          eq(budgetReservations.runId, runId),
+          eq(budgetReservations.status, "active")
+        ))
         .returning({ id: budgetReservations.id });
       return rows.length;
     },

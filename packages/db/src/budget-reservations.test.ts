@@ -114,3 +114,32 @@ test("R9.7 budget reservation outstanding totals do not cross-count same scope i
   assert.deepEqual(totals.get(outstandingKey(workspaceId)), { tokens: 1000, costCny: "1" });
   assert.deepEqual(totals.get(outstandingKey(otherWorkspaceId)), { tokens: 2500, costCny: "2.5" });
 });
+
+test("R9.7 budget reservation reconcile is bounded by workspace and run", async () => {
+  const { db, queries } = createQueryRecorder([[{ id: "40000000-0000-4000-8000-000000000201" }]]);
+  const repository = createBudgetReservationRepository(db);
+
+  await repository.reconcile(workspaceId, runId, 700, "0.7", new Date("2026-07-04T00:01:00.000Z"));
+
+  const update = queries[0];
+  assert.equal(update?.operation, "update");
+  assert.ok(queryReferences(update?.where, budgetReservations.workspaceId));
+  assert.ok(queryReferences(update?.where, budgetReservations.runId));
+  assert.ok(queryParamValues(update?.where).includes(workspaceId));
+  assert.ok(queryParamValues(update?.where).includes(runId));
+});
+
+test("R9.7 budget reservation lease refresh is bounded by workspace and run", async () => {
+  const nextLeaseExpiresAt = new Date("2026-07-04T00:10:00.000Z");
+  const { db, queries } = createQueryRecorder([[{ id: "40000000-0000-4000-8000-000000000202" }]]);
+  const repository = createBudgetReservationRepository(db);
+
+  await repository.refreshLease(workspaceId, runId, nextLeaseExpiresAt);
+
+  const update = queries[0];
+  assert.equal(update?.operation, "update");
+  assert.ok(queryReferences(update?.where, budgetReservations.workspaceId));
+  assert.ok(queryReferences(update?.where, budgetReservations.runId));
+  assert.ok(queryParamValues(update?.where).includes(workspaceId));
+  assert.ok(queryParamValues(update?.where).includes(runId));
+});
