@@ -37,10 +37,13 @@ test("route state copy stays serious and does not leak pet or default board lang
 });
 
 test("R9.7 route state agent dashboard label uses Agent team copy", () => {
-  const matrix = renderRouteStateMatrix({ locale: "en-US", routeKeys: ["agents"], states: ["loading"] });
+  const en = renderRouteStateMatrix({ locale: "en-US", routeKeys: ["agents"], states: ["loading"] });
+  const zh = renderRouteStateMatrix({ locale: "zh-CN", routeKeys: ["agents"], states: ["loading"] });
 
-  assert.equal(matrix.includes("Agent teams"), true);
-  assert.equal(matrix.includes("Agent Army"), false);
+  assert.equal(en.includes("Agent teams"), true);
+  assert.equal(en.includes("Agent Army"), false);
+  assert.equal(zh.includes("军团"), true);
+  assert.equal(zh.includes("智能代理军团"), false);
 });
 
 test("route state css keeps long text within frames", () => {

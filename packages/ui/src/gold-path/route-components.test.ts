@@ -1660,7 +1660,7 @@ test("R4.11 Cost route component renders dashboard values directly from Cost Pag
   assertNoMainWindowBoundaryLeak(cost.html);
 });
 
-test("R9.6 Agent Army route component renders observable dashboard cards without decision actions", () => {
+test("R9.6 Agent dashboard route component renders observable dashboard cards without decision actions", () => {
   const agents = renderWebRouteComponent({ key: "agents", agents: agentArmyDashboardVm() }, { locale: "zh-CN" });
 
   assert.ok(agents);
@@ -1675,7 +1675,10 @@ test("R9.6 Agent Army route component renders observable dashboard cards without
   assert.equal(agents.html.includes('data-r9-agent-plan-card="96000000-0000-4000-8000-000000000001"'), true);
   assert.equal(agents.html.includes('href="/workitems/96000000-0000-4000-8000-000000000002"'), true);
   assert.equal(agents.html.includes('data-r9-agent-recent-activity="accordion"'), true);
-  assert.equal(agents.html.includes("智能代理军团"), true);
+  // R9.7 UX spec uses the web-facing concept name "军团"; the old "智能代理军团"
+  // assertion was implementation copy, not the product glossary.
+  assert.equal(agents.html.includes("军团"), true);
+  assert.equal(agents.html.includes("智能代理军团"), false);
   assert.equal(agents.html.includes("竞品资料梳理"), true);
   assert.equal(agents.html.includes("卡在: 竞品复核"), true);
   assert.equal(agents.html.includes("¥0.01"), true);

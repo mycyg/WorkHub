@@ -527,7 +527,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     health: "项目健康",
     replay: "执行回放",
     cost: "成本",
-    agents: "智能代理军团",
+    agents: "军团",
     knowledge: "知识证据",
     skills: "团队技能",
     settings: "设置"

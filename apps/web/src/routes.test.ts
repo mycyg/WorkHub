@@ -929,7 +929,7 @@ test("R9.7 web resolves emitted /attention links to the decision inbox", async (
   assert.equal(result.html.includes('data-r4-product-masthead="true"'), false);
 });
 
-test("R9.6 web route loads Agent Army dashboard through the typed Page VM endpoint", async () => {
+test("R9.6 web route loads agent dashboard through the typed Page VM endpoint", async () => {
   const { client, calls } = fakeRouteClient(goldPathSurfaceVm());
   const match = resolveWebRoute("/dashboard/agents");
   assert.ok(match);
@@ -946,7 +946,10 @@ test("R9.6 web route loads Agent Army dashboard through the typed Page VM endpoi
   assert.equal(result.html.includes('data-r9-agent-kpi="waiting_decision"'), true);
   assert.equal(result.html.includes('href="/"'), true);
   assert.equal(result.html.includes('href="/workitems/96000000-0000-4000-8000-000000000002"'), true);
-  assert.equal(result.html.includes("智能代理军团"), true);
+  // R9.7 UX spec uses the web-facing concept name "军团"; the old "智能代理军团"
+  // assertion was implementation copy, not the product glossary.
+  assert.equal(result.html.includes("军团"), true);
+  assert.equal(result.html.includes("智能代理军团"), false);
   assert.equal(result.html.includes("竞品资料梳理"), true);
   assert.equal(result.html.includes("卡在: 竞品复核"), true);
   assert.equal(result.html.includes("追加预算继续"), false);
