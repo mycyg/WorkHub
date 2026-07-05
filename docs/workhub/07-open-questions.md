@@ -303,4 +303,14 @@ owner: workflow
 
 ---
 
+## 7. R9 施工卡点记录
+
+> 本节只登记 R9 施工中按交接红线"卡住两次则记录并跳过不依赖切片"产生的执行卡点；它不是 PRD 设计开放问题。
+
+| 编号 | 切片 / 问题 | 卡点 | 已有证据 | 恢复条件 | 当前处置 |
+|---|---|---|---|---|---|
+| **R9-BLOCK-7.152** | R9.7 follow-up 7.152：`work-items` detail 读取 `task_plan_items` 需通过父 `task_plans.workspace_id` 证明租户边界 | 受影响 R1 PG smoke 需要本地 PostgreSQL 访问；sandbox 下 TCP 与 Unix socket 均 `EPERM`，outside-sandbox R1 请求被 approval reviewer transport error/rejection 拦截，无法完成用户要求的 R1 验证清单 | RED 已证明原 item query `joins=[]`；GREEN 后 focused `work-items-detail.test.ts` 3/3、`@workhub/db` typecheck 0、DB tests 125/125、full typecheck 0、full `pnpm test` 0、release gate report PASS、R4 smoke `ok=true steps=82`；代码 diff 仅 `packages/db/src/repositories/work-items.ts` + `packages/db/src/work-items-detail.test.ts`，尚未 commit | 用户显式批准在 sandbox 外运行 R1 PG smoke，或提供可在 sandbox 内访问的 PostgreSQL 验证通道 | 按红线暂不提交该代码；跳到不依赖该 DB detail read-path 的下一条 R9.7 review finding |
+
+---
+
 *本篇定位：开放问题的**收敛追踪单一来源**。任何问题一旦在归属篇落定，回此更新状态标记；新问题在归属篇 `开放问题` 小节声明"汇总至 07-open-questions"后并入本篇。下一步：按 R0 已锁定的 OQ-2/OQ-3 默认策略推进 R1 真实纵切；MG-* 仍需随 TS-first/Drizzle 施工 plan 继续收口。*
