@@ -19,6 +19,51 @@ function tick() {
   return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
+class FakeElement {
+  public dataset: Record<string, string> = {};
+  public textContent = "";
+  public disabled = false;
+  private readonly attributes = new Set<string>();
+
+  constructor(private readonly selectors = new Set<string>(), dataset: Record<string, string> = {}) {
+    this.dataset = dataset;
+  }
+
+  closest<T extends Element = Element>(selector: string): T | null {
+    return this.selectors.has(selector) ? (this as unknown as T) : null;
+  }
+
+  setAttribute(name: string) {
+    this.attributes.add(name);
+  }
+
+  removeAttribute(name: string) {
+    this.attributes.delete(name);
+  }
+}
+
+class FakeBody extends FakeElement {
+  public innerHTML = "";
+  private readonly clickListeners: Array<(event: { target: unknown; preventDefault: () => void }) => void> = [];
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    if (type !== "click") return;
+    this.clickListeners.push((event) => {
+      if (typeof listener === "function") {
+        listener(event as unknown as Event);
+      } else {
+        listener.handleEvent(event as unknown as Event);
+      }
+    });
+  }
+
+  click(target: FakeElement) {
+    for (const listener of this.clickListeners) {
+      listener({ target, preventDefault() {} });
+    }
+  }
+}
+
 test("classifyAttentionActionHref routes proposal/workitem detail hrefs to inline navigation (no dead button)", () => {
   // 对抗审查 HIGH:决策卡「查看变更」是 GET /proposals/:id,之前落到 runAction 末尾死 toast。现走 ctx.open。
   assert.deepEqual(classifyAttentionActionHref("/proposals/abc-123"), {
@@ -102,6 +147,98 @@ test("attention proposal review cards hide model self narration in their title",
 test("attention escalation cards do not label retry/cancel actions as assignment", () => {
   assert.equal(attentionTagLabelForKind("escalation", true), "需处理");
   assert.equal(attentionTagLabelForKind("escalation", false), "Needs action");
+});
+
+test("desktop attention forwards locale to escalation and budget actions", async () => {
+  const globals = globalThis as typeof globalThis & { HTMLElement: typeof HTMLElement };
+  const previousHTMLElement = globals.HTMLElement;
+  globals.HTMLElement = FakeElement as unknown as typeof HTMLElement;
+  const body = new FakeBody();
+  const calls: unknown[] = [];
+  const vm = {
+    primary: undefined,
+    queue: [
+      {
+        id: "budget-1",
+        kind: "budget",
+        title: "Budget decision",
+        actions: [
+          {
+            id: "finish_current_output",
+            label: "Finish current output",
+            style: "primary",
+            method: "POST",
+            href: "/api/escalations/esc%201/budget-actions/finish_current_output"
+          }
+        ]
+      },
+      {
+        id: "escalation-1",
+        kind: "escalation",
+        title: "Worker needs help",
+        actions: [
+          {
+            id: "escalation_retry",
+            label: "Retry",
+            style: "primary",
+            method: "POST",
+            href: "/api/escalations/esc%202/resolve"
+          }
+        ]
+      }
+    ],
+    background_runs: [],
+    cuu_state: "worried"
+  } as unknown as AttentionHomeVM;
+
+  try {
+    await createAttentionView().mount({
+      body: body as unknown as HTMLElement,
+      locale: "en-US",
+      client: {
+        pages: {
+          async attention() {
+            return vm;
+          }
+        },
+        async resolveBudgetDecision(id: string, actionId: string, options: unknown) {
+          calls.push({ type: "budget", id, actionId, options });
+          return { attention: { summary_text: "Budget recorded" } };
+        },
+        async resolveEscalation(id: string, payload: unknown, options: unknown) {
+          calls.push({ type: "resolve", id, payload, options });
+          return { attention: { summary_text: "Escalation handled" } };
+        }
+      },
+      back() {},
+      open() {},
+      setSubtitle() {},
+      toast() {},
+      requestResize() {},
+      signal: new AbortController().signal
+    } as unknown as SpotlightViewContext);
+    await tick();
+
+    body.click(new FakeElement(new Set(["[data-att-action-id]"]), {
+      attHref: "/api/escalations/esc%201/budget-actions/finish_current_output",
+      attActionId: "finish_current_output"
+    }));
+    await tick();
+    await tick();
+    body.click(new FakeElement(new Set(["[data-att-action-id]"]), {
+      attHref: "/api/escalations/esc%202/resolve",
+      attActionId: "escalation_retry"
+    }));
+    await tick();
+    await tick();
+
+    assert.deepEqual(calls, [
+      { type: "budget", id: "esc 1", actionId: "finish_current_output", options: { locale: "en-US" } },
+      { type: "resolve", id: "esc 2", payload: { action: "retry" }, options: { locale: "en-US" } }
+    ]);
+  } finally {
+    globals.HTMLElement = previousHTMLElement;
+  }
 });
 
 test("attention plan_review cards use explicit plan-review labels", () => {

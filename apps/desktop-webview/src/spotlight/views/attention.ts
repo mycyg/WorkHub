@@ -333,7 +333,7 @@ export function createAttentionView(): SpotlightCapabilityView {
       ): Promise<boolean> => {
         const escalation = escalationActionFromHref(href);
         if (escalation?.action === "budget") {
-          const res = await client.resolveBudgetDecision(escalation.escalationId, escalation.budgetActionId);
+          const res = await client.resolveBudgetDecision(escalation.escalationId, escalation.budgetActionId, { locale: ctx.locale });
           ctx.toast(summaryText(res) ?? (zh ? "预算选择已记录" : "Budget decision recorded"), "ok");
           return true;
         }
@@ -343,7 +343,7 @@ export function createAttentionView(): SpotlightCapabilityView {
             ctx.toast(zh ? "这个升级动作暂不可用" : "This escalation action is not available", "error");
             return false;
           }
-          const res = await client.resolveEscalation(escalation.escalationId, payload);
+          const res = await client.resolveEscalation(escalation.escalationId, payload, { locale: ctx.locale });
           ctx.toast(summaryText(res) ?? (zh ? "升级已处理" : "Escalation handled"), "ok");
           return true;
         }
