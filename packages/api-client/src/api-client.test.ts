@@ -281,7 +281,9 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/agent-runs/run-1/trace?after=2",
     "GET /api/agent-runs/run-1/handoff",
     "POST /api/agent-runs/run-1/abort",
-    'POST /api/memory-conflicts/memory-conflict-1/resolve/merge_both {"value_md":"合并后的偏好。","expected_updated_at":"2026-07-03T10:40:00.000Z"}',
+    // R9.7 review: the old assertion put `expected_updated_at` in the JSON body,
+    // but durable memory-conflict cards and OpenAPI document the stale-version token as a query parameter.
+    'POST /api/memory-conflicts/memory-conflict-1/resolve/merge_both?expected_updated_at=2026-07-03T10%3A40%3A00.000Z {"value_md":"合并后的偏好。"}',
     "POST /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/conflicts",

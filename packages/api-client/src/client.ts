@@ -424,13 +424,15 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         body: JSON.stringify(payload)
       }),
     resolveMemoryConflict: (id, payload) => {
+      const params = new URLSearchParams({ expected_updated_at: payload.expected_updated_at });
+      const path =
+        `/api/memory-conflicts/${encodeURIComponent(id)}/resolve/${encodeURIComponent(payload.resolution)}?${params.toString()}`;
       const body = {
-        ...(payload.value_md ? { value_md: payload.value_md } : {}),
-        expected_updated_at: payload.expected_updated_at
+        ...(payload.value_md ? { value_md: payload.value_md } : {})
       };
-      return request<MemoryConflictResolveResult>(`/api/memory-conflicts/${encodeURIComponent(id)}/resolve/${encodeURIComponent(payload.resolution)}`, {
+      return request<MemoryConflictResolveResult>(path, {
         method: "POST",
-        body: JSON.stringify(body)
+        ...(payload.value_md ? { body: JSON.stringify(body) } : {})
       });
     },
     listApprovalComments: (id) => request(`/api/approvals/${encodeURIComponent(id)}/comments`),
