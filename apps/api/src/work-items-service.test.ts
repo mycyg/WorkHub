@@ -1240,6 +1240,41 @@ test("assigned lead can continue a private clarification session", async () => {
   assert.equal(session.question.progress.find((step) => step.key === "confirm")?.state, "active");
 });
 
+test("confirmation option copy does not leak raw work item statuses", async () => {
+  const repo = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return {
+        ...detailRows({
+          status: "ai_clarifying",
+          submitterUserId: "93000000-0000-4000-8000-000000000888",
+          claimedByUserId: null
+        }),
+        projectOwnerUserId: "93000000-0000-4000-8000-000000000303",
+        assignments: [{ userId, role: "lead" }]
+      } as unknown as StoredWorkItemDetailRows;
+    },
+    async insertChatMessage(input: InsertStoredChatMessageInput) {
+      return repository().insertChatMessage(input);
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  for (const locale of ["zh-CN", "en-US"] as const) {
+    const session = await service.nextQuestion({
+      sessionId: workItemId,
+      actor,
+      locale,
+      payload: { free_text: "请按项目网盘材料继续。" }
+    });
+    const visibleOptionCopy = session.question.options
+      .flatMap((option) => [option.label, option.description ?? ""])
+      .join("\n");
+
+    assert.doesNotMatch(visibleOptionCopy, /\bspec_ready\b/u);
+  }
+});
+
 test("work item session wraps VM assembly drift as an internal contract error", async () => {
   const repo = {
     ...repository(),
