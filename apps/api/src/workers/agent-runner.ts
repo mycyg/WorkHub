@@ -1955,9 +1955,10 @@ export function createInMemoryAgentRunQueue(options: {
             }
             if (!reserved.ok) {
               await failUnstartedRun(run, "AI 预算已被并发在飞执行占满，本次未启动。");
-              await emitBudgetNotice(input, decision);
-              throw new AgentRunnerError(402, "budget_exhausted", decision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。", {
-                ...budgetErrorDetails(decision),
+              const reservationDecision = budgetDecisionFromReservationDenial(decision, reserved.limitingScope);
+              await emitBudgetNotice(input, reservationDecision);
+              throw new AgentRunnerError(402, "budget_exhausted", reservationDecision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。", {
+                ...budgetErrorDetails(reservationDecision),
                 reserved_limiting_scope: toPublicBudgetScope(reserved.limitingScope),
                 reserved_limit: reserved.limit
               });
@@ -2381,6 +2382,58 @@ function budgetScopeId(scope: BudgetScope): string {
     case "eval":
       return scope.suite;
   }
+}
+
+function budgetActionHrefForScope(scope: BudgetScope) {
+  if (scope.kind === "workitem") {
+    return `/workitems/${scope.workitemId}`;
+  }
+  if (scope.kind === "task") {
+    return `/dashboard/cost?taskPlanId=${encodeURIComponent(scope.taskPlanId)}`;
+  }
+  if (scope.kind === "objective") {
+    return `/dashboard/cost?objectiveId=${encodeURIComponent(scope.objectiveId)}`;
+  }
+  return "/dashboard/cost";
+}
+
+function reservationBudgetNotice(scope: BudgetScope): BudgetNotice {
+  const actionHref = budgetActionHrefForScope(scope);
+  const armyScope = scope.kind === "task" || scope.kind === "objective";
+  return {
+    code: "budget_exhausted",
+    severity: "critical",
+    message: "AI 预算已经用完，先暂停新的自动执行。",
+    scope,
+    usageRatio: 1,
+    recommendedAction: armyScope ? "add_budget" : "ask_admin",
+    options: armyScope
+      ? [
+          { id: "add_budget", label: "追加预算继续", actionHref },
+          { id: "finish_current_output", label: "就用现有产出收尾", actionHref },
+          { id: "close_scope", label: "整体收工", actionHref }
+        ]
+      : [
+          { id: "downgrade_model", label: "降级模型继续", actionHref },
+          { id: "pause", label: "先暂停", actionHref },
+          { id: "ask_admin", label: "找管理员", actionHref: "/dashboard/cost" }
+        ],
+    actionHref
+  };
+}
+
+function budgetDecisionFromReservationDenial(
+  decision: BudgetDecisionTrace,
+  limitingScope: BudgetScope
+): BudgetDecisionTrace {
+  return {
+    ...decision,
+    decisionId: `${decision.decisionId}:reservation_denied`,
+    allowed: false,
+    reason: "budget_exhausted",
+    limitingScope,
+    notice: reservationBudgetNotice(limitingScope)
+  };
 }
 
 // R2 原子预算：把预算决策的受限 day/month scope 转成预留输入。per-run cap 不预留（按 work-item，已被

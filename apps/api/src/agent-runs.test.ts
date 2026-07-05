@@ -1620,6 +1620,77 @@ test("agent run enqueue reserves budget, denies an over-cap concurrent start, an
   assert.equal(reserveInputs.length, 2);
 });
 
+test("R9.7 reservation budget rejection persists a durable decision card before notifying", async () => {
+  const runtimeSettings = settings();
+  const durableEvents: Array<{ workItemId?: string; trigger?: string; reasonMd?: string; handoffJson?: Record<string, unknown> }> = [];
+  const publishedEvents: { topic: string; type: string; data: WorkHubEvent<unknown> }[] = [];
+  const fakeReservationRepo = {
+    reserve: async () => ({
+      ok: false,
+      limitingScope: { kind: "team", teamId: runtimeSettings.auth.defaultWorkspaceId },
+      limit: "tokens"
+    }),
+    reconcile: async () => 0,
+    releaseExpired: async () => 0,
+    refreshLease: async () => 0,
+    outstandingForScopes: async () => new Map()
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000033",
+    reservationRepo: fakeReservationRepo as unknown as BudgetReservationRepository,
+    decisions: {
+      async createEscalationEvent(input) {
+        durableEvents.push(input);
+        return {
+          id: "73000000-0000-4000-8000-000000000033",
+          workItemId: input.workItemId,
+          agentRunId: null,
+          confidenceId: null,
+          trigger: input.trigger,
+          reasonMd: input.reasonMd,
+          handoffJson: input.handoffJson ?? {},
+          suggestedLeadUserId: null,
+          createdAt: now,
+          resolvedAt: null
+        } as EscalationEventRow;
+      }
+    },
+    eventBus: {
+      async publish(topic, type, data) {
+        publishedEvents.push({ topic, type, data: data as WorkHubEvent<unknown> });
+      }
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false
+  });
+
+  await assert.rejects(
+    () => queue.enqueue({ workItemId, actorId: userId, title: "reservation denial needs card" }),
+    (error: unknown) => error instanceof AgentRunnerError && error.status === 402 && error.code === "budget_exhausted"
+  );
+
+  assert.equal((await queue.listActive()).length, 0);
+  assert.equal(durableEvents.length, 1);
+  const event = durableEvents[0];
+  assert.equal(event?.workItemId, workItemId);
+  assert.equal(event?.trigger, "budget_exhausted");
+  assert.equal(event?.reasonMd, "AI 预算已经用完，先暂停新的自动执行。");
+  const notice = event?.handoffJson?.["notice"] as { code?: string; recommended_action?: string; scope?: unknown } | undefined;
+  assert.equal(notice?.code, "budget_exhausted");
+  assert.equal(notice?.recommended_action, "ask_admin");
+  assert.deepEqual(notice?.scope, { kind: "team" });
+  const decision = event?.handoffJson?.["budget_decision"] as { allowed?: boolean; reason?: string } | undefined;
+  assert.equal(decision?.allowed, false);
+  assert.equal(decision?.reason, "budget_exhausted");
+  assert.deepEqual(publishedEvents.map((event) => [event.topic, event.type]), [
+    [topics.workitem(workItemId).topic, eventTypes.budgetExhausted],
+    [topics.user(userId).topic, eventTypes.budgetExhausted]
+  ]);
+});
+
 test("agent run enqueue compensates a persisted queued run when budget reservation throws", async () => {
   const runtimeSettings = settings();
   const persistence = new MemoryAgentRunPersistence();
