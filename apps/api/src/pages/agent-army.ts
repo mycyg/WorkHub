@@ -251,6 +251,10 @@ export function buildAgentArmyDashboardPage(input: AgentArmyDashboardPageInput):
       work_item_href: `/workitems/${row.workItem.id}`,
       ...(row.objective?.id ? { objective_id: row.objective.id } : {}),
       ...(row.objective?.title ? { objective_title: row.objective.title } : {}),
+      ...(row.objective?.progressPercent !== null && row.objective?.progressPercent !== undefined
+        ? { objective_progress_pct: Math.max(0, Math.min(100, row.objective.progressPercent)) }
+        : {}),
+      budget_href: "/dashboard/cost",
       status: row.plan.status,
       progress: {
         completed,

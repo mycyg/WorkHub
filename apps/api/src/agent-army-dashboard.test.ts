@@ -346,6 +346,9 @@ test("R9.6 agent army dashboard aggregates observable plan state from rows and c
   assert.equal(vm.kpis.today_cost_cny, "0.006");
   assert.equal(vm.kpis.autonomy_rate_pct, 67);
   assert.equal(vm.plans[0]?.progress.label, "1/2");
+  assert.equal(vm.plans[0]?.objective_title, "季度上市策略");
+  assert.equal(vm.plans[0]?.objective_progress_pct, 40);
+  assert.equal(vm.plans[0]?.budget_href, "/dashboard/cost");
   assert.deepEqual(vm.plans[0]?.roles, [
     { role: "research", count: 1 },
     { role: "review", count: 1 }

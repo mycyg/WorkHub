@@ -574,6 +574,8 @@ function agentArmyDashboardVm(overrides: Partial<AgentArmyDashboardVM> = {}): Ag
       work_item_href: "/workitems/96000000-0000-4000-8000-000000000002",
       objective_id: "96000000-0000-4000-8000-000000000003",
       objective_title: "季度上市策略",
+      objective_progress_pct: 40,
+      budget_href: "/dashboard/cost",
       status: "dispatching",
       progress: { completed: 1, total: 2, label: "1/2" },
       roles: [
@@ -1680,6 +1682,10 @@ test("R9.6 Agent dashboard route component renders observable dashboard cards wi
   assert.equal(agents.html.includes("军团"), true);
   assert.equal(agents.html.includes("智能代理军团"), false);
   assert.equal(agents.html.includes("竞品资料梳理"), true);
+  assert.equal(agents.html.includes('data-r9-agent-plan-objective="96000000-0000-4000-8000-000000000003"'), true);
+  assert.equal(agents.html.includes("目标 · 季度上市策略 · 40%"), true);
+  assert.equal(agents.html.includes('data-r9-agent-plan-budget-link="96000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(agents.html.includes('href="/dashboard/cost"'), true);
   assert.equal(agents.html.includes("卡在: 竞品复核"), true);
   assert.equal(agents.html.includes("¥0.01"), true);
   assert.equal(agents.html.includes("¥3"), true);
@@ -1687,6 +1693,30 @@ test("R9.6 Agent dashboard route component renders observable dashboard cards wi
   assert.equal(agents.html.includes("¥3.000000"), false);
   assert.equal(agents.html.includes("判官"), false);
   assert.equal(agents.html.includes("追加预算继续"), false);
+  assertNoMainWindowBoundaryLeak(agents.html);
+});
+
+test("R9.7 Agent dashboard renders cap warnings as visible product copy", () => {
+  const agents = renderWebRouteComponent({
+    key: "agents",
+    agents: agentArmyDashboardVm({
+      page_info: {
+        plan_limit: 20,
+        returned: 20,
+        plans_capped: true,
+        items_capped: true,
+        runs_capped: true,
+        escalation_limit: 5,
+        escalation_returned: 5,
+        escalations_capped: true
+      }
+    })
+  }, { locale: "en-US" });
+
+  assert.ok(agents);
+  assert.equal(agents.html.includes('data-r9-agent-dashboard-cap-warning="true"'), true);
+  assert.equal(agents.html.includes("Showing the first 20 agent teams"), true);
+  assert.equal(agents.html.includes("Some task, run, or escalation rows are capped"), true);
   assertNoMainWindowBoundaryLeak(agents.html);
 });
 

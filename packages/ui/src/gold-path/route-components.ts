@@ -333,6 +333,10 @@ type RouteCopyKey =
   | "agents.empty"
   | "agents.start"
   | "agents.cost"
+  | "agents.costDetails"
+  | "agents.objective"
+  | "agents.capPlans"
+  | "agents.capRows"
   | "agents.judge"
   | "agents.roles"
   | "agents.statuses"
@@ -550,6 +554,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.empty": "还没有军团在跑。下次遇到大任务，系统会先生成一份分工计划。",
     "agents.start": "发起新任务",
     "agents.cost": "成本",
+    "agents.costDetails": "查看成本",
+    "agents.objective": "目标",
+    "agents.capPlans": "当前只显示前 {limit} 个军团；继续处理后列表会刷新。",
+    "agents.capRows": "部分子任务、运行或升级记录已按上限截断，进入工作项可看完整上下文。",
     "agents.judge": "复核通过率",
     "agents.roles": "角色",
     "agents.statuses": "状态",
@@ -768,6 +776,10 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.empty": "No agent teams are running yet. Next time there is a large task, WorkHub will draft a task plan first.",
     "agents.start": "Start a task",
     "agents.cost": "Cost",
+    "agents.costDetails": "View cost",
+    "agents.objective": "Objective",
+    "agents.capPlans": "Showing the first {limit} agent teams; the list refreshes as work moves forward.",
+    "agents.capRows": "Some task, run, or escalation rows are capped; open the work item for full context.",
     "agents.judge": "Review pass rate",
     "agents.roles": "Roles",
     "agents.statuses": "Statuses",
@@ -3113,28 +3125,51 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
         <div class="wh-r4-route-timeline">${sourceWarnings.map((warning) => `<p class="wh-subtle" data-r9-agent-source-warning="${escapeHtml(warning.source)}">${escapeHtml(warning.message)}</p>`).join("")}</div>
       </section>`
     : "";
+  const capMessages = [
+    vm.page_info.plans_capped
+      ? routeT(locale, "agents.capPlans").replace("{limit}", String(vm.page_info.plan_limit))
+      : "",
+    vm.page_info.items_capped || vm.page_info.runs_capped || vm.page_info.escalations_capped
+      ? routeT(locale, "agents.capRows")
+      : ""
+  ].filter(Boolean);
+  const capWarning = capMessages.length
+    ? `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r9-agent-dashboard-cap-warning="true">
+        <div class="wh-r4-route-timeline">${capMessages.map((message) => `<p class="wh-subtle">${escapeHtml(message)}</p>`).join("")}</div>
+      </section>`
+    : "";
 
   const planCards = vm.plans.map((plan) => {
     const roles = plan.roles.map((role) => `<span class="wh-pill">${escapeHtml(`${taskPlanItemRoleLabel(locale, role.role)} ${role.count}`)}</span>`).join("");
     const statuses = plan.statuses.map((status) => `<span class="wh-pill">${escapeHtml(`${agentDashboardStatusLabel(locale, status.status)} ${status.count}`)}</span>`).join("");
     const burn = plan.cost.burn_pct ?? 0;
+    const objective = plan.objective_title
+      ? `<p class="wh-subtle" data-r9-agent-plan-objective="${escapeHtml(plan.objective_id ?? plan.plan_id)}">${escapeHtml(`${routeT(locale, "agents.objective")} · ${plan.objective_title}${plan.objective_progress_pct !== undefined ? ` · ${plan.objective_progress_pct}%` : ""}`)}</p>`
+      : "";
+    const budgetLink = plan.budget_href
+      ? `<a class="wh-pill" data-r9-agent-plan-budget-link="${escapeHtml(plan.plan_id)}" href="${escapeHtml(safeHref(plan.budget_href))}">${escapeHtml(routeT(locale, "agents.costDetails"))}</a>`
+      : "";
     const blocker = plan.oldest_blocker
       ? `<p class="wh-subtle" data-r9-agent-plan-blocker="true">${escapeHtml(plan.oldest_blocker.label)}</p>`
       : "";
-    return `<a class="wh-card wh-r4-route-card" data-r9-agent-plan-card="${escapeHtml(plan.plan_id)}" href="${escapeHtml(safeHref(plan.work_item_href))}">
+    return `<section class="wh-card wh-r4-route-card" data-r9-agent-plan-card="${escapeHtml(plan.plan_id)}">
       <div class="wh-r4-route-row">
         <div>
-          <strong>${escapeHtml(plan.work_item_title)}</strong>
+          <a href="${escapeHtml(safeHref(plan.work_item_href))}"><strong>${escapeHtml(plan.work_item_title)}</strong></a>
           <p>${escapeHtml(`${plan.work_item_code} · ${taskPlanStatusLabel(locale, plan.status)} · ${plan.progress.label}`)}</p>
+          ${objective}
         </div>
         <span class="wh-pill">${escapeHtml(plan.progress.label)}</span>
       </div>
       <div class="wh-r4-route-meter" aria-hidden="true"><span style="width:${escapeHtml(pctWidth(burn))}%"></span></div>
       <div class="wh-r4-route-meta" data-r9-agent-plan-roles="true">${roles}</div>
       <div class="wh-r4-route-meta" data-r9-agent-plan-statuses="true">${statuses}</div>
-      <p class="wh-subtle">${escapeHtml(`${routeT(locale, "agents.cost")}: ${costAmount(plan.cost.used_cny)}${plan.cost.budget_cny ? `/${costAmount(plan.cost.budget_cny)}` : ""} · ${routeT(locale, "agents.judge")}: ${plan.judge.pass_rate_pct}%`)}</p>
+      <div class="wh-r4-route-meta">
+        <span class="wh-subtle">${escapeHtml(`${routeT(locale, "agents.cost")}: ${costAmount(plan.cost.used_cny)}${plan.cost.budget_cny ? `/${costAmount(plan.cost.budget_cny)}` : ""} · ${routeT(locale, "agents.judge")}: ${plan.judge.pass_rate_pct}%`)}</span>
+        ${budgetLink}
+      </div>
       ${blocker}
-    </a>`;
+    </section>`;
   }).join("");
 
   const empty = vm.empty_state === "no_agent_armies"
@@ -3159,6 +3194,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
     primaryHrefs: [
       "/",
       ...vm.plans.map((plan) => plan.work_item_href),
+      ...vm.plans.map((plan) => plan.budget_href).filter((href): href is string => Boolean(href)),
       ...vm.recent_escalations.map((item) => item.href)
     ],
     source: "page-vm",
@@ -3175,6 +3211,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
       </header>
       <div class="wh-r4-route-grid" data-r9-agent-dashboard-kpis="true">${kpis}</div>
       ${warningStrip}
+      ${capWarning}
       ${empty}
       <div class="wh-r4-route-grid">
         <section class="wh-r4-route-card" data-r9-agent-dashboard-plans="true">

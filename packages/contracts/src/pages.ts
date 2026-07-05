@@ -752,6 +752,8 @@ export const agentArmyDashboardPlanVmSchema = z.object({
   work_item_href: z.string().min(1),
   objective_id: idSchema.optional(),
   objective_title: z.string().min(1).max(256).optional(),
+  objective_progress_pct: z.number().int().min(0).max(100).optional(),
+  budget_href: z.string().min(1).optional(),
   status: taskPlanStatusSchema,
   progress: z.object({
     completed: z.number().int().nonnegative(),
