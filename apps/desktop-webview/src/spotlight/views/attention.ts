@@ -3,6 +3,7 @@
 // 全部内联打真 API（复用 web-runtime 的 href 分类器 + client 方法），处置后回拉 queue、盒子随内容缩放。
 // 这一片证明是「真·内联重构」而非换入口：没有 hash、没有全屏壳、动作就地落库。
 
+import type { PageRequestOptions } from "@workhub/api-client";
 import type { AttentionHomeVM, AttentionItem } from "@workhub/contracts";
 import {
   actionElementApplyPayload,
@@ -201,8 +202,8 @@ function summaryText(result: unknown): string | undefined {
   return undefined;
 }
 
-export function reviewAttentionProposalWithoutMerge(client: ProposalReviewOnlyClient, proposalId: string) {
-  return reviewProposalWithoutMerge(client, proposalId);
+export function reviewAttentionProposalWithoutMerge(client: ProposalReviewOnlyClient, proposalId: string, options?: PageRequestOptions) {
+  return reviewProposalWithoutMerge(client, proposalId, options);
 }
 
 type MemoryConflictActionClient = {
@@ -299,14 +300,14 @@ export function createAttentionView(): SpotlightCapabilityView {
               ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
               return;
             }
-            result = await client.applyMergeProposalCandidate(action.applyId, payload.payload);
+            result = await client.applyMergeProposalCandidate(action.applyId, payload.payload, { locale: ctx.locale });
           } else if (action.kind === "merge") {
             const payload = actionElementMergePayload(target);
             if (!payload.ok) {
               ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
               return;
             }
-            result = await client.mergeProposal(action.proposalId, payload.payload);
+            result = await client.mergeProposal(action.proposalId, payload.payload, { locale: ctx.locale });
           }
           if (!result) {
             ctx.toast(zh ? "这个冲突动作暂时不可执行" : "This conflict action is not available", "error");
@@ -374,11 +375,11 @@ export function createAttentionView(): SpotlightCapabilityView {
               decision: "request_changes",
               ...(reasonMd ? { reason_md: reasonMd } : {}),
               remember: "once"
-            });
+            }, { locale: ctx.locale });
             ctx.toast(summaryText(res) ?? (zh ? "已打回改改" : "Changes requested"), "ok");
             return true;
           }
-          const review = await reviewAttentionProposalWithoutMerge(client, proposal.proposalId);
+          const review = await reviewAttentionProposalWithoutMerge(client, proposal.proposalId, { locale: ctx.locale });
           ctx.toast(summaryText(review) ?? (zh ? "已确认通过，下一步可合入交付物" : "Approved. You can merge the deliverable next."), "ok");
           return true;
         }
@@ -388,7 +389,7 @@ export function createAttentionView(): SpotlightCapabilityView {
             ctx.toast(zh ? "这个计划动作缺少必要参数" : "This plan action is missing details", "error");
             return false;
           }
-          const merge = await client.mergeProposal(proposal.proposalId, payload.payload);
+          const merge = await client.mergeProposal(proposal.proposalId, payload.payload, { locale: ctx.locale });
           ctx.toast(summaryText(merge) ?? (zh ? "已合并" : "Merged"), "ok");
           return true;
         }

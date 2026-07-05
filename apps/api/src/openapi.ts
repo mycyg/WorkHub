@@ -5104,7 +5104,7 @@ export function getOpenApiDocument() {
         post: {
           tags: ["proposals"],
           summary: "Review a deliverable change proposal",
-          parameters: [pathUuidParameter("id")],
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
           ...jsonRequestBody(reviewProposalRequestBodySchema),
           ...reviewProposalResponse
         }
@@ -5113,7 +5113,7 @@ export function getOpenApiDocument() {
         post: {
           tags: ["proposals"],
           summary: "Merge an approved deliverable change proposal",
-          parameters: [pathUuidParameter("id")],
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
           ...jsonRequestBody(mergeProposalRequestBodySchema, { required: false }),
           ...proposalMergeResponse
         }
@@ -5139,7 +5139,7 @@ export function getOpenApiDocument() {
         post: {
           tags: ["proposals"],
           summary: "Apply the selected AI fusion candidate",
-          parameters: [pathUuidParameter("id")],
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
           ...jsonRequestBody(applyMergeProposalCandidateRequestBodySchema, { required: false }),
           ...proposalMergeCandidateApplyResponse
         }

@@ -647,11 +647,14 @@ test("project and drive OpenAPI routes document runtime path and query parameter
     ["/api/drive/projects/{projectId}/items/{itemId}/delete", "post"],
     ["/api/drive/projects/{projectId}/items/{itemId}/restore", "post"],
     ["/api/drive/projects/{projectId}/comments/{commentId}/draft", "post"],
-    ["/api/drive/workitems/{workItemId}/proposal-draft", "post"],
-    ["/api/meetings/projects/{projectId}/insights/{insightId}/draft", "post"],
-    ["/api/meetings/projects/{projectId}/insights/{insightId}/dismiss", "post"],
-    ["/api/meetings/workitems/{workItemId}/proposal-draft", "post"]
-  ] as const) {
+	    ["/api/drive/workitems/{workItemId}/proposal-draft", "post"],
+	    ["/api/meetings/projects/{projectId}/insights/{insightId}/draft", "post"],
+	    ["/api/meetings/projects/{projectId}/insights/{insightId}/dismiss", "post"],
+	    ["/api/meetings/workitems/{workItemId}/proposal-draft", "post"],
+	    ["/api/proposals/{id}/review", "post"],
+	    ["/api/proposals/{id}/merge", "post"],
+	    ["/api/merge-proposals/{id}/apply", "post"]
+	  ] as const) {
     assert.deepEqual(parameterByName(body.paths, path, method, "locale"), {
       name: "locale",
       in: "query",

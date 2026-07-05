@@ -449,13 +449,13 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
     listWorkItemProposals: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/proposals`),
     listWorkItemConflicts: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/conflicts`),
     getProposal: (id) => request(`/api/proposals/${encodeURIComponent(id)}`),
-    reviewProposal: (id, payload) =>
-      request(`/api/proposals/${encodeURIComponent(id)}/review`, {
+    reviewProposal: (id, payload, options) =>
+      request(withPageLocale(`/api/proposals/${encodeURIComponent(id)}/review`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    mergeProposal: (id, payload = {}) =>
-      request(`/api/proposals/${encodeURIComponent(id)}/merge`, {
+    mergeProposal: (id, payload = {}, options) =>
+      request(withPageLocale(`/api/proposals/${encodeURIComponent(id)}/merge`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
@@ -469,8 +469,8 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    applyMergeProposalCandidate: (id, payload = {}) =>
-      request(`/api/merge-proposals/${encodeURIComponent(id)}/apply`, {
+    applyMergeProposalCandidate: (id, payload = {}, options) =>
+      request(withPageLocale(`/api/merge-proposals/${encodeURIComponent(id)}/apply`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),

@@ -308,7 +308,8 @@ type DesktopCuuActionClient = Pick<
   }>;
   reviewProposal?: (
     proposalId: string,
-    payload: ReviewProposalRequest
+    payload: ReviewProposalRequest,
+    options?: PageRequestOptions
   ) => Promise<{
     attention: {
       summary_text: string;
@@ -322,7 +323,8 @@ type DesktopCuuActionClient = Pick<
   ) => Promise<Awaited<ReturnType<WorkHubApiClient["startAgentRun"]>>>;
   mergeProposal: (
     proposalId: string,
-    payload?: MergeProposalRequest
+    payload?: MergeProposalRequest,
+    options?: PageRequestOptions
   ) => Promise<{
     attention: {
       summary_text: string;
@@ -330,7 +332,8 @@ type DesktopCuuActionClient = Pick<
   }>;
   applyMergeProposalCandidate?: (
     mergeProposalId: string,
-    payload?: ApplyMergeProposalCandidateRequest
+    payload?: ApplyMergeProposalCandidateRequest,
+    options?: PageRequestOptions
   ) => Promise<{
     attention: {
       summary_text: string;
@@ -1091,6 +1094,7 @@ export async function submitDesktopCuuAction(input: {
   reasonMd?: string | undefined;
   locale?: CuuLocaleOptions["locale"];
 }): Promise<DesktopCuuActionResult> {
+  const localeOptions: PageRequestOptions | undefined = input.locale ? { locale: input.locale } : undefined;
   if (input.action.kind === "cuu-start-agent") {
     const launch = await startDesktopCuuAgentFromLauncher({
       client: input.client,
@@ -1141,7 +1145,7 @@ export async function submitDesktopCuuAction(input: {
       decision: input.action.decision,
       ...(input.reasonMd ? { reason_md: input.reasonMd } : {}),
       remember: "once"
-    });
+    }, localeOptions);
     return {
       message: result.attention.summary_text
     };
@@ -1175,7 +1179,7 @@ export async function submitDesktopCuuAction(input: {
   }
 
   if (input.action.kind === "proposal-merge") {
-    const result = await input.client.mergeProposal(input.action.proposalId, input.action.payload ?? {});
+    const result = await input.client.mergeProposal(input.action.proposalId, input.action.payload ?? {}, localeOptions);
     return {
       message: result.attention.summary_text
     };
@@ -1185,7 +1189,7 @@ export async function submitDesktopCuuAction(input: {
     if (!input.client.applyMergeProposalCandidate) {
       throw new Error("AI fusion apply action is unavailable.");
     }
-    const result = await input.client.applyMergeProposalCandidate(input.action.mergeProposalId, input.action.payload ?? {});
+    const result = await input.client.applyMergeProposalCandidate(input.action.mergeProposalId, input.action.payload ?? {}, localeOptions);
     return {
       message: result.attention.summary_text
     };
@@ -1198,9 +1202,8 @@ export async function submitDesktopCuuAction(input: {
   const session = await input.client.nextQuestion(input.action.sessionId, {
     ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {}),
     ...(input.action.freeText ? { free_text: input.action.freeText } : {})
-  }, input.locale ? { locale: input.locale } : undefined);
+  }, localeOptions);
   if (shouldStartRun) {
-    const localeOptions = input.locale ? { locale: input.locale } : undefined;
     const workItem = await input.client.createWorkItem!({
       session_id: input.action.sessionId,
       ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {}),

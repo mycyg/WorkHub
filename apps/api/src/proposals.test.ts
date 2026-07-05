@@ -4002,6 +4002,48 @@ test("approved proposal can be merged with proposal events, audit facts, and rol
   assert.equal(mergeBody.data.attention.cuu_state, "celebrating");
 });
 
+test("proposal action routes localize result envelopes from locale query", async () => {
+  const { app, runtimeSettings } = appWithProposalRoutes();
+  const created = await createProposal(app, runtimeSettings, manifest(3));
+  const proposalId = created.data.id;
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await cookie(runtimeSettings)
+  };
+
+  const review = await app.request(`/api/proposals/${proposalId}/review?locale=en-US`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+
+  assert.equal(review.status, 200);
+  const reviewBody = await review.json() as {
+    ok: true;
+    data: {
+      next_action?: { label: string };
+      attention: { title: string; summary_text: string; actions: Array<{ label: string }> };
+    };
+  };
+  assert.equal(reviewBody.data.attention.summary_text, "Approved — ready to accept into the official version.");
+  assert.equal(reviewBody.data.attention.actions[0]?.label, "Merge deliverable");
+  assert.equal(reviewBody.data.next_action?.label, "Merge deliverable");
+  assert.doesNotMatch(reviewBody.data.attention.title, /已通过确认/u);
+
+  const merge = await app.request(`/api/proposals/${proposalId}/merge?locale=en-US`, {
+    method: "POST",
+    headers
+  });
+
+  assert.equal(merge.status, 200);
+  const mergeBody = await merge.json() as {
+    ok: true;
+    data: { attention: { summary_text: string; actions: Array<{ label: string }> } };
+  };
+  assert.equal(mergeBody.data.attention.summary_text, "The deliverable change is now in the official version. Audit and rollback are preserved.");
+  assert.equal(mergeBody.data.attention.actions[0]?.label, "View changes");
+});
+
 test("proposal merge confirm:false does not merge or publish events", async () => {
   const { app, runtimeSettings, bus } = appWithProposalRoutes();
   const created = await createProposal(app, runtimeSettings, manifest(3));

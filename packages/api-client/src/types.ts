@@ -295,8 +295,8 @@ export type WorkHubApiClient = {
   listWorkItemProposals: (workItemId: string) => Promise<Proposal[]>;
   listWorkItemConflicts: (workItemId: string) => Promise<ProposalConflictListResult>;
   getProposal: (id: string) => Promise<Proposal>;
-  reviewProposal: (id: string, payload: ReviewProposalRequest) => Promise<ProposalReviewResult>;
-  mergeProposal: (id: string, payload?: MergeProposalRequest) => Promise<ProposalMergeResult>;
+  reviewProposal: (id: string, payload: ReviewProposalRequest, options?: PageRequestOptions) => Promise<ProposalReviewResult>;
+  mergeProposal: (id: string, payload?: MergeProposalRequest, options?: PageRequestOptions) => Promise<ProposalMergeResult>;
   rebaseProposal: (id: string) => Promise<RebaseProposalResult>;
   chooseMergeProposalCandidate: (
     id: string,
@@ -304,7 +304,8 @@ export type WorkHubApiClient = {
   ) => Promise<MergeProposalCandidateChoiceResult>;
   applyMergeProposalCandidate: (
     id: string,
-    payload?: ApplyMergeProposalCandidateRequest
+    payload?: ApplyMergeProposalCandidateRequest,
+    options?: PageRequestOptions
   ) => Promise<ProposalMergeResult>;
   nextQuestion: (sessionId: string, payload?: NextQuestionRequest, options?: PageRequestOptions) => Promise<SessionVM>;
   searchKnowledge: (payload?: unknown, options?: PageRequestOptions) => Promise<EvidenceBubble>;

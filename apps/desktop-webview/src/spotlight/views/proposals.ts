@@ -3,6 +3,7 @@
 // 渲统一玻璃 diff（改动清单 + 校验 + 风险）→ 确认通过 → 合入交付物 / 打回。
 // list→detail 全在盒子内联 morph。
 
+import type { PageRequestOptions } from "@workhub/api-client";
 import type { AttentionItem, DeliverableChange, ProposalDetailVM } from "@workhub/contracts";
 import { publicProposalDisplayTitle, publicProposalSummaryText, renderProposalConflictCards } from "@workhub/ui/proposal";
 import {
@@ -222,12 +223,13 @@ export function classifyProposalConflictActionHref(href: string):
 export type ProposalReviewOnlyClient = {
   reviewProposal: (
     proposalId: string,
-    payload: { decision: "approve"; remember: "once" }
+    payload: { decision: "approve"; remember: "once" },
+    options?: PageRequestOptions
   ) => Promise<unknown>;
 };
 
-export function reviewProposalWithoutMerge(client: ProposalReviewOnlyClient, proposalId: string) {
-  return client.reviewProposal(proposalId, { decision: "approve", remember: "once" });
+export function reviewProposalWithoutMerge(client: ProposalReviewOnlyClient, proposalId: string, options?: PageRequestOptions) {
+  return client.reviewProposal(proposalId, { decision: "approve", remember: "once" }, options);
 }
 
 export function proposalDetailRefreshTargetAfterReview(startedProposalId: string, currentProposalId: string | undefined) {
@@ -325,7 +327,7 @@ export function createProposalsView(): SpotlightCapabilityView {
         busy = true;
         const restore = markBusy(btn, zh ? "确认中…" : "Approving…");
         try {
-          const review = await reviewProposalWithoutMerge(client, startedProposalId);
+          const review = await reviewProposalWithoutMerge(client, startedProposalId, { locale: ctx.locale });
           ctx.toast(summaryText(review) ?? (zh ? "已确认通过，下一步可合入交付物" : "Approved. You can merge the deliverable next."), "ok");
           ctx.onActionSettled?.();
           busy = false;
@@ -353,7 +355,7 @@ export function createProposalsView(): SpotlightCapabilityView {
             restore();
             return;
           }
-          const merge = await client.mergeProposal(currentId, payload.payload);
+          const merge = await client.mergeProposal(currentId, payload.payload, { locale: ctx.locale });
           ctx.toast(summaryText(merge) ?? (zh ? "已合并" : "Merged"), "ok");
           ctx.onActionSettled?.();
           busy = false;
@@ -389,14 +391,14 @@ export function createProposalsView(): SpotlightCapabilityView {
               ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
               return;
             }
-            result = await client.applyMergeProposalCandidate(action.applyId, payload.payload);
+            result = await client.applyMergeProposalCandidate(action.applyId, payload.payload, { locale: ctx.locale });
           } else if (action.kind === "merge") {
             const payload = actionElementMergePayload(target);
             if (!payload.ok) {
               ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
               return;
             }
-            result = await client.mergeProposal(action.proposalId, payload.payload);
+            result = await client.mergeProposal(action.proposalId, payload.payload, { locale: ctx.locale });
           }
           if (!result) {
             ctx.toast(zh ? "这个冲突动作暂时不可执行" : "This conflict action is not available", "error");
@@ -424,7 +426,7 @@ export function createProposalsView(): SpotlightCapabilityView {
         busy = true;
         const restore = markBusy(btn, zh ? "打回中…" : "Sending back…");
         try {
-          const res = await client.reviewProposal(currentId, { decision: "request_changes", reason_md: reason, remember: "once" });
+          const res = await client.reviewProposal(currentId, { decision: "request_changes", reason_md: reason, remember: "once" }, { locale: ctx.locale });
           ctx.toast(summaryText(res) ?? (zh ? "已打回" : "Sent back"), "ok");
           ctx.onActionSettled?.();
           busy = false;

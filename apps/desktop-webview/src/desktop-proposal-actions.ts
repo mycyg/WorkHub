@@ -48,7 +48,7 @@ export async function handleDesktopProposalAction(input: DesktopProposalActionIn
     }
 
     try {
-      const review = await reviewProposalWithoutMerge(input.client, proposalAction.proposalId);
+      const review = await reviewProposalWithoutMerge(input.client, proposalAction.proposalId, { locale: input.locale });
       input.showRouteNotice(
         actionSuccessNotice(input.locale, actionSummary(review, input.locale), input.actionId)
       );
@@ -66,7 +66,7 @@ export async function handleDesktopProposalAction(input: DesktopProposalActionIn
       return true;
     }
     try {
-      const merge = await input.client.mergeProposal(proposalAction.proposalId, payload.payload);
+      const merge = await input.client.mergeProposal(proposalAction.proposalId, payload.payload, { locale: input.locale });
       input.showRouteNotice(
         actionSuccessNotice(input.locale, actionSummary(merge, input.locale), input.actionId)
       );

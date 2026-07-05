@@ -10,13 +10,15 @@ import {
   eventTypes,
   mergeProposalCandidateChoiceResultSchema,
   mergeProposalRequestSchema,
+  normalizeWorkHubLocale,
   proposalConflictListResultSchema,
   proposalMergeResultSchema,
   proposalReviewResultSchema,
   reviewProposalRequestSchema,
   type AuditLogFact,
   type AttentionItem,
-  type ProposalReviewResult
+  type ProposalReviewResult,
+  type WorkHubLocale
 } from "@workhub/contracts";
 import { makeWorkHubEvent, topics } from "@workhub/events";
 import { getDefaultPushBus, type PushBus } from "../broker/index.js";
@@ -42,6 +44,7 @@ import {
   type WorkItemService
 } from "../services/work-items.js";
 import { taskPlanApprovalTarget } from "../services/task-plan-approval.js";
+import { pageT } from "../pages/i18n.js";
 import { parseOutputContract } from "../pages/output-contract.js";
 import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
@@ -141,6 +144,68 @@ function taskPlanDispatchAdvanced(result: TaskPlanRouteDispatchResult | undefine
   );
 }
 
+function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
+  return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
+}
+
+type ProposalActionCopyKey =
+  | "review.proposal.approved.summary"
+  | "review.plan.approved.summary"
+  | "review.proposal.requestChanges.summary"
+  | "review.plan.requestChanges.summary"
+  | "review.proposal.approved.reason"
+  | "review.plan.approved.reason"
+  | "review.requestChanges.reason"
+  | "merge.proposal.summary"
+  | "merge.proposal.reason.rollback"
+  | "merge.proposal.reason.noRollback"
+  | "merge.plan.dispatch.summary"
+  | "merge.plan.hold.summary"
+  | "merge.plan.dispatch.reason"
+  | "merge.plan.hold.reason"
+  | "merge.plan.start";
+
+const proposalActionCopy: Record<WorkHubLocale, Record<ProposalActionCopyKey, string>> = {
+  "zh-CN": {
+    "review.proposal.approved.summary": "接下来可以把这份交付物变更采纳到正式版本。",
+    "review.plan.approved.summary": "计划已确认，可以选择立即开始执行或先暂缓。",
+    "review.proposal.requestChanges.summary": "这份变更申请已被打回，原因会回灌给下一轮 AI。",
+    "review.plan.requestChanges.summary": "这份任务计划已被打回，原因会回灌给下一轮 AI。",
+    "review.proposal.approved.reason": "这是一份可审计的交付物变更申请。",
+    "review.plan.approved.reason": "这是一份可审计的任务计划提议。",
+    "review.requestChanges.reason": "打回原因已进入下一轮上下文。",
+    "merge.proposal.summary": "交付物变更已进入正式版本，审计和回滚信息已保留。",
+    "merge.proposal.reason.rollback": "这次变更保留了回滚入口。",
+    "merge.proposal.reason.noRollback": "这次变更缺少可用回滚快照。",
+    "merge.plan.dispatch.summary": "任务计划已批准，子任务会开始执行。",
+    "merge.plan.hold.summary": "任务计划已批准，暂不开始执行。",
+    "merge.plan.dispatch.reason": "后续执行会继续进入可审计的事项流。",
+    "merge.plan.hold.reason": "计划保持已批准状态，需要时可以再手动开始。",
+    "merge.plan.start": "开始执行计划"
+  },
+  "en-US": {
+    "review.proposal.approved.summary": "Approved — ready to accept into the official version.",
+    "review.plan.approved.summary": "Plan approved — start it now or hold it for later.",
+    "review.proposal.requestChanges.summary": "This change request was sent back. The reason will feed the next AI pass.",
+    "review.plan.requestChanges.summary": "This task plan was sent back. The reason will feed the next AI pass.",
+    "review.proposal.approved.reason": "This is an auditable deliverable change proposal.",
+    "review.plan.approved.reason": "This is an auditable task plan proposal.",
+    "review.requestChanges.reason": "The change reason is now in the next pass context.",
+    "merge.proposal.summary": "The deliverable change is now in the official version. Audit and rollback are preserved.",
+    "merge.proposal.reason.rollback": "Rollback is available for this change.",
+    "merge.proposal.reason.noRollback": "This change does not have an available rollback snapshot.",
+    "merge.plan.dispatch.summary": "The task plan is approved. Subtasks will start.",
+    "merge.plan.hold.summary": "The task plan is approved and held for later.",
+    "merge.plan.dispatch.reason": "Execution will continue in the auditable work-item flow.",
+    "merge.plan.hold.reason": "The plan remains approved. Start it manually when ready.",
+    "merge.plan.start": "Start task plan"
+  }
+};
+
+function proposalT(locale: WorkHubLocale, key: ProposalActionCopyKey) {
+  return proposalActionCopy[locale][key];
+}
+
 function confirmationRequiredResponse(c: Context<AuthEnv>) {
   return c.json({
     ok: false,
@@ -214,6 +279,7 @@ function genericReviewAttention(input: {
   decision: "approve" | "request_changes";
   reason?: string;
   createdAt: string;
+  locale: WorkHubLocale;
 }): AttentionItem {
   const approve = input.decision === "approve";
   const planReview = isTaskPlanProposal(input.proposal);
@@ -223,19 +289,27 @@ function genericReviewAttention(input: {
     priority: approve ? "normal" : "high",
     work_item_id: input.proposal.work_item_id,
     source_ref: { entity_type: "proposal", entity_id: input.proposal.id },
-    title: approve ? `${input.proposal.title} 已通过确认` : `${input.proposal.title} 需要修改`,
+    title: input.locale === "zh-CN"
+      ? (approve ? `${input.proposal.title} 已通过确认` : `${input.proposal.title} 需要修改`)
+      : (approve ? `${input.proposal.title} approved` : `${input.proposal.title} needs changes`),
     summary_text: approve
-      ? (planReview ? "计划已确认，可以选择立即开始执行或先暂缓。" : "接下来可以把这份交付物变更采纳到正式版本。")
-      : input.reason ?? (planReview ? "这份任务计划已被打回，原因会回灌给下一轮 AI。" : "这份变更申请已被打回，原因会回灌给下一轮 AI。"),
+      ? (planReview
+          ? proposalT(input.locale, "review.plan.approved.summary")
+          : proposalT(input.locale, "review.proposal.approved.summary"))
+      : input.reason ?? (planReview
+        ? proposalT(input.locale, "review.plan.requestChanges.summary")
+        : proposalT(input.locale, "review.proposal.requestChanges.summary")),
     reason_text: approve
-      ? (planReview ? "这是一份可审计的任务计划提议。" : "这是一份可审计的交付物变更申请。")
-      : "打回原因已进入下一轮上下文。",
+      ? (planReview
+          ? proposalT(input.locale, "review.plan.approved.reason")
+          : proposalT(input.locale, "review.proposal.approved.reason"))
+      : proposalT(input.locale, "review.requestChanges.reason"),
     actions: approve
       ? (planReview
           ? [
               {
                 id: "approve_and_dispatch",
-                label: "批准并开始执行",
+                label: pageT(input.locale, "proposal.action.approvePlanAndStart"),
                 style: "primary",
                 method: "POST",
                 href: `/api/proposals/${input.proposal.id}/merge`,
@@ -243,7 +317,7 @@ function genericReviewAttention(input: {
               },
               {
                 id: "approve_hold",
-                label: "批准但先不跑",
+                label: pageT(input.locale, "proposal.action.approvePlanHold"),
                 style: "secondary",
                 method: "POST",
                 href: `/api/proposals/${input.proposal.id}/merge`,
@@ -251,7 +325,7 @@ function genericReviewAttention(input: {
               },
               {
                 id: "open_proposal",
-                label: "查看计划提议",
+                label: pageT(input.locale, "proposal.action.viewPlan"),
                 style: "secondary",
                 method: "GET",
                 href: `/proposals/${input.proposal.id}`
@@ -260,7 +334,7 @@ function genericReviewAttention(input: {
           : [
               {
                 id: "merge",
-                label: "采纳到正式版",
+                label: pageT(input.locale, "proposal.action.merge"),
                 style: "primary",
                 method: "POST",
                 href: `/api/proposals/${input.proposal.id}/merge`
@@ -269,7 +343,7 @@ function genericReviewAttention(input: {
       : [
           {
             id: "open_proposal",
-            label: planReview ? "查看计划提议" : "查看变更申请",
+            label: pageT(input.locale, planReview ? "proposal.action.viewPlan" : "proposal.action.view"),
             style: "primary",
             method: "GET",
             href: `/proposals/${input.proposal.id}`
@@ -280,20 +354,22 @@ function genericReviewAttention(input: {
   };
 }
 
-function genericMergeAttention(proposal: StoredProposal, createdAt: string): AttentionItem {
+function genericMergeAttention(proposal: StoredProposal, createdAt: string, locale: WorkHubLocale): AttentionItem {
   return {
     id: randomUUID(),
     kind: "delivery_ready",
     priority: "normal",
     work_item_id: proposal.work_item_id,
     source_ref: { entity_type: "proposal", entity_id: proposal.id },
-    title: `${proposal.title} 已采纳`,
-    summary_text: "交付物变更已进入正式版本，审计和回滚信息已保留。",
-    reason_text: proposal.diff_manifest.rollback.available ? "这次变更保留了回滚入口。" : "这次变更缺少可用回滚快照。",
+    title: locale === "zh-CN" ? `${proposal.title} 已采纳` : `${proposal.title} merged`,
+    summary_text: proposalT(locale, "merge.proposal.summary"),
+    reason_text: proposal.diff_manifest.rollback.available
+      ? proposalT(locale, "merge.proposal.reason.rollback")
+      : proposalT(locale, "merge.proposal.reason.noRollback"),
     actions: [
       {
         id: "open_proposal",
-        label: "查看变更申请",
+        label: pageT(locale, "proposal.action.view"),
         style: "primary",
         method: "GET",
         href: `/proposals/${proposal.id}`
@@ -304,21 +380,21 @@ function genericMergeAttention(proposal: StoredProposal, createdAt: string): Att
   };
 }
 
-function taskPlanMergeAttention(proposal: StoredProposal, createdAt: string, dispatch: boolean): AttentionItem {
+function taskPlanMergeAttention(proposal: StoredProposal, createdAt: string, dispatch: boolean, locale: WorkHubLocale): AttentionItem {
   return {
     id: randomUUID(),
     kind: "delivery_ready",
     priority: "normal",
     work_item_id: proposal.work_item_id,
     source_ref: { entity_type: "proposal", entity_id: proposal.id },
-    title: `${proposal.title} 已批准`,
-    summary_text: dispatch ? "任务计划已批准，子任务会开始执行。" : "任务计划已批准，暂不开始执行。",
-    reason_text: dispatch ? "后续执行会继续进入可审计的事项流。" : "计划保持已批准状态，需要时可以再手动开始。",
+    title: locale === "zh-CN" ? `${proposal.title} 已批准` : `${proposal.title} approved`,
+    summary_text: dispatch ? proposalT(locale, "merge.plan.dispatch.summary") : proposalT(locale, "merge.plan.hold.summary"),
+    reason_text: dispatch ? proposalT(locale, "merge.plan.dispatch.reason") : proposalT(locale, "merge.plan.hold.reason"),
     actions: [
       ...(!dispatch
         ? [{
             id: "start_task_plan",
-            label: "开始执行计划",
+            label: proposalT(locale, "merge.plan.start"),
             style: "primary" as const,
             method: "POST" as const,
             href: `/api/proposals/${proposal.id}/merge`,
@@ -327,7 +403,7 @@ function taskPlanMergeAttention(proposal: StoredProposal, createdAt: string, dis
         : []),
       {
         id: "open_proposal",
-        label: "查看计划提议",
+        label: pageT(locale, "proposal.action.viewPlan"),
         style: dispatch ? "primary" : "secondary",
         method: "GET",
         href: `/proposals/${proposal.id}`
@@ -343,9 +419,10 @@ function mergeResultFor(input: {
   actor: ReturnType<typeof actorFor>;
   userId: string;
   createdAt: string;
+  locale: WorkHubLocale;
   attention?: AttentionItem;
 }) {
-  const attention = input.attention ?? genericMergeAttention(input.proposal, input.createdAt);
+  const attention = input.attention ?? genericMergeAttention(input.proposal, input.createdAt, input.locale);
   const mergeSnapshotId = input.proposal.merge_snapshot_id;
   if (!mergeSnapshotId) {
     throw new ProposalServiceError(409, "merge_snapshot_missing", "这份变更申请缺少合并快照，请刷新后重新生成或联系管理员处理。");
@@ -358,7 +435,7 @@ function mergeResultFor(input: {
     actor: input.actor,
     work_item_id: input.proposal.work_item_id,
     proposal_id: input.proposal.id,
-    preview_text: `${input.proposal.title} 已采纳。`,
+    preview_text: input.locale === "zh-CN" ? `${input.proposal.title} 已采纳。` : `${input.proposal.title} merged.`,
     attention,
     data: {
       proposal_id: input.proposal.id,
@@ -374,7 +451,7 @@ function mergeResultFor(input: {
     actor: { actor_kind: "system", label: "notification-service" },
     work_item_id: input.proposal.work_item_id,
     proposal_id: input.proposal.id,
-    preview_text: `${input.proposal.title} 已采纳。`,
+    preview_text: input.locale === "zh-CN" ? `${input.proposal.title} 已采纳。` : `${input.proposal.title} merged.`,
     attention,
     data: attention
   });
@@ -539,6 +616,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     // 拿不到本应优先返回的 404/403。授权检查（readProposalForActor → assertCanReadWorkItem）置于解析之前。
     const proposalForAccess = await readProposalForActor(c.req.param("id"), c.var.actor);
     await assertCanMutateWorkItem(proposalForAccess.work_item_id, c.var.actor);
+    const locale = requestLocale(c);
     const payload = reviewProposalRequestSchema.parse(await readJsonObject(c));
     let proposal: StoredProposal;
     try {
@@ -557,7 +635,8 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
       proposal,
       decision: payload.decision,
       ...(payload.reason_md ? { reason: payload.reason_md } : {}),
-      createdAt
+      createdAt,
+      locale
     });
     const actor = actorFor(c.var.actor);
     const event = makeWorkHubEvent({
@@ -568,7 +647,9 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
       actor,
       work_item_id: proposal.work_item_id,
       proposal_id: proposal.id,
-      preview_text: payload.decision === "approve" ? `${proposal.title} 已通过确认。` : `打回原因：${payload.reason_md}`,
+      preview_text: payload.decision === "approve"
+        ? (locale === "zh-CN" ? `${proposal.title} 已通过确认。` : `${proposal.title} approved.`)
+        : (locale === "zh-CN" ? `打回原因：${payload.reason_md}` : `Changes requested: ${payload.reason_md}`),
       attention,
       data: {
         proposal_id: proposal.id,
@@ -591,7 +672,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
       const planReview = isTaskPlanProposal(proposal);
       resultBase.next_action = {
         id: planReview ? "approve_and_dispatch" : "merge",
-        label: planReview ? "批准并开始执行" : "采纳到正式版",
+        label: pageT(locale, planReview ? "proposal.action.approvePlanAndStart" : "proposal.action.merge"),
         method: "POST",
         href: `/api/proposals/${proposal.id}/merge`,
         ...(planReview ? { request_json: { dispatch: true } } : {})
@@ -631,6 +712,7 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     // 应拿 403/404 而非泄露 schema 的 400。
     const proposalForAccess = await readProposalForActor(c.req.param("id"), c.var.actor);
     await assertCanMutateWorkItem(proposalForAccess.work_item_id, c.var.actor);
+    const locale = requestLocale(c);
     const payload = mergeProposalRequestSchema.parse(await readJsonObject(c));
     if (proposalForAccess.status === "merged") {
       const taskPlanTarget = taskPlanApprovalTarget(proposalForAccess);
@@ -647,7 +729,8 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
             actor: actorFor(c.var.actor),
             userId: c.var.currentUser.id,
             createdAt,
-            attention: taskPlanMergeAttention(proposalForAccess, createdAt, true)
+            locale,
+            attention: taskPlanMergeAttention(proposalForAccess, createdAt, true, locale)
           });
           await publishProposalEvents(bus, mergeResult.events, eventLogger);
           return c.json({ ok: true, data: mergeResult });
@@ -728,7 +811,8 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
       actor: actorFor(c.var.actor),
       userId: c.var.currentUser.id,
       createdAt,
-      ...(taskPlanTarget ? { attention: taskPlanMergeAttention(proposal, createdAt, payload.dispatch !== false) } : {})
+      locale,
+      ...(taskPlanTarget ? { attention: taskPlanMergeAttention(proposal, createdAt, payload.dispatch !== false, locale) } : {})
     });
     // findings[#168/H12]：发布 proposal.merged（→ workitem topic）+ notification.created（→ user topic）。
     await publishProposalEvents(bus, mergeResult.events, eventLogger);
@@ -878,6 +962,7 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
     // 泄露 schema 的校验 422。readProposalByMergeProposalForActor 同时承担 uuid 形参校验，置于解析之前。
     const proposalForAccess = await readProposalByMergeProposalForActor(c.req.param("id"), c.var.actor);
     await assertCanMutateWorkItem(proposalForAccess.work_item_id, c.var.actor);
+    const locale = requestLocale(c);
     const payload = applyMergeProposalCandidateRequestSchema.parse(await readJsonObject(c));
     if (payload.confirm === false) {
       return confirmationRequiredResponse(c);
@@ -903,7 +988,8 @@ export function createWorkItemProposalRoutes(deps: ProposalRoutesDependencies = 
         proposal,
         actor: actorFor(c.var.actor),
         userId: c.var.currentUser.id,
-        createdAt: nowIso()
+        createdAt: nowIso(),
+        locale
       });
       // findings[#168/H12]：AI 融合候选采纳也是一次合并，同样发布 proposal.merged + notification。
       await publishProposalEvents(bus, applyResult.events, eventLogger);

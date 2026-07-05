@@ -623,7 +623,7 @@ function bindGoldPathNavigation(
             decision: "request_changes",
             reason_md: reasonMd,
             remember: "once"
-          });
+          }, { locale });
           showRouteNotice(shellRoot, actionSuccessNotice(locale, result.attention.summary_text, pendingReviewActionId ?? "request_changes"));
           pendingReviewHref = undefined;
           pendingReviewActionId = undefined;
@@ -1132,7 +1132,7 @@ function bindGoldPathNavigation(
           return;
         }
         try {
-          const merge = await client.applyMergeProposalCandidate(mergeProposalCandidateApplyId, payload.payload);
+          const merge = await client.applyMergeProposalCandidate(mergeProposalCandidateApplyId, payload.payload, { locale });
           showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
@@ -1167,7 +1167,7 @@ function bindGoldPathNavigation(
           return;
         }
         try {
-          const review = await client.reviewProposal(proposalAction.proposalId, { decision: "approve", remember: "once" });
+          const review = await client.reviewProposal(proposalAction.proposalId, { decision: "approve", remember: "once" }, { locale });
           // M11/L17: approve is a first-class review step (status → reviewed). The
           // irreversible publish to the official version is now a SEPARATE deliberate
           // click — a GitHub-like approve-then-merge flow, not a silent one-click merge.
@@ -1201,7 +1201,7 @@ function bindGoldPathNavigation(
           return;
         }
         try {
-          const merge = await client.mergeProposal(proposalAction.proposalId, payload.payload);
+          const merge = await client.mergeProposal(proposalAction.proposalId, payload.payload, { locale });
           clearActiveRouteDirty();
           showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {

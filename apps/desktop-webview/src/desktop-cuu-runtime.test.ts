@@ -759,6 +759,49 @@ test("desktop Cuu actions submit proposal review choices instead of navigating t
   ]);
 });
 
+test("desktop Cuu proposal actions preserve locale for localized result copy", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async reviewProposal(id: string, payload: unknown, options?: unknown) {
+      calls.push({ type: "review", id, payload, options });
+      return { attention: { summary_text: "Proposal approved." } };
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal(id: string, payload: unknown, options?: unknown) {
+      calls.push({ type: "merge", id, payload, options });
+      return { attention: { summary_text: "Proposal merged." } };
+    },
+    async applyMergeProposalCandidate(id: string, payload: unknown, options?: unknown) {
+      calls.push({ type: "apply", id, payload, options });
+      return { attention: { summary_text: "AI fusion applied." } };
+    }
+  };
+  const review = resolveDesktopCuuAction("/api/proposals/proposal-1/review", { actionId: "approve" });
+  const merge = resolveDesktopCuuAction("/api/proposals/proposal-1/merge", { actionId: "merge" });
+  const apply = resolveDesktopCuuAction("/api/merge-proposals/merge-proposal-1/apply", { actionId: "apply" });
+
+  await submitDesktopCuuAction({ client, action: review!, locale: "en-US" });
+  await submitDesktopCuuAction({ client, action: merge!, locale: "en-US" });
+  await submitDesktopCuuAction({ client, action: apply!, locale: "en-US" });
+
+  assert.deepEqual(calls, [
+    { type: "review", id: "proposal-1", payload: { decision: "approve", remember: "once" }, options: { locale: "en-US" } },
+    { type: "merge", id: "proposal-1", payload: {}, options: { locale: "en-US" } },
+    { type: "apply", id: "merge-proposal-1", payload: {}, options: { locale: "en-US" } }
+  ]);
+});
+
 test("desktop Cuu actions resolve escalation cards with action-specific payloads", async () => {
   const calls: unknown[] = [];
   const client = {

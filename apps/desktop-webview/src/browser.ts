@@ -536,7 +536,7 @@ function bindGoldPathNavigation(
             decision: "request_changes",
             reason_md: reasonMd,
             remember: "once"
-          });
+          }, { locale });
           showRouteNotice(shellRoot, actionSuccessNotice(locale, result.attention.summary_text, pendingReviewActionId ?? "request_changes"));
           pendingReviewHref = undefined;
           pendingReviewActionId = undefined;
@@ -649,7 +649,7 @@ function bindGoldPathNavigation(
           return;
         }
         try {
-          const merge = await client.applyMergeProposalCandidate(mergeProposalCandidateApplyId, payload.payload);
+          const merge = await client.applyMergeProposalCandidate(mergeProposalCandidateApplyId, payload.payload, { locale });
           showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));

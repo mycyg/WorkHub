@@ -350,6 +350,9 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.resolveEscalation("esc 1", { action: "retry" }, { locale: "en-US" });
   await client.resolveBudgetDecision("esc 1", "finish_current_output", { locale: "en-US" });
   await client.delegateEscalation("esc 1", { to_user_id: "user 1" }, { locale: "en-US" });
+  await client.reviewProposal("proposal 1", { decision: "approve" }, { locale: "en-US" });
+  await client.mergeProposal("proposal 1", {}, { locale: "zh-CN" });
+  await client.applyMergeProposalCandidate("merge proposal/1", {}, { locale: "en-US" });
 
   assert.deepEqual(calls, [
     "/api/pages/gold-path?locale=en-US",
@@ -378,7 +381,10 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/meetings/workitems/work%201/proposal-draft?locale=zh-CN",
     "/api/escalations/esc%201/resolve?locale=en-US",
     "/api/escalations/esc%201/budget-actions/finish_current_output?locale=en-US",
-    "/api/escalations/esc%201/delegate?locale=en-US"
+    "/api/escalations/esc%201/delegate?locale=en-US",
+    "/api/proposals/proposal%201/review?locale=en-US",
+    "/api/proposals/proposal%201/merge?locale=zh-CN",
+    "/api/merge-proposals/merge%20proposal%2F1/apply?locale=en-US"
   ]);
 });
 
