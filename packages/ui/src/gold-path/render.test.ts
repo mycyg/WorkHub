@@ -95,6 +95,28 @@ test("approval center renderer does not leak raw approval facts", () => {
   assert.equal(approvals.html.includes(">Routed</span>"), true);
 });
 
+test("gold path renderer localizes work item and proposal check statuses", () => {
+  const vm = surfaceVm();
+  vm.page_vms.workitem.workitem.status = "spec_ready";
+  vm.page_vms.proposal.manifest.checks = [
+    { id: "snapshot_exists", label: "Snapshot exists", status: "passed" },
+    { id: "budget_warning", label: "Budget guard", status: "warning", detail: "Approaching the run cap." }
+  ];
+
+  const rendered = renderGoldPathSurface(vm, "web", { locale: "zh-CN" });
+  const workitem = rendered.pages.find((page) => page.key === "workitem");
+  const proposal = rendered.pages.find((page) => page.key === "proposal");
+
+  assert.ok(workitem);
+  assert.ok(proposal);
+  assert.equal(workitem.html.includes("spec_ready"), false);
+  assert.equal(workitem.html.includes("规格已就绪"), true);
+  assert.equal(proposal.html.includes(">passed<"), false);
+  assert.equal(proposal.html.includes(">warning"), false);
+  assert.equal(proposal.html.includes("通过"), true);
+  assert.equal(proposal.html.includes("有提醒"), true);
+});
+
 test("option intake stays option-first with collapsed free text instead of a chat wall", () => {
   const intake = renderGoldPathSurface(surfaceVm(), "desktop").pages.find((page) => page.key === "intake");
 

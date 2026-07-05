@@ -12,7 +12,7 @@ import type {
   ReplayMergeCandidateVM,
   ReplayTraceVM
 } from "@workhub/contracts";
-import { agentStepPhaseLabel, agentStepPublicSummary, budgetStatusLabel, deliverableTargetLabel, uiFormatCny } from "../i18n.js";
+import { agentStepPhaseLabel, agentStepPublicSummary, budgetStatusLabel, checkStatusLabel, deliverableTargetLabel, uiFormatCny, workItemStatusLabel } from "../i18n.js";
 import { publicProposalDisplayTitle } from "../proposal/render.js";
 import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
 import {
@@ -528,7 +528,7 @@ function renderWorkItem(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, l
     <h1 class="wh-title">${escapeHtml(detail.workitem.title ?? detail.workitem.code)}</h1>
     <p class="wh-subtle">${escapeHtml(detail.workitem.summary_md ?? detail.workitem.raw_description ?? "")}</p>
     <div class="wh-grid">
-      <article class="wh-card"><strong>${escapeHtml(t(locale, "workitem.statusTitle"))}</strong><p class="wh-subtle">${escapeHtml(detail.workitem.status)}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "workitem.statusTitle"))}</strong><p class="wh-subtle">${escapeHtml(workItemStatusLabel(locale, detail.workitem.status))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "workitem.deliverableTitle"))}</strong><p class="wh-subtle">${escapeHtml(detail.latest_proposal?.title ?? t(locale, "workitem.emptyDeliverable"))}</p></article>
     </div>
     <h2>${escapeHtml(t(locale, "workitem.traceTitle"))}</h2><div class="wh-card">${steps}</div>
@@ -547,9 +547,9 @@ function changeRow(change: DeliverableChange, locale: WorkHubLocale) {
   return `<div class="wh-row"><div><strong>${escapeHtml(change.human_summary)}</strong><p class="wh-subtle">${escapeHtml(change.target_ref.path ?? change.target_kind)}</p></div><div class="wh-row-meta"><span class="wh-pill">${escapeHtml(deliverableTargetLabel(locale, change.target_kind))}</span></div></div>`;
 }
 
-function checkRow(check: DeliverableCheck) {
+function checkRow(check: DeliverableCheck, locale: WorkHubLocale) {
   const className = check.status === "warning" ? "wh-check wh-warning" : "wh-check";
-  return `<div class="${className}"><strong>${escapeHtml(check.label)}</strong><span class="wh-subtle">${escapeHtml(check.status)}${check.detail ? ` · ${escapeHtml(check.detail)}` : ""}</span></div>`;
+  return `<div class="${className}"><strong>${escapeHtml(check.label)}</strong><span class="wh-subtle">${escapeHtml(checkStatusLabel(locale, check.status))}${check.detail ? ` · ${escapeHtml(check.detail)}` : ""}</span></div>`;
 }
 
 function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
@@ -573,7 +573,7 @@ function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, l
       <article class="wh-card"><strong>${escapeHtml(t(locale, "proposal.evidenceTitle"))}</strong><p class="wh-subtle">${manifest.evidence_refs.length}${escapeHtml(t(locale, "proposal.evidenceUnit"))}</p></article>
     </div>
     <h2>${escapeHtml(t(locale, "proposal.changedTitle"))}</h2><div class="wh-card">${manifest.changes.map((change) => changeRow(change, locale)).join("")}</div>
-    <h2>${escapeHtml(t(locale, "proposal.checksTitle"))}</h2><div class="wh-list">${manifest.checks.map(checkRow).join("")}</div>
+    <h2>${escapeHtml(t(locale, "proposal.checksTitle"))}</h2><div class="wh-list">${manifest.checks.map((check) => checkRow(check, locale)).join("")}</div>
     ${actions(proposalActions)}`;
   return {
     key: "proposal",
