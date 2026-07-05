@@ -4780,7 +4780,7 @@ export function getOpenApiDocument() {
         post: {
           tags: ["drive"],
           summary: "Upload a minimal project drive file and return the refreshed Drive Page VM",
-          parameters: [pathUuidParameter("projectId")],
+          parameters: [pathUuidParameter("projectId"), localeQueryParameter],
           requestBody: {
             required: true,
             content: {
@@ -4840,7 +4840,8 @@ export function getOpenApiDocument() {
           summary: "Move a project drive item to the recycle area",
           parameters: [
             pathUuidParameter("projectId"),
-            pathUuidParameter("itemId")
+            pathUuidParameter("itemId"),
+            localeQueryParameter
           ],
           ...jsonRequestBody({
             type: "object",
@@ -4873,7 +4874,8 @@ export function getOpenApiDocument() {
           summary: "Restore a recycled project drive item",
           parameters: [
             pathUuidParameter("projectId"),
-            pathUuidParameter("itemId")
+            pathUuidParameter("itemId"),
+            localeQueryParameter
           ],
           responses: {
             ...jsonOkResponse(drivePageResponseSchema).responses,
@@ -4893,7 +4895,8 @@ export function getOpenApiDocument() {
           summary: "Create or return a work item draft from a project drive comment",
           parameters: [
             pathUuidParameter("projectId"),
-            pathUuidParameter("commentId")
+            pathUuidParameter("commentId"),
+            localeQueryParameter
           ],
           responses: {
             ...jsonOkResponse(drivePageResponseSchema).responses,
@@ -4911,7 +4914,7 @@ export function getOpenApiDocument() {
         post: {
           tags: ["drive"],
           summary: "Create or return a deterministic proposal from a Drive comment work item draft",
-          parameters: [pathUuidParameter("workItemId")],
+          parameters: [pathUuidParameter("workItemId"), localeQueryParameter],
           responses: {
             ...jsonOkResponse(workItemDetailResponseSchema).responses,
             ...driveDraftProposalForbiddenResponse.responses,
@@ -4929,7 +4932,8 @@ export function getOpenApiDocument() {
           summary: "Create or return a work item draft from a meeting insight",
           parameters: [
             pathUuidParameter("projectId"),
-            pathUuidParameter("insightId")
+            pathUuidParameter("insightId"),
+            localeQueryParameter
           ],
           responses: {
             ...jsonOkResponse(meetingPageResponseSchema).responses,
@@ -4950,7 +4954,8 @@ export function getOpenApiDocument() {
           summary: "Dismiss a pending meeting insight",
           parameters: [
             pathUuidParameter("projectId"),
-            pathUuidParameter("insightId")
+            pathUuidParameter("insightId"),
+            localeQueryParameter
           ],
           responses: {
             ...jsonOkResponse(meetingPageResponseSchema).responses,
@@ -4967,7 +4972,7 @@ export function getOpenApiDocument() {
         post: {
           tags: ["meetings"],
           summary: "Create or return a deterministic proposal from a meeting-created work item draft",
-          parameters: [pathUuidParameter("workItemId")],
+          parameters: [pathUuidParameter("workItemId"), localeQueryParameter],
           responses: {
             ...jsonOkResponse(workItemDetailResponseSchema).responses,
             "401": meetingMutationNotIdentifiedResponse,
