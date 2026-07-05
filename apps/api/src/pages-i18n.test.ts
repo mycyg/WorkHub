@@ -159,6 +159,35 @@ test("Page VM builders localize generated English copy without translating user/
     ledgerEntries: []
   });
   assert.equal(customCost.budget[0]?.scope_label, "Marketing Team");
+  const costWithNotice = buildCostDashboardPage({
+    settings,
+    isAdmin: true,
+    userId,
+    locale: "en-US",
+    generatedAt: new Date(at),
+    budgetNotices: [
+      {
+        code: "budget_exhausted",
+        severity: "critical",
+        message: "AI 预算已经用完，先暂停新的自动执行。",
+        scope: { kind: "objective", objectiveId: "10000000-0000-4000-8000-000000000060" },
+        usageRatio: 1,
+        recommendedAction: "add_budget",
+        options: [
+          { id: "add_budget", label: "追加预算继续", actionHref: "/dashboard/cost?objectiveId=10000000-0000-4000-8000-000000000060" },
+          { id: "finish_current_output", label: "就用现有产出收尾", actionHref: "/workitems/demo" },
+          { id: "close_scope", label: "整体收工", actionHref: "/workitems/demo" }
+        ],
+        actionHref: "/dashboard/cost?objectiveId=10000000-0000-4000-8000-000000000060"
+      }
+    ],
+    ledgerEntries: []
+  });
+  assert.deepEqual(costWithNotice.notices[0]?.options?.map((option) => option.label), [
+    "Add budget and continue",
+    "Finish with current output",
+    "Close scope"
+  ]);
 
   const settingsPage = buildSettingsPage({ settings, locale: "en-US", generatedAt: new Date(at) });
   assert.equal(settingsPage.locale, "en-US");

@@ -203,6 +203,47 @@ test("R9.7 budget exhaustion rows render as budget decision cards", () => {
   ]);
 });
 
+test("R9.7 budget escalation cards localize durable Chinese labels for English readers", () => {
+  const item = buildEscalationAttentionItem(row({
+    trigger: "budget_exhausted",
+    reasonMd: "AI 预算已经用完，先暂停新的自动执行。",
+    handoffJson: {
+      attention_kind: "budget",
+      notice: {
+        code: "budget_exhausted",
+        severity: "critical",
+        message: "AI 预算已经用完，先暂停新的自动执行。",
+        usage: {
+          scope_label: "目标预算",
+          period: "month",
+          total_tokens: 1001,
+          max_tokens: 1000,
+          remaining_tokens: 0,
+          estimated_cost_cny: "51",
+          max_cost_cny: "50",
+          remaining_cost_cny: "0",
+          status: "exhausted"
+        },
+        recommended_action: "add_budget",
+        options: [
+          { id: "add_budget", label: "追加预算继续", action_href: "/dashboard/cost?objectiveId=obj-1" },
+          { id: "finish_current_output", label: "就用现有产出收尾", action_href: "/workitems/demo" },
+          { id: "close_scope", label: "整体收工", action_href: "/workitems/demo" }
+        ]
+      }
+    }
+  }), "en-US");
+
+  assert.equal(item.title, "\"竞品价格调研\" needs a budget decision");
+  assert.equal(item.summary_text.includes("目标预算"), false);
+  assert.equal(item.summary_text.includes("Objective budget month"), true);
+  assert.deepEqual(item.actions.map((action) => [action.id, action.label, action.method, action.href]), [
+    ["add_budget", "Add budget and continue", "GET", "/dashboard/cost?objectiveId=obj-1"],
+    ["finish_current_output", "Finish with current output", "POST", `/api/escalations/${escalationId}/budget-actions/finish_current_output`],
+    ["close_scope", "Close scope", "POST", `/api/escalations/${escalationId}/budget-actions/close_scope`]
+  ]);
+});
+
 test("R9.7 budget terminal actions apply scope state transitions", async () => {
   const budgetRow = row({
     trigger: "budget_exhausted",

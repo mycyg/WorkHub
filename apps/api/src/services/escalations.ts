@@ -19,6 +19,7 @@ import {
   type WorkspaceMembershipRepository
 } from "@workhub/db";
 
+import { localizedBudgetActionLabel, localizedBudgetUsageScopeLabel } from "../budget-labels.js";
 import type { AuthActor } from "../middleware/auth.js";
 import { getDefaultAgentRunQueue } from "../workers/agent-runner.js";
 import { getDefaultTaskDispatcher, type TaskDispatcher } from "./task-dispatcher.js";
@@ -255,10 +256,11 @@ function budgetActions(row: EscalationServiceRow, locale: WorkHubLocale): Attent
     )
     .map((option, index) => {
       const style = option.id === notice?.recommended_action || index === 0 ? "primary" as const : "secondary" as const;
+      const label = localizedBudgetActionLabel(option.id, option.label, locale);
       if (!isResolvableBudgetActionId(option.id)) {
         return {
           id: option.id,
-          label: option.label,
+          label,
           style,
           method: "GET" as const,
           href: option.action_href ?? notice?.action_href ?? "/dashboard/cost"
@@ -266,7 +268,7 @@ function budgetActions(row: EscalationServiceRow, locale: WorkHubLocale): Attent
       }
       return {
         id: option.id,
-        label: option.label,
+        label,
         style,
         method: "POST" as const,
         href: `/api/escalations/${row.id}/budget-actions/${encodeURIComponent(option.id)}`
@@ -325,10 +327,13 @@ function budgetUsageReason(
   if (totalTokens === undefined || maxTokens === undefined || remainingTokens === undefined || !usedCost || !maxCost || !remainingCost) {
     return "";
   }
-  const scopeLabel = typeof usage.scope_label === "string" && usage.scope_label.trim() ? usage.scope_label.trim() : undefined;
+  const rawScopeLabel = typeof usage.scope_label === "string" && usage.scope_label.trim() ? usage.scope_label.trim() : undefined;
   const period = usage.period === "run" || usage.period === "day" || usage.period === "month" ? usage.period : undefined;
-  const label = [scopeLabel, period ? budgetPeriodLabel(locale, period) : ""].filter(Boolean).join(locale === "zh-CN" ? "（" : " ");
-  const suffix = scopeLabel && period && locale === "zh-CN" ? "）" : "";
+  const localizedScope = localizedBudgetUsageScopeLabel(rawScopeLabel, period, locale);
+  const scopeLabel = localizedScope.label;
+  const periodLabel = period && !localizedScope.periodIncluded ? budgetPeriodLabel(locale, period) : "";
+  const label = [scopeLabel, periodLabel].filter(Boolean).join(locale === "zh-CN" ? "（" : " ");
+  const suffix = scopeLabel && periodLabel && locale === "zh-CN" ? "）" : "";
   if (locale === "en-US") {
     const prefix = label ? `${label}: ` : "";
     return `${prefix}used ${totalTokens}/${maxTokens} tokens, cost ${formatBudgetCny(usedCost)}/${formatBudgetCny(maxCost)}, remaining ${remainingTokens} tokens / ${formatBudgetCny(remainingCost)}.`;

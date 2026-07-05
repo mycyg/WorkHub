@@ -1,6 +1,7 @@
 import { costDashboardVmSchema, type BudgetNotice, type BudgetUsage, type CostDashboardVM, type CostSummaryVM, type WorkHubLocale } from "@workhub/contracts";
 import type { Settings } from "@workhub/config";
 import { isSelfImprovementSource, type BudgetNotice as InternalBudgetNotice, type BudgetUsage as InternalBudgetUsage, type CostLedgerEntry } from "@workhub/cost";
+import { localizedBudgetActionLabel } from "../budget-labels.js";
 import { pageT } from "./i18n.js";
 import { parseOutputContract } from "./output-contract.js";
 
@@ -241,22 +242,6 @@ function toApiBudgetNotice(notice: InternalBudgetNotice, locale: WorkHubLocale):
     } : {}),
     ...(notice.actionHref ? { action_href: notice.actionHref } : {})
   };
-}
-
-function localizedBudgetActionLabel(id: string, fallback: string, locale: WorkHubLocale) {
-  if (id === "add_budget" || id === "finish_current_output" || id === "close_scope") {
-    return fallback;
-  }
-  if (id === "downgrade_model") {
-    return pageT(locale, "cost.action.downgrade");
-  }
-  if (id === "pause") {
-    return pageT(locale, "cost.action.pause");
-  }
-  if (id === "ask_admin") {
-    return pageT(locale, "cost.action.askAdmin");
-  }
-  return fallback;
 }
 
 function localizedScopeLabel(usage: InternalBudgetUsage, locale: WorkHubLocale) {
