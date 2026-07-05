@@ -488,6 +488,8 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(zhReplay?.html.includes("data-text-diff3-auto-merge=\"false\""), true);
   assert.equal(zhReplay?.html.includes("data-text-diff3-conflict-hunks=\"1\""), true);
   assert.equal(zhReplay?.html.includes("data-text-diff3-conflict-ranges=\"2\""), true);
+  assert.equal(zhReplay?.html.includes(">2026-06-05T00:00:00.000Z<"), false);
+  assert.equal(zhReplay?.html.includes(">2026-06-05 00:00<"), true);
   assert.equal(zhReplay?.html.includes("data-overlap-risk=\"requires_review\""), true);
   assert.equal(zhReplay?.html.includes("改动预览"), true);
   assert.equal(zhReplay?.html.includes("文本合并检查"), true);
