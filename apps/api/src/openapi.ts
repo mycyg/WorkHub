@@ -1045,6 +1045,11 @@ const proposalMergeConflictResponse = proposalConflictErrorResponse(
     "delivery_artifact_unsafe_path"
   ]
 );
+const proposalMergeDispatchFailureResponse = jsonErrorStatusResponse(
+  "503",
+  "Task-plan proposal was approved but child-run dispatch failed",
+  ["task_plan_dispatch_failed"]
+).responses["503"];
 const proposalRebaseConflictResponse = jsonErrorStatusResponse(
   "409",
   "Proposal cannot be rebased before it has been reviewed",
@@ -1285,7 +1290,8 @@ const proposalMergeResponse = {
     "403": proposalForbiddenResponse,
     "404": proposalNotFoundResponse,
     "409": proposalMergeConflictResponse,
-    "422": proposalValidationResponse
+    "422": proposalValidationResponse,
+    "503": proposalMergeDispatchFailureResponse
   }
 } as const;
 const proposalMergeCandidateApplyResponse = {

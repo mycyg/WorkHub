@@ -577,12 +577,18 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
           actorId: c.var.actor.userId ?? c.var.actor.id
         });
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         eventLogger.warn("WorkHub task-plan dispatch after proposal merge failed", {
           proposalId: proposal.id,
           workItemId: proposal.work_item_id,
           planId: taskPlanTarget.planId,
-          error: error instanceof Error ? error.message : String(error)
+          error: message
         });
+        throw new ProposalServiceError(
+          503,
+          "task_plan_dispatch_failed",
+          "任务计划已经批准，但派发子任务失败，请稍后刷新后重试。"
+        );
       }
     }
     const mergeResult = mergeResultFor({

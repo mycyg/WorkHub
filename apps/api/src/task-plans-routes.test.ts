@@ -461,7 +461,7 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   assert.notEqual(workItems.status, "cancelled");
 });
 
-test("R9.7 task-plan merge still reports the durable merge when post-approval dispatch fails", async () => {
+test("R9.7 task-plan merge does not report success when post-approval dispatch fails", async () => {
   const runtimeSettings = settings();
   const workItems = new WorkItems();
   const taskPlans = new MemoryTaskPlans();
@@ -543,14 +543,15 @@ test("R9.7 task-plan merge still reports the durable merge when post-approval di
     body: JSON.stringify({})
   });
 
-  assert.equal(merged.status, 200);
-  const body = await merged.json() as { data: { status: string; proposal_id: string } };
-  assert.equal(body.data.status, "merged");
-  assert.equal(body.data.proposal_id, createdBody.data.proposal_id);
+  // R9.7 redline: the old assertion expected HTTP 200 because the proposal merge was durable,
+  // but that hid a failed child-run dispatch from the user and left no decision-inbox recovery path.
+  assert.equal(merged.status, 503);
+  const body = await merged.json() as { error: { code: string } };
+  assert.equal(body.error.code, "task_plan_dispatch_failed");
   assert.equal(taskPlans.rows.get(planId)?.status, "approved");
   assert.deepEqual(
     publishedEvents.filter((type) => type === "proposal.merged" || type === "notification.created"),
-    ["proposal.merged", "notification.created"]
+    []
   );
   assert.equal(warnings[0]?.message, "WorkHub task-plan dispatch after proposal merge failed");
 });

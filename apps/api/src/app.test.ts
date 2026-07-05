@@ -1606,6 +1606,10 @@ test("Proposal OpenAPI contracts document review, merge, and conflict action pay
     type: "string",
     enum: ["validation_error"]
   });
+  assert.deepEqual(jsonErrorCodeProperty(body.paths, "/api/proposals/{id}/merge", "post", "503"), {
+    type: "string",
+    enum: ["task_plan_dispatch_failed"]
+  });
 
   for (const [path, method] of [
     ["/api/workitems/{id}/conflicts", "get"]
