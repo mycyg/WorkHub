@@ -750,7 +750,51 @@ test("R9.7 dispatcher does not complete a partial-failed plan when attention per
 
   assert.equal(repository.row.status, "dispatching");
   assert.equal(repository.doneCalls, 0);
+  // The old assertion expected `failed`, but that consumed the only retryable
+  // state before the decision-inbox attention card was durable.
+  assert.equal(repository.items.find((candidate) => candidate.id === researchItemId)?.status, "dispatched");
+  assert.deepEqual(queue.inputs, []);
+});
+
+test("R9.7 dispatcher keeps partial failure retryable until attention is durable", async () => {
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "dispatched" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "succeeded" }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", status: "succeeded" })
+  ]);
+  const queue = new CapturingQueue();
+  const escalations: string[] = [];
+  let failAttention = true;
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    escalationSink: async (input) => {
+      if (failAttention) {
+        throw new Error("attention write failed once");
+      }
+      escalations.push(input.reason);
+    }
+  });
+  const failedRun = run({
+    status: "failed",
+    taskPlanItemId: researchItemId,
+    workspaceId
+  });
+
+  await assert.rejects(
+    dispatcher.handleRunSettled(failedRun),
+    /attention write failed once/u
+  );
+  failAttention = false;
+
+  const recovered = await dispatcher.handleRunSettled(failedRun);
+
+  assert.equal(recovered?.settledItemId, researchItemId);
+  assert.equal(repository.row.status, "done");
+  assert.equal(repository.doneCalls, 1);
   assert.equal(repository.items.find((candidate) => candidate.id === researchItemId)?.status, "failed");
+  assert.deepEqual(escalations, ["partial_failure"]);
   assert.deepEqual(queue.inputs, []);
 });
 

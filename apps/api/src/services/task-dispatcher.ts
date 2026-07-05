@@ -237,6 +237,15 @@ function updateLocalItems(items: TaskPlanItemRow[], rows: TaskPlanItemRow[]) {
   }
 }
 
+function previewItemStatus(
+  items: TaskPlanItemRow[],
+  itemId: string,
+  status: TaskPlanItemRow["status"],
+  at: Date
+) {
+  return items.map((item) => item.id === itemId ? { ...item, status, updatedAt: at } : item);
+}
+
 function completionSummary(plan: TaskPlanRow, items: TaskPlanItemRow[]) {
   const succeeded = items.filter((item) => item.status === "succeeded");
   const failed = items.filter((item) => item.status === "failed");
@@ -526,6 +535,28 @@ export function createTaskDispatcher(options: {
       return null;
     }
     const at = now();
+    if (settledStatus === "failed") {
+      const loaded = await loadPlan({
+        planId: run.task_plan_id,
+        workspaceId: run.workspace_id
+      });
+      const current = loaded.items.find((item) => item.id === run.task_plan_item_id);
+      if (!current || current.status !== "dispatched") {
+        return null;
+      }
+      const previewItems = previewItemStatus(loaded.items, run.task_plan_item_id, "failed", at);
+      if (blockedByFailedDependency(previewItems).length === 0) {
+        await requireEscalation(escalationSink, {
+          plan: loaded.plan,
+          items: previewItems,
+          skippedItemIds: [],
+          failedItemIds: [run.task_plan_item_id],
+          failedRunId: run.run_id,
+          reason: "partial_failure",
+          at
+        });
+      }
+    }
     const settled = await options.repository.settleDispatchedItem({
       planId: run.task_plan_id,
       workspaceId: run.workspace_id,
@@ -535,23 +566,6 @@ export function createTaskDispatcher(options: {
     });
     if (!settled) {
       return null;
-    }
-    if (settledStatus === "failed") {
-      const loaded = await loadPlan({
-        planId: run.task_plan_id,
-        workspaceId: run.workspace_id
-      });
-      if (blockedByFailedDependency(loaded.items).length === 0) {
-        await requireEscalation(escalationSink, {
-          plan: loaded.plan,
-          items: loaded.items,
-          skippedItemIds: [],
-          failedItemIds: [run.task_plan_item_id],
-          failedRunId: run.run_id,
-          reason: "partial_failure",
-          at
-        });
-      }
     }
     const dispatchResult = await dispatch({
       planId: run.task_plan_id,
