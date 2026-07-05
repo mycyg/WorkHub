@@ -15,9 +15,9 @@ const budgetActionLabels: Record<WorkHubLocale, Record<string, string>> = {
     add_budget: "Add budget and continue",
     finish_current_output: "Finish with current output",
     close_scope: "Close scope",
-    downgrade_model: "Switch to cheaper model",
+    downgrade_model: "Use a cheaper model",
     pause: "Pause for now",
-    ask_admin: "Ask admin"
+    ask_admin: "Ask an admin"
   }
 };
 

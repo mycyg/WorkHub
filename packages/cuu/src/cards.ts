@@ -434,6 +434,30 @@ function budgetStatusLabel(status: CostDashboardVM["top_exhaustion_risks"][numbe
   return cuuT(options.locale, `cost.status.${status}`);
 }
 
+const budgetActionLabels = {
+  "zh-CN": {
+    add_budget: "追加预算继续",
+    finish_current_output: "就用现有产出收尾",
+    close_scope: "整体收工",
+    downgrade_model: "降级模型继续",
+    pause: "先暂停",
+    ask_admin: "找管理员"
+  },
+  "en-US": {
+    add_budget: "Add budget and continue",
+    finish_current_output: "Finish with current output",
+    close_scope: "Close scope",
+    downgrade_model: "Use a cheaper model",
+    pause: "Pause for now",
+    ask_admin: "Ask an admin"
+  }
+} as const;
+
+function budgetActionLabel(id: string, fallback: string, options: CuuLocaleOptions) {
+  const locale = options.locale === "en-US" ? "en-US" : "zh-CN";
+  return budgetActionLabels[locale][id as keyof typeof budgetActionLabels[typeof locale]] ?? fallback;
+}
+
 function dataStringField(data: unknown, key: string) {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     return undefined;
@@ -1152,7 +1176,7 @@ export function cardFromBudgetNotice(notice: BudgetNotice, id = `budget-${notice
   const exhausted = notice.code === "budget_exhausted";
   const actions = notice.options?.map<CuuCardAction>((option) => ({
     id: option.id,
-    label: option.label,
+    label: budgetActionLabel(option.id, option.label, options),
     tone: option.id === notice.recommended_action ? "primary" : "secondary",
     method: "POST",
     href: option.action_href

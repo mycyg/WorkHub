@@ -828,6 +828,10 @@ test("budget-exhausted notices use budget Cuu cards", () => {
   assert.equal(card.message, budgetNotice.message);
   assert.equal(card.actions.find((action) => action.id === "pause")?.tone, "primary");
   assert.equal(card.actions.some((action) => action.id === "abort_agent_run"), false);
+  assert.equal(card.actions.find((action) => action.id === "pause")?.label, "Pause for now");
+  assert.equal(card.actions.find((action) => action.id === "downgrade_model")?.label, "Use a cheaper model");
+  assert.equal(JSON.stringify(card.actions).includes("先暂停"), false);
+  assert.equal(JSON.stringify(card.actions).includes("降级模型继续"), false);
 });
 
 test("replay cost cards localize remaining budget labels", () => {
