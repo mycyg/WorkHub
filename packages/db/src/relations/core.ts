@@ -19,6 +19,8 @@ import {
   reviews,
   snapshots,
   specDocs,
+  taskPlanItems,
+  taskPlans,
   users,
   userProfiles,
   workItemAcceptanceItems,
@@ -44,6 +46,7 @@ export const orgsRelations = relations(orgs, ({ many }) => ({
 export const workspacesRelations = relations(workspaces, ({ many, one }) => ({
   org: one(orgs, { fields: [workspaces.orgId], references: [orgs.id] }),
   projects: many(projects),
+  taskPlans: many(taskPlans),
   permissionPolicies: many(permissionPolicies)
 }));
 
@@ -69,6 +72,7 @@ export const workItemsRelations = relations(workItems, ({ many, one }) => ({
   proposals: many(proposals),
   agentRuns: many(agentRuns),
   acceptanceItems: many(workItemAcceptanceItems),
+  agentTaskPlans: many(taskPlans),
   taskPlans: many(workItemTaskPlans),
   comments: many(comments)
 }));
@@ -120,6 +124,22 @@ export const projectDriveItemsRelations = relations(projectDriveItems, ({ many, 
 export const workItemTaskPlansRelations = relations(workItemTaskPlans, ({ many, one }) => ({
   workItem: one(workItems, { fields: [workItemTaskPlans.workItemId], references: [workItems.id] }),
   items: many(workItemTaskItems)
+}));
+
+export const taskPlansRelations = relations(taskPlans, ({ many, one }) => ({
+  workItem: one(workItems, { fields: [taskPlans.workItemId], references: [workItems.id] }),
+  workspace: one(workspaces, { fields: [taskPlans.workspaceId], references: [workspaces.id] }),
+  createdBy: one(users, { fields: [taskPlans.createdByUserId], references: [users.id] }),
+  items: many(taskPlanItems)
+}));
+
+export const taskPlanItemsRelations = relations(taskPlanItems, ({ one }) => ({
+  plan: one(taskPlans, { fields: [taskPlanItems.planId], references: [taskPlans.id] }),
+  parentItem: one(taskPlanItems, {
+    fields: [taskPlanItems.parentItemId],
+    references: [taskPlanItems.id],
+    relationName: "task_plan_item_parent"
+  })
 }));
 
 export const workItemAcceptanceItemsRelations = relations(workItemAcceptanceItems, ({ one }) => ({

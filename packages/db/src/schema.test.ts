@@ -21,6 +21,8 @@ import {
   proposals,
   sessions,
   snapshots,
+  taskPlanItems,
+  taskPlans,
   usageRecords,
   userCredentials,
   users,
@@ -30,7 +32,9 @@ import {
   workspaceMemberships
 } from "./index.js";
 
-const F02_TABLE_COUNT = 50;
+// R9.1: the old count (50) was correct before the agent-army plan store existed; this slice
+// intentionally adds `task_plans` and `task_plan_items` as the auditable decomposition tables.
+const F02_TABLE_COUNT = 52;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -62,9 +66,33 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("budget_policies"), true);
   assert.equal(tableNames.includes("user_memories"), true);
   assert.equal(tableNames.includes("team_skills"), true);
+  assert.equal(tableNames.includes("task_plans"), true);
+  assert.equal(tableNames.includes("task_plan_items"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
+});
+
+test("R9.1 task plan tables expose auditable decomposition fields", () => {
+  assert.equal(getTableName(taskPlans), "task_plans");
+  assert.equal(taskPlans.workItemId.name, "work_item_id");
+  assert.equal(taskPlans.workspaceId.name, "workspace_id");
+  assert.equal(taskPlans.status.name, "status");
+  assert.equal(taskPlans.objectiveId.name, "objective_id");
+  assert.equal(taskPlans.budgetJson.name, "budget_json");
+  assert.equal(taskPlans.decompositionContextJson.name, "decomposition_context_json");
+  assert.equal(taskPlans.createdByUserId.name, "created_by");
+
+  assert.equal(getTableName(taskPlanItems), "task_plan_items");
+  assert.equal(taskPlanItems.planId.name, "plan_id");
+  assert.equal(taskPlanItems.parentItemId.name, "parent_item_id");
+  assert.equal(taskPlanItems.seq.name, "seq");
+  assert.equal(taskPlanItems.role.name, "role");
+  assert.equal(taskPlanItems.objectiveMd.name, "objective_md");
+  assert.equal(taskPlanItems.acceptanceMd.name, "acceptance_md");
+  assert.equal(taskPlanItems.budgetSharePct.name, "budget_share_pct");
+  assert.equal(taskPlanItems.dependsOn.name, "depends_on");
+  assert.equal(taskPlanItems.status.name, "status");
 });
 
 test("merge attempts persist conflict decisions for replayable proposal audit", () => {

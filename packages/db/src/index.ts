@@ -14,6 +14,7 @@ export * from "./repositories/memberships.js";
 export * from "./repositories/invites.js";
 export * from "./repositories/user-memory.js";
 export * from "./repositories/team-skill.js";
+export * from "./repositories/task-plans.js";
 export * from "./repositories/devices.js";
 export * from "./repositories/approval-requests.js";
 export * from "./repositories/approval-comments.js";
