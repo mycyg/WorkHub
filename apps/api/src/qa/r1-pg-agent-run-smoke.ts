@@ -72,6 +72,7 @@ import type { MergeFusionCandidateGenerator } from "../services/merge-fusion-can
 import { createDbAgentRunPersistence } from "../services/agent-run-persistence.js";
 import { createEscalationService, EscalationServiceError } from "../services/escalations.js";
 import { createDbProposalService, ProposalServiceError } from "../services/proposals.js";
+import { createTaskDispatcher } from "../services/task-dispatcher.js";
 import { createTaskPlanWorkflowService, TaskPlanServiceError } from "../services/task-plans.js";
 import { createDbWorkItemService } from "../services/work-items.js";
 import { createInMemoryAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
@@ -221,7 +222,7 @@ function deterministicTaskPlanner() {
             objectiveMd: "Review that each acceptance item maps to a subtask.",
             acceptanceMd: "All acceptance items are covered by the plan.",
             budgetSharePct: 20,
-            dependsOn: [produceId]
+            dependsOn: []
           }
         ],
         decompositionContext: {
@@ -336,6 +337,12 @@ async function main() {
       humanReserved: false,
       notifications: false,
       eventBus: false
+    });
+    const taskDispatcher = createTaskDispatcher({
+      repository: taskPlanRepository,
+      queue,
+      escalationSink: false,
+      completionSink: false
     });
     const app = withErrors(new Hono<AuthEnv>());
     app.route("/api", createSessionRoutes({ auth, workItems: workItemService }));
@@ -518,6 +525,85 @@ async function main() {
     }
     if (taskPlanPagePlan.items.length !== 3 || taskPlanPagePlan.items_capped) {
       throw new Error(`Expected work item page task_plan to expose 3 uncapped items, got ${taskPlanPagePlan.items.length}`);
+    }
+    const taskPlanDispatch = await taskDispatcher.dispatch({
+      planId: taskPlanCreateBody.data.plan_id,
+      workspaceId: settings.auth.defaultWorkspaceId,
+      orgId: defaultSeedIds.orgId,
+      actorId: seedUser.id
+    });
+    if (taskPlanDispatch.enqueuedItemIds.length !== 2 || taskPlanDispatch.casMissItemIds.length !== 0) {
+      throw new Error(`Expected dispatcher to enqueue 2 ready child runs without CAS misses, got ${JSON.stringify(taskPlanDispatch)}`);
+    }
+    const dispatchedTaskPlanRows = await db.select().from(taskPlans).then((rows) =>
+      rows.filter((row) => row.id === taskPlanCreateBody.data.plan_id)
+    );
+    if (dispatchedTaskPlanRows[0]?.status !== "dispatching") {
+      throw new Error(`Expected task plan dispatching after dispatcher run, got ${dispatchedTaskPlanRows[0]?.status ?? "missing"}`);
+    }
+    const dispatchedTaskPlanItems = await db.select().from(taskPlanItems).then((rows) =>
+      rows.filter((row) => row.planId === taskPlanCreateBody.data.plan_id)
+    );
+    const dispatchedReadyItems = dispatchedTaskPlanItems.filter((row) => row.status === "dispatched");
+    const pendingAfterDispatch = dispatchedTaskPlanItems.filter((row) => row.status === "pending");
+    if (dispatchedReadyItems.length !== 2 || pendingAfterDispatch.length !== 1) {
+      throw new Error(`Expected 2 dispatched ready items and 1 pending dependency, got ${JSON.stringify({
+        dispatched: dispatchedReadyItems.map((row) => ({ id: row.id, role: row.role, activeRunId: row.activeRunId })),
+        pending: pendingAfterDispatch.map((row) => ({ id: row.id, role: row.role }))
+      })}`);
+    }
+    if (dispatchedReadyItems.some((row) => !row.activeRunId)) {
+      throw new Error("Expected dispatched task-plan items to bind active_run_id.");
+    }
+    const taskPlanChildRuns = await db.select().from(agentRuns).then((rows) =>
+      rows.filter((row) => row.taskPlanId === taskPlanCreateBody.data.plan_id)
+    );
+    if (taskPlanChildRuns.length !== 2) {
+      throw new Error(`Expected 2 task-plan child agent_runs, got ${taskPlanChildRuns.length}`);
+    }
+    const researchItem = dispatchedReadyItems.find((row) => row.role === "research");
+    const reviewItem = dispatchedReadyItems.find((row) => row.role === "review");
+    const researchRun = taskPlanChildRuns.find((row) => row.id === researchItem?.activeRunId);
+    const reviewRun = taskPlanChildRuns.find((row) => row.id === reviewItem?.activeRunId);
+    if (!researchRun || !reviewRun) {
+      throw new Error("Expected active_run_id to point at the created child agent_runs.");
+    }
+    const expectedPlanCost = Number.parseFloat(settings.budgets.runCostCny);
+    const childCostTotal = taskPlanChildRuns.reduce((sum, row) => sum + Number.parseFloat(row.maxCostCny), 0);
+    if (Number.isFinite(expectedPlanCost) && childCostTotal > expectedPlanCost + 0.000001) {
+      throw new Error(`Expected child run budget total <= plan budget ${expectedPlanCost}, got ${childCostTotal}`);
+    }
+    if (researchRun.maxTokens !== Math.floor(settings.budgets.runTokens * 0.3)) {
+      throw new Error(`Expected research run max_tokens to be budget-share sliced, got ${researchRun.maxTokens}`);
+    }
+    if (Math.abs(Number.parseFloat(researchRun.maxCostCny) - expectedPlanCost * 0.3) > 0.000001) {
+      throw new Error(`Expected research run max_cost_cny to be 30% of plan budget, got ${researchRun.maxCostCny}`);
+    }
+    const staleRecord = await queue.get(researchRun.id);
+    if (!staleRecord) {
+      throw new Error("Expected queued research run to be readable from queue.");
+    }
+    const staleSettle = await taskDispatcher.handleRunSettled({
+      ...staleRecord,
+      run_id: randomUUID(),
+      status: "succeeded"
+    });
+    if (staleSettle !== null) {
+      throw new Error("Expected stale child run settlement to be ignored by active_run_id fence.");
+    }
+    const currentSettle = await taskDispatcher.handleRunSettled({
+      ...staleRecord,
+      status: "succeeded"
+    });
+    if (!currentSettle || currentSettle.dispatch.enqueuedItemIds.length !== 1) {
+      throw new Error(`Expected current child settlement to unlock exactly one downstream item, got ${JSON.stringify(currentSettle)}`);
+    }
+    const afterSettleItems = await db.select().from(taskPlanItems).then((rows) =>
+      rows.filter((row) => row.planId === taskPlanCreateBody.data.plan_id)
+    );
+    const produceAfterSettle = afterSettleItems.find((row) => row.role === "produce");
+    if (produceAfterSettle?.status !== "dispatched" || !produceAfterSettle.activeRunId) {
+      throw new Error(`Expected produce item dispatched with active_run_id after research settles, got ${JSON.stringify(produceAfterSettle)}`);
     }
     const knowledge = await app.request("/api/knowledge/search", {
       method: "POST",

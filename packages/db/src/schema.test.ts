@@ -165,6 +165,11 @@ test("snapshot refs are wide enough for local absolute snapshot paths", () => {
 
 test("agent run persistence fields support DB-backed replay recovery", () => {
   assert.equal(agentRuns.title.name, "title");
+  assert.equal(agentRuns.parentRunId.name, "parent_run_id");
+  assert.equal(agentRuns.taskPlanId.name, "task_plan_id");
+  assert.equal(agentRuns.taskPlanItemId.name, "task_plan_item_id");
+  assert.equal(agentRuns.agentRole.name, "agent_role");
+  assert.equal(agentRuns.objectiveMd.name, "objective_md");
   assert.equal(agentRuns.actorUserId.name, "actor_user_id");
   assert.equal(agentRuns.totalTimeoutS.name, "total_timeout_s");
   assert.equal(agentRuns.maxTokens.name, "max_tokens");
@@ -177,6 +182,7 @@ test("agent run persistence fields support DB-backed replay recovery", () => {
   assert.equal(agentRuns.heartbeatAt.name, "heartbeat_at");
   assert.equal(agentRuns.leaseExpiresAt.name, "lease_expires_at");
   assert.equal(agentSteps.seq.name, "seq");
+  assert.equal(taskPlanItems.activeRunId.name, "active_run_id");
 });
 
 test("cost ledger persistence fields support P-COST usage recovery", () => {

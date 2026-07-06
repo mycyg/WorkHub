@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 
-import type { WorkItemMode } from "@workhub/contracts";
+import type { TaskPlanItemRole, WorkItemMode } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
 import { agentRuns, agentSteps } from "../schema/index.js";
@@ -47,6 +47,11 @@ export type AgentRunForPersistence = {
   orgId?: string;
   workspaceId?: string;
   workItemId: string;
+  parentRunId?: string;
+  taskPlanId?: string;
+  taskPlanItemId?: string;
+  agentRole?: TaskPlanItemRole;
+  objectiveMd?: string;
   actorUserId: string;
   mode: WorkItemMode;
   status: AgentRunStatusForPersistence;
@@ -109,7 +114,8 @@ export type AgentRunRepository = {
 
 const terminalStatuses: AgentRunStatusForPersistence[] = ["succeeded", "failed", "escalated", "cancelled"];
 const activeStatuses: AgentRunStatusForPersistence[] = ["queued", "running"];
-const activeWorkItemRunWhere = sql`${agentRuns.status} in ('queued', 'running')`;
+const activeOrdinaryWorkItemRunWhere = sql`${agentRuns.status} in ('queued', 'running') and ${agentRuns.taskPlanItemId} is null`;
+const activeTaskPlanItemRunWhere = sql`${agentRuns.status} in ('queued', 'running') and ${agentRuns.taskPlanItemId} is not null`;
 
 function stableUuid(input: string) {
   const hex = createHash("sha256").update(input).digest("hex");
@@ -153,6 +159,11 @@ function runInsertValues(run: AgentRunForPersistence): typeof agentRuns.$inferIn
     orgId: run.orgId,
     workspaceId: run.workspaceId,
     workItemId: run.workItemId,
+    parentRunId: run.parentRunId,
+    taskPlanId: run.taskPlanId,
+    taskPlanItemId: run.taskPlanItemId,
+    agentRole: run.agentRole,
+    objectiveMd: run.objectiveMd,
     mode: run.mode,
     actor: "human",
     actorUserId: run.actorUserId,
@@ -213,6 +224,21 @@ function runUpdateValues(run: AgentRunForPersistence): Partial<typeof agentRuns.
   if (finishedAt) {
     values.finishedAt = finishedAt;
   }
+  if (run.parentRunId !== undefined) {
+    values.parentRunId = run.parentRunId;
+  }
+  if (run.taskPlanId !== undefined) {
+    values.taskPlanId = run.taskPlanId;
+  }
+  if (run.taskPlanItemId !== undefined) {
+    values.taskPlanItemId = run.taskPlanItemId;
+  }
+  if (run.agentRole !== undefined) {
+    values.agentRole = run.agentRole;
+  }
+  if (run.objectiveMd !== undefined) {
+    values.objectiveMd = run.objectiveMd;
+  }
   return values;
 }
 
@@ -272,14 +298,20 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
     },
 
     async createRunIfWorkItemIdle(run) {
-      const rows = await db
-        .insert(agentRuns)
-        .values(runInsertValues(run))
-        .onConflictDoNothing({
-          target: agentRuns.workItemId,
-          where: activeWorkItemRunWhere
-        })
-        .returning();
+      const insert = db.insert(agentRuns).values(runInsertValues(run));
+      const rows = run.taskPlanItemId
+        ? await insert
+          .onConflictDoNothing({
+            target: agentRuns.taskPlanItemId,
+            where: activeTaskPlanItemRunWhere
+          })
+          .returning()
+        : await insert
+          .onConflictDoNothing({
+            target: agentRuns.workItemId,
+            where: activeOrdinaryWorkItemRunWhere
+          })
+          .returning();
       return rows[0] ?? null;
     },
 

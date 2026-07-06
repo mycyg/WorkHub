@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import type { LlmActor } from "@workhub/agent/providers";
+import { settings as runtimeSettings } from "@workhub/config";
+import { defaultRunBudgetFromSettings } from "@workhub/cost";
 import {
   getSharedDatabaseClient,
   createTaskPlanRepository,
@@ -227,8 +229,11 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
       });
       const planId = nextId();
       const createdAt = now();
+      const defaultBudget = defaultRunBudgetFromSettings(runtimeSettings);
       const budgetJson: JsonObject = {
-        total_share_pct: draft.items.reduce((sum, item) => sum + item.budgetSharePct, 0)
+        total_share_pct: draft.items.reduce((sum, item) => sum + item.budgetSharePct, 0),
+        max_tokens: defaultBudget.maxTokens,
+        max_cost_cny: defaultBudget.maxCostCny
       };
       await options.taskPlans.createDraftPlan({
         id: planId,

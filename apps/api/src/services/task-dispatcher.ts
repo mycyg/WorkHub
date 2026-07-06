@@ -1,0 +1,551 @@
+import {
+  createAiDecisionRepository,
+  createAuditLogRepository,
+  createTaskPlanRepository,
+  getSharedDatabaseClient,
+  type AiDecisionRepository,
+  type AuditLogRepository,
+  type TaskPlanItemRow,
+  type TaskPlanRow,
+  type TaskPlanWithItems
+} from "@workhub/db";
+
+import { getDefaultStructuredLogger } from "../logging.js";
+import type {
+  AgentRunQueue,
+  AgentRunQueueRecord
+} from "../workers/agent-runner.js";
+
+type SettledItemStatus = Extract<TaskPlanItemRow["status"], "succeeded" | "failed">;
+type EscalationReason = "cycle" | "dependency_failed";
+type ChildBudgetOverride = {
+  maxTokens?: number;
+  maxCostCny?: string;
+};
+
+export type TaskDispatcherRepository = {
+  getPlanWithItems: (input: {
+    planId: string;
+    workspaceId: string;
+    itemLimit?: number;
+  }) => Promise<TaskPlanWithItems | null>;
+  startDispatchingPlan: (input: {
+    planId: string;
+    workspaceId: string;
+    startedAt?: Date;
+  }) => Promise<TaskPlanRow | null>;
+  markItemDispatched: (input: {
+    planId: string;
+    itemId: string;
+    dispatchedAt?: Date;
+  }) => Promise<TaskPlanItemRow | null>;
+  markItemActiveRun: (input: {
+    planId: string;
+    itemId: string;
+    runId: string;
+    activatedAt?: Date;
+  }) => Promise<TaskPlanItemRow | null>;
+  settleDispatchedItem: (input: {
+    planId: string;
+    itemId: string;
+    runId: string;
+    status: SettledItemStatus;
+    settledAt?: Date;
+  }) => Promise<TaskPlanItemRow | null>;
+  skipPendingItems: (input: {
+    planId: string;
+    itemIds: string[];
+    skippedAt?: Date;
+  }) => Promise<TaskPlanItemRow[]>;
+  markPlanDone: (input: {
+    planId: string;
+    workspaceId: string;
+    doneAt?: Date;
+  }) => Promise<TaskPlanRow | null>;
+};
+
+export type TaskDispatchInput = {
+  planId: string;
+  workspaceId: string;
+  orgId?: string;
+  actorId?: string;
+  parentRunId?: string;
+};
+
+export type TaskDispatchResult = {
+  planId: string;
+  enqueuedItemIds: string[];
+  skippedItemIds: string[];
+  casMissItemIds: string[];
+  completed: boolean;
+};
+
+export type TaskRunSettledResult = {
+  planId: string;
+  settledItemId: string;
+  settledStatus: SettledItemStatus;
+  dispatch: TaskDispatchResult;
+};
+
+export type TaskDispatchEscalationSink = (input: {
+  plan: TaskPlanRow;
+  items: TaskPlanItemRow[];
+  skippedItemIds: string[];
+  reason: EscalationReason;
+  at: Date;
+}) => Promise<void> | void;
+
+export type TaskDispatchCompletionSink = (input: {
+  plan: TaskPlanRow;
+  items: TaskPlanItemRow[];
+  summaryMd: string;
+  at: Date;
+}) => Promise<void> | void;
+
+export class TaskDispatcherError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+const ITEM_READ_LIMIT = 100;
+const TERMINAL_ITEM_STATUSES = new Set<TaskPlanItemRow["status"]>(["succeeded", "failed", "skipped"]);
+const FAILED_DEPENDENCY_STATUSES = new Set<TaskPlanItemRow["status"]>(["failed", "skipped"]);
+
+function itemById(items: TaskPlanItemRow[]) {
+  return new Map(items.map((item) => [item.id, item]));
+}
+
+function pendingItems(items: TaskPlanItemRow[]) {
+  return items.filter((item) => item.status === "pending");
+}
+
+function hasDependencyCycle(items: TaskPlanItemRow[]) {
+  const byId = itemById(items);
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  const visit = (id: string): boolean => {
+    if (visiting.has(id)) {
+      return true;
+    }
+    if (visited.has(id)) {
+      return false;
+    }
+    const item = byId.get(id);
+    if (!item) {
+      return false;
+    }
+    visiting.add(id);
+    for (const dependencyId of item.dependsOn ?? []) {
+      if (byId.has(dependencyId) && visit(dependencyId)) {
+        return true;
+      }
+    }
+    visiting.delete(id);
+    visited.add(id);
+    return false;
+  };
+
+  return items.some((item) => visit(item.id));
+}
+
+function blockedByFailedDependency(items: TaskPlanItemRow[]) {
+  const byId = itemById(items);
+  return pendingItems(items).filter((item) =>
+    (item.dependsOn ?? []).some((dependencyId) => {
+      const dependency = byId.get(dependencyId);
+      return !dependency || FAILED_DEPENDENCY_STATUSES.has(dependency.status);
+    })
+  );
+}
+
+function readyPendingItems(items: TaskPlanItemRow[]) {
+  const byId = itemById(items);
+  return pendingItems(items).filter((item) =>
+    (item.dependsOn ?? []).every((dependencyId) => byId.get(dependencyId)?.status === "succeeded")
+  );
+}
+
+function allTerminal(items: TaskPlanItemRow[]) {
+  return items.length > 0 && items.every((item) => TERMINAL_ITEM_STATUSES.has(item.status));
+}
+
+function taskObjective(item: TaskPlanItemRow) {
+  return [
+    "Objective:",
+    item.objectiveMd,
+    "",
+    "Acceptance:",
+    item.acceptanceMd,
+    "",
+    `Budget share: ${item.budgetSharePct}%`
+  ].join("\n");
+}
+
+function parsePositiveNumber(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function formatCny(value: number): string {
+  return value.toFixed(6).replace(/0+$/u, "").replace(/\.$/u, "");
+}
+
+function childBudgetOverride(plan: TaskPlanRow, item: TaskPlanItemRow): ChildBudgetOverride | undefined {
+  const share = Math.max(0, Math.min(100, item.budgetSharePct)) / 100;
+  if (share <= 0) {
+    return undefined;
+  }
+  const planBudget = plan.budgetJson as Record<string, unknown>;
+  const maxCost = parsePositiveNumber(planBudget["max_cost_cny"]);
+  const maxTokens = parsePositiveNumber(planBudget["max_tokens"]);
+  const override: ChildBudgetOverride = {};
+  if (maxCost !== undefined) {
+    override.maxCostCny = formatCny(maxCost * share);
+  }
+  if (maxTokens !== undefined) {
+    override.maxTokens = Math.max(1, Math.floor(maxTokens * share));
+  }
+  return Object.keys(override).length > 0 ? override : undefined;
+}
+
+function updateLocalItemStatus(items: TaskPlanItemRow[], itemId: string, status: TaskPlanItemRow["status"], at: Date) {
+  const item = items.find((candidate) => candidate.id === itemId);
+  if (item) {
+    item.status = status;
+    item.updatedAt = at;
+  }
+}
+
+function updateLocalItems(items: TaskPlanItemRow[], rows: TaskPlanItemRow[]) {
+  for (const row of rows) {
+    const index = items.findIndex((item) => item.id === row.id);
+    if (index >= 0) {
+      items[index] = row;
+    }
+  }
+}
+
+function completionSummary(plan: TaskPlanRow, items: TaskPlanItemRow[]) {
+  const succeeded = items.filter((item) => item.status === "succeeded");
+  const failed = items.filter((item) => item.status === "failed");
+  const skipped = items.filter((item) => item.status === "skipped");
+  return [
+    `Task plan ${plan.id} completed.`,
+    `Succeeded items: ${succeeded.map((item) => item.title).join(", ") || "none"}.`,
+    `Failed items: ${failed.map((item) => item.title).join(", ") || "none"}.`,
+    `Skipped items: ${skipped.map((item) => item.title).join(", ") || "none"}.`
+  ].join("\n");
+}
+
+function terminalStatusForRun(run: AgentRunQueueRecord): SettledItemStatus | null {
+  if (run.status === "succeeded") {
+    return "succeeded";
+  }
+  if (run.status === "failed" || run.status === "escalated" || run.status === "cancelled") {
+    return "failed";
+  }
+  return null;
+}
+
+async function bestEffortEscalate(
+  sink: TaskDispatchEscalationSink | undefined,
+  input: Parameters<TaskDispatchEscalationSink>[0]
+) {
+  if (!sink || input.skippedItemIds.length === 0) {
+    return;
+  }
+  try {
+    await sink(input);
+  } catch (error) {
+    getDefaultStructuredLogger().warn("task_dispatch_escalation_failed", {
+      planId: input.plan.id,
+      reason: input.reason,
+      error
+    });
+  }
+}
+
+async function bestEffortComplete(
+  sink: TaskDispatchCompletionSink | undefined,
+  input: Parameters<TaskDispatchCompletionSink>[0]
+) {
+  if (!sink) {
+    return;
+  }
+  try {
+    await sink(input);
+  } catch (error) {
+    getDefaultStructuredLogger().warn("task_dispatch_completion_timeline_failed", {
+      planId: input.plan.id,
+      error
+    });
+  }
+}
+
+export function createTaskDispatcher(options: {
+  repository: TaskDispatcherRepository;
+  queue: Pick<AgentRunQueue, "enqueue">;
+  escalationSink?: TaskDispatchEscalationSink | false;
+  completionSink?: TaskDispatchCompletionSink | false;
+  now?: () => Date;
+}) {
+  const now = options.now ?? (() => new Date());
+  const escalationSink = options.escalationSink === false ? undefined : options.escalationSink;
+  const completionSink = options.completionSink === false ? undefined : options.completionSink;
+
+  async function loadPlan(input: { planId: string; workspaceId: string }) {
+    const loaded = await options.repository.getPlanWithItems({
+      planId: input.planId,
+      workspaceId: input.workspaceId,
+      itemLimit: ITEM_READ_LIMIT
+    });
+    if (!loaded) {
+      throw new TaskDispatcherError(404, "task_plan_not_found", "没有找到这个任务计划。");
+    }
+    if (loaded.itemsCapped) {
+      throw new TaskDispatcherError(409, "task_plan_items_capped", "任务计划子项超过派发上限，请先拆小。");
+    }
+    return loaded;
+  }
+
+  async function maybeCompletePlan(plan: TaskPlanRow, items: TaskPlanItemRow[], at: Date) {
+    if (!allTerminal(items)) {
+      return false;
+    }
+    const done = await options.repository.markPlanDone({
+      planId: plan.id,
+      workspaceId: plan.workspaceId,
+      doneAt: at
+    });
+    if (!done) {
+      return false;
+    }
+    await bestEffortComplete(completionSink, {
+      plan: done,
+      items,
+      summaryMd: completionSummary(done, items),
+      at
+    });
+    return true;
+  }
+
+  async function dispatch(input: TaskDispatchInput): Promise<TaskDispatchResult> {
+    const at = now();
+    const loaded = await loadPlan(input);
+    let plan = loaded.plan;
+    const items = loaded.items.map((item) => ({ ...item }));
+    const result: TaskDispatchResult = {
+      planId: plan.id,
+      enqueuedItemIds: [],
+      skippedItemIds: [],
+      casMissItemIds: [],
+      completed: false
+    };
+
+    if (plan.status === "approved") {
+      plan = await options.repository.startDispatchingPlan({
+        planId: input.planId,
+        workspaceId: input.workspaceId,
+        startedAt: at
+      }) ?? plan;
+    }
+    if (plan.status !== "approved" && plan.status !== "dispatching") {
+      result.completed = await maybeCompletePlan(plan, items, at);
+      return result;
+    }
+
+    if (hasDependencyCycle(items)) {
+      const toSkip = pendingItems(items).map((item) => item.id);
+      const skipped = await options.repository.skipPendingItems({ planId: plan.id, itemIds: toSkip, skippedAt: at });
+      updateLocalItems(items, skipped);
+      result.skippedItemIds.push(...skipped.map((item) => item.id));
+      await bestEffortEscalate(escalationSink, {
+        plan,
+        items,
+        skippedItemIds: result.skippedItemIds,
+        reason: "cycle",
+        at
+      });
+      result.completed = await maybeCompletePlan(plan, items, at);
+      return result;
+    }
+
+    const blocked = blockedByFailedDependency(items);
+    if (blocked.length > 0) {
+      const skipped = await options.repository.skipPendingItems({
+        planId: plan.id,
+        itemIds: blocked.map((item) => item.id),
+        skippedAt: at
+      });
+      updateLocalItems(items, skipped);
+      result.skippedItemIds.push(...skipped.map((item) => item.id));
+      await bestEffortEscalate(escalationSink, {
+        plan,
+        items,
+        skippedItemIds: result.skippedItemIds,
+        reason: "dependency_failed",
+        at
+      });
+    }
+
+    for (const item of readyPendingItems(items)) {
+      const dispatched = await options.repository.markItemDispatched({
+        planId: plan.id,
+        itemId: item.id,
+        dispatchedAt: at
+      });
+      if (!dispatched) {
+        result.casMissItemIds.push(item.id);
+        continue;
+      }
+      updateLocalItemStatus(items, item.id, "dispatched", at);
+      const budgetOverride = childBudgetOverride(plan, item);
+      const childRun = await options.queue.enqueue({
+        workItemId: plan.workItemId,
+        actorId: input.actorId ?? plan.createdByUserId,
+        ...(input.orgId ? { orgId: input.orgId } : {}),
+        workspaceId: plan.workspaceId,
+        ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
+        taskPlanId: plan.id,
+        taskPlanItemId: item.id,
+        agentRole: item.role,
+        objectiveMd: taskObjective(item),
+        ...(budgetOverride ? { budgetOverride } : {}),
+        title: item.title,
+        mode: "worker"
+      });
+      const active = await options.repository.markItemActiveRun({
+        planId: plan.id,
+        itemId: item.id,
+        runId: childRun.run_id,
+        activatedAt: at
+      });
+      if (!active) {
+        throw new TaskDispatcherError(409, "task_plan_item_active_run_lost", "子任务派发状态已变化，请稍后重试。");
+      }
+      updateLocalItems(items, [active]);
+      result.enqueuedItemIds.push(item.id);
+    }
+
+    result.completed = await maybeCompletePlan(plan, items, at);
+    return result;
+  }
+
+  async function handleRunSettled(run: AgentRunQueueRecord): Promise<TaskRunSettledResult | null> {
+    const settledStatus = terminalStatusForRun(run);
+    if (!settledStatus || !run.task_plan_id || !run.task_plan_item_id) {
+      return null;
+    }
+    if (!run.workspace_id) {
+      getDefaultStructuredLogger().warn("task_dispatch_run_settled_missing_workspace", {
+        runId: run.run_id,
+        taskPlanId: run.task_plan_id,
+        taskPlanItemId: run.task_plan_item_id
+      });
+      return null;
+    }
+    const at = now();
+    const settled = await options.repository.settleDispatchedItem({
+      planId: run.task_plan_id,
+      itemId: run.task_plan_item_id,
+      runId: run.run_id,
+      status: settledStatus,
+      settledAt: at
+    });
+    if (!settled) {
+      return null;
+    }
+    const dispatchResult = await dispatch({
+      planId: run.task_plan_id,
+      workspaceId: run.workspace_id,
+      ...(run.org_id ? { orgId: run.org_id } : {}),
+      actorId: run.actor_id,
+      ...(run.parent_run_id ? { parentRunId: run.parent_run_id } : {})
+    });
+    return {
+      planId: run.task_plan_id,
+      settledItemId: run.task_plan_item_id,
+      settledStatus,
+      dispatch: dispatchResult
+    };
+  }
+
+  return {
+    dispatch,
+    handleRunSettled
+  };
+}
+
+export type TaskDispatcher = ReturnType<typeof createTaskDispatcher>;
+
+export function createDbTaskDispatchEscalationSink(
+  decisions: Pick<AiDecisionRepository, "createEscalationEvent">
+): TaskDispatchEscalationSink {
+  return async (input) => {
+    await decisions.createEscalationEvent({
+      workItemId: input.plan.workItemId,
+      trigger: input.reason === "cycle" ? "doom_loop" : "unqualified",
+      reasonMd: input.reason === "cycle"
+        ? "任务计划依赖图存在循环，已跳过未派发的子任务，请人工调整计划后重试。"
+        : "任务计划的上游子任务失败或被跳过，依赖它的子任务已跳过，请人工决定是否重试或改计划。",
+      handoffJson: {
+        source: "task_dispatcher",
+        reason: input.reason,
+        task_plan_id: input.plan.id,
+        skipped_item_ids: input.skippedItemIds
+      }
+    });
+  };
+}
+
+export function createDbTaskDispatchCompletionSink(
+  auditLogs: Pick<AuditLogRepository, "createAuditLog">
+): TaskDispatchCompletionSink {
+  return async (input) => {
+    await auditLogs.createAuditLog({
+      workspaceId: input.plan.workspaceId,
+      actorKind: "system",
+      actorNickname: "WorkHub",
+      entityType: "work_item",
+      entityId: input.plan.workItemId,
+      action: "task_plan.completed",
+      detailJson: {
+        task_plan_id: input.plan.id,
+        summary_md: input.summaryMd,
+        item_statuses: input.items.map((item) => ({
+          id: item.id,
+          title: item.title,
+          status: item.status,
+          role: item.role
+        }))
+      }
+    });
+  };
+}
+
+let defaultTaskDispatcher: TaskDispatcher | undefined;
+
+export function getDefaultTaskDispatcher(queue: Pick<AgentRunQueue, "enqueue">) {
+  if (!defaultTaskDispatcher) {
+    const dbClient = getSharedDatabaseClient();
+    defaultTaskDispatcher = createTaskDispatcher({
+      repository: createTaskPlanRepository(dbClient.db),
+      queue,
+      escalationSink: createDbTaskDispatchEscalationSink(createAiDecisionRepository(dbClient.db)),
+      completionSink: createDbTaskDispatchCompletionSink(createAuditLogRepository(dbClient.db))
+    });
+  }
+  return defaultTaskDispatcher;
+}

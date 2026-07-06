@@ -732,6 +732,7 @@ export const taskPlanItems = pgTable(
     acceptanceMd: text("acceptance_md").notNull(),
     budgetSharePct: integer("budget_share_pct").notNull(),
     dependsOn: uuid("depends_on").array().$type<string[]>().notNull().default(sql`'{}'::uuid[]`),
+    activeRunId: uuid("active_run_id").references((): AnyPgColumn => agentRuns.id, { onDelete: "set null" }),
     status: varchar("status", { length: 16 }).$type<TaskPlanItemStatus>().notNull().default("pending"),
     ...timestamps()
   },
@@ -739,7 +740,8 @@ export const taskPlanItems = pgTable(
     index("task_plan_items_plan_seq_idx").on(table.planId, table.seq),
     index("task_plan_items_parent_item_id_idx").on(table.parentItemId),
     index("task_plan_items_status_idx").on(table.status),
-    index("task_plan_items_role_idx").on(table.role)
+    index("task_plan_items_role_idx").on(table.role),
+    index("task_plan_items_active_run_id_idx").on(table.activeRunId)
   ]
 );
 
@@ -1084,6 +1086,11 @@ export const agentRuns = pgTable(
     ...tenantColumns(),
     workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
     branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
+    parentRunId: uuid("parent_run_id").references((): AnyPgColumn => agentRuns.id, { onDelete: "set null" }),
+    taskPlanId: uuid("task_plan_id").references(() => taskPlans.id, { onDelete: "set null" }),
+    taskPlanItemId: uuid("task_plan_item_id").references(() => taskPlanItems.id, { onDelete: "set null" }),
+    agentRole: varchar("agent_role", { length: 16 }).$type<TaskPlanItemRole>(),
+    objectiveMd: text("objective_md"),
     mode: varchar("mode", { length: 16 }).$type<WorkItemMode>().notNull(),
     actor: varchar("actor", { length: 32 }).notNull(),
     actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
@@ -1120,11 +1127,17 @@ export const agentRuns = pgTable(
     index("agent_runs_workspace_id_idx").on(table.workspaceId),
     index("agent_runs_work_item_id_idx").on(table.workItemId),
     index("agent_runs_branch_id_idx").on(table.branchId),
+    index("agent_runs_parent_run_id_idx").on(table.parentRunId),
+    index("agent_runs_task_plan_id_idx").on(table.taskPlanId),
+    index("agent_runs_task_plan_item_id_idx").on(table.taskPlanItemId),
     index("agent_runs_actor_user_id_idx").on(table.actorUserId),
     index("agent_runs_status_idx").on(table.status),
     uniqueIndex("agent_runs_work_item_active_uq")
       .on(table.workItemId)
-      .where(sql`${table.status} in ('queued', 'running')`),
+      .where(sql`${table.status} in ('queued', 'running') and ${table.taskPlanItemId} is null`),
+    uniqueIndex("agent_runs_task_plan_item_active_uq")
+      .on(table.taskPlanItemId)
+      .where(sql`${table.status} in ('queued', 'running') and ${table.taskPlanItemId} is not null`),
     index("agent_runs_claim_idx").on(table.status, table.leaseExpiresAt, table.createdAt),
     index("agent_runs_claimed_by_idx").on(table.claimedBy)
   ]

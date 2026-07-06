@@ -25,6 +25,7 @@ import { malformedJsonMessage } from "./routes/json-body.js";
 import { buildP05GoldPathSurfacePage } from "./pages/gold-path.js";
 import { InternalContractError } from "./pages/output-contract.js";
 import type { ApprovalService } from "./services/approvals.js";
+import type { EscalationService } from "./services/escalations.js";
 import { InProcessPushBus } from "./broker/memory.js";
 import { createProposalRoutes } from "./routes/proposals.js";
 import { createSessionRoutes } from "./routes/sessions.js";
@@ -169,6 +170,22 @@ function emptyQueue(): AgentRunQueue {
   };
 }
 
+function emptyEscalations(): EscalationService {
+  return {
+    async listAttentionItems() {
+      return [];
+    }
+  } as unknown as EscalationService;
+}
+
+function failingEscalations(): EscalationService {
+  return {
+    async listAttentionItems() {
+      throw new Error("db down");
+    }
+  } as unknown as EscalationService;
+}
+
 function pageRun(partial: Partial<AgentRunQueueRecord> = {}): AgentRunQueueRecord {
   const runtimeSettings = settings();
   return {
@@ -294,6 +311,7 @@ test("attention home decision queue is fed by the user's pending approvals", asy
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
+    escalations: emptyEscalations(),
     // 决策队列必须接真实的"用户待决策审批"源；这里用 gold-path 审批中心做替身。
     approvals: { async listPendingForUser() { return fixture.approvalCenter; } } as unknown as ApprovalService,
     // 决策队列现在按可读工作项收口（findings）；注入放行所有工作项的 workItems，让 fixture 审批项保持可见。
@@ -485,6 +503,7 @@ test("attention home marks the decision queue as partial when the approvals look
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
+    escalations: failingEscalations(),
     approvals: { async listPendingForUser() { throw new Error("db down"); } } as unknown as ApprovalService,
     proposals: { async listReviewableForUser() { return []; } } as never
   }));
