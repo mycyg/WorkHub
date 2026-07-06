@@ -432,6 +432,7 @@ export function createTaskDispatcher(options: {
         workspaceId: plan.workspaceId,
         ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
         taskPlanId: plan.id,
+        ...(plan.objectiveId ? { objectiveId: plan.objectiveId } : {}),
         taskPlanItemId: item.id,
         agentRole: item.role,
         objectiveMd: taskObjective(item),

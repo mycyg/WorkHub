@@ -2522,6 +2522,18 @@ const budgetScopeResponseSchema = {
     },
     {
       type: "object",
+      required: ["kind", "task_plan_id"],
+      properties: { kind: { type: "string", const: "task" }, task_plan_id: uuidStringSchema },
+      additionalProperties: false
+    },
+    {
+      type: "object",
+      required: ["kind", "objective_id"],
+      properties: { kind: { type: "string", const: "objective" }, objective_id: uuidStringSchema },
+      additionalProperties: false
+    },
+    {
+      type: "object",
       required: ["kind", "user_id"],
       properties: { kind: { type: "string", const: "user" }, user_id: uuidStringSchema },
       additionalProperties: false
@@ -2653,7 +2665,7 @@ const budgetPolicyResponseSchema = {
   ],
   properties: {
     id: { type: "string", minLength: 1 },
-    scope_kind: { type: "string", enum: ["workitem", "user", "team", "eval"] },
+    scope_kind: { type: "string", enum: ["workitem", "task", "objective", "user", "team", "eval"] },
     period: { type: "string", enum: ["run", "day", "month"] },
     max_tokens: { type: "integer", minimum: 1 },
     max_cost_cny: { type: "string", pattern: "^\\d+(\\.\\d+)?$" },
@@ -2754,6 +2766,8 @@ const costDashboardPageResponseSchema = {
     "by_user",
     "by_team",
     "by_workitem",
+    "by_task",
+    "by_objective",
     "model_breakdown",
     "budget",
     "notices",
@@ -2770,6 +2784,8 @@ const costDashboardPageResponseSchema = {
     by_user: { type: "array", items: { type: "object", additionalProperties: true } },
     by_team: { type: "array", items: { type: "object", additionalProperties: true } },
     by_workitem: { type: "array", items: { type: "object", additionalProperties: true } },
+    by_task: { type: "array", items: { type: "object", additionalProperties: true } },
+    by_objective: { type: "array", items: { type: "object", additionalProperties: true } },
     model_breakdown: { type: "array", items: { type: "object", additionalProperties: true } },
     labor_split: { type: "object", additionalProperties: true },
     budget: { type: "array", items: { type: "object", additionalProperties: true } },

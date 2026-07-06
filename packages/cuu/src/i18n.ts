@@ -69,6 +69,8 @@ export type CuuCopyKey =
   | "workItem.acceptanceFallback"
   | "workItem.startedFallback"
   | "budget.scope.workitem"
+  | "budget.scope.task"
+  | "budget.scope.objective"
   | "budget.scope.user"
   | "budget.scope.team"
   | "budget.scope.curation"
@@ -274,6 +276,8 @@ const cuuCopy = {
     "workItem.acceptanceFallback": "验收项 {index}",
     "workItem.startedFallback": "Cuu 开始处理这件事了。",
     "budget.scope.workitem": "任务预算",
+    "budget.scope.task": "任务计划预算",
+    "budget.scope.objective": "目标预算",
     "budget.scope.user": "个人预算",
     "budget.scope.team": "团队预算",
     "budget.scope.curation": "蒸馏预算",
@@ -478,6 +482,8 @@ const cuuCopy = {
     "workItem.acceptanceFallback": "Acceptance item {index}",
     "workItem.startedFallback": "Cuu started working on this task.",
     "budget.scope.workitem": "Task budget",
+    "budget.scope.task": "Task-plan budget",
+    "budget.scope.objective": "Objective budget",
     "budget.scope.user": "Personal budget",
     "budget.scope.team": "Team budget",
     "budget.scope.curation": "Curation budget",

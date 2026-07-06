@@ -274,6 +274,13 @@
       "when": 1781513333742,
       "tag": "0038_objectives",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1781513433742,
+      "tag": "0039_budget_objective_scope",
+      "breakpoints": true
     }
   ]
 }

@@ -382,6 +382,10 @@ function budgetScopeChip(scope: BudgetScope, options: CuuLocaleOptions = {}): Cu
   switch (scope.kind) {
     case "workitem":
       return { id: "scope", label: cuuT(options.locale, "budget.scope.workitem"), description: scope.workitem_id };
+    case "task":
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.task"), description: scope.task_plan_id };
+    case "objective":
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.objective"), description: scope.objective_id };
     case "user":
       return { id: "scope", label: cuuT(options.locale, "budget.scope.user"), description: scope.user_id };
     case "team":

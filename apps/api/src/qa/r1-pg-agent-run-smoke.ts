@@ -750,9 +750,15 @@ async function main() {
     const policyListBeforeBody = await policyListBefore.json() as {
       data: { id: string; scope_kind: string; max_tokens: number; max_cost_cny: string; version: number }[];
     };
-    // 5 条默认策略：workitem-run / user-day / team-day / team-month / eval-day（M21 新增 eval 上限）。
-    if (policyListBeforeBody.data.length !== 5) {
-      throw new Error(`Expected 5 default P-COST policies, got ${policyListBeforeBody.data.length}`);
+    // R9.5：旧断言只数 5 条默认策略；task/objective 预算现在也是 enqueue 与成本页的默认契约，
+    // R1 smoke 必须确认这两条存在，避免生产 PG 路径继续沿用旧预算面。
+    const defaultPolicyIds = policyListBeforeBody.data.map((policy) => policy.id).sort();
+    if (
+      policyListBeforeBody.data.length !== 7
+      || !defaultPolicyIds.includes("pcost-task-day-v0")
+      || !defaultPolicyIds.includes("pcost-objective-day-v0")
+    ) {
+      throw new Error(`Expected 7 default P-COST policies with task/objective scopes, got ${JSON.stringify(defaultPolicyIds)}`);
     }
     const userPolicyBefore = policyListBeforeBody.data.find((policy) => policy.id === "pcost-user-day-v0");
     if (!userPolicyBefore || userPolicyBefore.scope_kind !== "user") {

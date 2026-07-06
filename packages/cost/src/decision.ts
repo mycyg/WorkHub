@@ -8,6 +8,8 @@ import type { BudgetDecision, BudgetNotice, BudgetPolicy, BudgetScope, BudgetUsa
 
 export type BudgetScopeIds = {
   workItemId?: string;
+  taskPlanId?: string;
+  objectiveId?: string;
   userId?: string;
   teamId?: string;
   evalSuite?: "nightly" | "release";
@@ -180,6 +182,10 @@ function scopeForPolicy(policy: BudgetPolicy, scopeIds: BudgetScopeIds): BudgetS
   switch (policy.scopeKind) {
     case "workitem":
       return scopeIds.workItemId ? { kind: "workitem", workitemId: scopeIds.workItemId } : undefined;
+    case "task":
+      return scopeIds.taskPlanId ? { kind: "task", taskPlanId: scopeIds.taskPlanId } : undefined;
+    case "objective":
+      return scopeIds.objectiveId ? { kind: "objective", objectiveId: scopeIds.objectiveId } : undefined;
     case "user":
       return scopeIds.userId ? { kind: "user", userId: scopeIds.userId } : undefined;
     case "team":
@@ -208,6 +214,10 @@ function sameScope(left: BudgetScope, right: BudgetScope) {
   switch (left.kind) {
     case "workitem":
       return right.kind === "workitem" && left.workitemId === right.workitemId;
+    case "task":
+      return right.kind === "task" && left.taskPlanId === right.taskPlanId;
+    case "objective":
+      return right.kind === "objective" && left.objectiveId === right.objectiveId;
     case "user":
       return right.kind === "user" && left.userId === right.userId;
     case "team":
@@ -265,6 +275,11 @@ function budgetNotice(input: {
       ? "downgrade_model"
       : "continue";
   const actionHref = actionHrefForScope(input.scope);
+  const options = taskOrObjectiveBudgetOptions(input.scope) ?? [
+    { id: "downgrade_model", label: "降级模型继续", actionHref },
+    { id: "pause", label: "先暂停", actionHref },
+    { id: "ask_admin", label: "找管理员", actionHref: "/dashboard/cost" }
+  ];
   return {
     code: input.code,
     severity: input.severity,
@@ -272,13 +287,20 @@ function budgetNotice(input: {
     scope: input.scope,
     usageRatio: input.usageRatio,
     recommendedAction,
-    options: [
-      { id: "downgrade_model", label: "降级模型继续", actionHref },
-      { id: "pause", label: "先暂停", actionHref },
-      { id: "ask_admin", label: "找管理员", actionHref: "/dashboard/cost" }
-    ],
+    options,
     actionHref
   };
+}
+
+function taskOrObjectiveBudgetOptions(scope: BudgetScope) {
+  if (scope.kind !== "task" && scope.kind !== "objective") {
+    return undefined;
+  }
+  return [
+    { id: "increase_budget", label: "追加 ¥0.5 继续", actionHref: "/dashboard/cost" },
+    { id: "finish_with_current", label: "就用现有产出收尾", actionHref: "/dashboard/cost" },
+    { id: "close_scope", label: "整体收工", actionHref: "/dashboard/cost" }
+  ];
 }
 
 function actionHrefForScope(scope: BudgetScope) {
@@ -292,6 +314,10 @@ function defaultScopeLabel(scope: BudgetScope) {
   switch (scope.kind) {
     case "workitem":
       return "当前事项 AI 执行预算";
+    case "task":
+      return "任务计划 AI 预算";
+    case "objective":
+      return "目标 AI 预算";
     case "user":
       return "我的 AI 日预算";
     case "team":

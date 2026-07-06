@@ -290,6 +290,14 @@ export const budgetScopeSchema = z.discriminatedUnion("kind", [
     workitem_id: idSchema
   }),
   z.object({
+    kind: z.literal("task"),
+    task_plan_id: idSchema
+  }),
+  z.object({
+    kind: z.literal("objective"),
+    objective_id: idSchema
+  }),
+  z.object({
     kind: z.literal("user"),
     user_id: idSchema
   }),
@@ -333,7 +341,7 @@ export type BudgetUsage = z.infer<typeof budgetUsageSchema>;
 export const budgetPolicySchema = z
   .object({
     id: z.string().min(1),
-    scope_kind: z.enum(["workitem", "user", "team", "eval"]),
+    scope_kind: z.enum(["workitem", "task", "objective", "user", "team", "eval"]),
     period: z.enum(["run", "day", "month"]),
     max_tokens: z.number().int().positive(),
     max_cost_cny: z.string().regex(/^\d+(\.\d+)?$/),

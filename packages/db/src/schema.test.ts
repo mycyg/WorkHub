@@ -248,6 +248,7 @@ test("agent run persistence fields support DB-backed replay recovery", () => {
   assert.equal(agentRuns.title.name, "title");
   assert.equal(agentRuns.parentRunId.name, "parent_run_id");
   assert.equal(agentRuns.taskPlanId.name, "task_plan_id");
+  assert.equal(agentRuns.objectiveId.name, "objective_id");
   assert.equal(agentRuns.taskPlanItemId.name, "task_plan_item_id");
   assert.equal(agentRuns.agentRole.name, "agent_role");
   assert.equal(agentRuns.objectiveMd.name, "objective_md");
@@ -270,6 +271,8 @@ test("cost ledger persistence fields support P-COST usage recovery", () => {
   assert.equal(usageRecords.id.name, "id");
   assert.equal(usageRecords.runId.name, "run_id");
   assert.equal(usageRecords.workItemId.name, "work_item_id");
+  assert.equal(usageRecords.taskPlanId.name, "task_plan_id");
+  assert.equal(usageRecords.objectiveId.name, "objective_id");
   assert.equal(usageRecords.userId.name, "user_id");
   assert.equal(usageRecords.estimatedCostCny.name, "estimated_cost_cny");
   assert.equal(costLedgerEntries.usageRecordId.name, "usage_record_id");

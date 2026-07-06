@@ -8,6 +8,8 @@ export type CostTier = {
 export type BuildUsageRecordInput = {
   runId?: string;
   workItemId?: string;
+  taskPlanId?: string;
+  objectiveId?: string;
   userId?: string;
   workspaceId?: string;
   provider: string;
@@ -50,6 +52,12 @@ export function buildUsageRecord(input: BuildUsageRecordInput): UsageRecord {
   }
   if (input.workItemId) {
     record.workItemId = input.workItemId;
+  }
+  if (input.taskPlanId) {
+    record.taskPlanId = input.taskPlanId;
+  }
+  if (input.objectiveId) {
+    record.objectiveId = input.objectiveId;
   }
   if (input.userId) {
     record.userId = input.userId;

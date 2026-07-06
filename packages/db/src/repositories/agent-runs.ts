@@ -49,6 +49,7 @@ export type AgentRunForPersistence = {
   workItemId: string;
   parentRunId?: string;
   taskPlanId?: string;
+  objectiveId?: string;
   taskPlanItemId?: string;
   agentRole?: TaskPlanItemRole;
   objectiveMd?: string;
@@ -161,6 +162,7 @@ function runInsertValues(run: AgentRunForPersistence): typeof agentRuns.$inferIn
     workItemId: run.workItemId,
     parentRunId: run.parentRunId,
     taskPlanId: run.taskPlanId,
+    objectiveId: run.objectiveId,
     taskPlanItemId: run.taskPlanItemId,
     agentRole: run.agentRole,
     objectiveMd: run.objectiveMd,
@@ -229,6 +231,9 @@ function runUpdateValues(run: AgentRunForPersistence): Partial<typeof agentRuns.
   }
   if (run.taskPlanId !== undefined) {
     values.taskPlanId = run.taskPlanId;
+  }
+  if (run.objectiveId !== undefined) {
+    values.objectiveId = run.objectiveId;
   }
   if (run.taskPlanItemId !== undefined) {
     values.taskPlanItemId = run.taskPlanItemId;

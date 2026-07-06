@@ -14,6 +14,7 @@ import {
   decideRunBudget,
   defaultBudgetPoliciesFromSettings,
   defaultRunBudgetFromSettings,
+  usageRecordId,
   usageToLedgerEntry
 } from "./index.js";
 
@@ -38,6 +39,43 @@ test("usage records estimate cost without serializing secrets", async () => {
   assert.equal(usageToLedgerEntry(record, { kind: "user", userId: "user-1" }).tokenIn, 1000);
 });
 
+test("R9.5 usageRecordId preserves legacy keys unless task or objective scopes are present", () => {
+  const legacyRecord = buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "run-1",
+    workItemId: "workitem-1",
+    userId: "user-1",
+    workspaceId: "team-1",
+    inputTokens: 1000,
+    outputTokens: 100,
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: new Date("2026-07-06T00:00:00.000Z")
+  });
+  const legacyKey = [
+    "run-1",
+    "workitem-1",
+    "user-1",
+    "team-1",
+    "deepseek",
+    "deepseek-v4-flash",
+    "worker",
+    "agent_step",
+    "no-seq",
+    1000,
+    100,
+    "0.0011",
+    "2026-07-06T00:00:00.000Z"
+  ].join(":");
+
+  assert.equal(usageRecordId(legacyRecord), legacyKey);
+  assert.equal(
+    usageRecordId({ ...legacyRecord, taskPlanId: "task-plan-1", objectiveId: "objective-1" }),
+    `${legacyKey}:task:task-plan-1:objective:objective-1`
+  );
+});
+
 test("default budget mirrors P-COST v0 values from settings", () => {
   const settings = loadSettings({});
   const budget = defaultRunBudgetFromSettings(settings);
@@ -49,6 +87,8 @@ test("default budget mirrors P-COST v0 values from settings", () => {
   assert.equal(budget.maxCostCny, "5");
   assert.deepEqual(policies.map((policy) => policy.id), [
     "pcost-workitem-run-v0",
+    "pcost-task-day-v0",
+    "pcost-objective-day-v0",
     "pcost-user-day-v0",
     "pcost-team-day-v0",
     "pcost-team-month-v0",
@@ -56,6 +96,8 @@ test("default budget mirrors P-COST v0 values from settings", () => {
   ]);
   assert.equal(policies.find((policy) => policy.id === "pcost-user-day-v0")?.maxTokens, 500000);
   assert.equal(policies.find((policy) => policy.id === "pcost-team-month-v0")?.maxCostCny, "2000");
+  assert.equal(policies.find((policy) => policy.id === "pcost-task-day-v0")?.scopeKind, "task");
+  assert.equal(policies.find((policy) => policy.id === "pcost-objective-day-v0")?.scopeKind, "objective");
   // eval 套件日预算现在有上限（此前 eval 在决策层无策略=无限）。
   assert.equal(policies.find((policy) => policy.id === "pcost-eval-day-v0")?.scopeKind, "eval");
   assert.equal(policies.find((policy) => policy.id === "pcost-eval-day-v0")?.maxCostCny, "80");
@@ -180,6 +222,77 @@ test("cost ledger reconciles usage into scoped entries and budget snapshots", as
   assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "team" && snapshot.period === "day")?.estimatedCostCny, "0.006");
   // 新语义：per-run 快照恒为 0（这次 run 决策时尚未花费），避免 scope 全量把 per-run 上限卡死。
   assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "workitem" && snapshot.period === "run")?.tokenIn, 0);
+});
+
+test("R9.5 cost ledger and decisions include task and objective budget scopes", async () => {
+  const settings = loadSettings({});
+  const taskPlanId = "task-plan-1";
+  const objectiveId = "objective-1";
+  const ledger = createMemoryCostLedgerStore({ teamId: "team-1" });
+  await ledger.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "run-task-objective",
+    workItemId: "workitem-1",
+    userId: "user-1",
+    taskPlanId,
+    objectiveId,
+    inputTokens: 1000,
+    outputTokens: 100,
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: new Date("2026-07-06T00:00:00.000Z")
+  } as Parameters<typeof buildUsageRecord>[0] & { taskPlanId: string; objectiveId: string }));
+
+  assert.deepEqual(ledger.entries.map((entry) => entry.scope.kind).sort(), [
+    "objective",
+    "task",
+    "team",
+    "user",
+    "workitem"
+  ]);
+
+  const snapshots = await ledger.usageSnapshots({
+    taskPlanId,
+    objectiveId
+  } as Parameters<typeof ledger.usageSnapshots>[0] & { taskPlanId: string; objectiveId: string }, {
+    now: new Date("2026-07-06T12:00:00.000Z")
+  });
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "task" && snapshot.period === "day")?.tokenIn, 1000);
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "objective" && snapshot.period === "day")?.tokenOut, 100);
+
+  const decision = decideRunBudget({
+    settings,
+    decisionId: "decision-objective-exhausted",
+    now: new Date("2026-07-06T12:00:00.000Z"),
+    scopeIds: { taskPlanId, objectiveId } as Parameters<typeof decideRunBudget>[0]["scopeIds"] & {
+      taskPlanId: string;
+      objectiveId: string;
+    },
+    policies: [{
+      id: "pcost-objective-day-v0",
+      scopeKind: "objective",
+      period: "day",
+      maxTokens: 1000,
+      maxCostCny: "1",
+      warningRatio: 0.8,
+      criticalRatio: 0.95,
+      onWarning: "notify",
+      onExhausted: "block_new_run",
+      enabled: true,
+      version: 1
+    } as ReturnType<typeof defaultBudgetPoliciesFromSettings>[number] & { scopeKind: "objective" }],
+    usage: snapshots
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.equal(decision.reason, "budget_exhausted");
+  assert.deepEqual(decision.notice?.scope, { kind: "objective", objectiveId });
+  assert.deepEqual(decision.notice?.options?.map((option) => option.id), [
+    "increase_budget",
+    "finish_with_current",
+    "close_scope"
+  ]);
 });
 
 test("cost ledger uses a usage workspace id as the team scope when present", async () => {

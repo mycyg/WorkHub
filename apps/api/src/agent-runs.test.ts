@@ -18,7 +18,14 @@ import {
   type WorkHubEvent,
   type WorkItemStatus
 } from "@workhub/contracts";
-import { buildUsageRecord, createMemoryBudgetPolicyStore, createMemoryCostLedgerStore, decideRunBudget } from "@workhub/cost";
+import {
+  buildUsageRecord,
+  createMemoryBudgetPolicyStore,
+  createMemoryCostLedgerStore,
+  decideRunBudget,
+  type BudgetPolicy,
+  type BudgetUsageSnapshot
+} from "@workhub/cost";
 import { topics } from "@workhub/events";
 import type {
   AuditLogRepository,
@@ -1698,6 +1705,160 @@ test("agent run enqueue uses the actor workspace for team budget snapshots", asy
 
   assert.equal(run.budget.max_tokens, 25000);
   assert.deepEqual(run.budget_decision.notice?.scope, { kind: "team", team_id: actorWorkspaceId });
+});
+
+test("R9.5 child run enqueue blocks exhausted objective budgets with finish-scope actions", async () => {
+  const runtimeSettings = settings();
+  const taskPlanId = "81000000-0000-4000-8000-000000000071";
+  const objectiveId = "81000000-0000-4000-8000-000000000072";
+  const policyStore = {
+    async listPolicies() {
+      return [{
+        id: "pcost-objective-day-v0",
+        scopeKind: "objective",
+        period: "day",
+        maxTokens: 1000,
+        maxCostCny: "1",
+        warningRatio: 0.8,
+        criticalRatio: 0.95,
+        onWarning: "notify",
+        onExhausted: "block_new_run",
+        enabled: true,
+        version: 1
+      } satisfies BudgetPolicy];
+    },
+    async updatePolicy() {
+      return undefined;
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    policyStore,
+    usage: async () => [{
+      policyId: "pcost-objective-day-v0",
+      period: "day",
+      scope: { kind: "objective", objectiveId },
+      tokenIn: 1000,
+      tokenOut: 1,
+      estimatedCostCny: "1"
+    } satisfies BudgetUsageSnapshot],
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000ad"
+  });
+
+  await assert.rejects(
+    () => queue.enqueue({
+      workItemId,
+      actorId: userId,
+      taskPlanId,
+      objectiveId,
+      title: "Objective-capped child run"
+    } as EnqueueAgentRunInput & { objectiveId: string }),
+    (error: unknown) =>
+      error instanceof AgentRunnerError &&
+      error.status === 402 &&
+      error.code === "budget_exhausted" &&
+      (error.details?.["scope"] as { kind?: string; objective_id?: string } | undefined)?.kind === "objective" &&
+      (error.details?.["scope"] as { objective_id?: string } | undefined)?.objective_id === objectiveId &&
+      error.message.includes("预算")
+  );
+});
+
+test("R9.5 child run reservations include task and objective budget scopes", async () => {
+  const runtimeSettings = settings();
+  const taskPlanId = "81000000-0000-4000-8000-000000000073";
+  const objectiveId = "81000000-0000-4000-8000-000000000074";
+  const reserveInputs: Array<{ scopes: Array<{ scope: unknown; scopeKind: string; scopeId: string }> }> = [];
+  const fakeReservationRepo = {
+    reserve: async (input: { scopes: Array<{ scope: unknown; scopeKind: string; scopeId: string }> }) => {
+      reserveInputs.push(input);
+      return { ok: true };
+    },
+    reconcile: async () => 0,
+    releaseExpired: async () => 0,
+    refreshLease: async () => 0,
+    outstandingForScopes: async () => new Map()
+  };
+  const policyStore = {
+    async listPolicies() {
+      return [
+        {
+          id: "pcost-task-day-v0",
+          scopeKind: "task",
+          period: "day",
+          maxTokens: 5000,
+          maxCostCny: "3",
+          warningRatio: 0.8,
+          criticalRatio: 0.95,
+          onWarning: "notify",
+          onExhausted: "block_new_run",
+          enabled: true,
+          version: 1
+        },
+        {
+          id: "pcost-objective-day-v0",
+          scopeKind: "objective",
+          period: "day",
+          maxTokens: 10000,
+          maxCostCny: "5",
+          warningRatio: 0.8,
+          criticalRatio: 0.95,
+          onWarning: "notify",
+          onExhausted: "block_new_run",
+          enabled: true,
+          version: 1
+        }
+      ] satisfies BudgetPolicy[];
+    },
+    async updatePolicy() {
+      return undefined;
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    policyStore,
+    usage: async () => [
+      {
+        policyId: "pcost-task-day-v0",
+        period: "day",
+        scope: { kind: "task", taskPlanId },
+        tokenIn: 0,
+        tokenOut: 0,
+        estimatedCostCny: "0"
+      },
+      {
+        policyId: "pcost-objective-day-v0",
+        period: "day",
+        scope: { kind: "objective", objectiveId },
+        tokenIn: 0,
+        tokenOut: 0,
+        estimatedCostCny: "0"
+      }
+    ] satisfies BudgetUsageSnapshot[],
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000ae",
+    reservationRepo: fakeReservationRepo as unknown as BudgetReservationRepository,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    taskPlanId,
+    objectiveId,
+    title: "Reserved child run"
+  } as EnqueueAgentRunInput & { objectiveId: string });
+
+  assert.equal(run.task_plan_id, taskPlanId);
+  assert.equal((run as AgentRunQueueRecord & { objective_id?: string }).objective_id, objectiveId);
+  assert.equal(reserveInputs.length, 1);
+  assert.deepEqual(reserveInputs[0]!.scopes.map((scope) => [scope.scopeKind, scope.scopeId]).sort(), [
+    ["objective", objectiveId],
+    ["task", taskPlanId]
+  ]);
 });
 
 test("agent run enqueue reads budget policies from the actor workspace", async () => {

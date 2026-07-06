@@ -911,6 +911,13 @@ test("budget notices and budget events become actionable Cuu cards", () => {
   assert.equal(english.actions[0]?.label, "Handle budget");
   assert.equal(english.chips?.[0]?.label, "Task budget");
   assert.equal(english.chips?.[1]?.description, "Budget usage");
+
+  const objectiveNotice = {
+    ...budgetNotice,
+    scope: { kind: "objective", objective_id: "10000000-0000-4000-8000-0000000000f1" }
+  } as unknown as BudgetNotice;
+  const objectiveCard = cardFromBudgetNotice(objectiveNotice, "budget-objective", { locale: "en-US" });
+  assert.equal(objectiveCard.chips?.[0]?.label, "Objective budget");
 });
 
 test("attention approval cards localize standard action labels", () => {

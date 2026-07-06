@@ -17,6 +17,7 @@ import {
   budgetPolicySchema,
   budgetPolicyUpdateSchema,
   budgetUsageSchema,
+  costDashboardVmSchema,
   meetingInsightVmSchema,
   applyMergeProposalCandidateRequestSchema,
   buildStructuredFieldPatchDryRun,
@@ -1567,6 +1568,86 @@ test("cost governance contracts expose clickable budget notices and scoped usage
   assert.doesNotThrow(() => budgetPolicyUpdateSchema.parse({ warning_ratio: 0.8, critical_ratio: 0.95 }));
   // 单字段更新仍放行（合并不变量由服务端守卫兜底）。
   assert.doesNotThrow(() => budgetPolicyUpdateSchema.parse({ warning_ratio: 0.99 }));
+});
+
+test("R9.5 budget contracts expose task and objective scopes", () => {
+  const taskPlanId = "74000000-0000-4000-8000-000000000101";
+  const objectiveId = "74000000-0000-4000-8000-000000000102";
+  const taskPolicy = budgetPolicySchema.parse({
+    id: "pcost-task-day-v0",
+    scope_kind: "task",
+    period: "day",
+    max_tokens: 50000,
+    max_cost_cny: "3",
+    warning_ratio: 0.8,
+    critical_ratio: 0.95,
+    on_warning: "notify",
+    on_exhausted: "block_new_run",
+    model_route_hint: "balanced",
+    enabled: true,
+    version: 1
+  });
+  const taskUsage = budgetUsageSchema.parse({
+    scope: { kind: "task", task_plan_id: taskPlanId },
+    scope_label: "任务计划预算",
+    policy_id: taskPolicy.id,
+    period: "day",
+    period_start: "2026-07-06T00:00:00.000Z",
+    period_end: "2026-07-07T00:00:00.000Z",
+    token_in: 45000,
+    token_out: 5000,
+    total_tokens: 50000,
+    max_tokens: 50000,
+    remaining_tokens: 0,
+    estimated_cost_cny: "2.9",
+    max_cost_cny: "3",
+    remaining_cost_cny: "0.1",
+    warning_ratio: 1,
+    status: "exhausted"
+  });
+  const objectiveNotice = budgetNoticeSchema.parse({
+    code: "budget_exhausted",
+    severity: "critical",
+    message: "《选题调研》军团的预算用完了。",
+    scope: { kind: "objective", objective_id: objectiveId },
+    usage_ratio: 1,
+    recommended_action: "pause",
+    options: [
+      { id: "increase_budget", label: "追加 ¥0.5 继续", action_href: `/api/objectives/${objectiveId}/budget/increase` },
+      { id: "finish_with_current", label: "就用现有产出收尾", action_href: `/api/objectives/${objectiveId}/finish-current` },
+      { id: "close_scope", label: "整体收工", action_href: `/api/objectives/${objectiveId}/close` }
+    ],
+    action_href: "/dashboard/cost"
+  });
+  const dashboard = costDashboardVmSchema.parse({
+    generated_at: "2026-07-06T00:00:00.000Z",
+    currency: "CNY",
+    total_cost_cny: "2.9",
+    token_in: 45000,
+    token_out: 5000,
+    unit_cost_cny: "0.000058",
+    trend: [{ date: "2026-07-06", cost_cny: "2.9", tokens: 50000 }],
+    by_user: [],
+    by_team: [],
+    by_workitem: [],
+    by_task: [{ task_plan_id: taskPlanId, cost_cny: "2.9", turns: 1 }],
+    by_objective: [{ objective_id: objectiveId, cost_cny: "2.9", turns: 1 }],
+    model_breakdown: [],
+    budget: [taskUsage],
+    notices: [objectiveNotice],
+    top_exhaustion_risks: [{
+      scope: objectiveNotice.scope,
+      label: "《选题调研》",
+      remaining_cost_cny: "0",
+      status: "exhausted"
+    }]
+  });
+
+  assert.equal(taskPolicy.scope_kind, "task");
+  assert.deepEqual(taskUsage.scope, { kind: "task", task_plan_id: taskPlanId });
+  assert.deepEqual(objectiveNotice.scope, { kind: "objective", objective_id: objectiveId });
+  assert.equal((dashboard as unknown as { by_task?: unknown[] }).by_task?.length, 1);
+  assert.equal((dashboard as unknown as { by_objective?: unknown[] }).by_objective?.length, 1);
 });
 
 test("approval contracts keep UI payloads human-readable and deny reasons explicit", () => {

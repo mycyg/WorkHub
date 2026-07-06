@@ -33,6 +33,7 @@ import type {
 } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
+import { buildCostDashboardPage } from "./pages/cost.js";
 import { InternalContractError } from "./pages/output-contract.js";
 import { createCostRoutes } from "./routes/cost.js";
 import { createPageRoutes } from "./routes/pages.js";
@@ -275,8 +276,11 @@ test("cost policy routes expose configurable P-COST defaults to admins", async (
     ok: true;
     data: { id: string; scope_kind: string; max_tokens: number; max_cost_cny: string; version: number }[];
   };
-  assert.equal(listBody.data.length, 5);
+  // 旧断言 5 在只有 workitem/user/team/eval 默认策略时是对的；R9.5 新增 task/objective 预算策略后必须一起暴露给管理员配置。
+  assert.equal(listBody.data.length, 7);
   assert.equal(listBody.data.find((policy) => policy.id === "pcost-workitem-run-v0")?.max_tokens, 120000);
+  assert.equal(listBody.data.find((policy) => policy.id === "pcost-task-day-v0")?.scope_kind, "task");
+  assert.equal(listBody.data.find((policy) => policy.id === "pcost-objective-day-v0")?.scope_kind, "objective");
   // eval 套件日预算策略现已存在（M21：此前 eval 在决策层无上限）。
   assert.equal(listBody.data.find((policy) => policy.id === "pcost-eval-day-v0")?.scope_kind, "eval");
 
@@ -790,6 +794,61 @@ test("routes-b-2/contracts-pkgs-4: non-admin cost page calls the narrow user-sco
   // 管理员路径语义不变：仍走 listEntriesForWorkspace（保留 team/user/workitem 同胞条目供拆分展示）。
   assert.equal(workspaceCalls.length, 1);
   assert.equal(workspaceCalls[0], runtimeSettings.auth.defaultWorkspaceId);
+});
+
+test("R9.5 cost dashboard aggregates task and objective ledger dimensions", () => {
+  const runtimeSettings = settings();
+  const taskPlanId = "83000000-0000-4000-8000-000000000501";
+  const objectiveId = "83000000-0000-4000-8000-000000000502";
+  const usageRecordId = "usage-task-objective";
+  const baseEntry = {
+    usageRecordId,
+    runId: "40000000-0000-4000-8000-000000000501",
+    workItemId: "50000000-0000-4000-8000-000000000501",
+    userId,
+    teamId: runtimeSettings.auth.defaultWorkspaceId,
+    periodBucket: "2026-06-05",
+    tokenIn: 1200,
+    tokenOut: 300,
+    estimatedCostCny: "0.5",
+    currency: "CNY" as const,
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    source: "agent_step" as const,
+    createdAt: now.toISOString()
+  };
+  const dashboard = buildCostDashboardPage({
+    settings: runtimeSettings,
+    isAdmin: true,
+    userId,
+    teamId: runtimeSettings.auth.defaultWorkspaceId,
+    generatedAt: now,
+    budgetUsages: [],
+    ledgerEntries: [
+      {
+        ...baseEntry,
+        id: "ledger-task",
+        scope: { kind: "task", taskPlanId }
+      },
+      {
+        ...baseEntry,
+        id: "ledger-objective",
+        scope: { kind: "objective", objectiveId }
+      }
+    ] as NonNullable<Parameters<typeof buildCostDashboardPage>[0]["ledgerEntries"]>
+  });
+
+  assert.equal(dashboard.total_cost_cny, "0.5");
+  assert.deepEqual((dashboard as unknown as { by_task?: unknown[] }).by_task, [{
+    task_plan_id: taskPlanId,
+    cost_cny: "0.5",
+    turns: 1
+  }]);
+  assert.deepEqual((dashboard as unknown as { by_objective?: unknown[] }).by_objective, [{
+    objective_id: objectiveId,
+    cost_cny: "0.5",
+    turns: 1
+  }]);
 });
 
 test("cost dashboard page aggregates ledger entries without exposing all users to non-admins", async () => {

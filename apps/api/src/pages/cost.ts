@@ -137,6 +137,8 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
   const byUser = aggregateByScope(scopedEntries, "user");
   const byTeam = aggregateByScope(scopedEntries, "team");
   const byWorkitem = aggregateByScope(scopedEntries, "workitem");
+  const byTask = aggregateByScope(scopedEntries, "task");
+  const byObjective = aggregateByScope(scopedEntries, "objective");
   const modelBreakdown = aggregateByModel(uniqueEntries);
   const laborSplit = buildLaborSplit(uniqueEntries);
   const inactiveBudgetRows = [summary.me, ...(summary.team ? [summary.team] : [])].filter((usage) => usage.enabled === false);
@@ -169,6 +171,16 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
     by_workitem: input.isAdmin ? byWorkitem.map((item) => ({
       workitem_id: item.id,
       code: item.id,
+      cost_cny: formatCny(item.cost),
+      turns: item.turns
+    })) : [],
+    by_task: input.isAdmin ? byTask.map((item) => ({
+      task_plan_id: item.id,
+      cost_cny: formatCny(item.cost),
+      turns: item.turns
+    })) : [],
+    by_objective: input.isAdmin ? byObjective.map((item) => ({
+      objective_id: item.id,
       cost_cny: formatCny(item.cost),
       turns: item.turns
     })) : [],
@@ -272,6 +284,10 @@ function toApiScope(scope: InternalBudgetUsage["scope"]): BudgetUsage["scope"] {
   switch (scope.kind) {
     case "workitem":
       return { kind: "workitem", workitem_id: scope.workitemId };
+    case "task":
+      return { kind: "task", task_plan_id: scope.taskPlanId };
+    case "objective":
+      return { kind: "objective", objective_id: scope.objectiveId };
     case "user":
       return { kind: "user", user_id: scope.userId };
     case "team":
@@ -363,7 +379,7 @@ function aggregateTrend(entries: readonly CostLedgerEntry[]): CostDashboardVM["t
   }));
 }
 
-function aggregateByScope(entries: readonly CostLedgerEntry[], kind: "user" | "team" | "workitem") {
+function aggregateByScope(entries: readonly CostLedgerEntry[], kind: "user" | "team" | "workitem" | "task" | "objective") {
   // findings[H10/H13]：每次用量被 usageToLedgerEntries 扇成 user+team+workitem 三条 entry，且每条都复制了
   // 同一份 userId/workItemId 反规范化列——直接按这些列聚合会把一次花费数 2-3 次。改为：只认 scope.kind 匹配的
   // entry（每次用量在该 scope 恰好一条），按 usageRecordId 去重（防重试/双写），并从 entry.scope 取本 scope 的 id。
@@ -377,7 +393,11 @@ function aggregateByScope(entries: readonly CostLedgerEntry[], kind: "user" | "t
       ? entry.scope.userId
       : entry.scope.kind === "team"
         ? entry.scope.teamId
-        : entry.scope.workitemId;
+        : entry.scope.kind === "workitem"
+          ? entry.scope.workitemId
+          : entry.scope.kind === "task"
+            ? entry.scope.taskPlanId
+            : entry.scope.objectiveId;
     if (!id) {
       continue;
     }

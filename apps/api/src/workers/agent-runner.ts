@@ -124,6 +124,7 @@ export type AgentRunQueueRecord = {
   work_item_id: string;
   parent_run_id?: string;
   task_plan_id?: string;
+  objective_id?: string;
   task_plan_item_id?: string;
   agent_role?: TaskPlanItemRole;
   objective_md?: string;
@@ -199,6 +200,7 @@ export type EnqueueAgentRunInput = {
   orgId?: string;
   parentRunId?: string;
   taskPlanId?: string;
+  objectiveId?: string;
   taskPlanItemId?: string;
   agentRole?: TaskPlanItemRole;
   objectiveMd?: string;
@@ -527,19 +529,18 @@ export function createInMemoryAgentRunQueue(options: {
         }
       };
       const teamId = scopedSettings.auth.defaultWorkspaceId;
+      const scopeIds = {
+        workItemId: input.workItemId,
+        ...(input.taskPlanId ? { taskPlanId: input.taskPlanId } : {}),
+        ...(input.objectiveId ? { objectiveId: input.objectiveId } : {}),
+        userId: input.actorId,
+        teamId
+      };
       return decideRunBudget({
         settings: scopedSettings,
-        scopeIds: {
-          workItemId: input.workItemId,
-          userId: input.actorId,
-          teamId
-        },
+        scopeIds,
         policies: await policyStore.listPolicies(scopedSettings),
-        usage: await (options.usage?.(input) ?? ledgerStore.usageSnapshots({
-          workItemId: input.workItemId,
-          userId: input.actorId,
-          teamId
-        }, { now: now() })),
+        usage: await (options.usage?.(input) ?? ledgerStore.usageSnapshots(scopeIds, { now: now() })),
         modelRoute: {
           provider: scopedSettings.llm.defaultProvider,
           model: scopedSettings.llm.model,
@@ -650,7 +651,9 @@ export function createInMemoryAgentRunQueue(options: {
       userId: input.run.actor_id,
       ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
       runId: input.run.run_id,
-      workItemId: input.run.work_item_id
+      workItemId: input.run.work_item_id,
+      ...(input.run.task_plan_id ? { taskPlanId: input.run.task_plan_id } : {}),
+      ...(input.run.objective_id ? { objectiveId: input.run.objective_id } : {})
     }, "worker");
   }
 
@@ -662,7 +665,9 @@ export function createInMemoryAgentRunQueue(options: {
       userId: input.run.actor_id,
       ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
       runId: input.run.run_id,
-      workItemId: input.run.work_item_id
+      workItemId: input.run.work_item_id,
+      ...(input.run.task_plan_id ? { taskPlanId: input.run.task_plan_id } : {}),
+      ...(input.run.objective_id ? { objectiveId: input.run.objective_id } : {})
     }, "review");
   }
 
@@ -1700,6 +1705,7 @@ export function createInMemoryAgentRunQueue(options: {
           work_item_id: input.workItemId,
           ...(input.parentRunId ? { parent_run_id: input.parentRunId } : {}),
           ...(input.taskPlanId ? { task_plan_id: input.taskPlanId } : {}),
+          ...(input.objectiveId ? { objective_id: input.objectiveId } : {}),
           ...(input.taskPlanItemId ? { task_plan_item_id: input.taskPlanItemId } : {}),
           ...(input.agentRole ? { agent_role: input.agentRole } : {}),
           ...(input.objectiveMd ? { objective_md: input.objectiveMd } : {}),
@@ -1896,6 +1902,8 @@ export function createInMemoryAgentRunQueue(options: {
 
 type QueueBudgetScope =
   | { kind: "workitem"; workitem_id: string }
+  | { kind: "task"; task_plan_id: string }
+  | { kind: "objective"; objective_id: string }
   | { kind: "user"; user_id: string }
   | { kind: "team"; team_id: string }
   | { kind: "curation"; team_id: string }
@@ -2119,6 +2127,10 @@ function budgetScopeId(scope: BudgetScope): string {
   switch (scope.kind) {
     case "workitem":
       return scope.workitemId;
+    case "task":
+      return scope.taskPlanId;
+    case "objective":
+      return scope.objectiveId;
     case "user":
       return scope.userId;
     case "team":
@@ -2176,6 +2188,10 @@ function toQueueBudgetScope(scope: BudgetScope): QueueBudgetScope {
   switch (scope.kind) {
     case "workitem":
       return { kind: "workitem", workitem_id: scope.workitemId };
+    case "task":
+      return { kind: "task", task_plan_id: scope.taskPlanId };
+    case "objective":
+      return { kind: "objective", objective_id: scope.objectiveId };
     case "user":
       return { kind: "user", user_id: scope.userId };
     case "team":

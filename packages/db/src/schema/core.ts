@@ -1148,6 +1148,7 @@ export const agentRuns = pgTable(
     branchId: uuid("branch_id").references(() => branches.id, { onDelete: "set null" }),
     parentRunId: uuid("parent_run_id").references((): AnyPgColumn => agentRuns.id, { onDelete: "set null" }),
     taskPlanId: uuid("task_plan_id").references(() => taskPlans.id, { onDelete: "set null" }),
+    objectiveId: uuid("objective_id").references(() => objectives.id, { onDelete: "set null" }),
     taskPlanItemId: uuid("task_plan_item_id").references(() => taskPlanItems.id, { onDelete: "set null" }),
     agentRole: varchar("agent_role", { length: 16 }).$type<TaskPlanItemRole>(),
     objectiveMd: text("objective_md"),
@@ -1189,6 +1190,7 @@ export const agentRuns = pgTable(
     index("agent_runs_branch_id_idx").on(table.branchId),
     index("agent_runs_parent_run_id_idx").on(table.parentRunId),
     index("agent_runs_task_plan_id_idx").on(table.taskPlanId),
+    index("agent_runs_objective_id_idx").on(table.objectiveId),
     index("agent_runs_task_plan_item_id_idx").on(table.taskPlanItemId),
     index("agent_runs_actor_user_id_idx").on(table.actorUserId),
     index("agent_runs_status_idx").on(table.status),
@@ -1231,6 +1233,8 @@ export const usageRecords = pgTable(
     id: varchar("id", { length: 512 }).primaryKey(),
     runId: uuid("run_id").references(() => agentRuns.id, { onDelete: "set null" }),
     workItemId: uuid("work_item_id").references(() => workItems.id, { onDelete: "set null" }),
+    taskPlanId: uuid("task_plan_id").references(() => taskPlans.id, { onDelete: "set null" }),
+    objectiveId: uuid("objective_id").references(() => objectives.id, { onDelete: "set null" }),
     userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
     actorId: varchar("actor_id", { length: 128 }),
     provider: varchar("provider", { length: 64 }).notNull(),
@@ -1245,6 +1249,8 @@ export const usageRecords = pgTable(
   (table) => [
     index("usage_records_run_id_idx").on(table.runId),
     index("usage_records_work_item_id_idx").on(table.workItemId),
+    index("usage_records_task_plan_id_idx").on(table.taskPlanId),
+    index("usage_records_objective_id_idx").on(table.objectiveId),
     index("usage_records_user_id_idx").on(table.userId),
     index("usage_records_created_at_idx").on(table.createdAt),
     index("usage_records_provider_model_idx").on(table.provider, table.model)

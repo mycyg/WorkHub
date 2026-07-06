@@ -989,6 +989,8 @@ const costDashboard: CostDashboardVM = {
       turns: run.turns_used
     }
   ],
+  by_task: [],
+  by_objective: [],
   model_breakdown: [
     {
       provider: usageRecord.provider,

@@ -901,6 +901,16 @@ export const costDashboardVmSchema = z.object({
     cost_cny: z.string(),
     turns: z.number().int().nonnegative()
   })),
+  by_task: z.array(z.object({
+    task_plan_id: idSchema,
+    cost_cny: z.string(),
+    turns: z.number().int().nonnegative()
+  })),
+  by_objective: z.array(z.object({
+    objective_id: idSchema,
+    cost_cny: z.string(),
+    turns: z.number().int().nonnegative()
+  })),
   model_breakdown: z.array(z.object({
     provider: z.string(),
     model: z.string(),

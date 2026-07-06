@@ -20,11 +20,12 @@ const workspaceId = "95000000-0000-4000-8000-000000000103";
 const orgId = "95000000-0000-4000-8000-000000000104";
 const actorId = "95000000-0000-4000-8000-000000000105";
 const parentRunId = "95000000-0000-4000-8000-000000000106";
+const objectiveId = "95000000-0000-4000-8000-000000000107";
 const researchItemId = "95000000-0000-4000-8000-000000000201";
 const produceItemId = "95000000-0000-4000-8000-000000000202";
 const reviewItemId = "95000000-0000-4000-8000-000000000203";
 
-function plan(status: TaskPlanRow["status"] = "approved"): TaskPlanRow {
+function plan(status: TaskPlanRow["status"] = "approved", overrides: Partial<TaskPlanRow> = {}): TaskPlanRow {
   return {
     id: planId,
     workItemId,
@@ -35,7 +36,8 @@ function plan(status: TaskPlanRow["status"] = "approved"): TaskPlanRow {
     decompositionContextJson: { source: "test" },
     createdByUserId: actorId,
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    ...overrides
   } as TaskPlanRow;
 }
 
@@ -231,7 +233,7 @@ class CapturingQueue implements Pick<AgentRunQueue, "enqueue"> {
 }
 
 test("R9.2 dispatcher enqueues ready task-plan items as ordinary child runs with lineage and acceptance", async () => {
-  const repository = new MemoryTaskDispatcherRepository(plan(), [
+  const repository = new MemoryTaskDispatcherRepository(plan("approved", { objectiveId }), [
     item({ id: researchItemId, seq: 0, title: "Research", role: "research", budgetSharePct: 35 }),
     item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", dependsOn: [researchItemId], budgetSharePct: 45 }),
     item({ id: reviewItemId, seq: 2, title: "Review", role: "review", budgetSharePct: 20 })
@@ -249,6 +251,8 @@ test("R9.2 dispatcher enqueues ready task-plan items as ordinary child runs with
   assert.equal(queue.inputs[0]?.workItemId, workItemId);
   assert.equal(queue.inputs[0]?.parentRunId, parentRunId);
   assert.equal(queue.inputs[0]?.taskPlanId, planId);
+  assert.equal((queue.inputs[0] as EnqueueAgentRunInput & { objectiveId?: string }).objectiveId, objectiveId);
+  assert.equal((queue.inputs[1] as EnqueueAgentRunInput & { objectiveId?: string }).objectiveId, objectiveId);
   assert.equal(queue.inputs[0]?.workspaceId, workspaceId);
   assert.equal(queue.inputs[0]?.orgId, orgId);
   assert.match(queue.inputs[0]?.objectiveMd ?? "", /Research objective\./u);
