@@ -522,7 +522,7 @@ function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
 function renderWorkItem(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const detail = vm.page_vms.workitem;
   const steps = detail.agent_trace_preview
-    .map((step) => `<div class="wh-row"><span>${escapeHtml(step.output_excerpt ?? step.phase)}</span><span class="wh-pill">#${step.step_no}</span></div>`)
+    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(agentStepPublicSummary(locale, step))}</p></div><span class="wh-pill">#${step.step_no}</span></div>`)
     .join("");
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "workitem.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(detail.workitem.title ?? detail.workitem.code)}</h1>

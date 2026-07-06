@@ -117,6 +117,23 @@ test("gold path renderer localizes work item and proposal check statuses", () =>
   assert.equal(proposal.html.includes("有提醒"), true);
 });
 
+test("gold path work item trace hides raw phase fallback when excerpt is missing", () => {
+  const vm = surfaceVm();
+  const step = vm.page_vms.workitem.agent_trace_preview[0]!;
+  vm.page_vms.workitem.agent_trace_preview = [{
+    ...step,
+    phase: "tool_result",
+    output_excerpt: undefined
+  }];
+
+  const workitem = renderGoldPathSurface(vm, "web", { locale: "zh-CN" }).pages.find((page) => page.key === "workitem");
+
+  assert.ok(workitem);
+  assert.equal(workitem.html.includes("tool_result"), false);
+  assert.equal(workitem.html.includes("工具结果"), true);
+  assert.equal(workitem.html.includes("工具已返回，AI 正在整理下一步。"), true);
+});
+
 test("option intake stays option-first with collapsed free text instead of a chat wall", () => {
   const intake = renderGoldPathSurface(surfaceVm(), "desktop").pages.find((page) => page.key === "intake");
 
