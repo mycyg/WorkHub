@@ -2225,6 +2225,36 @@ test("W2 listPendingForUser exposes when the approval queue has more than the fi
   assert.equal(pageInfo?.has_more, true);
 });
 
+test("W2 listPendingForUser returns a requested approval queue page with the honest total", async () => {
+  const approvals = new MemoryApprovals();
+  for (let index = 0; index < 103; index += 1) {
+    await approvals.createApprovalRequest({
+      actionPattern: "tool.publish_external",
+      routedToUserId: userId,
+      payloadJson: { raw_args: { index } }
+    });
+  }
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    now: () => now
+  });
+
+  const vm = await service.listPendingForUser(user({ isAdmin: true }), { offset: 100 });
+  const pageInfo = (vm as { page_info?: { limit?: number; offset?: number; returned?: number; has_more?: boolean } }).page_info;
+
+  assert.equal(vm.requests.length, 3);
+  assert.equal(vm.items.length, 3);
+  assert.equal(vm.counts.pending, 3);
+  assert.equal(vm.counts.pending_total, 103);
+  assert.equal(pageInfo?.limit, 100);
+  assert.equal(pageInfo?.offset, 100);
+  assert.equal(pageInfo?.returned, 3);
+  assert.equal(pageInfo?.has_more, false);
+});
+
 test("routes-a-2/services-a-2/ux-web-govern-6: listPendingForUser caps the visibility scan instead of translating the whole pending table", async () => {
   const approvals = new MemoryApprovals();
   // 造 3 倍于 approvalCenterScanCap(=500) 的 pending 行，全部指向不同 work item、全部可见——

@@ -24,6 +24,7 @@ export const workHubLocaleOptions = [
 
 type ApprovalQueuePageInfo = {
   limit: number;
+  offset?: number | undefined;
   returned: number;
   has_more: boolean;
 };

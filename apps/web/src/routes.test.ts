@@ -53,6 +53,12 @@ type RouteClientOverrides = {
   knowledgeError?: Error;
 };
 
+type ApprovalRouteRequestOptions = {
+  locale?: string;
+  offset?: number;
+  limit?: number;
+};
+
 function meetingVm(): MeetingPageVM {
   return {
     generated_at: "2026-06-11T09:30:00.000Z",
@@ -546,8 +552,12 @@ function goldPathSurfaceVm(): GoldPathSurfaceVM {
 
 function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverrides = {}) {
   const calls: string[] = [];
-  const localeCall = (name: string, options?: { locale?: string; projectId?: string }) => {
-    calls.push(`${name}:${options?.locale ?? "none"}`);
+  const localeCall = (name: string, options?: { locale?: string; projectId?: string; offset?: number; limit?: number }) => {
+    const paging = [
+      options?.offset === undefined ? "" : `offset=${options.offset}`,
+      options?.limit === undefined ? "" : `limit=${options.limit}`
+    ].filter(Boolean).join(":");
+    calls.push(`${name}:${options?.locale ?? "none"}${paging ? `:${paging}` : ""}`);
   };
   const client = {
     pages: {
@@ -558,7 +568,7 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         }
         return overrides.attention ?? surface.page_vms.attention;
       },
-      async approvals(options?: { locale?: string }) {
+      async approvals(options?: ApprovalRouteRequestOptions) {
         localeCall("approvals", options);
         if (overrides.approvalsError) {
           throw overrides.approvalsError;
@@ -1731,6 +1741,33 @@ test("F11/簇A: empty approvals stays a full page in the shell (no collapse to a
   assert.equal(result.html.includes('data-r4-approval-empty="true"'), true, "renders the tailored empty card");
   assert.equal(result.html.includes('data-r4-approval-detail="true"'), false, "no select-a-row detail scaffolding when there are no approvals");
   assert.equal(result.html.includes('data-r4-approval-action-panel="true"'), false, "no selection action panel when empty");
+});
+
+test("R9 approvals route renders the real total and a working next-page entry for truncated queues", async () => {
+  const surface = goldPathSurfaceVm();
+  const approvals: ApprovalCenterVM = {
+    ...surface.page_vms.approvals,
+    counts: {
+      ...surface.page_vms.approvals.counts,
+      pending: 100,
+      pending_total: 237
+    },
+    page_info: { limit: 100, offset: 100, returned: 100, has_more: true }
+  };
+  const { client, calls } = fakeRouteClient(surface, { approvals });
+  const match = resolveWebRoute("/approvals?offset=100");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls, ["approvals:zh-CN:offset=100"]);
+  assert.equal(result.html.includes('data-r4-approval-pending="237"'), true);
+  assert.equal(result.html.includes('<span class="wh-r4-route-count">237</span>'), true);
+  assert.equal(result.html.includes('data-r4-approval-page-offset="100"'), true);
+  assert.equal(result.html.includes('data-r4-approval-next-page-href="/approvals?offset=200"'), true);
+  assert.equal(result.html.includes('href="/approvals?offset=200"'), true);
+  assert.equal(result.html.includes("查看更多审批"), true);
 });
 
 test("R4 web loader maps forbidden and not-found API failures to route states", async () => {

@@ -1847,8 +1847,15 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
     { name: "locale", in: "query", required: false, schema: { type: "string", enum: ["zh-CN", "en-US"] } }
   ]);
 
+  // 旧断言把 /api/pages/approvals 也钉成只有 locale；那已经不对，因为审批中心现在有真实的下一页入口，
+  // typed page endpoint 必须公开 offset/limit 查询参数，否则第 101+ 条仍只是 UI 提示、没有可请求的页面。
+  assert.deepEqual(operationParameters(body.paths, "/api/pages/approvals", "get"), [
+    { name: "locale", in: "query", required: false, schema: { type: "string", enum: ["zh-CN", "en-US"] } },
+    { name: "offset", in: "query", required: false, schema: { type: "integer", minimum: 0 } },
+    { name: "limit", in: "query", required: false, schema: { type: "integer", minimum: 1, maximum: 100 } }
+  ]);
+
   for (const path of [
-    "/api/pages/approvals",
     "/api/pages/notifications",
     "/api/pages/health",
     "/api/pages/cost",

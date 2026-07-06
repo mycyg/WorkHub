@@ -1,5 +1,6 @@
 import type {
   ApiEnvelope,
+  ApprovalPageRequestOptions,
   FetchLike,
   HealthResponse,
   IdentifyRequest,
@@ -51,6 +52,21 @@ function encodedStreamPath(kind: "workitem" | "run" | "session" | "proposal", id
 
 function withPageLocale(path: string, options?: PageRequestOptions) {
   return options?.locale ? `${path}?locale=${encodeURIComponent(options.locale)}` : path;
+}
+
+function withApprovalPageOptions(path: string, options?: ApprovalPageRequestOptions) {
+  const params = new URLSearchParams();
+  if (options?.locale) {
+    params.set("locale", options.locale);
+  }
+  if (options?.offset !== undefined) {
+    params.set("offset", String(options.offset));
+  }
+  if (options?.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
 }
 
 function withDrivePageOptions(path: string, options?: DrivePageRequestOptions) {
@@ -505,7 +521,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
     replayAgentRun: (runId, options) => request(withPageLocale(`/api/agent-runs/${encodeURIComponent(runId)}/replay`, options)),
     pages: {
       attention: (options) => request(withPageLocale("/api/pages/attention", options)),
-      approvals: (options) => request(withPageLocale("/api/pages/approvals", options)),
+      approvals: (options) => request(withApprovalPageOptions("/api/pages/approvals", options)),
       cost: (options) => request(withPageLocale("/api/pages/cost", options)),
       skills: (options) => request(withPageLocale("/api/pages/skills", options)),
       settings: (options) => request(withPageLocale("/api/pages/settings", options)),

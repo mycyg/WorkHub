@@ -755,6 +755,7 @@ export const approvalCenterVmSchema = z.object({
   counts: z.record(z.string(), z.number().int().nonnegative()),
   page_info: z.object({
     limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative().optional(),
     returned: z.number().int().nonnegative(),
     has_more: z.boolean()
   }).optional(),
