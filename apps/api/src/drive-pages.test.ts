@@ -1652,7 +1652,7 @@ test("drive page service keeps recycle-bin file current-version metadata intact"
   assert.equal(deletedVersionVm?.current, true);
 });
 
-test("drive page service honors a requested item_id (#5 recent-file deep-link) and falls back when the target is gone", async () => {
+test("drive page service honors a requested item_id (#5 recent-file deep-link) and marks a missing target without selecting another file", async () => {
   const pageRows = rows();
   let readInput: Parameters<DriveRepository["readPage"]>[0];
   const service = createDrivePageService({
@@ -1677,9 +1677,13 @@ test("drive page service honors a requested item_id (#5 recent-file deep-link) a
   assert.equal(focused.selected_item_id, folderId, "requested item_id is honored");
   assert.equal(readInput?.targetItemId, folderId, "requested item_id is forwarded so the repository can include it beyond the page slice");
 
-  const fallback = await service.page({ actor: actor(), locale: "zh-CN", projectId, itemId: "91000000-0000-4000-8000-0000000000bb" });
-  // 旧断言要求整页 404；这是最近文件/外部深链的体验错误，目标消失时应回到可用网盘页。
-  assert.equal(fallback.selected_item_id, itemId);
+  const missingItemId = "91000000-0000-4000-8000-0000000000bb";
+  const fallback = await service.page({ actor: actor(), locale: "zh-CN", projectId, itemId: missingItemId });
+  assert.equal(readInput?.targetItemId, missingItemId, "missing requested item_id is still forwarded for repository widening");
+  // 旧断言把 selected_item_id 钉成默认文件；那会让失效深链看起来打开了另一个真实文件，误导用户。
+  assert.equal(fallback.selected_item_id, undefined);
+  assert.equal(fallback.requested_item_missing, true);
+  assert.equal(fallback.items.some((item) => item.id === itemId), true, "the usable default drive page still renders");
 });
 
 test("drive page service honors a requested deleted item_id in the recycle bin", async () => {

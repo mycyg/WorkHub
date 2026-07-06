@@ -584,8 +584,11 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         localeCall("goldPath", options);
         return surface;
       },
-      async drive(options?: { locale?: string; projectId?: string }) {
-        calls.push(`drive:${options?.locale ?? "none"}:${options?.projectId ?? "none"}`);
+      async drive(options?: { locale?: string; projectId?: string; itemId?: string; item_id?: string }) {
+        const itemId = options?.itemId ?? options?.item_id;
+        calls.push(itemId
+          ? `drive:${options?.locale ?? "none"}:${options?.projectId ?? "none"}:${itemId}`
+          : `drive:${options?.locale ?? "none"}:${options?.projectId ?? "none"}`);
         return overrides.drive ?? driveVm();
       },
       async meetings(options?: { locale?: string; projectId?: string; meetingId?: string }) {
@@ -1529,6 +1532,24 @@ test("R5.1 drive route loader renders accepted deliverables and version actions 
   assert.equal(result.html.includes('data-r4-product-metric="files"'), true);
   assert.equal(result.html.includes('data-r4-product-metric="versions"'), true);
   assert.equal(result.html.includes('href="/drive"'), true);
+});
+
+test("R9 drive route loader shows a missing item notice without highlighting another file", async () => {
+  const surface = goldPathSurfaceVm();
+  const missingItemId = "93000000-0000-4000-8000-0000000000bb";
+  const drive = { ...driveVm(), selected_item_id: undefined, requested_item_missing: true };
+  const { client, calls } = fakeRouteClient(surface, { drive });
+  const match = resolveWebRoute(`/drive?project_id=93000000-0000-4000-8000-000000000001&item_id=${missingItemId}`);
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls, [`drive:zh-CN:93000000-0000-4000-8000-000000000001:${missingItemId}`]);
+  assert.equal(result.html.includes('data-r9-drive-requested-missing="true"'), true);
+  assert.equal(result.html.includes("找不到该文件，已回到默认视图。"), true);
+  assert.equal(/data-r4-drive-item="[^"]+"[^>]*data-r4-drive-item-selected="true"/.test(result.html), false);
+  assert.equal(/data-r5-drive-recycle-item="[^"]+"[^>]*data-r5-drive-recycle-selected="true"/.test(result.html), false);
 });
 
 test("R8 cycle-review #2 drive with no project sends the user to /projects, not a home dead-end", async () => {
