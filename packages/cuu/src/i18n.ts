@@ -79,6 +79,10 @@ export type CuuCopyKey =
   | "workItem.readyFallback"
   | "workItem.acceptanceSection"
   | "workItem.acceptanceFallback"
+  | "workItem.acceptanceStatus.open"
+  | "workItem.acceptanceStatus.met"
+  | "workItem.acceptanceStatus.unmet"
+  | "workItem.acceptanceStatus.waived"
   | "workItem.startedFallback"
   | "budget.scope.workitem"
   | "budget.scope.task"
@@ -309,6 +313,10 @@ const cuuCopy = {
     "workItem.readyFallback": "Cuu 已准备继续处理。",
     "workItem.acceptanceSection": "验收",
     "workItem.acceptanceFallback": "验收项 {index}",
+    "workItem.acceptanceStatus.open": "待处理",
+    "workItem.acceptanceStatus.met": "已满足",
+    "workItem.acceptanceStatus.unmet": "未满足",
+    "workItem.acceptanceStatus.waived": "已豁免",
     "workItem.startedFallback": "Cuu 开始处理这件事了。",
     "budget.scope.workitem": "任务预算",
     "budget.scope.task": "军团计划预算",
@@ -538,6 +546,10 @@ const cuuCopy = {
     "workItem.readyFallback": "Cuu is ready to continue.",
     "workItem.acceptanceSection": "Acceptance",
     "workItem.acceptanceFallback": "Acceptance item {index}",
+    "workItem.acceptanceStatus.open": "Pending",
+    "workItem.acceptanceStatus.met": "Met",
+    "workItem.acceptanceStatus.unmet": "Not met",
+    "workItem.acceptanceStatus.waived": "Waived",
     "workItem.startedFallback": "Cuu started working on this task.",
     "budget.scope.workitem": "Task budget",
     "budget.scope.task": "Plan budget",

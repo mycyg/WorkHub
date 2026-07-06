@@ -670,6 +670,9 @@ test("work item detail becomes a lightweight Cuu task card", () => {
   assert.equal(card.payload_ref?.entity_type, "workitem");
   assert.equal(card.actions.some((action) => action.href === `/agent-runs/${detail.agent_trace_preview[0]?.agent_run_id}/replay`), true);
   assert.equal(card.evidence_refs?.[0]?.title, "上次周会纪要");
+  const acceptanceLine = card.sections?.find((section) => section.id === "acceptance")?.lines[0] ?? "";
+  assert.equal(acceptanceLine, "输出必须绑定证据: 待处理");
+  assert.doesNotMatch(acceptanceLine, /: open\b/u);
 });
 
 test("findings: acceptance items with non-string title/status fall back instead of rendering [object Object]", () => {
@@ -692,7 +695,9 @@ test("findings: acceptance items with non-string title/status fall back instead 
   const line = card.sections?.find((section) => section.id === "acceptance")?.lines[0] ?? "";
   assert.equal(line.includes("[object Object]"), false);
   assert.equal(line.includes(": 5"), false);
-  assert.equal(line.endsWith(": open"), true);
+  // R9.7 review: the old assertion pinned raw `open`; user-facing Cuu cards
+  // need a localized fallback label even when the source acceptance status is bad data.
+  assert.equal(line.endsWith(": 待处理"), true);
 });
 
 test("evidence bubbles preserve task binding POST actions", () => {

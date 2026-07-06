@@ -945,6 +945,20 @@ function stateForWorkItem(status: WorkItemStatus, hasProposal: boolean): CuuStat
   return "thinking";
 }
 
+function acceptanceStatusLabel(status: unknown, options: CuuLocaleOptions) {
+  switch (status) {
+    case "met":
+      return cuuT(options.locale, "workItem.acceptanceStatus.met");
+    case "unmet":
+      return cuuT(options.locale, "workItem.acceptanceStatus.unmet");
+    case "waived":
+      return cuuT(options.locale, "workItem.acceptanceStatus.waived");
+    case "open":
+    default:
+      return cuuT(options.locale, "workItem.acceptanceStatus.open");
+  }
+}
+
 export function cardFromWorkItemDetail(vm: WorkItemDetailVM, options: CuuLocaleOptions = {}): CuuCard {
   const hasProposal = Boolean(vm.latest_proposal);
   const state = stateForWorkItem(vm.workitem.status, hasProposal);
@@ -1015,8 +1029,7 @@ export function cardFromWorkItemDetail(vm: WorkItemDetailVM, options: CuuLocaleO
         // ?? 只挡 null/undefined，对象/数字会 stringify 成 "[object Object]"/"5"。改 typeof 守卫，
         // 非字符串落到占位文案（与 cards.ts:233 dataStringField 约定一致）。
         const title = typeof record.title === "string" ? record.title : cuuFormat(options.locale, "workItem.acceptanceFallback", { index: index + 1 });
-        const status = typeof record.status === "string" ? record.status : "open";
-        return `${title}: ${status}`;
+        return `${title}: ${acceptanceStatusLabel(record.status, options)}`;
       })
     });
   }
