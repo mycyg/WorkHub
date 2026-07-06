@@ -891,6 +891,76 @@ test("replay cost cards localize remaining budget labels", () => {
   assert.doesNotMatch(costLines, /剩余/u);
 });
 
+test("replay trace cards hide raw phases and private step excerpts", () => {
+  const replay: ReplayTraceVM = {
+    run: agentRunLive("succeeded").run,
+    steps: [
+      {
+        id: "60000000-0000-4000-8000-000000000201",
+        agent_run_id: "40000000-0000-4000-8000-000000000025",
+        step_no: 1,
+        phase: "tool_call",
+        tool_name: "read_project_file",
+        input_json: {},
+        output_excerpt: "读取 workhub-app-upload.txt",
+        created_at: ts
+      },
+      {
+        id: "60000000-0000-4000-8000-000000000202",
+        agent_run_id: "40000000-0000-4000-8000-000000000025",
+        step_no: 2,
+        phase: "tool_result",
+        tool_name: "read_project_file",
+        input_json: {},
+        output_excerpt: "--- name: markdown-report description: long private tool payload",
+        created_at: ts
+      },
+      {
+        id: "60000000-0000-4000-8000-000000000203",
+        agent_run_id: "40000000-0000-4000-8000-000000000025",
+        step_no: 3,
+        phase: "think",
+        input_json: {},
+        output_excerpt: "Now I understand the task and will analyze hidden reasoning.",
+        created_at: ts
+      }
+    ],
+    evidence_refs: [],
+    snapshots: [],
+    audit_logs: [],
+    accepted_deliverables: [],
+    merge_timeline: []
+  };
+
+  const card = cardFromReplayTrace(replay);
+  const visible = JSON.stringify([card.message, card.sections]);
+
+  assert.match(visible, /工具调用/u);
+  assert.match(visible, /工具已返回/u);
+  assert.match(visible, /AI 正在整理材料/u);
+  assert.doesNotMatch(visible, /tool_call|tool_result|#3 think|read_project_file|Now I understand|hidden reasoning|隐藏推理|隐藏思考|markdown-report/u);
+
+  const finalCard = cardFromReplayTrace({
+    ...replay,
+    steps: [
+      ...replay.steps,
+      {
+        id: "60000000-0000-4000-8000-000000000204",
+        agent_run_id: "40000000-0000-4000-8000-000000000025",
+        step_no: 4,
+        phase: "final",
+        input_json: {},
+        output_excerpt: "交付完成。",
+        created_at: ts
+      }
+    ]
+  });
+  const finalVisible = JSON.stringify([finalCard.message, finalCard.sections]);
+
+  assert.match(finalVisible, /完成输出：交付完成。/u);
+  assert.doesNotMatch(finalVisible, /tool_call|tool_result|#3 think|read_project_file|Now I understand|hidden reasoning|隐藏推理|隐藏思考|markdown-report/u);
+});
+
 test("cost dashboard cards localize budget risk statuses", () => {
   const costDashboard: CostDashboardVM = {
     generated_at: ts,

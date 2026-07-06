@@ -1277,7 +1277,7 @@ export function cardFromReplayTrace(vm: ReplayTraceVM, options: CuuLocaleOptions
     {
       id: "steps",
       title: cuuT(options.locale, "replay.summarySection"),
-      lines: vm.steps.slice(-4).map((step) => `#${step.step_no} ${step.phase}${step.output_excerpt ? `: ${step.output_excerpt}` : ""}`)
+      lines: vm.steps.slice(-4).map((step) => publicAgentRunTraceLine(step, options))
     }
   ];
 
@@ -1297,7 +1297,7 @@ export function cardFromReplayTrace(vm: ReplayTraceVM, options: CuuLocaleOptions
     kind: "trace",
     state: vm.run.status === "failed" || vm.run.status === "escalated" ? "worried" : "thinking",
     title: cuuT(options.locale, "replay.title"),
-    message: truncate(latestStep?.output_excerpt ?? vm.run.handoff_md ?? cuuT(options.locale, "replay.readyFallback")),
+    message: truncate(publicAgentRunStepMessage(latestStep, options) ?? vm.run.handoff_md ?? cuuT(options.locale, "replay.readyFallback")),
     priority: vm.run.status === "failed" || vm.run.status === "escalated" ? "high" : "normal",
     actions: [],
     sections,
