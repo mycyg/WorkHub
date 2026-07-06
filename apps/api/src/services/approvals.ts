@@ -80,6 +80,15 @@ const approvalCenterPageLimit = 100;
 // 封顶到「几页」量级（5 倍页大小），超出如实通过 pending_total_capped 告知前端总数是下限估计，不假装数完了。
 const approvalCenterScanCap = approvalCenterPageLimit * 5;
 
+function normalizeApprovalCenterPage(input: { limit?: number; offset?: number }) {
+  const requestedLimit = Number.isFinite(input.limit) ? Math.trunc(input.limit ?? approvalCenterPageLimit) : approvalCenterPageLimit;
+  const requestedOffset = Number.isFinite(input.offset) ? Math.trunc(input.offset ?? 0) : 0;
+  return {
+    limit: Math.min(approvalCenterPageLimit, Math.max(1, requestedLimit)),
+    offset: Math.max(0, requestedOffset)
+  };
+}
+
 export class ApprovalServiceError extends Error {
   constructor(
     public readonly status: number,
@@ -762,9 +771,12 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       options: {
         locale?: WorkHubLocale;
         canReadWorkItem?: (workItemId: string | undefined) => Promise<boolean>;
+        limit?: number;
+        offset?: number;
       } = {}
     ) {
       const includeAll = user.isAdmin;
+      const page = normalizeApprovalCenterPage(options);
       // routes-a-2/services-a-2/xlink-authz-4/ux-web-govern-6：按 workItemId 去重的可见性缓存——多条审批
       // 常指向同一工作项，之前每一行都重新调用一次（重量级）canReadWorkItem，这里改成只判一次并复用结果。
       const workItemVisibility = new Map<string, Promise<boolean>>();
@@ -813,7 +825,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           for (const row of chunk) {
             if (await canReadApprovalRow(row)) {
               visibleTotal += 1;
-              if (visibleRows.length < approvalCenterPageLimit + 1) {
+              if (visibleRows.length < page.offset + page.limit + 1) {
                 visibleRows.push(row);
               }
             }
@@ -825,16 +837,17 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             totalPendingCapped = true;
           }
         }
-        rows = visibleRows.slice(0, approvalCenterPageLimit);
-        hasMore = visibleRows.length > approvalCenterPageLimit || totalPendingCapped;
+        rows = visibleRows.slice(page.offset, page.offset + page.limit);
+        hasMore = visibleRows.length > page.offset + page.limit || totalPendingCapped;
         totalPending = visibleTotal;
       } else {
         const loadedRows = await deps.approvals.listPendingForUser(user.id, {
           includeAll,
-          limit: approvalCenterPageLimit + 1
+          offset: page.offset,
+          limit: page.limit + 1
         });
-        rows = loadedRows.slice(0, approvalCenterPageLimit);
-        hasMore = loadedRows.length > approvalCenterPageLimit;
+        rows = loadedRows.slice(0, page.limit);
+        hasMore = loadedRows.length > page.limit;
         totalPending = await deps.approvals.countPendingForUser(user.id, { includeAll });
       }
       const itemOptions = options.locale ? { locale: options.locale } : {};
@@ -880,7 +893,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         requests: rows.map(toApprovalRequestResponse),
         filters: { pending: true },
         counts: { pending: rows.length, pending_total: totalPending, pending_total_capped: totalPendingCapped ? 1 : 0 },
-        page_info: { limit: approvalCenterPageLimit, returned: rows.length, has_more: hasMore },
+        page_info: { limit: page.limit, offset: page.offset, returned: rows.length, has_more: hasMore },
         items_detail: Object.fromEntries(detailEntries) as ApprovalCenterVM["items_detail"]
       }, "approval-center.page") satisfies ApprovalCenterVM;
     },
