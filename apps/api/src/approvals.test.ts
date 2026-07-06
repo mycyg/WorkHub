@@ -554,7 +554,7 @@ test("deny requires a reason and remember always refuses to learn high-risk appr
   assert.equal(deps.policyRepo.rows[0]?.learnedFromSession, true);
 });
 
-test("remember always fails closed when learned allow policy audit logging fails", async () => {
+test("remember always skips learning but returns the committed decision when policy audit logging fails", async () => {
   const deps = serviceDeps();
   const approval = await deps.approvals.createApprovalRequest({
     actionPattern: "tool.write_file",
@@ -575,11 +575,17 @@ test("remember always fails closed when learned allow policy audit logging fails
     return originalCreateAuditLog(input);
   };
 
-  await assert.rejects(
-    () => deps.service.respond(approval.id, actor, { decision: "allow", remember: "always" }),
-    /audit sink unavailable/u
-  );
+  // R9 branch-review fix-batch2-1: the old assertion made the whole response
+  // fail after respondPending() had already committed the decision, causing
+  // client retry to hit 409 and dropping approval.decided audit/publish.
+  const result = await deps.service.respond(approval.id, actor, { decision: "allow", remember: "always" });
+
+  assert.equal(result.approval.status, "approved");
+  assert.equal(result.learned_policy, undefined);
   assert.equal(deps.policyRepo.rows.length, 0);
+  const decidedAudit = deps.auditLogs.rows.find((entry) => entry.action === "approval.decided");
+  assert.equal((decidedAudit?.detailJson as Record<string, unknown> | undefined)?.learn_failed, true);
+  assert.equal(deps.bus.events.some((event) => event.type === "permission.decided"), true);
 });
 
 test("remember always reuses an equivalent active policy instead of duplicating learned policies", async () => {
