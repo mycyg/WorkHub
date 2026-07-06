@@ -1552,6 +1552,43 @@ test("R9 drive route loader shows a missing item notice without highlighting ano
   assert.equal(/data-r5-drive-recycle-item="[^"]+"[^>]*data-r5-drive-recycle-selected="true"/.test(result.html), false);
 });
 
+test("R9 drive route loader tells the truth when the recycle bin is truncated", async () => {
+  const surface = goldPathSurfaceVm();
+  const base = driveVm();
+  const baseItem = base.items[0]!;
+  const deletedItems = Array.from({ length: 5 }, (_, index) => {
+    const suffix = String(index + 10).padStart(12, "0");
+    return {
+      ...baseItem,
+      id: `93000000-0000-4000-8000-${suffix}`,
+      name: `已删除文件 ${index + 1}.md`,
+      path: `/回收站/已删除文件 ${index + 1}.md`,
+      deleted_at: `2026-06-1${index}T09:00:00.000Z`,
+      restore_href: `/api/drive/projects/93000000-0000-4000-8000-000000000001/items/93000000-0000-4000-8000-${suffix}/restore`,
+      preview_href: undefined,
+      download_href: undefined,
+      accepted_deliverable: undefined
+    };
+  });
+  const drive = {
+    ...base,
+    summary: { ...base.summary, deleted_item_count: 8 },
+    deleted_items: deletedItems
+  };
+  const { client } = fakeRouteClient(surface, { drive });
+  const match = resolveWebRoute("/drive?project_id=93000000-0000-4000-8000-000000000001");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.match(/data-r5-drive-recycle-item=/g)?.length, 5);
+  assert.equal(result.html.match(/data-r5-drive-recycle-restore=/g)?.length, 5);
+  assert.equal(result.html.includes('data-r9-drive-recycle-hidden-count="3"'), true);
+  assert.equal(result.html.includes("本页先显示 5 项；还有 3 项未加载。"), true);
+  assert.equal(result.html.includes("回收站是空的。"), false);
+});
+
 test("R8 cycle-review #2 drive with no project sends the user to /projects, not a home dead-end", async () => {
   const surface = goldPathSurfaceVm();
   // empty workspace → drive returns no_project; loader collapses to an empty state.

@@ -2318,6 +2318,13 @@ function renderDriveRouteComponent(
         ${item.restore_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore_item" data-method="POST" data-r5-drive-recycle-restore="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""}
       </div>
     </div>`).join("")
+    : "";
+  const hiddenRecycleCount = Math.max(0, vm.summary.deleted_item_count - vm.deleted_items.length);
+  const recycleMoreNote = hiddenRecycleCount > 0
+    ? `<p class="wh-subtle" data-r9-drive-recycle-hidden-count="${escapeHtml(String(hiddenRecycleCount))}" data-r9-drive-recycle-loaded-count="${escapeHtml(String(vm.deleted_items.length))}">${escapeHtml(locale === "zh-CN" ? `本页先显示 ${vm.deleted_items.length} 项；还有 ${hiddenRecycleCount} 项未加载。请通过对应文件链接打开后还原。` : `Showing ${vm.deleted_items.length} recycle-bin items on this page; ${hiddenRecycleCount} more are not loaded. Open the specific file link to restore one that is not shown here.`)}</p>`
+    : "";
+  const recycleEmpty = vm.deleted_items.length || hiddenRecycleCount > 0
+    ? ""
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyRecycle"))}</p>`;
   const operationRows = vm.operations.length
     ? vm.operations.slice(0, 6).map((operation) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-drive-operation="${escapeHtml(operation.id)}" data-r5-drive-operation-type="${escapeHtml(operation.op_type)}">
@@ -2392,7 +2399,8 @@ function renderDriveRouteComponent(
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r5-drive-recycle="true">
           <h3>${escapeHtml(routeT(locale, "drive.recycle"))}</h3>
-          <div class="wh-r4-route-timeline">${recycleRows}</div>
+          <div class="wh-r4-route-timeline">${recycleRows}${recycleEmpty}</div>
+          ${recycleMoreNote}
         </section>
         <section class="wh-card wh-r4-route-card" data-r5-drive-operations="true">
           <h3>${escapeHtml(routeT(locale, "drive.operations"))}</h3>
