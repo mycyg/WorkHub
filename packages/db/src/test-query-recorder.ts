@@ -2,13 +2,16 @@ import type { WorkHubDb } from "./client.js";
 
 export type RecordedQuery = {
   operation: "select" | "insert" | "update";
+  selection?: unknown;
   fromTable?: unknown;
   targetTable?: unknown;
   joins: Array<{ kind: "inner" | "left"; table: unknown; on: unknown }>;
   where?: unknown;
   orderBy: unknown[];
+  groupBy: unknown[];
   limit?: number;
   lock?: string;
+  alias?: string;
   setValue?: unknown;
   valuesValue?: unknown;
   returningCalled?: boolean;
@@ -51,6 +54,12 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
     return this;
   }
 
+  groupBy(...values: unknown[]): this {
+    this.query.groupBy.push(...values);
+    this.query.steps.push("groupBy");
+    return this;
+  }
+
   limit(count: number): this {
     this.query.limit = count;
     this.query.steps.push("limit");
@@ -79,6 +88,27 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
     this.query.returningCalled = true;
     this.query.steps.push("returning");
     return Promise.resolve([...this.rows]);
+  }
+
+  as(alias: string): Record<string, unknown> {
+    this.query.alias = alias;
+    this.query.steps.push("as");
+    const columns = new Map<string | symbol, unknown>();
+    const target = { __recordedQuery: this.query, __alias: alias };
+    return new Proxy(target, {
+      get(proxied, prop) {
+        if (prop === "then") {
+          return undefined;
+        }
+        if (prop in proxied) {
+          return proxied[prop as keyof typeof proxied];
+        }
+        if (!columns.has(prop)) {
+          columns.set(prop, { __subqueryAlias: alias, name: String(prop) });
+        }
+        return columns.get(prop);
+      }
+    }) as Record<string, unknown>;
   }
 
   then<TResult1 = unknown[], TResult2 = never>(
@@ -121,10 +151,11 @@ class QueryRecorderDb {
       operation,
       joins: [],
       orderBy: [],
+      groupBy: [],
       steps: [operation]
     };
     if ("selection" in values) {
-      (query as RecordedQuery & { selection?: unknown }).selection = values.selection;
+      query.selection = values.selection;
     }
     if ("targetTable" in values) {
       query.targetTable = values.targetTable;
@@ -205,6 +236,11 @@ function visitSqlTree(
   }
   if (name === "StringChunk") {
     return visitSqlTree((value as { value?: unknown }).value, visitor, seen);
+  }
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    if (visitSqlTree(child, visitor, seen)) {
+      return true;
+    }
   }
   return false;
 }
