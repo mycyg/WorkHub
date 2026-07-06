@@ -156,12 +156,25 @@ function hasDependencyCycle(items: TaskPlanItemRow[]) {
 
 function blockedByFailedDependency(items: TaskPlanItemRow[]) {
   const byId = itemById(items);
-  return pendingItems(items).filter((item) =>
-    (item.dependsOn ?? []).some((dependencyId) => {
-      const dependency = byId.get(dependencyId);
-      return !dependency || FAILED_DEPENDENCY_STATUSES.has(dependency.status);
-    })
-  );
+  const blocked = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const item of pendingItems(items)) {
+      if (blocked.has(item.id)) {
+        continue;
+      }
+      const hasBlockedDependency = (item.dependsOn ?? []).some((dependencyId) => {
+        const dependency = byId.get(dependencyId);
+        return !dependency || blocked.has(dependencyId) || FAILED_DEPENDENCY_STATUSES.has(dependency.status);
+      });
+      if (hasBlockedDependency) {
+        blocked.add(item.id);
+        changed = true;
+      }
+    }
+  }
+  return pendingItems(items).filter((item) => blocked.has(item.id));
 }
 
 function readyPendingItems(items: TaskPlanItemRow[]) {

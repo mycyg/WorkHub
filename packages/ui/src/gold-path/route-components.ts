@@ -25,6 +25,7 @@ import type {
   TeamSkillsPageVM,
   TaskPlanVM,
   GoldPathSurfaceVM,
+  WorkItemAgentTeamVM,
   WorkItemDetailVM
 } from "@workhub/contracts";
 
@@ -1931,6 +1932,77 @@ function renderTaskPlanPanel(
   </section>`;
 }
 
+function agentTeamTitle(team: WorkItemAgentTeamVM, locale: WorkHubLocale) {
+  const ratio = `${team.completed_count}/${team.total_count}`;
+  if (team.status === "done") {
+    return locale === "zh-CN" ? `军团已完成 ${ratio}` : `Team completed ${ratio}`;
+  }
+  return locale === "zh-CN" ? `军团推进中 ${ratio}` : `Team in progress ${ratio}`;
+}
+
+function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], locale: WorkHubLocale) {
+  const labels: Record<WorkItemAgentTeamVM["items"][number]["status"], { "zh-CN": string; "en-US": string }> = {
+    pending: { "zh-CN": "待派发", "en-US": "Pending" },
+    dispatched: { "zh-CN": "派发中", "en-US": "Dispatched" },
+    succeeded: { "zh-CN": "已成功", "en-US": "Succeeded" },
+    failed: { "zh-CN": "失败", "en-US": "Failed" },
+    needs_human: { "zh-CN": "等你决定", "en-US": "Needs decision" },
+    skipped: { "zh-CN": "已跳过", "en-US": "Skipped" }
+  };
+  return labels[status][locale];
+}
+
+function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: WorkHubLocale) {
+  if (!team) {
+    return "";
+  }
+  const burnPct = team.cost_burn_pct ?? 0;
+  const burnTone = burnPct > 100 ? "danger" : burnPct >= 70 ? "warning" : "ok";
+  const burnStyle = `width:${Math.min(Math.max(burnPct, 0), 100)}%`;
+  const rows = team.items.length
+    ? team.items.map((item) => {
+        const waiting = item.waiting_for_seq.length
+          ? `<p>${escapeHtml(locale === "zh-CN" ? `等待 ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")} 完成` : `Waiting for ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")}`)}</p>`
+          : "";
+        const action = item.action
+          ? `<a class="wh-pill" href="${escapeHtml(safeHref(item.action.href))}" data-r9-agent-team-action="${escapeHtml(item.action.kind)}">${escapeHtml(item.action.label)}</a>`
+          : "";
+        const cost = item.cost_estimate_cny
+          ? `<span class="wh-pill">${escapeHtml(`¥${item.cost_estimate_cny}`)}</span>`
+          : "";
+        return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-r9-agent-team-status="${escapeHtml(item.status)}" data-r9-agent-team-role="${escapeHtml(item.role)}">
+          <div>
+            <strong>${escapeHtml(`#${item.seq} ${item.title}`)}</strong>
+            ${waiting}
+          </div>
+          <div class="wh-r4-route-meta">
+            <span class="wh-pill" data-r9-agent-team-state-dot="${escapeHtml(item.status)}">●</span>
+            <span class="wh-pill">${escapeHtml(taskPlanItemRoleLabel(locale, item.role))}</span>
+            <span class="wh-pill">${escapeHtml(agentTeamItemStatusLabel(item.status, locale))}</span>
+            ${cost}
+            ${action}
+          </div>
+        </div>`;
+      }).join("")
+    : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无子运行。" : "No child runs yet.")}</p>`;
+  const capped = team.runs_capped
+    ? `<p class="wh-subtle" data-r9-agent-team-runs-capped-note="true">${escapeHtml(locale === "zh-CN" ? "仅显示前 100 个子运行。" : "Showing the first 100 child runs.")}</p>`
+    : "";
+  return `<section class="wh-card wh-r4-route-card" data-r9-agent-team-panel="true" data-r9-agent-team-plan-id="${escapeHtml(team.plan_id)}" data-r9-agent-team-status="${escapeHtml(team.status)}">
+    <div class="wh-r4-route-card-head">
+      <h3>${escapeHtml(agentTeamTitle(team, locale))}</h3>
+      <button type="button" class="wh-pill" disabled data-r9-agent-team-pause="true">${escapeHtml(locale === "zh-CN" ? "暂停派发" : "Pause dispatch")}</button>
+    </div>
+    <div class="wh-r4-route-meta">
+      <span class="wh-pill">${escapeHtml(`¥${team.cost_used_cny}`)}</span>
+      ${team.cost_budget_cny ? `<span class="wh-pill">${escapeHtml(`${burnPct}%`)}</span>` : ""}
+    </div>
+    ${team.cost_budget_cny ? `<div class="wh-r4-route-meter" data-r9-agent-team-burn="${escapeHtml(burnTone)}" aria-label="${escapeHtml(`${burnPct}%`)}"><span style="${escapeHtml(burnStyle)}"></span></div>` : ""}
+    <div class="wh-r4-route-timeline">${rows}</div>
+    ${capped}
+  </section>`;
+}
+
 // M15：某些状态(已升级/进行中/待审阅/终态…)在无变更申请、无运行、非待派活时本就没有用户动作。
 // 别留一个零按钮零说明的死卡——按状态给一句「为什么没动作 + 接下来会怎样」的说明。
 function workItemActionHint(status: string, zh: boolean): string {
@@ -2048,6 +2120,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
         </section>
       </div>
       ${renderTaskPlanPanel(vm.task_plan, latestProposal, locale)}
+      ${renderAgentTeamPanel(vm.agent_team, locale)}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-workitem-acceptance="true">
           <h3>${escapeHtml(uiT(locale, "workitem.acceptanceTitle"))}</h3>

@@ -13,6 +13,12 @@ import { workItemSchema } from "./domain/work-item.js";
 import { notificationSeveritySchema } from "./notification.js";
 import { taskPlanVmSchema } from "./task-plan.js";
 import {
+  agentRunStatusSchema,
+  taskPlanItemRoleSchema,
+  taskPlanItemStatusSchema,
+  taskPlanStatusSchema
+} from "./enums.js";
+import {
   attentionItemSchema,
   budgetScopeSchema,
   budgetUsageSchema,
@@ -684,6 +690,56 @@ export const workItemSourceContextVmSchema = z.discriminatedUnion("source_type",
 ]);
 export type WorkItemSourceContextVM = z.infer<typeof workItemSourceContextVmSchema>;
 
+export const workItemAgentTeamItemStatusSchema = z.enum([
+  "pending",
+  "dispatched",
+  "succeeded",
+  "failed",
+  "needs_human",
+  "skipped"
+]);
+export type WorkItemAgentTeamItemStatus = z.infer<typeof workItemAgentTeamItemStatusSchema>;
+
+export const workItemAgentTeamActionSchema = z.object({
+  kind: z.enum(["view_output", "decide"]),
+  label: z.string().min(1).max(48),
+  href: z.string().min(1)
+});
+export type WorkItemAgentTeamActionVM = z.infer<typeof workItemAgentTeamActionSchema>;
+
+export const workItemAgentTeamItemVmSchema = z.object({
+  task_plan_item_id: idSchema,
+  seq: z.number().int().positive(),
+  title: z.string().min(1).max(256),
+  role: taskPlanItemRoleSchema,
+  plan_status: taskPlanItemStatusSchema,
+  status: workItemAgentTeamItemStatusSchema,
+  budget_share_pct: z.number().int().min(0).max(100),
+  depends_on: z.array(idSchema).default([]),
+  waiting_for_seq: z.array(z.number().int().positive()).default([]),
+  cost_estimate_cny: z.string().optional(),
+  run_id: idSchema.optional(),
+  parent_run_id: idSchema.optional(),
+  run_status: agentRunStatusSchema.optional(),
+  replay_href: z.string().min(1).optional(),
+  decision_href: z.string().min(1).optional(),
+  action: workItemAgentTeamActionSchema.optional()
+});
+export type WorkItemAgentTeamItemVM = z.infer<typeof workItemAgentTeamItemVmSchema>;
+
+export const workItemAgentTeamVmSchema = z.object({
+  plan_id: idSchema,
+  status: taskPlanStatusSchema,
+  completed_count: z.number().int().nonnegative(),
+  total_count: z.number().int().nonnegative(),
+  cost_used_cny: z.string().default("0.000000"),
+  cost_budget_cny: z.string().optional(),
+  cost_burn_pct: z.number().int().nonnegative().optional(),
+  runs_capped: z.boolean().default(false),
+  items: z.array(workItemAgentTeamItemVmSchema).max(50)
+});
+export type WorkItemAgentTeamVM = z.infer<typeof workItemAgentTeamVmSchema>;
+
 export const workItemDetailVmSchema = z.object({
   workitem: workItemSchema,
   // GH-2：所属项目名,供详情页头部「← 项目名」面包屑链接到 /projects/:id(工作项的 project_id 在 workitem 里)。
@@ -694,6 +750,7 @@ export const workItemDetailVmSchema = z.object({
   accepted_deliverables: z.array(acceptedDeliverableVmSchema).default([]),
   evidence_refs: z.array(evidenceRefSchema),
   task_plan: taskPlanVmSchema.optional(),
+  agent_team: workItemAgentTeamVmSchema.optional(),
   source_context: workItemSourceContextVmSchema.optional(),
   actions: z.object({
     create_proposal_draft: actionSpecSchema.optional()

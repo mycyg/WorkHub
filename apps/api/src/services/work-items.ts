@@ -28,6 +28,7 @@ import {
   deliverableChangeManifestSchema,
   evidenceRefSchema,
   sessionVmSchema,
+  workItemAgentTeamVmSchema,
   taskPlanVmSchema,
   workItemDetailVmSchema,
   workItemPrioritySchema,
@@ -42,6 +43,7 @@ import {
   type QuestionCard,
   type SessionVM,
   type TaskPlanVM,
+  type WorkItemAgentTeamVM,
   type UseEvidenceForTaskRequest,
   type WorkItem,
   type WorkItemDetailVM,
@@ -1232,6 +1234,137 @@ function taskPlanToVm(rows: TaskPlanWithItems | null | undefined): TaskPlanVM | 
   }, "work-item.task-plan");
 }
 
+type TaskPlanRunForTeam = NonNullable<TaskPlanWithItems["runs"]>[number];
+
+function parseCostCny(value: string | null | undefined) {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function formatCostCny(value: number) {
+  return value.toFixed(6);
+}
+
+function costBudgetFromPlan(rows: TaskPlanWithItems) {
+  const value = rows.plan.budgetJson["max_cost_cny"];
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return formatCostCny(value);
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) && parsed > 0 ? formatCostCny(parsed) : undefined;
+  }
+  return undefined;
+}
+
+function latestRunByTaskPlanItem(runs: TaskPlanRunForTeam[]) {
+  const result = new Map<string, TaskPlanRunForTeam>();
+  for (const run of runs) {
+    if (run.taskPlanItemId) {
+      result.set(run.taskPlanItemId, run);
+    }
+  }
+  return result;
+}
+
+function agentTeamItemStatus(
+  item: TaskPlanWithItems["items"][number],
+  run: TaskPlanRunForTeam | undefined
+): WorkItemAgentTeamVM["items"][number]["status"] {
+  if (run?.status === "escalated" || run?.status === "budget_exhausted") {
+    return "needs_human";
+  }
+  if (run?.status === "queued" || run?.status === "running") {
+    return "dispatched";
+  }
+  if (run?.status === "succeeded") {
+    return "succeeded";
+  }
+  if (run?.status === "failed" || run?.status === "cancelled") {
+    return "failed";
+  }
+  if (item.status === "dispatched") {
+    return "dispatched";
+  }
+  if (item.status === "succeeded" || item.status === "failed" || item.status === "skipped") {
+    return item.status;
+  }
+  return "pending";
+}
+
+function taskPlanAgentTeamToVm(
+  rows: TaskPlanWithItems | null | undefined,
+  locale: WorkHubLocale = "zh-CN"
+): WorkItemAgentTeamVM | undefined {
+  if (!rows) {
+    return undefined;
+  }
+  const runs = rows.runs ?? [];
+  const latestByItem = latestRunByTaskPlanItem(runs);
+  const displaySeqByItemId = new Map(rows.items.map((item, index) => [item.id, index + 1]));
+  const completedCount = rows.items.filter((item) => item.status === "succeeded").length;
+  const costUsed = runs.reduce((sum, run) => sum + parseCostCny(run.costEstimate), 0);
+  const costBudget = costBudgetFromPlan(rows);
+  const costBudgetNumber = costBudget ? Number.parseFloat(costBudget) : undefined;
+  const costBurnPct = costBudgetNumber && costBudgetNumber > 0
+    ? Math.round((costUsed / costBudgetNumber) * 100)
+    : undefined;
+  const viewLabel = locale === "zh-CN" ? "看产出" : "View output";
+  const decideLabel = locale === "zh-CN" ? "去决策" : "Decide";
+
+  return parseOutputContract(workItemAgentTeamVmSchema, {
+    plan_id: rows.plan.id,
+    status: rows.plan.status,
+    completed_count: completedCount,
+    total_count: rows.items.length,
+    cost_used_cny: formatCostCny(costUsed),
+    ...(costBudget ? { cost_budget_cny: costBudget } : {}),
+    ...(costBurnPct !== undefined ? { cost_burn_pct: costBurnPct } : {}),
+    runs_capped: rows.runsCapped ?? false,
+    items: rows.items.map((item, index) => {
+      const displaySeq = index + 1;
+      const run = latestByItem.get(item.id);
+      const status = agentTeamItemStatus(item, run);
+      const replayHref = run ? `/agent-runs/${run.id}/replay` : undefined;
+      const decisionHref = status === "needs_human" || status === "failed" ? "/attention" : undefined;
+      const waitingForSeq = item.dependsOn
+        .filter((id) => {
+          const dependency = rows.items.find((candidate) => candidate.id === id);
+          return dependency && dependency.status !== "succeeded";
+        })
+        .map((id) => displaySeqByItemId.get(id))
+        .filter((seq): seq is number => Boolean(seq));
+      return {
+        task_plan_item_id: item.id,
+        seq: displaySeq,
+        title: item.title,
+        role: item.role,
+        plan_status: item.status,
+        status,
+        budget_share_pct: item.budgetSharePct,
+        depends_on: item.dependsOn,
+        waiting_for_seq: waitingForSeq,
+        ...(run?.costEstimate ? { cost_estimate_cny: run.costEstimate } : {}),
+        ...(run ? {
+          run_id: run.id,
+          ...(run.parentRunId ? { parent_run_id: run.parentRunId } : {}),
+          run_status: run.status,
+          replay_href: replayHref
+        } : {}),
+        ...(decisionHref ? { decision_href: decisionHref } : {}),
+        ...(status === "succeeded" && replayHref
+          ? { action: { kind: "view_output" as const, label: viewLabel, href: replayHref } }
+          : decisionHref
+            ? { action: { kind: "decide" as const, label: decideLabel, href: decisionHref } }
+            : {})
+      };
+    })
+  }, "work-item.agent-team");
+}
+
 function buildWorkItemDetail(
   rows: StoredWorkItemDetailRows,
   locale: WorkHubLocale = "zh-CN",
@@ -1303,6 +1436,7 @@ function buildWorkItemDetail(
     : undefined;
   const sourceContext = driveSourceContext ?? meetingSourceContext;
   const taskPlan = taskPlanToVm(rows.taskPlan);
+  const agentTeam = taskPlanAgentTeamToVm(rows.taskPlan, locale);
   const canCreateSourceProposal = sourceContext
     && !latestProposalId
     && (sourceContext.source_type === "drive_comment"
@@ -1341,6 +1475,7 @@ function buildWorkItemDetail(
     ),
     evidence_refs: evidenceRefsFromBindings(rows.evidenceBindings),
     ...(taskPlan ? { task_plan: taskPlan } : {}),
+    ...(agentTeam ? { agent_team: agentTeam } : {}),
     ...(sourceContext ? { source_context: sourceContext } : {}),
     actions: {
       ...(createProposalAction ? { create_proposal_draft: createProposalAction } : {})

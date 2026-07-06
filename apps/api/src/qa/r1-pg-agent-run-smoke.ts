@@ -561,6 +561,7 @@ async function main() {
     if (taskPlanChildRuns.length !== 2) {
       throw new Error(`Expected 2 task-plan child agent_runs, got ${taskPlanChildRuns.length}`);
     }
+    const childReplayRunIds = taskPlanChildRuns.map((row) => row.id);
     const researchItem = dispatchedReadyItems.find((row) => row.role === "research");
     const reviewItem = dispatchedReadyItems.find((row) => row.role === "review");
     const researchRun = taskPlanChildRuns.find((row) => row.id === researchItem?.activeRunId);
@@ -578,6 +579,37 @@ async function main() {
     }
     if (Math.abs(Number.parseFloat(researchRun.maxCostCny) - expectedPlanCost * 0.3) > 0.000001) {
       throw new Error(`Expected research run max_cost_cny to be 30% of plan budget, got ${researchRun.maxCostCny}`);
+    }
+    const taskPlanWorkItemPageAfterDispatch = await app.request(`/api/pages/workitems/${taskPlanWorkItemId}`, { headers });
+    if (taskPlanWorkItemPageAfterDispatch.status !== 200) {
+      throw new Error(`Expected task-plan work item page after dispatch 200, got ${taskPlanWorkItemPageAfterDispatch.status}: ${await taskPlanWorkItemPageAfterDispatch.text()}`);
+    }
+    const taskPlanWorkItemPageAfterDispatchBody = await taskPlanWorkItemPageAfterDispatch.json() as {
+      data: {
+        task_plan?: { status: string };
+        agent_team?: {
+          status: string;
+          completed_count: number;
+          total_count: number;
+          runs_capped: boolean;
+          items: Array<{ status: string; run_id?: string; action?: { kind: string; href: string } }>;
+        };
+      };
+    };
+    const taskPlanPageAgentTeam = taskPlanWorkItemPageAfterDispatchBody.data.agent_team;
+    const dispatchedAgentTeamItems = taskPlanPageAgentTeam?.items.filter((item) => item.status === "dispatched") ?? [];
+    const pendingAgentTeamItems = taskPlanPageAgentTeam?.items.filter((item) => item.status === "pending") ?? [];
+    if (
+      !taskPlanPageAgentTeam
+      || taskPlanPageAgentTeam.status !== "dispatching"
+      || taskPlanPageAgentTeam.completed_count !== 0
+      || taskPlanPageAgentTeam.total_count !== 3
+      || taskPlanPageAgentTeam.runs_capped
+      || dispatchedAgentTeamItems.length !== 2
+      || pendingAgentTeamItems.length !== 1
+      || dispatchedAgentTeamItems.some((item) => !item.run_id)
+    ) {
+      throw new Error(`Expected task-plan agent_team to expose 2 dispatched child runs plus 1 pending dependency, got ${JSON.stringify(taskPlanPageAgentTeam)}`);
     }
     const staleRecord = await queue.get(researchRun.id);
     if (!staleRecord) {
@@ -2597,7 +2629,11 @@ async function main() {
         status: taskPlanRow.status,
         item_count: taskPlanItemRows.length,
         page_status: taskPlanPagePlan.status,
-        page_item_count: taskPlanPagePlan.items.length
+        page_item_count: taskPlanPagePlan.items.length,
+        agent_team_status: taskPlanPageAgentTeam.status,
+        agent_team_completed: taskPlanPageAgentTeam.completed_count,
+        agent_team_total: taskPlanPageAgentTeam.total_count,
+        child_replay_run_ids: childReplayRunIds
       },
       merge: {
         proposal_status: proposalAfterMerge.status,

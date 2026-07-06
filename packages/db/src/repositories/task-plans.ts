@@ -7,6 +7,7 @@ import type {
 } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
+import type { AgentRunRow } from "./agent-runs.js";
 import {
   taskPlanItems,
   taskPlans,
@@ -17,6 +18,21 @@ type JsonObject = Record<string, unknown>;
 
 export type TaskPlanRow = typeof taskPlans.$inferSelect;
 export type TaskPlanItemRow = typeof taskPlanItems.$inferSelect;
+export type TaskPlanRunRow = Pick<AgentRunRow,
+  "id"
+  | "parentRunId"
+  | "workItemId"
+  | "taskPlanId"
+  | "taskPlanItemId"
+  | "agentRole"
+  | "title"
+  | "status"
+  | "costEstimate"
+  | "outcomeReason"
+  | "createdAt"
+  | "updatedAt"
+  | "finishedAt"
+>;
 
 export type CreateTaskPlanItemInput = {
   id: string;
@@ -46,6 +62,8 @@ export type TaskPlanWithItems = {
   plan: TaskPlanRow;
   items: TaskPlanItemRow[];
   itemsCapped: boolean;
+  runs?: TaskPlanRunRow[];
+  runsCapped?: boolean;
 };
 
 const DEFAULT_ITEM_LIMIT = 50;
