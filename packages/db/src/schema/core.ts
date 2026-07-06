@@ -1,6 +1,8 @@
 import type {
   DeliverableChange,
   DeliverableChangeManifest,
+  KeyResultStatus,
+  ObjectiveStatus,
   RiskLevel,
   TaskPlanItemRole,
   TaskPlanItemStatus,
@@ -698,6 +700,61 @@ export const workItemProgressUpdates = pgTable(
   ]
 );
 
+export const objectives = pgTable(
+  "objectives",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 256 }).notNull(),
+    descriptionMd: text("description_md"),
+    status: varchar("status", { length: 16 }).$type<ObjectiveStatus>().notNull().default("active"),
+    progressPct: integer("progress_pct").notNull().default(0),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps()
+  },
+  (table) => [
+    index("objectives_workspace_status_idx").on(table.workspaceId, table.status),
+    index("objectives_created_by_user_id_idx").on(table.createdByUserId),
+    index("objectives_updated_at_idx").on(table.updatedAt)
+  ]
+);
+
+export const keyResults = pgTable(
+  "key_results",
+  {
+    id: id(),
+    objectiveId: uuid("objective_id").notNull().references(() => objectives.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    title: varchar("title", { length: 256 }).notNull(),
+    status: varchar("status", { length: 16 }).$type<KeyResultStatus>().notNull().default("on_track"),
+    progressPct: integer("progress_pct").notNull().default(0),
+    targetValue: varchar("target_value", { length: 64 }),
+    currentValue: varchar("current_value", { length: 64 }),
+    unit: varchar("unit", { length: 64 }),
+    ...timestamps()
+  },
+  (table) => [
+    index("key_results_objective_seq_idx").on(table.objectiveId, table.seq),
+    index("key_results_status_idx").on(table.status)
+  ]
+);
+
+export const objectiveWorkItemLinks = pgTable(
+  "objective_work_item_links",
+  {
+    objectiveId: uuid("objective_id").notNull().references(() => objectives.id, { onDelete: "cascade" }),
+    workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps()
+  },
+  (table) => [
+    uniqueIndex("objective_work_item_links_objective_work_item_uq").on(table.objectiveId, table.workItemId),
+    index("objective_work_item_links_workspace_idx").on(table.workspaceId),
+    index("objective_work_item_links_work_item_idx").on(table.workItemId)
+  ]
+);
+
 export const taskPlans = pgTable(
   "task_plans",
   {
@@ -705,7 +762,7 @@ export const taskPlans = pgTable(
     workItemId: uuid("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
     status: varchar("status", { length: 16 }).$type<TaskPlanStatus>().notNull().default("draft"),
-    objectiveId: uuid("objective_id"),
+    objectiveId: uuid("objective_id").references(() => objectives.id, { onDelete: "set null" }),
     budgetJson: jsonb("budget_json").$type<JsonObject>().notNull().default({}),
     decompositionContextJson: jsonb("decomposition_context_json").$type<JsonObject>().notNull().default({}),
     createdByUserId: uuid("created_by").notNull().references(() => users.id, { onDelete: "restrict" }),
@@ -1615,6 +1672,9 @@ export const workHubTables = {
   workItemWorkspaces,
   workItemWorkspaceItems,
   workItemProgressUpdates,
+  objectives,
+  keyResults,
+  objectiveWorkItemLinks,
   taskPlans,
   taskPlanItems,
   workItemTaskPlans,

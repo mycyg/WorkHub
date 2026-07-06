@@ -10,6 +10,8 @@ import type {
 import type { WorkHubDb } from "../client.js";
 import type { AgentRunRow } from "./agent-runs.js";
 import {
+  objectives,
+  objectiveWorkItemLinks,
   taskPlanItems,
   taskPlans,
   workItems
@@ -96,6 +98,20 @@ export function createTaskPlanRepository(db: WorkHubDb) {
           throw new Error("task_plan_work_item_not_found");
         }
 
+        if (input.objectiveId) {
+          const [objective] = await tx
+            .select({ id: objectives.id })
+            .from(objectives)
+            .where(and(
+              eq(objectives.id, input.objectiveId),
+              eq(objectives.workspaceId, input.workspaceId)
+            ))
+            .limit(1);
+          if (!objective) {
+            throw new Error("task_plan_objective_not_found");
+          }
+        }
+
         await tx.insert(taskPlans).values({
           id: input.id,
           workItemId: input.workItemId,
@@ -108,6 +124,18 @@ export function createTaskPlanRepository(db: WorkHubDb) {
           createdAt: now,
           updatedAt: now
         });
+        if (input.objectiveId) {
+          await tx.insert(objectiveWorkItemLinks).values({
+            objectiveId: input.objectiveId,
+            workItemId: input.workItemId,
+            workspaceId: input.workspaceId,
+            createdByUserId: input.createdByUserId,
+            createdAt: now,
+            updatedAt: now
+          }).onConflictDoNothing({
+            target: [objectiveWorkItemLinks.objectiveId, objectiveWorkItemLinks.workItemId]
+          });
+        }
         if (input.items.length === 0) {
           return;
         }

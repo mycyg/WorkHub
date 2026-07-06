@@ -58,6 +58,14 @@ export const taskPlanItemStatuses = ["pending", "dispatched", "succeeded", "fail
 export const taskPlanItemStatusSchema = z.enum(taskPlanItemStatuses);
 export type TaskPlanItemStatus = z.infer<typeof taskPlanItemStatusSchema>;
 
+export const objectiveStatuses = ["active", "paused", "done", "cancelled"] as const;
+export const objectiveStatusSchema = z.enum(objectiveStatuses);
+export type ObjectiveStatus = z.infer<typeof objectiveStatusSchema>;
+
+export const keyResultStatuses = ["on_track", "at_risk", "done", "cancelled"] as const;
+export const keyResultStatusSchema = z.enum(keyResultStatuses);
+export type KeyResultStatus = z.infer<typeof keyResultStatusSchema>;
+
 export const confidenceGrades = ["low", "medium", "high"] as const;
 export const confidenceGradeSchema = z.enum(confidenceGrades);
 export type ConfidenceGrade = z.infer<typeof confidenceGradeSchema>;

@@ -267,6 +267,13 @@
       "when": 1781513233742,
       "tag": "0037_task_plan_item_risk_level",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1781513333742,
+      "tag": "0038_objectives",
+      "breakpoints": true
     }
   ]
 }

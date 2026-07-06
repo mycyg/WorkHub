@@ -3,6 +3,8 @@ import test from "node:test";
 
 import { createTaskPlanRepository } from "./repositories/task-plans.js";
 import {
+  objectives,
+  objectiveWorkItemLinks,
   taskPlanItems,
   taskPlans,
   workItems
@@ -14,6 +16,7 @@ const planId = "91000000-0000-4000-8000-000000000001";
 const workItemId = "91000000-0000-4000-8000-000000000002";
 const workspaceId = "91000000-0000-4000-8000-000000000003";
 const userId = "91000000-0000-4000-8000-000000000004";
+const objectiveId = "91000000-0000-4000-8000-000000000005";
 const firstItemId = "91000000-0000-4000-8000-000000000011";
 const secondItemId = "91000000-0000-4000-8000-000000000012";
 const runId = "91000000-0000-4000-8000-000000000021";
@@ -117,6 +120,66 @@ test("R9.1 task plan repository writes draft plans and items in one transaction"
       updatedAt: now
     }
   ]);
+});
+
+test("R9.5 task plan repository links an objective only inside the same workspace", async () => {
+  const { db, queries } = createQueryRecorder([[{ id: workItemId }], [{ id: objectiveId }]]);
+  const repository = createTaskPlanRepository(db);
+
+  await repository.createDraftPlan({
+    id: planId,
+    workItemId,
+    workspaceId,
+    objectiveId,
+    createdByUserId: userId,
+    budgetJson: { total_share_pct: 100 },
+    items: [],
+    now
+  });
+
+  assert.equal(queries.length, 4);
+  const [workItemQuery, objectiveQuery, planInsert, linkInsert] = queries;
+  assert.equal(workItemQuery?.fromTable, workItems);
+  assert.equal(objectiveQuery?.operation, "select");
+  assert.equal(objectiveQuery?.fromTable, objectives);
+  assert.equal(objectiveQuery?.limit, 1);
+  assert.ok(queryReferences(objectiveQuery?.where, objectives.id));
+  assert.ok(queryReferences(objectiveQuery?.where, objectives.workspaceId));
+  assert.ok(queryParamValues(objectiveQuery?.where).includes(objectiveId));
+  assert.ok(queryParamValues(objectiveQuery?.where).includes(workspaceId));
+
+  assert.equal(planInsert?.targetTable, taskPlans);
+  assert.equal((planInsert?.valuesValue as { objectiveId?: string }).objectiveId, objectiveId);
+  assert.equal(linkInsert?.operation, "insert");
+  assert.equal(linkInsert?.targetTable, objectiveWorkItemLinks);
+  assert.deepEqual(linkInsert?.valuesValue, {
+    objectiveId,
+    workItemId,
+    workspaceId,
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now
+  });
+  assert.ok(linkInsert?.steps.includes("onConflictDoNothing"));
+});
+
+test("R9.5 task plan repository refuses an explicit cross-workspace objective but leaves unbound work items non-blocking", async () => {
+  const { db, queries } = createQueryRecorder([[{ id: workItemId }], []]);
+  const repository = createTaskPlanRepository(db);
+
+  await assert.rejects(() => repository.createDraftPlan({
+    id: planId,
+    workItemId,
+    workspaceId,
+    objectiveId,
+    createdByUserId: userId,
+    items: [],
+    now
+  }), /task_plan_objective_not_found/);
+
+  assert.equal(queries.length, 2);
+  assert.equal(queries[0]?.fromTable, workItems);
+  assert.equal(queries[1]?.fromTable, objectives);
 });
 
 test("R9.1 task plan repository refuses to create plans for missing or cross-workspace work items", async () => {

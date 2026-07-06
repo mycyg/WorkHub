@@ -16,6 +16,7 @@ export * from "./repositories/user-memory.js";
 export * from "./repositories/agent-memory.js";
 export * from "./repositories/memory-conflicts.js";
 export * from "./repositories/team-skill.js";
+export * from "./repositories/objectives.js";
 export * from "./repositories/task-plans.js";
 export * from "./repositories/devices.js";
 export * from "./repositories/approval-requests.js";

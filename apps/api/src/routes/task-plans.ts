@@ -23,6 +23,7 @@ import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 
 const taskPlanRequestSchema = z.object({
+  objective_id: z.string().uuid().optional(),
   memories: z.object({
     user: z.array(z.string().min(1).max(1_000)).max(20).optional(),
     team: z.array(z.string().min(1).max(1_000)).max(20).optional()
@@ -84,6 +85,7 @@ export function createTaskPlanRoutes(deps: TaskPlanRoutesDependencies = {}) {
       detail,
       actor: actorForPlanner(c.var.actor),
       locale: normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language")),
+      ...(payload.objective_id ? { objectiveId: payload.objective_id } : {}),
       ...(memories ? { memories } : {})
     });
     const { reviews: _reviews, ...proposal } = result.proposal;

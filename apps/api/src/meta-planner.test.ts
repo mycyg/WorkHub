@@ -101,6 +101,7 @@ test("R9.1 meta planner uses decompose LLM discipline, judge retry, and returns 
       rawDescription: "调研短剧选题并产出一篇短报告"
     },
     acceptance: ["3-5 atomic subtasks", "Every subtask has measurable acceptance"],
+    objectives: ["Objective: Q3 launch readiness\nKR 1: Publish three evidence-backed launch notes"],
     memories: {
       user: ["Prefer evidence-backed output."],
       team: ["Keep reviewer and producer roles separate."]
@@ -118,6 +119,7 @@ test("R9.1 meta planner uses decompose LLM discipline, judge retry, and returns 
   assert.ok(registry.calls[0]!.params.maxTokens > 0);
   assert.match(String(registry.calls[0]?.params.system), /strict JSON/i);
   assert.match(String(registry.calls[0]?.params.messages[0]?.content), /risk_level/u);
+  assert.match(String(registry.calls[0]?.params.messages[0]?.content), /Q3 launch readiness/u);
 
   assert.equal(draft.items.length, 3);
   assert.deepEqual(draft.items.map((item) => item.id), [

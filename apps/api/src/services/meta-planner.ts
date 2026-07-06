@@ -42,6 +42,7 @@ export type MetaPlannerCreateDraftInput = {
   locale?: WorkHubLocale;
   workItem: MetaPlannerWorkItemInput;
   acceptance: string[];
+  objectives?: string[];
   memories?: {
     user?: string[];
     team?: string[];
@@ -150,6 +151,8 @@ function plannerPrompt(input: MetaPlannerCreateDraftInput, feedback: readonly st
     "",
     `Acceptance:\n${compactLines(input.acceptance, "No acceptance criteria provided.")}`,
     "",
+    `Objectives:\n${compactLines(input.objectives, "None")}`,
+    "",
     `User memories:\n${compactLines(input.memories?.user, "None")}`,
     "",
     `Team memories:\n${compactLines(input.memories?.team, "None")}`
@@ -165,6 +168,7 @@ function judgePrompt(plan: RawPlan, input: MetaPlannerCreateDraftInput) {
     `Work item title: ${input.workItem.title ?? ""}`,
     `Work item request: ${input.workItem.rawDescription ?? input.workItem.summaryMd ?? ""}`,
     `Acceptance:\n${compactLines(input.acceptance, "None")}`,
+    `Objectives:\n${compactLines(input.objectives, "None")}`,
     "",
     `Plan JSON:\n${JSON.stringify(plan)}`
   ].join("\n");

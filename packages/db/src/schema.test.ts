@@ -15,9 +15,12 @@ import {
   auditLogs,
   budgetPolicies,
   costLedgerEntries,
+  keyResults,
   memoryConflicts,
   mergeAttempts,
   mergeProposals,
+  objectives,
+  objectiveWorkItemLinks,
   projectDriveItems,
   projectDriveOperations,
   projectDriveVersions,
@@ -35,9 +38,9 @@ import {
   workspaceMemberships
 } from "./index.js";
 
-// R9.3: the old count (54) was correct when L1 memory existed but conflict cards were ephemeral;
-// memory_conflicts is now a real table so sync_conflict decisions survive refresh and close in one place.
-const F02_TABLE_COUNT = 55;
+// R9.5: the old count (55) was correct while OKR was only a nullable task_plans.objective_id;
+// objectives/key_results/objective_work_item_links are now real observable tables, while OKR remains non-blocking.
+const F02_TABLE_COUNT = 58;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -71,12 +74,42 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("team_skills"), true);
   assert.equal(tableNames.includes("task_plans"), true);
   assert.equal(tableNames.includes("task_plan_items"), true);
+  assert.equal(tableNames.includes("objectives"), true);
+  assert.equal(tableNames.includes("key_results"), true);
+  assert.equal(tableNames.includes("objective_work_item_links"), true);
   assert.equal(tableNames.includes("agent_memory"), true);
   assert.equal(tableNames.includes("agent_memory_versions"), true);
   assert.equal(tableNames.includes("memory_conflicts"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
+});
+
+test("R9.5 OKR tables expose workspace-scoped soft links and key results", () => {
+  assert.equal(getTableName(objectives), "objectives");
+  assert.equal(objectives.workspaceId.name, "workspace_id");
+  assert.equal(objectives.title.name, "title");
+  assert.equal(objectives.descriptionMd.name, "description_md");
+  assert.equal(objectives.status.name, "status");
+  assert.equal(objectives.progressPct.name, "progress_pct");
+  assert.equal(objectives.createdByUserId.name, "created_by_user_id");
+
+  assert.equal(getTableName(keyResults), "key_results");
+  assert.equal(keyResults.objectiveId.name, "objective_id");
+  assert.equal(keyResults.seq.name, "seq");
+  assert.equal(keyResults.title.name, "title");
+  assert.equal(keyResults.status.name, "status");
+  assert.equal(keyResults.progressPct.name, "progress_pct");
+
+  assert.equal(getTableName(objectiveWorkItemLinks), "objective_work_item_links");
+  assert.equal(objectiveWorkItemLinks.objectiveId.name, "objective_id");
+  assert.equal(objectiveWorkItemLinks.workItemId.name, "work_item_id");
+  assert.equal(objectiveWorkItemLinks.workspaceId.name, "workspace_id");
+  assert.equal(objectiveWorkItemLinks.createdByUserId.name, "created_by_user_id");
+
+  const migration = readFileSync(join(process.cwd(), "migrations", "0038_objectives.sql"), "utf8");
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "objectives"/u);
+  assert.match(migration, /objective_work_item_links_objective_work_item_uq/u);
 });
 
 test("R9.3 memory conflicts persist user decisions for sync_conflict cards", () => {

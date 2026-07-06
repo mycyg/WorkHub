@@ -23,6 +23,11 @@ import {
   type ProposalService,
   type StoredProposal
 } from "./proposals.js";
+import {
+  ObjectiveServiceError,
+  getDefaultObjectivePlanningService,
+  type ObjectivePlanningService
+} from "./objectives.js";
 export {
   createTaskPlanMergeApprovalHandler,
   TaskPlanApprovalError
@@ -54,6 +59,7 @@ export type CreateTaskPlanProposalInput = {
     user?: string[];
     team?: string[];
   };
+  objectiveId?: string;
 };
 
 export type CreateTaskPlanProposalResult = {
@@ -69,6 +75,7 @@ export type TaskPlanWorkflowOptions = {
   taskPlans: TaskPlanWorkflowRepository;
   proposals: Pick<ProposalService, "createFromManifest">;
   planner: MetaPlanner;
+  objectives?: ObjectivePlanningService;
   id?: () => string;
   now?: () => Date;
 };
@@ -198,6 +205,16 @@ function toCreateItems(items: readonly MetaPlannerDraftItem[]) {
   }));
 }
 
+function normalizeObjectiveError(error: unknown): never {
+  if (error instanceof ObjectiveServiceError) {
+    throw new TaskPlanServiceError(error.status, error.code, error.message);
+  }
+  if (error instanceof Error && error.message === "task_plan_objective_not_found") {
+    throw new TaskPlanServiceError(404, "objective_not_found", "没有找到这个目标，或它不属于当前工作区。");
+  }
+  throw error;
+}
+
 export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions): TaskPlanWorkflowService {
   const nextId = options.id ?? randomUUID;
   const now = options.now ?? (() => new Date());
@@ -212,7 +229,14 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
       if (!createdByUserId) {
         throw new TaskPlanServiceError(403, "task_plan_actor_missing", "缺少计划创建人，不能生成任务计划。");
       }
+      const objectiveContext = input.objectiveId
+        ? await (options.objectives ?? getDefaultObjectivePlanningService()).getPlanningContext({
+          objectiveId: input.objectiveId,
+          workspaceId
+        }).catch(normalizeObjectiveError)
+        : undefined;
       const draft = await options.planner.createDraft({
+        ...(objectiveContext ? { objectives: objectiveContext.lines } : {}),
         actor: {
           ...input.actor,
           userId: createdByUserId,
@@ -238,16 +262,29 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
         max_tokens: defaultBudget.maxTokens,
         max_cost_cny: defaultBudget.maxCostCny
       };
-      await options.taskPlans.createDraftPlan({
-        id: planId,
-        workItemId: workItem.id,
-        workspaceId,
-        budgetJson,
-        decompositionContextJson: draft.decompositionContext,
-        createdByUserId,
-        items: toCreateItems(draft.items),
-        now: createdAt
-      });
+      try {
+        await options.taskPlans.createDraftPlan({
+          id: planId,
+          workItemId: workItem.id,
+          workspaceId,
+          objectiveId: input.objectiveId ?? null,
+          budgetJson,
+          decompositionContextJson: {
+            ...draft.decompositionContext,
+            ...(objectiveContext ? {
+              objective: {
+                id: objectiveContext.objectiveId,
+                title: objectiveContext.title
+              }
+            } : {})
+          },
+          createdByUserId,
+          items: toCreateItems(draft.items),
+          now: createdAt
+        });
+      } catch (error) {
+        normalizeObjectiveError(error);
+      }
       const manifest = taskPlanManifest({
         planId,
         workspaceId,
@@ -289,7 +326,8 @@ export function getDefaultTaskPlanWorkflowService() {
     defaultTaskPlanWorkflowService = createTaskPlanWorkflowService({
       taskPlans: createTaskPlanRepository(getSharedDatabaseClient().db),
       proposals: getDefaultProposalService(),
-      planner: createMetaPlanner({ providerRegistry: getDefaultProviderRegistry() })
+      planner: createMetaPlanner({ providerRegistry: getDefaultProviderRegistry() }),
+      objectives: getDefaultObjectivePlanningService()
     });
   }
   return defaultTaskPlanWorkflowService;

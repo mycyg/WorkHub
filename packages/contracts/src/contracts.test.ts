@@ -42,6 +42,9 @@ import {
   mergeProposalRequestSchema,
   mergeProposalCandidateChoiceResultSchema,
   nextQuestionRequestSchema,
+  objectiveStatusSchema,
+  objectiveVmSchema,
+  keyResultStatusSchema,
   proposalConflictListResultSchema,
   replayTracePageVmSchema,
   resolveEscalationRequestSchema,
@@ -183,6 +186,37 @@ test("agent run contracts carry R9.2 task-plan lineage metadata", () => {
     ...parsed,
     agent_role: "manager"
   }));
+});
+
+test("R9.5 OKR contracts keep objectives observable and non-blocking", () => {
+  assert.equal(objectiveStatusSchema.parse("active"), "active");
+  assert.throws(() => objectiveStatusSchema.parse("blocking"));
+  assert.equal(keyResultStatusSchema.parse("at_risk"), "at_risk");
+
+  const parsed = objectiveVmSchema.parse({
+    id: "72000000-0000-4000-8000-000000000001",
+    workspace_id: "72000000-0000-4000-8000-000000000002",
+    title: "Q3 launch readiness",
+    description_md: "Coordinate launch work without blocking unrelated tasks.",
+    status: "active",
+    progress_pct: 45,
+    key_results: [{
+      id: "72000000-0000-4000-8000-000000000003",
+      objective_id: "72000000-0000-4000-8000-000000000001",
+      seq: 1,
+      title: "Publish three evidence-backed launch notes",
+      status: "at_risk",
+      progress_pct: 30,
+      target_value: "3",
+      current_value: "1",
+      unit: "notes"
+    }],
+    created_at: "2026-07-06T00:00:00.000Z",
+    updated_at: "2026-07-06T00:00:00.000Z"
+  });
+
+  assert.equal(parsed.progress_pct, 45);
+  assert.equal(parsed.key_results[0]?.status, "at_risk");
 });
 
 test("agent run live VMs expose start status, trace, stream, replay, and budget fields", () => {

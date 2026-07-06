@@ -27,6 +27,7 @@ import {
   TaskPlanServiceError,
   type TaskPlanWorkflowRepository
 } from "./services/task-plans.js";
+import { ObjectiveServiceError } from "./services/objectives.js";
 import { createInMemoryProposalService, ProposalServiceError } from "./services/proposals.js";
 import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 
@@ -40,6 +41,7 @@ const proposalId = "95000000-0000-4000-8000-000000000506";
 const branchId = "95000000-0000-4000-8000-000000000507";
 const reviewId = "95000000-0000-4000-8000-000000000508";
 const mergeSnapshotId = "95000000-0000-4000-8000-000000000509";
+const objectiveId = "95000000-0000-4000-8000-000000000510";
 
 function user(): UserAuthRow {
   return {
@@ -269,10 +271,28 @@ class MemoryTaskPlans implements TaskPlanWorkflowRepository {
   }
 }
 
+class MemoryObjectives {
+  public readonly requests: Array<{ objectiveId: string; workspaceId: string }> = [];
+
+  async getPlanningContext(input: { objectiveId: string; workspaceId: string }) {
+    this.requests.push(input);
+    return {
+      objectiveId: input.objectiveId,
+      title: "Q3 launch readiness",
+      lines: [
+        "Objective: Q3 launch readiness",
+        "Description: Use OKR only as planning context.",
+        "KR 1: Publish three evidence-backed launch notes (at_risk, 30%)"
+      ]
+    };
+  }
+}
+
 test("R9.1 task-plan route creates a plan proposal and proposal merge approves the plan", async () => {
   const runtimeSettings = settings();
   const workItems = new WorkItems();
   const taskPlans = new MemoryTaskPlans();
+  const objectives = new MemoryObjectives();
   const proposals = createInMemoryProposalService({
     now: () => now,
     id: ids([proposalId, branchId, reviewId, mergeSnapshotId]),
@@ -281,6 +301,7 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   const plannerInputs: unknown[] = [];
   const service = createTaskPlanWorkflowService({
     taskPlans,
+    objectives,
     proposals,
     id: ids([planId]),
     now: () => now,
@@ -337,7 +358,10 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   const created = await app.request(`/api/workitems/${workItemId}/task-plan`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ memories: { user: ["偏好证据充分"], team: ["产出和复核分开"] } })
+    body: JSON.stringify({
+      objective_id: objectiveId,
+      memories: { user: ["偏好证据充分"], team: ["产出和复核分开"] }
+    })
   });
   assert.equal(created.status, 201);
   const createdBody = await created.json() as {
@@ -367,12 +391,15 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   assert.equal(createdBody.data.proposal.diff_manifest.changes[0]?.machine_summary?.task_plan_items?.[1]?.risk_level, "high");
   assert.equal(createdBody.data.proposal.diff_manifest.changes[0]?.machine_summary?.task_plan_items?.[1]?.depends_on[0], "95000000-0000-4000-8000-000000000601");
   assert.equal(taskPlans.rows.get(planId)?.status, "draft");
+  assert.equal(taskPlans.rows.get(planId)?.input.objectiveId, objectiveId);
   assert.equal(taskPlans.rows.get(planId)?.input.items.length, 3);
   assert.equal(taskPlans.rows.get(planId)?.input.items[1]?.riskLevel, "high");
   assert.equal(taskPlans.rows.get(planId)?.input.budgetJson?.["max_tokens"], runtimeSettings.budgets.runTokens);
   assert.equal(taskPlans.rows.get(planId)?.input.budgetJson?.["max_cost_cny"], runtimeSettings.budgets.runCostCny);
   assert.equal(workItems.mutations.includes(workItemId), true);
+  assert.deepEqual(objectives.requests, [{ objectiveId, workspaceId }]);
   assert.equal(plannerInputs.length, 1);
+  assert.match(JSON.stringify(plannerInputs[0]), /Q3 launch readiness/u);
 
   const reviewed = await app.request(`/api/proposals/${proposalId}/review`, {
     method: "POST",
@@ -389,6 +416,53 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   assert.equal(merged.status, 200);
   assert.equal(taskPlans.rows.get(planId)?.status, "approved");
   assert.notEqual(workItems.status, "cancelled");
+});
+
+test("R9.5 task-plan route reports missing objective before planner or draft writes", async () => {
+  const runtimeSettings = settings();
+  const workItems = new WorkItems();
+  const taskPlans = new MemoryTaskPlans();
+  const objectiveRequests: Array<{ objectiveId: string; workspaceId: string }> = [];
+  let plannerCalled = false;
+  const service = createTaskPlanWorkflowService({
+    taskPlans,
+    objectives: {
+      async getPlanningContext(input) {
+        objectiveRequests.push(input);
+        throw new ObjectiveServiceError(404, "objective_not_found", "没有找到这个目标，或它不属于当前工作区。");
+      }
+    },
+    proposals: {
+      async createFromManifest() {
+        throw new Error("proposal service should not be called");
+      }
+    },
+    planner: {
+      async createDraft() {
+        plannerCalled = true;
+        throw new Error("planner should not be called");
+      }
+    }
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createTaskPlanRoutes({ auth: authDeps(runtimeSettings), service, workItems }));
+  const headers = {
+    cookie: await cookie(runtimeSettings),
+    "content-type": "application/json"
+  };
+
+  const response = await app.request(`/api/workitems/${workItemId}/task-plan`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ objective_id: objectiveId })
+  });
+
+  assert.equal(response.status, 404);
+  const body = await response.json() as { error: { code: string } };
+  assert.equal(body.error.code, "objective_not_found");
+  assert.deepEqual(objectiveRequests, [{ objectiveId, workspaceId }]);
+  assert.equal(plannerCalled, false);
+  assert.equal(taskPlans.rows.size, 0);
 });
 
 test("R9.1 task-plan merge fails loudly when approval does not update the plan", async () => {
