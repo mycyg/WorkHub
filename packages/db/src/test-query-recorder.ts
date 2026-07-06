@@ -14,8 +14,14 @@ export type RecordedQuery = {
   alias?: string;
   setValue?: unknown;
   valuesValue?: unknown;
+  onConflict?: unknown;
   returningCalled?: boolean;
   steps: string[];
+};
+
+export type RecordedTransaction = {
+  outcome: "resolved" | "rejected";
+  errorName?: string;
 };
 
 class RecordedQueryBuilder implements PromiseLike<unknown[]> {
@@ -84,6 +90,18 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
     return this;
   }
 
+  onConflictDoNothing(value?: unknown): this {
+    this.query.onConflict = value ?? {};
+    this.query.steps.push("onConflictDoNothing");
+    return this;
+  }
+
+  onConflictDoUpdate(value: unknown): this {
+    this.query.onConflict = value;
+    this.query.steps.push("onConflictDoUpdate");
+    return this;
+  }
+
   returning(): Promise<unknown[]> {
     this.query.returningCalled = true;
     this.query.steps.push("returning");
@@ -122,6 +140,7 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
 class QueryRecorderDb {
   private readonly responses: unknown[][];
   readonly queries: RecordedQuery[] = [];
+  readonly transactions: RecordedTransaction[] = [];
 
   constructor(responses: ReadonlyArray<ReadonlyArray<unknown>>) {
     this.responses = responses.map((rows) => [...rows]);
@@ -140,7 +159,17 @@ class QueryRecorderDb {
   }
 
   async transaction<T>(callback: (tx: WorkHubDb) => T | Promise<T>): Promise<T> {
-    return callback(this as unknown as WorkHubDb);
+    try {
+      const result = await callback(this as unknown as WorkHubDb);
+      this.transactions.push({ outcome: "resolved" });
+      return result;
+    } catch (error) {
+      this.transactions.push({
+        outcome: "rejected",
+        ...(error instanceof Error ? { errorName: error.name } : {})
+      });
+      throw error;
+    }
   }
 
   private createBuilder(
@@ -167,9 +196,13 @@ class QueryRecorderDb {
 
 export function createQueryRecorder(
   responses: ReadonlyArray<ReadonlyArray<unknown>> = []
-): { db: WorkHubDb; queries: RecordedQuery[] } {
+): { db: WorkHubDb; queries: RecordedQuery[]; transactions: RecordedTransaction[] } {
   const recorder = new QueryRecorderDb(responses);
-  return { db: recorder as unknown as WorkHubDb, queries: recorder.queries };
+  return {
+    db: recorder as unknown as WorkHubDb,
+    queries: recorder.queries,
+    transactions: recorder.transactions
+  };
 }
 
 export function queryReferences(value: unknown, target: unknown): boolean {
@@ -184,7 +217,7 @@ export function queryParamValues(value: unknown): unknown[] {
     }
     return false;
   });
-  return values;
+  return values.filter((item, index) => index === 0 || !Object.is(item, values[index - 1]));
 }
 
 export function queryTextFragments(value: unknown): string[] {
@@ -231,8 +264,7 @@ function visitSqlTree(
   }
   const name = constructorName(value);
   if (name === "Param") {
-    const param = value as { value?: unknown; encoder?: unknown };
-    return visitSqlTree(param.value, visitor, seen) || visitSqlTree(param.encoder, visitor, seen);
+    return visitSqlTree((value as { value?: unknown }).value, visitor, seen);
   }
   if (name === "StringChunk") {
     return visitSqlTree((value as { value?: unknown }).value, visitor, seen);

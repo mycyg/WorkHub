@@ -25,6 +25,7 @@ import {
   mergeProposalCandidateApplyIdFromHref,
   meetingDraftProposalFromHref,
   meetingInsightActionFromHref,
+  memoryConflictActionFromHref,
   isNativeResourceLink,
   notificationActionFromHref,
   proposalActionFromHref,
@@ -94,6 +95,19 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
     escalationId: "e-1",
     action: "delegate"
   });
+  assert.deepEqual(memoryConflictActionFromHref("/api/memory-conflicts/m%201/resolve/keep_current"), {
+    conflictId: "m 1",
+    resolution: "keep_current"
+  });
+  assert.deepEqual(memoryConflictActionFromHref("https://workhub.local/api/memory-conflicts/m-2/resolve/discard_both"), {
+    conflictId: "m-2",
+    resolution: "discard_both"
+  });
+  assert.deepEqual(memoryConflictActionFromHref("/api/memory-conflicts/m-3/resolve/edit_memory"), {
+    conflictId: "m-3",
+    resolution: "edit_memory"
+  });
+  assert.equal(memoryConflictActionFromHref("/api/memory-conflicts/m-1/resolve/delete_everything"), undefined);
   assert.deepEqual(driveItemMutationFromHref("/api/drive/projects/p-1/items/i-1/delete"), {
     projectId: "p-1",
     itemId: "i-1",

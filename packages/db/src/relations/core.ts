@@ -1,6 +1,8 @@
 import { relations } from "drizzle-orm";
 
 import {
+  agentMemory,
+  agentMemoryVersions,
   agentRuns,
   agentSteps,
   approvalRequests,
@@ -9,6 +11,7 @@ import {
   comments,
   confidenceRecords,
   deliveries,
+  memoryConflicts,
   meetingRecords,
   orgs,
   permissionPolicies,
@@ -35,7 +38,8 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   devices: many(clientDevices),
   profile: one(userProfiles, { fields: [users.id], references: [userProfiles.userId] }),
   ownedProjects: many(projects),
-  assignments: many(workItemAssignments)
+  assignments: many(workItemAssignments),
+  memoryConflicts: many(memoryConflicts)
 }));
 
 export const orgsRelations = relations(orgs, ({ many }) => ({
@@ -47,6 +51,8 @@ export const workspacesRelations = relations(workspaces, ({ many, one }) => ({
   org: one(orgs, { fields: [workspaces.orgId], references: [orgs.id] }),
   projects: many(projects),
   taskPlans: many(taskPlans),
+  agentMemory: many(agentMemory),
+  memoryConflicts: many(memoryConflicts),
   permissionPolicies: many(permissionPolicies)
 }));
 
@@ -102,6 +108,8 @@ export const agentRunsRelations = relations(agentRuns, ({ many, one }) => ({
   branch: one(branches, { fields: [agentRuns.branchId], references: [branches.id] }),
   actorUser: one(users, { fields: [agentRuns.actorUserId], references: [users.id] }),
   steps: many(agentSteps),
+  agentMemory: many(agentMemory),
+  agentMemoryVersions: many(agentMemoryVersions),
   approvals: many(approvalRequests)
 }));
 
@@ -133,13 +141,33 @@ export const taskPlansRelations = relations(taskPlans, ({ many, one }) => ({
   items: many(taskPlanItems)
 }));
 
-export const taskPlanItemsRelations = relations(taskPlanItems, ({ one }) => ({
+export const taskPlanItemsRelations = relations(taskPlanItems, ({ many, one }) => ({
   plan: one(taskPlans, { fields: [taskPlanItems.planId], references: [taskPlans.id] }),
   parentItem: one(taskPlanItems, {
     fields: [taskPlanItems.parentItemId],
     references: [taskPlanItems.id],
     relationName: "task_plan_item_parent"
-  })
+  }),
+  agentMemory: many(agentMemory)
+}));
+
+export const agentMemoryRelations = relations(agentMemory, ({ many, one }) => ({
+  workspace: one(workspaces, { fields: [agentMemory.workspaceId], references: [workspaces.id] }),
+  taskPlanItem: one(taskPlanItems, { fields: [agentMemory.agentContextId], references: [taskPlanItems.id] }),
+  sourceRun: one(agentRuns, { fields: [agentMemory.sourceRunId], references: [agentRuns.id] }),
+  versions: many(agentMemoryVersions)
+}));
+
+export const agentMemoryVersionsRelations = relations(agentMemoryVersions, ({ one }) => ({
+  memory: one(agentMemory, { fields: [agentMemoryVersions.memoryId], references: [agentMemory.id] }),
+  sourceRun: one(agentRuns, { fields: [agentMemoryVersions.sourceRunId], references: [agentRuns.id] })
+}));
+
+export const memoryConflictsRelations = relations(memoryConflicts, ({ one }) => ({
+  workspace: one(workspaces, { fields: [memoryConflicts.workspaceId], references: [workspaces.id] }),
+  user: one(users, { fields: [memoryConflicts.userId], references: [users.id] }),
+  sourceRun: one(agentRuns, { fields: [memoryConflicts.sourceRunId], references: [agentRuns.id] }),
+  resolvedBy: one(users, { fields: [memoryConflicts.resolvedByUserId], references: [users.id] })
 }));
 
 export const workItemAcceptanceItemsRelations = relations(workItemAcceptanceItems, ({ one }) => ({

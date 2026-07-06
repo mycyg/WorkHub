@@ -12,6 +12,7 @@ import { createAuthRoutes } from "./routes/auth.js";
 import { createClientDeviceRoutes } from "./routes/client-devices.js";
 import { createApprovalRoutes } from "./routes/approvals.js";
 import { createEscalationRoutes } from "./routes/escalations.js";
+import { createMemoryConflictRoutes } from "./routes/memory-conflicts.js";
 import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import { AgentRunnerError } from "./workers/agent-runner.js";
 import { createPermissionRoutes } from "./routes/permissions.js";
@@ -36,6 +37,7 @@ import { PilotDay1MetricsServiceError } from "./services/pilot-day1-metrics.js";
 import { httpErrorCodeFor } from "./http-error-codes.js";
 import { ApprovalServiceError } from "./services/approvals.js";
 import { EscalationServiceError } from "./services/escalations.js";
+import { MemoryConflictServiceError } from "./services/memory-conflicts.js";
 import { NotificationServiceError } from "./services/notifications.js";
 import {
   ProposalServiceError,
@@ -203,6 +205,7 @@ app.route("/api/client-devices", createClientDeviceRoutes());
 app.route("/api/push", createPushRoutes());
 app.route("/api/approvals", createApprovalRoutes());
 app.route("/api/escalations", createEscalationRoutes());
+app.route("/api/memory-conflicts", createMemoryConflictRoutes());
 app.route("/api/permissions", createPermissionRoutes());
 app.route("/api", createAgentRunRoutes());
 app.route("/api/notifications", createNotificationRoutes());
@@ -277,6 +280,19 @@ app.onError((error, c) => {
   }
 
   if (error instanceof EscalationServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof MemoryConflictServiceError) {
     return c.json(
       {
         ok: false,

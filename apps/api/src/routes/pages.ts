@@ -67,6 +67,10 @@ import {
   type EscalationService
 } from "../services/escalations.js";
 import {
+  createMemoryConflictService,
+  type MemoryConflictService
+} from "../services/memory-conflicts.js";
+import {
   getDefaultProposalService,
   type ProposalService
 } from "../services/proposals.js";
@@ -86,6 +90,7 @@ export type PageRoutesDependencies = {
   auth?: AuthDependencySource;
   approvals?: ApprovalService;
   escalations?: EscalationService;
+  memoryConflicts?: MemoryConflictService;
   proposals?: ProposalService;
   queue?: AgentRunQueue;
   policyStore?: BudgetPolicyStore;
@@ -253,6 +258,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const allowUnauthenticatedGoldPath = deps.allowUnauthenticatedGoldPath ?? authSettings.appEnv !== "production";
   const approvals = deps.approvals ?? createApprovalService();
   const escalations = deps.escalations ?? createEscalationService();
+  const memoryConflicts = deps.memoryConflicts ?? createMemoryConflictService();
   const proposals = deps.proposals ?? getDefaultProposalService();
   const queue = deps.queue ?? getDefaultAgentRunQueue();
   const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
@@ -288,6 +294,20 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // 决策队列：把"这个用户当前待决策的审批"接进首页收件箱（与 /approvals 同源、同按用户路由）。
     // 这是 W1 决策收件箱此前缺的真实数据源——没接前首页决策卡恒为空。取数失败保留首页,但显式告诉用户队列未完整加载。
     let decisionQueue: AttentionHomeVM["queue"] = [];
+    try {
+      const syncConflictItems = await memoryConflicts.listAttentionItems({ actor: c.var.actor, locale });
+      decisionQueue = [
+        ...syncConflictItems,
+        ...decisionQueue
+      ];
+    } catch {
+      sourceWarnings.push({
+        source: "sync_conflicts",
+        message: locale === "en-US"
+          ? "Memory conflicts could not be loaded. Open Settings or retry."
+          : "记忆冲突暂时加载失败。请打开设置或稍后重试。"
+      });
+    }
     try {
       const escalationItems = await escalations.listAttentionItems({ actor: c.var.actor, locale });
       decisionQueue = [

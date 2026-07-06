@@ -40,6 +40,7 @@
     "qa:r5-10-dry": "pnpm --filter @workhub/api qa:r5-10-dry",
     "qa:r5-10-real": "pnpm --filter @workhub/api qa:r5-10-real",
     "qa:r2-pg-redis-smoke": "pnpm --filter @workhub/api qa:r2-pg-redis-smoke",
+    "qa:r9-agent-memory-pg-smoke": "pnpm --filter @workhub/api qa:r9-agent-memory-pg-smoke",
     "db:generate": "pnpm --filter @workhub/db generate",
     "db:migrate": "pnpm --filter @workhub/db migrate",
     "db:check": "pnpm --filter @workhub/db check"

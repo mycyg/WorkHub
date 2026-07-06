@@ -15,6 +15,13 @@ import type {
 
 import { containsGitConflictMarkers } from "./git-conflict-markers.js";
 import { getDefaultProviderRegistry } from "./provider-registry.js";
+import {
+  changedLineIndexesFromBase,
+  splitTextLines,
+  textDiff3Analysis,
+  textDiff3HunkBaseRange,
+  textDiff3Merge
+} from "./text-diff3.js";
 import type { ProposalActor } from "./proposals.js";
 
 const supportedFusionTargetKinds = new Set(["structured_record", "text_doc", "spec_doc"]);
@@ -185,243 +192,13 @@ function textFromMergedValue(mergedValue: Record<string, unknown> | undefined) {
   return undefined;
 }
 
-function splitTextLines(value: string) {
-  return value.replace(/\r\n/gu, "\n").replace(/\r/gu, "\n").split("\n");
-}
-
 function patchLine(prefix: " " | "+" | "-", value: string) {
   const safe = value.length > maxPatchLineChars ? `${value.slice(0, maxPatchLineChars)}...` : value;
   return `${prefix}${safe}`;
 }
 
-function changedLineIndexesFromBase(baseText: string, changedText: string) {
-  const base = splitTextLines(baseText);
-  const changed = splitTextLines(changedText);
-  const indexes = new Set<number>();
-  const max = Math.max(base.length, changed.length);
-  for (let index = 0; index < max; index += 1) {
-    if ((base[index] ?? "") !== (changed[index] ?? "")) {
-      indexes.add(index);
-    }
-  }
-  return indexes;
-}
-
-type TextDiffHunk = {
-  baseStart: number;
-  baseEnd: number;
-  original: string[];
-  replacement: string[];
-};
-
-function sameLines(left: string[], right: string[]) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function diffHunksFromBase(baseText: string, changedText: string) {
-  const base = splitTextLines(baseText);
-  const changed = splitTextLines(changedText);
-  const lcs = Array.from({ length: base.length + 1 }, () =>
-    Array.from({ length: changed.length + 1 }, () => 0)
-  );
-  for (let baseIndex = base.length - 1; baseIndex >= 0; baseIndex -= 1) {
-    for (let changedIndex = changed.length - 1; changedIndex >= 0; changedIndex -= 1) {
-      lcs[baseIndex]![changedIndex] = base[baseIndex] === changed[changedIndex]
-        ? lcs[baseIndex + 1]![changedIndex + 1]! + 1
-        : Math.max(lcs[baseIndex + 1]![changedIndex]!, lcs[baseIndex]![changedIndex + 1]!);
-    }
-  }
-
-  const hunks: TextDiffHunk[] = [];
-  let baseIndex = 0;
-  let changedIndex = 0;
-  let pendingStart: number | undefined;
-  let original: string[] = [];
-  let replacement: string[] = [];
-
-  function ensurePending() {
-    pendingStart ??= baseIndex;
-  }
-
-  function flush() {
-    if (pendingStart === undefined) {
-      return;
-    }
-    hunks.push({
-      baseStart: pendingStart,
-      baseEnd: pendingStart + original.length,
-      original,
-      replacement
-    });
-    pendingStart = undefined;
-    original = [];
-    replacement = [];
-  }
-
-  while (baseIndex < base.length || changedIndex < changed.length) {
-    if (
-      baseIndex < base.length
-      && changedIndex < changed.length
-      && base[baseIndex] === changed[changedIndex]
-    ) {
-      flush();
-      baseIndex += 1;
-      changedIndex += 1;
-      continue;
-    }
-    if (
-      changedIndex < changed.length
-      && (
-        baseIndex === base.length
-        || lcs[baseIndex]![changedIndex + 1]! >= lcs[baseIndex + 1]![changedIndex]!
-      )
-    ) {
-      ensurePending();
-      replacement.push(changed[changedIndex]!);
-      changedIndex += 1;
-      continue;
-    }
-    if (baseIndex < base.length) {
-      ensurePending();
-      original.push(base[baseIndex]!);
-      baseIndex += 1;
-    }
-  }
-  flush();
-  return hunks;
-}
-
-function hunkDuplicates(left: TextDiffHunk, right: TextDiffHunk) {
-  return left.baseStart === right.baseStart
-    && left.baseEnd === right.baseEnd
-    && sameLines(left.replacement, right.replacement);
-}
-
-function hunkOverlaps(left: TextDiffHunk, right: TextDiffHunk) {
-  if (hunkDuplicates(left, right)) {
-    return false;
-  }
-  const leftInsert = left.baseStart === left.baseEnd;
-  const rightInsert = right.baseStart === right.baseEnd;
-  if (leftInsert && rightInsert) {
-    return left.baseStart === right.baseStart;
-  }
-  if (leftInsert) {
-    return left.baseStart >= right.baseStart && left.baseStart <= right.baseEnd;
-  }
-  if (rightInsert) {
-    return right.baseStart >= left.baseStart && right.baseStart <= left.baseEnd;
-  }
-  return left.baseStart < right.baseEnd && right.baseStart < left.baseEnd;
-}
-
-function hasOverlappingDiffHunks(left: TextDiffHunk[], right: TextDiffHunk[]) {
-  return left.some((leftHunk) => right.some((rightHunk) => hunkOverlaps(leftHunk, rightHunk)));
-}
-
-function overlappingDiffHunkPairs(left: TextDiffHunk[], right: TextDiffHunk[]) {
-  const pairs: Array<{ current: TextDiffHunk; incoming: TextDiffHunk }> = [];
-  for (const current of left) {
-    for (const incoming of right) {
-      if (hunkOverlaps(current, incoming)) {
-        pairs.push({ current, incoming });
-      }
-    }
-  }
-  return pairs;
-}
-
-function mergeUniqueHunks(currentHunks: TextDiffHunk[], incomingHunks: TextDiffHunk[]) {
-  const merged = [...currentHunks];
-  for (const incoming of incomingHunks) {
-    if (!merged.some((existing) => hunkDuplicates(existing, incoming))) {
-      merged.push(incoming);
-    }
-  }
-  return merged;
-}
-
-function applyDiffHunks(baseText: string, hunks: TextDiffHunk[]) {
-  const merged = splitTextLines(baseText);
-  const sorted = [...hunks].sort((left, right) =>
-    right.baseStart - left.baseStart || right.baseEnd - left.baseEnd
-  );
-  for (const hunk of sorted) {
-    merged.splice(hunk.baseStart, hunk.baseEnd - hunk.baseStart, ...hunk.replacement);
-  }
-  return merged.join("\n");
-}
-
-function textDiff3Analysis(input: MergeFusionContentContext | undefined) {
-  if (
-    !input?.base?.text
-    || !input.current?.text
-    || !input.incoming?.text
-    || input.base.truncated
-    || input.current.truncated
-    || input.incoming.truncated
-  ) {
-    return undefined;
-  }
-  // findings[#low]：生成侧 LCS 与 apply 侧 MAX_TEXT_HUNK_LINES=5000 对齐，超大文本走优雅 no-op
-  // （所有调用方都处理 undefined），避免无界 LCS 在巨文件上拖垮生成。
-  const MAX_DIFF3_LINES = 5000;
-  if (
-    splitTextLines(input.base.text).length > MAX_DIFF3_LINES
-    || splitTextLines(input.current.text).length > MAX_DIFF3_LINES
-    || splitTextLines(input.incoming.text).length > MAX_DIFF3_LINES
-  ) {
-    return undefined;
-  }
-  const currentHunks = diffHunksFromBase(input.base.text, input.current.text);
-  const incomingHunks = diffHunksFromBase(input.base.text, input.incoming.text);
-  const conflictPairs = overlappingDiffHunkPairs(currentHunks, incomingHunks);
-  return {
-    currentHunks,
-    incomingHunks,
-    conflictPairs
-  };
-}
-
-function textDiff3Merge(input: MergeFusionContentContext) {
-  if (input.current?.text === input.incoming?.text) {
-    return undefined;
-  }
-  const analysis = textDiff3Analysis(input);
-  if (!analysis) {
-    return undefined;
-  }
-  const { currentHunks, incomingHunks, conflictPairs } = analysis;
-  if (incomingHunks.length === 0 || conflictPairs.length > 0) {
-    return undefined;
-  }
-  const baseText = input.base?.text;
-  const currentText = input.current?.text;
-  if (!baseText || !currentText) {
-    return undefined;
-  }
-  const mergedText = applyDiffHunks(baseText, mergeUniqueHunks(currentHunks, incomingHunks));
-  if (mergedText === currentText || hasConflictMarkers(mergedText)) {
-    return undefined;
-  }
-  return {
-    mergedText,
-    currentHunks,
-    incomingHunks
-  };
-}
-
 function trimPromptLine(value: string) {
   return value.length > maxPatchLineChars ? `${value.slice(0, maxPatchLineChars)}...` : value;
-}
-
-function hunkBaseRange(current: TextDiffHunk, incoming: TextDiffHunk) {
-  const start = Math.min(current.baseStart, incoming.baseStart);
-  const end = Math.max(current.baseEnd, incoming.baseEnd);
-  return {
-    start_line: start + 1,
-    end_line: Math.max(start + 1, end)
-  };
 }
 
 function limitedPromptLines(lines: string[]) {
@@ -435,7 +212,7 @@ function textDiff3ConflictHints(context: MergeFusionContentContext | undefined) 
   }
   return analysis.conflictPairs.slice(0, maxTextDiff3ConflictPairs).map((pair) => ({
     type: "overlapping_hunk",
-    base_range: hunkBaseRange(pair.current, pair.incoming),
+    base_range: textDiff3HunkBaseRange(pair.current, pair.incoming),
     base_lines: limitedPromptLines(pair.current.original.length > 0
       ? pair.current.original
       : pair.incoming.original),
@@ -463,7 +240,7 @@ function textDiff3QualityGate(context: MergeFusionContentContext | undefined) {
     incoming_hunks: analysis.incomingHunks.length,
     conflict_ranges: analysis.conflictPairs
       .slice(0, maxTextDiff3ConflictPairs)
-      .map((pair) => hunkBaseRange(pair.current, pair.incoming))
+      .map((pair) => textDiff3HunkBaseRange(pair.current, pair.incoming))
   };
 }
 

@@ -17,6 +17,7 @@ import { renderProposalConflictCards, renderProposalDetail, proposalCss } from "
 import {
   actionElementApplyPayload,
   actionElementCreateWorkItemPayload,
+  actionElementJsonPayload,
   actionElementMergePayload,
   actionElementNextQuestionPayload,
   actionErrorNotice,
@@ -37,6 +38,7 @@ import {
   localePersistenceFailedNotice,
   mergeConflictNotice,
   mergeProposalCandidateApplyIdFromHref,
+  memoryConflictActionFromHref,
   persistBrowserLocale,
   proposalActionFromHref,
   reasonRequiredNotice,
@@ -603,6 +605,25 @@ function bindGoldPathNavigation(
     if (action.kind === "api-action") {
       event.preventDefault();
       const escalationAction = escalationActionFromHref(href);
+      const memoryConflictAction = memoryConflictActionFromHref(href);
+      if (memoryConflictAction) {
+        const payload = actionElementJsonPayload<{ value_md?: string }>(actionTarget);
+        if (!payload.ok) {
+          showPayloadFailureNotice(shellRoot, locale, payload, actionId);
+          return;
+        }
+        try {
+          const result = await client.resolveMemoryConflict(memoryConflictAction.conflictId, {
+            resolution: memoryConflictAction.resolution,
+            ...(payload.payload?.value_md ? { value_md: payload.payload.value_md } : {})
+          });
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "memory_conflict"));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        input.onActionSettled?.();
+        return;
+      }
       if (escalationAction?.action === "resolve") {
         const payload = escalationResolvePayloadFromActionId(actionId);
         if (!payload) {

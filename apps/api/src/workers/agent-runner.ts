@@ -90,6 +90,12 @@ import {
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "../services/proposals.js";
 import { getDefaultAgentRunPersistence } from "../services/agent-run-persistence.js";
 import { getDefaultBudgetReservationRepository } from "../services/budget-reservation-store.js";
+import {
+  getDefaultAgentMemoryContextProvider,
+  getDefaultAgentMemoryRecorder,
+  type AgentMemoryContextProvider,
+  type AgentMemoryRecorder
+} from "../services/agent-memory.js";
 import { getDefaultUserMemoryContextProvider, type UserMemoryContextProvider } from "../services/user-memory.js";
 import {
   getDefaultTeamSkillContextProvider,
@@ -472,6 +478,8 @@ export function createInMemoryAgentRunQueue(options: {
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord, workItemContext?: string) => string | Promise<string>;
   workItemContext?: AgentRunWorkItemContextProvider | false;
+  agentMemory?: AgentMemoryContextProvider | false;
+  agentMemoryRecorder?: AgentMemoryRecorder | false;
   userMemory?: UserMemoryContextProvider | false;
   teamSkills?: TeamSkillContextProvider | false;
   hydrateProject?: ProjectHydrator | false;
@@ -496,6 +504,8 @@ export function createInMemoryAgentRunQueue(options: {
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const persistence = options.persistence === false ? undefined : options.persistence;
   const workItemContext = options.workItemContext === false ? undefined : options.workItemContext;
+  const agentMemory = options.agentMemory === false ? undefined : options.agentMemory;
+  const agentMemoryRecorder = options.agentMemoryRecorder === false ? undefined : options.agentMemoryRecorder;
   const userMemory = options.userMemory === false ? undefined : options.userMemory;
   const teamSkills = options.teamSkills === false ? undefined : options.teamSkills;
   const hydrateProject = options.hydrateProject === false ? undefined : options.hydrateProject;
@@ -685,6 +695,7 @@ export function createInMemoryAgentRunQueue(options: {
   function defaultInitialUserMessage(
     run: AgentRunQueueRecord,
     resolvedWorkItemContext?: string,
+    agentMemorySection?: string,
     userMemorySection?: string,
     projectFileCount?: number
   ) {
@@ -720,6 +731,7 @@ export function createInMemoryAgentRunQueue(options: {
               : [])
           ]
         : []),
+      ...(agentMemorySection ? [agentMemorySection] : []),
       ...(userMemorySection ? [userMemorySection] : []),
       ...(projectFileCount && projectFileCount > 0
         ? [
@@ -1315,6 +1327,7 @@ export function createInMemoryAgentRunQueue(options: {
       const loop = createAgentLoop();
       stopClaimHeartbeat = startClaimHeartbeat(current.run_id);
       const resolvedWorkItemContext = await workItemContext?.(current);
+      const resolvedAgentMemory = await agentMemory?.(current);
       const resolvedUserMemory = await userMemory?.(current);
       const resolvedTeamSkills = await teamSkills?.(current);
       // 默认工具集时把团队技能内容塞进 load_skill；自定义 tools 提供者保持原样不动。
@@ -1331,7 +1344,7 @@ export function createInMemoryAgentRunQueue(options: {
       };
       const initialUserMessage = options.initialUserMessage
         ? await options.initialUserMessage(current, resolvedWorkItemContext)
-        : defaultInitialUserMessage(current, resolvedWorkItemContext, resolvedUserMemory, projectFileCount);
+        : defaultInitialUserMessage(current, resolvedWorkItemContext, resolvedAgentMemory, resolvedUserMemory, projectFileCount);
       const result = await loop.run({
         runId: current.run_id,
         workItemId: current.work_item_id,
@@ -1413,6 +1426,13 @@ export function createInMemoryAgentRunQueue(options: {
       // findings[H8 + chain-core-loop]：成功且开了提议 → 工作项 ai_working→in_review；成功但提议创建失败
       // → 不谎报 in_review，转 escalated（交付物已产出但进不了审阅，需人工）。
       await notifyRunMilestone(current, result.reason, { proposalOpened });
+      if (agentMemoryRecorder) {
+        try {
+          await agentMemoryRecorder({ run: current, result });
+        } catch (error) {
+          getDefaultStructuredLogger().warn("agent_memory_recorder_failed", { runId: current.run_id, error });
+        }
+      }
       await notifyRunSettled(current);
       return current;
     } catch (error) {
@@ -2250,6 +2270,8 @@ export function getDefaultAgentRunQueue() {
     // manifest.base.snapshot_id 永远为空、三方合并退回 accepted-history 祖先（背离 M2 设计）。
     snapshots: getDefaultAuditStores().snapshots,
     workItemContext: getDefaultWorkItemContextProvider(),
+    agentMemory: getDefaultAgentMemoryContextProvider(),
+    agentMemoryRecorder: getDefaultAgentMemoryRecorder(),
     userMemory: getDefaultUserMemoryContextProvider(),
     teamSkills: getDefaultTeamSkillContextProvider(),
     // 默认开启：项目/网盘是 WorkHub 核心语境，AI 工人应能读取 project/ 只读资料；仍可用

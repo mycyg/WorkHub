@@ -9,6 +9,7 @@ import type {
   DrivePageRequestOptions,
   EscalationDelegateResult,
   EscalationResolveResult,
+  ResolveMemoryConflictResult,
   PageRequestOptions,
   PilotDay1MetricsRequestOptions,
   MeetingPageRequestOptions,
@@ -428,6 +429,21 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    resolveMemoryConflict: (id, payload) => {
+      const params = new URLSearchParams();
+      if (payload.expected_updated_at) {
+        params.set("expected_updated_at", payload.expected_updated_at);
+      }
+      const query = params.toString();
+      const body = payload.value_md ? { value_md: payload.value_md } : {};
+      return request<ResolveMemoryConflictResult>(
+        `/api/memory-conflicts/${encodeURIComponent(id)}/resolve/${payload.resolution}${query ? `?${query}` : ""}`,
+        {
+          method: "POST",
+          body: JSON.stringify(body)
+        }
+      );
+    },
     listApprovalComments: (id) => request(`/api/approvals/${encodeURIComponent(id)}/comments`),
     postApprovalComment: (id, payload) =>
       request(`/api/approvals/${encodeURIComponent(id)}/comments`, {

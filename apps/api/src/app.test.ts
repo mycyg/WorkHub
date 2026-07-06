@@ -327,6 +327,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/approvals/{id}/comments"],
     ["post", "/api/escalations/{id}/resolve"],
     ["post", "/api/escalations/{id}/delegate"],
+    ["post", "/api/memory-conflicts/{id}/resolve/{resolution}"],
     ["get", "/api/permissions"],
     ["put", "/api/permissions"],
     ["delete", "/api/permissions/{id}"],
@@ -1163,6 +1164,23 @@ test("Approval and permission OpenAPI contracts document decision and policy act
   } | undefined;
   assert.deepEqual(escalationDelegateData?.required, ["escalation", "attention"]);
 
+  assert.equal(jsonRequestBodyRequired(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post"), false);
+  assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post")).sort(), [
+    "value_md"
+  ]);
+  const memoryConflictResolve = jsonResponseSchema(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "200");
+  const memoryConflictResolveData = memoryConflictResolve?.properties?.data as {
+    required?: string[];
+    properties?: Record<string, { required?: string[] }>;
+  } | undefined;
+  assert.deepEqual(memoryConflictResolveData?.required, ["conflict"]);
+  assert.deepEqual(memoryConflictResolveData?.properties?.conflict?.required, [
+    "id",
+    "status",
+    "resolution",
+    "resolved_value_md"
+  ]);
+
   const comments = jsonResponseSchema(body.paths, "/api/approvals/{id}/comments", "get", "200");
   assert.deepEqual(comments?.required, ["ok", "data"]);
   const commentItem = (comments?.properties?.data as { items?: { required?: string[] } } | undefined)?.items;
@@ -1312,6 +1330,16 @@ test("OpenAPI error responses document approval, meeting, and work item mutation
   ]);
   assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "409", ["escalation_race"]);
   assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "422", ["validation_error"]);
+
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "400", ["malformed_json", "json_object_required"]);
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "403", ["invalid_client_token", "forbidden"]);
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "404", ["not_found", "memory_conflict_not_found"]);
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "409", ["memory_conflict_status_changed"]);
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "422", [
+    "validation_error",
+    "memory_conflict_value_required"
+  ]);
 
   for (const path of [
     "/api/meetings/projects/{projectId}/insights/{insightId}/draft",

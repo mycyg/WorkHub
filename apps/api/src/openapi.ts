@@ -1657,6 +1657,17 @@ const resolveEscalationRequestBodySchema = {
   },
   additionalProperties: false
 } as const;
+const memoryConflictResolutionSchema = {
+  type: "string",
+  enum: ["keep_current", "accept_incoming", "discard_both", "edit_memory"]
+} as const;
+const resolveMemoryConflictRequestBodySchema = {
+  type: "object",
+  properties: {
+    value_md: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+} as const;
 const delegateEscalationRequestBodySchema = {
   type: "object",
   required: ["to_user_id"],
@@ -1700,6 +1711,34 @@ const escalationDelegateResultResponseSchema = {
       additionalProperties: false
     },
     attention: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: false
+} as const;
+const resolveMemoryConflictResultResponseSchema = {
+  type: "object",
+  required: ["conflict"],
+  properties: {
+    conflict: {
+      type: "object",
+      required: ["id", "status", "resolution", "resolved_value_md"],
+      properties: {
+        id: uuidStringSchema,
+        status: { type: "string", enum: ["open", "resolved"] },
+        resolution: {
+          anyOf: [
+            memoryConflictResolutionSchema,
+            { type: "null" }
+          ]
+        },
+        resolved_value_md: {
+          anyOf: [
+            { type: "string" },
+            { type: "null" }
+          ]
+        }
+      },
+      additionalProperties: false
+    }
   },
   additionalProperties: false
 } as const;
@@ -1763,11 +1802,26 @@ const approvalReadForbiddenResponse = jsonErrorStatusResponse(
   "Approval is not readable by the current user",
   ["invalid_client_token", "forbidden"]
 ).responses["403"];
+const memoryConflictMalformedJsonResponse = jsonErrorStatusResponse(
+  "400",
+  "Memory conflict resolution request body must be a JSON object",
+  ["malformed_json", "json_object_required"]
+).responses["400"];
 const approvalNotFoundResponse = jsonErrorStatusResponse(
   "404",
   "Approval was not found",
   ["not_found"]
 ).responses["404"];
+const memoryConflictNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Memory conflict was not found",
+  ["not_found", "memory_conflict_not_found"]
+).responses["404"];
+const memoryConflictRaceResponse = jsonErrorStatusResponse(
+  "409",
+  "Memory conflict was updated before this action completed",
+  ["memory_conflict_status_changed"]
+).responses["409"];
 const approvalValidationResponse = jsonErrorStatusResponse(
   "422",
   "Approval comment request body is not valid",
@@ -1777,6 +1831,11 @@ const escalationValidationResponse = jsonErrorStatusResponse(
   "422",
   "Escalation request body is not valid",
   ["validation_error"]
+).responses["422"];
+const memoryConflictValidationResponse = jsonErrorStatusResponse(
+  "422",
+  "Memory conflict resolution request is not valid",
+  ["validation_error", "memory_conflict_value_required"]
 ).responses["422"];
 const approvalCommentsUnavailableResponse = jsonErrorStatusResponse(
   "503",
@@ -1829,6 +1888,17 @@ const escalationDelegateResponse = {
     "404": escalationDelegateNotFoundResponse,
     "409": escalationDelegateRaceResponse,
     "422": escalationValidationResponse
+  }
+} as const;
+const resolveMemoryConflictResponse = {
+  responses: {
+    "200": jsonDataResponse(resolveMemoryConflictResultResponseSchema, "Memory conflict resolution result").responses["200"],
+    "400": memoryConflictMalformedJsonResponse,
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
+    "404": memoryConflictNotFoundResponse,
+    "409": memoryConflictRaceResponse,
+    "422": memoryConflictValidationResponse
   }
 } as const;
 const approvalCommentListResponse = {
@@ -2772,7 +2842,7 @@ const attentionHomePageResponseSchema = {
         type: "object",
         required: ["source", "message"],
         properties: {
-          source: { type: "string", enum: ["approvals", "proposals", "escalations"] },
+          source: { type: "string", enum: ["sync_conflicts", "approvals", "proposals", "escalations"] },
           message: { type: "string", minLength: 1 }
         },
         additionalProperties: false
@@ -4102,6 +4172,24 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           ...jsonRequestBody(delegateEscalationRequestBodySchema),
           ...escalationDelegateResponse
+        }
+      },
+      "/api/memory-conflicts/{id}/resolve/{resolution}": {
+        post: {
+          tags: ["memory-conflicts"],
+          summary: "Resolve a pending memory conflict by choosing A, B, neither, or an edited merge",
+          parameters: [
+            pathUuidParameter("id"),
+            {
+              name: "resolution",
+              in: "path",
+              required: true,
+              schema: memoryConflictResolutionSchema
+            },
+            optionalDateTimeQueryParameter("expected_updated_at")
+          ],
+          ...jsonRequestBody(resolveMemoryConflictRequestBodySchema, { required: false }),
+          ...resolveMemoryConflictResponse
         }
       },
       "/api/permissions": {

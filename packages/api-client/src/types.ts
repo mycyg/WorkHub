@@ -200,6 +200,23 @@ export type EscalationDelegateResult = {
   };
 };
 
+export type MemoryConflictResolution = "keep_current" | "accept_incoming" | "discard_both" | "edit_memory";
+
+export type ResolveMemoryConflictRequest = {
+  resolution: MemoryConflictResolution;
+  value_md?: string;
+  expected_updated_at?: string;
+};
+
+export type ResolveMemoryConflictResult = {
+  conflict: {
+    id: string;
+    status: "open" | "resolved";
+    resolution?: MemoryConflictResolution | null;
+    resolved_value_md?: string | null;
+  };
+};
+
 export type PageClient = {
   attention: (options?: PageRequestOptions) => Promise<AttentionHomeVM>;
   approvals: (options?: ApprovalPageRequestOptions) => Promise<ApprovalCenterVM>;
@@ -263,6 +280,7 @@ export type WorkHubApiClient = {
   delegateApproval: (id: string, payload: DelegateApprovalRequest) => Promise<unknown>;
   resolveEscalation: (id: string, payload: ResolveEscalationRequest) => Promise<EscalationResolveResult>;
   delegateEscalation: (id: string, payload: DelegateEscalationRequest) => Promise<EscalationDelegateResult>;
+  resolveMemoryConflict: (id: string, payload: ResolveMemoryConflictRequest) => Promise<ResolveMemoryConflictResult>;
   listApprovalComments: (id: string) => Promise<ApprovalCommentVM[]>;
   postApprovalComment: (id: string, payload: AddApprovalCommentRequest) => Promise<ApprovalCommentVM>;
   createProposalFromManifest: (workItemId: string, payload: CreateProposalFromManifestRequest) => Promise<Proposal>;

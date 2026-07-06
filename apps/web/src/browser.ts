@@ -55,6 +55,7 @@ import {
   mergeProposalCandidateApplyIdFromHref,
   meetingDraftProposalFromHref,
   meetingInsightActionFromHref,
+  memoryConflictActionFromHref,
   notificationActionFromHref,
   persistBrowserLocale,
   proposalActionFromHref,
@@ -1067,6 +1068,27 @@ function bindGoldPathNavigation(
         return;
       }
       const escalationAction = escalationActionFromHref(href);
+      const memoryConflictAction = memoryConflictActionFromHref(href);
+      if (memoryConflictAction) {
+        const payload = actionElementJsonPayload<{ value_md?: string }>(actionTarget);
+        if (!payload.ok) {
+          showPayloadFailureNotice(shellRoot, locale, payload, actionId);
+          return;
+        }
+        try {
+          const result = await client.resolveMemoryConflict(memoryConflictAction.conflictId, {
+            resolution: memoryConflictAction.resolution,
+            ...(payload.payload?.value_md ? { value_md: payload.payload.value_md } : {})
+          });
+          await renderCurrentRoute(client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "memory_conflict"));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        return;
+      }
       if (escalationAction?.action === "resolve") {
         const payload = escalationResolvePayloadFromActionId(actionId);
         if (!payload) {

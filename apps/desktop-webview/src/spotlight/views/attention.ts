@@ -11,6 +11,7 @@ import {
   approvalRespondIdFromHref,
   escapeHtml,
   escalationActionFromHref,
+  memoryConflictActionFromHref,
   proposalActionFromHref,
   safeHref
 } from "@workhub/web-runtime";
@@ -278,6 +279,15 @@ export function createAttentionView(): SpotlightCapabilityView {
         actionId: string | undefined,
         reasonMd: string | undefined
       ): Promise<boolean> => {
+        const memoryConflict = memoryConflictActionFromHref(href);
+        if (memoryConflict) {
+          const res = await client.resolveMemoryConflict(memoryConflict.conflictId, {
+            resolution: memoryConflict.resolution,
+            ...(reasonMd ? { value_md: reasonMd } : {})
+          });
+          ctx.toast(summaryText(res) ?? (zh ? "记忆冲突已处理" : "Memory conflict handled"), "ok");
+          return true;
+        }
         const escalation = escalationActionFromHref(href);
         if (escalation?.action === "resolve") {
           const payload = escalationResolvePayloadFromActionId(actionId);

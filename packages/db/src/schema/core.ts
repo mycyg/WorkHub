@@ -5,6 +5,7 @@ import type {
   TaskPlanItemRole,
   TaskPlanItemStatus,
   TaskPlanStatus,
+  UserMemoryCategory,
   WorkHubLocale,
   WorkItemMode,
   WorkItemStatus
@@ -1444,7 +1445,7 @@ export const auditLogs = pgTable(
 );
 
 // R6.M1 用户级 memory：个人偏好/纠正/常用上下文，注入 worker prompt 减少重复澄清。
-// 全局 user_id 维度（workspace_id 预留多租户）；用户自助可删（软删 deletedAt）。
+// R9.3.3：workspace_id 已参与 L2 key；旧全局记忆保留为 workspace_id IS NULL 的 fallback。
 export const userMemories = pgTable(
   "user_memories",
   {
@@ -1462,7 +1463,12 @@ export const userMemories = pgTable(
     ...timestamps()
   },
   (table) => [
-    uniqueIndex("user_memories_key_uq").on(table.userId, table.category, table.key).where(sql`${table.deletedAt} is null`),
+    uniqueIndex("user_memories_workspace_key_uq")
+      .on(table.userId, table.workspaceId, table.category, table.key)
+      .where(sql`${table.deletedAt} is null and ${table.workspaceId} is not null`),
+    uniqueIndex("user_memories_global_key_uq")
+      .on(table.userId, table.category, table.key)
+      .where(sql`${table.deletedAt} is null and ${table.workspaceId} is null`),
     index("user_memories_user_id_idx").on(table.userId),
     index("user_memories_workspace_id_idx").on(table.workspaceId),
     index("user_memories_category_idx").on(table.category),
@@ -1470,6 +1476,80 @@ export const userMemories = pgTable(
     index("user_memories_last_used_at_idx").on(table.lastUsedAt),
     index("user_memories_expires_at_idx").on(table.expiresAt),
     index("user_memories_deleted_at_idx").on(table.deletedAt)
+  ]
+);
+
+export const agentMemory = pgTable(
+  "agent_memory",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    // R9.3 L1: this is intentionally a task_plan_items.id, not a generic context id.
+    agentContextId: uuid("agent_context_id").notNull().references(() => taskPlanItems.id, { onDelete: "cascade" }),
+    category: varchar("category", { length: 32 }).$type<UserMemoryCategory>().notNull(),
+    key: varchar("key", { length: 256 }).notNull(),
+    valueMd: text("value_md").notNull(),
+    confidence: doublePrecision("confidence").notNull().default(0.5),
+    sourceRunId: uuid("source_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    baseVersion: integer("base_version").notNull().default(0),
+    currentVersion: integer("current_version").notNull().default(1),
+    ...timestamps()
+  },
+  (table) => [
+    uniqueIndex("agent_memory_context_key_uq").on(table.workspaceId, table.agentContextId, table.category, table.key),
+    index("agent_memory_workspace_context_idx").on(table.workspaceId, table.agentContextId),
+    index("agent_memory_source_run_id_idx").on(table.sourceRunId),
+    index("agent_memory_confidence_idx").on(table.confidence),
+    index("agent_memory_updated_at_idx").on(table.updatedAt)
+  ]
+);
+
+export const agentMemoryVersions = pgTable(
+  "agent_memory_versions",
+  {
+    id: id(),
+    memoryId: uuid("memory_id").notNull().references(() => agentMemory.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    baseVersion: integer("base_version").notNull().default(0),
+    valueMd: text("value_md").notNull(),
+    sourceRunId: uuid("source_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    createdAt: createdAt()
+  },
+  (table) => [
+    uniqueIndex("agent_memory_versions_memory_version_uq").on(table.memoryId, table.version),
+    index("agent_memory_versions_memory_id_idx").on(table.memoryId),
+    index("agent_memory_versions_source_run_id_idx").on(table.sourceRunId),
+    index("agent_memory_versions_created_at_idx").on(table.createdAt)
+  ]
+);
+
+export const memoryConflicts = pgTable(
+  "memory_conflicts",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    sourceRunId: uuid("source_run_id").references(() => agentRuns.id, { onDelete: "set null" }),
+    category: varchar("category", { length: 32 }).$type<UserMemoryCategory>().notNull(),
+    key: varchar("key", { length: 256 }).notNull(),
+    currentValueMd: text("current_value_md").notNull(),
+    incomingValueMd: text("incoming_value_md").notNull(),
+    baseValueMd: text("base_value_md"),
+    candidateMemoryIds: jsonb("candidate_memory_ids").$type<string[]>().notNull().default([]),
+    status: varchar("status", { length: 16 }).$type<"open" | "resolved">().notNull().default("open"),
+    resolution: varchar("resolution", { length: 32 }).$type<"keep_current" | "accept_incoming" | "discard_both" | "edit_memory">(),
+    resolvedValueMd: text("resolved_value_md"),
+    resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    resolvedAt: timestampTz("resolved_at"),
+    ...timestamps()
+  },
+  (table) => [
+    index("memory_conflicts_workspace_user_status_idx").on(table.workspaceId, table.userId, table.status),
+    index("memory_conflicts_source_run_id_idx").on(table.sourceRunId),
+    index("memory_conflicts_resolved_by_user_id_idx").on(table.resolvedByUserId),
+    uniqueIndex("memory_conflicts_open_key_uq")
+      .on(table.workspaceId, table.userId, table.category, table.key)
+      .where(sql`${table.status} = 'open'`)
   ]
 );
 
@@ -1508,6 +1588,9 @@ export const teamSkills = pgTable(
 export const workHubTables = {
   users,
   userMemories,
+  agentMemory,
+  agentMemoryVersions,
+  memoryConflicts,
   teamSkills,
   clientDevices,
   userProfiles,

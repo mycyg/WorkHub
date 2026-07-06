@@ -31,6 +31,7 @@ import { createProposalRoutes } from "./routes/proposals.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
 import { DrivePageServiceError } from "./services/drive-pages.js";
+import type { MemoryConflictService } from "./services/memory-conflicts.js";
 import type { ProjectHomePageService } from "./services/project-home-pages.js";
 import { createInMemoryProposalService, type ProposalService } from "./services/proposals.js";
 import {
@@ -178,6 +179,14 @@ function emptyEscalations(): EscalationService {
   } as unknown as EscalationService;
 }
 
+function emptyMemoryConflicts(): MemoryConflictService {
+  return {
+    async listAttentionItems() {
+      return [];
+    }
+  } as unknown as MemoryConflictService;
+}
+
 function failingEscalations(): EscalationService {
   return {
     async listAttentionItems() {
@@ -312,6 +321,7 @@ test("attention home decision queue is fed by the user's pending approvals", asy
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
     escalations: emptyEscalations(),
+    memoryConflicts: emptyMemoryConflicts(),
     // 决策队列必须接真实的"用户待决策审批"源；这里用 gold-path 审批中心做替身。
     approvals: { async listPendingForUser() { return fixture.approvalCenter; } } as unknown as ApprovalService,
     // 决策队列现在按可读工作项收口（findings）；注入放行所有工作项的 workItems，让 fixture 审批项保持可见。
@@ -379,6 +389,7 @@ test("attention home scopes proposal review lookup to the actor workspace", asyn
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
+    memoryConflicts: emptyMemoryConflicts(),
     approvals: {
       async listPendingForUser() {
         return {
@@ -425,6 +436,7 @@ test("attention home background runs stay scoped to the actor workspace for admi
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings, [user({ isAdmin: true })]),
     queue,
+    memoryConflicts: emptyMemoryConflicts(),
     approvals: {
       async listPendingForUser() {
         return {
@@ -504,6 +516,10 @@ test("attention home marks the decision queue as partial when the approvals look
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
     escalations: failingEscalations(),
+    // R9.3: this fixture is about approvals/escalations degradation. Without an explicit empty
+    // sync-conflict source, createPageRoutes falls back to the real DB-backed service and simulates
+    // an unrelated `sync_conflicts` warning; expanding this assertion would test fixture drift.
+    memoryConflicts: emptyMemoryConflicts(),
     approvals: { async listPendingForUser() { throw new Error("db down"); } } as unknown as ApprovalService,
     proposals: { async listReviewableForUser() { return []; } } as never
   }));

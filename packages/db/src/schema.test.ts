@@ -8,11 +8,14 @@ import { getTableName } from "drizzle-orm";
 import { confidenceGrades, escalationTriggers } from "@workhub/contracts";
 import {
   acceptedDeliverableChanges,
+  agentMemory,
+  agentMemoryVersions,
   agentRuns,
   agentSteps,
   auditLogs,
   budgetPolicies,
   costLedgerEntries,
+  memoryConflicts,
   mergeAttempts,
   mergeProposals,
   projectDriveItems,
@@ -32,9 +35,9 @@ import {
   workspaceMemberships
 } from "./index.js";
 
-// R9.1: the old count (50) was correct before the agent-army plan store existed; this slice
-// intentionally adds `task_plans` and `task_plan_items` as the auditable decomposition tables.
-const F02_TABLE_COUNT = 52;
+// R9.3: the old count (54) was correct when L1 memory existed but conflict cards were ephemeral;
+// memory_conflicts is now a real table so sync_conflict decisions survive refresh and close in one place.
+const F02_TABLE_COUNT = 55;
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {
@@ -68,9 +71,53 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("team_skills"), true);
   assert.equal(tableNames.includes("task_plans"), true);
   assert.equal(tableNames.includes("task_plan_items"), true);
+  assert.equal(tableNames.includes("agent_memory"), true);
+  assert.equal(tableNames.includes("agent_memory_versions"), true);
+  assert.equal(tableNames.includes("memory_conflicts"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
+});
+
+test("R9.3 memory conflicts persist user decisions for sync_conflict cards", () => {
+  assert.equal(getTableName(memoryConflicts), "memory_conflicts");
+  assert.equal(memoryConflicts.workspaceId.name, "workspace_id");
+  assert.equal(memoryConflicts.userId.name, "user_id");
+  assert.equal(memoryConflicts.sourceRunId.name, "source_run_id");
+  assert.equal(memoryConflicts.category.name, "category");
+  assert.equal(memoryConflicts.key.name, "key");
+  assert.equal(memoryConflicts.currentValueMd.name, "current_value_md");
+  assert.equal(memoryConflicts.incomingValueMd.name, "incoming_value_md");
+  assert.equal(memoryConflicts.baseValueMd.name, "base_value_md");
+  assert.equal(memoryConflicts.candidateMemoryIds.name, "candidate_memory_ids");
+  assert.equal(memoryConflicts.status.name, "status");
+  assert.equal(memoryConflicts.resolution.name, "resolution");
+  assert.equal(memoryConflicts.resolvedValueMd.name, "resolved_value_md");
+  assert.equal(memoryConflicts.resolvedByUserId.name, "resolved_by_user_id");
+  assert.equal(memoryConflicts.resolvedAt.name, "resolved_at");
+  const migration = readFileSync(join(process.cwd(), "migrations", "0036_memory_conflicts.sql"), "utf8");
+  assert.match(migration, /memory_conflicts_open_key_uq/u);
+  assert.match(migration, /WHERE "status" = 'open'/u);
+});
+
+test("R9.3 agent memory tables expose L1 private context and append-only versions", () => {
+  assert.equal(getTableName(agentMemory), "agent_memory");
+  assert.equal(agentMemory.workspaceId.name, "workspace_id");
+  assert.equal(agentMemory.agentContextId.name, "agent_context_id");
+  assert.equal(agentMemory.category.name, "category");
+  assert.equal(agentMemory.key.name, "key");
+  assert.equal(agentMemory.valueMd.name, "value_md");
+  assert.equal(agentMemory.confidence.name, "confidence");
+  assert.equal(agentMemory.sourceRunId.name, "source_run_id");
+  assert.equal(agentMemory.baseVersion.name, "base_version");
+  assert.equal(agentMemory.currentVersion.name, "current_version");
+
+  assert.equal(getTableName(agentMemoryVersions), "agent_memory_versions");
+  assert.equal(agentMemoryVersions.memoryId.name, "memory_id");
+  assert.equal(agentMemoryVersions.version.name, "version");
+  assert.equal(agentMemoryVersions.baseVersion.name, "base_version");
+  assert.equal(agentMemoryVersions.valueMd.name, "value_md");
+  assert.equal(agentMemoryVersions.sourceRunId.name, "source_run_id");
 });
 
 test("R9.1 task plan tables expose auditable decomposition fields", () => {

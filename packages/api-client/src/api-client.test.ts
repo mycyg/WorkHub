@@ -176,7 +176,11 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   const calls: string[] = [];
   const client = createApiClient({
     fetchFn: async (input, init) => {
-      const body = (String(input).includes("/next-question") || String(input).includes("/auth/preferences")) && typeof init?.body === "string"
+      const body = (
+        String(input).includes("/next-question") ||
+        String(input).includes("/auth/preferences") ||
+        String(input).includes("/memory-conflicts/")
+      ) && typeof init?.body === "string"
         ? ` ${init.body}`
         : "";
       calls.push(`${init?.method ?? "GET"} ${input}${body}`);
@@ -210,6 +214,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.getAgentRunTrace("run-1", 2);
   await client.getAgentRunHandoff("run-1");
   await client.abortAgentRun("run-1");
+  await client.resolveMemoryConflict("memory-conflict-1", { resolution: "edit_memory", value_md: "合并后的偏好。" });
   await client.createProposalFromManifest("work-1", { manifest: deliverableManifestFixtures[0]! });
   await client.listWorkItemProposals("work-1");
   await client.listWorkItemConflicts("work-1");
@@ -269,6 +274,7 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/agent-runs/run-1/trace?after=2",
     "GET /api/agent-runs/run-1/handoff",
     "POST /api/agent-runs/run-1/abort",
+    'POST /api/memory-conflicts/memory-conflict-1/resolve/edit_memory {"value_md":"合并后的偏好。"}',
     "POST /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/conflicts",

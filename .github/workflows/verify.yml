@@ -198,6 +198,10 @@ jobs:
           # 未鉴权 Page VM 必须 fail-closed
           code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/api/pages/attention)
           test "$code" = "401" -o "$code" = "403"
+      - name: Smoke R9 agent memory PG concurrency
+        run: |
+          set -euxo pipefail
+          docker compose -f docker-compose.pilot.yml exec -T workhub pnpm --filter @workhub/api qa:r9-agent-memory-pg-smoke
       - name: Smoke the sandbox deliverable libraries (R5.11.1)
         run: |
           set -euxo pipefail

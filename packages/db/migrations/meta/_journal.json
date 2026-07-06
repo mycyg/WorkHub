@@ -239,6 +239,27 @@
       "when": 1781512833742,
       "tag": "0033_agent_run_active_task_items",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1781512933742,
+      "tag": "0034_agent_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1781513033742,
+      "tag": "0035_user_memory_workspace_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1781513133742,
+      "tag": "0036_memory_conflicts",
+      "breakpoints": true
     }
   ]
 }
