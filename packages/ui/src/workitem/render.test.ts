@@ -82,6 +82,19 @@ test("work item renderer localizes fixed labels and hides raw status in English"
   assert.equal(rendered.html.includes("AI 会先读证据"), false);
 });
 
+test("R9.7 work item renderer falls back for non-string acceptance data", () => {
+  const fixture = createP05GoldPathFixture();
+  const detail = {
+    ...fixture.workItemDetail,
+    acceptance: [{ title: { nested: true }, status: 5 }]
+  };
+  const rendered = renderWorkItemDetail(detail, "web", { locale: "zh-CN" });
+
+  assert.match(rendered.html, /<strong>验收项 1<\/strong><span class="wh-pill">待确认<\/span>/u);
+  assert.equal(rendered.html.includes("[object Object]"), false);
+  assert.equal(rendered.html.includes('<span class="wh-pill">5</span>'), false);
+});
+
 test("R9.2 work item renderer shows the task-plan run tree in the AI working slot", () => {
   const fixture = createP05GoldPathFixture();
   const planId = "93000000-0000-4000-8000-000000000901";

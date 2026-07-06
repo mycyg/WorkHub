@@ -189,8 +189,10 @@ function acceptanceRows(items: unknown[], options?: UiRenderOptions) {
   return items
     .map((item, index) => {
       const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
-      const title = record.title ?? `${uiT(locale, "workitem.acceptanceItem")} ${index + 1}`;
-      const status = String(record.status ?? "open");
+      const title = typeof record.title === "string" && record.title.trim()
+        ? record.title
+        : `${uiT(locale, "workitem.acceptanceItem")} ${index + 1}`;
+      const status = typeof record.status === "string" && record.status.trim() ? record.status : "open";
       return `<div class="wh-row"><strong>${escapeHtml(title)}</strong><span class="wh-pill">${escapeHtml(checkStatusLabel(locale, status))}</span></div>`;
     })
     .join("");
