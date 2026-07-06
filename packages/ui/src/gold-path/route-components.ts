@@ -241,6 +241,7 @@ type RouteCopyKey =
   | "drive.createDraft"
   | "drive.openDraft"
   | "drive.openProposal"
+  | "drive.requestedMissing"
   | "drive.status.pending_llm"
   | "drive.status.draft_created"
   | "drive.status.proposal_created"
@@ -440,6 +441,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.createDraft": "生成草稿",
     "drive.openDraft": "打开草稿",
     "drive.openProposal": "打开提议",
+    "drive.requestedMissing": "找不到该文件，已回到默认视图。",
     "drive.status.pending_llm": "待生成草稿",
     "drive.status.draft_created": "已生成草稿",
     "drive.status.proposal_created": "已生成提议",
@@ -641,6 +643,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.createDraft": "Create draft",
     "drive.openDraft": "Open draft",
     "drive.openProposal": "Open proposal",
+    "drive.requestedMissing": "We could not find that file, so the drive is back at the default view.",
     "drive.status.pending_llm": "Pending draft",
     "drive.status.draft_created": "Draft created",
     "drive.status.proposal_created": "Proposal created",
@@ -2200,7 +2203,10 @@ function renderDriveRouteComponent(
       </nav>`;
   const selectedActiveItem = vm.items.find((item) => item.id === vm.selected_item_id);
   const selectedDeletedItem = vm.deleted_items.find((item) => item.id === vm.selected_item_id);
-  const selectedItem = selectedActiveItem ?? (selectedDeletedItem ? undefined : vm.items.find((item) => item.kind === "file") ?? vm.items[0]);
+  const selectedItem = selectedActiveItem ?? (selectedDeletedItem || vm.requested_item_missing ? undefined : vm.items.find((item) => item.kind === "file") ?? vm.items[0]);
+  const requestedMissingNotice = vm.requested_item_missing
+    ? `<p class="wh-subtle" data-r9-drive-requested-missing="true">${escapeHtml(routeT(locale, "drive.requestedMissing"))}</p>`
+    : "";
   const deleteTargetId = vm.actions.delete_item ? driveItemMutationIdFromHref(vm.actions.delete_item.href) : undefined;
   const deleteTarget = deleteTargetId ? vm.items.find((item) => item.id === deleteTargetId) : undefined;
   const deletePayload = {
@@ -2358,6 +2364,7 @@ function renderDriveRouteComponent(
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "drive.kicker"))}</span>
           <h1>${escapeHtml(projectTitle)}</h1>
           <p>${escapeHtml(selectedItem?.path ?? routeT(locale, vm.items.length === 0 ? "drive.emptyFiles" : "drive.selectFile"))}</p>
+          ${requestedMissingNotice}
           ${driveManageActions ? `<div class="wh-r4-route-actions" data-r5-drive-manage-actions="true">${driveManageActions}</div>` : ""}
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.file_count))}</span>

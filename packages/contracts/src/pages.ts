@@ -228,6 +228,7 @@ export const drivePageVmSchema = z.object({
   }),
   can_manage: z.boolean().default(false),
   selected_item_id: idSchema.optional(),
+  requested_item_missing: z.boolean().optional(),
   items: z.array(driveItemVmSchema),
   deleted_items: z.array(driveItemVmSchema).default([]),
   versions: z.array(driveFileVersionVmSchema),
