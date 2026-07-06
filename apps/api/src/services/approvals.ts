@@ -910,23 +910,29 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       }
 
       let learnedPolicy: Awaited<ReturnType<typeof deps.policies.createPermissionPolicy>> | undefined;
+      let learnFailed = false;
       // 决策 CAS 已提交(updated)。普通 approval.decided 审计和 publish 仍是 post-commit best-effort；
-      // 但 remember:'always' 新建 allow 策略会扩大 AI 后续权限，必须先写 permission_policy.created 审计。
-      // 若审计失败，方法抛错且不插入 standing permission，避免留下无审计的扩权策略。
+      // remember:'always' 新建 allow 策略会扩大 AI 后续权限，必须先写 permission_policy.created 审计。
+      // 若学习失败，只跳过 standing permission 并在 approval.decided 上标记，不能翻掉已提交决策。
       if (shouldLearn) {
-        const policyInput = {
-          scopeKind: "session",
-          scopeId: updated.agentRunId ?? actor.id,
-          actionPattern: updated.actionPattern,
-          effect: "allow",
-          priority: 0,
-          learnedFromSession: true,
-          ...(actor.userId ? { createdByUserId: actor.userId } : {}),
-          orgId: actor.orgId,
-          workspaceId: actor.workspaceId
-        } as const;
-        const existingPolicy = findEquivalentActivePolicy(await deps.policies.listActivePolicies(), actor, policyInput);
-        learnedPolicy = existingPolicy ?? await createAuditedPermissionPolicy(actor, policyInput);
+        try {
+          const policyInput = {
+            scopeKind: "session",
+            scopeId: updated.agentRunId ?? actor.id,
+            actionPattern: updated.actionPattern,
+            effect: "allow",
+            priority: 0,
+            learnedFromSession: true,
+            ...(actor.userId ? { createdByUserId: actor.userId } : {}),
+            orgId: actor.orgId,
+            workspaceId: actor.workspaceId
+          } as const;
+          const existingPolicy = findEquivalentActivePolicy(await deps.policies.listActivePolicies(), actor, policyInput);
+          learnedPolicy = existingPolicy ?? await createAuditedPermissionPolicy(actor, policyInput);
+        } catch (error) {
+          learnFailed = true;
+          getDefaultStructuredLogger().warn("approvals_remember_always_learning_failed", { id, error });
+        }
       }
       try {
         await auditApprovalAction(updated, {
@@ -942,7 +948,8 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             decision: payload.decision,
             decided_by_user_id: approverId(actor),
             ...(payload.reason_md ? { reason_preview: payload.reason_md.trim().slice(0, 160) } : {}),
-            ...(learnedPolicy ? { learned_policy_id: learnedPolicy.id } : {})
+            ...(learnedPolicy ? { learned_policy_id: learnedPolicy.id } : {}),
+            ...(learnFailed ? { learn_failed: true } : {})
           }
         });
       } catch (error) {
