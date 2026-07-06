@@ -26,6 +26,7 @@ import {
   proposals,
   reviews,
   snapshots,
+  taskPlans,
   workItemAcceptanceItems,
   workItemTaskItems,
   workItemTaskPlans,
@@ -342,6 +343,14 @@ export class ProposalRepositoryRebaseRequiredError extends Error {
   }
 }
 
+export class ProposalRepositoryTaskPlanApprovalError extends Error {
+  public readonly code = "task_plan_approval_failed";
+
+  constructor(public readonly planId: string) {
+    super(`Task plan "${planId}" could not be approved in the proposal merge transaction.`);
+  }
+}
+
 export type ProposalRepository = {
   createFromManifest: (input: CreateProposalFromManifestInput) => Promise<StoredProposalRows>;
   findMergeContext: (proposalId: string) => Promise<ProposalMergeContext | null>;
@@ -409,6 +418,24 @@ function targetKey(change: DeliverableChange) {
     return `${ref.entity_type}:${normalizeTargetPath(ref.path)}`;
   }
   return `${ref.entity_type}:${change.id}`;
+}
+
+function taskPlanApprovalTargets(manifest: DeliverableChangeManifest, fallbackWorkspaceId?: string | null) {
+  return manifest.changes.flatMap((change) => {
+    if (change.target_kind !== "structured_record" || change.target_ref.entity_type !== "task_plan") {
+      return [];
+    }
+    const planId = change.target_ref.entity_id;
+    if (!planId) {
+      throw new ProposalRepositoryTaskPlanApprovalError("missing");
+    }
+    const workspaceId = change.target_ref.path?.match(/\/workspaces\/([^/]+)\/task-plans\//u)?.[1]
+      ?? fallbackWorkspaceId;
+    if (!workspaceId) {
+      throw new ProposalRepositoryTaskPlanApprovalError(planId);
+    }
+    return [{ planId, workspaceId }];
+  });
 }
 
 function baseVersionRef(change: DeliverableChange) {
@@ -2612,6 +2639,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             title: proposals.title,
             workItemCode: workItems.code,
             projectId: workItems.projectId,
+            workspaceId: workItems.workspaceId,
             submitterUserId: workItems.submitterUserId,
             branchId: proposals.branchId,
             // P-COLLAB：本分支有无 base 快照,决定撞上最后防线时是"可对底稿(rebase)"还是裸 stale_base。
@@ -2652,6 +2680,9 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         const acceptIncomingTargetKeys = new Set(acceptedIncomingTargetKeyList);
         const keepCurrentTargetKeys = new Set(keptCurrentTargetKeyList);
         const targetKeys = proposal.diffManifest.changes.map(targetKey);
+        const taskPlanTargets = taskPlanApprovalTargets(proposal.diffManifest, proposal.workspaceId);
+        const taskPlanTargetKeys = new Set(taskPlanTargets.map((target) => `task_plan:${target.planId}`));
+        const hasNonTaskPlanChanges = proposal.diffManifest.changes.some((change) => !taskPlanTargetKeys.has(targetKey(change)));
         const currentByTargetKey = new Map<string, AcceptedDeliverableChangeRow | null>();
         const conflicts: ProposalMergeConflict[] = [];
         const resolvedConflicts: ProposalMergeConflict[] = [];
@@ -2806,19 +2837,42 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             updatedAt: at
           })
           .where(eq(branches.id, proposal.branchId));
-        await tx
-          .update(workItems)
-          .set({
-            status: "merged",
-            mainBranchId: proposal.branchId,
-            acceptedAt: at,
-            version: sql`${workItems.version} + 1`,
-            updatedAt: at
-          })
-          .where(eq(workItems.id, proposal.workItemId));
+        if (hasNonTaskPlanChanges) {
+          await tx
+            .update(workItems)
+            .set({
+              status: "merged",
+              mainBranchId: proposal.branchId,
+              acceptedAt: at,
+              version: sql`${workItems.version} + 1`,
+              updatedAt: at
+            })
+            .where(eq(workItems.id, proposal.workItemId));
+        }
+        for (const target of taskPlanTargets) {
+          const approved = await tx
+            .update(taskPlans)
+            .set({
+              status: "approved",
+              updatedAt: at
+            })
+            .where(and(
+              eq(taskPlans.id, target.planId),
+              eq(taskPlans.workspaceId, target.workspaceId),
+              eq(taskPlans.workItemId, proposal.workItemId),
+              eq(taskPlans.status, "draft")
+            ))
+            .returning({ id: taskPlans.id });
+          if (approved.length === 0) {
+            throw new ProposalRepositoryTaskPlanApprovalError(target.planId);
+          }
+        }
         const acceptedRows: string[] = [];
         for (const change of proposal.diffManifest.changes) {
           const key = targetKey(change);
+          if (taskPlanTargetKeys.has(key)) {
+            continue;
+          }
           if (keepCurrentTargetKeys.has(key)) {
             continue;
           }
@@ -2888,6 +2942,8 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             merge_attempt_id: mergeAttemptId,
             accepted_change_ids: acceptedRows,
             accepted_change_count: acceptedRows.length,
+            approved_task_plan_ids: taskPlanTargets.map((target) => target.planId),
+            approved_task_plan_count: taskPlanTargets.length,
             adopted_drive_version_ids: [...driveAdoptionsByChangeId.values()].map((adoption) => adoption.driveVersionId),
             adopted_drive_version_count: driveAdoptionsByChangeId.size,
             conflict_checked: true,

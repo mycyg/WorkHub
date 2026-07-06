@@ -39,6 +39,7 @@ import {
   ProposalRepositoryMergeProposalNotChosenError,
   ProposalRepositoryMergeProposalAlreadyChosenError,
   ProposalRepositoryStaleBaseError,
+  ProposalRepositoryTaskPlanApprovalError,
   ProposalRepositoryRebaseRequiredError,
   ProposalRepositoryUnsupportedMergeProposalApplyError,
   type ProposalAdoptedDriveFileInput,
@@ -63,6 +64,7 @@ import {
 } from "./text-hunk-materializer.js";
 import { correctionFromReview, getDefaultUserMemoryRepository } from "./user-memory.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import type { TaskPlanMergeApprovalHandler } from "./task-plan-approval.js";
 
 export type ProposalActor = {
   actor_kind: "human" | "ai" | "system";
@@ -72,6 +74,10 @@ export type ProposalActor = {
 
 export type StoredProposal = Proposal & {
   reviews: Review[];
+};
+
+export type ProposalServiceHooks = {
+  onMerged?: TaskPlanMergeApprovalHandler;
 };
 
 // GAP-1：首页决策队列里「待评审提议」的轻量摘要(不含 manifest/reviews)。
@@ -1623,6 +1629,7 @@ function conflictListResult(conflicts: ProposalConflict[]): ProposalConflictList
 export function createInMemoryProposalService(options: {
   now?: () => Date;
   id?: () => string;
+  onMerged?: TaskPlanMergeApprovalHandler;
 } = {}): ProposalService {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
@@ -1765,10 +1772,12 @@ export function createInMemoryProposalService(options: {
         merged_at: at,
         updated_at: at
       }, "proposal.memory");
-      return save({
+      const merged = save({
         ...updated,
         reviews: proposal.reviews
       });
+      await options.onMerged?.(merged);
+      return merged;
     },
 
     async rebase(input) {
@@ -1805,6 +1814,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
   id?: () => string;
   storageRoot?: string;
   fusionCandidateGenerator?: MergeFusionCandidateGenerator;
+  onMerged?: TaskPlanMergeApprovalHandler;
 } = {}): ProposalService {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
@@ -2124,12 +2134,17 @@ export function createDbProposalService(repository: ProposalRepository, options:
         if (error instanceof ProposalRepositoryStaleBaseError) {
           throw new ProposalServiceError(409, "stale_base", "正式版刚刚被别人改过，请刷新后重新采纳。");
         }
+        if (error instanceof ProposalRepositoryTaskPlanApprovalError) {
+          throw new ProposalServiceError(409, "task_plan_approval_failed", "任务计划提议已进入合并事务，但对应草稿未能标记为已批准。");
+        }
         throw error;
       }
       if (!rows) {
         throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
       }
-      return storedRowsToProposal(rows);
+      const merged = storedRowsToProposal(rows);
+      await options.onMerged?.(merged);
+      return merged;
     },
 
     async rebase(input) {

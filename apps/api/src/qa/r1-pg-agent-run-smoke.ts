@@ -24,6 +24,7 @@ import {
   createDbCostLedgerStore,
   createDriveRepository,
   createProposalRepository,
+  createTaskPlanRepository,
   createWorkItemRepository,
   createSnapshotRepository,
   createUserRepository,
@@ -40,6 +41,8 @@ import {
   projectDriveVersions,
   runMigrations,
   snapshots,
+  taskPlanItems,
+  taskPlans,
   usageRecords,
   users,
   workItemAcceptanceItems,
@@ -63,11 +66,13 @@ import { createKnowledgeRoutes } from "../routes/knowledge.js";
 import { createPageRoutes } from "../routes/pages.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "../routes/proposals.js";
 import { createSessionRoutes } from "../routes/sessions.js";
+import { createTaskPlanRoutes } from "../routes/task-plans.js";
 import { createWorkItemRoutes } from "../routes/workitems.js";
 import type { MergeFusionCandidateGenerator } from "../services/merge-fusion-candidates.js";
 import { createDbAgentRunPersistence } from "../services/agent-run-persistence.js";
 import { createEscalationService, EscalationServiceError } from "../services/escalations.js";
 import { createDbProposalService, ProposalServiceError } from "../services/proposals.js";
+import { createTaskPlanWorkflowService, TaskPlanServiceError } from "../services/task-plans.js";
 import { createDbWorkItemService } from "../services/work-items.js";
 import { createInMemoryAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
 
@@ -180,12 +185,63 @@ function deterministicFusionGenerator(): MergeFusionCandidateGenerator {
   };
 }
 
+function deterministicTaskPlanner() {
+  return {
+    async createDraft() {
+      const researchId = randomUUID();
+      const produceId = randomUUID();
+      const reviewId = randomUUID();
+      return {
+        items: [
+          {
+            id: researchId,
+            seq: 0,
+            title: "R1 PG smoke research",
+            role: "research" as const,
+            objectiveMd: "Collect deterministic source notes for the smoke task.",
+            acceptanceMd: "At least one deterministic source note is listed.",
+            budgetSharePct: 30,
+            dependsOn: []
+          },
+          {
+            id: produceId,
+            seq: 1,
+            title: "R1 PG smoke produce",
+            role: "produce" as const,
+            objectiveMd: "Draft the deterministic task-plan deliverable outline.",
+            acceptanceMd: "The outline has a conclusion and evidence section.",
+            budgetSharePct: 50,
+            dependsOn: [researchId]
+          },
+          {
+            id: reviewId,
+            seq: 2,
+            title: "R1 PG smoke review",
+            role: "review" as const,
+            objectiveMd: "Review that each acceptance item maps to a subtask.",
+            acceptanceMd: "All acceptance items are covered by the plan.",
+            budgetSharePct: 20,
+            dependsOn: [produceId]
+          }
+        ],
+        decompositionContext: {
+          source: "r1-pg-smoke",
+          judge: { decision: "approve", confidence: "high" }
+        }
+      };
+    }
+  };
+}
+
 function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
   app.onError((error, c) => {
     if (error instanceof ZodError) {
       return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
     }
     if (error instanceof EscalationServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
+    }
+    if (error instanceof TaskPlanServiceError) {
       return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
     }
     if (error instanceof HTTPException) {
@@ -227,6 +283,7 @@ async function main() {
     const persistence = createDbAgentRunPersistence(agentRunRepo);
     const formalStorageRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-drive-"));
     const proposalRepository = createProposalRepository(db);
+    const taskPlanRepository = createTaskPlanRepository(db);
     const proposalService = createDbProposalService(proposalRepository, {
       storageRoot: formalStorageRoot,
       fusionCandidateGenerator: deterministicFusionGenerator()
@@ -240,6 +297,11 @@ async function main() {
         body: `PG smoke deterministic clarification. Intent: ${(input.workItem.rawDescription ?? input.workItem.title ?? "").slice(0, 200)}`,
         placeholder: "例如：按需求原文执行即可。"
       })
+    });
+    const taskPlanService = createTaskPlanWorkflowService({
+      taskPlans: taskPlanRepository,
+      proposals: proposalService,
+      planner: deterministicTaskPlanner()
     });
     const aiDecisionRepository = createAiDecisionRepository(db);
     const escalationService = createEscalationService({
@@ -281,6 +343,7 @@ async function main() {
     app.route("/api/escalations", createEscalationRoutes({ auth, service: escalationService }));
     app.route("/api/proposals", createProposalRoutes({ auth, proposals: proposalService }));
     app.route("/api", createWorkItemProposalRoutes({ auth, proposals: proposalService }));
+    app.route("/api", createTaskPlanRoutes({ auth, service: taskPlanService, workItems: workItemService }));
     app.route("/api/knowledge", createKnowledgeRoutes({ auth, workItems: workItemService }));
     app.route("/api/pages", createPageRoutes({
       auth,
@@ -342,6 +405,86 @@ async function main() {
     const workItemId = createdWorkItemBody.data.workitem.id;
     if (createdWorkItemBody.data.workitem.status !== "spec_ready") {
       throw new Error(`Expected spec_ready work item, got ${createdWorkItemBody.data.workitem.status}`);
+    }
+    const taskPlanSession = await app.request("/api/sessions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        intent_text: "R9.1 task-plan smoke: research and produce a short topic report."
+      })
+    });
+    if (taskPlanSession.status !== 200) {
+      throw new Error(`Expected task-plan session create 200, got ${taskPlanSession.status}: ${await taskPlanSession.text()}`);
+    }
+    const taskPlanSessionBody = await taskPlanSession.json() as { data: { session_id: string } };
+    const taskPlanNextQuestion = await app.request(`/api/sessions/${taskPlanSessionBody.data.session_id}/next-question`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ selected_option_ids: ["document-draft"] })
+    });
+    if (taskPlanNextQuestion.status !== 200) {
+      throw new Error(`Expected task-plan next question 200, got ${taskPlanNextQuestion.status}: ${await taskPlanNextQuestion.text()}`);
+    }
+    const taskPlanWorkItem = await app.request("/api/workitems", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        session_id: taskPlanSessionBody.data.session_id,
+        selected_option_ids: ["document-draft"]
+      })
+    });
+    if (taskPlanWorkItem.status !== 201) {
+      throw new Error(`Expected task-plan work item create 201, got ${taskPlanWorkItem.status}: ${await taskPlanWorkItem.text()}`);
+    }
+    const taskPlanWorkItemBody = await taskPlanWorkItem.json() as { data: { workitem: { id: string; status: string } } };
+    const taskPlanWorkItemId = taskPlanWorkItemBody.data.workitem.id;
+    const taskPlanCreate = await app.request(`/api/workitems/${taskPlanWorkItemId}/task-plan`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ memories: { user: ["R1 smoke prefers evidence-backed output."], team: ["Separate produce and review roles."] } })
+    });
+    if (taskPlanCreate.status !== 201) {
+      throw new Error(`Expected task-plan create 201, got ${taskPlanCreate.status}: ${await taskPlanCreate.text()}`);
+    }
+    const taskPlanCreateBody = await taskPlanCreate.json() as { data: { plan_id: string; proposal_id: string; proposal: { title: string } } };
+    if (taskPlanCreateBody.data.proposal.title !== "计划提议") {
+      throw new Error(`Expected plan proposal title 计划提议, got ${taskPlanCreateBody.data.proposal.title}`);
+    }
+    const taskPlanReview = await app.request(`/api/proposals/${taskPlanCreateBody.data.proposal_id}/review`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ decision: "approve" })
+    });
+    if (taskPlanReview.status !== 200) {
+      throw new Error(`Expected task-plan proposal review 200, got ${taskPlanReview.status}: ${await taskPlanReview.text()}`);
+    }
+    const taskPlanMerge = await app.request(`/api/proposals/${taskPlanCreateBody.data.proposal_id}/merge`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({})
+    });
+    if (taskPlanMerge.status !== 200) {
+      throw new Error(`Expected task-plan proposal merge 200, got ${taskPlanMerge.status}: ${await taskPlanMerge.text()}`);
+    }
+    const taskPlanRows = await db.select().from(taskPlans).then((rows) =>
+      rows.filter((row) => row.id === taskPlanCreateBody.data.plan_id)
+    );
+    const taskPlanRow = taskPlanRows[0];
+    if (taskPlanRow?.status !== "approved") {
+      throw new Error(`Expected task plan approved after merge, got ${taskPlanRow?.status ?? "missing"}`);
+    }
+    const taskPlanItemRows = await db.select().from(taskPlanItems).then((rows) =>
+      rows.filter((row) => row.planId === taskPlanCreateBody.data.plan_id)
+    );
+    if (taskPlanItemRows.length !== 3) {
+      throw new Error(`Expected 3 task plan items, got ${taskPlanItemRows.length}`);
+    }
+    const taskPlanWorkItemRows = await db.select().from(workItems).then((rows) =>
+      rows.filter((row) => row.id === taskPlanWorkItemId)
+    );
+    const taskPlanWorkItemAfterMerge = taskPlanWorkItemRows[0];
+    if (!taskPlanWorkItemAfterMerge || taskPlanWorkItemAfterMerge.status === "merged") {
+      throw new Error(`Expected task-plan proposal merge not to complete the work item, got ${taskPlanWorkItemAfterMerge?.status ?? "missing"}`);
     }
     const knowledge = await app.request("/api/knowledge/search", {
       method: "POST",
@@ -2324,6 +2467,15 @@ async function main() {
         resolve_status: escalationResolveBody.data.work_item_status,
         persisted_status: resolvedEscalationWorkItem?.status,
         resolved_at_present: Boolean(resolvedEscalationEvent?.resolvedAt)
+      },
+      task_plan: {
+        work_item_id: taskPlanWorkItemId,
+        work_item_status: taskPlanWorkItemAfterMerge.status,
+        plan_id: taskPlanCreateBody.data.plan_id,
+        proposal_id: taskPlanCreateBody.data.proposal_id,
+        proposal_title: taskPlanCreateBody.data.proposal.title,
+        status: taskPlanRow.status,
+        item_count: taskPlanItemRows.length
       },
       merge: {
         proposal_status: proposalAfterMerge.status,

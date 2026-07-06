@@ -27,8 +27,10 @@ import { createProjectRoutes } from "./routes/projects.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
+import { createTaskPlanRoutes } from "./routes/task-plans.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
 import { createCostRoutes } from "./routes/cost.js";
+import { TaskPlanApprovalError } from "./services/task-plan-approval.js";
 import { ProjectServiceError } from "./services/projects.js";
 import { PilotDay1MetricsServiceError } from "./services/pilot-day1-metrics.js";
 import { httpErrorCodeFor } from "./http-error-codes.js";
@@ -207,6 +209,7 @@ app.route("/api/notifications", createNotificationRoutes());
 app.route("/api", createAuditRoutes());
 app.route("/api", createSessionRoutes());
 app.route("/api", createWorkItemRoutes());
+app.route("/api", createTaskPlanRoutes());
 app.route("/api/knowledge", createKnowledgeRoutes());
 app.route("/api", createWorkItemProposalRoutes());
 app.route("/api/proposals", createProposalRoutes());
@@ -300,6 +303,19 @@ app.onError((error, c) => {
   }
 
   if (error instanceof ProjectServiceError || error instanceof PilotDay1MetricsServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof TaskPlanApprovalError) {
     return c.json(
       {
         ok: false,

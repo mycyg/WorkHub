@@ -785,6 +785,34 @@ test("deliverable manifest preserves explicit generated markdown content for tex
   assert.equal(parsed.changes[0]?.machine_summary?.generated_content_md, generatedContent);
 });
 
+test("R9.1 plan proposals can target task_plan structured records without colliding with work item patches", () => {
+  const base = deliverableManifestFixtures[0]!;
+  const change = base.changes[0]!;
+  const planId = "95000000-0000-4000-8000-000000000101";
+  const parsed = deliverableChangeManifestSchema.parse({
+    ...base,
+    title: "计划提议",
+    summary_md: "请确认这份任务拆解计划。",
+    changes: [{
+      ...change,
+      target_kind: "structured_record",
+      target_ref: {
+        entity_type: "task_plan",
+        entity_id: planId
+      },
+      change_type: "generated",
+      human_summary: "新增可审的任务计划草稿。",
+      machine_summary: {
+        changed_fields: ["task_plan_items"],
+        generated_content_md: "1. 调研证据\n2. 产出短报告"
+      }
+    }]
+  });
+
+  assert.equal(parsed.changes[0]?.target_ref.entity_type, "task_plan");
+  assert.equal(parsed.changes[0]?.target_ref.entity_id, planId);
+});
+
 test("proposal conflict cards carry option-first merge resolution payloads", () => {
   const parsed = proposalConflictListResultSchema.parse({
     conflicts: [
