@@ -195,17 +195,6 @@ test("drive page accepted deliverables only attach versions belonging to their d
   assert.match(source, /eq\(projectDriveVersions\.itemId,\s*acceptedDeliverableChanges\.driveItemId\)/u);
 });
 
-test("drive page readPage keeps superseded accepted rows for historical version labels", () => {
-  const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
-  const acceptedStart = source.indexOf(".from(acceptedDeliverableChanges)");
-  const acceptedEnd = source.indexOf(".orderBy(desc(acceptedDeliverableChanges.createdAt))", acceptedStart);
-  assert.notEqual(acceptedStart, -1);
-  assert.notEqual(acceptedEnd, -1);
-  const acceptedBlock = source.slice(acceptedStart, acceptedEnd);
-
-  assert.doesNotMatch(acceptedBlock, /isNull\(acceptedDeliverableChanges\.supersededAt\)/u);
-});
-
 test("drive page readPage backfills current versions for every loaded file item", () => {
   const source = readFileSync(join(process.cwd(), "src", "repositories", "drive.ts"), "utf8");
   const start = source.indexOf("async readPage");

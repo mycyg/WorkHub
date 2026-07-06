@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
@@ -404,7 +404,6 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
 
   routes.post("/projects/:projectId/files", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
-    let storagePathForCleanup: string | undefined;
     try {
       const projectId = requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found");
       await assertCanManageDriveProject({
@@ -413,14 +412,10 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
         locale
       });
       const body = await readUploadBody(c, { projectId, settings: runtimeSettings });
-      storagePathForCleanup = body.storagePath;
-      // Once the service starts, it owns cleanup decisions. The repository may commit the
-      // storage path before the service refreshes the page VM; route-level cleanup after
-      // that point can delete a DB-referenced file.
-      storagePathForCleanup = undefined;
       const data = await drivePages.uploadFile({
         actor: c.var.actor,
         projectId,
+        locale,
         ...(body.parentId !== undefined ? { parentId: body.parentId } : {}),
         filename: body.filename,
         ...(body.mime ? { mime: body.mime } : {}),
@@ -431,9 +426,6 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
-      if (storagePathForCleanup) {
-        await rm(storagePathForCleanup, { force: true }).catch(() => undefined);
-      }
       if (error instanceof DrivePageServiceError) {
         return driveErrorResponse(c, error);
       }
@@ -455,6 +447,7 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
       const data = await drivePages.deleteItem({
         actor: c.var.actor,
         projectId,
+        locale,
         itemId,
         ...(body.expected_current_version_id !== undefined ? { expectedCurrentVersionId: body.expected_current_version_id } : {})
       });
@@ -472,6 +465,7 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
     try {
       const data = await drivePages.restoreItem({
         actor: c.var.actor,
+        locale,
         projectId: requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found"),
         itemId: requireUuidParam(c.req.param("itemId"), "文件", "drive_file_not_found")
       });
@@ -489,6 +483,7 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
     try {
       const data = await drivePages.commentToDraft({
         actor: c.var.actor,
+        locale,
         projectId: requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found"),
         commentId: requireUuidParam(c.req.param("commentId"), "评论", "drive_comment_not_found")
       });

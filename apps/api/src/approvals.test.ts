@@ -554,6 +554,40 @@ test("deny requires a reason and remember always refuses to learn high-risk appr
   assert.equal(deps.policyRepo.rows[0]?.learnedFromSession, true);
 });
 
+test("remember always skips learning but returns the committed decision when policy audit logging fails", async () => {
+  const deps = serviceDeps();
+  const approval = await deps.approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    routedToUserId: approverId,
+    payloadJson: {
+      ui: {
+        summary_text: "AI 想更新文件，需要你确认。",
+        risk: { level: "medium", human_label: "可回滚" }
+      },
+      raw_args: {}
+    }
+  });
+  const originalCreateAuditLog = deps.auditLogs.createAuditLog.bind(deps.auditLogs);
+  deps.auditLogs.createAuditLog = async (input) => {
+    if (input.action === "permission_policy.created") {
+      throw new Error("audit sink unavailable");
+    }
+    return originalCreateAuditLog(input);
+  };
+
+  // R9 branch-review fix-batch2-1: the old assertion made the whole response
+  // fail after respondPending() had already committed the decision, causing
+  // client retry to hit 409 and dropping approval.decided audit/publish.
+  const result = await deps.service.respond(approval.id, actor, { decision: "allow", remember: "always" });
+
+  assert.equal(result.approval.status, "approved");
+  assert.equal(result.learned_policy, undefined);
+  assert.equal(deps.policyRepo.rows.length, 0);
+  const decidedAudit = deps.auditLogs.rows.find((entry) => entry.action === "approval.decided");
+  assert.equal((decidedAudit?.detailJson as Record<string, unknown> | undefined)?.learn_failed, true);
+  assert.equal(deps.bus.events.some((event) => event.type === "permission.decided"), true);
+});
+
 test("remember always reuses an equivalent active policy instead of duplicating learned policies", async () => {
   const existingId = "70000000-0000-4000-8000-0000000000b1";
   const deps = serviceDeps([{
@@ -1790,30 +1824,28 @@ test("L23 createPolicy emits a permission_policy.created audit", async () => {
   assert.equal((audit?.detailJson as Record<string, unknown> | undefined)?.action_pattern, "tool.delete_file");
 });
 
-test("permission policy writes return committed rows when audit logging fails", async () => {
+test("permission policy allow creation fails closed when audit logging fails", async () => {
   const deps = serviceDeps();
   deps.auditLogs.createAuditLog = async () => {
     throw new Error("audit sink unavailable");
   };
   const adminActor = { ...actor, isAdmin: true };
 
-  const created = await deps.service.createPolicy(adminActor, {
-    scope_kind: "workspace",
-    scope_id: workspaceId,
-    action_pattern: "tool.write_file",
-    effect: "allow",
-    priority: 0,
-    learned_from_session: false
-  });
-
-  assert.equal(created.effect, "allow");
-  assert.ok(created.id);
-  assert.equal(deps.policyRepo.rows.length, 1);
-  assert.equal(deps.policyRepo.rows[0]?.id, created.id);
-
-  const revoked = await deps.service.revokePolicy(adminActor, created.id);
-  assert.equal(revoked.deletedAt ? new Date(revoked.deletedAt).toISOString() : null, now.toISOString());
-  assert.equal((await deps.service.listPolicies(adminActor)).length, 0);
+  // Old assertion expected a committed allow policy even when the audit sink failed.
+  // That was wrong: allow policies expand what AI may do, so missing audit evidence must
+  // block the expansion instead of leaving an unaudited standing permission behind.
+  await assert.rejects(
+    () => deps.service.createPolicy(adminActor, {
+      scope_kind: "workspace",
+      scope_id: workspaceId,
+      action_pattern: "tool.write_file",
+      effect: "allow",
+      priority: 0,
+      learned_from_session: false
+    }),
+    /audit sink unavailable/u
+  );
+  assert.equal(deps.policyRepo.rows.length, 0);
 });
 
 test("permission policy list is scoped to the admin actor tenant", async () => {
@@ -2114,7 +2146,7 @@ test("delegated pending approval timeline marks only delegated as current", asyn
   assert.equal(detail?.timeline.find((step) => step.kind === "routed")?.status, "done");
 });
 
-test("W2 listPendingForUser caps prefetched comments per approval", async () => {
+test("W2 listPendingForUser shows the latest prefetched comments and exposes overflow", async () => {
   const approvals = new MemoryApprovals();
   const seeded = await approvals.createApprovalRequest({
     actionPattern: "proposal.review.weekly",
@@ -2140,7 +2172,7 @@ test("W2 listPendingForUser caps prefetched comments per approval", async () => 
       listByApproval: async () => comments,
       listByApprovals: async (_ids, limit) => {
         seenLimit = limit;
-        return comments.slice(0, limit ?? comments.length);
+        return comments.slice(-(limit ?? comments.length));
       },
       create: async () => {
         throw new Error("not needed");
@@ -2151,10 +2183,17 @@ test("W2 listPendingForUser caps prefetched comments per approval", async () => 
 
   const vm = await service.listPendingForUser(user({ isAdmin: true }));
   const detail = vm.items_detail[seeded.id];
+  const pageInfo = detail?.comments_page_info;
 
-  assert.equal(seenLimit, 20);
+  // Old assertion expected `comment 20` as the last visible row because prefetch kept the
+  // oldest 20 comments. That was wrong: comment 21+ could be written successfully and then
+  // disappear from the approval center. The center now asks for one extra latest row so it
+  // can display a capped latest window and honestly report overflow.
+  assert.equal(seenLimit, 21);
   assert.equal(detail?.comments.length, 20);
-  assert.equal(detail?.comments.at(-1)?.body, "comment 20");
+  assert.equal(detail?.comments[0]?.body, "comment 6");
+  assert.equal(detail?.comments.at(-1)?.body, "comment 25");
+  assert.deepEqual(pageInfo, { limit: 20, returned: 20, has_more: true });
 });
 
 test("W2 listPendingForUser exposes when the approval queue has more than the first page", async () => {
@@ -2184,6 +2223,36 @@ test("W2 listPendingForUser exposes when the approval queue has more than the fi
   assert.equal(pageInfo?.limit, 100);
   assert.equal(pageInfo?.returned, 100);
   assert.equal(pageInfo?.has_more, true);
+});
+
+test("W2 listPendingForUser returns a requested approval queue page with the honest total", async () => {
+  const approvals = new MemoryApprovals();
+  for (let index = 0; index < 103; index += 1) {
+    await approvals.createApprovalRequest({
+      actionPattern: "tool.publish_external",
+      routedToUserId: userId,
+      payloadJson: { raw_args: { index } }
+    });
+  }
+  const service = createApprovalService({
+    approvals,
+    auditLogs: new MemoryAuditLogs(),
+    policies: new MemoryPolicies(),
+    bus: new RecordingBus(),
+    now: () => now
+  });
+
+  const vm = await service.listPendingForUser(user({ isAdmin: true }), { offset: 100 });
+  const pageInfo = (vm as { page_info?: { limit?: number; offset?: number; returned?: number; has_more?: boolean } }).page_info;
+
+  assert.equal(vm.requests.length, 3);
+  assert.equal(vm.items.length, 3);
+  assert.equal(vm.counts.pending, 3);
+  assert.equal(vm.counts.pending_total, 103);
+  assert.equal(pageInfo?.limit, 100);
+  assert.equal(pageInfo?.offset, 100);
+  assert.equal(pageInfo?.returned, 3);
+  assert.equal(pageInfo?.has_more, false);
 });
 
 test("routes-a-2/services-a-2/ux-web-govern-6: listPendingForUser caps the visibility scan instead of translating the whole pending table", async () => {

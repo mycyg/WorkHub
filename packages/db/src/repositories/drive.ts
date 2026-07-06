@@ -460,6 +460,7 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           // deletedAt 仅在确有 drive item 时才校验。
           .where(and(
             eq(acceptedDeliverableChanges.projectId, project.id),
+            isNull(acceptedDeliverableChanges.supersededAt),
             or(isNull(projectDriveItems.id), isNull(projectDriveItems.deletedAt))
           ))
           .orderBy(desc(acceptedDeliverableChanges.createdAt))
@@ -639,6 +640,42 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         acceptedDeliverables = [
           ...acceptedDeliverables,
           ...loadedAcceptedDeliverables.filter((row) => !knownAcceptedDeliverableIds.has(row.accepted.id))
+        ];
+      }
+      const loadedVersionIds = [...new Set(versions.map((version) => version.id))];
+      if (loadedItemIds.length && loadedVersionIds.length) {
+        const knownAcceptedDeliverableIds = new Set(acceptedDeliverables.map((row) => row.accepted.id));
+        const rankedHistoricalAccepted = db
+          .select({
+            acceptedId: acceptedDeliverableChanges.id,
+            rowNumber: sql<number>`row_number() over (partition by ${acceptedDeliverableChanges.driveVersionId} order by ${acceptedDeliverableChanges.createdAt} desc)`.as("row_number")
+          })
+          .from(acceptedDeliverableChanges)
+          .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+          .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
+          .where(and(
+            eq(acceptedDeliverableChanges.projectId, project.id),
+            inArray(acceptedDeliverableChanges.driveItemId, loadedItemIds),
+            inArray(acceptedDeliverableChanges.driveVersionId, loadedVersionIds),
+            isNotNull(acceptedDeliverableChanges.supersededAt),
+            or(isNull(projectDriveItems.id), isNull(projectDriveItems.deletedAt))
+          ))
+          .as("ranked_historical_accepted_deliverables");
+        const historicalAcceptedDeliverables = await db
+          .select({
+            accepted: acceptedDeliverableChanges,
+            driveItem: projectDriveItems,
+            driveVersion: projectDriveVersions
+          })
+          .from(rankedHistoricalAccepted)
+          .innerJoin(acceptedDeliverableChanges, eq(acceptedDeliverableChanges.id, rankedHistoricalAccepted.acceptedId))
+          .leftJoin(projectDriveItems, eq(acceptedDeliverableChanges.driveItemId, projectDriveItems.id))
+          .leftJoin(projectDriveVersions, acceptedDriveVersionJoinCondition())
+          .where(eq(rankedHistoricalAccepted.rowNumber, 1))
+          .orderBy(desc(acceptedDeliverableChanges.createdAt));
+        acceptedDeliverables = [
+          ...acceptedDeliverables,
+          ...historicalAcceptedDeliverables.filter((row) => !knownAcceptedDeliverableIds.has(row.accepted.id))
         ];
       }
       acceptedDeliverables = await attachAcceptedDeliverableRestoreState(db, acceptedDeliverables);

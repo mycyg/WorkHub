@@ -82,6 +82,15 @@ import {
   type WebRouteReadyResult
 } from "./routes.js";
 import {
+  acceptedDeliverableRestoreFollowUp,
+  driveUploadPayloadFromPicker
+} from "./drive-actions.js";
+import {
+  drivePreviewPanelHtml,
+  drivePreviewTitle,
+  type DrivePreviewPayload
+} from "./drive-preview.js";
+import {
   mountReactRouteIsland,
   setReactRouteDirtyHandler,
   unmountReactRouteIsland
@@ -90,15 +99,6 @@ import {
 const root = document.getElementById("root");
 const liveLastEventIdStorageKey = "workhub.live.lastEventId";
 type BrowserApiClient = ReturnType<typeof createApiClient>;
-type DrivePreviewPayload = {
-  filename?: string | undefined;
-  mime?: string | undefined;
-  size_bytes?: number | undefined;
-  preview_type?: string | undefined;
-  text?: string | undefined;
-  truncated?: boolean | undefined;
-  download_href?: string | undefined;
-};
 const noticeTimerState: RouteNoticeTimerState = {};
 let readyRouteBindings: AbortController | undefined;
 let liveDirtyGuardCount = 0;
@@ -120,35 +120,6 @@ function startIntentText(actionTarget: HTMLElement) {
   const route = actionTarget.closest<HTMLElement>("[data-r4-route-component=\"intake\"]");
   const input = route?.querySelector<HTMLTextAreaElement>("[data-s1-day1-intent-input]");
   return input?.value.trim() ?? "";
-}
-
-function drivePreviewTitle(preview: DrivePreviewPayload, locale: WorkHubLocale) {
-  const filename = preview.filename?.trim();
-  if (locale === "en-US") {
-    return filename ? `Preview: ${filename}` : "File preview";
-  }
-  return filename ? `预览：${filename}` : "文件预览";
-}
-
-function drivePreviewFallbackText(locale: WorkHubLocale) {
-  return locale === "en-US"
-    ? "This file has no text preview. Download it to inspect the original."
-    : "这个文件暂无文本预览，请下载原文件查看。";
-}
-
-function drivePreviewPanelHtml(preview: DrivePreviewPayload, locale: WorkHubLocale) {
-  const meta = [
-    preview.preview_type ? (locale === "en-US" ? `type ${preview.preview_type}` : `类型 ${preview.preview_type}`) : "",
-    Number.isFinite(preview.size_bytes) ? (locale === "en-US" ? `${preview.size_bytes} bytes` : `${preview.size_bytes} 字节`) : "",
-    preview.truncated ? (locale === "en-US" ? "truncated" : "已截断") : ""
-  ].filter(Boolean).join(" · ");
-  const download = preview.download_href
-    ? `<a class="wh-btn" href="${escapeHtml(safeHref(preview.download_href))}" data-action-id="drive_download" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(locale === "en-US" ? "Download" : "下载")}</a>`
-    : "";
-  const text = typeof preview.text === "string" && preview.text.length > 0
-    ? preview.text
-    : drivePreviewFallbackText(locale);
-  return `<h3>${escapeHtml(drivePreviewTitle(preview, locale))}</h3>${meta ? `<p>${escapeHtml(meta)}</p>` : ""}<pre class="wh-r5-drive-preview-body">${escapeHtml(text)}</pre>${download ? `<div class="wh-r4-route-actions">${download}</div>` : ""}`;
 }
 
 function renderDrivePreviewPanel(actionTarget: HTMLElement, preview: DrivePreviewPayload, locale: WorkHubLocale) {
@@ -523,7 +494,7 @@ function bindGoldPathNavigation(
       showRouteNotice(shellRoot, actionPendingNotice(locale, actionId));
       void (async () => {
         try {
-          const result = await client.uploadDriveFile(driveUpload.projectId, { file }, { locale });
+          const result = await client.uploadDriveFile(driveUpload.projectId, driveUploadPayloadFromPicker(target, file), { locale });
           target.value = "";
           await renderCurrentRoute(client, locale);
           if (root) {
@@ -902,17 +873,10 @@ function bindGoldPathNavigation(
             acceptedDeliverableRestore.workItemId,
             acceptedDeliverableRestore.acceptedChangeId
           );
-          if (result.accepted_deliverable.drive_href) {
-            await navigateWebRoute(result.accepted_deliverable.drive_href, client, locale);
-          } else {
-            await renderCurrentRoute(client, locale);
-          }
+          const followUp = acceptedDeliverableRestoreFollowUp(result, locale, actionSummary(result, locale));
+          await renderCurrentRoute(client, locale);
           if (root) {
-            const filename = result.accepted_deliverable.filename?.trim();
-            const body = filename
-              ? (locale === "zh-CN" ? `已恢复并打开：${filename}` : `Restored and opened: ${filename}`)
-              : actionSummary(result, locale);
-            showRouteNotice(root, actionSuccessNotice(locale, body, actionId));
+            showRouteNotice(root, actionSuccessNotice(locale, followUp.noticeBody, actionId));
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));

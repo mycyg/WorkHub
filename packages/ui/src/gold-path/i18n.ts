@@ -22,6 +22,41 @@ export const workHubLocaleOptions = [
   { locale: "en-US", label: "English", shortLabel: "EN" }
 ] as const satisfies WorkHubLocaleOption[];
 
+type ApprovalQueuePageInfo = {
+  limit: number;
+  offset?: number | undefined;
+  returned: number;
+  has_more: boolean;
+};
+
+export function approvalQueuePageInfoText(
+  locale: WorkHubLocale,
+  pageInfo: ApprovalQueuePageInfo | undefined,
+  counts: Record<string, number>
+) {
+  if (!pageInfo || (!pageInfo.has_more && counts["pending_total_capped"] !== 1)) {
+    return "";
+  }
+  const returned = Math.max(0, pageInfo?.returned ?? 0);
+  const total = counts["pending_total"];
+  const hasTotal = typeof total === "number" && Number.isFinite(total) && total > returned;
+  const capped = counts["pending_total_capped"] === 1;
+  if (locale === "zh-CN") {
+    if (capped) {
+      return `已显示 ${returned} 条审批，还有更多未展开；总数是当前扫描范围的下限。`;
+    }
+    return hasTotal
+      ? `已显示 ${returned}/${total} 条审批，还有更多未展开。`
+      : `已显示 ${returned} 条审批，还有更多未展开。`;
+  }
+  if (capped) {
+    return `Showing ${returned} approvals. More are available; the total is a lower bound from the current scan.`;
+  }
+  return hasTotal
+    ? `Showing ${returned} of ${total} approvals. More approvals are available.`
+    : `Showing ${returned} approvals. More approvals are available.`;
+}
+
 export type GoldPathCopyKey =
   | "state.idle"
   | "state.thinking"
@@ -84,6 +119,7 @@ export type GoldPathCopyKey =
   | "approvals.timelineTitle"
   | "approvals.discussionTitle"
   | "approvals.commentsEmpty"
+  | "approvals.commentsOverflow"
   | "approvals.commentPlaceholder"
   | "approvals.commentSubmit"
   | "approvals.reasonLabel"
@@ -272,6 +308,7 @@ const goldPathCopy = {
     "approvals.timelineTitle": "审批流程",
     "approvals.discussionTitle": "相关讨论",
     "approvals.commentsEmpty": "还没有讨论，来说两句 (=^･ω･^=)",
+    "approvals.commentsOverflow": "仅显示最新的讨论，较早内容未在此处展开。",
     "approvals.commentPlaceholder": "写下你的看法…",
     "approvals.commentSubmit": "发表",
     "approvals.reasonLabel": "意见说明",
@@ -459,6 +496,7 @@ const goldPathCopy = {
     "approvals.timelineTitle": "Approval flow",
     "approvals.discussionTitle": "Discussion",
     "approvals.commentsEmpty": "No discussion yet — say something (=^･ω･^=)",
+    "approvals.commentsOverflow": "Showing the latest discussion only. Older comments are not expanded here.",
     "approvals.commentPlaceholder": "Write a comment…",
     "approvals.commentSubmit": "Comment",
     "approvals.reasonLabel": "Your note",

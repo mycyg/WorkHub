@@ -450,6 +450,30 @@ function withLocale(locale: WorkHubLocale) {
   return { locale };
 }
 
+function nonnegativeIntSearchParam(search: string, key: string): number | undefined {
+  const raw = new URLSearchParams(search).get(key);
+  if (raw === null) {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function positiveIntSearchParam(search: string, key: string): number | undefined {
+  const parsed = nonnegativeIntSearchParam(search, key);
+  return parsed && parsed > 0 ? parsed : undefined;
+}
+
+function approvalPageOptions(match: WebRouteMatch, locale: WorkHubLocale) {
+  const offset = nonnegativeIntSearchParam(match.search, "offset");
+  const limit = positiveIntSearchParam(match.search, "limit");
+  return {
+    ...withLocale(locale),
+    ...(offset === undefined ? {} : { offset }),
+    ...(limit === undefined ? {} : { limit })
+  };
+}
+
 const shellPageOrder = [
   "home",
   "projects",
@@ -1002,7 +1026,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     return { key: "intake", session } satisfies WebRouteSurface;
   }
   if (match.key === "approvals") {
-    const approvals = await client.pages.approvals(withLocale(locale));
+    const approvals = await client.pages.approvals(approvalPageOptions(match, locale));
     // F11/簇A：无待办时不塌成通用空卡(会丢左导航把用户困住)。审批组件自带空态兜底
     // (头部 approvals.emptyTitle / 队列 reasonFallback / 详情 noSelection),照常渲染整页(含外壳)。
     return { key: "approvals", approvals } satisfies WebRouteSurface;

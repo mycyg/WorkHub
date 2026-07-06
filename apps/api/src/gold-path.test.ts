@@ -316,6 +316,44 @@ test("attention home decision queue is fed by the user's pending approvals", asy
   assert.equal(body.data.primary?.id, fixture.approvalCenter.items[0]?.id);
 });
 
+test("approval page route forwards paging query parameters to the approval service", async () => {
+  const runtimeSettings = settings();
+  let seenOptions: { locale?: string; offset?: number; limit?: number } | undefined;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    approvals: {
+      async listPendingForUser(_user: UserAuthRow, options: { locale?: string; offset?: number; limit?: number } = {}) {
+        seenOptions = options;
+        return {
+          items: [],
+          requests: [],
+          filters: { pending: true },
+          counts: { pending: 0, pending_total: 137 },
+          page_info: { limit: options.limit ?? 100, offset: options.offset ?? 0, returned: 0, has_more: false },
+          items_detail: {}
+        };
+      }
+    } as unknown as ApprovalService,
+    workItems: { async canReadWorkItems(input: { workItemIds: string[] }) { return new Set(input.workItemIds); } } as never
+  }));
+
+  const response = await app.request("/api/pages/approvals?locale=en-US&offset=100&limit=25", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(seenOptions?.locale, "en-US");
+  assert.equal(seenOptions?.offset, 100);
+  assert.equal(seenOptions?.limit, 25);
+  const body = await response.json() as {
+    data: { page_info?: { limit?: number; offset?: number; returned?: number; has_more?: boolean } };
+  };
+  assert.equal(body.data.page_info?.limit, 25);
+  assert.equal(body.data.page_info?.offset, 100);
+});
+
 test("attention home scopes proposal review lookup to the actor workspace", async () => {
   const runtimeSettings = settings();
   let captured: { user: { id: string; isAdmin: boolean; workspaceId?: string } } | undefined;

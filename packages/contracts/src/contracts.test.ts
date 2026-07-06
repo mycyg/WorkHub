@@ -352,6 +352,7 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
     },
     can_manage: true,
     selected_item_id: "92000000-0000-4000-8000-000000000002",
+    requested_item_missing: true,
     items: [
       {
         id: "92000000-0000-4000-8000-000000000002",
@@ -415,6 +416,7 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
         filename: "客户复盘.md",
         mime: "text/markdown",
         size_bytes: 2048,
+        access_notice: "Restricted: you need access to the backing work item to preview or download this deliverable.",
         accepted_at: "2026-06-11T01:00:00.000Z"
       }
     ],
@@ -470,11 +472,13 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
   });
 
   assert.equal(parsed.versions[0]?.source, "accepted_deliverable");
+  assert.equal(parsed.requested_item_missing, true);
   assert.equal(parsed.items[0]?.preview_href?.endsWith("/preview"), true);
   assert.equal(parsed.items[0]?.download_href?.endsWith("/download"), true);
   assert.equal(parsed.comments[0]?.status, "proposal_created");
   assert.equal(parsed.comments[0]?.proposal_href, "/proposals/92000000-0000-4000-8000-000000000006");
   assert.equal(parsed.comments[1]?.draft_action?.method, "POST");
+  assert.equal(parsed.accepted_deliverables[0]?.access_notice, "Restricted: you need access to the backing work item to preview or download this deliverable.");
   assert.equal(parsed.deleted_items[0]?.deleted_at, "2026-06-11T01:00:00.000Z");
   assert.equal(parsed.operations[0]?.op_type, "draft_to_proposal");
   assert.equal(parsed.actions.upload_file?.method, "POST");
@@ -1253,6 +1257,7 @@ test("cost governance contracts expose clickable budget notices and scoped usage
     max_cost_cny: "5",
     remaining_cost_cny: "0.8",
     warning_ratio: 0.84,
+    enabled: false,
     status: "warning"
   });
   const notice = budgetNoticeSchema.parse({
@@ -1295,6 +1300,7 @@ test("cost governance contracts expose clickable budget notices and scoped usage
 
   assert.equal(policy.scope_kind, "workitem");
   assert.equal(usage.status, "warning");
+  assert.equal(usage.enabled, false);
   assert.equal(notice.options?.length, 2);
   const attention = attentionItemSchema.parse({
     id: "75000000-0000-4000-8000-000000000001",
@@ -1702,12 +1708,14 @@ test("W2 approvalCenterVm items_detail is additive: parses with and without it",
       author_label: "刘梅",
       body: "建议错峰执行",
       created_at: "2026-06-14T10:24:00.000Z"
-    }]
+    }],
+    comments_page_info: { limit: 20, returned: 20, has_more: true }
   });
   assert.equal(detail.manifest_changes.length, 0);
   assert.equal(detail.checks.length, 0);
   assert.equal(detail.affected_targets.length, 0);
   assert.equal(detail.timeline[0]?.kind, "created");
+  assert.equal(detail.comments_page_info?.has_more, true);
 
   const enriched = approvalCenterVmSchema.parse({
     ...base,

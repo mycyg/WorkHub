@@ -550,18 +550,51 @@ test("cost usage route does not resurrect disabled user and team budget policies
   const body = await response.json() as {
     ok: true;
     data: {
-      me: { policy_id: string; max_tokens: number };
-      team?: { policy_id: string; max_tokens: number };
+      me: { policy_id: string; max_tokens: number; enabled?: boolean };
+      team?: { policy_id: string; max_tokens: number; enabled?: boolean };
       scopes: { policy_id: string; scope: { kind: string } }[];
       active_notices: unknown[];
     };
   };
   assert.equal(body.data.scopes.some((usage) => usage.scope.kind === "user" || usage.scope.kind === "team"), false);
   assert.equal(body.data.me.max_tokens, 0);
+  assert.equal(body.data.me.enabled, false);
   assert.equal(body.data.me.policy_id, "pcost-user-day-v0:disabled");
   assert.equal(body.data.team?.max_tokens, 0);
+  assert.equal(body.data.team?.enabled, false);
   assert.equal(body.data.team?.policy_id, "pcost-team-day-v0:disabled");
   assert.deepEqual(body.data.active_notices, []);
+});
+
+test("cost dashboard page marks disabled budget rows instead of hiding them behind zero quotas", async () => {
+  const runtimeSettings = settings();
+  const policyStore = createMemoryBudgetPolicyStore();
+  policyStore.updatePolicy(runtimeSettings, "user", "pcost-user-day-v0", { enabled: false });
+  policyStore.updatePolicy(runtimeSettings, "team", "pcost-team-day-v0", { enabled: false });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore,
+    ledgerStore: createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId })
+  }));
+
+  const response = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      budget: { policy_id: string; enabled?: boolean; max_tokens: number; max_cost_cny: string }[];
+      top_exhaustion_risks: unknown[];
+    };
+  };
+  const disabledRows = body.data.budget.filter((usage) => usage.enabled === false);
+  assert.equal(disabledRows.length, 2);
+  assert.deepEqual(disabledRows.map((usage) => usage.policy_id).sort(), ["pcost-team-day-v0:disabled", "pcost-user-day-v0:disabled"]);
+  assert.equal(disabledRows.every((usage) => usage.max_tokens === 0 && usage.max_cost_cny === "0"), true);
+  assert.deepEqual(body.data.top_exhaustion_risks, []);
 });
 
 test("cost usage route preserves budget policy notice actions", async () => {

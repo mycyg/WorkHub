@@ -124,6 +124,7 @@ export const acceptedDeliverableVmSchema = z.object({
   download_href: z.string().min(1).optional(),
   preview_href: z.string().min(1).optional(),
   restore_href: z.string().min(1).optional(),
+  access_notice: z.string().min(1).optional(),
   accepted_at: isoDateTimeSchema
 });
 export type AcceptedDeliverableVM = z.infer<typeof acceptedDeliverableVmSchema>;
@@ -227,6 +228,7 @@ export const drivePageVmSchema = z.object({
   }),
   can_manage: z.boolean().default(false),
   selected_item_id: idSchema.optional(),
+  requested_item_missing: z.boolean().optional(),
   items: z.array(driveItemVmSchema),
   deleted_items: z.array(driveItemVmSchema).default([]),
   versions: z.array(driveFileVersionVmSchema),
@@ -737,7 +739,12 @@ export const approvalDetailVmSchema = z.object({
   conflicts: z.array(approvalConflictRowSchema).default([]),
   affected_targets: z.array(z.string()).default([]),
   timeline: z.array(approvalRoutingStepSchema).default([]),
-  comments: z.array(approvalCommentVmSchema).default([])
+  comments: z.array(approvalCommentVmSchema).default([]),
+  comments_page_info: z.object({
+    limit: z.number().int().positive(),
+    returned: z.number().int().nonnegative(),
+    has_more: z.boolean()
+  }).optional()
 });
 export type ApprovalDetailVM = z.infer<typeof approvalDetailVmSchema>;
 
@@ -748,6 +755,7 @@ export const approvalCenterVmSchema = z.object({
   counts: z.record(z.string(), z.number().int().nonnegative()),
   page_info: z.object({
     limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative().optional(),
     returned: z.number().int().nonnegative(),
     has_more: z.boolean()
   }).optional(),

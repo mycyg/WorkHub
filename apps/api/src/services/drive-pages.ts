@@ -93,6 +93,7 @@ export type DrivePageServiceDependencies = {
 export type DriveMutationInput = {
   actor: AuthActor;
   projectId: string;
+  locale?: WorkHubLocale;
 };
 
 export type DriveStoredFile = {
@@ -227,7 +228,8 @@ function versionToVm(
 
 function filterAcceptedDeliverableLinks(
   accepted: AcceptedDeliverableVM,
-  linkAccess?: WorkItemLinkAccess
+  linkAccess?: WorkItemLinkAccess,
+  locale: WorkHubLocale = "zh-CN"
 ): AcceptedDeliverableVM {
   if (!linkAccess) {
     return accepted;
@@ -239,7 +241,12 @@ function filterAcceptedDeliverableLinks(
       restore_href: _restoreHref,
       ...rest
     } = accepted;
-    return rest;
+    return {
+      ...rest,
+      access_notice: locale === "zh-CN"
+        ? "受限：需要拥有来源工作项权限后才能预览或下载这个交付物。"
+        : "Restricted: you need access to the backing work item to preview or download this deliverable."
+    };
   }
   if (linkAccess.restorable.has(accepted.work_item_id)) {
     return accepted;
@@ -392,7 +399,8 @@ function buildDrivePage(
   now: Date,
   actor: AuthActor,
   requestedItemId?: string,
-  linkAccess?: WorkItemLinkAccess
+  linkAccess?: WorkItemLinkAccess,
+  locale: WorkHubLocale = "zh-CN"
 ): DrivePageVM {
   const allItems = [...rows.items, ...rows.deletedItems];
   const itemById = new Map(allItems.map((item) => [item.id, item]));
@@ -415,28 +423,46 @@ function buildDrivePage(
   const rawAcceptedDeliverableVms = rows.acceptedDeliverables
     .map((row) => acceptedDeliverableToVm(row))
     .map((accepted, index) => {
-      const filtered = filterAcceptedDeliverableLinks(accepted, linkAccess);
+      const filtered = filterAcceptedDeliverableLinks(accepted, linkAccess, locale);
       return rows.acceptedDeliverables[index]?.accepted.supersededAt
         ? acceptedDeliverableVersionMarker(filtered)
         : filtered;
     });
-  const visibleAcceptedDeliverableVms = rawAcceptedDeliverableVms.filter(
-    (accepted) => !linkAccess || linkAccess.readable.has(accepted.work_item_id)
-  );
   const acceptedDeliverables = rawAcceptedDeliverableVms.filter(
     (accepted, index) =>
-      (!linkAccess || linkAccess.readable.has(accepted.work_item_id))
-      && rows.acceptedDeliverables[index]?.accepted.supersededAt == null
+      rows.acceptedDeliverables[index]?.accepted.supersededAt == null
   );
-  const acceptedByVersionId = new Map(
-    visibleAcceptedDeliverableVms
-      .filter((accepted): accepted is AcceptedDeliverableVM & { drive_version_id: string } => !!accepted.drive_version_id)
-      .map((accepted) => [accepted.drive_version_id, accepted])
+  const readableAcceptedDeliverables = acceptedDeliverables.filter(
+    (accepted) => !linkAccess || linkAccess.readable.has(accepted.work_item_id)
   );
+  const visibleAcceptedVersionCandidates = rawAcceptedDeliverableVms
+    .map((accepted, index) => ({
+      accepted,
+      row: rows.acceptedDeliverables[index]
+    }))
+    .filter((entry): entry is {
+      accepted: AcceptedDeliverableVM & { drive_version_id: string };
+      row: NonNullable<DrivePageRows["acceptedDeliverables"][number]>;
+    } =>
+      !!entry.row
+      && !!entry.accepted.drive_version_id
+      && (!linkAccess || linkAccess.readable.has(entry.accepted.work_item_id))
+    );
+  const acceptedByVersionId = new Map<string, AcceptedDeliverableVM & { drive_version_id: string }>();
+  for (const { accepted, row } of visibleAcceptedVersionCandidates) {
+    if (row.accepted.supersededAt == null && !acceptedByVersionId.has(accepted.drive_version_id)) {
+      acceptedByVersionId.set(accepted.drive_version_id, accepted);
+    }
+  }
+  for (const { accepted } of visibleAcceptedVersionCandidates) {
+    if (!acceptedByVersionId.has(accepted.drive_version_id)) {
+      acceptedByVersionId.set(accepted.drive_version_id, accepted);
+    }
+  }
   // findings[#low]：同一 drive_item_id 可能有多条已采纳交付（多版本）。acceptedDeliverables 是
   // newest-first，而 new Map(entries) 是 last-wins → 会留下最旧的一条。改 first-wins 保留最新。
   const acceptedByItemId = new Map<string, AcceptedDeliverableVM & { drive_item_id: string }>();
-  for (const accepted of acceptedDeliverables) {
+  for (const accepted of readableAcceptedDeliverables) {
     if (accepted.drive_item_id && !acceptedByItemId.has(accepted.drive_item_id)) {
       acceptedByItemId.set(accepted.drive_item_id, accepted as AcceptedDeliverableVM & { drive_item_id: string });
     }
@@ -478,7 +504,10 @@ function buildDrivePage(
   const requestedSelected = requestedItemId && selectableItemVms.some((item) => item.id === requestedItemId)
     ? requestedItemId
     : undefined;
-  const selectedItemId = requestedSelected ?? deletableItem?.id ?? itemVms.find((item) => item.kind === "file")?.id ?? itemVms[0]?.id;
+  const requestedItemMissing = Boolean(requestedItemId && !requestedSelected);
+  const selectedItemId = requestedItemMissing
+    ? undefined
+    : requestedSelected ?? deletableItem?.id ?? itemVms.find((item) => item.kind === "file")?.id ?? itemVms[0]?.id;
   const projectId = rows.project?.id;
   const canManage = rows.project ? canManageProjectDrive(rows.project, actor) : false;
   // F3：给每个回收站项一个自己的 restore_href、每个可删项(文件或空文件夹)一个自己的 delete_href,
@@ -531,6 +560,7 @@ function buildDrivePage(
     },
     can_manage: canManage,
     ...(selectedItemId ? { selected_item_id: selectedItemId } : {}),
+    ...(requestedItemMissing ? { requested_item_missing: true } : {}),
     items: itemVms,
     deleted_items: deletedItemVms,
     versions: versionVms,
@@ -734,7 +764,7 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
         ...rows.acceptedDeliverables.map((accepted) => accepted.accepted.workItemId)
       ]
     });
-    return buildDrivePage(rows, deps.now?.() ?? new Date(), input.actor, targetItemId, linkAccess);
+    return buildDrivePage(rows, deps.now?.() ?? new Date(), input.actor, targetItemId, linkAccess, input.locale);
   }
 
   function mutationError(error: unknown): never {
@@ -890,13 +920,6 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
   return {
     async page(input) {
       const rows = await pageForActor(input);
-      if (
-        input.itemId
-        && !rows.items.some((item) => item.id === input.itemId)
-        && !rows.deletedItems.some((item) => item.id === input.itemId)
-      ) {
-        throw new DrivePageServiceError(404, "没有找到这个网盘文件。", "drive_file_not_found");
-      }
       const linkAccess = await workItemLinkAccessForActor({
         actor: input.actor,
         workItemIds: [
@@ -904,7 +927,7 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
           ...rows.acceptedDeliverables.map((accepted) => accepted.accepted.workItemId)
         ]
       });
-      return buildDrivePage(rows, deps.now?.() ?? new Date(), input.actor, input.itemId, linkAccess);
+      return buildDrivePage(rows, deps.now?.() ?? new Date(), input.actor, input.itemId, linkAccess, input.locale);
     },
     async file(input) {
       const rows = await deps.repo.readFile?.({ projectId: input.projectId, itemId: input.itemId });

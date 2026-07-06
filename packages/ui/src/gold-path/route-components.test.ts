@@ -1242,6 +1242,36 @@ test("R4.11 Cost route component renders dashboard values directly from Cost Pag
   assertNoMainWindowBoundaryLeak(cost.html);
 });
 
+test("Cost route component renders disabled budget policies as not enabled instead of zero quotas", () => {
+  const vm = surfaceVm();
+  vm.page_vms.cost.budget = [{
+    scope: { kind: "user", user_id: "97000000-0000-4000-8000-000000000004" },
+    scope_label: "My AI budget today",
+    policy_id: "pcost-user-day-v0:disabled",
+    period: "day",
+    period_start: "2026-06-11T00:00:00.000Z",
+    period_end: "2026-06-12T00:00:00.000Z",
+    token_in: 0,
+    token_out: 0,
+    total_tokens: 0,
+    max_tokens: 0,
+    remaining_tokens: 0,
+    estimated_cost_cny: "0",
+    max_cost_cny: "0",
+    remaining_cost_cny: "0",
+    warning_ratio: 0,
+    enabled: false,
+    status: "ok"
+  }];
+
+  const cost = renderWebRouteComponents(vm, { locale: "en-US" }).cost;
+
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r4-cost-budget-enabled="false"'), true);
+  assert.equal(cost.html.includes("Budget not enabled"), true);
+  assert.equal(cost.html.includes("0/0 tokens · ¥0/¥0"), false);
+});
+
 test("K5 Cost route component renders the work-vs-self-improvement labor split when present", () => {
   const base = surfaceVm();
   const vm = {
@@ -1469,6 +1499,18 @@ test("R4.10 Approvals route component keeps action reasons and Page VM counts vi
   assertNoMainWindowBoundaryLeak(approvals.html);
 });
 
+test("Approvals route component surfaces page_info when the queue is truncated", () => {
+  const vm = surfaceVm();
+  vm.page_vms.approvals.page_info = { limit: 100, returned: 100, has_more: true };
+  vm.page_vms.approvals.counts.pending = 100;
+  vm.page_vms.approvals.counts.pending_total = 137;
+  const approvals = renderWebRouteComponents(vm, { locale: "en-US" }).approvals;
+
+  assert.ok(approvals);
+  assert.equal(approvals.html.includes('data-r4-approval-page-has-more="true"'), true);
+  assert.equal(approvals.html.includes("Showing 100 of 137 approvals. More approvals are available."), true);
+});
+
 test("R5.1 Drive route component exposes files, versions, deliverable actions, and comment draft links", () => {
   const drive = renderWebRouteComponent({ key: "drive", drive: drivePageVm() }, { locale: "en-US" });
 
@@ -1527,6 +1569,30 @@ test("R5.1 Drive route component exposes files, versions, deliverable actions, a
   assertNoMainWindowBoundaryLeak(drive.html);
 });
 
+test("Drive route upload picker exposes project folders as parent targets", () => {
+  const vm = drivePageVm();
+  vm.summary.item_count = 3;
+  vm.summary.folder_count = 1;
+  vm.items.unshift({
+    id: "94000000-0000-4000-8000-000000000020",
+    project_id: "94000000-0000-4000-8000-000000000001",
+    name: "Research",
+    kind: "folder",
+    path: "/Research",
+    depth: 0,
+    children_count: 1,
+    updated_at: "2026-06-11T09:00:00.000Z"
+  });
+  vm.selected_item_id = "94000000-0000-4000-8000-000000000020";
+
+  const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
+
+  assert.equal(drive.html.includes('data-drive-upload-control="true"'), true);
+  assert.equal(drive.html.includes('data-drive-upload-parent-select="true"'), true);
+  assert.equal(drive.html.includes('<option value="">Drive root</option>'), true);
+  assert.equal(drive.html.includes('value="94000000-0000-4000-8000-000000000020" selected>Research</option>'), true);
+});
+
 test("Drive route version history follows the selected file instead of showing unrelated project versions", () => {
   const vm = drivePageVm();
   vm.selected_item_id = "94000000-0000-4000-8000-000000000009";
@@ -1539,7 +1605,7 @@ test("Drive route version history follows the selected file instead of showing u
   assert.equal(drive.html.includes('data-r4-drive-version="94000000-0000-4000-8000-000000000003"'), false);
 });
 
-test("Drive route recycle bin names when more deleted items are loaded than shown", () => {
+test("Drive route recycle bin renders every loaded deleted item", () => {
   const vm = drivePageVm();
   const baseDeleted = vm.deleted_items[0]!;
   vm.deleted_items = Array.from({ length: 7 }, (_, index) => ({
@@ -1552,10 +1618,39 @@ test("Drive route recycle bin names when more deleted items are loaded than show
 
   const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "zh-CN" });
 
-  assert.equal((drive.html.match(/data-action-id="drive_restore_item"/gu) ?? []).length, 5);
-  assert.equal(drive.html.includes("deleted-6.md"), false);
-  assert.equal(drive.html.includes('data-r5-drive-recycle-more="2"'), true);
-  assert.equal(drive.html.includes("还有 2 个回收站项目未显示"), true);
+  // 旧断言把回收站固定截断为 5 行，导致第 6+ 个已加载项目永远没有还原入口；这里应渲染完整已加载清单。
+  assert.equal((drive.html.match(/data-action-id="drive_restore_item"/gu) ?? []).length, 7);
+  assert.equal(drive.html.includes("deleted-6.md"), true);
+  assert.equal(drive.html.includes("deleted-7.md"), true);
+  assert.equal(drive.html.includes("继续进入网盘查看完整回收站"), false);
+});
+
+test("Drive route explains restricted accepted deliverables without action links", () => {
+  const vm = drivePageVm();
+  vm.accepted_deliverables[0] = {
+    ...vm.accepted_deliverables[0]!,
+    access_notice: "Restricted: you need access to the backing work item to preview or download this deliverable.",
+    preview_href: undefined,
+    download_href: undefined,
+    restore_href: undefined
+  };
+
+  const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
+
+  assert.equal(drive.html.includes('data-r4-drive-accepted-deliverable="94000000-0000-4000-8000-000000000004"'), true);
+  assert.equal(drive.html.includes('data-r5-drive-accepted-access-note="true"'), true);
+  assert.equal(drive.html.includes("Restricted: you need access to the backing work item to preview or download this deliverable."), true);
+  assert.equal((drive.html.match(/data-action-id="drive_restore"/gu) ?? []).length, 0);
+});
+
+test("Drive route marks a recycle-bin deep link without selecting an active file row", () => {
+  const vm = drivePageVm();
+  vm.selected_item_id = "94000000-0000-4000-8000-000000000011";
+
+  const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
+
+  assert.equal(drive.html.includes('data-r4-drive-item-selected="true"'), false);
+  assert.equal(drive.html.includes('data-r5-drive-recycle-item="94000000-0000-4000-8000-000000000011" data-r5-drive-recycle-selected="true"'), true);
 });
 
 test("Drive route renders every loaded file row instead of silently truncating after twelve", () => {
@@ -1849,6 +1944,14 @@ test("R5.9 product shell shows the current user chip with logout and admin tag",
 
 test("W2 approval workbench renders diff/checks/timeline/discussion markers + reason/remember controls", () => {
   const vm = surfaceVm();
+  const firstApprovalId = vm.page_vms.approvals.items[0]?.id;
+  assert.ok(firstApprovalId);
+  const firstDetail = vm.page_vms.approvals.items_detail[firstApprovalId];
+  assert.ok(firstDetail);
+  vm.page_vms.approvals.items_detail[firstApprovalId] = {
+    ...firstDetail,
+    comments_page_info: { limit: 20, returned: 20, has_more: true }
+  };
   const approvals = renderWebRouteComponents(vm, { locale: "zh-CN" }).approvals;
   assert.ok(approvals);
   const html = approvals.html;
@@ -1864,6 +1967,8 @@ test("W2 approval workbench renders diff/checks/timeline/discussion markers + re
   // 相关讨论：评论行 + 发表表单。
   assert.equal(html.includes('data-r4-approval-discussion="true"'), true);
   assert.equal(html.includes("data-r4-approval-comment="), true);
+  assert.equal(html.includes('data-r4-approval-comments-overflow="true"'), true);
+  assert.equal(html.includes("仅显示最新的讨论"), true);
   assert.equal(html.includes("data-r4-approval-comment-form="), true);
   // 右栏决策面板：理由框 + 记住勾选（默认未勾）。
   assert.equal(html.includes("data-r4-approval-reason"), true);

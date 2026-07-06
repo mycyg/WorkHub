@@ -58,6 +58,18 @@ const localeQueryParameter = {
   required: false,
   schema: { type: "string", enum: ["zh-CN", "en-US"] }
 } as const;
+const approvalOffsetQueryParameter = {
+  name: "offset",
+  in: "query",
+  required: false,
+  schema: { type: "integer", minimum: 0 }
+} as const;
+const approvalLimitQueryParameter = {
+  name: "limit",
+  in: "query",
+  required: false,
+  schema: { type: "integer", minimum: 1, maximum: 100 }
+} as const;
 const dateTimeStringSchema = { type: "string", format: "date-time" } as const;
 const cuuStateResponseSchema = {
   type: "string",
@@ -1384,6 +1396,7 @@ const approvalCenterResponseSchema = {
       required: ["limit", "returned", "has_more"],
       properties: {
         limit: { type: "integer", minimum: 1 },
+        offset: { type: "integer", minimum: 0 },
         returned: { type: "integer", minimum: 0 },
         has_more: { type: "boolean" }
       },
@@ -4391,7 +4404,7 @@ export function getOpenApiDocument() {
         get: {
           tags: ["pages"],
           summary: "Approval center page",
-          parameters: [localeQueryParameter],
+          parameters: [localeQueryParameter, approvalOffsetQueryParameter, approvalLimitQueryParameter],
           ...jsonAuthenticatedPageResponse(approvalCenterResponseSchema)
         }
       },

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   approvalCenterVmSchema,
   approvalPayloadSchema,
@@ -77,6 +79,15 @@ const approvalCenterPageLimit = 100;
 // `while(true)+offset` 无界翻页，admin/大收件箱用户每次打开审批中心 = 全表 pending 扫描 + 逐行 detailPage。
 // 封顶到「几页」量级（5 倍页大小），超出如实通过 pending_total_capped 告知前端总数是下限估计，不假装数完了。
 const approvalCenterScanCap = approvalCenterPageLimit * 5;
+
+function normalizeApprovalCenterPage(input: { limit?: number; offset?: number }) {
+  const requestedLimit = Number.isFinite(input.limit) ? Math.trunc(input.limit ?? approvalCenterPageLimit) : approvalCenterPageLimit;
+  const requestedOffset = Number.isFinite(input.offset) ? Math.trunc(input.offset ?? 0) : 0;
+  return {
+    limit: Math.min(approvalCenterPageLimit, Math.max(1, requestedLimit)),
+    offset: Math.max(0, requestedOffset)
+  };
+}
 
 export class ApprovalServiceError extends Error {
   constructor(
@@ -186,6 +197,9 @@ type AuditApprovalActor = {
   workspaceId?: string;
   userId?: string;
 };
+
+type CreatePermissionPolicyInput = Parameters<PermissionPolicyRepository["createPermissionPolicy"]>[0];
+type CreateAuditLogInput = Parameters<AuditLogRepository["createAuditLog"]>[0];
 
 let defaultDbClient: WorkHubDatabaseClient | undefined;
 
@@ -377,12 +391,15 @@ function toApprovalCommentVm(row: ApprovalCommentRow): ApprovalCommentVM {
   return { id: row.id, author_label: row.authorNickname, body: row.body, created_at: row.createdAt.toISOString() };
 }
 
+type ApprovalCommentPageInfo = NonNullable<ApprovalDetailVM["comments_page_info"]>;
+
 async function buildApprovalItemDetail(
   row: ApprovalRequestRow,
   deps: ApprovalServiceDependencies,
   viewerId: string,
   locale: WorkHubLocale,
-  prefetchedComments?: ApprovalCommentVM[]
+  prefetchedComments?: ApprovalCommentVM[],
+  prefetchedCommentsPageInfo?: ApprovalCommentPageInfo
 ): Promise<ApprovalDetailVM> {
   // L#W2-4：safeParse——一条畸形 payload 不能 500 掉整页（与 toApprovalAttentionItem 一致地降级）。
   const parsedPayload = approvalPayloadSchema.safeParse(row.payloadJson ?? { raw_args: {} });
@@ -431,7 +448,8 @@ async function buildApprovalItemDetail(
       conflicts,
       affected_targets: [],
       timeline,
-      comments
+      comments,
+      ...(prefetchedCommentsPageInfo ? { comments_page_info: prefetchedCommentsPageInfo } : {})
     };
   }
 
@@ -445,7 +463,8 @@ async function buildApprovalItemDetail(
     conflicts: [],
     affected_targets: payload.ui?.affected_targets ?? [],
     timeline,
-    comments
+    comments,
+    ...(prefetchedCommentsPageInfo ? { comments_page_info: prefetchedCommentsPageInfo } : {})
   };
 }
 
@@ -554,9 +573,13 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
     });
   }
 
-  async function auditPermissionPolicyAction(input: Parameters<AuditLogRepository["createAuditLog"]>[0]) {
+  async function auditPermissionPolicyAction(input: CreateAuditLogInput) {
+    await deps.auditLogs.createAuditLog(input);
+  }
+
+  async function auditPermissionPolicyActionBestEffort(input: CreateAuditLogInput) {
     try {
-      await deps.auditLogs.createAuditLog(input);
+      await auditPermissionPolicyAction(input);
     } catch (error) {
       getDefaultStructuredLogger().warn("permission_policy_audit_write_failed", {
         action: input.action,
@@ -564,6 +587,36 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         error
       });
     }
+  }
+
+  function permissionPolicyCreatedAuditInput(
+    actor: AuthActor,
+    policyId: string,
+    input: CreatePermissionPolicyInput
+  ): CreateAuditLogInput {
+    return {
+      actorKind: actor.kind,
+      actorNickname: actor.label,
+      entityType: "permission_policy",
+      entityId: policyId,
+      action: "permission_policy.created",
+      ...(actor.orgId ? { orgId: actor.orgId } : {}),
+      ...(actor.workspaceId ? { workspaceId: actor.workspaceId } : {}),
+      ...(actor.userId ? { actorUserId: actor.userId } : {}),
+      detailJson: {
+        scope_kind: input.scopeKind,
+        scope_id: input.scopeId,
+        action_pattern: input.actionPattern,
+        effect: input.effect,
+        learned_from_session: input.learnedFromSession ?? false
+      }
+    };
+  }
+
+  async function createAuditedPermissionPolicy(actor: AuthActor, input: CreatePermissionPolicyInput) {
+    const policyId = input.id ?? randomUUID();
+    await auditPermissionPolicyAction(permissionPolicyCreatedAuditInput(actor, policyId, input));
+    return deps.policies.createPermissionPolicy({ ...input, id: policyId });
   }
 
   // @mentions：解析评论正文里的 @昵称 → 活跃用户，给被点名者（排除作者本人、去重）发通知。
@@ -718,9 +771,12 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       options: {
         locale?: WorkHubLocale;
         canReadWorkItem?: (workItemId: string | undefined) => Promise<boolean>;
+        limit?: number;
+        offset?: number;
       } = {}
     ) {
       const includeAll = user.isAdmin;
+      const page = normalizeApprovalCenterPage(options);
       // routes-a-2/services-a-2/xlink-authz-4/ux-web-govern-6：按 workItemId 去重的可见性缓存——多条审批
       // 常指向同一工作项，之前每一行都重新调用一次（重量级）canReadWorkItem，这里改成只判一次并复用结果。
       const workItemVisibility = new Map<string, Promise<boolean>>();
@@ -769,7 +825,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           for (const row of chunk) {
             if (await canReadApprovalRow(row)) {
               visibleTotal += 1;
-              if (visibleRows.length < approvalCenterPageLimit + 1) {
+              if (visibleRows.length < page.offset + page.limit + 1) {
                 visibleRows.push(row);
               }
             }
@@ -781,37 +837,51 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             totalPendingCapped = true;
           }
         }
-        rows = visibleRows.slice(0, approvalCenterPageLimit);
-        hasMore = visibleRows.length > approvalCenterPageLimit || totalPendingCapped;
+        rows = visibleRows.slice(page.offset, page.offset + page.limit);
+        hasMore = visibleRows.length > page.offset + page.limit || totalPendingCapped;
         totalPending = visibleTotal;
       } else {
         const loadedRows = await deps.approvals.listPendingForUser(user.id, {
           includeAll,
-          limit: approvalCenterPageLimit + 1
+          offset: page.offset,
+          limit: page.limit + 1
         });
-        rows = loadedRows.slice(0, approvalCenterPageLimit);
-        hasMore = loadedRows.length > approvalCenterPageLimit;
+        rows = loadedRows.slice(0, page.limit);
+        hasMore = loadedRows.length > page.limit;
         totalPending = await deps.approvals.countPendingForUser(user.id, { includeAll });
       }
       const itemOptions = options.locale ? { locale: options.locale } : {};
       const locale: WorkHubLocale = options.locale ?? "zh-CN";
       // L#W2-12：一次 IN 查询批量取所有审批的评论，再按 approvalId 分组，避免逐审批 N+1。
       const commentsByApproval = new Map<string, ApprovalCommentVM[]>();
+      const commentsPageInfoByApproval = new Map<string, ApprovalCommentPageInfo>();
       if (deps.approvalComments?.listByApprovals) {
         try {
-          for (const commentRow of await deps.approvalComments.listByApprovals(rows.map((row) => row.id), approvalCenterCommentsPerApproval)) {
+          for (const commentRow of await deps.approvalComments.listByApprovals(rows.map((row) => row.id), approvalCenterCommentsPerApproval + 1)) {
             const list = commentsByApproval.get(commentRow.approvalId) ?? [];
             list.push(toApprovalCommentVm(commentRow));
             commentsByApproval.set(commentRow.approvalId, list);
           }
+          for (const row of rows) {
+            const prefetched = commentsByApproval.get(row.id) ?? [];
+            const hasMoreComments = prefetched.length > approvalCenterCommentsPerApproval;
+            const visibleComments = hasMoreComments ? prefetched.slice(-approvalCenterCommentsPerApproval) : prefetched;
+            commentsByApproval.set(row.id, visibleComments);
+            commentsPageInfoByApproval.set(row.id, {
+              limit: approvalCenterCommentsPerApproval,
+              returned: visibleComments.length,
+              has_more: hasMoreComments
+            });
+          }
         } catch {
           commentsByApproval.clear();
+          commentsPageInfoByApproval.clear();
         }
       }
       // W2 inc3：逐项构建详情（join proposal.diff_manifest + 合成路由时间线 + 预取评论）。
       const detailEntries = await Promise.all(
         rows.map(async (row) =>
-          [row.id, await buildApprovalItemDetail(row, deps, user.id, locale, commentsByApproval.get(row.id) ?? [])] as const)
+          [row.id, await buildApprovalItemDetail(row, deps, user.id, locale, commentsByApproval.get(row.id) ?? [], commentsPageInfoByApproval.get(row.id))] as const)
       );
       // findings[#79 同类]：返回前过 fail-closed 输出契约校验（装配走样 → 500，不甩 422）。
       // routes-a-2 修法：pending_total_capped 是 0/1 布尔标记（counts schema 只收数字，见 packages/contracts
@@ -823,7 +893,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         requests: rows.map(toApprovalRequestResponse),
         filters: { pending: true },
         counts: { pending: rows.length, pending_total: totalPending, pending_total_capped: totalPendingCapped ? 1 : 0 },
-        page_info: { limit: approvalCenterPageLimit, returned: rows.length, has_more: hasMore },
+        page_info: { limit: page.limit, offset: page.offset, returned: rows.length, has_more: hasMore },
         items_detail: Object.fromEntries(detailEntries) as ApprovalCenterVM["items_detail"]
       }, "approval-center.page") satisfies ApprovalCenterVM;
     },
@@ -852,15 +922,13 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         throw new ApprovalServiceError(409, "approval_race", "这条审批已经被处理过了。");
       }
 
-      // R4 #34：决策的 CAS 已提交(updated)。其后的「学到策略 + 审计」是 post-commit 副作用——若它们瞬时
-      // 失败而让整个方法抛错，调用方得 HTTP 500，但决策其实已生效；重试又撞非 pending CAS 得 409，
-      // 既拿不回结果也不会重建策略/审计=不可恢复。故 best-effort：吞错 + warn(学到策略丢失=下次再问一次的
-      // 降级,非损坏;审计丢失记入告警通道)。与 #3 的 post-commit publish 同口径。
-      // 注：完全原子化(respondPending+createPermissionPolicy+audit 同一事务,tx-orchestrator 模式)是更彻底
-      // 的修法,跨多仓库改造、工作量较大,记入 R4 报告留待 attended 单独处理。
       let learnedPolicy: Awaited<ReturnType<typeof deps.policies.createPermissionPolicy>> | undefined;
-      try {
-        if (shouldLearn) {
+      let learnFailed = false;
+      // 决策 CAS 已提交(updated)。普通 approval.decided 审计和 publish 仍是 post-commit best-effort；
+      // remember:'always' 新建 allow 策略会扩大 AI 后续权限，必须先写 permission_policy.created 审计。
+      // 若学习失败，只跳过 standing permission 并在 approval.decided 上标记，不能翻掉已提交决策。
+      if (shouldLearn) {
+        try {
           const policyInput = {
             scopeKind: "session",
             scopeId: updated.agentRunId ?? actor.id,
@@ -872,9 +940,14 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             orgId: actor.orgId,
             workspaceId: actor.workspaceId
           } as const;
-          learnedPolicy = findEquivalentActivePolicy(await deps.policies.listActivePolicies(), actor, policyInput)
-            ?? await deps.policies.createPermissionPolicy(policyInput);
+          const existingPolicy = findEquivalentActivePolicy(await deps.policies.listActivePolicies(), actor, policyInput);
+          learnedPolicy = existingPolicy ?? await createAuditedPermissionPolicy(actor, policyInput);
+        } catch (error) {
+          learnFailed = true;
+          getDefaultStructuredLogger().warn("approvals_remember_always_learning_failed", { id, error });
         }
+      }
+      try {
         await auditApprovalAction(updated, {
           action: "approval.decided",
           actor: {
@@ -888,7 +961,8 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             decision: payload.decision,
             decided_by_user_id: approverId(actor),
             ...(payload.reason_md ? { reason_preview: payload.reason_md.trim().slice(0, 160) } : {}),
-            ...(learnedPolicy ? { learned_policy_id: learnedPolicy.id } : {})
+            ...(learnedPolicy ? { learned_policy_id: learnedPolicy.id } : {}),
+            ...(learnFailed ? { learn_failed: true } : {})
           }
         });
       } catch (error) {
@@ -1099,7 +1173,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       if (existing) {
         return existing;
       }
-      const policy = await deps.policies.createPermissionPolicy({
+      const policyInput = {
         scopeKind: input.scope_kind,
         scopeId: input.scope_id,
         actionPattern: input.action_pattern,
@@ -1111,26 +1185,9 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         // （否则管理员可越权往别的租户写策略）。
         orgId: actor.orgId,
         workspaceId: actor.workspaceId
-      });
-      // L23：策略创建（含 allow 授权扩权）必须留审计，与撤销(permission_policy.revoked)对称。
-      await auditPermissionPolicyAction({
-        actorKind: actor.kind,
-        actorNickname: actor.label,
-        entityType: "permission_policy",
-        entityId: policy.id ?? `${input.scope_kind}:${input.scope_id}:${input.action_pattern}`,
-        action: "permission_policy.created",
-        ...(actor.orgId ? { orgId: actor.orgId } : {}),
-        ...(actor.workspaceId ? { workspaceId: actor.workspaceId } : {}),
-        ...(actor.userId ? { actorUserId: actor.userId } : {}),
-        detailJson: {
-          scope_kind: input.scope_kind,
-          scope_id: input.scope_id,
-          action_pattern: input.action_pattern,
-          effect: input.effect,
-          learned_from_session: input.learned_from_session ?? false
-        }
-      });
-      return policy;
+      } satisfies CreatePermissionPolicyInput;
+      // L23/Batch 2-3：策略创建（含 allow 授权扩权）必须先留审计，审计写失败不得插入新策略。
+      return createAuditedPermissionPolicy(actor, policyInput);
     },
 
     async listPolicies(actor?: AuthActor) {
@@ -1170,7 +1227,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       if (!revoked) {
         throw new ApprovalServiceError(404, "permission_policy_not_found", "找不到这条权限策略。");
       }
-      await auditPermissionPolicyAction({
+      await auditPermissionPolicyActionBestEffort({
         actorKind: actor.kind,
         actorNickname: actor.label,
         entityType: "permission_policy",

@@ -358,6 +358,25 @@ test("api client carries locale on typed page VM requests", async () => {
   ]);
 });
 
+test("api client carries approval paging options on the typed approvals page request", async () => {
+  const calls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.pages.approvals({ locale: "zh-CN", offset: 100, limit: 50 });
+
+  assert.deepEqual(calls, [
+    "/api/pages/approvals?locale=zh-CN&offset=100&limit=50"
+  ]);
+});
+
 test("api client sends drive file uploads as multipart form data", async () => {
   let seenBody: RequestInit["body"] | null | undefined;
   let seenContentType: string | null = null;
@@ -374,7 +393,8 @@ test("api client sends drive file uploads as multipart form data", async () => {
 
   await client.uploadDriveFile("project-1", {
     file: new Blob(["hello drive"], { type: "text/plain" }),
-    filename: "hello.txt"
+    filename: "hello.txt",
+    parent_id: "folder-1"
   });
 
   assert.equal(seenBody instanceof FormData, true);
@@ -382,6 +402,7 @@ test("api client sends drive file uploads as multipart form data", async () => {
   const file = (seenBody as FormData).get("file");
   assert.equal(file instanceof Blob, true);
   assert.equal(await (file as Blob).text(), "hello drive");
+  assert.equal((seenBody as FormData).get("parent_id"), "folder-1");
 });
 
 test("api client exposes typed push stream URLs for web and desktop clients", () => {

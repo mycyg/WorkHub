@@ -53,7 +53,7 @@ import {
   uiT,
   workItemStatusLabel
 } from "../i18n.js";
-import { goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
+import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
 // "skills"/"projects"/"project-home" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
@@ -148,7 +148,7 @@ export const webRouteComponentCss = [
   ".wh-r4-route-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-start}",
   ".wh-r4-route-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}",
   ".wh-r4-route .wh-btn,.wh-r4-route .wh-pill{max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere}",
-  ".wh-drive-upload-label{position:relative;cursor:pointer}.wh-drive-upload-input{position:absolute;inline-size:1px;block-size:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}",
+  ".wh-drive-upload-control{display:inline-flex;gap:8px;flex-wrap:wrap;align-items:center;max-width:100%}.wh-drive-upload-label{position:relative;cursor:pointer}.wh-drive-upload-input{position:absolute;inline-size:1px;block-size:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}",
   ".wh-r5-drive-preview-panel{grid-column:1/-1}.wh-r5-drive-preview-body{margin:0;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-word;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:12px;background:rgba(247,250,254,.82);color:var(--wh-product-ink,#172033);font:13px/1.55 \"SFMono-Regular\",\"Cascadia Mono\",Consolas,monospace}",
   ".wh-r4-route details:not([open])>*:not(summary){display:none}",
   ".wh-r4-intake-free-text{width:100%;min-height:92px;resize:vertical;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;padding:10px 12px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:#fff;overflow-wrap:anywhere}",
@@ -241,6 +241,7 @@ type RouteCopyKey =
   | "drive.createDraft"
   | "drive.openDraft"
   | "drive.openProposal"
+  | "drive.requestedMissing"
   | "drive.status.pending_llm"
   | "drive.status.draft_created"
   | "drive.status.proposal_created"
@@ -440,6 +441,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.createDraft": "生成草稿",
     "drive.openDraft": "打开草稿",
     "drive.openProposal": "打开提议",
+    "drive.requestedMissing": "找不到该文件，已回到默认视图。",
     "drive.status.pending_llm": "待生成草稿",
     "drive.status.draft_created": "已生成草稿",
     "drive.status.proposal_created": "已生成提议",
@@ -641,6 +643,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.createDraft": "Create draft",
     "drive.openDraft": "Open draft",
     "drive.openProposal": "Open proposal",
+    "drive.requestedMissing": "We could not find that file, so the drive is back at the default view.",
     "drive.status.pending_llm": "Pending draft",
     "drive.status.draft_created": "Draft created",
     "drive.status.proposal_created": "Proposal created",
@@ -1580,7 +1583,10 @@ function renderApprovalDetailPanel(
       }).join("")}</div></section>`
     : "";
   const comments = detail?.comments ?? [];
-  const commentsSection = `<section data-r4-approval-discussion="true"><h4>${escapeHtml(goldPathT(locale, "approvals.discussionTitle"))}</h4>${comments.length
+  const commentsOverflow = detail?.comments_page_info?.has_more
+    ? `<p class="wh-subtle" data-r4-approval-comments-overflow="true">${escapeHtml(goldPathT(locale, "approvals.commentsOverflow"))}</p>`
+    : "";
+  const commentsSection = `<section data-r4-approval-discussion="true"><h4>${escapeHtml(goldPathT(locale, "approvals.discussionTitle"))}</h4>${commentsOverflow}${comments.length
     ? comments.map((comment) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-approval-comment="${escapeHtml(comment.id)}"><strong>${escapeHtml(comment.author_label)}</strong><p>${escapeHtml(comment.body)}</p></div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.commentsEmpty"))}</p>`}<form class="wh-r4-approval-comment-form" data-r4-approval-comment-form="${escapeHtml(item.id)}"><textarea class="wh-r4-approval-comment-input" data-r4-approval-comment-input rows="2" placeholder="${escapeHtml(goldPathT(locale, "approvals.commentPlaceholder"))}"></textarea><button type="submit" class="wh-btn" data-r4-approval-comment-submit="${escapeHtml(item.id)}">${escapeHtml(goldPathT(locale, "approvals.commentSubmit"))}</button></form></section>`;
 
@@ -1599,6 +1605,28 @@ function renderApprovalDetailPanel(
       ${commentsSection}
       ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-workitem-link="${escapeHtml(item.work_item_id)}">${escapeHtml(zh ? "查看任务" : "View task")}</a>` : ""}
     </article>`;
+}
+
+function approvalPendingDisplayCount(vm: ApprovalCenterVM) {
+  const total = vm.counts["pending_total"];
+  if (typeof total === "number" && Number.isFinite(total)) {
+    return Math.max(0, total);
+  }
+  return vm.counts["pending"] ?? vm.items.length;
+}
+
+function approvalNextPageHref(pageInfo: ApprovalCenterVM["page_info"]) {
+  if (!pageInfo?.has_more) {
+    return "";
+  }
+  const offset = Math.max(0, pageInfo.offset ?? 0);
+  const limit = Math.max(1, pageInfo.limit);
+  const nextOffset = offset + Math.max(pageInfo.returned, limit);
+  const params = new URLSearchParams({ offset: String(nextOffset) });
+  if (limit !== 100) {
+    params.set("limit", String(limit));
+  }
+  return `/approvals?${params.toString()}`;
 }
 
 function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLocale): WebRouteComponent {
@@ -1636,7 +1664,15 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
     });
   }
   const primary = vm.items[0];
-  const pendingCount = vm.counts["pending"] ?? vm.items.length;
+  const pendingCount = approvalPendingDisplayCount(vm);
+  const pageInfoNote = approvalQueuePageInfoText(locale, vm.page_info, vm.counts);
+  const nextPageHref = approvalNextPageHref(vm.page_info);
+  const pageInfoAttrs = vm.page_info
+    ? ` data-r4-approval-page-info="true" data-r4-approval-page-limit="${escapeHtml(String(vm.page_info.limit))}" data-r4-approval-page-offset="${escapeHtml(String(vm.page_info.offset ?? 0))}" data-r4-approval-page-returned="${escapeHtml(String(vm.page_info.returned))}" data-r4-approval-page-has-more="${escapeHtml(String(vm.page_info.has_more))}"`
+    : "";
+  const nextPageAction = nextPageHref
+    ? `<div class="wh-r4-route-actions"><a class="wh-btn" href="${escapeHtml(safeHref(nextPageHref))}" data-r4-approval-load-more="true" data-r4-approval-next-page-href="${escapeHtml(safeHref(nextPageHref))}">${escapeHtml(zh ? "查看更多审批" : "Load more approvals")}</a></div>`
+    : "";
   // E4：删掉右栏那张独立「截止时间」卡——它绑定到 primary(首项)且服务端烘焙,客户端切换审批项时
   // 只换了详情面板与按钮 href,这张卡不更新 → 选了 B 仍显 A 的 SLA(和正确的每行 SLA 药丸打架)。
   // SLA 已在左栏每行药丸(选中行高亮)+ 详情时间线每步 SLA 里如实显示,这张卡纯冗余,移除即消除陈旧。
@@ -1677,7 +1713,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
     source: "page-vm",
     locale,
     pageVm: "approvals",
-    html: `<section class="wh-r4-route" data-r4-route-component="approvals" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-approval-pending="${escapeHtml(String(pendingCount))}">
+    html: `<section class="wh-r4-route" data-r4-route-component="approvals" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r4-approval-pending="${escapeHtml(String(pendingCount))}"${pageInfoAttrs}>
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.kicker"))}</span>
@@ -1686,6 +1722,8 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(pendingCount))}</span>
       </header>
+      ${pageInfoNote ? `<p class="wh-subtle" data-r4-approval-page-info-note="true">${escapeHtml(pageInfoNote)}</p>` : ""}
+      ${nextPageAction}
       <div class="wh-r4-route-grid wh-r4-approvals-grid">
         <section class="wh-r4-route-stack wh-r4-approval-list" data-r4-approval-queue="true">
           ${queueRows || `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(goldPathT(locale, "approvals.reasonFallback"))}</p></article>`}
@@ -2129,7 +2167,10 @@ function driveActionLinks(
   if (item.restore_href) {
     links.push(`<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore" data-method="POST">${escapeHtml(routeT(locale, "drive.restore"))}</a>`);
   }
-  return links.length ? `<div class="wh-r4-route-actions">${links.join("")}</div>` : "";
+  const accessNotice = item.access_notice
+    ? `<p class="wh-subtle" data-r5-drive-accepted-access-note="true">${escapeHtml(item.access_notice)}</p>`
+    : "";
+  return links.length || accessNotice ? `<div class="wh-r4-route-actions">${links.join("")}${accessNotice}</div>` : "";
 }
 
 function driveItemMutationIdFromHref(href: string) {
@@ -2187,7 +2228,12 @@ function renderDriveRouteComponent(
         <strong data-r8-drive-current-project-name="true">${escapeHtml(vm.project?.name ?? routeT(locale, "drive.kicker"))}</strong>
         ${switcherOptions ? `<select class="wh-pill" data-r8-drive-project-switcher="true" aria-label="${escapeHtml(routeT(locale, "drive.switchProject"))}">${switcherOptions}</select>` : ""}
       </nav>`;
-  const selectedItem = vm.items.find((item) => item.id === vm.selected_item_id) ?? vm.items.find((item) => item.kind === "file") ?? vm.items[0];
+  const selectedActiveItem = vm.items.find((item) => item.id === vm.selected_item_id);
+  const selectedDeletedItem = vm.deleted_items.find((item) => item.id === vm.selected_item_id);
+  const selectedItem = selectedActiveItem ?? (selectedDeletedItem || vm.requested_item_missing ? undefined : vm.items.find((item) => item.kind === "file") ?? vm.items[0]);
+  const requestedMissingNotice = vm.requested_item_missing
+    ? `<p class="wh-subtle" data-r9-drive-requested-missing="true">${escapeHtml(routeT(locale, "drive.requestedMissing"))}</p>`
+    : "";
   const deleteTargetId = vm.actions.delete_item ? driveItemMutationIdFromHref(vm.actions.delete_item.href) : undefined;
   const deleteTarget = deleteTargetId ? vm.items.find((item) => item.id === deleteTargetId) : undefined;
   const deletePayload = {
@@ -2200,8 +2246,16 @@ function renderDriveRouteComponent(
   const deleteLabel = deleteTarget
     ? (locale === "zh-CN" ? `移到回收站：${deleteTarget.name}` : `Move “${deleteTarget.name}” to recycle`)
     : routeT(locale, "drive.delete");
+  const uploadFolders = vm.items.filter((item) => item.kind === "folder");
+  const selectedUploadParentId = selectedItem?.kind === "folder" ? selectedItem.id : selectedItem?.parent_id ?? "";
+  const uploadParentSelect = uploadFolders.length
+    ? `<select class="wh-pill" data-drive-upload-parent-select="true" aria-label="${escapeHtml(locale === "zh-CN" ? "上传到文件夹" : "Upload to folder")}"><option value="">${escapeHtml(locale === "zh-CN" ? "网盘根目录" : "Drive root")}</option>${uploadFolders.map((folder) => {
+      const selected = folder.id === selectedUploadParentId ? " selected" : "";
+      return `<option value="${escapeHtml(folder.id)}"${selected}>${escapeHtml(folder.name)}</option>`;
+    }).join("")}</select>`
+    : "";
   const driveManageActions = [
-    vm.actions.upload_file ? `<label class="wh-btn wh-btn-primary wh-drive-upload-label"><span>${escapeHtml(routeT(locale, "drive.upload"))}</span><input class="wh-drive-upload-input" type="file" data-drive-upload-picker="true" data-action-id="drive_upload_file" data-method="POST" data-action-href="${escapeHtml(safeHref(vm.actions.upload_file.href))}" /></label>` : "",
+    vm.actions.upload_file ? `<span class="wh-drive-upload-control" data-drive-upload-control="true"><label class="wh-btn wh-btn-primary wh-drive-upload-label"><span>${escapeHtml(routeT(locale, "drive.upload"))}</span><input class="wh-drive-upload-input" type="file" data-drive-upload-picker="true" data-action-id="drive_upload_file" data-method="POST" data-action-href="${escapeHtml(safeHref(vm.actions.upload_file.href))}" /></label>${uploadParentSelect}</span>` : "",
     vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.delete_item.href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-r5-drive-delete-name="${escapeHtml(deleteTarget?.name ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(deleteLabel)}</a>` : ""
   ].filter(Boolean).join("");
   const fileRows = vm.items.length
@@ -2279,13 +2333,8 @@ function renderDriveRouteComponent(
       </div>
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无评论" : "No comments yet")}</p>`;
-  const visibleDeletedItems = vm.deleted_items.slice(0, 5);
-  const hiddenDeletedItemCount = vm.deleted_items.length - visibleDeletedItems.length;
-  const recycleMoreNote = hiddenDeletedItemCount > 0
-    ? `<p class="wh-subtle" data-r5-drive-recycle-more="${escapeHtml(String(hiddenDeletedItemCount))}">${escapeHtml(locale === "zh-CN" ? `还有 ${hiddenDeletedItemCount} 个回收站项目未显示，继续进入网盘查看完整回收站。` : `+${hiddenDeletedItemCount} recycle-bin items not shown here — open the full drive to review all.`)}</p>`
-    : "";
   const recycleRows = vm.deleted_items.length
-    ? `${visibleDeletedItems.map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}">
+    ? vm.deleted_items.map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}" data-r5-drive-recycle-selected="${escapeHtml(String(item.id === selectedDeletedItem?.id))}">
       <div>
         <strong>${escapeHtml(item.name)}</strong>
         <p>${escapeHtml(item.path)}</p>
@@ -2295,7 +2344,14 @@ function renderDriveRouteComponent(
         ${item.deleted_at ? `<span class="wh-pill">${escapeHtml(item.deleted_at.slice(0, 10))}</span>` : ""}
         ${item.restore_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore_item" data-method="POST" data-r5-drive-recycle-restore="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""}
       </div>
-    </div>`).join("")}${recycleMoreNote}`
+    </div>`).join("")
+    : "";
+  const hiddenRecycleCount = Math.max(0, vm.summary.deleted_item_count - vm.deleted_items.length);
+  const recycleMoreNote = hiddenRecycleCount > 0
+    ? `<p class="wh-subtle" data-r9-drive-recycle-hidden-count="${escapeHtml(String(hiddenRecycleCount))}" data-r9-drive-recycle-loaded-count="${escapeHtml(String(vm.deleted_items.length))}">${escapeHtml(locale === "zh-CN" ? `本页先显示 ${vm.deleted_items.length} 项；还有 ${hiddenRecycleCount} 项未加载。请通过对应文件链接打开后还原。` : `Showing ${vm.deleted_items.length} recycle-bin items on this page; ${hiddenRecycleCount} more are not loaded. Open the specific file link to restore one that is not shown here.`)}</p>`
+    : "";
+  const recycleEmpty = vm.deleted_items.length || hiddenRecycleCount > 0
+    ? ""
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyRecycle"))}</p>`;
   const operationRows = vm.operations.length
     ? vm.operations.slice(0, 6).map((operation) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-drive-operation="${escapeHtml(operation.id)}" data-r5-drive-operation-type="${escapeHtml(operation.op_type)}">
@@ -2342,6 +2398,7 @@ function renderDriveRouteComponent(
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "drive.kicker"))}</span>
           <h1>${escapeHtml(projectTitle)}</h1>
           <p>${escapeHtml(selectedItem?.path ?? routeT(locale, vm.items.length === 0 ? "drive.emptyFiles" : "drive.selectFile"))}</p>
+          ${requestedMissingNotice}
           ${driveManageActions ? `<div class="wh-r4-route-actions" data-r5-drive-manage-actions="true">${driveManageActions}</div>` : ""}
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.file_count))}</span>
@@ -2369,7 +2426,8 @@ function renderDriveRouteComponent(
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r5-drive-recycle="true">
           <h3>${escapeHtml(routeT(locale, "drive.recycle"))}</h3>
-          <div class="wh-r4-route-timeline">${recycleRows}</div>
+          <div class="wh-r4-route-timeline">${recycleRows}${recycleEmpty}</div>
+          ${recycleMoreNote}
         </section>
         <section class="wh-card wh-r4-route-card" data-r5-drive-operations="true">
           <h3>${escapeHtml(routeT(locale, "drive.operations"))}</h3>
@@ -2817,8 +2875,17 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
     return `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.statusFallback"))}</p>`;
   }
   return vm.budget.slice(0, 5).map((usage) => {
+    if (usage.enabled === false) {
+      return `<div class="wh-r4-route-row" data-r4-cost-budget-scope="${escapeHtml(usage.policy_id)}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="false">
+      <div>
+        <strong>${escapeHtml(usage.scope_label)}</strong>
+        <p>${escapeHtml(locale === "zh-CN" ? "预算未启用" : "Budget not enabled")}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(locale === "zh-CN" ? "未启用" : "Not enabled")}</span>
+    </div>`;
+    }
     const ratio = usage.max_tokens > 0 ? Math.round((usage.total_tokens / usage.max_tokens) * 100) : 0;
-    return `<div class="wh-r4-route-row" data-r4-cost-budget-scope="${escapeHtml(usage.policy_id)}" data-r4-cost-budget-status="${escapeHtml(usage.status)}">
+    return `<div class="wh-r4-route-row" data-r4-cost-budget-scope="${escapeHtml(usage.policy_id)}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="true">
       <div>
         <strong>${escapeHtml(usage.scope_label)}</strong>
         <p>${escapeHtml(`${usage.total_tokens}/${usage.max_tokens} tokens · ${costAmount(usage.estimated_cost_cny)}/${costAmount(usage.max_cost_cny)}`)}</p>
@@ -2955,12 +3022,37 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
   const openCountLabel = totalOpen > viewableOpen
     ? `${routeT(locale, "projects.openItems")} ${totalOpen} · ${zh ? "你可处理" : "you can handle"} ${viewableOpen}`
     : `${routeT(locale, "projects.openItems")} ${totalOpen}`;
-  // 隐藏量要对全量口径算:此前用 open_work_item_count(可见数)减可见清单长度,两者同源恒等 → hiddenCount 永远 0,
-  // 这条提示从不出现。当页头显示「进行中 16 · 你可处理 3」时,用户只看到 3 行却不知另外 13 条去哪了。
-  // 这里不能猜测原因一定是权限：也可能只是项目主页列表截断。文案保持中性，提示去项目内看全量。
-  const hiddenCount = totalOpen - vm.open_work_items.length;
+  // 隐藏量拆成两类：total > viewable 是权限/职责范围过滤，viewable > 本页 rows 是主页摘要折叠。
+  // 旧文案让用户「进入项目查看全部」，但当前页面已经是项目主页，不能指向不存在的隐藏工作项入口。
+  const shownOpen = vm.open_work_items.length;
+  const filteredHiddenCount = Math.max(0, totalOpen - viewableOpen);
+  const collapsedOpenCount = Math.max(0, viewableOpen - shownOpen);
+  const hiddenCount = filteredHiddenCount + collapsedOpenCount;
+  const moreNoteCopy = hiddenCount > 0
+    ? (() => {
+      const parts: string[] = [];
+      if (viewableOpen > 0) {
+        parts.push(zh
+          ? `项目主页摘要展示你可处理的 ${shownOpen} / ${viewableOpen} 条进行中工作`
+          : `Project home shows ${shownOpen} of ${viewableOpen} open items you can handle`);
+      } else {
+        parts.push(zh ? "本页没有可处理的进行中工作" : "No open items are currently in your handleable list");
+      }
+      if (collapsedOpenCount > 0) {
+        parts.push(zh
+          ? `其余 ${collapsedOpenCount} 条不会在此页展开`
+          : `${collapsedOpenCount} ${collapsedOpenCount === 1 ? "is" : "are"} not expanded on this page`);
+      }
+      if (filteredHiddenCount > 0) {
+        parts.push(zh
+          ? `另有 ${filteredHiddenCount} 条因权限或职责范围未显示`
+          : `${filteredHiddenCount} more ${filteredHiddenCount === 1 ? "is" : "are"} outside your permissions or assignment scope`);
+      }
+      return `${parts.join(zh ? "；" : "; ")}${zh ? "。" : "."}`;
+    })()
+    : "";
   const moreNote = hiddenCount > 0
-    ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}">${escapeHtml(zh ? `还有 ${hiddenCount} 条进行中工作未在此处显示，进入项目查看全部。` : `+${hiddenCount} more open items not shown here — open the project to review all.`)}</p>`
+    ? `<p class="wh-subtle" data-r8-project-home-more="${escapeHtml(String(hiddenCount))}" data-r8-project-home-filtered="${escapeHtml(String(filteredHiddenCount))}" data-r8-project-home-collapsed="${escapeHtml(String(collapsedOpenCount))}">${escapeHtml(moreNoteCopy)}</p>`
     : "";
   const fileCountLabel = `${routeT(locale, "projectHome.files")} ${vm.drive.file_count}`;
   // L4：文件标题用的是总文件数(file_count)，列表只显示最近若干条；以前没有「还有 N 个未显示」的提示，

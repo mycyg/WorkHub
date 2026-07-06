@@ -101,6 +101,11 @@ export type PageRequestOptions = {
   locale?: WorkHubLocale;
 };
 
+export type ApprovalPageRequestOptions = PageRequestOptions & {
+  offset?: number;
+  limit?: number;
+};
+
 export type DrivePageRequestOptions = PageRequestOptions & {
   projectId?: string;
   project_id?: string;
@@ -132,11 +137,13 @@ export type DriveUploadFileRequest = {
   size_bytes?: number;
   sha256?: string;
   parsed_text?: string;
+  parent_id?: string | null;
 } | {
   file: Blob;
   filename?: string;
   mime?: string;
   parsed_text?: string;
+  parent_id?: string | null;
 };
 
 export type DriveDeleteItemRequest = {
@@ -170,7 +177,7 @@ export type IdentityResponse = {
 
 export type PageClient = {
   attention: (options?: PageRequestOptions) => Promise<AttentionHomeVM>;
-  approvals: (options?: PageRequestOptions) => Promise<ApprovalCenterVM>;
+  approvals: (options?: ApprovalPageRequestOptions) => Promise<ApprovalCenterVM>;
   cost: (options?: PageRequestOptions) => Promise<CostDashboardVM>;
   skills: (options?: PageRequestOptions) => Promise<TeamSkillsPageVM>;
   settings: (options?: PageRequestOptions) => Promise<SettingsPageVM>;

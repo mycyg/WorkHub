@@ -8,7 +8,10 @@ import type { AgentLoopClient } from "@workhub/agent/loop";
 import { loadSettings } from "@workhub/config";
 import {
   agentRuns,
+  approvalComments,
+  approvalRequests,
   createAgentRunRepository,
+  createApprovalCommentRepository,
   createClientDeviceRepository,
   createCredentialRepository,
   createDatabaseClient,
@@ -185,6 +188,38 @@ async function main() {
       assert.ok(fileCount >= recentFiles.length, "countFilesByProject is the uncapped total (>= shown)");
       assert.equal(await driveRepoForHub.countFilesByProject(randomUUID()), 0, "countFilesByProject is project-scoped");
       console.log("[r2-pg-redis-smoke] listOpenByProject + countOpenByProject + drive files (project hub S1/S4a) ok");
+    }
+
+    {
+      const approvalId = randomUUID();
+      await db.insert(approvalRequests).values({
+        id: approvalId,
+        actionPattern: "tool.publish_external",
+        payloadJson: { raw_args: { smoke: "approval-comment-latest-window" } },
+        status: "pending",
+        routedToUserId: ownerId
+      });
+      const comments = Array.from({ length: 25 }, (_, index) => ({
+        id: randomUUID(),
+        approvalId,
+        authorUserId: ownerId,
+        authorNickname: "R2 Owner",
+        body: `approval comment ${String(index + 1).padStart(2, "0")}`,
+        createdAt: new Date(Date.UTC(2026, 6, 2, 0, index, 0)),
+        updatedAt: new Date(Date.UTC(2026, 6, 2, 0, index, 0))
+      }));
+      await db.insert(approvalComments).values(comments);
+      const commentRepo = createApprovalCommentRepository(db);
+      const bulkLatest = await commentRepo.listByApprovals([approvalId], 20);
+      const singleLatest = await commentRepo.listByApproval(approvalId, 20);
+
+      assert.equal(bulkLatest.length, 20, "approval comment bulk prefetch returns the capped latest window");
+      assert.equal(bulkLatest[0]?.body, "approval comment 06", "bulk prefetch displays the latest window in chronological order");
+      assert.equal(bulkLatest.at(-1)?.body, "approval comment 25", "bulk prefetch keeps newest approval comments visible");
+      assert.equal(singleLatest.length, 20, "single approval comment list returns the capped latest window");
+      assert.equal(singleLatest[0]?.body, "approval comment 06", "single comment list displays the latest window in chronological order");
+      assert.equal(singleLatest.at(-1)?.body, "approval comment 25", "single comment list keeps newest approval comments visible");
+      console.log("[r2-pg-redis-smoke] approval comment latest-window repository reads ok");
     }
 
     const redisTopic = `r2-smoke:${randomUUID()}`;
