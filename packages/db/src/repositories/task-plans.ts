@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 
 import type {
+  RiskLevel,
   TaskPlanItemStatus,
   TaskPlanItemRole,
   TaskPlanStatus
@@ -43,6 +44,7 @@ export type CreateTaskPlanItemInput = {
   objectiveMd: string;
   acceptanceMd: string;
   budgetSharePct: number;
+  riskLevel?: RiskLevel;
   dependsOn?: string[];
 };
 
@@ -119,6 +121,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
           objectiveMd: item.objectiveMd,
           acceptanceMd: item.acceptanceMd,
           budgetSharePct: item.budgetSharePct,
+          riskLevel: item.riskLevel ?? "medium",
           dependsOn: item.dependsOn ?? [],
           status: "pending" as const,
           createdAt: now,

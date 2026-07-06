@@ -307,6 +307,7 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
               objectiveMd: "基于证据写出中文短报告。",
               acceptanceMd: "报告包含结论、证据和下一步建议。",
               budgetSharePct: 45,
+              riskLevel: "high",
               dependsOn: ["95000000-0000-4000-8000-000000000601"]
             },
             {
@@ -349,7 +350,7 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
           changes: {
             target_ref: { entity_type: string; entity_id?: string };
             machine_summary?: {
-              task_plan_items?: { title: string; role: string; budget_share_pct: number; depends_on: string[] }[];
+              task_plan_items?: { title: string; role: string; budget_share_pct: number; risk_level: string; depends_on: string[] }[];
             };
           }[];
         };
@@ -363,9 +364,11 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   assert.equal(createdBody.data.proposal.diff_manifest.changes[0]?.target_ref.entity_id, planId);
   assert.equal(createdBody.data.proposal.diff_manifest.changes[0]?.machine_summary?.task_plan_items?.length, 3);
   assert.equal(createdBody.data.proposal.diff_manifest.changes[0]?.machine_summary?.task_plan_items?.[0]?.role, "research");
+  assert.equal(createdBody.data.proposal.diff_manifest.changes[0]?.machine_summary?.task_plan_items?.[1]?.risk_level, "high");
   assert.equal(createdBody.data.proposal.diff_manifest.changes[0]?.machine_summary?.task_plan_items?.[1]?.depends_on[0], "95000000-0000-4000-8000-000000000601");
   assert.equal(taskPlans.rows.get(planId)?.status, "draft");
   assert.equal(taskPlans.rows.get(planId)?.input.items.length, 3);
+  assert.equal(taskPlans.rows.get(planId)?.input.items[1]?.riskLevel, "high");
   assert.equal(taskPlans.rows.get(planId)?.input.budgetJson?.["max_tokens"], runtimeSettings.budgets.runTokens);
   assert.equal(taskPlans.rows.get(planId)?.input.budgetJson?.["max_cost_cny"], runtimeSettings.budgets.runCostCny);
   assert.equal(workItems.mutations.includes(workItemId), true);

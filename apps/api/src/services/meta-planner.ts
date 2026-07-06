@@ -5,7 +5,9 @@ import { z } from "zod";
 import type { LlmActor, ProviderRegistry } from "@workhub/agent/providers";
 import {
   normalizeWorkHubLocale,
+  riskLevelSchema,
   taskPlanItemRoleSchema,
+  type RiskLevel,
   type TaskPlanItemRole,
   type WorkHubLocale
 } from "@workhub/contracts";
@@ -54,6 +56,7 @@ export type MetaPlannerDraftItem = {
   objectiveMd: string;
   acceptanceMd: string;
   budgetSharePct: number;
+  riskLevel?: RiskLevel;
   dependsOn: string[];
 };
 
@@ -73,6 +76,7 @@ const rawItemSchema = z.object({
   objective_md: z.string().min(1),
   acceptance_md: z.string().min(1),
   budget_share_pct: z.number().int().min(0).max(100),
+  risk_level: riskLevelSchema.default("medium"),
   depends_on: z.array(z.string().min(1).max(80)).default([])
 });
 
@@ -136,10 +140,10 @@ function plannerPrompt(input: MetaPlannerCreateDraftInput, feedback: readonly st
       ? "把这个 WorkHub 工作项拆成可审计、可派发的任务计划。"
       : "Decompose this WorkHub work item into an auditable dispatch plan.",
     "Return strict JSON only with this shape:",
-    "{\"items\":[{\"key\":\"short-stable-key\",\"title\":\"...\",\"role\":\"research|produce|review|integrate\",\"objective_md\":\"...\",\"acceptance_md\":\"...\",\"budget_share_pct\":40,\"depends_on\":[\"other-key\"]}]}",
+    "{\"items\":[{\"key\":\"short-stable-key\",\"title\":\"...\",\"role\":\"research|produce|review|integrate\",\"objective_md\":\"...\",\"acceptance_md\":\"...\",\"budget_share_pct\":40,\"risk_level\":\"low|medium|high\",\"depends_on\":[\"other-key\"]}]}",
     zh
-      ? "规则：3-5 个原子子任务优先；每个子任务必须有可测验收；role 只能来自枚举；depends_on 只能引用前面或同计划 key；预算份额总和必须等于 100；不要输出泛化模板。"
-      : "Rules: prefer 3-5 atomic subtasks; every subtask needs measurable acceptance; role must be one enum value; depends_on may reference only item keys in this plan; budget shares must sum to exactly 100; do not return a generic template.",
+      ? "规则：3-5 个原子子任务优先；每个子任务必须有可测验收；role/risk_level 只能来自枚举；depends_on 只能引用前面或同计划 key；预算份额总和必须等于 100；法务、财务、身份、对外发布或不可逆影响标 high，否则默认 medium/low；不要输出泛化模板。"
+      : "Rules: prefer 3-5 atomic subtasks; every subtask needs measurable acceptance; role/risk_level must be enum values; depends_on may reference only item keys in this plan; budget shares must sum to exactly 100; mark legal, financial, identity, external-publishing, or irreversible-impact work high, otherwise use medium/low; do not return a generic template.",
     feedback.length ? `Previous draft was rejected:\n${compactLines(feedback, "None")}` : undefined,
     "",
     `Work item:\n${intent || "No description provided."}`,
@@ -232,6 +236,7 @@ function toDraft(plan: RawPlan, nextId: () => string): MetaPlannerDraftItem[] {
     objectiveMd: item.objective_md,
     acceptanceMd: item.acceptance_md,
     budgetSharePct: item.budget_share_pct,
+    riskLevel: item.risk_level,
     dependsOn: item.depends_on.map((key) => idsByKey.get(key)).filter((value): value is string => typeof value === "string")
   }));
 }

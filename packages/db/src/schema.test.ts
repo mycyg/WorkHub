@@ -138,6 +138,7 @@ test("R9.1 task plan tables expose auditable decomposition fields", () => {
   assert.equal(taskPlanItems.objectiveMd.name, "objective_md");
   assert.equal(taskPlanItems.acceptanceMd.name, "acceptance_md");
   assert.equal(taskPlanItems.budgetSharePct.name, "budget_share_pct");
+  assert.equal(taskPlanItems.riskLevel.name, "risk_level");
   assert.equal(taskPlanItems.dependsOn.name, "depends_on");
   assert.equal(taskPlanItems.status.name, "status");
 });

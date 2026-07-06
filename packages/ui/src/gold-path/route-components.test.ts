@@ -948,6 +948,7 @@ test("R9.1 WorkItem route component renders the approved task plan snapshot", ()
           objective_md: "查清三类竞品的最新打法。",
           acceptance_md: "列出至少 3 条可核验来源。",
           budget_share_pct: 35,
+          risk_level: "medium",
           depends_on: [],
           status: "pending",
           created_at: "2026-07-03T00:00:00.000Z",
@@ -963,6 +964,7 @@ test("R9.1 WorkItem route component renders the approved task plan snapshot", ()
           objective_md: "把证据整理成短报告。",
           acceptance_md: "报告包含结论、证据和下一步建议。",
           budget_share_pct: 65,
+          risk_level: "medium",
           depends_on: ["93000000-0000-4000-8000-000000000902"],
           status: "pending",
           created_at: "2026-07-03T00:00:00.000Z",
@@ -1012,6 +1014,7 @@ test("R9.2 WorkItem route component renders the task-plan run tree without inlin
           plan_status: "succeeded",
           status: "succeeded",
           budget_share_pct: 35,
+          risk_level: "medium",
           depends_on: [],
           waiting_for_seq: [],
           cost_estimate_cny: "0.450000",
@@ -1032,6 +1035,7 @@ test("R9.2 WorkItem route component renders the task-plan run tree without inlin
           plan_status: "failed",
           status: "needs_human",
           budget_share_pct: 25,
+          risk_level: "medium",
           depends_on: [researchId],
           waiting_for_seq: [],
           cost_estimate_cny: "0.800000",
@@ -1217,6 +1221,7 @@ test("R9.1 Proposal route component renders task plan changes as a subtask list"
             role: "research",
             acceptance_md: "列出至少 3 条可核验来源。",
             budget_share_pct: 35,
+            risk_level: "medium",
             depends_on: []
           },
           {
@@ -1226,6 +1231,7 @@ test("R9.1 Proposal route component renders task plan changes as a subtask list"
             role: "produce",
             acceptance_md: "报告包含结论、证据和下一步建议。",
             budget_share_pct: 65,
+            risk_level: "high",
             depends_on: [researchId]
           }
         ]
@@ -1244,6 +1250,8 @@ test("R9.1 Proposal route component renders task plan changes as a subtask list"
   assert.equal(proposal.html.includes("1. 整理竞品证据"), true);
   assert.equal(proposal.html.includes("0. 整理竞品证据"), false);
   assert.equal(proposal.html.includes("调研"), true);
+  assert.equal(proposal.html.includes("高风险"), true);
+  assert.equal(proposal.html.includes(">high<"), false);
   assert.equal(proposal.html.includes("列出至少 3 条可核验来源。"), true);
 });
 

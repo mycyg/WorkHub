@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  riskLevelSchema,
   taskPlanItemRoleSchema,
   taskPlanItemStatusSchema,
   taskPlanStatusSchema
@@ -19,6 +20,7 @@ export const taskPlanItemVmSchema = z.object({
   objective_md: z.string().min(1),
   acceptance_md: z.string().min(1),
   budget_share_pct: z.number().int().min(0).max(100),
+  risk_level: riskLevelSchema.default("medium"),
   depends_on: z.array(idSchema).default([]),
   status: taskPlanItemStatusSchema,
   created_at: isoDateTimeSchema,

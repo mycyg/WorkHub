@@ -48,6 +48,7 @@ test("R9.1 task plan repository writes draft plans and items in one transaction"
         objectiveMd: "写出初稿。",
         acceptanceMd: "初稿包含结论。",
         budgetSharePct: 60,
+        riskLevel: "high",
         dependsOn: [firstItemId]
       }
     ],
@@ -80,6 +81,8 @@ test("R9.1 task plan repository writes draft plans and items in one transaction"
   });
   assert.equal(itemInsert?.operation, "insert");
   assert.equal(itemInsert?.targetTable, taskPlanItems);
+  // R9.4.2: the old expected insert omitted task_plan_items.risk_level; that was wrong
+  // because high-risk plan items must be auditable before multi-vote arbitration is triggered.
   assert.deepEqual(itemInsert?.valuesValue, [
     {
       id: firstItemId,
@@ -91,6 +94,7 @@ test("R9.1 task plan repository writes draft plans and items in one transaction"
       objectiveMd: "查清背景。",
       acceptanceMd: "列出来源。",
       budgetSharePct: 40,
+      riskLevel: "medium",
       dependsOn: [],
       status: "pending",
       createdAt: now,
@@ -106,6 +110,7 @@ test("R9.1 task plan repository writes draft plans and items in one transaction"
       objectiveMd: "写出初稿。",
       acceptanceMd: "初稿包含结论。",
       budgetSharePct: 60,
+      riskLevel: "high",
       dependsOn: [firstItemId],
       status: "pending",
       createdAt: now,

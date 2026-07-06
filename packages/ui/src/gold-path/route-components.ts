@@ -50,6 +50,7 @@ import {
   evidenceSourceLabel,
   previewKindLabel,
   proposalStatusLabel,
+  riskLevelLabel,
   taskPlanItemRoleLabel,
   taskPlanItemStatusLabel,
   taskPlanStatusLabel,
@@ -1912,6 +1913,7 @@ function renderTaskPlanPanel(
             <span class="wh-pill">${escapeHtml(taskPlanItemRoleLabel(locale, item.role))}</span>
             <span class="wh-pill">${escapeHtml(taskPlanItemStatusLabel(locale, item.status))}</span>
             <span class="wh-pill">${escapeHtml(`${item.budget_share_pct}%`)}</span>
+            <span class="wh-pill">${escapeHtml(riskLevelLabel(locale, item.risk_level))}</span>
             <span class="wh-pill">${escapeHtml(dependsLabel)}</span>
           </div>
         </div>`;
@@ -1979,6 +1981,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
             <span class="wh-pill" data-r9-agent-team-state-dot="${escapeHtml(item.status)}">●</span>
             <span class="wh-pill">${escapeHtml(taskPlanItemRoleLabel(locale, item.role))}</span>
             <span class="wh-pill">${escapeHtml(agentTeamItemStatusLabel(item.status, locale))}</span>
+            <span class="wh-pill">${escapeHtml(riskLevelLabel(locale, item.risk_level))}</span>
             ${cost}
             ${action}
           </div>
@@ -2186,6 +2189,7 @@ function renderTaskPlanProposalDiff(change: DeliverableChange, locale: WorkHubLo
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(taskPlanItemRoleLabel(locale, item.role))}</span>
         <span class="wh-pill">${escapeHtml(`${item.budget_share_pct}%`)}</span>
+        <span class="wh-pill">${escapeHtml(riskLevelLabel(locale, item.risk_level))}</span>
         <span class="wh-pill">${escapeHtml(dependsLabel)}</span>
       </div>
     </div>`;

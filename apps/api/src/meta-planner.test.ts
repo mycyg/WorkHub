@@ -69,6 +69,7 @@ function validPlan(keys: readonly string[]) {
       objective_md: index === 0 ? "Find 3 verifiable sources." : index === 1 ? "Write the report from the evidence." : "Check the report against acceptance.",
       acceptance_md: index === 0 ? "At least 3 source notes are listed." : index === 1 ? "Report includes conclusion and evidence." : "Every acceptance item is checked.",
       budget_share_pct: index === 0 ? 30 : index === 1 ? 50 : 20,
+      risk_level: index === 1 ? "high" : "medium",
       depends_on: index === 1 ? [keys[0]] : index === 2 ? [keys[1]] : []
     }))
   };
@@ -116,6 +117,7 @@ test("R9.1 meta planner uses decompose LLM discipline, judge retry, and returns 
   assert.ok((registry.calls[0]?.params.timeoutMs ?? 0) >= 1_000);
   assert.ok(registry.calls[0]!.params.maxTokens > 0);
   assert.match(String(registry.calls[0]?.params.system), /strict JSON/i);
+  assert.match(String(registry.calls[0]?.params.messages[0]?.content), /risk_level/u);
 
   assert.equal(draft.items.length, 3);
   assert.deepEqual(draft.items.map((item) => item.id), [
@@ -124,6 +126,7 @@ test("R9.1 meta planner uses decompose LLM discipline, judge retry, and returns 
     "95000000-0000-4000-8000-000000000303"
   ]);
   assert.deepEqual(draft.items.map((item) => item.budgetSharePct), [30, 50, 20]);
+  assert.deepEqual(draft.items.map((item) => item.riskLevel), ["medium", "high", "medium"]);
   assert.deepEqual(draft.items[1]?.dependsOn, ["95000000-0000-4000-8000-000000000301"]);
   assert.deepEqual(draft.items[2]?.dependsOn, ["95000000-0000-4000-8000-000000000302"]);
 });

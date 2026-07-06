@@ -732,6 +732,7 @@ export const taskPlanItems = pgTable(
     objectiveMd: text("objective_md").notNull(),
     acceptanceMd: text("acceptance_md").notNull(),
     budgetSharePct: integer("budget_share_pct").notNull(),
+    riskLevel: varchar("risk_level", { length: 8 }).$type<RiskLevel>().notNull().default("medium"),
     dependsOn: uuid("depends_on").array().$type<string[]>().notNull().default(sql`'{}'::uuid[]`),
     activeRunId: uuid("active_run_id").references((): AnyPgColumn => agentRuns.id, { onDelete: "set null" }),
     status: varchar("status", { length: 16 }).$type<TaskPlanItemStatus>().notNull().default("pending"),
@@ -742,6 +743,7 @@ export const taskPlanItems = pgTable(
     index("task_plan_items_parent_item_id_idx").on(table.parentItemId),
     index("task_plan_items_status_idx").on(table.status),
     index("task_plan_items_role_idx").on(table.role),
+    index("task_plan_items_risk_level_idx").on(table.riskLevel),
     index("task_plan_items_active_run_id_idx").on(table.activeRunId)
   ]
 );

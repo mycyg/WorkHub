@@ -16,6 +16,7 @@ import {
   deliverableTargetLabel,
   evidenceSourceLabel,
   previewKindLabel,
+  riskLevelLabel,
   taskPlanItemRoleLabel,
   uiCount,
   uiLocale,
@@ -611,6 +612,7 @@ function renderTaskPlanProposalDiff(change: DeliverableChange, options?: UiRende
       <div class="wh-task-plan-meta">
         <span class="wh-pill">${escapeHtml(taskPlanItemRoleLabel(locale, item.role))}</span>
         <span class="wh-pill">${escapeHtml(`${item.budget_share_pct}%`)}</span>
+        <span class="wh-pill">${escapeHtml(riskLevelLabel(locale, item.risk_level))}</span>
         <span class="wh-pill">${escapeHtml(dependsLabel)}</span>
       </div>
     </div>`;

@@ -4,6 +4,7 @@ import {
   type AgentStepPhase,
   type DeliverableTargetKind,
   type EvidenceSourceType,
+  type RiskLevel,
   type TaskPlanItemRole,
   type TaskPlanItemStatus,
   type TaskPlanStatus,
@@ -252,6 +253,12 @@ const taskPlanItemStatusLabels = {
   skipped: { "zh-CN": "已跳过", "en-US": "Skipped" }
 } satisfies Record<TaskPlanItemStatus, Copy>;
 
+const riskLevelLabels = {
+  low: { "zh-CN": "低风险", "en-US": "Low risk" },
+  medium: { "zh-CN": "中风险", "en-US": "Medium risk" },
+  high: { "zh-CN": "高风险", "en-US": "High risk" }
+} satisfies Record<RiskLevel, Copy>;
+
 const agentRunStatusLabels = {
   queued: { "zh-CN": "排队中", "en-US": "Queued" },
   running: { "zh-CN": "执行中", "en-US": "Running" },
@@ -380,6 +387,10 @@ export function taskPlanItemRoleLabel(locale: WorkHubLocale, role: TaskPlanItemR
 
 export function taskPlanItemStatusLabel(locale: WorkHubLocale, status: TaskPlanItemStatus | string) {
   return labelFromMap(locale, status, taskPlanItemStatusLabels);
+}
+
+export function riskLevelLabel(locale: WorkHubLocale, riskLevel: RiskLevel | string) {
+  return labelFromMap(locale, riskLevel, riskLevelLabels);
 }
 
 export function agentRunStatusLabel(locale: WorkHubLocale, status: AgentRunStatus | string) {

@@ -14,6 +14,7 @@ import { notificationSeveritySchema } from "./notification.js";
 import { taskPlanVmSchema } from "./task-plan.js";
 import {
   agentRunStatusSchema,
+  riskLevelSchema,
   taskPlanItemRoleSchema,
   taskPlanItemStatusSchema,
   taskPlanStatusSchema
@@ -715,6 +716,7 @@ export const workItemAgentTeamItemVmSchema = z.object({
   plan_status: taskPlanItemStatusSchema,
   status: workItemAgentTeamItemStatusSchema,
   budget_share_pct: z.number().int().min(0).max(100),
+  risk_level: riskLevelSchema.default("medium"),
   depends_on: z.array(idSchema).default([]),
   waiting_for_seq: z.array(z.number().int().positive()).default([]),
   cost_estimate_cny: z.string().optional(),

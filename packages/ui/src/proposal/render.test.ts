@@ -59,6 +59,7 @@ test("proposal renderer shows task plan proposal changes as readable subtasks", 
             role: "research",
             acceptance_md: "列出至少 3 条可核验来源。",
             budget_share_pct: 35,
+            risk_level: "medium",
             depends_on: []
           },
           {
@@ -68,6 +69,7 @@ test("proposal renderer shows task plan proposal changes as readable subtasks", 
             role: "produce",
             acceptance_md: "报告包含结论、证据和下一步建议。",
             budget_share_pct: 65,
+            risk_level: "high",
             depends_on: [researchId]
           }
         ]
@@ -85,6 +87,8 @@ test("proposal renderer shows task plan proposal changes as readable subtasks", 
   assert.equal(rendered.html.includes("1. 整理竞品证据"), true);
   assert.equal(rendered.html.includes("0. 整理竞品证据"), false);
   assert.equal(rendered.html.includes("调研"), true);
+  assert.equal(rendered.html.includes("高风险"), true);
+  assert.equal(rendered.html.includes(">high<"), false);
   assert.equal(rendered.html.includes("列出至少 3 条可核验来源。"), true);
 });
 
