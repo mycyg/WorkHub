@@ -921,6 +921,72 @@ test("R4.11 WorkItem route component keeps task context, trace, acceptance, and 
   assertNoMainWindowBoundaryLeak(workitem.html);
 });
 
+test("R9.1 WorkItem route component renders the approved task plan snapshot", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const planVm: WorkItemDetailVM = {
+    ...base,
+    task_plan: {
+      id: "93000000-0000-4000-8000-000000000901",
+      work_item_id: base.workitem.id,
+      workspace_id: "93000000-0000-4000-8000-000000000001",
+      status: "approved",
+      objective_id: null,
+      budget_json: { total_share_pct: 100 },
+      decomposition_context_json: { source: "meta_planner" },
+      created_by: "93000000-0000-4000-8000-000000000301",
+      created_at: "2026-07-03T00:00:00.000Z",
+      updated_at: "2026-07-03T00:01:00.000Z",
+      items_capped: false,
+      items: [
+        {
+          id: "93000000-0000-4000-8000-000000000902",
+          plan_id: "93000000-0000-4000-8000-000000000901",
+          parent_item_id: null,
+          seq: 0,
+          title: "整理竞品证据",
+          role: "research",
+          objective_md: "查清三类竞品的最新打法。",
+          acceptance_md: "列出至少 3 条可核验来源。",
+          budget_share_pct: 35,
+          depends_on: [],
+          status: "pending",
+          created_at: "2026-07-03T00:00:00.000Z",
+          updated_at: "2026-07-03T00:00:00.000Z"
+        },
+        {
+          id: "93000000-0000-4000-8000-000000000903",
+          plan_id: "93000000-0000-4000-8000-000000000901",
+          parent_item_id: null,
+          seq: 1,
+          title: "产出短报告",
+          role: "produce",
+          objective_md: "把证据整理成短报告。",
+          acceptance_md: "报告包含结论、证据和下一步建议。",
+          budget_share_pct: 65,
+          depends_on: ["93000000-0000-4000-8000-000000000902"],
+          status: "pending",
+          created_at: "2026-07-03T00:00:00.000Z",
+          updated_at: "2026-07-03T00:00:00.000Z"
+        }
+      ]
+    }
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: planVm }, { locale: "zh-CN" });
+
+  assert.equal(workitem.html.includes('data-r9-task-plan-panel="true"'), true);
+  assert.equal(workitem.html.includes('data-r9-task-plan-status="approved"'), true);
+  assert.equal(workitem.html.includes('data-r9-task-plan-item="93000000-0000-4000-8000-000000000902"'), true);
+  assert.equal(workitem.html.includes('data-r9-task-plan-role="research"'), true);
+  assert.equal(workitem.html.includes('data-r9-task-plan-budget="65"'), true);
+  assert.equal(workitem.html.includes('data-r9-task-plan-depends="#1"'), true);
+  assert.equal(workitem.html.includes("任务计划"), true);
+  assert.equal(workitem.html.includes("1. 整理竞品证据"), true);
+  assert.equal(workitem.html.includes("0. 整理竞品证据"), false);
+  assert.equal(workitem.html.includes("整理竞品证据"), true);
+  assert.equal(workitem.html.includes("调研"), true);
+  assert.equal(workitem.html.includes("列出至少 3 条可核验来源。"), true);
+});
+
 test("R5.4 WorkItem route component exposes Drive source context and proposal draft action", () => {
   const vm = surfaceVm();
   const draftVm: WorkItemDetailVM = {
@@ -1042,6 +1108,69 @@ test("R4.11 Proposal route component preserves review actions, rollback, changes
     vm.page_vms.proposal.review_actions.request_changes.href
   ].filter(Boolean));
   assertNoMainWindowBoundaryLeak(proposal.html);
+});
+
+test("R9.1 Proposal route component renders task plan changes as a subtask list", () => {
+  const vm = structuredClone(surfaceVm());
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const researchId = "93000000-0000-4000-8000-000000000902";
+  const produceId = "93000000-0000-4000-8000-000000000903";
+  const baseChange = vm.page_vms.proposal.manifest.changes[0]!;
+  vm.page_vms.proposal.title = "计划提议";
+  vm.page_vms.proposal.manifest = {
+    ...vm.page_vms.proposal.manifest,
+    title: "计划提议",
+    summary_md: "请先确认这份任务拆解计划。",
+    changes: [{
+      ...baseChange,
+      id: planId,
+      target_kind: "structured_record",
+      target_ref: {
+        entity_type: "task_plan",
+        entity_id: planId,
+        path: `/workspaces/93000000-0000-4000-8000-000000000001/task-plans/${planId}`
+      },
+      change_type: "generated",
+      human_summary: "新增可审的任务计划草稿。",
+      machine_summary: {
+        changed_fields: ["task_plan_items", "budget_share_pct", "depends_on"],
+        generated_content_md: "1. 调研证据\n2. 产出短报告",
+        task_plan_items: [
+          {
+            id: researchId,
+            seq: 0,
+            title: "整理竞品证据",
+            role: "research",
+            acceptance_md: "列出至少 3 条可核验来源。",
+            budget_share_pct: 35,
+            depends_on: []
+          },
+          {
+            id: produceId,
+            seq: 1,
+            title: "产出短报告",
+            role: "produce",
+            acceptance_md: "报告包含结论、证据和下一步建议。",
+            budget_share_pct: 65,
+            depends_on: [researchId]
+          }
+        ]
+      }
+    }]
+  };
+
+  const proposal = renderWebRouteComponents(vm, { locale: "zh-CN" }).proposal;
+
+  assert.ok(proposal);
+  assert.equal(proposal.html.includes('data-r9-task-plan-proposal-diff="true"'), true);
+  assert.equal(proposal.html.includes(`data-r9-task-plan-proposal-item="${researchId}"`), true);
+  assert.equal(proposal.html.includes('data-r9-task-plan-proposal-role="produce"'), true);
+  assert.equal(proposal.html.includes('data-r9-task-plan-proposal-budget="65"'), true);
+  assert.equal(proposal.html.includes('data-r9-task-plan-proposal-depends="#1"'), true);
+  assert.equal(proposal.html.includes("1. 整理竞品证据"), true);
+  assert.equal(proposal.html.includes("0. 整理竞品证据"), false);
+  assert.equal(proposal.html.includes("调研"), true);
+  assert.equal(proposal.html.includes("列出至少 3 条可核验来源。"), true);
 });
 
 test("R4.11 reviewed Proposal route component exposes only merge as the next write action", () => {

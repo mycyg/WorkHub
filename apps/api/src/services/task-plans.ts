@@ -101,6 +101,18 @@ function planMarkdown(items: readonly MetaPlannerDraftItem[]) {
   ].filter(Boolean).join("\n")).join("\n\n");
 }
 
+function planChangeSummaryItems(items: readonly MetaPlannerDraftItem[]) {
+  return items.map((item) => ({
+    id: item.id,
+    seq: item.seq,
+    title: item.title,
+    role: item.role,
+    acceptance_md: item.acceptanceMd,
+    budget_share_pct: item.budgetSharePct,
+    depends_on: item.dependsOn
+  }));
+}
+
 function taskPlanManifest(input: {
   planId: string;
   workspaceId: string;
@@ -133,7 +145,8 @@ function taskPlanManifest(input: {
       human_summary: "新增可审的任务计划草稿。",
       machine_summary: {
         changed_fields: ["task_plan_items", "budget_share_pct", "depends_on"],
-        generated_content_md: markdown
+        generated_content_md: markdown,
+        task_plan_items: planChangeSummaryItems(input.items)
       }
     }],
     checks: [

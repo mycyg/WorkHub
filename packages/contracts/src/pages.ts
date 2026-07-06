@@ -11,6 +11,7 @@ import { auditLogFactSchema, manifestFactsSchema } from "./audit.js";
 import { approvalRequestSchema } from "./domain/governance.js";
 import { workItemSchema } from "./domain/work-item.js";
 import { notificationSeveritySchema } from "./notification.js";
+import { taskPlanVmSchema } from "./task-plan.js";
 import {
   attentionItemSchema,
   budgetScopeSchema,
@@ -692,6 +693,7 @@ export const workItemDetailVmSchema = z.object({
   latest_proposal: deliverableChangeManifestSchema.optional(),
   accepted_deliverables: z.array(acceptedDeliverableVmSchema).default([]),
   evidence_refs: z.array(evidenceRefSchema),
+  task_plan: taskPlanVmSchema.optional(),
   source_context: workItemSourceContextVmSchema.optional(),
   actions: z.object({
     create_proposal_draft: actionSpecSchema.optional()

@@ -804,13 +804,35 @@ test("R9.1 plan proposals can target task_plan structured records without collid
       human_summary: "新增可审的任务计划草稿。",
       machine_summary: {
         changed_fields: ["task_plan_items"],
-        generated_content_md: "1. 调研证据\n2. 产出短报告"
+        generated_content_md: "1. 调研证据\n2. 产出短报告",
+        task_plan_items: [
+          {
+            id: "95000000-0000-4000-8000-000000000201",
+            seq: 1,
+            title: "调研证据",
+            role: "research",
+            acceptance_md: "列出至少 3 条可核验来源。",
+            budget_share_pct: 40,
+            depends_on: []
+          },
+          {
+            id: "95000000-0000-4000-8000-000000000202",
+            seq: 2,
+            title: "产出短报告",
+            role: "produce",
+            acceptance_md: "报告包含结论、证据和下一步建议。",
+            budget_share_pct: 60,
+            depends_on: ["95000000-0000-4000-8000-000000000201"]
+          }
+        ]
       }
     }]
   });
 
   assert.equal(parsed.changes[0]?.target_ref.entity_type, "task_plan");
   assert.equal(parsed.changes[0]?.target_ref.entity_id, planId);
+  assert.equal(parsed.changes[0]?.machine_summary?.task_plan_items?.[1]?.role, "produce");
+  assert.deepEqual(parsed.changes[0]?.machine_summary?.task_plan_items?.[1]?.depends_on, ["95000000-0000-4000-8000-000000000201"]);
 });
 
 test("proposal conflict cards carry option-first merge resolution payloads", () => {

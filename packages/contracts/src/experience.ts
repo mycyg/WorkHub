@@ -4,7 +4,8 @@ import {
   actorKindSchema,
   deliverableTargetKindSchema,
   evidenceSourceTypeSchema,
-  riskLevelSchema
+  riskLevelSchema,
+  taskPlanItemRoleSchema
 } from "./enums.js";
 import { actorSchema, idSchema, isoDateTimeSchema } from "./domain/common.js";
 import { cuuLauncherDeliveryKindSchema } from "./domain/work-item.js";
@@ -23,6 +24,17 @@ export const cuuStates = [
 ] as const;
 export const cuuStateSchema = z.enum(cuuStates);
 export type CuuState = z.infer<typeof cuuStateSchema>;
+
+export const taskPlanChangeSummaryItemSchema = z.object({
+  id: idSchema,
+  seq: z.number().int().nonnegative(),
+  title: z.string().min(1).max(256),
+  role: taskPlanItemRoleSchema,
+  acceptance_md: z.string().min(1),
+  budget_share_pct: z.number().int().min(0).max(100),
+  depends_on: z.array(idSchema).default([])
+});
+export type TaskPlanChangeSummaryItem = z.infer<typeof taskPlanChangeSummaryItemSchema>;
 
 export const evidenceRefSchema = z.object({
   id: idSchema,
@@ -205,6 +217,7 @@ export const deliverableChangeSchema = z.object({
       after_excerpt: z.string().optional(),
       generated_content_md: z.string().optional(),
       changed_fields: z.array(z.string()).optional(),
+      task_plan_items: z.array(taskPlanChangeSummaryItemSchema).max(50).optional(),
       field_values_before: z.record(z.string(), z.unknown()).optional(),
       row_count_delta: z.number().int().optional(),
       slide_count_delta: z.number().int().optional(),

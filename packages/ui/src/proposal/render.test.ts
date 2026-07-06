@@ -26,6 +26,68 @@ test("proposal renderer keeps the change package shape visible", () => {
   assert.equal(rendered.html.includes("data-requires-reason=\"true\""), true);
 });
 
+test("proposal renderer shows task plan proposal changes as readable subtasks", () => {
+  const vm = structuredClone(createP05GoldPathFixture().proposalDetail);
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const researchId = "93000000-0000-4000-8000-000000000902";
+  const produceId = "93000000-0000-4000-8000-000000000903";
+  const baseChange = vm.manifest.changes[0]!;
+  vm.title = "计划提议";
+  vm.manifest = {
+    ...vm.manifest,
+    title: "计划提议",
+    summary_md: "请先确认这份任务拆解计划。",
+    changes: [{
+      ...baseChange,
+      id: planId,
+      target_kind: "structured_record",
+      target_ref: {
+        entity_type: "task_plan",
+        entity_id: planId,
+        path: `/workspaces/93000000-0000-4000-8000-000000000001/task-plans/${planId}`
+      },
+      change_type: "generated",
+      human_summary: "新增可审的任务计划草稿。",
+      machine_summary: {
+        changed_fields: ["task_plan_items", "budget_share_pct", "depends_on"],
+        generated_content_md: "1. 调研证据\n2. 产出短报告",
+        task_plan_items: [
+          {
+            id: researchId,
+            seq: 0,
+            title: "整理竞品证据",
+            role: "research",
+            acceptance_md: "列出至少 3 条可核验来源。",
+            budget_share_pct: 35,
+            depends_on: []
+          },
+          {
+            id: produceId,
+            seq: 1,
+            title: "产出短报告",
+            role: "produce",
+            acceptance_md: "报告包含结论、证据和下一步建议。",
+            budget_share_pct: 65,
+            depends_on: [researchId]
+          }
+        ]
+      }
+    }]
+  };
+
+  const rendered = renderProposalDetail(vm, "web");
+
+  assert.equal(rendered.html.includes('data-proposal-task-plan-diff="true"'), true);
+  assert.equal(rendered.html.includes(`data-proposal-task-plan-item="${researchId}"`), true);
+  assert.equal(rendered.html.includes('data-proposal-task-plan-role="produce"'), true);
+  assert.equal(rendered.html.includes('data-proposal-task-plan-budget="65"'), true);
+  assert.equal(rendered.html.includes('data-proposal-task-plan-depends="#1"'), true);
+  assert.equal(rendered.html.includes("1. 整理竞品证据"), true);
+  assert.equal(rendered.html.includes("0. 整理竞品证据"), false);
+  assert.equal(rendered.html.includes("调研"), true);
+  assert.equal(rendered.html.includes("列出至少 3 条可核验来源。"), true);
+});
+
 test("proposal renderer replaces model self-narration titles and shows the summary first", () => {
   const vm = structuredClone(createP05GoldPathFixture().proposalDetail);
   vm.title = "完成了。让我做一个人话总结。";

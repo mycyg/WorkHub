@@ -16,6 +16,7 @@ import {
   deliverableTargetLabel,
   evidenceSourceLabel,
   previewKindLabel,
+  taskPlanItemRoleLabel,
   uiCount,
   uiLocale,
   uiT,
@@ -96,6 +97,7 @@ export const proposalCss = [
   ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
   ".wh-field-editor{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px}.wh-field-editor>summary{cursor:pointer;font-weight:800}.wh-field-editor-body{margin:8px 0;color:var(--muted);font-size:13px}.wh-field-editor-list{display:grid;gap:8px}.wh-field-editor-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e1e8f5;padding-top:8px}.wh-field-editor-row:first-child{border-top:0}.wh-field-editor-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.wh-field-editor-custom{display:flex;gap:8px;flex-wrap:wrap;grid-column:1/-1}.wh-field-editor-custom textarea{min-height:42px;min-width:220px;flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;color:var(--ink);background:#fff}",
   subrecordItemDiffCss,
+  ".wh-task-plan-diff{border:1px solid #d8e1f2;background:#f8fbff;border-radius:8px;margin-top:10px;padding:10px;display:grid;gap:8px}.wh-task-plan-row{border-top:1px solid #e1e8f5;padding-top:8px}.wh-task-plan-row:first-child{border-top:0;padding-top:0}.wh-task-plan-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-desktop .wh-proposal-frame{max-width:940px;grid-template-columns:1fr 240px}.wh-desktop .wh-proposal{background:linear-gradient(135deg,#edf6ff,#f8fbff)}@media (max-width:860px){.wh-proposal{padding:18px}.wh-proposal-frame{grid-template-columns:1fr}.wh-proposal-main{padding:18px}.wh-proposal-rail{position:static}.wh-title{font-size:24px}.wh-title,.wh-subtle,.wh-card strong{word-break:break-all}.wh-grid{grid-template-columns:1fr}.wh-row{flex-direction:column;align-items:flex-start}.wh-conflict-workbench-row,.wh-field-row,.wh-field-editor-row,.wh-subrecord-row{grid-template-columns:1fr}.wh-conflict-options,.wh-actions{align-items:flex-start}.wh-diff{font-size:11px}.wh-diff-line,.wh-diff-hunk-head{grid-template-columns:38px 38px minmax(0,1fr)}.wh-diff-line-no{padding:2px 6px}.wh-diff-code{padding:2px 8px}}"
 ].join("");
@@ -568,10 +570,12 @@ function renderChange(change: DeliverableChange, options?: UiRenderOptions) {
   const preview = change.preview_ref
     ? `<a class="wh-pill" href="${escapeHtml(safeHref(change.preview_ref.href))}">${escapeHtml(previewKindLabel(locale, change.preview_ref.kind))}</a>`
     : "";
+  const taskPlanDiff = renderTaskPlanProposalDiff(change, options);
   return `<div class="wh-row" data-change-kind="${escapeHtml(change.target_kind)}" data-change-type="${escapeHtml(change.change_type)}">
     <div>
       <strong>${escapeHtml(change.human_summary)}</strong>
       <p class="wh-subtle">${escapeHtml(path)}</p>
+      ${taskPlanDiff}
     </div>
     <div>
       <span class="wh-pill">${escapeHtml(deliverableTargetLabel(locale, change.target_kind))}</span>
@@ -579,6 +583,39 @@ function renderChange(change: DeliverableChange, options?: UiRenderOptions) {
       ${preview}
     </div>
   </div>`;
+}
+
+function renderTaskPlanProposalDiff(change: DeliverableChange, options?: UiRenderOptions) {
+  const locale = uiLocale(options);
+  if (change.target_ref.entity_type !== "task_plan") {
+    return "";
+  }
+  const items = change.machine_summary?.task_plan_items ?? [];
+  if (items.length === 0) {
+    const generated = stripMarkdown(change.machine_summary?.generated_content_md ?? "").slice(0, 420);
+    return generated
+      ? `<p class="wh-subtle" data-proposal-task-plan-markdown="true">${escapeHtml(generated)}</p>`
+      : "";
+  }
+  const sequenceById = new Map(items.map((item, index) => [item.id, index + 1]));
+  const rows = items.map((item, index) => {
+    const dependsLabel = item.depends_on.length
+      ? item.depends_on.map((id) => {
+          const seq = sequenceById.get(id);
+          return seq ? `#${seq}` : (locale === "zh-CN" ? "未知" : "Unknown");
+        }).join(", ")
+      : (locale === "zh-CN" ? "无依赖" : "No dependencies");
+    return `<div class="wh-task-plan-row" data-proposal-task-plan-item="${escapeHtml(item.id)}" data-proposal-task-plan-role="${escapeHtml(item.role)}" data-proposal-task-plan-budget="${escapeHtml(String(item.budget_share_pct))}" data-proposal-task-plan-depends="${escapeHtml(dependsLabel)}">
+      <strong>${escapeHtml(`${index + 1}. ${item.title}`)}</strong>
+      <p class="wh-subtle">${escapeHtml(item.acceptance_md)}</p>
+      <div class="wh-task-plan-meta">
+        <span class="wh-pill">${escapeHtml(taskPlanItemRoleLabel(locale, item.role))}</span>
+        <span class="wh-pill">${escapeHtml(`${item.budget_share_pct}%`)}</span>
+        <span class="wh-pill">${escapeHtml(dependsLabel)}</span>
+      </div>
+    </div>`;
+  }).join("");
+  return `<div class="wh-task-plan-diff" data-proposal-task-plan-diff="true">${rows}</div>`;
 }
 
 function renderCheck(check: DeliverableCheck, options?: UiRenderOptions) {

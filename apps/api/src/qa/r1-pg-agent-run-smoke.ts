@@ -446,9 +446,28 @@ async function main() {
     if (taskPlanCreate.status !== 201) {
       throw new Error(`Expected task-plan create 201, got ${taskPlanCreate.status}: ${await taskPlanCreate.text()}`);
     }
-    const taskPlanCreateBody = await taskPlanCreate.json() as { data: { plan_id: string; proposal_id: string; proposal: { title: string } } };
+    const taskPlanCreateBody = await taskPlanCreate.json() as {
+      data: {
+        plan_id: string;
+        proposal_id: string;
+        proposal: {
+          title: string;
+          diff_manifest: {
+            changes: {
+              machine_summary?: {
+                task_plan_items?: { role: string; budget_share_pct: number; depends_on: string[] }[];
+              };
+            }[];
+          };
+        };
+      };
+    };
     if (taskPlanCreateBody.data.proposal.title !== "计划提议") {
       throw new Error(`Expected plan proposal title 计划提议, got ${taskPlanCreateBody.data.proposal.title}`);
+    }
+    const taskPlanProposalItems = taskPlanCreateBody.data.proposal.diff_manifest.changes[0]?.machine_summary?.task_plan_items ?? [];
+    if (taskPlanProposalItems.length !== 3 || taskPlanProposalItems[1]?.depends_on.length !== 1) {
+      throw new Error(`Expected plan proposal manifest to expose 3 structured items with dependencies, got ${taskPlanProposalItems.length}`);
     }
     const taskPlanReview = await app.request(`/api/proposals/${taskPlanCreateBody.data.proposal_id}/review`, {
       method: "POST",
@@ -485,6 +504,20 @@ async function main() {
     const taskPlanWorkItemAfterMerge = taskPlanWorkItemRows[0];
     if (!taskPlanWorkItemAfterMerge || taskPlanWorkItemAfterMerge.status === "merged") {
       throw new Error(`Expected task-plan proposal merge not to complete the work item, got ${taskPlanWorkItemAfterMerge?.status ?? "missing"}`);
+    }
+    const taskPlanWorkItemPage = await app.request(`/api/pages/workitems/${taskPlanWorkItemId}`, { headers });
+    if (taskPlanWorkItemPage.status !== 200) {
+      throw new Error(`Expected task-plan work item page 200, got ${taskPlanWorkItemPage.status}: ${await taskPlanWorkItemPage.text()}`);
+    }
+    const taskPlanWorkItemPageBody = await taskPlanWorkItemPage.json() as {
+      data: { task_plan?: { status: string; items: unknown[]; items_capped: boolean } };
+    };
+    const taskPlanPagePlan = taskPlanWorkItemPageBody.data.task_plan;
+    if (!taskPlanPagePlan || taskPlanPagePlan.status !== "approved") {
+      throw new Error(`Expected work item page task_plan approved, got ${taskPlanPagePlan?.status ?? "missing"}`);
+    }
+    if (taskPlanPagePlan.items.length !== 3 || taskPlanPagePlan.items_capped) {
+      throw new Error(`Expected work item page task_plan to expose 3 uncapped items, got ${taskPlanPagePlan.items.length}`);
     }
     const knowledge = await app.request("/api/knowledge/search", {
       method: "POST",
@@ -2474,8 +2507,11 @@ async function main() {
         plan_id: taskPlanCreateBody.data.plan_id,
         proposal_id: taskPlanCreateBody.data.proposal_id,
         proposal_title: taskPlanCreateBody.data.proposal.title,
+        proposal_item_count: taskPlanProposalItems.length,
         status: taskPlanRow.status,
-        item_count: taskPlanItemRows.length
+        item_count: taskPlanItemRows.length,
+        page_status: taskPlanPagePlan.status,
+        page_item_count: taskPlanPagePlan.items.length
       },
       merge: {
         proposal_status: proposalAfterMerge.status,

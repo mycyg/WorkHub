@@ -14,6 +14,7 @@ import {
   type DriveVersionRow,
   type WorkItemClarificationAnswerRow,
   type StoredWorkItemDetailRows,
+  type TaskPlanWithItems,
   type WorkItemDataRepository,
   type WorkItemAgentStepRow,
   type WorkItemKnowledgeDocumentRow,
@@ -27,6 +28,7 @@ import {
   deliverableChangeManifestSchema,
   evidenceRefSchema,
   sessionVmSchema,
+  taskPlanVmSchema,
   workItemDetailVmSchema,
   workItemPrioritySchema,
   type AgentStep,
@@ -39,6 +41,7 @@ import {
   type NextQuestionRequest,
   type QuestionCard,
   type SessionVM,
+  type TaskPlanVM,
   type UseEvidenceForTaskRequest,
   type WorkItem,
   type WorkItemDetailVM,
@@ -1195,6 +1198,40 @@ function evidenceRefsFromBindings(rows: StoredWorkItemDetailRows["evidenceBindin
   return refs;
 }
 
+function taskPlanToVm(rows: TaskPlanWithItems | null | undefined): TaskPlanVM | undefined {
+  if (!rows) {
+    return undefined;
+  }
+  return parseOutputContract(taskPlanVmSchema, {
+    id: rows.plan.id,
+    work_item_id: rows.plan.workItemId,
+    workspace_id: rows.plan.workspaceId,
+    status: rows.plan.status,
+    objective_id: rows.plan.objectiveId,
+    budget_json: rows.plan.budgetJson,
+    decomposition_context_json: rows.plan.decompositionContextJson,
+    created_by: rows.plan.createdByUserId,
+    created_at: rows.plan.createdAt.toISOString(),
+    updated_at: rows.plan.updatedAt.toISOString(),
+    items: rows.items.map((item) => ({
+      id: item.id,
+      plan_id: item.planId,
+      parent_item_id: item.parentItemId,
+      seq: item.seq,
+      title: item.title,
+      role: item.role,
+      objective_md: item.objectiveMd,
+      acceptance_md: item.acceptanceMd,
+      budget_share_pct: item.budgetSharePct,
+      depends_on: item.dependsOn,
+      status: item.status,
+      created_at: item.createdAt.toISOString(),
+      updated_at: item.updatedAt.toISOString()
+    })),
+    items_capped: rows.itemsCapped
+  }, "work-item.task-plan");
+}
+
 function buildWorkItemDetail(
   rows: StoredWorkItemDetailRows,
   locale: WorkHubLocale = "zh-CN",
@@ -1265,6 +1302,7 @@ function buildWorkItemDetail(
     }
     : undefined;
   const sourceContext = driveSourceContext ?? meetingSourceContext;
+  const taskPlan = taskPlanToVm(rows.taskPlan);
   const canCreateSourceProposal = sourceContext
     && !latestProposalId
     && (sourceContext.source_type === "drive_comment"
@@ -1302,6 +1340,7 @@ function buildWorkItemDetail(
         : acceptedDeliverableToVm(row, { includeRestore: options.includeAcceptedDeliverableRestore })
     ),
     evidence_refs: evidenceRefsFromBindings(rows.evidenceBindings),
+    ...(taskPlan ? { task_plan: taskPlan } : {}),
     ...(sourceContext ? { source_context: sourceContext } : {}),
     actions: {
       ...(createProposalAction ? { create_proposal_draft: createProposalAction } : {})

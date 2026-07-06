@@ -4,11 +4,35 @@
 // 历史/其它工作项从 项目/审批/看改动 进入。list→detail 盒内联 morph。
 
 import type { WorkItemDetailVM } from "@workhub/contracts";
+import { taskPlanItemRoleLabel, taskPlanStatusLabel } from "@workhub/ui";
 import { publicProposalDisplayTitle } from "@workhub/ui/proposal";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 import { agentStepPhaseLabel, agentStepPublicSummary, workItemPriorityLabel, workItemStatusLabel } from "../labels.js";
+
+function taskPlanHtml(vm: WorkItemDetailVM, zh: boolean): string {
+  const plan = vm.task_plan;
+  if (!plan) {
+    return "";
+  }
+  const locale = zh ? "zh-CN" : "en-US";
+  const rows = plan.items.slice(0, 4).map((item, index) => `<div class="wh-spot-trace-step" data-spot-task-plan-item="${escapeHtml(item.id)}">
+    <div class="wh-spot-trace-phase">${escapeHtml(`${index + 1}. ${taskPlanItemRoleLabel(locale, item.role)} · ${item.budget_share_pct}%`)}</div>
+    <div class="wh-spot-trace-out">${escapeHtml(item.title)}</div>
+  </div>`).join("");
+  const capped = plan.items_capped
+    ? `<div class="wh-spot-change-path" data-spot-task-plan-capped="true">${zh ? "仅显示前 50 个子任务" : "Showing first 50 subtasks"}</div>`
+    : "";
+  return `<div class="wh-spot-change" data-spot-task-plan="true" data-spot-task-plan-status="${escapeHtml(plan.status)}">
+    <div class="wh-spot-change-head">
+      <span class="wh-spot-chip wh-spot-chip--info">${zh ? "任务计划" : "Task plan"}</span>
+      <span class="wh-spot-change-path">${escapeHtml(taskPlanStatusLabel(locale, plan.status))}</span>
+    </div>
+    <div class="wh-spot-trace">${rows || `<div class="wh-spot-change-path">${zh ? "暂无子任务" : "No subtasks yet"}</div>`}</div>
+    ${capped}
+  </div>`;
+}
 
 export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const w = vm.workitem;
@@ -28,6 +52,7 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const proposal = vm.latest_proposal
     ? `<div class="wh-spot-change"><div class="wh-spot-change-head"><span class="wh-spot-chip wh-spot-chip--info">${zh ? "最新改动" : "Latest change"}</span></div><div class="wh-spot-change-sum">${escapeHtml(publicProposalDisplayTitle(vm.latest_proposal.title, zh ? "zh-CN" : "en-US"))}</div></div>`
     : "";
+  const taskPlan = taskPlanHtml(vm, zh);
   return `<div class="wh-spot-dash ds-anim-fade-in">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-wi-back style="align-self:flex-start">${zh ? "← 返回" : "← Back"}</button>
     <div>
@@ -39,6 +64,7 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "验收项" : "Acceptance"}</span><span class="wh-spot-metric-v">${vm.acceptance.length}</span></div>
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "交付物" : "Deliverables"}</span><span class="wh-spot-metric-v">${vm.accepted_deliverables.length}</span></div>
     </div>
+    ${taskPlan}
     ${proposal}
     ${traceHtml}
     ${createDraft || canRun ? `<div class="wh-spot-card-actions">${createDraft}${canRun ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-run="${escapeHtml(w.id)}">${zh ? "派给 AI 干" : "Dispatch to AI"}</button>` : ""}</div>` : ""}
