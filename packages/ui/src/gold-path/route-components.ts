@@ -2270,6 +2270,57 @@ function proposalActions(vm: ProposalDetailVM) {
   return [];
 }
 
+// R9.1 workbench-read：计划提议的行级子任务视图（序号/角色徽章/标题/验收/预算份额/依赖）。
+// 数据源=manifest machine_summary.task_plan_items（7.154 打通的结构化清单），markdown 只是摘要。
+function taskPlanItemRoleBadge(role: string, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  if (role === "research") return zh ? "调研" : "Research";
+  if (role === "produce") return zh ? "产出" : "Produce";
+  if (role === "review") return zh ? "复核" : "Review";
+  return humanizeToken(role);
+}
+
+function renderTaskPlanItemsPanel(vm: ProposalDetailVM, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  const planChange = vm.manifest.changes.find((change) =>
+    change.target_kind === "structured_record" && change.target_ref.entity_type === "task_plan");
+  const items = planChange?.machine_summary?.task_plan_items ?? [];
+  if (items.length === 0) {
+    return "";
+  }
+  const ordered = [...items].sort((a, b) => a.seq - b.seq);
+  const seqById = new Map(ordered.map((item, index) => [item.id, index + 1]));
+  const rows = ordered.map((item, index) => {
+    const deps = (item.depends_on ?? [])
+      .map((dependencyId) => seqById.get(dependencyId))
+      .filter((seq): seq is number => typeof seq === "number")
+      .map((seq) => `#${seq}`);
+    return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-plan-item="${escapeHtml(item.id)}" data-r9-plan-item-role="${escapeHtml(item.role)}">
+      <div>
+        <strong>#${index + 1} ${escapeHtml(item.title)}</strong>
+        <p>${escapeHtml(zh ? "验收：" : "Acceptance: ")}${escapeHtml(item.acceptance_md)}</p>
+      </div>
+      <div class="wh-r4-route-meta">
+        <span class="wh-pill">${escapeHtml(taskPlanItemRoleBadge(item.role, locale))}</span>
+        <span class="wh-pill" data-r9-plan-item-share="${escapeHtml(String(item.budget_share_pct))}">${escapeHtml(zh ? `预算 ${item.budget_share_pct}%` : `Budget ${item.budget_share_pct}%`)}</span>
+        ${deps.length ? `<span class="wh-pill">${escapeHtml(zh ? `依赖 ${deps.join(" ")}` : `Depends on ${deps.join(" ")}`)}</span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+  // §3.2 防呆（读侧红字）：份额和 ≠100% 时如实标红——「批准并派发」的硬门在合入事务里。
+  const totalShare = ordered.reduce((sum, item) => sum + item.budget_share_pct, 0);
+  const shareNote = totalShare === 100
+    ? `<p class="wh-subtle" data-r9-plan-share-total="100">${escapeHtml(zh ? "预算份额合计 100%。" : "Budget shares add up to 100%.")}</p>`
+    : `<p class="wh-pill-danger" data-r9-plan-share-total="${escapeHtml(String(totalShare))}" data-r9-plan-share-invalid="true">${escapeHtml(zh
+      ? `预算份额加起来是 ${totalShare}%，${totalShare < 100 ? `还差 ${100 - totalShare}%` : `超出 ${totalShare - 100}%`}，修正后才能批准并派发。`
+      : `Budget shares add up to ${totalShare}%, ${totalShare < 100 ? `${100 - totalShare}% short` : `${totalShare - 100}% over`} — fix them before approving and dispatching.`)}</p>`;
+  return `<section class="wh-card wh-r4-route-card" data-r9-plan-items="true" data-r9-plan-item-count="${escapeHtml(String(ordered.length))}">
+      <h3>${escapeHtml(zh ? "子任务清单" : "Subtasks")}</h3>
+      <div class="wh-r4-route-timeline">${rows}</div>
+      ${shareNote}
+    </section>`;
+}
+
 function renderProposalRouteComponent(
   vm: ProposalDetailVM,
   locale: WorkHubLocale,
@@ -2344,6 +2395,7 @@ function renderProposalRouteComponent(
           <div class="wh-r4-route-timeline">${vm.manifest.checks.slice(0, 3).map((check) => renderCheck(check, locale)).join("")}</div>
         </section>
       </div>
+      ${renderTaskPlanItemsPanel(vm, locale)}
       <section class="wh-card wh-r4-route-card" data-r4-proposal-changes="true">
         <h3>${escapeHtml(routeT(locale, "proposal.files"))}</h3>
         <div class="wh-r4-route-table">${vm.manifest.changes.map((change) => renderChange(change, locale)).join("")}</div>

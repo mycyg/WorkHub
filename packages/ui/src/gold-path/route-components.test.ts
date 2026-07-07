@@ -1408,6 +1408,85 @@ test("R5.5 WorkItem route component exposes Meeting source context and proposal 
   assert.equal(workitem.primaryHrefs.includes("/api/meetings/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"), true);
 });
 
+test("R9.1 proposal workbench renders the reviewed task plan item rows", () => {
+  // workbench-read 验收：计划提议在工作台可读——行级视图带序号/角色徽章/验收/预算份额/依赖，
+  // 数据源是 manifest machine_summary.task_plan_items（7.154），不是 markdown。
+  const vm = surfaceVm();
+  const planId = "95000000-0000-4000-8000-000000000701";
+  const researchId = "95000000-0000-4000-8000-000000000711";
+  const produceId = "95000000-0000-4000-8000-000000000712";
+  const proposalVm = {
+    ...vm.page_vms.proposal,
+    title: "计划提议",
+    manifest: {
+      ...vm.page_vms.proposal.manifest,
+      title: "计划提议",
+      changes: [{
+        ...vm.page_vms.proposal.manifest.changes[0]!,
+        target_kind: "structured_record" as const,
+        target_ref: { entity_type: "task_plan" as const, entity_id: planId },
+        change_type: "generated" as const,
+        human_summary: "新增可审的任务计划草稿。",
+        machine_summary: {
+          changed_fields: ["task_plan_items"],
+          task_plan_items: [
+            { id: researchId, seq: 0, title: "调研短剧选题证据", role: "research" as const, objective_md: "收集证据。", acceptance_md: "至少 3 条可核验来源。", budget_share_pct: 40, depends_on: [] },
+            { id: produceId, seq: 1, title: "产出选题短报告", role: "produce" as const, objective_md: "写报告。", acceptance_md: "有结论与证据段。", budget_share_pct: 60, depends_on: [researchId] }
+          ]
+        }
+      }]
+    }
+  };
+
+  const zh = renderWebRouteComponent({ key: "proposal", proposal: proposalVm }, { locale: "zh-CN" });
+  assert.equal(zh.html.includes('data-r9-plan-items="true"'), true);
+  assert.equal(zh.html.includes('data-r9-plan-item-count="2"'), true);
+  assert.equal(zh.html.includes("#1 调研短剧选题证据"), true);
+  assert.equal(zh.html.includes("#2 产出选题短报告"), true);
+  assert.equal(zh.html.includes("验收：至少 3 条可核验来源。"), true);
+  assert.equal(zh.html.includes(">调研</span>"), true);
+  assert.equal(zh.html.includes(">产出</span>"), true);
+  assert.equal(zh.html.includes("预算 40%"), true);
+  assert.equal(zh.html.includes("依赖 #1"), true);
+  assert.equal(zh.html.includes("预算份额合计 100%"), true);
+  // 角色不许裸枚举。
+  assert.equal(zh.html.includes(">research<"), false);
+
+  const en = renderWebRouteComponent({ key: "proposal", proposal: proposalVm }, { locale: "en-US" });
+  assert.equal(en.html.includes(">Research</span>"), true);
+  assert.equal(en.html.includes("Budget 40%"), true);
+  assert.equal(en.html.includes("Depends on #1"), true);
+});
+
+test("R9.1 proposal workbench flags budget shares that do not sum to 100", () => {
+  // §3.2 防呆（读侧红字）：份额和 92% → 红字「还差 8%」，data 探针供 smoke/交互层复用。
+  const vm = surfaceVm();
+  const planId = "95000000-0000-4000-8000-000000000702";
+  const soloId = "95000000-0000-4000-8000-000000000721";
+  const proposalVm = {
+    ...vm.page_vms.proposal,
+    manifest: {
+      ...vm.page_vms.proposal.manifest,
+      changes: [{
+        ...vm.page_vms.proposal.manifest.changes[0]!,
+        target_kind: "structured_record" as const,
+        target_ref: { entity_type: "task_plan" as const, entity_id: planId },
+        change_type: "generated" as const,
+        machine_summary: {
+          task_plan_items: [
+            { id: soloId, seq: 0, title: "调研", role: "research" as const, objective_md: "收集。", acceptance_md: "3 条来源。", budget_share_pct: 92, depends_on: [] }
+          ]
+        }
+      }]
+    }
+  };
+
+  const zh = renderWebRouteComponent({ key: "proposal", proposal: proposalVm }, { locale: "zh-CN" });
+  assert.equal(zh.html.includes('data-r9-plan-share-invalid="true"'), true);
+  assert.equal(zh.html.includes("预算份额加起来是 92%"), true);
+  assert.equal(zh.html.includes("还差 8%"), true);
+});
+
 test("R4.11 Proposal route component preserves review actions, rollback, changes, checks, evidence, and comments", () => {
   const vm = surfaceVm();
   const proposal = renderWebRouteComponents(vm, { locale: "en-US" }).proposal;
