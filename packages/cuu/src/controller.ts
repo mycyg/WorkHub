@@ -41,6 +41,7 @@ export type CuuControllerDecisionReason =
   | "low_priority_badge"
   | "duplicate_dropped"
   | "queue_overflow_dropped"
+  | "bubble_throttled"
   | "dismissed_current"
   | "promoted_badge"
   | "removed_queued_card"
@@ -95,15 +96,23 @@ export function defaultCuuControllerPreferences(): CuuControllerPreferences {
   return { ...defaultPreferences };
 }
 
+// ux-flow-spec §3.7 频率纪律：同一工作项（军团 plan 的宿主）的气泡在 5 分钟窗口内
+// 只冒最高优先级一条；后到的同/低优先级气泡降级成角标（决策收件箱仍有卡，不丢决策）。
+const BUBBLE_THROTTLE_WINDOW_MS = 5 * 60 * 1000;
+
 export function createCuuController(input: {
   preferences?: Partial<CuuControllerPreferences>;
   idle_state?: CuuState;
+  now?: () => number;
 } = {}): CuuController {
   let preferences = normalizePreferences(input.preferences);
   const idleState = input.idle_state ?? "idle";
+  const now = input.now ?? (() => Date.now());
   let activeCard: CuuCard | undefined;
   const queue: CuuCard[] = [];
   const badges: CuuCard[] = [];
+  // 每个节流组（work_item 优先，退化到 source entity）最近一次放行气泡的时间与优先级。
+  const bubbleWindow = new Map<string, { at: number; priority: CuuCard["priority"] }>();
 
   const snapshot = (): CuuControllerSnapshot => ({
     ...(activeCard ? { active_card: activeCard } : {}),
@@ -139,6 +148,25 @@ export function createCuuController(input: {
   const enqueue = (card: CuuCard): CuuControllerDecision => {
     if (hasCard(card.id, activeCard, queue, badges)) {
       return decision("drop", "duplicate_dropped", { card });
+    }
+
+    // §3.7 气泡节流：同组（同工作项）5 分钟窗口内只放行最高优先级一条；其余降级角标。
+    const throttleKey = card.kind === "bubble"
+      ? card.source?.work_item_id ?? (card.source ? `${card.source.entity_type}:${card.source.entity_id}` : undefined)
+      : undefined;
+    if (throttleKey) {
+      const at = now();
+      const last = bubbleWindow.get(throttleKey);
+      if (last && at - last.at < BUBBLE_THROTTLE_WINDOW_MS && priorityRank[card.priority] <= priorityRank[last.priority]) {
+        const droppedCard = pushQueued(card, badges, preferences.queue_limit);
+        const incomingWasDropped = droppedCard?.id === card.id;
+        return decision(incomingWasDropped ? "drop" : "badge", incomingWasDropped ? "queue_overflow_dropped" : "bubble_throttled", {
+          card,
+          surface: "badge",
+          ...(droppedCard ? { dropped_card: droppedCard } : {})
+        });
+      }
+      bubbleWindow.set(throttleKey, { at, priority: card.priority });
     }
 
     const badgeReason = badgeReasonFor(card, preferences);
