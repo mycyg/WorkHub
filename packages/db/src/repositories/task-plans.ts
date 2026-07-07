@@ -166,7 +166,8 @@ const taskPlanItemColumns = {
   dependsOn: taskPlanItems.dependsOn,
   status: taskPlanItems.status,
   createdAt: taskPlanItems.createdAt,
-  updatedAt: taskPlanItems.updatedAt
+  updatedAt: taskPlanItems.updatedAt,
+  dispatchEpoch: taskPlanItems.dispatchEpoch
 };
 
 function boundedItemLimit(input: number | undefined) {
@@ -524,6 +525,9 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         .update(taskPlanItems)
         .set({
           status: "dispatched" satisfies TaskPlanItemStatus,
+          // B-R9.2-3：派发代际 +1——run 记住自己的代，结算/恢复只认同代，
+          // 人工重派后旧终态 run 不再覆盖新一轮。
+          dispatchEpoch: sql`${taskPlanItems.dispatchEpoch} + 1`,
           updatedAt: dispatchedAt
         })
         .where(and(
@@ -541,6 +545,9 @@ export function createTaskPlanRepository(db: WorkHubDb) {
       workspaceId: string;
       itemId: string;
       status: Extract<TaskPlanItemStatus, "succeeded" | "failed">;
+      // B-R9.2-3：结算方（run）所属的派发代。带上时只结算同代 item——
+      // 人工重派后旧终态 run 的 CAS 落空返回 null，不覆盖新一轮。
+      epoch?: number;
       settledAt?: Date;
     }): Promise<TaskPlanItemRow | null> {
       const settledAt = input.settledAt ?? new Date();
@@ -554,7 +561,8 @@ export function createTaskPlanRepository(db: WorkHubDb) {
           eq(taskPlanItems.planId, input.planId),
           parentPlanWorkspacePredicate(input),
           eq(taskPlanItems.id, input.itemId),
-          eq(taskPlanItems.status, "dispatched" satisfies TaskPlanItemStatus)
+          eq(taskPlanItems.status, "dispatched" satisfies TaskPlanItemStatus),
+          ...(input.epoch === undefined ? [] : [eq(taskPlanItems.dispatchEpoch, input.epoch)])
         ))
         .returning();
       return row ?? null;

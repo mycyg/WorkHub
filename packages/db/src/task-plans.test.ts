@@ -14,7 +14,7 @@ import {
   taskPlans,
   workItems
 } from "./schema/index.js";
-import { createQueryRecorder, queryParamValues, queryReferences } from "./test-query-recorder.js";
+import { createQueryRecorder, queryParamValues, queryReferences, queryTextFragments } from "./test-query-recorder.js";
 
 const now = new Date("2026-07-03T00:00:00.000Z");
 const planId = "91000000-0000-4000-8000-000000000001";
@@ -672,7 +672,12 @@ test("R9.2 task plan repository uses CAS when marking items dispatched", async (
   const [query] = queries;
   assert.equal(query?.operation, "update");
   assert.equal(query?.targetTable, taskPlanItems);
-  assert.deepEqual(query?.setValue, { status: "dispatched", updatedAt: now });
+  // B-R9.2-3：派发时代际 +1（SQL 表达式），set 里必须带 dispatchEpoch。
+  const setValue = query?.setValue as { status?: string; updatedAt?: Date; dispatchEpoch?: unknown };
+  assert.equal(setValue?.status, "dispatched");
+  assert.equal(setValue?.updatedAt, now);
+  assert.ok(setValue?.dispatchEpoch, "markItemDispatched must bump dispatch_epoch");
+  assert.match(queryTextFragments(setValue.dispatchEpoch).join(""), /\+ 1/u);
   assert.equal(query?.returningCalled, true);
   // R9.7 redline: the pre-hardening CAS assertion only scoped by plan_id. Parent
   // workspace proof is required because task_plan_items does not carry workspace_id.

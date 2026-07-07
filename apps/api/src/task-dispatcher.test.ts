@@ -63,6 +63,7 @@ function item(input: {
     budgetSharePct: input.budgetSharePct ?? 33,
     dependsOn: input.dependsOn ?? [],
     status: input.status ?? "pending",
+    dispatchEpoch: input.status === "dispatched" ? 1 : 0,
     createdAt: now,
     updatedAt: now
   } as TaskPlanItemRow;
@@ -149,6 +150,7 @@ class MemoryTaskDispatcherRepository implements TaskDispatcherRepository {
       return null;
     }
     current.status = "dispatched";
+    (current as { dispatchEpoch: number }).dispatchEpoch = ((current as { dispatchEpoch?: number }).dispatchEpoch ?? 0) + 1;
     current.updatedAt = input.dispatchedAt ?? now;
     return current;
   }
@@ -158,11 +160,15 @@ class MemoryTaskDispatcherRepository implements TaskDispatcherRepository {
     workspaceId: string;
     itemId: string;
     status: "succeeded" | "failed";
+    epoch?: number;
     settledAt?: Date;
   }) {
     assert.equal(input.workspaceId, this.row.workspaceId);
     const current = this.items.find((candidate) => candidate.planId === input.planId && candidate.id === input.itemId);
     if (!current || current.status !== "dispatched") {
+      return null;
+    }
+    if (input.epoch !== undefined && (current as { dispatchEpoch?: number }).dispatchEpoch !== input.epoch) {
       return null;
     }
     current.status = input.status;
@@ -485,6 +491,51 @@ test("R9.2 dispatcher pumps queued child runs after enqueueing ready task-plan i
 
   assert.deepEqual(result.enqueuedItemIds, [researchItemId, reviewItemId]);
   assert.equal(queue.runNextCalls, 2);
+});
+
+test("B-R9.2 stale-epoch terminal runs cannot settle a redispatched item", async () => {
+  // branch-review 竞态：人工重派（item 代际 +1）后，旧终态子 run 的结果不许覆盖新一轮，
+  // 也不许替新一轮发 partial_failure 升级卡。
+  const escalations: string[] = [];
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research" })
+  ]);
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    escalationSink: async (input) => { escalations.push(input.reason); }
+  });
+
+  // 第一代派发：run 记住 epoch=1。
+  await dispatcher.dispatch({ planId, workspaceId, actorId });
+  assert.equal(queue.inputs[0]?.taskPlanItemEpoch, 1);
+  const staleRun = {
+    ...run({ status: "failed", taskPlanItemId: researchItemId, workspaceId }),
+    task_plan_item_epoch: 1
+  };
+
+  // 人工重派：item 重置回 pending 再派发 → 代际 2。
+  const target = repository.items.find((candidate) => candidate.id === researchItemId)!;
+  target.status = "pending";
+  await dispatcher.dispatch({ planId, workspaceId, actorId });
+  assert.equal(queue.inputs[1]?.taskPlanItemEpoch, 2);
+
+  // 第一代终态 run 迟到结算：CAS 落空，item 仍 dispatched、无升级卡。
+  const settled = await dispatcher.handleRunSettled(staleRun);
+  assert.equal(settled, null);
+  assert.equal(repository.items.find((candidate) => candidate.id === researchItemId)?.status, "dispatched");
+  assert.deepEqual(escalations, []);
+
+  // 同代（epoch=2）的 run 照常结算。
+  const freshRun = {
+    ...run({ status: "succeeded", taskPlanItemId: researchItemId, workspaceId }),
+    task_plan_item_epoch: 2
+  };
+  const freshSettled = await dispatcher.handleRunSettled(freshRun);
+  assert.equal(freshSettled?.settledItemId, researchItemId);
+  assert.equal(repository.items.find((candidate) => candidate.id === researchItemId)?.status, "succeeded");
 });
 
 test("B-R9.2 dispatcher splits the plan budget across child runs by share", async () => {

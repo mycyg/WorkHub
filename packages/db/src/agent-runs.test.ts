@@ -25,6 +25,7 @@ function runRow(id: string, taskPlanItemId: string): AgentRunRow {
     parentRunId: null,
     taskPlanId,
     taskPlanItemId,
+    taskPlanItemEpoch: 0,
     objectiveId: null,
     agentRole: "produce",
     objectiveMd: null,

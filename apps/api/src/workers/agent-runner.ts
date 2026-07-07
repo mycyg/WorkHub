@@ -132,6 +132,8 @@ export type AgentRunQueueRecord = {
   parent_run_id?: string;
   task_plan_id?: string;
   task_plan_item_id?: string;
+  // B-R9.2-3：run 所属的派发代（enqueue 时从 item 的 dispatch_epoch 记下）。
+  task_plan_item_epoch?: number;
   objective_id?: string;
   agent_role?: TaskPlanItemRole;
   objective_md?: string;
@@ -216,6 +218,8 @@ export type EnqueueAgentRunInput = {
   // B-R9.2-1（branch-review 假接线）：军团子 run 的预算上限（¥）——由 dispatcher 按
   // plan.budgetJson.max_cost_cny × budget_share_pct 切分。只收紧不放宽 policy 预算。
   budgetCapCny?: string;
+  // B-R9.2-3：本次派发的代际（item.dispatch_epoch）；结算/恢复只认同代。
+  taskPlanItemEpoch?: number;
 };
 
 // B-R9.2-2（branch-review 结构性必失败）：research/review 此前只拿 read 类工具，却仍被
@@ -1886,6 +1890,7 @@ export function createInMemoryAgentRunQueue(options: {
           ...(input.workspaceId ? { workspace_id: input.workspaceId } : {}),
           ...(input.taskPlanId ? { task_plan_id: input.taskPlanId } : {}),
           ...(input.taskPlanItemId ? { task_plan_item_id: input.taskPlanItemId } : {}),
+          ...(input.taskPlanItemEpoch !== undefined ? { task_plan_item_epoch: input.taskPlanItemEpoch } : {}),
           ...(input.objectiveId ? { objective_id: input.objectiveId } : {})
         }
       });

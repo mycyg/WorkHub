@@ -796,6 +796,8 @@ export const taskPlanItems = pgTable(
     budgetSharePct: integer("budget_share_pct").notNull(),
     dependsOn: uuid("depends_on").array().$type<string[]>().notNull().default(sql`'{}'::uuid[]`),
     status: varchar("status", { length: 16 }).$type<TaskPlanItemStatus>().notNull().default("pending"),
+    // B-R9.2-3：派发代际——每次 markItemDispatched +1；结算与恢复只认同代 run。
+    dispatchEpoch: integer("dispatch_epoch").notNull().default(0),
     ...timestamps()
   },
   (table) => [
@@ -1152,6 +1154,7 @@ export const agentRuns = pgTable(
     taskPlanItemId: uuid("task_plan_item_id").references(() => taskPlanItems.id, { onDelete: "set null" }),
     objectiveId: uuid("objective_id").references(() => objectives.id, { onDelete: "set null" }),
     agentRole: varchar("agent_role", { length: 16 }).$type<TaskPlanItemRole>(),
+    taskPlanItemEpoch: integer("task_plan_item_epoch"),
     objectiveMd: text("objective_md"),
     mode: varchar("mode", { length: 16 }).$type<WorkItemMode>().notNull(),
     actor: varchar("actor", { length: 32 }).notNull(),

@@ -58,6 +58,7 @@ function item(input: {
     objectiveMd: `${input.title} objective.`,
     acceptanceMd: input.acceptanceMd,
     budgetSharePct: 50,
+    dispatchEpoch: 0,
     dependsOn: [],
     status: "succeeded",
     createdAt: now,

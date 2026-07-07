@@ -50,6 +50,7 @@ export type AgentRunForPersistence = {
   parentRunId?: string;
   taskPlanId?: string;
   taskPlanItemId?: string;
+  taskPlanItemEpoch?: number | null;
   objectiveId?: string;
   agentRole?: TaskPlanItemRole;
   objectiveMd?: string;
@@ -171,6 +172,7 @@ function runInsertValues(run: AgentRunForPersistence): typeof agentRuns.$inferIn
     parentRunId: run.parentRunId,
     taskPlanId: run.taskPlanId,
     taskPlanItemId: run.taskPlanItemId,
+    taskPlanItemEpoch: run.taskPlanItemEpoch ?? null,
     objectiveId: run.objectiveId,
     agentRole: run.agentRole,
     objectiveMd: run.objectiveMd,
@@ -563,7 +565,10 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
         .innerJoin(taskPlanItems, eq(taskPlanItems.id, agentRuns.taskPlanItemId))
         .where(and(
           inArray(agentRuns.status, terminalStatuses),
-          eq(taskPlanItems.status, "dispatched" satisfies TaskPlanItemStatus)
+          eq(taskPlanItems.status, "dispatched" satisfies TaskPlanItemStatus),
+          // B-R9.2-3：恢复 tick 只认同代 run——人工重派后（item 代际 +1）旧终态 run
+          // 不再被捡起去覆盖新一轮结果。
+          eq(agentRuns.taskPlanItemEpoch, taskPlanItems.dispatchEpoch)
         ))
         .orderBy(asc(agentRuns.updatedAt), asc(agentRuns.id))
         .limit(limit);

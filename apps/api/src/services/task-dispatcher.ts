@@ -58,6 +58,8 @@ export type TaskDispatcherRepository = {
     workspaceId: string;
     itemId: string;
     status: SettledItemStatus;
+    // B-R9.2-3：结算方 run 的派发代——带上时只结算同代 item。
+    epoch?: number;
     settledAt?: Date;
   }) => Promise<TaskPlanItemRow | null>;
   skipPendingItems: (input: {
@@ -517,6 +519,7 @@ export function createTaskDispatcher(options: {
         result.casMissItemIds.push(item.id);
         continue;
       }
+      const dispatchEpoch = (dispatched as { dispatchEpoch?: number }).dispatchEpoch;
       updateLocalItemStatus(items, item.id, "dispatched", at);
       try {
         const budgetCapCny = itemBudgetCapCny(plan, item);
@@ -533,7 +536,8 @@ export function createTaskDispatcher(options: {
           objectiveMd: taskObjective(item),
           title: item.title,
           mode: "worker",
-          ...(budgetCapCny ? { budgetCapCny } : {})
+          ...(budgetCapCny ? { budgetCapCny } : {}),
+          ...(dispatchEpoch !== undefined ? { taskPlanItemEpoch: dispatchEpoch } : {})
         });
       } catch (error) {
         const failed = await options.repository.settleDispatchedItem({
@@ -587,6 +591,15 @@ export function createTaskDispatcher(options: {
       if (!current || current.status !== "dispatched") {
         return null;
       }
+      // B-R9.2-3：旧代 run 不许替新一轮发 partial_failure 升级卡（结算 CAS 也会落空）。
+      const currentEpoch = (current as { dispatchEpoch?: number }).dispatchEpoch;
+      if (
+        run.task_plan_item_epoch !== undefined
+        && currentEpoch !== undefined
+        && currentEpoch !== run.task_plan_item_epoch
+      ) {
+        return null;
+      }
       const previewItems = previewItemStatus(loaded.items, run.task_plan_item_id, "failed", at);
       if (blockedByFailedDependency(previewItems).length === 0) {
         await requireEscalation(escalationSink, {
@@ -605,6 +618,8 @@ export function createTaskDispatcher(options: {
       workspaceId: run.workspace_id,
       itemId: run.task_plan_item_id,
       status: settledStatus,
+      // B-R9.2-3：只结算同代——人工重派后旧终态 run 的结果不覆盖新一轮。
+      ...(run.task_plan_item_epoch !== undefined ? { epoch: run.task_plan_item_epoch } : {}),
       settledAt: at
     });
     if (!settled) {
