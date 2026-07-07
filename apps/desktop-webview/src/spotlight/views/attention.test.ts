@@ -345,3 +345,46 @@ test("attention proposal merge conflict renders actionable choices instead of a 
   assert.match(html ?? "", /href="\/proposals\/proposal-1"/u);
   assert.match(html ?? "", /data-method="GET"/u);
 });
+
+// UX-M7（桌面死按钮）：「看 B 的出处」/「打开设置」/「查看预算」GET 导航路由到对应能力。
+test("classifyAttentionActionHref routes replay/settings/cost GET actions to capabilities", () => {
+  assert.deepEqual(classifyAttentionActionHref("/agent-runs/r-1/replay"), {
+    kind: "navigate",
+    view: "replay",
+    id: "r-1"
+  });
+  assert.deepEqual(classifyAttentionActionHref("/settings"), { kind: "navigate", view: "settings" });
+  assert.deepEqual(classifyAttentionActionHref("/dashboard/cost"), { kind: "navigate", view: "cost" });
+  assert.deepEqual(classifyAttentionActionHref("/api/memory-conflicts/c1/resolve/merge_both"), { kind: "submit" });
+});
+
+// UX-M6（桌面可编辑合并）：merge_both 提交带上编辑稿；非 merge 不带。
+test("resolveAttentionMemoryConflictAction forwards the edited merge draft as value_md", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    async resolveMemoryConflict(id: string, payload: unknown) {
+      calls.push({ id, payload });
+      return { attention: { summary_text: "已合并" } };
+    }
+  };
+  await resolveAttentionMemoryConflictAction(
+    client,
+    "/api/memory-conflicts/c1/resolve/merge_both?expected_updated_at=2026-07-03T10%3A40%3A00.000Z",
+    "  合并后的一条。  "
+  );
+  await resolveAttentionMemoryConflictAction(
+    client,
+    "/api/memory-conflicts/c1/resolve/discard_both?expected_updated_at=2026-07-03T10%3A40%3A00.000Z",
+    "不该带上的稿"
+  );
+  assert.deepEqual(calls, [
+    {
+      id: "c1",
+      payload: { resolution: "merge_both", expected_updated_at: "2026-07-03T10:40:00.000Z", value_md: "合并后的一条。" }
+    },
+    {
+      id: "c1",
+      payload: { resolution: "discard_both", expected_updated_at: "2026-07-03T10:40:00.000Z" }
+    }
+  ]);
+});

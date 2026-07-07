@@ -31,7 +31,7 @@ import {
 // 与提交型(POST /api/... —— 走 runAction 落库)。导航型若被当提交处理,会落到 runAction 末尾的「请到对应能力处理」
 // 死 toast(对抗审查 HIGH:决策卡「查看变更」是死按钮)。纯函数,便于单测。
 export function classifyAttentionActionHref(href: string):
-  | { kind: "navigate"; view: "proposals" | "workitem"; id: string }
+  | { kind: "navigate"; view: "proposals" | "workitem" | "replay" | "settings" | "cost"; id?: string }
   | { kind: "submit" } {
   const proposalId = /^\/proposals\/([^/?#]+)$/.exec(href)?.[1];
   if (proposalId) {
@@ -40,6 +40,18 @@ export function classifyAttentionActionHref(href: string):
   const workitemId = /^\/workitems\/([^/?#]+)$/.exec(href)?.[1];
   if (workitemId) {
     return { kind: "navigate", view: "workitem", id: workitemId };
+  }
+  // UX-M7（桌面死按钮）：sync_conflict「看 B 的出处」/「打开设置」与 budget「查看预算」
+  // 是 GET 导航，之前落进提交路径的死 toast——分别路由到 replay/settings/cost 能力。
+  const replayId = /^\/agent-runs\/([^/?#]+)\/replay$/.exec(href)?.[1];
+  if (replayId) {
+    return { kind: "navigate", view: "replay", id: replayId };
+  }
+  if (/^\/settings(?:[/?#]|$)/.test(href)) {
+    return { kind: "navigate", view: "settings" };
+  }
+  if (/^\/dashboard\/cost(?:[/?#]|$)/.test(href)) {
+    return { kind: "navigate", view: "cost" };
   }
   return { kind: "submit" };
 }
@@ -126,6 +138,20 @@ function isUnsupportedDesktopAction(href: string): boolean {
   return /\/delegate(?:[/?#]|$)/u.test(href);
 }
 
+// UX-M6（桌面可编辑合并）：sync_conflict 卡「合并成一条（可编辑）」在桌面也要真可编辑——
+// merge 动作的 request_json.value_md 草稿渲成文本框，提交时读框内内容。
+function mergeDraftEditor(item: AttentionItem, zh: boolean): string {
+  if (item.kind !== "sync_conflict") {
+    return "";
+  }
+  const draft = item.actions.find((action) => action.id === "merge_both")?.request_json?.["value_md"];
+  if (typeof draft !== "string") {
+    return "";
+  }
+  return `<label class="wh-spot-card-desc">${escapeHtml(zh ? "合并草稿（可编辑，点「合并成一条」提交）" : "Merge draft (editable — submit via Merge into one)")}</label>
+    <textarea class="wh-spot-merge-draft" data-att-merge-value rows="3">${escapeHtml(draft)}</textarea>`;
+}
+
 function renderCard(item: AttentionItem, zh: boolean): string {
   const tone = toneForKind(item.kind);
   const desc = item.reason_text ?? item.summary_text ?? "";
@@ -139,6 +165,7 @@ function renderCard(item: AttentionItem, zh: boolean): string {
       </div>
       <h3 class="wh-spot-card-title">${escapeHtml(title)}</h3>
       ${desc ? `<p class="wh-spot-card-desc">${escapeHtml(desc)}</p>` : ""}
+      ${mergeDraftEditor(item, zh)}
       <div class="wh-spot-card-actions" data-att-actionrow>${actions.map(renderAction).join("")}</div>
     </div>
   </article>`;
@@ -213,18 +240,22 @@ type MemoryConflictActionClient = {
     payload: {
       resolution: "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both";
       expected_updated_at: string;
+      value_md?: string;
     }
   ) => Promise<unknown>;
 };
 
-export function resolveAttentionMemoryConflictAction(client: MemoryConflictActionClient, href: string) {
+export function resolveAttentionMemoryConflictAction(client: MemoryConflictActionClient, href: string, valueMd?: string) {
   const action = memoryConflictActionFromHref(href);
   if (!action) {
     return undefined;
   }
+  // UX-M6：merge_both 带上桌面卡文本框里的编辑稿；空白/非 merge 不传（服务端回落默认合并）。
+  const trimmed = valueMd?.trim();
   return client.resolveMemoryConflict(action.conflictId, {
     resolution: action.resolution,
-    expected_updated_at: action.expectedUpdatedAt
+    expected_updated_at: action.expectedUpdatedAt,
+    ...(action.resolution === "merge_both" && trimmed ? { value_md: trimmed } : {})
   });
 }
 
@@ -349,7 +380,10 @@ export function createAttentionView(): SpotlightCapabilityView {
           ctx.toast(summaryText(res) ?? (zh ? "升级已处理" : "Escalation handled"), "ok");
           return true;
         }
-        const memoryConflict = await resolveAttentionMemoryConflictAction(client, href);
+        const mergeDraft = actionTarget
+          ?.closest("[data-att-id]")
+          ?.querySelector<HTMLTextAreaElement>("[data-att-merge-value]")?.value;
+        const memoryConflict = await resolveAttentionMemoryConflictAction(client, href, mergeDraft);
         if (memoryConflict) {
           ctx.toast(summaryText(memoryConflict) ?? (zh ? "偏好冲突已处理" : "Memory conflict handled"), "ok");
           return true;
@@ -501,7 +535,7 @@ export function createAttentionView(): SpotlightCapabilityView {
         // 导航型动作(「查看变更」GET /proposals/:id、/workitems/:id)内联打开对应能力,不当 POST 动作提交。
         const nav = classifyAttentionActionHref(href);
         if (nav.kind === "navigate") {
-          ctx.open(nav.view, { id: nav.id, route: href });
+          ctx.open(nav.view, nav.id ? { id: nav.id, route: href } : { route: href });
           return;
         }
         void submit(href, actionId, undefined, actionBtn);

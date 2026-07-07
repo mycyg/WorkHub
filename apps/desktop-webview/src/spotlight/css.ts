@@ -42,6 +42,8 @@ export const spotlightCss = [
   ".wh-spot-field-icon{display:inline-flex;width:18px;height:18px;flex:0 0 auto;color:var(--ds-ink-muted)}.wh-spot-field-icon svg{width:18px;height:18px}",
   ".wh-spot-field{flex:1 1 auto;min-width:0;border:0;background:transparent;outline:none;box-shadow:none;-webkit-appearance:none;appearance:none;font:500 16px/1.3 var(--ds-font);color:var(--ds-ink)}",
   "input.wh-spot-field:focus{outline:0!important;box-shadow:none!important}",
+  // UX-M6：sync_conflict 卡的合并草稿编辑框（桌面玻璃上要实底可读，禁 transparent+backdrop-filter）。
+  ".wh-spot-merge-draft{width:100%;box-sizing:border-box;border:1px solid rgba(60,60,67,.18);border-radius:10px;background:rgba(255,255,255,.92);color:#1a1d26;padding:8px 10px;font:600 12.5px/1.5 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;resize:vertical}",
   ".wh-spot-field::placeholder{color:var(--ds-ink-faint)}",
   // 能力标题（capability 屏）。
   ".wh-spot-titlewrap{display:none;flex-direction:column;gap:1px;min-width:0;flex:1 1 auto}",
