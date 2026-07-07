@@ -218,6 +218,17 @@ export type EnqueueAgentRunInput = {
   budgetCapCny?: string;
 };
 
+// B-R9.2-2（branch-review 结构性必失败）：research/review 此前只拿 read 类工具，却仍被
+// requireDeliverable 要求 outputs/ 文件——必失败。角色产物形态统一为「outputs/ 文件」：
+// 研究交调研笔记、复核交复核结论，因此 sandbox 内写文件对所有角色放开；
+// 业务写/外部副作用类工具仍只归 produce/integrate。
+export function canUseToolForTaskPlanRole(role: TaskPlanItemRole | undefined, spec: Pick<AnyToolSpec, "sideEffect">) {
+  if (!role || role === "produce" || role === "integrate") {
+    return true;
+  }
+  return spec.sideEffect === "none" || spec.sideEffect === "sandbox_file";
+}
+
 export type AbortAgentRunActor = string | { id: string; isAdmin?: boolean; canManageRun?: boolean };
 
 export type BudgetDecisionInput = EnqueueAgentRunInput & {
@@ -575,10 +586,7 @@ export function createInMemoryAgentRunQueue(options: {
     });
 
   function canUseDefaultToolForRole(role: TaskPlanItemRole | undefined, spec: AnyToolSpec) {
-    if (!role || role === "produce" || role === "integrate") {
-      return true;
-    }
-    return spec.sideEffect === "none";
+    return canUseToolForTaskPlanRole(role, spec);
   }
 
   function isToolSideEffect(value: unknown): value is ToolSideEffect {

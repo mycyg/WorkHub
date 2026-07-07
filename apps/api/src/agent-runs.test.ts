@@ -50,6 +50,7 @@ import { createInMemoryProposalService } from "./services/proposals.js";
 import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 import {
   AgentRunnerError,
+  canUseToolForTaskPlanRole,
   createInMemoryAgentRunQueue,
   sweepStaleAgentWorkdirs,
   type AgentRunNotificationPublisher,
@@ -2552,7 +2553,7 @@ test("persistent agent run enqueue carries task-plan lineage into DB persistence
   assert.equal(persisted?.objective_md, objectiveMd);
 });
 
-test("task-plan child run prompt carries objective metadata and research role gets read-only tools", async () => {
+test("task-plan child run prompt carries objective metadata and research role delivers sandbox notes", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-task-plan-test-"));
   const taskPlanId = "81000000-0000-4000-8000-000000000011";
@@ -2566,21 +2567,38 @@ test("task-plan child run prompt carries objective metadata and research role ge
   ].join("\n");
   let firstPrompt = "";
   let visibleToolNames: string[] = [];
+  let llmStep = 0;
   const client: AgentLoopClient = {
     model: "deepseek-v4-flash",
     messages: {
       async create(params) {
+        llmStep += 1;
         if (!firstPrompt) {
           firstPrompt = String(params.messages[0]?.content ?? "");
           visibleToolNames = ((params.tools ?? []) as { name?: string }[])
             .map((tool) => tool.name)
             .filter((name): name is string => Boolean(name));
         }
+        // B-R9.2-2：research 的产物形态=outputs/ 笔记文件——真用写工具交付，
+        // 走默认 requireDeliverable 判定（不再用 requireDeliverable:false 迁就）。
+        if (llmStep === 1) {
+          return {
+            id: "msg-task-plan-research-write",
+            stopReason: "tool_use",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            content: [{
+              type: "tool_use",
+              id: "tool-research-notes",
+              name: "write_file",
+              input: { path: "outputs/research-notes.md", content: "# Research notes\n- Source A cites the market report." }
+            }]
+          };
+        }
         return {
-          id: "msg-task-plan-readonly",
+          id: "msg-task-plan-research-done",
           stopReason: "end_turn",
           usage: { inputTokens: 1, outputTokens: 1 },
-          content: [{ type: "text", text: "Sources inspected." }]
+          content: [{ type: "text", text: "Sources inspected and notes delivered." }]
         };
       }
     }
@@ -2595,7 +2613,10 @@ test("task-plan child run prompt carries objective metadata and research role ge
     proposals: false,
     notifications: false,
     eventBus: false,
-    requireDeliverable: false
+    // 写工具执行前有 snapshot gate（快照+审计成对注入才走桩）——让 research 真走
+    // 「写 outputs/ 笔记」的默认交付判定。
+    snapshots: new MemorySnapshots(),
+    auditLogs: new MemoryAuditLogs()
   });
 
   const queued = await queue.enqueue({
@@ -2618,13 +2639,12 @@ test("task-plan child run prompt carries objective metadata and research role ge
   assert.equal(visibleToolNames.includes("list_files"), true);
   assert.equal(visibleToolNames.includes("read_file"), true);
   assert.equal(visibleToolNames.includes("load_skill"), true);
-  assert.equal(visibleToolNames.includes("write_file"), false);
-  assert.equal(visibleToolNames.includes("write_base64_file"), false);
-  assert.equal(visibleToolNames.includes("mkdir"), false);
-  assert.equal(visibleToolNames.includes("move_path"), false);
-  assert.equal(visibleToolNames.includes("delete_path"), false);
-  assert.equal(visibleToolNames.includes("run_command"), false);
-  assert.equal(visibleToolNames.includes("zip_path"), false);
+  // B-R9.2-2：sandbox 写工具对 research 放开（产物=outputs/ 笔记）；旧断言钉死只读
+  // 会让「requireDeliverable 默认 true」下的 research 结构性必失败。
+  assert.equal(visibleToolNames.includes("write_file"), true);
+  assert.equal(visibleToolNames.includes("mkdir"), true);
+  const notes = await readFile(path.join(workdir, "outputs", "research-notes.md"), "utf8");
+  assert.match(notes, /Research notes/u);
 });
 
 test("task-plan child run prompt reads L1 private memory alongside existing L2 and L3 context", async () => {
