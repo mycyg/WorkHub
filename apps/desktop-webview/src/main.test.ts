@@ -1011,6 +1011,8 @@ test("M3 Spotlight ESC pops a view's internal detail before leaving the capabili
   assert.equal(selectors[0], SPOTLIGHT_INTERNAL_BACK_SELECTOR);
   assert.match(SPOTLIGHT_INTERNAL_BACK_SELECTOR, /data-wi-back/u);
   assert.match(SPOTLIGHT_INTERNAL_BACK_SELECTOR, /data-back-to-projects/u);
+  // UX-M15：军团 plan 详情的返回层也参与 Esc 逐级回退。
+  assert.match(SPOTLIGHT_INTERNAL_BACK_SELECTOR, /data-back-to-agent-armies/u);
   assert.deepEqual(clicks, ["internal_back"]);
   assert.deepEqual(topBack, []);
 });

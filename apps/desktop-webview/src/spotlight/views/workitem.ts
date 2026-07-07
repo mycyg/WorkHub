@@ -81,7 +81,9 @@ function agentTeamHtml(vm: WorkItemDetailVM, zh: boolean): string {
       ? `<button type="button" class="wh-spot-chip wh-spot-chip--info ds-pressable" data-spot-agent-team-action="${escapeHtml(item.action.kind)}" data-spot-agent-team-action-href="${escapeHtml(safeHref(item.action.href))}">${escapeHtml(item.action.label)}</button>`
       : "";
     const cost = item.cost_estimate_cny ? `<span class="wh-spot-change-path">${escapeHtml(uiFormatCny(item.cost_estimate_cny))}</span>` : "";
-    return `<div class="wh-spot-trace-step" data-spot-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-spot-agent-team-status="${escapeHtml(item.status)}">
+    // UX（规格 §3.1 桌面条款）：行点击 = 盒子内联 morph 到该子 run 轨迹（有 run 才可点）。
+    const rowReplay = item.replay_href ? ` data-spot-agent-team-row-replay="${escapeHtml(safeHref(item.replay_href))}"` : "";
+    return `<div class="wh-spot-trace-step${item.replay_href ? " ds-pressable" : ""}" data-spot-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-spot-agent-team-status="${escapeHtml(item.status)}"${rowReplay}>
       <div class="wh-spot-trace-phase">${escapeHtml(`#${item.seq} ${taskPlanItemRoleLabel(locale, item.role)} · ${agentTeamItemStatusLabel(item.status, zh)}`)}</div>
       <div class="wh-spot-trace-out">${escapeHtml(item.title)}</div>
       <div class="wh-spot-change-head">${cost}${action}</div>
@@ -240,6 +242,16 @@ export function createWorkItemView(): SpotlightCapabilityView {
             ctx.open(actionTarget.view, actionTarget.target);
           } else {
             ctx.toast(zh ? "这个入口暂时打不开" : "This action is not available here", "error");
+          }
+          return;
+        }
+        // UX（§3.1 桌面条款）：军团行点击 morph 到子 run 轨迹。
+        const teamRow = target.closest<HTMLElement>("[data-spot-agent-team-row-replay]");
+        if (teamRow?.dataset.spotAgentTeamRowReplay) {
+          event.preventDefault();
+          const rowTarget = agentTeamActionTarget(teamRow.dataset.spotAgentTeamRowReplay);
+          if (rowTarget) {
+            ctx.open(rowTarget.view, rowTarget.target);
           }
           return;
         }

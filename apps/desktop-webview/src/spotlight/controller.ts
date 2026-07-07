@@ -55,7 +55,8 @@ const SEARCH_ICON =
 const BACK_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
 const DRAG_EXCLUDED_SELECTOR = "input,textarea,button,a,select,[contenteditable=true]";
-export const SPOTLIGHT_INTERNAL_BACK_SELECTOR = "[data-wi-back],[data-prop-back],[data-run-back],[data-back-to-projects]";
+// UX-M15：军团 plan 详情的「← 返回小队列表」也算内部回退层——Esc 先回列表再回 launcher。
+export const SPOTLIGHT_INTERNAL_BACK_SELECTOR = "[data-wi-back],[data-prop-back],[data-run-back],[data-back-to-projects],[data-back-to-agent-armies]";
 
 type SpotlightInternalBackHost = {
   querySelector(selector: string): { click: () => void } | null;
