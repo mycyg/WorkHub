@@ -973,6 +973,8 @@ test("R9.7 approval workbench localizes plan_review attention kind", () => {
   assert.equal(approvals.html.includes("&quot;dispatch&quot;:false"), true);
   assert.equal(approvals.html.includes("plan_review"), false);
   assert.equal(approvals.html.includes("Plan Review"), false);
+  // 规格 §3.3/§3.7：plan_review 卡标题必须带工作项名真实渲出，禁止通用文案覆盖。
+  assert.equal(approvals.html.includes("《短剧选题调研》的分工计划等你过目"), true);
   assertNoMainWindowBoundaryLeak(approvals.html);
 });
 
