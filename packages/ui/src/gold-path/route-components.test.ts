@@ -1350,6 +1350,53 @@ test("R9.7 WorkItem route component avoids dispatch internals and unavailable pa
   assert.equal(en.html.includes('data-r9-agent-team-pause="true"'), false);
 });
 
+// B-R9.6 UX 审计（H1 卡位）：同一卡位按数据形态切换——军团活跃/终态只渲军团面板，
+// 草稿/待审/已取消只渲计划快照面板（含审批黄条），绝不双渲。
+test("B-R9.6 workitem plan slot switches between plan snapshot and army panel by status", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const teamBase = {
+    plan_id: planId,
+    completed_count: 1,
+    total_count: 3,
+    cost_used_cny: "1.250000",
+    runs_capped: false,
+    items: []
+  };
+  const planBase = {
+    plan_id: planId,
+    status: "proposed" as const,
+    items: [],
+    items_capped: false
+  };
+  const proposedVm: WorkItemDetailVM = {
+    ...base,
+    task_plan: planBase,
+    agent_team: { ...teamBase, status: "proposed" }
+  };
+  const proposed = renderWebRouteComponent({ key: "workitem", workitem: proposedVm }, { locale: "zh-CN" });
+  assert.equal(proposed.html.includes('data-r9-task-plan-panel="true"'), true);
+  assert.equal(proposed.html.includes('data-r9-agent-team-panel="true"'), false);
+  assert.equal(proposed.html.includes("军团推进中"), false);
+
+  const dispatchingVm: WorkItemDetailVM = {
+    ...base,
+    task_plan: { ...planBase, status: "dispatching" },
+    agent_team: { ...teamBase, status: "dispatching" }
+  };
+  const dispatching = renderWebRouteComponent({ key: "workitem", workitem: dispatchingVm }, { locale: "zh-CN" });
+  assert.equal(dispatching.html.includes('data-r9-agent-team-panel="true"'), true);
+  assert.equal(dispatching.html.includes('data-r9-task-plan-panel="true"'), false);
+
+  // 部分完成不许喊「已完成」。
+  const partialVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: { ...teamBase, status: "done" }
+  };
+  const partial = renderWebRouteComponent({ key: "workitem", workitem: partialVm }, { locale: "zh-CN" });
+  assert.equal(partial.html.includes("军团部分完成 1/3"), true);
+});
+
 // B-R9.6 §3.1：VM 带 dispatch_control 才渲「暂停派发/恢复派发」按钮；paused 头行
 // 要说「军团已暂停」而不是继续喊推进中。
 test("B-R9.6 WorkItem agent team panel renders the dispatch control from the VM", () => {

@@ -1984,6 +1984,21 @@ function taskPlanDependencyLabel(plan: TaskPlanVM, item: TaskPlanVM["items"][num
     .join(", ");
 }
 
+// B-R9.6 UX 审计（H1 卡位）：同一个卡位按数据形态切换，不双渲。军团已获批/推进/暂停/终态
+// → 军团面板；草稿/待审/已取消（或无军团）→ 计划快照面板（含审批黄条/已取消状态 pill）。
+const AGENT_TEAM_PANEL_STATUSES = new Set(["approved", "dispatching", "paused", "done"]);
+
+function renderWorkItemPlanSlot(
+  vm: WorkItemDetailVM,
+  latestProposal: WorkItemDetailVM["latest_proposal"],
+  locale: WorkHubLocale
+) {
+  if (vm.agent_team && AGENT_TEAM_PANEL_STATUSES.has(vm.agent_team.status)) {
+    return renderAgentTeamPanel(vm.agent_team, locale);
+  }
+  return renderTaskPlanPanel(vm.task_plan, latestProposal, locale);
+}
+
 function renderTaskPlanPanel(
   plan: TaskPlanVM | undefined,
   latestProposal: WorkItemDetailVM["latest_proposal"],
@@ -2036,11 +2051,17 @@ function renderTaskPlanPanel(
 function agentTeamTitle(team: WorkItemAgentTeamVM, locale: WorkHubLocale) {
   const ratio = `${team.completed_count}/${team.total_count}`;
   if (team.status === "done") {
-    return locale === "zh-CN" ? `军团已完成 ${ratio}` : `Team completed ${ratio}`;
+    // 有子任务没成也喊「已完成」是撒谎——差额时明说部分完成。
+    return team.completed_count < team.total_count
+      ? (locale === "zh-CN" ? `军团部分完成 ${ratio}` : `Team partially done ${ratio}`)
+      : (locale === "zh-CN" ? `军团已完成 ${ratio}` : `Team completed ${ratio}`);
   }
   // B-R9.6 §3.1：暂停态要在头行说清楚——否则用户按了暂停，面板还喊「推进中」在撒谎。
   if (team.status === "paused") {
     return locale === "zh-CN" ? `军团已暂停 ${ratio}` : `Team paused ${ratio}`;
+  }
+  if (team.status === "approved") {
+    return locale === "zh-CN" ? `军团待出发 ${ratio}` : `Team ready ${ratio}`;
   }
   return locale === "zh-CN" ? `军团推进中 ${ratio}` : `Team in progress ${ratio}`;
 }
@@ -2228,8 +2249,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
           <div class="wh-r4-route-timeline">${deliverableRows}</div>
         </section>
       </div>
-      ${renderTaskPlanPanel(vm.task_plan, latestProposal, locale)}
-      ${renderAgentTeamPanel(vm.agent_team, locale)}
+      ${renderWorkItemPlanSlot(vm, latestProposal, locale)}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-workitem-acceptance="true">
           <h3>${escapeHtml(uiT(locale, "workitem.acceptanceTitle"))}</h3>

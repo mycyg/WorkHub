@@ -34,10 +34,19 @@ function taskPlanHtml(vm: WorkItemDetailVM, zh: boolean): string {
   </div>`;
 }
 
+// B-R9.6 UX 审计：与 web 同一套状态词表（paused/部分完成/待出发），两端不许各说各话。
 function agentTeamTitle(team: WorkItemAgentTeamVM, zh: boolean) {
   const ratio = `${team.completed_count}/${team.total_count}`;
   if (team.status === "done") {
-    return zh ? `军团已完成 ${ratio}` : `Team completed ${ratio}`;
+    return team.completed_count < team.total_count
+      ? (zh ? `军团部分完成 ${ratio}` : `Team partially done ${ratio}`)
+      : (zh ? `军团已完成 ${ratio}` : `Team completed ${ratio}`);
+  }
+  if (team.status === "paused") {
+    return zh ? `军团已暂停 ${ratio}` : `Team paused ${ratio}`;
+  }
+  if (team.status === "approved") {
+    return zh ? `军团待出发 ${ratio}` : `Team ready ${ratio}`;
   }
   return zh ? `军团推进中 ${ratio}` : `Team in progress ${ratio}`;
 }
@@ -113,8 +122,11 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const proposal = vm.latest_proposal
     ? `<div class="wh-spot-change"><div class="wh-spot-change-head"><span class="wh-spot-chip wh-spot-chip--info">${zh ? "最新改动" : "Latest change"}</span></div><div class="wh-spot-change-sum">${escapeHtml(publicProposalDisplayTitle(vm.latest_proposal.title, zh ? "zh-CN" : "en-US"))}</div></div>`
     : "";
-  const taskPlan = taskPlanHtml(vm, zh);
-  const agentTeam = agentTeamHtml(vm, zh);
+  // B-R9.6 UX 审计（H1 卡位）：同 web——军团活跃/终态渲军团压缩版，否则渲计划快照，不双渲。
+  const teamStatuses = new Set(["approved", "dispatching", "paused", "done"]);
+  const showTeam = Boolean(vm.agent_team && teamStatuses.has(vm.agent_team.status));
+  const taskPlan = showTeam ? "" : taskPlanHtml(vm, zh);
+  const agentTeam = showTeam ? agentTeamHtml(vm, zh) : "";
   return `<div class="wh-spot-dash ds-anim-fade-in">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-wi-back style="align-self:flex-start">${zh ? "← 返回" : "← Back"}</button>
     <div>
