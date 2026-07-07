@@ -137,6 +137,19 @@ function authDeps(runtimeSettings: Settings, rows: UserAuthRow[] = [user()]): Au
   };
 }
 
+// 本地开发机的默认 escalation 仓库指向真实持久化存储，残留 dev 数据会漏进
+// attention 决策队列断言（CI 干净所以看不出来）。attention 测试一律显式注入空升级源。
+function emptyEscalations() {
+  return {
+    async listAttentionPage() {
+      return { items: [], page_info: { limit: 50, returned: 0, has_more: false } };
+    },
+    async listAttentionItems() {
+      return [];
+    }
+  } as never;
+}
+
 function emptyQueue(): AgentRunQueue {
   return {
     async enqueue(): Promise<AgentRunQueueRecord> {
@@ -297,6 +310,7 @@ test("attention home decision queue is fed by the user's pending approvals", asy
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
+    escalations: emptyEscalations(),
     // 决策队列必须接真实的"用户待决策审批"源；这里用 gold-path 审批中心做替身。
     approvals: { async listPendingForUser() { return fixture.approvalCenter; } } as unknown as ApprovalService,
     // 决策队列现在按可读工作项收口（findings）；注入放行所有工作项的 workItems，让 fixture 审批项保持可见。
@@ -363,6 +377,7 @@ test("attention home includes durable memory conflict cards as sync_conflict dec
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
+    escalations: emptyEscalations(),
     approvals: {
       async listPendingForUser() {
         return {
@@ -486,6 +501,7 @@ test("attention home preserves task-plan proposal reviews as plan_review cards",
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
+    escalations: emptyEscalations(),
     approvals: {
       async listPendingForUser() {
         return {
@@ -620,6 +636,12 @@ test("attention home marks the decision queue as partial when the approvals look
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
+    // 本测试断言升级源与审批源都产生 partial 警告：两者都注入抛错桩。
+    // （不能靠默认 escalation 仓库在测试环境里"恰好"报错——本地有真实存储时它会读成功。）
+    escalations: {
+      async listAttentionPage() { throw new Error("escalation store down"); },
+      async listAttentionItems() { throw new Error("escalation store down"); }
+    } as never,
     approvals: { async listPendingForUser() { throw new Error("db down"); } } as unknown as ApprovalService,
     memoryConflicts: { async listAttentionItems() { return []; } },
     proposals: { async listReviewableForUser() { return []; } } as never
