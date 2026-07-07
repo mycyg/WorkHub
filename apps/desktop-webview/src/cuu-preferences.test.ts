@@ -214,8 +214,11 @@ test("Cuu preference panel renders English black and white model-pack copy only"
 test("Cuu preference panel keeps an opaque frosted-white base (transparent Tauri window constraint)", () => {
   assert.doesNotMatch(desktopPetSettingsCss, /background:(?:#fff|#f8fbff|#fff4f3|rgba\(255,255,255,\.(?:[5-9]\d?|\d{2,})\))/u);
   // R9 批次0-3：透明 Tauri 窗里 CSS backdrop-filter 是空操作，磨砂只能来自不透白底——钉死白底不透明度下限。
-  assert.match(desktopCuuPreferenceCss, /\.wh-cuu-preferences\{[^}]*background:rgba\(255,255,255,\.55\)/u);
+  // R9-BLOCK-7.163：面板与浮动按钮统一抬到 .92 实底（同菜单口径），并且不许再挂 backdrop-filter 假玻璃。
+  assert.match(desktopCuuPreferenceCss, /\.wh-cuu-preferences\{[^}]*background:rgba\(255,255,255,\.92\)/u);
   assert.doesNotMatch(desktopCuuPreferenceCss, /\.wh-cuu-preferences\{[^}]*background:transparent/u);
+  assert.match(desktopCuuPreferenceCss, /\.wh-cuu-pref-button\{[^}]*background:rgba\(255,255,255,\.92\)/u);
+  assert.doesNotMatch(desktopCuuPreferenceCss, /\.wh-cuu-pref-button\{[^}]*(?:background:transparent|backdrop-filter)/u);
   assert.match(liquidGlassCss, /\.wh-cuu-preferences\{/u);
   assert.doesNotMatch(liquidGlassCss, /\.wh-cuu-preferences-panel/u);
 });
