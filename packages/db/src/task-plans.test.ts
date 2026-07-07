@@ -1006,6 +1006,7 @@ test("B-R9.6 task plan repository batches army progress reads without per-plan f
   assert.ok(!queryParamValues(countQuery?.where).includes(planId));
 
   // 最新计划优先；total=0 的计划不产出 pill（诚实：没有子任务就没有进度可言）。
+  // done 口径=仅 succeeded（与工作项面板/指挥台同口径，skipped 不算完成）。
   assert.deepEqual(progress.get(workItemId), { planId: newerPlanId, doneItems: 2, totalItems: 4 });
   assert.equal(progress.has(secondWorkItemId), false);
 

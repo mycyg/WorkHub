@@ -791,7 +791,9 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         .select({
           planId: taskPlanItems.planId,
           totalItems: sql<number>`count(*)::int`,
-          doneItems: sql<number>`count(*) filter (where ${taskPlanItems.status} in ('succeeded', 'skipped'))::int`
+          // UX 审计（跨页口径）：done 只数 succeeded——与工作项军团面板/指挥台同口径；
+          // skipped 计入会让项目主页 pill 比面板「先完成」。
+          doneItems: sql<number>`count(*) filter (where ${taskPlanItems.status} = 'succeeded')::int`
         })
         .from(taskPlanItems)
         .where(inArray(taskPlanItems.planId, planIds))

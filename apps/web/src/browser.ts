@@ -1251,6 +1251,15 @@ function bindGoldPathNavigation(
             : (locale === "en-US" ? "Pause dispatch" : "暂停派发");
           const panel = actionTarget.closest<HTMLElement>("[data-r9-agent-team-panel]");
           panel?.setAttribute("data-r9-agent-team-status", result.status);
+          // UX 审计（M3）：按钮翻了、标题还喊「推进中」在撒谎——头行随状态一起改写。
+          const heading = panel?.querySelector<HTMLElement>("h3");
+          if (heading) {
+            const ratioMatch = /(\d+\/\d+)/u.exec(heading.textContent ?? "");
+            const ratio = ratioMatch?.[1] ?? "";
+            heading.textContent = result.status === "paused"
+              ? (locale === "en-US" ? `Team paused ${ratio}` : `军团已暂停 ${ratio}`).trim()
+              : (locale === "en-US" ? `Team in progress ${ratio}` : `军团推进中 ${ratio}`).trim();
+          }
           const body = planDispatchAction.action === "pause"
             ? (locale === "en-US" ? "Dispatch paused — running subtasks will finish, no new ones start." : "已暂停派发——在跑的子任务会跑完，不再派新的。")
             : (locale === "en-US" ? "Dispatch resumed — ready subtasks are being sent out." : "已恢复派发——就绪的子任务正在派出。");
