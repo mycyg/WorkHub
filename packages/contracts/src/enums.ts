@@ -24,7 +24,10 @@ export const allowedWorkItemTransitions = {
   intake: ["ai_clarifying", "cancelled"],
   ai_clarifying: ["spec_ready", "cancelled"],
   spec_ready: ["ai_working", "pm_mode", "cancelled"],
-  ai_working: ["in_review", "escalated", "cancelled"],
+  // B-R9.0-4：ai_working→pm_mode = 人从跑着的军团手里接管（升级卡「转成我来做」）。
+  // 军团升级是切片级的（其他子任务可能还在健康跑），工单不整体置 escalated，
+  // 所以接管必须能从 ai_working 直达 pm_mode。
+  ai_working: ["in_review", "escalated", "pm_mode", "cancelled"],
   escalated: ["ai_working", "pm_mode", "cancelled"],
   pm_mode: ["in_review", "cancelled"],
   in_review: ["merged", "ai_working", "pm_mode", "cancelled"],

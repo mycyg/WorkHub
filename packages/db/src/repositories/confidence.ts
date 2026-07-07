@@ -511,7 +511,43 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
                 ))
                 .returning({ id: taskPlanItems.id });
               requireResolutionRows(skippedItems, taskTarget.itemIds.length);
-            } else {
+            }
+            // B-R9.0-4（branch-review 状态语义）：pm_mode 与 cancel 原先在 DB 层完全一样，
+            // 「转成我来做」永不生效。现在分化：
+            // - pm_mode = 人接管整个工单：军团计划停止派发（容忍计划已到终态）+ 工单真迁移到 pm_mode。
+            // - cancel  = 切片级只跳过目标子任务（计划继续，工单不动）；计划级取消计划 + 工单迁移到 cancelled。
+            if (input.taskPlanAction === "pm_mode") {
+              await tx
+                .update(taskPlans)
+                .set({
+                  status: "cancelled",
+                  updatedAt: input.at
+                })
+                .where(and(
+                  eq(taskPlans.id, taskTarget.planId),
+                  eq(taskPlans.workItemId, updatedEscalation.workItemId),
+                  eq(taskPlans.workspaceId, input.workspaceId),
+                  inArray(taskPlans.status, ["approved", "dispatching"])
+                ))
+                .returning({ id: taskPlans.id });
+              const takenOver = await tx
+                .update(workItems)
+                .set({
+                  status: "pm_mode",
+                  version: sql`${workItems.version} + 1`,
+                  updatedAt: input.at
+                })
+                .where(and(
+                  eq(workItems.id, updatedEscalation.workItemId),
+                  eq(workItems.workspaceId, input.workspaceId),
+                  inArray(workItems.status, predecessorsForStatus("pm_mode")),
+                  isNull(workItems.deletedAt)
+                ))
+                .returning({ id: workItems.id });
+              if (!takenOver[0]) {
+                throw new Error("escalation_status_transition_conflict");
+              }
+            } else if (taskTarget.itemIds.length === 0) {
               const cancelledPlans = await tx
                 .update(taskPlans)
                 .set({
@@ -526,6 +562,23 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
                 ))
                 .returning({ id: taskPlans.id });
               requireResolutionRows(cancelledPlans, 1);
+              const cancelledWorkItems = await tx
+                .update(workItems)
+                .set({
+                  status: "cancelled",
+                  version: sql`${workItems.version} + 1`,
+                  updatedAt: input.at
+                })
+                .where(and(
+                  eq(workItems.id, updatedEscalation.workItemId),
+                  eq(workItems.workspaceId, input.workspaceId),
+                  inArray(workItems.status, predecessorsForStatus("cancelled")),
+                  isNull(workItems.deletedAt)
+                ))
+                .returning({ id: workItems.id });
+              if (!cancelledWorkItems[0]) {
+                throw new Error("escalation_status_transition_conflict");
+              }
             }
           }
         }

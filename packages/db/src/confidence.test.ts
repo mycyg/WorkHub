@@ -719,3 +719,107 @@ test("R9.7 resolving a child cancel cancels the active child run and skips child
   // work_items row too, but child escalation actions must stay task-scoped.
   assert.equal(queries.some((query) => query.targetTable === workItems), false);
 });
+
+test("B-R9.0 resolving pm_mode halts the plan and moves the work item into pm_mode", async () => {
+  // branch-review 状态语义：pm_mode 与 cancel 原先 DB 层完全一样，「转成我来做」永不生效。
+  const updatedEscalation = {
+    id: escalationId,
+    workItemId,
+    agentRunId,
+    handoffJson: {
+      task_plan_id: taskPlanId,
+      task_plan_item_id: taskPlanItemId
+    }
+  };
+  const { db, queries } = createQueryRecorder([
+    [updatedEscalation],
+    [],
+    [{ id: taskPlanItemId }],
+    [],
+    [{ id: workItemId }],
+    []
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  await repository.resolveEscalation({
+    escalationId,
+    targetStatus: "pm_mode",
+    workspaceId,
+    taskPlanAction: "pm_mode",
+    at: now
+  });
+
+  const planUpdate = queries.find((query) => query.targetTable === taskPlans);
+  assert.ok(planUpdate, "pm_mode must stop the army plan from dispatching");
+  assert.deepEqual(planUpdate.setValue, { status: "cancelled", updatedAt: now });
+  assert.ok(queryReferences(planUpdate.where, taskPlans.id));
+  assert.ok(queryReferences(planUpdate.where, taskPlans.status));
+  assert.ok(queryParamValues(planUpdate.where).includes(taskPlanId));
+
+  const workItemUpdate = queries.find((query) => query.targetTable === workItems);
+  assert.ok(workItemUpdate, "pm_mode must actually move the work item");
+  assert.equal((workItemUpdate.setValue as { status?: string } | undefined)?.status, "pm_mode");
+  assert.ok(queryReferences(workItemUpdate.where, workItems.id));
+  assert.ok(queryReferences(workItemUpdate.where, workItems.status));
+  assert.ok(queryReferences(workItemUpdate.where, workItems.deletedAt));
+  assert.ok(queryParamValues(workItemUpdate.where).includes(workItemId));
+  // 人从跑着的军团手里接管：ai_working 必须是合法前驱。
+  assert.ok(queryParamValues(workItemUpdate.where).includes("ai_working"));
+});
+
+test("B-R9.0 pm_mode surfaces a conflict when the work item cannot transition", async () => {
+  const updatedEscalation = {
+    id: escalationId,
+    workItemId,
+    handoffJson: { task_plan_id: taskPlanId }
+  };
+  const { db, transactions } = createQueryRecorder([
+    [updatedEscalation],
+    [],
+    []
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  await assert.rejects(
+    repository.resolveEscalation({
+      escalationId,
+      targetStatus: "pm_mode",
+      workspaceId,
+      taskPlanAction: "pm_mode",
+      at: now
+    }),
+    /escalation_status_transition_conflict/
+  );
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "Error" }]);
+});
+
+test("B-R9.0 plan-scope cancel cancels both the plan and the work item", async () => {
+  const updatedEscalation = {
+    id: escalationId,
+    workItemId,
+    handoffJson: { task_plan_id: taskPlanId }
+  };
+  const { db, queries } = createQueryRecorder([
+    [updatedEscalation],
+    [{ id: taskPlanId }],
+    [{ id: workItemId }],
+    []
+  ]);
+  const repository = createAiDecisionRepository(db);
+
+  await repository.resolveEscalation({
+    escalationId,
+    targetStatus: "cancelled",
+    workspaceId,
+    taskPlanAction: "cancel",
+    at: now
+  });
+
+  const planUpdate = queries.find((query) => query.targetTable === taskPlans);
+  assert.ok(planUpdate);
+  assert.deepEqual(planUpdate.setValue, { status: "cancelled", updatedAt: now });
+  const workItemUpdate = queries.find((query) => query.targetTable === workItems);
+  assert.ok(workItemUpdate, "plan-scope cancel must cancel the work item too");
+  assert.equal((workItemUpdate.setValue as { status?: string } | undefined)?.status, "cancelled");
+  assert.ok(queryParamValues(workItemUpdate.where).includes(workItemId));
+});
