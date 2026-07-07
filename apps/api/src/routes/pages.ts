@@ -24,7 +24,7 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
-import { createTaskPlanRepository, createTeamSkillRepository, getSharedDatabaseClient, type TeamSkillRepository } from "@workhub/db";
+import { createObjectiveRepository, createTaskPlanRepository, createTeamSkillRepository, getSharedDatabaseClient, type ObjectiveRepository, type TeamSkillRepository } from "@workhub/db";
 
 import { isUuidParam } from "./uuid-param.js";
 
@@ -107,6 +107,7 @@ export type PageRoutesDependencies = {
   aiWorklog?: AiWorklogMetricsService;
   teamSkills?: Pick<TeamSkillRepository, "listActive">;
   taskPlans?: Pick<ReturnType<typeof createTaskPlanRepository>, "listDashboardPlans" | "listPlanMetaByIds">;
+  objectives?: Pick<ObjectiveRepository, "listObjectiveTitlesByIds">;
   agentArmyDashboard?: {
     page: (input: {
       actor: AuthEnv["Variables"]["actor"];
@@ -286,6 +287,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const aiWorklog = deps.aiWorklog ?? getDefaultAiWorklogMetricsService();
   const teamSkills = deps.teamSkills ?? createTeamSkillRepository(getSharedDatabaseClient().db);
   const taskPlans = deps.taskPlans ?? createTaskPlanRepository(getSharedDatabaseClient().db);
+  const objectives = deps.objectives ?? createObjectiveRepository(getSharedDatabaseClient().db);
 
   type DashboardSourceWarning = NonNullable<AgentArmyDashboardVM["source_warnings"]>[number];
   type DashboardSourceWarnings = DashboardSourceWarning[];
@@ -811,6 +813,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
           : []);
     // B-R9.6 UX-H4：军团行元数据（名称/状态/预算）。展示增强——取数失败降级为无名行，不拖垮成本页。
     let taskPlanMeta: Map<string, { label: string; status: string; maxCostCny?: number }> | undefined;
+    let objectiveTitles: Map<string, string> | undefined;
     if (c.var.currentUser.isAdmin && c.var.actor.workspaceId) {
       const planIds = [...new Set(ledgerEntries
         .map((entry) => entry.taskPlanId ?? (entry.scope.kind === "task" ? entry.scope.taskPlanId : undefined))
@@ -820,6 +823,17 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
           taskPlanMeta = await taskPlans.listPlanMetaByIds({ workspaceId: c.var.actor.workspaceId, planIds });
         } catch {
           taskPlanMeta = undefined;
+        }
+      }
+      // UX-M10：目标标题（按目标维度不渲裸 UUID）；同样降级安全。
+      const objectiveIds = [...new Set(ledgerEntries
+        .map((entry) => entry.objectiveId ?? (entry.scope.kind === "objective" ? entry.scope.objectiveId : undefined))
+        .filter((value): value is string => Boolean(value)))];
+      if (objectiveIds.length > 0) {
+        try {
+          objectiveTitles = await objectives.listObjectiveTitlesByIds({ workspaceId: c.var.actor.workspaceId, objectiveIds });
+        } catch {
+          objectiveTitles = undefined;
         }
       }
     }
@@ -832,7 +846,8 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       budgetUsages: decision.usages,
       budgetNotices: decision.notice ? [decision.notice] : [],
       ledgerEntries,
-      ...(taskPlanMeta ? { taskPlanMeta } : {})
+      ...(taskPlanMeta ? { taskPlanMeta } : {}),
+      ...(objectiveTitles ? { objectiveTitles } : {})
     });
     return c.json(pageEnvelope(data, locale));
   });

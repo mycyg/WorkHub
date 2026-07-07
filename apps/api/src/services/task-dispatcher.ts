@@ -11,7 +11,9 @@ import {
   type TaskPlanItemRow,
   type TaskPlanRow,
   type TaskPlanWithItems,
-  type WorkItemDataRepository
+  type WorkItemDataRepository,
+  createUserRepository,
+  type UserRepository
 } from "@workhub/db";
 
 import { getDefaultStructuredLogger } from "../logging.js";
@@ -681,6 +683,8 @@ export function createDbTaskDispatchEscalationSink(
     // 通知是触达手段、决策收件箱才是承重记录：通知写失败只告警，不翻升级事务。
     notifications?: Pick<NotificationService, "createNotification"> | false;
     workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> | false;
+    // UX-L（双语）：按收件人 preferredLocale 出通知标题，别让 en 用户单边读中文。可选，缺省 zh。
+    users?: Pick<UserRepository, "findActiveById"> | false;
   } = {}
 ): TaskDispatchEscalationSink {
   return async (input) => {
@@ -734,11 +738,19 @@ export function createDbTaskDispatchEscalationSink(
       );
       const dedupeBase = event?.id ?? `${input.plan.id}:${input.at.toISOString()}`;
       for (const userId of recipients) {
+        let en = false;
+        if (reach.users) {
+          try {
+            en = (await reach.users.findActiveById(userId))?.preferredLocale === "en-US";
+          } catch {
+            en = false;
+          }
+        }
         await reach.notifications.createNotification({
           userId,
           type: "workitem.escalated",
           severity: "high",
-          title: "军团任务需要你来定一下",
+          title: en ? "Your agent team needs a decision" : "军团任务需要你来定一下",
           body: reasonMd,
           targetUrl: `/workitems/${input.plan.workItemId}`,
           workItemId: input.plan.workItemId,
@@ -793,7 +805,8 @@ export function getDefaultTaskDispatcher(queue: Pick<AgentRunQueue, "enqueue">) 
       queue,
       escalationSink: createDbTaskDispatchEscalationSink(createAiDecisionRepository(dbClient.db), {
         notifications: createNotificationService(getDefaultNotificationServiceDependencies()),
-        workItems: createWorkItemRepository(dbClient.db)
+        workItems: createWorkItemRepository(dbClient.db),
+        users: createUserRepository(dbClient.db)
       }),
       completionSink: createDbTaskDispatchCompletionSink(createAuditLogRepository(dbClient.db)),
       arbitrationSink: createTaskDispatchArbitrationSink({

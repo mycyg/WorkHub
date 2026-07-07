@@ -108,24 +108,33 @@ export function createTaskPlanRoutes(deps: TaskPlanRoutesDependencies = {}) {
   }
 
   routes.post("/task-plans/:planId/pause", createCurrentUserMiddleware(authSource), async (c) => {
+    // UX-L（双语）：错误文案随 locale——web toast 原样透出 message，en 用户不该读中文。
+    const zh = normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language")) === "zh-CN";
     const { planId, workspaceId } = await requireMutablePlan(c);
     const paused = await plans().pausePlan({ planId, workspaceId });
     if (!paused) {
       return c.json({
         ok: false,
-        error: { code: "task_plan_pause_conflict", message: "这个军团当前不在派发中，无法暂停。刷新看看最新状态。" }
+        error: {
+          code: "task_plan_pause_conflict",
+          message: zh ? "这个军团当前不在派发中，无法暂停。刷新看看最新状态。" : "This team is not dispatching right now, so it cannot be paused. Refresh to see the latest state."
+        }
       }, 409);
     }
     return c.json({ ok: true, data: { plan_id: planId, status: paused.status } });
   });
 
   routes.post("/task-plans/:planId/resume", createCurrentUserMiddleware(authSource), async (c) => {
+    const zh = normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language")) === "zh-CN";
     const { planId, workspaceId } = await requireMutablePlan(c);
     const resumed = await plans().resumePlan({ planId, workspaceId });
     if (!resumed) {
       return c.json({
         ok: false,
-        error: { code: "task_plan_resume_conflict", message: "这个军团不在暂停状态，无法恢复。刷新看看最新状态。" }
+        error: {
+          code: "task_plan_resume_conflict",
+          message: zh ? "这个军团不在暂停状态，无法恢复。刷新看看最新状态。" : "This team is not paused, so it cannot be resumed. Refresh to see the latest state."
+        }
       }, 409);
     }
     // 恢复后立即踢一次派发让就绪子任务续跑；踢失败回滚到 paused 并 503，
@@ -138,7 +147,10 @@ export function createTaskPlanRoutes(deps: TaskPlanRoutesDependencies = {}) {
         await plans().pausePlan({ planId, workspaceId });
         return c.json({
           ok: false,
-          error: { code: "task_plan_resume_dispatch_failed", message: "恢复失败，请稍后再点一次。" }
+          error: {
+            code: "task_plan_resume_dispatch_failed",
+            message: zh ? "恢复失败，请稍后再点一次。" : "Resume failed — please try again in a moment."
+          }
         }, 503);
       }
     }

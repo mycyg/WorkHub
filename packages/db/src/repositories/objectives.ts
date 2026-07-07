@@ -88,6 +88,8 @@ export type ObjectiveRepository = {
     progressUpdatedAt?: Date;
   }) => Promise<ObjectiveRow | null>;
   // B-R9.5-1：夜间聚合刷新进度的输入面——按工作区列活跃 objective。
+  // UX-M10：成本页按目标维度的标题源。
+  listObjectiveTitlesByIds: (input: { workspaceId: string; objectiveIds: string[] }) => Promise<Map<string, string>>;
   listActiveObjectiveIdsForWorkspace: (input: { workspaceId: string; limit?: number }) => Promise<string[]>;
 };
 
@@ -326,6 +328,27 @@ export function createObjectiveRepository(db: WorkHubDb): ObjectiveRepository {
         ))
         .returning();
       return updated ?? null;
+    },
+
+    // UX-M10（成本页按目标维度）：批量取目标标题——成本账目里只有 objective id，
+    // 渲染层不许拿裸 UUID 当名称。workspace 钉死。
+    async listObjectiveTitlesByIds(input: { workspaceId: string; objectiveIds: string[] }): Promise<Map<string, string>> {
+      const ids = [...new Set(input.objectiveIds)].slice(0, 50);
+      const titles = new Map<string, string>();
+      if (ids.length === 0) {
+        return titles;
+      }
+      const rows = await db
+        .select({ id: objectives.id, title: objectives.title })
+        .from(objectives)
+        .where(and(
+          eq(objectives.workspaceId, input.workspaceId),
+          inArray(objectives.id, ids)
+        ));
+      for (const row of rows) {
+        titles.set(row.id, row.title);
+      }
+      return titles;
     },
 
     async listActiveObjectiveIdsForWorkspace(input) {

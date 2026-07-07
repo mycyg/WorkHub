@@ -2362,11 +2362,12 @@ function proposalActions(vm: ProposalDetailVM) {
 
 // R9.1 workbench-read：计划提议的行级子任务视图（序号/角色徽章/标题/验收/预算份额/依赖）。
 // 数据源=manifest machine_summary.task_plan_items（7.154 打通的结构化清单），markdown 只是摘要。
+// UX-L（integrate 泄英文）：自造三角色表漏了 integrate，中文界面渲「Integrate」。
+// 改走 canonical i18n 角色表（四角色齐），未知值才回退 humanizeToken。
 function taskPlanItemRoleBadge(role: string, locale: WorkHubLocale): string {
-  const zh = locale === "zh-CN";
-  if (role === "research") return zh ? "调研" : "Research";
-  if (role === "produce") return zh ? "产出" : "Produce";
-  if (role === "review") return zh ? "复核" : "Review";
+  if (role === "research" || role === "produce" || role === "review" || role === "integrate") {
+    return taskPlanItemRoleLabel(locale, role);
+  }
   return humanizeToken(role);
 }
 
@@ -3737,6 +3738,32 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           <div class="wh-r4-route-actions"><a class="wh-btn" href="/dashboard/agents" data-r9-cost-army-cta="true">${escapeHtml(zhNotice ? "去指挥台看军团" : "Open the command deck")}</a></div>
         </section>`
     : "";
+  // UX-M10（规格 §3.5 三维分组）：按人 / 按军团计划 / 按目标三个维度都要在成本页可达。
+  // 静态渲染架构下做成并排卡（有数据才渲），不做假 tab。
+  const byUserRows = vm.by_user.slice(0, 8)
+    .map((item) => `<div class="wh-r4-route-row" data-r9-cost-user="${escapeHtml(item.user_id)}">
+      <div><strong>${escapeHtml(item.label)}</strong></div>
+      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
+    </div>`)
+    .join("");
+  const byUserCard = vm.by_user.length
+    ? `<section class="wh-card wh-r4-route-card" data-r9-cost-by-user="true">
+          <h3>${escapeHtml(zhNotice ? "按人花费" : "Spend by person")}</h3>
+          <div class="wh-r4-route-timeline">${byUserRows}</div>
+        </section>`
+    : "";
+  const byObjectiveRows = vm.by_objective.slice(0, 8)
+    .map((item) => `<div class="wh-r4-route-row" data-r9-cost-objective="${escapeHtml(item.objective_id)}">
+      <div><strong>${escapeHtml(item.label ?? (zhNotice ? `目标 ${item.objective_id.slice(0, 8)}` : `Objective ${item.objective_id.slice(0, 8)}`))}</strong></div>
+      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
+    </div>`)
+    .join("");
+  const byObjectiveCard = vm.by_objective.length
+    ? `<section class="wh-card wh-r4-route-card" data-r9-cost-by-objective="true">
+          <h3>${escapeHtml(zhNotice ? "目标花费" : "Spend by objective")}</h3>
+          <div class="wh-r4-route-timeline">${byObjectiveRows}</div>
+        </section>`
+    : "";
   // K5：「干活 vs 自进化」分账卡——把夜间技能自迭代的开销显性化（复利劳动力的自我打磨成本）。
   const laborSplitCard = vm.labor_split
     ? `<section class="wh-card wh-r4-route-card" data-r4-cost-labor-split="true" data-r4-cost-self-improvement-ratio="${escapeHtml(String(vm.labor_split.self_improvement_ratio))}">
@@ -3818,6 +3845,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         </section>
       </div>
       ${armyCard || laborSplitCard ? `<div class="wh-r4-route-grid">${armyCard}${laborSplitCard}</div>` : ""}
+      ${byUserCard || byObjectiveCard ? `<div class="wh-r4-route-grid">${byUserCard}${byObjectiveCard}</div>` : ""}
     </section>`
   });
 }
