@@ -668,6 +668,64 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         ))
         .returning();
       return row ?? null;
+    },
+
+    // B-R9.6 §3.4（项目主页军团 pill）：按工作项批量取「活跃计划的子任务进度」。
+    // 每个工作项只取最新一份活跃计划（与指挥台同一批 DASHBOARD_PLAN_STATUSES 口径），
+    // 子任务计数走一次 group by，不逐计划 N+1。
+    async listArmyProgressByWorkItemIds(input: {
+      workspaceId: string;
+      workItemIds: string[];
+    }): Promise<Map<string, { planId: string; doneItems: number; totalItems: number }>> {
+      const workItemIds = [...new Set(input.workItemIds)].slice(0, MAX_DASHBOARD_PLAN_LIMIT);
+      const progress = new Map<string, { planId: string; doneItems: number; totalItems: number }>();
+      if (workItemIds.length === 0) {
+        return progress;
+      }
+      const planRows = await db
+        .select({
+          id: taskPlans.id,
+          workItemId: taskPlans.workItemId
+        })
+        .from(taskPlans)
+        .where(and(
+          eq(taskPlans.workspaceId, input.workspaceId),
+          inArray(taskPlans.workItemId, workItemIds),
+          inArray(taskPlans.status, DASHBOARD_PLAN_STATUSES)
+        ))
+        .orderBy(desc(taskPlans.updatedAt), desc(taskPlans.createdAt), desc(taskPlans.id));
+      const planForWorkItem = new Map<string, string>();
+      for (const row of planRows) {
+        if (!planForWorkItem.has(row.workItemId)) {
+          planForWorkItem.set(row.workItemId, row.id);
+        }
+      }
+      const planIds = [...planForWorkItem.values()];
+      if (planIds.length === 0) {
+        return progress;
+      }
+      const countRows = await db
+        .select({
+          planId: taskPlanItems.planId,
+          totalItems: sql<number>`count(*)::int`,
+          doneItems: sql<number>`count(*) filter (where ${taskPlanItems.status} in ('succeeded', 'skipped'))::int`
+        })
+        .from(taskPlanItems)
+        .where(inArray(taskPlanItems.planId, planIds))
+        .groupBy(taskPlanItems.planId);
+      const countsByPlan = new Map(countRows.map((row) => [row.planId, row]));
+      for (const [workItemId, planId] of planForWorkItem) {
+        const counts = countsByPlan.get(planId);
+        if (!counts || counts.totalItems === 0) {
+          continue;
+        }
+        progress.set(workItemId, {
+          planId,
+          doneItems: counts.doneItems,
+          totalItems: counts.totalItems
+        });
+      }
+      return progress;
     }
   };
 }

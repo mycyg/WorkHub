@@ -1732,6 +1732,52 @@ test("R9.7 web task entry and project empty states avoid dispatch wording", () =
   assert.doesNotMatch(html, /派活|派发/u);
 });
 
+// B-R9.6 §3.4：项目主页「进行中的工作」行尾军团 pill——带 army 的行渲「军团 done/total」，
+// 不带的行不渲；不加新小节。
+test("B-R9.6 project home rows show the army progress pill only for armied work items", () => {
+  const vm = {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    project: {
+      id: "93000000-0000-4000-8000-000000000001",
+      name: "R5 Workspace",
+      slug: "r5-workspace",
+      description: null,
+      owner_label: "owner",
+      status: "active" as const
+    },
+    summary: { open_work_item_count: 2, total_open_work_item_count: 2 },
+    open_work_items: [
+      {
+        id: "94000000-0000-4000-8000-000000000001",
+        code: "ALP-1",
+        title: "上市材料准备",
+        status: "ai_working",
+        priority: "normal",
+        href: "/workitems/94000000-0000-4000-8000-000000000001",
+        army: { done: 2, total: 4 }
+      },
+      {
+        id: "94000000-0000-4000-8000-000000000002",
+        code: "ALP-2",
+        title: "普通小活",
+        status: "ai_working",
+        priority: "normal",
+        href: "/workitems/94000000-0000-4000-8000-000000000002"
+      }
+    ],
+    drive: { file_count: 0, recent_files: [] },
+    actions: {
+      new_task: { id: "new_task", label: "新任务", method: "GET" as const, href: "/intake" },
+      open_drive: { id: "open_drive", label: "打开网盘", method: "GET" as const, href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
+    }
+  };
+  const projectHome = renderWebRouteComponent({ key: "project-home", project: vm }, { locale: "zh-CN" });
+  assert.equal(projectHome.html.includes('data-r9-project-army-pill="94000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(projectHome.html.includes("军团 2/4"), true);
+  assert.equal(projectHome.html.includes('data-r9-project-army-pill="94000000-0000-4000-8000-000000000002"'), false);
+  assertNoMainWindowBoundaryLeak(projectHome.html);
+});
+
 test("R4.14 Intake confirm component exposes create work item action with selected option payload", () => {
   const vm = {
     ...surfaceVm(),

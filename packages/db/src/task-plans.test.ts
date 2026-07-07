@@ -967,3 +967,51 @@ test("R9.6 task plan repository reads dashboard plans with capped batched joins"
   assert.deepEqual(result.runs.map((run) => run.id), [firstRunId]);
   assert.deepEqual(result.escalations.map((escalation) => escalation.id), [escalationId, runlessEscalationId]);
 });
+
+// B-R9.6 §3.4：项目主页军团 pill 的取数——两条查询（计划批量 + 子任务 group by），
+// 不逐计划 N+1；每个工作项只取最新活跃计划；两条都钉死 workspace/plan 作用域。
+test("B-R9.6 task plan repository batches army progress reads without per-plan fan-out", async () => {
+  const secondWorkItemId = "44444444-4444-4444-8444-4444444444f2";
+  const newerPlanId = "55555555-5555-4555-8555-5555555555f1";
+  const { db, queries } = createQueryRecorder([
+    [
+      { id: newerPlanId, workItemId },
+      { id: planId, workItemId },
+      { id: "55555555-5555-4555-8555-5555555555f2", workItemId: secondWorkItemId }
+    ],
+    [
+      { planId: newerPlanId, totalItems: 4, doneItems: 2 },
+      { planId: "55555555-5555-4555-8555-5555555555f2", totalItems: 0, doneItems: 0 }
+    ]
+  ]);
+  const repository = createTaskPlanRepository(db);
+
+  const progress = await repository.listArmyProgressByWorkItemIds({
+    workspaceId,
+    workItemIds: [workItemId, secondWorkItemId, workItemId]
+  });
+
+  assert.equal(queries.length, 2);
+  const [planQuery, countQuery] = queries;
+  assert.equal(planQuery?.fromTable, taskPlans);
+  assert.ok(queryReferences(planQuery?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(planQuery?.where, taskPlans.workItemId));
+  assert.ok(queryReferences(planQuery?.where, taskPlans.status));
+  assert.ok(queryParamValues(planQuery?.where).includes(workspaceId));
+
+  assert.equal(countQuery?.fromTable, taskPlanItems);
+  assert.ok(queryReferences(countQuery?.where, taskPlanItems.planId));
+  // 只对每个工作项的最新计划取计数（排序后首个），不把旧计划一并扫进来。
+  assert.ok(queryParamValues(countQuery?.where).includes(newerPlanId));
+  assert.ok(!queryParamValues(countQuery?.where).includes(planId));
+
+  // 最新计划优先；total=0 的计划不产出 pill（诚实：没有子任务就没有进度可言）。
+  assert.deepEqual(progress.get(workItemId), { planId: newerPlanId, doneItems: 2, totalItems: 4 });
+  assert.equal(progress.has(secondWorkItemId), false);
+
+  // 空入参零查询。
+  const before = queries.length;
+  const empty = await repository.listArmyProgressByWorkItemIds({ workspaceId, workItemIds: [] });
+  assert.equal(empty.size, 0);
+  assert.equal(queries.length, before);
+});

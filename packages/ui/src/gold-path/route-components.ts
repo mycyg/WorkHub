@@ -3503,6 +3503,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
           <span class="wh-pill">${escapeHtml(item.code)}</span>
           <span class="wh-pill" data-tone="${escapeHtml(item.status)}">${escapeHtml(workItemStatusLabel(locale, item.status))}</span>
           <span class="wh-pill">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span>
+          ${item.army ? `<span class="wh-pill" data-r9-project-army-pill="${escapeHtml(item.id)}">${escapeHtml(zh ? `军团 ${item.army.done}/${item.army.total}` : `Army ${item.army.done}/${item.army.total}`)}</span>` : ""}
         </div>
       </div>
     </a>`).join("")

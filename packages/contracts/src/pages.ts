@@ -550,7 +550,13 @@ export const projectHomeWorkItemVmSchema = z.object({
   title: z.string().min(1),
   status: z.string().min(1),
   priority: z.string().min(1),
-  href: z.string().min(1)
+  href: z.string().min(1),
+  // B-R9.6 §3.4：军团工作项行尾 pill「军团 2/4」。仅当该工作项挂着活跃任务计划时出现；
+  // 点击行为不变（进工作项详情），不加新小节。
+  army: z.object({
+    done: z.number().int().nonnegative(),
+    total: z.number().int().positive()
+  }).optional()
 });
 export type ProjectHomeWorkItemVM = z.infer<typeof projectHomeWorkItemVmSchema>;
 
