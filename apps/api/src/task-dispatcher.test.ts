@@ -367,7 +367,7 @@ test("R9.2 dispatcher run-settled callback advances succeeded items and unlocks 
 });
 
 test("R9.2 dispatcher skips dependency-failed pending items and escalates the plan", async () => {
-  const escalations: string[] = [];
+  const escalations: Array<{ reason: string; failedItemIds?: string[]; skippedItemIds: string[] }> = [];
   const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
     item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "dispatched" }),
     item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", dependsOn: [researchItemId] }),
@@ -378,7 +378,13 @@ test("R9.2 dispatcher skips dependency-failed pending items and escalates the pl
     repository,
     queue,
     now: () => now,
-    escalationSink: async (input) => { escalations.push(input.reason); }
+    escalationSink: async (input) => {
+      escalations.push({
+        reason: input.reason,
+        ...(input.failedItemIds ? { failedItemIds: input.failedItemIds } : {}),
+        skippedItemIds: input.skippedItemIds
+      });
+    }
   });
 
   const result = await dispatcher.handleRunSettled(run({
@@ -392,7 +398,39 @@ test("R9.2 dispatcher skips dependency-failed pending items and escalates the pl
   assert.equal(repository.items.find((candidate) => candidate.id === produceItemId)?.status, "skipped");
   assert.equal(repository.items.find((candidate) => candidate.id === reviewItemId)?.status, "skipped");
   assert.deepEqual(queue.inputs, []);
-  assert.deepEqual(escalations, ["dependency_failed"]);
+  // B-R9.0-3（branch-review 死循环）：升级卡必须带上失败的上游项，否则「让它重试」
+  // 只重置被阻塞项、失败依赖原样不动，下一次派发立刻再跳过再升级。
+  assert.deepEqual(escalations, [{
+    reason: "dependency_failed",
+    failedItemIds: [researchItemId],
+    skippedItemIds: [produceItemId, reviewItemId]
+  }]);
+});
+
+test("B-R9.0 dependency-failed retry re-dispatches after the failed upstream is reset", async () => {
+  // 走完整闭环：失败→升级（带 failed+skipped ids）→模拟人点「让它重试」把这批 id 重置回
+  // pending（repo 层 resolveEscalation 的行为）→再次 dispatch 必须真把失败上游重新入队。
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "failed" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "skipped", dependsOn: [researchItemId] })
+  ]);
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    escalationSink: async () => {}
+  });
+
+  for (const candidate of repository.items) {
+    candidate.status = "pending";
+  }
+
+  const result = await dispatcher.dispatch({ planId, workspaceId, actorId });
+
+  assert.deepEqual(result.enqueuedItemIds, [researchItemId]);
+  assert.deepEqual(result.skippedItemIds, []);
+  assert.deepEqual(queue.inputs.map((input) => input.taskPlanItemId), [researchItemId]);
 });
 
 test("R9.7 dispatcher does not complete dependency-failed plans when attention persistence fails", async () => {

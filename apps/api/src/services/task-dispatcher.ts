@@ -448,6 +448,28 @@ export function createTaskDispatcher(options: {
 
     const blocked = blockedByFailedDependency(items);
     if (blocked.length > 0) {
+      // B-R9.0-3（branch-review 死循环）：升级卡必须带上把这批子任务卡住的失败/被跳过上游，
+      // 否则「让它重试」只把被阻塞项重置回 pending，失败依赖原样不动——下一次派发立刻
+      // 再跳过再升级，人永远点不出这个循环。
+      const byId = itemById(items);
+      const failedUpstreamIds = new Set<string>();
+      const visited = new Set<string>();
+      const collectFailedUpstream = (itemId: string) => {
+        if (visited.has(itemId)) {
+          return;
+        }
+        visited.add(itemId);
+        for (const dependencyId of byId.get(itemId)?.dependsOn ?? []) {
+          const dependency = byId.get(dependencyId);
+          if (dependency && FAILED_DEPENDENCY_STATUSES.has(dependency.status)) {
+            failedUpstreamIds.add(dependencyId);
+          }
+          collectFailedUpstream(dependencyId);
+        }
+      };
+      for (const item of blocked) {
+        collectFailedUpstream(item.id);
+      }
       const skipped = await options.repository.skipPendingItems({
         planId: plan.id,
         workspaceId: plan.workspaceId,
@@ -460,6 +482,7 @@ export function createTaskDispatcher(options: {
         plan,
         items,
         skippedItemIds: result.skippedItemIds,
+        ...(failedUpstreamIds.size > 0 ? { failedItemIds: [...failedUpstreamIds] } : {}),
         reason: "dependency_failed",
         at
       });
