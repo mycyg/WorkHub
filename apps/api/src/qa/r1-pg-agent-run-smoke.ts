@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -130,7 +130,29 @@ function executableAgentClient(): AgentLoopClient {
   return {
     model: "deepseek-v4-flash",
     messages: {
-      async create() {
+      async create(params) {
+        // B-R9.2-2 后 research/review 也能写沙箱交付物（角色产物=outputs/ 文件），
+        // partial-failure 场景改为显式构造：produce 子任务的 run 不产出任何文件
+        // （end_turn 纯文本），走默认 requireDeliverable 判定失败。
+        const prompt = String((params as { messages?: Array<{ content?: unknown }> } | undefined)?.messages?.[0]?.content ?? "");
+        if (prompt.includes("Draft the deterministic task-plan deliverable outline")) {
+          return {
+            id: "msg-r1-pg-produce-fail",
+            stopReason: "end_turn",
+            usage: { inputTokens: 4, outputTokens: 4 },
+            usageRecord: {
+              provider: "deepseek",
+              model: "deepseek-v4-flash",
+              task: "worker",
+              inputTokens: 4,
+              outputTokens: 4,
+              estimatedCostCny: "0.001",
+              source: "agent_step",
+              createdAt: new Date().toISOString()
+            },
+            content: [{ type: "text", text: "没有可交付内容。" }]
+          } satisfies Awaited<ReturnType<AgentLoopClient["messages"]["create"]>>;
+        }
         const response = responses.shift();
         if (!response) {
           throw new Error("No fake AgentLoop response queued");
@@ -314,11 +336,24 @@ async function main() {
       evalSuite: "nightly"
     });
     const policyStore = createDbBudgetPolicyStore(db);
-    const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-agent-"));
+    const workdirRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-agent-"));
+    // 每个 run 独立 workdir：共享目录会让后续 run 捡到前一个 run 的 outputs/ 蹭过交付判定
+    // （B-R9.2-2 显式失败构造因此失真）。与生产 provider 的按 run 隔离语义一致。
+    const workdirByRun = new Map<string, string>();
+    const workdirForRun = async (input: { run: { run_id: string } }) => {
+      const existing = workdirByRun.get(input.run.run_id);
+      if (existing) {
+        return existing;
+      }
+      const created = path.join(workdirRoot, input.run.run_id);
+      await mkdir(created, { recursive: true });
+      workdirByRun.set(input.run.run_id, created);
+      return created;
+    };
     const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-snapshot-"));
     const queue = createInMemoryAgentRunQueue({
       settings,
-      workdir: () => workdir,
+      workdir: workdirForRun,
       client: () => executableAgentClient(),
       snapshotRoot,
       snapshots: snapshotsRepo,
@@ -631,21 +666,36 @@ async function main() {
     if (!orderedTaskPlanItems[0]) {
       throw new Error("Missing first ordered task-plan item.");
     }
-    // R9.2 role filtering makes research/review read-only. This deterministic client writes a file, so the
-    // first research child is expected to fail; the smoke validates partial-failure visibility and dependent skips.
-    const failedResearch = await runTaskPlanChild(orderedTaskPlanItems[0].id, "failed");
-    const childReplayRunIds = [failedResearch.runId];
-    if (failedResearch.settled.dispatch.enqueuedItemIds.length !== 0 || failedResearch.settled.dispatch.skippedItemIds.length !== 2) {
-      throw new Error(`Expected failed research child to skip two dependents without enqueueing more, got ${JSON.stringify(failedResearch.settled.dispatch)}`);
+    // B-R9.2-2：research 的产物形态=outputs/ 笔记文件，deterministic client 写文件即真交付。
+    // partial-failure 场景显式构造在 produce：其 run 不产出文件（requireDeliverable 失败），
+    // 依赖它的 review 被连坐跳过——部分失败可见性照旧被验证。
+    if (!orderedTaskPlanItems[1]) {
+      throw new Error("Missing second ordered task-plan item.");
+    }
+    const succeededResearch = await runTaskPlanChild(orderedTaskPlanItems[0].id, "succeeded");
+    if (
+      succeededResearch.settled.dispatch.enqueuedItemIds.length !== 1
+      || succeededResearch.settled.dispatch.enqueuedItemIds[0] !== orderedTaskPlanItems[1].id
+      || succeededResearch.settled.dispatch.skippedItemIds.length !== 0
+    ) {
+      throw new Error(`Expected succeeded research child to unlock produce only, got ${JSON.stringify(succeededResearch.settled.dispatch)}`);
+    }
+    const failedProduce = await runTaskPlanChild(orderedTaskPlanItems[1].id, "failed");
+    const childReplayRunIds = [succeededResearch.runId, failedProduce.runId];
+    if (failedProduce.settled.dispatch.enqueuedItemIds.length !== 0 || failedProduce.settled.dispatch.skippedItemIds.length !== 1) {
+      throw new Error(`Expected failed produce child to skip its review dependent without enqueueing more, got ${JSON.stringify(failedProduce.settled.dispatch)}`);
     }
     const taskDispatchEscalations = await db.select().from(escalationEvents).then((rows) =>
       rows.filter((row) => row.workItemId === taskPlanWorkItemId)
     );
     const hasDependencyFailureEscalation = taskDispatchEscalations.some((row) => {
-      const handoff = row.handoffJson as { source?: string; reason?: string; skipped_item_ids?: string[] };
+      const handoff = row.handoffJson as { source?: string; reason?: string; skipped_item_ids?: string[]; failed_item_ids?: string[] };
       return handoff.source === "task_dispatcher"
         && handoff.reason === "dependency_failed"
-        && handoff.skipped_item_ids?.length === 2;
+        && handoff.skipped_item_ids?.length === 1
+        // B-R9.0-3：升级卡带失败上游 ids，「让它重试」才能真重跑。
+        && handoff.failed_item_ids?.length === 1
+        && handoff.failed_item_ids[0] === orderedTaskPlanItems[1]?.id;
     });
     if (!hasDependencyFailureEscalation) {
       throw new Error(`Expected task dispatcher to persist dependency failure attention, got ${JSON.stringify(taskDispatchEscalations)}`);
@@ -670,14 +720,15 @@ async function main() {
     if (
       !taskPlanPageAgentTeam
       || taskPlanPageAgentTeam.status !== "done"
-      || taskPlanPageAgentTeam.completed_count !== 0
+      || taskPlanPageAgentTeam.completed_count !== 1
       || taskPlanPageAgentTeam.total_count !== 3
       || taskPlanPageAgentTeam.runs_capped
-      || taskPlanPageAgentTeam.items[0]?.status !== "failed"
-      || taskPlanPageAgentTeam.items[0]?.action?.kind !== "decide"
-      || taskPlanPageAgentTeam.items.slice(1).some((item) => item.status !== "skipped")
+      || taskPlanPageAgentTeam.items[0]?.status !== "succeeded"
+      || taskPlanPageAgentTeam.items[1]?.status !== "failed"
+      || taskPlanPageAgentTeam.items[1]?.action?.kind !== "decide"
+      || taskPlanPageAgentTeam.items[2]?.status !== "skipped"
     ) {
-      throw new Error(`Expected task-plan agent_team to expose failed research plus skipped dependents, got ${JSON.stringify(taskPlanPageAgentTeam)}`);
+      throw new Error(`Expected task-plan agent_team to expose succeeded research, failed produce with a decision, and skipped review, got ${JSON.stringify(taskPlanPageAgentTeam)}`);
     }
     const knowledge = await app.request("/api/knowledge/search", {
       method: "POST",
