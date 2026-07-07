@@ -1320,12 +1320,22 @@ function renderHomeRouteComponent(
       <span class="wh-r4-home-chip ${riskCount === 0 ? "wh-r4-home-chip--ok" : "wh-r4-prio--danger"}"><b>${escapeHtml(String(riskCount))}</b>${escapeHtml(riskCount === 0 ? (zh ? "风险 ✓ 安心" : "Risk ✓") : (zh ? "风险待看" : "Risk"))}</span>
     </div>`;
 
+  // B-R9.6 §3.7：sync_conflict 主卡的「合并成一条（可编辑）」——merge 动作带 request_json.value_md
+  // 合并草稿，这里渲成可编辑文本框；提交时 web 端以框内内容覆盖 value_md（人裁决，不是读转述）。
+  const primaryMergeDraft = primary?.kind === "sync_conflict"
+    ? primary.actions.find((action) => action.id === "merge_both")?.request_json?.["value_md"]
+    : undefined;
+  const mergeEditor = typeof primaryMergeDraft === "string"
+    ? `<label class="wh-subtle" data-r9-sync-merge-label="true">${escapeHtml(zh ? "合并草稿（可编辑，点「合并成一条」提交）" : "Merge draft (editable — submit via Merge into one)")}</label>
+       <textarea class="wh-r4-approval-comment-input" data-r9-sync-merge-value="true" rows="3">${escapeHtml(primaryMergeDraft)}</textarea>`
+    : "";
   const decisionCard = primary
     ? `<section class="wh-card wh-r4-route-card wh-r4-decision" data-r4-home-decision="true">
         <div class="wh-r4-decision-top"></div>
         <div class="wh-r4-route-meta">${homePriorityPill(primary.priority, zh)}<span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span></div>
         <h3>${escapeHtml(primary.title)}</h3>
         <p>${escapeHtml(primary.reason_text ?? primary.summary_text)}</p>
+        ${mergeEditor}
         ${evidenceCount > 0 ? `<div class="wh-r4-status"><span>${escapeHtml(zh ? `用到证据 ${evidenceCount} 条` : `${evidenceCount} evidence`)}</span></div>` : ""}
         ${renderActions(primaryActions)}
       </section>`

@@ -47,6 +47,9 @@ export type UserMemoryRepository = {
   listForUser: (userId: string, options?: ListUserMemoriesOptions) => Promise<UserMemoryRow[]>;
   touch: (ids: string[], at?: Date, scope?: { workspaceId?: string }) => Promise<void>;
   softDeleteForUser: (userId: string, id: string, at?: Date, scope?: { workspaceId?: string }) => Promise<boolean>;
+  // B-R9.6 §3.7「都不要」：按 key 撤记忆。同时撤 workspace 行与遗留 NULL 行——
+  // 只撤 workspace 行的话，B-R9.3 的 shadow 语义会让 NULL 旧行马上顶回来（幽灵记忆）。
+  softDeleteByKey: (input: { userId: string; workspaceId?: string; category: UserMemoryCategory; key: string; at?: Date }) => Promise<number>;
   prune: (now?: Date) => Promise<number>;
   countActiveForUser: (userId: string) => Promise<number>;
 };
@@ -296,6 +299,24 @@ export function createUserMemoryRepository(db: WorkHubDb): UserMemoryRepository 
         ))
         .returning({ id: userMemories.id });
       return updated.length > 0;
+    },
+
+    async softDeleteByKey(input) {
+      const now = input.at ?? new Date();
+      const updated = await db
+        .update(userMemories)
+        .set({ deletedAt: now, updatedAt: now })
+        .where(and(
+          eq(userMemories.userId, input.userId),
+          eq(userMemories.category, input.category),
+          eq(userMemories.key, input.key),
+          input.workspaceId
+            ? or(eq(userMemories.workspaceId, input.workspaceId), isNull(userMemories.workspaceId))
+            : isNull(userMemories.workspaceId),
+          isNull(userMemories.deletedAt)
+        ))
+        .returning({ id: userMemories.id });
+      return updated.length;
     },
 
     async prune(now) {

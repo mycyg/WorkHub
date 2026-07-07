@@ -22,7 +22,7 @@ export type MemoryConflictService = ReturnType<typeof createMemoryConflictServic
 
 export type MemoryConflictServiceDependencies = {
   conflicts?: MemoryConflictRepository;
-  userMemories?: Pick<UserMemoryRepository, "upsert">;
+  userMemories?: Pick<UserMemoryRepository, "upsert" | "softDeleteByKey">;
   now?: () => Date;
 };
 
@@ -36,7 +36,7 @@ type ResolveMemoryConflictInput = {
 
 type MemoryConflictDecisionStores = {
   conflicts: Pick<MemoryConflictRepository, "findOpenForUser" | "resolve">;
-  userMemories: Pick<UserMemoryRepository, "upsert">;
+  userMemories: Pick<UserMemoryRepository, "upsert" | "softDeleteByKey">;
 };
 
 function userIdFor(actor: AuthActor) {
@@ -82,11 +82,21 @@ export function buildMemoryConflictAttentionItem(row: MemoryConflictRow, locale:
     reason_text: zh
       ? `A：${row.currentValueMd}\nB：${row.incomingValueMd}`
       : `A: ${row.currentValueMd}\nB: ${row.incomingValueMd}`,
+    // B-R9.6 §3.7（ux-flow-spec §1 卡定义）：动作 = [要 A][要 B][都不要][合并成一条（可编辑）]。
+    // merge 动作带 request_json.value_md 合并草稿，web 端渲成可编辑文本框后再提交；
+    // 「都不要」= 两条都不该成为记忆（收卡 + 撤下现存记忆），与「要 A」（维持现状）语义分开。
     actions: [
       action("keep_current", zh ? "要 A" : "Keep A", "secondary", "POST", resolveHref(row, "keep_current")),
       action("accept_incoming", zh ? "要 B" : "Use B", "primary", "POST", resolveHref(row, "accept_incoming")),
-      action("merge_both", zh ? "合并两条" : "Merge both", "secondary", "POST", resolveHref(row, "merge_both")),
-      action("open_settings", zh ? "打开设置" : "Open settings", "quiet", "GET", "/settings")
+      action("discard_both", zh ? "都不要" : "Discard both", "danger", "POST", resolveHref(row, "discard_both")),
+      {
+        ...action("merge_both", zh ? "合并成一条（可编辑）" : "Merge into one (editable)", "secondary", "POST", resolveHref(row, "merge_both")),
+        request_json: { value_md: mergedValue(row) }
+      },
+      // 出处（哪个子任务学的）：B 侧有来源 run 时给回放链接；A 是现存记忆，出处即设置页里的记忆本身。
+      ...(row.sourceRunId
+        ? [action("open_incoming_source", zh ? "看 B 的出处" : "View B's source", "quiet", "GET", `/agent-runs/${row.sourceRunId}/replay`)]
+        : [action("open_settings", zh ? "打开设置" : "Open settings", "quiet", "GET", "/settings")])
     ],
     cuu_state: "worried",
     created_at: row.createdAt.toISOString()
@@ -119,11 +129,14 @@ function resolvedValue(row: MemoryConflictRow, resolution: MemoryConflictResolut
       }
       return edited;
     }
+    // B-R9.6 §3.7「都不要」：没有胜出值——记录 null，随后撤下现存记忆。
+    case "discard_both":
+      return null;
   }
 }
 
 let defaultRepository: MemoryConflictRepository | undefined;
-let defaultUserMemoryRepository: Pick<UserMemoryRepository, "upsert"> | undefined;
+let defaultUserMemoryRepository: Pick<UserMemoryRepository, "upsert" | "softDeleteByKey"> | undefined;
 
 function getDefaultMemoryConflictRepository() {
   defaultRepository = defaultRepository ?? createMemoryConflictRepository(getSharedDatabaseClient().db);
@@ -167,7 +180,16 @@ async function resolveWithStores(
     throw new MemoryConflictServiceError(409, "memory_conflict_status_changed", "这张记忆冲突卡已经被处理，请刷新。");
   }
 
-  if (input.resolution !== "keep_current") {
+  if (input.resolution === "discard_both") {
+    // 「都不要」：撤下这个 key 的现存记忆（含遗留 NULL 行），两条说法都不晋升。
+    await stores.userMemories.softDeleteByKey({
+      userId,
+      ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {}),
+      category: row.category,
+      key: row.key,
+      at: resolvedAt
+    });
+  } else if (input.resolution !== "keep_current" && valueMd) {
     await stores.userMemories.upsert({
       userId,
       workspaceId: input.actor.workspaceId,

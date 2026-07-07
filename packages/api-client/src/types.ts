@@ -100,7 +100,7 @@ export type WorkHubApiClientOptions = {
   requestTimeoutMs?: number;
 };
 
-export type MemoryConflictResolution = "keep_current" | "accept_incoming" | "merge_both" | "edit_memory";
+export type MemoryConflictResolution = "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both";
 
 export type ResolveMemoryConflictRequest = {
   resolution: MemoryConflictResolution;

@@ -1744,7 +1744,7 @@ const escalationBudgetResolveResultResponseSchema = {
 } as const;
 const memoryConflictResolutionResponseSchema = {
   type: "string",
-  enum: ["keep_current", "accept_incoming", "merge_both", "edit_memory"]
+  enum: ["keep_current", "accept_incoming", "merge_both", "edit_memory", "discard_both"]
 } as const;
 const memoryConflictResolveRequestBodySchema = {
   type: "object",

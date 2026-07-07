@@ -1113,7 +1113,10 @@ function bindGoldPathNavigation(
         return;
       }
       try {
-        const memoryConflictResult = await resolveWebMemoryConflictAction(client, href);
+        const mergeDraft = actionTarget
+          .closest("section, article")
+          ?.querySelector<HTMLTextAreaElement>("[data-r9-sync-merge-value]")?.value;
+        const memoryConflictResult = await resolveWebMemoryConflictAction(client, href, mergeDraft);
         if (memoryConflictResult) {
           await renderCurrentRoute(client, locale);
           if (root) {

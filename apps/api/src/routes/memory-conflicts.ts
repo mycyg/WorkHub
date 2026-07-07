@@ -15,7 +15,7 @@ import {
 import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 
-const memoryConflictResolutionSchema = z.enum(["keep_current", "accept_incoming", "merge_both", "edit_memory"]);
+const memoryConflictResolutionSchema = z.enum(["keep_current", "accept_incoming", "merge_both", "edit_memory", "discard_both"]);
 const expectedUpdatedAtSchema = z.string().datetime({ offset: true });
 const memoryConflictResolveRequestSchema = z.object({
   value_md: z.string().trim().min(1).max(4000).optional(),

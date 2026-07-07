@@ -8,7 +8,8 @@ import type { WorkHubDb } from "../client.js";
 import { memoryConflicts } from "../schema/index.js";
 
 export type MemoryConflictRow = typeof memoryConflicts.$inferSelect;
-export type MemoryConflictResolution = "keep_current" | "accept_incoming" | "merge_both" | "edit_memory";
+// B-R9.6 §3.7：discard_both = 「都不要」——两条都不该成为记忆，收卡 + 撤下现存记忆。
+export type MemoryConflictResolution = "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both";
 
 export type CreateMemoryConflictInput = {
   id?: string;

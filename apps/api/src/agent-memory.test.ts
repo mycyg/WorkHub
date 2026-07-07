@@ -486,7 +486,7 @@ test("promoteMemory returns a memory_conflict payload when L2 diff3 cannot recon
   assert.equal((published[0]?.data as { attention?: { kind?: string } }).attention?.kind, "sync_conflict");
   assert.deepEqual(
     result.memoryConflict?.resolution_options.map((option) => option.id),
-    ["keep_current", "accept_incoming", "merge_both", "edit_memory"]
+    ["keep_current", "accept_incoming", "discard_both", "merge_both", "edit_memory"]
   );
 });
 
@@ -550,9 +550,10 @@ test("promoteMemory persists judge-level memory conflicts into durable sync_conf
   assert.equal(result.status, "conflict");
   assert.equal(result.memoryConflict?.attention.kind, "sync_conflict");
   assert.equal(result.memoryConflict?.attention.priority, "high");
+  // B-R9.6 §3.7 口径更新：加「都不要」，merge 可编辑；有来源 run 时给出处链接。
   assert.deepEqual(
     result.memoryConflict?.attention.actions.map((action) => action.id),
-    ["keep_current", "accept_incoming", "merge_both", "open_settings"]
+    ["keep_current", "accept_incoming", "discard_both", "merge_both", "open_incoming_source"]
   );
   assert.equal(saved.length, 1);
   // R9.7: the old assertion expected the durable conflict id to reuse the L1 entry id.
@@ -576,8 +577,9 @@ test("promoteMemory persists judge-level memory conflicts into durable sync_conf
     [
       "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/keep_current?expected_updated_at=2026-07-03T00%3A00%3A00.000Z",
       "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/accept_incoming?expected_updated_at=2026-07-03T00%3A00%3A00.000Z",
+      "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/discard_both?expected_updated_at=2026-07-03T00%3A00%3A00.000Z",
       "/api/memory-conflicts/83000000-0000-4000-8000-000000000701/resolve/merge_both?expected_updated_at=2026-07-03T00%3A00%3A00.000Z",
-      "/settings"
+      "/agent-runs/83000000-0000-4000-8000-000000000005/replay"
     ]
   );
   assert.equal(published[0]?.type, "sync.conflict");

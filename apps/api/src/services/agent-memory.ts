@@ -140,7 +140,7 @@ export type AgentMemoryConflictProposal = {
   candidate_memory_ids: string[];
   attention: AttentionItem;
   resolution_options: Array<{
-    id: "keep_current" | "accept_incoming" | "merge_both" | "edit_memory";
+    id: "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both";
     label: string;
   }>;
 };
@@ -322,7 +322,7 @@ function buildMemoryConflictProposal(input: {
   const sourceRef: AttentionItem["source_ref"] = input.sourceRunId
     ? { entity_type: "agent_run", entity_id: input.sourceRunId }
     : { entity_type: "notification", entity_id: input.fallbackId };
-  const resolveHref = (resolution: "keep_current" | "accept_incoming" | "merge_both") => {
+  const resolveHref = (resolution: "keep_current" | "accept_incoming" | "merge_both" | "discard_both") => {
     const query = new URLSearchParams({ expected_updated_at: input.updatedAt.toISOString() });
     return `/api/memory-conflicts/${input.fallbackId}/resolve/${resolution}?${query.toString()}`;
   };
@@ -344,6 +344,8 @@ function buildMemoryConflictProposal(input: {
       title: "Cuu 学到了两条打架的偏好",
       summary_text: `${label}「${input.key}」出现两种说法，需要确认后再晋升。`,
       reason_text: `A：${input.currentValueMd}\nB：${input.incomingValueMd}`,
+      // B-R9.6 §3.7：与 memory-conflicts service 的收件箱卡同一套动作
+      // （[要A][要B][都不要][合并成一条（可编辑）]+出处），枚举新增三同步的教训——两处卡构造器必须一起改。
       actions: [
         {
           id: "keep_current",
@@ -360,19 +362,39 @@ function buildMemoryConflictProposal(input: {
           href: resolveHref("accept_incoming")
         },
         {
-          id: "merge_both",
-          label: "合并两条",
-          style: "secondary",
+          id: "discard_both",
+          label: "都不要",
+          style: "danger",
           method: "POST",
-          href: resolveHref("merge_both")
+          href: resolveHref("discard_both")
         },
         {
-          id: "open_settings",
-          label: "打开设置",
-          style: "quiet",
-          method: "GET",
-          href: "/settings"
-        }
+          id: "merge_both",
+          label: "合并成一条（可编辑）",
+          style: "secondary",
+          method: "POST",
+          href: resolveHref("merge_both"),
+          request_json: {
+            value_md: input.currentValueMd === input.incomingValueMd
+              ? input.currentValueMd
+              : `${input.currentValueMd}\n${input.incomingValueMd}`
+          }
+        },
+        ...(input.sourceRunId
+          ? [{
+            id: "open_incoming_source",
+            label: "看 B 的出处",
+            style: "quiet" as const,
+            method: "GET" as const,
+            href: `/agent-runs/${input.sourceRunId}/replay`
+          }]
+          : [{
+            id: "open_settings",
+            label: "打开设置",
+            style: "quiet" as const,
+            method: "GET" as const,
+            href: "/settings"
+          }])
       ],
       cuu_state: "worried",
       created_at: new Date().toISOString()
@@ -380,7 +402,8 @@ function buildMemoryConflictProposal(input: {
     resolution_options: [
       { id: "keep_current", label: "保留当前记忆" },
       { id: "accept_incoming", label: "采用新记忆" },
-      { id: "merge_both", label: "合并两条" },
+      { id: "discard_both", label: "都不要" },
+      { id: "merge_both", label: "合并成一条（可编辑）" },
       { id: "edit_memory", label: "手动编辑" }
     ]
   };

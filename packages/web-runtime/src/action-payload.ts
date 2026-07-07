@@ -200,7 +200,7 @@ export function escalationActionFromHref(href: string) {
 
 export function memoryConflictActionFromHref(href: string) {
   const path = hrefPathname(href);
-  const match = /^\/api\/memory-conflicts\/([^/]+)\/resolve\/(keep_current|accept_incoming|merge_both|edit_memory)$/u.exec(path);
+  const match = /^\/api\/memory-conflicts\/([^/]+)\/resolve\/(keep_current|accept_incoming|merge_both|edit_memory|discard_both)$/u.exec(path);
   if (!match?.[1] || !match[2]) {
     return undefined;
   }
@@ -210,7 +210,7 @@ export function memoryConflictActionFromHref(href: string) {
   }
   return {
     conflictId: decodeURIComponent(match[1]),
-    resolution: match[2] as "keep_current" | "accept_incoming" | "merge_both" | "edit_memory",
+    resolution: match[2] as "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both",
     expectedUpdatedAt
   };
 }

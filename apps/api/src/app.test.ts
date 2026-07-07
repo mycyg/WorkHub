@@ -1223,7 +1223,7 @@ test("Approval and permission OpenAPI contracts document decision and policy act
     name: "resolution",
     in: "path",
     required: true,
-    schema: { type: "string", enum: ["keep_current", "accept_incoming", "merge_both", "edit_memory"] }
+    schema: { type: "string", enum: ["keep_current", "accept_incoming", "merge_both", "edit_memory", "discard_both"] }
   });
   assert.deepEqual(parameterByName(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "expected_updated_at"), {
     name: "expected_updated_at",
@@ -1251,7 +1251,7 @@ test("Approval and permission OpenAPI contracts document decision and policy act
   });
   assert.deepEqual(memoryConflict?.properties?.resolution, {
     anyOf: [
-      { type: "string", enum: ["keep_current", "accept_incoming", "merge_both", "edit_memory"] },
+      { type: "string", enum: ["keep_current", "accept_incoming", "merge_both", "edit_memory", "discard_both"] },
       { type: "null" }
     ]
   });

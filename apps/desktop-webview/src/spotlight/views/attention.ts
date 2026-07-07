@@ -210,7 +210,7 @@ type MemoryConflictActionClient = {
   resolveMemoryConflict: (
     id: string,
     payload: {
-      resolution: "keep_current" | "accept_incoming" | "merge_both" | "edit_memory";
+      resolution: "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both";
       expected_updated_at: string;
     }
   ) => Promise<unknown>;

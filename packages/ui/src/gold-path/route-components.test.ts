@@ -884,6 +884,48 @@ test("R9.0 Home route renders escalation cards with human action labels", () => 
   assertNoMainWindowBoundaryLeak(home.html);
 });
 
+// B-R9.6 §3.7：sync_conflict 主卡渲「合并成一条（可编辑）」的可编辑草稿框（预填
+// merge 动作 request_json.value_md），并露出全部四动作 + B 出处链接。
+test("B-R9.6 Home route renders the editable merge draft on sync_conflict cards", () => {
+  const base = surfaceVm();
+  const conflict: AttentionItem = {
+    id: "94000000-0000-4000-8000-000000000121",
+    kind: "sync_conflict",
+    priority: "high",
+    source_ref: {
+      entity_type: "agent_run",
+      entity_id: "94000000-0000-4000-8000-000000000122"
+    },
+    title: "Cuu 学到了两条打架的偏好",
+    summary_text: "偏好「reply_style」出现两种说法，需要确认后再晋升。",
+    reason_text: "A：回复要长。\nB：回复只给结论。",
+    actions: [
+      { id: "keep_current", label: "要 A", style: "secondary", method: "POST", href: "/api/memory-conflicts/94000000-0000-4000-8000-000000000121/resolve/keep_current?expected_updated_at=2026-07-02T16%3A00%3A00.000Z" },
+      { id: "accept_incoming", label: "要 B", style: "primary", method: "POST", href: "/api/memory-conflicts/94000000-0000-4000-8000-000000000121/resolve/accept_incoming?expected_updated_at=2026-07-02T16%3A00%3A00.000Z" },
+      { id: "discard_both", label: "都不要", style: "danger", method: "POST", href: "/api/memory-conflicts/94000000-0000-4000-8000-000000000121/resolve/discard_both?expected_updated_at=2026-07-02T16%3A00%3A00.000Z" },
+      { id: "merge_both", label: "合并成一条（可编辑）", style: "secondary", method: "POST", href: "/api/memory-conflicts/94000000-0000-4000-8000-000000000121/resolve/merge_both?expected_updated_at=2026-07-02T16%3A00%3A00.000Z", request_json: { value_md: "回复要长。\n回复只给结论。" } },
+      { id: "open_incoming_source", label: "看 B 的出处", style: "quiet", method: "GET", href: "/agent-runs/94000000-0000-4000-8000-000000000122/replay" }
+    ],
+    cuu_state: "worried",
+    created_at: "2026-07-02T16:00:00.000Z"
+  };
+  const home = renderWebRouteComponent({
+    key: "home",
+    attention: {
+      ...base.page_vms.attention,
+      primary: conflict,
+      queue: [conflict]
+    }
+  }, { locale: "zh-CN" });
+
+  assert.equal(home.html.includes('data-r9-sync-merge-value="true"'), true);
+  assert.equal(home.html.includes("回复要长。"), true);
+  assert.equal(home.html.includes("都不要"), true);
+  assert.equal(home.html.includes("合并成一条（可编辑）"), true);
+  assert.equal(home.html.includes("看 B 的出处"), true);
+  assertNoMainWindowBoundaryLeak(home.html);
+});
+
 test("R9.0 Home route renders escalation cards localized for English readers", () => {
   // ux-flow-spec §3.3 双语文案：en-US 下标题与三动作都要真实渲染英文（API 按 locale 产出，
   // web 层不许中文裸奔）。

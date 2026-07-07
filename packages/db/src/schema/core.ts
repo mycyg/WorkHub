@@ -1611,7 +1611,7 @@ export const memoryConflicts = pgTable(
     baseValueMd: text("base_value_md"),
     candidateMemoryIds: jsonb("candidate_memory_ids").$type<string[]>().notNull().default([]),
     status: varchar("status", { length: 16 }).$type<"open" | "resolved">().notNull().default("open"),
-    resolution: varchar("resolution", { length: 32 }).$type<"keep_current" | "accept_incoming" | "merge_both" | "edit_memory">(),
+    resolution: varchar("resolution", { length: 32 }).$type<"keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both">(),
     resolvedValueMd: text("resolved_value_md"),
     resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id, { onDelete: "set null" }),
     resolvedAt: timestampTz("resolved_at"),
