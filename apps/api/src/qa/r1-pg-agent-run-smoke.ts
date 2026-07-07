@@ -27,6 +27,7 @@ import {
   createWorkItemRepository,
   createSnapshotRepository,
   createUserRepository,
+  createUserMemoryRepository,
   defaultSeedFixture,
   defaultSeedIds,
   escalationEvents,
@@ -1090,6 +1091,54 @@ async function main() {
       .find((item) => item?.source_ref?.entity_id === escalationEventId);
     if (postResolveEscalationCard) {
       throw new Error("Expected resolved escalation to disappear from attention queue.");
+    }
+    // B-R9.3-3（真 PG 并发断言，内存假仓库不顶数）：同 key 并发 mergeUpsert（无 base）
+    // 恰好一个成功、一个如实 conflict——乐观 CAS 不丢更新、不静默双写。
+    {
+      const memoryRepo = createUserMemoryRepository(db);
+      const seededMemory = await memoryRepo.mergeUpsert({
+        userId: seedUser.id,
+        workspaceId: settings.auth.defaultWorkspaceId,
+        category: "preference",
+        key: "r9-concurrency-probe",
+        valueMd: "初始偏好。"
+      });
+      if (seededMemory.status !== "upserted") {
+        throw new Error(`Expected concurrency probe seed upserted, got ${seededMemory.status}`);
+      }
+      // 两个并发写都基于同一 base（fast-forward 竞争）：乐观 CAS 必须恰好放行一个，
+      // 输者拿到如实 conflict 而不是静默覆盖（丢更新）或双双落败。
+      const [left, right] = await Promise.all([
+        memoryRepo.mergeUpsert({
+          userId: seedUser.id,
+          workspaceId: settings.auth.defaultWorkspaceId,
+          category: "preference",
+          key: "r9-concurrency-probe",
+          valueMd: "并发 A 版偏好。",
+          baseValueMd: "初始偏好。"
+        }),
+        memoryRepo.mergeUpsert({
+          userId: seedUser.id,
+          workspaceId: settings.auth.defaultWorkspaceId,
+          category: "preference",
+          key: "r9-concurrency-probe",
+          valueMd: "并发 B 版偏好。",
+          baseValueMd: "初始偏好。"
+        })
+      ]);
+      const statuses = [left.status, right.status].sort();
+      if (JSON.stringify(statuses) !== JSON.stringify(["conflict", "upserted"])) {
+        throw new Error(`Expected exactly one winner in concurrent L2 upsert, got ${JSON.stringify(statuses)}`);
+      }
+      const survivors = await memoryRepo.listForUser(seedUser.id, {
+        workspaceId: settings.auth.defaultWorkspaceId,
+        categories: ["preference"]
+      });
+      const survivor = survivors.find((row) => row.key === "r9-concurrency-probe");
+      const winner = left.status === "upserted" ? left : right;
+      if (winner.status !== "upserted" || survivor?.valueMd !== winner.userMemory.valueMd) {
+        throw new Error(`Expected surviving L2 value to match the winner, got ${survivor?.valueMd ?? "missing"}`);
+      }
     }
     const proposalRowsBeforeMerge = await db.select().from(proposals).then((rows) =>
       rows.filter((row) => row.workItemId === workItemId)

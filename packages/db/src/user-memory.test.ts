@@ -85,7 +85,9 @@ test("listForUser injects only global and current-workspace L2 memories", async 
   assert.ok(queryParamValues(query?.where).includes(userId));
   assert.ok(queryParamValues(query?.where).includes(workspaceId));
   assert.ok(queryParamValues(query?.where).includes("preference"));
-  assert.equal(query?.limit, 8);
+  // B-R9.3-3 shadow 去重：带 workspaceId 时 SQL limit 放大一倍（同 key 至多工作区+全局两行），
+  // JS 层按工作区行优先去重后再截回 limit。
+  assert.equal(query?.limit, 16);
 });
 
 test("R9.7 touch marks only visible L2 memories as used", async () => {
@@ -209,4 +211,49 @@ test("mergeUpsert returns a conflict instead of overwriting overlapping L2 memor
   assert.equal(result.status, "conflict");
   assert.equal(result.current.valueMd, "回复要详细解释。");
   assert.equal(queries.some((query) => query.operation === "update"), false);
+});
+
+
+test("B-R9.3 listForUser shadows same-key global rows behind workspace rows", async () => {
+  // 0045 回填避开唯一撞时会留下同 key 的全局 shadow 行——读侧必须让工作区行遮蔽它，
+  // 不然同一偏好出现两个版本、prompt 注入会自相矛盾。
+  const workspaceRow = {
+    id: "86000000-0000-4000-8000-000000000001",
+    userId: "86000000-0000-4000-8000-000000000011",
+    workspaceId: "86000000-0000-4000-8000-000000000021",
+    category: "preference",
+    key: "reply_style",
+    valueMd: "工作区版：要简洁。",
+    confidence: 0.9,
+    sourceRunId: null,
+    lastUsedAt: null,
+    deletedAt: null,
+    createdAt: new Date("2026-07-03T00:00:00.000Z"),
+    updatedAt: new Date("2026-07-03T00:00:00.000Z")
+  };
+  const globalShadow = {
+    ...workspaceRow,
+    id: "86000000-0000-4000-8000-000000000002",
+    workspaceId: null,
+    valueMd: "全局旧版：要详细。",
+    confidence: 0.95
+  };
+  const globalOnly = {
+    ...workspaceRow,
+    id: "86000000-0000-4000-8000-000000000003",
+    workspaceId: null,
+    key: "evidence_first",
+    valueMd: "全局独有：先给证据。",
+    confidence: 0.8
+  };
+  const { db } = createQueryRecorder([[globalShadow, workspaceRow, globalOnly]]);
+  const repository = createUserMemoryRepository(db);
+
+  const rows = await repository.listForUser(workspaceRow.userId, {
+    workspaceId: workspaceRow.workspaceId,
+    limit: 8
+  });
+
+  assert.deepEqual(rows.map((row) => row.id), [workspaceRow.id, globalOnly.id]);
+  assert.equal(rows.some((row) => row.valueMd.includes("全局旧版")), false);
 });

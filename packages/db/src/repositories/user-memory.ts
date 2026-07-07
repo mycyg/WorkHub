@@ -244,13 +244,29 @@ export function createUserMemoryRepository(db: WorkHubDb): UserMemoryRepository 
       if (workspaceCondition) {
         conditions.push(workspaceCondition);
       }
+      const limit = options.limit ?? USER_MEMORY_MAX_ACTIVE_PER_USER;
       const rows = await db
         .select()
         .from(userMemories)
         .where(and(...conditions))
         .orderBy(desc(userMemories.confidence), desc(sql`coalesce(${userMemories.lastUsedAt}, ${userMemories.createdAt})`))
-        .limit(options.limit ?? USER_MEMORY_MAX_ACTIVE_PER_USER);
-      return rows;
+        // B-R9.3-3（shadow 去重）：带 workspaceId 查询会同时命中工作区行与同 key 全局行
+        // （0045 回填避开唯一撞时留下的 shadow）。同 (category,key) 至多两行，放大一倍
+        // 再在下方去重，保证截断后仍能给满 limit。
+        .limit(options.workspaceId ? limit * 2 : limit);
+      if (!options.workspaceId) {
+        return rows;
+      }
+      const byKey = new Map<string, UserMemoryRow>();
+      for (const row of rows) {
+        const key = `${row.category}:${row.key}`;
+        const existing = byKey.get(key);
+        // 工作区行优先遮蔽全局 shadow 行；两行同域时保留排序更靠前的一行。
+        if (!existing || (existing.workspaceId === null && row.workspaceId !== null)) {
+          byKey.set(key, row);
+        }
+      }
+      return [...byKey.values()].slice(0, limit);
     },
 
     async touch(ids, at, scope = {}) {
