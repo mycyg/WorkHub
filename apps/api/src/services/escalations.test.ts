@@ -54,7 +54,7 @@ function row(partial: Partial<EscalationServiceRow> = {}): EscalationServiceRow 
 function createEscalationService(
   deps: Parameters<typeof createEscalationServiceImpl>[0] = {}
 ): ReturnType<typeof createEscalationServiceImpl> {
-  return createEscalationServiceImpl({ workItems: false, ...deps });
+  return createEscalationServiceImpl({ workItems: false, runQueue: false, ...deps });
 }
 
 class MemoryEscalationRepository implements EscalationRepository {
@@ -413,6 +413,95 @@ test("R9.0 escalation resolve actions map to the work-item state machine", async
     "pm_mode",
     "cancelled"
   ]);
+});
+
+test("B-R9.0 non-plan escalation retry re-enqueues a real agent run", async () => {
+  // branch-review 假接线：非计划升级 retry 原先只翻状态、无执行体接手。
+  const repository = new MemoryEscalationRepository();
+  const enqueueCalls: Array<{ workItemId: string; actorId: string; workspaceId?: string; orgId?: string; title?: string }> = [];
+  const service = createEscalationService({
+    repository,
+    runQueue: {
+      async enqueue(input) {
+        enqueueCalls.push({
+          workItemId: input.workItemId,
+          actorId: input.actorId,
+          ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+          ...(input.orgId ? { orgId: input.orgId } : {}),
+          ...(input.title ? { title: input.title } : {})
+        });
+        return { run_id: "94000000-0000-4000-8000-000000000901" } as never;
+      }
+    },
+    now: () => now
+  });
+
+  const resolved = await service.resolve(escalationId, actor(), { action: "retry" });
+
+  assert.equal(resolved.work_item_status, "ai_working");
+  assert.deepEqual(enqueueCalls, [{
+    workItemId,
+    actorId: actor().userId,
+    workspaceId: actor().workspaceId,
+    orgId: actor().orgId,
+    title: row().title
+  }]);
+
+  // pm_mode / cancel 不该再入队。
+  await service.resolve(escalationId, actor(), { action: "pm_mode" });
+  await service.resolve(escalationId, actor(), { action: "cancel" });
+  assert.equal(enqueueCalls.length, 1);
+});
+
+test("B-R9.0 non-plan retry reopens the escalation when the run enqueue fails", async () => {
+  const repository = new MemoryEscalationRepository();
+  const service = createEscalationService({
+    repository,
+    runQueue: {
+      async enqueue() {
+        throw new Error("queue down");
+      }
+    },
+    now: () => now
+  });
+
+  await assert.rejects(
+    service.resolve(escalationId, actor(), { action: "retry" }),
+    (error: unknown) => error instanceof Error
+      && (error as { status?: number }).status === 503
+      && (error as { code?: string }).code === "agent_run_retry_failed"
+  );
+  assert.deepEqual(repository.reopenCalls, [{ escalationId, targetStatus: "escalated" }]);
+});
+
+test("B-R9.0 plan escalation retry uses the dispatcher, not a bare work-item run", async () => {
+  const taskPlanId = "94000000-0000-4000-8000-000000000205";
+  const repository = new MemoryEscalationRepository({
+    findRow: row({ handoffJson: { task_plan_id: taskPlanId } })
+  });
+  let enqueued = 0;
+  let dispatched = 0;
+  const service = createEscalationService({
+    repository,
+    runQueue: {
+      async enqueue() {
+        enqueued += 1;
+        return { run_id: "94000000-0000-4000-8000-000000000902" } as never;
+      }
+    },
+    taskDispatcher: {
+      async dispatch(input) {
+        dispatched += 1;
+        return { planId: input.planId, enqueuedItemIds: [], skippedItemIds: [], casMissItemIds: [], completed: false };
+      }
+    },
+    now: () => now
+  });
+
+  await service.resolve(escalationId, actor(), { action: "retry" });
+
+  assert.equal(dispatched, 1);
+  assert.equal(enqueued, 0);
 });
 
 test("R9.7 child escalation retry resets the task slice and dispatches the plan", async () => {

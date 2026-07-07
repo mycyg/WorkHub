@@ -21,7 +21,7 @@ import {
 
 import { localizedBudgetActionLabel, localizedBudgetUsageScopeLabel } from "../budget-labels.js";
 import type { AuthActor } from "../middleware/auth.js";
-import { getDefaultAgentRunQueue } from "../workers/agent-runner.js";
+import { getDefaultAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
 import { getDefaultTaskDispatcher, type TaskDispatcher } from "./task-dispatcher.js";
 import { getDefaultWorkItemService, WorkItemServiceError, type WorkItemService } from "./work-items.js";
 
@@ -83,6 +83,8 @@ type EscalationServiceDependencies = {
   memberships?: Pick<WorkspaceMembershipRepository, "findActiveForUserWorkspace"> | false;
   workItems?: Pick<WorkItemService, "canReadWorkItems" | "assertCanMutateWorkItem"> | false;
   taskDispatcher?: Pick<TaskDispatcher, "dispatch"> | false;
+  // B-R9.0-2：非计划升级「让它重试」要真重新入队 agent run。false 仅供纯读测试用。
+  runQueue?: Pick<AgentRunQueue, "enqueue"> | false;
   now?: () => Date;
 };
 
@@ -395,6 +397,14 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
   const workItems = deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService();
   const injectedTaskDispatcher = deps.taskDispatcher === false ? undefined : deps.taskDispatcher;
   const now = deps.now ?? (() => new Date());
+  // 懒解析：默认队列挂着真 DB/worker，只有非计划 retry 真正需要时才构造。
+  // false 与其他依赖一致=测试显式拔掉该缝隙；生产默认永远接真队列。
+  function resolveRunQueue(): Pick<AgentRunQueue, "enqueue"> | undefined {
+    if (deps.runQueue === false) {
+      return undefined;
+    }
+    return deps.runQueue ?? getDefaultAgentRunQueue();
+  }
 
   async function listAttentionPage(input: { actor: AuthActor; locale: WorkHubLocale }): Promise<EscalationAttentionPage> {
     const fetchedRows = await repository.listUnresolvedForWorkspace({
@@ -500,6 +510,30 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
             at: now()
           });
           throw new EscalationServiceError(503, "task_dispatch_retry_failed", "重试执行失败，请稍后再试。");
+        }
+      } else if (payload.action === "retry") {
+        // B-R9.0-2（branch-review 假接线）：非计划升级的「让它重试」原先只把工单翻回
+        // ai_working，没有任何执行体接手——卡片说"已让它重试"是空话。这里真重新入队
+        // 一个 agent run；入队失败则重开升级并如实报错，不留"看起来在跑"的死状态。
+        const runQueue = resolveRunQueue();
+        if (runQueue) {
+          try {
+            await runQueue.enqueue({
+              workItemId: existing.workItemId,
+              actorId: actor.userId ?? actor.id,
+              workspaceId: actor.workspaceId,
+              ...(actor.orgId ? { orgId: actor.orgId } : {}),
+              title: existing.title
+            });
+          } catch {
+            await repository.reopenEscalation?.({
+              escalationId: id,
+              targetStatus: "escalated",
+              workspaceId: actor.workspaceId,
+              at: now()
+            });
+            throw new EscalationServiceError(503, "agent_run_retry_failed", "重试执行失败，请稍后再试。");
+          }
         }
       }
       return {

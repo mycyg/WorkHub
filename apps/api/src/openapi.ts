@@ -1851,7 +1851,7 @@ const escalationRaceResponse = jsonErrorStatusResponse(
 const escalationRetryUnavailableResponse = jsonErrorStatusResponse(
   "503",
   "Escalation retry dispatch failed after reopening the escalation",
-  ["task_dispatch_retry_failed"]
+  ["task_dispatch_retry_failed", "agent_run_retry_failed"]
 ).responses["503"];
 const escalationDelegateRaceResponse = jsonErrorStatusResponse(
   "409",
