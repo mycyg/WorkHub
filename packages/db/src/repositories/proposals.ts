@@ -26,6 +26,7 @@ import {
   proposals,
   reviews,
   snapshots,
+  taskPlans,
   workItemAcceptanceItems,
   workItemTaskItems,
   workItemTaskPlans,
@@ -242,6 +243,17 @@ export class ProposalRepositoryMergeConflictError extends Error {
 
   constructor(public readonly conflicts: ProposalMergeConflict[]) {
     super("Proposal merge conflicts with accepted deliverables");
+  }
+}
+
+// B-R9.1-1：计划提议合入时，军团计划必须在同一笔事务里 CAS 到 approved；
+// 计划已不可批准（被取消等）时抛本错误让整笔合入回滚，杜绝「提议 merged +
+// 计划仍 draft/cancelled + 永不派发」的死状态。
+export class ProposalRepositoryTaskPlanApprovalError extends Error {
+  public readonly code = "task_plan_approval_failed";
+
+  constructor(public readonly planId: string) {
+    super("Task plan tied to this proposal can no longer be approved");
   }
 }
 
@@ -2877,6 +2889,32 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             createdAt: at,
             updatedAt: at
           });
+        }
+        // B-R9.1-1（branch-review 原子性）：计划提议的合入与计划批准同事务。旧路径在
+        // merge 提交后由 service 层 onMerged 再 approvePlan，那一步失败就留下「提议
+        // merged + 计划仍 draft + 永不派发」的死状态。这里在提交前 CAS（draft→approved，
+        // 已 approved 幂等）；计划已被取消等不可批准时抛错让整笔合入回滚，绝不半套。
+        const taskPlanIdsToApprove = [...new Set(
+          proposal.diffManifest.changes
+            .filter((change) =>
+              change.target_kind === "structured_record"
+              && change.target_ref.entity_type === "task_plan"
+              && change.target_ref.entity_id)
+            .map((change) => change.target_ref.entity_id as string)
+        )];
+        for (const planId of taskPlanIdsToApprove) {
+          const approvedPlans = await tx
+            .update(taskPlans)
+            .set({ status: "approved", updatedAt: at })
+            .where(and(
+              eq(taskPlans.id, planId),
+              eq(taskPlans.workItemId, proposal.workItemId),
+              inArray(taskPlans.status, ["draft", "approved"])
+            ))
+            .returning({ id: taskPlans.id });
+          if (!approvedPlans[0]) {
+            throw new ProposalRepositoryTaskPlanApprovalError(planId);
+          }
         }
         await tx.insert(auditLogs).values({
           id: randomUUID(),

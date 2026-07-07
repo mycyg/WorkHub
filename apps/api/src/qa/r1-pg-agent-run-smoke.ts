@@ -245,6 +245,9 @@ function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<
     if (error instanceof TaskPlanServiceError) {
       return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
     }
+    if (error instanceof ProposalServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
+    }
     if (error instanceof HTTPException) {
       return c.json({ ok: false, error: { code: "http_error", message: error.message } }, error.status);
     }
@@ -508,6 +511,56 @@ async function main() {
     }
     if (taskPlanPagePlan.items.length !== 3 || taskPlanPagePlan.items_capped) {
       throw new Error(`Expected work item page task_plan to expose 3 uncapped items, got ${taskPlanPagePlan.items.length}`);
+    }
+    // B-R9.1-1（真 PG 原子性反路径）：计划已被取消后合入其提议，必须整笔回滚——
+    // 409 task_plan_approval_failed、提议停在 reviewed（没有半套 merged 死状态）、计划仍 cancelled。
+    const cancelledPlanCreate = await app.request(`/api/workitems/${taskPlanWorkItemId}/task-plan`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({})
+    });
+    if (cancelledPlanCreate.status !== 201) {
+      throw new Error(`Expected second task-plan create 201, got ${cancelledPlanCreate.status}: ${await cancelledPlanCreate.text()}`);
+    }
+    const cancelledPlanBody = await cancelledPlanCreate.json() as { data: { plan_id: string; proposal_id: string } };
+    const cancelledPlanReview = await app.request(`/api/proposals/${cancelledPlanBody.data.proposal_id}/review`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ decision: "approve" })
+    });
+    if (cancelledPlanReview.status !== 200) {
+      throw new Error(`Expected second task-plan review 200, got ${cancelledPlanReview.status}: ${await cancelledPlanReview.text()}`);
+    }
+    const cancelledDraft = await taskPlanRepository.cancelDraftPlan({
+      planId: cancelledPlanBody.data.plan_id,
+      workspaceId: settings.auth.defaultWorkspaceId
+    });
+    if (cancelledDraft?.status !== "cancelled") {
+      throw new Error(`Expected draft plan to cancel before the atomicity probe, got ${cancelledDraft?.status ?? "missing"}`);
+    }
+    const cancelledPlanMerge = await app.request(`/api/proposals/${cancelledPlanBody.data.proposal_id}/merge`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({})
+    });
+    if (cancelledPlanMerge.status !== 409) {
+      throw new Error(`Expected cancelled-plan merge 409, got ${cancelledPlanMerge.status}: ${await cancelledPlanMerge.text()}`);
+    }
+    const cancelledPlanMergeBody = await cancelledPlanMerge.json() as { error: { code: string } };
+    if (cancelledPlanMergeBody.error.code !== "task_plan_approval_failed") {
+      throw new Error(`Expected task_plan_approval_failed, got ${cancelledPlanMergeBody.error.code}`);
+    }
+    const cancelledPlanProposalRows = await db.select().from(proposals).then((rows) =>
+      rows.filter((row) => row.id === cancelledPlanBody.data.proposal_id)
+    );
+    if (cancelledPlanProposalRows[0]?.status !== "reviewed") {
+      throw new Error(`Expected cancelled-plan proposal to stay reviewed, got ${cancelledPlanProposalRows[0]?.status ?? "missing"}`);
+    }
+    const cancelledPlanRows = await db.select().from(taskPlans).then((rows) =>
+      rows.filter((row) => row.id === cancelledPlanBody.data.plan_id)
+    );
+    if (cancelledPlanRows[0]?.status !== "cancelled") {
+      throw new Error(`Expected plan to stay cancelled after blocked merge, got ${cancelledPlanRows[0]?.status ?? "missing"}`);
     }
     const orderedTaskPlanItems = [...taskPlanItemRows].sort((a, b) => a.seq - b.seq);
     const autoDispatchedRuns = await db.select().from(agentRuns).then((rows) =>

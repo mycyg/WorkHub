@@ -1058,7 +1058,9 @@ const proposalMergeConflictResponse = proposalConflictErrorResponse(
     "merge_snapshot_missing",
     "delivery_artifact_missing",
     "delivery_artifact_changed",
-    "delivery_artifact_unsafe_path"
+    "delivery_artifact_unsafe_path",
+    // B-R9.1-1：计划提议合入与计划批准同事务，计划不可批准时整笔回滚并回本码。
+    "task_plan_approval_failed"
   ]
 );
 const proposalMergeDispatchFailureResponse = jsonErrorStatusResponse(

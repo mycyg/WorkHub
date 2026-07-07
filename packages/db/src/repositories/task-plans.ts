@@ -603,6 +603,8 @@ export function createTaskPlanRepository(db: WorkHubDb) {
       approvedAt?: Date;
     }): Promise<TaskPlanRow | null> {
       const approvedAt = input.approvedAt ?? new Date();
+      // B-R9.1-1：合入事务内已把计划 CAS 到 approved；本方法作为 service 层兜底必须幂等
+      // （draft→approved 或已 approved 均成功），否则合入成功后兜底会误报 409。
       const [row] = await db
         .update(taskPlans)
         .set({
@@ -613,7 +615,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
           eq(taskPlans.id, input.planId),
           eq(taskPlans.workspaceId, input.workspaceId),
           eq(taskPlans.workItemId, input.workItemId),
-          eq(taskPlans.status, "draft" satisfies TaskPlanStatus)
+          inArray(taskPlans.status, ["draft", "approved"] satisfies TaskPlanStatus[])
         ))
         .returning();
       return row ?? null;

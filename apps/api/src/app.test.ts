@@ -1638,7 +1638,8 @@ test("Proposal OpenAPI contracts document review, merge, and conflict action pay
             "merge_snapshot_missing",
             "delivery_artifact_missing",
             "delivery_artifact_changed",
-            "delivery_artifact_unsafe_path"
+            "delivery_artifact_unsafe_path",
+            "task_plan_approval_failed"
           ]
     });
     assert.deepEqual(error?.properties?.recoverable, { type: "boolean", const: true });
