@@ -2028,6 +2028,10 @@ function agentTeamTitle(team: WorkItemAgentTeamVM, locale: WorkHubLocale) {
   if (team.status === "done") {
     return locale === "zh-CN" ? `军团已完成 ${ratio}` : `Team completed ${ratio}`;
   }
+  // B-R9.6 §3.1：暂停态要在头行说清楚——否则用户按了暂停，面板还喊「推进中」在撒谎。
+  if (team.status === "paused") {
+    return locale === "zh-CN" ? `军团已暂停 ${ratio}` : `Team paused ${ratio}`;
+  }
   return locale === "zh-CN" ? `军团推进中 ${ratio}` : `Team in progress ${ratio}`;
 }
 
@@ -2079,9 +2083,14 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
   const capped = team.runs_capped
     ? `<p class="wh-subtle" data-r9-agent-team-runs-capped-note="true">${escapeHtml(locale === "zh-CN" ? "仅显示前 100 个子运行。" : "Showing the first 100 child runs.")}</p>`
     : "";
+  // B-R9.6 §3.1：头行「暂停派发/恢复派发」次级按钮——VM 给控制才渲，终态军团无按钮。
+  const dispatchControl = team.dispatch_control
+    ? `<a class="wh-btn" href="${escapeHtml(safeHref(team.dispatch_control.href))}" data-method="${escapeHtml(team.dispatch_control.method)}" data-action-id="${escapeHtml(`${team.dispatch_control.kind}_dispatch`)}" data-r9-agent-team-dispatch-control="${escapeHtml(team.dispatch_control.kind)}">${escapeHtml(team.dispatch_control.label)}</a>`
+    : "";
   return `<section class="wh-card wh-r4-route-card" data-r9-agent-team-panel="true" data-r9-agent-team-plan-id="${escapeHtml(team.plan_id)}" data-r9-agent-team-status="${escapeHtml(team.status)}">
     <div class="wh-r4-route-card-head">
       <h3>${escapeHtml(agentTeamTitle(team, locale))}</h3>
+      ${dispatchControl}
     </div>
     <div class="wh-r4-route-meta">
       <span class="wh-pill">${escapeHtml(uiFormatCny(team.cost_used_cny))}</span>

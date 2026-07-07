@@ -152,7 +152,8 @@ const DEFAULT_DASHBOARD_RUN_LIMIT = 200;
 const MAX_DASHBOARD_RUN_LIMIT = 500;
 const DEFAULT_DASHBOARD_ESCALATION_LIMIT = 5;
 const MAX_DASHBOARD_ESCALATION_LIMIT = 20;
-const DASHBOARD_PLAN_STATUSES = ["proposed", "approved", "dispatching"] satisfies TaskPlanStatus[];
+// paused 也算「活跃军团」：暂停不是取消，指挥台/项目主页 pill 都得继续可见，否则暂停=假删除。
+const DASHBOARD_PLAN_STATUSES = ["proposed", "approved", "dispatching", "paused"] satisfies TaskPlanStatus[];
 const taskPlanItemColumns = {
   id: taskPlanItems.id,
   planId: taskPlanItems.planId,
@@ -665,6 +666,51 @@ export function createTaskPlanRepository(db: WorkHubDb) {
           eq(taskPlans.id, input.planId),
           eq(taskPlans.workspaceId, input.workspaceId),
           eq(taskPlans.status, "draft" satisfies TaskPlanStatus)
+        ))
+        .returning();
+      return row ?? null;
+    },
+
+    // B-R9.6 §3.1（暂停派发）：CAS 只从 approved/dispatching 暂停——终态/草稿态没有「派发」可暂停；
+    // 返回 null = 状态已变（别人先动了），路由层转 409。
+    async pausePlan(input: {
+      planId: string;
+      workspaceId: string;
+      pausedAt?: Date;
+    }): Promise<TaskPlanRow | null> {
+      const pausedAt = input.pausedAt ?? new Date();
+      const [row] = await db
+        .update(taskPlans)
+        .set({
+          status: "paused" satisfies TaskPlanStatus,
+          updatedAt: pausedAt
+        })
+        .where(and(
+          eq(taskPlans.id, input.planId),
+          eq(taskPlans.workspaceId, input.workspaceId),
+          inArray(taskPlans.status, ["approved", "dispatching"] satisfies TaskPlanStatus[])
+        ))
+        .returning();
+      return row ?? null;
+    },
+
+    // B-R9.6 §3.1（恢复派发）：paused → dispatching。恢复后由调用方触发一次 dispatch 立即续跑。
+    async resumePlan(input: {
+      planId: string;
+      workspaceId: string;
+      resumedAt?: Date;
+    }): Promise<TaskPlanRow | null> {
+      const resumedAt = input.resumedAt ?? new Date();
+      const [row] = await db
+        .update(taskPlans)
+        .set({
+          status: "dispatching" satisfies TaskPlanStatus,
+          updatedAt: resumedAt
+        })
+        .where(and(
+          eq(taskPlans.id, input.planId),
+          eq(taskPlans.workspaceId, input.workspaceId),
+          eq(taskPlans.status, "paused" satisfies TaskPlanStatus)
         ))
         .returning();
       return row ?? null;

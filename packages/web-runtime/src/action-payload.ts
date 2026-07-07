@@ -165,6 +165,19 @@ export function notificationActionFromHref(href: string) {
   };
 }
 
+// B-R9.6 §3.1：军团面板「暂停/恢复派发」按钮的 href 识别。
+export function taskPlanDispatchActionFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/task-plans\/([^/]+)\/(pause|resume)$/u.exec(path);
+  if (!match?.[1] || !match[2]) {
+    return undefined;
+  }
+  return {
+    planId: decodeURIComponent(match[1]),
+    action: match[2] as "pause" | "resume"
+  };
+}
+
 export function escalationActionFromHref(href: string) {
   const path = hrefPathname(href);
   const budgetMatch = /^\/api\/escalations\/([^/]+)\/budget-actions\/([^/]+)$/u.exec(path);

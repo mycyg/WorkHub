@@ -2241,7 +2241,7 @@ test("work item and proposal page OpenAPI routes document id parameters and page
   ]);
   assert.deepEqual(taskPlanSchema?.properties?.status, {
     type: "string",
-    enum: ["draft", "proposed", "approved", "dispatching", "done", "cancelled"]
+    enum: ["draft", "proposed", "approved", "dispatching", "paused", "done", "cancelled"]
   });
   const agentTeamSchema = workItemData?.properties?.agent_team as { required?: string[]; properties?: Record<string, unknown> } | undefined;
   assert.deepEqual(agentTeamSchema?.required, [

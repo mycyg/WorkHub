@@ -1318,6 +1318,22 @@ function taskPlanAgentTeamToVm(
     : undefined;
   const viewLabel = locale === "zh-CN" ? "看产出" : "View output";
   const decideLabel = locale === "zh-CN" ? "去决策" : "Decide";
+  // B-R9.6 §3.1：暂停/恢复派发控制。dispatching/approved 可暂停，paused 可恢复，终态无控制。
+  const dispatchControl = rows.plan.status === "dispatching" || rows.plan.status === "approved"
+    ? {
+      kind: "pause" as const,
+      label: locale === "zh-CN" ? "暂停派发" : "Pause dispatch",
+      href: `/api/task-plans/${rows.plan.id}/pause`,
+      method: "POST" as const
+    }
+    : rows.plan.status === "paused"
+      ? {
+        kind: "resume" as const,
+        label: locale === "zh-CN" ? "恢复派发" : "Resume dispatch",
+        href: `/api/task-plans/${rows.plan.id}/resume`,
+        method: "POST" as const
+      }
+      : undefined;
 
   return parseOutputContract(workItemAgentTeamVmSchema, {
     plan_id: rows.plan.id,
@@ -1328,6 +1344,7 @@ function taskPlanAgentTeamToVm(
     ...(costBudget ? { cost_budget_cny: costBudget } : {}),
     ...(costBurnPct !== undefined ? { cost_burn_pct: costBurnPct } : {}),
     runs_capped: rows.runsCapped ?? false,
+    ...(dispatchControl ? { dispatch_control: dispatchControl } : {}),
     items: rows.items.map((item, index) => {
       const displaySeq = index + 1;
       const run = latestByItem.get(item.id);

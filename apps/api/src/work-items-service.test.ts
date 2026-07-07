@@ -1668,6 +1668,9 @@ test("R9.2 work item detail exposes task-plan child run visibility and decision 
   const vm = await service.detailPage({ workItemId, actor, locale: "zh-CN" });
 
   assert.equal(vm.agent_team?.plan_id, planId);
+  // B-R9.6 §3.1：dispatching 计划头行带「暂停派发」控制，指向真实 pause 端点。
+  assert.equal(vm.agent_team?.dispatch_control?.kind, "pause");
+  assert.equal(vm.agent_team?.dispatch_control?.href, `/api/task-plans/${planId}/pause`);
   assert.equal(vm.agent_team?.completed_count, 1);
   assert.equal(vm.agent_team?.total_count, 2);
   assert.equal(vm.agent_team?.cost_used_cny, "1.250000");

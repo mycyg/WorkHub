@@ -1225,3 +1225,148 @@ test("R9.7 task-plan workflow rejects a new draft when the work item already has
   assert.equal(plannerCalls, 0);
   assert.deepEqual([...taskPlans.rows.keys()], [planId]);
 });
+
+// B-R9.6 §3.1：暂停/恢复派发路由——写级鉴权走工作项 mutate 门、CAS 冲突 409、
+// 恢复踢派发失败回滚 paused + 503（按钮幂等，不留假恢复态）。
+function pausablePlanRow(status: TaskPlanStatus): TaskPlanRow {
+  return {
+    id: planId,
+    workItemId,
+    workspaceId,
+    status,
+    objectiveId: null,
+    budgetJson: {},
+    decompositionContextJson: {},
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now
+  } as TaskPlanRow;
+}
+
+function pauseRouteHarness(input: {
+  planStatus: TaskPlanStatus | null;
+  dispatchError?: Error;
+}) {
+  const runtimeSettings = settings();
+  // 路由的 workspace 视界取自 actor（登录中间件给默认工作区），stub 与其对齐。
+  const actorWorkspaceId = runtimeSettings.auth.defaultWorkspaceId;
+  const workItems = new WorkItems();
+  const calls: string[] = [];
+  let status: TaskPlanStatus | null = input.planStatus;
+  const plans = {
+    async getPlanWithItems(query: { planId: string; workspaceId: string }) {
+      calls.push(`load:${query.planId}:${query.workspaceId}`);
+      if (status === null || query.planId !== planId || query.workspaceId !== actorWorkspaceId) {
+        return null;
+      }
+      return { plan: pausablePlanRow(status), items: [], itemsCapped: false };
+    },
+    async pausePlan(query: { planId: string; workspaceId: string }) {
+      calls.push(`pause:${query.planId}`);
+      if (status !== "dispatching" && status !== "approved") {
+        return null;
+      }
+      status = "paused";
+      return pausablePlanRow(status);
+    },
+    async resumePlan(query: { planId: string; workspaceId: string }) {
+      calls.push(`resume:${query.planId}`);
+      if (status !== "paused") {
+        return null;
+      }
+      status = "dispatching";
+      return pausablePlanRow(status);
+    }
+  };
+  const dispatched: string[] = [];
+  const taskDispatcher = {
+    async dispatch(query: { planId: string; workspaceId: string }) {
+      dispatched.push(query.planId);
+      if (input.dispatchError) {
+        throw input.dispatchError;
+      }
+      return { planId: query.planId, enqueuedItemIds: [], skippedItemIds: [], casMissItemIds: [], completed: false };
+    }
+  };
+  const app = new Hono<AuthEnv>();
+  app.route("/api", createTaskPlanRoutes({
+    auth: authDeps(runtimeSettings),
+    workItems,
+    plans,
+    taskDispatcher,
+    service: {
+      async createPlanProposal(): Promise<never> {
+        throw new Error("unused in pause tests");
+      }
+    }
+  }));
+  return {
+    runtimeSettings,
+    workItems,
+    app,
+    calls,
+    dispatched,
+    currentStatus: () => status
+  };
+}
+
+test("B-R9.6 task-plan pause gates on work item mutation authz and flips dispatching to paused", async () => {
+  const harness = pauseRouteHarness({ planStatus: "dispatching" });
+  const response = await harness.app.request(`/api/task-plans/${planId}/pause`, {
+    method: "POST",
+    headers: { cookie: await cookie(harness.runtimeSettings) }
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: true; data: { plan_id: string; status: string } };
+  assert.equal(body.data.status, "paused");
+  assert.deepEqual(harness.workItems.mutations, [workItemId]);
+  assert.equal(harness.currentStatus(), "paused");
+  assert.deepEqual(harness.dispatched, []);
+});
+
+test("B-R9.6 task-plan pause returns 409 when the plan is not dispatching", async () => {
+  const harness = pauseRouteHarness({ planStatus: "done" });
+  const response = await harness.app.request(`/api/task-plans/${planId}/pause`, {
+    method: "POST",
+    headers: { cookie: await cookie(harness.runtimeSettings) }
+  });
+  assert.equal(response.status, 409);
+  const body = await response.json() as { ok: false; error: { code: string } };
+  assert.equal(body.error.code, "task_plan_pause_conflict");
+});
+
+test("B-R9.6 task-plan resume flips paused back and kicks the dispatcher once", async () => {
+  const harness = pauseRouteHarness({ planStatus: "paused" });
+  const response = await harness.app.request(`/api/task-plans/${planId}/resume`, {
+    method: "POST",
+    headers: { cookie: await cookie(harness.runtimeSettings) }
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: true; data: { status: string } };
+  assert.equal(body.data.status, "dispatching");
+  assert.deepEqual(harness.dispatched, [planId]);
+  assert.equal(harness.currentStatus(), "dispatching");
+});
+
+test("B-R9.6 task-plan resume reverts to paused and returns 503 when the dispatch kick fails", async () => {
+  const harness = pauseRouteHarness({ planStatus: "paused", dispatchError: new Error("queue down") });
+  const response = await harness.app.request(`/api/task-plans/${planId}/resume`, {
+    method: "POST",
+    headers: { cookie: await cookie(harness.runtimeSettings) }
+  });
+  assert.equal(response.status, 503);
+  const body = await response.json() as { ok: false; error: { code: string } };
+  assert.equal(body.error.code, "task_plan_resume_dispatch_failed");
+  // 回滚：状态回 paused，用户可以再点一次。
+  assert.equal(harness.currentStatus(), "paused");
+});
+
+test("B-R9.6 task-plan pause 404s for missing plans without leaking existence", async () => {
+  const harness = pauseRouteHarness({ planStatus: null });
+  const response = await harness.app.request(`/api/task-plans/${planId}/pause`, {
+    method: "POST",
+    headers: { cookie: await cookie(harness.runtimeSettings) }
+  });
+  assert.equal(response.status, 404);
+  assert.deepEqual(harness.workItems.mutations, []);
+});

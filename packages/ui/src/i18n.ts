@@ -233,6 +233,7 @@ const taskPlanStatusLabels = {
   proposed: { "zh-CN": "待审阅", "en-US": "Proposed" },
   approved: { "zh-CN": "已批准", "en-US": "Approved" },
   dispatching: { "zh-CN": "推进中", "en-US": "In progress" },
+  paused: { "zh-CN": "已暂停", "en-US": "Paused" },
   done: { "zh-CN": "已完成", "en-US": "Done" },
   cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
 } satisfies Record<TaskPlanStatus, Copy>;

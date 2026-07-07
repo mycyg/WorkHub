@@ -424,6 +424,10 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    pauseTaskPlan: (planId) =>
+      request(`/api/task-plans/${encodeURIComponent(planId)}/pause`, { method: "POST" }),
+    resumeTaskPlan: (planId) =>
+      request(`/api/task-plans/${encodeURIComponent(planId)}/resume`, { method: "POST" }),
     resolveEscalation: (id, payload, options) =>
       request<EscalationResolveResult>(withPageLocale(`/api/escalations/${encodeURIComponent(id)}/resolve`, options), {
         method: "POST",

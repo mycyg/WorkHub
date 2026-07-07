@@ -358,6 +358,12 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async delegateApproval() {
       throw new Error("not needed");
     },
+    async pauseTaskPlan(): Promise<never> {
+      throw new Error("pauseTaskPlan not wired in this test");
+    },
+    async resumeTaskPlan(): Promise<never> {
+      throw new Error("resumeTaskPlan not wired in this test");
+    },
     async resolveEscalation() {
       throw new Error("not needed");
     },

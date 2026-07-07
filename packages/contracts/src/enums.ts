@@ -49,7 +49,8 @@ export const workItemModes = ["worker", "pm"] as const;
 export const workItemModeSchema = z.enum(workItemModes);
 export type WorkItemMode = z.infer<typeof workItemModeSchema>;
 
-export const taskPlanStatuses = ["draft", "proposed", "approved", "dispatching", "done", "cancelled"] as const;
+// B-R9.6 §3.1：paused = 人按下「暂停派发」。在跑的子 run 不杀，只停新派发；resume 回 dispatching。
+export const taskPlanStatuses = ["draft", "proposed", "approved", "dispatching", "paused", "done", "cancelled"] as const;
 export const taskPlanStatusSchema = z.enum(taskPlanStatuses);
 export type TaskPlanStatus = z.infer<typeof taskPlanStatusSchema>;
 

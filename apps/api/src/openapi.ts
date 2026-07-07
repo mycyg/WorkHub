@@ -2890,7 +2890,7 @@ const costDashboardPageResponseSchema = {
   },
   additionalProperties: false
 } as const;
-const taskPlanStatusResponseSchema = { type: "string", enum: ["draft", "proposed", "approved", "dispatching", "done", "cancelled"] } as const;
+const taskPlanStatusResponseSchema = { type: "string", enum: ["draft", "proposed", "approved", "dispatching", "paused", "done", "cancelled"] } as const;
 const taskPlanItemRoleResponseSchema = { type: "string", enum: ["research", "produce", "review", "integrate"] } as const;
 const taskPlanItemStatusResponseSchema = { type: "string", enum: ["pending", "dispatched", "succeeded", "failed", "skipped"] } as const;
 const agentArmyItemStatusResponseSchema = { type: "string", enum: ["pending", "dispatched", "succeeded", "failed", "needs_human", "skipped"] } as const;
@@ -5070,6 +5070,45 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id"), localeQueryParameter],
           ...jsonRequestBody(createTaskPlanRequestSchema, { required: false }),
           ...createTaskPlanResponse
+        }
+      },
+      "/api/task-plans/{planId}/pause": {
+        post: {
+          tags: ["task-plans"],
+          summary: "Pause dispatching new subtasks for a task plan (running child runs keep going)",
+          parameters: [pathUuidParameter("planId")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["plan_id", "status"],
+              properties: {
+                plan_id: uuidStringSchema,
+                status: taskPlanStatusResponseSchema
+              },
+              additionalProperties: false
+            }, "Plan paused").responses["200"],
+            ...jsonErrorStatusResponse("409", "Plan is not currently dispatching", ["task_plan_pause_conflict"]).responses
+          }
+        }
+      },
+      "/api/task-plans/{planId}/resume": {
+        post: {
+          tags: ["task-plans"],
+          summary: "Resume dispatching for a paused task plan and kick the dispatcher once",
+          parameters: [pathUuidParameter("planId")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["plan_id", "status"],
+              properties: {
+                plan_id: uuidStringSchema,
+                status: taskPlanStatusResponseSchema
+              },
+              additionalProperties: false
+            }, "Plan resumed").responses["200"],
+            ...jsonErrorStatusResponse("409", "Plan is not paused", ["task_plan_resume_conflict"]).responses,
+            ...jsonErrorStatusResponse("503", "Resume dispatch kick failed; plan reverted to paused", ["task_plan_resume_dispatch_failed"]).responses
+          }
         }
       },
       "/api/workitems/{id}/conflicts": {

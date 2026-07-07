@@ -45,6 +45,7 @@ import {
   eventListenerOptions,
   evidenceBindingWorkItemIdFromHref,
   escalationActionFromHref,
+  taskPlanDispatchActionFromHref,
   escapeHtml,
   fieldValueRequiredNotice,
   inspectPostRunWorkItemClarity,
@@ -1211,6 +1212,32 @@ function bindGoldPathNavigation(
           if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
             showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
           }
+        }
+        return;
+      }
+      // B-R9.6 §3.1：军团面板「暂停派发/恢复派发」。成功后原地翻转按钮（暂停↔恢复）+
+      // 同步面板状态标记，不整页重取（M12：全量 refetch 会破 loader/SSE smoke 门）。
+      const planDispatchAction = taskPlanDispatchActionFromHref(href);
+      if (planDispatchAction) {
+        try {
+          const result = planDispatchAction.action === "pause"
+            ? await client.pauseTaskPlan(planDispatchAction.planId)
+            : await client.resumeTaskPlan(planDispatchAction.planId);
+          const nextKind = planDispatchAction.action === "pause" ? "resume" : "pause";
+          actionTarget.setAttribute("href", `/api/task-plans/${encodeURIComponent(planDispatchAction.planId)}/${nextKind}`);
+          actionTarget.dataset.actionId = `${nextKind}_dispatch`;
+          actionTarget.dataset.r9AgentTeamDispatchControl = nextKind;
+          actionTarget.textContent = nextKind === "resume"
+            ? (locale === "en-US" ? "Resume dispatch" : "恢复派发")
+            : (locale === "en-US" ? "Pause dispatch" : "暂停派发");
+          const panel = actionTarget.closest<HTMLElement>("[data-r9-agent-team-panel]");
+          panel?.setAttribute("data-r9-agent-team-status", result.status);
+          const body = planDispatchAction.action === "pause"
+            ? (locale === "en-US" ? "Dispatch paused — running subtasks will finish, no new ones start." : "已暂停派发——在跑的子任务会跑完，不再派新的。")
+            : (locale === "en-US" ? "Dispatch resumed — ready subtasks are being sent out." : "已恢复派发——就绪的子任务正在派出。");
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, body, actionId));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
         }
         return;
       }

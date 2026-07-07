@@ -287,6 +287,9 @@ export type WorkHubApiClient = {
   getAgentRunHandoff: (runId: string) => Promise<StructuredHandoff | null>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
   delegateApproval: (id: string, payload: DelegateApprovalRequest) => Promise<unknown>;
+  // B-R9.6 §3.1：军团「暂停/恢复派发」。
+  pauseTaskPlan: (planId: string) => Promise<{ plan_id: string; status: string }>;
+  resumeTaskPlan: (planId: string) => Promise<{ plan_id: string; status: string }>;
   resolveEscalation: (id: string, payload: ResolveEscalationRequest, options?: PageRequestOptions) => Promise<EscalationResolveResult>;
   resolveBudgetDecision: (id: string, actionId: string, options?: PageRequestOptions) => Promise<EscalationResolveResult>;
   delegateEscalation: (id: string, payload: DelegateEscalationRequest, options?: PageRequestOptions) => Promise<EscalationDelegateResult>;

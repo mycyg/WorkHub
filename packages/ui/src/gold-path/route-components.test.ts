@@ -1308,6 +1308,57 @@ test("R9.7 WorkItem route component avoids dispatch internals and unavailable pa
   assert.equal(en.html.includes('data-r9-agent-team-pause="true"'), false);
 });
 
+// B-R9.6 §3.1：VM 带 dispatch_control 才渲「暂停派发/恢复派发」按钮；paused 头行
+// 要说「军团已暂停」而不是继续喊推进中。
+test("B-R9.6 WorkItem agent team panel renders the dispatch control from the VM", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const teamBase = {
+    plan_id: planId,
+    completed_count: 1,
+    total_count: 2,
+    cost_used_cny: "1.250000",
+    runs_capped: false,
+    items: []
+  };
+  const dispatchingVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      ...teamBase,
+      status: "dispatching",
+      dispatch_control: {
+        kind: "pause",
+        label: "暂停派发",
+        href: `/api/task-plans/${planId}/pause`,
+        method: "POST"
+      }
+    }
+  };
+  const dispatching = renderWebRouteComponent({ key: "workitem", workitem: dispatchingVm }, { locale: "zh-CN" });
+  assert.equal(dispatching.html.includes('data-r9-agent-team-dispatch-control="pause"'), true);
+  assert.equal(dispatching.html.includes("暂停派发"), true);
+  assert.equal(dispatching.html.includes(`href="/api/task-plans/${planId}/pause"`), true);
+  assert.equal(dispatching.html.includes('data-method="POST"'), true);
+
+  const pausedVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      ...teamBase,
+      status: "paused",
+      dispatch_control: {
+        kind: "resume",
+        label: "恢复派发",
+        href: `/api/task-plans/${planId}/resume`,
+        method: "POST"
+      }
+    }
+  };
+  const paused = renderWebRouteComponent({ key: "workitem", workitem: pausedVm }, { locale: "zh-CN" });
+  assert.equal(paused.html.includes("军团已暂停 1/2"), true);
+  assert.equal(paused.html.includes('data-r9-agent-team-dispatch-control="resume"'), true);
+  assert.equal(paused.html.includes("恢复派发"), true);
+});
+
 test("R5.4 WorkItem route component exposes Drive source context and proposal draft action", () => {
   const vm = surfaceVm();
   const draftVm: WorkItemDetailVM = {

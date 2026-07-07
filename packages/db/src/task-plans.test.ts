@@ -1015,3 +1015,39 @@ test("B-R9.6 task plan repository batches army progress reads without per-plan f
   assert.equal(empty.size, 0);
   assert.equal(queries.length, before);
 });
+
+// B-R9.6 §3.1：暂停/恢复 CAS——暂停只吃 approved/dispatching，恢复只吃 paused，
+// 两边都钉死 workspace 作用域；错状态返回 null（路由层转 409）。
+test("B-R9.6 task plan repository pauses and resumes dispatch with status CAS in workspace scope", async () => {
+  const pausedRow = { id: planId, status: "paused" };
+  const { db, queries } = createQueryRecorder([[pausedRow]]);
+  const repository = createTaskPlanRepository(db);
+  const paused = await repository.pausePlan({ planId, workspaceId });
+  assert.equal((paused as { status?: string } | null)?.status, "paused");
+  const [pauseQuery] = queries;
+  assert.ok(queryReferences(pauseQuery?.where, taskPlans.id));
+  assert.ok(queryReferences(pauseQuery?.where, taskPlans.workspaceId));
+  assert.ok(queryReferences(pauseQuery?.where, taskPlans.status));
+  const pauseParams = queryParamValues(pauseQuery?.where);
+  assert.ok(pauseParams.includes(planId));
+  assert.ok(pauseParams.includes(workspaceId));
+  assert.ok(pauseParams.includes("approved"));
+  assert.ok(pauseParams.includes("dispatching"));
+  assert.ok(!pauseParams.includes("done"));
+
+  const resumedRow = { id: planId, status: "dispatching" };
+  const resumeRecorder = createQueryRecorder([[resumedRow]]);
+  const resumeRepository = createTaskPlanRepository(resumeRecorder.db);
+  const resumed = await resumeRepository.resumePlan({ planId, workspaceId });
+  assert.equal((resumed as { status?: string } | null)?.status, "dispatching");
+  const [resumeQuery] = resumeRecorder.queries;
+  const resumeParams = queryParamValues(resumeQuery?.where);
+  assert.ok(resumeParams.includes(planId));
+  assert.ok(resumeParams.includes(workspaceId));
+  assert.ok(resumeParams.includes("paused"));
+
+  // CAS 未命中（错状态被 where 挡掉，returning 空）→ null。
+  const missRecorder = createQueryRecorder([[]]);
+  const missRepository = createTaskPlanRepository(missRecorder.db);
+  assert.equal(await missRepository.pausePlan({ planId, workspaceId }), null);
+});

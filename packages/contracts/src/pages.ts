@@ -747,6 +747,14 @@ export const workItemAgentTeamVmSchema = z.object({
   cost_budget_cny: z.string().optional(),
   cost_burn_pct: z.number().int().nonnegative().optional(),
   runs_capped: z.boolean().default(false),
+  // B-R9.6 §3.1：头行「暂停派发/恢复派发」次级按钮。只在 dispatching/approved（可暂停）
+  // 或 paused（可恢复）时出现；终态军团没有派发可控。
+  dispatch_control: z.object({
+    kind: z.enum(["pause", "resume"]),
+    label: z.string().min(1),
+    href: z.string().min(1),
+    method: z.literal("POST")
+  }).optional(),
   items: z.array(workItemAgentTeamItemVmSchema).max(50)
 });
 export type WorkItemAgentTeamVM = z.infer<typeof workItemAgentTeamVmSchema>;
