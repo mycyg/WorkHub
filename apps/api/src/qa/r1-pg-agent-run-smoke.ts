@@ -306,18 +306,6 @@ async function main() {
       planner: deterministicTaskPlanner()
     });
     const aiDecisionRepository = createAiDecisionRepository(db);
-    const escalationService = createEscalationService({
-      repository: {
-        findById: (input) => aiDecisionRepository.findEscalationById(input),
-        listUnresolvedForWorkspace: (input) => aiDecisionRepository.listUnresolvedEscalationsForWorkspace(input),
-        resolveEscalation: (input) => aiDecisionRepository.resolveEscalation(input),
-        resolveBudgetDecision: (input) => aiDecisionRepository.resolveBudgetDecision(input),
-        reopenEscalation: (input) => aiDecisionRepository.reopenEscalation?.(input) ?? Promise.resolve(null),
-        delegateEscalation: (input) => aiDecisionRepository.delegateEscalation(input)
-      },
-      users: userRepo,
-      workItems: workItemService
-    });
     const ledgerStore = createDbCostLedgerStore(db, {
       teamId: settings.auth.defaultWorkspaceId,
       evalSuite: "nightly"
@@ -346,6 +334,21 @@ async function main() {
       queue,
       escalationSink: createDbTaskDispatchEscalationSink(aiDecisionRepository),
       completionSink: false
+    });
+    // B-R9.0-2：非计划升级 retry 现在真重新入队 agent run，escalationService 必须接同一条
+    // 真 PG 队列（构造顺序因此挪到 queue 之后）。
+    const escalationService = createEscalationService({
+      repository: {
+        findById: (input) => aiDecisionRepository.findEscalationById(input),
+        listUnresolvedForWorkspace: (input) => aiDecisionRepository.listUnresolvedEscalationsForWorkspace(input),
+        resolveEscalation: (input) => aiDecisionRepository.resolveEscalation(input),
+        resolveBudgetDecision: (input) => aiDecisionRepository.resolveBudgetDecision(input),
+        reopenEscalation: (input) => aiDecisionRepository.reopenEscalation?.(input) ?? Promise.resolve(null),
+        delegateEscalation: (input) => aiDecisionRepository.delegateEscalation(input)
+      },
+      users: userRepo,
+      workItems: workItemService,
+      runQueue: queue
     });
     const app = withErrors(new Hono<AuthEnv>());
     app.route("/api", createSessionRoutes({ auth, workItems: workItemService }));
@@ -947,6 +950,15 @@ async function main() {
         `Expected DB escalation resolve to persist ai_working/resolvedAt, got status=${resolvedEscalationWorkItem?.status ?? "missing"}`
       );
     }
+    // B-R9.0-2：非计划升级 retry 必须真入队一个 agent run（不能只翻状态）。断言后立即取消该 run，
+    // 释放它的 team/day 预算持有量，避免影响后文并发预算竞争的精确门。
+    const escalationRetryRuns = (await queue.listActive()).filter((run) => run.work_item_id === escalationWorkItemId);
+    if (escalationRetryRuns.length !== 1 || escalationRetryRuns[0]?.status !== "queued") {
+      throw new Error(
+        `Expected escalation retry to enqueue exactly one queued run, got ${JSON.stringify(escalationRetryRuns.map((run) => ({ id: run.run_id, status: run.status })))}`
+      );
+    }
+    await queue.abort(escalationRetryRuns[0].run_id, { id: seedUser.id, isAdmin: true });
     const attentionAfterEscalation = await app.request("/api/pages/attention?locale=zh-CN", { headers });
     if (attentionAfterEscalation.status !== 200) {
       throw new Error(`Expected post-resolve attention page 200, got ${attentionAfterEscalation.status}: ${await attentionAfterEscalation.text()}`);
