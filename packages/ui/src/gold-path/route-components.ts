@@ -3596,6 +3596,27 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
     </div>`)
     .join("");
+  // B-R9.6 §3.5（成本页军团分组）：by_task_plan 早在 VM 里（仅管理员非空），但前端从没渲过——
+  // 军团跑掉的钱在成本页无处可看。按任务计划分组列出，行内给子 run 数，头部给指挥台入口。
+  const armyRows = vm.by_task_plan.slice(0, 8)
+    .map((item) => `<div class="wh-r4-route-row" data-r9-cost-army-plan="${escapeHtml(item.task_plan_id)}">
+      <div>
+        <strong>${escapeHtml(item.label ?? (zhNotice ? "军团任务计划" : "Task plan"))}</strong>
+        <p>${escapeHtml(zhNotice
+          ? `${item.child_runs} 个子任务 · ${item.task_plan_id.slice(0, 8)}`
+          : `${item.child_runs} child ${item.child_runs === 1 ? "run" : "runs"} · ${item.task_plan_id.slice(0, 8)}`)}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
+    </div>`)
+    .join("");
+  const armyCard = vm.by_task_plan.length
+    ? `<section class="wh-card wh-r4-route-card" data-r9-cost-army="true" data-r9-cost-army-count="${escapeHtml(String(vm.by_task_plan.length))}">
+          <h3>${escapeHtml(zhNotice ? "军团花费" : "Agent army spend")}</h3>
+          <p class="wh-subtle">${escapeHtml(zhNotice ? "按任务计划分组的 AI 军团开销。" : "AI army cost grouped by task plan.")}</p>
+          <div class="wh-r4-route-timeline">${armyRows}</div>
+          <div class="wh-r4-route-actions"><a class="wh-btn" href="/dashboard/agents" data-r9-cost-army-cta="true">${escapeHtml(zhNotice ? "去指挥台看军团" : "Open the command deck")}</a></div>
+        </section>`
+    : "";
   // K5：「干活 vs 自进化」分账卡——把夜间技能自迭代的开销显性化（复利劳动力的自我打磨成本）。
   const laborSplitCard = vm.labor_split
     ? `<section class="wh-card wh-r4-route-card" data-r4-cost-labor-split="true" data-r4-cost-self-improvement-ratio="${escapeHtml(String(vm.labor_split.self_improvement_ratio))}">
@@ -3676,7 +3697,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           <div class="wh-r4-route-timeline">${models || `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.statusFallback"))}</p>`}</div>
         </section>
       </div>
-      ${laborSplitCard ? `<div class="wh-r4-route-grid">${laborSplitCard}</div>` : ""}
+      ${armyCard || laborSplitCard ? `<div class="wh-r4-route-grid">${armyCard}${laborSplitCard}</div>` : ""}
     </section>`
   });
 }

@@ -1994,6 +1994,40 @@ test("K5 Cost route component omits the labor split card when labor_split is abs
   assert.equal(cost.html.includes('data-r4-cost-labor-split="true"'), false);
 });
 
+// B-R9.6 §3.5：军团花费卡——by_task_plan 非空（管理员口径）时按任务计划分组渲出，
+// 带子 run 数与指挥台入口；非管理员 VM 置空则整卡不渲。
+test("B-R9.6 Cost route component renders agent army spend grouped by task plan", () => {
+  const base = surfaceVm();
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: {
+        ...base.page_vms.cost,
+        by_task_plan: [
+          { task_plan_id: "0f8b1c2d-1111-4222-8333-444455556666", cost_cny: "1.25", tokens: 5000, child_runs: 3 },
+          { task_plan_id: "1a2b3c4d-2222-4333-8444-555566667777", label: "上市材料军团", cost_cny: "0.4", tokens: 900, child_runs: 1 }
+        ]
+      }
+    }
+  };
+  const cost = renderWebRouteComponents(vm, { locale: "zh-CN" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r9-cost-army="true"'), true);
+  assert.equal(cost.html.includes('data-r9-cost-army-count="2"'), true);
+  assert.equal(cost.html.includes('data-r9-cost-army-plan="0f8b1c2d-1111-4222-8333-444455556666"'), true);
+  assert.equal(cost.html.includes("3 个子任务"), true);
+  assert.equal(cost.html.includes("上市材料军团"), true);
+  assert.equal(cost.html.includes('href="/dashboard/agents"'), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
+test("B-R9.6 Cost route component omits the army card when by_task_plan is empty", () => {
+  const cost = renderWebRouteComponents(surfaceVm(), { locale: "zh-CN" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r9-cost-army="true"'), false);
+});
+
 test("R4.11 Settings route component uses a typed Settings Page VM without leaking secrets or pet settings", () => {
   const vm = surfaceVm();
   const settings = renderWebRouteComponents(vm, { locale: "en-US" }).settings;
