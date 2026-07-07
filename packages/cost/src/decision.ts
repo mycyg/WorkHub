@@ -357,6 +357,9 @@ function defaultScopeLabel(scope: BudgetScope) {
 // 与 ai-worklog 的 UTC 日界（L7）一致；CI/生产均为 UTC。代价仅是 UTC+8 下"今日"额度按北京时间 08:00
 // 重置（纯 UX 取舍）。若将来要按业务时区切日，必须写入侧与读取侧同时改、保持两端时区一致，否则会双计。
 function periodBounds(period: BudgetPolicy["period"], now: Date) {
+  if (period === "total") {
+    return { start: new Date(0), end: now };
+  }
   const start = new Date(now);
   if (period === "month") {
     start.setUTCDate(1);

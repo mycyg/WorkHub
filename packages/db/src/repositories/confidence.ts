@@ -671,6 +671,30 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
         }
 
         const planId = budgetTaskPlanId((updatedEscalation.handoffJson ?? {}) as Record<string, unknown>);
+        // B-R9.5-3（branch-review 未接线）：「追加预算继续」要真加预算——同事务把计划
+        // 预算上调 max(50%, ¥1)，军团派发由 service 层随后恢复；工单状态保持不变
+        // （军团仍在 ai_working，不走下方 finish/close 的状态迁移）。
+        if (planId && input.actionId === "add_budget") {
+          const bumped = await tx
+            .update(taskPlans)
+            .set({
+              budgetJson: sql`coalesce(${taskPlans.budgetJson}, '{}'::jsonb) || jsonb_build_object(
+                'max_cost_cny',
+                greatest(
+                  coalesce((${taskPlans.budgetJson} ->> 'max_cost_cny')::numeric, 0) * 1.5,
+                  coalesce((${taskPlans.budgetJson} ->> 'max_cost_cny')::numeric, 0) + 1
+                )::text
+              )`,
+              updatedAt: input.at
+            })
+            .where(and(
+              eq(taskPlans.id, planId),
+              eq(taskPlans.workItemId, updatedEscalation.workItemId),
+              eq(taskPlans.workspaceId, input.workspaceId)
+            ))
+            .returning({ id: taskPlans.id });
+          requireResolutionRows(bumped, 1);
+        }
         const terminalPlanStatus = planId ? budgetTaskPlanTerminalStatus(input.actionId) : null;
         if (planId && terminalPlanStatus) {
           await tx
@@ -722,7 +746,9 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
           requireResolutionRows(updatedPlans, 1);
         }
 
-        const updatedWorkItems = await tx
+        const updatedWorkItems = input.actionId === "add_budget"
+          ? [{ id: updatedEscalation.workItemId }]
+          : await tx
           .update(workItems)
           .set({
             status: input.targetStatus,

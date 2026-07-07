@@ -211,7 +211,8 @@ test("R9.7 budget exhaustion rows render as budget decision cards", () => {
   // R9.7 review: the old assertion made every budget option POST to resolve the card, but
   // `add_budget` does not itself update a budget policy. Only applied terminal choices may resolve.
   assert.deepEqual(item.actions.map((action) => [action.id, action.label, action.method, action.href]), [
-    ["add_budget", "追加预算继续", "GET", "/dashboard/cost?objectiveId=obj-1"],
+    // B-R9.5-3：追加预算是真 POST 动作（repo 加预算+恢复派发），不再是「去预算页」的提示。
+    ["add_budget", "追加预算继续", "POST", `/api/escalations/${escalationId}/budget-actions/add_budget`],
     ["finish_current_output", "就用现有产出收尾", "POST", `/api/escalations/${escalationId}/budget-actions/finish_current_output`],
     ["close_scope", "整体收工", "POST", `/api/escalations/${escalationId}/budget-actions/close_scope`]
   ]);
@@ -252,7 +253,7 @@ test("R9.7 budget escalation cards localize durable Chinese labels for English r
   assert.equal(item.summary_text.includes("目标预算"), false);
   assert.equal(item.summary_text.includes("Objective budget month"), true);
   assert.deepEqual(item.actions.map((action) => [action.id, action.label, action.method, action.href]), [
-    ["add_budget", "Add budget and continue", "GET", "/dashboard/cost?objectiveId=obj-1"],
+    ["add_budget", "Add budget and continue", "POST", `/api/escalations/${escalationId}/budget-actions/add_budget`],
     ["finish_current_output", "Finish with current output", "POST", `/api/escalations/${escalationId}/budget-actions/finish_current_output`],
     ["close_scope", "Close scope", "POST", `/api/escalations/${escalationId}/budget-actions/close_scope`]
   ]);
@@ -384,12 +385,17 @@ test("R9.7 budget decision actions reject options not present on the durable not
   assert.deepEqual(repository.budgetDecisionCalls, []);
 });
 
-test("R9.7 budget decision actions reject unapplied budget policy choices", async () => {
+test("B-R9.5 add_budget really settles the card and resumes army dispatch", async () => {
+  // branch-review 未接线：add_budget 此前只是「去预算页」的不可达提示（422）。
+  // 现在 repo 事务真加预算，service 随后恢复军团派发。
+  const taskPlanId = "94000000-0000-4000-8000-000000000501";
+  const dispatched: string[] = [];
   const repository = new MemoryEscalationRepository({
     findRow: row({
       trigger: "budget_exhausted",
       handoffJson: {
         attention_kind: "budget",
+        task_plan_id: taskPlanId,
         notice: {
           recommended_action: "add_budget",
           options: [
@@ -400,17 +406,21 @@ test("R9.7 budget decision actions reject unapplied budget policy choices", asyn
       }
     })
   });
-  const service = createEscalationService({ repository, now: () => now }) as ReturnType<typeof createEscalationService> & {
-    resolveBudgetDecision: (id: string, actor: AuthActor, actionId: string) => Promise<unknown>;
-  };
+  const service = createEscalationService({
+    repository,
+    taskDispatcher: {
+      async dispatch(input) {
+        dispatched.push(input.planId);
+        return { planId: input.planId, enqueuedItemIds: [], skippedItemIds: [], casMissItemIds: [], completed: false };
+      }
+    },
+    now: () => now
+  });
 
-  await assert.rejects(
-    service.resolveBudgetDecision(escalationId, actor(), "add_budget"),
-    (error: unknown) => error instanceof Error
-      && (error as { status?: number; code?: string }).status === 422
-      && (error as { code?: string }).code === "budget_action_requires_budget_update"
-  );
-  assert.deepEqual(repository.budgetDecisionCalls, []);
+  const resolved = await service.resolveBudgetDecision(escalationId, actor(), "add_budget", "zh-CN");
+  assert.equal(resolved.attention.summary_text, "已追加预算，军团继续执行。");
+  assert.deepEqual(repository.budgetDecisionCalls.map((call) => call.actionId), ["add_budget"]);
+  assert.deepEqual(dispatched, [taskPlanId]);
 });
 
 test("R9.0 escalation resolve actions map to the work-item state machine", async () => {

@@ -62,18 +62,22 @@ export function defaultBudgetPoliciesFromSettings(settings: Settings): BudgetPol
       version: 1
     },
     {
+      // B-R9.5-2（branch-review 护栏假）：task 维度预算此前挂在 period=run 上，
+      // 而 run 周期快照恒 0（决策只在 run 启动时取）——结构性永不超限。改为 total
+      // （plan 生命周期累计）+ 计划默认预算 cap，累计超限即 402 出预算升级卡。
+      // 并发在飞窗口由 B-R9.2-1 的份额 cap 压住（各子 run 上限之和 ≤ 计划预算）。
       id: "pcost-task-run-v0",
       scopeKind: "task",
-      period: "run",
-      maxTokens: settings.budgets.runTokens,
-      maxCostCny: settings.budgets.runCostCny,
+      period: "total",
+      maxTokens: settings.budgets.runTokens * 8,
+      maxCostCny: settings.budgets.taskPlanCostCny,
       warningRatio: 0.8,
       criticalRatio: 0.95,
-      onWarning: "downgrade_model",
-      onExhausted: "handoff_current_run",
+      onWarning: "notify",
+      onExhausted: "block_new_run",
       modelRouteHint: "balanced",
       enabled: true,
-      version: 1
+      version: 2
     },
     {
       id: "pcost-objective-month-v0",

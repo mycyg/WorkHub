@@ -20,7 +20,7 @@ export type RunBudget = {
 export type BudgetPolicy = {
   id: string;
   scopeKind: BudgetScope["kind"];
-  period: "run" | "day" | "month";
+  period: "run" | "day" | "month" | "total";
   maxTokens: number;
   maxCostCny: string;
   warningRatio: number;
@@ -36,7 +36,7 @@ export type BudgetUsage = {
   scope: BudgetScope;
   scopeLabel: string;
   policyId: string;
-  period: "run" | "day" | "month";
+  period: "run" | "day" | "month" | "total";
   periodStart: string;
   periodEnd: string;
   tokenIn: number;

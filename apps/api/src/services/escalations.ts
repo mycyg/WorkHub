@@ -155,7 +155,10 @@ function actionSummary(action: ResolveEscalationRequest["action"], locale: WorkH
   return "已取消这个子任务。";
 }
 
-function budgetDecisionSummary(locale: WorkHubLocale) {
+function budgetDecisionSummary(locale: WorkHubLocale, actionId?: string) {
+  if (actionId === "add_budget") {
+    return locale === "en-US" ? "Budget topped up — the agent team keeps going." : "已追加预算，军团继续执行。";
+  }
   return locale === "en-US" ? "Budget choice recorded." : "已记录预算选择。";
 }
 
@@ -241,6 +244,9 @@ function availableBudgetActionIds(row: EscalationServiceRow) {
 }
 
 const budgetActionTargetStatus = new Map<string, WorkItemStatus>([
+  // B-R9.5-3：追加预算继续——repo 层真加预算（工单状态不变，ai_working 仅作合法性占位），
+  // service 层随后恢复军团派发。
+  ["add_budget", "ai_working"],
   ["finish_current_output", "in_review"],
   ["close_scope", "cancelled"]
 ]);
@@ -575,6 +581,27 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       if (!row) {
         throw new EscalationServiceError(409, "escalation_race", "这条升级已经被处理过了。");
       }
+      // B-R9.5-3：预算已在 repo 事务里真加——现在恢复军团派发；派发失败重开升级卡
+      // 如实报错（预算保留提额，重试只需再点一次）。
+      const budgetPlanId = taskPlanIdFromHandoff(existing);
+      if (normalizedActionId === "add_budget" && budgetPlanId) {
+        try {
+          await (injectedTaskDispatcher ?? defaultTaskDispatcher()).dispatch({
+            planId: budgetPlanId,
+            workspaceId: actor.workspaceId,
+            orgId: actor.orgId,
+            ...(actor.userId ? { actorId: actor.userId } : {})
+          });
+        } catch {
+          await repository.reopenEscalation?.({
+            escalationId: id,
+            targetStatus: row.workItemStatus,
+            workspaceId: actor.workspaceId,
+            at: now()
+          });
+          throw new EscalationServiceError(503, "task_dispatch_retry_failed", "预算已追加，但恢复执行失败，请稍后再点一次。");
+        }
+      }
       return {
         escalation: {
           id: row.id,
@@ -583,7 +610,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
         },
         work_item_status: row.workItemStatus,
         attention: {
-          summary_text: budgetDecisionSummary(locale)
+          summary_text: budgetDecisionSummary(locale, normalizedActionId)
         }
       };
     },

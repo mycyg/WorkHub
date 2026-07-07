@@ -95,7 +95,7 @@ export function usageToLedgerEntries(usage: UsageRecord, options: ReconcileUsage
 // 周期感知：日/月预算只能统计当天/当月用量，否则会把全部历史都算进去 → 误判超额、用一阵后永久卡死。
 // periodBucket 是 entry 的日期 "YYYY-MM-DD"。每个 scope 产出 run/day/month 三个快照（按 period 过滤），
 // 由 decideRunBudget 的 matchesUsage 按 (scope, period) 取对应那个。run 周期保留 scope 全量（per-run 上限在运行时另行实时管控）。
-const SNAPSHOT_PERIODS: ReadonlyArray<NonNullable<BudgetUsageSnapshot["period"]>> = ["run", "day", "month"];
+const SNAPSHOT_PERIODS: ReadonlyArray<NonNullable<BudgetUsageSnapshot["period"]>> = ["run", "day", "month", "total"];
 
 export function ledgerUsageSnapshots(
   entries: readonly CostLedgerEntry[],
@@ -111,6 +111,11 @@ export function ledgerUsageSnapshots(
     }
     if (period === "month") {
       return entry.periodBucket.slice(0, 7) === monthPrefix;
+    }
+    // B-R9.5-2：total=scope 全量累计（无时间窗）——task/objective 这类「生命周期预算」
+    // 用它才能真超限触发 402；run 周期恒 0 的语义只适合 per-run 策略。
+    if (period === "total") {
+      return true;
     }
     // run：决策只在 run 启动时调用一次，此刻这次 run 尚未花费 → run 快照用量记 0。
     // 否则 run 快照取 scope 全量，per-run 策略的 remainingTokens 会随历史累计跌到 0，

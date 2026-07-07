@@ -145,6 +145,51 @@ test("R9.5 task and objective scopes participate in ledger snapshots and budget 
   ]);
 });
 
+test("B-R9.5 task lifetime budget really exhausts through the total-period snapshot", async () => {
+  // branch-review 护栏假：task 维度策略此前挂 period=run，而 run 快照恒 0——结构性
+  // 永不超限。total 快照=plan 生命周期累计，累计超 cap 必须真 402。
+  const settings = loadSettings({ BUDGET_DEFAULT_TASK_PLAN_COST_CNY: "10" });
+  const taskPlanId = "95000000-0000-4000-8000-000000000601";
+  const ledger = createMemoryCostLedgerStore({ teamId: "workspace-r95" });
+  // 两个子 run 累计花掉 ¥12（超过计划默认预算 ¥10）。
+  for (const [runId, tokens] of [["95000000-0000-4000-8000-000000000602", 600_000], ["95000000-0000-4000-8000-000000000603", 600_000]] as const) {
+    await ledger.recordUsage(buildUsageRecord({
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+      task: "worker",
+      runId,
+      workItemId: "95000000-0000-4000-8000-000000000604",
+      userId: "95000000-0000-4000-8000-000000000605",
+      workspaceId: "workspace-r95",
+      taskPlanId,
+      inputTokens: tokens,
+      outputTokens: 0,
+      costTier: { inputCnyPerMtok: 10, outputCnyPerMtok: 10 },
+      createdAt: new Date("2026-07-01T00:00:00.000Z")
+    }));
+  }
+  const snapshots = await ledger.usageSnapshots({ taskPlanId }, { now: new Date("2026-07-03T00:00:00.000Z") });
+  const totalSnapshot = snapshots.find((snapshot) => snapshot.scope.kind === "task" && snapshot.period === "total");
+  // total 跨天累计（不是当日 day 快照）。
+  assert.equal(totalSnapshot?.tokenIn, 1_200_000);
+  const taskPolicy = defaultBudgetPoliciesFromSettings(settings).find((policy) => policy.id === "pcost-task-run-v0");
+  assert.equal(taskPolicy?.period, "total");
+  assert.equal(taskPolicy?.maxCostCny, "10");
+
+  const decision = decideRunBudget({
+    settings,
+    decisionId: "decision-r95-task-total",
+    now: new Date("2026-07-03T00:00:00.000Z"),
+    scopeIds: { taskPlanId },
+    policies: [taskPolicy!],
+    usage: snapshots
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.deepEqual(decision.limitingScope, { kind: "task", taskPlanId });
+  assert.equal(decision.notice?.code, "budget_exhausted");
+});
+
 test("budget policy store updates policies without mutating settings defaults", () => {
   const settings = loadSettings({});
   const store = createMemoryBudgetPolicyStore();
