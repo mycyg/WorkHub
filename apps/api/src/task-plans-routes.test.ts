@@ -800,6 +800,102 @@ test("R9.7 task-plan rejection cancels the draft so the work item can regenerate
   );
 });
 
+test("R9.1 skip-plan rejects the plan draft and starts a single agent run", async () => {
+  // ux-flow-spec §1.1 步3「先不拆，单个 AI 跑」：打回计划（草稿随之取消）+ 真起单 run。
+  const runtimeSettings = settings();
+  const workItems = new WorkItems();
+  const taskPlans = new MemoryTaskPlans();
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: ids([proposalId, branchId, reviewId]),
+    onRejected: createTaskPlanReviewRejectionHandler({ taskPlans })
+  });
+  const service = createTaskPlanWorkflowService({
+    taskPlans,
+    proposals,
+    id: ids([planId]),
+    now: () => now,
+    planner: {
+      async createDraft() {
+        return {
+          items: [{
+            id: "95000000-0000-4000-8000-000000000661",
+            seq: 0,
+            title: "单任务计划",
+            role: "produce" as const,
+            objectiveMd: "先不拆的对照计划。",
+            acceptanceMd: "计划可被跳过。",
+            budgetSharePct: 100,
+            dependsOn: []
+          }],
+          decompositionContext: { judge: "approved" }
+        };
+      }
+    }
+  });
+  const enqueued: Array<{ workItemId: string; actorId: string; mode?: string }> = [];
+  const kickoffs: Array<{ workItemId: string; to: string }> = [];
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api", createTaskPlanRoutes({ auth: authDeps(runtimeSettings), service, workItems }));
+  app.route("/api/proposals", createProposalRoutes({
+    auth: authDeps(runtimeSettings),
+    proposals,
+    workItems,
+    taskPlanDispatcher: false,
+    runQueue: {
+      async enqueue(input) {
+        enqueued.push({ workItemId: input.workItemId, actorId: input.actorId, ...(input.mode ? { mode: input.mode } : {}) });
+        return { run_id: "95000000-0000-4000-8000-000000000671" } as never;
+      },
+      async abort() {
+        throw new Error("abort should not run on the happy path");
+      }
+    },
+    kickoffWorkItemStatus: async (input) => {
+      kickoffs.push({ workItemId: input.workItemId, to: input.to });
+      return { id: input.workItemId, status: "ai_working", transitioned: true };
+    }
+  }));
+  const headers = {
+    cookie: await cookie(runtimeSettings),
+    "content-type": "application/json"
+  };
+
+  const created = await app.request(`/api/workitems/${workItemId}/task-plan`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(created.status, 201);
+  const createdBody = await created.json() as { data: { proposal_id: string; plan_id: string } };
+
+  const skipped = await app.request(`/api/proposals/${createdBody.data.proposal_id}/skip-plan`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(skipped.status, 200);
+  const skippedBody = await skipped.json() as {
+    data: { run_id: string; work_item_id: string; attention: { summary_text: string } };
+  };
+  assert.equal(skippedBody.data.run_id, "95000000-0000-4000-8000-000000000671");
+  assert.equal(skippedBody.data.work_item_id, workItemId);
+  assert.equal(skippedBody.data.attention.summary_text, "已改为单个 AI 直接执行，计划草稿已取消。");
+  // 计划草稿被真取消、run 真入队、工单被 kickoff 到 ai_working。
+  assert.equal(taskPlans.rows.get(createdBody.data.plan_id)?.status, "cancelled");
+  assert.deepEqual(enqueued, [{ workItemId, actorId: userId, mode: "worker" }]);
+  assert.deepEqual(kickoffs, [{ workItemId, to: "ai_working" }]);
+
+  // 幂等/竞态：已处理过的提议再点一次 → 409，不再入队。
+  const again = await app.request(`/api/proposals/${createdBody.data.proposal_id}/skip-plan`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({})
+  });
+  assert.equal(again.status, 409);
+  assert.equal(enqueued.length, 1);
+});
+
 test("R9.1 task-plan merge fails loudly when approval does not update the plan", async () => {
   const runtimeSettings = settings();
   const workItems = new WorkItems();

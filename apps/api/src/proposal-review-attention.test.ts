@@ -80,6 +80,14 @@ test("task-plan proposals render as plan_review attention with plan-specific cop
   assert.equal(item.actions.find((a) => a.id === "approve")?.label, "确认计划");
   assert.equal(item.actions.find((a) => a.id === "request_replan")?.label, "打回重拆");
   assert.equal(item.actions.find((a) => a.id === "open_proposal")?.label, "查看计划提议");
+  // ux-flow-spec §1.1 步3 第三动作：先不拆，单个 AI 跑（≤3 动作 + 查看详情）。
+  const skipAction = item.actions.find((a) => a.id === "skip_plan_single_run");
+  assert.equal(skipAction?.label, "先不拆，单个 AI 跑");
+  assert.equal(skipAction?.method, "POST");
+  assert.equal(skipAction?.href, `/api/proposals/${base.id}/skip-plan`);
+  // 规格 §3.3：plan_review 卡标题必须带工作项名，不许通用文案。
+  assert.equal(item.title, "《短剧选题调研》的分工计划等你过目");
+  assert.equal(item.title.includes("《短剧选题调研》"), true);
 });
 
 test("reviewed task-plan proposals expose explicit start-or-hold decisions", () => {

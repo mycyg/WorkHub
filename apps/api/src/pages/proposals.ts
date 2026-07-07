@@ -42,11 +42,19 @@ export function buildProposalReviewAttentionItem(
             { id: "merge", label: pageT(locale, "proposal.action.merge"), style: "primary", method: "POST", href: `/api/proposals/${summary.id}/merge` },
             viewAction
           ])
-    : [
-        { id: "approve", label: pageT(locale, planReview ? "proposal.action.approvePlan" : "proposal.action.approve"), style: "primary", method: "POST", href: `/api/proposals/${summary.id}/review` },
-        { id: planReview ? "request_replan" : "request_changes", label: pageT(locale, planReview ? "proposal.action.requestPlanChanges" : "proposal.action.requestChanges"), style: "danger", method: "POST", href: `/api/proposals/${summary.id}/review`, requires_reason: true },
-        viewAction
-      ];
+    : (planReview
+        ? [
+            { id: "approve", label: pageT(locale, "proposal.action.approvePlan"), style: "primary" as const, method: "POST" as const, href: `/api/proposals/${summary.id}/review` },
+            { id: "request_replan", label: pageT(locale, "proposal.action.requestPlanChanges"), style: "danger" as const, method: "POST" as const, href: `/api/proposals/${summary.id}/review`, requires_reason: true },
+            // ux-flow-spec §1.1 步3：「先不拆，单个 AI 跑」——跳过军团计划，回到单 run 现状。
+            { id: "skip_plan_single_run", label: pageT(locale, "proposal.action.skipPlanSingleRun"), style: "secondary" as const, method: "POST" as const, href: `/api/proposals/${summary.id}/skip-plan` },
+            viewAction
+          ]
+        : [
+            { id: "approve", label: pageT(locale, "proposal.action.approve"), style: "primary" as const, method: "POST" as const, href: `/api/proposals/${summary.id}/review` },
+            { id: "request_changes", label: pageT(locale, "proposal.action.requestChanges"), style: "danger" as const, method: "POST" as const, href: `/api/proposals/${summary.id}/review`, requires_reason: true },
+            viewAction
+          ]);
   return {
     id: summary.id,
     kind: reviewKind,

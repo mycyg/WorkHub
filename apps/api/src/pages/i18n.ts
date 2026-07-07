@@ -19,6 +19,7 @@ type PageCopyKey =
   | "proposal.action.approvePlan"
   | "proposal.action.approvePlanAndStart"
   | "proposal.action.approvePlanHold"
+  | "proposal.action.skipPlanSingleRun"
   | "proposal.action.merge"
   | "proposal.action.mergePlan"
   | "proposal.action.view"
@@ -58,6 +59,7 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "proposal.action.approvePlan": "确认计划",
     "proposal.action.approvePlanAndStart": "批准并开始执行",
     "proposal.action.approvePlanHold": "批准但先不跑",
+    "proposal.action.skipPlanSingleRun": "先不拆，单个 AI 跑",
     "proposal.action.merge": "合入交付物",
     "proposal.action.mergePlan": "批准任务计划",
     "proposal.action.view": "查看变更",
@@ -96,6 +98,7 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "proposal.action.approvePlan": "Approve plan",
     "proposal.action.approvePlanAndStart": "Approve and start",
     "proposal.action.approvePlanHold": "Approve but hold",
+    "proposal.action.skipPlanSingleRun": "Skip the plan — run one AI",
     "proposal.action.merge": "Merge deliverable",
     "proposal.action.mergePlan": "Approve task plan",
     "proposal.action.view": "View changes",

@@ -44,6 +44,8 @@ import {
   type WorkItemService
 } from "../services/work-items.js";
 import { taskPlanApprovalTarget } from "../services/task-plan-approval.js";
+import { getDefaultAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
+import { getDefaultWorkItemStatusKickoff, type WorkItemStatusKickoff } from "./agent-runs.js";
 import { pageT } from "../pages/i18n.js";
 import { parseOutputContract } from "../pages/output-contract.js";
 import { readJsonObject } from "./json-body.js";
@@ -76,6 +78,9 @@ export type ProposalRoutesDependencies = {
   // findings[#168/H12]：合并/评审/打回事件原本只塞进 HTTP 响应、从不 publish 到总线，其它客户端的 SSE 实时
   // 刷新因此失效。注入 PushBus 后在各操作成功后 best-effort 发布。
   bus?: Pick<PushBus, "publish">;
+  // ux-flow-spec §1.1 步3「先不拆，单个 AI 跑」：打回计划后直接起单 run。false 仅供纯提议测试。
+  runQueue?: Pick<AgentRunQueue, "enqueue" | "abort"> | false;
+  kickoffWorkItemStatus?: WorkItemStatusKickoff | false;
   logger?: Pick<typeof console, "warn">;
 };
 
@@ -537,6 +542,15 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     : deps.taskPlanDispatcher ?? { dispatch: dispatchWithDefaultTaskDispatcher };
   const bus = deps.bus ?? getDefaultPushBus();
   const eventLogger = deps.logger ?? console;
+  function resolveSkipPlanRuntime() {
+    if (deps.runQueue === false || deps.kickoffWorkItemStatus === false) {
+      return undefined;
+    }
+    return {
+      queue: deps.runQueue ?? getDefaultAgentRunQueue(),
+      kickoff: deps.kickoffWorkItemStatus ?? getDefaultWorkItemStatusKickoff()
+    };
+  }
 
   async function assertCanReadWorkItem(workItemId: string, actor: AuthActor) {
     if (!workItems) {
@@ -705,6 +719,63 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     // findings[#168/H12]：发布 proposal.reviewed（及打回时的 revision.fedback），让其它客户端实时刷新。
     await publishProposalEvents(bus, [event, ...(resultBase.feedback_event ? [resultBase.feedback_event] : [])], eventLogger);
     return c.json({ ok: true, data: parseOutputContract(proposalReviewResultSchema, resultBase, "proposal.review-result") });
+  });
+
+  // ux-flow-spec §1.1 步3「先不拆，单个 AI 跑」：打回军团计划（onRejected 会取消草稿计划），
+  // 然后直接以现状单 run 开工。先打回后入队——反着做会留下「run 已在跑 + 计划仍可批准」的双跑窗口。
+  routes.post("/:id/skip-plan", authMiddleware, async (c) => {
+    const proposalForAccess = await readProposalForActor(c.req.param("id"), c.var.actor);
+    await assertCanMutateWorkItem(proposalForAccess.work_item_id, c.var.actor);
+    const locale = requestLocale(c);
+    const zh = locale === "zh-CN";
+    if (!taskPlanApprovalTarget(proposalForAccess)) {
+      return c.json({ ok: false, error: { code: "not_task_plan_proposal", message: zh ? "这不是任务计划提议。" : "This proposal is not a task plan." } }, 409);
+    }
+    if (proposalForAccess.status !== "opened" && proposalForAccess.status !== "reviewed") {
+      return c.json({ ok: false, error: { code: "plan_skip_not_available", message: zh ? "这份计划已经处理过了，请刷新后再看。" : "This plan has already been settled — refresh to see the latest state." } }, 409);
+    }
+    const runtime = resolveSkipPlanRuntime();
+    if (!runtime) {
+      return c.json({ ok: false, error: { code: "plan_skip_not_available", message: zh ? "单个 AI 执行暂时不可用。" : "Single-run execution is unavailable right now." } }, 503);
+    }
+    try {
+      await proposals.review({
+        proposalId: proposalForAccess.id,
+        actor: proposalActorFor(c.var.actor),
+        decision: "request_changes",
+        reasonMd: zh ? "用户选择先不拆，直接单个 AI 执行。" : "The user chose to skip the plan and run a single AI."
+      });
+    } catch (error) {
+      handleProposalServiceError(error);
+    }
+    const run = await runtime.queue.enqueue({
+      workItemId: proposalForAccess.work_item_id,
+      actorId: c.var.actor.id,
+      ...(c.var.actor.orgId ? { orgId: c.var.actor.orgId } : {}),
+      ...(c.var.actor.workspaceId ? { workspaceId: c.var.actor.workspaceId } : {}),
+      mode: "worker"
+    });
+    try {
+      // 与 /workitems/:id/agent-runs 同款 kickoff：非法前驱幂等 no-op；kickoff 失败取消刚入队的 run。
+      await runtime.kickoff({ workItemId: proposalForAccess.work_item_id, to: "ai_working", at: new Date() });
+    } catch (error) {
+      try {
+        await runtime.queue.abort(run.run_id, { id: c.var.actor.id, isAdmin: c.var.actor.isAdmin, canManageRun: true });
+      } catch {
+        // 已由 releaseExpired 租约回收兜底。
+      }
+      throw error;
+    }
+    return c.json({
+      ok: true,
+      data: {
+        run_id: run.run_id,
+        work_item_id: proposalForAccess.work_item_id,
+        attention: {
+          summary_text: zh ? "已改为单个 AI 直接执行，计划草稿已取消。" : "Switched to a single AI run; the plan draft was cancelled."
+        }
+      }
+    });
   });
 
   routes.post("/:id/merge", authMiddleware, async (c) => {

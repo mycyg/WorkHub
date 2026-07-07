@@ -5120,6 +5120,39 @@ export function getOpenApiDocument() {
           ...reviewProposalResponse
         }
       },
+      "/api/proposals/{id}/skip-plan": {
+        post: {
+          tags: ["task-plans"],
+          summary: "Skip the task plan and start a single agent run instead",
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["run_id", "work_item_id", "attention"],
+              properties: {
+                run_id: uuidStringSchema,
+                work_item_id: uuidStringSchema,
+                attention: {
+                  type: "object",
+                  required: ["summary_text"],
+                  properties: { summary_text: { type: "string", minLength: 1 } },
+                  additionalProperties: false
+                }
+              },
+              additionalProperties: false
+            }, "Plan skipped; a single agent run was enqueued").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": proposalForbiddenResponse,
+            "404": proposalNotFoundResponse,
+            ...jsonErrorStatusResponse("409", "Plan cannot be skipped in its current state", [
+              "not_task_plan_proposal",
+              "plan_skip_not_available",
+              "proposal_already_reviewed"
+            ]).responses,
+            ...jsonErrorStatusResponse("402", "Run budget is exhausted", ["budget_exhausted"]).responses
+          }
+        }
+      },
       "/api/proposals/{id}/merge": {
         post: {
           tags: ["proposals"],
