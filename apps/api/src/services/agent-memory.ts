@@ -102,7 +102,7 @@ export type PromoteMemoryResult =
     }
   | {
       status: "discarded";
-      reason: "noise" | "low_confidence" | "missing_source_actor";
+      reason: "noise" | "low_confidence" | "missing_source_actor" | "insufficient_evidence";
       decision?: AgentMemoryPromotionDecision;
       candidateMemoryIds: string[];
     }
@@ -264,12 +264,17 @@ export function preferenceMemoryCandidatesFromRun(input: {
     sourceRunId: run.run_id
   };
   const candidates: UpsertAgentMemoryInput[] = [];
-  if ((result.review?.grade ?? 0) >= 4 && result.usage.stepsUsed <= 3) {
+  // B-R9.3-2（branch-review 假蒸馏）：旧实现从执行统计（grade>=4 且步数<=3）**捏造**
+  // 「用户偏好简洁直接的执行路径」——那不是用户说过的话。L1 只记录锚定在 run 真实
+  // 产出上的执行观察：评审人真实评语原文、真实产出结构。断言用户偏好的权力只属于
+  // 晋升 judge，且要多条独立证据相互印证（见 promoteMemory 的证据门）。
+  const reviewRationale = result.review?.rationale?.trim();
+  if (reviewRationale && (result.review?.grade ?? 0) >= 4) {
     candidates.push({
       ...base,
-      key: "concise_approach",
-      valueMd: "用户偏好简洁直接的执行路径，减少不必要步骤。",
-      confidence: 0.7
+      key: "review_feedback",
+      valueMd: `评审对本类产出的原话（评分 ${result.review?.grade}/5）：${reviewRationale.slice(0, 500)}`,
+      confidence: 0.6
     });
   }
   if (result.manifest?.title) {
@@ -465,6 +470,13 @@ export async function promoteMemory(input: PromoteMemoryInput): Promise<PromoteM
     return { status: "not_found", candidateMemoryIds: [] };
   }
   const candidateMemoryIds = context.candidates.map((row) => row.id);
+  // B-R9.3-2（branch-review 触发收紧）：单一 run 的孤证不足以断言「用户偏好」。
+  // 至少两条来自不同 run 的同 key L1 相互印证才进晋升 judge——压制每次成功 run
+  // 内联触发时 LLM 捏造高置信直写 L2 的风险，也省掉必然无果的 judge 调用。
+  const independentSources = new Set(context.candidates.map((row) => row.sourceRunId ?? row.id));
+  if (context.candidates.length < 2 || independentSources.size < 2) {
+    return { status: "discarded", reason: "insufficient_evidence", candidateMemoryIds };
+  }
   const judge = input.judge ?? createLlmAgentMemoryPromotionJudge(input.providerRegistry ?? getDefaultProviderRegistry());
   const actor: LlmActor = {
     ...input.actor,
@@ -520,13 +532,18 @@ export async function promoteMemory(input: PromoteMemoryInput): Promise<PromoteM
   }
 
   const userMemoryRepository = input.userMemoryRepository ?? getDefaultUserMemoryRepository();
+  // B-R9.3-1（branch-review 数据丢失）：base 快照只在 judge 真给了修订稿时才有意义
+  // （diff3 祖先=修订所基于的 L1 原文）。judge 不给 value_md 时 incoming==base 会让
+  // mergeUpsert 走「保留 L2 旧值却回 upserted」——新偏好一字未写、矛盾被静默吞掉、
+  // 上层还谎报 promoted。此时不传 base：与 L2 现值相同则幂等晋升，不同则如实走
+  // conflict 提议让人裁决。
   const mergeResult = await userMemoryRepository.mergeUpsert({
     userId: context.sourceActorUserId,
     workspaceId: input.workspaceId,
     category: decision.category ?? context.entry.category,
     key: decision.key ?? context.entry.key,
     valueMd: decision.valueMd ?? context.entry.valueMd,
-    baseValueMd: context.entry.valueMd,
+    ...(decision.valueMd ? { baseValueMd: context.entry.valueMd } : {}),
     confidence: decision.confidence,
     ...sourceRunIdPatch(context.entry)
   });

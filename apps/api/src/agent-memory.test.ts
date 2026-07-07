@@ -176,7 +176,10 @@ test("preferenceMemoryCandidatesFromRun only creates L1 candidates for task-plan
   assert.equal(candidates[0]?.workspaceId, workspaceId);
   assert.equal(candidates[0]?.agentContextId, taskPlanItemId);
   assert.equal(candidates[0]?.category, "preference");
-  assert.equal(candidates[0]?.key, "concise_approach");
+  // B-R9.3-2：不许从执行统计捏造「用户偏好」——L1 只记录锚定在 run 真实产出上的观察。
+  assert.equal(candidates[0]?.key, "review_feedback");
+  assert.match(candidates[0]?.valueMd ?? "", /质量高/u);
+  assert.doesNotMatch(candidates[0]?.valueMd ?? "", /用户偏好/u);
 });
 
 test("extractPreferenceMemory writes through the L1 repository instead of user_memories", async () => {
@@ -214,7 +217,7 @@ test("R9.3 recorder promotes each extracted L1 row through the promotion gate", 
   const recorder = createAgentMemoryRecorder({
     repository: {
       upsertPrivateMemory: async (input) => memoryRow({
-        id: input.key === "concise_approach"
+        id: input.key === "review_feedback"
           ? "83000000-0000-4000-8000-000000000611"
           : "83000000-0000-4000-8000-000000000612",
         key: input.key,
@@ -254,6 +257,55 @@ test("R9.3 recorder promotes each extracted L1 row through the promotion gate", 
   assert.equal(promoted[0]?.actor?.taskPlanId, "83000000-0000-4000-8000-000000000610");
 });
 
+test("B-R9.3 promotion demands at least two independent runs before burning the judge", async () => {
+  // branch-review 触发收紧：每次成功 run 内联晋升 + LLM judge 有捏造「用户偏好」
+  // 高置信直写 L2 的风险。单一 run 的孤证直接 discard，judge 一次都不调。
+  let judgeCalls = 0;
+  const entry = memoryRow({ key: "concise_approach", valueMd: "用户喜欢短答案。" });
+
+  const single = await promoteMemory({
+    workspaceId,
+    l1EntryId: entry.id,
+    agentMemoryRepository: {
+      readPromotionContext: async () => ({
+        entry,
+        planId: "83000000-0000-4000-8000-000000000201",
+        sourceActorUserId: userId,
+        candidates: [entry],
+        capped: false
+      })
+    },
+    judge: async () => {
+      judgeCalls += 1;
+      throw new Error("judge must not run on single-run evidence");
+    }
+  });
+  assert.equal(single.status, "discarded");
+  assert.equal(single.status === "discarded" ? single.reason : "", "insufficient_evidence");
+  assert.equal(judgeCalls, 0);
+
+  // 两条 L1 但同一个 run 产出（同 sourceRunId）仍是孤证。
+  const sameRun = await promoteMemory({
+    workspaceId,
+    l1EntryId: entry.id,
+    agentMemoryRepository: {
+      readPromotionContext: async () => ({
+        entry,
+        planId: "83000000-0000-4000-8000-000000000201",
+        sourceActorUserId: userId,
+        candidates: [entry, memoryRow({ id: "83000000-0000-4000-8000-000000000299", valueMd: "别的话" })],
+        capped: false
+      })
+    },
+    judge: async () => {
+      judgeCalls += 1;
+      throw new Error("judge must not run on same-run evidence");
+    }
+  });
+  assert.equal(sameRun.status, "discarded");
+  assert.equal(judgeCalls, 0);
+});
+
 test("promoteMemory writes high-confidence L1 entries to user L2 through the promotion gate", async () => {
   const writes: unknown[] = [];
   const entry = memoryRow({ key: "concise_approach", valueMd: "用户喜欢短答案。", confidence: 0.8 });
@@ -266,7 +318,7 @@ test("promoteMemory writes high-confidence L1 entries to user L2 through the pro
         entry,
         planId: "83000000-0000-4000-8000-000000000201",
         sourceActorUserId: userId,
-        candidates: [entry, memoryRow({ id: "83000000-0000-4000-8000-000000000202", valueMd: "短答案更好。" })],
+        candidates: [entry, memoryRow({ id: "83000000-0000-4000-8000-000000000202", valueMd: "短答案更好。", sourceRunId: "83000000-0000-4000-8000-000000000902" })],
         capped: false
       })
     },
@@ -303,6 +355,66 @@ test("promoteMemory writes high-confidence L1 entries to user L2 through the pro
   });
 });
 
+test("B-R9.3 promote without a judge revision omits the base so real conflicts surface", async () => {
+  // branch-review 数据丢失：judge 不给 value_md 时 incoming==base，mergeUpsert 会
+  // 「保留 L2 旧值却回 upserted」——矛盾被静默吞掉、上层谎报 promoted。
+  // 现在这种晋升不带 base：与 L2 现值不同必须走 conflict 提议。
+  const writes: Array<{ baseValueMd?: string | null }> = [];
+  const saved: unknown[] = [];
+  const entry = memoryRow({ key: "concise_approach", valueMd: "用户喜欢短答案。", confidence: 0.8 });
+  const current = userMemoryRow({ valueMd: "用户喜欢详细解释。" });
+
+  const result = await promoteMemory({
+    workspaceId,
+    l1EntryId: entry.id,
+    bus: false,
+    agentMemoryRepository: {
+      readPromotionContext: async () => ({
+        entry,
+        planId: "83000000-0000-4000-8000-000000000201",
+        sourceActorUserId: userId,
+        candidates: [entry, memoryRow({ id: "83000000-0000-4000-8000-000000000203", valueMd: "短答案更好。", sourceRunId: "83000000-0000-4000-8000-000000000903" })],
+        capped: false
+      })
+    },
+    userMemoryRepository: {
+      mergeUpsert: async (input) => {
+        writes.push({ ...(input.baseValueMd !== undefined ? { baseValueMd: input.baseValueMd } : {}) });
+        // 复刻真实 repo 语义：无 base 且值不同 → conflict。
+        if (input.baseValueMd === undefined && input.valueMd !== current.valueMd) {
+          return { status: "conflict", current, incoming: input };
+        }
+        return { status: "upserted", userMemory: current };
+      }
+    },
+    memoryConflictRepository: {
+      createOrUpdateOpen: async (input: CreateMemoryConflictInput) => {
+        saved.push(input);
+        return memoryConflictRow({
+          category: input.category,
+          key: input.key,
+          currentValueMd: input.currentValueMd,
+          incomingValueMd: input.incomingValueMd
+        });
+      }
+    } as never,
+    judge: async () => ({
+      decision: "promote",
+      targetScope: "user",
+      category: "preference",
+      key: "concise_approach",
+      confidence: 0.92,
+      reasons: ["consistent evidence"]
+    })
+  });
+
+  // 不带 base（judge 没给修订稿）。
+  assert.deepEqual(writes, [{}]);
+  // 如实 conflict 而非谎报 promoted；矛盾进人裁决队列。
+  assert.equal(result.status, "conflict");
+  assert.equal(saved.length, 1);
+});
+
 test("promoteMemory returns a memory_conflict payload when L2 diff3 cannot reconcile a promoted memory", async () => {
   const entry = memoryRow({ key: "concise_approach", valueMd: "用户喜欢短答案。", confidence: 0.8 });
   const current = userMemoryRow({ valueMd: "用户喜欢详细解释。" });
@@ -317,7 +429,7 @@ test("promoteMemory returns a memory_conflict payload when L2 diff3 cannot recon
         entry,
         planId: "83000000-0000-4000-8000-000000000501",
         sourceActorUserId: userId,
-        candidates: [entry],
+        candidates: [entry, memoryRow({ id: "83000000-0000-4000-8000-000000000905", valueMd: "短答案更好。", sourceRunId: "83000000-0000-4000-8000-000000000906" })],
         capped: false
       })
     },
@@ -383,7 +495,8 @@ test("promoteMemory persists judge-level memory conflicts into durable sync_conf
   const sibling = memoryRow({
     id: "83000000-0000-4000-8000-000000000702",
     key: "reply_style",
-    valueMd: "回复要详细解释。"
+    valueMd: "回复要详细解释。",
+    sourceRunId: "83000000-0000-4000-8000-000000000904"
   });
   const saved: CreateMemoryConflictInput[] = [];
   const published: Array<{ type: string; data: unknown }> = [];
@@ -480,7 +593,7 @@ test("promoteMemory does not write L2 for conflicts, noise, low confidence, or u
         entry,
         planId: "83000000-0000-4000-8000-000000000301",
         sourceActorUserId: userId,
-        candidates: [entry],
+        candidates: [entry, memoryRow({ id: "83000000-0000-4000-8000-000000000905", valueMd: "短答案更好。", sourceRunId: "83000000-0000-4000-8000-000000000906" })],
         capped: false
       })
     },
