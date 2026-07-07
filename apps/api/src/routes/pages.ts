@@ -124,6 +124,32 @@ function requestLocale(c: { req: { query: (key: string) => string | undefined; h
   return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
 }
 
+function nonnegativeIntQuery(c: { req: { query: (key: string) => string | undefined } }, key: string): number | undefined {
+  const raw = c.req.query(key);
+  if (raw === undefined) {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return undefined;
+  }
+  return parsed;
+}
+
+function positiveIntQuery(c: { req: { query: (key: string) => string | undefined } }, key: string): number | undefined {
+  const parsed = nonnegativeIntQuery(c, key);
+  return parsed && parsed > 0 ? parsed : undefined;
+}
+
+function approvalPageQuery(c: { req: { query: (key: string) => string | undefined } }) {
+  const offset = nonnegativeIntQuery(c, "offset");
+  const limit = positiveIntQuery(c, "limit");
+  return {
+    ...(offset === undefined ? {} : { offset }),
+    ...(limit === undefined ? {} : { limit })
+  };
+}
+
 // findings[#74/#80]：管理员成本看板的时间窗口（天）。窗口内的账目走 period_bucket 索引下推，避免每次
 // 加载都全表扫描 cost_ledger_entries、也把 trend 桶数封顶。窗口外的历史不在看板展示（按需另查累计）。
 const COST_DASHBOARD_WINDOW_DAYS = 90;
@@ -558,6 +584,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     const locale = requestLocale(c);
     const data = await approvals.listPendingForUser(c.var.currentUser, {
       locale,
+      ...approvalPageQuery(c),
       canReadWorkItem: (workItemId) => canReadWorkItem(workItems, workItemId, c.var.actor)
     });
     // routes-b-1：service.listPendingForUser already applied this exact canReadWorkItem predicate

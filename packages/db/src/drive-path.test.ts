@@ -21,6 +21,7 @@ import {
   createQueryRecorder,
   queryParamValues,
   queryReferences,
+  queryTextFragments,
   type RecordedQuery
 } from "./test-query-recorder.js";
 
@@ -413,6 +414,7 @@ test("drive page readPage limits current accepted rows while backfilling superse
     [{ value: 0 }],
     [{ value: 0 }],
     [],
+    [],
     [historical],
     [{ targetKey: "file:/report.md", projectId, workItemId, acceptedVersion: 1 }],
     []
@@ -429,12 +431,26 @@ test("drive page readPage limits current accepted rows while backfilling superse
 
   const acceptedQueries = queriesFrom(queries, acceptedDeliverableChanges);
   const currentListQuery = acceptedQueries[0];
-  const historicalQuery = acceptedQueries.find((query) => query.limit === 2);
   assert.equal(currentListQuery?.limit, 1);
   assert.ok(queryReferences(currentListQuery?.where, acceptedDeliverableChanges.supersededAt));
-  assert.ok(historicalQuery, "historical accepted rows should be backfilled separately");
-  assert.ok(queryReferences(historicalQuery.where, acceptedDeliverableChanges.driveVersionId));
-  assert.ok(queryReferences(historicalQuery.where, acceptedDeliverableChanges.supersededAt));
+  // R9 branch-review fix-batch2-3：历史采纳标记按 drive_version_id 分区取每版本最新一条，
+  // 配额与版本数一一对应，不再用 loadedVersionIds*2 的粗 limit 让历史行挤占名额。
+  const rankedSubquery = acceptedQueries.find((query) => query.steps.includes("as"));
+  assert.ok(rankedSubquery, "historical accepted rows should be deduped per version via a ranked subquery");
+  assert.match(queryTextFragments(rankedSubquery.selection).join(""), /row_number\(\) over \(partition by/u);
+  assert.ok(queryReferences(rankedSubquery.where, acceptedDeliverableChanges.driveVersionId));
+  assert.ok(queryReferences(rankedSubquery.where, acceptedDeliverableChanges.supersededAt));
+  const historicalOuter = queries.find((query) =>
+    (query.fromTable as { __alias?: string } | undefined)?.__alias === "ranked_historical_accepted_deliverables"
+  );
+  assert.ok(historicalOuter, "outer backfill should read rank-1 rows from the ranked subquery");
+  // eq(子查询列, 1) 的字面量会被 drizzle 内联进 queryChunks 而非 Param，直接断言 chunks。
+  const outerWhereChunks = (historicalOuter.where as { queryChunks?: unknown[] } | undefined)?.queryChunks ?? [];
+  assert.ok(outerWhereChunks.some((chunk) =>
+    (chunk as { __subqueryAlias?: string; name?: string } | null)?.__subqueryAlias === "ranked_historical_accepted_deliverables"
+    && (chunk as { name?: string }).name === "rowNumber"
+  ));
+  assert.ok(outerWhereChunks.includes(1));
 });
 
 test("drive page readPage blocks child restore links when the deleted parent is outside the loaded slice", async () => {

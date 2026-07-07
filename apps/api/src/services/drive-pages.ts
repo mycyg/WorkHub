@@ -504,7 +504,10 @@ function buildDrivePage(
   const requestedSelected = requestedItemId && selectableItemVms.some((item) => item.id === requestedItemId)
     ? requestedItemId
     : undefined;
-  const selectedItemId = requestedSelected ?? deletableItem?.id ?? itemVms.find((item) => item.kind === "file")?.id ?? itemVms[0]?.id;
+  const requestedItemMissing = Boolean(requestedItemId && !requestedSelected);
+  const selectedItemId = requestedItemMissing
+    ? undefined
+    : requestedSelected ?? deletableItem?.id ?? itemVms.find((item) => item.kind === "file")?.id ?? itemVms[0]?.id;
   const projectId = rows.project?.id;
   const canManage = rows.project ? canManageProjectDrive(rows.project, actor) : false;
   // F3：给每个回收站项一个自己的 restore_href、每个可删项(文件或空文件夹)一个自己的 delete_href,
@@ -557,6 +560,7 @@ function buildDrivePage(
     },
     can_manage: canManage,
     ...(selectedItemId ? { selected_item_id: selectedItemId } : {}),
+    ...(requestedItemMissing ? { requested_item_missing: true } : {}),
     items: itemVms,
     deleted_items: deletedItemVms,
     versions: versionVms,

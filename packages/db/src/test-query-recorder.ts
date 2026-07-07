@@ -2,6 +2,7 @@ import type { WorkHubDb } from "./client.js";
 
 export type RecordedQuery = {
   operation: "select" | "insert" | "update" | "execute";
+  selection?: unknown;
   fromTable?: unknown;
   targetTable?: unknown;
   rawQuery?: unknown;
@@ -11,6 +12,7 @@ export type RecordedQuery = {
   groupBy: unknown[];
   limit?: number;
   lock?: string;
+  alias?: string;
   setValue?: unknown;
   valuesValue?: unknown;
   onConflict?: unknown;
@@ -107,6 +109,27 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
     return Promise.resolve([...this.rows]);
   }
 
+  as(alias: string): Record<string, unknown> {
+    this.query.alias = alias;
+    this.query.steps.push("as");
+    const columns = new Map<string | symbol, unknown>();
+    const target = { __recordedQuery: this.query, __alias: alias };
+    return new Proxy(target, {
+      get(proxied, prop) {
+        if (prop === "then") {
+          return undefined;
+        }
+        if (prop in proxied) {
+          return proxied[prop as keyof typeof proxied];
+        }
+        if (!columns.has(prop)) {
+          columns.set(prop, { __subqueryAlias: alias, name: String(prop) });
+        }
+        return columns.get(prop);
+      }
+    }) as Record<string, unknown>;
+  }
+
   then<TResult1 = unknown[], TResult2 = never>(
     onfulfilled?: ((value: unknown[]) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
@@ -175,7 +198,7 @@ class QueryRecorderDb {
       steps: [operation]
     };
     if ("selection" in values) {
-      (query as RecordedQuery & { selection?: unknown }).selection = values.selection;
+      query.selection = values.selection;
     }
     if ("targetTable" in values) {
       query.targetTable = values.targetTable;
@@ -247,16 +270,25 @@ function visitSqlTree(
   visitor: (node: unknown) => boolean,
   seen: Set<object> = new Set()
 ): boolean {
+  // seen 检查必须先于 visitor：同一节点可经 queryChunks 分支与泛型子节点遍历两条路径到达，
+  // visitor 只许触发一次，否则计数类断言（如 param/isNull 出现次数）会翻倍。
+  if (value && typeof value === "object") {
+    if (seen.has(value)) {
+      return false;
+    }
+    seen.add(value);
+  }
   if (visitor(value)) {
     return true;
   }
   if (!value || typeof value !== "object") {
     return false;
   }
-  if (seen.has(value)) {
+  // drizzle Column 是叶子：column.table 会带出整张表的所有列，继续下钻会让
+  // 「where 不引用列 X」这类否定断言因 table→columns 间接可达而永远失败。
+  if (typeof (value as { columnType?: unknown }).columnType === "string") {
     return false;
   }
-  seen.add(value);
   if (Array.isArray(value)) {
     return value.some((item) => visitSqlTree(item, visitor, seen));
   }
@@ -271,6 +303,11 @@ function visitSqlTree(
   }
   if (name === "StringChunk") {
     return visitSqlTree((value as { value?: unknown }).value, visitor, seen);
+  }
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    if (visitSqlTree(child, visitor, seen)) {
+      return true;
+    }
   }
   return false;
 }

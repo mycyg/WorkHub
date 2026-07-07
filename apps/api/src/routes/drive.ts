@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
@@ -404,7 +404,6 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
 
   routes.post("/projects/:projectId/files", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
-    let storagePathForCleanup: string | undefined;
     try {
       const projectId = requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found");
       await assertCanManageDriveProject({
@@ -413,13 +412,7 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
         locale
       });
       const body = await readUploadBody(c, { projectId, settings: runtimeSettings });
-      storagePathForCleanup = body.storagePath;
-      const uploadFile = drivePages.uploadFile.bind(drivePages);
-      // Once the service method is captured, it owns cleanup decisions. The repository may
-      // commit the storage path before the service refreshes the page VM; route-level cleanup
-      // after that point can delete a DB-referenced file.
-      storagePathForCleanup = undefined;
-      const data = await uploadFile({
+      const data = await drivePages.uploadFile({
         actor: c.var.actor,
         projectId,
         locale,
@@ -433,9 +426,6 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
-      if (storagePathForCleanup) {
-        await rm(storagePathForCleanup, { force: true }).catch(() => undefined);
-      }
       if (error instanceof DrivePageServiceError) {
         return driveErrorResponse(c, error);
       }

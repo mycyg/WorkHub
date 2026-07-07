@@ -418,6 +418,7 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
     },
     can_manage: true,
     selected_item_id: "92000000-0000-4000-8000-000000000002",
+    requested_item_missing: true,
     items: [
       {
         id: "92000000-0000-4000-8000-000000000002",
@@ -537,6 +538,7 @@ test("drive page VM carries project files, versions, accepted deliverables, and 
   });
 
   assert.equal(parsed.versions[0]?.source, "accepted_deliverable");
+  assert.equal(parsed.requested_item_missing, true);
   assert.equal(parsed.items[0]?.preview_href?.endsWith("/preview"), true);
   assert.equal(parsed.items[0]?.download_href?.endsWith("/download"), true);
   assert.equal(parsed.comments[0]?.status, "proposal_created");

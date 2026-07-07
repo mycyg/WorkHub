@@ -239,6 +239,7 @@ export const drivePageVmSchema = z.object({
   }),
   can_manage: z.boolean().default(false),
   selected_item_id: idSchema.optional(),
+  requested_item_missing: z.boolean().optional(),
   items: z.array(driveItemVmSchema),
   deleted_items: z.array(driveItemVmSchema).default([]),
   versions: z.array(driveFileVersionVmSchema),
@@ -895,6 +896,7 @@ export const approvalCenterVmSchema = z.object({
   counts: z.record(z.string(), z.number().int().nonnegative()),
   page_info: z.object({
     limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative().optional(),
     returned: z.number().int().nonnegative(),
     has_more: z.boolean()
   }).optional(),

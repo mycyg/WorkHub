@@ -249,6 +249,7 @@ type RouteCopyKey =
   | "drive.createDraft"
   | "drive.openDraft"
   | "drive.openProposal"
+  | "drive.requestedMissing"
   | "drive.status.pending_llm"
   | "drive.status.draft_created"
   | "drive.status.proposal_created"
@@ -469,6 +470,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.createDraft": "生成草稿",
     "drive.openDraft": "打开草稿",
     "drive.openProposal": "打开提议",
+    "drive.requestedMissing": "找不到该文件，已回到默认视图。",
     "drive.status.pending_llm": "待生成草稿",
     "drive.status.draft_created": "已生成草稿",
     "drive.status.proposal_created": "已生成提议",
@@ -691,6 +693,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.createDraft": "Create draft",
     "drive.openDraft": "Open draft",
     "drive.openProposal": "Open proposal",
+    "drive.requestedMissing": "We could not find that file, so the drive is back at the default view.",
     "drive.status.pending_llm": "Pending draft",
     "drive.status.draft_created": "Draft created",
     "drive.status.proposal_created": "Proposal created",
@@ -1695,6 +1698,28 @@ function renderApprovalDetailPanel(
     </article>`;
 }
 
+function approvalPendingDisplayCount(vm: ApprovalCenterVM) {
+  const total = vm.counts["pending_total"];
+  if (typeof total === "number" && Number.isFinite(total)) {
+    return Math.max(0, total);
+  }
+  return vm.counts["pending"] ?? vm.items.length;
+}
+
+function approvalNextPageHref(pageInfo: ApprovalCenterVM["page_info"]) {
+  if (!pageInfo?.has_more) {
+    return "";
+  }
+  const offset = Math.max(0, pageInfo.offset ?? 0);
+  const limit = Math.max(1, pageInfo.limit);
+  const nextOffset = offset + Math.max(pageInfo.returned, limit);
+  const params = new URLSearchParams({ offset: String(nextOffset) });
+  if (limit !== 100) {
+    params.set("limit", String(limit));
+  }
+  return `/approvals?${params.toString()}`;
+}
+
 function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLocale): WebRouteComponent {
   const zh = locale === "zh-CN";
   // 零审批时不渲三栏 master-detail——否则详情栏「左边选一条」无可选、右栏「你来拍板」重复同句、
@@ -1730,10 +1755,14 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
     });
   }
   const primary = vm.items[0];
-  const pendingCount = vm.counts["pending"] ?? vm.items.length;
+  const pendingCount = approvalPendingDisplayCount(vm);
   const pageInfoNote = approvalQueuePageInfoText(locale, vm.page_info, vm.counts);
+  const nextPageHref = approvalNextPageHref(vm.page_info);
   const pageInfoAttrs = vm.page_info
-    ? ` data-r4-approval-page-info="true" data-r4-approval-page-limit="${escapeHtml(String(vm.page_info.limit))}" data-r4-approval-page-returned="${escapeHtml(String(vm.page_info.returned))}" data-r4-approval-page-has-more="${escapeHtml(String(vm.page_info.has_more))}"`
+    ? ` data-r4-approval-page-info="true" data-r4-approval-page-limit="${escapeHtml(String(vm.page_info.limit))}" data-r4-approval-page-offset="${escapeHtml(String(vm.page_info.offset ?? 0))}" data-r4-approval-page-returned="${escapeHtml(String(vm.page_info.returned))}" data-r4-approval-page-has-more="${escapeHtml(String(vm.page_info.has_more))}"`
+    : "";
+  const nextPageAction = nextPageHref
+    ? `<div class="wh-r4-route-actions"><a class="wh-btn" href="${escapeHtml(safeHref(nextPageHref))}" data-r4-approval-load-more="true" data-r4-approval-next-page-href="${escapeHtml(safeHref(nextPageHref))}">${escapeHtml(zh ? "查看更多审批" : "Load more approvals")}</a></div>`
     : "";
   // E4：删掉右栏那张独立「截止时间」卡——它绑定到 primary(首项)且服务端烘焙,客户端切换审批项时
   // 只换了详情面板与按钮 href,这张卡不更新 → 选了 B 仍显 A 的 SLA(和正确的每行 SLA 药丸打架)。
@@ -1785,6 +1814,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
         <span class="wh-r4-route-count">${escapeHtml(String(pendingCount))}</span>
       </header>
       ${pageInfoNote ? `<p class="wh-subtle" data-r4-approval-page-info-note="true">${escapeHtml(pageInfoNote)}</p>` : ""}
+      ${nextPageAction}
       <div class="wh-r4-route-grid wh-r4-approvals-grid">
         <section class="wh-r4-route-stack wh-r4-approval-list" data-r4-approval-queue="true">
           ${queueRows || `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(goldPathT(locale, "approvals.reasonFallback"))}</p></article>`}
@@ -2433,7 +2463,10 @@ function renderDriveRouteComponent(
       </nav>`;
   const selectedActiveItem = vm.items.find((item) => item.id === vm.selected_item_id);
   const selectedDeletedItem = vm.deleted_items.find((item) => item.id === vm.selected_item_id);
-  const selectedItem = selectedActiveItem ?? (selectedDeletedItem ? undefined : vm.items.find((item) => item.kind === "file") ?? vm.items[0]);
+  const selectedItem = selectedActiveItem ?? (selectedDeletedItem || vm.requested_item_missing ? undefined : vm.items.find((item) => item.kind === "file") ?? vm.items[0]);
+  const requestedMissingNotice = vm.requested_item_missing
+    ? `<p class="wh-subtle" data-r9-drive-requested-missing="true">${escapeHtml(routeT(locale, "drive.requestedMissing"))}</p>`
+    : "";
   const deleteTargetId = vm.actions.delete_item ? driveItemMutationIdFromHref(vm.actions.delete_item.href) : undefined;
   const deleteTarget = deleteTargetId ? vm.items.find((item) => item.id === deleteTargetId) : undefined;
   const deletePayload = {
@@ -2545,6 +2578,13 @@ function renderDriveRouteComponent(
         ${item.restore_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore_item" data-method="POST" data-r5-drive-recycle-restore="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""}
       </div>
     </div>`).join("")
+    : "";
+  const hiddenRecycleCount = Math.max(0, vm.summary.deleted_item_count - vm.deleted_items.length);
+  const recycleMoreNote = hiddenRecycleCount > 0
+    ? `<p class="wh-subtle" data-r9-drive-recycle-hidden-count="${escapeHtml(String(hiddenRecycleCount))}" data-r9-drive-recycle-loaded-count="${escapeHtml(String(vm.deleted_items.length))}">${escapeHtml(locale === "zh-CN" ? `本页先显示 ${vm.deleted_items.length} 项；还有 ${hiddenRecycleCount} 项未加载。请通过对应文件链接打开后还原。` : `Showing ${vm.deleted_items.length} recycle-bin items on this page; ${hiddenRecycleCount} more are not loaded. Open the specific file link to restore one that is not shown here.`)}</p>`
+    : "";
+  const recycleEmpty = vm.deleted_items.length || hiddenRecycleCount > 0
+    ? ""
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyRecycle"))}</p>`;
   const operationRows = vm.operations.length
     ? vm.operations.slice(0, 6).map((operation) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-drive-operation="${escapeHtml(operation.id)}" data-r5-drive-operation-type="${escapeHtml(operation.op_type)}">
@@ -2591,6 +2631,7 @@ function renderDriveRouteComponent(
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "drive.kicker"))}</span>
           <h1>${escapeHtml(projectTitle)}</h1>
           <p>${escapeHtml(selectedItem?.path ?? routeT(locale, vm.items.length === 0 ? "drive.emptyFiles" : "drive.selectFile"))}</p>
+          ${requestedMissingNotice}
           ${driveManageActions ? `<div class="wh-r4-route-actions" data-r5-drive-manage-actions="true">${driveManageActions}</div>` : ""}
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.file_count))}</span>
@@ -2618,7 +2659,8 @@ function renderDriveRouteComponent(
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r5-drive-recycle="true">
           <h3>${escapeHtml(routeT(locale, "drive.recycle"))}</h3>
-          <div class="wh-r4-route-timeline">${recycleRows}</div>
+          <div class="wh-r4-route-timeline">${recycleRows}${recycleEmpty}</div>
+          ${recycleMoreNote}
         </section>
         <section class="wh-card wh-r4-route-card" data-r5-drive-operations="true">
           <h3>${escapeHtml(routeT(locale, "drive.operations"))}</h3>

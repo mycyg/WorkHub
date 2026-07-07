@@ -188,3 +188,25 @@ test("R4 smoke retries only fresh same-action transport notice failures", () => 
     actionId: "apply_ai_fusion"
   }), false);
 });
+
+test("drive preview panel localizes type and size metadata", () => {
+  const zh = drivePreviewPanelHtml({
+    filename: "brief.md",
+    preview_type: "text",
+    size_bytes: 2048,
+    text: "正文"
+  }, "zh-CN");
+  const en = drivePreviewPanelHtml({
+    filename: "brief.md",
+    preview_type: "text",
+    size_bytes: 2048,
+    text: "Body"
+  }, "en-US");
+
+  assert.equal(zh.includes("类型 text"), false);
+  assert.equal(zh.includes("2048 字节"), false);
+  assert.equal(zh.includes("文本预览 · 2 KB"), true);
+  assert.equal(en.includes("type text"), false);
+  assert.equal(en.includes("2048 bytes"), false);
+  assert.equal(en.includes("Text preview · 2 KB"), true);
+});

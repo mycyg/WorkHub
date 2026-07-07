@@ -55,6 +55,12 @@ type RouteClientOverrides = {
   knowledgeError?: Error;
 };
 
+type ApprovalRouteRequestOptions = {
+  locale?: string;
+  offset?: number;
+  limit?: number;
+};
+
 function meetingVm(): MeetingPageVM {
   return {
     generated_at: "2026-06-11T09:30:00.000Z",
@@ -608,8 +614,12 @@ function agentArmyDashboardVm(overrides: Partial<AgentArmyDashboardVM> = {}): Ag
 
 function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverrides = {}) {
   const calls: string[] = [];
-  const localeCall = (name: string, options?: { locale?: string; projectId?: string }) => {
-    calls.push(`${name}:${options?.locale ?? "none"}`);
+  const localeCall = (name: string, options?: { locale?: string; projectId?: string; offset?: number; limit?: number }) => {
+    const paging = [
+      options?.offset === undefined ? "" : `offset=${options.offset}`,
+      options?.limit === undefined ? "" : `limit=${options.limit}`
+    ].filter(Boolean).join(":");
+    calls.push(`${name}:${options?.locale ?? "none"}${paging ? `:${paging}` : ""}`);
   };
   const client = {
     pages: {
@@ -620,7 +630,7 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         }
         return overrides.attention ?? surface.page_vms.attention;
       },
-      async approvals(options?: { locale?: string }) {
+      async approvals(options?: ApprovalRouteRequestOptions) {
         localeCall("approvals", options);
         if (overrides.approvalsError) {
           throw overrides.approvalsError;
@@ -650,8 +660,11 @@ function fakeRouteClient(surface: GoldPathSurfaceVM, overrides: RouteClientOverr
         localeCall("goldPath", options);
         return surface;
       },
-      async drive(options?: { locale?: string; projectId?: string }) {
-        calls.push(`drive:${options?.locale ?? "none"}:${options?.projectId ?? "none"}`);
+      async drive(options?: { locale?: string; projectId?: string; itemId?: string; item_id?: string }) {
+        const itemId = options?.itemId ?? options?.item_id;
+        calls.push(itemId
+          ? `drive:${options?.locale ?? "none"}:${options?.projectId ?? "none"}:${itemId}`
+          : `drive:${options?.locale ?? "none"}:${options?.projectId ?? "none"}`);
         return overrides.drive ?? driveVm();
       },
       async meetings(options?: { locale?: string; projectId?: string; meetingId?: string }) {
@@ -1689,6 +1702,61 @@ test("R5.1 drive route loader renders accepted deliverables and version actions 
   assert.equal(result.html.includes('href="/drive"'), true);
 });
 
+test("R9 drive route loader shows a missing item notice without highlighting another file", async () => {
+  const surface = goldPathSurfaceVm();
+  const missingItemId = "93000000-0000-4000-8000-0000000000bb";
+  const drive = { ...driveVm(), selected_item_id: undefined, requested_item_missing: true };
+  const { client, calls } = fakeRouteClient(surface, { drive });
+  const match = resolveWebRoute(`/drive?project_id=93000000-0000-4000-8000-000000000001&item_id=${missingItemId}`);
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls, [`drive:zh-CN:93000000-0000-4000-8000-000000000001:${missingItemId}`]);
+  assert.equal(result.html.includes('data-r9-drive-requested-missing="true"'), true);
+  assert.equal(result.html.includes("找不到该文件，已回到默认视图。"), true);
+  assert.equal(/data-r4-drive-item="[^"]+"[^>]*data-r4-drive-item-selected="true"/.test(result.html), false);
+  assert.equal(/data-r5-drive-recycle-item="[^"]+"[^>]*data-r5-drive-recycle-selected="true"/.test(result.html), false);
+});
+
+test("R9 drive route loader tells the truth when the recycle bin is truncated", async () => {
+  const surface = goldPathSurfaceVm();
+  const base = driveVm();
+  const baseItem = base.items[0]!;
+  const deletedItems = Array.from({ length: 5 }, (_, index) => {
+    const suffix = String(index + 10).padStart(12, "0");
+    return {
+      ...baseItem,
+      id: `93000000-0000-4000-8000-${suffix}`,
+      name: `已删除文件 ${index + 1}.md`,
+      path: `/回收站/已删除文件 ${index + 1}.md`,
+      deleted_at: `2026-06-1${index}T09:00:00.000Z`,
+      restore_href: `/api/drive/projects/93000000-0000-4000-8000-000000000001/items/93000000-0000-4000-8000-${suffix}/restore`,
+      preview_href: undefined,
+      download_href: undefined,
+      accepted_deliverable: undefined
+    };
+  });
+  const drive = {
+    ...base,
+    summary: { ...base.summary, deleted_item_count: 8 },
+    deleted_items: deletedItems
+  };
+  const { client } = fakeRouteClient(surface, { drive });
+  const match = resolveWebRoute("/drive?project_id=93000000-0000-4000-8000-000000000001");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.match(/data-r5-drive-recycle-item=/g)?.length, 5);
+  assert.equal(result.html.match(/data-r5-drive-recycle-restore=/g)?.length, 5);
+  assert.equal(result.html.includes('data-r9-drive-recycle-hidden-count="3"'), true);
+  assert.equal(result.html.includes("本页先显示 5 项；还有 3 项未加载。"), true);
+  assert.equal(result.html.includes("回收站是空的。"), false);
+});
+
 test("R8 cycle-review #2 drive with no project sends the user to /projects, not a home dead-end", async () => {
   const surface = goldPathSurfaceVm();
   // empty workspace → drive returns no_project; loader collapses to an empty state.
@@ -1831,6 +1899,33 @@ test("F11/簇A: empty approvals stays a full page in the shell (no collapse to a
   assert.equal(result.html.includes('data-r4-approval-empty="true"'), true, "renders the tailored empty card");
   assert.equal(result.html.includes('data-r4-approval-detail="true"'), false, "no select-a-row detail scaffolding when there are no approvals");
   assert.equal(result.html.includes('data-r4-approval-action-panel="true"'), false, "no selection action panel when empty");
+});
+
+test("R9 approvals route renders the real total and a working next-page entry for truncated queues", async () => {
+  const surface = goldPathSurfaceVm();
+  const approvals: ApprovalCenterVM = {
+    ...surface.page_vms.approvals,
+    counts: {
+      ...surface.page_vms.approvals.counts,
+      pending: 100,
+      pending_total: 237
+    },
+    page_info: { limit: 100, offset: 100, returned: 100, has_more: true }
+  };
+  const { client, calls } = fakeRouteClient(surface, { approvals });
+  const match = resolveWebRoute("/approvals?offset=100");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.deepEqual(calls, ["approvals:zh-CN:offset=100"]);
+  assert.equal(result.html.includes('data-r4-approval-pending="237"'), true);
+  assert.equal(result.html.includes('<span class="wh-r4-route-count">237</span>'), true);
+  assert.equal(result.html.includes('data-r4-approval-page-offset="100"'), true);
+  assert.equal(result.html.includes('data-r4-approval-next-page-href="/approvals?offset=200"'), true);
+  assert.equal(result.html.includes('href="/approvals?offset=200"'), true);
+  assert.equal(result.html.includes("查看更多审批"), true);
 });
 
 test("R4 web loader maps forbidden and not-found API failures to route states", async () => {

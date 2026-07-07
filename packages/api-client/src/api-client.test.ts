@@ -430,6 +430,25 @@ test("api client carries locale on session creation and launch requests", async 
   ]);
 });
 
+test("api client carries approval paging options on the typed approvals page request", async () => {
+  const calls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.pages.approvals({ locale: "zh-CN", offset: 100, limit: 50 });
+
+  assert.deepEqual(calls, [
+    "/api/pages/approvals?locale=zh-CN&offset=100&limit=50"
+  ]);
+});
+
 test("api client sends drive file uploads as multipart form data", async () => {
   let seenBody: RequestInit["body"] | null | undefined;
   let seenContentType: string | null = null;
