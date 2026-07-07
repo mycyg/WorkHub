@@ -60,12 +60,19 @@ function action(
   return { id, label, style, method, href };
 }
 
-function resolveHref(row: MemoryConflictRow, resolution: MemoryConflictResolution) {
+function resolveHref(row: Pick<MemoryConflictRow, "id" | "updatedAt">, resolution: MemoryConflictResolution) {
   const query = new URLSearchParams({ expected_updated_at: row.updatedAt.toISOString() });
   return `/api/memory-conflicts/${row.id}/resolve/${resolution}?${query.toString()}`;
 }
 
-export function buildMemoryConflictAttentionItem(row: MemoryConflictRow, locale: WorkHubLocale): AttentionItem {
+// UX-M5：SSE 推送卡（agent-memory L1）与收件箱卡共用这一个构造器——两处内联曾经漂移
+// （「纠正过」vs「纠正」、动作集不同步、L1 无双语）。参数收窄成用到的字段，L1 侧可直接喂。
+export type MemoryConflictCardRow = Pick<
+  MemoryConflictRow,
+  "id" | "category" | "key" | "currentValueMd" | "incomingValueMd" | "sourceRunId" | "createdAt" | "updatedAt"
+>;
+
+export function buildMemoryConflictAttentionItem(row: MemoryConflictCardRow, locale: WorkHubLocale): AttentionItem {
   const zh = locale !== "en-US";
   const label = categoryLabel(row.category, locale);
   return {
@@ -103,7 +110,7 @@ export function buildMemoryConflictAttentionItem(row: MemoryConflictRow, locale:
   };
 }
 
-function mergedValue(row: MemoryConflictRow, override?: string) {
+function mergedValue(row: Pick<MemoryConflictRow, "currentValueMd" | "incomingValueMd">, override?: string) {
   const trimmed = override?.trim();
   if (trimmed) {
     return trimmed;

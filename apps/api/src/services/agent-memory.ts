@@ -1,11 +1,13 @@
 import { neutralizeFenceTags, type AgentLoopResult } from "@workhub/agent/loop";
+import { buildMemoryConflictAttentionItem } from "./memory-conflicts.js";
 import type { LlmActor, ProviderRegistry } from "@workhub/agent/providers";
 import {
   AGENT_MEMORY_PROMPT_TOP_N,
   eventTypes,
   type AttentionItem,
   userMemoryCategorySchema,
-  type UserMemoryCategory
+  type UserMemoryCategory,
+  type WorkHubLocale
 } from "@workhub/contracts";
 import { makeWorkHubEvent, topics } from "@workhub/events";
 import {
@@ -317,15 +319,8 @@ function buildMemoryConflictProposal(input: {
   sourceRunId?: string | null;
   fallbackId: string;
   updatedAt: Date;
+  locale?: WorkHubLocale;
 }): AgentMemoryConflictProposal {
-  const label = CATEGORY_LABEL[input.category] ?? input.category;
-  const sourceRef: AttentionItem["source_ref"] = input.sourceRunId
-    ? { entity_type: "agent_run", entity_id: input.sourceRunId }
-    : { entity_type: "notification", entity_id: input.fallbackId };
-  const resolveHref = (resolution: "keep_current" | "accept_incoming" | "merge_both" | "discard_both") => {
-    const query = new URLSearchParams({ expected_updated_at: input.updatedAt.toISOString() });
-    return `/api/memory-conflicts/${input.fallbackId}/resolve/${resolution}?${query.toString()}`;
-  };
   return {
     kind: "memory_conflict",
     workspace_id: input.workspaceId,
@@ -336,69 +331,17 @@ function buildMemoryConflictProposal(input: {
     incoming_value_md: input.incomingValueMd,
     ...(input.baseValueMd !== undefined ? { base_value_md: input.baseValueMd } : {}),
     candidate_memory_ids: input.candidateMemoryIds,
-    attention: {
+    // UX-M5：改用收件箱同款 canonical 构造器（消除两处内联漂移；locale 可传，SSE 默认 zh-CN）。
+    attention: buildMemoryConflictAttentionItem({
       id: input.fallbackId,
-      kind: "sync_conflict",
-      priority: "high",
-      source_ref: sourceRef,
-      title: "Cuu 学到了两条打架的偏好",
-      summary_text: `${label}「${input.key}」出现两种说法，需要确认后再晋升。`,
-      reason_text: `A：${input.currentValueMd}\nB：${input.incomingValueMd}`,
-      // B-R9.6 §3.7：与 memory-conflicts service 的收件箱卡同一套动作
-      // （[要A][要B][都不要][合并成一条（可编辑）]+出处），枚举新增三同步的教训——两处卡构造器必须一起改。
-      actions: [
-        {
-          id: "keep_current",
-          label: "要 A",
-          style: "secondary",
-          method: "POST",
-          href: resolveHref("keep_current")
-        },
-        {
-          id: "accept_incoming",
-          label: "要 B",
-          style: "primary",
-          method: "POST",
-          href: resolveHref("accept_incoming")
-        },
-        {
-          id: "discard_both",
-          label: "都不要",
-          style: "danger",
-          method: "POST",
-          href: resolveHref("discard_both")
-        },
-        {
-          id: "merge_both",
-          label: "合并成一条（可编辑）",
-          style: "secondary",
-          method: "POST",
-          href: resolveHref("merge_both"),
-          request_json: {
-            value_md: input.currentValueMd === input.incomingValueMd
-              ? input.currentValueMd
-              : `${input.currentValueMd}\n${input.incomingValueMd}`
-          }
-        },
-        ...(input.sourceRunId
-          ? [{
-            id: "open_incoming_source",
-            label: "看 B 的出处",
-            style: "quiet" as const,
-            method: "GET" as const,
-            href: `/agent-runs/${input.sourceRunId}/replay`
-          }]
-          : [{
-            id: "open_settings",
-            label: "打开设置",
-            style: "quiet" as const,
-            method: "GET" as const,
-            href: "/settings"
-          }])
-      ],
-      cuu_state: "worried",
-      created_at: new Date().toISOString()
-    },
+      category: input.category,
+      key: input.key,
+      currentValueMd: input.currentValueMd,
+      incomingValueMd: input.incomingValueMd,
+      sourceRunId: input.sourceRunId ?? null,
+      createdAt: input.updatedAt,
+      updatedAt: input.updatedAt
+    }, input.locale ?? "zh-CN"),
     resolution_options: [
       { id: "keep_current", label: "保留当前记忆" },
       { id: "accept_incoming", label: "采用新记忆" },
