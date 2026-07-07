@@ -4,15 +4,22 @@ import {
   createProposalRepository,
   createTaskPlanArbitrationRepository,
   createTaskPlanRepository,
+  createWorkItemRepository,
   getSharedDatabaseClient,
   type AiDecisionRepository,
   type AuditLogRepository,
   type TaskPlanItemRow,
   type TaskPlanRow,
-  type TaskPlanWithItems
+  type TaskPlanWithItems,
+  type WorkItemDataRepository
 } from "@workhub/db";
 
 import { getDefaultStructuredLogger } from "../logging.js";
+import {
+  createNotificationService,
+  getDefaultNotificationServiceDependencies,
+  type NotificationService
+} from "./notifications.js";
 import type {
   AgentRunQueue,
   AgentRunQueueRecord
@@ -614,7 +621,13 @@ export function createTaskDispatcher(options: {
 export type TaskDispatcher = ReturnType<typeof createTaskDispatcher>;
 
 export function createDbTaskDispatchEscalationSink(
-  decisions: Pick<AiDecisionRepository, "createEscalationEvent">
+  decisions: Pick<AiDecisionRepository, "createEscalationEvent">,
+  reach: {
+    // B-R9.0-5（施工图）：升级发生要主动通知提交人+项目 owner，不能只写 event 等人自己刷收件箱。
+    // 通知是触达手段、决策收件箱才是承重记录：通知写失败只告警，不翻升级事务。
+    notifications?: Pick<NotificationService, "createNotification"> | false;
+    workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> | false;
+  } = {}
 ): TaskDispatchEscalationSink {
   return async (input) => {
     const arbitrationReasonMd = input.reasonMd?.trim();
@@ -628,7 +641,7 @@ export function createDbTaskDispatchEscalationSink(
             arbitrationReasonMd ? `仲裁理由：${arbitrationReasonMd}` : undefined
           ].filter((line): line is string => Boolean(line)).join("\n")
           : "任务计划的上游子任务失败或被跳过，依赖它的子任务已跳过，请人工决定是否重试或改计划。";
-    await decisions.createEscalationEvent({
+    const event = await decisions.createEscalationEvent({
       workItemId: input.plan.workItemId,
       ...(input.failedRunId ? { agentRunId: input.failedRunId } : {}),
       trigger: input.reason === "cycle" ? "doom_loop" : "unqualified",
@@ -644,6 +657,35 @@ export function createDbTaskDispatchEscalationSink(
         skipped_item_ids: input.skippedItemIds
       }
     });
+    if (!reach.notifications || !reach.workItems) {
+      return;
+    }
+    try {
+      const access = await reach.workItems.findWorkItemAccessRecord(input.plan.workItemId);
+      const recipients = new Set(
+        [access?.submitterUserId, access?.project?.ownerUserId]
+          .filter((userId): userId is string => Boolean(userId))
+      );
+      const dedupeBase = event?.id ?? `${input.plan.id}:${input.at.toISOString()}`;
+      for (const userId of recipients) {
+        await reach.notifications.createNotification({
+          userId,
+          type: "workitem.escalated",
+          severity: "high",
+          title: "军团任务需要你来定一下",
+          body: reasonMd,
+          targetUrl: `/workitems/${input.plan.workItemId}`,
+          workItemId: input.plan.workItemId,
+          dedupeKey: `task_plan_escalation:${dedupeBase}:${userId}`
+        });
+      }
+    } catch (error) {
+      getDefaultStructuredLogger().warn("task_dispatch_escalation_notify_failed", {
+        planId: input.plan.id,
+        reason: input.reason,
+        error
+      });
+    }
   };
 }
 
@@ -683,7 +725,10 @@ export function getDefaultTaskDispatcher(queue: Pick<AgentRunQueue, "enqueue">) 
     defaultTaskDispatcher = createTaskDispatcher({
       repository: createTaskPlanRepository(dbClient.db),
       queue,
-      escalationSink: createDbTaskDispatchEscalationSink(createAiDecisionRepository(dbClient.db)),
+      escalationSink: createDbTaskDispatchEscalationSink(createAiDecisionRepository(dbClient.db), {
+        notifications: createNotificationService(getDefaultNotificationServiceDependencies()),
+        workItems: createWorkItemRepository(dbClient.db)
+      }),
       completionSink: createDbTaskDispatchCompletionSink(createAuditLogRepository(dbClient.db)),
       arbitrationSink: createTaskDispatchArbitrationSink({
         candidates: createDbTaskDispatchArbitrationCandidateStore(createTaskPlanArbitrationRepository(dbClient.db)),

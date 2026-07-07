@@ -258,6 +258,95 @@ test("R9.7 dispatcher escalation attention copy avoids dispatch wording", async 
   assert.doesNotMatch(reasons.join("\n"), /dispatch|派发/iu);
 });
 
+test("B-R9.0 dispatcher escalation notifies the submitter and project owner", async () => {
+  // 施工图：升级发生要主动触达提交人+项目 owner，不能只写 event 等人自己刷收件箱。
+  const submitterId = "94000000-0000-4000-8000-000000000401";
+  const ownerId = "94000000-0000-4000-8000-000000000402";
+  const escalationEventId = "94000000-0000-4000-8000-000000000403";
+  const drafts: Array<{ userId: string; type: string; workItemId: string | undefined; dedupeKey: string }> = [];
+  const sink = createDbTaskDispatchEscalationSink({
+    async createEscalationEvent() {
+      return { id: escalationEventId } as Awaited<ReturnType<Parameters<typeof createDbTaskDispatchEscalationSink>[0]["createEscalationEvent"]>>;
+    }
+  }, {
+    notifications: {
+      async createNotification(draft: { userId: string; type: string; workItemId?: string; dedupeKey: string }) {
+        drafts.push({ userId: draft.userId, type: draft.type, workItemId: draft.workItemId, dedupeKey: draft.dedupeKey });
+        return null;
+      }
+    } as never,
+    workItems: {
+      async findWorkItemAccessRecord() {
+        return {
+          id: workItemId,
+          status: "ai_working",
+          submitterUserId: submitterId,
+          claimedByUserId: null,
+          workspaceId,
+          project: { archived: false, deletedAt: null, ownerUserId: ownerId, workspaceId },
+          assignments: []
+        };
+      }
+    } as never
+  });
+
+  await sink({
+    plan: plan("dispatching"),
+    items: [item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "failed" })],
+    skippedItemIds: [],
+    failedItemIds: [researchItemId],
+    reason: "partial_failure",
+    at: now
+  });
+
+  assert.deepEqual(drafts.map((draft) => draft.userId).sort(), [submitterId, ownerId].sort());
+  for (const draft of drafts) {
+    assert.equal(draft.type, "workitem.escalated");
+    assert.equal(draft.workItemId, workItemId);
+    assert.equal(draft.dedupeKey.includes(escalationEventId), true);
+  }
+});
+
+test("B-R9.0 dispatcher escalation still lands when the notification write fails", async () => {
+  // 通知是触达手段、决策收件箱才是承重记录：通知失败只告警，升级事件照常成立。
+  let eventCreated = 0;
+  const sink = createDbTaskDispatchEscalationSink({
+    async createEscalationEvent() {
+      eventCreated += 1;
+      return { id: "94000000-0000-4000-8000-000000000404" } as Awaited<ReturnType<Parameters<typeof createDbTaskDispatchEscalationSink>[0]["createEscalationEvent"]>>;
+    }
+  }, {
+    notifications: {
+      async createNotification() {
+        throw new Error("notification store down");
+      }
+    } as never,
+    workItems: {
+      async findWorkItemAccessRecord() {
+        return {
+          id: workItemId,
+          status: "ai_working",
+          submitterUserId: actorId,
+          claimedByUserId: null,
+          workspaceId,
+          project: null,
+          assignments: []
+        };
+      }
+    } as never
+  });
+
+  await sink({
+    plan: plan("dispatching"),
+    items: [],
+    skippedItemIds: [],
+    reason: "cycle",
+    at: now
+  });
+
+  assert.equal(eventCreated, 1);
+});
+
 test("R9.7 dispatcher arbitration-blocked attention carries judge context", async () => {
   const events: Array<Parameters<Parameters<typeof createDbTaskDispatchEscalationSink>[0]["createEscalationEvent"]>[0]> = [];
   const sink = createDbTaskDispatchEscalationSink({
