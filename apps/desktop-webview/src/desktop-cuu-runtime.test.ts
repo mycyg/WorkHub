@@ -2179,3 +2179,80 @@ test("desktop Cuu actions bind evidence refs back to the current work item", asy
     }
   ]);
 });
+
+
+// B-R9.6 UX 审计（桌宠死卡）：sync_conflict / budget / skip-plan 卡动作现在有真分派——
+// 点了会打到对应端点，而不是掉进裸 anchor 导航。
+test("resolveDesktopCuuAction dispatches memory-conflict, budget and skip-plan hrefs", () => {
+  const conflict = resolveDesktopCuuAction(
+    "/api/memory-conflicts/c1/resolve/discard_both?expected_updated_at=2026-07-03T00%3A00%3A00.000Z"
+  );
+  assert.deepEqual(conflict, {
+    kind: "memory-conflict-resolve",
+    conflictId: "c1",
+    resolution: "discard_both",
+    expectedUpdatedAt: "2026-07-03T00:00:00.000Z"
+  });
+  // 缺 expected_updated_at 的冲突动作不派发（乐观锁参数是必需品）。
+  assert.equal(resolveDesktopCuuAction("/api/memory-conflicts/c1/resolve/keep_current"), undefined);
+  assert.deepEqual(resolveDesktopCuuAction("/api/escalations/e1/budget-actions/add_budget"), {
+    kind: "budget-decision",
+    escalationId: "e1",
+    budgetActionId: "add_budget"
+  });
+  assert.deepEqual(resolveDesktopCuuAction("/api/proposals/p1/skip-plan"), {
+    kind: "skip-plan",
+    proposalId: "p1"
+  });
+});
+
+test("submitDesktopCuuAction runs the three new card actions through the client", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    async respondApproval() { throw new Error("unused"); },
+    async nextQuestion() { throw new Error("unused"); },
+    async searchKnowledge() { throw new Error("unused"); },
+    async useEvidenceForWorkItem() { throw new Error("unused"); },
+    async resolveMemoryConflict(id: string, payload: unknown) {
+      calls.push(["conflict", id, payload]);
+      return { conflict: {} };
+    },
+    async resolveBudgetDecision(id: string, actionId: string) {
+      calls.push(["budget", id, actionId]);
+      return { attention: { summary_text: "已追加预算，军团继续执行。" } };
+    },
+    async skipTaskPlanProposal(id: string) {
+      calls.push(["skip", id]);
+      return { attention: { summary_text: "已改为单个 AI 直接执行。" } };
+    }
+  } as never;
+
+  const conflictResult = await submitDesktopCuuAction({
+    client,
+    locale: "zh-CN",
+    action: {
+      kind: "memory-conflict-resolve",
+      conflictId: "c1",
+      resolution: "merge_both",
+      expectedUpdatedAt: "2026-07-03T00:00:00.000Z"
+    }
+  });
+  assert.match(conflictResult.message, /偏好冲突已处理/u);
+  const budgetResult = await submitDesktopCuuAction({
+    client,
+    locale: "zh-CN",
+    action: { kind: "budget-decision", escalationId: "e1", budgetActionId: "add_budget" }
+  });
+  assert.equal(budgetResult.message, "已追加预算，军团继续执行。");
+  const skipResult = await submitDesktopCuuAction({
+    client,
+    locale: "zh-CN",
+    action: { kind: "skip-plan", proposalId: "p1" }
+  });
+  assert.equal(skipResult.message, "已改为单个 AI 直接执行。");
+  assert.deepEqual(calls, [
+    ["conflict", "c1", { resolution: "merge_both", expected_updated_at: "2026-07-03T00:00:00.000Z" }],
+    ["budget", "e1", "add_budget"],
+    ["skip", "p1"]
+  ]);
+});

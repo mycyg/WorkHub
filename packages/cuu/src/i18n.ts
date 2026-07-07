@@ -141,6 +141,7 @@ export type CuuCopyKey =
   | "notice.prefix"
   | "action.reasonRequired"
   | "action.approved"
+  | "action.memoryConflictResolved"
   | "action.denied"
   | "action.evidenceFound"
   | "action.noEvidence"
@@ -375,6 +376,7 @@ const cuuCopy = {
     "notice.prefix": "Cuu：{title}",
     "action.reasonRequired": "打回需要先选择一个原因。",
     "action.approved": "Cuu 已收到：这步已批准。",
+    "action.memoryConflictResolved": "偏好冲突已处理，Cuu 记好了～",
     "action.denied": "Cuu 已带着原因打回，会继续改。",
     "action.evidenceFound": "Cuu 找到了一组项目证据。",
     "action.noEvidence": "这张证据卡里没有可绑定的证据。",
@@ -608,6 +610,7 @@ const cuuCopy = {
     "notice.prefix": "Cuu: {title}",
     "action.reasonRequired": "Choose a reason before sending it back.",
     "action.approved": "Cuu got it: this step is approved.",
+    "action.memoryConflictResolved": "Memory conflict resolved — Cuu noted it.",
     "action.denied": "Sent back; Cuu will revise.",
     "action.evidenceFound": "Cuu found a set of project evidence.",
     "action.noEvidence": "This evidence card has nothing bindable yet.",

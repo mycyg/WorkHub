@@ -141,6 +141,24 @@ export type DesktopCuuActionRequest =
       kind: "proposal-merge-candidate-apply";
       mergeProposalId: string;
       payload?: ApplyMergeProposalCandidateRequest;
+    }
+  // B-R9.6 UX 审计（桌宠死卡）：sync_conflict/budget/plan_review 卡端上来了却没人接——
+  // 点击不发任何请求。补三类动作请求。
+  | {
+      kind: "memory-conflict-resolve";
+      conflictId: string;
+      resolution: "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both";
+      expectedUpdatedAt: string;
+      valueMd?: string;
+    }
+  | {
+      kind: "budget-decision";
+      escalationId: string;
+      budgetActionId: string;
+    }
+  | {
+      kind: "skip-plan";
+      proposalId: string;
     };
 
 export const desktopCuuProjectContextStorageKey = "workhub_cuu_project_context";
@@ -315,6 +333,16 @@ type DesktopCuuActionClient = Pick<
       summary_text: string;
     };
   }>;
+  resolveMemoryConflict?: WorkHubApiClient["resolveMemoryConflict"];
+  resolveBudgetDecision?: (
+    escalationId: string,
+    budgetActionId: string,
+    options?: PageRequestOptions
+  ) => Promise<{ attention: { summary_text: string } }>;
+  skipTaskPlanProposal?: (
+    proposalId: string,
+    options?: PageRequestOptions
+  ) => Promise<{ attention: { summary_text: string } }>;
   createSession?: (payload?: CreateSessionRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createSession"]>>>;
   createWorkItem?: (payload: CreateWorkItemRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>>;
   startAgentRun?: (
@@ -1008,6 +1036,38 @@ export function resolveDesktopCuuAction(
     };
   }
 
+  // B-R9.6 UX 审计（桌宠死卡）：sync_conflict 卡四动作 / budget 卡预算动作 / plan_review「先不拆」。
+  const memoryConflictMatch = /^\/api\/memory-conflicts\/([^/]+)\/resolve\/(keep_current|accept_incoming|merge_both|edit_memory|discard_both)$/u.exec(path);
+  if (memoryConflictMatch?.[1] && memoryConflictMatch[2]) {
+    const expectedUpdatedAt = url.searchParams.get("expected_updated_at");
+    if (!expectedUpdatedAt) {
+      return undefined;
+    }
+    return {
+      kind: "memory-conflict-resolve",
+      conflictId: decodeURIComponent(memoryConflictMatch[1]),
+      resolution: memoryConflictMatch[2] as "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both",
+      expectedUpdatedAt
+    };
+  }
+
+  const budgetActionMatch = /^\/api\/escalations\/([^/]+)\/budget-actions\/([^/]+)$/u.exec(path);
+  if (budgetActionMatch?.[1] && budgetActionMatch[2]) {
+    return {
+      kind: "budget-decision",
+      escalationId: decodeURIComponent(budgetActionMatch[1]),
+      budgetActionId: decodeURIComponent(budgetActionMatch[2])
+    };
+  }
+
+  const skipPlanMatch = /^\/api\/proposals\/([^/]+)\/skip-plan$/u.exec(path);
+  if (skipPlanMatch?.[1]) {
+    return {
+      kind: "skip-plan",
+      proposalId: decodeURIComponent(skipPlanMatch[1])
+    };
+  }
+
   const escalationResolveMatch = /^\/api\/escalations\/([^/]+)\/resolve$/u.exec(path);
   if (escalationResolveMatch?.[1]) {
     const payload = escalationResolvePayloadFromAction(input.actionId, input.card, href);
@@ -1175,6 +1235,40 @@ export async function submitDesktopCuuAction(input: {
     return {
       message: cuuT(input.locale, "action.evidenceBound"),
       card: cardFromWorkItemDetail(detail, input)
+    };
+  }
+
+  if (input.action.kind === "memory-conflict-resolve") {
+    if (!input.client.resolveMemoryConflict) {
+      throw new Error("Memory conflict action is unavailable.");
+    }
+    await input.client.resolveMemoryConflict(input.action.conflictId, {
+      resolution: input.action.resolution,
+      expected_updated_at: input.action.expectedUpdatedAt,
+      ...(input.action.valueMd ? { value_md: input.action.valueMd } : {})
+    });
+    return {
+      message: cuuT(input.locale, "action.memoryConflictResolved")
+    };
+  }
+
+  if (input.action.kind === "budget-decision") {
+    if (!input.client.resolveBudgetDecision) {
+      throw new Error("Budget decision action is unavailable.");
+    }
+    const result = await input.client.resolveBudgetDecision(input.action.escalationId, input.action.budgetActionId, localeOptions);
+    return {
+      message: result.attention.summary_text
+    };
+  }
+
+  if (input.action.kind === "skip-plan") {
+    if (!input.client.skipTaskPlanProposal) {
+      throw new Error("Skip-plan action is unavailable.");
+    }
+    const result = await input.client.skipTaskPlanProposal(input.action.proposalId, localeOptions);
+    return {
+      message: result.attention.summary_text
     };
   }
 
