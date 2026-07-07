@@ -11,6 +11,7 @@ import {
   type EscalationRepository,
   type EscalationServiceRow
 } from "./escalations.js";
+import { WorkItemServiceError } from "./work-items.js";
 
 const now = new Date("2026-07-02T16:00:00.000Z");
 const escalationId = "94000000-0000-4000-8000-000000000101";
@@ -581,15 +582,20 @@ test("R9.7 escalation service refuses legacy null-workspace rows", async () => {
   assert.deepEqual(repository.delegateCalls, []);
 });
 
-test("R9.7 escalation direct mutations require work-item readability", async () => {
-  const readChecks: Array<{ workItemIds: string[]; actorWorkspaceId: string }> = [];
+test("R9.7 escalation direct mutations require work-item mutate permission", async () => {
+  // B-R9.0-1：写动作改按写权限收口。对完全不可见的工单，assertCanMutateWorkItem 抛 404，
+  // 服务必须折叠成 403 forbidden（不向无权者泄露升级是否存在对应工单）。
+  const mutateChecks: Array<{ workItemId: string; actorWorkspaceId: string }> = [];
   const hiddenWorkItems = {
     async canReadWorkItems(input: { workItemIds: string[]; actor: AuthActor }) {
-      readChecks.push({
-        workItemIds: input.workItemIds,
+      return new Set<string>(input.workItemIds);
+    },
+    async assertCanMutateWorkItem(input: { workItemId: string; actor: AuthActor }) {
+      mutateChecks.push({
+        workItemId: input.workItemId,
         actorWorkspaceId: input.actor.workspaceId
       });
-      return new Set<string>();
+      throw new WorkItemServiceError(404, "not_found", "没有找到这个事项。");
     }
   };
 
@@ -651,11 +657,72 @@ test("R9.7 escalation direct mutations require work-item readability", async () 
       && (error as { code?: string }).code === "forbidden"
   );
   assert.deepEqual(delegateRepository.delegateCalls, []);
-  assert.deepEqual(readChecks, [
-    { workItemIds: [workItemId], actorWorkspaceId: actor().workspaceId },
-    { workItemIds: [workItemId], actorWorkspaceId: actor().workspaceId },
-    { workItemIds: [workItemId], actorWorkspaceId: actor().workspaceId }
+  assert.deepEqual(mutateChecks, [
+    { workItemId, actorWorkspaceId: actor().workspaceId },
+    { workItemId, actorWorkspaceId: actor().workspaceId },
+    { workItemId, actorWorkspaceId: actor().workspaceId }
   ]);
+});
+
+test("B-R9.0 read access alone cannot resolve, delegate, or decide budget on an escalation", async () => {
+  // branch-review 越权洞：旧实现只查 canReadWorkItems——同工作区任何能看到工单的人都能
+  // 取消/转派/杀掉别人的升级。现在可读但不可写的 actor 必须 403，且不触发任何仓库写调用。
+  const readableNotMutable = {
+    async canReadWorkItems(input: { workItemIds: string[] }) {
+      return new Set<string>(input.workItemIds);
+    },
+    async assertCanMutateWorkItem() {
+      throw new WorkItemServiceError(403, "forbidden", "你没有权限修改这个事项。");
+    }
+  };
+  const repository = new MemoryEscalationRepository();
+  const service = createEscalationService({
+    repository,
+    users: false,
+    memberships: false,
+    workItems: readableNotMutable,
+    now: () => now
+  });
+
+  const expectForbidden = (error: unknown) => error instanceof Error
+    && (error as { status?: number }).status === 403
+    && (error as { code?: string }).code === "forbidden";
+
+  await assert.rejects(service.resolve(escalationId, actor(), { action: "cancel" }), expectForbidden);
+  await assert.rejects(service.resolve(escalationId, actor(), { action: "pm_mode" }), expectForbidden);
+  await assert.rejects(service.delegate(escalationId, actor(), { to_user_id: delegateTargetUserId }), expectForbidden);
+  await assert.rejects(service.resolveBudgetDecision(escalationId, actor(), "finish_current_output"), expectForbidden);
+  assert.deepEqual(repository.resolveCalls, []);
+  assert.deepEqual(repository.delegateCalls, []);
+  assert.deepEqual(repository.budgetDecisionCalls, []);
+});
+
+test("B-R9.0 mutate-permitted actor still resolves and delegates escalations", async () => {
+  let mutateChecks = 0;
+  const mutableWorkItems = {
+    async canReadWorkItems(input: { workItemIds: string[] }) {
+      return new Set<string>(input.workItemIds);
+    },
+    async assertCanMutateWorkItem() {
+      mutateChecks += 1;
+    }
+  };
+  const repository = new MemoryEscalationRepository();
+  const service = createEscalationService({
+    repository,
+    users: false,
+    memberships: false,
+    workItems: mutableWorkItems,
+    now: () => now
+  });
+
+  const resolved = await service.resolve(escalationId, actor(), { action: "cancel" });
+  assert.equal(resolved.escalation.id, escalationId);
+  await service.delegate(escalationId, actor(), { to_user_id: delegateTargetUserId });
+
+  assert.equal(mutateChecks, 2);
+  assert.equal(repository.resolveCalls.length, 1);
+  assert.equal(repository.delegateCalls.length, 1);
 });
 
 test("R9.7 escalation attention scans past unreadable rows before applying the visible page limit", async () => {
@@ -678,6 +745,10 @@ test("R9.7 escalation attention scans past unreadable rows before applying the v
         assert.equal(input.actor.workspaceId, actor().workspaceId);
         assert.equal(input.workItemIds.includes(visible.workItemId), true);
         return new Set([visible.workItemId]);
+      },
+      // 决策信箱是读路径：列表可见性只看 canRead，绝不该向读者要写权限。
+      async assertCanMutateWorkItem() {
+        throw new Error("attention listing must not demand mutate permission");
       }
     },
     now: () => now

@@ -23,7 +23,7 @@ import { localizedBudgetActionLabel, localizedBudgetUsageScopeLabel } from "../b
 import type { AuthActor } from "../middleware/auth.js";
 import { getDefaultAgentRunQueue } from "../workers/agent-runner.js";
 import { getDefaultTaskDispatcher, type TaskDispatcher } from "./task-dispatcher.js";
-import { getDefaultWorkItemService, type WorkItemService } from "./work-items.js";
+import { getDefaultWorkItemService, WorkItemServiceError, type WorkItemService } from "./work-items.js";
 
 export type EscalationServiceRow = DbEscalationServiceRow;
 
@@ -81,7 +81,7 @@ type EscalationServiceDependencies = {
   repository?: EscalationRepository;
   users?: Pick<UserRepository, "findActiveById"> | false;
   memberships?: Pick<WorkspaceMembershipRepository, "findActiveForUserWorkspace"> | false;
-  workItems?: Pick<WorkItemService, "canReadWorkItems"> | false;
+  workItems?: Pick<WorkItemService, "canReadWorkItems" | "assertCanMutateWorkItem"> | false;
   taskDispatcher?: Pick<TaskDispatcher, "dispatch"> | false;
   now?: () => Date;
 };
@@ -437,6 +437,24 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
     }
   }
 
+  // B-R9.0-1（branch-review 越权洞）：resolve/delegate/预算决定都是写动作，必须按工作项
+  // 写权限收口（对齐 approvals/work-items 的 mutate 判定：owner/提交人/认领人/协作 assignment/admin）。
+  // canRead 只够展示卡片，不构成「替这个工单拍板」的授权。
+  async function ensureMutableEscalation(row: EscalationServiceRow, actor: AuthActor) {
+    ensureWorkspace(row, actor);
+    if (!workItems) {
+      return;
+    }
+    try {
+      await workItems.assertCanMutateWorkItem({ workItemId: row.workItemId, actor });
+    } catch (error) {
+      if (error instanceof WorkItemServiceError && (error.status === 403 || error.status === 404)) {
+        throw new EscalationServiceError(403, "forbidden", "你没有权限处理这条升级。");
+      }
+      throw error;
+    }
+  }
+
   return {
     async resolve(id: string, actor: AuthActor, input: ResolveEscalationRequest, locale: WorkHubLocale = "zh-CN") {
       const payload = resolveEscalationRequestSchema.parse(input);
@@ -444,7 +462,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       if (!existing) {
         throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
       }
-      await ensureReadableEscalation(existing, actor);
+      await ensureMutableEscalation(existing, actor);
       const targetStatus = resolveTargetStatus(payload.action);
       const taskPlanId = taskPlanIdFromHandoff(existing);
       const taskPlanAction = hasTaskPlanResolutionTarget(existing) ? payload.action : undefined;
@@ -503,7 +521,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       if (!existing) {
         throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
       }
-      await ensureReadableEscalation(existing, actor);
+      await ensureMutableEscalation(existing, actor);
       if (!isBudgetEscalation(existing)) {
         throw new EscalationServiceError(422, "budget_action_not_available", "这条预算选择已经不可用。");
       }
@@ -542,7 +560,7 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       if (!existing) {
         throw new EscalationServiceError(404, "escalation_not_found", "没有找到这条升级。");
       }
-      await ensureReadableEscalation(existing, actor);
+      await ensureMutableEscalation(existing, actor);
       if (users) {
         const target = await users.findActiveById(payload.to_user_id);
         if (!target) {
