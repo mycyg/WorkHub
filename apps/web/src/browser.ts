@@ -45,6 +45,7 @@ import {
   eventListenerOptions,
   evidenceBindingWorkItemIdFromHref,
   escalationActionFromHref,
+  skipPlanProposalIdFromHref,
   taskPlanDispatchActionFromHref,
   escapeHtml,
   fieldValueRequiredNotice,
@@ -1215,6 +1216,21 @@ function bindGoldPathNavigation(
           if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
             showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
           }
+        }
+        return;
+      }
+      // B-R9.6 UX 审计（skip-plan 假接线）：plan_review 卡「先不拆，单个 AI 跑」——
+      // 打回计划草稿并直接入队单个 run，成功后跳回工作项详情看进展。
+      const skipPlanProposalId = skipPlanProposalIdFromHref(href);
+      if (skipPlanProposalId) {
+        try {
+          const skipped = await client.skipTaskPlanProposal(skipPlanProposalId, { locale });
+          await navigateWebRoute(`/workitems/${encodeURIComponent(skipped.work_item_id)}`, client, locale);
+          if (root) {
+            showRouteNotice(root, actionSuccessNotice(locale, skipped.attention.summary_text, actionId));
+          }
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
         }
         return;
       }

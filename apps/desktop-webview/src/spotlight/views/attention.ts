@@ -14,6 +14,7 @@ import {
   escalationActionFromHref,
   memoryConflictActionFromHref,
   proposalActionFromHref,
+  skipPlanProposalIdFromHref,
   safeHref
 } from "@workhub/web-runtime";
 
@@ -366,6 +367,13 @@ export function createAttentionView(): SpotlightCapabilityView {
           }
           const res = await client.respondApproval(approvalId, { decision: "allow", remember: "once" });
           ctx.toast(summaryText(res) ?? (zh ? "已通过" : "Approved"), "ok");
+          return true;
+        }
+        // B-R9.6 UX 审计（skip-plan 假接线）：plan_review 卡「先不拆，单个 AI 跑」。
+        const skipPlanProposalId = skipPlanProposalIdFromHref(href);
+        if (skipPlanProposalId) {
+          const skipped = await client.skipTaskPlanProposal(skipPlanProposalId, { locale: ctx.locale });
+          ctx.toast(skipped.attention.summary_text || (zh ? "已改为单个 AI 直接执行" : "Switched to a single AI run"), "ok");
           return true;
         }
         const proposal = proposalActionFromHref(href);

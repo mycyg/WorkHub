@@ -424,6 +424,8 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    skipTaskPlanProposal: (proposalId, options) =>
+      request(withPageLocale(`/api/proposals/${encodeURIComponent(proposalId)}/skip-plan`, options), { method: "POST" }),
     pauseTaskPlan: (planId) =>
       request(`/api/task-plans/${encodeURIComponent(planId)}/pause`, { method: "POST" }),
     resumeTaskPlan: (planId) =>

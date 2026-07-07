@@ -34,6 +34,13 @@ export function proposalActionFromHref(href: string) {
   return { proposalId: decodeURIComponent(match[1]), action: match[2] as "review" | "merge" };
 }
 
+// B-R9.6 UX 审计（skip-plan 假接线）：plan_review 卡「先不拆，单个 AI 跑」的 href 识别。
+export function skipPlanProposalIdFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/proposals\/([^/]+)\/skip-plan$/u.exec(path);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
+}
+
 export function approvalRespondIdFromHref(href: string) {
   const path = hrefPathname(href);
   const match = /^\/api\/approvals\/([^/]+)\/respond$/u.exec(path);

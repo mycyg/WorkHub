@@ -27,6 +27,8 @@ import {
   meetingDraftProposalFromHref,
   meetingInsightActionFromHref,
   memoryConflictActionFromHref,
+  skipPlanProposalIdFromHref,
+  taskPlanDispatchActionFromHref,
   isNativeResourceLink,
   notificationActionFromHref,
   proposalActionFromHref,
@@ -299,4 +301,14 @@ test("S1 Day2 shared runtime detects post-run WorkItem proposal and replay next 
     workItemId: "missing",
     actionCount: 0
   });
+});
+
+
+// B-R9.6 UX 审计：skip-plan 与暂停/恢复派发的 href 识别（假接线修复的最小锚点）。
+test("skipPlanProposalIdFromHref and taskPlanDispatchActionFromHref parse their endpoints", () => {
+  assert.equal(skipPlanProposalIdFromHref("/api/proposals/p%201/skip-plan"), "p 1");
+  assert.equal(skipPlanProposalIdFromHref("/api/proposals/p1/review"), undefined);
+  assert.deepEqual(taskPlanDispatchActionFromHref("/api/task-plans/t1/pause"), { planId: "t1", action: "pause" });
+  assert.deepEqual(taskPlanDispatchActionFromHref("/api/task-plans/t1/resume"), { planId: "t1", action: "resume" });
+  assert.equal(taskPlanDispatchActionFromHref("/api/task-plans/t1/cancel"), undefined);
 });
