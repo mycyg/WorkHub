@@ -150,6 +150,8 @@ export type ProposalService = {
   get: (proposalId: string) => Promise<StoredProposal | null>;
   getByMergeProposal: (mergeProposalId: string) => Promise<StoredProposal | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposal[]>;
+  // B-R9.6：今日 AI 判官审阅结果——指挥台「复核通过率」的真源。
+  countTodayAiReviewOutcomes: (input: { workspaceId: string }) => Promise<{ total: number; approved: number }>;
   listReviewableForUser: (input: { user: { id: string; isAdmin: boolean; workspaceId?: string }; limit?: number }) => Promise<ReviewableProposalSummary[]>;
   listConflicts: (workItemId: string) => Promise<ProposalConflictListResult>;
   review: (input: {
@@ -1670,6 +1672,10 @@ export function createInMemoryProposalService(options: {
   }
 
   return {
+    async countTodayAiReviewOutcomes() {
+      return { total: 0, approved: 0 };
+    },
+
     async createFromManifest(input) {
       if (input.manifest.work_item_id !== input.workItemId) {
         throw new ProposalServiceError(422, "manifest_workitem_mismatch", "变更申请与事项不匹配。");
@@ -1985,6 +1991,10 @@ export function createDbProposalService(repository: ProposalRepository, options:
     async listByWorkItem(workItemId) {
       const rows = await repository.listByWorkItem(workItemId);
       return rows.map(storedRowsToProposal);
+    },
+
+    async countTodayAiReviewOutcomes(input) {
+      return repository.countTodayAiReviewOutcomes(input);
     },
 
     async listReviewableForUser(input) {

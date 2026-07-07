@@ -401,7 +401,9 @@ test("R9.6 agent army dashboard returns an honest empty state without fake plans
   assert.deepEqual(vm.recent_escalations, []);
 });
 
-test("R9.7 agent army dashboard KPI never undercounts returned escalation rows", () => {
+// B-R9.6 口径翻转：原测试钉死 max(attentionCount, escalations) 抬高——但「等你决策数」
+// 必须与收件箱同口径，仪表盘自己捞的升级行只进 recent_escalations 列表，不进 KPI。
+test("B-R9.6 waiting_decision KPI matches the attention inbox even when escalation rows exceed it", () => {
   const plan = dashboardPlanFixture(30);
   const vm = buildAgentArmyDashboardPage({
     generatedAt: now,
@@ -441,7 +443,7 @@ test("R9.7 agent army dashboard KPI never undercounts returned escalation rows",
   });
 
   assert.equal(vm.recent_escalations.length, 2);
-  assert.equal(vm.kpis.waiting_decision_count, 2);
+  assert.equal(vm.kpis.waiting_decision_count, 0);
 });
 
 test("R9.6 /api/pages/agents returns the dashboard VM through auth and locale envelope", async () => {
@@ -570,6 +572,104 @@ test("R9.7 /api/pages/agents marks failed attention count sources instead of loo
   assert.deepEqual(body.data.source_warnings.map((warning) => warning.source), ["escalations", "approvals"]);
   assert.match(body.data.source_warnings[0]?.message ?? "", /升级待办/u);
   assert.match(body.data.source_warnings[1]?.message ?? "", /审批待办/u);
+});
+
+// B-R9.6（KPI 真源）：复核通过率优先取今日 AI 判官审阅结果，而不是拿 run 成功率冒充；
+// 当天没有判官审阅时才回退旧口径。
+test("B-R9.6 /api/pages/agents autonomy rate prefers judge review outcomes over run success", async () => {
+  const settings = runtimeSettings();
+  const emptySourceStubs = {
+    taskPlans: {
+      async listDashboardPlans() {
+        return {
+          plans: [],
+          plansCapped: false,
+          items: [],
+          itemsCapped: false,
+          runs: [],
+          runsCapped: false,
+          escalations: [],
+          escalationsCapped: false
+        };
+      }
+    },
+    workItems: {
+      async canReadWorkItems() {
+        return new Set<string>();
+      }
+    },
+    ledgerStore: {
+      async listEntriesForScopes() {
+        return [];
+      }
+    },
+    aiWorklog: {
+      async getTodayMetrics() {
+        return {
+          runs_today: 5,
+          autonomy_rate: 20,
+          accepted_today: 1,
+          saved_hours_estimate: 0,
+          generated_at: now.toISOString()
+        };
+      }
+    },
+    escalations: {
+      async listAttentionItems() {
+        return [];
+      }
+    },
+    memoryConflicts: {
+      async listAttentionItems() {
+        return [];
+      }
+    },
+    approvals: {
+      async listPendingForUser() {
+        return { requests: [], counts: { pending: 0, pending_total: 0, pending_total_capped: 0 } };
+      }
+    }
+  };
+
+  const judgeApp = withErrors(new Hono<AuthEnv>());
+  judgeApp.route("/api/pages", createPageRoutes({
+    auth: authDeps(settings),
+    ...emptySourceStubs,
+    proposals: {
+      async listReviewableForUser() {
+        return [];
+      },
+      async countTodayAiReviewOutcomes() {
+        return { total: 4, approved: 3 };
+      }
+    }
+  } as never));
+  const judged = await judgeApp.request("/api/pages/agents?locale=zh-CN", {
+    headers: { Cookie: await cookie(settings) }
+  });
+  assert.equal(judged.status, 200);
+  const judgedBody = await judged.json() as { ok: true; data: { kpis: { autonomy_rate_pct: number } } };
+  assert.equal(judgedBody.data.kpis.autonomy_rate_pct, 75);
+
+  const fallbackApp = withErrors(new Hono<AuthEnv>());
+  fallbackApp.route("/api/pages", createPageRoutes({
+    auth: authDeps(settings),
+    ...emptySourceStubs,
+    proposals: {
+      async listReviewableForUser() {
+        return [];
+      },
+      async countTodayAiReviewOutcomes() {
+        return { total: 0, approved: 0 };
+      }
+    }
+  } as never));
+  const fallback = await fallbackApp.request("/api/pages/agents?locale=zh-CN", {
+    headers: { Cookie: await cookie(settings) }
+  });
+  assert.equal(fallback.status, 200);
+  const fallbackBody = await fallback.json() as { ok: true; data: { kpis: { autonomy_rate_pct: number } } };
+  assert.equal(fallbackBody.data.kpis.autonomy_rate_pct, 20);
 });
 
 test("R9.7 /api/pages/agents counts capped approval lower-bound totals in the decision KPI", async () => {

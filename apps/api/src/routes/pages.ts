@@ -447,11 +447,25 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         worklog = undefined;
       }
       const attention = await attentionDecisionSummary(input);
+      // B-R9.6（KPI 真源）：「复核通过率」优先取今日 AI 判官审阅结果；当天没有判官
+      // 审阅时回退 run 成功率（旧口径），不再拿成功率冒充通过率。
+      let reviewOutcomes: { total: number; approved: number } | undefined;
+      try {
+        reviewOutcomes = await proposals.countTodayAiReviewOutcomes({
+          workspaceId: input.actor.workspaceId
+        });
+      } catch {
+        reviewOutcomes = undefined;
+      }
+      const autonomyRatePct =
+        reviewOutcomes && reviewOutcomes.total > 0
+          ? Math.round((reviewOutcomes.approved / reviewOutcomes.total) * 100)
+          : (worklog?.autonomy_rate ?? 0);
       return buildAgentArmyDashboardPage({
         locale: input.locale,
         attentionCount: attention.count,
         sourceWarnings: attention.sourceWarnings,
-        autonomyRatePct: worklog?.autonomy_rate ?? 0,
+        autonomyRatePct,
         plans: visiblePlans,
         items: rows.items.filter((item) => visiblePlanIds.has(item.planId)),
         runs: rows.runs.filter((run) => run.taskPlanId ? visiblePlanIds.has(run.taskPlanId) : false),

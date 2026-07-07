@@ -189,19 +189,25 @@ export function buildAgentArmyDashboardPage(input: AgentArmyDashboardPageInput):
   const costs = costBuckets(input.ledgerEntries);
   const visiblePlanIds = new Set(input.plans.map((row) => row.plan.id));
   const todayBucket = generatedAt.toISOString().slice(0, 10);
-  const todayCost = [...input.ledgerEntries]
-    .filter((entry) => entry.periodBucket === todayBucket)
-    .reduce((sum, entry, index, entries) => {
-      const planId = entry.taskPlanId ?? (entry.scope.kind === "task" ? entry.scope.taskPlanId : undefined);
-      if (!planId || !visiblePlanIds.has(planId)) {
-        return sum;
-      }
-      const firstIndex = entries.findIndex((candidate) => {
-        const candidatePlanId = candidate.taskPlanId ?? (candidate.scope.kind === "task" ? candidate.scope.taskPlanId : undefined);
-        return candidatePlanId === planId && candidate.usageRecordId === entry.usageRecordId;
-      });
-      return firstIndex === index ? sum + (numericCny(entry.estimatedCostCny) ?? 0) : sum;
-    }, 0);
+  // B-R9.6（branch-review O(n²)）：去重原先在 reduce 里对全量账目 findIndex——90 天
+  // 全量账目下是平方扫描。改 Set 单遍：同 (plan, usageRecord) 只记一次。
+  const seenTodayCostKeys = new Set<string>();
+  let todayCost = 0;
+  for (const entry of input.ledgerEntries) {
+    if (entry.periodBucket !== todayBucket) {
+      continue;
+    }
+    const planId = entry.taskPlanId ?? (entry.scope.kind === "task" ? entry.scope.taskPlanId : undefined);
+    if (!planId || !visiblePlanIds.has(planId)) {
+      continue;
+    }
+    const key = `${planId}:${entry.usageRecordId}`;
+    if (seenTodayCostKeys.has(key)) {
+      continue;
+    }
+    seenTodayCostKeys.add(key);
+    todayCost += numericCny(entry.estimatedCostCny) ?? 0;
+  }
 
   const plans = input.plans.map((row) => {
     const planItems = itemsByPlan.get(row.plan.id) ?? [];
@@ -300,7 +306,9 @@ export function buildAgentArmyDashboardPage(input: AgentArmyDashboardPageInput):
     generated_at: generatedAt.toISOString(),
     kpis: {
       active_team_count: input.plans.length,
-      waiting_decision_count: Math.max(input.attentionCount, recentEscalations.length),
+      // B-R9.6（跨页一致性）：「等你决策数」与收件箱同口径——不许用 max() 拿 dashboard
+      // 自己捞的升级数抬高（收件箱按可见性/分页收口后就是用户看到的数）。
+      waiting_decision_count: input.attentionCount,
       today_cost_cny: formatCny(todayCost),
       autonomy_rate_pct: input.autonomyRatePct ?? 0
     },

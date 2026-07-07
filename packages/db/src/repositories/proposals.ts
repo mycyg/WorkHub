@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 
 import type {
   ActorKind,
@@ -384,6 +384,8 @@ export type ProposalRepository = {
   chooseMergeProposalCandidate: (input: ChooseMergeProposalCandidateInput) => Promise<MergeProposalRow | null>;
   applyMergeProposalCandidate: (input: ApplyMergeProposalCandidateInput) => Promise<StoredProposalRows | null>;
   review: (input: ReviewProposalInput) => Promise<StoredProposalRows | null>;
+  // B-R9.6（KPI 真源）：今日 AI 判官审阅结果，供指挥台「复核通过率」跨页同口径。
+  countTodayAiReviewOutcomes: (input: { workspaceId: string; now?: Date }) => Promise<{ total: number; approved: number }>;
   merge: (input: MergeProposalInput) => Promise<StoredProposalRows | null>;
   rebase: (input: RebaseProposalInput) => Promise<ProposalMergeConflict[] | null>;
 };
@@ -2615,6 +2617,28 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         return null;
       }
       return readStoredProposal(db, input.proposalId);
+    },
+
+    // B-R9.6（KPI 真源）：今日 AI 判官审阅结果——「复核通过率」接 R9.4 真数据，
+    // 不再拿 run 成功率冒充。按工作区（经 work item）+ 当日窗口聚合。
+    async countTodayAiReviewOutcomes(input: { workspaceId: string; now?: Date }) {
+      const at = input.now ?? new Date();
+      const dayStart = new Date(at);
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const rows = await db
+        .select({ decision: reviews.decision })
+        .from(reviews)
+        .innerJoin(proposals, eq(reviews.proposalId, proposals.id))
+        .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
+        .where(and(
+          eq(reviews.reviewerKind, "ai"),
+          eq(workItems.workspaceId, input.workspaceId),
+          gte(reviews.createdAt, dayStart)
+        ))
+        .limit(500);
+      const total = rows.length;
+      const approved = rows.filter((row) => row.decision === "approve").length;
+      return { total, approved };
     },
 
     async merge(input) {

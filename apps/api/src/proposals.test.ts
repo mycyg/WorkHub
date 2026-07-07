@@ -1178,6 +1178,10 @@ class MemoryProposalRepository implements ProposalRepository {
     return mergeAttemptId;
   }
 
+  async countTodayAiReviewOutcomes() {
+    return { total: 0, approved: 0 };
+  }
+
   async merge(input: Parameters<ProposalRepository["merge"]>[0]) {
     this.mergeInputs.push(input);
     const stored = this.rows.get(input.proposalId);
