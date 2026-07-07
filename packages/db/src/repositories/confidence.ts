@@ -94,6 +94,8 @@ export type AiDecisionRepository = {
   listEscalationEventsForWorkItem: (workItemId: string) => Promise<EscalationEventRow[]>;
   findEscalationById: (input: { id: string; workspaceId: string }) => Promise<EscalationServiceRow | null>;
   listUnresolvedEscalationsForWorkspace: (input: { workspaceId: string; limit?: number }) => Promise<EscalationServiceRow[]>;
+  // B-R9.2-4：同 plan 同 reason 的未解决升级卡查重（并发结算/重复触发不许双开卡）。
+  findUnresolvedTaskPlanEscalation: (input: { workItemId: string; planId: string; reason: string }) => Promise<EscalationServiceRow | null>;
   resolveEscalation: (input: ResolveEscalationInput) => Promise<EscalationServiceRow | null>;
   resolveBudgetDecision: (input: ResolveBudgetDecisionInput) => Promise<EscalationServiceRow | null>;
   reopenEscalation?: (input: {
@@ -346,6 +348,25 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
           eq(escalationEvents.id, input.id),
           eq(workItems.workspaceId, input.workspaceId),
           isNull(workItems.deletedAt)
+        ))
+        .limit(1);
+      const row = rows[0];
+      return row ? toEscalationServiceRow(row) : null;
+    },
+
+    // B-R9.2-4（结算幂等门）：同 plan 同 reason 的未解决升级卡只允许一张——
+    // 并发结算/重复 merge 触发的重复开卡在 sink 创建前用它查重。
+    async findUnresolvedTaskPlanEscalation(input) {
+      const rows = await db
+        .select(escalationServiceColumns)
+        .from(escalationEvents)
+        .innerJoin(workItems, eq(escalationEvents.workItemId, workItems.id))
+        .where(and(
+          eq(escalationEvents.workItemId, input.workItemId),
+          isNull(escalationEvents.resolvedAt),
+          isNull(workItems.deletedAt),
+          sql`${escalationEvents.handoffJson} ->> 'task_plan_id' = ${input.planId}`,
+          sql`${escalationEvents.handoffJson} ->> 'reason' = ${input.reason}`
         ))
         .limit(1);
       const row = rows[0];

@@ -112,7 +112,17 @@ function run(input: {
 class MemoryTaskDispatcherRepository implements TaskDispatcherRepository {
   public startCalls = 0;
   public doneCalls = 0;
+  public lockAcquired = 0;
   public markDispatchedMisses = new Set<string>();
+  private settlementQueue: Promise<unknown> = Promise.resolve();
+
+  // B-R9.2-4：与真实 advisory 锁同语义的串行门（内存版）。
+  async withPlanSettlementLock<T>(_input: { planId: string }, fn: () => Promise<T>): Promise<T> {
+    this.lockAcquired += 1;
+    const next = this.settlementQueue.then(fn, fn);
+    this.settlementQueue = next.catch(() => undefined);
+    return next;
+  }
 
   constructor(
     public row: TaskPlanRow,
@@ -491,6 +501,77 @@ test("R9.2 dispatcher pumps queued child runs after enqueueing ready task-plan i
 
   assert.deepEqual(result.enqueuedItemIds, [researchItemId, reviewItemId]);
   assert.equal(queue.runNextCalls, 2);
+});
+
+test("B-R9.2 settlement gate runs the judge and completion exactly once under concurrency", async () => {
+  // branch-review 并发结算：两个子 run 同时到达全终态，仲裁判官/完成落账只许跑一次。
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "dispatched" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", status: "dispatched" })
+  ]);
+  const queue = new CapturingQueue();
+  let arbitrations = 0;
+  let completions = 0;
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    escalationSink: async () => {},
+    completionSink: async () => { completions += 1; },
+    arbitrationSink: async () => {
+      arbitrations += 1;
+      // 放大并发窗口：判官在跑时另一个 settle 已经到门口。
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { completion: "proceed" as const };
+    }
+  });
+
+  const researchRun = { ...run({ status: "succeeded", taskPlanItemId: researchItemId, workspaceId }), task_plan_item_epoch: 1, run_id: "96000000-0000-4000-8000-000000000311" };
+  const produceRun = { ...run({ status: "succeeded", taskPlanItemId: produceItemId, workspaceId }), task_plan_item_epoch: 1, run_id: "96000000-0000-4000-8000-000000000312" };
+  await Promise.all([
+    dispatcher.handleRunSettled(researchRun),
+    dispatcher.handleRunSettled(produceRun)
+  ]);
+
+  assert.equal(arbitrations, 1, "cross-agent judge must run exactly once");
+  assert.equal(completions, 1, "completion sink must fire exactly once");
+  assert.equal(repository.doneCalls, 1);
+  assert.equal(repository.row.status, "done");
+  assert.equal(repository.lockAcquired >= 2, true, "both settlers must pass through the gate");
+
+  // 终态重入（done 后重复 dispatch/merge）直接短路：零新判官、零新落账。
+  const replay = await dispatcher.dispatch({ planId, workspaceId, actorId });
+  assert.equal(replay.completed, true);
+  assert.equal(arbitrations, 1);
+  assert.equal(completions, 1);
+});
+
+test("B-R9.2 escalation sink dedupes unresolved same-plan same-reason cards", async () => {
+  const created: string[] = [];
+  const sink = createDbTaskDispatchEscalationSink({
+    async createEscalationEvent(input) {
+      created.push((input.handoffJson as { reason?: string }).reason ?? "unknown");
+      return {} as Awaited<ReturnType<Parameters<typeof createDbTaskDispatchEscalationSink>[0]["createEscalationEvent"]>>;
+    },
+    async findUnresolvedTaskPlanEscalation(input) {
+      // 第二次起同 plan 同 reason 视为已有未解决卡。
+      return created.includes(input.reason)
+        ? ({ id: "existing" } as Awaited<ReturnType<NonNullable<Parameters<typeof createDbTaskDispatchEscalationSink>[0]["findUnresolvedTaskPlanEscalation"]>>>)
+        : null;
+    }
+  });
+
+  const baseInput = {
+    plan: plan("dispatching"),
+    items: [item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "failed" })],
+    skippedItemIds: [] as string[],
+    at: now
+  };
+  await sink({ ...baseInput, reason: "partial_failure", failedItemIds: [researchItemId] });
+  await sink({ ...baseInput, reason: "partial_failure", failedItemIds: [researchItemId] });
+  await sink({ ...baseInput, reason: "arbitration_blocked", reasonMd: "口径不一致。" });
+
+  assert.deepEqual(created, ["partial_failure", "arbitration_blocked"]);
 });
 
 test("B-R9.2 stale-epoch terminal runs cannot settle a redispatched item", async () => {

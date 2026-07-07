@@ -593,6 +593,16 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         .returning();
     },
 
+    // B-R9.2-4（结算幂等门）：同一 plan 的全终态汇总（判官仲裁/完成落账/失败开卡）必须
+    // 串行——两个子 run 同时到达终态时，输者在门外等赢者做完再进（进门后重读状态短路）。
+    // 事务级 advisory lock：fn 期间持锁，事务提交自动释放。
+    async withPlanSettlementLock<T>(input: { planId: string }, fn: () => Promise<T>): Promise<T> {
+      return db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`task-plan-settle:${input.planId}`})::bigint)`);
+        return fn();
+      });
+    },
+
     async markPlanDone(input: {
       planId: string;
       workspaceId: string;

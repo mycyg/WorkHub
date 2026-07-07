@@ -660,6 +660,10 @@ class MemoryAiDecisions implements AiDecisionRepository {
     return null;
   }
 
+  async findUnresolvedTaskPlanEscalation() {
+    return null;
+  }
+
   async listUnresolvedEscalationsForWorkspace() {
     return [];
   }

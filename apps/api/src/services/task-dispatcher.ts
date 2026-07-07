@@ -73,6 +73,9 @@ export type TaskDispatcherRepository = {
     workspaceId: string;
     doneAt?: Date;
   }) => Promise<TaskPlanRow | null>;
+  // B-R9.2-4：全终态汇总的互斥门（真实现=PG advisory 事务锁）。缺省时退化为直接执行
+  // （仅测试桩），生产 repo 必须提供。
+  withPlanSettlementLock?: <T>(input: { planId: string }, fn: () => Promise<T>) => Promise<T>;
 };
 
 export type TaskDispatchInput = {
@@ -384,40 +387,63 @@ export function createTaskDispatcher(options: {
     if (!allTerminal(items)) {
       return false;
     }
-    if (hasArbitrableOutputs(items)) {
-      const arbitration = await requireArbitration(arbitrationSink, {
-        plan,
-        items,
-        at
-      });
-      if (arbitration.completion === "blocked") {
-        await requireEscalation(escalationSink, {
-          plan,
-          items,
-          skippedItemIds: [],
-          reason: "arbitration_blocked",
-          arbitrationReason: arbitration.reason,
-          ...(arbitration.reasonMd ? { reasonMd: arbitration.reasonMd } : {}),
-          at
-        });
-        return false;
-      }
+    // B-R9.2-4（结算幂等门）：终态 plan 的重入（done 后重复 merge/dispatch）直接短路，
+    // 不再烧判官、不再写卡、不再落账。
+    if (plan.status === "done") {
+      return true;
     }
-    const done = await options.repository.markPlanDone({
-      planId: plan.id,
-      workspaceId: plan.workspaceId,
-      doneAt: at
-    });
-    if (!done) {
+    if (plan.status === "cancelled") {
       return false;
     }
-    await requireCompletion(completionSink, {
-      plan: done,
-      items,
-      summaryMd: completionSummary(done, items),
-      at
-    });
-    return true;
+    const settle = async () => {
+      // 进门后重读：并发窗口里输者等赢者做完，赢者已把 plan 推进终态则直接短路。
+      const reloaded = await loadPlan({ planId: plan.id, workspaceId: plan.workspaceId });
+      if (reloaded.plan.status === "done") {
+        return true;
+      }
+      if (reloaded.plan.status === "cancelled" || !allTerminal(reloaded.items)) {
+        return false;
+      }
+      const settledItems = reloaded.items;
+      if (hasArbitrableOutputs(settledItems)) {
+        const arbitration = await requireArbitration(arbitrationSink, {
+          plan: reloaded.plan,
+          items: settledItems,
+          at
+        });
+        if (arbitration.completion === "blocked") {
+          await requireEscalation(escalationSink, {
+            plan: reloaded.plan,
+            items: settledItems,
+            skippedItemIds: [],
+            reason: "arbitration_blocked",
+            arbitrationReason: arbitration.reason,
+            ...(arbitration.reasonMd ? { reasonMd: arbitration.reasonMd } : {}),
+            at
+          });
+          return false;
+        }
+      }
+      const done = await options.repository.markPlanDone({
+        planId: plan.id,
+        workspaceId: plan.workspaceId,
+        doneAt: at
+      });
+      if (!done) {
+        return false;
+      }
+      await requireCompletion(completionSink, {
+        plan: done,
+        items: settledItems,
+        summaryMd: completionSummary(done, settledItems),
+        at
+      });
+      return true;
+    };
+    if (options.repository.withPlanSettlementLock) {
+      return options.repository.withPlanSettlementLock({ planId: plan.id }, settle);
+    }
+    return settle();
   }
 
   async function dispatch(input: TaskDispatchInput): Promise<TaskDispatchResult> {
@@ -649,7 +675,7 @@ export function createTaskDispatcher(options: {
 export type TaskDispatcher = ReturnType<typeof createTaskDispatcher>;
 
 export function createDbTaskDispatchEscalationSink(
-  decisions: Pick<AiDecisionRepository, "createEscalationEvent">,
+  decisions: Pick<AiDecisionRepository, "createEscalationEvent"> & Partial<Pick<AiDecisionRepository, "findUnresolvedTaskPlanEscalation">>,
   reach: {
     // B-R9.0-5（施工图）：升级发生要主动通知提交人+项目 owner，不能只写 event 等人自己刷收件箱。
     // 通知是触达手段、决策收件箱才是承重记录：通知写失败只告警，不翻升级事务。
@@ -669,6 +695,18 @@ export function createDbTaskDispatchEscalationSink(
             arbitrationReasonMd ? `仲裁理由：${arbitrationReasonMd}` : undefined
           ].filter((line): line is string => Boolean(line)).join("\n")
           : "任务计划的上游子任务失败或被跳过，依赖它的子任务已跳过，请人工决定是否重试或改计划。";
+    // B-R9.2-4（结算幂等门）：同 plan 同 reason 已有未解决升级卡时不重复开卡、不重复通知
+    // （并发结算的输者、已合并计划的重复 merge 都会撞到这里）。
+    if (decisions.findUnresolvedTaskPlanEscalation) {
+      const existing = await decisions.findUnresolvedTaskPlanEscalation({
+        workItemId: input.plan.workItemId,
+        planId: input.plan.id,
+        reason: input.reason
+      });
+      if (existing) {
+        return;
+      }
+    }
     const event = await decisions.createEscalationEvent({
       workItemId: input.plan.workItemId,
       ...(input.failedRunId ? { agentRunId: input.failedRunId } : {}),
