@@ -91,6 +91,15 @@ export class TaskPlanItemGraphMismatch extends Error {
   }
 }
 
+// R9-BLOCK-7.154 / ux-flow-spec §3.2 防呆的服务端硬门：人审修订的预算份额必须合计 100。
+// UI 禁用是软门，行内编辑绕过 UI（直接 POST 修订）时靠这里兜底。
+export class TaskPlanBudgetShareMismatch extends Error {
+  constructor(public readonly totalSharePct: number) {
+    super(`Task plan item budget shares must sum to 100, got ${totalSharePct}.`);
+    this.name = "TaskPlanBudgetShareMismatch";
+  }
+}
+
 export type TaskPlanWithItems = {
   plan: TaskPlanRow;
   items: TaskPlanItemRow[];
@@ -184,7 +193,8 @@ function parentPlanWorkspacePredicate(input: { planId: string; workspaceId: stri
   )`;
 }
 
-function validateDraftItemGraph(items: CreateTaskPlanItemInput[]) {
+// 导出给 proposals repo 的合入写回复用（R9-BLOCK-7.154）：人审后的清单同样要过图校验。
+export function validateDraftItemGraph(items: CreateTaskPlanItemInput[]) {
   const itemIds = new Set(items.map((item) => item.id));
   if (itemIds.size !== items.length) {
     throw new TaskPlanItemGraphMismatch();

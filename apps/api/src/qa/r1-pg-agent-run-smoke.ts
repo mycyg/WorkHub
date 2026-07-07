@@ -497,6 +497,16 @@ async function main() {
     if (taskPlanItemRows.length !== 3) {
       throw new Error(`Expected 3 task plan items, got ${taskPlanItemRows.length}`);
     }
+    // R9-BLOCK-7.154：合入事务按 manifest 的 task_plan_items 整批写回——正路径下写回结果
+    // 必须与草稿保真（角色/份额/依赖不丢不变形）。
+    const rewrittenShares = [...taskPlanItemRows].sort((a, b) => a.seq - b.seq).map((row) => row.budgetSharePct);
+    if (JSON.stringify(rewrittenShares) !== JSON.stringify([30, 50, 20])) {
+      throw new Error(`Expected rewritten budget shares [30,50,20], got ${JSON.stringify(rewrittenShares)}`);
+    }
+    const rewrittenRoles = [...taskPlanItemRows].sort((a, b) => a.seq - b.seq).map((row) => row.role);
+    if (JSON.stringify(rewrittenRoles) !== JSON.stringify(["research", "produce", "review"])) {
+      throw new Error(`Expected rewritten roles research/produce/review, got ${JSON.stringify(rewrittenRoles)}`);
+    }
     const taskPlanWorkItemPage = await app.request(`/api/pages/workitems/${taskPlanWorkItemId}`, { headers });
     if (taskPlanWorkItemPage.status !== 200) {
       throw new Error(`Expected task-plan work item page 200, got ${taskPlanWorkItemPage.status}: ${await taskPlanWorkItemPage.text()}`);

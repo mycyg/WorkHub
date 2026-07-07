@@ -1060,7 +1060,10 @@ const proposalMergeConflictResponse = proposalConflictErrorResponse(
     "delivery_artifact_changed",
     "delivery_artifact_unsafe_path",
     // B-R9.1-1：计划提议合入与计划批准同事务，计划不可批准时整笔回滚并回本码。
-    "task_plan_approval_failed"
+    "task_plan_approval_failed",
+    // R9-BLOCK-7.154：人审修订写回前的图/预算校验，失败整笔回滚。
+    "task_plan_items_invalid",
+    "task_plan_budget_share_invalid"
   ]
 );
 const proposalMergeDispatchFailureResponse = jsonErrorStatusResponse(

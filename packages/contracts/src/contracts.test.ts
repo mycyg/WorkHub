@@ -945,6 +945,55 @@ test("R9.1 plan proposals can target task_plan structured records without collid
   assert.equal(parsed.changes[0]?.target_ref.entity_id, planId);
 });
 
+test("R9-BLOCK-7.154 manifest parse keeps machine_summary.task_plan_items intact", () => {
+  // 旧闭合 object 会把 task_plan_items 剥掉——人审后的行内编辑因此永不生效。
+  // 这里钉死：结构化子任务清单过 parse 原样保留（id/depends_on/份额都在）。
+  const base = deliverableManifestFixtures[0]!;
+  const change = base.changes[0]!;
+  const planId = "95000000-0000-4000-8000-000000000101";
+  const itemA = "95000000-0000-4000-8000-000000000111";
+  const itemB = "95000000-0000-4000-8000-000000000112";
+  const reviewedItems = [
+    {
+      id: itemA,
+      seq: 0,
+      title: "调研证据",
+      role: "research",
+      objective_md: "收集证据。",
+      acceptance_md: "至少 3 条来源。",
+      budget_share_pct: 40,
+      depends_on: []
+    },
+    {
+      id: itemB,
+      seq: 1,
+      title: "产出短报告",
+      role: "produce",
+      objective_md: "写短报告。",
+      acceptance_md: "有结论与证据段。",
+      budget_share_pct: 60,
+      depends_on: [itemA]
+    }
+  ];
+  const parsed = deliverableChangeManifestSchema.parse({
+    ...base,
+    title: "计划提议",
+    changes: [{
+      ...change,
+      target_kind: "structured_record",
+      target_ref: { entity_type: "task_plan", entity_id: planId },
+      change_type: "generated",
+      human_summary: "人审后的任务计划修订。",
+      machine_summary: {
+        changed_fields: ["task_plan_items"],
+        task_plan_items: reviewedItems
+      }
+    }]
+  });
+
+  assert.deepEqual(parsed.changes[0]?.machine_summary?.task_plan_items, reviewedItems);
+});
+
 test("proposal conflict cards carry option-first merge resolution payloads", () => {
   const parsed = proposalConflictListResultSchema.parse({
     conflicts: [

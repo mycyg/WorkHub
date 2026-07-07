@@ -153,7 +153,19 @@ function taskPlanManifest(input: {
       human_summary: "新增可审的任务计划草稿。",
       machine_summary: {
         changed_fields: ["task_plan_items", "budget_share_pct", "depends_on"],
-        generated_content_md: markdown
+        generated_content_md: markdown,
+        // R9-BLOCK-7.154：结构化子任务清单进 manifest——审批工作台行内编辑改它，
+        // 合入事务按它写回 task_plan_items；markdown 只是给人读的摘要。
+        task_plan_items: input.items.map((item) => ({
+          id: item.id,
+          seq: item.seq,
+          title: item.title,
+          role: item.role,
+          objective_md: item.objectiveMd,
+          acceptance_md: item.acceptanceMd,
+          budget_share_pct: item.budgetSharePct,
+          depends_on: item.dependsOn
+        }))
       }
     }],
     checks: [

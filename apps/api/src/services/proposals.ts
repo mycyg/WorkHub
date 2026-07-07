@@ -41,6 +41,8 @@ import {
   ProposalRepositoryStaleBaseError,
   ProposalRepositoryRebaseRequiredError,
   ProposalRepositoryTaskPlanApprovalError,
+  TaskPlanBudgetShareMismatch,
+  TaskPlanItemGraphMismatch,
   ProposalRepositoryUnsupportedMergeProposalApplyError,
   type ProposalAdoptedDriveFileInput,
   type MergeProposalCandidateApplicationContext,
@@ -2171,6 +2173,13 @@ export function createDbProposalService(repository: ProposalRepository, options:
         // B-R9.1-1：计划批准和合入同事务，批不动（计划已被取消等）时整笔回滚到这里。
         if (error instanceof ProposalRepositoryTaskPlanApprovalError) {
           throw new ProposalServiceError(409, "task_plan_approval_failed", "这份任务计划已经不能批准（可能已被取消），本次合入没有生效，请刷新后再处理。");
+        }
+        // R9-BLOCK-7.154：人审修订写回前的图/预算校验失败，整笔合入已回滚。
+        if (error instanceof TaskPlanItemGraphMismatch) {
+          throw new ProposalServiceError(409, "task_plan_items_invalid", "计划修订里的子任务依赖或引用不合法，本次合入没有生效，请修正后重试。");
+        }
+        if (error instanceof TaskPlanBudgetShareMismatch) {
+          throw new ProposalServiceError(409, "task_plan_budget_share_invalid", `计划修订的预算份额合计是 ${error.totalSharePct}%，必须刚好 100%，本次合入没有生效。`);
         }
         throw error;
       }

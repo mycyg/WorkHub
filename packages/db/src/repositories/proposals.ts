@@ -13,6 +13,7 @@ import type {
 } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
+import { TaskPlanBudgetShareMismatch, validateDraftItemGraph } from "./task-plans.js";
 import {
   acceptedDeliverableChanges,
   agentRuns,
@@ -26,6 +27,7 @@ import {
   proposals,
   reviews,
   snapshots,
+  taskPlanItems,
   taskPlans,
   workItemAcceptanceItems,
   workItemTaskItems,
@@ -2894,15 +2896,17 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         // merge 提交后由 service 层 onMerged 再 approvePlan，那一步失败就留下「提议
         // merged + 计划仍 draft + 永不派发」的死状态。这里在提交前 CAS（draft→approved，
         // 已 approved 幂等）；计划已被取消等不可批准时抛错让整笔合入回滚，绝不半套。
-        const taskPlanIdsToApprove = [...new Set(
-          proposal.diffManifest.changes
-            .filter((change) =>
-              change.target_kind === "structured_record"
-              && change.target_ref.entity_type === "task_plan"
-              && change.target_ref.entity_id)
-            .map((change) => change.target_ref.entity_id as string)
-        )];
-        for (const planId of taskPlanIdsToApprove) {
+        const taskPlanChanges = proposal.diffManifest.changes.filter((change) =>
+          change.target_kind === "structured_record"
+          && change.target_ref.entity_type === "task_plan"
+          && change.target_ref.entity_id);
+        const seenTaskPlanIds = new Set<string>();
+        for (const change of taskPlanChanges) {
+          const planId = change.target_ref.entity_id as string;
+          if (seenTaskPlanIds.has(planId)) {
+            continue;
+          }
+          seenTaskPlanIds.add(planId);
           const approvedPlans = await tx
             .update(taskPlans)
             .set({ status: "approved", updatedAt: at })
@@ -2914,6 +2918,41 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             .returning({ id: taskPlans.id });
           if (!approvedPlans[0]) {
             throw new ProposalRepositoryTaskPlanApprovalError(planId);
+          }
+          // R9-BLOCK-7.154：人审后的子任务清单（含行内编辑修订）随合入整批写回——
+          // 没有这一步，工作台编辑只改了 manifest 文本，真正派发的仍是 AI 草稿原样。
+          // 写回前过与建草稿相同的图校验（id 唯一、依赖引用同批）。
+          const reviewedItems = change.machine_summary?.task_plan_items;
+          if (reviewedItems && reviewedItems.length > 0) {
+            const totalSharePct = reviewedItems.reduce((sum, item) => sum + item.budget_share_pct, 0);
+            if (totalSharePct !== 100) {
+              throw new TaskPlanBudgetShareMismatch(totalSharePct);
+            }
+            validateDraftItemGraph(reviewedItems.map((item) => ({
+              id: item.id,
+              seq: item.seq,
+              title: item.title,
+              role: item.role,
+              objectiveMd: item.objective_md,
+              acceptanceMd: item.acceptance_md,
+              budgetSharePct: item.budget_share_pct,
+              dependsOn: item.depends_on
+            })));
+            await tx.delete(taskPlanItems).where(eq(taskPlanItems.planId, planId));
+            await tx.insert(taskPlanItems).values(reviewedItems.map((item) => ({
+              id: item.id,
+              planId,
+              seq: item.seq,
+              title: item.title,
+              role: item.role,
+              objectiveMd: item.objective_md,
+              acceptanceMd: item.acceptance_md,
+              budgetSharePct: item.budget_share_pct,
+              dependsOn: item.depends_on,
+              status: "pending" as const,
+              createdAt: at,
+              updatedAt: at
+            })));
           }
         }
         await tx.insert(auditLogs).values({

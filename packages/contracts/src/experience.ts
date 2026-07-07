@@ -8,6 +8,7 @@ import {
 } from "./enums.js";
 import { actorSchema, idSchema, isoDateTimeSchema } from "./domain/common.js";
 import { cuuLauncherDeliveryKindSchema } from "./domain/work-item.js";
+import { taskPlanReviewedItemSchema } from "./task-plan.js";
 
 export const cuuStates = [
   "idle",
@@ -211,7 +212,10 @@ export const deliverableChangeSchema = z.object({
       row_count_delta: z.number().int().optional(),
       slide_count_delta: z.number().int().optional(),
       image_size_before: z.string().optional(),
-      image_size_after: z.string().optional()
+      image_size_after: z.string().optional(),
+      // R9-BLOCK-7.154：计划提议承载「人审后的子任务清单」；合入事务按它写回
+      // task_plan_items。闭合 object 曾把该字段 parse 时剥掉，导致行内编辑永不生效。
+      task_plan_items: z.array(taskPlanReviewedItemSchema).max(50).optional()
     })
     .optional(),
   preview_ref: z
