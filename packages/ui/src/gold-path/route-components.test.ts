@@ -884,6 +884,50 @@ test("R9.0 Home route renders escalation cards with human action labels", () => 
   assertNoMainWindowBoundaryLeak(home.html);
 });
 
+test("R9.0 Home route renders escalation cards localized for English readers", () => {
+  // ux-flow-spec §3.3 双语文案：en-US 下标题与三动作都要真实渲染英文（API 按 locale 产出，
+  // web 层不许中文裸奔）。
+  const base = surfaceVm();
+  const escalation: AttentionItem = {
+    id: "94000000-0000-4000-8000-000000000111",
+    kind: "escalation",
+    priority: "urgent",
+    work_item_id: "94000000-0000-4000-8000-000000000112",
+    project_id: "94000000-0000-4000-8000-000000000113",
+    source_ref: {
+      entity_type: "escalation_event",
+      entity_id: "94000000-0000-4000-8000-000000000111"
+    },
+    title: "\"Competitor pricing research\" needs a decision",
+    summary_text: "The AI is unsure about its data sources.",
+    reason_text: "The AI is unsure about its data sources.",
+    actions: [
+      { id: "escalation_retry", label: "Let it retry", style: "primary", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000111/resolve" },
+      { id: "escalation_pm_mode", label: "I'll take over", style: "secondary", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000111/resolve" },
+      { id: "escalation_cancel", label: "Cancel this subtask", style: "danger", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000111/resolve" }
+    ],
+    cuu_state: "worried",
+    created_at: "2026-07-02T16:00:00.000Z"
+  };
+  const home = renderWebRouteComponent({
+    key: "home",
+    attention: {
+      ...base.page_vms.attention,
+      primary: escalation,
+      queue: [escalation]
+    }
+  }, { locale: "en-US" });
+
+  assert.equal(home.html.includes("&quot;Competitor pricing research&quot; needs a decision"), true);
+  assert.equal(home.html.includes("Let it retry"), true);
+  assert.equal(home.html.includes("I&#39;ll take over") || home.html.includes("I'll take over"), true);
+  assert.equal(home.html.includes("Cancel this subtask"), true);
+  // 周边 chrome（kind/priority 药丸等）也不许残留中文动作词。
+  assert.equal(home.html.includes("让它重试"), false);
+  assert.equal(home.html.includes(">pm_mode<"), false);
+  assertNoMainWindowBoundaryLeak(home.html);
+});
+
 test("R9.7 approval workbench localizes plan_review attention kind", () => {
   const vm = surfaceVm();
   const first = vm.page_vms.approvals.items[0];

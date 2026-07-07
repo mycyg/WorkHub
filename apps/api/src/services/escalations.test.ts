@@ -157,6 +157,19 @@ test("R9.0 escalation attention cards expose three human decisions without raw e
   ]);
 });
 
+test("R9.0 escalation attention cards localize the title and actions for English readers", () => {
+  // ux-flow-spec §3.3 双语文案：en-US 卡的标题与三动作都是英文，动作 id 与 zh 完全一致
+  // （前端动作接线按 id 映射，不许因 locale 漂移）。
+  const item = buildEscalationAttentionItem(row(), "en-US");
+
+  assert.equal(item.title, "\"竞品价格调研\" needs a decision");
+  assert.deepEqual(item.actions.map((action) => [action.id, action.label]), [
+    ["escalation_retry", "Let it retry"],
+    ["escalation_pm_mode", "I'll take over"],
+    ["escalation_cancel", "Cancel this subtask"]
+  ]);
+});
+
 test("R9.7 budget exhaustion rows render as budget decision cards", () => {
   const item = buildEscalationAttentionItem(row({
     trigger: "budget_exhausted",

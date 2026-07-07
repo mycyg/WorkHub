@@ -258,6 +258,73 @@ test("R9.7 dispatcher escalation attention copy avoids dispatch wording", async 
   assert.doesNotMatch(reasons.join("\n"), /dispatch|派发/iu);
 });
 
+test("R9.0 dispatcher escalation reasons are human sentences for every branch", async () => {
+  // ux-flow-spec §1.2 无黑话验收：reasonMd 必须是完整人话中文（正向断言，
+  // 不再只靠「不含 dispatch」的负向断言撑覆盖）。
+  const reasons = new Map<string, string>();
+  const sink = createDbTaskDispatchEscalationSink({
+    async createEscalationEvent(input) {
+      reasons.set((input.handoffJson as { reason?: string }).reason ?? "unknown", input.reasonMd);
+      return {} as Awaited<ReturnType<Parameters<typeof createDbTaskDispatchEscalationSink>[0]["createEscalationEvent"]>>;
+    }
+  });
+
+  const baseInput = {
+    plan: plan("dispatching"),
+    items: [item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "failed" })],
+    skippedItemIds: [] as string[],
+    at: now
+  };
+  await sink({ ...baseInput, reason: "cycle" });
+  await sink({ ...baseInput, reason: "partial_failure", failedItemIds: [researchItemId] });
+  await sink({ ...baseInput, reason: "dependency_failed", failedItemIds: [researchItemId] });
+  await sink({ ...baseInput, reason: "arbitration_blocked", reasonMd: "两份草稿的数据口径不一致。" });
+
+  assert.equal(reasons.get("cycle"), "任务计划依赖图存在循环，已跳过尚未开始的子任务，请人工调整计划后重试。");
+  assert.equal(reasons.get("partial_failure"), "任务计划已有子任务失败，请在决策收件箱选择重试、转人工或改计划。");
+  assert.equal(reasons.get("dependency_failed"), "任务计划的上游子任务失败或被跳过，依赖它的子任务已跳过，请人工决定是否重试或改计划。");
+  assert.equal(
+    reasons.get("arbitration_blocked"),
+    "跨 Agent 仲裁未通过，请在决策收件箱选择重试、转人工或改计划。\n仲裁理由：两份草稿的数据口径不一致。"
+  );
+  for (const reasonMd of reasons.values()) {
+    // 每条都是人话句子：无裸枚举/错误码/英文黑话。
+    assert.doesNotMatch(reasonMd, /[a-z_]{3,}:|grade \d|confidence|enum|null|undefined/iu);
+  }
+});
+
+test("R9.0 partial failure keeps independent pending siblings dispatching", async () => {
+  // ux-flow-spec §1.2「其余子任务不受影响继续跑」：A 失败只连坐依赖 A 的 C，
+  // 无依赖的 pending 兄弟 B 必须照常入队（部分失败是一等公民）。
+  const escalations: string[] = [];
+  const repository = new MemoryTaskDispatcherRepository(plan("dispatching"), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", status: "dispatched" }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce" }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", dependsOn: [researchItemId] })
+  ]);
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({
+    repository,
+    queue,
+    now: () => now,
+    escalationSink: async (input) => { escalations.push(input.reason); }
+  });
+
+  const result = await dispatcher.handleRunSettled(run({
+    status: "failed",
+    taskPlanItemId: researchItemId,
+    workspaceId
+  }));
+
+  assert.equal(result?.settledItemId, researchItemId);
+  assert.equal(repository.items.find((candidate) => candidate.id === researchItemId)?.status, "failed");
+  assert.equal(repository.items.find((candidate) => candidate.id === reviewItemId)?.status, "skipped");
+  // 独立兄弟继续跑：B 从 pending 真被派发进队列。
+  assert.equal(repository.items.find((candidate) => candidate.id === produceItemId)?.status, "dispatched");
+  assert.deepEqual(queue.inputs.map((input) => input.taskPlanItemId), [produceItemId]);
+  assert.deepEqual(escalations, ["dependency_failed"]);
+});
+
 test("B-R9.0 dispatcher escalation notifies the submitter and project owner", async () => {
   // 施工图：升级发生要主动触达提交人+项目 owner，不能只写 event 等人自己刷收件箱。
   const submitterId = "94000000-0000-4000-8000-000000000401";
