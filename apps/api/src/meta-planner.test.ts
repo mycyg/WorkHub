@@ -170,6 +170,45 @@ test("R9.1 meta planner escalates bad decomposition instead of silently cancelli
   assert.equal(registry.calls.length, 4);
 });
 
+test("B-R9.1 judge escalate goes straight to a human without burning another LLM round", async () => {
+  // branch-review 未直通：judge 明确说 escalate（要人来澄清）时，旧实现把理由当
+  // retry 反馈再烧一轮拆解+judge。现在必须立即 409 升级给人——LLM 只调 2 次。
+  const registry = new RecordingRegistry([
+    validPlan(["a", "b", "c"]),
+    { decision: "escalate", confidence: "low", reasons: ["scope is ambiguous; a human must clarify"] },
+    // 若实现错误地继续重试，会吃到下面这组并多出两次调用。
+    validPlan(["a2", "b2", "c2"]),
+    { decision: "approve", confidence: "high", reasons: ["ok"] }
+  ]);
+  const planner = createMetaPlanner({
+    providerRegistry: registry as unknown as ProviderRegistry,
+    id: idSequence([
+      "95000000-0000-4000-8000-000000000501",
+      "95000000-0000-4000-8000-000000000502",
+      "95000000-0000-4000-8000-000000000503"
+    ])
+  });
+
+  await assert.rejects(
+    planner.createDraft({
+      actor: { id: userId, userId, workspaceId, label: "Planner PM" },
+      locale: "zh-CN",
+      workItem: {
+        id: workItemId,
+        workspaceId,
+        title: "调研并产出短报告",
+        rawDescription: "范围含糊，需要人先澄清"
+      },
+      acceptance: ["judge escalate 直通升级"],
+      memories: {}
+    }),
+    (error: unknown) => error instanceof MetaPlannerServiceError
+      && error.code === "task_plan_decomposition_needs_human"
+      && error.status === 409
+  );
+  assert.equal(registry.calls.length, 2);
+});
+
 test("R9.7 meta planner prompts and escalation copy avoid dispatch wording", async () => {
   for (const locale of ["zh-CN", "en-US"] as const) {
     const registry = new RecordingRegistry([

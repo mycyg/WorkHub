@@ -334,6 +334,12 @@ export function createMetaPlanner(options: MetaPlannerOptions): MetaPlanner {
             }
           };
         }
+        // B-R9.1-3（branch-review 未直通）：judge 说 escalate = 这个计划需要人来澄清，
+        // 立即升级给人（409 卡片），不能把它当 retry 反馈再烧一轮 LLM——那既费钱
+        // 又违背 judge 的明确判断。只有 retry 才进下一轮重拆。
+        if (judge.decision === "escalate") {
+          throw needsHuman(locale);
+        }
         feedback = judge.reasons.length ? judge.reasons : [`judge decision: ${judge.decision}`];
       }
       throw needsHuman(locale);
