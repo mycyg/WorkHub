@@ -87,6 +87,8 @@ export type ObjectiveRepository = {
     progressPercent: number;
     progressUpdatedAt?: Date;
   }) => Promise<ObjectiveRow | null>;
+  // B-R9.5-1：夜间聚合刷新进度的输入面——按工作区列活跃 objective。
+  listActiveObjectiveIdsForWorkspace: (input: { workspaceId: string; limit?: number }) => Promise<string[]>;
 };
 
 export class ObjectiveLinkScopeMismatch extends Error {
@@ -324,6 +326,20 @@ export function createObjectiveRepository(db: WorkHubDb): ObjectiveRepository {
         ))
         .returning();
       return updated ?? null;
+    },
+
+    async listActiveObjectiveIdsForWorkspace(input) {
+      const limit = Math.max(1, Math.min(Math.floor(input.limit ?? 20), 50));
+      const rows = await db
+        .select({ id: objectives.id })
+        .from(objectives)
+        .where(and(
+          eq(objectives.workspaceId, input.workspaceId),
+          eq(objectives.status, "active")
+        ))
+        .orderBy(desc(objectives.updatedAt))
+        .limit(limit);
+      return rows.map((row) => row.id);
     }
   };
 }

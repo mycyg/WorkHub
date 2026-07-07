@@ -16,6 +16,7 @@ import {
 } from "@workhub/contracts";
 
 import { getDefaultStructuredLogger } from "../logging.js";
+import { getDefaultObjectiveService } from "../services/objectives.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { getDefaultProviderRegistry } from "../services/provider-registry.js";
 import { getDefaultAgentRunQueue } from "./agent-runner.js";
@@ -78,6 +79,8 @@ export type SkillCurationSchedulerOptions = {
   // M13：本轮 curation 是否还在花费预算内。返回 false 则整轮跳过 distill/refine（不烧 token）。
   // 默认（未提供）视为始终允许，保持向后兼容。
   curationBudgetOk?: () => Promise<boolean>;
+  // B-R9.5-1：夜间聚合顺带刷新工作区活跃 objective 进度；false=测试显式拔掉。
+  refreshObjectives?: ((workspaceId: string) => Promise<number>) | false;
   now?: () => Date;
   onError?: (error: unknown) => void;
 };
@@ -89,6 +92,11 @@ export function createAgentRunSkillCurationScheduler(
   const now = options.now ?? (() => new Date());
   const workQueueIsIdle = options.workQueueIsIdle ?? (async () => true);
   const curationBudgetOk = options.curationBudgetOk ?? (async () => true);
+  // B-R9.5-1：夜间聚合顺带刷新各工作区活跃 objective 的进度（refreshObjectiveProgress
+  // 此前没有任何调用方）。失败只告警，不打断技能 curation 主流程。
+  const refreshObjectives = options.refreshObjectives === false
+    ? undefined
+    : options.refreshObjectives ?? (async (workspaceId: string) => getDefaultObjectiveService().refreshWorkspaceObjectives(workspaceId));
 
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
@@ -332,6 +340,13 @@ export function createAgentRunSkillCurationScheduler(
       for (const workspace of workspaces) {
         try {
           const result = await curateWorkspace(workspace.id);
+          if (refreshObjectives) {
+            try {
+              await refreshObjectives(workspace.id);
+            } catch (error) {
+              getDefaultStructuredLogger().warn("objective_progress_refresh_failed", { workspaceId: workspace.id, error });
+            }
+          }
           workspaceCount += 1;
           promoted += result.promoted;
           discarded += result.discarded;

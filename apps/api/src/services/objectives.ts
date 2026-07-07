@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   createObjectiveRepository,
   getSharedDatabaseClient,
@@ -11,7 +13,12 @@ export type ObjectiveProgressSnapshot = DbObjectiveProgressSnapshot;
 
 export type ObjectiveRepository = Pick<
   DbObjectiveRepository,
-  "listPlanningContextForWorkItem" | "readObjectiveProgressSnapshot" | "updateObjectiveProgress"
+  | "listPlanningContextForWorkItem"
+  | "readObjectiveProgressSnapshot"
+  | "updateObjectiveProgress"
+  | "createObjective"
+  | "linkWorkItem"
+  | "listActiveObjectiveIdsForWorkspace"
 >;
 
 export type ObjectivePlanningContextForPlanner = {
@@ -35,10 +42,27 @@ export type ObjectiveService = {
     workspaceId: string;
     objectiveId: string;
   }) => Promise<ObjectiveRefreshResult | null>;
+  // B-R9.5-1（branch-review 整块死接线）：objectives 此前只有表和函数没接线——
+  // 创建/链接入口 + 夜间聚合批量刷新是让它活起来的三个调用面。
+  createObjective: (input: {
+    workspaceId: string;
+    title: string;
+    descriptionMd?: string;
+    ownerUserId?: string;
+    keyResults?: Array<{ title: string; targetValue?: string; currentValue?: string; unit?: string }>;
+  }) => Promise<ObjectiveRow>;
+  linkWorkItem: (input: {
+    workspaceId: string;
+    objectiveId: string;
+    workItemId: string;
+    linkedByUserId?: string;
+  }) => Promise<void>;
+  refreshWorkspaceObjectives: (workspaceId: string) => Promise<number>;
 };
 
 export type ObjectiveServiceOptions = {
   objectives: ObjectiveRepository;
+  id?: () => string;
   now?: () => Date;
 };
 
@@ -97,6 +121,7 @@ function progressFromSnapshot(snapshot: ObjectiveProgressSnapshot) {
 
 export function createObjectiveService(options: ObjectiveServiceOptions): ObjectiveService {
   const now = options.now ?? (() => new Date());
+  const nextId = options.id ?? randomUUID;
   return {
     async planningContextForWorkItem(input) {
       const context = await options.objectives.listPlanningContextForWorkItem(input);
@@ -123,6 +148,48 @@ export function createObjectiveService(options: ObjectiveServiceOptions): Object
         progressPercent,
         capped: snapshot.keyResultsCapped || snapshot.workItemsCapped
       };
+    },
+
+    async createObjective(input) {
+      return options.objectives.createObjective({
+        id: nextId(),
+        workspaceId: input.workspaceId,
+        title: input.title,
+        ...(input.descriptionMd ? { descriptionMd: input.descriptionMd } : {}),
+        ...(input.ownerUserId ? { ownerUserId: input.ownerUserId } : {}),
+        keyResults: (input.keyResults ?? []).map((keyResult, index) => ({
+          id: nextId(),
+          seq: index,
+          title: keyResult.title,
+          ...(keyResult.targetValue ? { targetValue: keyResult.targetValue } : {}),
+          ...(keyResult.currentValue ? { currentValue: keyResult.currentValue } : {}),
+          ...(keyResult.unit ? { unit: keyResult.unit } : {})
+        })),
+        now: now()
+      });
+    },
+
+    async linkWorkItem(input) {
+      await options.objectives.linkWorkItem({
+        workspaceId: input.workspaceId,
+        objectiveId: input.objectiveId,
+        workItemId: input.workItemId,
+        ...(input.linkedByUserId ? { linkedByUserId: input.linkedByUserId } : {}),
+        now: now()
+      });
+    },
+
+    // 夜间聚合的调用面：刷新该工作区活跃 objective 的进度（cap 20，失败不打断整轮）。
+    async refreshWorkspaceObjectives(workspaceId) {
+      const objectiveIds = await options.objectives.listActiveObjectiveIdsForWorkspace({ workspaceId, limit: 20 });
+      let refreshed = 0;
+      for (const objectiveId of objectiveIds) {
+        const result = await this.refreshObjectiveProgress({ workspaceId, objectiveId });
+        if (result) {
+          refreshed += 1;
+        }
+      }
+      return refreshed;
     }
   };
 }

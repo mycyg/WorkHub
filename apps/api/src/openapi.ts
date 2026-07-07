@@ -5120,6 +5120,80 @@ export function getOpenApiDocument() {
           ...reviewProposalResponse
         }
       },
+      "/api/objectives": {
+        post: {
+          tags: ["objectives"],
+          summary: "Create a team objective with optional key results",
+          ...jsonRequestBody({
+            type: "object",
+            required: ["title"],
+            properties: {
+              title: { type: "string", minLength: 1, maxLength: 256 },
+              description_md: { type: "string", maxLength: 4000 },
+              key_results: {
+                type: "array",
+                maxItems: 8,
+                items: {
+                  type: "object",
+                  required: ["title"],
+                  properties: {
+                    title: { type: "string", minLength: 1, maxLength: 256 },
+                    target_value: { type: "string", maxLength: 64 },
+                    current_value: { type: "string", maxLength: 64 },
+                    unit: { type: "string", maxLength: 16 }
+                  },
+                  additionalProperties: false
+                }
+              }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            "201": jsonDataResponse({
+              type: "object",
+              required: ["objective_id", "title", "status", "progress_percent"],
+              properties: {
+                objective_id: uuidStringSchema,
+                title: { type: "string", minLength: 1 },
+                status: { type: "string", minLength: 1 },
+                progress_percent: { type: "integer" }
+              },
+              additionalProperties: false
+            }, "Created objective").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": proposalForbiddenResponse,
+            "422": proposalValidationResponse
+          }
+        }
+      },
+      "/api/objectives/{id}/link": {
+        post: {
+          tags: ["objectives"],
+          summary: "Link a work item to an objective",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["work_item_id"],
+            properties: { work_item_id: uuidStringSchema },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["objective_id", "work_item_id"],
+              properties: {
+                objective_id: uuidStringSchema,
+                work_item_id: uuidStringSchema
+              },
+              additionalProperties: false
+            }, "Linked objective and work item").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": proposalForbiddenResponse,
+            "404": proposalNotFoundResponse,
+            "422": proposalValidationResponse
+          }
+        }
+      },
       "/api/proposals/{id}/skip-plan": {
         post: {
           tags: ["task-plans"],
