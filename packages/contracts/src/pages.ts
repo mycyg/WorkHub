@@ -93,7 +93,7 @@ export const teamSkillsPageVmSchema = z.object({
 export type TeamSkillsPageVM = z.infer<typeof teamSkillsPageVmSchema>;
 
 export const attentionSourceWarningSchema = z.object({
-  source: z.enum(["approvals", "proposals", "escalations", "sync_conflicts"]),
+  source: z.enum(["approvals", "proposals", "escalations", "sync_conflicts", "worklog"]),
   message: z.string().min(1)
 });
 export type AttentionSourceWarning = z.infer<typeof attentionSourceWarningSchema>;

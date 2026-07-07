@@ -164,6 +164,9 @@ export const webRouteComponentCss = [
   ".wh-r5-notif-mute summary{cursor:pointer;font-weight:800;font-size:14px;color:var(--wh-product-ink,#172033)}.wh-r5-notif-mute-list{display:grid;gap:8px;margin-top:8px;min-width:0}.wh-r5-notif-mute-row{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.4;color:var(--wh-product-secondary,#5B616E);min-width:0;overflow-wrap:anywhere}.wh-r5-notif-mute-row input{margin-top:2px;flex:0 0 auto}.wh-r5-notif-mute-row span{min-width:0}.wh-r5-notif-mute-status{margin:8px 0 0;font-size:12.5px}",
   ".wh-r4-route-count{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-product-ink,#172033);font-weight:900;line-height:1}",
   ".wh-r4-route-timeline{display:grid;gap:8px}",
+  // UX-M12（规格 §3.6 移动端）：KPI 行窄屏保持 2×2，不塌单列。
+  "[data-r9-agent-dashboard-kpis=true]{grid-template-columns:repeat(4,minmax(0,1fr))}",
+  "@media (max-width:860px){[data-r9-agent-dashboard-kpis=true]{grid-template-columns:repeat(2,minmax(0,1fr))}}",
   ".wh-r4-route-meter{height:8px;border-radius:999px;background:#e7edf7;overflow:hidden}.wh-r4-route-meter span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--wh-product-green,#24a66a),var(--wh-product-amber,#d98b16));max-width:100%}",
   // B-R9.6 UX 审计（视觉语义假接线）：燃烧条 tone / 军团状态点 / 审批黄条的 data hook 早就渲出，
   // 但全库无 CSS 消费——五种点一个样、超限不变红。补齐消费端规则（规格 §3.1 状态点色板+呼吸动画）。
@@ -569,8 +572,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.todayCost": "今日成本",
     "agents.autonomy": "自治率",
     "agents.plans": "活跃计划",
-    "agents.recent": "最近动态",
-    "agents.noRecent": "还没有升级或决策动态。",
+    "agents.recent": "最近升级",
+    "agents.noRecent": "还没有升级动态。",
     "agents.empty": "还没有军团在跑。下次遇到大任务，系统会先生成一份分工计划。",
     "agents.start": "发起新任务",
     "agents.cost": "成本",
@@ -792,8 +795,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.todayCost": "Today cost",
     "agents.autonomy": "Autonomy",
     "agents.plans": "Active plans",
-    "agents.recent": "Recent activity",
-    "agents.noRecent": "No escalations or decision activity yet.",
+    "agents.recent": "Recent escalations",
+    "agents.noRecent": "No escalations yet.",
     "agents.empty": "No agent teams are running yet. Next time there is a large task, WorkHub will draft a task plan first.",
     "agents.start": "Start a task",
     "agents.cost": "Cost",
@@ -3291,10 +3294,11 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
   const kpis = [
     { id: "active_team_count", label: routeT(locale, "agents.active"), value: String(vm.kpis.active_team_count) },
     { id: "waiting_decision", label: routeT(locale, "agents.waiting"), value: String(vm.kpis.waiting_decision_count), href: "/" },
-    { id: "today_cost", label: routeT(locale, "agents.todayCost"), value: costAmount(vm.kpis.today_cost_cny) },
+    // UX-M11：今日成本口径=当前可见的活跃军团账目，不是全组织今日总账——标签说清楚，不冒充。
+    { id: "today_cost", label: routeT(locale, "agents.todayCost"), value: costAmount(vm.kpis.today_cost_cny), note: locale === "zh-CN" ? "仅含当前可见军团" : "Visible teams only" },
     { id: "autonomy_rate", label: routeT(locale, "agents.autonomy"), value: `${vm.kpis.autonomy_rate_pct}%` }
-  ].map((item) => {
-    const body = `<strong>${escapeHtml(item.value)}</strong><span>${escapeHtml(item.label)}</span>`;
+  ].map((item: { id: string; label: string; value: string; href?: string; note?: string }) => {
+    const body = `<strong>${escapeHtml(item.value)}</strong><span>${escapeHtml(item.label)}</span>${item.note ? `<span class="wh-subtle" data-r9-agent-kpi-note="true">${escapeHtml(item.note)}</span>` : ""}`;
     return item.href
       ? `<a class="wh-card wh-r4-route-card" data-r9-agent-kpi="${escapeHtml(item.id)}" href="${escapeHtml(safeHref(item.href))}">${body}</a>`
       : `<section class="wh-card wh-r4-route-card" data-r9-agent-kpi="${escapeHtml(item.id)}">${body}</section>`;

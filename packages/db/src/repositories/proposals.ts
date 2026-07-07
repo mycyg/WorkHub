@@ -2625,16 +2625,23 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
       const at = input.now ?? new Date();
       const dayStart = new Date(at);
       dayStart.setUTCHours(0, 0, 0, 0);
+      // UX 审计（口径）：workspace 过滤与 listReviewable 同款——工作项或其项目命中工作区即计入，
+      // NULL 打标的旧工作项不被静默丢弃；ORDER BY 让 500 截断落在最旧一侧（当日超 500 审阅时取最新样本）。
       const rows = await db
         .select({ decision: reviews.decision })
         .from(reviews)
         .innerJoin(proposals, eq(reviews.proposalId, proposals.id))
         .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
+        .innerJoin(projects, eq(projects.id, workItems.projectId))
         .where(and(
           eq(reviews.reviewerKind, "ai"),
-          eq(workItems.workspaceId, input.workspaceId),
+          or(
+            eq(workItems.workspaceId, input.workspaceId),
+            eq(projects.workspaceId, input.workspaceId)
+          ),
           gte(reviews.createdAt, dayStart)
         ))
+        .orderBy(desc(reviews.createdAt))
         .limit(500);
       const total = rows.length;
       const approved = rows.filter((row) => row.decision === "approve").length;

@@ -307,6 +307,10 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       proposals: {
         en: "Proposal reviews could not be loaded. Open Attention or retry.",
         zh: "变更评审暂时加载失败。请打开决策收件箱或稍后重试。"
+      },
+      worklog: {
+        en: "Autonomy metrics could not be loaded — the 0% shown is missing data, not a real rate.",
+        zh: "自治率数据暂时加载失败——显示的 0% 是缺数据，不是真实通过率。"
       }
     };
     const message = messages[source];
@@ -461,10 +465,14 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         reviewOutcomes && reviewOutcomes.total > 0
           ? Math.round((reviewOutcomes.approved / reviewOutcomes.total) * 100)
           : (worklog?.autonomy_rate ?? 0);
+      // UX-M14：判官源与回退源双双失败时不许把 0% 当真数据端出去——挂 worklog 源警告。
+      const kpiWarnings = reviewOutcomes === undefined && worklog === undefined
+        ? [...attention.sourceWarnings, dashboardSourceWarning("worklog", input.locale)]
+        : attention.sourceWarnings;
       return buildAgentArmyDashboardPage({
         locale: input.locale,
         attentionCount: attention.count,
-        sourceWarnings: attention.sourceWarnings,
+        sourceWarnings: kpiWarnings,
         autonomyRatePct,
         plans: visiblePlans,
         items: rows.items.filter((item) => visiblePlanIds.has(item.planId)),

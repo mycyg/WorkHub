@@ -574,6 +574,89 @@ test("R9.7 /api/pages/agents marks failed attention count sources instead of loo
   assert.match(body.data.source_warnings[1]?.message ?? "", /审批待办/u);
 });
 
+// UX-M11（跨页一致性钉住）：指挥台「等你决策数」与收件箱同一套 attentionDecisionSummary——
+// 升级 1 + 审批 1 + 变更评审 1 = 3，仪表盘自捞升级行不参与计数。
+test("B-R9.6 /api/pages/agents waiting_decision_count matches the inbox source composition", async () => {
+  const settings = runtimeSettings();
+  const approvalId = testUuid(0x400);
+  const proposalId = testUuid(0x401);
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(settings),
+    taskPlans: {
+      async listDashboardPlans() {
+        return {
+          plans: [],
+          plansCapped: false,
+          items: [],
+          itemsCapped: false,
+          runs: [],
+          runsCapped: false,
+          escalations: [],
+          escalationsCapped: false
+        };
+      }
+    },
+    workItems: {
+      async canReadWorkItems() {
+        return new Set<string>();
+      }
+    },
+    ledgerStore: {
+      async listEntriesForScopes() {
+        return [];
+      }
+    },
+    aiWorklog: {
+      async getTodayMetrics() {
+        return {
+          runs_today: 0,
+          autonomy_rate: 0,
+          accepted_today: 0,
+          saved_hours_estimate: 0,
+          generated_at: now.toISOString()
+        };
+      }
+    },
+    escalations: {
+      async listAttentionItems() {
+        return [{ id: escalationId }];
+      }
+    },
+    memoryConflicts: {
+      async listAttentionItems() {
+        return [];
+      }
+    },
+    approvals: {
+      async listPendingForUser() {
+        return {
+          items: [],
+          requests: [{ id: approvalId, work_item_id: null }],
+          counts: { pending: 1, pending_total: 1, pending_total_capped: 0 },
+          page_info: { limit: 100, returned: 1, has_more: false },
+          items_detail: {}
+        };
+      }
+    },
+    proposals: {
+      async listReviewableForUser() {
+        return [{ id: proposalId }];
+      },
+      async countTodayAiReviewOutcomes() {
+        return { total: 0, approved: 0 };
+      }
+    }
+  } as never));
+
+  const response = await app.request("/api/pages/agents?locale=zh-CN", {
+    headers: { Cookie: await cookie(settings) }
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: true; data: { kpis: { waiting_decision_count: number } } };
+  assert.equal(body.data.kpis.waiting_decision_count, 3);
+});
+
 // B-R9.6（KPI 真源）：复核通过率优先取今日 AI 判官审阅结果，而不是拿 run 成功率冒充；
 // 当天没有判官审阅时才回退旧口径。
 test("B-R9.6 /api/pages/agents autonomy rate prefers judge review outcomes over run success", async () => {
