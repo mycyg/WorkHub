@@ -2105,6 +2105,9 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
   const burnStyle = `width:${Math.min(Math.max(burnPct, 0), 100)}%`;
   const rows = team.items.length
     ? team.items.map((item) => {
+        const traceLink = !item.action && item.replay_href
+          ? `<a class="wh-pill" href="${escapeHtml(safeHref(item.replay_href))}" data-r9-agent-team-trace="${escapeHtml(item.task_plan_item_id)}">${escapeHtml(locale === "zh-CN" ? "看轨迹" : "View trace")}</a>`
+          : "";
         const waiting = item.waiting_for_seq.length
           ? `<p>${escapeHtml(locale === "zh-CN" ? `等待 ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")} 完成` : `Waiting for ${item.waiting_for_seq.map((seq) => `#${seq}`).join(", ")}`)}</p>`
           : "";
@@ -2125,12 +2128,35 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
             <span class="wh-pill">${escapeHtml(agentTeamItemStatusLabel(item.status, locale))}</span>
             ${cost}
             ${action}
+            ${traceLink}
           </div>
         </div>`;
       }).join("")
     : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无子运行。" : "No child runs yet.")}</p>`;
   const capped = team.runs_capped
     ? `<p class="wh-subtle" data-r9-agent-team-runs-capped-note="true">${escapeHtml(locale === "zh-CN" ? "仅显示前 100 个子运行。" : "Showing the first 100 child runs.")}</p>`
+    : "";
+  // UX-M13（规格 §1.2）：有子任务等人拍板时面板顶部黄条——「N 个子任务需要你拍板 → 去决策」，
+  // 处理完（needs_human 清零）黄条自然消失。
+  const needsHumanCount = team.items.filter((item) => item.status === "needs_human").length;
+  const decisionBanner = needsHumanCount > 0
+    ? `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-agent-team-banner="needs_human" data-r9-task-plan-awaiting-approval="true">
+        <strong>${escapeHtml(locale === "zh-CN" ? `${needsHumanCount} 个子任务需要你拍板` : `${needsHumanCount} subtask${needsHumanCount === 1 ? "" : "s"} need${needsHumanCount === 1 ? "s" : ""} your decision`)}</strong>
+        <a class="wh-pill" href="/attention">${escapeHtml(locale === "zh-CN" ? "去决策" : "Decide")}</a>
+      </div>`
+    : "";
+  // UX-M2（规格 §3.1 尾行）：终态复盘摘要一行——成功/失败/跳过/花费。复盘专页尚不存在，
+  // 只给诚实的数字行，不放假「查看复盘」链接。
+  const retroLine = team.status === "done"
+    ? (() => {
+      const succeeded = team.items.filter((item) => item.status === "succeeded").length;
+      const failed = team.items.filter((item) => item.status === "failed").length;
+      const skipped = team.items.filter((item) => item.status === "skipped").length;
+      const summary = locale === "zh-CN"
+        ? `复盘：成功 ${succeeded} · 失败 ${failed} · 跳过 ${skipped} · 花费 ${uiFormatCny(team.cost_used_cny)}`
+        : `Retro: ${succeeded} succeeded · ${failed} failed · ${skipped} skipped · spent ${uiFormatCny(team.cost_used_cny)}`;
+      return `<p class="wh-subtle" data-r9-agent-team-retro="true">${escapeHtml(summary)}</p>`;
+    })()
     : "";
   // B-R9.6 §3.1：头行「暂停派发/恢复派发」次级按钮——VM 给控制才渲，终态军团无按钮。
   const dispatchControl = team.dispatch_control
@@ -2141,12 +2167,14 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
       <h3>${escapeHtml(agentTeamTitle(team, locale))}</h3>
       ${dispatchControl}
     </div>
+    ${decisionBanner}
     <div class="wh-r4-route-meta">
       <span class="wh-pill">${escapeHtml(uiFormatCny(team.cost_used_cny))}</span>
       ${team.cost_budget_cny ? `<span class="wh-pill">${escapeHtml(`${burnPct}%`)}</span>` : ""}
     </div>
     ${team.cost_budget_cny ? `<div class="wh-r4-route-meter" data-r9-agent-team-burn="${escapeHtml(burnTone)}" aria-label="${escapeHtml(`${burnPct}%`)}"><span style="${escapeHtml(burnStyle)}"></span></div>` : ""}
     <div class="wh-r4-route-timeline">${rows}</div>
+    ${retroLine}
     ${capped}
   </section>`;
 }
@@ -2242,7 +2270,9 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
           <h1>${escapeHtml(title)}</h1>
           <p>${escapeHtml(summary)}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(workItemStatusLabel(locale, vm.workitem.status))}</span>
+        <span class="wh-r4-route-count">${escapeHtml(vm.agent_team && AGENT_TEAM_PANEL_STATUSES.has(vm.agent_team.status)
+          ? agentTeamTitle(vm.agent_team, locale)
+          : workItemStatusLabel(locale, vm.workitem.status))}</span>
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-workitem-context="true">

@@ -1395,6 +1395,62 @@ test("B-R9.6 workitem plan slot switches between plan snapshot and army panel by
   assert.equal(dispatching.html.includes('data-r9-agent-team-panel="true"'), true);
   assert.equal(dispatching.html.includes('data-r9-task-plan-panel="true"'), false);
 
+  // UX-M13：等人拍板黄条 + UX-M2 终态复盘尾行 + 顶部徽章细化。
+  const bannerVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      ...teamBase,
+      status: "dispatching",
+      items: [
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000905",
+          seq: 1,
+          title: "复核风险",
+          role: "review",
+          plan_status: "failed",
+          status: "needs_human",
+          budget_share_pct: 30,
+          depends_on: [],
+          waiting_for_seq: [],
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000906/replay"
+        }
+      ]
+    }
+  };
+  const banner = renderWebRouteComponent({ key: "workitem", workitem: bannerVm }, { locale: "zh-CN" });
+  assert.equal(banner.html.includes('data-r9-agent-team-banner="needs_human"'), true);
+  assert.equal(banner.html.includes("1 个子任务需要你拍板"), true);
+  assert.equal(banner.html.includes("军团推进中 1/3"), true, "顶部徽章细化为军团标题");
+
+  const retroVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      ...teamBase,
+      status: "done",
+      completed_count: 2,
+      total_count: 3,
+      items: [
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000907",
+          seq: 1,
+          title: "查资料",
+          role: "research",
+          plan_status: "succeeded",
+          status: "succeeded",
+          budget_share_pct: 30,
+          depends_on: [],
+          waiting_for_seq: [],
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000908/replay"
+        }
+      ]
+    }
+  };
+  const retro = renderWebRouteComponent({ key: "workitem", workitem: retroVm }, { locale: "zh-CN" });
+  assert.equal(retro.html.includes('data-r9-agent-team-retro="true"'), true);
+  assert.equal(retro.html.includes("复盘：成功 1 · 失败 0 · 跳过 0"), true);
+  // 有 replay 而无专门动作的行给「看轨迹」。
+  assert.equal(retro.html.includes('data-r9-agent-team-trace="93000000-0000-4000-8000-000000000907"'), true);
+
   // 部分完成不许喊「已完成」。
   const partialVm: WorkItemDetailVM = {
     ...base,
