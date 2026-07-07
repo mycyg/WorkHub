@@ -788,6 +788,16 @@ test("R9.7 task-plan rejection cancels the draft so the work item can regenerate
   assert.equal(taskPlans.rows.get(planId)?.status, "cancelled");
   assert.equal(taskPlans.rows.get(regeneratedPlanId)?.status, "draft");
   assert.equal(plannerInputs.length, 2);
+  // R9.1 workbench-reject（ux-flow-spec §3.2）：打回理由必须回灌重拆 planner——
+  // 服务端从 review 记录读，第一次生成时不存在、重拆时逐字带上。
+  assert.equal(
+    (plannerInputs[0] as { rejectionFeedback?: string[] }).rejectionFeedback,
+    undefined
+  );
+  assert.deepEqual(
+    (plannerInputs[1] as { rejectionFeedback?: string[] }).rejectionFeedback,
+    ["请把产出和复核拆得更清楚。"]
+  );
 });
 
 test("R9.1 task-plan merge fails loudly when approval does not update the plan", async () => {
@@ -970,6 +980,9 @@ test("R9.1 task-plan workflow cancels its draft when proposal creation fails", a
   const service = createTaskPlanWorkflowService({
     taskPlans,
     proposals: {
+      async listByWorkItem() {
+        return [];
+      },
       async createFromManifest() {
         throw new ProposalServiceError(409, "proposal_already_exists", "proposal already exists");
       }

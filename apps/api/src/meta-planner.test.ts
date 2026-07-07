@@ -104,7 +104,8 @@ test("R9.1 meta planner uses decompose LLM discipline, judge retry, and returns 
       user: ["Prefer evidence-backed output."],
       team: ["Keep reviewer and producer roles separate."],
       objectives: ["Objective: Raise R9 review quality (40%)"]
-    }
+    },
+    rejectionFeedback: ["请把产出和复核拆得更清楚。"]
   });
 
   assert.equal(registry.calls.length, 4);
@@ -118,6 +119,9 @@ test("R9.1 meta planner uses decompose LLM discipline, judge retry, and returns 
   assert.ok(registry.calls[0]!.params.maxTokens > 0);
   assert.match(String(registry.calls[0]?.params.system), /strict JSON/i);
   assert.match(String(registry.calls[0]?.params.messages[0]?.content), /Objective context/u);
+  // R9.1 workbench-reject：人打回的理由逐字进重拆 prompt。
+  assert.match(String(registry.calls[0]?.params.messages[0]?.content), /Human reviewer rejected the previous plan/u);
+  assert.match(String(registry.calls[0]?.params.messages[0]?.content), /请把产出和复核拆得更清楚。/u);
   assert.match(String(registry.calls[0]?.params.messages[0]?.content), /Raise R9 review quality/u);
 
   assert.equal(draft.items.length, 3);

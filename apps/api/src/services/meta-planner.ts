@@ -45,6 +45,8 @@ export type MetaPlannerCreateDraftInput = {
     team?: string[];
     objectives?: string[];
   };
+  // R9.1 workbench-reject（ux-flow-spec §3.2）：上一次人打回计划的理由，回灌进重拆 prompt。
+  rejectionFeedback?: string[];
 };
 
 export type MetaPlannerDraftItem = {
@@ -142,6 +144,9 @@ function plannerPrompt(input: MetaPlannerCreateDraftInput, feedback: readonly st
       ? "规则：3-5 个原子子任务优先；每个子任务必须有可测验收；role 只能来自枚举；depends_on 只能引用前面或同计划 key；预算份额总和必须等于 100；不要输出泛化模板。"
       : "Rules: prefer 3-5 atomic subtasks; every subtask needs measurable acceptance; role must be one enum value; depends_on may reference only item keys in this plan; budget shares must sum to exactly 100; do not return a generic template.",
     feedback.length ? `Previous draft was rejected:\n${compactLines(feedback, "None")}` : undefined,
+    input.rejectionFeedback?.length
+      ? `Human reviewer rejected the previous plan with these reasons (address every one):\n${compactLines(input.rejectionFeedback, "None")}`
+      : undefined,
     "",
     `Work item:\n${intent || "No description provided."}`,
     "",

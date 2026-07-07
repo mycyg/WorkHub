@@ -69,7 +69,7 @@ export type TaskPlanWorkflowService = {
 
 export type TaskPlanWorkflowOptions = {
   taskPlans: TaskPlanWorkflowRepository;
-  proposals: Pick<ProposalService, "createFromManifest">;
+  proposals: Pick<ProposalService, "createFromManifest" | "listByWorkItem">;
   planner: MetaPlanner;
   objectives?: Pick<ObjectiveService, "planningContextForWorkItem">;
   // B-R9.1-2（branch-review 注入面）：planner 的记忆上下文一律服务端读——
@@ -79,6 +79,29 @@ export type TaskPlanWorkflowOptions = {
   id?: () => string;
   now?: () => Date;
 };
+
+// R9.1 workbench-reject（ux-flow-spec §3.2）：重拆时把最近一次人打回计划的理由
+// 服务端读出来回灌 planner——理由存在 review 记录里，客户端不需要也不允许转述。
+async function latestPlanRejectionFeedback(
+  proposals: Pick<ProposalService, "listByWorkItem">,
+  workItemId: string
+): Promise<string[]> {
+  const rows = await proposals.listByWorkItem(workItemId);
+  const rejectedPlans = rows
+    .filter((proposal) =>
+      proposal.status === "rejected"
+      && proposal.diff_manifest.changes.some((change) =>
+        change.target_kind === "structured_record" && change.target_ref.entity_type === "task_plan"))
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const latest = rejectedPlans[0];
+  if (!latest) {
+    return [];
+  }
+  const reason = latest.reviews
+    .filter((review) => review.decision === "reject" && review.reason_md?.trim())
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0]?.reason_md?.trim();
+  return reason ? [reason.slice(0, 1_000)] : [];
+}
 
 const PLANNER_MEMORY_LINE_LIMIT = 20;
 const PLANNER_MEMORY_LINE_MAX_CHARS = 1_000;
@@ -243,11 +266,12 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
           ? await options.objectives.planningContextForWorkItem({ workspaceId, workItemId: workItem.id })
           : { lines: [], capped: false };
         // 服务端读记忆：user_memories 按创建人+工作区（含全局行），team_skills 按工作区在用技能。
-        const [userMemoryRows, teamSkillRows] = await Promise.all([
+        const [userMemoryRows, teamSkillRows, rejectionFeedback] = await Promise.all([
           options.userMemories
             ? options.userMemories.listForUser(createdByUserId, { workspaceId, limit: PLANNER_MEMORY_LINE_LIMIT })
             : Promise.resolve([]),
-          options.teamSkills ? options.teamSkills.listActive(workspaceId) : Promise.resolve([])
+          options.teamSkills ? options.teamSkills.listActive(workspaceId) : Promise.resolve([]),
+          latestPlanRejectionFeedback(options.proposals, workItem.id)
         ]);
         const userLines = plannerMemoryLines(userMemoryRows.map((row) => row.valueMd));
         const teamLines = plannerMemoryLines(teamSkillRows.map((row) => row.contentMd));
@@ -272,7 +296,8 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
             ...(workItem.summary_md ? { summaryMd: workItem.summary_md } : {})
           },
           acceptance: acceptanceText(input.detail.acceptance),
-          ...(Object.keys(memories).length > 0 ? { memories } : {})
+          ...(Object.keys(memories).length > 0 ? { memories } : {}),
+          ...(rejectionFeedback.length > 0 ? { rejectionFeedback } : {})
         });
         const planId = nextId();
         const createdAt = now();
