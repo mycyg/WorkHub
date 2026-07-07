@@ -40,7 +40,7 @@ export const spotlightCss = [
   // 搜索框（launcher 屏）。
   ".wh-spot-field-wrap{display:flex;align-items:center;gap:10px;flex:1 1 auto;min-width:0}",
   ".wh-spot-field-icon{display:inline-flex;width:18px;height:18px;flex:0 0 auto;color:var(--ds-ink-muted)}.wh-spot-field-icon svg{width:18px;height:18px}",
-  ".wh-spot-field{flex:1 1 auto;min-width:0;border:0;background:transparent;outline:none;box-shadow:none;-webkit-appearance:none;appearance:none;font:500 16px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-spot-field{flex:1 1 auto;min-width:0;border:0;background:transparent;outline:none;box-shadow:none;-webkit-appearance:none;appearance:none;-webkit-app-region:no-drag;font:500 16px/1.3 var(--ds-font);color:var(--ds-ink)}",
   "input.wh-spot-field:focus{outline:0!important;box-shadow:none!important}",
   ".wh-spot-field::placeholder{color:var(--ds-ink-faint)}",
   // 能力标题（capability 屏）。

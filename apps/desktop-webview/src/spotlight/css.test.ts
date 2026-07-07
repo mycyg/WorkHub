@@ -73,7 +73,9 @@ test("Spotlight shell keeps a translucent liquid-glass surface", () => {
   // whose dragged size could be overwritten by render-driven auto-resize.
   assert.match(css, /\.wh-spot-back,\.wh-spot button,\.wh-spot a,\.wh-spot select,\.wh-spot textarea,\.wh-spot \[contenteditable=true\]\{-webkit-app-region:no-drag\}/u);
   assert.doesNotMatch(css, /\.wh-spot-top>\*\{-webkit-app-region:no-drag\}/u);
-  assert.doesNotMatch(css, /\.wh-spot-field\{[^}]*-webkit-app-region/u);
+  // 3-2: the old assertion required `.wh-spot-field` to omit app-region, but the release
+  // Tauri window still treated text-selection drags inside the search input as window drags.
+  assert.match(css, /\.wh-spot-field\{[^}]*-webkit-app-region:no-drag/u);
   assert.match(css, /\.wh-spot-drag-sheet\{position:absolute;inset:0;display:none;z-index:3;border:0;background:transparent;cursor:grab/u);
   assert.match(css, /\.wh-spot\[data-mode="launcher"\]\[data-collapsed="true"\] \.wh-spot-drag-sheet\{display:block\}/u);
   assert.match(css, /\.wh-spot-drag-sheet:active\{cursor:grabbing\}/u);

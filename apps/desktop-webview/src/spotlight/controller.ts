@@ -60,6 +60,36 @@ export function isSpotlightDragExcludedTarget(target: EventTarget | null): boole
   return target instanceof Element && Boolean(target.closest(DRAG_EXCLUDED_SELECTOR));
 }
 
+function pointerInsideExcludedElement(element: Element | null | undefined, clientX: number, clientY: number): boolean {
+  if (!(element instanceof Element) || !element.closest(DRAG_EXCLUDED_SELECTOR)) {
+    return false;
+  }
+  const rect = element.getBoundingClientRect();
+  return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+}
+
+export function isSpotlightDragExcludedPointer(input: {
+  target: EventTarget | null;
+  clientX: number;
+  clientY: number;
+  elementAtPoint?: Element | null;
+  activeElement?: Element | null;
+  // 发布版 Tauri 窗内事件 retarget 不可靠（mousedown target/elementFromPoint 可能落到拖拽层），
+  // 兜底用已知文本控件的几何范围判定指针是否落在输入区。
+  excludedElements?: readonly Element[];
+}): boolean {
+  if (isSpotlightDragExcludedTarget(input.target)) {
+    return true;
+  }
+  if (input.elementAtPoint && isSpotlightDragExcludedTarget(input.elementAtPoint)) {
+    return true;
+  }
+  if (pointerInsideExcludedElement(input.activeElement, input.clientX, input.clientY)) {
+    return true;
+  }
+  return (input.excludedElements ?? []).some((element) => pointerInsideExcludedElement(element, input.clientX, input.clientY));
+}
+
 function renderLauncherGrid(
   matches: CommandMatch[],
   locale: WorkHubLocale,
@@ -442,7 +472,17 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   topEl.addEventListener(
     "mousedown",
     (event) => {
-      if (event.button !== 0 || isSpotlightDragExcludedTarget(event.target)) {
+      if (
+        event.button !== 0 ||
+        isSpotlightDragExcludedPointer({
+          target: event.target,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          elementAtPoint: doc.elementFromPoint(event.clientX, event.clientY),
+          activeElement: doc.activeElement,
+          excludedElements: Array.from(topEl.querySelectorAll(DRAG_EXCLUDED_SELECTOR))
+        })
+      ) {
         return;
       }
       manualDrag = {
@@ -598,7 +638,16 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     if (event.button !== 0) {
       return;
     }
-    if (isSpotlightDragExcludedTarget(event.target)) {
+    if (
+      isSpotlightDragExcludedPointer({
+        target: event.target,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        elementAtPoint: doc.elementFromPoint(event.clientX, event.clientY),
+        activeElement: doc.activeElement,
+        excludedElements: Array.from(topEl.querySelectorAll(DRAG_EXCLUDED_SELECTOR))
+      })
+    ) {
       return;
     }
     if (input.dragMove) {
