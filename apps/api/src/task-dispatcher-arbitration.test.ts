@@ -235,6 +235,86 @@ test("R9.4 task dispatch arbitration sink judges child proposal outputs and revi
   }]);
 });
 
+test("B-R9.4 arbitration risk comes from the plan annotation, not candidate self-report", async () => {
+  // branch-review 可绕过：高风险 2-of-3 的 risk 依据取自被评产出自报，产出方自评 low
+  // 即可绕过。基线=planner 标注（人审可改，落 decompositionContextJson.plan_risk），
+  // 自报只能抬高不能压低。
+  const judgeCalls: CrossAgentJudgeInput[] = [];
+  const lowSelfReportCandidates: TaskDispatchArbitrationCandidateStore = {
+    async listArbitrationCandidates() {
+      return [
+        {
+          proposalId: proposalAId,
+          proposalTitle: "Draft A",
+          producerRunId: runAId,
+          taskPlanItemId: researchItemId,
+          producerClientRef: "deepseek:worker:run-a",
+          producerContextRef: `agent-run:${runAId}`,
+          manifest: manifest({ proposalId: proposalAId, title: "Draft A", summaryMd: "A.", riskLevel: "low" })
+        },
+        {
+          proposalId: proposalBId,
+          proposalTitle: "Draft B",
+          producerRunId: runBId,
+          taskPlanItemId: produceItemId,
+          producerClientRef: "deepseek:worker:run-b",
+          producerContextRef: `agent-run:${runBId}`,
+          manifest: manifest({ proposalId: proposalBId, title: "Draft B", summaryMd: "B.", riskLevel: "low" })
+        }
+      ];
+    }
+  };
+  const judge: CrossAgentJudgeService = {
+    async arbitrate(input) {
+      judgeCalls.push(input);
+      return {
+        decision: "accept_one",
+        selectedCandidateId: proposalBId,
+        confidence: "high",
+        reasons: ["理由"],
+        summaryMd: "选 B。",
+        proposalReview: { decision: "approve", reasonMd: "B 更完整。" }
+      } as never;
+    }
+  };
+  const sink = createTaskDispatchArbitrationSink({
+    candidates: lowSelfReportCandidates,
+    judge,
+    proposalReviews: { async review() { return undefined as never; } },
+    judgeClientRef: "deepseek:review:judge"
+  });
+
+  const highRiskPlan = {
+    ...plan(),
+    decompositionContextJson: { source: "test", plan_risk: "high" }
+  } as TaskPlanRow;
+  await sink({ plan: highRiskPlan, items: [], at: now });
+  assert.equal(judgeCalls[0]?.riskLevel, "high");
+
+  // 未标注时保守取 medium（不是候选自报的 low）。
+  await sink({ plan: plan(), items: [], at: now });
+  assert.equal(judgeCalls[1]?.riskLevel, "medium");
+
+  // 候选自报 high 仍能抬高低标注计划。
+  const highSelfReport: TaskDispatchArbitrationCandidateStore = {
+    async listArbitrationCandidates() {
+      const rows = await lowSelfReportCandidates.listArbitrationCandidates({ plan: plan(), items: [], at: now } as never);
+      return rows.map((row, index) => index === 0
+        ? { ...row, manifest: manifest({ proposalId: proposalAId, title: "Draft A", summaryMd: "A.", riskLevel: "high" }) }
+        : row);
+    }
+  };
+  const highSink = createTaskDispatchArbitrationSink({
+    candidates: highSelfReport,
+    judge,
+    proposalReviews: { async review() { return undefined as never; } },
+    judgeClientRef: "deepseek:review:judge"
+  });
+  const lowPlan = { ...plan(), decompositionContextJson: { source: "test", plan_risk: "low" } } as TaskPlanRow;
+  await highSink({ plan: lowPlan, items: [], at: now });
+  assert.equal(judgeCalls[2]?.riskLevel, "high");
+});
+
 test("R9.7 task dispatch arbitration sink blocks completion when judge requests human changes", async () => {
   const reviewCalls: Array<Parameters<CrossAgentProposalReviewStore["review"]>[0]> = [];
   const candidates: TaskDispatchArbitrationCandidateStore = {

@@ -396,6 +396,7 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
               dependsOn: ["95000000-0000-4000-8000-000000000602"]
             }
           ],
+          riskLevel: "medium" as const,
           decompositionContext: { judge: "approved" }
         };
       }
@@ -511,6 +512,7 @@ test("R9.7 task-plan merge does not report success when post-approval dispatch f
             budgetSharePct: 100,
             dependsOn: []
           }],
+          riskLevel: "medium" as const,
           decompositionContext: { judge: "approved" }
         };
       }
@@ -638,6 +640,7 @@ test("R9.7 task-plan merge can approve without dispatching when held", async () 
             budgetSharePct: 100,
             dependsOn: []
           }],
+          riskLevel: "medium" as const,
           decompositionContext: { judge: "approved" }
         };
       }
@@ -740,6 +743,7 @@ test("R9.7 task-plan rejection cancels the draft so the work item can regenerate
             budgetSharePct: 100,
             dependsOn: []
           }],
+          riskLevel: "medium" as const,
           decompositionContext: { judge: "approved" }
         };
       }
@@ -828,6 +832,7 @@ test("R9.1 skip-plan rejects the plan draft and starts a single agent run", asyn
             budgetSharePct: 100,
             dependsOn: []
           }],
+          riskLevel: "medium" as const,
           decompositionContext: { judge: "approved" }
         };
       }
@@ -928,6 +933,7 @@ test("R9.1 task-plan merge fails loudly when approval does not update the plan",
             budgetSharePct: 100,
             dependsOn: []
           }],
+          riskLevel: "medium" as const,
           decompositionContext: { judge: "approved" }
         };
       }
@@ -1098,6 +1104,7 @@ test("R9.1 task-plan workflow cancels its draft when proposal creation fails", a
             budgetSharePct: 100,
             dependsOn: []
           }],
+          riskLevel: "medium" as const,
           decompositionContext: { judge: "approved" }
         };
       }
@@ -1147,6 +1154,7 @@ test("R9.7 task-plan workflow rejects a second draft request while the first pla
             budgetSharePct: 100,
             dependsOn: []
           }],
+          riskLevel: "medium" as const,
           decompositionContext: { source: "single-flight-test" }
         };
       }

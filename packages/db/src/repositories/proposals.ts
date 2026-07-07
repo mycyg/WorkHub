@@ -2909,7 +2909,13 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           seenTaskPlanIds.add(planId);
           const approvedPlans = await tx
             .update(taskPlans)
-            .set({ status: "approved", updatedAt: at })
+            .set({
+              status: "approved",
+              updatedAt: at,
+              // B-R9.4-1：合入时把（planner 标注、人审可改的）提议风险写回计划——
+              // 仲裁 2-of-3 的触发基线读这里，产出自报只能抬高不能压低。
+              decompositionContextJson: sql`coalesce(${taskPlans.decompositionContextJson}, '{}'::jsonb) || jsonb_build_object('plan_risk', ${proposal.diffManifest.risk.level}::text)`
+            })
             .where(and(
               eq(taskPlans.id, planId),
               eq(taskPlans.workItemId, proposal.workItemId),

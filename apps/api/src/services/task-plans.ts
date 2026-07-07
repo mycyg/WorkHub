@@ -152,6 +152,7 @@ function taskPlanManifest(input: {
   workspaceId: string;
   workItemId: string;
   items: readonly MetaPlannerDraftItem[];
+  riskLevel: "low" | "medium" | "high";
   createdAt: Date;
 }): DeliverableChangeManifest {
   const markdown = planMarkdown(input.items);
@@ -210,8 +211,14 @@ function taskPlanManifest(input: {
     ],
     evidence_refs: [],
     risk: {
-      level: "low",
-      human_label: "低风险：这里只批准计划，不直接改交付物。",
+      // B-R9.4-1：风险由 planner 在拆解阶段标注（人审提议时可改），仲裁 2-of-3 的
+      // 触发依据取它与产出自报的较高者——被评方无法自评降级绕过。
+      level: input.riskLevel,
+      human_label: input.riskLevel === "high"
+        ? "高风险：执行涉及对外影响，产出合并前会做多视角复核。"
+        : input.riskLevel === "medium"
+          ? "中风险：批准计划后开始执行，产出仍需你确认采纳。"
+          : "低风险：这里只批准计划，不直接改交付物。",
       reversible: true
     },
     rollback: {
@@ -329,6 +336,7 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
           throw error;
         }
         const manifest = taskPlanManifest({
+          riskLevel: draft.riskLevel,
           planId,
           workspaceId,
           workItemId: workItem.id,

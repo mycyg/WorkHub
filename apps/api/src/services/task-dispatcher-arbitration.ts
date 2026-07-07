@@ -107,6 +107,16 @@ function highestRisk(candidates: readonly TaskDispatchArbitrationCandidate[]) {
   ), "low");
 }
 
+// B-R9.4-1（branch-review 可绕过）：高风险 2-of-3 的触发依据不能只取被评产出的自报
+// （产出方自评 low 即可绕过）。基线=planner 在计划阶段标注、人审可改的 plan_risk
+// （落在 decompositionContextJson），候选自报只能抬高不能压低。
+function arbitrationRiskLevel(plan: TaskPlanRow, candidates: readonly TaskDispatchArbitrationCandidate[]): RiskLevel {
+  const raw = (plan.decompositionContextJson as Record<string, unknown> | null | undefined)?.["plan_risk"];
+  const planRisk: RiskLevel = raw === "high" || raw === "medium" || raw === "low" ? raw : "medium";
+  const candidateRisk = highestRisk(candidates);
+  return riskRank(candidateRisk) > riskRank(planRisk) ? candidateRisk : planRisk;
+}
+
 function judgeContextRef(input: TaskDispatchArbitrationSinkOptions, plan: TaskPlanRow) {
   if (typeof input.judgeContextRef === "function") {
     return input.judgeContextRef({ plan });
@@ -165,7 +175,7 @@ export function createTaskDispatchArbitrationSink(options: TaskDispatchArbitrati
         taskPlanId: input.plan.id
       },
       planId: input.plan.id,
-      riskLevel: highestRisk(candidates),
+      riskLevel: arbitrationRiskLevel(input.plan, candidates),
       judgeClientRef: options.judgeClientRef,
       judgeContextRef: judgeContextRef(options, input.plan),
       acceptance: sortedAcceptance(input.items),

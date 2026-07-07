@@ -62,6 +62,7 @@ export type MetaPlannerDraftItem = {
 
 export type MetaPlannerDraft = {
   items: MetaPlannerDraftItem[];
+  riskLevel: "low" | "medium" | "high";
   decompositionContext: JsonObject;
 };
 
@@ -80,7 +81,10 @@ const rawItemSchema = z.object({
 });
 
 const rawPlanSchema = z.object({
-  items: z.array(rawItemSchema).min(1).max(MAX_PLAN_ITEMS)
+  items: z.array(rawItemSchema).min(1).max(MAX_PLAN_ITEMS),
+  // B-R9.4-1：计划级风险由 planner 在拆解阶段标注（人审时可改），仲裁 2-of-3 的
+  // 触发依据不再取自被评产出的自报。
+  plan_risk: z.enum(["low", "medium", "high"]).default("medium")
 });
 
 const judgeSchema = z.object({
@@ -139,7 +143,8 @@ function plannerPrompt(input: MetaPlannerCreateDraftInput, feedback: readonly st
       ? "把这个 WorkHub 工作项拆成可审计、可执行的任务计划。"
       : "Decompose this WorkHub work item into an auditable execution plan.",
     "Return strict JSON only with this shape:",
-    "{\"items\":[{\"key\":\"short-stable-key\",\"title\":\"...\",\"role\":\"research|produce|review|integrate\",\"objective_md\":\"...\",\"acceptance_md\":\"...\",\"budget_share_pct\":40,\"depends_on\":[\"other-key\"]}]}",
+    "{\"items\":[{\"key\":\"short-stable-key\",\"title\":\"...\",\"role\":\"research|produce|review|integrate\",\"objective_md\":\"...\",\"acceptance_md\":\"...\",\"budget_share_pct\":40,\"depends_on\":[\"other-key\"]}],\"plan_risk\":\"low|medium|high\"}",
+    "plan_risk: overall external-impact risk of executing this plan (legal/finance/identity/publishing => high).",
     zh
       ? "规则：3-5 个原子子任务优先；每个子任务必须有可测验收；role 只能来自枚举；depends_on 只能引用前面或同计划 key；预算份额总和必须等于 100；不要输出泛化模板。"
       : "Rules: prefer 3-5 atomic subtasks; every subtask needs measurable acceptance; role must be one enum value; depends_on may reference only item keys in this plan; budget shares must sum to exactly 100; do not return a generic template.",
@@ -332,10 +337,12 @@ export function createMetaPlanner(options: MetaPlannerOptions): MetaPlanner {
         if (judge.decision === "approve") {
           return {
             items: toDraft(plan, nextId),
+            riskLevel: plan.plan_risk,
             decompositionContext: {
               attempts: attempt + 1,
               judge,
-              source: "meta-planner"
+              source: "meta-planner",
+              plan_risk: plan.plan_risk
             }
           };
         }

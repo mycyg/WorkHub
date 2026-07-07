@@ -248,6 +248,7 @@ function deterministicTaskPlanner() {
             dependsOn: [produceId]
           }
         ],
+        riskLevel: "medium" as const,
         decompositionContext: {
           source: "r1-pg-smoke",
           judge: { decision: "approve", confidence: "high" }
