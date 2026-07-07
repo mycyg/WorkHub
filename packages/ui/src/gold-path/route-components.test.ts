@@ -1364,8 +1364,15 @@ test("B-R9.6 workitem plan slot switches between plan snapshot and army panel by
     items: []
   };
   const planBase = {
-    plan_id: planId,
+    id: planId,
+    work_item_id: "93000000-0000-4000-8000-000000000902",
+    workspace_id: "93000000-0000-4000-8000-000000000903",
     status: "proposed" as const,
+    budget_json: {},
+    decomposition_context_json: {},
+    created_by: "93000000-0000-4000-8000-000000000904",
+    created_at: "2026-07-02T16:00:00.000Z",
+    updated_at: "2026-07-02T16:00:00.000Z",
     items: [],
     items_capped: false
   };
@@ -2191,8 +2198,8 @@ test("B-R9.6 Cost route component renders agent army spend grouped by task plan"
       cost: {
         ...base.page_vms.cost,
         by_task_plan: [
-          { task_plan_id: "0f8b1c2d-1111-4222-8333-444455556666", cost_cny: "1.25", tokens: 5000, child_runs: 3 },
-          { task_plan_id: "1a2b3c4d-2222-4333-8444-555566667777", label: "上市材料军团", cost_cny: "0.4", tokens: 900, child_runs: 1 }
+          { task_plan_id: "0f8b1c2d-1111-4222-8333-444455556666", cost_cny: "1.25", tokens: 5000, child_runs: 3, status: "dispatching", budget_cny: "1.000000", burn_pct: 125 },
+          { task_plan_id: "1a2b3c4d-2222-4333-8444-555566667777", label: "上市材料军团", cost_cny: "0.4", tokens: 900, child_runs: 1, status: "done", budget_cny: "3.000000", burn_pct: 13 }
         ]
       }
     }
@@ -2202,8 +2209,15 @@ test("B-R9.6 Cost route component renders agent army spend grouped by task plan"
   assert.equal(cost.html.includes('data-r9-cost-army="true"'), true);
   assert.equal(cost.html.includes('data-r9-cost-army-count="2"'), true);
   assert.equal(cost.html.includes('data-r9-cost-army-plan="0f8b1c2d-1111-4222-8333-444455556666"'), true);
-  assert.equal(cost.html.includes("3 个子任务"), true);
+  // UX-H4：行结构 = 名称 + 燃烧条（tone 分级）+ 子运行数 + 状态；超限行红字 +「去处理」锚到预算卡。
+  assert.equal(cost.html.includes("3 个子运行"), true);
   assert.equal(cost.html.includes("上市材料军团"), true);
+  assert.equal(cost.html.includes('data-r9-cost-army-burn="danger"'), true);
+  assert.equal(cost.html.includes('data-r9-cost-army-burn="ok"'), true);
+  assert.equal(cost.html.includes('data-r9-cost-army-over="0f8b1c2d-1111-4222-8333-444455556666"'), true);
+  assert.equal(cost.html.includes('href="#wh-cost-budget"'), true);
+  assert.equal(cost.html.includes('id="wh-cost-budget"'), true);
+  assert.equal(cost.html.includes("推进中"), true);
   assert.equal(cost.html.includes('href="/dashboard/agents"'), true);
   assertNoMainWindowBoundaryLeak(cost.html);
 });

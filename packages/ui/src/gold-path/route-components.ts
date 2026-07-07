@@ -165,6 +165,24 @@ export const webRouteComponentCss = [
   ".wh-r4-route-count{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--wh-product-line,#dce4f1);border-radius:8px;background:#fff;padding:8px 10px;color:var(--wh-product-ink,#172033);font-weight:900;line-height:1}",
   ".wh-r4-route-timeline{display:grid;gap:8px}",
   ".wh-r4-route-meter{height:8px;border-radius:999px;background:#e7edf7;overflow:hidden}.wh-r4-route-meter span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--wh-product-green,#24a66a),var(--wh-product-amber,#d98b16));max-width:100%}",
+  // B-R9.6 UX 审计（视觉语义假接线）：燃烧条 tone / 军团状态点 / 审批黄条的 data hook 早就渲出，
+  // 但全库无 CSS 消费——五种点一个样、超限不变红。补齐消费端规则（规格 §3.1 状态点色板+呼吸动画）。
+  "[data-r9-agent-team-burn=ok] span,[data-r9-cost-army-burn=ok] span{background:var(--wh-product-blue,#4F46E5)}",
+  "[data-r9-agent-team-burn=warning] span,[data-r9-cost-army-burn=warning] span{background:var(--wh-product-amber,#d98b16)}",
+  "[data-r9-agent-team-burn=danger] span,[data-r9-cost-army-burn=danger] span{background:var(--wh-product-red,#d64545)}",
+  ".wh-pill[data-r9-agent-team-state-dot]{color:transparent;position:relative;min-width:22px}.wh-pill[data-r9-agent-team-state-dot]::after{content:\"\";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:10px;height:10px;border-radius:999px}",
+  ".wh-pill[data-r9-agent-team-state-dot=pending]::after{background:transparent;border:2px solid #9aa4b8}",
+  ".wh-pill[data-r9-agent-team-state-dot=dispatched]::after{background:var(--wh-product-blue,#4F46E5);animation:wh-r9-dot-breathe 1.6s ease-in-out infinite}",
+  ".wh-pill[data-r9-agent-team-state-dot=succeeded]::after{background:var(--wh-product-green,#15A05A)}",
+  ".wh-pill[data-r9-agent-team-state-dot=failed]::after{background:var(--wh-product-red,#d64545)}",
+  ".wh-pill[data-r9-agent-team-state-dot=needs_human]::after{background:var(--wh-product-amber,#d98b16)}",
+  ".wh-pill[data-r9-agent-team-state-dot=skipped]::after{background:linear-gradient(135deg,#9aa4b8 45%,#fff 45%,#fff 55%,#9aa4b8 55%)}",
+  "@keyframes wh-r9-dot-breathe{0%,100%{opacity:1}50%{opacity:.35}}",
+  "@media (prefers-reduced-motion:reduce){.wh-pill[data-r9-agent-team-state-dot=dispatched]::after{animation:none}}",
+  // 审批黄条复用 home banner 视觉（黄底+深字）；依赖未解锁行按规格降 60% 不透明度；超限红字。
+  "[data-r9-task-plan-awaiting-approval]{border:1px solid #F1DC9C!important;border-radius:12px;background:#FEFBF0;color:#8A7330}",
+  "[data-r9-agent-team-waiting=true]{opacity:.6}",
+  ".wh-pill-danger{background:#fff1ef;color:#d64545}",
   ".wh-r5-meeting-text{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;color:var(--wh-product-muted,#66728c);font-family:\"Aptos\",\"Segoe UI\",sans-serif;font-size:13px;line-height:1.55;overflow-wrap:anywhere}",
   ".wh-r4-home-banner{display:flex;align-items:center;gap:10px;padding:11px 14px;border:1px solid #F1DC9C;border-radius:12px;background:#FEFBF0;color:#8A7330;font-size:13.5px;font-weight:700;flex-wrap:wrap;line-height:1.5}.wh-r4-home-banner b{color:#1A1D26;font-weight:900}.wh-r4-home-banner-cat{width:18px;height:18px;border-radius:50% 50% 45% 45%;background:#1A1D26;position:relative;flex:0 0 auto}.wh-r4-home-banner-cat::before,.wh-r4-home-banner-cat::after{content:\"\";position:absolute;top:6px;width:4px;height:4px;border-radius:999px;background:#F4D35E}.wh-r4-home-banner-cat::before{left:4px}.wh-r4-home-banner-cat::after{right:4px}.wh-r4-home-kao{color:var(--wh-product-blue,#4F46E5)}",
   ".wh-r4-home-chips{display:flex;gap:10px;flex-wrap:wrap}.wh-r4-home-chip{display:flex;align-items:center;gap:8px;padding:11px 14px;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;background:#fff;font-size:12.5px;font-weight:700;color:var(--wh-product-secondary,#5B616E);min-width:118px}.wh-r4-home-chip b{font-size:22px;font-weight:900;color:var(--wh-product-ink,#1A1D26);line-height:1}.wh-r4-home-chip--accent{border-color:var(--wh-product-blue-pale,#D9DBF5);background:var(--wh-product-blue-tint,#F5F5FE);color:var(--wh-product-blue,#4F46E5)}.wh-r4-home-chip--accent b{color:var(--wh-product-blue,#4F46E5)}.wh-r4-home-chip--ok b{color:var(--wh-product-green,#15A05A)}",
@@ -2096,7 +2114,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
         const cost = item.cost_estimate_cny
           ? `<span class="wh-pill">${escapeHtml(uiFormatCny(item.cost_estimate_cny))}</span>`
           : "";
-        return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-r9-agent-team-status="${escapeHtml(item.status)}" data-r9-agent-team-role="${escapeHtml(item.role)}">
+        return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-r9-agent-team-status="${escapeHtml(item.status)}" data-r9-agent-team-role="${escapeHtml(item.role)}"${item.waiting_for_seq.length ? ' data-r9-agent-team-waiting="true"' : ""}>
           <div>
             <strong>${escapeHtml(`#${item.seq} ${item.title}`)}</strong>
             ${waiting}
@@ -3637,23 +3655,51 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     </div>`)
     .join("");
   // B-R9.6 §3.5（成本页军团分组）：by_task_plan 早在 VM 里（仅管理员非空），但前端从没渲过——
-  // 军团跑掉的钱在成本页无处可看。按任务计划分组列出，行内给子 run 数，头部给指挥台入口。
+  // 军团跑掉的钱在成本页无处可看。UX-H4 补齐规格行结构：名称 + 燃烧条（<70 蓝/70-100 橙/超 红）
+  // + 子运行数 + 状态；超限行红字 +「去处理」链到本页预算卡。
   const armyRows = vm.by_task_plan.slice(0, 8)
-    .map((item) => `<div class="wh-r4-route-row" data-r9-cost-army-plan="${escapeHtml(item.task_plan_id)}">
+    .map((item) => {
+      const burnPct = item.burn_pct;
+      const burnTone = burnPct === undefined ? undefined : burnPct > 100 ? "danger" : burnPct >= 70 ? "warning" : "ok";
+      const burnMeter = burnPct !== undefined
+        ? `<div class="wh-r4-route-meter" data-r9-cost-army-burn="${escapeHtml(burnTone ?? "ok")}" aria-label="${escapeHtml(`${burnPct}%`)}"><span style="${escapeHtml(`width:${Math.min(Math.max(burnPct, 0), 100)}%`)}"></span></div>`
+        : "";
+      const overBudget = burnPct !== undefined && burnPct > 100
+        ? `<p class="wh-pill-danger" data-r9-cost-army-over="${escapeHtml(item.task_plan_id)}">${escapeHtml(zhNotice
+          ? `已超预算（${burnPct}%${item.budget_cny ? `，上限 ${costAmount(item.budget_cny)}` : ""}）`
+          : `Over budget (${burnPct}%${item.budget_cny ? `, cap ${costAmount(item.budget_cny)}` : ""})`)} <a href="#wh-cost-budget" data-r9-cost-army-handle="true">${escapeHtml(zhNotice ? "去处理" : "Handle it")}</a></p>`
+        : "";
+      const statusPill = item.status
+        ? `<span class="wh-pill" data-tone="${escapeHtml(item.status)}">${escapeHtml(taskPlanStatusLabel(locale, item.status as Parameters<typeof taskPlanStatusLabel>[1]))}</span>`
+        : "";
+      return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-cost-army-plan="${escapeHtml(item.task_plan_id)}">
       <div>
         <strong>${escapeHtml(item.label ?? (zhNotice ? "军团任务计划" : "Task plan"))}</strong>
         <p>${escapeHtml(zhNotice
-          ? `${item.child_runs} 个子任务 · ${item.task_plan_id.slice(0, 8)}`
+          ? `${item.child_runs} 个子运行 · ${item.task_plan_id.slice(0, 8)}`
           : `${item.child_runs} child ${item.child_runs === 1 ? "run" : "runs"} · ${item.task_plan_id.slice(0, 8)}`)}</p>
+        ${burnMeter}
+        ${overBudget}
       </div>
-      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
-    </div>`)
+      <div class="wh-r4-route-meta">
+        ${statusPill}
+        <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
+      </div>
+    </div>`;
+    })
     .join("");
+  // 静默截断=撒谎：超过 8 个计划时明说只显示最烧钱的前 8。
+  const armyCapNote = vm.by_task_plan.length > 8
+    ? `<p class="wh-subtle" data-r9-cost-army-capped="true">${escapeHtml(zhNotice
+      ? `按花费只显示前 8 个军团（共 ${vm.by_task_plan.length} 个）。`
+      : `Showing the 8 costliest teams of ${vm.by_task_plan.length}.`)}</p>`
+    : "";
   const armyCard = vm.by_task_plan.length
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-army="true" data-r9-cost-army-count="${escapeHtml(String(vm.by_task_plan.length))}">
-          <h3>${escapeHtml(zhNotice ? "军团花费" : "Agent army spend")}</h3>
-          <p class="wh-subtle">${escapeHtml(zhNotice ? "按任务计划分组的 AI 军团开销。" : "AI army cost grouped by task plan.")}</p>
+          <h3>${escapeHtml(zhNotice ? "军团花费" : "Agent team spend")}</h3>
+          <p class="wh-subtle">${escapeHtml(zhNotice ? "按任务计划分组的 AI 军团开销。" : "AI team cost grouped by task plan.")}</p>
           <div class="wh-r4-route-timeline">${armyRows}</div>
+          ${armyCapNote}
           <div class="wh-r4-route-actions"><a class="wh-btn" href="/dashboard/agents" data-r9-cost-army-cta="true">${escapeHtml(zhNotice ? "去指挥台看军团" : "Open the command deck")}</a></div>
         </section>`
     : "";
@@ -3728,7 +3774,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         </section>
       </div>
       <div class="wh-r4-route-grid">
-        <section class="wh-card wh-r4-route-card" data-r4-cost-budget="true">
+        <section class="wh-card wh-r4-route-card" id="wh-cost-budget" data-r4-cost-budget="true">
           <h3>${escapeHtml(routeT(locale, "cost.scopes"))}</h3>
           <div class="wh-r4-route-timeline">${renderBudgetRows(vm, locale)}</div>
         </section>

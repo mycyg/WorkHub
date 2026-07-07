@@ -14,6 +14,9 @@ type CostPageInput = {
   budgetUsages?: InternalBudgetUsage[];
   budgetNotices?: InternalBudgetNotice[];
   ledgerEntries?: readonly CostLedgerEntry[];
+  // B-R9.6 UX-H4：军团行展示元数据（名称/状态/预算上限），路由层按 plan id 批量取后传入；
+  // 缺省（取数失败/非管理员）时行退化为无名称无燃烧条，页面不塌。
+  taskPlanMeta?: Map<string, { label: string; status: string; maxCostCny?: number }>;
   locale?: WorkHubLocale;
 };
 
@@ -175,12 +178,23 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
       cost_cny: formatCny(item.cost),
       turns: item.turns
     })) : [],
-    by_task_plan: input.isAdmin ? byTaskPlan.map((item) => ({
-      task_plan_id: item.id,
-      cost_cny: formatCny(item.cost),
-      tokens: item.tokens,
-      child_runs: item.childRuns
-    })) : [],
+    // B-R9.6 UX-H4：按花费降序（截断时留下的是最烧钱的）+ 合入名称/状态/燃烧数据。
+    by_task_plan: input.isAdmin ? [...byTaskPlan].sort((a, b) => b.cost - a.cost).map((item) => {
+      const meta = input.taskPlanMeta?.get(item.id);
+      const burnPct = meta?.maxCostCny && meta.maxCostCny > 0
+        ? Math.round((item.cost / meta.maxCostCny) * 100)
+        : undefined;
+      return {
+        task_plan_id: item.id,
+        ...(meta?.label ? { label: meta.label } : {}),
+        cost_cny: formatCny(item.cost),
+        tokens: item.tokens,
+        child_runs: item.childRuns,
+        ...(meta?.status ? { status: meta.status } : {}),
+        ...(meta?.maxCostCny ? { budget_cny: formatCny(meta.maxCostCny) } : {}),
+        ...(burnPct !== undefined ? { burn_pct: Math.max(0, burnPct) } : {})
+      };
+    }) : [],
     by_objective: input.isAdmin ? byObjective.map((item) => ({
       objective_id: item.id,
       cost_cny: formatCny(item.cost),

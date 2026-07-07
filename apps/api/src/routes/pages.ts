@@ -106,7 +106,7 @@ export type PageRoutesDependencies = {
   projectHealthPages?: ProjectHealthPageService;
   aiWorklog?: AiWorklogMetricsService;
   teamSkills?: Pick<TeamSkillRepository, "listActive">;
-  taskPlans?: Pick<ReturnType<typeof createTaskPlanRepository>, "listDashboardPlans">;
+  taskPlans?: Pick<ReturnType<typeof createTaskPlanRepository>, "listDashboardPlans" | "listPlanMetaByIds">;
   agentArmyDashboard?: {
     page: (input: {
       actor: AuthEnv["Variables"]["actor"];
@@ -801,6 +801,20 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
           // L[1]：非管理员且 store 未实现按 scope 查询时 fail-closed 返回空——绝不回退到 listEntries()/entries
           // （全组织账目）。跨租户读账目宁可空，也不能 fail-open 把别人的花费泄露给普通成员。
           : []);
+    // B-R9.6 UX-H4：军团行元数据（名称/状态/预算）。展示增强——取数失败降级为无名行，不拖垮成本页。
+    let taskPlanMeta: Map<string, { label: string; status: string; maxCostCny?: number }> | undefined;
+    if (c.var.currentUser.isAdmin && c.var.actor.workspaceId) {
+      const planIds = [...new Set(ledgerEntries
+        .map((entry) => entry.taskPlanId ?? (entry.scope.kind === "task" ? entry.scope.taskPlanId : undefined))
+        .filter((value): value is string => Boolean(value)))];
+      if (planIds.length > 0) {
+        try {
+          taskPlanMeta = await taskPlans.listPlanMetaByIds({ workspaceId: c.var.actor.workspaceId, planIds });
+        } catch {
+          taskPlanMeta = undefined;
+        }
+      }
+    }
     const data = buildCostDashboardPage({
       settings: tenantSettings,
       isAdmin: c.var.currentUser.isAdmin,
@@ -809,7 +823,8 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       locale,
       budgetUsages: decision.usages,
       budgetNotices: decision.notice ? [decision.notice] : [],
-      ledgerEntries
+      ledgerEntries,
+      ...(taskPlanMeta ? { taskPlanMeta } : {})
     });
     return c.json(pageEnvelope(data, locale));
   });

@@ -716,6 +716,43 @@ export function createTaskPlanRepository(db: WorkHubDb) {
       return row ?? null;
     },
 
+    // B-R9.6 UX-H4（成本页军团行）：按计划 id 批量取展示元数据（工作项标题=名称、状态、预算上限）。
+    // 成本账目里只有 plan id，名称/燃烧条/超限红全靠这里；workspace 钉死防跨租户拼名。
+    async listPlanMetaByIds(input: {
+      workspaceId: string;
+      planIds: string[];
+    }): Promise<Map<string, { label: string; status: TaskPlanStatus; maxCostCny?: number }>> {
+      const planIds = [...new Set(input.planIds)].slice(0, MAX_DASHBOARD_PLAN_LIMIT);
+      const meta = new Map<string, { label: string; status: TaskPlanStatus; maxCostCny?: number }>();
+      if (planIds.length === 0) {
+        return meta;
+      }
+      const rows = await db
+        .select({
+          id: taskPlans.id,
+          status: taskPlans.status,
+          budgetJson: taskPlans.budgetJson,
+          workItemTitle: workItems.title,
+          workItemCode: workItems.code
+        })
+        .from(taskPlans)
+        .innerJoin(workItems, eq(workItems.id, taskPlans.workItemId))
+        .where(and(
+          eq(taskPlans.workspaceId, input.workspaceId),
+          inArray(taskPlans.id, planIds)
+        ));
+      for (const row of rows) {
+        const rawBudget = (row.budgetJson as Record<string, unknown>)["max_cost_cny"];
+        const parsed = typeof rawBudget === "number" ? rawBudget : typeof rawBudget === "string" ? Number.parseFloat(rawBudget) : Number.NaN;
+        meta.set(row.id, {
+          label: row.workItemTitle ?? row.workItemCode,
+          status: row.status,
+          ...(Number.isFinite(parsed) && parsed > 0 ? { maxCostCny: parsed } : {})
+        });
+      }
+      return meta;
+    },
+
     // B-R9.6 §3.4（项目主页军团 pill）：按工作项批量取「活跃计划的子任务进度」。
     // 每个工作项只取最新一份活跃计划（与指挥台同一批 DASHBOARD_PLAN_STATUSES 口径），
     // 子任务计数走一次 group by，不逐计划 N+1。

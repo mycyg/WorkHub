@@ -1002,7 +1002,10 @@ export const costDashboardVmSchema = z.object({
     cost_cny: z.string(),
     tokens: z.number().int().nonnegative(),
     child_runs: z.number().int().nonnegative(),
-    status: z.string().min(1).optional()
+    status: z.string().min(1).optional(),
+    // B-R9.6 UX-H4：燃烧条数据——预算上限与已烧百分比（可 >100，渲染层截 100 画条、红字提示超限）。
+    budget_cny: z.string().optional(),
+    burn_pct: z.number().int().nonnegative().optional()
   })).default([]),
   by_objective: z.array(z.object({
     objective_id: idSchema,
