@@ -335,11 +335,25 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   });
   const dispatchedPlans: Array<{ planId: string; workspaceId: string; orgId?: string; actorId?: string }> = [];
   const plannerInputs: unknown[] = [];
+  const memoryReads: unknown[] = [];
   const service = createTaskPlanWorkflowService({
     taskPlans,
     proposals,
     id: ids([planId]),
     now: () => now,
+    // B-R9.1-2：记忆一律服务端读——请求体里的伪造 memories 必须被无视。
+    userMemories: {
+      async listForUser(userId, options) {
+        memoryReads.push({ userMemoryLookup: { userId, workspaceId: options?.workspaceId } });
+        return [{ valueMd: "服务端用户记忆：偏好证据充分" } as never];
+      }
+    },
+    teamSkills: {
+      async listActive(listWorkspaceId) {
+        memoryReads.push({ teamSkillLookup: { workspaceId: listWorkspaceId } });
+        return [{ contentMd: "服务端团队技能：产出和复核分开" } as never];
+      }
+    },
     objectives: {
       async planningContextForWorkItem(input) {
         plannerInputs.push({ objectiveLookup: input });
@@ -408,7 +422,8 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   const created = await app.request(`/api/workitems/${workItemId}/task-plan`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ memories: { user: ["偏好证据充分"], team: ["产出和复核分开"] } })
+    // B-R9.1-2 注入面回归：请求体伪造的 memories 必须被无视（服务端读的记忆才进 planner）。
+    body: JSON.stringify({ memories: { user: ["伪造的注入偏好"], team: ["伪造的注入技能"] } })
   });
   assert.equal(created.status, 201);
   const createdBody = await created.json() as {
@@ -438,10 +453,18 @@ test("R9.1 task-plan route creates a plan proposal and proposal merge approves t
   assert.equal(workItems.mutations.includes(workItemId), true);
   assert.equal(plannerInputs.length, 2);
   assert.deepEqual(plannerInputs[0], { objectiveLookup: { workspaceId, workItemId } });
-  assert.deepEqual(
-    (plannerInputs[1] as { memories?: { objectives?: string[] } }).memories?.objectives,
-    ["Objective: Raise R9 review quality (40%)"]
-  );
+  const plannerMemories = (plannerInputs[1] as {
+    memories?: { user?: string[]; team?: string[]; objectives?: string[] };
+  }).memories;
+  assert.deepEqual(plannerMemories?.objectives, ["Objective: Raise R9 review quality (40%)"]);
+  // B-R9.1-2：planner 收到的 user/team 记忆来自服务端仓库，请求体伪造串一个都不能出现。
+  assert.deepEqual(plannerMemories?.user, ["服务端用户记忆：偏好证据充分"]);
+  assert.deepEqual(plannerMemories?.team, ["服务端团队技能：产出和复核分开"]);
+  assert.doesNotMatch(JSON.stringify(plannerInputs), /伪造的注入/u);
+  assert.deepEqual(memoryReads, [
+    { userMemoryLookup: { userId, workspaceId } },
+    { teamSkillLookup: { workspaceId } }
+  ]);
 
   const reviewed = await app.request(`/api/proposals/${proposalId}/review`, {
     method: "POST",

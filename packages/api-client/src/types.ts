@@ -112,12 +112,9 @@ export type MemoryConflictResolveResult = {
   conflict: unknown;
 };
 
-export type CreateTaskPlanRequest = {
-  memories?: {
-    user?: string[];
-    team?: string[];
-  };
-};
+// B-R9.1-2：请求体不再携带 memories——记忆上下文由服务端读 user_memories/team_skills，
+// 客户端注入面已删。
+export type CreateTaskPlanRequest = Record<string, never>;
 
 export type CreateTaskPlanResult = {
   plan_id: string;

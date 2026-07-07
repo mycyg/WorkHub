@@ -23,12 +23,10 @@ import {
 import { readJsonObject } from "./json-body.js";
 import { isUuidParam } from "./uuid-param.js";
 
-const taskPlanRequestSchema = z.object({
-  memories: z.object({
-    user: z.array(z.string().min(1).max(1_000)).max(20).optional(),
-    team: z.array(z.string().min(1).max(1_000)).max(20).optional()
-  }).optional()
-}).default({});
+// B-R9.1-2（branch-review 注入面）：请求体禁止携带 memories——那是可伪造的
+// 「团队记忆」直入 planner prompt 的注入面。记忆一律服务端读 user_memories/team_skills。
+// body 里多余字段（含旧客户端残留的 memories）静默忽略，保持向后兼容。
+const taskPlanRequestSchema = z.object({}).passthrough().default({});
 
 export type TaskPlanRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -52,20 +50,6 @@ function actorForPlanner(actor: AuthActor) {
   };
 }
 
-function memoriesForPlanner(input: z.infer<typeof taskPlanRequestSchema>["memories"]) {
-  if (!input) {
-    return undefined;
-  }
-  const memories: { user?: string[]; team?: string[] } = {};
-  if (input.user) {
-    memories.user = input.user;
-  }
-  if (input.team) {
-    memories.team = input.team;
-  }
-  return memories.user || memories.team ? memories : undefined;
-}
-
 export function createTaskPlanRoutes(deps: TaskPlanRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
@@ -78,16 +62,14 @@ export function createTaskPlanRoutes(deps: TaskPlanRoutesDependencies = {}) {
     }
     const workItemId = requireWorkItemId(c.req.param("id"));
     await workItems.assertCanMutateArtifacts({ workItemId, actor: c.var.actor });
-    const payload = taskPlanRequestSchema.parse(await readJsonObject(c));
+    taskPlanRequestSchema.parse(await readJsonObject(c));
     const detail = await workItems.detailPage({ workItemId, actor: c.var.actor });
-    const memories = memoriesForPlanner(payload.memories);
     let result;
     try {
       result = await service.createPlanProposal({
         detail,
         actor: actorForPlanner(c.var.actor),
-        locale: normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language")),
-        ...(memories ? { memories } : {})
+        locale: normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"))
       });
     } catch (error) {
       if (error instanceof TaskPlanServiceError) {

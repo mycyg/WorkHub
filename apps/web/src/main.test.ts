@@ -722,10 +722,11 @@ test("web surface creates work items through the typed client without pet adapte
 test("web surface drafts task plans through the typed client before agent runs", async () => {
   const surface = { page_vms: { workitem: {}, proposal: {} } } as unknown as GoldPathSurfaceVM;
   const client = fakeClient(surface);
+  // B-R9.1-2：请求体不再携带 memories（记忆由服务端读取，注入面已删）。
   const result = await createWebTaskPlan(
     client,
     "50000000-0000-4000-8000-000000000021",
-    { memories: { user: ["Prefer concise plans."] } },
+    {},
     "en-US"
   );
 

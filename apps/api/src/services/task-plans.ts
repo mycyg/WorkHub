@@ -4,9 +4,13 @@ import type { LlmActor } from "@workhub/agent/providers";
 import {
   getSharedDatabaseClient,
   createTaskPlanRepository,
+  createTeamSkillRepository,
+  createUserMemoryRepository,
   type CreateDraftTaskPlanInput,
   TaskPlanDraftAlreadyExists,
-  type TaskPlanRow
+  type TaskPlanRow,
+  type TeamSkillRepository,
+  type UserMemoryRepository
 } from "@workhub/db";
 import type {
   DeliverableChangeManifest,
@@ -52,11 +56,6 @@ export type CreateTaskPlanProposalInput = {
   detail: WorkItemDetailVM;
   actor: LlmActor;
   locale?: WorkHubLocale;
-  memories?: {
-    user?: string[];
-    team?: string[];
-    objectives?: string[];
-  };
 };
 
 export type CreateTaskPlanProposalResult = {
@@ -73,9 +72,24 @@ export type TaskPlanWorkflowOptions = {
   proposals: Pick<ProposalService, "createFromManifest">;
   planner: MetaPlanner;
   objectives?: Pick<ObjectiveService, "planningContextForWorkItem">;
+  // B-R9.1-2（branch-review 注入面）：planner 的记忆上下文一律服务端读——
+  // user_memories 按创建人、team_skills 按工作区。请求体注入面已删。
+  userMemories?: Pick<UserMemoryRepository, "listForUser"> | false;
+  teamSkills?: Pick<TeamSkillRepository, "listActive"> | false;
   id?: () => string;
   now?: () => Date;
 };
+
+const PLANNER_MEMORY_LINE_LIMIT = 20;
+const PLANNER_MEMORY_LINE_MAX_CHARS = 1_000;
+
+function plannerMemoryLines(values: ReadonlyArray<string | null | undefined>) {
+  return values
+    .map((value) => value?.replace(/\s+/gu, " ").trim() ?? "")
+    .filter(Boolean)
+    .slice(0, PLANNER_MEMORY_LINE_LIMIT)
+    .map((line) => (line.length > PLANNER_MEMORY_LINE_MAX_CHARS ? `${line.slice(0, PLANNER_MEMORY_LINE_MAX_CHARS - 1)}…` : line));
+}
 
 function acceptanceText(input: readonly unknown[]) {
   return input
@@ -216,8 +230,18 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
         const objectiveContext = options.objectives
           ? await options.objectives.planningContextForWorkItem({ workspaceId, workItemId: workItem.id })
           : { lines: [], capped: false };
+        // 服务端读记忆：user_memories 按创建人+工作区（含全局行），team_skills 按工作区在用技能。
+        const [userMemoryRows, teamSkillRows] = await Promise.all([
+          options.userMemories
+            ? options.userMemories.listForUser(createdByUserId, { workspaceId, limit: PLANNER_MEMORY_LINE_LIMIT })
+            : Promise.resolve([]),
+          options.teamSkills ? options.teamSkills.listActive(workspaceId) : Promise.resolve([])
+        ]);
+        const userLines = plannerMemoryLines(userMemoryRows.map((row) => row.valueMd));
+        const teamLines = plannerMemoryLines(teamSkillRows.map((row) => row.contentMd));
         const memories = {
-          ...(input.memories ?? {}),
+          ...(userLines.length > 0 ? { user: userLines } : {}),
+          ...(teamLines.length > 0 ? { team: teamLines } : {}),
           ...(objectiveContext.lines.length > 0 ? { objectives: objectiveContext.lines } : {})
         };
         const draft = await options.planner.createDraft({
@@ -308,11 +332,14 @@ let defaultTaskPlanWorkflowService: TaskPlanWorkflowService | undefined;
 
 export function getDefaultTaskPlanWorkflowService() {
   if (!defaultTaskPlanWorkflowService) {
+    const db = getSharedDatabaseClient().db;
     defaultTaskPlanWorkflowService = createTaskPlanWorkflowService({
-      taskPlans: createTaskPlanRepository(getSharedDatabaseClient().db),
+      taskPlans: createTaskPlanRepository(db),
       proposals: getDefaultProposalService(),
       planner: createMetaPlanner({ providerRegistry: getDefaultProviderRegistry() }),
-      objectives: getDefaultObjectiveService()
+      objectives: getDefaultObjectiveService(),
+      userMemories: createUserMemoryRepository(db),
+      teamSkills: createTeamSkillRepository(db)
     });
   }
   return defaultTaskPlanWorkflowService;

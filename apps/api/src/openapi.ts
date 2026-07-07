@@ -1123,19 +1123,12 @@ const createProposalResponse = {
     "422": createProposalValidationResponse
   }
 } as const;
+// B-R9.1-2：请求体不再接受 memories（可伪造团队记忆直入 planner prompt 的注入面）；
+// 记忆上下文一律服务端读 user_memories/team_skills。旧客户端多余字段被忽略。
 const createTaskPlanRequestSchema = {
   type: "object",
-  properties: {
-    memories: {
-      type: "object",
-      properties: {
-        user: { type: "array", items: { type: "string", minLength: 1, maxLength: 1000 }, maxItems: 20 },
-        team: { type: "array", items: { type: "string", minLength: 1, maxLength: 1000 }, maxItems: 20 }
-      },
-      additionalProperties: false
-    }
-  },
-  additionalProperties: false
+  properties: {},
+  additionalProperties: true
 } as const;
 const createTaskPlanResponseSchema = {
   type: "object",
