@@ -1279,6 +1279,26 @@ test("agent run enqueue consumes P-COST decisions before creating a run", async 
   assert.equal(body.data.budget_decision.notice?.recommended_action, "downgrade_model");
 });
 
+test("B-R9.2 enqueue budgetCapCny tightens the run budget without loosening it", async () => {
+  // branch-review 假接线：份额切出的子预算必须真进执行预算（run.budget/预留 est/环内守卫），
+  // 且只收紧不放宽 policy 预算。
+  const runtimeSettings = settings();
+  const ids = ["40000000-0000-4000-8000-000000000031", "40000000-0000-4000-8000-000000000032"];
+  let idIndex = 0;
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => ids[idIndex++]!
+  });
+
+  const capped = await queue.enqueue({ workItemId, actorId: userId, budgetCapCny: "1.50" });
+  assert.equal(capped.budget.max_cost_cny, "1.50");
+
+  // 高于 policy 默认（BUDGET_DEFAULT_RUN_COST_CNY=5）的 cap 不放宽。
+  const uncapped = await queue.enqueue({ workItemId: "50000000-0000-4000-8000-000000000022", actorId: userId, budgetCapCny: "9.99" });
+  assert.equal(uncapped.budget.max_cost_cny, "5");
+});
+
 test("agent run enqueue denies starting AI on a work item the caller cannot read (cross-tenant IDOR guard)", async () => {
   const runtimeSettings = settings();
   let enqueued = false;

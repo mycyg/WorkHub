@@ -215,6 +215,17 @@ function hasArbitrableOutputs(items: TaskPlanItemRow[]) {
   return items.filter((item) => item.status === "succeeded").length >= 2;
 }
 
+// B-R9.2-1（branch-review 假接线）：budget_share_pct 真切分子 run 预算——按计划总预算
+// （plan.budgetJson.max_cost_cny）×份额算出子上限传进 enqueue，不再只写进 prompt 文本。
+function itemBudgetCapCny(plan: TaskPlanRow, item: TaskPlanItemRow): string | undefined {
+  const raw = (plan.budgetJson as Record<string, unknown> | null | undefined)?.["max_cost_cny"];
+  const total = typeof raw === "string" ? Number.parseFloat(raw) : typeof raw === "number" ? raw : Number.NaN;
+  if (!Number.isFinite(total) || total <= 0) {
+    return undefined;
+  }
+  return ((total * item.budgetSharePct) / 100).toFixed(2);
+}
+
 function taskObjective(item: TaskPlanItemRow) {
   return [
     "Objective:",
@@ -508,6 +519,7 @@ export function createTaskDispatcher(options: {
       }
       updateLocalItemStatus(items, item.id, "dispatched", at);
       try {
+        const budgetCapCny = itemBudgetCapCny(plan, item);
         await options.queue.enqueue({
           workItemId: plan.workItemId,
           actorId: input.actorId ?? plan.createdByUserId,
@@ -520,7 +532,8 @@ export function createTaskDispatcher(options: {
           agentRole: item.role,
           objectiveMd: taskObjective(item),
           title: item.title,
-          mode: "worker"
+          mode: "worker",
+          ...(budgetCapCny ? { budgetCapCny } : {})
         });
       } catch (error) {
         const failed = await options.repository.settleDispatchedItem({

@@ -487,6 +487,37 @@ test("R9.2 dispatcher pumps queued child runs after enqueueing ready task-plan i
   assert.equal(queue.runNextCalls, 2);
 });
 
+test("B-R9.2 dispatcher splits the plan budget across child runs by share", async () => {
+  // branch-review 假接线（最重要）：budget_share_pct 必须真切分子 run 预算——
+  // 每个子 run 的 budgetCapCny=计划总预算×份额，N 个子预算之和 ≤ 计划预算。
+  const budgetedPlan = {
+    ...plan(),
+    budgetJson: { total_share_pct: 100, max_cost_cny: "10" }
+  } as TaskPlanRow;
+  const repository = new MemoryTaskDispatcherRepository(budgetedPlan, [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research", budgetSharePct: 30 }),
+    item({ id: produceItemId, seq: 1, title: "Produce", role: "produce", budgetSharePct: 50 }),
+    item({ id: reviewItemId, seq: 2, title: "Review", role: "review", budgetSharePct: 20 })
+  ]);
+  const queue = new CapturingQueue();
+  const dispatcher = createTaskDispatcher({ repository, queue, now: () => now });
+
+  await dispatcher.dispatch({ planId, workspaceId, actorId });
+
+  assert.deepEqual(queue.inputs.map((input) => input.budgetCapCny), ["3.00", "5.00", "2.00"]);
+  const totalChildBudget = queue.inputs.reduce((sum, input) => sum + Number.parseFloat(input.budgetCapCny ?? "0"), 0);
+  assert.equal(totalChildBudget <= 10, true, `child budgets ${totalChildBudget} must not exceed the plan budget`);
+
+  // 计划没有预算时不造假 cap（份额只进 prompt 说明，执行预算走 policy）。
+  const unbudgetedRepository = new MemoryTaskDispatcherRepository(plan(), [
+    item({ id: researchItemId, seq: 0, title: "Research", role: "research" })
+  ]);
+  const unbudgetedQueue = new CapturingQueue();
+  const unbudgetedDispatcher = createTaskDispatcher({ repository: unbudgetedRepository, queue: unbudgetedQueue, now: () => now });
+  await unbudgetedDispatcher.dispatch({ planId, workspaceId, actorId });
+  assert.equal(unbudgetedQueue.inputs[0]?.budgetCapCny, undefined);
+});
+
 test("R9.2 dispatcher respects item CAS misses and does not duplicate child enqueue", async () => {
   const repository = new MemoryTaskDispatcherRepository(plan(), [
     item({ id: researchItemId, seq: 0, title: "Research", role: "research" })

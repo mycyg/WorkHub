@@ -90,6 +90,8 @@ export const envSchema = z.object({
   // eval（夜间/发布评测套件）日预算：此前 eval 在决策层无任何策略=无上限，跑飞的套件可无限烧钱。
   BUDGET_DEFAULT_EVAL_DAILY_TOKENS: z.coerce.number().int().positive().default(2000000),
   BUDGET_DEFAULT_RUN_COST_CNY: cnyString.default("5"),
+  // R9.2：军团任务计划的默认总预算（按子任务 budget_share_pct 切分给子 run）。
+  BUDGET_DEFAULT_TASK_PLAN_COST_CNY: cnyString.default("10"),
   BUDGET_DEFAULT_USER_DAILY_COST_CNY: cnyString.default("20"),
   BUDGET_DEFAULT_TEAM_DAILY_COST_CNY: cnyString.default("200"),
   BUDGET_DEFAULT_TEAM_MONTHLY_COST_CNY: cnyString.default("2000"),
@@ -168,6 +170,7 @@ export type Settings = {
     teamMonthlyTokens: number;
     evalDailyTokens: number;
     runCostCny: string;
+    taskPlanCostCny: string;
     userDailyCostCny: string;
     teamDailyCostCny: string;
     teamMonthlyCostCny: string;
@@ -248,6 +251,7 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       teamMonthlyTokens: parsed.BUDGET_DEFAULT_TEAM_MONTHLY_TOKENS,
       evalDailyTokens: parsed.BUDGET_DEFAULT_EVAL_DAILY_TOKENS,
       runCostCny: parsed.BUDGET_DEFAULT_RUN_COST_CNY,
+      taskPlanCostCny: parsed.BUDGET_DEFAULT_TASK_PLAN_COST_CNY,
       userDailyCostCny: parsed.BUDGET_DEFAULT_USER_DAILY_COST_CNY,
       teamDailyCostCny: parsed.BUDGET_DEFAULT_TEAM_DAILY_COST_CNY,
       teamMonthlyCostCny: parsed.BUDGET_DEFAULT_TEAM_MONTHLY_COST_CNY,

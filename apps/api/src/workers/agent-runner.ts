@@ -213,6 +213,9 @@ export type EnqueueAgentRunInput = {
   objectiveMd?: string;
   title?: string;
   mode?: WorkItemMode;
+  // B-R9.2-1（branch-review 假接线）：军团子 run 的预算上限（¥）——由 dispatcher 按
+  // plan.budgetJson.max_cost_cny × budget_share_pct 切分。只收紧不放宽 policy 预算。
+  budgetCapCny?: string;
 };
 
 export type AbortAgentRunActor = string | { id: string; isAdmin?: boolean; canManageRun?: boolean };
@@ -1956,7 +1959,16 @@ export function createInMemoryAgentRunQueue(options: {
             }
           );
         }
-        const decision = await decideBudget({ ...input, settings });
+        let decision = await decideBudget({ ...input, settings });
+        // B-R9.2-1：份额切分的子预算真进执行预算（run.budget/预留 est/环内成本守卫全链生效），
+        // 不只是 prompt 文本。cap 只收紧不放宽。
+        const capCny = Number.parseFloat(input.budgetCapCny ?? "");
+        if (Number.isFinite(capCny) && capCny >= 0 && capCny < Number.parseFloat(decision.runBudget.maxCostCny)) {
+          decision = {
+            ...decision,
+            runBudget: { ...decision.runBudget, maxCostCny: capCny.toFixed(2) }
+          };
+        }
         if (!decision.allowed) {
           await emitBudgetNotice(input, decision);
           throw new AgentRunnerError(

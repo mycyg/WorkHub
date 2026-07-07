@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { LlmActor } from "@workhub/agent/providers";
+import { settings as defaultSettings } from "@workhub/config";
 import {
   getSharedDatabaseClient,
   createTaskPlanRepository,
@@ -76,6 +77,8 @@ export type TaskPlanWorkflowOptions = {
   // user_memories 按创建人、team_skills 按工作区。请求体注入面已删。
   userMemories?: Pick<UserMemoryRepository, "listForUser"> | false;
   teamSkills?: Pick<TeamSkillRepository, "listActive"> | false;
+  // B-R9.2-5：计划总预算（¥），落 budgetJson.max_cost_cny，派发时按份额切给子 run。
+  planBudgetCny?: string;
   id?: () => string;
   now?: () => Date;
 };
@@ -301,8 +304,11 @@ export function createTaskPlanWorkflowService(options: TaskPlanWorkflowOptions):
         });
         const planId = nextId();
         const createdAt = now();
+        // B-R9.2-5（branch-review 假接线）：max_cost_cny 此前从没人写，军团面板预算恒空、
+        // 份额切分无从算起。计划总预算来自配置默认（BUDGET_DEFAULT_TASK_PLAN_COST_CNY）。
         const budgetJson: JsonObject = {
-          total_share_pct: draft.items.reduce((sum, item) => sum + item.budgetSharePct, 0)
+          total_share_pct: draft.items.reduce((sum, item) => sum + item.budgetSharePct, 0),
+          max_cost_cny: options.planBudgetCny ?? defaultSettings.budgets.taskPlanCostCny
         };
         try {
           await options.taskPlans.createDraftPlan({
