@@ -92,6 +92,18 @@ export function createSettingsView(): SpotlightCapabilityView {
                 window.localStorage.removeItem("yqgl_client_token");
                 // R10：落显式登出标记——boot 见它则停在重新绑定屏，不再用固定昵称自动绑回同一账户。
                 window.localStorage.setItem("workhub_desktop_logged_out", "1");
+                // R11 回归修复：Rust 壳层 SSE worker 独立持有 client token——不清空它，
+                // 登出后后台仍带旧身份重连推送流。空串即清（main.rs set_client_token 语义）。
+                const tauri = (globalThis as {
+                  __TAURI__?: {
+                    core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+                    invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+                  };
+                }).__TAURI__;
+                const invoke = tauri?.core?.invoke ?? tauri?.invoke;
+                if (typeof invoke === "function") {
+                  void invoke("set_client_token", { token: "" }).catch(() => undefined);
+                }
               } catch {
                 // ignore storage failure
               }

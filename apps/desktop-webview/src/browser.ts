@@ -1,4 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
+import { workHubLocaleStorageKey } from "@workhub/contracts";
 import { defaultPorts } from "@workhub/config/ports";
 import { createCuuController, type CuuControllerSnapshot } from "@workhub/cuu";
 import {
@@ -1315,7 +1316,9 @@ async function bootSpotlight() {
       const nextLocale = (event.payload as { locale?: string } | undefined)?.locale;
       if (nextLocale === "zh-CN" || nextLocale === "en-US") {
         try {
-          window.localStorage.setItem("workhub_locale", nextLocale);
+          // R11 回归修复：此前手写 "workhub_locale"（下划线）——browserLocale() 读的是
+          // workHubLocaleStorageKey="workhub.locale"（点分），写入是死代码。
+          window.localStorage.setItem(workHubLocaleStorageKey, nextLocale);
         } catch {
           // ignore
         }

@@ -561,7 +561,7 @@ function bindGoldPathNavigation(
     }
     event.preventDefault();
     event.target.closest("[data-r8-project-create-form]")?.querySelector<HTMLElement>("[data-r8-project-create]")?.click();
-  });
+  }, eventListenerOptions(signal));
 
   // rank5：网盘项目切换器用 CSP 合规的委托 change 监听 + SPA 导航，取代被 CSP 禁的内联 onchange/整页刷新。
   // option 的 value 已是完整 href（/drive?project_id=…）；空 value（M3 占位「当前项目」）不导航。
@@ -617,7 +617,7 @@ function bindGoldPathNavigation(
     if (href) {
       void navigateWebRoute(href, client, locale);
     }
-  });
+  }, eventListenerOptions(signal));
 
   shellRoot.addEventListener("click", async (event) => {
     const logoutButton = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-wh-logout]") : null;
@@ -1922,6 +1922,9 @@ function showOnboardingScreen(
   if (!root) {
     return;
   }
+  // R11 回归修复：R10 想修的「探活切注册屏后在途 renderCurrentRoute 盖回失效内容」竞态，
+  // 递增被错落在 renderFatalRouteError（anchor 撞名）——真正的 not_identified 分流全走这里。
+  activeRouteRenderId += 1;
   clearReadyRouteBindings();
   liveRuntime?.closeAllLiveEventSources();
   // findings[#low]：live runtime 单例创建时一次性捕获 locale。登出→切语言→重登后，
