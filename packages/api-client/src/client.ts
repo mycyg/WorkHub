@@ -530,6 +530,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/items/${encodeURIComponent(itemId)}/restore`, options), {
         method: "POST"
       }),
+    createDriveComment: (projectId, payload, options) =>
+      request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/comments`, options), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     createDriveCommentDraft: (projectId, commentId, options) =>
       request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/comments/${encodeURIComponent(commentId)}/draft`, options), {
         method: "POST"

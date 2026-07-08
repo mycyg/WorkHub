@@ -365,6 +365,9 @@ test("drive page service scopes the default-project lookup to the actor's worksp
     async uploadFile() { throw new Error("not needed"); },
     async softDeleteItem() { throw new Error("not needed"); },
     async restoreDeletedItem() { throw new Error("not needed"); },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
     async commentToDraft() { throw new Error("not needed"); },
     async recordDraftProposal() { throw new Error("not needed"); }
   };
@@ -393,6 +396,9 @@ test("drive page service builds project files, version history, accepted deliver
     },
     async restoreDeletedItem() {
       throw new Error("not needed");
+    },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
     },
     async commentToDraft() {
       throw new Error("not needed");
@@ -463,7 +469,10 @@ test("drive page service surfaces proposal links for comment-created drafts", as
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -508,7 +517,10 @@ test("drive page service uses superseded accepted rows only for historical versi
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -566,7 +578,10 @@ test("drive page service marks restored versions with the current accepted row i
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -616,7 +631,10 @@ test("drive page service hides draft, proposal, and accepted-deliverable links w
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -680,7 +698,10 @@ test("drive page service keeps unreadable accepted deliverable placeholders with
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -750,6 +771,9 @@ test("drive page service blocks direct file reads for unreadable accepted delive
     },
     async restoreDeletedItem() {
       throw new Error("not needed");
+    },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
     },
     async commentToDraft() {
       throw new Error("not needed");
@@ -835,6 +859,9 @@ test("drive page service checks direct file reads against the current accepted v
     },
     async restoreDeletedItem() {
       throw new Error("not needed");
+    },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
     },
     async commentToDraft() {
       throw new Error("not needed");
@@ -926,7 +953,10 @@ test("drive page service keeps backing work item links for claimed private work 
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -981,7 +1011,10 @@ test("drive page service hides accepted-deliverable restore links when the actor
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -1041,7 +1074,10 @@ test("drive page service shows accepted-deliverable restore links for assigned l
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -1126,7 +1162,10 @@ test("drive page service targets the latest manual file for recycle actions", as
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -1193,6 +1232,9 @@ test("drive page service returns an upload refresh focused on the created file",
     },
     async softDeleteItem() { throw new Error("not needed"); },
     async restoreDeletedItem() { throw new Error("not needed"); },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
     async commentToDraft() { throw new Error("not needed"); },
     async recordDraftProposal() { throw new Error("not needed"); }
   };
@@ -1253,6 +1295,9 @@ test("drive page service returns a delete refresh with the deleted item in recyc
       };
     },
     async restoreDeletedItem() { throw new Error("not needed"); },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
     async commentToDraft() { throw new Error("not needed"); },
     async recordDraftProposal() { throw new Error("not needed"); }
   };
@@ -1273,6 +1318,9 @@ test("drive page service reports missing delete and restore targets as file-leve
     async uploadFile() { throw new Error("not needed"); },
     async softDeleteItem() { return null; },
     async restoreDeletedItem() { return null; },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
     async commentToDraft() { throw new Error("not needed"); },
     async recordDraftProposal() { throw new Error("not needed"); }
   };
@@ -1324,6 +1372,9 @@ test("drive page service preserves the selected folder when uploading into a par
     },
     async softDeleteItem() { throw new Error("not needed"); },
     async restoreDeletedItem() { throw new Error("not needed"); },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
     async commentToDraft() { throw new Error("not needed"); },
     async recordDraftProposal() { throw new Error("not needed"); }
   };
@@ -1385,6 +1436,9 @@ test("drive page service returns a restore refresh focused on the restored item"
         operation: pageRows.operations[0]!
       };
     },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
     async commentToDraft() { throw new Error("not needed"); },
     async recordDraftProposal() { throw new Error("not needed"); }
   };
@@ -1440,7 +1494,10 @@ test("drive page service reads ordinary file metadata for preview and download r
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -1485,7 +1542,10 @@ test("F3: each recycle-bin item gets its own restore_href (not just deleted_item
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -1530,7 +1590,10 @@ test("drive page service hides restore links for deleted children whose parent i
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -1563,7 +1626,10 @@ test("drive page service hides restore links when an active sibling already has 
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -1595,7 +1661,10 @@ test("drive page service hides restore links when the repository reports an off-
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -1635,7 +1704,10 @@ test("drive page service keeps recycle-bin file current-version metadata intact"
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -1666,7 +1738,10 @@ test("drive page service honors a requested item_id (#5 recent-file deep-link) a
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -1708,7 +1783,10 @@ test("drive page service honors a requested deleted item_id in the recycle bin",
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -1746,7 +1824,10 @@ test("xreview: drive summary.file_count uses the uncapped project total, not the
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -1779,7 +1860,10 @@ test("DF-3: drive children_count uses the uncapped per-parent count, not the 200
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -1820,7 +1904,10 @@ test("drive page service does not 403 the generic drive route on an invisible de
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -1864,7 +1951,10 @@ test("drive page service blocks owner writes from another workspace", async () =
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -1905,7 +1995,10 @@ test("drive page service exposes a no-project empty state instead of throwing", 
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -1934,7 +2027,10 @@ test("drive page service 404s an explicit project_id that resolves to nothing (n
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal() { throw new Error("not needed"); }
     },
     now: () => now
@@ -1966,7 +2062,10 @@ test("drive page service creates a work item draft from a pending drive comment"
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft(input) {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft(input) {
         calls.push({
           projectId: input.projectId,
           commentId: input.commentId,
@@ -2028,7 +2127,10 @@ test("drive page service creates a deterministic proposal from a drive comment d
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal(input) {
@@ -2114,7 +2216,10 @@ test("drive draftToProposal requires artifact mutation access before creating a 
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -2164,7 +2269,10 @@ test("drive page service treats deterministic proposal conflicts as idempotent",
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal(input) {
@@ -2269,7 +2377,10 @@ test("drive draftToProposal self-heals a residual draft_created state and is ide
       async uploadFile() { throw new Error("not needed"); },
       async softDeleteItem() { throw new Error("not needed"); },
       async restoreDeletedItem() { throw new Error("not needed"); },
-      async commentToDraft() { throw new Error("not needed"); },
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
       async recordDraftProposal(input) {
         return recorder.recordDraftProposal({ workItemId: input.workItemId, proposalId: input.proposalId });
       }
@@ -2508,6 +2619,9 @@ test("drive page route returns an authenticated bilingual page envelope and forw
     async restoreItem() {
       throw new Error("not needed");
     },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
     async commentToDraft() {
       throw new Error("not needed");
     },
@@ -2552,6 +2666,9 @@ test("drive page route rejects malformed item_id before it reaches the repositor
     },
     async restoreItem() {
       throw new Error("not needed");
+    },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
     },
     async commentToDraft() {
       throw new Error("not needed");
@@ -2611,7 +2728,10 @@ test("drive upload route authenticates, parses payload, and returns a refreshed 
       async restoreItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async draftToProposal() {
@@ -2682,7 +2802,10 @@ test("drive upload route forwards parent_id so folder uploads do not land at pro
       async restoreItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async draftToProposal() {
@@ -2743,7 +2866,10 @@ test("drive upload route normalizes JSON filenames to a basename", async () => {
       async restoreItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async draftToProposal() {
@@ -2804,7 +2930,10 @@ test("drive upload route normalizes dot-segment JSON filenames to a safe leaf na
       async restoreItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async draftToProposal() {
@@ -2856,6 +2985,9 @@ test("drive upload route rejects metadata-only JSON uploads so AI file context i
     },
     async restoreItem() {
       throw new Error("not needed");
+    },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
     },
     async commentToDraft() {
       throw new Error("not needed");
@@ -2932,7 +3064,10 @@ test("drive upload route materializes multipart file bytes before returning succ
       async restoreItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async draftToProposal() {
@@ -2998,7 +3133,10 @@ test("drive upload route truncates unbounded (chunked) bodies at the 34MiB strea
       async restoreItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async draftToProposal() {
@@ -3056,7 +3194,10 @@ test("drive upload route rejects oversized multipart files before calling the se
       async restoreItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async draftToProposal() {
@@ -3118,7 +3259,10 @@ test("drive upload route checks manage permission before materializing multipart
       async restoreItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async draftToProposal() {
@@ -3174,7 +3318,10 @@ test("drive page service removes materialized bytes when the repository rejects 
       async restoreDeletedItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async recordDraftProposal() {
@@ -3231,7 +3378,10 @@ test("drive upload route keeps materialized bytes after the service takes upload
       async restoreItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async draftToProposal() {
@@ -3282,6 +3432,9 @@ test("drive upload route returns 400 for malformed JSON instead of treating it a
     },
     async restoreItem() {
       throw new Error("not needed");
+    },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
     },
     async commentToDraft() {
       throw new Error("not needed");
@@ -3348,7 +3501,10 @@ test("drive ordinary file routes download and preview stored bytes", async () =>
       async restoreItem() {
         throw new Error("not needed");
       },
-      async commentToDraft() {
+      async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() {
         throw new Error("not needed");
       },
       async draftToProposal() {
@@ -3418,6 +3574,9 @@ test("drive ordinary file routes fall back to parsed text when stored bytes are 
     async restoreItem() {
       throw new Error("not needed");
     },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
     async commentToDraft() {
       throw new Error("not needed");
     },
@@ -3475,6 +3634,9 @@ test("drive ordinary file preview and download reject incomplete parsed text fal
     async restoreItem() {
       throw new Error("not needed");
     },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
     async commentToDraft() {
       throw new Error("not needed");
     },
@@ -3519,6 +3681,9 @@ test("drive comment draft route authenticates and returns a refreshed page VM", 
     },
     async restoreItem() {
       throw new Error("not needed");
+    },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
     },
     async commentToDraft(input) {
       calls.push({
@@ -3568,6 +3733,9 @@ test("drive draft proposal route authenticates and returns a refreshed work item
     },
     async restoreItem() {
       throw new Error("not needed");
+    },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
     },
     async commentToDraft() {
       throw new Error("not needed");
@@ -3635,6 +3803,9 @@ test("drive delete route rejects malformed path ids before parsing the body", as
     async restoreItem() {
       throw new Error("not needed");
     },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
     async commentToDraft() {
       throw new Error("not needed");
     },
@@ -3682,6 +3853,9 @@ test("drive delete route checks manage access before parsing the optional body",
     },
     async restoreItem() {
       throw new Error("not needed");
+    },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
     },
     async commentToDraft() {
       throw new Error("not needed");
@@ -3731,6 +3905,9 @@ test("drive mutation routes preserve service conflict codes", async () => {
     },
     async restoreItem() {
       throw new Error("not needed");
+    },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
     },
     async commentToDraft() {
       throw new Error("not needed");

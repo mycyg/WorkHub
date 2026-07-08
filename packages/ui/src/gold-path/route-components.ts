@@ -2708,7 +2708,15 @@ function renderDriveRouteComponent(
         ${comment.proposal_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(comment.proposal_href))}" data-r5-drive-proposal-link="true" data-r5-drive-proposal-id="${escapeHtml(comment.proposal_id ?? "")}" data-r5-drive-proposal-status="${escapeHtml(comment.proposal_status ?? "")}">${escapeHtml(routeT(locale, "drive.openProposal"))}</a>` : ""}
       </div>
     </div>`).join("")
-    : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "暂无评论" : "No comments yet")}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "还没有评论。写一条，之后可以让 AI 按它改文件。" : "No comments yet. Leave one — AI can act on it later.")}</p>`;
+  // UX-U3（评论闭环缺口）：产品到处承诺「评论生成草稿」，但从没有写评论的入口。补 composer：
+  // 发一条评论（pending_llm）→ 列表里出现 →「生成草稿」按既有链路让 AI 接手。
+  const commentComposer = currentProjectId
+    ? `<form class="wh-r4-approval-comment-form" data-r9-drive-comment-form="${escapeHtml(currentProjectId)}">
+        <textarea class="wh-r4-approval-comment-input" data-r9-drive-comment-input rows="2" maxlength="4000" placeholder="${escapeHtml(locale === "zh-CN" ? "对这个项目的文件说点什么，比如「第二节数据要更新」…" : "Say something about these files, e.g. update the data in section 2…")}"></textarea>
+        <button type="submit" class="wh-btn" data-r9-drive-comment-submit="true">${escapeHtml(locale === "zh-CN" ? "发评论" : "Comment")}</button>
+      </form>`
+    : "";
   const recycleRows = vm.deleted_items.length
     ? vm.deleted_items.map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}" data-r5-drive-recycle-selected="${escapeHtml(String(item.id === selectedDeletedItem?.id))}">
       <div>
@@ -2796,7 +2804,8 @@ function renderDriveRouteComponent(
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-drive-comments="true">
           <h3>${escapeHtml(routeT(locale, "drive.comments"))}</h3>
-          <div class="wh-r4-route-timeline">${commentRows}</div>
+          <div class="wh-r4-route-timeline">${commentRows}
+          ${commentComposer}</div>
         </section>
       </div>
       <div class="wh-r4-route-grid">

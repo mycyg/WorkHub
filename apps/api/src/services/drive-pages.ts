@@ -68,6 +68,11 @@ export type DrivePageService = {
   restoreItem: (input: DriveMutationInput & {
     itemId: string;
   }) => Promise<DrivePageVM>;
+  // UX-U3：网盘评论 composer 的写端——发一条评论（进入 pending_llm，后续可生成草稿）。
+  createComment: (input: DriveMutationInput & {
+    body: string;
+    folderId?: string;
+  }) => Promise<DrivePageVM>;
   commentToDraft: (input: DriveMutationInput & {
     commentId: string;
   }) => Promise<DrivePageVM>;
@@ -1027,6 +1032,31 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
         mutationError(error);
       }
     },
+    async createComment(input) {
+      const actorUserId = ensureHumanActor(input);
+      await ensureCanManage(input);
+      const body = input.body.trim();
+      if (!body) {
+        throw new DrivePageServiceError(400, "评论内容不能为空。", "drive_comment_body_required");
+      }
+      if (body.length > 4000) {
+        throw new DrivePageServiceError(400, "评论最长 4000 字。", "drive_comment_body_too_long");
+      }
+      const created = await deps.repo.createComment({
+        actorKind: input.actor.kind,
+        actorUserId,
+        projectId: input.projectId,
+        body,
+        authorNickname: input.actor.label,
+        ...(input.folderId ? { folderId: input.folderId } : {}),
+        at: deps.now?.() ?? new Date()
+      });
+      if (!created) {
+        throw new DrivePageServiceError(404, "没有找到这个项目。", "drive_not_found");
+      }
+      return pageAfterMutation(input);
+    },
+
     async commentToDraft(input) {
       const actorUserId = ensureHumanActor(input);
       await ensureCanManage(input);

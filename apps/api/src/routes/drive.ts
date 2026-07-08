@@ -53,6 +53,11 @@ const textLikeDriveFile = /\.(csv|json|md|markdown|txt|tsv|html|xml|yaml|yml)$/i
 const driveDeleteSchema = z.object({
   expected_current_version_id: z.uuid().nullable().optional()
 });
+// UX-U3：网盘评论 composer 请求体。
+const driveCreateCommentSchema = z.object({
+  body: z.string().min(1).max(4000),
+  folder_id: z.string().uuid().optional()
+});
 
 function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }) {
   return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
@@ -468,6 +473,26 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
         locale,
         projectId: requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found"),
         itemId: requireUuidParam(c.req.param("itemId"), "文件", "drive_file_not_found")
+      });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof DrivePageServiceError) {
+        return driveErrorResponse(c, error);
+      }
+      throw error;
+    }
+  });
+
+  routes.post("/projects/:projectId/comments", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    const payload = driveCreateCommentSchema.parse(await readJsonObject(c));
+    try {
+      const data = await drivePages.createComment({
+        actor: c.var.actor,
+        locale,
+        projectId: requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found"),
+        body: payload.body,
+        ...(payload.folder_id ? { folderId: payload.folder_id } : {})
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {

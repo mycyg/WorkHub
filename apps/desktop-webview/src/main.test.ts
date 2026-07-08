@@ -358,6 +358,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async delegateApproval() {
       throw new Error("not needed");
     },
+    async createDriveComment(): Promise<never> {
+      throw new Error("createDriveComment not wired in this test");
+    },
     async skipTaskPlanProposal(): Promise<never> {
       throw new Error("skipTaskPlanProposal not wired in this test");
     },

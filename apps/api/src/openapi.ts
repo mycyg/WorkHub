@@ -4900,6 +4900,26 @@ export function getOpenApiDocument() {
           }
         }
       },
+      "/api/drive/projects/{projectId}/comments": {
+        post: {
+          tags: ["drive"],
+          summary: "Post a drive comment (enters pending_llm; can later become a draft)",
+          parameters: [pathUuidParameter("projectId"), localeQueryParameter],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["body"],
+            properties: {
+              body: { type: "string", minLength: 1, maxLength: 4000 },
+              folder_id: uuidStringSchema
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            ...jsonOkResponse(drivePageResponseSchema).responses,
+            ...driveForbiddenResponse.responses
+          }
+        }
+      },
       "/api/drive/projects/{projectId}/comments/{commentId}/draft": {
         post: {
           tags: ["drive"],

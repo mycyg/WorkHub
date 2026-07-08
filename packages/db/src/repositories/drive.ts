@@ -179,6 +179,14 @@ export type DriveRepository = {
     itemId: string;
     at?: Date;
   }) => Promise<DriveMutationRows | null>;
+  // UX-U3（评论闭环缺口）：产品到处承诺「评论生成草稿」，但全站没有创建评论的入口——补写端。
+  createComment: (input: DriveRepositoryActor & {
+    projectId: string;
+    body: string;
+    authorNickname: string;
+    folderId?: string | null;
+    at?: Date;
+  }) => Promise<DriveCommentRow | null>;
   commentToDraft: (input: DriveRepositoryActor & {
     projectId: string;
     commentId: string;
@@ -1186,6 +1194,29 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         result = { item: updated[0] as DriveItemRow, operation };
       });
       return result;
+    },
+
+    async createComment(input) {
+      const at = input.at ?? new Date();
+      const project = await findProject(db, input.projectId);
+      if (!project || !input.actorUserId) {
+        return null;
+      }
+      const [row] = await db
+        .insert(projectDriveComments)
+        .values({
+          id: randomUUID(),
+          projectId: input.projectId,
+          folderId: input.folderId ?? null,
+          authorUserId: input.actorUserId,
+          authorNickname: input.authorNickname,
+          body: input.body,
+          status: "pending_llm",
+          createdAt: at,
+          updatedAt: at
+        })
+        .returning();
+      return row ?? null;
     },
 
     async commentToDraft(input) {

@@ -578,6 +578,33 @@ function bindGoldPathNavigation(
     }
 
     // W2：相关讨论——发表评论（乐观追加，再回填服务端结果）。
+    // UX-U3：网盘评论 composer 提交——发评论后整页重渲（评论出现在列表并带「生成草稿」入口）。
+    const driveCommentSubmit = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-r9-drive-comment-submit]") : null;
+    if (driveCommentSubmit) {
+      event.preventDefault();
+      const form = driveCommentSubmit.closest<HTMLFormElement>("[data-r9-drive-comment-form]");
+      const projectId = form?.getAttribute("data-r9-drive-comment-form") ?? "";
+      const input = form?.querySelector<HTMLTextAreaElement>("[data-r9-drive-comment-input]");
+      const body = input?.value.trim();
+      if (!projectId) {
+        return;
+      }
+      if (!body) {
+        showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, "drive_comment"));
+        input?.focus();
+        return;
+      }
+      try {
+        await client.createDriveComment(projectId, { body }, { locale });
+        await renderCurrentRoute(client, locale);
+        showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, locale === "en-US"
+          ? "Comment posted. Use \u201cCreate draft\u201d on it to hand it to AI."
+          : "评论已发出。点评论上的「生成草稿」就能交给 AI 处理。", "drive_comment"));
+      } catch (error) {
+        showRouteNotice(shellRoot, actionErrorNotice(locale, error, "drive_comment"));
+      }
+      return;
+    }
     const commentSubmit = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-r4-approval-comment-submit]") : null;
     if (commentSubmit) {
       event.preventDefault();
