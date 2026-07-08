@@ -559,7 +559,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       // 卡片仍会在首页泄露事项信息。复用同一个 visibleApprovalCenter 收口。
       decisionQueue = [
         ...decisionQueue,
-        ...(await visibleApprovalCenter(pending, workItems, c.var.actor)).items
+        // R9（性能）：listPendingForUser 已用同一 canReadWorkItem 谓词过滤过——传 alreadyFiltered
+        // 免去对同一批数据的第二轮串行可见性全扫描（与 KPI 计数处同口径）。
+        ...(await visibleApprovalCenter(pending, workItems, c.var.actor, true)).items
       ];
       if (pending.counts.pending_total_capped === 1) {
         sourceWarnings.push({

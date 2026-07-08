@@ -114,6 +114,12 @@ export function actionMessage(error: unknown, locale: WorkHubLocale) {
     // 普通用户审查 R3 high：服务端错误串大量只有中文——en 界面读到整句中文。系统性兜底：
     // en 会话下 message 含 CJK 时给通用英文+错误码（服务端逐串双语化是长尾，客户端先保体验）。
     if (locale === "en-US" && /[\u4e00-\u9fff]/u.test(error.message)) {
+      // R9 回归修复：服务端「中文正文(English gloss)」双语串——先提取末尾英文括注，
+      // 否则专门写的英文说明会被整句通用兜底吞掉。
+      const gloss = /\(([^()\u4e00-\u9fff]{8,})\)\s*$/u.exec(error.message)?.[1];
+      if (gloss) {
+        return gloss;
+      }
       const code = (error as { code?: unknown }).code;
       return typeof code === "string" && code
         ? `The request was rejected (${code.replace(/_/gu, " ")}). Refresh and try again.`

@@ -168,7 +168,7 @@ export const webRouteComponentCss = [
   "[data-r9-agent-dashboard-kpis=true]{grid-template-columns:repeat(4,minmax(0,1fr))}",
   "@media (max-width:860px){[data-r9-agent-dashboard-kpis=true]{grid-template-columns:repeat(2,minmax(0,1fr))}}",
   // R3 移动端：军团子任务行的 pill 群在窄屏收紧字号+间距；可点的 pill（链接）加下划线与按钮描边区分。
-  "@media (max-width:640px){[data-r9-agent-team-item] .wh-r4-route-meta{gap:4px}[data-r9-agent-team-item] .wh-pill{font-size:11px;padding:4px 7px}}",
+  "@media (max-width:640px){[data-r9-agent-team-item] .wh-r4-route-meta{gap:4px}[data-r9-agent-team-item] span.wh-pill{font-size:11px;padding:4px 7px}[data-r9-agent-team-item] a.wh-pill{min-height:32px;display:inline-flex;align-items:center}}",
   "[data-r9-agent-team-item] a.wh-pill{text-decoration:underline;border:1px solid var(--wh-product-line,#dce4f1)}",
   ".wh-r4-route-meter{height:8px;border-radius:999px;background:#e7edf7;overflow:hidden}.wh-r4-route-meter span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--wh-product-green,#24a66a),var(--wh-product-amber,#d98b16));max-width:100%}",
   // B-R9.6 UX 审计（视觉语义假接线）：燃烧条 tone / 军团状态点 / 审批黄条的 data hook 早就渲出，
@@ -215,7 +215,6 @@ type RouteCopyKey =
   | "workitem.openProposal"
   | "workitem.openReplay"
   | "workitem.createTaskPlan"
-  | "workitem.startRun"
   | "intake.summary"
   | "intake.progress"
   | "intake.freeText"
@@ -246,14 +245,12 @@ type RouteCopyKey =
   | "knowledge.scopeLandingCta"
   | "proposal.summary"
   | "proposal.review"
-  | "proposal.rollback"
   | "proposal.files"
   | "drive.kicker"
   | "drive.allProjects"
   | "drive.switchProject"
   | "drive.files"
   | "drive.versions"
-  | "drive.accepted"
   | "drive.comments"
   | "drive.recycle"
   | "drive.operations"
@@ -269,7 +266,6 @@ type RouteCopyKey =
   | "drive.download"
   | "drive.restore"
   | "drive.current"
-  | "drive.pendingDrafts"
   | "drive.createDraft"
   | "drive.openDraft"
   | "drive.openProposal"
@@ -282,7 +278,6 @@ type RouteCopyKey =
   | "meeting.transcript"
   | "meeting.minutes"
   | "meeting.insights"
-  | "meeting.evidence"
   | "meeting.createDraft"
   | "meeting.dismiss"
   | "meeting.openDraft"
@@ -312,7 +307,6 @@ type RouteCopyKey =
   | "notifications.groundingWhy"
   | "knowledge.fromNotice"
   | "health.kicker"
-  | "health.summary"
   | "health.healthy"
   | "health.attention"
   | "health.critical"
@@ -346,7 +340,6 @@ type RouteCopyKey =
   | "cost.laborSelfImprovement"
   | "cost.laborSelfImprovementRatio"
   | "agents.kicker"
-  | "agents.title"
   | "agents.summary"
   | "agents.active"
   | "agents.waiting"
@@ -363,8 +356,6 @@ type RouteCopyKey =
   | "agents.capPlans"
   | "agents.capRows"
   | "agents.judge"
-  | "agents.roles"
-  | "agents.statuses"
   | "skills.kicker"
   | "skills.title"
   | "skills.summary"
@@ -375,7 +366,6 @@ type RouteCopyKey =
   | "skills.version"
   | "skills.readiness"
   | "skills.refinedFrom"
-  | "skills.authoredBy"
   | "projects.kicker"
   | "projects.title"
   | "projects.summary"
@@ -408,8 +398,6 @@ type RouteCopyKey =
   | "settings.broker"
   | "settings.database"
   | "settings.runtimeStatus"
-  | "settings.lease"
-  | "settings.recovery"
   | "settings.provider"
   | "settings.model"
   | "settings.apiKey"
@@ -419,9 +407,7 @@ type RouteCopyKey =
   | "settings.preferenceLocale"
   | "settings.preferenceSource"
   | "settings.preferenceSync"
-  | "settings.updateEndpoint"
   | "settings.supported"
-  | "settings.storage"
   | "settings.localExecution"
   | "settings.independentPet"
   | "settings.petBoundary"
@@ -439,7 +425,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.openProposal": "查看变更申请",
     "workitem.openReplay": "查看回放",
     "workitem.createTaskPlan": "生成任务计划",
-    "workitem.startRun": "开始 AI 执行",
     "intake.summary": "接入摘要",
     "intake.progress": "澄清进度",
     "intake.freeText": "展开手动输入回答",
@@ -467,14 +452,12 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "knowledge.scopeLandingCta": "去项目列表",
     "proposal.summary": "AI 摘要",
     "proposal.review": "审阅动作",
-    "proposal.rollback": "回滚路径",
     "proposal.files": "文件与对象变化",
     "drive.kicker": "项目网盘",
     "drive.allProjects": "所有项目",
     "drive.switchProject": "切换项目",
     "drive.files": "文件列表",
     "drive.versions": "版本历史",
-    "drive.accepted": "正式交付物",
     "drive.comments": "评论",
     "drive.recycle": "回收站",
     "drive.operations": "操作日志",
@@ -490,7 +473,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.download": "下载",
     "drive.restore": "还原",
     "drive.current": "当前",
-    "drive.pendingDrafts": "待处理草稿",
     "drive.createDraft": "生成草稿",
     "drive.openDraft": "打开草稿",
     "drive.openProposal": "查看变更申请",
@@ -503,7 +485,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.transcript": "转写",
     "meeting.minutes": "纪要",
     "meeting.insights": "洞察",
-    "meeting.evidence": "会议证据",
     "meeting.createDraft": "生成草稿",
     "meeting.dismiss": "忽略",
     "meeting.openDraft": "打开草稿",
@@ -534,7 +515,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "knowledge.fromNotice": "来自通知的相关资料",
     "health.kicker": "项目健康",
     "health.title": "健康总览",
-    "health.summary": "项目",
     "health.healthy": "健康",
     "health.attention": "需要关注",
     "health.critical": "告急",
@@ -568,7 +548,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.laborSelfImprovement": "自进化花费",
     "cost.laborSelfImprovementRatio": "自进化占比",
     "agents.kicker": "军团",
-    "agents.title": "军团",
     "agents.summary": "观察正在推进的任务计划；需要人决定的事仍回到总览处理。",
     "agents.active": "进行中军团",
     "agents.waiting": "等你决策",
@@ -585,8 +564,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.capPlans": "当前只显示前 {limit} 个军团；继续处理后列表会刷新。",
     "agents.capRows": "部分子任务、运行或升级记录已按上限截断，进入工作项可看完整上下文。",
     "agents.judge": "复核通过率",
-    "agents.roles": "角色",
-    "agents.statuses": "状态",
     "skills.kicker": "团队技能库",
     "skills.title": "团队技能",
     "skills.summary": "AI 沉淀并持续打磨的可复用技能",
@@ -615,7 +592,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.version": "版本",
     "skills.readiness": "成熟度",
     "skills.refinedFrom": "精修自 v",
-    "skills.authoredBy": "来源",
     "settings.runtime": "运行时",
     "settings.llm": "AI 运行配置",
     "settings.language": "语言",
@@ -632,8 +608,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.broker": "消息服务",
     "settings.database": "数据库",
     "settings.runtimeStatus": "运行状态",
-    "settings.lease": "执行租约",
-    "settings.recovery": "恢复间隔",
     "settings.provider": "提供方",
     "settings.model": "模型",
     "settings.apiKey": "密钥状态",
@@ -643,9 +617,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.preferenceLocale": "服务端偏好",
     "settings.preferenceSource": "偏好来源",
     "settings.preferenceSync": "同步状态",
-    "settings.updateEndpoint": "保存地址",
     "settings.supported": "支持语言",
-    "settings.storage": "本地键",
     "settings.localExecution": "本地执行边界",
     "settings.independentPet": "独立桌宠窗口",
     "settings.petBoundary": "桌宠形象在独立窗口里设置",
@@ -662,7 +634,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.openProposal": "Open change request",
     "workitem.openReplay": "Open replay",
     "workitem.createTaskPlan": "Draft task plan",
-    "workitem.startRun": "Start AI run",
     "intake.summary": "Intake summary",
     "intake.progress": "Clarification progress",
     "intake.freeText": "Type your answer",
@@ -690,14 +661,12 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "knowledge.scopeLandingCta": "Go to projects",
     "proposal.summary": "AI summary",
     "proposal.review": "Review actions",
-    "proposal.rollback": "Rollback path",
     "proposal.files": "Files and object changes",
     "drive.kicker": "Project drive",
     "drive.allProjects": "All projects",
     "drive.switchProject": "Switch project",
     "drive.files": "File tree",
     "drive.versions": "Version history",
-    "drive.accepted": "Accepted deliverables",
     "drive.comments": "Comments",
     "drive.recycle": "Recycle",
     "drive.operations": "Operation log",
@@ -713,7 +682,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.download": "Download",
     "drive.restore": "Restore",
     "drive.current": "Current",
-    "drive.pendingDrafts": "Pending drafts",
     "drive.createDraft": "Create draft",
     "drive.openDraft": "Open draft",
     "drive.openProposal": "Open change request",
@@ -726,7 +694,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.transcript": "Transcript",
     "meeting.minutes": "Minutes",
     "meeting.insights": "Insights",
-    "meeting.evidence": "Meeting evidence",
     "meeting.createDraft": "Create draft",
     "meeting.dismiss": "Dismiss",
     "meeting.openDraft": "Open draft",
@@ -757,7 +724,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "knowledge.fromNotice": "Search context from a notification",
     "health.kicker": "Project health",
     "health.title": "Health overview",
-    "health.summary": "Projects",
     "health.healthy": "Healthy",
     "health.attention": "Needs attention",
     "health.critical": "Critical",
@@ -791,7 +757,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.laborSelfImprovement": "Self-improvement spend",
     "cost.laborSelfImprovementRatio": "Self-improvement share",
     "agents.kicker": "Agent teams",
-    "agents.title": "Agent teams",
     "agents.summary": "Observe active task plans; decisions still go through the overview inbox.",
     "agents.active": "Active teams",
     "agents.waiting": "Needs your decision",
@@ -808,8 +773,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.capPlans": "Showing the first {limit} agent teams; the list refreshes as work moves forward.",
     "agents.capRows": "Some task, run, or escalation rows are capped; open the work item for full context.",
     "agents.judge": "Review pass rate",
-    "agents.roles": "Roles",
-    "agents.statuses": "Statuses",
     "skills.kicker": "Team skill library",
     "skills.title": "Team skills",
     "skills.summary": "Reusable skills the AI distills and keeps refining",
@@ -838,7 +801,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "skills.version": "Version",
     "skills.readiness": "Readiness",
     "skills.refinedFrom": "refined from v",
-    "skills.authoredBy": "Source",
     "settings.runtime": "Runtime",
     "settings.llm": "AI runtime config",
     "settings.language": "Language",
@@ -855,8 +817,6 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.broker": "Event broker",
     "settings.database": "Database",
     "settings.runtimeStatus": "Runtime status",
-    "settings.lease": "Run lease",
-    "settings.recovery": "Recovery interval",
     "settings.provider": "Provider",
     "settings.model": "Model",
     "settings.apiKey": "Key status",
@@ -866,9 +826,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.preferenceLocale": "Server preference",
     "settings.preferenceSource": "Preference source",
     "settings.preferenceSync": "Sync state",
-    "settings.updateEndpoint": "Save endpoint",
     "settings.supported": "Supported locales",
-    "settings.storage": "Storage key",
     "settings.localExecution": "Local execution boundary",
     "settings.independentPet": "Independent pet window",
     "settings.petBoundary": "Pet look is not configured in the Web main window",
@@ -1731,7 +1689,7 @@ function renderApprovalDetailPanel(
   const evidence = item.evidence_refs?.length
     ? `<ul class="wh-r4-approval-evidence" data-r4-approval-evidence-list="true">${item.evidence_refs
         .slice(0, 4)
-        .map((ev) => `<li>${ev.href ? `<a href="${escapeHtml(safeHref(ev.href))}">${escapeHtml(ev.title)}</a>` : escapeHtml(ev.title)}${ev.excerpt ? `<span class="wh-subtle">${escapeHtml(ev.excerpt)}</span>` : ""}${ev.confidence_hint ? `<span class="wh-pill" data-r4-approval-evidence-confidence="${escapeHtml(ev.confidence_hint)}" title="${escapeHtml(ev.confidence_reason ?? approvalEvidenceConfidenceExplain(ev.confidence_hint, zh))}">${escapeHtml(approvalEvidenceConfidenceLabel(ev.confidence_hint, zh))}</span>` : ""}</li>`)
+        .map((ev) => `<li>${ev.href ? `<a href="${escapeHtml(safeHref(ev.href))}">${escapeHtml(ev.title)}</a>` : escapeHtml(ev.title)}${ev.excerpt ? `<span class="wh-subtle">${escapeHtml(ev.excerpt)}</span>` : ""}${ev.confidence_hint ? `<span class="wh-pill" data-r4-approval-evidence-confidence="${escapeHtml(ev.confidence_hint)}" title="${escapeHtml(ev.confidence_reason ?? approvalEvidenceConfidenceExplain(ev.confidence_hint, zh))}">${escapeHtml(approvalEvidenceConfidenceLabel(ev.confidence_hint, zh))}</span>${ev.confidence_hint !== "found" ? `<span class="wh-subtle" data-r9-evidence-confidence-note="${escapeHtml(ev.confidence_hint)}"> ${escapeHtml(ev.confidence_reason ?? approvalEvidenceConfidenceExplain(ev.confidence_hint, zh))}</span>` : ""}` : ""}</li>`)
         .join("")}</ul>`
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.evidenceEmpty"))}</p>`;
 
@@ -2225,13 +2183,16 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
   const dispatchControl = team.dispatch_control
     ? `<a class="wh-btn" href="${escapeHtml(safeHref(team.dispatch_control.href))}" data-method="${escapeHtml(team.dispatch_control.method)}" data-action-id="${escapeHtml(`${team.dispatch_control.kind}_dispatch`)}" data-r9-agent-team-dispatch-control="${escapeHtml(team.dispatch_control.kind)}" title="${escapeHtml(team.dispatch_control.kind === "pause"
       ? (locale === "zh-CN" ? "只停新派发；在跑的子任务会跑完，不会被打断。" : "Stops new dispatches only; running subtasks finish unharmed.")
-      : (locale === "zh-CN" ? "就绪的子任务会立即继续派出。" : "Ready subtasks resume dispatching immediately."))}">${escapeHtml(team.dispatch_control.label)}</a>`
+      : (locale === "zh-CN" ? "就绪的子任务会立即继续派出。" : "Ready subtasks resume dispatching immediately."))}">${escapeHtml(team.dispatch_control.label)}</a><span class="wh-subtle" data-r9-agent-team-dispatch-hint="true">${escapeHtml(team.dispatch_control.kind === "pause"
+      ? (locale === "zh-CN" ? "只停新派发，在跑的会跑完" : "Stops new dispatches; running ones finish")
+      : (locale === "zh-CN" ? "就绪子任务立即继续" : "Ready subtasks resume"))}</span>`
     : "";
   return `<section class="wh-card wh-r4-route-card" data-r9-agent-team-panel="true" data-r9-agent-team-plan-id="${escapeHtml(team.plan_id)}" data-r9-agent-team-status="${escapeHtml(team.status)}">
     <div class="wh-r4-route-card-head">
-      <h3 title="${escapeHtml(locale === "zh-CN" ? "角色：调研=找依据 · 产出=写东西 · 复核=检查 · 整合=拼装收尾" : "Roles: research=gather · produce=write · review=check · integrate=assemble")}">${escapeHtml(agentTeamTitle(team, locale))}</h3>
+      <h3>${escapeHtml(agentTeamTitle(team, locale))}</h3>
       ${dispatchControl}
     </div>
+    <p class="wh-subtle" data-r9-agent-team-role-legend="true">${escapeHtml(locale === "zh-CN" ? "角色：调研=找依据 · 产出=写东西 · 复核=检查 · 整合=拼装收尾" : "Roles: research=gather · produce=write · review=check · integrate=assemble")}</p>
     ${decisionBanner}
     <div class="wh-r4-route-meta">
       <span class="wh-pill" title="${escapeHtml(locale === "zh-CN" ? "本军团全部子运行的成本合计" : "Total cost across this team's child runs")}">${escapeHtml(uiFormatCny(team.cost_used_cny, locale))}</span>
@@ -2351,6 +2312,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
     ? `AI 置信 ${Math.round(vm.confidence.score * 100)}% · ${vm.confidence.verdict === "auto_merge" ? "可自动采纳" : vm.confidence.verdict === "human_spotcheck" ? "建议抽查" : "建议人工把关"}`
     : `AI confidence ${Math.round(vm.confidence.score * 100)}% · ${vm.confidence.verdict === "auto_merge" ? "auto-merge ok" : vm.confidence.verdict === "human_spotcheck" ? "spot-check" : "needs review"}`)}</span>` : ""}
           </div>
+          ${vm.confidence ? `<p class="wh-subtle" data-r9-workitem-confidence-note="true">${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的置信评级与分流结论。" : "AI's confidence grade and routing verdict for the latest output.")}</p>` : ""}
           ${(() => {
     // L25：上下文卡正文别和头部 summary 重复(都源自 raw_description 时)；两者都空也别渲一个空 <p>。
     const body = vm.workitem.planning_note ?? vm.workitem.raw_description ?? "";

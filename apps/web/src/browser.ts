@@ -2033,6 +2033,31 @@ async function boot() {
       }
       void renderCurrentRouteOrOnboard(client, activeLocale).catch((error) => renderFatalRouteError(activeLocale, error));
     });
+    // R9（身份边缘）：tab 切回可见时轻量 me() 探活——另一个 tab 登出/会话过期后，这个 tab
+    // 此前要等 SSE 连错 ~24s 或下一次动作报错才知道掉线。探活失败即回注册屏。
+    let identityProbeBusy = false;
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible" || identityProbeBusy || !currentIdentity) {
+        return;
+      }
+      identityProbeBusy = true;
+      void client.me()
+        .then((me) => {
+          if (!me) {
+            currentIdentity = undefined;
+            showOnboardingScreen(client, activeLocale);
+          }
+        })
+        .catch((error) => {
+          if (error instanceof WorkHubApiError && (error.status === 401 || error.code === "not_identified")) {
+            currentIdentity = undefined;
+            showOnboardingScreen(client, activeLocale);
+          }
+        })
+        .finally(() => {
+          identityProbeBusy = false;
+        });
+    });
     window.addEventListener("beforeunload", (event) => {
       liveRuntime?.closeAllLiveEventSources();
       // R7（中断恢复）：刷新/关标签页时若有未提交输入，触发浏览器原生「离开此页？」确认。
