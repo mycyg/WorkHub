@@ -861,6 +861,13 @@ export const workItemDetailVmSchema = z.object({
     grade: z.string().min(1),
     verdict: z.enum(["auto_merge", "human_spotcheck", "escalate"])
   }).optional(),
+  // R8（留痕）：本工作项上已决策的人工审批——「谁在什么时候批了/驳回了这一步」进详情页时间线。
+  approval_decisions: z.array(z.object({
+    id: idSchema,
+    decision: z.string().min(1),
+    reason_md: z.string().optional(),
+    decided_at: isoDateTimeSchema
+  })).default([]),
   actions: z.object({
     create_proposal_draft: actionSpecSchema.optional()
   }).default({})
@@ -930,7 +937,16 @@ export const approvalCenterVmSchema = z.object({
     has_more: z.boolean()
   }).optional(),
   // 逐 item.id 的详情（预取，左栏点选时客户端就地切换；旧调用方默认空对象）。
-  items_detail: z.record(z.string(), approvalDetailVmSchema).default({})
+  items_detail: z.record(z.string(), approvalDetailVmSchema).default({}),
+  // R8（留痕）：最近已处理——审批一旦决策此前即从所有可达视图消失，无历史回看。
+  decided: z.array(z.object({
+    id: idSchema,
+    title: z.string().min(1),
+    decision: z.string().min(1),
+    decided_by_label: z.string().min(1).optional(),
+    reason_md: z.string().optional(),
+    decided_at: isoDateTimeSchema
+  })).default([])
 });
 export type ApprovalCenterVM = z.infer<typeof approvalCenterVmSchema>;
 

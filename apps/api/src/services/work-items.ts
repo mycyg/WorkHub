@@ -1503,6 +1503,12 @@ function buildWorkItemDetail(
     ...(rows.latestConfidence && (rows.latestConfidence.verdict === "auto_merge" || rows.latestConfidence.verdict === "human_spotcheck" || rows.latestConfidence.verdict === "escalate")
       ? { confidence: { score: rows.latestConfidence.confidenceScore, grade: rows.latestConfidence.grade, verdict: rows.latestConfidence.verdict } }
       : {}),
+    approval_decisions: (rows.approvalDecisions ?? []).map((decision) => ({
+      id: decision.id,
+      decision: decision.status,
+      ...(decision.decisionReasonMd ? { reason_md: decision.decisionReasonMd.slice(0, 300) } : {}),
+      decided_at: decision.updatedAt.toISOString()
+    })),
     actions: {
       ...(createProposalAction ? { create_proposal_draft: createProposalAction } : {})
     }

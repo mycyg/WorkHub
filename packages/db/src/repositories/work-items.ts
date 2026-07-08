@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 
 import { allowedWorkItemTransitions, sessionFinalizeFromStatuses } from "@workhub/contracts";
 import type { EvidenceRef, WorkItemMode, WorkItemStatus } from "@workhub/contracts";
@@ -15,6 +15,7 @@ import type { WorkHubDb } from "../client.js";
 import type { TaskPlanWithItems } from "./task-plans.js";
 import {
   acceptedDeliverableChanges,
+  approvalRequests,
   agentRuns,
   agentSteps,
   auditLogs,
@@ -229,6 +230,8 @@ export type StoredWorkItemDetailRows = {
   meetingSourceInsight: WorkItemMeetingSourceInsightRow | null;
   // R6（信任）：最近一次置信评级（workItem.latestConfidenceId 指向的记录），详情页渲染置信 pill 用。
   latestConfidence?: { confidenceScore: number; grade: "low" | "medium" | "high"; verdict: string } | null;
+  // R8（留痕）：本工作项上已决策的审批（谁批的/结论/理由/时间），详情页时间线用。
+  approvalDecisions?: Array<{ id: string; status: string; decisionReasonMd: string | null; decidedByUserId: string | null; updatedAt: Date }>;
 };
 
 export type WorkItemKnowledgeSearchInput = {
@@ -1153,6 +1156,19 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         };
       }
 
+      const approvalDecisionRows = await db
+        .select({
+          id: approvalRequests.id,
+          status: approvalRequests.status,
+          decisionReasonMd: approvalRequests.decisionReasonMd,
+          decidedByUserId: approvalRequests.decidedByUserId,
+          updatedAt: approvalRequests.updatedAt
+        })
+        .from(approvalRequests)
+        .where(and(eq(approvalRequests.workItemId, workItemId), ne(approvalRequests.status, "pending")))
+        .orderBy(desc(approvalRequests.updatedAt))
+        .limit(5);
+
       const latestConfidenceRows = row.workItem.latestConfidenceId
         ? await db
             .select({
@@ -1181,7 +1197,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         taskPlan,
         driveSourceComment: driveSourceCommentWithPath,
         meetingSourceInsight: meetingSourceInsights[0] ?? null,
-        latestConfidence: latestConfidenceRows[0] ?? null
+        latestConfidence: latestConfidenceRows[0] ?? null,
+        approvalDecisions: approvalDecisionRows
       };
     },
 

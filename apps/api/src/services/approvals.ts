@@ -910,13 +910,30 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       // approvalCenterVmSchema.counts = record<string, number>），=1 时前端应把 pending_total 理解为「扫描范围
       // 内的可见下限」而非组织真实总数——不新增 page_info 字段是因为该 schema 已固定 {limit,returned,has_more}，
       // 本次改动范围不含 packages/contracts。
+      // R8（留痕 high）：审批一旦决策此前即从所有可达视图永久消失——补「最近已处理」区（我批的或路由给我且已决的）。
+      // 尽力而为：失败给空数组不翻整页。
+      let decidedRows: Awaited<ReturnType<typeof deps.approvals.listDecidedForUser>> = [];
+      try {
+        decidedRows = await deps.approvals.listDecidedForUser(user.id, { limit: 20 });
+      } catch (error) {
+        getDefaultStructuredLogger().warn("approvals_decided_list_failed", { error });
+      }
+      const decided = decidedRows.map((row) => ({
+        id: row.id,
+        title: toApprovalAttentionItem(toRecord(row)).title,
+        decision: row.status,
+        ...(row.decidedByUserId ? { decided_by_label: row.decidedByUserId === user.id ? "我" : row.decidedByUserId.slice(0, 8) } : {}),
+        ...(row.decisionReasonMd ? { reason_md: row.decisionReasonMd.slice(0, 300) } : {}),
+        decided_at: row.updatedAt.toISOString()
+      }));
       return parseOutputContract(approvalCenterVmSchema, {
         items: rows.map((row) => toApprovalAttentionItem(toRecord(row), itemOptions)),
         requests: rows.map(toApprovalRequestResponse),
         filters: { pending: true },
         counts: { pending: rows.length, pending_total: totalPending, pending_total_capped: totalPendingCapped ? 1 : 0 },
         page_info: { limit: page.limit, offset: page.offset, returned: rows.length, has_more: hasMore },
-        items_detail: Object.fromEntries(detailEntries) as ApprovalCenterVM["items_detail"]
+        items_detail: Object.fromEntries(detailEntries) as ApprovalCenterVM["items_detail"],
+        decided
       }, "approval-center.page") satisfies ApprovalCenterVM;
     },
 

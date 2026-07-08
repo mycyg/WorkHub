@@ -224,6 +224,7 @@ function detail(status = "spec_ready"): WorkItemDetailVM {
     agent_trace_preview: [],
     accepted_deliverables: [],
     evidence_refs: [],
+    approval_decisions: [],
     actions: {}
   };
 }

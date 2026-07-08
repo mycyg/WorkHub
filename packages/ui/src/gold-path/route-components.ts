@@ -1690,6 +1690,16 @@ function formatApprovalTimestamp(iso: string | undefined): string {
   return match ? `${match[1]} ${match[2]}` : iso;
 }
 
+// R8（留痕）：已处理审批的决策词映射。
+function approvalDecisionLabel(decision: string, zh: boolean): string {
+  return localizedEnumLabel(
+    decision,
+    zh,
+    { approved: "已通过", allowed: "已通过", rejected: "已打回", denied: "已打回", expired: "已过期", decided: "已处理", delegated: "已转交" },
+    { approved: "Approved", allowed: "Approved", rejected: "Sent back", denied: "Sent back", expired: "Expired", decided: "Decided", delegated: "Delegated" }
+  );
+}
+
 function approvalStepStatusLabel(status: string, zh: boolean): string {
   return localizedEnumLabel(
     status,
@@ -1892,6 +1902,13 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       <div class="wh-r4-route-grid wh-r4-approvals-grid">
         <section class="wh-r4-route-stack wh-r4-approval-list" data-r4-approval-queue="true">
           ${queueRows || `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(goldPathT(locale, "approvals.reasonFallback"))}</p></article>`}
+          ${(vm.decided ?? []).length ? `<details class="wh-card wh-r4-route-card" data-r9-approval-decided="${escapeHtml(String((vm.decided ?? []).length))}">
+            <summary class="wh-subtle">${escapeHtml(locale === "zh-CN" ? `最近已处理（${(vm.decided ?? []).length}）` : `Recently decided (${(vm.decided ?? []).length})`)}</summary>
+            ${(vm.decided ?? []).slice(0, 10).map((entry) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-approval-decided-item="${escapeHtml(entry.id)}">
+              <strong>${escapeHtml(entry.title)}</strong>
+              <p class="wh-subtle">${escapeHtml(`${approvalDecisionLabel(entry.decision, locale === "zh-CN")} · ${formatApprovalTimestamp(entry.decided_at)}`)}${entry.reason_md ? `<br/>${escapeHtml(entry.reason_md)}` : ""}</p>
+            </div>`).join("")}
+          </details>` : ""}
         </section>
         <section class="wh-r4-route-stack wh-r4-approval-detail" data-r4-approval-detail="true">
           ${detailPanels}
@@ -2340,6 +2357,10 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
     return body && stripMarkdown(body) !== summary ? `<p>${escapeHtml(body)}</p>` : "";
   })()}
           ${renderWorkItemSourceContext(vm, locale)}
+          ${(vm.approval_decisions ?? []).length ? `<div data-r9-workitem-approval-decisions="${escapeHtml(String((vm.approval_decisions ?? []).length))}">
+            <p class="wh-subtle"><strong>${escapeHtml(locale === "zh-CN" ? "审批记录" : "Approval history")}</strong></p>
+            ${(vm.approval_decisions ?? []).map((decision) => `<p class="wh-subtle" data-r9-workitem-approval-decision="${escapeHtml(decision.id)}">${escapeHtml(`${approvalDecisionLabel(decision.decision, locale === "zh-CN")} · ${formatApprovalTimestamp(decision.decided_at)}`)}${decision.reason_md ? escapeHtml(` · ${decision.reason_md.slice(0, 120)}`) : ""}</p>`).join("")}
+          </div>` : ""}
           ${actions.length
     ? renderActions(actions)
     : `<p class="wh-subtle" data-r4-workitem-action-hint="${escapeHtml(vm.workitem.status)}">${escapeHtml(workItemActionHint(vm.workitem.status, locale === "zh-CN"))}</p>`}

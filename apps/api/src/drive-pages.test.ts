@@ -262,6 +262,7 @@ function workItemDetail(partial: Partial<WorkItemDetailVM> = {}): WorkItemDetail
       status: "draft_created",
       created_at: now.toISOString()
     },
+    approval_decisions: [],
     actions: {
       create_proposal_draft: {
         id: "drive_draft_to_proposal",

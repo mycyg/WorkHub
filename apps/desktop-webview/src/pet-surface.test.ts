@@ -552,6 +552,7 @@ function createPetHarnessClient(calls: unknown[], run: AgentRunLiveVM = petHarne
         agent_trace_preview: [],
         accepted_deliverables: [],
         evidence_refs: [],
+        approval_decisions: [],
         actions: {}
       } as WorkItemDetailVM;
     },

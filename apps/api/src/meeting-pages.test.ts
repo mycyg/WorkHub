@@ -365,6 +365,7 @@ function minimalWorkItemDetail(): WorkItemDetailVM {
       proposal_href: `/proposals/${proposalId}`,
       proposal_status: "opened"
     },
+    approval_decisions: [],
     actions: {}
   };
 }
