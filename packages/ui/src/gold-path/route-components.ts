@@ -2186,7 +2186,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
     : "";
   return `<section class="wh-card wh-r4-route-card" data-r9-agent-team-panel="true" data-r9-agent-team-plan-id="${escapeHtml(team.plan_id)}" data-r9-agent-team-status="${escapeHtml(team.status)}">
     <div class="wh-r4-route-card-head">
-      <h3>${escapeHtml(agentTeamTitle(team, locale))}</h3>
+      <h3 title="${escapeHtml(locale === "zh-CN" ? "角色：调研=找依据 · 产出=写东西 · 复核=检查 · 整合=拼装收尾" : "Roles: research=gather · produce=write · review=check · integrate=assemble")}">${escapeHtml(agentTeamTitle(team, locale))}</h3>
       ${dispatchControl}
     </div>
     ${decisionBanner}
@@ -2633,7 +2633,13 @@ function renderDriveRouteComponent(
   const requestedMissingNotice = vm.requested_item_missing
     ? `<p class="wh-subtle" data-r9-drive-requested-missing="true">${escapeHtml(routeT(locale, "drive.requestedMissing"))}</p>`
     : "";
-  const deleteTargetId = vm.actions.delete_item ? driveItemMutationIdFromHref(vm.actions.delete_item.href) : undefined;
+  // 普通用户审查 R2：删除按钮的目标曾是服务端挑的「最近手动文件」，与用户当前选中的无关——
+  // 选中了可删（手动上传）文件时，删除目标改为选中项；否则维持服务端目标（按钮文案始终带名）。
+  const serverDeleteTargetId = vm.actions.delete_item ? driveItemMutationIdFromHref(vm.actions.delete_item.href) : undefined;
+  const selectedDeletable = selectedActiveItem?.kind === "file" && selectedActiveItem.delete_href
+    ? selectedActiveItem
+    : undefined;
+  const deleteTargetId = selectedDeletable?.id ?? serverDeleteTargetId;
   const deleteTarget = deleteTargetId ? vm.items.find((item) => item.id === deleteTargetId) : undefined;
   const deletePayload = {
     expected_current_version_id: deleteTarget?.current_version_id ?? null
@@ -2655,7 +2661,7 @@ function renderDriveRouteComponent(
     : "";
   const driveManageActions = [
     vm.actions.upload_file ? `<span class="wh-drive-upload-control" data-drive-upload-control="true"><label class="wh-btn wh-btn-primary wh-drive-upload-label"><span>${escapeHtml(routeT(locale, "drive.upload"))}</span><input class="wh-drive-upload-input" type="file" data-drive-upload-picker="true" data-action-id="drive_upload_file" data-method="POST" data-action-href="${escapeHtml(safeHref(vm.actions.upload_file.href))}" /></label>${uploadParentSelect}</span>` : "",
-    vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(vm.actions.delete_item.href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-r5-drive-delete-name="${escapeHtml(deleteTarget?.name ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(deleteLabel)}</a>` : ""
+    vm.actions.delete_item ? `<a class="wh-btn" href="${escapeHtml(safeHref(selectedDeletable?.delete_href ?? vm.actions.delete_item.href))}" data-action-id="drive_delete_item" data-method="POST" data-r5-drive-delete-target="${escapeHtml(deleteTargetId ?? "")}" data-r5-drive-delete-name="${escapeHtml(deleteTarget?.name ?? "")}" data-request-json="${jsonAttr(deletePayload)}">${escapeHtml(deleteLabel)}</a>` : ""
   ].filter(Boolean).join("");
   const fileRows = vm.items.length
     ? vm.items.map((item) => {
@@ -2812,7 +2818,7 @@ function renderDriveRouteComponent(
           ${requestedMissingNotice}
           ${driveManageActions ? `<div class="wh-r4-route-actions" data-r5-drive-manage-actions="true">${driveManageActions}</div>` : ""}
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.file_count))}</span>
+        <span class="wh-r4-route-count" title="${escapeHtml(locale === "zh-CN" ? "文件总数" : "Total files")}">${escapeHtml(`${vm.summary.file_count} ${locale === "zh-CN" ? "个文件" : "files"}`)}</span>
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-drive-files="true" data-r4-drive-folder-count="${escapeHtml(String(driveFolderCount))}" data-r4-drive-listed-file-count="${escapeHtml(String(driveListedFileCount))}">
@@ -2890,7 +2896,9 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
       </div>
       <span class="wh-pill">${escapeHtml(meetingRecordStatusLabel(meeting.status, locale))}</span>
     </a>`).join("")
-    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "meeting.empty"))}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(selectedMeeting
+      ? (locale === "zh-CN" ? "这场会议还没有洞察。" : "No insights from this meeting yet.")
+      : routeT(locale, "meeting.empty"))}</p>`;
   const transcript = selectedMeeting?.transcript_text?.trim() || meetingContentFallback("transcript", selectedMeeting?.status, locale);
   const minutes = selectedMeeting?.minutes_md?.trim() || meetingContentFallback("minutes", selectedMeeting?.status, locale);
   const insightRows = selectedMeeting?.insights.length
@@ -2951,7 +2959,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
           <h1>${escapeHtml(projectTitle)}</h1>
           <p>${escapeHtml(selectedMeeting?.title ?? routeT(locale, "meeting.empty"))}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.pending_insight_count))}</span>
+        <span class="wh-r4-route-count" title="${escapeHtml(locale === "zh-CN" ? "待确认洞察" : "Insights pending review")}">${escapeHtml(`${vm.summary.pending_insight_count} ${locale === "zh-CN" ? "条待确认" : "pending"}`)}</span>
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r5-meeting-list="true">
