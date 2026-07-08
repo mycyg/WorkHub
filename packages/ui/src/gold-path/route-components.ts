@@ -3806,6 +3806,14 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       ? `按花费只显示前 8 个军团（共 ${vm.by_task_plan.length} 个）。`
       : `Showing the 8 costliest teams of ${vm.by_task_plan.length}.`)}</p>`
     : "";
+  // R3：非管理员的分组维度（按人/按军团/按目标）不可见时说明白，而不是当它不存在。
+  const nonAdminNote = vm.viewer_is_admin === false
+    ? `<section class="wh-card wh-r4-route-card" data-r9-cost-non-admin-note="true">
+        <p class="wh-subtle">${escapeHtml(zhNotice
+          ? "按人 / 按军团 / 按目标的全组织分组仅管理员可见——这里只显示你自己的用量与预算。"
+          : "Org-wide breakdowns (by person / team / objective) are admin-only — this page shows your own usage and budgets.")}</p>
+      </section>`
+    : "";
   const armyCard = vm.by_task_plan.length
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-army="true" data-r9-cost-army-count="${escapeHtml(String(vm.by_task_plan.length))}">
           <h3>${escapeHtml(zhNotice ? "军团花费" : "Agent team spend")}</h3>
@@ -3922,6 +3930,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         </section>
       </div>
       ${armyCard || laborSplitCard ? `<div class="wh-r4-route-grid">${armyCard}${laborSplitCard}</div>` : ""}
+      ${nonAdminNote}
       ${byUserCard || byObjectiveCard ? `<div class="wh-r4-route-grid">${byUserCard}${byObjectiveCard}</div>` : ""}
     </section>`
   });

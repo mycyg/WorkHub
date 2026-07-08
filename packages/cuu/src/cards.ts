@@ -1338,6 +1338,31 @@ export function cardFromEvent(event: WorkHubEvent<unknown>, options: CuuLocaleOp
     return cardFromAgentRunEvent(event, options);
   }
 
+  // R3 回归（R9-OQ-CUU-DONE 半成品）：notification.created 事件此前只能变成「WorkHub update」
+  // 泛卡——通知自己的标题/正文/落点全丢，「军团收工！」冒不出来。带真实通知内容出卡。
+  if (event.type === "notification.created" && event.data && typeof event.data === "object") {
+    const data = event.data as { title?: unknown; body?: unknown; target_url?: unknown; type?: unknown };
+    if (typeof data.title === "string" && data.title) {
+      const celebratory = /收工|wrapped up|完成/u.test(data.title);
+      return withMotion({
+        id: event.event_id,
+        kind: "bubble",
+        state: celebratory ? "celebrating" : toCuuState(event),
+        title: data.title,
+        message: truncate(typeof data.body === "string" && data.body ? data.body : data.title),
+        priority: "normal",
+        actions: typeof data.target_url === "string" && data.target_url
+          ? [{ id: "open_notification_target", label: celebratory ? (options.locale === "en-US" ? "Review it" : "去验收") : (options.locale === "en-US" ? "Open" : "去看看"), tone: "primary" as const, method: "GET" as const, href: data.target_url }]
+          : [],
+        payload_ref: { entity_type: "event", entity_id: event.event_id },
+        source: optionalSource({
+          entity_type: "event",
+          entity_id: event.event_id,
+          ...(event.work_item_id ? { work_item_id: event.work_item_id } : {})
+        })
+      });
+    }
+  }
   const attention = event.attention ? event.attention : toAttentionItem(event);
   if (attention) {
     if (options.locale === "en-US" && isDefaultAttentionFallback(attention)) {

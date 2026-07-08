@@ -998,6 +998,8 @@ export const costDashboardVmSchema = z.object({
     cost_cny: z.string(),
     turns: z.number().int().nonnegative()
   })),
+  // R3（协作）：非管理员看不到分组卡且无说明——加 viewer_is_admin 让前端诚实解释。
+  viewer_is_admin: z.boolean().optional(),
   by_task_plan: z.array(z.object({
     task_plan_id: idSchema,
     label: z.string().min(1).optional(),

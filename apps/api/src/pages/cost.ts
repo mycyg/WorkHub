@@ -181,6 +181,7 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
       turns: item.turns
     })) : [],
     // B-R9.6 UX-H4：按花费降序（截断时留下的是最烧钱的）+ 合入名称/状态/燃烧数据。
+    viewer_is_admin: input.isAdmin,
     by_task_plan: input.isAdmin ? [...byTaskPlan].sort((a, b) => b.cost - a.cost).map((item) => {
       const meta = input.taskPlanMeta?.get(item.id);
       const burnPct = meta?.maxCostCny && meta.maxCostCny > 0

@@ -461,6 +461,10 @@ function mountConflictCardsInline(shellRoot: HTMLElement, html: string): boolean
   }
   const mount = document.createElement("div");
   mount.setAttribute("data-r9-inline-conflicts", "true");
+  // 冲突卡原设计给 420px toast——内联进页面时钉住宽度约束，防窄屏横向溢出。
+  mount.style.maxWidth = "100%";
+  mount.style.minWidth = "0";
+  mount.style.overflowX = "auto";
   mount.innerHTML = html;
   shellRoot.querySelector("[data-r9-inline-conflicts]")?.remove();
   host.insertAdjacentElement("afterend", mount);
@@ -606,6 +610,19 @@ function bindGoldPathNavigation(
     }
 
     // W2：相关讨论——发表评论（乐观追加，再回填服务端结果）。
+    // R3 移动导航折叠：窄屏默认只显前 7 项 +「更多」，点击展开/收起（display:none 方案不触发溢出门）。
+    const navMore = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-nav-more]") : null;
+    if (navMore) {
+      event.preventDefault();
+      const navHost = navMore.closest<HTMLElement>(".wh-product-nav");
+      const expanded = navHost?.getAttribute("data-nav-expanded") === "true";
+      navHost?.setAttribute("data-nav-expanded", expanded ? "false" : "true");
+      navMore.setAttribute("aria-expanded", expanded ? "false" : "true");
+      navMore.textContent = expanded
+        ? (locale === "en-US" ? "More" : "更多")
+        : (locale === "en-US" ? "Less" : "收起");
+      return;
+    }
     // UX-U3：网盘评论 composer 提交——发评论后整页重渲（评论出现在列表并带「生成草稿」入口）。
     const driveCommentSubmit = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-r9-drive-comment-submit]") : null;
     if (driveCommentSubmit) {
@@ -1271,6 +1288,10 @@ function bindGoldPathNavigation(
           showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "approve"));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "approve"));
+          // R3（协作）：撞上别人已决策的 409 时按钮不该原地装死——重渲反映最新状态。
+          if (error instanceof WorkHubApiError && error.status === 409) {
+            await renderCurrentRoute(client, locale);
+          }
         }
         return;
       }

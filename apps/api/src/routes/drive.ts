@@ -145,7 +145,7 @@ async function readStoredDriveFile(storagePath: string, encoding?: BufferEncodin
       && "code" in error
       && (error as { code?: unknown }).code === "ENOENT"
     ) {
-      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。", "drive_file_missing");
+      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。(The file no longer exists — re-upload or check history.)", "drive_file_missing");
     }
     throw error;
   }
@@ -159,15 +159,15 @@ function sha256Buffer(bytes: Buffer) {
 
 function parsedTextFallback(file: DriveRouteFile, encoding?: BufferEncoding, options: { requireComplete?: boolean } = {}) {
   if (file.parsedText === undefined) {
-    throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。", "drive_file_missing");
+    throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。(The file no longer exists — re-upload or check history.)", "drive_file_missing");
   }
   const bytes = Buffer.from(file.parsedText, "utf8");
   if (options.requireComplete) {
     if (bytes.byteLength !== file.sizeBytes) {
-      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。", "drive_file_missing");
+      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。(The file no longer exists — re-upload or check history.)", "drive_file_missing");
     }
     if (file.sha256 && sha256Buffer(bytes) !== file.sha256) {
-      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。", "drive_file_missing");
+      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。(The file no longer exists — re-upload or check history.)", "drive_file_missing");
     }
   }
   return encoding ? file.parsedText : bytes;
@@ -270,7 +270,7 @@ async function readUploadBody(
     const filename = displayFilename(formString(form.get("filename")) || file.name || "upload.bin");
     const mime = formString(form.get("mime")) || file.type || "application/octet-stream";
     if (file.size > driveUploadMaxBytes) {
-      throw new DrivePageServiceError(413, `网盘文件不能超过 ${driveUploadMaxBytes / 1024 / 1024} MiB。`, "drive_file_too_large");
+      throw new DrivePageServiceError(413, `网盘文件不能超过 ${driveUploadMaxBytes / 1024 / 1024} MiB。(File exceeds the ${driveUploadMaxBytes / 1024 / 1024} MiB limit.)`, "drive_file_too_large");
     }
     const bytes = Buffer.from(await file.arrayBuffer());
     const parsedText = formString(form.get("parsed_text")) || parsedTextFromBytes(bytes, filename, mime);
