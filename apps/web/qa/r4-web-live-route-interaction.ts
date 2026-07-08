@@ -3044,7 +3044,7 @@ function auditExpression() {
         : routeComponentKey === "workitem"
         ? Boolean(document.querySelector("[data-r4-workitem-context]") && document.querySelector("[data-r4-workitem-trace]") && document.querySelector("[data-r4-workitem-evidence]"))
         : routeComponentKey === "proposal"
-          ? Boolean(document.querySelector("[data-r4-proposal-summary]") && document.querySelector("[data-r4-proposal-changes]") && (document.querySelector("[data-action-id='request_changes'][data-method='POST'][data-requires-reason='true']") || document.querySelector("[data-action-id='merge'][data-method='POST']")))
+          ? Boolean(document.querySelector("[data-r4-proposal-summary]") && document.querySelector("[data-r4-proposal-changes]") && (document.querySelector("[data-action-id='request_changes'][data-method='POST'][data-requires-reason='true']") || document.querySelector("[data-action-id='merge'][data-method='POST']") || document.querySelector("[data-action-id='open_workitem']")))
           : routeComponentKey === "cost"
             ? Boolean(document.querySelector("[data-r4-cost-metrics]") && document.querySelector("[data-r4-cost-budget]") && document.querySelector("[data-r4-cost-models]"))
             : routeComponentKey === "intake"

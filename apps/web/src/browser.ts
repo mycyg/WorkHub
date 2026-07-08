@@ -121,6 +121,9 @@ function escalationResolvePayloadFromActionId(actionId: string | undefined) {
   return undefined;
 }
 const noticeTimerState: RouteNoticeTimerState = {};
+// 普通用户审查 R2：开始新任务/生成任务计划是十几秒的 LLM 动作——点击后要 pending 提示+
+// in-flight 锁，否则连点会造出重复工作项/计划。
+let llmActionBusy = false;
 let readyRouteBindings: AbortController | undefined;
 let liveDirtyGuardCount = 0;
 let liveRuntime: ReturnType<typeof createWebLiveRuntime> | undefined;
@@ -794,6 +797,11 @@ function bindGoldPathNavigation(
           showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, actionId));
           return;
         }
+        if (llmActionBusy) {
+          return;
+        }
+        llmActionBusy = true;
+        showRouteNotice(shellRoot, actionPendingNotice(locale, actionId), undefined, 0);
         if (existingProjectId) {
           try {
             const session = await client.createSession({
@@ -807,11 +815,14 @@ function bindGoldPathNavigation(
             }
           } catch (error) {
             showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+          } finally {
+            llmActionBusy = false;
           }
           return;
         }
         const payload = actionElementJsonPayload<Parameters<BrowserApiClient["bootstrapProject"]>[0]>(actionTarget);
         if (!payload.ok) {
+          llmActionBusy = false;
           showPayloadFailureNotice(shellRoot, locale, payload, actionId);
           return;
         }
@@ -830,6 +841,8 @@ function bindGoldPathNavigation(
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        } finally {
+          llmActionBusy = false;
         }
         return;
       }
@@ -870,6 +883,11 @@ function bindGoldPathNavigation(
       }
       const createTaskPlan = createTaskPlanActionFromHref(href);
       if (createTaskPlan) {
+        if (llmActionBusy) {
+          return;
+        }
+        llmActionBusy = true;
+        showRouteNotice(shellRoot, actionPendingNotice(locale, actionId), undefined, 0);
         try {
           const result = await client.createTaskPlan(createTaskPlan.workItemId, {}, { locale });
           await navigateWebRoute(result.proposal_href || `/workitems/${createTaskPlan.workItemId}`, client, locale);
@@ -878,6 +896,8 @@ function bindGoldPathNavigation(
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "create_task_plan"));
+        } finally {
+          llmActionBusy = false;
         }
         return;
       }
@@ -1261,6 +1281,20 @@ function bindGoldPathNavigation(
           // 会破 dirty-edit/SSE 守卫与重复 loader 门（M12），保持原地回执。
           if (!shellRoot.querySelector('[data-r4-proposal-summary="true"]')) {
             await renderCurrentRoute(client, locale);
+          } else {
+            // 普通用户审查 R2：采纳后按钮还亮着（再点报错 409）且无去看进展的入口——
+            // 原地把动作行换成「去看进展」链接。
+            const mergedWorkItemId = shellRoot
+              .querySelector<HTMLElement>("[data-r4-proposal-workitem-id]")
+              ?.getAttribute("data-r4-proposal-workitem-id");
+            if (mergedWorkItemId) {
+              swapProposalActionRow(shellRoot, {
+                id: "open_workitem",
+                label: locale === "en-US" ? "See progress" : "去看进展",
+                method: "GET",
+                href: `/workitems/${encodeURIComponent(mergedWorkItemId)}`
+              });
+            }
           }
           showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
