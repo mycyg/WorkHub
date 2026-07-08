@@ -796,6 +796,7 @@ function workItemsWithAcceptedDeliverables(deliverables: AcceptedDeliverableVM[]
         agent_trace_preview: [],
         accepted_deliverables: deliverables,
         evidence_refs: [],
+        approval_decisions: [],
         actions: {}
       };
     },

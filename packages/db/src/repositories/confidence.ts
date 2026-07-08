@@ -289,6 +289,16 @@ export function createAiDecisionRepository(db: WorkHubDb): AiDecisionRepository 
       if (!record) {
         throw new Error("Failed to create confidence record");
       }
+      // R8 回归修复：work_items.latest_confidence_id 此前全库没有任何写入路径——详情页置信 pill
+      // 的读侧接好了但数据恒 NULL。新纪录落库即写回工作项（与 insert 同库连接，尽力而为不翻主流程）。
+      try {
+        await db
+          .update(workItems)
+          .set({ latestConfidenceId: record.id, updatedAt: new Date() })
+          .where(eq(workItems.id, input.workItemId));
+      } catch {
+        // 写回失败不翻置信记录本身——下一条记录会再尝试。
+      }
       return record;
     },
 

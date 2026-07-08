@@ -1223,7 +1223,11 @@ export function createInMemoryAgentRunQueue(options: {
       // R7（跨页一致）：run 生命周期事件此前只发 topics.run——工作项详情页/项目页的军团进度
       // n/m 订的是 workitem 流，纯执行推进永远刷不新。关键节点（started/failed/escalated/succeeded
       // 类终态）双发 workitem 流；逐 step 噪声不双发，避免高频整页刷新。
-      if (run.work_item_id && /(?:started|succeeded|failed|escalated|settled|completed)/u.test(event.type)) {
+      // R8 回归修复：成功终态的事件 type 是 agent_run.step（kind:'done' 只在 payload 里）——
+      // 之前只查 type 的正则永远匹配不上「成功」这个最常见终态，工作项页军团进度照旧不刷新。
+      const isRunLifecycleKeyEvent = /(?:started|failed|escalated)/u.test(event.type)
+        || (event.type === "agent_run.step" && (event.data as Record<string, unknown> | undefined)?.["kind"] === "done");
+      if (run.work_item_id && isRunLifecycleKeyEvent) {
         const workItemTopic = topics.workitem(run.work_item_id).topic;
         await eventBus.publish(workItemTopic, event.type, { ...envelope, topic: workItemTopic });
       }
