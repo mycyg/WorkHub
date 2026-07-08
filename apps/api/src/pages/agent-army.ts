@@ -176,8 +176,8 @@ function blockerLabel(title: string, ageSeconds: number, locale: WorkHubLocale) 
     : `卡在: ${title} · ${age}`;
 }
 
-function reasonPreview(reasonMd: string) {
-  return reasonMd.replace(/\s+/gu, " ").trim().slice(0, 160) || "等你决定。";
+function reasonPreview(reasonMd: string, locale: WorkHubLocale = "zh-CN") {
+  return reasonMd.replace(/\s+/gu, " ").trim().slice(0, 160) || (locale === "en-US" ? "Needs your decision." : "等你决定。");
 }
 
 export function buildAgentArmyDashboardPage(input: AgentArmyDashboardPageInput): AgentArmyDashboardVM {
@@ -300,7 +300,7 @@ export function buildAgentArmyDashboardPage(input: AgentArmyDashboardPageInput):
       ...(escalation.planId ? { plan_id: escalation.planId } : {}),
       work_item_id: escalation.workItemId,
       title: locale === "en-US" ? `${titleBase} needs review` : `${titleBase}需要人判断`,
-      reason_preview: reasonPreview(escalation.reasonMd),
+      reason_preview: reasonPreview(escalation.reasonMd, locale),
       created_at: escalation.createdAt.toISOString(),
       href: "/attention"
     };

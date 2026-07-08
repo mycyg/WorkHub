@@ -167,6 +167,9 @@ export const webRouteComponentCss = [
   // UX-M12（规格 §3.6 移动端）：KPI 行窄屏保持 2×2，不塌单列。
   "[data-r9-agent-dashboard-kpis=true]{grid-template-columns:repeat(4,minmax(0,1fr))}",
   "@media (max-width:860px){[data-r9-agent-dashboard-kpis=true]{grid-template-columns:repeat(2,minmax(0,1fr))}}",
+  // R3 移动端：军团子任务行的 pill 群在窄屏收紧字号+间距；可点的 pill（链接）加下划线与按钮描边区分。
+  "@media (max-width:640px){[data-r9-agent-team-item] .wh-r4-route-meta{gap:4px}[data-r9-agent-team-item] .wh-pill{font-size:11px;padding:4px 7px}}",
+  "[data-r9-agent-team-item] a.wh-pill{text-decoration:underline;border:1px solid var(--wh-product-line,#dce4f1)}",
   ".wh-r4-route-meter{height:8px;border-radius:999px;background:#e7edf7;overflow:hidden}.wh-r4-route-meter span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--wh-product-green,#24a66a),var(--wh-product-amber,#d98b16));max-width:100%}",
   // B-R9.6 UX 审计（视觉语义假接线）：燃烧条 tone / 军团状态点 / 审批黄条的 data hook 早就渲出，
   // 但全库无 CSS 消费——五种点一个样、超限不变红。补齐消费端规则（规格 §3.1 状态点色板+呼吸动画）。
@@ -2133,7 +2136,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
           ? `<a class="wh-pill" href="${escapeHtml(safeHref(item.action.href))}" data-r9-agent-team-action="${escapeHtml(item.action.kind)}">${escapeHtml(item.action.label)}</a>`
           : "";
         const cost = item.cost_estimate_cny
-          ? `<span class="wh-pill">${escapeHtml(uiFormatCny(item.cost_estimate_cny))}</span>`
+          ? `<span class="wh-pill">${escapeHtml(uiFormatCny(item.cost_estimate_cny, locale))}</span>`
           : "";
         return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-r9-agent-team-status="${escapeHtml(item.status)}" data-r9-agent-team-role="${escapeHtml(item.role)}"${item.waiting_for_seq.length ? ' data-r9-agent-team-waiting="true"' : ""}>
           <div>
@@ -2171,8 +2174,8 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
       const failed = team.items.filter((item) => item.status === "failed").length;
       const skipped = team.items.filter((item) => item.status === "skipped").length;
       const summary = locale === "zh-CN"
-        ? `复盘：成功 ${succeeded} · 失败 ${failed} · 跳过 ${skipped} · 花费 ${uiFormatCny(team.cost_used_cny)}`
-        : `Retro: ${succeeded} succeeded · ${failed} failed · ${skipped} skipped · spent ${uiFormatCny(team.cost_used_cny)}`;
+        ? `复盘：成功 ${succeeded} · 失败 ${failed} · 跳过 ${skipped} · 花费 ${uiFormatCny(team.cost_used_cny, locale)}`
+        : `Retro: ${succeeded} succeeded · ${failed} failed · ${skipped} skipped · spent ${uiFormatCny(team.cost_used_cny, locale)}`;
       return `<p class="wh-subtle" data-r9-agent-team-retro="true">${escapeHtml(summary)}</p>`;
     })()
     : "";
@@ -2189,7 +2192,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
     </div>
     ${decisionBanner}
     <div class="wh-r4-route-meta">
-      <span class="wh-pill" title="${escapeHtml(locale === "zh-CN" ? "本军团全部子运行的成本合计" : "Total cost across this team's child runs")}">${escapeHtml(uiFormatCny(team.cost_used_cny))}</span>
+      <span class="wh-pill" title="${escapeHtml(locale === "zh-CN" ? "本军团全部子运行的成本合计" : "Total cost across this team's child runs")}">${escapeHtml(uiFormatCny(team.cost_used_cny, locale))}</span>
       ${team.cost_budget_cny ? `<span class="wh-pill">${escapeHtml(`${burnPct}%`)}</span>` : ""}
     </div>
     ${team.cost_budget_cny ? `<div class="wh-r4-route-meter" data-r9-agent-team-burn="${escapeHtml(burnTone)}" aria-label="${escapeHtml(`${burnPct}%`)}"><span style="${escapeHtml(burnStyle)}"></span></div>` : ""}
@@ -3131,7 +3134,7 @@ function renderNotificationsRouteComponent(vm: NotificationPageVM, locale: WorkH
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "notifications.kicker"))}</span>
-          <h1>${escapeHtml(routeT(locale, "notifications.kicker"))}</h1>
+          <h1>${escapeHtml(locale === "zh-CN" ? "别错过要紧事" : "Don't miss what matters")}</h1>
           <p>${escapeHtml(`${notificationBucketTitle("needs_decision", locale)} ${vm.summary.needs_decision_count} · ${notificationBucketTitle("fyi", locale)} ${vm.summary.fyi_count} · ${notificationBucketTitle("done", locale)} ${vm.summary.done_count}`)}</p>
         </div>
         <div class="wh-r4-route-actions">${markAll}<span class="wh-r4-route-count">${escapeHtml(String(vm.summary.unread_count))}</span></div>
@@ -3282,7 +3285,7 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "calendar.kicker"))}</span>
-          <h1>${escapeHtml(routeT(locale, "calendar.kicker"))}</h1>
+          <h1>${escapeHtml(locale === "zh-CN" ? "接下来几天的安排" : "What's coming up")}</h1>
           <p>${escapeHtml(`${routeT(locale, "calendar.week")} · ${vm.scope.range_start.slice(0, 10)} - ${vm.scope.range_end.slice(0, 10)}`)}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.block_count))}</span>
@@ -3300,8 +3303,8 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
   });
 }
 
-function costAmount(value: string) {
-  return uiFormatCny(value);
+function costAmount(value: string, locale: WorkHubLocale = "zh-CN") {
+  return uiFormatCny(value, locale);
 }
 
 function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
@@ -3322,7 +3325,7 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
     return `<div class="wh-r4-route-row" data-r4-cost-budget-row="${escapeHtml(String(index))}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="true">
       <div>
         <strong>${escapeHtml(usage.scope_label)}</strong>
-        <p>${escapeHtml(`${usage.total_tokens}/${usage.max_tokens} tokens · ${costAmount(usage.estimated_cost_cny)}/${costAmount(usage.max_cost_cny)}`)}</p>
+        <p>${escapeHtml(`${usage.total_tokens}/${usage.max_tokens} tokens · ${costAmount(usage.estimated_cost_cny, locale)}/${costAmount(usage.max_cost_cny, locale)}`)}</p>
         <div class="wh-r4-route-meter" aria-hidden="true"><span style="width:${escapeHtml(String(Math.min(100, ratio)))}%"></span></div>
       </div>
       <span class="wh-pill">${escapeHtml(budgetStatusLabel(locale, usage.status))}</span>
@@ -3355,7 +3358,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
     { id: "active_team_count", label: routeT(locale, "agents.active"), value: String(vm.kpis.active_team_count) },
     { id: "waiting_decision", label: routeT(locale, "agents.waiting"), value: String(vm.kpis.waiting_decision_count), href: "/" },
     // UX-M11：今日成本口径=当前可见的活跃军团账目，不是全组织今日总账——标签说清楚，不冒充。
-    { id: "today_cost", label: routeT(locale, "agents.todayCost"), value: costAmount(vm.kpis.today_cost_cny), note: locale === "zh-CN" ? "仅含当前可见军团" : "Visible teams only" },
+    { id: "today_cost", label: routeT(locale, "agents.todayCost"), value: costAmount(vm.kpis.today_cost_cny, locale), note: locale === "zh-CN" ? "仅含当前可见军团" : "Visible teams only" },
     // 普通用户审查：「自治率」没人看得懂——注明口径（当日 AI 判官复核通过率，无审阅回退 run 成功率）。
     { id: "autonomy_rate", label: routeT(locale, "agents.autonomy"), value: `${vm.kpis.autonomy_rate_pct}%`, note: locale === "zh-CN" ? "今日 AI 复核通过率" : "Today's AI review pass rate" }
   ].map((item: { id: string; label: string; value: string; href?: string; note?: string }) => {
@@ -3424,7 +3427,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
       <div class="wh-r4-route-meta" data-r9-agent-plan-roles="true">${roles}</div>
       <div class="wh-r4-route-meta" data-r9-agent-plan-statuses="true">${statuses}</div>
       <div class="wh-r4-route-meta">
-        <span class="wh-subtle">${escapeHtml(`${routeT(locale, "agents.cost")}: ${costAmount(plan.cost.used_cny)}${plan.cost.budget_cny ? `/${costAmount(plan.cost.budget_cny)}` : ""} · ${plan.judge.total > 0 ? `${routeT(locale, "agents.judge")}: ${plan.judge.pass_rate_pct}%` : (locale === "zh-CN" ? "暂无复核" : "No reviews yet")}`)}</span>
+        <span class="wh-subtle">${escapeHtml(`${routeT(locale, "agents.cost")}: ${costAmount(plan.cost.used_cny, locale)}${plan.cost.budget_cny ? `/${costAmount(plan.cost.budget_cny, locale)}` : ""} · ${plan.judge.total > 0 ? `${routeT(locale, "agents.judge")}: ${plan.judge.pass_rate_pct}%` : (locale === "zh-CN" ? "暂无复核" : "No reviews yet")}`)}</span>
         ${freshness}
         ${budgetLink}
       </div>
@@ -3464,7 +3467,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "agents.kicker"))}</span>
-          <h1>${escapeHtml(routeT(locale, "agents.title"))}</h1>
+          <h1>${escapeHtml(locale === "zh-CN" ? "军团正在为你干活" : "Your agent teams at work")}</h1>
           <p>${escapeHtml(routeT(locale, "agents.summary"))}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.kpis.active_team_count))}</span>
@@ -3722,7 +3725,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     ? vm.top_exhaustion_risks.map((risk) => `<div class="wh-r4-route-row" data-r4-cost-risk="${escapeHtml(risk.label)}" data-r4-cost-risk-status="${escapeHtml(risk.status)}">
       <div>
         <strong>${escapeHtml(risk.label)}</strong>
-        <p>${escapeHtml(`${routeT(locale, "cost.remaining")}: ${costAmount(risk.remaining_cost_cny)}`)}</p>
+        <p>${escapeHtml(`${routeT(locale, "cost.remaining")}: ${costAmount(risk.remaining_cost_cny, locale)}`)}</p>
       </div>
       <span class="wh-pill">${escapeHtml(budgetStatusLabel(locale, risk.status))}</span>
     </div>`).join("")
@@ -3760,7 +3763,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         <strong>${escapeHtml(item.model)}</strong>
         <p>${escapeHtml(`${item.provider} · ${item.count} ${locale === "zh-CN" ? "次调用" : item.count === 1 ? "call" : "calls"}`)}</p>
       </div>
-      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
+      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
     </div>`)
     .join("");
   // B-R9.6 §3.5（成本页军团分组）：by_task_plan 早在 VM 里（仅管理员非空），但前端从没渲过——
@@ -3775,8 +3778,8 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         : "";
       const overBudget = burnPct !== undefined && burnPct > 100
         ? `<p class="wh-pill-danger" data-r9-cost-army-over="${escapeHtml(item.task_plan_id)}">${escapeHtml(zhNotice
-          ? `已超预算（${burnPct}%${item.budget_cny ? `，上限 ${costAmount(item.budget_cny)}` : ""}）`
-          : `Over budget (${burnPct}%${item.budget_cny ? `, cap ${costAmount(item.budget_cny)}` : ""})`)} <a href="#wh-cost-budget" data-r9-cost-army-handle="true">${escapeHtml(zhNotice ? "去处理" : "Handle it")}</a></p>`
+          ? `已超预算（${burnPct}%${item.budget_cny ? `，上限 ${costAmount(item.budget_cny, locale)}` : ""}）`
+          : `Over budget (${burnPct}%${item.budget_cny ? `, cap ${costAmount(item.budget_cny, locale)}` : ""})`)} <a class="wh-btn" href="#wh-cost-budget" data-r9-cost-army-handle="true">${escapeHtml(zhNotice ? "去处理" : "Handle it")}</a></p>`
         : "";
       const statusPill = item.status
         ? `<span class="wh-pill" data-tone="${escapeHtml(item.status)}">${escapeHtml(taskPlanStatusLabel(locale, item.status as Parameters<typeof taskPlanStatusLabel>[1]))}</span>`
@@ -3792,7 +3795,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       </div>
       <div class="wh-r4-route-meta">
         ${statusPill}
-        <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
+        <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
       </div>
     </div>`;
     })
@@ -3817,7 +3820,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   const byUserRows = vm.by_user.slice(0, 8)
     .map((item) => `<div class="wh-r4-route-row" data-r9-cost-user="${escapeHtml(item.user_id)}">
       <div><strong>${escapeHtml(item.label)}</strong></div>
-      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
+      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
     </div>`)
     .join("");
   const byUserCard = vm.by_user.length
@@ -3829,7 +3832,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   const byObjectiveRows = vm.by_objective.slice(0, 8)
     .map((item) => `<div class="wh-r4-route-row" data-r9-cost-objective="${escapeHtml(item.objective_id)}">
       <div><strong>${escapeHtml(item.label ?? (zhNotice ? `目标 ${item.objective_id.slice(0, 8)}` : `Objective ${item.objective_id.slice(0, 8)}`))}</strong></div>
-      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny))}</span>
+      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
     </div>`)
     .join("");
   const byObjectiveCard = vm.by_objective.length
@@ -3845,14 +3848,14 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           <div class="wh-r4-route-timeline">
             <div class="wh-r4-route-row" data-r4-cost-labor="production">
               <div><strong>${escapeHtml(routeT(locale, "cost.laborProduction"))}</strong></div>
-              <span class="wh-pill">${escapeHtml(costAmount(vm.labor_split.production_cost_cny))}</span>
+              <span class="wh-pill">${escapeHtml(costAmount(vm.labor_split.production_cost_cny, locale))}</span>
             </div>
             <div class="wh-r4-route-row" data-r4-cost-labor="self_improvement">
               <div>
                 <strong>${escapeHtml(routeT(locale, "cost.laborSelfImprovement"))}</strong>
                 <p>${escapeHtml(`${routeT(locale, "cost.laborSelfImprovementRatio")}: ${Math.round(vm.labor_split.self_improvement_ratio * 100)}%`)}</p>
               </div>
-              <span class="wh-pill">${escapeHtml(costAmount(vm.labor_split.self_improvement_cost_cny))}</span>
+              <span class="wh-pill">${escapeHtml(costAmount(vm.labor_split.self_improvement_cost_cny, locale))}</span>
             </div>
           </div>
         </section>`
@@ -3890,7 +3893,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           <h1>${escapeHtml(goldPathT(locale, "cost.title"))}</h1>
           <p>${escapeHtml(goldPathT(locale, "cost.summary"))}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(costAmount(props.totalCostCny))}</span>
+        <span class="wh-r4-route-count">${escapeHtml(costAmount(props.totalCostCny, locale))}</span>
       </header>
       ${emptyStateCard}
       <div class="wh-r4-route-grid">
@@ -3898,7 +3901,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           <h3>${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}</h3>
           <div class="wh-r4-route-meta">
             <span class="wh-pill">${escapeHtml(`${goldPathT(locale, "cost.tokenTitle")}: ${props.totalTokens} ${locale === "zh-CN" ? "个 token" : "tokens"}`)}</span>
-            <span class="wh-pill">${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}: ${escapeHtml(costAmount(props.totalCostCny))}</span>
+            <span class="wh-pill">${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}: ${escapeHtml(costAmount(props.totalCostCny, locale))}</span>
             <span class="wh-pill" data-r4-cost-trend-days="${escapeHtml(String(props.trendCount))}">${escapeHtml(`${routeT(locale, "cost.trend")}: ${props.trendCount}`)}</span>
           </div>
           ${notices}

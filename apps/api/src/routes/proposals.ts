@@ -22,6 +22,9 @@ import {
 } from "@workhub/contracts";
 import { makeWorkHubEvent, topics } from "@workhub/events";
 import { getDefaultPushBus, type PushBus } from "../broker/index.js";
+import { createWorkItemRepository, getSharedDatabaseClient } from "@workhub/db";
+import { createNotificationService, getDefaultNotificationServiceDependencies } from "../services/notifications.js";
+import { getDefaultStructuredLogger } from "../logging.js";
 
 import {
   createCurrentUserMiddleware,
@@ -430,7 +433,9 @@ function mergeResultFor(input: {
   const attention = input.attention ?? genericMergeAttention(input.proposal, input.createdAt, input.locale);
   const mergeSnapshotId = input.proposal.merge_snapshot_id;
   if (!mergeSnapshotId) {
-    throw new ProposalServiceError(409, "merge_snapshot_missing", "这份变更申请缺少合并快照，请刷新后重新生成或联系管理员处理。");
+    throw new ProposalServiceError(409, "merge_snapshot_missing", input.locale === "en-US"
+        ? "This change request is missing its merge snapshot — refresh and regenerate, or contact an admin."
+        : "这份变更申请缺少合并快照，请刷新后重新生成或联系管理员处理。");
   }
   const proposalMerged = makeWorkHubEvent({
     event_id: randomUUID(),
@@ -718,6 +723,30 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
 
     // findings[#168/H12]：发布 proposal.reviewed（及打回时的 revision.fedback），让其它客户端实时刷新。
     await publishProposalEvents(bus, [event, ...(resultBase.feedback_event ? [resultBase.feedback_event] : [])], eventLogger);
+    // 普通用户审查 R3 high（协作）：打回只有 SSE——发起人 A 不在线就永远不知道被打回、理由在哪。
+    // 落一条持久化通知给提交人（审阅人自己打回自己的除外）；通知失败只告警不翻审阅。
+    if (payload.decision === "request_changes") {
+      try {
+        const access = await createWorkItemRepository(getSharedDatabaseClient().db)
+          .findWorkItemAccessRecord(proposal.work_item_id);
+        const submitterId = access?.submitterUserId ?? undefined;
+        const reviewerId = c.var.actor.userId ?? c.var.actor.id;
+        if (submitterId && submitterId !== reviewerId) {
+          await createNotificationService(getDefaultNotificationServiceDependencies()).createNotification({
+            userId: submitterId,
+            type: "proposal.revision_requested",
+            severity: "normal",
+            title: locale === "en-US" ? "Your change request was sent back" : "你的变更申请被打回了",
+            body: payload.reason_md ?? (locale === "en-US" ? "See the review comments." : "查看打回理由。"),
+            targetUrl: `/proposals/${proposal.id}`,
+            workItemId: proposal.work_item_id,
+            dedupeKey: `proposal_revision:${proposal.id}:${createdAt}`
+          });
+        }
+      } catch (error) {
+        getDefaultStructuredLogger().warn("proposal_revision_notify_failed", { proposalId: proposal.id, error });
+      }
+    }
     return c.json({ ok: true, data: parseOutputContract(proposalReviewResultSchema, resultBase, "proposal.review-result") });
   });
 

@@ -362,20 +362,22 @@ export function uiHumanize(value: string) {
   return String(value ?? "").replace(/_/gu, " ");
 }
 
-export function uiFormatCny(value: string | number | null | undefined) {
+export function uiFormatCny(value: string | number | null | undefined, locale: WorkHubLocale = "zh-CN") {
+  // R3（en 用户）：裸 ¥ 对国际用户是「日元还是人民币」的歧义——en 用 CN¥ 国际写法，zh 保持 ¥。
+  const prefix = locale === "en-US" ? "CN¥" : "¥";
   const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
   if (!Number.isFinite(parsed)) {
     const fallback = String(value ?? "0").trim() || "0";
-    return `¥${fallback}`;
+    return `${prefix}${fallback}`;
   }
   if (parsed > 0 && parsed < 0.005) {
-    return "<¥0.01";
+    return `<${prefix}0.01`;
   }
   const amount = new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 2,
     minimumFractionDigits: 0
   }).format(parsed);
-  return `¥${amount}`;
+  return `${prefix}${amount}`;
 }
 
 function labelFromMap(locale: WorkHubLocale, value: string, map: Record<string, Copy>) {

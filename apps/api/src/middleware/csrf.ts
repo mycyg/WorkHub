@@ -65,7 +65,7 @@ export function createSameOriginGuardMiddleware(
       if (secFetchSite === "same-origin" || secFetchSite === "same-site" || secFetchSite === "none") {
         return next();
       }
-      throw new HTTPException(403, { message: "跨站请求被拒绝。" });
+      throw new HTTPException(403, { message: "跨站请求被拒绝。(Cross-site request rejected.)" });
     }
     // (3) 退而求其次（老浏览器无 Sec-Fetch-Site）：比对 Origin 与本服务 origin / CORS 白名单。
     const origin = c.req.header("Origin");
@@ -75,7 +75,7 @@ export function createSameOriginGuardMiddleware(
       if (allowOrigins.includes("*") || allowOrigins.includes(origin) || (self !== undefined && origin === self)) {
         return next();
       }
-      throw new HTTPException(403, { message: "跨域请求被拒绝。" });
+      throw new HTTPException(403, { message: "跨域请求被拒绝。(Cross-origin request rejected.)" });
     }
     // (4) 既无 Sec-Fetch-Site 也无 Origin（非浏览器/服务端/老客户端）→ 放行，cookie/token 鉴权仍把关。
     return next();

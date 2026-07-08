@@ -622,6 +622,12 @@ function bindGoldPathNavigation(
         input?.focus();
         return;
       }
+      // R3：慢请求下零反馈+可双击重复提交——pending 提示+in-flight 锁。
+      if (llmActionBusy) {
+        return;
+      }
+      llmActionBusy = true;
+      showRouteNotice(shellRoot, actionPendingNotice(locale, "drive_comment"), undefined, 0);
       try {
         await client.createDriveComment(projectId, { body }, { locale });
         await renderCurrentRoute(client, locale);
@@ -630,6 +636,8 @@ function bindGoldPathNavigation(
           : "评论已发出。点评论上的「生成草稿」就能交给 AI 处理。", "drive_comment"));
       } catch (error) {
         showRouteNotice(shellRoot, actionErrorNotice(locale, error, "drive_comment"));
+      } finally {
+        llmActionBusy = false;
       }
       return;
     }
@@ -647,6 +655,11 @@ function bindGoldPathNavigation(
         return;
       }
       if (approvalId && body) {
+        if (llmActionBusy) {
+          return;
+        }
+        llmActionBusy = true;
+        commentSubmit.disabled = true;
         try {
           const comment = await client.postApprovalComment(approvalId, { body });
           // R4 #27：await 期间路由可能被 SSE 重渲/导航重建，form 会脱离 DOM——此时 insertBefore 静默落到
@@ -667,6 +680,9 @@ function bindGoldPathNavigation(
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, "approval_comment"));
+        } finally {
+          llmActionBusy = false;
+          commentSubmit.disabled = false;
         }
       }
       return;
@@ -693,6 +709,11 @@ function bindGoldPathNavigation(
         }
       }
       if (pendingApprovalId) {
+        if (llmActionBusy) {
+          return;
+        }
+        llmActionBusy = true;
+        showRouteNotice(shellRoot, actionPendingNotice(locale, pendingApprovalActionId ?? "deny"), undefined, 0);
         try {
           const remember = shellRoot.querySelector<HTMLInputElement>("[data-r4-approval-remember]")?.checked ? "always" : "once";
           // L#W2-17：优先用决策面板里手写的「意见说明」，没写才回落到预设理由按钮。
@@ -708,6 +729,8 @@ function bindGoldPathNavigation(
           clearActiveRouteDirty();
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingApprovalActionId ?? "deny"));
+        } finally {
+          llmActionBusy = false;
         }
       }
       return;
@@ -1410,6 +1433,14 @@ function bindGoldPathNavigation(
       : null;
     if (customField && customField.value.trim().length > 0) {
       markActiveRouteDirty("proposal_custom_field");
+    }
+    // 普通用户审查 R3 high：审批讨论/意见说明/网盘评论三个输入框此前不在 dirty-guard 里——
+    // SSE 事件整页重渲会静默清空写了一半的文字。
+    const draftBox = event.target instanceof Element
+      ? event.target.closest<HTMLTextAreaElement>("[data-r4-approval-comment-input], [data-r4-approval-reason], [data-r9-drive-comment-input], [data-r9-sync-merge-value]")
+      : null;
+    if (draftBox && draftBox.value.trim().length > 0) {
+      markActiveRouteDirty("comment_draft_pending");
     }
   }, eventListenerOptions(signal));
 

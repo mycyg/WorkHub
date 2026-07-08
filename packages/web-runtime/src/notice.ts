@@ -97,6 +97,27 @@ export function actionMessage(error: unknown, locale: WorkHubLocale) {
         ? "Could not reach the server — check your connection and try again."
         : "连不上服务器——请检查网络后重试。";
     }
+    // 普通用户审查 R3 high：会话过期的服务端原串 "not identified" 是天书——换成可操作的人话。
+    const errorCode = (error as { code?: unknown }).code;
+    if (errorCode === "not_identified" || error.message === "not identified") {
+      return locale === "en-US"
+        ? "Your session expired — refresh the page to sign in again."
+        : "登录已过期——刷新页面重新登录后再试。";
+    }
+    // R3：客户端超时错误串是中文硬编码（api-client 无 locale）——按错误码在这里双语化。
+    if (errorCode === "request_timeout") {
+      return locale === "en-US"
+        ? "The request timed out — check your connection and try again."
+        : "请求超时了——检查网络后再试一次。";
+    }
+    // 普通用户审查 R3 high：服务端错误串大量只有中文——en 界面读到整句中文。系统性兜底：
+    // en 会话下 message 含 CJK 时给通用英文+错误码（服务端逐串双语化是长尾，客户端先保体验）。
+    if (locale === "en-US" && /[\u4e00-\u9fff]/u.test(error.message)) {
+      const code = (error as { code?: unknown }).code;
+      return typeof code === "string" && code
+        ? `The request was rejected (${code.replace(/_/gu, " ")}). Refresh and try again.`
+        : "The request was rejected. Refresh and try again.";
+    }
     return error.message;
   }
   return goldPathT(locale, "runtime.actionFail");

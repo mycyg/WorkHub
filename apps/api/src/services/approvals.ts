@@ -183,7 +183,7 @@ export type ApprovalServiceDependencies = {
   proposals?: Pick<ProposalService, "get" | "listByWorkItem">;
   approvalComments?: Pick<ApprovalCommentRepository, "listByApproval" | "listByApprovals" | "create">;
   // @mentions：评论里 @某人时发通知。缺省时退化为不发 mention 通知（旧测试夹具）。
-  notifications?: Pick<NotificationService, "createMentionNotification">;
+  notifications?: Pick<NotificationService, "createMentionNotification"> & Partial<Pick<NotificationService, "createNotification">>;
   bus?: Pick<PushBus, "publish">;
   now?: () => Date;
 };
@@ -763,6 +763,24 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       const approval = await deps.approvals.createApprovalRequest(createInput);
       const attention = toApprovalAttentionItem(toRecord(approval), { kind: input.kind });
       await publishAsk(approval, attention);
+      // 普通用户审查 R3 high（协作）：审批路由给 B 只有 SSE——B 不在线就不知道有事等他。
+      // 落持久化通知（铃铛角标可见）；失败只告警不翻审批创建。
+      if (approval.routedToUserId && approval.workItemId && deps.notifications?.createNotification) {
+        try {
+          await deps.notifications.createNotification({
+            userId: approval.routedToUserId,
+            type: "approval.routed",
+            severity: "high",
+            title: "有一步操作等你审批",
+            body: attention.summary_text,
+            targetUrl: "/approvals",
+            workItemId: approval.workItemId,
+            dedupeKey: `approval_routed:${approval.id}`
+          });
+        } catch (error) {
+          getDefaultStructuredLogger().warn("approval_routed_notify_failed", { approvalId: approval.id, error });
+        }
+      }
       return { outcome: "pending", approval: toApprovalRequestResponse(approval), attention };
     },
 
