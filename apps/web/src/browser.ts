@@ -810,10 +810,13 @@ function bindGoldPathNavigation(
             reason_md: customReason || reasonMd,
             remember
           });
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), pendingApprovalActionId ?? "deny"));
+          const settledApprovalActionId = pendingApprovalActionId ?? "deny";
           pendingApprovalId = undefined;
           pendingApprovalActionId = undefined;
           clearActiveRouteDirty();
+          // R8（引导承接 high）：打回后同样重渲——已处理项移出队列，回执在重渲后弹。
+          await renderCurrentRoute(client, locale);
+          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), settledApprovalActionId));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingApprovalActionId ?? "deny"));
         } finally {
@@ -1368,7 +1371,10 @@ function bindGoldPathNavigation(
         try {
           const remember = shellRoot.querySelector<HTMLInputElement>("[data-r4-approval-remember]")?.checked ? "always" : "once";
           const result = await client.respondApproval(approvalRespondId, { decision: "allow", remember });
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "approve"));
+          // R8（引导承接 high）：批准后列表原地不动——已处理项还在、处理完最后一条也见不到空态。
+          // 与 reviewProposal 同口径：成功即重渲（下一条自动成为 primary），回执在重渲后弹。
+          await renderCurrentRoute(client, locale);
+          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId ?? "approve"));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "approve"));
           // R3（协作）：撞上别人已决策的 409 时按钮不该原地装死——重渲反映最新状态。
@@ -1483,6 +1489,15 @@ function bindGoldPathNavigation(
             ? await client.pauseTaskPlan(planDispatchAction.planId)
             : await client.resumeTaskPlan(planDispatchAction.planId);
           const nextKind = planDispatchAction.action === "pause" ? "resume" : "pause";
+          // R8（竞态）：await 期间 SSE silent 重渲会把 actionTarget 换成分离节点——原地改写全部落空、
+          // 按钮态与服务端脱节。检测到分离就整页重渲兜底（服务端已成功，重渲自然带出新状态）。
+          if (!actionTarget.isConnected) {
+            await renderCurrentRoute(client, locale);
+            showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, planDispatchAction.action === "pause"
+              ? (locale === "en-US" ? "Dispatch paused." : "已暂停派发。")
+              : (locale === "en-US" ? "Dispatch resumed." : "已恢复派发。"), actionId));
+            return;
+          }
           actionTarget.setAttribute("href", `/api/task-plans/${encodeURIComponent(planDispatchAction.planId)}/${nextKind}`);
           actionTarget.dataset.actionId = `${nextKind}_dispatch`;
           actionTarget.dataset.r9AgentTeamDispatchControl = nextKind;
@@ -1614,6 +1629,15 @@ async function refreshCurrentRouteFromLiveEvent(
     return "dirty-deferred";
   }
   setLiveMetric("r4LiveRefreshMode", "page-vm-render");
+  // R8（竞态）：「正在展示回执就跳过刷新提示」的判断必须在重渲【前】快照——
+  // innerHTML 替换后 notice 节点是不带 data-r4-notice-kind 的新节点，事后读恒为空。
+  {
+    const noticeEl = root?.querySelector<HTMLElement>('[data-wh-app-notice]');
+    // 只认「可见」的回执——超时隐藏后节点仍残留 dataset，不该继续压制刷新提示。
+    lastNoticeKindBeforeSseRefresh = noticeEl && !noticeEl.hidden
+      ? noticeEl.getAttribute("data-r4-notice-kind") ?? undefined
+      : undefined;
+  }
   // L#79：SSE 刷新也要 fail-closed——会话过期(not_identified)时回到注册屏，
   // 而不是让错误冒泡、让用户停在一个已失效的已登录视图上。
   // R7 回归修复：R4 给 renderCurrentRoute 加的 silent 开关此前没接到这里（三处调用点全没传），
@@ -1638,10 +1662,7 @@ function createBrowserLiveRuntime(client: BrowserApiClient, locale: WorkHubLocal
       }
       // 普通用户审查 R2：动作回执与「页面已刷新」共用一个 toast 槽——回执刚弹出就被刷新提示盖掉。
       // 正在展示操作回执时跳过 info 级刷新提示（刷新本体已完成，不损失功能）。
-      const currentNoticeKind = root
-        .querySelector('[data-wh-app-notice]')
-        ?.getAttribute("data-r4-notice-kind");
-      if (outcome !== "dirty-deferred" && currentNoticeKind === "action_success") {
+      if (outcome !== "dirty-deferred" && lastNoticeKindBeforeSseRefresh === "action_success") {
         return;
       }
       showRouteNotice(
@@ -1692,6 +1713,8 @@ function bindLiveRouteStreams(result: WebRouteReadyResult, client: BrowserApiCli
 // 静默清空。改武装式守卫（与桌面 Esc 同模式）：脏时第一次离开被拦下并提示，5 秒内再次操作才放行。
 // 不用 window.confirm——原生对话框会卡死 headless smoke 且不可样式化。
 let dirtyLeaveArmedUntil = 0;
+// R8（竞态）：SSE 重渲前 notice 的 kind 快照——onRefreshNotice 用它而非读已被替换的节点。
+let lastNoticeKindBeforeSseRefresh: string | undefined;
 // 最近一次真正渲染到屏上的路由 href——popstate 被 dirty 守卫拦下时用它把地址栏顶回去。
 let lastRenderedHref: string | undefined;
 

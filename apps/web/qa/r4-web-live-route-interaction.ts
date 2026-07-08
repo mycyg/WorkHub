@@ -3565,6 +3565,9 @@ async function runScenario(cdp: CdpClient, baseUrl: string) {
   await clickAndWaitForNotice(cdp, '[data-action-id="merge"]', "action_success", "merge");
   steps.push(await captureStep(cdp, { id: "09-proposal-merge-success-en-desktop", url: `${baseUrl}/proposals/r4-live-proposal`, viewport: desktop, expectedStatus: "ready", expectedRouteComponent: "proposal" }));
 
+  // R8（竞态修复后的新语义）：回执可见期间 SSE 刷新提示会被抑制（browser.ts 渲前快照，避免回执被盖）。
+  // 先模拟回执 4.6s 超时隐藏，再发 SSE——保持事件/loader 计数与既有钉死门一致。
+  await cdp.evaluate("(() => { const n = document.querySelector('[data-wh-app-notice]'); if (n) { n.hidden = true; } return true; })()");
   await emitQaSseEvent(cdp, "proposal.merged", "proposal");
   await waitFor<BrowserAudit>(
     cdp,
@@ -5331,7 +5334,8 @@ async function main() {
       r4_10_active_only_product_panels: steps.filter((step) => step.audit.productShell && step.audit.status === "ready").every((step) => step.audit.panelCount === 1 && step.audit.visiblePanelCount === 1),
       product_shell_stays_path_mode: steps.filter((step) => step.audit.productShell).every((step) => step.audit.linkModePath),
       no_duplicate_route_loader_calls:
-        proof.counts.approvals === 4 &&
+        // R8：审批 respond（deny+approve）成功后重渲列表（已处理项移出/空态可达）——各多一次 approvals loader → 4+2=6。
+        proof.counts.approvals === 6 &&
         proof.counts.workitem === 6 &&
         proof.counts.workitemForbidden === 1 &&
         // UX-U8：会议页补项目导航后 meetings loader 每次加载多取一次 /api/projects（smoke 内 meetings 加载 3 次）→ 11+3。
