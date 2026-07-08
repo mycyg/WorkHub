@@ -43,7 +43,7 @@ export type GoldPathRenderedSurface = {
 };
 
 export const goldPathCss = [
-  ":root{color-scheme:light;--ink:#1A1D26;--secondary:#5B616E;--muted:#667085;--line:#E6E7EB;--line-alt:#EEF0F3;--paper:#fff;--panel:#fff;--page:#F7F8FA;--soft:#F5F5FE;--blue:#4F46E5;--blue-light:#EEF0FE;--green:#15A05A;--green-light:#E7F0EA;--red:#E5484D;--red-light:#FCECEC;--coral:#ee6b5f;--amber:#E0892A;--amber-light:#FCF3E6;--violet:#7863e6;--radius-card:14px;--radius-button:10px}",
+  ":root{color-scheme:light;--ink:#1A1D26;--secondary:#5B616E;--muted:#667085;--line:#E6E7EB;--line-alt:#EEF0F3;--paper:#fff;--panel:#fff;--page:#F7F8FA;--soft:#F5F5FE;--blue:#4F46E5;--blue-light:#EEF0FE;--green:#15A05A;--green-light:#E7F0EA;--red:#E5484D;--red-light:#FCECEC;--coral:#ee6b5f;--amber:#E0892A;--amber-light:#FCF3E6;--violet:#7863e6}",
   ".wh-shell{font-family:\"Segoe UI\",system-ui,-apple-system,\"PingFang SC\",sans-serif;color:var(--ink);background:var(--page);padding:24px;min-height:100%;width:100%;max-width:100%;box-sizing:border-box;overflow-x:hidden}.wh-shell,.wh-shell *{box-sizing:border-box}",
   ".wh-stage{width:100%;max-width:1040px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start;min-width:0}",
   ".wh-panel{background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 50px rgba(37,51,79,.08);min-width:0;max-width:100%}",

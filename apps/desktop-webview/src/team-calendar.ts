@@ -166,5 +166,5 @@ export const teamCalendarCss = [
   ".wh-tcal-empty{max-width:560px;margin:8px auto 0;border-radius:24px;padding:46px 30px;text-align:center;background:rgba(255,255,255,.5);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%);border:1px solid rgba(255,255,255,.75);box-shadow:0 26px 60px -28px rgba(60,60,67,.32),inset 0 1px 0 rgba(255,255,255,.7)}",
   ".wh-tcal-empty-face{font:700 32px/1 'M PLUS Rounded 1c',sans-serif}",
   ".wh-tcal-empty-title{margin:16px 0 0;font-size:20px;font-weight:900;color:#1d1d1f}",
-  ".wh-tcal-empty-sub{margin:10px 0 0;font-size:13.5px;line-height:1.6;color:#636366}"
+  ".wh-tcal-empty-sub{margin:10px 0 0;font-size:13px;line-height:1.6;color:#636366}"
 ].join("");
