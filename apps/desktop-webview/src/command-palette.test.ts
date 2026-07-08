@@ -21,6 +21,8 @@ test("registry covers every backend capability surface", () => {
       "drive",
       "intake",
       "knowledge",
+      // R5 双端一致：桌面补通知中心入口（通知箱+按类型静音），与 web 对齐。
+      "notifications",
       "projects",
       "proposals",
       "replay",

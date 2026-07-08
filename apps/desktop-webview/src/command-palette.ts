@@ -18,6 +18,7 @@ export type CommandId =
   | "knowledge"
   | "cost"
   | "team"
+  | "notifications"
   | "settings";
 
 // 命令落到客户端的两类动作：开一个临时玻璃窗，或触发一次流程（如开始 intake）。
@@ -133,6 +134,15 @@ export const commandRegistry: DesktopCommand[] = [
     keywords: ["团队", "成员", "日历", "技能", "team", "members", "calendar", "skills"],
     icon: ic('<circle cx="9" cy="9" r="3"/><path d="M3 19a6 6 0 0 1 12 0"/><path d="M16 7a3 3 0 0 1 0 6M21 19a6 6 0 0 0-4-5.6"/>'),
     action: { kind: "open-window", target: "team" }
+  },
+  {
+    // R5 双端一致：web 有完整通知中心+按类型静音偏好，桌面此前零入口——通知只能被动挨弹。
+    id: "notifications",
+    label: { "zh-CN": "通知", en: "Notifications" },
+    hint: { "zh-CN": "通知箱与按类型静音", en: "Inbox and per-type mute" },
+    keywords: ["通知", "消息", "静音", "notifications", "inbox", "mute"],
+    icon: ic('<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 19a2 2 0 0 0 4 0"/>'),
+    action: { kind: "open-window", target: "notifications" }
   },
   {
     id: "settings",

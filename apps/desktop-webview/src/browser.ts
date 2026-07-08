@@ -239,6 +239,7 @@ const COMMAND_ROUTE: Record<CommandId, string> = {
   cost: "/dashboard/cost",
   agents: "/dashboard/agents",
   team: "/team",
+  notifications: "/notifications",
   settings: "/settings"
 };
 

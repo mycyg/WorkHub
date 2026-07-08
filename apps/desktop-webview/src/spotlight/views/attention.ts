@@ -4,7 +4,7 @@
 // 这一片证明是「真·内联重构」而非换入口：没有 hash、没有全屏壳、动作就地落库。
 
 import type { PageRequestOptions } from "@workhub/api-client";
-import type { AttentionHomeVM, AttentionItem } from "@workhub/contracts";
+import type { ApprovalDetailVM, AttentionHomeVM, AttentionItem } from "@workhub/contracts";
 import {
   actionElementApplyPayload,
   actionElementMergePayload,
@@ -165,6 +165,34 @@ function renderCardEvidence(item: AttentionItem, zh: boolean): string {
   return rows + more;
 }
 
+// R5 双端一致（high）：web 审批详情有 AI 理由/预期收益/风险标签、流程时间线（含 SLA）与评论讨论，
+// 桌面此前只有标题+两条证据=「盲拍板」。审批卡加「详情」就地展开，数据取 client.pages.approvals
+// 的 items_detail（与 web 审批工作台同源），评论可读可发（postApprovalComment）。
+export function renderApprovalDetailInline(detail: ApprovalDetailVM, itemId: string, zh: boolean): string {
+  const ts = (iso: string | undefined) => {
+    const m = iso ? /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(iso) : null;
+    return m ? `${m[1]} ${m[2]}` : "";
+  };
+  const aiRows = [
+    detail.ai_reason ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "AI 理由：" : "AI reason: ")}${escapeHtml(detail.ai_reason)}</p>` : "",
+    detail.expected_benefit ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "预期收益：" : "Expected benefit: ")}${escapeHtml(detail.expected_benefit)}</p>` : "",
+    detail.risk_label ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "风险：" : "Risk: ")}${escapeHtml(detail.risk_label)}</p>` : ""
+  ].filter(Boolean).join("");
+  const timeline = detail.timeline.length
+    ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "流程：" : "Timeline: ")}${detail.timeline.map((step) => `${escapeHtml(step.label)}${step.sla_due_at ? escapeHtml(`（${zh ? "SLA " : "SLA "}${ts(step.sla_due_at)}）`) : ""}${step.at ? ` ${escapeHtml(ts(step.at))}` : ""}`).join(" → ")}</p>`
+    : "";
+  const comments = detail.comments.length
+    ? detail.comments.slice(-3).map((comment) => `<p class="wh-spot-card-desc" data-att-detail-comment="${escapeHtml(comment.id)}">${escapeHtml(comment.author_label)}：${escapeHtml(comment.body)}</p>`).join("")
+    : `<p class="wh-spot-card-desc">${escapeHtml(zh ? "还没有讨论。" : "No discussion yet.")}</p>`;
+  return `<div class="wh-spot-card-detail" data-att-detail="${escapeHtml(itemId)}">
+    ${aiRows}
+    ${timeline}
+    <p class="wh-spot-card-desc"><strong>${escapeHtml(zh ? "讨论" : "Discussion")}</strong></p>
+    ${comments}
+    <div class="wh-spot-reasons-row"><input class="wh-spot-merge-draft" data-att-detail-comment-input="${escapeHtml(itemId)}" placeholder="${escapeHtml(zh ? "写句评论…" : "Add a comment…")}" /><button type="button" class="wh-spot-act ds-pressable" data-att-detail-comment-submit="${escapeHtml(itemId)}">${escapeHtml(zh ? "发出" : "Post")}</button></div>
+  </div>`;
+}
+
 function renderCard(item: AttentionItem, zh: boolean): string {
   const tone = toneForKind(item.kind);
   const desc = item.reason_text ?? item.summary_text ?? "";
@@ -180,7 +208,7 @@ function renderCard(item: AttentionItem, zh: boolean): string {
       ${desc ? `<p class="wh-spot-card-desc">${escapeHtml(desc)}</p>` : ""}
       ${renderCardEvidence(item, zh)}
       ${mergeDraftEditor(item, zh)}
-      <div class="wh-spot-card-actions" data-att-actionrow>${actions.map(renderAction).join("")}</div>
+      <div class="wh-spot-card-actions" data-att-actionrow>${actions.map(renderAction).join("")}${item.kind === "approval" ? `<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-att-detail-toggle="${escapeHtml(item.id)}">${escapeHtml(zh ? "详情" : "Details")}</button>` : ""}</div>
     </div>
   </article>`;
 }
@@ -289,6 +317,8 @@ export function createAttentionView(): SpotlightCapabilityView {
       let busy = false;
       // rank7：上次失败的加载器，点「重试」即重跑。
       let retry: (() => void) | undefined;
+      // R5：审批详情取自 pages.approvals 的 items_detail——同一次会话内缓存，refresh 后失效。
+      let approvalDetailCache: Awaited<ReturnType<typeof client.pages.approvals>> | undefined;
 
       const setSubtitleFromVm = (vm: AttentionHomeVM) => {
         const n = vm.queue?.length ?? 0;
@@ -309,6 +339,7 @@ export function createAttentionView(): SpotlightCapabilityView {
       };
 
       const refresh = async () => {
+        approvalDetailCache = undefined;
         try {
           const vm = await client.pages.attention({ locale: ctx.locale });
           render(vm);
@@ -513,6 +544,66 @@ export function createAttentionView(): SpotlightCapabilityView {
         if (conflictAction) {
           event.preventDefault();
           void runConflictAction(conflictAction);
+          return;
+        }
+        // R5 双端一致：审批卡「详情」——就地展开 AI 理由/时间线/评论（数据与 web 审批工作台同源）。
+        const detailToggle = target.closest<HTMLButtonElement>("[data-att-detail-toggle]");
+        if (detailToggle) {
+          const itemId = detailToggle.dataset.attDetailToggle ?? "";
+          const card = detailToggle.closest<HTMLElement>("[data-att-id]");
+          const existing = card?.querySelector<HTMLElement>("[data-att-detail]");
+          if (existing) {
+            existing.remove();
+            ctx.requestResize();
+            return;
+          }
+          const restore = markBusy(detailToggle, zh ? "加载中…" : "Loading…");
+          void (async () => {
+            try {
+              const center = approvalDetailCache ?? await client.pages.approvals({ locale: ctx.locale });
+              approvalDetailCache = center;
+              const detail = center.items_detail?.[itemId];
+              if (!detail) {
+                ctx.toast(zh ? "这条的详情暂时拉不到" : "Details are unavailable for this item", "info");
+                return;
+              }
+              card?.insertAdjacentHTML("beforeend", renderApprovalDetailInline(detail, itemId, zh));
+              ctx.requestResize();
+            } catch {
+              ctx.toast(zh ? "详情没拉到，稍后重试" : "Couldn't load details. Try again.", "error");
+            } finally {
+              restore();
+            }
+          })();
+          return;
+        }
+        const detailCommentSubmit = target.closest<HTMLButtonElement>("[data-att-detail-comment-submit]");
+        if (detailCommentSubmit) {
+          const itemId = detailCommentSubmit.dataset.attDetailCommentSubmit ?? "";
+          const input = body.querySelector<HTMLInputElement>(`[data-att-detail-comment-input="${itemId}"]`);
+          const text = input?.value.trim();
+          if (!text) {
+            ctx.toast(zh ? "先写点内容再发" : "Write something first", "info");
+            return;
+          }
+          const restore = markBusy(detailCommentSubmit, zh ? "发送中…" : "Posting…");
+          void (async () => {
+            try {
+              await client.postApprovalComment(itemId, { body: text });
+              if (input) {
+                input.value = "";
+              }
+              approvalDetailCache = undefined;
+              const detailEl = body.querySelector<HTMLElement>(`[data-att-detail="${itemId}"]`);
+              detailEl?.insertAdjacentHTML("beforeend", `<p class="wh-spot-card-desc">${escapeHtml(zh ? "我：" : "Me: ")}${escapeHtml(text)}</p>`);
+              ctx.toast(zh ? "评论已发出" : "Comment posted", "ok");
+              ctx.requestResize();
+            } catch {
+              ctx.toast(zh ? "评论没发出去，稍后重试" : "Comment failed. Try again.", "error");
+            } finally {
+              restore();
+            }
+          })();
           return;
         }
         // 1) 选了打回理由 → 以该理由打回（href 从理由层容器取，审批/看改动通用）。

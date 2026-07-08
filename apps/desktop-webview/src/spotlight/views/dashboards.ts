@@ -8,6 +8,8 @@ import type {
   CalendarPageVM,
   CostDashboardVM,
   EvidenceBubble,
+  NotificationPageVM,
+  TeamSkillsPageVM,
   ProjectHomePageVM,
   ProjectListItemVM,
   ScheduleBlockVM
@@ -81,7 +83,7 @@ function taskPlanStatusLabel(status: AgentArmyDashboardPlanVM["status"], zh: boo
     case "approved":
       return zh ? "已批准" : "Approved";
     case "dispatching":
-      return zh ? "推进中" : "In progress";
+      return zh ? "进行中" : "In progress";
     case "done":
       return zh ? "已收工" : "Done";
     case "cancelled":
@@ -571,7 +573,10 @@ export function createAgentsView(): SpotlightCapabilityView {
 
 // —— 团队日历 —— //
 function blockRow(b: ScheduleBlockVM, zh: boolean): string {
-  const when = b.ends_at ? new Date(b.ends_at).toLocaleString(zh ? "zh-CN" : "en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+  // R5 词表/时间一致性：对齐 web 端 formatApprovalTimestamp 的确定性格式（YYYY-MM-DD HH:MM），
+  // 同一份日历数据不再两端两套格式。
+  const whenMatch = b.ends_at ? /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(b.ends_at) : null;
+  const when = whenMatch ? `${whenMatch[1]} ${whenMatch[2]}` : (b.ends_at ?? "");
   const tone = b.status === "overdue" ? "handoff" : b.status === "today" ? "approval" : "info";
   return `<div class="wh-spot-row">
     <span class="wh-spot-card-bar wh-spot-card-bar--${tone}" style="border-radius:3px"></span>
@@ -579,20 +584,113 @@ function blockRow(b: ScheduleBlockVM, zh: boolean): string {
   </div>`;
 }
 
+// R5 双端一致：桌面此前没有任何通知中心入口，web 的按类型静音偏好在桌面不可达。
+// 通知行带「不再接收此类」，静音区带「恢复接收」；偏好走 get/setNotificationPreferences 全量提交。
+function notificationRow(item: NotificationPageVM["items"][number], zh: boolean): string {
+  const tone = item.severity === "urgent" ? "handoff" : item.inbox_bucket === "needs_decision" ? "approval" : "info";
+  const timeMatch = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(item.created_at);
+  const when = timeMatch ? `${timeMatch[1]} ${timeMatch[2]}` : "";
+  return `<div class="wh-spot-row" data-notif-id="${escapeHtml(item.id)}">
+    <span class="wh-spot-card-bar wh-spot-card-bar--${tone}" style="border-radius:3px"></span>
+    <div class="wh-spot-row-main">
+      <div class="wh-spot-row-title">${item.status === "unread" ? "● " : ""}${escapeHtml(item.title)}</div>
+      <div class="wh-spot-row-sub">${escapeHtml([when, item.body ?? ""].filter(Boolean).join(" · "))}</div>
+    </div>
+    <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-notif-mute="${escapeHtml(item.type)}" title="${escapeHtml(zh ? `不再接收「${item.type}」类通知` : `Mute “${item.type}” notifications`)}">${escapeHtml(zh ? "静音此类" : "Mute type")}</button>
+  </div>`;
+}
+
+export function createNotificationsView(): SpotlightCapabilityView {
+  return readOnlyView("notifications", {
+    loadingLabel: (zh) => (zh ? "正在拉通知…" : "Loading notifications…"),
+    errorLabel: (zh) => (zh ? "通知没拉到，稍后重试" : "Couldn't load notifications — retry"),
+    load: async (ctx, zh) => {
+      const [vm, prefs] = await Promise.all([
+        ctx.client.pages.notifications({ locale: ctx.locale }) as Promise<NotificationPageVM>,
+        ctx.client.getNotificationPreferences().catch(() => ({ muted_notification_types: [] as string[] }))
+      ]);
+      const rows = [...vm.buckets.needs_decision, ...vm.buckets.fyi, ...vm.buckets.done].slice(0, 12);
+      const overflow = vm.items.length > 12
+        ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? `还有 ${vm.items.length - 12} 条，去网页版通知中心细看。` : `${vm.items.length - 12} more in the web notification center.`)}</p>`
+        : "";
+      const muted = prefs.muted_notification_types;
+      const mutedPanel = muted.length
+        ? `<div class="wh-spot-list" data-notif-muted-panel><p class="wh-spot-card-desc">${escapeHtml(zh ? "已静音类型：" : "Muted types:")}</p>${muted
+          .map((type) => `<div class="wh-spot-row"><div class="wh-spot-row-main"><div class="wh-spot-row-sub">${escapeHtml(type)}</div></div><button type="button" class="wh-spot-act ds-pressable" data-notif-unmute="${escapeHtml(type)}">${escapeHtml(zh ? "恢复接收" : "Unmute")}</button></div>`)
+          .join("")}</div>`
+        : "";
+      const html = rows.length || muted.length
+        ? `<div class="wh-spot-list ds-stagger" data-notif-list data-notif-muted="${escapeHtml(JSON.stringify(muted))}">${rows.map((item) => notificationRow(item, zh)).join("")}${overflow}${mutedPanel}</div>`
+        : emptyHtml("🔔", zh ? "通知箱是空的" : "Inbox is empty", zh ? "审批、军团收工和升级会出现在这里" : "Approvals, team completions and escalations show here");
+      const subtitle = zh
+        ? `未读 ${vm.summary.unread_count} · 待决策 ${vm.summary.needs_decision_count}`
+        : `${vm.summary.unread_count} unread · ${vm.summary.needs_decision_count} need a call`;
+      return { html, subtitle };
+    },
+    onAction: (target, ctx) => {
+      const zh = ctx.locale === "zh-CN";
+      const muteBtn = target.closest<HTMLButtonElement>("[data-notif-mute]");
+      const unmuteBtn = target.closest<HTMLButtonElement>("[data-notif-unmute]");
+      const type = muteBtn?.dataset.notifMute ?? unmuteBtn?.dataset.notifUnmute;
+      if (!type) {
+        return;
+      }
+      const listEl = ctx.body.querySelector<HTMLElement>("[data-notif-list]");
+      let muted: string[] = [];
+      try {
+        muted = JSON.parse(listEl?.dataset.notifMuted ?? "[]") as string[];
+      } catch {
+        muted = [];
+      }
+      const next = muteBtn ? [...new Set([...muted, type])] : muted.filter((entry) => entry !== type);
+      void ctx.client.setNotificationPreferences(next)
+        .then(() => {
+          ctx.toast(muteBtn
+            ? (zh ? `已静音「${type}」类通知` : `Muted “${type}” notifications`)
+            : (zh ? `已恢复接收「${type}」` : `Unmuted “${type}”`), "ok");
+          // 重挂载最省事且状态一定一致：静音面板/按钮态全部随 VM 重渲。
+          ctx.open("notifications", {});
+        })
+        .catch(() => {
+          ctx.toast(zh ? "偏好没保存上，稍后重试" : "Couldn't save the preference. Try again.", "error");
+        });
+    }
+  });
+}
+
 export function createCalendarView(): SpotlightCapabilityView {
   return readOnlyView("team", {
     loadingLabel: (zh) => (zh ? "正在拉日程…" : "Loading schedule…"),
     errorLabel: (zh) => (zh ? "日程没拉到，稍后重试" : "Couldn't load schedule — retry"),
     load: async (ctx, zh) => {
-      const vm: CalendarPageVM = await ctx.client.pages.calendar({ locale: ctx.locale });
+      // R5 双端一致：命令面板对 team 的承诺是「成员、日历与技能库」——此前只拉日历，技能承诺落空。
+      // 与日历并行拉 pages.skills；技能拉取失败只降级该区块，不连累日历。
+      const [vm, skills] = await Promise.all([
+        ctx.client.pages.calendar({ locale: ctx.locale }) as Promise<CalendarPageVM>,
+        (ctx.client.pages.skills({ locale: ctx.locale }) as Promise<TeamSkillsPageVM>).catch(() => undefined)
+      ]);
       const blocks = vm.blocks ?? [];
       const subtitle = zh
         ? `今天 ${vm.summary.today_count} · 逾期 ${vm.summary.overdue_count}`
         : `today ${vm.summary.today_count} · overdue ${vm.summary.overdue_count}`;
-      const html = blocks.length
+      const calendarHtml = blocks.length
         ? `<div class="wh-spot-list ds-stagger">${blocks.slice(0, 20).map((b) => blockRow(b, zh)).join("")}</div>`
         : emptyHtml("🗓️", zh ? "近期没有日程" : "Nothing scheduled", zh ? "工作项到期、复盘窗口会出现在这里" : "Due items and review windows show here");
-      return { html, subtitle };
+      const skillsHtml = skills
+        ? `<div class="wh-spot-list" data-team-skills data-team-skills-active="${escapeHtml(String(skills.totals.active))}">
+            <p class="wh-spot-card-desc"><strong>${escapeHtml(zh ? "团队技能库" : "Team skills")}</strong> · ${escapeHtml(zh
+              ? `激活 ${skills.totals.active} · AI 沉淀 ${skills.totals.ai_authored} · 精修 ${skills.totals.refined}`
+              : `${skills.totals.active} active · ${skills.totals.ai_authored} AI-authored · ${skills.totals.refined} refined`)}</p>
+            ${skills.skills.slice(0, 5).map((skill) => `<div class="wh-spot-row" data-team-skill="${escapeHtml(skill.skill_key)}">
+              <div class="wh-spot-row-main">
+                <div class="wh-spot-row-title">${escapeHtml(skill.name)} · v${escapeHtml(String(skill.version))}</div>
+                <div class="wh-spot-row-sub">${escapeHtml(skill.when_to_use)}</div>
+              </div>
+            </div>`).join("")}
+            ${skills.skills.length > 5 ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? `还有 ${skills.skills.length - 5} 项技能，去网页版技能页细看。` : `${skills.skills.length - 5} more on the web skills page.`)}</p>` : ""}
+          </div>`
+        : `<p class="wh-spot-card-desc" data-team-skills-unavailable>${escapeHtml(zh ? "技能库暂时没拉到。" : "Skills are unavailable right now.")}</p>`;
+      return { html: calendarHtml + skillsHtml, subtitle };
     }
   });
 }

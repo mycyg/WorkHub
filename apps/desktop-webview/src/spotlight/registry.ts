@@ -9,8 +9,7 @@ import {
   createCalendarView,
   createCostView,
   createKnowledgeView,
-  createProjectsView
-} from "./views/dashboards.js";
+  createProjectsView, createNotificationsView } from "./views/dashboards.js";
 import { createDriveView } from "./views/drive.js";
 import { createIntakeView } from "./views/intake.js";
 import { createPlaceholderView } from "./views/placeholder.js";
@@ -33,6 +32,7 @@ const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   replay: createReplayView,
   proposals: createProposalsView,
   workitem: createWorkItemView,
+  notifications: createNotificationsView,
   settings: createSettingsView
 };
 
