@@ -137,6 +137,8 @@ export type DriveRepository = {
     operationLimit?: number;
     targetItemId?: string;
     targetFileNames?: string[];
+    // R4（规模化）：按名称模糊搜索——200 条字母序截断外的文件唯一用户可达出路。
+    nameQuery?: string;
   }) => Promise<DrivePageRows>;
   // 项目主页文件卡：最近文件清单（轻量，不拉版本/评论/采纳）+ 真实文件总数（不受清单 limit 截断）。
   listRecentFilesByProject: (projectId: string, limit?: number) => Promise<DriveRecentFileRow[]>;
@@ -431,7 +433,13 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         db
           .select()
           .from(projectDriveItems)
-          .where(and(eq(projectDriveItems.projectId, project.id), isNull(projectDriveItems.deletedAt)))
+          .where(and(
+            eq(projectDriveItems.projectId, project.id),
+            isNull(projectDriveItems.deletedAt),
+            ...(input.nameQuery?.trim()
+              ? [sql`${projectDriveItems.name} ilike ${`%${input.nameQuery.trim().replace(/[%_\\]/gu, (ch) => `\\${ch}`)}%`}`]
+              : [])
+          ))
           .orderBy(
             sql`${projectDriveItems.parentId} is not null`,
             asc(projectDriveItems.parentId),

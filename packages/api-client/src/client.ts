@@ -85,6 +85,9 @@ function withDrivePageOptions(path: string, options?: DrivePageRequestOptions) {
   if (itemId) {
     params.set("item_id", itemId);
   }
+  if (options?.q) {
+    params.set("q", options.q);
+  }
   const query = params.toString();
   return query ? `${path}?${query}` : path;
 }

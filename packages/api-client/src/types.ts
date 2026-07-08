@@ -138,6 +138,8 @@ export type DrivePageRequestOptions = PageRequestOptions & {
   // #5：项目主页「最近文件」深链 → 网盘高亮该文件。
   itemId?: string;
   item_id?: string;
+  // R4：按名称搜索文件。
+  q?: string;
 };
 
 export type MeetingPageRequestOptions = PageRequestOptions & {

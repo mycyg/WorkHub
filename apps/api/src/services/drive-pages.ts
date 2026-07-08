@@ -48,6 +48,8 @@ export type DrivePageService = {
     projectId?: string;
     // #5：项目主页「最近文件」深链带 item_id → 网盘渲染时高亮该文件。
     itemId?: string;
+    // R4（规模化）：按名称搜索——200 条截断外的文件用户可达出路。
+    nameQuery?: string;
   }) => Promise<DrivePageVM>;
   file: (input: DriveMutationInput & {
     itemId: string;
@@ -706,14 +708,15 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
     }
   }
 
-  async function pageForActor(input: { actor: AuthActor; projectId?: string; itemId?: string }) {
+  async function pageForActor(input: { actor: AuthActor; projectId?: string; itemId?: string; nameQuery?: string }) {
     const rows = await deps.repo.readPage({
       ...(input.projectId ? { projectId: input.projectId } : {}),
       // 无显式 projectId 时，默认项目限定在 actor 所在 workspace（M8：否则全库取最老项目，多租户落空）。
       ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {}),
       includeDeleted: true,
       operationLimit: 12,
-      ...(input.itemId ? { targetItemId: input.itemId } : {})
+      ...(input.itemId ? { targetItemId: input.itemId } : {}),
+      ...(input.nameQuery ? { nameQuery: input.nameQuery } : {})
     });
     // 显式传了 project_id 却查不到(不存在/已归档/已删) → 404，与 /workitems、/proposals、项目主页一致，
     // 不再回 200+no_project 空态(那语义错误，且让前端无法区分"没选项目"和"项目不存在")。

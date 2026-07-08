@@ -579,6 +579,16 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         ...decisionQueue,
         ...reviewable.map((summary) => buildProposalReviewAttentionItem(summary, locale))
       ];
+      // R4 high（规模化）：listReviewableForUser 硬上限 50——打满即可能有更多评审被静默截断，
+      // 与升级/审批的诚实上限提示同口径给 sourceWarning，不让用户以为队列已清空。
+      if (reviewable.length >= 50) {
+        sourceWarnings.push({
+          source: "proposals",
+          message: locale === "en-US"
+            ? "Showing the first 50 reviewable changes — clear some to surface the rest."
+            : "变更评审只显示前 50 条——处理掉一些，其余的才会浮现。"
+        });
+      }
     } catch {
       // 保留已有审批队列,不拖垮首页,但不能让用户误以为队列完整。
       sourceWarnings.push({
@@ -669,11 +679,13 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return pageServiceErrorResponse(c, new DrivePageServiceError(404, "没有找到这个网盘文件。", "drive_file_not_found"));
     }
     try {
+      const nameQuery = c.req.query("q")?.trim().slice(0, 120);
       const data = await drivePages.page({
         actor: c.var.actor,
         locale,
         ...(projectId ? { projectId } : {}),
-        ...(itemId ? { itemId } : {})
+        ...(itemId ? { itemId } : {}),
+        ...(nameQuery ? { nameQuery } : {})
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {

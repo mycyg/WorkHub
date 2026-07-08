@@ -1015,7 +1015,20 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   if (match.key === "home") {
     // 首页是项目工作台,不是 AI 收件箱孤岛：先展示项目/网盘入口,再把待决策和后台运行作为运营队列露出。
     // 项目清单是次要数据,拉取失败不应把已可用的决策队列整页打垮。
-    const attention = await client.pages.attention(withLocale(locale));
+    // R4（性能）：attention 与项目清单互不依赖——并行拉，首屏不再吃两次串行 RTT。
+    // listProjects 的失败语义保持不变：not_identified 冒泡去重认证，其余退化为 undefined。
+    const [attention, projectsSettled] = await Promise.all([
+      client.pages.attention(withLocale(locale)),
+      client.listProjects().then(
+        (value): ProjectListVM | undefined => value,
+        (error: unknown): ProjectListVM | undefined => {
+          if (error instanceof WorkHubApiError && error.code === "not_identified") {
+            throw error;
+          }
+          return undefined;
+        }
+      )
+    ]);
     // 普通用户审查（QUEUE-PROMOTE）：?focus=<attention_id> 把队列里那张卡提升为主卡原地处理——
     // 队列行点击不再跳去回放页/无动作的工作项页。
     const focusId = new URLSearchParams(match.search).get("focus");
@@ -1031,16 +1044,7 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
         }
       }
     }
-    let projects: ProjectListVM | undefined;
-    try {
-      projects = await client.listProjects();
-    } catch (error) {
-      if (error instanceof WorkHubApiError && error.code === "not_identified") {
-        throw error;
-      }
-      projects = undefined;
-    }
-    return { key: "home", attention, projects } satisfies WebRouteSurface;
+    return { key: "home", attention, projects: projectsSettled } satisfies WebRouteSurface;
   }
   if (match.key === "projects") {
     const projects = await client.listProjects();
@@ -1156,25 +1160,29 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
     // #5：项目主页「最近文件」深链带 item_id → 网盘高亮该文件(selected_item_id)。
     const itemId = params.get("item_id") ?? params.get("itemId") ?? undefined;
-    const drive = await client.pages.drive({
-      ...withLocale(locale),
-      ...(projectId ? { projectId } : {}),
-      ...(itemId ? { itemId } : {})
-    });
-    if (drive.empty_state === "no_project") {
-      return "empty" as const;
-    }
+    const driveQuery = params.get("q")?.trim() || undefined;
     // 网盘是 GitHub 式核心:同时拉全量项目清单,供面板内的项目切换器/「所有项目」回链使用。
     // M1：清单拉取失败不应连累已加载好的网盘——退化为无切换器(仍展示文件)，而非整页报错。
-    let projects: ProjectListVM;
-    try {
-      projects = await client.listProjects();
-    } catch (error) {
-      // 会话过期(not_identified)要冒泡到重认证分支,别被「退化为无切换器」吞掉。
-      if (error instanceof WorkHubApiError && error.code === "not_identified") {
-        throw error;
-      }
-      projects = { generated_at: new Date().toISOString(), projects: [] };
+    // R4（性能）：两者互不依赖，并行拉；not_identified 仍冒泡去重认证。
+    const [drive, projects] = await Promise.all([
+      client.pages.drive({
+        ...withLocale(locale),
+        ...(projectId ? { projectId } : {}),
+        ...(itemId ? { itemId } : {}),
+        ...(driveQuery ? { q: driveQuery } : {})
+      }),
+      client.listProjects().then(
+        (value): ProjectListVM => value,
+        (error: unknown): ProjectListVM => {
+          if (error instanceof WorkHubApiError && error.code === "not_identified") {
+            throw error;
+          }
+          return { generated_at: new Date().toISOString(), projects: [] };
+        }
+      )
+    ]);
+    if (drive.empty_state === "no_project") {
+      return "empty" as const;
     }
     return { key: "drive", drive, projects } satisfies WebRouteSurface;
   }
@@ -1182,20 +1190,21 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     const params = new URLSearchParams(match.search);
     const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
     const meetingId = params.get("m") ?? params.get("meeting_id") ?? params.get("meetingId") ?? undefined;
-    const meetings = await client.pages.meetings({
-      ...withLocale(locale),
-      ...(projectId ? { projectId } : {}),
-      ...(meetingId ? { meetingId } : {})
-    });
+    // 普通用户审查：会议页没有项目切换/返回入口，想看别的项目只能改 URL——与网盘同款项目导航。
+    // R4（性能）：会议页与项目清单并行拉；清单失败照旧退化为空清单（原语义即吞所有错误）。
+    const [meetings, projects] = await Promise.all([
+      client.pages.meetings({
+        ...withLocale(locale),
+        ...(projectId ? { projectId } : {}),
+        ...(meetingId ? { meetingId } : {})
+      }),
+      client.listProjects().then(
+        (value): ProjectListVM => value,
+        (): ProjectListVM => ({ generated_at: new Date().toISOString(), projects: [] })
+      )
+    ]);
     if (meetings.empty_state === "no_project") {
       return "empty" as const;
-    }
-    // 普通用户审查：会议页没有项目切换/返回入口，想看别的项目只能改 URL——与网盘同款项目导航。
-    let projects: ProjectListVM;
-    try {
-      projects = await client.listProjects();
-    } catch {
-      projects = { generated_at: new Date().toISOString(), projects: [] };
     }
     return { key: "meetings", meetings, projects } satisfies WebRouteSurface;
   }
@@ -1382,6 +1391,11 @@ function renderReadyRoute(
   };
 }
 
+// 设计决策（R4 审查裁定，不是遗漏）：路由层零缓存——每次导航都重新拉取页面 VM。
+// 理由：①页面数据是审批/预算/运行态等高时效运营数据，陈旧缓存会直接误导决策；
+// ②实时性已由 SSE（refreshCurrentRouteFromLiveEvent）负责推给「停留中」的页面，导航拉新
+// 是正确性选择而非性能疏忽；③loader 内已做并行化（Promise.all）压掉串行 RTT。
+// 若未来要加缓存，只能做「stale-while-revalidate 的骨架替代」，绝不能把陈旧 VM 当终态渲染。
 export async function loadWebRoute(
   client: WorkHubApiClient,
   match: WebRouteMatch,
