@@ -351,7 +351,7 @@ const cuuCopy = {
     "cost.title": "AI 成本与预算",
     "cost.notConnected": "成本数据还没有接入。",
     "cost.usedToday": "今天已使用 ¥{cost}。",
-    "replay.summarySection": "Replay 摘要",
+    "replay.summarySection": "回放摘要",
     "replay.costSection": "成本",
     "replay.title": "执行回放已就绪",
     "replay.readyFallback": "Cuu 整理好了这次执行轨迹。",

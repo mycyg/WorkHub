@@ -1718,7 +1718,7 @@ function renderApprovalDetailPanel(
     ? `<section data-r4-approval-timeline="true"><h4>${escapeHtml(goldPathT(locale, "approvals.timelineTitle"))}</h4><div class="wh-r4-route-timeline">${detail.timeline.map((step) => {
         // L#W2-18：把合成的时间戳/每步 SLA 真正显示出来（之前只算不渲染）。
         const sub = [step.actor_label, formatApprovalTimestamp(step.at)].filter(Boolean).join(" · ");
-        return `<div class="wh-r4-route-row" data-r4-approval-timeline-step="${escapeHtml(step.kind)}" data-status="${escapeHtml(step.status)}"><div><strong>${escapeHtml(step.label)}</strong>${sub ? `<p class="wh-subtle">${escapeHtml(sub)}</p>` : ""}</div><div class="wh-r4-route-meta">${step.sla_due_at ? `<span class="wh-pill" data-r4-approval-step-sla="true">SLA ${escapeHtml(formatApprovalTimestamp(step.sla_due_at))}</span>` : ""}<span class="wh-pill">${escapeHtml(approvalStepStatusLabel(step.status, zh))}</span></div></div>`;
+        return `<div class="wh-r4-route-row" data-r4-approval-timeline-step="${escapeHtml(step.kind)}" data-status="${escapeHtml(step.status)}"><div><strong>${escapeHtml(step.label)}</strong>${sub ? `<p class="wh-subtle">${escapeHtml(sub)}</p>` : ""}</div><div class="wh-r4-route-meta">${step.sla_due_at ? `<span class="wh-pill" data-r4-approval-step-sla="true">${escapeHtml(zh ? "处理期限 " : "Due ")}${escapeHtml(formatApprovalTimestamp(step.sla_due_at))}</span>` : ""}<span class="wh-pill">${escapeHtml(approvalStepStatusLabel(step.status, zh))}</span></div></div>`;
       }).join("")}</div></section>`
     : "";
   const comments = detail?.comments ?? [];
@@ -1825,7 +1825,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       <div class="wh-r4-route-meta"><span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, zh))}</span></div>
       <h3>${escapeHtml(item.title)}</h3>
       <p>${escapeHtml(item.summary_text)}</p>
-      ${itemRequest?.sla_due_at ? `<span class="wh-pill" data-r4-approval-sla="${escapeHtml(item.id)}">SLA ${escapeHtml(formatApprovalTimestamp(itemRequest.sla_due_at))}</span>` : ""}
+      ${itemRequest?.sla_due_at ? `<span class="wh-pill" data-r4-approval-sla="${escapeHtml(item.id)}">${escapeHtml(locale === "zh-CN" ? "处理期限 " : "Due ")}${escapeHtml(formatApprovalTimestamp(itemRequest.sla_due_at))}</span>` : ""}
       ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-item-link="${escapeHtml(item.id)}">${escapeHtml(zh ? "去处理" : "Open")}</a>` : ""}
     </article>`;
     })
@@ -1839,7 +1839,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
     .map((item) => `<div class="wh-r4-route-row" data-r4-approval-request="${escapeHtml(item.id)}">
       <div>
         <strong>${escapeHtml(approvalActionLabel(item.action_pattern, locale))}</strong>
-        <p>${escapeHtml(approvalRequestStatusLabel(item.status, locale === "zh-CN"))}${item.sla_due_at ? ` · SLA ${escapeHtml(formatApprovalTimestamp(item.sla_due_at))}` : ""}</p>
+        <p>${escapeHtml(approvalRequestStatusLabel(item.status, locale === "zh-CN"))}${item.sla_due_at ? ` · ${locale === "zh-CN" ? "处理期限" : "due"} ${escapeHtml(formatApprovalTimestamp(item.sla_due_at))}` : ""}</p>
       </div>
       <span class="wh-pill" data-r4-approval-routed="${escapeHtml(String(Boolean(item.routed_to_user_id)))}">${escapeHtml(approvalRouteLabel(item.routed_to_user_id, locale))}</span>
     </div>`)

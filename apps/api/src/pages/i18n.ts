@@ -68,7 +68,7 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "attention.proposalReview.reviewed": "已通过确认，可以采纳到正式版了。",
     "attention.planReview.opened": "任务已拆成分工计划，等你确认后再开始执行。",
     "attention.planReview.reviewed": "计划已确认，可以批准为待开始计划。",
-    "proposal.author.ai": "AI Reviewer",
+    "proposal.author.ai": "AI 审阅员",
     "proposal.author.human": "负责人",
     "replay.handoff.done": "已完成",
     "replay.handoff.remaining": "还剩",

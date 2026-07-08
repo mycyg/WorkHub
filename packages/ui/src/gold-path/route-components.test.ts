@@ -2497,7 +2497,7 @@ test("Approvals route component does not leak raw approval facts", () => {
   assert.equal(approvals.html.includes("96000000-0000-4000-8000-000000000011"), false);
   assert.equal(approvals.html.includes("2026-07-05T00:00:00.000Z"), false);
   assert.equal(approvals.html.includes("<strong>Tool approval</strong>"), true);
-  assert.equal(approvals.html.includes("Pending · SLA 2026-07-05 00:00"), true);
+  assert.equal(approvals.html.includes("Pending · due 2026-07-05 00:00"), true);
   assert.equal(approvals.html.includes(">Routed</span>"), true);
   assertNoMainWindowBoundaryLeak(approvals.html);
 });
