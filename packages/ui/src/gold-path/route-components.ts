@@ -1377,11 +1377,17 @@ function renderHomeRouteComponent(
         </div>
       </section>`;
 
+  // 普通用户审查 R2：failed/等拍板的 run 曾是不可点死行——给入口（失败/等人→工作项，运行中→回放）。
   const runRows = vm.background_runs.length
-    ? vm.background_runs.slice(0, 4).map((run) => `<div class="wh-r4-run" data-r4-home-background-run="${escapeHtml(run.run_id)}">
+    ? vm.background_runs.slice(0, 4).map((run) => {
+      const runHref = run.state === "failed" || run.state === "waiting_for_user"
+        ? (run.work_item_id ? `/workitems/${run.work_item_id}` : `/agent-runs/${run.run_id}/replay`)
+        : `/agent-runs/${run.run_id}/replay`;
+      return `<a class="wh-r4-run" href="${escapeHtml(safeHref(runHref))}" data-r4-home-background-run="${escapeHtml(run.run_id)}">
         <div class="wh-r4-run-main"><strong>${escapeHtml(run.title)}</strong><p>${escapeHtml(run.preview_text)}</p></div>
         <span class="wh-pill wh-r4-runstate wh-r4-runstate--${homeRunStateTone(run.state)}">${escapeHtml(homeRunStateLabel(run.state, zh))}</span>
-      </div>`).join("")
+      </a>`;
+    }).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "home.aiWorkingEmpty"))}</p>`;
   // 普通用户审查（首页布局）：每天拍板的人不该先滚过两张常青说明卡——决策区提到项目桌之上。
   const decisionGrid = `<div class="wh-r4-route-grid">
@@ -2709,6 +2715,10 @@ function renderDriveRouteComponent(
       </div>
       <h3>${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</h3>
       <p>${escapeHtml(accepted.target_path ?? accepted.target_key)}</p>
+      <div class="wh-r4-route-meta">
+        ${accepted.work_item_id ? `<a class="wh-pill" href="/workitems/${escapeHtml(accepted.work_item_id)}" data-r9-drive-accepted-workitem="${escapeHtml(accepted.work_item_id)}">${escapeHtml(locale === "zh-CN" ? "来源任务" : "Source task")}</a>` : ""}
+        ${accepted.proposal_id ? `<a class="wh-pill" href="/proposals/${escapeHtml(accepted.proposal_id)}" data-r9-drive-accepted-proposal="${escapeHtml(accepted.proposal_id)}">${escapeHtml(locale === "zh-CN" ? "看变更申请" : "View change request")}</a>` : ""}
+      </div>
       ${driveActionLinks(accepted, locale)}
     </article>`).join("")
     : `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(routeT(locale, "drive.empty"))}</p></article>`;

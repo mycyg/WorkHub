@@ -262,7 +262,7 @@ type WorkItemCopyKey =
 const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
   "zh-CN": {
     "question.confirm.title": "是否按这个方向创建事项？",
-    "question.confirm.body": "点确认后会进入可执行事项；如果需要更多依据，可以先去检索项目证据。",
+    "question.confirm.body": "确认后会按下面的方向创建事项。",
     "question.confirm.create.label": "创建事项",
     "question.confirm.create.description": "确认后，事项会进入可执行状态，AI 可以继续处理。",
     "question.confirm.evidence.label": "先找证据",
@@ -299,7 +299,7 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
   },
   "en-US": {
     "question.confirm.title": "Create the work item with this direction?",
-    "question.confirm.body": "Confirming turns this into executable work. If more support is needed, search project evidence first.",
+    "question.confirm.body": "Confirming creates the work item with the direction below.",
     "question.confirm.create.label": "Create work item",
     "question.confirm.create.description": "After confirmation, the work item becomes executable so AI can continue.",
     "question.confirm.evidence.label": "Find evidence first",
@@ -1517,7 +1517,8 @@ function questionFor(
       session_id: workItem.id,
       work_item_id: workItem.id,
       title: workItemT(locale, "question.confirm.title"),
-      body: workItemT(locale, "question.confirm.body"),
+      // 普通用户审查 R2：问「是否按这个方向创建」却不给看方向——回显标题与需求原文摘要。
+      body: `${workItemT(locale, "question.confirm.body")}\n${locale === "en-US" ? "Direction" : "方向"}：${workItem.title}${workItem.rawDescription ? `\n${(workItem.rawDescription ?? "").slice(0, 280)}` : ""}`,
       input_mode: "confirm",
       options: [
         { id: "create-workitem", label: workItemT(locale, "question.confirm.create.label"), description: workItemT(locale, "question.confirm.create.description"), icon: "check" },

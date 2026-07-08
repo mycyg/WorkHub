@@ -1457,6 +1457,14 @@ function createBrowserLiveRuntime(client: BrowserApiClient, locale: WorkHubLocal
       if (!root) {
         return;
       }
+      // 普通用户审查 R2：动作回执与「页面已刷新」共用一个 toast 槽——回执刚弹出就被刷新提示盖掉。
+      // 正在展示操作回执时跳过 info 级刷新提示（刷新本体已完成，不损失功能）。
+      const currentNoticeKind = root
+        .querySelector('[data-wh-app-notice]')
+        ?.getAttribute("data-r4-notice-kind");
+      if (outcome !== "dirty-deferred" && currentNoticeKind === "action_success") {
+        return;
+      }
       showRouteNotice(
         root,
         outcome === "dirty-deferred"
