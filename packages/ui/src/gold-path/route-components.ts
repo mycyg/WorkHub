@@ -566,7 +566,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "cost.laborSelfImprovementRatio": "自进化占比",
     "agents.kicker": "军团",
     "agents.title": "军团",
-    "agents.summary": "观察正在推进的分工计划；需要人决定的事仍回到总览处理。",
+    "agents.summary": "观察正在推进的任务计划；需要人决定的事仍回到总览处理。",
     "agents.active": "进行中军团",
     "agents.waiting": "等你决策",
     "agents.todayCost": "今日成本",
@@ -574,7 +574,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "agents.plans": "活跃计划",
     "agents.recent": "最近升级",
     "agents.noRecent": "还没有升级动态。",
-    "agents.empty": "还没有军团在跑。下次遇到大任务，系统会先生成一份分工计划。",
+    "agents.empty": "还没有军团在跑。下次遇到大任务，系统会先生成一份任务计划。",
     "agents.start": "发起新任务",
     "agents.cost": "成本",
     "agents.costDetails": "查看成本",
@@ -2089,17 +2089,17 @@ function agentTeamTitle(team: WorkItemAgentTeamVM, locale: WorkHubLocale) {
   if (team.status === "done") {
     // 有子任务没成也喊「已完成」是撒谎——差额时明说部分完成。
     return team.completed_count < team.total_count
-      ? (locale === "zh-CN" ? `军团部分完成 ${ratio}` : `Team partially done ${ratio}`)
-      : (locale === "zh-CN" ? `军团已完成 ${ratio}` : `Team completed ${ratio}`);
+      ? (locale === "zh-CN" ? `军团部分完成 ${ratio}` : `Agent team partially done ${ratio}`)
+      : (locale === "zh-CN" ? `军团已完成 ${ratio}` : `Agent team completed ${ratio}`);
   }
   // B-R9.6 §3.1：暂停态要在头行说清楚——否则用户按了暂停，面板还喊「推进中」在撒谎。
   if (team.status === "paused") {
-    return locale === "zh-CN" ? `军团已暂停 ${ratio}` : `Team paused ${ratio}`;
+    return locale === "zh-CN" ? `军团已暂停 ${ratio}` : `Agent team paused ${ratio}`;
   }
   if (team.status === "approved") {
-    return locale === "zh-CN" ? `军团待出发 ${ratio}` : `Team ready ${ratio}`;
+    return locale === "zh-CN" ? `军团待出发 ${ratio}` : `Agent team ready ${ratio}`;
   }
-  return locale === "zh-CN" ? `军团推进中 ${ratio}` : `Team in progress ${ratio}`;
+  return locale === "zh-CN" ? `军团推进中 ${ratio}` : `Agent team in progress ${ratio}`;
 }
 
 function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], locale: WorkHubLocale) {
@@ -2189,7 +2189,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
     </div>
     ${decisionBanner}
     <div class="wh-r4-route-meta">
-      <span class="wh-pill">${escapeHtml(uiFormatCny(team.cost_used_cny))}</span>
+      <span class="wh-pill" title="${escapeHtml(locale === "zh-CN" ? "本军团全部子运行的成本合计" : "Total cost across this team's child runs")}">${escapeHtml(uiFormatCny(team.cost_used_cny))}</span>
       ${team.cost_budget_cny ? `<span class="wh-pill">${escapeHtml(`${burnPct}%`)}</span>` : ""}
     </div>
     ${team.cost_budget_cny ? `<div class="wh-r4-route-meter" data-r9-agent-team-burn="${escapeHtml(burnTone)}" aria-label="${escapeHtml(`${burnPct}%`)}"><span style="${escapeHtml(burnStyle)}"></span></div>` : ""}
@@ -3669,7 +3669,7 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
           <span class="wh-pill">${escapeHtml(item.code)}</span>
           <span class="wh-pill" data-tone="${escapeHtml(item.status)}">${escapeHtml(workItemStatusLabel(locale, item.status))}</span>
           <span class="wh-pill">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span>
-          ${item.army ? `<span class="wh-pill" data-r9-project-army-pill="${escapeHtml(item.id)}">${escapeHtml(zh ? `军团 ${item.army.done}/${item.army.total}` : `Army ${item.army.done}/${item.army.total}`)}</span>` : ""}
+          ${item.army ? `<span class="wh-pill" data-r9-project-army-pill="${escapeHtml(item.id)}" title="${escapeHtml(zh ? "AI 军团任务计划的子任务完成数" : "Agent team subtasks done")}">${escapeHtml(zh ? `军团子任务 ${item.army.done}/${item.army.total}` : `Agent team ${item.army.done}/${item.army.total}`)}</span>` : ""}
         </div>
       </div>
     </a>`).join("")
@@ -3806,7 +3806,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   const armyCard = vm.by_task_plan.length
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-army="true" data-r9-cost-army-count="${escapeHtml(String(vm.by_task_plan.length))}">
           <h3>${escapeHtml(zhNotice ? "军团花费" : "Agent team spend")}</h3>
-          <p class="wh-subtle">${escapeHtml(zhNotice ? "按任务计划分组的 AI 军团开销。" : "AI team cost grouped by task plan.")}</p>
+          <p class="wh-subtle">${escapeHtml(zhNotice ? "按任务计划分组的 AI 军团开销（近 90 天账目）。" : "Agent team cost grouped by task plan (last 90 days).")}</p>
           <div class="wh-r4-route-timeline">${armyRows}</div>
           ${armyCapNote}
           <div class="wh-r4-route-actions"><a class="wh-btn" href="/dashboard/agents" data-r9-cost-army-cta="true">${escapeHtml(zhNotice ? "去指挥台看军团" : "Open the command deck")}</a></div>

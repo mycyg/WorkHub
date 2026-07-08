@@ -39,16 +39,16 @@ function agentTeamTitle(team: WorkItemAgentTeamVM, zh: boolean) {
   const ratio = `${team.completed_count}/${team.total_count}`;
   if (team.status === "done") {
     return team.completed_count < team.total_count
-      ? (zh ? `军团部分完成 ${ratio}` : `Team partially done ${ratio}`)
-      : (zh ? `军团已完成 ${ratio}` : `Team completed ${ratio}`);
+      ? (zh ? `军团部分完成 ${ratio}` : `Agent team partially done ${ratio}`)
+      : (zh ? `军团已完成 ${ratio}` : `Agent team completed ${ratio}`);
   }
   if (team.status === "paused") {
-    return zh ? `军团已暂停 ${ratio}` : `Team paused ${ratio}`;
+    return zh ? `军团已暂停 ${ratio}` : `Agent team paused ${ratio}`;
   }
   if (team.status === "approved") {
-    return zh ? `军团待出发 ${ratio}` : `Team ready ${ratio}`;
+    return zh ? `军团待出发 ${ratio}` : `Agent team ready ${ratio}`;
   }
-  return zh ? `军团推进中 ${ratio}` : `Team in progress ${ratio}`;
+  return zh ? `军团推进中 ${ratio}` : `Agent team in progress ${ratio}`;
 }
 
 function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], zh: boolean) {

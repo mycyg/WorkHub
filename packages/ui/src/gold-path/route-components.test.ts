@@ -1978,7 +1978,8 @@ test("B-R9.6 project home rows show the army progress pill only for armied work 
   };
   const projectHome = renderWebRouteComponent({ key: "project-home", project: vm }, { locale: "zh-CN" });
   assert.equal(projectHome.html.includes('data-r9-project-army-pill="94000000-0000-4000-8000-000000000001"'), true);
-  assert.equal(projectHome.html.includes("军团 2/4"), true);
+  // NAMING pass：pill 文案带「子任务」限定词，新人不再猜 2/4 是什么。
+  assert.equal(projectHome.html.includes("军团子任务 2/4"), true);
   assert.equal(projectHome.html.includes('data-r9-project-army-pill="94000000-0000-4000-8000-000000000002"'), false);
   assertNoMainWindowBoundaryLeak(projectHome.html);
 });
