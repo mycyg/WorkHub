@@ -86,7 +86,7 @@ function questionHtml(vm: SessionVM, selected: Set<string>, zh: boolean): string
 }
 
 // projectLabel：从项目主页「新任务」进来时携带的项目名 → 起始屏直接显示「在该项目里新建」，与 web 端对齐。
-export function startHtml(zh: boolean, projectLabel?: string): string {
+export function startHtml(zh: boolean, projectLabel?: string, prefillIntent?: string): string {
   const projectPill = projectLabel
     ? `<div class="wh-spot-row-meta" data-intake-project="${escapeHtml(projectLabel)}"><span class="wh-spot-chip wh-spot-chip--info">${escapeHtml(zh ? `项目：${projectLabel}` : `Project: ${projectLabel}`)}</span></div>`
     : "";
@@ -94,7 +94,7 @@ export function startHtml(zh: boolean, projectLabel?: string): string {
     <h3 class="wh-spot-intake-title">${zh ? "你想让 AI 帮你做点什么？" : "What should the AI take on?"}</h3>
     ${projectPill}
     <p class="wh-spot-intake-body">${zh ? "用一句话说清楚，Cuu 会先澄清几个关键点，再去干、回头给你过目。" : "Describe it in a line — Cuu clarifies a few points, then works and brings it back for review."}</p>
-    <textarea class="wh-spot-freetext" data-intent placeholder="${zh ? "例如：整理上周客户访谈，输出一页要点摘要…" : "e.g. Summarize last week's customer interviews into a one-pager…"}"></textarea>
+    <textarea class="wh-spot-freetext" data-intent placeholder="${zh ? "例如：整理上周客户访谈，输出一页要点摘要…" : "e.g. Summarize last week's customer interviews into a one-pager…"}">${escapeHtml(prefillIntent ?? "")}</textarea>
     <div class="wh-spot-intake-actions">
       <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-start>${zh ? "开始澄清" : "Start"}</button>
     </div>
@@ -137,8 +137,12 @@ export function createIntakeView(): SpotlightCapabilityView {
         selected = new Set();
         // 绑定项目时(ctx.target.label) 把上下文带进面包屑 + 起始屏，与 web 端「在 X 里派活」对齐。
         const projectLabel = ctx.target?.label;
+        // 普通用户审查 R2：launcher 整句查询无匹配→「当新任务」带过来的原话预填到意图框，不丢字。
+        const prefillIntent = ctx.target?.route?.startsWith("spotlight-intent:")
+          ? ctx.target.route.slice("spotlight-intent:".length)
+          : undefined;
         ctx.setSubtitle(projectLabel ? (zh ? `新任务 · ${projectLabel}` : `New task · ${projectLabel}`) : (zh ? "提需求" : "New request"));
-        body.innerHTML = startHtml(zh, projectLabel);
+        body.innerHTML = startHtml(zh, projectLabel, prefillIntent);
         ctx.requestResize();
         body.querySelector<HTMLTextAreaElement>("[data-intent]")?.focus();
       };

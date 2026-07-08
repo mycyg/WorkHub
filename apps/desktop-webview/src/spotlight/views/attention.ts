@@ -152,6 +152,19 @@ function mergeDraftEditor(item: AttentionItem, zh: boolean): string {
     <textarea class="wh-spot-merge-draft" data-att-merge-value rows="3">${escapeHtml(draft)}</textarea>`;
 }
 
+// 普通用户审查 R2：web 同一张审批卡有依据链接、桌面却要凭空拍板——压缩渲前 2 条证据（标题+摘录）。
+function renderCardEvidence(item: AttentionItem, zh: boolean): string {
+  const refs = item.evidence_refs ?? [];
+  if (refs.length === 0) {
+    return "";
+  }
+  const rows = refs.slice(0, 2).map((ref) => `<p class="wh-spot-card-desc" data-att-evidence="${escapeHtml(ref.id)}">${escapeHtml(zh ? "依据：" : "Evidence: ")}${escapeHtml(ref.title)}${ref.excerpt ? ` — ${escapeHtml(ref.excerpt.slice(0, 80))}` : ""}</p>`).join("");
+  const more = refs.length > 2
+    ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? `还有 ${refs.length - 2} 条依据，去主窗口细看` : `${refs.length - 2} more in the main window`)}</p>`
+    : "";
+  return rows + more;
+}
+
 function renderCard(item: AttentionItem, zh: boolean): string {
   const tone = toneForKind(item.kind);
   const desc = item.reason_text ?? item.summary_text ?? "";
@@ -165,6 +178,7 @@ function renderCard(item: AttentionItem, zh: boolean): string {
       </div>
       <h3 class="wh-spot-card-title">${escapeHtml(title)}</h3>
       ${desc ? `<p class="wh-spot-card-desc">${escapeHtml(desc)}</p>` : ""}
+      ${renderCardEvidence(item, zh)}
       ${mergeDraftEditor(item, zh)}
       <div class="wh-spot-card-actions" data-att-actionrow>${actions.map(renderAction).join("")}</div>
     </div>

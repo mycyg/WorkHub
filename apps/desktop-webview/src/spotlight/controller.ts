@@ -110,7 +110,10 @@ function renderLauncherGrid(
 ): string {
   const zh = locale === "zh-CN";
   if (matches.length === 0) {
-    return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${zh ? "没有匹配的能力，换个说法试试" : "No matching capability — try another phrase"}</div></div>`;
+    // 普通用户审查 R2：搜索框邀请自然语言，整句需求却落「没有匹配」死路——给「当新任务交给 Cuu」出口。
+    return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${zh ? "没有匹配的能力" : "No matching capability"}
+      <div class="wh-spot-intake-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-spot-fallback-intake>${zh ? "把这句话当新任务交给 Cuu" : "Hand this to Cuu as a new task"}</button></div>
+    </div></div>`;
   }
   // 空查询时给一无所知的新用户一句温和的引导：先亮身份(WorkHub·Cuu)，再说怎么用 + Esc 关闭提示
   // （搜索框无 header，保持聚焦盒观感；⌘K 已在右上角标出）。
@@ -665,6 +668,12 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     const cap = target.closest<HTMLElement>("[data-spot-cap]");
     if (cap?.dataset.spotCap) {
       dispatch({ type: "openCapability", id: cap.dataset.spotCap as CommandId });
+      return;
+    }
+    // 普通用户审查 R2：无匹配兜底——整句查询原话带进 intake 意图框（route 前缀约定 spotlight-intent:）。
+    if (target.closest<HTMLElement>("[data-spot-fallback-intake]")) {
+      const query = input2.value.trim();
+      openCapabilityWithTarget("intake", query ? { route: `spotlight-intent:${query}` } : undefined);
     }
   });
 
@@ -694,6 +703,10 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   };
 
   input2.addEventListener("keydown", (event) => {
+    // 普通用户审查 R2：中文输入法组合态的回车是「选字」不是「确认」——组合中一律不当快捷键。
+    if (event.isComposing || event.keyCode === 229) {
+      return;
+    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       moveActive(1);
@@ -710,6 +723,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     }
   });
 
+  let escapeArmedUntil = 0;
   window.addEventListener(
     "keydown",
     (event) => {
@@ -719,6 +733,21 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         // 不再额外 render() 造成 launcher 连画两遍。
         resetLauncher();
       } else if (event.key === "Escape") {
+        if (event.isComposing || event.keyCode === 229) {
+          return;
+        }
+        // 普通用户审查 R2：capability 内有未提交的输入（打回说明/合并草稿/需求文本）时，
+        // Esc 无条件回退会静默丢字——第一次 Esc 提示，2 秒内再按才真正回退。
+        const dirtyInput = openCapabilityId(state)
+          ? [...body.querySelectorAll<HTMLTextAreaElement | HTMLInputElement>("textarea, input[type=text], input[type=search]")]
+            .find((field) => field.value.trim().length > 0)
+          : undefined;
+        if (dirtyInput && escapeArmedUntil < Date.now()) {
+          event.preventDefault();
+          escapeArmedUntil = Date.now() + 2000;
+          return;
+        }
+        escapeArmedUntil = 0;
         if (openCapabilityId(state)) {
           event.preventDefault();
           // M3：若当前能力视图正处于内部详情(list→detail),先退一级——点它已渲染好的「返回列表」按钮,

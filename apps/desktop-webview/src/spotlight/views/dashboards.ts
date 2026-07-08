@@ -603,7 +603,8 @@ function bubbleHtml(bubble: EvidenceBubble, zh: boolean): string {
     .slice(0, 8)
     .map((r) => {
       const conf = r.confidence_hint === "found" ? "ok" : r.confidence_hint === "weak" ? "warn" : "muted";
-      return `<a class="wh-spot-row" href="${escapeHtml(safeHref(r.href ?? "#"))}" target="_blank" rel="noreferrer">
+      // 普通用户审查 R2：target=_blank 在 Tauri 内无承接（点了没反应）——改内联分派。
+      return `<a class="wh-spot-row" href="${escapeHtml(safeHref(r.href ?? "#"))}" data-know-ref="${escapeHtml(safeHref(r.href ?? ""))}">
         <div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(r.title)}<span class="wh-spot-conf wh-spot-conf--${conf}"></span></div><div class="wh-spot-row-sub">${escapeHtml(r.excerpt ?? "")}</div></div>
       </a>`;
     })
@@ -730,6 +731,22 @@ export function createKnowledgeView(): SpotlightCapabilityView {
         }
         if (target.closest("[data-know-go]") || target.closest("[data-spot-retry]")) {
           void run();
+          return;
+        }
+        // 证据行：工作项/回放内联打开，其余（drive 等）提示到主窗查看，绝不静默无反应。
+        const refRow = target.closest<HTMLElement>("[data-know-ref]");
+        if (refRow) {
+          event.preventDefault();
+          const href = refRow.dataset.knowRef ?? "";
+          const workitemId = /^\/workitems\/([^/?#]+)/.exec(href)?.[1];
+          const replayId = /^\/agent-runs\/([^/?#]+)\/replay/.exec(href)?.[1];
+          if (workitemId) {
+            ctx.open("workitem", { id: decodeURIComponent(workitemId), route: href });
+          } else if (replayId) {
+            ctx.open("replay", { id: decodeURIComponent(replayId), route: href });
+          } else {
+            ctx.toast(zh ? "这类来源请在主窗口打开查看" : "Open this source in the main window", "info");
+          }
         }
       });
       ctx.body.addEventListener("keydown", (event) => {
