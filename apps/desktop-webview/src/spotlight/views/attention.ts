@@ -189,6 +189,7 @@ export function renderApprovalDetailInline(detail: ApprovalDetailVM, itemId: str
     ${timeline}
     <p class="wh-spot-card-desc"><strong>${escapeHtml(zh ? "讨论" : "Discussion")}</strong></p>
     ${comments}
+    <div class="wh-spot-reasons-row"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-att-detail-collapse="${escapeHtml(itemId)}">${escapeHtml(zh ? "收起" : "Collapse")}</button></div>
     <div class="wh-spot-reasons-row"><input class="wh-spot-merge-draft" data-att-detail-comment-input="${escapeHtml(itemId)}" placeholder="${escapeHtml(zh ? "写句评论…" : "Add a comment…")}" /><button type="button" class="wh-spot-act ds-pressable" data-att-detail-comment-submit="${escapeHtml(itemId)}">${escapeHtml(zh ? "发出" : "Post")}</button></div>
   </div>`;
 }
@@ -546,6 +547,13 @@ export function createAttentionView(): SpotlightCapabilityView {
           void runConflictAction(conflictAction);
           return;
         }
+        // R8：详情面板「收起」——可见按钮 + 纳入 Esc 逐级回退（controller 的 back selector）。
+        const detailCollapse = target.closest<HTMLButtonElement>("[data-att-detail-collapse]");
+        if (detailCollapse) {
+          detailCollapse.closest("[data-att-detail]")?.remove();
+          ctx.requestResize();
+          return;
+        }
         // R5 双端一致：审批卡「详情」——就地展开 AI 理由/时间线/评论（数据与 web 审批工作台同源）。
         const detailToggle = target.closest<HTMLButtonElement>("[data-att-detail-toggle]");
         if (detailToggle) {
@@ -562,15 +570,23 @@ export function createAttentionView(): SpotlightCapabilityView {
             try {
               const center = approvalDetailCache ?? await client.pages.approvals({ locale: ctx.locale });
               approvalDetailCache = center;
+              // R8：用户可能在 await 期间切走能力——disposed 后不再对新视图弹 toast/改 DOM。
+              if (disposed) {
+                return;
+              }
               const detail = center.items_detail?.[itemId];
               if (!detail) {
                 ctx.toast(zh ? "这条的详情暂时拉不到" : "Details are unavailable for this item", "info");
                 return;
               }
-              card?.insertAdjacentHTML("beforeend", renderApprovalDetailInline(detail, itemId, zh));
+              // R8：挂到 .wh-spot-card-main（内容列）而非 article 本体——后者是 flex 行，
+              // 详情块会被当成第三个 flex 子项挤成无内边距窄条。
+              (card?.querySelector<HTMLElement>(".wh-spot-card-main") ?? card)?.insertAdjacentHTML("beforeend", renderApprovalDetailInline(detail, itemId, zh));
               ctx.requestResize();
             } catch {
-              ctx.toast(zh ? "详情没拉到，稍后重试" : "Couldn't load details. Try again.", "error");
+              if (!disposed) {
+                ctx.toast(zh ? "详情没拉到，稍后重试" : "Couldn't load details. Try again.", "error");
+              }
             } finally {
               restore();
             }
@@ -590,6 +606,9 @@ export function createAttentionView(): SpotlightCapabilityView {
           void (async () => {
             try {
               await client.postApprovalComment(itemId, { body: text });
+              if (disposed) {
+                return;
+              }
               if (input) {
                 input.value = "";
               }
@@ -599,7 +618,9 @@ export function createAttentionView(): SpotlightCapabilityView {
               ctx.toast(zh ? "评论已发出" : "Comment posted", "ok");
               ctx.requestResize();
             } catch {
-              ctx.toast(zh ? "评论没发出去，稍后重试" : "Comment failed. Try again.", "error");
+              if (!disposed) {
+                ctx.toast(zh ? "评论没发出去，稍后重试" : "Comment failed. Try again.", "error");
+              }
             } finally {
               restore();
             }
