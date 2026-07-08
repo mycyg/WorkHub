@@ -1971,10 +1971,10 @@ test("pet surface renders merge conflicts as proposal conflict choices instead o
           "data-cuu-action-id": "merge"
         }, "a"));
         assert.equal(merge.defaultPrevented, true);
-        assert.match(root.innerHTML, /变更撞车了/u);
+        assert.match(root.innerHTML, /和别人的改动冲突了/u);
         assert.match(root.innerHTML, /保留正式版/u);
         // 旧断言继续接受「采纳这次版本」；Cuu proposal 卡片已统一 merge 动词为「合入」，否则同一卡内会混用两套口径。
-        assert.match(root.innerHTML, /合入这次版本/u);
+        assert.match(root.innerHTML, /采纳这次版本/u);
         assert.doesNotMatch(root.innerHTML, /这次启动没有成功|重新开始/u);
       } finally {
         await runtime.dispose();

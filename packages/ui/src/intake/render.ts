@@ -104,7 +104,7 @@ export function renderIntakeSession(
   const rootClass = surface === "desktop" ? "wh-desktop" : "wh-web";
   const pct = progressPercent(question);
   const main = `<section class="wh-intake-main" data-session-id="${escapeHtml(session.session_id)}">
-    <span class="wh-kicker">${escapeHtml(uiT(locale, "intake.kicker"))}</span>
+    <span class="wh-kicker">${escapeHtml(uiT(locale, "intake.sessionKicker"))}</span>
     <h1 class="wh-title">${escapeHtml(question.title)}</h1>
     <p class="wh-subtle">${escapeHtml(question.body ?? uiT(locale, "intake.defaultBody"))}</p>
     <div class="wh-progress" aria-label="${escapeHtml(uiT(locale, "intake.progressAria"))}"><span style="width:${pct}%"></span></div>

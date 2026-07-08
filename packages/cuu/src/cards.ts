@@ -178,10 +178,12 @@ function normalizeProposalMergeVerb(text: string, options: CuuLocaleOptions = {}
   if (options.locale === "en-US") {
     return text;
   }
+  // R9 词表：全站 merge 动词统一「采纳」（web 主动作即「采纳到正式版」）——旧实现反向统一成「合入」，
+  // 造成同一冲突卡 web/桌面两套动词。服务端残留的「合入」在这里归一。
   return text
-    .replaceAll("采纳这次版本", "合入这次版本")
-    .replaceAll("正式采纳", "正式合入")
-    .replaceAll("是否采纳", "是否合入");
+    .replaceAll("合入这次版本", "采纳这次版本")
+    .replaceAll("正式合入", "正式采纳")
+    .replaceAll("是否合入", "是否采纳");
 }
 
 function publicProposalSummary(text: string | undefined, options: CuuLocaleOptions = {}) {

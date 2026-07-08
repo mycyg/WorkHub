@@ -11,7 +11,6 @@ export type CuuCopyKey =
   | "agentRun.workingTitle"
   | "agentRun.progressFallback"
   | "agentRun.thinkingStatus"
-  | "agentRun.toolCallStatus"
   | "agentRun.toolCallStatusGeneric"
   | "agentRun.toolResultStatus"
   | "agentRun.phase.think"
@@ -246,7 +245,6 @@ const cuuCopy = {
     "agentRun.workingTitle": "Cuu 正在处理",
     "agentRun.progressFallback": "Cuu 正在整理执行进度。",
     "agentRun.thinkingStatus": "AI 正在整理材料，稍后给你下一步。",
-    "agentRun.toolCallStatus": "正在调用工具：{tool}",
     "agentRun.toolCallStatusGeneric": "正在调用工具。",
     "agentRun.toolResultStatus": "工具已返回，Cuu 正在整理下一步。",
     "agentRun.phase.think": "AI 正在整理材料",
@@ -292,16 +290,16 @@ const cuuCopy = {
     "proposal.requestReplan": "打回重拆",
     "proposal.riskSection": "风险与回滚",
     "proposal.rollbackAvailable": "留有回滚快照（需人工恢复）",
-    "proposal.rollbackUnavailable": "不可完整回滚",
+    "proposal.rollbackUnavailable": "无回滚快照",
     "proposal.checksSection": "检查结果",
     "proposal.checkStatus.passed": "通过",
     "proposal.checkStatus.failed": "未通过",
     "proposal.checkStatus.warning": "有提醒",
     "proposal.checkStatus.skipped": "已跳过",
-    "proposal.conflictTitle": "变更撞车了",
+    "proposal.conflictTitle": "和别人的改动冲突了",
     "proposal.conflictOpenProposal": "查看变更申请",
     "proposal.conflictKeepCurrent": "保留正式版",
-    "proposal.conflictAcceptIncoming": "合入这次版本",
+    "proposal.conflictAcceptIncoming": "采纳这次版本",
     "proposal.conflictAiFusion": "AI 融合建议",
     "proposal.conflictApplyAiFusion": "采用 AI 融合稿",
     "proposal.conflictTargetSection": "撞车对象",
@@ -480,7 +478,6 @@ const cuuCopy = {
     "agentRun.workingTitle": "Cuu is working",
     "agentRun.progressFallback": "Cuu is organizing the run progress.",
     "agentRun.thinkingStatus": "AI is organizing the materials and preparing the next step.",
-    "agentRun.toolCallStatus": "Calling tool: {tool}",
     "agentRun.toolCallStatusGeneric": "Calling a tool.",
     "agentRun.toolResultStatus": "Tool result received; Cuu is organizing the next step.",
     "agentRun.phase.think": "AI is organizing materials",
@@ -526,7 +523,7 @@ const cuuCopy = {
     "proposal.requestReplan": "Request replan",
     "proposal.riskSection": "Risk and rollback",
     "proposal.rollbackAvailable": "Rollback snapshot kept (manual restore)",
-    "proposal.rollbackUnavailable": "Not fully rollbackable",
+    "proposal.rollbackUnavailable": "No rollback snapshot",
     "proposal.checksSection": "Check results",
     "proposal.checkStatus.passed": "Passed",
     "proposal.checkStatus.failed": "Failed",

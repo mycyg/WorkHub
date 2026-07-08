@@ -612,15 +612,16 @@ test("proposal conflicts become option-first Cuu cards with merge payloads", () 
     conflict_resolution: { accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"] }
   });
   assert.equal(card.actions.find((action) => action.id === "ai_fusion")?.label, "采用 AI 融合稿");
-  // 旧断言允许「采纳这次版本」漏到 Cuu 冲突卡；这里统一 proposal merge 动作为「合入」。
-  assert.equal(card.actions.find((action) => action.id === "accept_incoming")?.label, "合入这次版本");
+  // R9 词表：全站 proposal merge 动词统一「采纳」（web 主战场是「采纳到正式版」）——Cuu 卡对齐，
+  // 负断言翻转为不许残留旧词「合入」。
+  assert.equal(card.actions.find((action) => action.id === "accept_incoming")?.label, "采纳这次版本");
   assert.doesNotMatch(
     [
       card.message,
       ...(card.sections ?? []).flatMap((section) => section.lines),
       ...card.actions.map((action) => action.label)
     ].join(" "),
-    /采纳/u
+    /合入/u
   );
   assert.equal(
     card.actions.find((action) => action.id === "ai_fusion")?.href,

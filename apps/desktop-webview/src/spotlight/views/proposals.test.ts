@@ -173,7 +173,7 @@ test("desktop proposal detail renders merge conflicts as choices instead of a ge
   );
 
   assert.match(html ?? "", /data-prop-conflict-panel="true"/u);
-  assert.match(html ?? "", /这份变更撞车了/u);
+  assert.match(html ?? "", /这份变更和别人的改动冲突了/u);
   assert.match(html ?? "", /保留正式版/u);
   assert.match(html ?? "", /采纳这次版本/u);
   assert.doesNotMatch(html ?? "", /合并失败/u);

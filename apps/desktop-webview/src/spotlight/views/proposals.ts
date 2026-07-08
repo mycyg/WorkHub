@@ -156,7 +156,7 @@ export function proposalMergeConflictHtml(error: unknown, zh: boolean): string |
   return `<div class="wh-spot-dash ds-anim-fade-in" data-prop-conflict-panel="true">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-prop-back style="align-self:flex-start">${zh ? "← 返回待审改动" : "← Back to changes"}</button>
     <div>
-      <h3 class="wh-spot-card-title">${zh ? "这份变更撞车了" : "This change has conflicts"}</h3>
+      <h3 class="wh-spot-card-title">${zh ? "这份变更和别人的改动冲突了" : "This change has conflicts"}</h3>
       <p class="wh-spot-action-note">${zh ? "先选择每个冲突怎么处理，再继续合入交付物。" : "Choose how to resolve each conflict, then merge the deliverable."}</p>
     </div>
     ${rendered.html}

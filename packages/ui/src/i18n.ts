@@ -18,7 +18,8 @@ export type UiRenderOptions = {
 type Copy = Record<WorkHubLocale, string>;
 
 const copy = {
-  "intake.kicker": { "zh-CN": "选项澄清", "en-US": "Option intake" },
+  // R9 i18n：与 gold-path 词典的 intake.kicker（「新建需求」）同名不同义——改名消歧。
+  "intake.sessionKicker": { "zh-CN": "选项澄清", "en-US": "Option intake" },
   "intake.aiRecommended": { "zh-CN": "AI 推荐", "en-US": "AI recommended" },
   "intake.freeText": { "zh-CN": "其他 / 补充", "en-US": "Other / add context" },
   "intake.freeTextPlaceholder": { "zh-CN": "需要时再补一句。", "en-US": "Add one sentence only if needed." },
@@ -179,9 +180,7 @@ const copy = {
   },
   "agent.stepFallback": { "zh-CN": "记录了一步。", "en-US": "Recorded one step." },
   "agent.stepThinkingPublic": { "zh-CN": "AI 正在整理材料，稍后给你下一步。", "en-US": "AI is organizing the materials and preparing the next step." },
-  "agent.stepToolCall": { "zh-CN": "工具调用", "en-US": "Tool call" },
   "agent.stepToolCallGeneric": { "zh-CN": "正在调用工具。", "en-US": "Calling a tool." },
-  "agent.stepToolResult": { "zh-CN": "工具已返回", "en-US": "Tool result received" },
   "agent.stepToolResultGeneric": {
     "zh-CN": "工具已返回，AI 正在整理下一步。",
     "en-US": "Tool result received; AI is organizing the next step."
