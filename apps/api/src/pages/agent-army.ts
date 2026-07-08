@@ -18,6 +18,7 @@ type AgentArmyDashboardPageInput = {
   generatedAt?: Date;
   locale?: WorkHubLocale;
   attentionCount: number;
+  isAdmin?: boolean;
   sourceWarnings?: NonNullable<AgentArmyDashboardVM["source_warnings"]>;
   autonomyRatePct?: number;
   plans: TaskPlanDashboardPlanRow[];
@@ -260,7 +261,9 @@ export function buildAgentArmyDashboardPage(input: AgentArmyDashboardPageInput):
       ...(row.objective?.progressPercent !== null && row.objective?.progressPercent !== undefined
         ? { objective_progress_pct: Math.max(0, Math.min(100, row.objective.progressPercent)) }
         : {}),
-      budget_href: "/dashboard/cost",
+      // 普通用户审查 R2 high：成本页军团卡仅管理员可见——非 admin 点「查看成本」是死链，不给链接
+      // （卡上本就有 已花/预算 数字）。
+      ...(input.isAdmin ? { budget_href: "/dashboard/cost" } : {}),
       status: row.plan.status,
       last_activity_at: row.plan.updatedAt.toISOString(),
       progress: {

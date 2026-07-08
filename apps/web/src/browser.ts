@@ -1194,7 +1194,7 @@ function bindGoldPathNavigation(
           pendingApprovalId = approvalRespondId;
           pendingApprovalActionId = actionId ?? "deny";
           markActiveRouteDirty("review_reason_pending");
-          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingApprovalActionId), reviewReasonButtons(locale));
+          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingApprovalActionId), reviewReasonButtons(locale), 0);
           return;
         }
         try {
@@ -1212,7 +1212,7 @@ function bindGoldPathNavigation(
           pendingReviewHref = href;
           pendingReviewActionId = actionId ?? "request_changes";
           markActiveRouteDirty("review_reason_pending");
-          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingReviewActionId), reviewReasonButtons(locale));
+          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingReviewActionId), reviewReasonButtons(locale), 0);
           return;
         }
         try {

@@ -215,6 +215,7 @@ test("R9.6 agent army dashboard aggregates observable plan state from rows and c
     generatedAt: now,
     locale: "zh-CN",
     attentionCount: 2,
+    isAdmin: true,
     sourceWarnings: [{
       source: "sync_conflicts",
       message: "记忆冲突暂时加载失败。请打开设置或稍后重试。"
@@ -350,6 +351,7 @@ test("R9.6 agent army dashboard aggregates observable plan state from rows and c
   assert.equal(vm.plans[0]?.progress.label, "1/2");
   assert.equal(vm.plans[0]?.objective_title, "季度上市策略");
   assert.equal(vm.plans[0]?.objective_progress_pct, 40);
+  // 普通用户审查 R2 high：成本页军团卡仅管理员可见——「查看成本」链接只给 admin。
   assert.equal(vm.plans[0]?.budget_href, "/dashboard/cost");
   assert.deepEqual(vm.plans[0]?.roles, [
     { role: "research", count: 1 },

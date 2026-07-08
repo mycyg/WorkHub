@@ -2479,7 +2479,10 @@ function renderProposalRouteComponent(
     html: `<section class="wh-r4-route" data-r4-route-component="proposal" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}"${reactAttrs} data-r4-proposal-id="${escapeHtml(props.proposalId)}" data-r4-proposal-workitem-id="${escapeHtml(props.workItemId)}" data-r4-proposal-change-count="${escapeHtml(String(props.changeCount))}" data-r4-proposal-check-count="${escapeHtml(String(props.checkCount))}" data-r4-proposal-evidence-count="${escapeHtml(String(props.evidenceRefCount))}" data-r4-proposal-action-count="${escapeHtml(String(actions.length))}" data-r4-proposal-comment-count="${escapeHtml(String(props.commentCount))}" data-r4-proposal-conflict-count="${escapeHtml(String(props.conflictCount))}" data-r4-proposal-split-adapter="true" data-r4-proposal-readonly-review-action-count="${escapeHtml(String(props.reviewActionCount))}" data-r4-proposal-advanced-fallback-preserved="${escapeHtml(String(props.advancedFallbackPreserved))}" data-r4-proposal-advanced-fallback-action-count="${escapeHtml(String(props.advancedFallbackActionCount))}" data-r4-proposal-line-editor-fallback="${escapeHtml(String(props.lineEditorFallback))}" data-r4-proposal-field-editor-fallback="${escapeHtml(String(props.fieldEditorFallback))}" data-r4-proposal-subrecord-editor-fallback="${escapeHtml(String(props.subrecordEditorFallback))}">
       <header class="wh-r4-route-head">
         <div>
-          <span class="wh-r4-route-kicker">${escapeHtml(uiT(locale, "proposal.kicker"))}</span>
+          <span class="wh-r4-route-kicker">${escapeHtml(vm.manifest.changes.some((change) =>
+            change.target_kind === "structured_record" && change.target_ref.entity_type === "task_plan")
+            ? (locale === "zh-CN" ? "任务计划提议" : "Task plan proposal")
+            : uiT(locale, "proposal.kicker"))}</span>
           <h1>${escapeHtml(vm.title)}</h1>
           <p>${escapeHtml(summary)}</p>
         </div>
@@ -3405,7 +3408,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
       <div class="wh-r4-route-meta" data-r9-agent-plan-roles="true">${roles}</div>
       <div class="wh-r4-route-meta" data-r9-agent-plan-statuses="true">${statuses}</div>
       <div class="wh-r4-route-meta">
-        <span class="wh-subtle">${escapeHtml(`${routeT(locale, "agents.cost")}: ${costAmount(plan.cost.used_cny)}${plan.cost.budget_cny ? `/${costAmount(plan.cost.budget_cny)}` : ""} · ${routeT(locale, "agents.judge")}: ${plan.judge.pass_rate_pct}%`)}</span>
+        <span class="wh-subtle">${escapeHtml(`${routeT(locale, "agents.cost")}: ${costAmount(plan.cost.used_cny)}${plan.cost.budget_cny ? `/${costAmount(plan.cost.budget_cny)}` : ""} · ${plan.judge.total > 0 ? `${routeT(locale, "agents.judge")}: ${plan.judge.pass_rate_pct}%` : (locale === "zh-CN" ? "暂无复核" : "No reviews yet")}`)}</span>
         ${freshness}
         ${budgetLink}
       </div>

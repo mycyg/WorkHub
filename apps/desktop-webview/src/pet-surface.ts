@@ -209,6 +209,8 @@ export const desktopPetSurfaceCss = [
   "@media (prefers-reduced-motion:reduce){.wh-pet-bubble{animation:none!important}}",
   ".wh-pet-surface[data-pet-suppress-bubble-intro=true] .wh-pet-bubble{animation:none}",
   ".wh-pet-kicker{display:flex;align-items:center;gap:7px;color:#667085;font-size:11px;font-weight:800;min-width:0;max-width:100%;flex-wrap:wrap}",
+  // 普通用户审查 R2：每张卡给「知道了」退路——不许猫被一张卡占住没法脱身。
+  ".wh-pet-dismiss{margin-left:auto;border:1px solid rgba(60,60,67,.16);border-radius:999px;background:rgba(255,255,255,.92);color:#667085;width:18px;height:18px;line-height:1;font-size:12px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0}",
   ".wh-pet-dot{width:8px;height:8px;border-radius:999px;background:#ff9d58;box-shadow:0 0 0 3px rgba(255,157,88,.18)}",
   ".wh-pet-emotion{max-width:100%;color:#475467;font-size:10px;line-height:1;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   // 气泡直接复用聚焦盒(.wh-spot)的玻璃配方：同样的半透白底/亮描边/投影/blur。语气不再改底色或描边色，
@@ -1341,6 +1343,15 @@ export async function bootDesktopPetSurface(
       return;
     }
 
+    // 普通用户审查 R2：「知道了」关闭钮——先于 anchor 守卫处理（它是 button 不是链接）。
+    const dismissBtn = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-pet-dismiss]") : null;
+    if (dismissBtn) {
+      event.preventDefault();
+      // 收起当前卡并主动端出下一条待拍板（节流/队列里的不再被永久压住）。
+      setCard(undefined, undefined);
+      void surfacePendingDecision();
+      return;
+    }
     const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
     const petBody = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-pet-drag-handle]") : null;
     if (petBody && !anchor) {
@@ -1835,7 +1846,7 @@ function renderDesktopPetBubble(input: {
     ${renderWorkHubLiquidGlassLayer("pet")}
     <span class="wh-liquid-glass-rim" aria-hidden="true"></span>
     <div class="wh-liquid-glass-content">
-      <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${emotionLabel}${kind}${priority}</div>
+      <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${emotionLabel}${kind}${priority}${card ? `<button type="button" class="wh-pet-dismiss ds-pressable" data-pet-dismiss="${escapeHtml(card.id)}" aria-label="${escapeHtml(locale === "en-US" ? "Dismiss" : "知道了")}">×</button>` : ""}</div>
       ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
       ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}
       ${input.status_text && (!compact || !card) && !suppressStatusForContext ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}

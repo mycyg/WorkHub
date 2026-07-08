@@ -164,7 +164,8 @@ export function proposalMergeConflictHtml(error: unknown, zh: boolean): string |
 }
 
 export function reasonComposerHtml(zh: boolean): string {
-  const reasons = zh ? ["方向不对", "细节要调整", "缺少依据", "先放一放"] : ["Wrong direction", "Needs tweaks", "Insufficient evidence", "Hold"];
+  // 同 attention 视图：「先放一放」提交的是打回，语义误导——移除。
+  const reasons = zh ? ["方向不对", "细节要调整", "缺少依据"] : ["Wrong direction", "Needs tweaks", "Insufficient evidence"];
   return `<div class="wh-spot-reasons" data-prop-reasons>
     <p class="wh-spot-reasons-q">${zh ? "打回说明" : "Feedback for changes"}</p>
     <div class="wh-spot-reasons-row">${reasons

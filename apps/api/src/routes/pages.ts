@@ -474,6 +474,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return buildAgentArmyDashboardPage({
         locale: input.locale,
         attentionCount: attention.count,
+        isAdmin: input.currentUser.isAdmin,
         sourceWarnings: kpiWarnings,
         autonomyRatePct,
         plans: visiblePlans,

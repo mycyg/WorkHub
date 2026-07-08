@@ -209,9 +209,10 @@ function loadingHtml(zh: boolean): string {
 // 内联打回理由（统一玻璃小弹层），点选即以该理由把这条打回。href 存在容器上——审批项的动作 id 是
 // "deny"、看改动项是 "request_changes"，不能靠 id 反查按钮（H2 之前就是写死 deny 才失效）。
 function reasonChips(zh: boolean, href: string): string {
+  // 普通用户审查 R2 high：「先放一放」听起来是延后，点了却提交 deny 打回且不可撤——语义误导，移除。
   const reasons = zh
-    ? ["方向不对，重做", "细节需要调整", "先放一放", "缺少依据"]
-    : ["Wrong direction", "Needs tweaks", "Hold for now", "Insufficient evidence"];
+    ? ["方向不对，重做", "细节需要调整", "缺少依据"]
+    : ["Wrong direction", "Needs tweaks", "Insufficient evidence"];
   return `<div class="wh-spot-reasons" data-att-reasons data-att-reason-href="${escapeHtml(href)}">
     <p class="wh-spot-reasons-q">${zh ? "打回理由（点一个）" : "Reason for sending back"}</p>
     <div class="wh-spot-reasons-row">${reasons
