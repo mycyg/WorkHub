@@ -2484,7 +2484,9 @@ function renderProposalRouteComponent(
   const props = reactComponent.props;
   const summaryFull = stripMarkdown(vm.manifest.summary_md);
   // R4：硬切断像渲染 bug——超长补省略号。
-  const summary = summaryFull.length > 320 ? `${summaryFull.slice(0, 320)}…` : summaryFull;
+  // R7：按码点截断——UTF-16 code unit 硬切会把 emoji surrogate pair 切成乱码。
+  const summaryPoints = [...summaryFull];
+  const summary = summaryPoints.length > 320 ? `${summaryPoints.slice(0, 320).join("")}…` : summaryFull;
   const rollbackClass = vm.manifest.rollback.available ? "wh-pill" : "wh-pill wh-pill-danger";
   const comments = vm.comments.length
     ? vm.comments.map((comment) => `<div class="wh-r4-route-row" data-r4-proposal-comment="${escapeHtml(comment.id)}">
@@ -2803,7 +2805,7 @@ function renderDriveRouteComponent(
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(driveItemKindLabel(item.kind, locale === "zh-CN"))}</span>
         ${item.deleted_at ? `<span class="wh-pill">${escapeHtml(item.deleted_at.slice(0, 10))}</span>` : ""}
-        ${item.restore_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore_item" data-method="POST" data-r5-drive-recycle-restore="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : ""}
+        ${item.restore_href ? `<a class="wh-btn" href="${escapeHtml(safeHref(item.restore_href))}" data-action-id="drive_restore_item" data-method="POST" data-r5-drive-recycle-restore="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "drive.restore"))}</a>` : item.restore_blocked_reason ? `<span class="wh-subtle" data-r9-drive-restore-blocked="${escapeHtml(item.id)}">${escapeHtml(locale === "en-US" ? restoreBlockedReasonEn(item.restore_blocked_reason) : item.restore_blocked_reason)}</span>` : ""}
       </div>
     </div>`).join("")
     : "";
@@ -3222,6 +3224,17 @@ function renderHealthSignal(
   return signal.target_href
     ? `<a href="${escapeHtml(safeHref(signal.target_href))}" data-action-id="health_signal_${escapeHtml(signal.key)}">${inner}</a>`
     : inner;
+}
+
+// R7（撤销路径）：restore_blocked_reason 服务端为中文人话——en 界面用映射兜底（非点名串，可安全整体映射）。
+function restoreBlockedReasonEn(reason: string): string {
+  if (reason.includes("父文件夹")) {
+    return "Its parent folder is also in the recycle bin — restore the parent first.";
+  }
+  if (reason.includes("同名")) {
+    return "An active file with the same name exists — rename or remove it first.";
+  }
+  return "This item cannot be restored right now.";
 }
 
 function renderHealthCard(card: ProjectHealthPageVM["cards"][number], locale: WorkHubLocale) {

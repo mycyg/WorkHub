@@ -529,6 +529,13 @@ function buildDrivePage(
       const activeNameConflict = activeNameKeys.has(`${item.parent_id ?? ""}\u0000${item.name}`);
       if (!parentStillDeleted && !activeNameConflict && !restoreBlockedItemIds.has(item.id)) {
         item.restore_href = `/api/drive/projects/${projectId}/items/${item.id}/restore`;
+      } else {
+        // R7（撤销路径）：还原按钮消失时说明白为什么——三种阻塞在视觉上曾与可还原行完全一样。
+        item.restore_blocked_reason = parentStillDeleted
+          ? "父文件夹也在回收站，先还原父文件夹。"
+          : activeNameConflict
+            ? "已有同名文件占位，改名或删除后再还原。"
+            : "该项暂不可还原。";
       }
     }
     const deletableIds = new Set(

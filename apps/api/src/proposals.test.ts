@@ -4044,7 +4044,7 @@ test("proposal action routes localize result envelopes from locale query", async
     ok: true;
     data: { attention: { summary_text: string; actions: Array<{ label: string }> } };
   };
-  assert.equal(mergeBody.data.attention.summary_text, "The deliverable change is now in the official version. Audit and rollback are preserved.");
+  assert.equal(mergeBody.data.attention.summary_text, "The deliverable change is now in the official version, with a full audit trail.");
   assert.equal(mergeBody.data.attention.actions[0]?.label, "View changes");
 });
 

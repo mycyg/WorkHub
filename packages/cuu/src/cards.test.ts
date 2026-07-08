@@ -311,7 +311,7 @@ test("proposal detail becomes a PR-like Cuu deliverable card", () => {
 
   const english = cardFromProposalDetail(proposal, { locale: "en-US" });
   assert.equal(english.sections?.some((section) => section.title === "Risk and rollback"), true);
-  assert.equal(english.sections?.some((section) => section.lines.includes("Rollback available")), true);
+  assert.equal(english.sections?.some((section) => section.lines.includes("Rollback snapshot kept (manual restore)")), true);
   const enChecks = english.sections?.find((section) => section.title === "Check results");
   assert.deepEqual(enChecks?.lines, [
     "file-only 范围: Passed - 未触碰外部发送。",

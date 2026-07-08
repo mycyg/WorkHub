@@ -141,8 +141,9 @@ function normalizePublicProposalCopy(value: string, locale: WorkHubLocale) {
 
 export function publicProposalSummaryText(markdown: string, locale: WorkHubLocale, maxLength = 260) {
   const text = stripMarkdown(normalizePublicProposalCopy(markdown, locale));
-  // R4：硬切断像渲染 bug——超长补省略号。
-  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
+  // R4：硬切断像渲染 bug——超长补省略号。R7：按码点切（[...str]），不把 emoji 的 surrogate pair 切成乱码。
+  const points = [...text];
+  return points.length > maxLength ? `${points.slice(0, maxLength).join("")}…` : text;
 }
 
 function stripProposalOpenedPrefix(text: string) {
