@@ -422,7 +422,9 @@ export function createNotificationService(
           // 计数口径与实际返回的 items 一致（如实反映"这次返回了多少"，不虚报未扫描到的历史总量）。
           unread: capped.filter((entry) => !entry.row.readAt).length,
           total: capped.length
-        }
+        },
+        // R4（规模化）：真实通知数可能超过 outputCap——capped=true 让前端明说「列表被封顶」。
+        capped: visibleEntries.length > outputCap || scanned >= scanCap
       };
     },
 

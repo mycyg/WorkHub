@@ -420,6 +420,8 @@ export const notificationPageVmSchema = z.object({
     done: z.array(notificationItemVmSchema)
   }),
   items: z.array(notificationItemVmSchema),
+  // R4（规模化）：列表被 200 上限封顶时明说——total_count 是「本次返回数」，不是历史总量。
+  capped: z.boolean().optional(),
   actions: z.object({
     mark_all_read: actionSpecSchema.optional()
   }).default({}),
