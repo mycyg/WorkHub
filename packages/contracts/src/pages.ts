@@ -1043,6 +1043,16 @@ export type CostDashboardVM = z.infer<typeof costDashboardVmSchema>;
 export const settingsPageVmSchema = z.object({
   generated_at: isoDateTimeSchema,
   locale: workHubLocaleSchema,
+  // 普通用户审查（APPROVAL-POLICY-UI）：「以后同类审批自动通过」的常驻策略要能查看；
+  // 撤销走 DELETE /api/permissions/:id（桌面边界内的写动作，web 端按钮 fail-closed 提示去桌面）。
+  permission_policies: z.array(z.object({
+    id: idSchema,
+    action_pattern: z.string().min(1),
+    effect: z.enum(["allow", "deny", "ask"]),
+    learned_from_session: z.boolean(),
+    created_at: isoDateTimeSchema,
+    revoke_href: z.string().min(1)
+  })).optional(),
   runtime: z.object({
     app_env: z.enum(["development", "test", "production"]),
     runtime_status: z.enum(["ready", "attention_needed"]),

@@ -4038,6 +4038,19 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           <a class="wh-btn" href="${escapeHtml(safeHref(props.restoreHref))}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
         </section>
       </div>
+      ${vm.permission_policies !== undefined ? `<section class="wh-card wh-r4-route-card" data-r9-settings-policies="${escapeHtml(String(vm.permission_policies.length))}">
+        <h3>${escapeHtml(locale === "zh-CN" ? "自动通过规则" : "Auto-approve rules")}</h3>
+        <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "勾选「以后同类自动通过」留下的常驻规则都在这里；撤销需在桌面端操作。" : "Standing rules from \u201calways allow\u201d live here; revoking requires the desktop app.")}</p>
+        <div class="wh-r4-route-timeline">${vm.permission_policies.length
+          ? vm.permission_policies.map((policy) => `<div class="wh-r4-route-row" data-r9-settings-policy="${escapeHtml(policy.id)}">
+            <div>
+              <strong>${escapeHtml(policy.action_pattern)}</strong>
+              <p>${escapeHtml(`${policy.effect === "allow" ? (locale === "zh-CN" ? "自动通过" : "Auto-allow") : policy.effect === "deny" ? (locale === "zh-CN" ? "自动拒绝" : "Auto-deny") : (locale === "zh-CN" ? "每次询问" : "Ask")}${policy.learned_from_session ? (locale === "zh-CN" ? " · 来自审批时的勾选" : " · learned from approval") : ""}`)}</p>
+            </div>
+            <a class="wh-btn" href="${escapeHtml(safeHref(policy.revoke_href))}" data-action-id="revoke_policy" data-method="DELETE" data-requires-desktop="true">${escapeHtml(locale === "zh-CN" ? "撤销" : "Revoke")}</a>
+          </div>`).join("")
+          : `<p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "还没有常驻规则。" : "No standing rules yet.")}</p>`}</div>
+      </section>` : ""}
     </section>`
   });
 }

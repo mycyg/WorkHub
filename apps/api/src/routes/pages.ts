@@ -62,6 +62,7 @@ import {
 } from "../services/project-health-pages.js";
 import {
   createApprovalService,
+  toPermissionPolicyResponse,
   type ApprovalService
 } from "../services/approvals.js";
 import {
@@ -872,14 +873,23 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     return c.json(pageEnvelope(buildTeamSkillsPage({ skills: active }), locale));
   });
 
-  routes.get("/settings", createCurrentUserMiddleware(authSource), (c) => {
+  routes.get("/settings", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
     const preferenceLocale = normalizeWorkHubLocale(c.var.currentUser.preferredLocale);
+    // APPROVAL-POLICY-UI：常驻审批策略在设置页可见（撤销是桌面边界写动作，按钮 fail-closed）。
+    // 取数失败降级为不渲策略区，不拖垮设置页。
+    let permissionPolicies: Parameters<typeof buildSettingsPage>[0]["permissionPolicies"];
+    try {
+      permissionPolicies = (await approvals.listPolicies(c.var.actor)).map(toPermissionPolicyResponse);
+    } catch {
+      permissionPolicies = undefined;
+    }
     return c.json(pageEnvelope(buildSettingsPage({
       settings: authSettings,
       locale,
       preferenceLocale,
-      preferenceSource: "server"
+      preferenceSource: "server",
+      ...(permissionPolicies ? { permissionPolicies } : {})
     }), locale));
   });
 

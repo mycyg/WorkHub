@@ -8,6 +8,13 @@ type SettingsPageInput = {
   locale: WorkHubLocale;
   preferenceLocale?: WorkHubLocale;
   preferenceSource?: "server" | "request" | "fallback";
+  permissionPolicies?: Array<{
+    id?: string;
+    action_pattern: string;
+    effect: "allow" | "deny" | "ask";
+    learned_from_session: boolean;
+    created_at: string;
+  }>;
   generatedAt?: Date;
 };
 
@@ -20,6 +27,20 @@ export function buildSettingsPage(input: SettingsPageInput): SettingsPageVM {
   return parseOutputContract(settingsPageVmSchema, {
     generated_at: (input.generatedAt ?? new Date()).toISOString(),
     locale: input.locale,
+    ...(input.permissionPolicies
+      ? {
+        permission_policies: input.permissionPolicies
+          .filter((policy): policy is typeof policy & { id: string } => Boolean(policy.id))
+          .map((policy) => ({
+            id: policy.id,
+            action_pattern: policy.action_pattern,
+            effect: policy.effect,
+            learned_from_session: policy.learned_from_session,
+            created_at: policy.created_at,
+            revoke_href: `/api/permissions/${policy.id}`
+          }))
+      }
+      : {}),
     runtime: {
       app_env: input.settings.appEnv,
       runtime_status: brokerConfigured && databaseConfigured && input.settings.workerCount > 0 ? "ready" : "attention_needed",
