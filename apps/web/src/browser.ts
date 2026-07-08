@@ -892,6 +892,10 @@ function bindGoldPathNavigation(
     });
     if (action.kind === "navigate") {
       event.preventDefault();
+      // R7（中断恢复 high）：用户点导航离开时若有未提交输入——武装式拦一次，5 秒内再点才放行。
+      if (!confirmLeaveDirtyRoute(locale)) {
+        return;
+      }
       if (onNavigate) {
         void Promise.resolve(onNavigate(href, action.pageKey)).catch((error) => renderFatalRouteError(locale, error));
         return;
@@ -1337,7 +1341,18 @@ function bindGoldPathNavigation(
           const merge = await client.applyMergeProposalCandidate(mergeProposalCandidateApplyId, payload.payload, { locale });
           showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
-          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+          // R7（双标签页）：候选合并与相邻 merge/review 路径同一套错误分类——rebase/冲突给可操作提示，
+          // 409（他人已合入）重渲刷新卡片状态，不再留一个永远可点的死按钮。
+          const candidateProposalId = /\/api\/proposals\/([^/]+)\//u.exec(href)?.[1];
+          if (candidateProposalId && await showRebaseRequiredNotice(shellRoot, error, candidateProposalId, client, locale, actionId)) {
+            return;
+          }
+          if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
+            showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+          }
+          if (error instanceof WorkHubApiError && error.status === 409) {
+            await renderCurrentRoute(client, locale);
+          }
         }
         return;
       }
@@ -1601,7 +1616,9 @@ async function refreshCurrentRouteFromLiveEvent(
   setLiveMetric("r4LiveRefreshMode", "page-vm-render");
   // L#79：SSE 刷新也要 fail-closed——会话过期(not_identified)时回到注册屏，
   // 而不是让错误冒泡、让用户停在一个已失效的已登录视图上。
-  await renderCurrentRouteOrOnboard(client, locale);
+  // R7 回归修复：R4 给 renderCurrentRoute 加的 silent 开关此前没接到这里（三处调用点全没传），
+  // 「SSE 不闪 loading 不抢焦点」从未真正生效——这才是唯一该走 silent 的路径。
+  await renderCurrentRouteOrOnboard(client, locale, { silent: true });
   return "refreshed";
 }
 
@@ -1671,6 +1688,40 @@ function bindLiveRouteStreams(result: WebRouteReadyResult, client: BrowserApiCli
   liveRuntime.syncTargets(liveStreamTargetsForRoute(result, client));
 }
 
+// R7（中断恢复 high）：dirty-guard 此前只护 SSE 刷新——用户自己按后退/点导航反而把没提交的输入
+// 静默清空。改武装式守卫（与桌面 Esc 同模式）：脏时第一次离开被拦下并提示，5 秒内再次操作才放行。
+// 不用 window.confirm——原生对话框会卡死 headless smoke 且不可样式化。
+let dirtyLeaveArmedUntil = 0;
+// 最近一次真正渲染到屏上的路由 href——popstate 被 dirty 守卫拦下时用它把地址栏顶回去。
+let lastRenderedHref: string | undefined;
+
+function confirmLeaveDirtyRoute(locale: WorkHubLocale): boolean {
+  if (!activeRouteHasDirtyEdits()) {
+    return true;
+  }
+  if (dirtyLeaveArmedUntil > Date.now()) {
+    dirtyLeaveArmedUntil = 0;
+    clearActiveRouteDirty();
+    return true;
+  }
+  dirtyLeaveArmedUntil = Date.now() + 5000;
+  if (root) {
+    showRouteNotice(root, {
+      kind: "sse_dirty_guard",
+      tone: "warning",
+      source: "client",
+      locale,
+      title: locale === "en-US" ? "You have unsaved input" : "有未提交的输入",
+      body: locale === "en-US"
+        ? "Leaving now will discard it. Navigate again within 5 seconds to leave anyway."
+        : "现在离开会丢掉这些内容。5 秒内再次离开即确认放弃。"
+    });
+  }
+  return false;
+}
+
+// 注意：navigateWebRoute 本身不做 dirty 守卫——动作成功后的程序化跳转（如创建工作项→详情页）
+// 意味着输入已提交；守卫只挂在用户主动导航入口（导航链接点击 + popstate）。
 async function navigateWebRoute(href: string, client: BrowserApiClient, locale: WorkHubLocale) {
   const nextHref = webRouteHref(href);
   const currentHref = `${window.location.pathname}${window.location.search}`;
@@ -1793,16 +1844,23 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
   clearReadyRouteBindings();
   unmountReactRouteIsland();
   clearLiveDirtyMetrics();
-  // R4 high（性能感知）：SSE 刷新用 silent——保留旧内容直到新数据就绪，不再每次事件整页闪白
-  // 打断阅读；只有主动导航才渲 loading 骨架。
+  // R4 high（性能感知）：SSE 刷新用 silent——保留旧内容直到新数据就绪。
+  // R7（布局稳定）：主动导航也不再整屏换成「无壳居中卡」——外壳已在屏时保留旧内容，
+  // 只注入顶部细进度条示意加载中；只有 boot（屏上还没有外壳）才渲全屏 loading 骨架。
   if (!options.silent) {
-    root.innerHTML = renderWebRouteState(match, "loading", locale).html;
+    const hasShellOnScreen = Boolean(root.querySelector(".wh-product-root, .wh-app-shell, [data-r4-web-route-status]"));
+    if (!hasShellOnScreen) {
+      root.innerHTML = renderWebRouteState(match, "loading", locale).html;
+    } else if (!root.querySelector("[data-r7-nav-progress]")) {
+      root.insertAdjacentHTML("afterbegin", `<div data-r7-nav-progress="true" style="position:fixed;top:0;left:0;right:0;height:2px;z-index:80;background:linear-gradient(90deg,#355cff,#7aa2ff);animation:whNavProgress 1.1s ease-in-out infinite alternate;transform-origin:left"></div><style>@keyframes whNavProgress{from{transform:scaleX(.15)}to{transform:scaleX(.9)}}</style>`);
+    }
   }
   const result = await loadWebRoute(client, match, locale, currentIdentity);
   if (renderId !== activeRouteRenderId) {
     return;
   }
   root.innerHTML = result.html;
+  lastRenderedHref = `${window.location.pathname}${window.location.search}`;
   if (result.status === "ready") {
     mountReactRouteIsland(result, locale, "initial");
     bindReadyRoute(result, client, locale);
@@ -1941,9 +1999,25 @@ async function boot() {
     // 先挂导航监听，再渲染：否则首次渲染抛错时这两个监听永远注册不上，
     // 整个会话的前进/后退会静默失效（即便用户已从首屏错误中恢复）。
     window.addEventListener("popstate", () => {
+      // R7（中断恢复 high）：后退/前进也过 dirty 武装守卫。被拦下时地址栏已经变了——
+      // 用 pushState 把当前路由顶回去，保持地址栏与画面一致。
+      if (!confirmLeaveDirtyRoute(activeLocale)) {
+        // popstate 时 location 已经变成目标页——把地址栏顶回「画面上还停着的」上一次渲染路由。
+        if (lastRenderedHref) {
+          window.history.pushState(null, "", lastRenderedHref);
+        }
+        return;
+      }
       void renderCurrentRouteOrOnboard(client, activeLocale).catch((error) => renderFatalRouteError(activeLocale, error));
     });
-    window.addEventListener("beforeunload", () => liveRuntime?.closeAllLiveEventSources());
+    window.addEventListener("beforeunload", (event) => {
+      liveRuntime?.closeAllLiveEventSources();
+      // R7（中断恢复）：刷新/关标签页时若有未提交输入，触发浏览器原生「离开此页？」确认。
+      if (activeRouteHasDirtyEdits()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    });
     // 只有「未登录」才落注册屏：me() 在 200 空 body 时返回 null（真·未识别），或抛 401/not_identified。
     // 5xx/网络/403 等不应把已登录用户强行踢回注册——交给外层 catch 渲染可重试错误态（renderFatalRouteError）。
     let me: Awaited<ReturnType<typeof client.me>> | null;
