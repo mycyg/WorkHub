@@ -2330,6 +2330,14 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
         <section class="wh-card wh-r4-route-card" data-r4-workitem-deliverables="true">
           <h3>${escapeHtml(routeT(locale, "workitem.deliverables"))}</h3>
           <div class="wh-r4-route-timeline">${deliverableRows}</div>
+          ${vm.accepted_deliverables.length ? `<h4>${escapeHtml(locale === "zh-CN" ? "已采纳的交付物" : "Accepted deliverables")}</h4>
+          <div class="wh-r4-route-timeline">${vm.accepted_deliverables.slice(0, 6).map((accepted) => `<div class="wh-r4-route-row" data-r9-workitem-accepted-deliverable="${escapeHtml(accepted.change_id)}">
+            <div><strong>${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</strong></div>
+            <div class="wh-r4-route-meta">
+              ${accepted.drive_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.drive_href))}" data-r9-accepted-drive-link="true">${escapeHtml(locale === "zh-CN" ? "在网盘中查看" : "Open in drive")}</a>` : ""}
+              ${accepted.download_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.download_href))}">${escapeHtml(locale === "zh-CN" ? "下载" : "Download")}</a>` : ""}
+            </div>
+          </div>`).join("")}</div>` : ""}
         </section>
       </div>
       ${renderWorkItemPlanSlot(vm, latestProposal, locale)}
@@ -2640,7 +2648,8 @@ function renderDriveRouteComponent(
   const switcherOptions = projectList.length > 1
     ? `${currentInList && switcherCurrentInPool ? "" : `<option value="" selected>${escapeHtml(vm.project?.name ?? "")}</option>`}${switcherPool.map((project) => {
       const selected = project.id === currentProjectId ? " selected" : "";
-      return `<option value="${escapeHtml(safeHref(`/drive?project_id=${encodeURIComponent(project.id)}`))}"${selected}>${escapeHtml(project.name)}</option>`;
+      // R10（极端数据）：项目名无唯一约束——同名项目在下拉里追加 slug 区分。
+      return `<option value="${escapeHtml(safeHref(`/drive?project_id=${encodeURIComponent(project.id)}`))}"${selected}>${escapeHtml(projectList.some((other) => other.id !== project.id && other.name === project.name) ? `${project.name} · ${project.slug}` : project.name)}</option>`;
     }).join("")}${switcherRest > 0 ? `<option value="" disabled>${escapeHtml(locale === "zh-CN" ? `其余 ${switcherRest} 个项目请到「项目」页查找` : `${switcherRest} more — find them on Projects`)}</option>` : ""}`
     : "";
   // R4（规模化）：200 条字母序截断外的文件此前无用户可达出路——补名称搜索框（GET 导航保留项目参数）。
@@ -2911,7 +2920,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
   const meetingSwitcherOptions = projectList.length > 1
     ? `${currentMeetingInList && meetingCurrentInPool ? "" : `<option value="" selected>${escapeHtml(vm.project?.name ?? "")}</option>`}${meetingSwitcherPool.map((project) => {
       const selected = project.id === currentMeetingProjectId ? " selected" : "";
-      return `<option value="${escapeHtml(safeHref(`/meetings?project_id=${encodeURIComponent(project.id)}`))}"${selected}>${escapeHtml(project.name)}</option>`;
+      return `<option value="${escapeHtml(safeHref(`/meetings?project_id=${encodeURIComponent(project.id)}`))}"${selected}>${escapeHtml(projectList.some((other) => other.id !== project.id && other.name === project.name) ? `${project.name} · ${project.slug}` : project.name)}</option>`;
     }).join("")}${meetingSwitcherRest > 0 ? `<option value="" disabled>${escapeHtml(locale === "zh-CN" ? `其余 ${meetingSwitcherRest} 个项目请到「项目」页查找` : `${meetingSwitcherRest} more — find them on Projects`)}</option>` : ""}`
     : "";
   const meetingProjectNav = `<nav class="wh-r4-route-meta" data-r9-meeting-project-nav="true" data-r9-meeting-current-project="${escapeHtml(currentMeetingProjectId)}">
@@ -3374,12 +3383,22 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
     return `<div class="wh-r4-route-row" data-r4-cost-budget-row="${escapeHtml(String(index))}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="true">
       <div>
         <strong>${escapeHtml(usage.scope_label)}</strong>
-        <p>${escapeHtml(`${usage.total_tokens}/${usage.max_tokens} tokens · ${costAmount(usage.estimated_cost_cny, locale)}/${costAmount(usage.max_cost_cny, locale)}`)}</p>
+        <p>${escapeHtml(`${usage.total_tokens}/${usage.max_tokens} tokens · ${costAmount(usage.estimated_cost_cny, locale)}/${costAmount(usage.max_cost_cny, locale)} · ${budgetPeriodLabel(usage.period, locale)}`)}</p>
         <div class="wh-r4-route-meter" aria-hidden="true"><span style="width:${escapeHtml(String(Math.min(100, ratio)))}%"></span></div>
       </div>
       <span class="wh-pill">${escapeHtml(budgetStatusLabel(locale, usage.status))}</span>
     </div>`;
   }).join("");
+}
+
+// R10（自解释）：预算行此前完全丢弃 period 字段——用户不知道「本期」是按天/按月/按次统计。
+function budgetPeriodLabel(period: string, locale: WorkHubLocale): string {
+  return localizedEnumLabel(
+    period,
+    locale === "zh-CN",
+    { run: "按单次运行", day: "按天", month: "按月", total: "累计" },
+    { run: "per run", day: "daily", month: "monthly", total: "lifetime" }
+  );
 }
 
 function agentDashboardStatusLabel(locale: WorkHubLocale, status: string) {
@@ -3453,7 +3472,15 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
     // 新鲜度：最近活动相对时间——「刚在动」还是「卡了三天」一眼分清。
     const freshness = plan.last_activity_at
       ? (() => {
-        const ageMs = Date.now() - Date.parse(plan.last_activity_at);
+        const parsedAt = Date.parse(plan.last_activity_at);
+        // R10（极端数据）：未来时间戳（时钟偏移/种子数据）或解析失败——不许钳成「1 分钟前」撒谎。
+        if (!Number.isFinite(parsedAt)) {
+          return "";
+        }
+        const ageMs = Date.now() - parsedAt;
+        if (ageMs < 0) {
+          return `<span class="wh-subtle" data-r9-agent-plan-freshness="true">${escapeHtml(locale === "zh-CN" ? "刚刚有动静" : "active just now")}</span>`;
+        }
         const minutes = Math.max(1, Math.floor(ageMs / 60000));
         const label = minutes < 60
           ? (locale === "zh-CN" ? `${minutes} 分钟前有动静` : `active ${minutes}m ago`)
@@ -3548,7 +3575,7 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
             ? `<span class="wh-pill">${escapeHtml(routeT(locale, "skills.aiAuthored"))}</span>`
             : "",
           skill.confidence_score !== undefined
-            ? `<span class="wh-pill">${escapeHtml(`${routeT(locale, "skills.readiness")} ${Math.round(skill.confidence_score * 100)}%`)}</span>`
+            ? `<span class="wh-pill" title="${escapeHtml(locale === "zh-CN" ? `基于 ${skill.sample_count} 次实际使用的采纳/复核通过情况估算——分数越高越可放心直接复用。` : `Estimated from ${skill.sample_count} real uses (adoption / review pass rate) — higher means safer to reuse as-is.`)}" data-r10-skill-readiness="${escapeHtml(String(skill.confidence_score))}">${escapeHtml(`${routeT(locale, "skills.readiness")} ${Math.round(skill.confidence_score * 100)}%`)}</span>`
             : "",
           skill.provenance
             ? `<span class="wh-pill wh-pill--accent" data-r8-skill-refined="true" data-r8-skill-refined-ops="${escapeHtml(String(skill.provenance.op_count))}">${escapeHtml(`${routeT(locale, "skills.refinedFrom")}${skill.provenance.refined_from_version} · ${locale === "zh-CN" ? `改了 ${skill.provenance.op_count} 处` : `${skill.provenance.op_count} ${skill.provenance.op_count === 1 ? "edit" : "edits"}`}`)}</span>`
@@ -4091,9 +4118,9 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           <h3>${escapeHtml(routeT(locale, "settings.llm"))}</h3>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.provider"))}</strong><span class="wh-pill">${escapeHtml(props.defaultProvider)}</span></div>
           <div class="wh-r4-route-row"><div><strong>${escapeHtml(routeT(locale, "settings.model"))}</strong><p>${escapeHtml(props.defaultModel)}</p></div><span class="wh-pill">${escapeHtml(String(props.providerCount))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.apiKeyConfigured, locale))}</span></div>
+          <div class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "AI 引擎的服务端密钥；「未配置」时 AI 功能不可用，需管理员在服务端设置。" : "Server-side key for the AI engine; if unset, AI features are unavailable until an admin configures it.")}"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.apiKeyConfigured, locale))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.baseUrl"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.baseUrlConfigured, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.secretSafe"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.secretSafe, locale))}</span></div>
+          <div class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "密钥只存服务端环境变量、绝不发给浏览器；「未配置」时联系管理员在服务端配置。" : "Keys live only in server env vars and never reach the browser; if unset, ask an admin to configure the server.")}"><strong>${escapeHtml(routeT(locale, "settings.secretSafe"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.secretSafe, locale))}</span></div>
         </section>
       </div>
       <div class="wh-r4-route-grid">
@@ -4107,10 +4134,10 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-settings-device="true">
           <h3>${escapeHtml(routeT(locale, "settings.device"))}</h3>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.localExecutionBoundary))}</span></div>
+          <div class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "「是」表示改文件等本地动作只在桌面客户端执行，网页端只读——这是安全边界不是故障。" : "Yes means local actions (file writes) run only in the desktop app; the web stays read-only — a safety boundary, not a fault.")}"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.localExecutionBoundary))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.independentPet"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.independentPetWindow))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.petBoundary"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, !props.petModelSettingsInWeb))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.restoreRequiresDesktop))}</span></div>
+          <div class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "恢复交付物到本地文件需要桌面客户端在线；「是」为正常态。" : "Restoring deliverables to local files requires the desktop app; Yes is the normal state.")}"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.restoreRequiresDesktop))}</span></div>
           <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.webLocalActions"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.webLocalActionsEnabled))}</span></div>
           <a class="wh-btn" href="${escapeHtml(safeHref(props.restoreHref))}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
         </section>
