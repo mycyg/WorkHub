@@ -1258,6 +1258,9 @@ async function bootSpotlight() {
   }
   let locale = browserLocale();
   setDocumentLocale(locale);
+  // R12（首帧）：此前两次网络往返（token 探活 + locale me）完成前 #root 是空 div、整窗白屏——
+  // 先同步渲一帧占位盒，让窗口一出现就有画面。
+  root.innerHTML = renderDesktopSpotlightBootShell();
   try {
     const client = createApiClient({
       baseUrl: resolveDesktopApiBase(),
@@ -1265,7 +1268,10 @@ async function bootSpotlight() {
     });
     // 跨源鉴权地基：先确保有 client token（goldPath/pages 才返回 LIVE 数据），并把令牌推给 Rust 壳（SSE /me 鉴权）。
     await ensureDesktopClientToken(client);
-    locale = await resolveBootLocale(client, locale);
+    // R12（首帧）：resolveBootLocale 内部的 me() 与 ensureDesktopClientToken 的探活是同一请求的重复——
+    // 直接拿一次 me 结果解析 locale，省一拍串行往返。
+    const bootMe = await client.me().catch(() => null);
+    locale = applyIdentityLocale(bootMe, locale);
     root.innerHTML = renderDesktopSpotlightBootShell();
     const hostEl = root.querySelector<HTMLElement>("[data-spot-host]");
     if (!hostEl) {

@@ -7,6 +7,9 @@
 // 字体用独立 <link> 注入(放在 <style> 之前),避免 @import 必须位于样式表首条的限制;
 // 离线/被 CSP 拦时回退到 Noto Sans SC / Segoe UI,布局不受影响。
 export const liquidGlassHeadHtml =
+  // R12（首帧）：外部字体前置 preconnect 提前建连；display=swap 已保证字体未到先渲系统字不阻塞文字。
+  "<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">" +
+  "<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin=\"anonymous\">" +
   "<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800;900&family=Noto+Sans+SC:wght@400;500;700;900&display=swap\">";
 
 const auroraBackground = [
