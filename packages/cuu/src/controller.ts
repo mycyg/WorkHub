@@ -72,6 +72,7 @@ export type CuuController = {
   dismiss: (cardId?: string) => CuuControllerDecision;
   setPreferences: (input: Partial<CuuControllerPreferences>) => CuuControllerSnapshot;
   clearBadges: () => CuuControllerSnapshot;
+  noteExternalCard: (card: CuuCard | undefined) => CuuControllerSnapshot;
 };
 
 const defaultPreferences: CuuControllerPreferences = {
@@ -204,6 +205,16 @@ export function createCuuController(input: {
     });
   };
 
+  const clearBubbleWindowFor = (card: CuuCard | undefined) => {
+    if (!card || card.kind !== "bubble") {
+      return;
+    }
+    const key = card.source?.work_item_id ?? (card.source ? `${card.source.entity_type}:${card.source.entity_id}` : undefined);
+    if (key) {
+      bubbleWindow.delete(key);
+    }
+  };
+
   const dismiss = (cardId = activeCard?.id): CuuControllerDecision => {
     if (!cardId) {
       const promoted = takeNextCard(queue, badges);
@@ -215,6 +226,9 @@ export function createCuuController(input: {
     }
 
     if (activeCard?.id === cardId) {
+      // R9（Cuu 行为链）：被处理/关闭的气泡不该继续占用 5 分钟节流窗——「上一条已被看过并处理」
+      // 与「上一条还没人管」要区分开，否则处理完后同组新气泡仍被静音成角标。
+      clearBubbleWindowFor(activeCard);
       const promoted = takeNextCard(queue, badges);
       activeCard = promoted?.card;
       if (promoted) {
@@ -245,6 +259,13 @@ export function createCuuController(input: {
     snapshot,
     enqueue,
     dismiss,
+    // R9（Cuu 行为链 high）：本地动作路径（提交回执/待拍板浮现/恢复）直接换卡不走 enqueue——
+    // controller 的 activeCard 与屏上真卡脱节，push 气泡会按「无当前卡」误判直接抢断。
+    // 本地换卡后调它对齐单一事实来源；传 undefined 表示屏上已无卡。
+    noteExternalCard(card: CuuCard | undefined) {
+      activeCard = card;
+      return snapshot();
+    },
     setPreferences(inputPreferences) {
       preferences = normalizePreferences({ ...preferences, ...inputPreferences });
       return snapshot();

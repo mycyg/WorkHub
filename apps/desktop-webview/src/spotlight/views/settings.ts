@@ -37,6 +37,13 @@ function settingsHtml(vm: SettingsPageVM, zh: boolean): string {
         <div class="wh-spot-row-sub">${zh ? "桌宠外观在独立桌宠窗设置；本地动作仅桌面端可用" : "Pet appearance is set on the pet window; local actions are desktop-only"}</div>
       </div>
     </div>
+    <div class="wh-spot-row">
+      <div class="wh-spot-row-main">
+        <div class="wh-spot-row-title">${zh ? "账户" : "Account"}</div>
+        <div class="wh-spot-row-sub">${zh ? "退出当前身份并重新绑定这台设备" : "Sign out and re-bind this device"}</div>
+      </div>
+      <button type="button" class="wh-spot-act wh-spot-act--danger ds-pressable" data-set-logout="true">${zh ? "登出" : "Sign out"}</button>
+    </div>
   </div>`;
 }
 
@@ -70,6 +77,24 @@ export function createSettingsView(): SpotlightCapabilityView {
         if (!(target instanceof HTMLElement)) return;
         if (target.closest("[data-spot-retry]")) {
           void load();
+          return;
+        }
+        // R9（身份边缘 high）：桌面此前完全没有登出/换身份入口——首启绑定后永久持有身份。
+        // 登出=吊销服务端会话（尽力而为）+清本地 client_token+整窗 reload（重走 bootstrap 绑定流）。
+        const logoutBtn = target.closest<HTMLElement>("[data-set-logout]");
+        if (logoutBtn) {
+          ctx.toast(zh ? "正在登出…" : "Signing out…", "info");
+          void ctx.client.logout()
+            .catch(() => undefined)
+            .then(() => {
+              try {
+                window.localStorage.removeItem("workhub_client_token");
+                window.localStorage.removeItem("yqgl_client_token");
+              } catch {
+                // ignore storage failure
+              }
+              window.location.reload();
+            });
           return;
         }
         const loc = target.closest<HTMLElement>("[data-set-locale]");

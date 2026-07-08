@@ -565,6 +565,11 @@ export function createAttentionView(): SpotlightCapabilityView {
             ctx.requestResize();
             return;
           }
+          // R9：详情互斥展开——收起其它卡已展开的详情，保证同一时刻至多一个「收起」钮，
+          // Esc 逐级回退（单例 querySelector）收起的就是用户正看的这层。
+          for (const other of body.querySelectorAll<HTMLElement>("[data-att-detail]")) {
+            other.remove();
+          }
           const restore = markBusy(detailToggle, zh ? "加载中…" : "Loading…");
           void (async () => {
             try {

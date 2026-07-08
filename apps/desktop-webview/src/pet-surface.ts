@@ -981,6 +981,9 @@ export async function bootDesktopPetSurface(
     cardRevision += 1;
     statusText = status;
     pendingAction = undefined;
+    // R9（Cuu 行为链 high）：本地动作路径直接换卡此前不记账——controller.activeCard 与屏上真卡
+    // 脱节，push 气泡按「无当前卡」误判 outcome:show 抢断用户正在处理的高优先级卡。对齐单一事实源。
+    controller.noteExternalCard(card);
     if (options.persist !== false) {
       writeDesktopPetRestoreState(card);
     }
@@ -1519,6 +1522,11 @@ export async function bootDesktopPetSurface(
     listen: shellListen,
     controller,
     notify(notice) {
+      // R9（Cuu 行为链）：用户正处于二次确认（pendingAction，如选打回理由）时，push 新卡不抢占——
+      // 卡在 controller 队列里没丢，用户处理完当前卡自然轮到。
+      if (pendingAction && notice.card.id !== currentCard?.id) {
+        return;
+      }
       handleDesktopPetRuntimeNotice(notice, setCard);
     },
     onDecision(decision) {
