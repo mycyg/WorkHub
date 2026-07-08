@@ -793,6 +793,8 @@ export const agentArmyDashboardPlanVmSchema = z.object({
     total: z.number().int().nonnegative(),
     pass_rate_pct: z.number().int().min(0).max(100)
   }),
+  // 普通用户审查：分不清军团是刚在动还是卡死三天——卡上带最近活动时间。
+  last_activity_at: isoDateTimeSchema.optional(),
   oldest_blocker: z.object({
     kind: z.enum(["needs_human", "budget", "stalled"]),
     label: z.string().min(1).max(128),

@@ -262,6 +262,7 @@ export function buildAgentArmyDashboardPage(input: AgentArmyDashboardPageInput):
         : {}),
       budget_href: "/dashboard/cost",
       status: row.plan.status,
+      last_activity_at: row.plan.updatedAt.toISOString(),
       progress: {
         completed,
         total: planItems.length,

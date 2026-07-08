@@ -1319,7 +1319,7 @@ function renderHomeRouteComponent(
   // M1：战绩主行只在今天真有完成量时才显示，否则零活跃新用户首屏会读到「今天我替你扛了 0 件·自主率 0%·约省 0 小时」
   // 这种自夸 0 的尴尬文案（与自进化行的 selfEvolved>0 门同口径）。自进化行独立成立。
   const worklogMainLine = worklog && worklog.accepted_today > 0
-    ? `<span>${escapeHtml(zh ? "今天我搞定了" : "AI handled today:")} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(zh ? "件 · 自主率" : "done · autonomy")} <b>${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(zh ? "约省" : "saved ≈")} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(zh ? "小时" : "h")} <span class="wh-r4-home-kao">٩(◜◡◝)۶</span></span>`
+    ? `<span>${escapeHtml(zh ? "今天我搞定了" : "AI handled today:")} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(zh ? "件 · 自治率" : "done · autonomy")} <b>${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(zh ? "约省" : "saved ≈")} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(zh ? "小时" : "h")} <span class="wh-r4-home-kao">٩(◜◡◝)۶</span></span>`
     : "";
   const worklogBanner = (worklogMainLine || selfEvolveLine)
     ? `<div class="wh-r4-home-banner" data-r4-home-worklog="true">
@@ -3317,7 +3317,8 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
     { id: "waiting_decision", label: routeT(locale, "agents.waiting"), value: String(vm.kpis.waiting_decision_count), href: "/" },
     // UX-M11：今日成本口径=当前可见的活跃军团账目，不是全组织今日总账——标签说清楚，不冒充。
     { id: "today_cost", label: routeT(locale, "agents.todayCost"), value: costAmount(vm.kpis.today_cost_cny), note: locale === "zh-CN" ? "仅含当前可见军团" : "Visible teams only" },
-    { id: "autonomy_rate", label: routeT(locale, "agents.autonomy"), value: `${vm.kpis.autonomy_rate_pct}%` }
+    // 普通用户审查：「自治率」没人看得懂——注明口径（当日 AI 判官复核通过率，无审阅回退 run 成功率）。
+    { id: "autonomy_rate", label: routeT(locale, "agents.autonomy"), value: `${vm.kpis.autonomy_rate_pct}%`, note: locale === "zh-CN" ? "今日 AI 复核通过率" : "Today's AI review pass rate" }
   ].map((item: { id: string; label: string; value: string; href?: string; note?: string }) => {
     const body = `<strong>${escapeHtml(item.value)}</strong><span>${escapeHtml(item.label)}</span>${item.note ? `<span class="wh-subtle" data-r9-agent-kpi-note="true">${escapeHtml(item.note)}</span>` : ""}`;
     return item.href
@@ -3358,20 +3359,34 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
     const blocker = plan.oldest_blocker
       ? `<p class="wh-subtle" data-r9-agent-plan-blocker="true">${escapeHtml(plan.oldest_blocker.label)}</p>`
       : "";
+    // 新鲜度：最近活动相对时间——「刚在动」还是「卡了三天」一眼分清。
+    const freshness = plan.last_activity_at
+      ? (() => {
+        const ageMs = Date.now() - Date.parse(plan.last_activity_at);
+        const minutes = Math.max(1, Math.floor(ageMs / 60000));
+        const label = minutes < 60
+          ? (locale === "zh-CN" ? `${minutes} 分钟前有动静` : `active ${minutes}m ago`)
+          : minutes < 60 * 24
+            ? (locale === "zh-CN" ? `${Math.floor(minutes / 60)} 小时前有动静` : `active ${Math.floor(minutes / 60)}h ago`)
+            : (locale === "zh-CN" ? `${Math.floor(minutes / 1440)} 天没动静了` : `no activity for ${Math.floor(minutes / 1440)}d`);
+        return `<span class="wh-subtle" data-r9-agent-plan-freshness="true">${escapeHtml(label)}</span>`;
+      })()
+      : "";
     return `<section class="wh-card wh-r4-route-card" data-r9-agent-plan-card="${escapeHtml(plan.plan_id)}">
       <div class="wh-r4-route-row">
         <div>
           <a href="${escapeHtml(safeHref(plan.work_item_href))}"><strong>${escapeHtml(plan.work_item_title)}</strong></a>
-          <p>${escapeHtml(`${plan.work_item_code} · ${taskPlanStatusLabel(locale, plan.status)} · ${plan.progress.label}`)}</p>
+          <p>${escapeHtml(`${plan.work_item_code} · ${taskPlanStatusLabel(locale, plan.status)}`)}</p>
           ${objective}
         </div>
         <span class="wh-pill">${escapeHtml(plan.progress.label)}</span>
       </div>
-      <div class="wh-r4-route-meter" aria-hidden="true"><span style="width:${escapeHtml(pctWidth(burn))}%"></span></div>
+      <div class="wh-r4-route-meter" data-r9-agent-team-burn="${escapeHtml(burn > 100 ? "danger" : burn >= 70 ? "warning" : "ok")}" aria-hidden="true"><span style="width:${escapeHtml(pctWidth(burn))}%"></span></div>
       <div class="wh-r4-route-meta" data-r9-agent-plan-roles="true">${roles}</div>
       <div class="wh-r4-route-meta" data-r9-agent-plan-statuses="true">${statuses}</div>
       <div class="wh-r4-route-meta">
         <span class="wh-subtle">${escapeHtml(`${routeT(locale, "agents.cost")}: ${costAmount(plan.cost.used_cny)}${plan.cost.budget_cny ? `/${costAmount(plan.cost.budget_cny)}` : ""} · ${routeT(locale, "agents.judge")}: ${plan.judge.pass_rate_pct}%`)}</span>
+        ${freshness}
         ${budgetLink}
       </div>
       ${blocker}
