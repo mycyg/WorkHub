@@ -2849,7 +2849,22 @@ function meetingContentFallback(kind: "transcript" | "minutes", status: string |
   return zh ? `这次会议还没有${noun}内容。` : `This meeting has no ${kind} yet.`;
 }
 
-function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): WebRouteComponent {
+function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, projects?: ProjectListVM | undefined): WebRouteComponent {
+  // 普通用户审查：网盘有「← 所有项目 + 切换器」而会议页没有——同款导航（切换导航到 /meetings?project_id=）。
+  const projectList = projects?.projects ?? [];
+  const currentMeetingProjectId = vm.project?.id ?? "";
+  const currentMeetingInList = projectList.some((project) => project.id === currentMeetingProjectId);
+  const meetingSwitcherOptions = projectList.length > 1
+    ? `${currentMeetingInList ? "" : `<option value="" selected>${escapeHtml(vm.project?.name ?? "")}</option>`}${projectList.map((project) => {
+      const selected = project.id === currentMeetingProjectId ? " selected" : "";
+      return `<option value="${escapeHtml(safeHref(`/meetings?project_id=${encodeURIComponent(project.id)}`))}"${selected}>${escapeHtml(project.name)}</option>`;
+    }).join("")}`
+    : "";
+  const meetingProjectNav = `<nav class="wh-r4-route-meta" data-r9-meeting-project-nav="true" data-r9-meeting-current-project="${escapeHtml(currentMeetingProjectId)}">
+        <a class="wh-pill" href="/projects" data-r9-meeting-all-projects="true">&#8592; ${escapeHtml(routeT(locale, "drive.allProjects"))}</a>
+        <strong>${escapeHtml(vm.project?.name ?? "")}</strong>
+        ${meetingSwitcherOptions ? `<select class="wh-pill" data-r8-drive-project-switcher="true" aria-label="${escapeHtml(routeT(locale, "drive.switchProject"))}">${meetingSwitcherOptions}</select>` : ""}
+      </nav>`;
   const projectTitle = vm.project?.name ?? (locale === "zh-CN" ? "会议洞察" : "Meeting insights");
   const selectedMeeting = vm.meetings.find((meeting) => meeting.id === vm.selected_meeting_id) ?? vm.meetings[0];
   const meetingRows = vm.meetings.length
@@ -2914,6 +2929,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale): 
     locale,
     pageVm: "meetings",
     html: `<section class="wh-r4-route" data-r4-route-component="meetings" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r5-meetings-route="true" data-r5-meetings-project-id="${escapeHtml(vm.project?.id ?? "")}" data-r5-meeting-selected-id="${escapeHtml(selectedMeeting?.id ?? "")}" data-r5-meeting-count="${escapeHtml(String(vm.summary.meeting_count))}" data-r5-meeting-pending-insights="${escapeHtml(String(vm.summary.pending_insight_count))}" data-r5-meeting-confirmed-insights="${escapeHtml(String(vm.summary.confirmed_insight_count))}" data-r5-meeting-dismissed-insights="${escapeHtml(String(vm.summary.dismissed_insight_count))}" data-r5-meeting-can-manage="${escapeHtml(String(vm.can_manage))}">
+      ${meetingProjectNav}
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "meeting.kicker"))}</span>
@@ -4031,7 +4047,7 @@ export type WebRouteComponentInput =
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined }
   | { key: "drive"; drive: DrivePageVM; projects?: ProjectListVM | undefined }
-  | { key: "meetings"; meetings: MeetingPageVM }
+  | { key: "meetings"; meetings: MeetingPageVM; projects?: ProjectListVM | undefined }
   | { key: "notifications"; notifications: NotificationPageVM }
   | { key: "calendar"; calendar: CalendarPageVM }
   | { key: "health"; health: ProjectHealthPageVM }
@@ -4068,7 +4084,7 @@ export function renderWebRouteComponent(
     case "drive":
       return renderDriveRouteComponent(input.drive, locale, input.projects);
     case "meetings":
-      return renderMeetingRouteComponent(input.meetings, locale);
+      return renderMeetingRouteComponent(input.meetings, locale, input.projects);
     case "notifications":
       return renderNotificationsRouteComponent(input.notifications, locale);
     case "calendar":

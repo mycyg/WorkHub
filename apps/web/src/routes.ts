@@ -90,7 +90,7 @@ export type WebRouteSurface =
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[] }
   | { key: "drive"; drive: DrivePageVM; projects: ProjectListVM }
-  | { key: "meetings"; meetings: MeetingPageVM }
+  | { key: "meetings"; meetings: MeetingPageVM; projects?: ProjectListVM }
   | { key: "notifications"; notifications: NotificationPageVM }
   | { key: "calendar"; calendar: CalendarPageVM }
   | { key: "health"; health: ProjectHealthPageVM }
@@ -915,7 +915,7 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
     return renderWebRouteComponent({ key: "drive", drive: surface.drive, projects: surface.projects }, { locale });
   }
   if (surface.key === "meetings") {
-    return renderWebRouteComponent({ key: "meetings", meetings: surface.meetings }, { locale });
+    return renderWebRouteComponent({ key: "meetings", meetings: surface.meetings, projects: surface.projects }, { locale });
   }
   if (surface.key === "notifications") {
     return renderWebRouteComponent({ key: "notifications", notifications: surface.notifications }, { locale });
@@ -1168,7 +1168,14 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     if (meetings.empty_state === "no_project") {
       return "empty" as const;
     }
-    return { key: "meetings", meetings } satisfies WebRouteSurface;
+    // 普通用户审查：会议页没有项目切换/返回入口，想看别的项目只能改 URL——与网盘同款项目导航。
+    let projects: ProjectListVM;
+    try {
+      projects = await client.listProjects();
+    } catch {
+      projects = { generated_at: new Date().toISOString(), projects: [] };
+    }
+    return { key: "meetings", meetings, projects } satisfies WebRouteSurface;
   }
   if (match.key === "notifications") {
     const notifications = await client.pages.notifications(withLocale(locale));
