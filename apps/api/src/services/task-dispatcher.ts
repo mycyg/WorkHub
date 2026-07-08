@@ -768,9 +768,53 @@ export function createDbTaskDispatchEscalationSink(
 }
 
 export function createDbTaskDispatchCompletionSink(
-  auditLogs: Pick<AuditLogRepository, "createAuditLog">
+  auditLogs: Pick<AuditLogRepository, "createAuditLog">,
+  // R9-OQ-CUU-DONE（Cuu 三场景之三「军团收工」）：计划完成主动通知提交人+owner——
+  // 通知经既有 SSE/Cuu 管线冒泡，桌面即可出「军团收工！」气泡。通知失败只告警不翻结算。
+  reach: {
+    notifications?: Pick<NotificationService, "createNotification"> | false;
+    workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> | false;
+    users?: Pick<UserRepository, "findActiveById"> | false;
+  } = {}
 ): TaskDispatchCompletionSink {
   return async (input) => {
+    if (reach.notifications && reach.workItems) {
+      try {
+        const access = await reach.workItems.findWorkItemAccessRecord(input.plan.workItemId);
+        const recipients = new Set(
+          [access?.submitterUserId, access?.project?.ownerUserId]
+            .filter((userId): userId is string => Boolean(userId))
+        );
+        const doneCount = input.items.filter((item) => item.status === "succeeded").length;
+        for (const userId of recipients) {
+          let en = false;
+          if (reach.users) {
+            try {
+              en = (await reach.users.findActiveById(userId))?.preferredLocale === "en-US";
+            } catch {
+              en = false;
+            }
+          }
+          await reach.notifications.createNotification({
+            userId,
+            type: "workitem.status_changed",
+            severity: "normal",
+            title: en ? "Your agent team wrapped up!" : "军团收工！",
+            body: en
+              ? `${doneCount} of ${input.items.length} subtasks done — go review the results.`
+              : `${doneCount}/${input.items.length} 个活儿办完啦，去验收吧～`,
+            targetUrl: `/workitems/${input.plan.workItemId}`,
+            workItemId: input.plan.workItemId,
+            dedupeKey: `task_plan_completed:${input.plan.id}:${userId}`
+          });
+        }
+      } catch (error) {
+        getDefaultStructuredLogger().warn("task_dispatch_completion_notify_failed", {
+          planId: input.plan.id,
+          error
+        });
+      }
+    }
     await auditLogs.createAuditLog({
       workspaceId: input.plan.workspaceId,
       actorKind: "system",
@@ -808,7 +852,11 @@ export function getDefaultTaskDispatcher(queue: Pick<AgentRunQueue, "enqueue">) 
         workItems: createWorkItemRepository(dbClient.db),
         users: createUserRepository(dbClient.db)
       }),
-      completionSink: createDbTaskDispatchCompletionSink(createAuditLogRepository(dbClient.db)),
+      completionSink: createDbTaskDispatchCompletionSink(createAuditLogRepository(dbClient.db), {
+        notifications: createNotificationService(getDefaultNotificationServiceDependencies()),
+        workItems: createWorkItemRepository(dbClient.db),
+        users: createUserRepository(dbClient.db)
+      }),
       arbitrationSink: createTaskDispatchArbitrationSink({
         candidates: createDbTaskDispatchArbitrationCandidateStore(createTaskPlanArbitrationRepository(dbClient.db)),
         judge: createCrossAgentJudge({ providerRegistry }),

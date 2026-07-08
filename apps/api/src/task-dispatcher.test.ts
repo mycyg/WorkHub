@@ -4,6 +4,7 @@ import test from "node:test";
 import type { TaskPlanItemRow, TaskPlanRow, TaskPlanWithItems } from "@workhub/db";
 
 import {
+  createDbTaskDispatchCompletionSink,
   createDbTaskDispatchEscalationSink,
   createTaskDispatcher,
   type TaskDispatchArbitrationSink,
@@ -1239,4 +1240,68 @@ test("R9.7 dispatcher fails closed when child run enqueue fails after item dispa
     reason: "partial_failure",
     failedItemIds: [researchItemId]
   }]);
+});
+
+// R9-OQ-CUU-DONE：计划完成时 completion sink 通知提交人+owner（「军团收工！」），
+// 经既有通知/SSE 管线冒泡到 Cuu；通知失败只告警不翻结算。
+test("B-R9.6 db completion sink notifies submitter and owner when the plan wraps up", async () => {
+  const audits: unknown[] = [];
+  const notified: Array<{ userId: string; title: string; dedupeKey?: string }> = [];
+  const sink = createDbTaskDispatchCompletionSink(
+    {
+      async createAuditLog(input) {
+        audits.push(input);
+        return {} as never;
+      }
+    },
+    {
+      notifications: {
+        async createNotification(input) {
+          notified.push({ userId: input.userId, title: input.title, dedupeKey: input.dedupeKey });
+          return {} as never;
+        }
+      },
+      workItems: {
+        async findWorkItemAccessRecord() {
+          return {
+            id: "90000000-0000-4000-8000-000000000001",
+            status: "ai_working",
+            submitterUserId: "90000000-0000-4000-8000-000000000002",
+            claimedByUserId: null,
+            workspaceId: "90000000-0000-4000-8000-000000000003",
+            assignments: [],
+            project: {
+              archived: false,
+              deletedAt: null,
+              ownerUserId: "90000000-0000-4000-8000-000000000004",
+              orgId: null,
+              workspaceId: "90000000-0000-4000-8000-000000000003"
+            }
+          } as never;
+        }
+      },
+      users: {
+        async findActiveById() {
+          return null;
+        }
+      }
+    }
+  );
+  await sink({
+    plan: {
+      id: "90000000-0000-4000-8000-000000000005",
+      workItemId: "90000000-0000-4000-8000-000000000001",
+      workspaceId: "90000000-0000-4000-8000-000000000003"
+    } as never,
+    items: [
+      { id: "i1", title: "查资料", role: "research", status: "succeeded" } as never,
+      { id: "i2", title: "写报告", role: "produce", status: "succeeded" } as never
+    ],
+    summaryMd: "军团完成 2/2。",
+    at: new Date("2026-07-08T00:00:00.000Z")
+  });
+  assert.equal(audits.length, 1);
+  assert.equal(notified.length, 2);
+  assert.equal(notified[0]?.title, "军团收工！");
+  assert.ok(notified.every((n) => n.dedupeKey?.startsWith("task_plan_completed:")));
 });
