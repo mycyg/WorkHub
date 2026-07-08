@@ -1295,7 +1295,7 @@ test("R9.2 WorkItem route component renders the task-plan run tree without inlin
 
   assert.equal(workitem.html.includes('data-r9-agent-team-panel="true"'), true);
   assert.equal(workitem.html.includes(`data-r9-agent-team-plan-id="${planId}"`), true);
-  assert.equal(workitem.html.includes("军团推进中 1/2"), true);
+  assert.equal(workitem.html.includes("军团进行中 1/2"), true);
   assert.equal(workitem.html.includes('data-r9-agent-team-item="93000000-0000-4000-8000-000000000902"'), true);
   assert.equal(workitem.html.includes('data-r9-agent-team-status="needs_human"'), true);
   assert.equal(workitem.html.includes("看产出"), true);
@@ -1386,7 +1386,7 @@ test("B-R9.6 workitem plan slot switches between plan snapshot and army panel by
   const proposed = renderWebRouteComponent({ key: "workitem", workitem: proposedVm }, { locale: "zh-CN" });
   assert.equal(proposed.html.includes('data-r9-task-plan-panel="true"'), true);
   assert.equal(proposed.html.includes('data-r9-agent-team-panel="true"'), false);
-  assert.equal(proposed.html.includes("军团推进中"), false);
+  assert.equal(proposed.html.includes("军团进行中"), false);
 
   const dispatchingVm: WorkItemDetailVM = {
     ...base,
@@ -1422,7 +1422,7 @@ test("B-R9.6 workitem plan slot switches between plan snapshot and army panel by
   const banner = renderWebRouteComponent({ key: "workitem", workitem: bannerVm }, { locale: "zh-CN" });
   assert.equal(banner.html.includes('data-r9-agent-team-banner="needs_human"'), true);
   assert.equal(banner.html.includes("1 个子任务需要你拍板"), true);
-  assert.equal(banner.html.includes("军团推进中 1/3"), true, "顶部徽章细化为军团标题");
+  assert.equal(banner.html.includes("军团进行中 1/3"), true, "顶部徽章细化为军团标题");
 
   const retroVm: WorkItemDetailVM = {
     ...base,
@@ -2276,7 +2276,7 @@ test("B-R9.6 Cost route component renders agent army spend grouped by task plan"
   assert.equal(cost.html.includes('data-r9-cost-army-over="0f8b1c2d-1111-4222-8333-444455556666"'), true);
   assert.equal(cost.html.includes('href="#wh-cost-budget"'), true);
   assert.equal(cost.html.includes('id="wh-cost-budget"'), true);
-  assert.equal(cost.html.includes("推进中"), true);
+  assert.equal(cost.html.includes("进行中"), true);
   assert.equal(cost.html.includes('href="/dashboard/agents"'), true);
   assertNoMainWindowBoundaryLeak(cost.html);
 });

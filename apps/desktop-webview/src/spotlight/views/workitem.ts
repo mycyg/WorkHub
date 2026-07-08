@@ -48,7 +48,7 @@ function agentTeamTitle(team: WorkItemAgentTeamVM, zh: boolean) {
   if (team.status === "approved") {
     return zh ? `军团待出发 ${ratio}` : `Agent team ready ${ratio}`;
   }
-  return zh ? `军团推进中 ${ratio}` : `Agent team in progress ${ratio}`;
+  return zh ? `军团进行中 ${ratio}` : `Agent team in progress ${ratio}`;
 }
 
 function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], zh: boolean) {

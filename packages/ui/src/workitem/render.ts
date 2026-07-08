@@ -114,7 +114,7 @@ function agentTeamTitle(team: WorkItemAgentTeamVM, options?: UiRenderOptions) {
   if (team.status === "done") {
     return locale === "zh-CN" ? `军团已完成 ${ratio}` : `Team completed ${ratio}`;
   }
-  return locale === "zh-CN" ? `军团推进中 ${ratio}` : `Team in progress ${ratio}`;
+  return locale === "zh-CN" ? `军团进行中 ${ratio}` : `Team in progress ${ratio}`;
 }
 
 function agentTeamStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], options?: UiRenderOptions) {

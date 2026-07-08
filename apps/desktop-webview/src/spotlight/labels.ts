@@ -31,7 +31,7 @@ const workItemPriorityMap: Record<string, [string, string]> = {
 
 const agentRunStatusMap: Record<string, [string, string]> = {
   queued: ["排队中", "Queued"],
-  running: ["执行中", "Running"],
+  running: ["进行中", "In progress"],
   succeeded: ["已完成", "Succeeded"],
   failed: ["失败", "Failed"],
   escalated: ["已升级", "Escalated"],

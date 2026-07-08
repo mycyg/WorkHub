@@ -161,7 +161,7 @@ test("R9.2 work item renderer shows the task-plan run tree in the AI working slo
   const rendered = renderWorkItemDetail(detail, "web");
 
   assert.equal(rendered.html.includes('data-r9-agent-team-panel="true"'), true);
-  assert.equal(rendered.html.includes("军团推进中 1/2"), true);
+  assert.equal(rendered.html.includes("军团进行中 1/2"), true);
   assert.equal(rendered.html.includes("整理竞品证据"), true);
   assert.equal(rendered.html.includes("去决策"), true);
   assert.equal(rendered.primaryHrefs.includes("/attention"), true);

@@ -207,7 +207,7 @@ test("R9.2 desktop workitem renders a compressed read-only army run tree", () =>
 
   assert.ok(html.includes('data-spot-agent-team="true"'));
   assert.ok(html.includes('data-spot-agent-team-status="dispatching"'));
-  assert.ok(html.includes("军团推进中 1/2"));
+  assert.ok(html.includes("军团进行中 1/2"));
   assert.ok(html.includes('data-spot-agent-team-item="93000000-0000-4000-8000-000000000903"'));
   assert.ok(html.includes("复核"));
   assert.ok(html.includes("去决策"));

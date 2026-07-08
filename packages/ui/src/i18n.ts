@@ -232,7 +232,8 @@ const taskPlanStatusLabels = {
   draft: { "zh-CN": "草稿", "en-US": "Draft" },
   proposed: { "zh-CN": "待审阅", "en-US": "Proposed" },
   approved: { "zh-CN": "已批准", "en-US": "Approved" },
-  dispatching: { "zh-CN": "推进中", "en-US": "In progress" },
+  // R5 词表：跨实体「正在跑」统一为「进行中 / In progress」（plan/item/run 同词，中英同策略）。
+  dispatching: { "zh-CN": "进行中", "en-US": "In progress" },
   paused: { "zh-CN": "已暂停", "en-US": "Paused" },
   done: { "zh-CN": "已完成", "en-US": "Done" },
   cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
@@ -255,7 +256,7 @@ const taskPlanItemStatusLabels = {
 
 const agentRunStatusLabels = {
   queued: { "zh-CN": "排队中", "en-US": "Queued" },
-  running: { "zh-CN": "执行中", "en-US": "Running" },
+  running: { "zh-CN": "进行中", "en-US": "In progress" },
   succeeded: { "zh-CN": "已完成", "en-US": "Succeeded" },
   failed: { "zh-CN": "失败", "en-US": "Failed" },
   escalated: { "zh-CN": "已升级", "en-US": "Escalated" },
