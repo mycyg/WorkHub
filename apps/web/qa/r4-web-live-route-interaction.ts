@@ -5335,7 +5335,9 @@ async function main() {
         proof.counts.workitem === 6 &&
         proof.counts.workitemForbidden === 1 &&
         // UX-U8：会议页补项目导航后 meetings loader 每次加载多取一次 /api/projects（smoke 内 meetings 加载 3 次）→ 11+3。
-        proof.counts.projects === 14 &&
+        // R4（性能）：drive/meetings loader 改 Promise.all 并行后，no_project 的 empty 探针（/drive?empty=drive 加载 1 次）
+        // 也会并行发出一次 /api/projects（不再等 drive 返回后短路）→ 14+1=15。这是并行化的确定性代价，非 N+1 回归。
+        proof.counts.projects === 15 &&
         proof.counts.projectHome === 4 &&
         proof.counts.createNamedProject === 1 &&
         proof.counts.drive === 8 &&
