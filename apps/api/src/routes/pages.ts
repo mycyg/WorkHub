@@ -890,11 +890,15 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     const preferenceLocale = normalizeWorkHubLocale(c.var.currentUser.preferredLocale);
     // APPROVAL-POLICY-UI：常驻审批策略在设置页可见（撤销是桌面边界写动作，按钮 fail-closed）。
     // 取数失败降级为不渲策略区，不拖垮设置页。
+    // R6（权限边界 high）：权限策略是 org 级治理面，专用路由 /api/permissions 读写均 admin-only——
+    // 设置页此前无条件吐给所有成员（越权读）。与专用路由同门槛：非管理员不取不渲。
     let permissionPolicies: Parameters<typeof buildSettingsPage>[0]["permissionPolicies"];
-    try {
-      permissionPolicies = (await approvals.listPolicies(c.var.actor)).map(toPermissionPolicyResponse);
-    } catch {
-      permissionPolicies = undefined;
+    if (c.var.currentUser.isAdmin) {
+      try {
+        permissionPolicies = (await approvals.listPolicies(c.var.actor)).map(toPermissionPolicyResponse);
+      } catch {
+        permissionPolicies = undefined;
+      }
     }
     return c.json(pageEnvelope(buildSettingsPage({
       settings: authSettings,

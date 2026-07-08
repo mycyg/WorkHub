@@ -555,7 +555,8 @@ function bindGoldPathNavigation(
 
   // M2：项目名输入框按 Enter 即触发「新建项目」——该表单的动作是锚点，原生 Enter 不会提交。
   shellRoot.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" || !(event.target instanceof HTMLElement) || !event.target.matches("[data-r8-project-name-input]")) {
+    // R6（表单 high）：中文输入法用 Enter 上屏组词时 isComposing=true——不拦截，否则打项目名打到一半被当提交。
+    if (event.isComposing || event.key !== "Enter" || !(event.target instanceof HTMLElement) || !event.target.matches("[data-r8-project-name-input]")) {
       return;
     }
     event.preventDefault();
@@ -1504,6 +1505,17 @@ function bindGoldPathNavigation(
   }, eventListenerOptions(signal));
 
   shellRoot.addEventListener("input", (event) => {
+    // R6（表单）：意图框 280 上限只有一次性静态提示——实时回填「已用 N / 280 字」，260+ 提醒接近上限。
+    if (event.target instanceof HTMLTextAreaElement && event.target.matches("[data-s1-day1-intent-input]")) {
+      const limitEl = event.target.closest("section, form, div")?.parentElement?.querySelector<HTMLElement>("[data-r9-intake-intent-limit]")
+        ?? shellRoot.querySelector<HTMLElement>("[data-r9-intake-intent-limit]");
+      if (limitEl) {
+        const used = event.target.value.length;
+        limitEl.textContent = locale === "en-US"
+          ? `${used} / 280 characters${used >= 260 ? " — almost at the limit" : ""}`
+          : `已用 ${used} / 280 字${used >= 260 ? "——快到上限了" : ""}`;
+      }
+    }
     const intakeFreeText = event.target instanceof Element
       ? event.target.closest<HTMLTextAreaElement>("[data-intake-free-text-input]")
       : null;
@@ -1875,7 +1887,11 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
   const nicknameInput = root.querySelector<HTMLInputElement>("[data-r5-9-onboarding-nickname]");
   const nickname = nicknameInput?.value.trim() ?? "";
   if (!nickname) {
-    nicknameInput?.focus();
+    // R6（表单）：留空提交此前只 focus 零反馈（表单带 novalidate，原生气泡也不弹）——渲染可见错误条。
+    showOnboardingScreen(client, locale, {
+      errorText: locale === "en-US" ? "Please enter a nickname first." : "请先填写昵称。",
+      presetNickname: ""
+    });
     return;
   }
   const adminSecret = root.querySelector<HTMLInputElement>("[data-r5-9-onboarding-admin-secret]")?.value.trim() ?? "";
