@@ -1355,7 +1355,7 @@ function renderHomeRouteComponent(
         <div class="wh-r4-decision-top"></div>
         <div class="wh-r4-route-meta">${homePriorityPill(primary.priority, zh)}<span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span></div>
         <h3>${escapeHtml(primary.title)}</h3>
-        <p>${escapeHtml(primary.reason_text ?? primary.summary_text)}</p>
+        <p style="white-space:pre-line">${escapeHtml(primary.reason_text ?? primary.summary_text)}</p>
         ${mergeEditor}
         ${evidenceCount > 0 ? `<div class="wh-r4-status"><span>${escapeHtml(zh ? `用到证据 ${evidenceCount} 条` : `${evidenceCount} evidence`)}</span></div>` : ""}
         ${renderActions(primaryActions)}

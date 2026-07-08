@@ -83,12 +83,14 @@ export function buildMemoryConflictAttentionItem(row: MemoryConflictCardRow, loc
       ? { entity_type: "agent_run", entity_id: row.sourceRunId }
       : { entity_type: "notification", entity_id: row.id },
     title: zh ? "Cuu 学到了两条打架的偏好" : "Cuu found conflicting memory",
+    // 普通用户审查 high：A/B 只有字母代号没人知道哪条正在生效，「都不要」会删现存记忆也没说。
+    // 身份写死在正文里（现在生效/新学到），按钮后果在正文说明。
     summary_text: zh
-      ? `${label}「${row.key}」出现两种说法，需要确认后再晋升。`
-      : `${label} "${row.key}" has conflicting values and needs your decision.`,
+      ? `${label}「${row.key}」出现两种说法，需要确认后再使用。「都不要」会把现有这条记忆也撤下。`
+      : `${label} "${row.key}" has two conflicting values. "Discard both" also retires the current memory.`,
     reason_text: zh
-      ? `A：${row.currentValueMd}\nB：${row.incomingValueMd}`
-      : `A: ${row.currentValueMd}\nB: ${row.incomingValueMd}`,
+      ? `A（现在生效）：${row.currentValueMd}\nB（新学到）：${row.incomingValueMd}`
+      : `A (currently in use): ${row.currentValueMd}\nB (newly learned): ${row.incomingValueMd}`,
     // B-R9.6 §3.7（ux-flow-spec §1 卡定义）：动作 = [要 A][要 B][都不要][合并成一条（可编辑）]。
     // merge 动作带 request_json.value_md 合并草稿，web 端渲成可编辑文本框后再提交；
     // 「都不要」= 两条都不该成为记忆（收卡 + 撤下现存记忆），与「要 A」（维持现状）语义分开。

@@ -53,7 +53,17 @@ export function createMemoryConflictRoutes(deps: MemoryConflictRoutesDependencie
       expectedUpdatedAt,
       ...(payload.value_md ? { valueMd: payload.value_md } : {})
     });
-    return c.json({ ok: true, data });
+    // 普通用户审查：四个动作点完回执都是「操作成功」分不清发生了什么——按 resolution 给人话回执。
+    const zh = (c.req.query("locale") ?? c.req.header("Accept-Language") ?? "zh-CN").startsWith("zh");
+    const summaries: Record<typeof resolution, [string, string]> = {
+      keep_current: ["已保留现有记忆（A），新学到的那条不会被使用。", "Kept the current memory (A); the new one will not be used."],
+      accept_incoming: ["已改用新学到的记忆（B），旧的那条已被替换。", "Switched to the new memory (B); the old one was replaced."],
+      merge_both: ["已把两条合并成一条记忆，之后按合并稿使用。", "Merged both into one memory."],
+      edit_memory: ["已按你的编辑保存这条记忆。", "Saved the memory with your edits."],
+      discard_both: ["已把两条都撤下——包括原本生效的那条，AI 之后不会再用它们。", "Discarded both — including the one that was in use."]
+    };
+    const [zhText, enText] = summaries[resolution];
+    return c.json({ ok: true, data: { ...data, attention: { summary_text: zh ? zhText : enText } } });
   });
 
   return routes;
