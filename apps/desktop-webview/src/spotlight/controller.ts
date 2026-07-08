@@ -371,10 +371,21 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     el.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
     el.textContent = message;
     box.appendChild(el);
+    // R6（桌面交互）：toast 绝对定位悬浮在盒底，恰好盖住可滚动 body 底部的提交按钮——
+    // 显示期给 body 垫底部空隙让位，退场时复原。
+    const bodyEl = box.querySelector<HTMLElement>(".wh-spot-body");
+    if (bodyEl) {
+      bodyEl.style.paddingBottom = "56px";
+    }
     // #20：到期先播退场动画(约 1 帧)再移除,toast 不再生硬消失。reduced-motion 下动画近 0ms,行为不变。
     toastTimer = window.setTimeout(() => {
       el.classList.add("wh-spot-toast--leaving");
-      toastInnerTimer = window.setTimeout(() => el.remove(), 220);
+      toastInnerTimer = window.setTimeout(() => {
+        el.remove();
+        if (bodyEl) {
+          bodyEl.style.paddingBottom = "";
+        }
+      }, 220);
     }, 3200);
   };
 
@@ -745,6 +756,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         if (dirtyInput && escapeArmedUntil < Date.now()) {
           event.preventDefault();
           escapeArmedUntil = Date.now() + 2000;
+          // R6（桌面交互）：此前武装态零反馈——用户按了 Esc 什么都没发生，以为坏了。
+          showToast(zh ? "再按一次 Esc 放弃未提交的内容" : "Press Esc again to discard your input", "info");
           return;
         }
         escapeArmedUntil = 0;

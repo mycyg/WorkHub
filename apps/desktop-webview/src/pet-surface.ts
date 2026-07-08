@@ -1090,6 +1090,12 @@ export async function bootDesktopPetSurface(
       const items = [attention.primary, ...attention.queue].filter((item): item is AttentionItem => Boolean(item));
       const next = currentId ? items.find((item) => item.id === currentId) ?? items[0] : items[0];
       if (next) {
+        // R6（桌面交互）：SSE/轮询刷新会整卡重渲——用户正往自由文本框里打的字会被静默清空。
+        // 框里有未提交内容时跳过本次静默刷新（下一次事件还会再同步；提交后 setCard 走正常路径）。
+        const pendingFreeText = root.querySelector<HTMLTextAreaElement>("[data-pet-free-text]")?.value.trim();
+        if (pendingFreeText) {
+          return;
+        }
         setCard(cardFromAttentionItem(next, { locale }), visibleAttentionMessage(next), { persist: false });
         return;
       }
