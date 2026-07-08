@@ -12,6 +12,7 @@ export type RouteNoticeKind =
   | "merge_conflict"
   | "sse_refresh"
   | "sse_dirty_guard"
+  | "sse_gave_up"
   | "budget_warning"
   | "field_value_required"
   | "intake_option_required"
@@ -316,7 +317,9 @@ export function reviewReasonButtons(locale: WorkHubLocale) {
     goldPathT(locale, "runtime.reason.tone"),
     goldPathT(locale, "runtime.reason.scope")
   ];
+  // R5（键盘可达）：理由卡此前没有脱身出口——键盘用户被迫三选一。补「取消」钮（Esc 同效，见 browser 键盘处理）。
+  const cancelLabel = locale === "en-US" ? "Cancel" : "取消";
   return `<div class="wh-app-action-row">${reasons
     .map((reason) => `<button type="button" data-review-reason="${escapeHtml(reason)}">${escapeHtml(reason)}</button>`)
-    .join("")}</div>`;
+    .join("")}<button type="button" data-review-reason-cancel="true">${escapeHtml(cancelLabel)}</button></div>`;
 }

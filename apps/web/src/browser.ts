@@ -535,6 +535,24 @@ function bindGoldPathNavigation(
   let pendingApprovalId: string | undefined;
   let pendingApprovalActionId: string | undefined;
 
+  // R5（键盘可达）：理由提示卡响应 Esc——等同点「取消」，键盘用户不再被迫三选一才能脱身。
+  shellRoot.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || (!pendingReviewHref && !pendingApprovalId)) {
+      return;
+    }
+    event.preventDefault();
+    pendingReviewHref = undefined;
+    pendingReviewActionId = undefined;
+    pendingApprovalId = undefined;
+    pendingApprovalActionId = undefined;
+    clearActiveRouteDirty();
+    const notice = shellRoot.querySelector<HTMLElement>("[data-wh-app-notice]");
+    if (notice) {
+      notice.hidden = true;
+    }
+  }, eventListenerOptions(signal));
+
+
   // M2：项目名输入框按 Enter 即触发「新建项目」——该表单的动作是锚点，原生 Enter 不会提交。
   shellRoot.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || !(event.target instanceof HTMLElement) || !event.target.matches("[data-r8-project-name-input]")) {
@@ -556,7 +574,21 @@ function bindGoldPathNavigation(
       if (!driveUpload || !file) {
         return;
       }
-      showRouteNotice(shellRoot, actionPendingNotice(locale, actionId));
+      // R5（慢网感知）：大文件慢网下只有一条静态「处理中」——补文件名+体积的诚实等待文案（>2MB 预告可能要等），
+      // 等待期禁用 picker + in-flight 锁防同一个选择器被再次触发。
+      if (llmActionBusy) {
+        target.value = "";
+        return;
+      }
+      llmActionBusy = true;
+      target.disabled = true;
+      const sizeMb = file.size / (1024 * 1024);
+      const sizeText = sizeMb >= 0.1 ? `${sizeMb.toFixed(1)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`;
+      const pendingVm = actionPendingNotice(locale, actionId);
+      pendingVm.body = locale === "en-US"
+        ? `Uploading “${file.name}” (${sizeText})…${sizeMb > 2 ? " Large file — this may take a while on a slow connection." : ""}`
+        : `正在上传「${file.name}」（${sizeText}）…${sizeMb > 2 ? "文件较大，慢网络下可能需要等一会儿。" : ""}`;
+      showRouteNotice(shellRoot, pendingVm, undefined, 0);
       void (async () => {
         try {
           const result = await client.uploadDriveFile(driveUpload.projectId, driveUploadPayloadFromPicker(target, file), { locale });
@@ -568,6 +600,11 @@ function bindGoldPathNavigation(
         } catch (error) {
           target.value = "";
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        } finally {
+          llmActionBusy = false;
+          if (target.isConnected) {
+            target.disabled = false;
+          }
         }
       })();
       return;
@@ -722,6 +759,21 @@ function bindGoldPathNavigation(
       return;
     }
 
+    // R5（键盘可达）：理由卡「取消」——清空挂起状态、收起持久提示卡、解除 dirty 标记。Esc 同效（见下方 keydown）。
+    const reasonCancel = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason-cancel]") : null;
+    if (reasonCancel) {
+      event.preventDefault();
+      pendingReviewHref = undefined;
+      pendingReviewActionId = undefined;
+      pendingApprovalId = undefined;
+      pendingApprovalActionId = undefined;
+      clearActiveRouteDirty();
+      const notice = shellRoot.querySelector<HTMLElement>("[data-wh-app-notice]");
+      if (notice) {
+        notice.hidden = true;
+      }
+      return;
+    }
     const reasonButton = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason]") : null;
     if (reasonButton && (pendingReviewHref || pendingApprovalId)) {
       event.preventDefault();
@@ -848,6 +900,15 @@ function bindGoldPathNavigation(
     }
     if (action.kind === "api-action") {
       event.preventDefault();
+      // R5（慢网感知 medium→系统性）：此前只有零星分支各自接 llmActionBusy，approve/merge/删除/通知/升级等
+      // 大多数动作点击后既无锁也无按钮态——慢网下连点两下=重复请求。把锁上提到 api-action 分发入口统一管：
+      // 进入置位+按钮 aria-disabled，finally 复位。分支内部原有的局部锁已被此门取代（见下方各分支）。
+      if (llmActionBusy) {
+        return;
+      }
+      llmActionBusy = true;
+      actionTarget.setAttribute("aria-disabled", "true");
+      try {
       if (createNamedProjectActionFromHref(href) && actionTarget.dataset.r8ProjectCreate === "true") {
         const payload = actionElementCreateProjectPayload(actionTarget);
         if (!payload.ok || !payload.payload) {
@@ -879,10 +940,7 @@ function bindGoldPathNavigation(
           showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, actionId));
           return;
         }
-        if (llmActionBusy) {
-          return;
-        }
-        llmActionBusy = true;
+        // R5：in-flight 锁已上提到 api-action 分发入口统一管（外层已置位，此处只留 pending 提示）。
         showRouteNotice(shellRoot, actionPendingNotice(locale, actionId), undefined, 0);
         if (existingProjectId) {
           try {
@@ -897,14 +955,11 @@ function bindGoldPathNavigation(
             }
           } catch (error) {
             showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
-          } finally {
-            llmActionBusy = false;
           }
           return;
         }
         const payload = actionElementJsonPayload<Parameters<BrowserApiClient["bootstrapProject"]>[0]>(actionTarget);
         if (!payload.ok) {
-          llmActionBusy = false;
           showPayloadFailureNotice(shellRoot, locale, payload, actionId);
           return;
         }
@@ -923,8 +978,6 @@ function bindGoldPathNavigation(
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
-        } finally {
-          llmActionBusy = false;
         }
         return;
       }
@@ -965,10 +1018,7 @@ function bindGoldPathNavigation(
       }
       const createTaskPlan = createTaskPlanActionFromHref(href);
       if (createTaskPlan) {
-        if (llmActionBusy) {
-          return;
-        }
-        llmActionBusy = true;
+        // R5：in-flight 锁已上提到 api-action 分发入口统一管。
         showRouteNotice(shellRoot, actionPendingNotice(locale, actionId), undefined, 0);
         try {
           const result = await client.createTaskPlan(createTaskPlan.workItemId, {}, { locale });
@@ -978,13 +1028,13 @@ function bindGoldPathNavigation(
           }
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "create_task_plan"));
-        } finally {
-          llmActionBusy = false;
         }
         return;
       }
       const startAgentRun = startAgentRunActionFromHref(href);
       if (startAgentRun) {
+        // R5（慢网感知 high）：启动 AI 运行是最重的动作之一，此前按下后零反馈——补持久 pending 提示（成功/失败提示会顶掉它）。
+        showRouteNotice(shellRoot, actionPendingNotice(locale, actionId ?? "start_agent_run"), undefined, 0);
         try {
           const run = await client.startAgentRun(startAgentRun.workItemId);
           await navigateWebRoute(`/workitems/${startAgentRun.workItemId}`, client, locale);
@@ -1432,7 +1482,7 @@ function bindGoldPathNavigation(
             const ratio = ratioMatch?.[1] ?? "";
             heading.textContent = result.status === "paused"
               ? (locale === "en-US" ? `Team paused ${ratio}` : `军团已暂停 ${ratio}`).trim()
-              : (locale === "en-US" ? `Team in progress ${ratio}` : `军团推进中 ${ratio}`).trim();
+              : (locale === "en-US" ? `Team in progress ${ratio}` : `军团进行中 ${ratio}`).trim();
           }
           const body = planDispatchAction.action === "pause"
             ? (locale === "en-US" ? "Dispatch paused — running subtasks will finish, no new ones start." : "已暂停派发——在跑的子任务会跑完，不再派新的。")
@@ -1444,6 +1494,12 @@ function bindGoldPathNavigation(
         return;
       }
       showRouteNotice(shellRoot, actionPendingNotice(locale, actionId));
+      } finally {
+        llmActionBusy = false;
+        if (actionTarget.isConnected) {
+          actionTarget.removeAttribute("aria-disabled");
+        }
+      }
     }
   }, eventListenerOptions(signal));
 
@@ -1572,7 +1628,29 @@ function createBrowserLiveRuntime(client: BrowserApiClient, locale: WorkHubLocal
         outcome === "dirty-deferred" ? 0 : 3600
       );
     },
-    onFatal: (error) => renderFatalRouteError(locale, error)
+    onFatal: (error) => renderFatalRouteError(locale, error),
+    // R5（慢网感知）：SSE 放弃重连后用户此前零感知——页面看着正常但不再实时更新。
+    // 弹持久提示（timeoutMs=0 不自动消失）+ 手动刷新按钮（复用 dirty-guard 的刷新动作，带全 query）。
+    onGiveUp: () => {
+      if (!root) {
+        return;
+      }
+      showRouteNotice(
+        root,
+        {
+          kind: "sse_gave_up",
+          tone: "warning",
+          source: "sse",
+          locale,
+          title: locale === "en-US" ? "Live updates disconnected" : "实时更新已断开",
+          body: locale === "en-US"
+            ? "The live connection was lost and automatic retries stopped. Refresh to reconnect."
+            : "实时连接已中断且自动重试已停止，页面内容可能不再自动更新。点下方按钮刷新重连。"
+        },
+        dirtyGuardRefreshAction(locale, webRouteHref(`${window.location.pathname}${window.location.search}`)),
+        0
+      );
+    }
   });
 }
 
@@ -1716,6 +1794,15 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
   if (result.status === "ready") {
     mountReactRouteIsland(result, locale, "initial");
     bindReadyRoute(result, client, locale);
+  }
+  // R5（键盘可达 high）：innerHTML 整体替换后焦点掉回 body，键盘用户每次导航都得从页面最顶重新 Tab。
+  // 主动把焦点移交给新页面的主标题（SSE silent 刷新不抢焦点——用户可能正停在输入框/按钮上）。
+  if (!options.silent) {
+    const heading = root.querySelector<HTMLElement>(".wh-product-main h1, .wh-app-content h1, h1");
+    if (heading) {
+      heading.setAttribute("tabindex", "-1");
+      heading.focus({ preventScroll: false });
+    }
   }
 }
 
