@@ -1225,7 +1225,7 @@ test("R9.1 WorkItem route component drafts a task plan before any agent run", ()
   };
   const workitem = renderWebRouteComponent({ key: "workitem", workitem: cleanSpecReady }, { locale: "en-US" });
 
-  assert.equal(workitem.html.includes('data-action-id="create_task_plan" data-method="POST"'), true);
+  assert.equal(workitem.html.includes('data-action-id="create_task_plan" role="button" data-method="POST"'), true);
   assert.equal(workitem.html.includes(`/api/workitems/${cleanSpecReady.workitem.id}/task-plan`), true);
   assert.equal(workitem.html.includes('data-action-id="start_agent_run"'), false);
 });
@@ -1541,7 +1541,7 @@ test("R5.4 WorkItem route component exposes Drive source context and proposal dr
   assert.equal(workitem.html.includes('data-r5-workitem-source-context="drive_comment"'), true);
   assert.equal(workitem.html.includes('data-r5-workitem-source-comment-id="94000000-0000-4000-8000-000000000008"'), true);
   assert.equal(workitem.html.includes('data-r5-workitem-create-proposal-action="true"'), true);
-  assert.equal(workitem.html.includes('data-action-id="drive_draft_to_proposal" data-method="POST"'), true);
+  assert.equal(workitem.html.includes('data-action-id="drive_draft_to_proposal" role="button" data-method="POST"'), true);
   assert.equal(workitem.primaryHrefs.includes("/api/drive/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"), true);
 });
 
@@ -1611,7 +1611,7 @@ test("R5.5 WorkItem route component exposes Meeting source context and proposal 
   assert.equal(workitem.html.includes('data-r5-workitem-source-insight-id="95000000-0000-4000-8000-000000000004"'), true);
   assert.equal(workitem.html.includes("Meeting insight source"), true);
   assert.equal(workitem.html.includes('data-r5-workitem-create-proposal-action="true"'), true);
-  assert.equal(workitem.html.includes('data-action-id="meeting_draft_to_proposal" data-method="POST"'), true);
+  assert.equal(workitem.html.includes('data-action-id="meeting_draft_to_proposal" role="button" data-method="POST"'), true);
   assert.equal(workitem.primaryHrefs.includes("/api/meetings/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"), true);
 });
 

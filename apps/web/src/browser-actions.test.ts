@@ -113,7 +113,7 @@ test("drive preview is rendered in-place instead of opening the API JSON envelop
   assert.equal(anchor.inserted[0]?.element, createdPanels[0]);
   assert.equal(createdPanels[0]?.dataset.r5DrivePreviewPanel, "true");
   assert.match(createdPanels[0]?.innerHTML ?? "", /Preview: brief\.md/u);
-  assert.match(createdPanels[0]?.innerHTML ?? "", /Text preview · 2 KB/u);
+  assert.match(createdPanels[0]?.innerHTML ?? "", /Text preview · Markdown source view · 2 KB/u);
   assert.equal(createdPanels[0]?.scrollCalls.length, 1);
 });
 
@@ -133,10 +133,10 @@ test("drive preview panel localizes type and size metadata", () => {
 
   assert.equal(zh.includes("类型 text"), false);
   assert.equal(zh.includes("2048 字节"), false);
-  assert.equal(zh.includes("文本预览 · 2 KB"), true);
+  assert.equal(zh.includes("文本预览 · Markdown 源码视图 · 2 KB"), true);
   assert.equal(en.includes("type text"), false);
   assert.equal(en.includes("2048 bytes"), false);
-  assert.equal(en.includes("Text preview · 2 KB"), true);
+  assert.equal(en.includes("Text preview · Markdown source view · 2 KB"), true);
 });
 
 test("R4 smoke retries only fresh same-action transport notice failures", () => {
@@ -205,8 +205,8 @@ test("drive preview panel localizes type and size metadata", () => {
 
   assert.equal(zh.includes("类型 text"), false);
   assert.equal(zh.includes("2048 字节"), false);
-  assert.equal(zh.includes("文本预览 · 2 KB"), true);
+  assert.equal(zh.includes("文本预览 · Markdown 源码视图 · 2 KB"), true);
   assert.equal(en.includes("type text"), false);
   assert.equal(en.includes("2048 bytes"), false);
-  assert.equal(en.includes("Text preview · 2 KB"), true);
+  assert.equal(en.includes("Text preview · Markdown source view · 2 KB"), true);
 });

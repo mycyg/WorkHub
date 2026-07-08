@@ -9,9 +9,11 @@ export const richPatchViewerCss = [
   ".wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto;max-width:100%;min-width:0}",
   ".wh-diff-hunk{border-top:1px solid #e8eef8}.wh-diff-hunk:first-child{border-top:0}",
   ".wh-diff-hunk-head{display:grid;grid-template-columns:54px 54px minmax(0,1fr);gap:0;background:#f1f5fb;color:var(--muted);font-weight:650}",
-  ".wh-diff-line{display:grid;grid-template-columns:54px 54px minmax(0,1fr);gap:0;min-width:0;white-space:pre}",
+  ".wh-diff-line{display:grid;grid-template-columns:54px 54px minmax(0,auto);gap:0;min-width:0;white-space:pre;width:max-content;min-width:100%}",
   ".wh-diff-line-no{color:#7b87a2;text-align:right;padding:2px 10px;border-right:1px solid #e4ebf6;user-select:none}",
-  ".wh-diff-code{min-width:0;padding:2px 12px;overflow:hidden;text-overflow:clip}",
+  // R12（富文本）：超宽代码行此前被静默硬裁切（overflow:hidden+clip，连省略号都没有）——
+  // 改为真横向滚动：外层 .wh-diff 已 overflow:auto，第三列放开钳制让内容撑宽。
+  ".wh-diff-code{min-width:max-content;padding:2px 12px}",
   ".wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}",
   ".wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}",
   ".wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",

@@ -417,6 +417,36 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client:
       });
   }, eventListenerOptions(signal));
 
+  // R12（批量效率）：审批页快捷键——非输入态下 A=通过当前选中项、X=打回（弹理由卡）。
+  shellRoot.addEventListener("keydown", (event) => {
+    if (event.isComposing || (event.key !== "a" && event.key !== "A" && event.key !== "x" && event.key !== "X")) {
+      return;
+    }
+    if (event.metaKey || event.ctrlKey || event.altKey) {
+      return;
+    }
+    const activeTag = document.activeElement?.tagName ?? "";
+    if (/^(input|textarea|select)$/iu.test(activeTag)) {
+      return;
+    }
+    if (!shellRoot.querySelector('[data-r4-route-component="approvals"]')) {
+      return;
+    }
+    const panel = shellRoot.querySelector<HTMLElement>("[data-r4-approval-action-panel]");
+    if (!panel) {
+      return;
+    }
+    const wantApprove = event.key === "a" || event.key === "A";
+    const actionLink = [...panel.querySelectorAll<HTMLAnchorElement>("a[data-action-id]")].find((link) => {
+      const id = link.getAttribute("data-action-id") ?? "";
+      return wantApprove ? id === "approve" : id === "deny";
+    });
+    if (actionLink) {
+      event.preventDefault();
+      actionLink.click();
+    }
+  }, eventListenerOptions(signal));
+
   // R4 a11y high：审批队列行纯键盘不可达——Enter/Space 等同点击（行已带 tabindex/role=button）。
   shellRoot.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") {
@@ -567,6 +597,15 @@ function bindGoldPathNavigation(
   // option 的 value 已是完整 href（/drive?project_id=…）；空 value（M3 占位「当前项目」）不导航。
   shellRoot.addEventListener("change", (event) => {
     const target = event.target;
+    // R12（批量效率）：勾选审批行 checkbox → 显示「批量通过所选」按钮（有勾选才显示）。
+    if (target instanceof HTMLInputElement && target.matches("[data-r12-approval-check]")) {
+      const anyChecked = shellRoot.querySelector("[data-r12-approval-check]:checked") !== null;
+      const batchButton = shellRoot.querySelector<HTMLElement>("[data-r12-approval-batch-approve]");
+      if (batchButton) {
+        batchButton.hidden = !anyChecked;
+      }
+      return;
+    }
     if (target instanceof HTMLInputElement && target.matches("[data-drive-upload-picker]")) {
       const href = actionHrefFromElement(target);
       const driveUpload = driveUploadFromHref(href);
@@ -760,6 +799,37 @@ function bindGoldPathNavigation(
       return;
     }
 
+    // R12（批量效率）：批量通过所选——收集勾选 id → respond-batch，成功后重渲并回执成功/跳过数。
+    const batchApprove = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-r12-approval-batch-approve]") : null;
+    if (batchApprove) {
+      event.preventDefault();
+      const ids = [...shellRoot.querySelectorAll<HTMLInputElement>("[data-r12-approval-check]:checked")]
+        .map((input) => input.dataset.r12ApprovalCheck)
+        .filter((value): value is string => Boolean(value));
+      if (ids.length === 0 || llmActionBusy) {
+        return;
+      }
+      llmActionBusy = true;
+      batchApprove.disabled = true;
+      showRouteNotice(shellRoot, actionPendingNotice(locale, "respond_batch"), undefined, 0);
+      void (async () => {
+        try {
+          const result = await client.respondApprovalsBatch(ids);
+          await renderCurrentRoute(client, locale);
+          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, locale === "en-US"
+            ? `Approved ${result.approved} item${result.approved === 1 ? "" : "s"}${result.skipped ? `, ${result.skipped} skipped (already handled)` : ""}.`
+            : `已批量通过 ${result.approved} 条${result.skipped ? `，${result.skipped} 条跳过（已被处理）` : ""}。`, "respond_batch"));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, "respond_batch"));
+        } finally {
+          llmActionBusy = false;
+          if (batchApprove.isConnected) {
+            batchApprove.disabled = false;
+          }
+        }
+      })();
+      return;
+    }
     // R5（键盘可达）：理由卡「取消」——清空挂起状态、收起持久提示卡、解除 dirty 标记。Esc 同效（见下方 keydown）。
     const reasonCancel = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-review-reason-cancel]") : null;
     if (reasonCancel) {
@@ -1546,6 +1616,16 @@ function bindGoldPathNavigation(
           : `已用 ${used} / 280 字${used >= 260 ? "——快到上限了" : ""}`;
       }
     }
+    // R12（多项目）：/projects 列表按名称即时过滤（客户端隐藏不匹配行，零请求）。
+    if (event.target instanceof HTMLInputElement && event.target.matches("[data-r12-project-filter]")) {
+      const filterQuery = event.target.value.trim().toLowerCase();
+      const listRoot = event.target.closest("[data-r8-projects-list]");
+      for (const row of listRoot?.querySelectorAll<HTMLElement>("[role=listitem]") ?? []) {
+        const name = row.querySelector("strong")?.textContent?.toLowerCase() ?? "";
+        row.hidden = Boolean(filterQuery) && !name.includes(filterQuery);
+      }
+      return;
+    }
     const intakeFreeText = event.target instanceof Element
       ? event.target.closest<HTMLTextAreaElement>("[data-intake-free-text-input]")
       : null;
@@ -1891,7 +1971,20 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
   if (renderId !== activeRouteRenderId) {
     return;
   }
-  root.innerHTML = result.html;
+  // R12（首帧/SSE 开销）：路由 HTML 自带整段 shell CSS（~36KB 源码）——若屏上首个 <style> 与新内容
+  // 的 style 段完全一致（绝大多数导航/所有 SSE 刷新），保留该节点只替换其后内容，免去每次重解析样式。
+  {
+    const styleMatch = /^<style>([\s\S]*?)<\/style>/u.exec(result.html);
+    const existingStyle = root.firstElementChild;
+    if (styleMatch && existingStyle instanceof HTMLStyleElement && existingStyle.textContent === styleMatch[1]) {
+      while (existingStyle.nextSibling) {
+        existingStyle.nextSibling.remove();
+      }
+      existingStyle.insertAdjacentHTML("afterend", result.html.slice(styleMatch[0].length));
+    } else {
+      root.innerHTML = result.html;
+    }
+  }
   lastRenderedHref = `${window.location.pathname}${window.location.search}`;
   if (result.status === "ready") {
     mountReactRouteIsland(result, locale, "initial");

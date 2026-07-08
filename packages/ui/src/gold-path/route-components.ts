@@ -502,7 +502,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.needsDecision": "需要你决定",
     "notifications.fyi": "仅供了解",
     "notifications.done": "已归档",
-    "notifications.markAllRead": "全部已读",
+    "notifications.markAllRead": "全部已读（不含待决策）",
     "notifications.empty": "通知箱是空的。",
     "notifications.muteTitle": "通知静音偏好",
     "notifications.muteHelp": "勾选的类型将不再给你发通知（默认全部接收）。",
@@ -711,7 +711,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.needsDecision": "Needs your decision",
     "notifications.fyi": "FYI",
     "notifications.done": "Archived",
-    "notifications.markAllRead": "Mark all as read",
+    "notifications.markAllRead": "Mark all read (skips decisions)",
     "notifications.empty": "Your inbox is empty.",
     "notifications.muteTitle": "Notification mute preferences",
     "notifications.muteHelp": "Checked types stop notifying you (everything is on by default).",
@@ -962,7 +962,9 @@ function renderActions(actions: (AttentionAction | ActionSpec)[]) {
         : action.id === "open_replay"
           ? " data-s1-day2-post-run-next-action=\"replay\""
           : "";
-      return `<a class="${actionClass(action, index)}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}"${reason}${method}${desktop}${requestJson}${postRunNext}>${escapeHtml(action.label)}</a>`;
+      // R12（读屏语义）：POST/DELETE 动作是「按钮」不是「链接」——补 role=button（视觉/分类器不变）。
+      const buttonRole = "method" in action && action.method && action.method !== "GET" ? " role=\"button\"" : "";
+      return `<a class="${actionClass(action, index)}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}"${buttonRole}${reason}${method}${desktop}${requestJson}${postRunNext}>${escapeHtml(action.label)}</a>`;
     })
     .join("")}</div>`;
 }
@@ -1000,7 +1002,7 @@ function renderAttentionRows(items: AttentionItem[], emptyCopy: string, zh: bool
       <span class="wh-pill">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span>`;
       return href
         ? `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(href))}" data-r4-route-attention-item="${escapeHtml(item.id)}">${inner}</a>`
-        : `<div class="wh-r4-route-row" data-r4-route-attention-item="${escapeHtml(item.id)}">${inner}</div>`;
+        : `<div role="listitem" class="wh-r4-route-row" data-r4-route-attention-item="${escapeHtml(item.id)}">${inner}</div>`;
     })
     .join("") + overflowNote;
 }
@@ -1241,7 +1243,7 @@ function renderHomeRouteComponent(
   const topProject = projectList[0];
   const projectCountLabel = projects ? String(projectList.length) : (zh ? "项目" : "Projects");
   const projectRows = projectList.length
-    ? projectList.slice(0, 4).map((project) => `<div class="wh-r4-route-row" data-r8-home-project="${escapeHtml(project.id)}" data-r8-home-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
+    ? projectList.slice(0, 4).map((project) => `<div role="listitem" class="wh-r4-route-row" data-r8-home-project="${escapeHtml(project.id)}" data-r8-home-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
         <div>
           <strong><a class="wh-r4-route-row-title" href="/projects/${escapeHtml(encodeURIComponent(project.id))}">${escapeHtml(project.name)}</a></strong>
           ${project.description ? `<p>${escapeHtml(project.description)}</p>` : ""}
@@ -1264,14 +1266,14 @@ function renderHomeRouteComponent(
         <span class="wh-r4-route-kicker">${escapeHtml(zh ? "项目与网盘" : "Projects and drive")}</span>
         <span class="wh-pill">${escapeHtml(projects ? (zh ? `项目 ${projectList.length}` : `${projectList.length} projects`) : (zh ? "项目清单稍后同步" : "Project list syncing"))}</span>
       </div>
-      <h3>${escapeHtml(zh ? "先进入项目，再处理任务和文件" : "Start from a project, then work through tasks and files")}</h3>
+      <h3 role="heading" aria-level="2">${escapeHtml(zh ? "先进入项目，再处理任务和文件" : "Start from a project, then work through tasks and files")}</h3>
       <p>${escapeHtml(zh ? "每个项目像一个仓库：进行中的任务、最近文件、版本历史和网盘入口都围绕它组织。" : "Each project behaves like a repo: open work, recent files, version history, and the drive stay organized around it.")}</p>
       <div class="wh-r4-route-actions">
         <a class="wh-btn wh-btn-primary" href="/projects" data-r8-home-projects-cta="true">${escapeHtml(zh ? "打开项目" : "Open projects")}</a>
         <a class="wh-btn" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-cta="true">${escapeHtml(zh ? "打开网盘" : "Open drive")}</a>
         <a class="wh-btn" href="${escapeHtml(safeHref(projectIntakeHref))}" data-r4-home-intake-cta="true" data-r8-home-new-work-cta="true">${escapeHtml(zh ? "新建任务" : "New task")}</a>
       </div>
-      <div class="wh-r4-route-timeline">${projectRows}</div>
+      <div class="wh-r4-route-timeline" role="list">${projectRows}</div>
     </section>`;
 
   // R8：今日「自进化」——只在确有新增/精修时显示，避免零活动时刷存在感。
@@ -1294,7 +1296,7 @@ function renderHomeRouteComponent(
   const sourceWarningBanner = sourceWarnings.length
     ? `<section class="wh-card wh-r4-route-card wh-r4-home-source-warning" data-r4-home-source-warning="true" data-r4-home-source-warning-count="${escapeHtml(String(sourceWarnings.length))}">
         <span class="wh-r4-route-kicker">${escapeHtml(zh ? "数据未完整加载" : "Some data did not load")}</span>
-        <div class="wh-r4-route-timeline">
+        <div class="wh-r4-route-timeline" role="list">
           ${sourceWarnings.map((warning) => `<p class="wh-subtle" data-r4-home-source-warning-source="${escapeHtml(warning.source)}">${escapeHtml(warning.message)}</p>`).join("")}
         </div>
       </section>`
@@ -1323,7 +1325,7 @@ function renderHomeRouteComponent(
     ? `<section class="wh-card wh-r4-route-card wh-r4-decision" data-r4-home-decision="true">
         <div class="wh-r4-decision-top"></div>
         <div class="wh-r4-route-meta">${homePriorityPill(primary.priority, zh)}<span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span></div>
-        <h3>${escapeHtml(primary.title)}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(primary.title)}</h3>
         <p style="white-space:pre-line">${escapeHtml(primary.reason_text ?? primary.summary_text)}</p>
         ${mergeEditor}
         ${evidenceCount > 0 ? `<div class="wh-r4-status"><span>${escapeHtml(zh ? `用到证据 ${evidenceCount} 条` : `${evidenceCount} evidence`)}</span></div>` : ""}
@@ -1332,7 +1334,7 @@ function renderHomeRouteComponent(
     : `<section class="wh-card wh-r4-route-card wh-r4-decision" data-r4-home-decision="true">
         <div class="wh-r4-decision-top"></div>
         <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.decisionTitle"))}</span>
-        <h3>${escapeHtml(goldPathT(locale, "home.emptyTitle"))}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "home.emptyTitle"))}</h3>
         <p>${escapeHtml(goldPathT(locale, "home.emptySummary"))}</p>
         <div class="wh-r4-route-actions">
           <a class="wh-btn wh-btn-primary" href="/intake" data-wh-route="/intake" data-r4-home-intake-cta="true">${escapeHtml(goldPathT(locale, "home.emptyCta"))}</a>
@@ -1362,13 +1364,13 @@ function renderHomeRouteComponent(
         ${decisionCard}
         <section class="wh-card wh-r4-route-card" data-r4-home-ai-working="true">
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.aiWorkingTitle"))}</span>
-          <div class="wh-r4-route-timeline">${runRows}</div>
+          <div class="wh-r4-route-timeline" role="list">${runRows}</div>
           ${runOverflowNote}
         </section>
       </div>`;
 
   const evidenceRows = primary?.evidence_refs?.length
-    ? primary.evidence_refs.slice(0, 3).map((ref) => `<div class="wh-r4-route-row" data-r4-home-evidence="${escapeHtml(ref.id)}">
+    ? primary.evidence_refs.slice(0, 3).map((ref) => `<div role="listitem" class="wh-r4-route-row" data-r4-home-evidence="${escapeHtml(ref.id)}">
         <div>
           <strong>${escapeHtml(ref.title)}</strong>
           <p>${escapeHtml(ref.excerpt ?? ref.source_id)}</p>
@@ -1383,11 +1385,11 @@ function renderHomeRouteComponent(
   const secondaryGrid = decideCount > 0
     ? `<div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-home-queue="true">
-          <h3>${escapeHtml(goldPathT(locale, "home.entryTitle"))}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "home.entryTitle"))}</h3>
           ${renderAttentionRows(queueWithoutPrimary, goldPathT(locale, "home.entryText"), locale === "zh-CN")}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-home-evidence-list="true">
-          <h3>${escapeHtml(goldPathT(locale, "home.evidenceTitle"))}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "home.evidenceTitle"))}</h3>
           ${evidenceRows}
         </section>
       </div>`
@@ -1418,7 +1420,7 @@ function renderHomeRouteComponent(
         ${projectDesk}
         <section class="wh-card wh-r4-route-card" data-r8-home-drive-principle="true">
           <span class="wh-r4-route-kicker">${escapeHtml(zh ? "文件同步" : "File sync")}</span>
-          <h3>${escapeHtml(zh ? "网盘跟着项目走" : "The drive follows the project")}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "网盘跟着项目走" : "The drive follows the project")}</h3>
           <p>${escapeHtml(zh ? "上传、版本、交付物恢复和评论草稿都在项目网盘里闭环，避免把文件散在全局入口。" : "Uploads, versions, deliverable restore, and comment drafts close the loop inside each project drive instead of a loose global bucket.")}</p>
           <a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-principle-link="true">${escapeHtml(zh ? "查看项目网盘 →" : "View project drive →")}</a>
         </section>
@@ -1438,7 +1440,7 @@ function intakeStepStateLabel(locale: WorkHubLocale, state: string) {
 
 function intakeProgressRows(vm: SessionVM, locale: WorkHubLocale) {
   return vm.question.progress
-    .map((step) => `<div class="wh-r4-route-row" data-r4-intake-progress-step="${escapeHtml(step.key)}" data-r4-intake-progress-state="${escapeHtml(step.state)}">
+    .map((step) => `<div role="listitem" class="wh-r4-route-row" data-r4-intake-progress-step="${escapeHtml(step.key)}" data-r4-intake-progress-state="${escapeHtml(step.state)}">
       <strong>${escapeHtml(step.label)}</strong>
       <span class="wh-pill">${escapeHtml(intakeStepStateLabel(locale, step.state))}</span>
     </div>`)
@@ -1495,7 +1497,7 @@ function renderIntakeStartRouteComponent(
       ${unavailableNotice}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-s1-day0-project-context-card="true">
-          <h3>${escapeHtml(projectCardHeading)}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(projectCardHeading)}</h3>
           <div class="wh-r4-route-meta">
             <span class="wh-pill" data-s4b-intake-project-name="${escapeHtml(projectName)}">${escapeHtml(projectName)}</span>
             <span class="wh-pill">${escapeHtml(zh ? "实时数据" : "Live data")}</span>
@@ -1509,10 +1511,10 @@ function renderIntakeStartRouteComponent(
         </section>
         <aside class="wh-r4-route-stack">
           <section class="wh-card wh-r4-route-card" data-s1-day0-intake-evidence="true">
-            <h3>${escapeHtml(routeT(locale, "intake.progress"))}</h3>
-            <div class="wh-r4-route-timeline">
-              <div class="wh-r4-route-row"><strong>${escapeHtml(projectCardHeading)}</strong><span class="wh-pill">${escapeHtml(zh ? "已就绪" : "Ready")}</span></div>
-              <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.summary"))}</strong><span class="wh-pill">${escapeHtml(zh ? "待进行" : "Next")}</span></div>
+            <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "intake.progress"))}</h3>
+            <div class="wh-r4-route-timeline" role="list">
+              <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(projectCardHeading)}</strong><span class="wh-pill">${escapeHtml(zh ? "已就绪" : "Ready")}</span></div>
+              <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "intake.summary"))}</strong><span class="wh-pill">${escapeHtml(zh ? "待进行" : "Next")}</span></div>
             </div>
             <p>${escapeHtml(routeT(locale, "intake.startEvidence"))}</p>
           </section>
@@ -1554,7 +1556,7 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
         : "";
       return `<button class="wh-card wh-r4-route-card" type="button" data-option-id="${escapeHtml(option.id)}" data-intake-option-id="${escapeHtml(option.id)}" data-intake-option-selected="false" data-intake-option-mode="${escapeHtml(question.input_mode)}" data-intake-option-multi="${escapeHtml(String(allowMulti))}" data-recommended="${escapeHtml(String(recommended.has(option.id)))}">
         ${pill}
-        <h3>${escapeHtml(option.label)}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(option.label)}</h3>
         <p>${escapeHtml(description)}</p>
       </button>`;
     })
@@ -1600,9 +1602,9 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
         </section>
         <aside class="wh-r4-route-stack">
           <section class="wh-card wh-r4-route-card" data-r4-intake-progress="true">
-            <h3>${escapeHtml(routeT(locale, "intake.progress"))}</h3>
+            <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "intake.progress"))}</h3>
             ${activeStepLabel ? `<p class="wh-subtle" data-r4-intake-active-step="true">${escapeHtml(locale === "zh-CN" ? `当前：${activeStepLabel}` : `Now: ${activeStepLabel}`)}</p>` : ""}
-            <div class="wh-r4-route-timeline">${intakeProgressRows(vm, locale)}</div>
+            <div class="wh-r4-route-timeline" role="list">${intakeProgressRows(vm, locale)}</div>
           </section>
         </aside>
       </div>
@@ -1695,44 +1697,44 @@ function renderApprovalDetailPanel(
 
   const isDeliverable = detail?.kind === "deliverable" && detail.manifest_changes.length > 0;
   const diffSection = isDeliverable
-    ? `<section data-r4-approval-diff="true"><h4>${escapeHtml(goldPathT(locale, "approvals.diffTitle"))}</h4><div class="wh-r4-route-timeline">${detail.manifest_changes.map((change) => renderChange(change, locale)).join("")}</div></section>`
+    ? `<section data-r4-approval-diff="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.diffTitle"))}</h4><div class="wh-r4-route-timeline" role="list">${detail.manifest_changes.map((change) => renderChange(change, locale)).join("")}</div></section>`
     : (detail?.affected_targets.length
-        ? `<section data-r4-approval-affected="true"><h4>${escapeHtml(goldPathT(locale, "approvals.affectedTitle"))}</h4><div class="wh-r4-route-meta">${detail.affected_targets.map((target) => `<span class="wh-pill">${escapeHtml(target)}</span>`).join("")}</div></section>`
+        ? `<section data-r4-approval-affected="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.affectedTitle"))}</h4><div class="wh-r4-route-meta">${detail.affected_targets.map((target) => `<span class="wh-pill">${escapeHtml(target)}</span>`).join("")}</div></section>`
         : "");
   const checksSection = detail?.checks.length
-    ? `<section data-r4-approval-checks="true"><h4>${escapeHtml(goldPathT(locale, "approvals.checksTitle"))}</h4><div class="wh-r4-route-timeline">${detail.checks.map((check) => renderCheck(check, locale)).join("")}</div></section>`
+    ? `<section data-r4-approval-checks="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.checksTitle"))}</h4><div class="wh-r4-route-timeline" role="list">${detail.checks.map((check) => renderCheck(check, locale)).join("")}</div></section>`
     : "";
   const aiSection = (detail?.ai_reason || detail?.expected_benefit || detail?.risk_label || detail?.ai_review_md)
-    ? `<section data-r4-approval-ai="true"><h4>${escapeHtml(goldPathT(locale, "approvals.aiTitle"))}</h4>${detail?.ai_reason ? `<p>${escapeHtml(detail.ai_reason)}</p>` : ""}${detail?.expected_benefit ? `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.benefitTitle"))}: ${escapeHtml(detail.expected_benefit)}</p>` : ""}${detail?.risk_label ? `<span class="wh-pill wh-r4-prio wh-r4-prio--warn">${escapeHtml(detail.risk_label)}</span>` : ""}${detail?.ai_review_md ? `<div data-r9-approval-ai-review="true"><h4>${escapeHtml(locale === "zh-CN" ? "AI 复核结论" : "AI review verdict")}</h4><p class="wh-subtle" style="white-space:pre-line">${escapeHtml(detail.ai_review_md)}</p></div>` : ""}</section>`
+    ? `<section data-r4-approval-ai="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.aiTitle"))}</h4>${detail?.ai_reason ? `<p>${escapeHtml(detail.ai_reason)}</p>` : ""}${detail?.expected_benefit ? `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.benefitTitle"))}: ${escapeHtml(detail.expected_benefit)}</p>` : ""}${detail?.risk_label ? `<span class="wh-pill wh-r4-prio wh-r4-prio--warn">${escapeHtml(detail.risk_label)}</span>` : ""}${detail?.ai_review_md ? `<div data-r9-approval-ai-review="true"><h4 role="heading" aria-level="3">${escapeHtml(locale === "zh-CN" ? "AI 复核结论" : "AI review verdict")}</h4><p class="wh-subtle" style="white-space:pre-line">${escapeHtml(detail.ai_review_md)}</p></div>` : ""}</section>`
     : "";
   const conflictsSection = detail?.conflicts.length
-    ? `<section data-r4-approval-conflicts="true"><h4>${escapeHtml(goldPathT(locale, "approvals.conflictsTitle"))}</h4>${detail.conflicts.map((conflict) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-approval-conflict="true"><strong>${escapeHtml(conflict.description)}</strong>${conflict.impact ? `<p class="wh-subtle">${escapeHtml(conflict.impact)}</p>` : ""}${conflict.suggestion ? `<p>${escapeHtml(conflict.suggestion)}</p>` : ""}</div>`).join("")}</section>`
+    ? `<section data-r4-approval-conflicts="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.conflictsTitle"))}</h4>${detail.conflicts.map((conflict) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-approval-conflict="true"><strong>${escapeHtml(conflict.description)}</strong>${conflict.impact ? `<p class="wh-subtle">${escapeHtml(conflict.impact)}</p>` : ""}${conflict.suggestion ? `<p>${escapeHtml(conflict.suggestion)}</p>` : ""}</div>`).join("")}</section>`
     : "";
   const timelineSection = detail?.timeline.length
-    ? `<section data-r4-approval-timeline="true"><h4>${escapeHtml(goldPathT(locale, "approvals.timelineTitle"))}</h4><div class="wh-r4-route-timeline">${detail.timeline.map((step) => {
+    ? `<section data-r4-approval-timeline="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.timelineTitle"))}</h4><div class="wh-r4-route-timeline" role="list">${detail.timeline.map((step) => {
         // L#W2-18：把合成的时间戳/每步 SLA 真正显示出来（之前只算不渲染）。
         const sub = [step.actor_label, formatApprovalTimestamp(step.at)].filter(Boolean).join(" · ");
-        return `<div class="wh-r4-route-row" data-r4-approval-timeline-step="${escapeHtml(step.kind)}" data-status="${escapeHtml(step.status)}"><div><strong>${escapeHtml(step.label)}</strong>${sub ? `<p class="wh-subtle">${escapeHtml(sub)}</p>` : ""}</div><div class="wh-r4-route-meta">${step.sla_due_at ? `<span class="wh-pill" data-r4-approval-step-sla="true">${escapeHtml(zh ? "处理期限 " : "Due ")}${escapeHtml(formatApprovalTimestamp(step.sla_due_at))}</span>` : ""}<span class="wh-pill">${escapeHtml(approvalStepStatusLabel(step.status, zh))}</span></div></div>`;
+        return `<div role="listitem" class="wh-r4-route-row" data-r4-approval-timeline-step="${escapeHtml(step.kind)}" data-status="${escapeHtml(step.status)}"><div><strong>${escapeHtml(step.label)}</strong>${sub ? `<p class="wh-subtle">${escapeHtml(sub)}</p>` : ""}</div><div class="wh-r4-route-meta">${step.sla_due_at ? `<span class="wh-pill" data-r4-approval-step-sla="true">${escapeHtml(zh ? "处理期限 " : "Due ")}${escapeHtml(formatApprovalTimestamp(step.sla_due_at))}</span>` : ""}<span class="wh-pill">${escapeHtml(approvalStepStatusLabel(step.status, zh))}</span></div></div>`;
       }).join("")}</div></section>`
     : "";
   const comments = detail?.comments ?? [];
   const commentsOverflow = detail?.comments_page_info?.has_more
     ? `<p class="wh-subtle" data-r4-approval-comments-overflow="true">${escapeHtml(goldPathT(locale, "approvals.commentsOverflow"))}</p>`
     : "";
-  const commentsSection = `<section data-r4-approval-discussion="true"><h4>${escapeHtml(goldPathT(locale, "approvals.discussionTitle"))}</h4>${commentsOverflow}${comments.length
-    ? comments.map((comment) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-approval-comment="${escapeHtml(comment.id)}"><strong>${escapeHtml(comment.author_label)}</strong><p>${escapeHtml(comment.body)}</p></div>`).join("")
+  const commentsSection = `<section data-r4-approval-discussion="true"><h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.discussionTitle"))}</h4>${commentsOverflow}${comments.length
+    ? comments.map((comment) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-approval-comment="${escapeHtml(comment.id)}"><strong>${escapeHtml(comment.author_label)}</strong><p style="white-space:pre-line">${escapeHtml(comment.body)}</p></div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.commentsEmpty"))}</p>`}<form class="wh-r4-approval-comment-form" data-r4-approval-comment-form="${escapeHtml(item.id)}"><textarea class="wh-r4-approval-comment-input" data-r4-approval-comment-input rows="2" placeholder="${escapeHtml(goldPathT(locale, "approvals.commentPlaceholder"))}"></textarea><button type="submit" class="wh-btn" data-r4-approval-comment-submit="${escapeHtml(item.id)}">${escapeHtml(goldPathT(locale, "approvals.commentSubmit"))}</button></form></section>`;
 
   return `<article class="wh-card wh-r4-route-card wh-r4-route-card--accent wh-r4-approval-detail-panel" data-r4-approval-detail-for="${escapeHtml(item.id)}" data-r4-approval-detail-kind="${escapeHtml(detail?.kind ?? "permission")}"${selected ? "" : " hidden"}>
       <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.detailTitle"))}</span>
-      <h3>${escapeHtml(item.title)}</h3>
+      <h3 role="heading" aria-level="2">${escapeHtml(item.title)}</h3>
       <p>${escapeHtml(item.summary_text)}</p>
       ${item.reason_text ? `<p class="wh-subtle">${escapeHtml(item.reason_text)}</p>` : ""}
       ${diffSection}
       ${checksSection}
       ${aiSection}
       ${conflictsSection}
-      <h4>${escapeHtml(goldPathT(locale, "approvals.evidenceTitle"))}</h4>
+      <h4 role="heading" aria-level="3">${escapeHtml(goldPathT(locale, "approvals.evidenceTitle"))}</h4>
       ${evidence}
       ${timelineSection}
       ${commentsSection}
@@ -1789,7 +1791,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
           <p>${escapeHtml(zh ? "有需要你拍板的，Cuu 会第一时间端到这里；先安心忙别的吧 (=^･ω･^=)" : "When something needs your call, Cuu will bring it here first — carry on for now.")}</p>
         </section>
         <section class="wh-card wh-r4-route-card">
-          <h3>${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>
           <p>${escapeHtml(goldPathT(locale, "approvals.ruleText"))}</p>
         </section>
       </div>
@@ -1815,9 +1817,9 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       const itemRequest = vm.requests.find((req) => req.id === item.id);
       // 嵌入该事项的 respond href，供左栏选择时把右栏决策按钮重绑到选中项（避免误批 items[0]）。
       const respondHref = item.actions.find((action) => action.href.includes("/respond"))?.href;
-      return `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" tabindex="0" role="button" aria-pressed="${escapeHtml(String(item.id === primary?.id))}" data-r4-approval-item="${escapeHtml(item.id)}" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}"${respondHref ? ` data-r4-approval-respond-href="${escapeHtml(safeHref(respondHref))}"` : ""}>
-      <div class="wh-r4-route-meta"><span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, zh))}</span></div>
-      <h3>${escapeHtml(item.title)}</h3>
+      return `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" tabindex="0" role="button" aria-pressed="${escapeHtml(String(item.id === primary?.id))}" data-r4-approval-item="${escapeHtml(item.id)}" data-r12-approval-checkable="true" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}"${respondHref ? ` data-r4-approval-respond-href="${escapeHtml(safeHref(respondHref))}"` : ""}>
+      <div class="wh-r4-route-meta">${respondHref ? `<input type="checkbox" data-r12-approval-check="${escapeHtml(item.id)}" aria-label="${escapeHtml(zh ? "选择这条参与批量通过" : "Select for batch approve")}" />` : ""}<span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, zh))}</span>${item.project_name ? `<span class="wh-pill" data-r12-attention-project="true">${escapeHtml(item.project_name)}</span>` : ""}</div>
+      <h3 role="heading" aria-level="2">${escapeHtml(item.title)}</h3>
       <p>${escapeHtml(item.summary_text)}</p>
       ${itemRequest?.sla_due_at ? `<span class="wh-pill" data-r4-approval-sla="${escapeHtml(item.id)}">${escapeHtml(locale === "zh-CN" ? "处理期限 " : "Due ")}${escapeHtml(formatApprovalTimestamp(itemRequest.sla_due_at))}</span>` : ""}
       ${item.work_item_id ? `<a class="wh-btn" href="/workitems/${escapeHtml(item.work_item_id)}" data-r4-approval-item-link="${escapeHtml(item.id)}">${escapeHtml(zh ? "去处理" : "Open")}</a>` : ""}
@@ -1830,7 +1832,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
     : `<article class="wh-card wh-r4-route-card"><p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.noSelection"))}</p></article>`;
   // 右栏事实区：审批请求路由状态（保留 data-r4-approval-routed / Routed 标记）。
   const requestRows = vm.requests
-    .map((item) => `<div class="wh-r4-route-row" data-r4-approval-request="${escapeHtml(item.id)}">
+    .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r4-approval-request="${escapeHtml(item.id)}">
       <div>
         <strong>${escapeHtml(approvalActionLabel(item.action_pattern, locale))}</strong>
         <p>${escapeHtml(approvalRequestStatusLabel(item.status, locale === "zh-CN"))}${item.sla_due_at ? ` · ${locale === "zh-CN" ? "处理期限" : "due"} ${escapeHtml(formatApprovalTimestamp(item.sla_due_at))}` : ""}</p>
@@ -1862,7 +1864,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
           ${queueRows || `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(goldPathT(locale, "approvals.reasonFallback"))}</p></article>`}
           ${(vm.decided ?? []).length ? `<details class="wh-card wh-r4-route-card" data-r9-approval-decided="${escapeHtml(String((vm.decided ?? []).length))}">
             <summary class="wh-subtle">${escapeHtml(locale === "zh-CN" ? `最近已处理（${(vm.decided ?? []).length}）` : `Recently decided (${(vm.decided ?? []).length})`)}</summary>
-            ${(vm.decided ?? []).slice(0, 10).map((entry) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-approval-decided-item="${escapeHtml(entry.id)}">
+            ${(vm.decided ?? []).slice(0, 10).map((entry) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-approval-decided-item="${escapeHtml(entry.id)}">
               <strong>${escapeHtml(entry.title)}</strong>
               <p class="wh-subtle">${escapeHtml(`${approvalDecisionLabel(entry.decision, locale === "zh-CN")} · ${formatApprovalTimestamp(entry.decided_at)}`)}${entry.reason_md ? `<br/>${escapeHtml(entry.reason_md)}` : ""}</p>
             </div>`).join("")}
@@ -1873,19 +1875,21 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
         </section>
         <aside class="wh-r4-route-stack wh-r4-approval-actions" data-r4-approval-action-panel="true">
           <section class="wh-card wh-r4-route-card">
-            <h3>${escapeHtml(goldPathT(locale, "approvals.myActions"))}</h3>
+            <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "approvals.myActions"))}</h3>
+            <button type="button" class="wh-btn" data-r12-approval-batch-approve="true" hidden>${escapeHtml(zh ? "批量通过所选" : "Approve selected")}</button>
+            <p class="wh-subtle" data-r12-approval-kbd-hint="true">${escapeHtml(zh ? "键盘：A=通过当前 · X=打回当前" : "Keys: A=approve · X=send back")}</p>
             ${primary ? renderActions(primary.actions) : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.noSelection"))}</p>`}
             ${primary ? `<label class="wh-r4-approval-field"><span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.reasonLabel"))}</span><textarea class="wh-r4-approval-reason" data-r4-approval-reason rows="2" placeholder="${escapeHtml(goldPathT(locale, "approvals.reasonPlaceholder"))}"></textarea></label>
             <label class="wh-r4-approval-remember"><input type="checkbox" data-r4-approval-remember /> <span>${escapeHtml(goldPathT(locale, "approvals.rememberLabel"))}</span></label>
             <p class="wh-subtle" data-r4-approval-remember-help="true">${escapeHtml(goldPathT(locale, "approvals.rememberHelp"))}</p>` : ""}
           </section>
           <section class="wh-card wh-r4-route-card">
-            <h3>${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>
+            <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>
             <p>${escapeHtml(goldPathT(locale, "approvals.ruleText"))}</p>
           </section>
           <section class="wh-card wh-r4-route-card">
-            <h3>${escapeHtml(goldPathT(locale, "approvals.factsTitle"))}</h3>
-            <div class="wh-r4-route-timeline">${requestRows || `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.unrouted"))}</p>`}</div>
+            <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "approvals.factsTitle"))}</h3>
+            <div class="wh-r4-route-timeline" role="list">${requestRows || `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.unrouted"))}</p>`}</div>
           </section>
         </aside>
       </div>
@@ -1902,7 +1906,7 @@ function acceptanceRows(items: WorkItemDetailVM["acceptance"], locale: WorkHubLo
       const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
       const title = String(record["title"] ?? `${uiT(locale, "workitem.acceptanceItem")} ${index + 1}`);
       const status = String(record["status"] ?? "open");
-      return `<div class="wh-r4-route-row" data-r4-workitem-acceptance-item="${escapeHtml(String(record["id"] ?? index))}">
+      return `<div role="listitem" class="wh-r4-route-row" data-r4-workitem-acceptance-item="${escapeHtml(String(record["id"] ?? index))}">
         <strong>${escapeHtml(title)}</strong>
         <span class="wh-pill">${escapeHtml(checkStatusLabel(locale, status))}</span>
       </div>`;
@@ -1915,7 +1919,7 @@ function evidenceRows(refs: EvidenceRef[], locale: WorkHubLocale, marker: string
     return `<p class="wh-subtle">${escapeHtml(uiT(locale, "generic.noEvidence"))}</p>`;
   }
   return refs.slice(0, 5)
-    .map((ref) => `<div class="wh-r4-route-row" data-${marker}="${escapeHtml(ref.id)}">
+    .map((ref) => `<div role="listitem" class="wh-r4-route-row" data-${marker}="${escapeHtml(ref.id)}">
       <div>
         <strong>${escapeHtml(ref.title)}</strong>
         <p>${escapeHtml(ref.excerpt ?? ref.source_id)}</p>
@@ -1961,7 +1965,7 @@ function traceRows(vm: WorkItemDetailVM, locale: WorkHubLocale) {
     return `<p class="wh-subtle" data-r4-workitem-empty-trace-status="${escapeHtml(vm.workitem.status)}">${escapeHtml(emptyTraceCopy(vm.workitem.status, locale))}</p>`;
   }
   return vm.agent_trace_preview.slice(0, 5)
-    .map((step) => `<div class="wh-r4-route-row" data-r4-workitem-trace-step="${escapeHtml(step.id)}">
+    .map((step) => `<div role="listitem" class="wh-r4-route-row" data-r4-workitem-trace-step="${escapeHtml(step.id)}">
       <div>
         <strong>${escapeHtml(`${step.step_no}. ${agentStepPhaseLabel(locale, step.phase)}`)}</strong>
         <p>${escapeHtml(agentStepPublicSummary(locale, step))}</p>
@@ -2049,7 +2053,7 @@ function renderTaskPlanPanel(
   const waitingForApproval = plan.status === "draft" || plan.status === "proposed";
   const reviewHref = latestProposal?.proposal_id ? `/proposals/${latestProposal.proposal_id}` : undefined;
   const reviewBanner = waitingForApproval
-    ? `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-task-plan-awaiting-approval="true">
+    ? `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-task-plan-awaiting-approval="true">
         <strong>${escapeHtml(locale === "zh-CN" ? "计划等你批准" : "Plan awaiting approval")}</strong>
         ${reviewHref ? `<a class="wh-pill" href="${escapeHtml(safeHref(reviewHref))}">${escapeHtml(locale === "zh-CN" ? "去审批" : "Review")}</a>` : ""}
       </div>`
@@ -2058,7 +2062,7 @@ function renderTaskPlanPanel(
     ? plan.items.map((item, index) => {
         const dependsLabel = taskPlanDependencyLabel(plan, item, locale);
         const displaySeq = index + 1;
-        return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-task-plan-item="${escapeHtml(item.id)}" data-r9-task-plan-role="${escapeHtml(item.role)}" data-r9-task-plan-budget="${escapeHtml(String(item.budget_share_pct))}" data-r9-task-plan-depends="${escapeHtml(dependsLabel)}">
+        return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-task-plan-item="${escapeHtml(item.id)}" data-r9-task-plan-role="${escapeHtml(item.role)}" data-r9-task-plan-budget="${escapeHtml(String(item.budget_share_pct))}" data-r9-task-plan-depends="${escapeHtml(dependsLabel)}">
           <div>
             <strong>${escapeHtml(`${displaySeq}. ${item.title}`)}</strong>
             <p>${escapeHtml(stripMarkdown(item.acceptance_md))}</p>
@@ -2076,13 +2080,13 @@ function renderTaskPlanPanel(
     ? `<p class="wh-subtle" data-r9-task-plan-items-capped-note="true">${escapeHtml(locale === "zh-CN" ? "仅显示前 50 个子任务。" : "Showing the first 50 subtasks.")}</p>`
     : "";
   return `<section class="wh-card wh-r4-route-card" data-r9-task-plan-panel="true" data-r9-task-plan-status="${escapeHtml(plan.status)}" data-r9-task-plan-items-capped="${escapeHtml(String(plan.items_capped))}">
-    <h3>${escapeHtml(locale === "zh-CN" ? "任务计划" : "Task plan")}</h3>
+    <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "任务计划" : "Task plan")}</h3>
     <div class="wh-r4-route-meta">
       <span class="wh-pill">${escapeHtml(taskPlanStatusLabel(locale, plan.status))}</span>
       <span class="wh-pill">${escapeHtml(uiCount(locale, plan.items.length, "个子任务", "subtask"))}</span>
     </div>
     ${reviewBanner}
-    <div class="wh-r4-route-timeline">${rows}</div>
+    <div class="wh-r4-route-timeline" role="list">${rows}</div>
     ${capped}
   </section>`;
 }
@@ -2138,7 +2142,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
         const cost = item.cost_estimate_cny
           ? `<span class="wh-pill">${escapeHtml(uiFormatCny(item.cost_estimate_cny, locale))}</span>`
           : "";
-        return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-r9-agent-team-status="${escapeHtml(item.status)}" data-r9-agent-team-role="${escapeHtml(item.role)}"${item.waiting_for_seq.length ? ' data-r9-agent-team-waiting="true"' : ""}>
+        return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-r9-agent-team-status="${escapeHtml(item.status)}" data-r9-agent-team-role="${escapeHtml(item.role)}"${item.waiting_for_seq.length ? ' data-r9-agent-team-waiting="true"' : ""}>
           <div>
             <strong>${escapeHtml(`#${item.seq} ${item.title}`)}</strong>
             ${waiting}
@@ -2161,7 +2165,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
   // 处理完（needs_human 清零）黄条自然消失。
   const needsHumanCount = team.items.filter((item) => item.status === "needs_human").length;
   const decisionBanner = needsHumanCount > 0
-    ? `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-agent-team-banner="needs_human" data-r9-task-plan-awaiting-approval="true">
+    ? `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-agent-team-banner="needs_human" data-r9-task-plan-awaiting-approval="true">
         <strong>${escapeHtml(locale === "zh-CN" ? `${needsHumanCount} 个子任务需要你拍板` : `${needsHumanCount} subtask${needsHumanCount === 1 ? "" : "s"} need${needsHumanCount === 1 ? "s" : ""} your decision`)}</strong>
         <a class="wh-pill" href="/attention">${escapeHtml(locale === "zh-CN" ? "去决策" : "Decide")}</a>
       </div>`
@@ -2189,7 +2193,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
     : "";
   return `<section class="wh-card wh-r4-route-card" data-r9-agent-team-panel="true" data-r9-agent-team-plan-id="${escapeHtml(team.plan_id)}" data-r9-agent-team-status="${escapeHtml(team.status)}">
     <div class="wh-r4-route-card-head">
-      <h3>${escapeHtml(agentTeamTitle(team, locale))}</h3>
+      <h3 role="heading" aria-level="2">${escapeHtml(agentTeamTitle(team, locale))}</h3>
       ${dispatchControl}
     </div>
     <p class="wh-subtle" data-r9-agent-team-role-legend="true">${escapeHtml(locale === "zh-CN" ? "角色：调研=找依据 · 产出=写东西 · 复核=检查 · 整合=拼装收尾" : "Roles: research=gather · produce=write · review=check · integrate=assemble")}</p>
@@ -2199,7 +2203,7 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
       ${team.cost_budget_cny ? `<span class="wh-pill">${escapeHtml(`${burnPct}%`)}</span>` : ""}
     </div>
     ${team.cost_budget_cny ? `<div class="wh-r4-route-meter" data-r9-agent-team-burn="${escapeHtml(burnTone)}" aria-label="${escapeHtml(`${burnPct}%`)}"><span style="${escapeHtml(burnStyle)}"></span></div>` : ""}
-    <div class="wh-r4-route-timeline">${rows}</div>
+    <div class="wh-r4-route-timeline" role="list">${rows}</div>
     ${retroLine}
     ${capped}
   </section>`;
@@ -2234,7 +2238,7 @@ function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale
     const proposal = source.proposal_href
       ? `<a class="wh-pill" href="${escapeHtml(safeHref(source.proposal_href))}" data-r5-workitem-source-proposal-link="true">${escapeHtml(routeT(locale, "workitem.openProposal"))}</a>`
       : "";
-    return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-workitem-source-context="${escapeHtml(source.source_type)}" data-r5-workitem-source-comment-id="${escapeHtml(source.comment_id)}" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-create-proposal-action="${escapeHtml(String(Boolean(vm.actions.create_proposal_draft)))}">
+    return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-workitem-source-context="${escapeHtml(source.source_type)}" data-r5-workitem-source-comment-id="${escapeHtml(source.comment_id)}" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-create-proposal-action="${escapeHtml(String(Boolean(vm.actions.create_proposal_draft)))}">
       <div>
         <strong>${escapeHtml(routeT(locale, "workitem.driveSource"))}</strong>
         <p>${escapeHtml(source.body)}</p>
@@ -2253,7 +2257,7 @@ function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale
   const evidence = source.evidence_refs.length
     ? source.evidence_refs.slice(0, 3).map((ref) => `<span class="wh-pill" data-r5-workitem-source-evidence="${escapeHtml(ref.id)}">${escapeHtml(ref.title)}</span>`).join("")
     : "";
-  return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-workitem-source-context="${escapeHtml(source.source_type)}" data-r5-workitem-source-meeting-id="${escapeHtml(source.meeting_id)}" data-r5-workitem-source-insight-id="${escapeHtml(source.insight_id)}" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-create-proposal-action="${escapeHtml(String(Boolean(vm.actions.create_proposal_draft)))}">
+  return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-workitem-source-context="${escapeHtml(source.source_type)}" data-r5-workitem-source-meeting-id="${escapeHtml(source.meeting_id)}" data-r5-workitem-source-insight-id="${escapeHtml(source.insight_id)}" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-create-proposal-action="${escapeHtml(String(Boolean(vm.actions.create_proposal_draft)))}">
     <div>
       <strong>${escapeHtml(routeT(locale, "workitem.meetingSource"))}</strong>
       <p>${escapeHtml(`${source.meeting_title}: ${source.description}`)}</p>
@@ -2274,7 +2278,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
   const actions = workItemActions(vm, locale);
   const latestProposal = vm.latest_proposal;
   const deliverableRows = latestProposal?.changes.length
-    ? latestProposal.changes.slice(0, 4).map((change) => `<div class="wh-r4-route-row" data-r4-workitem-deliverable-change="${escapeHtml(change.id)}">
+    ? latestProposal.changes.slice(0, 4).map((change) => `<div role="listitem" class="wh-r4-route-row" data-r4-workitem-deliverable-change="${escapeHtml(change.id)}">
       <div>
         <strong>${escapeHtml(change.human_summary)}</strong>
         <p>${escapeHtml(change.target_ref.path ?? change.target_ref.entity_id ?? change.target_ref.entity_type)}</p>
@@ -2303,7 +2307,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-workitem-context="true">
-          <h3>${escapeHtml(routeT(locale, "workitem.context"))}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "workitem.context"))}</h3>
           <div class="wh-r4-route-meta">
             <span class="wh-pill">${escapeHtml(vm.workitem.code)}</span>
             <span class="wh-pill">${escapeHtml(attentionPriorityLabel(vm.workitem.priority, locale === "zh-CN"))}</span>
@@ -2328,10 +2332,10 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
     : `<p class="wh-subtle" data-r4-workitem-action-hint="${escapeHtml(vm.workitem.status)}">${escapeHtml(workItemActionHint(vm.workitem.status, locale === "zh-CN"))}</p>`}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-workitem-deliverables="true">
-          <h3>${escapeHtml(routeT(locale, "workitem.deliverables"))}</h3>
-          <div class="wh-r4-route-timeline">${deliverableRows}</div>
-          ${vm.accepted_deliverables.length ? `<h4>${escapeHtml(locale === "zh-CN" ? "已采纳的交付物" : "Accepted deliverables")}</h4>
-          <div class="wh-r4-route-timeline">${vm.accepted_deliverables.slice(0, 6).map((accepted) => `<div class="wh-r4-route-row" data-r9-workitem-accepted-deliverable="${escapeHtml(accepted.change_id)}">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "workitem.deliverables"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${deliverableRows}</div>
+          ${vm.accepted_deliverables.length ? `<h4 role="heading" aria-level="3">${escapeHtml(locale === "zh-CN" ? "已采纳的交付物" : "Accepted deliverables")}</h4>
+          <div class="wh-r4-route-timeline" role="list">${vm.accepted_deliverables.slice(0, 6).map((accepted) => `<div role="listitem" class="wh-r4-route-row" data-r9-workitem-accepted-deliverable="${escapeHtml(accepted.change_id)}">
             <div><strong>${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</strong></div>
             <div class="wh-r4-route-meta">
               ${accepted.drive_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.drive_href))}" data-r9-accepted-drive-link="true">${escapeHtml(locale === "zh-CN" ? "在网盘中查看" : "Open in drive")}</a>` : ""}
@@ -2343,17 +2347,17 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
       ${renderWorkItemPlanSlot(vm, latestProposal, locale)}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-workitem-acceptance="true">
-          <h3>${escapeHtml(uiT(locale, "workitem.acceptanceTitle"))}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(uiT(locale, "workitem.acceptanceTitle"))}</h3>
           <div class="wh-r4-route-table">${acceptanceRows(vm.acceptance, locale)}</div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-workitem-trace="true">
-          <h3>${escapeHtml(routeT(locale, "workitem.trace"))}</h3>
-          <div class="wh-r4-route-timeline">${traceRows(vm, locale)}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "workitem.trace"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${traceRows(vm, locale)}</div>
         </section>
       </div>
       <section class="wh-card wh-r4-route-card" data-r4-workitem-evidence="true">
-        <h3>${escapeHtml(uiT(locale, "generic.evidence"))}</h3>
-        <div class="wh-r4-route-timeline">${evidenceRows(vm.evidence_refs, locale, "r4-workitem-evidence-ref")}</div>
+        <h3 role="heading" aria-level="2">${escapeHtml(uiT(locale, "generic.evidence"))}</h3>
+        <div class="wh-r4-route-timeline" role="list">${evidenceRows(vm.evidence_refs, locale, "r4-workitem-evidence-ref")}</div>
       </section>
     </section>`
   });
@@ -2364,7 +2368,7 @@ function renderChange(change: DeliverableChange, locale: WorkHubLocale) {
   const preview = change.preview_ref
     ? `<a class="wh-pill" href="${escapeHtml(safeHref(change.preview_ref.href))}">${escapeHtml(previewKindLabel(locale, change.preview_ref.kind))}</a>`
     : "";
-  return `<div class="wh-r4-route-row" data-r4-proposal-change="${escapeHtml(change.id)}" data-r4-proposal-change-kind="${escapeHtml(change.target_kind)}" data-r4-proposal-change-type="${escapeHtml(change.change_type)}">
+  return `<div role="listitem" class="wh-r4-route-row" data-r4-proposal-change="${escapeHtml(change.id)}" data-r4-proposal-change-kind="${escapeHtml(change.target_kind)}" data-r4-proposal-change-type="${escapeHtml(change.change_type)}">
     <div>
       <strong>${escapeHtml(change.human_summary)}</strong>
       <p>${escapeHtml(path)}</p>
@@ -2378,7 +2382,7 @@ function renderChange(change: DeliverableChange, locale: WorkHubLocale) {
 }
 
 function renderCheck(check: DeliverableCheck, locale: WorkHubLocale) {
-  return `<div class="wh-r4-route-row" data-r4-proposal-check="${escapeHtml(check.id)}" data-r4-proposal-check-status="${escapeHtml(check.status)}">
+  return `<div role="listitem" class="wh-r4-route-row" data-r4-proposal-check="${escapeHtml(check.id)}" data-r4-proposal-check-status="${escapeHtml(check.status)}">
     <div>
       <strong>${escapeHtml(check.label)}</strong>
       <p>${escapeHtml(check.detail ?? checkStatusLabel(locale, check.status))}</p>
@@ -2426,10 +2430,10 @@ function renderTaskPlanItemsPanel(vm: ProposalDetailVM, locale: WorkHubLocale): 
       .map((dependencyId) => seqById.get(dependencyId))
       .filter((seq): seq is number => typeof seq === "number")
       .map((seq) => `#${seq}`);
-    return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-plan-item="${escapeHtml(item.id)}" data-r9-plan-item-role="${escapeHtml(item.role)}">
+    return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-plan-item="${escapeHtml(item.id)}" data-r9-plan-item-role="${escapeHtml(item.role)}">
       <div>
         <strong>#${index + 1} ${escapeHtml(item.title)}</strong>
-        <p>${escapeHtml(zh ? "验收：" : "Acceptance: ")}${escapeHtml(item.acceptance_md)}</p>
+        <p style="white-space:pre-line">${escapeHtml(zh ? "验收：" : "Acceptance: ")}${escapeHtml(stripMarkdown(item.acceptance_md))}</p>
       </div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(taskPlanItemRoleBadge(item.role, locale))}</span>
@@ -2446,8 +2450,8 @@ function renderTaskPlanItemsPanel(vm: ProposalDetailVM, locale: WorkHubLocale): 
       ? `预算份额加起来是 ${totalShare}%，${totalShare < 100 ? `还差 ${100 - totalShare}%` : `超出 ${totalShare - 100}%`}，修正后才能批准并派发。`
       : `Budget shares add up to ${totalShare}%, ${totalShare < 100 ? `${100 - totalShare}% short` : `${totalShare - 100}% over`} — fix them before approving and dispatching.`)}</p>`;
   return `<section class="wh-card wh-r4-route-card" data-r9-plan-items="true" data-r9-plan-item-count="${escapeHtml(String(ordered.length))}">
-      <h3>${escapeHtml(zh ? "子任务清单" : "Subtasks")}</h3>
-      <div class="wh-r4-route-timeline">${rows}</div>
+      <h3 role="heading" aria-level="2">${escapeHtml(zh ? "子任务清单" : "Subtasks")}</h3>
+      <div class="wh-r4-route-timeline" role="list">${rows}</div>
       ${shareNote}
     </section>`;
 }
@@ -2480,10 +2484,10 @@ function renderProposalRouteComponent(
   const summary = summaryPoints.length > 320 ? `${summaryPoints.slice(0, 320).join("")}…` : summaryFull;
   const rollbackClass = vm.manifest.rollback.available ? "wh-pill" : "wh-pill wh-pill-danger";
   const comments = vm.comments.length
-    ? vm.comments.map((comment) => `<div class="wh-r4-route-row" data-r4-proposal-comment="${escapeHtml(comment.id)}">
+    ? vm.comments.map((comment) => `<div role="listitem" class="wh-r4-route-row" data-r4-proposal-comment="${escapeHtml(comment.id)}">
       <div>
         <strong>${escapeHtml(comment.author_label)}</strong>
-        <p>${escapeHtml(comment.body)}</p>
+        <p style="white-space:pre-line">${escapeHtml(comment.body)}</p>
       </div>
       <span class="wh-pill">${escapeHtml(formatApprovalTimestamp(comment.created_at))}</span>
     </div>`).join("")
@@ -2520,7 +2524,7 @@ function renderProposalRouteComponent(
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-proposal-summary="true">
-          <h3>${escapeHtml(routeT(locale, "proposal.summary"))}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "proposal.summary"))}</h3>
           <div class="wh-r4-route-meta">
             <span class="wh-pill">${escapeHtml(uiT(locale, "generic.risk"))}: ${escapeHtml(vm.manifest.risk.human_label)}</span>
             <span class="${rollbackClass}" data-r4-proposal-rollback-available="${escapeHtml(String(vm.manifest.rollback.available))}">${escapeHtml(vm.manifest.rollback.available ? uiT(locale, "proposal.rollbackAvailable") : uiT(locale, "proposal.rollbackUnavailable"))}</span>
@@ -2529,24 +2533,24 @@ function renderProposalRouteComponent(
           ${renderActions(actions)}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-proposal-review="true">
-          <h3>${escapeHtml(routeT(locale, "proposal.review"))}</h3>
-          <div class="wh-r4-route-timeline">${vm.manifest.checks.slice(0, 3).map((check) => renderCheck(check, locale)).join("")}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "proposal.review"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${vm.manifest.checks.slice(0, 3).map((check) => renderCheck(check, locale)).join("")}</div>
         </section>
       </div>
       ${renderTaskPlanItemsPanel(vm, locale)}
       <section class="wh-card wh-r4-route-card" data-r4-proposal-changes="true">
-        <h3>${escapeHtml(routeT(locale, "proposal.files"))}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "proposal.files"))}</h3>
         <div class="wh-r4-route-table">${vm.manifest.changes.map((change) => renderChange(change, locale)).join("")}</div>
       </section>
       ${advancedConflictReview}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-proposal-evidence="true">
-          <h3>${escapeHtml(uiT(locale, "generic.evidence"))}</h3>
-          <div class="wh-r4-route-timeline">${evidenceRows(vm.evidence_refs, locale, "r4-proposal-evidence-ref")}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(uiT(locale, "generic.evidence"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${evidenceRows(vm.evidence_refs, locale, "r4-proposal-evidence-ref")}</div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-proposal-comments="true">
-          <h3>${escapeHtml(uiT(locale, "proposal.comments"))}</h3>
-          <div class="wh-r4-route-timeline">${comments}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(uiT(locale, "proposal.comments"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${comments}</div>
         </section>
       </div>
     </section>`
@@ -2707,7 +2711,7 @@ function renderDriveRouteComponent(
       const size = current ? formatBytes(current.size_bytes, locale) : "";
       const itemHref = safeHref(`/drive?project_id=${encodeURIComponent(vm.project?.id ?? item.project_id)}&item_id=${encodeURIComponent(item.id)}`);
       const resourceActions = driveResourceActionLinks(item, locale).join("");
-      return `<div class="wh-r4-route-row" data-r4-drive-item="${escapeHtml(item.id)}" data-r4-drive-item-kind="${escapeHtml(item.kind)}" data-r4-drive-item-depth="${escapeHtml(String(item.depth))}" data-r4-drive-item-selected="${escapeHtml(String(item.id === selectedItem?.id))}">
+      return `<div role="listitem" class="wh-r4-route-row" data-r4-drive-item="${escapeHtml(item.id)}" data-r4-drive-item-kind="${escapeHtml(item.kind)}" data-r4-drive-item-depth="${escapeHtml(String(item.depth))}" data-r4-drive-item-selected="${escapeHtml(String(item.id === selectedItem?.id))}">
         <a class="wh-r4-drive-item-link" href="${escapeHtml(itemHref)}" data-r5-drive-item-link="true" data-r5-drive-item-link-id="${escapeHtml(item.id)}">
           <strong>${escapeHtml(item.name)}</strong>
           <p>${escapeHtml(item.path)}</p>
@@ -2740,7 +2744,7 @@ function renderDriveRouteComponent(
     ? `${routeT(locale, "drive.versions")} · ${selectedItem.name}`
     : routeT(locale, "drive.versions");
   const versionRows = selectedFileVersions.length
-    ? selectedFileVersions.slice(0, 8).map((version) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-version="${escapeHtml(version.id)}" data-r4-drive-version-current="${escapeHtml(String(version.current))}">
+    ? selectedFileVersions.slice(0, 8).map((version) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-version="${escapeHtml(version.id)}" data-r4-drive-version-current="${escapeHtml(String(version.current))}">
       <div>
         <strong>${escapeHtml(`${version.filename} · v${version.version_no}`)}</strong>
         <p>${escapeHtml(`${formatBytes(version.size_bytes, locale)} · ${version.created_at.slice(0, 10)}`)}</p>
@@ -2757,7 +2761,7 @@ function renderDriveRouteComponent(
         <span class="wh-pill">${escapeHtml(deliverableTargetLabel(locale, accepted.target_kind))}</span>
         <span class="wh-pill">v${escapeHtml(String(accepted.accepted_version))}</span>
       </div>
-      <h3>${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</h3>
+      <h3 role="heading" aria-level="2">${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</h3>
       <p>${escapeHtml(accepted.target_path ?? accepted.target_key)}</p>
       <div class="wh-r4-route-meta">
         ${accepted.work_item_id ? `<a class="wh-pill" href="/workitems/${escapeHtml(accepted.work_item_id)}" data-r9-drive-accepted-workitem="${escapeHtml(accepted.work_item_id)}">${escapeHtml(locale === "zh-CN" ? "来源任务" : "Source task")}</a>` : ""}
@@ -2769,10 +2773,10 @@ function renderDriveRouteComponent(
       : "")
     : `<article class="wh-card wh-r4-route-card"><p>${escapeHtml(routeT(locale, "drive.empty"))}</p></article>`;
   const commentRows = vm.comments.length
-    ? vm.comments.slice(0, 5).map((comment) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-comment="${escapeHtml(comment.id)}" data-r4-drive-comment-status="${escapeHtml(comment.status)}">
+    ? vm.comments.slice(0, 5).map((comment) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-drive-comment="${escapeHtml(comment.id)}" data-r4-drive-comment-status="${escapeHtml(comment.status)}">
       <div>
         <strong>${escapeHtml(comment.author_label)}</strong>
-        <p>${escapeHtml(comment.body)}</p>
+        <p style="white-space:pre-line">${escapeHtml(comment.body)}</p>
       </div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(driveCommentStatusLabel(comment.status, locale))}</span>
@@ -2791,7 +2795,7 @@ function renderDriveRouteComponent(
       </form>`
     : "";
   const recycleRows = vm.deleted_items.length
-    ? vm.deleted_items.map((item) => `<div class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}" data-r5-drive-recycle-selected="${escapeHtml(String(item.id === selectedDeletedItem?.id))}">
+    ? vm.deleted_items.map((item) => `<div role="listitem" class="wh-r4-route-row" data-r5-drive-recycle-item="${escapeHtml(item.id)}" data-r5-drive-recycle-selected="${escapeHtml(String(item.id === selectedDeletedItem?.id))}">
       <div>
         <strong>${escapeHtml(item.name)}</strong>
         <p>${escapeHtml(item.path)}</p>
@@ -2811,7 +2815,7 @@ function renderDriveRouteComponent(
     ? ""
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "drive.emptyRecycle"))}</p>`;
   const operationRows = vm.operations.length
-    ? vm.operations.slice(0, 6).map((operation) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-drive-operation="${escapeHtml(operation.id)}" data-r5-drive-operation-type="${escapeHtml(operation.op_type)}">
+    ? vm.operations.slice(0, 6).map((operation) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-drive-operation="${escapeHtml(operation.id)}" data-r5-drive-operation-type="${escapeHtml(operation.op_type)}">
       <div>
         <strong>${escapeHtml(operation.summary_text)}</strong>
         <p>${escapeHtml(operation.created_at.slice(0, 10))}</p>
@@ -2862,13 +2866,13 @@ function renderDriveRouteComponent(
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-drive-files="true" data-r4-drive-folder-count="${escapeHtml(String(driveFolderCount))}" data-r4-drive-listed-file-count="${escapeHtml(String(driveListedFileCount))}">
-          <h3>${escapeHtml(driveFilesHeading)}</h3>
-          <div class="wh-r4-route-timeline">${fileRows}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(driveFilesHeading)}</h3>
+          <div class="wh-r4-route-timeline" role="list">${fileRows}</div>
           ${driveMoreFilesNote}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-drive-versions="true">
-          <h3>${escapeHtml(driveVersionsHeading)}</h3>
-          <div class="wh-r4-route-timeline">${versionRows}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(driveVersionsHeading)}</h3>
+          <div class="wh-r4-route-timeline" role="list">${versionRows}</div>
         </section>
       </div>
       <div class="wh-r4-route-grid">
@@ -2876,20 +2880,20 @@ function renderDriveRouteComponent(
           ${acceptedRows}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-drive-comments="true">
-          <h3>${escapeHtml(routeT(locale, "drive.comments"))}</h3>
-          <div class="wh-r4-route-timeline">${commentRows}
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "drive.comments"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${commentRows}
           ${commentComposer}</div>
         </section>
       </div>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r5-drive-recycle="true">
-          <h3>${escapeHtml(routeT(locale, "drive.recycle"))}</h3>
-          <div class="wh-r4-route-timeline">${recycleRows}${recycleEmpty}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "drive.recycle"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${recycleRows}${recycleEmpty}</div>
           ${recycleMoreNote}
         </section>
         <section class="wh-card wh-r4-route-card" data-r5-drive-operations="true">
-          <h3>${escapeHtml(routeT(locale, "drive.operations"))}</h3>
-          <div class="wh-r4-route-timeline">${operationRows}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "drive.operations"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${operationRows}</div>
         </section>
       </div>
     </section>`
@@ -2975,7 +2979,7 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
           ${draftLink}
           ${proposalLink}
         </div>
-        <h3>${escapeHtml(insight.title)}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(insight.title)}</h3>
         <p>${escapeHtml(insight.description)}</p>
         <p>${escapeHtml(routeT(locale, "meeting.reason"))}: ${escapeHtml(insight.confidence_reason)}</p>
         <div class="wh-r4-route-meta">${evidence}</div>
@@ -3011,12 +3015,12 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r5-meeting-list="true">
-          <h3>${escapeHtml(routeT(locale, "meeting.kicker"))}</h3>
-          <div class="wh-r4-route-timeline">${meetingRows}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.kicker"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${meetingRows}</div>
         </section>
         ${selectedMeeting ? `<aside class="wh-r4-route-stack" data-r5-meeting-insight-panel="true">
           <section class="wh-card wh-r4-route-card">
-            <h3>${escapeHtml(routeT(locale, "meeting.insights"))}</h3>
+            <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.insights"))}</h3>
             <div class="wh-r4-route-stack">${insightRows}</div>
             <p>${escapeHtml(routeT(locale, "meeting.approvalSafe"))}</p>
           </section>
@@ -3024,14 +3028,14 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
       </div>
       ${selectedMeeting ? `<div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r5-meeting-transcript="true">
-          <h3>${escapeHtml(routeT(locale, "meeting.transcript"))}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.transcript"))}</h3>
           <pre class="wh-r5-meeting-text">${escapeHtml(transcript)}</pre>
         </section>
         <section class="wh-card wh-r4-route-card" data-r5-meeting-minutes="true">
-          <h3>${escapeHtml(routeT(locale, "meeting.minutes"))}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.minutes"))}</h3>
           <pre class="wh-r5-meeting-text">${escapeHtml(minutes)}</pre>
         </section>
-      </div>` : `<div class="wh-r4-route-grid"><article class="wh-card wh-r4-route-card" data-r5-meeting-empty="true"><h3>${escapeHtml(routeT(locale, "meeting.empty"))}</h3><p class="wh-subtle">${escapeHtml(vm.can_manage ? (locale === "zh-CN" ? "会议录音或转写接入后，Cuu 会自动整理出纪要和待办洞察，并显示在这里。" : "Once a meeting recording or transcript is brought in, Cuu drafts the minutes and action insights here.") : (locale === "zh-CN" ? "团队的会议接入后，这里会出现转写、纪要和洞察。" : "Once a team meeting is brought in, its transcript, minutes and insights show up here."))}</p></article></div>`}
+      </div>` : `<div class="wh-r4-route-grid"><article class="wh-card wh-r4-route-card" data-r5-meeting-empty="true"><h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.empty"))}</h3><p class="wh-subtle">${escapeHtml(vm.can_manage ? (locale === "zh-CN" ? "会议录音或转写接入后，Cuu 会自动整理出纪要和待办洞察，并显示在这里。" : "Once a meeting recording or transcript is brought in, Cuu drafts the minutes and action insights here.") : (locale === "zh-CN" ? "团队的会议接入后，这里会出现转写、纪要和洞察。" : "Once a team meeting is brought in, its transcript, minutes and insights show up here."))}</p></article></div>`}
     </section>`
   });
 }
@@ -3104,7 +3108,7 @@ function renderNotificationBucket(
   locale: WorkHubLocale
 ) {
   const rows = items.length
-    ? items.map((item) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-notification-item="${escapeHtml(item.id)}" data-r5-notification-status="${escapeHtml(item.status)}" data-r5-notification-severity="${escapeHtml(item.severity)}" data-r5-notification-type="${escapeHtml(item.type)}" data-r5-notification-source-type="${escapeHtml(item.source_context?.source_type ?? "")}">
+    ? items.map((item) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-notification-item="${escapeHtml(item.id)}" data-r5-notification-status="${escapeHtml(item.status)}" data-r5-notification-severity="${escapeHtml(item.severity)}" data-r5-notification-type="${escapeHtml(item.type)}" data-r5-notification-source-type="${escapeHtml(item.source_context?.source_type ?? "")}">
       <div>
         <div class="wh-r4-route-meta">
           <span class="wh-pill">${escapeHtml(notificationStatusLabel(item.status, locale))}</span>
@@ -3121,8 +3125,8 @@ function renderNotificationBucket(
     </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(routeT(locale, "notifications.empty"))}</p>`;
   return `<section class="wh-card wh-r4-route-card" data-r5-notification-bucket="${escapeHtml(bucket)}" data-r5-notification-bucket-count="${escapeHtml(String(items.length))}">
-    <h3>${escapeHtml(notificationBucketTitle(bucket, locale))}</h3>
-    <div class="wh-r4-route-timeline">${rows}</div>
+    <h3 role="heading" aria-level="2">${escapeHtml(notificationBucketTitle(bucket, locale))}</h3>
+    <div class="wh-r4-route-timeline" role="list">${rows}</div>
   </section>`;
 }
 
@@ -3239,7 +3243,7 @@ function renderHealthCard(card: ProjectHealthPageVM["cards"][number], locale: Wo
     <div class="wh-r4-route-meta">
       <span class="wh-pill">${escapeHtml(healthBandLabel(card.band, locale))}</span>
     </div>
-    <h3>${escapeHtml(card.project_name)}</h3>
+    <h3 role="heading" aria-level="2">${escapeHtml(card.project_name)}</h3>
     <div class="wh-r4-route-meta">${card.signals.map((signal) => renderHealthSignal(signal, card.numbers_visible, locale)).join("")}</div>
     ${open ? `<div class="wh-r4-route-actions">${open}</div>` : ""}
   </section>`;
@@ -3313,7 +3317,7 @@ function renderCalendarBlock(block: CalendarPageVM["blocks"][number], locale: Wo
   const timePill = block.all_day
     ? routeT(locale, "calendar.allDay")
     : [formatApprovalTimestamp(block.starts_at), formatApprovalTimestamp(block.ends_at)].filter(Boolean).join(" – ");
-  return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-calendar-block="${escapeHtml(block.id)}" data-r5-calendar-block-kind="${escapeHtml(block.kind)}" data-r5-calendar-block-status="${escapeHtml(block.status)}" data-r5-calendar-block-severity="${escapeHtml(block.severity)}">
+  return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-calendar-block="${escapeHtml(block.id)}" data-r5-calendar-block-kind="${escapeHtml(block.kind)}" data-r5-calendar-block-status="${escapeHtml(block.status)}" data-r5-calendar-block-severity="${escapeHtml(block.severity)}">
     <div>
       <div class="wh-r4-route-meta">
         <span class="wh-pill">${escapeHtml(scheduleKindLabel(block.kind, locale))}</span>
@@ -3330,8 +3334,8 @@ function renderCalendarBlock(block: CalendarPageVM["blocks"][number], locale: Wo
 function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale): WebRouteComponent {
   const primaryHrefs = vm.blocks.map((block) => block.target_href).filter((value): value is string => Boolean(value));
   const dayRows = vm.days.map((day) => `<section class="wh-card wh-r4-route-card" data-r5-calendar-day="${escapeHtml(day.date)}" data-r5-calendar-day-count="${escapeHtml(String(day.blocks.length))}">
-    <h3>${escapeHtml(day.date)}</h3>
-    <div class="wh-r4-route-timeline">${day.blocks.length ? day.blocks.map((block) => renderCalendarBlock(block, locale)).join("") : `<p class="wh-subtle">${escapeHtml(routeT(locale, "calendar.empty"))}</p>`}</div>
+    <h3 role="heading" aria-level="2">${escapeHtml(day.date)}</h3>
+    <div class="wh-r4-route-timeline" role="list">${day.blocks.length ? day.blocks.map((block) => renderCalendarBlock(block, locale)).join("") : `<p class="wh-subtle">${escapeHtml(routeT(locale, "calendar.empty"))}</p>`}</div>
   </section>`).join("");
 
   return createWebRouteComponent({
@@ -3352,8 +3356,8 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r5-calendar-upcoming="true">
-          <h3>${escapeHtml(routeT(locale, "calendar.upcoming"))}</h3>
-          <div class="wh-r4-route-timeline">${vm.blocks.length ? vm.blocks.slice(0, 6).map((block) => renderCalendarBlock(block, locale)).join("") : `<p class="wh-subtle">${escapeHtml(routeT(locale, "calendar.empty"))}</p>`}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "calendar.upcoming"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${vm.blocks.length ? vm.blocks.slice(0, 6).map((block) => renderCalendarBlock(block, locale)).join("") : `<p class="wh-subtle">${escapeHtml(routeT(locale, "calendar.empty"))}</p>`}</div>
         </section>
         <section class="wh-r4-route-stack" data-r5-calendar-days="true">
           ${dayRows}
@@ -3373,7 +3377,7 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
   }
   return vm.budget.slice(0, 5).map((usage, index) => {
     if (usage.enabled === false) {
-      return `<div class="wh-r4-route-row" data-r4-cost-budget-row="${escapeHtml(String(index))}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="false">
+      return `<div role="listitem" class="wh-r4-route-row" data-r4-cost-budget-row="${escapeHtml(String(index))}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="false">
       <div>
         <strong>${escapeHtml(usage.scope_label)}</strong>
         <p>${escapeHtml(locale === "zh-CN" ? "预算未启用" : "Budget not enabled")}</p>
@@ -3382,7 +3386,7 @@ function renderBudgetRows(vm: CostDashboardVM, locale: WorkHubLocale) {
     </div>`;
     }
     const ratio = usage.max_tokens > 0 ? Math.round((usage.total_tokens / usage.max_tokens) * 100) : 0;
-    return `<div class="wh-r4-route-row" data-r4-cost-budget-row="${escapeHtml(String(index))}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="true">
+    return `<div role="listitem" class="wh-r4-route-row" data-r4-cost-budget-row="${escapeHtml(String(index))}" data-r4-cost-budget-status="${escapeHtml(usage.status)}" data-r4-cost-budget-enabled="true">
       <div>
         <strong>${escapeHtml(usage.scope_label)}</strong>
         <p>${escapeHtml(`${usage.total_tokens}/${usage.max_tokens} tokens · ${costAmount(usage.estimated_cost_cny, locale)}/${costAmount(usage.max_cost_cny, locale)} · ${budgetPeriodLabel(usage.period, locale)}`)}</p>
@@ -3440,8 +3444,8 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
   const sourceWarnings = vm.source_warnings ?? [];
   const warningStrip = sourceWarnings.length
     ? `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r9-agent-source-warnings="${escapeHtml(String(sourceWarnings.length))}">
-        <h3>${escapeHtml(locale === "zh-CN" ? "决策数据未完全加载" : "Decision data is partially loaded")}</h3>
-        <div class="wh-r4-route-timeline">${sourceWarnings.map((warning) => `<p class="wh-subtle" data-r9-agent-source-warning="${escapeHtml(warning.source)}">${escapeHtml(warning.message)}</p>`).join("")}</div>
+        <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "决策数据未完全加载" : "Decision data is partially loaded")}</h3>
+        <div class="wh-r4-route-timeline" role="list">${sourceWarnings.map((warning) => `<p class="wh-subtle" data-r9-agent-source-warning="${escapeHtml(warning.source)}">${escapeHtml(warning.message)}</p>`).join("")}</div>
       </section>`
     : "";
   const capMessages = [
@@ -3454,7 +3458,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
   ].filter(Boolean);
   const capWarning = capMessages.length
     ? `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r9-agent-dashboard-cap-warning="true">
-        <div class="wh-r4-route-timeline">${capMessages.map((message) => `<p class="wh-subtle">${escapeHtml(message)}</p>`).join("")}</div>
+        <div class="wh-r4-route-timeline" role="list">${capMessages.map((message) => `<p class="wh-subtle">${escapeHtml(message)}</p>`).join("")}</div>
       </section>`
     : "";
 
@@ -3493,7 +3497,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
       })()
       : "";
     return `<section class="wh-card wh-r4-route-card" data-r9-agent-plan-card="${escapeHtml(plan.plan_id)}">
-      <div class="wh-r4-route-row">
+      <div role="listitem" class="wh-r4-route-row">
         <div>
           <a href="${escapeHtml(safeHref(plan.work_item_href))}"><strong>${escapeHtml(plan.work_item_title)}</strong></a>
           <p>${escapeHtml(`${plan.work_item_code} · ${taskPlanStatusLabel(locale, plan.status)}`)}</p>
@@ -3520,7 +3524,7 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
       </section>`
     : "";
   const recent = vm.recent_escalations.length
-    ? vm.recent_escalations.map((item) => `<div class="wh-r4-route-row" data-r9-agent-recent-item="${escapeHtml(item.id)}">
+    ? vm.recent_escalations.map((item) => `<div role="listitem" class="wh-r4-route-row" data-r9-agent-recent-item="${escapeHtml(item.id)}">
       <div>
         <strong>${escapeHtml(item.title)}</strong>
         <p>${escapeHtml(item.reason_preview)}</p>
@@ -3556,12 +3560,12 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
       ${empty}
       <div class="wh-r4-route-grid">
         <section class="wh-r4-route-card" data-r9-agent-dashboard-plans="true">
-          <h3>${escapeHtml(routeT(locale, "agents.plans"))}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "agents.plans"))}</h3>
           <div class="wh-r4-route-grid">${planCards}</div>
         </section>
         <details class="wh-card wh-r4-route-card" data-r9-agent-recent-activity="accordion" open>
           <summary>${escapeHtml(routeT(locale, "agents.recent"))}</summary>
-          <div class="wh-r4-route-timeline">${recent}</div>
+          <div class="wh-r4-route-timeline" role="list">${recent}</div>
         </details>
       </div>
     </section>`
@@ -3587,7 +3591,7 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
           ? `<p class="wh-subtle">${escapeHtml(stripMarkdown(skill.provenance.rationale_md))}</p>`
           : "";
         return `<section class="wh-card wh-r4-route-card" data-r8-skill="${escapeHtml(skill.skill_key)}" data-r8-skill-version="${escapeHtml(String(skill.version))}">
-          <h3>${escapeHtml(skill.name)}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(skill.name)}</h3>
           <p>${escapeHtml(skill.when_to_use)}</p>
           <div class="wh-r4-route-meta">${badges}</div>
           ${rationale}
@@ -3634,7 +3638,7 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
         : "";
       const updatedLabel = `${routeT(locale, "projects.updated")} ${project.updated_at.slice(0, 10)}`;
       const projectHref = `/projects/${encodeURIComponent(project.id)}`;
-      return `<div class="wh-r4-route-row" data-r8-project="${escapeHtml(project.id)}" data-r8-project-slug="${escapeHtml(project.slug)}" data-r8-project-archived="${escapeHtml(String(project.archived))}" data-r8-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
+      return `<div role="listitem" class="wh-r4-route-row" data-r8-project="${escapeHtml(project.id)}" data-r8-project-slug="${escapeHtml(project.slug)}" data-r8-project-archived="${escapeHtml(String(project.archived))}" data-r8-project-open-items="${escapeHtml(String(project.open_work_item_count))}">
       <div>
         <strong><a class="wh-r4-route-row-title" href="${escapeHtml(safeHref(projectHref))}">${escapeHtml(project.name)}</a></strong>
         ${descriptionLine}
@@ -3669,7 +3673,8 @@ function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale):
         </form>
       </header>
       <section class="wh-card wh-r4-route-card" data-r8-projects-list="true">
-        <div class="wh-r4-route-timeline">${rows}</div>
+        ${projects.length > 5 ? `<input class="wh-pill" type="search" data-r12-project-filter="true" maxlength="120" placeholder="${escapeHtml(locale === "zh-CN" ? "按项目名过滤…" : "Filter by name…")}" aria-label="${escapeHtml(locale === "zh-CN" ? "过滤项目" : "Filter projects")}" />` : ""}
+        <div class="wh-r4-route-timeline" role="list">${rows}</div>
       </section>
     </section>`
   });
@@ -3780,12 +3785,12 @@ function renderProjectHomeRouteComponent(vm: ProjectHomePageVM, locale: WorkHubL
         </div>
       </header>
       <section class="wh-card wh-r4-route-card" data-r8-project-home-list="true">
-        <h3>${escapeHtml(routeT(locale, "projectHome.openWork"))}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "projectHome.openWork"))}</h3>
         <div class="wh-r4-route-table">${rows}</div>
         ${moreNote}
       </section>
       <section class="wh-card wh-r4-route-card" data-r8-project-home-files="${escapeHtml(String(vm.drive.file_count))}">
-        <h3>${escapeHtml(fileCountLabel)}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(fileCountLabel)}</h3>
         <div class="wh-r4-route-table">${fileRows}</div>
         ${filesMoreNote}
         <a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(vm.actions.open_drive.href))}" data-r8-project-home-files-all="true">${escapeHtml(vm.actions.open_drive.label)} →</a>
@@ -3800,7 +3805,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const props = reactComponent.props;
   const risks = vm.top_exhaustion_risks.length
-    ? vm.top_exhaustion_risks.map((risk) => `<div class="wh-r4-route-row" data-r4-cost-risk="${escapeHtml(risk.label)}" data-r4-cost-risk-status="${escapeHtml(risk.status)}">
+    ? vm.top_exhaustion_risks.map((risk) => `<div role="listitem" class="wh-r4-route-row" data-r4-cost-risk="${escapeHtml(risk.label)}" data-r4-cost-risk-status="${escapeHtml(risk.status)}">
       <div>
         <strong>${escapeHtml(risk.label)}</strong>
         <p>${escapeHtml(`${routeT(locale, "cost.remaining")}: ${costAmount(risk.remaining_cost_cny, locale)}`)}</p>
@@ -3826,7 +3831,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         { info: "提示", warning: "提醒", critical: "严重" },
         { info: "Info", warning: "Warning", critical: "Critical" }
       );
-      return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-cost-notice="${escapeHtml(notice.code)}" data-r4-cost-notice-severity="${escapeHtml(notice.severity)}">
+      return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-cost-notice="${escapeHtml(notice.code)}" data-r4-cost-notice-severity="${escapeHtml(notice.severity)}">
       <div>
         <strong>${escapeHtml(severityLabel)}</strong>
         <p>${escapeHtml(notice.message)}</p>
@@ -3836,7 +3841,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     }).join("")
     : "";
   const models = vm.model_breakdown.slice(0, 5)
-    .map((item) => `<div class="wh-r4-route-row" data-r4-cost-model="${escapeHtml(`${item.provider}:${item.model}`)}">
+    .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r4-cost-model="${escapeHtml(`${item.provider}:${item.model}`)}">
       <div>
         <strong>${escapeHtml(item.model)}</strong>
         <p>${escapeHtml(`${item.provider} · ${item.count} ${locale === "zh-CN" ? "次调用" : item.count === 1 ? "call" : "calls"}`)}</p>
@@ -3862,7 +3867,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       const statusPill = item.status
         ? `<span class="wh-pill" data-tone="${escapeHtml(item.status)}">${escapeHtml(taskPlanStatusLabel(locale, item.status as Parameters<typeof taskPlanStatusLabel>[1]))}</span>`
         : "";
-      return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-cost-army-plan="${escapeHtml(item.task_plan_id)}">
+      return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-cost-army-plan="${escapeHtml(item.task_plan_id)}">
       <div>
         <strong>${item.work_item_id
           ? `<a class="wh-r4-route-row-title" href="/workitems/${escapeHtml(encodeURIComponent(item.work_item_id))}" data-r9-cost-army-drill="${escapeHtml(item.task_plan_id)}" title="${escapeHtml(zhNotice ? "打开工作项，看子任务与每次运行的回放" : "Open the work item to see subtasks and per-run replays")}">${escapeHtml(item.label ?? (zhNotice ? "军团任务计划" : "Task plan"))}</a>`
@@ -3896,9 +3901,9 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     : "";
   const armyCard = vm.by_task_plan.length
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-army="true" data-r9-cost-army-count="${escapeHtml(String(vm.by_task_plan.length))}">
-          <h3>${escapeHtml(zhNotice ? "军团花费" : "Agent team spend")}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "军团花费" : "Agent team spend")}</h3>
           <p class="wh-subtle">${escapeHtml(zhNotice ? "按任务计划分组的 AI 军团开销（近 90 天账目）。" : "Agent team cost grouped by task plan (last 90 days).")}</p>
-          <div class="wh-r4-route-timeline">${armyRows}</div>
+          <div class="wh-r4-route-timeline" role="list">${armyRows}</div>
           ${armyCapNote}
           <div class="wh-r4-route-actions"><a class="wh-btn" href="/dashboard/agents" data-r9-cost-army-cta="true">${escapeHtml(zhNotice ? "去指挥台看军团" : "Open the command deck")}</a></div>
         </section>`
@@ -3906,7 +3911,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   // UX-M10（规格 §3.5 三维分组）：按人 / 按军团计划 / 按目标三个维度都要在成本页可达。
   // 静态渲染架构下做成并排卡（有数据才渲），不做假 tab。
   const byUserRows = vm.by_user.slice(0, 8)
-    .map((item) => `<div class="wh-r4-route-row" data-r9-cost-user="${escapeHtml(item.user_id)}">
+    .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r9-cost-user="${escapeHtml(item.user_id)}">
       <div><strong>${escapeHtml(item.label)}</strong></div>
       <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
     </div>`)
@@ -3919,13 +3924,13 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     : "";
   const byUserCard = vm.by_user.length
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-by-user="true">
-          <h3>${escapeHtml(zhNotice ? "按人花费" : "Spend by person")}</h3>
-          <div class="wh-r4-route-timeline">${byUserRows}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "按人花费" : "Spend by person")}</h3>
+          <div class="wh-r4-route-timeline" role="list">${byUserRows}</div>
           ${byUserCapNote}
         </section>`
     : "";
   const byObjectiveRows = vm.by_objective.slice(0, 8)
-    .map((item) => `<div class="wh-r4-route-row" data-r9-cost-objective="${escapeHtml(item.objective_id)}">
+    .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r9-cost-objective="${escapeHtml(item.objective_id)}">
       <div><strong>${escapeHtml(item.label ?? (zhNotice ? `目标 ${item.objective_id.slice(0, 8)}` : `Objective ${item.objective_id.slice(0, 8)}`))}</strong></div>
       <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
     </div>`)
@@ -3937,21 +3942,21 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
     : "";
   const byObjectiveCard = vm.by_objective.length
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-by-objective="true">
-          <h3>${escapeHtml(zhNotice ? "目标花费" : "Spend by objective")}</h3>
-          <div class="wh-r4-route-timeline">${byObjectiveRows}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "目标花费" : "Spend by objective")}</h3>
+          <div class="wh-r4-route-timeline" role="list">${byObjectiveRows}</div>
           ${byObjectiveCapNote}
         </section>`
     : "";
   // K5：「干活 vs 自进化」分账卡——把夜间技能自迭代的开销显性化（复利劳动力的自我打磨成本）。
   const laborSplitCard = vm.labor_split
     ? `<section class="wh-card wh-r4-route-card" data-r4-cost-labor-split="true" data-r4-cost-self-improvement-ratio="${escapeHtml(String(vm.labor_split.self_improvement_ratio))}">
-          <h3>${escapeHtml(routeT(locale, "cost.laborSplit"))}</h3>
-          <div class="wh-r4-route-timeline">
-            <div class="wh-r4-route-row" data-r4-cost-labor="production">
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "cost.laborSplit"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">
+            <div role="listitem" class="wh-r4-route-row" data-r4-cost-labor="production">
               <div><strong>${escapeHtml(routeT(locale, "cost.laborProduction"))}</strong></div>
               <span class="wh-pill">${escapeHtml(costAmount(vm.labor_split.production_cost_cny, locale))}</span>
             </div>
-            <div class="wh-r4-route-row" data-r4-cost-labor="self_improvement">
+            <div role="listitem" class="wh-r4-route-row" data-r4-cost-labor="self_improvement">
               <div>
                 <strong>${escapeHtml(routeT(locale, "cost.laborSelfImprovement"))}</strong>
                 <p>${escapeHtml(`${routeT(locale, "cost.laborSelfImprovementRatio")}: ${Math.round(vm.labor_split.self_improvement_ratio * 100)}%`)}</p>
@@ -3966,7 +3971,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
   // 这里据此显式给出可操作说明，而不是默默摆一堆 0。
   const emptyStateCard = vm.empty_state
     ? `<section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-cost-empty-state="${escapeHtml(vm.empty_state)}">
-          <h3>${escapeHtml(vm.empty_state === "usage_not_connected"
+          <h3 role="heading" aria-level="2">${escapeHtml(vm.empty_state === "usage_not_connected"
             ? (zhNotice ? "用量统计还没接入" : "Usage tracking not connected")
             : (zhNotice ? "还没有 AI 用量记录" : "No AI usage yet"))}</h3>
           <p>${escapeHtml(vm.empty_state === "usage_not_connected"
@@ -4000,7 +4005,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       ${emptyStateCard}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-cost-metrics="true">
-          <h3>${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}</h3>
+          <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}</h3>
           <div class="wh-r4-route-meta">
             <span class="wh-pill">${escapeHtml(`${goldPathT(locale, "cost.tokenTitle")}: ${props.totalTokens} ${locale === "zh-CN" ? "个 token" : "tokens"}`)}</span>
             <span class="wh-pill">${escapeHtml(goldPathT(locale, "cost.estimatedTitle"))}: ${escapeHtml(costAmount(props.totalCostCny, locale))}</span>
@@ -4009,18 +4014,18 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           ${notices}
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-cost-risks="true">
-          <h3>${escapeHtml(routeT(locale, "cost.risks"))}</h3>
-          <div class="wh-r4-route-timeline">${risks}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "cost.risks"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${risks}</div>
         </section>
       </div>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" id="wh-cost-budget" data-r4-cost-budget="true">
-          <h3>${escapeHtml(routeT(locale, "cost.scopes"))}</h3>
-          <div class="wh-r4-route-timeline">${renderBudgetRows(vm, locale)}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "cost.scopes"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${renderBudgetRows(vm, locale)}</div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-cost-models="true">
-          <h3>${escapeHtml(routeT(locale, "cost.models"))}</h3>
-          <div class="wh-r4-route-timeline">${models || `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.statusFallback"))}</p>`}</div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "cost.models"))}</h3>
+          <div class="wh-r4-route-timeline" role="list">${models || `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "cost.statusFallback"))}</p>`}</div>
         </section>
       </div>
       ${armyCard || laborSplitCard ? `<div class="wh-r4-route-grid">${armyCard}${laborSplitCard}</div>` : ""}
@@ -4040,18 +4045,25 @@ function renderKnowledgeAction(action: EvidenceBubble["actions"][number], vm: Ev
   return `<a class="wh-btn${action.id === "use_for_current_task" ? " wh-btn-primary" : ""}" href="${escapeHtml(safeHref(action.href))}" data-action-id="${escapeHtml(action.id)}"${action.method ? ` data-method="${escapeHtml(action.method)}"` : ""}${payload ? ` data-request-json="${jsonAttr(payload)}"` : ""}>${escapeHtml(action.label)}</a>`;
 }
 
-function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale, sourceRef?: string, scopeLanding?: boolean): WebRouteComponent {
+function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale, sourceRef?: string, scopeLanding?: boolean, projects?: ProjectListVM): WebRouteComponent {
   const refs = vm.evidence_refs;
   // L34：非管理员、无项目/工作项范围时落到这张「检索需先锚定范围」的引导页。此时再摆一个全局搜索框只会
   // 让用户输入后再次 403 撞回同一页(死循环)。改为只给一条与引导文案一致的出路——去项目列表。
+  const landingProjects = (projects?.projects ?? []).slice(0, 50);
   const searchBlock = scopeLanding
-    ? `<div class="wh-r4-route-actions" data-r4-knowledge-scope-landing="true"><a class="wh-btn wh-btn-primary" href="/projects" data-r4-knowledge-scope-cta="true">${escapeHtml(routeT(locale, "knowledge.scopeLandingCta"))}</a></div>`
+    ? `<div data-r4-knowledge-scope-landing="true">${landingProjects.length
+      ? `<form class="wh-r4-knowledge-search" method="get" action="/knowledge" role="search" data-r12-knowledge-scope-form="true">
+          <select class="wh-pill" name="project_id" aria-label="${escapeHtml(locale === "zh-CN" ? "选择要检索的项目" : "Pick a project to search")}">${landingProjects.map((project, index) => `<option value="${escapeHtml(project.id)}"${index === 0 ? " selected" : ""}>${escapeHtml(project.name)}</option>`).join("")}</select>
+          <input type="search" name="q" maxlength="120" placeholder="${escapeHtml(routeT(locale, "knowledge.searchPlaceholder"))}" aria-label="${escapeHtml(routeT(locale, "knowledge.searchLabel"))}" autocomplete="off" />
+          <button class="wh-btn wh-btn-primary" type="submit">${escapeHtml(routeT(locale, "knowledge.searchSubmit"))}</button>
+        </form>` : ""}
+      <div class="wh-r4-route-actions"><a class="wh-btn${landingProjects.length ? "" : " wh-btn-primary"}" href="/projects" data-r4-knowledge-scope-cta="true">${escapeHtml(routeT(locale, "knowledge.scopeLandingCta"))}</a></div></div>`
     : `<form class="wh-r4-knowledge-search" method="get" action="/knowledge/search" role="search" data-r4-knowledge-search-form="true">
         <input type="search" name="q" value="${escapeHtml(vm.query_text ?? "")}" placeholder="${escapeHtml(routeT(locale, "knowledge.searchPlaceholder"))}" aria-label="${escapeHtml(routeT(locale, "knowledge.searchLabel"))}" autocomplete="off" />
         <button class="wh-btn wh-btn-primary" type="submit">${escapeHtml(routeT(locale, "knowledge.searchSubmit"))}</button>
       </form>`;
   const sourceRows = refs.length
-    ? refs.slice(0, 6).map((ref) => `<div class="wh-r4-route-row" data-r4-knowledge-evidence-ref="${escapeHtml(ref.id)}" data-r4-knowledge-source-type="${escapeHtml(ref.source_type)}">
+    ? refs.slice(0, 6).map((ref) => `<div role="listitem" class="wh-r4-route-row" data-r4-knowledge-evidence-ref="${escapeHtml(ref.id)}" data-r4-knowledge-source-type="${escapeHtml(ref.source_type)}">
       <div>
         <strong>${escapeHtml(ref.title)}</strong>
         <p>${escapeHtml(ref.excerpt ?? ref.source_id)}</p>
@@ -4080,8 +4092,8 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
       ${searchBlock}
       ${sourceRef ? `<p class="wh-subtle" data-r5-7-knowledge-source-ref="${escapeHtml(sourceRef)}">${escapeHtml(routeT(locale, "knowledge.fromNotice"))}: ${escapeHtml(sourceRef)}</p>` : ""}
       <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-knowledge-fallback="true">
-        <h3>${escapeHtml(routeT(locale, "knowledge.sources"))}</h3>
-        <div class="wh-r4-route-timeline">${sourceRows}</div>
+        <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "knowledge.sources"))}</h3>
+        <div class="wh-r4-route-timeline" role="list">${sourceRows}</div>
         <div class="wh-r4-route-actions">${actions}</div>
       </section>
     </section>`
@@ -4110,45 +4122,45 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
       </header>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r4-settings-runtime="true">
-          <h3>${escapeHtml(routeT(locale, "settings.runtime"))}</h3>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.runtimeStatus"))}</strong><span class="wh-pill">${escapeHtml(runtimeStatusLabel(props.runtimeStatus, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.worker"))}</strong><span class="wh-pill">${escapeHtml(String(props.workerCount))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.broker"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.brokerConfigured, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.database"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.databaseConfigured, locale))}</span></div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.runtime"))}</h3>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.runtimeStatus"))}</strong><span class="wh-pill">${escapeHtml(runtimeStatusLabel(props.runtimeStatus, locale))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.worker"))}</strong><span class="wh-pill">${escapeHtml(String(props.workerCount))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.broker"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.brokerConfigured, locale))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.database"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.databaseConfigured, locale))}</span></div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-settings-llm="true">
-          <h3>${escapeHtml(routeT(locale, "settings.llm"))}</h3>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.provider"))}</strong><span class="wh-pill">${escapeHtml(props.defaultProvider)}</span></div>
-          <div class="wh-r4-route-row"><div><strong>${escapeHtml(routeT(locale, "settings.model"))}</strong><p>${escapeHtml(props.defaultModel)}</p></div><span class="wh-pill">${escapeHtml(String(props.providerCount))}</span></div>
-          <div class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "AI 引擎的服务端密钥；「未配置」时 AI 功能不可用，需管理员在服务端设置。" : "Server-side key for the AI engine; if unset, AI features are unavailable until an admin configures it.")}"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.apiKeyConfigured, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.baseUrl"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.baseUrlConfigured, locale))}</span></div>
-          <div class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "密钥只存服务端环境变量、绝不发给浏览器；「未配置」时联系管理员在服务端配置。" : "Keys live only in server env vars and never reach the browser; if unset, ask an admin to configure the server.")}"><strong>${escapeHtml(routeT(locale, "settings.secretSafe"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.secretSafe, locale))}</span></div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.llm"))}</h3>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.provider"))}</strong><span class="wh-pill">${escapeHtml(props.defaultProvider)}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><div><strong>${escapeHtml(routeT(locale, "settings.model"))}</strong><p>${escapeHtml(props.defaultModel)}</p></div><span class="wh-pill">${escapeHtml(String(props.providerCount))}</span></div>
+          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "AI 引擎的服务端密钥；「未配置」时 AI 功能不可用，需管理员在服务端设置。" : "Server-side key for the AI engine; if unset, AI features are unavailable until an admin configures it.")}"><strong>${escapeHtml(routeT(locale, "settings.apiKey"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.apiKeyConfigured, locale))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.baseUrl"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.baseUrlConfigured, locale))}</span></div>
+          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "密钥只存服务端环境变量、绝不发给浏览器；「未配置」时联系管理员在服务端配置。" : "Keys live only in server env vars and never reach the browser; if unset, ask an admin to configure the server.")}"><strong>${escapeHtml(routeT(locale, "settings.secretSafe"))}</strong><span class="wh-pill">${escapeHtml(boolLabel(props.secretSafe, locale))}</span></div>
         </section>
       </div>
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card" data-r4-settings-language="true">
-          <h3>${escapeHtml(routeT(locale, "settings.language"))}</h3>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.activeLocale"))}</strong><span class="wh-pill">${escapeHtml(props.activeLocale)}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceLocale"))}</strong><span class="wh-pill">${escapeHtml(props.preferenceLocale)}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSource"))}</strong><span class="wh-pill">${escapeHtml(preferenceSourceLabel(props.preferenceSource, locale === "zh-CN"))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSync"))}</strong><span class="wh-pill">${escapeHtml(syncLabel(props.preferenceSynced, locale))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.supported"))}</strong><span class="wh-pill">${escapeHtml(props.supportedLocales.join(" / "))}</span></div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.language"))}</h3>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.activeLocale"))}</strong><span class="wh-pill">${escapeHtml(props.activeLocale)}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceLocale"))}</strong><span class="wh-pill">${escapeHtml(props.preferenceLocale)}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSource"))}</strong><span class="wh-pill">${escapeHtml(preferenceSourceLabel(props.preferenceSource, locale === "zh-CN"))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.preferenceSync"))}</strong><span class="wh-pill">${escapeHtml(syncLabel(props.preferenceSynced, locale))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.supported"))}</strong><span class="wh-pill">${escapeHtml(props.supportedLocales.join(" / "))}</span></div>
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-settings-device="true">
-          <h3>${escapeHtml(routeT(locale, "settings.device"))}</h3>
-          <div class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "「是」表示改文件等本地动作只在桌面客户端执行，网页端只读——这是安全边界不是故障。" : "Yes means local actions (file writes) run only in the desktop app; the web stays read-only — a safety boundary, not a fault.")}"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.localExecutionBoundary))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.independentPet"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.independentPetWindow))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.petBoundary"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, !props.petModelSettingsInWeb))}</span></div>
-          <div class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "恢复交付物到本地文件需要桌面客户端在线；「是」为正常态。" : "Restoring deliverables to local files requires the desktop app; Yes is the normal state.")}"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.restoreRequiresDesktop))}</span></div>
-          <div class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.webLocalActions"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.webLocalActionsEnabled))}</span></div>
+          <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "settings.device"))}</h3>
+          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "「是」表示改文件等本地动作只在桌面客户端执行，网页端只读——这是安全边界不是故障。" : "Yes means local actions (file writes) run only in the desktop app; the web stays read-only — a safety boundary, not a fault.")}"><strong>${escapeHtml(routeT(locale, "settings.localExecution"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.localExecutionBoundary))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.independentPet"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.independentPetWindow))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.petBoundary"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, !props.petModelSettingsInWeb))}</span></div>
+          <div role="listitem" class="wh-r4-route-row" title="${escapeHtml(locale === "zh-CN" ? "恢复交付物到本地文件需要桌面客户端在线；「是」为正常态。" : "Restoring deliverables to local files requires the desktop app; Yes is the normal state.")}"><strong>${escapeHtml(routeT(locale, "settings.desktopGate"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.restoreRequiresDesktop))}</span></div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.webLocalActions"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.webLocalActionsEnabled))}</span></div>
           <a class="wh-btn" href="${escapeHtml(safeHref(props.restoreHref))}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
         </section>
       </div>
       ${vm.permission_policies !== undefined ? `<section class="wh-card wh-r4-route-card" data-r9-settings-policies="${escapeHtml(String(vm.permission_policies.length))}">
-        <h3>${escapeHtml(locale === "zh-CN" ? "自动通过规则" : "Auto-approve rules")}</h3>
+        <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "自动通过规则" : "Auto-approve rules")}</h3>
         <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "勾选「以后同类自动通过」留下的常驻规则都在这里；撤销需在桌面端操作。" : "Standing rules from \u201calways allow\u201d live here; revoking requires the desktop app.")}</p>
-        <div class="wh-r4-route-timeline">${vm.permission_policies.length
-          ? vm.permission_policies.map((policy) => `<div class="wh-r4-route-row" data-r9-settings-policy="${escapeHtml(policy.id)}">
+        <div class="wh-r4-route-timeline" role="list">${vm.permission_policies.length
+          ? vm.permission_policies.map((policy) => `<div role="listitem" class="wh-r4-route-row" data-r9-settings-policy="${escapeHtml(policy.id)}">
             <div>
               <strong>${escapeHtml(policy.action_pattern)}</strong>
               <p>${escapeHtml(`${policy.effect === "allow" ? (locale === "zh-CN" ? "自动通过" : "Auto-allow") : policy.effect === "deny" ? (locale === "zh-CN" ? "自动拒绝" : "Auto-deny") : (locale === "zh-CN" ? "每次询问" : "Ask")}${policy.learned_from_session ? (locale === "zh-CN" ? " · 来自审批时的勾选" : " · learned from approval") : ""}`)}</p>
@@ -4194,7 +4206,7 @@ export type WebRouteComponentInput =
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "agents"; agents: AgentArmyDashboardVM }
-  | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined; scopeLanding?: boolean | undefined }
+  | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined; scopeLanding?: boolean | undefined; projects?: ProjectListVM | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
   | { key: "settings"; settings: SettingsPageVM };
 
@@ -4238,7 +4250,7 @@ export function renderWebRouteComponent(
     case "agents":
       return renderAgentArmyRouteComponent(input.agents, locale);
     case "knowledge":
-      return renderKnowledgeRouteComponent(input.evidence, locale, input.sourceRef, input.scopeLanding);
+      return renderKnowledgeRouteComponent(input.evidence, locale, input.sourceRef, input.scopeLanding, input.projects);
     case "skills":
       return renderTeamSkillsRouteComponent(input.skills, locale);
     case "settings":
