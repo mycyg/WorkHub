@@ -439,7 +439,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.startRun": "开始 AI 执行",
     "intake.summary": "接入摘要",
     "intake.progress": "澄清进度",
-    "intake.freeText": "也可以展开手动输入（可选）",
+    "intake.freeText": "展开手动输入回答",
     "intake.createWorkItem": "创建工作项",
     "intake.continue": "继续澄清",
     "intake.stateDone": "已完成",
@@ -662,7 +662,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.startRun": "Start AI run",
     "intake.summary": "Intake summary",
     "intake.progress": "Clarification progress",
-    "intake.freeText": "Or type your own answer (optional)",
+    "intake.freeText": "Type your answer",
     "intake.createWorkItem": "Create work item",
     "intake.continue": "Continue intake",
     "intake.stateDone": "Done",
@@ -670,7 +670,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "intake.statePending": "Pending",
     "intake.startKicker": "Pilot work entry",
     "intake.startTitle": "Start from a real project",
-    "intake.startBody": "WorkHub prepares the pilot project context first, then opens option-first intake. It will not use old smoke seed ids or modify accepted deliverables directly.",
+    "intake.startBody": "WorkHub prepares the pilot project context first, then opens option-first intake. It never modifies accepted deliverables directly.",
     "intake.startProject": "Pilot project context",
     "intake.startAction": "Start work intake",
     "intake.startNext": "Next: pick a work type, then let AI do the work.",
@@ -1476,10 +1476,12 @@ function renderIntakeStartRouteComponent(
   projectUnavailable?: boolean | undefined
 ): WebRouteComponent {
   const zh = locale === "zh-CN";
+  // 普通用户审查：界面写「试点项目」、实际建出英文「Pilot Project」对不上号——按 locale 送本地化名
+  // （slug 保持稳定，二次进入仍复用同一项目）。
   const bootstrapPayload = {
-    name: "Pilot Project",
+    name: zh ? "试点项目" : "Pilot Project",
     slug: "pilot-project",
-    description: "Pilot project context created from the WorkHub intake entry."
+    description: zh ? "从 WorkHub 新任务入口创建的试点项目。" : "Pilot project context created from the WorkHub intake entry."
   };
   // 带项目上下文(从项目主页「新任务」进来)：展示真实项目名、绑定到该项目、跳过「试点项目」bootstrap。
   const projectName = project ? project.name : (zh ? "试点项目" : "Pilot project");

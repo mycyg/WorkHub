@@ -1521,7 +1521,6 @@ function questionFor(
       input_mode: "confirm",
       options: [
         { id: "create-workitem", label: workItemT(locale, "question.confirm.create.label"), description: workItemT(locale, "question.confirm.create.description"), icon: "check" },
-        { id: "search-evidence-first", label: workItemT(locale, "question.confirm.evidence.label"), description: workItemT(locale, "question.confirm.evidence.description"), icon: "search" },
         { id: "adjust-scope", label: workItemT(locale, "question.confirm.adjust.label"), description: workItemT(locale, "question.confirm.adjust.description"), icon: "sliders" }
       ],
       recommended_option_ids: ["create-workitem"],

@@ -1883,7 +1883,7 @@ test("R4.14 Intake route component renders a typed option-first session without 
   assert.equal(intake.html.includes('data-request-json="{&quot;selected_option_ids&quot;:[]}"'), true);
   assert.equal(intake.html.includes('data-intake-free-text-input="true"'), true);
   assert.equal(intake.html.includes('maxlength="120"'), true);
-  assert.equal(intake.html.includes("Or type your own answer (optional)"), true);
+  assert.equal(intake.html.includes("Type your answer"), true);
   assert.equal(intake.html.includes("message-list"), false);
   assert.deepEqual(intake.primaryHrefs, ["/api/sessions/10000000-0000-4000-8000-000000000901/next-question"]);
   assertNoMainWindowBoundaryLeak(intake.html);

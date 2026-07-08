@@ -51,8 +51,8 @@ const copy = {
     "en-US": "AI will turn this into a clear next step."
   },
   "workitem.emptyTrace": {
-    "zh-CN": "AI 已准备好，下一步会开始读取证据。",
-    "en-US": "AI is ready. The next step will start reading evidence."
+    "zh-CN": "AI 待命中——点上方「生成任务计划」或「让 AI 开工」它才会动手。",
+    "en-US": "AI is standing by — it starts only after you hit Draft task plan or Start AI."
   },
   "workitem.stepFallback": { "zh-CN": "记录了一步。", "en-US": "Recorded one step." },
   "workitem.emptyAcceptance": { "zh-CN": "暂无验收项。", "en-US": "No acceptance items yet." },
@@ -67,8 +67,8 @@ const copy = {
     "en-US": "AI has packaged the changes into a reviewable request."
   },
   "workitem.willReadEvidence": {
-    "zh-CN": "AI 会先看证据，再生成可供审批的交付物。",
-    "en-US": "AI will read evidence first, then prepare a reviewable deliverable."
+    "zh-CN": "开工后 AI 会先看证据，再生成可供审批的交付物——记得点「生成任务计划」让它开工。",
+    "en-US": "Once started, AI reads evidence first, then prepares a reviewable deliverable — hit Draft task plan to kick it off."
   },
 
   "proposal.kicker": { "zh-CN": "交付物变更申请", "en-US": "Deliverable change request" },

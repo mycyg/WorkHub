@@ -353,6 +353,11 @@ export function materializeIntakePayload<T>(element: HTMLElement): ActionPayload
   if (optionCount > 0 && selected.length === 0 && freeText.length === 0) {
     return { ok: false, reason: "intake_option_required" };
   }
+  // 普通用户审查：0 选项的纯问答步（long_text）自由文本是唯一答法，空提交会让 AI 拿着空信息干活——
+  // 一样拦下（提示先回答问题）。
+  if (optionCount === 0 && selected.length === 0 && freeText.length === 0) {
+    return { ok: false, reason: "intake_option_required" };
+  }
   return actionElementJsonPayload<T>(element);
 }
 

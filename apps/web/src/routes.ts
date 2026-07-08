@@ -764,10 +764,16 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
         metric(locale, "runtime", intakeRuntime)
       ];
     }
+    // 普通用户审查：原样渲 input_mode 枚举（long_text）与 session UUID 是黑话泄漏——换人话。
+    const stageLabel = surface.session.question.input_mode === "confirm"
+      ? (locale === "zh-CN" ? "待确认" : "Confirm")
+      : (locale === "zh-CN" ? "问答中" : "Q&A");
     return [
-      metric(locale, "options", String(surface.session.question.options.length)),
-      metric(locale, "queue", surface.session.question.input_mode),
-      metric(locale, "runtime", surface.session.session_id)
+      ...(surface.session.question.options.length > 0
+        ? [metric(locale, "options", String(surface.session.question.options.length))]
+        : []),
+      metric(locale, "queue", stageLabel),
+      metric(locale, "runtime", locale === "zh-CN" ? "需求澄清" : "Clarifying")
     ];
   }
   if (surface.key === "approvals") {
