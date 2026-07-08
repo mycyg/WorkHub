@@ -2108,7 +2108,8 @@ test("R9.5 objective budget exhaustion blocks the next child enqueue and publish
   assert.deepEqual(notice.options?.map((option) => [option.id, option.label]), [
     ["add_budget", "追加预算继续"],
     ["finish_current_output", "就用现有产出收尾"],
-    ["close_scope", "整体收工"]
+    // 普通用户审查：danger 标签写明后果。
+    ["close_scope", "整体收工（取消这个任务）"]
   ]);
 });
 
