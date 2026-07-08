@@ -750,7 +750,10 @@ export function createDbTaskDispatchEscalationSink(
           userId,
           type: "workitem.escalated",
           severity: "high",
-          title: en ? "Your agent team needs a decision" : "军团任务需要你来定一下",
+          // R11（通知信息量）：点名事项——不点开也知道是哪个任务在等决定。
+          title: en
+            ? `${access?.code ? `${access.code} · ` : ""}Your agent team needs a decision`
+            : `${access?.code ? `${access.code} · ` : ""}军团任务需要你来定一下`,
           body: reasonMd,
           targetUrl: `/workitems/${input.plan.workItemId}`,
           workItemId: input.plan.workItemId,
@@ -799,7 +802,9 @@ export function createDbTaskDispatchCompletionSink(
             userId,
             type: "workitem.status_changed",
             severity: "normal",
-            title: en ? "Your agent team wrapped up!" : "军团收工！",
+            title: en
+              ? `${access?.code ? `${access.code} · ` : ""}Your agent team wrapped up!`
+              : `${access?.code ? `${access.code} · ` : ""}军团收工！`,
             body: en
               ? `${doneCount} of ${input.items.length} subtasks done — go review the results.`
               : `${doneCount}/${input.items.length} 个活儿办完啦，去验收吧～`,

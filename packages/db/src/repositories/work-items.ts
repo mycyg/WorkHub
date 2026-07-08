@@ -92,6 +92,9 @@ export type WorkItemNotificationContextRow = {
 // 让 canViewWorkItemRecord(record, targetUser) 能复用——含状态/提交人/认领人/项目活跃度/显式指派（lead/collaborator）。
 export type WorkItemAccessRow = {
   id: string;
+  // R11（通知信息量）：军团升级/收工通知要点名事项——顺带带出 code/title（可选，测试夹具不必补）。
+  code?: string;
+  title?: string | null;
   status: WorkItemStatus;
   submitterUserId: string;
   claimedByUserId: string | null;
@@ -510,6 +513,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       const rows = await db
         .select({
           id: workItems.id,
+          code: workItems.code,
+          title: workItems.title,
           status: workItems.status,
           submitterUserId: workItems.submitterUserId,
           claimedByUserId: workItems.claimedByUserId,
@@ -535,6 +540,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         .where(eq(workItemAssignments.workItemId, workItemId));
       return {
         id: row.id,
+        code: row.code,
+        title: row.title,
         status: row.status,
         submitterUserId: row.submitterUserId,
         claimedByUserId: row.claimedByUserId,

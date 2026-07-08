@@ -775,7 +775,8 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             userId: approval.routedToUserId,
             type: "approval.routed",
             severity: "high",
-            title: "有一步操作等你审批",
+            // R11（通知信息量）：铃铛/推送常只显示 title——带上事项摘要，不点开也能判断要不要现在处理。
+            title: `待你审批：${attention.title.slice(0, 60)}`,
             body: attention.summary_text,
             targetUrl: "/approvals",
             workItemId: approval.workItemId,
@@ -1112,7 +1113,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
             userId: toUserId,
             type: "approval.routed",
             severity: "high",
-            title: "有一步操作转交给你审批",
+            title: `转交给你审批：${attention.title.slice(0, 60)}`,
             body: attention.summary_text,
             targetUrl: "/approvals",
             workItemId: updated.workItemId,

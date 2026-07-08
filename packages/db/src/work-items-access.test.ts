@@ -31,6 +31,9 @@ test("findWorkItemAccessRecord returns project org id and assignment rows", asyn
 
   assert.deepEqual(result, {
     id: "work-item-1",
+    // R11：通知点名事项——access 查询顺带带出 code/title（recorder 夹具行没给则为 undefined）。
+    code: undefined,
+    title: undefined,
     status: "spec_ready",
     submitterUserId: "submitter-1",
     claimedByUserId: "claimer-1",

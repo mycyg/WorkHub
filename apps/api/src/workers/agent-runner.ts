@@ -1871,7 +1871,8 @@ export function createInMemoryAgentRunQueue(options: {
         workItem,
         actor: {
           id: "ai-auto",
-          label: "AI 工人"
+          // R11（通知信息量）：多角色分工下 {actor} 不再恒为「AI 工人」——带上执行角色。
+          label: agentActorLabelForRun(run)
         },
         newStatus,
         reasonOneline,
@@ -1880,6 +1881,23 @@ export function createInMemoryAgentRunQueue(options: {
     } catch (error) {
       getDefaultStructuredLogger().warn("agent_run_notification_milestone_failed", { error });
     }
+  }
+
+  function agentActorLabelForRun(run: { agent_role?: string | null }): string {
+    const role = run.agent_role;
+    if (role === "research") {
+      return "调研 AI";
+    }
+    if (role === "review") {
+      return "复核 AI";
+    }
+    if (role === "integrate") {
+      return "整合 AI";
+    }
+    if (role === "produce") {
+      return "产出 AI";
+    }
+    return "AI 工人";
   }
 
   async function persistBudgetDecision(input: EnqueueAgentRunInput, decision: BudgetDecisionTrace) {

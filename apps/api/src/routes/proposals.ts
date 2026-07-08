@@ -736,7 +736,10 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
             userId: submitterId,
             type: "proposal.revision_requested",
             severity: "normal",
-            title: locale === "en-US" ? "Your change request was sent back" : "你的变更申请被打回了",
+            // R11（通知信息量）：点名被打回的是哪份变更申请——不点开也能判断轻重缓急。
+            title: locale === "en-US"
+              ? `Sent back: ${proposal.title.slice(0, 60)}`
+              : `被打回：${proposal.title.slice(0, 60)}`,
             body: payload.reason_md ?? (locale === "en-US" ? "See the review comments." : "查看打回理由。"),
             targetUrl: `/proposals/${proposal.id}`,
             workItemId: proposal.work_item_id,
