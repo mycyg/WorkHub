@@ -255,7 +255,7 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(zh.html.includes("data-patch-line-kind=\"remove\""), true);
   assert.equal(zh.html.includes("data-patch-line-kind=\"add\""), true);
   assert.equal(zh.html.includes("改动预览"), true);
-  assert.equal(zh.html.includes("段落: 1"), true);
+  assert.equal(zh.html.includes("改动处: 1"), true);
   assert.equal(zh.html.includes("行数: 2"), true);
   assert.equal(zh.html.includes("data-replay-text-diff3=\"true\""), true);
   assert.equal(zh.html.includes("data-text-diff3-option-key=\"ai_fusion\""), true);
@@ -304,7 +304,7 @@ test("replay renderer exposes structured field operation targets and writeback a
   assert.equal(en.html.includes("Subrecord item changes"), true);
   assert.equal(en.html.includes("Added"), true);
   assert.equal(en.html.includes("Change preview"), true);
-  assert.equal(en.html.includes("Hunks: 1"), true);
+  assert.equal(en.html.includes("Changes: 1"), true);
   assert.equal(en.html.includes("Lines: 2"), true);
   assert.equal(en.html.includes("Text merge check"), true);
   assert.equal(en.html.includes("Overlap hunk 1"), true);

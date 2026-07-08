@@ -341,7 +341,7 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Use this version"), true);
   assert.equal(english.html.includes("Use AI fusion draft"), true);
   assert.equal(english.html.includes("Preview before apply"), true);
-  assert.equal(english.html.includes("Hunks: 1"), true);
+  assert.equal(english.html.includes("Changes: 1"), true);
   assert.equal(english.html.includes("Lines: 2"), true);
   assert.equal(english.html.includes("Text merge check"), true);
   assert.equal(english.html.includes("Needs line review"), true);

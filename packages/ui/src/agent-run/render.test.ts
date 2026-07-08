@@ -99,7 +99,7 @@ test("agent run renderer celebrates completed runs without showing cancel action
 
   assert.equal(rendered.surface, "desktop");
   assert.equal(rendered.cuuState, "celebrating");
-  assert.equal(rendered.html.includes("做完啦"), true);
+  assert.equal(rendered.html.includes("已完成"), true);
   assert.equal(rendered.html.includes("取消执行"), false);
 });
 
