@@ -184,6 +184,9 @@ function renderBulkActionAudit(attempt: ReplayMergeAttemptVM, locale: WorkHubLoc
   </section>`;
 }
 
+function stripMarkdown(value: string) {
+  return value.replace(/[#*_`>-]/gu, " ").replace(/\s+/gu, " ").trim();
+}
 function renderTextPatchPreview(candidate: ReplayMergeCandidateVM, locale: WorkHubLocale) {
   return renderRichPatchViewer({
     locale,
@@ -252,7 +255,7 @@ function renderMergeTimeline(vm: ReplayTraceVM, locale: WorkHubLocale) {
                 candidate.recommended ? copy(locale, "推荐", "Recommended") : "",
                 candidate.chosen ? copy(locale, "已选择", "Chosen") : ""
               ].filter(Boolean).join(" · ");
-              return `<div class="wh-row"><div><strong>${escapeHtml(mergeOptionLabel(locale, candidate.option_key))}</strong><p class="wh-subtle">${escapeHtml(candidate.rationale_md ?? candidate.option_key)}</p>${renderTextPatchPreview(candidate, locale)}${renderTextDiff3QualityGate(candidate, locale)}${renderStructuredRecordPatch(candidate, locale)}</div>${badges ? `<span class="wh-pill">${escapeHtml(badges)}</span>` : ""}</div>`;
+              return `<div class="wh-row"><div><strong>${escapeHtml(mergeOptionLabel(locale, candidate.option_key))}</strong><p class="wh-subtle">${escapeHtml(stripMarkdown(candidate.rationale_md ?? candidate.option_key))}</p>${renderTextPatchPreview(candidate, locale)}${renderTextDiff3QualityGate(candidate, locale)}${renderStructuredRecordPatch(candidate, locale)}</div>${badges ? `<span class="wh-pill">${escapeHtml(badges)}</span>` : ""}</div>`;
             }).join("")
             : `<p class="wh-subtle">${escapeHtml(copy(locale, "未选择", "Not chosen"))}</p>`;
           const chosen = decision.chosen_option_key

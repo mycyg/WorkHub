@@ -140,7 +140,9 @@ function normalizePublicProposalCopy(value: string, locale: WorkHubLocale) {
 }
 
 export function publicProposalSummaryText(markdown: string, locale: WorkHubLocale, maxLength = 260) {
-  return stripMarkdown(normalizePublicProposalCopy(markdown, locale)).slice(0, maxLength);
+  const text = stripMarkdown(normalizePublicProposalCopy(markdown, locale));
+  // R4：硬切断像渲染 bug——超长补省略号。
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
 }
 
 function stripProposalOpenedPrefix(text: string) {

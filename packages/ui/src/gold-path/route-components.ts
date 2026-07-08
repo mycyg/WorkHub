@@ -1822,7 +1822,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       const itemRequest = vm.requests.find((req) => req.id === item.id);
       // 嵌入该事项的 respond href，供左栏选择时把右栏决策按钮重绑到选中项（避免误批 items[0]）。
       const respondHref = item.actions.find((action) => action.href.includes("/respond"))?.href;
-      return `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" data-r4-approval-item="${escapeHtml(item.id)}" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}"${respondHref ? ` data-r4-approval-respond-href="${escapeHtml(safeHref(respondHref))}"` : ""}>
+      return `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" tabindex="0" role="button" aria-pressed="${escapeHtml(String(item.id === primary?.id))}" data-r4-approval-item="${escapeHtml(item.id)}" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}"${respondHref ? ` data-r4-approval-respond-href="${escapeHtml(safeHref(respondHref))}"` : ""}>
       <div class="wh-r4-route-meta"><span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, zh))}</span></div>
       <h3>${escapeHtml(item.title)}</h3>
       <p>${escapeHtml(item.summary_text)}</p>
@@ -2061,7 +2061,7 @@ function renderTaskPlanPanel(
         return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-task-plan-item="${escapeHtml(item.id)}" data-r9-task-plan-role="${escapeHtml(item.role)}" data-r9-task-plan-budget="${escapeHtml(String(item.budget_share_pct))}" data-r9-task-plan-depends="${escapeHtml(dependsLabel)}">
           <div>
             <strong>${escapeHtml(`${displaySeq}. ${item.title}`)}</strong>
-            <p>${escapeHtml(item.acceptance_md)}</p>
+            <p>${escapeHtml(stripMarkdown(item.acceptance_md))}</p>
           </div>
           <div class="wh-r4-route-meta">
             <span class="wh-pill">${escapeHtml(taskPlanItemRoleLabel(locale, item.role))}</span>
@@ -2454,7 +2454,9 @@ function renderProposalRouteComponent(
   });
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
   const props = reactComponent.props;
-  const summary = stripMarkdown(vm.manifest.summary_md).slice(0, 320);
+  const summaryFull = stripMarkdown(vm.manifest.summary_md);
+  // R4：硬切断像渲染 bug——超长补省略号。
+  const summary = summaryFull.length > 320 ? `${summaryFull.slice(0, 320)}…` : summaryFull;
   const rollbackClass = vm.manifest.rollback.available ? "wh-pill" : "wh-pill wh-pill-danger";
   const comments = vm.comments.length
     ? vm.comments.map((comment) => `<div class="wh-r4-route-row" data-r4-proposal-comment="${escapeHtml(comment.id)}">
@@ -2623,11 +2625,19 @@ function renderDriveRouteComponent(
       return `<option value="${escapeHtml(safeHref(`/drive?project_id=${encodeURIComponent(project.id)}`))}"${selected}>${escapeHtml(project.name)}</option>`;
     }).join("")}`
     : "";
+  // R4（规模化）：200 条字母序截断外的文件此前无用户可达出路——补名称搜索框（GET 导航保留项目参数）。
+  const driveSearchForm = currentProjectId
+    ? `<form class="wh-r4-route-meta" method="get" action="/drive" role="search" data-r9-drive-search-form="true">
+        <input type="hidden" name="project_id" value="${escapeHtml(currentProjectId)}" />
+        <input class="wh-pill" type="search" name="q" maxlength="120" placeholder="${escapeHtml(locale === "zh-CN" ? "按文件名搜索…" : "Search files by name…")}" aria-label="${escapeHtml(locale === "zh-CN" ? "搜索文件" : "Search files")}" />
+        <button class="wh-btn" type="submit">${escapeHtml(locale === "zh-CN" ? "搜索" : "Search")}</button>
+      </form>`
+    : "";
   const driveProjectNav = `<nav class="wh-r4-route-meta" data-r8-drive-project-nav="true" data-r8-drive-current-project="${escapeHtml(currentProjectId)}" data-r8-drive-project-count="${escapeHtml(String(projectList.length))}">
         <a class="wh-pill" href="/projects" data-r8-drive-all-projects="true">&#8592; ${escapeHtml(routeT(locale, "drive.allProjects"))}</a>
         <strong data-r8-drive-current-project-name="true">${escapeHtml(vm.project?.name ?? routeT(locale, "drive.kicker"))}</strong>
         ${switcherOptions ? `<select class="wh-pill" data-r8-drive-project-switcher="true" aria-label="${escapeHtml(routeT(locale, "drive.switchProject"))}">${switcherOptions}</select>` : ""}
-      </nav>`;
+      </nav>${driveSearchForm}`;
   const selectedActiveItem = vm.items.find((item) => item.id === vm.selected_item_id);
   const selectedDeletedItem = vm.deleted_items.find((item) => item.id === vm.selected_item_id);
   const selectedItem = selectedActiveItem ?? (selectedDeletedItem || vm.requested_item_missing ? undefined : vm.items.find((item) => item.kind === "file") ?? vm.items[0]);
@@ -3135,6 +3145,7 @@ function renderNotificationsRouteComponent(vm: NotificationPageVM, locale: WorkH
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "notifications.kicker"))}</span>
           <h1>${escapeHtml(locale === "zh-CN" ? "别错过要紧事" : "Don't miss what matters")}</h1>
+          ${vm.capped ? `<p class="wh-subtle" data-r9-notifications-capped="true">${escapeHtml(locale === "zh-CN" ? "只显示最近 200 条——上面的总数不含更早的历史。" : "Showing the latest 200 — the totals above exclude older history.")}</p>` : ""}
           <p>${escapeHtml(`${notificationBucketTitle("needs_decision", locale)} ${vm.summary.needs_decision_count} · ${notificationBucketTitle("fyi", locale)} ${vm.summary.fyi_count} · ${notificationBucketTitle("done", locale)} ${vm.summary.done_count}`)}</p>
         </div>
         <div class="wh-r4-route-actions">${markAll}<span class="wh-r4-route-count">${escapeHtml(String(vm.summary.unread_count))}</span></div>
@@ -3506,7 +3517,7 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
             : ""
         ].filter(Boolean).join("");
         const rationale = skill.provenance?.rationale_md
-          ? `<p class="wh-subtle">${escapeHtml(skill.provenance.rationale_md)}</p>`
+          ? `<p class="wh-subtle">${escapeHtml(stripMarkdown(skill.provenance.rationale_md))}</p>`
           : "";
         return `<section class="wh-card wh-r4-route-card" data-r8-skill="${escapeHtml(skill.skill_key)}" data-r8-skill-version="${escapeHtml(String(skill.version))}">
           <h3>${escapeHtml(skill.name)}</h3>

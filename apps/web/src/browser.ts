@@ -416,6 +416,19 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client:
         showRouteNotice(shellRoot, localePersistenceFailedNotice(locale, "locale_switch"));
       });
   }, eventListenerOptions(signal));
+
+  // R4 a11y high：审批队列行纯键盘不可达——Enter/Space 等同点击（行已带 tabindex/role=button）。
+  shellRoot.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    const row = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-r4-approval-item]") : null;
+    if (!row || (event.target instanceof HTMLElement && /^(input|textarea|button|a|select)$/iu.test(event.target.tagName))) {
+      return;
+    }
+    event.preventDefault();
+    row.click();
+  }, eventListenerOptions(signal));
 }
 
 function showRouteNotice(shellRoot: HTMLElement, vm: RouteNoticeVM, extraHtml?: string, timeoutMs = 4600) {
@@ -700,6 +713,10 @@ function bindGoldPathNavigation(
         } finally {
           llmActionBusy = false;
           commentSubmit.disabled = false;
+          // R4 回归：提交成功已清空输入框，dirty 标记也要清——否则该路由永远收不到 SSE 刷新。
+          if (!input?.value.trim()) {
+            clearActiveRouteDirty();
+          }
         }
       }
       return;
@@ -1676,7 +1693,7 @@ function bindNotificationMutePanel(
   }
 }
 
-async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocale) {
+async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocale, options: { silent?: boolean } = {}) {
   if (!root) {
     return;
   }
@@ -1686,7 +1703,11 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
   clearReadyRouteBindings();
   unmountReactRouteIsland();
   clearLiveDirtyMetrics();
-  root.innerHTML = renderWebRouteState(match, "loading", locale).html;
+  // R4 high（性能感知）：SSE 刷新用 silent——保留旧内容直到新数据就绪，不再每次事件整页闪白
+  // 打断阅读；只有主动导航才渲 loading 骨架。
+  if (!options.silent) {
+    root.innerHTML = renderWebRouteState(match, "loading", locale).html;
+  }
   const result = await loadWebRoute(client, match, locale, currentIdentity);
   if (renderId !== activeRouteRenderId) {
     return;
@@ -1788,9 +1809,9 @@ async function submitOnboarding(client: BrowserApiClient, locale: WorkHubLocale)
   }
 }
 
-async function renderCurrentRouteOrOnboard(client: BrowserApiClient, locale: WorkHubLocale) {
+async function renderCurrentRouteOrOnboard(client: BrowserApiClient, locale: WorkHubLocale, options: { silent?: boolean } = {}) {
   try {
-    await renderCurrentRoute(client, locale);
+    await renderCurrentRoute(client, locale, options);
   } catch (error) {
     if (error instanceof WorkHubApiError && error.code === "not_identified") {
       showOnboardingScreen(client, locale);

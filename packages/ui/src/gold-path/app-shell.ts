@@ -210,7 +210,7 @@ export function renderGoldPathAppShell(
         </nav>
         <div class="wh-app-content">${panels}</div>
       </div>
-      <div class="wh-app-notice" data-wh-app-notice ${options.notice ? "" : "hidden"}>${escapeHtml(options.notice ?? "")}</div>
+      <div class="wh-app-notice" role="status" aria-live="polite" aria-atomic="true" data-wh-app-notice ${options.notice ? "" : "hidden"}>${escapeHtml(options.notice ?? "")}</div>
     </div>`
   };
 }

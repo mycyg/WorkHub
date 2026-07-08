@@ -43,7 +43,7 @@ export type GoldPathRenderedSurface = {
 };
 
 export const goldPathCss = [
-  ":root{color-scheme:light;--ink:#1A1D26;--secondary:#5B616E;--muted:#9AA0AC;--line:#E6E7EB;--line-alt:#EEF0F3;--paper:#fff;--panel:#fff;--page:#F7F8FA;--soft:#F5F5FE;--blue:#4F46E5;--blue-light:#EEF0FE;--green:#15A05A;--green-light:#E7F0EA;--red:#E5484D;--red-light:#FCECEC;--coral:#ee6b5f;--amber:#E0892A;--amber-light:#FCF3E6;--violet:#7863e6;--radius-card:14px;--radius-button:10px}",
+  ":root{color-scheme:light;--ink:#1A1D26;--secondary:#5B616E;--muted:#667085;--line:#E6E7EB;--line-alt:#EEF0F3;--paper:#fff;--panel:#fff;--page:#F7F8FA;--soft:#F5F5FE;--blue:#4F46E5;--blue-light:#EEF0FE;--green:#15A05A;--green-light:#E7F0EA;--red:#E5484D;--red-light:#FCECEC;--coral:#ee6b5f;--amber:#E0892A;--amber-light:#FCF3E6;--violet:#7863e6;--radius-card:14px;--radius-button:10px}",
   ".wh-shell{font-family:\"Segoe UI\",system-ui,-apple-system,\"PingFang SC\",sans-serif;color:var(--ink);background:var(--page);padding:24px;min-height:100%;width:100%;max-width:100%;box-sizing:border-box;overflow-x:hidden}.wh-shell,.wh-shell *{box-sizing:border-box}",
   ".wh-stage{width:100%;max-width:1040px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start;min-width:0}",
   ".wh-panel{background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 50px rgba(37,51,79,.08);min-width:0;max-width:100%}",
@@ -651,7 +651,7 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
     <div class="wh-card">${steps}</div>
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.tokenTitle"))}</strong><p class="wh-subtle">${replay.cost?.me.total_tokens ?? 0}</p></article>
-      <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.costTitle"))}</strong><p class="wh-subtle">¥${escapeHtml(replay.cost?.me.estimated_cost_cny ?? "0")}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.costTitle"))}</strong><p class="wh-subtle">${escapeHtml(uiFormatCny(replay.cost?.me.estimated_cost_cny ?? "0", locale))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.snapshotTitle"))}</strong><p class="wh-subtle">${replay.snapshots.length}${escapeHtml(t(locale, "replay.snapshotUnit"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.deliverableTitle"))}</strong><p class="wh-subtle">${acceptedDeliverables.length}${escapeHtml(t(locale, "replay.deliverableUnit"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.decisionTitle"))}</strong><p class="wh-subtle">${mergeTimeline.length}${escapeHtml(t(locale, "replay.decisionUnit"))}</p></article>
@@ -677,7 +677,7 @@ function renderCost(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, local
   // K5 对齐:把「干活 vs 自进化（夜间技能蒸馏）」分账显性化（与 web cost labor_split 一致）。仅有账目时显示。
   const laborSplit = cost.labor_split;
   const laborCard = laborSplit
-    ? `<article class="wh-card" data-r8-cost-labor-split="true" data-r8-cost-self-improvement-ratio="${escapeHtml(String(laborSplit.self_improvement_ratio))}"><strong>${escapeHtml(zh ? "干活 vs 自进化" : "Work vs self-improvement")}</strong><p class="wh-subtle">${escapeHtml(`${zh ? "干活" : "Production"} ${uiFormatCny(laborSplit.production_cost_cny)} · ${zh ? "自进化" : "Self-improvement"} ${uiFormatCny(laborSplit.self_improvement_cost_cny)}（${Math.round(laborSplit.self_improvement_ratio * 100)}%）`)}</p></article>`
+    ? `<article class="wh-card" data-r8-cost-labor-split="true" data-r8-cost-self-improvement-ratio="${escapeHtml(String(laborSplit.self_improvement_ratio))}"><strong>${escapeHtml(zh ? "干活 vs 自进化" : "Work vs self-improvement")}</strong><p class="wh-subtle">${escapeHtml(`${zh ? "干活" : "Production"} ${uiFormatCny(laborSplit.production_cost_cny, locale)} · ${zh ? "自进化" : "Self-improvement"} ${uiFormatCny(laborSplit.self_improvement_cost_cny, locale)}（${Math.round(laborSplit.self_improvement_ratio * 100)}%）`)}</p></article>`
     : "";
   const statusText = nearestRisk
     ? budgetStatusLabel(locale, nearestRisk.status)
@@ -687,7 +687,7 @@ function renderCost(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, local
     <p class="wh-subtle">${escapeHtml(t(locale, "cost.summary"))}</p>
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.tokenTitle"))}</strong><p class="wh-subtle">${cost.token_in + cost.token_out}</p></article>
-      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.estimatedTitle"))}</strong><p class="wh-subtle">${escapeHtml(uiFormatCny(cost.total_cost_cny))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.estimatedTitle"))}</strong><p class="wh-subtle">${escapeHtml(uiFormatCny(cost.total_cost_cny, locale))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.statusTitle"))}</strong><p class="wh-subtle">${escapeHtml(statusText)}</p></article>
     </div>
     ${laborCard ? `<div class="wh-list">${laborCard}</div>` : ""}
