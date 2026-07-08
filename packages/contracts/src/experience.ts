@@ -78,6 +78,8 @@ export const attentionItemSchema = z.object({
   priority: z.enum(["low", "normal", "high", "urgent"]),
   work_item_id: idSchema.optional(),
   project_id: idSchema.optional(),
+  // R12（多项目）：多项目并行时队列卡要能一眼看出属于哪个项目。
+  project_name: z.string().min(1).optional(),
   source_ref: z.object({
     entity_type: z.enum([
       "approval_request",

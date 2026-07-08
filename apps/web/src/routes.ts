@@ -97,7 +97,7 @@ export type WebRouteSurface =
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "agents"; agents: AgentArmyDashboardVM }
-  | { key: "knowledge"; evidence: EvidenceBubble; source_ref?: string | undefined; scope_landing?: boolean | undefined }
+  | { key: "knowledge"; evidence: EvidenceBubble; source_ref?: string | undefined; scope_landing?: boolean | undefined; projects?: ProjectListVM | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
   | { key: "settings"; settings: SettingsPageVM };
 
@@ -943,7 +943,7 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
     return renderWebRouteComponent({ key: "agents", agents: surface.agents }, { locale });
   }
   if (surface.key === "knowledge") {
-    return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence, sourceRef: surface.source_ref, scopeLanding: surface.scope_landing }, { locale });
+    return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence, sourceRef: surface.source_ref, scopeLanding: surface.scope_landing, projects: surface.projects }, { locale });
   }
   if (surface.key === "skills") {
     return renderWebRouteComponent({ key: "skills", skills: surface.skills }, { locale });
@@ -1129,7 +1129,15 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       // 无锚点的全局检索对非管理员 403:不塌成裸 403 死胡同,改在外壳内渲染知识库落地页。
       // 带锚点(项目/工作项)的 403 是真实的越权,照常冒泡为 forbidden 态。
       if (error instanceof WorkHubApiError && error.status === 403 && !hasScope) {
-        return { key: "knowledge", evidence: knowledgeScopeLandingBubble(q, locale), scope_landing: true } satisfies WebRouteSurface;
+        // R12（多项目）：落地页不再只有「去项目列表」死路——带上项目清单渲检索项目选择器，
+        // 非管理员选定项目即可就地检索（服务端单项目口径不变）。清单拉取失败退化为无选择器。
+        let landingProjects: ProjectListVM | undefined;
+        try {
+          landingProjects = await client.listProjects();
+        } catch {
+          landingProjects = undefined;
+        }
+        return { key: "knowledge", evidence: knowledgeScopeLandingBubble(q, locale), scope_landing: true, ...(landingProjects ? { projects: landingProjects } : {}) } satisfies WebRouteSurface;
       }
       throw error;
     }

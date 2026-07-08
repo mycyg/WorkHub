@@ -66,14 +66,22 @@ export function createProjectRepository(db: WorkHubDb): ProjectRepository {
           archived: projects.archived,
           createdAt: projects.createdAt,
           updatedAt: projects.updatedAt,
+          // R12（多项目）：projects.updatedAt 建库后从不被写路径更新≈创建时间——「按更新时间排序」
+          // 与「更新于」展示都在撒谎。真活跃时间 = max(项目行, 项目内工作项最新 updatedAt)。
+          lastActivityAt: sql<Date>`greatest(${projects.updatedAt}, coalesce(max(${workItems.updatedAt}), ${projects.updatedAt}))`,
           openWorkItemCount: sql<number>`coalesce(sum(case when ${workItems.id} is not null and ${workItems.status} not in ('merged','done','cancelled') and ${workItems.deletedAt} is null then 1 else 0 end), 0)`
         })
         .from(projects)
         .leftJoin(workItems, eq(workItems.projectId, projects.id))
         .where(and(eq(projects.workspaceId, workspaceId), eq(projects.archived, false), isNull(projects.deletedAt)))
         .groupBy(projects.id)
-        .orderBy(desc(projects.updatedAt));
-      return rows.map((row) => ({ ...row, openWorkItemCount: Number(row.openWorkItemCount) }));
+        .orderBy(sql`greatest(${projects.updatedAt}, coalesce(max(${workItems.updatedAt}), ${projects.updatedAt})) desc`);
+      return rows.map((row) => ({
+        ...row,
+        // 展示与排序同源：updatedAt 用真活跃时间（VM 的 updated_at 即由它而来）。
+        updatedAt: row.lastActivityAt instanceof Date ? row.lastActivityAt : new Date(String(row.lastActivityAt)),
+        openWorkItemCount: Number(row.openWorkItemCount)
+      }));
     },
 
     async bootstrapPilotProject(input) {

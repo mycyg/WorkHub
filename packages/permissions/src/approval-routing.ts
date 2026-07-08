@@ -70,6 +70,7 @@ export function toApprovalAttentionItem(
     kind: options.kind === "proposal" || options.kind === "revision" ? "proposal_review" : "approval",
     priority: options.priority ?? (ui?.risk?.level === "high" ? "urgent" : "normal"),
     ...(approval.workItemId ? { work_item_id: approval.workItemId } : {}),
+    ...(options.projectName ? { project_name: options.projectName } : {}),
     source_ref: {
       entity_type: "approval_request",
       entity_id: approval.id
