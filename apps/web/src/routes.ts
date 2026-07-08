@@ -853,10 +853,10 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
     ];
   }
   if (surface.key === "agents") {
+    // R5（视觉层级）：正文 KPI 四卡（带口径注解与落点）是权威版本——masthead 不再复读同名三数，
+    // 只留一条独有补充（今日成本），避免同屏三处渲染同一批计数。
     return [
-      metric(locale, "agentTeams", String(surface.agents.kpis.active_team_count)),
-      metric(locale, "needsDecision", String(surface.agents.kpis.waiting_decision_count)),
-      metric(locale, "autonomy", `${surface.agents.kpis.autonomy_rate_pct}%`)
+      metric(locale, "cost", surface.agents.kpis.today_cost_cny ? `¥${surface.agents.kpis.today_cost_cny}` : "¥0")
     ];
   }
   if (surface.key === "knowledge") {

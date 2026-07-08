@@ -1137,7 +1137,8 @@ function notificationSeverityLabel(severity: string, zh: boolean): string {
   return localizedEnumLabel(
     severity,
     zh,
-    { urgent: "紧急", high: "重要", normal: "常规" },
+    // R5 词表：high 与 attention/工作项侧同词「较高」，同一后端枚举不再两套中文。
+    { urgent: "紧急", high: "较高", normal: "常规" },
     { urgent: "Urgent", high: "High", normal: "Normal" }
   );
 }
@@ -1293,7 +1294,10 @@ function renderHomeRouteComponent(
           </div>
         </div>
         <a class="wh-btn" href="/projects/${escapeHtml(encodeURIComponent(project.id))}" data-r8-home-open-project="${escapeHtml(project.id)}">${escapeHtml(routeT(locale, "projects.open"))}</a>
-      </div>`).join("")
+      </div>`).join("") + (projectList.length > 4
+      ? `<p class="wh-subtle" data-r9-home-projects-overflow="${escapeHtml(String(projectList.length - 4))}">${escapeHtml(zh
+        ? `还有 ${projectList.length - 4} 个项目未显示，` : `${projectList.length - 4} more projects not shown — `)}<a href="/projects">${escapeHtml(zh ? "查看全部项目" : "see all projects")}</a></p>`
+      : "")
     : `<p class="wh-subtle" data-r8-home-projects-empty="true">${escapeHtml(zh ? "还没有项目。先新建或打开一个项目，任务、文件和版本都会收在同一个工作区里。" : "No projects yet. Create or open a project first; tasks, files, and versions will live in that workspace.")}</p>`;
   const projectDriveHref = topProject ? `/drive?project_id=${encodeURIComponent(topProject.id)}` : "/projects";
   const projectIntakeHref = topProject ? `/intake?project_id=${encodeURIComponent(topProject.id)}` : "/intake";
@@ -1390,12 +1394,18 @@ function renderHomeRouteComponent(
       </a>`;
     }).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "home.aiWorkingEmpty"))}</p>`;
+  // R5（规模化）：多军团并跑时 background_runs 远超 4 条——诚实提示剩余数并给指挥台出路，不再静默截断。
+  const runOverflowNote = vm.background_runs.length > 4
+    ? `<p class="wh-subtle" data-r9-home-runs-overflow="${escapeHtml(String(vm.background_runs.length - 4))}">${escapeHtml(zh
+      ? `还有 ${vm.background_runs.length - 4} 个运行未显示，` : `${vm.background_runs.length - 4} more runs not shown — `)}<a href="/dashboard/agents">${escapeHtml(zh ? "去指挥台查看全部" : "see all in the command center")}</a></p>`
+    : "";
   // 普通用户审查（首页布局）：每天拍板的人不该先滚过两张常青说明卡——决策区提到项目桌之上。
   const decisionGrid = `<div class="wh-r4-route-grid">
         ${decisionCard}
         <section class="wh-card wh-r4-route-card" data-r4-home-ai-working="true">
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.aiWorkingTitle"))}</span>
           <div class="wh-r4-route-timeline">${runRows}</div>
+          ${runOverflowNote}
         </section>
       </div>`;
 
@@ -2102,7 +2112,7 @@ function agentTeamTitle(team: WorkItemAgentTeamVM, locale: WorkHubLocale) {
   if (team.status === "approved") {
     return locale === "zh-CN" ? `军团待出发 ${ratio}` : `Agent team ready ${ratio}`;
   }
-  return locale === "zh-CN" ? `军团推进中 ${ratio}` : `Agent team in progress ${ratio}`;
+  return locale === "zh-CN" ? `军团进行中 ${ratio}` : `Agent team in progress ${ratio}`;
 }
 
 function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], locale: WorkHubLocale) {
@@ -2619,11 +2629,16 @@ function renderDriveRouteComponent(
   // M3：当前项目不在清单里时(归档/跨工作区直链)，原生 <select> 会显示第一项名字，与下方标题不符。
   // 补一个 value 为空、选中的「当前项目」占位项，避免错配（选它不导航）。
   const currentInList = projectList.some((project) => project.id === currentProjectId);
+  // R5（规模化）：50+ 项目时原生下拉退化为超长滚动列表——只列前 50（清单按最近更新序），
+  // 当前项目不在前 50 也保留在顶部，末尾用禁用项告知剩余数量并指去项目页。
+  const switcherPool = projectList.slice(0, 50);
+  const switcherRest = projectList.length - switcherPool.length;
+  const switcherCurrentInPool = switcherPool.some((project) => project.id === currentProjectId);
   const switcherOptions = projectList.length > 1
-    ? `${currentInList ? "" : `<option value="" selected>${escapeHtml(vm.project?.name ?? "")}</option>`}${projectList.map((project) => {
+    ? `${currentInList && switcherCurrentInPool ? "" : `<option value="" selected>${escapeHtml(vm.project?.name ?? "")}</option>`}${switcherPool.map((project) => {
       const selected = project.id === currentProjectId ? " selected" : "";
       return `<option value="${escapeHtml(safeHref(`/drive?project_id=${encodeURIComponent(project.id)}`))}"${selected}>${escapeHtml(project.name)}</option>`;
-    }).join("")}`
+    }).join("")}${switcherRest > 0 ? `<option value="" disabled>${escapeHtml(locale === "zh-CN" ? `其余 ${switcherRest} 个项目请到「项目」页查找` : `${switcherRest} more — find them on Projects`)}</option>` : ""}`
     : "";
   // R4（规模化）：200 条字母序截断外的文件此前无用户可达出路——补名称搜索框（GET 导航保留项目参数）。
   const driveSearchForm = currentProjectId
@@ -2886,11 +2901,15 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
   const projectList = projects?.projects ?? [];
   const currentMeetingProjectId = vm.project?.id ?? "";
   const currentMeetingInList = projectList.some((project) => project.id === currentMeetingProjectId);
+  // R5（规模化）：同 drive 切换器——50 上限+剩余数出路。
+  const meetingSwitcherPool = projectList.slice(0, 50);
+  const meetingSwitcherRest = projectList.length - meetingSwitcherPool.length;
+  const meetingCurrentInPool = meetingSwitcherPool.some((project) => project.id === currentMeetingProjectId);
   const meetingSwitcherOptions = projectList.length > 1
-    ? `${currentMeetingInList ? "" : `<option value="" selected>${escapeHtml(vm.project?.name ?? "")}</option>`}${projectList.map((project) => {
+    ? `${currentMeetingInList && meetingCurrentInPool ? "" : `<option value="" selected>${escapeHtml(vm.project?.name ?? "")}</option>`}${meetingSwitcherPool.map((project) => {
       const selected = project.id === currentMeetingProjectId ? " selected" : "";
       return `<option value="${escapeHtml(safeHref(`/meetings?project_id=${encodeURIComponent(project.id)}`))}"${selected}>${escapeHtml(project.name)}</option>`;
-    }).join("")}`
+    }).join("")}${meetingSwitcherRest > 0 ? `<option value="" disabled>${escapeHtml(locale === "zh-CN" ? `其余 ${meetingSwitcherRest} 个项目请到「项目」页查找` : `${meetingSwitcherRest} more — find them on Projects`)}</option>` : ""}`
     : "";
   const meetingProjectNav = `<nav class="wh-r4-route-meta" data-r9-meeting-project-nav="true" data-r9-meeting-current-project="${escapeHtml(currentMeetingProjectId)}">
         <a class="wh-pill" href="/projects" data-r9-meeting-all-projects="true">&#8592; ${escapeHtml(routeT(locale, "drive.allProjects"))}</a>
@@ -2906,7 +2925,11 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         <p>${escapeHtml(`${formatApprovalTimestamp(meeting.created_at)} · ${meeting.uploaded_by_label}`)}</p>
       </div>
       <span class="wh-pill">${escapeHtml(meetingRecordStatusLabel(meeting.status, locale))}</span>
-    </a>`).join("")
+    </a>`).join("") + (vm.meetings.length > 10
+      ? `<p class="wh-subtle" data-r9-meetings-overflow="${escapeHtml(String(vm.meetings.length - 10))}">${escapeHtml(locale === "zh-CN"
+        ? `只列出最近 10 场会议（共 ${vm.meetings.length} 场）。`
+        : `Showing the 10 most recent meetings of ${vm.meetings.length}.`)}</p>`
+      : "")
     : `<p class="wh-subtle">${escapeHtml(selectedMeeting
       ? (locale === "zh-CN" ? "这场会议还没有洞察。" : "No insights from this meeting yet.")
       : routeT(locale, "meeting.empty"))}</p>`;
@@ -3148,7 +3171,7 @@ function renderNotificationsRouteComponent(vm: NotificationPageVM, locale: WorkH
           ${vm.capped ? `<p class="wh-subtle" data-r9-notifications-capped="true">${escapeHtml(locale === "zh-CN" ? "只显示最近 200 条——上面的总数不含更早的历史。" : "Showing the latest 200 — the totals above exclude older history.")}</p>` : ""}
           <p>${escapeHtml(`${notificationBucketTitle("needs_decision", locale)} ${vm.summary.needs_decision_count} · ${notificationBucketTitle("fyi", locale)} ${vm.summary.fyi_count} · ${notificationBucketTitle("done", locale)} ${vm.summary.done_count}`)}</p>
         </div>
-        <div class="wh-r4-route-actions">${markAll}<span class="wh-r4-route-count">${escapeHtml(String(vm.summary.unread_count))}</span></div>
+        <div class="wh-r4-route-actions">${markAll}</div>
       </header>
       ${renderNotificationMutePanel(locale)}
       <div class="wh-r4-route-grid">
@@ -3220,9 +3243,8 @@ function renderHealthRouteComponent(vm: ProjectHealthPageVM, locale: WorkHubLoca
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "health.kicker"))}</span>
           <h1>${escapeHtml(routeT(locale, "health.title"))}</h1>
-          <p>${escapeHtml(`${routeT(locale, "health.summary")} ${vm.summary.project_count} · ${routeT(locale, "health.attention")} ${vm.summary.attention_count} · ${routeT(locale, "health.critical")} ${vm.summary.critical_count}`)}</p>
+          <p>${escapeHtml(locale === "zh-CN" ? "每个项目一张健康卡：分数、风险信号与下一步入口。" : "One health card per project: score, risk signals, and where to act next.")}</p>
         </div>
-        <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.project_count))}</span>
       </header>
       ${memberNote}
       <div class="wh-r4-route-grid">${cards}</div>
@@ -3842,10 +3864,17 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
     </div>`)
     .join("");
+  // R5（规模化）：与 armyCapNote 同口径——超过 8 人时明说，不静默截断。
+  const byUserCapNote = vm.by_user.length > 8
+    ? `<p class="wh-subtle" data-r9-cost-by-user-capped="true">${escapeHtml(zhNotice
+      ? `按花费只显示前 8 人（共 ${vm.by_user.length} 人）。`
+      : `Showing the 8 costliest people of ${vm.by_user.length}.`)}</p>`
+    : "";
   const byUserCard = vm.by_user.length
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-by-user="true">
           <h3>${escapeHtml(zhNotice ? "按人花费" : "Spend by person")}</h3>
           <div class="wh-r4-route-timeline">${byUserRows}</div>
+          ${byUserCapNote}
         </section>`
     : "";
   const byObjectiveRows = vm.by_objective.slice(0, 8)
@@ -3854,10 +3883,16 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
       <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
     </div>`)
     .join("");
+  const byObjectiveCapNote = vm.by_objective.length > 8
+    ? `<p class="wh-subtle" data-r9-cost-by-objective-capped="true">${escapeHtml(zhNotice
+      ? `按花费只显示前 8 个目标（共 ${vm.by_objective.length} 个）。`
+      : `Showing the 8 costliest objectives of ${vm.by_objective.length}.`)}</p>`
+    : "";
   const byObjectiveCard = vm.by_objective.length
     ? `<section class="wh-card wh-r4-route-card" data-r9-cost-by-objective="true">
           <h3>${escapeHtml(zhNotice ? "目标花费" : "Spend by objective")}</h3>
           <div class="wh-r4-route-timeline">${byObjectiveRows}</div>
+          ${byObjectiveCapNote}
         </section>`
     : "";
   // K5：「干活 vs 自进化」分账卡——把夜间技能自迭代的开销显性化（复利劳动力的自我打磨成本）。
