@@ -1024,6 +1024,12 @@ function renderAttentionRows(items: AttentionItem[], emptyCopy: string, zh: bool
   if (items.length === 0) {
     return `<p class="wh-subtle">${escapeHtml(emptyCopy)}</p>`;
   }
+  // 普通用户审查：芯片报 12、列表只见 4，剩下的去哪了没人说——超出展示上限时明说还有几件。
+  const overflowNote = items.length > 4
+    ? `<p class="wh-subtle" data-r9-attention-overflow="${escapeHtml(String(items.length - 4))}">${escapeHtml(zh
+      ? `还有 ${items.length - 4} 件排在后面，处理完上面的会自动顶上来。`
+      : `${items.length - 4} more waiting — they surface as you clear the ones above.`)}</p>`
+    : "";
   return items
     .slice(0, 4)
     .map((item) => {
@@ -1037,7 +1043,7 @@ function renderAttentionRows(items: AttentionItem[], emptyCopy: string, zh: bool
         ? `<a class="wh-r4-route-row" href="${escapeHtml(safeHref(href))}" data-r4-route-attention-item="${escapeHtml(item.id)}">${inner}</a>`
         : `<div class="wh-r4-route-row" data-r4-route-attention-item="${escapeHtml(item.id)}">${inner}</div>`;
     })
-    .join("");
+    .join("") + overflowNote;
 }
 
 function approvalRouteLabel(routedToUserId: string | undefined, locale: WorkHubLocale) {
@@ -1377,6 +1383,14 @@ function renderHomeRouteComponent(
         <span class="wh-pill wh-r4-runstate wh-r4-runstate--${homeRunStateTone(run.state)}">${escapeHtml(homeRunStateLabel(run.state, zh))}</span>
       </div>`).join("")
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "home.aiWorkingEmpty"))}</p>`;
+  // 普通用户审查（首页布局）：每天拍板的人不该先滚过两张常青说明卡——决策区提到项目桌之上。
+  const decisionGrid = `<div class="wh-r4-route-grid">
+        ${decisionCard}
+        <section class="wh-card wh-r4-route-card" data-r4-home-ai-working="true">
+          <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.aiWorkingTitle"))}</span>
+          <div class="wh-r4-route-timeline">${runRows}</div>
+        </section>
+      </div>`;
 
   const evidenceRows = primary?.evidence_refs?.length
     ? primary.evidence_refs.slice(0, 3).map((ref) => `<div class="wh-r4-route-row" data-r4-home-evidence="${escapeHtml(ref.id)}">
@@ -1424,6 +1438,7 @@ function renderHomeRouteComponent(
       </header>
       ${chips}
       ${sourceWarningBanner}
+      ${decisionGrid}
       <div class="wh-r4-route-grid">
         ${projectDesk}
         <section class="wh-card wh-r4-route-card" data-r8-home-drive-principle="true">
@@ -1431,13 +1446,6 @@ function renderHomeRouteComponent(
           <h3>${escapeHtml(zh ? "网盘跟着项目走" : "The drive follows the project")}</h3>
           <p>${escapeHtml(zh ? "上传、版本、交付物恢复和评论草稿都在项目网盘里闭环，避免把文件散在全局入口。" : "Uploads, versions, deliverable restore, and comment drafts close the loop inside each project drive instead of a loose global bucket.")}</p>
           <a class="wh-r4-route-kicker" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-principle-link="true">${escapeHtml(zh ? "查看项目网盘 →" : "View project drive →")}</a>
-        </section>
-      </div>
-      <div class="wh-r4-route-grid">
-        ${decisionCard}
-        <section class="wh-card wh-r4-route-card" data-r4-home-ai-working="true">
-          <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "home.aiWorkingTitle"))}</span>
-          <div class="wh-r4-route-timeline">${runRows}</div>
         </section>
       </div>
       ${secondaryGrid}

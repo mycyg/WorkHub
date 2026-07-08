@@ -826,7 +826,9 @@ test("R4.10 Home route component renders directly from Attention Page VM with bi
   assertNoMainWindowBoundaryLeak(en.html);
 });
 
-test("Home route leads with a project and drive workspace before the decision queue", () => {
+// 普通用户审查（IA 翻转）：R8 曾钉「项目桌在前」，但每天来拍板的人不该先滚过两张常青说明卡——
+// 决策区（含紧急升级卡）永远第一屏，项目桌其后。
+test("Home route leads with the decision queue before the project desk", () => {
   const vm = surfaceVm();
   const en = renderWebRouteComponent({
     key: "home",
@@ -840,7 +842,7 @@ test("Home route leads with a project and drive workspace before the decision qu
   assert.equal(en.html.includes('href="/projects/93000000-0000-4000-8000-000000000001"'), true);
   assert.equal(en.html.includes('href="/drive?project_id=93000000-0000-4000-8000-000000000001"'), true);
   assert.equal(en.html.includes('href="/intake?project_id=93000000-0000-4000-8000-000000000001"'), true);
-  assert.ok(en.html.indexOf('data-r8-home-project-desk="true"') < en.html.indexOf('data-r4-home-decision="true"'));
+  assert.ok(en.html.indexOf('data-r4-home-decision="true"') < en.html.indexOf('data-r8-home-project-desk="true"'));
   assertNoMainWindowBoundaryLeak(en.html);
 });
 
