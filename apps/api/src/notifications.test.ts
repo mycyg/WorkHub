@@ -72,6 +72,14 @@ class StubNotifications implements NotificationRepository {
     this.archives += 1;
     return { ...this.stored, readAt: now, archivedAt: now, updatedAt: now };
   }
+
+  async archiveByDedupeKey() {
+    return 0;
+  }
+
+  async archiveStaleLifecycleForWorkItem() {
+    return 0;
+  }
 }
 
 class DriftedSeverityNotifications extends StubNotifications {
@@ -136,6 +144,14 @@ class RecordingNotifications implements NotificationRepository {
 
   async archive() {
     return row({ archivedAt: now });
+  }
+
+  async archiveByDedupeKey() {
+    return 0;
+  }
+
+  async archiveStaleLifecycleForWorkItem() {
+    return 0;
   }
 }
 
@@ -219,6 +235,14 @@ class VisibilityNotifications implements NotificationRepository {
 
   snapshot(id: string) {
     return this.rows.find((stored) => stored.id === id) ?? null;
+  }
+
+  async archiveByDedupeKey() {
+    return 0;
+  }
+
+  async archiveStaleLifecycleForWorkItem() {
+    return 0;
   }
 }
 

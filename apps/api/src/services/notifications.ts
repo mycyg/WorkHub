@@ -26,6 +26,7 @@ import {
 } from "@workhub/events";
 
 import { getDefaultPushBus } from "../broker/index.js";
+import { getDefaultStructuredLogger } from "../logging.js";
 import type { PushBus } from "../broker/types.js";
 import type { AuthActor } from "../middleware/auth.js";
 
@@ -336,7 +337,23 @@ export function createNotificationService(
     },
 
     async notifyMilestone(context: MilestoneNotificationContext) {
-      return this.flushNotificationDrafts(this.queueMilestoneNotifications(context));
+      // R7（通知闭环）：新里程碑落地时，同一工作项上更早的 workitem.* 通知描述的状态已不成立——
+      // 一并归档，不再让「已升级」「审阅中」在事项推进后仍卡在待决策桶。归档失败不翻通知创建。
+      const milestone = this.queueMilestoneNotifications(context);
+      const keepType = milestone[0]?.type;
+      if (keepType && context.workItem.id) {
+        try {
+          await deps.notifications.archiveStaleLifecycleForWorkItem(context.workItem.id, keepType, now());
+        } catch (error) {
+          getDefaultStructuredLogger().warn("lifecycle_notification_archive_failed", { workItemId: context.workItem.id, error });
+        }
+      }
+      return this.flushNotificationDrafts(milestone);
+    },
+
+    // R7（通知闭环）：审批被处理/转交后归档对应 approval_routed 通知（跨用户）。
+    async archiveByDedupeKey(dedupeKey: string) {
+      return deps.notifications.archiveByDedupeKey(dedupeKey, now());
     },
 
     async createNotification(draft: NotificationDraft): Promise<Notification | null> {

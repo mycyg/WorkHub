@@ -183,7 +183,7 @@ export type ApprovalServiceDependencies = {
   proposals?: Pick<ProposalService, "get" | "listByWorkItem">;
   approvalComments?: Pick<ApprovalCommentRepository, "listByApproval" | "listByApprovals" | "create">;
   // @mentions：评论里 @某人时发通知。缺省时退化为不发 mention 通知（旧测试夹具）。
-  notifications?: Pick<NotificationService, "createMentionNotification"> & Partial<Pick<NotificationService, "createNotification">>;
+  notifications?: Pick<NotificationService, "createMentionNotification"> & Partial<Pick<NotificationService, "createNotification" | "archiveByDedupeKey">>;
   bus?: Pick<PushBus, "publish">;
   now?: () => Date;
 };
@@ -996,6 +996,15 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         decision: payload.decision,
         learned_policy_id: learnedPolicy?.id
       };
+      // R7（通知闭环 high）：审批已被处理——归档 approval_routed 通知（跨用户），
+      // 否则那条「等你审批」会永久卡在被路由人的待决策桶里、点开又找不到事。失败只告警。
+      if (deps.notifications?.archiveByDedupeKey) {
+        try {
+          await deps.notifications.archiveByDedupeKey(`approval_routed:${updated.id}`);
+        } catch (error) {
+          getDefaultStructuredLogger().warn("approval_routed_notification_archive_failed", { id, error });
+        }
+      }
       await publishIfAvailable(deps.bus, topics.user(approverId(actor)).topic, eventTypes.permissionDecided, eventData);
       if (updated.workItemId) {
         await publishIfAvailable(deps.bus, topics.workitem(updated.workItemId).topic, eventTypes.permissionDecided, eventData);
@@ -1071,6 +1080,31 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       }
 
       const attention = toApprovalAttentionItem(toRecord(updated));
+      // R7（通知闭环）：转交此前只有 SSE——原被路由人的持久通知仍卡在他桶里、新对象离线就永远不知道。
+      // 对称补齐：归档旧通知 + 给新对象建持久通知（dedupeKey 同前缀，失败只告警不翻转交）。
+      if (deps.notifications?.archiveByDedupeKey) {
+        try {
+          await deps.notifications.archiveByDedupeKey(`approval_routed:${updated.id}`);
+        } catch (error) {
+          getDefaultStructuredLogger().warn("approval_delegate_notification_archive_failed", { id, error });
+        }
+      }
+      if (updated.workItemId && deps.notifications?.createNotification) {
+        try {
+          await deps.notifications.createNotification({
+            userId: toUserId,
+            type: "approval.routed",
+            severity: "high",
+            title: "有一步操作转交给你审批",
+            body: attention.summary_text,
+            targetUrl: "/approvals",
+            workItemId: updated.workItemId,
+            dedupeKey: `approval_routed:${updated.id}:delegated:${toUserId}`
+          });
+        } catch (error) {
+          getDefaultStructuredLogger().warn("approval_delegate_notify_failed", { id, error });
+        }
+      }
       const eventData = {
         approval_id: updated.id,
         from_user_id: previousUserId,

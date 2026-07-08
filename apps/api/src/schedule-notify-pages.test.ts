@@ -233,6 +233,30 @@ class MemoryNotifications implements NotificationRepository {
     this.rows[index] = { ...this.rows[index]!, readAt: now, archivedAt: now, updatedAt: now };
     return this.rows[index]!;
   }
+
+  async archiveByDedupeKey(dedupeKey: string) {
+    let count = 0;
+    this.rows = this.rows.map((row) => {
+      if (row.dedupeKey === dedupeKey && !row.archivedAt) {
+        count += 1;
+        return { ...row, readAt: now, archivedAt: now, updatedAt: now };
+      }
+      return row;
+    });
+    return count;
+  }
+
+  async archiveStaleLifecycleForWorkItem(workItemId: string, keepType: string) {
+    let count = 0;
+    this.rows = this.rows.map((row) => {
+      if (row.workItemId === workItemId && !row.archivedAt && row.type.startsWith("workitem.") && row.type !== keepType) {
+        count += 1;
+        return { ...row, readAt: now, archivedAt: now, updatedAt: now };
+      }
+      return row;
+    });
+    return count;
+  }
 }
 
 class EmptyNotifications extends MemoryNotifications {

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql, like, ne } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
 import { notifications } from "../schema/index.js";
@@ -39,6 +39,8 @@ export type NotificationRepository = {
   markReadMany: (ids: string[], userId: string, at: Date) => Promise<number>;
   markAllRead: (userId: string, at: Date) => Promise<number>;
   archive: (id: string, userId: string, at: Date) => Promise<NotificationRow | null>;
+  archiveByDedupeKey: (dedupeKey: string, at: Date) => Promise<number>;
+  archiveStaleLifecycleForWorkItem: (workItemId: string, keepType: string, at: Date) => Promise<number>;
 };
 
 // M10：导出供读路径（schedule-notify-pages.ensureMeetingInsightNotifications）做"内容未变则跳过 upsert"的门，
@@ -215,6 +217,37 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
         .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
         .returning();
       return rows[0] ?? null;
+    },
+
+    // R7（通知闭环）：事项被处理后按 dedupeKey 归档对应通知（跨用户——处理人未必是被通知人），
+    // 不再留「点开找不到事」的孤儿通知永久卡在待决策桶。
+    async archiveByDedupeKey(dedupeKey: string, at: Date) {
+      // 前缀匹配：转交产生的通知 dedupeKey 带 `:delegated:<userId>` 后缀，respond 归档时要一并清。
+      const rows = await db
+        .update(notifications)
+        .set({ readAt: at, archivedAt: at, updatedAt: at })
+        .where(and(
+          or(eq(notifications.dedupeKey, dedupeKey), like(notifications.dedupeKey, `${dedupeKey}:%`)),
+          isNull(notifications.archivedAt)
+        ))
+        .returning();
+      return rows.length;
+    },
+
+    // R7（通知闭环）：工作项推进到新里程碑时，归档同一工作项上更早的 lifecycle 通知
+    // （workitem.* 且非本次类型）——旧通知描述的状态已经不成立了。
+    async archiveStaleLifecycleForWorkItem(workItemId: string, keepType: string, at: Date) {
+      const rows = await db
+        .update(notifications)
+        .set({ readAt: at, archivedAt: at, updatedAt: at })
+        .where(and(
+          eq(notifications.workItemId, workItemId),
+          isNull(notifications.archivedAt),
+          like(notifications.type, "workitem.%"),
+          ne(notifications.type, keepType)
+        ))
+        .returning();
+      return rows.length;
     }
   };
 }
