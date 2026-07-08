@@ -48,6 +48,7 @@ export type DesktopShellEventName =
   | "navigate"
   | "tray-action"
   | "pet-settings"
+  | "pet-locale-changed"
   | "attention-refresh";
 
 export type DesktopShellListen = (

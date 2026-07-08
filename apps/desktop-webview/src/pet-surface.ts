@@ -554,6 +554,7 @@ const desktopPetSettingsMenuCopy = {
     hideCuu: "隐藏 Cuu",
     modelChanged: "Cuu 形象已更新。",
     localeChanged: "语言已更新。",
+    localeChangeFailed: "语言没保存到服务端，已恢复原语言。",
     hoverEnabled: "悬停避让已开启。",
     hoverDisabled: "悬停避让已关闭。",
     openSettingsFallback: "请从托盘打开设置。",
@@ -572,6 +573,7 @@ const desktopPetSettingsMenuCopy = {
     hideCuu: "Hide Cuu",
     modelChanged: "Cuu look updated.",
     localeChanged: "Language updated.",
+    localeChangeFailed: "Couldn't save the language — reverted.",
     hoverEnabled: "Dodge hover is on.",
     hoverDisabled: "Dodge hover is off.",
     openSettingsFallback: "Open settings from the tray.",
@@ -1188,6 +1190,7 @@ export async function bootDesktopPetSurface(
   }
 
   const setLocalePreference = (nextLocale: WorkHubLocale) => {
+    const previousLocale = locale;
     locale = nextLocale;
     try {
       globalThis.localStorage?.setItem(workHubLocaleStorageKey, nextLocale);
@@ -1195,7 +1198,28 @@ export async function bootDesktopPetSurface(
       // Local storage may be unavailable in isolated test surfaces.
     }
     statusText = desktopPetSettingsMenuCopy[locale].localeChanged;
-    void client.updatePreferences({ locale: nextLocale }).catch(() => undefined);
+    // R10（偏好同步）：①失败要回滚+提示（此前静默吞掉，与主窗/web 的失败处理不对称）；
+    // ②成功后用新 locale 重取当前 attention 卡（卡文案是创建时烘焙的，不重取会中英混语）；
+    // ③广播主窗——两窗语言态不再长期漂移。
+    void client.updatePreferences({ locale: nextLocale })
+      .then(() => {
+        void refreshVisibleAttentionCard();
+        try {
+          shellEmitter?.emitTo?.("main", "pet-locale-changed", { locale: nextLocale });
+        } catch {
+          // emit 失败不影响本窗切换。
+        }
+      })
+      .catch(() => {
+        locale = previousLocale;
+        try {
+          globalThis.localStorage?.setItem(workHubLocaleStorageKey, previousLocale);
+        } catch {
+          // ignore
+        }
+        statusText = desktopPetSettingsMenuCopy[locale].localeChangeFailed;
+        render();
+      });
     render();
   };
 
