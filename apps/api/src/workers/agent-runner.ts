@@ -1220,6 +1220,13 @@ export function createInMemoryAgentRunQueue(options: {
         }
       });
       await eventBus.publish(topic, event.type, envelope);
+      // R7（跨页一致）：run 生命周期事件此前只发 topics.run——工作项详情页/项目页的军团进度
+      // n/m 订的是 workitem 流，纯执行推进永远刷不新。关键节点（started/failed/escalated/succeeded
+      // 类终态）双发 workitem 流；逐 step 噪声不双发，避免高频整页刷新。
+      if (run.work_item_id && /(?:started|succeeded|failed|escalated|settled|completed)/u.test(event.type)) {
+        const workItemTopic = topics.workitem(run.work_item_id).topic;
+        await eventBus.publish(workItemTopic, event.type, { ...envelope, topic: workItemTopic });
+      }
     } catch (error) {
       getDefaultStructuredLogger().warn("agent_run_event_emit_failed", { error });
     }

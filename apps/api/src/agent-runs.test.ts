@@ -3956,14 +3956,18 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(executed?.usage.token_out, 25);
   assert.equal(executed?.usage.estimated_cost_cny, "0.003");
   const runTopic = topics.run(startBody.data.run_id).topic;
+  // R7（跨页一致）：run 关键生命周期事件（started/终态）双发 workitem 流——工作项页军团进度才能实时刷新；
+  // 逐 step 噪声仍只进 run 流。
+  const workItemTopic = topics.workitem(workItemId).topic;
   assert.equal(publishedEvents.length > 0, true);
-  assert.equal(publishedEvents.every((event) => event.topic === runTopic), true);
+  assert.equal(publishedEvents.every((event) => event.topic === runTopic || event.topic === workItemTopic), true);
+  assert.equal(publishedEvents.some((event) => event.topic === workItemTopic && event.type === eventTypes.agentRunStarted), true);
   assert.equal(publishedEvents.some((event) => event.topic === "all"), false);
   assert.equal(publishedEvents.some((event) => event.type === eventTypes.agentRunStarted), true);
   assert.equal(publishedEvents.some((event) => event.type === eventTypes.stepToolResult), true);
   assert.equal(publishedEvents.some((event) => event.type === eventTypes.stepSnapshot), true);
   for (const event of publishedEvents) {
-    assert.equal(event.data.topic, runTopic);
+    assert.equal(event.data.topic, event.topic === workItemTopic ? workItemTopic : runTopic);
     assert.equal(event.data.run_id, startBody.data.run_id);
     assert.equal(event.data.work_item_id, workItemId);
     assert.equal(event.data.preview_text === undefined || event.data.preview_text.length <= 200, true);

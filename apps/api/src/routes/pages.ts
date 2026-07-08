@@ -549,13 +549,26 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       });
     }
     try {
-      const pending = await approvals.listPendingForUser(c.var.currentUser, { locale });
+      // R7（跨页一致）：与指挥台 waiting_decision KPI 同口径——传 canReadWorkItem 走 scanCap 翻页分支，
+      // 两处对同一批审批不再用不同扫描深度；封顶时首页也诚实提示，不再静默截断装完整。
+      const pending = await approvals.listPendingForUser(c.var.currentUser, {
+        locale,
+        canReadWorkItem: (workItemId) => canReadWorkItem(workItems, workItemId, c.var.actor)
+      });
       // findings：决策队列要和 /approvals 一样按可读工作项过滤——否则被路由到的审批若其工作项不可读，
       // 卡片仍会在首页泄露事项信息。复用同一个 visibleApprovalCenter 收口。
       decisionQueue = [
         ...decisionQueue,
         ...(await visibleApprovalCenter(pending, workItems, c.var.actor)).items
       ];
+      if (pending.counts.pending_total_capped === 1) {
+        sourceWarnings.push({
+          source: "approvals",
+          message: locale === "en-US"
+            ? "There are more pending approvals than shown here — open Approvals for the full list."
+            : "待审批的事项比这里显示的更多——去审批页看完整清单。"
+        });
+      }
     } catch {
       sourceWarnings.push({
         source: "approvals",
