@@ -4524,6 +4524,48 @@ export function getOpenApiDocument() {
           ...approvalListResponse
         }
       },
+      "/api/approvals/respond-batch": {
+        post: {
+          tags: ["approvals"],
+          summary: "Batch-allow selected pending approvals (allow only; deny requires per-item reason)",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["ids"],
+                  properties: {
+                    ids: { type: "array", items: { type: "string", format: "uuid" }, maxItems: 50 }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            "200": {
+              description: "Per-item results",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      ok: { type: "boolean" },
+                      data: {
+                        type: "object",
+                        properties: {
+                          approved: { type: "integer" },
+                          skipped: { type: "integer" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "/api/approvals/{id}/respond": {
         post: {
           tags: ["approvals"],

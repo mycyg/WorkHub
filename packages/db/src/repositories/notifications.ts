@@ -37,7 +37,7 @@ export type NotificationRepository = {
   }) => Promise<NotificationRow[]>;
   markRead: (id: string, userId: string, at: Date) => Promise<NotificationRow | null>;
   markReadMany: (ids: string[], userId: string, at: Date) => Promise<number>;
-  markAllRead: (userId: string, at: Date) => Promise<number>;
+  markAllRead: (userId: string, at: Date, options?: { excludeNeedsDecision?: boolean }) => Promise<number>;
   archive: (id: string, userId: string, at: Date) => Promise<NotificationRow | null>;
   archiveByDedupeKey: (dedupeKey: string, at: Date) => Promise<number>;
   archiveStaleLifecycleForWorkItem: (workItemId: string, keepType: string, at: Date) => Promise<number>;
@@ -201,11 +201,21 @@ export function createNotificationRepository(db: WorkHubDb): NotificationReposit
       return rows.length;
     },
 
-    async markAllRead(userId, at) {
+    async markAllRead(userId, at, options = {}) {
+      // R12（批量效率）：「全部已读」默认不吞掉待决策——needs_decision（severity high/urgent 或
+      // 决策类 type，与 isNeedsDecisionNotification 同口径）保持未读，避免「已读但未处理」被视觉埋没。
+      const needsDecision = or(
+        inArray(notifications.severity, ["high", "urgent"]),
+        sql`${notifications.type} ~ 'approval|ask|pending|insight|escalated|in_review|review|decision'`
+      );
       const rows = await db
         .update(notifications)
         .set({ readAt: at, updatedAt: at })
-        .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)))
+        .where(and(
+          eq(notifications.userId, userId),
+          isNull(notifications.readAt),
+          ...(options.excludeNeedsDecision ? [sql`NOT (${needsDecision})`] : [])
+        ))
         .returning({ id: notifications.id });
       return rows.length;
     },

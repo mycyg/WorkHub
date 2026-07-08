@@ -422,6 +422,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    respondApprovalsBatch: (ids) =>
+      request("/api/approvals/respond-batch", {
+        method: "POST",
+        body: JSON.stringify({ ids })
+      }),
     delegateApproval: (id, payload) =>
       request(`/api/approvals/${encodeURIComponent(id)}/delegate`, {
         method: "POST",

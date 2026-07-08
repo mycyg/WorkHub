@@ -511,12 +511,15 @@ export function createNotificationService(
             break;
           }
           const visibleRows = await visibleRowsForActor(rows, options.actor);
-          updated += await deps.notifications.markReadMany(visibleRows.map((row) => row.id), userId, at);
+          // R12（批量效率）：「全部已读」不吞待决策——needs_decision 保持未读，
+          // 「已读但未处理」比未读更容易被视觉埋没。
+          const informationalRows = visibleRows.filter((row) => !isNeedsDecisionNotification(row));
+          updated += await deps.notifications.markReadMany(informationalRows.map((row) => row.id), userId, at);
           const last = rows[rows.length - 1]!;
           cursor = { createdAt: last.createdAt, id: last.id };
         }
       } else {
-        updated = await deps.notifications.markAllRead(userId, at);
+        updated = await deps.notifications.markAllRead(userId, at, { excludeNeedsDecision: true });
       }
       await auditNotificationAction({
         userId,

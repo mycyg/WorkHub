@@ -326,3 +326,8 @@ owner: workflow
 ---
 
 *本篇定位：开放问题的**收敛追踪单一来源**。任何问题一旦在归属篇落定，回此更新状态标记；新问题在归属篇 `开放问题` 小节声明"汇总至 07-open-questions"后并入本篇。下一步：按 R0 已锁定的 OQ-2/OQ-3 默认策略推进 R1 真实纵切；MG-* 仍需随 TS-first/Drizzle 施工 plan 继续收口。*
+
+## R12-OQ-EXTERNAL-STYLESHEET（架构挂账 2026-07-08）
+- 现状：shell 级 CSS（productShellCss+routeComponentCss，~36KB 源码）内联在每次路由 HTML payload 里，dist 无 `<link rel=stylesheet>` 外部样式表，浏览器无法跨路由缓存。
+- 已做的止损：R12 起渲染层复用屏上 `<style>` 节点（文本一致则不重解析），SSE/导航的重复解析开销已消除；真正的构建期抽取（vite 产物拆 CSS + 服务端 HTML 去内联）涉及渲染架构与 smoke 全链，单轮不动。
+- 触发条件：下次做构建产物优化或 SSR 改造时一并处理。

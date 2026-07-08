@@ -352,6 +352,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async getAgentRunHandoff() {
       return null;
     },
+    async respondApprovalsBatch(): Promise<{ approved: number; skipped: number }> {
+      throw new Error("not needed");
+    },
     async respondApproval() {
       throw new Error("not needed");
     },

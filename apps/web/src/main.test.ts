@@ -230,6 +230,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async getAgentRunHandoff() {
       return null;
     },
+    async respondApprovalsBatch(): Promise<{ approved: number; skipped: number }> {
+      throw new Error("not needed");
+    },
     async respondApproval() {
       throw new Error("not needed");
     },

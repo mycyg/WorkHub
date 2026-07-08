@@ -42,6 +42,7 @@ test("findWorkItemAccessRecord returns project org id and assignment rows", asyn
       archived: false,
       deletedAt: null,
       ownerUserId: "owner-1",
+      name: undefined,
       workspaceId: "workspace-project",
       orgId: "org-1"
     },

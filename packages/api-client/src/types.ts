@@ -288,6 +288,8 @@ export type WorkHubApiClient = {
   abortAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
   getAgentRunHandoff: (runId: string) => Promise<StructuredHandoff | null>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
+  // R12（批量效率）：多选批量放行（allow-only）。
+  respondApprovalsBatch: (ids: string[]) => Promise<{ approved: number; skipped: number }>;
   delegateApproval: (id: string, payload: DelegateApprovalRequest) => Promise<unknown>;
   // B-R9.6 UX：plan_review 卡「先不拆，单个 AI 跑」。
   skipTaskPlanProposal: (proposalId: string, options?: PageRequestOptions) => Promise<{ run_id: string; work_item_id: string; attention: { summary_text: string } }>;

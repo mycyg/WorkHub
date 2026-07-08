@@ -105,6 +105,7 @@ export type WorkItemAccessRow = {
     ownerUserId: string | null;
     workspaceId: string | null;
     orgId?: string | null;
+    name?: string | null;
   } | null;
   assignments: Array<{ userId: string; role: string }>;
 };
@@ -522,6 +523,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           projectArchived: projects.archived,
           projectDeletedAt: projects.deletedAt,
           projectOwnerUserId: projects.ownerUserId,
+          projectName: projects.name,
           projectWorkspaceId: projects.workspaceId,
           projectOrgId: workspaces.orgId
         })
@@ -550,6 +552,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           archived: row.projectArchived,
           deletedAt: row.projectDeletedAt,
           ownerUserId: row.projectOwnerUserId,
+          name: row.projectName,
           workspaceId: row.projectWorkspaceId,
           orgId: row.projectOrgId
         },
@@ -567,6 +570,9 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         db
           .select({
             id: workItems.id,
+            // R12：与单条路径对齐——批量路径也带出 code/title，两条共享类型的路径行为等价。
+            code: workItems.code,
+            title: workItems.title,
             status: workItems.status,
             submitterUserId: workItems.submitterUserId,
             claimedByUserId: workItems.claimedByUserId,
@@ -574,6 +580,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             projectArchived: projects.archived,
             projectDeletedAt: projects.deletedAt,
             projectOwnerUserId: projects.ownerUserId,
+            projectName: projects.name,
             projectWorkspaceId: projects.workspaceId,
             projectOrgId: workspaces.orgId
           })
@@ -599,6 +606,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       for (const row of rows) {
         result.set(row.id, {
           id: row.id,
+          code: row.code,
+          title: row.title,
           status: row.status,
           submitterUserId: row.submitterUserId,
           claimedByUserId: row.claimedByUserId,
@@ -607,6 +616,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             archived: row.projectArchived,
             deletedAt: row.projectDeletedAt,
             ownerUserId: row.projectOwnerUserId,
+            name: row.projectName,
             workspaceId: row.projectWorkspaceId,
             orgId: row.projectOrgId
           },

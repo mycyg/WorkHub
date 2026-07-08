@@ -178,7 +178,7 @@ export type ApprovalServiceDependencies = {
   users?: Pick<UserRepository, "findActiveById"> & Partial<Pick<UserRepository, "findActiveByNickname">>;
   // 可选：委派守卫用——把审批挂的工作项摊平成可见性记录，校验转交目标确实能看到该事项（与 routeApprover 一致）。
   // 缺省时退化为不校验工作项可见性（旧测试夹具不提供）。
-  workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord">;
+  workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> & Partial<Pick<WorkItemDataRepository, "findWorkItemAccessRecords">>;
   // W2：可选——审批工作台逐项详情用。缺省时 items_detail 退化为空（旧夹具不崩）。
   proposals?: Pick<ProposalService, "get" | "listByWorkItem">;
   approvalComments?: Pick<ApprovalCommentRepository, "listByApproval" | "listByApprovals" | "create">;
@@ -927,8 +927,26 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         ...(row.decisionReasonMd ? { reason_md: row.decisionReasonMd.slice(0, 300) } : {}),
         decided_at: row.updatedAt.toISOString()
       }));
+      // R12（多项目）：一次批量取回工作项的项目名，队列卡点名所属项目（取数失败降级不点名）。
+      let projectNamesByWorkItemId = new Map<string, string>();
+      try {
+        const accessWorkItemIds = [...new Set(rows.map((row) => row.workItemId).filter((value): value is string => Boolean(value)))];
+        if (accessWorkItemIds.length > 0 && deps.workItems?.findWorkItemAccessRecords) {
+          const accessMap = await deps.workItems.findWorkItemAccessRecords(accessWorkItemIds);
+          for (const [workItemId, record] of accessMap) {
+            if (record.project?.name) {
+              projectNamesByWorkItemId.set(workItemId, record.project.name);
+            }
+          }
+        }
+      } catch {
+        projectNamesByWorkItemId = new Map();
+      }
       return parseOutputContract(approvalCenterVmSchema, {
-        items: rows.map((row) => toApprovalAttentionItem(toRecord(row), itemOptions)),
+        items: rows.map((row) => {
+          const projectName = row.workItemId ? projectNamesByWorkItemId.get(row.workItemId) : undefined;
+          return toApprovalAttentionItem(toRecord(row), projectName ? { ...itemOptions, projectName } : itemOptions);
+        }),
         requests: rows.map(toApprovalRequestResponse),
         filters: { pending: true },
         counts: { pending: rows.length, pending_total: totalPending, pending_total_capped: totalPendingCapped ? 1 : 0 },
@@ -982,6 +1000,26 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           } as const;
           const existingPolicy = findEquivalentActivePolicy(await deps.policies.listActivePolicies(), actor, policyInput);
           learnedPolicy = existingPolicy ?? await createAuditedPermissionPolicy(actor, policyInput);
+          // R12（批量效率）：策略只管「下次起」——队列里已存在的同类 pending 此前原样卡着，
+          // 用户以为「同类都处理了」还得再逐条点。学习成功且本次是放行时，联动清扫同 actor
+          // 名下同 action_pattern 的其余 pending（逐条 CAS+归档通知，失败只告警不翻主决策）。
+          if (learnedPolicy && payload.decision === "allow") {
+            try {
+              const pendingRows = await deps.approvals.listPendingForUser(approverId(actor), { limit: 100 });
+              const sameKind = pendingRows.filter((row) => row.id !== updated.id && row.actionPattern === updated.actionPattern);
+              for (const row of sameKind) {
+                const swept = await deps.approvals.respondPending(row.id, "allow", approverId(actor), null, now(), actor.isAdmin ? undefined : approverId(actor));
+                if (swept && deps.notifications?.archiveByDedupeKey) {
+                  await deps.notifications.archiveByDedupeKey(`approval_routed:${swept.id}`).catch(() => undefined);
+                }
+              }
+              if (sameKind.length > 0) {
+                getDefaultStructuredLogger().info("approvals_remember_always_swept_pending", { actionPattern: updated.actionPattern, count: sameKind.length });
+              }
+            } catch (error) {
+              getDefaultStructuredLogger().warn("approvals_remember_always_sweep_failed", { id, error });
+            }
+          }
         } catch (error) {
           learnFailed = true;
           getDefaultStructuredLogger().warn("approvals_remember_always_learning_failed", { id, error });
