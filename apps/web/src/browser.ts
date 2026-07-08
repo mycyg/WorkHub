@@ -1600,6 +1600,9 @@ function renderFatalRouteError(locale: WorkHubLocale, error: unknown) {
   if (!root) {
     return;
   }
+  // R10（竞态）：注册屏也要推进渲染代际——否则在途的 renderCurrentRoute（如 SSE silent 刷新）
+  // resolve 时代际未变、守卫恒过，会把已失效会话的鉴权态内容静默盖回注册屏之上。
+  activeRouteRenderId += 1;
   clearReadyRouteBindings();
   liveRuntime?.closeAllLiveEventSources();
   unmountReactRouteIsland();

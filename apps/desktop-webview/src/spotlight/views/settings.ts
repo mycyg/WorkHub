@@ -90,6 +90,8 @@ export function createSettingsView(): SpotlightCapabilityView {
               try {
                 window.localStorage.removeItem("workhub_client_token");
                 window.localStorage.removeItem("yqgl_client_token");
+                // R10：落显式登出标记——boot 见它则停在重新绑定屏，不再用固定昵称自动绑回同一账户。
+                window.localStorage.setItem("workhub_desktop_logged_out", "1");
               } catch {
                 // ignore storage failure
               }

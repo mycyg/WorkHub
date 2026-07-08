@@ -263,6 +263,10 @@ export function createCuuController(input: {
     // controller 的 activeCard 与屏上真卡脱节，push 气泡会按「无当前卡」误判直接抢断。
     // 本地换卡后调它对齐单一事实来源；传 undefined 表示屏上已无卡。
     noteExternalCard(card: CuuCard | undefined) {
+      // R10：本地换/清卡与 dismiss 同语义——被离开的旧气泡不再占 5 分钟节流窗。
+      if (activeCard && activeCard.id !== card?.id) {
+        clearBubbleWindowFor(activeCard);
+      }
       activeCard = card;
       return snapshot();
     },

@@ -177,7 +177,21 @@ async function bootstrapDesktopClientToken(client: BrowserApiClient): Promise<vo
   }
 }
 
+// R10（真登出）：登出后 boot 不许再用固定昵称自动 bootstrap 绑回同一账户——否则登出形同虚设。
+const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
+
+export function desktopLoggedOut(): boolean {
+  try {
+    return window.localStorage.getItem(DESKTOP_LOGGED_OUT_FLAG) === "1";
+  } catch {
+    return false;
+  }
+}
+
 async function ensureDesktopClientToken(client: BrowserApiClient): Promise<void> {
+  if (desktopLoggedOut()) {
+    return;
+  }
   if (!clientToken()) {
     await bootstrapDesktopClientToken(client);
   } else {
@@ -873,6 +887,50 @@ async function boot() {
       baseUrl: resolveDesktopApiBase(),
       getClientToken: clientToken
     });
+    // R10（真登出）：登出态先渲染显式重新绑定屏——输入昵称后清标记再走 bootstrap，
+    // 不让 boot 用固定昵称把刚登出的身份原样绑回来。
+    if (desktopLoggedOut()) {
+      const zhBoot = (locale ?? "zh-CN") === "zh-CN";
+      root.innerHTML = `<style>${appleGlassDesignSystemCss}</style>
+        <div style="min-height:100vh;display:grid;place-items:center;font-family:system-ui">
+          <div class="ds-glass" style="padding:28px 30px;border-radius:16px;display:grid;gap:12px;min-width:300px">
+            <strong>${zhBoot ? "已登出" : "Signed out"}</strong>
+            <p style="margin:0;font-size:13px;color:#5B616E">${zhBoot ? "输入昵称重新绑定这台设备。" : "Enter a nickname to re-bind this device."}</p>
+            <input data-desktop-rebind-nickname type="text" maxlength="64" placeholder="${zhBoot ? "昵称" : "Nickname"}" style="padding:9px 11px;border:1px solid #E6E7EB;border-radius:9px;font-size:14px" />
+            <button data-desktop-rebind type="button" class="ds-pressable" style="padding:9px;border:0;border-radius:9px;background:#4F46E5;color:#fff;font-weight:700;cursor:pointer">${zhBoot ? "登录" : "Sign in"}</button>
+            <p data-desktop-rebind-error hidden style="margin:0;font-size:12px;color:#E5484D"></p>
+          </div>
+        </div>`;
+      const rebindBtn = root.querySelector<HTMLButtonElement>("[data-desktop-rebind]");
+      rebindBtn?.addEventListener("click", () => {
+        const nickname = root.querySelector<HTMLInputElement>("[data-desktop-rebind-nickname]")?.value.trim();
+        const errorEl = root.querySelector<HTMLElement>("[data-desktop-rebind-error]");
+        if (!nickname) {
+          if (errorEl) {
+            errorEl.textContent = zhBoot ? "请先填写昵称。" : "Please enter a nickname first.";
+            errorEl.hidden = false;
+          }
+          return;
+        }
+        rebindBtn.disabled = true;
+        void client.bootstrapDesktop({ nickname, device_name: "WorkHub Desktop", platform: "desktop" })
+          .then((result) => {
+            if (result?.client_token) {
+              window.localStorage.setItem("workhub_client_token", result.client_token);
+            }
+            window.localStorage.removeItem("workhub_desktop_logged_out");
+            window.location.reload();
+          })
+          .catch(() => {
+            rebindBtn.disabled = false;
+            if (errorEl) {
+              errorEl.textContent = zhBoot ? "登录失败，请检查后端连接后重试。" : "Sign-in failed — check the backend connection and retry.";
+              errorEl.hidden = false;
+            }
+          });
+      });
+      return;
+    }
     // 跨源鉴权地基：先确保有 client token，goldPath 才会返回 LIVE 数据而非静默 fixture。
     await ensureDesktopClientToken(client);
     locale = await resolveBootLocale(client, locale);
@@ -1251,6 +1309,19 @@ async function bootSpotlight() {
     // 以 Cuu 为核心：托盘「打开收件箱/设置」、深链、桌宠点击都会让主窗 emit "navigate"（main.rs execute_window_control）。
     // 监听它 → 把盒子直接开到对应能力（回 "/" 则回 launcher）。这是 Cuu/外部入口与盒子联动的地基。
     const shellListen = resolveDesktopShellListen();
+    // R10（偏好同步）：桌宠窗切语言→主窗跟随写本地偏好并 reload（与自身 bindLocaleSwitch 同款生效路径），
+    // 两窗语言态不再长期漂移到下次重启。
+    void shellListen?.("pet-locale-changed", (event) => {
+      const nextLocale = (event.payload as { locale?: string } | undefined)?.locale;
+      if (nextLocale === "zh-CN" || nextLocale === "en-US") {
+        try {
+          window.localStorage.setItem("workhub_locale", nextLocale);
+        } catch {
+          // ignore
+        }
+        window.location.reload();
+      }
+    });
     void shellListen?.("navigate", (event) => {
       handleDesktopSpotlightShellNavigate(event.payload, {
         spotlight,
