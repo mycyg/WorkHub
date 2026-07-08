@@ -1257,8 +1257,11 @@ function bindGoldPathNavigation(
         try {
           const merge = await client.mergeProposal(proposalAction.proposalId, payload.payload, { locale });
           clearActiveRouteDirty();
-          // 采纳是状态跃迁（opened/reviewed→merged）：原地没有可换的下一步行，整页重渲反映终态。
-          await renderCurrentRoute(client, locale);
+          // 只有不在提议详情页（收件箱里点的采纳）才整页重渲让卡消失——详情页上重跑 loader
+          // 会破 dirty-edit/SSE 守卫与重复 loader 门（M12），保持原地回执。
+          if (!shellRoot.querySelector('[data-r4-proposal-summary="true"]')) {
+            await renderCurrentRoute(client, locale);
+          }
           showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
           if (await showRebaseRequiredNotice(shellRoot, error, proposalAction.proposalId, client, locale, actionId)) {

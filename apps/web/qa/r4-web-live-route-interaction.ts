@@ -5334,7 +5334,8 @@ async function main() {
         proof.counts.approvals === 4 &&
         proof.counts.workitem === 6 &&
         proof.counts.workitemForbidden === 1 &&
-        proof.counts.projects === 11 &&
+        // UX-U8：会议页补项目导航后 meetings loader 每次加载多取一次 /api/projects（smoke 内 meetings 加载 3 次）→ 11+3。
+        proof.counts.projects === 14 &&
         proof.counts.projectHome === 4 &&
         proof.counts.createNamedProject === 1 &&
         proof.counts.drive === 8 &&
