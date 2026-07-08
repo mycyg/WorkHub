@@ -182,6 +182,7 @@ test("R9.7 desktop intake created toast avoids dispatch copy", async () => {
         toasts.push({ message, tone });
       },
       requestResize() {},
+    refocusBody() {},
       signal: new AbortController().signal
     });
 

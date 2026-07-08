@@ -252,6 +252,7 @@ test("R9.7 desktop cost dashboard formats raw CNY precision before rendering", a
     },
     toast: () => {},
     requestResize: () => {},
+    refocusBody: () => {},
     signal: new AbortController().signal
   } as unknown as SpotlightViewContext);
   await subtitleReady;

@@ -311,6 +311,10 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       },
       toast: (message, tone) => showToast(message, tone),
       requestResize,
+      refocusBody: () => {
+        viewRoot.tabIndex = -1;
+        viewRoot.focus({ preventScroll: true });
+      },
       ...(input.onActionSettled ? { onActionSettled: input.onActionSettled } : {}),
       signal: viewAbort.signal
     };

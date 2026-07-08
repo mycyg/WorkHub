@@ -848,6 +848,10 @@ export function createKnowledgeView(): SpotlightCapabilityView {
         }
       });
       ctx.body.addEventListener("keydown", (event) => {
+        // R11：中文输入法组合态的回车是「选字」不是「确认」——与顶层搜索框同款守卫。
+        if (event instanceof KeyboardEvent && (event.isComposing || event.keyCode === 229)) {
+          return;
+        }
         if (event instanceof KeyboardEvent && event.key === "Enter" && event.target instanceof HTMLElement && event.target.matches("[data-know-input]")) {
           event.preventDefault();
           void run();

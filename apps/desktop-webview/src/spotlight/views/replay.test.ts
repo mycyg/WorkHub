@@ -81,6 +81,7 @@ test("R9.7 desktop replay hides raw tool ids from visible trace copy", async () 
     setSubtitle() {},
     toast() {},
     requestResize() {},
+    refocusBody() {},
     signal: new AbortController().signal
   } as unknown as Parameters<typeof view.mount>[0]);
   await tick();

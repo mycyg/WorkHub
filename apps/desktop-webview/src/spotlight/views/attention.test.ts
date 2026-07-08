@@ -215,6 +215,7 @@ test("desktop attention forwards locale to escalation and budget actions", async
       setSubtitle() {},
       toast() {},
       requestResize() {},
+    refocusBody() {},
       signal: new AbortController().signal
     } as unknown as SpotlightViewContext);
     await tick();
@@ -280,6 +281,7 @@ test("desktop attention view surfaces source warnings instead of showing all cle
     },
     toast() {},
     requestResize() {},
+    refocusBody() {},
     signal: new AbortController().signal
   } as unknown as SpotlightViewContext);
   await tick();

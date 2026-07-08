@@ -284,6 +284,8 @@ export function createProposalsView(): SpotlightCapabilityView {
           }
         }
         ctx.requestResize();
+        // R11（键盘全程）：innerHTML 重渲后焦点掉回 body——交还内容区，Tab 起点可预期。
+        ctx.refocusBody();
       };
 
       const showDetail = async (id: string) => {
@@ -303,6 +305,8 @@ export function createProposalsView(): SpotlightCapabilityView {
           }
         }
         ctx.requestResize();
+        // R11（键盘全程）：innerHTML 重渲后焦点掉回 body——交还内容区，Tab 起点可预期。
+        ctx.refocusBody();
       };
 
       // M13：approve/merge/deny 都是网络往返。期间给被点按钮即时忙态(禁用 + 文案换「…中」),

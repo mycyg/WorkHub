@@ -293,6 +293,7 @@ test("desktop workitem agent-team actions route to replay and decision inbox", a
       setSubtitle() {},
       toast() {},
       requestResize() {},
+    refocusBody() {},
       signal: new AbortController().signal
     } as unknown as SpotlightViewContext);
     await tick();
