@@ -2,6 +2,7 @@
 
 - ok: true
 - steps: 82
+- contact sheet fresh: true
 - path nav clicks: true
 - history back/forward: true
 - locale toggle reload: true

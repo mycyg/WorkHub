@@ -1,14 +1,25 @@
 {
-  "generated_at": "2026-07-04T10:05:34.287Z",
+  "generated_at": "2026-07-08T04:48:07.205Z",
   "module": "R4.5 Web Live Route Interaction Smoke",
   "chrome_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  "vite_url": "http://127.0.0.1:58136",
-  "api_target": "http://127.0.0.1:58135",
+  "vite_url": "http://127.0.0.1:52812",
+  "api_target": "http://127.0.0.1:52811",
   "output_dir": "docs/workhub/05-clients/assets/audit/2026-06-11-r4-web-live-route-interaction",
   "contact_sheet": "contact-sheet.png",
+  "contact_sheet_freshness": {
+    "ok": true,
+    "contact_sheet": "contact-sheet.png",
+    "contact_sheet_missing": false,
+    "source_count": 83,
+    "png_mtime_ms": 1783486087197.619,
+    "newest_source_mtime_ms": 1783486086989.9814,
+    "stale_sources": [],
+    "missing_sources": []
+  },
   "gates": {
     "dev_server_started": true,
     "screenshots_captured": true,
+    "contact_sheet_fresh": true,
     "path_nav_clicks": true,
     "history_back_forward": true,
     "locale_toggle_reload": true,
@@ -184,7 +195,7 @@
       "createWorkItem": 1,
       "knowledgeSearch": 2,
       "evidenceBinding": 1,
-      "projects": 11,
+      "projects": 14,
       "projectHome": 4,
       "createNamedProject": 1,
       "proposal": 2,
@@ -251,7 +262,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/",
+      "referer": "http://127.0.0.1:52812/",
       "body": null
     },
     {
@@ -259,7 +270,7 @@
       "pathname": "/api/auth/identify",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/",
+      "referer": "http://127.0.0.1:52812/",
       "body": "{\"nickname\":\"R4 Live Reviewer\"}"
     },
     {
@@ -267,7 +278,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/",
+      "referer": "http://127.0.0.1:52812/",
       "body": "{\"locale\":\"zh-CN\"}"
     },
     {
@@ -275,7 +286,7 @@
       "pathname": "/api/pages/attention",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:58136/",
+      "referer": "http://127.0.0.1:52812/",
       "body": null
     },
     {
@@ -283,7 +294,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/",
+      "referer": "http://127.0.0.1:52812/",
       "body": null
     },
     {
@@ -291,7 +302,7 @@
       "pathname": "/api/push/stream/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/",
+      "referer": "http://127.0.0.1:52812/",
       "body": null
     },
     {
@@ -299,7 +310,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=budget.warning&stream=me",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/",
+      "referer": "http://127.0.0.1:52812/",
       "body": null
     },
     {
@@ -307,7 +318,7 @@
       "pathname": "/api/pages/attention",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:58136/",
+      "referer": "http://127.0.0.1:52812/",
       "body": null
     },
     {
@@ -315,7 +326,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/",
+      "referer": "http://127.0.0.1:52812/",
       "body": null
     },
     {
@@ -323,7 +334,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52812/intake/r4-live-session",
       "body": null
     },
     {
@@ -331,7 +342,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:58136/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52812/intake/r4-live-session",
       "body": null
     },
     {
@@ -339,7 +350,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52812/intake/r4-live-session",
       "body": null
     },
     {
@@ -347,7 +358,7 @@
       "pathname": "/api/push/stream/session/r4-live-session",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52812/intake/r4-live-session",
       "body": null
     },
     {
@@ -355,7 +366,7 @@
       "pathname": "/api/sessions/10000000-0000-4000-8000-000000001414/next-question",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52812/intake/r4-live-session",
       "body": "{\"selected_option_ids\":[\"risk-first\"]}"
     },
     {
@@ -363,7 +374,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:58136/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52812/intake/r4-live-session",
       "body": null
     },
     {
@@ -371,7 +382,7 @@
       "pathname": "/api/workitems",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52812/intake/r4-live-session",
       "body": "{\"session_id\":\"10000000-0000-4000-8000-000000001414\",\"selected_option_ids\":[\"create-worker\"]}"
     },
     {
@@ -379,7 +390,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -387,7 +398,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -395,7 +406,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": null
     },
     {
@@ -403,7 +414,7 @@
       "pathname": "/api/approvals/00000000-0000-4000-8000-000000000802/respond",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": "{\"decision\":\"deny\",\"reason_md\":\"证据不足\",\"remember\":\"once\"}"
     },
     {
@@ -411,7 +422,7 @@
       "pathname": "/api/approvals/00000000-0000-4000-8000-000000000802/respond",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": "{\"decision\":\"allow\",\"remember\":\"once\"}"
     },
     {
@@ -419,7 +430,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -427,7 +438,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -435,7 +446,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": null
     },
     {
@@ -443,7 +454,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=zh-CN",
       "locale": "zh-CN",
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -451,7 +462,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -459,7 +470,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": "{\"locale\":\"en-US\"}"
     },
     {
@@ -467,7 +478,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -475,7 +486,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -483,7 +494,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -491,7 +502,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -499,7 +510,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -507,7 +518,7 @@
       "pathname": "/api/pages/proposals/r4-live-proposal",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -515,7 +526,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/conflicts",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -523,7 +534,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -531,7 +542,7 @@
       "pathname": "/api/push/stream/proposal/r4-live-proposal",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -539,7 +550,7 @@
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "?last_event_id=evt_r4_20_1",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -547,63 +558,63 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=proposal.merged&stream=proposal",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": null
     },
     {
       "method": "POST",
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000913/apply",
-      "search": "",
-      "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"text_hunk_overrides\":{\"hunks\":[{\"hunk_index\":0,\"start_line\":2,\"end_line\":2,\"decision\":\"keep_current\"}]}}"
     },
     {
       "method": "POST",
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
-      "search": "",
-      "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"task_plan_scope\":{\"target_plan_id\":\"10000000-0000-4000-8000-000000000929\"}}"
     },
     {
       "method": "POST",
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
-      "search": "",
-      "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"structured_item_overrides\":{\"items\":[{\"field\":\"task_items\",\"item_id\":\"10000000-0000-4000-8000-000000000925\",\"decision\":\"accept_incoming\"}]},\"task_plan_scope\":{\"target_plan_id\":\"10000000-0000-4000-8000-000000000928\"}}"
     },
     {
       "method": "POST",
       "pathname": "/api/merge-proposals/10000000-0000-4000-8000-000000000914/apply",
-      "search": "",
-      "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": "{\"confirm\":true,\"structured_field_overrides\":{\"operations\":[{\"field\":\"title\",\"decision\":\"custom\",\"value\":\"R4.13 custom reviewed title\"}]}}"
     },
     {
       "method": "POST",
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/review",
-      "search": "",
-      "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": "{\"decision\":\"request_changes\",\"reason_md\":\"Evidence is not enough\",\"remember\":\"once\"}"
     },
     {
       "method": "POST",
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/review",
-      "search": "",
-      "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": "{\"decision\":\"approve\",\"remember\":\"once\"}"
     },
     {
       "method": "POST",
       "pathname": "/api/proposals/00000000-0000-4000-8000-000000000108/merge",
-      "search": "",
-      "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "search": "?locale=en-US",
+      "locale": "en-US",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": "{}"
     },
     {
@@ -611,7 +622,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=proposal.merged&stream=proposal",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -619,7 +630,7 @@
       "pathname": "/api/pages/proposals/r4-live-proposal",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -627,7 +638,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/conflicts",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "referer": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "body": null
     },
     {
@@ -635,7 +646,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/cost",
+      "referer": "http://127.0.0.1:52812/dashboard/cost",
       "body": null
     },
     {
@@ -643,7 +654,7 @@
       "pathname": "/api/pages/cost",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/dashboard/cost",
+      "referer": "http://127.0.0.1:52812/dashboard/cost",
       "body": null
     },
     {
@@ -651,7 +662,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_3",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/cost",
+      "referer": "http://127.0.0.1:52812/dashboard/cost",
       "body": null
     },
     {
@@ -659,7 +670,7 @@
       "pathname": "/api/__qa/emit",
       "search": "?event=budget.warning&stream=me",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/cost",
+      "referer": "http://127.0.0.1:52812/dashboard/cost",
       "body": null
     },
     {
@@ -667,7 +678,7 @@
       "pathname": "/api/pages/cost",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/dashboard/cost",
+      "referer": "http://127.0.0.1:52812/dashboard/cost",
       "body": null
     },
     {
@@ -675,7 +686,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/agents",
+      "referer": "http://127.0.0.1:52812/dashboard/agents",
       "body": null
     },
     {
@@ -683,7 +694,7 @@
       "pathname": "/api/pages/agents",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/dashboard/agents",
+      "referer": "http://127.0.0.1:52812/dashboard/agents",
       "body": null
     },
     {
@@ -691,7 +702,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/agents",
+      "referer": "http://127.0.0.1:52812/dashboard/agents",
       "body": null
     },
     {
@@ -699,7 +710,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/agents",
+      "referer": "http://127.0.0.1:52812/dashboard/agents",
       "body": null
     },
     {
@@ -707,7 +718,7 @@
       "pathname": "/api/pages/agents",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/dashboard/agents",
+      "referer": "http://127.0.0.1:52812/dashboard/agents",
       "body": null
     },
     {
@@ -715,7 +726,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/agents",
+      "referer": "http://127.0.0.1:52812/dashboard/agents",
       "body": null
     },
     {
@@ -723,7 +734,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": null
     },
     {
@@ -731,7 +742,7 @@
       "pathname": "/api/knowledge/search",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": "{\"q\":\"regional\",\"work_item_id\":\"r4-live-workitem\",\"limit\":6}"
     },
     {
@@ -739,7 +750,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": null
     },
     {
@@ -747,7 +758,7 @@
       "pathname": "/api/workitems/r4-live-workitem/evidence-bindings",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "body": "{\"evidence_bubble_id\":\"10000000-0000-4000-8000-000000001424\",\"evidence_refs\":[{\"id\":\"10000000-0000-4000-8000-000000001425\",\"source_type\":\"meeting\",\"source_id\":\"regional-sync\",\"title\":\"Regional launch sync\",\"excerpt\":\"Supply delay is the blocker that needs the closest follow-up.\",\"href\":\"/knowledge/sources/regional-sync\"},{\"id\":\"10000000-0000-4000-8000-000000001426\",\"source_type\":\"drive_file\",\"source_id\":\"drive:regional-launch-review\",\"title\":\"Regional launch review draft\",\"excerpt\":\"The draft records metrics, risks, and next actions.\",\"href\":\"/knowledge/sources/regional-launch-review\"}]}"
     },
     {
@@ -755,7 +766,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52812/intake/r4-live-session",
       "body": null
     },
     {
@@ -763,7 +774,7 @@
       "pathname": "/api/sessions/r4-live-session",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52812/intake/r4-live-session",
       "body": null
     },
     {
@@ -771,7 +782,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52812/intake/r4-live-session",
       "body": null
     },
     {
@@ -779,7 +790,7 @@
       "pathname": "/api/push/stream/session/r4-live-session",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/intake/r4-live-session",
+      "referer": "http://127.0.0.1:52812/intake/r4-live-session",
       "body": null
     },
     {
@@ -787,7 +798,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/settings",
+      "referer": "http://127.0.0.1:52812/settings",
       "body": null
     },
     {
@@ -795,7 +806,7 @@
       "pathname": "/api/pages/settings",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/settings",
+      "referer": "http://127.0.0.1:52812/settings",
       "body": null
     },
     {
@@ -803,7 +814,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/settings",
+      "referer": "http://127.0.0.1:52812/settings",
       "body": null
     },
     {
@@ -811,7 +822,7 @@
       "pathname": "/api/__qa/fail-next-preference-patch",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/settings",
+      "referer": "http://127.0.0.1:52812/settings",
       "body": null
     },
     {
@@ -819,7 +830,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/settings",
+      "referer": "http://127.0.0.1:52812/settings",
       "body": "{\"locale\":\"zh-CN\"}"
     },
     {
@@ -827,7 +838,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52812/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -835,7 +846,7 @@
       "pathname": "/api/agent-runs/r4-live-run/replay",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52812/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -843,7 +854,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52812/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -851,7 +862,7 @@
       "pathname": "/api/push/stream/run/r4-live-run",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52812/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -859,7 +870,7 @@
       "pathname": "/api/push/stream/workitem/00000000-0000-4000-8000-000000000104",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52812/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -867,7 +878,7 @@
       "pathname": "/api/workitems/00000000-0000-4000-8000-000000000104/deliverables/10000000-0000-4000-8000-000000001518/restore",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52812/agent-runs/r4-live-run/replay",
       "body": ""
     },
     {
@@ -875,7 +886,7 @@
       "pathname": "/api/agent-runs/r4-live-run/replay",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/agent-runs/r4-live-run/replay",
+      "referer": "http://127.0.0.1:52812/agent-runs/r4-live-run/replay",
       "body": null
     },
     {
@@ -883,7 +894,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/projects",
+      "referer": "http://127.0.0.1:52812/projects",
       "body": null
     },
     {
@@ -891,7 +902,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/projects",
+      "referer": "http://127.0.0.1:52812/projects",
       "body": null
     },
     {
@@ -899,7 +910,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/projects",
+      "referer": "http://127.0.0.1:52812/projects",
       "body": null
     },
     {
@@ -907,7 +918,7 @@
       "pathname": "/api/projects/bootstrap",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/projects",
+      "referer": "http://127.0.0.1:52812/projects",
       "body": "{\"name\":\"R4 Live Launch Notes\"}"
     },
     {
@@ -915,7 +926,7 @@
       "pathname": "/api/pages/project/10000000-0000-4000-8000-000000001691",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/projects/10000000-0000-4000-8000-000000001691",
+      "referer": "http://127.0.0.1:52812/projects/10000000-0000-4000-8000-000000001691",
       "body": null
     },
     {
@@ -923,7 +934,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/projects",
+      "referer": "http://127.0.0.1:52812/projects",
       "body": null
     },
     {
@@ -931,7 +942,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/projects",
+      "referer": "http://127.0.0.1:52812/projects",
       "body": null
     },
     {
@@ -939,7 +950,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/projects",
+      "referer": "http://127.0.0.1:52812/projects",
       "body": null
     },
     {
@@ -947,7 +958,7 @@
       "pathname": "/api/pages/project/10000000-0000-4000-8000-000000001600",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/projects/10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/projects/10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -955,7 +966,7 @@
       "pathname": "/api/pages/project/10000000-0000-4000-8000-000000001600",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/intake?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/intake?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -963,7 +974,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/projects/10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/projects/10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -971,7 +982,7 @@
       "pathname": "/api/pages/project/10000000-0000-4000-8000-000000001600",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/projects/10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/projects/10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -979,7 +990,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/projects/10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/projects/10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -987,7 +998,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -995,7 +1006,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1003,7 +1014,7 @@
       "pathname": "/api/drive/projects/10000000-0000-4000-8000-000000001600/comments/10000000-0000-4000-8000-000000001623/draft",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": ""
     },
     {
@@ -1011,7 +1022,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1019,7 +1030,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1027,7 +1038,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -1035,7 +1046,7 @@
       "pathname": "/api/push/stream/workitem/r4-live-workitem",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -1043,7 +1054,7 @@
       "pathname": "/api/drive/workitems/r4-live-workitem/proposal-draft",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": ""
     },
     {
@@ -1051,7 +1062,7 @@
       "pathname": "/api/pages/workitems/r4-live-workitem",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "body": null
     },
     {
@@ -1059,7 +1070,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1067,7 +1078,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1075,7 +1086,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1083,7 +1094,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1091,15 +1102,15 @@
       "pathname": "/api/drive/projects/10000000-0000-4000-8000-000000001600/files",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
-      "body": "------WebKitFormBoundaryEN6a923gFE5fiB25\r\nContent-Disposition: form-data; name=\"file\"; filename=\"regional-launch-brief.md\"\r\nContent-Type: text/markdown\r\n\r\n# Regional launch brief\n\nPrepared by field operations for the launch readiness review.\r\n------WebKitFormBoundaryEN6a923gFE5fiB25\r\nContent-Disposition: form-data; name=\"mime\"\r\n\r\ntext/markdown\r\n------WebKitFormBoundaryEN6a923gFE5fiB25\r\nContent-Disposition: form-data; name=\"parent_id\"\r\n\r\n10000000-0000-4000-8000-000000001619\r\n------WebKitFormBoundaryEN6a923gFE5fiB25--\r\n"
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "body": "------WebKitFormBoundary5SgIASUomAUIBbLk\r\nContent-Disposition: form-data; name=\"file\"; filename=\"regional-launch-brief.md\"\r\nContent-Type: text/markdown\r\n\r\n# Regional launch brief\n\nPrepared by field operations for the launch readiness review.\r\n------WebKitFormBoundary5SgIASUomAUIBbLk\r\nContent-Disposition: form-data; name=\"mime\"\r\n\r\ntext/markdown\r\n------WebKitFormBoundary5SgIASUomAUIBbLk\r\nContent-Disposition: form-data; name=\"parent_id\"\r\n\r\n10000000-0000-4000-8000-000000001619\r\n------WebKitFormBoundary5SgIASUomAUIBbLk--\r\n"
     },
     {
       "method": "GET",
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1107,7 +1118,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1115,7 +1126,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1123,7 +1134,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1131,7 +1142,7 @@
       "pathname": "/api/drive/projects/10000000-0000-4000-8000-000000001600/items/10000000-0000-4000-8000-000000001624/delete",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": "{\"expected_current_version_id\":\"10000000-0000-4000-8000-000000001625\"}"
     },
     {
@@ -1139,7 +1150,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1147,7 +1158,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1155,7 +1166,7 @@
       "pathname": "/api/drive/projects/10000000-0000-4000-8000-000000001600/items/10000000-0000-4000-8000-000000001624/restore",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": ""
     },
     {
@@ -1163,7 +1174,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1171,7 +1182,7 @@
       "pathname": "/api/projects",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "referer": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "body": null
     },
     {
@@ -1179,7 +1190,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1187,7 +1198,15 @@
       "pathname": "/api/pages/meetings",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/projects",
+      "search": "",
+      "locale": null,
+      "referer": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1195,7 +1214,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1203,7 +1222,7 @@
       "pathname": "/api/meetings/projects/10000000-0000-4000-8000-000000001600/insights/10000000-0000-4000-8000-000000001701/draft",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": ""
     },
     {
@@ -1211,7 +1230,15 @@
       "pathname": "/api/pages/meetings",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/projects",
+      "search": "",
+      "locale": null,
+      "referer": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1219,7 +1246,7 @@
       "pathname": "/api/pages/workitems/10000000-0000-4000-8000-000000001730",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:52812/workitems/10000000-0000-4000-8000-000000001730",
       "body": null
     },
     {
@@ -1227,7 +1254,7 @@
       "pathname": "/api/push/stream/workitem/10000000-0000-4000-8000-000000001730",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:52812/workitems/10000000-0000-4000-8000-000000001730",
       "body": null
     },
     {
@@ -1235,7 +1262,7 @@
       "pathname": "/api/meetings/workitems/10000000-0000-4000-8000-000000001730/proposal-draft",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:52812/workitems/10000000-0000-4000-8000-000000001730",
       "body": ""
     },
     {
@@ -1243,7 +1270,7 @@
       "pathname": "/api/pages/workitems/10000000-0000-4000-8000-000000001730",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:52812/workitems/10000000-0000-4000-8000-000000001730",
       "body": null
     },
     {
@@ -1251,7 +1278,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1259,7 +1286,15 @@
       "pathname": "/api/pages/meetings",
       "search": "?locale=en-US&project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "body": null
+    },
+    {
+      "method": "GET",
+      "pathname": "/api/projects",
+      "search": "",
+      "locale": null,
+      "referer": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1267,7 +1302,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "referer": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "body": null
     },
     {
@@ -1275,7 +1310,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1283,7 +1318,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1291,7 +1326,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1299,7 +1334,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1307,7 +1342,7 @@
       "pathname": "/api/notifications/10000000-0000-4000-8000-000000001801/read",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1315,7 +1350,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1323,7 +1358,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1331,7 +1366,7 @@
       "pathname": "/api/notifications/10000000-0000-4000-8000-000000001801/dismiss",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1339,7 +1374,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1347,7 +1382,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1355,7 +1390,7 @@
       "pathname": "/api/notifications/read-all",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1363,7 +1398,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1371,7 +1406,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1379,7 +1414,7 @@
       "pathname": "/api/notifications/10000000-0000-4000-8000-000000001802/complete",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1387,7 +1422,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1395,7 +1430,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1403,7 +1438,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1411,7 +1446,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1419,7 +1454,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1427,7 +1462,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1435,7 +1470,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:52812/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1443,7 +1478,7 @@
       "pathname": "/api/pages/calendar",
       "search": "?locale=en-US&date=2026-06-11&view=week",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:52812/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1451,7 +1486,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:52812/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1459,7 +1494,7 @@
       "pathname": "/api/pages/workitems/10000000-0000-4000-8000-000000001730",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:52812/workitems/10000000-0000-4000-8000-000000001730",
       "body": null
     },
     {
@@ -1467,7 +1502,7 @@
       "pathname": "/api/push/stream/workitem/10000000-0000-4000-8000-000000001730",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/workitems/10000000-0000-4000-8000-000000001730",
+      "referer": "http://127.0.0.1:52812/workitems/10000000-0000-4000-8000-000000001730",
       "body": null
     },
     {
@@ -1475,7 +1510,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:52812/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1483,7 +1518,7 @@
       "pathname": "/api/pages/calendar",
       "search": "?locale=en-US&date=2026-06-11&view=week",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:52812/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1491,7 +1526,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/calendar?date=2026-06-11&view=week",
+      "referer": "http://127.0.0.1:52812/calendar?date=2026-06-11&view=week",
       "body": null
     },
     {
@@ -1499,7 +1534,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/health",
+      "referer": "http://127.0.0.1:52812/dashboard/health",
       "body": null
     },
     {
@@ -1507,7 +1542,7 @@
       "pathname": "/api/pages/health",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/dashboard/health",
+      "referer": "http://127.0.0.1:52812/dashboard/health",
       "body": null
     },
     {
@@ -1515,7 +1550,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/health",
+      "referer": "http://127.0.0.1:52812/dashboard/health",
       "body": null
     },
     {
@@ -1523,7 +1558,7 @@
       "pathname": "/api/pages/project/10000000-0000-4000-8000-000000001600",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/projects/10000000-0000-4000-8000-000000001600",
+      "referer": "http://127.0.0.1:52812/projects/10000000-0000-4000-8000-000000001600",
       "body": null
     },
     {
@@ -1531,7 +1566,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/health",
+      "referer": "http://127.0.0.1:52812/dashboard/health",
       "body": null
     },
     {
@@ -1539,7 +1574,7 @@
       "pathname": "/api/pages/health",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/dashboard/health",
+      "referer": "http://127.0.0.1:52812/dashboard/health",
       "body": null
     },
     {
@@ -1547,7 +1582,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/health",
+      "referer": "http://127.0.0.1:52812/dashboard/health",
       "body": null
     },
     {
@@ -1555,7 +1590,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/skills",
+      "referer": "http://127.0.0.1:52812/dashboard/skills",
       "body": null
     },
     {
@@ -1563,7 +1598,7 @@
       "pathname": "/api/pages/skills",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/dashboard/skills",
+      "referer": "http://127.0.0.1:52812/dashboard/skills",
       "body": null
     },
     {
@@ -1571,7 +1606,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/skills",
+      "referer": "http://127.0.0.1:52812/dashboard/skills",
       "body": null
     },
     {
@@ -1579,7 +1614,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/skills",
+      "referer": "http://127.0.0.1:52812/dashboard/skills",
       "body": null
     },
     {
@@ -1587,7 +1622,7 @@
       "pathname": "/api/pages/skills",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/dashboard/skills",
+      "referer": "http://127.0.0.1:52812/dashboard/skills",
       "body": null
     },
     {
@@ -1595,7 +1630,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/dashboard/skills",
+      "referer": "http://127.0.0.1:52812/dashboard/skills",
       "body": null
     },
     {
@@ -1603,7 +1638,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1611,7 +1646,7 @@
       "pathname": "/api/pages/notifications",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1619,7 +1654,7 @@
       "pathname": "/api/notifications/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1627,7 +1662,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/notifications",
+      "referer": "http://127.0.0.1:52812/notifications",
       "body": null
     },
     {
@@ -1635,7 +1670,7 @@
       "pathname": "/api/knowledge/search",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/knowledge/search?q=regional%20launch&work_item_id=10000000-0000-4000-8000-000000001730&source_ref=notification:10000000-0000-4000-8000-000000001801",
+      "referer": "http://127.0.0.1:52812/knowledge/search?q=regional%20launch&work_item_id=10000000-0000-4000-8000-000000001730&source_ref=notification:10000000-0000-4000-8000-000000001801",
       "body": "{\"q\":\"regional launch\",\"work_item_id\":\"10000000-0000-4000-8000-000000001730\",\"source_ref\":\"notification:10000000-0000-4000-8000-000000001801\",\"limit\":6}"
     },
     {
@@ -1643,7 +1678,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/drive?empty=drive",
+      "referer": "http://127.0.0.1:52812/drive?empty=drive",
       "body": null
     },
     {
@@ -1651,7 +1686,7 @@
       "pathname": "/api/pages/drive",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/drive?empty=drive",
+      "referer": "http://127.0.0.1:52812/drive?empty=drive",
       "body": null
     },
     {
@@ -1659,7 +1694,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-forbidden",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-forbidden",
       "body": null
     },
     {
@@ -1667,7 +1702,7 @@
       "pathname": "/api/pages/workitems/r4-live-forbidden",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/workitems/r4-live-forbidden",
+      "referer": "http://127.0.0.1:52812/workitems/r4-live-forbidden",
       "body": null
     },
     {
@@ -1675,7 +1710,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/missing-r4-live-route",
+      "referer": "http://127.0.0.1:52812/missing-r4-live-route",
       "body": null
     },
     {
@@ -1683,7 +1718,7 @@
       "pathname": "/api/auth/me",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": null
     },
     {
@@ -1691,7 +1726,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": null
     },
     {
@@ -1699,7 +1734,7 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": null
     },
     {
@@ -1707,7 +1742,7 @@
       "pathname": "/api/auth/logout",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": null
     },
     {
@@ -1715,7 +1750,7 @@
       "pathname": "/api/auth/identify",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": "{\"nickname\":\"Pilot Two\"}"
     },
     {
@@ -1723,7 +1758,7 @@
       "pathname": "/api/auth/preferences",
       "search": "",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": "{\"locale\":\"en-US\"}"
     },
     {
@@ -1731,7 +1766,7 @@
       "pathname": "/api/pages/approvals",
       "search": "?locale=en-US",
       "locale": "en-US",
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": null
     },
     {
@@ -1739,14 +1774,14 @@
       "pathname": "/api/push/stream/me",
       "search": "?last_event_id=evt_r4_20_4",
       "locale": null,
-      "referer": "http://127.0.0.1:58136/approvals",
+      "referer": "http://127.0.0.1:52812/approvals",
       "body": null
     }
   ],
   "steps": [
     {
       "id": "00-onboarding-zh-desktop",
-      "url": "http://127.0.0.1:58136/",
+      "url": "http://127.0.0.1:52812/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2075,7 +2110,7 @@
     },
     {
       "id": "00a-onboarding-zh-mobile-no-overflow",
-      "url": "http://127.0.0.1:58136/",
+      "url": "http://127.0.0.1:52812/",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -2404,7 +2439,7 @@
     },
     {
       "id": "01-home-zh-desktop",
-      "url": "http://127.0.0.1:58136/",
+      "url": "http://127.0.0.1:52812/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -2720,8 +2755,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -2733,7 +2768,7 @@
     },
     {
       "id": "01r-home-react-dispatcher-probe-zh-desktop",
-      "url": "http://127.0.0.1:58136/",
+      "url": "http://127.0.0.1:52812/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3049,8 +3084,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -3062,7 +3097,7 @@
     },
     {
       "id": "01s-home-react-sse-props-update-zh-desktop",
-      "url": "http://127.0.0.1:58136/",
+      "url": "http://127.0.0.1:52812/",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3378,8 +3413,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -3391,7 +3426,7 @@
     },
     {
       "id": "01a-intake-zh-desktop-route-component",
-      "url": "http://127.0.0.1:58136/intake/r4-live-session",
+      "url": "http://127.0.0.1:52812/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -3720,7 +3755,7 @@
     },
     {
       "id": "01b-intake-empty-fail-closed-zh-desktop",
-      "url": "http://127.0.0.1:58136/intake/r4-live-session",
+      "url": "http://127.0.0.1:52812/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4049,7 +4084,7 @@
     },
     {
       "id": "01c-intake-next-question-success-zh-desktop",
-      "url": "http://127.0.0.1:58136/intake/r4-live-session",
+      "url": "http://127.0.0.1:52812/intake/r4-live-session",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4378,7 +4413,7 @@
     },
     {
       "id": "01d-intake-create-workitem-success-zh-desktop",
-      "url": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -4694,8 +4729,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -4707,7 +4742,7 @@
     },
     {
       "id": "02-approvals-click-zh-desktop",
-      "url": "http://127.0.0.1:58136/approvals",
+      "url": "http://127.0.0.1:52812/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5023,8 +5058,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -5036,7 +5071,7 @@
     },
     {
       "id": "02a-approval-deny-reason-gate-zh-desktop",
-      "url": "http://127.0.0.1:58136/approvals",
+      "url": "http://127.0.0.1:52812/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5352,8 +5387,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -5365,7 +5400,7 @@
     },
     {
       "id": "02b-approval-deny-success-zh-desktop",
-      "url": "http://127.0.0.1:58136/approvals",
+      "url": "http://127.0.0.1:52812/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -5681,8 +5716,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -5694,7 +5729,7 @@
     },
     {
       "id": "02c-approval-approve-success-zh-desktop",
-      "url": "http://127.0.0.1:58136/approvals",
+      "url": "http://127.0.0.1:52812/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6010,8 +6045,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -6023,7 +6058,7 @@
     },
     {
       "id": "03-workitem-click-zh-desktop-route-component",
-      "url": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6339,8 +6374,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -6352,7 +6387,7 @@
     },
     {
       "id": "04-history-back-approvals",
-      "url": "http://127.0.0.1:58136/approvals",
+      "url": "http://127.0.0.1:52812/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6668,8 +6703,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -6681,7 +6716,7 @@
     },
     {
       "id": "05-history-forward-workitem",
-      "url": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -6997,8 +7032,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -7010,7 +7045,7 @@
     },
     {
       "id": "06-locale-toggle-en-workitem-route-component",
-      "url": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7326,8 +7361,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -7339,7 +7374,7 @@
     },
     {
       "id": "06a-proposal-advanced-review-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7655,8 +7690,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -7668,7 +7703,7 @@
     },
     {
       "id": "06aa-proposal-dirty-edit-sse-guard-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -7984,8 +8019,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -7997,7 +8032,7 @@
     },
     {
       "id": "06b-proposal-line-editor-apply-success-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8313,8 +8348,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -8326,7 +8361,7 @@
     },
     {
       "id": "06c-proposal-task-plan-apply-success-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8642,8 +8677,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -8655,7 +8690,7 @@
     },
     {
       "id": "06d-proposal-subrecord-apply-success-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -8971,8 +9006,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -8984,7 +9019,7 @@
     },
     {
       "id": "06e-proposal-custom-field-empty-fail-closed-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9300,8 +9335,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -9313,7 +9348,7 @@
     },
     {
       "id": "06f-proposal-custom-field-apply-success-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -9629,8 +9664,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -9642,7 +9677,7 @@
     },
     {
       "id": "06g-proposal-structured-field-editor-visual-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 3000
@@ -9958,8 +9993,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -9971,7 +10006,7 @@
     },
     {
       "id": "07-proposal-reason-gate-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -10287,8 +10322,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -10300,7 +10335,7 @@
     },
     {
       "id": "08-proposal-request-changes-success-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -10616,8 +10651,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -10629,7 +10664,7 @@
     },
     {
       "id": "08b-proposal-approve-success-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -10945,8 +10980,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -10958,7 +10993,7 @@
     },
     {
       "id": "09-proposal-merge-success-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -11274,8 +11309,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -11287,7 +11322,7 @@
     },
     {
       "id": "10-proposal-sse-refresh-notice-en-desktop",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -11603,8 +11638,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -11616,7 +11651,7 @@
     },
     {
       "id": "11-proposal-en-mobile-scrolled-notice-route-component",
-      "url": "http://127.0.0.1:58136/proposals/r4-live-proposal",
+      "url": "http://127.0.0.1:52812/proposals/r4-live-proposal",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -11945,7 +11980,7 @@
     },
     {
       "id": "12-cost-en-mobile-route-component",
-      "url": "http://127.0.0.1:58136/dashboard/cost",
+      "url": "http://127.0.0.1:52812/dashboard/cost",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -12274,7 +12309,7 @@
     },
     {
       "id": "12a-cost-budget-warning-notice-en-mobile",
-      "url": "http://127.0.0.1:58136/dashboard/cost",
+      "url": "http://127.0.0.1:52812/dashboard/cost",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -12603,7 +12638,7 @@
     },
     {
       "id": "12aa-agents-en-desktop-route-component",
-      "url": "http://127.0.0.1:58136/dashboard/agents",
+      "url": "http://127.0.0.1:52812/dashboard/agents",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -12932,7 +12967,7 @@
     },
     {
       "id": "12ab-agents-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:58136/dashboard/agents",
+      "url": "http://127.0.0.1:52812/dashboard/agents",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -13261,7 +13296,7 @@
     },
     {
       "id": "12b-knowledge-fallback-en-desktop-route-component",
-      "url": "http://127.0.0.1:58136/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "url": "http://127.0.0.1:52812/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -13590,7 +13625,7 @@
     },
     {
       "id": "12c-knowledge-bind-success-en-desktop",
-      "url": "http://127.0.0.1:58136/knowledge/search?q=regional&workItemId=r4-live-workitem",
+      "url": "http://127.0.0.1:52812/knowledge/search?q=regional&workItemId=r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -13919,7 +13954,7 @@
     },
     {
       "id": "12d-intake-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:58136/intake/r4-live-session",
+      "url": "http://127.0.0.1:52812/intake/r4-live-session",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -14248,7 +14283,7 @@
     },
     {
       "id": "13-settings-en-desktop-route-component",
-      "url": "http://127.0.0.1:58136/settings",
+      "url": "http://127.0.0.1:52812/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -14577,7 +14612,7 @@
     },
     {
       "id": "13a-settings-locale-persistence-fail-closed-en-desktop",
-      "url": "http://127.0.0.1:58136/settings",
+      "url": "http://127.0.0.1:52812/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -14906,7 +14941,7 @@
     },
     {
       "id": "14-settings-desktop-gate-en-desktop",
-      "url": "http://127.0.0.1:58136/settings",
+      "url": "http://127.0.0.1:52812/settings",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -15235,7 +15270,7 @@
     },
     {
       "id": "14a-settings-en-mobile-boundary-no-overflow",
-      "url": "http://127.0.0.1:58136/settings",
+      "url": "http://127.0.0.1:52812/settings",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -15564,7 +15599,7 @@
     },
     {
       "id": "15-replay-en-desktop-route-component",
-      "url": "http://127.0.0.1:58136/agent-runs/r4-live-run/replay",
+      "url": "http://127.0.0.1:52812/agent-runs/r4-live-run/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -15880,8 +15915,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -15893,7 +15928,7 @@
     },
     {
       "id": "15a-replay-restore-success-en-desktop",
-      "url": "http://127.0.0.1:58136/agent-runs/r4-live-run/replay",
+      "url": "http://127.0.0.1:52812/agent-runs/r4-live-run/replay",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -16209,8 +16244,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -16222,7 +16257,7 @@
     },
     {
       "id": "15ab-projects-en-desktop-route-component",
-      "url": "http://127.0.0.1:58136/projects",
+      "url": "http://127.0.0.1:52812/projects",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -16551,7 +16586,7 @@
     },
     {
       "id": "15aba-project-create-named-en-desktop",
-      "url": "http://127.0.0.1:58136/projects/10000000-0000-4000-8000-000000001691",
+      "url": "http://127.0.0.1:52812/projects/10000000-0000-4000-8000-000000001691",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -16880,7 +16915,7 @@
     },
     {
       "id": "15ac-project-home-en-desktop-route-component",
-      "url": "http://127.0.0.1:58136/projects/10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:52812/projects/10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -17209,7 +17244,7 @@
     },
     {
       "id": "15ad-project-home-new-task-intake-en-desktop",
-      "url": "http://127.0.0.1:58136/intake?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:52812/intake?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -17538,7 +17573,7 @@
     },
     {
       "id": "15b-drive-en-desktop-route-component",
-      "url": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -17867,7 +17902,7 @@
     },
     {
       "id": "15bb-drive-comment-to-draft-success-en-desktop",
-      "url": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -18183,8 +18218,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -18196,7 +18231,7 @@
     },
     {
       "id": "15bc-drive-open-workitem-draft-en-desktop",
-      "url": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -18512,8 +18547,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -18525,7 +18560,7 @@
     },
     {
       "id": "15bd-drive-draft-to-proposal-success-en-desktop",
-      "url": "http://127.0.0.1:58136/workitems/r4-live-workitem",
+      "url": "http://127.0.0.1:52812/workitems/r4-live-workitem",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -18841,8 +18876,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -18854,7 +18889,7 @@
     },
     {
       "id": "15be-drive-proposal-link-en-desktop",
-      "url": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -19170,8 +19205,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -19183,7 +19218,7 @@
     },
     {
       "id": "15c-drive-upload-success-en-desktop",
-      "url": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -19499,8 +19534,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -19512,7 +19547,7 @@
     },
     {
       "id": "15ca-drive-uploaded-item-deeplink-en-desktop",
-      "url": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
+      "url": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600&item_id=10000000-0000-4000-8000-000000001624",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -19828,8 +19863,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -19841,7 +19876,7 @@
     },
     {
       "id": "15d-drive-delete-success-en-desktop",
-      "url": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -20157,8 +20192,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -20170,7 +20205,7 @@
     },
     {
       "id": "15e-drive-restore-success-en-desktop",
-      "url": "http://127.0.0.1:58136/drive?project_id=10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:52812/drive?project_id=10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -20486,8 +20521,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -20499,7 +20534,7 @@
     },
     {
       "id": "15f-meetings-insight-en-desktop",
-      "url": "http://127.0.0.1:58136/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "url": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -20828,7 +20863,7 @@
     },
     {
       "id": "15g-meeting-insight-draft-en-desktop",
-      "url": "http://127.0.0.1:58136/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "url": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -21157,7 +21192,7 @@
     },
     {
       "id": "15h-meeting-workitem-source-en-desktop",
-      "url": "http://127.0.0.1:58136/workitems/10000000-0000-4000-8000-000000001730",
+      "url": "http://127.0.0.1:52812/workitems/10000000-0000-4000-8000-000000001730",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -21473,8 +21508,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -21486,7 +21521,7 @@
     },
     {
       "id": "15i-meeting-draft-proposal-en-desktop",
-      "url": "http://127.0.0.1:58136/workitems/10000000-0000-4000-8000-000000001730",
+      "url": "http://127.0.0.1:52812/workitems/10000000-0000-4000-8000-000000001730",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -21802,8 +21837,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -21815,7 +21850,7 @@
     },
     {
       "id": "15j-meetings-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:58136/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
+      "url": "http://127.0.0.1:52812/meetings?project_id=10000000-0000-4000-8000-000000001600&m=10000000-0000-4000-8000-000000001700",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -22144,7 +22179,7 @@
     },
     {
       "id": "15k-notifications-en-desktop",
-      "url": "http://127.0.0.1:58136/notifications",
+      "url": "http://127.0.0.1:52812/notifications",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -22473,7 +22508,7 @@
     },
     {
       "id": "15l-notification-mark-read-en-desktop",
-      "url": "http://127.0.0.1:58136/notifications",
+      "url": "http://127.0.0.1:52812/notifications",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -22802,7 +22837,7 @@
     },
     {
       "id": "15m-notification-dismiss-en-desktop",
-      "url": "http://127.0.0.1:58136/notifications",
+      "url": "http://127.0.0.1:52812/notifications",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -23131,7 +23166,7 @@
     },
     {
       "id": "15n-notification-mark-all-read-en-desktop",
-      "url": "http://127.0.0.1:58136/notifications",
+      "url": "http://127.0.0.1:52812/notifications",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -23460,7 +23495,7 @@
     },
     {
       "id": "15o-notification-complete-en-desktop",
-      "url": "http://127.0.0.1:58136/notifications",
+      "url": "http://127.0.0.1:52812/notifications",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -23789,7 +23824,7 @@
     },
     {
       "id": "15p-notifications-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:58136/notifications",
+      "url": "http://127.0.0.1:52812/notifications",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -24118,7 +24153,7 @@
     },
     {
       "id": "15q-calendar-en-desktop",
-      "url": "http://127.0.0.1:58136/calendar?date=2026-06-11&view=week",
+      "url": "http://127.0.0.1:52812/calendar?date=2026-06-11&view=week",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -24434,8 +24469,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -24447,7 +24482,7 @@
     },
     {
       "id": "15qa-calendar-open-target-workitem-en-desktop",
-      "url": "http://127.0.0.1:58136/workitems/10000000-0000-4000-8000-000000001730",
+      "url": "http://127.0.0.1:52812/workitems/10000000-0000-4000-8000-000000001730",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -24763,8 +24798,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
@@ -24776,7 +24811,7 @@
     },
     {
       "id": "15r-calendar-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:58136/calendar?date=2026-06-11&view=week",
+      "url": "http://127.0.0.1:52812/calendar?date=2026-06-11&view=week",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -25105,7 +25140,7 @@
     },
     {
       "id": "15s-health-en-desktop",
-      "url": "http://127.0.0.1:58136/dashboard/health",
+      "url": "http://127.0.0.1:52812/dashboard/health",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -25434,7 +25469,7 @@
     },
     {
       "id": "15sa-health-open-project-en-desktop",
-      "url": "http://127.0.0.1:58136/projects/10000000-0000-4000-8000-000000001600",
+      "url": "http://127.0.0.1:52812/projects/10000000-0000-4000-8000-000000001600",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -25763,7 +25798,7 @@
     },
     {
       "id": "15t-health-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:58136/dashboard/health",
+      "url": "http://127.0.0.1:52812/dashboard/health",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -26092,7 +26127,7 @@
     },
     {
       "id": "15v-skills-en-desktop-route-component",
-      "url": "http://127.0.0.1:58136/dashboard/skills",
+      "url": "http://127.0.0.1:52812/dashboard/skills",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -26421,7 +26456,7 @@
     },
     {
       "id": "15w-skills-en-mobile-no-overflow",
-      "url": "http://127.0.0.1:58136/dashboard/skills",
+      "url": "http://127.0.0.1:52812/dashboard/skills",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -26750,7 +26785,7 @@
     },
     {
       "id": "15u-notification-evidence-jump-en-desktop",
-      "url": "http://127.0.0.1:58136/knowledge/search",
+      "url": "http://127.0.0.1:52812/knowledge/search",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -27079,7 +27114,7 @@
     },
     {
       "id": "16-empty-drive-no-project-mobile",
-      "url": "http://127.0.0.1:58136/drive?empty=drive",
+      "url": "http://127.0.0.1:52812/drive?empty=drive",
       "viewport": {
         "width": 390,
         "height": 1180
@@ -27408,7 +27443,7 @@
     },
     {
       "id": "17-forbidden-workitem-desktop",
-      "url": "http://127.0.0.1:58136/workitems/r4-live-forbidden",
+      "url": "http://127.0.0.1:52812/workitems/r4-live-forbidden",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -27737,7 +27772,7 @@
     },
     {
       "id": "18-unknown-route-notfound",
-      "url": "http://127.0.0.1:58136/missing-r4-live-route",
+      "url": "http://127.0.0.1:52812/missing-r4-live-route",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -28066,7 +28101,7 @@
     },
     {
       "id": "19-logout-onboarding-en-desktop",
-      "url": "http://127.0.0.1:58136/approvals",
+      "url": "http://127.0.0.1:52812/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -28395,7 +28430,7 @@
     },
     {
       "id": "19a-second-user-deeplink-en-desktop",
-      "url": "http://127.0.0.1:58136/approvals",
+      "url": "http://127.0.0.1:52812/approvals",
       "viewport": {
         "width": 1365,
         "height": 1120
@@ -28711,8 +28746,8 @@
         "cuuLeak": false,
         "kanbanLeak": false,
         "secretLeak": false,
-        "clientWidth": 1365,
-        "scrollWidth": 1365,
+        "clientWidth": 1350,
+        "scrollWidth": 1350,
         "horizontalOverflow": false,
         "navHorizontalOverflow": false,
         "textOverflowCount": 0,
