@@ -90,7 +90,16 @@ export function showRouteNotice(
 }
 
 export function actionMessage(error: unknown, locale: WorkHubLocale) {
-  return error instanceof Error ? error.message : goldPathT(locale, "runtime.actionFail");
+  if (error instanceof Error) {
+    // 普通用户审查：断网时浏览器原文「Failed to fetch」直接端给中文用户——换成可操作的人话。
+    if (/failed to fetch|networkerror|load failed/iu.test(error.message)) {
+      return locale === "en-US"
+        ? "Could not reach the server — check your connection and try again."
+        : "连不上服务器——请检查网络后重试。";
+    }
+    return error.message;
+  }
+  return goldPathT(locale, "runtime.actionFail");
 }
 
 export function actionSummary(result: unknown, locale: WorkHubLocale) {

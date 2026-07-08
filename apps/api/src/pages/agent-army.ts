@@ -176,7 +176,7 @@ function blockerLabel(title: string, ageSeconds: number, locale: WorkHubLocale) 
 }
 
 function reasonPreview(reasonMd: string) {
-  return reasonMd.replace(/\s+/gu, " ").trim().slice(0, 160) || "需要人判断。";
+  return reasonMd.replace(/\s+/gu, " ").trim().slice(0, 160) || "等你决定。";
 }
 
 export function buildAgentArmyDashboardPage(input: AgentArmyDashboardPageInput): AgentArmyDashboardVM {

@@ -1527,6 +1527,7 @@ function renderIntakeStartRouteComponent(
           <label class="wh-r4-route-stack">
             <strong>${escapeHtml(routeT(locale, "intake.startIntent"))}</strong>
             <textarea class="wh-r4-intake-free-text" data-s1-day1-intent-input="true" maxlength="280" aria-label="${escapeHtml(routeT(locale, "intake.startIntent"))}" placeholder="${escapeHtml(routeT(locale, "intake.startIntentPlaceholder"))}"></textarea>
+            <p class="wh-subtle" data-r9-intake-intent-limit="true">${escapeHtml(locale === "zh-CN" ? "最多 280 字——先说重点，细节 AI 会追问。" : "Up to 280 characters — lead with the point; AI will ask for details.")}</p>
           </label>
         </section>
         <aside class="wh-r4-route-stack">
@@ -3299,7 +3300,8 @@ function agentDashboardStatusLabel(locale: WorkHubLocale, status: string) {
     succeeded: { "zh-CN": "已成功", "en-US": "Succeeded" },
     failed: { "zh-CN": "失败", "en-US": "Failed" },
     skipped: { "zh-CN": "已跳过", "en-US": "Skipped" },
-    needs_human: { "zh-CN": "需要你判断", "en-US": "Needs review" }
+    // 普通用户审查（词表统一）：同一状态四处四叫法——needs_human 统一「等你决定/Needs decision」。
+    needs_human: { "zh-CN": "等你决定", "en-US": "Needs decision" }
   };
   return labels[status]?.[locale] ?? taskPlanItemStatusLabel(locale, status);
 }
