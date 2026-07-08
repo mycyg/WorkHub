@@ -1874,8 +1874,14 @@ async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocal
     const hasShellOnScreen = Boolean(root.querySelector(".wh-product-root, .wh-app-shell, [data-r4-web-route-status]"));
     if (!hasShellOnScreen) {
       root.innerHTML = renderWebRouteState(match, "loading", locale).html;
-    } else if (!root.querySelector("[data-r7-nav-progress]")) {
-      root.insertAdjacentHTML("afterbegin", `<div data-r7-nav-progress="true" style="position:fixed;top:0;left:0;right:0;height:2px;z-index:80;background:linear-gradient(90deg,#355cff,#7aa2ff);animation:whNavProgress 1.1s ease-in-out infinite alternate;transform-origin:left"></div><style>@keyframes whNavProgress{from{transform:scaleX(.15)}to{transform:scaleX(.9)}}</style>`);
+    } else {
+      // R9 竞态修复：旧内容保留在屏时，路由状态标记必须立刻翻成 loading——
+      // 否则等待「pathname 已变 && status=ready」的消费者（smoke/任何轮询）会在
+      // 新内容渲染前拿着上一页的 ready 误判（CI 慢机器必现，本机偶发）。
+      root.querySelector("[data-r4-web-route-status]")?.setAttribute("data-r4-web-route-status", "loading");
+      if (!root.querySelector("[data-r7-nav-progress]")) {
+        root.insertAdjacentHTML("afterbegin", `<div data-r7-nav-progress="true" style="position:fixed;top:0;left:0;right:0;height:2px;z-index:80;background:linear-gradient(90deg,#355cff,#7aa2ff);animation:whNavProgress 1.1s ease-in-out infinite alternate;transform-origin:left"></div><style>@keyframes whNavProgress{from{transform:scaleX(.15)}to{transform:scaleX(.9)}}</style>`);
+      }
     }
   }
   const result = await loadWebRoute(client, match, locale, currentIdentity);
