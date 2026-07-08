@@ -434,6 +434,9 @@ async function buildApprovalItemDetail(
 
   if (proposal) {
     const manifest = proposal.diff_manifest;
+    // R6（信任 high）：跨 agent 复核(judge)的裁决理由此前从未进详情——ai_reason 只有提议作者自写摘要，
+    // 「另一层 AI 认为该不该过、为什么」被静默丢弃。取最近一条 AI 复核的 reason_md 单独透出。
+    const aiReview = [...(proposal.reviews ?? [])].reverse().find((review) => review.reviewer_kind === "ai" && review.reason_md);
     const conflicts = manifest.checks
       .filter((check) => check.status === "failed" || check.status === "warning")
       .map((check) => ({ description: check.label, ...(check.detail ? { impact: check.detail } : {}) }));
@@ -442,6 +445,7 @@ async function buildApprovalItemDetail(
       proposal_id: proposal.id,
       proposal_href: `/proposals/${proposal.id}`,
       ai_reason: manifest.summary_md,
+      ...(aiReview?.reason_md ? { ai_review_md: aiReview.reason_md } : {}),
       risk_label: manifest.risk.human_label,
       manifest_changes: manifest.changes,
       checks: manifest.checks,

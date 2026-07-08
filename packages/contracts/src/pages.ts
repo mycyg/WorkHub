@@ -852,6 +852,13 @@ export const workItemDetailVmSchema = z.object({
   task_plan: taskPlanVmSchema.optional(),
   agent_team: workItemAgentTeamVmSchema.optional(),
   source_context: workItemSourceContextVmSchema.optional(),
+  // R6（信任 high）：AI 对最近一次输出的置信评级——后端 confidenceRecords 早已按 run 落库，
+  // 此前只透传 opaque 的 latest_confidence_id，最后一公里从未展示给审阅者。
+  confidence: z.object({
+    score: z.number().min(0).max(1),
+    grade: z.string().min(1),
+    verdict: z.enum(["auto_merge", "human_spotcheck", "escalate"])
+  }).optional(),
   actions: z.object({
     create_proposal_draft: actionSpecSchema.optional()
   }).default({})
@@ -891,6 +898,8 @@ export const approvalDetailVmSchema = z.object({
   proposal_id: idSchema.optional(),
   proposal_href: z.string().optional(),
   ai_reason: z.string().optional(),
+  // R6（信任 high）：跨 agent 复核(judge)的结构化裁决理由——与提议作者自写的 ai_reason 分开渲染。
+  ai_review_md: z.string().optional(),
   expected_benefit: z.string().optional(),
   risk_label: z.string().optional(),
   manifest_changes: z.array(deliverableChangeSchema).default([]),
@@ -1004,6 +1013,8 @@ export const costDashboardVmSchema = z.object({
   viewer_is_admin: z.boolean().optional(),
   by_task_plan: z.array(z.object({
     task_plan_id: idSchema,
+    // R6（信任）：成本行可钻取到工作项详情（子任务/回放都在那），成本归因不再断在聚合层。
+    work_item_id: idSchema.optional(),
     label: z.string().min(1).optional(),
     cost_cny: z.string(),
     tokens: z.number().int().nonnegative(),

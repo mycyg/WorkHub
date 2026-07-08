@@ -1499,6 +1499,10 @@ function buildWorkItemDetail(
     ...(taskPlan ? { task_plan: taskPlan } : {}),
     ...(agentTeam ? { agent_team: agentTeam } : {}),
     ...(sourceContext ? { source_context: sourceContext } : {}),
+    // R6（信任 high）：置信评级最后一公里——后端早已按 run 落库，详情页此前只透传 opaque id。
+    ...(rows.latestConfidence && (rows.latestConfidence.verdict === "auto_merge" || rows.latestConfidence.verdict === "human_spotcheck" || rows.latestConfidence.verdict === "escalate")
+      ? { confidence: { score: rows.latestConfidence.confidenceScore, grade: rows.latestConfidence.grade, verdict: rows.latestConfidence.verdict } }
+      : {}),
     actions: {
       ...(createProposalAction ? { create_proposal_draft: createProposalAction } : {})
     }

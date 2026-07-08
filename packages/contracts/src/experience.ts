@@ -43,6 +43,8 @@ export const evidenceRefSchema = z.object({
     })
     .optional(),
   confidence_hint: z.enum(["found", "weak", "missing"]).optional(),
+  // R6（信任）：weak/missing 不再是裸标签——生产端（LLM manifest）可带具体原因，渲染端有则展示。
+  confidence_reason: z.string().max(600).optional(),
   href: z.string().optional()
 });
 export type EvidenceRef = z.infer<typeof evidenceRefSchema>;

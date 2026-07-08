@@ -493,7 +493,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.pendingDrafts": "待处理草稿",
     "drive.createDraft": "生成草稿",
     "drive.openDraft": "打开草稿",
-    "drive.openProposal": "打开提议",
+    "drive.openProposal": "查看变更申请",
     "drive.requestedMissing": "找不到该文件，已回到默认视图。",
     "drive.status.pending_llm": "待生成草稿",
     "drive.status.draft_created": "已生成草稿",
@@ -507,7 +507,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.createDraft": "生成草稿",
     "meeting.dismiss": "忽略",
     "meeting.openDraft": "打开草稿",
-    "meeting.openProposal": "打开提议",
+    "meeting.openProposal": "查看变更申请",
     "meeting.reason": "AI 推荐理由",
     "meeting.approvalSafe": "审批安全：确认前不会修改正式资料。",
     "meeting.empty": "这个项目还没有会议洞察。",
@@ -716,7 +716,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "drive.pendingDrafts": "Pending drafts",
     "drive.createDraft": "Create draft",
     "drive.openDraft": "Open draft",
-    "drive.openProposal": "Open proposal",
+    "drive.openProposal": "Open change request",
     "drive.requestedMissing": "We could not find that file, so the drive is back at the default view.",
     "drive.status.pending_llm": "Pending draft",
     "drive.status.draft_created": "Draft created",
@@ -730,7 +730,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.createDraft": "Create draft",
     "meeting.dismiss": "Dismiss",
     "meeting.openDraft": "Open draft",
-    "meeting.openProposal": "Open proposal",
+    "meeting.openProposal": "Open change request",
     "meeting.reason": "AI rationale",
     "meeting.approvalSafe": "Approval-safe: official project state will not change until you confirm.",
     "meeting.empty": "This project does not have meeting insights yet.",
@@ -1206,7 +1206,7 @@ function driveOpTypeLabel(op: string, zh: boolean): string {
       restore_version: "恢复版本",
       rename_item: "重命名",
       comment_to_draft: "评论转草稿",
-      draft_to_proposal: "草稿转申请"
+      draft_to_proposal: "草稿转变更申请"
     },
     {
       upload_file: "Upload",
@@ -1215,7 +1215,7 @@ function driveOpTypeLabel(op: string, zh: boolean): string {
       restore_version: "Restore version",
       rename_item: "Rename",
       comment_to_draft: "Comment → draft",
-      draft_to_proposal: "Draft → proposal"
+      draft_to_proposal: "Draft → change request"
     }
   );
 }
@@ -1324,7 +1324,7 @@ function renderHomeRouteComponent(
   // M1：战绩主行只在今天真有完成量时才显示，否则零活跃新用户首屏会读到「今天我替你扛了 0 件·自主率 0%·约省 0 小时」
   // 这种自夸 0 的尴尬文案（与自进化行的 selfEvolved>0 门同口径）。自进化行独立成立。
   const worklogMainLine = worklog && worklog.accepted_today > 0
-    ? `<span>${escapeHtml(zh ? "今天我搞定了" : "AI handled today:")} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(zh ? "件 · 自治率" : "done · autonomy")} <b>${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(zh ? "约省" : "saved ≈")} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(zh ? "小时" : "h")}${zh ? ` <span class="wh-r4-home-kao">٩(◜◡◝)۶</span>` : ""}</span>`
+    ? `<span>${escapeHtml(zh ? "今天我搞定了" : "AI handled today:")} <b>${escapeHtml(String(worklog.accepted_today))}</b> ${escapeHtml(zh ? "件 · 自治率" : "done · autonomy")} <b title="${escapeHtml(zh ? "今日 AI 复核通过率" : "Today's AI review pass rate")}" data-r9-home-autonomy-note="true">${escapeHtml(String(worklog.autonomy_rate))}%</b> · ${escapeHtml(zh ? "约省" : "saved ≈")} <b>${escapeHtml(String(worklog.saved_hours_estimate))}</b> ${escapeHtml(zh ? "小时" : "h")}${zh ? ` <span class="wh-r4-home-kao">٩(◜◡◝)۶</span>` : ""}</span>`
     : "";
   const worklogBanner = (worklogMainLine || selfEvolveLine)
     ? `<div class="wh-r4-home-banner" data-r4-home-worklog="true">
@@ -1657,6 +1657,21 @@ function renderIntakeRouteComponent(vm: SessionVM, locale: WorkHubLocale): WebRo
   });
 }
 
+// R6（信任）：weak/missing 裸标签不可行动——解释「弱在哪、该怎么办」（生产端带 confidence_reason 时优先用它）。
+function approvalEvidenceConfidenceExplain(hint: string, zh: boolean): string {
+  if (hint === "weak") {
+    return zh
+      ? "证据较弱：来源少或与结论关联不强，建议自行核对后再拍板。"
+      : "Weak evidence: few sources or loosely tied to the conclusion — verify before deciding.";
+  }
+  if (hint === "missing") {
+    return zh
+      ? "缺证据：AI 没有给出可核对的依据，建议打回并要求补充证据。"
+      : "No evidence: the AI provided nothing verifiable — consider sending it back for sources.";
+  }
+  return zh ? "证据充分：有可核对的依据支撑这个结论。" : "Evidence found: verifiable sources support this conclusion.";
+}
+
 function approvalEvidenceConfidenceLabel(hint: string, zh: boolean): string {
   return localizedEnumLabel(
     hint,
@@ -1706,7 +1721,7 @@ function renderApprovalDetailPanel(
   const evidence = item.evidence_refs?.length
     ? `<ul class="wh-r4-approval-evidence" data-r4-approval-evidence-list="true">${item.evidence_refs
         .slice(0, 4)
-        .map((ev) => `<li>${ev.href ? `<a href="${escapeHtml(safeHref(ev.href))}">${escapeHtml(ev.title)}</a>` : escapeHtml(ev.title)}${ev.excerpt ? `<span class="wh-subtle">${escapeHtml(ev.excerpt)}</span>` : ""}${ev.confidence_hint ? `<span class="wh-pill" data-r4-approval-evidence-confidence="${escapeHtml(ev.confidence_hint)}">${escapeHtml(approvalEvidenceConfidenceLabel(ev.confidence_hint, zh))}</span>` : ""}</li>`)
+        .map((ev) => `<li>${ev.href ? `<a href="${escapeHtml(safeHref(ev.href))}">${escapeHtml(ev.title)}</a>` : escapeHtml(ev.title)}${ev.excerpt ? `<span class="wh-subtle">${escapeHtml(ev.excerpt)}</span>` : ""}${ev.confidence_hint ? `<span class="wh-pill" data-r4-approval-evidence-confidence="${escapeHtml(ev.confidence_hint)}" title="${escapeHtml(ev.confidence_reason ?? approvalEvidenceConfidenceExplain(ev.confidence_hint, zh))}">${escapeHtml(approvalEvidenceConfidenceLabel(ev.confidence_hint, zh))}</span>` : ""}</li>`)
         .join("")}</ul>`
     : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.evidenceEmpty"))}</p>`;
 
@@ -1719,8 +1734,8 @@ function renderApprovalDetailPanel(
   const checksSection = detail?.checks.length
     ? `<section data-r4-approval-checks="true"><h4>${escapeHtml(goldPathT(locale, "approvals.checksTitle"))}</h4><div class="wh-r4-route-timeline">${detail.checks.map((check) => renderCheck(check, locale)).join("")}</div></section>`
     : "";
-  const aiSection = (detail?.ai_reason || detail?.expected_benefit || detail?.risk_label)
-    ? `<section data-r4-approval-ai="true"><h4>${escapeHtml(goldPathT(locale, "approvals.aiTitle"))}</h4>${detail?.ai_reason ? `<p>${escapeHtml(detail.ai_reason)}</p>` : ""}${detail?.expected_benefit ? `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.benefitTitle"))}: ${escapeHtml(detail.expected_benefit)}</p>` : ""}${detail?.risk_label ? `<span class="wh-pill wh-r4-prio wh-r4-prio--warn">${escapeHtml(detail.risk_label)}</span>` : ""}</section>`
+  const aiSection = (detail?.ai_reason || detail?.expected_benefit || detail?.risk_label || detail?.ai_review_md)
+    ? `<section data-r4-approval-ai="true"><h4>${escapeHtml(goldPathT(locale, "approvals.aiTitle"))}</h4>${detail?.ai_reason ? `<p>${escapeHtml(detail.ai_reason)}</p>` : ""}${detail?.expected_benefit ? `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.benefitTitle"))}: ${escapeHtml(detail.expected_benefit)}</p>` : ""}${detail?.risk_label ? `<span class="wh-pill wh-r4-prio wh-r4-prio--warn">${escapeHtml(detail.risk_label)}</span>` : ""}${detail?.ai_review_md ? `<div data-r9-approval-ai-review="true"><h4>${escapeHtml(locale === "zh-CN" ? "AI 复核结论" : "AI review verdict")}</h4><p class="wh-subtle" style="white-space:pre-line">${escapeHtml(detail.ai_review_md)}</p></div>` : ""}</section>`
     : "";
   const conflictsSection = detail?.conflicts.length
     ? `<section data-r4-approval-conflicts="true"><h4>${escapeHtml(goldPathT(locale, "approvals.conflictsTitle"))}</h4>${detail.conflicts.map((conflict) => `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r4-approval-conflict="true"><strong>${escapeHtml(conflict.description)}</strong>${conflict.impact ? `<p class="wh-subtle">${escapeHtml(conflict.impact)}</p>` : ""}${conflict.suggestion ? `<p>${escapeHtml(conflict.suggestion)}</p>` : ""}</div>`).join("")}</section>`
@@ -2315,6 +2330,9 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
             <span class="wh-pill">${escapeHtml(vm.workitem.code)}</span>
             <span class="wh-pill">${escapeHtml(attentionPriorityLabel(vm.workitem.priority, locale === "zh-CN"))}</span>
             <span class="wh-pill">${escapeHtml(localizedEnumLabel(vm.workitem.mode, locale === "zh-CN", { worker: "执行", pm: "项目管理" }, { worker: "Worker", pm: "PM" }))}</span>
+            ${vm.confidence ? `<span class="wh-pill wh-r4-prio ${vm.confidence.verdict === "escalate" ? "wh-r4-prio--warn" : ""}" data-r9-workitem-confidence="${escapeHtml(vm.confidence.verdict)}" title="${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的置信评级与分流结论" : "AI's confidence grade and routing verdict for the latest output")}">${escapeHtml(locale === "zh-CN"
+    ? `AI 置信 ${Math.round(vm.confidence.score * 100)}% · ${vm.confidence.verdict === "auto_merge" ? "可自动采纳" : vm.confidence.verdict === "human_spotcheck" ? "建议抽查" : "建议人工把关"}`
+    : `AI confidence ${Math.round(vm.confidence.score * 100)}% · ${vm.confidence.verdict === "auto_merge" ? "auto-merge ok" : vm.confidence.verdict === "human_spotcheck" ? "spot-check" : "needs review"}`)}</span>` : ""}
           </div>
           ${(() => {
     // L25：上下文卡正文别和头部 summary 重复(都源自 raw_description 时)；两者都空也别渲一个空 <p>。
@@ -3225,9 +3243,11 @@ function renderHealthRouteComponent(vm: ProjectHealthPageVM, locale: WorkHubLoca
     ...vm.cards.map((card) => card.target_href),
     ...vm.cards.flatMap((card) => card.signals.map((signal) => signal.target_href))
   ].filter((value): value is string => Boolean(value));
+  // R6（成长阶段）：health 是常驻导航项，Day 1 零项目用户点进来不能只见一句灰字死路——补去项目页的出路。
   const cards = vm.cards.length
     ? vm.cards.map((card) => renderHealthCard(card, locale)).join("")
-    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "health.empty"))}</p>`;
+    : `<p class="wh-subtle">${escapeHtml(routeT(locale, "health.empty"))}</p>
+      <div class="wh-r4-route-actions"><a class="wh-btn wh-btn-primary" href="/projects" data-r9-health-empty-cta="true">${escapeHtml(locale === "zh-CN" ? "打开项目" : "Open projects")}</a></div>`;
   const memberNote = vm.viewer_scope === "member"
     ? `<p class="wh-subtle" data-r5-7-health-bands-only="true">${escapeHtml(routeT(locale, "health.bandsOnly"))}</p>`
     : "";
@@ -3819,7 +3839,9 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
         : "";
       return `<div class="wh-r4-route-row wh-r4-route-row--stacked" data-r9-cost-army-plan="${escapeHtml(item.task_plan_id)}">
       <div>
-        <strong>${escapeHtml(item.label ?? (zhNotice ? "军团任务计划" : "Task plan"))}</strong>
+        <strong>${item.work_item_id
+          ? `<a class="wh-r4-route-row-title" href="/workitems/${escapeHtml(encodeURIComponent(item.work_item_id))}" data-r9-cost-army-drill="${escapeHtml(item.task_plan_id)}" title="${escapeHtml(zhNotice ? "打开工作项，看子任务与每次运行的回放" : "Open the work item to see subtasks and per-run replays")}">${escapeHtml(item.label ?? (zhNotice ? "军团任务计划" : "Task plan"))}</a>`
+          : escapeHtml(item.label ?? (zhNotice ? "军团任务计划" : "Task plan"))}</strong>
         <p>${escapeHtml(zhNotice
           ? `${item.child_runs} 个子运行 · ${item.task_plan_id.slice(0, 8)}`
           : `${item.child_runs} child ${item.child_runs === 1 ? "run" : "runs"} · ${item.task_plan_id.slice(0, 8)}`)}</p>
@@ -3929,6 +3951,7 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
             : (zhNotice
               ? "下面的数字暂时都是 0。派一个任务让 AI 跑一次，这里就会出现成本。"
               : "The figures below read 0 for now. Assign a task and let AI run once — cost will show up here."))}</p>
+          ${vm.empty_state === "no_agent_runs" ? `<div class="wh-r4-route-actions"><a class="wh-btn wh-btn-primary" href="/intake" data-r9-cost-empty-cta="true">${escapeHtml(zhNotice ? "派一个任务" : "Assign a task")}</a></div>` : ""}
         </section>`
     : "";
 

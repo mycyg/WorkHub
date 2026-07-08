@@ -19,6 +19,7 @@ import {
   agentSteps,
   auditLogs,
   chatMessages,
+  confidenceRecords,
   knowledgeDocuments,
   meetingInsights,
   meetingRecords,
@@ -226,6 +227,8 @@ export type StoredWorkItemDetailRows = {
   taskPlan?: TaskPlanWithItems | null;
   driveSourceComment: WorkItemDriveSourceCommentRow | null;
   meetingSourceInsight: WorkItemMeetingSourceInsightRow | null;
+  // R6（信任）：最近一次置信评级（workItem.latestConfidenceId 指向的记录），详情页渲染置信 pill 用。
+  latestConfidence?: { confidenceScore: number; grade: "low" | "medium" | "high"; verdict: string } | null;
 };
 
 export type WorkItemKnowledgeSearchInput = {
@@ -1150,6 +1153,18 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         };
       }
 
+      const latestConfidenceRows = row.workItem.latestConfidenceId
+        ? await db
+            .select({
+              confidenceScore: confidenceRecords.confidenceScore,
+              grade: confidenceRecords.grade,
+              verdict: confidenceRecords.verdict
+            })
+            .from(confidenceRecords)
+            .where(eq(confidenceRecords.id, row.workItem.latestConfidenceId))
+            .limit(1)
+        : [];
+
       return {
         workItem: row.workItem,
         projectName: row.projectName,
@@ -1165,7 +1180,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         evidenceBindings,
         taskPlan,
         driveSourceComment: driveSourceCommentWithPath,
-        meetingSourceInsight: meetingSourceInsights[0] ?? null
+        meetingSourceInsight: meetingSourceInsights[0] ?? null,
+        latestConfidence: latestConfidenceRows[0] ?? null
       };
     },
 

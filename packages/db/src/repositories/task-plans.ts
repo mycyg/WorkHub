@@ -721,9 +721,9 @@ export function createTaskPlanRepository(db: WorkHubDb) {
     async listPlanMetaByIds(input: {
       workspaceId: string;
       planIds: string[];
-    }): Promise<Map<string, { label: string; status: TaskPlanStatus; maxCostCny?: number }>> {
+    }): Promise<Map<string, { label: string; status: TaskPlanStatus; maxCostCny?: number; workItemId?: string }>> {
       const planIds = [...new Set(input.planIds)].slice(0, MAX_DASHBOARD_PLAN_LIMIT);
-      const meta = new Map<string, { label: string; status: TaskPlanStatus; maxCostCny?: number }>();
+      const meta = new Map<string, { label: string; status: TaskPlanStatus; maxCostCny?: number; workItemId?: string }>();
       if (planIds.length === 0) {
         return meta;
       }
@@ -732,6 +732,7 @@ export function createTaskPlanRepository(db: WorkHubDb) {
           id: taskPlans.id,
           status: taskPlans.status,
           budgetJson: taskPlans.budgetJson,
+          workItemId: taskPlans.workItemId,
           workItemTitle: workItems.title,
           workItemCode: workItems.code
         })
@@ -747,7 +748,9 @@ export function createTaskPlanRepository(db: WorkHubDb) {
         meta.set(row.id, {
           label: row.workItemTitle ?? row.workItemCode,
           status: row.status,
-          ...(Number.isFinite(parsed) && parsed > 0 ? { maxCostCny: parsed } : {})
+          ...(Number.isFinite(parsed) && parsed > 0 ? { maxCostCny: parsed } : {}),
+          // R6（信任）：成本页军团行钻取——带上工作项 id，行标题可链到工作项（那里有子任务与回放链）。
+          workItemId: row.workItemId
         });
       }
       return meta;

@@ -16,7 +16,7 @@ type CostPageInput = {
   ledgerEntries?: readonly CostLedgerEntry[];
   // B-R9.6 UX-H4：军团行展示元数据（名称/状态/预算上限），路由层按 plan id 批量取后传入；
   // 缺省（取数失败/非管理员）时行退化为无名称无燃烧条，页面不塌。
-  taskPlanMeta?: Map<string, { label: string; status: string; maxCostCny?: number }>;
+  taskPlanMeta?: Map<string, { label: string; status: string; maxCostCny?: number; workItemId?: string }>;
   // UX-M10：目标标题（按目标维度不渲裸 UUID）。
   objectiveTitles?: Map<string, string>;
   locale?: WorkHubLocale;
@@ -189,6 +189,7 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
         : undefined;
       return {
         task_plan_id: item.id,
+        ...(meta?.workItemId ? { work_item_id: meta.workItemId } : {}),
         ...(meta?.label ? { label: meta.label } : {}),
         cost_cny: formatCny(item.cost),
         tokens: item.tokens,
