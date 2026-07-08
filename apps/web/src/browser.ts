@@ -451,12 +451,33 @@ function showPayloadFailureNotice(
   return true;
 }
 
+// 普通用户审查（CONFLICT-TOAST）：整套冲突解决卡塞 420px 常驻 toast 无关闭无上限——
+// 提议页有冲突区就内联渲进页面（可滚动、随页面存亡），toast 只留一句提示；
+// 不在提议页（收件箱采纳撞冲突）才退回 toast 卡。
+function mountConflictCardsInline(shellRoot: HTMLElement, html: string): boolean {
+  const host = shellRoot.querySelector<HTMLElement>("[data-r4-proposal-conflicts]");
+  if (!host) {
+    return false;
+  }
+  const mount = document.createElement("div");
+  mount.setAttribute("data-r9-inline-conflicts", "true");
+  mount.innerHTML = html;
+  shellRoot.querySelector("[data-r9-inline-conflicts]")?.remove();
+  host.insertAdjacentElement("afterend", mount);
+  mount.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  return true;
+}
+
 function showMergeConflictNotice(shellRoot: HTMLElement, error: unknown, locale: WorkHubLocale, actionId?: string) {
   const conflicts = conflictsFromMergeError(error);
   if (conflicts.length === 0) {
     return false;
   }
   const rendered = renderProposalConflictCards(conflicts, { locale });
+  if (mountConflictCardsInline(shellRoot, rendered.html)) {
+    showRouteNotice(shellRoot, mergeConflictNotice(locale, actionId));
+    return true;
+  }
   showRouteNotice(shellRoot, mergeConflictNotice(locale, actionId), rendered.html, 0);
   return true;
 }
@@ -476,6 +497,10 @@ async function showRebaseRequiredNotice(
   }
   const result = await client.rebaseProposal(proposalId);
   const rendered = renderProposalConflictCards(result.conflicts, { locale });
+  if (mountConflictCardsInline(shellRoot, rendered.html)) {
+    showRouteNotice(shellRoot, mergeConflictNotice(locale, actionId));
+    return true;
+  }
   showRouteNotice(shellRoot, mergeConflictNotice(locale, actionId), rendered.html, 0);
   return true;
 }
