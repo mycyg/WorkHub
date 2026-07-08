@@ -60,6 +60,10 @@ export function toApprovalAttentionItem(
   const evidenceRefs = ui?.evidence_refs as EvidenceRef[] | undefined;
   const requiresDesktop = ui?.requires_desktop ?? false;
   const locale = options.locale ?? "zh-CN";
+  // 普通用户审查（低）：标题=正文时卡片同一句连读两遍像渲染 bug——标题给分类短语，正文留细节。
+  const title = ui?.summary_text
+    ? summaryText
+    : (locale === "en-US" ? "Approval needed" : "有一步操作等你确认");
 
   return {
     id: approval.id,
@@ -70,7 +74,7 @@ export function toApprovalAttentionItem(
       entity_type: "approval_request",
       entity_id: approval.id
     },
-    title: summaryText,
+    title,
     summary_text: summaryText,
     ...(reasonText ? { reason_text: reasonText } : {}),
     ...(evidenceRefs ? { evidence_refs: evidenceRefs } : {}),

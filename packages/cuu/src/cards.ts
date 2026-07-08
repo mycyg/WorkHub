@@ -442,7 +442,7 @@ const budgetActionLabels = {
   "zh-CN": {
     add_budget: "追加预算继续",
     finish_current_output: "就用现有产出收尾",
-    close_scope: "整体收工",
+    close_scope: "整体收工（取消这个任务）",
     downgrade_model: "降级模型继续",
     pause: "先暂停",
     ask_admin: "找管理员"
@@ -450,7 +450,7 @@ const budgetActionLabels = {
   "en-US": {
     add_budget: "Add budget and continue",
     finish_current_output: "Finish with current output",
-    close_scope: "Close scope",
+    close_scope: "Close scope (cancels this task)",
     downgrade_model: "Use a cheaper model",
     pause: "Pause for now",
     ask_admin: "Ask an admin"

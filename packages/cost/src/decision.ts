@@ -286,7 +286,7 @@ function budgetNotice(input: {
     ? [
         { id: "add_budget", label: "追加预算继续", actionHref },
         { id: "finish_current_output", label: "就用现有产出收尾", actionHref },
-        { id: "close_scope", label: "整体收工", actionHref }
+        { id: "close_scope", label: "整体收工（取消这个任务）", actionHref }
       ]
     : [
         { id: "downgrade_model", label: "降级模型继续", actionHref },

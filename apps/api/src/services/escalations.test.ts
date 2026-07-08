@@ -307,7 +307,8 @@ test("R9.7 budget terminal actions apply scope state transitions", async () => {
   assert.equal(result.escalation.id, escalationId);
   assert.equal(result.work_item_status, "in_review");
   assert.equal(closed.work_item_status, "cancelled");
-  assert.equal(result.attention.summary_text, "已记录预算选择。");
+  // 普通用户审查：回执按动作说人话，不再统一「已记录预算选择」。
+  assert.equal(result.attention.summary_text, "已按现有产出收尾，任务进入验收。");
 });
 
 test("R9.7 escalation mutation success summaries honor the requested locale", async () => {
@@ -333,7 +334,7 @@ test("R9.7 escalation mutation success summaries honor the requested locale", as
     "en-US"
   );
 
-  assert.equal(budget.attention.summary_text, "Budget choice recorded.");
+  assert.equal(budget.attention.summary_text, "Wrapping up with what's already produced — the task moved to review.");
 
   const resolveRepository = new MemoryEscalationRepository();
   const resolveService = createEscalationService({ repository: resolveRepository, now: () => now });

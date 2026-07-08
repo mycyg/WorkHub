@@ -155,9 +155,20 @@ function actionSummary(action: ResolveEscalationRequest["action"], locale: WorkH
   return "已取消这个子任务。";
 }
 
+// 普通用户审查：「已记录预算选择」看不出任务被收尾还是被取消——按动作说人话。
 function budgetDecisionSummary(locale: WorkHubLocale, actionId?: string) {
   if (actionId === "add_budget") {
     return locale === "en-US" ? "Budget topped up — the agent team keeps going." : "已追加预算，军团继续执行。";
+  }
+  if (actionId === "finish_current_output") {
+    return locale === "en-US"
+      ? "Wrapping up with what's already produced — the task moved to review."
+      : "已按现有产出收尾，任务进入验收。";
+  }
+  if (actionId === "close_scope") {
+    return locale === "en-US"
+      ? "Closed out — this task was cancelled and AI will not deliver more on it."
+      : "已整体收工——这个任务已取消，AI 不会再交付内容。";
   }
   return locale === "en-US" ? "Budget choice recorded." : "已记录预算选择。";
 }

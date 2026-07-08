@@ -2171,7 +2171,9 @@ function renderAgentTeamPanel(team: WorkItemAgentTeamVM | undefined, locale: Wor
     : "";
   // B-R9.6 §3.1：头行「暂停派发/恢复派发」次级按钮——VM 给控制才渲，终态军团无按钮。
   const dispatchControl = team.dispatch_control
-    ? `<a class="wh-btn" href="${escapeHtml(safeHref(team.dispatch_control.href))}" data-method="${escapeHtml(team.dispatch_control.method)}" data-action-id="${escapeHtml(`${team.dispatch_control.kind}_dispatch`)}" data-r9-agent-team-dispatch-control="${escapeHtml(team.dispatch_control.kind)}">${escapeHtml(team.dispatch_control.label)}</a>`
+    ? `<a class="wh-btn" href="${escapeHtml(safeHref(team.dispatch_control.href))}" data-method="${escapeHtml(team.dispatch_control.method)}" data-action-id="${escapeHtml(`${team.dispatch_control.kind}_dispatch`)}" data-r9-agent-team-dispatch-control="${escapeHtml(team.dispatch_control.kind)}" title="${escapeHtml(team.dispatch_control.kind === "pause"
+      ? (locale === "zh-CN" ? "只停新派发；在跑的子任务会跑完，不会被打断。" : "Stops new dispatches only; running subtasks finish unharmed.")
+      : (locale === "zh-CN" ? "就绪的子任务会立即继续派出。" : "Ready subtasks resume dispatching immediately."))}">${escapeHtml(team.dispatch_control.label)}</a>`
     : "";
   return `<section class="wh-card wh-r4-route-card" data-r9-agent-team-panel="true" data-r9-agent-team-plan-id="${escapeHtml(team.plan_id)}" data-r9-agent-team-status="${escapeHtml(team.status)}">
     <div class="wh-r4-route-card-head">
@@ -2198,7 +2200,8 @@ function workItemActionHint(status: string, zh: boolean): string {
     ai_clarifying: ["AI 正在和你澄清需求，去「提需求」入口继续。", "AI is clarifying with you — continue from the intake flow."],
     in_progress: ["AI 正在处理，有进展会更新到这里。", "AI is working on this; progress will appear here."],
     in_review: ["等待审阅，相关变更会以审批 / 变更申请的形式找你。", "Awaiting review — changes will reach you as an approval / change request."],
-    escalated: ["已升级给负责人接手，无需你额外操作。", "Escalated to an owner to take over — nothing more needed from you."],
+    // 普通用户审查：升级恰恰是「需要人拿主意」的状态，写「无需你额外操作」在撒谎——重试/接手按钮在收件箱。
+    escalated: ["AI 卡住了，需要有人拿主意——去首页收件箱处理（可让它重试/转成我来做/取消）。", "The AI is stuck and needs a human call — handle it from the home inbox (retry / take over / cancel)."],
     delivery_ready: ["交付物已就绪，等待采纳。", "The deliverable is ready, awaiting acceptance."],
     accepted: ["这条已采纳。", "This one was accepted."],
     done: ["这条已完成。", "This one is done."],

@@ -1132,6 +1132,20 @@ function bindGoldPathNavigation(
           showRouteNotice(shellRoot, actionErrorNotice(locale, new Error(locale === "en-US" ? "This escalation action is not available." : "这个升级动作暂不可用。"), actionId));
           return;
         }
+        // 普通用户审查：「取消这个子任务」紧挨「转成我来做」，一键即取消无反悔——
+        // danger 动作加两段式确认：第一次点把按钮翻成确认态（5 秒后自动复原），再点才执行。
+        if (payload.action === "cancel" && actionTarget.dataset.r9ConfirmArmed !== "true") {
+          const originalLabel = actionTarget.textContent ?? "";
+          actionTarget.dataset.r9ConfirmArmed = "true";
+          actionTarget.textContent = locale === "en-US" ? "Really cancel? Click again" : "确认取消？再点一次";
+          window.setTimeout(() => {
+            if (actionTarget.isConnected && actionTarget.dataset.r9ConfirmArmed === "true") {
+              delete actionTarget.dataset.r9ConfirmArmed;
+              actionTarget.textContent = originalLabel;
+            }
+          }, 5000);
+          return;
+        }
         try {
           const result = await client.resolveEscalation(escalationAction.escalationId, payload, { locale });
           await renderCurrentRoute(client, locale);
