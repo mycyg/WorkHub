@@ -314,12 +314,14 @@ function clearActiveRouteDirty() {
 // merge click flows through the existing proposalAction "merge" branch.
 type ProposalRowAction = Pick<ActionSpec, "id" | "label" | "method" | "href" | "request_json">;
 
-function swapProposalActionRow(shellRoot: HTMLElement, actions: ProposalRowAction | ProposalRowAction[]) {
+// 返回是否真的换到了行——首页决策卡没有 [data-r4-proposal-summary]，换不上时调用方要整页重渲，
+// 否则通过后的「开工/采纳」按钮永远不出现（普通用户审查 high：卡片原地不动）。
+function swapProposalActionRow(shellRoot: HTMLElement, actions: ProposalRowAction | ProposalRowAction[]): boolean {
   const row = shellRoot.querySelector<HTMLElement>(
     '[data-r4-proposal-summary="true"] .wh-r4-route-actions'
   );
   if (!row) {
-    return;
+    return false;
   }
   const nextActions = Array.isArray(actions) ? actions : [actions];
   const links = nextActions.map((action, index) => {
@@ -335,9 +337,10 @@ function swapProposalActionRow(shellRoot: HTMLElement, actions: ProposalRowActio
     return link;
   });
   if (links.length === 0) {
-    return;
+    return false;
   }
   row.replaceChildren(...links);
+  return true;
 }
 
 function activeRouteHasDirtyEdits() {
@@ -1182,13 +1185,18 @@ function bindGoldPathNavigation(
           const planMergeActions = review.attention.kind === "plan_review"
             ? review.attention.actions.filter((item) => proposalActionFromHref(item.href)?.action === "merge")
             : [];
-          if (planMergeActions.length > 0) {
-            swapProposalActionRow(shellRoot, planMergeActions);
-          } else if (review.next_action) {
-            swapProposalActionRow(shellRoot, review.next_action);
-          }
+          const swapped = planMergeActions.length > 0
+            ? swapProposalActionRow(shellRoot, planMergeActions)
+            : review.next_action
+              ? swapProposalActionRow(shellRoot, review.next_action)
+              : false;
           clearActiveRouteDirty();
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, review.attention.summary_text, actionId));
+          if (!swapped) {
+            // 首页/收件箱里点的通过：原地换行落空，与升级/预算/冲突卡同口径整页重渲，
+            // 卡片状态跟上、下一步按钮出现。回执在重渲后再弹，避免被刷新提示覆盖。
+            await renderCurrentRoute(client, locale);
+          }
+          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, review.attention.summary_text, actionId));
         } catch (error) {
           if (await showRebaseRequiredNotice(shellRoot, error, proposalAction.proposalId, client, locale, actionId)) {
             return;
@@ -1208,7 +1216,9 @@ function bindGoldPathNavigation(
         try {
           const merge = await client.mergeProposal(proposalAction.proposalId, payload.payload, { locale });
           clearActiveRouteDirty();
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
+          // 采纳是状态跃迁（opened/reviewed→merged）：原地没有可换的下一步行，整页重渲反映终态。
+          await renderCurrentRoute(client, locale);
+          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
           if (await showRebaseRequiredNotice(shellRoot, error, proposalAction.proposalId, client, locale, actionId)) {
             return;
