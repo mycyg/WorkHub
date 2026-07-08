@@ -119,6 +119,14 @@ export function actionMessage(error: unknown, locale: WorkHubLocale) {
         ? `The request was rejected (${code.replace(/_/gu, " ")}). Refresh and try again.`
         : "The request was rejected. Refresh and try again.";
     }
+    // R8（错误面 high）：镜像分支——全局兜底（422 契约不符/500/404/JSON 解析失败）的 message 只有英文，
+    // 中文界面用户读到整句英文原文。zh 会话下 message 为纯 ASCII 时同样走通用中文兜底+错误码。
+    if (locale !== "en-US" && !/[\u4e00-\u9fff]/u.test(error.message) && /[A-Za-z]/u.test(error.message)) {
+      const code = (error as { code?: unknown }).code;
+      return typeof code === "string" && code
+        ? `请求没有通过（${code.replace(/_/gu, " ")}）。刷新后再试一次。`
+        : "请求没有通过。刷新后再试一次。";
+    }
     return error.message;
   }
   return goldPathT(locale, "runtime.actionFail");

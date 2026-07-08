@@ -274,14 +274,20 @@ async function readUploadBody(
     }
     const bytes = Buffer.from(await file.arrayBuffer());
     const parsedText = formString(form.get("parsed_text")) || parsedTextFromBytes(bytes, filename, mime);
-    const metadata = uploadDriveFileSchema.parse({
-      filename,
-      parent_id: formString(form.get("parent_id")) || undefined,
-      mime,
-      size_bytes: bytes.byteLength,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-      ...(parsedText ? { parsed_text: parsedText } : {})
-    });
+    // R8（错误面）：zod 校验失败此前漏进全局英文 422 兜底——与本文件其余双语文案不一致。就地转双语。
+    let metadata: ReturnType<typeof uploadDriveFileSchema.parse>;
+    try {
+      metadata = uploadDriveFileSchema.parse({
+        filename,
+        parent_id: formString(form.get("parent_id")) || undefined,
+        mime,
+        size_bytes: bytes.byteLength,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        ...(parsedText ? { parsed_text: parsedText } : {})
+      });
+    } catch {
+      throw new DrivePageServiceError(400, "网盘文件信息不合法，请检查后重新上传。(Invalid file metadata — check and re-upload.)", "drive_upload_invalid");
+    }
     const storagePath = await persistDriveUploadBytes({ bytes, filename: metadata.filename, projectId: input.projectId, settings: input.settings });
     return {
       filename: metadata.filename,
@@ -294,7 +300,14 @@ async function readUploadBody(
     };
   }
 
-  const body = uploadDriveFileSchema.parse(jsonObjectFromText(rawBody.toString("utf8")));
+  // R8：只把 zod 校验失败转双语——JSON 解析失败有自己的专用报错（malformed JSON 测试钉死），原样放行。
+  const parsedJsonBody = jsonObjectFromText(rawBody.toString("utf8"));
+  let body: ReturnType<typeof uploadDriveFileSchema.parse>;
+  try {
+    body = uploadDriveFileSchema.parse(parsedJsonBody);
+  } catch {
+    throw new DrivePageServiceError(400, "网盘文件信息不合法，请检查后重新上传。(Invalid file metadata — check and re-upload.)", "drive_upload_invalid");
+  }
   if (!body.parsed_text?.trim()) {
     throw new DrivePageServiceError(
       400,
