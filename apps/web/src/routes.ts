@@ -1015,6 +1015,21 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     // 首页是项目工作台,不是 AI 收件箱孤岛：先展示项目/网盘入口,再把待决策和后台运行作为运营队列露出。
     // 项目清单是次要数据,拉取失败不应把已可用的决策队列整页打垮。
     const attention = await client.pages.attention(withLocale(locale));
+    // 普通用户审查（QUEUE-PROMOTE）：?focus=<attention_id> 把队列里那张卡提升为主卡原地处理——
+    // 队列行点击不再跳去回放页/无动作的工作项页。
+    const focusId = new URLSearchParams(match.search).get("focus");
+    if (focusId) {
+      const focusIndex = attention.queue.findIndex((item) => item.id === focusId);
+      if (focusIndex >= 0) {
+        const [focused] = attention.queue.splice(focusIndex, 1);
+        if (focused) {
+          if (attention.primary && attention.primary.id !== focused.id) {
+            attention.queue.unshift(attention.primary);
+          }
+          attention.primary = focused;
+        }
+      }
+    }
     let projects: ProjectListVM | undefined;
     try {
       projects = await client.listProjects();

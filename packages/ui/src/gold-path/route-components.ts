@@ -1012,12 +1012,10 @@ function jsonAttr(value: unknown) {
 
 // M3：决策队列里每条都要能点进去处理,不能是死文本。优先用第一个导航(GET)动作的 href,
 // 否则退回工作项/项目详情路由;实在没有目标时才退化为不可点的 div(不造死链)。
-function attentionRowHref(item: AttentionItem): string | undefined {
-  const navAction = item.actions.find((action) => action.method === "GET" && action.href);
-  if (navAction) return navAction.href;
-  if (item.work_item_id) return `/workitems/${item.work_item_id}`;
-  if (item.project_id) return `/projects/${item.project_id}`;
-  return undefined;
+function attentionRowHref(item: AttentionItem): string {
+  // 普通用户审查（QUEUE-PROMOTE）：队列行统一回首页并把该卡提升为主卡原地处理——
+  // 此前取第一个 GET 动作五花八门（冲突行跳回放、审批行跳无动作的工作项页）。
+  return `/?focus=${encodeURIComponent(item.id)}`;
 }
 
 function renderAttentionRows(items: AttentionItem[], emptyCopy: string, zh: boolean) {
