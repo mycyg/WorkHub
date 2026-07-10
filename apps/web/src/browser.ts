@@ -125,7 +125,22 @@ function escalationResolvePayloadFromActionId(actionId: string | undefined) {
 const noticeTimerState: RouteNoticeTimerState = {};
 // 普通用户审查 R2：开始新任务/生成任务计划是十几秒的 LLM 动作——点击后要 pending 提示+
 // in-flight 锁，否则连点会造出重复工作项/计划。
-let llmActionBusy = false;
+// R10-P1-5b：锁从「全局一个布尔」改为按动作 key 分区——一个慢请求（上传大文件/LLM 追问）
+// 不再把整页所有无关动作锁死；同一动作的双击防抖语义不变。key 见各调用点。
+const busyActionKeys = new Set<string>();
+function beginBusyAction(key: string): boolean {
+  // 同 key（双击同一动作）必拦；不同 key 放行并发。
+  if (busyActionKeys.has(key)) {
+    return false;
+  }
+  busyActionKeys.add(key);
+  return true;
+}
+function endBusyAction(key: string) {
+  busyActionKeys.delete(key);
+}
+// R10-P1-2：审批打回理由草稿按事项隔离——key=approval id。跨重渲保留（respond 后重渲不丢在写的草稿）。
+const approvalReasonDrafts = new Map<string, string>();
 let readyRouteBindings: AbortController | undefined;
 let liveDirtyGuardCount = 0;
 let liveRuntime: ReturnType<typeof createWebLiveRuntime> | undefined;
@@ -632,11 +647,10 @@ function bindGoldPathNavigation(
       }
       // R5（慢网感知）：大文件慢网下只有一条静态「处理中」——补文件名+体积的诚实等待文案（>2MB 预告可能要等），
       // 等待期禁用 picker + in-flight 锁防同一个选择器被再次触发。
-      if (llmActionBusy) {
+      if (!beginBusyAction("drive_upload")) {
         target.value = "";
         return;
       }
-      llmActionBusy = true;
       target.disabled = true;
       const sizeMb = file.size / (1024 * 1024);
       const sizeText = sizeMb >= 0.1 ? `${sizeMb.toFixed(1)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`;
@@ -657,7 +671,7 @@ function bindGoldPathNavigation(
           target.value = "";
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
         } finally {
-          llmActionBusy = false;
+          endBusyAction("drive_upload");
           if (target.isConnected) {
             target.disabled = false;
           }
@@ -695,13 +709,38 @@ function bindGoldPathNavigation(
     }
 
     // W2：左栏选择——点选一行，高亮它、显示对应中栏详情面板、把右栏决策按钮重绑到选中事项。
+    // R10-P1-2：页面上凡是「当前审批事项」的表达都必须从这一次选中派生——此前只换了选中样式/详情/按钮
+    // href，h1 标题、顶部原因、aria-current、打回理由框全部停留在初始 primary：可能出现 A 的标题配 B 的
+    // 按钮，A 的打回理由以 B 的名义提交进审计。现在标题/原因随行内嵌数据同步、aria-current 写回（修 R13
+    // 只改了 SSR 端的退化）、理由草稿按事项隔离（切换时保存/回填，绝不跨事项提交）。
     const approvalRow = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-r4-approval-item]") : null;
     if (approvalRow && !(event.target instanceof Element && event.target.closest("a,button,textarea,input,form"))) {
       const itemId = approvalRow.dataset["r4ApprovalItem"];
       if (itemId) {
+        const reasonBox = shellRoot.querySelector<HTMLTextAreaElement>("[data-r4-approval-reason]");
+        let previousId: string | undefined;
         shellRoot.querySelectorAll<HTMLElement>("[data-r4-approval-item]").forEach((rowEl) => {
+          if (rowEl.getAttribute("data-r4-approval-selected") === "true") {
+            previousId = rowEl.dataset["r4ApprovalItem"];
+          }
           rowEl.setAttribute("data-r4-approval-selected", String(rowEl === approvalRow));
+          rowEl.setAttribute("aria-current", String(rowEl === approvalRow));
         });
+        // 理由草稿按事项隔离：离开的事项存草稿，进入的事项回填自己的草稿（没有就空）。
+        if (reasonBox && previousId !== itemId) {
+          if (previousId !== undefined) {
+            approvalReasonDrafts.set(previousId, reasonBox.value);
+          }
+          reasonBox.value = approvalReasonDrafts.get(itemId) ?? "";
+        }
+        const headline = shellRoot.querySelector<HTMLElement>("[data-r10-approval-headline]");
+        const headlineReason = shellRoot.querySelector<HTMLElement>("[data-r10-approval-headline-reason]");
+        if (headline && approvalRow.dataset["r10ApprovalTitle"]) {
+          headline.textContent = approvalRow.dataset["r10ApprovalTitle"];
+        }
+        if (headlineReason && approvalRow.dataset["r10ApprovalReason"] !== undefined) {
+          headlineReason.textContent = approvalRow.dataset["r10ApprovalReason"];
+        }
         shellRoot.querySelectorAll<HTMLElement>("[data-r4-approval-detail-for]").forEach((panel) => {
           if (panel.dataset["r4ApprovalDetailFor"] === itemId) {
             panel.removeAttribute("hidden");
@@ -753,10 +792,9 @@ function bindGoldPathNavigation(
         return;
       }
       // R3：慢请求下零反馈+可双击重复提交——pending 提示+in-flight 锁。
-      if (llmActionBusy) {
+      if (!beginBusyAction("drive_comment")) {
         return;
       }
-      llmActionBusy = true;
       showRouteNotice(shellRoot, actionInProgressNotice(locale, "drive_comment"), undefined, 0);
       try {
         await client.createDriveComment(projectId, { body }, { locale });
@@ -767,7 +805,7 @@ function bindGoldPathNavigation(
       } catch (error) {
         showRouteNotice(shellRoot, actionErrorNotice(locale, error, "drive_comment"));
       } finally {
-        llmActionBusy = false;
+        endBusyAction("drive_comment");
       }
       return;
     }
@@ -785,10 +823,9 @@ function bindGoldPathNavigation(
         return;
       }
       if (approvalId && body) {
-        if (llmActionBusy) {
+        if (!beginBusyAction("approval_comment")) {
           return;
         }
-        llmActionBusy = true;
         commentSubmit.disabled = true;
         try {
           const comment = await client.postApprovalComment(approvalId, { body });
@@ -811,7 +848,7 @@ function bindGoldPathNavigation(
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, "approval_comment"));
         } finally {
-          llmActionBusy = false;
+          endBusyAction("approval_comment");
           commentSubmit.disabled = false;
           // R4 回归：提交成功已清空输入框，dirty 标记也要清——否则该路由永远收不到 SSE 刷新。
           if (!input?.value.trim()) {
@@ -829,10 +866,9 @@ function bindGoldPathNavigation(
       const ids = [...shellRoot.querySelectorAll<HTMLInputElement>("[data-r12-approval-check]:checked")]
         .map((input) => input.dataset.r12ApprovalCheck)
         .filter((value): value is string => Boolean(value));
-      if (ids.length === 0 || llmActionBusy) {
+      if (ids.length === 0 || !beginBusyAction("respond_batch")) {
         return;
       }
-      llmActionBusy = true;
       batchApprove.disabled = true;
       showRouteNotice(shellRoot, actionInProgressNotice(locale, "respond_batch"), undefined, 0);
       void (async () => {
@@ -845,7 +881,7 @@ function bindGoldPathNavigation(
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, "respond_batch"));
         } finally {
-          llmActionBusy = false;
+          endBusyAction("respond_batch");
           if (batchApprove.isConnected) {
             batchApprove.disabled = false;
           }
@@ -889,10 +925,9 @@ function bindGoldPathNavigation(
         }
       }
       if (pendingApprovalId) {
-        if (llmActionBusy) {
+        if (!beginBusyAction("approval_deny")) {
           return;
         }
-        llmActionBusy = true;
         showRouteNotice(shellRoot, actionInProgressNotice(locale, pendingApprovalActionId ?? "deny"), undefined, 0);
         try {
           const remember = shellRoot.querySelector<HTMLInputElement>("[data-r4-approval-remember]")?.checked ? "always" : "once";
@@ -904,6 +939,7 @@ function bindGoldPathNavigation(
             remember
           });
           const settledApprovalActionId = pendingApprovalActionId ?? "deny";
+          approvalReasonDrafts.delete(pendingApprovalId);
           pendingApprovalId = undefined;
           pendingApprovalActionId = undefined;
           clearActiveRouteDirty();
@@ -913,7 +949,7 @@ function bindGoldPathNavigation(
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, pendingApprovalActionId ?? "deny"));
         } finally {
-          llmActionBusy = false;
+          endBusyAction("approval_deny");
         }
       }
       return;
@@ -1001,13 +1037,14 @@ function bindGoldPathNavigation(
     }
     if (action.kind === "api-action") {
       event.preventDefault();
-      // R5（慢网感知 medium→系统性）：此前只有零星分支各自接 llmActionBusy，approve/merge/删除/通知/升级等
+      // R5（慢网感知 medium→系统性）：此前只有零星分支各自接锁，approve/merge/删除/通知/升级等
       // 大多数动作点击后既无锁也无按钮态——慢网下连点两下=重复请求。把锁上提到 api-action 分发入口统一管：
       // 进入置位+按钮 aria-disabled，finally 复位。分支内部原有的局部锁已被此门取代（见下方各分支）。
-      if (llmActionBusy) {
+      // R10-P1-5b：按 href 分区——同一动作双击必拦，一个慢动作不再锁死整页其余动作。
+      const busyKey = `api:${href}`;
+      if (!beginBusyAction(busyKey)) {
         return;
       }
-      llmActionBusy = true;
       actionTarget.setAttribute("aria-disabled", "true");
       try {
       if (createNamedProjectActionFromHref(href) && actionTarget.dataset.r8ProjectCreate === "true") {
@@ -1634,7 +1671,7 @@ function bindGoldPathNavigation(
       }
       showRouteNotice(shellRoot, actionPendingNotice(locale, actionId));
       } finally {
-        llmActionBusy = false;
+        endBusyAction(busyKey);
         if (actionTarget.isConnected) {
           actionTarget.removeAttribute("aria-disabled");
         }
@@ -1937,8 +1974,20 @@ function bindNotificationMutePanel(
     status.setAttribute("data-r5-notification-mute-status", tone);
   };
 
-  // 回填当前静音态（best-effort：读不出来就保持全不勾的诚实 default-off）。
-  void (async () => {
+  // R10-P1-7：水合竞态收口——SSR 开关是禁用的，只有 GET 成功回填后才解禁；GET 失败保持锁定+
+  // 显式错误+重试按钮（此前失败被静默吞掉，用户在「假的全不勾」上点一下就把已有静音整组覆盖丢了）。
+  const retryButton = panel.querySelector<HTMLButtonElement>("[data-r10-notification-mute-retry]");
+  const setEnabled = (enabled: boolean) => {
+    for (const checkbox of checkboxes) {
+      checkbox.disabled = !enabled;
+    }
+  };
+  const hydrate = async () => {
+    setEnabled(false);
+    if (retryButton) {
+      retryButton.hidden = true;
+    }
+    setStatus(zh ? "正在读取当前设置…" : "Loading current settings…", "saving");
     try {
       const prefs = await client.getNotificationPreferences();
       if (signal.aborted) {
@@ -1948,12 +1997,26 @@ function bindNotificationMutePanel(
       for (const checkbox of checkboxes) {
         checkbox.checked = muted.has(checkbox.getAttribute("data-r5-notification-mute-type") ?? "");
       }
+      setEnabled(true);
+      if (status) {
+        status.hidden = true;
+      }
     } catch {
-      // 偏好读不出来不挡用户用通知页。
+      if (signal.aborted) {
+        return;
+      }
+      setStatus(zh ? "没能读取当前设置。为避免覆盖你已有的静音，开关已暂时锁定。" : "Couldn't load current settings — toggles stay locked so we don't overwrite what you saved.", "error");
+      if (retryButton) {
+        retryButton.hidden = false;
+      }
     }
-  })();
+  };
+  void hydrate();
+  retryButton?.addEventListener("click", () => void hydrate(), { signal });
 
-  const save = async () => {
+  // 保存按到达顺序串行（PUT 是整体替换，乱序完成会用旧勾选覆盖新勾选）；每次执行时现读 DOM，最后写赢。
+  let saveChain: Promise<void> = Promise.resolve();
+  const doSave = async () => {
     const muted = checkboxes
       .filter((checkbox) => checkbox.checked)
       .map((checkbox) => checkbox.getAttribute("data-r5-notification-mute-type") ?? "")
@@ -1971,6 +2034,10 @@ function bindNotificationMutePanel(
       }
       setStatus(zh ? "保存失败，请重试" : "Save failed, please retry", "error");
     }
+  };
+  const save = () => {
+    saveChain = saveChain.then(doSave);
+    return saveChain;
   };
 
   for (const checkbox of checkboxes) {

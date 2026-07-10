@@ -605,9 +605,15 @@ export function createNotificationsView(): SpotlightCapabilityView {
     loadingLabel: (zh) => (zh ? "正在拉通知…" : "Loading notifications…"),
     errorLabel: (zh) => (zh ? "通知没拉到，稍后重试" : "Couldn't load notifications — retry"),
     load: async (ctx, zh) => {
+      // R10-P1-7：偏好 GET 失败不能装作「什么都没静音」——那会让下一次「静音此类」整组 PUT
+      // 把已有静音覆盖丢。失败时禁用静音入口+诚实提示（通知列表照常显示）。
+      let prefsFailed = false;
       const [vm, prefs] = await Promise.all([
         ctx.client.pages.notifications({ locale: ctx.locale }) as Promise<NotificationPageVM>,
-        ctx.client.getNotificationPreferences().catch(() => ({ muted_notification_types: [] as string[] }))
+        ctx.client.getNotificationPreferences().catch(() => {
+          prefsFailed = true;
+          return { muted_notification_types: [] as string[] };
+        })
       ]);
       const rows = [...vm.buckets.needs_decision, ...vm.buckets.fyi, ...vm.buckets.done].slice(0, 12);
       const overflow = vm.items.length > 12
@@ -619,8 +625,11 @@ export function createNotificationsView(): SpotlightCapabilityView {
           .map((type) => `<div class="wh-spot-row"><div class="wh-spot-row-main"><div class="wh-spot-row-sub">${escapeHtml(type)}</div></div><button type="button" class="wh-spot-act ds-pressable" data-notif-unmute="${escapeHtml(type)}">${escapeHtml(zh ? "恢复接收" : "Unmute")}</button></div>`)
           .join("")}</div>`
         : "";
+      const prefsFailedNote = prefsFailed
+        ? `<p class="wh-spot-card-desc">${escapeHtml(zh ? "静音设置没读取到——为避免覆盖你已有的静音，静音按钮暂时不可用。" : "Couldn't load mute settings — mute buttons are locked so we don't overwrite what you saved.")}</p>`
+        : "";
       const html = rows.length || muted.length
-        ? `<div class="wh-spot-list ds-stagger" data-notif-list data-notif-muted="${escapeHtml(JSON.stringify(muted))}">${rows.map((item) => notificationRow(item, zh)).join("")}${overflow}${mutedPanel}</div>`
+        ? `<div class="wh-spot-list ds-stagger" data-notif-list data-notif-muted="${escapeHtml(JSON.stringify(muted))}"${prefsFailed ? " data-notif-prefs-failed=\"true\"" : ""}>${prefsFailedNote}${rows.map((item) => notificationRow(item, zh)).join("")}${overflow}${mutedPanel}</div>`
         : emptyHtml("🔔", zh ? "通知箱是空的" : "Inbox is empty", zh ? "审批、军团收工和升级会出现在这里" : "Approvals, team completions and escalations show here");
       const subtitle = zh
         ? `未读 ${vm.summary.unread_count} · 待决策 ${vm.summary.needs_decision_count}`
@@ -636,6 +645,10 @@ export function createNotificationsView(): SpotlightCapabilityView {
         return;
       }
       const listEl = ctx.body.querySelector<HTMLElement>("[data-notif-list]");
+      if (listEl?.dataset.notifPrefsFailed === "true") {
+        ctx.toast(zh ? "静音设置没读取到，先重开通知面板再改静音。" : "Mute settings didn't load — reopen notifications before changing mutes.", "error");
+        return;
+      }
       let muted: string[] = [];
       try {
         muted = JSON.parse(listEl?.dataset.notifMuted ?? "[]") as string[];

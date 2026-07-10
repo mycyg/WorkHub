@@ -1821,7 +1821,7 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       const respondHref = item.actions.find((action) => action.href.includes("/respond"))?.href;
       // R13（读屏）：行内嵌 checkbox 时容器不能是 role=button（禁止嵌套可交互）——
       // 改用 aria-current 表达「当前选中行」，tabindex+Enter/Space 行为保留。
-      return `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" tabindex="0" aria-current="${escapeHtml(String(item.id === primary?.id))}" data-r4-approval-item="${escapeHtml(item.id)}" data-r12-approval-checkable="true" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}"${respondHref ? ` data-r4-approval-respond-href="${escapeHtml(safeHref(respondHref))}"` : ""}>
+      return `<article class="wh-card wh-r4-route-card wh-r4-approval-list-item" tabindex="0" aria-current="${escapeHtml(String(item.id === primary?.id))}" data-r4-approval-item="${escapeHtml(item.id)}" data-r12-approval-checkable="true" data-r4-approval-selected="${escapeHtml(String(item.id === primary?.id))}" data-r10-approval-title="${escapeHtml(item.title)}" data-r10-approval-reason="${escapeHtml(item.reason_text ?? "")}"${respondHref ? ` data-r4-approval-respond-href="${escapeHtml(safeHref(respondHref))}"` : ""}>
       <div class="wh-r4-route-meta">${respondHref ? `<input type="checkbox" data-r12-approval-check="${escapeHtml(item.id)}" aria-label="${escapeHtml(zh ? "选择这条参与批量通过" : "Select for batch approve")}" />` : ""}<span class="wh-pill" data-tone="${escapeHtml(item.priority)}">${escapeHtml(attentionPriorityLabel(item.priority, zh))}</span><span class="wh-pill">${escapeHtml(attentionKindLabel(item.kind, zh))}</span>${item.project_name ? `<span class="wh-pill" data-r12-attention-project="true">${escapeHtml(item.project_name)}</span>` : ""}</div>
       <h3 role="heading" aria-level="2">${escapeHtml(item.title)}</h3>
       <p>${escapeHtml(item.summary_text)}</p>
@@ -1856,8 +1856,8 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
       <header class="wh-r4-route-head">
         <div>
           <span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.kicker"))}</span>
-          <h1>${escapeHtml(primary?.title ?? goldPathT(locale, "approvals.emptyTitle"))}</h1>
-          <p>${escapeHtml(primary?.reason_text ?? goldPathT(locale, "approvals.reasonFallback"))}</p>
+          <h1 data-r10-approval-headline="true">${escapeHtml(primary?.title ?? goldPathT(locale, "approvals.emptyTitle"))}</h1>
+          <p data-r10-approval-headline-reason="true">${escapeHtml(primary?.reason_text ?? goldPathT(locale, "approvals.reasonFallback"))}</p>
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(pendingCount))}</span>
       </header>
@@ -3177,13 +3177,16 @@ const MUTABLE_NOTIFICATION_TYPES: ReadonlyArray<{ type: string; zh: string; en: 
 function renderNotificationMutePanel(locale: WorkHubLocale): string {
   const rows = MUTABLE_NOTIFICATION_TYPES.map(
     (entry) =>
-      `<label class="wh-r5-notif-mute-row"><input type="checkbox" data-r5-notification-mute-type="${escapeHtml(entry.type)}" /><span>${escapeHtml(locale === "zh-CN" ? entry.zh : entry.en)}</span></label>`
+      `<label class="wh-r5-notif-mute-row"><input type="checkbox" data-r5-notification-mute-type="${escapeHtml(entry.type)}" disabled /><span>${escapeHtml(locale === "zh-CN" ? entry.zh : entry.en)}</span></label>`
   ).join("");
+  // R10-P1-7：开关 SSR 先禁用——当前偏好是异步 GET 回填的，回填前就能点会让「看起来全不勾」的
+  // 假状态被整组 PUT 覆盖掉已有静音。水合成功后由客户端解禁；失败时保持锁定+显式重试。
   return `<details class="wh-card wh-r4-route-card wh-r5-notif-mute" data-r5-notification-mute-panel="true">
         <summary>${escapeHtml(routeT(locale, "notifications.muteTitle"))}</summary>
         <p class="wh-subtle">${escapeHtml(routeT(locale, "notifications.muteHelp"))}</p>
         <div class="wh-r5-notif-mute-list">${rows}</div>
         <p class="wh-subtle wh-r5-notif-mute-status" data-r5-notification-mute-status="idle" hidden></p>
+        <button type="button" class="wh-btn" data-r10-notification-mute-retry="true" hidden>${escapeHtml(locale === "zh-CN" ? "重新读取设置" : "Reload settings")}</button>
       </details>`;
 }
 
