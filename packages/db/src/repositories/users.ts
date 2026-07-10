@@ -5,7 +5,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { WorkHubLocale } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { users } from "../schema/index.js";
+import { users, workspaceMemberships } from "../schema/index.js";
 
 export type UserAuthRow = typeof users.$inferSelect;
 
@@ -44,21 +44,29 @@ export type UserRepository = {
   // 空/缺失=不静音（DEFAULT-OFF）。OPTIONAL（假仓库不实现则通知路径跳过静音、按今天创建）。
   getMutedNotificationTypes?: (userId: string) => Promise<string[]>;
   setMutedNotificationTypes?: (userId: string, types: string[]) => Promise<UserAuthRow | null>;
-  // R10-P2-5（委派选人器）：活跃成员简表（id+昵称+admin），按昵称排序、上限 200——只暴露转交
-  // 所需的最小字段。OPTIONAL（假仓库不实现则 /api/users 回 501，前端选人器降级隐藏）。
-  listActiveRefs?: () => Promise<Array<Pick<UserAuthRow, "id" | "nickname" | "isAdmin">>>;
+  // R11 Batch 0：工作区内的活跃成员简表（id+昵称+admin），按昵称排序、上限 200——只暴露转交
+  // 所需的最小字段。OPTIONAL（假仓库不实现则 /api/users 回 501）。
+  listActiveRefsForWorkspace?: (
+    workspaceId: string
+  ) => Promise<Array<Pick<UserAuthRow, "id" | "nickname" | "isAdmin">>>;
 };
 
 export function createUserRepository(db: WorkHubDb): UserRepository {
   return {
-    async listActiveRefs() {
-      const rows = await db
+    async listActiveRefsForWorkspace(workspaceId) {
+      return db
         .select({ id: users.id, nickname: users.nickname, isAdmin: users.isAdmin })
         .from(users)
-        .where(isNull(users.deletedAt))
+        .innerJoin(workspaceMemberships, eq(workspaceMemberships.userId, users.id))
+        .where(
+          and(
+            eq(workspaceMemberships.workspaceId, workspaceId),
+            isNull(workspaceMemberships.deletedAt),
+            isNull(users.deletedAt)
+          )
+        )
         .orderBy(users.nickname)
         .limit(200);
-      return rows;
     },
 
     async findActiveById(id) {

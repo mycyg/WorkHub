@@ -50,7 +50,7 @@ import {
   type AuthEnv
 } from "./middleware/auth.js";
 import { hashPassword, verifyPassword } from "./auth/password.js";
-import { createAuthRoutes } from "./routes/auth.js";
+import { createAuthRoutes, createUserDirectoryRoutes } from "./routes/auth.js";
 import { createClientDeviceRoutes } from "./routes/client-devices.js";
 import { httpErrorCodeFor } from "./http-error-codes.js";
 import { createAdminClaimThrottle } from "./middleware/admin-claim-throttle.js";
@@ -93,7 +93,18 @@ function device(partial: Partial<ClientDeviceAuthRow> = {}): ClientDeviceAuthRow
 }
 
 class MemoryUsers implements UserRepository {
+  public readonly directoryWorkspaceCalls: string[] = [];
+  public readonly directoryUserIdsByWorkspace = new Map<string, string[]>();
+
   constructor(private rows: UserAuthRow[]) {}
+
+  async listActiveRefsForWorkspace(workspaceId: string) {
+    this.directoryWorkspaceCalls.push(workspaceId);
+    const allowed = new Set(this.directoryUserIdsByWorkspace.get(workspaceId) ?? []);
+    return this.rows
+      .filter((row) => allowed.has(row.id) && row.deletedAt === null)
+      .map((row) => ({ id: row.id, nickname: row.nickname, isAdmin: row.isAdmin }));
+  }
 
   async findActiveById(id: string) {
     return this.rows.find((row) => row.id === id && row.deletedAt === null) ?? null;
@@ -1475,6 +1486,49 @@ test("resolveHumanActor uses the constant when no memberships repository is wire
   const actor = await resolveHumanActor(deps, alice);
   assert.equal(actor.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
   assert.equal(actor.orgId, runtimeSettings.auth.defaultOrgId);
+});
+
+test("GET /api/users lists only active members from the authenticated actor workspace", async () => {
+  const runtimeSettings = settings();
+  const alice = user({ id: "10000000-0000-4000-8000-0000000000a1", nickname: "alice" });
+  const teammate = user({ id: "10000000-0000-4000-8000-0000000000a2", nickname: "teammate" });
+  const outsider = user({ id: "10000000-0000-4000-8000-0000000000b1", nickname: "outsider" });
+  const actorWorkspaceId = "22220000-0000-4000-8000-0000000000a1";
+  const actorOrgId = "11110000-0000-4000-8000-0000000000a1";
+  const memberships = new MemoryMemberships({ [actorWorkspaceId]: actorOrgId });
+  await memberships.create({
+    workspaceId: actorWorkspaceId,
+    userId: alice.id,
+    role: "member",
+    defaultWorkspace: true
+  });
+  const users = new MemoryUsers([alice, teammate, outsider]);
+  users.directoryUserIdsByWorkspace.set(actorWorkspaceId, [alice.id, teammate.id]);
+  const authDeps: AuthDependencies = {
+    users,
+    devices: new MemoryDevices([]),
+    memberships,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withProductionHttpErrors(new Hono<AuthEnv>());
+  app.route("/api", createUserDirectoryRoutes(authDeps));
+
+  const response = await app.request("/api/users", {
+    headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ok: true,
+    data: {
+      users: [
+        { id: alice.id, nickname: "alice", is_admin: false },
+        { id: teammate.id, nickname: "teammate", is_admin: false }
+      ]
+    }
+  });
+  assert.deepEqual(users.directoryWorkspaceCalls, [actorWorkspaceId]);
 });
 
 // ——— R2 auth epic：账号生命周期-停用 ———

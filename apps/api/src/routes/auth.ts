@@ -796,14 +796,30 @@ export function createUserDirectoryRoutes(source: AuthDependencySource = getDefa
   const routes = new Hono<AuthEnv>();
   routes.get("/users", async (c) => {
     const deps = resolveAuthDependencies(source);
-    await resolveCurrentUser(c, deps);
-    if (!deps.users.listActiveRefs) {
-      return c.json({ ok: false, error: { code: "users_unsupported", message: "当前存储不支持成员清单。" } }, 501);
+    const currentUser = await resolveCurrentUser(c, deps);
+    const actor = await resolveHumanActor(deps, currentUser);
+    if (!deps.users.listActiveRefsForWorkspace) {
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: "users_unsupported",
+            message: "当前存储不支持工作区成员清单。"
+          }
+        },
+        501
+      );
     }
-    const refs = await deps.users.listActiveRefs();
+    const refs = await deps.users.listActiveRefsForWorkspace(actor.workspaceId);
     return c.json({
       ok: true,
-      data: { users: refs.map((user) => ({ id: user.id, nickname: user.nickname, is_admin: user.isAdmin })) }
+      data: {
+        users: refs.map((member) => ({
+          id: member.id,
+          nickname: member.nickname,
+          is_admin: member.isAdmin
+        }))
+      }
     });
   });
   return routes;
