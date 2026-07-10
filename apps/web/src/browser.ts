@@ -761,6 +761,16 @@ function bindGoldPathNavigation(
       return;
     }
 
+    // Nav-v2：次级分组（项目资产/团队/管理）点组名展开收起——SSR 默认收起（当前页所在组展开）。
+    const navGroupToggle = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-nav-group-toggle]") : null;
+    if (navGroupToggle) {
+      event.preventDefault();
+      const groupHost = navGroupToggle.closest<HTMLElement>(".wh-product-nav-group");
+      const collapsed = groupHost?.getAttribute("data-nav-collapsed") === "true";
+      groupHost?.setAttribute("data-nav-collapsed", collapsed ? "false" : "true");
+      navGroupToggle.setAttribute("aria-expanded", collapsed ? "true" : "false");
+      return;
+    }
     // W2：相关讨论——发表评论（乐观追加，再回填服务端结果）。
     // R3 移动导航折叠：窄屏默认只显前 7 项 +「更多」，点击展开/收起（display:none 方案不触发溢出门）。
     const navMore = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-nav-more]") : null;

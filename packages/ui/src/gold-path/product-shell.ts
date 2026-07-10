@@ -304,7 +304,7 @@ const productShellCss = [
   ".wh-product-brand{display:flex;align-items:center;gap:10px;color:var(--wh-product-ink);text-decoration:none;font-weight:900;min-width:0}.wh-product-brand-mark{position:relative;width:30px;height:30px;border-radius:10px;background:linear-gradient(145deg,#6D8BFF 0%,var(--wh-product-blue) 48%,#7C3AED 100%);box-shadow:0 8px 22px rgba(79,70,229,.32),inset 0 1px 1px rgba(255,255,255,.65);overflow:hidden;flex:0 0 auto}.wh-product-brand-mark::before{content:\"\";position:absolute;inset:0;background:radial-gradient(130% 90% at 18% -4%,rgba(255,255,255,.6) 0%,rgba(255,255,255,.14) 42%,rgba(255,255,255,0) 62%)}.wh-product-brand-mark::after{content:\"\";position:absolute;left:8px;top:8px;width:14px;height:14px;border-radius:6px;background:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.75);box-shadow:inset 0 1px 3px rgba(255,255,255,.6),0 3px 8px rgba(30,27,75,.28)}.wh-product-brand span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-product-top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0;flex:1 1 auto}.wh-product-user{display:flex;align-items:center;gap:8px;min-width:0;max-width:240px}.wh-product-user-name{color:var(--wh-product-ink);font-size:12px;font-weight:850;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-product-user .wh-product-rail-tag{flex:0 0 auto}.wh-product-logout{border:1px solid var(--wh-product-line);border-radius:999px;background:#fff;color:var(--wh-product-muted);font-size:11px;font-weight:850;line-height:1.35;padding:5px 10px;cursor:pointer;flex:0 0 auto;font-family:inherit}.wh-product-logout:hover{color:var(--wh-product-ink)}.wh-product-runtime{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0;max-width:100%;overflow:hidden;color:var(--wh-product-muted);font-size:12px;font-weight:800}.wh-product-runtime span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wh-product-runtime-dot{width:8px;height:8px;border-radius:999px;background:var(--wh-product-green);box-shadow:0 0 0 4px rgba(36,166,106,.12);flex:0 0 auto}",
   ".wh-locale-toggle{display:grid;grid-template-columns:repeat(2,42px);gap:2px;border:1px solid var(--wh-glass-line);border-radius:var(--wh-radius-md);background:rgba(238,243,249,.72);padding:2px;flex:0 0 auto}.wh-locale-toggle button{height:28px;border:0;border-radius:9px;background:transparent;color:var(--wh-product-muted);font-weight:850;font-size:12px;line-height:1.35;cursor:pointer}.wh-locale-toggle button[aria-pressed=true]{background:#fff;color:var(--wh-product-blue);box-shadow:0 5px 14px rgba(37,51,79,.1)}",
-  ".wh-product-layout{display:grid;grid-template-columns:218px minmax(0,1fr) 276px;gap:0;min-height:calc(100vh - 64px);width:100%;overflow:hidden}.wh-product-nav{display:grid;gap:18px;align-content:start;border-right:1px solid var(--wh-glass-line);background:rgba(255,255,255,.42);backdrop-filter:var(--wh-glass-blur);-webkit-backdrop-filter:var(--wh-glass-blur);padding:18px 12px;overflow-y:auto;overflow-x:hidden}.wh-product-nav-group{display:grid;gap:4px}.wh-product-nav-title{margin:2px 10px 4px;color:var(--wh-product-muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}.wh-product-nav-list{display:grid;gap:4px}.wh-product-nav a{display:grid;grid-template-columns:minmax(0,1fr);align-items:center;gap:3px;border-radius:var(--wh-radius-md);padding:10px 12px;color:var(--wh-product-ink);font-size:14px;font-weight:800;text-decoration:none;transition:background .16s ease}.wh-product-nav a span,.wh-product-nav a small{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-product-nav a:hover{background:rgba(255,255,255,.85)}.wh-product-nav a[aria-current=page]{background:rgba(255,255,255,.92);color:var(--wh-product-blue);box-shadow:0 0 0 1px rgba(79,70,229,.16),0 10px 24px rgba(37,51,79,.07)}.wh-product-nav small{color:var(--wh-product-faint);font-size:11px;font-weight:800}.wh-product-nav-more{display:none}",
+  ".wh-product-layout{display:grid;grid-template-columns:218px minmax(0,1fr) 276px;gap:0;min-height:calc(100vh - 64px);width:100%;overflow:hidden}.wh-product-nav{display:grid;gap:18px;align-content:start;border-right:1px solid var(--wh-glass-line);background:rgba(255,255,255,.42);backdrop-filter:var(--wh-glass-blur);-webkit-backdrop-filter:var(--wh-glass-blur);padding:18px 12px;overflow-y:auto;overflow-x:hidden}.wh-product-nav-group{display:grid;gap:4px}.wh-product-nav-title{margin:2px 10px 4px;color:var(--wh-product-muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}.wh-product-nav-list{display:grid;gap:4px}.wh-product-nav a.wh-product-nav-cta{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:6px;margin:0 2px 2px;border-radius:var(--wh-radius-md);background:var(--wh-product-blue);color:#fff;font-size:14px;font-weight:850;text-decoration:none;padding:11px 12px;box-shadow:0 10px 26px rgba(79,70,229,.28)}.wh-product-nav a.wh-product-nav-cta:hover{filter:brightness(1.06);background:var(--wh-product-blue)}.wh-product-nav a.wh-product-nav-cta[aria-current=page]{box-shadow:0 0 0 2px rgba(79,70,229,.35),0 10px 26px rgba(79,70,229,.28);background:var(--wh-product-blue);color:#fff}.wh-product-nav-group-toggle{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;margin:0;border:0;background:transparent;padding:8px 10px;border-radius:var(--wh-radius-md);color:var(--wh-product-muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;font-family:inherit}.wh-product-nav-group-toggle:hover{background:rgba(255,255,255,.7);color:var(--wh-product-ink)}.wh-product-nav-chevron{transition:transform .16s ease}.wh-product-nav-group[data-nav-collapsed=true] .wh-product-nav-chevron{transform:rotate(-90deg)}.wh-product-nav-group[data-nav-collapsed=true]>.wh-product-nav-list{display:none}.wh-product-nav a{display:grid;grid-template-columns:minmax(0,1fr);align-items:center;gap:3px;border-radius:var(--wh-radius-md);padding:10px 12px;color:var(--wh-product-ink);font-size:14px;font-weight:800;text-decoration:none;transition:background .16s ease}.wh-product-nav a span,.wh-product-nav a small{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-product-nav a:hover{background:rgba(255,255,255,.85)}.wh-product-nav a[aria-current=page]{background:rgba(255,255,255,.92);color:var(--wh-product-blue);box-shadow:0 0 0 1px rgba(79,70,229,.16),0 10px 24px rgba(37,51,79,.07)}.wh-product-nav small{color:var(--wh-product-faint);font-size:11px;font-weight:800}.wh-product-nav-more{display:none}",
   ".wh-product-main{min-width:0;max-width:100%;overflow:hidden;padding:24px clamp(14px,2vw,28px)}.wh-product-masthead{display:flex;justify-content:flex-end;max-width:1120px;margin:0 auto 14px}.wh-product-kicker{margin:0 0 8px;color:var(--wh-product-blue);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}.wh-product-main h1[tabindex]:focus{outline:none}.wh-product-masthead h1{margin:0;color:var(--wh-product-ink);font-size:clamp(24px,2.4vw,34px);line-height:1.35;letter-spacing:0;overflow-wrap:anywhere}.wh-product-masthead p{margin:8px 0 0;color:var(--wh-product-muted);font-size:14px;line-height:1.55;max-width:760px;overflow-wrap:anywhere}",
   ".wh-product-metrics{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:flex-end;max-width:390px}.wh-product-metric{display:grid;gap:2px;border:1px solid var(--wh-glass-line);border-radius:var(--wh-radius-md);background:var(--wh-glass);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);padding:8px 10px;min-width:78px;box-shadow:0 10px 28px rgba(37,51,79,.06)}.wh-product-metric strong{font-size:17px;line-height:1.35;overflow-wrap:anywhere}.wh-product-metric span{color:var(--wh-product-muted);font-size:11px;font-weight:850;line-height:1.35;overflow-wrap:anywhere}",
   ".wh-product-route-panels{max-width:1120px;margin:0 auto;min-width:0}.wh-route-panel{min-width:0;max-width:100%;overflow:hidden}.wh-route-panel[hidden]{display:none}.wh-product-route-panels .wh-shell{padding:0;background:transparent;min-height:0}.wh-product-route-panels .wh-stage{max-width:none;margin:0}.wh-product-route-panels .wh-panel{box-shadow:0 16px 42px rgba(37,51,79,.07)}",
@@ -315,8 +315,8 @@ const productShellCss = [
   // 保证文字对比与可读不依赖毛玻璃效果。
   "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.wh-product-topbar,.wh-product-nav,.wh-product-rail{background:rgba(255,255,255,.95)}.wh-product-metric,.wh-product-rail-block,.wh-app-notice{background:rgba(255,255,255,.97)}}",
   "@media (prefers-reduced-transparency:reduce){body{background:var(--wh-product-page)}.wh-product-topbar,.wh-product-nav,.wh-product-rail,.wh-product-metric,.wh-product-rail-block,.wh-app-notice{background:#fff;backdrop-filter:none;-webkit-backdrop-filter:none}}",
-  "@media (prefers-reduced-motion:reduce){.wh-product-nav a{transition:none}}",
-  "@media (max-width:780px){.wh-product-topbar{height:auto;min-height:62px;padding:10px 12px;align-items:flex-start}.wh-product-top-actions{flex-wrap:wrap}.wh-product-runtime{order:2;flex-basis:100%;justify-content:flex-start}.wh-product-layout{grid-template-columns:1fr;min-height:calc(100vh - 62px)}.wh-product-nav{position:static;border-right:0;border-bottom:1px solid var(--wh-product-line);padding:10px;min-width:0}.wh-product-nav{gap:8px}.wh-product-nav-title{display:none}.wh-product-nav-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;min-width:0}.wh-product-nav a{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center;padding:9px 8px;font-size:13px;white-space:normal}.wh-product-nav:not([data-nav-expanded=true]) .wh-product-nav-group:not([data-nav-group=work]):not(:has(a[aria-current=page])){display:none}.wh-product-nav-more{display:block;width:100%;margin-top:6px;border:1px solid var(--wh-glass-line);border-radius:12px;background:rgba(255,255,255,.85);padding:7px;font-size:12px;font-weight:800;color:var(--wh-product-muted);cursor:pointer}.wh-product-nav small{display:none}.wh-product-main{padding:18px 12px}.wh-product-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.wh-product-metric{min-width:0}.wh-product-route-panels .wh-main{padding:18px}.wh-locale-toggle{grid-template-columns:repeat(2,36px)}}"
+  "@media (prefers-reduced-motion:reduce){.wh-product-nav a{transition:none}.wh-product-nav-chevron{transition:none}}",
+  "@media (max-width:780px){.wh-product-topbar{height:auto;min-height:62px;padding:10px 12px;align-items:flex-start}.wh-product-top-actions{flex-wrap:wrap}.wh-product-runtime{order:2;flex-basis:100%;justify-content:flex-start}.wh-product-layout{grid-template-columns:1fr;min-height:calc(100vh - 62px)}.wh-product-nav{position:static;border-right:0;border-bottom:1px solid var(--wh-product-line);padding:10px;min-width:0}.wh-product-nav{gap:8px}.wh-product-nav-title{display:none}.wh-product-nav-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;min-width:0}.wh-product-nav a{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center;padding:9px 8px;font-size:13px;white-space:normal}.wh-product-nav:not([data-nav-expanded=true]) .wh-product-nav-group:not([data-nav-group=work]):not(:has(a[aria-current=page])){display:none}.wh-product-nav[data-nav-expanded=true] .wh-product-nav-group>.wh-product-nav-list{display:grid}.wh-product-nav[data-nav-expanded=true] .wh-product-nav-group-toggle{pointer-events:none}.wh-product-nav-more{display:block;width:100%;margin-top:6px;border:1px solid var(--wh-glass-line);border-radius:12px;background:rgba(255,255,255,.85);padding:7px;font-size:12px;font-weight:800;color:var(--wh-product-muted);cursor:pointer}.wh-product-nav small{display:none}.wh-product-main{padding:18px 12px}.wh-product-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.wh-product-metric{min-width:0}.wh-product-route-panels .wh-main{padding:18px}.wh-locale-toggle{grid-template-columns:repeat(2,36px)}}"
 ].join("");
 
 function escapeHtml(value: unknown) {
@@ -422,18 +422,20 @@ function pageMetrics(page: WebProductShellPage, rendered: WebProductShellSurface
   return fallback;
 }
 
-// R10-S1.5 导航信息架构：14 个平铺一级入口按动线分四组——工作(每天要碰的)/项目资产(内容沉淀)/
-// 团队(运营节奏)/管理(诊断与花钱)。detail-only 页(工作项/变更/回放/本项目)只在激活时出现,归工作组。
+// R10-S1.5→Nav-v2 导航信息架构：「提需求」是动作不是地点——升为置顶主 CTA；工作组(总览/项目/审批
+// +detail-only 激活页)常驻无标题；项目资产/团队/管理三组默认折叠(当前页所在组自动展开)，点组名展开。
+// 普通成员默认视野=1 CTA + 3 项 + 3 个组名。
 const productNavGroups: ReadonlyArray<{
   id: string;
   titleKey: ProductShellCopyKey;
   keys: ReadonlySet<string>;
   adminOnly?: boolean;
+  collapsible?: boolean;
 }> = [
-  { id: "work", titleKey: "nav.group.work", keys: new Set(["home", "projects", "project-home", "intake", "approvals", "workitem", "proposal", "replay"]) },
-  { id: "assets", titleKey: "nav.group.assets", keys: new Set(["drive", "meetings", "knowledge"]) },
-  { id: "team", titleKey: "nav.group.team", keys: new Set(["notifications", "calendar", "health"]) },
-  { id: "admin", titleKey: "nav.group.admin", keys: new Set(["cost", "agents", "skills", "settings"]), adminOnly: true }
+  { id: "work", titleKey: "nav.group.work", keys: new Set(["home", "projects", "project-home", "approvals", "workitem", "proposal", "replay"]) },
+  { id: "assets", titleKey: "nav.group.assets", keys: new Set(["drive", "meetings", "knowledge"]), collapsible: true },
+  { id: "team", titleKey: "nav.group.team", keys: new Set(["notifications", "calendar", "health"]), collapsible: true },
+  { id: "admin", titleKey: "nav.group.admin", keys: new Set(["cost", "agents", "skills", "settings"]), adminOnly: true, collapsible: true }
 ];
 
 // R10-S3：状态壳(loading/error/403/404)只需要 key/route/title 渲导航——放宽到最小形状，
@@ -451,6 +453,14 @@ function renderProductNav(
     return `<a href="${escapeHtml(page.route)}" data-wh-route="${escapeHtml(page.route)}" data-wh-page-key="${page.key}" aria-current="${active ? "page" : "false"}"><span>${escapeHtml(labelForPage(page, locale))}</span></a>`;
   };
   const assigned = new Set<string>();
+  // Nav-v2：「提需求」是高频动作——从列表项升为置顶主 CTA。
+  const intakePage = pages.find((page) => page.key === "intake");
+  if (intakePage) {
+    assigned.add("intake");
+  }
+  const cta = intakePage
+    ? `<a class="wh-product-nav-cta" href="${escapeHtml(intakePage.route)}" data-wh-route="${escapeHtml(intakePage.route)}" data-wh-page-key="intake" aria-current="${activeKey === "intake" ? "page" : "false"}"><span aria-hidden="true">＋</span><span>${escapeHtml(labelForPage(intakePage, locale))}</span></a>`
+    : "";
   const groups = productNavGroups
     .map((group) => {
       const groupPages = pages.filter((page) => group.keys.has(page.key));
@@ -460,10 +470,19 @@ function renderProductNav(
       }
       // 角色化披露：管理组(成本/军团/技能/设置)不进普通成员的日常导航——深链与服务端权限不受影响；
       // 非 admin 恰好深链停在管理组页面时仍渲该组,保证当前页在导航中有锚点。
-      if (group.adminOnly && !isAdmin && !groupPages.some((page) => page.key === activeKey)) {
+      const containsActive = groupPages.some((page) => page.key === activeKey);
+      if (group.adminOnly && !isAdmin && !containsActive) {
         return "";
       }
-      return `<div class="wh-product-nav-group" data-nav-group="${group.id}"><div class="wh-product-nav-title">${escapeHtml(productT(locale, group.titleKey))}</div><div class="wh-product-nav-list">${groupPages.map(link).join("")}</div></div>`;
+      // Nav-v2：工作组无标题常驻；可折叠组默认收起（当前页所在组自动展开），组名即开关。
+      if (!group.collapsible) {
+        return `<div class="wh-product-nav-group" data-nav-group="${group.id}"><div class="wh-product-nav-list">${groupPages.map(link).join("")}</div></div>`;
+      }
+      const collapsed = !containsActive;
+      return `<div class="wh-product-nav-group" data-nav-group="${group.id}" data-nav-collapsed="${collapsed ? "true" : "false"}">
+        <button type="button" class="wh-product-nav-group-toggle" data-nav-group-toggle="${group.id}" aria-expanded="${collapsed ? "false" : "true"}"><span>${escapeHtml(productT(locale, group.titleKey))}</span><span class="wh-product-nav-chevron" aria-hidden="true">▾</span></button>
+        <div class="wh-product-nav-list">${groupPages.map(link).join("")}</div>
+      </div>`;
     })
     .filter(Boolean)
     .join("");
@@ -472,7 +491,7 @@ function renderProductNav(
   const leftoverGroup = leftovers.length
     ? `<div class="wh-product-nav-group" data-nav-group="other"><div class="wh-product-nav-list">${leftovers.map(link).join("")}</div></div>`
     : "";
-  return groups + leftoverGroup;
+  return cta + groups + leftoverGroup;
 }
 
 function renderRoutePanel(page: GoldPathRenderedPage, active: boolean, routeComponents?: WebRouteComponentMap) {
