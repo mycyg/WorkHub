@@ -1467,8 +1467,10 @@ export async function loadWebRoute(
     if (result === "empty" || result === "error" || result === "notFound") {
       // empty / notFound 都是可恢复态:动作回到来源列表(详情页→列表)或首页;error 才给「重试」。
       const backLabel = result === "error" ? undefined : routeStateBackLabel(match, locale);
+      // R10-P2-12：错误态「重试」保留查询串——/drive?project_id、/knowledge/search?q 等页重试
+      // 不再丢上下文打开错误对象。
       const stateInput = result === "error"
-        ? { traceId: `route=${match.pathname}`, actionHref: match.pathname }
+        ? { traceId: `route=${match.pathname}`, actionHref: `${match.pathname}${match.search}` }
         : { actionHref: routeStateBackHref(match), ...(backLabel ? { actionLabel: backLabel } : {}) };
       return renderWebRouteState(match, result, locale, {
         ...stateInput,
@@ -1492,7 +1494,8 @@ export async function loadWebRoute(
         ? routeStateBackLabel(match, locale)
         : undefined;
     const stateInput = {
-      actionHref: escapable ? routeStateBackHref(match) : match.pathname,
+      // R10-P2-12：error 留在原地重试时带上查询串。
+      actionHref: escapable ? routeStateBackHref(match) : `${match.pathname}${match.search}`,
       ...(backLabel ? { actionLabel: backLabel } : {}),
       ...(status === "error" ? { traceId: errorTrace(error) } : {}),
       ...(status === "forbidden" ? { ownerLabel: forbiddenOwnerLabel(error, locale) } : {}),

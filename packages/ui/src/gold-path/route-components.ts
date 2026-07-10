@@ -988,10 +988,11 @@ function renderAttentionRows(items: AttentionItem[], emptyCopy: string, zh: bool
     return `<p class="wh-subtle">${escapeHtml(emptyCopy)}</p>`;
   }
   // 普通用户审查：芯片报 12、列表只见 4，剩下的去哪了没人说——超出展示上限时明说还有几件。
+  // R10-P2-11：补完整队列出路——审批中心承载全部待决策项。
   const overflowNote = items.length > 4
     ? `<p class="wh-subtle" data-r9-attention-overflow="${escapeHtml(String(items.length - 4))}">${escapeHtml(zh
       ? `还有 ${items.length - 4} 件排在后面，处理完上面的会自动顶上来。`
-      : `${items.length - 4} more waiting — they surface as you clear the ones above.`)}</p>`
+      : `${items.length - 4} more waiting — they surface as you clear the ones above.`)} <a href="/approvals">${escapeHtml(zh ? "去审批中心看全部" : "See the full queue in Approvals")}</a></p>`
     : "";
   return items
     .slice(0, 4)
@@ -1272,8 +1273,8 @@ function renderHomeRouteComponent(
       <p>${escapeHtml(zh ? "每个项目像一个仓库：进行中的任务、最近文件、版本历史和网盘入口都围绕它组织。" : "Each project behaves like a repo: open work, recent files, version history, and the drive stay organized around it.")}</p>
       <div class="wh-r4-route-actions">
         <a class="wh-btn wh-btn-primary" href="/projects" data-r8-home-projects-cta="true">${escapeHtml(zh ? "打开项目" : "Open projects")}</a>
-        <a class="wh-btn" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-cta="true">${escapeHtml(zh ? "打开网盘" : "Open drive")}</a>
-        <a class="wh-btn" href="${escapeHtml(safeHref(projectIntakeHref))}" data-r4-home-intake-cta="true" data-r8-home-new-work-cta="true">${escapeHtml(zh ? "新建任务" : "New task")}</a>
+        <a class="wh-btn" href="${escapeHtml(safeHref(projectDriveHref))}" data-r8-home-drive-cta="true">${escapeHtml(topProject ? (zh ? `打开「${topProject.name}」网盘` : `Open ${topProject.name} drive`) : (zh ? "打开网盘" : "Open drive"))}</a>
+        <a class="wh-btn" href="${escapeHtml(safeHref(projectIntakeHref))}" data-r4-home-intake-cta="true" data-r8-home-new-work-cta="true">${escapeHtml(topProject ? (zh ? `在「${topProject.name}」新建任务` : `New task in ${topProject.name}`) : (zh ? "新建任务" : "New task"))}</a>
       </div>
       <div class="wh-r4-route-timeline" role="list">${projectRows}</div>
     </section>`;
@@ -3373,6 +3374,23 @@ function renderCalendarBlock(block: CalendarPageVM["blocks"][number], locale: Wo
 
 function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale): WebRouteComponent {
   const primaryHrefs = vm.blocks.map((block) => block.target_href).filter((value): value is string => Boolean(value));
+  // R10-P2-3：路由早就支持 ?date=&view=，页面却没有任何日期/视图控件——用户只能改 URL。
+  // 补上一周/今天/下一周 + 日/周切换（纯链接导航，走既有 SPA 管线）。
+  const zh = locale === "zh-CN";
+  const anchor = new Date(`${vm.scope.date.slice(0, 10)}T00:00:00.000Z`);
+  const shiftDays = vm.scope.view === "day" ? 1 : 7;
+  const shifted = (days: number) => {
+    const next = new Date(anchor.getTime() + days * 24 * 60 * 60 * 1000);
+    return next.toISOString().slice(0, 10);
+  };
+  const calendarHref = (date: string, view: string) => `/calendar?date=${encodeURIComponent(date)}&view=${encodeURIComponent(view)}`;
+  const calendarControls = `<div class="wh-r4-route-actions" data-r10-calendar-controls="true">
+        <a class="wh-btn" href="${escapeHtml(calendarHref(shifted(-shiftDays), vm.scope.view))}" data-r10-calendar-prev="true">${escapeHtml(zh ? (vm.scope.view === "day" ? "前一天" : "上一周") : (vm.scope.view === "day" ? "Previous day" : "Previous week"))}</a>
+        <a class="wh-btn" href="/calendar" data-r10-calendar-today="true">${escapeHtml(zh ? "回到今天" : "Today")}</a>
+        <a class="wh-btn" href="${escapeHtml(calendarHref(shifted(shiftDays), vm.scope.view))}" data-r10-calendar-next="true">${escapeHtml(zh ? (vm.scope.view === "day" ? "后一天" : "下一周") : (vm.scope.view === "day" ? "Next day" : "Next week"))}</a>
+        <a class="wh-btn${vm.scope.view === "day" ? " wh-btn-primary" : ""}" href="${escapeHtml(calendarHref(vm.scope.date.slice(0, 10), "day"))}" data-r10-calendar-view-day="true" aria-pressed="${escapeHtml(String(vm.scope.view === "day"))}">${escapeHtml(zh ? "日视图" : "Day")}</a>
+        <a class="wh-btn${vm.scope.view === "day" ? "" : " wh-btn-primary"}" href="${escapeHtml(calendarHref(vm.scope.date.slice(0, 10), "week"))}" data-r10-calendar-view-week="true" aria-pressed="${escapeHtml(String(vm.scope.view !== "day"))}">${escapeHtml(zh ? "周视图" : "Week")}</a>
+      </div>`;
   const dayRows = vm.days.map((day) => `<section class="wh-card wh-r4-route-card" data-r5-calendar-day="${escapeHtml(day.date)}" data-r5-calendar-day-count="${escapeHtml(String(day.blocks.length))}">
     <h3 role="heading" aria-level="2">${escapeHtml(day.date)}</h3>
     <div class="wh-r4-route-timeline" role="list">${day.blocks.length ? day.blocks.map((block) => renderCalendarBlock(block, locale)).join("") : `<p role="listitem" class="wh-subtle">${escapeHtml(routeT(locale, "calendar.empty"))}</p>`}</div>
@@ -3394,6 +3412,7 @@ function renderCalendarRouteComponent(vm: CalendarPageVM, locale: WorkHubLocale)
         </div>
         <span class="wh-r4-route-count">${escapeHtml(String(vm.summary.block_count))}</span>
       </header>
+      ${calendarControls}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r5-calendar-upcoming="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "calendar.upcoming"))}</h3>

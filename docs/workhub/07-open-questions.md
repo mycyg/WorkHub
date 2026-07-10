@@ -331,3 +331,11 @@ owner: workflow
 - 现状：shell 级 CSS（productShellCss+routeComponentCss，~36KB 源码）内联在每次路由 HTML payload 里，dist 无 `<link rel=stylesheet>` 外部样式表，浏览器无法跨路由缓存。
 - 已做的止损：R12 起渲染层复用屏上 `<style>` 节点（文本一致则不重解析），SSE/导航的重复解析开销已消除；真正的构建期抽取（vite 产物拆 CSS + 服务端 HTML 去内联）涉及渲染架构与 smoke 全链，单轮不动。
 - 触发条件：下次做构建产物优化或 SSR 改造时一并处理。
+
+## R10-OQ-MEETINGS-PAGINATION（架构挂账 2026-07-10）
+- 现状：会议页只列最近 10 场（溢出提示诚实但无处翻页），meetings VM/服务无 offset 参数，更早会议从页面不可达。
+- 触发条件：会议数据量真实增长（导入入口上线后）时补 `?offset=` 全链（VM+loader+UI）。
+
+## R10-OQ-PROJECT-WORKITEM-LIST（架构挂账 2026-07-10）
+- 现状：项目主页进行中工作最多 50 条，溢出说明完整但没有「查看全部」落点——项目级工作项完整列表页在 IA 中不存在（工作项只有详情路由）。
+- 触发条件：单项目工作项规模逼近上限时补 `/projects/:id/workitems` 列表路由（新路由需同步 routes.test+shellPageOrder+smoke 计数）。

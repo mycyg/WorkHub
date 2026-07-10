@@ -271,7 +271,7 @@ export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean, ap
     ? `<div class="wh-spot-card-actions"><label class="wh-spot-act wh-spot-act--primary ds-pressable wh-spot-upload-label"><span data-drive-upload-label>${zh ? "＋ 上传文件" : "＋ Upload file"}</span><input class="wh-spot-file-input" type="file" data-drive-upload-picker /></label></div>`
     : "";
   const list = items.length
-    ? `<div class="wh-spot-list ds-stagger">${visibleDriveItems(items, vm.selected_item_id).map((i) => itemRow(i, zh, canManage, i.id === vm.selected_item_id, apiBaseUrl)).join("")}</div>`
+    ? `<div class="wh-spot-list ds-stagger">${visibleDriveItems(items, vm.selected_item_id).map((i) => itemRow(i, zh, canManage, i.id === vm.selected_item_id, apiBaseUrl)).join("")}</div>${items.length > 40 ? `<p class="wh-spot-card-desc" data-drive-list-overflow="${items.length - 40}">${zh ? `只显示前 40 项（共 ${items.length} 项），全部文件去网页版网盘看。` : `Showing the first 40 of ${items.length} items — open the web drive for the full list.`}</p>` : ""}`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "这个项目还没有文件" : "No files in this project yet"}</p>`;
   const deletedBlock = deleted.length
     ? `<div class="wh-spot-drive-section"><p class="wh-spot-reasons-q">${zh ? "回收站" : "Recently deleted"}</p><div class="wh-spot-list">${deleted.slice(0, 12).map((i) => deletedRow(i, zh)).join("")}</div>${deleted.length > 12 ? `<p class="wh-spot-card-desc">${zh ? `还有 ${deleted.length - 12} 项，去网页版回收站细看。` : `${deleted.length - 12} more in the web recycle bin.`}</p>` : ""}</div>`
