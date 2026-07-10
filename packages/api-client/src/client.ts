@@ -551,6 +551,12 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(withPageLocale(`/api/drive/workitems/${encodeURIComponent(workItemId)}/proposal-draft`, options), {
         method: "POST"
       }),
+    importMeetingTranscript: (projectId, payload, options) =>
+      request(withPageLocale(`/api/meetings/projects/${encodeURIComponent(projectId)}/import`, options), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    listUsers: () => request("/api/users"),
     createMeetingInsightDraft: (projectId, insightId, options) =>
       request(withPageLocale(`/api/meetings/projects/${encodeURIComponent(projectId)}/insights/${encodeURIComponent(insightId)}/draft`, options), {
         method: "POST"

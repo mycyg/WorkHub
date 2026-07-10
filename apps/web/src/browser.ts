@@ -762,6 +762,90 @@ function bindGoldPathNavigation(
       return;
     }
 
+    // R10-P2-2：会议转写导入——标题+文本进项目，成功后整页重渲（新会议出现在列表）。
+    const meetingImportSubmit = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-r10-meeting-import-submit]") : null;
+    if (meetingImportSubmit) {
+      event.preventDefault();
+      const projectId = meetingImportSubmit.dataset["r10MeetingImportSubmit"] ?? "";
+      const title = shellRoot.querySelector<HTMLInputElement>("[data-r10-meeting-import-title]")?.value.trim() ?? "";
+      const transcript = shellRoot.querySelector<HTMLTextAreaElement>("[data-r10-meeting-import-text]")?.value.trim() ?? "";
+      if (!projectId || !title || !transcript) {
+        showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, "meeting_import"));
+        return;
+      }
+      if (!beginBusyAction("meeting_import")) {
+        return;
+      }
+      showRouteNotice(shellRoot, actionInProgressNotice(locale, "meeting_import"), undefined, 0);
+      void (async () => {
+        try {
+          await client.importMeetingTranscript(projectId, { title, transcript_text: transcript }, { locale });
+          clearActiveRouteDirty();
+          await renderCurrentRoute(client, locale);
+          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, locale === "en-US"
+            ? `Imported "${title}" — the transcript now lives with this project's meetings.`
+            : `已导入「${title}」，转写已归入这个项目的会议。`, "meeting_import"));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, "meeting_import"));
+        } finally {
+          endBusyAction("meeting_import");
+        }
+      })();
+      return;
+    }
+    // R10-P2-5：审批转交——打开「转交给同事」时懒加载成员清单（不进 loader，不动 smoke 计数）；
+    // 确认转交走既有 delegateApproval 全链（服务端重路由+通知），成功后重渲。
+    const delegateSummary = event.target instanceof Element ? event.target.closest("[data-r10-approval-delegate] summary") : null;
+    if (delegateSummary) {
+      const details = delegateSummary.closest<HTMLElement>("[data-r10-approval-delegate]");
+      const select = details?.querySelector<HTMLSelectElement>("[data-r10-approval-delegate-select]");
+      if (details && select && details.dataset["r10DelegateLoaded"] !== "true") {
+        details.dataset["r10DelegateLoaded"] = "true";
+        void client.listUsers()
+          .then((result) => {
+            select.innerHTML = result.users
+              .map((user) => `<option value="${user.id}">${user.nickname}${user.is_admin ? (locale === "en-US" ? " (admin)" : "（管理员）") : ""}</option>`)
+              .join("");
+          })
+          .catch(() => {
+            details.dataset["r10DelegateLoaded"] = "false";
+            select.innerHTML = `<option value="">${locale === "en-US" ? "Couldn't load members — reopen to retry" : "成员没加载出来，收起再展开重试"}</option>`;
+          });
+      }
+      return;
+    }
+    const delegateSubmit = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-r10-approval-delegate-submit]") : null;
+    if (delegateSubmit) {
+      event.preventDefault();
+      const select = shellRoot.querySelector<HTMLSelectElement>("[data-r10-approval-delegate-select]");
+      const toUserId = select?.value || "";
+      const selectedRow = [...shellRoot.querySelectorAll<HTMLElement>("[data-r4-approval-item]")]
+        .find((row) => row.getAttribute("data-r4-approval-selected") === "true");
+      const respondHref = selectedRow?.dataset["r4ApprovalRespondHref"] ?? "";
+      const approvalId = approvalRespondIdFromHref(respondHref);
+      if (!toUserId || !approvalId) {
+        showRouteNotice(shellRoot, fieldValueRequiredNotice(locale, "delegate_approval"));
+        return;
+      }
+      if (!beginBusyAction("approval_delegate")) {
+        return;
+      }
+      showRouteNotice(shellRoot, actionInProgressNotice(locale, "delegate_approval"), undefined, 0);
+      void (async () => {
+        try {
+          await client.delegateApproval(approvalId, { to_user_id: toUserId });
+          await renderCurrentRoute(client, locale);
+          showRouteNotice(root ?? shellRoot, actionSuccessNotice(locale, locale === "en-US"
+            ? "Approval handed off — it now routes to them."
+            : "已转交，这条审批会路由给对方处理。", "delegate_approval"));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, "delegate_approval"));
+        } finally {
+          endBusyAction("approval_delegate");
+        }
+      })();
+      return;
+    }
     // Nav-v2：次级分组（项目资产/团队/管理）点组名展开收起——SSR 默认收起（当前页所在组展开）。
     const navGroupToggle = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-nav-group-toggle]") : null;
     if (navGroupToggle) {

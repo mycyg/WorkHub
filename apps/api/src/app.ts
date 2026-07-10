@@ -8,7 +8,7 @@ import { ZodError } from "zod";
 import { settings } from "@workhub/config";
 
 import { getOpenApiDocument } from "./openapi.js";
-import { createAuthRoutes } from "./routes/auth.js";
+import { createAuthRoutes, createUserDirectoryRoutes } from "./routes/auth.js";
 import { createClientDeviceRoutes } from "./routes/client-devices.js";
 import { createApprovalRoutes } from "./routes/approvals.js";
 import { createEscalationRoutes } from "./routes/escalations.js";
@@ -202,6 +202,7 @@ app.get("/openapi.json", (c) => c.json(getOpenApiDocument()));
 app.get("/api/openapi.json", (c) => c.json(getOpenApiDocument()));
 
 app.route("/api/auth", createAuthRoutes());
+app.route("/api", createUserDirectoryRoutes());
 app.route("/api/client-devices", createClientDeviceRoutes());
 app.route("/api/push", createPushRoutes());
 app.route("/api/approvals", createApprovalRoutes());

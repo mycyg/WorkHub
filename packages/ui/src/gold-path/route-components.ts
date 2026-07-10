@@ -288,6 +288,7 @@ type RouteCopyKey =
   | "meeting.approvalSafe"
   | "meeting.empty"
   | "meeting.status.ready"
+  | "meeting.status.transcribed"
   | "meeting.status.processing"
   | "meeting.status.failed"
   | "meeting.status.pending"
@@ -495,6 +496,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.approvalSafe": "审批安全：确认前不会修改正式资料。",
     "meeting.empty": "这个项目还没有会议洞察。",
     "meeting.status.ready": "已生成",
+    "meeting.status.transcribed": "转写已导入",
     "meeting.status.processing": "处理中",
     "meeting.status.failed": "处理失败",
     "meeting.status.pending": "待确认",
@@ -704,6 +706,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "meeting.approvalSafe": "Approval-safe: official project state will not change until you confirm.",
     "meeting.empty": "This project does not have meeting insights yet.",
     "meeting.status.ready": "Ready",
+    "meeting.status.transcribed": "Transcript imported",
     "meeting.status.processing": "Processing",
     "meeting.status.failed": "Failed",
     "meeting.status.pending": "Pending",
@@ -1896,7 +1899,13 @@ function renderApprovalsRouteComponent(vm: ApprovalCenterVM, locale: WorkHubLoca
             ${primary ? renderActions(primary.actions) : `<p class="wh-subtle">${escapeHtml(goldPathT(locale, "approvals.noSelection"))}</p>`}
             ${primary ? `<label class="wh-r4-approval-field"><span class="wh-r4-route-kicker">${escapeHtml(goldPathT(locale, "approvals.reasonLabel"))}</span><textarea class="wh-r4-approval-reason" data-r4-approval-reason rows="2" aria-label="${escapeHtml(goldPathT(locale, "approvals.reasonLabel"))}" placeholder="${escapeHtml(goldPathT(locale, "approvals.reasonPlaceholder"))}"></textarea></label>
             <label class="wh-r4-approval-remember"><input type="checkbox" data-r4-approval-remember /> <span>${escapeHtml(goldPathT(locale, "approvals.rememberLabel"))}</span></label>
-            <p class="wh-subtle" data-r4-approval-remember-help="true">${escapeHtml(goldPathT(locale, "approvals.rememberHelp"))}</p>` : ""}
+            <p class="wh-subtle" data-r4-approval-remember-help="true">${escapeHtml(goldPathT(locale, "approvals.rememberHelp"))}</p>
+            <details class="wh-r4-approval-field" data-r10-approval-delegate="true">
+              <summary>${escapeHtml(zh ? "转交给同事" : "Hand off to a teammate")}</summary>
+              <p class="wh-subtle">${escapeHtml(zh ? "请假、轮值或这事不归你管时，把这条审批路由给合适的人。" : "On leave, on rotation, or not your call — route this approval to the right person.")}</p>
+              <select class="wh-pill" data-r10-approval-delegate-select="true" aria-label="${escapeHtml(zh ? "选择转交对象" : "Pick a teammate")}"><option value="">${escapeHtml(zh ? "展开后加载成员…" : "Members load on open…")}</option></select>
+              <div class="wh-r4-route-actions"><button type="button" class="wh-btn" data-r10-approval-delegate-submit="true">${escapeHtml(zh ? "确认转交" : "Delegate")}</button></div>
+            </details>` : ""}
           </section>
           <section class="wh-card wh-r4-route-card">
             <h3 role="heading" aria-level="2">${escapeHtml(goldPathT(locale, "approvals.ruleTitle"))}</h3>
@@ -3051,6 +3060,13 @@ function renderMeetingRouteComponent(vm: MeetingPageVM, locale: WorkHubLocale, p
         </div>
         <span class="wh-r4-route-count" title="${escapeHtml(locale === "zh-CN" ? "待确认洞察" : "Insights pending review")}">${escapeHtml(`${vm.summary.pending_insight_count} ${locale === "zh-CN" ? "条待确认" : "pending"}`)}</span>
       </header>
+      ${vm.can_manage && vm.project ? `<details class="wh-card wh-r4-route-card" data-r10-meeting-import="true">
+        <summary>${escapeHtml(locale === "zh-CN" ? "＋ 导入会议转写" : "＋ Import meeting transcript")}</summary>
+        <p class="wh-subtle">${escapeHtml(locale === "zh-CN" ? "把会议纪要或转写文本粘进来，团队就能围绕它确认洞察、生成任务。" : "Paste minutes or a transcript; the team can then confirm insights and spin up tasks from it.")}</p>
+        <label class="wh-r4-route-stack"><strong>${escapeHtml(locale === "zh-CN" ? "会议标题" : "Meeting title")}</strong><input class="wh-r4-intake-free-text" style="min-height:auto" type="text" maxlength="256" data-r10-meeting-import-title="true" aria-label="${escapeHtml(locale === "zh-CN" ? "会议标题" : "Meeting title")}" /></label>
+        <label class="wh-r4-route-stack"><strong>${escapeHtml(locale === "zh-CN" ? "转写/纪要文本" : "Transcript / minutes text")}</strong><textarea class="wh-r4-intake-free-text" rows="6" maxlength="200000" data-r10-meeting-import-text="true" aria-label="${escapeHtml(locale === "zh-CN" ? "转写或纪要文本" : "Transcript or minutes text")}"></textarea></label>
+        <div class="wh-r4-route-actions"><button type="button" class="wh-btn wh-btn-primary" data-r10-meeting-import-submit="${escapeHtml(vm.project.id)}">${escapeHtml(locale === "zh-CN" ? "导入" : "Import")}</button></div>
+      </details>` : ""}
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-r5-meeting-list="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "meeting.kicker"))}</h3>

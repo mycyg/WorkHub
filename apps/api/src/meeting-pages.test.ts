@@ -858,6 +858,9 @@ test("meeting page route authenticates and passes project and selected meeting q
     async dismissInsight() {
       throw new Error("not needed");
     },
+    async importTranscript() {
+      throw new Error("importTranscript not stubbed in this test");
+    },
     async draftToProposal() {
       throw new Error("not needed");
     }
@@ -891,6 +894,9 @@ test("meeting page route rejects a malformed selected meeting id before loading 
     },
     async dismissInsight() {
       throw new Error("not needed");
+    },
+    async importTranscript() {
+      throw new Error("importTranscript not stubbed in this test");
     },
     async draftToProposal() {
       throw new Error("not needed");
@@ -930,6 +936,9 @@ test("meeting mutation route authenticates and returns a refreshed meeting page"
     async dismissInsight() {
       throw new Error("not needed");
     },
+    async importTranscript() {
+      throw new Error("importTranscript not stubbed in this test");
+    },
     async draftToProposal() {
       throw new Error("not needed");
     }
@@ -967,6 +976,9 @@ test("meeting mutation routes reject malformed insight ids before calling the se
       calls.push(`dismiss:${input.insightId}`);
       return minimalMeetingPage();
     },
+    async importTranscript() {
+      throw new Error("importTranscript not stubbed in this test");
+    },
     async draftToProposal() {
       throw new Error("not needed");
     }
@@ -1001,6 +1013,9 @@ test("meeting draft proposal route authenticates and returns a refreshed work it
     },
     async dismissInsight() {
       throw new Error("not needed");
+    },
+    async importTranscript() {
+      throw new Error("importTranscript not stubbed in this test");
     },
     async draftToProposal(input) {
       calls.push({

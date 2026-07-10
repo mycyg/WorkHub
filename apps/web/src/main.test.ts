@@ -317,6 +317,12 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async createDriveDraftProposal() {
       throw new Error("not needed");
     },
+    async importMeetingTranscript(): Promise<never> {
+      throw new Error("not needed");
+    },
+    async listUsers(): Promise<never> {
+      throw new Error("not needed");
+    },
     async createMeetingInsightDraft() {
       throw new Error("not needed");
     },

@@ -4476,6 +4476,51 @@ export function getOpenApiDocument() {
           ...authLogoutResponses
         }
       },
+      "/api/users": {
+        get: {
+          tags: ["auth"],
+          summary: "List active member refs (id/nickname/admin) for delegation pickers",
+          responses: {
+            "200": {
+              description: "Active member refs sorted by nickname (max 200)",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["ok", "data"],
+                    properties: {
+                      ok: { type: "boolean", const: true },
+                      data: {
+                        type: "object",
+                        required: ["users"],
+                        properties: {
+                          users: {
+                            type: "array",
+                            items: {
+                              type: "object",
+                              required: ["id", "nickname", "is_admin"],
+                              properties: {
+                                id: uuidStringSchema,
+                                nickname: { type: "string", minLength: 1 },
+                                is_admin: { type: "boolean" }
+                              },
+                              additionalProperties: false
+                            }
+                          }
+                        },
+                        additionalProperties: false
+                      }
+                    },
+                    additionalProperties: false
+                  }
+                }
+              }
+            },
+            ...jsonErrorStatusResponse("401", "Member listing requires an authenticated user", ["not_identified"]).responses,
+            ...jsonErrorStatusResponse("501", "Member listing is not supported by the active storage", ["users_unsupported"]).responses
+          }
+        }
+      },
       "/api/auth/password": {
         post: {
           tags: ["auth"],
@@ -5038,6 +5083,32 @@ export function getOpenApiDocument() {
             ...jsonErrorStatusResponse("409", "Drive comment draft cannot create a proposal in its current state", [
               "drive_draft_source_missing",
               "drive_comment_dismissed"
+            ]).responses
+          }
+        }
+      },
+      "/api/meetings/projects/{projectId}/import": {
+        post: {
+          tags: ["meetings"],
+          summary: "Import a meeting transcript (title + text) into a project",
+          parameters: [pathUuidParameter("projectId"), localeQueryParameter],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["title", "transcript_text"],
+            properties: {
+              title: { type: "string", minLength: 1, maxLength: 256 },
+              transcript_text: { type: "string", minLength: 1, maxLength: 200000 }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            ...jsonOkResponse(meetingPageResponseSchema).responses,
+            "401": meetingMutationNotIdentifiedResponse,
+            "403": meetingInsightForbiddenResponse,
+            "404": meetingInsightNotFoundResponse,
+            ...jsonErrorStatusResponse("409", "Meeting transcript import rejected", [
+              "meeting_import_invalid",
+              "meeting_import_unsupported"
             ]).responses
           }
         }

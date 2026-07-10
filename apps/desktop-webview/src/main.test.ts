@@ -439,6 +439,12 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
     async createDriveDraftProposal() {
       throw new Error("not needed");
     },
+    async importMeetingTranscript(): Promise<never> {
+      throw new Error("not needed");
+    },
+    async listUsers(): Promise<never> {
+      throw new Error("not needed");
+    },
     async createMeetingInsightDraft() {
       throw new Error("not needed");
     },
