@@ -550,6 +550,75 @@ async function main() {
       console.log("[r2-pg-redis-smoke] workspace membership partial-unique + tenant resolution round-trip ok");
     }
 
+    // R11 Batch 0：委派成员目录必须由真 PG 的 workspace_memberships join 隔离，并同时过滤
+    // membership/user 软删墓碑；不能把全局活跃用户当作当前工作区候选人。
+    {
+      const userRepo = createUserRepository(db);
+      const memberships = createWorkspaceMembershipRepository(db);
+      const actorWorkspaceId = settings.auth.defaultWorkspaceId;
+      const otherWorkspaceId = randomUUID();
+      await db
+        .insert(workspaces)
+        .values({
+          id: otherWorkspaceId,
+          orgId: settings.auth.defaultOrgId,
+          name: "R11 member directory isolation workspace",
+          slug: `r11-directory-${otherWorkspaceId.slice(0, 8)}`
+        })
+        .onConflictDoNothing();
+
+      const included = await userRepo.createUser({
+        nickname: `r11-directory-in-${randomUUID().slice(0, 8)}`,
+        cookieToken: `r11-directory-in-${randomUUID()}`
+      });
+      const otherWorkspaceUser = await userRepo.createUser({
+        nickname: `r11-directory-other-${randomUUID().slice(0, 8)}`,
+        cookieToken: `r11-directory-other-${randomUUID()}`
+      });
+      const deletedMembershipUser = await userRepo.createUser({
+        nickname: `r11-directory-deleted-membership-${randomUUID().slice(0, 8)}`,
+        cookieToken: `r11-directory-deleted-membership-${randomUUID()}`
+      });
+      const deletedUser = await userRepo.createUser({
+        nickname: `r11-directory-deleted-user-${randomUUID().slice(0, 8)}`,
+        cookieToken: `r11-directory-deleted-user-${randomUUID()}`
+      });
+
+      await memberships.create({ workspaceId: actorWorkspaceId, userId: included.id });
+      await memberships.create({ workspaceId: otherWorkspaceId, userId: otherWorkspaceUser.id });
+      const deletedMembership = await memberships.create({
+        workspaceId: actorWorkspaceId,
+        userId: deletedMembershipUser.id
+      });
+      await memberships.softDelete(deletedMembership.id, new Date());
+      await memberships.create({ workspaceId: actorWorkspaceId, userId: deletedUser.id });
+      const softDeleteUser = userRepo.softDelete;
+      assert.ok(softDeleteUser, "user repository exposes softDelete for the real-PG fixture");
+      assert.ok(
+        await softDeleteUser.call(userRepo, deletedUser.id, ownerId, new Date()),
+        "soft-deleted user fixture was updated"
+      );
+
+      const listActiveRefsForWorkspace = userRepo.listActiveRefsForWorkspace;
+      assert.ok(listActiveRefsForWorkspace, "user repository exposes the workspace-scoped directory query");
+      const refs = await listActiveRefsForWorkspace.call(userRepo, actorWorkspaceId);
+      const visibleIds = new Set(refs.map((ref) => ref.id));
+      assert.equal(visibleIds.has(included.id), true, "active member in the actor workspace is included");
+      assert.equal(
+        visibleIds.has(otherWorkspaceUser.id),
+        false,
+        "active user who is only a member of another workspace is excluded"
+      );
+      assert.equal(
+        visibleIds.has(deletedMembershipUser.id),
+        false,
+        "user whose actor-workspace membership is soft-deleted is excluded"
+      );
+      assert.equal(visibleIds.has(deletedUser.id), false, "soft-deleted user with an active membership is excluded");
+
+      console.log("[r2-pg-redis-smoke] workspace-scoped active member directory isolation ok");
+    }
+
     // rank1（R8 深复审）：项目 create-or-reuse 必须按工作区隔离——同 slug 在不同工作区是不同项目，
     // 不能把 B 工作区的请求命中并返回 A 工作区的项目（跨租户串号/泄漏）；同工作区同 slug 才复用。
     // 该断言依赖迁移 0028 把 projects_slug_uq 改成 (workspace_id, slug)；旧全局唯一索引下 inB 的插入会撞唯一抛错。

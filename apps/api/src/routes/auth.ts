@@ -790,15 +790,16 @@ export function createAuthRoutes(
   return routes;
 }
 
-// R10-P2-5（委派选人器数据源）：活跃成员简表——只暴露转交所需最小字段（id/昵称/admin），
-// 任何已登录成员可读。挂载于 /api → GET /api/users。
+// R11 Batch 0（委派选人器数据源）：当前 actor 工作区的活跃成员简表——只暴露转交所需
+// 最小字段（id/昵称/admin）。调用方必须有该工作区的 active membership；挂载于 /api → GET /api/users。
 export function createUserDirectoryRoutes(source: AuthDependencySource = getDefaultAuthDependencies) {
   const routes = new Hono<AuthEnv>();
   routes.get("/users", async (c) => {
     const deps = resolveAuthDependencies(source);
     const currentUser = await resolveCurrentUser(c, deps);
-    const actor = await resolveHumanActor(deps, currentUser);
-    if (!deps.users.listActiveRefsForWorkspace) {
+    const memberships = deps.memberships;
+    const listActiveRefsForWorkspace = deps.users.listActiveRefsForWorkspace;
+    if (!memberships?.findActiveForUserWorkspace || !listActiveRefsForWorkspace) {
       return c.json(
         {
           ok: false,
@@ -810,7 +811,21 @@ export function createUserDirectoryRoutes(source: AuthDependencySource = getDefa
         501
       );
     }
-    const refs = await deps.users.listActiveRefsForWorkspace(actor.workspaceId);
+    const actor = await resolveHumanActor(deps, currentUser);
+    const membership = await memberships.findActiveForUserWorkspace(currentUser.id, actor.workspaceId);
+    if (!membership) {
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: "workspace_membership_required",
+            message: "当前用户不是该工作区的活跃成员。"
+          }
+        },
+        403
+      );
+    }
+    const refs = await listActiveRefsForWorkspace.call(deps.users, actor.workspaceId);
     return c.json({
       ok: true,
       data: {

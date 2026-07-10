@@ -1531,6 +1531,68 @@ test("GET /api/users lists only active members from the authenticated actor work
   assert.deepEqual(users.directoryWorkspaceCalls, [actorWorkspaceId]);
 });
 
+test("GET /api/users returns users_unsupported when workspace memberships are unavailable", async () => {
+  const runtimeSettings = settings();
+  const alice = user({ id: "10000000-0000-4000-8000-0000000000a3", nickname: "alice" });
+  const users = new MemoryUsers([alice]);
+  users.directoryUserIdsByWorkspace.set(runtimeSettings.auth.defaultWorkspaceId, [alice.id]);
+  const authDeps: AuthDependencies = {
+    users,
+    devices: new MemoryDevices([]),
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withProductionHttpErrors(new Hono<AuthEnv>());
+  app.route("/api", createUserDirectoryRoutes(authDeps));
+
+  const response = await app.request("/api/users", {
+    headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) }
+  });
+
+  assert.equal(response.status, 501);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "users_unsupported",
+      message: "当前存储不支持工作区成员清单。"
+    }
+  });
+  assert.deepEqual(users.directoryWorkspaceCalls, []);
+});
+
+test("GET /api/users rejects an authenticated user without an active membership", async () => {
+  const runtimeSettings = settings();
+  const alice = user({ id: "10000000-0000-4000-8000-0000000000a4", nickname: "alice" });
+  const memberships = new MemoryMemberships({
+    [runtimeSettings.auth.defaultWorkspaceId]: runtimeSettings.auth.defaultOrgId
+  });
+  const users = new MemoryUsers([alice]);
+  users.directoryUserIdsByWorkspace.set(runtimeSettings.auth.defaultWorkspaceId, [alice.id]);
+  const authDeps: AuthDependencies = {
+    users,
+    devices: new MemoryDevices([]),
+    memberships,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const app = withProductionHttpErrors(new Hono<AuthEnv>());
+  app.route("/api", createUserDirectoryRoutes(authDeps));
+
+  const response = await app.request("/api/users", {
+    headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) }
+  });
+
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: {
+      code: "workspace_membership_required",
+      message: "当前用户不是该工作区的活跃成员。"
+    }
+  });
+  assert.deepEqual(users.directoryWorkspaceCalls, []);
+});
+
 // ——— R2 auth epic：账号生命周期-停用 ———
 
 test("POST /users/:id/deactivate (admin) soft-deletes the user and revokes their sessions + devices", async () => {

@@ -4479,10 +4479,10 @@ export function getOpenApiDocument() {
       "/api/users": {
         get: {
           tags: ["auth"],
-          summary: "List active member refs (id/nickname/admin) for delegation pickers",
+          summary: "List active member refs in the authenticated actor workspace for delegation pickers",
           responses: {
             "200": {
-              description: "Active member refs sorted by nickname (max 200)",
+              description: "Active member refs in the actor workspace sorted by nickname (max 200)",
               content: {
                 "application/json": {
                   schema: {
@@ -4517,6 +4517,9 @@ export function getOpenApiDocument() {
               }
             },
             ...jsonErrorStatusResponse("401", "Member listing requires an authenticated user", ["not_identified"]).responses,
+            ...jsonErrorStatusResponse("403", "Member listing requires an active membership in the actor workspace", [
+              "workspace_membership_required"
+            ]).responses,
             ...jsonErrorStatusResponse("501", "Member listing is not supported by the active storage", ["users_unsupported"]).responses
           }
         }

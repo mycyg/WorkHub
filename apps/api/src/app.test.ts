@@ -315,6 +315,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/auth/invites/accept"],
     ["patch", "/api/auth/preferences"],
     ["get", "/api/auth/me"],
+    ["get", "/api/users"],
     ["post", "/api/auth/users/{id}/deactivate"],
     ["post", "/api/client-devices/register"],
     ["get", "/api/client-devices/me"],
@@ -435,6 +436,15 @@ test("runtime API routes stay in lockstep with the OpenAPI document", async () =
     missingFromOpenApi: [],
     staleOpenApiRoutes: []
   });
+});
+
+test("member directory OpenAPI documents its fail-closed runtime errors", async () => {
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+
+  assertJsonErrorCodes(body.paths, "/api/users", "get", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/users", "get", "403", ["workspace_membership_required"]);
+  assertJsonErrorCodes(body.paths, "/api/users", "get", "501", ["users_unsupported"]);
 });
 
 test("templated OpenAPI paths declare their required path parameters", async () => {
