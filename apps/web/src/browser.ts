@@ -1763,7 +1763,9 @@ function renderFatalRouteError(locale: WorkHubLocale, error: unknown) {
   unmountReactRouteIsland();
   clearLiveDirtyMetrics();
   root.innerHTML = renderWebRouteState(currentRouteMatch(), "error", locale, {
-    traceId: routeErrorTrace(error)
+    traceId: routeErrorTrace(error),
+    // R10-S3：已登录时错误态保留产品壳（顶栏+导航），不再整屏裸卡。
+    ...(currentIdentity ? { shellUser: currentIdentity } : {})
   }).html;
 }
 

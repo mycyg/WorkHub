@@ -47,6 +47,7 @@ type ProductShellCopyKey =
   | "nav.calendar"
   | "nav.replay"
   | "nav.cost"
+  | "nav.agents"
   | "nav.settings"
   | "nav.intake"
   | "nav.health"
@@ -133,6 +134,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.calendar": "日程",
     "nav.replay": "回放",
     "nav.cost": "成本",
+    "nav.agents": "军团",
     "nav.settings": "设置",
     "nav.intake": "提需求",
     "nav.health": "项目健康",
@@ -218,6 +220,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.calendar": "Calendar",
     "nav.replay": "Replay",
     "nav.cost": "Cost",
+    "nav.agents": "Agent teams",
     "nav.settings": "Settings",
     "nav.intake": "New request",
     "nav.health": "Project health",
@@ -306,14 +309,14 @@ const productShellCss = [
   ".wh-product-metrics{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:flex-end;max-width:390px}.wh-product-metric{display:grid;gap:2px;border:1px solid var(--wh-glass-line);border-radius:var(--wh-radius-md);background:var(--wh-glass);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);padding:8px 10px;min-width:78px;box-shadow:0 10px 28px rgba(37,51,79,.06)}.wh-product-metric strong{font-size:17px;line-height:1.35;overflow-wrap:anywhere}.wh-product-metric span{color:var(--wh-product-muted);font-size:11px;font-weight:850;line-height:1.35;overflow-wrap:anywhere}",
   ".wh-product-route-panels{max-width:1120px;margin:0 auto;min-width:0}.wh-route-panel{min-width:0;max-width:100%;overflow:hidden}.wh-route-panel[hidden]{display:none}.wh-product-route-panels .wh-shell{padding:0;background:transparent;min-height:0}.wh-product-route-panels .wh-stage{max-width:none;margin:0}.wh-product-route-panels .wh-panel{box-shadow:0 16px 42px rgba(37,51,79,.07)}",
   ".wh-product-rail{border-left:1px solid var(--wh-glass-line);background:rgba(255,255,255,.36);backdrop-filter:var(--wh-glass-blur);-webkit-backdrop-filter:var(--wh-glass-blur);padding:24px 16px;display:grid;align-content:start;gap:12px;overflow:auto}.wh-product-rail-block{border:1px solid var(--wh-glass-line);border-radius:var(--wh-radius-lg);background:var(--wh-glass);padding:13px 14px;display:grid;gap:6px}.wh-product-rail-block--static{border:0;background:transparent;padding:4px 2px}.wh-product-rail-block--static h2{font-size:12px;color:var(--wh-product-muted);font-weight:700}.wh-product-rail-block--static p{font-size:11px}.wh-product-rail-block h2{margin:0;color:var(--wh-product-ink);font-size:13px;line-height:1.35}.wh-product-rail-block p{margin:0;color:var(--wh-product-muted);font-size:12px;line-height:1.45;overflow-wrap:anywhere}.wh-product-rail-tag{display:inline-flex;align-items:center;width:max-content;max-width:100%;border-radius:999px;background:#eef4ff;color:var(--wh-product-blue);font-size:11px;font-weight:900;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-  ".wh-app-notice{position:fixed;right:max(18px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));z-index:40;display:grid;gap:4px;width:max-content;max-width:min(420px,calc(100vw - 36px));border:1px solid rgba(79,70,229,.22);background:rgba(255,255,255,.88);backdrop-filter:var(--wh-glass-blur);-webkit-backdrop-filter:var(--wh-glass-blur);border-radius:var(--wh-radius-lg);box-shadow:0 18px 60px rgba(37,51,79,.16);padding:12px 14px;color:var(--wh-product-ink);font-weight:750;overflow-wrap:anywhere}.wh-app-notice[hidden]{display:none}.wh-app-notice[data-r4-notice-tone=success]{border-color:rgba(36,166,106,.42);box-shadow:0 18px 60px rgba(36,166,106,.16)}.wh-app-notice[data-r4-notice-tone=warning]{border-color:rgba(217,139,22,.45);box-shadow:0 18px 60px rgba(217,139,22,.15)}.wh-app-notice[data-r4-notice-tone=danger]{border-color:rgba(238,107,95,.45);box-shadow:0 18px 60px rgba(238,107,95,.16)}.wh-app-notice-title{display:block;font-size:13px;line-height:1.35;color:var(--wh-product-ink);font-weight:900}.wh-app-notice-body{display:block;color:var(--wh-product-muted);font-size:12px;line-height:1.45;max-width:100%;overflow-wrap:anywhere}.wh-app-action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}.wh-app-action-row button{border:1px solid var(--wh-product-line);border-radius:8px;background:#fff;padding:9px 12px;font-weight:750;color:var(--wh-product-ink);cursor:pointer}.wh-app-action-row button:first-child{background:var(--wh-product-blue);border-color:var(--wh-product-blue);color:#fff}",
+  ".wh-app-notice{position:fixed;right:max(18px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));z-index:40;display:grid;gap:4px;width:max-content;max-width:min(420px,calc(100vw - 36px));border:1px solid rgba(79,70,229,.22);background:rgba(255,255,255,.88);backdrop-filter:var(--wh-glass-blur);-webkit-backdrop-filter:var(--wh-glass-blur);border-radius:var(--wh-radius-lg);box-shadow:0 18px 60px rgba(37,51,79,.16);padding:12px 14px;color:var(--wh-product-ink);font-weight:750;overflow-wrap:anywhere}.wh-app-notice[hidden]{display:none}.wh-app-notice[data-r4-notice-tone=success]{border-color:rgba(36,166,106,.42);box-shadow:0 18px 60px rgba(36,166,106,.16)}.wh-app-notice[data-r4-notice-tone=warning]{border-color:rgba(217,139,22,.45);box-shadow:0 18px 60px rgba(217,139,22,.15)}.wh-app-notice[data-r4-notice-tone=danger]{border-color:rgba(238,107,95,.45);box-shadow:0 18px 60px rgba(238,107,95,.16)}.wh-app-notice-title{display:block;font-size:13px;line-height:1.35;color:var(--wh-product-ink);font-weight:900}.wh-app-notice-body{display:block;color:var(--wh-product-muted);font-size:12px;line-height:1.45;max-width:100%;overflow-wrap:anywhere}.wh-app-action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}.wh-app-action-row button{border:1px solid var(--wh-product-line);border-radius:12px;background:rgba(255,255,255,.92);padding:9px 12px;font-weight:750;color:var(--wh-product-ink);cursor:pointer}.wh-app-action-row button:first-child{background:var(--wh-product-blue);border-color:var(--wh-product-blue);color:#fff}",
   "@media (max-width:1120px){.wh-product-layout{grid-template-columns:206px minmax(0,1fr)}.wh-product-rail{display:none}.wh-product-masthead{grid-template-columns:1fr}.wh-product-metrics{justify-content:flex-start;max-width:100%}}",
   // R10-S1 玻璃降级门：不支持 backdrop-filter 的浏览器与 prefers-reduced-transparency 用户回实底，
   // 保证文字对比与可读不依赖毛玻璃效果。
   "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.wh-product-topbar,.wh-product-nav,.wh-product-rail{background:rgba(255,255,255,.95)}.wh-product-metric,.wh-product-rail-block,.wh-app-notice{background:rgba(255,255,255,.97)}}",
   "@media (prefers-reduced-transparency:reduce){body{background:var(--wh-product-page)}.wh-product-topbar,.wh-product-nav,.wh-product-rail,.wh-product-metric,.wh-product-rail-block,.wh-app-notice{background:#fff;backdrop-filter:none;-webkit-backdrop-filter:none}}",
   "@media (prefers-reduced-motion:reduce){.wh-product-nav a{transition:none}}",
-  "@media (max-width:780px){.wh-product-topbar{height:auto;min-height:62px;padding:10px 12px;align-items:flex-start}.wh-product-top-actions{flex-wrap:wrap}.wh-product-runtime{order:2;flex-basis:100%;justify-content:flex-start}.wh-product-layout{grid-template-columns:1fr;min-height:calc(100vh - 62px)}.wh-product-nav{position:static;border-right:0;border-bottom:1px solid var(--wh-product-line);padding:10px;min-width:0}.wh-product-nav{gap:8px}.wh-product-nav-title{display:none}.wh-product-nav-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;min-width:0}.wh-product-nav a{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center;padding:9px 8px;font-size:13px;white-space:normal}.wh-product-nav:not([data-nav-expanded=true]) .wh-product-nav-group:not([data-nav-group=work]):not(:has(a[aria-current=page])){display:none}.wh-product-nav-more{display:block;width:100%;margin-top:6px;border:1px solid var(--wh-product-line);border-radius:8px;background:#fff;padding:7px;font-size:12px;font-weight:800;color:var(--wh-product-muted);cursor:pointer}.wh-product-nav small{display:none}.wh-product-main{padding:18px 12px}.wh-product-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.wh-product-metric{min-width:0}.wh-product-route-panels .wh-main{padding:18px}.wh-locale-toggle{grid-template-columns:repeat(2,36px)}}"
+  "@media (max-width:780px){.wh-product-topbar{height:auto;min-height:62px;padding:10px 12px;align-items:flex-start}.wh-product-top-actions{flex-wrap:wrap}.wh-product-runtime{order:2;flex-basis:100%;justify-content:flex-start}.wh-product-layout{grid-template-columns:1fr;min-height:calc(100vh - 62px)}.wh-product-nav{position:static;border-right:0;border-bottom:1px solid var(--wh-product-line);padding:10px;min-width:0}.wh-product-nav{gap:8px}.wh-product-nav-title{display:none}.wh-product-nav-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;min-width:0}.wh-product-nav a{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center;padding:9px 8px;font-size:13px;white-space:normal}.wh-product-nav:not([data-nav-expanded=true]) .wh-product-nav-group:not([data-nav-group=work]):not(:has(a[aria-current=page])){display:none}.wh-product-nav-more{display:block;width:100%;margin-top:6px;border:1px solid var(--wh-glass-line);border-radius:12px;background:rgba(255,255,255,.85);padding:7px;font-size:12px;font-weight:800;color:var(--wh-product-muted);cursor:pointer}.wh-product-nav small{display:none}.wh-product-main{padding:18px 12px}.wh-product-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.wh-product-metric{min-width:0}.wh-product-route-panels .wh-main{padding:18px}.wh-locale-toggle{grid-template-columns:repeat(2,36px)}}"
 ].join("");
 
 function escapeHtml(value: unknown) {
@@ -329,7 +332,7 @@ function productT(locale: WorkHubLocale, key: ProductShellCopyKey) {
   return productShellCopy[locale][key];
 }
 
-function labelForPage(page: GoldPathRenderedPage, locale: WorkHubLocale) {
+function labelForPage(page: { key: string; title: string }, locale: WorkHubLocale) {
   const key = `nav.${page.key}` as ProductShellCopyKey;
   return productShellCopy[locale][key] ?? page.title;
 }
@@ -433,13 +436,17 @@ const productNavGroups: ReadonlyArray<{
   { id: "admin", titleKey: "nav.group.admin", keys: new Set(["cost", "agents", "skills", "settings"]), adminOnly: true }
 ];
 
+// R10-S3：状态壳(loading/error/403/404)只需要 key/route/title 渲导航——放宽到最小形状，
+// ready 壳传完整 GoldPathRenderedPage 不受影响。
+type ProductNavPage = Pick<GoldPathRenderedPage, "route" | "title"> & { key: string };
+
 function renderProductNav(
-  pages: GoldPathRenderedPage[],
-  activeKey: GoldPathRenderedPage["key"],
+  pages: ProductNavPage[],
+  activeKey: string,
   locale: WorkHubLocale,
   isAdmin: boolean
 ) {
-  const link = (page: GoldPathRenderedPage) => {
+  const link = (page: ProductNavPage) => {
     const active = page.key === activeKey;
     return `<a href="${escapeHtml(page.route)}" data-wh-route="${escapeHtml(page.route)}" data-wh-page-key="${page.key}" aria-current="${active ? "page" : "false"}"><span>${escapeHtml(labelForPage(page, locale))}</span></a>`;
   };
@@ -479,6 +486,52 @@ function renderRoutePanel(page: GoldPathRenderedPage, active: boolean, routeComp
   return `<section class="wh-route-panel" data-wh-panel="${page.key}"${componentMarker}${hydrationMarker} ${active ? "" : "hidden"}>${routeComponent?.html ?? page.html}</section>`;
 }
 
+function renderProductTopbar(locale: WorkHubLocale, appName: string, currentUser?: WebProductShellCurrentUser) {
+  return `<header class="wh-product-topbar">
+        <a class="wh-product-brand" href="/" data-wh-route="/" data-wh-page-key="home"><span class="wh-product-brand-mark" aria-hidden="true"></span><span>${escapeHtml(appName)}</span></a>
+        <div class="wh-product-top-actions">
+          <div class="wh-product-runtime" aria-label="${escapeHtml(productT(locale, "topbar.scope"))}"><span class="wh-product-runtime-dot" aria-hidden="true"></span><span>${escapeHtml(productT(locale, "topbar.scope"))}</span></div>
+          ${currentUser ? `<div class="wh-product-user" data-wh-current-user="${escapeHtml(currentUser.nickname)}" data-wh-current-user-admin="${escapeHtml(String(currentUser.isAdmin))}"><span class="wh-product-user-name">${escapeHtml(currentUser.nickname)}</span>${currentUser.isAdmin ? `<span class="wh-product-rail-tag">${escapeHtml(productT(locale, "topbar.admin"))}</span>` : ""}<button type="button" class="wh-product-logout" data-wh-logout="true" data-action-id="logout">${escapeHtml(productT(locale, "topbar.logout"))}</button></div>` : ""}
+          ${renderLocaleToggle(locale)}
+        </div>
+      </header>`;
+}
+
+// R10-S3（P2-6）：loading/error/403/404 不再渲成脱壳裸页——身份可用时保留顶栏+分组导航，
+// 状态卡渲进主内容区。用户在异常态仍知道自己在 WorkHub 的哪里、还能去哪。
+export type WebProductStateShellInput = {
+  locale: WorkHubLocale;
+  appName: string;
+  currentRoute: string;
+  activeKey: string;
+  entries: Array<{ key: string; route: string; title: string }>;
+  currentUser?: WebProductShellCurrentUser | undefined;
+  contentHtml: string;
+};
+
+export function renderWebProductStateShell(input: WebProductStateShellInput): { css: string; html: string } {
+  const locale = normalizeWorkHubLocale(input.locale);
+  const nav = renderProductNav(input.entries, input.activeKey, locale, input.currentUser ? input.currentUser.isAdmin : true);
+  return {
+    css: `${productShellCss}${productStateShellCss}`,
+    html: `<div class="wh-product-root" data-wh-surface="web" data-r4-product-shell="true" data-r4-product-state-shell="true" data-r4-product-route-key="${escapeHtml(input.activeKey)}" data-r4-product-link-mode="path">
+      ${renderProductTopbar(locale, input.appName, input.currentUser)}
+      <div class="wh-product-layout wh-product-layout--state">
+        <nav class="wh-product-nav" aria-label="${escapeHtml(goldPathT(locale, "shell.navAria"))}">
+          ${nav}
+          <button type="button" class="wh-product-nav-more" data-nav-more aria-expanded="false">${escapeHtml(locale === "en-US" ? "More" : "更多")}</button>
+        </nav>
+        <main class="wh-product-main">
+          <div class="wh-product-route-panels">${input.contentHtml}</div>
+        </main>
+      </div>
+      <aside class="wh-app-notice" data-wh-app-notice hidden aria-live="polite"></aside>
+    </div>`
+  };
+}
+
+const productStateShellCss = ".wh-product-layout--state{grid-template-columns:218px minmax(0,1fr)}.wh-product-layout--state .wh-product-main{display:grid;align-content:start}@media (max-width:780px){.wh-product-layout--state{grid-template-columns:1fr}}";
+
 export function renderWebProductShell(
   rendered: WebProductShellSurface,
   options: WebProductShellOptions
@@ -502,14 +555,7 @@ export function renderWebProductShell(
     routeMap,
     css: `${productShellCss}${rendered.css}${routeComponentCss}`,
     html: `<div class="wh-product-root" data-wh-surface="${rendered.surface}" data-r4-product-shell="true" data-r4-product-route-key="${escapeHtml(activeKey)}" data-r4-product-link-mode="path">
-      <header class="wh-product-topbar">
-        <a class="wh-product-brand" href="/" data-wh-route="/" data-wh-page-key="home"><span class="wh-product-brand-mark" aria-hidden="true"></span><span>${escapeHtml(options.appName)}</span></a>
-        <div class="wh-product-top-actions">
-          <div class="wh-product-runtime" aria-label="${escapeHtml(productT(locale, "topbar.scope"))}"><span class="wh-product-runtime-dot" aria-hidden="true"></span><span>${escapeHtml(productT(locale, "topbar.scope"))}</span></div>
-          ${options.currentUser ? `<div class="wh-product-user" data-wh-current-user="${escapeHtml(options.currentUser.nickname)}" data-wh-current-user-admin="${escapeHtml(String(options.currentUser.isAdmin))}"><span class="wh-product-user-name">${escapeHtml(options.currentUser.nickname)}</span>${options.currentUser.isAdmin ? `<span class="wh-product-rail-tag">${escapeHtml(productT(locale, "topbar.admin"))}</span>` : ""}<button type="button" class="wh-product-logout" data-wh-logout="true" data-action-id="logout">${escapeHtml(productT(locale, "topbar.logout"))}</button></div>` : ""}
-          ${renderLocaleToggle(locale)}
-        </div>
-      </header>
+      ${renderProductTopbar(locale, options.appName, options.currentUser)}
       <div class="wh-product-layout">
         <nav class="wh-product-nav" aria-label="${escapeHtml(goldPathT(locale, "shell.navAria"))}">
           ${nav}

@@ -24,6 +24,7 @@ import {
   goldPathCss,
   renderWebRouteComponent,
   renderWebProductShell,
+  renderWebProductStateShell,
   type GoldPathAppShell,
   type GoldPathRenderedPage,
   type WebProductMetric,
@@ -1346,14 +1347,10 @@ export function renderWebRouteState(
   match: WebRouteMatch,
   status: Exclude<WebRouteLoadStatus, "ready">,
   locale: WorkHubLocale,
-  input: { traceId?: string; ownerLabel?: string; actionHref?: string; actionLabel?: string; titleOverride?: string; bodyOverride?: string } = {}
+  input: { traceId?: string; ownerLabel?: string; actionHref?: string; actionLabel?: string; titleOverride?: string; bodyOverride?: string; shellUser?: WebProductShellCurrentUser } = {}
 ): WebRouteStateResult {
   const routeState = routeStateFromStatus(status);
-  const html = `<style>${routeStateCss}${webRouteStateScreenCss}</style>
-    <main class="wh-web-route-state-screen" data-r4-web-route-status="${escapeHtml(status)}" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}">
-      <section class="wh-web-route-state-wrap">
-        <div class="wh-web-route-state-meta" data-r4-web-route-api="${escapeHtml(apiLabelFor(match))}"><a class="wh-web-route-state-home" href="/" data-r4-web-route-home="true">WorkHub</a></div>
-        ${renderRouteStateCard({
+  const card = renderRouteStateCard({
     routeKey: match.key,
     state: routeState,
     locale,
@@ -1364,7 +1361,33 @@ export function renderWebRouteState(
     ...(input.actionLabel ? { actionLabel: input.actionLabel } : {}),
     ...(input.titleOverride ? { titleOverride: input.titleOverride } : {}),
     ...(input.bodyOverride ? { bodyOverride: input.bodyOverride } : {})
-  })}
+  });
+  // R10-S3（P2-6）：已登录（有 shellUser）时非 Ready 态保留产品壳——顶栏/分组导航/身份都在，
+  // 403/404/error 只是主内容区的一张状态卡，不再像被踢出了 WorkHub。boot 阶段（无身份）仍走全屏裸卡。
+  if (input.shellUser) {
+    const entries = shellPageOrderFor(match)
+      .map((key) => ({ key, route: shellDefaultRoutes[key], title: shellPageTitles[locale][key] }));
+    const stateShell = renderWebProductStateShell({
+      locale,
+      appName: "WorkHub",
+      currentRoute: match.pathname,
+      activeKey: match.key,
+      entries,
+      currentUser: input.shellUser,
+      contentHtml: `<section class="wh-web-route-state-wrap wh-web-route-state-wrap--shelled" data-r4-web-route-api="${escapeHtml(apiLabelFor(match))}">${card}</section>`
+    });
+    return {
+      status,
+      match,
+      html: `<style>${routeStateCss}${stateShell.css}.wh-product-main .wh-web-route-state-wrap{width:min(560px,100%);display:grid;gap:12px;min-width:0;margin:8vh auto 0}</style>
+    <div data-r4-web-route-status="${escapeHtml(status)}" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}">${stateShell.html}</div>`
+    };
+  }
+  const html = `<style>${routeStateCss}${webRouteStateScreenCss}</style>
+    <main class="wh-web-route-state-screen" data-r4-web-route-status="${escapeHtml(status)}" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}">
+      <section class="wh-web-route-state-wrap">
+        <div class="wh-web-route-state-meta" data-r4-web-route-api="${escapeHtml(apiLabelFor(match))}"><a class="wh-web-route-state-home" href="/" data-r4-web-route-home="true">WorkHub</a></div>
+        ${card}
       </section>
     </main>`;
   return {
@@ -1422,7 +1445,8 @@ export async function loadWebRoute(
         actionHref: result.actionHref,
         ...(result.actionLabel ? { actionLabel: result.actionLabel } : {}),
         ...(result.titleOverride ? { titleOverride: result.titleOverride } : {}),
-        ...(result.bodyOverride ? { bodyOverride: result.bodyOverride } : {})
+        ...(result.bodyOverride ? { bodyOverride: result.bodyOverride } : {}),
+        ...(shellUser ? { shellUser } : {})
       });
     }
     if (result === "empty" || result === "error" || result === "notFound") {
@@ -1433,7 +1457,8 @@ export async function loadWebRoute(
         : { actionHref: routeStateBackHref(match), ...(backLabel ? { actionLabel: backLabel } : {}) };
       return renderWebRouteState(match, result, locale, {
         ...stateInput,
-        ...(routeStateCopyOverride(match, result, locale) ?? {})
+        ...(routeStateCopyOverride(match, result, locale) ?? {}),
+        ...(shellUser ? { shellUser } : {})
       });
     }
     return renderReadyRoute(result, match, locale, shellUser);
@@ -1458,6 +1483,6 @@ export async function loadWebRoute(
       ...(status === "forbidden" ? { ownerLabel: forbiddenOwnerLabel(error, locale) } : {}),
       ...(routeStateCopyOverride(match, status, locale) ?? {})
     };
-    return renderWebRouteState(match, status, locale, stateInput);
+    return renderWebRouteState(match, status, locale, { ...stateInput, ...(shellUser ? { shellUser } : {}) });
   }
 }
