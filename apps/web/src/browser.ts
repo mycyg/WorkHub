@@ -94,6 +94,10 @@ import {
   driveUploadPayloadFromPicker
 } from "./drive-actions.js";
 import {
+  buildDelegateOptionNodes,
+  buildDelegateStatusOption
+} from "./delegate-options.js";
+import {
   drivePreviewPanelHtml,
   drivePreviewTitle,
   renderDrivePreviewPanel,
@@ -803,13 +807,21 @@ function bindGoldPathNavigation(
         details.dataset["r10DelegateLoaded"] = "true";
         void client.listUsers()
           .then((result) => {
-            select.innerHTML = result.users
-              .map((user) => `<option value="${user.id}">${user.nickname}${user.is_admin ? (locale === "en-US" ? " (admin)" : "（管理员）") : ""}</option>`)
-              .join("");
+            const options = buildDelegateOptionNodes(
+              () => document.createElement("option"),
+              result.users,
+              locale
+            );
+            select.replaceChildren(...options);
           })
           .catch(() => {
             details.dataset["r10DelegateLoaded"] = "false";
-            select.innerHTML = `<option value="">${locale === "en-US" ? "Couldn't load members — reopen to retry" : "成员没加载出来，收起再展开重试"}</option>`;
+            select.replaceChildren(buildDelegateStatusOption(
+              () => document.createElement("option"),
+              locale === "en-US"
+                ? "Couldn't load members — reopen to retry"
+                : "成员没加载出来，收起再展开重试"
+            ));
           });
       }
       return;
