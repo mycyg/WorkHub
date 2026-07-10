@@ -2321,8 +2321,8 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
             <span class="wh-pill">${escapeHtml(attentionPriorityLabel(vm.workitem.priority, locale === "zh-CN"))}</span>
             <span class="wh-pill">${escapeHtml(localizedEnumLabel(vm.workitem.mode, locale === "zh-CN", { worker: "执行", pm: "项目管理" }, { worker: "Worker", pm: "PM" }))}</span>
             ${vm.confidence ? `<span class="wh-pill wh-r4-prio ${vm.confidence.verdict === "escalate" ? "wh-r4-prio--warn" : ""}" data-r9-workitem-confidence="${escapeHtml(vm.confidence.verdict)}" title="${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的置信评级与分流结论" : "AI's confidence grade and routing verdict for the latest output")}">${escapeHtml(locale === "zh-CN"
-    ? `AI 置信 ${Math.round(vm.confidence.score * 100)}% · ${vm.confidence.verdict === "auto_merge" ? "可自动采纳" : vm.confidence.verdict === "human_spotcheck" ? "建议抽查" : "建议人工把关"}`
-    : `AI confidence ${Math.round(vm.confidence.score * 100)}% · ${vm.confidence.verdict === "auto_merge" ? "auto-merge ok" : vm.confidence.verdict === "human_spotcheck" ? "spot-check" : "needs review"}`)}</span>` : ""}
+    ? `${vm.confidence.score >= 0.85 ? "AI 很有把握" : vm.confidence.score >= 0.6 ? "AI 比较有把握" : "AI 把握不大"} · ${vm.confidence.verdict === "auto_merge" ? "可自动采纳" : vm.confidence.verdict === "human_spotcheck" ? "建议抽查" : "建议人工把关"}`
+    : `${vm.confidence.score >= 0.85 ? "AI is confident" : vm.confidence.score >= 0.6 ? "AI is fairly confident" : "AI is unsure"} · ${vm.confidence.verdict === "auto_merge" ? "auto-merge ok" : vm.confidence.verdict === "human_spotcheck" ? "spot-check" : "needs review"}`)}</span>` : ""}
           </div>
           ${vm.confidence ? `<p class="wh-subtle" data-r9-workitem-confidence-note="true">${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的置信评级与分流结论。" : "AI's confidence grade and routing verdict for the latest output.")}</p>` : ""}
           ${(() => {
