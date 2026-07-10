@@ -8,6 +8,7 @@ import {
 } from "./enums.js";
 import { actorSchema, idSchema, isoDateTimeSchema } from "./domain/common.js";
 import { cuuLauncherDeliveryKindSchema } from "./domain/work-item.js";
+import { taskPlanReviewedItemSchema } from "./task-plan.js";
 
 export const cuuStates = [
   "idle",
@@ -42,6 +43,8 @@ export const evidenceRefSchema = z.object({
     })
     .optional(),
   confidence_hint: z.enum(["found", "weak", "missing"]).optional(),
+  // R6（信任）：weak/missing 不再是裸标签——生产端（LLM manifest）可带具体原因，渲染端有则展示。
+  confidence_reason: z.string().max(600).optional(),
   href: z.string().optional()
 });
 export type EvidenceRef = z.infer<typeof evidenceRefSchema>;
@@ -53,7 +56,8 @@ export const attentionActionSchema = z.object({
   method: z.enum(["GET", "POST"]),
   href: z.string().min(1),
   requires_desktop: z.boolean().optional(),
-  requires_reason: z.boolean().optional()
+  requires_reason: z.boolean().optional(),
+  request_json: z.record(z.string(), z.unknown()).optional()
 });
 export type AttentionAction = z.infer<typeof attentionActionSchema>;
 
@@ -62,6 +66,7 @@ export const attentionItemSchema = z.object({
   kind: z.enum([
     "clarification",
     "approval",
+    "plan_review",
     "proposal_review",
     "escalation",
     "sync_conflict",
@@ -73,6 +78,8 @@ export const attentionItemSchema = z.object({
   priority: z.enum(["low", "normal", "high", "urgent"]),
   work_item_id: idSchema.optional(),
   project_id: idSchema.optional(),
+  // R12（多项目）：多项目并行时队列卡要能一眼看出属于哪个项目。
+  project_name: z.string().min(1).optional(),
   source_ref: z.object({
     entity_type: z.enum([
       "approval_request",
@@ -186,7 +193,7 @@ export const deliverableChangeSchema = z.object({
   id: idSchema,
   target_kind: deliverableTargetKindSchema,
   target_ref: z.object({
-    entity_type: z.enum(["work_item", "drive_item", "delivery", "spec_doc", "folder", "external"]),
+    entity_type: z.enum(["work_item", "drive_item", "delivery", "spec_doc", "folder", "task_plan", "external"]),
     entity_id: idSchema.optional(),
     // findings[#7]：这些 AI 产出的串落进定宽列，原本无 .max 上界，超长串到 INSERT 才以 PG 22001 抛未捕获 500。
     // 在契约边界按对应列宽收口，让超长 manifest 在创建时即得干净 400。path→target_path(512)；
@@ -209,7 +216,10 @@ export const deliverableChangeSchema = z.object({
       row_count_delta: z.number().int().optional(),
       slide_count_delta: z.number().int().optional(),
       image_size_before: z.string().optional(),
-      image_size_after: z.string().optional()
+      image_size_after: z.string().optional(),
+      // R9-BLOCK-7.154：计划提议承载「人审后的子任务清单」；合入事务按它写回
+      // task_plan_items。闭合 object 曾把该字段 parse 时剥掉，导致行内编辑永不生效。
+      task_plan_items: z.array(taskPlanReviewedItemSchema).max(50).optional()
     })
     .optional(),
   preview_ref: z
@@ -276,6 +286,14 @@ export const budgetScopeSchema = z.discriminatedUnion("kind", [
     workitem_id: idSchema
   }),
   z.object({
+    kind: z.literal("task"),
+    task_plan_id: idSchema
+  }),
+  z.object({
+    kind: z.literal("objective"),
+    objective_id: idSchema
+  }),
+  z.object({
     kind: z.literal("user"),
     user_id: idSchema
   }),
@@ -299,7 +317,7 @@ export const budgetUsageSchema = z.object({
   scope: budgetScopeSchema,
   scope_label: z.string().min(1),
   policy_id: z.string().min(1),
-  period: z.enum(["run", "day", "month"]),
+  period: z.enum(["run", "day", "month", "total"]),
   period_start: isoDateTimeSchema,
   period_end: isoDateTimeSchema,
   token_in: z.number().int().nonnegative(),
@@ -319,8 +337,8 @@ export type BudgetUsage = z.infer<typeof budgetUsageSchema>;
 export const budgetPolicySchema = z
   .object({
     id: z.string().min(1),
-    scope_kind: z.enum(["workitem", "user", "team", "eval"]),
-    period: z.enum(["run", "day", "month"]),
+    scope_kind: z.enum(["workitem", "task", "objective", "user", "team", "eval"]),
+    period: z.enum(["run", "day", "month", "total"]),
     max_tokens: z.number().int().positive(),
     max_cost_cny: z.string().regex(/^\d+(\.\d+)?$/),
     warning_ratio: z.number().min(0).max(1),
@@ -382,13 +400,27 @@ export const runBudgetSchema = z.object({
 });
 export type RunBudget = z.infer<typeof runBudgetSchema>;
 
+export const budgetNoticeUsageSchema = z.object({
+  scope_label: z.string().min(1),
+  period: z.enum(["run", "day", "month", "total"]),
+  total_tokens: z.number().int().nonnegative(),
+  max_tokens: z.number().int().nonnegative(),
+  remaining_tokens: z.number().int().nonnegative(),
+  estimated_cost_cny: z.string(),
+  max_cost_cny: z.string(),
+  remaining_cost_cny: z.string(),
+  status: z.enum(["ok", "warning", "critical", "exhausted"])
+});
+export type BudgetNoticeUsage = z.infer<typeof budgetNoticeUsageSchema>;
+
 export const budgetNoticeSchema = z.object({
   code: z.enum(["budget_warning", "budget_exhausted"]),
   severity: z.enum(["info", "warning", "critical"]),
   message: z.string().min(1),
   scope: budgetScopeSchema,
   usage_ratio: z.number().min(0),
-  recommended_action: z.enum(["continue", "downgrade_model", "pause", "ask_admin"]),
+  usage: budgetNoticeUsageSchema.optional(),
+  recommended_action: z.enum(["continue", "downgrade_model", "pause", "ask_admin", "add_budget"]),
   options: z
     .array(z.object({
       id: z.string().min(1),

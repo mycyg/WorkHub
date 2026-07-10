@@ -1,5 +1,7 @@
 import type { WorkHubLocale } from "@workhub/contracts";
 
+import { structuredFieldLabel } from "./structured-field-labels.js";
+
 type StructuredDetailSurface = "proposal" | "replay";
 
 function escapeHtml(value: unknown) {
@@ -19,19 +21,6 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
 
 function text(locale: WorkHubLocale, zh: string, en: string) {
   return locale === "zh-CN" ? zh : en;
-}
-
-function fieldLabel(locale: WorkHubLocale, field: string) {
-  const labels: Record<string, { zh: string; en: string }> = {
-    title: { zh: "标题", en: "Title" },
-    summary_md: { zh: "说明", en: "Summary" },
-    priority: { zh: "优先级", en: "Priority" },
-    due_at: { zh: "截止时间", en: "Due date" },
-    acceptance_items: { zh: "验收项", en: "Acceptance items" },
-    task_items: { zh: "任务项", en: "Task items" }
-  };
-  const label = labels[field];
-  return label ? text(locale, label.zh, label.en) : field;
 }
 
 function shortString(value: string) {
@@ -114,7 +103,7 @@ function operationRows(input: {
         : "";
       return `<div class="wh-field-row" data-${dataPrefix}-structured-field-${input.mode}="${escapeHtml(field)}" data-structured-field-value-type="${escapeHtml(typeof valueType === "string" ? valueType : "")}" data-structured-field-item-count="${escapeHtml(itemCount === undefined ? "" : String(itemCount))}">
         <div>
-          <strong>${escapeHtml(fieldLabel(input.locale, field))}</strong>
+          <strong>${escapeHtml(structuredFieldLabel(input.locale, field))}</strong>
           <p class="wh-structured-fields">${escapeHtml(text(input.locale, "原始值", "Base"))}: ${escapeHtml(summarizeValue(beforeValue, input.locale))}</p>
           <p class="wh-structured-fields">${escapeHtml(text(input.locale, "当前", "Current"))}: ${escapeHtml(summarizeValue(currentValue, input.locale))}</p>
           <p class="wh-structured-fields">${escapeHtml(text(input.locale, "写入", "After"))}: ${escapeHtml(summarizeValue(afterValue, input.locale))}</p>

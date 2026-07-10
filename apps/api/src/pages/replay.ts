@@ -59,7 +59,13 @@ export function toAgentRunVm(run: AgentRunQueueRecord, locale: WorkHubLocale = "
   // findings[#78]：与其他 page builder 一致 fail-closed parse；装配走样 → InternalContractError(500)。
   return parseOutputContract(agentRunSchema, {
     id: run.run_id,
+    ...(run.parent_run_id ? { parent_run_id: run.parent_run_id } : {}),
     work_item_id: run.work_item_id,
+    ...(run.task_plan_id ? { task_plan_id: run.task_plan_id } : {}),
+    ...(run.task_plan_item_id ? { task_plan_item_id: run.task_plan_item_id } : {}),
+    ...(run.objective_id ? { objective_id: run.objective_id } : {}),
+    ...(run.agent_role ? { agent_role: run.agent_role } : {}),
+    ...(run.objective_md ? { objective_md: run.objective_md } : {}),
     mode: run.mode,
     // GAP-4：agent run 的执行者是 AI,不是 human。按 mode 给个真实标签(actor 为展示用自由字符串)。
     actor: run.mode === "pm" ? (locale === "zh-CN" ? "Cuu 项目管家" : "Cuu PM") : (locale === "zh-CN" ? "AI 工人" : "AI worker"),

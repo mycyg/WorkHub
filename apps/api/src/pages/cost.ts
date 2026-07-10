@@ -1,6 +1,7 @@
 import { costDashboardVmSchema, type BudgetNotice, type BudgetUsage, type CostDashboardVM, type CostSummaryVM, type WorkHubLocale } from "@workhub/contracts";
 import type { Settings } from "@workhub/config";
 import { isSelfImprovementSource, type BudgetNotice as InternalBudgetNotice, type BudgetUsage as InternalBudgetUsage, type CostLedgerEntry } from "@workhub/cost";
+import { localizedBudgetActionLabel } from "../budget-labels.js";
 import { pageT } from "./i18n.js";
 import { parseOutputContract } from "./output-contract.js";
 
@@ -13,6 +14,11 @@ type CostPageInput = {
   budgetUsages?: InternalBudgetUsage[];
   budgetNotices?: InternalBudgetNotice[];
   ledgerEntries?: readonly CostLedgerEntry[];
+  // B-R9.6 UX-H4：军团行展示元数据（名称/状态/预算上限），路由层按 plan id 批量取后传入；
+  // 缺省（取数失败/非管理员）时行退化为无名称无燃烧条，页面不塌。
+  taskPlanMeta?: Map<string, { label: string; status: string; maxCostCny?: number; workItemId?: string }>;
+  // UX-M10：目标标题（按目标维度不渲裸 UUID）。
+  objectiveTitles?: Map<string, string>;
   locale?: WorkHubLocale;
 };
 
@@ -137,6 +143,8 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
   const byUser = aggregateByScope(scopedEntries, "user");
   const byTeam = aggregateByScope(scopedEntries, "team");
   const byWorkitem = aggregateByScope(scopedEntries, "workitem");
+  const byTaskPlan = aggregateByTaskPlan(uniqueEntries);
+  const byObjective = aggregateByObjective(uniqueEntries);
   const modelBreakdown = aggregateByModel(uniqueEntries);
   const laborSplit = buildLaborSplit(uniqueEntries);
   const inactiveBudgetRows = [summary.me, ...(summary.team ? [summary.team] : [])].filter((usage) => usage.enabled === false);
@@ -171,6 +179,31 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
       code: item.id,
       cost_cny: formatCny(item.cost),
       turns: item.turns
+    })) : [],
+    // B-R9.6 UX-H4：按花费降序（截断时留下的是最烧钱的）+ 合入名称/状态/燃烧数据。
+    viewer_is_admin: input.isAdmin,
+    by_task_plan: input.isAdmin ? [...byTaskPlan].sort((a, b) => b.cost - a.cost).map((item) => {
+      const meta = input.taskPlanMeta?.get(item.id);
+      const burnPct = meta?.maxCostCny && meta.maxCostCny > 0
+        ? Math.round((item.cost / meta.maxCostCny) * 100)
+        : undefined;
+      return {
+        task_plan_id: item.id,
+        ...(meta?.workItemId ? { work_item_id: meta.workItemId } : {}),
+        ...(meta?.label ? { label: meta.label } : {}),
+        cost_cny: formatCny(item.cost),
+        tokens: item.tokens,
+        child_runs: item.childRuns,
+        ...(meta?.status ? { status: meta.status } : {}),
+        ...(meta?.maxCostCny ? { budget_cny: formatCny(meta.maxCostCny) } : {}),
+        ...(burnPct !== undefined ? { burn_pct: Math.max(0, burnPct) } : {})
+      };
+    }) : [],
+    by_objective: input.isAdmin ? [...byObjective].sort((a, b) => b.cost - a.cost).map((item) => ({
+      objective_id: item.id,
+      ...(input.objectiveTitles?.get(item.id) ? { label: input.objectiveTitles.get(item.id)! } : {}),
+      cost_cny: formatCny(item.cost),
+      tokens: item.tokens
     })) : [],
     model_breakdown: modelBreakdown,
     ...(laborSplit ? { labor_split: laborSplit } : {}),
@@ -230,19 +263,6 @@ function toApiBudgetNotice(notice: InternalBudgetNotice, locale: WorkHubLocale):
   };
 }
 
-function localizedBudgetActionLabel(id: string, fallback: string, locale: WorkHubLocale) {
-  if (id === "downgrade_model") {
-    return pageT(locale, "cost.action.downgrade");
-  }
-  if (id === "pause") {
-    return pageT(locale, "cost.action.pause");
-  }
-  if (id === "ask_admin") {
-    return pageT(locale, "cost.action.askAdmin");
-  }
-  return fallback;
-}
-
 function localizedScopeLabel(usage: InternalBudgetUsage, locale: WorkHubLocale) {
   if (usage.scope.kind === "user" && usage.period === "day" && isDefaultUserDayScopeLabel(usage.scopeLabel)) {
     return pageT(locale, "cost.scope.me");
@@ -272,6 +292,10 @@ function toApiScope(scope: InternalBudgetUsage["scope"]): BudgetUsage["scope"] {
   switch (scope.kind) {
     case "workitem":
       return { kind: "workitem", workitem_id: scope.workitemId };
+    case "task":
+      return { kind: "task", task_plan_id: scope.taskPlanId };
+    case "objective":
+      return { kind: "objective", objective_id: scope.objectiveId };
     case "user":
       return { kind: "user", user_id: scope.userId };
     case "team":
@@ -390,6 +414,42 @@ function aggregateByScope(entries: readonly CostLedgerEntry[], kind: "user" | "t
     current.cost += parseCny(entry.estimatedCostCny);
     current.tokens += entry.tokenIn + entry.tokenOut;
     current.turns += entry.source === "agent_step" ? 1 : 0;
+    buckets.set(id, current);
+  }
+  return [...buckets.entries()].map(([id, value]) => ({ id, ...value }));
+}
+
+function aggregateByTaskPlan(entries: readonly CostLedgerEntry[]) {
+  const buckets = new Map<string, { cost: number; tokens: number; runIds: Set<string> }>();
+  for (const entry of entries) {
+    const id = entry.taskPlanId ?? (entry.scope.kind === "task" ? entry.scope.taskPlanId : undefined);
+    if (!id) {
+      continue;
+    }
+    const current = buckets.get(id) ?? { cost: 0, tokens: 0, runIds: new Set<string>() };
+    current.cost += parseCny(entry.estimatedCostCny);
+    current.tokens += entry.tokenIn + entry.tokenOut;
+    current.runIds.add(entry.runId ?? entry.usageRecordId);
+    buckets.set(id, current);
+  }
+  return [...buckets.entries()].map(([id, value]) => ({
+    id,
+    cost: value.cost,
+    tokens: value.tokens,
+    childRuns: value.runIds.size
+  }));
+}
+
+function aggregateByObjective(entries: readonly CostLedgerEntry[]) {
+  const buckets = new Map<string, { cost: number; tokens: number }>();
+  for (const entry of entries) {
+    const id = entry.objectiveId ?? (entry.scope.kind === "objective" ? entry.scope.objectiveId : undefined);
+    if (!id) {
+      continue;
+    }
+    const current = buckets.get(id) ?? { cost: 0, tokens: 0 };
+    current.cost += parseCny(entry.estimatedCostCny);
+    current.tokens += entry.tokenIn + entry.tokenOut;
     buckets.set(id, current);
   }
   return [...buckets.entries()].map(([id, value]) => ({ id, ...value }));

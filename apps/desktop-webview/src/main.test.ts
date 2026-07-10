@@ -1,20 +1,29 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { WorkHubApiClient } from "@workhub/api-client";
-import { eventTypes, type AgentRunLiveVM, type GoldPathSurfaceVM, type ProposalConflict, type SessionVM, type WorkHubEvent } from "@workhub/contracts";
+import {
+  eventTypes,
+  type AgentArmyDashboardVM,
+  type AgentRunLiveVM,
+  type GoldPathSurfaceVM,
+  type ProposalConflict,
+  type SessionVM,
+  type WorkHubEvent
+} from "@workhub/contracts";
 
 import {
   loadDesktopAgentRunCuuCard,
   loadDesktopAgentRunReplay,
   loadDesktopAgentRunTrace,
+  createDesktopTaskPlan,
   createDesktopWorkItem,
   createDesktopWorkItemCuuCard,
   desktopCuuCardFromEvent,
   desktopWebviewSurface,
   renderDesktopAgentRunReplay,
   renderDesktopAgentRunLive,
+  loadDesktopAgentArmyDashboard,
   loadDesktopIntakeCuuCard,
   loadDesktopProposalConflictCuuCards,
   loadDesktopProposalCuuCard,
@@ -28,6 +37,23 @@ import {
   startDesktopAgentRunCuuCard,
   startDesktopIntakeSession
 } from "./main.js";
+import {
+  handleDesktopProposalAction,
+  type DesktopProposalActionClient
+} from "./desktop-proposal-actions.js";
+import {
+  dismissDesktopMainWindow,
+  dragDesktopMainWindow,
+  moveDesktopMainWindowBy,
+  resizeDesktopMainWindow
+} from "./desktop-window-controls.js";
+import { bindDesktopOfflineCard } from "./desktop-offline-card.js";
+import { renderDesktopSpotlightBootShell } from "./desktop-spotlight-boot.js";
+import {
+  handleSpotlightCapabilityEscape,
+  renderSpotlightShellHtml,
+  SPOTLIGHT_INTERNAL_BACK_SELECTOR
+} from "./spotlight/controller.js";
 
 const intakeSession: SessionVM = {
   session_id: "10000000-0000-4000-8000-000000000201",
@@ -101,7 +127,95 @@ const liveRun = {
   replay_href: "/api/agent-runs/40000000-0000-4000-8000-000000000025/replay"
 } satisfies AgentRunLiveVM;
 
-function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSession): WorkHubApiClient {
+type DesktopTestSurface = GoldPathSurfaceVM & {
+  page_vms: GoldPathSurfaceVM["page_vms"] & { agents?: AgentArmyDashboardVM };
+};
+
+const agentArmyDashboard: AgentArmyDashboardVM = {
+  generated_at: "2026-07-03T00:00:00.000Z",
+  kpis: {
+    active_team_count: 1,
+    waiting_decision_count: 1,
+    today_cost_cny: "0.80",
+    autonomy_rate_pct: 67
+  },
+  plans: [{
+    plan_id: "93000000-0000-4000-8000-000000000901",
+    work_item_id: "93000000-0000-4000-8000-000000000101",
+    work_item_code: "WH-901",
+    work_item_title: "竞品价格调研",
+    work_item_href: "/workitems/93000000-0000-4000-8000-000000000101",
+    status: "dispatching",
+    progress: { completed: 2, total: 4, label: "2/4" },
+    roles: [{ role: "research", count: 2 }],
+    statuses: [{ status: "dispatched", count: 2 }],
+    cost: { used_cny: "0.80", budget_cny: "2.00", burn_pct: 40 },
+    judge: { passed: 3, total: 4, pass_rate_pct: 75 },
+    updated_at: "2026-07-03T00:05:00.000Z"
+  }],
+  recent_escalations: [],
+  page_info: {
+    plan_limit: 20,
+    returned: 1,
+    plans_capped: false,
+    items_capped: false,
+    runs_capped: false,
+    escalation_limit: 5,
+    escalation_returned: 0,
+    escalations_capped: false
+  }
+};
+
+function fakeDesktopProposalClient(calls: Array<{ method: string; id: string; payload: unknown }>): DesktopProposalActionClient {
+  return {
+    async reviewProposal(id: string, payload: unknown) {
+      calls.push({ method: "reviewProposal", id, payload });
+      return { attention: { summary_text: "已审阅" } };
+    },
+    async mergeProposal(id: string, payload: unknown) {
+      calls.push({ method: "mergeProposal", id, payload });
+      return { attention: { summary_text: "已合入" } };
+    }
+  } as unknown as DesktopProposalActionClient;
+}
+
+function fakeDesktopActionTarget(dataset: Record<string, string>): HTMLElement {
+  return { dataset } as unknown as HTMLElement;
+}
+
+type FakeDesktopDomEvent = { preventDefault?: () => void };
+
+type FakeDesktopDomElement = {
+  value?: string;
+  addEventListener: (type: string, handler: (event: FakeDesktopDomEvent) => void) => void;
+  dispatch: (type: string, event?: FakeDesktopDomEvent) => void;
+  focus?: (options?: FocusOptions) => void;
+  removeAttribute?: (name: string) => void;
+};
+
+function fakeDesktopDomElement(extra: Partial<FakeDesktopDomElement> = {}): FakeDesktopDomElement {
+  const listeners = new Map<string, (event: FakeDesktopDomEvent) => void>();
+  return {
+    addEventListener(type, handler) {
+      listeners.set(type, handler);
+    },
+    dispatch(type, event = {}) {
+      listeners.get(type)?.(event);
+    },
+    ...extra
+  };
+}
+
+function fakeDesktopRoot(nodes: Record<string, FakeDesktopDomElement | null>) {
+  return {
+    innerHTML: "",
+    querySelector(selector: string) {
+      return nodes[selector] ?? null;
+    }
+  } as unknown as HTMLElement;
+}
+
+function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSession): WorkHubApiClient {
   return {
     async health() {
       throw new Error("not needed");
@@ -183,6 +297,46 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async createWorkItem() {
       return surface.page_vms.workitem;
     },
+    async createTaskPlan() {
+      return {
+        plan_id: "70000000-0000-4000-8000-000000000021",
+        proposal_id: "70000000-0000-4000-8000-000000000022",
+        proposal_href: "/proposals/70000000-0000-4000-8000-000000000022",
+        proposal: {
+          id: "70000000-0000-4000-8000-000000000022",
+          work_item_id: "50000000-0000-4000-8000-000000000021",
+          branch_id: "70000000-0000-4000-8000-000000000023",
+          round: 1,
+          title: "任务计划",
+          status: "opened",
+          diff_manifest: {
+            version: 0,
+            work_item_id: "50000000-0000-4000-8000-000000000021",
+            title: "任务计划",
+            summary_md: "先生成任务计划，等待人工审阅后再派发。",
+            author: { actor_kind: "ai", label: "Cuu" },
+            base: {},
+            risk: { level: "low", human_label: "低风险", reversible: true },
+            rollback: { available: true, description: "关闭提案即可回滚。" },
+            evidence_refs: [],
+            review: { reason_required_on_reject: true },
+            changes: [
+              {
+                id: "task-plan",
+                human_summary: "生成任务计划草案",
+                target_kind: "structured_record",
+                change_type: "generated",
+                target_ref: { entity_type: "work_item", id: "50000000-0000-4000-8000-000000000021" }
+              }
+            ],
+            checks: []
+          },
+          opened_by_kind: "ai",
+          created_at: "2026-06-05T01:00:00.000Z",
+          updated_at: "2026-06-05T01:00:00.000Z"
+        }
+      };
+    },
     async startAgentRun() {
       return liveRun;
     },
@@ -198,10 +352,37 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async getAgentRunHandoff() {
       return null;
     },
+    async respondApprovalsBatch(): Promise<{ approved: number; skipped: number }> {
+      throw new Error("not needed");
+    },
     async respondApproval() {
       throw new Error("not needed");
     },
     async delegateApproval() {
+      throw new Error("not needed");
+    },
+    async createDriveComment(): Promise<never> {
+      throw new Error("createDriveComment not wired in this test");
+    },
+    async skipTaskPlanProposal(): Promise<never> {
+      throw new Error("skipTaskPlanProposal not wired in this test");
+    },
+    async pauseTaskPlan(): Promise<never> {
+      throw new Error("pauseTaskPlan not wired in this test");
+    },
+    async resumeTaskPlan(): Promise<never> {
+      throw new Error("resumeTaskPlan not wired in this test");
+    },
+    async resolveEscalation() {
+      throw new Error("not needed");
+    },
+    async resolveBudgetDecision() {
+      throw new Error("not needed");
+    },
+    async delegateEscalation() {
+      throw new Error("not needed");
+    },
+    async resolveMemoryConflict() {
       throw new Error("not needed");
     },
     async listApprovalComments() {
@@ -258,6 +439,12 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async createDriveDraftProposal() {
       throw new Error("not needed");
     },
+    async importMeetingTranscript(): Promise<never> {
+      throw new Error("not needed");
+    },
+    async listUsers(): Promise<never> {
+      throw new Error("not needed");
+    },
     async createMeetingInsightDraft() {
       throw new Error("not needed");
     },
@@ -303,6 +490,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
       },
       async cost() {
         throw new Error("not needed");
+      },
+      async agents() {
+        return surface.page_vms.agents ?? agentArmyDashboard;
       },
       async skills() {
         throw new Error("not needed");
@@ -581,7 +771,8 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
         budget: [],
         notices: [],
         top_exhaustion_risks: []
-      }
+      },
+      agents: agentArmyDashboard
     },
     events: [],
     cuu_states: ["carrying_document"]
@@ -589,6 +780,8 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
 
   assert.equal(desktopWebviewSurface.pages.includes("/api/pages/gold-path"), true);
   assert.equal(desktopWebviewSurface.pages.includes("/api/pages/drive"), true);
+  assert.equal(desktopWebviewSurface.pages.includes("/api/pages/agents"), true);
+  assert.equal(desktopWebviewSurface.pages.includes("/dashboard/agents"), true);
   assert.equal(desktopWebviewSurface.pages.includes("/api/drive/workitems/:workItemId/proposal-draft"), true);
   assert.equal(desktopWebviewSurface.pages.includes("/settings"), true);
   assert.equal(desktopWebviewSurface.cuuCardAdapter, "@workhub/cuu");
@@ -605,6 +798,7 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   assert.equal((await loadDesktopAgentRunReplay(fakeClient(surface), "run")).run.handoff_md, "Cuu 完成了草稿生成。");
   assert.equal((await renderDesktopAgentRunReplay(fakeClient(surface), "run")).html.includes("查看 AI 怎么做的"), true);
   assert.equal((await renderDesktopAgentRunReplay(fakeClient(surface), "run", "en-US")).html.includes("See how AI did it"), true);
+  assert.equal((await loadDesktopAgentArmyDashboard(fakeClient(surface), "en-US")).plans[0]?.work_item_title, "竞品价格调研");
   assert.equal((await loadDesktopWorkItemCuuCard(fakeClient(surface), "work")).state, "carrying_document");
   assert.equal((await loadDesktopProposalCuuCard(fakeClient(surface), "proposal")).state, "carrying_document");
 
@@ -682,6 +876,22 @@ test("desktop webview creates work items through the typed client and maps the r
   assert.equal(card.state, "thinking");
 });
 
+test("desktop webview drafts task plans through the typed client before agent runs", async () => {
+  const surface = { page_vms: { workitem: {}, proposal: {} } } as unknown as GoldPathSurfaceVM;
+  const client = fakeClient(surface);
+  // B-R9.1-2：请求体不再携带 memories（记忆由服务端读取，注入面已删）。
+  const result = await createDesktopTaskPlan(
+    client,
+    "50000000-0000-4000-8000-000000000021",
+    {},
+    "en-US"
+  );
+
+  assert.equal(desktopWebviewSurface.pages.includes("/api/workitems/:id/task-plan"), true);
+  assert.equal(result.plan_id, "70000000-0000-4000-8000-000000000021");
+  assert.equal(result.proposal_href, "/proposals/70000000-0000-4000-8000-000000000022");
+});
+
 test("desktop webview starts agent runs and renders the live trace with Cuu state", async () => {
   const surface = { page_vms: { workitem: {}, proposal: {} } } as unknown as GoldPathSurfaceVM;
   const client = fakeClient(surface);
@@ -721,165 +931,241 @@ test("desktop webview exposes the shared Cuu event adapter for the Rust shell", 
   assert.equal(card.motion.sprite_state, "asking_approval_bounce");
 });
 
-test("R4.21 desktop browser uses the shared web runtime helpers", () => {
-  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+// R9.7: the old assertions read browser.ts and matched import/branch strings.
+// That was wrong because source regexes can pass while desktop clicks still call the wrong API.
+test("desktop proposal review action confirms only and leaves merge as a second step", async () => {
+  const calls: Array<{ method: string; id: string; payload: unknown }> = [];
+  let settled = 0;
 
-  assert.match(source, /@workhub\/web-runtime/u);
-  assert.match(source, /bindRouteLineEditor\(root\)/u);
-  assert.match(source, /actionElementMergePayload/u);
-  assert.match(source, /showRouteNotice\(shellRoot, reasonRequiredNotice/u);
-  assert.doesNotMatch(source, /function proposalActionFromHref/u);
-  assert.doesNotMatch(source, /function conflictsFromMergeError/u);
-  assert.doesNotMatch(source, /function updateLineEditorPanelPayload/u);
+  const handled = await handleDesktopProposalAction({
+    href: "/api/proposals/proposal-1/review",
+    actionTarget: fakeDesktopActionTarget({}),
+    actionId: "approve",
+    requiresReason: false,
+    locale: "zh-CN",
+    client: fakeDesktopProposalClient(calls),
+    showRouteNotice: () => undefined,
+    showPayloadFailureNotice: () => undefined,
+    showMergeConflictNotice: () => false,
+    onActionSettled: () => { settled += 1; }
+  });
+
+  assert.equal(handled, true);
+  assert.deepEqual(calls, [
+    { method: "reviewProposal", id: "proposal-1", payload: { decision: "approve", remember: "once" } }
+  ]);
+  assert.equal(settled, 1);
 });
 
-test("desktop browser saves project context so Cuu can ask about project drive files", () => {
-  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
-  const activateStart = source.indexOf("const activateRoute = (route: string) => {");
-  const activateEnd = source.indexOf("const activateFromHash", activateStart);
-  assert.notEqual(activateStart, -1);
-  assert.notEqual(activateEnd, -1);
-  const activateSource = source.slice(activateStart, activateEnd);
+test("desktop proposal action handler uses shared merge payload and reason-required behavior", async () => {
+  const calls: Array<{ method: string; id: string; payload: unknown }> = [];
+  const notices: string[] = [];
+  let pendingReview: { href: string; actionId: string } | undefined;
+  let settled = 0;
 
-  assert.match(source, /saveDesktopCuuProjectContextFromRoute/u);
-  assert.match(activateSource, /saveDesktopCuuProjectContextFromRoute\(route\)/u);
+  const mergeHandled = await handleDesktopProposalAction({
+    href: "/api/proposals/proposal-2/merge",
+    actionTarget: fakeDesktopActionTarget({ requestJson: "{\"reviewed_by\":\"desktop\"}" }),
+    actionId: "merge",
+    requiresReason: false,
+    locale: "zh-CN",
+    client: fakeDesktopProposalClient(calls),
+    showRouteNotice: (notice) => { notices.push(notice.kind); },
+    showPayloadFailureNotice: () => undefined,
+    showMergeConflictNotice: () => false,
+    onActionSettled: () => { settled += 1; }
+  });
+
+  const reviewHandled = await handleDesktopProposalAction({
+    href: "/api/proposals/proposal-3/review",
+    actionTarget: fakeDesktopActionTarget({}),
+    actionId: "request_changes",
+    requiresReason: true,
+    locale: "zh-CN",
+    client: fakeDesktopProposalClient(calls),
+    showRouteNotice: (notice) => { notices.push(notice.kind); },
+    showPayloadFailureNotice: () => undefined,
+    showMergeConflictNotice: () => false,
+    setPendingReview: (href, actionId) => { pendingReview = { href, actionId }; },
+    onActionSettled: () => { settled += 1; }
+  });
+
+  assert.equal(mergeHandled, true);
+  assert.equal(reviewHandled, true);
+  assert.deepEqual(calls, [
+    { method: "mergeProposal", id: "proposal-2", payload: { reviewed_by: "desktop" } }
+  ]);
+  assert.deepEqual(pendingReview, { href: "/api/proposals/proposal-3/review", actionId: "request_changes" });
+  assert.deepEqual(notices, ["action_success", "reason_required"]);
+  assert.equal(settled, 1);
 });
 
-test("desktop browser proposal review action confirms only and leaves merge as a second step", () => {
-  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
-  const reviewBranchStart = source.lastIndexOf('if (proposalAction?.action === "review")');
-  const mergeBranchStart = source.indexOf('if (proposalAction?.action === "merge")');
-  assert.notEqual(reviewBranchStart, -1);
-  assert.notEqual(mergeBranchStart, -1);
-  const reviewBranch = source.slice(reviewBranchStart, mergeBranchStart);
+// The old project-context assertion was wrong: it grepped deprecated gold-path
+// activateRoute text while the production desktop shell is bootSpotlight().
+// Production behavior is covered by spotlight-shell-navigation.test.ts.
 
-  assert.match(reviewBranch, /reviewProposalWithoutMerge\(client, proposalAction\.proposalId\)/u);
-  assert.doesNotMatch(reviewBranch, /mergeProposal/u);
-});
-
+// R9.7: the old M3 assertion grepped spotlight/controller.ts for selector text.
+// That was wrong because source regexes can pass while Escape still skips the view's own back action.
 test("M3 Spotlight ESC pops a view's internal detail before leaving the capability", () => {
-  // 没有控制器 DOM 测试床,这里以源码静态断言守住 M3：能力内 Esc 必须先点视图自己的「返回列表」按钮
-  // (data-*-back，仅 detail 态存在)，只有查不到内部详情层时才 dispatch 顶层 back 退回 launcher。
-  const source = readFileSync(new URL("./spotlight/controller.ts", import.meta.url), "utf8");
-  assert.match(source, /data-wi-back/u);
-  assert.match(source, /data-back-to-projects/u);
-  // ESC 分支里：查到内部返回按钮就点它(退一级)，否则才 dispatch 顶层 back。
-  assert.match(source, /if \(internalBack\) \{\s*internalBack\.click\(\);\s*\} else \{\s*dispatch\(\{ type: "back" \}\);/u);
+  const selectors: string[] = [];
+  const clicks: string[] = [];
+  const topBack: string[] = [];
+  const body = {
+    querySelector(selector: string) {
+      selectors.push(selector);
+      return { click: () => { clicks.push("internal_back"); } };
+    }
+  };
+
+  const result = handleSpotlightCapabilityEscape(body, () => { topBack.push("top_back"); });
+
+  assert.equal(result, "internal_back");
+  assert.equal(selectors[0], SPOTLIGHT_INTERNAL_BACK_SELECTOR);
+  assert.match(SPOTLIGHT_INTERNAL_BACK_SELECTOR, /data-wi-back/u);
+  assert.match(SPOTLIGHT_INTERNAL_BACK_SELECTOR, /data-back-to-projects/u);
+  // UX-M15：军团 plan 详情的返回层也参与 Esc 逐级回退。
+  assert.match(SPOTLIGHT_INTERNAL_BACK_SELECTOR, /data-back-to-agent-armies/u);
+  assert.deepEqual(clicks, ["internal_back"]);
+  assert.deepEqual(topBack, []);
 });
 
-test("Spotlight exposes native move and resize gestures instead of a fixed top search bar", () => {
-  const source = readFileSync(new URL("./spotlight/controller.ts", import.meta.url), "utf8");
-  const browserSource = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+test("M3 Spotlight ESC falls back to top-level back when the view has no internal detail", () => {
+  const topBack: string[] = [];
+  const body = {
+    querySelector() {
+      return null;
+    }
+  };
 
-  assert.match(source, /export type SpotlightManualDragFn = \(deltaX: number, deltaY: number\) => void/u);
-  assert.match(source, /drag\?: \(\) => void/u);
-  assert.match(source, /dragMove\?: SpotlightManualDragFn/u);
-  assert.match(source, /resizeDrag\?: \(direction: SpotlightResizeDirection\) => void/u);
-  assert.match(source, /renderWorkHubLiquidGlassLayer\("spotlight"\)/u);
-  assert.match(source, /class="wh-spot ds-anim-spring-in"/u);
-  // 盒子自己在 css.ts 里持有液态玻璃(渐变白底 + backdrop blur)，不再借用扁平的 ds-glass-strong 工具类。
-  assert.doesNotMatch(source, /class="wh-spot ds-glass-strong/u);
-  assert.match(source, /data-spot-box data-mode="launcher"/u);
-  assert.match(source, /class="wh-spot-drag-sheet" data-spot-drag-sheet/u);
-  assert.match(source, /class="wh-spot-field" type="search" data-spot-input role="combobox"/u);
-  assert.doesNotMatch(source, /data-tauri-drag-region/u);
-  assert.match(source, /data-spot-resize="south-east"/u);
-  assert.match(source, /focusSearch\(\{ expand: false \}\)/u);
-  assert.match(source, /suppressNextFocusExpansion = !options\.expand/u);
-  assert.match(source, /if \(suppressNextFocusExpansion \|\| nowMs\(\) < suppressSearchFocusUntil\) \{\s*suppressNextFocusExpansion = false;\s*\}/u);
-  assert.match(source, /const dragExcludedSelector = "button,a,select,\[contenteditable=true\],\[data-spot-resize\]"/u);
-  assert.match(source, /Boolean\(target\.closest\(dragExcludedSelector\)\)/u);
-  assert.doesNotMatch(source, /dragExcludedSelector = "input,textarea,button/u);
-  assert.match(source, /let userResizeAutoUnlockAt = 0/u);
-  assert.match(source, /let suppressSearchFocusUntil = 0/u);
-  assert.match(source, /let suppressSearchClickUntil = 0/u);
-  assert.match(source, /const resetLauncher = \(\) => \{/u);
-  assert.match(source, /const renderLauncherBody = \(\) => \{/u);
-  assert.match(source, /const expanded = searchActive \|\| state\.query\.trim\(\)\.length > 0/u);
-  assert.match(source, /renderLauncherBody\(\);\s*scheduleWorkHubLiquidGlassFilterRebuild\(doc\);/u);
-  assert.match(source, /input2\.addEventListener\("input", \(\) => \{\s*if \(!openCapabilityId\(state\)\) \{\s*searchActive = true;/u);
-  assert.match(source, /searchActive = false;\s*pendingTarget = undefined;\s*state = initialSpotlightState\(\);\s*box\.dataset\.kbd = "false";\s*renderLauncher\(\);\s*focusSearch\(\{ expand: false \}\);/u);
-  assert.match(source, /resetLauncher\(\);\s*input\.dismiss\?\.\(\);/u);
-  assert.match(source, /reset: \(\) => \{\s*resetLauncher\(\);\s*\}/u);
-  assert.match(source, /nowMs\(\) < suppressSearchFocusUntil/u);
-  assert.match(source, /nowMs\(\) < suppressSearchClickUntil/u);
-  assert.match(source, /userResizeAutoUnlockAt = nowMs\(\) \+ 1600/u);
-  assert.match(source, /suppressSearchFocusUntil = nowMs\(\) \+ 700/u);
-  assert.match(source, /suppressSearchClickUntil = nowMs\(\) \+ 900/u);
-  assert.match(source, /suppressSearchClickUntil = nowMs\(\) \+ 700/u);
-  assert.match(source, /if \(!manualDrag.dragging && moved < 4\) \{\s*suppressSearchClickUntil = 0;/u);
-  assert.match(source, /let manualDrag:/u);
-  assert.match(source, /dragMove\?\.\(event\.screenX - manualDrag\.lastScreenX, event\.screenY - manualDrag\.lastScreenY\)/u);
-  assert.match(source, /manualDrag\.dragging = true/u);
-  assert.match(source, /let dragSheetDrag:/u);
-  assert.match(source, /dragSheet\.addEventListener\("pointerdown"/u);
-  assert.match(source, /input\.dragMove\?\.\(event\.screenX - dragSheetDrag\.lastScreenX, event\.screenY - dragSheetDrag\.lastScreenY\)/u);
-  assert.match(source, /const wasDragging = dragSheetDrag\.dragging/u);
-  assert.match(source, /if \(!wasDragging\) \{\s*searchActive = true;\s*renderLauncher\(\);\s*focusSearch\(\{ expand: true \}\);/u);
-  assert.match(source, /topEl\.addEventListener\("click", \(event\) => \{[\s\S]*?event\.stopImmediatePropagation\(\);/u);
-  const focusStart = source.indexOf('input2.addEventListener("focus"');
-  const clickStart = source.indexOf('input2.addEventListener("click"', focusStart);
-  assert.notEqual(focusStart, -1);
-  assert.notEqual(clickStart, -1);
-  const focusSource = source.slice(focusStart, clickStart);
-  assert.doesNotMatch(focusSource, /searchActive = true|renderLauncher\(\)/u);
-  const pointerDownStart = source.indexOf('topEl.addEventListener("pointerdown"');
-  const pointerMoveStart = source.indexOf('topEl.addEventListener("pointermove"', pointerDownStart);
-  assert.notEqual(pointerDownStart, -1);
-  assert.notEqual(pointerMoveStart, -1);
-  const pointerDownSource = source.slice(pointerDownStart, pointerMoveStart);
-  assert.doesNotMatch(pointerDownSource, /input\.drag\(\)/u);
-  assert.match(source, /if \(now < userResizeAutoUnlockAt\) \{\s*userResizeAutoUnlockAt = now \+ 700;\s*return;\s*\}/u);
-  assert.match(source, /input\.drag\?\.\(\)/u);
-  assert.match(source, /input\.resizeDrag\?\.\(direction\)/u);
-  assert.match(source, /const requestResizeFromWindowResize = \(\) => \{\s*scheduleWorkHubLiquidGlassFilterRebuild\(doc\);\s*const now = nowMs\(\);/u);
-  assert.match(source, /input\.resizeDrag\?\.\(direction\);\s*scheduleWorkHubLiquidGlassFilterRebuild\(doc\);/u);
-  const mouseMoveStart = source.indexOf('"mousemove"');
-  const mouseUpStart = source.indexOf('"mouseup"', mouseMoveStart);
-  assert.notEqual(mouseMoveStart, -1);
-  assert.notEqual(mouseUpStart, -1);
-  assert.doesNotMatch(source.slice(mouseMoveStart, mouseUpStart), /scheduleWorkHubLiquidGlassFilterRebuild\(doc\)/u);
-  const dragSheetMoveStart = source.indexOf('dragSheet.addEventListener("pointermove"');
-  const dragSheetFinishStart = source.indexOf("const finishDragSheet", dragSheetMoveStart);
-  assert.notEqual(dragSheetMoveStart, -1);
-  assert.notEqual(dragSheetFinishStart, -1);
-  assert.doesNotMatch(source.slice(dragSheetMoveStart, dragSheetFinishStart), /scheduleWorkHubLiquidGlassFilterRebuild\(doc\)/u);
-  const nativeFallbackMoveStart = source.indexOf('topEl.addEventListener("pointermove"');
-  const nativeFallbackClearStart = source.indexOf("const clearDragStart", nativeFallbackMoveStart);
-  assert.notEqual(nativeFallbackMoveStart, -1);
-  assert.notEqual(nativeFallbackClearStart, -1);
-  assert.doesNotMatch(source.slice(nativeFallbackMoveStart, nativeFallbackClearStart), /scheduleWorkHubLiquidGlassFilterRebuild\(doc\)/u);
-  assert.match(browserSource, /liquidGlassFilterHtml/u);
-  assert.match(browserSource, /scheduleWorkHubLiquidGlassFilterRebuild\(document\)/u);
-  assert.match(browserSource, /const moveMainWindowBy: SpotlightManualDragFn = \(deltaX, deltaY\): void =>/u);
-  assert.match(browserSource, /invoke\("move_main_window_by", \{ deltaX, deltaY \}\)/u);
-  assert.match(browserSource, /invoke\("start_main_window_drag"\)/u);
-  assert.match(browserSource, /invoke\("start_main_window_resize_drag", \{ direction \}\)/u);
+  const result = handleSpotlightCapabilityEscape(body, () => { topBack.push("top_back"); });
+
+  assert.equal(result, "top_back");
+  assert.deepEqual(topBack, ["top_back"]);
 });
 
+test("Spotlight shell renders native drag affordances without dead resize handles", () => {
+  const html = renderSpotlightShellHtml("en-US");
+
+  // R9.7: the old native-drag assertion grepped spotlight/controller.ts for local variable names.
+  // That was wrong because source text did not prove the shell HTML exposed the expected controls.
+  assert.match(html, /class="wh-spot ds-anim-spring-in"/u);
+  assert.match(html, /data-spot-box data-mode="launcher"/u);
+  assert.match(html, /wh-liquid-glass/u);
+  assert.match(html, /class="wh-spot-drag-sheet" data-spot-drag-sheet/u);
+  assert.match(html, /class="wh-spot-field" type="search" data-spot-input role="combobox"/u);
+  assert.doesNotMatch(html, /data-tauri-drag-region/u);
+  assert.doesNotMatch(html, /data-spot-resize/u);
+  assert.doesNotMatch(html, /ds-glass-strong/u);
+});
+
+test("desktop native window commands invoke movement without resize-drag plumbing", () => {
+  const calls: Array<{ command: string; args?: Record<string, unknown> | undefined }> = [];
+  const scope = {
+    __TAURI__: {
+      core: {
+        invoke(command: string, args?: Record<string, unknown>) {
+          calls.push({ command, args });
+          return Promise.resolve();
+        }
+      }
+    }
+  };
+
+  // R9.7: the old native-command assertion grepped browser.ts for invoke strings.
+  // That was wrong because source text did not prove the injected commands call Tauri with the right payloads.
+  assert.equal(resizeDesktopMainWindow(480, 320, scope), true);
+  assert.equal(dragDesktopMainWindow(scope), true);
+  assert.equal(moveDesktopMainWindowBy(12, -8, scope), true);
+  assert.equal(dismissDesktopMainWindow(scope), true);
+  assert.equal(dragDesktopMainWindow({}), false);
+  assert.deepEqual(calls, [
+    { command: "set_spotlight_size", args: { width: 480, height: 320 } },
+    { command: "start_main_window_drag", args: undefined },
+    { command: "move_main_window_by", args: { deltaX: 12, deltaY: -8 } },
+    { command: "hide_main_window", args: undefined }
+  ]);
+  assert.equal(calls.some((call) => call.command === "start_main_window_resize_drag"), false);
+});
+
+// R9.7: the old offline-settings assertion grepped browser.ts for localStorage calls.
+// That was wrong because source regexes can pass while the rendered offline card still navigates or leaves controls unbound.
 test("desktop offline settings edit the API base locally instead of navigating to a dead settings route", () => {
-  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+  const storageCalls: Array<{ method: "setItem" | "removeItem"; key: string; value?: string }> = [];
+  const reloads: string[] = [];
+  const rebuilds: string[] = [];
+  const focusCalls: FocusOptions[] = [];
+  const removedAttributes: string[] = [];
+  let submitPrevented = 0;
 
-  const offlineStart = source.indexOf("function renderDesktopOfflineCard");
-  const bootStart = source.indexOf("async function bootSpotlight", offlineStart);
-  const offlineSource = source.slice(offlineStart, bootStart);
+  const retry = fakeDesktopDomElement();
+  const openSettings = fakeDesktopDomElement();
+  const defaultApi = fakeDesktopDomElement();
+  const form = fakeDesktopDomElement({
+    removeAttribute(name) {
+      removedAttributes.push(name);
+    }
+  });
+  const apiInput = fakeDesktopDomElement({
+    value: "https://workhub.example///",
+    focus(options) {
+      focusCalls.push(options ?? {});
+    }
+  });
+  const root = fakeDesktopRoot({
+    "#wh-retry": retry,
+    "#wh-open-settings": openSettings,
+    "#wh-default-api": defaultApi,
+    "#wh-offline-settings": form,
+    "#wh-api-base": apiInput
+  });
 
-  assert.match(offlineSource, /#wh-offline-settings/u);
-  assert.match(offlineSource, /window\.localStorage\.setItem\("workhub_api_base", next\)/u);
-  assert.match(offlineSource, /window\.localStorage\.removeItem\("workhub_api_base"\)/u);
-  assert.doesNotMatch(offlineSource, /window\.location\.hash = "#\/settings"/u);
+  bindDesktopOfflineCard(root, {
+    apiBase: "http://127.0.0.1:8787",
+    detail: "ECONNREFUSED",
+    locale: "zh-CN",
+    storage: {
+      setItem(key, value) {
+        storageCalls.push({ method: "setItem", key, value });
+      },
+      removeItem(key) {
+        storageCalls.push({ method: "removeItem", key });
+      }
+    },
+    reload: () => { reloads.push("reload"); },
+    scheduleRebuild: () => { rebuilds.push("rebuild"); }
+  });
+
+  assert.match(root.innerHTML, /id="wh-offline-settings"/u);
+  assert.doesNotMatch(root.innerHTML, /#\/settings/u);
+
+  openSettings.dispatch("click");
+  assert.deepEqual(removedAttributes, ["hidden"]);
+  assert.deepEqual(focusCalls, [{ preventScroll: true }]);
+
+  form.dispatch("submit", { preventDefault: () => { submitPrevented += 1; } });
+  assert.equal(submitPrevented, 1);
+  assert.deepEqual(storageCalls, [
+    { method: "setItem", key: "workhub_api_base", value: "https://workhub.example" }
+  ]);
+  assert.deepEqual(reloads, ["reload"]);
+
+  defaultApi.dispatch("click");
+  assert.deepEqual(storageCalls.at(-1), { method: "removeItem", key: "workhub_api_base" });
+  assert.deepEqual(reloads, ["reload", "reload"]);
+
+  retry.dispatch("click");
+  assert.deepEqual(reloads, ["reload", "reload", "reload"]);
+  assert.deepEqual(rebuilds, ["rebuild"]);
 });
 
 test("Spotlight boot starts transparent without a legacy boot card or capture background", () => {
-  const source = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
-  const bootStart = source.indexOf("async function bootSpotlight");
-  const endStart = source.indexOf("if (root && resolveDesktopSurface() === \"pet\")", bootStart);
-  assert.notEqual(bootStart, -1);
-  assert.notEqual(endStart, -1);
-  const bootSource = source.slice(bootStart, endStart);
+  // R9.7: the old boot assertion grepped browser.ts for omitted legacy calls.
+  // That was wrong because source regexes can pass while boot still renders a stale opaque shell.
+  const html = renderDesktopSpotlightBootShell();
 
-  assert.doesNotMatch(bootSource, /renderGoldPathBootDocument/u);
-  assert.doesNotMatch(bootSource, /#0f1117/u);
-  assert.match(bootSource, /liquidGlassHeadHtml/u);
-  assert.match(bootSource, /liquidGlassFilterHtml/u);
+  assert.match(html, /data-spot-host/u);
+  assert.match(html, /M\+PLUS\+Rounded\+1c/u);
+  assert.match(html, /\.wh-spot/u);
+  assert.doesNotMatch(html, /wh-app-root/u);
+  assert.doesNotMatch(html, /#0f1117/u);
 });

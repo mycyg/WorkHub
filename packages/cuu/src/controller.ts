@@ -41,6 +41,7 @@ export type CuuControllerDecisionReason =
   | "low_priority_badge"
   | "duplicate_dropped"
   | "queue_overflow_dropped"
+  | "bubble_throttled"
   | "dismissed_current"
   | "promoted_badge"
   | "removed_queued_card"
@@ -71,6 +72,7 @@ export type CuuController = {
   dismiss: (cardId?: string) => CuuControllerDecision;
   setPreferences: (input: Partial<CuuControllerPreferences>) => CuuControllerSnapshot;
   clearBadges: () => CuuControllerSnapshot;
+  noteExternalCard: (card: CuuCard | undefined) => CuuControllerSnapshot;
 };
 
 const defaultPreferences: CuuControllerPreferences = {
@@ -95,15 +97,23 @@ export function defaultCuuControllerPreferences(): CuuControllerPreferences {
   return { ...defaultPreferences };
 }
 
+// ux-flow-spec §3.7 频率纪律：同一工作项（军团 plan 的宿主）的气泡在 5 分钟窗口内
+// 只冒最高优先级一条；后到的同/低优先级气泡降级成角标（决策收件箱仍有卡，不丢决策）。
+const BUBBLE_THROTTLE_WINDOW_MS = 5 * 60 * 1000;
+
 export function createCuuController(input: {
   preferences?: Partial<CuuControllerPreferences>;
   idle_state?: CuuState;
+  now?: () => number;
 } = {}): CuuController {
   let preferences = normalizePreferences(input.preferences);
   const idleState = input.idle_state ?? "idle";
+  const now = input.now ?? (() => Date.now());
   let activeCard: CuuCard | undefined;
   const queue: CuuCard[] = [];
   const badges: CuuCard[] = [];
+  // 每个节流组（work_item 优先，退化到 source entity）最近一次放行气泡的时间与优先级。
+  const bubbleWindow = new Map<string, { at: number; priority: CuuCard["priority"] }>();
 
   const snapshot = (): CuuControllerSnapshot => ({
     ...(activeCard ? { active_card: activeCard } : {}),
@@ -141,6 +151,25 @@ export function createCuuController(input: {
       return decision("drop", "duplicate_dropped", { card });
     }
 
+    // §3.7 气泡节流：同组（同工作项）5 分钟窗口内只放行最高优先级一条；其余降级角标。
+    const throttleKey = card.kind === "bubble"
+      ? card.source?.work_item_id ?? (card.source ? `${card.source.entity_type}:${card.source.entity_id}` : undefined)
+      : undefined;
+    if (throttleKey) {
+      const at = now();
+      const last = bubbleWindow.get(throttleKey);
+      if (last && at - last.at < BUBBLE_THROTTLE_WINDOW_MS && priorityRank[card.priority] <= priorityRank[last.priority]) {
+        const droppedCard = pushQueued(card, badges, preferences.queue_limit);
+        const incomingWasDropped = droppedCard?.id === card.id;
+        return decision(incomingWasDropped ? "drop" : "badge", incomingWasDropped ? "queue_overflow_dropped" : "bubble_throttled", {
+          card,
+          surface: "badge",
+          ...(droppedCard ? { dropped_card: droppedCard } : {})
+        });
+      }
+      bubbleWindow.set(throttleKey, { at, priority: card.priority });
+    }
+
     const badgeReason = badgeReasonFor(card, preferences);
     if (badgeReason) {
       const droppedCard = pushQueued(card, badges, preferences.queue_limit);
@@ -176,6 +205,16 @@ export function createCuuController(input: {
     });
   };
 
+  const clearBubbleWindowFor = (card: CuuCard | undefined) => {
+    if (!card || card.kind !== "bubble") {
+      return;
+    }
+    const key = card.source?.work_item_id ?? (card.source ? `${card.source.entity_type}:${card.source.entity_id}` : undefined);
+    if (key) {
+      bubbleWindow.delete(key);
+    }
+  };
+
   const dismiss = (cardId = activeCard?.id): CuuControllerDecision => {
     if (!cardId) {
       const promoted = takeNextCard(queue, badges);
@@ -187,6 +226,9 @@ export function createCuuController(input: {
     }
 
     if (activeCard?.id === cardId) {
+      // R9（Cuu 行为链）：被处理/关闭的气泡不该继续占用 5 分钟节流窗——「上一条已被看过并处理」
+      // 与「上一条还没人管」要区分开，否则处理完后同组新气泡仍被静音成角标。
+      clearBubbleWindowFor(activeCard);
       const promoted = takeNextCard(queue, badges);
       activeCard = promoted?.card;
       if (promoted) {
@@ -217,6 +259,17 @@ export function createCuuController(input: {
     snapshot,
     enqueue,
     dismiss,
+    // R9（Cuu 行为链 high）：本地动作路径（提交回执/待拍板浮现/恢复）直接换卡不走 enqueue——
+    // controller 的 activeCard 与屏上真卡脱节，push 气泡会按「无当前卡」误判直接抢断。
+    // 本地换卡后调它对齐单一事实来源；传 undefined 表示屏上已无卡。
+    noteExternalCard(card: CuuCard | undefined) {
+      // R10：本地换/清卡与 dismiss 同语义——被离开的旧气泡不再占 5 分钟节流窗。
+      if (activeCard && activeCard.id !== card?.id) {
+        clearBubbleWindowFor(activeCard);
+      }
+      activeCard = card;
+      return snapshot();
+    },
     setPreferences(inputPreferences) {
       preferences = normalizePreferences({ ...preferences, ...inputPreferences });
       return snapshot();

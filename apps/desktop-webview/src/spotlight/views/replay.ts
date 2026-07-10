@@ -20,9 +20,9 @@ function stateLabel(state: BgRun["state"], zh: boolean): string {
   return zh ? map[state][0] : map[state][1];
 }
 
-function runListHtml(runs: BgRun[], zh: boolean): string {
+export function runListHtml(runs: BgRun[], zh: boolean): string {
   if (!runs.length) {
-    return `<div class="wh-spot-empty"><div class="wh-spot-empty-face">(=・ω・=)</div><h3 class="wh-spot-empty-title">${zh ? "暂时没有在跑的 AI" : "No active runs"}</h3><p class="wh-spot-empty-sub">${zh ? "派个活，Cuu 跑起来就会出现在这里" : "Dispatch a task and runs show up here"}</p></div>`;
+    return `<div class="wh-spot-empty"><div class="wh-spot-empty-face">(=・ω・=)</div><h3 class="wh-spot-empty-title">${zh ? "暂时没有在跑的 AI" : "No active runs"}</h3><p class="wh-spot-empty-sub">${zh ? "新建任务后，Cuu 跑起来就会出现在这里" : "Create a task and runs show up here"}</p></div>`;
   }
   return `<div class="wh-spot-list ds-stagger">${runs
     .map(
@@ -53,7 +53,7 @@ function traceHtml(vm: AgentRunLiveVM, zh: boolean, waiting = false): string {
     ? `<div class="wh-spot-trace">${steps
         .map(
           (s) =>
-            `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}${s.tool_name ? ` · ${escapeHtml(s.tool_name)}` : ""}</div><div class="wh-spot-trace-out">${escapeHtml(agentStepPublicSummary(s, zh))}</div></div>`
+            `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}</div><div class="wh-spot-trace-out">${escapeHtml(agentStepPublicSummary(s, zh))}</div></div>`
         )
         .join("")}</div>`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "还没有步骤" : "No steps yet"}</p>`;

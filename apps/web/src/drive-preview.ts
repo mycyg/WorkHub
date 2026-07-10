@@ -56,8 +56,12 @@ function drivePreviewSizeLabel(sizeBytes: number | undefined, locale: WorkHubLoc
 }
 
 export function drivePreviewPanelHtml(preview: DrivePreviewPayload, locale: WorkHubLocale) {
+  // R12（富文本）：.md 等结构化文本目前按纯文本 <pre> 呈现——诚实标注「源码视图」而不是
+  // 让用户以为渲染坏了；带下载出路可用本地工具查看排版效果。
+  const isMarkdown = /\.(md|markdown)$/iu.test(preview.filename ?? "");
   const meta = [
     drivePreviewTypeLabel(preview.preview_type, locale),
+    isMarkdown ? (locale === "en-US" ? "Markdown source view" : "Markdown 源码视图") : "",
     drivePreviewSizeLabel(preview.size_bytes, locale),
     preview.truncated ? (locale === "en-US" ? "Truncated" : "已截断") : ""
   ].filter(Boolean).join(" · ");
@@ -68,4 +72,25 @@ export function drivePreviewPanelHtml(preview: DrivePreviewPayload, locale: Work
     ? preview.text
     : drivePreviewFallbackText(locale);
   return `<h3>${escapeHtml(drivePreviewTitle(preview, locale))}</h3>${meta ? `<p>${escapeHtml(meta)}</p>` : ""}<pre class="wh-r5-drive-preview-body">${escapeHtml(text)}</pre>${download ? `<div class="wh-r4-route-actions">${download}</div>` : ""}`;
+}
+
+export function renderDrivePreviewPanel(
+  actionTarget: HTMLElement,
+  preview: DrivePreviewPayload,
+  locale: WorkHubLocale,
+  createElement: (tagName: string) => HTMLElement = (tagName) => document.createElement(tagName)
+) {
+  const route = actionTarget.closest<HTMLElement>("[data-r4-route-component=\"drive\"]");
+  if (!route) {
+    return false;
+  }
+  route.querySelector<HTMLElement>("[data-r5-drive-preview-panel]")?.remove();
+  const anchor = actionTarget.closest<HTMLElement>("[data-r4-drive-accepted-deliverable],[data-r4-drive-item]");
+  const panel = createElement("section");
+  panel.className = "wh-card wh-r4-route-card wh-r5-drive-preview-panel";
+  panel.dataset.r5DrivePreviewPanel = "true";
+  panel.innerHTML = drivePreviewPanelHtml(preview, locale);
+  (anchor ?? route).insertAdjacentElement(anchor ? "afterend" : "beforeend", panel);
+  panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  return true;
 }

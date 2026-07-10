@@ -26,6 +26,7 @@ import {
 } from "@workhub/events";
 
 import { getDefaultPushBus } from "../broker/index.js";
+import { getDefaultStructuredLogger } from "../logging.js";
 import type { PushBus } from "../broker/types.js";
 import type { AuthActor } from "../middleware/auth.js";
 
@@ -336,7 +337,23 @@ export function createNotificationService(
     },
 
     async notifyMilestone(context: MilestoneNotificationContext) {
-      return this.flushNotificationDrafts(this.queueMilestoneNotifications(context));
+      // R7（通知闭环）：新里程碑落地时，同一工作项上更早的 workitem.* 通知描述的状态已不成立——
+      // 一并归档，不再让「已升级」「审阅中」在事项推进后仍卡在待决策桶。归档失败不翻通知创建。
+      const milestone = this.queueMilestoneNotifications(context);
+      const keepType = milestone[0]?.type;
+      if (keepType && context.workItem.id) {
+        try {
+          await deps.notifications.archiveStaleLifecycleForWorkItem(context.workItem.id, keepType, now());
+        } catch (error) {
+          getDefaultStructuredLogger().warn("lifecycle_notification_archive_failed", { workItemId: context.workItem.id, error });
+        }
+      }
+      return this.flushNotificationDrafts(milestone);
+    },
+
+    // R7（通知闭环）：审批被处理/转交后归档对应 approval_routed 通知（跨用户）。
+    async archiveByDedupeKey(dedupeKey: string) {
+      return deps.notifications.archiveByDedupeKey(dedupeKey, now());
     },
 
     async createNotification(draft: NotificationDraft): Promise<Notification | null> {
@@ -422,7 +439,9 @@ export function createNotificationService(
           // 计数口径与实际返回的 items 一致（如实反映"这次返回了多少"，不虚报未扫描到的历史总量）。
           unread: capped.filter((entry) => !entry.row.readAt).length,
           total: capped.length
-        }
+        },
+        // R4（规模化）：真实通知数可能超过 outputCap——capped=true 让前端明说「列表被封顶」。
+        capped: visibleEntries.length > outputCap || scanned >= scanCap
       };
     },
 
@@ -492,12 +511,15 @@ export function createNotificationService(
             break;
           }
           const visibleRows = await visibleRowsForActor(rows, options.actor);
-          updated += await deps.notifications.markReadMany(visibleRows.map((row) => row.id), userId, at);
+          // R12（批量效率）：「全部已读」不吞待决策——needs_decision 保持未读，
+          // 「已读但未处理」比未读更容易被视觉埋没。
+          const informationalRows = visibleRows.filter((row) => !isNeedsDecisionNotification(row));
+          updated += await deps.notifications.markReadMany(informationalRows.map((row) => row.id), userId, at);
           const last = rows[rows.length - 1]!;
           cursor = { createdAt: last.createdAt, id: last.id };
         }
       } else {
-        updated = await deps.notifications.markAllRead(userId, at);
+        updated = await deps.notifications.markAllRead(userId, at, { excludeNeedsDecision: true });
       }
       await auditNotificationAction({
         userId,

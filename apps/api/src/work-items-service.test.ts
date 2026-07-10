@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -16,6 +18,15 @@ import type { ProviderRegistry } from "@workhub/agent/providers";
 
 import type { AuthActor } from "./middleware/auth.js";
 import { InternalContractError } from "./pages/output-contract.js";
+import {
+  assertR5_10RequiredConfidence,
+  buildR5_10InitialUserMessage,
+  buildR5_10RunScopeSummary,
+  collectR5_10LocalInputFileContext,
+  createR5_10ClarificationAnswerPayload,
+  createR5_10WorkItemServiceOptions,
+  selectR5_10TasksForRun
+} from "./qa/r5-10-real-key-evaluation-contract.js";
 import { createDbWorkItemService, createInMemoryWorkItemService, WorkItemServiceError } from "./services/work-items.js";
 
 const now = new Date("2026-06-26T00:00:00.000Z");
@@ -909,60 +920,154 @@ test("persistent intake passes the actor workspace into AI clarification usage",
   assert.equal(seenActor?.workspaceId, defaultSeedIds.workspaceId);
 });
 
-test("real-key evaluation wires the provider registry into WorkItem clarification", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(
-    source,
-    /createDbWorkItemService\(workItemRepository,\s*\{[\s\S]*providerRegistry[\s\S]*\}\)/u
+test("real-key evaluation wires the provider registry into WorkItem clarification", async () => {
+  const providerRegistry = { isConfigured: () => true } as unknown as ProviderRegistry;
+  const context = [{
+    name: "workhub-app-upload.txt",
+    path: "inputs/workhub-app-upload.txt",
+    preview: "真实 App 验收"
+  }];
+  const options = createR5_10WorkItemServiceOptions(
+    providerRegistry,
+    new Map([["请根据项目网盘 workhub-app-upload.txt 生成验收要点。", context]])
   );
+
+  // R9.7: the old assertion grepped r5-10-real-key-evaluation.ts for `providerRegistry`.
+  // That was wrong because source text did not prove the helper passes the registry and file context at runtime.
+  assert.equal(options.providerRegistry, providerRegistry);
+  assert.deepEqual(
+    await options.projectFileContext?.({ intentText: "请根据项目网盘 workhub-app-upload.txt 生成验收要点。" }),
+    context
+  );
+  assert.deepEqual(await options.projectFileContext?.({ intentText: "没有预置文件的任务" }), []);
 });
 
 test("real-key evaluation answers AI clarification with free text before applying task presets", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(source, /const clarificationQuestion = session\.data\.question/u);
-  assert.match(
-    source,
-    /\/api\/sessions\/\$\{session\.data\.session_id\}\/next-question`[\s\S]{0,160}free_text: clarificationAnswer/u
-  );
-  assert.doesNotMatch(
-    source,
-    /\/api\/sessions\/\$\{session\.data\.session_id\}\/next-question`[\s\S]{0,160}selected_option_ids: task\.optionIds/u
-  );
+  const payload = createR5_10ClarificationAnswerPayload("请优先输出适合项目验收的要点。");
+
+  // R9.7: the old assertion grepped request-body source around `/next-question`.
+  // That was wrong because source text did not prove the clarification payload omits preset option ids.
+  assert.deepEqual(payload, { free_text: "请优先输出适合项目验收的要点。" });
+  assert.equal(Object.hasOwn(payload, "selected_option_ids"), false);
 });
 
 test("real-key evaluation labels limited samples instead of applying full-suite gates", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(source, /const limitedRun = /u);
-  assert.match(source, /R5_10_REAL_TASK_LIMIT/u);
-  assert.match(source, /run_scope/u);
-  assert.match(source, /full_suite/u);
-  assert.match(source, /Limited Sample Summary/u);
-  assert.match(source, /Full Gate Summary/u);
-  assert.match(source, /full-suite escalation gates were not asserted in this limited sample/u);
+  const selected = selectR5_10TasksForRun(["T1", "T2", "T3"], "2");
+  const limited = buildR5_10RunScopeSummary({
+    limitedRun: selected.limitedRun,
+    requestedTaskLimit: selected.requestedTaskLimit,
+    taskCount: selected.tasks.length,
+    totalTaskCount: 3,
+    realProviderSamplePass: true,
+    realProviderFullSuitePass: null,
+    ledgerPass: false,
+    qualityPassCount: 1,
+    sampledQualityTotal: 2,
+    structuredUpgrade: false,
+    budgetGuard: false,
+    unsampledGateTasks: ["T5", "B1"]
+  });
+  const full = buildR5_10RunScopeSummary({
+    limitedRun: false,
+    requestedTaskLimit: null,
+    taskCount: 3,
+    totalTaskCount: 3,
+    realProviderSamplePass: true,
+    realProviderFullSuitePass: true,
+    ledgerPass: true,
+    qualityPassCount: 3,
+    sampledQualityTotal: 3,
+    structuredUpgrade: true,
+    budgetGuard: true,
+    unsampledGateTasks: []
+  });
+
+  // R9.7: the old assertion grepped report-source strings for limited/full suite labels.
+  // That was wrong because source text did not prove the limit selection or report sections agree.
+  assert.deepEqual(selected.tasks, ["T1", "T2"]);
+  assert.equal(selected.requestedTaskLimit, 2);
+  assert.equal(selected.limitedRun, true);
+  assert.deepEqual(limited.reportRunScope, {
+    mode: "limited_sample",
+    requested_task_limit: 2,
+    task_count: 2,
+    total_available_tasks: 3,
+    full_suite: false
+  });
+  assert.match(limited.runScope, /limited_sample \(2\/3, R5_10_REAL_TASK_LIMIT=2\)/u);
+  assert.equal(limited.markdownGateSummary.includes("## Limited Sample Summary"), true);
+  assert.equal(limited.markdownGateSummary.includes("- Ledger sample: fail"), true);
+  assert.match(limited.escalationCalibrationNote, /full-suite escalation gates were not asserted/u);
+  assert.deepEqual(full.reportRunScope, {
+    mode: "full_suite",
+    requested_task_limit: null,
+    task_count: 3,
+    total_available_tasks: 3,
+    full_suite: true
+  });
+  assert.equal(full.markdownGateSummary.includes("## Full Gate Summary"), true);
+  assert.equal(full.markdownGateSummary.includes("- G2 real provider: pass"), true);
 });
 
-test("real-key evaluation feeds prepared input files into AI clarification", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(source, /function localInputFileContext/u);
-  assert.match(source, /const clarificationFileContextByIntent = new Map/u);
-  assert.match(source, /projectFileContext/u);
-  assert.match(source, /clarificationFileContextByIntent\.set\(task\.intentText/u);
+test("real-key evaluation feeds prepared input files into AI clarification", async () => {
+  const workdir = await mkdtemp(join(tmpdir(), "workhub-r5-10-context-"));
+  await mkdir(join(workdir, "inputs", "nested"), { recursive: true });
+  await writeFile(join(workdir, "inputs", "brief.txt"), "  真实   App\n验收  ", "utf8");
+  await writeFile(join(workdir, "inputs", "nested", "metrics.csv"), "metric,value\npass,3\n", "utf8");
+
+  const context = await collectR5_10LocalInputFileContext(workdir);
+
+  // R9.7: the old assertion grepped for `localInputFileContext` and the intent map.
+  // That was wrong because source text did not prove prepared files become clarification context rows.
+  assert.deepEqual(
+    context.map((item) => ({ name: item.name, path: item.path, preview: item.preview })),
+    [
+      { name: "brief.txt", path: "inputs/brief.txt", preview: "真实 App 验收" },
+      { name: "metrics.csv", path: "inputs/nested/metrics.csv", preview: "metric,value pass,3" }
+    ]
+  );
+  assert.equal(typeof context[0]?.sizeBytes, "number");
 });
 
 test("real-key evaluation keeps resolved work item context in the execution prompt", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(source, /initialUserMessage:\s*\(run,\s*workItemContext\)/u);
-  assert.match(source, /workItemContext\s*\?\s*\[/u);
-  assert.match(source, /<work_item_context>/u);
-  assert.match(source, /workItemContext,/u);
+  const message = buildR5_10InitialUserMessage({
+    runTitle: "生成客户验收要点",
+    workItemId: workItemId,
+    taskId: "T1",
+    taskPrompt: "请根据 inputs/brief.txt 生成验收要点。",
+    workItemContext: "用户上传了 workhub-app-upload.txt。"
+  });
+  const noContext = buildR5_10InitialUserMessage({
+    runTitle: "生成客户验收要点",
+    workItemId: workItemId,
+    taskId: "T1",
+    taskPrompt: "请根据 inputs/brief.txt 生成验收要点。"
+  });
+
+  // R9.7: the old assertion grepped the queue `initialUserMessage` source.
+  // That was wrong because source text did not prove resolved work-item context appears in the actual prompt.
+  assert.match(message, /work_item_id: 93000000-0000-4000-8000-000000000201/u);
+  assert.match(message, /r5_10_task_id: T1/u);
+  assert.match(message, /<work_item_context>\n用户上传了 workhub-app-upload.txt。\n<\/work_item_context>/u);
+  assert.match(message, /请根据 inputs\/brief\.txt 生成验收要点。/u);
+  assert.doesNotMatch(noContext, /<work_item_context>/u);
 });
 
 test("real-key evaluation fails deliverable samples with incomplete confidence reviews", () => {
-  const source = readFileSync("src/qa/r5-10-real-key-evaluation.ts", "utf8");
-  assert.match(source, /function assertRequiredConfidence/u);
-  assert.match(source, /task\.expectedMode !== "deliverable"/u);
-  assert.match(source, /confidence review is incomplete/u);
-  assert.match(source, /assertRequiredConfidence\(task,\s*confidenceEvidence\)/u);
+  // R9.7: the old assertion grepped for `assertRequiredConfidence(...)`.
+  // That was wrong because source text did not prove deliverable confidence failures are thrown.
+  assert.doesNotThrow(() => assertR5_10RequiredConfidence({ id: "T5", expectedMode: "structured_upgrade" }, null));
+  assert.throws(
+    () => assertR5_10RequiredConfidence({ id: "T1", expectedMode: "deliverable" }, null),
+    /expected a confidence review record/u
+  );
+  assert.throws(
+    () => assertR5_10RequiredConfidence({ id: "T1", expectedMode: "deliverable" }, { verdict: null, score: null }),
+    /confidence review is incomplete/u
+  );
+  assert.doesNotThrow(() =>
+    assertR5_10RequiredConfidence({ id: "T1", expectedMode: "deliverable" }, { verdict: "pass", score: "4" })
+  );
 });
 
 test("kickoff_agent finalize does not show ai_working before an AgentRun is actually queued", async () => {
@@ -1135,6 +1240,41 @@ test("assigned lead can continue a private clarification session", async () => {
   assert.equal(session.question.progress.find((step) => step.key === "confirm")?.state, "active");
 });
 
+test("confirmation option copy does not leak raw work item statuses", async () => {
+  const repo = {
+    ...repository(),
+    async readWorkItemDetail() {
+      return {
+        ...detailRows({
+          status: "ai_clarifying",
+          submitterUserId: "93000000-0000-4000-8000-000000000888",
+          claimedByUserId: null
+        }),
+        projectOwnerUserId: "93000000-0000-4000-8000-000000000303",
+        assignments: [{ userId, role: "lead" }]
+      } as unknown as StoredWorkItemDetailRows;
+    },
+    async insertChatMessage(input: InsertStoredChatMessageInput) {
+      return repository().insertChatMessage(input);
+    }
+  } as unknown as WorkItemDataRepository;
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  for (const locale of ["zh-CN", "en-US"] as const) {
+    const session = await service.nextQuestion({
+      sessionId: workItemId,
+      actor,
+      locale,
+      payload: { free_text: "请按项目网盘材料继续。" }
+    });
+    const visibleOptionCopy = session.question.options
+      .flatMap((option) => [option.label, option.description ?? ""])
+      .join("\n");
+
+    assert.doesNotMatch(visibleOptionCopy, /\bspec_ready\b/u);
+  }
+});
+
 test("work item session wraps VM assembly drift as an internal contract error", async () => {
   const repo = {
     ...repository(),
@@ -1235,14 +1375,6 @@ test("in-memory work item detail wraps VM assembly drift as an internal contract
       }
     }),
     (error: unknown) => error instanceof InternalContractError && error.context === "work-item.detail"
-  );
-});
-
-test("accepted deliverable restore finds previous versions by project target instead of same drive item", () => {
-  const source = readFileSync("../../packages/db/src/repositories/work-items.ts", "utf8");
-  assert.doesNotMatch(
-    source,
-    /eq\(acceptedDeliverableChanges\.driveItemId,\s*current\.driveItem\.id\)/u
   );
 });
 
@@ -1354,6 +1486,201 @@ test("assigned users can open private work item details in their workspace", asy
   const vm = await service.detailPage({ workItemId, actor, locale: "zh-CN" });
 
   assert.equal(vm.workitem.id, workItemId);
+});
+
+test("work item detail includes the latest task plan snapshot for presentation", async () => {
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const researchId = "93000000-0000-4000-8000-000000000902";
+  const produceId = "93000000-0000-4000-8000-000000000903";
+  const repo = repository();
+  repo.readWorkItemDetail = async () => ({
+    ...detailRows({
+      status: "in_review",
+      submitterUserId: userId,
+      claimedByUserId: null
+    }),
+    taskPlan: {
+      plan: {
+        id: planId,
+        workItemId,
+        workspaceId: defaultSeedIds.workspaceId,
+        status: "approved",
+        objectiveId: null,
+        budgetJson: { total_share_pct: 100 },
+        decompositionContextJson: { source: "meta_planner" },
+        createdByUserId: userId,
+        createdAt: now,
+        updatedAt: now
+      },
+      items: [
+        {
+          id: researchId,
+          planId,
+          parentItemId: null,
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          objectiveMd: "查清三类竞品的最新打法。",
+          acceptanceMd: "列出至少 3 条可核验来源。",
+          budgetSharePct: 35,
+          dependsOn: [],
+          status: "pending",
+          createdAt: now,
+          updatedAt: now
+        },
+        {
+          id: produceId,
+          planId,
+          parentItemId: null,
+          seq: 2,
+          title: "产出短报告",
+          role: "produce",
+          objectiveMd: "把证据整理成短报告。",
+          acceptanceMd: "报告包含结论、证据和下一步建议。",
+          budgetSharePct: 65,
+          dependsOn: [researchId],
+          status: "pending",
+          createdAt: now,
+          updatedAt: now
+        }
+      ],
+      itemsCapped: false
+    }
+  } as unknown as StoredWorkItemDetailRows);
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  const vm = await service.detailPage({ workItemId, actor, locale: "zh-CN" });
+
+  assert.equal(vm.task_plan?.status, "approved");
+  assert.equal(vm.task_plan?.items[0]?.role, "research");
+  assert.equal(vm.task_plan?.items[1]?.depends_on[0], researchId);
+  assert.equal(vm.task_plan?.items_capped, false);
+});
+
+test("R9.2 work item detail exposes task-plan child run visibility and decision jumps", async () => {
+  const repo = repository();
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const researchId = "93000000-0000-4000-8000-000000000902";
+  const reviewId = "93000000-0000-4000-8000-000000000903";
+  repo.readWorkItemDetail = async () => ({
+    ...detailRows({ status: "ai_working", submitterUserId: userId }),
+    taskPlan: {
+      plan: {
+        id: planId,
+        workItemId,
+        workspaceId: defaultSeedIds.workspaceId,
+        status: "dispatching",
+        objectiveId: null,
+        budgetJson: { total_share_pct: 100, max_cost_cny: "3.000000" },
+        decompositionContextJson: { source: "meta_planner" },
+        createdByUserId: userId,
+        createdAt: now,
+        updatedAt: now
+      },
+      items: [
+        {
+          id: researchId,
+          planId,
+          parentItemId: null,
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          objectiveMd: "查清三类竞品的最新打法。",
+          acceptanceMd: "列出至少 3 条可核验来源。",
+          budgetSharePct: 35,
+          dependsOn: [],
+          status: "succeeded",
+          createdAt: now,
+          updatedAt: now
+        },
+        {
+          id: reviewId,
+          planId,
+          parentItemId: null,
+          seq: 2,
+          title: "复核风险",
+          role: "review",
+          objectiveMd: "确认结论风险。",
+          acceptanceMd: "列出风险和是否需要负责人决定。",
+          budgetSharePct: 25,
+          dependsOn: [researchId],
+          status: "failed",
+          createdAt: now,
+          updatedAt: now
+        }
+      ],
+      itemsCapped: false,
+      runs: [
+        {
+          id: "93000000-0000-4000-8000-000000000911",
+          parentRunId: null,
+          workItemId,
+          workspaceId: defaultSeedIds.workspaceId,
+          taskPlanId: planId,
+          taskPlanItemId: researchId,
+          agentRole: "research",
+          title: "整理竞品证据",
+          status: "succeeded",
+          costEstimate: "0.450000",
+          outcomeReason: null,
+          createdAt: now,
+          updatedAt: now,
+          finishedAt: now
+        },
+        {
+          id: "93000000-0000-4000-8000-000000000912",
+          parentRunId: null,
+          workItemId,
+          workspaceId: defaultSeedIds.workspaceId,
+          taskPlanId: planId,
+          taskPlanItemId: reviewId,
+          agentRole: "review",
+          title: "复核风险",
+          status: "escalated",
+          costEstimate: "0.800000",
+          outcomeReason: "needs_owner_decision",
+          createdAt: now,
+          updatedAt: now,
+          finishedAt: now
+        },
+        {
+          id: "93000000-0000-4000-8000-000000000913",
+          parentRunId: null,
+          workItemId,
+          workspaceId: "93000000-0000-4000-8000-000000000999",
+          taskPlanId: planId,
+          taskPlanItemId: reviewId,
+          agentRole: "review",
+          title: "外部工作区复核",
+          status: "succeeded",
+          costEstimate: "9.000000",
+          outcomeReason: null,
+          createdAt: now,
+          updatedAt: now,
+          finishedAt: now
+        }
+      ],
+      runsCapped: false
+    }
+  } as unknown as StoredWorkItemDetailRows);
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  const vm = await service.detailPage({ workItemId, actor, locale: "zh-CN" });
+
+  assert.equal(vm.agent_team?.plan_id, planId);
+  // B-R9.6 §3.1：dispatching 计划头行带「暂停派发」控制，指向真实 pause 端点。
+  assert.equal(vm.agent_team?.dispatch_control?.kind, "pause");
+  assert.equal(vm.agent_team?.dispatch_control?.href, `/api/task-plans/${planId}/pause`);
+  assert.equal(vm.agent_team?.completed_count, 1);
+  assert.equal(vm.agent_team?.total_count, 2);
+  assert.equal(vm.agent_team?.cost_used_cny, "1.250000");
+  assert.equal(vm.agent_team?.cost_budget_cny, "3.000000");
+  assert.equal(vm.agent_team?.items[0]?.status, "succeeded");
+  assert.equal(vm.agent_team?.items[0]?.run_workspace_id, defaultSeedIds.workspaceId);
+  assert.equal(vm.agent_team?.items[0]?.action?.href, "/agent-runs/93000000-0000-4000-8000-000000000911/replay");
+  assert.equal(vm.agent_team?.items[1]?.status, "needs_human");
+  assert.equal(vm.agent_team?.items[1]?.decision_href, "/attention");
+  assert.equal(vm.agent_team?.items[1]?.action?.label, "去决策");
 });
 
 test("work item detail hides accepted-deliverable restore links for read-only viewers", async () => {

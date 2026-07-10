@@ -134,6 +134,7 @@ export type CuuCard = {
 const stateByAttentionKind: Record<AttentionItem["kind"], CuuState> = {
   clarification: "asking_approval",
   approval: "asking_approval",
+  plan_review: "asking_approval",
   proposal_review: "carrying_document",
   escalation: "worried",
   sync_conflict: "worried",
@@ -173,9 +174,27 @@ function publicProposalTitle(title: string, options: CuuLocaleOptions = {}) {
   return isModelSelfNarrationTitle(compact) ? cuuT(options.locale, "proposal.reviewTitle") : compact;
 }
 
+function normalizeProposalMergeVerb(text: string, options: CuuLocaleOptions = {}) {
+  if (options.locale === "en-US") {
+    return text;
+  }
+  // R9 词表：全站 merge 动词统一「采纳」（web 主动作即「采纳到正式版」）——旧实现反向统一成「合入」，
+  // 造成同一冲突卡 web/桌面两套动词。服务端残留的「合入」在这里归一。
+  return text
+    .replaceAll("合入这次版本", "采纳这次版本")
+    .replaceAll("正式合入", "正式采纳")
+    .replaceAll("是否合入", "是否采纳");
+}
+
 function publicProposalSummary(text: string | undefined, options: CuuLocaleOptions = {}) {
-  const compact = truncate(stripProposalOpenedPrefix(text ?? ""), 180);
-  return !compact || isModelSelfNarrationTitle(compact) ? cuuT(options.locale, "proposal.summaryFallback") : compact;
+  const compact = truncate(stripProposalOpenedPrefix(text ?? "")
+    .replaceAll("进入派发", "开始执行")
+    .replaceAll("自动派发", "自动开始执行")
+    .replaceAll("派发", "开始执行")
+    .replace(/\bdispatch(?:ed|ing)?\b/gi, options.locale === "en-US" ? "start work" : "开始执行"), 180);
+  return !compact || isModelSelfNarrationTitle(compact)
+    ? cuuT(options.locale, "proposal.summaryFallback")
+    : normalizeProposalMergeVerb(compact, options);
 }
 
 function proposalNextStepForStatus(status: ProposalDetailVM["status"], options: CuuLocaleOptions = {}) {
@@ -192,6 +211,9 @@ function proposalNextStepForStatus(status: ProposalDetailVM["status"], options: 
 }
 
 function proposalNextStepForAttention(item: AttentionItem, options: CuuLocaleOptions = {}) {
+  if (item.kind === "plan_review") {
+    return cuuT(options.locale, "proposal.planNextStepOpened");
+  }
   const actionIds = new Set(item.actions.map((action) => action.id));
   if (actionIds.has("merge")) {
     return cuuT(options.locale, "proposal.nextStepReviewed");
@@ -214,18 +236,29 @@ function attentionHasAction(item: AttentionItem, actionId: string) {
   return item.actions.some((action) => action.id === actionId);
 }
 
+function isProposalLikeAttentionKind(kind: AttentionItem["kind"]) {
+  return kind === "plan_review" || kind === "proposal_review" || kind === "delivery_ready";
+}
+
 function stateForAttentionItem(item: AttentionItem): CuuState {
-  if ((item.kind === "proposal_review" || item.kind === "delivery_ready") && attentionHasAction(item, "merge")) {
+  if (isProposalLikeAttentionKind(item.kind) && attentionHasAction(item, "merge")) {
     return "carrying_document";
   }
   return item.cuu_state ?? stateByAttentionKind[item.kind];
 }
 
 function publicProposalAttentionTitle(item: AttentionItem, message: string, options: CuuLocaleOptions = {}) {
-  if (attentionHasAction(item, "merge")) {
-    return cuuT(options.locale, "proposal.mergeTitle");
-  }
   const title = publicProposalTitle(item.title, options);
+  if (attentionHasAction(item, "merge")) {
+    if (
+      title === message
+      || title === cuuT(options.locale, "proposal.reviewTitle")
+      || title === cuuT(options.locale, "proposal.mergeTitle")
+    ) {
+      return cuuT(options.locale, "proposal.mergeTitle");
+    }
+    return cuuFormat(options.locale, "proposal.mergeTitleNamed", { title });
+  }
   return title === message ? cuuT(options.locale, "proposal.reviewTitle") : title;
 }
 
@@ -248,29 +281,51 @@ function localizedAttentionActionLabel(
   item: AttentionItem,
   options: CuuLocaleOptions
 ) {
-  if (item.kind !== "approval" && item.kind !== "proposal_review" && item.kind !== "delivery_ready") {
+  if (item.kind !== "approval" && !isProposalLikeAttentionKind(item.kind) && item.kind !== "escalation") {
     return action.label;
   }
   switch (action.id) {
+    case "escalation_retry":
+      return options.locale === "en-US" ? "Let it retry" : "让它重试";
+    case "escalation_pm_mode":
+      return options.locale === "en-US" ? "I'll take over" : "转成我来做";
+    case "escalation_cancel":
+      return options.locale === "en-US" ? "Cancel this subtask" : "取消这个子任务";
     case "approve":
     case "allow":
-      if (item.kind === "proposal_review" || item.kind === "delivery_ready") {
+      if (item.kind === "plan_review") {
+        return cuuT(options.locale, "proposal.approvePlanReview");
+      }
+      if (isProposalLikeAttentionKind(item.kind)) {
         return cuuT(options.locale, "proposal.approveReview");
       }
       return cuuT(options.locale, "pet.action.approve");
+    case "approve_and_dispatch":
+      return cuuT(options.locale, "proposal.approvePlanAndStart");
+    case "approve_hold":
+      return cuuT(options.locale, "proposal.approvePlanHold");
+    case "start_task_plan":
+      return cuuT(options.locale, "proposal.startHeldPlan");
+    case "request_replan":
+      return cuuT(options.locale, "proposal.requestReplan");
     case "request_changes":
     case "deny":
     case "reject":
-      if (item.kind === "proposal_review" || item.kind === "delivery_ready") {
+      if (item.kind === "plan_review") {
+        return cuuT(options.locale, "proposal.requestReplan");
+      }
+      if (isProposalLikeAttentionKind(item.kind)) {
         return cuuT(options.locale, "proposal.requestChanges");
       }
       return cuuT(options.locale, "pet.action.requestChanges");
     case "open_proposal":
-      return cuuT(options.locale, "proposal.openReview");
+      return item.kind === "plan_review" || attentionHasAction(item, "start_task_plan")
+        ? cuuT(options.locale, "proposal.openPlanReview")
+        : cuuT(options.locale, "proposal.openReview");
     case "open":
     case "view":
-      return item.kind === "proposal_review" || item.kind === "delivery_ready"
-        ? cuuT(options.locale, "proposal.openReview")
+      return isProposalLikeAttentionKind(item.kind)
+        ? cuuT(options.locale, item.kind === "plan_review" || attentionHasAction(item, "start_task_plan") ? "proposal.openPlanReview" : "proposal.openReview")
         : cuuT(options.locale, "pet.action.open");
     default:
       return action.label;
@@ -285,25 +340,29 @@ function mapAttentionAction(action: AttentionAction, item: AttentionItem, option
     method: action.method,
     href: action.href,
     ...(action.requires_desktop ? { requires_desktop: action.requires_desktop } : {}),
-    ...(action.requires_reason ? { requires_reason: action.requires_reason } : {})
+    ...(action.requires_reason ? { requires_reason: action.requires_reason } : {}),
+    ...(action.request_json ? { payload: action.request_json } : {})
   };
 }
 
 function sortAttentionActionsForUser(actions: CuuCardAction[], item: AttentionItem) {
-  if (item.kind !== "proposal_review" && item.kind !== "delivery_ready") {
+  if (!isProposalLikeAttentionKind(item.kind)) {
     return actions;
   }
   const rank = (action: CuuCardAction) => {
     if (action.id === "open" || action.id === "open_proposal" || action.id === "view") {
       return 0;
     }
-    if (action.id === "approve" || action.id === "allow") {
+    if (action.id === "approve" || action.id === "allow" || action.id === "approve_and_dispatch" || action.id === "start_task_plan") {
       return 1;
     }
-    if (action.id === "request_changes" || action.id === "deny" || action.id === "reject") {
+    if (action.id === "approve_hold") {
       return 2;
     }
-    return 3;
+    if (action.id === "request_replan" || action.id === "request_changes" || action.id === "deny" || action.id === "reject") {
+      return 3;
+    }
+    return 4;
   };
   return [...actions].sort((a, b) => rank(a) - rank(b));
 }
@@ -337,7 +396,8 @@ function mapActionSpec(action: ActionSpec, tone: CuuCardActionTone): CuuCardActi
     method: action.method,
     href: action.href,
     ...(action.requires_desktop ? { requires_desktop: action.requires_desktop } : {}),
-    ...(action.requires_reason ? { requires_reason: action.requires_reason } : {})
+    ...(action.requires_reason ? { requires_reason: action.requires_reason } : {}),
+    ...(action.request_json ? { payload: action.request_json } : {})
   };
 }
 
@@ -356,16 +416,52 @@ function evidenceById(evidenceRefs: EvidenceRef[]) {
 function budgetScopeChip(scope: BudgetScope, options: CuuLocaleOptions = {}): CuuCardChip {
   switch (scope.kind) {
     case "workitem":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.workitem"), description: scope.workitem_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.workitem"), description: cuuT(options.locale, "budget.scopeDesc.workitem") };
+    case "task":
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.task"), description: cuuT(options.locale, "budget.scopeDesc.task") };
+    case "objective":
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.objective"), description: cuuT(options.locale, "budget.scopeDesc.objective") };
     case "user":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.user"), description: scope.user_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.user"), description: cuuT(options.locale, "budget.scopeDesc.user") };
     case "team":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.team"), description: scope.team_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.team"), description: cuuT(options.locale, "budget.scopeDesc.team") };
     case "curation":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.curation"), description: scope.team_id };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.curation"), description: cuuT(options.locale, "budget.scopeDesc.curation") };
     case "eval":
-      return { id: "scope", label: cuuT(options.locale, "budget.scope.eval"), description: scope.suite };
+      return { id: "scope", label: cuuT(options.locale, "budget.scope.eval"), description: cuuT(options.locale, "budget.scopeDesc.eval") };
   }
+}
+
+function budgetStatusLabel(status: CostDashboardVM["top_exhaustion_risks"][number]["status"], options: CuuLocaleOptions) {
+  return cuuT(options.locale, `cost.status.${status}`);
+}
+
+function proposalCheckStatusLabel(status: ProposalDetailVM["manifest"]["checks"][number]["status"], options: CuuLocaleOptions) {
+  return cuuT(options.locale, `proposal.checkStatus.${status}`);
+}
+
+const budgetActionLabels = {
+  "zh-CN": {
+    add_budget: "追加预算继续",
+    finish_current_output: "就用现有产出收尾",
+    close_scope: "整体收工（取消这个任务）",
+    downgrade_model: "降级模型继续",
+    pause: "先暂停",
+    ask_admin: "找管理员"
+  },
+  "en-US": {
+    add_budget: "Add budget and continue",
+    finish_current_output: "Finish with current output",
+    close_scope: "Close scope (cancels this task)",
+    downgrade_model: "Use a cheaper model",
+    pause: "Pause for now",
+    ask_admin: "Ask an admin"
+  }
+} as const;
+
+function budgetActionLabel(id: string, fallback: string, options: CuuLocaleOptions) {
+  const locale = options.locale === "en-US" ? "en-US" : "zh-CN";
+  return budgetActionLabels[locale][id as keyof typeof budgetActionLabels[typeof locale]] ?? fallback;
 }
 
 function dataStringField(data: unknown, key: string) {
@@ -455,6 +551,7 @@ function cardKindForAttention(kind: AttentionItem["kind"]): CuuCardKind {
       return "question";
     case "approval":
       return "approval";
+    case "plan_review":
     case "proposal_review":
     case "delivery_ready":
       return "proposal";
@@ -473,7 +570,7 @@ function cardKindForAttention(kind: AttentionItem["kind"]): CuuCardKind {
 
 export function cardFromAttentionItem(item: AttentionItem, options: CuuLocaleOptions = {}): CuuCard {
   const state = stateForAttentionItem(item);
-  const proposalLike = item.kind === "proposal_review" || item.kind === "delivery_ready";
+  const proposalLike = isProposalLikeAttentionKind(item.kind);
   const message = proposalLike
     ? publicProposalSummary(item.reason_text ?? item.summary_text, options)
     : item.kind === "clarification"
@@ -664,7 +761,12 @@ export function cardFromProposalDetail(vm: ProposalDetailVM, options: CuuLocaleO
       title: cuuT(options.locale, "proposal.summarySection"),
       lines: [publicProposalSummary(vm.manifest.summary_md, options)]
     },
-    proposalNextStepSection(proposalNextStepForStatus(vm.status, options), options),
+    proposalNextStepSection(
+      vm.status === "reviewed" && vm.review_actions.approve_hold
+        ? cuuT(options.locale, "proposal.planNextStepReviewed")
+        : proposalNextStepForStatus(vm.status, options),
+      options
+    ),
     {
       id: "changes",
       title: cuuT(options.locale, "proposal.changesSection"),
@@ -689,7 +791,9 @@ export function cardFromProposalDetail(vm: ProposalDetailVM, options: CuuLocaleO
     sections.push({
       id: "checks",
       title: cuuT(options.locale, "proposal.checksSection"),
-      lines: checks.map((check) => `${check.label}: ${check.status}${check.detail ? ` - ${check.detail}` : ""}`)
+      lines: checks.map((check) =>
+        `${check.label}: ${proposalCheckStatusLabel(check.status, options)}${check.detail ? ` - ${check.detail}` : ""}`
+      )
     });
   }
 
@@ -699,7 +803,10 @@ export function cardFromProposalDetail(vm: ProposalDetailVM, options: CuuLocaleO
         mapActionSpec(vm.review_actions.request_changes, "danger")
       ]
     : vm.status === "reviewed" && vm.review_actions.merge
-      ? [mapActionSpec(vm.review_actions.merge, "primary")]
+      ? [
+          mapActionSpec(vm.review_actions.merge, "primary"),
+          ...(vm.review_actions.approve_hold ? [mapActionSpec(vm.review_actions.approve_hold, "secondary")] : [])
+        ]
       : [];
 
   return withMotion({
@@ -776,7 +883,7 @@ export function cardFromProposalConflict(conflict: ProposalConflict, options: Cu
     {
       id: "versions",
       title: cuuT(options.locale, "proposal.conflictVersionSection"),
-      lines: conflict.options.map((option) => option.summary_text)
+      lines: conflict.options.map((option) => normalizeProposalMergeVerb(option.summary_text, options))
     }
   ];
   const actions = [
@@ -795,7 +902,7 @@ export function cardFromProposalConflict(conflict: ProposalConflict, options: Cu
     kind: "proposal",
     state: "asking_approval",
     title: cuuT(options.locale, "proposal.conflictTitle"),
-    message: truncate(conflict.summary_text),
+    message: truncate(normalizeProposalMergeVerb(conflict.summary_text, options)),
     priority: "high",
     actions,
     chips: [
@@ -838,6 +945,20 @@ function stateForWorkItem(status: WorkItemStatus, hasProposal: boolean): CuuStat
     return "asking_approval";
   }
   return "thinking";
+}
+
+function acceptanceStatusLabel(status: unknown, options: CuuLocaleOptions) {
+  switch (status) {
+    case "met":
+      return cuuT(options.locale, "workItem.acceptanceStatus.met");
+    case "unmet":
+      return cuuT(options.locale, "workItem.acceptanceStatus.unmet");
+    case "waived":
+      return cuuT(options.locale, "workItem.acceptanceStatus.waived");
+    case "open":
+    default:
+      return cuuT(options.locale, "workItem.acceptanceStatus.open");
+  }
 }
 
 export function cardFromWorkItemDetail(vm: WorkItemDetailVM, options: CuuLocaleOptions = {}): CuuCard {
@@ -910,8 +1031,7 @@ export function cardFromWorkItemDetail(vm: WorkItemDetailVM, options: CuuLocaleO
         // ?? 只挡 null/undefined，对象/数字会 stringify 成 "[object Object]"/"5"。改 typeof 守卫，
         // 非字符串落到占位文案（与 cards.ts:233 dataStringField 约定一致）。
         const title = typeof record.title === "string" ? record.title : cuuFormat(options.locale, "workItem.acceptanceFallback", { index: index + 1 });
-        const status = typeof record.status === "string" ? record.status : "open";
-        return `${title}: ${status}`;
+        return `${title}: ${acceptanceStatusLabel(record.status, options)}`;
       })
     });
   }
@@ -944,9 +1064,6 @@ function stateForAgentRun(status: AgentRunLiveVM["status"]): CuuState {
   if (status === "succeeded") {
     return "celebrating";
   }
-  if (status === "budget_exhausted") {
-    return "asking_approval";
-  }
   if (status === "failed" || status === "escalated") {
     return "worried";
   }
@@ -955,21 +1072,14 @@ function stateForAgentRun(status: AgentRunLiveVM["status"]): CuuState {
 
 type AgentRunTraceStep = AgentRunLiveVM["trace"][number];
 
-function agentRunToolSuffix(step: AgentRunTraceStep, options: CuuLocaleOptions) {
-  if (!step.tool_name) {
-    return "";
-  }
-  return `${options.locale === "en-US" ? ": " : "："}${step.tool_name}`;
-}
-
 function publicAgentRunTraceLine(step: AgentRunTraceStep, options: CuuLocaleOptions) {
   switch (step.phase) {
     case "think":
       return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.think")}`;
     case "tool_call":
-      return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.toolCall")}${agentRunToolSuffix(step, options)}`;
+      return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.toolCall")}`;
     case "tool_result":
-      return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.toolResult")}${agentRunToolSuffix(step, options)}`;
+      return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.toolResult")}`;
     case "final":
       return `#${step.step_no} ${cuuT(options.locale, "agentRun.phase.final")}${step.output_excerpt ? `${options.locale === "en-US" ? ": " : "："}${truncate(step.output_excerpt, 120)}` : ""}`;
     default:
@@ -985,9 +1095,7 @@ function publicAgentRunStepMessage(step: AgentRunTraceStep | undefined, options:
     case "think":
       return cuuT(options.locale, "agentRun.thinkingStatus");
     case "tool_call":
-      return step.tool_name
-        ? cuuFormat(options.locale, "agentRun.toolCallStatus", { tool: step.tool_name })
-        : cuuT(options.locale, "agentRun.toolCallStatusGeneric");
+      return cuuT(options.locale, "agentRun.toolCallStatusGeneric");
     case "tool_result":
       return cuuT(options.locale, "agentRun.toolResultStatus");
     case "final":
@@ -1001,12 +1109,11 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM, options: CuuLocaleOptio
   const state = stateForAgentRun(vm.status);
   const latestStep = vm.trace.at(-1);
   const active = vm.status === "queued" || vm.status === "running";
-  const budgetExhausted = vm.status === "budget_exhausted";
   const actions: CuuCardAction[] = [
     {
       id: "view_replay",
       label: cuuT(options.locale, "agentRun.viewReplay"),
-      tone: state === "celebrating" || budgetExhausted ? "primary" : "secondary",
+      tone: state === "celebrating" ? "primary" : "secondary",
       method: "GET",
       href: `/agent-runs/${vm.run_id}/replay`
     },
@@ -1057,11 +1164,9 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM, options: CuuLocaleOptio
 
   return withMotion({
     id: vm.run_id,
-    kind: budgetExhausted ? "budget" : state === "celebrating" ? "completion" : "trace",
+    kind: state === "celebrating" ? "completion" : "trace",
     state,
-    title: budgetExhausted
-      ? cuuT(options.locale, "budget.exhaustedTitle")
-      : state === "celebrating"
+    title: state === "celebrating"
         ? cuuT(options.locale, "agentRun.doneTitle")
         : state === "worried"
           ? cuuT(options.locale, "agentRun.attentionTitle")
@@ -1069,7 +1174,7 @@ export function cardFromAgentRunLive(vm: AgentRunLiveVM, options: CuuLocaleOptio
     message: truncate(
       publicAgentRunStepMessage(latestStep, options) ??
         vm.run.handoff_md ??
-        cuuT(options.locale, budgetExhausted ? "cuuStart.errorBudgetMessage" : "agentRun.progressFallback")
+        cuuT(options.locale, "agentRun.progressFallback")
     ),
     priority: state === "worried" || state === "asking_approval" ? "high" : "normal",
     actions,
@@ -1092,7 +1197,7 @@ export function cardFromBudgetNotice(notice: BudgetNotice, id = `budget-${notice
   const exhausted = notice.code === "budget_exhausted";
   const actions = notice.options?.map<CuuCardAction>((option) => ({
     id: option.id,
-    label: option.label,
+    label: budgetActionLabel(option.id, option.label, options),
     tone: option.id === notice.recommended_action ? "primary" : "secondary",
     method: "POST",
     href: option.action_href
@@ -1151,7 +1256,7 @@ export function cardFromCostDashboard(vm: CostDashboardVM, options: CuuLocaleOpt
       title: cuuT(options.locale, "cost.risksSection"),
       lines: vm.top_exhaustion_risks
         .slice(0, 4)
-        .map((risk) => `${risk.label}: ${cuuFormat(options.locale, "cost.remaining", { cost: risk.remaining_cost_cny })} (${risk.status})`)
+        .map((risk) => `${risk.label}: ${cuuFormat(options.locale, "cost.remaining", { cost: risk.remaining_cost_cny })} (${budgetStatusLabel(risk.status, options)})`)
     });
   }
 
@@ -1187,7 +1292,7 @@ export function cardFromReplayTrace(vm: ReplayTraceVM, options: CuuLocaleOptions
     {
       id: "steps",
       title: cuuT(options.locale, "replay.summarySection"),
-      lines: vm.steps.slice(-4).map((step) => `#${step.step_no} ${step.phase}${step.output_excerpt ? `: ${step.output_excerpt}` : ""}`)
+      lines: vm.steps.slice(-4).map((step) => publicAgentRunTraceLine(step, options))
     }
   ];
 
@@ -1207,7 +1312,7 @@ export function cardFromReplayTrace(vm: ReplayTraceVM, options: CuuLocaleOptions
     kind: "trace",
     state: vm.run.status === "failed" || vm.run.status === "escalated" ? "worried" : "thinking",
     title: cuuT(options.locale, "replay.title"),
-    message: truncate(latestStep?.output_excerpt ?? vm.run.handoff_md ?? cuuT(options.locale, "replay.readyFallback")),
+    message: truncate(publicAgentRunStepMessage(latestStep, options) ?? vm.run.handoff_md ?? cuuT(options.locale, "replay.readyFallback")),
     priority: vm.run.status === "failed" || vm.run.status === "escalated" ? "high" : "normal",
     actions: [],
     sections,
@@ -1235,6 +1340,31 @@ export function cardFromEvent(event: WorkHubEvent<unknown>, options: CuuLocaleOp
     return cardFromAgentRunEvent(event, options);
   }
 
+  // R3 回归（R9-OQ-CUU-DONE 半成品）：notification.created 事件此前只能变成「WorkHub update」
+  // 泛卡——通知自己的标题/正文/落点全丢，「军团收工！」冒不出来。带真实通知内容出卡。
+  if (event.type === "notification.created" && event.data && typeof event.data === "object") {
+    const data = event.data as { title?: unknown; body?: unknown; target_url?: unknown; type?: unknown };
+    if (typeof data.title === "string" && data.title) {
+      const celebratory = /收工|wrapped up|完成/u.test(data.title);
+      return withMotion({
+        id: event.event_id,
+        kind: "bubble",
+        state: celebratory ? "celebrating" : toCuuState(event),
+        title: data.title,
+        message: truncate(typeof data.body === "string" && data.body ? data.body : data.title),
+        priority: "normal",
+        actions: typeof data.target_url === "string" && data.target_url
+          ? [{ id: "open_notification_target", label: celebratory ? (options.locale === "en-US" ? "Review it" : "去验收") : (options.locale === "en-US" ? "Open" : "去看看"), tone: "primary" as const, method: "GET" as const, href: data.target_url }]
+          : [],
+        payload_ref: { entity_type: "event", entity_id: event.event_id },
+        source: optionalSource({
+          entity_type: "event",
+          entity_id: event.event_id,
+          ...(event.work_item_id ? { work_item_id: event.work_item_id } : {})
+        })
+      });
+    }
+  }
   const attention = event.attention ? event.attention : toAttentionItem(event);
   if (attention) {
     if (options.locale === "en-US" && isDefaultAttentionFallback(attention)) {

@@ -21,6 +21,10 @@ function hrefPathname(href: string, origin = globalThis.location?.origin ?? "htt
   return new URL(href, origin).pathname;
 }
 
+function hrefSearchParams(href: string, origin = globalThis.location?.origin ?? "http://workhub.local") {
+  return new URL(href, origin).searchParams;
+}
+
 export function proposalActionFromHref(href: string) {
   const path = hrefPathname(href);
   const match = /^\/api\/proposals\/([^/]+)\/(review|merge)$/u.exec(path);
@@ -28,6 +32,13 @@ export function proposalActionFromHref(href: string) {
     return undefined;
   }
   return { proposalId: decodeURIComponent(match[1]), action: match[2] as "review" | "merge" };
+}
+
+// B-R9.6 UX 审计（skip-plan 假接线）：plan_review 卡「先不拆，单个 AI 跑」的 href 识别。
+export function skipPlanProposalIdFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/proposals\/([^/]+)\/skip-plan$/u.exec(path);
+  return match?.[1] ? decodeURIComponent(match[1]) : undefined;
 }
 
 export function approvalRespondIdFromHref(href: string) {
@@ -63,6 +74,12 @@ export function createNamedProjectActionFromHref(href: string) {
 export function startAgentRunActionFromHref(href: string) {
   const path = hrefPathname(href);
   const match = /^\/api\/workitems\/([^/]+)\/agent-runs$/u.exec(path);
+  return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
+}
+
+export function createTaskPlanActionFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/workitems\/([^/]+)\/task-plan$/u.exec(path);
   return match?.[1] ? { workItemId: decodeURIComponent(match[1]) } : undefined;
 }
 
@@ -152,6 +169,56 @@ export function notificationActionFromHref(href: string) {
   return {
     notificationId: decodeURIComponent(match[1]),
     action: match[2] as "read" | "dismiss" | "complete"
+  };
+}
+
+// B-R9.6 §3.1：军团面板「暂停/恢复派发」按钮的 href 识别。
+export function taskPlanDispatchActionFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/task-plans\/([^/]+)\/(pause|resume)$/u.exec(path);
+  if (!match?.[1] || !match[2]) {
+    return undefined;
+  }
+  return {
+    planId: decodeURIComponent(match[1]),
+    action: match[2] as "pause" | "resume"
+  };
+}
+
+export function escalationActionFromHref(href: string) {
+  const path = hrefPathname(href);
+  const budgetMatch = /^\/api\/escalations\/([^/]+)\/budget-actions\/([^/]+)$/u.exec(path);
+  if (budgetMatch?.[1] && budgetMatch[2]) {
+    return {
+      escalationId: decodeURIComponent(budgetMatch[1]),
+      action: "budget" as const,
+      budgetActionId: decodeURIComponent(budgetMatch[2])
+    };
+  }
+  const match = /^\/api\/escalations\/([^/]+)\/(resolve|delegate)$/u.exec(path);
+  if (!match?.[1] || !match[2]) {
+    return undefined;
+  }
+  return {
+    escalationId: decodeURIComponent(match[1]),
+    action: match[2] as "resolve" | "delegate"
+  };
+}
+
+export function memoryConflictActionFromHref(href: string) {
+  const path = hrefPathname(href);
+  const match = /^\/api\/memory-conflicts\/([^/]+)\/resolve\/(keep_current|accept_incoming|merge_both|edit_memory|discard_both)$/u.exec(path);
+  if (!match?.[1] || !match[2]) {
+    return undefined;
+  }
+  const expectedUpdatedAt = hrefSearchParams(href).get("expected_updated_at") ?? undefined;
+  if (!expectedUpdatedAt) {
+    return undefined;
+  }
+  return {
+    conflictId: decodeURIComponent(match[1]),
+    resolution: match[2] as "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both",
+    expectedUpdatedAt
   };
 }
 
@@ -284,6 +351,11 @@ export function materializeIntakePayload<T>(element: HTMLElement): ActionPayload
   // 只有当选项和自由文本都为空时才拦。否则就成了"邀请你写,却又说没选项不让过"的死路。
   const freeText = intakeFreeTextValue(route);
   if (optionCount > 0 && selected.length === 0 && freeText.length === 0) {
+    return { ok: false, reason: "intake_option_required" };
+  }
+  // 普通用户审查：0 选项的纯问答步（long_text）自由文本是唯一答法，空提交会让 AI 拿着空信息干活——
+  // 一样拦下（提示先回答问题）。
+  if (optionCount === 0 && selected.length === 0 && freeText.length === 0) {
     return { ok: false, reason: "intake_option_required" };
   }
   return actionElementJsonPayload<T>(element);

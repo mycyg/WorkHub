@@ -6,6 +6,7 @@ import type { AgentRunLiveVM, GoldPathSurfaceVM, ProposalConflict, SessionVM } f
 
 import {
   loadWebAgentRunTrace,
+  createWebTaskPlan,
   createWebWorkItem,
   loadWebAgentRunReplay,
   renderWebAgentRunReplay,
@@ -174,6 +175,46 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async createWorkItem() {
       return surface.page_vms.workitem;
     },
+    async createTaskPlan() {
+      return {
+        plan_id: "70000000-0000-4000-8000-000000000011",
+        proposal_id: "70000000-0000-4000-8000-000000000012",
+        proposal_href: "/proposals/70000000-0000-4000-8000-000000000012",
+        proposal: {
+          id: "70000000-0000-4000-8000-000000000012",
+          work_item_id: "50000000-0000-4000-8000-000000000021",
+          branch_id: "70000000-0000-4000-8000-000000000013",
+          round: 1,
+          title: "任务计划",
+          status: "opened",
+          diff_manifest: {
+            version: 0,
+            work_item_id: "50000000-0000-4000-8000-000000000021",
+            title: "任务计划",
+            summary_md: "先生成任务计划，等待人工审阅后再派发。",
+            author: { actor_kind: "ai", label: "AI" },
+            base: {},
+            risk: { level: "low", human_label: "低风险", reversible: true },
+            rollback: { available: true, description: "关闭提案即可回滚。" },
+            evidence_refs: [],
+            review: { reason_required_on_reject: true },
+            changes: [
+              {
+                id: "task-plan",
+                human_summary: "生成任务计划草案",
+                target_kind: "structured_record",
+                change_type: "generated",
+                target_ref: { entity_type: "work_item", id: "50000000-0000-4000-8000-000000000021" }
+              }
+            ],
+            checks: []
+          },
+          opened_by_kind: "ai",
+          created_at: "2026-06-05T01:00:00.000Z",
+          updated_at: "2026-06-05T01:00:00.000Z"
+        }
+      };
+    },
     async startAgentRun() {
       return liveRun;
     },
@@ -189,10 +230,37 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async getAgentRunHandoff() {
       return null;
     },
+    async respondApprovalsBatch(): Promise<{ approved: number; skipped: number }> {
+      throw new Error("not needed");
+    },
     async respondApproval() {
       throw new Error("not needed");
     },
     async delegateApproval() {
+      throw new Error("not needed");
+    },
+    async createDriveComment(): Promise<never> {
+      throw new Error("createDriveComment not wired in this test");
+    },
+    async skipTaskPlanProposal(): Promise<never> {
+      throw new Error("skipTaskPlanProposal not wired in this test");
+    },
+    async pauseTaskPlan(): Promise<never> {
+      throw new Error("pauseTaskPlan not wired in this test");
+    },
+    async resumeTaskPlan(): Promise<never> {
+      throw new Error("resumeTaskPlan not wired in this test");
+    },
+    async resolveEscalation() {
+      throw new Error("not needed");
+    },
+    async resolveBudgetDecision() {
+      throw new Error("not needed");
+    },
+    async delegateEscalation() {
+      throw new Error("not needed");
+    },
+    async resolveMemoryConflict() {
       throw new Error("not needed");
     },
     async listApprovalComments() {
@@ -249,6 +317,12 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
     async createDriveDraftProposal() {
       throw new Error("not needed");
     },
+    async importMeetingTranscript(): Promise<never> {
+      throw new Error("not needed");
+    },
+    async listUsers(): Promise<never> {
+      throw new Error("not needed");
+    },
     async createMeetingInsightDraft() {
       throw new Error("not needed");
     },
@@ -293,6 +367,9 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
         throw new Error("not needed");
       },
       async cost() {
+        throw new Error("not needed");
+      },
+      async agents() {
         throw new Error("not needed");
       },
       async skills() {
@@ -661,6 +738,22 @@ test("web surface creates work items through the typed client without pet adapte
 
   assert.equal(webSurface.pages.includes("/api/workitems"), true);
   assert.equal(created.workitem.status, "ai_working");
+});
+
+test("web surface drafts task plans through the typed client before agent runs", async () => {
+  const surface = { page_vms: { workitem: {}, proposal: {} } } as unknown as GoldPathSurfaceVM;
+  const client = fakeClient(surface);
+  // B-R9.1-2：请求体不再携带 memories（记忆由服务端读取，注入面已删）。
+  const result = await createWebTaskPlan(
+    client,
+    "50000000-0000-4000-8000-000000000021",
+    {},
+    "en-US"
+  );
+
+  assert.equal(webSurface.pages.includes("/api/workitems/:id/task-plan"), true);
+  assert.equal(result.plan_id, "70000000-0000-4000-8000-000000000011");
+  assert.equal(result.proposal_href, "/proposals/70000000-0000-4000-8000-000000000012");
 });
 
 test("web surface starts agent runs and renders the live trace", async () => {

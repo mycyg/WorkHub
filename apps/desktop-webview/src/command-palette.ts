@@ -11,12 +11,14 @@ export type CommandId =
   | "approvals"
   | "proposals"
   | "workitem"
+  | "agents"
   | "drive"
   | "projects"
   | "replay"
   | "knowledge"
   | "cost"
   | "team"
+  | "notifications"
   | "settings";
 
 // 命令落到客户端的两类动作：开一个临时玻璃窗，或触发一次流程（如开始 intake）。
@@ -47,7 +49,7 @@ const ic = (inner: string) =>
 export const commandRegistry: DesktopCommand[] = [
   {
     id: "intake",
-    label: { "zh-CN": "新任务 / 交给 AI", en: "Dispatch a task" },
+    label: { "zh-CN": "新任务 / 交给 AI", en: "New task / Ask AI" },
     hint: { "zh-CN": "说清需求，AI 来做，你过目", en: "Clarify, let AI work, you review" },
     keywords: ["派活", "新任务", "提需求", "干活", "澄清", "dispatch", "new task", "intake", "clarify"],
     icon: ic('<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'),
@@ -76,6 +78,14 @@ export const commandRegistry: DesktopCommand[] = [
     keywords: ["工作项", "任务", "事项", "work item", "issue", "ticket", "task"],
     icon: ic('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>'),
     action: { kind: "open-window", target: "workitem" }
+  },
+  {
+    id: "agents",
+    label: { "zh-CN": "Cuu 的小队", en: "Cuu's squad" },
+    hint: { "zh-CN": "分工方案、子任务和卡点", en: "Plans, subtasks, blockers" },
+    keywords: ["军团", "小队", "分工", "计划", "agents", "agent army", "army", "squad", "task plan"],
+    icon: ic('<circle cx="7" cy="8" r="2.5"/><circle cx="17" cy="8" r="2.5"/><circle cx="12" cy="16" r="2.5"/><path d="M9 9.5l2 4M15 9.5l-2 4M9.5 16h5"/>'),
+    action: { kind: "open-window", target: "agents" }
   },
   {
     id: "drive",
@@ -124,6 +134,15 @@ export const commandRegistry: DesktopCommand[] = [
     keywords: ["团队", "成员", "日历", "技能", "team", "members", "calendar", "skills"],
     icon: ic('<circle cx="9" cy="9" r="3"/><path d="M3 19a6 6 0 0 1 12 0"/><path d="M16 7a3 3 0 0 1 0 6M21 19a6 6 0 0 0-4-5.6"/>'),
     action: { kind: "open-window", target: "team" }
+  },
+  {
+    // R5 双端一致：web 有完整通知中心+按类型静音偏好，桌面此前零入口——通知只能被动挨弹。
+    id: "notifications",
+    label: { "zh-CN": "通知", en: "Notifications" },
+    hint: { "zh-CN": "通知箱与按类型静音", en: "Inbox and per-type mute" },
+    keywords: ["通知", "消息", "静音", "notifications", "inbox", "mute"],
+    icon: ic('<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 19a2 2 0 0 0 4 0"/>'),
+    action: { kind: "open-window", target: "notifications" }
   },
   {
     id: "settings",
@@ -210,7 +229,7 @@ export function renderCommandPalette(input: CommandPaletteRenderInput = {}): str
   const query = input.query ?? "";
   const matches = matchCommands(query, loc);
   const ds = designSystem;
-  const placeholder = loc === "zh-CN" ? "想做什么？派活 / 审批 / 网盘 / 项目…" : "What do you need? dispatch / approve / drive…";
+  const placeholder = loc === "zh-CN" ? "想做什么？新任务 / 审批 / 网盘 / 项目…" : "What do you need? new task / approve / drive…";
   const emptyHint = loc === "zh-CN" ? "没有匹配的能力，换个说法试试" : "No matching capability — try another phrase";
 
   const rows =

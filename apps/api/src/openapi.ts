@@ -93,7 +93,10 @@ const actionSpecSchema = {
     id: { type: "string", minLength: 1 },
     label: { type: "string", minLength: 1 },
     method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"] },
-    href: { type: "string", minLength: 1 }
+    href: { type: "string", minLength: 1 },
+    requires_desktop: { type: "boolean" },
+    requires_reason: { type: "boolean" },
+    request_json: { type: "object", additionalProperties: true }
   },
   additionalProperties: false
 } as const;
@@ -926,7 +929,8 @@ const proposalDetailPageResponseSchema = {
       properties: {
         approve: actionSpecSchema,
         request_changes: actionSpecSchema,
-        merge: actionSpecSchema
+        merge: actionSpecSchema,
+        approve_hold: actionSpecSchema
       },
       additionalProperties: false
     },
@@ -1016,6 +1020,49 @@ const proposalNotFoundResponse = jsonErrorStatusResponse(
   "Proposal, work item, or merge proposal was not found",
   ["not_found"]
 ).responses["404"];
+// R10-P1-3：提议变更在线预览（内容来自 manifest change 的 machine_summary.generated_content_md）。
+const proposalChangePreviewResponse = {
+  responses: {
+    "200": {
+      description: "Inline text preview of a proposal manifest change",
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["ok", "data"],
+            properties: {
+              ok: { type: "boolean", const: true },
+              data: {
+                type: "object",
+                required: ["id", "filename", "size_bytes", "preview_type", "text", "truncated"],
+                properties: {
+                  id: uuidStringSchema,
+                  filename: { type: "string", minLength: 1 },
+                  size_bytes: { type: "integer", minimum: 0 },
+                  preview_type: { type: "string", enum: ["text"] },
+                  text: { type: "string" },
+                  truncated: { type: "boolean" }
+                },
+                additionalProperties: false
+              }
+            },
+            additionalProperties: false
+          }
+        }
+      }
+    },
+    "401": proposalNotIdentifiedResponse,
+    "403": proposalForbiddenResponse,
+    "404": jsonErrorStatusResponse(
+      "404",
+      "Proposal or manifest change was not found",
+      ["not_found", "proposal_change_not_found"]
+    ).responses["404"],
+    ...jsonErrorStatusResponse("415", "Proposal change has no inline-previewable text", [
+      "proposal_change_preview_unsupported"
+    ]).responses
+  }
+} as const;
 const createProposalConflictResponse = jsonErrorStatusResponse(
   "409",
   "Proposal manifest cannot create a new proposal in the current state",
@@ -1054,9 +1101,19 @@ const proposalMergeConflictResponse = proposalConflictErrorResponse(
     "merge_snapshot_missing",
     "delivery_artifact_missing",
     "delivery_artifact_changed",
-    "delivery_artifact_unsafe_path"
+    "delivery_artifact_unsafe_path",
+    // B-R9.1-1：计划提议合入与计划批准同事务，计划不可批准时整笔回滚并回本码。
+    "task_plan_approval_failed",
+    // R9-BLOCK-7.154：人审修订写回前的图/预算校验，失败整笔回滚。
+    "task_plan_items_invalid",
+    "task_plan_budget_share_invalid"
   ]
 );
+const proposalMergeDispatchFailureResponse = jsonErrorStatusResponse(
+  "503",
+  "Task-plan proposal was approved but child-run dispatch failed",
+  ["task_plan_dispatch_failed"]
+).responses["503"];
 const proposalRebaseConflictResponse = jsonErrorStatusResponse(
   "409",
   "Proposal cannot be rebased before it has been reviewed",
@@ -1112,6 +1169,57 @@ const createProposalResponse = {
     "404": proposalNotFoundResponse,
     "409": createProposalConflictResponse,
     "422": createProposalValidationResponse
+  }
+} as const;
+// B-R9.1-2：请求体不再接受 memories（可伪造团队记忆直入 planner prompt 的注入面）；
+// 记忆上下文一律服务端读 user_memories/team_skills。旧客户端多余字段被忽略。
+const createTaskPlanRequestSchema = {
+  type: "object",
+  properties: {},
+  additionalProperties: true
+} as const;
+const createTaskPlanResponseSchema = {
+  type: "object",
+  required: ["plan_id", "proposal_id", "proposal_href", "proposal"],
+  properties: {
+    plan_id: uuidStringSchema,
+    proposal_id: uuidStringSchema,
+    proposal_href: { type: "string", minLength: 1 },
+    proposal: proposalResponseSchema
+  },
+  additionalProperties: false
+} as const;
+const createTaskPlanConflictResponse = jsonErrorStatusResponse(
+  "409",
+  "Task plan decomposition needs human intervention, an existing draft, or proposal state changed",
+  ["task_plan_decomposition_needs_human", "task_plan_draft_exists", "task_plan_draft_in_progress", "proposal_already_exists"]
+).responses["409"];
+const createTaskPlanValidationResponse = jsonErrorStatusResponse(
+  "422",
+  "Task plan request or work item state is invalid",
+  ["validation_error", "task_plan_workspace_missing", "manifest_workitem_mismatch"]
+).responses["422"];
+const createTaskPlanBadGatewayResponse = jsonErrorStatusResponse(
+  "502",
+  "Task plan LLM returned an invalid response",
+  ["task_plan_llm_invalid_response"]
+).responses["502"];
+const createTaskPlanUnavailableResponse = jsonErrorStatusResponse(
+  "503",
+  "Task plan LLM is not configured",
+  ["task_plan_llm_unavailable"]
+).responses["503"];
+const createTaskPlanResponse = {
+  responses: {
+    ...jsonDataStatusResponse(createTaskPlanResponseSchema, "201", "Created task plan draft and review proposal").responses,
+    "400": proposalMalformedJsonResponse,
+    "401": proposalNotIdentifiedResponse,
+    "403": proposalForbiddenResponse,
+    "404": proposalNotFoundResponse,
+    "409": createTaskPlanConflictResponse,
+    "422": createTaskPlanValidationResponse,
+    "502": createTaskPlanBadGatewayResponse,
+    "503": createTaskPlanUnavailableResponse
   }
 } as const;
 const proposalListResponseSchema = {
@@ -1177,6 +1285,7 @@ const mergeProposalRequestBodySchema = {
   type: "object",
   properties: {
     confirm: { type: "boolean", default: true },
+    dispatch: { type: "boolean", default: true },
     conflict_resolution: {
       type: "object",
       properties: {
@@ -1239,7 +1348,8 @@ const proposalMergeResponse = {
     "403": proposalForbiddenResponse,
     "404": proposalNotFoundResponse,
     "409": proposalMergeConflictResponse,
-    "422": proposalValidationResponse
+    "422": proposalValidationResponse,
+    "503": proposalMergeDispatchFailureResponse
   }
 } as const;
 const proposalMergeCandidateApplyResponse = {
@@ -1544,7 +1654,7 @@ const permissionForbiddenResponse = jsonErrorStatusResponse(
 const permissionPolicyNotFoundResponse = jsonErrorStatusResponse(
   "404",
   "Permission policy was not found",
-  ["not_found"]
+  ["permission_policy_not_found"]
 ).responses["404"];
 const permissionPolicyListResponse = {
   responses: {
@@ -1590,16 +1700,210 @@ const approvalDelegateResultResponseSchema = {
   },
   additionalProperties: false
 } as const;
+const resolveEscalationRequestBodySchema = {
+  type: "object",
+  required: ["action"],
+  properties: {
+    action: { type: "string", enum: ["retry", "pm_mode", "cancel"] },
+    reason_md: { type: "string", minLength: 1, maxLength: 2000 }
+  },
+  additionalProperties: false
+} as const;
+const delegateEscalationRequestBodySchema = {
+  type: "object",
+  required: ["to_user_id"],
+  properties: {
+    to_user_id: uuidStringSchema,
+    reason_md: { type: "string", minLength: 1, maxLength: 2000 }
+  },
+  additionalProperties: false
+} as const;
+const escalationResolveResultResponseSchema = {
+  type: "object",
+  required: ["escalation", "work_item_status", "attention"],
+  properties: {
+    escalation: {
+      type: "object",
+      required: ["id", "work_item_id", "resolved_at"],
+      properties: {
+        id: uuidStringSchema,
+        work_item_id: uuidStringSchema,
+        resolved_at: dateTimeStringSchema
+      },
+      additionalProperties: false
+    },
+    work_item_status: {
+      type: "string",
+      enum: [
+        "intake",
+        "ai_clarifying",
+        "spec_ready",
+        "ai_working",
+        "escalated",
+        "pm_mode",
+        "in_review",
+        "merged",
+        "done",
+        "cancelled"
+      ]
+    },
+    attention: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: false
+} as const;
+const workItemStatusResponseSchema = {
+  type: "string",
+  enum: [
+    "intake",
+    "ai_clarifying",
+    "spec_ready",
+    "ai_working",
+    "escalated",
+    "pm_mode",
+    "in_review",
+    "merged",
+    "done",
+    "cancelled"
+  ]
+} as const;
+const escalationBudgetResolveResultResponseSchema = {
+  type: "object",
+  required: ["escalation", "work_item_status", "attention"],
+  properties: {
+    escalation: {
+      type: "object",
+      required: ["id", "work_item_id", "resolved_at"],
+      properties: {
+        id: uuidStringSchema,
+        work_item_id: uuidStringSchema,
+        resolved_at: dateTimeStringSchema
+      },
+      additionalProperties: false
+    },
+    work_item_status: workItemStatusResponseSchema,
+    attention: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: false
+} as const;
+const memoryConflictResolutionResponseSchema = {
+  type: "string",
+  enum: ["keep_current", "accept_incoming", "merge_both", "edit_memory", "discard_both"]
+} as const;
+const memoryConflictResolveRequestBodySchema = {
+  type: "object",
+  properties: {
+    value_md: { type: "string", minLength: 1, maxLength: 4000 },
+    expected_updated_at: { type: "string", format: "date-time" }
+  },
+  additionalProperties: false
+} as const;
+const memoryConflictRowResponseSchema = {
+  type: "object",
+  required: [
+    "id",
+    "workspaceId",
+    "userId",
+    "category",
+    "key",
+    "currentValueMd",
+    "incomingValueMd",
+    "candidateMemoryIds",
+    "status",
+    "createdAt",
+    "updatedAt"
+  ],
+  properties: {
+    id: uuidStringSchema,
+    workspaceId: uuidStringSchema,
+    userId: uuidStringSchema,
+    sourceRunId: { anyOf: [uuidStringSchema, { type: "null" }] },
+    category: { type: "string", enum: ["preference", "correction", "recurring_context"] },
+    key: { type: "string", minLength: 1, maxLength: 256 },
+    currentValueMd: { type: "string", minLength: 1 },
+    incomingValueMd: { type: "string", minLength: 1 },
+    baseValueMd: { anyOf: [{ type: "string" }, { type: "null" }] },
+    candidateMemoryIds: { type: "array", items: uuidStringSchema },
+    status: { type: "string", enum: ["open", "resolved"] },
+    resolution: { anyOf: [memoryConflictResolutionResponseSchema, { type: "null" }] },
+    resolvedValueMd: { anyOf: [{ type: "string" }, { type: "null" }] },
+    resolvedByUserId: { anyOf: [uuidStringSchema, { type: "null" }] },
+    resolvedAt: { anyOf: [dateTimeStringSchema, { type: "null" }] },
+    createdAt: dateTimeStringSchema,
+    updatedAt: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const memoryConflictResolveResultResponseSchema = {
+  type: "object",
+  required: ["conflict"],
+  properties: {
+    conflict: memoryConflictRowResponseSchema
+  },
+  additionalProperties: false
+} as const;
+const escalationDelegateResultResponseSchema = {
+  type: "object",
+  required: ["escalation", "attention"],
+  properties: {
+    escalation: {
+      type: "object",
+      required: ["id", "work_item_id", "suggested_lead_user_id"],
+      properties: {
+        id: uuidStringSchema,
+        work_item_id: uuidStringSchema,
+        suggested_lead_user_id: uuidStringSchema
+      },
+      additionalProperties: false
+    },
+    attention: { type: "object", additionalProperties: true }
+  },
+  additionalProperties: false
+} as const;
 const approvalRaceResponse = jsonErrorStatusResponse(
   "409",
   "Approval was already handled before this action completed",
   ["approval_race"]
 ).responses["409"];
+const escalationMalformedJsonResponse = jsonErrorStatusResponse(
+  "400",
+  "Escalation request body must be a JSON object",
+  ["malformed_json", "json_object_required"]
+).responses["400"];
 const approvalDelegateNotFoundResponse = jsonErrorStatusResponse(
   "404",
   "Approval or delegate target was not found",
   ["not_found", "delegate_target_not_found"]
 ).responses["404"];
+const escalationResolveNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Escalation was not found",
+  ["not_found", "escalation_not_found"]
+).responses["404"];
+const escalationDelegateNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Escalation or delegate target was not found",
+  ["not_found", "escalation_not_found", "delegate_target_not_found"]
+).responses["404"];
+const escalationRaceResponse = jsonErrorStatusResponse(
+  "409",
+  "Escalation was already handled before this action completed",
+  ["escalation_race", "escalation_status_conflict"]
+).responses["409"];
+const escalationRetryUnavailableResponse = jsonErrorStatusResponse(
+  "503",
+  "Escalation retry dispatch failed after reopening the escalation",
+  ["task_dispatch_retry_failed", "agent_run_retry_failed"]
+).responses["503"];
+const escalationDelegateRaceResponse = jsonErrorStatusResponse(
+  "409",
+  "Escalation delegation raced with another handler",
+  ["escalation_race"]
+).responses["409"];
+const escalationBudgetActionUnavailableResponse = jsonErrorStatusResponse(
+  "422",
+  "Budget action is not available for this escalation",
+  ["budget_action_not_available", "budget_action_requires_budget_update"]
+).responses["422"];
 const approvalDelegateSemanticResponse = jsonErrorStatusResponse(
   "422",
   "Approval delegation target is not valid for this request",
@@ -1635,6 +1939,31 @@ const approvalValidationResponse = jsonErrorStatusResponse(
   "Approval comment request body is not valid",
   ["validation_error"]
 ).responses["422"];
+const escalationValidationResponse = jsonErrorStatusResponse(
+  "422",
+  "Escalation request body is not valid",
+  ["validation_error"]
+).responses["422"];
+const memoryConflictMalformedJsonResponse = jsonErrorStatusResponse(
+  "400",
+  "Memory conflict resolve request body must be a JSON object",
+  ["malformed_json", "json_object_required"]
+).responses["400"];
+const memoryConflictNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Memory conflict was not found or was already handled",
+  ["not_found", "memory_conflict_not_found"]
+).responses["404"];
+const memoryConflictStatusChangedResponse = jsonErrorStatusResponse(
+  "409",
+  "Memory conflict was handled before this action completed",
+  ["memory_conflict_status_changed"]
+).responses["409"];
+const memoryConflictValidationResponse = jsonErrorStatusResponse(
+  "422",
+  "Memory conflict resolve request body or resolution is not valid",
+  ["validation_error"]
+).responses["422"];
 const approvalCommentsUnavailableResponse = jsonErrorStatusResponse(
   "503",
   "Approval comments are not available in this deployment",
@@ -1650,15 +1979,64 @@ const approvalListResponse = {
 const approvalRespondResponse = {
   responses: {
     "200": jsonDataResponse(approvalRespondResultResponseSchema, "Approval decision result").responses["200"],
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
+    "404": approvalNotFoundResponse,
     "409": approvalRaceResponse
   }
 } as const;
 const approvalDelegateResponse = {
   responses: {
     "200": jsonDataResponse(approvalDelegateResultResponseSchema, "Delegated approval result").responses["200"],
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
     "404": approvalDelegateNotFoundResponse,
     "422": approvalDelegateSemanticResponse,
     "409": approvalRaceResponse
+  }
+} as const;
+const escalationResolveResponse = {
+  responses: {
+    "200": jsonDataResponse(escalationResolveResultResponseSchema, "Escalation resolution result").responses["200"],
+    "400": escalationMalformedJsonResponse,
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
+    "404": escalationResolveNotFoundResponse,
+    "409": escalationRaceResponse,
+    "422": escalationValidationResponse,
+    "503": escalationRetryUnavailableResponse
+  }
+} as const;
+const escalationBudgetResolveResponse = {
+  responses: {
+    "200": jsonDataResponse(escalationBudgetResolveResultResponseSchema, "Budget decision result").responses["200"],
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
+    "404": escalationResolveNotFoundResponse,
+    "409": escalationDelegateRaceResponse,
+    "422": escalationBudgetActionUnavailableResponse
+  }
+} as const;
+const memoryConflictResolveResponse = {
+  responses: {
+    "200": jsonDataResponse(memoryConflictResolveResultResponseSchema, "Memory conflict resolve result").responses["200"],
+    "400": memoryConflictMalformedJsonResponse,
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
+    "404": memoryConflictNotFoundResponse,
+    "409": memoryConflictStatusChangedResponse,
+    "422": memoryConflictValidationResponse
+  }
+} as const;
+const escalationDelegateResponse = {
+  responses: {
+    "200": jsonDataResponse(escalationDelegateResultResponseSchema, "Delegated escalation result").responses["200"],
+    "400": escalationMalformedJsonResponse,
+    "401": approvalNotIdentifiedResponse,
+    "403": approvalReadForbiddenResponse,
+    "404": escalationDelegateNotFoundResponse,
+    "409": escalationDelegateRaceResponse,
+    "422": escalationValidationResponse
   }
 } as const;
 const approvalCommentListResponse = {
@@ -2157,6 +2535,31 @@ const meetingPageResponseSchema = {
   },
   additionalProperties: false
 } as const;
+const meetingMutationNotIdentifiedResponse = jsonErrorStatusResponse(
+  "401",
+  "Meeting mutation requires an authenticated user",
+  ["not_identified"]
+).responses["401"];
+const meetingInsightForbiddenResponse = jsonErrorStatusResponse(
+  "403",
+  "Meeting insight is not visible or mutable by the current user",
+  ["invalid_client_token", "meeting_forbidden"]
+).responses["403"];
+const meetingInsightNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Meeting project or insight was not found",
+  ["meeting_not_found", "meeting_insight_not_found"]
+).responses["404"];
+const meetingDraftProposalForbiddenResponse = jsonErrorStatusResponse(
+  "403",
+  "Meeting-created work item draft is not visible or mutable by the current user",
+  ["invalid_client_token", "forbidden", "meeting_forbidden"]
+).responses["403"];
+const meetingDraftProposalNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Meeting-created work item draft or source insight was not found",
+  ["not_found", "meeting_not_found", "meeting_insight_not_found"]
+).responses["404"];
 const notificationPageItemResponseSchema = {
   type: "object",
   required: ["id", "type", "severity", "status", "inbox_bucket", "title", "created_at", "updated_at"],
@@ -2257,6 +2660,18 @@ const budgetScopeResponseSchema = {
     },
     {
       type: "object",
+      required: ["kind", "task_plan_id"],
+      properties: { kind: { type: "string", const: "task" }, task_plan_id: uuidStringSchema },
+      additionalProperties: false
+    },
+    {
+      type: "object",
+      required: ["kind", "objective_id"],
+      properties: { kind: { type: "string", const: "objective" }, objective_id: uuidStringSchema },
+      additionalProperties: false
+    },
+    {
+      type: "object",
       required: ["kind", "user_id"],
       properties: { kind: { type: "string", const: "user" }, user_id: uuidStringSchema },
       additionalProperties: false
@@ -2330,7 +2745,7 @@ const budgetNoticeResponseSchema = {
     message: { type: "string", minLength: 1 },
     scope: budgetScopeResponseSchema,
     usage_ratio: { type: "number", minimum: 0 },
-    recommended_action: { type: "string", enum: ["continue", "downgrade_model", "pause", "ask_admin"] },
+    recommended_action: { type: "string", enum: ["continue", "downgrade_model", "pause", "ask_admin", "add_budget"] },
     options: {
       type: "array",
       items: {
@@ -2388,7 +2803,7 @@ const budgetPolicyResponseSchema = {
   ],
   properties: {
     id: { type: "string", minLength: 1 },
-    scope_kind: { type: "string", enum: ["workitem", "user", "team", "eval"] },
+    scope_kind: { type: "string", enum: ["workitem", "task", "objective", "user", "team", "eval"] },
     period: { type: "string", enum: ["run", "day", "month"] },
     max_tokens: { type: "integer", minimum: 1 },
     max_cost_cny: { type: "string", pattern: "^\\d+(\\.\\d+)?$" },
@@ -2421,7 +2836,7 @@ const costPolicyScopePathParameter = {
   name: "scope",
   in: "path",
   required: true,
-  schema: { type: "string", enum: ["workitem", "user", "team", "eval"] }
+  schema: { type: "string", enum: ["workitem", "task", "objective", "user", "team", "eval"] }
 } as const;
 const costPolicyIdPathParameter = {
   name: "id",
@@ -2489,6 +2904,8 @@ const costDashboardPageResponseSchema = {
     "by_user",
     "by_team",
     "by_workitem",
+    "by_task_plan",
+    "by_objective",
     "model_breakdown",
     "budget",
     "notices",
@@ -2505,12 +2922,309 @@ const costDashboardPageResponseSchema = {
     by_user: { type: "array", items: { type: "object", additionalProperties: true } },
     by_team: { type: "array", items: { type: "object", additionalProperties: true } },
     by_workitem: { type: "array", items: { type: "object", additionalProperties: true } },
+    by_task_plan: { type: "array", items: { type: "object", additionalProperties: true } },
+    by_objective: { type: "array", items: { type: "object", additionalProperties: true } },
     model_breakdown: { type: "array", items: { type: "object", additionalProperties: true } },
     labor_split: { type: "object", additionalProperties: true },
     budget: { type: "array", items: { type: "object", additionalProperties: true } },
     notices: { type: "array", items: { type: "object", additionalProperties: true } },
     top_exhaustion_risks: { type: "array", items: { type: "object", additionalProperties: true } },
     empty_state: { type: "string", enum: ["no_agent_runs", "usage_not_connected"] }
+  },
+  additionalProperties: false
+} as const;
+const taskPlanStatusResponseSchema = { type: "string", enum: ["draft", "proposed", "approved", "dispatching", "paused", "done", "cancelled"] } as const;
+const taskPlanItemRoleResponseSchema = { type: "string", enum: ["research", "produce", "review", "integrate"] } as const;
+const taskPlanItemStatusResponseSchema = { type: "string", enum: ["pending", "dispatched", "succeeded", "failed", "skipped"] } as const;
+const agentArmyItemStatusResponseSchema = { type: "string", enum: ["pending", "dispatched", "succeeded", "failed", "needs_human", "skipped"] } as const;
+const taskPlanItemResponseSchema = {
+  type: "object",
+  required: [
+    "id",
+    "plan_id",
+    "seq",
+    "title",
+    "role",
+    "objective_md",
+    "acceptance_md",
+    "budget_share_pct",
+    "depends_on",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  properties: {
+    id: uuidStringSchema,
+    plan_id: uuidStringSchema,
+    parent_item_id: { anyOf: [uuidStringSchema, { type: "null" }] },
+    seq: { type: "integer", minimum: 0 },
+    title: { type: "string", minLength: 1, maxLength: 256 },
+    role: taskPlanItemRoleResponseSchema,
+    objective_md: { type: "string", minLength: 1 },
+    acceptance_md: { type: "string", minLength: 1 },
+    budget_share_pct: { type: "integer", minimum: 0, maximum: 100 },
+    depends_on: { type: "array", items: uuidStringSchema },
+    status: taskPlanItemStatusResponseSchema,
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const taskPlanVmResponseSchema = {
+  type: "object",
+  required: [
+    "id",
+    "work_item_id",
+    "workspace_id",
+    "status",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "items",
+    "items_capped"
+  ],
+  properties: {
+    id: uuidStringSchema,
+    work_item_id: uuidStringSchema,
+    workspace_id: uuidStringSchema,
+    status: taskPlanStatusResponseSchema,
+    objective_id: { anyOf: [uuidStringSchema, { type: "null" }] },
+    budget_json: { type: "object", additionalProperties: true },
+    decomposition_context_json: { type: "object", additionalProperties: true },
+    created_by: uuidStringSchema,
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema,
+    items: { type: "array", items: taskPlanItemResponseSchema, maxItems: 50 },
+    items_capped: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const;
+const workItemAgentTeamActionResponseSchema = {
+  type: "object",
+  required: ["kind", "label", "href"],
+  properties: {
+    kind: { type: "string", enum: ["view_output", "decide"] },
+    label: { type: "string", minLength: 1, maxLength: 48 },
+    href: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+} as const;
+const workItemAgentTeamItemResponseSchema = {
+  type: "object",
+  required: [
+    "task_plan_item_id",
+    "seq",
+    "title",
+    "role",
+    "plan_status",
+    "status",
+    "budget_share_pct",
+    "depends_on",
+    "waiting_for_seq"
+  ],
+  properties: {
+    task_plan_item_id: uuidStringSchema,
+    seq: { type: "integer", minimum: 1 },
+    title: { type: "string", minLength: 1, maxLength: 256 },
+    role: taskPlanItemRoleResponseSchema,
+    plan_status: taskPlanItemStatusResponseSchema,
+    status: agentArmyItemStatusResponseSchema,
+    budget_share_pct: { type: "integer", minimum: 0, maximum: 100 },
+    depends_on: { type: "array", items: uuidStringSchema },
+    waiting_for_seq: { type: "array", items: { type: "integer", minimum: 1 } },
+    cost_estimate_cny: { type: "string" },
+    run_id: uuidStringSchema,
+    run_workspace_id: uuidStringSchema,
+    parent_run_id: uuidStringSchema,
+    run_status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "cancelled"] },
+    replay_href: { type: "string", minLength: 1 },
+    decision_href: { type: "string", minLength: 1 },
+    action: workItemAgentTeamActionResponseSchema
+  },
+  additionalProperties: false
+} as const;
+const workItemAgentTeamResponseSchema = {
+  type: "object",
+  required: [
+    "plan_id",
+    "status",
+    "completed_count",
+    "total_count",
+    "cost_used_cny",
+    "runs_capped",
+    "items"
+  ],
+  properties: {
+    plan_id: uuidStringSchema,
+    status: taskPlanStatusResponseSchema,
+    completed_count: { type: "integer", minimum: 0 },
+    total_count: { type: "integer", minimum: 0 },
+    cost_used_cny: { type: "string" },
+    cost_budget_cny: { type: "string" },
+    cost_burn_pct: { type: "integer", minimum: 0 },
+    runs_capped: { type: "boolean" },
+    items: { type: "array", items: workItemAgentTeamItemResponseSchema, maxItems: 50 }
+  },
+  additionalProperties: false
+} as const;
+const agentArmyDashboardCountByRoleResponseSchema = {
+  type: "object",
+  required: ["role", "count"],
+  properties: {
+    role: taskPlanItemRoleResponseSchema,
+    count: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const agentArmyDashboardCountByStatusResponseSchema = {
+  type: "object",
+  required: ["status", "count"],
+  properties: {
+    status: agentArmyItemStatusResponseSchema,
+    count: { type: "integer", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const agentArmyDashboardPlanResponseSchema = {
+  type: "object",
+  required: [
+    "plan_id",
+    "work_item_id",
+    "work_item_code",
+    "work_item_title",
+    "work_item_href",
+    "status",
+    "progress",
+    "roles",
+    "statuses",
+    "cost",
+    "judge",
+    "updated_at"
+  ],
+  properties: {
+    plan_id: uuidStringSchema,
+    work_item_id: uuidStringSchema,
+    work_item_code: { type: "string", minLength: 1 },
+    work_item_title: { type: "string", minLength: 1, maxLength: 256 },
+    work_item_href: { type: "string", minLength: 1 },
+    objective_id: uuidStringSchema,
+    objective_title: { type: "string", minLength: 1, maxLength: 256 },
+    status: taskPlanStatusResponseSchema,
+    progress: {
+      type: "object",
+      required: ["completed", "total", "label"],
+      properties: {
+        completed: { type: "integer", minimum: 0 },
+        total: { type: "integer", minimum: 0 },
+        label: { type: "string", minLength: 1, maxLength: 32 }
+      },
+      additionalProperties: false
+    },
+    roles: { type: "array", items: agentArmyDashboardCountByRoleResponseSchema },
+    statuses: { type: "array", items: agentArmyDashboardCountByStatusResponseSchema },
+    cost: {
+      type: "object",
+      required: ["used_cny"],
+      properties: {
+        used_cny: { type: "string" },
+        budget_cny: { type: "string" },
+        burn_pct: { type: "integer", minimum: 0 }
+      },
+      additionalProperties: false
+    },
+    judge: {
+      type: "object",
+      required: ["passed", "total", "pass_rate_pct"],
+      properties: {
+        passed: { type: "integer", minimum: 0 },
+        total: { type: "integer", minimum: 0 },
+        pass_rate_pct: { type: "integer", minimum: 0, maximum: 100 }
+      },
+      additionalProperties: false
+    },
+    oldest_blocker: {
+      type: "object",
+      required: ["kind", "label", "age_seconds"],
+      properties: {
+        kind: { type: "string", enum: ["needs_human", "budget", "stalled"] },
+        label: { type: "string", minLength: 1, maxLength: 128 },
+        age_seconds: { type: "integer", minimum: 0 },
+        href: { type: "string", minLength: 1 }
+      },
+      additionalProperties: false
+    },
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const agentArmyDashboardRecentEscalationResponseSchema = {
+  type: "object",
+  required: ["id", "work_item_id", "title", "reason_preview", "created_at", "href"],
+  properties: {
+    id: uuidStringSchema,
+    plan_id: uuidStringSchema,
+    work_item_id: uuidStringSchema,
+    title: { type: "string", minLength: 1, maxLength: 128 },
+    reason_preview: { type: "string", minLength: 1, maxLength: 200 },
+    created_at: dateTimeStringSchema,
+    href: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+} as const;
+const agentArmyDashboardPageInfoResponseSchema = {
+  type: "object",
+  required: [
+    "plan_limit",
+    "returned",
+    "plans_capped",
+    "items_capped",
+    "runs_capped",
+    "escalation_limit",
+    "escalation_returned",
+    "escalations_capped"
+  ],
+  properties: {
+    plan_limit: { type: "integer", minimum: 1 },
+    returned: { type: "integer", minimum: 0 },
+    plans_capped: { type: "boolean" },
+    items_capped: { type: "boolean" },
+    runs_capped: { type: "boolean" },
+    escalation_limit: { type: "integer", minimum: 1 },
+    escalation_returned: { type: "integer", minimum: 0 },
+    escalations_capped: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const;
+const attentionSourceWarningResponseSchema = {
+  type: "object",
+  required: ["source", "message"],
+  properties: {
+    source: { type: "string", enum: ["approvals", "proposals", "escalations", "sync_conflicts"] },
+    message: { type: "string", minLength: 1 }
+  },
+  additionalProperties: false
+} as const;
+const agentArmyDashboardPageResponseSchema = {
+  type: "object",
+  required: ["generated_at", "kpis", "plans", "recent_escalations", "page_info"],
+  properties: {
+    generated_at: dateTimeStringSchema,
+    kpis: {
+      type: "object",
+      required: ["active_team_count", "waiting_decision_count", "today_cost_cny", "autonomy_rate_pct"],
+      properties: {
+        active_team_count: { type: "integer", minimum: 0 },
+        waiting_decision_count: { type: "integer", minimum: 0 },
+        today_cost_cny: { type: "string" },
+        autonomy_rate_pct: { type: "integer", minimum: 0, maximum: 100 }
+      },
+      additionalProperties: false
+    },
+    plans: { type: "array", maxItems: 20, items: agentArmyDashboardPlanResponseSchema },
+    recent_escalations: { type: "array", maxItems: 5, items: agentArmyDashboardRecentEscalationResponseSchema },
+    source_warnings: { type: "array", items: attentionSourceWarningResponseSchema },
+    page_info: agentArmyDashboardPageInfoResponseSchema,
+    empty_state: { type: "string", enum: ["no_agent_armies"] }
   },
   additionalProperties: false
 } as const;
@@ -2573,15 +3287,7 @@ const attentionHomePageResponseSchema = {
     queue: { type: "array", items: { type: "object", additionalProperties: true } },
     source_warnings: {
       type: "array",
-      items: {
-        type: "object",
-        required: ["source", "message"],
-        properties: {
-          source: { type: "string", enum: ["approvals", "proposals"] },
-          message: { type: "string", minLength: 1 }
-        },
-        additionalProperties: false
-      }
+      items: attentionSourceWarningResponseSchema
     },
     background_runs: {
       type: "array",
@@ -2709,6 +3415,8 @@ const workItemDetailResponseSchema = {
     latest_proposal: { type: "object", additionalProperties: true },
     accepted_deliverables: { type: "array", items: acceptedDeliverableVmResponseSchema },
     evidence_refs: { type: "array", items: { type: "object", additionalProperties: true } },
+    task_plan: taskPlanVmResponseSchema,
+    agent_team: workItemAgentTeamResponseSchema,
     source_context: { type: "object", additionalProperties: true },
     actions: {
       type: "object",
@@ -3251,11 +3959,17 @@ const agentRunResponseSchema = {
   ],
   properties: {
     id: uuidStringSchema,
+    parent_run_id: uuidStringSchema,
     work_item_id: uuidStringSchema,
     branch_id: uuidStringSchema,
+    task_plan_id: uuidStringSchema,
+    task_plan_item_id: uuidStringSchema,
+    objective_id: uuidStringSchema,
+    agent_role: { type: "string", enum: ["research", "produce", "review", "integrate"] },
+    objective_md: { type: "string", minLength: 1 },
     mode: { type: "string", enum: ["worker", "pm"] },
     actor: { type: "string", minLength: 1, maxLength: 32 },
-    status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "budget_exhausted", "cancelled"] },
+    status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "cancelled"] },
     model: { type: "string", minLength: 1, maxLength: 128 },
     turns_used: { type: "integer", minimum: 0 },
     max_turns: { type: "integer", minimum: 1 },
@@ -3335,7 +4049,7 @@ const agentRunLiveResponseSchema = {
     run_id: uuidStringSchema,
     work_item_id: uuidStringSchema,
     title: { type: "string", minLength: 1 },
-    status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "budget_exhausted", "cancelled"] },
+    status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "cancelled"] },
     budget: agentRunBudgetResponseSchema,
     budget_decision: agentRunBudgetDecisionResponseSchema,
     usage: agentRunUsageResponseSchema,
@@ -3432,7 +4146,7 @@ const agentRunValidationResponse = jsonErrorStatusResponse(
 const agentRunKickoffUnavailableResponse = jsonErrorStatusResponse(
   "503",
   "Agent run kickoff status transition failed",
-  ["http_error"]
+  ["http_error", "budget_decision_persist_failed", "budget_reservation_failed"]
 ).responses["503"];
 const startAgentRunResponse = {
   responses: {
@@ -3762,6 +4476,51 @@ export function getOpenApiDocument() {
           ...authLogoutResponses
         }
       },
+      "/api/users": {
+        get: {
+          tags: ["auth"],
+          summary: "List active member refs (id/nickname/admin) for delegation pickers",
+          responses: {
+            "200": {
+              description: "Active member refs sorted by nickname (max 200)",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    required: ["ok", "data"],
+                    properties: {
+                      ok: { type: "boolean", const: true },
+                      data: {
+                        type: "object",
+                        required: ["users"],
+                        properties: {
+                          users: {
+                            type: "array",
+                            items: {
+                              type: "object",
+                              required: ["id", "nickname", "is_admin"],
+                              properties: {
+                                id: uuidStringSchema,
+                                nickname: { type: "string", minLength: 1 },
+                                is_admin: { type: "boolean" }
+                              },
+                              additionalProperties: false
+                            }
+                          }
+                        },
+                        additionalProperties: false
+                      }
+                    },
+                    additionalProperties: false
+                  }
+                }
+              }
+            },
+            ...jsonErrorStatusResponse("401", "Member listing requires an authenticated user", ["not_identified"]).responses,
+            ...jsonErrorStatusResponse("501", "Member listing is not supported by the active storage", ["users_unsupported"]).responses
+          }
+        }
+      },
       "/api/auth/password": {
         post: {
           tags: ["auth"],
@@ -3853,6 +4612,48 @@ export function getOpenApiDocument() {
           ...approvalListResponse
         }
       },
+      "/api/approvals/respond-batch": {
+        post: {
+          tags: ["approvals"],
+          summary: "Batch-allow selected pending approvals (allow only; deny requires per-item reason)",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["ids"],
+                  properties: {
+                    ids: { type: "array", items: { type: "string", format: "uuid" }, maxItems: 50 }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            "200": {
+              description: "Per-item results",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      ok: { type: "boolean" },
+                      data: {
+                        type: "object",
+                        properties: {
+                          approved: { type: "integer" },
+                          skipped: { type: "integer" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "/api/approvals/{id}/respond": {
         post: {
           tags: ["approvals"],
@@ -3884,6 +4685,59 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           ...jsonRequestBody(addApprovalCommentRequestBodySchema),
           ...approvalCommentCreateResponse
+        }
+      },
+      "/api/escalations/{id}/resolve": {
+        post: {
+          tags: ["escalations"],
+          summary: "Resolve an unresolved escalation by retrying, taking over, or cancelling",
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
+          ...jsonRequestBody(resolveEscalationRequestBodySchema),
+          ...escalationResolveResponse
+        }
+      },
+      "/api/escalations/{id}/budget-actions/{actionId}": {
+        post: {
+          tags: ["escalations"],
+          summary: "Resolve a durable budget escalation by recording the selected budget action",
+          parameters: [
+            pathUuidParameter("id"),
+            {
+              name: "actionId",
+              in: "path",
+              required: true,
+              schema: { type: "string", minLength: 1, maxLength: 64 }
+            },
+            localeQueryParameter
+          ],
+          ...escalationBudgetResolveResponse
+        }
+      },
+      "/api/escalations/{id}/delegate": {
+        post: {
+          tags: ["escalations"],
+          summary: "Delegate an unresolved escalation to another active user",
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
+          ...jsonRequestBody(delegateEscalationRequestBodySchema),
+          ...escalationDelegateResponse
+        }
+      },
+      "/api/memory-conflicts/{id}/resolve/{resolution}": {
+        post: {
+          tags: ["memory-conflicts"],
+          summary: "Resolve a durable memory synchronization conflict",
+          parameters: [
+            pathUuidParameter("id"),
+            {
+              name: "resolution",
+              in: "path",
+              required: true,
+              schema: memoryConflictResolutionResponseSchema
+            },
+            optionalDateTimeQueryParameter("expected_updated_at")
+          ],
+          ...jsonRequestBody(memoryConflictResolveRequestBodySchema, { required: false }),
+          ...memoryConflictResolveResponse
         }
       },
       "/api/permissions": {
@@ -4017,6 +4871,14 @@ export function getOpenApiDocument() {
           ...jsonAuthenticatedPageResponse(projectHealthPageResponseSchema)
         }
       },
+      "/api/pages/agents": {
+        get: {
+          tags: ["pages"],
+          summary: "Agent army dashboard page VM",
+          parameters: [localeQueryParameter],
+          ...jsonAuthenticatedPageResponse(agentArmyDashboardPageResponseSchema)
+        }
+      },
       "/api/pages/skills": {
         get: {
           tags: ["pages"],
@@ -4059,7 +4921,7 @@ export function getOpenApiDocument() {
         post: {
           tags: ["drive"],
           summary: "Upload a minimal project drive file and return the refreshed Drive Page VM",
-          parameters: [pathUuidParameter("projectId")],
+          parameters: [pathUuidParameter("projectId"), localeQueryParameter],
           requestBody: {
             required: true,
             content: {
@@ -4119,7 +4981,8 @@ export function getOpenApiDocument() {
           summary: "Move a project drive item to the recycle area",
           parameters: [
             pathUuidParameter("projectId"),
-            pathUuidParameter("itemId")
+            pathUuidParameter("itemId"),
+            localeQueryParameter
           ],
           ...jsonRequestBody({
             type: "object",
@@ -4152,7 +5015,8 @@ export function getOpenApiDocument() {
           summary: "Restore a recycled project drive item",
           parameters: [
             pathUuidParameter("projectId"),
-            pathUuidParameter("itemId")
+            pathUuidParameter("itemId"),
+            localeQueryParameter
           ],
           responses: {
             ...jsonOkResponse(drivePageResponseSchema).responses,
@@ -4166,13 +5030,34 @@ export function getOpenApiDocument() {
           }
         }
       },
+      "/api/drive/projects/{projectId}/comments": {
+        post: {
+          tags: ["drive"],
+          summary: "Post a drive comment (enters pending_llm; can later become a draft)",
+          parameters: [pathUuidParameter("projectId"), localeQueryParameter],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["body"],
+            properties: {
+              body: { type: "string", minLength: 1, maxLength: 4000 },
+              folder_id: uuidStringSchema
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            ...jsonOkResponse(drivePageResponseSchema).responses,
+            ...driveForbiddenResponse.responses
+          }
+        }
+      },
       "/api/drive/projects/{projectId}/comments/{commentId}/draft": {
         post: {
           tags: ["drive"],
           summary: "Create or return a work item draft from a project drive comment",
           parameters: [
             pathUuidParameter("projectId"),
-            pathUuidParameter("commentId")
+            pathUuidParameter("commentId"),
+            localeQueryParameter
           ],
           responses: {
             ...jsonOkResponse(drivePageResponseSchema).responses,
@@ -4190,7 +5075,7 @@ export function getOpenApiDocument() {
         post: {
           tags: ["drive"],
           summary: "Create or return a deterministic proposal from a Drive comment work item draft",
-          parameters: [pathUuidParameter("workItemId")],
+          parameters: [pathUuidParameter("workItemId"), localeQueryParameter],
           responses: {
             ...jsonOkResponse(workItemDetailResponseSchema).responses,
             ...driveDraftProposalForbiddenResponse.responses,
@@ -4202,16 +5087,46 @@ export function getOpenApiDocument() {
           }
         }
       },
+      "/api/meetings/projects/{projectId}/import": {
+        post: {
+          tags: ["meetings"],
+          summary: "Import a meeting transcript (title + text) into a project",
+          parameters: [pathUuidParameter("projectId"), localeQueryParameter],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["title", "transcript_text"],
+            properties: {
+              title: { type: "string", minLength: 1, maxLength: 256 },
+              transcript_text: { type: "string", minLength: 1, maxLength: 200000 }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            ...jsonOkResponse(meetingPageResponseSchema).responses,
+            "401": meetingMutationNotIdentifiedResponse,
+            "403": meetingInsightForbiddenResponse,
+            "404": meetingInsightNotFoundResponse,
+            ...jsonErrorStatusResponse("409", "Meeting transcript import rejected", [
+              "meeting_import_invalid",
+              "meeting_import_unsupported"
+            ]).responses
+          }
+        }
+      },
       "/api/meetings/projects/{projectId}/insights/{insightId}/draft": {
         post: {
           tags: ["meetings"],
           summary: "Create or return a work item draft from a meeting insight",
           parameters: [
             pathUuidParameter("projectId"),
-            pathUuidParameter("insightId")
+            pathUuidParameter("insightId"),
+            localeQueryParameter
           ],
           responses: {
             ...jsonOkResponse(meetingPageResponseSchema).responses,
+            "401": meetingMutationNotIdentifiedResponse,
+            "403": meetingInsightForbiddenResponse,
+            "404": meetingInsightNotFoundResponse,
             ...jsonErrorStatusResponse("409", "Meeting insight cannot be converted to a draft in its current state", [
               "meeting_insight_not_pending",
               "meeting_insight_draft_missing",
@@ -4226,10 +5141,14 @@ export function getOpenApiDocument() {
           summary: "Dismiss a pending meeting insight",
           parameters: [
             pathUuidParameter("projectId"),
-            pathUuidParameter("insightId")
+            pathUuidParameter("insightId"),
+            localeQueryParameter
           ],
           responses: {
             ...jsonOkResponse(meetingPageResponseSchema).responses,
+            "401": meetingMutationNotIdentifiedResponse,
+            "403": meetingInsightForbiddenResponse,
+            "404": meetingInsightNotFoundResponse,
             ...jsonErrorStatusResponse("409", "Meeting insight cannot be dismissed in its current state", [
               "meeting_insight_not_pending"
             ]).responses
@@ -4240,9 +5159,12 @@ export function getOpenApiDocument() {
         post: {
           tags: ["meetings"],
           summary: "Create or return a deterministic proposal from a meeting-created work item draft",
-          parameters: [pathUuidParameter("workItemId")],
+          parameters: [pathUuidParameter("workItemId"), localeQueryParameter],
           responses: {
             ...jsonOkResponse(workItemDetailResponseSchema).responses,
+            "401": meetingMutationNotIdentifiedResponse,
+            "403": meetingDraftProposalForbiddenResponse,
+            "404": meetingDraftProposalNotFoundResponse,
             ...jsonErrorStatusResponse("409", "Meeting insight draft cannot create a proposal in its current state", [
               "meeting_draft_source_missing",
               "meeting_insight_dismissed"
@@ -4317,6 +5239,54 @@ export function getOpenApiDocument() {
           ...proposalListResponse
         }
       },
+      "/api/workitems/{id}/task-plan": {
+        post: {
+          tags: ["task-plans"],
+          summary: "Decompose a work item into a task plan proposal",
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
+          ...jsonRequestBody(createTaskPlanRequestSchema, { required: false }),
+          ...createTaskPlanResponse
+        }
+      },
+      "/api/task-plans/{planId}/pause": {
+        post: {
+          tags: ["task-plans"],
+          summary: "Pause dispatching new subtasks for a task plan (running child runs keep going)",
+          parameters: [pathUuidParameter("planId")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["plan_id", "status"],
+              properties: {
+                plan_id: uuidStringSchema,
+                status: taskPlanStatusResponseSchema
+              },
+              additionalProperties: false
+            }, "Plan paused").responses["200"],
+            ...jsonErrorStatusResponse("409", "Plan is not currently dispatching", ["task_plan_pause_conflict"]).responses
+          }
+        }
+      },
+      "/api/task-plans/{planId}/resume": {
+        post: {
+          tags: ["task-plans"],
+          summary: "Resume dispatching for a paused task plan and kick the dispatcher once",
+          parameters: [pathUuidParameter("planId")],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["plan_id", "status"],
+              properties: {
+                plan_id: uuidStringSchema,
+                status: taskPlanStatusResponseSchema
+              },
+              additionalProperties: false
+            }, "Plan resumed").responses["200"],
+            ...jsonErrorStatusResponse("409", "Plan is not paused", ["task_plan_resume_conflict"]).responses,
+            ...jsonErrorStatusResponse("503", "Resume dispatch kick failed; plan reverted to paused", ["task_plan_resume_dispatch_failed"]).responses
+          }
+        }
+      },
       "/api/workitems/{id}/conflicts": {
         get: {
           tags: ["proposals"],
@@ -4356,20 +5326,135 @@ export function getOpenApiDocument() {
           ...readProposalResponse
         }
       },
+      "/api/proposals/{id}/changes/{changeId}/preview": {
+        get: {
+          tags: ["proposals"],
+          summary: "Preview a proposal manifest change inline when it carries generated text",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("changeId")],
+          ...proposalChangePreviewResponse
+        }
+      },
       "/api/proposals/{id}/review": {
         post: {
           tags: ["proposals"],
           summary: "Review a deliverable change proposal",
-          parameters: [pathUuidParameter("id")],
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
           ...jsonRequestBody(reviewProposalRequestBodySchema),
           ...reviewProposalResponse
+        }
+      },
+      "/api/objectives": {
+        post: {
+          tags: ["objectives"],
+          summary: "Create a team objective with optional key results",
+          ...jsonRequestBody({
+            type: "object",
+            required: ["title"],
+            properties: {
+              title: { type: "string", minLength: 1, maxLength: 256 },
+              description_md: { type: "string", maxLength: 4000 },
+              key_results: {
+                type: "array",
+                maxItems: 8,
+                items: {
+                  type: "object",
+                  required: ["title"],
+                  properties: {
+                    title: { type: "string", minLength: 1, maxLength: 256 },
+                    target_value: { type: "string", maxLength: 64 },
+                    current_value: { type: "string", maxLength: 64 },
+                    unit: { type: "string", maxLength: 16 }
+                  },
+                  additionalProperties: false
+                }
+              }
+            },
+            additionalProperties: false
+          }),
+          responses: {
+            "201": jsonDataResponse({
+              type: "object",
+              required: ["objective_id", "title", "status", "progress_percent"],
+              properties: {
+                objective_id: uuidStringSchema,
+                title: { type: "string", minLength: 1 },
+                status: { type: "string", minLength: 1 },
+                progress_percent: { type: "integer" }
+              },
+              additionalProperties: false
+            }, "Created objective").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": proposalForbiddenResponse,
+            "422": proposalValidationResponse
+          }
+        }
+      },
+      "/api/objectives/{id}/link": {
+        post: {
+          tags: ["objectives"],
+          summary: "Link a work item to an objective",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody({
+            type: "object",
+            required: ["work_item_id"],
+            properties: { work_item_id: uuidStringSchema },
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["objective_id", "work_item_id"],
+              properties: {
+                objective_id: uuidStringSchema,
+                work_item_id: uuidStringSchema
+              },
+              additionalProperties: false
+            }, "Linked objective and work item").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": proposalForbiddenResponse,
+            "404": proposalNotFoundResponse,
+            "422": proposalValidationResponse
+          }
+        }
+      },
+      "/api/proposals/{id}/skip-plan": {
+        post: {
+          tags: ["task-plans"],
+          summary: "Skip the task plan and start a single agent run instead",
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
+          responses: {
+            "200": jsonDataResponse({
+              type: "object",
+              required: ["run_id", "work_item_id", "attention"],
+              properties: {
+                run_id: uuidStringSchema,
+                work_item_id: uuidStringSchema,
+                attention: {
+                  type: "object",
+                  required: ["summary_text"],
+                  properties: { summary_text: { type: "string", minLength: 1 } },
+                  additionalProperties: false
+                }
+              },
+              additionalProperties: false
+            }, "Plan skipped; a single agent run was enqueued").responses["200"],
+            "401": proposalNotIdentifiedResponse,
+            "403": proposalForbiddenResponse,
+            "404": proposalNotFoundResponse,
+            ...jsonErrorStatusResponse("409", "Plan cannot be skipped in its current state", [
+              "not_task_plan_proposal",
+              "plan_skip_not_available",
+              "proposal_already_reviewed"
+            ]).responses,
+            ...jsonErrorStatusResponse("402", "Run budget is exhausted", ["budget_exhausted"]).responses
+          }
         }
       },
       "/api/proposals/{id}/merge": {
         post: {
           tags: ["proposals"],
           summary: "Merge an approved deliverable change proposal",
-          parameters: [pathUuidParameter("id")],
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
           ...jsonRequestBody(mergeProposalRequestBodySchema, { required: false }),
           ...proposalMergeResponse
         }
@@ -4395,7 +5480,7 @@ export function getOpenApiDocument() {
         post: {
           tags: ["proposals"],
           summary: "Apply the selected AI fusion candidate",
-          parameters: [pathUuidParameter("id")],
+          parameters: [pathUuidParameter("id"), localeQueryParameter],
           ...jsonRequestBody(applyMergeProposalCandidateRequestBodySchema, { required: false }),
           ...proposalMergeCandidateApplyResponse
         }

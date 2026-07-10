@@ -27,14 +27,10 @@ export const spotlightCss = [
   ".wh-spot[data-mode=\"launcher\"][data-collapsed=\"true\"] .wh-spot-body{display:none}",
   ".wh-spot[data-mode=\"launcher\"][data-collapsed=\"true\"] .wh-spot-top{border-bottom:0}",
   ".wh-spot[data-mode=\"launcher\"][data-collapsed=\"true\"]{height:auto;min-height:0}",
-  ".wh-spot-resize{position:absolute;z-index:4;pointer-events:auto;background:transparent;border:0;padding:0;-webkit-app-region:no-drag}",
-  ".wh-spot-resize--e{top:18px;right:0;bottom:18px;width:10px;cursor:ew-resize}",
-  ".wh-spot-resize--s{left:18px;right:18px;bottom:0;height:10px;cursor:ns-resize}",
-  ".wh-spot-resize--se{right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize}",
   // 顶栏：搜索/标题 + 面包屑返回。搜索条本身也是原生 drag region；只有真实按钮/表单控件退出拖动。
   ".wh-spot-top{position:relative;display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--ds-glass-hairline);-webkit-app-region:no-drag;cursor:grab}",
   ".wh-spot-top:active{cursor:grabbing}",
-  ".wh-spot-back,.wh-spot-resize,.wh-spot button,.wh-spot a,.wh-spot select,.wh-spot textarea,.wh-spot [contenteditable=true]{-webkit-app-region:no-drag}",
+  ".wh-spot-back,.wh-spot button,.wh-spot a,.wh-spot select,.wh-spot textarea,.wh-spot [contenteditable=true]{-webkit-app-region:no-drag}",
   ".wh-spot-drag-sheet{position:absolute;inset:0;display:none;z-index:3;border:0;background:transparent;cursor:grab;padding:0;-webkit-app-region:no-drag}",
   ".wh-spot[data-mode=\"launcher\"][data-collapsed=\"true\"] .wh-spot-drag-sheet{display:block}",
   ".wh-spot-drag-sheet:active{cursor:grabbing}",
@@ -46,6 +42,8 @@ export const spotlightCss = [
   ".wh-spot-field-icon{display:inline-flex;width:18px;height:18px;flex:0 0 auto;color:var(--ds-ink-muted)}.wh-spot-field-icon svg{width:18px;height:18px}",
   ".wh-spot-field{flex:1 1 auto;min-width:0;border:0;background:transparent;outline:none;box-shadow:none;-webkit-appearance:none;appearance:none;font:500 16px/1.3 var(--ds-font);color:var(--ds-ink)}",
   "input.wh-spot-field:focus{outline:0!important;box-shadow:none!important}",
+  // UX-M6：sync_conflict 卡的合并草稿编辑框（桌面玻璃上要实底可读，禁 transparent+backdrop-filter）。
+  ".wh-spot-merge-draft{width:100%;box-sizing:border-box;border:1px solid rgba(60,60,67,.18);border-radius:10px;background:rgba(255,255,255,.92);color:#1a1d26;padding:8px 10px;font:600 12.5px/1.5 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;resize:vertical}",
   ".wh-spot-field::placeholder{color:var(--ds-ink-faint)}",
   // 能力标题（capability 屏）。
   ".wh-spot-titlewrap{display:none;flex-direction:column;gap:1px;min-width:0;flex:1 1 auto}",

@@ -13,6 +13,12 @@ type DesktopOfflineCardInput = {
   locale: WorkHubLocale;
 };
 
+type DesktopOfflineCardBindingInput = DesktopOfflineCardInput & {
+  storage: Pick<Storage, "removeItem" | "setItem">;
+  reload: () => void;
+  scheduleRebuild?: () => void;
+};
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"]/gu, (char) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[char] ?? char
@@ -54,3 +60,28 @@ html,body,#root{margin:0;min-height:100%;background:rgba(0,0,0,0)!important}
   .wh-desktop-offline-detail summary{cursor:pointer;font-weight:850}
   </style><main class="wh-desktop-offline-shell"><section class="wh-desktop-offline-card" aria-live="polite">${renderWorkHubLiquidGlassLayer("spotlight")}<span class="wh-liquid-glass-rim" aria-hidden="true"></span><div class="wh-liquid-glass-content"><div class="wh-desktop-offline-mark" aria-hidden="true"></div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(body)}</p><p class="wh-desktop-offline-hint">${escapeHtml(hint)}</p><div class="wh-desktop-offline-actions"><button id="wh-retry" type="button">${zh ? "重试" : "Retry"}</button><button id="wh-open-settings" type="button">${zh ? "打开设置" : "Open Settings"}</button></div><form id="wh-offline-settings" class="wh-desktop-offline-settings" hidden><label>${zh ? "服务器地址" : "Server address"}<input id="wh-api-base" name="apiBase" type="url" value="${escapeHtml(input.apiBase)}" placeholder="http://127.0.0.1:8787" /></label><div class="wh-desktop-offline-settings-row"><button type="submit">${zh ? "保存并重试" : "Save and Retry"}</button><button id="wh-default-api" type="button">${zh ? "使用默认" : "Use Default"}</button></div></form><details class="wh-desktop-offline-detail"><summary>${zh ? "高级详情" : "Details"}</summary>${escapeHtml(input.detail)}</details></div></section></main>`;
   }
+
+export function bindDesktopOfflineCard(rootEl: HTMLElement, input: DesktopOfflineCardBindingInput): void {
+  rootEl.innerHTML = renderDesktopOfflineCardHtml(input);
+  rootEl.querySelector<HTMLButtonElement>("#wh-retry")?.addEventListener("click", input.reload);
+  rootEl.querySelector<HTMLButtonElement>("#wh-open-settings")?.addEventListener("click", () => {
+    const form = rootEl.querySelector<HTMLFormElement>("#wh-offline-settings");
+    form?.removeAttribute("hidden");
+    rootEl.querySelector<HTMLInputElement>("#wh-api-base")?.focus({ preventScroll: true });
+  });
+  rootEl.querySelector<HTMLButtonElement>("#wh-default-api")?.addEventListener("click", () => {
+    input.storage.removeItem("workhub_api_base");
+    input.reload();
+  });
+  rootEl.querySelector<HTMLFormElement>("#wh-offline-settings")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const next = rootEl.querySelector<HTMLInputElement>("#wh-api-base")?.value.trim().replace(/\/+$/u, "") ?? "";
+    if (next.length > 0) {
+      input.storage.setItem("workhub_api_base", next);
+    } else {
+      input.storage.removeItem("workhub_api_base");
+    }
+    input.reload();
+  });
+  input.scheduleRebuild?.();
+}

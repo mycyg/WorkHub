@@ -90,6 +90,26 @@ test("approver recipients fall back to project owner without routing to the acto
   assert.deepEqual(recipients, ["80000000-0000-4000-8000-000000000005"]);
 });
 
+test("R9.0 escalations notify both the submitter and the project owner", () => {
+  const milestone = lifecycleMilestones.escalated;
+  assert.ok(milestone);
+  const recipients = resolveLifecycleRecipients(milestone, {
+    ...baseContext,
+    workItem: {
+      ...baseContext.workItem,
+      approverUserId: null,
+      submitterUserId: "80000000-0000-4000-8000-000000000002",
+      projectOwnerUserId: "80000000-0000-4000-8000-000000000005"
+    },
+    newStatus: "escalated"
+  });
+
+  assert.deepEqual(recipients, [
+    "80000000-0000-4000-8000-000000000002",
+    "80000000-0000-4000-8000-000000000005"
+  ]);
+});
+
 test("template rendering uses safe replace semantics instead of format parsing", () => {
   const rendered = renderLifecycleTemplate("{code} {title} {actor}", {
     code: "WH-1",
@@ -107,7 +127,8 @@ test("lifecycle drafts carry human copy, target URL, and dedupe key", () => {
     reasonOneline: "预算已经用完"
   });
 
-  assert.equal(drafts.length, 1);
+  // R9.0 escalation escape hatch: the old single-draft assertion was wrong because escalation must notify both submitter and project owner/approver, deduped against actor.
+  assert.equal(drafts.length, 2);
   assert.equal(drafts[0]?.type, "workitem.escalated");
   assert.equal(drafts[0]?.severity, "high");
   assert.equal(drafts[0]?.body.includes("{reason_oneline}"), false);

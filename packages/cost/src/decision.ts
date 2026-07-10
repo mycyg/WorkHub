@@ -8,6 +8,8 @@ import type { BudgetDecision, BudgetNotice, BudgetPolicy, BudgetScope, BudgetUsa
 
 export type BudgetScopeIds = {
   workItemId?: string;
+  taskPlanId?: string;
+  objectiveId?: string;
   userId?: string;
   teamId?: string;
   evalSuite?: "nightly" | "release";
@@ -68,7 +70,8 @@ export function decideRunBudget(input: DecideRunBudgetInput): BudgetDecisionTrac
       severity: "critical",
       scope: limiting.usage.scope,
       usageRatio: maxRatio,
-      policy: limiting.policy
+      policy: limiting.policy,
+      usage: limiting.usage
     });
     return {
       decisionId: input.decisionId ?? randomUUID(),
@@ -96,7 +99,8 @@ export function decideRunBudget(input: DecideRunBudgetInput): BudgetDecisionTrac
         severity: "critical",
         scope: limiting.usage.scope,
         usageRatio: maxRatio,
-        policy: limiting.policy
+        policy: limiting.policy,
+        usage: limiting.usage
       }),
       usages,
       limitingUsage: limiting.usage
@@ -116,7 +120,8 @@ export function decideRunBudget(input: DecideRunBudgetInput): BudgetDecisionTrac
         severity: "warning",
         scope: limiting.usage.scope,
         usageRatio: maxRatio,
-        policy: limiting.policy
+        policy: limiting.policy,
+        usage: limiting.usage
       }),
       usages,
       limitingUsage: limiting.usage
@@ -180,6 +185,10 @@ function scopeForPolicy(policy: BudgetPolicy, scopeIds: BudgetScopeIds): BudgetS
   switch (policy.scopeKind) {
     case "workitem":
       return scopeIds.workItemId ? { kind: "workitem", workitemId: scopeIds.workItemId } : undefined;
+    case "task":
+      return scopeIds.taskPlanId ? { kind: "task", taskPlanId: scopeIds.taskPlanId } : undefined;
+    case "objective":
+      return scopeIds.objectiveId ? { kind: "objective", objectiveId: scopeIds.objectiveId } : undefined;
     case "user":
       return scopeIds.userId ? { kind: "user", userId: scopeIds.userId } : undefined;
     case "team":
@@ -208,6 +217,10 @@ function sameScope(left: BudgetScope, right: BudgetScope) {
   switch (left.kind) {
     case "workitem":
       return right.kind === "workitem" && left.workitemId === right.workitemId;
+    case "task":
+      return right.kind === "task" && left.taskPlanId === right.taskPlanId;
+    case "objective":
+      return right.kind === "objective" && left.objectiveId === right.objectiveId;
     case "user":
       return right.kind === "user" && left.userId === right.userId;
     case "team":
@@ -255,9 +268,13 @@ function budgetNotice(input: {
   scope: BudgetScope;
   usageRatio: number;
   policy: BudgetPolicy;
+  usage?: BudgetUsage;
 }): BudgetNotice {
   const exhausted = input.code === "budget_exhausted";
-  const recommendedAction = exhausted
+  const armyScopeExhausted = exhausted && (input.scope.kind === "task" || input.scope.kind === "objective");
+  const recommendedAction = armyScopeExhausted
+    ? "add_budget"
+    : exhausted
     ? input.policy.onExhausted === "block_new_run"
       ? "ask_admin"
       : "pause"
@@ -265,25 +282,53 @@ function budgetNotice(input: {
       ? "downgrade_model"
       : "continue";
   const actionHref = actionHrefForScope(input.scope);
+  const options = armyScopeExhausted
+    ? [
+        { id: "add_budget", label: "追加预算继续", actionHref },
+        { id: "finish_current_output", label: "就用现有产出收尾", actionHref },
+        { id: "close_scope", label: "整体收工（取消这个任务）", actionHref }
+      ]
+    : [
+        { id: "downgrade_model", label: "降级模型继续", actionHref },
+        { id: "pause", label: "先暂停", actionHref },
+        { id: "ask_admin", label: "找管理员", actionHref: "/dashboard/cost" }
+      ];
   return {
     code: input.code,
     severity: input.severity,
     message: exhausted ? "AI 预算已经用完，先暂停新的自动执行。" : "AI 预算快用完了，建议先选择更省的执行方式。",
     scope: input.scope,
     usageRatio: input.usageRatio,
+    ...(input.usage ? { usage: budgetNoticeUsage(input.usage) } : {}),
     recommendedAction,
-    options: [
-      { id: "downgrade_model", label: "降级模型继续", actionHref },
-      { id: "pause", label: "先暂停", actionHref },
-      { id: "ask_admin", label: "找管理员", actionHref: "/dashboard/cost" }
-    ],
+    options,
     actionHref
+  };
+}
+
+function budgetNoticeUsage(usage: BudgetUsage): NonNullable<BudgetNotice["usage"]> {
+  return {
+    scopeLabel: usage.scopeLabel,
+    period: usage.period,
+    totalTokens: usage.totalTokens,
+    maxTokens: usage.maxTokens,
+    remainingTokens: usage.remainingTokens,
+    estimatedCostCny: usage.estimatedCostCny,
+    maxCostCny: usage.maxCostCny,
+    remainingCostCny: usage.remainingCostCny,
+    status: usage.status
   };
 }
 
 function actionHrefForScope(scope: BudgetScope) {
   if (scope.kind === "workitem") {
     return `/workitems/${scope.workitemId}`;
+  }
+  if (scope.kind === "task") {
+    return `/dashboard/cost?taskPlanId=${encodeURIComponent(scope.taskPlanId)}`;
+  }
+  if (scope.kind === "objective") {
+    return `/dashboard/cost?objectiveId=${encodeURIComponent(scope.objectiveId)}`;
   }
   return "/dashboard/cost";
 }
@@ -292,6 +337,10 @@ function defaultScopeLabel(scope: BudgetScope) {
   switch (scope.kind) {
     case "workitem":
       return "当前事项 AI 执行预算";
+    case "task":
+      return "军团计划预算";
+    case "objective":
+      return "目标预算";
     case "user":
       return "我的 AI 日预算";
     case "team":
@@ -308,6 +357,9 @@ function defaultScopeLabel(scope: BudgetScope) {
 // 与 ai-worklog 的 UTC 日界（L7）一致；CI/生产均为 UTC。代价仅是 UTC+8 下"今日"额度按北京时间 08:00
 // 重置（纯 UX 取舍）。若将来要按业务时区切日，必须写入侧与读取侧同时改、保持两端时区一致，否则会双计。
 function periodBounds(period: BudgetPolicy["period"], now: Date) {
+  if (period === "total") {
+    return { start: new Date(0), end: now };
+  }
   const start = new Date(now);
   if (period === "month") {
     start.setUTCDate(1);

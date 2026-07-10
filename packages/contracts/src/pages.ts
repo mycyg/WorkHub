@@ -11,6 +11,13 @@ import { auditLogFactSchema, manifestFactsSchema } from "./audit.js";
 import { approvalRequestSchema } from "./domain/governance.js";
 import { workItemSchema } from "./domain/work-item.js";
 import { notificationSeveritySchema } from "./notification.js";
+import { taskPlanVmSchema } from "./task-plan.js";
+import {
+  agentRunStatusSchema,
+  taskPlanItemRoleSchema,
+  taskPlanItemStatusSchema,
+  taskPlanStatusSchema
+} from "./enums.js";
 import {
   attentionItemSchema,
   budgetScopeSchema,
@@ -34,7 +41,8 @@ export const actionSpecSchema = z.object({
   method: z.enum(["GET", "POST", "PUT", "DELETE"]),
   href: z.string().min(1),
   requires_desktop: z.boolean().optional(),
-  requires_reason: z.boolean().optional()
+  requires_reason: z.boolean().optional(),
+  request_json: z.record(z.string(), z.unknown()).optional()
 });
 export type ActionSpec = z.infer<typeof actionSpecSchema>;
 
@@ -84,13 +92,16 @@ export const teamSkillsPageVmSchema = z.object({
 });
 export type TeamSkillsPageVM = z.infer<typeof teamSkillsPageVmSchema>;
 
+export const attentionSourceWarningSchema = z.object({
+  source: z.enum(["approvals", "proposals", "escalations", "sync_conflicts", "worklog"]),
+  message: z.string().min(1)
+});
+export type AttentionSourceWarning = z.infer<typeof attentionSourceWarningSchema>;
+
 export const attentionHomeVmSchema = z.object({
   primary: attentionItemSchema.optional(),
   queue: z.array(attentionItemSchema),
-  source_warnings: z.array(z.object({
-    source: z.enum(["approvals", "proposals"]),
-    message: z.string().min(1)
-  })).optional(),
+  source_warnings: z.array(attentionSourceWarningSchema).optional(),
   background_runs: z.array(z.object({
     run_id: idSchema,
     work_item_id: idSchema.optional(),
@@ -172,6 +183,8 @@ export const driveItemVmSchema = z.object({
   // F3：逐项操作端点——回收站项各带自己的 restore_href、可删项各带自己的 delete_href,让每行都能单独恢复/删除,
   // 而不是只有一个指向 deleted[0]/单个 deletable 的全局按钮。仅在请求者有管理权时由服务端填充。
   restore_href: z.string().min(1).optional(),
+  // R7（撤销路径）：还原被阻塞时给出人话原因（父级也在回收站/同名冲突/被禁止），不再静默留白。
+  restore_blocked_reason: z.string().min(1).optional(),
   delete_href: z.string().min(1).optional(),
   updated_at: isoDateTimeSchema
 });
@@ -409,6 +422,8 @@ export const notificationPageVmSchema = z.object({
     done: z.array(notificationItemVmSchema)
   }),
   items: z.array(notificationItemVmSchema),
+  // R4（规模化）：列表被 200 上限封顶时明说——total_count 是「本次返回数」，不是历史总量。
+  capped: z.boolean().optional(),
   actions: z.object({
     mark_all_read: actionSpecSchema.optional()
   }).default({}),
@@ -539,7 +554,13 @@ export const projectHomeWorkItemVmSchema = z.object({
   title: z.string().min(1),
   status: z.string().min(1),
   priority: z.string().min(1),
-  href: z.string().min(1)
+  href: z.string().min(1),
+  // B-R9.6 §3.4：军团工作项行尾 pill「军团 2/4」。仅当该工作项挂着活跃任务计划时出现；
+  // 点击行为不变（进工作项详情），不加新小节。
+  army: z.object({
+    done: z.number().int().nonnegative(),
+    total: z.number().int().positive()
+  }).optional()
 });
 export type ProjectHomeWorkItemVM = z.infer<typeof projectHomeWorkItemVmSchema>;
 
@@ -683,6 +704,144 @@ export const workItemSourceContextVmSchema = z.discriminatedUnion("source_type",
 ]);
 export type WorkItemSourceContextVM = z.infer<typeof workItemSourceContextVmSchema>;
 
+export const workItemAgentTeamItemStatusSchema = z.enum([
+  "pending",
+  "dispatched",
+  "succeeded",
+  "failed",
+  "needs_human",
+  "skipped"
+]);
+export type WorkItemAgentTeamItemStatus = z.infer<typeof workItemAgentTeamItemStatusSchema>;
+
+export const workItemAgentTeamActionSchema = z.object({
+  kind: z.enum(["view_output", "decide"]),
+  label: z.string().min(1).max(48),
+  href: z.string().min(1)
+});
+export type WorkItemAgentTeamActionVM = z.infer<typeof workItemAgentTeamActionSchema>;
+
+export const workItemAgentTeamItemVmSchema = z.object({
+  task_plan_item_id: idSchema,
+  seq: z.number().int().positive(),
+  title: z.string().min(1).max(256),
+  role: taskPlanItemRoleSchema,
+  plan_status: taskPlanItemStatusSchema,
+  status: workItemAgentTeamItemStatusSchema,
+  budget_share_pct: z.number().int().min(0).max(100),
+  depends_on: z.array(idSchema).default([]),
+  waiting_for_seq: z.array(z.number().int().positive()).default([]),
+  cost_estimate_cny: z.string().optional(),
+  run_id: idSchema.optional(),
+  run_workspace_id: idSchema.optional(),
+  parent_run_id: idSchema.optional(),
+  run_status: agentRunStatusSchema.optional(),
+  replay_href: z.string().min(1).optional(),
+  decision_href: z.string().min(1).optional(),
+  action: workItemAgentTeamActionSchema.optional()
+});
+export type WorkItemAgentTeamItemVM = z.infer<typeof workItemAgentTeamItemVmSchema>;
+
+export const workItemAgentTeamVmSchema = z.object({
+  plan_id: idSchema,
+  status: taskPlanStatusSchema,
+  completed_count: z.number().int().nonnegative(),
+  total_count: z.number().int().nonnegative(),
+  cost_used_cny: z.string().default("0.000000"),
+  cost_budget_cny: z.string().optional(),
+  cost_burn_pct: z.number().int().nonnegative().optional(),
+  runs_capped: z.boolean().default(false),
+  // B-R9.6 §3.1：头行「暂停派发/恢复派发」次级按钮。只在 dispatching/approved（可暂停）
+  // 或 paused（可恢复）时出现；终态军团没有派发可控。
+  dispatch_control: z.object({
+    kind: z.enum(["pause", "resume"]),
+    label: z.string().min(1),
+    href: z.string().min(1),
+    method: z.literal("POST")
+  }).optional(),
+  items: z.array(workItemAgentTeamItemVmSchema).max(50)
+});
+export type WorkItemAgentTeamVM = z.infer<typeof workItemAgentTeamVmSchema>;
+
+export const agentArmyDashboardPlanVmSchema = z.object({
+  plan_id: idSchema,
+  work_item_id: idSchema,
+  work_item_code: z.string().min(1),
+  work_item_title: z.string().min(1).max(256),
+  work_item_href: z.string().min(1),
+  objective_id: idSchema.optional(),
+  objective_title: z.string().min(1).max(256).optional(),
+  objective_progress_pct: z.number().int().min(0).max(100).optional(),
+  budget_href: z.string().min(1).optional(),
+  status: taskPlanStatusSchema,
+  progress: z.object({
+    completed: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    label: z.string().min(1).max(32)
+  }),
+  roles: z.array(z.object({
+    role: taskPlanItemRoleSchema,
+    count: z.number().int().nonnegative()
+  })),
+  statuses: z.array(z.object({
+    status: workItemAgentTeamItemStatusSchema,
+    count: z.number().int().nonnegative()
+  })),
+  cost: z.object({
+    used_cny: z.string(),
+    budget_cny: z.string().optional(),
+    burn_pct: z.number().int().nonnegative().optional()
+  }),
+  judge: z.object({
+    passed: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    pass_rate_pct: z.number().int().min(0).max(100)
+  }),
+  // 普通用户审查：分不清军团是刚在动还是卡死三天——卡上带最近活动时间。
+  last_activity_at: isoDateTimeSchema.optional(),
+  oldest_blocker: z.object({
+    kind: z.enum(["needs_human", "budget", "stalled"]),
+    label: z.string().min(1).max(128),
+    age_seconds: z.number().int().nonnegative(),
+    href: z.string().min(1).optional()
+  }).optional(),
+  updated_at: isoDateTimeSchema
+});
+export type AgentArmyDashboardPlanVM = z.infer<typeof agentArmyDashboardPlanVmSchema>;
+
+export const agentArmyDashboardVmSchema = z.object({
+  generated_at: isoDateTimeSchema,
+  kpis: z.object({
+    active_team_count: z.number().int().nonnegative(),
+    waiting_decision_count: z.number().int().nonnegative(),
+    today_cost_cny: z.string(),
+    autonomy_rate_pct: z.number().int().min(0).max(100)
+  }),
+  plans: z.array(agentArmyDashboardPlanVmSchema).max(20),
+  recent_escalations: z.array(z.object({
+    id: idSchema,
+    plan_id: idSchema.optional(),
+    work_item_id: idSchema,
+    title: z.string().min(1).max(128),
+    reason_preview: z.string().min(1).max(200),
+    created_at: isoDateTimeSchema,
+    href: z.string().min(1)
+  })).max(5),
+  source_warnings: z.array(attentionSourceWarningSchema).optional(),
+  page_info: z.object({
+    plan_limit: z.number().int().positive(),
+    returned: z.number().int().nonnegative(),
+    plans_capped: z.boolean(),
+    items_capped: z.boolean(),
+    runs_capped: z.boolean(),
+    escalation_limit: z.number().int().positive(),
+    escalation_returned: z.number().int().nonnegative(),
+    escalations_capped: z.boolean()
+  }),
+  empty_state: z.enum(["no_agent_armies"]).optional()
+});
+export type AgentArmyDashboardVM = z.infer<typeof agentArmyDashboardVmSchema>;
+
 export const workItemDetailVmSchema = z.object({
   workitem: workItemSchema,
   // GH-2：所属项目名,供详情页头部「← 项目名」面包屑链接到 /projects/:id(工作项的 project_id 在 workitem 里)。
@@ -692,7 +851,23 @@ export const workItemDetailVmSchema = z.object({
   latest_proposal: deliverableChangeManifestSchema.optional(),
   accepted_deliverables: z.array(acceptedDeliverableVmSchema).default([]),
   evidence_refs: z.array(evidenceRefSchema),
+  task_plan: taskPlanVmSchema.optional(),
+  agent_team: workItemAgentTeamVmSchema.optional(),
   source_context: workItemSourceContextVmSchema.optional(),
+  // R6（信任 high）：AI 对最近一次输出的置信评级——后端 confidenceRecords 早已按 run 落库，
+  // 此前只透传 opaque 的 latest_confidence_id，最后一公里从未展示给审阅者。
+  confidence: z.object({
+    score: z.number().min(0).max(1),
+    grade: z.string().min(1),
+    verdict: z.enum(["auto_merge", "human_spotcheck", "escalate"])
+  }).optional(),
+  // R8（留痕）：本工作项上已决策的人工审批——「谁在什么时候批了/驳回了这一步」进详情页时间线。
+  approval_decisions: z.array(z.object({
+    id: idSchema,
+    decision: z.string().min(1),
+    reason_md: z.string().optional(),
+    decided_at: isoDateTimeSchema
+  })).default([]),
   actions: z.object({
     create_proposal_draft: actionSpecSchema.optional()
   }).default({})
@@ -732,6 +907,8 @@ export const approvalDetailVmSchema = z.object({
   proposal_id: idSchema.optional(),
   proposal_href: z.string().optional(),
   ai_reason: z.string().optional(),
+  // R6（信任 high）：跨 agent 复核(judge)的结构化裁决理由——与提议作者自写的 ai_reason 分开渲染。
+  ai_review_md: z.string().optional(),
   expected_benefit: z.string().optional(),
   risk_label: z.string().optional(),
   manifest_changes: z.array(deliverableChangeSchema).default([]),
@@ -760,7 +937,16 @@ export const approvalCenterVmSchema = z.object({
     has_more: z.boolean()
   }).optional(),
   // 逐 item.id 的详情（预取，左栏点选时客户端就地切换；旧调用方默认空对象）。
-  items_detail: z.record(z.string(), approvalDetailVmSchema).default({})
+  items_detail: z.record(z.string(), approvalDetailVmSchema).default({}),
+  // R8（留痕）：最近已处理——审批一旦决策此前即从所有可达视图消失，无历史回看。
+  decided: z.array(z.object({
+    id: idSchema,
+    title: z.string().min(1),
+    decision: z.string().min(1),
+    decided_by_label: z.string().min(1).optional(),
+    reason_md: z.string().optional(),
+    decided_at: isoDateTimeSchema
+  })).default([])
 });
 export type ApprovalCenterVM = z.infer<typeof approvalCenterVmSchema>;
 
@@ -774,7 +960,8 @@ export const proposalDetailVmSchema = z.object({
   review_actions: z.object({
     approve: actionSpecSchema,
     request_changes: actionSpecSchema,
-    merge: actionSpecSchema.optional()
+    merge: actionSpecSchema.optional(),
+    approve_hold: actionSpecSchema.optional()
   }),
   comments: z.array(z.object({
     id: idSchema,
@@ -840,6 +1027,27 @@ export const costDashboardVmSchema = z.object({
     cost_cny: z.string(),
     turns: z.number().int().nonnegative()
   })),
+  // R3（协作）：非管理员看不到分组卡且无说明——加 viewer_is_admin 让前端诚实解释。
+  viewer_is_admin: z.boolean().optional(),
+  by_task_plan: z.array(z.object({
+    task_plan_id: idSchema,
+    // R6（信任）：成本行可钻取到工作项详情（子任务/回放都在那），成本归因不再断在聚合层。
+    work_item_id: idSchema.optional(),
+    label: z.string().min(1).optional(),
+    cost_cny: z.string(),
+    tokens: z.number().int().nonnegative(),
+    child_runs: z.number().int().nonnegative(),
+    status: z.string().min(1).optional(),
+    // B-R9.6 UX-H4：燃烧条数据——预算上限与已烧百分比（可 >100，渲染层截 100 画条、红字提示超限）。
+    budget_cny: z.string().optional(),
+    burn_pct: z.number().int().nonnegative().optional()
+  })).default([]),
+  by_objective: z.array(z.object({
+    objective_id: idSchema,
+    label: z.string().min(1).optional(),
+    cost_cny: z.string(),
+    tokens: z.number().int().nonnegative()
+  })).default([]),
   model_breakdown: z.array(z.object({
     provider: z.string(),
     model: z.string(),
@@ -868,6 +1076,16 @@ export type CostDashboardVM = z.infer<typeof costDashboardVmSchema>;
 export const settingsPageVmSchema = z.object({
   generated_at: isoDateTimeSchema,
   locale: workHubLocaleSchema,
+  // 普通用户审查（APPROVAL-POLICY-UI）：「以后同类审批自动通过」的常驻策略要能查看；
+  // 撤销走 DELETE /api/permissions/:id（桌面边界内的写动作，web 端按钮 fail-closed 提示去桌面）。
+  permission_policies: z.array(z.object({
+    id: idSchema,
+    action_pattern: z.string().min(1),
+    effect: z.enum(["allow", "deny", "ask"]),
+    learned_from_session: z.boolean(),
+    created_at: isoDateTimeSchema,
+    revoke_href: z.string().min(1)
+  })).optional(),
   runtime: z.object({
     app_env: z.enum(["development", "test", "production"]),
     runtime_status: z.enum(["ready", "attention_needed"]),

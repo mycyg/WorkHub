@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createP05GoldPathFixture, validateP05GoldPathFixture } from "@workhub/agent/fixtures";
-import type { CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
+import type { AgentArmyDashboardVM, AttentionItem, CalendarPageVM, DrivePageVM, ProjectHealthPageVM, EvidenceBubble, GoldPathSurfaceVM, MeetingPageVM, NotificationPageVM, ProjectListVM, ProposalConflict, SessionVM, SettingsPageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { renderAgentRunReplay } from "../replay/index.js";
 import { renderWebRouteComponent, renderWebRouteComponents } from "./route-components.js";
@@ -557,6 +557,68 @@ function surfaceVm(): GoldPathSurfaceVM {
   };
 }
 
+function agentArmyDashboardVm(overrides: Partial<AgentArmyDashboardVM> = {}): AgentArmyDashboardVM {
+  return {
+    generated_at: "2026-07-03T00:00:00.000Z",
+    kpis: {
+      active_team_count: 1,
+      waiting_decision_count: 2,
+      today_cost_cny: "0.006",
+      autonomy_rate_pct: 67
+    },
+    plans: [{
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      work_item_code: "DEMO-960",
+      work_item_title: "竞品资料梳理",
+      work_item_href: "/workitems/96000000-0000-4000-8000-000000000002",
+      objective_id: "96000000-0000-4000-8000-000000000003",
+      objective_title: "季度上市策略",
+      objective_progress_pct: 40,
+      budget_href: "/dashboard/cost",
+      status: "dispatching",
+      progress: { completed: 1, total: 2, label: "1/2" },
+      roles: [
+        { role: "research", count: 1 },
+        { role: "review", count: 1 }
+      ],
+      statuses: [
+        { status: "succeeded", count: 1 },
+        { status: "needs_human", count: 1 }
+      ],
+      cost: { used_cny: "0.006", budget_cny: "3.000000", burn_pct: 42 },
+      judge: { passed: 1, total: 1, pass_rate_pct: 100 },
+      oldest_blocker: {
+        kind: "needs_human",
+        label: "卡在: 竞品复核 · 2h",
+        age_seconds: 7200,
+        href: "/attention"
+      },
+      updated_at: "2026-07-03T00:00:00.000Z"
+    }],
+    recent_escalations: [{
+      id: "96000000-0000-4000-8000-000000000008",
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      title: "竞品复核需要人判断",
+      reason_preview: "证据互相冲突，需要人判断。",
+      created_at: "2026-07-02T22:00:00.000Z",
+      href: "/attention"
+    }],
+    page_info: {
+      plan_limit: 20,
+      returned: 1,
+      plans_capped: false,
+      items_capped: false,
+      runs_capped: false,
+      escalation_limit: 5,
+      escalation_returned: 1,
+      escalations_capped: false
+    },
+    ...overrides
+  };
+}
+
 function assertNoMainWindowBoundaryLeak(html: string) {
   assert.equal(html.includes("data-cuu"), false);
   assert.equal(html.includes("./assets/cuu/"), false);
@@ -764,7 +826,9 @@ test("R4.10 Home route component renders directly from Attention Page VM with bi
   assertNoMainWindowBoundaryLeak(en.html);
 });
 
-test("Home route leads with a project and drive workspace before the decision queue", () => {
+// 普通用户审查（IA 翻转）：R8 曾钉「项目桌在前」，但每天来拍板的人不该先滚过两张常青说明卡——
+// 决策区（含紧急升级卡）永远第一屏，项目桌其后。
+test("Home route leads with the decision queue before the project desk", () => {
   const vm = surfaceVm();
   const en = renderWebRouteComponent({
     key: "home",
@@ -778,8 +842,184 @@ test("Home route leads with a project and drive workspace before the decision qu
   assert.equal(en.html.includes('href="/projects/93000000-0000-4000-8000-000000000001"'), true);
   assert.equal(en.html.includes('href="/drive?project_id=93000000-0000-4000-8000-000000000001"'), true);
   assert.equal(en.html.includes('href="/intake?project_id=93000000-0000-4000-8000-000000000001"'), true);
-  assert.ok(en.html.indexOf('data-r8-home-project-desk="true"') < en.html.indexOf('data-r4-home-decision="true"'));
+  assert.ok(en.html.indexOf('data-r4-home-decision="true"') < en.html.indexOf('data-r8-home-project-desk="true"'));
   assertNoMainWindowBoundaryLeak(en.html);
+});
+
+test("R9.0 Home route renders escalation cards with human action labels", () => {
+  const base = surfaceVm();
+  const escalation: AttentionItem = {
+    id: "94000000-0000-4000-8000-000000000101",
+    kind: "escalation",
+    priority: "urgent",
+    work_item_id: "94000000-0000-4000-8000-000000000102",
+    project_id: "94000000-0000-4000-8000-000000000103",
+    source_ref: {
+      entity_type: "escalation_event",
+      entity_id: "94000000-0000-4000-8000-000000000101"
+    },
+    title: "《竞品价格调研》卡住了",
+    summary_text: "AI 对数据来源不确定。",
+    reason_text: "AI 对数据来源不确定。",
+    actions: [
+      { id: "escalation_retry", label: "让它重试", style: "primary", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000101/resolve" },
+      { id: "escalation_pm_mode", label: "转成我来做", style: "secondary", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000101/resolve" },
+      { id: "escalation_cancel", label: "取消这个子任务", style: "danger", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000101/resolve" }
+    ],
+    cuu_state: "worried",
+    created_at: "2026-07-02T16:00:00.000Z"
+  };
+  const home = renderWebRouteComponent({
+    key: "home",
+    attention: {
+      ...base.page_vms.attention,
+      primary: escalation,
+      queue: [escalation]
+    }
+  }, { locale: "zh-CN" });
+
+  assert.equal(home.html.includes("《竞品价格调研》卡住了"), true);
+  assert.equal(home.html.includes("让它重试"), true);
+  assert.equal(home.html.includes("转成我来做"), true);
+  assert.equal(home.html.includes("取消这个子任务"), true);
+  assert.equal(home.html.includes(">pm_mode<"), false);
+  assertNoMainWindowBoundaryLeak(home.html);
+});
+
+// B-R9.6 §3.7：sync_conflict 主卡渲「合并成一条（可编辑）」的可编辑草稿框（预填
+// merge 动作 request_json.value_md），并露出全部四动作 + B 出处链接。
+test("B-R9.6 Home route renders the editable merge draft on sync_conflict cards", () => {
+  const base = surfaceVm();
+  const conflict: AttentionItem = {
+    id: "94000000-0000-4000-8000-000000000121",
+    kind: "sync_conflict",
+    priority: "high",
+    source_ref: {
+      entity_type: "agent_run",
+      entity_id: "94000000-0000-4000-8000-000000000122"
+    },
+    title: "Cuu 学到了两条打架的偏好",
+    summary_text: "偏好「reply_style」出现两种说法，需要确认后再晋升。",
+    reason_text: "A：回复要长。\nB：回复只给结论。",
+    actions: [
+      { id: "keep_current", label: "要 A", style: "secondary", method: "POST", href: "/api/memory-conflicts/94000000-0000-4000-8000-000000000121/resolve/keep_current?expected_updated_at=2026-07-02T16%3A00%3A00.000Z" },
+      { id: "accept_incoming", label: "要 B", style: "primary", method: "POST", href: "/api/memory-conflicts/94000000-0000-4000-8000-000000000121/resolve/accept_incoming?expected_updated_at=2026-07-02T16%3A00%3A00.000Z" },
+      { id: "discard_both", label: "都不要", style: "danger", method: "POST", href: "/api/memory-conflicts/94000000-0000-4000-8000-000000000121/resolve/discard_both?expected_updated_at=2026-07-02T16%3A00%3A00.000Z" },
+      { id: "merge_both", label: "合并成一条（可编辑）", style: "secondary", method: "POST", href: "/api/memory-conflicts/94000000-0000-4000-8000-000000000121/resolve/merge_both?expected_updated_at=2026-07-02T16%3A00%3A00.000Z", request_json: { value_md: "回复要长。\n回复只给结论。" } },
+      { id: "open_incoming_source", label: "看 B 的出处", style: "quiet", method: "GET", href: "/agent-runs/94000000-0000-4000-8000-000000000122/replay" }
+    ],
+    cuu_state: "worried",
+    created_at: "2026-07-02T16:00:00.000Z"
+  };
+  const home = renderWebRouteComponent({
+    key: "home",
+    attention: {
+      ...base.page_vms.attention,
+      primary: conflict,
+      queue: [conflict]
+    }
+  }, { locale: "zh-CN" });
+
+  assert.equal(home.html.includes('data-r9-sync-merge-value="true"'), true);
+  assert.equal(home.html.includes("回复要长。"), true);
+  assert.equal(home.html.includes("都不要"), true);
+  assert.equal(home.html.includes("合并成一条（可编辑）"), true);
+  assert.equal(home.html.includes("看 B 的出处"), true);
+  assertNoMainWindowBoundaryLeak(home.html);
+});
+
+test("R9.0 Home route renders escalation cards localized for English readers", () => {
+  // ux-flow-spec §3.3 双语文案：en-US 下标题与三动作都要真实渲染英文（API 按 locale 产出，
+  // web 层不许中文裸奔）。
+  const base = surfaceVm();
+  const escalation: AttentionItem = {
+    id: "94000000-0000-4000-8000-000000000111",
+    kind: "escalation",
+    priority: "urgent",
+    work_item_id: "94000000-0000-4000-8000-000000000112",
+    project_id: "94000000-0000-4000-8000-000000000113",
+    source_ref: {
+      entity_type: "escalation_event",
+      entity_id: "94000000-0000-4000-8000-000000000111"
+    },
+    title: "\"Competitor pricing research\" needs a decision",
+    summary_text: "The AI is unsure about its data sources.",
+    reason_text: "The AI is unsure about its data sources.",
+    actions: [
+      { id: "escalation_retry", label: "Let it retry", style: "primary", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000111/resolve" },
+      { id: "escalation_pm_mode", label: "I'll take over", style: "secondary", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000111/resolve" },
+      { id: "escalation_cancel", label: "Cancel this subtask", style: "danger", method: "POST", href: "/api/escalations/94000000-0000-4000-8000-000000000111/resolve" }
+    ],
+    cuu_state: "worried",
+    created_at: "2026-07-02T16:00:00.000Z"
+  };
+  const home = renderWebRouteComponent({
+    key: "home",
+    attention: {
+      ...base.page_vms.attention,
+      primary: escalation,
+      queue: [escalation]
+    }
+  }, { locale: "en-US" });
+
+  assert.equal(home.html.includes("&quot;Competitor pricing research&quot; needs a decision"), true);
+  assert.equal(home.html.includes("Let it retry"), true);
+  assert.equal(home.html.includes("I&#39;ll take over") || home.html.includes("I'll take over"), true);
+  assert.equal(home.html.includes("Cancel this subtask"), true);
+  // 周边 chrome（kind/priority 药丸等）也不许残留中文动作词。
+  assert.equal(home.html.includes("让它重试"), false);
+  assert.equal(home.html.includes(">pm_mode<"), false);
+  assertNoMainWindowBoundaryLeak(home.html);
+});
+
+test("R9.7 approval workbench localizes plan_review attention kind", () => {
+  const vm = surfaceVm();
+  const first = vm.page_vms.approvals.items[0];
+  assert.ok(first);
+  vm.page_vms.approvals.items[0] = {
+    ...first,
+    kind: "plan_review",
+    source_ref: { entity_type: "proposal", entity_id: "94000000-0000-4000-8000-000000000111" },
+    title: "《短剧选题调研》的分工计划等你过目",
+    summary_text: "计划已确认，可以批准为待开始计划。",
+    actions: [
+      {
+        id: "approve_and_dispatch",
+        label: "批准并开始执行",
+        style: "primary",
+        method: "POST",
+        href: "/api/proposals/94000000-0000-4000-8000-000000000111/merge",
+        request_json: { dispatch: true }
+      },
+      {
+        id: "approve_hold",
+        label: "批准但先不跑",
+        style: "secondary",
+        method: "POST",
+        href: "/api/proposals/94000000-0000-4000-8000-000000000111/merge",
+        request_json: { dispatch: false }
+      },
+      {
+        id: "open_proposal",
+        label: "查看计划提议",
+        style: "secondary",
+        method: "GET",
+        href: "/proposals/94000000-0000-4000-8000-000000000111"
+      }
+    ]
+  };
+
+  const approvals = renderWebRouteComponents(vm, { locale: "zh-CN" }).approvals;
+
+  assert.ok(approvals);
+  assert.equal(approvals.html.includes("计划审阅"), true);
+  assert.equal(approvals.html.includes("data-action-id=\"approve_hold\""), true);
+  assert.equal(approvals.html.includes("&quot;dispatch&quot;:false"), true);
+  assert.equal(approvals.html.includes("plan_review"), false);
+  assert.equal(approvals.html.includes("Plan Review"), false);
+  // 规格 §3.3/§3.7：plan_review 卡标题必须带工作项名真实渲出，禁止通用文案覆盖。
+  assert.equal(approvals.html.includes("《短剧选题调研》的分工计划等你过目"), true);
+  assertNoMainWindowBoundaryLeak(approvals.html);
 });
 
 test("Home route surfaces partial source warnings instead of silently showing an empty queue", () => {
@@ -881,6 +1121,398 @@ test("R4.11 WorkItem route component keeps task context, trace, acceptance, and 
   assertNoMainWindowBoundaryLeak(workitem.html);
 });
 
+test("R9.7 WorkItem trace route component does not render machine tool names as visible pills", () => {
+  const vm = surfaceVm();
+  const firstStep = vm.page_vms.workitem.agent_trace_preview[0];
+  assert.ok(firstStep);
+  const workitem = renderWebRouteComponents({
+    ...vm,
+    page_vms: {
+      ...vm.page_vms,
+      workitem: {
+        ...vm.page_vms.workitem,
+        agent_trace_preview: [{
+          ...firstStep,
+          phase: "think",
+          tool_name: "read_project_file",
+          output_excerpt: "Reviewed the project context.",
+          created_at: "2026-07-03T10:24:00.000Z"
+        }]
+      }
+    }
+  }, { locale: "en-US" }).workitem;
+
+  assert.ok(workitem);
+  assert.equal(workitem.html.includes("<span class=\"wh-pill\">read_project_file</span>"), false);
+  assert.equal(workitem.html.includes("<span class=\"wh-pill\">2026-07-03 10:24</span>"), true);
+});
+
+test("R9.1 WorkItem route component renders the approved task plan snapshot", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const planVm: WorkItemDetailVM = {
+    ...base,
+    task_plan: {
+      id: "93000000-0000-4000-8000-000000000901",
+      work_item_id: base.workitem.id,
+      workspace_id: "93000000-0000-4000-8000-000000000001",
+      status: "approved",
+      objective_id: null,
+      budget_json: { total_share_pct: 100 },
+      decomposition_context_json: { source: "meta_planner" },
+      created_by: "93000000-0000-4000-8000-000000000301",
+      created_at: "2026-07-03T00:00:00.000Z",
+      updated_at: "2026-07-03T00:01:00.000Z",
+      items_capped: false,
+      items: [
+        {
+          id: "93000000-0000-4000-8000-000000000902",
+          plan_id: "93000000-0000-4000-8000-000000000901",
+          parent_item_id: null,
+          seq: 0,
+          title: "整理竞品证据",
+          role: "research",
+          objective_md: "查清三类竞品的最新打法。",
+          acceptance_md: "列出至少 3 条可核验来源。",
+          budget_share_pct: 35,
+          depends_on: [],
+          status: "pending",
+          created_at: "2026-07-03T00:00:00.000Z",
+          updated_at: "2026-07-03T00:00:00.000Z"
+        },
+        {
+          id: "93000000-0000-4000-8000-000000000903",
+          plan_id: "93000000-0000-4000-8000-000000000901",
+          parent_item_id: null,
+          seq: 1,
+          title: "产出短报告",
+          role: "produce",
+          objective_md: "把证据整理成短报告。",
+          acceptance_md: "报告包含结论、证据和下一步建议。",
+          budget_share_pct: 65,
+          depends_on: ["93000000-0000-4000-8000-000000000902"],
+          status: "pending",
+          created_at: "2026-07-03T00:00:00.000Z",
+          updated_at: "2026-07-03T00:00:00.000Z"
+        }
+      ]
+    }
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: planVm }, { locale: "zh-CN" });
+
+  assert.equal(workitem.html.includes('data-r9-task-plan-panel="true"'), true);
+  assert.equal(workitem.html.includes('data-r9-task-plan-status="approved"'), true);
+  assert.equal(workitem.html.includes('data-r9-task-plan-item="93000000-0000-4000-8000-000000000902"'), true);
+  assert.equal(workitem.html.includes('data-r9-task-plan-role="research"'), true);
+  assert.equal(workitem.html.includes('data-r9-task-plan-budget="65"'), true);
+  assert.equal(workitem.html.includes('data-r9-task-plan-depends="#1"'), true);
+  assert.equal(workitem.html.includes("任务计划"), true);
+  assert.equal(workitem.html.includes("1. 整理竞品证据"), true);
+  assert.equal(workitem.html.includes("0. 整理竞品证据"), false);
+  assert.equal(workitem.html.includes("整理竞品证据"), true);
+  assert.equal(workitem.html.includes("调研"), true);
+  assert.equal(workitem.html.includes("列出至少 3 条可核验来源。"), true);
+});
+
+test("R9.1 WorkItem route component drafts a task plan before any agent run", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const cleanSpecReady: WorkItemDetailVM = {
+    ...base,
+    workitem: { ...base.workitem, status: "spec_ready" },
+    latest_proposal: undefined,
+    agent_trace_preview: [],
+    task_plan: undefined,
+    agent_team: undefined
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: cleanSpecReady }, { locale: "en-US" });
+
+  assert.equal(workitem.html.includes('data-action-id="create_task_plan" role="button" data-method="POST"'), true);
+  assert.equal(workitem.html.includes(`/api/workitems/${cleanSpecReady.workitem.id}/task-plan`), true);
+  assert.equal(workitem.html.includes('data-action-id="start_agent_run"'), false);
+});
+
+test("R9.2 WorkItem route component renders the task-plan run tree without inline decisions", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const researchId = "93000000-0000-4000-8000-000000000902";
+  const reviewId = "93000000-0000-4000-8000-000000000903";
+  const runTreeVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      plan_id: planId,
+      status: "dispatching",
+      completed_count: 1,
+      total_count: 2,
+      cost_used_cny: "1.250000",
+      cost_budget_cny: "3.000000",
+      cost_burn_pct: 42,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: researchId,
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          plan_status: "succeeded",
+          status: "succeeded",
+          budget_share_pct: 35,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.450000",
+          run_id: "93000000-0000-4000-8000-000000000911",
+          run_status: "succeeded",
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000911/replay",
+          action: {
+            kind: "view_output",
+            label: "看产出",
+            href: "/agent-runs/93000000-0000-4000-8000-000000000911/replay"
+          }
+        },
+        {
+          task_plan_item_id: reviewId,
+          seq: 2,
+          title: "复核风险",
+          role: "review",
+          plan_status: "failed",
+          status: "needs_human",
+          budget_share_pct: 25,
+          depends_on: [researchId],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.800000",
+          run_id: "93000000-0000-4000-8000-000000000912",
+          run_status: "escalated",
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000912/replay",
+          decision_href: "/attention",
+          action: {
+            kind: "decide",
+            label: "去决策",
+            href: "/attention"
+          }
+        }
+      ]
+    }
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: runTreeVm }, { locale: "zh-CN" });
+
+  assert.equal(workitem.html.includes('data-r9-agent-team-panel="true"'), true);
+  assert.equal(workitem.html.includes(`data-r9-agent-team-plan-id="${planId}"`), true);
+  assert.equal(workitem.html.includes("军团进行中 1/2"), true);
+  assert.equal(workitem.html.includes('data-r9-agent-team-item="93000000-0000-4000-8000-000000000902"'), true);
+  assert.equal(workitem.html.includes('data-r9-agent-team-status="needs_human"'), true);
+  assert.equal(workitem.html.includes("看产出"), true);
+  assert.equal(workitem.html.includes("去决策"), true);
+  assert.equal(workitem.html.includes('href="/attention"'), true);
+  assert.equal(workitem.html.includes("data-r9-agent-team-inline-decision"), false);
+  assert.equal(workitem.html.includes("¥1.25"), true);
+  assert.equal(workitem.html.includes("¥0.45"), true);
+  assert.equal(workitem.html.includes("¥1.250000"), false);
+  assert.equal(workitem.html.includes("¥0.450000"), false);
+});
+
+test("R9.7 WorkItem route component avoids dispatch internals and unavailable pause controls", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const dispatchedId = "93000000-0000-4000-8000-000000000904";
+  const runTreeVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      plan_id: planId,
+      status: "dispatching",
+      completed_count: 1,
+      total_count: 3,
+      cost_used_cny: "1.250000",
+      cost_budget_cny: "3.000000",
+      cost_burn_pct: 42,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: dispatchedId,
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          plan_status: "dispatched",
+          status: "dispatched",
+          budget_share_pct: 35,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.450000",
+          run_id: "93000000-0000-4000-8000-000000000914",
+          run_status: "running",
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000914/replay"
+        }
+      ]
+    }
+  };
+
+  const zh = renderWebRouteComponent({ key: "workitem", workitem: runTreeVm }, { locale: "zh-CN" });
+  const en = renderWebRouteComponent({ key: "workitem", workitem: runTreeVm }, { locale: "en-US" });
+
+  assert.equal(zh.html.includes("派发"), false);
+  assert.equal(en.html.includes("Dispatch"), false);
+  assert.equal(zh.html.includes('data-r9-agent-team-pause="true"'), false);
+  assert.equal(en.html.includes('data-r9-agent-team-pause="true"'), false);
+});
+
+// B-R9.6 UX 审计（H1 卡位）：同一卡位按数据形态切换——军团活跃/终态只渲军团面板，
+// 草稿/待审/已取消只渲计划快照面板（含审批黄条），绝不双渲。
+test("B-R9.6 workitem plan slot switches between plan snapshot and army panel by status", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const teamBase = {
+    plan_id: planId,
+    completed_count: 1,
+    total_count: 3,
+    cost_used_cny: "1.250000",
+    runs_capped: false,
+    items: []
+  };
+  const planBase = {
+    id: planId,
+    work_item_id: "93000000-0000-4000-8000-000000000902",
+    workspace_id: "93000000-0000-4000-8000-000000000903",
+    status: "proposed" as const,
+    budget_json: {},
+    decomposition_context_json: {},
+    created_by: "93000000-0000-4000-8000-000000000904",
+    created_at: "2026-07-02T16:00:00.000Z",
+    updated_at: "2026-07-02T16:00:00.000Z",
+    items: [],
+    items_capped: false
+  };
+  const proposedVm: WorkItemDetailVM = {
+    ...base,
+    task_plan: planBase,
+    agent_team: { ...teamBase, status: "proposed" }
+  };
+  const proposed = renderWebRouteComponent({ key: "workitem", workitem: proposedVm }, { locale: "zh-CN" });
+  assert.equal(proposed.html.includes('data-r9-task-plan-panel="true"'), true);
+  assert.equal(proposed.html.includes('data-r9-agent-team-panel="true"'), false);
+  assert.equal(proposed.html.includes("军团进行中"), false);
+
+  const dispatchingVm: WorkItemDetailVM = {
+    ...base,
+    task_plan: { ...planBase, status: "dispatching" },
+    agent_team: { ...teamBase, status: "dispatching" }
+  };
+  const dispatching = renderWebRouteComponent({ key: "workitem", workitem: dispatchingVm }, { locale: "zh-CN" });
+  assert.equal(dispatching.html.includes('data-r9-agent-team-panel="true"'), true);
+  assert.equal(dispatching.html.includes('data-r9-task-plan-panel="true"'), false);
+
+  // UX-M13：等人拍板黄条 + UX-M2 终态复盘尾行 + 顶部徽章细化。
+  const bannerVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      ...teamBase,
+      status: "dispatching",
+      items: [
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000905",
+          seq: 1,
+          title: "复核风险",
+          role: "review",
+          plan_status: "failed",
+          status: "needs_human",
+          budget_share_pct: 30,
+          depends_on: [],
+          waiting_for_seq: [],
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000906/replay"
+        }
+      ]
+    }
+  };
+  const banner = renderWebRouteComponent({ key: "workitem", workitem: bannerVm }, { locale: "zh-CN" });
+  assert.equal(banner.html.includes('data-r9-agent-team-banner="needs_human"'), true);
+  assert.equal(banner.html.includes("1 个子任务需要你拍板"), true);
+  assert.equal(banner.html.includes("军团进行中 1/3"), true, "顶部徽章细化为军团标题");
+
+  const retroVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      ...teamBase,
+      status: "done",
+      completed_count: 2,
+      total_count: 3,
+      items: [
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000907",
+          seq: 1,
+          title: "查资料",
+          role: "research",
+          plan_status: "succeeded",
+          status: "succeeded",
+          budget_share_pct: 30,
+          depends_on: [],
+          waiting_for_seq: [],
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000908/replay"
+        }
+      ]
+    }
+  };
+  const retro = renderWebRouteComponent({ key: "workitem", workitem: retroVm }, { locale: "zh-CN" });
+  assert.equal(retro.html.includes('data-r9-agent-team-retro="true"'), true);
+  assert.equal(retro.html.includes("复盘：成功 1 · 失败 0 · 跳过 0"), true);
+  // 有 replay 而无专门动作的行给「看轨迹」。
+  assert.equal(retro.html.includes('data-r9-agent-team-trace="93000000-0000-4000-8000-000000000907"'), true);
+
+  // 部分完成不许喊「已完成」。
+  const partialVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: { ...teamBase, status: "done" }
+  };
+  const partial = renderWebRouteComponent({ key: "workitem", workitem: partialVm }, { locale: "zh-CN" });
+  assert.equal(partial.html.includes("军团部分完成 1/3"), true);
+});
+
+// B-R9.6 §3.1：VM 带 dispatch_control 才渲「暂停派发/恢复派发」按钮；paused 头行
+// 要说「军团已暂停」而不是继续喊推进中。
+test("B-R9.6 WorkItem agent team panel renders the dispatch control from the VM", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const teamBase = {
+    plan_id: planId,
+    completed_count: 1,
+    total_count: 2,
+    cost_used_cny: "1.250000",
+    runs_capped: false,
+    items: []
+  };
+  const dispatchingVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      ...teamBase,
+      status: "dispatching",
+      dispatch_control: {
+        kind: "pause",
+        label: "暂停派发",
+        href: `/api/task-plans/${planId}/pause`,
+        method: "POST"
+      }
+    }
+  };
+  const dispatching = renderWebRouteComponent({ key: "workitem", workitem: dispatchingVm }, { locale: "zh-CN" });
+  assert.equal(dispatching.html.includes('data-r9-agent-team-dispatch-control="pause"'), true);
+  assert.equal(dispatching.html.includes("暂停派发"), true);
+  assert.equal(dispatching.html.includes(`href="/api/task-plans/${planId}/pause"`), true);
+  assert.equal(dispatching.html.includes('data-method="POST"'), true);
+
+  const pausedVm: WorkItemDetailVM = {
+    ...base,
+    agent_team: {
+      ...teamBase,
+      status: "paused",
+      dispatch_control: {
+        kind: "resume",
+        label: "恢复派发",
+        href: `/api/task-plans/${planId}/resume`,
+        method: "POST"
+      }
+    }
+  };
+  const paused = renderWebRouteComponent({ key: "workitem", workitem: pausedVm }, { locale: "zh-CN" });
+  assert.equal(paused.html.includes("军团已暂停 1/2"), true);
+  assert.equal(paused.html.includes('data-r9-agent-team-dispatch-control="resume"'), true);
+  assert.equal(paused.html.includes("恢复派发"), true);
+});
+
 test("R5.4 WorkItem route component exposes Drive source context and proposal draft action", () => {
   const vm = surfaceVm();
   const draftVm: WorkItemDetailVM = {
@@ -909,7 +1541,7 @@ test("R5.4 WorkItem route component exposes Drive source context and proposal dr
   assert.equal(workitem.html.includes('data-r5-workitem-source-context="drive_comment"'), true);
   assert.equal(workitem.html.includes('data-r5-workitem-source-comment-id="94000000-0000-4000-8000-000000000008"'), true);
   assert.equal(workitem.html.includes('data-r5-workitem-create-proposal-action="true"'), true);
-  assert.equal(workitem.html.includes('data-action-id="drive_draft_to_proposal" data-method="POST"'), true);
+  assert.equal(workitem.html.includes('data-action-id="drive_draft_to_proposal" role="button" data-method="POST"'), true);
   assert.equal(workitem.primaryHrefs.includes("/api/drive/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"), true);
 });
 
@@ -979,8 +1611,87 @@ test("R5.5 WorkItem route component exposes Meeting source context and proposal 
   assert.equal(workitem.html.includes('data-r5-workitem-source-insight-id="95000000-0000-4000-8000-000000000004"'), true);
   assert.equal(workitem.html.includes("Meeting insight source"), true);
   assert.equal(workitem.html.includes('data-r5-workitem-create-proposal-action="true"'), true);
-  assert.equal(workitem.html.includes('data-action-id="meeting_draft_to_proposal" data-method="POST"'), true);
+  assert.equal(workitem.html.includes('data-action-id="meeting_draft_to_proposal" role="button" data-method="POST"'), true);
   assert.equal(workitem.primaryHrefs.includes("/api/meetings/workitems/10000000-0000-4000-8000-000000000202/proposal-draft"), true);
+});
+
+test("R9.1 proposal workbench renders the reviewed task plan item rows", () => {
+  // workbench-read 验收：计划提议在工作台可读——行级视图带序号/角色徽章/验收/预算份额/依赖，
+  // 数据源是 manifest machine_summary.task_plan_items（7.154），不是 markdown。
+  const vm = surfaceVm();
+  const planId = "95000000-0000-4000-8000-000000000701";
+  const researchId = "95000000-0000-4000-8000-000000000711";
+  const produceId = "95000000-0000-4000-8000-000000000712";
+  const proposalVm = {
+    ...vm.page_vms.proposal,
+    title: "计划提议",
+    manifest: {
+      ...vm.page_vms.proposal.manifest,
+      title: "计划提议",
+      changes: [{
+        ...vm.page_vms.proposal.manifest.changes[0]!,
+        target_kind: "structured_record" as const,
+        target_ref: { entity_type: "task_plan" as const, entity_id: planId },
+        change_type: "generated" as const,
+        human_summary: "新增可审的任务计划草稿。",
+        machine_summary: {
+          changed_fields: ["task_plan_items"],
+          task_plan_items: [
+            { id: researchId, seq: 0, title: "调研短剧选题证据", role: "research" as const, objective_md: "收集证据。", acceptance_md: "至少 3 条可核验来源。", budget_share_pct: 40, depends_on: [] },
+            { id: produceId, seq: 1, title: "产出选题短报告", role: "produce" as const, objective_md: "写报告。", acceptance_md: "有结论与证据段。", budget_share_pct: 60, depends_on: [researchId] }
+          ]
+        }
+      }]
+    }
+  };
+
+  const zh = renderWebRouteComponent({ key: "proposal", proposal: proposalVm }, { locale: "zh-CN" });
+  assert.equal(zh.html.includes('data-r9-plan-items="true"'), true);
+  assert.equal(zh.html.includes('data-r9-plan-item-count="2"'), true);
+  assert.equal(zh.html.includes("#1 调研短剧选题证据"), true);
+  assert.equal(zh.html.includes("#2 产出选题短报告"), true);
+  assert.equal(zh.html.includes("验收：至少 3 条可核验来源。"), true);
+  assert.equal(zh.html.includes(">调研</span>"), true);
+  assert.equal(zh.html.includes(">产出</span>"), true);
+  assert.equal(zh.html.includes("预算 40%"), true);
+  assert.equal(zh.html.includes("依赖 #1"), true);
+  assert.equal(zh.html.includes("预算份额合计 100%"), true);
+  // 角色不许裸枚举。
+  assert.equal(zh.html.includes(">research<"), false);
+
+  const en = renderWebRouteComponent({ key: "proposal", proposal: proposalVm }, { locale: "en-US" });
+  assert.equal(en.html.includes(">Research</span>"), true);
+  assert.equal(en.html.includes("Budget 40%"), true);
+  assert.equal(en.html.includes("Depends on #1"), true);
+});
+
+test("R9.1 proposal workbench flags budget shares that do not sum to 100", () => {
+  // §3.2 防呆（读侧红字）：份额和 92% → 红字「还差 8%」，data 探针供 smoke/交互层复用。
+  const vm = surfaceVm();
+  const planId = "95000000-0000-4000-8000-000000000702";
+  const soloId = "95000000-0000-4000-8000-000000000721";
+  const proposalVm = {
+    ...vm.page_vms.proposal,
+    manifest: {
+      ...vm.page_vms.proposal.manifest,
+      changes: [{
+        ...vm.page_vms.proposal.manifest.changes[0]!,
+        target_kind: "structured_record" as const,
+        target_ref: { entity_type: "task_plan" as const, entity_id: planId },
+        change_type: "generated" as const,
+        machine_summary: {
+          task_plan_items: [
+            { id: soloId, seq: 0, title: "调研", role: "research" as const, objective_md: "收集。", acceptance_md: "3 条来源。", budget_share_pct: 92, depends_on: [] }
+          ]
+        }
+      }]
+    }
+  };
+
+  const zh = renderWebRouteComponent({ key: "proposal", proposal: proposalVm }, { locale: "zh-CN" });
+  assert.equal(zh.html.includes('data-r9-plan-share-invalid="true"'), true);
+  assert.equal(zh.html.includes("预算份额加起来是 92%"), true);
+  assert.equal(zh.html.includes("还差 8%"), true);
 });
 
 test("R4.11 Proposal route component preserves review actions, rollback, changes, checks, evidence, and comments", () => {
@@ -993,7 +1704,7 @@ test("R4.11 Proposal route component preserves review actions, rollback, changes
   assert.equal(proposal.html.includes(`data-r4-proposal-change-count="${vm.page_vms.proposal.manifest.changes.length}"`), true);
   assert.equal(proposal.html.includes(`data-r4-proposal-check-count="${vm.page_vms.proposal.manifest.checks.length}"`), true);
   assert.equal(proposal.html.includes("Deliverable change request"), true);
-  assert.equal(proposal.html.includes("Rollback available"), true);
+  assert.equal(proposal.html.includes("Rollback snapshot kept (manual restore)"), true);
   assert.equal(proposal.html.includes('data-action-id="request_changes"'), true);
   assert.equal(proposal.html.includes('data-method="POST"'), true);
   assert.equal(proposal.html.includes('data-requires-reason="true"'), true);
@@ -1172,7 +1883,7 @@ test("R4.14 Intake route component renders a typed option-first session without 
   assert.equal(intake.html.includes('data-request-json="{&quot;selected_option_ids&quot;:[]}"'), true);
   assert.equal(intake.html.includes('data-intake-free-text-input="true"'), true);
   assert.equal(intake.html.includes('maxlength="120"'), true);
-  assert.equal(intake.html.includes("Or type your own answer (optional)"), true);
+  assert.equal(intake.html.includes("Type your answer"), true);
   assert.equal(intake.html.includes("message-list"), false);
   assert.deepEqual(intake.primaryHrefs, ["/api/sessions/10000000-0000-4000-8000-000000000901/next-question"]);
   assertNoMainWindowBoundaryLeak(intake.html);
@@ -1185,6 +1896,123 @@ test("R8 intake start head shows a meaningful localized badge (not the 'D0' plac
   assert.equal(zh.html.includes(">D0<"), false, "no hardcoded D0 placeholder leaks to the UI");
   assert.equal(zh.html.includes('data-r8-intake-badge="true">新任务<'), true);
   assert.equal(en.html.includes('data-r8-intake-badge="true">New<'), true);
+});
+
+test("R10-0c intake start renders an explicit project picker instead of silently defaulting to the pilot project", () => {
+  const withProjects = renderWebRouteComponent({
+    key: "intake",
+    start: true,
+    projects: {
+      generated_at: "2026-07-10T09:00:00.000Z",
+      projects: [
+        { id: "93000000-0000-4000-8000-000000000001", name: "区域发布资料库", slug: "regional", status: "active", open_workitem_count: 2, owner_label: "owner", last_activity_at: "2026-07-09T09:00:00.000Z" },
+        { id: "93000000-0000-4000-8000-000000000002", name: "新一代客服平台", slug: "support", status: "active", open_workitem_count: 1, owner_label: "owner", last_activity_at: "2026-07-08T09:00:00.000Z" }
+      ]
+    } as never
+  }, { locale: "zh-CN" });
+  assert.equal(withProjects.html.includes('data-s4c-intake-project-select="true"'), true);
+  // 首项默认选中（真活跃排序第一位），且保留「新建试点项目」兜底出路。
+  assert.equal(withProjects.html.includes('value="93000000-0000-4000-8000-000000000001" selected'), true);
+  assert.equal(withProjects.html.includes("＋ 新建试点项目"), true);
+
+  // 无项目清单（拉取失败/零项目）退化为原试点起点，不渲空选择器。
+  const withoutProjects = renderWebRouteComponent({ key: "intake", start: true }, { locale: "zh-CN" });
+  assert.equal(withoutProjects.html.includes("data-s4c-intake-project-select"), false);
+  assert.equal(withoutProjects.html.includes("试点项目"), true);
+
+  // 绑定项目（从项目主页进入）优先于选择器——不重复渲选择器。
+  const bound = renderWebRouteComponent({
+    key: "intake",
+    start: true,
+    project: { id: "93000000-0000-4000-8000-000000000001", name: "区域发布资料库" }
+  }, { locale: "zh-CN" });
+  assert.equal(bound.html.includes("data-s4c-intake-project-select"), false);
+});
+
+test("R9.7 web task entry and project empty states avoid dispatch wording", () => {
+  const intake = renderWebRouteComponent({ key: "intake", start: true }, { locale: "zh-CN" });
+  const projectIntake = renderWebRouteComponent({
+    key: "intake",
+    start: true,
+    project: { id: "93000000-0000-4000-8000-000000000001", name: "R5 Workspace" }
+  }, { locale: "zh-CN" });
+  const projects = renderWebRouteComponent({
+    key: "projects",
+    projects: { generated_at: "2026-06-11T09:00:00.000Z", projects: [] }
+  }, { locale: "zh-CN" });
+  const projectHome = renderWebRouteComponent({
+    key: "project-home",
+    project: {
+      generated_at: "2026-06-11T09:00:00.000Z",
+      project: {
+        id: "93000000-0000-4000-8000-000000000001",
+        name: "R5 Workspace",
+        slug: "r5-workspace",
+        description: null,
+        owner_label: "owner",
+        status: "active"
+      },
+      summary: { open_work_item_count: 0, total_open_work_item_count: 0 },
+      open_work_items: [],
+      drive: { file_count: 0, recent_files: [] },
+      actions: {
+        new_task: { id: "new_task", label: "新任务", method: "GET", href: "/intake?project_id=93000000-0000-4000-8000-000000000001" },
+        open_drive: { id: "open_drive", label: "打开网盘", method: "GET", href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
+      },
+      empty_state: "no_open_work"
+    }
+  }, { locale: "zh-CN" });
+
+  const html = [intake.html, projectIntake.html, projects.html, projectHome.html].join("\n");
+  assert.match(html, /新任务/u);
+  assert.doesNotMatch(html, /派活|派发/u);
+});
+
+// B-R9.6 §3.4：项目主页「进行中的工作」行尾军团 pill——带 army 的行渲「军团 done/total」，
+// 不带的行不渲；不加新小节。
+test("B-R9.6 project home rows show the army progress pill only for armied work items", () => {
+  const vm = {
+    generated_at: "2026-06-11T09:00:00.000Z",
+    project: {
+      id: "93000000-0000-4000-8000-000000000001",
+      name: "R5 Workspace",
+      slug: "r5-workspace",
+      description: null,
+      owner_label: "owner",
+      status: "active" as const
+    },
+    summary: { open_work_item_count: 2, total_open_work_item_count: 2 },
+    open_work_items: [
+      {
+        id: "94000000-0000-4000-8000-000000000001",
+        code: "ALP-1",
+        title: "上市材料准备",
+        status: "ai_working",
+        priority: "normal",
+        href: "/workitems/94000000-0000-4000-8000-000000000001",
+        army: { done: 2, total: 4 }
+      },
+      {
+        id: "94000000-0000-4000-8000-000000000002",
+        code: "ALP-2",
+        title: "普通小活",
+        status: "ai_working",
+        priority: "normal",
+        href: "/workitems/94000000-0000-4000-8000-000000000002"
+      }
+    ],
+    drive: { file_count: 0, recent_files: [] },
+    actions: {
+      new_task: { id: "new_task", label: "新任务", method: "GET" as const, href: "/intake" },
+      open_drive: { id: "open_drive", label: "打开网盘", method: "GET" as const, href: "/drive?project_id=93000000-0000-4000-8000-000000000001" }
+    }
+  };
+  const projectHome = renderWebRouteComponent({ key: "project-home", project: vm }, { locale: "zh-CN" });
+  assert.equal(projectHome.html.includes('data-r9-project-army-pill="94000000-0000-4000-8000-000000000001"'), true);
+  // NAMING pass：pill 文案带「子任务」限定词，新人不再猜 2/4 是什么。
+  assert.equal(projectHome.html.includes("军团子任务 2/4"), true);
+  assert.equal(projectHome.html.includes('data-r9-project-army-pill="94000000-0000-4000-8000-000000000002"'), false);
+  assertNoMainWindowBoundaryLeak(projectHome.html);
 });
 
 test("R4.14 Intake confirm component exposes create work item action with selected option payload", () => {
@@ -1242,6 +2070,150 @@ test("R4.11 Cost route component renders dashboard values directly from Cost Pag
   assertNoMainWindowBoundaryLeak(cost.html);
 });
 
+test("R9.6 Agent dashboard route component renders observable dashboard cards without decision actions", () => {
+  const agents = renderWebRouteComponent({ key: "agents", agents: agentArmyDashboardVm() }, { locale: "zh-CN" });
+
+  assert.ok(agents);
+  assert.equal(agents.key, "agents");
+  assert.equal(agents.html.includes('data-r4-route-component="agents"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-dashboard="true"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-dashboard-mobile="single-column"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-dashboard-plan-count="1"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-kpi="active_team_count"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-kpi="waiting_decision"'), true);
+  assert.equal(agents.html.includes('href="/"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-plan-card="96000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(agents.html.includes('href="/workitems/96000000-0000-4000-8000-000000000002"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-recent-activity="accordion"'), true);
+  // R9.7 UX spec uses the web-facing concept name "军团"; the old "智能代理军团"
+  // assertion was implementation copy, not the product glossary.
+  assert.equal(agents.html.includes("军团"), true);
+  assert.equal(agents.html.includes("智能代理军团"), false);
+  assert.equal(agents.html.includes("竞品资料梳理"), true);
+  assert.equal(agents.html.includes('data-r9-agent-plan-objective="96000000-0000-4000-8000-000000000003"'), true);
+  assert.equal(agents.html.includes("目标 · 季度上市策略 · 40%"), true);
+  assert.equal(agents.html.includes('data-r9-agent-plan-budget-link="96000000-0000-4000-8000-000000000001"'), true);
+  assert.equal(agents.html.includes('href="/dashboard/cost"'), true);
+  assert.equal(agents.html.includes("卡在: 竞品复核"), true);
+  assert.equal(agents.html.includes("¥0.01"), true);
+  assert.equal(agents.html.includes("¥3"), true);
+  assert.equal(agents.html.includes("¥0.006"), false);
+  assert.equal(agents.html.includes("¥3.000000"), false);
+  assert.equal(agents.html.includes("判官"), false);
+  assert.equal(agents.html.includes("追加预算继续"), false);
+  assertNoMainWindowBoundaryLeak(agents.html);
+});
+
+test("R9.7 Agent dashboard renders cap warnings as visible product copy", () => {
+  const agents = renderWebRouteComponent({
+    key: "agents",
+    agents: agentArmyDashboardVm({
+      page_info: {
+        plan_limit: 20,
+        returned: 20,
+        plans_capped: true,
+        items_capped: true,
+        runs_capped: true,
+        escalation_limit: 5,
+        escalation_returned: 5,
+        escalations_capped: true
+      }
+    })
+  }, { locale: "en-US" });
+
+  assert.ok(agents);
+  assert.equal(agents.html.includes('data-r9-agent-dashboard-cap-warning="true"'), true);
+  assert.equal(agents.html.includes("Showing the first 20 agent teams"), true);
+  assert.equal(agents.html.includes("Some task, run, or escalation rows are capped"), true);
+  assertNoMainWindowBoundaryLeak(agents.html);
+});
+
+test("R9.7 web agent dashboard uses product-facing Agent team copy", () => {
+  const agents = renderWebRouteComponent({ key: "agents", agents: agentArmyDashboardVm() }, { locale: "en-US" });
+  const emptyAgents = renderWebRouteComponent({
+    key: "agents",
+    agents: agentArmyDashboardVm({
+      kpis: {
+        active_team_count: 0,
+        waiting_decision_count: 0,
+        today_cost_cny: "0",
+        autonomy_rate_pct: 0
+      },
+      plans: [],
+      recent_escalations: [],
+      page_info: {
+        plan_limit: 20,
+        returned: 0,
+        plans_capped: false,
+        items_capped: false,
+        runs_capped: false,
+        escalation_limit: 5,
+        escalation_returned: 0,
+        escalations_capped: false
+      },
+      empty_state: "no_agent_armies"
+    })
+  }, { locale: "en-US" });
+
+  assert.ok(agents);
+  assert.ok(emptyAgents);
+  assert.match(agents.html, /Agent teams/u);
+  assert.match(emptyAgents.html, /No agent teams are running yet/u);
+  assert.doesNotMatch(`${agents.html}\n${emptyAgents.html}`, /Agent Army|agent armies/u);
+});
+
+test("R9.6 Agent Army route component renders empty state without fake plan cards", () => {
+  const agents = renderWebRouteComponent({
+    key: "agents",
+    agents: agentArmyDashboardVm({
+      kpis: {
+        active_team_count: 0,
+        waiting_decision_count: 0,
+        today_cost_cny: "0",
+        autonomy_rate_pct: 0
+      },
+      plans: [],
+      recent_escalations: [],
+      page_info: {
+        plan_limit: 20,
+        returned: 0,
+        plans_capped: false,
+        items_capped: false,
+        runs_capped: false,
+        escalation_limit: 5,
+        escalation_returned: 0,
+        escalations_capped: false
+      },
+      empty_state: "no_agent_armies"
+    })
+  }, { locale: "zh-CN" });
+
+  assert.ok(agents);
+  assert.equal(agents.html.includes('data-r9-agent-dashboard-empty="no_agent_armies"'), true);
+  assert.equal(agents.html.includes("还没有军团在跑"), true);
+  assert.equal(agents.html.includes('href="/intake"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-plan-card='), false);
+  assertNoMainWindowBoundaryLeak(agents.html);
+});
+
+test("R9.7 Agent Army route component shows attention source warnings beside the KPI", () => {
+  const agents = renderWebRouteComponent({
+    key: "agents",
+    agents: agentArmyDashboardVm({
+      source_warnings: [{
+        source: "sync_conflicts",
+        message: "记忆冲突暂时加载失败。请打开设置或稍后重试。"
+      }]
+    })
+  }, { locale: "zh-CN" });
+
+  assert.ok(agents);
+  assert.equal(agents.html.includes('data-r9-agent-source-warnings="1"'), true);
+  assert.equal(agents.html.includes('data-r9-agent-source-warning="sync_conflicts"'), true);
+  assert.equal(agents.html.includes("记忆冲突暂时加载失败"), true);
+  assertNoMainWindowBoundaryLeak(agents.html);
+});
+
 test("Cost route component renders disabled budget policies as not enabled instead of zero quotas", () => {
   const vm = surfaceVm();
   vm.page_vms.cost.budget = [{
@@ -1268,6 +2240,7 @@ test("Cost route component renders disabled budget policies as not enabled inste
 
   assert.ok(cost);
   assert.equal(cost.html.includes('data-r4-cost-budget-enabled="false"'), true);
+  assert.equal(cost.html.includes("pcost-user-day-v0:disabled"), false);
   assert.equal(cost.html.includes("Budget not enabled"), true);
   assert.equal(cost.html.includes("0/0 tokens · ¥0/¥0"), false);
 });
@@ -1302,6 +2275,47 @@ test("K5 Cost route component omits the labor split card when labor_split is abs
   assert.ok(cost);
   // 默认 fixture 的 cost VM 没有 labor_split → 不渲染该卡。
   assert.equal(cost.html.includes('data-r4-cost-labor-split="true"'), false);
+});
+
+// B-R9.6 §3.5：军团花费卡——by_task_plan 非空（管理员口径）时按任务计划分组渲出，
+// 带子 run 数与指挥台入口；非管理员 VM 置空则整卡不渲。
+test("B-R9.6 Cost route component renders agent army spend grouped by task plan", () => {
+  const base = surfaceVm();
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: {
+        ...base.page_vms.cost,
+        by_task_plan: [
+          { task_plan_id: "0f8b1c2d-1111-4222-8333-444455556666", cost_cny: "1.25", tokens: 5000, child_runs: 3, status: "dispatching", budget_cny: "1.000000", burn_pct: 125 },
+          { task_plan_id: "1a2b3c4d-2222-4333-8444-555566667777", label: "上市材料军团", cost_cny: "0.4", tokens: 900, child_runs: 1, status: "done", budget_cny: "3.000000", burn_pct: 13 }
+        ]
+      }
+    }
+  };
+  const cost = renderWebRouteComponents(vm, { locale: "zh-CN" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r9-cost-army="true"'), true);
+  assert.equal(cost.html.includes('data-r9-cost-army-count="2"'), true);
+  assert.equal(cost.html.includes('data-r9-cost-army-plan="0f8b1c2d-1111-4222-8333-444455556666"'), true);
+  // UX-H4：行结构 = 名称 + 燃烧条（tone 分级）+ 子运行数 + 状态；超限行红字 +「去处理」锚到预算卡。
+  assert.equal(cost.html.includes("3 个子运行"), true);
+  assert.equal(cost.html.includes("上市材料军团"), true);
+  assert.equal(cost.html.includes('data-r9-cost-army-burn="danger"'), true);
+  assert.equal(cost.html.includes('data-r9-cost-army-burn="ok"'), true);
+  assert.equal(cost.html.includes('data-r9-cost-army-over="0f8b1c2d-1111-4222-8333-444455556666"'), true);
+  assert.equal(cost.html.includes('href="#wh-cost-budget"'), true);
+  assert.equal(cost.html.includes('id="wh-cost-budget"'), true);
+  assert.equal(cost.html.includes("进行中"), true);
+  assert.equal(cost.html.includes('href="/dashboard/agents"'), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
+test("B-R9.6 Cost route component omits the army card when by_task_plan is empty", () => {
+  const cost = renderWebRouteComponents(surfaceVm(), { locale: "zh-CN" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r9-cost-army="true"'), false);
 });
 
 test("R4.11 Settings route component uses a typed Settings Page VM without leaking secrets or pet settings", () => {
@@ -1496,6 +2510,27 @@ test("R4.10 Approvals route component keeps action reasons and Page VM counts vi
   assert.equal(approvals.html.includes(">Routed</span>"), true);
   assert.equal(approvals.html.includes('data-requires-reason="true"'), true);
   assert.deepEqual(approvals.primaryHrefs, vm.page_vms.approvals.items[0]?.actions.map((action) => action.href) ?? []);
+  assertNoMainWindowBoundaryLeak(approvals.html);
+});
+
+test("Approvals route component does not leak raw approval facts", () => {
+  const vm = surfaceVm();
+  const request = vm.page_vms.approvals.requests[0];
+  assert.ok(request);
+  request.action_pattern = "tool.write_file";
+  request.status = "pending";
+  request.routed_to_user_id = "96000000-0000-4000-8000-000000000011";
+  request.sla_due_at = "2026-07-05T00:00:00.000Z";
+
+  const approvals = renderWebRouteComponents(vm, { locale: "en-US" }).approvals;
+
+  assert.ok(approvals);
+  assert.equal(approvals.html.includes("tool.write_file"), false);
+  assert.equal(approvals.html.includes("96000000-0000-4000-8000-000000000011"), false);
+  assert.equal(approvals.html.includes("2026-07-05T00:00:00.000Z"), false);
+  assert.equal(approvals.html.includes("<strong>Tool approval</strong>"), true);
+  assert.equal(approvals.html.includes("Pending · due 2026-07-05 00:00"), true);
+  assert.equal(approvals.html.includes(">Routed</span>"), true);
   assertNoMainWindowBoundaryLeak(approvals.html);
 });
 
@@ -1801,6 +2836,32 @@ test("R8 Team skills route component shows an empty state when there are no skil
   const en = renderWebRouteComponent({ key: "skills", skills: emptyVm }, { locale: "en-US" });
   assert.equal(en.html.includes('data-r8-skills-empty="true"'), true);
   assert.equal(en.html.includes('data-r8-skills-active="0"'), true);
+});
+
+test("R9.7 Team skills route hides confidence jargon in skill score badges", () => {
+  const skillsVm = {
+    generated_at: "2026-06-16T00:00:00.000Z",
+    skills: [
+      {
+        skill_key: "quarterly-report",
+        name: "季度报告",
+        when_to_use: "生成季度业务报告",
+        version: 3,
+        source_kind: "distilled" as const,
+        created_by_kind: "ai" as const,
+        confidence_score: 0.86,
+        sample_count: 0,
+        updated_at: "2026-06-16T00:00:00.000Z"
+      }
+    ],
+    totals: { active: 1, ai_authored: 1, refined: 0 }
+  };
+
+  const en = renderWebRouteComponent({ key: "skills", skills: skillsVm }, { locale: "en-US" });
+  const zh = renderWebRouteComponent({ key: "skills", skills: skillsVm }, { locale: "zh-CN" });
+
+  assert.doesNotMatch(en.html, /confidence/iu);
+  assert.doesNotMatch(zh.html, /置信/u);
 });
 
 test("R4.10 Replay route component uses replay renderer while preserving route component markers", () => {

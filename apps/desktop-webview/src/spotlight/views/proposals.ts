@@ -3,8 +3,9 @@
 // 渲统一玻璃 diff（改动清单 + 校验 + 风险）→ 确认通过 → 合入交付物 / 打回。
 // list→detail 全在盒子内联 morph。
 
+import type { PageRequestOptions } from "@workhub/api-client";
 import type { AttentionItem, DeliverableChange, ProposalDetailVM } from "@workhub/contracts";
-import { publicProposalDisplayTitle, renderProposalConflictCards } from "@workhub/ui/proposal";
+import { publicProposalDisplayTitle, publicProposalSummaryText, renderProposalConflictCards } from "@workhub/ui/proposal";
 import {
   actionElementApplyPayload,
   actionElementMergePayload,
@@ -73,6 +74,7 @@ function stripMarkdownLine(value: string) {
 }
 
 function publicProposalSummary(markdown: string, zh: boolean) {
+  const locale = zh ? "zh-CN" : "en-US";
   const headingPattern = zh
     ? /^(?:变更摘要|审查提示|审查建议|总结)$/u
     : /^(?:change summary|review notes?|review hints?|summary)$/iu;
@@ -80,7 +82,7 @@ function publicProposalSummary(markdown: string, zh: boolean) {
     .split(/\r?\n/u)
     .map(stripMarkdownLine)
     .filter((line) => line && !headingPattern.test(line));
-  return lines.join(" ").replace(/\s+/gu, " ").trim().slice(0, 320) ||
+  return publicProposalSummaryText(lines.join(" ").replace(/\s+/gu, " ").trim(), locale, 320) ||
     (zh ? "先看总结和改动，再决定是否采纳。" : "Review the summary and changes before deciding.");
 }
 
@@ -103,6 +105,13 @@ export function detailHtml(vm: ProposalDetailVM, zh: boolean): string {
   const isOpen = vm.status === "opened";
   // 已审阅(approved 但未合并)：下一步只做合入，避免把“确认通过”和“打回”混在同一状态里。
   const canMerge = vm.status === "reviewed" && !!vm.review_actions.merge;
+  const mergePayload = vm.review_actions.merge?.request_json
+    ? ` data-request-json="${escapeHtml(JSON.stringify(vm.review_actions.merge.request_json))}"`
+    : "";
+  const holdAction = vm.review_actions.approve_hold;
+  const holdButton = holdAction
+    ? `<button type="button" class="wh-spot-act ds-pressable" data-prop-merge${holdAction.request_json ? ` data-request-json="${escapeHtml(JSON.stringify(holdAction.request_json))}"` : ""}>${escapeHtml(holdAction.label)}</button>`
+    : "";
   const statusLabel: Record<string, [string, string]> = {
     opened: ["待审阅", "Open"],
     reviewed: ["已审阅", "Reviewed"],
@@ -117,8 +126,9 @@ export function detailHtml(vm: ProposalDetailVM, zh: boolean): string {
       </div>`
     : canMerge
       ? `<div class="wh-spot-card-actions" data-prop-actions>
-        <p class="wh-spot-action-note">${zh ? "已确认通过，只差合入交付物。" : "Approved; only the deliverable merge remains."}</p>
-        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-prop-merge>${zh ? "合入交付物" : "Merge deliverable"}</button>
+        <p class="wh-spot-action-note">${holdAction ? (zh ? "已确认通过，可以开始执行，也可以先暂缓。" : "Approved; start now or hold it for later.") : (zh ? "已确认通过，只差合入交付物。" : "Approved; only the deliverable merge remains.")}</p>
+        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-prop-merge${mergePayload}>${escapeHtml(vm.review_actions.merge?.label ?? (zh ? "合入交付物" : "Merge deliverable"))}</button>
+        ${holdButton}
       </div>`
       : `<div class="wh-spot-card-actions"><span class="wh-spot-chip wh-spot-chip--info">${escapeHtml((zh ? statusLabel[vm.status]?.[0] : statusLabel[vm.status]?.[1]) ?? vm.status)}</span></div>`;
   return `<div class="wh-spot-dash ds-anim-fade-in">
@@ -146,7 +156,7 @@ export function proposalMergeConflictHtml(error: unknown, zh: boolean): string |
   return `<div class="wh-spot-dash ds-anim-fade-in" data-prop-conflict-panel="true">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-prop-back style="align-self:flex-start">${zh ? "← 返回待审改动" : "← Back to changes"}</button>
     <div>
-      <h3 class="wh-spot-card-title">${zh ? "这份变更撞车了" : "This change has conflicts"}</h3>
+      <h3 class="wh-spot-card-title">${zh ? "这份变更和别人的改动冲突了" : "This change has conflicts"}</h3>
       <p class="wh-spot-action-note">${zh ? "先选择每个冲突怎么处理，再继续合入交付物。" : "Choose how to resolve each conflict, then merge the deliverable."}</p>
     </div>
     ${rendered.html}
@@ -154,7 +164,8 @@ export function proposalMergeConflictHtml(error: unknown, zh: boolean): string |
 }
 
 export function reasonComposerHtml(zh: boolean): string {
-  const reasons = zh ? ["方向不对", "细节要调整", "缺少依据", "先放一放"] : ["Wrong direction", "Needs tweaks", "Insufficient evidence", "Hold"];
+  // 同 attention 视图：「先放一放」提交的是打回，语义误导——移除。
+  const reasons = zh ? ["方向不对", "细节要调整", "缺少依据"] : ["Wrong direction", "Needs tweaks", "Insufficient evidence"];
   return `<div class="wh-spot-reasons" data-prop-reasons>
     <p class="wh-spot-reasons-q">${zh ? "打回说明" : "Feedback for changes"}</p>
     <div class="wh-spot-reasons-row">${reasons
@@ -213,12 +224,13 @@ export function classifyProposalConflictActionHref(href: string):
 export type ProposalReviewOnlyClient = {
   reviewProposal: (
     proposalId: string,
-    payload: { decision: "approve"; remember: "once" }
+    payload: { decision: "approve"; remember: "once" },
+    options?: PageRequestOptions
   ) => Promise<unknown>;
 };
 
-export function reviewProposalWithoutMerge(client: ProposalReviewOnlyClient, proposalId: string) {
-  return client.reviewProposal(proposalId, { decision: "approve", remember: "once" });
+export function reviewProposalWithoutMerge(client: ProposalReviewOnlyClient, proposalId: string, options?: PageRequestOptions) {
+  return client.reviewProposal(proposalId, { decision: "approve", remember: "once" }, options);
 }
 
 export function proposalDetailRefreshTargetAfterReview(startedProposalId: string, currentProposalId: string | undefined) {
@@ -272,6 +284,8 @@ export function createProposalsView(): SpotlightCapabilityView {
           }
         }
         ctx.requestResize();
+        // R11（键盘全程）：innerHTML 重渲后焦点掉回 body——交还内容区，Tab 起点可预期。
+        ctx.refocusBody();
       };
 
       const showDetail = async (id: string) => {
@@ -291,6 +305,8 @@ export function createProposalsView(): SpotlightCapabilityView {
           }
         }
         ctx.requestResize();
+        // R11（键盘全程）：innerHTML 重渲后焦点掉回 body——交还内容区，Tab 起点可预期。
+        ctx.refocusBody();
       };
 
       // M13：approve/merge/deny 都是网络往返。期间给被点按钮即时忙态(禁用 + 文案换「…中」),
@@ -316,7 +332,7 @@ export function createProposalsView(): SpotlightCapabilityView {
         busy = true;
         const restore = markBusy(btn, zh ? "确认中…" : "Approving…");
         try {
-          const review = await reviewProposalWithoutMerge(client, startedProposalId);
+          const review = await reviewProposalWithoutMerge(client, startedProposalId, { locale: ctx.locale });
           ctx.toast(summaryText(review) ?? (zh ? "已确认通过，下一步可合入交付物" : "Approved. You can merge the deliverable next."), "ok");
           ctx.onActionSettled?.();
           busy = false;
@@ -335,9 +351,16 @@ export function createProposalsView(): SpotlightCapabilityView {
       const mergeOnly = async (btn: HTMLButtonElement | null = null) => {
         if (busy || !currentId) return;
         busy = true;
-        const restore = markBusy(btn, zh ? "合入中…" : "Merging…");
+        const restore = markBusy(btn, zh ? "处理中…" : "Working…");
         try {
-          const merge = await client.mergeProposal(currentId);
+          const payload = btn ? actionElementMergePayload(btn) : { ok: true as const };
+          if (!payload.ok) {
+            ctx.toast(zh ? "这个合入动作缺少必要参数" : "This merge action is missing details", "error");
+            busy = false;
+            restore();
+            return;
+          }
+          const merge = await client.mergeProposal(currentId, payload.payload, { locale: ctx.locale });
           ctx.toast(summaryText(merge) ?? (zh ? "已合并" : "Merged"), "ok");
           ctx.onActionSettled?.();
           busy = false;
@@ -373,14 +396,14 @@ export function createProposalsView(): SpotlightCapabilityView {
               ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
               return;
             }
-            result = await client.applyMergeProposalCandidate(action.applyId, payload.payload);
+            result = await client.applyMergeProposalCandidate(action.applyId, payload.payload, { locale: ctx.locale });
           } else if (action.kind === "merge") {
             const payload = actionElementMergePayload(target);
             if (!payload.ok) {
               ctx.toast(zh ? "冲突选项缺少必要参数" : "This conflict option is missing details", "error");
               return;
             }
-            result = await client.mergeProposal(action.proposalId, payload.payload);
+            result = await client.mergeProposal(action.proposalId, payload.payload, { locale: ctx.locale });
           }
           if (!result) {
             ctx.toast(zh ? "这个冲突动作暂时不可执行" : "This conflict action is not available", "error");
@@ -408,7 +431,7 @@ export function createProposalsView(): SpotlightCapabilityView {
         busy = true;
         const restore = markBusy(btn, zh ? "打回中…" : "Sending back…");
         try {
-          const res = await client.reviewProposal(currentId, { decision: "request_changes", reason_md: reason, remember: "once" });
+          const res = await client.reviewProposal(currentId, { decision: "request_changes", reason_md: reason, remember: "once" }, { locale: ctx.locale });
           ctx.toast(summaryText(res) ?? (zh ? "已打回" : "Sent back"), "ok");
           ctx.onActionSettled?.();
           busy = false;

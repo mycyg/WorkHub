@@ -132,6 +132,12 @@ class MemoryApprovals implements ApprovalRequestRepository {
       .slice(offset, offset + (options.limit ?? this.rows.length));
   }
 
+  async listDecidedForUser(id: string, options: { limit?: number } = {}) {
+    return this.rows
+      .filter((approval) => approval.status !== "pending" && (approval.decidedByUserId === id || approval.routedToUserId === id))
+      .slice(0, options.limit ?? 20);
+  }
+
   async countPendingForUser(id: string, options: { includeAll?: boolean } = {}) {
     return this.rows.filter(
       (approval) => approval.status === "pending" && (options.includeAll || approval.routedToUserId === id)

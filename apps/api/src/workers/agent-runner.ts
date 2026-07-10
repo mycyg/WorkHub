@@ -14,7 +14,15 @@ import {
   type StructuredHandoff
 } from "@workhub/agent/loop";
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
-import { eventTypes, evidenceRefSchema, type CuuState, type EvidenceRef, type WorkItemMode, type WorkItemStatus } from "@workhub/contracts";
+import {
+  eventTypes,
+  evidenceRefSchema,
+  type CuuState,
+  type EvidenceRef,
+  type TaskPlanItemRole,
+  type WorkItemMode,
+  type WorkItemStatus
+} from "@workhub/contracts";
 import {
   createMemoryBudgetPolicyStore,
   createMemoryCostLedgerStore,
@@ -36,9 +44,11 @@ import {
   errorToolResult,
   nodeCommandRunner,
   type CommandRunner,
+  type AnyToolSpec,
   type SnapshotHook,
   type ToolExecutionContext,
-  type ToolResult
+  type ToolResult,
+  type ToolSideEffect
 } from "@workhub/tools";
 import {
   makeWorkHubEvent,
@@ -47,8 +57,9 @@ import {
   type LifecycleUserRef,
   type LifecycleWorkItemRef
 } from "@workhub/events";
-import { getSharedDatabaseClient, createWorkItemRepository } from "@workhub/db";
+import { createAiDecisionRepository, getSharedDatabaseClient, createWorkItemRepository } from "@workhub/db";
 import type {
+  AiDecisionRepository,
   AuditLogRepository,
   BudgetReservationRepository,
   BudgetReservationScopeInput,
@@ -70,7 +81,12 @@ import {
   createAgentRunConfidenceRecorder,
   type AgentRunConfidenceRecorder
 } from "../services/agent-run-confidence.js";
-import { createHumanReservedGuard, type HumanReservedGuard } from "../services/human-reserved-guard.js";
+import {
+  classifyHumanReservedToolCall,
+  createHumanReservedGuard,
+  type HumanReservedGuard,
+  type HumanReservedToolRiskCategory
+} from "../services/human-reserved-guard.js";
 import { createNotificationService, type NotificationService } from "../services/notifications.js";
 import {
   createAgentRunNotificationWorkItemResolver,
@@ -81,6 +97,12 @@ import {
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "../services/proposals.js";
 import { getDefaultAgentRunPersistence } from "../services/agent-run-persistence.js";
 import { getDefaultBudgetReservationRepository } from "../services/budget-reservation-store.js";
+import {
+  getDefaultAgentMemoryContextProvider,
+  getDefaultAgentMemoryRecorder,
+  type AgentMemoryContextProvider,
+  type AgentMemoryRecorder
+} from "../services/agent-memory.js";
 import { getDefaultUserMemoryContextProvider, type UserMemoryContextProvider } from "../services/user-memory.js";
 import {
   getDefaultTeamSkillContextProvider,
@@ -88,6 +110,7 @@ import {
 } from "../services/team-skill-context.js";
 import { getDefaultProjectHydrator, type ProjectHydrator } from "./project-hydrate.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
+import { getDefaultTaskDispatcher } from "../services/task-dispatcher.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
 
@@ -106,6 +129,14 @@ export type AgentRunQueueRecord = {
   org_id?: string;
   workspace_id?: string;
   work_item_id: string;
+  parent_run_id?: string;
+  task_plan_id?: string;
+  task_plan_item_id?: string;
+  // B-R9.2-3：run 所属的派发代（enqueue 时从 item 的 dispatch_epoch 记下）。
+  task_plan_item_epoch?: number;
+  objective_id?: string;
+  agent_role?: TaskPlanItemRole;
+  objective_md?: string;
   actor_id: string;
   mode: WorkItemMode;
   status: AgentRunQueueStatus;
@@ -176,9 +207,31 @@ export type EnqueueAgentRunInput = {
   actorId: string;
   workspaceId?: string;
   orgId?: string;
+  parentRunId?: string;
+  taskPlanId?: string;
+  taskPlanItemId?: string;
+  objectiveId?: string;
+  agentRole?: TaskPlanItemRole;
+  objectiveMd?: string;
   title?: string;
   mode?: WorkItemMode;
+  // B-R9.2-1（branch-review 假接线）：军团子 run 的预算上限（¥）——由 dispatcher 按
+  // plan.budgetJson.max_cost_cny × budget_share_pct 切分。只收紧不放宽 policy 预算。
+  budgetCapCny?: string;
+  // B-R9.2-3：本次派发的代际（item.dispatch_epoch）；结算/恢复只认同代。
+  taskPlanItemEpoch?: number;
 };
+
+// B-R9.2-2（branch-review 结构性必失败）：research/review 此前只拿 read 类工具，却仍被
+// requireDeliverable 要求 outputs/ 文件——必失败。角色产物形态统一为「outputs/ 文件」：
+// 研究交调研笔记、复核交复核结论，因此 sandbox 内写文件对所有角色放开；
+// 业务写/外部副作用类工具仍只归 produce/integrate。
+export function canUseToolForTaskPlanRole(role: TaskPlanItemRole | undefined, spec: Pick<AnyToolSpec, "sideEffect">) {
+  if (!role || role === "produce" || role === "integrate") {
+    return true;
+  }
+  return spec.sideEffect === "none" || spec.sideEffect === "sandbox_file";
+}
 
 export type AbortAgentRunActor = string | { id: string; isAdmin?: boolean; canManageRun?: boolean };
 
@@ -204,6 +257,7 @@ export type AgentRunEventBus = Pick<PushBus, "publish">;
 export type AgentRunProposalSink = Pick<ProposalService, "createFromManifest">;
 export type AgentRunWorkItemContextProvider =
   (run: AgentRunQueueRecord) => Promise<string | undefined> | string | undefined;
+export type AgentRunSettledHook = (run: AgentRunQueueRecord) => Promise<void> | void;
 export type AgentRunPersistence = {
   createRun: (run: AgentRunQueueRecord) => Promise<void>;
   createRunIfWorkItemIdle?: (run: AgentRunQueueRecord) => Promise<boolean>;
@@ -220,6 +274,8 @@ export type AgentRunPersistence = {
   claimNextQueued?: (claim: AgentRunClaimLease) => Promise<AgentRunQueueRecord | null>;
   heartbeatClaim?: (input: AgentRunHeartbeatLease) => Promise<AgentRunQueueRecord | null>;
   requeueExpiredClaims?: (input: AgentRunRequeueExpiredLeases) => Promise<AgentRunQueueRecord[]>;
+  restoreDeadLetterClaim?: (input: AgentRunRestoreDeadLetterClaim) => Promise<AgentRunQueueRecord | null>;
+  listUnsettledTaskPlanRuns?: (input: { limit: number }) => Promise<AgentRunQueueRecord[]>;
 };
 
 export type AgentRunClaimLease = {
@@ -243,6 +299,12 @@ export type AgentRunRequeueExpiredLeases = {
   maxRecoverAttempts: number;
 };
 
+export type AgentRunRestoreDeadLetterClaim = {
+  runId: string;
+  restoredAt: Date;
+  claim: AgentRunClaimLease;
+};
+
 export type AgentRunQueue = {
   enqueue: (input: EnqueueAgentRunInput) => Promise<AgentRunQueueRecord>;
   get: (runId: string) => Promise<AgentRunQueueRecord | null>;
@@ -250,10 +312,13 @@ export type AgentRunQueue = {
   trace: (runId: string, after?: number) => Promise<AgentRunTraceStepRecord[]>;
   abort: (runId: string, actor: AbortAgentRunActor) => Promise<AgentRunQueueRecord>;
   listActive: () => Promise<AgentRunQueueRecord[]>;
+  recoverUnsettledTaskPlanRuns: () => Promise<AgentRunQueueRecord[]>;
   recoverExpiredClaims: () => Promise<AgentRunQueueRecord[]>;
   run: (runId: string) => Promise<AgentRunQueueRecord>;
   runNext: () => Promise<AgentRunQueueRecord | null>;
 };
+
+const UNSETTLED_TASK_PLAN_RUN_RECOVERY_LIMIT = 20;
 
 function compactContextText(value: string | null | undefined, maxChars = 1400) {
   const text = value?.trim();
@@ -416,6 +481,7 @@ export function createInMemoryAgentRunQueue(options: {
   snapshotId?: () => string;
   snapshots?: SnapshotRepository;
   auditLogs?: AuditLogRepository | false;
+  decisions?: Pick<AiDecisionRepository, "createEscalationEvent"> | false;
   confidence?: AgentRunConfidenceRecorder | false;
   humanReserved?: HumanReservedGuard | false;
   proposals?: AgentRunProposalSink | false;
@@ -447,10 +513,13 @@ export function createInMemoryAgentRunQueue(options: {
   systemPrompt?: string;
   initialUserMessage?: (run: AgentRunQueueRecord, workItemContext?: string) => string | Promise<string>;
   workItemContext?: AgentRunWorkItemContextProvider | false;
+  agentMemory?: AgentMemoryContextProvider | false;
+  agentMemoryRecorder?: AgentMemoryRecorder | false;
   userMemory?: UserMemoryContextProvider | false;
   teamSkills?: TeamSkillContextProvider | false;
   hydrateProject?: ProjectHydrator | false;
   requireDeliverable?: boolean;
+  runSettled?: AgentRunSettledHook | false;
   emit?: (event: AgentLoopEvent, run: AgentRunQueueRecord) => Promise<void> | void;
 } = {}): AgentRunQueue {
   const now = options.now ?? (() => new Date());
@@ -461,15 +530,17 @@ export function createInMemoryAgentRunQueue(options: {
     teamId: settings.auth.defaultWorkspaceId,
     evalSuite: "nightly"
   });
-  const defaultTools = createToolRegistry([...createBuiltInFileTools(), createSkillTool()]);
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
   const proposalSink = options.proposals === false ? undefined : options.proposals;
   const notificationWorkItem = options.notificationWorkItem === false ? undefined : options.notificationWorkItem;
   const resolveUserRefs = options.resolveUserRefs === false ? undefined : options.resolveUserRefs;
   const transitionWorkItemStatus = options.transitionWorkItemStatus === false ? undefined : options.transitionWorkItemStatus;
+  const runSettled = options.runSettled === false ? undefined : options.runSettled;
   const eventBus = options.eventBus === false ? undefined : options.eventBus ?? getDefaultPushBus();
   const persistence = options.persistence === false ? undefined : options.persistence;
   const workItemContext = options.workItemContext === false ? undefined : options.workItemContext;
+  const agentMemory = options.agentMemory === false ? undefined : options.agentMemory;
+  const agentMemoryRecorder = options.agentMemoryRecorder === false ? undefined : options.agentMemoryRecorder;
   const userMemory = options.userMemory === false ? undefined : options.userMemory;
   const teamSkills = options.teamSkills === false ? undefined : options.teamSkills;
   const hydrateProject = options.hydrateProject === false ? undefined : options.hydrateProject;
@@ -480,10 +551,10 @@ export function createInMemoryAgentRunQueue(options: {
   // R2 原子预算：可选预留仓库（false/未传 → undefined，整段预留逻辑跳过）。预留租约要覆盖 run 租约 + 全部
   // 合法恢复重试，否则可恢复 run 的持有量会被过早 releaseExpired 误放。
   const reservationRepo = options.reservationRepo || undefined;
+  const decisions = options.decisions === false ? undefined : options.decisions;
   const reservationLeaseMs = leaseMs * (maxRecoverAttempts + 1);
-  const decideBudget = options.decideBudget ?? (async (input: BudgetDecisionInput) =>
-    {
-      const scopedSettings = {
+  const decideBudget = options.decideBudget ?? (async (input: BudgetDecisionInput) => {
+    const scopedSettings = {
         ...input.settings,
         auth: {
           ...input.settings.auth,
@@ -496,12 +567,16 @@ export function createInMemoryAgentRunQueue(options: {
         settings: scopedSettings,
         scopeIds: {
           workItemId: input.workItemId,
+          ...(input.taskPlanId ? { taskPlanId: input.taskPlanId } : {}),
+          ...(input.objectiveId ? { objectiveId: input.objectiveId } : {}),
           userId: input.actorId,
           teamId
         },
         policies: await policyStore.listPolicies(scopedSettings),
         usage: await (options.usage?.(input) ?? ledgerStore.usageSnapshots({
           workItemId: input.workItemId,
+          ...(input.taskPlanId ? { taskPlanId: input.taskPlanId } : {}),
+          ...(input.objectiveId ? { objectiveId: input.objectiveId } : {}),
           userId: input.actorId,
           teamId
         }, { now: now() })),
@@ -513,6 +588,40 @@ export function createInMemoryAgentRunQueue(options: {
         now: now()
       });
     });
+
+  function canUseDefaultToolForRole(role: TaskPlanItemRole | undefined, spec: AnyToolSpec) {
+    return canUseToolForTaskPlanRole(role, spec);
+  }
+
+  function isToolSideEffect(value: unknown): value is ToolSideEffect {
+    return value === "none" || value === "sandbox_file" || value === "business_write" || value === "external_effect";
+  }
+
+  function rememberVisibleToolSideEffects(tools: unknown[]) {
+    const sideEffects = new Map<string, ToolSideEffect>();
+    for (const tool of tools) {
+      if (!tool || typeof tool !== "object") {
+        continue;
+      }
+      const metadata = tool as Record<string, unknown>;
+      if (typeof metadata.name === "string" && isToolSideEffect(metadata.side_effect)) {
+        sideEffects.set(metadata.name, metadata.side_effect);
+      }
+    }
+    return sideEffects;
+  }
+
+  function sideEffectRiskCategory(sideEffect: ToolSideEffect | undefined): HumanReservedToolRiskCategory | null {
+    return sideEffect === "external_effect" ? "external" : null;
+  }
+
+  function defaultToolRegistryFor(role: TaskPlanItemRole | undefined, teamSkillContent?: Record<string, string>) {
+    return createToolRegistry(
+      [...createBuiltInFileTools(), createSkillTool(undefined, teamSkillContent)],
+      { canUse: (spec) => canUseDefaultToolForRole(role, spec) }
+    );
+  }
+
   const runs = new Map<string, AgentRunQueueRecord>();
   // SIR-1：每个在跑 run 的「租约视界」(ms)——最近一次成功心跳续到的 lease_expires_at。心跳写**抛错**时
   // (transient DB error)refreshClaimInBackground 的 .catch 会吞掉,run 的内存 status 仍 running、driftedRun
@@ -533,20 +642,31 @@ export function createInMemoryAgentRunQueue(options: {
   // 在 escalation trigger 是枚举，run 终态用 'escalated' 表达），它从不匹配任何真实 run.status。
   const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "escalated", "cancelled"]);
 
-  function activeForWorkItem(workItemId: string) {
-    if (startingWorkItems.has(workItemId)) {
-      return true;
-    }
-    return [...runs.values()].find(
-      (run) =>
-        run.work_item_id === workItemId &&
-        (run.status === "queued" || run.status === "running")
-    );
+  function activeStartKey(input: EnqueueAgentRunInput) {
+    return input.taskPlanItemId ? `task-plan-item:${input.taskPlanItemId}` : `work-item:${input.workItemId}`;
   }
 
-  async function persistedActiveForWorkItem(workItemId: string) {
+  function activeConflictsWithInput(input: EnqueueAgentRunInput, run: AgentRunQueueRecord) {
+    if (run.status !== "queued" && run.status !== "running") {
+      return false;
+    }
+    if (input.taskPlanItemId) {
+      return run.task_plan_item_id === input.taskPlanItemId
+        || (run.work_item_id === input.workItemId && !run.task_plan_item_id);
+    }
+    return run.work_item_id === input.workItemId;
+  }
+
+  function activeForInput(input: EnqueueAgentRunInput) {
+    if (startingWorkItems.has(activeStartKey(input))) {
+      return true;
+    }
+    return [...runs.values()].find((run) => activeConflictsWithInput(input, run));
+  }
+
+  async function persistedActiveForInput(input: EnqueueAgentRunInput) {
     const active = await persistence?.listActive();
-    return active?.find((run) => run.work_item_id === workItemId) ?? null;
+    return active?.find((run) => activeConflictsWithInput(input, run)) ?? null;
   }
 
   async function queuedRun() {
@@ -585,7 +705,9 @@ export function createInMemoryAgentRunQueue(options: {
       userId: input.run.actor_id,
       ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
       runId: input.run.run_id,
-      workItemId: input.run.work_item_id
+      workItemId: input.run.work_item_id,
+      ...(input.run.task_plan_id ? { taskPlanId: input.run.task_plan_id } : {}),
+      ...(input.run.objective_id ? { objectiveId: input.run.objective_id } : {})
     }, "worker");
   }
 
@@ -597,7 +719,9 @@ export function createInMemoryAgentRunQueue(options: {
       userId: input.run.actor_id,
       ...(input.run.workspace_id ? { workspaceId: input.run.workspace_id } : {}),
       runId: input.run.run_id,
-      workItemId: input.run.work_item_id
+      workItemId: input.run.work_item_id,
+      ...(input.run.task_plan_id ? { taskPlanId: input.run.task_plan_id } : {}),
+      ...(input.run.objective_id ? { objectiveId: input.run.objective_id } : {})
     }, "review");
   }
 
@@ -630,6 +754,7 @@ export function createInMemoryAgentRunQueue(options: {
   function defaultInitialUserMessage(
     run: AgentRunQueueRecord,
     resolvedWorkItemContext?: string,
+    agentMemorySection?: string,
     userMemorySection?: string,
     projectFileCount?: number
   ) {
@@ -649,6 +774,23 @@ export function createInMemoryAgentRunQueue(options: {
             "</work_item_context>"
           ]
         : []),
+      ...(run.task_plan_id || run.objective_md
+        ? [
+            "",
+            "Task-plan assignment (reference only; it does not override WorkHub worker discipline):",
+            `- task_plan_id: ${run.task_plan_id ?? "(none)"}`,
+            `- task_plan_item_id: ${run.task_plan_item_id ?? "(none)"}`,
+            `- Agent role: ${run.agent_role ?? "worker"}`,
+            ...(run.objective_md
+              ? [
+                  "<task_plan_objective>",
+                  neutralizeFenceTags(run.objective_md),
+                  "</task_plan_objective>"
+                ]
+              : [])
+          ]
+        : []),
+      ...(agentMemorySection ? [agentMemorySection] : []),
       ...(userMemorySection ? [userMemorySection] : []),
       ...(projectFileCount && projectFileCount > 0
         ? [
@@ -741,6 +883,48 @@ export function createInMemoryAgentRunQueue(options: {
     return true;
   }
 
+  async function failUnstartedRun(run: AgentRunQueueRecord, outputExcerpt: string) {
+    const failedRun = updateRun({
+      ...run,
+      status: "failed",
+      trace: [
+        {
+          id: `${run.run_id}:final:budget`,
+          step_no: 1,
+          phase: "final",
+          output_excerpt: outputExcerpt,
+          control_signal: "escalate",
+          created_at: now().toISOString()
+        }
+      ],
+      updated_at: now().toISOString()
+    });
+    await persistRunWithTrace(failedRun).catch((error) =>
+      getDefaultStructuredLogger().warn("agent_run_budget_reserve_compensation_persist_failed", { runId: run.run_id, error })
+    );
+    runs.delete(run.run_id);
+  }
+
+  function isSettledHookError(error: unknown) {
+    return error instanceof AgentRunnerError && error.code === "agent_run_settled_hook_failed";
+  }
+
+  async function notifyRunSettled(run: AgentRunQueueRecord) {
+    if (!runSettled) {
+      return;
+    }
+    try {
+      await runSettled(run);
+    } catch (error) {
+      getDefaultStructuredLogger().warn("agent_run_settled_hook_failed", { runId: run.run_id, error });
+      throw new AgentRunnerError(503, "agent_run_settled_hook_failed", "AI 运行已结束，但后续状态更新失败，请重试结算。", {
+        run_id: run.run_id,
+        ...(run.task_plan_id ? { task_plan_id: run.task_plan_id } : {}),
+        ...(run.task_plan_item_id ? { task_plan_item_id: run.task_plan_item_id } : {})
+      });
+    }
+  }
+
   function queueTracePersistence(run: AgentRunQueueRecord, fencingWorkerId?: string) {
     if (!persistence) {
       return Promise.resolve();
@@ -811,7 +995,9 @@ export function createInMemoryAgentRunQueue(options: {
     // 仍在生效的预留，导致无预留的重跑集体超预算。与入队时 reserve 用的 reservationLeaseMs 保持同一视界。
     if (reservationRepo) {
       const reservationLeaseExpiresAt = new Date(heartbeatAt.getTime() + reservationLeaseMs);
-      await reservationRepo.refreshLease(run.run_id, reservationLeaseExpiresAt).catch(() => {});
+      await reservationRepo
+        .refreshLease(run.workspace_id ?? settings.auth.defaultWorkspaceId, run.run_id, reservationLeaseExpiresAt)
+        .catch(() => {});
     }
   }
 
@@ -846,6 +1032,58 @@ export function createInMemoryAgentRunQueue(options: {
         });
       }
     }
+  }
+
+  async function openDeadLetterEscalation(run: AgentRunQueueRecord, recoveredAt: Date) {
+    if (!decisions) {
+      return;
+    }
+    try {
+      await decisions.createEscalationEvent({
+        workItemId: run.work_item_id,
+        agentRunId: run.run_id,
+        trigger: "doom_loop",
+        reasonMd: run.task_plan_id && run.task_plan_item_id
+          ? "子任务心跳超时且多次恢复失败，已停止自动重试，请在决策收件箱选择重试、转人工或取消。"
+          : "AI 执行心跳超时且多次恢复失败，已停止自动重试，请在决策收件箱选择重试、转人工或取消。",
+        handoffJson: {
+          source: "agent_run_recovery",
+          ...(run.task_plan_id ? { task_plan_id: run.task_plan_id } : {}),
+          ...(run.task_plan_item_id ? { task_plan_item_id: run.task_plan_item_id } : {}),
+          recovered_at: recoveredAt.toISOString()
+        }
+      });
+    } catch (error) {
+      getDefaultStructuredLogger().warn("agent_run_dead_letter_escalation_failed", {
+        runId: run.run_id,
+        ...(run.task_plan_id ? { taskPlanId: run.task_plan_id } : {}),
+        ...(run.task_plan_item_id ? { taskPlanItemId: run.task_plan_item_id } : {}),
+        error
+      });
+      throw error;
+    }
+  }
+
+  async function restoreDeadLetterRetrySurface(run: AgentRunQueueRecord, recoveredAt: Date) {
+    if (!persistence?.restoreDeadLetterClaim) {
+      return;
+    }
+    const staleAt = new Date(recoveredAt.getTime() - 1);
+    const restored = await persistence.restoreDeadLetterClaim({
+      runId: run.run_id,
+      restoredAt: recoveredAt,
+      claim: {
+        workerId: `${workerId}:dead-letter-retry`,
+        claimedAt: staleAt,
+        heartbeatAt: staleAt,
+        leaseExpiresAt: staleAt
+      }
+    });
+    if (!restored) {
+      return;
+    }
+    const live = runs.get(restored.run_id);
+    runs.set(restored.run_id, live && live.trace.length > restored.trace.length ? { ...restored, trace: live.trace } : restored);
   }
 
   function refreshClaimInBackground(runId: string) {
@@ -982,6 +1220,17 @@ export function createInMemoryAgentRunQueue(options: {
         }
       });
       await eventBus.publish(topic, event.type, envelope);
+      // R7（跨页一致）：run 生命周期事件此前只发 topics.run——工作项详情页/项目页的军团进度
+      // n/m 订的是 workitem 流，纯执行推进永远刷不新。关键节点（started/failed/escalated/succeeded
+      // 类终态）双发 workitem 流；逐 step 噪声不双发，避免高频整页刷新。
+      // R8 回归修复：成功终态的事件 type 是 agent_run.step（kind:'done' 只在 payload 里）——
+      // 之前只查 type 的正则永远匹配不上「成功」这个最常见终态，工作项页军团进度照旧不刷新。
+      const isRunLifecycleKeyEvent = /(?:started|failed|escalated)/u.test(event.type)
+        || (event.type === "agent_run.step" && (event.data as Record<string, unknown> | undefined)?.["kind"] === "done");
+      if (run.work_item_id && isRunLifecycleKeyEvent) {
+        const workItemTopic = topics.workitem(run.work_item_id).topic;
+        await eventBus.publish(workItemTopic, event.type, { ...envelope, topic: workItemTopic });
+      }
     } catch (error) {
       getDefaultStructuredLogger().warn("agent_run_event_emit_failed", { error });
     }
@@ -1233,26 +1482,56 @@ export function createInMemoryAgentRunQueue(options: {
       const loop = createAgentLoop();
       stopClaimHeartbeat = startClaimHeartbeat(current.run_id);
       const resolvedWorkItemContext = await workItemContext?.(current);
+      const resolvedAgentMemory = await agentMemory?.(current);
       const resolvedUserMemory = await userMemory?.(current);
       const resolvedTeamSkills = await teamSkills?.(current);
       // 默认工具集时把团队技能内容塞进 load_skill；自定义 tools 提供者保持原样不动。
       const teamSkillContent = resolvedTeamSkills?.contentByKey;
-      const rawTools =
-        !options.tools && teamSkillContent && Object.keys(teamSkillContent).length > 0
-          ? createToolRegistry([...createBuiltInFileTools(), createSkillTool(undefined, teamSkillContent)])
-          : options.tools?.(executionInput) ?? defaultTools;
+      const rawTools = options.tools?.(executionInput) ?? defaultToolRegistryFor(current.agent_role, teamSkillContent);
+      let visibleToolSideEffects = new Map<string, ToolSideEffect>();
       const tools: ReturnType<AgentRunToolsProvider> = {
-        toModelTools: (ctx) => rawTools.toModelTools(ctx),
+        toModelTools: async (ctx) => {
+          const modelTools = await rawTools.toModelTools(ctx);
+          visibleToolSideEffects = rememberVisibleToolSideEffects(modelTools);
+          return modelTools;
+        },
         execute: async (toolId, input, ctx) => {
           if (driftedRun(current.run_id)) {
             return errorToolResult("这次 AI 执行已经取消，已跳过后续工具执行。");
+          }
+          const riskCategory = classifyHumanReservedToolCall({ toolId }) ?? sideEffectRiskCategory(visibleToolSideEffects.get(toolId));
+          if (riskCategory && humanReservedGuard) {
+            const humanReserved = await humanReservedGuard({
+              workItemId: current.work_item_id,
+              actorId: current.actor_id,
+              agentRunId: current.run_id,
+              mode: current.mode,
+              title: current.title,
+              settings,
+              toolCall: { toolId, input, riskCategory }
+            });
+            if (humanReserved) {
+              throw new AgentRunnerError(
+                409,
+                "human_reserved_tool_call",
+                "高风险工具调用已停止，并已转给负责人确认。",
+                {
+                  escalation_id: humanReserved.escalationId,
+                  trigger: humanReserved.trigger,
+                  source: humanReserved.source,
+                  risk_category: humanReserved.riskCategory,
+                  tool_id: humanReserved.toolId,
+                  suggested_action: "pm_mode"
+                }
+              );
+            }
           }
           return rawTools.execute(toolId, input, ctx);
         }
       };
       const initialUserMessage = options.initialUserMessage
         ? await options.initialUserMessage(current, resolvedWorkItemContext)
-        : defaultInitialUserMessage(current, resolvedWorkItemContext, resolvedUserMemory, projectFileCount);
+        : defaultInitialUserMessage(current, resolvedWorkItemContext, resolvedAgentMemory, resolvedUserMemory, projectFileCount);
       const result = await loop.run({
         runId: current.run_id,
         workItemId: current.work_item_id,
@@ -1310,6 +1589,14 @@ export function createInMemoryAgentRunQueue(options: {
         workerDrifted = true;
         return drifted;
       }
+      // R9.7：failed/no-deliverable/fake-done 结果必须先写 durable attention，再落 terminal 状态。
+      // 否则 confidence/escalation 写失败会被吞掉，run 已经 terminal，后续 recovery 没有可重试面。
+      const proposalWillOpen = Boolean(proposalSink && result.status === "succeeded" && result.manifest);
+      const confidenceBeforeTerminal = result.status === "failed";
+      const preTerminalConfidenceId = confidenceBeforeTerminal
+        ? await recordRunConfidence(current, result, { proposalWillOpen, failClosed: true })
+        : undefined;
+
       // 先落定运行成功状态，再开提议。否则 openProposalFromManifest 抛错（manifest 不匹配/
       // 提议已存在/DB 写失败）会被外层 catch 当作"run 失败"、丢掉本已成功的交付物。
       current = updateRun(finalizeExecutedRun(current, result, now()));
@@ -1322,8 +1609,9 @@ export function createInMemoryAgentRunQueue(options: {
       // FIX#5：成功且有 manifest 且接了 proposalSink → 本次会开出可审阅提议。据此告诉置信记录器：
       // 即便低置信 escalate，也别把工作项推到 escalated（有提议要审），只记升级/注意力事件；
       // 最终状态由 notifyRunMilestone 这个唯一写入者落到 in_review。与 openProposalFromManifest 的开提议门同口径。
-      const proposalWillOpen = Boolean(proposalSink && current.status === "succeeded" && result.manifest);
-      const confidenceId = await recordRunConfidence(current, result, { proposalWillOpen });
+      const confidenceId = confidenceBeforeTerminal
+        ? preTerminalConfidenceId
+        : await recordRunConfidence(current, result, { proposalWillOpen });
       let proposalOpened = false;
       try {
         await openProposalFromManifest(current, result, confidenceId);
@@ -1334,9 +1622,24 @@ export function createInMemoryAgentRunQueue(options: {
       // findings[H8 + chain-core-loop]：成功且开了提议 → 工作项 ai_working→in_review；成功但提议创建失败
       // → 不谎报 in_review，转 escalated（交付物已产出但进不了审阅，需人工）。
       await notifyRunMilestone(current, result.reason, { proposalOpened });
+      if (agentMemoryRecorder) {
+        try {
+          await agentMemoryRecorder({ run: current, result });
+        } catch (error) {
+          getDefaultStructuredLogger().warn("agent_memory_recorder_failed", { runId: current.run_id, error });
+        }
+      }
+      await notifyRunSettled(current);
       return current;
     } catch (error) {
+      if (isFailClosedConfidenceError(error)) {
+        throw error;
+      }
       const failureReason = error instanceof Error ? error.message : String(error);
+      const settlementFailed = isSettledHookError(error);
+      if (settlementFailed) {
+        throw error;
+      }
       const drifted = driftedRun(current.run_id);
       if (drifted) {
         workerDrifted = true;
@@ -1406,6 +1709,12 @@ export function createInMemoryAgentRunQueue(options: {
         steps: []
       });
       await notifyRunMilestone(current, current.trace.at(-1)?.output_excerpt ?? "AI 执行中断,需要人工查看。");
+      if (!settlementFailed) {
+        await notifyRunSettled(current);
+      }
+      if (settlementFailed) {
+        throw error;
+      }
       return current;
     } finally {
       runAbortControllers.delete(current.run_id);
@@ -1419,7 +1728,13 @@ export function createInMemoryAgentRunQueue(options: {
         const settled = runs.get(runId);
         if (settled) {
           await reservationRepo
-            .reconcile(runId, settled.usage.token_in + settled.usage.token_out, settled.usage.estimated_cost_cny, now())
+            .reconcile(
+              settled.workspace_id ?? settings.auth.defaultWorkspaceId,
+              runId,
+              settled.usage.token_in + settled.usage.token_out,
+              settled.usage.estimated_cost_cny,
+              now()
+            )
             .catch((error) => getDefaultStructuredLogger().warn("agent_run_budget_reconcile_failed", { error }));
         }
       }
@@ -1429,7 +1744,7 @@ export function createInMemoryAgentRunQueue(options: {
   async function recordRunConfidence(
     run: AgentRunQueueRecord,
     result: AgentLoopResult,
-    opts: { proposalWillOpen?: boolean } = {}
+    opts: { proposalWillOpen?: boolean; failClosed?: boolean } = {}
   ): Promise<string | undefined> {
     if (options.confidence === false || !options.confidence) {
       return undefined;
@@ -1439,8 +1754,27 @@ export function createInMemoryAgentRunQueue(options: {
       return recorded?.confidenceId;
     } catch (error) {
       getDefaultStructuredLogger().warn("agent_run_confidence_record_failed", { error });
+      if (opts.failClosed) {
+        throw markFailClosedConfidenceError(error);
+      }
       return undefined;
     }
+  }
+
+  const failClosedConfidenceErrors = new WeakSet<object>();
+
+  function markFailClosedConfidenceError(error: unknown) {
+    if (error && typeof error === "object") {
+      failClosedConfidenceErrors.add(error);
+      return error;
+    }
+    const wrapped = new Error(String(error));
+    failClosedConfidenceErrors.add(wrapped);
+    return wrapped;
+  }
+
+  function isFailClosedConfidenceError(error: unknown) {
+    return Boolean(error && typeof error === "object" && failClosedConfidenceErrors.has(error));
   }
 
   async function notifyRunMilestone(run: AgentRunQueueRecord, reasonOneline: string, opts: { proposalOpened?: boolean } = {}) {
@@ -1537,7 +1871,8 @@ export function createInMemoryAgentRunQueue(options: {
         workItem,
         actor: {
           id: "ai-auto",
-          label: "AI 工人"
+          // R11（通知信息量）：多角色分工下 {actor} 不再恒为「AI 工人」——带上执行角色。
+          label: agentActorLabelForRun(run)
         },
         newStatus,
         reasonOneline,
@@ -1548,18 +1883,104 @@ export function createInMemoryAgentRunQueue(options: {
     }
   }
 
+  function agentActorLabelForRun(run: { agent_role?: string | null }): string {
+    const role = run.agent_role;
+    if (role === "research") {
+      return "调研 AI";
+    }
+    if (role === "review") {
+      return "复核 AI";
+    }
+    if (role === "integrate") {
+      return "整合 AI";
+    }
+    if (role === "produce") {
+      return "产出 AI";
+    }
+    return "AI 工人";
+  }
+
+  async function persistBudgetDecision(input: EnqueueAgentRunInput, decision: BudgetDecisionTrace) {
+    if (!decisions || decision.notice?.code !== "budget_exhausted") {
+      return;
+    }
+    const notice = toPublicBudgetNotice(decision.notice);
+    try {
+      await decisions.createEscalationEvent({
+        workItemId: input.workItemId,
+        trigger: "budget_exhausted",
+        reasonMd: notice.message,
+        handoffJson: {
+          attention_kind: "budget",
+          notice,
+          budget_decision: toPublicBudgetDecision(decision),
+          actor_id: input.actorId,
+          ...(input.orgId ? { org_id: input.orgId } : {}),
+          ...(input.workspaceId ? { workspace_id: input.workspaceId } : {}),
+          ...(input.taskPlanId ? { task_plan_id: input.taskPlanId } : {}),
+          ...(input.taskPlanItemId ? { task_plan_item_id: input.taskPlanItemId } : {}),
+          ...(input.taskPlanItemEpoch !== undefined ? { task_plan_item_epoch: input.taskPlanItemEpoch } : {}),
+          ...(input.objectiveId ? { objective_id: input.objectiveId } : {})
+        }
+      });
+    } catch (error) {
+      getDefaultStructuredLogger().warn("agent_run_budget_decision_persist_failed", {
+        workItemId: input.workItemId,
+        error
+      });
+      throw new AgentRunnerError(
+        503,
+        "budget_decision_persist_failed",
+        "预算决策卡片写入失败，请稍后重试。"
+      );
+    }
+  }
+
+  async function emitBudgetNotice(input: EnqueueAgentRunInput, decision: BudgetDecisionTrace) {
+    if (!decision.notice) {
+      return;
+    }
+    await persistBudgetDecision(input, decision);
+    if (!eventBus) {
+      return;
+    }
+    const eventType = decision.notice.code === "budget_exhausted" ? eventTypes.budgetExhausted : eventTypes.budgetWarning;
+    const topicsToPublish = [
+      topics.workitem(input.workItemId).topic,
+      topics.user(input.actorId).topic
+    ];
+    const notice = toPublicBudgetNotice(decision.notice);
+    const envelope = makeWorkHubEvent({
+      type: eventType,
+      topic: topicsToPublish[0]!,
+      actor: { actor_kind: "ai", label: "WorkHub AI" },
+      work_item_id: input.workItemId,
+      preview_text: notice.message,
+      cuu_state: decision.notice.code === "budget_exhausted" ? "asking_approval" : "worried",
+      data: notice
+    });
+    try {
+      for (const topic of topicsToPublish) {
+        await eventBus.publish(topic, eventType, { ...envelope, topic });
+      }
+    } catch (error) {
+      getDefaultStructuredLogger().warn("agent_run_budget_notice_publish_failed", { error });
+    }
+  }
+
   return {
     async enqueue(input) {
       const hasPersistentIdleCreate = Boolean(persistence?.createRunIfWorkItemIdle);
-      let existing = activeForWorkItem(input.workItemId);
+      const startKey = activeStartKey(input);
+      let existing = activeForInput(input);
       if (!existing && persistence) {
-        existing = await persistedActiveForWorkItem(input.workItemId) ?? undefined;
+        existing = await persistedActiveForInput(input) ?? undefined;
       }
       if (existing) {
         throw new AgentRunnerError(409, "agent_run_already_active", "这个事项已经有 AI 在处理了。");
       }
       if (!hasPersistentIdleCreate) {
-        startingWorkItems.add(input.workItemId);
+        startingWorkItems.add(startKey);
       }
       try {
         const humanReserved = await humanReservedGuard?.({
@@ -1580,8 +2001,18 @@ export function createInMemoryAgentRunQueue(options: {
             }
           );
         }
-        const decision = await decideBudget({ ...input, settings });
+        let decision = await decideBudget({ ...input, settings });
+        // B-R9.2-1：份额切分的子预算真进执行预算（run.budget/预留 est/环内成本守卫全链生效），
+        // 不只是 prompt 文本。cap 只收紧不放宽。
+        const capCny = Number.parseFloat(input.budgetCapCny ?? "");
+        if (Number.isFinite(capCny) && capCny >= 0 && capCny < Number.parseFloat(decision.runBudget.maxCostCny)) {
+          decision = {
+            ...decision,
+            runBudget: { ...decision.runBudget, maxCostCny: capCny.toFixed(2) }
+          };
+        }
         if (!decision.allowed) {
+          await emitBudgetNotice(input, decision);
           throw new AgentRunnerError(
             402,
             "budget_exhausted",
@@ -1595,6 +2026,12 @@ export function createInMemoryAgentRunQueue(options: {
           ...(input.orgId ? { org_id: input.orgId } : {}),
           ...(input.workspaceId ? { workspace_id: input.workspaceId } : {}),
           work_item_id: input.workItemId,
+          ...(input.parentRunId ? { parent_run_id: input.parentRunId } : {}),
+          ...(input.taskPlanId ? { task_plan_id: input.taskPlanId } : {}),
+          ...(input.taskPlanItemId ? { task_plan_item_id: input.taskPlanItemId } : {}),
+          ...(input.objectiveId ? { objective_id: input.objectiveId } : {}),
+          ...(input.agentRole ? { agent_role: input.agentRole } : {}),
+          ...(input.objectiveMd ? { objective_md: input.objectiveMd } : {}),
           actor_id: input.actorId,
           mode: input.mode ?? "worker",
           status: "queued",
@@ -1615,38 +2052,36 @@ export function createInMemoryAgentRunQueue(options: {
         runs.set(run.run_id, run);
         // R2 原子预算：run 行已落（reservations.run_id FK 需要它），现在原子预留。被并发在飞占满 → 拒绝；
         // 补偿：把刚建的 queued run 置 failed（enqueue 非执行路径不传 workerId → 无 fencing，无条件落），
-        // 释放 work-item active 槽 + 防止它被后续 claim 执行；抛与 decideBudget 同款 402 budget_exhausted。
+        // 释放 work-item active 槽 + 防止它被后续 claim 执行。业务性超额抛与 decideBudget 同款 402；
+        // reservation 后端异常则 fail-closed 成 503，不能留下无预留 queued run。
         if (reservationRepo) {
           const reserveScopes = buildReserveScopes(decision, now());
           if (reserveScopes.length > 0) {
-            const reserved = await reservationRepo.reserve({
-              runId: run.run_id,
-              leaseExpiresAt: new Date(now().getTime() + reservationLeaseMs),
-              scopes: reserveScopes
-            });
-            if (!reserved.ok) {
-              const failedRun = updateRun({
-                ...run,
-                status: "failed",
-                trace: [
-                  {
-                    id: `${run.run_id}:final:budget`,
-                    step_no: 1,
-                    phase: "final",
-                    output_excerpt: "AI 预算已被并发在飞执行占满，本次未启动。",
-                    control_signal: "escalate",
-                    created_at: now().toISOString()
-                  }
-                ],
-                updated_at: now().toISOString()
+            let reserved: Awaited<ReturnType<BudgetReservationRepository["reserve"]>>;
+            try {
+              reserved = await reservationRepo.reserve({
+                workspaceId: input.workspaceId ?? settings.auth.defaultWorkspaceId,
+                runId: run.run_id,
+                leaseExpiresAt: new Date(now().getTime() + reservationLeaseMs),
+                scopes: reserveScopes
               });
-              await persistRunWithTrace(failedRun).catch((error) =>
-                getDefaultStructuredLogger().warn("agent_run_budget_reserve_compensation_persist_failed", { error })
+            } catch (error) {
+              await failUnstartedRun(run, "AI 预算预留服务暂时不可用，本次未启动。");
+              getDefaultStructuredLogger().warn("agent_run_budget_reserve_failed", { runId: run.run_id, error });
+              throw new AgentRunnerError(
+                503,
+                "budget_reservation_failed",
+                "AI 预算预留服务暂时不可用，请稍后重试。",
+                { run_id: run.run_id }
               );
-              runs.delete(run.run_id);
-              throw new AgentRunnerError(402, "budget_exhausted", decision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。", {
-                ...budgetErrorDetails(decision),
-                reserved_limiting_scope: toQueueBudgetScope(reserved.limitingScope),
+            }
+            if (!reserved.ok) {
+              await failUnstartedRun(run, "AI 预算已被并发在飞执行占满，本次未启动。");
+              const reservationDecision = budgetDecisionFromReservationDenial(decision, reserved.limitingScope);
+              await emitBudgetNotice(input, reservationDecision);
+              throw new AgentRunnerError(402, "budget_exhausted", reservationDecision.notice?.message ?? "AI 预算已经用完，先暂停新的自动执行。", {
+                ...budgetErrorDetails(reservationDecision),
+                reserved_limiting_scope: toPublicBudgetScope(reserved.limitingScope),
                 reserved_limit: reserved.limit
               });
             }
@@ -1655,7 +2090,7 @@ export function createInMemoryAgentRunQueue(options: {
         return run;
       } finally {
         if (!hasPersistentIdleCreate) {
-          startingWorkItems.delete(input.workItemId);
+          startingWorkItems.delete(startKey);
         }
       }
     },
@@ -1697,7 +2132,13 @@ export function createInMemoryAgentRunQueue(options: {
       abortInFlightProvider(runId);
       if (reservationRepo) {
         await reservationRepo
-          .reconcile(runId, cancelled.usage.token_in + cancelled.usage.token_out, cancelled.usage.estimated_cost_cny, now())
+          .reconcile(
+            cancelled.workspace_id ?? settings.auth.defaultWorkspaceId,
+            runId,
+            cancelled.usage.token_in + cancelled.usage.token_out,
+            cancelled.usage.estimated_cost_cny,
+            now()
+          )
           .catch((error) => getDefaultStructuredLogger().warn("agent_run_budget_abort_reconcile_failed", { error }));
       }
       await emitRunStatusEvent(cancelled, {
@@ -1706,6 +2147,7 @@ export function createInMemoryAgentRunQueue(options: {
         previewText: "这次 AI 执行已取消。",
         cuuState: "worried"
       });
+      await notifyRunSettled(cancelled);
       return cancelled;
     },
 
@@ -1720,6 +2162,21 @@ export function createInMemoryAgentRunQueue(options: {
         }
       }
       return [...byId.values()];
+    },
+
+    async recoverUnsettledTaskPlanRuns() {
+      if (!persistence?.listUnsettledTaskPlanRuns || !runSettled) {
+        return [];
+      }
+      const candidates = await persistence.listUnsettledTaskPlanRuns({
+        limit: UNSETTLED_TASK_PLAN_RUN_RECOVERY_LIMIT
+      });
+      const settled: AgentRunQueueRecord[] = [];
+      for (const run of candidates) {
+        await notifyRunSettled(run);
+        settled.push(run);
+      }
+      return settled;
     },
 
     async recoverExpiredClaims() {
@@ -1764,7 +2221,21 @@ export function createInMemoryAgentRunQueue(options: {
       // 仍会被下次执行接手，不动其状态。复用 notifyRunMilestone：failed 终态 → newStatus=escalated + 通知。
       for (const run of recovered) {
         if (run.status === "failed") {
+          try {
+            await openDeadLetterEscalation(run, recoveredAt);
+          } catch (error) {
+            try {
+              await restoreDeadLetterRetrySurface(run, recoveredAt);
+            } catch (restoreError) {
+              getDefaultStructuredLogger().warn("agent_run_dead_letter_retry_restore_failed", {
+                runId: run.run_id,
+                restoreError
+              });
+            }
+            throw error;
+          }
           await notifyRunMilestone(run, "AI 多次崩溃，已转人工接手。");
+          await notifyRunSettled(run);
         }
       }
       // R2 原子预算：与认领恢复同节奏扫一遍过期预留，释放崩溃/失租 run 占住的额度。
@@ -1787,6 +2258,8 @@ export function createInMemoryAgentRunQueue(options: {
 
 type QueueBudgetScope =
   | { kind: "workitem"; workitem_id: string }
+  | { kind: "task"; task_plan_id: string }
+  | { kind: "objective"; objective_id: string }
   | { kind: "user"; user_id: string }
   | { kind: "team"; team_id: string }
   | { kind: "curation"; team_id: string }
@@ -1798,9 +2271,35 @@ type QueueBudgetNotice = {
   message: string;
   scope: QueueBudgetScope;
   usage_ratio: number;
+  usage?: QueueBudgetNoticeUsage;
   recommended_action: BudgetNotice["recommendedAction"];
   options?: { id: string; label: string; action_href: string }[];
   action_href?: string;
+};
+
+type QueueBudgetNoticeUsage = {
+  scope_label: string;
+  period: NonNullable<BudgetNotice["usage"]>["period"];
+  total_tokens: number;
+  max_tokens: number;
+  remaining_tokens: number;
+  estimated_cost_cny: string;
+  max_cost_cny: string;
+  remaining_cost_cny: string;
+  status: NonNullable<BudgetNotice["usage"]>["status"];
+};
+
+type PublicBudgetScope =
+  | { kind: "workitem" }
+  | { kind: "task" }
+  | { kind: "objective" }
+  | { kind: "user" }
+  | { kind: "team" }
+  | { kind: "curation" }
+  | { kind: "eval"; suite: "nightly" | "release" };
+
+type PublicBudgetNotice = Omit<QueueBudgetNotice, "scope"> & {
+  scope: PublicBudgetScope;
 };
 
 function toQueueRunBudget(budget: RunBudget): AgentRunQueueRecord["budget"] {
@@ -1948,6 +2447,16 @@ function toQueueBudgetDecision(decision: BudgetDecision): AgentRunQueueRecord["b
   };
 }
 
+function toPublicBudgetDecision(decision: BudgetDecision): Record<string, unknown> {
+  return {
+    decision_id: decision.decisionId,
+    allowed: decision.allowed,
+    ...(decision.reason ? { reason: decision.reason } : {}),
+    model_route: decision.modelRoute,
+    ...(decision.notice ? { notice: toPublicBudgetNotice(decision.notice) } : {})
+  };
+}
+
 function toQueueBudgetNotice(notice: BudgetNotice): QueueBudgetNotice {
   return {
     code: notice.code,
@@ -1955,6 +2464,7 @@ function toQueueBudgetNotice(notice: BudgetNotice): QueueBudgetNotice {
     message: notice.message,
     scope: toQueueBudgetScope(notice.scope),
     usage_ratio: notice.usageRatio,
+    ...(notice.usage ? { usage: toQueueBudgetNoticeUsage(notice.usage) } : {}),
     recommended_action: notice.recommendedAction,
     ...(notice.options
       ? {
@@ -1969,10 +2479,40 @@ function toQueueBudgetNotice(notice: BudgetNotice): QueueBudgetNotice {
   };
 }
 
+function toPublicBudgetNotice(notice: BudgetNotice): PublicBudgetNotice {
+  return {
+    code: notice.code,
+    severity: notice.severity,
+    message: notice.message,
+    scope: toPublicBudgetScope(notice.scope),
+    usage_ratio: notice.usageRatio,
+    ...(notice.usage ? { usage: toQueueBudgetNoticeUsage(notice.usage) } : {}),
+    recommended_action: notice.recommendedAction,
+    ...(notice.options
+      ? {
+          options: notice.options.map((option) => ({
+            id: option.id,
+            label: option.label,
+            action_href: publicBudgetActionHref(notice.scope, option.actionHref)
+          }))
+        }
+      : {}),
+    ...(notice.actionHref ? { action_href: publicBudgetActionHref(notice.scope, notice.actionHref) } : {})
+  };
+}
+
+function publicBudgetActionHref(scope: BudgetScope, href: string): string {
+  return scope.kind === "task" || scope.kind === "objective" ? "/dashboard/cost" : href;
+}
+
 function budgetScopeId(scope: BudgetScope): string {
   switch (scope.kind) {
     case "workitem":
       return scope.workitemId;
+    case "task":
+      return scope.taskPlanId;
+    case "objective":
+      return scope.objectiveId;
     case "user":
       return scope.userId;
     case "team":
@@ -1982,6 +2522,58 @@ function budgetScopeId(scope: BudgetScope): string {
     case "eval":
       return scope.suite;
   }
+}
+
+function budgetActionHrefForScope(scope: BudgetScope) {
+  if (scope.kind === "workitem") {
+    return `/workitems/${scope.workitemId}`;
+  }
+  if (scope.kind === "task") {
+    return `/dashboard/cost?taskPlanId=${encodeURIComponent(scope.taskPlanId)}`;
+  }
+  if (scope.kind === "objective") {
+    return `/dashboard/cost?objectiveId=${encodeURIComponent(scope.objectiveId)}`;
+  }
+  return "/dashboard/cost";
+}
+
+function reservationBudgetNotice(scope: BudgetScope): BudgetNotice {
+  const actionHref = budgetActionHrefForScope(scope);
+  const armyScope = scope.kind === "task" || scope.kind === "objective";
+  return {
+    code: "budget_exhausted",
+    severity: "critical",
+    message: "AI 预算已经用完，先暂停新的自动执行。",
+    scope,
+    usageRatio: 1,
+    recommendedAction: armyScope ? "add_budget" : "ask_admin",
+    options: armyScope
+      ? [
+          { id: "add_budget", label: "追加预算继续", actionHref },
+          { id: "finish_current_output", label: "就用现有产出收尾", actionHref },
+          { id: "close_scope", label: "整体收工", actionHref }
+        ]
+      : [
+          { id: "downgrade_model", label: "降级模型继续", actionHref },
+          { id: "pause", label: "先暂停", actionHref },
+          { id: "ask_admin", label: "找管理员", actionHref: "/dashboard/cost" }
+        ],
+    actionHref
+  };
+}
+
+function budgetDecisionFromReservationDenial(
+  decision: BudgetDecisionTrace,
+  limitingScope: BudgetScope
+): BudgetDecisionTrace {
+  return {
+    ...decision,
+    decisionId: `${decision.decisionId}:reservation_denied`,
+    allowed: false,
+    reason: "budget_exhausted",
+    limitingScope,
+    notice: reservationBudgetNotice(limitingScope)
+  };
 }
 
 // R2 原子预算：把预算决策的受限 day/month scope 转成预留输入。per-run cap 不预留（按 work-item，已被
@@ -2014,7 +2606,7 @@ function buildReserveScopes(decision: BudgetDecisionTrace, at: Date): BudgetRese
 function budgetErrorDetails(decision: BudgetDecisionTrace): Record<string, unknown> {
   const usage = decision.limitingUsage;
   return {
-    ...(decision.limitingScope ? { scope: toQueueBudgetScope(decision.limitingScope) } : {}),
+    ...(decision.limitingScope ? { scope: toPublicBudgetScope(decision.limitingScope) } : {}),
     ...(usage
       ? {
           policy_id: usage.policyId,
@@ -2026,10 +2618,37 @@ function budgetErrorDetails(decision: BudgetDecisionTrace): Record<string, unkno
   };
 }
 
+function toQueueBudgetNoticeUsage(usage: NonNullable<BudgetNotice["usage"]>): QueueBudgetNoticeUsage {
+  return {
+    scope_label: usage.scopeLabel,
+    period: usage.period,
+    total_tokens: usage.totalTokens,
+    max_tokens: usage.maxTokens,
+    remaining_tokens: usage.remainingTokens,
+    estimated_cost_cny: usage.estimatedCostCny,
+    max_cost_cny: usage.maxCostCny,
+    remaining_cost_cny: usage.remainingCostCny,
+    status: usage.status
+  };
+}
+
+function toPublicBudgetScope(scope: BudgetScope): PublicBudgetScope {
+  switch (scope.kind) {
+    case "eval":
+      return { kind: "eval", suite: scope.suite };
+    default:
+      return { kind: scope.kind };
+  }
+}
+
 function toQueueBudgetScope(scope: BudgetScope): QueueBudgetScope {
   switch (scope.kind) {
     case "workitem":
       return { kind: "workitem", workitem_id: scope.workitemId };
+    case "task":
+      return { kind: "task", task_plan_id: scope.taskPlanId };
+    case "objective":
+      return { kind: "objective", objective_id: scope.objectiveId };
     case "user":
       return { kind: "user", user_id: scope.userId };
     case "team":
@@ -2113,6 +2732,7 @@ function getDefaultWorkItemStatusWriter() {
 export function getDefaultAgentRunQueue() {
   defaultQueue ??= createInMemoryAgentRunQueue({
     confidence: createAgentRunConfidenceRecorder(),
+    decisions: createAiDecisionRepository(getSharedDatabaseClient().db),
     humanReserved: createHumanReservedGuard(),
     policyStore: getDefaultBudgetPolicyStore(),
     ledgerStore: getDefaultCostLedgerStore(),
@@ -2124,6 +2744,8 @@ export function getDefaultAgentRunQueue() {
     // manifest.base.snapshot_id 永远为空、三方合并退回 accepted-history 祖先（背离 M2 设计）。
     snapshots: getDefaultAuditStores().snapshots,
     workItemContext: getDefaultWorkItemContextProvider(),
+    agentMemory: getDefaultAgentMemoryContextProvider(),
+    agentMemoryRecorder: getDefaultAgentMemoryRecorder(),
     userMemory: getDefaultUserMemoryContextProvider(),
     teamSkills: getDefaultTeamSkillContextProvider(),
     // 默认开启：项目/网盘是 WorkHub 核心语境，AI 工人应能读取 project/ 只读资料；仍可用
@@ -2139,7 +2761,13 @@ export function getDefaultAgentRunQueue() {
     ...(runtimeSettings.agentRun.allowUnsandboxedCommands ? { commandRunner: nodeCommandRunner } : {}),
     notificationWorkItem: createAgentRunNotificationWorkItemResolver(),
     resolveUserRefs: createAgentRunUserRefResolver(),
-    transitionWorkItemStatus: getDefaultWorkItemStatusWriter()
+    transitionWorkItemStatus: getDefaultWorkItemStatusWriter(),
+    runSettled: async (run) => {
+      if (!defaultQueue) {
+        return;
+      }
+      await getDefaultTaskDispatcher(defaultQueue).handleRunSettled(run);
+    }
   });
   // 启动时回收上次进程崩溃/重启遗留的过期 workdir（fire-and-forget，失败不影响队列就绪）。
   void sweepStaleAgentWorkdirs().catch((error) => {

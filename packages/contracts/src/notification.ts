@@ -28,6 +28,8 @@ export const notificationListSchema = z.object({
   counts: z.object({
     unread: z.number().int().nonnegative(),
     total: z.number().int().nonnegative()
-  })
+  }),
+  // R4（规模化）：列表被 200 上限封顶时为 true。
+  capped: z.boolean().optional()
 });
 export type NotificationList = z.infer<typeof notificationListSchema>;

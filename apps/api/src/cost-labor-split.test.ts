@@ -113,3 +113,33 @@ test("findings[#81] malformed period_bucket row is skipped from trend, not 422-i
   assert.equal(cost.trend.length, 1);
   assert.equal(cost.trend[0]?.date, "2026-06-16");
 });
+
+// B-R9.6 UX-H4：军团行合入元数据（名称/状态/预算→燃烧百分比），按花费降序；无 meta 时行退化不塌。
+test("B-R9.6 buildCostDashboardPage enriches by_task_plan rows with meta and sorts by cost", () => {
+  const planA = "00000000-0000-4000-8000-00000000p0a1".replace("p0", "0f");
+  const planB = "00000000-0000-4000-8000-00000000p0b1".replace("p0", "1a");
+  const cost = buildCostDashboardPage({
+    settings,
+    isAdmin: true,
+    userId: "00000000-0000-4000-8000-000000000001",
+    generatedAt: new Date("2026-06-16T02:00:00.000Z"),
+    ledgerEntries: [
+      entry({ usageRecordId: "u1", source: "agent_step", estimatedCostCny: "0.30", taskPlanId: planA, runId: "r1" }),
+      entry({ usageRecordId: "u2", source: "agent_step", estimatedCostCny: "1.20", taskPlanId: planB, runId: "r2" })
+    ],
+    taskPlanMeta: new Map([
+      [planB, { label: "上市材料军团", status: "dispatching", maxCostCny: 1 }]
+    ])
+  });
+  assert.equal(cost.by_task_plan.length, 2);
+  // 花费降序：planB（1.20）在前。
+  assert.equal(cost.by_task_plan[0]?.task_plan_id, planB);
+  assert.equal(cost.by_task_plan[0]?.label, "上市材料军团");
+  assert.equal(cost.by_task_plan[0]?.status, "dispatching");
+  assert.equal(cost.by_task_plan[0]?.budget_cny, "1");
+  assert.equal(cost.by_task_plan[0]?.burn_pct, 120);
+  // 无 meta 的行退化为纯账目行。
+  assert.equal(cost.by_task_plan[1]?.task_plan_id, planA);
+  assert.equal(cost.by_task_plan[1]?.label, undefined);
+  assert.equal(cost.by_task_plan[1]?.burn_pct, undefined);
+});

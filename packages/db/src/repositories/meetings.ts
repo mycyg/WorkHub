@@ -75,6 +75,14 @@ export type MeetingRepository = {
     limit?: number;
     targetMeetingId?: string;
   }) => Promise<MeetingPageRows>;
+  // R10-P2-2：转写导入——会议页此前是只读孤岛（会议只能由 seed/管线产生）。导入的记录以转写
+  // 文本为源文件（audio_* 列语义=记录源文件），状态 transcribed，落审计。OPTIONAL（假仓库可不实现）。
+  importTranscript?: (input: MeetingRepositoryActor & {
+    projectId: string;
+    title: string;
+    transcriptText: string;
+    at?: Date;
+  }) => Promise<{ id: string } | null>;
   findInsightContext?: (input: {
     projectId: string;
     insightId: string;
@@ -162,6 +170,42 @@ async function insertMeetingAudit(
 
 export function createMeetingRepository(db: WorkHubDb): MeetingRepository {
   return {
+    async importTranscript(input) {
+      const project = await findProject(db, input.projectId);
+      if (!project) {
+        return null;
+      }
+      const at = input.at ?? new Date();
+      const id = randomUUID();
+      const transcriptBytes = Buffer.byteLength(input.transcriptText, "utf8");
+      await db.insert(meetingRecords).values({
+        id,
+        projectId: project.id,
+        uploadedByUserId: input.actorUserId,
+        title: input.title,
+        // 导入的源文件就是转写文本本身（audio_* 列语义=记录源文件，非必有音频）。
+        audioFilename: "transcript-import.md",
+        audioMime: "text/markdown",
+        audioSizeBytes: transcriptBytes,
+        audioPath: `imported/${id}.md`,
+        transcriptText: input.transcriptText,
+        status: "transcribed",
+        createdAt: at,
+        updatedAt: at
+      });
+      await insertMeetingAudit(db, {
+        actorKind: input.actorKind,
+        actorUserId: input.actorUserId,
+        project,
+        entityType: "meeting_record",
+        entityId: id,
+        action: "meeting.transcript_imported",
+        detailJson: { title: input.title, transcript_bytes: transcriptBytes },
+        at
+      });
+      return { id };
+    },
+
     async readPage(input = {}) {
       const project = await findProject(db, input.projectId, input.workspaceId);
       if (!project) {

@@ -789,3 +789,22 @@ export function createAuthRoutes(
 
   return routes;
 }
+
+// R10-P2-5（委派选人器数据源）：活跃成员简表——只暴露转交所需最小字段（id/昵称/admin），
+// 任何已登录成员可读。挂载于 /api → GET /api/users。
+export function createUserDirectoryRoutes(source: AuthDependencySource = getDefaultAuthDependencies) {
+  const routes = new Hono<AuthEnv>();
+  routes.get("/users", async (c) => {
+    const deps = resolveAuthDependencies(source);
+    await resolveCurrentUser(c, deps);
+    if (!deps.users.listActiveRefs) {
+      return c.json({ ok: false, error: { code: "users_unsupported", message: "当前存储不支持成员清单。" } }, 501);
+    }
+    const refs = await deps.users.listActiveRefs();
+    return c.json({
+      ok: true,
+      data: { users: refs.map((user) => ({ id: user.id, nickname: user.nickname, is_admin: user.isAdmin })) }
+    });
+  });
+  return routes;
+}

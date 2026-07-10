@@ -127,6 +127,7 @@ export type MergeProposalBulkAction = z.infer<typeof mergeProposalBulkActionSche
 
 export const mergeProposalRequestSchema = z.object({
   confirm: z.boolean().default(true),
+  dispatch: z.boolean().default(true),
   conflict_resolution: z
     .object({
       accept_incoming_target_keys: z.array(z.string().min(1)).default([]),

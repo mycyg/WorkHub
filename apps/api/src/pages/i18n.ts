@@ -14,11 +14,20 @@ type PageCopyKey =
   | "cost.action.pause"
   | "cost.action.askAdmin"
   | "proposal.action.requestChanges"
+  | "proposal.action.requestPlanChanges"
   | "proposal.action.approve"
+  | "proposal.action.approvePlan"
+  | "proposal.action.approvePlanAndStart"
+  | "proposal.action.approvePlanHold"
+  | "proposal.action.skipPlanSingleRun"
   | "proposal.action.merge"
+  | "proposal.action.mergePlan"
   | "proposal.action.view"
+  | "proposal.action.viewPlan"
   | "attention.proposalReview.opened"
   | "attention.proposalReview.reviewed"
+  | "attention.planReview.opened"
+  | "attention.planReview.reviewed"
   | "proposal.author.ai"
   | "proposal.author.human"
   | "replay.handoff.done"
@@ -45,12 +54,21 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "cost.action.pause": "先暂停",
     "cost.action.askAdmin": "找管理员",
     "proposal.action.requestChanges": "打回并说明原因",
+    "proposal.action.requestPlanChanges": "打回重拆",
     "proposal.action.approve": "确认通过",
+    "proposal.action.approvePlan": "确认计划",
+    "proposal.action.approvePlanAndStart": "批准并开始执行",
+    "proposal.action.approvePlanHold": "批准但先不跑",
+    "proposal.action.skipPlanSingleRun": "先不拆，单个 AI 跑",
     "proposal.action.merge": "合入交付物",
+    "proposal.action.mergePlan": "批准任务计划",
     "proposal.action.view": "查看变更",
+    "proposal.action.viewPlan": "查看计划提议",
     "attention.proposalReview.opened": "AI 交付了一份变更，等你确认。",
     "attention.proposalReview.reviewed": "已通过确认，可以采纳到正式版了。",
-    "proposal.author.ai": "AI Reviewer",
+    "attention.planReview.opened": "任务已拆成任务计划，等你确认后再开始执行。",
+    "attention.planReview.reviewed": "计划已确认，可以批准为待开始计划。",
+    "proposal.author.ai": "AI 审阅员",
     "proposal.author.human": "负责人",
     "replay.handoff.done": "已完成",
     "replay.handoff.remaining": "还剩",
@@ -75,11 +93,20 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "cost.action.pause": "Pause for now",
     "cost.action.askAdmin": "Ask an admin",
     "proposal.action.requestChanges": "Request changes with a reason",
+    "proposal.action.requestPlanChanges": "Request replan",
     "proposal.action.approve": "Mark approved",
+    "proposal.action.approvePlan": "Approve plan",
+    "proposal.action.approvePlanAndStart": "Approve and start",
+    "proposal.action.approvePlanHold": "Approve but hold",
+    "proposal.action.skipPlanSingleRun": "Skip the plan — run one AI",
     "proposal.action.merge": "Merge deliverable",
+    "proposal.action.mergePlan": "Approve task plan",
     "proposal.action.view": "View changes",
+    "proposal.action.viewPlan": "View plan proposal",
     "attention.proposalReview.opened": "AI delivered a change — review it.",
     "attention.proposalReview.reviewed": "Approved — ready to accept into the official version.",
+    "attention.planReview.opened": "AI decomposed this into a task plan. Review it before work starts.",
+    "attention.planReview.reviewed": "Plan reviewed — approve it when you are ready to start.",
     "proposal.author.ai": "AI Reviewer",
     "proposal.author.human": "Owner",
     "replay.handoff.done": "Done",

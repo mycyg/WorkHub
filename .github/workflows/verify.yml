@@ -32,6 +32,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install CJK fonts for deterministic zh-CN text metrics
         run: |
+          sudo find /etc/apt/sources.list.d -maxdepth 1 -type f \( -name 'azure-cli.*' -o -name 'microsoft-prod.*' \) -print -exec sudo mv {} {}.disabled \;
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends fonts-noto-cjk
       - uses: pnpm/action-setup@v4
@@ -59,6 +60,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Tauri Linux system dependencies
         run: |
+          sudo find /etc/apt/sources.list.d -maxdepth 1 -type f \( -name 'azure-cli.*' -o -name 'microsoft-prod.*' \) -print -exec sudo mv {} {}.disabled \;
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
@@ -280,8 +282,33 @@ jobs:
             echo "No obvious committed private keys found."
           fi || true
 
-  migration-placeholder:
+  migration-audit:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: workhub
+          POSTGRES_USER: workhub
+          POSTGRES_PASSWORD: workhub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U workhub -d workhub"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql+psycopg://workhub:workhub@127.0.0.1:5432/workhub
+      WORKHUB_MIGRATION_AUDIT_REQUIRE_DB: "true"
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Drizzle migration check will become mandatory in F03."
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit:migrations

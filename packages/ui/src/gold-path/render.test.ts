@@ -75,6 +75,65 @@ test("approval center renderer surfaces page_info when the queue is truncated", 
   assert.equal(approvals.html.includes("已显示 100/137 条审批，还有更多未展开。"), true);
 });
 
+test("approval center renderer does not leak raw approval facts", () => {
+  const vm = surfaceVm();
+  const request = vm.page_vms.approvals.requests[0];
+  assert.ok(request);
+  request.action_pattern = "tool.write_file";
+  request.status = "pending";
+  request.routed_to_user_id = "96000000-0000-4000-8000-000000000011";
+  request.sla_due_at = "2026-07-05T00:00:00.000Z";
+
+  const approvals = renderGoldPathSurface(vm, "web", { locale: "en-US" }).pages.find((page) => page.key === "approvals");
+
+  assert.ok(approvals);
+  assert.equal(approvals.html.includes("tool.write_file"), false);
+  assert.equal(approvals.html.includes("96000000-0000-4000-8000-000000000011"), false);
+  assert.equal(approvals.html.includes("2026-07-05T00:00:00.000Z"), false);
+  assert.equal(approvals.html.includes("<strong>Tool approval</strong>"), true);
+  assert.equal(approvals.html.includes("Pending · SLA 2026-07-05 00:00"), true);
+  assert.equal(approvals.html.includes(">Routed</span>"), true);
+});
+
+test("gold path renderer localizes work item and proposal check statuses", () => {
+  const vm = surfaceVm();
+  vm.page_vms.workitem.workitem.status = "spec_ready";
+  vm.page_vms.proposal.manifest.checks = [
+    { id: "snapshot_exists", label: "Snapshot exists", status: "passed" },
+    { id: "budget_warning", label: "Budget guard", status: "warning", detail: "Approaching the run cap." }
+  ];
+
+  const rendered = renderGoldPathSurface(vm, "web", { locale: "zh-CN" });
+  const workitem = rendered.pages.find((page) => page.key === "workitem");
+  const proposal = rendered.pages.find((page) => page.key === "proposal");
+
+  assert.ok(workitem);
+  assert.ok(proposal);
+  assert.equal(workitem.html.includes("spec_ready"), false);
+  assert.equal(workitem.html.includes("规格已就绪"), true);
+  assert.equal(proposal.html.includes(">passed<"), false);
+  assert.equal(proposal.html.includes(">warning"), false);
+  assert.equal(proposal.html.includes("通过"), true);
+  assert.equal(proposal.html.includes("有提醒"), true);
+});
+
+test("gold path work item trace hides raw phase fallback when excerpt is missing", () => {
+  const vm = surfaceVm();
+  const step = vm.page_vms.workitem.agent_trace_preview[0]!;
+  vm.page_vms.workitem.agent_trace_preview = [{
+    ...step,
+    phase: "tool_result",
+    output_excerpt: undefined
+  }];
+
+  const workitem = renderGoldPathSurface(vm, "web", { locale: "zh-CN" }).pages.find((page) => page.key === "workitem");
+
+  assert.ok(workitem);
+  assert.equal(workitem.html.includes("tool_result"), false);
+  assert.equal(workitem.html.includes("工具结果"), true);
+  assert.equal(workitem.html.includes("工具已返回，AI 正在整理下一步。"), true);
+});
+
 test("option intake stays option-first with collapsed free text instead of a chat wall", () => {
   const intake = renderGoldPathSurface(surfaceVm(), "desktop").pages.find((page) => page.key === "intake");
 
@@ -154,6 +213,27 @@ test("proposal and replay pages expose review actions, rollback, cost, and at le
   assert.equal(englishProposal?.html.includes("<span class=\"wh-pill\">Text document</span>"), true);
   assert.equal(replay?.html.includes("估算成本"), true);
   assert.equal((replay?.html.match(/wh-row/gu)?.length ?? 0) >= 5, true);
+});
+
+test("gold path replay hides raw tool ids from visible step summaries", () => {
+  const vm = surfaceVm();
+  const firstStep = vm.page_vms.replay.steps[0]!;
+  vm.page_vms.replay.steps = [
+    {
+      ...firstStep,
+      phase: "tool_result",
+      tool_name: "read_project_file",
+      output_excerpt: undefined
+    }
+  ];
+
+  const replay = renderGoldPathSurface(vm, "web").pages.find((page) => page.key === "replay");
+
+  assert.equal(replay?.html.includes("工具结果"), true);
+  // R9.7 review: falling back to raw `tool_name` made machine ids visible in the old
+  // replay surface; the fallback must be localized user copy instead.
+  assert.equal(replay?.html.includes("read_project_file"), false);
+  assert.equal(replay?.html.includes("工具已返回，AI 正在整理下一步。"), true);
 });
 
 test("gold path proposal page hides model self narration titles", () => {
@@ -425,6 +505,8 @@ test("replay page explains merge decisions with bilingual candidate labels", () 
   assert.equal(zhReplay?.html.includes("data-text-diff3-auto-merge=\"false\""), true);
   assert.equal(zhReplay?.html.includes("data-text-diff3-conflict-hunks=\"1\""), true);
   assert.equal(zhReplay?.html.includes("data-text-diff3-conflict-ranges=\"2\""), true);
+  assert.equal(zhReplay?.html.includes(">2026-06-05T00:00:00.000Z<"), false);
+  assert.equal(zhReplay?.html.includes(">2026-06-05 00:00<"), true);
   assert.equal(zhReplay?.html.includes("data-overlap-risk=\"requires_review\""), true);
   assert.equal(zhReplay?.html.includes("改动预览"), true);
   assert.equal(zhReplay?.html.includes("文本合并检查"), true);
@@ -492,4 +574,40 @@ test("gold path cost page renders the K5 work-vs-self-improvement labor split wh
   // 无 labor_split 时不渲染该卡。
   const plain = renderGoldPathSurface(base as unknown as GoldPathSurfaceVM, "desktop").pages.find((page) => page.key === "cost");
   assert.equal(plain?.html.includes('data-r8-cost-labor-split="true"'), false);
+});
+
+test("gold path cost page formats CNY values and hides raw budget status", () => {
+  const base = surfaceVm();
+  const risk = base.page_vms.cost.top_exhaustion_risks[0];
+  assert.ok(risk);
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: {
+        ...base.page_vms.cost,
+        total_cost_cny: "1.250000",
+        labor_split: {
+          production_cost_cny: "0.800000",
+          self_improvement_cost_cny: "0.006",
+          self_improvement_ratio: 0.2
+        },
+        notices: [{ ...base.page_vms.cost.notices[0]!, severity: "warning" }],
+        top_exhaustion_risks: [{ ...risk, status: "warning" }]
+      }
+    }
+  } as unknown as GoldPathSurfaceVM;
+
+  const cost = renderGoldPathSurface(vm, "desktop", { locale: "zh-CN" }).pages.find((page) => page.key === "cost");
+
+  assert.ok(cost);
+  assert.equal(cost.html.includes("¥1.250000"), false);
+  assert.equal(cost.html.includes("¥0.800000"), false);
+  assert.equal(cost.html.includes("¥0.006"), false);
+  assert.equal(cost.html.includes("<strong>warning</strong>"), false);
+  assert.equal(cost.html.includes("<p class=\"wh-subtle\">warning</p>"), false);
+  assert.equal(cost.html.includes("¥1.25"), true);
+  assert.equal(cost.html.includes("干活 ¥0.8 · 自进化 ¥0.01"), true);
+  assert.equal(cost.html.includes("<strong>接近上限</strong>"), true);
+  assert.equal(cost.html.includes("<p class=\"wh-subtle\">接近上限</p>"), true);
 });

@@ -14,6 +14,7 @@ import {
   type DriveVersionRow,
   type WorkItemClarificationAnswerRow,
   type StoredWorkItemDetailRows,
+  type TaskPlanWithItems,
   type WorkItemDataRepository,
   type WorkItemAgentStepRow,
   type WorkItemKnowledgeDocumentRow,
@@ -27,6 +28,8 @@ import {
   deliverableChangeManifestSchema,
   evidenceRefSchema,
   sessionVmSchema,
+  workItemAgentTeamVmSchema,
+  taskPlanVmSchema,
   workItemDetailVmSchema,
   workItemPrioritySchema,
   type AgentStep,
@@ -39,6 +42,8 @@ import {
   type NextQuestionRequest,
   type QuestionCard,
   type SessionVM,
+  type TaskPlanVM,
+  type WorkItemAgentTeamVM,
   type UseEvidenceForTaskRequest,
   type WorkItem,
   type WorkItemDetailVM,
@@ -116,6 +121,7 @@ export type WorkItemService = {
   // routes-a-2/routes-b-1/services-a-2/xlink-authz-4/ux-web-govern-6：审批中心可见性判定此前借用 detailPage
   // （整页 VM 装配：assignments/proposals/acceptance/agent trace 等一堆 join）只为算一个 boolean，且逐行调用无
   // 去重。改成批量、轻量的访问记录判定——一次 IN 查询把一批 workItemId 的可见性判完，返回可读的那部分 id 集合。
+  projectNamesForWorkItems: (input: { workItemIds: string[]; actor: AuthActor }) => Promise<Map<string, string>>;
   canReadWorkItems: (input: {
     workItemIds: string[];
     actor: AuthActor;
@@ -169,6 +175,8 @@ export type ClarificationQuestionDraft = {
   title: string;
   body?: string | undefined;
   placeholder?: string | undefined;
+  options?: Array<{ id?: string | undefined; label: string; description?: string | undefined }> | undefined;
+  recommended_option_id?: string | undefined;
 };
 
 type ClarificationQuestionInput = {
@@ -257,9 +265,9 @@ type WorkItemCopyKey =
 const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
   "zh-CN": {
     "question.confirm.title": "是否按这个方向创建事项？",
-    "question.confirm.body": "点确认后会进入可执行事项；如果需要更多依据，可以先去检索项目证据。",
+    "question.confirm.body": "确认后会按下面的方向创建事项。",
     "question.confirm.create.label": "创建事项",
-    "question.confirm.create.description": "进入 AI 可施工的 spec_ready 状态。",
+    "question.confirm.create.description": "确认后，事项会进入可执行状态，AI 可以继续处理。",
     "question.confirm.evidence.label": "先找证据",
     "question.confirm.evidence.description": "先从项目历史、文档和事项里找依据。",
     "question.confirm.adjust.label": "调整范围",
@@ -294,9 +302,9 @@ const workItemCopy: Record<WorkHubLocale, Record<WorkItemCopyKey, string>> = {
   },
   "en-US": {
     "question.confirm.title": "Create the work item with this direction?",
-    "question.confirm.body": "Confirming turns this into executable work. If more support is needed, search project evidence first.",
+    "question.confirm.body": "Confirming creates the work item with the direction below.",
     "question.confirm.create.label": "Create work item",
-    "question.confirm.create.description": "Move into the spec_ready state so AI can start work.",
+    "question.confirm.create.description": "After confirmation, the work item becomes executable so AI can continue.",
     "question.confirm.evidence.label": "Find evidence first",
     "question.confirm.evidence.description": "Search project history, documents, and related work first.",
     "question.confirm.adjust.label": "Adjust scope",
@@ -463,10 +471,21 @@ function titleFromIntent(intentText: string | undefined) {
   return compact ?? "待澄清事项";
 }
 
+// R10-0c：澄清草稿升级为「选项优先」契约——LLM 给出 2-4 个可点选的具体答案候选（含推荐项），
+// 自由文本降级为折叠兜底（page-concepts §Option Cards 的产品承诺）。旧存量草稿无 options，
+// 渲染端自动退化为长文本，不炸。
+const clarificationOptionSchema = z.object({
+  id: z.string().trim().min(1).max(64).optional(),
+  label: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(200).optional()
+});
+
 const clarificationQuestionDraftSchema = z.object({
   title: z.string().trim().min(2).max(160),
   body: z.string().trim().max(900).optional(),
-  placeholder: z.string().trim().max(180).optional()
+  placeholder: z.string().trim().max(180).optional(),
+  options: z.array(clarificationOptionSchema).max(4).optional(),
+  recommended_option_id: z.string().trim().min(1).max(64).optional()
 });
 
 const CLARIFICATION_LLM_MAX_TOKENS = 1_600;
@@ -565,10 +584,35 @@ function clarificationDraftFromRawJson(raw: unknown, locale: WorkHubLocale): Cla
   if (!title) {
     throw invalidClarificationResponseError(locale);
   }
+  // R10-0c：选项候选——LLM 返回 options 数组时逐条收口（label 必填、截断、最多 4 条、id 缺省按序补）。
+  // 解析失败不整体拒稿：选项是增强，退化为无选项长文本仍是合法草稿。
+  const rawOptions = raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>)["options"])
+    ? ((raw as Record<string, unknown>)["options"] as unknown[])
+    : [];
+  const options = rawOptions
+    .map((entry, index) => {
+      if (!entry || typeof entry !== "object") {
+        return undefined;
+      }
+      const record = entry as Record<string, unknown>;
+      const label = compactText(typeof record["label"] === "string" ? record["label"] : undefined, 80);
+      if (!label) {
+        return undefined;
+      }
+      const id = compactText(typeof record["id"] === "string" ? record["id"] : undefined, 64) ?? `option-${index + 1}`;
+      const description = compactText(typeof record["description"] === "string" ? record["description"] : undefined, 200);
+      return { id, label, ...(description ? { description } : {}) };
+    })
+    .filter((entry): entry is { id: string; label: string; description?: string } => Boolean(entry))
+    .slice(0, 4);
+  const recommendedRaw = raw && typeof raw === "object" ? (raw as Record<string, unknown>)["recommended_option_id"] : undefined;
+  const recommended = compactText(typeof recommendedRaw === "string" ? recommendedRaw : undefined, 64);
   const draft = {
     title,
     body: questionText ? compactText(bodyText, 900) : undefined,
-    placeholder: compactText(pickClarificationTextField(raw, ["placeholder"]), 180)
+    placeholder: compactText(pickClarificationTextField(raw, ["placeholder"]), 180),
+    ...(options.length >= 2 ? { options } : {}),
+    ...(options.length >= 2 && recommended && options.some((option) => option.id === recommended) ? { recommended_option_id: recommended } : {})
   };
   const parsed = clarificationQuestionDraftSchema.safeParse(draft);
   if (!parsed.success) {
@@ -601,10 +645,16 @@ function normalizeClarificationDraft(
   }
   const body = compactText(parsed.data.body, 900);
   const placeholder = compactText(parsed.data.placeholder, 180);
+  const options = (parsed.data.options ?? []).length >= 2 ? parsed.data.options : undefined;
+  const recommended = options && parsed.data.recommended_option_id && options.some((option) => (option.id ?? "") === parsed.data.recommended_option_id)
+    ? parsed.data.recommended_option_id
+    : undefined;
   return {
     title: parsed.data.title,
     ...(body ? { body } : {}),
-    ...(placeholder ? { placeholder } : {})
+    ...(placeholder ? { placeholder } : {}),
+    ...(options ? { options } : {}),
+    ...(recommended ? { recommended_option_id: recommended } : {})
   };
 }
 
@@ -726,14 +776,30 @@ function missingDriveTargetFileNames(input: { intentText: string | undefined; fi
   return targets.filter((target) => !input.files.some((file) => driveContextMatchesTarget(file, target)));
 }
 
-async function fileContextFromDriveRows(rows: DrivePageRows, intentText: string | undefined): Promise<ClarificationFileContext[]> {
+export async function fileContextFromDriveRows(rows: DrivePageRows, intentText: string | undefined): Promise<ClarificationFileContext[]> {
   const itemsById = new Map(rows.items.map((item) => [item.id, item]));
+  const namedTargets = driveTargetFileNamesFromIntent(intentText);
+  // R10-0c（P1-1 根因）：用户没点名文件且与当前意图零相关（score=0）的旧项目文件，不再送进澄清
+  // 上下文——此前相关性全 0 时按原始顺序取前 12 个旧文件，LLM 会拿它们把全新任务带偏成历史任务。
+  // 点名的文件（namedTargets）始终保留；一个相关文件都没有时宁可空上下文，让反问只围绕用户意图。
   const fileItems = rows.items
     .filter((item) => item.kind === "file")
-    .map((item, index) => ({ item, index, path: driveItemPath(item, itemsById) }))
+    .map((item, index) => {
+      const path = driveItemPath(item, itemsById);
+      return {
+        item,
+        index,
+        path,
+        score: driveFileRelevanceScore({ item, path, intentText }),
+        named: namedTargets.some((target) => {
+          const pathName = path.split(/[\\/]/u).pop()?.toLowerCase();
+          return item.name.toLowerCase() === target.toLowerCase() || pathName === target.toLowerCase();
+        })
+      };
+    })
+    .filter((entry) => entry.named || entry.score > 0)
     .sort((left, right) => {
-      const byRelevance = driveFileRelevanceScore({ item: right.item, path: right.path, intentText })
-        - driveFileRelevanceScore({ item: left.item, path: left.path, intentText });
+      const byRelevance = (right.named ? 1000 : right.score) - (left.named ? 1000 : left.score);
       return byRelevance || left.index - right.index;
     })
     .slice(0, 12);
@@ -823,10 +889,13 @@ function clarificationPrompt(input: ClarificationQuestionInput) {
       ? "请根据用户需求和项目文件，生成一个真正需要用户补充的澄清反问。"
       : "Generate one useful clarification question from the user's request and project files.",
     "Return strict JSON only:",
-    `{"title":"...","body":"...","placeholder":"..."}`,
+    `{"title":"...","body":"...","placeholder":"...","options":[{"id":"option-1","label":"...","description":"..."}],"recommended_option_id":"option-1"}`,
     zh
       ? "规则：只问一个问题；不要问预设交付方式；不要使用“需要确认一个关键点”这类泛化标题；反问必须引用用户需求或项目文件中的具体信息；优先围绕文件依据、验收口径、目标读者、缺失输入；如果信息足够，就让用户确认你将采用的文件和假设；使用中文。"
       : "Rules: ask exactly one question; do not ask for a preset delivery type; do not use generic titles like 'One key detail to confirm'; the question must reference concrete information from the user request or project files; prioritize source file, acceptance criteria, audience, or missing input; if enough information exists, ask the user to confirm the file and assumptions; use English.",
+    zh
+      ? "options 规则：给出 2-4 个针对这个问题的具体候选答案（不是交付类型），每条 label ≤ 20 字、description 一句话说明影响；把最合理的一条设为 recommended_option_id。候选必须来自用户需求或文件里的真实信息，凑不出 2 条有区分度的就返回空数组。"
+      : "Options rules: provide 2-4 concrete candidate answers to this exact question (not delivery types); label ≤ 8 words, description one sentence on the consequence; set recommended_option_id to the most sensible one. Candidates must come from real information in the request or files — return an empty array if you cannot form 2 distinct ones.",
     "",
     `Request:\n${intent}`,
     "",
@@ -1135,7 +1204,9 @@ function evidenceRefFromWorkItem(row: WorkItemRow): EvidenceRef {
     source_id: row.code,
     title: row.title ?? row.code,
     confidence_hint: "found",
-    href: `/api/pages/workitems/${row.id}`
+    // R10-P1-3：证据出处要打开产品页，不是 JSON Page VM——web SPA 按 /workitems/:id 导航，
+    // 桌面 Spotlight 也按同一形状正则解析做内联 morph（dashboards.ts data-know-ref 分支）。
+    href: `/workitems/${row.id}`
   };
   const excerpt = compactText(row.summaryMd ?? row.rawDescription);
   if (excerpt) {
@@ -1193,6 +1264,193 @@ function evidenceRefsFromBindings(rows: StoredWorkItemDetailRows["evidenceBindin
     }
   }
   return refs;
+}
+
+function taskPlanToVm(rows: TaskPlanWithItems | null | undefined): TaskPlanVM | undefined {
+  if (!rows) {
+    return undefined;
+  }
+  return parseOutputContract(taskPlanVmSchema, {
+    id: rows.plan.id,
+    work_item_id: rows.plan.workItemId,
+    workspace_id: rows.plan.workspaceId,
+    status: rows.plan.status,
+    objective_id: rows.plan.objectiveId,
+    budget_json: rows.plan.budgetJson,
+    decomposition_context_json: rows.plan.decompositionContextJson,
+    created_by: rows.plan.createdByUserId,
+    created_at: rows.plan.createdAt.toISOString(),
+    updated_at: rows.plan.updatedAt.toISOString(),
+    items: rows.items.map((item) => ({
+      id: item.id,
+      plan_id: item.planId,
+      parent_item_id: item.parentItemId,
+      seq: item.seq,
+      title: item.title,
+      role: item.role,
+      objective_md: item.objectiveMd,
+      acceptance_md: item.acceptanceMd,
+      budget_share_pct: item.budgetSharePct,
+      depends_on: item.dependsOn,
+      status: item.status,
+      created_at: item.createdAt.toISOString(),
+      updated_at: item.updatedAt.toISOString()
+    })),
+    items_capped: rows.itemsCapped
+  }, "work-item.task-plan");
+}
+
+type TaskPlanRunForTeam = NonNullable<TaskPlanWithItems["runs"]>[number];
+
+function parseCostCny(value: string | null | undefined) {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function formatCostCny(value: number) {
+  return value.toFixed(6);
+}
+
+function costBudgetFromPlan(rows: TaskPlanWithItems) {
+  const value = rows.plan.budgetJson["max_cost_cny"];
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return formatCostCny(value);
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) && parsed > 0 ? formatCostCny(parsed) : undefined;
+  }
+  return undefined;
+}
+
+function latestRunByTaskPlanItem(runs: TaskPlanRunForTeam[]) {
+  const result = new Map<string, TaskPlanRunForTeam>();
+  for (const run of runs) {
+    if (run.taskPlanItemId) {
+      result.set(run.taskPlanItemId, run);
+    }
+  }
+  return result;
+}
+
+function agentTeamItemStatus(
+  item: TaskPlanWithItems["items"][number],
+  run: TaskPlanRunForTeam | undefined
+): WorkItemAgentTeamVM["items"][number]["status"] {
+  if (run?.status === "escalated") {
+    return "needs_human";
+  }
+  if (run?.status === "queued" || run?.status === "running") {
+    return "dispatched";
+  }
+  if (run?.status === "succeeded") {
+    return "succeeded";
+  }
+  if (run?.status === "failed" || run?.status === "cancelled") {
+    return "failed";
+  }
+  if (item.status === "dispatched") {
+    return "dispatched";
+  }
+  if (item.status === "succeeded" || item.status === "failed" || item.status === "skipped") {
+    return item.status;
+  }
+  return "pending";
+}
+
+function taskPlanAgentTeamToVm(
+  rows: TaskPlanWithItems | null | undefined,
+  locale: WorkHubLocale = "zh-CN"
+): WorkItemAgentTeamVM | undefined {
+  if (!rows) {
+    return undefined;
+  }
+  const runs = (rows.runs ?? []).filter((run) =>
+    run.workspaceId === rows.plan.workspaceId
+    && run.workItemId === rows.plan.workItemId
+    && run.taskPlanId === rows.plan.id
+  );
+  const latestByItem = latestRunByTaskPlanItem(runs);
+  const displaySeqByItemId = new Map(rows.items.map((item, index) => [item.id, index + 1]));
+  const completedCount = rows.items.filter((item) => item.status === "succeeded").length;
+  const costUsed = runs.reduce((sum, run) => sum + parseCostCny(run.costEstimate), 0);
+  const costBudget = costBudgetFromPlan(rows);
+  const costBudgetNumber = costBudget ? Number.parseFloat(costBudget) : undefined;
+  const costBurnPct = costBudgetNumber && costBudgetNumber > 0
+    ? Math.round((costUsed / costBudgetNumber) * 100)
+    : undefined;
+  const viewLabel = locale === "zh-CN" ? "看产出" : "View output";
+  const decideLabel = locale === "zh-CN" ? "去决策" : "Decide";
+  // B-R9.6 §3.1：暂停/恢复派发控制。dispatching/approved 可暂停，paused 可恢复，终态无控制。
+  const dispatchControl = rows.plan.status === "dispatching" || rows.plan.status === "approved"
+    ? {
+      kind: "pause" as const,
+      label: locale === "zh-CN" ? "暂停派发" : "Pause dispatch",
+      href: `/api/task-plans/${rows.plan.id}/pause`,
+      method: "POST" as const
+    }
+    : rows.plan.status === "paused"
+      ? {
+        kind: "resume" as const,
+        label: locale === "zh-CN" ? "恢复派发" : "Resume dispatch",
+        href: `/api/task-plans/${rows.plan.id}/resume`,
+        method: "POST" as const
+      }
+      : undefined;
+
+  return parseOutputContract(workItemAgentTeamVmSchema, {
+    plan_id: rows.plan.id,
+    status: rows.plan.status,
+    completed_count: completedCount,
+    total_count: rows.items.length,
+    cost_used_cny: formatCostCny(costUsed),
+    ...(costBudget ? { cost_budget_cny: costBudget } : {}),
+    ...(costBurnPct !== undefined ? { cost_burn_pct: costBurnPct } : {}),
+    runs_capped: rows.runsCapped ?? false,
+    ...(dispatchControl ? { dispatch_control: dispatchControl } : {}),
+    items: rows.items.map((item, index) => {
+      const displaySeq = index + 1;
+      const run = latestByItem.get(item.id);
+      const status = agentTeamItemStatus(item, run);
+      const replayHref = run ? `/agent-runs/${run.id}/replay` : undefined;
+      const decisionHref = status === "needs_human" || status === "failed" ? "/attention" : undefined;
+      const waitingForSeq = item.dependsOn
+        .filter((id) => {
+          const dependency = rows.items.find((candidate) => candidate.id === id);
+          return dependency && dependency.status !== "succeeded";
+        })
+        .map((id) => displaySeqByItemId.get(id))
+        .filter((seq): seq is number => Boolean(seq));
+      return {
+        task_plan_item_id: item.id,
+        seq: displaySeq,
+        title: item.title,
+        role: item.role,
+        plan_status: item.status,
+        status,
+        budget_share_pct: item.budgetSharePct,
+        depends_on: item.dependsOn,
+        waiting_for_seq: waitingForSeq,
+        ...(run?.costEstimate ? { cost_estimate_cny: run.costEstimate } : {}),
+        ...(run ? {
+          run_id: run.id,
+          run_workspace_id: run.workspaceId,
+          ...(run.parentRunId ? { parent_run_id: run.parentRunId } : {}),
+          run_status: run.status,
+          replay_href: replayHref
+        } : {}),
+        ...(decisionHref ? { decision_href: decisionHref } : {}),
+        ...(status === "succeeded" && replayHref
+          ? { action: { kind: "view_output" as const, label: viewLabel, href: replayHref } }
+          : decisionHref
+            ? { action: { kind: "decide" as const, label: decideLabel, href: decisionHref } }
+            : {})
+      };
+    })
+  }, "work-item.agent-team");
 }
 
 function buildWorkItemDetail(
@@ -1265,6 +1523,8 @@ function buildWorkItemDetail(
     }
     : undefined;
   const sourceContext = driveSourceContext ?? meetingSourceContext;
+  const taskPlan = taskPlanToVm(rows.taskPlan);
+  const agentTeam = taskPlanAgentTeamToVm(rows.taskPlan, locale);
   const canCreateSourceProposal = sourceContext
     && !latestProposalId
     && (sourceContext.source_type === "drive_comment"
@@ -1302,7 +1562,19 @@ function buildWorkItemDetail(
         : acceptedDeliverableToVm(row, { includeRestore: options.includeAcceptedDeliverableRestore })
     ),
     evidence_refs: evidenceRefsFromBindings(rows.evidenceBindings),
+    ...(taskPlan ? { task_plan: taskPlan } : {}),
+    ...(agentTeam ? { agent_team: agentTeam } : {}),
     ...(sourceContext ? { source_context: sourceContext } : {}),
+    // R6（信任 high）：置信评级最后一公里——后端早已按 run 落库，详情页此前只透传 opaque id。
+    ...(rows.latestConfidence && (rows.latestConfidence.verdict === "auto_merge" || rows.latestConfidence.verdict === "human_spotcheck" || rows.latestConfidence.verdict === "escalate")
+      ? { confidence: { score: rows.latestConfidence.confidenceScore, grade: rows.latestConfidence.grade, verdict: rows.latestConfidence.verdict } }
+      : {}),
+    approval_decisions: (rows.approvalDecisions ?? []).map((decision) => ({
+      id: decision.id,
+      decision: decision.status,
+      ...(decision.decisionReasonMd ? { reason_md: decision.decisionReasonMd.slice(0, 300) } : {}),
+      decided_at: decision.updatedAt.toISOString()
+    })),
     actions: {
       ...(createProposalAction ? { create_proposal_draft: createProposalAction } : {})
     }
@@ -1321,11 +1593,11 @@ function questionFor(
       session_id: workItem.id,
       work_item_id: workItem.id,
       title: workItemT(locale, "question.confirm.title"),
-      body: workItemT(locale, "question.confirm.body"),
+      // 普通用户审查 R2：问「是否按这个方向创建」却不给看方向——回显标题与需求原文摘要。
+      body: `${workItemT(locale, "question.confirm.body")}\n${locale === "en-US" ? "Direction" : "方向"}：${workItem.title}${workItem.rawDescription ? `\n${(workItem.rawDescription ?? "").slice(0, 280)}` : ""}`,
       input_mode: "confirm",
       options: [
         { id: "create-workitem", label: workItemT(locale, "question.confirm.create.label"), description: workItemT(locale, "question.confirm.create.description"), icon: "check" },
-        { id: "search-evidence-first", label: workItemT(locale, "question.confirm.evidence.label"), description: workItemT(locale, "question.confirm.evidence.description"), icon: "search" },
         { id: "adjust-scope", label: workItemT(locale, "question.confirm.adjust.label"), description: workItemT(locale, "question.confirm.adjust.description"), icon: "sliders" }
       ],
       recommended_option_ids: ["create-workitem"],
@@ -1369,18 +1641,27 @@ function questionFor(
       locale
     })
   );
+  // R10-0c（P1-1 契约）：首轮澄清落实「选项优先」——LLM 草稿带 ≥2 个候选答案时渲 single_choice
+  // 选项卡（自由文本折叠为兜底）；没有可用候选时诚实退化为长文本（不造假选项）。
+  const scopeOptions = (draft.options ?? [])
+    .map((option, index) => ({
+      id: option.id ?? `option-${index + 1}`,
+      label: option.label,
+      ...(option.description ? { description: option.description } : {})
+    }));
+  const optionFirst = scopeOptions.length >= 2;
   const question: QuestionCard = {
     id: stableUuid(`${workItem.id}:question:scope`),
     session_id: workItem.id,
     work_item_id: workItem.id,
     title: draft.title,
     ...(draft.body ? { body: draft.body } : {}),
-    input_mode: "long_text",
-    options: [],
-    recommended_option_ids: [],
+    input_mode: optionFirst ? "single_choice" : "long_text",
+    options: optionFirst ? scopeOptions : [],
+    recommended_option_ids: optionFirst && draft.recommended_option_id ? [draft.recommended_option_id] : [],
     free_text: {
       enabled: true,
-      collapsed_by_default: false,
+      collapsed_by_default: optionFirst,
       placeholder: draft.placeholder ?? workItemT(locale, "question.clarify.placeholder"),
       max_length: 1000
     },
@@ -1476,6 +1757,24 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
   // 一次 findWorkItemAccessRecords（IN 查询 workItems + IN 查询 assignments，两次往返，不管 workItemIds 有多少个）
   // 换掉此前审批中心每行一次 detailPage（整页 VM：assignments/proposals/acceptance/agent trace 等 ~10 条查询）。
   // 找不到的 workItemId 不算可见（fail-closed，与 detailPage 404→false 的旧行为一致）。
+  // R13（多项目一致性）：批量取「actor 可见工作项 → 项目名」——首页决策队列四路来源统一点名用。
+  // 复用同一次 findWorkItemAccessRecords，可见性判定与 canReadWorkItems 同口径。
+  async function projectNamesForWorkItems(input: { workItemIds: string[]; actor: AuthActor }): Promise<Map<string, string>> {
+    const uniqueIds = [...new Set(input.workItemIds)];
+    const names = new Map<string, string>();
+    if (uniqueIds.length === 0) {
+      return names;
+    }
+    const records = await repository.findWorkItemAccessRecords(uniqueIds);
+    for (const workItemId of uniqueIds) {
+      const record = records.get(workItemId);
+      if (record && canReadWorkItemAccessRow(record, input.actor) && record.project?.name) {
+        names.set(workItemId, record.project.name);
+      }
+    }
+    return names;
+  }
+
   async function canReadWorkItems(input: { workItemIds: string[]; actor: AuthActor }): Promise<Set<string>> {
     const uniqueIds = [...new Set(input.workItemIds)];
     if (uniqueIds.length === 0) {
@@ -1924,6 +2223,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
       });
     },
 
+    projectNamesForWorkItems,
     canReadWorkItems,
 
     async assertCanMutateWorkItem(input) {
@@ -2308,6 +2608,11 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
 
     // In-memory fixture has no actor-based access model (requireWorkItem only checks existence) — mirror that:
     // any workItemId that exists in the map is "visible". Matches detailPage's lack of restriction above.
+    // 内存双不建模项目名——返回空 Map（首页点名优雅降级）。
+    async projectNamesForWorkItems() {
+      return new Map<string, string>();
+    },
+
     async canReadWorkItems(input) {
       return new Set(input.workItemIds.filter((id) => workItems.has(id)));
     },

@@ -2,14 +2,67 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { WorkHubApiError } from "@workhub/api-client/client";
-import type { ProposalConflict } from "@workhub/contracts";
+import type { AttentionHomeVM, ProposalConflict } from "@workhub/contracts";
 
 import {
   attentionCardDisplayTitle,
+  attentionTagLabelForKind,
   attentionConflictHtmlFromError,
   classifyAttentionActionHref,
+  createAttentionView,
+  resolveAttentionMemoryConflictAction,
   reviewAttentionProposalWithoutMerge
 } from "./attention.js";
+import type { SpotlightViewContext } from "../view-context.js";
+
+function tick() {
+  return new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+class FakeElement {
+  public dataset: Record<string, string> = {};
+  public textContent = "";
+  public disabled = false;
+  private readonly attributes = new Set<string>();
+
+  constructor(private readonly selectors = new Set<string>(), dataset: Record<string, string> = {}) {
+    this.dataset = dataset;
+  }
+
+  closest<T extends Element = Element>(selector: string): T | null {
+    return this.selectors.has(selector) ? (this as unknown as T) : null;
+  }
+
+  setAttribute(name: string) {
+    this.attributes.add(name);
+  }
+
+  removeAttribute(name: string) {
+    this.attributes.delete(name);
+  }
+}
+
+class FakeBody extends FakeElement {
+  public innerHTML = "";
+  private readonly clickListeners: Array<(event: { target: unknown; preventDefault: () => void }) => void> = [];
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    if (type !== "click") return;
+    this.clickListeners.push((event) => {
+      if (typeof listener === "function") {
+        listener(event as unknown as Event);
+      } else {
+        listener.handleEvent(event as unknown as Event);
+      }
+    });
+  }
+
+  click(target: FakeElement) {
+    for (const listener of this.clickListeners) {
+      listener({ target, preventDefault() {} });
+    }
+  }
+}
 
 test("classifyAttentionActionHref routes proposal/workitem detail hrefs to inline navigation (no dead button)", () => {
   // 对抗审查 HIGH:决策卡「查看变更」是 GET /proposals/:id,之前落到 runAction 末尾死 toast。现走 ctx.open。
@@ -58,6 +111,22 @@ test("attention proposal approval reviews only and never merges in the same clic
   assert.equal(result.attention.summary_text, "已确认通过");
 });
 
+test("attention sync-conflict actions resolve through the typed client", async () => {
+  const calls: unknown[] = [];
+  const result = await resolveAttentionMemoryConflictAction({
+    async resolveMemoryConflict(id: string, payload: unknown) {
+      calls.push({ id, payload });
+      return { attention: { summary_text: "偏好已确认" } };
+    }
+  }, "/api/memory-conflicts/conflict%202/resolve/merge_both?expected_updated_at=2026-07-03T10%3A40%3A00.000Z") as { attention: { summary_text: string } };
+
+  assert.deepEqual(calls, [{
+    id: "conflict 2",
+    payload: { resolution: "merge_both", expected_updated_at: "2026-07-03T10:40:00.000Z" }
+  }]);
+  assert.equal(result.attention.summary_text, "偏好已确认");
+});
+
 test("attention proposal review cards hide model self narration in their title", () => {
   assert.equal(
     attentionCardDisplayTitle({
@@ -73,6 +142,155 @@ test("attention proposal review cards hide model self narration in their title",
     }, true),
     "审批预算"
   );
+});
+
+test("attention escalation cards do not label retry/cancel actions as assignment", () => {
+  assert.equal(attentionTagLabelForKind("escalation", true), "需处理");
+  assert.equal(attentionTagLabelForKind("escalation", false), "Needs action");
+});
+
+test("desktop attention forwards locale to escalation and budget actions", async () => {
+  const globals = globalThis as typeof globalThis & { HTMLElement: typeof HTMLElement };
+  const previousHTMLElement = globals.HTMLElement;
+  globals.HTMLElement = FakeElement as unknown as typeof HTMLElement;
+  const body = new FakeBody();
+  const calls: unknown[] = [];
+  const vm = {
+    primary: undefined,
+    queue: [
+      {
+        id: "budget-1",
+        kind: "budget",
+        title: "Budget decision",
+        actions: [
+          {
+            id: "finish_current_output",
+            label: "Finish current output",
+            style: "primary",
+            method: "POST",
+            href: "/api/escalations/esc%201/budget-actions/finish_current_output"
+          }
+        ]
+      },
+      {
+        id: "escalation-1",
+        kind: "escalation",
+        title: "Worker needs help",
+        actions: [
+          {
+            id: "escalation_retry",
+            label: "Retry",
+            style: "primary",
+            method: "POST",
+            href: "/api/escalations/esc%202/resolve"
+          }
+        ]
+      }
+    ],
+    background_runs: [],
+    cuu_state: "worried"
+  } as unknown as AttentionHomeVM;
+
+  try {
+    await createAttentionView().mount({
+      body: body as unknown as HTMLElement,
+      locale: "en-US",
+      client: {
+        pages: {
+          async attention() {
+            return vm;
+          }
+        },
+        async resolveBudgetDecision(id: string, actionId: string, options: unknown) {
+          calls.push({ type: "budget", id, actionId, options });
+          return { attention: { summary_text: "Budget recorded" } };
+        },
+        async resolveEscalation(id: string, payload: unknown, options: unknown) {
+          calls.push({ type: "resolve", id, payload, options });
+          return { attention: { summary_text: "Escalation handled" } };
+        }
+      },
+      back() {},
+      open() {},
+      setSubtitle() {},
+      toast() {},
+      requestResize() {},
+    refocusBody() {},
+      signal: new AbortController().signal
+    } as unknown as SpotlightViewContext);
+    await tick();
+
+    body.click(new FakeElement(new Set(["[data-att-action-id]"]), {
+      attHref: "/api/escalations/esc%201/budget-actions/finish_current_output",
+      attActionId: "finish_current_output"
+    }));
+    await tick();
+    await tick();
+    body.click(new FakeElement(new Set(["[data-att-action-id]"]), {
+      attHref: "/api/escalations/esc%202/resolve",
+      attActionId: "escalation_retry"
+    }));
+    await tick();
+    await tick();
+
+    assert.deepEqual(calls, [
+      { type: "budget", id: "esc 1", actionId: "finish_current_output", options: { locale: "en-US" } },
+      { type: "resolve", id: "esc 2", payload: { action: "retry" }, options: { locale: "en-US" } }
+    ]);
+  } finally {
+    globals.HTMLElement = previousHTMLElement;
+  }
+});
+
+test("attention plan_review cards use explicit plan-review labels", () => {
+  assert.equal(attentionTagLabelForKind("plan_review", true), "计划审阅");
+  assert.equal(attentionTagLabelForKind("plan_review", false), "Plan review");
+});
+
+test("desktop attention view surfaces source warnings instead of showing all clear", async () => {
+  const body = {
+    innerHTML: "",
+    addEventListener() {}
+  } as unknown as HTMLElement;
+  const vm: AttentionHomeVM = {
+    primary: undefined,
+    queue: [],
+    source_warnings: [{
+      source: "approvals",
+      message: "Approval decisions could not be loaded. Open Approvals or retry."
+    }],
+    background_runs: [],
+    cuu_state: "worried"
+  };
+  let subtitle = "";
+
+  await createAttentionView().mount({
+    body,
+    locale: "en-US",
+    client: {
+      pages: {
+        async attention() {
+          return vm;
+        }
+      }
+    },
+    back() {},
+    open() {},
+    setSubtitle(text: string) {
+      subtitle = text;
+    },
+    toast() {},
+    requestResize() {},
+    refocusBody() {},
+    signal: new AbortController().signal
+  } as unknown as SpotlightViewContext);
+  await tick();
+
+  assert.match(body.innerHTML, /data-spot-attention-source-warnings="1"/u);
+  assert.match(body.innerHTML, /data-spot-attention-source-warning="approvals"/u);
+  assert.match(body.innerHTML, /Approval decisions could not be loaded/u);
+  assert.doesNotMatch(body.innerHTML, /All clear/u);
+  assert.notEqual(subtitle, "all done");
 });
 
 test("attention proposal merge conflict renders actionable choices instead of a generic failure", () => {
@@ -124,8 +342,51 @@ test("attention proposal merge conflict renders actionable choices instead of a 
   );
 
   assert.match(html ?? "", /data-prop-conflict-panel="true"/u);
-  assert.match(html ?? "", /这份变更撞车了/u);
+  assert.match(html ?? "", /这份变更和别人的改动冲突了/u);
   assert.match(html ?? "", /保留正式版/u);
   assert.match(html ?? "", /href="\/proposals\/proposal-1"/u);
   assert.match(html ?? "", /data-method="GET"/u);
+});
+
+// UX-M7（桌面死按钮）：「看 B 的出处」/「打开设置」/「查看预算」GET 导航路由到对应能力。
+test("classifyAttentionActionHref routes replay/settings/cost GET actions to capabilities", () => {
+  assert.deepEqual(classifyAttentionActionHref("/agent-runs/r-1/replay"), {
+    kind: "navigate",
+    view: "replay",
+    id: "r-1"
+  });
+  assert.deepEqual(classifyAttentionActionHref("/settings"), { kind: "navigate", view: "settings" });
+  assert.deepEqual(classifyAttentionActionHref("/dashboard/cost"), { kind: "navigate", view: "cost" });
+  assert.deepEqual(classifyAttentionActionHref("/api/memory-conflicts/c1/resolve/merge_both"), { kind: "submit" });
+});
+
+// UX-M6（桌面可编辑合并）：merge_both 提交带上编辑稿；非 merge 不带。
+test("resolveAttentionMemoryConflictAction forwards the edited merge draft as value_md", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    async resolveMemoryConflict(id: string, payload: unknown) {
+      calls.push({ id, payload });
+      return { attention: { summary_text: "已合并" } };
+    }
+  };
+  await resolveAttentionMemoryConflictAction(
+    client,
+    "/api/memory-conflicts/c1/resolve/merge_both?expected_updated_at=2026-07-03T10%3A40%3A00.000Z",
+    "  合并后的一条。  "
+  );
+  await resolveAttentionMemoryConflictAction(
+    client,
+    "/api/memory-conflicts/c1/resolve/discard_both?expected_updated_at=2026-07-03T10%3A40%3A00.000Z",
+    "不该带上的稿"
+  );
+  assert.deepEqual(calls, [
+    {
+      id: "c1",
+      payload: { resolution: "merge_both", expected_updated_at: "2026-07-03T10:40:00.000Z", value_md: "合并后的一条。" }
+    },
+    {
+      id: "c1",
+      payload: { resolution: "discard_both", expected_updated_at: "2026-07-03T10:40:00.000Z" }
+    }
+  ]);
 });

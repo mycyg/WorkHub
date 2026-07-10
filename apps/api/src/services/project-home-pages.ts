@@ -2,6 +2,7 @@
 // 访问按 canViewProjectDrive 收口(与网盘同一道项目级 fence)；归档/已删项目 findProjectById 返回 null → 404。
 import {
   createDriveRepository,
+  createTaskPlanRepository,
   createWorkItemRepository,
   getSharedDatabaseClient,
   type DriveRepository,
@@ -25,6 +26,8 @@ export type ProjectHomePageService = {
 export type ProjectHomePageServiceDependencies = {
   repo: Pick<WorkItemDataRepository, "findProjectById" | "listOpenByProject" | "countOpenByProject" | "countVisibleOpenByProject" | "findWorkItemAccessRecords">;
   driveRepo: Pick<DriveRepository, "listRecentFilesByProject" | "countFilesByProject">;
+  // B-R9.6 §3.4：军团 pill 数据源（可选注入——缺省时行尾不渲 pill，页面其余部分不受影响）。
+  taskPlans?: Pick<ReturnType<typeof createTaskPlanRepository>, "listArmyProgressByWorkItemIds">;
   now?: () => Date;
 };
 
@@ -148,6 +151,19 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
         );
       });
       const viewableItems = visibleOpenItems.slice(0, OPEN_WORK_ITEM_LIMIT);
+      // B-R9.6 §3.4：军团工作项行尾 pill。军团进度是展示增强，取数失败不拖垮项目主页。
+      let armyProgress = new Map<string, { planId: string; doneItems: number; totalItems: number }>();
+      const armyWorkspaceId = project.workspaceId ?? actor.workspaceId;
+      if (deps.taskPlans && armyWorkspaceId && viewableItems.length > 0) {
+        try {
+          armyProgress = await deps.taskPlans.listArmyProgressByWorkItemIds({
+            workspaceId: armyWorkspaceId,
+            workItemIds: viewableItems.map((item) => item.id)
+          });
+        } catch {
+          armyProgress = new Map();
+        }
+      }
       const data: ProjectHomePageVM = {
         generated_at: now().toISOString(),
         project: {
@@ -172,14 +188,18 @@ export function createProjectHomePageService(deps: ProjectHomePageServiceDepende
             href: `${driveHref}&item_id=${encodeURIComponent(file.id)}`
           }))
         },
-        open_work_items: viewableItems.map((item) => ({
-          id: item.id,
-          code: item.code,
-          title: item.title ?? item.code,
-          status: item.status,
-          priority: item.priority,
-          href: `/workitems/${encodeURIComponent(item.id)}`
-        })),
+        open_work_items: viewableItems.map((item) => {
+          const army = armyProgress.get(item.id);
+          return {
+            id: item.id,
+            code: item.code,
+            title: item.title ?? item.code,
+            status: item.status,
+            priority: item.priority,
+            href: `/workitems/${encodeURIComponent(item.id)}`,
+            ...(army ? { army: { done: army.doneItems, total: army.totalItems } } : {})
+          };
+        }),
         actions: {
           // 同 workspace 的新任务带项目上下文(/intake?project_id=)；只读跨 workspace 项目仍给通用 intake 入口，
           // 避免前端 action 合同变成 optional，也避免把新任务错误写回不可管理的项目。
@@ -205,7 +225,8 @@ export function getDefaultProjectHomePageService(): ProjectHomePageService {
     defaultProjectHomeDbClient = getSharedDatabaseClient();
     defaultProjectHomePageService = createProjectHomePageService({
       repo: createWorkItemRepository(defaultProjectHomeDbClient.db),
-      driveRepo: createDriveRepository(defaultProjectHomeDbClient.db)
+      driveRepo: createDriveRepository(defaultProjectHomeDbClient.db),
+      taskPlans: createTaskPlanRepository(defaultProjectHomeDbClient.db)
     });
   }
   return defaultProjectHomePageService;

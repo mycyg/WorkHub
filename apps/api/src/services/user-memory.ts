@@ -39,6 +39,7 @@ export function buildUserMemoryPromptSection(rows: UserMemoryRow[]): string {
 // WRITE 规则：用户打回(request_changes)并写了原因 → 存为 correction 记忆（v0 无 LLM 蒸馏）。
 export function correctionFromReview(input: {
   reviewerUserId?: string | null;
+  workspaceId?: string;
   decision: "approve" | "request_changes";
   reasonMd?: string | undefined;
   proposalId: string;
@@ -52,6 +53,7 @@ export function correctionFromReview(input: {
   }
   return {
     userId: input.reviewerUserId,
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
     category: "correction",
     key: `proposal:${input.proposalId}`,
     valueMd: reason.length > 400 ? `${reason.slice(0, 400)}…` : reason,
@@ -70,18 +72,25 @@ export function getDefaultUserMemoryRepository(): UserMemoryRepository {
   return defaultRepository;
 }
 
-export type UserMemoryContextProvider = (run: { actor_id: string }) => Promise<string | undefined>;
+export type UserMemoryContextProvider = (run: { actor_id: string; workspace_id?: string }) => Promise<string | undefined>;
 
 // 给 agent-runner 用的默认提供者：取该用户 top-N 记忆、touch 之、拼成 prompt 段。失败静默降级。
 export function getDefaultUserMemoryContextProvider(): UserMemoryContextProvider {
   return async (run) => {
     try {
       const repository = getDefaultUserMemoryRepository();
-      const rows = await repository.listForUser(run.actor_id, { limit: USER_MEMORY_PROMPT_TOP_N });
+      const rows = await repository.listForUser(run.actor_id, {
+        limit: USER_MEMORY_PROMPT_TOP_N,
+        ...(run.workspace_id ? { workspaceId: run.workspace_id } : {})
+      });
       if (rows.length === 0) {
         return undefined;
       }
-      await repository.touch(rows.map((row) => row.id));
+      await repository.touch(
+        rows.map((row) => row.id),
+        undefined,
+        run.workspace_id ? { workspaceId: run.workspace_id } : undefined
+      );
       return buildUserMemoryPromptSection(rows);
     } catch {
       return undefined;

@@ -169,3 +169,59 @@ test("Cuu controller normalizes desktop pet window preferences", () => {
   assert.equal(normalized.preferences.pet_hide_on_hover, false);
   assert.equal(normalized.preferences.pet_model_pack_id, undefined);
 });
+
+test("B-R9.0 bubble throttle keeps one bubble per work item inside the 5-minute window", () => {
+  // ux-flow-spec §3.7 频率纪律：同一 plan（宿主工作项）的气泡 5 分钟窗口内只冒最高优先级一条，
+  // 其余降级角标——收件箱仍有卡，桌宠不连环弹。
+  let clock = 0;
+  const controller = createCuuController({ now: () => clock });
+  const workItemId = "96000000-0000-4000-8000-000000000901";
+  const bubble = (id: string, priority: CuuCard["priority"]): CuuCard => ({
+    ...card({ id, priority, state: "worried" }),
+    source: { entity_type: "escalation_event", entity_id: id, work_item_id: workItemId }
+  });
+
+  const first = controller.enqueue(bubble("esc-1", "high"));
+  assert.equal(first.outcome, "show");
+
+  clock += 60_000;
+  const second = controller.enqueue(bubble("esc-2", "high"));
+  assert.equal(second.outcome, "badge");
+  assert.equal(second.reason, "bubble_throttled");
+  assert.equal(controller.snapshot().badge_count, 1);
+
+  // 更高优先级在窗口内照常放行（只冒最高优先级一条）。
+  clock += 60_000;
+  const urgent = controller.enqueue(bubble("esc-3", "urgent"));
+  assert.equal(urgent.outcome, "replace");
+
+  // 窗口过期后恢复正常冒泡。
+  clock += 5 * 60_000 + 1;
+  const later = controller.enqueue(bubble("esc-4", "high"));
+  assert.equal(later.outcome, "queue");
+  assert.notEqual(later.reason, "bubble_throttled");
+});
+
+test("B-R9.0 bubble throttle scopes by work item and leaves non-bubble cards alone", () => {
+  let clock = 0;
+  const controller = createCuuController({ now: () => clock });
+  const bubbleFor = (id: string, workItemId: string): CuuCard => ({
+    ...card({ id, priority: "high", state: "worried" }),
+    source: { entity_type: "escalation_event", entity_id: id, work_item_id: workItemId }
+  });
+
+  assert.equal(controller.enqueue(bubbleFor("esc-a", "96000000-0000-4000-8000-000000000902")).outcome, "show");
+  // 不同工作项互不影响。
+  const other = controller.enqueue(bubbleFor("esc-b", "96000000-0000-4000-8000-000000000903"));
+  assert.equal(other.outcome, "queue");
+  assert.notEqual(other.reason, "bubble_throttled");
+
+  // 非 bubble 卡（如审批卡牌）不吃节流。
+  const approval: CuuCard = {
+    ...card({ id: "approval-1", priority: "high", state: "asking_approval" }),
+    kind: "approval",
+    source: { entity_type: "escalation_event", entity_id: "approval-1", work_item_id: "96000000-0000-4000-8000-000000000902" }
+  };
+  const decisionCard = controller.enqueue(approval);
+  assert.notEqual(decisionCard.reason, "bubble_throttled");
+});

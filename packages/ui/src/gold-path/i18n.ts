@@ -222,6 +222,10 @@ export type GoldPathCopyKey =
   | "runtime.rejectNeedsReason"
   | "runtime.rejectReasonFirst"
   | "runtime.actionPending"
+  | "runtime.actionInProgress"
+  | "runtime.logoutFailedBody"
+  | "runtime.notice.inProgressTitle"
+  | "runtime.notice.logoutFailedTitle"
   | "runtime.notice.actionSuccessTitle"
   | "runtime.notice.actionErrorTitle"
   | "runtime.notice.selectionTitle"
@@ -282,7 +286,7 @@ const goldPathCopy = {
     "intake.progressLabel": "澄清进度",
     "intake.otherSummary": "其他 / 补充",
     "intake.freeTextFallback": "需要时再补一句。",
-    "intake.continue": "继续",
+    "intake.continue": "继续澄清",
     "approvals.kicker": "审批中心",
     "approvals.emptyTitle": "没有等你点头的事啦 ٩(◜◡◝)۶",
     "approvals.reasonFallback": "这里只放需要你拍板的事，完整看板在后台保留。",
@@ -314,14 +318,14 @@ const goldPathCopy = {
     "approvals.reasonLabel": "意见说明",
     "approvals.reasonPlaceholder": "可填：补充说明审批理由",
     "approvals.rememberLabel": "以后同类审批自动通过",
-    "approvals.rememberHelp": "「同类」指相同动作类型的 AI 变更。这是一条只对你自己生效、持续有效的规则，下次起这类审批会被自动通过。",
+    "approvals.rememberHelp": "「同类」指相同动作类型的 AI 变更。这是一条只对你自己生效、持续有效的规则：通过时队列里已有的同类待审会一并通过，之后的也自动通过。",
     "workitem.kicker": "任务详情",
     "workitem.statusTitle": "状态",
     "workitem.deliverableTitle": "交付物",
     "workitem.emptyDeliverable": "暂无",
     "workitem.traceTitle": "AI 工作过程",
     "workitem.openProposal": "查看变更申请",
-    "workitem.openReplay": "看 AI 怎么做的",
+    "workitem.openReplay": "查看回放",
     "proposal.kicker": "变更申请",
     "proposal.riskTitle": "风险",
     "proposal.rollbackTitle": "回滚",
@@ -411,6 +415,10 @@ const goldPathCopy = {
     "runtime.rejectNeedsReason": "打回时请说明原因。先选一个原因，AI 会带着它继续改。",
     "runtime.rejectReasonFirst": "先选一个打回原因，AI 会在下一轮带上它继续改。",
     "runtime.actionPending": "这个功能还在开发中，暂时不可用。",
+    "runtime.actionInProgress": "正在处理，请稍候，别重复点击。处理结果会在这里提示。",
+    "runtime.logoutFailedBody": "网络或服务端出错，退出没有完成——这台设备上的登录可能仍然有效。请检查网络后再试一次；共享设备请务必重试到看到退出成功为止。",
+    "runtime.notice.inProgressTitle": "处理中",
+    "runtime.notice.logoutFailedTitle": "退出登录失败",
     "runtime.notice.actionSuccessTitle": "已提交",
     "runtime.notice.actionErrorTitle": "提交失败",
     "runtime.notice.selectionTitle": "已记录选择",
@@ -470,7 +478,7 @@ const goldPathCopy = {
     "intake.progressLabel": "clarification progress",
     "intake.otherSummary": "Other / add context",
     "intake.freeTextFallback": "Add a short note only when needed.",
-    "intake.continue": "Continue",
+    "intake.continue": "Continue intake",
     "approvals.kicker": "Approval center",
     "approvals.emptyTitle": "Nothing is waiting for your approval ٩(◜◡◝)۶",
     "approvals.reasonFallback": "Only user-blocking items appear here; the full board stays in the background.",
@@ -502,14 +510,14 @@ const goldPathCopy = {
     "approvals.reasonLabel": "Your note",
     "approvals.reasonPlaceholder": "Optional: explain your decision",
     "approvals.rememberLabel": "Auto-approve future requests of this type",
-    "approvals.rememberHelp": "\"This type\" means AI changes of the same action type. This is a standing rule that applies only to you; from now on such approvals pass automatically.",
+    "approvals.rememberHelp": "\"This type\" means AI changes of the same action type. A standing rule for you only: approving also clears queued approvals of this type, and future ones pass automatically.",
     "workitem.kicker": "Work item",
     "workitem.statusTitle": "Status",
     "workitem.deliverableTitle": "Deliverable",
     "workitem.emptyDeliverable": "None yet",
     "workitem.traceTitle": "AI trace preview",
     "workitem.openProposal": "Review change request",
-    "workitem.openReplay": "See how AI did it",
+    "workitem.openReplay": "Open replay",
     "proposal.kicker": "Deliverable change request",
     "proposal.riskTitle": "Risk",
     "proposal.rollbackTitle": "Rollback",
@@ -599,6 +607,10 @@ const goldPathCopy = {
     "runtime.rejectNeedsReason": "Choose a rejection reason first. AI will use it in the next revision.",
     "runtime.rejectReasonFirst": "Choose a rejection reason first. AI will carry it into the next revision.",
     "runtime.actionPending": "This action is still waiting for its service wiring.",
+    "runtime.actionInProgress": "Working on it — no need to click again. The result will show up here.",
+    "runtime.logoutFailedBody": "A network or server error interrupted sign-out — you may still be signed in on this device. Check your connection and try again; on a shared device, retry until you see it succeed.",
+    "runtime.notice.inProgressTitle": "In progress",
+    "runtime.notice.logoutFailedTitle": "Sign-out failed",
     "runtime.notice.actionSuccessTitle": "Submitted",
     "runtime.notice.actionErrorTitle": "Submission failed",
     "runtime.notice.selectionTitle": "Selection saved",

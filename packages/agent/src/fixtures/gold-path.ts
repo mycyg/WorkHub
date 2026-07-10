@@ -876,6 +876,7 @@ const proposalDetail: ProposalDetailVM = {
 const approvalCenter: ApprovalCenterVM = {
   items: [approvalAttention],
   requests: [approvalRequest],
+  decided: [],
   filters: {
     pending: true,
     kind: "proposal",
@@ -919,6 +920,7 @@ const approvalCenter: ApprovalCenterVM = {
 
 const workItemDetail: WorkItemDetailVM = {
   workitem: workItem,
+  approval_decisions: [],
   acceptance: [
     {
       id: "option-first",
@@ -989,6 +991,8 @@ const costDashboard: CostDashboardVM = {
       turns: run.turns_used
     }
   ],
+  by_task_plan: [],
+  by_objective: [],
   model_breakdown: [
     {
       provider: usageRecord.provider,

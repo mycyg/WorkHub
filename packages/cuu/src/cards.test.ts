@@ -7,6 +7,7 @@ import {
   type AgentRunLiveVM,
   type AttentionItem,
   type BudgetNotice,
+  type CostDashboardVM,
   type EvidenceBubble,
   type ProposalConflict,
   type ProposalDetailVM,
@@ -30,7 +31,8 @@ import {
   cardFromReplayTrace,
   cardFromSessionVm,
   cardFromAgentRunLive,
-  cardFromWorkItemDetail
+  cardFromWorkItemDetail,
+  cardFromCostDashboard
 } from "./index.js";
 
 const ts = "2026-06-05T01:00:00.000Z";
@@ -74,7 +76,7 @@ function agentRunLive(status: AgentRunLiveVM["status"] = "running"): AgentRunLiv
     budget: { max_steps: 15, total_timeout_s: 300, max_tokens: 120000, max_cost_cny: "5" },
     budget_decision: {
       decision_id: "decision-run",
-      allowed: status !== "budget_exhausted",
+      allowed: true,
       model_route: { provider: "deepseek", model: "deepseek-v4-flash", reason: "default" }
     },
     usage: { steps_used: 1, token_in: 10, token_out: 20, estimated_cost_cny: "0.003" },
@@ -257,7 +259,10 @@ test("proposal detail becomes a PR-like Cuu deliverable card", () => {
           human_summary: "新增 weekly-report.md"
         }
       ],
-      checks: [{ id: "scope", label: "file-only 范围", status: "passed", detail: "未触碰外部发送。" }],
+      checks: [
+        { id: "scope", label: "file-only 范围", status: "passed", detail: "未触碰外部发送。" },
+        { id: "budget", label: "预算提醒", status: "warning", detail: "接近本次预算线。" }
+      ],
       evidence_refs: [
         {
           id: "evidence-1",
@@ -295,12 +300,24 @@ test("proposal detail becomes a PR-like Cuu deliverable card", () => {
   assert.equal(card.sections?.[0]?.title, "总结");
   assert.equal(card.sections?.[0]?.lines[0], "新增一份周报草稿，并附上证据与回滚说明。");
   assert.equal(card.sections?.some((section) => section.title === "风险与回滚"), true);
+  const zhChecks = card.sections?.find((section) => section.title === "检查结果");
+  assert.deepEqual(zhChecks?.lines, [
+    "file-only 范围: 通过 - 未触碰外部发送。",
+    "预算提醒: 有提醒 - 接近本次预算线。"
+  ]);
+  assert.equal(zhChecks?.lines.some((line) => /: (?:passed|warning)(?:\b| -)/u.test(line)), false);
   assert.equal(card.chips?.[0]?.label, "docs/weekly-report.md");
   assert.equal(card.evidence_refs?.[0]?.title, "原始需求");
 
   const english = cardFromProposalDetail(proposal, { locale: "en-US" });
   assert.equal(english.sections?.some((section) => section.title === "Risk and rollback"), true);
-  assert.equal(english.sections?.some((section) => section.lines.includes("Rollback available")), true);
+  assert.equal(english.sections?.some((section) => section.lines.includes("Rollback snapshot kept (manual restore)")), true);
+  const enChecks = english.sections?.find((section) => section.title === "Check results");
+  assert.deepEqual(enChecks?.lines, [
+    "file-only 范围: Passed - 未触碰外部发送。",
+    "预算提醒: Warning - 接近本次预算线。"
+  ]);
+  assert.equal(enChecks?.lines.some((line) => /: (?:passed|warning)(?:\b| -)/u.test(line)), false);
 });
 
 test("reviewed proposal Cuu card only exposes merge as the next step", () => {
@@ -360,7 +377,7 @@ test("reviewed proposal attention cards say merge instead of asking for approval
     priority: "normal",
     work_item_id: workItemId,
     source_ref: { entity_type: "proposal", entity_id: "proposal-reviewed" },
-    title: "Cuu 等你确认变更",
+    title: "周报草稿变更申请",
     summary_text: "已确认通过，只差合入交付物。",
     reason_text: "接下来可以合入交付物。",
     actions: [
@@ -374,11 +391,12 @@ test("reviewed proposal attention cards say merge instead of asking for approval
   const card = cardFromAttentionItem(attention);
   const english = cardFromAttentionItem(attention, { locale: "en-US" });
 
-  assert.equal(card.title, "Cuu 等你合入变更");
+  // 旧断言只钉通用「Cuu 等你合入变更」；真实队列里多张 reviewed proposal 并列时会看不出是哪份变更。
+  assert.equal(card.title, "「周报草稿变更申请」待合入");
   assert.doesNotMatch(card.title, /确认|拍板/u);
   assert.equal(card.sections?.find((section) => section.id === "next_step")?.lines[0], "已确认通过，下一步合入交付物。");
   assert.deepEqual(card.actions.map((action) => action.id), ["open_proposal", "merge"]);
-  assert.equal(english.title, "Cuu is ready to merge the change");
+  assert.equal(english.title, '"周报草稿变更申请" is ready to merge');
 });
 
 test("proposal cards replace model self-narration titles with public review copy", () => {
@@ -473,7 +491,8 @@ test("proposal cards replace model self-narration titles with public review copy
   assert.equal(fileNarrationCard.title, "Cuu 等你确认变更");
   assert.equal(chineseAttentionCard.title, "Cuu 等你确认变更");
   assert.equal(chineseProposalCard.title, "Cuu 等你确认变更");
-  assert.equal(chineseAttentionCard.message, "变更申请已生成。先看总结和改动，再决定是否采纳。");
+  // 旧断言继续使用「采纳」；proposal 流程其它状态/action 已用「合入」，Cuu 卡片里再混用会误导用户。
+  assert.equal(chineseAttentionCard.message, "变更申请已生成。先看总结和改动，再决定是否合入。");
   assert.equal(chineseAttentionCard.sections?.[0]?.title, "总结");
   assert.equal(chineseAttentionCard.sections?.[1]?.title, "下一步");
   assert.equal(chineseAttentionCard.sections?.[1]?.lines[0], "先看总结和改动，再确认通过或打回修改。");
@@ -593,6 +612,17 @@ test("proposal conflicts become option-first Cuu cards with merge payloads", () 
     conflict_resolution: { accept_incoming_target_keys: ["drive_item:docs/weekly-report.md"] }
   });
   assert.equal(card.actions.find((action) => action.id === "ai_fusion")?.label, "采用 AI 融合稿");
+  // R9 词表：全站 proposal merge 动词统一「采纳」（web 主战场是「采纳到正式版」）——Cuu 卡对齐，
+  // 负断言翻转为不许残留旧词「合入」。
+  assert.equal(card.actions.find((action) => action.id === "accept_incoming")?.label, "采纳这次版本");
+  assert.doesNotMatch(
+    [
+      card.message,
+      ...(card.sections ?? []).flatMap((section) => section.lines),
+      ...card.actions.map((action) => action.label)
+    ].join(" "),
+    /合入/u
+  );
   assert.equal(
     card.actions.find((action) => action.id === "ai_fusion")?.href,
     "/api/merge-proposals/10000000-0000-4000-8000-000000000309/apply"
@@ -641,6 +671,9 @@ test("work item detail becomes a lightweight Cuu task card", () => {
   assert.equal(card.payload_ref?.entity_type, "workitem");
   assert.equal(card.actions.some((action) => action.href === `/agent-runs/${detail.agent_trace_preview[0]?.agent_run_id}/replay`), true);
   assert.equal(card.evidence_refs?.[0]?.title, "上次周会纪要");
+  const acceptanceLine = card.sections?.find((section) => section.id === "acceptance")?.lines[0] ?? "";
+  assert.equal(acceptanceLine, "输出必须绑定证据: 待处理");
+  assert.doesNotMatch(acceptanceLine, /: open\b/u);
 });
 
 test("findings: acceptance items with non-string title/status fall back instead of rendering [object Object]", () => {
@@ -663,7 +696,9 @@ test("findings: acceptance items with non-string title/status fall back instead 
   const line = card.sections?.find((section) => section.id === "acceptance")?.lines[0] ?? "";
   assert.equal(line.includes("[object Object]"), false);
   assert.equal(line.includes(": 5"), false);
-  assert.equal(line.endsWith(": open"), true);
+  // R9.7 review: the old assertion pinned raw `open`; user-facing Cuu cards
+  // need a localized fallback label even when the source acceptance status is bad data.
+  assert.equal(line.endsWith(": 待处理"), true);
 });
 
 test("evidence bubbles preserve task binding POST actions", () => {
@@ -795,20 +830,29 @@ test("live agent run cards hide hidden reasoning and raw tool results", () => {
   const visible = JSON.stringify([card.message, card.sections]);
 
   assert.match(visible, /AI 正在整理材料/u);
-  assert.match(visible, /工具调用：read_project_file/u);
-  assert.match(visible, /工具已返回：read_project_file/u);
-  assert.doesNotMatch(visible, /Now I understand|hidden reasoning|隐藏推理|隐藏思考|markdown-report|tool_result|#3 think/u);
+  assert.match(visible, /工具调用/u);
+  assert.match(visible, /工具已返回/u);
+  // R9.7 review: the old assertion expected raw `read_project_file` in visible copy,
+  // but machine tool ids belong in payloads/logs, not user-facing Cuu cards.
+  assert.doesNotMatch(visible, /read_project_file|Now I understand|hidden reasoning|隐藏推理|隐藏思考|markdown-report|tool_result|#3 think/u);
 });
 
-test("budget-exhausted live agent runs use budget Cuu cards", () => {
-  const card = cardFromAgentRunLive(agentRunLive("budget_exhausted"), { locale: "en-US" });
+test("budget-exhausted notices use budget Cuu cards", () => {
+  // R9.7 review: the old assertion constructed `AgentRunLiveVM.status =
+  // "budget_exhausted"`, but budget exhaustion rejects enqueue with 402 and
+  // opens a BudgetNotice; it is not a persisted live run status.
+  const card = cardFromBudgetNotice(budgetNotice, "budget-card", { locale: "en-US" });
 
   assert.equal(card.kind, "budget");
   assert.equal(card.state, "asking_approval");
   assert.equal(card.title, "Budget exhausted");
-  assert.equal(card.message, "This task reached its budget limit and needs your decision.");
-  assert.equal(card.actions.find((action) => action.id === "view_replay")?.tone, "primary");
+  assert.equal(card.message, budgetNotice.message);
+  assert.equal(card.actions.find((action) => action.id === "pause")?.tone, "primary");
   assert.equal(card.actions.some((action) => action.id === "abort_agent_run"), false);
+  assert.equal(card.actions.find((action) => action.id === "pause")?.label, "Pause for now");
+  assert.equal(card.actions.find((action) => action.id === "downgrade_model")?.label, "Use a cheaper model");
+  assert.equal(JSON.stringify(card.actions).includes("先暂停"), false);
+  assert.equal(JSON.stringify(card.actions).includes("降级模型继续"), false);
 });
 
 test("replay cost cards localize remaining budget labels", () => {
@@ -853,6 +897,113 @@ test("replay cost cards localize remaining budget labels", () => {
   assert.doesNotMatch(costLines, /剩余/u);
 });
 
+test("replay trace cards hide raw phases and private step excerpts", () => {
+  const replay: ReplayTraceVM = {
+    run: agentRunLive("succeeded").run,
+    steps: [
+      {
+        id: "60000000-0000-4000-8000-000000000201",
+        agent_run_id: "40000000-0000-4000-8000-000000000025",
+        step_no: 1,
+        phase: "tool_call",
+        tool_name: "read_project_file",
+        input_json: {},
+        output_excerpt: "读取 workhub-app-upload.txt",
+        created_at: ts
+      },
+      {
+        id: "60000000-0000-4000-8000-000000000202",
+        agent_run_id: "40000000-0000-4000-8000-000000000025",
+        step_no: 2,
+        phase: "tool_result",
+        tool_name: "read_project_file",
+        input_json: {},
+        output_excerpt: "--- name: markdown-report description: long private tool payload",
+        created_at: ts
+      },
+      {
+        id: "60000000-0000-4000-8000-000000000203",
+        agent_run_id: "40000000-0000-4000-8000-000000000025",
+        step_no: 3,
+        phase: "think",
+        input_json: {},
+        output_excerpt: "Now I understand the task and will analyze hidden reasoning.",
+        created_at: ts
+      }
+    ],
+    evidence_refs: [],
+    snapshots: [],
+    audit_logs: [],
+    accepted_deliverables: [],
+    merge_timeline: []
+  };
+
+  const card = cardFromReplayTrace(replay);
+  const visible = JSON.stringify([card.message, card.sections]);
+
+  assert.match(visible, /工具调用/u);
+  assert.match(visible, /工具已返回/u);
+  assert.match(visible, /AI 正在整理材料/u);
+  assert.doesNotMatch(visible, /tool_call|tool_result|#3 think|read_project_file|Now I understand|hidden reasoning|隐藏推理|隐藏思考|markdown-report/u);
+
+  const finalCard = cardFromReplayTrace({
+    ...replay,
+    steps: [
+      ...replay.steps,
+      {
+        id: "60000000-0000-4000-8000-000000000204",
+        agent_run_id: "40000000-0000-4000-8000-000000000025",
+        step_no: 4,
+        phase: "final",
+        input_json: {},
+        output_excerpt: "交付完成。",
+        created_at: ts
+      }
+    ]
+  });
+  const finalVisible = JSON.stringify([finalCard.message, finalCard.sections]);
+
+  assert.match(finalVisible, /完成输出：交付完成。/u);
+  assert.doesNotMatch(finalVisible, /tool_call|tool_result|#3 think|read_project_file|Now I understand|hidden reasoning|隐藏推理|隐藏思考|markdown-report/u);
+});
+
+test("cost dashboard cards localize budget risk statuses", () => {
+  const costDashboard: CostDashboardVM = {
+    generated_at: ts,
+    currency: "CNY",
+    total_cost_cny: "1.25",
+    token_in: 100,
+    token_out: 50,
+    trend: [],
+    by_user: [],
+    by_team: [],
+    by_workitem: [],
+    by_task_plan: [],
+    by_objective: [],
+    model_breakdown: [],
+    budget: [],
+    notices: [],
+    top_exhaustion_risks: [
+      {
+        scope: { kind: "user", user_id: "10000000-0000-4000-8000-000000000201" },
+        label: "Personal budget",
+        remaining_cost_cny: "0.50",
+        status: "warning"
+      }
+    ]
+  };
+
+  const zh = cardFromCostDashboard(costDashboard, { locale: "zh-CN" });
+  const en = cardFromCostDashboard(costDashboard, { locale: "en-US" });
+  const zhRisk = zh.sections?.find((section) => section.id === "risks")?.lines.join(" ") ?? "";
+  const enRisk = en.sections?.find((section) => section.id === "risks")?.lines.join(" ") ?? "";
+
+  assert.match(zhRisk, /接近上限/u);
+  assert.doesNotMatch(zhRisk, /\(warning\)/u);
+  assert.match(enRisk, /Warning/u);
+  assert.doesNotMatch(enRisk, /\(warning\)/u);
+});
+
 test("budget notices and budget events become actionable Cuu cards", () => {
   const card = cardFromBudgetNotice(budgetNotice, "budget-card");
   const attentionCard = cardFromAttentionItem({
@@ -887,6 +1038,8 @@ test("budget notices and budget events become actionable Cuu cards", () => {
   assert.equal(card.kind, "budget");
   assert.equal(card.state, "asking_approval");
   assert.equal(card.actions[0]?.tone, "primary");
+  assert.equal(card.chips?.[0]?.description, "当前任务");
+  assert.notEqual(card.chips?.[0]?.description, workItemId);
   assert.equal(attentionCard.kind, "budget");
   assert.equal(attentionCard.state, "asking_approval");
   assert.equal(eventCard.id, "event-budget");
@@ -898,6 +1051,8 @@ test("budget notices and budget events become actionable Cuu cards", () => {
   assert.equal(english.title, "Budget exhausted");
   assert.equal(english.actions[0]?.label, "Handle budget");
   assert.equal(english.chips?.[0]?.label, "Task budget");
+  assert.equal(english.chips?.[0]?.description, "Current task");
+  assert.notEqual(english.chips?.[0]?.description, workItemId);
   assert.equal(english.chips?.[1]?.description, "Budget usage");
 });
 
@@ -934,6 +1089,135 @@ test("attention approval cards localize standard action labels", () => {
   assert.equal(english.actions.find((action) => action.id === "open_proposal")?.label, "View change request");
   assert.equal(cardFromAttentionItem(attention).actions.find((action) => action.id === "approve")?.label, "同意");
   assert.equal(cardFromAttentionItem(attention).actions.find((action) => action.id === "open_proposal")?.label, "查看变更申请");
+});
+
+test("R9.7 plan_review attention cards render as plan proposal Cuu cards", () => {
+  const attention: AttentionItem = {
+    id: "30000000-0000-4000-8000-000000000021",
+    kind: "plan_review",
+    priority: "normal",
+    work_item_id: workItemId,
+    source_ref: { entity_type: "proposal", entity_id: "proposal-plan" },
+    title: "《短剧选题调研》的分工计划等你过目",
+    summary_text: "任务已拆成分工计划，等你确认后再进入派发。",
+    actions: [
+      { id: "approve", label: "确认计划", style: "primary", method: "POST", href: "/api/proposals/proposal-plan/review" },
+      {
+        id: "request_changes",
+        label: "打回重拆",
+        style: "danger",
+        method: "POST",
+        href: "/api/proposals/proposal-plan/review",
+        requires_reason: true
+      },
+      { id: "open_proposal", label: "查看计划提议", style: "secondary", method: "GET", href: "/proposals/proposal-plan" }
+    ],
+    cuu_state: "asking_approval",
+    created_at: ts
+  };
+
+  const card = cardFromAttentionItem(attention);
+  const english = cardFromAttentionItem(attention, { locale: "en-US" });
+
+  assert.equal(card.kind, "proposal");
+  assert.equal(card.state, "asking_approval");
+  assert.equal(card.title, "《短剧选题调研》的分工计划等你过目");
+  assert.deepEqual(card.actions.map((action) => action.label), ["查看计划提议", "确认计划", "打回重拆"]);
+  assert.doesNotMatch(card.message, /派发|dispatch/iu);
+  assert.doesNotMatch(card.sections?.find((section) => section.id === "summary")?.lines.join("\n") ?? "", /派发|dispatch/iu);
+  assert.equal(card.sections?.find((section) => section.id === "next_step")?.lines[0], "先确认计划；不满意就打回重拆。");
+  assert.deepEqual(english.actions.map((action) => action.label), ["View plan proposal", "Approve plan", "Request replan"]);
+
+  const reviewed: AttentionItem = {
+    ...attention,
+    id: "30000000-0000-4000-8000-000000000022",
+    summary_text: "计划已确认，可以批准为待开始计划。",
+    actions: [
+      {
+        id: "approve_and_dispatch",
+        label: "批准并开始执行",
+        style: "primary",
+        method: "POST",
+        href: "/api/proposals/proposal-plan/merge",
+        request_json: { dispatch: true }
+      },
+      {
+        id: "approve_hold",
+        label: "批准但先不跑",
+        style: "secondary",
+        method: "POST",
+        href: "/api/proposals/proposal-plan/merge",
+        request_json: { dispatch: false }
+      },
+      { id: "open_proposal", label: "查看计划提议", style: "secondary", method: "GET", href: "/proposals/proposal-plan" }
+    ]
+  };
+  const reviewedCard = cardFromAttentionItem(reviewed, { locale: "en-US" });
+  assert.deepEqual(reviewedCard.actions.map((action) => action.label), [
+    "View plan proposal",
+    "Approve and start",
+    "Approve but hold"
+  ]);
+  assert.deepEqual(reviewedCard.actions.find((action) => action.id === "approve_hold")?.payload, { dispatch: false });
+});
+
+test("R9.7 held task-plan attention exposes a localized manual start action", () => {
+  const attention: AttentionItem = {
+    id: "30000000-0000-4000-8000-000000000032",
+    kind: "delivery_ready",
+    priority: "normal",
+    work_item_id: workItemId,
+    source_ref: { entity_type: "proposal", entity_id: "proposal-plan" },
+    title: "计划提议 已批准",
+    summary_text: "任务计划已批准，暂不开始执行。",
+    reason_text: "计划保持已批准状态，需要时可以再手动开始。",
+    actions: [
+      {
+        id: "start_task_plan",
+        label: "开始执行计划",
+        style: "primary",
+        method: "POST",
+        href: "/api/proposals/proposal-plan/merge",
+        request_json: { dispatch: true }
+      },
+      { id: "open_proposal", label: "查看计划提议", style: "secondary", method: "GET", href: "/proposals/proposal-plan" }
+    ],
+    cuu_state: "asking_approval",
+    created_at: ts
+  };
+
+  const card = cardFromAttentionItem(attention, { locale: "en-US" });
+
+  assert.deepEqual(card.actions.map((action) => action.label), ["View plan proposal", "Start plan"]);
+  assert.deepEqual(card.actions.find((action) => action.id === "start_task_plan")?.payload, { dispatch: true });
+  assert.doesNotMatch(card.actions.map((action) => action.label).join("\n"), /派发|dispatch|开始/u);
+});
+
+test("R9.0 escalation attention cards render human Cuu actions", () => {
+  const attention: AttentionItem = {
+    id: "30000000-0000-4000-8000-000000000011",
+    kind: "escalation",
+    priority: "urgent",
+    work_item_id: workItemId,
+    source_ref: { entity_type: "escalation_event", entity_id: "30000000-0000-4000-8000-000000000099" },
+    title: "《竞品价格调研》卡住了",
+    summary_text: "AI 对数据来源不确定。",
+    reason_text: "AI 对数据来源不确定。",
+    actions: [
+      { id: "escalation_retry", label: "让它重试", style: "primary", method: "POST", href: "/api/escalations/30000000-0000-4000-8000-000000000099/resolve" },
+      { id: "escalation_pm_mode", label: "转成我来做", style: "secondary", method: "POST", href: "/api/escalations/30000000-0000-4000-8000-000000000099/resolve" },
+      { id: "escalation_cancel", label: "取消这个子任务", style: "danger", method: "POST", href: "/api/escalations/30000000-0000-4000-8000-000000000099/resolve" }
+    ],
+    cuu_state: "worried",
+    created_at: ts
+  };
+
+  const card = cardFromAttentionItem(attention);
+  const english = cardFromAttentionItem(attention, { locale: "en-US" });
+
+  assert.equal(card.state, "worried");
+  assert.deepEqual(card.actions.map((action) => action.label), ["让它重试", "转成我来做", "取消这个子任务"]);
+  assert.deepEqual(english.actions.map((action) => action.label), ["Let it retry", "I'll take over", "Cancel this subtask"]);
 });
 
 test("generic permission events still map through attention into Cuu approval cards", () => {

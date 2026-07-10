@@ -48,6 +48,8 @@ export type DrivePageService = {
     projectId?: string;
     // #5：项目主页「最近文件」深链带 item_id → 网盘渲染时高亮该文件。
     itemId?: string;
+    // R4（规模化）：按名称搜索——200 条截断外的文件用户可达出路。
+    nameQuery?: string;
   }) => Promise<DrivePageVM>;
   file: (input: DriveMutationInput & {
     itemId: string;
@@ -67,6 +69,11 @@ export type DrivePageService = {
   }) => Promise<DrivePageVM>;
   restoreItem: (input: DriveMutationInput & {
     itemId: string;
+  }) => Promise<DrivePageVM>;
+  // UX-U3：网盘评论 composer 的写端——发一条评论（进入 pending_llm，后续可生成草稿）。
+  createComment: (input: DriveMutationInput & {
+    body: string;
+    folderId?: string;
   }) => Promise<DrivePageVM>;
   commentToDraft: (input: DriveMutationInput & {
     commentId: string;
@@ -522,6 +529,13 @@ function buildDrivePage(
       const activeNameConflict = activeNameKeys.has(`${item.parent_id ?? ""}\u0000${item.name}`);
       if (!parentStillDeleted && !activeNameConflict && !restoreBlockedItemIds.has(item.id)) {
         item.restore_href = `/api/drive/projects/${projectId}/items/${item.id}/restore`;
+      } else {
+        // R7（撤销路径）：还原按钮消失时说明白为什么——三种阻塞在视觉上曾与可还原行完全一样。
+        item.restore_blocked_reason = parentStillDeleted
+          ? "父文件夹也在回收站，先还原父文件夹。"
+          : activeNameConflict
+            ? "已有同名文件占位，改名或删除后再还原。"
+            : "该项暂不可还原。";
       }
     }
     const deletableIds = new Set(
@@ -701,14 +715,15 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
     }
   }
 
-  async function pageForActor(input: { actor: AuthActor; projectId?: string; itemId?: string }) {
+  async function pageForActor(input: { actor: AuthActor; projectId?: string; itemId?: string; nameQuery?: string }) {
     const rows = await deps.repo.readPage({
       ...(input.projectId ? { projectId: input.projectId } : {}),
       // 无显式 projectId 时，默认项目限定在 actor 所在 workspace（M8：否则全库取最老项目，多租户落空）。
       ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {}),
       includeDeleted: true,
       operationLimit: 12,
-      ...(input.itemId ? { targetItemId: input.itemId } : {})
+      ...(input.itemId ? { targetItemId: input.itemId } : {}),
+      ...(input.nameQuery ? { nameQuery: input.nameQuery } : {})
     });
     // 显式传了 project_id 却查不到(不存在/已归档/已删) → 404，与 /workitems、/proposals、项目主页一致，
     // 不再回 200+no_project 空态(那语义错误，且让前端无法区分"没选项目"和"项目不存在")。
@@ -1027,6 +1042,31 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
         mutationError(error);
       }
     },
+    async createComment(input) {
+      const actorUserId = ensureHumanActor(input);
+      await ensureCanManage(input);
+      const body = input.body.trim();
+      if (!body) {
+        throw new DrivePageServiceError(400, "评论内容不能为空。", "drive_comment_body_required");
+      }
+      if (body.length > 4000) {
+        throw new DrivePageServiceError(400, "评论最长 4000 字。", "drive_comment_body_too_long");
+      }
+      const created = await deps.repo.createComment({
+        actorKind: input.actor.kind,
+        actorUserId,
+        projectId: input.projectId,
+        body,
+        authorNickname: input.actor.label,
+        ...(input.folderId ? { folderId: input.folderId } : {}),
+        at: deps.now?.() ?? new Date()
+      });
+      if (!created) {
+        throw new DrivePageServiceError(404, "没有找到这个项目。", "drive_not_found");
+      }
+      return pageAfterMutation(input);
+    },
+
     async commentToDraft(input) {
       const actorUserId = ensureHumanActor(input);
       await ensureCanManage(input);

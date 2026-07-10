@@ -127,6 +127,47 @@ test("project home page returns project meta + open work items + actions", async
   assert.equal(vm.empty_state, undefined);
 });
 
+// B-R9.6 §3.4：军团工作项行尾 pill 的数据面——挂着活跃计划的行带 army{done,total}，
+// 其余行不带；军团取数抛错时页面照常返回（展示增强不拖垮主页）。
+test("B-R9.6 project home attaches army progress to armied rows and survives source failure", async () => {
+  const calls: Array<{ workspaceId: string; workItemIds: string[] }> = [];
+  const svc = createProjectHomePageService({
+    repo: repo(
+      async () => projectRow(),
+      async () => [openItem(), openItem({ id: WI_2, code: "ALP-2" })]
+    ),
+    driveRepo: driveRepo(),
+    taskPlans: {
+      async listArmyProgressByWorkItemIds(input) {
+        calls.push({ workspaceId: input.workspaceId, workItemIds: [...input.workItemIds] });
+        return new Map([[WI_1, { planId: "66666666-6666-4666-8666-666666666601", doneItems: 2, totalItems: 4 }]]);
+      }
+    },
+    now: () => new Date("2026-06-23T00:00:00.000Z")
+  });
+  const vm = await svc.page({ actor: actor(), projectId: PROJ, locale: "zh-CN" });
+  assert.deepEqual(calls, [{ workspaceId: WS, workItemIds: [WI_1, WI_2] }]);
+  assert.deepEqual(vm.open_work_items[0]?.army, { done: 2, total: 4 });
+  assert.equal(vm.open_work_items[1]?.army, undefined);
+
+  const failing = createProjectHomePageService({
+    repo: repo(
+      async () => projectRow(),
+      async () => [openItem()]
+    ),
+    driveRepo: driveRepo(),
+    taskPlans: {
+      async listArmyProgressByWorkItemIds() {
+        throw new Error("task plan source down");
+      }
+    },
+    now: () => new Date("2026-06-23T00:00:00.000Z")
+  });
+  const degraded = await failing.page({ actor: actor(), projectId: PROJ, locale: "zh-CN" });
+  assert.equal(degraded.open_work_items.length, 1);
+  assert.equal(degraded.open_work_items[0]?.army, undefined);
+});
+
 test("project home blocks admins from opening a project in another org", async () => {
   const svc = createProjectHomePageService({
     repo: repo(

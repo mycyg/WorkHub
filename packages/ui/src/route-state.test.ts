@@ -36,6 +36,16 @@ test("route state copy stays serious and does not leak pet or default board lang
   assert.equal(matrix.toLowerCase().includes("kanban"), false);
 });
 
+test("R9.7 route state agent dashboard label uses Agent team copy", () => {
+  const en = renderRouteStateMatrix({ locale: "en-US", routeKeys: ["agents"], states: ["loading"] });
+  const zh = renderRouteStateMatrix({ locale: "zh-CN", routeKeys: ["agents"], states: ["loading"] });
+
+  assert.equal(en.includes("Agent teams"), true);
+  assert.equal(en.includes("Agent Army"), false);
+  assert.equal(zh.includes("军团"), true);
+  assert.equal(zh.includes("智能代理军团"), false);
+});
+
 test("route state css keeps long text within frames", () => {
   assert.match(routeStateCss, /\.wh-route-state-card\{[^}]*min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word/u);
   assert.match(routeStateCss, /\.wh-route-state-row\{[^}]*grid-template-columns:160px repeat\(5,minmax\(0,1fr\)\)/u);
@@ -60,4 +70,16 @@ test("route state card carries trace and owner context without exposing private 
   assert.equal(error.includes("This page failed to load"), true);
   assert.equal(forbidden.includes("需要项目负责人授权"), true);
   assert.equal(forbidden.includes("你没有权限查看"), true);
+});
+
+test("route state loading actions retry the concrete route instead of a path template", () => {
+  const html = renderRouteStateCard({
+    routeKey: "intake",
+    state: "loading",
+    locale: "en-US",
+    route: "/intake/real-session-id"
+  });
+
+  assert.equal(html.includes('href="/intake/real-session-id"'), true);
+  assert.equal(html.includes('href="/intake/:sessionId"'), false);
 });

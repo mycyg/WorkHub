@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { WorkHubApiError } from "@workhub/api-client";
@@ -31,7 +30,10 @@ import {
   desktopPetLocale,
   desktopPetPointerSmoothingAlpha,
   desktopPetRunRestoreStorageKey,
+  desktopPetRuntimeRetryingDelayMs,
   desktopPetSurfaceCss,
+  handleDesktopPetRuntimeDecision,
+  handleDesktopPetRuntimeNotice,
   renderDesktopPetSurface,
   replaceDesktopPetRootHtmlPreservingLive2DFrame,
   resolveDesktopSurface,
@@ -149,7 +151,9 @@ test("desktop pet bubble is a real frosted-white glass card with dark text", () 
   assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-refract\{[^}]*filter:none;-webkit-filter:none/u);
   assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*backdrop-filter/u);
   assert.doesNotMatch(desktopPetSurfaceCss, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*-webkit-backdrop-filter/u);
-  assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-edge\{backdrop-filter:url\(#workhub-liquid-glass-pet-filter\) blur\(var\(--wh-liquid-frost\)\)/u);
+  // 3-4: the old assertion pinned a hidden SVG edge filter; pet bubbles hide the warp/rim,
+  // so the generated-map filter could never be seen and should not stay in the CSS.
+  assert.doesNotMatch(desktopPetSurfaceCss, /url\(#workhub-liquid-glass-pet-filter/u);
   assert.doesNotMatch(desktopPetSurfaceCss, /(?:^|[;{])filter:url\(#workhub-liquid-glass/u);
   assert.doesNotMatch(desktopPetSurfaceCss, /--wh-liquid-frost:(?:1[0-9]|[2-9][0-9])px/u);
   assert.match(desktopPetSurfaceCss, /\.wh-liquid-glass-warp\{[^}]*background:transparent[^}]*overflow:hidden/u);
@@ -183,19 +187,38 @@ test("desktop pet bubble is a real frosted-white glass card with dark text", () 
   );
 });
 
-test("desktop pet surface clears a stale Cuu card when the runtime dismisses the active card", () => {
-  const source = readFileSync(new URL("./pet-surface.ts", import.meta.url), "utf8");
-  const runtimeStart = source.indexOf("const runtime = await bindDesktopShellCuuRuntime");
-  const runtimeEnd = source.indexOf("let samplingCursor", runtimeStart);
-  assert.notEqual(runtimeStart, -1);
-  assert.notEqual(runtimeEnd, -1);
-  const runtimeBindingSource = source.slice(runtimeStart, runtimeEnd);
+test("desktop pet runtime notices keep SSE retry cards transient and clear dismissed active cards", () => {
+  const calls: Array<{
+    cardId?: string | undefined;
+    persist?: boolean | undefined;
+  }> = [];
+  const persistentCard = approvalCard();
+  const sseStatusCard = {
+    ...approvalCard(),
+    id: "sse-status:global:retrying"
+  };
+  const setCard = (card: CuuCard | undefined, _message?: string, options?: { persist?: boolean }) => {
+    calls.push({ cardId: card?.id, persist: options?.persist });
+  };
 
-  assert.match(runtimeBindingSource, /onDecision\(decision\)/u);
-  assert.match(runtimeBindingSource, /decision\.reason === "dismissed_current"/u);
-  assert.match(runtimeBindingSource, /setCard\(undefined/u);
-  assert.match(runtimeBindingSource, /notice\.card\.id\.startsWith\("sse-status:"\)/u);
-  assert.match(runtimeBindingSource, /retryingDelayMs:\s*900/u);
+  handleDesktopPetRuntimeNotice({ card: persistentCard, message: "ready", html: "<p>ready</p>" }, setCard);
+  handleDesktopPetRuntimeNotice({ card: sseStatusCard, message: "retrying", html: "<p>retrying</p>" }, setCard);
+  const cleared = handleDesktopPetRuntimeDecision({ reason: "dismissed_current", snapshot: {} }, setCard);
+  const kept = handleDesktopPetRuntimeDecision(
+    { reason: "dismissed_current", snapshot: { active_card: persistentCard } },
+    setCard
+  );
+
+  // R9.7: the old assertion grepped pet-surface.ts for runtime-binding source text.
+  // That was wrong because source text did not prove notice persistence or dismissed-card clearing behavior.
+  assert.equal(desktopPetRuntimeRetryingDelayMs, 900);
+  assert.equal(cleared, true);
+  assert.equal(kept, false);
+  assert.deepEqual(calls, [
+    { cardId: "approval-card", persist: true },
+    { cardId: "sse-status:global:retrying", persist: false },
+    { cardId: undefined, persist: undefined }
+  ]);
 });
 
 function approvalCard(): CuuCard {
@@ -529,6 +552,7 @@ function createPetHarnessClient(calls: unknown[], run: AgentRunLiveVM = petHarne
         agent_trace_preview: [],
         accepted_deliverables: [],
         evidence_refs: [],
+        approval_decisions: [],
         actions: {}
       } as WorkItemDetailVM;
     },
@@ -842,7 +866,8 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(idle.css, /\.wh-pet-bubble\{[^}]*border-radius:24px;[^}]*background:linear-gradient\(135deg,rgba\(255,255,255,\.82\),rgba\(255,255,255,\.52\)\)/u);
   assert.doesNotMatch(idle.css, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*backdrop-filter/u);
   assert.doesNotMatch(idle.css, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-refract\{[^}]*-webkit-backdrop-filter/u);
-  assert.match(idle.css, /\.wh-liquid-glass-warp--pet \.wh-liquid-glass-edge\{backdrop-filter:url\(#workhub-liquid-glass-pet-filter\) blur\(var\(--wh-liquid-frost\)\)/u);
+  // 3-4: same as the static CSS assertion above; hidden pet warp should not keep SVG filters alive.
+  assert.doesNotMatch(idle.css, /url\(#workhub-liquid-glass-pet-filter/u);
   assert.doesNotMatch(idle.css, /(?:^|[;{])filter:url\(#workhub-liquid-glass/u);
   assert.match(idle.css, /\.wh-pet-menu\{[^}]*right:88px;[^}]*width:164px;[^}]*overflow:hidden/u);
   assert.match(idle.css, /\.wh-pet-menu\{[^}]*border-radius:14px;[^}]*background:rgba\(255,255,255,\.92\);[^}]*backdrop-filter:blur\(30px\) saturate\(180%\)/u);
@@ -884,7 +909,9 @@ test("pet surface renders only the Live2D cat runtime without main shell or fall
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-body\{right:calc\(72px \* var\(--wh-pet-scale,1\)\);bottom:calc\(48px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\{[^}]*max-width:calc\(100% - calc\(128px \* var\(--wh-pet-scale,1\)\)\)/u);
   assert.match(card.css, /data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=bubble\],\.wh-pet-surface\[data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=offline\],\.wh-pet-surface\[data-pet-window-mode=card\] \.wh-pet-bubble\[data-pet-bubble-kind=trace\]\{min-height:calc\(268px \* var\(--wh-pet-scale,1\)\)/u);
-  assert.match(card.css, /data-pet-window-mode=card\]\[data-pet-card-has-context=true\] \.wh-pet-bubble\{left:calc\(72px \* var\(--wh-pet-scale,1\)\);right:auto;bottom:calc\(372px \* var\(--wh-pet-scale,1\)\);width:calc\(328px \* var\(--wh-pet-scale,1\)\)/u);
+  // R9.7 real-user smoke: the old 372px assertion was wrong because Chrome/CDP measured only
+  // 2.04px between the context bubble and Live2D body, failing `bubble_clear_of_live2d`.
+  assert.match(card.css, /data-pet-window-mode=card\]\[data-pet-card-has-context=true\] \.wh-pet-bubble\{left:calc\(72px \* var\(--wh-pet-scale,1\)\);right:auto;bottom:calc\(380px \* var\(--wh-pet-scale,1\)\);width:calc\(328px \* var\(--wh-pet-scale,1\)\)/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*min-height:0;max-height:calc\(336px \* var\(--wh-pet-scale,1\)\);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*pointer-events:auto/u);
   assert.match(card.css, /data-pet-card-has-context=true\] \.wh-pet-bubble\{[^}]*gap:6px;padding:10px 12px/u);
@@ -1796,6 +1823,47 @@ test("pet surface refreshes a proposal card after the main window settles the re
   }
 });
 
+test("pet surface hides backend English diagnostics on zh launcher clarification failures", async () => {
+  const calls: unknown[] = [];
+  const target = globalThis as typeof globalThis & {
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+  };
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  const client = {
+    ...createPetHarnessClient(calls),
+    async createSession(payload: unknown): Promise<SessionVM> {
+      calls.push({ step: "createSession", payload: cloneHarnessPayload(payload) });
+      throw new WorkHubApiError(
+        502,
+        "clarification_llm_templated_response",
+        "AI material analysis returned a generic template instead of a real follow-up question."
+      );
+    }
+  } as unknown as DesktopPetSurfaceClient;
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, { client });
+      try {
+        await root.click(fakePetTarget({ "data-pet-drag-handle": "true" }));
+        const launcherSubmit = await root.click(fakePetTarget({
+          href: "/api/cuu/start-agent",
+          "data-cuu-action-id": "start_agent_from_cuu"
+        }, "a"));
+        assert.equal(launcherSubmit.defaultPrevented, true);
+        assert.match(root.innerHTML, /这次启动没有成功/u);
+        assert.match(root.innerHTML, /可以重新开始，Cuu 会再读一次需求和项目文件/u);
+        assert.doesNotMatch(root.innerHTML, /generic template|real follow-up question|AI material analysis/iu);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
 test("pet surface renders merge conflicts as proposal conflict choices instead of a restart error", async () => {
   const conflict: ProposalConflict = {
     id: "conflict-workhub-upload",
@@ -1903,8 +1971,9 @@ test("pet surface renders merge conflicts as proposal conflict choices instead o
           "data-cuu-action-id": "merge"
         }, "a"));
         assert.equal(merge.defaultPrevented, true);
-        assert.match(root.innerHTML, /变更撞车了/u);
+        assert.match(root.innerHTML, /和别人的改动冲突了/u);
         assert.match(root.innerHTML, /保留正式版/u);
+        // 旧断言继续接受「采纳这次版本」；Cuu proposal 卡片已统一 merge 动词为「合入」，否则同一卡内会混用两套口径。
         assert.match(root.innerHTML, /采纳这次版本/u);
         assert.doesNotMatch(root.innerHTML, /这次启动没有成功|重新开始/u);
       } finally {

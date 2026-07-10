@@ -1,4 +1,5 @@
 import type {
+  AgentArmyDashboardVM,
   ApprovalCenterVM,
   AgentRunLiveVM,
   AgentStep,
@@ -43,6 +44,8 @@ import type {
   ReviewProposalRequest,
   RespondApprovalRequest,
   DelegateApprovalRequest,
+  ResolveEscalationRequest,
+  DelegateEscalationRequest,
   AddApprovalCommentRequest,
   ApprovalCommentVM,
   MergeProposalRequest,
@@ -97,6 +100,29 @@ export type WorkHubApiClientOptions = {
   requestTimeoutMs?: number;
 };
 
+export type MemoryConflictResolution = "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both";
+
+export type ResolveMemoryConflictRequest = {
+  resolution: MemoryConflictResolution;
+  expected_updated_at: string;
+  value_md?: string;
+};
+
+export type MemoryConflictResolveResult = {
+  conflict: unknown;
+};
+
+// B-R9.1-2：请求体不再携带 memories——记忆上下文由服务端读 user_memories/team_skills，
+// 客户端注入面已删。
+export type CreateTaskPlanRequest = Record<string, never>;
+
+export type CreateTaskPlanResult = {
+  plan_id: string;
+  proposal_id: string;
+  proposal_href: string;
+  proposal: Proposal;
+};
+
 export type PageRequestOptions = {
   locale?: WorkHubLocale;
 };
@@ -112,6 +138,8 @@ export type DrivePageRequestOptions = PageRequestOptions & {
   // #5：项目主页「最近文件」深链 → 网盘高亮该文件。
   itemId?: string;
   item_id?: string;
+  // R4：按名称搜索文件。
+  q?: string;
 };
 
 export type MeetingPageRequestOptions = PageRequestOptions & {
@@ -175,10 +203,34 @@ export type IdentityResponse = {
   availability_text?: string;
 };
 
+export type EscalationResolveResult = {
+  escalation: {
+    id: string;
+    work_item_id: string;
+    resolved_at?: string;
+  };
+  work_item_status: WorkItemDetailVM["workitem"]["status"];
+  attention: {
+    summary_text: string;
+  };
+};
+
+export type EscalationDelegateResult = {
+  escalation: {
+    id: string;
+    work_item_id: string;
+    suggested_lead_user_id: string | null;
+  };
+  attention: {
+    summary_text: string;
+  };
+};
+
 export type PageClient = {
   attention: (options?: PageRequestOptions) => Promise<AttentionHomeVM>;
   approvals: (options?: ApprovalPageRequestOptions) => Promise<ApprovalCenterVM>;
   cost: (options?: PageRequestOptions) => Promise<CostDashboardVM>;
+  agents: (options?: PageRequestOptions) => Promise<AgentArmyDashboardVM>;
   skills: (options?: PageRequestOptions) => Promise<TeamSkillsPageVM>;
   settings: (options?: PageRequestOptions) => Promise<SettingsPageVM>;
   goldPath: (options?: PageRequestOptions) => Promise<GoldPathSurfaceVM>;
@@ -226,24 +278,36 @@ export type WorkHubApiClient = {
     mutedNotificationTypes: string[]
   ) => Promise<{ muted_notification_types: string[] }>;
   bootstrapProject: (payload?: BootstrapProjectRequest) => Promise<BootstrapProjectResult>;
-  createSession: (payload?: CreateSessionRequest) => Promise<SessionVM>;
+  createSession: (payload?: CreateSessionRequest, options?: PageRequestOptions) => Promise<SessionVM>;
   getSession: (id: string, options?: PageRequestOptions) => Promise<SessionVM>;
-  createWorkItem: (payload: CreateWorkItemRequest) => Promise<WorkItemDetailVM>;
-  startAgentRun: (workItemId: string, payload?: StartAgentRunRequest) => Promise<AgentRunLiveVM>;
+  createWorkItem: (payload: CreateWorkItemRequest, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
+  createTaskPlan: (workItemId: string, payload?: CreateTaskPlanRequest, options?: PageRequestOptions) => Promise<CreateTaskPlanResult>;
+  startAgentRun: (workItemId: string, payload?: StartAgentRunRequest, options?: PageRequestOptions) => Promise<AgentRunLiveVM>;
   getAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
   getAgentRunTrace: (runId: string, after?: number) => Promise<AgentStep[]>;
   abortAgentRun: (runId: string) => Promise<AgentRunLiveVM>;
   getAgentRunHandoff: (runId: string) => Promise<StructuredHandoff | null>;
   respondApproval: (id: string, payload: RespondApprovalRequest) => Promise<unknown>;
+  // R12（批量效率）：多选批量放行（allow-only）。
+  respondApprovalsBatch: (ids: string[]) => Promise<{ approved: number; skipped: number }>;
   delegateApproval: (id: string, payload: DelegateApprovalRequest) => Promise<unknown>;
+  // B-R9.6 UX：plan_review 卡「先不拆，单个 AI 跑」。
+  skipTaskPlanProposal: (proposalId: string, options?: PageRequestOptions) => Promise<{ run_id: string; work_item_id: string; attention: { summary_text: string } }>;
+  // B-R9.6 §3.1：军团「暂停/恢复派发」。
+  pauseTaskPlan: (planId: string) => Promise<{ plan_id: string; status: string }>;
+  resumeTaskPlan: (planId: string) => Promise<{ plan_id: string; status: string }>;
+  resolveEscalation: (id: string, payload: ResolveEscalationRequest, options?: PageRequestOptions) => Promise<EscalationResolveResult>;
+  resolveBudgetDecision: (id: string, actionId: string, options?: PageRequestOptions) => Promise<EscalationResolveResult>;
+  delegateEscalation: (id: string, payload: DelegateEscalationRequest, options?: PageRequestOptions) => Promise<EscalationDelegateResult>;
+  resolveMemoryConflict: (id: string, payload: ResolveMemoryConflictRequest) => Promise<MemoryConflictResolveResult>;
   listApprovalComments: (id: string) => Promise<ApprovalCommentVM[]>;
   postApprovalComment: (id: string, payload: AddApprovalCommentRequest) => Promise<ApprovalCommentVM>;
   createProposalFromManifest: (workItemId: string, payload: CreateProposalFromManifestRequest) => Promise<Proposal>;
   listWorkItemProposals: (workItemId: string) => Promise<Proposal[]>;
   listWorkItemConflicts: (workItemId: string) => Promise<ProposalConflictListResult>;
   getProposal: (id: string) => Promise<Proposal>;
-  reviewProposal: (id: string, payload: ReviewProposalRequest) => Promise<ProposalReviewResult>;
-  mergeProposal: (id: string, payload?: MergeProposalRequest) => Promise<ProposalMergeResult>;
+  reviewProposal: (id: string, payload: ReviewProposalRequest, options?: PageRequestOptions) => Promise<ProposalReviewResult>;
+  mergeProposal: (id: string, payload?: MergeProposalRequest, options?: PageRequestOptions) => Promise<ProposalMergeResult>;
   rebaseProposal: (id: string) => Promise<RebaseProposalResult>;
   chooseMergeProposalCandidate: (
     id: string,
@@ -251,9 +315,10 @@ export type WorkHubApiClient = {
   ) => Promise<MergeProposalCandidateChoiceResult>;
   applyMergeProposalCandidate: (
     id: string,
-    payload?: ApplyMergeProposalCandidateRequest
+    payload?: ApplyMergeProposalCandidateRequest,
+    options?: PageRequestOptions
   ) => Promise<ProposalMergeResult>;
-  nextQuestion: (sessionId: string, payload?: NextQuestionRequest) => Promise<SessionVM>;
+  nextQuestion: (sessionId: string, payload?: NextQuestionRequest, options?: PageRequestOptions) => Promise<SessionVM>;
   searchKnowledge: (payload?: unknown, options?: PageRequestOptions) => Promise<EvidenceBubble>;
   useEvidenceForWorkItem: (workItemId: string, payload: UseEvidenceForTaskRequest) => Promise<WorkItemDetailVM>;
   restoreAcceptedDeliverable: (
@@ -263,9 +328,15 @@ export type WorkHubApiClient = {
   uploadDriveFile: (projectId: string, payload: DriveUploadFileRequest, options?: PageRequestOptions) => Promise<DrivePageVM>;
   deleteDriveItem: (projectId: string, itemId: string, payload?: DriveDeleteItemRequest, options?: PageRequestOptions) => Promise<DrivePageVM>;
   restoreDriveItem: (projectId: string, itemId: string, options?: PageRequestOptions) => Promise<DrivePageVM>;
+  // UX-U3：网盘评论 composer。
+  createDriveComment: (projectId: string, payload: { body: string; folder_id?: string }, options?: PageRequestOptions) => Promise<DrivePageVM>;
   createDriveCommentDraft: (projectId: string, commentId: string, options?: PageRequestOptions) => Promise<DrivePageVM>;
   createDriveDraftProposal: (workItemId: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   createMeetingInsightDraft: (projectId: string, insightId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
+  // R10-P2-2：导入会议转写。
+  importMeetingTranscript: (projectId: string, payload: { title: string; transcript_text: string }, options?: PageRequestOptions) => Promise<MeetingPageVM>;
+  // R10-P2-5：委派选人器的数据源——活跃成员简表。
+  listUsers: () => Promise<{ users: Array<{ id: string; nickname: string; is_admin: boolean }> }>;
   dismissMeetingInsight: (projectId: string, insightId: string, options?: PageRequestOptions) => Promise<MeetingPageVM>;
   createMeetingDraftProposal: (workItemId: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   costUsage: () => Promise<CostSummaryVM>;

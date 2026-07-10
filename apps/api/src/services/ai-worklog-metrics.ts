@@ -12,12 +12,11 @@ import type { AiWorklogVM } from "@workhub/contracts";
 // 估算口径（保守常量，UI 标注"约省"）：每件被采纳的 AI 直出，约替人省下的工时。
 const SAVED_HOURS_PER_ACCEPTED = 0.5;
 
-// AgentRun 终态：自主率 = succeeded / 全部终态。escalated/failed/budget_exhausted/cancelled 视为"没能自主跑完"。
+// AgentRun 终态：自主率 = succeeded / 全部终态。escalated/failed/cancelled 视为"没能自主跑完"。
 const TERMINAL_RUN_STATUSES = new Set([
   "succeeded",
   "failed",
   "escalated",
-  "budget_exhausted",
   "cancelled"
 ]);
 

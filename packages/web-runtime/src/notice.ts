@@ -8,10 +8,13 @@ export type RouteNoticeKind =
   | "selection"
   | "reason_required"
   | "action_pending"
+  | "action_in_progress"
+  | "logout_failed"
   | "desktop_required"
   | "merge_conflict"
   | "sse_refresh"
   | "sse_dirty_guard"
+  | "sse_gave_up"
   | "budget_warning"
   | "field_value_required"
   | "intake_option_required"
@@ -36,6 +39,8 @@ export type RouteNoticeTimerState = {
   timer?: number | undefined;
 };
 
+let routeNoticeSequence = 0;
+
 export function resetRouteNoticeDataset(notice: HTMLElement) {
   delete notice.dataset.r4NoticeActionId;
   delete notice.dataset.r4NoticeEventType;
@@ -59,6 +64,8 @@ export function showRouteNotice(
   }
   resetRouteNoticeDataset(notice);
   notice.dataset.r4RouteNotice = "true";
+  routeNoticeSequence += 1;
+  notice.dataset.r4NoticeSeq = String(routeNoticeSequence);
   notice.dataset.r4NoticeKind = vm.kind;
   notice.dataset.r4NoticeTone = vm.tone;
   notice.dataset.r4NoticeSource = vm.source;
@@ -86,7 +93,51 @@ export function showRouteNotice(
 }
 
 export function actionMessage(error: unknown, locale: WorkHubLocale) {
-  return error instanceof Error ? error.message : goldPathT(locale, "runtime.actionFail");
+  if (error instanceof Error) {
+    // 普通用户审查：断网时浏览器原文「Failed to fetch」直接端给中文用户——换成可操作的人话。
+    if (/failed to fetch|networkerror|load failed/iu.test(error.message)) {
+      return locale === "en-US"
+        ? "Could not reach the server — check your connection and try again."
+        : "连不上服务器——请检查网络后重试。";
+    }
+    // 普通用户审查 R3 high：会话过期的服务端原串 "not identified" 是天书——换成可操作的人话。
+    const errorCode = (error as { code?: unknown }).code;
+    if (errorCode === "not_identified" || error.message === "not identified") {
+      return locale === "en-US"
+        ? "Your session expired — refresh the page to sign in again."
+        : "登录已过期——刷新页面重新登录后再试。";
+    }
+    // R3：客户端超时错误串是中文硬编码（api-client 无 locale）——按错误码在这里双语化。
+    if (errorCode === "request_timeout") {
+      return locale === "en-US"
+        ? "The request timed out — check your connection and try again."
+        : "请求超时了——检查网络后再试一次。";
+    }
+    // 普通用户审查 R3 high：服务端错误串大量只有中文——en 界面读到整句中文。系统性兜底：
+    // en 会话下 message 含 CJK 时给通用英文+错误码（服务端逐串双语化是长尾，客户端先保体验）。
+    if (locale === "en-US" && /[\u4e00-\u9fff]/u.test(error.message)) {
+      // R9 回归修复：服务端「中文正文(English gloss)」双语串——先提取末尾英文括注，
+      // 否则专门写的英文说明会被整句通用兜底吞掉。
+      const gloss = /\(([^()\u4e00-\u9fff]{8,})\)\s*$/u.exec(error.message)?.[1];
+      if (gloss) {
+        return gloss;
+      }
+      const code = (error as { code?: unknown }).code;
+      return typeof code === "string" && code
+        ? `The request was rejected (${code.replace(/_/gu, " ")}). Refresh and try again.`
+        : "The request was rejected. Refresh and try again.";
+    }
+    // R8（错误面 high）：镜像分支——全局兜底（422 契约不符/500/404/JSON 解析失败）的 message 只有英文，
+    // 中文界面用户读到整句英文原文。zh 会话下 message 为纯 ASCII 时同样走通用中文兜底+错误码。
+    if (locale !== "en-US" && !/[\u4e00-\u9fff]/u.test(error.message) && /[A-Za-z]/u.test(error.message)) {
+      const code = (error as { code?: unknown }).code;
+      return typeof code === "string" && code
+        ? `请求没有通过（${code.replace(/_/gu, " ")}）。刷新后再试一次。`
+        : "请求没有通过。刷新后再试一次。";
+    }
+    return error.message;
+  }
+  return goldPathT(locale, "runtime.actionFail");
 }
 
 export function actionSummary(result: unknown, locale: WorkHubLocale) {
@@ -114,6 +165,18 @@ export function actionSuccessNotice(locale: WorkHubLocale, body: string, actionI
   };
 }
 
+export function taskPlanDraftedNoticeBody(locale: WorkHubLocale): string {
+  return locale === "en-US"
+    ? "Task plan drafted. Review the plan before work starts."
+    : "任务计划已生成，请先审阅再开始执行。";
+}
+
+export function startAgentRunQueuedNoticeBody(locale: WorkHubLocale): string {
+  return locale === "en-US"
+    ? "AI started. WorkHub will refresh this task and surface Proposal or Replay when available."
+    : "AI 已开始处理，WorkHub 会刷新任务，并在有 Proposal 或 Replay 时提醒你。";
+}
+
 export function actionErrorNotice(locale: WorkHubLocale, error: unknown, actionId?: string): RouteNoticeVM {
   return {
     kind: "action_error",
@@ -135,6 +198,33 @@ export function actionPendingNotice(locale: WorkHubLocale, actionId?: string): R
     title: goldPathT(locale, "runtime.notice.pendingTitle"),
     body: goldPathT(locale, "runtime.actionPending"),
     actionId
+  };
+}
+
+// R10-P1-5：真实 in-flight（请求已发出、等服务端回来）和「功能没接线」是两种状态——
+// 前者用这个「处理中」notice；actionPendingNotice 只留给真正没有处理器的动作兜底。
+export function actionInProgressNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "action_in_progress",
+    tone: "info",
+    source: "client",
+    locale,
+    title: goldPathT(locale, "runtime.notice.inProgressTitle"),
+    body: goldPathT(locale, "runtime.actionInProgress"),
+    actionId
+  };
+}
+
+// R10-P1-8：登出失败不许伪装成已登出——服务端会话可能仍有效，必须显式告知。
+export function logoutFailedNotice(locale: WorkHubLocale): RouteNoticeVM {
+  return {
+    kind: "logout_failed",
+    tone: "danger",
+    source: "client",
+    locale,
+    title: goldPathT(locale, "runtime.notice.logoutFailedTitle"),
+    body: goldPathT(locale, "runtime.logoutFailedBody"),
+    actionId: "logout"
   };
 }
 
@@ -270,7 +360,9 @@ export function reviewReasonButtons(locale: WorkHubLocale) {
     goldPathT(locale, "runtime.reason.tone"),
     goldPathT(locale, "runtime.reason.scope")
   ];
+  // R5（键盘可达）：理由卡此前没有脱身出口——键盘用户被迫三选一。补「取消」钮（Esc 同效，见 browser 键盘处理）。
+  const cancelLabel = locale === "en-US" ? "Cancel" : "取消";
   return `<div class="wh-app-action-row">${reasons
     .map((reason) => `<button type="button" data-review-reason="${escapeHtml(reason)}">${escapeHtml(reason)}</button>`)
-    .join("")}</div>`;
+    .join("")}<button type="button" data-review-reason-cancel="true">${escapeHtml(cancelLabel)}</button></div>`;
 }

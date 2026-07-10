@@ -1,19 +1,41 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { AcceptedDeliverableRestoreResult } from "@workhub/contracts";
 
 import { acceptedDeliverableRestoreFollowUp, driveUploadPayloadFromPicker } from "./drive-actions.js";
-import { drivePreviewPanelHtml } from "./drive-preview.js";
+import { drivePreviewPanelHtml, renderDrivePreviewPanel } from "./drive-preview.js";
+import { shouldRetryTransportActionNotice } from "./browser-action-notice.js";
 
-const browserSource = readFileSync(new URL("./browser.ts", import.meta.url), "utf8");
+class FakeElement {
+  className = "";
+  dataset: Record<string, string> = {};
+  innerHTML = "";
+  readonly closestResults = new Map<string, FakeElement | null>();
+  readonly queryResults = new Map<string, FakeElement | null>();
+  readonly inserted: Array<{ position: InsertPosition; element: FakeElement }> = [];
+  readonly scrollCalls: unknown[] = [];
+  removed = false;
 
-function browserActionBlock(startMarker: string, endMarker: string) {
-  const start = browserSource.indexOf(startMarker);
-  const end = browserSource.indexOf(endMarker, start);
-  assert.notEqual(start, -1, `missing browser action block ${startMarker}`);
-  assert.notEqual(end, -1, `missing browser action end marker ${endMarker}`);
-  return browserSource.slice(start, end);
+  closest(selector: string) {
+    return this.closestResults.get(selector) ?? null;
+  }
+
+  querySelector(selector: string) {
+    return this.queryResults.get(selector) ?? null;
+  }
+
+  remove() {
+    this.removed = true;
+  }
+
+  insertAdjacentElement(position: InsertPosition, element: FakeElement) {
+    this.inserted.push({ position, element });
+    return element;
+  }
+
+  scrollIntoView(options?: unknown) {
+    this.scrollCalls.push(options);
+  }
 }
 
 test("accepted deliverable restore refreshes the current route instead of jumping to drive", () => {
@@ -57,12 +79,42 @@ test("drive upload picker payload carries the selected parent folder id", () => 
 });
 
 test("drive preview is rendered in-place instead of opening the API JSON envelope", () => {
-  const block = browserActionBlock("if (actionId === \"drive_preview\") {", "if (isNativeResourceLink(actionTarget)) {");
+  // R9.7: the old assertion read browser.ts and matched source strings. That was wrong
+  // because source regexes can pass while delegated click behavior still opens raw API JSON.
+  const actionTarget = new FakeElement();
+  const route = new FakeElement();
+  const anchor = new FakeElement();
+  const previousPanel = new FakeElement();
+  actionTarget.closestResults.set("[data-r4-route-component=\"drive\"]", route);
+  actionTarget.closestResults.set("[data-r4-drive-accepted-deliverable],[data-r4-drive-item]", anchor);
+  route.queryResults.set("[data-r5-drive-preview-panel]", previousPanel);
+  const createdPanels: FakeElement[] = [];
 
-  assert.match(block, /event\.preventDefault\(\);/u);
-  assert.match(block, /await client\.request<DrivePreviewPayload>\(href\);/u);
-  assert.match(block, /data-r5-drive-preview-panel/u);
-  assert.match(block, /renderDrivePreviewPanel/u);
+  const rendered = renderDrivePreviewPanel(
+    actionTarget as unknown as HTMLElement,
+    {
+      filename: "brief.md",
+      preview_type: "text",
+      size_bytes: 2048,
+      text: "Body"
+    },
+    "en-US",
+    () => {
+      const panel = new FakeElement();
+      createdPanels.push(panel);
+      return panel as unknown as HTMLElement;
+    }
+  );
+
+  assert.equal(rendered, true);
+  assert.equal(previousPanel.removed, true);
+  assert.equal(anchor.inserted.length, 1);
+  assert.equal(anchor.inserted[0]?.position, "afterend");
+  assert.equal(anchor.inserted[0]?.element, createdPanels[0]);
+  assert.equal(createdPanels[0]?.dataset.r5DrivePreviewPanel, "true");
+  assert.match(createdPanels[0]?.innerHTML ?? "", /Preview: brief\.md/u);
+  assert.match(createdPanels[0]?.innerHTML ?? "", /Text preview · Markdown source view · 2 KB/u);
+  assert.equal(createdPanels[0]?.scrollCalls.length, 1);
 });
 
 test("drive preview panel localizes type and size metadata", () => {
@@ -81,8 +133,80 @@ test("drive preview panel localizes type and size metadata", () => {
 
   assert.equal(zh.includes("类型 text"), false);
   assert.equal(zh.includes("2048 字节"), false);
-  assert.equal(zh.includes("文本预览 · 2 KB"), true);
+  assert.equal(zh.includes("文本预览 · Markdown 源码视图 · 2 KB"), true);
   assert.equal(en.includes("type text"), false);
   assert.equal(en.includes("2048 bytes"), false);
-  assert.equal(en.includes("Text preview · 2 KB"), true);
+  assert.equal(en.includes("Text preview · Markdown source view · 2 KB"), true);
+});
+
+test("R4 smoke retries only fresh same-action transport notice failures", () => {
+  assert.equal(shouldRetryTransportActionNotice({
+    notice: {
+      visible: true,
+      seq: "4",
+      kind: "action_error",
+      actionId: "apply_ai_fusion",
+      body: "Failed to fetch"
+    },
+    previousSeq: 3,
+    actionId: "apply_ai_fusion"
+  }), true);
+
+  assert.equal(shouldRetryTransportActionNotice({
+    notice: {
+      visible: true,
+      seq: "3",
+      kind: "action_error",
+      actionId: "apply_ai_fusion",
+      body: "Failed to fetch"
+    },
+    previousSeq: 3,
+    actionId: "apply_ai_fusion"
+  }), false);
+
+  assert.equal(shouldRetryTransportActionNotice({
+    notice: {
+      visible: true,
+      seq: "4",
+      kind: "action_error",
+      actionId: "apply_ai_fusion",
+      body: "field_value_required"
+    },
+    previousSeq: 3,
+    actionId: "apply_ai_fusion"
+  }), false);
+
+  assert.equal(shouldRetryTransportActionNotice({
+    notice: {
+      visible: true,
+      seq: "4",
+      kind: "action_error",
+      actionId: "request_changes",
+      body: "Failed to fetch"
+    },
+    previousSeq: 3,
+    actionId: "apply_ai_fusion"
+  }), false);
+});
+
+test("drive preview panel localizes type and size metadata", () => {
+  const zh = drivePreviewPanelHtml({
+    filename: "brief.md",
+    preview_type: "text",
+    size_bytes: 2048,
+    text: "正文"
+  }, "zh-CN");
+  const en = drivePreviewPanelHtml({
+    filename: "brief.md",
+    preview_type: "text",
+    size_bytes: 2048,
+    text: "Body"
+  }, "en-US");
+
+  assert.equal(zh.includes("类型 text"), false);
+  assert.equal(zh.includes("2048 字节"), false);
+  assert.equal(zh.includes("文本预览 · Markdown 源码视图 · 2 KB"), true);
+  assert.equal(en.includes("type text"), false);
+  assert.equal(en.includes("2048 bytes"), false);
+  assert.equal(en.includes("Text preview · Markdown source view · 2 KB"), true);
 });

@@ -1,0 +1,874 @@
+import {
+  createAiDecisionRepository,
+  createAuditLogRepository,
+  createProposalRepository,
+  createTaskPlanArbitrationRepository,
+  createTaskPlanRepository,
+  createWorkItemRepository,
+  getSharedDatabaseClient,
+  type AiDecisionRepository,
+  type AuditLogRepository,
+  type TaskPlanItemRow,
+  type TaskPlanRow,
+  type TaskPlanWithItems,
+  type WorkItemDataRepository,
+  createUserRepository,
+  type UserRepository
+} from "@workhub/db";
+
+import { getDefaultStructuredLogger } from "../logging.js";
+import {
+  createNotificationService,
+  getDefaultNotificationServiceDependencies,
+  type NotificationService
+} from "./notifications.js";
+import type {
+  AgentRunQueue,
+  AgentRunQueueRecord
+} from "../workers/agent-runner.js";
+import { createCrossAgentJudge } from "./cross-agent-judge.js";
+import { getDefaultProviderRegistry } from "./provider-registry.js";
+import { createDbProposalService } from "./proposals.js";
+import {
+  createDbTaskDispatchArbitrationCandidateStore,
+  createTaskDispatchArbitrationSink
+} from "./task-dispatcher-arbitration.js";
+
+type SettledItemStatus = Extract<TaskPlanItemRow["status"], "succeeded" | "failed">;
+type ArbitrationBlockedReason = "request_changes" | "replan" | "escalate";
+type EscalationReason = "cycle" | "dependency_failed" | "partial_failure" | "arbitration_blocked";
+
+export type TaskDispatcherRepository = {
+  getPlanWithItems: (input: {
+    planId: string;
+    workspaceId: string;
+    itemLimit?: number;
+  }) => Promise<TaskPlanWithItems | null>;
+  startDispatchingPlan: (input: {
+    planId: string;
+    workspaceId: string;
+    startedAt?: Date;
+  }) => Promise<TaskPlanRow | null>;
+  markItemDispatched: (input: {
+    planId: string;
+    workspaceId: string;
+    itemId: string;
+    dispatchedAt?: Date;
+  }) => Promise<TaskPlanItemRow | null>;
+  settleDispatchedItem: (input: {
+    planId: string;
+    workspaceId: string;
+    itemId: string;
+    status: SettledItemStatus;
+    // B-R9.2-3：结算方 run 的派发代——带上时只结算同代 item。
+    epoch?: number;
+    settledAt?: Date;
+  }) => Promise<TaskPlanItemRow | null>;
+  skipPendingItems: (input: {
+    planId: string;
+    workspaceId: string;
+    itemIds: string[];
+    skippedAt?: Date;
+  }) => Promise<TaskPlanItemRow[]>;
+  markPlanDone: (input: {
+    planId: string;
+    workspaceId: string;
+    doneAt?: Date;
+  }) => Promise<TaskPlanRow | null>;
+  // B-R9.2-4：全终态汇总的互斥门（真实现=PG advisory 事务锁）。缺省时退化为直接执行
+  // （仅测试桩），生产 repo 必须提供。
+  withPlanSettlementLock?: <T>(input: { planId: string }, fn: () => Promise<T>) => Promise<T>;
+};
+
+export type TaskDispatchInput = {
+  planId: string;
+  workspaceId: string;
+  orgId?: string;
+  actorId?: string;
+  parentRunId?: string;
+};
+
+export type TaskDispatchResult = {
+  planId: string;
+  enqueuedItemIds: string[];
+  skippedItemIds: string[];
+  casMissItemIds: string[];
+  completed: boolean;
+};
+
+export type TaskRunSettledResult = {
+  planId: string;
+  settledItemId: string;
+  settledStatus: SettledItemStatus;
+  dispatch: TaskDispatchResult;
+};
+
+export type TaskDispatchEscalationSink = (input: {
+  plan: TaskPlanRow;
+  items: TaskPlanItemRow[];
+  skippedItemIds: string[];
+  failedItemIds?: string[];
+  failedRunId?: string;
+  arbitrationReason?: ArbitrationBlockedReason;
+  reasonMd?: string;
+  reason: EscalationReason;
+  at: Date;
+}) => Promise<void> | void;
+
+export type TaskDispatchCompletionSink = (input: {
+  plan: TaskPlanRow;
+  items: TaskPlanItemRow[];
+  summaryMd: string;
+  at: Date;
+}) => Promise<void> | void;
+
+export type TaskDispatchArbitrationResult =
+  | { completion: "proceed" }
+  | { completion: "blocked"; reason: ArbitrationBlockedReason; reasonMd?: string };
+
+export type TaskDispatchArbitrationSink = (input: {
+  plan: TaskPlanRow;
+  items: TaskPlanItemRow[];
+  at: Date;
+}) => Promise<TaskDispatchArbitrationResult | void> | TaskDispatchArbitrationResult | void;
+
+export class TaskDispatcherError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+const ITEM_READ_LIMIT = 100;
+const TERMINAL_ITEM_STATUSES = new Set<TaskPlanItemRow["status"]>(["succeeded", "failed", "skipped"]);
+const FAILED_DEPENDENCY_STATUSES = new Set<TaskPlanItemRow["status"]>(["failed", "skipped"]);
+
+function itemById(items: TaskPlanItemRow[]) {
+  return new Map(items.map((item) => [item.id, item]));
+}
+
+function pendingItems(items: TaskPlanItemRow[]) {
+  return items.filter((item) => item.status === "pending");
+}
+
+function hasDependencyCycle(items: TaskPlanItemRow[]) {
+  const byId = itemById(items);
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  const visit = (id: string): boolean => {
+    if (visiting.has(id)) {
+      return true;
+    }
+    if (visited.has(id)) {
+      return false;
+    }
+    const item = byId.get(id);
+    if (!item) {
+      return false;
+    }
+    visiting.add(id);
+    for (const dependencyId of item.dependsOn ?? []) {
+      if (byId.has(dependencyId) && visit(dependencyId)) {
+        return true;
+      }
+    }
+    visiting.delete(id);
+    visited.add(id);
+    return false;
+  };
+
+  return items.some((item) => visit(item.id));
+}
+
+function blockedByFailedDependency(items: TaskPlanItemRow[]) {
+  const byId = itemById(items);
+  const blocked = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const item of pendingItems(items)) {
+      if (blocked.has(item.id)) {
+        continue;
+      }
+      const hasBlockedDependency = (item.dependsOn ?? []).some((dependencyId) => {
+        const dependency = byId.get(dependencyId);
+        return !dependency || blocked.has(dependencyId) || FAILED_DEPENDENCY_STATUSES.has(dependency.status);
+      });
+      if (hasBlockedDependency) {
+        blocked.add(item.id);
+        changed = true;
+      }
+    }
+  }
+  return pendingItems(items).filter((item) => blocked.has(item.id));
+}
+
+function readyPendingItems(items: TaskPlanItemRow[]) {
+  const byId = itemById(items);
+  return pendingItems(items).filter((item) =>
+    (item.dependsOn ?? []).every((dependencyId) => byId.get(dependencyId)?.status === "succeeded")
+  );
+}
+
+function allTerminal(items: TaskPlanItemRow[]) {
+  return items.length > 0 && items.every((item) => TERMINAL_ITEM_STATUSES.has(item.status));
+}
+
+function hasArbitrableOutputs(items: TaskPlanItemRow[]) {
+  return items.filter((item) => item.status === "succeeded").length >= 2;
+}
+
+// B-R9.2-1（branch-review 假接线）：budget_share_pct 真切分子 run 预算——按计划总预算
+// （plan.budgetJson.max_cost_cny）×份额算出子上限传进 enqueue，不再只写进 prompt 文本。
+function itemBudgetCapCny(plan: TaskPlanRow, item: TaskPlanItemRow): string | undefined {
+  const raw = (plan.budgetJson as Record<string, unknown> | null | undefined)?.["max_cost_cny"];
+  const total = typeof raw === "string" ? Number.parseFloat(raw) : typeof raw === "number" ? raw : Number.NaN;
+  if (!Number.isFinite(total) || total <= 0) {
+    return undefined;
+  }
+  return ((total * item.budgetSharePct) / 100).toFixed(2);
+}
+
+function taskObjective(item: TaskPlanItemRow) {
+  return [
+    "Objective:",
+    item.objectiveMd,
+    "",
+    "Acceptance:",
+    item.acceptanceMd,
+    "",
+    `Budget share: ${item.budgetSharePct}%`
+  ].join("\n");
+}
+
+function updateLocalItemStatus(items: TaskPlanItemRow[], itemId: string, status: TaskPlanItemRow["status"], at: Date) {
+  const item = items.find((candidate) => candidate.id === itemId);
+  if (item) {
+    item.status = status;
+    item.updatedAt = at;
+  }
+}
+
+function updateLocalItems(items: TaskPlanItemRow[], rows: TaskPlanItemRow[]) {
+  for (const row of rows) {
+    const index = items.findIndex((item) => item.id === row.id);
+    if (index >= 0) {
+      items[index] = row;
+    }
+  }
+}
+
+function previewItemStatus(
+  items: TaskPlanItemRow[],
+  itemId: string,
+  status: TaskPlanItemRow["status"],
+  at: Date
+) {
+  return items.map((item) => item.id === itemId ? { ...item, status, updatedAt: at } : item);
+}
+
+function completionSummary(plan: TaskPlanRow, items: TaskPlanItemRow[]) {
+  const succeeded = items.filter((item) => item.status === "succeeded");
+  const failed = items.filter((item) => item.status === "failed");
+  const skipped = items.filter((item) => item.status === "skipped");
+  return [
+    `Task plan ${plan.id} completed.`,
+    `Succeeded items: ${succeeded.map((item) => item.title).join(", ") || "none"}.`,
+    `Failed items: ${failed.map((item) => item.title).join(", ") || "none"}.`,
+    `Skipped items: ${skipped.map((item) => item.title).join(", ") || "none"}.`
+  ].join("\n");
+}
+
+function terminalStatusForRun(run: AgentRunQueueRecord): SettledItemStatus | null {
+  if (run.status === "succeeded") {
+    return "succeeded";
+  }
+  if (run.status === "failed" || run.status === "escalated" || run.status === "cancelled") {
+    return "failed";
+  }
+  return null;
+}
+
+async function requireEscalation(
+  sink: TaskDispatchEscalationSink | undefined,
+  input: Parameters<TaskDispatchEscalationSink>[0]
+) {
+  if (!sink) {
+    throw new TaskDispatcherError(500, "task_dispatch_escalation_sink_missing", "任务计划需要人工关注，但决策收件箱写入器未配置。");
+  }
+  try {
+    await sink(input);
+  } catch (error) {
+    getDefaultStructuredLogger().warn("task_dispatch_escalation_failed", {
+      planId: input.plan.id,
+      reason: input.reason,
+      error
+    });
+    throw error;
+  }
+}
+
+async function requireCompletion(
+  sink: TaskDispatchCompletionSink | undefined,
+  input: Parameters<TaskDispatchCompletionSink>[0]
+) {
+  if (!sink) {
+    return;
+  }
+  try {
+    await sink(input);
+  } catch (error) {
+    getDefaultStructuredLogger().warn("task_dispatch_completion_failed", {
+      planId: input.plan.id,
+      error
+    });
+    throw error;
+  }
+}
+
+async function requireArbitration(
+  sink: TaskDispatchArbitrationSink | undefined,
+  input: Parameters<TaskDispatchArbitrationSink>[0]
+): Promise<TaskDispatchArbitrationResult> {
+  if (!sink) {
+    return { completion: "proceed" };
+  }
+  try {
+    return await sink(input) ?? { completion: "proceed" };
+  } catch (error) {
+    getDefaultStructuredLogger().warn("task_dispatch_arbitration_failed", {
+      planId: input.plan.id,
+      error
+    });
+    throw error;
+  }
+}
+
+export function createTaskDispatcher(options: {
+  repository: TaskDispatcherRepository;
+  queue: Pick<AgentRunQueue, "enqueue"> & Partial<Pick<AgentRunQueue, "runNext">>;
+  escalationSink?: TaskDispatchEscalationSink | false;
+  completionSink?: TaskDispatchCompletionSink | false;
+  arbitrationSink?: TaskDispatchArbitrationSink | false;
+  now?: () => Date;
+}) {
+  const now = options.now ?? (() => new Date());
+  const escalationSink = options.escalationSink === false ? undefined : options.escalationSink;
+  const completionSink = options.completionSink === false ? undefined : options.completionSink;
+  const arbitrationSink = options.arbitrationSink === false ? undefined : options.arbitrationSink;
+
+  function pumpQueuedRun() {
+    if (!options.queue.runNext) {
+      return;
+    }
+    void options.queue.runNext().catch((error) => {
+      getDefaultStructuredLogger().warn("task_dispatch_child_run_pump_failed", { error });
+    });
+  }
+
+  async function loadPlan(input: { planId: string; workspaceId: string }) {
+    const loaded = await options.repository.getPlanWithItems({
+      planId: input.planId,
+      workspaceId: input.workspaceId,
+      itemLimit: ITEM_READ_LIMIT
+    });
+    if (!loaded) {
+      throw new TaskDispatcherError(404, "task_plan_not_found", "没有找到这个任务计划。");
+    }
+    if (loaded.itemsCapped) {
+      throw new TaskDispatcherError(409, "task_plan_items_capped", "任务计划子项超过执行上限，请先拆小。");
+    }
+    return loaded;
+  }
+
+  async function maybeCompletePlan(plan: TaskPlanRow, items: TaskPlanItemRow[], at: Date) {
+    if (!allTerminal(items)) {
+      return false;
+    }
+    // B-R9.2-4（结算幂等门）：终态 plan 的重入（done 后重复 merge/dispatch）直接短路，
+    // 不再烧判官、不再写卡、不再落账。
+    if (plan.status === "done") {
+      return true;
+    }
+    if (plan.status === "cancelled") {
+      return false;
+    }
+    const settle = async () => {
+      // 进门后重读：并发窗口里输者等赢者做完，赢者已把 plan 推进终态则直接短路。
+      const reloaded = await loadPlan({ planId: plan.id, workspaceId: plan.workspaceId });
+      if (reloaded.plan.status === "done") {
+        return true;
+      }
+      if (reloaded.plan.status === "cancelled" || !allTerminal(reloaded.items)) {
+        return false;
+      }
+      const settledItems = reloaded.items;
+      if (hasArbitrableOutputs(settledItems)) {
+        const arbitration = await requireArbitration(arbitrationSink, {
+          plan: reloaded.plan,
+          items: settledItems,
+          at
+        });
+        if (arbitration.completion === "blocked") {
+          await requireEscalation(escalationSink, {
+            plan: reloaded.plan,
+            items: settledItems,
+            skippedItemIds: [],
+            reason: "arbitration_blocked",
+            arbitrationReason: arbitration.reason,
+            ...(arbitration.reasonMd ? { reasonMd: arbitration.reasonMd } : {}),
+            at
+          });
+          return false;
+        }
+      }
+      const done = await options.repository.markPlanDone({
+        planId: plan.id,
+        workspaceId: plan.workspaceId,
+        doneAt: at
+      });
+      if (!done) {
+        return false;
+      }
+      await requireCompletion(completionSink, {
+        plan: done,
+        items: settledItems,
+        summaryMd: completionSummary(done, settledItems),
+        at
+      });
+      return true;
+    };
+    if (options.repository.withPlanSettlementLock) {
+      return options.repository.withPlanSettlementLock({ planId: plan.id }, settle);
+    }
+    return settle();
+  }
+
+  async function dispatch(input: TaskDispatchInput): Promise<TaskDispatchResult> {
+    const at = now();
+    const loaded = await loadPlan(input);
+    let plan = loaded.plan;
+    const items = loaded.items.map((item) => ({ ...item }));
+    const result: TaskDispatchResult = {
+      planId: plan.id,
+      enqueuedItemIds: [],
+      skippedItemIds: [],
+      casMissItemIds: [],
+      completed: false
+    };
+
+    if (plan.status === "approved") {
+      plan = await options.repository.startDispatchingPlan({
+        planId: input.planId,
+        workspaceId: input.workspaceId,
+        startedAt: at
+      }) ?? plan;
+    }
+    if (plan.status !== "approved" && plan.status !== "dispatching") {
+      result.completed = await maybeCompletePlan(plan, items, at);
+      return result;
+    }
+
+    if (hasDependencyCycle(items)) {
+      const toSkip = pendingItems(items).map((item) => item.id);
+      const skipped = await options.repository.skipPendingItems({
+        planId: plan.id,
+        workspaceId: plan.workspaceId,
+        itemIds: toSkip,
+        skippedAt: at
+      });
+      updateLocalItems(items, skipped);
+      result.skippedItemIds.push(...skipped.map((item) => item.id));
+      await requireEscalation(escalationSink, {
+        plan,
+        items,
+        skippedItemIds: result.skippedItemIds,
+        reason: "cycle",
+        at
+      });
+      result.completed = await maybeCompletePlan(plan, items, at);
+      return result;
+    }
+
+    const blocked = blockedByFailedDependency(items);
+    if (blocked.length > 0) {
+      // B-R9.0-3（branch-review 死循环）：升级卡必须带上把这批子任务卡住的失败/被跳过上游，
+      // 否则「让它重试」只把被阻塞项重置回 pending，失败依赖原样不动——下一次派发立刻
+      // 再跳过再升级，人永远点不出这个循环。
+      const byId = itemById(items);
+      const failedUpstreamIds = new Set<string>();
+      const visited = new Set<string>();
+      const collectFailedUpstream = (itemId: string) => {
+        if (visited.has(itemId)) {
+          return;
+        }
+        visited.add(itemId);
+        for (const dependencyId of byId.get(itemId)?.dependsOn ?? []) {
+          const dependency = byId.get(dependencyId);
+          if (dependency && FAILED_DEPENDENCY_STATUSES.has(dependency.status)) {
+            failedUpstreamIds.add(dependencyId);
+          }
+          collectFailedUpstream(dependencyId);
+        }
+      };
+      for (const item of blocked) {
+        collectFailedUpstream(item.id);
+      }
+      const skipped = await options.repository.skipPendingItems({
+        planId: plan.id,
+        workspaceId: plan.workspaceId,
+        itemIds: blocked.map((item) => item.id),
+        skippedAt: at
+      });
+      updateLocalItems(items, skipped);
+      result.skippedItemIds.push(...skipped.map((item) => item.id));
+      await requireEscalation(escalationSink, {
+        plan,
+        items,
+        skippedItemIds: result.skippedItemIds,
+        ...(failedUpstreamIds.size > 0 ? { failedItemIds: [...failedUpstreamIds] } : {}),
+        reason: "dependency_failed",
+        at
+      });
+    }
+
+    for (const item of readyPendingItems(items)) {
+      const dispatched = await options.repository.markItemDispatched({
+        planId: plan.id,
+        workspaceId: plan.workspaceId,
+        itemId: item.id,
+        dispatchedAt: at
+      });
+      if (!dispatched) {
+        result.casMissItemIds.push(item.id);
+        continue;
+      }
+      const dispatchEpoch = (dispatched as { dispatchEpoch?: number }).dispatchEpoch;
+      updateLocalItemStatus(items, item.id, "dispatched", at);
+      try {
+        const budgetCapCny = itemBudgetCapCny(plan, item);
+        await options.queue.enqueue({
+          workItemId: plan.workItemId,
+          actorId: input.actorId ?? plan.createdByUserId,
+          ...(input.orgId ? { orgId: input.orgId } : {}),
+          workspaceId: plan.workspaceId,
+          ...(input.parentRunId ? { parentRunId: input.parentRunId } : {}),
+          taskPlanId: plan.id,
+          taskPlanItemId: item.id,
+          ...(plan.objectiveId ? { objectiveId: plan.objectiveId } : {}),
+          agentRole: item.role,
+          objectiveMd: taskObjective(item),
+          title: item.title,
+          mode: "worker",
+          ...(budgetCapCny ? { budgetCapCny } : {}),
+          ...(dispatchEpoch !== undefined ? { taskPlanItemEpoch: dispatchEpoch } : {})
+        });
+      } catch (error) {
+        const failed = await options.repository.settleDispatchedItem({
+          planId: plan.id,
+          workspaceId: plan.workspaceId,
+          itemId: item.id,
+          status: "failed",
+          settledAt: at
+        });
+        if (failed) {
+          updateLocalItems(items, [failed]);
+          await requireEscalation(escalationSink, {
+            plan,
+            items,
+            skippedItemIds: [],
+            failedItemIds: [item.id],
+            reason: "partial_failure",
+            at
+          });
+        }
+        throw error;
+      }
+      result.enqueuedItemIds.push(item.id);
+      pumpQueuedRun();
+    }
+
+    result.completed = await maybeCompletePlan(plan, items, at);
+    return result;
+  }
+
+  async function handleRunSettled(run: AgentRunQueueRecord): Promise<TaskRunSettledResult | null> {
+    const settledStatus = terminalStatusForRun(run);
+    if (!settledStatus || !run.task_plan_id || !run.task_plan_item_id) {
+      return null;
+    }
+    if (!run.workspace_id) {
+      getDefaultStructuredLogger().warn("task_dispatch_run_settled_missing_workspace", {
+        runId: run.run_id,
+        taskPlanId: run.task_plan_id,
+        taskPlanItemId: run.task_plan_item_id
+      });
+      return null;
+    }
+    const at = now();
+    if (settledStatus === "failed") {
+      const loaded = await loadPlan({
+        planId: run.task_plan_id,
+        workspaceId: run.workspace_id
+      });
+      const current = loaded.items.find((item) => item.id === run.task_plan_item_id);
+      if (!current || current.status !== "dispatched") {
+        return null;
+      }
+      // B-R9.2-3：旧代 run 不许替新一轮发 partial_failure 升级卡（结算 CAS 也会落空）。
+      const currentEpoch = (current as { dispatchEpoch?: number }).dispatchEpoch;
+      if (
+        run.task_plan_item_epoch !== undefined
+        && currentEpoch !== undefined
+        && currentEpoch !== run.task_plan_item_epoch
+      ) {
+        return null;
+      }
+      const previewItems = previewItemStatus(loaded.items, run.task_plan_item_id, "failed", at);
+      if (blockedByFailedDependency(previewItems).length === 0) {
+        await requireEscalation(escalationSink, {
+          plan: loaded.plan,
+          items: previewItems,
+          skippedItemIds: [],
+          failedItemIds: [run.task_plan_item_id],
+          failedRunId: run.run_id,
+          reason: "partial_failure",
+          at
+        });
+      }
+    }
+    const settled = await options.repository.settleDispatchedItem({
+      planId: run.task_plan_id,
+      workspaceId: run.workspace_id,
+      itemId: run.task_plan_item_id,
+      status: settledStatus,
+      // B-R9.2-3：只结算同代——人工重派后旧终态 run 的结果不覆盖新一轮。
+      ...(run.task_plan_item_epoch !== undefined ? { epoch: run.task_plan_item_epoch } : {}),
+      settledAt: at
+    });
+    if (!settled) {
+      return null;
+    }
+    const dispatchResult = await dispatch({
+      planId: run.task_plan_id,
+      workspaceId: run.workspace_id,
+      ...(run.org_id ? { orgId: run.org_id } : {}),
+      actorId: run.actor_id,
+      ...(run.parent_run_id ? { parentRunId: run.parent_run_id } : {})
+    });
+    return {
+      planId: run.task_plan_id,
+      settledItemId: run.task_plan_item_id,
+      settledStatus,
+      dispatch: dispatchResult
+    };
+  }
+
+  return {
+    dispatch,
+    handleRunSettled
+  };
+}
+
+export type TaskDispatcher = ReturnType<typeof createTaskDispatcher>;
+
+export function createDbTaskDispatchEscalationSink(
+  decisions: Pick<AiDecisionRepository, "createEscalationEvent"> & Partial<Pick<AiDecisionRepository, "findUnresolvedTaskPlanEscalation">>,
+  reach: {
+    // B-R9.0-5（施工图）：升级发生要主动通知提交人+项目 owner，不能只写 event 等人自己刷收件箱。
+    // 通知是触达手段、决策收件箱才是承重记录：通知写失败只告警，不翻升级事务。
+    notifications?: Pick<NotificationService, "createNotification"> | false;
+    workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> | false;
+    // UX-L（双语）：按收件人 preferredLocale 出通知标题，别让 en 用户单边读中文。可选，缺省 zh。
+    users?: Pick<UserRepository, "findActiveById"> | false;
+  } = {}
+): TaskDispatchEscalationSink {
+  return async (input) => {
+    const arbitrationReasonMd = input.reasonMd?.trim();
+    const reasonMd = input.reason === "cycle"
+      ? "任务计划依赖图存在循环，已跳过尚未开始的子任务，请人工调整计划后重试。"
+      : input.reason === "partial_failure"
+        ? "任务计划已有子任务失败，请在决策收件箱选择重试、转人工或改计划。"
+        : input.reason === "arbitration_blocked"
+          ? [
+            "跨 Agent 仲裁未通过，请在决策收件箱选择重试、转人工或改计划。",
+            arbitrationReasonMd ? `仲裁理由：${arbitrationReasonMd}` : undefined
+          ].filter((line): line is string => Boolean(line)).join("\n")
+          : "任务计划的上游子任务失败或被跳过，依赖它的子任务已跳过，请人工决定是否重试或改计划。";
+    // B-R9.2-4（结算幂等门）：同 plan 同 reason 已有未解决升级卡时不重复开卡、不重复通知
+    // （并发结算的输者、已合并计划的重复 merge 都会撞到这里）。
+    if (decisions.findUnresolvedTaskPlanEscalation) {
+      const existing = await decisions.findUnresolvedTaskPlanEscalation({
+        workItemId: input.plan.workItemId,
+        planId: input.plan.id,
+        reason: input.reason
+      });
+      if (existing) {
+        return;
+      }
+    }
+    const event = await decisions.createEscalationEvent({
+      workItemId: input.plan.workItemId,
+      ...(input.failedRunId ? { agentRunId: input.failedRunId } : {}),
+      trigger: input.reason === "cycle" ? "doom_loop" : "unqualified",
+      reasonMd,
+      handoffJson: {
+        source: "task_dispatcher",
+        reason: input.reason,
+        task_plan_id: input.plan.id,
+        ...(input.failedItemIds ? { failed_item_ids: input.failedItemIds } : {}),
+        ...(input.failedRunId ? { failed_run_id: input.failedRunId } : {}),
+        ...(input.arbitrationReason ? { arbitration_reason: input.arbitrationReason } : {}),
+        ...(arbitrationReasonMd ? { arbitration_reason_md: arbitrationReasonMd } : {}),
+        skipped_item_ids: input.skippedItemIds
+      }
+    });
+    if (!reach.notifications || !reach.workItems) {
+      return;
+    }
+    try {
+      const access = await reach.workItems.findWorkItemAccessRecord(input.plan.workItemId);
+      const recipients = new Set(
+        [access?.submitterUserId, access?.project?.ownerUserId]
+          .filter((userId): userId is string => Boolean(userId))
+      );
+      const dedupeBase = event?.id ?? `${input.plan.id}:${input.at.toISOString()}`;
+      for (const userId of recipients) {
+        let en = false;
+        if (reach.users) {
+          try {
+            en = (await reach.users.findActiveById(userId))?.preferredLocale === "en-US";
+          } catch {
+            en = false;
+          }
+        }
+        await reach.notifications.createNotification({
+          userId,
+          type: "workitem.escalated",
+          severity: "high",
+          // R11（通知信息量）：点名事项——不点开也知道是哪个任务在等决定。
+          title: en
+            ? `${access?.code ? `${access.code} · ` : ""}Your agent team needs a decision`
+            : `${access?.code ? `${access.code} · ` : ""}军团任务需要你来定一下`,
+          body: reasonMd,
+          targetUrl: `/workitems/${input.plan.workItemId}`,
+          workItemId: input.plan.workItemId,
+          dedupeKey: `task_plan_escalation:${dedupeBase}:${userId}`
+        });
+      }
+    } catch (error) {
+      getDefaultStructuredLogger().warn("task_dispatch_escalation_notify_failed", {
+        planId: input.plan.id,
+        reason: input.reason,
+        error
+      });
+    }
+  };
+}
+
+export function createDbTaskDispatchCompletionSink(
+  auditLogs: Pick<AuditLogRepository, "createAuditLog">,
+  // R9-OQ-CUU-DONE（Cuu 三场景之三「军团收工」）：计划完成主动通知提交人+owner——
+  // 通知经既有 SSE/Cuu 管线冒泡，桌面即可出「军团收工！」气泡。通知失败只告警不翻结算。
+  reach: {
+    notifications?: Pick<NotificationService, "createNotification"> | false;
+    workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> | false;
+    users?: Pick<UserRepository, "findActiveById"> | false;
+  } = {}
+): TaskDispatchCompletionSink {
+  return async (input) => {
+    if (reach.notifications && reach.workItems) {
+      try {
+        const access = await reach.workItems.findWorkItemAccessRecord(input.plan.workItemId);
+        const recipients = new Set(
+          [access?.submitterUserId, access?.project?.ownerUserId]
+            .filter((userId): userId is string => Boolean(userId))
+        );
+        const doneCount = input.items.filter((item) => item.status === "succeeded").length;
+        for (const userId of recipients) {
+          let en = false;
+          if (reach.users) {
+            try {
+              en = (await reach.users.findActiveById(userId))?.preferredLocale === "en-US";
+            } catch {
+              en = false;
+            }
+          }
+          await reach.notifications.createNotification({
+            userId,
+            type: "workitem.status_changed",
+            severity: "normal",
+            title: en
+              ? `${access?.code ? `${access.code} · ` : ""}Your agent team wrapped up!`
+              : `${access?.code ? `${access.code} · ` : ""}军团收工！`,
+            body: en
+              ? `${doneCount} of ${input.items.length} subtasks done — go review the results.`
+              : `${doneCount}/${input.items.length} 个活儿办完啦，去验收吧～`,
+            targetUrl: `/workitems/${input.plan.workItemId}`,
+            workItemId: input.plan.workItemId,
+            dedupeKey: `task_plan_completed:${input.plan.id}:${userId}`
+          });
+        }
+      } catch (error) {
+        getDefaultStructuredLogger().warn("task_dispatch_completion_notify_failed", {
+          planId: input.plan.id,
+          error
+        });
+      }
+    }
+    await auditLogs.createAuditLog({
+      workspaceId: input.plan.workspaceId,
+      actorKind: "system",
+      actorNickname: "WorkHub",
+      entityType: "work_item",
+      entityId: input.plan.workItemId,
+      action: "task_plan.completed",
+      detailJson: {
+        task_plan_id: input.plan.id,
+        summary_md: input.summaryMd,
+        item_statuses: input.items.map((item) => ({
+          id: item.id,
+          title: item.title,
+          status: item.status,
+          role: item.role
+        }))
+      }
+    });
+  };
+}
+
+let defaultTaskDispatcher: TaskDispatcher | undefined;
+
+export function getDefaultTaskDispatcher(queue: Pick<AgentRunQueue, "enqueue">) {
+  if (!defaultTaskDispatcher) {
+    const dbClient = getSharedDatabaseClient();
+    const providerRegistry = getDefaultProviderRegistry();
+    const reviewRoute = providerRegistry.routeFor("review");
+    const proposals = createDbProposalService(createProposalRepository(dbClient.db));
+    defaultTaskDispatcher = createTaskDispatcher({
+      repository: createTaskPlanRepository(dbClient.db),
+      queue,
+      escalationSink: createDbTaskDispatchEscalationSink(createAiDecisionRepository(dbClient.db), {
+        notifications: createNotificationService(getDefaultNotificationServiceDependencies()),
+        workItems: createWorkItemRepository(dbClient.db),
+        users: createUserRepository(dbClient.db)
+      }),
+      completionSink: createDbTaskDispatchCompletionSink(createAuditLogRepository(dbClient.db), {
+        notifications: createNotificationService(getDefaultNotificationServiceDependencies()),
+        workItems: createWorkItemRepository(dbClient.db),
+        users: createUserRepository(dbClient.db)
+      }),
+      arbitrationSink: createTaskDispatchArbitrationSink({
+        candidates: createDbTaskDispatchArbitrationCandidateStore(createTaskPlanArbitrationRepository(dbClient.db)),
+        judge: createCrossAgentJudge({ providerRegistry }),
+        proposalReviews: proposals,
+        judgeClientRef: `${reviewRoute.provider.name}:${reviewRoute.model.model}:review`
+      })
+    });
+  }
+  return defaultTaskDispatcher;
+}

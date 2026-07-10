@@ -55,6 +55,13 @@ function toPersistenceRun(run: AgentRunQueueRecord): AgentRunForPersistence {
     ...(run.org_id ? { orgId: run.org_id } : {}),
     ...(run.workspace_id ? { workspaceId: run.workspace_id } : {}),
     workItemId: run.work_item_id,
+    ...(run.parent_run_id ? { parentRunId: run.parent_run_id } : {}),
+    ...(run.task_plan_id ? { taskPlanId: run.task_plan_id } : {}),
+    ...(run.task_plan_item_id ? { taskPlanItemId: run.task_plan_item_id } : {}),
+    ...(run.task_plan_item_epoch !== undefined && run.task_plan_item_epoch !== null ? { taskPlanItemEpoch: run.task_plan_item_epoch } : {}),
+    ...(run.objective_id ? { objectiveId: run.objective_id } : {}),
+    ...(run.agent_role ? { agentRole: run.agent_role } : {}),
+    ...(run.objective_md ? { objectiveMd: run.objective_md } : {}),
     actorUserId: run.actor_id,
     mode: run.mode,
     status: run.status,
@@ -197,6 +204,13 @@ function toQueueRun(rows: StoredAgentRunRows): AgentRunQueueRecord {
     ...(rows.run.orgId ? { org_id: rows.run.orgId } : {}),
     ...(rows.run.workspaceId ? { workspace_id: rows.run.workspaceId } : {}),
     work_item_id: rows.run.workItemId,
+    ...(rows.run.parentRunId ? { parent_run_id: rows.run.parentRunId } : {}),
+    ...(rows.run.taskPlanId ? { task_plan_id: rows.run.taskPlanId } : {}),
+    ...(rows.run.taskPlanItemId ? { task_plan_item_id: rows.run.taskPlanItemId } : {}),
+    ...(rows.run.taskPlanItemEpoch !== null && rows.run.taskPlanItemEpoch !== undefined ? { task_plan_item_epoch: rows.run.taskPlanItemEpoch } : {}),
+    ...(rows.run.objectiveId ? { objective_id: rows.run.objectiveId } : {}),
+    ...(rows.run.agentRole ? { agent_role: rows.run.agentRole } : {}),
+    ...(rows.run.objectiveMd ? { objective_md: rows.run.objectiveMd } : {}),
     actor_id: rows.run.actorUserId ?? rows.run.actor,
     mode: rows.run.mode,
     status: queueStatus(rows.run.status),
@@ -297,6 +311,11 @@ export function createDbAgentRunPersistence(repository: AgentRunRepository): Age
       return rows.map(toQueueRun);
     },
 
+    async listUnsettledTaskPlanRuns(input) {
+      const rows = await repository.listUnsettledTaskPlanRuns(input);
+      return rows.map(toQueueRun);
+    },
+
     async claimQueued(runId, claim) {
       const rows = await repository.claimQueued(runId, claimForRepository(claim));
       return rows ? toQueueRun(rows) : null;
@@ -315,6 +334,15 @@ export function createDbAgentRunPersistence(repository: AgentRunRepository): Age
     async requeueExpiredClaims(input) {
       const rows = await repository.requeueExpiredClaims(requeueForRepository(input));
       return rows.map((run) => toQueueRun({ run, steps: [] }));
+    },
+
+    async restoreDeadLetterClaim(input) {
+      const row = await repository.restoreDeadLetterClaim({
+        runId: input.runId,
+        restoredAt: input.restoredAt,
+        claim: claimForRepository(input.claim)
+      });
+      return row ? toQueueRun({ run: row, steps: [] }) : null;
     }
   };
 }

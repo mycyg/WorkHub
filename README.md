@@ -104,9 +104,9 @@ pnpm install
 
 cp .env.example .env          # 填入大模型 key、数据库连接等本地密钥
 docker compose up -d postgres redis   # 起本地 PG + Redis
-pnpm db:migrate               # 跑 Drizzle 迁移(0000–0019)
+pnpm db:migrate               # 跑 Drizzle 迁移(0000–0045)
 
-pnpm dev                      # 同时拉起 API / Web
+pnpm dev                      # 拉起 API(8787)；另开终端 pnpm --filter @workhub/web dev 起 Web(5173)
 ```
 
 **方式二 · 一键全栈(Pilot,推荐用于试运行)**

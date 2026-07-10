@@ -12,7 +12,7 @@ import type {
   ReplayMergeCandidateVM,
   ReplayTraceVM
 } from "@workhub/contracts";
-import { deliverableTargetLabel } from "../i18n.js";
+import { agentStepPhaseLabel, agentStepPublicSummary, budgetStatusLabel, checkStatusLabel, deliverableTargetLabel, uiFormatCny, workItemStatusLabel } from "../i18n.js";
 import { publicProposalDisplayTitle } from "../proposal/render.js";
 import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type GoldPathCopyKey, type WorkHubLocale } from "./i18n.js";
 import {
@@ -26,7 +26,7 @@ export type GoldPathRenderOptions = {
 };
 
 export type GoldPathRenderedPage = {
-  key: "home" | "projects" | "project-home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "skills" | "settings";
+  key: "home" | "projects" | "project-home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "agents" | "knowledge" | "skills" | "settings";
   route: string;
   title: string;
   html: string;
@@ -43,24 +43,29 @@ export type GoldPathRenderedSurface = {
 };
 
 export const goldPathCss = [
-  ":root{color-scheme:light;--ink:#1A1D26;--secondary:#5B616E;--muted:#9AA0AC;--line:#E6E7EB;--line-alt:#EEF0F3;--paper:#fff;--panel:#fff;--page:#F7F8FA;--soft:#F5F5FE;--blue:#4F46E5;--blue-light:#EEF0FE;--green:#15A05A;--green-light:#E7F0EA;--red:#E5484D;--red-light:#FCECEC;--coral:#ee6b5f;--amber:#E0892A;--amber-light:#FCF3E6;--violet:#7863e6;--radius-card:14px;--radius-button:10px}",
+  ":root{color-scheme:light;--ink:#1A1D26;--secondary:#5B616E;--muted:#667085;--line:#E6E7EB;--line-alt:#EEF0F3;--paper:#fff;--panel:#fff;--page:#F7F8FA;--soft:#F5F5FE;--blue:#4F46E5;--blue-light:#EEF0FE;--green:#15A05A;--green-light:#E7F0EA;--red:#E5484D;--red-light:#FCECEC;--coral:#ee6b5f;--amber:#E0892A;--amber-light:#FCF3E6;--violet:#7863e6}",
   ".wh-shell{font-family:\"Segoe UI\",system-ui,-apple-system,\"PingFang SC\",sans-serif;color:var(--ink);background:var(--page);padding:24px;min-height:100%;width:100%;max-width:100%;box-sizing:border-box;overflow-x:hidden}.wh-shell,.wh-shell *{box-sizing:border-box}",
   ".wh-stage{width:100%;max-width:1040px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start;min-width:0}",
-  ".wh-panel{background:rgba(255,255,255,.9);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 50px rgba(37,51,79,.08);min-width:0;max-width:100%}",
+  // R10-S1 液态玻璃：panel 是玻璃层(带 backdrop-filter)；card 只做半透明白(不叠 blur——每页几十张卡
+  // 逐卡 blur 会拖垮渲染,卡本就坐在玻璃 panel 上,视觉一致)。圆角分级 18/16/12。
+  ".wh-panel{background:rgba(255,255,255,.62);backdrop-filter:saturate(1.45) blur(18px);-webkit-backdrop-filter:saturate(1.45) blur(18px);border:1px solid rgba(255,255,255,.72);border-radius:18px;box-shadow:0 18px 50px rgba(37,51,79,.08);min-width:0;max-width:100%}",
   ".wh-main{padding:24px;min-width:0}.wh-side{padding:18px;position:sticky;top:16px;min-width:0}.wh-kicker{font-size:12px;color:var(--blue);font-weight:700;text-transform:uppercase;letter-spacing:0}",
   ".wh-title{font-size:30px;line-height:1.35;margin:8px 0 8px;overflow-wrap:anywhere}.wh-subtle{color:var(--muted);line-height:1.55;overflow-wrap:anywhere}.wh-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:14px;margin-top:18px;min-width:0;max-width:100%}",
   ".wh-settings-grid{grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr))}",
-  ".wh-card{border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:16px;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word}.wh-card[data-recommended=true]{border-color:var(--blue);box-shadow:0 0 0 1px rgba(53,92,255,.2)}",
+  ".wh-card{border:1px solid rgba(255,255,255,.75);background:rgba(255,255,255,.66);border-radius:16px;padding:16px;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 8px 26px rgba(37,51,79,.05)}.wh-card[data-recommended=true]{border-color:var(--blue);box-shadow:0 0 0 1px rgba(53,92,255,.2)}",
   ".wh-row{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding:12px 0;min-width:0}.wh-row:first-child{border-top:0}.wh-row>div{min-width:0}.wh-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:flex-start;min-width:0}.wh-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:var(--soft);padding:5px 9px;font-size:12px;color:var(--muted);max-width:100%;white-space:normal;text-align:left;overflow-wrap:anywhere;word-break:break-word}",
-  ".wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:8px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:#fff;font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
+  ".wh-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:12px;border:1px solid var(--line);padding:9px 12px;color:var(--ink);text-decoration:none;background:rgba(255,255,255,.92);font-weight:650}.wh-btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}.wh-btn-danger{background:#fff4f3;color:#a94137;border-color:#f3c5c0}",
   ".wh-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.wh-list{display:grid;gap:10px;margin-top:14px}.wh-check{display:grid;gap:4px;border-left:3px solid var(--green);padding-left:10px}.wh-warning{border-left-color:var(--amber)}",
-  ".wh-patch{border:1px solid var(--line);border-radius:8px;background:#fbfcff;overflow:hidden;margin-top:10px}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",
-  ".wh-diff3{border:1px solid #d8e1f2;border-radius:8px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}",
-  ".wh-structured{border:1px solid #dfe6d8;border-radius:8px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
-  ".wh-field-details{border:1px solid #dfe6d8;border-radius:8px;background:#fffefa;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
+  ".wh-patch{border:1px solid var(--line);border-radius:12px;background:#fbfcff;overflow:hidden;margin-top:10px}.wh-patch-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:#f8fbff}.wh-patch-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff{margin:0;font-family:\"Cascadia Mono\",\"SFMono-Regular\",Consolas,monospace;font-size:12px;line-height:1.45;overflow:auto}.wh-diff-line{display:block;white-space:pre;padding:2px 12px}.wh-diff-line[data-patch-line-kind=add]{background:#ecfdf3;color:#11663b}.wh-diff-line[data-patch-line-kind=remove]{background:#fff1f0;color:#9d2f24}.wh-diff-line[data-patch-line-kind=meta]{background:#f1f5fb;color:var(--muted)}",
+  ".wh-diff3{border:1px solid #d8e1f2;border-radius:12px;background:#f8fbff;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-diff3-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-diff3-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-diff3-ranges{margin:0;color:var(--muted);font-size:13px}",
+  ".wh-structured{border:1px solid #dfe6d8;border-radius:12px;background:#fbfff8;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-structured-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.wh-structured-meta{display:flex;gap:6px;flex-wrap:wrap}.wh-structured-fields{margin:0;color:var(--muted);font-size:13px}",
+  ".wh-field-details{border:1px solid #dfe6d8;border-radius:12px;background:#fffefa;padding:10px 12px;display:grid;gap:8px;margin-top:10px}.wh-field-list{display:grid;gap:8px}.wh-field-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;border-top:1px solid #e6ecd9;padding-top:8px}.wh-field-row:first-child{border-top:0;padding-top:0}.wh-field-row-meta{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-content:start}",
   ".wh-progress{height:8px;border-radius:999px;background:#e7ecf6;overflow:hidden}.wh-progress>span{display:block;height:100%;background:var(--blue)}",
   ".wh-desktop .wh-stage{max-width:660px;margin:0;grid-template-columns:1fr}.wh-desktop .wh-shell{background:linear-gradient(135deg,#edf6ff,#f8fbff)}",
-  "@media (max-width:860px){.wh-stage{grid-template-columns:1fr}.wh-side{position:static}.wh-title{font-size:24px}.wh-row{flex-direction:column;align-items:flex-start}.wh-row-meta{justify-content:flex-start}}"
+  "@media (max-width:860px){.wh-stage{grid-template-columns:1fr}.wh-side{position:static}.wh-title{font-size:24px}.wh-row{flex-direction:column;align-items:flex-start}.wh-row-meta{justify-content:flex-start}}",
+  // R10-S1 玻璃降级门（与 product-shell 同口径）。
+  "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.wh-panel{background:rgba(255,255,255,.95)}.wh-card{background:rgba(255,255,255,.97)}}",
+  "@media (prefers-reduced-transparency:reduce){.wh-panel,.wh-card{background:#fff;backdrop-filter:none;-webkit-backdrop-filter:none}}"
 ].join("");
 
 function escapeHtml(value: unknown) {
@@ -77,6 +82,52 @@ function href(value: string) {
   const v = String(value ?? "").trim();
   const safe = (v.startsWith("/") && !v.startsWith("//")) || /^(?:https?:|mailto:)/iu.test(v) ? v : "#";
   return escapeHtml(safe);
+}
+
+function approvalFactActionLabel(actionPattern: string, locale: WorkHubLocale) {
+  const zh = locale === "zh-CN";
+  const normalized = actionPattern.toLowerCase();
+  if (normalized.startsWith("tool.")) {
+    return zh ? "工具审批" : "Tool approval";
+  }
+  if (normalized.includes("permission") || normalized.includes("policy")) {
+    return zh ? "权限审批" : "Permission approval";
+  }
+  if (normalized.includes("budget") || normalized.includes("cost")) {
+    return zh ? "预算审批" : "Budget approval";
+  }
+  if (normalized.includes("proposal") || normalized.includes("deliverable") || normalized.includes("document")) {
+    return zh ? "变更审批" : "Change approval";
+  }
+  return zh ? "审批请求" : "Approval request";
+}
+
+function approvalFactStatusLabel(status: string, locale: WorkHubLocale) {
+  const zh = locale === "zh-CN";
+  const labels: Record<string, [string, string]> = {
+    approved: ["已通过", "Approved"],
+    delegated: ["已转交", "Delegated"],
+    denied: ["已打回", "Denied"],
+    expired: ["已过期", "Expired"],
+    pending: ["待处理", "Pending"]
+  };
+  const label = labels[status];
+  return label ? (zh ? label[0] : label[1]) : (zh ? "状态待确认" : "Status pending review");
+}
+
+function approvalFactRouteLabel(routedToUserId: string | undefined, locale: WorkHubLocale) {
+  if (!routedToUserId) {
+    return t(locale, "approvals.unrouted");
+  }
+  return locale === "zh-CN" ? "已路由" : "Routed";
+}
+
+function formatApprovalFactTimestamp(iso: string | undefined) {
+  if (!iso) {
+    return "";
+  }
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(iso);
+  return match ? `${match[1]} ${match[2]}` : iso;
 }
 
 function t(locale: WorkHubLocale, key: GoldPathCopyKey) {
@@ -99,6 +150,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     health: "项目健康",
     replay: "执行回放",
     cost: "成本看板",
+    agents: "智能代理军团",
     knowledge: "证据检索",
     skills: "团队技能",
     settings: "设置"
@@ -118,6 +170,7 @@ const pageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], stri
     health: "Project Health",
     replay: "Replay Work",
     cost: "Cost Dashboard",
+    agents: "Agent Army",
     knowledge: "Evidence Search",
     skills: "Team Skills",
     settings: "Settings"
@@ -441,7 +494,7 @@ function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
   const requestRows = approvals.requests
     .map(
       (item) =>
-        `<div class="wh-row"><div><strong>${escapeHtml(item.action_pattern)}</strong><p class="wh-subtle">${escapeHtml(item.status)}${item.sla_due_at ? ` · SLA ${escapeHtml(item.sla_due_at)}` : ""}</p></div><span class="wh-pill">${escapeHtml(item.routed_to_user_id ?? t(locale, "approvals.unrouted"))}</span></div>`
+        `<div class="wh-row"><div><strong>${escapeHtml(approvalFactActionLabel(item.action_pattern, locale))}</strong><p class="wh-subtle">${escapeHtml(approvalFactStatusLabel(item.status, locale))}${item.sla_due_at ? ` · SLA ${escapeHtml(formatApprovalFactTimestamp(item.sla_due_at))}` : ""}</p></div><span class="wh-pill">${escapeHtml(approvalFactRouteLabel(item.routed_to_user_id, locale))}</span></div>`
     )
     .join("");
   const queueCards = approvals.items
@@ -456,7 +509,7 @@ function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
     ${pageInfoNote ? `<p class="wh-subtle"${pageInfoAttrs}>${escapeHtml(pageInfoNote)}</p>` : ""}
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.pendingTitle"))}</strong><p class="wh-subtle">${approvals.counts.pending ?? approvals.items.length}${escapeHtml(t(locale, "approvals.pendingUnit"))}</p></article>
-      <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.slaTitle"))}</strong><p class="wh-subtle">${escapeHtml(request?.sla_due_at ?? t(locale, "approvals.slaEmpty"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.slaTitle"))}</strong><p class="wh-subtle">${escapeHtml(formatApprovalFactTimestamp(request?.sla_due_at) || t(locale, "approvals.slaEmpty"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "approvals.ruleTitle"))}</strong><p class="wh-subtle">${escapeHtml(t(locale, "approvals.ruleText"))}</p></article>
     </div>
     <div class="wh-list">${queueCards}</div>
@@ -474,13 +527,13 @@ function renderApprovals(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, 
 function renderWorkItem(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const detail = vm.page_vms.workitem;
   const steps = detail.agent_trace_preview
-    .map((step) => `<div class="wh-row"><span>${escapeHtml(step.output_excerpt ?? step.phase)}</span><span class="wh-pill">#${step.step_no}</span></div>`)
+    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(agentStepPublicSummary(locale, step))}</p></div><span class="wh-pill">#${step.step_no}</span></div>`)
     .join("");
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "workitem.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(detail.workitem.title ?? detail.workitem.code)}</h1>
     <p class="wh-subtle">${escapeHtml(detail.workitem.summary_md ?? detail.workitem.raw_description ?? "")}</p>
     <div class="wh-grid">
-      <article class="wh-card"><strong>${escapeHtml(t(locale, "workitem.statusTitle"))}</strong><p class="wh-subtle">${escapeHtml(detail.workitem.status)}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "workitem.statusTitle"))}</strong><p class="wh-subtle">${escapeHtml(workItemStatusLabel(locale, detail.workitem.status))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "workitem.deliverableTitle"))}</strong><p class="wh-subtle">${escapeHtml(detail.latest_proposal?.title ?? t(locale, "workitem.emptyDeliverable"))}</p></article>
     </div>
     <h2>${escapeHtml(t(locale, "workitem.traceTitle"))}</h2><div class="wh-card">${steps}</div>
@@ -499,9 +552,9 @@ function changeRow(change: DeliverableChange, locale: WorkHubLocale) {
   return `<div class="wh-row"><div><strong>${escapeHtml(change.human_summary)}</strong><p class="wh-subtle">${escapeHtml(change.target_ref.path ?? change.target_kind)}</p></div><div class="wh-row-meta"><span class="wh-pill">${escapeHtml(deliverableTargetLabel(locale, change.target_kind))}</span></div></div>`;
 }
 
-function checkRow(check: DeliverableCheck) {
+function checkRow(check: DeliverableCheck, locale: WorkHubLocale) {
   const className = check.status === "warning" ? "wh-check wh-warning" : "wh-check";
-  return `<div class="${className}"><strong>${escapeHtml(check.label)}</strong><span class="wh-subtle">${escapeHtml(check.status)}${check.detail ? ` · ${escapeHtml(check.detail)}` : ""}</span></div>`;
+  return `<div class="${className}"><strong>${escapeHtml(check.label)}</strong><span class="wh-subtle">${escapeHtml(checkStatusLabel(locale, check.status))}${check.detail ? ` · ${escapeHtml(check.detail)}` : ""}</span></div>`;
 }
 
 function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
@@ -525,7 +578,7 @@ function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, l
       <article class="wh-card"><strong>${escapeHtml(t(locale, "proposal.evidenceTitle"))}</strong><p class="wh-subtle">${manifest.evidence_refs.length}${escapeHtml(t(locale, "proposal.evidenceUnit"))}</p></article>
     </div>
     <h2>${escapeHtml(t(locale, "proposal.changedTitle"))}</h2><div class="wh-card">${manifest.changes.map((change) => changeRow(change, locale)).join("")}</div>
-    <h2>${escapeHtml(t(locale, "proposal.checksTitle"))}</h2><div class="wh-list">${manifest.checks.map(checkRow).join("")}</div>
+    <h2>${escapeHtml(t(locale, "proposal.checksTitle"))}</h2><div class="wh-list">${manifest.checks.map((check) => checkRow(check, locale)).join("")}</div>
     ${actions(proposalActions)}`;
   return {
     key: "proposal",
@@ -540,7 +593,7 @@ function renderProposal(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, l
 function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const replay: ReplayTraceVM = vm.page_vms.replay;
   const steps = replay.steps
-    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(step.phase)}</strong><p class="wh-subtle">${escapeHtml(step.output_excerpt ?? step.tool_name ?? t(locale, "replay.stepFallback"))}</p></div><span class="wh-pill">#${step.step_no}</span></div>`)
+    .map((step) => `<div class="wh-row"><div><strong>${escapeHtml(agentStepPhaseLabel(locale, step.phase))}</strong><p class="wh-subtle">${escapeHtml(agentStepPublicSummary(locale, step))}</p></div><span class="wh-pill">#${escapeHtml(String(step.step_no))}</span></div>`)
     .join("");
   const acceptedDeliverables = replay.accepted_deliverables ?? [];
   const deliverableHrefs = acceptedDeliverables
@@ -588,7 +641,8 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
           .join("")
         : `<p class="wh-subtle">${escapeHtml(t(locale, "replay.noChoice"))}</p>`;
       const targetSummary = attempt.target_keys.length > 0 ? attempt.target_keys.join(", ") : attempt.id;
-      return `<article class="wh-card" data-replay-merge-attempt="${escapeHtml(attempt.id)}" data-replay-merge-result="${escapeHtml(attempt.result)}"><strong>${escapeHtml(mergeAttemptLabel(locale, attempt.result))}</strong><p class="wh-subtle">${escapeHtml(targetSummary)}</p><div class="wh-actions"><span class="wh-pill">${escapeHtml(String(attempt.conflict_count))}</span><span class="wh-pill">${escapeHtml(attempt.created_at)}</span></div>${decisions}</article>`;
+      const createdLabel = formatApprovalFactTimestamp(attempt.created_at);
+      return `<article class="wh-card" data-replay-merge-attempt="${escapeHtml(attempt.id)}" data-replay-merge-result="${escapeHtml(attempt.result)}"><strong>${escapeHtml(mergeAttemptLabel(locale, attempt.result))}</strong><p class="wh-subtle">${escapeHtml(targetSummary)}</p><div class="wh-actions"><span class="wh-pill">${escapeHtml(String(attempt.conflict_count))}</span><span class="wh-pill">${escapeHtml(createdLabel)}</span></div>${decisions}</article>`;
     })
     .join("");
   const structuredAuditCards = renderStructuredFieldAuditDetails({
@@ -602,7 +656,7 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
     <div class="wh-card">${steps}</div>
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.tokenTitle"))}</strong><p class="wh-subtle">${replay.cost?.me.total_tokens ?? 0}</p></article>
-      <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.costTitle"))}</strong><p class="wh-subtle">¥${escapeHtml(replay.cost?.me.estimated_cost_cny ?? "0")}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.costTitle"))}</strong><p class="wh-subtle">${escapeHtml(uiFormatCny(replay.cost?.me.estimated_cost_cny ?? "0", locale))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.snapshotTitle"))}</strong><p class="wh-subtle">${replay.snapshots.length}${escapeHtml(t(locale, "replay.snapshotUnit"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.deliverableTitle"))}</strong><p class="wh-subtle">${acceptedDeliverables.length}${escapeHtml(t(locale, "replay.deliverableUnit"))}</p></article>
       <article class="wh-card"><strong>${escapeHtml(t(locale, "replay.decisionTitle"))}</strong><p class="wh-subtle">${mergeTimeline.length}${escapeHtml(t(locale, "replay.decisionUnit"))}</p></article>
@@ -622,21 +676,24 @@ function renderReplay(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, loc
 
 function renderCost(surface: GoldPathRenderSurface, vm: GoldPathSurfaceVM, locale: WorkHubLocale): GoldPathRenderedPage {
   const cost = vm.page_vms.cost;
-  const noticeCards = cost.notices.map((notice) => `<article class="wh-card"><strong>${escapeHtml(notice.severity)}</strong><p class="wh-subtle">${escapeHtml(notice.message)}</p></article>`).join("");
+  const noticeCards = cost.notices.map((notice) => `<article class="wh-card"><strong>${escapeHtml(budgetStatusLabel(locale, notice.severity))}</strong><p class="wh-subtle">${escapeHtml(notice.message)}</p></article>`).join("");
   const nearestRisk = cost.top_exhaustion_risks[0];
   const zh = locale === "zh-CN";
   // K5 对齐:把「干活 vs 自进化（夜间技能蒸馏）」分账显性化（与 web cost labor_split 一致）。仅有账目时显示。
   const laborSplit = cost.labor_split;
   const laborCard = laborSplit
-    ? `<article class="wh-card" data-r8-cost-labor-split="true" data-r8-cost-self-improvement-ratio="${escapeHtml(String(laborSplit.self_improvement_ratio))}"><strong>${escapeHtml(zh ? "干活 vs 自进化" : "Work vs self-improvement")}</strong><p class="wh-subtle">${escapeHtml(`${zh ? "干活" : "Production"} ¥${laborSplit.production_cost_cny} · ${zh ? "自进化" : "Self-improvement"} ¥${laborSplit.self_improvement_cost_cny}（${Math.round(laborSplit.self_improvement_ratio * 100)}%）`)}</p></article>`
+    ? `<article class="wh-card" data-r8-cost-labor-split="true" data-r8-cost-self-improvement-ratio="${escapeHtml(String(laborSplit.self_improvement_ratio))}"><strong>${escapeHtml(zh ? "干活 vs 自进化" : "Work vs self-improvement")}</strong><p class="wh-subtle">${escapeHtml(`${zh ? "干活" : "Production"} ${uiFormatCny(laborSplit.production_cost_cny, locale)} · ${zh ? "自进化" : "Self-improvement"} ${uiFormatCny(laborSplit.self_improvement_cost_cny, locale)}（${Math.round(laborSplit.self_improvement_ratio * 100)}%）`)}</p></article>`
     : "";
+  const statusText = nearestRisk
+    ? budgetStatusLabel(locale, nearestRisk.status)
+    : cost.empty_state ?? t(locale, "cost.statusFallback");
   const main = `<span class="wh-kicker">${escapeHtml(t(locale, "cost.kicker"))}</span>
     <h1 class="wh-title">${escapeHtml(t(locale, "cost.title"))}</h1>
     <p class="wh-subtle">${escapeHtml(t(locale, "cost.summary"))}</p>
     <div class="wh-grid">
       <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.tokenTitle"))}</strong><p class="wh-subtle">${cost.token_in + cost.token_out}</p></article>
-      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.estimatedTitle"))}</strong><p class="wh-subtle">¥${escapeHtml(cost.total_cost_cny)}</p></article>
-      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.statusTitle"))}</strong><p class="wh-subtle">${escapeHtml(nearestRisk?.status ?? cost.empty_state ?? t(locale, "cost.statusFallback"))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.estimatedTitle"))}</strong><p class="wh-subtle">${escapeHtml(uiFormatCny(cost.total_cost_cny, locale))}</p></article>
+      <article class="wh-card"><strong>${escapeHtml(t(locale, "cost.statusTitle"))}</strong><p class="wh-subtle">${escapeHtml(statusText)}</p></article>
     </div>
     ${laborCard ? `<div class="wh-list">${laborCard}</div>` : ""}
     <div class="wh-list">${noticeCards}</div>`;

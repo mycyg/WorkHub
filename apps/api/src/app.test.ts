@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { HTTPException } from "hono/http-exception";
+
+import {
+  addApprovalCommentRequestSchema,
+  createApprovalRequestSchema,
+  delegateApprovalRequestSchema,
+  delegateEscalationRequestSchema,
+  permissionPolicyWriteSchema,
+  resolveEscalationRequestSchema,
+  respondApprovalRequestSchema,
+  useEvidenceForTaskRequestSchema
+} from "@workhub/contracts";
 
 import app from "./app.js";
 import { httpErrorCodeFor } from "./http-error-codes.js";
@@ -19,6 +31,10 @@ interface ErrorBody {
     code: string;
   };
 }
+
+type ZodRequestObject = {
+  shape: Record<string, { isOptional: () => boolean }>;
+};
 
 const documentedMethods = new Set(["delete", "get", "head", "options", "patch", "post", "put"]);
 const runtimeContractRouteIgnores = new Set(["/", "/openapi.json", "/api/openapi.json"]);
@@ -119,6 +135,49 @@ function jsonErrorCodeProperty(
   const error = schema?.properties?.error as { properties?: Record<string, unknown> } | undefined;
   assert.deepEqual(schema?.required, ["ok", "error"], `${method.toUpperCase()} ${path} ${status} missing error envelope`);
   return error?.properties?.code;
+}
+
+function assertJsonErrorCodes(
+  paths: Record<string, Record<string, unknown>>,
+  path: string,
+  method: string,
+  status: string,
+  codes: string[]
+) {
+  assert.deepEqual(jsonErrorCodeProperty(paths, path, method, status), {
+    type: "string",
+    enum: codes
+  }, `${method.toUpperCase()} ${path} ${status} error codes drifted`);
+}
+
+function zodPropertyNames(schema: ZodRequestObject) {
+  return Object.keys(schema.shape).sort();
+}
+
+function zodRequiredPropertyNames(schema: ZodRequestObject) {
+  return Object.entries(schema.shape)
+    .filter(([, field]) => !field.isOptional())
+    .map(([name]) => name)
+    .sort();
+}
+
+function assertJsonRequestMatchesZodObject(
+  paths: Record<string, Record<string, unknown>>,
+  path: string,
+  method: string,
+  schema: ZodRequestObject
+) {
+  const openApiSchema = jsonRequestSchema(paths, path, method);
+  assert.deepEqual(
+    Object.keys(openApiSchema?.properties ?? {}).sort(),
+    zodPropertyNames(schema),
+    `${method.toUpperCase()} ${path} request properties drifted from zod schema`
+  );
+  assert.deepEqual(
+    [...(openApiSchema?.required ?? [])].sort(),
+    zodRequiredPropertyNames(schema),
+    `${method.toUpperCase()} ${path} required request properties drifted from zod schema`
+  );
 }
 
 function responseObject(
@@ -267,6 +326,10 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/approvals/{id}/delegate"],
     ["get", "/api/approvals/{id}/comments"],
     ["post", "/api/approvals/{id}/comments"],
+    ["post", "/api/escalations/{id}/resolve"],
+    ["post", "/api/escalations/{id}/budget-actions/{actionId}"],
+    ["post", "/api/escalations/{id}/delegate"],
+    ["post", "/api/memory-conflicts/{id}/resolve/{resolution}"],
     ["get", "/api/permissions"],
     ["put", "/api/permissions"],
     ["delete", "/api/permissions/{id}"],
@@ -283,6 +346,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["get", "/api/pages/calendar"],
     ["get", "/api/pages/health"],
     ["get", "/api/pages/cost"],
+    ["get", "/api/pages/agents"],
     ["get", "/api/pages/skills"],
     ["get", "/api/pages/settings"],
     ["get", "/api/drive/projects/{projectId}/items/{itemId}/download"],
@@ -497,6 +561,24 @@ test("core JSON mutation routes document optional bodies and nested fields accur
   ]);
 });
 
+test("OpenAPI JSON request bodies stay aligned with zod input contracts", async () => {
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+
+  for (const { path, method, schema } of [
+    { path: "/api/permissions", method: "put", schema: permissionPolicyWriteSchema },
+    { path: "/api/permissions/ask", method: "post", schema: createApprovalRequestSchema },
+    { path: "/api/approvals/{id}/respond", method: "post", schema: respondApprovalRequestSchema },
+    { path: "/api/approvals/{id}/delegate", method: "post", schema: delegateApprovalRequestSchema },
+    { path: "/api/approvals/{id}/comments", method: "post", schema: addApprovalCommentRequestSchema },
+    { path: "/api/escalations/{id}/resolve", method: "post", schema: resolveEscalationRequestSchema },
+    { path: "/api/escalations/{id}/delegate", method: "post", schema: delegateEscalationRequestSchema },
+    { path: "/api/workitems/{id}/evidence-bindings", method: "post", schema: useEvidenceForTaskRequestSchema }
+  ] as const) {
+    assertJsonRequestMatchesZodObject(body.paths, path, method, schema);
+  }
+});
+
 test("project and drive OpenAPI routes document runtime path and query parameters", async () => {
   const response = await app.request("/api/openapi.json");
   const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
@@ -545,6 +627,9 @@ test("project and drive OpenAPI routes document runtime path and query parameter
 	    ["/api/approvals/{id}/delegate", "post", ["id"]],
 	    ["/api/approvals/{id}/comments", "get", ["id"]],
 	    ["/api/approvals/{id}/comments", "post", ["id"]],
+	    ["/api/escalations/{id}/resolve", "post", ["id"]],
+	    ["/api/escalations/{id}/delegate", "post", ["id"]],
+	    ["/api/memory-conflicts/{id}/resolve/{resolution}", "post", ["id"]],
 	    ["/api/permissions/{id}", "delete", ["id"]]
 	  ] as const) {
     for (const name of names) {
@@ -555,6 +640,27 @@ test("project and drive OpenAPI routes document runtime path and query parameter
         schema: { type: "string", format: "uuid" }
       });
     }
+  }
+
+  for (const [path, method] of [
+    ["/api/drive/projects/{projectId}/files", "post"],
+    ["/api/drive/projects/{projectId}/items/{itemId}/delete", "post"],
+    ["/api/drive/projects/{projectId}/items/{itemId}/restore", "post"],
+    ["/api/drive/projects/{projectId}/comments/{commentId}/draft", "post"],
+	    ["/api/drive/workitems/{workItemId}/proposal-draft", "post"],
+	    ["/api/meetings/projects/{projectId}/insights/{insightId}/draft", "post"],
+	    ["/api/meetings/projects/{projectId}/insights/{insightId}/dismiss", "post"],
+	    ["/api/meetings/workitems/{workItemId}/proposal-draft", "post"],
+	    ["/api/proposals/{id}/review", "post"],
+	    ["/api/proposals/{id}/merge", "post"],
+	    ["/api/merge-proposals/{id}/apply", "post"]
+	  ] as const) {
+    assert.deepEqual(parameterByName(body.paths, path, method, "locale"), {
+      name: "locale",
+      in: "query",
+      required: false,
+      schema: { type: "string", enum: ["zh-CN", "en-US"] }
+    }, `${method.toUpperCase()} ${path} missing locale query parameter`);
   }
 });
 
@@ -827,6 +933,10 @@ test("Task intake and AgentRun OpenAPI responses document the execution chain", 
     "title"
   ]);
 
+  const persistedAgentRunStatusSchema = {
+    type: "string",
+    enum: ["queued", "running", "succeeded", "failed", "escalated", "cancelled"]
+  };
   for (const [path, method, status] of [
     ["/api/workitems/{id}/agent-runs", "post", "202"],
     ["/api/agent-runs/{id}", "get", "200"],
@@ -849,6 +959,20 @@ test("Task intake and AgentRun OpenAPI responses document the execution chain", 
       "replay_href"
     ]);
     assert.ok(data?.properties?.trace, `${method.toUpperCase()} ${path} missing AgentRun trace schema`);
+    // R9.7 review: the old response contract let `budget_exhausted` appear as a
+    // persisted run status. That was wrong because budget exhaustion rejects the
+    // start request with HTTP 402 and opens a budget card instead of saving a run.
+    assert.deepEqual(data?.properties?.status, persistedAgentRunStatusSchema);
+    const runSchema = data?.properties?.run as { properties?: Record<string, unknown> } | undefined;
+    assert.deepEqual(runSchema?.properties?.status, persistedAgentRunStatusSchema);
+    assert.deepEqual(runSchema?.properties?.parent_run_id, { type: "string", format: "uuid" });
+    assert.deepEqual(runSchema?.properties?.task_plan_id, { type: "string", format: "uuid" });
+    assert.deepEqual(runSchema?.properties?.task_plan_item_id, { type: "string", format: "uuid" });
+    assert.deepEqual(runSchema?.properties?.agent_role, {
+      type: "string",
+      enum: ["research", "produce", "review", "integrate"]
+    });
+    assert.deepEqual(runSchema?.properties?.objective_md, { type: "string", minLength: 1 });
   }
 
   assert.deepEqual(jsonErrorCodeProperty(body.paths, "/api/workitems/{id}/agent-runs", "post", "400"), {
@@ -867,9 +991,11 @@ test("Task intake and AgentRun OpenAPI responses document the execution chain", 
     type: "string",
     enum: ["validation_error"]
   });
+  // R9.7 review: the old 503 contract only documented kickoff HTTP failures, but
+  // budget persistence/reservation outages also fail closed before any unreserved run may proceed.
   assert.deepEqual(jsonErrorCodeProperty(body.paths, "/api/workitems/{id}/agent-runs", "post", "503"), {
     type: "string",
-    enum: ["http_error"]
+    enum: ["http_error", "budget_decision_persist_failed", "budget_reservation_failed"]
   });
 
   for (const [path, method] of [
@@ -1046,6 +1172,106 @@ test("Approval and permission OpenAPI contracts document decision and policy act
     enum: ["delegate_to_requester", "delegate_target_cannot_view"]
   });
 
+  assert.deepEqual(jsonRequestSchema(body.paths, "/api/escalations/{id}/resolve", "post")?.required, ["action"]);
+  assert.deepEqual(operationParameters(body.paths, "/api/escalations/{id}/resolve", "post"), [
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+    { name: "locale", in: "query", required: false, schema: { type: "string", enum: ["zh-CN", "en-US"] } }
+  ]);
+  assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/escalations/{id}/resolve", "post")).sort(), [
+    "action",
+    "reason_md"
+  ]);
+  const escalationResolve = jsonResponseSchema(body.paths, "/api/escalations/{id}/resolve", "post", "200");
+  const escalationResolveData = escalationResolve?.properties?.data as {
+    required?: string[];
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.deepEqual(escalationResolveData?.required, ["escalation", "work_item_status", "attention"]);
+  // R9.7 review: the old assertion only allowed direct work-item resolve statuses,
+  // but task-scoped escalation resolution returns the unchanged parent work item status
+  // (for example `escalated`) while mutating the task plan instead.
+  assert.deepEqual(escalationResolveData?.properties?.work_item_status, {
+    type: "string",
+    enum: ["intake", "ai_clarifying", "spec_ready", "ai_working", "escalated", "pm_mode", "in_review", "merged", "done", "cancelled"]
+  });
+
+  assert.equal(jsonRequestBodyRequired(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post"), false);
+  assert.deepEqual(operationParameters(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post"), [
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+    { name: "actionId", in: "path", required: true, schema: { type: "string", minLength: 1, maxLength: 64 } },
+    { name: "locale", in: "query", required: false, schema: { type: "string", enum: ["zh-CN", "en-US"] } }
+  ]);
+  const escalationBudget = jsonResponseSchema(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "200");
+  const escalationBudgetData = escalationBudget?.properties?.data as {
+    required?: string[];
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.deepEqual(escalationBudgetData?.required, ["escalation", "work_item_status", "attention"]);
+  assert.deepEqual(escalationBudgetData?.properties?.work_item_status, {
+    type: "string",
+    enum: ["intake", "ai_clarifying", "spec_ready", "ai_working", "escalated", "pm_mode", "in_review", "merged", "done", "cancelled"]
+  });
+
+  assert.equal(jsonRequestBodyRequired(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post"), false);
+  // R9.7 review: the old assertion only documented `value_md`, but resolving a sync-conflict
+  // without the card version lets a stale UI click decide a newer overwritten memory conflict.
+  assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post")).sort(), [
+    "expected_updated_at",
+    "value_md"
+  ]);
+  assert.deepEqual(parameterByName(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "resolution"), {
+    name: "resolution",
+    in: "path",
+    required: true,
+    schema: { type: "string", enum: ["keep_current", "accept_incoming", "merge_both", "edit_memory", "discard_both"] }
+  });
+  assert.deepEqual(parameterByName(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "expected_updated_at"), {
+    name: "expected_updated_at",
+    in: "query",
+    required: false,
+    schema: { type: "string", format: "date-time" }
+  });
+  const memoryConflictResolve = jsonResponseSchema(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "200");
+  const memoryConflictResolveData = memoryConflictResolve?.properties?.data as {
+    required?: string[];
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.deepEqual(memoryConflictResolveData?.required, ["conflict"]);
+  const memoryConflict = memoryConflictResolveData?.properties?.conflict as {
+    required?: string[];
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.deepEqual(memoryConflict?.properties?.status, {
+    type: "string",
+    enum: ["open", "resolved"]
+  });
+  assert.deepEqual(memoryConflict?.properties?.category, {
+    type: "string",
+    enum: ["preference", "correction", "recurring_context"]
+  });
+  assert.deepEqual(memoryConflict?.properties?.resolution, {
+    anyOf: [
+      { type: "string", enum: ["keep_current", "accept_incoming", "merge_both", "edit_memory", "discard_both"] },
+      { type: "null" }
+    ]
+  });
+
+  assert.deepEqual(jsonRequestSchema(body.paths, "/api/escalations/{id}/delegate", "post")?.required, ["to_user_id"]);
+  assert.deepEqual(operationParameters(body.paths, "/api/escalations/{id}/delegate", "post"), [
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+    { name: "locale", in: "query", required: false, schema: { type: "string", enum: ["zh-CN", "en-US"] } }
+  ]);
+  assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/escalations/{id}/delegate", "post")).sort(), [
+    "reason_md",
+    "to_user_id"
+  ]);
+  const escalationDelegate = jsonResponseSchema(body.paths, "/api/escalations/{id}/delegate", "post", "200");
+  const escalationDelegateData = escalationDelegate?.properties?.data as {
+    required?: string[];
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.deepEqual(escalationDelegateData?.required, ["escalation", "attention"]);
+
   const comments = jsonResponseSchema(body.paths, "/api/approvals/{id}/comments", "get", "200");
   assert.deepEqual(comments?.required, ["ok", "data"]);
   const commentItem = (comments?.properties?.data as { items?: { required?: string[] } } | undefined)?.items;
@@ -1130,7 +1356,12 @@ test("Approval and permission OpenAPI contracts document decision and policy act
     properties?: Record<string, unknown>;
   } | undefined;
   assert.deepEqual(deletePermissionNotFound?.required, ["ok", "error"]);
-  assert.deepEqual(deletePermissionNotFoundError?.properties?.code, { type: "string", enum: ["not_found"] });
+  // Old assertion expected generic not_found. That was wrong because permissions.revokePolicy
+  // returns the domain code permission_policy_not_found, and clients branch on that code.
+  assert.deepEqual(deletePermissionNotFoundError?.properties?.code, {
+    type: "string",
+    enum: ["permission_policy_not_found"]
+  });
 
   assert.deepEqual(jsonRequestSchema(body.paths, "/api/permissions/ask", "post")?.required, ["action_pattern"]);
   assert.deepEqual(Object.keys(jsonRequestProperties(body.paths, "/api/permissions/ask", "post")).sort(), [
@@ -1150,6 +1381,105 @@ test("Approval and permission OpenAPI contracts document decision and policy act
     enum: ["allowed", "denied", "escalated", "pending"]
   });
   assert.ok(askData?.properties?.approval, "POST /api/permissions/ask missing pending approval schema");
+});
+
+test("OpenAPI error responses document approval, meeting, and work item mutation status matrices", async () => {
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+
+  assertJsonErrorCodes(body.paths, "/api/workitems", "post", "409", ["workitem_state_conflict"]);
+  assertJsonErrorCodes(body.paths, "/api/permissions/{id}", "delete", "404", ["permission_policy_not_found"]);
+
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/respond", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/respond", "post", "403", ["invalid_client_token", "forbidden"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/respond", "post", "404", ["not_found"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/respond", "post", "409", ["approval_race"]);
+
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "403", ["invalid_client_token", "forbidden"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "404", ["not_found", "delegate_target_not_found"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "409", ["approval_race"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "422", ["delegate_to_requester", "delegate_target_cannot_view"]);
+
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "400", ["malformed_json", "json_object_required"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "403", ["invalid_client_token", "forbidden"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "404", ["not_found", "escalation_not_found"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "409", [
+    "escalation_race",
+    "escalation_status_conflict"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "422", ["validation_error"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "503", ["task_dispatch_retry_failed", "agent_run_retry_failed"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "403", [
+    "invalid_client_token",
+    "forbidden"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "404", [
+    "not_found",
+    "escalation_not_found"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "409", ["escalation_race"]);
+  // R9.7 review: the old assertion documented only missing-option failures, but
+  // unapplied choices such as `add_budget` now fail closed instead of resolving the card.
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/budget-actions/{actionId}", "post", "422", [
+    "budget_action_not_available",
+    "budget_action_requires_budget_update"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "400", [
+    "malformed_json",
+    "json_object_required"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "403", [
+    "invalid_client_token",
+    "forbidden"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "404", [
+    "not_found",
+    "memory_conflict_not_found"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "409", [
+    "memory_conflict_status_changed"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/memory-conflicts/{id}/resolve/{resolution}", "post", "422", ["validation_error"]);
+
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "400", ["malformed_json", "json_object_required"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "403", ["invalid_client_token", "forbidden"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "404", [
+    "not_found",
+    "escalation_not_found",
+    "delegate_target_not_found"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "409", ["escalation_race"]);
+  assertJsonErrorCodes(body.paths, "/api/escalations/{id}/delegate", "post", "422", ["validation_error"]);
+
+  for (const path of [
+    "/api/meetings/projects/{projectId}/insights/{insightId}/draft",
+    "/api/meetings/projects/{projectId}/insights/{insightId}/dismiss"
+  ] as const) {
+    assertJsonErrorCodes(body.paths, path, "post", "401", ["not_identified"]);
+    assertJsonErrorCodes(body.paths, path, "post", "403", ["invalid_client_token", "meeting_forbidden"]);
+    assertJsonErrorCodes(body.paths, path, "post", "404", ["meeting_not_found", "meeting_insight_not_found"]);
+  }
+
+  assertJsonErrorCodes(body.paths, "/api/meetings/workitems/{workItemId}/proposal-draft", "post", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, "/api/meetings/workitems/{workItemId}/proposal-draft", "post", "403", [
+    "invalid_client_token",
+    "forbidden",
+    "meeting_forbidden"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/meetings/workitems/{workItemId}/proposal-draft", "post", "404", [
+    "not_found",
+    "meeting_not_found",
+    "meeting_insight_not_found"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/meetings/workitems/{workItemId}/proposal-draft", "post", "409", [
+    "meeting_draft_source_missing",
+    "meeting_insight_dismissed"
+  ]);
 });
 
 test("Proposal OpenAPI contracts document review, merge, and conflict action payloads", async () => {
@@ -1255,7 +1585,9 @@ test("Proposal OpenAPI contracts document review, merge, and conflict action pay
 
   assert.equal(jsonRequestBodyRequired(body.paths, "/api/proposals/{id}/merge", "post"), false);
   const mergeRequest = jsonRequestSchema(body.paths, "/api/proposals/{id}/merge", "post");
-  assert.deepEqual(Object.keys(mergeRequest?.properties ?? {}).sort(), ["confirm", "conflict_resolution"]);
+  // R9.7: the old key set was wrong because approve-hold needs a documented dispatch:false merge request.
+  assert.deepEqual(Object.keys(mergeRequest?.properties ?? {}).sort(), ["confirm", "conflict_resolution", "dispatch"]);
+  assert.deepEqual(mergeRequest?.properties?.dispatch, { type: "boolean", default: true });
   for (const [path, method] of [
     ["/api/proposals/{id}/merge", "post"],
     ["/api/merge-proposals/{id}/apply", "post"]
@@ -1306,7 +1638,10 @@ test("Proposal OpenAPI contracts document review, merge, and conflict action pay
             "merge_snapshot_missing",
             "delivery_artifact_missing",
             "delivery_artifact_changed",
-            "delivery_artifact_unsafe_path"
+            "delivery_artifact_unsafe_path",
+            "task_plan_approval_failed",
+            "task_plan_items_invalid",
+            "task_plan_budget_share_invalid"
           ]
     });
     assert.deepEqual(error?.properties?.recoverable, { type: "boolean", const: true });
@@ -1314,6 +1649,10 @@ test("Proposal OpenAPI contracts document review, merge, and conflict action pay
   assert.deepEqual(jsonErrorCodeProperty(body.paths, "/api/proposals/{id}/merge", "post", "422"), {
     type: "string",
     enum: ["validation_error"]
+  });
+  assert.deepEqual(jsonErrorCodeProperty(body.paths, "/api/proposals/{id}/merge", "post", "503"), {
+    type: "string",
+    enum: ["task_plan_dispatch_failed"]
   });
 
   for (const [path, method] of [
@@ -1738,6 +2077,7 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
     "/api/pages/notifications",
     "/api/pages/health",
     "/api/pages/cost",
+    "/api/pages/agents",
     "/api/pages/skills",
     "/api/pages/settings"
   ] as const) {
@@ -1751,7 +2091,10 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
     ["/api/pages/approvals", ["items", "requests", "filters", "counts", "items_detail"]],
     ["/api/pages/notifications", ["generated_at", "actor_user_id", "summary", "buckets", "items"]],
     ["/api/pages/health", ["generated_at", "actor_user_id", "viewer_scope", "summary", "cards"]],
-    ["/api/pages/cost", ["generated_at", "currency", "total_cost_cny", "token_in", "token_out", "trend", "by_user", "by_team", "by_workitem", "model_breakdown", "budget", "notices", "top_exhaustion_risks"]],
+    // R9.5 cost dashboards must expose army task/objective aggregates; the old required-field list
+    // only covered pre-army user/team/workitem buckets and would let the OpenAPI contract drift.
+    ["/api/pages/cost", ["generated_at", "currency", "total_cost_cny", "token_in", "token_out", "trend", "by_user", "by_team", "by_workitem", "by_task_plan", "by_objective", "model_breakdown", "budget", "notices", "top_exhaustion_risks"]],
+    ["/api/pages/agents", ["generated_at", "kpis", "plans", "recent_escalations", "page_info"]],
     ["/api/pages/skills", ["generated_at", "skills", "totals"]],
     ["/api/pages/settings", ["generated_at", "locale", "runtime", "llm_runtime", "budgets", "language", "device"]]
   ] as const) {
@@ -1772,6 +2115,7 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
     "/api/pages/notifications",
     "/api/pages/health",
     "/api/pages/cost",
+    "/api/pages/agents",
     "/api/pages/skills",
     "/api/pages/settings"
   ] as const) {
@@ -1786,6 +2130,79 @@ test("secondary page OpenAPI routes document query parameters and page VM envelo
   }
   assert.deepEqual(pageErrorCode("/api/pages/meetings", "403"), { type: "string", enum: ["meeting_forbidden"] });
   assert.deepEqual(pageErrorCode("/api/pages/meetings", "404"), { type: "string", enum: ["meeting_not_found"] });
+});
+
+test("R9.7 Agent Army OpenAPI schema documents nested dashboard VM fields", async () => {
+  type OpenApiSchema = {
+    additionalProperties?: boolean;
+    items?: OpenApiSchema;
+    maxItems?: number;
+    properties?: Record<string, OpenApiSchema>;
+    required?: string[];
+    type?: string;
+  };
+
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+  const data = jsonResponseSchema(body.paths, "/api/pages/agents", "get", "200")
+    ?.properties?.data as OpenApiSchema | undefined;
+
+  const plans = data?.properties?.plans;
+  const plan = plans?.items;
+  assert.equal(plans?.maxItems, 20);
+  assert.equal(plan?.additionalProperties, false);
+  assert.deepEqual(plan?.required, [
+    "plan_id",
+    "work_item_id",
+    "work_item_code",
+    "work_item_title",
+    "work_item_href",
+    "status",
+    "progress",
+    "roles",
+    "statuses",
+    "cost",
+    "judge",
+    "updated_at"
+  ]);
+
+  const progress = plan?.properties?.progress;
+  assert.deepEqual(progress?.required, ["completed", "total", "label"]);
+  const roles = plan?.properties?.roles;
+  assert.deepEqual(roles?.items?.required, ["role", "count"]);
+  const statuses = plan?.properties?.statuses;
+  assert.deepEqual(statuses?.items?.required, ["status", "count"]);
+  const cost = plan?.properties?.cost;
+  assert.deepEqual(cost?.required, ["used_cny"]);
+  const judge = plan?.properties?.judge;
+  assert.deepEqual(judge?.required, ["passed", "total", "pass_rate_pct"]);
+  const blocker = plan?.properties?.oldest_blocker;
+  assert.deepEqual(blocker?.required, ["kind", "label", "age_seconds"]);
+
+  const recentEscalation = data?.properties?.recent_escalations?.items;
+  assert.equal(data?.properties?.recent_escalations?.maxItems, 5);
+  assert.equal(recentEscalation?.additionalProperties, false);
+  assert.deepEqual(recentEscalation?.required, ["id", "work_item_id", "title", "reason_preview", "created_at", "href"]);
+  const sourceWarnings = data?.properties?.source_warnings;
+  assert.equal(sourceWarnings?.items?.additionalProperties, false);
+  assert.deepEqual(sourceWarnings?.items?.required, ["source", "message"]);
+  assert.deepEqual(sourceWarnings?.items?.properties?.source, {
+    type: "string",
+    enum: ["approvals", "proposals", "escalations", "sync_conflicts"]
+  });
+
+  const pageInfo = data?.properties?.page_info;
+  assert.equal(pageInfo?.additionalProperties, false);
+  assert.deepEqual(pageInfo?.required, [
+    "plan_limit",
+    "returned",
+    "plans_capped",
+    "items_capped",
+    "runs_capped",
+    "escalation_limit",
+    "escalation_returned",
+    "escalations_capped"
+  ]);
 });
 
 test("work item and proposal page OpenAPI routes document id parameters and page VM envelopes", async () => {
@@ -1810,6 +2227,50 @@ test("work item and proposal page OpenAPI routes document id parameters and page
     "evidence_refs",
     "actions"
   ]);
+  const taskPlanSchema = workItemData?.properties?.task_plan as { required?: string[]; properties?: Record<string, unknown> } | undefined;
+  assert.deepEqual(taskPlanSchema?.required, [
+    "id",
+    "work_item_id",
+    "workspace_id",
+    "status",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "items",
+    "items_capped"
+  ]);
+  assert.deepEqual(taskPlanSchema?.properties?.status, {
+    type: "string",
+    enum: ["draft", "proposed", "approved", "dispatching", "paused", "done", "cancelled"]
+  });
+  const agentTeamSchema = workItemData?.properties?.agent_team as { required?: string[]; properties?: Record<string, unknown> } | undefined;
+  assert.deepEqual(agentTeamSchema?.required, [
+    "plan_id",
+    "status",
+    "completed_count",
+    "total_count",
+    "cost_used_cny",
+    "runs_capped",
+    "items"
+  ]);
+  const agentTeamItems = agentTeamSchema?.properties?.items as { type?: string; maxItems?: number; items?: { required?: string[]; properties?: Record<string, unknown> } } | undefined;
+  assert.equal(agentTeamItems?.type, "array");
+  assert.equal(agentTeamItems?.maxItems, 50);
+  assert.deepEqual(agentTeamItems?.items?.required, [
+    "task_plan_item_id",
+    "seq",
+    "title",
+    "role",
+    "plan_status",
+    "status",
+    "budget_share_pct",
+    "depends_on",
+    "waiting_for_seq"
+  ]);
+  assert.deepEqual(agentTeamItems?.items?.properties?.status, {
+    type: "string",
+    enum: ["pending", "dispatched", "succeeded", "failed", "needs_human", "skipped"]
+  });
   const pageErrorCode = (path: string, status: string) => {
     const schema = jsonResponseSchema(body.paths, path, "get", status);
     const error = schema?.properties?.error as { properties?: Record<string, unknown> } | undefined;
@@ -1836,6 +2297,11 @@ test("work item and proposal page OpenAPI routes document id parameters and page
     "review_actions",
     "comments"
   ]);
+  const proposalReviewActions = (proposalData?.properties?.review_actions as { properties?: Record<string, unknown> } | undefined)?.properties;
+  const approveHoldAction = proposalReviewActions?.approve_hold as { properties?: Record<string, unknown> } | undefined;
+  assert.ok(approveHoldAction);
+  assert.ok(approveHoldAction?.properties?.request_json);
+  assert.ok(proposalReviewActions?.merge);
   assert.deepEqual(pageErrorCode("/api/pages/proposals/{id}", "403"), { type: "string", enum: ["forbidden"] });
   assert.deepEqual(pageErrorCode("/api/pages/proposals/{id}", "404"), { type: "string", enum: ["not_found"] });
 });
@@ -1862,6 +2328,13 @@ test("attention and gold path page OpenAPI routes document locale and page VM en
     "source_warnings",
     "worklog"
   ]);
+  const sourceWarnings = attentionData?.properties?.source_warnings as {
+    items?: { properties?: { source?: unknown } };
+  } | undefined;
+  assert.deepEqual(sourceWarnings?.items?.properties?.source, {
+    type: "string",
+    enum: ["approvals", "proposals", "escalations", "sync_conflicts"]
+  });
 
   const goldPathResponse = jsonResponseSchema(body.paths, "/api/pages/gold-path", "get", "200");
   const goldPathData = goldPathResponse?.properties?.data as { required?: string[]; properties?: Record<string, unknown> } | undefined;
@@ -2141,7 +2614,9 @@ test("cost OpenAPI routes document budget usage, policies, and update payloads",
   assert.deepEqual(policiesForbiddenError?.properties?.code, { type: "string", enum: ["forbidden"] });
 
   assert.deepEqual(operationParameters(body.paths, "/api/cost/policies/{scope}/{id}", "put"), [
-    { name: "scope", in: "path", required: true, schema: { type: "string", enum: ["workitem", "user", "team", "eval"] } },
+    // R9.5 added task/objective policy overrides; the old path enum documented only
+    // pre-army scopes even though the runtime route already accepts the new scopes.
+    { name: "scope", in: "path", required: true, schema: { type: "string", enum: ["workitem", "task", "objective", "user", "team", "eval"] } },
     { name: "id", in: "path", required: true, schema: { type: "string", minLength: 1 } }
   ]);
   assert.equal(jsonRequestBodyRequired(body.paths, "/api/cost/policies/{scope}/{id}", "put"), true);
@@ -2567,7 +3042,37 @@ test("malformed JSON request bodies use stable client-debuggable error codes", (
   assert.equal(httpErrorCodeFor(new HTTPException(429, { message: "Too many attempts." })), "rate_limited");
 });
 
-test("isolated route tests do not import the production app just for HTTP error codes", () => {
+function appImportGuardRegisterUrl() {
+  const loaderSource = `
+export async function resolve(specifier, context, nextResolve) {
+  const result = await nextResolve(specifier, context);
+  if (result.url.endsWith("/apps/api/src/app.ts") || result.url.endsWith("/apps/api/src/app.js")) {
+    throw new Error("production app import forbidden in isolated route test guard");
+  }
+  return result;
+}
+`;
+  const registerSource = `
+import { register } from "node:module";
+register(${JSON.stringify(`data:text/javascript,${encodeURIComponent(loaderSource)}`)}, import.meta.url);
+`;
+  return `data:text/javascript,${encodeURIComponent(registerSource)}`;
+}
+
+function childRouteTestEnv() {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    APP_ENV: "test"
+  };
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("NODE_TEST_")) {
+      delete env[key];
+    }
+  }
+  return env;
+}
+
+test("isolated route tests execute with production app imports forbidden", () => {
   const routeTestFiles = [
     "auth.test.ts",
     "gold-path.test.ts",
@@ -2575,9 +3080,23 @@ test("isolated route tests do not import the production app just for HTTP error 
     "notifications-routes.test.ts",
     "projects.test.ts"
   ];
-  const offenders = routeTestFiles.filter((file) =>
-    readFileSync(new URL(file, import.meta.url), "utf8").includes('from "./app.js"')
-  );
+  // R9.7 review: the old guard grepped test source for `from "./app.js"`.
+  // That was wrong because source text does not prove isolated route tests can execute without the production app.
+  const result = spawnSync(process.execPath, [
+    "--import",
+    "tsx",
+    "--import",
+    appImportGuardRegisterUrl(),
+    "--test",
+    ...routeTestFiles
+  ], {
+    cwd: fileURLToPath(new URL(".", import.meta.url)),
+    encoding: "utf8",
+    env: childRouteTestEnv()
+  });
 
-  assert.deepEqual(offenders, []);
+  if (result.error) {
+    throw result.error;
+  }
+  assert.equal(result.status, 0, [result.stdout, result.stderr].filter(Boolean).join("\n"));
 });

@@ -176,7 +176,12 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   const calls: string[] = [];
   const client = createApiClient({
     fetchFn: async (input, init) => {
-      const body = (String(input).includes("/next-question") || String(input).includes("/auth/preferences")) && typeof init?.body === "string"
+      const body = (
+        String(input).includes("/next-question") ||
+        String(input).includes("/auth/preferences") ||
+        String(input).includes("/task-plan") ||
+        String(input).includes("/memory-conflicts/")
+      ) && typeof init?.body === "string"
         ? ` ${init.body}`
         : "";
       calls.push(`${init?.method ?? "GET"} ${input}${body}`);
@@ -206,10 +211,16 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
   await client.getSession("session-1");
   await client.createWorkItem({ session_id: "session-1", selected_option_ids: ["risk-first"] });
   await client.startAgentRun("work-1", { title: "AI 开始整理周报" });
+  await client.createTaskPlan("work-1", {}, { locale: "en-US" });
   await client.getAgentRun("run-1");
   await client.getAgentRunTrace("run-1", 2);
   await client.getAgentRunHandoff("run-1");
   await client.abortAgentRun("run-1");
+  await client.resolveMemoryConflict("memory-conflict-1", {
+    resolution: "merge_both",
+    value_md: "合并后的偏好。",
+    expected_updated_at: "2026-07-03T10:40:00.000Z"
+  });
   await client.createProposalFromManifest("work-1", { manifest: deliverableManifestFixtures[0]! });
   await client.listWorkItemProposals("work-1");
   await client.listWorkItemConflicts("work-1");
@@ -265,10 +276,14 @@ test("api client exposes P0.5 gold path page and replay endpoints", async () => 
     "GET /api/sessions/session-1",
     "POST /api/workitems",
     "POST /api/workitems/work-1/agent-runs",
+    'POST /api/workitems/work-1/task-plan?locale=en-US {}',
     "GET /api/agent-runs/run-1",
     "GET /api/agent-runs/run-1/trace?after=2",
     "GET /api/agent-runs/run-1/handoff",
     "POST /api/agent-runs/run-1/abort",
+    // R9.7 review: the old assertion put `expected_updated_at` in the JSON body,
+    // but durable memory-conflict cards and OpenAPI document the stale-version token as a query parameter.
+    'POST /api/memory-conflicts/memory-conflict-1/resolve/merge_both?expected_updated_at=2026-07-03T10%3A40%3A00.000Z {"value_md":"合并后的偏好。"}',
     "POST /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/proposals",
     "GET /api/workitems/work-1/conflicts",
@@ -313,6 +328,7 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.pages.attention({ locale: "en-US" });
   await client.pages.approvals({ locale: "en-US" });
   await client.pages.cost({ locale: "en-US" });
+  await client.pages.agents({ locale: "en-US" });
   await client.pages.settings({ locale: "en-US" });
   await client.pages.drive({ locale: "en-US", projectId: "project 1" });
   await client.pages.meetings({ locale: "en-US", project_id: "project 1", meeting_id: "meeting 1" });
@@ -331,12 +347,20 @@ test("api client carries locale on typed page VM requests", async () => {
   await client.createMeetingInsightDraft("project 1", "insight 1", { locale: "zh-CN" });
   await client.dismissMeetingInsight("project 1", "insight 1", { locale: "en-US" });
   await client.createMeetingDraftProposal("work 1", { locale: "zh-CN" });
+  await client.resolveEscalation("esc 1", { action: "retry" }, { locale: "en-US" });
+  await client.resolveBudgetDecision("esc 1", "finish_current_output", { locale: "en-US" });
+  await client.delegateEscalation("esc 1", { to_user_id: "user 1" }, { locale: "en-US" });
+  await client.reviewProposal("proposal 1", { decision: "approve" }, { locale: "en-US" });
+  await client.mergeProposal("proposal 1", {}, { locale: "zh-CN" });
+  await client.applyMergeProposalCandidate("merge proposal/1", {}, { locale: "en-US" });
 
   assert.deepEqual(calls, [
     "/api/pages/gold-path?locale=en-US",
     "/api/pages/attention?locale=en-US",
     "/api/pages/approvals?locale=en-US",
     "/api/pages/cost?locale=en-US",
+    // R9.6 adds the Agent Army dashboard Page VM; the old locale-call list was pre-dashboard.
+    "/api/pages/agents?locale=en-US",
     "/api/pages/settings?locale=en-US",
     "/api/pages/drive?locale=en-US&project_id=project+1",
     "/api/pages/meetings?locale=en-US&project_id=project+1&m=meeting+1",
@@ -354,7 +378,55 @@ test("api client carries locale on typed page VM requests", async () => {
     "/api/drive/workitems/work%201/proposal-draft?locale=en-US",
     "/api/meetings/projects/project%201/insights/insight%201/draft?locale=zh-CN",
     "/api/meetings/projects/project%201/insights/insight%201/dismiss?locale=en-US",
-    "/api/meetings/workitems/work%201/proposal-draft?locale=zh-CN"
+    "/api/meetings/workitems/work%201/proposal-draft?locale=zh-CN",
+    "/api/escalations/esc%201/resolve?locale=en-US",
+    "/api/escalations/esc%201/budget-actions/finish_current_output?locale=en-US",
+    "/api/escalations/esc%201/delegate?locale=en-US",
+    "/api/proposals/proposal%201/review?locale=en-US",
+    "/api/proposals/proposal%201/merge?locale=zh-CN",
+    "/api/merge-proposals/merge%20proposal%2F1/apply?locale=en-US"
+  ]);
+});
+
+test("api client carries locale on session next-question requests", async () => {
+  const calls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push(`${init?.method ?? "GET"} ${input}${typeof init?.body === "string" ? ` ${init.body}` : ""}`);
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.nextQuestion("session 1", { selected_option_ids: ["risk-first"] }, { locale: "zh-CN" });
+
+  assert.deepEqual(calls, [
+    'POST /api/sessions/session%201/next-question?locale=zh-CN {"selected_option_ids":["risk-first"]}'
+  ]);
+});
+
+test("api client carries locale on session creation and launch requests", async () => {
+  const calls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input, init) => {
+      calls.push(`${init?.method ?? "GET"} ${input}${typeof init?.body === "string" ? ` ${init.body}` : ""}`);
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.createSession({ intent_text: "整理 R9 记录" }, { locale: "zh-CN" });
+  await client.createWorkItem({ session_id: "session 1" }, { locale: "zh-CN" });
+  await client.startAgentRun("work 1", { title: "整理 R9 记录" }, { locale: "zh-CN" });
+
+  assert.deepEqual(calls, [
+    'POST /api/sessions?locale=zh-CN {"intent_text":"整理 R9 记录"}',
+    'POST /api/workitems?locale=zh-CN {"session_id":"session 1"}',
+    'POST /api/workitems/work%201/agent-runs?locale=zh-CN {"title":"整理 R9 记录"}'
   ]);
 });
 

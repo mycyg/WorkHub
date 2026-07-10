@@ -759,6 +759,98 @@ test("desktop Cuu actions submit proposal review choices instead of navigating t
   ]);
 });
 
+test("desktop Cuu proposal actions preserve locale for localized result copy", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async reviewProposal(id: string, payload: unknown, options?: unknown) {
+      calls.push({ type: "review", id, payload, options });
+      return { attention: { summary_text: "Proposal approved." } };
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal(id: string, payload: unknown, options?: unknown) {
+      calls.push({ type: "merge", id, payload, options });
+      return { attention: { summary_text: "Proposal merged." } };
+    },
+    async applyMergeProposalCandidate(id: string, payload: unknown, options?: unknown) {
+      calls.push({ type: "apply", id, payload, options });
+      return { attention: { summary_text: "AI fusion applied." } };
+    }
+  };
+  const review = resolveDesktopCuuAction("/api/proposals/proposal-1/review", { actionId: "approve" });
+  const merge = resolveDesktopCuuAction("/api/proposals/proposal-1/merge", { actionId: "merge" });
+  const apply = resolveDesktopCuuAction("/api/merge-proposals/merge-proposal-1/apply", { actionId: "apply" });
+
+  await submitDesktopCuuAction({ client, action: review!, locale: "en-US" });
+  await submitDesktopCuuAction({ client, action: merge!, locale: "en-US" });
+  await submitDesktopCuuAction({ client, action: apply!, locale: "en-US" });
+
+  assert.deepEqual(calls, [
+    { type: "review", id: "proposal-1", payload: { decision: "approve", remember: "once" }, options: { locale: "en-US" } },
+    { type: "merge", id: "proposal-1", payload: {}, options: { locale: "en-US" } },
+    { type: "apply", id: "merge-proposal-1", payload: {}, options: { locale: "en-US" } }
+  ]);
+});
+
+test("desktop Cuu actions resolve escalation cards with action-specific payloads", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async resolveEscalation(id: string, payload: unknown, options?: unknown) {
+      calls.push({ id, payload, options });
+      return { attention: { summary_text: "我会再让它试一次。" } };
+    },
+    async nextQuestion() {
+      throw new Error("not needed");
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    }
+  };
+  const retry = resolveDesktopCuuAction("/api/escalations/escalation-1/resolve", { actionId: "escalation_retry" });
+  const pmMode = resolveDesktopCuuAction("/api/escalations/escalation-1/resolve", { actionId: "escalation_pm_mode" });
+  const cancel = resolveDesktopCuuAction("/api/escalations/escalation-1/resolve", { actionId: "escalation_cancel" });
+
+  assert.deepEqual(retry, {
+    kind: "resolve-escalation",
+    escalationId: "escalation-1",
+    payload: { action: "retry" }
+  });
+  assert.deepEqual(pmMode, {
+    kind: "resolve-escalation",
+    escalationId: "escalation-1",
+    payload: { action: "pm_mode" }
+  });
+  assert.deepEqual(cancel, {
+    kind: "resolve-escalation",
+    escalationId: "escalation-1",
+    payload: { action: "cancel" }
+  });
+
+  assert.equal((await submitDesktopCuuAction({ client, action: retry! })).message, "我会再让它试一次。");
+  assert.deepEqual(calls, [
+    { id: "escalation-1", payload: { action: "retry" }, options: { locale: "zh-CN" } }
+  ]);
+});
+
 test("desktop Cuu actions start a real agent run from a free-text launcher card", async () => {
   const calls: unknown[] = [];
   const launcher = createDesktopCuuAgentLauncherCard();
@@ -808,8 +900,8 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
     replay_href: "/api/agent-runs/10000000-0000-4000-8000-000000000301/replay"
   };
   const client = {
-    async createSession(payload: unknown): Promise<SessionVM> {
-      calls.push({ step: "createSession", payload });
+    async createSession(payload: unknown, options?: unknown): Promise<SessionVM> {
+      calls.push({ step: "createSession", payload, options });
       return {
         session_id: "10000000-0000-4000-8000-000000000201",
         work_item_id: "10000000-0000-4000-8000-000000000201",
@@ -830,8 +922,8 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
         }
       };
     },
-    async createWorkItem(payload: unknown) {
-      calls.push({ step: "createWorkItem", payload });
+    async createWorkItem(payload: unknown, options?: unknown) {
+      calls.push({ step: "createWorkItem", payload, options });
       return {
         workitem: {
           id: "10000000-0000-4000-8000-000000000201",
@@ -845,8 +937,8 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
         evidence_refs: []
       } as unknown as WorkItemDetailVM;
     },
-    async startAgentRun(workItemId: string, payload: unknown) {
-      calls.push({ step: "startAgentRun", workItemId, payload });
+    async startAgentRun(workItemId: string, payload: unknown, options?: unknown) {
+      calls.push({ step: "startAgentRun", workItemId, payload, options });
       return run;
     },
     async respondApproval() {
@@ -871,7 +963,7 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
     card: launcher,
     freeText: demand
   });
-  const result = await submitDesktopCuuAction({ client, action: action! });
+  const result = await submitDesktopCuuAction({ client, action: action!, locale: "zh-CN" });
 
   assert.equal(action?.kind, "cuu-start-agent");
   assert.equal(action && "selectedOptionIds" in action ? action.selectedOptionIds : undefined, undefined);
@@ -881,13 +973,17 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
   assert.equal(result.card?.payload_ref?.entity_type, "agent_run");
   assert.equal(result.card?.state, "thinking");
   assert.equal(result.agentRun?.run_id, run.run_id);
+  // R9.7: the old assertion only checked payloads, but launcher-created sessions
+  // render user-visible follow-up/confirm cards; omitting locale options let zh flows
+  // silently fall back to English after the first clarification.
   assert.deepEqual(calls, [
     {
       step: "createSession",
       payload: {
         title: demand,
         intent_text: demand
-      }
+      },
+      options: { locale: "zh-CN" }
     },
     {
       step: "createWorkItem",
@@ -897,14 +993,16 @@ test("desktop Cuu actions start a real agent run from a free-text launcher card"
         raw_description: demand,
         free_text: demand,
         kickoff_agent: true
-      }
+      },
+      options: { locale: "zh-CN" }
     },
     {
       step: "startAgentRun",
       workItemId: "10000000-0000-4000-8000-000000000201",
       payload: {
         title: demand
-      }
+      },
+      options: { locale: "zh-CN" }
     }
   ]);
 });
@@ -1559,6 +1657,98 @@ test("desktop Cuu actions advance option-first clarification sessions", async ()
   assert.deepEqual(calls, [{ sessionId: "session-1", payload: { selected_option_ids: ["risk-first"] } }]);
 });
 
+test("desktop Cuu session actions preserve the current locale for follow-up questions", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    async respondApproval() {
+      throw new Error("not needed");
+    },
+    async nextQuestion(sessionId: string, payload: unknown, options?: unknown) {
+      calls.push({ sessionId, payload, options });
+      const session: SessionVM = {
+        session_id: sessionId,
+        work_item_id: sessionId,
+        topic: `session:${sessionId}`,
+        stream_href: `/api/push/stream/session/${sessionId}`,
+        next_question_href: `/api/sessions/${sessionId}/next-question`,
+        question: {
+          id: "question-confirm",
+          session_id: sessionId,
+          work_item_id: sessionId,
+          title: "是否按这个方向创建事项？",
+          body: "点确认后会进入可执行事项；如果需要更多依据，可以先去检索项目证据。",
+          input_mode: "confirm",
+          options: [
+            { id: "create-workitem", label: "创建事项", description: "确认后，事项会进入可执行状态，AI 可以继续处理。" },
+            { id: "search-evidence-first", label: "先找证据", description: "先从项目历史、文档和事项里找依据。" },
+            { id: "adjust-scope", label: "调整范围", description: "回到上一步补充澄清回答。" }
+          ],
+          free_text: { enabled: true, collapsed_by_default: true },
+          progress: [],
+          submit: { method: "POST", href: `/api/sessions/${sessionId}/next-question` }
+        }
+      };
+      return session;
+    },
+    async searchKnowledge() {
+      throw new Error("not needed");
+    },
+    async useEvidenceForWorkItem() {
+      throw new Error("not needed");
+    },
+    async mergeProposal() {
+      throw new Error("not needed");
+    }
+  };
+  const card: CuuCard = {
+    id: "question-card",
+    kind: "question",
+    state: "asking_approval",
+    motion: {
+      state: "asking_approval",
+      sprite_state: "asking_approval_bounce",
+      emphasis: "urgent",
+      loop: true,
+      reduced_motion_fallback: "Cuu 等你选择一个澄清选项。"
+    },
+    title: "R9验收记录来源确认",
+    message: "请提供源文件。",
+    priority: "high",
+    chips: [
+      { id: "source-provided", label: "已提供来源", selected: true }
+    ],
+    input: {
+      mode: "single_choice",
+      option_first: true,
+      free_text_enabled: true,
+      free_text_collapsed_by_default: true
+    },
+    actions: [
+      {
+        id: "submit_option",
+        label: "确认选项",
+        tone: "primary",
+        method: "POST",
+        href: "/api/sessions/session-1/next-question"
+      }
+    ]
+  };
+  const action = resolveDesktopCuuAction("/api/sessions/session-1/next-question", { actionId: "submit_option", card });
+
+  const result = await submitDesktopCuuAction({ client, action: action!, locale: "zh-CN" });
+
+  assert.deepEqual(calls, [
+    {
+      sessionId: "session-1",
+      payload: { selected_option_ids: ["source-provided"] },
+      options: { locale: "zh-CN" }
+    }
+  ]);
+  assert.equal(result.message, "下一题：是否按这个方向创建事项？");
+  assert.equal(result.card?.title, "是否按这个方向创建事项？");
+  assert.doesNotMatch(JSON.stringify(result.card), /Create work item|Find evidence first|Adjust scope/u);
+});
+
 test("desktop Cuu actions finalize confirmed sessions and start the agent run", async () => {
   const calls: unknown[] = [];
   const run = agentRunLive({ title: "Confirmed Cuu run", status: "queued" });
@@ -1987,5 +2177,82 @@ test("desktop Cuu actions bind evidence refs back to the current work item", asy
         note: "Cuu evidence card action: use_for_current_task"
       }
     }
+  ]);
+});
+
+
+// B-R9.6 UX 审计（桌宠死卡）：sync_conflict / budget / skip-plan 卡动作现在有真分派——
+// 点了会打到对应端点，而不是掉进裸 anchor 导航。
+test("resolveDesktopCuuAction dispatches memory-conflict, budget and skip-plan hrefs", () => {
+  const conflict = resolveDesktopCuuAction(
+    "/api/memory-conflicts/c1/resolve/discard_both?expected_updated_at=2026-07-03T00%3A00%3A00.000Z"
+  );
+  assert.deepEqual(conflict, {
+    kind: "memory-conflict-resolve",
+    conflictId: "c1",
+    resolution: "discard_both",
+    expectedUpdatedAt: "2026-07-03T00:00:00.000Z"
+  });
+  // 缺 expected_updated_at 的冲突动作不派发（乐观锁参数是必需品）。
+  assert.equal(resolveDesktopCuuAction("/api/memory-conflicts/c1/resolve/keep_current"), undefined);
+  assert.deepEqual(resolveDesktopCuuAction("/api/escalations/e1/budget-actions/add_budget"), {
+    kind: "budget-decision",
+    escalationId: "e1",
+    budgetActionId: "add_budget"
+  });
+  assert.deepEqual(resolveDesktopCuuAction("/api/proposals/p1/skip-plan"), {
+    kind: "skip-plan",
+    proposalId: "p1"
+  });
+});
+
+test("submitDesktopCuuAction runs the three new card actions through the client", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    async respondApproval() { throw new Error("unused"); },
+    async nextQuestion() { throw new Error("unused"); },
+    async searchKnowledge() { throw new Error("unused"); },
+    async useEvidenceForWorkItem() { throw new Error("unused"); },
+    async resolveMemoryConflict(id: string, payload: unknown) {
+      calls.push(["conflict", id, payload]);
+      return { conflict: {} };
+    },
+    async resolveBudgetDecision(id: string, actionId: string) {
+      calls.push(["budget", id, actionId]);
+      return { attention: { summary_text: "已追加预算，军团继续执行。" } };
+    },
+    async skipTaskPlanProposal(id: string) {
+      calls.push(["skip", id]);
+      return { attention: { summary_text: "已改为单个 AI 直接执行。" } };
+    }
+  } as never;
+
+  const conflictResult = await submitDesktopCuuAction({
+    client,
+    locale: "zh-CN",
+    action: {
+      kind: "memory-conflict-resolve",
+      conflictId: "c1",
+      resolution: "merge_both",
+      expectedUpdatedAt: "2026-07-03T00:00:00.000Z"
+    }
+  });
+  assert.match(conflictResult.message, /偏好冲突已处理/u);
+  const budgetResult = await submitDesktopCuuAction({
+    client,
+    locale: "zh-CN",
+    action: { kind: "budget-decision", escalationId: "e1", budgetActionId: "add_budget" }
+  });
+  assert.equal(budgetResult.message, "已追加预算，军团继续执行。");
+  const skipResult = await submitDesktopCuuAction({
+    client,
+    locale: "zh-CN",
+    action: { kind: "skip-plan", proposalId: "p1" }
+  });
+  assert.equal(skipResult.message, "已改为单个 AI 直接执行。");
+  assert.deepEqual(calls, [
+    ["conflict", "c1", { resolution: "merge_both", expected_updated_at: "2026-07-03T00:00:00.000Z" }],
+    ["budget", "e1", "add_budget"],
+    ["skip", "p1"]
   ]);
 });

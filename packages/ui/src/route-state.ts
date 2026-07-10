@@ -17,6 +17,7 @@ export type R4WebRouteKey =
   | "health"
   | "replay"
   | "cost"
+  | "agents"
   | "knowledge"
   | "skills"
   | "settings";
@@ -53,6 +54,7 @@ export const r4WebRouteKeys = [
   "health",
   "replay",
   "cost",
+  "agents",
   "knowledge",
   "skills",
   "settings"
@@ -95,6 +97,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     health: { label: "项目健康", route: "/dashboard/health" },
     replay: { label: "执行回放", route: "/agent-runs/:id/replay" },
     cost: { label: "成本仪表盘", route: "/dashboard/cost" },
+    agents: { label: "军团", route: "/dashboard/agents" },
     knowledge: { label: "证据检索", route: "/knowledge/search" },
     skills: { label: "团队技能", route: "/dashboard/skills" },
     settings: { label: "设置", route: "/settings" }
@@ -114,6 +117,7 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     health: { label: "Project health", route: "/dashboard/health" },
     replay: { label: "Run replay", route: "/agent-runs/:id/replay" },
     cost: { label: "Cost dashboard", route: "/dashboard/cost" },
+    agents: { label: "Agent teams", route: "/dashboard/agents" },
     knowledge: { label: "Evidence search", route: "/knowledge/search" },
     skills: { label: "Team skills", route: "/dashboard/skills" },
     settings: { label: "Settings", route: "/settings" }
@@ -199,7 +203,7 @@ export function renderRouteStateCard(input: RouteStateCardInput) {
   const locale = normalizeWorkHubLocale(input.locale);
   const route = routeInfo[locale][input.routeKey];
   const copy = stateCopy[locale][input.state];
-  const actionHref = input.actionHref ?? (input.state === "empty" || input.state === "notFound" ? "/" : route.route);
+  const actionHref = input.actionHref ?? (input.state === "empty" || input.state === "notFound" ? "/" : input.route ?? route.route);
   const meta = input.state === "error"
     ? input.traceId ?? "trace_id=r4-web-route-state"
     : input.state === "forbidden"

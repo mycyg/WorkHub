@@ -14,6 +14,7 @@ import {
   type CuuCard,
   type CuuEmotion,
   type CuuController,
+  type CuuControllerDecision,
   type CuuControllerPreferences,
   type CuuIdleMicroAction,
   type CuuIdleScheduler,
@@ -64,6 +65,7 @@ import {
   subscribeDesktopCuuAgentRunStream,
   submitDesktopCuuAction,
   type DesktopCuuActionRequest,
+  type DesktopCuuNotice,
   type DesktopCuuRunStreamStatus,
   type DesktopCuuRunStreamSubscription,
   type DesktopShellEmitter,
@@ -105,6 +107,38 @@ export type DesktopPetSurfaceRuntime = {
 export type DesktopPetSurfaceClient = ReturnType<typeof createApiClient>;
 
 export const desktopPetRunRestoreStorageKey = "workhub.cuu.currentRun.v1";
+export const desktopPetRuntimeRetryingDelayMs = 900;
+
+export type DesktopPetRuntimeSetCard = (
+  card: CuuCard | undefined,
+  message?: string | undefined,
+  options?: { persist?: boolean }
+) => void;
+
+export type DesktopPetRuntimeDecision = {
+  reason: CuuControllerDecision["reason"];
+  snapshot: {
+    active_card?: CuuCard;
+  };
+};
+
+export function handleDesktopPetRuntimeNotice(
+  notice: DesktopCuuNotice,
+  setCard: DesktopPetRuntimeSetCard
+) {
+  setCard(notice.card, undefined, { persist: !notice.card.id.startsWith("sse-status:") });
+}
+
+export function handleDesktopPetRuntimeDecision(
+  decision: DesktopPetRuntimeDecision,
+  setCard: DesktopPetRuntimeSetCard
+) {
+  if (decision.reason === "dismissed_current" && !decision.snapshot.active_card) {
+    setCard(undefined);
+    return true;
+  }
+  return false;
+}
 
 type DesktopPetRestoreState =
   | {
@@ -157,7 +191,7 @@ export const desktopPetSurfaceCss = [
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-body{right:calc(72px * var(--wh-pet-scale,1));bottom:calc(48px * var(--wh-pet-scale,1));width:calc(240px * var(--wh-pet-scale,1));height:calc(320px * var(--wh-pet-scale,1))}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble{left:calc(88px * var(--wh-pet-scale,1));right:auto;top:auto;bottom:calc(392px * var(--wh-pet-scale,1));width:calc(300px * var(--wh-pet-scale,1));max-width:calc(100% - calc(128px * var(--wh-pet-scale,1)));max-height:calc(268px * var(--wh-pet-scale,1));overflow:hidden;padding:12px 14px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=bubble],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=offline],.wh-pet-surface[data-pet-window-mode=card] .wh-pet-bubble[data-pet-bubble-kind=trace]{min-height:calc(268px * var(--wh-pet-scale,1))}",
-  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(72px * var(--wh-pet-scale,1));right:auto;bottom:calc(372px * var(--wh-pet-scale,1));width:calc(328px * var(--wh-pet-scale,1));max-width:calc(100% - calc(104px * var(--wh-pet-scale,1)));min-height:0;max-height:calc(336px * var(--wh-pet-scale,1));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;pointer-events:auto;gap:6px;padding:10px 12px 12px}",
+  ".wh-pet-surface[data-pet-window-mode=card][data-pet-card-has-context=true] .wh-pet-bubble{left:calc(72px * var(--wh-pet-scale,1));right:auto;bottom:calc(380px * var(--wh-pet-scale,1));width:calc(328px * var(--wh-pet-scale,1));max-width:calc(100% - calc(104px * var(--wh-pet-scale,1)));min-height:0;max-height:calc(336px * var(--wh-pet-scale,1));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;pointer-events:auto;gap:6px;padding:10px 12px 12px}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-title{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-window-mode=card] .wh-pet-message{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}",
   ".wh-pet-surface[data-pet-card-has-context=true] .wh-pet-title{-webkit-line-clamp:2;font-size:13px;line-height:1.28}",
@@ -175,6 +209,8 @@ export const desktopPetSurfaceCss = [
   "@media (prefers-reduced-motion:reduce){.wh-pet-bubble{animation:none!important}}",
   ".wh-pet-surface[data-pet-suppress-bubble-intro=true] .wh-pet-bubble{animation:none}",
   ".wh-pet-kicker{display:flex;align-items:center;gap:7px;color:#667085;font-size:11px;font-weight:800;min-width:0;max-width:100%;flex-wrap:wrap}",
+  // 普通用户审查 R2：每张卡给「知道了」退路——不许猫被一张卡占住没法脱身。
+  ".wh-pet-dismiss{margin-left:auto;border:1px solid rgba(60,60,67,.16);border-radius:999px;background:rgba(255,255,255,.92);color:#667085;width:18px;height:18px;line-height:1;font-size:12px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0}",
   ".wh-pet-dot{width:8px;height:8px;border-radius:999px;background:#ff9d58;box-shadow:0 0 0 3px rgba(255,157,88,.18)}",
   ".wh-pet-emotion{max-width:100%;color:#475467;font-size:10px;line-height:1;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   // 气泡直接复用聚焦盒(.wh-spot)的玻璃配方：同样的半透白底/亮描边/投影/blur。语气不再改底色或描边色，
@@ -426,7 +462,7 @@ export function renderDesktopPetSurface(input: {
     visual_mode: visualMode,
     css: `${desktopPetSurfaceCss}${live2d.css}`,
     html: `<section class="wh-pet-surface" style="${surfaceStyle}" data-wh-surface="pet" data-pet-window-mode="${windowMode}" data-pet-card-layout="${compactCard ? "compact" : input.card ? "full" : "body"}" data-pet-scale-percent="${settings.scale_percent}" data-pet-opacity-percent="${settings.opacity_percent}" data-pet-pass-through="${settings.pass_through ? "true" : "false"}" data-pet-hide-on-hover="${settings.hide_on_hover ? "true" : "false"}" data-pet-hover-hidden="${hoverHidden ? "true" : "false"}" data-pet-hover-hide-mode="${settings.hide_on_hover ? "soft" : "off"}" data-pet-window-width="${scaledWindowSize.width}" data-pet-window-height="${scaledWindowSize.height}" data-pet-cursor-near="${pointer.cursor_near ? "true" : "false"}" data-pet-hovered="${pointer.hovered ? "true" : "false"}" data-pet-dragging="${pointer.dragging ? "true" : "false"}" data-pet-look-x="${formatPointerNumber(pointer.look_x)}" data-pet-look-y="${formatPointerNumber(pointer.look_y)}" data-pet-hover-avoidance="${pointer.hover_avoidance}" data-pet-pointer-smoothing-alpha="${formatPointerNumber(pointerSmoothingAlpha)}" data-pet-suppress-bubble-intro="${input.suppress_bubble_intro ? "true" : "false"}"${pointer.last_pointer_ms !== undefined ? ` data-pet-last-pointer-ms="${escapeHtml(pointer.last_pointer_ms)}"` : ""}${cardAttrs}${input.window_mode_status ? ` data-pet-window-mode-status="${escapeHtml(input.window_mode_status)}"` : ""}${input.window_mode_error ? ` data-pet-window-mode-error="${escapeHtml(input.window_mode_error)}"` : ""} data-cuu-state="${escapeHtml(motion.state)}" data-cuu-idle-action="${escapeHtml(input.idle_action ?? "idle_breathe")}" data-cuu-visual-mode="${visualMode}" data-cuu-live2d-runtime="${escapeHtml(live2d.runtime_kind)}" data-cuu-live2d-status="${escapeHtml(live2d.status)}" data-cuu-live2d-model="${escapeHtml(live2d.model_key)}" data-cuu-live2d-appearance="${escapeHtml(live2d.appearance)}" data-cuu-live2d-motion="${escapeHtml(live2d.motion_state)}" data-cuu-live2d-renderer-state="${escapeHtml(live2d.renderer_state)}" data-cuu-live2d-layer-count="native_moc" data-cuu-behavior-manifest-version="${live2d.behavior_manifest_version}" data-cuu-behavior-state="${escapeHtml(live2d.behavior_state)}" data-cuu-behavior-phase="${escapeHtml(live2d.behavior_phase)}" data-cuu-behavior-coverage="${escapeHtml(live2d.behavior_coverage)}" data-cuu-behavior-priority="${escapeHtml(live2d.behavior_priority)}" data-cuu-behavior-expected-window-mode="${escapeHtml(live2d.behavior_window_mode)}" data-cuu-behavior-expected-bubble-mode="${escapeHtml(live2d.behavior_bubble_mode)}" data-cuu-live2d-frame-url="${escapeHtml(live2d.iframe_url)}" data-cuu-live2d-model-url="${escapeHtml(live2d.model_url)}" data-cuu-model-pack="${escapeHtml(live2d.model_pack_id)}" data-cuu-model-pack-selection-reason="${escapeHtml(live2d.model_pack_selection_reason)}">
-      <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="${escapeHtml(cuuT(locale, "pet.aria"))}">
+      <button class="wh-pet-body" type="button" data-pet-drag-handle="true" aria-label="${escapeHtml(cuuT(locale, "pet.aria"))}" title="${escapeHtml(locale === "en-US" ? "Right-click for settings" : "右键打开桌宠设置")}">
         ${live2d.html}
       </button>
       ${menu}
@@ -518,6 +554,7 @@ const desktopPetSettingsMenuCopy = {
     hideCuu: "隐藏 Cuu",
     modelChanged: "Cuu 形象已更新。",
     localeChanged: "语言已更新。",
+    localeChangeFailed: "语言没保存到服务端，已恢复原语言。",
     hoverEnabled: "悬停避让已开启。",
     hoverDisabled: "悬停避让已关闭。",
     openSettingsFallback: "请从托盘打开设置。",
@@ -536,6 +573,7 @@ const desktopPetSettingsMenuCopy = {
     hideCuu: "Hide Cuu",
     modelChanged: "Cuu look updated.",
     localeChanged: "Language updated.",
+    localeChangeFailed: "Couldn't save the language — reverted.",
     hoverEnabled: "Dodge hover is on.",
     hoverDisabled: "Dodge hover is off.",
     openSettingsFallback: "Open settings from the tray.",
@@ -945,6 +983,9 @@ export async function bootDesktopPetSurface(
     cardRevision += 1;
     statusText = status;
     pendingAction = undefined;
+    // R9（Cuu 行为链 high）：本地动作路径直接换卡此前不记账——controller.activeCard 与屏上真卡
+    // 脱节，push 气泡按「无当前卡」误判 outcome:show 抢断用户正在处理的高优先级卡。对齐单一事实源。
+    controller.noteExternalCard(card);
     if (options.persist !== false) {
       writeDesktopPetRestoreState(card);
     }
@@ -1054,6 +1095,12 @@ export async function bootDesktopPetSurface(
       const items = [attention.primary, ...attention.queue].filter((item): item is AttentionItem => Boolean(item));
       const next = currentId ? items.find((item) => item.id === currentId) ?? items[0] : items[0];
       if (next) {
+        // R6（桌面交互）：SSE/轮询刷新会整卡重渲——用户正往自由文本框里打的字会被静默清空。
+        // 框里有未提交内容时跳过本次静默刷新（下一次事件还会再同步；提交后 setCard 走正常路径）。
+        const pendingFreeText = root.querySelector<HTMLTextAreaElement>("[data-pet-free-text]")?.value.trim();
+        if (pendingFreeText) {
+          return;
+        }
         setCard(cardFromAttentionItem(next, { locale }), visibleAttentionMessage(next), { persist: false });
         return;
       }
@@ -1143,6 +1190,7 @@ export async function bootDesktopPetSurface(
   }
 
   const setLocalePreference = (nextLocale: WorkHubLocale) => {
+    const previousLocale = locale;
     locale = nextLocale;
     try {
       globalThis.localStorage?.setItem(workHubLocaleStorageKey, nextLocale);
@@ -1150,7 +1198,28 @@ export async function bootDesktopPetSurface(
       // Local storage may be unavailable in isolated test surfaces.
     }
     statusText = desktopPetSettingsMenuCopy[locale].localeChanged;
-    void client.updatePreferences({ locale: nextLocale }).catch(() => undefined);
+    // R10（偏好同步）：①失败要回滚+提示（此前静默吞掉，与主窗/web 的失败处理不对称）；
+    // ②成功后用新 locale 重取当前 attention 卡（卡文案是创建时烘焙的，不重取会中英混语）；
+    // ③广播主窗——两窗语言态不再长期漂移。
+    void client.updatePreferences({ locale: nextLocale })
+      .then(() => {
+        void refreshVisibleAttentionCard();
+        try {
+          shellEmitter?.emitTo?.("main", "pet-locale-changed", { locale: nextLocale });
+        } catch {
+          // emit 失败不影响本窗切换。
+        }
+      })
+      .catch(() => {
+        locale = previousLocale;
+        try {
+          globalThis.localStorage?.setItem(workHubLocaleStorageKey, previousLocale);
+        } catch {
+          // ignore
+        }
+        statusText = desktopPetSettingsMenuCopy[locale].localeChangeFailed;
+        render();
+      });
     render();
   };
 
@@ -1307,6 +1376,15 @@ export async function bootDesktopPetSurface(
       return;
     }
 
+    // 普通用户审查 R2：「知道了」关闭钮——先于 anchor 守卫处理（它是 button 不是链接）。
+    const dismissBtn = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-pet-dismiss]") : null;
+    if (dismissBtn) {
+      event.preventDefault();
+      // 收起当前卡并主动端出下一条待拍板（节流/队列里的不再被永久压住）。
+      setCard(undefined, undefined);
+      void surfacePendingDecision();
+      return;
+    }
     const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
     const petBody = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-pet-drag-handle]") : null;
     if (petBody && !anchor) {
@@ -1468,14 +1546,17 @@ export async function bootDesktopPetSurface(
     listen: shellListen,
     controller,
     notify(notice) {
-      setCard(notice.card, undefined, { persist: !notice.card.id.startsWith("sse-status:") });
+      // R9（Cuu 行为链）：用户正处于二次确认（pendingAction，如选打回理由）时，push 新卡不抢占——
+      // 卡在 controller 队列里没丢，用户处理完当前卡自然轮到。
+      if (pendingAction && notice.card.id !== currentCard?.id) {
+        return;
+      }
+      handleDesktopPetRuntimeNotice(notice, setCard);
     },
     onDecision(decision) {
-      if (decision.reason === "dismissed_current" && !decision.snapshot.active_card) {
-        setCard(undefined);
-      }
+      handleDesktopPetRuntimeDecision(decision, setCard);
     },
-    retryingDelayMs: 900,
+    retryingDelayMs: desktopPetRuntimeRetryingDelayMs,
     get locale() {
       return locale;
     }
@@ -1803,7 +1884,7 @@ function renderDesktopPetBubble(input: {
     ${renderWorkHubLiquidGlassLayer("pet")}
     <span class="wh-liquid-glass-rim" aria-hidden="true"></span>
     <div class="wh-liquid-glass-content">
-      <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${emotionLabel}${kind}${priority}</div>
+      <div class="wh-pet-kicker"><span class="wh-pet-dot" aria-hidden="true"></span><span>Cuu</span>${emotionLabel}${kind}${priority}${card ? `<button type="button" class="wh-pet-dismiss ds-pressable" data-pet-dismiss="${escapeHtml(card.id)}" aria-label="${escapeHtml(locale === "en-US" ? "Dismiss" : "知道了")}">×</button>` : ""}</div>
       ${card ? `<strong class="wh-pet-title">${escapeHtml(card.title)}</strong>` : ""}
       ${card && !compact ? `<p class="wh-pet-message">${escapeHtml(card.message)}</p>` : ""}
       ${input.status_text && (!compact || !card) && !suppressStatusForContext ? `<p class="wh-pet-status">${escapeHtml(input.status_text)}</p>` : ""}
@@ -2166,6 +2247,9 @@ function isRestorableCuuSessionCard(value: unknown, sessionId: string): value is
 }
 
 function actionMessage(error: unknown, locale: WorkHubLocale) {
+  if (error instanceof WorkHubApiError) {
+    return cardFromDesktopPetActionError(error, locale).message;
+  }
   return error instanceof Error ? error.message : cuuT(locale, "pet.actionFail");
 }
 

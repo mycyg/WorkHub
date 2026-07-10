@@ -23,6 +23,7 @@ import {
   ProposalRepositoryRebaseRequiredError,
   ProposalRepositoryStaleBaseError,
   ProposalRepositoryUnsupportedMergeProposalApplyError,
+  type UpsertUserMemoryInput,
   type MergeAttemptRow,
   type MergeProposalCandidateApplicationContext,
   type MergeProposalRow,
@@ -250,6 +251,36 @@ function structuredManifest(): DeliverableChangeManifest {
     throw new Error("missing structured manifest fixture");
   }
   return structuredClone(fixture);
+}
+
+function taskPlanManifest(): DeliverableChangeManifest {
+  const base = manifest();
+  const change = base.changes[0];
+  if (!change) {
+    throw new Error("missing base change fixture");
+  }
+  const planId = "91000000-0000-4000-8000-000000000991";
+  return {
+    ...base,
+    title: "计划提议",
+    summary_md: "请先确认这份任务拆解计划。",
+    changes: [{
+      ...change,
+      id: planId,
+      target_kind: "structured_record",
+      target_ref: {
+        entity_type: "task_plan",
+        entity_id: planId,
+        path: `/workspaces/92000000-0000-4000-8000-000000000001/task-plans/${planId}`
+      },
+      change_type: "generated",
+      human_summary: "新增可审的任务计划草稿。",
+      machine_summary: {
+        changed_fields: ["task_plan_items"],
+        generated_content_md: "1. 调研证据\n2. 产出短报告"
+      }
+    }]
+  };
 }
 
 function ids() {
@@ -654,6 +685,7 @@ class MemoryProposalRepository implements ProposalRepository {
         workItemId: row.proposal.workItemId,
         title: row.proposal.title,
         status: row.proposal.status,
+        diffManifest: row.proposal.diffManifest,
         createdAt: row.proposal.createdAt
       }));
   }
@@ -1146,6 +1178,10 @@ class MemoryProposalRepository implements ProposalRepository {
     return mergeAttemptId;
   }
 
+  async countTodayAiReviewOutcomes() {
+    return { total: 0, approved: 0 };
+  }
+
   async merge(input: Parameters<ProposalRepository["merge"]>[0]) {
     this.mergeInputs.push(input);
     const stored = this.rows.get(input.proposalId);
@@ -1214,9 +1250,12 @@ class MemoryProposalRepository implements ProposalRepository {
     }
     const workItem = this.workItemRows.get(stored.proposal.workItemId);
     if (workItem) {
-      workItem.status = "merged";
+      const workItemStatusAfterMerge = input.workItemStatusAfterMerge ?? "merged";
+      workItem.status = workItemStatusAfterMerge;
       workItem.mainBranchId = stored.proposal.branchId;
-      workItem.acceptedAt = at;
+      if (workItemStatusAfterMerge === "merged") {
+        workItem.acceptedAt = at;
+      }
       workItem.version += 1;
     }
     return stored;
@@ -1344,6 +1383,60 @@ test("proposal routes require work item access before read and write operations"
   assert.equal(merge.status, 403);
   assert.equal(reviewBadBody.status, 403);
   assert.equal(mergeBadBody.status, 403);
+});
+
+test("reviewable proposal summaries mark task-plan manifests as plan_review", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = taskPlanManifest();
+  const proposal = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub Meta-Planner" },
+    title: "计划提议"
+  });
+
+  const reviewable = await service.listReviewableForUser({
+    user: { id: userId, isAdmin: true }
+  });
+
+  assert.equal(reviewable.find((item) => item.id === proposal.id)?.review_kind, "plan_review");
+});
+
+test("R9.7 task-plan proposal merge keeps the parent work item active for child dispatch", async () => {
+  const repository = new MemoryProposalRepository();
+  const service = createDbProposalService(repository, { now: () => now, id: ids() });
+  const itemManifest = taskPlanManifest();
+  repository.workItemRows.set(itemManifest.work_item_id, {
+    status: "in_review",
+    mainBranchId: null,
+    acceptedAt: null,
+    version: 0,
+    title: "Agent army task",
+    summaryMd: null,
+    priority: "normal",
+    dueAt: null
+  });
+  const proposal = await service.createFromManifest({
+    workItemId: itemManifest.work_item_id,
+    manifest: itemManifest,
+    actor: { actor_kind: "ai", label: "WorkHub Meta-Planner" },
+    title: "计划提议"
+  });
+  await service.review({
+    proposalId: proposal.id,
+    actor: { actor_kind: "human", actor_user_id: userId },
+    decision: "approve"
+  });
+
+  await service.merge({
+    proposalId: proposal.id,
+    actor: { actor_kind: "human", actor_user_id: userId }
+  });
+
+  const workItem = repository.workItemRows.get(itemManifest.work_item_id);
+  assert.equal(workItem?.status, "ai_working");
+  assert.equal(workItem?.acceptedAt, null, "approving a plan must not mark deliverables accepted before child runs execute");
 });
 
 test("proposal create rejects branch ids that belong to a different work item", async () => {
@@ -3810,6 +3903,57 @@ test("proposal review requires reasons for changes and feeds them back into the 
   assert.equal(body.data.audit_logs?.[0]?.detail_json.reason_fed_back, true);
 });
 
+test("proposal review remember-always stores corrections inside the authenticated workspace", async () => {
+  const memoryWrites: UpsertUserMemoryInput[] = [];
+  const userMemoryRepository = {
+    async upsert(input: UpsertUserMemoryInput) {
+      memoryWrites.push(input);
+      return {
+        id: "91000000-0000-4000-8000-000000000861",
+        userId: input.userId,
+        workspaceId: input.workspaceId ?? null,
+        category: input.category,
+        key: input.key,
+        valueMd: input.valueMd,
+        confidence: input.confidence ?? 0.9,
+        sourceRunId: input.sourceRunId ?? null,
+        lastUsedAt: null,
+        expiresAt: null,
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now
+      };
+    }
+  };
+  const { app, runtimeSettings } = appWithDbProposalRoutes({ userMemoryRepository });
+  const created = await createProposal(app, runtimeSettings, manifest(2));
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await cookie(runtimeSettings)
+  };
+
+  const response = await app.request(`/api/proposals/${created.data.id}/review`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      decision: "request_changes",
+      reason_md: "请补齐数据来源和口径说明。",
+      remember: "always"
+    })
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(memoryWrites.length, 1);
+  assert.deepEqual(memoryWrites[0], {
+    userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    category: "correction",
+    key: `proposal:${created.data.id}`,
+    valueMd: "请补齐数据来源和口径说明。",
+    confidence: 0.9
+  });
+});
+
 test("approved proposal can be merged with proposal events, audit facts, and rollback payload", async () => {
   const { app, runtimeSettings } = appWithProposalRoutes();
   const created = await createProposal(app, runtimeSettings, manifest(3));
@@ -3860,6 +4004,48 @@ test("approved proposal can be merged with proposal events, audit facts, and rol
   assert.equal(mergeBody.data.events.some((event) => event.type === "notification.created"), true);
   assert.equal(mergeBody.data.audit_logs.some((log) => log.action === "proposal.merged" && log.snapshot_id), true);
   assert.equal(mergeBody.data.attention.cuu_state, "celebrating");
+});
+
+test("proposal action routes localize result envelopes from locale query", async () => {
+  const { app, runtimeSettings } = appWithProposalRoutes();
+  const created = await createProposal(app, runtimeSettings, manifest(3));
+  const proposalId = created.data.id;
+  const headers = {
+    "Content-Type": "application/json",
+    Cookie: await cookie(runtimeSettings)
+  };
+
+  const review = await app.request(`/api/proposals/${proposalId}/review?locale=en-US`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ decision: "approve" })
+  });
+
+  assert.equal(review.status, 200);
+  const reviewBody = await review.json() as {
+    ok: true;
+    data: {
+      next_action?: { label: string };
+      attention: { title: string; summary_text: string; actions: Array<{ label: string }> };
+    };
+  };
+  assert.equal(reviewBody.data.attention.summary_text, "Approved — ready to accept into the official version.");
+  assert.equal(reviewBody.data.attention.actions[0]?.label, "Merge deliverable");
+  assert.equal(reviewBody.data.next_action?.label, "Merge deliverable");
+  assert.doesNotMatch(reviewBody.data.attention.title, /已通过确认/u);
+
+  const merge = await app.request(`/api/proposals/${proposalId}/merge?locale=en-US`, {
+    method: "POST",
+    headers
+  });
+
+  assert.equal(merge.status, 200);
+  const mergeBody = await merge.json() as {
+    ok: true;
+    data: { attention: { summary_text: string; actions: Array<{ label: string }> } };
+  };
+  assert.equal(mergeBody.data.attention.summary_text, "The deliverable change is now in the official version, with a full audit trail.");
+  assert.equal(mergeBody.data.attention.actions[0]?.label, "View changes");
 });
 
 test("proposal merge confirm:false does not merge or publish events", async () => {

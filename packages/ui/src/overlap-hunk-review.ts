@@ -1,4 +1,5 @@
 import type { WorkHubLocale } from "@workhub/contracts";
+import { safeHref } from "./safe-href.js";
 
 import { uiT } from "./i18n.js";
 
@@ -134,7 +135,7 @@ function renderChoice(input: {
     "data-overlap-hunk-decision": input.action.decision,
     "data-overlap-hunk-recommended": input.action.recommended === true,
     "data-action-id": input.action.actionId,
-    "data-action-href": input.action.href,
+    "data-action-href": safeHref(input.action.href),
     "data-method": input.action.method,
     "data-request-json-template": JSON.stringify(payload)
   });

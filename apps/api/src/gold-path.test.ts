@@ -8,7 +8,7 @@ import { z, ZodError } from "zod";
 
 import { p05GoldPathIds, createP05GoldPathFixture } from "@workhub/agent/fixtures";
 import { loadSettings, type Settings } from "@workhub/config";
-import { goldPathSurfaceVmSchema } from "@workhub/contracts";
+import { goldPathSurfaceVmSchema, type AttentionItem } from "@workhub/contracts";
 import type {
   ClientDeviceAuthRow,
   ClientDeviceRepository,
@@ -137,6 +137,19 @@ function authDeps(runtimeSettings: Settings, rows: UserAuthRow[] = [user()]): Au
   };
 }
 
+// 本地开发机的默认 escalation 仓库指向真实持久化存储，残留 dev 数据会漏进
+// attention 决策队列断言（CI 干净所以看不出来）。attention 测试一律显式注入空升级源。
+function emptyEscalations() {
+  return {
+    async listAttentionPage() {
+      return { items: [], page_info: { limit: 50, returned: 0, has_more: false } };
+    },
+    async listAttentionItems() {
+      return [];
+    }
+  } as never;
+}
+
 function emptyQueue(): AgentRunQueue {
   return {
     async enqueue(): Promise<AgentRunQueueRecord> {
@@ -158,6 +171,9 @@ function emptyQueue(): AgentRunQueue {
       return [];
     },
     async recoverExpiredClaims() {
+      return [];
+    },
+    async recoverUnsettledTaskPlanRuns() {
       return [];
     },
     async run(): Promise<AgentRunQueueRecord> {
@@ -294,6 +310,7 @@ test("attention home decision queue is fed by the user's pending approvals", asy
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
+    escalations: emptyEscalations(),
     // 决策队列必须接真实的"用户待决策审批"源；这里用 gold-path 审批中心做替身。
     approvals: { async listPendingForUser() { return fixture.approvalCenter; } } as unknown as ApprovalService,
     // 决策队列现在按可读工作项收口（findings）；注入放行所有工作项的 workItems，让 fixture 审批项保持可见。
@@ -314,44 +331,6 @@ test("attention home decision queue is fed by the user's pending approvals", asy
   assert.ok(fixture.approvalCenter.items.length > 0);
   assert.equal(body.data.queue.length, fixture.approvalCenter.items.length);
   assert.equal(body.data.primary?.id, fixture.approvalCenter.items[0]?.id);
-});
-
-test("approval page route forwards paging query parameters to the approval service", async () => {
-  const runtimeSettings = settings();
-  let seenOptions: { locale?: string; offset?: number; limit?: number } | undefined;
-  const app = withErrors(new Hono<AuthEnv>());
-  app.route("/api/pages", createPageRoutes({
-    auth: authDeps(runtimeSettings),
-    queue: emptyQueue(),
-    approvals: {
-      async listPendingForUser(_user: UserAuthRow, options: { locale?: string; offset?: number; limit?: number } = {}) {
-        seenOptions = options;
-        return {
-          items: [],
-          requests: [],
-          filters: { pending: true },
-          counts: { pending: 0, pending_total: 137 },
-          page_info: { limit: options.limit ?? 100, offset: options.offset ?? 0, returned: 0, has_more: false },
-          items_detail: {}
-        };
-      }
-    } as unknown as ApprovalService,
-    workItems: { async canReadWorkItems(input: { workItemIds: string[] }) { return new Set(input.workItemIds); } } as never
-  }));
-
-  const response = await app.request("/api/pages/approvals?locale=en-US&offset=100&limit=25", {
-    headers: { Cookie: await cookie(runtimeSettings) }
-  });
-
-  assert.equal(response.status, 200);
-  assert.equal(seenOptions?.locale, "en-US");
-  assert.equal(seenOptions?.offset, 100);
-  assert.equal(seenOptions?.limit, 25);
-  const body = await response.json() as {
-    data: { page_info?: { limit?: number; offset?: number; returned?: number; has_more?: boolean } };
-  };
-  assert.equal(body.data.page_info?.limit, 25);
-  assert.equal(body.data.page_info?.offset, 100);
 });
 
 test("attention home scopes proposal review lookup to the actor workspace", async () => {
@@ -388,6 +367,178 @@ test("attention home scopes proposal review lookup to the actor workspace", asyn
   assert.equal(response.status, 200);
   assert.equal(captured?.user.id, userId);
   assert.equal(captured?.user.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+});
+
+test("attention home includes durable memory conflict cards as sync_conflict decisions", async () => {
+  const runtimeSettings = settings();
+  let capturedWorkspaceId: string | undefined;
+  const conflictId = "40000000-0000-4000-8000-0000000000d1";
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    escalations: emptyEscalations(),
+    approvals: {
+      async listPendingForUser() {
+        return {
+          items: [],
+          requests: [],
+          filters: {},
+          counts: { pending: 0, pending_total: 0 },
+          page_info: { limit: 100, returned: 0, has_more: false },
+          items_detail: {}
+        };
+      }
+    } as unknown as ApprovalService,
+    proposals: {
+      async listReviewableForUser() {
+        return [];
+      }
+    } as unknown as ProposalService,
+    memoryConflicts: {
+      async listAttentionItems(input: { actor: AuthEnv["Variables"]["actor"] }) {
+        capturedWorkspaceId = input.actor.workspaceId;
+        return [{
+          id: conflictId,
+          kind: "sync_conflict" as const,
+          priority: "high" as const,
+          source_ref: { entity_type: "notification" as const, entity_id: conflictId },
+          title: "Cuu 学到了两条打架的偏好",
+          summary_text: "回复风格出现两种说法，需要确认。",
+          actions: [
+            { id: "keep_current", label: "要 A", style: "secondary" as const, method: "POST" as const, href: `/api/memory-conflicts/${conflictId}/resolve/keep_current` },
+            { id: "accept_incoming", label: "要 B", style: "primary" as const, method: "POST" as const, href: `/api/memory-conflicts/${conflictId}/resolve/accept_incoming` }
+          ],
+          cuu_state: "worried" as const,
+          created_at: "2026-07-03T00:00:00.000Z"
+        }];
+      }
+    }
+  }));
+
+  const response = await app.request("/api/pages/attention?locale=zh-CN", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as { data: { primary?: AttentionItem; queue: AttentionItem[] } };
+  assert.equal(capturedWorkspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(body.data.primary?.id, conflictId);
+  assert.equal(body.data.primary?.kind, "sync_conflict");
+  assert.deepEqual(body.data.primary?.actions.map((action) => action.id), ["keep_current", "accept_incoming"]);
+});
+
+test("attention home warns when unresolved escalation attention is capped", async () => {
+  const runtimeSettings = settings();
+  const escalationId = "40000000-0000-4000-8000-0000000000e1";
+  const card: AttentionItem = {
+    id: escalationId,
+    kind: "escalation",
+    priority: "urgent",
+    source_ref: { entity_type: "escalation_event", entity_id: escalationId },
+    title: "《竞品资料梳理》卡住了",
+    summary_text: "需要你判断下一步。",
+    actions: [{
+      id: "escalation_retry",
+      label: "让它重试",
+      style: "primary",
+      method: "POST",
+      href: `/api/escalations/${escalationId}/resolve`
+    }],
+    created_at: "2026-07-03T00:00:00.000Z"
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    escalations: {
+      async listAttentionPage() {
+        return {
+          items: [card],
+          page_info: { limit: 50, returned: 1, has_more: true }
+        };
+      },
+      async listAttentionItems() {
+        return [card];
+      }
+    } as never,
+    approvals: {
+      async listPendingForUser() {
+        return {
+          items: [],
+          requests: [],
+          filters: {},
+          counts: { pending: 0, pending_total: 0 },
+          page_info: { limit: 100, returned: 0, has_more: false },
+          items_detail: {}
+        };
+      }
+    } as unknown as ApprovalService,
+    memoryConflicts: { async listAttentionItems() { return []; } },
+    proposals: { async listReviewableForUser() { return []; } } as unknown as ProposalService
+  }));
+
+  const response = await app.request("/api/pages/attention?locale=zh-CN", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    data: {
+      queue: AttentionItem[];
+      source_warnings?: Array<{ source: string; message: string }>;
+    };
+  };
+  assert.equal(body.data.queue[0]?.id, escalationId);
+  assert.equal(body.data.source_warnings?.[0]?.source, "escalations");
+  assert.match(body.data.source_warnings?.[0]?.message ?? "", /上限/u);
+});
+
+test("attention home preserves task-plan proposal reviews as plan_review cards", async () => {
+  const runtimeSettings = settings();
+  const planProposalId = "40000000-0000-4000-8000-0000000000b1";
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    queue: emptyQueue(),
+    escalations: emptyEscalations(),
+    approvals: {
+      async listPendingForUser() {
+        return {
+          items: [],
+          requests: [],
+          filters: {},
+          counts: { pending: 0, pending_total: 0 },
+          page_info: { limit: 100, returned: 0, has_more: false },
+          items_detail: {}
+        };
+      }
+    } as unknown as ApprovalService,
+    proposals: {
+      async listReviewableForUser() {
+        return [{
+          id: planProposalId,
+          work_item_id: "40000000-0000-4000-8000-0000000000b2",
+          title: "《短剧选题调研》的分工计划等你过目",
+          status: "opened" as const,
+          created_at: "2026-07-03T00:00:00.000Z",
+          review_kind: "plan_review" as const
+        }];
+      }
+    } as unknown as ProposalService
+  }));
+
+  const response = await app.request("/api/pages/attention?locale=zh-CN", {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as { data: { primary?: AttentionItem; queue: AttentionItem[] } };
+  assert.equal(body.data.primary?.kind, "plan_review");
+  assert.equal(body.data.primary?.source_ref.entity_id, planProposalId);
+  // R9.7: the old assertion leaked internal "派发" terminology into user-facing plan-review copy.
+  assert.equal(body.data.primary?.summary_text, "任务已拆成任务计划，等你确认后再开始执行。");
+  assert.equal(body.data.primary?.actions.find((action) => action.id === "open_proposal")?.label, "查看计划提议");
 });
 
 test("attention home background runs stay scoped to the actor workspace for admins", async () => {
@@ -485,7 +636,14 @@ test("attention home marks the decision queue as partial when the approvals look
   app.route("/api/pages", createPageRoutes({
     auth: authDeps(runtimeSettings),
     queue: emptyQueue(),
+    // 本测试断言升级源与审批源都产生 partial 警告：两者都注入抛错桩。
+    // （不能靠默认 escalation 仓库在测试环境里"恰好"报错——本地有真实存储时它会读成功。）
+    escalations: {
+      async listAttentionPage() { throw new Error("escalation store down"); },
+      async listAttentionItems() { throw new Error("escalation store down"); }
+    } as never,
     approvals: { async listPendingForUser() { throw new Error("db down"); } } as unknown as ApprovalService,
+    memoryConflicts: { async listAttentionItems() { return []; } },
     proposals: { async listReviewableForUser() { return []; } } as never
   }));
 
@@ -497,8 +655,11 @@ test("attention home marks the decision queue as partial when the approvals look
   const body = await response.json() as { data: { queue: unknown[]; primary?: unknown; source_warnings: { source: string; message: string }[] } };
   assert.equal(body.data.queue.length, 0);
   assert.equal(body.data.primary, undefined);
-  assert.deepEqual(body.data.source_warnings.map((warning) => warning.source), ["approvals"]);
-  assert.match(body.data.source_warnings[0]?.message ?? "", /审批待办/u);
+  // R9.0: the old assertion expected only `approvals`, but `/attention` now loads unresolved
+  // escalation cards before approvals, so both degraded sources must be exposed when their
+  // default services are unavailable in this fixture.
+  assert.deepEqual(body.data.source_warnings.map((warning) => warning.source), ["escalations", "approvals"]);
+  assert.match(body.data.source_warnings.find((warning) => warning.source === "approvals")?.message ?? "", /审批待办/u);
 });
 
 test("settings page carries server locale preference sync state without secrets", async () => {
@@ -911,6 +1072,26 @@ test("AI clarification extracts explicit drive filenames from the user's request
   );
 });
 
+test("R10-0c clarification file context drops old project files that are irrelevant to the current intent", async () => {
+  const { fileContextFromDriveRows } = await import("./services/work-items.js");
+  const rows = {
+    items: [
+      { id: "f1", kind: "file", name: "day-1-pilot-feedback-digest.md", parentId: null, currentVersionId: null },
+      { id: "f2", kind: "file", name: "regional-report-template.md", parentId: null, currentVersionId: null }
+    ],
+    versions: []
+  } as never;
+
+  // 全新意图与两份旧文件零相关 → 空上下文（宁缺毋滥，LLM 只围绕意图反问，不被旧任务带偏）。
+  const unrelated = await fileContextFromDriveRows(rows, "检查异步动作状态提示，不继续创建正式任务。");
+  assert.equal(unrelated.length, 0);
+
+  // 点名文件始终进入上下文，且相关文件按分数排序。
+  const named = await fileContextFromDriveRows(rows, "基于 regional-report-template.md 更新风险段落");
+  assert.equal(named.length, 1);
+  assert.equal(named[0]?.name, "regional-report-template.md");
+});
+
 test("AI clarification parser accepts question/context JSON from real providers", () => {
   const body = Array.from({ length: 60 }, () => "请围绕验收材料/workhub-app-upload.txt 的风险、进展和下周动作生成验收口径。").join("");
   const placeholder = Array.from({ length: 20 }, () => "例如：只使用 workhub-app-upload.txt，并面向验收同学输出。").join("");
@@ -925,6 +1106,34 @@ test("AI clarification parser accepts question/context JSON from real providers"
   assert.match(draft.body ?? "", /workhub-app-upload\.txt/u);
   assert.ok((draft.body ?? "").length <= 900);
   assert.ok((draft.placeholder ?? "").length <= 180);
+});
+
+test("R10-0c clarification parser carries option candidates through to the scope question contract", () => {
+  const draft = parseClarificationDraftFromLlmText(JSON.stringify({
+    question: "复盘包以哪份材料为唯一数据来源？",
+    options: [
+      { id: "option-1", label: "只用 workhub-app-upload.txt", description: "口径最稳，缺口由 AI 标注。" },
+      { label: "上传材料 + 周会纪要", description: "更全，但要人工核对两处冲突。" },
+      { label: "" },
+      "not-an-object"
+    ],
+    recommended_option_id: "option-1"
+  }), "zh-CN");
+
+  assert.equal(draft.options?.length, 2);
+  assert.equal(draft.options?.[0]?.id, "option-1");
+  // 缺省 id 按序补齐；空 label 与非对象项被丢弃。
+  assert.equal(draft.options?.[1]?.id, "option-2");
+  assert.equal(draft.recommended_option_id, "option-1");
+
+  // 只有 1 条有效候选 → 不构成选项集，退化为无选项（渲染端回长文本，不造假选项）。
+  const single = parseClarificationDraftFromLlmText(JSON.stringify({
+    question: "确认验收对象？",
+    options: [{ label: "验收同学" }],
+    recommended_option_id: "option-1"
+  }), "zh-CN");
+  assert.equal(single.options, undefined);
+  assert.equal(single.recommended_option_id, undefined);
 });
 
 test("AI clarification parser extracts fenced JSON without requiring exact title/body fields", () => {

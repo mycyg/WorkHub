@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 
-import type { WorkItemMode } from "@workhub/contracts";
+import type { TaskPlanItemRole, TaskPlanItemStatus, WorkItemMode } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
-import { agentRuns, agentSteps } from "../schema/index.js";
+import { agentRuns, agentSteps, taskPlanItems } from "../schema/index.js";
 
 export type AgentRunRow = typeof agentRuns.$inferSelect;
 export type AgentStepRow = typeof agentSteps.$inferSelect;
@@ -47,6 +47,13 @@ export type AgentRunForPersistence = {
   orgId?: string;
   workspaceId?: string;
   workItemId: string;
+  parentRunId?: string;
+  taskPlanId?: string;
+  taskPlanItemId?: string;
+  taskPlanItemEpoch?: number | null;
+  objectiveId?: string;
+  agentRole?: TaskPlanItemRole;
+  objectiveMd?: string;
   actorUserId: string;
   mode: WorkItemMode;
   status: AgentRunStatusForPersistence;
@@ -89,6 +96,12 @@ export type AgentRunRequeueStaleInput = {
   maxRecoverAttempts: number;
 };
 
+export type AgentRunRestoreDeadLetterClaimInput = {
+  runId: string;
+  restoredAt: Date;
+  claim: AgentRunClaimInput;
+};
+
 export type AgentRunRepository = {
   createRun: (run: AgentRunForPersistence) => Promise<AgentRunRow>;
   createRunIfWorkItemIdle: (run: AgentRunForPersistence) => Promise<AgentRunRow | null>;
@@ -105,11 +118,14 @@ export type AgentRunRepository = {
   claimNextQueued: (claim: AgentRunClaimInput) => Promise<StoredAgentRunRows | null>;
   heartbeatClaim: (input: AgentRunHeartbeatInput) => Promise<AgentRunRow | null>;
   requeueExpiredClaims: (input: AgentRunRequeueStaleInput) => Promise<AgentRunRow[]>;
+  restoreDeadLetterClaim: (input: AgentRunRestoreDeadLetterClaimInput) => Promise<AgentRunRow | null>;
+  listUnsettledTaskPlanRuns: (input: { limit: number }) => Promise<StoredAgentRunRows[]>;
 };
 
 const terminalStatuses: AgentRunStatusForPersistence[] = ["succeeded", "failed", "escalated", "cancelled"];
 const activeStatuses: AgentRunStatusForPersistence[] = ["queued", "running"];
-const activeWorkItemRunWhere = sql`${agentRuns.status} in ('queued', 'running')`;
+const activeOrdinaryWorkItemRunWhere = sql`${agentRuns.status} in ('queued', 'running') and ${agentRuns.taskPlanItemId} is null`;
+const activeTaskPlanItemRunWhere = sql`${agentRuns.status} in ('queued', 'running') and ${agentRuns.taskPlanItemId} is not null`;
 
 function stableUuid(input: string) {
   const hex = createHash("sha256").update(input).digest("hex");
@@ -153,6 +169,13 @@ function runInsertValues(run: AgentRunForPersistence): typeof agentRuns.$inferIn
     orgId: run.orgId,
     workspaceId: run.workspaceId,
     workItemId: run.workItemId,
+    parentRunId: run.parentRunId,
+    taskPlanId: run.taskPlanId,
+    taskPlanItemId: run.taskPlanItemId,
+    taskPlanItemEpoch: run.taskPlanItemEpoch ?? null,
+    objectiveId: run.objectiveId,
+    agentRole: run.agentRole,
+    objectiveMd: run.objectiveMd,
     mode: run.mode,
     actor: "human",
     actorUserId: run.actorUserId,
@@ -213,6 +236,24 @@ function runUpdateValues(run: AgentRunForPersistence): Partial<typeof agentRuns.
   if (finishedAt) {
     values.finishedAt = finishedAt;
   }
+  if (run.parentRunId !== undefined) {
+    values.parentRunId = run.parentRunId;
+  }
+  if (run.taskPlanId !== undefined) {
+    values.taskPlanId = run.taskPlanId;
+  }
+  if (run.taskPlanItemId !== undefined) {
+    values.taskPlanItemId = run.taskPlanItemId;
+  }
+  if (run.objectiveId !== undefined) {
+    values.objectiveId = run.objectiveId;
+  }
+  if (run.agentRole !== undefined) {
+    values.agentRole = run.agentRole;
+  }
+  if (run.objectiveMd !== undefined) {
+    values.objectiveMd = run.objectiveMd;
+  }
   return values;
 }
 
@@ -228,6 +269,28 @@ async function readStoredAgentRun(db: WorkHubDb, runId: string): Promise<StoredA
     .where(eq(agentSteps.agentRunId, run.id))
     .orderBy(asc(agentSteps.seq), asc(agentSteps.createdAt));
   return { run, steps };
+}
+
+async function attachStepsToRuns(db: WorkHubDb, runRows: AgentRunRow[]): Promise<StoredAgentRunRows[]> {
+  if (runRows.length === 0) {
+    return [];
+  }
+  const runIds = runRows.map((row) => row.id);
+  const allSteps = await db
+    .select()
+    .from(agentSteps)
+    .where(inArray(agentSteps.agentRunId, runIds))
+    .orderBy(asc(agentSteps.agentRunId), asc(agentSteps.seq), asc(agentSteps.createdAt));
+  const stepsByRun = new Map<string, AgentStepRow[]>();
+  for (const step of allSteps) {
+    const list = stepsByRun.get(step.agentRunId);
+    if (list) {
+      list.push(step);
+    } else {
+      stepsByRun.set(step.agentRunId, [step]);
+    }
+  }
+  return runRows.map((run) => ({ run, steps: stepsByRun.get(run.id) ?? [] }));
 }
 
 export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
@@ -272,14 +335,20 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
     },
 
     async createRunIfWorkItemIdle(run) {
-      const rows = await db
-        .insert(agentRuns)
-        .values(runInsertValues(run))
-        .onConflictDoNothing({
-          target: agentRuns.workItemId,
-          where: activeWorkItemRunWhere
-        })
-        .returning();
+      const insert = db.insert(agentRuns).values(runInsertValues(run));
+      const rows = run.taskPlanItemId
+        ? await insert
+          .onConflictDoNothing({
+            target: agentRuns.taskPlanItemId,
+            where: activeTaskPlanItemRunWhere
+          })
+          .returning()
+        : await insert
+          .onConflictDoNothing({
+            target: agentRuns.workItemId,
+            where: activeOrdinaryWorkItemRunWhere
+          })
+          .returning();
       return rows[0] ?? null;
     },
 
@@ -367,25 +436,7 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
         .from(agentRuns)
         .where(inArray(agentRuns.status, activeStatuses))
         .orderBy(asc(agentRuns.createdAt));
-      if (runRows.length === 0) {
-        return [];
-      }
-      const runIds = runRows.map((row) => row.id);
-      const allSteps = await db
-        .select()
-        .from(agentSteps)
-        .where(inArray(agentSteps.agentRunId, runIds))
-        .orderBy(asc(agentSteps.seq), asc(agentSteps.createdAt));
-      const stepsByRun = new Map<string, typeof allSteps>();
-      for (const step of allSteps) {
-        const list = stepsByRun.get(step.agentRunId);
-        if (list) {
-          list.push(step);
-        } else {
-          stepsByRun.set(step.agentRunId, [step]);
-        }
-      }
-      return runRows.map((run) => ({ run, steps: stepsByRun.get(run.id) ?? [] }));
+      return attachStepsToRuns(db, runRows);
     },
 
     claimQueued(runId, claim) {
@@ -481,6 +532,47 @@ export function createAgentRunRepository(db: WorkHubDb): AgentRunRepository {
           .returning();
         return [...deadLettered, ...requeued];
       });
+    },
+
+    async restoreDeadLetterClaim(input) {
+      const [row] = await db
+        .update(agentRuns)
+        .set({
+          status: "running",
+          claimedBy: input.claim.workerId,
+          claimedAt: input.claim.claimedAt,
+          heartbeatAt: input.claim.heartbeatAt,
+          leaseExpiresAt: input.claim.leaseExpiresAt,
+          finishedAt: null,
+          updatedAt: input.restoredAt
+        })
+        .where(and(
+          eq(agentRuns.id, input.runId),
+          eq(agentRuns.status, "failed")
+        ))
+        .returning();
+      return row ?? null;
+    },
+
+    async listUnsettledTaskPlanRuns(input) {
+      const limit = Math.max(0, Math.min(Math.floor(input.limit), 100));
+      if (limit === 0) {
+        return [];
+      }
+      const rows = await db
+        .select({ run: agentRuns })
+        .from(agentRuns)
+        .innerJoin(taskPlanItems, eq(taskPlanItems.id, agentRuns.taskPlanItemId))
+        .where(and(
+          inArray(agentRuns.status, terminalStatuses),
+          eq(taskPlanItems.status, "dispatched" satisfies TaskPlanItemStatus),
+          // B-R9.2-3：恢复 tick 只认同代 run——人工重派后（item 代际 +1）旧终态 run
+          // 不再被捡起去覆盖新一轮结果。
+          eq(agentRuns.taskPlanItemEpoch, taskPlanItems.dispatchEpoch)
+        ))
+        .orderBy(asc(agentRuns.updatedAt), asc(agentRuns.id))
+        .limit(limit);
+      return attachStepsToRuns(db, rows.map((row) => row.run));
     }
   };
 }

@@ -35,6 +35,9 @@ type OutputEntry = {
   sizeBytes: number;
 };
 
+const NO_DELIVERABLES_ERROR = "No deliverables found under outputs/.";
+const NO_NON_EMPTY_DELIVERABLES_ERROR = "No non-empty deliverables found under outputs/.";
+
 const textExtensions = new Set([
   ".css",
   ".html",
@@ -116,25 +119,54 @@ async function listDirectoryChildren(root: string, directory: string, limit = 20
   return acc;
 }
 
+function directoryContainsNonEmptyFile(entry: OutputEntry, entries: OutputEntry[]) {
+  const prefix = `${entry.relativePath}/`;
+  return entries.some((candidate) =>
+    !candidate.isDirectory &&
+    candidate.sizeBytes > 0 &&
+    candidate.relativePath.startsWith(prefix)
+  );
+}
+
+function isNonEmptyDeliverableEntry(entry: OutputEntry, entries: OutputEntry[]) {
+  if (!entry.isDirectory) {
+    return entry.sizeBytes > 0;
+  }
+  return directoryContainsNonEmptyFile(entry, entries);
+}
+
 async function listOutputEntries(workdir: string) {
   const outputsRoot = path.join(workdir, "outputs");
   const outputStat = await stat(outputsRoot).catch(() => undefined);
   if (!outputStat?.isDirectory()) {
-    throw new Error("No deliverables found under outputs/.");
+    throw new Error(NO_DELIVERABLES_ERROR);
   }
 
   const entries: OutputEntry[] = [];
   await walkOutputs(outputsRoot, outputsRoot, entries);
   const deliverables = entries.filter((entry) => entry.relativePath !== ".");
   if (deliverables.length === 0) {
-    throw new Error("No deliverables found under outputs/.");
+    throw new Error(NO_DELIVERABLES_ERROR);
   }
-  return deliverables.sort((a, b) => {
+  const nonEmptyDeliverables = deliverables.filter((entry) => isNonEmptyDeliverableEntry(entry, deliverables));
+  if (nonEmptyDeliverables.length === 0) {
+    throw new Error(NO_NON_EMPTY_DELIVERABLES_ERROR);
+  }
+  return nonEmptyDeliverables.sort((a, b) => {
     if (a.relativePath === b.relativePath) {
       return 0;
     }
     return a.relativePath < b.relativePath ? -1 : 1;
   });
+}
+
+export async function hasNonEmptyOutputDeliverables(workdir: string) {
+  try {
+    await listOutputEntries(workdir);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function detectTargetKind(entry: OutputEntry): DeliverableTargetKind {

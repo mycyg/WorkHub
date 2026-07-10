@@ -175,10 +175,10 @@ export function validateNickname(nickname: string) {
     throw new HTTPException(400, { message: "empty nickname" });
   }
   if (normalized.startsWith("_deleted_")) {
-    throw new HTTPException(400, { message: "昵称不能以 _deleted_ 开头" });
+    throw new HTTPException(400, { message: "昵称不能以 _deleted_ 开头 (nickname cannot start with _deleted_)" });
   }
   if (/[\r\n\t\u0000]/u.test(normalized)) {
-    throw new HTTPException(400, { message: "昵称不能包含控制字符" });
+    throw new HTTPException(400, { message: "昵称不能包含控制字符 (nickname cannot contain control characters)" });
   }
   return normalized;
 }

@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono";
+import { z } from "zod";
 
 import { normalizeWorkHubLocale, type MeetingPageVM, type WorkItemDetailVM } from "@workhub/contracts";
 
@@ -14,6 +15,13 @@ import {
   type MeetingPageService
 } from "../services/meeting-pages.js";
 import { isUuidParam } from "./uuid-param.js";
+import { readJsonObject } from "./json-body.js";
+
+// R10-P2-2：导入会议转写请求体。
+const importMeetingTranscriptSchema = z.object({
+  title: z.string().trim().min(1).max(256),
+  transcript_text: z.string().trim().min(1).max(200000)
+});
 
 export type MeetingRoutesDependencies = {
   auth?: AuthDependencySource;
@@ -55,6 +63,27 @@ export function createMeetingRoutes(deps: MeetingRoutesDependencies = {}) {
   const routes = new Hono<AuthEnv>();
   const authSource = deps.auth ?? getDefaultAuthDependencies;
   const meetingPages = deps.meetingPages ?? getDefaultMeetingPageService();
+
+  // R10-P2-2：导入会议转写（标题+文本）——会议页从只读孤岛变成可自助进数据。
+  routes.post("/projects/:projectId/import", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    try {
+      const payload = importMeetingTranscriptSchema.parse(await readJsonObject(c));
+      const data = await meetingPages.importTranscript({
+        actor: c.var.actor,
+        projectId: requireUuidParam(c.req.param("projectId"), "项目"),
+        title: payload.title,
+        transcriptText: payload.transcript_text,
+        locale
+      });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof MeetingPageServiceError) {
+        return meetingErrorResponse(c, error);
+      }
+      throw error;
+    }
+  });
 
   routes.post("/projects/:projectId/insights/:insightId/draft", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);

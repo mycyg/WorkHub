@@ -24,8 +24,11 @@ export const allowedWorkItemTransitions = {
   intake: ["ai_clarifying", "cancelled"],
   ai_clarifying: ["spec_ready", "cancelled"],
   spec_ready: ["ai_working", "pm_mode", "cancelled"],
-  ai_working: ["in_review", "escalated", "cancelled"],
-  escalated: ["pm_mode", "cancelled"],
+  // B-R9.0-4：ai_working→pm_mode = 人从跑着的军团手里接管（升级卡「转成我来做」）。
+  // 军团升级是切片级的（其他子任务可能还在健康跑），工单不整体置 escalated，
+  // 所以接管必须能从 ai_working 直达 pm_mode。
+  ai_working: ["in_review", "escalated", "pm_mode", "cancelled"],
+  escalated: ["ai_working", "pm_mode", "cancelled"],
   pm_mode: ["in_review", "cancelled"],
   in_review: ["merged", "ai_working", "pm_mode", "cancelled"],
   merged: ["done", "intake"],
@@ -45,6 +48,19 @@ export function sessionFinalizeFromStatuses(to: WorkItemStatus): WorkItemStatus[
 export const workItemModes = ["worker", "pm"] as const;
 export const workItemModeSchema = z.enum(workItemModes);
 export type WorkItemMode = z.infer<typeof workItemModeSchema>;
+
+// B-R9.6 §3.1：paused = 人按下「暂停派发」。在跑的子 run 不杀，只停新派发；resume 回 dispatching。
+export const taskPlanStatuses = ["draft", "proposed", "approved", "dispatching", "paused", "done", "cancelled"] as const;
+export const taskPlanStatusSchema = z.enum(taskPlanStatuses);
+export type TaskPlanStatus = z.infer<typeof taskPlanStatusSchema>;
+
+export const taskPlanItemRoles = ["research", "produce", "review", "integrate"] as const;
+export const taskPlanItemRoleSchema = z.enum(taskPlanItemRoles);
+export type TaskPlanItemRole = z.infer<typeof taskPlanItemRoleSchema>;
+
+export const taskPlanItemStatuses = ["pending", "dispatched", "succeeded", "failed", "skipped"] as const;
+export const taskPlanItemStatusSchema = z.enum(taskPlanItemStatuses);
+export type TaskPlanItemStatus = z.infer<typeof taskPlanItemStatusSchema>;
 
 export const confidenceGrades = ["low", "medium", "high"] as const;
 export const confidenceGradeSchema = z.enum(confidenceGrades);
@@ -94,7 +110,6 @@ export const agentRunStatuses = [
   "succeeded",
   "failed",
   "escalated",
-  "budget_exhausted",
   "cancelled"
 ] as const;
 export const agentRunStatusSchema = z.enum(agentRunStatuses);

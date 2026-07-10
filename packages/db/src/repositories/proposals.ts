@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 
 import type {
   ActorKind,
@@ -13,6 +13,7 @@ import type {
 } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
+import { TaskPlanBudgetShareMismatch, validateDraftItemGraph } from "./task-plans.js";
 import {
   acceptedDeliverableChanges,
   agentRuns,
@@ -26,6 +27,8 @@ import {
   proposals,
   reviews,
   snapshots,
+  taskPlanItems,
+  taskPlans,
   workItemAcceptanceItems,
   workItemTaskItems,
   workItemTaskPlans,
@@ -51,6 +54,7 @@ export type ReviewableProposalRow = {
   workItemId: string;
   title: string;
   status: string;
+  diffManifest: DeliverableChangeManifest;
   createdAt: Date;
 };
 
@@ -90,6 +94,7 @@ export type MergeProposalInput = {
   acceptIncomingTargetKeys?: string[];
   bulkAction?: ProposalMergeBulkActionInput;
   candidateSupplements?: MergeProposalCandidateSupplement[];
+  workItemStatusAfterMerge?: "merged" | "ai_working";
   at?: Date;
 };
 
@@ -243,6 +248,17 @@ export class ProposalRepositoryMergeConflictError extends Error {
   }
 }
 
+// B-R9.1-1：计划提议合入时，军团计划必须在同一笔事务里 CAS 到 approved；
+// 计划已不可批准（被取消等）时抛本错误让整笔合入回滚，杜绝「提议 merged +
+// 计划仍 draft/cancelled + 永不派发」的死状态。
+export class ProposalRepositoryTaskPlanApprovalError extends Error {
+  public readonly code = "task_plan_approval_failed";
+
+  constructor(public readonly planId: string) {
+    super("Task plan tied to this proposal can no longer be approved");
+  }
+}
+
 export class ProposalRepositoryConflictError extends Error {
   constructor(
     public readonly code: "proposal_already_exists",
@@ -368,6 +384,8 @@ export type ProposalRepository = {
   chooseMergeProposalCandidate: (input: ChooseMergeProposalCandidateInput) => Promise<MergeProposalRow | null>;
   applyMergeProposalCandidate: (input: ApplyMergeProposalCandidateInput) => Promise<StoredProposalRows | null>;
   review: (input: ReviewProposalInput) => Promise<StoredProposalRows | null>;
+  // B-R9.6（KPI 真源）：今日 AI 判官审阅结果，供指挥台「复核通过率」跨页同口径。
+  countTodayAiReviewOutcomes: (input: { workspaceId: string; now?: Date }) => Promise<{ total: number; approved: number }>;
   merge: (input: MergeProposalInput) => Promise<StoredProposalRows | null>;
   rebase: (input: RebaseProposalInput) => Promise<ProposalMergeConflict[] | null>;
 };
@@ -1879,6 +1897,7 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
           workItemId: proposals.workItemId,
           title: proposals.title,
           status: proposals.status,
+          diffManifest: proposals.diffManifest,
           createdAt: proposals.createdAt
         })
         .from(proposals)
@@ -2600,6 +2619,35 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
       return readStoredProposal(db, input.proposalId);
     },
 
+    // B-R9.6（KPI 真源）：今日 AI 判官审阅结果——「复核通过率」接 R9.4 真数据，
+    // 不再拿 run 成功率冒充。按工作区（经 work item）+ 当日窗口聚合。
+    async countTodayAiReviewOutcomes(input: { workspaceId: string; now?: Date }) {
+      const at = input.now ?? new Date();
+      const dayStart = new Date(at);
+      dayStart.setUTCHours(0, 0, 0, 0);
+      // UX 审计（口径）：workspace 过滤与 listReviewable 同款——工作项或其项目命中工作区即计入，
+      // NULL 打标的旧工作项不被静默丢弃；ORDER BY 让 500 截断落在最旧一侧（当日超 500 审阅时取最新样本）。
+      const rows = await db
+        .select({ decision: reviews.decision })
+        .from(reviews)
+        .innerJoin(proposals, eq(reviews.proposalId, proposals.id))
+        .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
+        .innerJoin(projects, eq(projects.id, workItems.projectId))
+        .where(and(
+          eq(reviews.reviewerKind, "ai"),
+          or(
+            eq(workItems.workspaceId, input.workspaceId),
+            eq(projects.workspaceId, input.workspaceId)
+          ),
+          gte(reviews.createdAt, dayStart)
+        ))
+        .orderBy(desc(reviews.createdAt))
+        .limit(500);
+      const total = rows.length;
+      const approved = rows.filter((row) => row.decision === "approve").length;
+      return { total, approved };
+    },
+
     async merge(input) {
       const at = input.at ?? new Date();
       const mergeSnapshotId = input.mergeSnapshotId ?? randomUUID();
@@ -2806,12 +2854,13 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             updatedAt: at
           })
           .where(eq(branches.id, proposal.branchId));
+        const workItemStatusAfterMerge = input.workItemStatusAfterMerge ?? "merged";
         await tx
           .update(workItems)
           .set({
-            status: "merged",
+            status: workItemStatusAfterMerge,
             mainBranchId: proposal.branchId,
-            acceptedAt: at,
+            ...(workItemStatusAfterMerge === "merged" ? { acceptedAt: at } : {}),
             version: sql`${workItems.version} + 1`,
             updatedAt: at
           })
@@ -2873,6 +2922,75 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
             createdAt: at,
             updatedAt: at
           });
+        }
+        // B-R9.1-1（branch-review 原子性）：计划提议的合入与计划批准同事务。旧路径在
+        // merge 提交后由 service 层 onMerged 再 approvePlan，那一步失败就留下「提议
+        // merged + 计划仍 draft + 永不派发」的死状态。这里在提交前 CAS（draft→approved，
+        // 已 approved 幂等）；计划已被取消等不可批准时抛错让整笔合入回滚，绝不半套。
+        const taskPlanChanges = proposal.diffManifest.changes.filter((change) =>
+          change.target_kind === "structured_record"
+          && change.target_ref.entity_type === "task_plan"
+          && change.target_ref.entity_id);
+        const seenTaskPlanIds = new Set<string>();
+        for (const change of taskPlanChanges) {
+          const planId = change.target_ref.entity_id as string;
+          if (seenTaskPlanIds.has(planId)) {
+            continue;
+          }
+          seenTaskPlanIds.add(planId);
+          const approvedPlans = await tx
+            .update(taskPlans)
+            .set({
+              status: "approved",
+              updatedAt: at,
+              // B-R9.4-1：合入时把（planner 标注、人审可改的）提议风险写回计划——
+              // 仲裁 2-of-3 的触发基线读这里，产出自报只能抬高不能压低。
+              decompositionContextJson: sql`coalesce(${taskPlans.decompositionContextJson}, '{}'::jsonb) || jsonb_build_object('plan_risk', ${proposal.diffManifest.risk.level}::text)`
+            })
+            .where(and(
+              eq(taskPlans.id, planId),
+              eq(taskPlans.workItemId, proposal.workItemId),
+              inArray(taskPlans.status, ["draft", "approved"])
+            ))
+            .returning({ id: taskPlans.id });
+          if (!approvedPlans[0]) {
+            throw new ProposalRepositoryTaskPlanApprovalError(planId);
+          }
+          // R9-BLOCK-7.154：人审后的子任务清单（含行内编辑修订）随合入整批写回——
+          // 没有这一步，工作台编辑只改了 manifest 文本，真正派发的仍是 AI 草稿原样。
+          // 写回前过与建草稿相同的图校验（id 唯一、依赖引用同批）。
+          const reviewedItems = change.machine_summary?.task_plan_items;
+          if (reviewedItems && reviewedItems.length > 0) {
+            const totalSharePct = reviewedItems.reduce((sum, item) => sum + item.budget_share_pct, 0);
+            if (totalSharePct !== 100) {
+              throw new TaskPlanBudgetShareMismatch(totalSharePct);
+            }
+            validateDraftItemGraph(reviewedItems.map((item) => ({
+              id: item.id,
+              seq: item.seq,
+              title: item.title,
+              role: item.role,
+              objectiveMd: item.objective_md,
+              acceptanceMd: item.acceptance_md,
+              budgetSharePct: item.budget_share_pct,
+              dependsOn: item.depends_on
+            })));
+            await tx.delete(taskPlanItems).where(eq(taskPlanItems.planId, planId));
+            await tx.insert(taskPlanItems).values(reviewedItems.map((item) => ({
+              id: item.id,
+              planId,
+              seq: item.seq,
+              title: item.title,
+              role: item.role,
+              objectiveMd: item.objective_md,
+              acceptanceMd: item.acceptance_md,
+              budgetSharePct: item.budget_share_pct,
+              dependsOn: item.depends_on,
+              status: "pending" as const,
+              createdAt: at,
+              updatedAt: at
+            })));
+          }
         }
         await tx.insert(auditLogs).values({
           id: randomUUID(),

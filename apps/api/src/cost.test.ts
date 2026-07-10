@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { Hono } from "hono";
@@ -31,9 +30,11 @@ import type {
   UserRepository,
   WorkspaceMembershipRepository
 } from "@workhub/db";
+import { budgetPolicyStorageId } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { InternalContractError } from "./pages/output-contract.js";
+import { selectTenantScopedBudgetPolicyRows } from "./qa/r1-pg-budget-policy.js";
 import { createCostRoutes } from "./routes/cost.js";
 import { createPageRoutes } from "./routes/pages.js";
 import { createApiProviderRegistry } from "./services/provider-registry.js";
@@ -219,11 +220,25 @@ function captureAuditLogs() {
   };
 }
 
-test("R1 PG smoke checks tenant-scoped budget policy storage ids", () => {
-  const source = readFileSync("src/qa/r1-pg-agent-run-smoke.ts", "utf8");
+test("R1 PG smoke selects tenant-scoped budget policy storage rows", () => {
+  const runtimeSettings = settings();
+  const logicalId = "pcost-user-day-v0";
+  const scopedId = budgetPolicyStorageId(runtimeSettings, logicalId);
+  const otherTenantId = budgetPolicyStorageId(loadSettings({
+    APP_ENV: "test",
+    COOKIE_SECRET: "test-cookie-secret",
+    DEFAULT_ORG_ID: runtimeSettings.auth.defaultOrgId,
+    DEFAULT_WORKSPACE_ID: "00000000-0000-4000-8000-00000000c057"
+  }), logicalId);
+  const rows = [
+    { id: logicalId, marker: "public-id" },
+    { id: scopedId, marker: "current-tenant" },
+    { id: otherTenantId, marker: "other-tenant" }
+  ];
 
-  assert.match(source, /budgetPolicyStorageId\(\s*settings,\s*"pcost-user-day-v0"\s*\)/u);
-  assert.doesNotMatch(source, /row\.id === "pcost-user-day-v0"/u);
+  // R9.7: the old assertion grepped r1-pg-agent-run-smoke.ts for `budgetPolicyStorageId(...)`.
+  // That was wrong because source text did not prove the smoke selected the scoped DB row at runtime.
+  assert.deepEqual(selectTenantScopedBudgetPolicyRows(runtimeSettings, logicalId, rows), [rows[1]]);
 });
 
 test("R2 audit#1: a failed audit write surfaces as a server error, not a 422 invalid-patch (update+audit stay atomic in production)", async () => {
@@ -275,8 +290,12 @@ test("cost policy routes expose configurable P-COST defaults to admins", async (
     ok: true;
     data: { id: string; scope_kind: string; max_tokens: number; max_cost_cny: string; version: number }[];
   };
-  assert.equal(listBody.data.length, 5);
+  // R9.5 adds task-plan and objective budget defaults; the old 5-policy
+  // assertion only covered pre-army user/team/work-item/eval scopes.
+  assert.equal(listBody.data.length, 7);
   assert.equal(listBody.data.find((policy) => policy.id === "pcost-workitem-run-v0")?.max_tokens, 120000);
+  assert.equal(listBody.data.find((policy) => policy.id === "pcost-task-run-v0")?.scope_kind, "task");
+  assert.equal(listBody.data.find((policy) => policy.id === "pcost-objective-month-v0")?.scope_kind, "objective");
   // eval 套件日预算策略现已存在（M21：此前 eval 在决策层无上限）。
   assert.equal(listBody.data.find((policy) => policy.id === "pcost-eval-day-v0")?.scope_kind, "eval");
 
@@ -595,6 +614,87 @@ test("cost dashboard page marks disabled budget rows instead of hiding them behi
   assert.deepEqual(disabledRows.map((usage) => usage.policy_id).sort(), ["pcost-team-day-v0:disabled", "pcost-user-day-v0:disabled"]);
   assert.equal(disabledRows.every((usage) => usage.max_tokens === 0 && usage.max_cost_cny === "0"), true);
   assert.deepEqual(body.data.top_exhaustion_risks, []);
+});
+
+test("R9.5 cost dashboard keeps army task plan and objective breakdowns admin-only", async () => {
+  const runtimeSettings = settings();
+  const taskPlanId = "95000000-0000-4000-8000-000000000701";
+  const objectiveId = "95000000-0000-4000-8000-000000000702";
+  const ledgerStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "95000000-0000-4000-8000-000000000703",
+    workItemId: "95000000-0000-4000-8000-000000000704",
+    userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    taskPlanId,
+    objectiveId,
+    inputTokens: 1000,
+    outputTokens: 500,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: now
+  }));
+  const scopesCalls: unknown[] = [];
+  const spyStore: CostLedgerStore = {
+    records: ledgerStore.records,
+    entries: ledgerStore.entries,
+    recordUsage: (record) => ledgerStore.recordUsage(record),
+    usageSnapshots: (scopeIds, options) => ledgerStore.usageSnapshots(scopeIds, options),
+    listEntriesForScopes: (scopeIds, options) => {
+      scopesCalls.push(scopeIds);
+      return ledgerStore.listEntriesForScopes!(scopeIds, options);
+    },
+    listEntriesForWorkspace: (teamId, options) => ledgerStore.listEntriesForWorkspace!(teamId, options)
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore: spyStore
+  }));
+
+  const response = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json() as {
+    ok: true;
+    data: {
+      by_task_plan: { task_plan_id: string; cost_cny: string; tokens: number; child_runs: number }[];
+      by_objective: { objective_id: string; cost_cny: string; tokens: number }[];
+    };
+  };
+  assert.deepEqual(scopesCalls, [{ userId, teamId: runtimeSettings.auth.defaultWorkspaceId }]);
+  // R9.7 review: the old assertion exposed raw task_plan_id/objective_id breakdowns to non-admins.
+  // Ordinary members still see their scoped totals, but plan/objective attribution is an admin breakdown like by_user/team/workitem.
+  assert.deepEqual(body.data.by_task_plan, []);
+  assert.deepEqual(body.data.by_objective, []);
+
+  const adminResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+  assert.equal(adminResponse.status, 200);
+  const adminBody = await adminResponse.json() as {
+    ok: true;
+    data: {
+      by_task_plan: { task_plan_id: string; cost_cny: string; tokens: number; child_runs: number }[];
+      by_objective: { objective_id: string; cost_cny: string; tokens: number }[];
+    };
+  };
+  assert.deepEqual(adminBody.data.by_task_plan, [{
+    task_plan_id: taskPlanId,
+    cost_cny: "0.006",
+    tokens: 1500,
+    child_runs: 1
+  }]);
+  assert.deepEqual(adminBody.data.by_objective, [{
+    objective_id: objectiveId,
+    cost_cny: "0.006",
+    tokens: 1500
+  }]);
 });
 
 test("cost usage route preserves budget policy notice actions", async () => {
@@ -922,6 +1022,57 @@ test("L[1] cost dashboard fails closed (empty) for a non-admin when the store la
   // fail-closed：既看不到自己的 1000，也绝不泄露另一用户的 18000——全空。
   assert.equal(userBody.data.token_in, 0);
   assert.equal(userBody.data.by_user.length, 0);
+});
+
+test("R9.7 cost dashboard fails closed for an admin when the store lacks workspace-filtered reads", async () => {
+  const runtimeSettings = settings();
+  const fullStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await fullStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000e2",
+    workItemId: "50000000-0000-4000-8000-0000000000e2",
+    userId,
+    inputTokens: 1000,
+    outputTokens: 500,
+    costTier: { inputCnyPerMtok: 2, outputCnyPerMtok: 8 },
+    createdAt: now
+  }));
+  await fullStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "40000000-0000-4000-8000-0000000000e3",
+    workItemId: "50000000-0000-4000-8000-0000000000e3",
+    userId: "10000000-0000-4000-8000-0000000000c9",
+    inputTokens: 9000,
+    outputTokens: 9000,
+    costTier: { inputCnyPerMtok: 4, outputCnyPerMtok: 16 },
+    createdAt: now
+  }));
+  const storeWithoutWorkspaceReads: CostLedgerStore = {
+    records: fullStore.records,
+    entries: fullStore.entries,
+    recordUsage: (record) => fullStore.recordUsage(record),
+    usageSnapshots: (scopeIds, options) => fullStore.usageSnapshots(scopeIds, options),
+    listEntries: () => fullStore.listEntries!()
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore: storeWithoutWorkspaceReads
+  }));
+
+  const adminResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+
+  assert.equal(adminResponse.status, 200);
+  const adminBody = await adminResponse.json() as { ok: true; data: { token_in: number; by_user: unknown[] } };
+  assert.equal(adminBody.data.token_in, 0);
+  assert.equal(adminBody.data.by_user.length, 0);
 });
 
 test("api provider registry records create and stream usage into the shared cost ledger", async () => {

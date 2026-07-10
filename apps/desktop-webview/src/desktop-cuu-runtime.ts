@@ -15,7 +15,7 @@ import {
   type CuuControllerDecision,
   type CuuLocaleOptions
 } from "@workhub/cuu";
-import { WorkHubApiError, type WorkHubApiClient } from "@workhub/api-client";
+import { WorkHubApiError, type PageRequestOptions, type WorkHubApiClient } from "@workhub/api-client";
 import {
   cuuLauncherSpecOptionSchema,
   eventTypes,
@@ -28,6 +28,7 @@ import {
   type GoldPathSurfaceVM,
   type MergeProposalRequest,
   type ReviewProposalRequest,
+  type ResolveEscalationRequest,
   type StartAgentRunRequest,
   type WorkHubEvent
 } from "@workhub/contracts";
@@ -47,6 +48,7 @@ export type DesktopShellEventName =
   | "navigate"
   | "tray-action"
   | "pet-settings"
+  | "pet-locale-changed"
   | "attention-refresh";
 
 export type DesktopShellListen = (
@@ -110,6 +112,11 @@ export type DesktopCuuActionRequest =
       requiresReason: boolean;
     }
   | {
+      kind: "resolve-escalation";
+      escalationId: string;
+      payload: ResolveEscalationRequest;
+    }
+  | {
       kind: "session-next-question";
       sessionId: string;
       selectedOptionIds?: string[];
@@ -135,6 +142,24 @@ export type DesktopCuuActionRequest =
       kind: "proposal-merge-candidate-apply";
       mergeProposalId: string;
       payload?: ApplyMergeProposalCandidateRequest;
+    }
+  // B-R9.6 UX 审计（桌宠死卡）：sync_conflict/budget/plan_review 卡端上来了却没人接——
+  // 点击不发任何请求。补三类动作请求。
+  | {
+      kind: "memory-conflict-resolve";
+      conflictId: string;
+      resolution: "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both";
+      expectedUpdatedAt: string;
+      valueMd?: string;
+    }
+  | {
+      kind: "budget-decision";
+      escalationId: string;
+      budgetActionId: string;
+    }
+  | {
+      kind: "skip-plan";
+      proposalId: string;
     };
 
 export const desktopCuuProjectContextStorageKey = "workhub_cuu_project_context";
@@ -220,11 +245,12 @@ export type DesktopCuuActionResult = {
 export type DesktopCuuStartAgentAction = Extract<DesktopCuuActionRequest, { kind: "cuu-start-agent" }>;
 
 export type DesktopCuuAgentLaunchClient = {
-  createSession?: (payload?: CreateSessionRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createSession"]>>>;
-  createWorkItem?: (payload: CreateWorkItemRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>>;
+  createSession?: (payload?: CreateSessionRequest, options?: PageRequestOptions) => Promise<Awaited<ReturnType<WorkHubApiClient["createSession"]>>>;
+  createWorkItem?: (payload: CreateWorkItemRequest, options?: PageRequestOptions) => Promise<Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>>;
   startAgentRun?: (
     workItemId: string,
-    payload?: StartAgentRunRequest
+    payload?: StartAgentRunRequest,
+    options?: PageRequestOptions
   ) => Promise<Awaited<ReturnType<WorkHubApiClient["startAgentRun"]>>>;
 };
 
@@ -290,14 +316,34 @@ type DesktopCuuActionClient = Pick<
   WorkHubApiClient,
   "respondApproval" | "nextQuestion" | "searchKnowledge" | "useEvidenceForWorkItem"
 > & {
-  reviewProposal?: (
-    proposalId: string,
-    payload: ReviewProposalRequest
+  resolveEscalation?: (
+    escalationId: string,
+    payload: ResolveEscalationRequest,
+    options?: PageRequestOptions
   ) => Promise<{
     attention: {
       summary_text: string;
     };
   }>;
+  reviewProposal?: (
+    proposalId: string,
+    payload: ReviewProposalRequest,
+    options?: PageRequestOptions
+  ) => Promise<{
+    attention: {
+      summary_text: string;
+    };
+  }>;
+  resolveMemoryConflict?: WorkHubApiClient["resolveMemoryConflict"];
+  resolveBudgetDecision?: (
+    escalationId: string,
+    budgetActionId: string,
+    options?: PageRequestOptions
+  ) => Promise<{ attention: { summary_text: string } }>;
+  skipTaskPlanProposal?: (
+    proposalId: string,
+    options?: PageRequestOptions
+  ) => Promise<{ attention: { summary_text: string } }>;
   createSession?: (payload?: CreateSessionRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createSession"]>>>;
   createWorkItem?: (payload: CreateWorkItemRequest) => Promise<Awaited<ReturnType<WorkHubApiClient["createWorkItem"]>>>;
   startAgentRun?: (
@@ -306,7 +352,8 @@ type DesktopCuuActionClient = Pick<
   ) => Promise<Awaited<ReturnType<WorkHubApiClient["startAgentRun"]>>>;
   mergeProposal: (
     proposalId: string,
-    payload?: MergeProposalRequest
+    payload?: MergeProposalRequest,
+    options?: PageRequestOptions
   ) => Promise<{
     attention: {
       summary_text: string;
@@ -314,7 +361,8 @@ type DesktopCuuActionClient = Pick<
   }>;
   applyMergeProposalCandidate?: (
     mergeProposalId: string,
-    payload?: ApplyMergeProposalCandidateRequest
+    payload?: ApplyMergeProposalCandidateRequest,
+    options?: PageRequestOptions
   ) => Promise<{
     attention: {
       summary_text: string;
@@ -451,7 +499,8 @@ export async function startDesktopCuuAgentFromLauncher(input: {
     intent_text: input.action.intentText,
     ...(input.action.projectId ? { project_id: input.action.projectId } : {})
   };
-  const session = await input.client.createSession(sessionPayload);
+  const localeOptions = input.locale ? { locale: input.locale } : undefined;
+  const session = await input.client.createSession(sessionPayload, localeOptions);
   if (desktopCuuSessionNeedsClarification(session)) {
     return {
       outcome: "clarification",
@@ -469,13 +518,13 @@ export async function startDesktopCuuAgentFromLauncher(input: {
     ...(input.action.cuuLauncherSpec ? { cuu_launcher_spec: input.action.cuuLauncherSpec } : {}),
     kickoff_agent: true,
     ...(input.action.projectId ? { project_id: input.action.projectId } : {})
-  });
+  }, localeOptions);
   const workItemId = workItem.workitem.id;
   const runPayload: StartAgentRunRequest = {
     title: input.action.runTitle ?? input.action.title,
     ...(input.action.mode ? { mode: input.action.mode } : {})
   };
-  const run = await input.client.startAgentRun(workItemId, runPayload);
+  const run = await input.client.startAgentRun(workItemId, runPayload, localeOptions);
   return {
     outcome: "started",
     session,
@@ -988,6 +1037,51 @@ export function resolveDesktopCuuAction(
     };
   }
 
+  // B-R9.6 UX 审计（桌宠死卡）：sync_conflict 卡四动作 / budget 卡预算动作 / plan_review「先不拆」。
+  const memoryConflictMatch = /^\/api\/memory-conflicts\/([^/]+)\/resolve\/(keep_current|accept_incoming|merge_both|edit_memory|discard_both)$/u.exec(path);
+  if (memoryConflictMatch?.[1] && memoryConflictMatch[2]) {
+    const expectedUpdatedAt = url.searchParams.get("expected_updated_at");
+    if (!expectedUpdatedAt) {
+      return undefined;
+    }
+    return {
+      kind: "memory-conflict-resolve",
+      conflictId: decodeURIComponent(memoryConflictMatch[1]),
+      resolution: memoryConflictMatch[2] as "keep_current" | "accept_incoming" | "merge_both" | "edit_memory" | "discard_both",
+      expectedUpdatedAt
+    };
+  }
+
+  const budgetActionMatch = /^\/api\/escalations\/([^/]+)\/budget-actions\/([^/]+)$/u.exec(path);
+  if (budgetActionMatch?.[1] && budgetActionMatch[2]) {
+    return {
+      kind: "budget-decision",
+      escalationId: decodeURIComponent(budgetActionMatch[1]),
+      budgetActionId: decodeURIComponent(budgetActionMatch[2])
+    };
+  }
+
+  const skipPlanMatch = /^\/api\/proposals\/([^/]+)\/skip-plan$/u.exec(path);
+  if (skipPlanMatch?.[1]) {
+    return {
+      kind: "skip-plan",
+      proposalId: decodeURIComponent(skipPlanMatch[1])
+    };
+  }
+
+  const escalationResolveMatch = /^\/api\/escalations\/([^/]+)\/resolve$/u.exec(path);
+  if (escalationResolveMatch?.[1]) {
+    const payload = escalationResolvePayloadFromAction(input.actionId, input.card, href);
+    if (!payload) {
+      return undefined;
+    }
+    return {
+      kind: "resolve-escalation",
+      escalationId: decodeURIComponent(escalationResolveMatch[1]),
+      payload
+    };
+  }
+
   const proposalReviewMatch = /^\/api\/proposals\/([^/]+)\/review$/u.exec(path);
   if (proposalReviewMatch?.[1]) {
     return {
@@ -1056,11 +1150,12 @@ export function resolveDesktopCuuAction(
 }
 
 export async function submitDesktopCuuAction(input: {
-  client: DesktopCuuActionClient;
+  client: DesktopCuuActionClient & DesktopCuuAgentLaunchClient;
   action: DesktopCuuActionRequest;
   reasonMd?: string | undefined;
   locale?: CuuLocaleOptions["locale"];
 }): Promise<DesktopCuuActionResult> {
+  const localeOptions: PageRequestOptions | undefined = input.locale ? { locale: input.locale } : undefined;
   if (input.action.kind === "cuu-start-agent") {
     const launch = await startDesktopCuuAgentFromLauncher({
       client: input.client,
@@ -1088,6 +1183,18 @@ export async function submitDesktopCuuAction(input: {
     };
   }
 
+  if (input.action.kind === "resolve-escalation") {
+    if (!input.client.resolveEscalation) {
+      throw new Error("Escalation resolve action is unavailable.");
+    }
+    const result = await input.client.resolveEscalation(input.action.escalationId, input.action.payload, {
+      locale: input.locale ?? "zh-CN"
+    });
+    return {
+      message: result.attention.summary_text
+    };
+  }
+
   if (input.action.kind === "proposal-review") {
     if (!input.client.reviewProposal) {
       throw new Error("Proposal review action is unavailable.");
@@ -1099,7 +1206,7 @@ export async function submitDesktopCuuAction(input: {
       decision: input.action.decision,
       ...(input.reasonMd ? { reason_md: input.reasonMd } : {}),
       remember: "once"
-    });
+    }, localeOptions);
     return {
       message: result.attention.summary_text
     };
@@ -1132,8 +1239,42 @@ export async function submitDesktopCuuAction(input: {
     };
   }
 
+  if (input.action.kind === "memory-conflict-resolve") {
+    if (!input.client.resolveMemoryConflict) {
+      throw new Error("Memory conflict action is unavailable.");
+    }
+    await input.client.resolveMemoryConflict(input.action.conflictId, {
+      resolution: input.action.resolution,
+      expected_updated_at: input.action.expectedUpdatedAt,
+      ...(input.action.valueMd ? { value_md: input.action.valueMd } : {})
+    });
+    return {
+      message: cuuT(input.locale, "action.memoryConflictResolved")
+    };
+  }
+
+  if (input.action.kind === "budget-decision") {
+    if (!input.client.resolveBudgetDecision) {
+      throw new Error("Budget decision action is unavailable.");
+    }
+    const result = await input.client.resolveBudgetDecision(input.action.escalationId, input.action.budgetActionId, localeOptions);
+    return {
+      message: result.attention.summary_text
+    };
+  }
+
+  if (input.action.kind === "skip-plan") {
+    if (!input.client.skipTaskPlanProposal) {
+      throw new Error("Skip-plan action is unavailable.");
+    }
+    const result = await input.client.skipTaskPlanProposal(input.action.proposalId, localeOptions);
+    return {
+      message: result.attention.summary_text
+    };
+  }
+
   if (input.action.kind === "proposal-merge") {
-    const result = await input.client.mergeProposal(input.action.proposalId, input.action.payload ?? {});
+    const result = await input.client.mergeProposal(input.action.proposalId, input.action.payload ?? {}, localeOptions);
     return {
       message: result.attention.summary_text
     };
@@ -1143,7 +1284,7 @@ export async function submitDesktopCuuAction(input: {
     if (!input.client.applyMergeProposalCandidate) {
       throw new Error("AI fusion apply action is unavailable.");
     }
-    const result = await input.client.applyMergeProposalCandidate(input.action.mergeProposalId, input.action.payload ?? {});
+    const result = await input.client.applyMergeProposalCandidate(input.action.mergeProposalId, input.action.payload ?? {}, localeOptions);
     return {
       message: result.attention.summary_text
     };
@@ -1156,17 +1297,17 @@ export async function submitDesktopCuuAction(input: {
   const session = await input.client.nextQuestion(input.action.sessionId, {
     ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {}),
     ...(input.action.freeText ? { free_text: input.action.freeText } : {})
-  });
+  }, localeOptions);
   if (shouldStartRun) {
     const workItem = await input.client.createWorkItem!({
       session_id: input.action.sessionId,
       ...(input.action.selectedOptionIds?.length ? { selected_option_ids: input.action.selectedOptionIds } : {}),
       ...(input.action.freeText ? { free_text: input.action.freeText } : {}),
       kickoff_agent: true
-    });
+    }, localeOptions);
     const run = await input.client.startAgentRun!(workItem.workitem.id, {
       title: workItem.workitem.title
-    });
+    }, localeOptions);
     return {
       message: cuuFormat(input.locale, "cuuStart.started", { title: run.title }),
       card: cardFromAgentRunLive(run, input),
@@ -1554,6 +1695,27 @@ function approvalDecisionFromAction(actionId: string | undefined, requiresReason
 
 function proposalReviewDecisionFromAction(actionId: string | undefined, requiresReason: boolean): ReviewProposalRequest["decision"] {
   return approvalDecisionFromAction(actionId, requiresReason) === "deny" ? "request_changes" : "approve";
+}
+
+function escalationResolvePayloadFromAction(
+  actionId: string | undefined,
+  card: CuuCard | undefined,
+  href: string
+): ResolveEscalationRequest | undefined {
+  const payload = actionPayloadFromCard(card, actionId, href);
+  if (payload && typeof payload === "object" && !Array.isArray(payload) && "action" in payload) {
+    return payload as ResolveEscalationRequest;
+  }
+  switch (actionId) {
+    case "escalation_retry":
+      return { action: "retry" };
+    case "escalation_pm_mode":
+      return { action: "pm_mode" };
+    case "escalation_cancel":
+      return { action: "cancel" };
+    default:
+      return undefined;
+  }
 }
 
 function labelForState(state: CuuCard["state"], options: CuuLocaleOptions = {}) {

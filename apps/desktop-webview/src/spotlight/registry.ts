@@ -5,11 +5,11 @@
 import type { CommandId } from "../command-palette.js";
 import { createAttentionView } from "./views/attention.js";
 import {
+  createAgentsView,
   createCalendarView,
   createCostView,
   createKnowledgeView,
-  createProjectsView
-} from "./views/dashboards.js";
+  createProjectsView, createNotificationsView } from "./views/dashboards.js";
 import { createDriveView } from "./views/drive.js";
 import { createIntakeView } from "./views/intake.js";
 import { createPlaceholderView } from "./views/placeholder.js";
@@ -24,6 +24,7 @@ const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   approvals: createAttentionView,
   intake: createIntakeView,
   projects: createProjectsView,
+  agents: createAgentsView,
   cost: createCostView,
   team: createCalendarView,
   knowledge: createKnowledgeView,
@@ -31,6 +32,7 @@ const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   replay: createReplayView,
   proposals: createProposalsView,
   workitem: createWorkItemView,
+  notifications: createNotificationsView,
   settings: createSettingsView
 };
 

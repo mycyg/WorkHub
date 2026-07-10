@@ -13,8 +13,11 @@ import {
   mergeConflictNotice,
   reasonRequiredNotice,
   selectionNotice,
+  showRouteNotice,
+  startAgentRunQueuedNoticeBody,
   sseDirtyGuardNotice,
-  sseRefreshNotice
+  sseRefreshNotice,
+  taskPlanDraftedNoticeBody
 } from "./notice.js";
 
 test("R4.21 notice factories produce structured bilingual QA hooks", () => {
@@ -40,4 +43,51 @@ test("R4.21 dirty guard refresh action escapes href and label", () => {
   const html = dirtyGuardRefreshAction("en-US", "/proposals/p-1?x=<bad>");
   assert.match(html, /data-r4-dirty-refresh="true"/u);
   assert.match(html, /\/proposals\/p-1\?x=&lt;bad&gt;/u);
+});
+
+test("R9.7 task-plan drafted notices avoid dispatch internals", () => {
+  assert.equal(taskPlanDraftedNoticeBody("zh-CN").includes("派发"), false);
+  assert.equal(taskPlanDraftedNoticeBody("en-US").includes("dispatch"), false);
+  assert.equal(taskPlanDraftedNoticeBody("zh-CN"), "任务计划已生成，请先审阅再开始执行。");
+  assert.equal(taskPlanDraftedNoticeBody("en-US"), "Task plan drafted. Review the plan before work starts.");
+});
+
+test("R9.7 start-run notices avoid raw run identifiers", () => {
+  const rawRunId = "40000000-0000-4000-8000-000000000025";
+  const zh = startAgentRunQueuedNoticeBody("zh-CN");
+  const en = startAgentRunQueuedNoticeBody("en-US");
+
+  assert.equal(zh, "AI 已开始处理，WorkHub 会刷新任务，并在有 Proposal 或 Replay 时提醒你。");
+  assert.equal(en, "AI started. WorkHub will refresh this task and surface Proposal or Replay when available.");
+  assert.equal(zh.includes(rawRunId), false);
+  assert.equal(en.includes(rawRunId), false);
+});
+
+test("R9.7 route notices expose a monotonic sequence for live smoke freshness", () => {
+  const originalWindow = globalThis.window;
+  const fakeTimers = {
+    clearTimeout: () => undefined,
+    setTimeout: () => 1
+  };
+  (globalThis as unknown as { window: unknown }).window = fakeTimers;
+  const notice = {
+    dataset: {} as Record<string, string>,
+    hidden: true,
+    innerHTML: "",
+    insertAdjacentHTML: (_position: InsertPosition, html: string) => {
+      notice.innerHTML += html;
+    }
+  } as HTMLElement;
+  const shellRoot = {
+    querySelector: (selector: string) => selector === "[data-wh-app-notice]" ? notice : null
+  } as HTMLElement;
+  try {
+    showRouteNotice(shellRoot, actionSuccessNotice("en-US", "first", "apply_ai_fusion"), undefined, 4600, {});
+    assert.equal(notice.dataset.r4NoticeSeq, "1");
+
+    showRouteNotice(shellRoot, actionSuccessNotice("en-US", "second", "apply_ai_fusion"), undefined, 4600, {});
+    assert.equal(notice.dataset.r4NoticeSeq, "2");
+  } finally {
+    (globalThis as unknown as { window: unknown }).window = originalWindow;
+  }
 });

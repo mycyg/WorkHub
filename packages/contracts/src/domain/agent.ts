@@ -7,6 +7,7 @@ import {
   confidenceVerdictSchema,
   escalationTriggerSchema,
   riskLevelSchema,
+  taskPlanItemRoleSchema,
   toolControlSignalSchema,
   workItemModeSchema
 } from "../enums.js";
@@ -15,8 +16,14 @@ import { idSchema, isoDateTimeSchema, timestampFieldsSchema } from "./common.js"
 
 export const agentRunSchema = timestampFieldsSchema.extend({
   id: idSchema,
+  parent_run_id: idSchema.optional(),
   work_item_id: idSchema,
   branch_id: idSchema.optional(),
+  task_plan_id: idSchema.optional(),
+  task_plan_item_id: idSchema.optional(),
+  objective_id: idSchema.optional(),
+  agent_role: taskPlanItemRoleSchema.optional(),
+  objective_md: z.string().min(1).optional(),
   mode: workItemModeSchema,
   actor: z.string().min(1).max(32),
   status: agentRunStatusSchema,

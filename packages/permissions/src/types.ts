@@ -97,6 +97,8 @@ export type ApprovalRequestRecord = {
 };
 
 export type ApprovalAttentionOptions = {
+  // R12（多项目）：多项目并行时卡片点名所属项目。
+  projectName?: string;
   kind?: ApprovalKind;
   priority?: AttentionItem["priority"];
   riskLevel?: RiskLevel;

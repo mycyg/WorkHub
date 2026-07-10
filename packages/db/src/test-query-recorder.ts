@@ -1,10 +1,11 @@
 import type { WorkHubDb } from "./client.js";
 
 export type RecordedQuery = {
-  operation: "select" | "insert" | "update";
+  operation: "select" | "insert" | "update" | "execute";
   selection?: unknown;
   fromTable?: unknown;
   targetTable?: unknown;
+  rawQuery?: unknown;
   joins: Array<{ kind: "inner" | "left"; table: unknown; on: unknown }>;
   where?: unknown;
   orderBy: unknown[];
@@ -14,8 +15,14 @@ export type RecordedQuery = {
   alias?: string;
   setValue?: unknown;
   valuesValue?: unknown;
+  onConflict?: unknown;
   returningCalled?: boolean;
   steps: string[];
+};
+
+export type RecordedTransaction = {
+  outcome: "resolved" | "rejected";
+  errorName?: string;
 };
 
 class RecordedQueryBuilder implements PromiseLike<unknown[]> {
@@ -84,6 +91,18 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
     return this;
   }
 
+  onConflictDoUpdate(config: unknown): this {
+    this.query.onConflict = config;
+    this.query.steps.push("onConflictDoUpdate");
+    return this;
+  }
+
+  onConflictDoNothing(config?: unknown): this {
+    this.query.onConflict = config ?? {};
+    this.query.steps.push("onConflictDoNothing");
+    return this;
+  }
+
   returning(): Promise<unknown[]> {
     this.query.returningCalled = true;
     this.query.steps.push("returning");
@@ -122,6 +141,7 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
 class QueryRecorderDb {
   private readonly responses: unknown[][];
   readonly queries: RecordedQuery[] = [];
+  readonly transactions: RecordedTransaction[] = [];
 
   constructor(responses: ReadonlyArray<ReadonlyArray<unknown>>) {
     this.responses = responses.map((rows) => [...rows]);
@@ -139,8 +159,31 @@ class QueryRecorderDb {
     return this.createBuilder("update", { targetTable: table });
   }
 
+  async execute(query: unknown): Promise<unknown[]> {
+    const response = this.responses.shift() ?? [];
+    this.queries.push({
+      operation: "execute",
+      rawQuery: query,
+      joins: [],
+      orderBy: [],
+      groupBy: [],
+      steps: ["execute"]
+    });
+    return [...response];
+  }
+
   async transaction<T>(callback: (tx: WorkHubDb) => T | Promise<T>): Promise<T> {
-    return callback(this as unknown as WorkHubDb);
+    try {
+      const result = await callback(this as unknown as WorkHubDb);
+      this.transactions.push({ outcome: "resolved" });
+      return result;
+    } catch (error) {
+      this.transactions.push({
+        outcome: "rejected",
+        ...(error instanceof Error ? { errorName: error.name } : {})
+      });
+      throw error;
+    }
   }
 
   private createBuilder(
@@ -167,9 +210,13 @@ class QueryRecorderDb {
 
 export function createQueryRecorder(
   responses: ReadonlyArray<ReadonlyArray<unknown>> = []
-): { db: WorkHubDb; queries: RecordedQuery[] } {
+): { db: WorkHubDb; queries: RecordedQuery[]; transactions: RecordedTransaction[] } {
   const recorder = new QueryRecorderDb(responses);
-  return { db: recorder as unknown as WorkHubDb, queries: recorder.queries };
+  return {
+    db: recorder as unknown as WorkHubDb,
+    queries: recorder.queries,
+    transactions: recorder.transactions
+  };
 }
 
 export function queryReferences(value: unknown, target: unknown): boolean {
@@ -201,6 +248,17 @@ export function queryTextFragments(value: unknown): string[] {
   return fragments;
 }
 
+export function queryRawStrings(value: unknown): string[] {
+  const fragments: string[] = [];
+  visitSqlTree(value, (node) => {
+    if (typeof node === "string") {
+      fragments.push(node);
+    }
+    return false;
+  });
+  return fragments;
+}
+
 function constructorName(value: unknown): string | undefined {
   return value && typeof value === "object"
     ? (value as { constructor?: { name?: string } }).constructor?.name
@@ -212,16 +270,25 @@ function visitSqlTree(
   visitor: (node: unknown) => boolean,
   seen: Set<object> = new Set()
 ): boolean {
+  // seen 检查必须先于 visitor：同一节点可经 queryChunks 分支与泛型子节点遍历两条路径到达，
+  // visitor 只许触发一次，否则计数类断言（如 param/isNull 出现次数）会翻倍。
+  if (value && typeof value === "object") {
+    if (seen.has(value)) {
+      return false;
+    }
+    seen.add(value);
+  }
   if (visitor(value)) {
     return true;
   }
   if (!value || typeof value !== "object") {
     return false;
   }
-  if (seen.has(value)) {
+  // drizzle Column 是叶子：column.table 会带出整张表的所有列，继续下钻会让
+  // 「where 不引用列 X」这类否定断言因 table→columns 间接可达而永远失败。
+  if (typeof (value as { columnType?: unknown }).columnType === "string") {
     return false;
   }
-  seen.add(value);
   if (Array.isArray(value)) {
     return value.some((item) => visitSqlTree(item, visitor, seen));
   }

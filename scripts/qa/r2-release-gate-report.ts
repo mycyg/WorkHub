@@ -149,6 +149,21 @@ addGate(
 
 addGate(
   gates,
+  "workflow.migration-audit",
+  "CI runs the real PostgreSQL migration replay audit instead of a placeholder",
+  includesAll(workflow, [
+    "migration-audit:",
+    "postgres:16",
+    "DATABASE_URL: postgresql+psycopg://workhub:workhub@127.0.0.1:5432/workhub",
+    "WORKHUB_MIGRATION_AUDIT_REQUIRE_DB: \"true\"",
+    "node-version: 22",
+    "pnpm audit:migrations"
+  ]),
+  "verify.yml migration-audit job"
+);
+
+addGate(
+  gates,
   "workflow.r1-smoke",
   "CI keeps the R1 PostgreSQL smoke job wired",
   includesAll(workflow, ["r1-pg-smoke:", "postgres:16", "pnpm qa:r1-pg-smoke"]),

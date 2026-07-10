@@ -4,6 +4,9 @@ import {
   type AgentStepPhase,
   type DeliverableTargetKind,
   type EvidenceSourceType,
+  type TaskPlanItemRole,
+  type TaskPlanItemStatus,
+  type TaskPlanStatus,
   type WorkHubLocale,
   type WorkItemStatus
 } from "@workhub/contracts";
@@ -15,7 +18,8 @@ export type UiRenderOptions = {
 type Copy = Record<WorkHubLocale, string>;
 
 const copy = {
-  "intake.kicker": { "zh-CN": "选项澄清", "en-US": "Option intake" },
+  // R9 i18n：与 gold-path 词典的 intake.kicker（「新建需求」）同名不同义——改名消歧。
+  "intake.sessionKicker": { "zh-CN": "选项澄清", "en-US": "Option intake" },
   "intake.aiRecommended": { "zh-CN": "AI 推荐", "en-US": "AI recommended" },
   "intake.freeText": { "zh-CN": "其他 / 补充", "en-US": "Other / add context" },
   "intake.freeTextPlaceholder": { "zh-CN": "需要时再补一句。", "en-US": "Add one sentence only if needed." },
@@ -31,7 +35,7 @@ const copy = {
   "generic.checks": { "zh-CN": "检查", "en-US": "Checks" },
   "generic.steps": { "zh-CN": "步骤", "en-US": "Steps" },
   "generic.budget": { "zh-CN": "预算", "en-US": "Budget" },
-  "generic.tokens": { "zh-CN": "令牌", "en-US": "tokens" },
+  "generic.tokens": { "zh-CN": "token", "en-US": "tokens" },
   "generic.model": { "zh-CN": "模型", "en-US": "Model" },
   "generic.rollback": { "zh-CN": "回滚", "en-US": "Rollback" },
   "generic.snapshot": { "zh-CN": "快照", "en-US": "Snapshot" },
@@ -48,8 +52,8 @@ const copy = {
     "en-US": "AI will turn this into a clear next step."
   },
   "workitem.emptyTrace": {
-    "zh-CN": "AI 已准备好，下一步会开始读取证据。",
-    "en-US": "AI is ready. The next step will start reading evidence."
+    "zh-CN": "AI 待命中——点上方「生成任务计划」或「让 AI 开工」它才会动手。",
+    "en-US": "AI is standing by — it starts only after you hit Draft task plan or Start AI."
   },
   "workitem.stepFallback": { "zh-CN": "记录了一步。", "en-US": "Recorded one step." },
   "workitem.emptyAcceptance": { "zh-CN": "暂无验收项。", "en-US": "No acceptance items yet." },
@@ -64,20 +68,20 @@ const copy = {
     "en-US": "AI has packaged the changes into a reviewable request."
   },
   "workitem.willReadEvidence": {
-    "zh-CN": "AI 会先看证据，再生成可供审批的交付物。",
-    "en-US": "AI will read evidence first, then prepare a reviewable deliverable."
+    "zh-CN": "开工后 AI 会先看证据，再生成可供审批的交付物——记得点「生成任务计划」让它开工。",
+    "en-US": "Once started, AI reads evidence first, then prepares a reviewable deliverable — hit Draft task plan to kick it off."
   },
 
   "proposal.kicker": { "zh-CN": "交付物变更申请", "en-US": "Deliverable change request" },
   "proposal.displayTitleFallback": { "zh-CN": "交付物变更申请", "en-US": "Deliverable change request" },
   "proposal.summaryHeading": { "zh-CN": "总结", "en-US": "Summary" },
-  "proposal.railComplete": { "zh-CN": "完成啦", "en-US": "Finished" },
+  "proposal.railComplete": { "zh-CN": "已完成", "en-US": "Finished" },
   "proposal.railCarrying": { "zh-CN": "带着交付物", "en-US": "Carrying a deliverable" },
   "proposal.railRejected": { "zh-CN": "已打回", "en-US": "Sent back" },
   "proposal.terminalMerged": { "zh-CN": "这份改动已采纳，并合并进正式版。无需再操作。", "en-US": "This change was accepted and merged into the official version. Nothing more to do." },
   "proposal.terminalRejected": { "zh-CN": "这份改动已打回，打回理由已回灌给 AI，它会带着反馈继续改。", "en-US": "This change was sent back; the reason was fed to the AI, which will revise with your feedback." },
-  "proposal.rollbackAvailable": { "zh-CN": "可回滚", "en-US": "Rollback available" },
-  "proposal.rollbackUnavailable": { "zh-CN": "不可回滚", "en-US": "No rollback" },
+  "proposal.rollbackAvailable": { "zh-CN": "留有回滚快照（需人工恢复）", "en-US": "Rollback snapshot kept (manual restore)" },
+  "proposal.rollbackUnavailable": { "zh-CN": "无回滚快照", "en-US": "No rollback snapshot" },
   "proposal.changeSummary": { "zh-CN": "这次改了什么", "en-US": "What changed" },
   "proposal.checkResults": { "zh-CN": "检查结果", "en-US": "Check results" },
   "proposal.comments": { "zh-CN": "负责人意见", "en-US": "Owner comments" },
@@ -106,12 +110,12 @@ const copy = {
   "proposal.patchTitle": { "zh-CN": "采用前预览", "en-US": "Preview before apply" },
   "proposal.patchChanged": { "zh-CN": "有改动", "en-US": "Changed" },
   "proposal.patchUnchanged": { "zh-CN": "无改动", "en-US": "Unchanged" },
-  "proposal.patchBaseAvailable": { "zh-CN": "有分叉基线", "en-US": "Base available" },
-  "proposal.patchBaseMissing": { "zh-CN": "无分叉基线", "en-US": "Base missing" },
+  "proposal.patchBaseAvailable": { "zh-CN": "可对比原始版本", "en-US": "Original version available" },
+  "proposal.patchBaseMissing": { "zh-CN": "缺原始版本可对比", "en-US": "No original to compare" },
   "proposal.patchRiskUnknown": { "zh-CN": "风险未知", "en-US": "Risk unknown" },
   "proposal.patchRiskLow": { "zh-CN": "低重叠风险", "en-US": "Low overlap risk" },
   "proposal.patchRiskReview": { "zh-CN": "需要复核", "en-US": "Review required" },
-  "proposal.patchHunks": { "zh-CN": "段落", "en-US": "Hunks" },
+  "proposal.patchHunks": { "zh-CN": "改动处", "en-US": "Changes" },
   "proposal.patchLines": { "zh-CN": "行数", "en-US": "Lines" },
   "proposal.patchFoldedLines": { "zh-CN": "已折叠行", "en-US": "Folded lines" },
   "proposal.patchFoldedHunks": { "zh-CN": "已折叠段落", "en-US": "Folded hunks" },
@@ -176,9 +180,7 @@ const copy = {
   },
   "agent.stepFallback": { "zh-CN": "记录了一步。", "en-US": "Recorded one step." },
   "agent.stepThinkingPublic": { "zh-CN": "AI 正在整理材料，稍后给你下一步。", "en-US": "AI is organizing the materials and preparing the next step." },
-  "agent.stepToolCall": { "zh-CN": "工具调用", "en-US": "Tool call" },
   "agent.stepToolCallGeneric": { "zh-CN": "正在调用工具。", "en-US": "Calling a tool." },
-  "agent.stepToolResult": { "zh-CN": "工具已返回", "en-US": "Tool result received" },
   "agent.stepToolResultGeneric": {
     "zh-CN": "工具已返回，AI 正在整理下一步。",
     "en-US": "Tool result received; AI is organizing the next step."
@@ -195,7 +197,7 @@ const copy = {
   "agent.viewReplay": { "zh-CN": "查看回放", "en-US": "View replay" },
   "agent.backToTask": { "zh-CN": "回到任务", "en-US": "Back to task" },
   "agent.abort": { "zh-CN": "取消执行", "en-US": "Cancel run" },
-  "agent.done": { "zh-CN": "做完啦", "en-US": "Done" },
+  "agent.done": { "zh-CN": "已完成", "en-US": "Done" },
   "agent.needsAttention": { "zh-CN": "需要关注", "en-US": "Needs attention" },
   "agent.thinking": { "zh-CN": "正在思考", "en-US": "Thinking" },
   "agent.celebratingBody": {
@@ -225,13 +227,38 @@ const workItemStatusLabels = {
   cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
 } satisfies Record<WorkItemStatus, Copy>;
 
+const taskPlanStatusLabels = {
+  draft: { "zh-CN": "草稿", "en-US": "Draft" },
+  proposed: { "zh-CN": "待审阅", "en-US": "Proposed" },
+  approved: { "zh-CN": "已批准", "en-US": "Approved" },
+  // R5 词表：跨实体「正在跑」统一为「进行中 / In progress」（plan/item/run 同词，中英同策略）。
+  dispatching: { "zh-CN": "进行中", "en-US": "In progress" },
+  paused: { "zh-CN": "已暂停", "en-US": "Paused" },
+  done: { "zh-CN": "已完成", "en-US": "Done" },
+  cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
+} satisfies Record<TaskPlanStatus, Copy>;
+
+const taskPlanItemRoleLabels = {
+  research: { "zh-CN": "调研", "en-US": "Research" },
+  produce: { "zh-CN": "产出", "en-US": "Produce" },
+  review: { "zh-CN": "复核", "en-US": "Review" },
+  integrate: { "zh-CN": "整合", "en-US": "Integrate" }
+} satisfies Record<TaskPlanItemRole, Copy>;
+
+const taskPlanItemStatusLabels = {
+  pending: { "zh-CN": "待开始", "en-US": "Waiting" },
+  dispatched: { "zh-CN": "进行中", "en-US": "In progress" },
+  succeeded: { "zh-CN": "已成功", "en-US": "Succeeded" },
+  failed: { "zh-CN": "失败", "en-US": "Failed" },
+  skipped: { "zh-CN": "已跳过", "en-US": "Skipped" }
+} satisfies Record<TaskPlanItemStatus, Copy>;
+
 const agentRunStatusLabels = {
   queued: { "zh-CN": "排队中", "en-US": "Queued" },
-  running: { "zh-CN": "执行中", "en-US": "Running" },
+  running: { "zh-CN": "进行中", "en-US": "In progress" },
   succeeded: { "zh-CN": "已完成", "en-US": "Succeeded" },
   failed: { "zh-CN": "失败", "en-US": "Failed" },
   escalated: { "zh-CN": "已升级", "en-US": "Escalated" },
-  budget_exhausted: { "zh-CN": "预算已用尽", "en-US": "Budget exhausted" },
   cancelled: { "zh-CN": "已取消", "en-US": "Cancelled" }
 } satisfies Record<AgentRunStatus, Copy>;
 
@@ -335,12 +362,42 @@ export function uiHumanize(value: string) {
   return String(value ?? "").replace(/_/gu, " ");
 }
 
+export function uiFormatCny(value: string | number | null | undefined, locale: WorkHubLocale = "zh-CN") {
+  // R3（en 用户）：裸 ¥ 对国际用户是「日元还是人民币」的歧义——en 用 CN¥ 国际写法，zh 保持 ¥。
+  const prefix = locale === "en-US" ? "CN¥" : "¥";
+  const parsed = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
+  if (!Number.isFinite(parsed)) {
+    const fallback = String(value ?? "0").trim() || "0";
+    return `${prefix}${fallback}`;
+  }
+  if (parsed > 0 && parsed < 0.005) {
+    return `<${prefix}0.01`;
+  }
+  const amount = new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0
+  }).format(parsed);
+  return `${prefix}${amount}`;
+}
+
 function labelFromMap(locale: WorkHubLocale, value: string, map: Record<string, Copy>) {
   return map[value]?.[locale] ?? uiHumanize(value);
 }
 
 export function workItemStatusLabel(locale: WorkHubLocale, status: WorkItemStatus | string) {
   return labelFromMap(locale, status, workItemStatusLabels);
+}
+
+export function taskPlanStatusLabel(locale: WorkHubLocale, status: TaskPlanStatus | string) {
+  return labelFromMap(locale, status, taskPlanStatusLabels);
+}
+
+export function taskPlanItemRoleLabel(locale: WorkHubLocale, role: TaskPlanItemRole | string) {
+  return labelFromMap(locale, role, taskPlanItemRoleLabels);
+}
+
+export function taskPlanItemStatusLabel(locale: WorkHubLocale, status: TaskPlanItemStatus | string) {
+  return labelFromMap(locale, status, taskPlanItemStatusLabels);
 }
 
 export function agentRunStatusLabel(locale: WorkHubLocale, status: AgentRunStatus | string) {
@@ -355,19 +412,17 @@ export function agentStepPublicSummary(
   locale: WorkHubLocale,
   step: { phase?: AgentStepPhase | string | undefined; tool_name?: string | undefined; output_excerpt?: string | undefined }
 ) {
-  const tool = step.tool_name?.trim();
-  const separator = locale === "en-US" ? ": " : "：";
   switch (step.phase) {
     case "think":
       return uiT(locale, "agent.stepThinkingPublic");
     case "tool_call":
-      return tool ? `${uiT(locale, "agent.stepToolCall")}${separator}${tool}` : uiT(locale, "agent.stepToolCallGeneric");
+      return uiT(locale, "agent.stepToolCallGeneric");
     case "tool_result":
-      return tool ? `${uiT(locale, "agent.stepToolResult")}${separator}${tool}` : uiT(locale, "agent.stepToolResultGeneric");
+      return uiT(locale, "agent.stepToolResultGeneric");
     case "final":
       return step.output_excerpt ?? uiT(locale, "agent.stepFinalOutput");
     default:
-      return step.output_excerpt ?? tool ?? uiT(locale, "agent.stepFallback");
+      return step.output_excerpt ?? uiT(locale, "agent.stepFallback");
   }
 }
 

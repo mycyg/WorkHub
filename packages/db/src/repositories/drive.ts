@@ -137,6 +137,8 @@ export type DriveRepository = {
     operationLimit?: number;
     targetItemId?: string;
     targetFileNames?: string[];
+    // R4（规模化）：按名称模糊搜索——200 条字母序截断外的文件唯一用户可达出路。
+    nameQuery?: string;
   }) => Promise<DrivePageRows>;
   // 项目主页文件卡：最近文件清单（轻量，不拉版本/评论/采纳）+ 真实文件总数（不受清单 limit 截断）。
   listRecentFilesByProject: (projectId: string, limit?: number) => Promise<DriveRecentFileRow[]>;
@@ -179,6 +181,14 @@ export type DriveRepository = {
     itemId: string;
     at?: Date;
   }) => Promise<DriveMutationRows | null>;
+  // UX-U3（评论闭环缺口）：产品到处承诺「评论生成草稿」，但全站没有创建评论的入口——补写端。
+  createComment: (input: DriveRepositoryActor & {
+    projectId: string;
+    body: string;
+    authorNickname: string;
+    folderId?: string | null;
+    at?: Date;
+  }) => Promise<DriveCommentRow | null>;
   commentToDraft: (input: DriveRepositoryActor & {
     projectId: string;
     commentId: string;
@@ -423,7 +433,13 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         db
           .select()
           .from(projectDriveItems)
-          .where(and(eq(projectDriveItems.projectId, project.id), isNull(projectDriveItems.deletedAt)))
+          .where(and(
+            eq(projectDriveItems.projectId, project.id),
+            isNull(projectDriveItems.deletedAt),
+            ...(input.nameQuery?.trim()
+              ? [sql`${projectDriveItems.name} ilike ${`%${input.nameQuery.trim().replace(/[%_\\]/gu, (ch) => `\\${ch}`)}%`}`]
+              : [])
+          ))
           .orderBy(
             sql`${projectDriveItems.parentId} is not null`,
             asc(projectDriveItems.parentId),
@@ -1186,6 +1202,29 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
         result = { item: updated[0] as DriveItemRow, operation };
       });
       return result;
+    },
+
+    async createComment(input) {
+      const at = input.at ?? new Date();
+      const project = await findProject(db, input.projectId);
+      if (!project || !input.actorUserId) {
+        return null;
+      }
+      const [row] = await db
+        .insert(projectDriveComments)
+        .values({
+          id: randomUUID(),
+          projectId: input.projectId,
+          folderId: input.folderId ?? null,
+          authorUserId: input.actorUserId,
+          authorNickname: input.authorNickname,
+          body: input.body,
+          status: "pending_llm",
+          createdAt: at,
+          updatedAt: at
+        })
+        .returning();
+      return row ?? null;
     },
 
     async commentToDraft(input) {

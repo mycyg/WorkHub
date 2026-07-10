@@ -3,10 +3,14 @@ import test from "node:test";
 
 import {
   allowedWorkItemTransitions,
+  agentArmyDashboardVmSchema,
+  agentRunStatuses,
+  agentRunSchema,
   sessionFinalizeFromStatuses,
   agentRunBudgetDecisionVmSchema,
   agentRunLiveBudgetSchema,
   agentRunLiveVmSchema,
+  actionSpecSchema,
   structuredFieldPatchSchema,
   agentRunTraceVmSchema,
   attentionItemSchema,
@@ -24,6 +28,7 @@ import {
   createWorkItemRequestSchema,
   cuuLauncherSpecFromSelectedOptionIds,
   confidenceGrades,
+  delegateEscalationRequestSchema,
   calendarPageVmSchema,
   drivePageVmSchema,
   identifyRequestSchema,
@@ -42,6 +47,7 @@ import {
   nextQuestionRequestSchema,
   proposalConflictListResultSchema,
   replayTracePageVmSchema,
+  resolveEscalationRequestSchema,
   respondApprovalRequestSchema,
   permissionPolicySchema,
   updateUserPreferencesRequestSchema,
@@ -65,9 +71,37 @@ test("work item statuses expose the data-model transition truth", () => {
   assert.deepEqual(confidenceGrades, ["low", "medium", "high"]);
   assert.equal(Object.keys(allowedWorkItemTransitions).length, workItemStatuses.length);
   assert.deepEqual(allowedWorkItemTransitions.intake, ["ai_clarifying", "cancelled"]);
+  assert.deepEqual(allowedWorkItemTransitions.escalated, ["ai_working", "pm_mode", "cancelled"]);
   assert.deepEqual(allowedWorkItemTransitions.done, []);
   assert.equal(escalationTriggers.includes("user_unsatisfied"), true);
   assert.equal(escalationTriggers.includes("user_rejected" as never), false);
+});
+
+test("R9.7 agent run statuses only include persisted queue states", () => {
+  assert.deepEqual(agentRunStatuses, [
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "escalated",
+    "cancelled"
+  ]);
+});
+
+test("R9.0 escalation action contracts stay narrow and human-actionable", () => {
+  assert.deepEqual(resolveEscalationRequestSchema.parse({ action: "retry" }), { action: "retry" });
+  assert.deepEqual(resolveEscalationRequestSchema.parse({ action: "pm_mode", reason_md: "I will take this over." }), {
+    action: "pm_mode",
+    reason_md: "I will take this over."
+  });
+  assert.throws(() => resolveEscalationRequestSchema.parse({ action: "done" }));
+  assert.deepEqual(delegateEscalationRequestSchema.parse({
+    to_user_id: "10000000-0000-4000-8000-000000000002",
+    reason_md: "Better owner for this blocker."
+  }), {
+    to_user_id: "10000000-0000-4000-8000-000000000002",
+    reason_md: "Better owner for this blocker."
+  });
 });
 
 test("findings[#19/H4] sessionFinalizeFromStatuses blocks resurrecting finalized items, allows clarify-phase + same-status", () => {
@@ -131,6 +165,38 @@ test("agent trace VM carries F08 replay and structured handoff fields", () => {
   });
 
   assert.equal(parsed.handoff?.budget_hit, "doom_loop");
+});
+
+test("agent run contracts carry R9.2 task-plan lineage metadata", () => {
+  const parsed = agentRunSchema.parse({
+    id: "70000000-0000-4000-8000-000000000041",
+    parent_run_id: "70000000-0000-4000-8000-000000000040",
+    work_item_id: "70000000-0000-4000-8000-000000000042",
+    task_plan_id: "70000000-0000-4000-8000-000000000043",
+    task_plan_item_id: "70000000-0000-4000-8000-000000000044",
+    agent_role: "research",
+    objective_md: "Validate the source evidence before writing the final answer.",
+    mode: "worker",
+    actor: "human",
+    status: "queued",
+    model: "deepseek-v4-flash",
+    turns_used: 0,
+    max_turns: 15,
+    token_in: 0,
+    token_out: 0,
+    created_at: "2026-06-05T00:00:00.000Z",
+    updated_at: "2026-06-05T00:00:00.000Z"
+  });
+
+  assert.equal(parsed.parent_run_id, "70000000-0000-4000-8000-000000000040");
+  assert.equal(parsed.task_plan_id, "70000000-0000-4000-8000-000000000043");
+  assert.equal(parsed.task_plan_item_id, "70000000-0000-4000-8000-000000000044");
+  assert.equal(parsed.agent_role, "research");
+  assert.equal(parsed.objective_md, "Validate the source evidence before writing the final answer.");
+  assert.throws(() => agentRunSchema.parse({
+    ...parsed,
+    agent_role: "manager"
+  }));
 });
 
 test("agent run live VMs expose start status, trace, stream, replay, and budget fields", () => {
@@ -527,6 +593,91 @@ test("work item detail VM carries Drive source context and proposal draft action
   assert.equal(parsed.actions.create_proposal_draft?.method, "POST");
 });
 
+test("R9.2 work item detail VM carries the approved task plan run tree for visibility", () => {
+  const parsed = workItemDetailVmSchema.parse({
+    workitem: {
+      id: "92000000-0000-4000-8000-000000000005",
+      code: "R9-2",
+      project_id: "92000000-0000-4000-8000-000000000001",
+      submitter_user_id: "92000000-0000-4000-8000-000000000011",
+      status: "ai_working",
+      priority: "normal",
+      sync_state: "synced",
+      version: 1,
+      mode: "worker",
+      human_reserved: false,
+      created_at: "2026-07-03T00:00:00.000Z",
+      updated_at: "2026-07-03T00:00:00.000Z"
+    },
+    acceptance: [],
+    agent_trace_preview: [],
+    evidence_refs: [],
+    agent_team: {
+      plan_id: "92000000-0000-4000-8000-000000000101",
+      status: "dispatching",
+      completed_count: 2,
+      total_count: 4,
+      cost_used_cny: "1.250000",
+      cost_budget_cny: "3.000000",
+      cost_burn_pct: 42,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: "92000000-0000-4000-8000-000000000102",
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research",
+          plan_status: "succeeded",
+          status: "succeeded",
+          budget_share_pct: 35,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.450000",
+          run_id: "92000000-0000-4000-8000-000000000201",
+          run_workspace_id: "92000000-0000-4000-8000-000000000001",
+          run_status: "succeeded",
+          replay_href: "/agent-runs/92000000-0000-4000-8000-000000000201/replay",
+          action: {
+            kind: "view_output",
+            label: "看产出",
+            href: "/agent-runs/92000000-0000-4000-8000-000000000201/replay"
+          }
+        },
+        {
+          task_plan_item_id: "92000000-0000-4000-8000-000000000103",
+          seq: 2,
+          title: "复核结论风险",
+          role: "review",
+          plan_status: "failed",
+          status: "needs_human",
+          budget_share_pct: 25,
+          depends_on: ["92000000-0000-4000-8000-000000000102"],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.800000",
+          run_id: "92000000-0000-4000-8000-000000000202",
+          run_workspace_id: "92000000-0000-4000-8000-000000000001",
+          run_status: "escalated",
+          replay_href: "/agent-runs/92000000-0000-4000-8000-000000000202/replay",
+          decision_href: "/attention",
+          action: {
+            kind: "decide",
+            label: "去决策",
+            href: "/attention"
+          }
+        }
+      ]
+    },
+    actions: {}
+  });
+
+  assert.equal(parsed.agent_team?.plan_id, "92000000-0000-4000-8000-000000000101");
+  assert.equal(parsed.agent_team?.completed_count, 2);
+  assert.equal(parsed.agent_team?.items[0]?.action?.kind, "view_output");
+  assert.equal(parsed.agent_team?.items[0]?.run_workspace_id, "92000000-0000-4000-8000-000000000001");
+  assert.equal(parsed.agent_team?.items[1]?.status, "needs_human");
+  assert.equal(parsed.agent_team?.items[1]?.decision_href, "/attention");
+});
+
 test("meeting page VM carries insight actions, evidence, and proposal links", () => {
   const parsed = meetingPageVmSchema.parse({
     generated_at: "2026-06-11T01:10:00.000Z",
@@ -766,6 +917,83 @@ test("deliverable manifest preserves explicit generated markdown content for tex
   assert.equal(parsed.changes[0]?.machine_summary?.generated_content_md, generatedContent);
 });
 
+test("R9.1 plan proposals can target task_plan structured records without colliding with work item patches", () => {
+  const base = deliverableManifestFixtures[0]!;
+  const change = base.changes[0]!;
+  const planId = "95000000-0000-4000-8000-000000000101";
+  const parsed = deliverableChangeManifestSchema.parse({
+    ...base,
+    title: "计划提议",
+    summary_md: "请确认这份任务拆解计划。",
+    changes: [{
+      ...change,
+      target_kind: "structured_record",
+      target_ref: {
+        entity_type: "task_plan",
+        entity_id: planId
+      },
+      change_type: "generated",
+      human_summary: "新增可审的任务计划草稿。",
+      machine_summary: {
+        changed_fields: ["task_plan_items"],
+        generated_content_md: "1. 调研证据\n2. 产出短报告"
+      }
+    }]
+  });
+
+  assert.equal(parsed.changes[0]?.target_ref.entity_type, "task_plan");
+  assert.equal(parsed.changes[0]?.target_ref.entity_id, planId);
+});
+
+test("R9-BLOCK-7.154 manifest parse keeps machine_summary.task_plan_items intact", () => {
+  // 旧闭合 object 会把 task_plan_items 剥掉——人审后的行内编辑因此永不生效。
+  // 这里钉死：结构化子任务清单过 parse 原样保留（id/depends_on/份额都在）。
+  const base = deliverableManifestFixtures[0]!;
+  const change = base.changes[0]!;
+  const planId = "95000000-0000-4000-8000-000000000101";
+  const itemA = "95000000-0000-4000-8000-000000000111";
+  const itemB = "95000000-0000-4000-8000-000000000112";
+  const reviewedItems = [
+    {
+      id: itemA,
+      seq: 0,
+      title: "调研证据",
+      role: "research",
+      objective_md: "收集证据。",
+      acceptance_md: "至少 3 条来源。",
+      budget_share_pct: 40,
+      depends_on: []
+    },
+    {
+      id: itemB,
+      seq: 1,
+      title: "产出短报告",
+      role: "produce",
+      objective_md: "写短报告。",
+      acceptance_md: "有结论与证据段。",
+      budget_share_pct: 60,
+      depends_on: [itemA]
+    }
+  ];
+  const parsed = deliverableChangeManifestSchema.parse({
+    ...base,
+    title: "计划提议",
+    changes: [{
+      ...change,
+      target_kind: "structured_record",
+      target_ref: { entity_type: "task_plan", entity_id: planId },
+      change_type: "generated",
+      human_summary: "人审后的任务计划修订。",
+      machine_summary: {
+        changed_fields: ["task_plan_items"],
+        task_plan_items: reviewedItems
+      }
+    }]
+  });
+
+  assert.deepEqual(parsed.changes[0]?.machine_summary?.task_plan_items, reviewedItems);
+});
+
 test("proposal conflict cards carry option-first merge resolution payloads", () => {
   const parsed = proposalConflictListResultSchema.parse({
     conflicts: [
@@ -897,6 +1125,21 @@ test("proposal conflict cards carry option-first merge resolution payloads", () 
     "delivery:/outputs/result.md",
     "drive_item:docs/brief.md"
   ]);
+
+  const heldPlanRequest = mergeProposalRequestSchema.parse({
+    confirm: true,
+    dispatch: false
+  });
+  assert.equal(heldPlanRequest.dispatch, false);
+
+  const heldPlanAction = actionSpecSchema.parse({
+    id: "approve_hold",
+    label: "批准但先不跑",
+    method: "POST",
+    href: "/api/proposals/72000000-0000-4000-8000-000000000002/merge",
+    request_json: { dispatch: false }
+  });
+  assert.deepEqual(heldPlanAction.request_json, { dispatch: false });
 });
 
 test("merge proposal candidate choices are explicit and replayable", () => {
@@ -1241,6 +1484,20 @@ test("cost governance contracts expose clickable budget notices and scoped usage
     enabled: true,
     version: 1
   });
+  const objectivePolicy = budgetPolicySchema.parse({
+    id: "pcost-objective-month-v0",
+    scope_kind: "objective",
+    period: "month",
+    max_tokens: 1000000,
+    max_cost_cny: "200",
+    warning_ratio: 0.8,
+    critical_ratio: 0.95,
+    on_warning: "notify",
+    on_exhausted: "block_new_run",
+    model_route_hint: "balanced",
+    enabled: true,
+    version: 1
+  });
   const usage = budgetUsageSchema.parse({
     scope: { kind: "workitem", workitem_id: "74000000-0000-4000-8000-000000000001" },
     scope_label: "生成周报模板",
@@ -1260,12 +1517,41 @@ test("cost governance contracts expose clickable budget notices and scoped usage
     enabled: false,
     status: "warning"
   });
+  const taskUsage = budgetUsageSchema.parse({
+    scope: { kind: "task", task_plan_id: "74000000-0000-4000-8000-000000000002" },
+    scope_label: "军团计划预算",
+    policy_id: "pcost-task-run-v0",
+    period: "run",
+    period_start: "2026-06-05T00:00:00.000Z",
+    period_end: "2026-06-05T00:05:00.000Z",
+    token_in: 10,
+    token_out: 2,
+    total_tokens: 12,
+    max_tokens: 120000,
+    remaining_tokens: 119988,
+    estimated_cost_cny: "0.1",
+    max_cost_cny: "5",
+    remaining_cost_cny: "4.9",
+    warning_ratio: 0.01,
+    status: "ok"
+  });
   const notice = budgetNoticeSchema.parse({
     code: "budget_warning",
     severity: "warning",
     message: "预算快用完了。",
     scope: usage.scope,
     usage_ratio: usage.warning_ratio,
+    usage: {
+      scope_label: usage.scope_label,
+      period: usage.period,
+      total_tokens: usage.total_tokens,
+      max_tokens: usage.max_tokens,
+      remaining_tokens: usage.remaining_tokens,
+      estimated_cost_cny: usage.estimated_cost_cny,
+      max_cost_cny: usage.max_cost_cny,
+      remaining_cost_cny: usage.remaining_cost_cny,
+      status: usage.status
+    },
     recommended_action: "downgrade_model",
     options: [
       { id: "continue_low_cost", label: "继续但降级模型", action_href: "/api/workitems/demo/agent-runs" },
@@ -1294,14 +1580,24 @@ test("cost governance contracts expose clickable budget notices and scoped usage
       message: "AI 预算已经用完，先暂停新的自动执行。",
       scope: usage.scope,
       usage_ratio: 1,
-      recommended_action: "pause"
+      // R9.5 army budget exhaustion must present an explicit budget-choice card; the old
+      // pause-only fixture hid the add-budget / finish-current / close-scope decision surface.
+      recommended_action: "add_budget",
+      options: [
+        { id: "add_budget", label: "追加预算继续", action_href: "/dashboard/cost" },
+        { id: "finish_current_output", label: "就用现有产出收尾", action_href: "/workitems/demo" },
+        { id: "close_scope", label: "整体收工", action_href: "/workitems/demo" }
+      ]
     }
   });
 
   assert.equal(policy.scope_kind, "workitem");
+  assert.equal(objectivePolicy.scope_kind, "objective");
   assert.equal(usage.status, "warning");
+  assert.equal(taskUsage.scope.kind, "task");
   assert.equal(usage.enabled, false);
   assert.equal(notice.options?.length, 2);
+  assert.equal((notice as { usage?: { total_tokens?: number } }).usage?.total_tokens, 104000);
   const attention = attentionItemSchema.parse({
     id: "75000000-0000-4000-8000-000000000001",
     kind: "budget",
@@ -1322,6 +1618,27 @@ test("cost governance contracts expose clickable budget notices and scoped usage
     created_at: "2026-06-05T00:00:00.000Z"
   });
   assert.equal(attention.kind, "budget");
+  const planReviewAttention = attentionItemSchema.parse({
+    id: "75000000-0000-4000-8000-000000000011",
+    kind: "plan_review",
+    priority: "normal",
+    work_item_id: "75000000-0000-4000-8000-000000000012",
+    source_ref: { entity_type: "proposal", entity_id: "75000000-0000-4000-8000-000000000013" },
+    title: "《短剧选题调研》的分工计划等你过目",
+    summary_text: "拆成 4 个子任务 · 预计 ¥0.8 · 2 个并行",
+    actions: [
+      {
+        id: "open_proposal",
+        label: "查看计划提议",
+        style: "primary",
+        method: "GET",
+        href: "/proposals/75000000-0000-4000-8000-000000000013"
+      }
+    ],
+    cuu_state: "asking_approval",
+    created_at: "2026-06-05T00:00:00.000Z"
+  });
+  assert.equal(planReviewAttention.kind, "plan_review");
   assert.equal(decision.reason, "budget_exhausted");
   const runDecision = agentRunBudgetDecisionVmSchema.parse({
     decision_id: decision.decision_id,
@@ -1346,6 +1663,68 @@ test("cost governance contracts expose clickable budget notices and scoped usage
   assert.doesNotThrow(() => budgetPolicyUpdateSchema.parse({ warning_ratio: 0.8, critical_ratio: 0.95 }));
   // 单字段更新仍放行（合并不变量由服务端守卫兜底）。
   assert.doesNotThrow(() => budgetPolicyUpdateSchema.parse({ warning_ratio: 0.99 }));
+});
+
+test("R9.6 agent army dashboard VM exposes observable plans without embedding decisions", () => {
+  const parsed = agentArmyDashboardVmSchema.parse({
+    generated_at: "2026-07-03T00:00:00.000Z",
+    kpis: {
+      active_team_count: 1,
+      waiting_decision_count: 2,
+      today_cost_cny: "1.25",
+      autonomy_rate_pct: 67
+    },
+    plans: [{
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      work_item_code: "DEMO-960",
+      work_item_title: "竞品资料梳理",
+      work_item_href: "/workitems/96000000-0000-4000-8000-000000000002",
+      objective_id: "96000000-0000-4000-8000-000000000003",
+      objective_title: "季度上市策略",
+      status: "dispatching",
+      progress: { completed: 2, total: 4, label: "2/4" },
+      roles: [{ role: "research", count: 2 }, { role: "produce", count: 1 }],
+      statuses: [{ status: "succeeded", count: 2 }, { status: "needs_human", count: 1 }],
+      cost: { used_cny: "1.25", budget_cny: "3", burn_pct: 42 },
+      judge: { passed: 1, total: 1, pass_rate_pct: 100 },
+      oldest_blocker: {
+        kind: "needs_human",
+        label: "卡在: 竞品复核 · 2h",
+        age_seconds: 7200,
+        href: "/attention"
+      },
+      updated_at: "2026-07-03T00:00:00.000Z"
+    }],
+    recent_escalations: [{
+      id: "96000000-0000-4000-8000-000000000004",
+      plan_id: "96000000-0000-4000-8000-000000000001",
+      work_item_id: "96000000-0000-4000-8000-000000000002",
+      title: "竞品复核需要人判断",
+      reason_preview: "证据互相冲突。",
+      created_at: "2026-07-03T00:00:00.000Z",
+      href: "/attention"
+    }],
+    source_warnings: [{
+      source: "sync_conflicts",
+      message: "记忆冲突暂时加载失败。"
+    }],
+    page_info: {
+      plan_limit: 20,
+      returned: 1,
+      plans_capped: false,
+      items_capped: false,
+      runs_capped: false,
+      escalation_limit: 5,
+      escalation_returned: 1,
+      escalations_capped: false
+    }
+  });
+
+  assert.equal(parsed.kpis.waiting_decision_count, 2);
+  assert.equal(parsed.plans[0]?.oldest_blocker?.href, "/attention");
+  assert.equal(parsed.plans[0]?.roles[0]?.role, "research");
+  assert.equal(parsed.source_warnings?.[0]?.source, "sync_conflicts");
 });
 
 test("approval contracts keep UI payloads human-readable and deny reasons explicit", () => {

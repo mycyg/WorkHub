@@ -37,14 +37,14 @@ function handleWorkItemError(error: unknown): never {
 // 同样的 404（WorkItemServiceError，经 app.onError 收口），不泄露存在性。
 function requireWorkItemId(value: string): string {
   if (!isUuidParam(value)) {
-    throw new WorkItemServiceError(404, "not_found", "没有找到这个事项。");
+    throw new WorkItemServiceError(404, "not_found", "没有找到这个事项。(Work item not found.)");
   }
   return value;
 }
 
 function requireAcceptedChangeId(value: string): string {
   if (!isUuidParam(value)) {
-    throw new WorkItemServiceError(404, "deliverable_not_found", "没有找到这份正式交付物。");
+    throw new WorkItemServiceError(404, "deliverable_not_found", "没有找到这份正式交付物。(Deliverable not found.)");
   }
   return value;
 }

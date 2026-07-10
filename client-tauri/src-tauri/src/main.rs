@@ -42,7 +42,6 @@ use tauri::{
     Emitter, LogicalPosition as TauriLogicalPosition, LogicalSize, Manager,
     PhysicalPosition as TauriPhysicalPosition, State, WebviewUrl, WebviewWindowBuilder,
 };
-use tauri_runtime::ResizeDirection;
 use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg(target_os = "macos")]
@@ -525,15 +524,6 @@ fn set_spotlight_size(app: tauri::AppHandle, width: f64, height: f64) -> Result<
     Ok(())
 }
 
-fn main_window_resize_direction_from_label(direction: &str) -> Option<ResizeDirection> {
-    match direction {
-        "east" => Some(ResizeDirection::East),
-        "south" => Some(ResizeDirection::South),
-        "south-east" => Some(ResizeDirection::SouthEast),
-        _ => None,
-    }
-}
-
 #[tauri::command]
 fn start_main_window_drag(window: tauri::Window) -> Result<(), String> {
     if window.label() != "main" {
@@ -569,21 +559,6 @@ fn move_main_window_by(app: tauri::AppHandle, delta_x: f64, delta_y: f64) -> Res
             position.y + delta_y,
         ))
         .map_err(|error| format!("failed to move main window: {error}"))
-}
-
-#[tauri::command]
-fn start_main_window_resize_drag(
-    window: tauri::Window,
-    direction: String,
-) -> Result<(), String> {
-    if window.label() != "main" {
-        return Err("main window resize can only be started from the main window".to_string());
-    }
-    let direction = main_window_resize_direction_from_label(&direction)
-        .ok_or_else(|| format!("unknown main window resize direction: {direction}"))?;
-    window
-        .start_resize_dragging(direction)
-        .map_err(|error| format!("failed to start main window resize dragging: {error}"))
 }
 
 // 若窗口底边超出当前显示器工作区，则上移使其落回区内（不小于工作区顶）。失败不致命。
@@ -818,7 +793,9 @@ fn execute_window_control(
     }
 
     if plan.label == "main" {
-        configure_main_window_chrome(&window)?;
+        if let Err(error) = configure_main_window_chrome(&window) {
+            eprintln!("failed to configure main window chrome; continuing window control: {error}");
+        }
         if let Some(route) = &plan.route {
             app.emit("navigate", route.clone())
                 .map_err(|error| format!("failed to emit main window navigation: {error}"))?;
@@ -1040,13 +1017,58 @@ fn keep_pet_window_above_desktop(window: &tauri::WebviewWindow) -> Result<(), St
 }
 
 fn configure_main_window_chrome(window: &tauri::WebviewWindow) -> Result<(), String> {
-    window
-        .set_background_color(Some(Color(0, 0, 0, 1)))
-        .map_err(|error| format!("failed to make main window background transparent: {error}"))?;
+    configure_main_window_hit_surface(window)?;
     window
         .set_ignore_cursor_events(false)
         .map_err(|error| format!("failed to keep main window pointer events enabled: {error}"))?;
     configure_main_window_native_drag(window)
+}
+
+#[derive(Clone, Copy)]
+enum MainWindowStartupFallbackStep {
+    Chrome,
+    MacosVibrancy,
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    WindowsAcrylic,
+}
+
+impl MainWindowStartupFallbackStep {
+    fn action(self) -> &'static str {
+        match self {
+            Self::Chrome => "configure main window chrome during startup",
+            Self::MacosVibrancy => "apply main window macOS vibrancy",
+            Self::WindowsAcrylic => "apply main window Windows acrylic",
+        }
+    }
+}
+
+fn main_window_startup_fallback_message(
+    step: MainWindowStartupFallbackStep,
+    error: impl std::fmt::Display,
+) -> String {
+    format!(
+        "failed to {}; continuing with CSS glass fallback: {error}",
+        step.action()
+    )
+}
+
+fn log_main_window_startup_fallback(
+    step: MainWindowStartupFallbackStep,
+    error: impl std::fmt::Display,
+) {
+    eprintln!("{}", main_window_startup_fallback_message(step, error));
+}
+
+#[cfg(target_os = "macos")]
+fn configure_main_window_hit_surface(window: &tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .set_background_color(Some(Color(0, 0, 0, 1)))
+        .map_err(|error| format!("failed to make main window hit surface opaque: {error}"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn configure_main_window_hit_surface(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -1431,23 +1453,37 @@ fn main() {
             }
             // 主窗口保持透明 + 原生拖拽，且贴一层 OS 级毛玻璃（macOS vibrancy / Windows acrylic）让玻璃真正"磨砂"
             // 透出桌面 —— 纯透明窗里 CSS backdrop-filter 无内容可糊，半透白底也只是奶白不带模糊，真·毛玻璃必须靠原生材质。
-            // 失败不致命（不支持的系统退回半透白底 ds-glass-strong 兜底），故忽略 Result。第 4 参数=圆角半径，对齐盒子 24px。
+            // 失败不致命（不支持的系统退回半透白底 ds-glass-strong 兜底），但必须留下真机诊断。第 4 参数=圆角半径，对齐盒子 24px。
             // WORKHUB_DISABLE_VIBRANCY（仅自动化截图验收用）置位时跳过——vibrancy 窗由窗口服务器合成会被原生截图过滤掉。
             if let Some(main_window) = app.get_webview_window("main") {
-                let _ = configure_main_window_chrome(&main_window);
+                if let Err(error) = configure_main_window_chrome(&main_window) {
+                    log_main_window_startup_fallback(MainWindowStartupFallbackStep::Chrome, error);
+                }
                 #[cfg(target_os = "macos")]
                 if std::env::var("WORKHUB_DISABLE_VIBRANCY").is_err() {
                     // state=Active 强制毛玻璃常亮：默认 FollowsWindowActiveState 会让窗口"没被点中(非 key)"时
                     // vibrancy 退成扁平不透明材质 —— 表现就是"点一下才有毛玻璃"。聚焦盒不抢焦点也要一直是玻璃。
-                    let _ = window_vibrancy::apply_vibrancy(
+                    if let Err(error) = window_vibrancy::apply_vibrancy(
                         &main_window,
                         window_vibrancy::NSVisualEffectMaterial::HudWindow,
                         Some(window_vibrancy::NSVisualEffectState::Active),
                         Some(24.0),
-                    );
+                    ) {
+                        log_main_window_startup_fallback(
+                            MainWindowStartupFallbackStep::MacosVibrancy,
+                            error,
+                        );
+                    }
                 }
                 #[cfg(target_os = "windows")]
-                let _ = window_vibrancy::apply_acrylic(&main_window, Some((24, 24, 32, 120)));
+                if let Err(error) =
+                    window_vibrancy::apply_acrylic(&main_window, Some((24, 24, 32, 120)))
+                {
+                    log_main_window_startup_fallback(
+                        MainWindowStartupFallbackStep::WindowsAcrylic,
+                        error,
+                    );
+                }
             }
             // R8 真·Spotlight：把主窗摆到屏幕上方居中（聚焦盒位置）；之后 set_spotlight_size 随内容缩放。
             if let Some(main_window) = app.get_webview_window("main") {
@@ -1467,7 +1503,6 @@ fn main() {
             set_spotlight_size,
             start_main_window_drag,
             move_main_window_by,
-            start_main_window_resize_drag,
             show_main_window,
             hide_main_window,
             focus_main_route,
@@ -1504,6 +1539,31 @@ mod tests {
     }
 
     #[test]
+    fn main_window_startup_fallback_messages_keep_real_device_diagnostics() {
+        assert_eq!(
+            main_window_startup_fallback_message(
+                MainWindowStartupFallbackStep::Chrome,
+                "main NSWindow handle is null"
+            ),
+            "failed to configure main window chrome during startup; continuing with CSS glass fallback: main NSWindow handle is null"
+        );
+        assert_eq!(
+            main_window_startup_fallback_message(
+                MainWindowStartupFallbackStep::MacosVibrancy,
+                "visual effect view failed"
+            ),
+            "failed to apply main window macOS vibrancy; continuing with CSS glass fallback: visual effect view failed"
+        );
+        assert_eq!(
+            main_window_startup_fallback_message(
+                MainWindowStartupFallbackStep::WindowsAcrylic,
+                "composition unavailable"
+            ),
+            "failed to apply main window Windows acrylic; continuing with CSS glass fallback: composition unavailable"
+        );
+    }
+
+    #[test]
     fn sse_disable_env_accepts_explicit_truthy_values() {
         for value in ["1", "true", "TRUE", "yes", "on", " on "] {
             assert!(workhub_sse_disabled_from_env(env_value(Some(value))));
@@ -1523,23 +1583,6 @@ mod tests {
         assert_eq!(clamp_spotlight_size(720.0, 52.0), (720.0, 52.0));
         assert_eq!(clamp_spotlight_size(200.0, 20.0), (420.0, 48.0));
         assert_eq!(clamp_spotlight_size(f64::NAN, f64::INFINITY), (720.0, 480.0));
-    }
-
-    #[test]
-    fn main_window_resize_direction_accepts_spotlight_edges_only() {
-        assert_eq!(
-            main_window_resize_direction_from_label("east"),
-            Some(ResizeDirection::East)
-        );
-        assert_eq!(
-            main_window_resize_direction_from_label("south"),
-            Some(ResizeDirection::South)
-        );
-        assert_eq!(
-            main_window_resize_direction_from_label("south-east"),
-            Some(ResizeDirection::SouthEast)
-        );
-        assert_eq!(main_window_resize_direction_from_label("north"), None);
     }
 
     #[test]

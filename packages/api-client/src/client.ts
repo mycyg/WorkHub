@@ -7,6 +7,9 @@ import type {
   IdentityResponse,
   CalendarPageRequestOptions,
   DrivePageRequestOptions,
+  EscalationDelegateResult,
+  EscalationResolveResult,
+  MemoryConflictResolveResult,
   PageRequestOptions,
   PilotDay1MetricsRequestOptions,
   MeetingPageRequestOptions,
@@ -81,6 +84,9 @@ function withDrivePageOptions(path: string, options?: DrivePageRequestOptions) {
   const itemId = options?.itemId ?? options?.item_id;
   if (itemId) {
     params.set("item_id", itemId);
+  }
+  if (options?.q) {
+    params.set("q", options.q);
   }
   const query = params.toString();
   return query ? `${path}?${query}` : path;
@@ -380,19 +386,24 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    createSession: (payload = {}) =>
-      request("/api/sessions", {
+    createSession: (payload = {}, options) =>
+      request(withPageLocale("/api/sessions", options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
     getSession: (id, options) => request(withPageLocale(`/api/sessions/${encodeURIComponent(id)}`, options)),
-    createWorkItem: (payload) =>
-      request("/api/workitems", {
+    createWorkItem: (payload, options) =>
+      request(withPageLocale("/api/workitems", options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    startAgentRun: (workItemId, payload = {}) =>
-      request(`/api/workitems/${encodeURIComponent(workItemId)}/agent-runs`, {
+    createTaskPlan: (workItemId, payload = {}, options) =>
+      request(withPageLocale(`/api/workitems/${encodeURIComponent(workItemId)}/task-plan`, options), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    startAgentRun: (workItemId, payload = {}, options) =>
+      request(withPageLocale(`/api/workitems/${encodeURIComponent(workItemId)}/agent-runs`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
@@ -411,11 +422,49 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    respondApprovalsBatch: (ids) =>
+      request("/api/approvals/respond-batch", {
+        method: "POST",
+        body: JSON.stringify({ ids })
+      }),
     delegateApproval: (id, payload) =>
       request(`/api/approvals/${encodeURIComponent(id)}/delegate`, {
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    skipTaskPlanProposal: (proposalId, options) =>
+      request(withPageLocale(`/api/proposals/${encodeURIComponent(proposalId)}/skip-plan`, options), { method: "POST" }),
+    pauseTaskPlan: (planId) =>
+      request(`/api/task-plans/${encodeURIComponent(planId)}/pause`, { method: "POST" }),
+    resumeTaskPlan: (planId) =>
+      request(`/api/task-plans/${encodeURIComponent(planId)}/resume`, { method: "POST" }),
+    resolveEscalation: (id, payload, options) =>
+      request<EscalationResolveResult>(withPageLocale(`/api/escalations/${encodeURIComponent(id)}/resolve`, options), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    resolveBudgetDecision: (id, actionId, options) =>
+      request<EscalationResolveResult>(
+        withPageLocale(`/api/escalations/${encodeURIComponent(id)}/budget-actions/${encodeURIComponent(actionId)}`, options),
+        { method: "POST" }
+      ),
+    delegateEscalation: (id, payload, options) =>
+      request<EscalationDelegateResult>(withPageLocale(`/api/escalations/${encodeURIComponent(id)}/delegate`, options), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    resolveMemoryConflict: (id, payload) => {
+      const params = new URLSearchParams({ expected_updated_at: payload.expected_updated_at });
+      const path =
+        `/api/memory-conflicts/${encodeURIComponent(id)}/resolve/${encodeURIComponent(payload.resolution)}?${params.toString()}`;
+      const body = {
+        ...(payload.value_md ? { value_md: payload.value_md } : {})
+      };
+      return request<MemoryConflictResolveResult>(path, {
+        method: "POST",
+        ...(payload.value_md ? { body: JSON.stringify(body) } : {})
+      });
+    },
     listApprovalComments: (id) => request(`/api/approvals/${encodeURIComponent(id)}/comments`),
     postApprovalComment: (id, payload) =>
       request(`/api/approvals/${encodeURIComponent(id)}/comments`, {
@@ -430,13 +479,13 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
     listWorkItemProposals: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/proposals`),
     listWorkItemConflicts: (workItemId) => request(`/api/workitems/${encodeURIComponent(workItemId)}/conflicts`),
     getProposal: (id) => request(`/api/proposals/${encodeURIComponent(id)}`),
-    reviewProposal: (id, payload) =>
-      request(`/api/proposals/${encodeURIComponent(id)}/review`, {
+    reviewProposal: (id, payload, options) =>
+      request(withPageLocale(`/api/proposals/${encodeURIComponent(id)}/review`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    mergeProposal: (id, payload = {}) =>
-      request(`/api/proposals/${encodeURIComponent(id)}/merge`, {
+    mergeProposal: (id, payload = {}, options) =>
+      request(withPageLocale(`/api/proposals/${encodeURIComponent(id)}/merge`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
@@ -450,13 +499,13 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    applyMergeProposalCandidate: (id, payload = {}) =>
-      request(`/api/merge-proposals/${encodeURIComponent(id)}/apply`, {
+    applyMergeProposalCandidate: (id, payload = {}, options) =>
+      request(withPageLocale(`/api/merge-proposals/${encodeURIComponent(id)}/apply`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
-    nextQuestion: (sessionId, payload = {}) =>
-      request(`/api/sessions/${encodeURIComponent(sessionId)}/next-question`, {
+    nextQuestion: (sessionId, payload = {}, options) =>
+      request(withPageLocale(`/api/sessions/${encodeURIComponent(sessionId)}/next-question`, options), {
         method: "POST",
         body: JSON.stringify(payload)
       }),
@@ -489,6 +538,11 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/items/${encodeURIComponent(itemId)}/restore`, options), {
         method: "POST"
       }),
+    createDriveComment: (projectId, payload, options) =>
+      request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/comments`, options), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
     createDriveCommentDraft: (projectId, commentId, options) =>
       request(withPageLocale(`/api/drive/projects/${encodeURIComponent(projectId)}/comments/${encodeURIComponent(commentId)}/draft`, options), {
         method: "POST"
@@ -497,6 +551,12 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       request(withPageLocale(`/api/drive/workitems/${encodeURIComponent(workItemId)}/proposal-draft`, options), {
         method: "POST"
       }),
+    importMeetingTranscript: (projectId, payload, options) =>
+      request(withPageLocale(`/api/meetings/projects/${encodeURIComponent(projectId)}/import`, options), {
+        method: "POST",
+        body: JSON.stringify(payload)
+      }),
+    listUsers: () => request("/api/users"),
     createMeetingInsightDraft: (projectId, insightId, options) =>
       request(withPageLocale(`/api/meetings/projects/${encodeURIComponent(projectId)}/insights/${encodeURIComponent(insightId)}/draft`, options), {
         method: "POST"
@@ -523,6 +583,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       attention: (options) => request(withPageLocale("/api/pages/attention", options)),
       approvals: (options) => request(withApprovalPageOptions("/api/pages/approvals", options)),
       cost: (options) => request(withPageLocale("/api/pages/cost", options)),
+      agents: (options) => request(withPageLocale("/api/pages/agents", options)),
       skills: (options) => request(withPageLocale("/api/pages/skills", options)),
       settings: (options) => request(withPageLocale("/api/pages/settings", options)),
       goldPath: (options) => request(withPageLocale("/api/pages/gold-path", options)),

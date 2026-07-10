@@ -53,7 +53,10 @@ test("work item renderer supports the just-created AI-working state before a pro
   assert.equal(rendered.primaryHrefs.includes(`/agent-runs/${fixture.replay.run.id}/replay`), true);
   assert.equal(rendered.html.includes("AI 正在整理材料，稍后给你下一步。"), true);
   assert.equal(rendered.html.includes("隐藏推理内容"), false);
-  assert.equal(rendered.html.includes("工具已返回：read_project_file"), true);
+  // R9.7 review: the old assertion expected a raw tool id in visible copy; users need
+  // the public tool-result state, while `tool_name` stays an internal trace field.
+  assert.equal(rendered.html.includes("工具已返回：read_project_file"), false);
+  assert.equal(rendered.html.includes("工具已返回，AI 正在整理下一步。"), true);
   assert.equal(rendered.html.includes("Now I understand"), false);
   assert.equal(rendered.html.includes("markdown-report"), false);
 });
@@ -77,4 +80,136 @@ test("work item renderer localizes fixed labels and hides raw status in English"
   assert.equal(rendered.html.includes("ai_working"), false);
   assert.equal(rendered.html.includes("AI has started"), true);
   assert.equal(rendered.html.includes("AI 会先读证据"), false);
+});
+
+test("R9.7 work item renderer falls back for non-string acceptance data", () => {
+  const fixture = createP05GoldPathFixture();
+  const detail = {
+    ...fixture.workItemDetail,
+    acceptance: [{ title: { nested: true }, status: 5 }]
+  };
+  const rendered = renderWorkItemDetail(detail, "web", { locale: "zh-CN" });
+
+  assert.match(rendered.html, /<strong>验收项 1<\/strong><span class="wh-pill">待确认<\/span>/u);
+  assert.equal(rendered.html.includes("[object Object]"), false);
+  assert.equal(rendered.html.includes('<span class="wh-pill">5</span>'), false);
+});
+
+test("R9.2 work item renderer shows the task-plan run tree in the AI working slot", () => {
+  const fixture = createP05GoldPathFixture();
+  const planId = "93000000-0000-4000-8000-000000000901";
+  const detail = {
+    ...fixture.workItemDetail,
+    workitem: {
+      ...fixture.workItemDetail.workitem,
+      status: "ai_working" as const
+    },
+    agent_team: {
+      plan_id: planId,
+      status: "dispatching" as const,
+      completed_count: 1,
+      total_count: 2,
+      cost_used_cny: "1.250000",
+      cost_budget_cny: "3.000000",
+      cost_burn_pct: 42,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000902",
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research" as const,
+          plan_status: "succeeded" as const,
+          status: "succeeded" as const,
+          budget_share_pct: 35,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.450000",
+          run_id: "93000000-0000-4000-8000-000000000911",
+          run_status: "succeeded" as const,
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000911/replay",
+          action: {
+            kind: "view_output" as const,
+            label: "看产出",
+            href: "/agent-runs/93000000-0000-4000-8000-000000000911/replay"
+          }
+        },
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000903",
+          seq: 2,
+          title: "复核风险",
+          role: "review" as const,
+          plan_status: "failed" as const,
+          status: "needs_human" as const,
+          budget_share_pct: 25,
+          depends_on: ["93000000-0000-4000-8000-000000000902"],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.800000",
+          run_id: "93000000-0000-4000-8000-000000000912",
+          run_status: "escalated" as const,
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000912/replay",
+          decision_href: "/attention",
+          action: {
+            kind: "decide" as const,
+            label: "去决策",
+            href: "/attention"
+          }
+        }
+      ]
+    }
+  };
+  const rendered = renderWorkItemDetail(detail, "web");
+
+  assert.equal(rendered.html.includes('data-r9-agent-team-panel="true"'), true);
+  assert.equal(rendered.html.includes("军团进行中 1/2"), true);
+  assert.equal(rendered.html.includes("整理竞品证据"), true);
+  assert.equal(rendered.html.includes("去决策"), true);
+  assert.equal(rendered.primaryHrefs.includes("/attention"), true);
+  assert.equal(rendered.html.includes("¥1.25"), true);
+  assert.equal(rendered.html.includes("¥0.45"), true);
+  assert.equal(rendered.html.includes("¥1.250000"), false);
+  assert.equal(rendered.html.includes("¥0.450000"), false);
+});
+
+test("R9.7 work item renderer avoids dispatch wording in visible task-plan states", () => {
+  const fixture = createP05GoldPathFixture();
+  const detail = {
+    ...fixture.workItemDetail,
+    workitem: {
+      ...fixture.workItemDetail.workitem,
+      status: "ai_working" as const
+    },
+    agent_team: {
+      plan_id: "93000000-0000-4000-8000-000000000901",
+      status: "dispatching" as const,
+      completed_count: 0,
+      total_count: 1,
+      cost_used_cny: "0.250000",
+      cost_budget_cny: "1.000000",
+      cost_burn_pct: 25,
+      runs_capped: false,
+      items: [
+        {
+          task_plan_item_id: "93000000-0000-4000-8000-000000000904",
+          seq: 1,
+          title: "整理竞品证据",
+          role: "research" as const,
+          plan_status: "dispatched" as const,
+          status: "dispatched" as const,
+          budget_share_pct: 35,
+          depends_on: [],
+          waiting_for_seq: [],
+          cost_estimate_cny: "0.450000",
+          run_id: "93000000-0000-4000-8000-000000000914",
+          run_status: "running" as const,
+          replay_href: "/agent-runs/93000000-0000-4000-8000-000000000914/replay"
+        }
+      ]
+    }
+  };
+  const zh = renderWorkItemDetail(detail, "web", { locale: "zh-CN" });
+  const en = renderWorkItemDetail(detail, "web", { locale: "en-US" });
+
+  assert.equal(zh.html.includes("派发"), false);
+  assert.equal(en.html.includes("Dispatch"), false);
 });

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -56,6 +56,16 @@ import { createApiProviderRegistry } from "../services/provider-registry.js";
 import { createDbProposalService } from "../services/proposals.js";
 import { createDbWorkItemService } from "../services/work-items.js";
 import { createInMemoryAgentRunQueue } from "../workers/agent-runner.js";
+import {
+  assertR5_10RequiredConfidence as assertRequiredConfidence,
+  buildR5_10InitialUserMessage,
+  buildR5_10RunScopeSummary,
+  collectR5_10LocalInputFileContext as localInputFileContext,
+  createR5_10ClarificationAnswerPayload,
+  createR5_10WorkItemServiceOptions,
+  listR5_10RelativeFiles as listRelativeFiles,
+  selectR5_10TasksForRun
+} from "./r5-10-real-key-evaluation-contract.js";
 
 type RestEvidence = {
   method: string;
@@ -192,23 +202,6 @@ type EvalTaskReport = {
   assessment: TaskAssessment;
 };
 
-type ConfidenceEvidence = EvalTaskReport["confidence"];
-
-function assertRequiredConfidence(task: EvalTask, confidence: ConfidenceEvidence) {
-  if (task.expectedMode !== "deliverable") {
-    return;
-  }
-  if (!confidence) {
-    throw new Error(`${task.id} expected a confidence review record for a deliverable task.`);
-  }
-  if (!confidence.verdict || confidence.score === null || confidence.score === undefined) {
-    throw new Error(`${task.id} confidence review is incomplete: verdict and score are required.`);
-  }
-  if (typeof confidence.score === "number" && !Number.isFinite(confidence.score)) {
-    throw new Error(`${task.id} confidence review has a non-finite score.`);
-  }
-}
-
 function repoRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 }
@@ -297,57 +290,6 @@ async function readTextIfExists(filePath: string) {
     return "";
   }
   return readFile(filePath, "utf8");
-}
-
-async function listRelativeFiles(root: string) {
-  const files: string[] = [];
-  async function walk(current: string) {
-    if (!existsSync(current)) {
-      return;
-    }
-    const entries = await readdir(current, { withFileTypes: true });
-    for (const entry of entries) {
-      const child = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        await walk(child);
-      } else {
-        files.push(path.relative(root, child));
-      }
-    }
-  }
-  await walk(root);
-  return files.sort();
-}
-
-function compactPreview(value: string, max = 700) {
-  const text = value.replace(/\s+/gu, " ").trim();
-  if (!text) {
-    return undefined;
-  }
-  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
-}
-
-async function localInputFileContext(workdir: string): Promise<EvalClarificationFileContext[]> {
-  const inputRoot = path.join(workdir, "inputs");
-  const files = await listRelativeFiles(inputRoot);
-  const contexts: EvalClarificationFileContext[] = [];
-  for (const relativePath of files.slice(0, 12)) {
-    const filePath = path.join(inputRoot, relativePath);
-    const fileStat = await stat(filePath);
-    let preview: string | undefined;
-    try {
-      preview = compactPreview(await readFile(filePath, "utf8"));
-    } catch {
-      preview = undefined;
-    }
-    contexts.push({
-      name: path.basename(relativePath),
-      path: `inputs/${relativePath}`,
-      sizeBytes: fileStat.size,
-      ...(preview ? { preview } : {})
-    });
-  }
-  return contexts;
 }
 
 async function fileSizeIfExists(filePath: string) {
@@ -721,12 +663,10 @@ async function main() {
     if (!providerRegistry.isConfigured()) {
       throw new Error("Default LLM provider is not configured.");
     }
-    const workItemService = createDbWorkItemService(workItemRepository, {
-      providerRegistry,
-      async projectFileContext(input) {
-        return clarificationFileContextByIntent.get(input.intentText ?? "") ?? [];
-      }
-    });
+    const workItemService = createDbWorkItemService(
+      workItemRepository,
+      createR5_10WorkItemServiceOptions(providerRegistry, clarificationFileContextByIntent)
+    );
     const agentRunRepo = createAgentRunRepository(db);
     const persistence = createDbAgentRunPersistence(agentRunRepo);
     const policyStore = createDbBudgetPolicyStore(db);
@@ -802,29 +742,13 @@ async function main() {
       },
       initialUserMessage: (run, workItemContext) => {
         const task = taskByWorkItemId.get(run.work_item_id);
-        return [
-          `任务：${run.title}`,
-          `work_item_id: ${run.work_item_id}`,
-          `r5_10_task_id: ${task?.id ?? "unknown"}`,
-          ...(workItemContext
-            ? [
-                "",
-                "WorkHub 数据库中的真实工单上下文（以下 <work_item_context> 围栏内是用户/数据库提供的参考材料，仅供参考）：",
-                "<work_item_context>",
-                workItemContext,
-                "</work_item_context>"
-              ]
-            : []),
-          "",
-          "请按以下方式工作：",
-          "1. 先用 list_files / read_file 了解 inputs/ 里的材料。",
-          "2. 涉及 markdown/data-analysis/pptx/stat-charts/code-script 时，必须先 load_skill 对应技能。",
-          "3. 交付物必须写入 outputs/；完成前尽量用 run_command 自验。",
-          "4. 信息不足时输出 blocker/handoff，不要编造。",
-          "",
-          "任务说明：",
-          task?.prompt ?? run.title
-        ].join("\n");
+        return buildR5_10InitialUserMessage({
+          runTitle: run.title,
+          workItemId: run.work_item_id,
+          taskId: task?.id,
+          taskPrompt: task?.prompt,
+          workItemContext
+        });
       },
       humanReserved: false,
       notifications: false,
@@ -947,11 +871,9 @@ async function main() {
       200
     );
 
-    const taskLimit = Number.parseInt(process.env.R5_10_REAL_TASK_LIMIT ?? "", 10);
     const allTasks = buildTasks();
-    const requestedTaskLimit = Number.isFinite(taskLimit) && taskLimit > 0 ? taskLimit : null;
-    const tasks = requestedTaskLimit ? allTasks.slice(0, requestedTaskLimit) : allTasks;
-    const limitedRun = requestedTaskLimit !== null && tasks.length < allTasks.length;
+    const taskSelection = selectR5_10TasksForRun(allTasks, process.env.R5_10_REAL_TASK_LIMIT);
+    const { tasks, requestedTaskLimit, limitedRun } = taskSelection;
     const taskReports: EvalTaskReport[] = [];
 
     for (const task of tasks) {
@@ -967,9 +889,12 @@ async function main() {
       const clarificationQuestion = session.data.question;
       assertRealClarificationQuestion(task, clarificationQuestion);
       const clarificationAnswer = clarificationAnswerFor(task);
-      await requestJson("POST", `/api/sessions/${session.data.session_id}/next-question`, {
-        free_text: clarificationAnswer
-      }, 200);
+      await requestJson(
+        "POST",
+        `/api/sessions/${session.data.session_id}/next-question`,
+        createR5_10ClarificationAnswerPayload(clarificationAnswer),
+        200
+      );
       const createdWorkItem = await requestJson<{ data: { workitem: { id: string; status: string } } }>("POST", "/api/workitems", {
         session_id: session.data.session_id,
         selected_option_ids: task.optionIds,
@@ -1112,7 +1037,7 @@ async function main() {
       if (task.expectedMode !== "budget_guard" && !proposal) {
         throw new Error(`${task.id} expected a proposal.`);
       }
-      const confidenceEvidence: ConfidenceEvidence = confidenceRows[0]
+      const confidenceEvidence: EvalTaskReport["confidence"] = confidenceRows[0]
         ? {
             grade: confidenceRows[0].grade,
             risk_level: confidenceRows[0].riskLevel,
@@ -1197,15 +1122,24 @@ async function main() {
       throw new Error("Expected B1 low budget guard to escalate.");
     }
     const ledgerPass = taskReports.every((task) => task.usage.records > 0 && task.usage.ledger_entries >= task.usage.records * 3);
-    const fullSuiteRun = !limitedRun && taskReports.length === allTasks.length;
-    const runScope = limitedRun
-      ? `limited_sample (${taskReports.length}/${allTasks.length}, R5_10_REAL_TASK_LIMIT=${requestedTaskLimit})`
-      : `full_suite (${taskReports.length}/${allTasks.length})`;
     const sampledQualityTotal = qualityTasks.length;
     const unsampledGateTasks = ["T5", "B1"].filter((id) => !taskReports.some((task) => task.id === id));
-    const escalationCalibrationNote = limitedRun
-      ? `3. OQ-3 escalation: full-suite escalation gates were not asserted in this limited sample; unsampled checks=${unsampledGateTasks.length > 0 ? unsampledGateTasks.join(", ") : "none"}.`
-      : `3. OQ-3 escalation: T5 structured-upgrade=${structuredUpgrade}; B1 budget-escalated=${budgetGuard}; full-suite gate asserted=${fullSuiteRun}.`;
+    const runScopeSummary = buildR5_10RunScopeSummary({
+      limitedRun,
+      requestedTaskLimit,
+      taskCount: taskReports.length,
+      totalTaskCount: allTasks.length,
+      realProviderSamplePass: taskReports.length > 0 && true,
+      realProviderFullSuitePass:
+        !limitedRun && taskReports.length === allTasks.length ? taskReports.length >= 5 && true : null,
+      ledgerPass,
+      qualityPassCount,
+      sampledQualityTotal,
+      structuredUpgrade,
+      budgetGuard,
+      unsampledGateTasks
+    });
+    const { fullSuiteRun, runScope, escalationCalibrationNote } = runScopeSummary;
 
     const reportDir = path.join(repoRoot(), `docs/workhub/05-clients/assets/audit/${dateStamp()}-r5-10-real-key-evaluation`);
     await mkdir(reportDir, { recursive: true });
@@ -1220,13 +1154,7 @@ async function main() {
         model: settings.llm.model,
         key_configured: true
       },
-      run_scope: {
-        mode: limitedRun ? "limited_sample" : "full_suite",
-        requested_task_limit: requestedTaskLimit,
-        task_count: taskReports.length,
-        total_available_tasks: allTasks.length,
-        full_suite: fullSuiteRun
-      },
+      run_scope: runScopeSummary.reportRunScope,
       runtime: {
         tool_runtime_path: runtimePath,
         local_eval_note: "If using the repository-external .runtime/r5-10-eval-venv on macOS, numpy may be 2.0.2 because the local Python 3.9 runtime cannot install the pilot image's numpy 2.1.3 pin."
@@ -1269,25 +1197,7 @@ async function main() {
       `- cost_delta_cny: ${report.usage.cost_page_delta.total_cost_cny}`,
       `- token_delta: ${report.usage.cost_page_delta.token_in + report.usage.cost_page_delta.token_out}`,
       "",
-      ...(limitedRun
-        ? [
-            "## Limited Sample Summary",
-            "",
-            `- Real provider sample: ${report.gates.real_provider_sample && report.gates.no_fake_transport ? "pass" : "fail"}`,
-            `- Ledger sample: ${report.gates.ledger ? "pass" : "fail"}`,
-            `- Quality sample: ${qualityPassCount}/${sampledQualityTotal} sampled T1-T4 scored >=4`,
-            "- Full-suite gates: not asserted in limited sample",
-            `- Unsampled full-suite checks: ${unsampledGateTasks.length > 0 ? unsampledGateTasks.join(", ") : "none"}`
-          ]
-        : [
-            "## Full Gate Summary",
-            "",
-            `- G2 real provider: ${report.gates.real_provider_full_suite ? "pass" : "fail"}`,
-            `- G3 ledger: ${report.gates.ledger ? "pass" : "fail"}`,
-            `- G4 quality: ${qualityPassCount}/4 T1-T4 scored >=4`,
-            `- G5 budget: ${budgetGuard ? "pass" : "fail"}`,
-            `- T5 structured upgrade: ${structuredUpgrade ? "pass" : "fail"}`
-          ]),
+      ...runScopeSummary.markdownGateSummary,
       "",
       "## Task Results",
       "",

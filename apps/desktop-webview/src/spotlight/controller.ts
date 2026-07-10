@@ -20,7 +20,6 @@ import type { SpotlightApiClient, SpotlightTarget, SpotlightViewContext } from "
 
 export type SpotlightResizeFn = (width: number, height: number) => void;
 export type SpotlightManualDragFn = (deltaX: number, deltaY: number) => void;
-export type SpotlightResizeDirection = "east" | "south" | "south-east";
 
 export type MountSpotlightInput = {
   host: HTMLElement;
@@ -33,7 +32,6 @@ export type MountSpotlightInput = {
   // 顶栏拖动/边缘缩放（browser.ts 注入 → 原生 frameless 窗口手势）。浏览器开发态可为空（no-op）。
   drag?: () => void;
   dragMove?: SpotlightManualDragFn;
-  resizeDrag?: (direction: SpotlightResizeDirection) => void;
   // 关闭/隐藏盒子（browser.ts 注入 → invoke hide_main_window）。M2：让 launcher 顶层 Esc 真正关闭盒子，
   // 兑现 hello 卡「Esc 关闭」的承诺。浏览器开发态可为空（no-op）。
   dismiss?: () => void;
@@ -56,6 +54,53 @@ const SEARCH_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/></svg>';
 const BACK_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+const DRAG_EXCLUDED_SELECTOR = "input,textarea,button,a,select,[contenteditable=true]";
+// UX-M15：军团 plan 详情的「← 返回小队列表」也算内部回退层——Esc 先回列表再回 launcher。
+export const SPOTLIGHT_INTERNAL_BACK_SELECTOR = "[data-att-detail-collapse],[data-wi-back],[data-prop-back],[data-run-back],[data-back-to-projects],[data-back-to-agent-armies]";
+
+type SpotlightInternalBackHost = {
+  querySelector(selector: string): { click: () => void } | null;
+};
+
+export function isSpotlightDragExcludedTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(DRAG_EXCLUDED_SELECTOR));
+}
+
+export function handleSpotlightCapabilityEscape(body: SpotlightInternalBackHost, topLevelBack: () => void) {
+  const internalBack = body.querySelector(SPOTLIGHT_INTERNAL_BACK_SELECTOR);
+  if (internalBack) {
+    internalBack.click();
+    return "internal_back" as const;
+  }
+  topLevelBack();
+  return "top_back" as const;
+}
+
+export function renderSpotlightShellHtml(locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  const placeholder = zh ? "想做点什么？新任务 / 审批 / 网盘 / 项目…" : "What do you need? new task / approve / drive…";
+  return `
+    <div class="wh-spot ds-anim-spring-in" data-spot-box data-mode="launcher">
+      ${renderWorkHubLiquidGlassLayer("spotlight")}
+      <span class="wh-liquid-glass-rim" aria-hidden="true"></span>
+      <div class="wh-liquid-glass-content">
+        <div class="wh-spot-top">
+          <button type="button" class="wh-spot-back" data-spot-back aria-label="${zh ? "返回" : "Back"}">${BACK_ICON}</button>
+          <div class="wh-spot-field-wrap">
+            <span class="wh-spot-field-icon">${SEARCH_ICON}</span>
+            <input class="wh-spot-field" type="search" data-spot-input role="combobox" aria-expanded="true" aria-controls="wh-spot-listbox" aria-autocomplete="list" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}" />
+          </div>
+          <div class="wh-spot-titlewrap">
+            <span class="wh-spot-title" data-spot-title></span>
+            <span class="wh-spot-subtitle" data-spot-subtitle></span>
+          </div>
+          <kbd class="wh-spot-kbd">⌘K</kbd>
+          <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-drag-sheet" data-spot-drag-sheet></button>
+        </div>
+        <div class="wh-spot-body" data-spot-body></div>
+      </div>
+    </div>`;
+}
 
 function renderLauncherGrid(
   matches: CommandMatch[],
@@ -65,7 +110,10 @@ function renderLauncherGrid(
 ): string {
   const zh = locale === "zh-CN";
   if (matches.length === 0) {
-    return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${zh ? "没有匹配的能力，换个说法试试" : "No matching capability — try another phrase"}</div></div>`;
+    // 普通用户审查 R2：搜索框邀请自然语言，整句需求却落「没有匹配」死路——给「当新任务交给 Cuu」出口。
+    return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${zh ? "没有匹配的能力" : "No matching capability"}
+      <div class="wh-spot-intake-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-spot-fallback-intake>${zh ? "把这句话当新任务交给 Cuu" : "Hand this to Cuu as a new task"}</button></div>
+    </div></div>`;
   }
   // 空查询时给一无所知的新用户一句温和的引导：先亮身份(WorkHub·Cuu)，再说怎么用 + Esc 关闭提示
   // （搜索框无 header，保持聚焦盒观感；⌘K 已在右上角标出）。
@@ -113,32 +161,8 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   // controller 自身的 window 监听器（⌘K/ESC/resize）统一挂这个 signal，dispose 时一并断开（rank25）。
   const controllerAbort = new AbortController();
 
-  const placeholder = zh ? "想做点什么？新任务 / 审批 / 网盘 / 项目…" : "What do you need? new task / approve / drive…";
   host.className = "wh-ds wh-spot-stage";
-  host.innerHTML = `
-    <div class="wh-spot ds-anim-spring-in" data-spot-box data-mode="launcher">
-      ${renderWorkHubLiquidGlassLayer("spotlight")}
-      <span class="wh-liquid-glass-rim" aria-hidden="true"></span>
-      <div class="wh-liquid-glass-content">
-        <div class="wh-spot-top">
-          <button type="button" class="wh-spot-back" data-spot-back aria-label="${zh ? "返回" : "Back"}">${BACK_ICON}</button>
-          <div class="wh-spot-field-wrap">
-            <span class="wh-spot-field-icon">${SEARCH_ICON}</span>
-            <input class="wh-spot-field" type="search" data-spot-input role="combobox" aria-expanded="true" aria-controls="wh-spot-listbox" aria-autocomplete="list" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}" />
-          </div>
-          <div class="wh-spot-titlewrap">
-            <span class="wh-spot-title" data-spot-title></span>
-            <span class="wh-spot-subtitle" data-spot-subtitle></span>
-          </div>
-          <kbd class="wh-spot-kbd">⌘K</kbd>
-          <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-drag-sheet" data-spot-drag-sheet></button>
-        </div>
-        <div class="wh-spot-body" data-spot-body></div>
-      </div>
-      <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-resize wh-spot-resize--e" data-spot-resize="east"></button>
-      <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-resize wh-spot-resize--s" data-spot-resize="south"></button>
-      <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-resize wh-spot-resize--se" data-spot-resize="south-east"></button>
-    </div>`;
+  host.innerHTML = renderSpotlightShellHtml(locale);
 
   const box = host.querySelector<HTMLElement>("[data-spot-box]")!;
   const topEl = host.querySelector<HTMLElement>(".wh-spot-top")!;
@@ -155,7 +179,6 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   let resizeRaf = 0;
   let lastSentW = 0;
   let lastSentH = 0;
-  let userResizeAutoUnlockAt = 0;
   const nowMs = () => window.performance.now();
   const focusSearch = (options: { expand: boolean }) => {
     if (options.expand) {
@@ -206,11 +229,6 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   };
   const requestResizeFromWindowResize = () => {
     scheduleWorkHubLiquidGlassFilterRebuild(doc);
-    const now = nowMs();
-    if (now < userResizeAutoUnlockAt) {
-      userResizeAutoUnlockAt = now + 700;
-      return;
-    }
     requestResize();
   };
 
@@ -293,6 +311,10 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       },
       toast: (message, tone) => showToast(message, tone),
       requestResize,
+      refocusBody: () => {
+        viewRoot.tabIndex = -1;
+        viewRoot.focus({ preventScroll: true });
+      },
       ...(input.onActionSettled ? { onActionSettled: input.onActionSettled } : {}),
       signal: viewAbort.signal
     };
@@ -353,10 +375,21 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     el.setAttribute("aria-live", tone === "error" ? "assertive" : "polite");
     el.textContent = message;
     box.appendChild(el);
+    // R6（桌面交互）：toast 绝对定位悬浮在盒底，恰好盖住可滚动 body 底部的提交按钮——
+    // 显示期给 body 垫底部空隙让位，退场时复原。
+    const bodyEl = box.querySelector<HTMLElement>(".wh-spot-body");
+    if (bodyEl) {
+      bodyEl.style.paddingBottom = "56px";
+    }
     // #20：到期先播退场动画(约 1 帧)再移除,toast 不再生硬消失。reduced-motion 下动画近 0ms,行为不变。
     toastTimer = window.setTimeout(() => {
       el.classList.add("wh-spot-toast--leaving");
-      toastInnerTimer = window.setTimeout(() => el.remove(), 220);
+      toastInnerTimer = window.setTimeout(() => {
+        el.remove();
+        if (bodyEl) {
+          bodyEl.style.paddingBottom = "";
+        }
+      }, 220);
     }, 3200);
   };
 
@@ -436,8 +469,6 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     dispatch({ type: "back" });
   });
 
-  const dragExcludedSelector = "button,a,select,[contenteditable=true],[data-spot-resize]";
-  const isDragExcludedTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest(dragExcludedSelector));
   let manualDrag:
     | {
         startClientX: number;
@@ -450,7 +481,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   topEl.addEventListener(
     "mousedown",
     (event) => {
-      if (event.button !== 0 || isDragExcludedTarget(event.target)) {
+      if (event.button !== 0 || isSpotlightDragExcludedTarget(event.target)) {
         return;
       }
       manualDrag = {
@@ -606,7 +637,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     if (event.button !== 0) {
       return;
     }
-    if (isDragExcludedTarget(event.target)) {
+    if (isSpotlightDragExcludedTarget(event.target)) {
       return;
     }
     if (input.dragMove) {
@@ -644,19 +675,6 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   topEl.addEventListener("pointerup", clearDragStart);
   topEl.addEventListener("pointercancel", clearDragStart);
 
-  host.querySelectorAll<HTMLElement>("[data-spot-resize]").forEach((handle) => {
-    handle.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const direction = handle.dataset.spotResize as SpotlightResizeDirection | undefined;
-      if (direction) {
-        userResizeAutoUnlockAt = nowMs() + 1600;
-        input.resizeDrag?.(direction);
-        scheduleWorkHubLiquidGlassFilterRebuild(doc);
-      }
-    });
-  });
-
   body.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) {
@@ -665,6 +683,12 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     const cap = target.closest<HTMLElement>("[data-spot-cap]");
     if (cap?.dataset.spotCap) {
       dispatch({ type: "openCapability", id: cap.dataset.spotCap as CommandId });
+      return;
+    }
+    // 普通用户审查 R2：无匹配兜底——整句查询原话带进 intake 意图框（route 前缀约定 spotlight-intent:）。
+    if (target.closest<HTMLElement>("[data-spot-fallback-intake]")) {
+      const query = input2.value.trim();
+      openCapabilityWithTarget("intake", query ? { route: `spotlight-intent:${query}` } : undefined);
     }
   });
 
@@ -694,6 +718,10 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   };
 
   input2.addEventListener("keydown", (event) => {
+    // 普通用户审查 R2：中文输入法组合态的回车是「选字」不是「确认」——组合中一律不当快捷键。
+    if (event.isComposing || event.keyCode === 229) {
+      return;
+    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       moveActive(1);
@@ -710,6 +738,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     }
   });
 
+  let escapeArmedUntil = 0;
   window.addEventListener(
     "keydown",
     (event) => {
@@ -719,19 +748,31 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         // 不再额外 render() 造成 launcher 连画两遍。
         resetLauncher();
       } else if (event.key === "Escape") {
+        if (event.isComposing || event.keyCode === 229) {
+          return;
+        }
+        // 普通用户审查 R2：capability 内有未提交的输入（打回说明/合并草稿/需求文本）时，
+        // Esc 无条件回退会静默丢字——第一次 Esc 提示，2 秒内再按才真正回退。
+        const dirtyInput = openCapabilityId(state)
+          ? [...body.querySelectorAll<HTMLTextAreaElement | HTMLInputElement>("textarea, input[type=text], input[type=search]")]
+            .find((field) => field.value.trim().length > 0)
+          : undefined;
+        if (dirtyInput && escapeArmedUntil < Date.now()) {
+          event.preventDefault();
+          escapeArmedUntil = Date.now() + 2000;
+          // R6（桌面交互）：此前武装态零反馈——用户按了 Esc 什么都没发生，以为坏了。
+          showToast(zh ? "再按一次 Esc 放弃未提交的内容" : "Press Esc again to discard your input", "info");
+          return;
+        }
+        escapeArmedUntil = 0;
         if (openCapabilityId(state)) {
           event.preventDefault();
           // M3：若当前能力视图正处于内部详情(list→detail),先退一级——点它已渲染好的「返回列表」按钮,
           // 让 Esc 与屏幕上的面包屑返回逐级一致;只有视图没有内部详情层时,Esc 才退回 launcher(能力网格)。
           // 这些 data-*-back 仅在各 view 的 detail HTML 里出现,list 态查不到 → 自然退回顶层。
-          const internalBack = body.querySelector<HTMLElement>(
-            "[data-wi-back],[data-prop-back],[data-run-back],[data-back-to-projects]"
-          );
-          if (internalBack) {
-            internalBack.click();
-          } else {
+          handleSpotlightCapabilityEscape(body, () => {
             dispatch({ type: "back" });
-          }
+          });
         } else if (input2.value) {
           event.preventDefault();
           input2.value = "";

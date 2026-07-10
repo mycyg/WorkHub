@@ -9,7 +9,7 @@ function pick(map: Record<string, [string, string]>, value: string, zh: boolean)
 const workItemStatusMap: Record<string, [string, string]> = {
   intake: ["接收中", "Intake"],
   ai_clarifying: ["澄清中", "Clarifying"],
-  spec_ready: ["待派活", "Ready to run"],
+  spec_ready: ["规格已就绪", "Spec ready"],
   ai_working: ["AI 正在处理", "AI working"],
   in_progress: ["进行中", "In progress"],
   in_review: ["待审阅", "In review"],
@@ -31,7 +31,7 @@ const workItemPriorityMap: Record<string, [string, string]> = {
 
 const agentRunStatusMap: Record<string, [string, string]> = {
   queued: ["排队中", "Queued"],
-  running: ["执行中", "Running"],
+  running: ["进行中", "In progress"],
   succeeded: ["已完成", "Succeeded"],
   failed: ["失败", "Failed"],
   escalated: ["已升级", "Escalated"],
@@ -75,21 +75,17 @@ export function agentStepPublicSummary(
   step: { phase?: string | undefined; tool_name?: string | undefined; output_excerpt?: string | undefined },
   zh: boolean
 ): string {
-  const tool = step.tool_name?.trim();
-  const separator = zh ? "：" : ": ";
   switch (step.phase) {
     case "think":
       return zh ? "AI 正在整理材料，稍后给你下一步。" : "AI is organizing the materials and preparing the next step.";
     case "tool_call":
-      return tool ? `${zh ? "工具调用" : "Tool call"}${separator}${tool}` : zh ? "正在调用工具。" : "Calling a tool.";
+      return zh ? "正在调用工具。" : "Calling a tool.";
     case "tool_result":
-      return tool
-        ? `${zh ? "工具已返回" : "Tool result received"}${separator}${tool}`
-        : zh ? "工具已返回，AI 正在整理下一步。" : "Tool result received; AI is organizing the next step.";
+      return zh ? "工具已返回，AI 正在整理下一步。" : "Tool result received; AI is organizing the next step.";
     case "final":
       return step.output_excerpt ?? (zh ? "最终输出已生成。" : "Final output is ready.");
     default:
-      return step.output_excerpt ?? tool ?? (zh ? "记录了一个步骤。" : "Recorded one step.");
+      return step.output_excerpt ?? (zh ? "记录了一个步骤。" : "Recorded one step.");
   }
 }
 

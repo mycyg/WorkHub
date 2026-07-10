@@ -99,7 +99,7 @@ test("agent run renderer celebrates completed runs without showing cancel action
 
   assert.equal(rendered.surface, "desktop");
   assert.equal(rendered.cuuState, "celebrating");
-  assert.equal(rendered.html.includes("做完啦"), true);
+  assert.equal(rendered.html.includes("已完成"), true);
   assert.equal(rendered.html.includes("取消执行"), false);
 });
 
@@ -108,7 +108,7 @@ test("agent run renderer localizes fixed labels and visible run status in Englis
 
   assert.equal(rendered.html.includes("Live AI work"), true);
   assert.equal(rendered.html.includes("Cancel run"), true);
-  assert.equal(rendered.html.includes("Running"), true);
+  assert.equal(rendered.html.includes("In progress"), true);
   assert.equal(rendered.html.includes("Thinking"), true);
   assert.equal(rendered.html.includes(">running<"), false);
   assert.equal(rendered.html.includes("AI 实时执行"), false);
@@ -119,9 +119,9 @@ test("agent run renderer localizes fixed labels and visible run status in Englis
 
 test("findings: budget card token unit is localized, no hardcoded English 'tokens' in zh", () => {
   const renderedZh = renderAgentRunLive(baseRun, "web", { locale: "zh-CN" });
-  // 之前硬编码 ' tokens' 单位会漏进 zh；现在走 generic.tokens 文案键。
+  // UX-R2 词表统一：zh 单位=「token」（与全站「个 token」一致），仍走 generic.tokens 键非硬编码。
   assert.equal(renderedZh.html.includes(" tokens<"), false);
-  assert.equal(renderedZh.html.includes("令牌"), true);
+  assert.equal(renderedZh.html.includes("token"), true);
 
   const renderedEn = renderAgentRunLive(baseRun, "web", { locale: "en-US" });
   assert.equal(renderedEn.html.includes("tokens<"), true);

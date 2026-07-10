@@ -5,6 +5,7 @@ import { eventTypes } from "@workhub/contracts";
 
 import {
   buildDeliverableChangeManifestFromOutputs,
+  hasNonEmptyOutputDeliverables,
   type BuildDeliverableChangeManifestInput
 } from "../deliverables/index.js";
 import type { LlmMessage, LlmStreamEvent } from "../providers/types.js";
@@ -55,17 +56,7 @@ function textFromBlocks(blocks: AgentAssistantBlock[]) {
 }
 
 async function hasDeliverables(workdir: string) {
-  const outputs = path.join(workdir, "outputs");
-  try {
-    const outputStat = await stat(outputs);
-    if (!outputStat.isDirectory()) {
-      return false;
-    }
-    const entries = await readdir(outputs);
-    return entries.length > 0;
-  } catch {
-    return false;
-  }
+  return hasNonEmptyOutputDeliverables(workdir);
 }
 
 function parseCny(value: string | undefined) {
@@ -591,7 +582,7 @@ export function parseReviewJson(text: string): { grade: 1 | 2 | 3 | 4 | 5; ratio
 // 若内容里出现一行字面的 </outputs>，它就能提前闭合围栏、伪造其它围栏来逃逸并冒充指令，击穿「仅 grade-5 自动合并」的信任边界。
 // 因此在装入围栏前，把内容里所有「已知评审围栏标签」的尖括号中和成全角书名号（‹ ›），使其无法发出真正的定界符。
 // 中和是确定性的、可测的（不需要随机串）：真正的定界符只会是 fenced() 自己写出的那一对。
-const FENCE_TAG_PATTERN = /<\/?(outputs|worker_claim|task|acceptance|changes|work_item_context|user_memory)\s*>/giu;
+const FENCE_TAG_PATTERN = /<\/?(outputs|worker_claim|task|acceptance|changes|work_item_context|user_memory|agent_private_memory)\s*>/giu;
 // 导出供 api 侧（agent-runner / user-memory）复用同一口径，避免两处中和逻辑漂移。
 export function neutralizeFenceTags(text: string): string {
   // 仅替换被识别为围栏标签的 token 的尖括号：< → ‹、> → ›。普通文本里的 < > 不受影响。

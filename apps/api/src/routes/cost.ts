@@ -51,7 +51,7 @@ export type CostRoutesDependencies = {
   updatePolicyWithAudit?: UpdateBudgetPolicyWithAudit;
 };
 
-const scopeKindSchema = z.enum(["workitem", "user", "team", "eval"]);
+const scopeKindSchema = z.enum(["workitem", "task", "objective", "user", "team", "eval"]);
 
 function settingsForActor(actor: AuthEnv["Variables"]["actor"]) {
   return {

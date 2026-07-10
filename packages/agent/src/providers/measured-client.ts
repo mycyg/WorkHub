@@ -62,6 +62,12 @@ function makeUsageRecord(route: ProviderRoute, actor: LlmActor | undefined, resp
   if (actor?.workItemId) {
     input.workItemId = actor.workItemId;
   }
+  if (actor?.taskPlanId) {
+    input.taskPlanId = actor.taskPlanId;
+  }
+  if (actor?.objectiveId) {
+    input.objectiveId = actor.objectiveId;
+  }
   if (actor?.userId) {
     input.userId = actor.userId;
   }

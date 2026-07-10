@@ -1,5 +1,7 @@
 export type BudgetScope =
   | { kind: "workitem"; workitemId: string }
+  | { kind: "task"; taskPlanId: string }
+  | { kind: "objective"; objectiveId: string }
   | { kind: "user"; userId: string }
   | { kind: "team"; teamId: string }
   // 技能蒸馏(自我提升)用量自成 scope，与 eval 一样和团队生产预算隔离：findings[#164] curation 花费
@@ -18,7 +20,7 @@ export type RunBudget = {
 export type BudgetPolicy = {
   id: string;
   scopeKind: BudgetScope["kind"];
-  period: "run" | "day" | "month";
+  period: "run" | "day" | "month" | "total";
   maxTokens: number;
   maxCostCny: string;
   warningRatio: number;
@@ -34,7 +36,7 @@ export type BudgetUsage = {
   scope: BudgetScope;
   scopeLabel: string;
   policyId: string;
-  period: "run" | "day" | "month";
+  period: "run" | "day" | "month" | "total";
   periodStart: string;
   periodEnd: string;
   tokenIn: number;
@@ -49,13 +51,26 @@ export type BudgetUsage = {
   status: "ok" | "warning" | "critical" | "exhausted";
 };
 
+export type BudgetNoticeUsage = {
+  scopeLabel: string;
+  period: BudgetUsage["period"];
+  totalTokens: number;
+  maxTokens: number;
+  remainingTokens: number;
+  estimatedCostCny: string;
+  maxCostCny: string;
+  remainingCostCny: string;
+  status: BudgetUsage["status"];
+};
+
 export type BudgetNotice = {
   code: "budget_warning" | "budget_exhausted";
   severity: "info" | "warning" | "critical";
   message: string;
   scope: BudgetScope;
   usageRatio: number;
-  recommendedAction: "continue" | "downgrade_model" | "pause" | "ask_admin";
+  usage?: BudgetNoticeUsage;
+  recommendedAction: "continue" | "downgrade_model" | "pause" | "ask_admin" | "add_budget";
   options?: { id: string; label: string; actionHref: string }[];
   actionHref?: string;
 };
@@ -86,6 +101,8 @@ export function isSelfImprovementSource(source: UsageSource): boolean {
 export type UsageRecord = {
   runId?: string;
   workItemId?: string;
+  taskPlanId?: string;
+  objectiveId?: string;
   userId?: string;
   workspaceId?: string;
   provider: string;
@@ -109,6 +126,8 @@ export type CostLedgerEntry = {
   policyId?: string;
   runId?: string;
   workItemId?: string;
+  taskPlanId?: string;
+  objectiveId?: string;
   userId?: string;
   teamId?: string;
   scope: BudgetScope;

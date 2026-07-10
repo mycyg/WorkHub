@@ -11,7 +11,6 @@ export type CuuCopyKey =
   | "agentRun.workingTitle"
   | "agentRun.progressFallback"
   | "agentRun.thinkingStatus"
-  | "agentRun.toolCallStatus"
   | "agentRun.toolCallStatusGeneric"
   | "agentRun.toolResultStatus"
   | "agentRun.phase.think"
@@ -34,6 +33,7 @@ export type CuuCopyKey =
   | "proposal.changesSection"
   | "proposal.reviewTitle"
   | "proposal.mergeTitle"
+  | "proposal.mergeTitleNamed"
   | "proposal.mergeStatus"
   | "proposal.summarySection"
   | "proposal.summaryFallback"
@@ -43,13 +43,25 @@ export type CuuCopyKey =
   | "proposal.nextStepReviewed"
   | "proposal.nextStepMerged"
   | "proposal.nextStepRejected"
+  | "proposal.planNextStepOpened"
+  | "proposal.planNextStepReviewed"
   | "proposal.openReview"
+  | "proposal.openPlanReview"
   | "proposal.approveReview"
+  | "proposal.approvePlanReview"
+  | "proposal.approvePlanAndStart"
+  | "proposal.approvePlanHold"
+  | "proposal.startHeldPlan"
   | "proposal.requestChanges"
+  | "proposal.requestReplan"
   | "proposal.riskSection"
   | "proposal.rollbackAvailable"
   | "proposal.rollbackUnavailable"
   | "proposal.checksSection"
+  | "proposal.checkStatus.passed"
+  | "proposal.checkStatus.failed"
+  | "proposal.checkStatus.warning"
+  | "proposal.checkStatus.skipped"
   | "proposal.conflictTitle"
   | "proposal.conflictOpenProposal"
   | "proposal.conflictKeepCurrent"
@@ -66,12 +78,25 @@ export type CuuCopyKey =
   | "workItem.readyFallback"
   | "workItem.acceptanceSection"
   | "workItem.acceptanceFallback"
+  | "workItem.acceptanceStatus.open"
+  | "workItem.acceptanceStatus.met"
+  | "workItem.acceptanceStatus.unmet"
+  | "workItem.acceptanceStatus.waived"
   | "workItem.startedFallback"
   | "budget.scope.workitem"
+  | "budget.scope.task"
+  | "budget.scope.objective"
   | "budget.scope.user"
   | "budget.scope.team"
   | "budget.scope.curation"
   | "budget.scope.eval"
+  | "budget.scopeDesc.workitem"
+  | "budget.scopeDesc.task"
+  | "budget.scopeDesc.objective"
+  | "budget.scopeDesc.user"
+  | "budget.scopeDesc.team"
+  | "budget.scopeDesc.curation"
+  | "budget.scopeDesc.eval"
   | "budget.handle"
   | "budget.view"
   | "budget.exhaustedTitle"
@@ -83,6 +108,10 @@ export type CuuCopyKey =
   | "cost.input"
   | "cost.output"
   | "cost.remaining"
+  | "cost.status.ok"
+  | "cost.status.warning"
+  | "cost.status.critical"
+  | "cost.status.exhausted"
   | "cost.title"
   | "cost.notConnected"
   | "cost.usedToday"
@@ -111,6 +140,7 @@ export type CuuCopyKey =
   | "notice.prefix"
   | "action.reasonRequired"
   | "action.approved"
+  | "action.memoryConflictResolved"
   | "action.denied"
   | "action.evidenceFound"
   | "action.noEvidence"
@@ -215,7 +245,6 @@ const cuuCopy = {
     "agentRun.workingTitle": "Cuu 正在处理",
     "agentRun.progressFallback": "Cuu 正在整理执行进度。",
     "agentRun.thinkingStatus": "AI 正在整理材料，稍后给你下一步。",
-    "agentRun.toolCallStatus": "正在调用工具：{tool}",
     "agentRun.toolCallStatusGeneric": "正在调用工具。",
     "agentRun.toolResultStatus": "工具已返回，Cuu 正在整理下一步。",
     "agentRun.phase.think": "AI 正在整理材料",
@@ -238,23 +267,36 @@ const cuuCopy = {
     "proposal.changesSection": "这次改了什么",
     "proposal.reviewTitle": "Cuu 等你确认变更",
     "proposal.mergeTitle": "Cuu 等你合入变更",
+    "proposal.mergeTitleNamed": "「{title}」待合入",
     "proposal.mergeStatus": "有变更待合入",
     "proposal.summarySection": "总结",
-    "proposal.summaryFallback": "变更申请已生成。先看总结和改动，再决定是否采纳。",
+    "proposal.summaryFallback": "变更申请已生成。先看总结和改动，再决定是否合入。",
     "proposal.nextStepSection": "下一步",
     "proposal.nextStepOpenReview": "点「查看变更申请」会打开变更详情，里面有总结、改动和确认按钮。",
     "proposal.nextStepOpened": "先看总结和改动，再确认通过或打回修改。",
     "proposal.nextStepReviewed": "已确认通过，下一步合入交付物。",
     "proposal.nextStepMerged": "已合入正式版本。",
     "proposal.nextStepRejected": "已打回，Cuu 会带着反馈继续修。",
+    "proposal.planNextStepOpened": "先确认计划；不满意就打回重拆。",
+    "proposal.planNextStepReviewed": "计划已确认，可以开始执行，也可以先暂缓。",
     "proposal.openReview": "查看变更申请",
+    "proposal.openPlanReview": "查看计划提议",
     "proposal.approveReview": "确认通过",
+    "proposal.approvePlanReview": "确认计划",
+    "proposal.approvePlanAndStart": "批准并开始执行",
+    "proposal.approvePlanHold": "批准但先不跑",
+    "proposal.startHeldPlan": "开始执行计划",
     "proposal.requestChanges": "打回修改",
+    "proposal.requestReplan": "打回重拆",
     "proposal.riskSection": "风险与回滚",
-    "proposal.rollbackAvailable": "可回滚",
-    "proposal.rollbackUnavailable": "不可完整回滚",
+    "proposal.rollbackAvailable": "留有回滚快照（需人工恢复）",
+    "proposal.rollbackUnavailable": "无回滚快照",
     "proposal.checksSection": "检查结果",
-    "proposal.conflictTitle": "变更撞车了",
+    "proposal.checkStatus.passed": "通过",
+    "proposal.checkStatus.failed": "未通过",
+    "proposal.checkStatus.warning": "有提醒",
+    "proposal.checkStatus.skipped": "已跳过",
+    "proposal.conflictTitle": "和别人的改动冲突了",
     "proposal.conflictOpenProposal": "查看变更申请",
     "proposal.conflictKeepCurrent": "保留正式版",
     "proposal.conflictAcceptIncoming": "采纳这次版本",
@@ -270,12 +312,25 @@ const cuuCopy = {
     "workItem.readyFallback": "Cuu 已准备继续处理。",
     "workItem.acceptanceSection": "验收",
     "workItem.acceptanceFallback": "验收项 {index}",
+    "workItem.acceptanceStatus.open": "待处理",
+    "workItem.acceptanceStatus.met": "已满足",
+    "workItem.acceptanceStatus.unmet": "未满足",
+    "workItem.acceptanceStatus.waived": "已豁免",
     "workItem.startedFallback": "Cuu 开始处理这件事了。",
     "budget.scope.workitem": "任务预算",
+    "budget.scope.task": "军团计划预算",
+    "budget.scope.objective": "目标预算",
     "budget.scope.user": "个人预算",
     "budget.scope.team": "团队预算",
     "budget.scope.curation": "蒸馏预算",
     "budget.scope.eval": "评测预算",
+    "budget.scopeDesc.workitem": "当前任务",
+    "budget.scopeDesc.task": "当前任务计划",
+    "budget.scopeDesc.objective": "当前目标",
+    "budget.scopeDesc.user": "当前用户",
+    "budget.scopeDesc.team": "当前团队",
+    "budget.scopeDesc.curation": "团队蒸馏范围",
+    "budget.scopeDesc.eval": "评测范围",
     "budget.handle": "处理预算",
     "budget.view": "查看预算",
     "budget.exhaustedTitle": "预算用完了",
@@ -287,10 +342,14 @@ const cuuCopy = {
     "cost.input": "输入",
     "cost.output": "输出",
     "cost.remaining": "还剩 ¥{cost}",
+    "cost.status.ok": "正常",
+    "cost.status.warning": "接近上限",
+    "cost.status.critical": "严重",
+    "cost.status.exhausted": "已用尽",
     "cost.title": "AI 成本与预算",
     "cost.notConnected": "成本数据还没有接入。",
     "cost.usedToday": "今天已使用 ¥{cost}。",
-    "replay.summarySection": "Replay 摘要",
+    "replay.summarySection": "回放摘要",
     "replay.costSection": "成本",
     "replay.title": "执行回放已就绪",
     "replay.readyFallback": "Cuu 整理好了这次执行轨迹。",
@@ -315,6 +374,7 @@ const cuuCopy = {
     "notice.prefix": "Cuu：{title}",
     "action.reasonRequired": "打回需要先选择一个原因。",
     "action.approved": "Cuu 已收到：这步已批准。",
+    "action.memoryConflictResolved": "偏好冲突已处理，Cuu 记好了～",
     "action.denied": "Cuu 已带着原因打回，会继续改。",
     "action.evidenceFound": "Cuu 找到了一组项目证据。",
     "action.noEvidence": "这张证据卡里没有可绑定的证据。",
@@ -418,7 +478,6 @@ const cuuCopy = {
     "agentRun.workingTitle": "Cuu is working",
     "agentRun.progressFallback": "Cuu is organizing the run progress.",
     "agentRun.thinkingStatus": "AI is organizing the materials and preparing the next step.",
-    "agentRun.toolCallStatus": "Calling tool: {tool}",
     "agentRun.toolCallStatusGeneric": "Calling a tool.",
     "agentRun.toolResultStatus": "Tool result received; Cuu is organizing the next step.",
     "agentRun.phase.think": "AI is organizing materials",
@@ -441,6 +500,7 @@ const cuuCopy = {
     "proposal.changesSection": "What changed",
     "proposal.reviewTitle": "Cuu has a change for review",
     "proposal.mergeTitle": "Cuu is ready to merge the change",
+    "proposal.mergeTitleNamed": "\"{title}\" is ready to merge",
     "proposal.mergeStatus": "Change ready to merge",
     "proposal.summarySection": "Summary",
     "proposal.summaryFallback": "The change request is ready. Review the summary and changes before deciding.",
@@ -450,13 +510,25 @@ const cuuCopy = {
     "proposal.nextStepReviewed": "Approved. Merge the deliverable next.",
     "proposal.nextStepMerged": "Merged into the official version.",
     "proposal.nextStepRejected": "Sent back. Cuu will revise with your feedback.",
+    "proposal.planNextStepOpened": "Review the plan; request a replan if it needs changes.",
+    "proposal.planNextStepReviewed": "Plan approved. Start it now or hold it for later.",
     "proposal.openReview": "View change request",
+    "proposal.openPlanReview": "View plan proposal",
     "proposal.approveReview": "Mark approved",
+    "proposal.approvePlanReview": "Approve plan",
+    "proposal.approvePlanAndStart": "Approve and start",
+    "proposal.approvePlanHold": "Approve but hold",
+    "proposal.startHeldPlan": "Start plan",
     "proposal.requestChanges": "Request changes",
+    "proposal.requestReplan": "Request replan",
     "proposal.riskSection": "Risk and rollback",
-    "proposal.rollbackAvailable": "Rollback available",
-    "proposal.rollbackUnavailable": "Not fully rollbackable",
+    "proposal.rollbackAvailable": "Rollback snapshot kept (manual restore)",
+    "proposal.rollbackUnavailable": "No rollback snapshot",
     "proposal.checksSection": "Check results",
+    "proposal.checkStatus.passed": "Passed",
+    "proposal.checkStatus.failed": "Failed",
+    "proposal.checkStatus.warning": "Warning",
+    "proposal.checkStatus.skipped": "Skipped",
     "proposal.conflictTitle": "Change conflict",
     "proposal.conflictOpenProposal": "View change request",
     "proposal.conflictKeepCurrent": "Keep current",
@@ -473,12 +545,25 @@ const cuuCopy = {
     "workItem.readyFallback": "Cuu is ready to continue.",
     "workItem.acceptanceSection": "Acceptance",
     "workItem.acceptanceFallback": "Acceptance item {index}",
+    "workItem.acceptanceStatus.open": "Pending",
+    "workItem.acceptanceStatus.met": "Met",
+    "workItem.acceptanceStatus.unmet": "Not met",
+    "workItem.acceptanceStatus.waived": "Waived",
     "workItem.startedFallback": "Cuu started working on this task.",
     "budget.scope.workitem": "Task budget",
+    "budget.scope.task": "Plan budget",
+    "budget.scope.objective": "Objective budget",
     "budget.scope.user": "Personal budget",
     "budget.scope.team": "Team budget",
     "budget.scope.curation": "Curation budget",
     "budget.scope.eval": "Eval budget",
+    "budget.scopeDesc.workitem": "Current task",
+    "budget.scopeDesc.task": "Current task plan",
+    "budget.scopeDesc.objective": "Current objective",
+    "budget.scopeDesc.user": "Current user",
+    "budget.scopeDesc.team": "Current team",
+    "budget.scopeDesc.curation": "Team curation scope",
+    "budget.scopeDesc.eval": "Evaluation scope",
     "budget.handle": "Handle budget",
     "budget.view": "View budget",
     "budget.exhaustedTitle": "Budget exhausted",
@@ -490,6 +575,10 @@ const cuuCopy = {
     "cost.input": "Input",
     "cost.output": "Output",
     "cost.remaining": "¥{cost} remaining",
+    "cost.status.ok": "OK",
+    "cost.status.warning": "Warning",
+    "cost.status.critical": "Critical",
+    "cost.status.exhausted": "Exhausted",
     "cost.title": "AI cost and budget",
     "cost.notConnected": "Cost data is not connected yet.",
     "cost.usedToday": "Used ¥{cost} today.",
@@ -518,6 +607,7 @@ const cuuCopy = {
     "notice.prefix": "Cuu: {title}",
     "action.reasonRequired": "Choose a reason before sending it back.",
     "action.approved": "Cuu got it: this step is approved.",
+    "action.memoryConflictResolved": "Memory conflict resolved — Cuu noted it.",
     "action.denied": "Sent back; Cuu will revise.",
     "action.evidenceFound": "Cuu found a set of project evidence.",
     "action.noEvidence": "This evidence card has nothing bindable yet.",

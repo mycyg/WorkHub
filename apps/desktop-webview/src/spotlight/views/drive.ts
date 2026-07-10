@@ -271,10 +271,10 @@ export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean, ap
     ? `<div class="wh-spot-card-actions"><label class="wh-spot-act wh-spot-act--primary ds-pressable wh-spot-upload-label"><span data-drive-upload-label>${zh ? "＋ 上传文件" : "＋ Upload file"}</span><input class="wh-spot-file-input" type="file" data-drive-upload-picker /></label></div>`
     : "";
   const list = items.length
-    ? `<div class="wh-spot-list ds-stagger">${visibleDriveItems(items, vm.selected_item_id).map((i) => itemRow(i, zh, canManage, i.id === vm.selected_item_id, apiBaseUrl)).join("")}</div>`
+    ? `<div class="wh-spot-list ds-stagger">${visibleDriveItems(items, vm.selected_item_id).map((i) => itemRow(i, zh, canManage, i.id === vm.selected_item_id, apiBaseUrl)).join("")}</div>${items.length > 40 ? `<p class="wh-spot-card-desc" data-drive-list-overflow="${items.length - 40}">${zh ? `只显示前 40 项（共 ${items.length} 项），全部文件去网页版网盘看。` : `Showing the first 40 of ${items.length} items — open the web drive for the full list.`}</p>` : ""}`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "这个项目还没有文件" : "No files in this project yet"}</p>`;
   const deletedBlock = deleted.length
-    ? `<div class="wh-spot-drive-section"><p class="wh-spot-reasons-q">${zh ? "回收站" : "Recently deleted"}</p><div class="wh-spot-list">${deleted.slice(0, 12).map((i) => deletedRow(i, zh)).join("")}</div></div>`
+    ? `<div class="wh-spot-drive-section"><p class="wh-spot-reasons-q">${zh ? "回收站" : "Recently deleted"}</p><div class="wh-spot-list">${deleted.slice(0, 12).map((i) => deletedRow(i, zh)).join("")}</div>${deleted.length > 12 ? `<p class="wh-spot-card-desc">${zh ? `还有 ${deleted.length - 12} 项，去网页版回收站细看。` : `${deleted.length - 12} more in the web recycle bin.`}</p>` : ""}</div>`
     : "";
   return `<div class="wh-spot-know">${projectChips}${summary}${uploadBtn}${list}${deletedBlock}</div>`;
 }
@@ -283,8 +283,8 @@ export function driveNoProjectsEmptyHtml(zh: boolean): string {
   return `<div class="wh-spot-empty">
     <div class="wh-spot-empty-face">📁</div>
     <h3 class="wh-spot-empty-title">${zh ? "还没有项目" : "No projects"}</h3>
-    <p class="wh-spot-empty-sub">${zh ? "先交给 Cuu 一个任务，它会自动建立项目和网盘。" : "Dispatch a task and Cuu will create the project and drive."}</p>
-    <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-drive-open-intake="true">${zh ? "＋ 新任务 / 交给 AI" : "＋ New task / Dispatch to AI"}</button>
+    <p class="wh-spot-empty-sub">${zh ? "先交给 Cuu 一个任务，它会自动建立项目和网盘。" : "Create a task and Cuu will create the project and drive."}</p>
+    <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-drive-open-intake="true">${zh ? "＋ 新任务 / 交给 AI" : "＋ New task / Ask AI"}</button>
   </div>`;
 }
 

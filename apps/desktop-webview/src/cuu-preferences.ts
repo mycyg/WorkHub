@@ -41,21 +41,24 @@ const petScaleOptions = [75, 100, 125, 150] as const satisfies readonly CuuPetSc
 const petOpacityOptions = [60, 80, 100] as const satisfies readonly CuuPetOpacityPercent[];
 
 export const desktopCuuPreferenceCss = [
-  ".wh-cuu-pref-button{position:fixed;right:18px;top:78px;z-index:40;border:1px solid rgba(255,255,255,.28);border-radius:12px;background:transparent;backdrop-filter:blur(50px) saturate(220%) contrast(108%);-webkit-backdrop-filter:blur(50px) saturate(220%) contrast(108%);box-shadow:0 16px 42px -28px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.30);padding:8px 10px;color:var(--wh-app-blue);font:850 12px/1 \"Aptos\",\"Segoe UI\",sans-serif;cursor:pointer}",
-  ".wh-cuu-pref-button[aria-expanded=true]{background:transparent;border-color:rgba(10,132,255,.32);box-shadow:0 16px 42px -28px rgba(0,0,0,.38),inset 0 0 0 1px rgba(10,132,255,.18),inset 0 1px 0 rgba(255,255,255,.30)}",
-  ".wh-cuu-preferences{position:fixed;right:18px;top:122px;z-index:40;width:min(340px,calc(100vw - 36px));display:grid;gap:10px;border:1px solid rgba(255,255,255,.75);border-radius:14px;background:rgba(255,255,255,.55);backdrop-filter:blur(34px) saturate(180%);-webkit-backdrop-filter:blur(34px) saturate(180%);box-shadow:0 30px 66px -28px rgba(60,60,67,.34),inset 0 1px 0 rgba(255,255,255,.8);padding:12px;color:var(--wh-app-ink);font:700 12px/1.25 \"Aptos\",\"Segoe UI\",sans-serif}",
+  // R9-BLOCK-7.163（玻璃红线）：透明 macOS Tauri 窗里 CSS backdrop-filter 是空操作——
+  // transparent 底 + backdrop-filter 的「玻璃」= 隐形按钮。浮在窗上的偏好按钮/面板
+  // 改 .92 磨砂白实底（同菜单修复口径），毛玻璃只能靠原生 vibrancy，不靠 CSS。
+  ".wh-cuu-pref-button{position:fixed;right:18px;top:78px;z-index:40;border:1px solid rgba(60,60,67,.16);border-radius:12px;background:rgba(255,255,255,.92);box-shadow:0 16px 42px -28px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.9);padding:8px 10px;color:var(--wh-app-blue);font:850 12px/1 \"Aptos\",\"Segoe UI\",sans-serif;cursor:pointer}",
+  ".wh-cuu-pref-button[aria-expanded=true]{background:rgba(255,255,255,.96);border-color:rgba(10,132,255,.32);box-shadow:0 16px 42px -28px rgba(0,0,0,.38),inset 0 0 0 1px rgba(10,132,255,.18),inset 0 1px 0 rgba(255,255,255,.9)}",
+  ".wh-cuu-preferences{position:fixed;right:18px;top:122px;z-index:40;width:min(340px,calc(100vw - 36px));display:grid;gap:10px;border:1px solid rgba(60,60,67,.14);border-radius:14px;background:rgba(255,255,255,.92);box-shadow:0 30px 66px -28px rgba(60,60,67,.34),inset 0 1px 0 rgba(255,255,255,.9);padding:12px;color:var(--wh-app-ink);font:700 12px/1.25 \"Aptos\",\"Segoe UI\",sans-serif}",
   ".wh-cuu-preferences[hidden]{display:none}.wh-cuu-preferences strong{font-size:13px}.wh-cuu-pref-row{display:grid;gap:6px}.wh-cuu-pref-options{display:flex;gap:6px;flex-wrap:wrap}",
-  ".wh-cuu-pref-options button{border:1px solid rgba(255,255,255,.24);border-radius:10px;background:transparent;color:var(--wh-app-ink);padding:7px 9px;font-weight:800;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.20)}",
+  ".wh-cuu-pref-options button{border:1px solid rgba(60,60,67,.16);border-radius:10px;background:transparent;color:var(--wh-app-ink);padding:7px 9px;font-weight:800;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.20)}",
   ".wh-cuu-pref-options button[aria-pressed=true]{border-color:rgba(53,92,255,.32);background:transparent;color:var(--wh-app-blue);box-shadow:inset 0 0 0 1px rgba(53,92,255,.16),inset 3px 0 0 var(--wh-app-blue)}",
   ".wh-cuu-pref-models{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}",
-  ".wh-cuu-pref-model{display:grid;gap:4px;min-height:54px;border:1px solid rgba(255,255,255,.24);border-radius:10px;background:transparent;color:var(--wh-app-ink);padding:8px;text-align:left;font:800 11px/1.15 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.20)}",
+  ".wh-cuu-pref-model{display:grid;gap:4px;min-height:54px;border:1px solid rgba(60,60,67,.16);border-radius:10px;background:transparent;color:var(--wh-app-ink);padding:8px;text-align:left;font:800 11px/1.15 \"Aptos\",\"Segoe UI\",\"Microsoft YaHei\",\"PingFang SC\",sans-serif;cursor:pointer;box-shadow:inset 0 1px 0 rgba(255,255,255,.20)}",
   ".wh-cuu-pref-model[aria-pressed=true]{border-color:rgba(53,92,255,.35);background:transparent;color:var(--wh-app-blue);box-shadow:inset 3px 0 0 var(--wh-app-blue),inset 0 0 0 1px rgba(53,92,255,.16)}",
   ".wh-cuu-pref-model[disabled]{cursor:not-allowed;opacity:.58;background:transparent;color:#667085}",
   ".wh-cuu-pref-model-name,.wh-cuu-pref-model-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-cuu-pref-model-status{font-size:10px;color:#667085}",
   ".wh-cuu-pref-toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--wh-app-line);padding-top:8px}",
   ".wh-cuu-pref-toggle label{display:flex;align-items:center;gap:8px}.wh-cuu-pref-toggle input{width:16px;height:16px;accent-color:var(--wh-app-blue)}",
-  ".wh-cuu-pref-queue{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--wh-app-line);padding-top:8px}.wh-cuu-pref-queue input{width:64px;border:1px solid rgba(255,255,255,.24);border-radius:10px;background:transparent;padding:6px 8px;font:800 12px/1 \"Aptos\",\"Segoe UI\",sans-serif;color:var(--wh-app-ink);box-shadow:inset 0 1px 0 rgba(255,255,255,.20)}"
+  ".wh-cuu-pref-queue{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--wh-app-line);padding-top:8px}.wh-cuu-pref-queue input{width:64px;border:1px solid rgba(60,60,67,.16);border-radius:10px;background:transparent;padding:6px 8px;font:800 12px/1 \"Aptos\",\"Segoe UI\",sans-serif;color:var(--wh-app-ink);box-shadow:inset 0 1px 0 rgba(255,255,255,.20)}"
 ].join("");
 
 export const desktopPetSettingsCss = [

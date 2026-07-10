@@ -7,7 +7,7 @@ import {
   type HomeRouteComponentProps,
   type WorkHubLocale
 } from "@workhub/ui/gold-path";
-import { uiCount, uiT } from "@workhub/ui";
+import { structuredFieldLabel, uiCount, uiT } from "@workhub/ui";
 import { safeHref } from "@workhub/web-runtime";
 import type { ProposalConflict, ProposalConflictOption } from "@workhub/contracts";
 
@@ -140,7 +140,7 @@ type StructuredFieldOperation = {
   value: unknown;
 };
 
-type ProposalMutationEditorProps = {
+export type ProposalMutationEditorProps = {
   locale: WorkHubLocale;
   conflictId: string;
   field: string;
@@ -259,11 +259,12 @@ function proposalMutationEditorProps(conflicts: ProposalConflict[], locale: Work
   return undefined;
 }
 
-function ProposalMutationEditor(input: ProposalMutationEditorProps) {
+export function ProposalMutationEditor(input: ProposalMutationEditorProps) {
   const [customValue, setCustomValue] = useState("");
   const title = uiT(input.locale, "proposal.fieldEditorTitle");
   const body = uiT(input.locale, "proposal.fieldEditorBody");
   const fieldLabel = uiT(input.locale, "proposal.fieldEditorField");
+  const readableField = structuredFieldLabel(input.locale, input.field);
   const placeholder = uiT(input.locale, "proposal.fieldEditorCustomPlaceholder");
   return createElement(
     "details",
@@ -289,7 +290,7 @@ function ProposalMutationEditor(input: ProposalMutationEditorProps) {
           "data-r4-proposal-react-field-row": input.field,
           "data-proposal-structured-field-editor-row": input.field
         },
-        createElement("strong", null, `${fieldLabel}: ${input.field}`),
+        createElement("strong", null, `${fieldLabel}: ${readableField}`),
         createElement(
           "div",
           { className: "wh-field-editor-actions" },
@@ -580,7 +581,31 @@ function ProposalLineEditor(input: ProposalLineEditorProps) {
             tabIndex: active ? 0 : -1,
             "data-line-editor-tab": file.targetKey,
             "data-line-editor-panel-id": file.panelId,
-            onClick: () => setActivePanelId(file.panelId)
+            onClick: () => setActivePanelId(file.panelId),
+            // R10-P2b（无障碍）：tablist 键盘模型——方向键在标签间移动激活+焦点，Home/End 跳两端。
+            onKeyDown: (event: { key: string; preventDefault: () => void; currentTarget: { closest: (selector: string) => Element | null } }) => {
+              const targetIndex = event.key === "ArrowRight"
+                ? (index + 1) % input.files.length
+                : event.key === "ArrowLeft"
+                  ? (index - 1 + input.files.length) % input.files.length
+                  : event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? input.files.length - 1
+                      : -1;
+              if (targetIndex < 0) {
+                return;
+              }
+              event.preventDefault();
+              const targetFile = input.files[targetIndex];
+              if (!targetFile) {
+                return;
+              }
+              setActivePanelId(targetFile.panelId);
+              const tablist = event.currentTarget.closest("[role=\"tablist\"]");
+              const nextTab = tablist?.querySelector<HTMLButtonElement>(`[data-line-editor-panel-id="${targetFile.panelId}"]`);
+              nextTab?.focus();
+            }
           },
           file.targetLabel
         );

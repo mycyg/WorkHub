@@ -1,8 +1,27 @@
-import { attentionHomeVmSchema, type AttentionHomeVM, type WorkHubLocale } from "@workhub/contracts";
+import { attentionHomeVmSchema, type AttentionHomeVM, type AttentionItem, type WorkHubLocale } from "@workhub/contracts";
 
 import type { AgentRunQueueRecord } from "../workers/agent-runner.js";
 import { pageT } from "./i18n.js";
 import { parseOutputContract } from "./output-contract.js";
+
+const decisionKindRank: Partial<Record<AttentionItem["kind"], number>> = {
+  escalation: 0,
+  budget: 1,
+  sync_conflict: 2,
+  approval: 3,
+  plan_review: 4,
+  proposal_review: 5
+};
+
+function sortDecisionQueue(queue: AttentionHomeVM["queue"]): AttentionHomeVM["queue"] {
+  return queue
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const rankDelta = (decisionKindRank[left.item.kind] ?? 99) - (decisionKindRank[right.item.kind] ?? 99);
+      return rankDelta || left.index - right.index;
+    })
+    .map(({ item }) => item);
+}
 
 function toBackgroundRun(
   run: AgentRunQueueRecord,
@@ -37,7 +56,7 @@ export function buildAttentionHomePage(input: {
   worklog?: AttentionHomeVM["worklog"];
 } = {}): AttentionHomeVM {
   const locale = input.locale ?? "zh-CN";
-  const queue = input.queue ?? [];
+  const queue = sortDecisionQueue(input.queue ?? []);
   const background_runs = (input.backgroundRuns ?? [])
     .map((run) => toBackgroundRun(run, locale))
     .filter((run): run is AttentionHomeVM["background_runs"][number] => Boolean(run));

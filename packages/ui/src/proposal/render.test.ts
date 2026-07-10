@@ -6,6 +6,18 @@ import type { ProposalConflict } from "@workhub/contracts";
 
 import { renderProposalDetail } from "./render.js";
 
+function visibleText(html: string) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/giu, " ")
+    .replace(/<style[\s\S]*?<\/style>/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/&quot;/gu, "\"")
+    .replace(/&#39;/gu, "'")
+    .replace(/&amp;/gu, "&")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 test("proposal renderer keeps the change package shape visible", () => {
   const vm = createP05GoldPathFixture().proposalDetail;
   const rendered = renderProposalDetail(vm, "web");
@@ -37,6 +49,15 @@ test("proposal renderer replaces model self-narration titles and shows the summa
   assert.equal(rendered.html.includes("data-proposal-summary=\"true\""), true);
   assert.equal(rendered.html.includes("<strong>总结</strong>"), true);
   assert.equal(rendered.html.includes("让我做一个人话总结"), false);
+});
+
+test("R9.7 proposal renderer hides task-plan internals from persisted summaries", () => {
+  const vm = structuredClone(createP05GoldPathFixture().proposalDetail);
+  vm.manifest.summary_md = "先生成任务计划，等待人工审阅后再派发。WorkHub Meta-Planner judge confidence high.";
+
+  const rendered = renderProposalDetail(vm, "web");
+
+  assert.doesNotMatch(rendered.html, /派发|dispatch|Meta-Planner|judge|confidence/iu);
 });
 
 test("proposal renderer stays non-kanban and non-git while exposing deliverable kinds", () => {
@@ -232,6 +253,8 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
 
   const rendered = renderProposalDetail(vm, "web", { conflicts: [conflict] });
   const english = renderProposalDetail(vm, "web", { locale: "en-US", conflicts: [conflict] });
+  const visible = visibleText(rendered.html);
+  const englishVisible = visibleText(english.html);
 
   assert.equal(rendered.conflictCount, 1);
   assert.equal(rendered.html.includes("data-proposal-conflicts=\"1\""), true);
@@ -300,9 +323,10 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(rendered.html.includes("原始值: 旧标题"), true);
   assert.equal(rendered.html.includes("写入: 新标题"), true);
   assert.equal(rendered.html.includes("写入: 2 项: 原始任务项, 新增风险项"), true);
-  assert.equal(rendered.html.includes("将写入字段: title, due_at, extra_field"), true);
-  assert.equal(rendered.html.includes("缺少字段: acceptance_items"), true);
-  assert.equal(rendered.html.includes("额外字段: extra_field"), true);
+  // 旧断言错在把 raw schema field identifier 当成用户可见契约；R9 红线要求可见文案显示产品化字段标签。
+  assert.equal(visible.includes("将写入字段: 标题, 截止时间, Extra Field"), true);
+  assert.equal(visible.includes("缺少字段: 验收项"), true);
+  assert.equal(visible.includes("额外字段: Extra Field"), true);
   assert.equal(rendered.html.includes("需要复核"), true);
   assert.equal(rendered.html.includes("-正式版已有结论。"), true);
   assert.equal(rendered.html.includes("+融合后的正文"), true);
@@ -317,7 +341,7 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Use this version"), true);
   assert.equal(english.html.includes("Use AI fusion draft"), true);
   assert.equal(english.html.includes("Preview before apply"), true);
-  assert.equal(english.html.includes("Hunks: 1"), true);
+  assert.equal(english.html.includes("Changes: 1"), true);
   assert.equal(english.html.includes("Lines: 2"), true);
   assert.equal(english.html.includes("Text merge check"), true);
   assert.equal(english.html.includes("Needs line review"), true);
@@ -332,9 +356,9 @@ test("proposal renderer exposes option-first conflict cards with merge payloads"
   assert.equal(english.html.includes("Base: 旧标题"), true);
   assert.equal(english.html.includes("After: 新标题"), true);
   assert.equal(english.html.includes("After: 2 items: 原始任务项, 新增风险项"), true);
-  assert.equal(english.html.includes("Fields to write: title, due_at, extra_field"), true);
-  assert.equal(english.html.includes("Missing fields: acceptance_items"), true);
-  assert.equal(english.html.includes("Extra fields: extra_field"), true);
+  assert.equal(englishVisible.includes("Fields to write: Title, Due date, Extra Field"), true);
+  assert.equal(englishVisible.includes("Missing fields: Acceptance items"), true);
+  assert.equal(englishVisible.includes("Extra fields: Extra Field"), true);
   assert.equal(english.html.includes("Review required"), true);
 });
 
@@ -428,6 +452,10 @@ test("proposal renderer exposes a folded bulk conflict review only for multiple 
   assert.equal(rendered.html.includes("data-workbench-target-key=\"drive_item:docs/summary.md\""), true);
   assert.equal(rendered.html.includes(`data-workbench-target-key=\"work_item:${vm.work_item_id}:task_items\"`), true);
   assert.equal(rendered.html.includes("data-workbench-target-kind=\"structured_record\""), true);
+  assert.equal(rendered.html.includes("<span class=\"wh-pill\">text_doc</span>"), false);
+  assert.equal(rendered.html.includes("<span class=\"wh-pill\">structured_record</span>"), false);
+  assert.equal(rendered.html.includes("<span class=\"wh-pill\">文档</span>"), true);
+  assert.equal(rendered.html.includes("<span class=\"wh-pill\">结构化记录</span>"), true);
   assert.equal(rendered.html.includes("data-workbench-recommended-option=\"keep_current\""), true);
   assert.equal(rendered.html.includes("data-workbench-recommended-option=\"accept_incoming\""), true);
   assert.equal(rendered.html.includes("批量冲突检查"), true);
@@ -452,6 +480,8 @@ test("proposal renderer exposes a folded bulk conflict review only for multiple 
   assert.equal(english.html.includes("One thing first by default"), true);
   assert.equal(english.html.includes("Keep all current"), true);
   assert.equal(english.html.includes("Use all incoming"), true);
+  assert.equal(english.html.includes("<span class=\"wh-pill\">Text document</span>"), true);
+  assert.equal(english.html.includes("<span class=\"wh-pill\">Structured record</span>"), true);
 });
 
 test("findings: conflicts whose ids collapse to the same safeId still get distinct line-editor panel ids", () => {
@@ -755,6 +785,8 @@ test("proposal renderer exposes a folded field editor for ready structured patch
 
   const rendered = renderProposalDetail(vm, "web", { conflicts: [conflict] });
   const english = renderProposalDetail(vm, "web", { locale: "en-US", conflicts: [conflict] });
+  const visible = visibleText(rendered.html);
+  const englishVisible = visibleText(english.html);
 
   assert.equal(rendered.html.includes("data-proposal-structured-field-editor=\"true\""), true);
   assert.equal(rendered.html.includes("data-proposal-structured-field-editor-count=\"3\""), true);
@@ -780,6 +812,13 @@ test("proposal renderer exposes a folded field editor for ready structured patch
   assert.equal(rendered.html.includes("采纳此项"), true);
   assert.equal(rendered.html.includes("保留当前项"), true);
   assert.equal(rendered.html.includes("高级字段编辑"), true);
+  assert.equal(visible.includes("将写入字段: 标题, 优先级, 任务项"), true);
+  assert.equal(visible.includes("字段: 标题"), true);
+  assert.equal(visible.includes("字段: 优先级"), true);
+  assert.equal(visible.includes("字段: 任务项"), true);
+  assert.equal(visible.includes("字段: title"), false);
+  assert.equal(visible.includes("字段: priority"), false);
+  assert.equal(visible.includes("字段: task_items"), false);
   assert.equal(rendered.html.includes("只采用此字段"), true);
   assert.equal(rendered.html.includes("保留当前字段"), true);
   assert.equal(rendered.html.includes("使用自定义值"), true);
@@ -796,6 +835,13 @@ test("proposal renderer exposes a folded field editor for ready structured patch
   assert.equal(english.html.includes("Use this item"), true);
   assert.equal(english.html.includes("Keep current item"), true);
   assert.equal(english.html.includes("Advanced field editor"), true);
+  assert.equal(englishVisible.includes("Fields to write: Title, Priority, Task items"), true);
+  assert.equal(englishVisible.includes("Field: Title"), true);
+  assert.equal(englishVisible.includes("Field: Priority"), true);
+  assert.equal(englishVisible.includes("Field: Task items"), true);
+  assert.equal(englishVisible.includes("Field: title"), false);
+  assert.equal(englishVisible.includes("Field: priority"), false);
+  assert.equal(englishVisible.includes("Field: task_items"), false);
   assert.equal(english.html.includes("Use this field only"), true);
   assert.equal(english.html.includes("Keep current field"), true);
   assert.equal(english.html.includes("Use custom value"), true);

@@ -50,9 +50,15 @@ test("decision deck maps kinds to glass tones and localizes tags (en)", () => {
   const perm = renderDecisionDeckHtml({ items: [item({ kind: "budget" })], locale: "en-US" });
   assert.match(perm, /wh-deck-tag--permission/u);
   assert.match(perm, /Allow\?/u);
+  const plan = renderDecisionDeckHtml({ items: [item({ kind: "plan_review" })], locale: "zh-CN" });
+  assert.match(plan, /wh-deck-tag--approval/u);
+  assert.match(plan, /计划审阅/u);
+  assert.doesNotMatch(plan, /plan_review|Plan Review/u);
   const handoff = renderDecisionDeckHtml({ items: [item({ kind: "escalation" })], locale: "en-US" });
   assert.match(handoff, /wh-deck-tag--handoff/u);
-  assert.match(handoff, /Assign/u);
+  // R9.7: the old "Assign" assertion was wrong because escalation actions are retry/PM-mode/cancel,
+  // not a user delegation flow.
+  assert.match(handoff, /Needs action/u);
   assert.ok(decisionDeckCss.includes(".wh-deck-card{"));
 });
 

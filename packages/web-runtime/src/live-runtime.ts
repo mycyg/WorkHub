@@ -28,6 +28,8 @@ export type WebLiveRuntimeOptions = {
   onRefresh: (eventType: string, targetKey: string) => Promise<WebLiveRefreshOutcome>;
   onRefreshNotice: (outcome: WebLiveRefreshOutcome, eventType: string, targetKey: string) => void;
   onFatal: (error: unknown) => void;
+  // R5（慢网感知）：SSE 连错达阈值主动放弃重连时通知外壳——此前只写 metric，用户对「实时更新已断」零感知。
+  onGiveUp?: ((streamKey: string) => void) | undefined;
   EventSourceCtor?: WebLiveEventSourceConstructor | undefined;
   debounceMs?: number | undefined;
   readCursor?: (() => string) | undefined;
@@ -234,6 +236,7 @@ export function createWebLiveRuntime(options: WebLiveRuntimeOptions) {
         // 主动关闭(停止浏览器对死流的无限自动重连)，并记一个可观测标志供外壳渲染「实时更新已断·刷新重连」。
         setMetric("r4LiveStreamGaveUp", target.key);
         closeLiveEventSource(target.url);
+        options.onGiveUp?.(target.key);
       }
     });
     for (const eventType of options.eventTypes) {

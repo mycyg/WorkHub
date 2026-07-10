@@ -5,6 +5,7 @@ import { settings } from "@workhub/config";
 import { decideRunBudget, type BudgetPolicyStore, type CostLedgerStore } from "@workhub/cost";
 import {
   normalizeWorkHubLocale,
+  type AgentArmyDashboardVM,
   type ApprovalCenterVM,
   type AttentionHomeVM,
   type CalendarPageVM,
@@ -23,11 +24,12 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
-import { createTeamSkillRepository, getSharedDatabaseClient, type TeamSkillRepository } from "@workhub/db";
+import { createObjectiveRepository, createTaskPlanRepository, createTeamSkillRepository, getSharedDatabaseClient, type ObjectiveRepository, type TeamSkillRepository } from "@workhub/db";
 
 import { isUuidParam } from "./uuid-param.js";
 
 import { buildAttentionHomePage } from "../pages/attention.js";
+import { buildAgentArmyDashboardPage } from "../pages/agent-army.js";
 import { getDefaultAiWorklogMetricsService, type AiWorklogMetricsService } from "../services/ai-worklog-metrics.js";
 import { buildCostDashboardPage } from "../pages/cost.js";
 import { buildTeamSkillsPage } from "../pages/team-skills.js";
@@ -60,8 +62,18 @@ import {
 } from "../services/project-health-pages.js";
 import {
   createApprovalService,
+  toPermissionPolicyResponse,
   type ApprovalService
 } from "../services/approvals.js";
+import {
+  createEscalationService,
+  type EscalationAttentionPage,
+  type EscalationService
+} from "../services/escalations.js";
+import {
+  createMemoryConflictService,
+  type MemoryConflictService
+} from "../services/memory-conflicts.js";
 import {
   getDefaultProposalService,
   type ProposalService
@@ -81,6 +93,8 @@ import { getDefaultBudgetPolicyStore } from "../services/cost-policy-store.js";
 export type PageRoutesDependencies = {
   auth?: AuthDependencySource;
   approvals?: ApprovalService;
+  escalations?: EscalationService;
+  memoryConflicts?: Pick<MemoryConflictService, "listAttentionItems">;
   proposals?: ProposalService;
   queue?: AgentRunQueue;
   policyStore?: BudgetPolicyStore;
@@ -93,8 +107,20 @@ export type PageRoutesDependencies = {
   projectHealthPages?: ProjectHealthPageService;
   aiWorklog?: AiWorklogMetricsService;
   teamSkills?: Pick<TeamSkillRepository, "listActive">;
+  taskPlans?: Pick<ReturnType<typeof createTaskPlanRepository>, "listDashboardPlans" | "listPlanMetaByIds">;
+  objectives?: Pick<ObjectiveRepository, "listObjectiveTitlesByIds">;
+  agentArmyDashboard?: {
+    page: (input: {
+      actor: AuthEnv["Variables"]["actor"];
+      currentUser: AuthEnv["Variables"]["currentUser"];
+      locale: WorkHubLocale;
+    }) => Promise<AgentArmyDashboardVM>;
+  };
   allowUnauthenticatedGoldPath?: boolean;
 };
+
+const AGENT_DASHBOARD_PUBLIC_PLAN_LIMIT = 20;
+const AGENT_DASHBOARD_VISIBILITY_CANDIDATE_LIMIT = 50;
 
 function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }): WorkHubLocale {
   return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
@@ -247,6 +273,8 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const authSettings = getAuthSettings(resolveAuthDependencies(authSource));
   const allowUnauthenticatedGoldPath = deps.allowUnauthenticatedGoldPath ?? authSettings.appEnv !== "production";
   const approvals = deps.approvals ?? createApprovalService();
+  const escalations = deps.escalations ?? createEscalationService();
+  const memoryConflicts = deps.memoryConflicts ?? createMemoryConflictService();
   const proposals = deps.proposals ?? getDefaultProposalService();
   const queue = deps.queue ?? getDefaultAgentRunQueue();
   const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
@@ -259,6 +287,213 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const projectHealthPages = deps.projectHealthPages ?? createProjectHealthPageService();
   const aiWorklog = deps.aiWorklog ?? getDefaultAiWorklogMetricsService();
   const teamSkills = deps.teamSkills ?? createTeamSkillRepository(getSharedDatabaseClient().db);
+  const taskPlans = deps.taskPlans ?? createTaskPlanRepository(getSharedDatabaseClient().db);
+  const objectives = deps.objectives ?? createObjectiveRepository(getSharedDatabaseClient().db);
+
+  type DashboardSourceWarning = NonNullable<AgentArmyDashboardVM["source_warnings"]>[number];
+  type DashboardSourceWarnings = DashboardSourceWarning[];
+
+  function dashboardSourceWarning(source: DashboardSourceWarning["source"], locale: WorkHubLocale): DashboardSourceWarning {
+    const messages: Record<DashboardSourceWarning["source"], { en: string; zh: string }> = {
+      escalations: {
+        en: "Escalations could not be loaded. Open Attention or retry.",
+        zh: "升级待办暂时加载失败。请打开决策收件箱或稍后重试。"
+      },
+      sync_conflicts: {
+        en: "Memory conflicts could not be loaded. Open Settings or retry.",
+        zh: "记忆冲突暂时加载失败。请打开设置或稍后重试。"
+      },
+      approvals: {
+        en: "Approval decisions could not be loaded. Open Approvals or retry.",
+        zh: "审批待办暂时加载失败。请打开审批页或稍后重试。"
+      },
+      proposals: {
+        en: "Proposal reviews could not be loaded. Open Attention or retry.",
+        zh: "变更评审暂时加载失败。请打开决策收件箱或稍后重试。"
+      },
+      worklog: {
+        en: "Autonomy metrics could not be loaded — the 0% shown is missing data, not a real rate.",
+        zh: "自治率数据暂时加载失败——显示的 0% 是缺数据，不是真实通过率。"
+      }
+    };
+    const message = messages[source];
+    return {
+      source,
+      message: locale === "en-US" ? message.en : message.zh
+    };
+  }
+
+  function escalationCapWarning(locale: WorkHubLocale) {
+    return {
+      source: "escalations" as const,
+      message: locale === "en-US"
+        ? "Escalation decisions exceeded the visible scan cap; this queue is a lower bound."
+        : "升级待办超过可见扫描上限；这里显示的是可见下限。"
+    };
+  }
+
+  async function listEscalationAttentionPage(input: {
+    actor: AuthEnv["Variables"]["actor"];
+    locale: WorkHubLocale;
+  }): Promise<EscalationAttentionPage> {
+    if ("listAttentionPage" in escalations && typeof escalations.listAttentionPage === "function") {
+      return escalations.listAttentionPage(input);
+    }
+    const items = await escalations.listAttentionItems(input);
+    return {
+      items,
+      page_info: {
+        limit: items.length,
+        returned: items.length,
+        has_more: false
+      }
+    };
+  }
+
+  function dashboardSourceLowerBoundWarning(locale: WorkHubLocale): DashboardSourceWarning {
+    return {
+      source: "approvals",
+      message: locale === "en-US"
+        ? "Approval decisions exceeded the dashboard scan cap; this KPI shows a visible lower bound. Open Approvals to review everything."
+        : "审批待办超过仪表盘扫描上限；这里显示的是可见下限，请打开审批页查看全部。"
+    };
+  }
+
+  async function attentionDecisionSummary(input: {
+    actor: AuthEnv["Variables"]["actor"];
+    currentUser: AuthEnv["Variables"]["currentUser"];
+    locale: WorkHubLocale;
+  }) {
+    let count = 0;
+    const sourceWarnings: DashboardSourceWarnings = [];
+    try {
+      const escalationPage = await listEscalationAttentionPage({ actor: input.actor, locale: input.locale });
+      count += escalationPage.items.length;
+      if (escalationPage.page_info.has_more) {
+        sourceWarnings.push(escalationCapWarning(input.locale));
+      }
+    } catch {
+      sourceWarnings.push(dashboardSourceWarning("escalations", input.locale));
+    }
+    try {
+      count += (await memoryConflicts.listAttentionItems({ actor: input.actor, locale: input.locale })).length;
+    } catch {
+      sourceWarnings.push(dashboardSourceWarning("sync_conflicts", input.locale));
+    }
+    try {
+      const pending = await approvals.listPendingForUser(input.currentUser, {
+        locale: input.locale,
+        canReadWorkItem: (workItemId) => canReadWorkItem(workItems, workItemId, input.actor)
+      });
+      const visiblePending = await visibleApprovalCenter(pending, workItems, input.actor, true);
+      const visibleCount = Math.max(visiblePending.items.length, visiblePending.requests.length);
+      const lowerBoundTotal = pending.counts.pending_total;
+      count += typeof lowerBoundTotal === "number"
+        ? Math.max(visibleCount, lowerBoundTotal)
+        : visibleCount;
+      if (pending.counts.pending_total_capped === 1) {
+        sourceWarnings.push(dashboardSourceLowerBoundWarning(input.locale));
+      }
+    } catch {
+      sourceWarnings.push(dashboardSourceWarning("approvals", input.locale));
+    }
+    try {
+      count += (await proposals.listReviewableForUser({
+        user: {
+          id: input.currentUser.id,
+          isAdmin: input.currentUser.isAdmin,
+          workspaceId: input.actor.workspaceId
+        }
+      })).length;
+    } catch {
+      sourceWarnings.push(dashboardSourceWarning("proposals", input.locale));
+    }
+    return { count, sourceWarnings };
+  }
+
+  async function ledgerEntriesForActor(input: {
+    actor: AuthEnv["Variables"]["actor"];
+    currentUser: AuthEnv["Variables"]["currentUser"];
+  }) {
+    const teamId = input.actor.workspaceId;
+    const sinceBucket = costDashboardSinceBucket(new Date());
+    if (input.currentUser.isAdmin) {
+      return ledgerStore.listEntriesForWorkspace
+        ? ledgerStore.listEntriesForWorkspace(teamId, { sinceBucket })
+        : ledgerStore.listEntriesForScopes
+          ? ledgerStore.listEntriesForScopes({ teamId }, { sinceBucket })
+          : [];
+    }
+    return ledgerStore.listEntriesForScopes
+      ? ledgerStore.listEntriesForScopes({ userId: input.currentUser.id, teamId }, { sinceBucket })
+      : [];
+  }
+
+  const agentArmyDashboard = deps.agentArmyDashboard ?? {
+    async page(input: {
+      actor: AuthEnv["Variables"]["actor"];
+      currentUser: AuthEnv["Variables"]["currentUser"];
+      locale: WorkHubLocale;
+    }) {
+      const rows = await taskPlans.listDashboardPlans({
+        workspaceId: input.actor.workspaceId,
+        planLimit: AGENT_DASHBOARD_VISIBILITY_CANDIDATE_LIMIT
+      });
+      const visibleWorkItems = await workItems.canReadWorkItems({
+        workItemIds: rows.plans.map((row) => row.workItem.id),
+        actor: input.actor
+      });
+      const visiblePlanCandidates = rows.plans.filter((row) => visibleWorkItems.has(row.workItem.id));
+      const visiblePlans = visiblePlanCandidates.slice(0, AGENT_DASHBOARD_PUBLIC_PLAN_LIMIT);
+      const visiblePlanIds = new Set(visiblePlans.map((row) => row.plan.id));
+      const visibleWorkItemIds = new Set(visiblePlans.map((row) => row.workItem.id));
+      let worklog: Awaited<ReturnType<AiWorklogMetricsService["getTodayMetrics"]>> | undefined;
+      try {
+        worklog = await aiWorklog.getTodayMetrics({ workspaceId: input.actor.workspaceId });
+      } catch {
+        worklog = undefined;
+      }
+      const attention = await attentionDecisionSummary(input);
+      // B-R9.6（KPI 真源）：「复核通过率」优先取今日 AI 判官审阅结果；当天没有判官
+      // 审阅时回退 run 成功率（旧口径），不再拿成功率冒充通过率。
+      let reviewOutcomes: { total: number; approved: number } | undefined;
+      try {
+        reviewOutcomes = await proposals.countTodayAiReviewOutcomes({
+          workspaceId: input.actor.workspaceId
+        });
+      } catch {
+        reviewOutcomes = undefined;
+      }
+      const autonomyRatePct =
+        reviewOutcomes && reviewOutcomes.total > 0
+          ? Math.round((reviewOutcomes.approved / reviewOutcomes.total) * 100)
+          : (worklog?.autonomy_rate ?? 0);
+      // UX-M14：判官源与回退源双双失败时不许把 0% 当真数据端出去——挂 worklog 源警告。
+      const kpiWarnings = reviewOutcomes === undefined && worklog === undefined
+        ? [...attention.sourceWarnings, dashboardSourceWarning("worklog", input.locale)]
+        : attention.sourceWarnings;
+      return buildAgentArmyDashboardPage({
+        locale: input.locale,
+        attentionCount: attention.count,
+        isAdmin: input.currentUser.isAdmin,
+        sourceWarnings: kpiWarnings,
+        autonomyRatePct,
+        plans: visiblePlans,
+        items: rows.items.filter((item) => visiblePlanIds.has(item.planId)),
+        runs: rows.runs.filter((run) => run.taskPlanId ? visiblePlanIds.has(run.taskPlanId) : false),
+        escalations: rows.escalations.filter((escalation) => visibleWorkItemIds.has(escalation.workItemId)),
+        ledgerEntries: await ledgerEntriesForActor(input),
+        pageInfo: {
+          planLimit: AGENT_DASHBOARD_PUBLIC_PLAN_LIMIT,
+          plansCapped: rows.plansCapped || visiblePlanCandidates.length > AGENT_DASHBOARD_PUBLIC_PLAN_LIMIT,
+          itemsCapped: rows.itemsCapped,
+          runsCapped: rows.runsCapped,
+          escalationLimit: 5,
+          escalationsCapped: rows.escalationsCapped
+        }
+      });
+    }
+  };
 
   routes.get("/attention", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
@@ -283,12 +518,60 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     // 这是 W1 决策收件箱此前缺的真实数据源——没接前首页决策卡恒为空。取数失败保留首页,但显式告诉用户队列未完整加载。
     let decisionQueue: AttentionHomeVM["queue"] = [];
     try {
-      const pending = await approvals.listPendingForUser(c.var.currentUser, { locale });
+      const escalationPage = await listEscalationAttentionPage({ actor: c.var.actor, locale });
+      decisionQueue = [
+        ...escalationPage.items,
+        ...decisionQueue
+      ];
+      if (escalationPage.page_info.has_more) {
+        sourceWarnings.push(escalationCapWarning(locale));
+      }
+    } catch {
+      sourceWarnings.push({
+        source: "escalations",
+        message: locale === "en-US"
+          ? "Escalations could not be loaded. Open Projects or retry."
+          : "升级待办暂时加载失败。请打开项目或稍后重试。"
+      });
+    }
+    try {
+      const memoryConflictItems = await memoryConflicts.listAttentionItems({ actor: c.var.actor, locale });
+      decisionQueue = [
+        ...decisionQueue,
+        ...memoryConflictItems
+      ];
+    } catch {
+      sourceWarnings.push({
+        source: "sync_conflicts",
+        message: locale === "en-US"
+          ? "Memory conflicts could not be loaded. Open Settings or retry."
+          : "记忆冲突暂时加载失败。请打开设置或稍后重试。"
+      });
+    }
+    try {
+      // R7（跨页一致）：与指挥台 waiting_decision KPI 同口径——传 canReadWorkItem 走 scanCap 翻页分支，
+      // 两处对同一批审批不再用不同扫描深度；封顶时首页也诚实提示，不再静默截断装完整。
+      const pending = await approvals.listPendingForUser(c.var.currentUser, {
+        locale,
+        canReadWorkItem: (workItemId) => canReadWorkItem(workItems, workItemId, c.var.actor)
+      });
       // findings：决策队列要和 /approvals 一样按可读工作项过滤——否则被路由到的审批若其工作项不可读，
       // 卡片仍会在首页泄露事项信息。复用同一个 visibleApprovalCenter 收口。
-      decisionQueue = (await visibleApprovalCenter(pending, workItems, c.var.actor)).items;
+      decisionQueue = [
+        ...decisionQueue,
+        // R9（性能）：listPendingForUser 已用同一 canReadWorkItem 谓词过滤过——传 alreadyFiltered
+        // 免去对同一批数据的第二轮串行可见性全扫描（与 KPI 计数处同口径）。
+        ...(await visibleApprovalCenter(pending, workItems, c.var.actor, true)).items
+      ];
+      if (pending.counts.pending_total_capped === 1) {
+        sourceWarnings.push({
+          source: "approvals",
+          message: locale === "en-US"
+            ? "There are more pending approvals than shown here — open Approvals for the full list."
+            : "待审批的事项比这里显示的更多——去审批页看完整清单。"
+        });
+      }
     } catch {
-      decisionQueue = [];
       sourceWarnings.push({
         source: "approvals",
         message: locale === "en-US"
@@ -311,6 +594,16 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         ...decisionQueue,
         ...reviewable.map((summary) => buildProposalReviewAttentionItem(summary, locale))
       ];
+      // R4 high（规模化）：listReviewableForUser 硬上限 50——打满即可能有更多评审被静默截断，
+      // 与升级/审批的诚实上限提示同口径给 sourceWarning，不让用户以为队列已清空。
+      if (reviewable.length >= 50) {
+        sourceWarnings.push({
+          source: "proposals",
+          message: locale === "en-US"
+            ? "Showing the first 50 reviewable changes — clear some to surface the rest."
+            : "变更评审只显示前 50 条——处理掉一些，其余的才会浮现。"
+        });
+      }
     } catch {
       // 保留已有审批队列,不拖垮首页,但不能让用户误以为队列完整。
       sourceWarnings.push({
@@ -319,6 +612,26 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
           ? "Proposal reviews could not be loaded. Open Projects or retry."
           : "变更评审暂时加载失败。请打开项目页或稍后重试。"
       });
+    }
+    // R13（多项目一致性）：四路来源（审批/升级预算/记忆冲突/提议评审）只有审批带 project_name——
+    // 装配收尾统一按 work_item_id 批量反查补齐，首页/桌面卡与审批中心同构。失败不点名不翻页面。
+    try {
+      const missingNameWorkItemIds = [...new Set(decisionQueue
+        .filter((item) => !item.project_name && item.work_item_id)
+        .map((item) => item.work_item_id as string))];
+      if (missingNameWorkItemIds.length > 0) {
+        const nameMap = await workItems.projectNamesForWorkItems({ workItemIds: missingNameWorkItemIds, actor: c.var.actor });
+        for (const item of decisionQueue) {
+          if (!item.project_name && item.work_item_id) {
+            const name = nameMap.get(item.work_item_id);
+            if (name) {
+              item.project_name = name;
+            }
+          }
+        }
+      }
+    } catch {
+      // 点名失败不影响决策队列本身。
     }
     return c.json(pageEnvelope(
       buildAttentionHomePage({ queue: decisionQueue, sourceWarnings, backgroundRuns: activeRuns, locale, worklog }),
@@ -401,11 +714,13 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return pageServiceErrorResponse(c, new DrivePageServiceError(404, "没有找到这个网盘文件。", "drive_file_not_found"));
     }
     try {
+      const nameQuery = c.req.query("q")?.trim().slice(0, 120);
       const data = await drivePages.page({
         actor: c.var.actor,
         locale,
         ...(projectId ? { projectId } : {}),
-        ...(itemId ? { itemId } : {})
+        ...(itemId ? { itemId } : {}),
+        ...(nameQuery ? { nameQuery } : {})
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
@@ -535,9 +850,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
           ? await ledgerStore.listEntriesForWorkspace(teamId, { sinceBucket: costSinceBucket })
           : ledgerStore.listEntriesForScopes
             ? await ledgerStore.listEntriesForScopes({ teamId }, { sinceBucket: costSinceBucket })
-            : ledgerStore.listEntries
-              ? await ledgerStore.listEntries({ sinceBucket: costSinceBucket })
-              : ledgerStore.entries)
+            // R9.7：管理员账目同样必须有 workspace-scoped reader；缺失时 fail-closed，
+            // 不能回退到 listEntries()/entries 的全组织账本。
+            : [])
       // routes-b-2/contracts-pkgs-4：非管理员回到按 { userId, teamId } 的窄 scope 查询——只取本人 user-scope
       // 条目并叠加工作区围栏（listEntriesForScopes 内部对 teamId 走子查询半连接，不拉全工作区）。
       : (ledgerStore.listEntriesForScopes
@@ -545,6 +860,32 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
           // L[1]：非管理员且 store 未实现按 scope 查询时 fail-closed 返回空——绝不回退到 listEntries()/entries
           // （全组织账目）。跨租户读账目宁可空，也不能 fail-open 把别人的花费泄露给普通成员。
           : []);
+    // B-R9.6 UX-H4：军团行元数据（名称/状态/预算）。展示增强——取数失败降级为无名行，不拖垮成本页。
+    let taskPlanMeta: Map<string, { label: string; status: string; maxCostCny?: number }> | undefined;
+    let objectiveTitles: Map<string, string> | undefined;
+    if (c.var.currentUser.isAdmin && c.var.actor.workspaceId) {
+      const planIds = [...new Set(ledgerEntries
+        .map((entry) => entry.taskPlanId ?? (entry.scope.kind === "task" ? entry.scope.taskPlanId : undefined))
+        .filter((value): value is string => Boolean(value)))];
+      if (planIds.length > 0) {
+        try {
+          taskPlanMeta = await taskPlans.listPlanMetaByIds({ workspaceId: c.var.actor.workspaceId, planIds });
+        } catch {
+          taskPlanMeta = undefined;
+        }
+      }
+      // UX-M10：目标标题（按目标维度不渲裸 UUID）；同样降级安全。
+      const objectiveIds = [...new Set(ledgerEntries
+        .map((entry) => entry.objectiveId ?? (entry.scope.kind === "objective" ? entry.scope.objectiveId : undefined))
+        .filter((value): value is string => Boolean(value)))];
+      if (objectiveIds.length > 0) {
+        try {
+          objectiveTitles = await objectives.listObjectiveTitlesByIds({ workspaceId: c.var.actor.workspaceId, objectiveIds });
+        } catch {
+          objectiveTitles = undefined;
+        }
+      }
+    }
     const data = buildCostDashboardPage({
       settings: tenantSettings,
       isAdmin: c.var.currentUser.isAdmin,
@@ -553,7 +894,19 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       locale,
       budgetUsages: decision.usages,
       budgetNotices: decision.notice ? [decision.notice] : [],
-      ledgerEntries
+      ledgerEntries,
+      ...(taskPlanMeta ? { taskPlanMeta } : {}),
+      ...(objectiveTitles ? { objectiveTitles } : {})
+    });
+    return c.json(pageEnvelope(data, locale));
+  });
+
+  routes.get("/agents", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    const data = await agentArmyDashboard.page({
+      actor: c.var.actor,
+      currentUser: c.var.currentUser,
+      locale
     });
     return c.json(pageEnvelope(data, locale));
   });
@@ -567,14 +920,27 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     return c.json(pageEnvelope(buildTeamSkillsPage({ skills: active }), locale));
   });
 
-  routes.get("/settings", createCurrentUserMiddleware(authSource), (c) => {
+  routes.get("/settings", createCurrentUserMiddleware(authSource), async (c) => {
     const locale = requestLocale(c);
     const preferenceLocale = normalizeWorkHubLocale(c.var.currentUser.preferredLocale);
+    // APPROVAL-POLICY-UI：常驻审批策略在设置页可见（撤销是桌面边界写动作，按钮 fail-closed）。
+    // 取数失败降级为不渲策略区，不拖垮设置页。
+    // R6（权限边界 high）：权限策略是 org 级治理面，专用路由 /api/permissions 读写均 admin-only——
+    // 设置页此前无条件吐给所有成员（越权读）。与专用路由同门槛：非管理员不取不渲。
+    let permissionPolicies: Parameters<typeof buildSettingsPage>[0]["permissionPolicies"];
+    if (c.var.currentUser.isAdmin) {
+      try {
+        permissionPolicies = (await approvals.listPolicies(c.var.actor)).map(toPermissionPolicyResponse);
+      } catch {
+        permissionPolicies = undefined;
+      }
+    }
     return c.json(pageEnvelope(buildSettingsPage({
       settings: authSettings,
       locale,
       preferenceLocale,
-      preferenceSource: "server"
+      preferenceSource: "server",
+      ...(permissionPolicies ? { permissionPolicies } : {})
     }), locale));
   });
 

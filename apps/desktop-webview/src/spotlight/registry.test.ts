@@ -4,8 +4,9 @@ import { test } from "node:test";
 import { commandRegistry } from "../command-palette.js";
 import { resolveCapabilityView } from "./registry.js";
 
-test("every capability resolves to a real inline view carrying its id (11/11 built)", () => {
-  // 全部 11 个能力都已内联，每个 view 都带回自己的 id；绝不退回旧全屏壳。
+test("every capability resolves to a real inline view carrying its id", () => {
+  // R9.6 adds Agent Army on top of the original 11 abilities; assert the live
+  // registry size instead of freezing the old count in the test name/comment.
   for (const command of commandRegistry) {
     assert.equal(resolveCapabilityView(command.id).id, command.id);
   }

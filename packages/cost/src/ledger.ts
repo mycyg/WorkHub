@@ -7,6 +7,8 @@ type MaybePromise<T> = T | Promise<T>;
 
 export type LedgerScopeIds = {
   workItemId?: string;
+  taskPlanId?: string;
+  objectiveId?: string;
   userId?: string;
   teamId?: string;
   evalSuite?: "nightly" | "release";
@@ -42,6 +44,12 @@ export function usageToLedgerEntry(
   if (usage.workItemId) {
     entry.workItemId = usage.workItemId;
   }
+  if (usage.taskPlanId) {
+    entry.taskPlanId = usage.taskPlanId;
+  }
+  if (usage.objectiveId) {
+    entry.objectiveId = usage.objectiveId;
+  }
   if (usage.userId) {
     entry.userId = usage.userId;
   }
@@ -58,6 +66,8 @@ export function usageRecordId(usage: UsageRecord) {
   return [
     usage.runId ?? "no-run",
     usage.workItemId ?? "no-workitem",
+    usage.taskPlanId ?? "no-task-plan",
+    usage.objectiveId ?? "no-objective",
     usage.userId ?? "no-user",
     usage.workspaceId ?? "no-workspace",
     usage.provider,
@@ -85,7 +95,7 @@ export function usageToLedgerEntries(usage: UsageRecord, options: ReconcileUsage
 // 周期感知：日/月预算只能统计当天/当月用量，否则会把全部历史都算进去 → 误判超额、用一阵后永久卡死。
 // periodBucket 是 entry 的日期 "YYYY-MM-DD"。每个 scope 产出 run/day/month 三个快照（按 period 过滤），
 // 由 decideRunBudget 的 matchesUsage 按 (scope, period) 取对应那个。run 周期保留 scope 全量（per-run 上限在运行时另行实时管控）。
-const SNAPSHOT_PERIODS: ReadonlyArray<NonNullable<BudgetUsageSnapshot["period"]>> = ["run", "day", "month"];
+const SNAPSHOT_PERIODS: ReadonlyArray<NonNullable<BudgetUsageSnapshot["period"]>> = ["run", "day", "month", "total"];
 
 export function ledgerUsageSnapshots(
   entries: readonly CostLedgerEntry[],
@@ -101,6 +111,11 @@ export function ledgerUsageSnapshots(
     }
     if (period === "month") {
       return entry.periodBucket.slice(0, 7) === monthPrefix;
+    }
+    // B-R9.5-2：total=scope 全量累计（无时间窗）——task/objective 这类「生命周期预算」
+    // 用它才能真超限触发 402；run 周期恒 0 的语义只适合 per-run 策略。
+    if (period === "total") {
+      return true;
     }
     // run：决策只在 run 启动时调用一次，此刻这次 run 尚未花费 → run 快照用量记 0。
     // 否则 run 快照取 scope 全量，per-run 策略的 remainingTokens 会随历史累计跌到 0，
@@ -262,6 +277,12 @@ function scopesForUsage(usage: UsageRecord, options: ReconcileUsageOptions) {
   if (usage.workItemId) {
     scopes.push({ kind: "workitem", workitemId: usage.workItemId });
   }
+  if (usage.taskPlanId) {
+    scopes.push({ kind: "task", taskPlanId: usage.taskPlanId });
+  }
+  if (usage.objectiveId) {
+    scopes.push({ kind: "objective", objectiveId: usage.objectiveId });
+  }
   if (usage.userId) {
     scopes.push({ kind: "user", userId: usage.userId });
   }
@@ -276,6 +297,12 @@ function scopesFromIds(scopeIds: LedgerScopeIds) {
   const scopes: BudgetScope[] = [];
   if (scopeIds.workItemId) {
     scopes.push({ kind: "workitem", workitemId: scopeIds.workItemId });
+  }
+  if (scopeIds.taskPlanId) {
+    scopes.push({ kind: "task", taskPlanId: scopeIds.taskPlanId });
+  }
+  if (scopeIds.objectiveId) {
+    scopes.push({ kind: "objective", objectiveId: scopeIds.objectiveId });
   }
   if (scopeIds.userId) {
     scopes.push({ kind: "user", userId: scopeIds.userId });
@@ -296,6 +323,10 @@ function sameScope(left: BudgetScope, right: BudgetScope) {
   switch (left.kind) {
     case "workitem":
       return right.kind === "workitem" && left.workitemId === right.workitemId;
+    case "task":
+      return right.kind === "task" && left.taskPlanId === right.taskPlanId;
+    case "objective":
+      return right.kind === "objective" && left.objectiveId === right.objectiveId;
     case "user":
       return right.kind === "user" && left.userId === right.userId;
     case "team":
@@ -315,6 +346,10 @@ function scopeKey(scope: BudgetScope) {
   switch (scope.kind) {
     case "workitem":
       return `workitem:${scope.workitemId}`;
+    case "task":
+      return `task:${scope.taskPlanId}`;
+    case "objective":
+      return `objective:${scope.objectiveId}`;
     case "user":
       return `user:${scope.userId}`;
     case "team":

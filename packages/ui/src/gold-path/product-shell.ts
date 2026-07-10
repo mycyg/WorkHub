@@ -32,6 +32,10 @@ export type WebProductShellOptions = GoldPathAppShellOptions & {
 
 type ProductShellCopyKey =
   | "nav.title"
+  | "nav.group.work"
+  | "nav.group.assets"
+  | "nav.group.team"
+  | "nav.group.admin"
   | "nav.home"
   | "nav.projects"
   | "nav.approvals"
@@ -43,6 +47,7 @@ type ProductShellCopyKey =
   | "nav.calendar"
   | "nav.replay"
   | "nav.cost"
+  | "nav.agents"
   | "nav.settings"
   | "nav.intake"
   | "nav.health"
@@ -114,6 +119,10 @@ type ProductShellCopyKey =
 const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string>> = {
   "zh-CN": {
     "nav.title": "工作入口",
+    "nav.group.work": "工作",
+    "nav.group.assets": "项目资产",
+    "nav.group.team": "团队",
+    "nav.group.admin": "管理",
     "nav.home": "总览",
     "nav.projects": "项目",
     "nav.approvals": "审批",
@@ -125,9 +134,10 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.calendar": "日程",
     "nav.replay": "回放",
     "nav.cost": "成本",
+    "nav.agents": "军团",
     "nav.settings": "设置",
     "nav.intake": "提需求",
-    "nav.health": "健康",
+    "nav.health": "项目健康",
     "nav.knowledge": "知识",
     "nav.skills": "技能",
     "nav.project-home": "本项目",
@@ -141,7 +151,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.boundary": "本地执行、文件同步和桌宠都在桌面客户端里 (=^･ω･^=)",
     "rail.next": "下一步",
     "rail.nextHome": "先挑最要紧的一件，其他的我在后台盯着 (๑˃ᴗ˂)",
-    "rail.nextProjects": "把每个项目当产品看，挑一个进去派活或新建一个。",
+    "rail.nextProjects": "把每个项目当产品看，打开一个继续推进，或新建一个。",
     "rail.nextApprovals": "打回理由会回灌给 AI 继续改。",
     "rail.nextWorkitem": "核对验收项、AI 轨迹和交付物。",
     "rail.nextProposal": "审查风险、证据和可回滚路径。",
@@ -195,6 +205,10 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
   },
   "en-US": {
     "nav.title": "Work entry",
+    "nav.group.work": "Work",
+    "nav.group.assets": "Project assets",
+    "nav.group.team": "Team",
+    "nav.group.admin": "Admin",
     "nav.home": "Overview",
     "nav.projects": "Projects",
     "nav.approvals": "Approvals",
@@ -206,9 +220,10 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "nav.calendar": "Calendar",
     "nav.replay": "Replay",
     "nav.cost": "Cost",
+    "nav.agents": "Agent teams",
     "nav.settings": "Settings",
     "nav.intake": "New request",
-    "nav.health": "Health",
+    "nav.health": "Project health",
     "nav.knowledge": "Knowledge",
     "nav.skills": "Skills",
     "nav.project-home": "This project",
@@ -222,7 +237,7 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
     "rail.boundary": "Local execution, file sync, and the desktop pet all live in the desktop client (=^･ω･^=)",
     "rail.next": "Next",
     "rail.nextHome": "Grab the most blocking item first — I'll watch the rest (๑˃ᴗ˂)",
-    "rail.nextProjects": "Treat each project as a product — open one to assign work or create a new one.",
+    "rail.nextProjects": "Treat each project as a product — open one to start work or create a new one.",
     "rail.nextApprovals": "Rejection reasons flow back into AI work.",
     "rail.nextWorkitem": "Review acceptance, trace, and deliverables.",
     "rail.nextProposal": "Check risk, evidence, and rollback path.",
@@ -277,22 +292,31 @@ const productShellCopy: Record<WorkHubLocale, Record<ProductShellCopyKey, string
 };
 
 const productShellCss = [
-  ":root{color-scheme:light;--wh-product-ink:#1A1D26;--wh-product-secondary:#5B616E;--wh-product-muted:#9AA0AC;--wh-product-faint:#C8CCD4;--wh-product-line:#E6E7EB;--wh-product-line-alt:#EEF0F3;--wh-product-blue:#4F46E5;--wh-product-blue-light:#EEF0FE;--wh-product-blue-tint:#F5F5FE;--wh-product-blue-pale:#D9DBF5;--wh-product-green:#15A05A;--wh-product-green-light:#E7F0EA;--wh-product-green-lighter:#E7F6EE;--wh-product-red:#E5484D;--wh-product-red-light:#FCECEC;--wh-product-coral:#ee6b5f;--wh-product-amber:#E0892A;--wh-product-amber-light:#FCF3E6;--wh-product-paper:#fff;--wh-product-panel:#fff;--wh-product-page:#F7F8FA;--wh-product-soft:#F5F5FE;--wh-radius-card:14px;--wh-radius-button:10px}",
-  "body{margin:0;background:var(--wh-product-page);color:var(--wh-product-ink);overflow-x:hidden}",
-  ".wh-product-root{min-height:100vh;background:var(--wh-product-page);font-family:\"Segoe UI\",system-ui,-apple-system,\"Microsoft YaHei\",\"PingFang SC\",sans-serif;color:var(--wh-product-ink)}",
+  // R10-S1 液态玻璃：web 与桌面 .wh-ds 同源基调——柔和渐变底 + 半透明玻璃层(backdrop-filter 在普通
+  // 浏览器可用,Tauri 透明窗的限制不适用于 web) + 大圆角分级(lg=18/md=12)。语义色不动；
+  // muted 从 #9AA0AC 提到 #646E7E(白底约 5:1,玻璃上仍达标)。不支持 backdrop-filter 或
+  // prefers-reduced-transparency 时在文末降级为实底。
+  ":root{color-scheme:light;--wh-product-ink:#1A1D26;--wh-product-secondary:#5B616E;--wh-product-muted:#646E7E;--wh-product-faint:#C8CCD4;--wh-product-line:#E6E7EB;--wh-product-line-alt:#EEF0F3;--wh-product-blue:#4F46E5;--wh-product-accent:#4F46E5;--wh-product-blue-light:#EEF0FE;--wh-product-blue-tint:#F5F5FE;--wh-product-blue-pale:#D9DBF5;--wh-product-green:#15A05A;--wh-product-green-light:#E7F0EA;--wh-product-green-lighter:#E7F6EE;--wh-product-red:#E5484D;--wh-product-red-light:#FCECEC;--wh-product-coral:#ee6b5f;--wh-product-amber:#E0892A;--wh-product-amber-light:#FCF3E6;--wh-product-paper:#fff;--wh-product-panel:#fff;--wh-product-page:#F3F5F9;--wh-product-soft:#F5F5FE;--wh-glass:rgba(255,255,255,.58);--wh-glass-strong:rgba(255,255,255,.76);--wh-glass-line:rgba(255,255,255,.72);--wh-glass-blur:saturate(1.5) blur(20px);--wh-radius-lg:18px;--wh-radius-md:12px}",
+  "body{margin:0;background:radial-gradient(1100px 640px at 6% -8%,rgba(79,70,229,.10) 0%,rgba(79,70,229,0) 55%),radial-gradient(900px 560px at 102% -2%,rgba(21,160,90,.08) 0%,rgba(21,160,90,0) 52%),radial-gradient(760px 520px at 88% 104%,rgba(238,107,95,.07) 0%,rgba(238,107,95,0) 55%),var(--wh-product-page);background-attachment:fixed;color:var(--wh-product-ink);overflow-x:hidden}",
+  ".wh-product-root{min-height:100vh;background:transparent;font-family:\"Segoe UI\",system-ui,-apple-system,\"Microsoft YaHei\",\"PingFang SC\",sans-serif;color:var(--wh-product-ink)}",
   ".wh-product-root,.wh-product-root *{box-sizing:border-box;min-width:0}",
-  ".wh-product-topbar{position:sticky;top:0;z-index:30;height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--wh-product-line);background:rgba(255,255,255,.9);backdrop-filter:blur(18px);padding:0 22px;overflow:hidden}",
-  ".wh-product-brand{display:flex;align-items:center;gap:10px;color:var(--wh-product-ink);text-decoration:none;font-weight:900;min-width:0}.wh-product-brand-mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--wh-product-blue),var(--wh-product-green) 54%,var(--wh-product-coral));box-shadow:0 10px 24px rgba(53,92,255,.18);flex:0 0 auto}.wh-product-brand span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-product-topbar{position:sticky;top:0;z-index:30;height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--wh-glass-line);background:var(--wh-glass-strong);backdrop-filter:var(--wh-glass-blur);-webkit-backdrop-filter:var(--wh-glass-blur);box-shadow:0 10px 30px rgba(37,51,79,.06);padding:0 22px;overflow:hidden}",
+  ".wh-product-brand{display:flex;align-items:center;gap:10px;color:var(--wh-product-ink);text-decoration:none;font-weight:900;min-width:0}.wh-product-brand-mark{position:relative;width:30px;height:30px;border-radius:10px;background:linear-gradient(145deg,#6D8BFF 0%,var(--wh-product-blue) 48%,#7C3AED 100%);box-shadow:0 8px 22px rgba(79,70,229,.32),inset 0 1px 1px rgba(255,255,255,.65);overflow:hidden;flex:0 0 auto}.wh-product-brand-mark::before{content:\"\";position:absolute;inset:0;background:radial-gradient(130% 90% at 18% -4%,rgba(255,255,255,.6) 0%,rgba(255,255,255,.14) 42%,rgba(255,255,255,0) 62%)}.wh-product-brand-mark::after{content:\"\";position:absolute;left:8px;top:8px;width:14px;height:14px;border-radius:6px;background:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.75);box-shadow:inset 0 1px 3px rgba(255,255,255,.6),0 3px 8px rgba(30,27,75,.28)}.wh-product-brand span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-product-top-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0;flex:1 1 auto}.wh-product-user{display:flex;align-items:center;gap:8px;min-width:0;max-width:240px}.wh-product-user-name{color:var(--wh-product-ink);font-size:12px;font-weight:850;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-product-user .wh-product-rail-tag{flex:0 0 auto}.wh-product-logout{border:1px solid var(--wh-product-line);border-radius:999px;background:#fff;color:var(--wh-product-muted);font-size:11px;font-weight:850;line-height:1.35;padding:5px 10px;cursor:pointer;flex:0 0 auto;font-family:inherit}.wh-product-logout:hover{color:var(--wh-product-ink)}.wh-product-runtime{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0;max-width:100%;overflow:hidden;color:var(--wh-product-muted);font-size:12px;font-weight:800}.wh-product-runtime span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wh-product-runtime-dot{width:8px;height:8px;border-radius:999px;background:var(--wh-product-green);box-shadow:0 0 0 4px rgba(36,166,106,.12);flex:0 0 auto}",
-  ".wh-locale-toggle{display:grid;grid-template-columns:repeat(2,42px);gap:2px;border:1px solid var(--wh-product-line);border-radius:8px;background:#eef3f9;padding:2px;flex:0 0 auto}.wh-locale-toggle button{height:28px;border:0;border-radius:6px;background:transparent;color:var(--wh-product-muted);font-weight:850;font-size:12px;line-height:1.35;cursor:pointer}.wh-locale-toggle button[aria-pressed=true]{background:#fff;color:var(--wh-product-blue);box-shadow:0 5px 14px rgba(37,51,79,.1)}",
-  ".wh-product-layout{display:grid;grid-template-columns:218px minmax(0,1fr) 276px;gap:0;min-height:calc(100vh - 64px);width:100%;overflow:hidden}.wh-product-nav{border-right:1px solid var(--wh-product-line);background:rgba(247,250,254,.78);padding:18px 12px;overflow-y:auto;overflow-x:hidden}.wh-product-nav-title{margin:2px 10px 12px;color:var(--wh-product-muted);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}.wh-product-nav-list{display:grid;gap:6px}.wh-product-nav a{display:grid;grid-template-columns:minmax(0,1fr);align-items:center;gap:3px;border-radius:8px;padding:10px 12px;color:var(--wh-product-ink);font-size:14px;font-weight:800;text-decoration:none}.wh-product-nav a span,.wh-product-nav a small{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-product-nav a:hover{background:#fff}.wh-product-nav a[aria-current=page]{background:#fff;color:var(--wh-product-blue);box-shadow:0 0 0 1px rgba(53,92,255,.18),0 10px 24px rgba(37,51,79,.06)}.wh-product-nav small{color:var(--wh-product-faint);font-size:11px;font-weight:800}",
-  ".wh-product-main{min-width:0;max-width:100%;overflow:hidden;padding:24px clamp(14px,2vw,28px)}.wh-product-masthead{display:flex;justify-content:flex-end;max-width:1120px;margin:0 auto 14px}.wh-product-kicker{margin:0 0 8px;color:var(--wh-product-blue);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}.wh-product-masthead h1{margin:0;color:var(--wh-product-ink);font-size:clamp(24px,2.4vw,34px);line-height:1.35;letter-spacing:0;overflow-wrap:anywhere}.wh-product-masthead p{margin:8px 0 0;color:var(--wh-product-muted);font-size:14px;line-height:1.55;max-width:760px;overflow-wrap:anywhere}",
-  ".wh-product-metrics{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:flex-end;max-width:390px}.wh-product-metric{display:grid;gap:2px;border:1px solid var(--wh-product-line);border-radius:8px;background:rgba(255,255,255,.86);padding:8px 10px;min-width:78px;box-shadow:0 10px 28px rgba(37,51,79,.05)}.wh-product-metric strong{font-size:17px;line-height:1.35;overflow-wrap:anywhere}.wh-product-metric span{color:var(--wh-product-muted);font-size:11px;font-weight:850;line-height:1.35;overflow-wrap:anywhere}",
+  ".wh-locale-toggle{display:grid;grid-template-columns:repeat(2,42px);gap:2px;border:1px solid var(--wh-glass-line);border-radius:var(--wh-radius-md);background:rgba(238,243,249,.72);padding:2px;flex:0 0 auto}.wh-locale-toggle button{height:28px;border:0;border-radius:9px;background:transparent;color:var(--wh-product-muted);font-weight:850;font-size:12px;line-height:1.35;cursor:pointer}.wh-locale-toggle button[aria-pressed=true]{background:#fff;color:var(--wh-product-blue);box-shadow:0 5px 14px rgba(37,51,79,.1)}",
+  ".wh-product-layout{display:grid;grid-template-columns:218px minmax(0,1fr) 276px;gap:0;min-height:calc(100vh - 64px);width:100%;overflow:hidden}.wh-product-nav{display:grid;gap:18px;align-content:start;border-right:1px solid var(--wh-glass-line);background:rgba(255,255,255,.42);backdrop-filter:var(--wh-glass-blur);-webkit-backdrop-filter:var(--wh-glass-blur);padding:18px 12px;overflow-y:auto;overflow-x:hidden}.wh-product-nav-group{display:grid;gap:4px}.wh-product-nav-title{margin:2px 10px 4px;color:var(--wh-product-muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}.wh-product-nav-list{display:grid;gap:4px}.wh-product-nav a.wh-product-nav-cta{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:6px;margin:0 2px 2px;border-radius:var(--wh-radius-md);background:var(--wh-product-blue);color:#fff;font-size:14px;font-weight:850;text-decoration:none;padding:11px 12px;box-shadow:0 10px 26px rgba(79,70,229,.28)}.wh-product-nav a.wh-product-nav-cta:hover{filter:brightness(1.06);background:var(--wh-product-blue)}.wh-product-nav a.wh-product-nav-cta[aria-current=page]{box-shadow:0 0 0 2px rgba(79,70,229,.35),0 10px 26px rgba(79,70,229,.28);background:var(--wh-product-blue);color:#fff}.wh-product-nav-group-toggle{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;margin:0;border:0;background:transparent;padding:8px 10px;border-radius:var(--wh-radius-md);color:var(--wh-product-muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;cursor:pointer;font-family:inherit}.wh-product-nav-group-toggle:hover{background:rgba(255,255,255,.7);color:var(--wh-product-ink)}.wh-product-nav-chevron{transition:transform .16s ease}.wh-product-nav-group[data-nav-collapsed=true] .wh-product-nav-chevron{transform:rotate(-90deg)}.wh-product-nav-group[data-nav-collapsed=true]>.wh-product-nav-list{display:none}.wh-product-nav a{display:grid;grid-template-columns:minmax(0,1fr);align-items:center;gap:3px;border-radius:var(--wh-radius-md);padding:10px 12px;color:var(--wh-product-ink);font-size:14px;font-weight:800;text-decoration:none;transition:background .16s ease}.wh-product-nav a span,.wh-product-nav a small{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wh-product-nav a:hover{background:rgba(255,255,255,.85)}.wh-product-nav a[aria-current=page]{background:rgba(255,255,255,.92);color:var(--wh-product-blue);box-shadow:0 0 0 1px rgba(79,70,229,.16),0 10px 24px rgba(37,51,79,.07)}.wh-product-nav small{color:var(--wh-product-faint);font-size:11px;font-weight:800}.wh-product-nav-more{display:none}",
+  ".wh-product-main{min-width:0;max-width:100%;overflow:hidden;padding:24px clamp(14px,2vw,28px)}.wh-product-masthead{display:flex;justify-content:flex-end;max-width:1120px;margin:0 auto 14px}.wh-product-kicker{margin:0 0 8px;color:var(--wh-product-blue);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0}.wh-product-main h1[tabindex]:focus{outline:none}.wh-product-masthead h1{margin:0;color:var(--wh-product-ink);font-size:clamp(24px,2.4vw,34px);line-height:1.35;letter-spacing:0;overflow-wrap:anywhere}.wh-product-masthead p{margin:8px 0 0;color:var(--wh-product-muted);font-size:14px;line-height:1.55;max-width:760px;overflow-wrap:anywhere}",
+  ".wh-product-metrics{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:flex-end;max-width:390px}.wh-product-metric{display:grid;gap:2px;border:1px solid var(--wh-glass-line);border-radius:var(--wh-radius-md);background:var(--wh-glass);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);padding:8px 10px;min-width:78px;box-shadow:0 10px 28px rgba(37,51,79,.06)}.wh-product-metric strong{font-size:17px;line-height:1.35;overflow-wrap:anywhere}.wh-product-metric span{color:var(--wh-product-muted);font-size:11px;font-weight:850;line-height:1.35;overflow-wrap:anywhere}",
   ".wh-product-route-panels{max-width:1120px;margin:0 auto;min-width:0}.wh-route-panel{min-width:0;max-width:100%;overflow:hidden}.wh-route-panel[hidden]{display:none}.wh-product-route-panels .wh-shell{padding:0;background:transparent;min-height:0}.wh-product-route-panels .wh-stage{max-width:none;margin:0}.wh-product-route-panels .wh-panel{box-shadow:0 16px 42px rgba(37,51,79,.07)}",
-  ".wh-product-rail{border-left:1px solid var(--wh-product-line);background:rgba(247,250,254,.68);padding:24px 16px;display:grid;align-content:start;gap:12px;overflow:auto}.wh-product-rail-block{border:1px solid var(--wh-product-line);border-radius:8px;background:rgba(255,255,255,.86);padding:13px 14px;display:grid;gap:6px}.wh-product-rail-block h2{margin:0;color:var(--wh-product-ink);font-size:13px;line-height:1.35}.wh-product-rail-block p{margin:0;color:var(--wh-product-muted);font-size:12px;line-height:1.45;overflow-wrap:anywhere}.wh-product-rail-tag{display:inline-flex;align-items:center;width:max-content;max-width:100%;border-radius:999px;background:#eef4ff;color:var(--wh-product-blue);font-size:11px;font-weight:900;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-  ".wh-app-notice{position:fixed;right:18px;bottom:18px;z-index:40;display:grid;gap:4px;width:max-content;max-width:min(420px,calc(100vw - 36px));border:1px solid rgba(53,92,255,.22);background:rgba(255,255,255,.96);border-radius:8px;box-shadow:0 18px 60px rgba(37,51,79,.16);padding:12px 14px;color:var(--wh-product-ink);font-weight:750;overflow-wrap:anywhere}.wh-app-notice[hidden]{display:none}.wh-app-notice[data-r4-notice-tone=success]{border-color:rgba(36,166,106,.42);box-shadow:0 18px 60px rgba(36,166,106,.16)}.wh-app-notice[data-r4-notice-tone=warning]{border-color:rgba(217,139,22,.45);box-shadow:0 18px 60px rgba(217,139,22,.15)}.wh-app-notice[data-r4-notice-tone=danger]{border-color:rgba(238,107,95,.45);box-shadow:0 18px 60px rgba(238,107,95,.16)}.wh-app-notice-title{display:block;font-size:13px;line-height:1.35;color:var(--wh-product-ink);font-weight:900}.wh-app-notice-body{display:block;color:var(--wh-product-muted);font-size:12px;line-height:1.45;max-width:100%;overflow-wrap:anywhere}.wh-app-action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}.wh-app-action-row button{border:1px solid var(--wh-product-line);border-radius:8px;background:#fff;padding:9px 12px;font-weight:750;color:var(--wh-product-ink);cursor:pointer}.wh-app-action-row button:first-child{background:var(--wh-product-blue);border-color:var(--wh-product-blue);color:#fff}",
+  ".wh-product-rail{border-left:1px solid var(--wh-glass-line);background:rgba(255,255,255,.36);backdrop-filter:var(--wh-glass-blur);-webkit-backdrop-filter:var(--wh-glass-blur);padding:24px 16px;display:grid;align-content:start;gap:12px;overflow:auto}.wh-product-rail-block{border:1px solid var(--wh-glass-line);border-radius:var(--wh-radius-lg);background:var(--wh-glass);padding:13px 14px;display:grid;gap:6px}.wh-product-rail-block--static{border:0;background:transparent;padding:4px 2px}.wh-product-rail-block--static h2{font-size:12px;color:var(--wh-product-muted);font-weight:700}.wh-product-rail-block--static p{font-size:11px}.wh-product-rail-block h2{margin:0;color:var(--wh-product-ink);font-size:13px;line-height:1.35}.wh-product-rail-block p{margin:0;color:var(--wh-product-muted);font-size:12px;line-height:1.45;overflow-wrap:anywhere}.wh-product-rail-tag{display:inline-flex;align-items:center;width:max-content;max-width:100%;border-radius:999px;background:#eef4ff;color:var(--wh-product-blue);font-size:11px;font-weight:900;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-app-notice{position:fixed;right:max(18px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));z-index:40;display:grid;gap:4px;width:max-content;max-width:min(420px,calc(100vw - 36px));border:1px solid rgba(79,70,229,.22);background:rgba(255,255,255,.88);backdrop-filter:var(--wh-glass-blur);-webkit-backdrop-filter:var(--wh-glass-blur);border-radius:var(--wh-radius-lg);box-shadow:0 18px 60px rgba(37,51,79,.16);padding:12px 14px;color:var(--wh-product-ink);font-weight:750;overflow-wrap:anywhere}.wh-app-notice[hidden]{display:none}.wh-app-notice[data-r4-notice-tone=success]{border-color:rgba(36,166,106,.42);box-shadow:0 18px 60px rgba(36,166,106,.16)}.wh-app-notice[data-r4-notice-tone=warning]{border-color:rgba(217,139,22,.45);box-shadow:0 18px 60px rgba(217,139,22,.15)}.wh-app-notice[data-r4-notice-tone=danger]{border-color:rgba(238,107,95,.45);box-shadow:0 18px 60px rgba(238,107,95,.16)}.wh-app-notice-title{display:block;font-size:13px;line-height:1.35;color:var(--wh-product-ink);font-weight:900}.wh-app-notice-body{display:block;color:var(--wh-product-muted);font-size:12px;line-height:1.45;max-width:100%;overflow-wrap:anywhere}.wh-app-action-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}.wh-app-action-row button{border:1px solid var(--wh-product-line);border-radius:12px;background:rgba(255,255,255,.92);padding:9px 12px;font-weight:750;color:var(--wh-product-ink);cursor:pointer}.wh-app-action-row button:first-child{background:var(--wh-product-blue);border-color:var(--wh-product-blue);color:#fff}",
   "@media (max-width:1120px){.wh-product-layout{grid-template-columns:206px minmax(0,1fr)}.wh-product-rail{display:none}.wh-product-masthead{grid-template-columns:1fr}.wh-product-metrics{justify-content:flex-start;max-width:100%}}",
-  "@media (max-width:780px){.wh-product-topbar{height:auto;min-height:62px;padding:10px 12px;align-items:flex-start}.wh-product-top-actions{flex-wrap:wrap}.wh-product-runtime{order:2;flex-basis:100%;justify-content:flex-start}.wh-product-layout{grid-template-columns:1fr;min-height:calc(100vh - 62px)}.wh-product-nav{position:static;border-right:0;border-bottom:1px solid var(--wh-product-line);padding:10px;overflow:hidden}.wh-product-nav-title{display:none}.wh-product-nav-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;min-width:0}.wh-product-nav a{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center;padding:9px 8px;font-size:13px;white-space:normal}.wh-product-nav small{display:none}.wh-product-main{padding:18px 12px}.wh-product-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.wh-product-metric{min-width:0}.wh-product-route-panels .wh-main{padding:18px}.wh-locale-toggle{grid-template-columns:repeat(2,36px)}}"
+  // R10-S1 玻璃降级门：不支持 backdrop-filter 的浏览器与 prefers-reduced-transparency 用户回实底，
+  // 保证文字对比与可读不依赖毛玻璃效果。
+  "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.wh-product-topbar,.wh-product-nav,.wh-product-rail{background:rgba(255,255,255,.95)}.wh-product-metric,.wh-product-rail-block,.wh-app-notice{background:rgba(255,255,255,.97)}}",
+  "@media (prefers-reduced-transparency:reduce){body{background:var(--wh-product-page)}.wh-product-topbar,.wh-product-nav,.wh-product-rail,.wh-product-metric,.wh-product-rail-block,.wh-app-notice{background:#fff;backdrop-filter:none;-webkit-backdrop-filter:none}}",
+  "@media (prefers-reduced-motion:reduce){.wh-product-nav a{transition:none}.wh-product-nav-chevron{transition:none}}",
+  "@media (max-width:780px){.wh-product-topbar{height:auto;min-height:62px;padding:10px 12px;align-items:flex-start}.wh-product-top-actions{flex-wrap:wrap}.wh-product-runtime{order:2;flex-basis:100%;justify-content:flex-start}.wh-product-layout{grid-template-columns:1fr;min-height:calc(100vh - 62px)}.wh-product-nav{position:static;border-right:0;border-bottom:1px solid var(--wh-product-line);padding:10px;min-width:0}.wh-product-nav{gap:8px}.wh-product-nav-title{display:none}.wh-product-nav-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;min-width:0}.wh-product-nav a{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center;padding:9px 8px;font-size:13px;white-space:normal}.wh-product-nav:not([data-nav-expanded=true]) .wh-product-nav-group:not([data-nav-group=work]):not(:has(a[aria-current=page])){display:none}.wh-product-nav[data-nav-expanded=true] .wh-product-nav-group>.wh-product-nav-list{display:grid}.wh-product-nav[data-nav-expanded=true] .wh-product-nav-group-toggle{pointer-events:none}.wh-product-nav-more{display:block;width:100%;margin-top:6px;border:1px solid var(--wh-glass-line);border-radius:12px;background:rgba(255,255,255,.85);padding:7px;font-size:12px;font-weight:800;color:var(--wh-product-muted);cursor:pointer}.wh-product-nav small{display:none}.wh-product-main{padding:18px 12px}.wh-product-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.wh-product-metric{min-width:0}.wh-product-route-panels .wh-main{padding:18px}.wh-locale-toggle{grid-template-columns:repeat(2,36px)}}"
 ].join("");
 
 function escapeHtml(value: unknown) {
@@ -308,7 +332,7 @@ function productT(locale: WorkHubLocale, key: ProductShellCopyKey) {
   return productShellCopy[locale][key];
 }
 
-function labelForPage(page: GoldPathRenderedPage, locale: WorkHubLocale) {
+function labelForPage(page: { key: string; title: string }, locale: WorkHubLocale) {
   const key = `nav.${page.key}` as ProductShellCopyKey;
   return productShellCopy[locale][key] ?? page.title;
 }
@@ -398,18 +422,76 @@ function pageMetrics(page: WebProductShellPage, rendered: WebProductShellSurface
   return fallback;
 }
 
+// R10-S1.5→Nav-v2 导航信息架构：「提需求」是动作不是地点——升为置顶主 CTA；工作组(总览/项目/审批
+// +detail-only 激活页)常驻无标题；项目资产/团队/管理三组默认折叠(当前页所在组自动展开)，点组名展开。
+// 普通成员默认视野=1 CTA + 3 项 + 3 个组名。
+const productNavGroups: ReadonlyArray<{
+  id: string;
+  titleKey: ProductShellCopyKey;
+  keys: ReadonlySet<string>;
+  adminOnly?: boolean;
+  collapsible?: boolean;
+}> = [
+  { id: "work", titleKey: "nav.group.work", keys: new Set(["home", "projects", "project-home", "approvals", "workitem", "proposal", "replay"]) },
+  { id: "assets", titleKey: "nav.group.assets", keys: new Set(["drive", "meetings", "knowledge"]), collapsible: true },
+  { id: "team", titleKey: "nav.group.team", keys: new Set(["notifications", "calendar", "health"]), collapsible: true },
+  { id: "admin", titleKey: "nav.group.admin", keys: new Set(["cost", "agents", "skills", "settings"]), adminOnly: true, collapsible: true }
+];
+
+// R10-S3：状态壳(loading/error/403/404)只需要 key/route/title 渲导航——放宽到最小形状，
+// ready 壳传完整 GoldPathRenderedPage 不受影响。
+type ProductNavPage = Pick<GoldPathRenderedPage, "route" | "title"> & { key: string };
+
 function renderProductNav(
-  pages: GoldPathRenderedPage[],
-  activeKey: GoldPathRenderedPage["key"],
-  locale: WorkHubLocale
+  pages: ProductNavPage[],
+  activeKey: string,
+  locale: WorkHubLocale,
+  isAdmin: boolean
 ) {
-  return pages
-    .map((page) => {
-      const active = page.key === activeKey;
-      const navHref = page.route;
-      return `<a href="${escapeHtml(navHref)}" data-wh-route="${escapeHtml(page.route)}" data-wh-page-key="${page.key}" aria-current="${active ? "page" : "false"}"><span>${escapeHtml(labelForPage(page, locale))}</span></a>`;
+  const link = (page: ProductNavPage) => {
+    const active = page.key === activeKey;
+    return `<a href="${escapeHtml(page.route)}" data-wh-route="${escapeHtml(page.route)}" data-wh-page-key="${page.key}" aria-current="${active ? "page" : "false"}"><span>${escapeHtml(labelForPage(page, locale))}</span></a>`;
+  };
+  const assigned = new Set<string>();
+  // Nav-v2：「提需求」是高频动作——从列表项升为置顶主 CTA。
+  const intakePage = pages.find((page) => page.key === "intake");
+  if (intakePage) {
+    assigned.add("intake");
+  }
+  const cta = intakePage
+    ? `<a class="wh-product-nav-cta" href="${escapeHtml(intakePage.route)}" data-wh-route="${escapeHtml(intakePage.route)}" data-wh-page-key="intake" aria-current="${activeKey === "intake" ? "page" : "false"}"><span aria-hidden="true">＋</span><span>${escapeHtml(labelForPage(intakePage, locale))}</span></a>`
+    : "";
+  const groups = productNavGroups
+    .map((group) => {
+      const groupPages = pages.filter((page) => group.keys.has(page.key));
+      groupPages.forEach((page) => assigned.add(page.key));
+      if (groupPages.length === 0) {
+        return "";
+      }
+      // 角色化披露：管理组(成本/军团/技能/设置)不进普通成员的日常导航——深链与服务端权限不受影响；
+      // 非 admin 恰好深链停在管理组页面时仍渲该组,保证当前页在导航中有锚点。
+      const containsActive = groupPages.some((page) => page.key === activeKey);
+      if (group.adminOnly && !isAdmin && !containsActive) {
+        return "";
+      }
+      // Nav-v2：工作组无标题常驻；可折叠组默认收起（当前页所在组自动展开），组名即开关。
+      if (!group.collapsible) {
+        return `<div class="wh-product-nav-group" data-nav-group="${group.id}"><div class="wh-product-nav-list">${groupPages.map(link).join("")}</div></div>`;
+      }
+      const collapsed = !containsActive;
+      return `<div class="wh-product-nav-group" data-nav-group="${group.id}" data-nav-collapsed="${collapsed ? "true" : "false"}">
+        <button type="button" class="wh-product-nav-group-toggle" data-nav-group-toggle="${group.id}" aria-expanded="${collapsed ? "false" : "true"}"><span>${escapeHtml(productT(locale, group.titleKey))}</span><span class="wh-product-nav-chevron" aria-hidden="true">▾</span></button>
+        <div class="wh-product-nav-list">${groupPages.map(link).join("")}</div>
+      </div>`;
     })
+    .filter(Boolean)
     .join("");
+  // 未落组的新页面兜底可见——加新路由忘了归组时绝不静默消失。
+  const leftovers = pages.filter((page) => !assigned.has(page.key));
+  const leftoverGroup = leftovers.length
+    ? `<div class="wh-product-nav-group" data-nav-group="other"><div class="wh-product-nav-list">${leftovers.map(link).join("")}</div></div>`
+    : "";
+  return cta + groups + leftoverGroup;
 }
 
 function renderRoutePanel(page: GoldPathRenderedPage, active: boolean, routeComponents?: WebRouteComponentMap) {
@@ -423,6 +505,52 @@ function renderRoutePanel(page: GoldPathRenderedPage, active: boolean, routeComp
   return `<section class="wh-route-panel" data-wh-panel="${page.key}"${componentMarker}${hydrationMarker} ${active ? "" : "hidden"}>${routeComponent?.html ?? page.html}</section>`;
 }
 
+function renderProductTopbar(locale: WorkHubLocale, appName: string, currentUser?: WebProductShellCurrentUser) {
+  return `<header class="wh-product-topbar">
+        <a class="wh-product-brand" href="/" data-wh-route="/" data-wh-page-key="home"><span class="wh-product-brand-mark" aria-hidden="true"></span><span>${escapeHtml(appName)}</span></a>
+        <div class="wh-product-top-actions">
+          <div class="wh-product-runtime" aria-label="${escapeHtml(productT(locale, "topbar.scope"))}"><span class="wh-product-runtime-dot" aria-hidden="true"></span><span>${escapeHtml(productT(locale, "topbar.scope"))}</span></div>
+          ${currentUser ? `<div class="wh-product-user" data-wh-current-user="${escapeHtml(currentUser.nickname)}" data-wh-current-user-admin="${escapeHtml(String(currentUser.isAdmin))}"><span class="wh-product-user-name">${escapeHtml(currentUser.nickname)}</span>${currentUser.isAdmin ? `<span class="wh-product-rail-tag">${escapeHtml(productT(locale, "topbar.admin"))}</span>` : ""}<button type="button" class="wh-product-logout" data-wh-logout="true" data-action-id="logout">${escapeHtml(productT(locale, "topbar.logout"))}</button></div>` : ""}
+          ${renderLocaleToggle(locale)}
+        </div>
+      </header>`;
+}
+
+// R10-S3（P2-6）：loading/error/403/404 不再渲成脱壳裸页——身份可用时保留顶栏+分组导航，
+// 状态卡渲进主内容区。用户在异常态仍知道自己在 WorkHub 的哪里、还能去哪。
+export type WebProductStateShellInput = {
+  locale: WorkHubLocale;
+  appName: string;
+  currentRoute: string;
+  activeKey: string;
+  entries: Array<{ key: string; route: string; title: string }>;
+  currentUser?: WebProductShellCurrentUser | undefined;
+  contentHtml: string;
+};
+
+export function renderWebProductStateShell(input: WebProductStateShellInput): { css: string; html: string } {
+  const locale = normalizeWorkHubLocale(input.locale);
+  const nav = renderProductNav(input.entries, input.activeKey, locale, input.currentUser ? input.currentUser.isAdmin : true);
+  return {
+    css: `${productShellCss}${productStateShellCss}`,
+    html: `<div class="wh-product-root" data-wh-surface="web" data-r4-product-shell="true" data-r4-product-state-shell="true" data-r4-product-route-key="${escapeHtml(input.activeKey)}" data-r4-product-link-mode="path">
+      ${renderProductTopbar(locale, input.appName, input.currentUser)}
+      <div class="wh-product-layout wh-product-layout--state">
+        <nav class="wh-product-nav" aria-label="${escapeHtml(goldPathT(locale, "shell.navAria"))}">
+          ${nav}
+          <button type="button" class="wh-product-nav-more" data-nav-more aria-expanded="false">${escapeHtml(locale === "en-US" ? "More" : "更多")}</button>
+        </nav>
+        <main class="wh-product-main">
+          <div class="wh-product-route-panels">${input.contentHtml}</div>
+        </main>
+      </div>
+      <aside class="wh-app-notice" data-wh-app-notice hidden aria-live="polite"></aside>
+    </div>`
+  };
+}
+
+const productStateShellCss = ".wh-product-layout--state{grid-template-columns:218px minmax(0,1fr)}.wh-product-layout--state .wh-product-main{display:grid;align-content:start}@media (max-width:780px){.wh-product-layout--state{grid-template-columns:1fr}}";
+
 export function renderWebProductShell(
   rendered: WebProductShellSurface,
   options: WebProductShellOptions
@@ -431,7 +559,7 @@ export function renderWebProductShell(
   const routeMap = buildGoldPathRouteMap(rendered.pages);
   const activeKey = resolveGoldPathPageKey(routeMap, options.currentRoute ?? "") ?? rendered.pages[0]?.key ?? "home";
   const activePage = rendered.pages.find((page) => page.key === activeKey) ?? rendered.pages[0];
-  const nav = renderProductNav(rendered.pages, activeKey, locale);
+  const nav = renderProductNav(rendered.pages, activeKey, locale, options.currentUser ? options.currentUser.isAdmin : true);
   const routeComponentCss = [...new Set(Object.values(options.routeComponents ?? {})
     .map((component) => component.css)
     .filter(Boolean))]
@@ -446,18 +574,11 @@ export function renderWebProductShell(
     routeMap,
     css: `${productShellCss}${rendered.css}${routeComponentCss}`,
     html: `<div class="wh-product-root" data-wh-surface="${rendered.surface}" data-r4-product-shell="true" data-r4-product-route-key="${escapeHtml(activeKey)}" data-r4-product-link-mode="path">
-      <header class="wh-product-topbar">
-        <a class="wh-product-brand" href="/" data-wh-route="/" data-wh-page-key="home"><span class="wh-product-brand-mark" aria-hidden="true"></span><span>${escapeHtml(options.appName)}</span></a>
-        <div class="wh-product-top-actions">
-          <div class="wh-product-runtime" aria-label="${escapeHtml(productT(locale, "topbar.scope"))}"><span class="wh-product-runtime-dot" aria-hidden="true"></span><span>${escapeHtml(productT(locale, "topbar.scope"))}</span></div>
-          ${options.currentUser ? `<div class="wh-product-user" data-wh-current-user="${escapeHtml(options.currentUser.nickname)}" data-wh-current-user-admin="${escapeHtml(String(options.currentUser.isAdmin))}"><span class="wh-product-user-name">${escapeHtml(options.currentUser.nickname)}</span>${options.currentUser.isAdmin ? `<span class="wh-product-rail-tag">${escapeHtml(productT(locale, "topbar.admin"))}</span>` : ""}<button type="button" class="wh-product-logout" data-wh-logout="true" data-action-id="logout">${escapeHtml(productT(locale, "topbar.logout"))}</button></div>` : ""}
-          ${renderLocaleToggle(locale)}
-        </div>
-      </header>
+      ${renderProductTopbar(locale, options.appName, options.currentUser)}
       <div class="wh-product-layout">
         <nav class="wh-product-nav" aria-label="${escapeHtml(goldPathT(locale, "shell.navAria"))}">
-          <div class="wh-product-nav-title">${escapeHtml(productT(locale, "nav.title"))}</div>
-          <div class="wh-product-nav-list">${nav}</div>
+          ${nav}
+          <button type="button" class="wh-product-nav-more" data-nav-more aria-expanded="false">${escapeHtml(locale === "en-US" ? "More" : "更多")}</button>
         </nav>
         <main class="wh-product-main">
           ${activeKey === "home" ? "" : `<section class="wh-product-masthead" data-r4-product-masthead="true" aria-label="${escapeHtml(activeTitle)}">
@@ -466,7 +587,7 @@ export function renderWebProductShell(
           <div class="wh-product-route-panels">${panels}</div>
         </main>
         <aside class="wh-product-rail" aria-label="${escapeHtml(productT(locale, "rail.now"))}">
-          <section class="wh-product-rail-block">
+          <section class="wh-product-rail-block wh-product-rail-block--static">
             <span class="wh-product-rail-tag">${escapeHtml(productT(locale, "rail.source"))}</span>
             <h2>${escapeHtml(productT(locale, "topbar.rest"))}</h2>
             <p>${escapeHtml(productT(locale, "rail.refresh"))}</p>
@@ -476,13 +597,13 @@ export function renderWebProductShell(
             <h2>${escapeHtml(activePage ? labelForPage(activePage, locale) : options.appName)}</h2>
             <p>${escapeHtml(activeNext)}</p>
           </section>
-          <section class="wh-product-rail-block">
+          <section class="wh-product-rail-block wh-product-rail-block--static">
             <span class="wh-product-rail-tag">${escapeHtml(productT(locale, "topbar.scope"))}</span>
             <p>${escapeHtml(productT(locale, "rail.boundary"))}</p>
           </section>
         </aside>
       </div>
-      <div class="wh-app-notice" data-wh-app-notice ${options.notice ? "" : "hidden"}>${escapeHtml(options.notice ?? "")}</div>
+      <div class="wh-app-notice" role="status" aria-live="polite" aria-atomic="true" data-wh-app-notice ${options.notice ? "" : "hidden"}>${escapeHtml(options.notice ?? "")}</div>
     </div>`
   };
 }

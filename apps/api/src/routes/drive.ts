@@ -53,6 +53,11 @@ const textLikeDriveFile = /\.(csv|json|md|markdown|txt|tsv|html|xml|yaml|yml)$/i
 const driveDeleteSchema = z.object({
   expected_current_version_id: z.uuid().nullable().optional()
 });
+// UX-U3：网盘评论 composer 请求体。
+const driveCreateCommentSchema = z.object({
+  body: z.string().min(1).max(4000),
+  folder_id: z.string().uuid().optional()
+});
 
 function requestLocale(c: { req: { query: (key: string) => string | undefined; header: (key: string) => string | undefined } }) {
   return normalizeWorkHubLocale(c.req.query("locale") ?? c.req.header("Accept-Language"));
@@ -140,7 +145,7 @@ async function readStoredDriveFile(storagePath: string, encoding?: BufferEncodin
       && "code" in error
       && (error as { code?: unknown }).code === "ENOENT"
     ) {
-      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。", "drive_file_missing");
+      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。(The file no longer exists — re-upload or check history.)", "drive_file_missing");
     }
     throw error;
   }
@@ -154,15 +159,15 @@ function sha256Buffer(bytes: Buffer) {
 
 function parsedTextFallback(file: DriveRouteFile, encoding?: BufferEncoding, options: { requireComplete?: boolean } = {}) {
   if (file.parsedText === undefined) {
-    throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。", "drive_file_missing");
+    throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。(The file no longer exists — re-upload or check history.)", "drive_file_missing");
   }
   const bytes = Buffer.from(file.parsedText, "utf8");
   if (options.requireComplete) {
     if (bytes.byteLength !== file.sizeBytes) {
-      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。", "drive_file_missing");
+      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。(The file no longer exists — re-upload or check history.)", "drive_file_missing");
     }
     if (file.sha256 && sha256Buffer(bytes) !== file.sha256) {
-      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。", "drive_file_missing");
+      throw new DrivePageServiceError(404, "网盘文件已不存在，请重新上传或查看历史记录。(The file no longer exists — re-upload or check history.)", "drive_file_missing");
     }
   }
   return encoding ? file.parsedText : bytes;
@@ -265,18 +270,24 @@ async function readUploadBody(
     const filename = displayFilename(formString(form.get("filename")) || file.name || "upload.bin");
     const mime = formString(form.get("mime")) || file.type || "application/octet-stream";
     if (file.size > driveUploadMaxBytes) {
-      throw new DrivePageServiceError(413, `网盘文件不能超过 ${driveUploadMaxBytes / 1024 / 1024} MiB。`, "drive_file_too_large");
+      throw new DrivePageServiceError(413, `网盘文件不能超过 ${driveUploadMaxBytes / 1024 / 1024} MiB。(File exceeds the ${driveUploadMaxBytes / 1024 / 1024} MiB limit.)`, "drive_file_too_large");
     }
     const bytes = Buffer.from(await file.arrayBuffer());
     const parsedText = formString(form.get("parsed_text")) || parsedTextFromBytes(bytes, filename, mime);
-    const metadata = uploadDriveFileSchema.parse({
-      filename,
-      parent_id: formString(form.get("parent_id")) || undefined,
-      mime,
-      size_bytes: bytes.byteLength,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-      ...(parsedText ? { parsed_text: parsedText } : {})
-    });
+    // R8（错误面）：zod 校验失败此前漏进全局英文 422 兜底——与本文件其余双语文案不一致。就地转双语。
+    let metadata: ReturnType<typeof uploadDriveFileSchema.parse>;
+    try {
+      metadata = uploadDriveFileSchema.parse({
+        filename,
+        parent_id: formString(form.get("parent_id")) || undefined,
+        mime,
+        size_bytes: bytes.byteLength,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+        ...(parsedText ? { parsed_text: parsedText } : {})
+      });
+    } catch {
+      throw new DrivePageServiceError(400, "网盘文件信息不合法，请检查后重新上传。(Invalid file metadata — check and re-upload.)", "drive_upload_invalid");
+    }
     const storagePath = await persistDriveUploadBytes({ bytes, filename: metadata.filename, projectId: input.projectId, settings: input.settings });
     return {
       filename: metadata.filename,
@@ -289,7 +300,14 @@ async function readUploadBody(
     };
   }
 
-  const body = uploadDriveFileSchema.parse(jsonObjectFromText(rawBody.toString("utf8")));
+  // R8：只把 zod 校验失败转双语——JSON 解析失败有自己的专用报错（malformed JSON 测试钉死），原样放行。
+  const parsedJsonBody = jsonObjectFromText(rawBody.toString("utf8"));
+  let body: ReturnType<typeof uploadDriveFileSchema.parse>;
+  try {
+    body = uploadDriveFileSchema.parse(parsedJsonBody);
+  } catch {
+    throw new DrivePageServiceError(400, "网盘文件信息不合法，请检查后重新上传。(Invalid file metadata — check and re-upload.)", "drive_upload_invalid");
+  }
   if (!body.parsed_text?.trim()) {
     throw new DrivePageServiceError(
       400,
@@ -468,6 +486,26 @@ export function createDriveRoutes(deps: DriveRoutesDependencies = {}) {
         locale,
         projectId: requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found"),
         itemId: requireUuidParam(c.req.param("itemId"), "文件", "drive_file_not_found")
+      });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof DrivePageServiceError) {
+        return driveErrorResponse(c, error);
+      }
+      throw error;
+    }
+  });
+
+  routes.post("/projects/:projectId/comments", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    const payload = driveCreateCommentSchema.parse(await readJsonObject(c));
+    try {
+      const data = await drivePages.createComment({
+        actor: c.var.actor,
+        locale,
+        projectId: requireUuidParam(c.req.param("projectId"), "项目", "drive_not_found"),
+        body: payload.body,
+        ...(payload.folder_id ? { folderId: payload.folder_id } : {})
       });
       return c.json(pageEnvelope(data, locale));
     } catch (error) {

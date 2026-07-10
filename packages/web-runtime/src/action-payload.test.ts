@@ -11,6 +11,7 @@ import {
   approvalRespondIdFromHref,
   bootstrapProjectActionFromHref,
   conflictsFromMergeError,
+  createTaskPlanActionFromHref,
   createNamedProjectActionFromHref,
   createWorkItemActionFromHref,
   driveCommentDraftFromHref,
@@ -18,12 +19,16 @@ import {
   driveItemMutationFromHref,
   driveUploadFromHref,
   evidenceBindingWorkItemIdFromHref,
+  escalationActionFromHref,
   hasCustomFieldPlaceholder,
   intakeFreeTextValue,
   materializeIntakePayload,
   mergeProposalCandidateApplyIdFromHref,
   meetingDraftProposalFromHref,
   meetingInsightActionFromHref,
+  memoryConflictActionFromHref,
+  skipPlanProposalIdFromHref,
+  taskPlanDispatchActionFromHref,
   isNativeResourceLink,
   notificationActionFromHref,
   proposalActionFromHref,
@@ -43,6 +48,7 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
   assert.equal(bootstrapProjectActionFromHref("/api/projects/bootstrap"), true);
   assert.equal(createNamedProjectActionFromHref("/api/projects/bootstrap"), true);
   assert.equal(createNamedProjectActionFromHref("/api/projects"), false);
+  assert.deepEqual(createTaskPlanActionFromHref("/api/workitems/w%201/task-plan"), { workItemId: "w 1" });
   assert.deepEqual(startAgentRunActionFromHref("/api/workitems/w%201/agent-runs"), { workItemId: "w 1" });
   assert.equal(evidenceBindingWorkItemIdFromHref("/api/workitems/w-1/evidence-bindings"), "w-1");
   assert.deepEqual(acceptedDeliverableRestoreFromHref("/api/workitems/w-1/deliverables/ac-1/restore"), {
@@ -85,6 +91,33 @@ test("R4.21 shared runtime parses route action hrefs without app-specific code",
     notificationId: "n-1",
     action: "complete"
   });
+  assert.deepEqual(escalationActionFromHref("/api/escalations/e%201/resolve"), {
+    escalationId: "e 1",
+    action: "resolve"
+  });
+  assert.deepEqual(escalationActionFromHref("/api/escalations/e-1/delegate"), {
+    escalationId: "e-1",
+    action: "delegate"
+  });
+  assert.deepEqual(escalationActionFromHref("/api/escalations/e%201/budget-actions/finish_current_output"), {
+    escalationId: "e 1",
+    action: "budget",
+    budgetActionId: "finish_current_output"
+  });
+  assert.deepEqual(memoryConflictActionFromHref("/api/memory-conflicts/m%201/resolve/keep_current?expected_updated_at=2026-07-03T10%3A40%3A00.000Z"), {
+    conflictId: "m 1",
+    resolution: "keep_current",
+    expectedUpdatedAt: "2026-07-03T10:40:00.000Z"
+  });
+  assert.deepEqual(memoryConflictActionFromHref("https://workhub.local/api/memory-conflicts/m-2/resolve/merge_both?expected_updated_at=2026-07-03T10%3A41%3A00.000Z"), {
+    conflictId: "m-2",
+    resolution: "merge_both",
+    expectedUpdatedAt: "2026-07-03T10:41:00.000Z"
+  });
+  // R9.7 review: the old assertion accepted memory-conflict POST hrefs with no version.
+  // That was wrong because stale cards need an updated_at token before the client can resolve.
+  assert.equal(memoryConflictActionFromHref("https://workhub.local/api/memory-conflicts/m-2/resolve/merge_both"), undefined);
+  assert.equal(memoryConflictActionFromHref("/api/memory-conflicts/m-1/resolve/delete_everything"), undefined);
   assert.deepEqual(driveItemMutationFromHref("/api/drive/projects/p-1/items/i-1/delete"), {
     projectId: "p-1",
     itemId: "i-1",
@@ -268,4 +301,14 @@ test("S1 Day2 shared runtime detects post-run WorkItem proposal and replay next 
     workItemId: "missing",
     actionCount: 0
   });
+});
+
+
+// B-R9.6 UX 审计：skip-plan 与暂停/恢复派发的 href 识别（假接线修复的最小锚点）。
+test("skipPlanProposalIdFromHref and taskPlanDispatchActionFromHref parse their endpoints", () => {
+  assert.equal(skipPlanProposalIdFromHref("/api/proposals/p%201/skip-plan"), "p 1");
+  assert.equal(skipPlanProposalIdFromHref("/api/proposals/p1/review"), undefined);
+  assert.deepEqual(taskPlanDispatchActionFromHref("/api/task-plans/t1/pause"), { planId: "t1", action: "pause" });
+  assert.deepEqual(taskPlanDispatchActionFromHref("/api/task-plans/t1/resume"), { planId: "t1", action: "resume" });
+  assert.equal(taskPlanDispatchActionFromHref("/api/task-plans/t1/cancel"), undefined);
 });

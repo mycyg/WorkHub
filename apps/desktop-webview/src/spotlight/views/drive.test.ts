@@ -270,3 +270,13 @@ test("desktop drive no-project empty state offers a direct new-task action", () 
   assert.match(en, /data-drive-open-intake="true"/u);
   assert.match(en, /New task/u);
 });
+
+test("R9.7 desktop drive no-project empty state avoids dispatch copy", () => {
+  const zh = driveNoProjectsEmptyHtml(true);
+  const en = driveNoProjectsEmptyHtml(false);
+
+  assert.doesNotMatch(zh, /派活/u);
+  assert.doesNotMatch(en, /Dispatch|dispatch/u);
+  assert.match(zh, /交给 Cuu 一个任务/u);
+  assert.match(en, /Create a task/u);
+});

@@ -641,6 +641,8 @@ export function createScheduleNotifyPageService(
       return parseOutputContract(notificationPageVmSchema, {
         generated_at: now().toISOString(),
         actor_user_id: input.actor.userId ?? input.actor.id,
+        // 拉满 200 即可能有更多历史被截断。
+        capped: rows.length >= 200,
         summary: {
           total_count: items.length,
           unread_count: items.filter((item) => item.status === "unread").length,

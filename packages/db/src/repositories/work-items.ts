@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 
 import { allowedWorkItemTransitions, sessionFinalizeFromStatuses } from "@workhub/contracts";
 import type { EvidenceRef, WorkItemMode, WorkItemStatus } from "@workhub/contracts";
@@ -12,12 +12,15 @@ const terminalWorkItemStatuses: WorkItemStatus[] = ["merged", "done", "cancelled
 const privateWorkItemStatuses: WorkItemStatus[] = ["intake", "ai_clarifying", "spec_ready"];
 
 import type { WorkHubDb } from "../client.js";
+import type { TaskPlanWithItems } from "./task-plans.js";
 import {
   acceptedDeliverableChanges,
+  approvalRequests,
   agentRuns,
   agentSteps,
   auditLogs,
   chatMessages,
+  confidenceRecords,
   knowledgeDocuments,
   meetingInsights,
   meetingRecords,
@@ -27,6 +30,8 @@ import {
   projectDriveVersions,
   projects,
   proposals,
+  taskPlanItems,
+  taskPlans,
   workItemAcceptanceItems,
   workItemAssignments,
   workItems,
@@ -87,6 +92,9 @@ export type WorkItemNotificationContextRow = {
 // 让 canViewWorkItemRecord(record, targetUser) 能复用——含状态/提交人/认领人/项目活跃度/显式指派（lead/collaborator）。
 export type WorkItemAccessRow = {
   id: string;
+  // R11（通知信息量）：军团升级/收工通知要点名事项——顺带带出 code/title（可选，测试夹具不必补）。
+  code?: string;
+  title?: string | null;
   status: WorkItemStatus;
   submitterUserId: string;
   claimedByUserId: string | null;
@@ -97,6 +105,7 @@ export type WorkItemAccessRow = {
     ownerUserId: string | null;
     workspaceId: string | null;
     orgId?: string | null;
+    name?: string | null;
   } | null;
   assignments: Array<{ userId: string; role: string }>;
 };
@@ -220,8 +229,13 @@ export type StoredWorkItemDetailRows = {
   latestProposal: WorkItemProposalRow | null;
   acceptedDeliverables: WorkItemAcceptedDeliverableRow[];
   evidenceBindings: WorkItemChatMessageRow[];
+  taskPlan?: TaskPlanWithItems | null;
   driveSourceComment: WorkItemDriveSourceCommentRow | null;
   meetingSourceInsight: WorkItemMeetingSourceInsightRow | null;
+  // R6（信任）：最近一次置信评级（workItem.latestConfidenceId 指向的记录），详情页渲染置信 pill 用。
+  latestConfidence?: { confidenceScore: number; grade: "low" | "medium" | "high"; verdict: string } | null;
+  // R8（留痕）：本工作项上已决策的审批（谁批的/结论/理由/时间），详情页时间线用。
+  approvalDecisions?: Array<{ id: string; status: string; decisionReasonMd: string | null; decidedByUserId: string | null; updatedAt: Date }>;
 };
 
 export type WorkItemKnowledgeSearchInput = {
@@ -500,6 +514,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       const rows = await db
         .select({
           id: workItems.id,
+          code: workItems.code,
+          title: workItems.title,
           status: workItems.status,
           submitterUserId: workItems.submitterUserId,
           claimedByUserId: workItems.claimedByUserId,
@@ -507,6 +523,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           projectArchived: projects.archived,
           projectDeletedAt: projects.deletedAt,
           projectOwnerUserId: projects.ownerUserId,
+          projectName: projects.name,
           projectWorkspaceId: projects.workspaceId,
           projectOrgId: workspaces.orgId
         })
@@ -525,6 +542,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         .where(eq(workItemAssignments.workItemId, workItemId));
       return {
         id: row.id,
+        code: row.code,
+        title: row.title,
         status: row.status,
         submitterUserId: row.submitterUserId,
         claimedByUserId: row.claimedByUserId,
@@ -533,6 +552,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           archived: row.projectArchived,
           deletedAt: row.projectDeletedAt,
           ownerUserId: row.projectOwnerUserId,
+          name: row.projectName,
           workspaceId: row.projectWorkspaceId,
           orgId: row.projectOrgId
         },
@@ -550,6 +570,9 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         db
           .select({
             id: workItems.id,
+            // R12：与单条路径对齐——批量路径也带出 code/title，两条共享类型的路径行为等价。
+            code: workItems.code,
+            title: workItems.title,
             status: workItems.status,
             submitterUserId: workItems.submitterUserId,
             claimedByUserId: workItems.claimedByUserId,
@@ -557,6 +580,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             projectArchived: projects.archived,
             projectDeletedAt: projects.deletedAt,
             projectOwnerUserId: projects.ownerUserId,
+            projectName: projects.name,
             projectWorkspaceId: projects.workspaceId,
             projectOrgId: workspaces.orgId
           })
@@ -582,6 +606,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       for (const row of rows) {
         result.set(row.id, {
           id: row.id,
+          code: row.code,
+          title: row.title,
           status: row.status,
           submitterUserId: row.submitterUserId,
           claimedByUserId: row.claimedByUserId,
@@ -590,6 +616,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             archived: row.projectArchived,
             deletedAt: row.projectDeletedAt,
             ownerUserId: row.projectOwnerUserId,
+            name: row.projectName,
             workspaceId: row.projectWorkspaceId,
             orgId: row.projectOrgId
           },
@@ -1021,7 +1048,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             .limit(8)
         : [];
 
-      const [assignments, acceptance, latestProposals, acceptedDeliverables, evidenceBindings, driveSourceComments, meetingSourceInsights] = await Promise.all([
+      const detailWorkspaceId = row.workItem.workspaceId ?? row.projectWorkspaceId;
+      const [assignments, acceptance, latestProposals, acceptedDeliverables, evidenceBindings, driveSourceComments, meetingSourceInsights, latestTaskPlans] = await Promise.all([
         db
           .select({ userId: workItemAssignments.userId, role: workItemAssignments.role })
           .from(workItemAssignments)
@@ -1064,8 +1092,66 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
           .innerJoin(meetingRecords, eq(meetingInsights.meetingId, meetingRecords.id))
           .where(eq(meetingInsights.createdWorkItemId, workItemId))
           .orderBy(desc(meetingInsights.updatedAt), desc(meetingInsights.createdAt))
-          .limit(1)
+          .limit(1),
+        detailWorkspaceId
+          ? db
+              .select({ plan: taskPlans })
+              .from(taskPlans)
+              .where(and(
+                eq(taskPlans.workItemId, workItemId),
+                eq(taskPlans.workspaceId, detailWorkspaceId),
+                notInArray(taskPlans.status, ["cancelled"])
+              ))
+              .orderBy(desc(taskPlans.updatedAt), desc(taskPlans.createdAt), desc(taskPlans.id))
+              .limit(1)
+          : Promise.resolve([])
       ]);
+
+      const latestTaskPlan = latestTaskPlans[0]?.plan ?? null;
+      const taskPlanItemRows = latestTaskPlan
+        ? await db
+            .select()
+            .from(taskPlanItems)
+            .where(eq(taskPlanItems.planId, latestTaskPlan.id))
+            .orderBy(asc(taskPlanItems.seq), asc(taskPlanItems.id))
+            .limit(51)
+        : [];
+      const taskPlanRunRows = latestTaskPlan
+        ? await db
+            .select({
+              id: agentRuns.id,
+              parentRunId: agentRuns.parentRunId,
+              workItemId: agentRuns.workItemId,
+              workspaceId: agentRuns.workspaceId,
+              taskPlanId: agentRuns.taskPlanId,
+              taskPlanItemId: agentRuns.taskPlanItemId,
+              agentRole: agentRuns.agentRole,
+              title: agentRuns.title,
+              status: agentRuns.status,
+              costEstimate: agentRuns.costEstimate,
+              outcomeReason: agentRuns.outcomeReason,
+              createdAt: agentRuns.createdAt,
+              updatedAt: agentRuns.updatedAt,
+              finishedAt: agentRuns.finishedAt
+            })
+            .from(agentRuns)
+            .where(and(
+              eq(agentRuns.workItemId, workItemId),
+              eq(agentRuns.workspaceId, latestTaskPlan.workspaceId),
+              eq(agentRuns.taskPlanId, latestTaskPlan.id)
+            ))
+            .orderBy(asc(agentRuns.createdAt), asc(agentRuns.id))
+            .limit(101)
+        : [];
+      const taskPlan = latestTaskPlan
+        ? {
+            plan: latestTaskPlan,
+            items: taskPlanItemRows.slice(0, 50),
+            itemsCapped: taskPlanItemRows.length > 50,
+            runs: taskPlanRunRows.slice(0, 100),
+            runsCapped: taskPlanRunRows.length > 100
+          }
+        : null;
 
       const driveSourceComment = driveSourceComments[0] ?? null;
       let driveSourceCommentWithPath: WorkItemDriveSourceCommentRow | null = null;
@@ -1087,6 +1173,31 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         };
       }
 
+      const approvalDecisionRows = await db
+        .select({
+          id: approvalRequests.id,
+          status: approvalRequests.status,
+          decisionReasonMd: approvalRequests.decisionReasonMd,
+          decidedByUserId: approvalRequests.decidedByUserId,
+          updatedAt: approvalRequests.updatedAt
+        })
+        .from(approvalRequests)
+        .where(and(eq(approvalRequests.workItemId, workItemId), ne(approvalRequests.status, "pending")))
+        .orderBy(desc(approvalRequests.updatedAt))
+        .limit(5);
+
+      const latestConfidenceRows = row.workItem.latestConfidenceId
+        ? await db
+            .select({
+              confidenceScore: confidenceRecords.confidenceScore,
+              grade: confidenceRecords.grade,
+              verdict: confidenceRecords.verdict
+            })
+            .from(confidenceRecords)
+            .where(eq(confidenceRecords.id, row.workItem.latestConfidenceId))
+            .limit(1)
+        : [];
+
       return {
         workItem: row.workItem,
         projectName: row.projectName,
@@ -1100,8 +1211,11 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         latestProposal: latestProposals[0] ?? null,
         acceptedDeliverables: await attachAcceptedDeliverableRestoreState(db, acceptedDeliverables),
         evidenceBindings,
+        taskPlan,
         driveSourceComment: driveSourceCommentWithPath,
-        meetingSourceInsight: meetingSourceInsights[0] ?? null
+        meetingSourceInsight: meetingSourceInsights[0] ?? null,
+        latestConfidence: latestConfidenceRows[0] ?? null,
+        approvalDecisions: approvalDecisionRows
       };
     },
 

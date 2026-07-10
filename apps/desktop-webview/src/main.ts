@@ -1,4 +1,4 @@
-import { createApiClient, type WorkHubApiClient } from "@workhub/api-client";
+import { createApiClient, type CreateTaskPlanRequest, type WorkHubApiClient } from "@workhub/api-client";
 import { defaultPorts } from "@workhub/config/ports";
 import type { CreateSessionRequest, CreateWorkItemRequest, ProposalConflict, ProposalDetailVM, StartAgentRunRequest, WorkHubEvent } from "@workhub/contracts";
 import { cardFromAgentRunLive, cardFromEvent, cardFromProposalDetail, cardsFromProposalConflicts, cardFromSessionVm, cardFromWorkItemDetail, type CuuCard } from "@workhub/cuu";
@@ -21,6 +21,7 @@ export const desktopWebviewSurface = {
     "/api/sessions",
     "/api/sessions/:id",
     "/api/workitems",
+    "/api/workitems/:id/task-plan",
     "/api/workitems/:id/agent-runs",
     "/api/agent-runs/:id",
     "/api/agent-runs/:id/trace",
@@ -52,8 +53,10 @@ export const desktopWebviewSurface = {
     "/api/notifications/:id/complete",
     "/api/pages/approvals",
     "/api/pages/cost",
+    "/api/pages/agents",
     "/api/pages/settings",
     "/api/agent-runs/:id/replay",
+    "/dashboard/agents",
     "/settings"
   ],
   consumesTypedClient: "@workhub/api-client",
@@ -104,6 +107,15 @@ export async function renderDesktopWorkItemDetail(client: WorkHubApiClient, work
   return renderWorkItemDetail(await loadDesktopWorkItemDetail(client, workItemId, locale), "desktop", locale ? { locale } : undefined);
 }
 
+export function createDesktopTaskPlan(
+  client: WorkHubApiClient,
+  workItemId: string,
+  payload: CreateTaskPlanRequest = {},
+  locale?: WorkHubLocale
+) {
+  return client.createTaskPlan(workItemId, payload, locale ? { locale } : undefined);
+}
+
 export function startDesktopAgentRun(
   client: WorkHubApiClient,
   workItemId: string,
@@ -126,6 +138,10 @@ export function loadDesktopAgentRunReplay(client: WorkHubApiClient, runId: strin
 
 export async function renderDesktopAgentRunReplay(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {
   return renderAgentRunReplay(await loadDesktopAgentRunReplay(client, runId), "desktop", locale ? { locale } : undefined);
+}
+
+export function loadDesktopAgentArmyDashboard(client: WorkHubApiClient, locale?: WorkHubLocale) {
+  return client.pages.agents(locale ? { locale } : undefined);
 }
 
 export async function renderDesktopAgentRunLive(client: WorkHubApiClient, runId: string, locale?: WorkHubLocale) {

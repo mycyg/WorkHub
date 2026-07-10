@@ -47,8 +47,12 @@ test("default budget mirrors P-COST v0 values from settings", () => {
   assert.equal(budget.totalTimeoutSeconds, 300);
   assert.equal(budget.maxTokens, 120000);
   assert.equal(budget.maxCostCny, "5");
+  // R9.5 adds task/objective budgets as first-class default scopes; the old five-policy list was correct only
+  // before child task plans and OKR objectives became budget boundaries.
   assert.deepEqual(policies.map((policy) => policy.id), [
     "pcost-workitem-run-v0",
+    "pcost-task-run-v0",
+    "pcost-objective-month-v0",
     "pcost-user-day-v0",
     "pcost-team-day-v0",
     "pcost-team-month-v0",
@@ -60,6 +64,130 @@ test("default budget mirrors P-COST v0 values from settings", () => {
   assert.equal(policies.find((policy) => policy.id === "pcost-eval-day-v0")?.scopeKind, "eval");
   assert.equal(policies.find((policy) => policy.id === "pcost-eval-day-v0")?.maxCostCny, "80");
   assert.equal(allowWithDefaultBudget(settings, { provider: "deepseek", model: "m", reason: "default" }).allowed, true);
+});
+
+test("R9.5 task and objective scopes participate in ledger snapshots and budget decisions", async () => {
+  const settings = loadSettings({});
+  const taskPlanId = "95000000-0000-4000-8000-000000000501";
+  const objectiveId = "95000000-0000-4000-8000-000000000502";
+  const ledger = createMemoryCostLedgerStore({ teamId: "workspace-r95" });
+  await ledger.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "95000000-0000-4000-8000-000000000503",
+    workItemId: "95000000-0000-4000-8000-000000000504",
+    userId: "95000000-0000-4000-8000-000000000505",
+    workspaceId: "workspace-r95",
+    taskPlanId,
+    objectiveId,
+    inputTokens: 900,
+    outputTokens: 100,
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: new Date("2026-07-03T00:00:00.000Z")
+  }));
+
+  assert.deepEqual(ledger.entries.map((entry) => entry.scope.kind).sort(), [
+    "objective",
+    "task",
+    "team",
+    "user",
+    "workitem"
+  ]);
+  // R9.7: the old DB schema assertion grepped migration 0037 for task/objective cost columns.
+  // That was wrong because migration source text did not prove task/objective IDs flow through
+  // runtime ledger entries and budget decisions.
+  const taskEntry = ledger.entries.find((entry) => entry.scope.kind === "task");
+  assert.equal(taskEntry?.taskPlanId, taskPlanId);
+  assert.equal(taskEntry?.objectiveId, objectiveId);
+  assert.deepEqual(taskEntry?.scope, { kind: "task", taskPlanId });
+  const objectiveEntry = ledger.entries.find((entry) => entry.scope.kind === "objective");
+  assert.equal(objectiveEntry?.taskPlanId, taskPlanId);
+  assert.equal(objectiveEntry?.objectiveId, objectiveId);
+  assert.deepEqual(objectiveEntry?.scope, { kind: "objective", objectiveId });
+  const snapshots = await ledger.usageSnapshots({ taskPlanId, objectiveId }, {
+    now: new Date("2026-07-03T00:00:00.000Z")
+  });
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "task" && snapshot.period === "day")?.tokenIn, 900);
+  assert.equal(snapshots.find((snapshot) => snapshot.scope.kind === "objective" && snapshot.period === "month")?.tokenOut, 100);
+
+  const decision = decideRunBudget({
+    settings,
+    decisionId: "decision-r95-objective",
+    now: new Date("2026-07-03T00:00:00.000Z"),
+    scopeIds: { taskPlanId, objectiveId },
+    policies: [
+      {
+        id: "pcost-objective-month-v0",
+        scopeKind: "objective",
+        period: "month",
+        maxTokens: 1000,
+        maxCostCny: "99",
+        warningRatio: 0.8,
+        criticalRatio: 0.95,
+        onWarning: "notify",
+        onExhausted: "block_new_run",
+        modelRouteHint: "balanced",
+        enabled: true,
+        version: 1
+      }
+    ],
+    usage: snapshots
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.deepEqual(decision.limitingScope, { kind: "objective", objectiveId });
+  assert.equal(decision.notice?.recommendedAction, "add_budget");
+  assert.deepEqual(decision.notice?.options?.map((option) => option.id), [
+    "add_budget",
+    "finish_current_output",
+    "close_scope"
+  ]);
+});
+
+test("B-R9.5 task lifetime budget really exhausts through the total-period snapshot", async () => {
+  // branch-review 护栏假：task 维度策略此前挂 period=run，而 run 快照恒 0——结构性
+  // 永不超限。total 快照=plan 生命周期累计，累计超 cap 必须真 402。
+  const settings = loadSettings({ BUDGET_DEFAULT_TASK_PLAN_COST_CNY: "10" });
+  const taskPlanId = "95000000-0000-4000-8000-000000000601";
+  const ledger = createMemoryCostLedgerStore({ teamId: "workspace-r95" });
+  // 两个子 run 累计花掉 ¥12（超过计划默认预算 ¥10）。
+  for (const [runId, tokens] of [["95000000-0000-4000-8000-000000000602", 600_000], ["95000000-0000-4000-8000-000000000603", 600_000]] as const) {
+    await ledger.recordUsage(buildUsageRecord({
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+      task: "worker",
+      runId,
+      workItemId: "95000000-0000-4000-8000-000000000604",
+      userId: "95000000-0000-4000-8000-000000000605",
+      workspaceId: "workspace-r95",
+      taskPlanId,
+      inputTokens: tokens,
+      outputTokens: 0,
+      costTier: { inputCnyPerMtok: 10, outputCnyPerMtok: 10 },
+      createdAt: new Date("2026-07-01T00:00:00.000Z")
+    }));
+  }
+  const snapshots = await ledger.usageSnapshots({ taskPlanId }, { now: new Date("2026-07-03T00:00:00.000Z") });
+  const totalSnapshot = snapshots.find((snapshot) => snapshot.scope.kind === "task" && snapshot.period === "total");
+  // total 跨天累计（不是当日 day 快照）。
+  assert.equal(totalSnapshot?.tokenIn, 1_200_000);
+  const taskPolicy = defaultBudgetPoliciesFromSettings(settings).find((policy) => policy.id === "pcost-task-run-v0");
+  assert.equal(taskPolicy?.period, "total");
+  assert.equal(taskPolicy?.maxCostCny, "10");
+
+  const decision = decideRunBudget({
+    settings,
+    decisionId: "decision-r95-task-total",
+    now: new Date("2026-07-03T00:00:00.000Z"),
+    scopeIds: { taskPlanId },
+    policies: [taskPolicy!],
+    usage: snapshots
+  });
+
+  assert.equal(decision.allowed, false);
+  assert.deepEqual(decision.limitingScope, { kind: "task", taskPlanId });
+  assert.equal(decision.notice?.code, "budget_exhausted");
 });
 
 test("budget policy store updates policies without mutating settings defaults", () => {

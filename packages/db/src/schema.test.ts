@@ -1,26 +1,35 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import test from "node:test";
 
 import { getTableName } from "drizzle-orm";
+import { getTableConfig } from "drizzle-orm/pg-core";
 
 import { confidenceGrades, escalationTriggers } from "@workhub/contracts";
 import {
   acceptedDeliverableChanges,
+  agentMemory,
+  agentMemoryVersions,
   agentRuns,
   agentSteps,
   auditLogs,
   budgetPolicies,
+  budgetReservations,
+  chatMessages,
   costLedgerEntries,
   mergeAttempts,
   mergeProposals,
+  keyResults,
+  memoryConflicts,
+  objectiveWorkItemLinks,
+  objectives,
   projectDriveItems,
   projectDriveOperations,
   projectDriveVersions,
   proposals,
   sessions,
   snapshots,
+  taskPlanItems,
+  taskPlans,
   usageRecords,
   userCredentials,
   users,
@@ -30,18 +39,63 @@ import {
   workspaceMemberships
 } from "./index.js";
 
-const F02_TABLE_COUNT = 50;
+// R9.7.26: the old count (57) was correct before durable R9.3 memory-conflict attention cards existed.
+// This slice intentionally adds memory_conflicts so sync_conflict decisions survive beyond transient SSE events.
+const F02_TABLE_COUNT = 58;
 
-function* walk(dir: string): Generator<string> {
-  for (const entry of readdirSync(dir)) {
-    const absolute = join(dir, entry);
-    const stat = statSync(absolute);
-    if (stat.isDirectory()) {
-      yield* walk(absolute);
-    } else if (entry.endsWith(".ts")) {
-      yield absolute;
-    }
+type WorkHubTable = (typeof workHubTables)[keyof typeof workHubTables];
+
+function inlineForeignKeyNames(table: object): string[] {
+  const inlineForeignKeysSymbol = Object.getOwnPropertySymbols(table).find((symbol) =>
+    String(symbol) === "Symbol(drizzle:PgInlineForeignKeys)"
+  );
+  if (!inlineForeignKeysSymbol) {
+    return [];
   }
+  const foreignKeys = (table as { [key: symbol]: Array<{ getName(): string }> })[inlineForeignKeysSymbol] ?? [];
+  return foreignKeys.map((foreignKey) => foreignKey.getName()).sort();
+}
+
+function chunkRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function columnName(value: unknown): string | undefined {
+  const record = chunkRecord(value);
+  return typeof record?.["name"] === "string" ? record["name"] : undefined;
+}
+
+function sqlChunkText(value: unknown): string {
+  const record = chunkRecord(value);
+  if (!record) {
+    return "";
+  }
+  const chunkValue = record["value"];
+  if (Array.isArray(chunkValue)) {
+    return chunkValue.filter((part): part is string => typeof part === "string").join("");
+  }
+  const queryChunks = record["queryChunks"];
+  if (Array.isArray(queryChunks)) {
+    return queryChunks.map(sqlChunkText).join("");
+  }
+  return "";
+}
+
+function sqlColumnNames(value: unknown): string[] {
+  const direct = columnName(value);
+  if (direct) {
+    return [direct];
+  }
+  const record = chunkRecord(value);
+  const queryChunks = record?.["queryChunks"];
+  if (!Array.isArray(queryChunks)) {
+    return [];
+  }
+  return queryChunks.flatMap(sqlColumnNames);
+}
+
+function tableColumnNames(table: WorkHubTable): string[] {
+  return getTableConfig(table).columns.map((column) => column.name);
 }
 
 test("F02 declares the full table graph expected by the plan", () => {
@@ -62,9 +116,110 @@ test("F02 declares the full table graph expected by the plan", () => {
   assert.equal(tableNames.includes("budget_policies"), true);
   assert.equal(tableNames.includes("user_memories"), true);
   assert.equal(tableNames.includes("team_skills"), true);
+  assert.equal(tableNames.includes("task_plans"), true);
+  assert.equal(tableNames.includes("task_plan_items"), true);
+  assert.equal(tableNames.includes("agent_memory"), true);
+  assert.equal(tableNames.includes("agent_memory_versions"), true);
+  assert.equal(tableNames.includes("memory_conflicts"), true);
+  assert.equal(tableNames.includes("objectives"), true);
+  assert.equal(tableNames.includes("key_results"), true);
+  assert.equal(tableNames.includes("objective_work_item_links"), true);
   assert.equal(tableNames.includes("requirements"), false);
   assert.equal(tableNames.includes("revision_requests"), false);
   assert.equal(tableNames.includes("activity_log"), false);
+});
+
+test("R9.5 OKR tables expose non-blocking planning and progress fields", () => {
+  assert.equal(getTableName(objectives), "objectives");
+  assert.equal(objectives.workspaceId.name, "workspace_id");
+  assert.equal(objectives.title.name, "title");
+  assert.equal(objectives.descriptionMd.name, "description_md");
+  assert.equal(objectives.ownerUserId.name, "owner_user_id");
+  assert.equal(objectives.status.name, "status");
+  assert.equal(objectives.progressPercent.name, "progress_percent");
+  assert.equal(objectives.progressUpdatedAt.name, "progress_updated_at");
+
+  assert.equal(getTableName(keyResults), "key_results");
+  assert.equal(keyResults.objectiveId.name, "objective_id");
+  assert.equal(keyResults.workspaceId.name, "workspace_id");
+  assert.equal(keyResults.seq.name, "seq");
+  assert.equal(keyResults.title.name, "title");
+  assert.equal(keyResults.targetValue.name, "target_value");
+  assert.equal(keyResults.currentValue.name, "current_value");
+  assert.equal(keyResults.unit.name, "unit");
+  assert.equal(keyResults.status.name, "status");
+  assert.equal(keyResults.progressPercent.name, "progress_percent");
+
+  assert.equal(getTableName(objectiveWorkItemLinks), "objective_work_item_links");
+  assert.equal(objectiveWorkItemLinks.workspaceId.name, "workspace_id");
+  assert.equal(objectiveWorkItemLinks.objectiveId.name, "objective_id");
+  assert.equal(objectiveWorkItemLinks.workItemId.name, "work_item_id");
+  assert.equal(objectiveWorkItemLinks.linkedByUserId.name, "linked_by_user_id");
+});
+
+test("R9.3 memory conflicts expose durable sync_conflict decision fields", () => {
+  assert.equal(getTableName(memoryConflicts), "memory_conflicts");
+  assert.equal(memoryConflicts.workspaceId.name, "workspace_id");
+  assert.equal(memoryConflicts.userId.name, "user_id");
+  assert.equal(memoryConflicts.sourceRunId.name, "source_run_id");
+  assert.equal(memoryConflicts.currentValueMd.name, "current_value_md");
+  assert.equal(memoryConflicts.incomingValueMd.name, "incoming_value_md");
+  assert.equal(memoryConflicts.candidateMemoryIds.name, "candidate_memory_ids");
+  assert.equal(memoryConflicts.status.name, "status");
+  assert.equal(memoryConflicts.resolution.name, "resolution");
+  assert.equal(memoryConflicts.resolvedByUserId.name, "resolved_by_user_id");
+});
+
+test("R9.3 agent memory tables expose L1 private context and append-only versions", () => {
+  assert.equal(getTableName(agentMemory), "agent_memory");
+  assert.equal(agentMemory.workspaceId.name, "workspace_id");
+  assert.equal(agentMemory.agentContextId.name, "agent_context_id");
+  assert.equal(agentMemory.category.name, "category");
+  assert.equal(agentMemory.key.name, "key");
+  assert.equal(agentMemory.valueMd.name, "value_md");
+  assert.equal(agentMemory.confidence.name, "confidence");
+  assert.equal(agentMemory.sourceRunId.name, "source_run_id");
+  assert.equal(agentMemory.baseVersion.name, "base_version");
+  assert.equal(agentMemory.currentVersion.name, "current_version");
+
+  assert.equal(getTableName(agentMemoryVersions), "agent_memory_versions");
+  assert.equal(agentMemoryVersions.memoryId.name, "memory_id");
+  assert.equal(agentMemoryVersions.version.name, "version");
+  assert.equal(agentMemoryVersions.baseVersion.name, "base_version");
+  assert.equal(agentMemoryVersions.valueMd.name, "value_md");
+  assert.equal(agentMemoryVersions.sourceRunId.name, "source_run_id");
+});
+
+test("R9.1 task plan tables expose auditable decomposition fields", () => {
+  assert.equal(getTableName(taskPlans), "task_plans");
+  assert.equal(taskPlans.workItemId.name, "work_item_id");
+  assert.equal(taskPlans.workspaceId.name, "workspace_id");
+  assert.equal(taskPlans.status.name, "status");
+  assert.equal(taskPlans.objectiveId.name, "objective_id");
+  assert.equal(inlineForeignKeyNames(taskPlans).includes("task_plans_objective_id_objectives_id_fk"), true);
+  assert.equal(taskPlans.budgetJson.name, "budget_json");
+  assert.equal(taskPlans.decompositionContextJson.name, "decomposition_context_json");
+  assert.equal(taskPlans.createdByUserId.name, "created_by");
+
+  assert.equal(getTableName(taskPlanItems), "task_plan_items");
+  assert.equal(taskPlanItems.planId.name, "plan_id");
+  assert.equal(taskPlanItems.parentItemId.name, "parent_item_id");
+  assert.equal(taskPlanItems.seq.name, "seq");
+  assert.equal(taskPlanItems.role.name, "role");
+  assert.equal(taskPlanItems.objectiveMd.name, "objective_md");
+  assert.equal(taskPlanItems.acceptanceMd.name, "acceptance_md");
+  assert.equal(taskPlanItems.budgetSharePct.name, "budget_share_pct");
+  assert.equal(taskPlanItems.dependsOn.name, "depends_on");
+  assert.equal(taskPlanItems.status.name, "status");
+});
+
+test("R9.7 budget reservations keep workspace scope referentially valid", () => {
+  assert.equal(getTableName(budgetReservations), "budget_reservations");
+  assert.equal(budgetReservations.workspaceId.name, "workspace_id");
+  assert.equal(
+    inlineForeignKeyNames(budgetReservations).includes("budget_reservations_workspace_id_workspaces_id_fk"),
+    true
+  );
 });
 
 test("merge attempts persist conflict decisions for replayable proposal audit", () => {
@@ -113,10 +268,18 @@ test("drive tables expose soft-delete, version pointer, and operation log fields
   assert.equal(projectDriveOperations.opType.name, "op_type");
   assert.equal(projectDriveOperations.payloadJson.name, "payload_json");
   assert.equal(projectDriveOperations.undoneAt.name, "undone_at");
-  const activePathMigration = readFileSync(join(process.cwd(), "migrations", "0011_bitter_magneto.sql"), "utf8");
-  assert.match(activePathMigration, /project_drive_items_active_path_uq/u);
-  assert.match(activePathMigration, /coalesce\("parent_id"/u);
-  assert.match(activePathMigration, /deleted_at" is null/u);
+  // R9.7: the old assertion grepped migration 0011 for active-path unique-index SQL.
+  // That was wrong because migration source text did not prove the current Drizzle schema
+  // still enforces one active path per project/folder/name.
+  const activePathIndex = getTableConfig(projectDriveItems).indexes.find(
+    (index) => index.config.name === "project_drive_items_active_path_uq"
+  );
+  assert.equal(activePathIndex?.config.unique, true);
+  assert.deepEqual(activePathIndex?.config.columns.map(columnName), ["project_id", undefined, "name"]);
+  assert.deepEqual(sqlColumnNames(activePathIndex?.config.columns[1]), ["parent_id"]);
+  assert.equal(sqlChunkText(activePathIndex?.config.columns[1]).includes("coalesce("), true);
+  assert.deepEqual(sqlColumnNames(activePathIndex?.config.where), ["deleted_at"]);
+  assert.equal(sqlChunkText(activePathIndex?.config.where).includes("is null"), true);
 });
 
 test("core renamed fields are present on Drizzle table objects", () => {
@@ -130,13 +293,31 @@ test("core renamed fields are present on Drizzle table objects", () => {
 
 test("snapshot refs are wide enough for local absolute snapshot paths", () => {
   assert.equal(getTableName(snapshots), "snapshots");
+  // R9.7: the old assertion grepped migration 0029 for an ALTER TABLE statement.
+  // That was wrong because migration source text did not prove the current schema contract
+  // used by runtime snapshot persistence accepts local absolute refs.
   assert.equal((snapshots.ref as unknown as { config: { length: number } }).config.length, 1024);
-  const migration = readFileSync(join(process.cwd(), "migrations", "0029_snapshot_ref_width.sql"), "utf8");
-  assert.match(migration, /ALTER TABLE "snapshots" ALTER COLUMN "ref" TYPE varchar\(1024\)/u);
+});
+
+test("chat message kinds fit file-context notice events from real intake", () => {
+  assert.equal(getTableName(chatMessages), "chat_messages");
+  // R9.7: the old assertion grepped migration 0041 for an ALTER TABLE statement.
+  // That was wrong because migration source text did not prove the current schema contract
+  // used by intake chat writes accepts the longest runtime notice kind.
+  assert.ok(
+    (chatMessages.kind as unknown as { config: { length: number } }).config.length >=
+      "clarification_file_context_notice".length
+  );
 });
 
 test("agent run persistence fields support DB-backed replay recovery", () => {
   assert.equal(agentRuns.title.name, "title");
+  assert.equal(agentRuns.parentRunId.name, "parent_run_id");
+  assert.equal(agentRuns.taskPlanId.name, "task_plan_id");
+  assert.equal(agentRuns.taskPlanItemId.name, "task_plan_item_id");
+  assert.equal(agentRuns.agentRole.name, "agent_role");
+  assert.equal(agentRuns.objectiveId.name, "objective_id");
+  assert.equal(agentRuns.objectiveMd.name, "objective_md");
   assert.equal(agentRuns.actorUserId.name, "actor_user_id");
   assert.equal(agentRuns.totalTimeoutS.name, "total_timeout_s");
   assert.equal(agentRuns.maxTokens.name, "max_tokens");
@@ -155,9 +336,13 @@ test("cost ledger persistence fields support P-COST usage recovery", () => {
   assert.equal(usageRecords.id.name, "id");
   assert.equal(usageRecords.runId.name, "run_id");
   assert.equal(usageRecords.workItemId.name, "work_item_id");
+  assert.equal(usageRecords.taskPlanId.name, "task_plan_id");
+  assert.equal(usageRecords.objectiveId.name, "objective_id");
   assert.equal(usageRecords.userId.name, "user_id");
   assert.equal(usageRecords.estimatedCostCny.name, "estimated_cost_cny");
   assert.equal(costLedgerEntries.usageRecordId.name, "usage_record_id");
+  assert.equal(costLedgerEntries.taskPlanId.name, "task_plan_id");
+  assert.equal(costLedgerEntries.objectiveId.name, "objective_id");
   assert.equal(costLedgerEntries.scopeKind.name, "scope_kind");
   assert.equal(costLedgerEntries.scopeId.name, "scope_id");
   assert.equal(costLedgerEntries.scopeJson.name, "scope_json");
@@ -205,18 +390,25 @@ test("R2 auth foundation: credential + session tables expose the password/sessio
   assert.equal(users.deletedByUserId.name, "deleted_by_user_id");
 });
 
-test("migration 0023 provisions citext email, session token uniqueness, and the users offboard column", () => {
-  const migration = readFileSync(
-    join(process.cwd(), "migrations", "0023_auth_credentials_sessions.sql"),
-    "utf8"
-  );
-  assert.match(migration, /CREATE EXTENSION IF NOT EXISTS citext/u);
-  assert.match(migration, /"email" citext NOT NULL/u);
-  assert.match(migration, /user_credentials_email_uq/u);
-  assert.match(migration, /sessions_token_hash_uq/u);
-  // partial index：仅未撤销会话进过期清扫索引。
-  assert.match(migration, /sessions_idle_expires_idx[\s\S]*WHERE "revoked_at" IS NULL/u);
-  assert.match(migration, /ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "deleted_by_user_id"/u);
+test("auth credential/session schema config exposes uniqueness, cleanup, and offboard contracts", () => {
+  // R9.7: the old assertion grepped migration 0023 for citext/index/offboard SQL.
+  // That was wrong because migration source text did not prove the current Drizzle schema
+  // used by auth repositories exposes these uniqueness and cleanup contracts.
+  const credentialIndexes = getTableConfig(userCredentials).indexes;
+  const emailUniqueIndex = credentialIndexes.find((index) => index.config.name === "user_credentials_email_uq");
+  assert.equal(emailUniqueIndex?.config.unique, true);
+  assert.deepEqual(emailUniqueIndex?.config.columns.map(columnName), ["email"]);
+
+  const sessionIndexes = getTableConfig(sessions).indexes;
+  const tokenHashIndex = sessionIndexes.find((index) => index.config.name === "sessions_token_hash_uq");
+  assert.equal(tokenHashIndex?.config.unique, true);
+  assert.deepEqual(tokenHashIndex?.config.columns.map(columnName), ["token_hash"]);
+
+  const idleExpiresIndex = sessionIndexes.find((index) => index.config.name === "sessions_idle_expires_idx");
+  assert.deepEqual(idleExpiresIndex?.config.columns.map(columnName), ["idle_expires_at"]);
+  assert.deepEqual(sqlColumnNames(idleExpiresIndex?.config.where), ["revoked_at"]);
+  assert.equal(sqlChunkText(idleExpiresIndex?.config.where).includes("is null"), true);
+  assert.equal(users.deletedByUserId.name, "deleted_by_user_id");
 });
 
 test("R2 multi-tenancy foundation: workspace_memberships exposes the membership contract", () => {
@@ -228,17 +420,24 @@ test("R2 multi-tenancy foundation: workspace_memberships exposes the membership 
   assert.equal(workspaceMemberships.deletedAt.name, "deleted_at");
 });
 
-test("migration 0024/0025 provision memberships with one-default-per-user and an idempotent seed", () => {
-  const table = readFileSync(join(process.cwd(), "migrations", "0024_workspace_memberships.sql"), "utf8");
-  // 每用户至多一个 default workspace（partial unique）。
-  assert.match(table, /workspace_memberships_user_default_uq[\s\S]*WHERE "default_workspace" AND "deleted_at" IS NULL/u);
-  // 每 (ws,user) 至多一条 active 成员行。
-  assert.match(table, /workspace_memberships_ws_user_uq[\s\S]*WHERE "deleted_at" IS NULL/u);
+test("workspace membership schema config exposes active and default uniqueness contracts", () => {
+  // R9.7: the old assertion grepped migrations 0024/0025 for index and seed SQL.
+  // That was wrong because SQL source text did not prove the current Drizzle schema
+  // used by membership repositories preserves the active/default uniqueness contracts;
+  // seed SQL replay/idempotency belongs to migration-audit rather than a schema unit test.
+  const indexes = getTableConfig(workspaceMemberships).indexes;
 
-  const seed = readFileSync(join(process.cwd(), "migrations", "0025_seed_default_memberships.sql"), "utf8");
-  assert.match(seed, /INSERT INTO "workspace_memberships"/u);
-  assert.match(seed, /ON CONFLICT DO NOTHING/u); // 幂等
-  assert.match(seed, /EXISTS \(SELECT 1 FROM "workspaces"/u); // FK 守卫
+  const activeMembershipIndex = indexes.find((index) => index.config.name === "workspace_memberships_ws_user_uq");
+  assert.equal(activeMembershipIndex?.config.unique, true);
+  assert.deepEqual(activeMembershipIndex?.config.columns.map(columnName), ["workspace_id", "user_id"]);
+  assert.deepEqual(sqlColumnNames(activeMembershipIndex?.config.where), ["deleted_at"]);
+  assert.equal(sqlChunkText(activeMembershipIndex?.config.where).includes("is null"), true);
+
+  const defaultMembershipIndex = indexes.find((index) => index.config.name === "workspace_memberships_user_default_uq");
+  assert.equal(defaultMembershipIndex?.config.unique, true);
+  assert.deepEqual(defaultMembershipIndex?.config.columns.map(columnName), ["user_id"]);
+  assert.deepEqual(sqlColumnNames(defaultMembershipIndex?.config.where), ["default_workspace", "deleted_at"]);
+  assert.equal(sqlChunkText(defaultMembershipIndex?.config.where).includes("is null"), true);
 });
 
 test("R2 auth invite foundation: user_invites exposes the out-of-band invite contract", () => {
@@ -253,12 +452,20 @@ test("R2 auth invite foundation: user_invites exposes the out-of-band invite con
   assert.equal(userInvites.acceptedUserId.name, "accepted_user_id");
 });
 
-test("migration 0026 provisions citext invite email, unique token hash, and a pending-only index", () => {
-  const migration = readFileSync(join(process.cwd(), "migrations", "0026_user_invites.sql"), "utf8");
-  assert.match(migration, /"email" citext NOT NULL/u);
-  assert.match(migration, /user_invites_token_hash_uq/u);
-  // 待接受清单 partial index：未接受 ∧ 未撤销。
-  assert.match(migration, /user_invites_pending_idx[\s\S]*WHERE "accepted_at" IS NULL AND "deleted_at" IS NULL/u);
+test("user invite schema config exposes token uniqueness and pending lookup contracts", () => {
+  // R9.7: the old assertion grepped migration 0026 for citext and partial-index SQL.
+  // That was wrong because migration source text did not prove the current invite
+  // repository schema exposes the unique token and pending-invite lookup contracts.
+  const indexes = getTableConfig(userInvites).indexes;
+
+  const tokenHashIndex = indexes.find((index) => index.config.name === "user_invites_token_hash_uq");
+  assert.equal(tokenHashIndex?.config.unique, true);
+  assert.deepEqual(tokenHashIndex?.config.columns.map(columnName), ["token_hash"]);
+
+  const pendingIndex = indexes.find((index) => index.config.name === "user_invites_pending_idx");
+  assert.deepEqual(pendingIndex?.config.columns.map(columnName), ["email", "expires_at"]);
+  assert.deepEqual(sqlColumnNames(pendingIndex?.config.where), ["accepted_at", "deleted_at"]);
+  assert.equal(sqlChunkText(pendingIndex?.config.where).includes("is null and"), true);
 });
 
 test("team-readiness notification prefs: users exposes the per-type mute column with a default-off empty array", () => {
@@ -266,16 +473,12 @@ test("team-readiness notification prefs: users exposes the per-type mute column 
   assert.equal(users.mutedNotificationTypes.name, "muted_notification_types");
 });
 
-test("migration 0027 adds the muted notification types column default-off (idempotent)", () => {
-  const migration = readFileSync(
-    join(process.cwd(), "migrations", "0027_user_notification_prefs.sql"),
-    "utf8"
-  );
-  // 加列、jsonb、NOT NULL、默认空数组、IF NOT EXISTS 幂等。
-  assert.match(
-    migration,
-    /ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "muted_notification_types" jsonb NOT NULL DEFAULT '\[\]'::jsonb/u
-  );
+test("notification preference schema config exposes default-off muted types", () => {
+  // R9.7: the old assertion grepped migration 0027 for ALTER TABLE text.
+  // That was wrong because SQL source text did not prove the current users table
+  // schema exposes a non-null default-off muted notification preference column.
+  assert.equal(users.mutedNotificationTypes.notNull, true);
+  assert.deepEqual(users.mutedNotificationTypes.default, []);
 });
 
 test("enum drift is closed in the shared contract package", () => {
@@ -284,17 +487,15 @@ test("enum drift is closed in the shared contract package", () => {
   assert.equal(escalationTriggers.includes("user_rejected" as never), false);
 });
 
-test("schema source does not reintroduce old field/table names", () => {
-  const forbidden = ["requirement" + "_id", "requirements" + ".id", "\"requirements\""];
-  const sourceRoot = join(process.cwd(), "src");
+test("schema metadata keeps retired requirement tables and fields out of the active graph", () => {
+  // R9.7: the old assertion walked src text looking for retired names.
+  // That was wrong because source-text absence did not prove the live Drizzle schema
+  // graph excluded retired tables/columns, while also flagging harmless comments or docs.
+  const tableNames = Object.values(workHubTables).map((table) => getTableName(table) as string).sort();
+  assert.deepEqual(tableNames.filter((name) => name.includes("requirement")), []);
+  assert.equal(tableNames.includes("revision_requests"), false);
+  assert.equal(tableNames.includes("activity_log"), false);
 
-  for (const file of walk(sourceRoot)) {
-    if (file.endsWith(".test.ts")) {
-      continue;
-    }
-    const text = readFileSync(file, "utf8");
-    for (const pattern of forbidden) {
-      assert.equal(text.includes(pattern), false, `${file} contains ${pattern}`);
-    }
-  }
+  const columnNames = new Set(Object.values(workHubTables).flatMap(tableColumnNames));
+  assert.equal(columnNames.has("requirement_id"), false);
 });

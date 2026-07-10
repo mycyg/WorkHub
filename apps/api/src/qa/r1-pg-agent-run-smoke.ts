@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -11,23 +11,26 @@ import {
   acceptedDeliverableChanges,
   branches,
   budgetPolicies,
-  budgetPolicyStorageId,
   budgetReservations,
   costLedgerEntries,
   createAgentRunRepository,
   createAuditLogRepository,
   createBudgetReservationRepository,
+  createAiDecisionRepository,
   createClientDeviceRepository,
   createDatabaseClient,
   createDbBudgetPolicyStore,
   createDbCostLedgerStore,
   createDriveRepository,
   createProposalRepository,
+  createTaskPlanRepository,
   createWorkItemRepository,
   createSnapshotRepository,
   createUserRepository,
+  createUserMemoryRepository,
   defaultSeedFixture,
   defaultSeedIds,
+  escalationEvents,
   mergeAttempts,
   mergeProposals,
   orgs,
@@ -38,6 +41,8 @@ import {
   projectDriveVersions,
   runMigrations,
   snapshots,
+  taskPlanItems,
+  taskPlans,
   usageRecords,
   users,
   workItemAcceptanceItems,
@@ -56,16 +61,22 @@ import { ZodError } from "zod";
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "../middleware/auth.js";
 import { createAgentRunRoutes } from "../routes/agent-runs.js";
 import { createCostRoutes } from "../routes/cost.js";
+import { createEscalationRoutes } from "../routes/escalations.js";
 import { createKnowledgeRoutes } from "../routes/knowledge.js";
 import { createPageRoutes } from "../routes/pages.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "../routes/proposals.js";
 import { createSessionRoutes } from "../routes/sessions.js";
+import { createTaskPlanRoutes } from "../routes/task-plans.js";
 import { createWorkItemRoutes } from "../routes/workitems.js";
 import type { MergeFusionCandidateGenerator } from "../services/merge-fusion-candidates.js";
 import { createDbAgentRunPersistence } from "../services/agent-run-persistence.js";
+import { createEscalationService, EscalationServiceError } from "../services/escalations.js";
 import { createDbProposalService, ProposalServiceError } from "../services/proposals.js";
+import { createDbTaskDispatchEscalationSink, createTaskDispatcher } from "../services/task-dispatcher.js";
+import { createTaskPlanMergeApprovalHandler, createTaskPlanWorkflowService, TaskPlanServiceError } from "../services/task-plans.js";
 import { createDbWorkItemService } from "../services/work-items.js";
-import { createInMemoryAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
+import { AgentRunnerError, createInMemoryAgentRunQueue, type AgentRunQueue, type AgentRunQueueRecord } from "../workers/agent-runner.js";
+import { selectTenantScopedBudgetPolicyRows } from "./r1-pg-budget-policy.js";
 
 function sha256Text(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -120,7 +131,29 @@ function executableAgentClient(): AgentLoopClient {
   return {
     model: "deepseek-v4-flash",
     messages: {
-      async create() {
+      async create(params) {
+        // B-R9.2-2 后 research/review 也能写沙箱交付物（角色产物=outputs/ 文件），
+        // partial-failure 场景改为显式构造：produce 子任务的 run 不产出任何文件
+        // （end_turn 纯文本），走默认 requireDeliverable 判定失败。
+        const prompt = String((params as { messages?: Array<{ content?: unknown }> } | undefined)?.messages?.[0]?.content ?? "");
+        if (prompt.includes("Draft the deterministic task-plan deliverable outline")) {
+          return {
+            id: "msg-r1-pg-produce-fail",
+            stopReason: "end_turn",
+            usage: { inputTokens: 4, outputTokens: 4 },
+            usageRecord: {
+              provider: "deepseek",
+              model: "deepseek-v4-flash",
+              task: "worker",
+              inputTokens: 4,
+              outputTokens: 4,
+              estimatedCostCny: "0.001",
+              source: "agent_step",
+              createdAt: new Date().toISOString()
+            },
+            content: [{ type: "text", text: "没有可交付内容。" }]
+          } satisfies Awaited<ReturnType<AgentLoopClient["messages"]["create"]>>;
+        }
         const response = responses.shift();
         if (!response) {
           throw new Error("No fake AgentLoop response queued");
@@ -176,10 +209,68 @@ function deterministicFusionGenerator(): MergeFusionCandidateGenerator {
   };
 }
 
+function deterministicTaskPlanner() {
+  return {
+    async createDraft() {
+      const researchId = randomUUID();
+      const produceId = randomUUID();
+      const reviewId = randomUUID();
+      return {
+        items: [
+          {
+            id: researchId,
+            seq: 0,
+            title: "R1 PG smoke research",
+            role: "research" as const,
+            objectiveMd: "Collect deterministic source notes for the smoke task.",
+            acceptanceMd: "At least one deterministic source note is listed.",
+            budgetSharePct: 30,
+            dependsOn: []
+          },
+          {
+            id: produceId,
+            seq: 1,
+            title: "R1 PG smoke produce",
+            role: "produce" as const,
+            objectiveMd: "Draft the deterministic task-plan deliverable outline.",
+            acceptanceMd: "The outline has a conclusion and evidence section.",
+            budgetSharePct: 50,
+            dependsOn: [researchId]
+          },
+          {
+            id: reviewId,
+            seq: 2,
+            title: "R1 PG smoke review",
+            role: "review" as const,
+            objectiveMd: "Review that each acceptance item maps to a subtask.",
+            acceptanceMd: "All acceptance items are covered by the plan.",
+            budgetSharePct: 20,
+            dependsOn: [produceId]
+          }
+        ],
+        riskLevel: "medium" as const,
+        decompositionContext: {
+          source: "r1-pg-smoke",
+          judge: { decision: "approve", confidence: "high" }
+        }
+      };
+    }
+  };
+}
+
 function withErrors<T extends { Variables: Record<string, unknown> }>(app: Hono<T>) {
   app.onError((error, c) => {
     if (error instanceof ZodError) {
       return c.json({ ok: false, error: { code: "validation_error", message: "invalid payload" } }, 422);
+    }
+    if (error instanceof EscalationServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
+    }
+    if (error instanceof TaskPlanServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
+    }
+    if (error instanceof ProposalServiceError) {
+      return c.json({ ok: false, error: { code: error.code, message: error.message } }, error.status as 400);
     }
     if (error instanceof HTTPException) {
       return c.json({ ok: false, error: { code: "http_error", message: error.message } }, error.status);
@@ -207,9 +298,11 @@ async function main() {
   try {
     const db = client.db;
     await ensureDefaultSeed(db);
+    const userRepo = createUserRepository(db);
+    const deviceRepo = createClientDeviceRepository(db);
     const auth: AuthDependencies = {
-      users: createUserRepository(db),
-      devices: createClientDeviceRepository(db),
+      users: userRepo,
+      devices: deviceRepo,
       settings
     };
     const snapshotsRepo = createSnapshotRepository(db);
@@ -218,9 +311,11 @@ async function main() {
     const persistence = createDbAgentRunPersistence(agentRunRepo);
     const formalStorageRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-drive-"));
     const proposalRepository = createProposalRepository(db);
+    const taskPlanRepository = createTaskPlanRepository(db);
     const proposalService = createDbProposalService(proposalRepository, {
       storageRoot: formalStorageRoot,
-      fusionCandidateGenerator: deterministicFusionGenerator()
+      fusionCandidateGenerator: deterministicFusionGenerator(),
+      onMerged: createTaskPlanMergeApprovalHandler({ taskPlans: taskPlanRepository })
     });
     const workItemRepository = createWorkItemRepository(db);
     // codex 把 intake 改为「必须真 AI 反问，无 provider 直接 503」但没同步本 smoke——
@@ -232,16 +327,35 @@ async function main() {
         placeholder: "例如：按需求原文执行即可。"
       })
     });
+    const taskPlanService = createTaskPlanWorkflowService({
+      taskPlans: taskPlanRepository,
+      proposals: proposalService,
+      planner: deterministicTaskPlanner()
+    });
+    const aiDecisionRepository = createAiDecisionRepository(db);
     const ledgerStore = createDbCostLedgerStore(db, {
       teamId: settings.auth.defaultWorkspaceId,
       evalSuite: "nightly"
     });
     const policyStore = createDbBudgetPolicyStore(db);
-    const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-agent-"));
+    const workdirRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-agent-"));
+    // 每个 run 独立 workdir：共享目录会让后续 run 捡到前一个 run 的 outputs/ 蹭过交付判定
+    // （B-R9.2-2 显式失败构造因此失真）。与生产 provider 的按 run 隔离语义一致。
+    const workdirByRun = new Map<string, string>();
+    const workdirForRun = async (input: { run: { run_id: string } }) => {
+      const existing = workdirByRun.get(input.run.run_id);
+      if (existing) {
+        return existing;
+      }
+      const created = path.join(workdirRoot, input.run.run_id);
+      await mkdir(created, { recursive: true });
+      workdirByRun.set(input.run.run_id, created);
+      return created;
+    };
     const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r1-pg-snapshot-"));
     const queue = createInMemoryAgentRunQueue({
       settings,
-      workdir: () => workdir,
+      workdir: workdirForRun,
       client: () => executableAgentClient(),
       snapshotRoot,
       snapshots: snapshotsRepo,
@@ -255,15 +369,39 @@ async function main() {
       notifications: false,
       eventBus: false
     });
+    const taskPlanDispatcher = createTaskDispatcher({
+      repository: taskPlanRepository,
+      queue,
+      escalationSink: createDbTaskDispatchEscalationSink(aiDecisionRepository),
+      completionSink: false
+    });
+    // B-R9.0-2：非计划升级 retry 现在真重新入队 agent run，escalationService 必须接同一条
+    // 真 PG 队列（构造顺序因此挪到 queue 之后）。
+    const escalationService = createEscalationService({
+      repository: {
+        findById: (input) => aiDecisionRepository.findEscalationById(input),
+        listUnresolvedForWorkspace: (input) => aiDecisionRepository.listUnresolvedEscalationsForWorkspace(input),
+        resolveEscalation: (input) => aiDecisionRepository.resolveEscalation(input),
+        resolveBudgetDecision: (input) => aiDecisionRepository.resolveBudgetDecision(input),
+        reopenEscalation: (input) => aiDecisionRepository.reopenEscalation?.(input) ?? Promise.resolve(null),
+        delegateEscalation: (input) => aiDecisionRepository.delegateEscalation(input)
+      },
+      users: userRepo,
+      workItems: workItemService,
+      runQueue: queue
+    });
     const app = withErrors(new Hono<AuthEnv>());
     app.route("/api", createSessionRoutes({ auth, workItems: workItemService }));
     app.route("/api", createWorkItemRoutes({ auth, workItems: workItemService }));
-    app.route("/api/proposals", createProposalRoutes({ auth, proposals: proposalService }));
+    app.route("/api/escalations", createEscalationRoutes({ auth, service: escalationService }));
+    app.route("/api/proposals", createProposalRoutes({ auth, proposals: proposalService, taskPlanDispatcher }));
     app.route("/api", createWorkItemProposalRoutes({ auth, proposals: proposalService }));
+    app.route("/api", createTaskPlanRoutes({ auth, service: taskPlanService, workItems: workItemService }));
     app.route("/api/knowledge", createKnowledgeRoutes({ auth, workItems: workItemService }));
     app.route("/api/pages", createPageRoutes({
       auth,
       queue,
+      escalations: escalationService,
       proposals: proposalService,
       workItems: workItemService,
       policyStore,
@@ -320,6 +458,279 @@ async function main() {
     const workItemId = createdWorkItemBody.data.workitem.id;
     if (createdWorkItemBody.data.workitem.status !== "spec_ready") {
       throw new Error(`Expected spec_ready work item, got ${createdWorkItemBody.data.workitem.status}`);
+    }
+    const taskPlanSession = await app.request("/api/sessions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        intent_text: "R9.1 task-plan smoke: research and produce a short topic report."
+      })
+    });
+    if (taskPlanSession.status !== 200) {
+      throw new Error(`Expected task-plan session create 200, got ${taskPlanSession.status}: ${await taskPlanSession.text()}`);
+    }
+    const taskPlanSessionBody = await taskPlanSession.json() as { data: { session_id: string } };
+    const taskPlanNextQuestion = await app.request(`/api/sessions/${taskPlanSessionBody.data.session_id}/next-question`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ selected_option_ids: ["document-draft"] })
+    });
+    if (taskPlanNextQuestion.status !== 200) {
+      throw new Error(`Expected task-plan next question 200, got ${taskPlanNextQuestion.status}: ${await taskPlanNextQuestion.text()}`);
+    }
+    const taskPlanWorkItem = await app.request("/api/workitems", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        session_id: taskPlanSessionBody.data.session_id,
+        selected_option_ids: ["document-draft"]
+      })
+    });
+    if (taskPlanWorkItem.status !== 201) {
+      throw new Error(`Expected task-plan work item create 201, got ${taskPlanWorkItem.status}: ${await taskPlanWorkItem.text()}`);
+    }
+    const taskPlanWorkItemBody = await taskPlanWorkItem.json() as { data: { workitem: { id: string; status: string } } };
+    const taskPlanWorkItemId = taskPlanWorkItemBody.data.workitem.id;
+    const taskPlanCreate = await app.request(`/api/workitems/${taskPlanWorkItemId}/task-plan`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ memories: { user: ["R1 smoke prefers evidence-backed output."], team: ["Separate produce and review roles."] } })
+    });
+    if (taskPlanCreate.status !== 201) {
+      throw new Error(`Expected task-plan create 201, got ${taskPlanCreate.status}: ${await taskPlanCreate.text()}`);
+    }
+    const taskPlanCreateBody = await taskPlanCreate.json() as { data: { plan_id: string; proposal_id: string; proposal: { title: string } } };
+    if (taskPlanCreateBody.data.proposal.title !== "计划提议") {
+      throw new Error(`Expected plan proposal title 计划提议, got ${taskPlanCreateBody.data.proposal.title}`);
+    }
+    const taskPlanReview = await app.request(`/api/proposals/${taskPlanCreateBody.data.proposal_id}/review`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ decision: "approve" })
+    });
+    if (taskPlanReview.status !== 200) {
+      throw new Error(`Expected task-plan proposal review 200, got ${taskPlanReview.status}: ${await taskPlanReview.text()}`);
+    }
+    const taskPlanMerge = await app.request(`/api/proposals/${taskPlanCreateBody.data.proposal_id}/merge`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({})
+    });
+    if (taskPlanMerge.status !== 200) {
+      throw new Error(`Expected task-plan proposal merge 200, got ${taskPlanMerge.status}: ${await taskPlanMerge.text()}`);
+    }
+    const taskPlanRows = await db.select().from(taskPlans).then((rows) =>
+      rows.filter((row) => row.id === taskPlanCreateBody.data.plan_id)
+    );
+    const taskPlanRow = taskPlanRows[0];
+    // The old assertion expected `approved` here. That was wrong once approval became product-wired to dispatch:
+    // the merge route now starts the dispatcher immediately, so the observable plan state is `dispatching`.
+    if (taskPlanRow?.status !== "dispatching") {
+      throw new Error(`Expected task plan dispatching after merge, got ${taskPlanRow?.status ?? "missing"}`);
+    }
+    const taskPlanItemRows = await db.select().from(taskPlanItems).then((rows) =>
+      rows.filter((row) => row.planId === taskPlanCreateBody.data.plan_id)
+    );
+    if (taskPlanItemRows.length !== 3) {
+      throw new Error(`Expected 3 task plan items, got ${taskPlanItemRows.length}`);
+    }
+    // R9-BLOCK-7.154：合入事务按 manifest 的 task_plan_items 整批写回——正路径下写回结果
+    // 必须与草稿保真（角色/份额/依赖不丢不变形）。
+    const rewrittenShares = [...taskPlanItemRows].sort((a, b) => a.seq - b.seq).map((row) => row.budgetSharePct);
+    if (JSON.stringify(rewrittenShares) !== JSON.stringify([30, 50, 20])) {
+      throw new Error(`Expected rewritten budget shares [30,50,20], got ${JSON.stringify(rewrittenShares)}`);
+    }
+    const rewrittenRoles = [...taskPlanItemRows].sort((a, b) => a.seq - b.seq).map((row) => row.role);
+    if (JSON.stringify(rewrittenRoles) !== JSON.stringify(["research", "produce", "review"])) {
+      throw new Error(`Expected rewritten roles research/produce/review, got ${JSON.stringify(rewrittenRoles)}`);
+    }
+    const taskPlanWorkItemPage = await app.request(`/api/pages/workitems/${taskPlanWorkItemId}`, { headers });
+    if (taskPlanWorkItemPage.status !== 200) {
+      throw new Error(`Expected task-plan work item page 200, got ${taskPlanWorkItemPage.status}: ${await taskPlanWorkItemPage.text()}`);
+    }
+    const taskPlanWorkItemPageBody = await taskPlanWorkItemPage.json() as {
+      data: { task_plan?: { status: string; items: unknown[]; items_capped: boolean } };
+    };
+    const taskPlanPagePlan = taskPlanWorkItemPageBody.data.task_plan;
+    // Same lifecycle as above: approved is an intermediate write, but the route-visible product state is dispatching.
+    if (!taskPlanPagePlan || taskPlanPagePlan.status !== "dispatching") {
+      throw new Error(`Expected work item page task_plan dispatching, got ${taskPlanPagePlan?.status ?? "missing"}`);
+    }
+    if (taskPlanPagePlan.items.length !== 3 || taskPlanPagePlan.items_capped) {
+      throw new Error(`Expected work item page task_plan to expose 3 uncapped items, got ${taskPlanPagePlan.items.length}`);
+    }
+    // B-R9.1-1（真 PG 原子性反路径）：计划已被取消后合入其提议，必须整笔回滚——
+    // 409 task_plan_approval_failed、提议停在 reviewed（没有半套 merged 死状态）、计划仍 cancelled。
+    const cancelledPlanCreate = await app.request(`/api/workitems/${taskPlanWorkItemId}/task-plan`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({})
+    });
+    if (cancelledPlanCreate.status !== 201) {
+      throw new Error(`Expected second task-plan create 201, got ${cancelledPlanCreate.status}: ${await cancelledPlanCreate.text()}`);
+    }
+    const cancelledPlanBody = await cancelledPlanCreate.json() as { data: { plan_id: string; proposal_id: string } };
+    const cancelledPlanReview = await app.request(`/api/proposals/${cancelledPlanBody.data.proposal_id}/review`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ decision: "approve" })
+    });
+    if (cancelledPlanReview.status !== 200) {
+      throw new Error(`Expected second task-plan review 200, got ${cancelledPlanReview.status}: ${await cancelledPlanReview.text()}`);
+    }
+    const cancelledDraft = await taskPlanRepository.cancelDraftPlan({
+      planId: cancelledPlanBody.data.plan_id,
+      workspaceId: settings.auth.defaultWorkspaceId
+    });
+    if (cancelledDraft?.status !== "cancelled") {
+      throw new Error(`Expected draft plan to cancel before the atomicity probe, got ${cancelledDraft?.status ?? "missing"}`);
+    }
+    const cancelledPlanMerge = await app.request(`/api/proposals/${cancelledPlanBody.data.proposal_id}/merge`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({})
+    });
+    if (cancelledPlanMerge.status !== 409) {
+      throw new Error(`Expected cancelled-plan merge 409, got ${cancelledPlanMerge.status}: ${await cancelledPlanMerge.text()}`);
+    }
+    const cancelledPlanMergeBody = await cancelledPlanMerge.json() as { error: { code: string } };
+    if (cancelledPlanMergeBody.error.code !== "task_plan_approval_failed") {
+      throw new Error(`Expected task_plan_approval_failed, got ${cancelledPlanMergeBody.error.code}`);
+    }
+    const cancelledPlanProposalRows = await db.select().from(proposals).then((rows) =>
+      rows.filter((row) => row.id === cancelledPlanBody.data.proposal_id)
+    );
+    if (cancelledPlanProposalRows[0]?.status !== "reviewed") {
+      throw new Error(`Expected cancelled-plan proposal to stay reviewed, got ${cancelledPlanProposalRows[0]?.status ?? "missing"}`);
+    }
+    const cancelledPlanRows = await db.select().from(taskPlans).then((rows) =>
+      rows.filter((row) => row.id === cancelledPlanBody.data.plan_id)
+    );
+    if (cancelledPlanRows[0]?.status !== "cancelled") {
+      throw new Error(`Expected plan to stay cancelled after blocked merge, got ${cancelledPlanRows[0]?.status ?? "missing"}`);
+    }
+    const orderedTaskPlanItems = [...taskPlanItemRows].sort((a, b) => a.seq - b.seq);
+    const autoDispatchedRuns = await db.select().from(agentRuns).then((rows) =>
+      rows.filter((row) => row.taskPlanId === taskPlanCreateBody.data.plan_id)
+    );
+    if (autoDispatchedRuns.length !== 1 || autoDispatchedRuns[0]?.taskPlanItemId !== orderedTaskPlanItems[0]?.id) {
+      throw new Error(`Expected merge route to auto-dispatch the first ready child only, got ${JSON.stringify(autoDispatchedRuns.map((row) => row.taskPlanItemId))}`);
+    }
+    async function latestTaskPlanChildRun(itemId: string) {
+      const childRuns = await db.select().from(agentRuns).then((rows) =>
+        rows.filter((row) => row.taskPlanId === taskPlanCreateBody.data.plan_id && row.taskPlanItemId === itemId)
+          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      );
+      const childRun = childRuns.at(-1);
+      if (!childRun) {
+        throw new Error(`Expected task-plan child run for item ${itemId}`);
+      }
+      const persistedChildRun = await persistence.get(childRun.id);
+      if (!persistedChildRun) {
+        throw new Error(`Expected persisted task-plan child run for item ${itemId}`);
+      }
+      return persistedChildRun;
+    }
+    async function waitForTaskPlanChildRun(itemId: string) {
+      let childRun = await latestTaskPlanChildRun(itemId);
+      for (let attempt = 0; (childRun.status === "queued" || childRun.status === "running") && attempt < 20; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        childRun = await latestTaskPlanChildRun(itemId);
+      }
+      return childRun;
+    }
+    async function runTaskPlanChild(itemId: string, expectedStatus: "succeeded" | "failed") {
+      let executedChild: AgentRunQueueRecord = await latestTaskPlanChildRun(itemId);
+      // The old smoke asserted this child was still queued and always ran it manually. That was wrong after
+      // task-plan merge started pumping child runs itself: the product-visible behavior is the settled child
+      // run plus dispatcher attention, regardless of whether the pump or this smoke observes it first.
+      if (executedChild.status === "queued") {
+        try {
+          executedChild = await queue.run(executedChild.run_id);
+        } catch (error) {
+          if (!(error instanceof AgentRunnerError) || error.code !== "agent_run_not_queued") {
+            throw error;
+          }
+          executedChild = await waitForTaskPlanChildRun(itemId);
+        }
+      } else if (executedChild.status === "running") {
+        executedChild = await waitForTaskPlanChildRun(itemId);
+      }
+      if (executedChild.status !== expectedStatus) {
+        throw new Error(`Expected task-plan child run ${itemId} to ${expectedStatus}, got ${executedChild.status}`);
+      }
+      const settled = await taskPlanDispatcher.handleRunSettled(executedChild);
+      if (settled?.settledItemId !== itemId) {
+        throw new Error(`Expected dispatcher settled item ${itemId}, got ${settled?.settledItemId ?? "missing"}`);
+      }
+      return { runId: executedChild.run_id, settled };
+    }
+    if (!orderedTaskPlanItems[0]) {
+      throw new Error("Missing first ordered task-plan item.");
+    }
+    // B-R9.2-2：research 的产物形态=outputs/ 笔记文件，deterministic client 写文件即真交付。
+    // partial-failure 场景显式构造在 produce：其 run 不产出文件（requireDeliverable 失败），
+    // 依赖它的 review 被连坐跳过——部分失败可见性照旧被验证。
+    if (!orderedTaskPlanItems[1]) {
+      throw new Error("Missing second ordered task-plan item.");
+    }
+    const succeededResearch = await runTaskPlanChild(orderedTaskPlanItems[0].id, "succeeded");
+    if (
+      succeededResearch.settled.dispatch.enqueuedItemIds.length !== 1
+      || succeededResearch.settled.dispatch.enqueuedItemIds[0] !== orderedTaskPlanItems[1].id
+      || succeededResearch.settled.dispatch.skippedItemIds.length !== 0
+    ) {
+      throw new Error(`Expected succeeded research child to unlock produce only, got ${JSON.stringify(succeededResearch.settled.dispatch)}`);
+    }
+    const failedProduce = await runTaskPlanChild(orderedTaskPlanItems[1].id, "failed");
+    const childReplayRunIds = [succeededResearch.runId, failedProduce.runId];
+    if (failedProduce.settled.dispatch.enqueuedItemIds.length !== 0 || failedProduce.settled.dispatch.skippedItemIds.length !== 1) {
+      throw new Error(`Expected failed produce child to skip its review dependent without enqueueing more, got ${JSON.stringify(failedProduce.settled.dispatch)}`);
+    }
+    const taskDispatchEscalations = await db.select().from(escalationEvents).then((rows) =>
+      rows.filter((row) => row.workItemId === taskPlanWorkItemId)
+    );
+    const hasDependencyFailureEscalation = taskDispatchEscalations.some((row) => {
+      const handoff = row.handoffJson as { source?: string; reason?: string; skipped_item_ids?: string[]; failed_item_ids?: string[] };
+      return handoff.source === "task_dispatcher"
+        && handoff.reason === "dependency_failed"
+        && handoff.skipped_item_ids?.length === 1
+        // B-R9.0-3：升级卡带失败上游 ids，「让它重试」才能真重跑。
+        && handoff.failed_item_ids?.length === 1
+        && handoff.failed_item_ids[0] === orderedTaskPlanItems[1]?.id;
+    });
+    if (!hasDependencyFailureEscalation) {
+      throw new Error(`Expected task dispatcher to persist dependency failure attention, got ${JSON.stringify(taskDispatchEscalations)}`);
+    }
+    const taskPlanWorkItemPageAfterDispatch = await app.request(`/api/pages/workitems/${taskPlanWorkItemId}`, { headers });
+    if (taskPlanWorkItemPageAfterDispatch.status !== 200) {
+      throw new Error(`Expected task-plan work item page after dispatch 200, got ${taskPlanWorkItemPageAfterDispatch.status}: ${await taskPlanWorkItemPageAfterDispatch.text()}`);
+    }
+    const taskPlanWorkItemPageAfterDispatchBody = await taskPlanWorkItemPageAfterDispatch.json() as {
+      data: {
+        task_plan?: { status: string };
+        agent_team?: {
+          status: string;
+          completed_count: number;
+          total_count: number;
+          runs_capped: boolean;
+          items: Array<{ status: string; action?: { kind: string; href: string } }>;
+        };
+      };
+    };
+    const taskPlanPageAgentTeam = taskPlanWorkItemPageAfterDispatchBody.data.agent_team;
+    if (
+      !taskPlanPageAgentTeam
+      || taskPlanPageAgentTeam.status !== "done"
+      || taskPlanPageAgentTeam.completed_count !== 1
+      || taskPlanPageAgentTeam.total_count !== 3
+      || taskPlanPageAgentTeam.runs_capped
+      || taskPlanPageAgentTeam.items[0]?.status !== "succeeded"
+      || taskPlanPageAgentTeam.items[1]?.status !== "failed"
+      || taskPlanPageAgentTeam.items[1]?.action?.kind !== "decide"
+      || taskPlanPageAgentTeam.items[2]?.status !== "skipped"
+    ) {
+      throw new Error(`Expected task-plan agent_team to expose succeeded research, failed produce with a decision, and skipped review, got ${JSON.stringify(taskPlanPageAgentTeam)}`);
     }
     const knowledge = await app.request("/api/knowledge/search", {
       method: "POST",
@@ -434,9 +845,17 @@ async function main() {
     const policyListBeforeBody = await policyListBefore.json() as {
       data: { id: string; scope_kind: string; max_tokens: number; max_cost_cny: string; version: number }[];
     };
-    // 5 条默认策略：workitem-run / user-day / team-day / team-month / eval-day（M21 新增 eval 上限）。
-    if (policyListBeforeBody.data.length !== 5) {
-      throw new Error(`Expected 5 default P-COST policies, got ${policyListBeforeBody.data.length}`);
+    // R9.5 新增 task-plan 与 objective 预算域；旧的 5 条断言只覆盖军团预算前的默认策略。
+    if (policyListBeforeBody.data.length !== 7) {
+      throw new Error(`Expected 7 default P-COST policies, got ${policyListBeforeBody.data.length}`);
+    }
+    const taskPolicyBefore = policyListBeforeBody.data.find((policy) => policy.id === "pcost-task-run-v0");
+    const objectivePolicyBefore = policyListBeforeBody.data.find((policy) => policy.id === "pcost-objective-month-v0");
+    if (taskPolicyBefore?.scope_kind !== "task" || objectivePolicyBefore?.scope_kind !== "objective") {
+      throw new Error(`Expected task/objective P-COST defaults, got ${JSON.stringify({
+        task: taskPolicyBefore,
+        objective: objectivePolicyBefore
+      })}`);
     }
     const userPolicyBefore = policyListBeforeBody.data.find((policy) => policy.id === "pcost-user-day-v0");
     if (!userPolicyBefore || userPolicyBefore.scope_kind !== "user") {
@@ -477,9 +896,10 @@ async function main() {
     ) {
       throw new Error(`Expected cost policy readback to use DB override, got ${JSON.stringify(userPolicyAfter)}`);
     }
-    const userDayPolicyStorageId = budgetPolicyStorageId(settings, "pcost-user-day-v0");
     const [budgetPolicyRows, budgetPolicyAuditRows] = await Promise.all([
-      db.select().from(budgetPolicies).then((rows) => rows.filter((row) => row.id === userDayPolicyStorageId)),
+      db.select().from(budgetPolicies).then((rows) =>
+        selectTenantScopedBudgetPolicyRows(settings, "pcost-user-day-v0", rows)
+      ),
       db.select().from(auditLogs).then((rows) =>
         rows.filter((row) =>
           row.entityType === "budget_policy"
@@ -559,6 +979,167 @@ async function main() {
     const pageTokenDelta = costPageBody.data.token_in - costPageBeforeBody.data.token_in;
     if (Math.abs(pageCostDelta - 0.007) > 0.000001 || pageTokenDelta !== 1500) {
       throw new Error(`Expected DB cost page totals, got ${JSON.stringify(costPageBody.data)}`);
+    }
+    const escalationProjectId = randomUUID();
+    const escalationWorkItemId = randomUUID();
+    const escalationEventId = randomUUID();
+    await db.insert(projects).values({
+      id: escalationProjectId,
+      workspaceId: settings.auth.defaultWorkspaceId,
+      name: "R9 escalation smoke project",
+      slug: `r9-escalation-${randomUUID().slice(0, 8)}`,
+      ownerNickname: "owner",
+      ownerUserId: seedUser.id
+    });
+    await db.insert(workItems).values({
+      id: escalationWorkItemId,
+      code: `R9-ESC-${randomUUID().slice(0, 8)}`,
+      projectId: escalationProjectId,
+      workspaceId: settings.auth.defaultWorkspaceId,
+      submitterUserId: seedUser.id,
+      title: "R9 escalation smoke",
+      rawDescription: "制造一个真实升级卡,再从 HTTP resolve 回到 ai_working。",
+      summaryMd: "R9 escalation smoke.",
+      status: "escalated",
+      mode: "worker"
+    });
+    await db.insert(escalationEvents).values({
+      id: escalationEventId,
+      workItemId: escalationWorkItemId,
+      trigger: "unqualified",
+      reasonMd: "PG smoke escalation needs a human decision before retry.",
+      handoffJson: {}
+    });
+    const attentionWithEscalation = await app.request("/api/pages/attention?locale=zh-CN", { headers });
+    if (attentionWithEscalation.status !== 200) {
+      throw new Error(`Expected attention escalation page 200, got ${attentionWithEscalation.status}: ${await attentionWithEscalation.text()}`);
+    }
+    const attentionWithEscalationBody = await attentionWithEscalation.json() as {
+      data: {
+        primary?: {
+          kind?: string;
+          source_ref?: { entity_type?: string; entity_id?: string };
+          actions?: Array<{ label?: string; href?: string }>;
+        };
+        queue: Array<{
+          kind?: string;
+          source_ref?: { entity_type?: string; entity_id?: string };
+          actions?: Array<{ label?: string; href?: string }>;
+        }>;
+      };
+    };
+    const escalationCards = [
+      attentionWithEscalationBody.data.primary,
+      ...attentionWithEscalationBody.data.queue
+    ].filter(Boolean);
+    const escalationCard = escalationCards.find((item) => item?.source_ref?.entity_id === escalationEventId);
+    if (
+      escalationCard?.kind !== "escalation"
+      || !escalationCard.actions?.some((action) =>
+        action.label === "让它重试" && action.href === `/api/escalations/${escalationEventId}/resolve`
+      )
+    ) {
+      throw new Error("Expected attention page to show the unresolved R9 escalation card with retry action.");
+    }
+    const escalationResolve = await app.request(`/api/escalations/${escalationEventId}/resolve`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ action: "retry", reason_md: "PG smoke retry path" })
+    });
+    if (escalationResolve.status !== 200) {
+      throw new Error(`Expected escalation resolve 200, got ${escalationResolve.status}: ${await escalationResolve.text()}`);
+    }
+    const escalationResolveBody = await escalationResolve.json() as {
+      data: { escalation: { resolved_at?: string }; work_item_status: string };
+    };
+    if (escalationResolveBody.data.work_item_status !== "ai_working" || !escalationResolveBody.data.escalation.resolved_at) {
+      throw new Error(`Expected escalation resolve to return ai_working + resolved_at, got ${JSON.stringify(escalationResolveBody.data)}`);
+    }
+    const [resolvedEscalationWorkItem] = await db.select().from(workItems).then((rows) =>
+      rows.filter((row) => row.id === escalationWorkItemId)
+    );
+    const [resolvedEscalationEvent] = await db.select().from(escalationEvents).then((rows) =>
+      rows.filter((row) => row.id === escalationEventId)
+    );
+    if (resolvedEscalationWorkItem?.status !== "ai_working" || !resolvedEscalationEvent?.resolvedAt) {
+      throw new Error(
+        `Expected DB escalation resolve to persist ai_working/resolvedAt, got status=${resolvedEscalationWorkItem?.status ?? "missing"}`
+      );
+    }
+    // B-R9.0-2：非计划升级 retry 必须真入队一个 agent run（不能只翻状态）。断言后立即取消该 run，
+    // 释放它的 team/day 预算持有量，避免影响后文并发预算竞争的精确门。
+    const escalationRetryRuns = (await queue.listActive()).filter((run) => run.work_item_id === escalationWorkItemId);
+    if (escalationRetryRuns.length !== 1 || escalationRetryRuns[0]?.status !== "queued") {
+      throw new Error(
+        `Expected escalation retry to enqueue exactly one queued run, got ${JSON.stringify(escalationRetryRuns.map((run) => ({ id: run.run_id, status: run.status })))}`
+      );
+    }
+    await queue.abort(escalationRetryRuns[0].run_id, { id: seedUser.id, isAdmin: true });
+    const attentionAfterEscalation = await app.request("/api/pages/attention?locale=zh-CN", { headers });
+    if (attentionAfterEscalation.status !== 200) {
+      throw new Error(`Expected post-resolve attention page 200, got ${attentionAfterEscalation.status}: ${await attentionAfterEscalation.text()}`);
+    }
+    const attentionAfterEscalationBody = await attentionAfterEscalation.json() as {
+      data: {
+        primary?: { source_ref?: { entity_id?: string } };
+        queue: Array<{ source_ref?: { entity_id?: string } }>;
+      };
+    };
+    const postResolveEscalationCard = [
+      attentionAfterEscalationBody.data.primary,
+      ...attentionAfterEscalationBody.data.queue
+    ].filter(Boolean)
+      .find((item) => item?.source_ref?.entity_id === escalationEventId);
+    if (postResolveEscalationCard) {
+      throw new Error("Expected resolved escalation to disappear from attention queue.");
+    }
+    // B-R9.3-3（真 PG 并发断言，内存假仓库不顶数）：同 key 并发 mergeUpsert（无 base）
+    // 恰好一个成功、一个如实 conflict——乐观 CAS 不丢更新、不静默双写。
+    {
+      const memoryRepo = createUserMemoryRepository(db);
+      const seededMemory = await memoryRepo.mergeUpsert({
+        userId: seedUser.id,
+        workspaceId: settings.auth.defaultWorkspaceId,
+        category: "preference",
+        key: "r9-concurrency-probe",
+        valueMd: "初始偏好。"
+      });
+      if (seededMemory.status !== "upserted") {
+        throw new Error(`Expected concurrency probe seed upserted, got ${seededMemory.status}`);
+      }
+      // 两个并发写都基于同一 base（fast-forward 竞争）：乐观 CAS 必须恰好放行一个，
+      // 输者拿到如实 conflict 而不是静默覆盖（丢更新）或双双落败。
+      const [left, right] = await Promise.all([
+        memoryRepo.mergeUpsert({
+          userId: seedUser.id,
+          workspaceId: settings.auth.defaultWorkspaceId,
+          category: "preference",
+          key: "r9-concurrency-probe",
+          valueMd: "并发 A 版偏好。",
+          baseValueMd: "初始偏好。"
+        }),
+        memoryRepo.mergeUpsert({
+          userId: seedUser.id,
+          workspaceId: settings.auth.defaultWorkspaceId,
+          category: "preference",
+          key: "r9-concurrency-probe",
+          valueMd: "并发 B 版偏好。",
+          baseValueMd: "初始偏好。"
+        })
+      ]);
+      const statuses = [left.status, right.status].sort();
+      if (JSON.stringify(statuses) !== JSON.stringify(["conflict", "upserted"])) {
+        throw new Error(`Expected exactly one winner in concurrent L2 upsert, got ${JSON.stringify(statuses)}`);
+      }
+      const survivors = await memoryRepo.listForUser(seedUser.id, {
+        workspaceId: settings.auth.defaultWorkspaceId,
+        categories: ["preference"]
+      });
+      const survivor = survivors.find((row) => row.key === "r9-concurrency-probe");
+      const winner = left.status === "upserted" ? left : right;
+      if (winner.status !== "upserted" || survivor?.valueMd !== winner.userMemory.valueMd) {
+        throw new Error(`Expected surviving L2 value to match the winner, got ${survivor?.valueMd ?? "missing"}`);
+      }
     }
     const proposalRowsBeforeMerge = await db.select().from(proposals).then((rows) =>
       rows.filter((row) => row.workItemId === workItemId)
@@ -2190,6 +2771,28 @@ async function main() {
         page_token_delta: pageTokenDelta,
         user_policy_version: policyUpdateBody.data.version,
         user_policy_max_tokens: costUsageBeforeBody.data.me.max_tokens
+      },
+      escalation: {
+        work_item_id: escalationWorkItemId,
+        event_id: escalationEventId,
+        attention_card_kind: escalationCard.kind,
+        resolve_status: escalationResolveBody.data.work_item_status,
+        persisted_status: resolvedEscalationWorkItem?.status,
+        resolved_at_present: Boolean(resolvedEscalationEvent?.resolvedAt)
+      },
+      task_plan: {
+        work_item_id: taskPlanWorkItemId,
+        plan_id: taskPlanCreateBody.data.plan_id,
+        proposal_id: taskPlanCreateBody.data.proposal_id,
+        proposal_title: taskPlanCreateBody.data.proposal.title,
+        status: taskPlanRow.status,
+        item_count: taskPlanItemRows.length,
+        page_status: taskPlanPagePlan.status,
+        page_item_count: taskPlanPagePlan.items.length,
+        agent_team_status: taskPlanPageAgentTeam.status,
+        agent_team_completed: taskPlanPageAgentTeam.completed_count,
+        agent_team_total: taskPlanPageAgentTeam.total_count,
+        child_replay_run_ids: childReplayRunIds
       },
       merge: {
         proposal_status: proposalAfterMerge.status,

@@ -40,12 +40,16 @@ import {
   ProposalRepositoryMergeProposalAlreadyChosenError,
   ProposalRepositoryStaleBaseError,
   ProposalRepositoryRebaseRequiredError,
+  ProposalRepositoryTaskPlanApprovalError,
+  TaskPlanBudgetShareMismatch,
+  TaskPlanItemGraphMismatch,
   ProposalRepositoryUnsupportedMergeProposalApplyError,
   type ProposalAdoptedDriveFileInput,
   type MergeProposalCandidateApplicationContext,
   type MergeProposalRow,
   type ProposalRepository,
   type StoredProposalRows,
+  type UserMemoryRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
@@ -63,15 +67,28 @@ import {
 } from "./text-hunk-materializer.js";
 import { correctionFromReview, getDefaultUserMemoryRepository } from "./user-memory.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import {
+  getDefaultTaskPlanMergeApprovalHandler,
+  getDefaultTaskPlanReviewRejectionHandler,
+  taskPlanApprovalTarget,
+  type TaskPlanMergeApprovalHandler,
+  type TaskPlanReviewRejectionHandler
+} from "./task-plan-approval.js";
 
 export type ProposalActor = {
   actor_kind: "human" | "ai" | "system";
   actor_user_id?: string;
+  workspaceId?: string;
   label?: string;
 };
 
 export type StoredProposal = Proposal & {
   reviews: Review[];
+};
+
+export type ProposalServiceHooks = {
+  onMerged?: TaskPlanMergeApprovalHandler;
+  onRejected?: TaskPlanReviewRejectionHandler;
 };
 
 // GAP-1：首页决策队列里「待评审提议」的轻量摘要(不含 manifest/reviews)。
@@ -80,6 +97,7 @@ export type ReviewableProposalSummary = {
   work_item_id: string;
   title: string;
   status: "opened" | "reviewed";
+  review_kind: "proposal_review" | "plan_review";
   created_at: string;
 };
 
@@ -132,6 +150,8 @@ export type ProposalService = {
   get: (proposalId: string) => Promise<StoredProposal | null>;
   getByMergeProposal: (mergeProposalId: string) => Promise<StoredProposal | null>;
   listByWorkItem: (workItemId: string) => Promise<StoredProposal[]>;
+  // B-R9.6：今日 AI 判官审阅结果——指挥台「复核通过率」的真源。
+  countTodayAiReviewOutcomes: (input: { workspaceId: string }) => Promise<{ total: number; approved: number }>;
   listReviewableForUser: (input: { user: { id: string; isAdmin: boolean; workspaceId?: string }; limit?: number }) => Promise<ReviewableProposalSummary[]>;
   listConflicts: (workItemId: string) => Promise<ProposalConflictListResult>;
   review: (input: {
@@ -183,6 +203,14 @@ function cloneManifestWithIds(input: {
     branch_id: input.branchId,
     base
   }, "proposal.manifest");
+}
+
+function reviewKindForManifest(manifest: DeliverableChangeManifest): ReviewableProposalSummary["review_kind"] {
+  return manifest.changes.some((change) =>
+    change.target_kind === "structured_record" && change.target_ref.entity_type === "task_plan"
+  )
+    ? "plan_review"
+    : "proposal_review";
 }
 
 function iso(value: Date | string | null | undefined) {
@@ -1623,6 +1651,8 @@ function conflictListResult(conflicts: ProposalConflict[]): ProposalConflictList
 export function createInMemoryProposalService(options: {
   now?: () => Date;
   id?: () => string;
+  onMerged?: TaskPlanMergeApprovalHandler;
+  onRejected?: TaskPlanReviewRejectionHandler;
 } = {}): ProposalService {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
@@ -1642,6 +1672,10 @@ export function createInMemoryProposalService(options: {
   }
 
   return {
+    async countTodayAiReviewOutcomes() {
+      return { total: 0, approved: 0 };
+    },
+
     async createFromManifest(input) {
       if (input.manifest.work_item_id !== input.workItemId) {
         throw new ProposalServiceError(422, "manifest_workitem_mismatch", "变更申请与事项不匹配。");
@@ -1703,6 +1737,7 @@ export function createInMemoryProposalService(options: {
           work_item_id: proposal.work_item_id,
           title: proposal.title,
           status: proposal.status === "reviewed" ? ("reviewed" as const) : ("opened" as const),
+          review_kind: reviewKindForManifest(proposal.diff_manifest),
           created_at: proposal.created_at
         }));
     },
@@ -1739,10 +1774,14 @@ export function createInMemoryProposalService(options: {
         reviewed_at: at,
         updated_at: at
       }, "proposal.memory");
-      return save({
+      const reviewed = save({
         ...updated,
         reviews: [...proposal.reviews, review]
       });
+      if (input.decision !== "approve") {
+        await options.onRejected?.(reviewed);
+      }
+      return reviewed;
     },
 
     async merge(input) {
@@ -1765,10 +1804,12 @@ export function createInMemoryProposalService(options: {
         merged_at: at,
         updated_at: at
       }, "proposal.memory");
-      return save({
+      const merged = save({
         ...updated,
         reviews: proposal.reviews
       });
+      await options.onMerged?.(merged);
+      return merged;
     },
 
     async rebase(input) {
@@ -1805,6 +1846,9 @@ export function createDbProposalService(repository: ProposalRepository, options:
   id?: () => string;
   storageRoot?: string;
   fusionCandidateGenerator?: MergeFusionCandidateGenerator;
+  userMemoryRepository?: Pick<UserMemoryRepository, "upsert">;
+  onMerged?: TaskPlanMergeApprovalHandler;
+  onRejected?: TaskPlanReviewRejectionHandler;
 } = {}): ProposalService {
   const now = options.now ?? (() => new Date());
   const nextId = options.id ?? randomUUID;
@@ -1949,6 +1993,10 @@ export function createDbProposalService(repository: ProposalRepository, options:
       return rows.map(storedRowsToProposal);
     },
 
+    async countTodayAiReviewOutcomes(input) {
+      return repository.countTodayAiReviewOutcomes(input);
+    },
+
     async listReviewableForUser(input) {
       const rows = await repository.listReviewable({
         submitterUserId: input.user.id,
@@ -1961,6 +2009,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
         work_item_id: row.workItemId,
         title: row.title,
         status: row.status === "reviewed" ? ("reviewed" as const) : ("opened" as const),
+        review_kind: reviewKindForManifest(row.diffManifest),
         created_at: row.createdAt.toISOString()
       }));
     },
@@ -2011,18 +2060,23 @@ export function createDbProposalService(repository: ProposalRepository, options:
         try {
           const memory = correctionFromReview({
             reviewerUserId: input.actor.actor_user_id ?? null,
+            ...(input.actor.workspaceId ? { workspaceId: input.actor.workspaceId } : {}),
             decision: input.decision,
             reasonMd: input.reasonMd,
             proposalId: input.proposalId
           });
           if (memory) {
-            await getDefaultUserMemoryRepository().upsert(memory);
+            await (options.userMemoryRepository ?? getDefaultUserMemoryRepository()).upsert(memory);
           }
         } catch {
           // 记忆沉淀失败不影响审批结果
         }
       }
-      return storedRowsToProposal(rows);
+      const reviewed = storedRowsToProposal(rows);
+      if (input.decision !== "approve") {
+        await options.onRejected?.(reviewed);
+      }
+      return reviewed;
     },
 
     async merge(input) {
@@ -2036,6 +2090,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
       if (proposal.status !== "reviewed") {
         throw new ProposalServiceError(409, "proposal_not_reviewed", "这份变更申请需要先确认，再采纳到正式版。");
       }
+      const taskPlanTarget = taskPlanApprovalTarget(proposal);
 
       let rows: StoredProposalRows | null;
       const mergedAt = now();
@@ -2097,6 +2152,7 @@ export function createDbProposalService(repository: ProposalRepository, options:
             ? { bulkAction: input.conflictResolution.bulkAction }
             : {}),
           ...(candidateSupplements.length > 0 ? { candidateSupplements } : {}),
+          ...(taskPlanTarget ? { workItemStatusAfterMerge: "ai_working" as const } : {}),
           at: mergedAt
         });
       } catch (error) {
@@ -2124,12 +2180,25 @@ export function createDbProposalService(repository: ProposalRepository, options:
         if (error instanceof ProposalRepositoryStaleBaseError) {
           throw new ProposalServiceError(409, "stale_base", "正式版刚刚被别人改过，请刷新后重新采纳。");
         }
+        // B-R9.1-1：计划批准和合入同事务，批不动（计划已被取消等）时整笔回滚到这里。
+        if (error instanceof ProposalRepositoryTaskPlanApprovalError) {
+          throw new ProposalServiceError(409, "task_plan_approval_failed", "这份任务计划已经不能批准（可能已被取消），本次合入没有生效，请刷新后再处理。");
+        }
+        // R9-BLOCK-7.154：人审修订写回前的图/预算校验失败，整笔合入已回滚。
+        if (error instanceof TaskPlanItemGraphMismatch) {
+          throw new ProposalServiceError(409, "task_plan_items_invalid", "计划修订里的子任务依赖或引用不合法，本次合入没有生效，请修正后重试。");
+        }
+        if (error instanceof TaskPlanBudgetShareMismatch) {
+          throw new ProposalServiceError(409, "task_plan_budget_share_invalid", `计划修订的预算份额合计是 ${error.totalSharePct}%，必须刚好 100%，本次合入没有生效。`);
+        }
         throw error;
       }
       if (!rows) {
         throw new ProposalServiceError(404, "not_found", "没有找到这个变更申请。");
       }
-      return storedRowsToProposal(rows);
+      const merged = storedRowsToProposal(rows);
+      await options.onMerged?.(merged);
+      return merged;
     },
 
     async rebase(input) {
@@ -2269,7 +2338,10 @@ let defaultProposalDbClient: WorkHubDatabaseClient | undefined;
 export function getDefaultProposalService() {
   if (!defaultProposalService) {
     defaultProposalDbClient = getSharedDatabaseClient();
-    defaultProposalService = createDbProposalService(createProposalRepository(defaultProposalDbClient.db));
+    defaultProposalService = createDbProposalService(createProposalRepository(defaultProposalDbClient.db), {
+      onMerged: getDefaultTaskPlanMergeApprovalHandler(),
+      onRejected: getDefaultTaskPlanReviewRejectionHandler()
+    });
   }
   return defaultProposalService;
 }

@@ -72,6 +72,14 @@ class StubNotifications implements NotificationRepository {
     this.archives += 1;
     return { ...this.stored, readAt: now, archivedAt: now, updatedAt: now };
   }
+
+  async archiveByDedupeKey() {
+    return 0;
+  }
+
+  async archiveStaleLifecycleForWorkItem() {
+    return 0;
+  }
 }
 
 class DriftedSeverityNotifications extends StubNotifications {
@@ -136,6 +144,14 @@ class RecordingNotifications implements NotificationRepository {
 
   async archive() {
     return row({ archivedAt: now });
+  }
+
+  async archiveByDedupeKey() {
+    return 0;
+  }
+
+  async archiveStaleLifecycleForWorkItem() {
+    return 0;
   }
 }
 
@@ -219,6 +235,14 @@ class VisibilityNotifications implements NotificationRepository {
 
   snapshot(id: string) {
     return this.rows.find((stored) => stored.id === id) ?? null;
+  }
+
+  async archiveByDedupeKey() {
+    return 0;
+  }
+
+  async archiveStaleLifecycleForWorkItem() {
+    return 0;
   }
 }
 
@@ -910,14 +934,18 @@ test("notification mark-all-read scopes actor to readable work item notification
     orgId: "org-1",
     workspaceId: "workspace-1"
   };
+  // R12：mark-all-read 语义收紧为「不吞待决策」——本测试考的是 actor 可见性收口，
+  // 夹具改用信息类通知（normal/merged），避免与新语义相撞。
   const notifications = new VisibilityNotifications([
-    row({ id: hiddenNotificationId, userId, workItemId: hiddenWorkItemId }),
+    row({ id: hiddenNotificationId, userId, workItemId: hiddenWorkItemId, type: "workitem.merged", severity: "normal" }),
     row({
       id: visibleNotificationId,
       userId,
       workItemId: visibleWorkItemId,
       targetUrl: `/workitems/${visibleWorkItemId}`,
-      dedupeKey: "visible"
+      dedupeKey: "visible",
+      type: "workitem.merged",
+      severity: "normal"
     })
   ]);
   const service = createNotificationService({

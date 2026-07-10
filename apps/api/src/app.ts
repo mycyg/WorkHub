@@ -8,9 +8,12 @@ import { ZodError } from "zod";
 import { settings } from "@workhub/config";
 
 import { getOpenApiDocument } from "./openapi.js";
-import { createAuthRoutes } from "./routes/auth.js";
+import { createAuthRoutes, createUserDirectoryRoutes } from "./routes/auth.js";
 import { createClientDeviceRoutes } from "./routes/client-devices.js";
 import { createApprovalRoutes } from "./routes/approvals.js";
+import { createEscalationRoutes } from "./routes/escalations.js";
+import { createObjectiveRoutes } from "./routes/objectives.js";
+import { createMemoryConflictRoutes } from "./routes/memory-conflicts.js";
 import { createAgentRunRoutes } from "./routes/agent-runs.js";
 import { AgentRunnerError } from "./workers/agent-runner.js";
 import { createPermissionRoutes } from "./routes/permissions.js";
@@ -26,12 +29,16 @@ import { createProjectRoutes } from "./routes/projects.js";
 import { createSessionRoutes } from "./routes/sessions.js";
 import { createKnowledgeRoutes } from "./routes/knowledge.js";
 import { createWorkItemRoutes } from "./routes/workitems.js";
+import { createTaskPlanRoutes } from "./routes/task-plans.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
 import { createCostRoutes } from "./routes/cost.js";
+import { TaskPlanApprovalError } from "./services/task-plan-approval.js";
 import { ProjectServiceError } from "./services/projects.js";
 import { PilotDay1MetricsServiceError } from "./services/pilot-day1-metrics.js";
 import { httpErrorCodeFor } from "./http-error-codes.js";
 import { ApprovalServiceError } from "./services/approvals.js";
+import { EscalationServiceError } from "./services/escalations.js";
+import { MemoryConflictServiceError } from "./services/memory-conflicts.js";
 import { NotificationServiceError } from "./services/notifications.js";
 import {
   ProposalServiceError,
@@ -195,15 +202,20 @@ app.get("/openapi.json", (c) => c.json(getOpenApiDocument()));
 app.get("/api/openapi.json", (c) => c.json(getOpenApiDocument()));
 
 app.route("/api/auth", createAuthRoutes());
+app.route("/api", createUserDirectoryRoutes());
 app.route("/api/client-devices", createClientDeviceRoutes());
 app.route("/api/push", createPushRoutes());
 app.route("/api/approvals", createApprovalRoutes());
+app.route("/api/escalations", createEscalationRoutes());
+app.route("/api/objectives", createObjectiveRoutes());
+app.route("/api/memory-conflicts", createMemoryConflictRoutes());
 app.route("/api/permissions", createPermissionRoutes());
 app.route("/api", createAgentRunRoutes());
 app.route("/api/notifications", createNotificationRoutes());
 app.route("/api", createAuditRoutes());
 app.route("/api", createSessionRoutes());
 app.route("/api", createWorkItemRoutes());
+app.route("/api", createTaskPlanRoutes());
 app.route("/api/knowledge", createKnowledgeRoutes());
 app.route("/api", createWorkItemProposalRoutes());
 app.route("/api/proposals", createProposalRoutes());
@@ -270,6 +282,32 @@ app.onError((error, c) => {
     );
   }
 
+  if (error instanceof EscalationServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof MemoryConflictServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
   if (error instanceof NotificationServiceError) {
     return c.json(
       {
@@ -284,6 +322,19 @@ app.onError((error, c) => {
   }
 
   if (error instanceof ProjectServiceError || error instanceof PilotDay1MetricsServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof TaskPlanApprovalError) {
     return c.json(
       {
         ok: false,

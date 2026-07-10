@@ -31,6 +31,9 @@ export type SpotlightViewContext = {
   toast: (message: string, tone?: "ok" | "error" | "info") => void;
   // 内容高度变化后请求重新测量并缩放原生窗口（盒子随内容生长/收缩）。
   requestResize: () => void;
+  // R11（键盘全程）：innerHTML 重渲会把焦点静默丢回 document.body——list↔detail 等导航式重渲后
+  // 调它把焦点交还内容区（tabIndex=-1 + focus），屏幕阅读器与 Tab 起点保持可预期。
+  refocusBody: () => void;
   // 写动作成功落库后通知壳层刷新角标、桌宠卡片等外部入口。
   onActionSettled?: () => void;
   // 本能力视图的生命周期信号：离开能力时 abort。view 必须用它给 addEventListener 传 {signal}，

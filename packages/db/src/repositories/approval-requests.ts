@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, lte, sql, ne, or } from "drizzle-orm";
 
 import type { ApprovalDecision } from "@workhub/contracts";
 
@@ -24,6 +24,8 @@ export type ApprovalRequestRepository = {
   findById: (id: string) => Promise<ApprovalRequestRow | null>;
   listPendingDue: (at: Date, limit?: number) => Promise<ApprovalRequestRow[]>;
   listPendingForUser: (userId: string, options?: { includeAll?: boolean; limit?: number; offset?: number }) => Promise<ApprovalRequestRow[]>;
+  // R8（留痕）：已处理审批回看——我决策过的或路由给我且已决的，按决策时间倒序。
+  listDecidedForUser: (userId: string, options?: { limit?: number }) => Promise<ApprovalRequestRow[]>;
   countPendingForUser: (userId: string, options?: { includeAll?: boolean }) => Promise<number>;
   respondPending: (
     id: string,
@@ -96,6 +98,19 @@ export function createApprovalRequestRepository(db: WorkHubDb): ApprovalRequestR
         .orderBy(desc(approvalRequests.createdAt))
         .limit(limit)
         .offset(offset);
+    },
+
+    async listDecidedForUser(userId, options = {}) {
+      const limit = Math.max(1, Math.min(options.limit ?? 20, 50));
+      return db
+        .select()
+        .from(approvalRequests)
+        .where(and(
+          ne(approvalRequests.status, "pending"),
+          or(eq(approvalRequests.decidedByUserId, userId), eq(approvalRequests.routedToUserId, userId))
+        ))
+        .orderBy(desc(approvalRequests.updatedAt))
+        .limit(limit);
     },
 
     async countPendingForUser(userId, options = {}) {

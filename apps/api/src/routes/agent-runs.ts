@@ -149,7 +149,7 @@ export type WorkItemStatusKickoff = (input: {
 let defaultWorkItemStatusKickoffDbClient: WorkHubDatabaseClient | undefined;
 let defaultWorkItemStatusKickoff: WorkItemStatusKickoff | undefined;
 
-function getDefaultWorkItemStatusKickoff(): WorkItemStatusKickoff {
+export function getDefaultWorkItemStatusKickoff(): WorkItemStatusKickoff {
   if (!defaultWorkItemStatusKickoff) {
     defaultWorkItemStatusKickoffDbClient ??= getSharedDatabaseClient();
     const repo = createWorkItemRepository(defaultWorkItemStatusKickoffDbClient.db);

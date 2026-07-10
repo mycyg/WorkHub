@@ -48,6 +48,11 @@ export type MeetingPageService = {
   dismissInsight: (input: MeetingMutationInput & {
     insightId: string;
   }) => Promise<MeetingPageVM>;
+  // R10-P2-2：导入会议转写——补齐「会议页只能看不能进数据」的孤岛缺口。
+  importTranscript: (input: MeetingMutationInput & {
+    title: string;
+    transcriptText: string;
+  }) => Promise<MeetingPageVM>;
   draftToProposal: (input: {
     actor: AuthActor;
     locale?: WorkHubLocale;
@@ -59,7 +64,7 @@ export type MeetingPageServiceDependencies = {
   repo: MeetingRepository;
   proposals?: Pick<ProposalService, "createFromManifest" | "get">;
   workItems?: Pick<WorkItemService, "detailPage" | "assertCanMutateArtifacts">;
-  workItemAccess?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord">;
+  workItemAccess?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> & Partial<Pick<WorkItemDataRepository, "findWorkItemAccessRecords">>;
   now?: () => Date;
 };
 
@@ -343,8 +348,11 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
     const uniqueIds = [...new Set([...input.workItemIds].filter(Boolean))];
     const visible = new Set<string>();
     const actorUserId = input.actor.userId ?? input.actor.id;
+    const recordsByWorkItemId = access.findWorkItemAccessRecords
+      ? await access.findWorkItemAccessRecords(uniqueIds)
+      : new Map(await Promise.all(uniqueIds.map(async (workItemId) => [workItemId, await access.findWorkItemAccessRecord(workItemId)] as const)));
     for (const workItemId of uniqueIds) {
-      const record = await access.findWorkItemAccessRecord(workItemId);
+      const record = recordsByWorkItemId.get(workItemId);
       if (record && canViewWorkItemRecord(record, { id: actorUserId, isAdmin: input.actor.isAdmin }, { workspaceId: input.actor.workspaceId })) {
         visible.add(workItemId);
       }
@@ -590,6 +598,41 @@ export function createMeetingPageService(deps: MeetingPageServiceDependencies): 
         workItemIds: linkableWorkItemIdsFromRows(rows)
       });
       return buildMeetingPage(rows, input.actor, input.locale ?? "zh-CN", deps.now?.() ?? new Date(), input.meetingId, linkableWorkItemIds);
+    },
+    async importTranscript(input) {
+      const actorUserId = ensureHumanActor(input.actor);
+      // 项目级 manage 门（与页面 can_manage 同口径）：owner/admin 才能往项目里进会议数据。
+      const rows = await pageForActor({ actor: input.actor, projectId: input.projectId });
+      if (!rows.project) {
+        throw new MeetingPageServiceError(404, "没有找到这个项目会议。", "meeting_not_found");
+      }
+      if (!canManageProjectMeeting(rows.project, { uploadedByUserId: "" }, input.actor)) {
+        throw new MeetingPageServiceError(403, "你没有权限往这个项目导入会议。", "meeting_forbidden");
+      }
+      const title = input.title.trim();
+      const transcriptText = input.transcriptText.trim();
+      if (!title || !transcriptText) {
+        throw new MeetingPageServiceError(409, "标题和转写内容都不能为空。", "meeting_import_invalid");
+      }
+      if (!deps.repo.importTranscript) {
+        throw new MeetingPageServiceError(409, "当前存储不支持导入会议转写。", "meeting_import_unsupported");
+      }
+      try {
+        const imported = await deps.repo.importTranscript({
+          actorKind: input.actor.kind,
+          actorUserId,
+          projectId: input.projectId,
+          title: title.slice(0, 256),
+          transcriptText,
+          at: deps.now?.() ?? new Date()
+        });
+        if (!imported) {
+          throw new MeetingPageServiceError(404, "没有找到这个项目会议。", "meeting_not_found");
+        }
+        return pageAfterMutation(input);
+      } catch (error) {
+        mutationError(error);
+      }
     },
     async insightToDraft(input) {
       const actorUserId = ensureHumanActor(input.actor);

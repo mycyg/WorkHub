@@ -164,6 +164,30 @@ export function createApprovalRoutes(deps: ApprovalRoutesDependencies = {}) {
     return c.json({ ok: true, data });
   });
 
+  // R12（批量效率）：多选批量放行。仅 allow——打回需要逐条理由，不进批量通道。
+  // 逐条走完整 respond（鉴权/CAS/审计/策略/通知归档全复用），单条失败（409 竞态等）跳过不翻整批。
+  routes.post("/respond-batch", createCurrentUserMiddleware(authSource), async (c) => {
+    const body = await readJsonObject(c);
+    const rawIds = Array.isArray((body as { ids?: unknown }).ids) ? (body as { ids: unknown[] }).ids : [];
+    const ids = [...new Set(rawIds.filter((value): value is string => typeof value === "string" && value.length > 0))].slice(0, 50);
+    if (ids.length === 0) {
+      return c.json({ ok: false, code: "field_value_required", message: "请至少勾选一条要通过的审批。" }, 422);
+    }
+    let approved = 0;
+    let skipped = 0;
+    for (const id of ids) {
+      try {
+        const approval = await assertCanReadApproval(id, c.var.actor);
+        assertCanActOnApproval(approval, c.var.actor);
+        await service.respond(id, c.var.actor, { decision: "allow", remember: "once" });
+        approved += 1;
+      } catch {
+        skipped += 1;
+      }
+    }
+    return c.json({ ok: true, data: { approved, skipped } });
+  });
+
   routes.post("/:id/delegate", createCurrentUserMiddleware(authSource), async (c) => {
     const approval = await assertCanReadApproval(c.req.param("id"), c.var.actor);
     assertCanActOnApproval(approval, c.var.actor);

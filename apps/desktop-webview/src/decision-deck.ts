@@ -12,6 +12,7 @@ type DeckTagTone = "approval" | "choice" | "permission" | "handoff" | "info";
 function tagToneForKind(kind: AttentionItem["kind"]): DeckTagTone {
   switch (kind) {
     case "approval":
+    case "plan_review":
     case "proposal_review":
       return "approval";
     case "clarification":
@@ -34,10 +35,17 @@ function tagLabel(tone: DeckTagTone, zh: boolean) {
     case "permission":
       return zh ? "要你授权" : "Allow?";
     case "handoff":
-      return zh ? "派给谁好" : "Assign";
+      return zh ? "需处理" : "Needs action";
     default:
       return zh ? "看一眼" : "Heads-up";
   }
+}
+
+function tagLabelForKind(kind: AttentionItem["kind"], zh: boolean) {
+  if (kind === "plan_review") {
+    return zh ? "计划审阅" : "Plan review";
+  }
+  return tagLabel(tagToneForKind(kind), zh);
 }
 
 const accentByTone: Record<DeckTagTone, string> = {
@@ -147,7 +155,7 @@ export function renderDecisionDeckHtml(input: {
         <div class="wh-deck-accent" style="background:${accentByTone[tone]}"></div>
         <div class="wh-deck-cardbody">
           <div class="wh-deck-tagrow">
-            <span class="wh-deck-tag wh-deck-tag--${tone}">${escapeHtml(tagLabel(tone, zh))}</span>
+            <span class="wh-deck-tag wh-deck-tag--${tone}">${escapeHtml(tagLabelForKind(top.kind, zh))}</span>
             <span class="wh-deck-count">${zh ? "待办" : "To do"} <b>${remaining}</b></span>
           </div>
           <h3 class="wh-deck-title">${escapeHtml(top.title)}</h3>

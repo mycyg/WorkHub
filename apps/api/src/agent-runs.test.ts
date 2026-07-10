@@ -50,6 +50,7 @@ import { createInMemoryProposalService } from "./services/proposals.js";
 import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 import {
   AgentRunnerError,
+  canUseToolForTaskPlanRole,
   createInMemoryAgentRunQueue,
   sweepStaleAgentWorkdirs,
   type AgentRunNotificationPublisher,
@@ -58,7 +59,9 @@ import {
   type AgentRunPersistence,
   type AgentRunQueue,
   type AgentRunQueueRecord,
+  type AgentRunQueueStatus,
   type AgentRunRequeueExpiredLeases,
+  type AgentRunRestoreDeadLetterClaim,
   type AgentRunTraceStepRecord,
   type BudgetDecisionProvider
 } from "./workers/agent-runner.js";
@@ -74,6 +77,16 @@ const snapshotId = "70000000-0000-4000-8000-000000000025";
 const confidenceId = "72000000-0000-4000-8000-000000000025";
 const escalationId = "73000000-0000-4000-8000-000000000025";
 
+function assertNoRawBudgetBoundaryIds(value: unknown, rawIds: string[]) {
+  const serialized = JSON.stringify(value) ?? "";
+  for (const field of ["task_plan_id", "taskPlanId", "task_plan_item_id", "taskPlanItemId", "objective_id", "objectiveId"]) {
+    assert.equal(serialized.includes(field), false, `${field} leaked through public budget payload`);
+  }
+  for (const id of rawIds) {
+    assert.equal(serialized.includes(id), false, `${id} leaked through public budget payload`);
+  }
+}
+
 class MemoryAgentRunPersistence implements AgentRunPersistence {
   public readonly rows = new Map<string, AgentRunQueueRecord>();
   public readonly traceWrites: AgentRunTraceStepRecord[][] = [];
@@ -88,9 +101,7 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
 
   async createRunIfWorkItemIdle(run: AgentRunQueueRecord) {
     const existing = [...this.rows.values()].find(
-      (candidate) =>
-        candidate.work_item_id === run.work_item_id &&
-        (candidate.status === "queued" || candidate.status === "running")
+      (candidate) => agentRunActiveConflict(candidate, run)
     );
     if (existing) {
       return false;
@@ -142,6 +153,14 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
   async listActive() {
     return [...this.rows.values()]
       .filter((run) => run.status === "queued" || run.status === "running")
+      .map((run) => structuredClone(run));
+  }
+
+  async listUnsettledTaskPlanRuns(input: { limit: number }) {
+    const terminalStatuses = new Set<AgentRunQueueStatus>(["succeeded", "failed", "escalated", "cancelled"]);
+    return [...this.rows.values()]
+      .filter((run) => Boolean(run.task_plan_item_id) && terminalStatuses.has(run.status))
+      .slice(0, input.limit)
       .map((run) => structuredClone(run));
   }
 
@@ -221,6 +240,37 @@ class MemoryAgentRunPersistence implements AgentRunPersistence {
     }
     return recovered;
   }
+
+  async restoreDeadLetterClaim(input: AgentRunRestoreDeadLetterClaim) {
+    const run = this.rows.get(input.runId);
+    if (!run || run.status !== "failed") {
+      return null;
+    }
+    const restored: AgentRunQueueRecord = {
+      ...structuredClone(run),
+      status: "running",
+      claim: {
+        claimed_by: input.claim.workerId,
+        claimed_at: input.claim.claimedAt.toISOString(),
+        heartbeat_at: input.claim.heartbeatAt.toISOString(),
+        lease_expires_at: input.claim.leaseExpiresAt.toISOString()
+      },
+      updated_at: input.restoredAt.toISOString()
+    };
+    this.rows.set(run.run_id, structuredClone(restored));
+    return structuredClone(restored);
+  }
+}
+
+function agentRunActiveConflict(candidate: AgentRunQueueRecord, input: AgentRunQueueRecord | { work_item_id: string; task_plan_item_id?: string }) {
+  if (candidate.status !== "queued" && candidate.status !== "running") {
+    return false;
+  }
+  if (input.task_plan_item_id) {
+    return candidate.task_plan_item_id === input.task_plan_item_id
+      || (candidate.work_item_id === input.work_item_id && !candidate.task_plan_item_id);
+  }
+  return candidate.work_item_id === input.work_item_id;
 }
 
 function user(partial: Partial<UserAuthRow> = {}): UserAuthRow {
@@ -605,6 +655,30 @@ class MemoryAiDecisions implements AiDecisionRepository {
   async listEscalationEventsForWorkItem(id: string) {
     return this.escalationRows.filter((row) => row.workItemId === id);
   }
+
+  async findEscalationById() {
+    return null;
+  }
+
+  async findUnresolvedTaskPlanEscalation() {
+    return null;
+  }
+
+  async listUnresolvedEscalationsForWorkspace() {
+    return [];
+  }
+
+  async resolveEscalation() {
+    return null;
+  }
+
+  async resolveBudgetDecision() {
+    return null;
+  }
+
+  async delegateEscalation() {
+    return null;
+  }
 }
 
 function settings(): Settings {
@@ -683,6 +757,9 @@ function acceptedDeliverable(partial: Partial<AcceptedDeliverableVM> = {}): Acce
 
 function workItemsWithAcceptedDeliverables(deliverables: AcceptedDeliverableVM[]): WorkItemService {
   return {
+    async projectNamesForWorkItems() {
+      return new Map<string, string>();
+    },
     async createSession() {
       throw new Error("not needed");
     },
@@ -722,6 +799,7 @@ function workItemsWithAcceptedDeliverables(deliverables: AcceptedDeliverableVM[]
         agent_trace_preview: [],
         accepted_deliverables: deliverables,
         evidence_refs: [],
+        approval_decisions: [],
         actions: {}
       };
     },
@@ -1074,6 +1152,69 @@ function noDeliverableAgentClient(): AgentLoopClient {
   };
 }
 
+function emptyArtifactAgentClient(): AgentLoopClient {
+  const responses = [
+    {
+      id: "msg-empty-artifact-1",
+      stopReason: "tool_use",
+      usage: { inputTokens: 10, outputTokens: 20 },
+      usageRecord: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        task: "worker",
+        inputTokens: 10,
+        outputTokens: 20,
+        estimatedCostCny: "0.001",
+        source: "agent_step",
+        createdAt: "2026-06-05T00:00:00.000Z"
+      },
+      content: [
+        {
+          type: "tool_use",
+          id: "tool-empty-artifact-1",
+          name: "write_file",
+          input: { path: "outputs/empty.md", content: "" }
+        }
+      ]
+    },
+    {
+      id: "msg-empty-artifact-2",
+      stopReason: "end_turn",
+      usage: { inputTokens: 5, outputTokens: 5 },
+      usageRecord: {
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        task: "worker",
+        inputTokens: 5,
+        outputTokens: 5,
+        estimatedCostCny: "0.002",
+        source: "agent_step",
+        createdAt: "2026-06-05T00:00:01.000Z"
+      },
+      content: [{ type: "text", text: "交付完成" }]
+    },
+    {
+      id: "msg-empty-artifact-review",
+      stopReason: "end_turn",
+      usage: { inputTokens: 0, outputTokens: 0 },
+      content: [{ type: "text", text: "{\"grade\": 5, \"rationale\": \"可直接采纳\"}" }]
+    }
+  ] satisfies Awaited<ReturnType<AgentLoopClient["messages"]["create"]>>[];
+
+  return {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create() {
+        const response = responses.shift();
+        if (!response) {
+          throw new Error("No fake AgentLoop response queued");
+        }
+        return response;
+      }
+    }
+  };
+}
+
 function singleToolThenDoneAgentClient(): AgentLoopClient {
   let calls = 0;
   return {
@@ -1145,6 +1286,26 @@ test("agent run enqueue consumes P-COST decisions before creating a run", async 
   assert.equal(body.data.budget_decision.reason, "critical");
   assert.equal(body.data.budget_decision.model_route.reason, "near_budget_downgrade");
   assert.equal(body.data.budget_decision.notice?.recommended_action, "downgrade_model");
+});
+
+test("B-R9.2 enqueue budgetCapCny tightens the run budget without loosening it", async () => {
+  // branch-review 假接线：份额切出的子预算必须真进执行预算（run.budget/预留 est/环内守卫），
+  // 且只收紧不放宽 policy 预算。
+  const runtimeSettings = settings();
+  const ids = ["40000000-0000-4000-8000-000000000031", "40000000-0000-4000-8000-000000000032"];
+  let idIndex = 0;
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => ids[idIndex++]!
+  });
+
+  const capped = await queue.enqueue({ workItemId, actorId: userId, budgetCapCny: "1.50" });
+  assert.equal(capped.budget.max_cost_cny, "1.50");
+
+  // 高于 policy 默认（BUDGET_DEFAULT_RUN_COST_CNY=5）的 cap 不放宽。
+  const uncapped = await queue.enqueue({ workItemId: "50000000-0000-4000-8000-000000000022", actorId: userId, budgetCapCny: "9.99" });
+  assert.equal(uncapped.budget.max_cost_cny, "5");
 });
 
 test("agent run enqueue denies starting AI on a work item the caller cannot read (cross-tenant IDOR guard)", async () => {
@@ -1343,6 +1504,122 @@ test("agent run enqueue returns budget_exhausted before queueing new work", asyn
   assert.equal((await queue.listActive()).length, 0);
 });
 
+test("R9.7 budget exhaustion persists a durable budget decision before rejecting enqueue", async () => {
+  const runtimeSettings = settings();
+  const durableEvents: Parameters<AiDecisionRepository["createEscalationEvent"]>[0][] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000027",
+    usage: () => [
+      {
+        policyId: "pcost-user-day-v0",
+        scope: { kind: "user", userId },
+        tokenIn: 500000,
+        tokenOut: 1,
+        estimatedCostCny: "20"
+      }
+    ],
+    eventBus: false,
+    decisions: {
+      async createEscalationEvent(input) {
+        durableEvents.push(input);
+        return {
+          id: "73000000-0000-4000-8000-000000000027",
+          workItemId: input.workItemId,
+          agentRunId: null,
+          confidenceId: null,
+          trigger: input.trigger,
+          reasonMd: input.reasonMd,
+          handoffJson: input.handoffJson ?? {},
+          suggestedLeadUserId: null,
+          createdAt: now,
+          resolvedAt: null
+        } as EscalationEventRow;
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => queue.enqueue({ workItemId, actorId: userId, title: "Budget blocked run" }),
+    (error: unknown) => error instanceof AgentRunnerError && error.status === 402 && error.code === "budget_exhausted"
+  );
+
+  assert.equal((await queue.listActive()).length, 0);
+  assert.equal(durableEvents.length, 1);
+  const [event] = durableEvents;
+  assert.equal(event?.workItemId, workItemId);
+  assert.equal(event?.trigger, "budget_exhausted");
+  assert.equal(event?.reasonMd, "AI 预算已经用完，先暂停新的自动执行。");
+  assert.equal(event?.handoffJson?.["attention_kind"], "budget");
+  const persistedNotice = event?.handoffJson?.["notice"] as {
+    code?: string;
+    recommended_action?: string;
+    usage?: {
+      scope_label?: string;
+      period?: string;
+      total_tokens?: number;
+      max_tokens?: number;
+      remaining_tokens?: number;
+      estimated_cost_cny?: string;
+      max_cost_cny?: string;
+      remaining_cost_cny?: string;
+      status?: string;
+    };
+  } | undefined;
+  assert.equal(persistedNotice?.code, "budget_exhausted");
+  assert.equal(persistedNotice?.recommended_action, "ask_admin");
+  assert.equal(persistedNotice?.usage?.scope_label, "我的 AI 日预算");
+  assert.equal(persistedNotice?.usage?.period, "day");
+  assert.equal(persistedNotice?.usage?.total_tokens, 500001);
+  assert.equal(persistedNotice?.usage?.max_tokens, 500000);
+  assert.equal(persistedNotice?.usage?.remaining_tokens, 0);
+  assert.equal(persistedNotice?.usage?.estimated_cost_cny, "20");
+  assert.equal(persistedNotice?.usage?.max_cost_cny, "20");
+  assert.equal(persistedNotice?.usage?.remaining_cost_cny, "0");
+  assert.equal(persistedNotice?.usage?.status, "exhausted");
+  assert.equal(event?.handoffJson?.["actor_id"], userId);
+});
+
+test("R9.7 budget exhaustion fails closed when the durable budget decision cannot be persisted", async () => {
+  const runtimeSettings = settings();
+  const publishedEvents: { topic: string; type: string }[] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000b7",
+    usage: () => [
+      {
+        policyId: "pcost-user-day-v0",
+        scope: { kind: "user", userId },
+        tokenIn: 500000,
+        tokenOut: 1,
+        estimatedCostCny: "20"
+      }
+    ],
+    decisions: {
+      async createEscalationEvent() {
+        throw new Error("decision store down");
+      }
+    },
+    eventBus: {
+      async publish(topic, type) {
+        publishedEvents.push({ topic, type });
+      }
+    }
+  });
+
+  await assert.rejects(
+    () => queue.enqueue({ workItemId, actorId: userId, title: "Budget blocked run" }),
+    (error: unknown) => error instanceof AgentRunnerError
+      && error.status === 503
+      && error.code === "budget_decision_persist_failed"
+  );
+
+  assert.equal((await queue.listActive()).length, 0);
+  assert.deepEqual(publishedEvents, [], "transient budget events need a durable decision-inbox card first");
+});
+
 test("agent run enqueue reserves budget, denies an over-cap concurrent start, and compensates the queued run", async () => {
   const runtimeSettings = settings();
   // 默认拒绝（模拟并发在飞已占满该 scope 的预留）；之后切允许验证补偿释放了 work-item 槽。
@@ -1393,13 +1670,123 @@ test("agent run enqueue reserves budget, denies an over-cap concurrent start, an
   assert.equal(reserveInputs.length, 2);
 });
 
+test("R9.7 reservation budget rejection persists a durable decision card before notifying", async () => {
+  const runtimeSettings = settings();
+  const durableEvents: Array<{ workItemId?: string; trigger?: string; reasonMd?: string; handoffJson?: Record<string, unknown> }> = [];
+  const publishedEvents: { topic: string; type: string; data: WorkHubEvent<unknown> }[] = [];
+  const fakeReservationRepo = {
+    reserve: async () => ({
+      ok: false,
+      limitingScope: { kind: "team", teamId: runtimeSettings.auth.defaultWorkspaceId },
+      limit: "tokens"
+    }),
+    reconcile: async () => 0,
+    releaseExpired: async () => 0,
+    refreshLease: async () => 0,
+    outstandingForScopes: async () => new Map()
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000033",
+    reservationRepo: fakeReservationRepo as unknown as BudgetReservationRepository,
+    decisions: {
+      async createEscalationEvent(input) {
+        durableEvents.push(input);
+        return {
+          id: "73000000-0000-4000-8000-000000000033",
+          workItemId: input.workItemId,
+          agentRunId: null,
+          confidenceId: null,
+          trigger: input.trigger,
+          reasonMd: input.reasonMd,
+          handoffJson: input.handoffJson ?? {},
+          suggestedLeadUserId: null,
+          createdAt: now,
+          resolvedAt: null
+        } as EscalationEventRow;
+      }
+    },
+    eventBus: {
+      async publish(topic, type, data) {
+        publishedEvents.push({ topic, type, data: data as WorkHubEvent<unknown> });
+      }
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false
+  });
+
+  await assert.rejects(
+    () => queue.enqueue({ workItemId, actorId: userId, title: "reservation denial needs card" }),
+    (error: unknown) => error instanceof AgentRunnerError && error.status === 402 && error.code === "budget_exhausted"
+  );
+
+  assert.equal((await queue.listActive()).length, 0);
+  assert.equal(durableEvents.length, 1);
+  const event = durableEvents[0];
+  assert.equal(event?.workItemId, workItemId);
+  assert.equal(event?.trigger, "budget_exhausted");
+  assert.equal(event?.reasonMd, "AI 预算已经用完，先暂停新的自动执行。");
+  const notice = event?.handoffJson?.["notice"] as { code?: string; recommended_action?: string; scope?: unknown } | undefined;
+  assert.equal(notice?.code, "budget_exhausted");
+  assert.equal(notice?.recommended_action, "ask_admin");
+  assert.deepEqual(notice?.scope, { kind: "team" });
+  const decision = event?.handoffJson?.["budget_decision"] as { allowed?: boolean; reason?: string } | undefined;
+  assert.equal(decision?.allowed, false);
+  assert.equal(decision?.reason, "budget_exhausted");
+  assert.deepEqual(publishedEvents.map((event) => [event.topic, event.type]), [
+    [topics.workitem(workItemId).topic, eventTypes.budgetExhausted],
+    [topics.user(userId).topic, eventTypes.budgetExhausted]
+  ]);
+});
+
+test("agent run enqueue compensates a persisted queued run when budget reservation throws", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const fakeReservationRepo = {
+    reserve: async () => {
+      throw new Error("reservation store offline");
+    },
+    reconcile: async () => 0,
+    releaseExpired: async () => 0,
+    refreshLease: async () => 0,
+    outstandingForScopes: async () => new Map()
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000032",
+    persistence,
+    reservationRepo: fakeReservationRepo as unknown as BudgetReservationRepository,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  await assert.rejects(
+    () => queue.enqueue({ workItemId, actorId: userId, title: "reservation backend fails" }),
+    (error: unknown) => error instanceof AgentRunnerError
+      && error.status === 503
+      && error.code === "budget_reservation_failed"
+  );
+
+  assert.equal((await queue.listActive()).length, 0);
+  const persisted = [...persistence.rows.values()];
+  assert.equal(persisted.length, 1);
+  assert.equal(persisted[0]?.status, "failed");
+  assert.equal(persisted[0]?.trace.at(-1)?.control_signal, "escalate");
+});
+
 test("agent run abort releases reserved budget immediately", async () => {
   const runtimeSettings = settings();
-  const reconciled: Array<{ runId: string; tokens: number; cost: string }> = [];
+  const actorWorkspaceId = "00000000-0000-4000-8000-00000000b071";
+  const reconciled: Array<{ workspaceId: string; runId: string; tokens: number; cost: string }> = [];
   const fakeReservationRepo = {
     reserve: async () => ({ ok: true }),
-    reconcile: async (runId: string, tokens: number, cost: string) => {
-      reconciled.push({ runId, tokens, cost });
+    reconcile: async (workspaceId: string, runId: string, tokens: number, cost: string) => {
+      reconciled.push({ workspaceId, runId, tokens, cost });
       return 1;
     },
     releaseExpired: async () => 0,
@@ -1417,11 +1804,13 @@ test("agent run abort releases reserved budget immediately", async () => {
     eventBus: false
   });
 
-  const run = await queue.enqueue({ workItemId, actorId: userId, title: "Abort reserved run" });
+  const run = await queue.enqueue({ workItemId, actorId: userId, workspaceId: actorWorkspaceId, title: "Abort reserved run" });
   const aborted = await queue.abort(run.run_id, userId);
 
   assert.equal(aborted.status, "cancelled");
-  assert.deepEqual(reconciled, [{ runId: run.run_id, tokens: 0, cost: "0" }]);
+  // Old assertion checked only runId, but reservation lifecycle writes are tenant-scoped
+  // and must carry the actor workspace to avoid settling another workspace's same-id row.
+  assert.deepEqual(reconciled, [{ workspaceId: actorWorkspaceId, runId: run.run_id, tokens: 0, cost: "0" }]);
 });
 
 test("agent run abort publishes a cancelled status event to the run stream", async () => {
@@ -1460,11 +1849,12 @@ test("agent run abort publishes a cancelled status event to the run stream", asy
 
 test("agent run startup provider errors fail the run and reconcile reserved budget", async () => {
   const runtimeSettings = settings();
-  const reconciled: Array<{ runId: string; tokens: number; cost: string }> = [];
+  const actorWorkspaceId = "00000000-0000-4000-8000-00000000b072";
+  const reconciled: Array<{ workspaceId: string; runId: string; tokens: number; cost: string }> = [];
   const fakeReservationRepo = {
     reserve: async () => ({ ok: true }),
-    reconcile: async (runId: string, tokens: number, cost: string) => {
-      reconciled.push({ runId, tokens, cost });
+    reconcile: async (workspaceId: string, runId: string, tokens: number, cost: string) => {
+      reconciled.push({ workspaceId, runId, tokens, cost });
       return 1;
     },
     releaseExpired: async () => 0,
@@ -1485,14 +1875,16 @@ test("agent run startup provider errors fail the run and reconcile reserved budg
     eventBus: false
   });
 
-  const run = await queue.enqueue({ workItemId, actorId: userId, title: "Provider init fails" });
+  const run = await queue.enqueue({ workItemId, actorId: userId, workspaceId: actorWorkspaceId, title: "Provider init fails" });
   const executed = await queue.runNext();
   const stored = await queue.get(run.run_id);
 
   assert.equal(executed?.status, "failed");
   assert.equal(stored?.status, "failed");
   assert.equal(stored?.trace.at(-1)?.output_excerpt, "provider missing before loop");
-  assert.deepEqual(reconciled, [{ runId: run.run_id, tokens: 0, cost: "0" }]);
+  // Old assertion checked only runId, but provider-failure settlement releases
+  // tenant-scoped budget reservations and must include the run workspace.
+  assert.deepEqual(reconciled, [{ workspaceId: actorWorkspaceId, runId: run.run_id, tokens: 0, cost: "0" }]);
 });
 
 test("agent run abort does not overwrite a run that settled during cancellation", async () => {
@@ -1635,6 +2027,139 @@ test("agent run enqueue uses the actor workspace for team budget snapshots", asy
   assert.deepEqual(run.budget_decision.notice?.scope, { kind: "team", team_id: actorWorkspaceId });
 });
 
+test("R9.5 objective budget exhaustion blocks the next child enqueue and publishes a budget card event", async () => {
+  const runtimeSettings = settings();
+  const taskPlanId = "95000000-0000-4000-8000-000000000601";
+  const objectiveId = "95000000-0000-4000-8000-000000000602";
+  const policyStore = createMemoryBudgetPolicyStore();
+  const objectivePolicy = policyStore.updatePolicy(runtimeSettings, "objective", "pcost-objective-month-v0", {
+    maxTokens: 1000,
+    maxCostCny: "50",
+    onExhausted: "block_new_run"
+  });
+  assert.ok(objectivePolicy, "R9.5 objective budget policy should be available for overrides");
+  const ledgerStore = createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId });
+  await ledgerStore.recordUsage(buildUsageRecord({
+    provider: "deepseek",
+    model: "deepseek-v4-pro",
+    task: "worker",
+    runId: "95000000-0000-4000-8000-000000000603",
+    workItemId,
+    userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    taskPlanId,
+    objectiveId,
+    inputTokens: 1000,
+    outputTokens: 1,
+    costTier: { inputCnyPerMtok: 1, outputCnyPerMtok: 1 },
+    createdAt: now
+  }));
+  const events: { topic: string; type: string; data: WorkHubEvent<unknown> }[] = [];
+  const durableEvents: Parameters<AiDecisionRepository["createEscalationEvent"]>[0][] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    policyStore,
+    ledgerStore,
+    decisions: {
+      async createEscalationEvent(input) {
+        durableEvents.push(input);
+        return null as unknown as EscalationEventRow;
+      }
+    },
+    now: () => now,
+    id: () => "95000000-0000-4000-8000-000000000604",
+    eventBus: {
+      async publish(topic, type, data) {
+        events.push({ topic, type, data: data as WorkHubEvent<unknown> });
+      }
+    }
+  });
+
+  let rejected: unknown;
+  try {
+    await queue.enqueue({
+      workItemId,
+      actorId: userId,
+      workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+      taskPlanId,
+      taskPlanItemId: "95000000-0000-4000-8000-000000000605",
+      objectiveId,
+      title: "Objective child run"
+    });
+  } catch (error) {
+    rejected = error;
+  }
+
+  assert.ok(rejected instanceof AgentRunnerError);
+  assert.equal(rejected.status, 402);
+  assert.equal(rejected.code, "budget_exhausted");
+  // Old assertion expected `scope.objective_id`, but that leaked a raw budget
+  // boundary id through public errors/events. R9.7 only exposes the boundary kind.
+  assert.deepEqual(rejected.details?.scope, { kind: "objective" });
+  assert.equal(rejected.details?.recommended_action, "add_budget");
+  assertNoRawBudgetBoundaryIds(rejected.details, [taskPlanId, objectiveId]);
+
+  assert.equal((await queue.listActive()).length, 0);
+  assert.deepEqual(events.map((event) => [event.topic, event.type]), [
+    [topics.workitem(workItemId).topic, eventTypes.budgetExhausted],
+    [topics.user(userId).topic, eventTypes.budgetExhausted]
+  ]);
+  const notice = events[0]?.data.data as { recommended_action?: string; options?: { id: string; label: string }[] };
+  assertNoRawBudgetBoundaryIds(notice, [taskPlanId, objectiveId]);
+  assertNoRawBudgetBoundaryIds(durableEvents[0]?.handoffJson?.["notice"], [taskPlanId, objectiveId]);
+  assertNoRawBudgetBoundaryIds(durableEvents[0]?.handoffJson?.["budget_decision"], [taskPlanId, objectiveId]);
+  assert.equal(notice.recommended_action, "add_budget");
+  assert.deepEqual(notice.options?.map((option) => [option.id, option.label]), [
+    ["add_budget", "追加预算继续"],
+    ["finish_current_output", "就用现有产出收尾"],
+    // 普通用户审查：danger 标签写明后果。
+    ["close_scope", "整体收工（取消这个任务）"]
+  ]);
+});
+
+test("R9.7 reservation budget rejection public details do not leak task-plan ids", async () => {
+  const runtimeSettings = settings();
+  const taskPlanId = "95000000-0000-4000-8000-000000000701";
+  const taskPlanItemId = "95000000-0000-4000-8000-000000000702";
+  const fakeReservationRepo = {
+    reserve: async () => ({ ok: false, limitingScope: { kind: "task", taskPlanId }, limit: "tokens" }),
+    reconcile: async () => 0,
+    releaseExpired: async () => 0,
+    refreshLease: async () => 0,
+    outstandingForScopes: async () => new Map()
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    reservationRepo: fakeReservationRepo as unknown as BudgetReservationRepository,
+    now: () => now,
+    id: () => "95000000-0000-4000-8000-000000000704",
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+
+  let rejected: unknown;
+  try {
+    await queue.enqueue({
+      workItemId,
+      actorId: userId,
+      workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+      taskPlanId,
+      taskPlanItemId,
+      title: "Task child run"
+    });
+  } catch (error) {
+    rejected = error;
+  }
+
+  assert.ok(rejected instanceof AgentRunnerError);
+  assert.equal(rejected.status, 402);
+  assert.equal(rejected.code, "budget_exhausted");
+  assert.deepEqual(rejected.details?.reserved_limiting_scope, { kind: "task" });
+  assertNoRawBudgetBoundaryIds(rejected.details, [taskPlanId, taskPlanItemId]);
+});
+
 test("agent run enqueue reads budget policies from the actor workspace", async () => {
   const runtimeSettings = settings();
   const actorWorkspaceId = "00000000-0000-4000-8000-00000000a9c2";
@@ -1772,6 +2297,62 @@ test("persistent agent run enqueue rejects duplicate active work item across que
   assert.equal((await persistence.listActive()).length, 1);
 });
 
+test("task-plan child runs may share a work item but not a task-plan item", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const runIds = [
+    "40000000-0000-4000-8000-0000000000e1",
+    "40000000-0000-4000-8000-0000000000e2",
+    "40000000-0000-4000-8000-0000000000e3"
+  ];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => {
+      const value = runIds.shift();
+      if (!value) {
+        throw new Error("missing run id fixture");
+      }
+      return value;
+    },
+    persistence,
+    eventBus: false
+  });
+  const taskPlanId = "81000000-0000-4000-8000-000000000041";
+  const firstItemId = "81000000-0000-4000-8000-000000000042";
+  const secondItemId = "81000000-0000-4000-8000-000000000043";
+
+  await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Task-plan child A",
+    taskPlanId,
+    taskPlanItemId: firstItemId,
+    agentRole: "research"
+  });
+  await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Task-plan child B",
+    taskPlanId,
+    taskPlanItemId: secondItemId,
+    agentRole: "produce"
+  });
+
+  await assert.rejects(
+    queue.enqueue({
+      workItemId,
+      actorId: userId,
+      title: "Task-plan child A duplicate",
+      taskPlanId,
+      taskPlanItemId: firstItemId,
+      agentRole: "research"
+    }),
+    (error) => error instanceof AgentRunnerError && error.code === "agent_run_already_active"
+  );
+  assert.deepEqual((await queue.listActive()).map((run) => run.task_plan_item_id).sort(), [firstItemId, secondItemId].sort());
+});
+
 test("persistent agent run enqueue carries tenant ids into DB persistence", async () => {
   const runtimeSettings = settings();
   const orgId = "00000000-0000-4000-8000-00000000a0b1";
@@ -1815,6 +2396,12 @@ test("persistent agent run enqueue carries tenant ids into DB persistence", asyn
     },
     async requeueExpiredClaims() {
       throw new Error("not used");
+    },
+    async restoreDeadLetterClaim() {
+      throw new Error("not used");
+    },
+    async listUnsettledTaskPlanRuns() {
+      throw new Error("not used");
     }
   };
   const queue = createInMemoryAgentRunQueue({
@@ -1834,6 +2421,541 @@ test("persistent agent run enqueue carries tenant ids into DB persistence", asyn
 
   assert.equal((captured as Record<string, unknown>).orgId, orgId);
   assert.equal((captured as Record<string, unknown>).workspaceId, workspaceId);
+});
+
+test("persistent agent run enqueue carries task-plan lineage into DB persistence", async () => {
+  const runtimeSettings = settings();
+  const parentRunId = "40000000-0000-4000-8000-0000000000c0";
+  const taskPlanId = "81000000-0000-4000-8000-000000000001";
+  const taskPlanItemId = "81000000-0000-4000-8000-000000000002";
+  const objectiveMd = "Verify source evidence and produce the research memo.";
+  let captured: Record<string, unknown> | undefined;
+  let storedRun: Record<string, unknown> | undefined;
+  const repository: AgentRunRepository = {
+    async createRun(run) {
+      captured = run as unknown as Record<string, unknown>;
+      storedRun = {
+        id: run.runId,
+        orgId: run.orgId ?? null,
+        workspaceId: run.workspaceId ?? null,
+        workItemId: run.workItemId,
+        branchId: null,
+        parentRunId: captured.parentRunId ?? null,
+        taskPlanId: captured.taskPlanId ?? null,
+        taskPlanItemId: captured.taskPlanItemId ?? null,
+        agentRole: captured.agentRole ?? null,
+        objectiveMd: captured.objectiveMd ?? null,
+        mode: run.mode,
+        actor: "human",
+        actorUserId: run.actorUserId,
+        title: run.title,
+        status: run.status,
+        model: run.model,
+        turnsUsed: run.usage.stepsUsed,
+        maxTurns: run.budget.maxSteps,
+        totalTimeoutS: run.budget.totalTimeoutS,
+        maxTokens: run.budget.maxTokens,
+        maxCostCny: run.budget.maxCostCny,
+        seconds: 0,
+        tokenIn: run.usage.tokenIn,
+        tokenOut: run.usage.tokenOut,
+        costEstimate: run.usage.estimatedCostCny,
+        budgetDecisionJson: run.budgetDecisionJson,
+        outcomeReason: null,
+        handoffMd: null,
+        handoffJson: null,
+        workdirRef: null,
+        claimedBy: null,
+        claimedAt: null,
+        heartbeatAt: null,
+        leaseExpiresAt: null,
+        recoverAttempts: 0,
+        startedAt: null,
+        finishedAt: null,
+        createdAt: run.createdAt,
+        updatedAt: run.updatedAt
+      };
+      return storedRun as Awaited<ReturnType<AgentRunRepository["createRun"]>>;
+    },
+    async createRunIfWorkItemIdle(run) {
+      return this.createRun(run);
+    },
+    async updateRun() {
+      throw new Error("not used");
+    },
+    async cancelActiveRun() {
+      throw new Error("not used");
+    },
+    async replaceTrace() {
+      throw new Error("not used");
+    },
+    async setWorkdir() {
+      throw new Error("not used");
+    },
+    async findById() {
+      return storedRun
+        ? { run: storedRun, steps: [] } as unknown as Awaited<ReturnType<AgentRunRepository["findById"]>>
+        : null;
+    },
+    async listActive() {
+      return [];
+    },
+    async claimQueued() {
+      throw new Error("not used");
+    },
+    async claimNextQueued() {
+      throw new Error("not used");
+    },
+    async heartbeatClaim() {
+      throw new Error("not used");
+    },
+    async requeueExpiredClaims() {
+      throw new Error("not used");
+    },
+    async restoreDeadLetterClaim() {
+      throw new Error("not used");
+    },
+    async listUnsettledTaskPlanRuns() {
+      throw new Error("not used");
+    }
+  };
+  const persistence = createDbAgentRunPersistence(repository);
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    persistence,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000cd"
+  });
+
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Task-plan child run",
+    parentRunId,
+    taskPlanId,
+    taskPlanItemId,
+    agentRole: "research",
+    objectiveMd
+  } as Parameters<AgentRunQueue["enqueue"]>[0] & {
+    parentRunId: string;
+    taskPlanId: string;
+    taskPlanItemId: string;
+    agentRole: "research";
+    objectiveMd: string;
+  });
+
+  assert.equal(run.parent_run_id, parentRunId);
+  assert.equal(run.task_plan_id, taskPlanId);
+  assert.equal(run.task_plan_item_id, taskPlanItemId);
+  assert.equal(run.agent_role, "research");
+  assert.equal(run.objective_md, objectiveMd);
+  assert.equal(captured?.parentRunId, parentRunId);
+  assert.equal(captured?.taskPlanId, taskPlanId);
+  assert.equal(captured?.taskPlanItemId, taskPlanItemId);
+  assert.equal(captured?.agentRole, "research");
+  assert.equal(captured?.objectiveMd, objectiveMd);
+  const persisted = await persistence.get(run.run_id);
+  assert.equal(persisted?.parent_run_id, parentRunId);
+  assert.equal(persisted?.task_plan_id, taskPlanId);
+  assert.equal(persisted?.task_plan_item_id, taskPlanItemId);
+  assert.equal(persisted?.agent_role, "research");
+  assert.equal(persisted?.objective_md, objectiveMd);
+});
+
+test("task-plan child run prompt carries objective metadata and research role delivers sandbox notes", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-task-plan-test-"));
+  const taskPlanId = "81000000-0000-4000-8000-000000000011";
+  const taskPlanItemId = "81000000-0000-4000-8000-000000000012";
+  const objectiveMd = [
+    "Objective:",
+    "Summarize three reliable sources.",
+    "",
+    "Acceptance:",
+    "Every claim cites a source."
+  ].join("\n");
+  let firstPrompt = "";
+  let visibleToolNames: string[] = [];
+  let llmStep = 0;
+  const client: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create(params) {
+        llmStep += 1;
+        if (!firstPrompt) {
+          firstPrompt = String(params.messages[0]?.content ?? "");
+          visibleToolNames = ((params.tools ?? []) as { name?: string }[])
+            .map((tool) => tool.name)
+            .filter((name): name is string => Boolean(name));
+        }
+        // B-R9.2-2：research 的产物形态=outputs/ 笔记文件——真用写工具交付，
+        // 走默认 requireDeliverable 判定（不再用 requireDeliverable:false 迁就）。
+        if (llmStep === 1) {
+          return {
+            id: "msg-task-plan-research-write",
+            stopReason: "tool_use",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            content: [{
+              type: "tool_use",
+              id: "tool-research-notes",
+              name: "write_file",
+              input: { path: "outputs/research-notes.md", content: "# Research notes\n- Source A cites the market report." }
+            }]
+          };
+        }
+        return {
+          id: "msg-task-plan-research-done",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          content: [{ type: "text", text: "Sources inspected and notes delivered." }]
+        };
+      }
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000de",
+    workdir: () => workdir,
+    client: () => client,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    // 写工具执行前有 snapshot gate（快照+审计成对注入才走桩）——让 research 真走
+    // 「写 outputs/ 笔记」的默认交付判定。
+    snapshots: new MemorySnapshots(),
+    auditLogs: new MemoryAuditLogs()
+  });
+
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Research child run",
+    taskPlanId,
+    taskPlanItemId,
+    agentRole: "research",
+    objectiveMd
+  });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "succeeded");
+  assert.match(firstPrompt, /Task-plan assignment/u);
+  assert.match(firstPrompt, /Agent role: research/u);
+  assert.match(firstPrompt, /Summarize three reliable sources/u);
+  assert.match(firstPrompt, /Every claim cites a source/u);
+  assert.equal(visibleToolNames.includes("list_files"), true);
+  assert.equal(visibleToolNames.includes("read_file"), true);
+  assert.equal(visibleToolNames.includes("load_skill"), true);
+  // B-R9.2-2：sandbox 写工具对 research 放开（产物=outputs/ 笔记）；旧断言钉死只读
+  // 会让「requireDeliverable 默认 true」下的 research 结构性必失败。
+  assert.equal(visibleToolNames.includes("write_file"), true);
+  assert.equal(visibleToolNames.includes("mkdir"), true);
+  const notes = await readFile(path.join(workdir, "outputs", "research-notes.md"), "utf8");
+  assert.match(notes, /Research notes/u);
+});
+
+test("task-plan child run prompt reads L1 private memory alongside existing L2 and L3 context", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-memory-context-test-"));
+  const taskPlanId = "81000000-0000-4000-8000-000000000061";
+  const taskPlanItemId = "81000000-0000-4000-8000-000000000062";
+  let firstPrompt = "";
+  let firstSystemPrompt = "";
+  const client: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create(params) {
+        if (!firstPrompt) {
+          firstPrompt = String(params.messages[0]?.content ?? "");
+          firstSystemPrompt = String(params.system ?? "");
+        }
+        return {
+          id: firstPrompt ? "msg-memory-context-review" : "msg-memory-context",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          content: [{ type: "text", text: firstPrompt ? "{\"grade\": 5, \"rationale\": \"上下文充分\"}" : "Done." }]
+        };
+      }
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e5",
+    workdir: () => workdir,
+    client: () => client,
+    agentMemory: async () => [
+      "以下是该子任务自己的私有记忆，仅作为参考。",
+      "<agent_private_memory>",
+      "- [偏好] 子任务里已经确认只采官方来源",
+      "</agent_private_memory>"
+    ].join("\n"),
+    userMemory: async () => [
+      "以下是该用户既往偏好的参考材料，仅用于减少重复澄清。",
+      "<user_memory>",
+      "- [偏好] 用户喜欢 Markdown 摘要",
+      "</user_memory>"
+    ].join("\n"),
+    teamSkills: async () => ({
+      catalogAppendix: "- [团队自蒸馏] team-memory-context: 团队常用调研模板",
+      contentByKey: {
+        "team-memory-context": "# 团队常用调研模板"
+      }
+    }),
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+
+  await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    title: "Memory scoped child run",
+    taskPlanId,
+    taskPlanItemId,
+    agentRole: "research",
+    objectiveMd: "Read memory context before researching."
+  });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.status, "succeeded");
+  assert.match(firstPrompt, /<agent_private_memory>/u);
+  assert.match(firstPrompt, /只采官方来源/u);
+  assert.match(firstPrompt, /<user_memory>/u);
+  assert.match(firstPrompt, /Markdown 摘要/u);
+  assert.match(firstSystemPrompt, /team-memory-context/u);
+});
+
+test("agent-runner finalize records task-plan child preferences through the L1 memory recorder", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-memory-finalize-test-"));
+  const recorded: { run: AgentRunQueueRecord; resultStatus: string; reviewGrade: number | undefined }[] = [];
+  const client: AgentLoopClient = {
+    model: "deepseek-v4-flash",
+    messages: {
+      async create(params) {
+        const isReview = String(params.system ?? "").includes("llm_review") || String(params.messages[0]?.content ?? "").includes("grade");
+        return {
+          id: isReview ? "msg-memory-finalize-review" : "msg-memory-finalize",
+          stopReason: "end_turn",
+          usage: { inputTokens: 1, outputTokens: 1 },
+          content: [{ type: "text", text: isReview ? "{\"grade\": 5, \"rationale\": \"偏好信号稳定\"}" : "Done." }]
+        };
+      }
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e6",
+    workdir: () => workdir,
+    client: () => client,
+    agentMemoryRecorder: async ({ run, result }) => {
+      recorded.push({ run, resultStatus: result.status, reviewGrade: result.review?.grade });
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+
+  await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    title: "Memory finalize child run",
+    taskPlanId: "81000000-0000-4000-8000-000000000071",
+    taskPlanItemId: "81000000-0000-4000-8000-000000000072",
+    agentRole: "produce"
+  });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.status, "succeeded");
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0]?.run.task_plan_item_id, "81000000-0000-4000-8000-000000000072");
+  assert.equal(recorded[0]?.resultStatus, "succeeded");
+  assert.equal(recorded[0]?.reviewGrade, 5);
+});
+
+test("agent run settled hook fires for terminal task-plan runs and requires task-plan settlement", async () => {
+  const runtimeSettings = settings();
+  const successWorkdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-settled-ok-"));
+  const failureWorkdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-settled-fail-"));
+  const settledStatuses: string[] = [];
+  const settledTaskPlanIds: Array<string | undefined> = [];
+  const settledTaskPlanItemIds: Array<string | undefined> = [];
+  const successQueue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000df",
+    workdir: () => successWorkdir,
+    client: () => ({
+      model: "deepseek-v4-flash",
+      messages: {
+        async create() {
+          return {
+            id: "msg-settled-ok",
+            stopReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            content: [{ type: "text", text: "Done." }]
+          };
+        }
+      }
+    }),
+    runSettled: async (run) => {
+      settledStatuses.push(run.status);
+      settledTaskPlanIds.push(run.task_plan_id);
+      settledTaskPlanItemIds.push(run.task_plan_item_id);
+      throw new Error("settled hook backend unavailable");
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+  const successRun = await successQueue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Settled success child",
+    taskPlanId: "81000000-0000-4000-8000-000000000021",
+    taskPlanItemId: "81000000-0000-4000-8000-000000000022",
+    agentRole: "produce"
+  });
+  assert.equal(successRun.task_plan_id, "81000000-0000-4000-8000-000000000021");
+  assert.equal(successRun.task_plan_item_id, "81000000-0000-4000-8000-000000000022");
+
+  // Old assertion expected fail-open success here. That was wrong for task-plan child runs:
+  // the settled hook is the only state-machine write that marks the plan item terminal and unlocks attention/downstream work.
+  let settledError: unknown;
+  try {
+    await successQueue.runNext();
+  } catch (error) {
+    settledError = error;
+  }
+  assert.ok(
+    settledError instanceof AgentRunnerError
+      && settledError.code === "agent_run_settled_hook_failed"
+      && settledError.details?.run_id === successRun.run_id,
+    `expected task-plan settlement failure, got ${JSON.stringify({ error: settledError, settledTaskPlanIds, settledTaskPlanItemIds })}`
+  );
+  assert.deepEqual(settledStatuses, ["succeeded"]);
+  assert.deepEqual(settledTaskPlanIds, ["81000000-0000-4000-8000-000000000021"]);
+  assert.deepEqual(settledTaskPlanItemIds, ["81000000-0000-4000-8000-000000000022"]);
+  const persistedSuccess = await successQueue.get(successRun.run_id);
+  assert.equal(persistedSuccess?.status, "succeeded", "settlement failure must not rewrite an already-succeeded run to failed");
+
+  const failureQueue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e0",
+    workdir: () => failureWorkdir,
+    client: () => noDeliverableAgentClient(),
+    runSettled: async (run) => { settledStatuses.push(run.status); },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false
+  });
+  await failureQueue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Settled failure child",
+    taskPlanId: "81000000-0000-4000-8000-000000000031",
+    taskPlanItemId: "81000000-0000-4000-8000-000000000032",
+    agentRole: "review"
+  });
+
+  const failure = await failureQueue.runNext();
+
+  assert.equal(failure?.status, "failed");
+  assert.deepEqual(settledStatuses, ["succeeded", "failed"]);
+
+  const cancelQueue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e4",
+    runSettled: async (run) => { settledStatuses.push(run.status); },
+    eventBus: false
+  });
+  const cancelRun = await cancelQueue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Settled cancelled child",
+    taskPlanId: "81000000-0000-4000-8000-000000000051",
+    taskPlanItemId: "81000000-0000-4000-8000-000000000052",
+    agentRole: "review"
+  });
+
+  const cancelled = await cancelQueue.abort(cancelRun.run_id, userId);
+
+  assert.equal(cancelled.status, "cancelled");
+  assert.deepEqual(settledStatuses, ["succeeded", "failed", "cancelled"]);
+});
+
+test("R9.7 terminal task-plan runs with failed settlement are retried by queue recovery", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-settlement-retry-"));
+  const persistence = new MemoryAgentRunPersistence();
+  const settledRunIds: string[] = [];
+  let failFirstSettlement = true;
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-0000000000e5",
+    workdir: () => workdir,
+    client: () => ({
+      model: "deepseek-v4-flash",
+      messages: {
+        async create() {
+          return {
+            id: "msg-settlement-retry",
+            stopReason: "end_turn",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            content: [{ type: "text", text: "Done." }]
+          };
+        }
+      }
+    }),
+    persistence,
+    runSettled: async (run) => {
+      settledRunIds.push(run.run_id);
+      if (failFirstSettlement) {
+        failFirstSettlement = false;
+        throw new Error("task-plan settlement temporarily unavailable");
+      }
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    requireDeliverable: false
+  });
+  const run = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Retryable settled child",
+    taskPlanId: "81000000-0000-4000-8000-000000000061",
+    taskPlanItemId: "81000000-0000-4000-8000-000000000062",
+    agentRole: "produce"
+  });
+
+  await assert.rejects(
+    queue.runNext(),
+    (error) => error instanceof AgentRunnerError && error.code === "agent_run_settled_hook_failed"
+  );
+  assert.equal((await queue.get(run.run_id))?.status, "succeeded");
+
+  const recovered = await queue.recoverUnsettledTaskPlanRuns();
+
+  assert.deepEqual(recovered.map((candidate) => candidate.run_id), [run.run_id]);
+  assert.deepEqual(settledRunIds, [run.run_id, run.run_id]);
 });
 
 test("agent run queue refreshes stale cached trace from persistence", async () => {
@@ -1934,6 +3056,9 @@ test("agent run route auto-pump drains through runNext instead of direct run id"
       return [queuedRun];
     },
     async recoverExpiredClaims() {
+      return [];
+    },
+    async recoverUnsettledTaskPlanRuns() {
       return [];
     },
     async run() {
@@ -2392,6 +3517,172 @@ test("agent run enqueue opens user_forbidden escalation for human-reserved worke
   assert.equal(decisions.escalationRows.length, 1);
 });
 
+test("human-reserved guard audits and publishes escalation in the work item's workspace", async () => {
+  const runtimeSettings = settings();
+  const nonDefaultWorkspaceId = "00000000-0000-4000-8000-000000000202";
+  assert.notEqual(nonDefaultWorkspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  const workItems = new MemoryWorkItems([
+    humanReservedWorkItemRow({
+      workspaceId: nonDefaultWorkspaceId
+    })
+  ]);
+  const decisions = new MemoryAiDecisions();
+  const auditLogs = new MemoryAuditLogs();
+  const events: { topic: string; type: string; data: Record<string, unknown> }[] = [];
+  const guard = createHumanReservedGuard({
+    workItems,
+    decisions,
+    auditLogs,
+    settings: runtimeSettings,
+    now: () => now,
+    bus: {
+      async publish(topic, type, data) {
+        events.push({ topic, type, data: data as Record<string, unknown> });
+      }
+    }
+  });
+
+  const result = await guard({
+    workItemId,
+    actorId: userId,
+    mode: "worker",
+    title: "Manual-only worker run",
+    settings: runtimeSettings
+  });
+
+  assert.equal(result?.trigger, "user_forbidden");
+  const audit = auditLogs.rows.find((row) => row.action === "escalation.opened");
+  assert.equal(audit?.workspaceId, nonDefaultWorkspaceId);
+  assert.equal(audit?.orgId, runtimeSettings.auth.defaultOrgId);
+  assert.deepEqual(events.map((event) => [event.topic, event.type]), [
+    [`workitem:${workItemId}`, "escalation.opened"],
+    [`all:${nonDefaultWorkspaceId}`, "escalation.opened"]
+  ]);
+});
+
+test("R9.7 high-risk legal, finance, identity, and publishing tool calls are stopped by human-reserved guard", async () => {
+  const runtimeSettings = settings();
+  const cases: readonly {
+    toolId: string;
+    category: "legal" | "finance" | "identity" | "publish" | "external";
+    sideEffect?: "business_write" | "external_effect";
+  }[] = [
+    { toolId: "legal_accept_terms", category: "legal" },
+    { toolId: "finance_payment_release", category: "finance" },
+    { toolId: "identity_register_account", category: "identity" },
+    { toolId: "acceptTerms", category: "legal" },
+    { toolId: "bankTransfer", category: "finance" },
+    { toolId: "passportKycSubmit", category: "identity" },
+    { toolId: "createAccount", category: "identity" },
+    { toolId: "registerEntity", category: "identity" },
+    { toolId: "publishExternalPost", category: "publish" },
+    { toolId: "socialMediaPost", category: "publish" },
+    { toolId: "sendPressRelease", category: "publish" },
+    { toolId: "sendNewsletter", category: "publish" },
+    { toolId: "sendEmail", category: "publish" },
+    { toolId: "sendCustomerEmail", category: "publish" },
+    { toolId: "postCompanyAnnouncement", category: "publish" },
+    { toolId: "crmNotifyCustomer", category: "external", sideEffect: "external_effect" }
+  ];
+
+  for (const [index, testCase] of cases.entries()) {
+    const caseWorkItemId = `50000000-0000-4000-8000-${String(120 + index).padStart(12, "0")}`;
+    const caseRunId = `40000000-0000-4000-8000-${String(120 + index).padStart(12, "0")}`;
+    const workItems = new MemoryWorkItems([
+      humanReservedWorkItemRow({
+        id: caseWorkItemId,
+        code: `WH-RISK-${index + 1}`,
+        humanReserved: false,
+        status: "ai_working"
+      })
+    ]);
+    const decisions = new MemoryAiDecisions();
+    const auditLogs = new MemoryAuditLogs();
+    const events: { topic: string; type: string; data: Record<string, unknown> }[] = [];
+    let toolExecutions = 0;
+    // Keep vocabulary cases on business_write so the tool-id classifier remains exercised;
+    // external_effect has its own metadata fail-closed regression case in this table.
+    const sideEffect = testCase.sideEffect ?? "business_write";
+    const client: AgentLoopClient = {
+      model: "deepseek-v4-flash",
+      messages: {
+        async create() {
+          return {
+            id: `msg-risk-${index}`,
+            stopReason: "tool_use",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            content: [
+              {
+                type: "tool_use",
+                id: `tool-risk-${index}`,
+                name: testCase.toolId,
+                input: { target: "external-system", amount_cny: 100 }
+              }
+            ]
+          };
+        }
+      }
+    };
+    const queue = createInMemoryAgentRunQueue({
+      settings: runtimeSettings,
+      now: () => now,
+      id: () => caseRunId,
+      client: () => client,
+      tools: () => ({
+        toModelTools: () => [
+          {
+            name: testCase.toolId,
+            description: "High-risk external action used only by this regression test.",
+            input_schema: { type: "object" },
+            side_effect: sideEffect
+          }
+        ],
+        async execute() {
+          toolExecutions += 1;
+          return { ok: true, isError: false, content: "unsafe action executed" };
+        }
+      }),
+      humanReserved: createHumanReservedGuard({
+        workItems,
+        decisions,
+        auditLogs,
+        settings: runtimeSettings,
+        now: () => now,
+        bus: {
+          async publish(topic, type, data) {
+            events.push({ topic, type, data: data as Record<string, unknown> });
+          }
+        }
+      }),
+      confidence: false,
+      proposals: false,
+      notifications: false,
+      eventBus: false,
+      transitionWorkItemStatus: workItems.transitionWorkItemStatus.bind(workItems)
+    });
+
+    const queued = await queue.enqueue({ workItemId: caseWorkItemId, actorId: userId, title: "High-risk tool run" });
+    const executed = await queue.runNext();
+
+    assert.equal(queued.run_id, caseRunId);
+    assert.equal(toolExecutions, 0, `${testCase.toolId} must not execute before human review`);
+    assert.equal(executed?.status, "failed", `${testCase.toolId} must stop the run instead of letting the model continue`);
+    assert.equal(decisions.escalationRows.length, 1, `${testCase.toolId} must open a decision inbox escalation`);
+    assert.equal(decisions.escalationRows[0]?.workItemId, caseWorkItemId);
+    assert.equal(decisions.escalationRows[0]?.agentRunId, caseRunId);
+    assert.equal(decisions.escalationRows[0]?.trigger, "user_forbidden");
+    assert.equal(decisions.escalationRows[0]?.handoffJson["source"], "tool_call");
+    assert.equal(decisions.escalationRows[0]?.handoffJson["risk_category"], testCase.category);
+    assert.equal(decisions.escalationRows[0]?.handoffJson["tool_id"], testCase.toolId);
+    assert.equal(workItems.rows.get(caseWorkItemId)?.status, "escalated");
+    assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
+    assert.deepEqual(events.map((event) => [event.topic, event.type]), [
+      [`workitem:${caseWorkItemId}`, "escalation.opened"],
+      [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened"]
+    ]);
+  }
+});
+
 test("human-reserved guard returns the committed escalation when audit or publish fails", async () => {
   const runtimeSettings = settings();
 
@@ -2500,6 +3791,84 @@ test("#18: human-reserved guard does not re-mark pm_mode or re-version when an u
   assert.equal(events.length, eventsAfterFirst, "no second escalation event published");
 });
 
+test("R9.7 high-risk tool calls create durable evidence instead of reusing a generic human-reserved escalation", async () => {
+  const runtimeSettings = settings();
+  const workItems = new MemoryWorkItems([humanReservedWorkItemRow()]);
+  const decisions = new MemoryAiDecisions();
+  const auditLogs = new MemoryAuditLogs();
+  let markCalls = 0;
+  const baseMark = workItems.markHumanReservedPmMode.bind(workItems);
+  workItems.markHumanReservedPmMode = async (input) => {
+    markCalls += 1;
+    return baseMark(input);
+  };
+  const events: { topic: string; type: string; data: Record<string, unknown> }[] = [];
+  const guard = createHumanReservedGuard({
+    workItems,
+    decisions,
+    auditLogs,
+    settings: runtimeSettings,
+    now: () => now,
+    bus: {
+      async publish(topic, type, data) {
+        events.push({ topic, type, data: data as Record<string, unknown> });
+      }
+    }
+  });
+
+  const generic = await guard({ workItemId, actorId: userId, mode: "worker", settings: runtimeSettings });
+  assert.ok(generic, "first trigger creates the generic human-reserved escalation");
+  assert.equal(generic?.source, "work_item");
+  assert.equal(decisions.escalationRows.length, 1);
+  assert.equal(markCalls, 1);
+
+  const toolCall = await guard({
+    workItemId,
+    actorId: userId,
+    agentRunId: "40000000-0000-4000-8000-000000000201",
+    mode: "worker",
+    title: "Release vendor payment",
+    settings: runtimeSettings,
+    toolCall: {
+      toolId: "finance_payment_release",
+      input: { vendor_id: "vendor-1", amount_cny: 1000, bank_account: "secret" }
+    }
+  });
+
+  assert.ok(toolCall, "high-risk tool calls still return an escalation result");
+  assert.equal(toolCall?.source, "tool_call");
+  assert.equal(toolCall?.reused, false, "a generic reservation is not enough evidence for a specific tool call");
+  assert.notEqual(toolCall?.escalationId, generic?.escalationId);
+  assert.equal(markCalls, 1, "tool-call evidence must not re-mark pm_mode");
+  assert.equal(decisions.escalationRows.length, 2, "tool-call evidence gets its own durable decision-inbox card");
+  const toolEscalation = decisions.escalationRows[1];
+  assert.equal(toolEscalation?.trigger, "user_forbidden");
+  assert.equal(toolEscalation?.agentRunId, "40000000-0000-4000-8000-000000000201");
+  assert.equal(toolEscalation?.handoffJson["source"], "tool_call");
+  assert.equal(toolEscalation?.handoffJson["risk_category"], "finance");
+  assert.equal(toolEscalation?.handoffJson["tool_id"], "finance_payment_release");
+  assert.deepEqual(toolEscalation?.handoffJson["input_shape"], {
+    kind: "object",
+    keys: ["vendor_id", "amount_cny", "bank_account"],
+    key_count: 3
+  });
+  assert.equal(auditLogs.rows.filter((row) => row.action === "escalation.opened").length, 2);
+  assert.deepEqual(auditLogs.rows[1]?.detailJson, {
+    escalation_id: toolEscalation?.id,
+    trigger: "user_forbidden",
+    source: "human_reserved_tool_call",
+    requested_by_user_id: userId,
+    reason_preview: toolEscalation?.reasonMd.slice(0, 160),
+    tool_id: "finance_payment_release",
+    risk_category: "finance"
+  });
+  assert.equal(events.length, 4, "the tool-specific escalation is published alongside the existing generic card");
+  assert.deepEqual(events.slice(2).map((event) => [event.topic, event.type, event.data.source, event.data.tool_id]), [
+    [`workitem:${workItemId}`, "escalation.opened", "human_reserved_tool_call", "finance_payment_release"],
+    [`all:${runtimeSettings.auth.defaultWorkspaceId}`, "escalation.opened", "human_reserved_tool_call", "finance_payment_release"]
+  ]);
+});
+
 test("agent run queue executes a queued AgentLoop run and records trace for replay", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-test-"));
@@ -2591,14 +3960,18 @@ test("agent run queue executes a queued AgentLoop run and records trace for repl
   assert.equal(executed?.usage.token_out, 25);
   assert.equal(executed?.usage.estimated_cost_cny, "0.003");
   const runTopic = topics.run(startBody.data.run_id).topic;
+  // R7（跨页一致）：run 关键生命周期事件（started/终态）双发 workitem 流——工作项页军团进度才能实时刷新；
+  // 逐 step 噪声仍只进 run 流。
+  const workItemTopic = topics.workitem(workItemId).topic;
   assert.equal(publishedEvents.length > 0, true);
-  assert.equal(publishedEvents.every((event) => event.topic === runTopic), true);
+  assert.equal(publishedEvents.every((event) => event.topic === runTopic || event.topic === workItemTopic), true);
+  assert.equal(publishedEvents.some((event) => event.topic === workItemTopic && event.type === eventTypes.agentRunStarted), true);
   assert.equal(publishedEvents.some((event) => event.topic === "all"), false);
   assert.equal(publishedEvents.some((event) => event.type === eventTypes.agentRunStarted), true);
   assert.equal(publishedEvents.some((event) => event.type === eventTypes.stepToolResult), true);
   assert.equal(publishedEvents.some((event) => event.type === eventTypes.stepSnapshot), true);
   for (const event of publishedEvents) {
-    assert.equal(event.data.topic, runTopic);
+    assert.equal(event.data.topic, event.topic === workItemTopic ? workItemTopic : runTopic);
     assert.equal(event.data.run_id, startBody.data.run_id);
     assert.equal(event.data.work_item_id, workItemId);
     assert.equal(event.data.preview_text === undefined || event.data.preview_text.length <= 200, true);
@@ -3349,6 +4722,55 @@ test("agent run queue dead-letters a run that keeps crashing past the recover-at
   assert.equal(deadLetterAudit?.entityId, queued.run_id);
 });
 
+test("R9.7 dead-lettered standalone runs appear in attention", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  const recoveredAt = new Date("2026-06-05T00:10:00.000Z");
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => recoveredAt,
+    id: () => "40000000-0000-4000-8000-00000000004d",
+    workerId: "worker-deadletter-standalone",
+    leaseMs: 60_000,
+    maxRecoverAttempts: 1,
+    persistence,
+    auditLogs,
+    decisions,
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Standalone poison run" });
+  const expiredLease = {
+    claimedAt: new Date("2026-06-05T00:00:00.000Z"),
+    heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
+    leaseExpiresAt: new Date("2026-06-05T00:01:00.000Z")
+  };
+
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-1", ...expiredLease });
+  await queue.recoverExpiredClaims();
+  assert.equal(decisions.escalationRows.length, 0, "recoverable stale runs must not open attention");
+
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
+  const deadLettered = await queue.recoverExpiredClaims();
+
+  assert.equal(deadLettered[0]?.status, "failed");
+  assert.equal(status.statuses.get(workItemId), "escalated");
+  assert.equal(decisions.escalationRows.length, 1, "standalone stuck runs must appear in the decision inbox");
+  assert.equal(decisions.escalationRows[0]?.workItemId, workItemId);
+  assert.equal(decisions.escalationRows[0]?.agentRunId, queued.run_id);
+  assert.equal(decisions.escalationRows[0]?.trigger, "doom_loop");
+  assert.equal(decisions.escalationRows[0]?.handoffJson["source"], "agent_run_recovery");
+  assert.equal(decisions.escalationRows[0]?.handoffJson["recovered_at"], recoveredAt.toISOString());
+  assert.equal("task_plan_id" in decisions.escalationRows[0]!.handoffJson, false);
+  assert.equal("task_plan_item_id" in decisions.escalationRows[0]!.handoffJson, false);
+});
+
 test("sweepStaleAgentWorkdirs removes only stale workhub-agent dirs", async () => {
   const parent = await mkdtemp(path.join(os.tmpdir(), "workhub-sweep-test-"));
   const stale = path.join(parent, "workhub-agent-stale");
@@ -3438,6 +4860,71 @@ test("agent run recovery scheduler ticks once, recovers stale claims, and drains
     error_count: 0,
     last_tick_at: now.toISOString()
   });
+});
+
+test("R9.7 recovery scheduler retries unsettled terminal task-plan runs before stale-claim drain", async () => {
+  const recoveredRun: AgentRunQueueRecord = {
+    run_id: "40000000-0000-4000-8000-000000000044",
+    work_item_id: workItemId,
+    actor_id: userId,
+    mode: "worker",
+    status: "succeeded",
+    title: "Unsettled terminal child",
+    task_plan_id: "81000000-0000-4000-8000-000000000071",
+    task_plan_item_id: "81000000-0000-4000-8000-000000000072",
+    budget: {
+      max_steps: 15,
+      total_timeout_s: 300,
+      max_tokens: 120000,
+      max_cost_cny: "5"
+    },
+    budget_decision: {
+      decision_id: "budget-1",
+      allowed: true,
+      model_route: {
+        provider: "test",
+        model: "test",
+        reason: "default"
+      }
+    },
+    usage: {
+      steps_used: 1,
+      token_in: 1,
+      token_out: 1,
+      estimated_cost_cny: "0"
+    },
+    trace: [],
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
+  let settlementRecoveryCalls = 0;
+  let staleRecoveryCalls = 0;
+  const scheduler = createAgentRunRecoveryScheduler({
+    intervalMs: 0,
+    now: () => now,
+    queue: {
+      async recoverUnsettledTaskPlanRuns() {
+        settlementRecoveryCalls += 1;
+        return [recoveredRun];
+      },
+      async recoverExpiredClaims() {
+        staleRecoveryCalls += 1;
+        return [];
+      },
+      async runNext() {
+        return null;
+      }
+    }
+  });
+
+  const result = await scheduler.tick();
+
+  assert.equal(settlementRecoveryCalls, 1);
+  assert.equal(staleRecoveryCalls, 1);
+  assert.equal(result.unsettled_settled, 1);
+  assert.equal(result.recovered, 0);
+  assert.equal(result.drained, 0);
+  assert.equal(scheduler.stats().unsettled_settled_count, 1);
 });
 
 test("#25: recovery drain budget counts only requeued runs, not dead-lettered ones", async () => {
@@ -4226,6 +5713,107 @@ function faithfulWorkItemStatusWriter(initial: Record<string, WorkItemStatus>) {
   return { writer, statuses, calls };
 }
 
+test("R9.7 fake-done empty artifact opens attention instead of a proposal", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-r97-empty-artifact-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r97-empty-artifact-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => "76000000-0000-4000-8000-000000000701"
+  });
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000701",
+    workdir: () => workdir,
+    client: () => emptyArtifactAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: createAgentRunConfidenceRecorder({
+      decisions,
+      auditLogs,
+      settings: runtimeSettings,
+      transitionWorkItemStatus: async (input) => {
+        await status.writer(input);
+      }
+    }),
+    notifications: false,
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Fake-done empty artifact run" });
+  const executed = await queue.runNext();
+  const opened = await proposals.listByWorkItem(workItemId);
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "failed");
+  assert.equal(opened.length, 0, "empty artifacts must not become reviewable proposals");
+  assert.equal(decisions.escalationRows.length, 1, "fake-done empty artifacts must appear in attention");
+  assert.equal(decisions.escalationRows[0]?.workItemId, workItemId);
+  assert.equal(status.statuses.get(workItemId), "escalated");
+  assert.equal(auditLogs.rows.some((row) => row.action === "escalation.opened"), true);
+});
+
+test("R9.7 fake-done attention failure keeps the run retryable", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-r97-empty-artifact-attention-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-r97-empty-artifact-attention-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  decisions.createEscalationEvent = async () => {
+    throw new Error("decision inbox unavailable for fake-done");
+  };
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => "76000000-0000-4000-8000-000000000702"
+  });
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000702",
+    workdir: () => workdir,
+    client: () => emptyArtifactAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: createAgentRunConfidenceRecorder({
+      decisions,
+      auditLogs,
+      settings: runtimeSettings,
+      transitionWorkItemStatus: async (input) => {
+        await status.writer(input);
+      }
+    }),
+    notifications: false,
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Fake-done attention outage run" });
+
+  await assert.rejects(queue.runNext(), /decision inbox unavailable for fake-done/u);
+
+  const live = await queue.get(queued.run_id);
+  const opened = await proposals.listByWorkItem(workItemId);
+  assert.equal(live?.status, "running");
+  assert.equal(opened.length, 0);
+  assert.equal(decisions.confidenceRows.length, 1);
+  assert.equal(decisions.escalationRows.length, 0);
+  assert.equal(status.statuses.get(workItemId), "ai_working");
+});
+
 test("FIX#5: a succeeded+manifest run with an escalate verdict ends in_review with an open proposal (not escalated) and notifies once", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-fix5-test-"));
@@ -4567,7 +6155,9 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
   const runtimeSettings = settings();
   const persistence = new MemoryAgentRunPersistence();
   const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
   const milestoneNotifications: { newStatus: string }[] = [];
+  const settledRuns: { status: string; taskPlanItemId: string | undefined }[] = [];
   const notifications: AgentRunNotificationPublisher = {
     async notifyMilestone(context) {
       milestoneNotifications.push({ newStatus: context.newStatus });
@@ -4586,6 +6176,7 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
     maxRecoverAttempts: 1,
     persistence,
     auditLogs,
+    decisions,
     confidence: false,
     proposals: false,
     notifications,
@@ -4598,9 +6189,20 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
       projectOwnerUserId: projectOwnerId
     }),
     eventBus: false,
-    transitionWorkItemStatus: status.writer
+    transitionWorkItemStatus: status.writer,
+    runSettled: async (run) => {
+      settledRuns.push({ status: run.status, taskPlanItemId: run.task_plan_item_id });
+    }
   });
-  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Poison run" });
+  const taskPlanId = "81000000-0000-4000-8000-000000000091";
+  const taskPlanItemId = "81000000-0000-4000-8000-000000000092";
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Poison run",
+    taskPlanId,
+    taskPlanItemId
+  });
   const expiredLease = {
     claimedAt: new Date("2026-06-05T00:00:00.000Z"),
     heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
@@ -4613,6 +6215,7 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
   assert.equal(firstRecover[0]?.status, "queued");
   assert.equal(status.statuses.get(workItemId), "ai_working", "requeue must not touch the work item");
   assert.deepEqual(milestoneNotifications, [], "requeue must not notify");
+  assert.equal(decisions.escalationRows.length, 0, "requeue is recoverable, so it must not open a decision card");
 
   // 第二次过期（已达上限）：转死信 failed → 工作项 ai_working→escalated + 一条「转人工」里程碑通知。
   await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
@@ -4620,9 +6223,140 @@ test("FIX#10: a dead-lettered run moves its work item ai_working→escalated and
   assert.equal(secondRecover[0]?.status, "failed");
   assert.equal(status.statuses.get(workItemId), "escalated", "dead-letter advances the stuck item to escalated");
   assert.deepEqual(milestoneNotifications, [{ newStatus: "escalated" }]);
+  assert.equal(decisions.escalationRows.length, 1, "dead-lettered child runs must appear in the decision inbox");
+  assert.equal(decisions.escalationRows[0]?.workItemId, workItemId);
+  assert.equal(decisions.escalationRows[0]?.agentRunId, queued.run_id);
+  assert.equal(decisions.escalationRows[0]?.trigger, "doom_loop");
+  assert.equal(decisions.escalationRows[0]?.handoffJson["source"], "agent_run_recovery");
+  assert.equal(decisions.escalationRows[0]?.handoffJson["task_plan_id"], taskPlanId);
+  assert.equal(decisions.escalationRows[0]?.handoffJson["task_plan_item_id"], taskPlanItemId);
+  assert.deepEqual(settledRuns, [{ status: "failed", taskPlanItemId }], "dead-lettered task-plan children must settle their plan item");
   // 死信审计动作仍照常打。
   assert.equal(
     auditLogs.rows.some((row) => row.action === "agent_run.dead_lettered_stale_claim"),
     true
   );
+});
+
+test("R9.7 dead-letter recovery fails closed when the decision inbox write fails", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const auditLogs = new MemoryAuditLogs();
+  const milestoneNotifications: { newStatus: string }[] = [];
+  const notifications: AgentRunNotificationPublisher = {
+    async notifyMilestone(context) {
+      milestoneNotifications.push({ newStatus: context.newStatus });
+      return [];
+    }
+  };
+  const recoveredAt = new Date("2026-06-05T00:10:00.000Z");
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const decisions: Pick<AiDecisionRepository, "createEscalationEvent"> = {
+    async createEscalationEvent() {
+      throw new Error("decision inbox unavailable");
+    }
+  };
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => recoveredAt,
+    id: () => "40000000-0000-4000-8000-00000000004c",
+    workerId: "worker-deadletter-r9-7",
+    leaseMs: 60_000,
+    maxRecoverAttempts: 1,
+    persistence,
+    auditLogs,
+    decisions,
+    confidence: false,
+    proposals: false,
+    notifications,
+    notificationWorkItem: async () => ({
+      id: workItemId,
+      code: "WH-22",
+      title: "Poison run with failed inbox",
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: userId,
+      projectOwnerUserId: projectOwnerId
+    }),
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+  const taskPlanId = "81000000-0000-4000-8000-000000000093";
+  const taskPlanItemId = "81000000-0000-4000-8000-000000000094";
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Poison run with failed inbox",
+    taskPlanId,
+    taskPlanItemId
+  });
+  const expiredLease = {
+    claimedAt: new Date("2026-06-05T00:00:00.000Z"),
+    heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
+    leaseExpiresAt: new Date("2026-06-05T00:01:00.000Z")
+  };
+
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-1", ...expiredLease });
+  await queue.recoverExpiredClaims();
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
+
+  await assert.rejects(queue.recoverExpiredClaims(), /decision inbox unavailable/u);
+  assert.equal(status.statuses.get(workItemId), "ai_working", "do not show escalated without a matching attention card");
+  assert.deepEqual(milestoneNotifications, [], "do not publish a handoff milestone when the inbox card was not persisted");
+  assert.equal(
+    auditLogs.rows.some((row) => row.action === "agent_run.dead_lettered_stale_claim"),
+    true,
+    "the dead-letter audit still records the poison run for operators"
+  );
+});
+
+test("R9.7 dead-letter recovery remains retryable until attention is durable", async () => {
+  const runtimeSettings = settings();
+  const persistence = new MemoryAgentRunPersistence();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  let failInbox = true;
+  const recoveredAt = new Date("2026-06-05T00:10:00.000Z");
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => recoveredAt,
+    id: () => "40000000-0000-4000-8000-00000000004e",
+    workerId: "worker-deadletter-retryable",
+    leaseMs: 60_000,
+    maxRecoverAttempts: 1,
+    persistence,
+    auditLogs,
+    decisions: {
+      async createEscalationEvent(input) {
+        if (failInbox) {
+          throw new Error("decision inbox unavailable once");
+        }
+        return decisions.createEscalationEvent(input);
+      }
+    },
+    confidence: false,
+    proposals: false,
+    notifications: false,
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Retryable standalone poison run" });
+  const expiredLease = {
+    claimedAt: new Date("2026-06-05T00:00:00.000Z"),
+    heartbeatAt: new Date("2026-06-05T00:00:30.000Z"),
+    leaseExpiresAt: new Date("2026-06-05T00:01:00.000Z")
+  };
+
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-1", ...expiredLease });
+  await queue.recoverExpiredClaims();
+  await persistence.claimQueued(queued.run_id, { workerId: "dead-worker-2", ...expiredLease });
+  await assert.rejects(queue.recoverExpiredClaims(), /decision inbox unavailable once/u);
+  failInbox = false;
+
+  const recovered = await queue.recoverExpiredClaims();
+
+  assert.equal(recovered[0]?.status, "failed");
+  assert.equal(status.statuses.get(workItemId), "escalated");
+  assert.equal(decisions.escalationRows.length, 1);
+  assert.equal(decisions.escalationRows[0]?.agentRunId, queued.run_id);
 });

@@ -52,6 +52,7 @@ import type { PushBus } from "../broker/types.js";
 import type { AuthActor } from "../middleware/auth.js";
 import { getDefaultStructuredLogger } from "../logging.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import { presentableManifestChanges } from "../pages/proposals.js";
 import {
   createNotificationService,
   type NotificationService
@@ -178,12 +179,12 @@ export type ApprovalServiceDependencies = {
   users?: Pick<UserRepository, "findActiveById"> & Partial<Pick<UserRepository, "findActiveByNickname">>;
   // 可选：委派守卫用——把审批挂的工作项摊平成可见性记录，校验转交目标确实能看到该事项（与 routeApprover 一致）。
   // 缺省时退化为不校验工作项可见性（旧测试夹具不提供）。
-  workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord">;
+  workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> & Partial<Pick<WorkItemDataRepository, "findWorkItemAccessRecords">>;
   // W2：可选——审批工作台逐项详情用。缺省时 items_detail 退化为空（旧夹具不崩）。
   proposals?: Pick<ProposalService, "get" | "listByWorkItem">;
   approvalComments?: Pick<ApprovalCommentRepository, "listByApproval" | "listByApprovals" | "create">;
   // @mentions：评论里 @某人时发通知。缺省时退化为不发 mention 通知（旧测试夹具）。
-  notifications?: Pick<NotificationService, "createMentionNotification">;
+  notifications?: Pick<NotificationService, "createMentionNotification"> & Partial<Pick<NotificationService, "createNotification" | "archiveByDedupeKey">>;
   bus?: Pick<PushBus, "publish">;
   now?: () => Date;
 };
@@ -434,6 +435,9 @@ async function buildApprovalItemDetail(
 
   if (proposal) {
     const manifest = proposal.diff_manifest;
+    // R6（信任 high）：跨 agent 复核(judge)的裁决理由此前从未进详情——ai_reason 只有提议作者自写摘要，
+    // 「另一层 AI 认为该不该过、为什么」被静默丢弃。取最近一条 AI 复核的 reason_md 单独透出。
+    const aiReview = [...(proposal.reviews ?? [])].reverse().find((review) => review.reviewer_kind === "ai" && review.reason_md);
     const conflicts = manifest.checks
       .filter((check) => check.status === "failed" || check.status === "warning")
       .map((check) => ({ description: check.label, ...(check.detail ? { impact: check.detail } : {}) }));
@@ -442,8 +446,9 @@ async function buildApprovalItemDetail(
       proposal_id: proposal.id,
       proposal_href: `/proposals/${proposal.id}`,
       ai_reason: manifest.summary_md,
+      ...(aiReview?.reason_md ? { ai_review_md: aiReview.reason_md } : {}),
       risk_label: manifest.risk.human_label,
-      manifest_changes: manifest.changes,
+      manifest_changes: presentableManifestChanges(proposal.id, manifest.changes),
       checks: manifest.checks,
       conflicts,
       affected_targets: [],
@@ -763,6 +768,25 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       const approval = await deps.approvals.createApprovalRequest(createInput);
       const attention = toApprovalAttentionItem(toRecord(approval), { kind: input.kind });
       await publishAsk(approval, attention);
+      // 普通用户审查 R3 high（协作）：审批路由给 B 只有 SSE——B 不在线就不知道有事等他。
+      // 落持久化通知（铃铛角标可见）；失败只告警不翻审批创建。
+      if (approval.routedToUserId && approval.workItemId && deps.notifications?.createNotification) {
+        try {
+          await deps.notifications.createNotification({
+            userId: approval.routedToUserId,
+            type: "approval.routed",
+            severity: "high",
+            // R11（通知信息量）：铃铛/推送常只显示 title——带上事项摘要，不点开也能判断要不要现在处理。
+            title: `待你审批：${attention.title.slice(0, 60)}`,
+            body: attention.summary_text,
+            targetUrl: "/approvals",
+            workItemId: approval.workItemId,
+            dedupeKey: `approval_routed:${approval.id}`
+          });
+        } catch (error) {
+          getDefaultStructuredLogger().warn("approval_routed_notify_failed", { approvalId: approval.id, error });
+        }
+      }
       return { outcome: "pending", approval: toApprovalRequestResponse(approval), attention };
     },
 
@@ -888,13 +912,48 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       // approvalCenterVmSchema.counts = record<string, number>），=1 时前端应把 pending_total 理解为「扫描范围
       // 内的可见下限」而非组织真实总数——不新增 page_info 字段是因为该 schema 已固定 {limit,returned,has_more}，
       // 本次改动范围不含 packages/contracts。
+      // R8（留痕 high）：审批一旦决策此前即从所有可达视图永久消失——补「最近已处理」区（我批的或路由给我且已决的）。
+      // 尽力而为：失败给空数组不翻整页。
+      let decidedRows: Awaited<ReturnType<typeof deps.approvals.listDecidedForUser>> = [];
+      try {
+        decidedRows = await deps.approvals.listDecidedForUser(user.id, { limit: 20 });
+      } catch (error) {
+        getDefaultStructuredLogger().warn("approvals_decided_list_failed", { error });
+      }
+      const decided = decidedRows.map((row) => ({
+        id: row.id,
+        title: toApprovalAttentionItem(toRecord(row)).title,
+        decision: row.status,
+        ...(row.decidedByUserId ? { decided_by_label: row.decidedByUserId === user.id ? "我" : row.decidedByUserId.slice(0, 8) } : {}),
+        ...(row.decisionReasonMd ? { reason_md: row.decisionReasonMd.slice(0, 300) } : {}),
+        decided_at: row.updatedAt.toISOString()
+      }));
+      // R12（多项目）：一次批量取回工作项的项目名，队列卡点名所属项目（取数失败降级不点名）。
+      let projectNamesByWorkItemId = new Map<string, string>();
+      try {
+        const accessWorkItemIds = [...new Set(rows.map((row) => row.workItemId).filter((value): value is string => Boolean(value)))];
+        if (accessWorkItemIds.length > 0 && deps.workItems?.findWorkItemAccessRecords) {
+          const accessMap = await deps.workItems.findWorkItemAccessRecords(accessWorkItemIds);
+          for (const [workItemId, record] of accessMap) {
+            if (record.project?.name) {
+              projectNamesByWorkItemId.set(workItemId, record.project.name);
+            }
+          }
+        }
+      } catch {
+        projectNamesByWorkItemId = new Map();
+      }
       return parseOutputContract(approvalCenterVmSchema, {
-        items: rows.map((row) => toApprovalAttentionItem(toRecord(row), itemOptions)),
+        items: rows.map((row) => {
+          const projectName = row.workItemId ? projectNamesByWorkItemId.get(row.workItemId) : undefined;
+          return toApprovalAttentionItem(toRecord(row), projectName ? { ...itemOptions, projectName } : itemOptions);
+        }),
         requests: rows.map(toApprovalRequestResponse),
         filters: { pending: true },
         counts: { pending: rows.length, pending_total: totalPending, pending_total_capped: totalPendingCapped ? 1 : 0 },
         page_info: { limit: page.limit, offset: page.offset, returned: rows.length, has_more: hasMore },
-        items_detail: Object.fromEntries(detailEntries) as ApprovalCenterVM["items_detail"]
+        items_detail: Object.fromEntries(detailEntries) as ApprovalCenterVM["items_detail"],
+        decided
       }, "approval-center.page") satisfies ApprovalCenterVM;
     },
 
@@ -942,6 +1001,49 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           } as const;
           const existingPolicy = findEquivalentActivePolicy(await deps.policies.listActivePolicies(), actor, policyInput);
           learnedPolicy = existingPolicy ?? await createAuditedPermissionPolicy(actor, policyInput);
+          // R12（批量效率）：策略只管「下次起」——队列里已存在的同类 pending 此前原样卡着，
+          // 用户以为「同类都处理了」还得再逐条点。学习成功且本次是放行时，联动清扫同 actor
+          // 名下同 action_pattern 的其余 pending（逐条 CAS+归档通知，失败只告警不翻主决策）。
+          if (learnedPolicy && payload.decision === "allow") {
+            try {
+              const pendingRows = await deps.approvals.listPendingForUser(approverId(actor), { limit: 100 });
+              const sameKind = pendingRows.filter((row) => row.id !== updated.id && row.actionPattern === updated.actionPattern);
+              for (const row of sameKind) {
+                const swept = await deps.approvals.respondPending(row.id, "allow", approverId(actor), null, now(), actor.isAdmin ? undefined : approverId(actor));
+                if (swept && deps.notifications?.archiveByDedupeKey) {
+                  await deps.notifications.archiveByDedupeKey(`approval_routed:${swept.id}`).catch(() => undefined);
+                }
+                // R13（合规）：被清扫的每一条都要在 audit_logs 留痕——事后必须能回答
+                // 「这条审批是谁/何时/因哪条策略批的」。失败只告警不翻主决策。
+                if (swept) {
+                  try {
+                    await auditApprovalAction(swept, {
+                      action: "approval.decided",
+                      actor: {
+                        kind: "human",
+                        label: actorNickname(actor),
+                        orgId: actor.orgId,
+                        workspaceId: actor.workspaceId,
+                        ...(actor.userId ? { userId: actor.userId } : {})
+                      },
+                      detail: {
+                        decision: "allow",
+                        swept_via: updated.id,
+                        learned_action_pattern: updated.actionPattern
+                      }
+                    });
+                  } catch (error) {
+                    getDefaultStructuredLogger().warn("approvals_swept_audit_failed", { id: swept.id, error });
+                  }
+                }
+              }
+              if (sameKind.length > 0) {
+                getDefaultStructuredLogger().info("approvals_remember_always_swept_pending", { actionPattern: updated.actionPattern, count: sameKind.length });
+              }
+            } catch (error) {
+              getDefaultStructuredLogger().warn("approvals_remember_always_sweep_failed", { id, error });
+            }
+          }
         } catch (error) {
           learnFailed = true;
           getDefaultStructuredLogger().warn("approvals_remember_always_learning_failed", { id, error });
@@ -974,6 +1076,15 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         decision: payload.decision,
         learned_policy_id: learnedPolicy?.id
       };
+      // R7（通知闭环 high）：审批已被处理——归档 approval_routed 通知（跨用户），
+      // 否则那条「等你审批」会永久卡在被路由人的待决策桶里、点开又找不到事。失败只告警。
+      if (deps.notifications?.archiveByDedupeKey) {
+        try {
+          await deps.notifications.archiveByDedupeKey(`approval_routed:${updated.id}`);
+        } catch (error) {
+          getDefaultStructuredLogger().warn("approval_routed_notification_archive_failed", { id, error });
+        }
+      }
       await publishIfAvailable(deps.bus, topics.user(approverId(actor)).topic, eventTypes.permissionDecided, eventData);
       if (updated.workItemId) {
         await publishIfAvailable(deps.bus, topics.workitem(updated.workItemId).topic, eventTypes.permissionDecided, eventData);
@@ -1049,6 +1160,31 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       }
 
       const attention = toApprovalAttentionItem(toRecord(updated));
+      // R7（通知闭环）：转交此前只有 SSE——原被路由人的持久通知仍卡在他桶里、新对象离线就永远不知道。
+      // 对称补齐：归档旧通知 + 给新对象建持久通知（dedupeKey 同前缀，失败只告警不翻转交）。
+      if (deps.notifications?.archiveByDedupeKey) {
+        try {
+          await deps.notifications.archiveByDedupeKey(`approval_routed:${updated.id}`);
+        } catch (error) {
+          getDefaultStructuredLogger().warn("approval_delegate_notification_archive_failed", { id, error });
+        }
+      }
+      if (updated.workItemId && deps.notifications?.createNotification) {
+        try {
+          await deps.notifications.createNotification({
+            userId: toUserId,
+            type: "approval.routed",
+            severity: "high",
+            title: `转交给你审批：${attention.title.slice(0, 60)}`,
+            body: attention.summary_text,
+            targetUrl: "/approvals",
+            workItemId: updated.workItemId,
+            dedupeKey: `approval_routed:${updated.id}:delegated:${toUserId}`
+          });
+        } catch (error) {
+          getDefaultStructuredLogger().warn("approval_delegate_notify_failed", { id, error });
+        }
+      }
       const eventData = {
         approval_id: updated.id,
         from_user_id: previousUserId,

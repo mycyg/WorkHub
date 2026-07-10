@@ -1,4 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
+import { workHubLocaleStorageKey } from "@workhub/contracts";
 import { defaultPorts } from "@workhub/config/ports";
 import { createCuuController, type CuuControllerSnapshot } from "@workhub/cuu";
 import {
@@ -17,7 +18,6 @@ import { renderProposalConflictCards, renderProposalDetail, proposalCss } from "
 import {
   actionElementApplyPayload,
   actionElementCreateWorkItemPayload,
-  actionElementMergePayload,
   actionElementNextQuestionPayload,
   actionErrorNotice,
   actionHrefFromElement,
@@ -30,7 +30,9 @@ import {
   bootstrapProjectActionFromHref,
   browserLocale,
   conflictsFromMergeError,
+  createTaskPlanActionFromHref,
   createWorkItemActionFromHref,
+  escalationActionFromHref,
   fieldValueRequiredNotice,
   intakeOptionRequiredNotice,
   localePersistenceFailedNotice,
@@ -44,7 +46,9 @@ import {
   sessionNextQuestionIdFromHref,
   setDocumentLocale,
   showRouteNotice as showSharedRouteNotice,
+  startAgentRunQueuedNoticeBody,
   startAgentRunActionFromHref,
+  taskPlanDraftedNoticeBody,
   updateIntakeActionPayloads,
   type ActionPayloadResult,
   type RouteNoticeTimerState,
@@ -64,10 +68,11 @@ import {
   loadCuuPreferences,
   saveCuuPreferences
 } from "./cuu-preferences.js";
-import { renderDesktopOfflineCardHtml } from "./desktop-offline-card.js";
+import { bindDesktopOfflineCard } from "./desktop-offline-card.js";
+import { renderDesktopSpotlightBootShell } from "./desktop-spotlight-boot.js";
 import { bootDesktopPetSurface, resolveDesktopSurface } from "./pet-surface.js";
 import { liquidGlassCss, liquidGlassHeadHtml } from "./liquid-glass.js";
-import { liquidGlassFilterHtml, scheduleWorkHubLiquidGlassFilterRebuild } from "./liquid-glass-filter.js";
+import { scheduleWorkHubLiquidGlassFilterRebuild } from "./liquid-glass-filter.js";
 import { renderDecisionDeckHtml, decisionDeckCss } from "./decision-deck.js";
 import { renderTeamCalendarHtml, teamCalendarCss } from "./team-calendar.js";
 import { renderProjectsListHtml, projectsPageCss } from "./projects-page.js";
@@ -77,6 +82,14 @@ import {
   resolveDesktopPetWindowBridge
 } from "./pet-window-bridge.js";
 import { parseDesktopShellNavigatePayload } from "./shell-events.js";
+import { handleDesktopSpotlightShellNavigate } from "./spotlight-shell-navigation.js";
+import { handleDesktopProposalAction } from "./desktop-proposal-actions.js";
+import {
+  dismissDesktopMainWindow,
+  dragDesktopMainWindow,
+  moveDesktopMainWindowBy as moveDesktopMainWindowByCommand,
+  resizeDesktopMainWindow
+} from "./desktop-window-controls.js";
 import { appleGlassDesignSystemCss } from "./design-system.js";
 import {
   commandPaletteCss,
@@ -89,16 +102,25 @@ import { glassWindowCss } from "./glass-window.js";
 import {
   mountSpotlight,
   type SpotlightManualDragFn,
-  type SpotlightResizeDirection,
   type SpotlightResizeFn
 } from "./spotlight/controller.js";
-import { spotlightCss } from "./spotlight/css.js";
-import { capabilityForShellRoute, entityIdFromShellRoute } from "./spotlight/state.js";
-import { reviewProposalWithoutMerge } from "./spotlight/views/proposals.js";
 import { isStaleDesktopClientTokenError } from "./auth-recovery.js";
 
 const root = document.getElementById("root");
 type BrowserApiClient = ReturnType<typeof createApiClient>;
+
+function escalationResolvePayloadFromActionId(actionId: string | undefined) {
+  if (actionId === "escalation_retry") {
+    return { action: "retry" as const };
+  }
+  if (actionId === "escalation_pm_mode") {
+    return { action: "pm_mode" as const };
+  }
+  if (actionId === "escalation_cancel") {
+    return { action: "cancel" as const };
+  }
+  return undefined;
+}
 type DesktopSessionVM = Awaited<ReturnType<BrowserApiClient["createSession"]>>;
 const noticeTimerState: RouteNoticeTimerState = {};
 let plainNoticeTimer: number | undefined;
@@ -156,7 +178,21 @@ async function bootstrapDesktopClientToken(client: BrowserApiClient): Promise<vo
   }
 }
 
+// R10（真登出）：登出后 boot 不许再用固定昵称自动 bootstrap 绑回同一账户——否则登出形同虚设。
+const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
+
+export function desktopLoggedOut(): boolean {
+  try {
+    return window.localStorage.getItem(DESKTOP_LOGGED_OUT_FLAG) === "1";
+  } catch {
+    return false;
+  }
+}
+
 async function ensureDesktopClientToken(client: BrowserApiClient): Promise<void> {
+  if (desktopLoggedOut()) {
+    return;
+  }
   if (!clientToken()) {
     await bootstrapDesktopClientToken(client);
   } else {
@@ -216,7 +252,9 @@ const COMMAND_ROUTE: Record<CommandId, string> = {
   replay: "/agent-runs",
   knowledge: "/knowledge",
   cost: "/dashboard/cost",
+  agents: "/dashboard/agents",
   team: "/team",
+  notifications: "/notifications",
   settings: "/settings"
 };
 
@@ -514,7 +552,7 @@ function bindGoldPathNavigation(
             decision: "request_changes",
             reason_md: reasonMd,
             remember: "once"
-          });
+          }, { locale });
           showRouteNotice(shellRoot, actionSuccessNotice(locale, result.attention.summary_text, pendingReviewActionId ?? "request_changes"));
           pendingReviewHref = undefined;
           pendingReviewActionId = undefined;
@@ -589,6 +627,36 @@ function bindGoldPathNavigation(
     }
     if (action.kind === "api-action") {
       event.preventDefault();
+      const escalationAction = escalationActionFromHref(href);
+      if (escalationAction?.action === "budget") {
+        try {
+          const result = await client.resolveBudgetDecision(
+            escalationAction.escalationId,
+            escalationAction.budgetActionId,
+            { locale }
+          );
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        input.onActionSettled?.();
+        return;
+      }
+      if (escalationAction?.action === "resolve") {
+        const payload = escalationResolvePayloadFromActionId(actionId);
+        if (!payload) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, new Error(locale === "en-US" ? "This escalation action is not available." : "这个升级动作暂不可用。"), actionId));
+          return;
+        }
+        try {
+          const result = await client.resolveEscalation(escalationAction.escalationId, payload, { locale });
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(result, locale), actionId));
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
+        }
+        input.onActionSettled?.();
+        return;
+      }
       const mergeProposalCandidateApplyId = mergeProposalCandidateApplyIdFromHref(href);
       if (mergeProposalCandidateApplyId) {
         const payload = actionElementApplyPayload(actionTarget);
@@ -597,7 +665,7 @@ function bindGoldPathNavigation(
           return;
         }
         try {
-          const merge = await client.applyMergeProposalCandidate(mergeProposalCandidateApplyId, payload.payload);
+          const merge = await client.applyMergeProposalCandidate(mergeProposalCandidateApplyId, payload.payload, { locale });
           showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
@@ -622,38 +690,28 @@ function bindGoldPathNavigation(
         input.onActionSettled?.();
         return;
       }
-      const proposalAction = proposalActionFromHref(href);
-      if (proposalAction?.action === "review") {
-        if (action.requiresReason) {
-          pendingReviewHref = href;
-          pendingReviewActionId = actionId ?? "request_changes";
-          showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingReviewActionId), reviewReasonButtons(locale));
-          return;
-        }
-        try {
-          const review = await reviewProposalWithoutMerge(client, proposalAction.proposalId);
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, actionSummary(review, locale), actionId));
-        } catch (error) {
-          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
-        }
-        input.onActionSettled?.();
-        return;
-      }
-      if (proposalAction?.action === "merge") {
-        const payload = actionElementMergePayload(actionTarget);
-        if (!payload.ok) {
-          showPayloadFailureNotice(shellRoot, locale, payload, actionId);
-          return;
-        }
-        try {
-          const merge = await client.mergeProposal(proposalAction.proposalId, payload.payload);
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, merge.attention.summary_text, actionId));
-        } catch (error) {
-          if (!showMergeConflictNotice(shellRoot, error, locale, actionId)) {
-            showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId));
-          }
-        }
-        input.onActionSettled?.();
+      const handledProposalAction = await handleDesktopProposalAction({
+        href,
+        actionTarget,
+        actionId,
+        requiresReason: action.requiresReason,
+        locale,
+        client,
+        showRouteNotice: (notice, extraHtml, timeoutMs) => {
+          showRouteNotice(shellRoot, notice, extraHtml, timeoutMs);
+        },
+        showPayloadFailureNotice: (payload, failedActionId) => {
+          showPayloadFailureNotice(shellRoot, locale, payload, failedActionId);
+        },
+        showMergeConflictNotice: (error, failedActionId) =>
+          showMergeConflictNotice(shellRoot, error, locale, failedActionId),
+        setPendingReview: (pendingHref, pendingActionId) => {
+          pendingReviewHref = pendingHref;
+          pendingReviewActionId = pendingActionId;
+        },
+        onActionSettled: input.onActionSettled
+      });
+      if (handledProposalAction) {
         return;
       }
       // 提需求起点：bootstrap 项目 + 起真实澄清会话，渲交互式 scope 题（替换 fixture 预览）。
@@ -704,15 +762,24 @@ function bindGoldPathNavigation(
         input.onActionSettled?.();
         return;
       }
+      const createTaskPlan = createTaskPlanActionFromHref(href);
+      if (createTaskPlan) {
+        try {
+          const result = await client.createTaskPlan(createTaskPlan.workItemId, {}, { locale });
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, taskPlanDraftedNoticeBody(locale), actionId ?? "create_task_plan"));
+          window.location.hash = result.proposal_href || `/workitems/${createTaskPlan.workItemId}`;
+        } catch (error) {
+          showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "create_task_plan"));
+        }
+        input.onActionSettled?.();
+        return;
+      }
       // 派活：起 AI 执行 → 跳工作项详情（LIVE 面板会刷出 run / 之后的 Proposal·Replay）。
       const startAgentRun = startAgentRunActionFromHref(href);
       if (startAgentRun) {
         try {
-          const run = await client.startAgentRun(startAgentRun.workItemId);
-          const body = locale === "en-US"
-            ? `AI run queued: ${run.run_id}.`
-            : `AI 执行已排队：${run.run_id}。`;
-          showRouteNotice(shellRoot, actionSuccessNotice(locale, body, actionId ?? "start_agent_run"));
+          await client.startAgentRun(startAgentRun.workItemId);
+          showRouteNotice(shellRoot, actionSuccessNotice(locale, startAgentRunQueuedNoticeBody(locale), actionId ?? "start_agent_run"));
           window.location.hash = `/workitems/${startAgentRun.workItemId}`;
         } catch (error) {
           showRouteNotice(shellRoot, actionErrorNotice(locale, error, actionId ?? "start_agent_run"));
@@ -821,6 +888,50 @@ async function boot() {
       baseUrl: resolveDesktopApiBase(),
       getClientToken: clientToken
     });
+    // R10（真登出）：登出态先渲染显式重新绑定屏——输入昵称后清标记再走 bootstrap，
+    // 不让 boot 用固定昵称把刚登出的身份原样绑回来。
+    if (desktopLoggedOut()) {
+      const zhBoot = (locale ?? "zh-CN") === "zh-CN";
+      root.innerHTML = `<style>${appleGlassDesignSystemCss}</style>
+        <div style="min-height:100vh;display:grid;place-items:center;font-family:system-ui">
+          <div class="ds-glass" style="padding:28px 30px;border-radius:16px;display:grid;gap:12px;min-width:300px">
+            <strong>${zhBoot ? "已登出" : "Signed out"}</strong>
+            <p style="margin:0;font-size:13px;color:#5B616E">${zhBoot ? "输入昵称重新绑定这台设备。" : "Enter a nickname to re-bind this device."}</p>
+            <input data-desktop-rebind-nickname type="text" maxlength="64" placeholder="${zhBoot ? "昵称" : "Nickname"}" style="padding:9px 11px;border:1px solid #E6E7EB;border-radius:9px;font-size:14px" />
+            <button data-desktop-rebind type="button" class="ds-pressable" style="padding:9px;border:0;border-radius:9px;background:#4F46E5;color:#fff;font-weight:700;cursor:pointer">${zhBoot ? "登录" : "Sign in"}</button>
+            <p data-desktop-rebind-error hidden style="margin:0;font-size:12px;color:#E5484D"></p>
+          </div>
+        </div>`;
+      const rebindBtn = root.querySelector<HTMLButtonElement>("[data-desktop-rebind]");
+      rebindBtn?.addEventListener("click", () => {
+        const nickname = root.querySelector<HTMLInputElement>("[data-desktop-rebind-nickname]")?.value.trim();
+        const errorEl = root.querySelector<HTMLElement>("[data-desktop-rebind-error]");
+        if (!nickname) {
+          if (errorEl) {
+            errorEl.textContent = zhBoot ? "请先填写昵称。" : "Please enter a nickname first.";
+            errorEl.hidden = false;
+          }
+          return;
+        }
+        rebindBtn.disabled = true;
+        void client.bootstrapDesktop({ nickname, device_name: "WorkHub Desktop", platform: "desktop" })
+          .then((result) => {
+            if (result?.client_token) {
+              window.localStorage.setItem("workhub_client_token", result.client_token);
+            }
+            window.localStorage.removeItem("workhub_desktop_logged_out");
+            window.location.reload();
+          })
+          .catch(() => {
+            rebindBtn.disabled = false;
+            if (errorEl) {
+              errorEl.textContent = zhBoot ? "登录失败，请检查后端连接后重试。" : "Sign-in failed — check the backend connection and retry.";
+              errorEl.hidden = false;
+            }
+          });
+      });
+      return;
+    }
     // 跨源鉴权地基：先确保有 client token，goldPath 才会返回 LIVE 数据而非静默 fixture。
     await ensureDesktopClientToken(client);
     locale = await resolveBootLocale(client, locale);
@@ -1108,99 +1219,36 @@ async function boot() {
 
 // R8 真·Spotlight：把内容高度同步给原生壳，缩放主窗（盒子随内容生长/收缩）。浏览器开发态无 __TAURI__ → no-op。
 const resizeMainWindow: SpotlightResizeFn = (width, height) => {
-  const tauri = (globalThis as {
-    __TAURI__?: {
-      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    };
-  }).__TAURI__;
-  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
-  if (typeof invoke === "function") {
-    void invoke("set_spotlight_size", { width, height }).catch(() => undefined);
-  }
+  resizeDesktopMainWindow(width, height);
 };
 
-// 搜索条像系统 Spotlight 一样可拖动，边缘热区可缩放；浏览器开发态无 __TAURI__ → no-op。
+// 搜索条像系统 Spotlight 一样可拖动；浏览器开发态无 __TAURI__ → no-op。
 const dragMainWindow = (): void => {
-  const tauri = (globalThis as {
-    __TAURI__?: {
-      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    };
-  }).__TAURI__;
-  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
-  if (typeof invoke === "function") {
-    void invoke("start_main_window_drag").catch(() => undefined);
-  }
+  dragDesktopMainWindow();
 };
 
 const moveMainWindowBy: SpotlightManualDragFn = (deltaX, deltaY): void => {
-  const tauri = (globalThis as {
-    __TAURI__?: {
-      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    };
-  }).__TAURI__;
-  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
-  if (typeof invoke === "function") {
-    void invoke("move_main_window_by", { deltaX, deltaY }).catch(() => undefined);
-  }
-};
-
-const resizeMainWindowFromEdge = (direction: SpotlightResizeDirection): void => {
-  const tauri = (globalThis as {
-    __TAURI__?: {
-      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    };
-  }).__TAURI__;
-  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
-  if (typeof invoke === "function") {
-    void invoke("start_main_window_resize_drag", { direction }).catch(() => undefined);
-  }
+  moveDesktopMainWindowByCommand(deltaX, deltaY);
 };
 
 // M2：launcher 顶层 Esc → 隐藏主窗（关闭盒子），兑现 hello 卡「Esc 关闭」承诺。浏览器开发态无 __TAURI__ → no-op。
 const dismissMainWindow = (): void => {
-  const tauri = (globalThis as {
-    __TAURI__?: {
-      core?: { invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-      invoke?: (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
-    };
-  }).__TAURI__;
-  const invoke = tauri?.core?.invoke ?? tauri?.invoke;
-  if (typeof invoke === "function") {
-    void invoke("hide_main_window").catch(() => undefined);
-  }
+  dismissDesktopMainWindow();
 };
 
 // 连不上后端时渲一张清晰的玻璃「离线卡」（与旧 boot 的兜底一致）：说明需要后端、当前地址、怎么改、重试。
 function renderDesktopOfflineCard(rootEl: HTMLElement, locale: WorkHubLocale, error: unknown): void {
   const apiBase = resolveDesktopApiBase();
   const detail = error instanceof Error ? error.message : String(error);
-    rootEl.innerHTML = renderDesktopOfflineCardHtml({ apiBase, detail, locale });
-    rootEl.querySelector<HTMLButtonElement>("#wh-retry")?.addEventListener("click", () => window.location.reload());
-    rootEl.querySelector<HTMLButtonElement>("#wh-open-settings")?.addEventListener("click", () => {
-      const form = rootEl.querySelector<HTMLFormElement>("#wh-offline-settings");
-      form?.removeAttribute("hidden");
-      rootEl.querySelector<HTMLInputElement>("#wh-api-base")?.focus({ preventScroll: true });
-    });
-    rootEl.querySelector<HTMLButtonElement>("#wh-default-api")?.addEventListener("click", () => {
-      window.localStorage.removeItem("workhub_api_base");
-      window.location.reload();
-    });
-    rootEl.querySelector<HTMLFormElement>("#wh-offline-settings")?.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const next = rootEl.querySelector<HTMLInputElement>("#wh-api-base")?.value.trim().replace(/\/+$/u, "") ?? "";
-      if (next.length > 0) {
-        window.localStorage.setItem("workhub_api_base", next);
-      } else {
-        window.localStorage.removeItem("workhub_api_base");
-      }
-      window.location.reload();
-    });
-    scheduleWorkHubLiquidGlassFilterRebuild(document);
-  }
+  bindDesktopOfflineCard(rootEl, {
+    apiBase,
+    detail,
+    locale,
+    storage: window.localStorage,
+    reload: () => window.location.reload(),
+    scheduleRebuild: () => scheduleWorkHubLiquidGlassFilterRebuild(document)
+  });
+}
 
 // R8 彻底重构主窗：苹果聚焦搜索式「会生长的玻璃盒」就是整个 app（替代旧的 gold-path 全屏壳 boot()）。
 // 复用跨域鉴权地基（client token bootstrap）+ locale；挂 Spotlight 控制器；把桌宠偏好同步给桌宠窗（Cuu 为核心）。
@@ -1210,6 +1258,9 @@ async function bootSpotlight() {
   }
   let locale = browserLocale();
   setDocumentLocale(locale);
+  // R12（首帧）：此前两次网络往返（token 探活 + locale me）完成前 #root 是空 div、整窗白屏——
+  // 先同步渲一帧占位盒，让窗口一出现就有画面。
+  root.innerHTML = renderDesktopSpotlightBootShell();
   try {
     const client = createApiClient({
       baseUrl: resolveDesktopApiBase(),
@@ -1217,8 +1268,11 @@ async function bootSpotlight() {
     });
     // 跨源鉴权地基：先确保有 client token（goldPath/pages 才返回 LIVE 数据），并把令牌推给 Rust 壳（SSE /me 鉴权）。
     await ensureDesktopClientToken(client);
-    locale = await resolveBootLocale(client, locale);
-    root.innerHTML = `${liquidGlassHeadHtml}${liquidGlassFilterHtml}<style>${appleGlassDesignSystemCss}${spotlightCss}</style><div data-spot-host></div>`;
+    // R12（首帧）：resolveBootLocale 内部的 me() 与 ensureDesktopClientToken 的探活是同一请求的重复——
+    // 直接拿一次 me 结果解析 locale，省一拍串行往返。
+    const bootMe = await client.me().catch(() => null);
+    locale = applyIdentityLocale(bootMe, locale);
+    root.innerHTML = renderDesktopSpotlightBootShell();
     const hostEl = root.querySelector<HTMLElement>("[data-spot-host]");
     if (!hostEl) {
       return;
@@ -1252,7 +1306,6 @@ async function bootSpotlight() {
       resize: resizeMainWindow,
       drag: dragMainWindow,
       dragMove: moveMainWindowBy,
-      resizeDrag: resizeMainWindowFromEdge,
       dismiss: dismissMainWindow,
       onActionSettled: () => {
         void refreshApprovalsBadge();
@@ -1263,16 +1316,26 @@ async function bootSpotlight() {
     // 以 Cuu 为核心：托盘「打开收件箱/设置」、深链、桌宠点击都会让主窗 emit "navigate"（main.rs execute_window_control）。
     // 监听它 → 把盒子直接开到对应能力（回 "/" 则回 launcher）。这是 Cuu/外部入口与盒子联动的地基。
     const shellListen = resolveDesktopShellListen();
-    void shellListen?.("navigate", (event) => {
-      const parsed = parseDesktopShellNavigatePayload(event.payload);
-      const cap = parsed ? capabilityForShellRoute(parsed.route) : undefined;
-      if (cap && parsed) {
-        // rank13：携带路由里的实体 id，让 workitem/proposals/replay 直接打开该项而非落到列表。
-        const id = entityIdFromShellRoute(parsed.route);
-        spotlight.openCapability(cap, id ? { id, route: parsed.route } : { route: parsed.route });
-      } else {
-        spotlight.reset();
+    // R10（偏好同步）：桌宠窗切语言→主窗跟随写本地偏好并 reload（与自身 bindLocaleSwitch 同款生效路径），
+    // 两窗语言态不再长期漂移到下次重启。
+    void shellListen?.("pet-locale-changed", (event) => {
+      const nextLocale = (event.payload as { locale?: string } | undefined)?.locale;
+      if (nextLocale === "zh-CN" || nextLocale === "en-US") {
+        try {
+          // R11 回归修复：此前手写 "workhub_locale"（下划线）——browserLocale() 读的是
+          // workHubLocaleStorageKey="workhub.locale"（点分），写入是死代码。
+          window.localStorage.setItem(workHubLocaleStorageKey, nextLocale);
+        } catch {
+          // ignore
+        }
+        window.location.reload();
       }
+    });
+    void shellListen?.("navigate", (event) => {
+      handleDesktopSpotlightShellNavigate(event.payload, {
+        spotlight,
+        saveProjectContextFromRoute: saveDesktopCuuProjectContextFromRoute
+      });
     });
     // rank12：把「待你拍板」实时条数喂给 launcher 审批角标——盒子的核心承诺是一眼看到有几条待决策。
     // 启动拉一次 + 每 30s + 窗口重新聚焦时刷新；best-effort，失败不更新角标、不影响盒子。

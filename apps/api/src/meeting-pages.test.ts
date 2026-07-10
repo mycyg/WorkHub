@@ -13,6 +13,7 @@ import type {
   MeetingInsightDraftRows,
   MeetingPageRows,
   MeetingRepository,
+  WorkItemAccessRow,
   UserAuthRow,
   UserRepository
 } from "@workhub/db";
@@ -117,6 +118,23 @@ function insightRow(partial: Partial<MeetingPageRows["insights"][number]> = {}):
     createdAt: now,
     updatedAt: now,
     ...partial
+  };
+}
+
+function readableWorkItemAccessRow(id: string): WorkItemAccessRow {
+  return {
+    id,
+    status: "spec_ready",
+    submitterUserId: userId,
+    claimedByUserId: null,
+    workspaceId: actor().workspaceId,
+    project: {
+      archived: false,
+      deletedAt: null,
+      ownerUserId: userId,
+      workspaceId: actor().workspaceId
+    },
+    assignments: []
   };
 }
 
@@ -347,6 +365,7 @@ function minimalWorkItemDetail(): WorkItemDetailVM {
       proposal_href: `/proposals/${proposalId}`,
       proposal_status: "opened"
     },
+    approval_decisions: [],
     actions: {}
   };
 }
@@ -596,6 +615,65 @@ test("meeting page service hides target work item ids when the actor cannot open
   assert.equal(insight?.target_work_item_id, undefined);
 });
 
+test("meeting page service batches linked work item visibility checks", async () => {
+  const meetingWorkItemId = "96000000-0000-4000-8000-000000000041";
+  const targetWorkItemId = "96000000-0000-4000-8000-000000000042";
+  const createdWorkItemId = "96000000-0000-4000-8000-000000000043";
+  const pageRows = rows(insightRow({
+    targetWorkItemId,
+    createdWorkItemId,
+    status: "confirmed",
+    confirmedByUserId: userId,
+    confirmedAt: now
+  }));
+  pageRows.meetings = [{
+    meeting: {
+      ...meetingRow(),
+      workItemId: meetingWorkItemId
+    },
+    uploadedBy: user()
+  }];
+
+  let batchCalls = 0;
+  let singleCalls = 0;
+  const service = createMeetingPageService({
+    repo: {
+      async readPage() {
+        return pageRows;
+      },
+      async insightToDraft() {
+        throw new Error("not needed");
+      },
+      async dismissInsight() {
+        throw new Error("not needed");
+      },
+      async recordDraftProposal() {
+        throw new Error("not needed");
+      }
+    },
+    workItemAccess: {
+      async findWorkItemAccessRecord() {
+        singleCalls += 1;
+        throw new Error("meeting page read path must not fall back to per-id access queries");
+      },
+      async findWorkItemAccessRecords(ids: string[]) {
+        batchCalls += 1;
+        return new Map(ids.map((id) => [id, readableWorkItemAccessRow(id)]));
+      }
+    },
+    now: () => now
+  } as Parameters<typeof createMeetingPageService>[0] & { workItemAccess: unknown });
+
+  const page = await service.page({ actor: actor(), projectId, locale: "en-US" });
+  const insight = page.meetings[0]?.insights[0];
+
+  assert.equal(batchCalls, 1);
+  assert.equal(singleCalls, 0);
+  assert.equal(page.meetings[0]?.work_item_id, meetingWorkItemId);
+  assert.equal(insight?.target_work_item_id, targetWorkItemId);
+  assert.equal(insight?.draft_href, `/workitems/${createdWorkItemId}`);
+});
+
 test("meeting page service dismisses a pending insight without creating a draft", async () => {
   const repo = new MutableMeetingRepo();
   const service = createMeetingPageService({
@@ -780,6 +858,9 @@ test("meeting page route authenticates and passes project and selected meeting q
     async dismissInsight() {
       throw new Error("not needed");
     },
+    async importTranscript() {
+      throw new Error("importTranscript not stubbed in this test");
+    },
     async draftToProposal() {
       throw new Error("not needed");
     }
@@ -813,6 +894,9 @@ test("meeting page route rejects a malformed selected meeting id before loading 
     },
     async dismissInsight() {
       throw new Error("not needed");
+    },
+    async importTranscript() {
+      throw new Error("importTranscript not stubbed in this test");
     },
     async draftToProposal() {
       throw new Error("not needed");
@@ -852,6 +936,9 @@ test("meeting mutation route authenticates and returns a refreshed meeting page"
     async dismissInsight() {
       throw new Error("not needed");
     },
+    async importTranscript() {
+      throw new Error("importTranscript not stubbed in this test");
+    },
     async draftToProposal() {
       throw new Error("not needed");
     }
@@ -889,6 +976,9 @@ test("meeting mutation routes reject malformed insight ids before calling the se
       calls.push(`dismiss:${input.insightId}`);
       return minimalMeetingPage();
     },
+    async importTranscript() {
+      throw new Error("importTranscript not stubbed in this test");
+    },
     async draftToProposal() {
       throw new Error("not needed");
     }
@@ -923,6 +1013,9 @@ test("meeting draft proposal route authenticates and returns a refreshed work it
     },
     async dismissInsight() {
       throw new Error("not needed");
+    },
+    async importTranscript() {
+      throw new Error("importTranscript not stubbed in this test");
     },
     async draftToProposal(input) {
       calls.push({

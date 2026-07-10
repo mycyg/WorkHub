@@ -71,7 +71,14 @@ test("R4 product shell localizes fixed product chrome", () => {
     linkMode: "path"
   });
 
-  assert.equal(shell.html.includes("工作入口"), true);
+  // R10 Nav-v2：提需求=置顶主 CTA；工作组无标题常驻；次级组名可折叠且本地化。
+  assert.equal(shell.html.includes('data-nav-group="work"'), true);
+  assert.equal(shell.html.includes('class="wh-product-nav-cta"'), true);
+  assert.equal(shell.html.includes("<span>提需求</span>"), true);
+  assert.equal(shell.html.includes('data-nav-group-toggle="assets"'), true);
+  assert.equal(shell.html.includes("<span>项目资产</span>"), true);
+  // 当前页(workitem)在工作组 → 次级组默认收起。
+  assert.equal(shell.html.includes('data-nav-group="assets" data-nav-collapsed="true"'), true);
   // F2 修双标题:masthead 不再渲染冗余大标题/副标题(页面标题归各 route-component 的唯一 <h1>);
   // masthead 收成指标条,本地化页标题保留在 aria-label 上(无障碍 + 不与组件标题视觉重复)。
   assert.equal(shell.html.includes('data-r4-product-masthead="true" aria-label="任务详情"'), true);
@@ -81,6 +88,32 @@ test("R4 product shell localizes fixed product chrome", () => {
   assert.equal(shell.html.includes("网页版"), true);
   assert.equal(shell.html.includes('data-r4-product-route-key="workitem"'), true);
   assert.equal(shell.html.includes('aria-pressed="true" title="中文"'), true);
+});
+
+test("R9.7 product shell project rail avoids dispatch wording", () => {
+  const rendered = renderedSurface("zh-CN");
+  const template = rendered.pages[0];
+  if (!template) {
+    throw new Error("rendered surface missing home page");
+  }
+  rendered.pages.push({
+    ...template,
+    key: "projects",
+    route: "/projects",
+    title: "项目",
+    html: '<section data-r8-projects-count="0"></section>',
+    primaryHrefs: []
+  });
+  const shell = renderWebProductShell(rendered, {
+    appName: "WorkHub",
+    surfaceLabel: "Web R4",
+    currentRoute: "/projects",
+    locale: "zh-CN",
+    linkMode: "path"
+  });
+
+  assert.equal(shell.html.includes("项目"), true);
+  assert.doesNotMatch(shell.html, /派活|派发/u);
 });
 
 test("R4 product shell defaults to path navigation without hash fallback", () => {

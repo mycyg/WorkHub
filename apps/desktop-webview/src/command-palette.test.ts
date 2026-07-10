@@ -13,11 +13,16 @@ test("registry covers every backend capability surface", () => {
   assert.deepEqual(
     ids,
     [
+      // R9.6 adds the live-only Agent Army command-center ability; the old list
+      // was complete only before the desktop command center existed.
+      "agents",
       "approvals",
       "cost",
       "drive",
       "intake",
       "knowledge",
+      // R5 双端一致：桌面补通知中心入口（通知箱+按类型静音），与 web 对齐。
+      "notifications",
       "projects",
       "proposals",
       "replay",
@@ -45,11 +50,15 @@ test("fuzzy router: one phrase reaches the right capability (zh + en + alias)", 
   assert.equal(matchCommands("网盘", "zh-CN")[0]?.command.id, "drive");
   assert.equal(matchCommands("审批", "zh-CN")[0]?.command.id, "approvals");
   assert.equal(matchCommands("成本", "zh-CN")[0]?.command.id, "cost");
+  assert.equal(matchCommands("军团", "zh-CN")[0]?.command.id, "agents");
+  assert.equal(matchCommands("小队", "zh-CN")[0]?.command.id, "agents");
   // 英文/别名
   assert.equal(matchCommands("approve", "en")[0]?.command.id, "approvals");
   assert.equal(matchCommands("diff", "en")[0]?.command.id, "proposals");
   assert.equal(matchCommands("pr", "en")[0]?.command.id, "proposals");
   assert.equal(matchCommands("files", "en")[0]?.command.id, "drive");
+  assert.equal(matchCommands("agents", "en")[0]?.command.id, "agents");
+  assert.equal(matchCommands("army", "en")[0]?.command.id, "agents");
 });
 
 test("ranking: exact/prefix beats substring beats subsequence", () => {
@@ -86,4 +95,26 @@ test("render escapes the query (no HTML injection via the search box)", () => {
   const html = renderCommandPalette({ query: '"><img src=x onerror=alert(1)>', locale: "en" });
   assert.doesNotMatch(html, /<img src=x/u);
   assert.match(html, /&quot;&gt;&lt;img/u);
+});
+
+test("R9.7 command palette uses new-task wording instead of dispatch copy", () => {
+  const zh = renderCommandPalette({ query: "", locale: "zh-CN" });
+  const en = renderCommandPalette({ query: "", locale: "en" });
+
+  assert.doesNotMatch(zh, /派活/u);
+  assert.doesNotMatch(en, /Dispatch|dispatch/u);
+  assert.match(zh, /新任务 \/ 交给 AI/u);
+  assert.match(en, /New task/u);
+  assert.equal(matchCommands("dispatch", "en")[0]?.command.id, "intake");
+});
+
+test("R9.7 desktop agents command uses Cuu squad wording instead of Agent Army copy", () => {
+  const zh = renderCommandPalette({ query: "军团", locale: "zh-CN" });
+  const en = renderCommandPalette({ query: "agents", locale: "en" });
+
+  assert.match(zh, /Cuu 的小队/u);
+  assert.match(en, /Cuu&#39;s squad/u);
+  assert.doesNotMatch(zh + en, /Agent Army/u);
+  assert.equal(matchCommands("army", "en")[0]?.command.id, "agents");
+  assert.equal(matchCommands("agent army", "en")[0]?.command.id, "agents");
 });

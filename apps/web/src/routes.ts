@@ -1,5 +1,6 @@
 import { WorkHubApiError, type WorkHubApiClient } from "@workhub/api-client";
 import type {
+  AgentArmyDashboardVM,
   ApprovalCenterVM,
   AttentionHomeVM,
   CalendarPageVM,
@@ -23,6 +24,7 @@ import {
   goldPathCss,
   renderWebRouteComponent,
   renderWebProductShell,
+  renderWebProductStateShell,
   type GoldPathAppShell,
   type GoldPathRenderedPage,
   type WebProductMetric,
@@ -84,18 +86,19 @@ export type WebRouteSurface =
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
   | { key: "intake"; session: SessionVM }
-  | { key: "intake"; start: true; project?: { id: string; name: string }; project_unavailable?: boolean }
+  | { key: "intake"; start: true; project?: { id: string; name: string }; project_unavailable?: boolean; projects?: ProjectListVM | undefined }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
-  | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[] }
+  | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[]; proposal_conflicts_check_failed?: boolean | undefined }
   | { key: "drive"; drive: DrivePageVM; projects: ProjectListVM }
-  | { key: "meetings"; meetings: MeetingPageVM }
+  | { key: "meetings"; meetings: MeetingPageVM; projects?: ProjectListVM }
   | { key: "notifications"; notifications: NotificationPageVM }
   | { key: "calendar"; calendar: CalendarPageVM }
   | { key: "health"; health: ProjectHealthPageVM }
   | { key: "replay"; replay: ReplayTraceVM }
   | { key: "cost"; cost: CostDashboardVM }
-  | { key: "knowledge"; evidence: EvidenceBubble; source_ref?: string | undefined; scope_landing?: boolean | undefined }
+  | { key: "agents"; agents: AgentArmyDashboardVM }
+  | { key: "knowledge"; evidence: EvidenceBubble; source_ref?: string | undefined; scope_landing?: boolean | undefined; projects?: ProjectListVM | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
   | { key: "settings"; settings: SettingsPageVM };
 
@@ -104,7 +107,7 @@ const routeMatchers = [
     key: "home",
     pattern: "/",
     apiBaseLabel: "/api/pages/attention",
-    regex: /^\/$/u,
+    regex: /^\/(?:attention)?$/u,
     paramNames: []
   },
   {
@@ -199,6 +202,13 @@ const routeMatchers = [
     paramNames: []
   },
   {
+    key: "agents",
+    pattern: "/dashboard/agents",
+    apiBaseLabel: "/api/pages/agents",
+    regex: /^\/dashboard\/agents$/u,
+    paramNames: []
+  },
+  {
     key: "knowledge",
     pattern: "/knowledge/search",
     apiBaseLabel: "/api/knowledge/search",
@@ -242,6 +252,7 @@ type WebRouteTreePageVm =
   | "health"
   | "replay"
   | "cost"
+  | "agents"
   | "evidence"
   | "skills"
   | "settings";
@@ -289,6 +300,7 @@ const routeTreePageVmByKey = {
   health: "health",
   replay: "replay",
   cost: "cost",
+  agents: "agents",
   knowledge: "evidence",
   skills: "skills",
   settings: "settings"
@@ -489,6 +501,7 @@ const shellPageOrder = [
   "health",
   "replay",
   "cost",
+  "agents",
   "knowledge",
   "skills",
   "settings"
@@ -517,6 +530,7 @@ const shellDefaultRoutes = {
   health: "/dashboard/health",
   replay: "/",
   cost: "/dashboard/cost",
+  agents: "/dashboard/agents",
   knowledge: "/knowledge/search",
   skills: "/dashboard/skills",
   settings: "/settings"
@@ -527,7 +541,8 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     home: "总览",
     projects: "项目",
     "project-home": "项目主页",
-    intake: "接入",
+    // NAMING pass：导航项与所有 CTA（新任务）对齐——「接入」是工程词。
+    intake: "新任务",
     approvals: "审批",
     workitem: "任务详情",
     proposal: "变更申请",
@@ -538,6 +553,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     health: "项目健康",
     replay: "执行回放",
     cost: "成本",
+    agents: "军团",
     knowledge: "知识证据",
     skills: "团队技能",
     settings: "设置"
@@ -546,7 +562,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     home: "Overview",
     projects: "Projects",
     "project-home": "Project home",
-    intake: "Intake",
+    intake: "New task",
     approvals: "Approvals",
     workitem: "Task detail",
     proposal: "Change request",
@@ -557,6 +573,7 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     health: "Project health",
     replay: "Execution replay",
     cost: "Cost",
+    agents: "Agent teams",
     knowledge: "Knowledge evidence",
     skills: "Team skills",
     settings: "Settings"
@@ -590,6 +607,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     tokens: "Tokens",
     cost: "成本",
     budget: "预算",
+    agentTeams: "军团",
+    autonomy: "自治率",
     options: "选项",
     refs: "来源",
     runtime: "运行时",
@@ -635,6 +654,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     tokens: "Tokens",
     cost: "Cost",
     budget: "Budget",
+    agentTeams: "Teams",
+    autonomy: "Autonomy",
     options: "Options",
     refs: "Sources",
     runtime: "Runtime",
@@ -745,10 +766,16 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
         metric(locale, "runtime", intakeRuntime)
       ];
     }
+    // 普通用户审查：原样渲 input_mode 枚举（long_text）与 session UUID 是黑话泄漏——换人话。
+    const stageLabel = surface.session.question.input_mode === "confirm"
+      ? (locale === "zh-CN" ? "待确认" : "Confirm")
+      : (locale === "zh-CN" ? "问答中" : "Q&A");
     return [
-      metric(locale, "options", String(surface.session.question.options.length)),
-      metric(locale, "queue", surface.session.question.input_mode),
-      metric(locale, "runtime", surface.session.session_id)
+      ...(surface.session.question.options.length > 0
+        ? [metric(locale, "options", String(surface.session.question.options.length))]
+        : []),
+      metric(locale, "queue", stageLabel),
+      metric(locale, "runtime", locale === "zh-CN" ? "需求澄清" : "Clarifying")
     ];
   }
   if (surface.key === "approvals") {
@@ -826,6 +853,13 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "budget", String(surface.cost.budget.length))
     ];
   }
+  if (surface.key === "agents") {
+    // R5（视觉层级）：正文 KPI 四卡（带口径注解与落点）是权威版本——masthead 不再复读同名三数，
+    // 只留一条独有补充（今日成本），避免同屏三处渲染同一批计数。
+    return [
+      metric(locale, "cost", surface.agents.kpis.today_cost_cny ? `¥${surface.agents.kpis.today_cost_cny}` : "¥0")
+    ];
+  }
   if (surface.key === "knowledge") {
     return [
       metric(locale, "refs", String(surface.evidence.evidence_refs.length)),
@@ -865,7 +899,8 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
           key: "intake",
           start: true,
           ...(surface.project ? { project: surface.project } : {}),
-          ...(surface.project_unavailable ? { projectUnavailable: true } : {})
+          ...(surface.project_unavailable ? { projectUnavailable: true } : {}),
+          ...(surface.projects ? { projects: surface.projects } : {})
         },
         { locale }
       );
@@ -882,14 +917,15 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
     return renderWebRouteComponent({
       key: "proposal",
       proposal: surface.proposal,
-      proposalConflicts: surface.proposal_conflicts
+      proposalConflicts: surface.proposal_conflicts,
+      proposalConflictsCheckFailed: surface.proposal_conflicts_check_failed ?? false
     }, { locale });
   }
   if (surface.key === "drive") {
     return renderWebRouteComponent({ key: "drive", drive: surface.drive, projects: surface.projects }, { locale });
   }
   if (surface.key === "meetings") {
-    return renderWebRouteComponent({ key: "meetings", meetings: surface.meetings }, { locale });
+    return renderWebRouteComponent({ key: "meetings", meetings: surface.meetings, projects: surface.projects }, { locale });
   }
   if (surface.key === "notifications") {
     return renderWebRouteComponent({ key: "notifications", notifications: surface.notifications }, { locale });
@@ -906,8 +942,11 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   if (surface.key === "cost") {
     return renderWebRouteComponent({ key: "cost", cost: surface.cost }, { locale });
   }
+  if (surface.key === "agents") {
+    return renderWebRouteComponent({ key: "agents", agents: surface.agents }, { locale });
+  }
   if (surface.key === "knowledge") {
-    return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence, sourceRef: surface.source_ref, scopeLanding: surface.scope_landing }, { locale });
+    return renderWebRouteComponent({ key: "knowledge", evidence: surface.evidence, sourceRef: surface.source_ref, scopeLanding: surface.scope_landing, projects: surface.projects }, { locale });
   }
   if (surface.key === "skills") {
     return renderWebRouteComponent({ key: "skills", skills: surface.skills }, { locale });
@@ -979,17 +1018,36 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   if (match.key === "home") {
     // 首页是项目工作台,不是 AI 收件箱孤岛：先展示项目/网盘入口,再把待决策和后台运行作为运营队列露出。
     // 项目清单是次要数据,拉取失败不应把已可用的决策队列整页打垮。
-    const attention = await client.pages.attention(withLocale(locale));
-    let projects: ProjectListVM | undefined;
-    try {
-      projects = await client.listProjects();
-    } catch (error) {
-      if (error instanceof WorkHubApiError && error.code === "not_identified") {
-        throw error;
+    // R4（性能）：attention 与项目清单互不依赖——并行拉，首屏不再吃两次串行 RTT。
+    // listProjects 的失败语义保持不变：not_identified 冒泡去重认证，其余退化为 undefined。
+    const [attention, projectsSettled] = await Promise.all([
+      client.pages.attention(withLocale(locale)),
+      client.listProjects().then(
+        (value): ProjectListVM | undefined => value,
+        (error: unknown): ProjectListVM | undefined => {
+          if (error instanceof WorkHubApiError && error.code === "not_identified") {
+            throw error;
+          }
+          return undefined;
+        }
+      )
+    ]);
+    // 普通用户审查（QUEUE-PROMOTE）：?focus=<attention_id> 把队列里那张卡提升为主卡原地处理——
+    // 队列行点击不再跳去回放页/无动作的工作项页。
+    const focusId = new URLSearchParams(match.search).get("focus");
+    if (focusId) {
+      const focusIndex = attention.queue.findIndex((item) => item.id === focusId);
+      if (focusIndex >= 0) {
+        const [focused] = attention.queue.splice(focusIndex, 1);
+        if (focused) {
+          if (attention.primary && attention.primary.id !== focused.id) {
+            attention.queue.unshift(attention.primary);
+          }
+          attention.primary = focused;
+        }
       }
-      projects = undefined;
     }
-    return { key: "home", attention, projects } satisfies WebRouteSurface;
+    return { key: "home", attention, projects: projectsSettled } satisfies WebRouteSurface;
   }
   if (match.key === "projects") {
     const projects = await client.listProjects();
@@ -1017,10 +1075,12 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
             throw error;
           }
           // 来自的项目拉不到(已删/无权限/旧链接)：不静默切换，标记 project_unavailable → 渲染明确提示，再退化为通用起点。
-          return { key: "intake", start: true, project_unavailable: true } satisfies WebRouteSurface;
+          return { key: "intake", start: true, project_unavailable: true, ...(await intakeProjectChoices(client)) } satisfies WebRouteSurface;
         }
       }
-      return { key: "intake", start: true } satisfies WebRouteSurface;
+      // R10-0c（P1-1）：通用入口不再静默落到共享「试点项目」——拉项目清单渲显式项目选择器，
+      // 用户自己挑落点（真活跃排序，首项默认）。清单拉取失败退化为原试点兜底（不挡提需求）。
+      return { key: "intake", start: true, ...(await intakeProjectChoices(client)) } satisfies WebRouteSurface;
     }
     const session = await client.getSession(sessionId, withLocale(locale));
     return { key: "intake", session } satisfies WebRouteSurface;
@@ -1036,6 +1096,10 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     // F11/簇A：无成本数据(含 usage_not_connected)时不塌成通用空卡。成本组件自带空态兜底
     // (cost.statusFallback 等)，照常渲染整页(含外壳 + 「用量未接入」等可操作提示)，保留导航。
     return { key: "cost", cost } satisfies WebRouteSurface;
+  }
+  if (match.key === "agents") {
+    const agents = await client.pages.agents(withLocale(locale));
+    return { key: "agents", agents } satisfies WebRouteSurface;
   }
   if (match.key === "health") {
     const health = await client.pages.projectHealth(withLocale(locale));
@@ -1070,7 +1134,15 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
       // 无锚点的全局检索对非管理员 403:不塌成裸 403 死胡同,改在外壳内渲染知识库落地页。
       // 带锚点(项目/工作项)的 403 是真实的越权,照常冒泡为 forbidden 态。
       if (error instanceof WorkHubApiError && error.status === 403 && !hasScope) {
-        return { key: "knowledge", evidence: knowledgeScopeLandingBubble(q, locale), scope_landing: true } satisfies WebRouteSurface;
+        // R12（多项目）：落地页不再只有「去项目列表」死路——带上项目清单渲检索项目选择器，
+        // 非管理员选定项目即可就地检索（服务端单项目口径不变）。清单拉取失败退化为无选择器。
+        let landingProjects: ProjectListVM | undefined;
+        try {
+          landingProjects = await client.listProjects();
+        } catch {
+          landingProjects = undefined;
+        }
+        return { key: "knowledge", evidence: knowledgeScopeLandingBubble(q, locale), scope_landing: true, ...(landingProjects ? { projects: landingProjects } : {}) } satisfies WebRouteSurface;
       }
       throw error;
     }
@@ -1082,9 +1154,11 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   if (match.key === "proposal") {
     const proposal = await client.pages.proposal(match.params["id"] ?? "", withLocale(locale));
     // EDGE-2：冲突列表是次要数据(它自带 assertCanReadWorkItem,可能独立 403/抖动)。它失败不该把本已加载好的
-    // 提议/合并工作台整页塌成错误卡——退化为「无冲突」即可(与 drive 的 listProjects 失败退化同模式)。
-    // 会话过期(not_identified)仍要冒泡去重认证。
+    // 提议/合并工作台整页塌成错误卡。会话过期(not_identified)仍要冒泡去重认证。
+    // R10-P1-4：但失败也绝不能伪装成「零冲突」——审阅者会拿它当决策依据。标志位透传，页面渲显式
+    // 「冲突检查暂时失败」提示。
     let conflicts: ProposalConflict[] = [];
+    let conflictsCheckFailed = false;
     try {
       const result = await client.listWorkItemConflicts(proposal.work_item_id);
       conflicts = result.conflicts.filter((conflict) => conflict.proposal_id === proposal.proposal_id);
@@ -1093,33 +1167,38 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
         throw error;
       }
       conflicts = [];
+      conflictsCheckFailed = true;
     }
-    return { key: "proposal", proposal, proposal_conflicts: conflicts } satisfies WebRouteSurface;
+    return { key: "proposal", proposal, proposal_conflicts: conflicts, proposal_conflicts_check_failed: conflictsCheckFailed } satisfies WebRouteSurface;
   }
   if (match.key === "drive") {
     const params = new URLSearchParams(match.search);
     const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
     // #5：项目主页「最近文件」深链带 item_id → 网盘高亮该文件(selected_item_id)。
     const itemId = params.get("item_id") ?? params.get("itemId") ?? undefined;
-    const drive = await client.pages.drive({
-      ...withLocale(locale),
-      ...(projectId ? { projectId } : {}),
-      ...(itemId ? { itemId } : {})
-    });
-    if (drive.empty_state === "no_project") {
-      return "empty" as const;
-    }
+    const driveQuery = params.get("q")?.trim() || undefined;
     // 网盘是 GitHub 式核心:同时拉全量项目清单,供面板内的项目切换器/「所有项目」回链使用。
     // M1：清单拉取失败不应连累已加载好的网盘——退化为无切换器(仍展示文件)，而非整页报错。
-    let projects: ProjectListVM;
-    try {
-      projects = await client.listProjects();
-    } catch (error) {
-      // 会话过期(not_identified)要冒泡到重认证分支,别被「退化为无切换器」吞掉。
-      if (error instanceof WorkHubApiError && error.code === "not_identified") {
-        throw error;
-      }
-      projects = { generated_at: new Date().toISOString(), projects: [] };
+    // R4（性能）：两者互不依赖，并行拉；not_identified 仍冒泡去重认证。
+    const [drive, projects] = await Promise.all([
+      client.pages.drive({
+        ...withLocale(locale),
+        ...(projectId ? { projectId } : {}),
+        ...(itemId ? { itemId } : {}),
+        ...(driveQuery ? { q: driveQuery } : {})
+      }),
+      client.listProjects().then(
+        (value): ProjectListVM => value,
+        (error: unknown): ProjectListVM => {
+          if (error instanceof WorkHubApiError && error.code === "not_identified") {
+            throw error;
+          }
+          return { generated_at: new Date().toISOString(), projects: [] };
+        }
+      )
+    ]);
+    if (drive.empty_state === "no_project") {
+      return "empty" as const;
     }
     return { key: "drive", drive, projects } satisfies WebRouteSurface;
   }
@@ -1127,15 +1206,23 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     const params = new URLSearchParams(match.search);
     const projectId = params.get("project_id") ?? params.get("projectId") ?? undefined;
     const meetingId = params.get("m") ?? params.get("meeting_id") ?? params.get("meetingId") ?? undefined;
-    const meetings = await client.pages.meetings({
-      ...withLocale(locale),
-      ...(projectId ? { projectId } : {}),
-      ...(meetingId ? { meetingId } : {})
-    });
+    // 普通用户审查：会议页没有项目切换/返回入口，想看别的项目只能改 URL——与网盘同款项目导航。
+    // R4（性能）：会议页与项目清单并行拉；清单失败照旧退化为空清单（原语义即吞所有错误）。
+    const [meetings, projects] = await Promise.all([
+      client.pages.meetings({
+        ...withLocale(locale),
+        ...(projectId ? { projectId } : {}),
+        ...(meetingId ? { meetingId } : {})
+      }),
+      client.listProjects().then(
+        (value): ProjectListVM => value,
+        (): ProjectListVM => ({ generated_at: new Date().toISOString(), projects: [] })
+      )
+    ]);
     if (meetings.empty_state === "no_project") {
       return "empty" as const;
     }
-    return { key: "meetings", meetings } satisfies WebRouteSurface;
+    return { key: "meetings", meetings, projects } satisfies WebRouteSurface;
   }
   if (match.key === "notifications") {
     const notifications = await client.pages.notifications(withLocale(locale));
@@ -1259,18 +1346,26 @@ function routeStateBackLabel(match: WebRouteMatch, locale: WorkHubLocale): strin
   return undefined;
 }
 
+// R10-0c：intake 起点的项目清单（fail-soft）。会话过期仍要冒泡去重认证。
+async function intakeProjectChoices(client: WorkHubApiClient): Promise<{ projects?: ProjectListVM }> {
+  try {
+    return { projects: await client.listProjects() };
+  } catch (error) {
+    if (error instanceof WorkHubApiError && error.code === "not_identified") {
+      throw error;
+    }
+    return {};
+  }
+}
+
 export function renderWebRouteState(
   match: WebRouteMatch,
   status: Exclude<WebRouteLoadStatus, "ready">,
   locale: WorkHubLocale,
-  input: { traceId?: string; ownerLabel?: string; actionHref?: string; actionLabel?: string; titleOverride?: string; bodyOverride?: string } = {}
+  input: { traceId?: string; ownerLabel?: string; actionHref?: string; actionLabel?: string; titleOverride?: string; bodyOverride?: string; shellUser?: WebProductShellCurrentUser } = {}
 ): WebRouteStateResult {
   const routeState = routeStateFromStatus(status);
-  const html = `<style>${routeStateCss}${webRouteStateScreenCss}</style>
-    <main class="wh-web-route-state-screen" data-r4-web-route-status="${escapeHtml(status)}" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}">
-      <section class="wh-web-route-state-wrap">
-        <div class="wh-web-route-state-meta" data-r4-web-route-api="${escapeHtml(apiLabelFor(match))}"><a class="wh-web-route-state-home" href="/" data-r4-web-route-home="true">WorkHub</a></div>
-        ${renderRouteStateCard({
+  const card = renderRouteStateCard({
     routeKey: match.key,
     state: routeState,
     locale,
@@ -1281,7 +1376,33 @@ export function renderWebRouteState(
     ...(input.actionLabel ? { actionLabel: input.actionLabel } : {}),
     ...(input.titleOverride ? { titleOverride: input.titleOverride } : {}),
     ...(input.bodyOverride ? { bodyOverride: input.bodyOverride } : {})
-  })}
+  });
+  // R10-S3（P2-6）：已登录（有 shellUser）时非 Ready 态保留产品壳——顶栏/分组导航/身份都在，
+  // 403/404/error 只是主内容区的一张状态卡，不再像被踢出了 WorkHub。boot 阶段（无身份）仍走全屏裸卡。
+  if (input.shellUser) {
+    const entries = shellPageOrderFor(match)
+      .map((key) => ({ key, route: shellDefaultRoutes[key], title: shellPageTitles[locale][key] }));
+    const stateShell = renderWebProductStateShell({
+      locale,
+      appName: "WorkHub",
+      currentRoute: match.pathname,
+      activeKey: match.key,
+      entries,
+      currentUser: input.shellUser,
+      contentHtml: `<section class="wh-web-route-state-wrap wh-web-route-state-wrap--shelled" data-r4-web-route-api="${escapeHtml(apiLabelFor(match))}">${card}</section>`
+    });
+    return {
+      status,
+      match,
+      html: `<style>${routeStateCss}${stateShell.css}.wh-product-main .wh-web-route-state-wrap{width:min(560px,100%);display:grid;gap:12px;min-width:0;margin:8vh auto 0}</style>
+    <div data-r4-web-route-status="${escapeHtml(status)}" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}">${stateShell.html}</div>`
+    };
+  }
+  const html = `<style>${routeStateCss}${webRouteStateScreenCss}</style>
+    <main class="wh-web-route-state-screen" data-r4-web-route-status="${escapeHtml(status)}" data-r4-web-route-key="${escapeHtml(match.key)}" data-r4-web-route-pattern="${escapeHtml(match.pattern)}">
+      <section class="wh-web-route-state-wrap">
+        <div class="wh-web-route-state-meta" data-r4-web-route-api="${escapeHtml(apiLabelFor(match))}"><a class="wh-web-route-state-home" href="/" data-r4-web-route-home="true">WorkHub</a></div>
+        ${card}
       </section>
     </main>`;
   return {
@@ -1320,6 +1441,11 @@ function renderReadyRoute(
   };
 }
 
+// 设计决策（R4 审查裁定，不是遗漏）：路由层零缓存——每次导航都重新拉取页面 VM。
+// 理由：①页面数据是审批/预算/运行态等高时效运营数据，陈旧缓存会直接误导决策；
+// ②实时性已由 SSE（refreshCurrentRouteFromLiveEvent）负责推给「停留中」的页面，导航拉新
+// 是正确性选择而非性能疏忽；③loader 内已做并行化（Promise.all）压掉串行 RTT。
+// 若未来要加缓存，只能做「stale-while-revalidate 的骨架替代」，绝不能把陈旧 VM 当终态渲染。
 export async function loadWebRoute(
   client: WorkHubApiClient,
   match: WebRouteMatch,
@@ -1334,18 +1460,22 @@ export async function loadWebRoute(
         actionHref: result.actionHref,
         ...(result.actionLabel ? { actionLabel: result.actionLabel } : {}),
         ...(result.titleOverride ? { titleOverride: result.titleOverride } : {}),
-        ...(result.bodyOverride ? { bodyOverride: result.bodyOverride } : {})
+        ...(result.bodyOverride ? { bodyOverride: result.bodyOverride } : {}),
+        ...(shellUser ? { shellUser } : {})
       });
     }
     if (result === "empty" || result === "error" || result === "notFound") {
       // empty / notFound 都是可恢复态:动作回到来源列表(详情页→列表)或首页;error 才给「重试」。
       const backLabel = result === "error" ? undefined : routeStateBackLabel(match, locale);
+      // R10-P2-12：错误态「重试」保留查询串——/drive?project_id、/knowledge/search?q 等页重试
+      // 不再丢上下文打开错误对象。
       const stateInput = result === "error"
-        ? { traceId: `route=${match.pathname}`, actionHref: match.pathname }
+        ? { traceId: `route=${match.pathname}`, actionHref: `${match.pathname}${match.search}` }
         : { actionHref: routeStateBackHref(match), ...(backLabel ? { actionLabel: backLabel } : {}) };
       return renderWebRouteState(match, result, locale, {
         ...stateInput,
-        ...(routeStateCopyOverride(match, result, locale) ?? {})
+        ...(routeStateCopyOverride(match, result, locale) ?? {}),
+        ...(shellUser ? { shellUser } : {})
       });
     }
     return renderReadyRoute(result, match, locale, shellUser);
@@ -1364,12 +1494,13 @@ export async function loadWebRoute(
         ? routeStateBackLabel(match, locale)
         : undefined;
     const stateInput = {
-      actionHref: escapable ? routeStateBackHref(match) : match.pathname,
+      // R10-P2-12：error 留在原地重试时带上查询串。
+      actionHref: escapable ? routeStateBackHref(match) : `${match.pathname}${match.search}`,
       ...(backLabel ? { actionLabel: backLabel } : {}),
       ...(status === "error" ? { traceId: errorTrace(error) } : {}),
       ...(status === "forbidden" ? { ownerLabel: forbiddenOwnerLabel(error, locale) } : {}),
       ...(routeStateCopyOverride(match, status, locale) ?? {})
     };
-    return renderWebRouteState(match, status, locale, stateInput);
+    return renderWebRouteState(match, status, locale, { ...stateInput, ...(shellUser ? { shellUser } : {}) });
   }
 }

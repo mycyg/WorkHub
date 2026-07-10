@@ -1,19 +1,115 @@
 // WorkHub 桌面 · Spotlight「工作项」能力内联视图。
 // 无全局 work-item 列表端点 → 列表借 pages.attention.background_runs（在跑/排队的工作项，去重）；
-// 点开 pages.workItem(id) → 统一玻璃详情（状态/验收/最新改动/AI 轨迹）+ spec_ready 时一键派活 startAgentRun。
+// 点开 pages.workItem(id) → 统一玻璃详情（状态/验收/最新改动/AI 轨迹）+ spec_ready 时先生成任务计划给人审。
 // 历史/其它工作项从 项目/审批/看改动 进入。list→detail 盒内联 morph。
 
-import type { WorkItemDetailVM } from "@workhub/contracts";
+import type { WorkItemAgentTeamVM, WorkItemDetailVM } from "@workhub/contracts";
+import { taskPlanItemRoleLabel, taskPlanItemStatusLabel, taskPlanStatusLabel, uiFormatCny } from "@workhub/ui";
 import { publicProposalDisplayTitle } from "@workhub/ui/proposal";
-import { escapeHtml } from "@workhub/web-runtime";
+import { escapeHtml, safeHref } from "@workhub/web-runtime";
 
-import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
+import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightTarget, type SpotlightViewContext } from "../view-context.js";
 import { agentStepPhaseLabel, agentStepPublicSummary, workItemPriorityLabel, workItemStatusLabel } from "../labels.js";
+
+function taskPlanHtml(vm: WorkItemDetailVM, zh: boolean): string {
+  const plan = vm.task_plan;
+  if (!plan) {
+    return "";
+  }
+  const locale = zh ? "zh-CN" : "en-US";
+  const rows = plan.items.slice(0, 4).map((item, index) => `<div class="wh-spot-trace-step" data-spot-task-plan-item="${escapeHtml(item.id)}">
+    <div class="wh-spot-trace-phase">${escapeHtml(`${index + 1}. ${taskPlanItemRoleLabel(locale, item.role)} · ${item.budget_share_pct}%`)}</div>
+    <div class="wh-spot-trace-out">${escapeHtml(item.title)}</div>
+  </div>`).join("");
+  const capped = plan.items_capped
+    ? `<div class="wh-spot-change-path" data-spot-task-plan-capped="true">${zh ? "仅显示前 50 个子任务" : "Showing first 50 subtasks"}</div>`
+    : "";
+  return `<div class="wh-spot-change" data-spot-task-plan="true" data-spot-task-plan-status="${escapeHtml(plan.status)}">
+    <div class="wh-spot-change-head">
+      <span class="wh-spot-chip wh-spot-chip--info">${zh ? "任务计划" : "Task plan"}</span>
+      <span class="wh-spot-change-path">${escapeHtml(taskPlanStatusLabel(locale, plan.status))}</span>
+    </div>
+    <div class="wh-spot-trace">${rows || `<div class="wh-spot-change-path">${zh ? "暂无子任务" : "No subtasks yet"}</div>`}</div>
+    ${capped}
+  </div>`;
+}
+
+// B-R9.6 UX 审计：与 web 同一套状态词表（paused/部分完成/待出发），两端不许各说各话。
+function agentTeamTitle(team: WorkItemAgentTeamVM, zh: boolean) {
+  const ratio = `${team.completed_count}/${team.total_count}`;
+  if (team.status === "done") {
+    return team.completed_count < team.total_count
+      ? (zh ? `军团部分完成 ${ratio}` : `Agent team partially done ${ratio}`)
+      : (zh ? `军团已完成 ${ratio}` : `Agent team completed ${ratio}`);
+  }
+  if (team.status === "paused") {
+    return zh ? `军团已暂停 ${ratio}` : `Agent team paused ${ratio}`;
+  }
+  if (team.status === "approved") {
+    return zh ? `军团待出发 ${ratio}` : `Agent team ready ${ratio}`;
+  }
+  return zh ? `军团进行中 ${ratio}` : `Agent team in progress ${ratio}`;
+}
+
+function agentTeamItemStatusLabel(status: WorkItemAgentTeamVM["items"][number]["status"], zh: boolean) {
+  if (status === "needs_human") {
+    return zh ? "等你决定" : "Needs decision";
+  }
+  return taskPlanItemStatusLabel(zh ? "zh-CN" : "en-US", status);
+}
+
+function agentTeamActionTarget(href: string): { view: "replay" | "approvals"; target: SpotlightTarget } | undefined {
+  const safe = safeHref(href);
+  const replayId = /^\/agent-runs\/([^/?#]+)\/replay$/u.exec(safe)?.[1];
+  if (replayId) {
+    return { view: "replay", target: { id: decodeURIComponent(replayId), route: safe } };
+  }
+  if (safe === "/attention") {
+    return { view: "approvals", target: { route: safe } };
+  }
+  return undefined;
+}
+
+function agentTeamHtml(vm: WorkItemDetailVM, zh: boolean): string {
+  const team = vm.agent_team;
+  if (!team) {
+    return "";
+  }
+  const locale = zh ? "zh-CN" : "en-US";
+  const rows = team.items.slice(0, 4).map((item) => {
+    const action = item.action
+      ? `<button type="button" class="wh-spot-chip wh-spot-chip--info ds-pressable" data-spot-agent-team-action="${escapeHtml(item.action.kind)}" data-spot-agent-team-action-href="${escapeHtml(safeHref(item.action.href))}">${escapeHtml(item.action.label)}</button>`
+      : "";
+    const cost = item.cost_estimate_cny ? `<span class="wh-spot-change-path">${escapeHtml(uiFormatCny(item.cost_estimate_cny))}</span>` : "";
+    // UX（规格 §3.1 桌面条款）：行点击 = 盒子内联 morph 到该子 run 轨迹（有 run 才可点）。
+    const rowReplay = item.replay_href ? ` data-spot-agent-team-row-replay="${escapeHtml(safeHref(item.replay_href))}"` : "";
+    return `<div class="wh-spot-trace-step${item.replay_href ? " ds-pressable" : ""}" data-spot-agent-team-item="${escapeHtml(item.task_plan_item_id)}" data-spot-agent-team-status="${escapeHtml(item.status)}"${rowReplay}>
+      <div class="wh-spot-trace-phase">${escapeHtml(`#${item.seq} ${taskPlanItemRoleLabel(locale, item.role)} · ${agentTeamItemStatusLabel(item.status, zh)}`)}</div>
+      <div class="wh-spot-trace-out">${escapeHtml(item.title)}</div>
+      <div class="wh-spot-change-head">${cost}${action}</div>
+    </div>`;
+  }).join("");
+  const capped = team.runs_capped
+    ? `<div class="wh-spot-change-path" data-spot-agent-team-capped="true">${zh ? "仅显示前 100 个子运行" : "Showing first 100 child runs"}</div>`
+    : "";
+  return `<div class="wh-spot-change" data-spot-agent-team="true" data-spot-agent-team-status="${escapeHtml(team.status)}">
+    <div class="wh-spot-change-head">
+      <span class="wh-spot-chip wh-spot-chip--info">${escapeHtml(agentTeamTitle(team, zh))}</span>
+      <span class="wh-spot-change-path">${escapeHtml(uiFormatCny(team.cost_used_cny))}</span>
+    </div>
+    <div class="wh-spot-trace">${rows || `<div class="wh-spot-change-path">${zh ? "暂无子运行" : "No child runs yet"}</div>`}</div>
+    ${capped}
+  </div>`;
+}
 
 export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const w = vm.workitem;
-  // #22：与 web 同口径——已有变更/已跑过就不再显示「派给 AI」，否则会出现「再跑一发」歧义按钮。
-  const canRun = w.status === "spec_ready" && !vm.latest_proposal && (vm.agent_trace_preview?.length ?? 0) === 0;
+  const canDraftTaskPlan =
+    w.status === "spec_ready" &&
+    !vm.latest_proposal &&
+    !vm.task_plan &&
+    !vm.agent_team &&
+    (vm.agent_trace_preview?.length ?? 0) === 0;
   // #11：从网盘评论/会议洞察生成的工作项带 create_proposal_draft 动作 → 桌面也给「生成变更草稿」入口。
   const createDraft = vm.actions.create_proposal_draft
     ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-create-proposal="${escapeHtml(w.id)}">${zh ? "生成变更草稿" : "Create proposal draft"}</button>`
@@ -22,12 +118,17 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
   const traceHtml = trace.length
     ? `<div class="wh-spot-trace">${trace
         .slice(0, 8)
-        .map((s) => `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}${s.tool_name ? ` · ${escapeHtml(s.tool_name)}` : ""}</div><div class="wh-spot-trace-out">${escapeHtml(agentStepPublicSummary(s, zh))}</div></div>`)
+        .map((s) => `<div class="wh-spot-trace-step"><div class="wh-spot-trace-phase">${escapeHtml(agentStepPhaseLabel(s.phase, zh))}</div><div class="wh-spot-trace-out">${escapeHtml(agentStepPublicSummary(s, zh))}</div></div>`)
         .join("")}</div>`
     : "";
   const proposal = vm.latest_proposal
     ? `<div class="wh-spot-change"><div class="wh-spot-change-head"><span class="wh-spot-chip wh-spot-chip--info">${zh ? "最新改动" : "Latest change"}</span></div><div class="wh-spot-change-sum">${escapeHtml(publicProposalDisplayTitle(vm.latest_proposal.title, zh ? "zh-CN" : "en-US"))}</div></div>`
     : "";
+  // B-R9.6 UX 审计（H1 卡位）：同 web——军团活跃/终态渲军团压缩版，否则渲计划快照，不双渲。
+  const teamStatuses = new Set(["approved", "dispatching", "paused", "done"]);
+  const showTeam = Boolean(vm.agent_team && teamStatuses.has(vm.agent_team.status));
+  const taskPlan = showTeam ? "" : taskPlanHtml(vm, zh);
+  const agentTeam = showTeam ? agentTeamHtml(vm, zh) : "";
   return `<div class="wh-spot-dash ds-anim-fade-in">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-wi-back style="align-self:flex-start">${zh ? "← 返回" : "← Back"}</button>
     <div>
@@ -39,10 +140,21 @@ export function detailHtml(vm: WorkItemDetailVM, zh: boolean): string {
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "验收项" : "Acceptance"}</span><span class="wh-spot-metric-v">${vm.acceptance.length}</span></div>
       <div class="wh-spot-metric"><span class="wh-spot-metric-k">${zh ? "交付物" : "Deliverables"}</span><span class="wh-spot-metric-v">${vm.accepted_deliverables.length}</span></div>
     </div>
+    ${agentTeam}
+    ${taskPlan}
     ${proposal}
     ${traceHtml}
-    ${createDraft || canRun ? `<div class="wh-spot-card-actions">${createDraft}${canRun ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-run="${escapeHtml(w.id)}">${zh ? "派给 AI 干" : "Dispatch to AI"}</button>` : ""}</div>` : ""}
+    ${createDraft || canDraftTaskPlan ? `<div class="wh-spot-card-actions">${createDraft}${canDraftTaskPlan ? `<button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-wi-task-plan="${escapeHtml(w.id)}">${zh ? "生成任务计划" : "Draft task plan"}</button>` : ""}</div>` : ""}
   </div>`;
+}
+
+export function workItemListHtml(items: Array<{ id: string; title: string }>, zh: boolean): string {
+  if (!items.length) {
+    return `<div class="wh-spot-empty"><div class="wh-spot-empty-face">(=･ｪ･=)</div><h3 class="wh-spot-empty-title">${zh ? "暂无进行中的工作项" : "No active work items"}</h3><p class="wh-spot-empty-sub">${zh ? "新建一个任务，或从 项目 / 审批 进入具体工作项" : "Create a task, or open one from Projects / Approvals"}</p></div>`;
+  }
+  return `<div class="wh-spot-list ds-stagger">${items
+    .map((it) => `<button type="button" class="wh-spot-row" data-wi-open="${escapeHtml(it.id)}" style="cursor:pointer;width:100%;text-align:left"><div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(it.title)}</div></div></button>`)
+    .join("")}</div>`;
 }
 
 export function createWorkItemView(): SpotlightCapabilityView {
@@ -73,12 +185,10 @@ export function createWorkItemView(): SpotlightCapabilityView {
             .filter((r) => r.work_item_id && !seen.has(r.work_item_id) && seen.add(r.work_item_id))
             .map((r) => ({ id: r.work_item_id as string, title: r.title }));
           if (!items.length) {
-            body.innerHTML = `<div class="wh-spot-empty"><div class="wh-spot-empty-face">(=･ｪ･=)</div><h3 class="wh-spot-empty-title">${zh ? "暂无进行中的工作项" : "No active work items"}</h3><p class="wh-spot-empty-sub">${zh ? "派个活，或从 项目 / 审批 进入具体工作项" : "Dispatch a task, or open one from Projects / Approvals"}</p></div>`;
+            body.innerHTML = workItemListHtml([], zh);
           } else {
             ctx.setSubtitle(zh ? `${items.length} 个进行中` : `${items.length} active`);
-            body.innerHTML = `<div class="wh-spot-list ds-stagger">${items
-              .map((it) => `<button type="button" class="wh-spot-row" data-wi-open="${escapeHtml(it.id)}" style="cursor:pointer;width:100%;text-align:left"><div class="wh-spot-row-main"><div class="wh-spot-row-title">${escapeHtml(it.title)}</div></div></button>`)
-              .join("")}</div>`;
+            body.innerHTML = workItemListHtml(items, zh);
           }
         } catch {
           if (!disposed && gen === loadGen) {
@@ -87,6 +197,8 @@ export function createWorkItemView(): SpotlightCapabilityView {
           }
         }
         ctx.requestResize();
+        // R11（键盘全程）：innerHTML 重渲后焦点掉回 body——交还内容区，Tab 起点可预期。
+        ctx.refocusBody();
       };
 
       const showDetail = async (id: string) => {
@@ -106,6 +218,8 @@ export function createWorkItemView(): SpotlightCapabilityView {
           }
         }
         ctx.requestResize();
+        // R11（键盘全程）：innerHTML 重渲后焦点掉回 body——交还内容区，Tab 起点可预期。
+        ctx.refocusBody();
       };
 
       body.addEventListener("click", (event) => {
@@ -122,6 +236,27 @@ export function createWorkItemView(): SpotlightCapabilityView {
         const open = target.closest<HTMLElement>("[data-wi-open]");
         if (open?.dataset.wiOpen) {
           void showDetail(open.dataset.wiOpen);
+          return;
+        }
+        const agentAction = target.closest<HTMLElement>("[data-spot-agent-team-action-href]");
+        if (agentAction?.dataset.spotAgentTeamActionHref) {
+          event.preventDefault();
+          const actionTarget = agentTeamActionTarget(agentAction.dataset.spotAgentTeamActionHref);
+          if (actionTarget) {
+            ctx.open(actionTarget.view, actionTarget.target);
+          } else {
+            ctx.toast(zh ? "这个入口暂时打不开" : "This action is not available here", "error");
+          }
+          return;
+        }
+        // UX（§3.1 桌面条款）：军团行点击 morph 到子 run 轨迹。
+        const teamRow = target.closest<HTMLElement>("[data-spot-agent-team-row-replay]");
+        if (teamRow?.dataset.spotAgentTeamRowReplay) {
+          event.preventDefault();
+          const rowTarget = agentTeamActionTarget(teamRow.dataset.spotAgentTeamRowReplay);
+          if (rowTarget) {
+            ctx.open(rowTarget.view, rowTarget.target);
+          }
           return;
         }
         const draft = target.closest<HTMLElement>("[data-wi-create-proposal]");
@@ -142,20 +277,25 @@ export function createWorkItemView(): SpotlightCapabilityView {
             });
           return;
         }
-        const run = target.closest<HTMLElement>("[data-wi-run]");
-        if (run?.dataset.wiRun && !busy) {
+        const taskPlan = target.closest<HTMLElement>("[data-wi-task-plan]");
+        if (taskPlan?.dataset.wiTaskPlan && !busy) {
           busy = true;
-          const id = run.dataset.wiRun;
-          run.textContent = zh ? "派活中…" : "Dispatching…";
+          const id = taskPlan.dataset.wiTaskPlan;
+          taskPlan.textContent = zh ? "生成计划中…" : "Drafting plan…";
+          let openedProposal = false;
           void client
-            .startAgentRun(id)
-            .then(() => {
-              ctx.toast(zh ? "已派给 AI，Cuu 开干了" : "Dispatched to AI", "ok");
+            .createTaskPlan(id, {}, { locale: ctx.locale })
+            .then((result) => {
+              ctx.toast(zh ? "任务计划已生成，请先审阅" : "Task plan drafted. Review it first.", "ok");
+              ctx.open("proposals", { id: result.proposal_id, route: result.proposal_href });
+              openedProposal = true;
             })
-            .catch(() => ctx.toast(zh ? "派活失败，稍后重试" : "Dispatch failed — retry", "error"))
+            .catch(() => ctx.toast(zh ? "生成计划失败，稍后重试" : "Couldn't draft plan — retry", "error"))
             .finally(() => {
               busy = false;
-              void showDetail(id);
+              if (!openedProposal) {
+                void showDetail(id);
+              }
             });
         }
       });
