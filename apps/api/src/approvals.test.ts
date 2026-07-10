@@ -310,7 +310,25 @@ class ThrowingAuditLogs extends MemoryAuditLogs {
   }
 }
 
-function serviceDeps(policies: PermissionPolicyRecord[] = []) {
+function eligibleDelegate(targetUserIds: readonly string[]) {
+  const eligible = new Set(targetUserIds);
+  return {
+    users: {
+      findActiveById: async (id: string) => eligible.has(id) ? user({ id }) : null
+    },
+    memberships: {
+      findActiveForUserWorkspace: async (id: string, targetWorkspaceId: string) =>
+        eligible.has(id) && targetWorkspaceId === workspaceId
+          ? ({ id: `membership-${id}`, userId: id, workspaceId } as never)
+          : null
+    }
+  };
+}
+
+function serviceDeps(
+  policies: PermissionPolicyRecord[] = [],
+  delegateTargetUserIds: readonly string[] = []
+) {
   const approvals = new MemoryApprovals();
   const policyRepo = new MemoryPolicies(policies);
   const auditLogs = new MemoryAuditLogs();
@@ -325,6 +343,7 @@ function serviceDeps(policies: PermissionPolicyRecord[] = []) {
       auditLogs,
       policies: policyRepo,
       bus,
+      ...(delegateTargetUserIds.length > 0 ? eligibleDelegate(delegateTargetUserIds) : {}),
       now: () => now
     })
   };
@@ -658,7 +677,8 @@ test("remember always does not create a learned policy after an approval race", 
 });
 
 test("approval decisions, delegation, and expiry are audited with identity anchors", async () => {
-  const deps = serviceDeps();
+  const delegatedToUserId = "10000000-0000-4000-8000-000000000003";
+  const deps = serviceDeps([], [delegatedToUserId]);
   const denied = await deps.approvals.createApprovalRequest({
     actionPattern: "tool.write_file",
     workItemId: "50000000-0000-4000-8000-000000000001",
@@ -675,7 +695,7 @@ test("approval decisions, delegation, and expiry are audited with identity ancho
     workItemId: "50000000-0000-4000-8000-000000000001",
     routedToUserId: approverId
   });
-  await deps.service.delegate(delegated.id, actor, "10000000-0000-4000-8000-000000000003");
+  await deps.service.delegate(delegated.id, actor, delegatedToUserId);
 
   const due = await deps.approvals.createApprovalRequest({
     actionPattern: "tool.write_file",
@@ -695,7 +715,7 @@ test("approval decisions, delegation, and expiry are audited with identity ancho
   assert.equal(deps.auditLogs.rows[0]?.detailJson["decided_by_user_id"], approverId);
   assert.match(String(deps.auditLogs.rows[0]?.detailJson["reason_preview"]), /预算附件/);
   assert.equal(deps.auditLogs.rows[1]?.actorUserId, approverId);
-  assert.equal(deps.auditLogs.rows[1]?.detailJson["to_user_id"], "10000000-0000-4000-8000-000000000003");
+  assert.equal(deps.auditLogs.rows[1]?.detailJson["to_user_id"], delegatedToUserId);
   assert.equal(deps.auditLogs.rows[2]?.actorKind, "system");
   assert.equal(deps.auditLogs.rows[2]?.actorUserId, null);
   assert.equal(deps.auditLogs.rows[2]?.detailJson["approval_id"], due.id);
@@ -769,11 +789,13 @@ test("FIX#3 delegate returns the committed reassignment even when the bus publis
       throw new Error("redis connection blip");
     }
   };
+  const toUserId = "10000000-0000-4000-8000-000000000003";
   const service = createApprovalService({
     approvals,
     auditLogs,
     policies: policyRepo,
     bus: throwingBus,
+    ...eligibleDelegate([toUserId]),
     now: () => now
   });
   const seeded = await approvals.createApprovalRequest({
@@ -781,8 +803,6 @@ test("FIX#3 delegate returns the committed reassignment even when the bus publis
     workItemId: "50000000-0000-4000-8000-000000000001",
     routedToUserId: approverId
   });
-  const toUserId = "10000000-0000-4000-8000-000000000003";
-
   const result = await service.delegate(seeded.id, actor, toUserId);
   assert.equal(result.approval.routed_to_user_id, toUserId);
   assert.equal((await approvals.findById(seeded.id))?.routedToUserId, toUserId);
@@ -794,11 +814,13 @@ test("delegate returns the committed reassignment even when post-commit audit wr
   const auditLogs = new ThrowingAuditLogs();
   const policyRepo = new MemoryPolicies();
   const bus = new RecordingBus();
+  const toUserId = "10000000-0000-4000-8000-000000000003";
   const service = createApprovalService({
     approvals,
     auditLogs,
     policies: policyRepo,
     bus,
+    ...eligibleDelegate([toUserId]),
     now: () => now
   });
   const seeded = await approvals.createApprovalRequest({
@@ -806,8 +828,6 @@ test("delegate returns the committed reassignment even when post-commit audit wr
     workItemId: "50000000-0000-4000-8000-000000000001",
     routedToUserId: approverId
   });
-  const toUserId = "10000000-0000-4000-8000-000000000003";
-
   const result = await service.delegate(seeded.id, actor, toUserId);
 
   assert.equal(result.approval.routed_to_user_id, toUserId);
@@ -815,20 +835,122 @@ test("delegate returns the committed reassignment even when post-commit audit wr
   assert.equal(bus.events.some((event) => event.type === "permission.reassigned"), true);
 });
 
-test("delegate rejects a target outside the actor workspace even when the work item is otherwise public", async () => {
+test("delegate rejects an active user without an actor-workspace membership before mutation or side effects", async () => {
+  const approvals = new MemoryApprovals();
+  const auditLogs = new MemoryAuditLogs();
+  const policies = new MemoryPolicies();
+  const bus = new RecordingBus();
+  const notificationCalls: unknown[] = [];
+  const targetUserId = "10000000-0000-4000-8000-0000000000d3";
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-0000000000d3",
+    routedToUserId: approverId
+  });
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies,
+    bus,
+    users: {
+      findActiveById: async (id) => id === targetUserId ? user({ id }) : null
+    },
+    memberships: {
+      findActiveForUserWorkspace: async () => null
+    },
+    workItems: {
+      findWorkItemAccessRecord: async () => ({
+        id: seeded.workItemId!,
+        status: "in_review",
+        submitterUserId: userId,
+        claimedByUserId: null,
+        workspaceId,
+        project: {
+          id: "70000000-0000-4000-8000-0000000000d3",
+          workspaceId,
+          orgId,
+          ownerUserId: userId,
+          archived: false,
+          deletedAt: null
+        },
+        assignments: []
+      }) as never
+    },
+    notifications: {
+      createMentionNotification: async () => undefined as never,
+      createNotification: async (input) => {
+        notificationCalls.push(input);
+        return undefined as never;
+      },
+      archiveByDedupeKey: async () => 0
+    },
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.delegate(seeded.id, actor, targetUserId),
+    (error) => error instanceof ApprovalServiceError
+      && error.status === 404
+      && error.code === "delegate_target_not_found"
+  );
+
+  assert.equal((await approvals.findById(seeded.id))?.routedToUserId, approverId);
+  assert.equal(auditLogs.rows.some((entry) => entry.action === "approval.delegated"), false);
+  assert.deepEqual(bus.events, []);
+  assert.deepEqual(notificationCalls, []);
+});
+
+test("delegate returns membership unavailable before mutation or side effects when the capability is absent", async () => {
+  const approvals = new MemoryApprovals();
+  const auditLogs = new MemoryAuditLogs();
+  const policies = new MemoryPolicies();
+  const bus = new RecordingBus();
+  const targetUserId = "10000000-0000-4000-8000-0000000000d4";
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-0000000000d4",
+    routedToUserId: approverId
+  });
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies,
+    bus,
+    users: {
+      findActiveById: async (id) => id === targetUserId ? user({ id }) : null
+    },
+    memberships: false,
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.delegate(seeded.id, actor, targetUserId),
+    (error) => error instanceof ApprovalServiceError
+      && error.status === 503
+      && error.code === "delegate_membership_unavailable"
+  );
+
+  assert.equal((await approvals.findById(seeded.id))?.routedToUserId, approverId);
+  assert.equal(auditLogs.rows.some((entry) => entry.action === "approval.delegated"), false);
+  assert.deepEqual(bus.events, []);
+});
+
+test("delegate rejects a target without actor-workspace membership even when the work item is otherwise visible", async () => {
   const approvals = new MemoryApprovals();
   const auditLogs = new MemoryAuditLogs();
   const policyRepo = new MemoryPolicies();
   const bus = new RecordingBus();
   const targetUserId = "10000000-0000-4000-8000-0000000000d3";
-  const otherWorkspaceId = "99990000-0000-4000-8000-0000000000d3";
   const service = createApprovalService({
     approvals,
     auditLogs,
     policies: policyRepo,
     bus,
     users: {
-      findActiveById: async () => user({ id: targetUserId })
+      findActiveById: async (id) => id === targetUserId ? user({ id }) : null
+    },
+    memberships: {
+      findActiveForUserWorkspace: async () => null
     },
     workItems: {
       findWorkItemAccessRecord: async () => ({
@@ -836,12 +958,12 @@ test("delegate rejects a target outside the actor workspace even when the work i
         status: "in_review",
         submitterUserId: "10000000-0000-4000-8000-0000000000ee",
         claimedByUserId: null,
-        workspaceId: otherWorkspaceId,
+        workspaceId,
         project: {
           id: "70000000-0000-4000-8000-0000000000d3",
-          workspaceId: otherWorkspaceId,
+          workspaceId,
           orgId,
-          ownerUserId: "10000000-0000-4000-8000-0000000000ee",
+          ownerUserId: targetUserId,
           archived: false,
           deletedAt: null
         },
@@ -859,8 +981,8 @@ test("delegate rejects a target outside the actor workspace even when the work i
   await assert.rejects(
     () => service.delegate(seeded.id, actor, targetUserId),
     (error) => error instanceof ApprovalServiceError &&
-      error.status === 422 &&
-      error.code === "delegate_target_cannot_view"
+      error.status === 404 &&
+      error.code === "delegate_target_not_found"
   );
   assert.equal((await approvals.findById(seeded.id))?.routedToUserId, approverId);
 });
@@ -899,6 +1021,7 @@ test("findings[#172] delegatePending CAS rejects stale delegation after the requ
     auditLogs,
     policies: policyRepo,
     bus,
+    ...eligibleDelegate([userB, userC]),
     now: () => now
   });
   const req = await approvals.createApprovalRequest({

@@ -1410,6 +1410,9 @@ test("OpenAPI error responses document approval, meeting, and work item mutation
   assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "404", ["not_found", "delegate_target_not_found"]);
   assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "409", ["approval_race"]);
   assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "422", ["delegate_to_requester", "delegate_target_cannot_view"]);
+  assertJsonErrorCodes(body.paths, "/api/approvals/{id}/delegate", "post", "503", [
+    "delegate_membership_unavailable"
+  ]);
 
   assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "400", ["malformed_json", "json_object_required"]);
   assertJsonErrorCodes(body.paths, "/api/escalations/{id}/resolve", "post", "401", ["not_identified"]);

@@ -23,6 +23,7 @@ import {
   createPermissionPolicyRepository,
   createUserRepository,
   createWorkItemRepository,
+  createWorkspaceMembershipRepository,
   type ApprovalCommentRepository,
   type ApprovalCommentRow,
   type AuditLogRepository,
@@ -35,7 +36,8 @@ import {
   type UserRepository,
   type WorkItemAccessRow,
   type WorkItemDataRepository,
-  type WorkHubDatabaseClient
+  type WorkHubDatabaseClient,
+  type WorkspaceMembershipRepository
 } from "@workhub/db";
 import { topics } from "@workhub/events";
 import {
@@ -177,6 +179,7 @@ export type ApprovalServiceDependencies = {
   // 可选：用于校验委派目标用户存在（L#48）。缺省时退化为不校验（旧测试夹具）。
   // findActiveByNickname 供 @mentions 解析被点名用户，本身也是可选——旧夹具只给 findActiveById 时不解析 mention。
   users?: Pick<UserRepository, "findActiveById"> & Partial<Pick<UserRepository, "findActiveByNickname">>;
+  memberships?: Pick<WorkspaceMembershipRepository, "findActiveForUserWorkspace"> | false;
   // 可选：委派守卫用——把审批挂的工作项摊平成可见性记录，校验转交目标确实能看到该事项（与 routeApprover 一致）。
   // 缺省时退化为不校验工作项可见性（旧测试夹具不提供）。
   workItems?: Pick<WorkItemDataRepository, "findWorkItemAccessRecord"> & Partial<Pick<WorkItemDataRepository, "findWorkItemAccessRecords">>;
@@ -211,6 +214,7 @@ export function getDefaultApprovalServiceDependencies(): ApprovalServiceDependen
     auditLogs: createAuditLogRepository(defaultDbClient.db),
     policies: createPermissionPolicyRepository(defaultDbClient.db),
     users: createUserRepository(defaultDbClient.db),
+    memberships: createWorkspaceMembershipRepository(defaultDbClient.db),
     workItems: createWorkItemRepository(defaultDbClient.db),
     proposals: getDefaultProposalService(),
     approvalComments: createApprovalCommentRepository(defaultDbClient.db),
@@ -548,6 +552,7 @@ function auditEntity(row: ApprovalRequestRow) {
 
 export function createApprovalService(deps: ApprovalServiceDependencies = getDefaultApprovalServiceDependencies()) {
   const now = deps.now ?? (() => new Date());
+  const memberships = deps.memberships === false ? undefined : deps.memberships;
 
   async function auditApprovalAction(
     row: ApprovalRequestRow,
@@ -1110,6 +1115,18 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
         if (!target) {
           throw new ApprovalServiceError(404, "delegate_target_not_found", "找不到要转交的成员。");
         }
+      }
+
+      if (!memberships) {
+        throw new ApprovalServiceError(
+          503,
+          "delegate_membership_unavailable",
+          "成员资格暂时无法校验，审批没有被转交。"
+        );
+      }
+      const targetMembership = await memberships.findActiveForUserWorkspace(toUserId, actor.workspaceId);
+      if (!targetMembership) {
+        throw new ApprovalServiceError(404, "delegate_target_not_found", "找不到要转交的成员。");
       }
 
       // 与 routeApprover/usableCandidate 一致的转交守卫：审批挂在某个工作项上时，转交目标必须
