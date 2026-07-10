@@ -86,7 +86,7 @@ export type WebRouteSurface =
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
   | { key: "intake"; session: SessionVM }
-  | { key: "intake"; start: true; project?: { id: string; name: string }; project_unavailable?: boolean }
+  | { key: "intake"; start: true; project?: { id: string; name: string }; project_unavailable?: boolean; projects?: ProjectListVM | undefined }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[]; proposal_conflicts_check_failed?: boolean | undefined }
@@ -899,7 +899,8 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
           key: "intake",
           start: true,
           ...(surface.project ? { project: surface.project } : {}),
-          ...(surface.project_unavailable ? { projectUnavailable: true } : {})
+          ...(surface.project_unavailable ? { projectUnavailable: true } : {}),
+          ...(surface.projects ? { projects: surface.projects } : {})
         },
         { locale }
       );
@@ -1074,10 +1075,12 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
             throw error;
           }
           // 来自的项目拉不到(已删/无权限/旧链接)：不静默切换，标记 project_unavailable → 渲染明确提示，再退化为通用起点。
-          return { key: "intake", start: true, project_unavailable: true } satisfies WebRouteSurface;
+          return { key: "intake", start: true, project_unavailable: true, ...(await intakeProjectChoices(client)) } satisfies WebRouteSurface;
         }
       }
-      return { key: "intake", start: true } satisfies WebRouteSurface;
+      // R10-0c（P1-1）：通用入口不再静默落到共享「试点项目」——拉项目清单渲显式项目选择器，
+      // 用户自己挑落点（真活跃排序，首项默认）。清单拉取失败退化为原试点兜底（不挡提需求）。
+      return { key: "intake", start: true, ...(await intakeProjectChoices(client)) } satisfies WebRouteSurface;
     }
     const session = await client.getSession(sessionId, withLocale(locale));
     return { key: "intake", session } satisfies WebRouteSurface;
@@ -1341,6 +1344,18 @@ function routeStateBackLabel(match: WebRouteMatch, locale: WorkHubLocale): strin
     return locale === "zh-CN" ? "去项目" : "Go to projects";
   }
   return undefined;
+}
+
+// R10-0c：intake 起点的项目清单（fail-soft）。会话过期仍要冒泡去重认证。
+async function intakeProjectChoices(client: WorkHubApiClient): Promise<{ projects?: ProjectListVM }> {
+  try {
+    return { projects: await client.listProjects() };
+  } catch (error) {
+    if (error instanceof WorkHubApiError && error.code === "not_identified") {
+      throw error;
+    }
+    return {};
+  }
 }
 
 export function renderWebRouteState(

@@ -175,6 +175,8 @@ export type ClarificationQuestionDraft = {
   title: string;
   body?: string | undefined;
   placeholder?: string | undefined;
+  options?: Array<{ id?: string | undefined; label: string; description?: string | undefined }> | undefined;
+  recommended_option_id?: string | undefined;
 };
 
 type ClarificationQuestionInput = {
@@ -469,10 +471,21 @@ function titleFromIntent(intentText: string | undefined) {
   return compact ?? "待澄清事项";
 }
 
+// R10-0c：澄清草稿升级为「选项优先」契约——LLM 给出 2-4 个可点选的具体答案候选（含推荐项），
+// 自由文本降级为折叠兜底（page-concepts §Option Cards 的产品承诺）。旧存量草稿无 options，
+// 渲染端自动退化为长文本，不炸。
+const clarificationOptionSchema = z.object({
+  id: z.string().trim().min(1).max(64).optional(),
+  label: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(200).optional()
+});
+
 const clarificationQuestionDraftSchema = z.object({
   title: z.string().trim().min(2).max(160),
   body: z.string().trim().max(900).optional(),
-  placeholder: z.string().trim().max(180).optional()
+  placeholder: z.string().trim().max(180).optional(),
+  options: z.array(clarificationOptionSchema).max(4).optional(),
+  recommended_option_id: z.string().trim().min(1).max(64).optional()
 });
 
 const CLARIFICATION_LLM_MAX_TOKENS = 1_600;
@@ -571,10 +584,35 @@ function clarificationDraftFromRawJson(raw: unknown, locale: WorkHubLocale): Cla
   if (!title) {
     throw invalidClarificationResponseError(locale);
   }
+  // R10-0c：选项候选——LLM 返回 options 数组时逐条收口（label 必填、截断、最多 4 条、id 缺省按序补）。
+  // 解析失败不整体拒稿：选项是增强，退化为无选项长文本仍是合法草稿。
+  const rawOptions = raw && typeof raw === "object" && Array.isArray((raw as Record<string, unknown>)["options"])
+    ? ((raw as Record<string, unknown>)["options"] as unknown[])
+    : [];
+  const options = rawOptions
+    .map((entry, index) => {
+      if (!entry || typeof entry !== "object") {
+        return undefined;
+      }
+      const record = entry as Record<string, unknown>;
+      const label = compactText(typeof record["label"] === "string" ? record["label"] : undefined, 80);
+      if (!label) {
+        return undefined;
+      }
+      const id = compactText(typeof record["id"] === "string" ? record["id"] : undefined, 64) ?? `option-${index + 1}`;
+      const description = compactText(typeof record["description"] === "string" ? record["description"] : undefined, 200);
+      return { id, label, ...(description ? { description } : {}) };
+    })
+    .filter((entry): entry is { id: string; label: string; description?: string } => Boolean(entry))
+    .slice(0, 4);
+  const recommendedRaw = raw && typeof raw === "object" ? (raw as Record<string, unknown>)["recommended_option_id"] : undefined;
+  const recommended = compactText(typeof recommendedRaw === "string" ? recommendedRaw : undefined, 64);
   const draft = {
     title,
     body: questionText ? compactText(bodyText, 900) : undefined,
-    placeholder: compactText(pickClarificationTextField(raw, ["placeholder"]), 180)
+    placeholder: compactText(pickClarificationTextField(raw, ["placeholder"]), 180),
+    ...(options.length >= 2 ? { options } : {}),
+    ...(options.length >= 2 && recommended && options.some((option) => option.id === recommended) ? { recommended_option_id: recommended } : {})
   };
   const parsed = clarificationQuestionDraftSchema.safeParse(draft);
   if (!parsed.success) {
@@ -607,10 +645,16 @@ function normalizeClarificationDraft(
   }
   const body = compactText(parsed.data.body, 900);
   const placeholder = compactText(parsed.data.placeholder, 180);
+  const options = (parsed.data.options ?? []).length >= 2 ? parsed.data.options : undefined;
+  const recommended = options && parsed.data.recommended_option_id && options.some((option) => (option.id ?? "") === parsed.data.recommended_option_id)
+    ? parsed.data.recommended_option_id
+    : undefined;
   return {
     title: parsed.data.title,
     ...(body ? { body } : {}),
-    ...(placeholder ? { placeholder } : {})
+    ...(placeholder ? { placeholder } : {}),
+    ...(options ? { options } : {}),
+    ...(recommended ? { recommended_option_id: recommended } : {})
   };
 }
 
@@ -732,14 +776,30 @@ function missingDriveTargetFileNames(input: { intentText: string | undefined; fi
   return targets.filter((target) => !input.files.some((file) => driveContextMatchesTarget(file, target)));
 }
 
-async function fileContextFromDriveRows(rows: DrivePageRows, intentText: string | undefined): Promise<ClarificationFileContext[]> {
+export async function fileContextFromDriveRows(rows: DrivePageRows, intentText: string | undefined): Promise<ClarificationFileContext[]> {
   const itemsById = new Map(rows.items.map((item) => [item.id, item]));
+  const namedTargets = driveTargetFileNamesFromIntent(intentText);
+  // R10-0c（P1-1 根因）：用户没点名文件且与当前意图零相关（score=0）的旧项目文件，不再送进澄清
+  // 上下文——此前相关性全 0 时按原始顺序取前 12 个旧文件，LLM 会拿它们把全新任务带偏成历史任务。
+  // 点名的文件（namedTargets）始终保留；一个相关文件都没有时宁可空上下文，让反问只围绕用户意图。
   const fileItems = rows.items
     .filter((item) => item.kind === "file")
-    .map((item, index) => ({ item, index, path: driveItemPath(item, itemsById) }))
+    .map((item, index) => {
+      const path = driveItemPath(item, itemsById);
+      return {
+        item,
+        index,
+        path,
+        score: driveFileRelevanceScore({ item, path, intentText }),
+        named: namedTargets.some((target) => {
+          const pathName = path.split(/[\\/]/u).pop()?.toLowerCase();
+          return item.name.toLowerCase() === target.toLowerCase() || pathName === target.toLowerCase();
+        })
+      };
+    })
+    .filter((entry) => entry.named || entry.score > 0)
     .sort((left, right) => {
-      const byRelevance = driveFileRelevanceScore({ item: right.item, path: right.path, intentText })
-        - driveFileRelevanceScore({ item: left.item, path: left.path, intentText });
+      const byRelevance = (right.named ? 1000 : right.score) - (left.named ? 1000 : left.score);
       return byRelevance || left.index - right.index;
     })
     .slice(0, 12);
@@ -829,10 +889,13 @@ function clarificationPrompt(input: ClarificationQuestionInput) {
       ? "请根据用户需求和项目文件，生成一个真正需要用户补充的澄清反问。"
       : "Generate one useful clarification question from the user's request and project files.",
     "Return strict JSON only:",
-    `{"title":"...","body":"...","placeholder":"..."}`,
+    `{"title":"...","body":"...","placeholder":"...","options":[{"id":"option-1","label":"...","description":"..."}],"recommended_option_id":"option-1"}`,
     zh
       ? "规则：只问一个问题；不要问预设交付方式；不要使用“需要确认一个关键点”这类泛化标题；反问必须引用用户需求或项目文件中的具体信息；优先围绕文件依据、验收口径、目标读者、缺失输入；如果信息足够，就让用户确认你将采用的文件和假设；使用中文。"
       : "Rules: ask exactly one question; do not ask for a preset delivery type; do not use generic titles like 'One key detail to confirm'; the question must reference concrete information from the user request or project files; prioritize source file, acceptance criteria, audience, or missing input; if enough information exists, ask the user to confirm the file and assumptions; use English.",
+    zh
+      ? "options 规则：给出 2-4 个针对这个问题的具体候选答案（不是交付类型），每条 label ≤ 20 字、description 一句话说明影响；把最合理的一条设为 recommended_option_id。候选必须来自用户需求或文件里的真实信息，凑不出 2 条有区分度的就返回空数组。"
+      : "Options rules: provide 2-4 concrete candidate answers to this exact question (not delivery types); label ≤ 8 words, description one sentence on the consequence; set recommended_option_id to the most sensible one. Candidates must come from real information in the request or files — return an empty array if you cannot form 2 distinct ones.",
     "",
     `Request:\n${intent}`,
     "",
@@ -1578,18 +1641,27 @@ function questionFor(
       locale
     })
   );
+  // R10-0c（P1-1 契约）：首轮澄清落实「选项优先」——LLM 草稿带 ≥2 个候选答案时渲 single_choice
+  // 选项卡（自由文本折叠为兜底）；没有可用候选时诚实退化为长文本（不造假选项）。
+  const scopeOptions = (draft.options ?? [])
+    .map((option, index) => ({
+      id: option.id ?? `option-${index + 1}`,
+      label: option.label,
+      ...(option.description ? { description: option.description } : {})
+    }));
+  const optionFirst = scopeOptions.length >= 2;
   const question: QuestionCard = {
     id: stableUuid(`${workItem.id}:question:scope`),
     session_id: workItem.id,
     work_item_id: workItem.id,
     title: draft.title,
     ...(draft.body ? { body: draft.body } : {}),
-    input_mode: "long_text",
-    options: [],
-    recommended_option_ids: [],
+    input_mode: optionFirst ? "single_choice" : "long_text",
+    options: optionFirst ? scopeOptions : [],
+    recommended_option_ids: optionFirst && draft.recommended_option_id ? [draft.recommended_option_id] : [],
     free_text: {
       enabled: true,
-      collapsed_by_default: false,
+      collapsed_by_default: optionFirst,
       placeholder: draft.placeholder ?? workItemT(locale, "question.clarify.placeholder"),
       max_length: 1000
     },

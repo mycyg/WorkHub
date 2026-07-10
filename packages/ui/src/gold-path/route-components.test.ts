@@ -1898,6 +1898,37 @@ test("R8 intake start head shows a meaningful localized badge (not the 'D0' plac
   assert.equal(en.html.includes('data-r8-intake-badge="true">New<'), true);
 });
 
+test("R10-0c intake start renders an explicit project picker instead of silently defaulting to the pilot project", () => {
+  const withProjects = renderWebRouteComponent({
+    key: "intake",
+    start: true,
+    projects: {
+      generated_at: "2026-07-10T09:00:00.000Z",
+      projects: [
+        { id: "93000000-0000-4000-8000-000000000001", name: "区域发布资料库", slug: "regional", status: "active", open_workitem_count: 2, owner_label: "owner", last_activity_at: "2026-07-09T09:00:00.000Z" },
+        { id: "93000000-0000-4000-8000-000000000002", name: "新一代客服平台", slug: "support", status: "active", open_workitem_count: 1, owner_label: "owner", last_activity_at: "2026-07-08T09:00:00.000Z" }
+      ]
+    } as never
+  }, { locale: "zh-CN" });
+  assert.equal(withProjects.html.includes('data-s4c-intake-project-select="true"'), true);
+  // 首项默认选中（真活跃排序第一位），且保留「新建试点项目」兜底出路。
+  assert.equal(withProjects.html.includes('value="93000000-0000-4000-8000-000000000001" selected'), true);
+  assert.equal(withProjects.html.includes("＋ 新建试点项目"), true);
+
+  // 无项目清单（拉取失败/零项目）退化为原试点起点，不渲空选择器。
+  const withoutProjects = renderWebRouteComponent({ key: "intake", start: true }, { locale: "zh-CN" });
+  assert.equal(withoutProjects.html.includes("data-s4c-intake-project-select"), false);
+  assert.equal(withoutProjects.html.includes("试点项目"), true);
+
+  // 绑定项目（从项目主页进入）优先于选择器——不重复渲选择器。
+  const bound = renderWebRouteComponent({
+    key: "intake",
+    start: true,
+    project: { id: "93000000-0000-4000-8000-000000000001", name: "区域发布资料库" }
+  }, { locale: "zh-CN" });
+  assert.equal(bound.html.includes("data-s4c-intake-project-select"), false);
+});
+
 test("R9.7 web task entry and project empty states avoid dispatch wording", () => {
   const intake = renderWebRouteComponent({ key: "intake", start: true }, { locale: "zh-CN" });
   const projectIntake = renderWebRouteComponent({

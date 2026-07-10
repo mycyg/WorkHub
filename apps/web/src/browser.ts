@@ -1071,7 +1071,9 @@ function bindGoldPathNavigation(
       }
       if (bootstrapProjectActionFromHref(href) && actionTarget.dataset.s1Day0StartIntake === "true") {
         // S4b：从项目主页「新任务」进来时动作带 data-s4b-project-id → 直接在该项目建会话，跳过「试点项目」bootstrap。
-        const existingProjectId = actionTarget.dataset.s4bProjectId;
+        // R10-0c：通用入口渲了项目选择器时，以用户选中的项目为准（空值=「新建试点项目」走 bootstrap 兜底）。
+        const pickedProjectId = shellRoot.querySelector<HTMLSelectElement>("[data-s4c-intake-project-select]")?.value || undefined;
+        const existingProjectId = actionTarget.dataset.s4bProjectId ?? pickedProjectId;
         const intentText = startIntentText(actionTarget);
         if (!intentText) {
           // L13：意图为空就 fail-closed，提示用户先写要做什么，绝不替换成预设任务。

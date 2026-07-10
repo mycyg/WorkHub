@@ -1452,7 +1452,8 @@ function intakeProgressRows(vm: SessionVM, locale: WorkHubLocale) {
 function renderIntakeStartRouteComponent(
   locale: WorkHubLocale,
   project?: { id: string; name: string } | undefined,
-  projectUnavailable?: boolean | undefined
+  projectUnavailable?: boolean | undefined,
+  projects?: ProjectListVM | undefined
 ): WebRouteComponent {
   const zh = locale === "zh-CN";
   // 普通用户审查：界面写「试点项目」、实际建出英文「Pilot Project」对不上号——按 locale 送本地化名
@@ -1500,10 +1501,19 @@ function renderIntakeStartRouteComponent(
       <div class="wh-r4-route-grid">
         <section class="wh-card wh-r4-route-card wh-r4-route-card--accent" data-s1-day0-project-context-card="true">
           <h3 role="heading" aria-level="2">${escapeHtml(projectCardHeading)}</h3>
-          <div class="wh-r4-route-meta">
+          ${!project && (projects?.projects ?? []).length
+    ? `<label class="wh-r4-route-stack" data-s4c-intake-project-picker="true">
+            <strong>${escapeHtml(zh ? "任务放进哪个项目" : "Which project does this task belong to")}</strong>
+            <select class="wh-pill" data-s4c-intake-project-select="true" aria-label="${escapeHtml(zh ? "选择任务所属项目" : "Pick the project for this task")}">
+              ${(projects?.projects ?? []).slice(0, 50).map((entry, index) => `<option value="${escapeHtml(entry.id)}"${index === 0 ? " selected" : ""}>${escapeHtml(entry.name)}</option>`).join("")}
+              <option value="">${escapeHtml(zh ? "＋ 新建试点项目" : "+ New pilot project")}</option>
+            </select>
+            <p class="wh-subtle">${escapeHtml(zh ? "按最近活跃排序；不选项目会新建/复用「试点项目」。" : "Sorted by recent activity; leaving it unset creates/reuses the pilot project.")}</p>
+          </label>`
+    : `<div class="wh-r4-route-meta">
             <span class="wh-pill" data-s4b-intake-project-name="${escapeHtml(projectName)}">${escapeHtml(projectName)}</span>
             <span class="wh-pill">${escapeHtml(zh ? "实时数据" : "Live data")}</span>
-          </div>
+          </div>`}
           <p>${escapeHtml(routeT(locale, "intake.startNext"))}</p>
           <label class="wh-r4-route-stack">
             <strong>${escapeHtml(routeT(locale, "intake.startIntent"))}</strong>
@@ -4229,7 +4239,7 @@ export type WebRouteComponentInput =
   | { key: "projects"; projects: ProjectListVM }
   | { key: "project-home"; project: ProjectHomePageVM }
   | { key: "intake"; session: SessionVM }
-  | { key: "intake"; start: true; project?: { id: string; name: string } | undefined; projectUnavailable?: boolean | undefined }
+  | { key: "intake"; start: true; project?: { id: string; name: string } | undefined; projectUnavailable?: boolean | undefined; projects?: ProjectListVM | undefined }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
   | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined; proposalConflictsCheckFailed?: boolean | undefined }
@@ -4259,7 +4269,7 @@ export function renderWebRouteComponent(
       return renderProjectHomeRouteComponent(input.project, locale);
     case "intake":
       if ("start" in input) {
-        return renderIntakeStartRouteComponent(locale, input.project, input.projectUnavailable);
+        return renderIntakeStartRouteComponent(locale, input.project, input.projectUnavailable, input.projects);
       }
       return renderIntakeRouteComponent(input.session, locale);
     case "approvals":

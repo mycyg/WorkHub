@@ -1072,6 +1072,26 @@ test("AI clarification extracts explicit drive filenames from the user's request
   );
 });
 
+test("R10-0c clarification file context drops old project files that are irrelevant to the current intent", async () => {
+  const { fileContextFromDriveRows } = await import("./services/work-items.js");
+  const rows = {
+    items: [
+      { id: "f1", kind: "file", name: "day-1-pilot-feedback-digest.md", parentId: null, currentVersionId: null },
+      { id: "f2", kind: "file", name: "regional-report-template.md", parentId: null, currentVersionId: null }
+    ],
+    versions: []
+  } as never;
+
+  // 全新意图与两份旧文件零相关 → 空上下文（宁缺毋滥，LLM 只围绕意图反问，不被旧任务带偏）。
+  const unrelated = await fileContextFromDriveRows(rows, "检查异步动作状态提示，不继续创建正式任务。");
+  assert.equal(unrelated.length, 0);
+
+  // 点名文件始终进入上下文，且相关文件按分数排序。
+  const named = await fileContextFromDriveRows(rows, "基于 regional-report-template.md 更新风险段落");
+  assert.equal(named.length, 1);
+  assert.equal(named[0]?.name, "regional-report-template.md");
+});
+
 test("AI clarification parser accepts question/context JSON from real providers", () => {
   const body = Array.from({ length: 60 }, () => "请围绕验收材料/workhub-app-upload.txt 的风险、进展和下周动作生成验收口径。").join("");
   const placeholder = Array.from({ length: 20 }, () => "例如：只使用 workhub-app-upload.txt，并面向验收同学输出。").join("");
@@ -1086,6 +1106,34 @@ test("AI clarification parser accepts question/context JSON from real providers"
   assert.match(draft.body ?? "", /workhub-app-upload\.txt/u);
   assert.ok((draft.body ?? "").length <= 900);
   assert.ok((draft.placeholder ?? "").length <= 180);
+});
+
+test("R10-0c clarification parser carries option candidates through to the scope question contract", () => {
+  const draft = parseClarificationDraftFromLlmText(JSON.stringify({
+    question: "复盘包以哪份材料为唯一数据来源？",
+    options: [
+      { id: "option-1", label: "只用 workhub-app-upload.txt", description: "口径最稳，缺口由 AI 标注。" },
+      { label: "上传材料 + 周会纪要", description: "更全，但要人工核对两处冲突。" },
+      { label: "" },
+      "not-an-object"
+    ],
+    recommended_option_id: "option-1"
+  }), "zh-CN");
+
+  assert.equal(draft.options?.length, 2);
+  assert.equal(draft.options?.[0]?.id, "option-1");
+  // 缺省 id 按序补齐；空 label 与非对象项被丢弃。
+  assert.equal(draft.options?.[1]?.id, "option-2");
+  assert.equal(draft.recommended_option_id, "option-1");
+
+  // 只有 1 条有效候选 → 不构成选项集，退化为无选项（渲染端回长文本，不造假选项）。
+  const single = parseClarificationDraftFromLlmText(JSON.stringify({
+    question: "确认验收对象？",
+    options: [{ label: "验收同学" }],
+    recommended_option_id: "option-1"
+  }), "zh-CN");
+  assert.equal(single.options, undefined);
+  assert.equal(single.recommended_option_id, undefined);
 });
 
 test("AI clarification parser extracts fenced JSON without requiring exact title/body fields", () => {
