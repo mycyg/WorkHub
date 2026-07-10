@@ -3226,8 +3226,10 @@ function auditExpression() {
       textOverflowCount: textOverflowSamples.length,
       textOverflowSamples: textOverflowSamples.slice(0, 8),
       topbarNavOverlap,
-      zhChrome: text.includes("工作入口"),
-      enChrome: text.includes("Work entry")
+      // R10-S1.5：导航改四组信息架构后，「工作入口/Work entry」单标题不复存在——
+      // 改用分组标题「项目资产/Project assets」做外壳语言探针（两语言唯一且常驻）。
+      zhChrome: text.includes("项目资产"),
+      enChrome: text.includes("Project assets")
     };
   })()`;
 }

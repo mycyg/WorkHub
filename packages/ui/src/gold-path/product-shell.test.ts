@@ -71,7 +71,10 @@ test("R4 product shell localizes fixed product chrome", () => {
     linkMode: "path"
   });
 
-  assert.equal(shell.html.includes("工作入口"), true);
+  // R10-S1.5：导航从单一「工作入口」平铺改为四组信息架构——断言分组结构与标题本地化。
+  assert.equal(shell.html.includes('data-nav-group="work"'), true);
+  assert.equal(shell.html.includes(">工作</div>"), true);
+  assert.equal(shell.html.includes(">项目资产</div>"), true);
   // F2 修双标题:masthead 不再渲染冗余大标题/副标题(页面标题归各 route-component 的唯一 <h1>);
   // masthead 收成指标条,本地化页标题保留在 aria-label 上(无障碍 + 不与组件标题视觉重复)。
   assert.equal(shell.html.includes('data-r4-product-masthead="true" aria-label="任务详情"'), true);
