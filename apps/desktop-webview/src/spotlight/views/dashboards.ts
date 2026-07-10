@@ -477,7 +477,7 @@ export function costView(vm: CostDashboardVM, zh: boolean): string {
       ${labor}
     </div>
     ${bars ? `<div class="wh-spot-bars" role="group" aria-label="${zh ? "近 14 天花费趋势" : "14-day spend trend"}">${bars}</div>${barsCaption}` : ""}
-    ${topItems ? `<div class="wh-spot-list">${topItems}</div>` : ""}
+    ${topItems ? `<div class="wh-spot-list">${topItems}${vm.by_workitem.length > 5 ? `<p class="wh-spot-card-desc">${zh ? `还有 ${vm.by_workitem.length - 5} 个事项的花费，去网页版成本页细看。` : `${vm.by_workitem.length - 5} more on the web cost page.`}</p>` : ""}</div>` : ""}
   </div>`;
 }
 

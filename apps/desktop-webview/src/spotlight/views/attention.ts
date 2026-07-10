@@ -204,6 +204,7 @@ function renderCard(item: AttentionItem, zh: boolean): string {
     <div class="wh-spot-card-main">
       <div class="wh-spot-card-head">
         <span class="wh-spot-chip wh-spot-chip--${tone}">${escapeHtml(attentionTagLabelForKind(item.kind, zh))}</span>
+        ${item.project_name ? `<span class="wh-spot-chip" data-att-project="true">${escapeHtml(item.project_name)}</span>` : ""}
       </div>
       <h3 class="wh-spot-card-title">${escapeHtml(title)}</h3>
       ${desc ? `<p class="wh-spot-card-desc">${escapeHtml(desc)}</p>` : ""}

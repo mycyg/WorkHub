@@ -447,6 +447,15 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client:
     }
   }, eventListenerOptions(signal));
 
+  // R13（读屏）：role=button 的锚只有原生 Enter——Space 也要激活（原生 button 语义对齐）。
+  shellRoot.addEventListener("keydown", (event) => {
+    if (event.key !== " " || !(event.target instanceof HTMLAnchorElement) || event.target.getAttribute("role") !== "button") {
+      return;
+    }
+    event.preventDefault();
+    event.target.click();
+  }, eventListenerOptions(signal));
+
   // R4 a11y high：审批队列行纯键盘不可达——Enter/Space 等同点击（行已带 tabindex/role=button）。
   shellRoot.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") {
@@ -1436,6 +1445,21 @@ function bindGoldPathNavigation(
           pendingApprovalActionId = actionId ?? "deny";
           markActiveRouteDirty("review_reason_pending");
           showRouteNotice(shellRoot, reasonRequiredNotice(locale, pendingApprovalActionId), reviewReasonButtons(locale), 0);
+          return;
+        }
+        // R13（决策完整性）：打回理由卡挂起时不许静默改批准——先让用户对已开的打回流程表态
+        // （选理由或 Esc/取消），否则 X 后按 A/误点会把正在走打回的同一条直接放行。
+        if (pendingApprovalId || pendingReviewHref) {
+          showRouteNotice(shellRoot, {
+            kind: "reason_required",
+            tone: "warning",
+            source: "client",
+            locale,
+            title: locale === "en-US" ? "Finish the send-back first" : "先处理打回理由卡",
+            body: locale === "en-US"
+              ? "A send-back is in progress — pick a reason, or press Esc / Cancel to drop it before approving."
+              : "有一条打回流程正在进行——先选理由，或按 Esc/取消放弃打回，再执行通过。"
+          });
           return;
         }
         try {

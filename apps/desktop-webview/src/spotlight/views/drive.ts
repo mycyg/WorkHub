@@ -274,7 +274,7 @@ export function driveHtml(vm: DrivePageVM, projectChips: string, zh: boolean, ap
     ? `<div class="wh-spot-list ds-stagger">${visibleDriveItems(items, vm.selected_item_id).map((i) => itemRow(i, zh, canManage, i.id === vm.selected_item_id, apiBaseUrl)).join("")}</div>`
     : `<p class="wh-spot-bubble-note" style="color:var(--ds-ink-muted)">${zh ? "这个项目还没有文件" : "No files in this project yet"}</p>`;
   const deletedBlock = deleted.length
-    ? `<div class="wh-spot-drive-section"><p class="wh-spot-reasons-q">${zh ? "回收站" : "Recently deleted"}</p><div class="wh-spot-list">${deleted.slice(0, 12).map((i) => deletedRow(i, zh)).join("")}</div></div>`
+    ? `<div class="wh-spot-drive-section"><p class="wh-spot-reasons-q">${zh ? "回收站" : "Recently deleted"}</p><div class="wh-spot-list">${deleted.slice(0, 12).map((i) => deletedRow(i, zh)).join("")}</div>${deleted.length > 12 ? `<p class="wh-spot-card-desc">${zh ? `还有 ${deleted.length - 12} 项，去网页版回收站细看。` : `${deleted.length - 12} more in the web recycle bin.`}</p>` : ""}</div>`
     : "";
   return `<div class="wh-spot-know">${projectChips}${summary}${uploadBtn}${list}${deletedBlock}</div>`;
 }
