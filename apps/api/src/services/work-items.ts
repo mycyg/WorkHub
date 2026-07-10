@@ -1141,7 +1141,9 @@ function evidenceRefFromWorkItem(row: WorkItemRow): EvidenceRef {
     source_id: row.code,
     title: row.title ?? row.code,
     confidence_hint: "found",
-    href: `/api/pages/workitems/${row.id}`
+    // R10-P1-3：证据出处要打开产品页，不是 JSON Page VM——web SPA 按 /workitems/:id 导航，
+    // 桌面 Spotlight 也按同一形状正则解析做内联 morph（dashboards.ts data-know-ref 分支）。
+    href: `/workitems/${row.id}`
   };
   const excerpt = compactText(row.summaryMd ?? row.rawDescription);
   if (excerpt) {

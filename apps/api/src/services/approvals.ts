@@ -52,6 +52,7 @@ import type { PushBus } from "../broker/types.js";
 import type { AuthActor } from "../middleware/auth.js";
 import { getDefaultStructuredLogger } from "../logging.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import { presentableManifestChanges } from "../pages/proposals.js";
 import {
   createNotificationService,
   type NotificationService
@@ -447,7 +448,7 @@ async function buildApprovalItemDetail(
       ai_reason: manifest.summary_md,
       ...(aiReview?.reason_md ? { ai_review_md: aiReview.reason_md } : {}),
       risk_label: manifest.risk.human_label,
-      manifest_changes: manifest.changes,
+      manifest_changes: presentableManifestChanges(proposal.id, manifest.changes),
       checks: manifest.checks,
       conflicts,
       affected_targets: [],

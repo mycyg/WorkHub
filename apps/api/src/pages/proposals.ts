@@ -1,6 +1,7 @@
 import {
   proposalDetailVmSchema,
   type AttentionItem,
+  type DeliverableChange,
   type ProposalDetailVM,
   type WorkHubLocale
 } from "@workhub/contracts";
@@ -12,6 +13,28 @@ import { parseOutputContract } from "./output-contract.js";
 
 function isTaskPlanProposal(proposal: Pick<StoredProposal, "diff_manifest">) {
   return proposal.diff_manifest.changes.some((change) => change.target_ref.entity_type === "task_plan");
+}
+
+// R10-P1-3：agent 侧 manifest 默认生成的 /api/agent/outputs/{preview,download} href 在生产 API 没有
+// 对应路由（runner 不传 href 覆盖），点了就是死链。渲染前统一改写：有可预览文本
+// （machine_summary.generated_content_md）的指到已注册的 GET /api/proposals/:id/changes/:changeId/preview，
+// 没有的删掉 preview_ref——不把死链渲染成可点的 affordance。存量提议（死 href 已入库）也被这层兜住。
+const deadAgentOutputHref = /^\/api\/agent\/outputs\//u;
+
+export function presentableManifestChanges(proposalId: string, changes: DeliverableChange[]): DeliverableChange[] {
+  return changes.map((change) => {
+    if (!change.preview_ref || !deadAgentOutputHref.test(change.preview_ref.href)) {
+      return change;
+    }
+    if (change.machine_summary?.generated_content_md) {
+      return {
+        ...change,
+        preview_ref: { kind: "text" as const, href: `/api/proposals/${proposalId}/changes/${change.id}/preview` }
+      };
+    }
+    const { preview_ref: _dead, ...rest } = change;
+    return rest;
+  });
 }
 
 // GAP-1：把一份待评审的 AI 提议(opened/reviewed)渲染成首页决策队列里的 proposal_review 卡。
@@ -114,7 +137,10 @@ export function buildProposalDetailPage(proposal: StoredProposal, locale: WorkHu
     work_item_id: proposal.work_item_id,
     title: proposal.title,
     status: proposal.status,
-    manifest: proposal.diff_manifest,
+    manifest: {
+      ...proposal.diff_manifest,
+      changes: presentableManifestChanges(proposal.id, proposal.diff_manifest.changes)
+    },
     evidence_refs: proposal.diff_manifest.evidence_refs,
     review_actions: reviewActions,
     comments: proposal.reviews

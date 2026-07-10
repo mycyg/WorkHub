@@ -1020,6 +1020,49 @@ const proposalNotFoundResponse = jsonErrorStatusResponse(
   "Proposal, work item, or merge proposal was not found",
   ["not_found"]
 ).responses["404"];
+// R10-P1-3：提议变更在线预览（内容来自 manifest change 的 machine_summary.generated_content_md）。
+const proposalChangePreviewResponse = {
+  responses: {
+    "200": {
+      description: "Inline text preview of a proposal manifest change",
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["ok", "data"],
+            properties: {
+              ok: { type: "boolean", const: true },
+              data: {
+                type: "object",
+                required: ["id", "filename", "size_bytes", "preview_type", "text", "truncated"],
+                properties: {
+                  id: uuidStringSchema,
+                  filename: { type: "string", minLength: 1 },
+                  size_bytes: { type: "integer", minimum: 0 },
+                  preview_type: { type: "string", enum: ["text"] },
+                  text: { type: "string" },
+                  truncated: { type: "boolean" }
+                },
+                additionalProperties: false
+              }
+            },
+            additionalProperties: false
+          }
+        }
+      }
+    },
+    "401": proposalNotIdentifiedResponse,
+    "403": proposalForbiddenResponse,
+    "404": jsonErrorStatusResponse(
+      "404",
+      "Proposal or manifest change was not found",
+      ["not_found", "proposal_change_not_found"]
+    ).responses["404"],
+    ...jsonErrorStatusResponse("415", "Proposal change has no inline-previewable text", [
+      "proposal_change_preview_unsupported"
+    ]).responses
+  }
+} as const;
 const createProposalConflictResponse = jsonErrorStatusResponse(
   "409",
   "Proposal manifest cannot create a new proposal in the current state",
@@ -5210,6 +5253,14 @@ export function getOpenApiDocument() {
           summary: "Read a deliverable change proposal",
           parameters: [pathUuidParameter("id")],
           ...readProposalResponse
+        }
+      },
+      "/api/proposals/{id}/changes/{changeId}/preview": {
+        get: {
+          tags: ["proposals"],
+          summary: "Preview a proposal manifest change inline when it carries generated text",
+          parameters: [pathUuidParameter("id"), pathUuidParameter("changeId")],
+          ...proposalChangePreviewResponse
         }
       },
       "/api/proposals/{id}/review": {

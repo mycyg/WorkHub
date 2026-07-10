@@ -20,6 +20,7 @@ import {
   actionElementNextQuestionPayload,
   actionErrorNotice,
   actionHrefFromElement,
+  actionInProgressNotice,
   actionPendingNotice,
   actionSuccessNotice,
   actionSummary,
@@ -53,6 +54,7 @@ import {
   intakeOptionRequiredNotice,
   isNativeResourceLink,
   localePersistenceFailedNotice,
+  logoutFailedNotice,
   markActiveRouteDirty as sharedMarkActiveRouteDirty,
   mergeConflictNotice,
   mergeProposalCandidateApplyIdFromHref,
@@ -406,6 +408,11 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client:
     if (nextLocale === locale) {
       return;
     }
+    // R10-P1-6：语言切换走整页 reload，会丢掉所有未提交草稿。此前它绕过了站内武装式 dirty 守卫
+    // （只剩原生 beforeunload 兜底）——切换前接入同一套守卫，第一次点击先警告，5 秒内再点才放行。
+    if (!confirmLeaveDirtyRoute(locale)) {
+      return;
+    }
     persistBrowserLocale(nextLocale);
     void client.updatePreferences({ locale: nextLocale })
       .then(() => {
@@ -633,7 +640,7 @@ function bindGoldPathNavigation(
       target.disabled = true;
       const sizeMb = file.size / (1024 * 1024);
       const sizeText = sizeMb >= 0.1 ? `${sizeMb.toFixed(1)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`;
-      const pendingVm = actionPendingNotice(locale, actionId);
+      const pendingVm = actionInProgressNotice(locale, actionId);
       pendingVm.body = locale === "en-US"
         ? `Uploading “${file.name}” (${sizeText})…${sizeMb > 2 ? " Large file — this may take a while on a slow connection." : ""}`
         : `正在上传「${file.name}」（${sizeText}）…${sizeMb > 2 ? "文件较大，慢网络下可能需要等一会儿。" : ""}`;
@@ -673,8 +680,15 @@ function bindGoldPathNavigation(
       event.preventDefault();
       try {
         await client.logout();
-      } catch {
-        // cookie 已失效也视为登出成功，fail-closed 回注册屏。
+      } catch (error) {
+        // R10-P1-8：只有「会话本就无效」(401/not_identified) 才可视为已登出。网络中断或服务端 5xx 时
+        // httpOnly 会话 cookie 可能仍然有效——此时渲 Onboarding 就是在共享设备上撒谎，必须显式报错停下。
+        const sessionAlreadyGone = error instanceof WorkHubApiError
+          && (error.status === 401 || error.code === "not_identified");
+        if (!sessionAlreadyGone) {
+          showRouteNotice(shellRoot, logoutFailedNotice(locale));
+          return;
+        }
       }
       showOnboardingScreen(client, locale);
       return;
@@ -743,7 +757,7 @@ function bindGoldPathNavigation(
         return;
       }
       llmActionBusy = true;
-      showRouteNotice(shellRoot, actionPendingNotice(locale, "drive_comment"), undefined, 0);
+      showRouteNotice(shellRoot, actionInProgressNotice(locale, "drive_comment"), undefined, 0);
       try {
         await client.createDriveComment(projectId, { body }, { locale });
         await renderCurrentRoute(client, locale);
@@ -820,7 +834,7 @@ function bindGoldPathNavigation(
       }
       llmActionBusy = true;
       batchApprove.disabled = true;
-      showRouteNotice(shellRoot, actionPendingNotice(locale, "respond_batch"), undefined, 0);
+      showRouteNotice(shellRoot, actionInProgressNotice(locale, "respond_batch"), undefined, 0);
       void (async () => {
         try {
           const result = await client.respondApprovalsBatch(ids);
@@ -879,7 +893,7 @@ function bindGoldPathNavigation(
           return;
         }
         llmActionBusy = true;
-        showRouteNotice(shellRoot, actionPendingNotice(locale, pendingApprovalActionId ?? "deny"), undefined, 0);
+        showRouteNotice(shellRoot, actionInProgressNotice(locale, pendingApprovalActionId ?? "deny"), undefined, 0);
         try {
           const remember = shellRoot.querySelector<HTMLInputElement>("[data-r4-approval-remember]")?.checked ? "always" : "once";
           // L#W2-17：优先用决策面板里手写的「意见说明」，没写才回落到预设理由按钮。
@@ -1028,7 +1042,7 @@ function bindGoldPathNavigation(
           return;
         }
         // R5：in-flight 锁已上提到 api-action 分发入口统一管（外层已置位，此处只留 pending 提示）。
-        showRouteNotice(shellRoot, actionPendingNotice(locale, actionId), undefined, 0);
+        showRouteNotice(shellRoot, actionInProgressNotice(locale, actionId), undefined, 0);
         if (existingProjectId) {
           try {
             const session = await client.createSession({
@@ -1106,7 +1120,7 @@ function bindGoldPathNavigation(
       const createTaskPlan = createTaskPlanActionFromHref(href);
       if (createTaskPlan) {
         // R5：in-flight 锁已上提到 api-action 分发入口统一管。
-        showRouteNotice(shellRoot, actionPendingNotice(locale, actionId), undefined, 0);
+        showRouteNotice(shellRoot, actionInProgressNotice(locale, actionId), undefined, 0);
         try {
           const result = await client.createTaskPlan(createTaskPlan.workItemId, {}, { locale });
           await navigateWebRoute(result.proposal_href || `/workitems/${createTaskPlan.workItemId}`, client, locale);
@@ -1121,7 +1135,7 @@ function bindGoldPathNavigation(
       const startAgentRun = startAgentRunActionFromHref(href);
       if (startAgentRun) {
         // R5（慢网感知 high）：启动 AI 运行是最重的动作之一，此前按下后零反馈——补持久 pending 提示（成功/失败提示会顶掉它）。
-        showRouteNotice(shellRoot, actionPendingNotice(locale, actionId ?? "start_agent_run"), undefined, 0);
+        showRouteNotice(shellRoot, actionInProgressNotice(locale, actionId ?? "start_agent_run"), undefined, 0);
         try {
           const run = await client.startAgentRun(startAgentRun.workItemId);
           await navigateWebRoute(`/workitems/${startAgentRun.workItemId}`, client, locale);
@@ -2147,7 +2161,9 @@ async function boot() {
   root.innerHTML = renderWebRouteState(currentRouteMatch(), "idle", locale).html;
 
   try {
-    const client = createApiClient({ baseUrl: "" });
+    // R10-P1-5：不设超时 = 一个挂死的请求把全局动作锁焊死到刷新。60s 上限盖住最慢的 LLM 动作
+    // （intake 追问/建计划），超时抛错走各分支既有的 error notice + finally 复位锁。
+    const client = createApiClient({ baseUrl: "", requestTimeoutMs: 60_000 });
     // 先挂导航监听，再渲染：否则首次渲染抛错时这两个监听永远注册不上，
     // 整个会话的前进/后退会静默失效（即便用户已从首屏错误中恢复）。
     window.addEventListener("popstate", () => {

@@ -64,7 +64,9 @@ export const webSurface = {
 } as const;
 
 export const webApiClient = createApiClient({
-  baseUrl: ""
+  baseUrl: "",
+  // R10-P1-5：web 侧统一 60s 请求超时——不设超时的挂死请求会把动作锁焊死到刷新。
+  requestTimeoutMs: 60_000
 });
 
 export function loadWebGoldPathSurface(client: WorkHubApiClient = webApiClient, locale?: WorkHubLocale) {

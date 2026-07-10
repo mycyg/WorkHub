@@ -630,6 +630,35 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     return c.json({ ok: true, data });
   });
 
+  // R10-P1-3：提议变更的在线预览。生产 runner 不提供 /api/agent/outputs/* 静态服务（manifest 里的
+  // 默认 href 是死链），可预览的文本其实一直在 manifest change 的 machine_summary.generated_content_md
+  // 里——从这里按已鉴权的提议读出来，返回与 drive/workitem preview 相同的 JSON 形状，前端复用同一预览面板。
+  routes.get("/:id/changes/:changeId/preview", authMiddleware, async (c) => {
+    const proposal = await readProposalForActor(c.req.param("id"), c.var.actor);
+    const changeId = c.req.param("changeId");
+    const change = proposal.diff_manifest.changes.find((item) => item.id === changeId);
+    if (!change) {
+      throw new ProposalServiceError(404, "proposal_change_not_found", "没有找到这条变更记录。");
+    }
+    const text = change.machine_summary?.generated_content_md;
+    if (!text) {
+      throw new ProposalServiceError(415, "proposal_change_preview_unsupported", "这条变更没有可在线预览的文本。采纳后可到工作项或网盘查看正式版。");
+    }
+    const filename = change.target_ref.path?.split("/").filter(Boolean).pop() ?? change.target_ref.entity_type;
+    const maxPreviewChars = 200000;
+    return c.json({
+      ok: true,
+      data: {
+        id: change.id,
+        filename,
+        size_bytes: Buffer.byteLength(text, "utf8"),
+        preview_type: "text",
+        text: text.slice(0, maxPreviewChars),
+        truncated: text.length > maxPreviewChars
+      }
+    });
+  });
+
   routes.post("/:id/review", authMiddleware, async (c) => {
     // L3：先鉴权再解析请求体——否则未授权者会先收到 schema 校验 400（泄露请求体形状/字段要求），
     // 拿不到本应优先返回的 404/403。授权检查（readProposalForActor → assertCanReadWorkItem）置于解析之前。

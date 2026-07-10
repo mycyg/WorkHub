@@ -88,7 +88,7 @@ export type WebRouteSurface =
   | { key: "intake"; start: true; project?: { id: string; name: string }; project_unavailable?: boolean }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
-  | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[] }
+  | { key: "proposal"; proposal: ProposalDetailVM; proposal_conflicts: ProposalConflict[]; proposal_conflicts_check_failed?: boolean | undefined }
   | { key: "drive"; drive: DrivePageVM; projects: ProjectListVM }
   | { key: "meetings"; meetings: MeetingPageVM; projects?: ProjectListVM }
   | { key: "notifications"; notifications: NotificationPageVM }
@@ -915,7 +915,8 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
     return renderWebRouteComponent({
       key: "proposal",
       proposal: surface.proposal,
-      proposalConflicts: surface.proposal_conflicts
+      proposalConflicts: surface.proposal_conflicts,
+      proposalConflictsCheckFailed: surface.proposal_conflicts_check_failed ?? false
     }, { locale });
   }
   if (surface.key === "drive") {
@@ -1149,9 +1150,11 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
   if (match.key === "proposal") {
     const proposal = await client.pages.proposal(match.params["id"] ?? "", withLocale(locale));
     // EDGE-2：冲突列表是次要数据(它自带 assertCanReadWorkItem,可能独立 403/抖动)。它失败不该把本已加载好的
-    // 提议/合并工作台整页塌成错误卡——退化为「无冲突」即可(与 drive 的 listProjects 失败退化同模式)。
-    // 会话过期(not_identified)仍要冒泡去重认证。
+    // 提议/合并工作台整页塌成错误卡。会话过期(not_identified)仍要冒泡去重认证。
+    // R10-P1-4：但失败也绝不能伪装成「零冲突」——审阅者会拿它当决策依据。标志位透传，页面渲显式
+    // 「冲突检查暂时失败」提示。
     let conflicts: ProposalConflict[] = [];
+    let conflictsCheckFailed = false;
     try {
       const result = await client.listWorkItemConflicts(proposal.work_item_id);
       conflicts = result.conflicts.filter((conflict) => conflict.proposal_id === proposal.proposal_id);
@@ -1160,8 +1163,9 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
         throw error;
       }
       conflicts = [];
+      conflictsCheckFailed = true;
     }
-    return { key: "proposal", proposal, proposal_conflicts: conflicts } satisfies WebRouteSurface;
+    return { key: "proposal", proposal, proposal_conflicts: conflicts, proposal_conflicts_check_failed: conflictsCheckFailed } satisfies WebRouteSurface;
   }
   if (match.key === "drive") {
     const params = new URLSearchParams(match.search);

@@ -8,6 +8,8 @@ export type RouteNoticeKind =
   | "selection"
   | "reason_required"
   | "action_pending"
+  | "action_in_progress"
+  | "logout_failed"
   | "desktop_required"
   | "merge_conflict"
   | "sse_refresh"
@@ -196,6 +198,33 @@ export function actionPendingNotice(locale: WorkHubLocale, actionId?: string): R
     title: goldPathT(locale, "runtime.notice.pendingTitle"),
     body: goldPathT(locale, "runtime.actionPending"),
     actionId
+  };
+}
+
+// R10-P1-5：真实 in-flight（请求已发出、等服务端回来）和「功能没接线」是两种状态——
+// 前者用这个「处理中」notice；actionPendingNotice 只留给真正没有处理器的动作兜底。
+export function actionInProgressNotice(locale: WorkHubLocale, actionId?: string): RouteNoticeVM {
+  return {
+    kind: "action_in_progress",
+    tone: "info",
+    source: "client",
+    locale,
+    title: goldPathT(locale, "runtime.notice.inProgressTitle"),
+    body: goldPathT(locale, "runtime.actionInProgress"),
+    actionId
+  };
+}
+
+// R10-P1-8：登出失败不许伪装成已登出——服务端会话可能仍有效，必须显式告知。
+export function logoutFailedNotice(locale: WorkHubLocale): RouteNoticeVM {
+  return {
+    kind: "logout_failed",
+    tone: "danger",
+    source: "client",
+    locale,
+    title: goldPathT(locale, "runtime.notice.logoutFailedTitle"),
+    body: goldPathT(locale, "runtime.logoutFailedBody"),
+    actionId: "logout"
   };
 }
 

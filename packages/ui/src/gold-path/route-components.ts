@@ -110,6 +110,8 @@ type CreateWebRouteComponentInput = {
 type ProposalConflictSurface = GoldPathSurfaceVM & {
   conflicts?: ProposalConflict[];
   proposal_conflicts?: ProposalConflict[];
+  // R10-P1-4：冲突接口加载失败 ≠ 零冲突——标志位透传到提议页渲显式 partial 提示。
+  proposal_conflicts_check_failed?: boolean;
 };
 
 type R4RouteSurface = ProposalConflictSurface & {
@@ -1920,6 +1922,10 @@ function evidenceRows(refs: EvidenceRef[], locale: WorkHubLocale, marker: string
   if (refs.length === 0) {
     return `<p class="wh-subtle">${escapeHtml(uiT(locale, "generic.noEvidence"))}</p>`;
   }
+  // R10-P1-4：证据是决策依据——截断必须诚实标出「还有 N 条」，不许让审阅者以为已看全。
+  const overflow = refs.length > 5
+    ? `<p class="wh-subtle" role="listitem" data-${marker}-overflow="${escapeHtml(String(refs.length - 5))}">${escapeHtml(locale === "zh-CN" ? `还有 ${refs.length - 5} 条证据未展开（共 ${refs.length} 条）。` : `${refs.length - 5} more evidence refs not shown (${refs.length} total).`)}</p>`
+    : "";
   return refs.slice(0, 5)
     .map((ref) => `<div role="listitem" class="wh-r4-route-row" data-${marker}="${escapeHtml(ref.id)}">
       <div>
@@ -1928,7 +1934,7 @@ function evidenceRows(refs: EvidenceRef[], locale: WorkHubLocale, marker: string
       </div>
       <span class="wh-pill">${escapeHtml(evidenceSourceLabel(locale, ref.source_type))}</span>
     </div>`)
-    .join("");
+    .join("") + overflow;
 }
 
 // L22：空轨迹/空交付物文案必须看状态。一条「已完成 / 已采纳 / 已取消 / 需要负责人介入」却没留下轨迹的
@@ -2341,7 +2347,7 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
             <div><strong>${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</strong></div>
             <div class="wh-r4-route-meta">
               ${accepted.drive_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.drive_href))}" data-r9-accepted-drive-link="true">${escapeHtml(locale === "zh-CN" ? "在网盘中查看" : "Open in drive")}</a>` : ""}
-              ${accepted.download_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.download_href))}">${escapeHtml(locale === "zh-CN" ? "下载" : "Download")}</a>` : ""}
+              ${accepted.download_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.download_href))}" data-action-id="drive_download" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(locale === "zh-CN" ? "下载" : "Download")}</a>` : ""}
             </div>
           </div>`).join("")}</div>${vm.accepted_deliverables.length > 6 ? `<p class="wh-subtle" data-r11-accepted-overflow="${escapeHtml(String(vm.accepted_deliverables.length - 6))}">${escapeHtml(locale === "zh-CN" ? `还有 ${vm.accepted_deliverables.length - 6} 条已采纳交付物，去网盘查看全部。` : `${vm.accepted_deliverables.length - 6} more accepted deliverables — see all in the drive.`)}</p>` : ""}` : ""}
         </section>
@@ -2367,8 +2373,13 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
 
 function renderChange(change: DeliverableChange, locale: WorkHubLocale) {
   const path = change.target_ref.path ?? change.target_ref.entity_id ?? change.target_ref.entity_type;
+  // R10-P1-3：预览链接此前是裸 <a>——被 api-action 分发拦下 preventDefault 后没有任何处理器认领，
+  // 点了只弹「处理中」。download 类走原生下载（照抄 drive_download），其余接既有 drive_preview
+  // JSON 预览面板管线（drive 路由外会退化为 notice 内嵌面板，通用可用）。
   const preview = change.preview_ref
-    ? `<a class="wh-pill" href="${escapeHtml(safeHref(change.preview_ref.href))}">${escapeHtml(previewKindLabel(locale, change.preview_ref.kind))}</a>`
+    ? (change.preview_ref.kind === "download"
+      ? `<a class="wh-pill" href="${escapeHtml(safeHref(change.preview_ref.href))}" data-action-id="drive_download" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(previewKindLabel(locale, change.preview_ref.kind))}</a>`
+      : `<a class="wh-pill" href="${escapeHtml(safeHref(change.preview_ref.href))}" data-action-id="drive_preview" data-r4-proposal-change-preview="true">${escapeHtml(previewKindLabel(locale, change.preview_ref.kind))}</a>`)
     : "";
   return `<div role="listitem" class="wh-r4-route-row" data-r4-proposal-change="${escapeHtml(change.id)}" data-r4-proposal-change-kind="${escapeHtml(change.target_kind)}" data-r4-proposal-change-type="${escapeHtml(change.change_type)}">
     <div>
@@ -2461,7 +2472,8 @@ function renderTaskPlanItemsPanel(vm: ProposalDetailVM, locale: WorkHubLocale): 
 function renderProposalRouteComponent(
   vm: ProposalDetailVM,
   locale: WorkHubLocale,
-  conflicts: ProposalConflict[] = []
+  conflicts: ProposalConflict[] = [],
+  conflictsCheckFailed = false
 ): WebRouteComponent {
   const actions = proposalActions(vm);
   const conflictCards = renderProposalConflictCards(conflicts, { locale });
@@ -2483,7 +2495,12 @@ function renderProposalRouteComponent(
   // R4：硬切断像渲染 bug——超长补省略号。
   // R7：按码点截断——UTF-16 code unit 硬切会把 emoji surrogate pair 切成乱码。
   const summaryPoints = [...summaryFull];
-  const summary = summaryPoints.length > 320 ? `${summaryPoints.slice(0, 320).join("")}…` : summaryFull;
+  const summaryTruncated = summaryPoints.length > 320;
+  const summary = summaryTruncated ? `${summaryPoints.slice(0, 320).join("")}…` : summaryFull;
+  // R10-P1-4：截断了就明说截断了——省略号太容易被当成原文结尾。
+  const summaryNote = summaryTruncated
+    ? `<span class="wh-subtle" data-r10-proposal-summary-truncated="${escapeHtml(String(summaryPoints.length))}">${escapeHtml(locale === "zh-CN" ? `（摘要已截断，全文约 ${summaryPoints.length} 字）` : ` (summary truncated — about ${summaryPoints.length} characters in full)`)}</span>`
+    : "";
   const rollbackClass = vm.manifest.rollback.available ? "wh-pill" : "wh-pill wh-pill-danger";
   const comments = vm.comments.length
     ? vm.comments.map((comment) => `<div role="listitem" class="wh-r4-route-row" data-r4-proposal-comment="${escapeHtml(comment.id)}">
@@ -2520,7 +2537,7 @@ function renderProposalRouteComponent(
             ? (locale === "zh-CN" ? "任务计划提议" : "Task plan proposal")
             : uiT(locale, "proposal.kicker"))}</span>
           <h1>${escapeHtml(vm.title)}</h1>
-          <p>${escapeHtml(summary)}</p>
+          <p>${escapeHtml(summary)}${summaryNote}</p>
         </div>
         <span class="wh-r4-route-count" data-r4-proposal-status="${escapeHtml(vm.status)}">${escapeHtml(proposalStatusLabel(locale, vm.status))}</span>
       </header>
@@ -2536,10 +2553,14 @@ function renderProposalRouteComponent(
         </section>
         <section class="wh-card wh-r4-route-card" data-r4-proposal-review="true">
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "proposal.review"))}</h3>
-          <div class="wh-r4-route-timeline" role="list">${vm.manifest.checks.slice(0, 3).map((check) => renderCheck(check, locale)).join("")}</div>
+          <div class="wh-r4-route-timeline" role="list">${vm.manifest.checks.slice(0, 8).map((check) => renderCheck(check, locale)).join("")}${vm.manifest.checks.length > 8 ? `<p class="wh-subtle" role="listitem" data-r10-proposal-checks-overflow="${escapeHtml(String(vm.manifest.checks.length - 8))}">${escapeHtml(locale === "zh-CN" ? `还有 ${vm.manifest.checks.length - 8} 项检查未展开（共 ${vm.manifest.checks.length} 项）。` : `${vm.manifest.checks.length - 8} more checks not shown (${vm.manifest.checks.length} total).`)}</p>` : ""}</div>
         </section>
       </div>
       ${renderTaskPlanItemsPanel(vm, locale)}
+      ${conflictsCheckFailed ? `<section class="wh-card wh-r4-route-card" data-r10-proposal-conflicts-check-failed="true">
+        <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "冲突检查暂时失败" : "Conflict check unavailable")}</h3>
+        <p>${escapeHtml(locale === "zh-CN" ? "刚才没能确认这份变更是否和别人撞车——页面上看不到冲突不代表没有冲突。请刷新重试，确认后再做决定。" : "We couldn't verify whether this change conflicts with others — seeing no conflicts here does not mean there are none. Refresh to retry before you decide.")}</p>
+      </section>` : ""}
       <section class="wh-card wh-r4-route-card" data-r4-proposal-changes="true">
         <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "proposal.files"))}</h3>
         <div class="wh-r4-route-table">${vm.manifest.changes.map((change) => renderChange(change, locale)).join("")}</div>
@@ -4076,7 +4097,7 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
         <p>${escapeHtml(ref.excerpt ?? ref.source_id)}</p>
       </div>
       ${ref.href ? `<a class="wh-pill" href="${escapeHtml(safeHref(ref.href))}">${escapeHtml(routeT(locale, "knowledge.open"))}</a>` : `<span class="wh-pill">${escapeHtml(evidenceSourceLabel(locale, ref.source_type))}</span>`}
-    </div>`).join("")
+    </div>`).join("") + (refs.length > 6 ? `<p class="wh-subtle" role="listitem" data-r10-knowledge-overflow="${escapeHtml(String(refs.length - 6))}">${escapeHtml(locale === "zh-CN" ? `还有 ${refs.length - 6} 条来源未展开（共 ${refs.length} 条），可换更具体的关键词缩小范围。` : `${refs.length - 6} more sources not shown (${refs.length} total) — narrow the query to see fewer, closer matches.`)}</p>` : "")
     : `<p class="wh-subtle" data-r4-knowledge-missing-note="true">${escapeHtml(vm.missing_evidence_note ?? routeT(locale, "knowledge.missing"))}</p>`;
   const actions = vm.actions.map((action) => renderKnowledgeAction(action, vm)).join("");
 
@@ -4208,7 +4229,7 @@ export type WebRouteComponentInput =
   | { key: "intake"; start: true; project?: { id: string; name: string } | undefined; projectUnavailable?: boolean | undefined }
   | { key: "approvals"; approvals: ApprovalCenterVM }
   | { key: "workitem"; workitem: WorkItemDetailVM }
-  | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined }
+  | { key: "proposal"; proposal: ProposalDetailVM; proposalConflicts?: ProposalConflict[] | undefined; proposalConflictsCheckFailed?: boolean | undefined }
   | { key: "drive"; drive: DrivePageVM; projects?: ProjectListVM | undefined }
   | { key: "meetings"; meetings: MeetingPageVM; projects?: ProjectListVM | undefined }
   | { key: "notifications"; notifications: NotificationPageVM }
@@ -4243,7 +4264,7 @@ export function renderWebRouteComponent(
     case "workitem":
       return renderWorkItemRouteComponent(input.workitem, locale);
     case "proposal":
-      return renderProposalRouteComponent(input.proposal, locale, input.proposalConflicts ?? []);
+      return renderProposalRouteComponent(input.proposal, locale, input.proposalConflicts ?? [], input.proposalConflictsCheckFailed ?? false);
     case "drive":
       return renderDriveRouteComponent(input.drive, locale, input.projects);
     case "meetings":
@@ -4280,7 +4301,7 @@ export function renderWebRouteComponents(
     ...(routeSurface.intake_session ? { intake: renderIntakeRouteComponent(routeSurface.intake_session, locale) } : {}),
     approvals: renderApprovalsRouteComponent(vm.page_vms.approvals, locale),
     workitem: renderWorkItemRouteComponent(vm.page_vms.workitem, locale),
-    proposal: renderProposalRouteComponent(vm.page_vms.proposal, locale, proposalConflictsFromSurface(routeSurface)),
+    proposal: renderProposalRouteComponent(vm.page_vms.proposal, locale, proposalConflictsFromSurface(routeSurface), routeSurface.proposal_conflicts_check_failed ?? false),
     replay: renderReplayRouteComponent(vm.page_vms.replay, locale),
     cost: renderCostRouteComponent(vm.page_vms.cost, locale),
     ...(routeSurface.knowledge_evidence ? { knowledge: renderKnowledgeRouteComponent(routeSurface.knowledge_evidence, locale) } : {}),
