@@ -1109,12 +1109,16 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
       ensureCanActOnApproval(approval, actor);
 
       // L#48：委派目标必须是真实存在的活跃用户，否则审批会被路由进黑洞或转给非法 id。
-      let target: UserAuthRow | null = null;
-      if (deps.users) {
-        target = await deps.users.findActiveById(toUserId);
-        if (!target) {
-          throw new ApprovalServiceError(404, "delegate_target_not_found", "找不到要转交的成员。");
-        }
+      if (!deps.users) {
+        throw new ApprovalServiceError(
+          503,
+          "delegate_user_directory_unavailable",
+          "成员目录暂时无法校验，审批没有被转交。"
+        );
+      }
+      const target = await deps.users.findActiveById(toUserId);
+      if (!target) {
+        throw new ApprovalServiceError(404, "delegate_target_not_found", "找不到要转交的成员。");
       }
 
       if (!memberships) {
@@ -1138,9 +1142,7 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
           if (toUserId === workItem.submitterUserId) {
             throw new ApprovalServiceError(422, "delegate_to_requester", "不能把审批转交回发起人。");
           }
-          // target 可能未取（无 deps.users 的旧夹具）——此时回退到仅凭 id 构造可见性主体。
-          const candidate = target ?? ({ id: toUserId } as Pick<UserAuthRow, "id">);
-          if (!canViewWorkItemRecord(toWorkItemAccessRecord(workItem), candidate, {
+          if (!canViewWorkItemRecord(toWorkItemAccessRecord(workItem), target, {
             orgId: actor.orgId,
             workspaceId: actor.workspaceId
           })) {

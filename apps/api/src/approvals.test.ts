@@ -325,6 +325,20 @@ function eligibleDelegate(targetUserIds: readonly string[]) {
   };
 }
 
+function recordingDelegateNotifications(calls: unknown[]) {
+  return {
+    createMentionNotification: async () => undefined as never,
+    createNotification: async (input: unknown) => {
+      calls.push({ action: "create", input });
+      return undefined as never;
+    },
+    archiveByDedupeKey: async (dedupeKey: string) => {
+      calls.push({ action: "archive", dedupeKey });
+      return 0;
+    }
+  };
+}
+
 function serviceDeps(
   policies: PermissionPolicyRecord[] = [],
   delegateTargetUserIds: readonly string[] = []
@@ -833,6 +847,169 @@ test("delegate returns the committed reassignment even when post-commit audit wr
   assert.equal(result.approval.routed_to_user_id, toUserId);
   assert.equal((await approvals.findById(seeded.id))?.routedToUserId, toUserId);
   assert.equal(bus.events.some((event) => event.type === "permission.reassigned"), true);
+});
+
+test("delegate fails closed before membership or side effects when the active-user directory capability is absent", async () => {
+  const approvals = new MemoryApprovals();
+  const auditLogs = new MemoryAuditLogs();
+  const policies = new MemoryPolicies();
+  const bus = new RecordingBus();
+  const notificationCalls: unknown[] = [];
+  const targetUserId = "10000000-0000-4000-8000-0000000000d5";
+  let membershipCalls = 0;
+  let workItemCalls = 0;
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-0000000000d5",
+    routedToUserId: approverId
+  });
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies,
+    bus,
+    memberships: {
+      findActiveForUserWorkspace: async (id, targetWorkspaceId) => {
+        membershipCalls += 1;
+        return id === targetUserId && targetWorkspaceId === workspaceId
+          ? ({ id: `membership-${id}`, userId: id, workspaceId } as never)
+          : null;
+      }
+    },
+    workItems: {
+      findWorkItemAccessRecord: async () => {
+        workItemCalls += 1;
+        return {
+          id: seeded.workItemId!,
+          status: "in_review",
+          submitterUserId: userId,
+          claimedByUserId: null,
+          workspaceId,
+          project: {
+            id: "70000000-0000-4000-8000-0000000000d5",
+            workspaceId,
+            orgId,
+            ownerUserId: targetUserId,
+            archived: false,
+            deletedAt: null
+          },
+          assignments: []
+        } as never;
+      }
+    },
+    notifications: recordingDelegateNotifications(notificationCalls),
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.delegate(seeded.id, actor, targetUserId),
+    (error) => error instanceof ApprovalServiceError
+      && error.status === 503
+      && error.code === "delegate_user_directory_unavailable"
+  );
+
+  assert.equal(membershipCalls, 0);
+  assert.equal(workItemCalls, 0);
+  assert.equal((await approvals.findById(seeded.id))?.routedToUserId, approverId);
+  assert.equal(auditLogs.rows.some((entry) => entry.action === "approval.delegated"), false);
+  assert.deepEqual(notificationCalls, []);
+  assert.deepEqual(bus.events, []);
+});
+
+test("delegate rejects a soft-deleted target before membership even when an active membership remains", async () => {
+  const approvals = new MemoryApprovals();
+  const auditLogs = new MemoryAuditLogs();
+  const policies = new MemoryPolicies();
+  const bus = new RecordingBus();
+  const notificationCalls: unknown[] = [];
+  const targetUserId = "10000000-0000-4000-8000-0000000000d6";
+  let membershipCalls = 0;
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-0000000000d6",
+    routedToUserId: approverId
+  });
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies,
+    bus,
+    users: {
+      // findActiveById excludes soft-deleted rows, so this target is absent from the active-user view.
+      findActiveById: async () => null
+    },
+    memberships: {
+      findActiveForUserWorkspace: async (id, targetWorkspaceId) => {
+        membershipCalls += 1;
+        return id === targetUserId && targetWorkspaceId === workspaceId
+          ? ({ id: `membership-${id}`, userId: id, workspaceId } as never)
+          : null;
+      }
+    },
+    notifications: recordingDelegateNotifications(notificationCalls),
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.delegate(seeded.id, actor, targetUserId),
+    (error) => error instanceof ApprovalServiceError
+      && error.status === 404
+      && error.code === "delegate_target_not_found"
+  );
+
+  assert.equal(membershipCalls, 0);
+  assert.equal((await approvals.findById(seeded.id))?.routedToUserId, approverId);
+  assert.equal(auditLogs.rows.some((entry) => entry.action === "approval.delegated"), false);
+  assert.deepEqual(notificationCalls, []);
+  assert.deepEqual(bus.events, []);
+});
+
+test("delegate propagates an active-user lookup failure before mutation or side effects", async () => {
+  const approvals = new MemoryApprovals();
+  const auditLogs = new MemoryAuditLogs();
+  const policies = new MemoryPolicies();
+  const bus = new RecordingBus();
+  const notificationCalls: unknown[] = [];
+  const targetUserId = "10000000-0000-4000-8000-0000000000d7";
+  const lookupError = new Error("active-user repository unavailable");
+  let membershipCalls = 0;
+  const seeded = await approvals.createApprovalRequest({
+    actionPattern: "tool.write_file",
+    workItemId: "50000000-0000-4000-8000-0000000000d7",
+    routedToUserId: approverId
+  });
+  const service = createApprovalService({
+    approvals,
+    auditLogs,
+    policies,
+    bus,
+    users: {
+      findActiveById: async () => {
+        throw lookupError;
+      }
+    },
+    memberships: {
+      findActiveForUserWorkspace: async (id, targetWorkspaceId) => {
+        membershipCalls += 1;
+        return id === targetUserId && targetWorkspaceId === workspaceId
+          ? ({ id: `membership-${id}`, userId: id, workspaceId } as never)
+          : null;
+      }
+    },
+    notifications: recordingDelegateNotifications(notificationCalls),
+    now: () => now
+  });
+
+  await assert.rejects(
+    () => service.delegate(seeded.id, actor, targetUserId),
+    (error) => error === lookupError
+  );
+
+  assert.equal(membershipCalls, 0);
+  assert.equal((await approvals.findById(seeded.id))?.routedToUserId, approverId);
+  assert.equal(auditLogs.rows.some((entry) => entry.action === "approval.delegated"), false);
+  assert.deepEqual(notificationCalls, []);
+  assert.deepEqual(bus.events, []);
 });
 
 test("delegate rejects an active user without an actor-workspace membership before mutation or side effects", async () => {

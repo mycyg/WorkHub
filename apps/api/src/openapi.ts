@@ -1909,10 +1909,10 @@ const approvalDelegateSemanticResponse = jsonErrorStatusResponse(
   "Approval delegation target is not valid for this request",
   ["delegate_to_requester", "delegate_target_cannot_view"]
 ).responses["422"];
-const approvalDelegateMembershipUnavailableResponse = jsonErrorStatusResponse(
+const approvalDelegateAuthorizationUnavailableResponse = jsonErrorStatusResponse(
   "503",
-  "Approval delegation membership could not be verified",
-  ["delegate_membership_unavailable"]
+  "Approval delegation target authorization could not be verified",
+  ["delegate_membership_unavailable", "delegate_user_directory_unavailable"]
 ).responses["503"];
 const approvalMalformedJsonResponse = jsonErrorStatusResponse(
   "400",
@@ -1998,7 +1998,7 @@ const approvalDelegateResponse = {
     "404": approvalDelegateNotFoundResponse,
     "422": approvalDelegateSemanticResponse,
     "409": approvalRaceResponse,
-    "503": approvalDelegateMembershipUnavailableResponse
+    "503": approvalDelegateAuthorizationUnavailableResponse
   }
 } as const;
 const escalationResolveResponse = {
