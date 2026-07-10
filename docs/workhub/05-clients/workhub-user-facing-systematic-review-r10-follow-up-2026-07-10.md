@@ -14,6 +14,14 @@
 
 ---
 
+## Remediation loop status
+
+本节是原始审查之上的 living remediation ledger，只记录修复与 fresh 验证证据；上方原始审查基线、下方 P0-1 历史发现及整份报告的 `HOLD` 发布结论均保持不变。`FIXED_PENDING_REVIEW` 仅表示修复已有提交和本轮验证证据，仍须等待独立 task review 与 whole-batch review，不表示 Batch 0 或产品已完成。
+
+| Finding | Status | Remediation commits | Fresh verification evidence |
+|---|---|---|---|
+| P0-1 | `FIXED_PENDING_REVIEW` | Task 1 directory scope: `110e415d4`; Task 1 fail-closed/repository hardening: `5aab1337b`; Task 2 delegate authorization: `58a3168a7`; Task 3 literal DOM options: `591510f7f` | `pnpm --filter @workhub/api test`: tests `850`, pass `850`, fail `0`, exit `0`.<br>`pnpm --filter @workhub/web test`: tests `68`, pass `68`, fail `0`, exit `0`.<br>`pnpm --filter @workhub/api typecheck`, `pnpm --filter @workhub/web typecheck`, and `pnpm --filter @workhub/db typecheck`: all exit `0`.<br>Fresh isolated Pilot PG/Redis command: `DATABASE_URL='postgresql+psycopg://workhub:workhub@127.0.0.1:55434/workhub_r11_batch0_task4' APP_ENV=test COOKIE_SECRET=local BROKER_BACKEND=redis BROKER_URL='redis://127.0.0.1:6381' WORKER_COUNT=2 pnpm qa:r2-pg-redis-smoke`; exit `0`, `workspace-scoped active member directory isolation ok`, final `ok: true`, owner SSE `200`, stranger SSE `403`, and `run_status: succeeded`.<br>Fresh cross-workspace exploit regression `pnpm --filter @workhub/api exec node --import tsx --test --test-name-pattern="delegate rejects an active user without an actor-workspace membership" src/approvals.test.ts`: tests `1`, pass `1`, fail `0`, exit `0`; the regression produced no routed-user mutation, notification, SSE event, or `approval.delegated` success audit.<br>`rg -n "listActiveRefs\b|select\.innerHTML = result\.users" packages/db/src apps/api/src apps/web/src`: no matches (expected `rg` exit `1`). |
+
 ## 1. 一句话结论
 
 WorkHub 的 Web 表面已经从“工程后台”明显进化成了有产品感的玻璃化工作台，导航、Intake、审批选择、日历、设置拆分等 R10 改动也确实改善了第一印象；但它还没有形成一个可以让普通用户放心操作的、跨 Web/Desktop/Cuu 一致的产品。
