@@ -47,7 +47,7 @@ function optionsHtml(question: Question, selected: Set<string>, zh: boolean): st
       const tag = recommended.has(option.id)
         ? (zh ? "推荐" : "Recommended")
         : option.risk_hint ? riskHintLabel(option.risk_hint, zh) : "";
-      return `<button type="button" class="wh-spot-opt" data-opt="${escapeHtml(option.id)}" data-sel="${isSel}">
+      return `<button type="button" class="wh-spot-opt" data-opt="${escapeHtml(option.id)}" data-sel="${isSel}" aria-pressed="${isSel}">
         <span class="wh-spot-opt-check" aria-hidden="true"></span>
         <span class="wh-spot-opt-text">
           <span class="wh-spot-opt-label">${escapeHtml(option.label)}${tag ? `<span class="wh-spot-opt-tag">${escapeHtml(tag)}</span>` : ""}</span>
@@ -250,9 +250,11 @@ export function createIntakeView(): SpotlightCapabilityView {
           } else {
             selected = new Set([id]);
           }
-          // 只更新选中态，不整体重渲（保自由文本输入）。
+          // 只更新选中态，不整体重渲（保自由文本输入）。aria-pressed 同步给读屏。
           body.querySelectorAll<HTMLElement>("[data-opt]").forEach((el) => {
-            el.dataset.sel = String(selected.has(el.dataset.opt ?? ""));
+            const isSelected = selected.has(el.dataset.opt ?? "");
+            el.dataset.sel = String(isSelected);
+            el.setAttribute("aria-pressed", String(isSelected));
           });
         }
       });

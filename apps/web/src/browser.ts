@@ -448,7 +448,8 @@ function bindLocaleSwitch(shellRoot: HTMLElement, locale: WorkHubLocale, client:
       return;
     }
     const activeTag = document.activeElement?.tagName ?? "";
-    if (/^(input|textarea|select)$/iu.test(activeTag)) {
+    // R10-P2b：contenteditable 里打字同样不能触发单字符快捷键。
+    if (/^(input|textarea|select)$/iu.test(activeTag) || (document.activeElement instanceof HTMLElement && document.activeElement.isContentEditable)) {
       return;
     }
     if (!shellRoot.querySelector('[data-r4-route-component="approvals"]')) {

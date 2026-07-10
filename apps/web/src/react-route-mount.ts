@@ -581,7 +581,31 @@ function ProposalLineEditor(input: ProposalLineEditorProps) {
             tabIndex: active ? 0 : -1,
             "data-line-editor-tab": file.targetKey,
             "data-line-editor-panel-id": file.panelId,
-            onClick: () => setActivePanelId(file.panelId)
+            onClick: () => setActivePanelId(file.panelId),
+            // R10-P2b（无障碍）：tablist 键盘模型——方向键在标签间移动激活+焦点，Home/End 跳两端。
+            onKeyDown: (event: { key: string; preventDefault: () => void; currentTarget: { closest: (selector: string) => Element | null } }) => {
+              const targetIndex = event.key === "ArrowRight"
+                ? (index + 1) % input.files.length
+                : event.key === "ArrowLeft"
+                  ? (index - 1 + input.files.length) % input.files.length
+                  : event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? input.files.length - 1
+                      : -1;
+              if (targetIndex < 0) {
+                return;
+              }
+              event.preventDefault();
+              const targetFile = input.files[targetIndex];
+              if (!targetFile) {
+                return;
+              }
+              setActivePanelId(targetFile.panelId);
+              const tablist = event.currentTarget.closest("[role=\"tablist\"]");
+              const nextTab = tablist?.querySelector<HTMLButtonElement>(`[data-line-editor-panel-id="${targetFile.panelId}"]`);
+              nextTab?.focus();
+            }
           },
           file.targetLabel
         );
