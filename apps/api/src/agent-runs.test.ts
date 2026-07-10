@@ -757,6 +757,9 @@ function acceptedDeliverable(partial: Partial<AcceptedDeliverableVM> = {}): Acce
 
 function workItemsWithAcceptedDeliverables(deliverables: AcceptedDeliverableVM[]): WorkItemService {
   return {
+    async projectNamesForWorkItems() {
+      return new Map<string, string>();
+    },
     async createSession() {
       throw new Error("not needed");
     },

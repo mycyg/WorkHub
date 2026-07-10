@@ -121,6 +121,7 @@ export type WorkItemService = {
   // routes-a-2/routes-b-1/services-a-2/xlink-authz-4/ux-web-govern-6：审批中心可见性判定此前借用 detailPage
   // （整页 VM 装配：assignments/proposals/acceptance/agent trace 等一堆 join）只为算一个 boolean，且逐行调用无
   // 去重。改成批量、轻量的访问记录判定——一次 IN 查询把一批 workItemId 的可见性判完，返回可读的那部分 id 集合。
+  projectNamesForWorkItems: (input: { workItemIds: string[]; actor: AuthActor }) => Promise<Map<string, string>>;
   canReadWorkItems: (input: {
     workItemIds: string[];
     actor: AuthActor;
@@ -1682,6 +1683,24 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
   // 一次 findWorkItemAccessRecords（IN 查询 workItems + IN 查询 assignments，两次往返，不管 workItemIds 有多少个）
   // 换掉此前审批中心每行一次 detailPage（整页 VM：assignments/proposals/acceptance/agent trace 等 ~10 条查询）。
   // 找不到的 workItemId 不算可见（fail-closed，与 detailPage 404→false 的旧行为一致）。
+  // R13（多项目一致性）：批量取「actor 可见工作项 → 项目名」——首页决策队列四路来源统一点名用。
+  // 复用同一次 findWorkItemAccessRecords，可见性判定与 canReadWorkItems 同口径。
+  async function projectNamesForWorkItems(input: { workItemIds: string[]; actor: AuthActor }): Promise<Map<string, string>> {
+    const uniqueIds = [...new Set(input.workItemIds)];
+    const names = new Map<string, string>();
+    if (uniqueIds.length === 0) {
+      return names;
+    }
+    const records = await repository.findWorkItemAccessRecords(uniqueIds);
+    for (const workItemId of uniqueIds) {
+      const record = records.get(workItemId);
+      if (record && canReadWorkItemAccessRow(record, input.actor) && record.project?.name) {
+        names.set(workItemId, record.project.name);
+      }
+    }
+    return names;
+  }
+
   async function canReadWorkItems(input: { workItemIds: string[]; actor: AuthActor }): Promise<Set<string>> {
     const uniqueIds = [...new Set(input.workItemIds)];
     if (uniqueIds.length === 0) {
@@ -2130,6 +2149,7 @@ export function createDbWorkItemService(repository: WorkItemDataRepository, opti
       });
     },
 
+    projectNamesForWorkItems,
     canReadWorkItems,
 
     async assertCanMutateWorkItem(input) {
@@ -2514,6 +2534,11 @@ export function createInMemoryWorkItemService(options: ServiceOptions = {}): Wor
 
     // In-memory fixture has no actor-based access model (requireWorkItem only checks existence) — mirror that:
     // any workItemId that exists in the map is "visible". Matches detailPage's lack of restriction above.
+    // 内存双不建模项目名——返回空 Map（首页点名优雅降级）。
+    async projectNamesForWorkItems() {
+      return new Map<string, string>();
+    },
+
     async canReadWorkItems(input) {
       return new Set(input.workItemIds.filter((id) => workItems.has(id)));
     },

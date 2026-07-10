@@ -1012,6 +1012,29 @@ export function createApprovalService(deps: ApprovalServiceDependencies = getDef
                 if (swept && deps.notifications?.archiveByDedupeKey) {
                   await deps.notifications.archiveByDedupeKey(`approval_routed:${swept.id}`).catch(() => undefined);
                 }
+                // R13（合规）：被清扫的每一条都要在 audit_logs 留痕——事后必须能回答
+                // 「这条审批是谁/何时/因哪条策略批的」。失败只告警不翻主决策。
+                if (swept) {
+                  try {
+                    await auditApprovalAction(swept, {
+                      action: "approval.decided",
+                      actor: {
+                        kind: "human",
+                        label: actorNickname(actor),
+                        orgId: actor.orgId,
+                        workspaceId: actor.workspaceId,
+                        ...(actor.userId ? { userId: actor.userId } : {})
+                      },
+                      detail: {
+                        decision: "allow",
+                        swept_via: updated.id,
+                        learned_action_pattern: updated.actionPattern
+                      }
+                    });
+                  } catch (error) {
+                    getDefaultStructuredLogger().warn("approvals_swept_audit_failed", { id: swept.id, error });
+                  }
+                }
               }
               if (sameKind.length > 0) {
                 getDefaultStructuredLogger().info("approvals_remember_always_swept_pending", { actionPattern: updated.actionPattern, count: sameKind.length });

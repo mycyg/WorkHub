@@ -613,6 +613,26 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
           : "变更评审暂时加载失败。请打开项目页或稍后重试。"
       });
     }
+    // R13（多项目一致性）：四路来源（审批/升级预算/记忆冲突/提议评审）只有审批带 project_name——
+    // 装配收尾统一按 work_item_id 批量反查补齐，首页/桌面卡与审批中心同构。失败不点名不翻页面。
+    try {
+      const missingNameWorkItemIds = [...new Set(decisionQueue
+        .filter((item) => !item.project_name && item.work_item_id)
+        .map((item) => item.work_item_id as string))];
+      if (missingNameWorkItemIds.length > 0) {
+        const nameMap = await workItems.projectNamesForWorkItems({ workItemIds: missingNameWorkItemIds, actor: c.var.actor });
+        for (const item of decisionQueue) {
+          if (!item.project_name && item.work_item_id) {
+            const name = nameMap.get(item.work_item_id);
+            if (name) {
+              item.project_name = name;
+            }
+          }
+        }
+      }
+    } catch {
+      // 点名失败不影响决策队列本身。
+    }
     return c.json(pageEnvelope(
       buildAttentionHomePage({ queue: decisionQueue, sourceWarnings, backgroundRuns: activeRuns, locale, worklog }),
       locale

@@ -180,6 +180,9 @@ function workItemServiceFor(input: {
   restoreError?: Error;
 }): WorkItemService {
   return {
+    async projectNamesForWorkItems() {
+      return new Map<string, string>();
+    },
     async createSession() {
       throw new Error("not needed");
     },
