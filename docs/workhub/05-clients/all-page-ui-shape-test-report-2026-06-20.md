@@ -1,5 +1,7 @@
 # 全页面 UI 形态测试报告 2026-06-20
 
+> **历史快照（2026-06-20）**：本报告基于当时的 15 条正式路由；现行注册表已扩至 18 条（projects / project-home / agents 等后续加入）。以 `apps/web/src/routes.ts` 的 shellPageOrder 为准。
+
 ## 结论
 
 本轮按“每一个页面的 UI 形态都要覆盖”的要求，补齐并重跑 Web 端全页面 UI 自动化。15 个注册路由均已覆盖 ready 页面形态；同一组 15 个路由也在 route-state matrix 中覆盖 loading、empty、error、forbidden 四类状态。live UI 交互共 72 步，包含桌面/移动截图、API Page VM 取数证明、SSE、表单/按钮交互、无横向溢出和无文本框溢出 gate。

@@ -1,5 +1,7 @@
 # WorkHub 端到端测试总报告 2026-06-20
 
+> **历史快照（2026-06-20）**：本报告基于当时的 15 条正式路由；现行注册表已扩至 18 条（projects / project-home / agents 等后续加入）。以 `apps/web/src/routes.ts` 的 shellPageOrder 为准。
+
 ## 结论
 
 本轮按“服务端 + 本地客户端 + CUU UI + UI 交互 + 数据同步 + 每个页面 UI 形态”的目标完成系统性回归。Web、API、DB、Postgres live seed、Redis/SSE、CUU、desktop webview、Tauri Rust 壳与 macOS `.app` bundle 均通过；真实外部 LLM 评测已接入用户提供的 DeepSeek Anthropic-compatible 配置（密钥只作为环境变量注入，未写入仓库/报告），但当前真实模型链路在 R5.10 T3 富格式任务失败，应作为待修复问题保留。
