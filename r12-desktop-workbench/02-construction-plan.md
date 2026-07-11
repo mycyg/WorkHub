@@ -64,7 +64,8 @@ project_conversations
   id uuid pk · project_id fk · kind varchar('main'|'collab') · title varchar(256)
   parent_conversation_id uuid nullable(行动卡拆出的血缘)
   source_message_id uuid nullable · visibility varchar('project'|'private')
-  created_by uuid fk users · timestamps · soft delete
+  workspace_id uuid fk(租户 SQL 过滤) · next_seq bigint default 0(原子分配消息序号)
+  created_by uuid nullable fk users(仅兼容存量无 owner 项目;新建项目必填) · timestamps · soft delete
   UNIQUE(project_id) WHERE kind='main' AND deleted_at IS NULL
 
 conversation_participants(仅 collab 用;main 隐含全项目成员)
@@ -95,7 +96,8 @@ conversation_observer_state
   consecutive_failures int default 0 · updated_at
 
 user_ai_profiles
-  user_id pk · default_mode smallint(1-5, default 3) · granular_json jsonb
+  workspace_id fk + user_id fk · UNIQUE(workspace_id, user_id)
+  default_mode smallint(1-5, default 3) · granular_json jsonb
   dispatch_policy varchar('auto'|'ask'|'manual', default 'auto')  ← 接单策略(03 §0)
   cuu_proactivity varchar · model_tier_pref varchar nullable · timestamps
 
@@ -121,19 +123,19 @@ project_ai_governance
 
 ### SSE(扩展 `apps/api/src/sse/`)
 
-- `/me` 流新增 topic 族 `conversation`:事件 `conversation.message.created`(整条小消息)、`conversation.message.delta`(Cuu 流式)、`conversation.tool.begin/output_delta/end`、`conversation.action_card.updated`、`conversation.item.started/completed`(兜底)——命名与分层按 codex 规范(01 §1)。
+- 事件层新增 topic 族 `conversation`:事件 `conversation.message.created`(整条小消息)、`conversation.message.delta`(Cuu 流式)、`conversation.tool.begin/output_delta/end`、`conversation.action_card.updated`、`conversation.item.started/completed`(兜底)——命名与分层按 codex 规范(01 §1)。现有 `/me` 仍只订个人 topic;工作台用新增 `/api/push/stream/conversation/:id` 订当前会话,不把 broker 不具备的多 topic/replay 能力写成假承诺。
 - topic-access:按会话可见性鉴权(main=项目成员,collab=参与者);沿用 EC-1 uuid 守卫与 reconcile 语义。
 - typing 指示走瞬态事件 `conversation.presence.typing`(不落库,3s 过期)。
 
 ### 任务
 
-- [ ] 迁移+schema+repository(含 seq 分配:同会话内事务内 `max(seq)+1`,或 per-conversation 计数行防热点——写前先看现有 drive/comments 的做法保持一致)
+- [ ] 迁移+schema+repository(含 seq 分配:原子 `UPDATE project_conversations SET next_seq=next_seq+1 RETURNING next_seq`;`UNIQUE(conversation_id,seq)` 是最终防线,不使用会并发撞号的裸 `max(seq)+1`)
 - [ ] routes + 鉴权 + uuid 守卫 + json-body 校验;repository 单测 + 路由测试
 - [ ] SSE topic + access + reconcile;事件 shape 单测
 - [ ] PG smoke 增断言:建项目→main 会话自动存在→发消息→afterSeq 拉取有序
 - [ ] `pnpm -r typecheck` + CI 全绿
 
-**踩雷**:seq 并发分配是本批唯一难点,学 wisp 的唯一约束+重试而不是应用层锁;file_card 绝不落文件内容。
+**踩雷**:wisp 只提供 seq 唯一约束,没有可复用的并发分配实现;本仓用 PG 原子计数并保留唯一约束兜底,错误不得吞。file_card 绝不落文件内容。
 **验收门**:curl 全链路演示(建项目→列会话→发消息→SSE 收到→行动卡表可手插演示);PG smoke 绿。
 
 ---

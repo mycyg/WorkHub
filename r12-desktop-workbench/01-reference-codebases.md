@@ -54,9 +54,9 @@ codex 把「审批策略」和「执行能力」拆成正交两维:`AskForApprov
 ### 5. 会话持久化与回放 ← openai/codex + wisp-science
 
 - codex:JSONL rollout + 索引,支持 resume(`codex-rs/core/src/thread_manager.rs:760,780`)与 fork(`:953,996`);录制器在 `codex-rs/rollout/src/recorder.rs`
-- wisp:sqlite schema 三个好设计——`frames` 自引用(`parent_frame_id`+`root_frame_id`)支持分支/fork;`messages` 用 `UNIQUE(frame_id, seq)` 保证有序回放;`runs` 表带 `lifecycle_owner`/lease 字段防多端并发接管。完整 schema:`crates/wisp-store/migrations/0000_init.sql:1-206`(frames 24-40、messages 42-55、runs 145-174)
+- wisp:sqlite schema 三个好设计——`frames` 自引用(`parent_frame_id`+`root_frame_id`)支持分支/fork;`messages` 用 `UNIQUE(frame_id, seq)` 保证有序回放;`runs` 表带 `lifecycle_owner`/lease 字段防多端并发接管。完整 schema:`crates/wisp-store/migrations/0000_init.sql:1-205`(frames 24-40、messages 42-55、runs 145-174)
 
-**抄法**:R12 新表 `conversation_messages` 加 `(conversation_id, seq)` 唯一约束(有序回放地基);`project_conversations` 预留 `parent_conversation_id`(行动卡拆出协同会话时记血缘)。run 的 lease 我们已有(claim-lease 心跳),不重造。
+**抄法**:R12 新表 `conversation_messages` 加 `(conversation_id, seq)` 唯一约束(有序回放地基);`project_conversations` 预留 `parent_conversation_id`(行动卡拆出协同会话时记血缘)。wisp 不提供并发安全的 seq 分配器,WorkHub 必须自行用 PG 原子计数实现,不能把唯一约束误写成分配算法。run 的 lease 我们已有(claim-lease 心跳),不重造。
 
 ### 6. composer 的 @/#// 引用系统 ← wisp-science(含一条安全红线)
 
@@ -91,10 +91,10 @@ wisp 的设计最值得抄的是**安全边界**:composer 里只存轻量 chip(i
 ### 9. Rust 侧进程/事件桥 + 未来远程端 ← codexia
 
 - 单一常驻子进程 + JSON-RPC over stdio(oneshot channel 按 id 配对请求响应):`crates/codex/src/app_server.rs:95-180`
-- **EventSink trait 解耦事件出口**(桌面实现= tauri emit,web 实现= tokio broadcast),同一份业务代码双端复用:`crates/shared/src/event_sink.rs:6-28`
+- **EventSink trait 解耦事件出口**(桌面实现= tauri emit,web 实现= tokio broadcast),同一份业务代码双端复用:`crates/shared/src/event_sink.rs:6-28`、`src-tauri/src/event_sink.rs:6-19`
 - Axum 把每个 tauri command 镜像成 REST + `/ws` + `/api/events`(SSE),再 serve 前端 dist = 手机遥控桌面:`web/src/router.rs:96-110`、`web/src/websocket.rs:16-81`
 
-**抄法**:WorkHub 桌面本就直连 API(不经本地进程),第 9 条前半不需要;但 EventSink 式「事件出口抽象」值得用在 client-tauri 的 SSE worker → 前端桥上(现有 sse.rs/notify.rs 重构时顺手)。远程遥控架构留作 web 端工作台的远期参考。
+**抄法**:WorkHub 桌面本就直连 API(不经本地进程),第 9 条前半不需要;但 EventSink 式「事件出口抽象」值得用在 client-tauri 的 SSE worker → 前端桥上(现有 sse.rs/notify.rs 重构时顺手)。参考实现会忽略 emit/send 错误,WorkHub 只能学接口边界,必须保留可观测错误。远程遥控架构留作 web 端工作台的远期参考。
 
 ### 10. 技能与工具统一抽象 ← wisp-science + openai/codex
 

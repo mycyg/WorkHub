@@ -166,6 +166,6 @@ work_item(assignee=张三)
 
 ## 4. 落进施工计划的增量
 
-- 批 0 表补两个字段(已更新 02):`user_ai_profiles.dispatch_policy('auto'|'ask'|'manual', default 'auto')`、`agent_runs.execution_hint('server'|'local'|'any', default 'server')`;接单确认通知复用 notifications。
+- 批 0 表补租户键与两个字段(已更新 02):`user_ai_profiles` 按 `(workspace_id,user_id)` 唯一、`dispatch_policy('auto'|'ask'|'manual', default 'auto')`、`agent_runs.execution_hint('server'|'local'|'any', default 'server')`;接单确认通知复用 notifications。
 - 批 3 派发逻辑按 dispatch_policy 分叉;批 5 军团卡显示执行地(本机/云端)。
 - 新增批 9(后置,M5,可独立立项):桌面执行器 + `/api/llm-proxy` + 本地模型档。协议按本文件 §2E 冻结,先落协议测试(contract test)后落实现。

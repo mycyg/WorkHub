@@ -134,7 +134,7 @@ codexia,wisp-science},只学结构禁止复制粘贴代码。
 ```
 阅读 WorkHub 仓库 r12-desktop-workbench/04-codex-execution-guide.md 全文并严格遵守其铁律,
 然后执行 02-construction-plan.md 的「批 0 · 数据与协议地基」:
-建 7 张新表(project_conversations / conversation_participants / conversation_messages /
+建 8 张新表(project_conversations / conversation_participants / conversation_messages /
 action_cards / action_card_items / conversation_observer_state / user_ai_profiles /
 project_ai_governance,列定义以 02 批0 为准,含 dispatch_policy 与 agent_runs 的
 execution_hint/source_conversation_id 扩展列)、conversations 路由、/api/me/ai-profile、
