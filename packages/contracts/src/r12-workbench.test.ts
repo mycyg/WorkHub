@@ -322,6 +322,19 @@ test("R12 user AI profile PATCH is strict, snake-case, and nonempty", () => {
 
   assert.deepEqual(schema.parse(patch), patch);
   assert.deepEqual(schema.parse({ model_tier_preference: null }), { model_tier_preference: null });
+  for (const field of [
+    "default_mode",
+    "granular_settings",
+    "dispatch_policy",
+    "cuu_proactivity",
+    "model_tier_preference"
+  ]) {
+    assert.equal(
+      schema.safeParse({ [field]: undefined }).success,
+      false,
+      `accepted undefined-only user patch field: ${field}`
+    );
+  }
   for (const invalid of [
     {},
     { defaultMode: 4 },
@@ -353,6 +366,18 @@ test("R12 project AI governance PATCH is strict, bounded, and nonempty", () => {
   };
 
   assert.deepEqual(schema.parse(patch), patch);
+  for (const field of [
+    "observer_enabled",
+    "silence_window_seconds",
+    "quiet_hours",
+    "granular_settings"
+  ]) {
+    assert.equal(
+      schema.safeParse({ [field]: undefined }).success,
+      false,
+      `accepted undefined-only governance patch field: ${field}`
+    );
+  }
   for (const invalid of [
     {},
     { observerEnabled: false },

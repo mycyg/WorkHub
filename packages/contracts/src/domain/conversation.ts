@@ -108,7 +108,7 @@ export const patchUserAiProfileRequestSchema = z
     model_tier_preference: modelTierPreferenceSchema.nullable().optional()
   })
   .strict()
-  .refine((value) => Object.keys(value).length > 0, {
+  .refine((value) => Object.values(value).some((field) => field !== undefined), {
     message: "user AI profile patch must include at least one field"
   });
 export type PatchUserAiProfileRequest = z.infer<typeof patchUserAiProfileRequestSchema>;
@@ -121,7 +121,7 @@ export const patchProjectAiGovernanceRequestSchema = z
     granular_settings: aiGranularSettingsSchema.optional()
   })
   .strict()
-  .refine((value) => Object.keys(value).length > 0, {
+  .refine((value) => Object.values(value).some((field) => field !== undefined), {
     message: "project AI governance patch must include at least one field"
   });
 export type PatchProjectAiGovernanceRequest = z.infer<typeof patchProjectAiGovernanceRequestSchema>;
