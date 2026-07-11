@@ -61,6 +61,9 @@ CREATE TABLE IF NOT EXISTS "action_cards" (
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "action_card_items" (
   "id" uuid PRIMARY KEY NOT NULL,
+  "workspace_id" uuid NOT NULL,
+  "project_id" uuid NOT NULL,
+  "conversation_id" uuid NOT NULL,
   "action_card_id" uuid NOT NULL REFERENCES "action_cards"("id") ON DELETE cascade,
   "ordinal" integer NOT NULL,
   "kind" varchar(16) NOT NULL,
@@ -76,7 +79,8 @@ CREATE TABLE IF NOT EXISTS "action_card_items" (
   CONSTRAINT "action_card_items_ordinal_ck" CHECK ("ordinal" >= 0),
   CONSTRAINT "action_card_items_kind_ck" CHECK ("kind" IN ('execute','decide','observe')),
   CONSTRAINT "action_card_items_confidence_ck" CHECK ("confidence" IN ('high','mid','low')),
-  CONSTRAINT "action_card_items_status_ck" CHECK ("status" IN ('running','done','undone','waiting_decision','dismissed','escalated'))
+  CONSTRAINT "action_card_items_status_ck" CHECK ("status" IN ('running','done','undone','waiting_decision','dismissed','escalated')),
+  CONSTRAINT "action_card_items_run_requires_work_item_ck" CHECK ("run_id" IS NULL OR "work_item_id" IS NOT NULL)
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "conversation_observer_state" (
@@ -120,16 +124,57 @@ ALTER TABLE "agent_runs" ADD COLUMN IF NOT EXISTS "source_conversation_id" uuid;
 --> statement-breakpoint
 ALTER TABLE "agent_runs" ADD COLUMN IF NOT EXISTS "source_action_card_item_id" uuid;
 --> statement-breakpoint
+ALTER TABLE "action_card_items" ADD COLUMN IF NOT EXISTS "workspace_id" uuid;
+--> statement-breakpoint
+ALTER TABLE "action_card_items" ADD COLUMN IF NOT EXISTS "project_id" uuid;
+--> statement-breakpoint
+ALTER TABLE "action_card_items" ADD COLUMN IF NOT EXISTS "conversation_id" uuid;
+--> statement-breakpoint
+UPDATE "action_card_items" AS aci
+SET
+  "workspace_id" = pc."workspace_id",
+  "project_id" = pc."project_id",
+  "conversation_id" = ac."conversation_id"
+FROM "action_cards" AS ac
+JOIN "project_conversations" AS pc ON pc."id" = ac."conversation_id"
+WHERE aci."action_card_id" = ac."id"
+  AND (
+    aci."workspace_id" IS DISTINCT FROM pc."workspace_id"
+    OR aci."project_id" IS DISTINCT FROM pc."project_id"
+    OR aci."conversation_id" IS DISTINCT FROM ac."conversation_id"
+  );
+--> statement-breakpoint
+ALTER TABLE "action_card_items" ALTER COLUMN "workspace_id" SET NOT NULL;
+--> statement-breakpoint
+ALTER TABLE "action_card_items" ALTER COLUMN "project_id" SET NOT NULL;
+--> statement-breakpoint
+ALTER TABLE "action_card_items" ALTER COLUMN "conversation_id" SET NOT NULL;
+--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "projects_id_workspace_uq" ON "projects" ("id","workspace_id");
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "project_conversations_id_project_uq"
   ON "project_conversations" ("id","project_id");
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "project_conversations_id_project_workspace_uq"
+  ON "project_conversations" ("id","project_id","workspace_id");
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "project_conversations_id_workspace_uq"
+  ON "project_conversations" ("id","workspace_id");
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "work_items_id_project_workspace_uq"
+  ON "work_items" ("id","project_id","workspace_id");
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "conversation_messages_conversation_id_uq"
   ON "conversation_messages" ("conversation_id","id");
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "action_cards_conversation_id_uq"
   ON "action_cards" ("conversation_id","id");
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "action_card_items_id_conversation_workspace_uq"
+  ON "action_card_items" ("id","conversation_id","workspace_id");
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "agent_runs_id_work_item_workspace_uq"
+  ON "agent_runs" ("id","work_item_id","workspace_id");
 --> statement-breakpoint
 DO $$
 BEGIN
@@ -141,6 +186,71 @@ BEGIN
     ALTER TABLE "project_conversations"
       ADD CONSTRAINT "project_conversations_source_message_id_conversation_messages_id_fk"
       FOREIGN KEY ("source_message_id") REFERENCES "conversation_messages"("id") ON DELETE set null;
+  END IF;
+END $$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'action_card_items_run_requires_work_item_ck'
+      AND conrelid = 'action_card_items'::regclass
+  ) THEN
+    ALTER TABLE "action_card_items"
+      ADD CONSTRAINT "action_card_items_run_requires_work_item_ck"
+      CHECK ("run_id" IS NULL OR "work_item_id" IS NOT NULL);
+  END IF;
+END $$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'action_card_items_conversation_scope_fk'
+      AND conrelid = 'action_card_items'::regclass
+  ) THEN
+    ALTER TABLE "action_card_items"
+      ADD CONSTRAINT "action_card_items_conversation_scope_fk"
+      FOREIGN KEY ("conversation_id","project_id","workspace_id") REFERENCES "project_conversations"("id","project_id","workspace_id");
+  END IF;
+END $$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'action_card_items_action_card_conversation_fk'
+      AND conrelid = 'action_card_items'::regclass
+  ) THEN
+    ALTER TABLE "action_card_items"
+      ADD CONSTRAINT "action_card_items_action_card_conversation_fk"
+      FOREIGN KEY ("conversation_id","action_card_id") REFERENCES "action_cards"("conversation_id","id");
+  END IF;
+END $$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'action_card_items_work_item_scope_fk'
+      AND conrelid = 'action_card_items'::regclass
+  ) THEN
+    ALTER TABLE "action_card_items"
+      ADD CONSTRAINT "action_card_items_work_item_scope_fk"
+      FOREIGN KEY ("work_item_id","project_id","workspace_id") REFERENCES "work_items"("id","project_id","workspace_id");
+  END IF;
+END $$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'action_card_items_run_scope_fk'
+      AND conrelid = 'action_card_items'::regclass
+  ) THEN
+    ALTER TABLE "action_card_items"
+      ADD CONSTRAINT "action_card_items_run_scope_fk"
+      FOREIGN KEY ("run_id","work_item_id","workspace_id") REFERENCES "agent_runs"("id","work_item_id","workspace_id");
   END IF;
 END $$;
 --> statement-breakpoint
@@ -239,6 +349,58 @@ DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
+    WHERE conname = 'agent_runs_source_conversation_workspace_ck'
+      AND conrelid = 'agent_runs'::regclass
+  ) THEN
+    ALTER TABLE "agent_runs"
+      ADD CONSTRAINT "agent_runs_source_conversation_workspace_ck"
+      CHECK ("source_conversation_id" IS NULL OR "workspace_id" IS NOT NULL);
+  END IF;
+END $$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'agent_runs_source_action_item_conversation_ck'
+      AND conrelid = 'agent_runs'::regclass
+  ) THEN
+    ALTER TABLE "agent_runs"
+      ADD CONSTRAINT "agent_runs_source_action_item_conversation_ck"
+      CHECK ("source_action_card_item_id" IS NULL OR "source_conversation_id" IS NOT NULL);
+  END IF;
+END $$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'agent_runs_source_conversation_workspace_fk'
+      AND conrelid = 'agent_runs'::regclass
+  ) THEN
+    ALTER TABLE "agent_runs"
+      ADD CONSTRAINT "agent_runs_source_conversation_workspace_fk"
+      FOREIGN KEY ("source_conversation_id","workspace_id") REFERENCES "project_conversations"("id","workspace_id");
+  END IF;
+END $$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'agent_runs_source_action_item_conversation_fk'
+      AND conrelid = 'agent_runs'::regclass
+  ) THEN
+    ALTER TABLE "agent_runs"
+      ADD CONSTRAINT "agent_runs_source_action_item_conversation_fk"
+      FOREIGN KEY ("source_action_card_item_id","source_conversation_id","workspace_id") REFERENCES "action_card_items"("id","conversation_id","workspace_id");
+  END IF;
+END $$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
     WHERE conname = 'agent_runs_source_conversation_id_project_conversations_id_fk'
       AND conrelid = 'agent_runs'::regclass
   ) THEN
@@ -304,6 +466,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS "action_cards_message_id_uq" ON "action_cards"
 --> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "action_card_items_card_ordinal_uq"
   ON "action_card_items" ("action_card_id","ordinal");
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "action_card_items_scope_idx"
+  ON "action_card_items" ("workspace_id","project_id","conversation_id");
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "action_card_items_work_item_id_idx" ON "action_card_items" ("work_item_id");
 --> statement-breakpoint

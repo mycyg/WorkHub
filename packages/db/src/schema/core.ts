@@ -369,6 +369,7 @@ export const workItems = pgTable(
   },
   (table) => [
     uniqueIndex("work_items_code_uq").on(table.code),
+    uniqueIndex("work_items_id_project_workspace_uq").on(table.id, table.projectId, table.workspaceId),
     index("work_items_project_id_idx").on(table.projectId),
     index("work_items_workspace_id_idx").on(table.workspaceId),
     index("work_items_submitter_user_id_idx").on(table.submitterUserId),
@@ -439,6 +440,12 @@ export const projectConversations = pgTable(
     index("project_conversations_workspace_project_idx").on(table.workspaceId, table.projectId),
     index("project_conversations_project_created_idx").on(table.projectId, table.createdAt),
     uniqueIndex("project_conversations_id_project_uq").on(table.id, table.projectId),
+    uniqueIndex("project_conversations_id_project_workspace_uq").on(
+      table.id,
+      table.projectId,
+      table.workspaceId
+    ),
+    uniqueIndex("project_conversations_id_workspace_uq").on(table.id, table.workspaceId),
     index("project_conversations_parent_id_idx").on(table.parentConversationId),
     index("project_conversations_source_message_id_idx").on(table.sourceMessageId),
     index("project_conversations_deleted_at_idx").on(table.deletedAt)
@@ -530,6 +537,9 @@ export const actionCardItems = pgTable(
   "action_card_items",
   {
     id: id(),
+    workspaceId: uuid("workspace_id").notNull(),
+    projectId: uuid("project_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
     actionCardId: uuid("action_card_id").notNull().references(() => actionCards.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
     kind: varchar("kind", { length: 16 }).$type<ActionCardItemKind>().notNull(),
@@ -542,7 +552,7 @@ export const actionCardItems = pgTable(
     undoDeadlineAt: timestampTz("undo_deadline_at"),
     ...timestamps()
   },
-  (table) => [
+  (table): PgTableExtraConfigValue[] => [
     check("action_card_items_ordinal_ck", sql`${table.ordinal} >= 0`),
     check("action_card_items_kind_ck", sql`${table.kind} in ('execute', 'decide', 'observe')`),
     check("action_card_items_confidence_ck", sql`${table.confidence} in ('high', 'mid', 'low')`),
@@ -550,7 +560,37 @@ export const actionCardItems = pgTable(
       "action_card_items_status_ck",
       sql`${table.status} in ('running', 'done', 'undone', 'waiting_decision', 'dismissed', 'escalated')`
     ),
+    check(
+      "action_card_items_run_requires_work_item_ck",
+      sql`${table.runId} is null or ${table.workItemId} is not null`
+    ),
+    foreignKey({
+      name: "action_card_items_conversation_scope_fk",
+      columns: [table.conversationId, table.projectId, table.workspaceId],
+      foreignColumns: [projectConversations.id, projectConversations.projectId, projectConversations.workspaceId]
+    }),
+    foreignKey({
+      name: "action_card_items_action_card_conversation_fk",
+      columns: [table.conversationId, table.actionCardId],
+      foreignColumns: [actionCards.conversationId, actionCards.id]
+    }),
+    foreignKey({
+      name: "action_card_items_work_item_scope_fk",
+      columns: [table.workItemId, table.projectId, table.workspaceId],
+      foreignColumns: [workItems.id, workItems.projectId, workItems.workspaceId]
+    }),
+    deferredForeignKey((): DeferredForeignKeyConfig => ({
+      name: "action_card_items_run_scope_fk",
+      columns: [table.runId, table.workItemId, table.workspaceId],
+      foreignColumns: [agentRuns.id, agentRuns.workItemId, agentRuns.workspaceId]
+    })),
     uniqueIndex("action_card_items_card_ordinal_uq").on(table.actionCardId, table.ordinal),
+    uniqueIndex("action_card_items_id_conversation_workspace_uq").on(
+      table.id,
+      table.conversationId,
+      table.workspaceId
+    ),
+    index("action_card_items_scope_idx").on(table.workspaceId, table.projectId, table.conversationId),
     index("action_card_items_work_item_id_idx").on(table.workItemId),
     index("action_card_items_run_id_idx").on(table.runId),
     index("action_card_items_assignee_status_idx").on(table.assigneeUserId, table.status)
@@ -1457,6 +1497,24 @@ export const agentRuns = pgTable(
   },
   (table) => [
     check("agent_runs_execution_hint_ck", sql`${table.executionHint} in ('server', 'local', 'any')`),
+    check(
+      "agent_runs_source_conversation_workspace_ck",
+      sql`${table.sourceConversationId} is null or ${table.workspaceId} is not null`
+    ),
+    check(
+      "agent_runs_source_action_item_conversation_ck",
+      sql`${table.sourceActionCardItemId} is null or ${table.sourceConversationId} is not null`
+    ),
+    foreignKey({
+      name: "agent_runs_source_conversation_workspace_fk",
+      columns: [table.sourceConversationId, table.workspaceId],
+      foreignColumns: [projectConversations.id, projectConversations.workspaceId]
+    }),
+    foreignKey({
+      name: "agent_runs_source_action_item_conversation_fk",
+      columns: [table.sourceActionCardItemId, table.sourceConversationId, table.workspaceId],
+      foreignColumns: [actionCardItems.id, actionCardItems.conversationId, actionCardItems.workspaceId]
+    }),
     index("agent_runs_org_id_idx").on(table.orgId),
     index("agent_runs_workspace_id_idx").on(table.workspaceId),
     index("agent_runs_work_item_id_idx").on(table.workItemId),
@@ -1482,7 +1540,8 @@ export const agentRuns = pgTable(
       table.createdAt
     ),
     index("agent_runs_source_conversation_id_idx").on(table.sourceConversationId),
-    index("agent_runs_source_action_card_item_id_idx").on(table.sourceActionCardItemId)
+    index("agent_runs_source_action_card_item_id_idx").on(table.sourceActionCardItemId),
+    uniqueIndex("agent_runs_id_work_item_workspace_uq").on(table.id, table.workItemId, table.workspaceId)
   ]
 );
 

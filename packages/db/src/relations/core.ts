@@ -67,6 +67,7 @@ export const workspacesRelations = relations(workspaces, ({ many, one }) => ({
   objectives: many(objectives),
   agentMemory: many(agentMemory),
   conversations: many(projectConversations),
+  actionCardItems: many(actionCardItems),
   userAiProfiles: many(userAiProfiles),
   permissionPolicies: many(permissionPolicies)
 }));
@@ -77,6 +78,7 @@ export const projectsRelations = relations(projects, ({ many, one }) => ({
   workItems: many(workItems),
   driveItems: many(projectDriveItems),
   conversations: many(projectConversations),
+  actionCardItems: many(actionCardItems),
   aiGovernance: one(projectAiGovernance, {
     fields: [projects.id],
     references: [projectAiGovernance.projectId]
@@ -105,6 +107,7 @@ export const projectConversationsRelations = relations(projectConversations, ({ 
   participants: many(conversationParticipants),
   messages: many(conversationMessages, { relationName: "conversation_messages" }),
   actionCards: many(actionCards),
+  actionCardItems: many(actionCardItems),
   observerState: one(conversationObserverState),
   sourceRuns: many(agentRuns)
 }));
@@ -150,6 +153,12 @@ export const actionCardsRelations = relations(actionCards, ({ many, one }) => ({
 }));
 
 export const actionCardItemsRelations = relations(actionCardItems, ({ many, one }) => ({
+  workspace: one(workspaces, { fields: [actionCardItems.workspaceId], references: [workspaces.id] }),
+  project: one(projects, { fields: [actionCardItems.projectId], references: [projects.id] }),
+  conversation: one(projectConversations, {
+    fields: [actionCardItems.conversationId],
+    references: [projectConversations.id]
+  }),
   actionCard: one(actionCards, { fields: [actionCardItems.actionCardId], references: [actionCards.id] }),
   workItem: one(workItems, { fields: [actionCardItems.workItemId], references: [workItems.id] }),
   run: one(agentRuns, {

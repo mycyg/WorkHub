@@ -121,6 +121,15 @@ function foreignKeyShape(table: WorkHubTable, constraintName: string) {
   };
 }
 
+function foreignKeyActions(table: WorkHubTable, constraintName: string) {
+  const foreignKey = getTableConfig(table).foreignKeys.find((candidate) => candidate.getName() === constraintName);
+  assert.ok(foreignKey, `missing foreign key ${constraintName}`);
+  return {
+    onDelete: foreignKey.onDelete,
+    onUpdate: foreignKey.onUpdate
+  };
+}
+
 test("F02 declares the full table graph expected by the plan", () => {
   const tableNames = Object.values(workHubTables).map((table) => getTableName(table) as string).sort();
 
@@ -199,6 +208,11 @@ test("R12 conversations pin atomic safe-number sequencing and active-main unique
   assert.equal(indexes.some((candidate) => candidate.config.name === "project_conversations_workspace_project_idx"), true);
   assert.equal(indexes.some((candidate) => candidate.config.name === "project_conversations_project_created_idx"), true);
   assert.equal(indexes.some((candidate) => candidate.config.name === "project_conversations_id_project_uq"), true);
+  assert.equal(
+    indexes.some((candidate) => candidate.config.name === "project_conversations_id_project_workspace_uq"),
+    true
+  );
+  assert.equal(indexes.some((candidate) => candidate.config.name === "project_conversations_id_workspace_uq"), true);
 
   const projectIndexes = getTableConfig(dbSchema.projects as WorkHubTable).indexes;
   assert.equal(projectIndexes.some((candidate) => candidate.config.name === "projects_id_workspace_uq"), true);
@@ -277,6 +291,7 @@ test("R12 message and participant identities enforce ordered bounded reads", () 
 });
 
 test("R12 action cards, observer state, AI profiles, and governance expose their fixed identities", () => {
+  const projectConversations = requiredTable("projectConversations");
   const actionCards = requiredTable("actionCards") as WorkHubTable & Record<string, any>;
   const actionCardItems = requiredTable("actionCardItems") as WorkHubTable & Record<string, any>;
   const conversationObserverState = requiredTable("conversationObserverState") as WorkHubTable & Record<string, any>;
@@ -332,6 +347,79 @@ test("R12 action cards, observer state, AI profiles, and governance expose their
     }
   );
 
+  const actionItemColumns = tableColumnNames(actionCardItems);
+  for (const scopedColumn of ["workspace_id", "project_id", "conversation_id"]) {
+    assert.equal(actionItemColumns.includes(scopedColumn), true, `action_card_items missing ${scopedColumn}`);
+  }
+  assert.equal(actionCardItems.workspaceId.notNull, true);
+  assert.equal(actionCardItems.projectId.notNull, true);
+  assert.equal(actionCardItems.conversationId.notNull, true);
+
+  const actionItemIndexes = getTableConfig(actionCardItems).indexes;
+  assert.equal(
+    actionItemIndexes.some((candidate) => candidate.config.name === "action_card_items_id_conversation_workspace_uq"),
+    true
+  );
+  assert.equal(
+    getTableConfig(workItems).indexes.some(
+      (candidate) => candidate.config.name === "work_items_id_project_workspace_uq"
+    ),
+    true
+  );
+  assert.deepEqual(foreignKeyShape(actionCardItems, "action_card_items_conversation_scope_fk"), {
+    columns: ["conversation_id", "project_id", "workspace_id"],
+    foreignTable: "project_conversations",
+    foreignColumns: ["id", "project_id", "workspace_id"]
+  });
+  assert.deepEqual(foreignKeyShape(actionCardItems, "action_card_items_action_card_conversation_fk"), {
+    columns: ["conversation_id", "action_card_id"],
+    foreignTable: "action_cards",
+    foreignColumns: ["conversation_id", "id"]
+  });
+  assert.deepEqual(foreignKeyShape(actionCardItems, "action_card_items_work_item_scope_fk"), {
+    columns: ["work_item_id", "project_id", "workspace_id"],
+    foreignTable: "work_items",
+    foreignColumns: ["id", "project_id", "workspace_id"]
+  });
+  assert.deepEqual(foreignKeyShape(actionCardItems, "action_card_items_run_scope_fk"), {
+    columns: ["run_id", "work_item_id", "workspace_id"],
+    foreignTable: "agent_runs",
+    foreignColumns: ["id", "work_item_id", "workspace_id"]
+  });
+  assert.equal(
+    foreignKeyActions(actionCardItems, "action_card_items_action_card_id_action_cards_id_fk").onDelete,
+    "cascade"
+  );
+  for (const nullableReference of [
+    "action_card_items_work_item_id_work_items_id_fk",
+    "action_card_items_run_id_agent_runs_id_fk"
+  ]) {
+    assert.equal(foreignKeyActions(actionCardItems, nullableReference).onDelete, "set null");
+  }
+  for (const scopeReference of [
+    "action_card_items_conversation_scope_fk",
+    "action_card_items_action_card_conversation_fk",
+    "action_card_items_work_item_scope_fk",
+    "action_card_items_run_scope_fk"
+  ]) {
+    assert.deepEqual(foreignKeyActions(actionCardItems, scopeReference), {
+      onDelete: "no action",
+      onUpdate: "no action"
+    });
+  }
+  assert.equal(
+    getTableConfig(actionCardItems).checks.some(
+      (constraint) => constraint.name === "action_card_items_run_requires_work_item_ck"
+    ),
+    true
+  );
+  assert.equal(
+    getTableConfig(projectConversations).indexes.some(
+      (candidate) => candidate.config.name === "project_conversations_id_project_workspace_uq"
+    ),
+    true
+  );
+
   const itemChecks = checkSqlText(actionCardItems);
   for (const value of [
     "'execute'",
@@ -366,6 +454,37 @@ test("R12 agent runs carry execution routing and conversation provenance", () =>
   assert.equal(indexes.some((candidate) => candidate.config.name === "agent_runs_execution_claim_idx"), true);
   assert.equal(indexes.some((candidate) => candidate.config.name === "agent_runs_source_conversation_id_idx"), true);
   assert.equal(indexes.some((candidate) => candidate.config.name === "agent_runs_source_action_card_item_id_idx"), true);
+  assert.equal(indexes.some((candidate) => candidate.config.name === "agent_runs_id_work_item_workspace_uq"), true);
+  assert.deepEqual(foreignKeyShape(agentRuns, "agent_runs_source_conversation_workspace_fk"), {
+    columns: ["source_conversation_id", "workspace_id"],
+    foreignTable: "project_conversations",
+    foreignColumns: ["id", "workspace_id"]
+  });
+  assert.deepEqual(foreignKeyShape(agentRuns, "agent_runs_source_action_item_conversation_fk"), {
+    columns: ["source_action_card_item_id", "source_conversation_id", "workspace_id"],
+    foreignTable: "action_card_items",
+    foreignColumns: ["id", "conversation_id", "workspace_id"]
+  });
+  assert.equal(
+    foreignKeyActions(agentRuns, "agent_runs_source_conversation_id_project_conversations_id_fk").onDelete,
+    "set null"
+  );
+  assert.equal(
+    foreignKeyActions(agentRuns, "agent_runs_source_action_card_item_id_action_card_items_id_fk").onDelete,
+    "set null"
+  );
+  for (const scopeReference of [
+    "agent_runs_source_conversation_workspace_fk",
+    "agent_runs_source_action_item_conversation_fk"
+  ]) {
+    assert.deepEqual(foreignKeyActions(agentRuns, scopeReference), {
+      onDelete: "no action",
+      onUpdate: "no action"
+    });
+  }
+  const checkNames = getTableConfig(agentRuns).checks.map((constraint) => constraint.name);
+  assert.equal(checkNames.includes("agent_runs_source_conversation_workspace_ck"), true);
+  assert.equal(checkNames.includes("agent_runs_source_action_item_conversation_ck"), true);
 });
 
 test("R12 migration 0046 is journaled, replay-safe, and never allocates with max(seq)+1", () => {
@@ -388,13 +507,51 @@ test("R12 migration 0046 is journaled, replay-safe, and never allocates with max
   assert.match(migration, /ADD COLUMN IF NOT EXISTS "execution_hint"/);
   assert.match(migration, /ADD COLUMN IF NOT EXISTS "source_conversation_id"/);
   assert.match(migration, /ADD COLUMN IF NOT EXISTS "source_action_card_item_id"/);
+  assert.match(migration, /ALTER TABLE "action_card_items" ADD COLUMN IF NOT EXISTS "workspace_id" uuid/);
+  assert.match(migration, /ALTER TABLE "action_card_items" ADD COLUMN IF NOT EXISTS "project_id" uuid/);
+  assert.match(migration, /ALTER TABLE "action_card_items" ADD COLUMN IF NOT EXISTS "conversation_id" uuid/);
+  assert.match(migration, /UPDATE "action_card_items"/);
+  for (const columnName of ["workspace_id", "project_id", "conversation_id"]) {
+    assert.equal(
+      migration.includes(`ALTER COLUMN "${columnName}" SET NOT NULL`),
+      true,
+      `migration does not make action_card_items.${columnName} non-null`
+    );
+  }
+  const scopeMigrationOrder = [
+    'ALTER TABLE "action_card_items" ADD COLUMN IF NOT EXISTS "workspace_id" uuid',
+    'UPDATE "action_card_items" AS aci',
+    'ALTER TABLE "action_card_items" ALTER COLUMN "conversation_id" SET NOT NULL',
+    'CREATE UNIQUE INDEX IF NOT EXISTS "project_conversations_id_project_workspace_uq"',
+    'ADD CONSTRAINT "action_card_items_conversation_scope_fk"'
+  ].map((statement) => migration.indexOf(statement));
+  assert.equal(scopeMigrationOrder.every((position) => position >= 0), true);
+  assert.deepEqual(scopeMigrationOrder, [...scopeMigrationOrder].sort((left, right) => left - right));
+  for (const lifecycleReference of [
+    '"action_card_id" uuid NOT NULL REFERENCES "action_cards"("id") ON DELETE cascade',
+    '"work_item_id" uuid REFERENCES "work_items"("id") ON DELETE set null',
+    '"run_id" uuid REFERENCES "agent_runs"("id") ON DELETE set null',
+    'FOREIGN KEY ("source_conversation_id") REFERENCES "project_conversations"("id") ON DELETE set null',
+    'FOREIGN KEY ("source_action_card_item_id") REFERENCES "action_card_items"("id") ON DELETE set null'
+  ]) {
+    assert.equal(migration.includes(lifecycleReference), true, `migration changed lifecycle FK: ${lifecycleReference}`);
+  }
   for (const constraintName of [
     "project_conversations_project_workspace_fk",
     "project_conversations_parent_project_fk",
     "project_conversations_source_message_parent_fk",
     "conversation_messages_thread_root_conversation_fk",
     "action_cards_conversation_message_fk",
-    "conversation_observer_state_active_card_conversation_fk"
+    "conversation_observer_state_active_card_conversation_fk",
+    "action_card_items_conversation_scope_fk",
+    "action_card_items_action_card_conversation_fk",
+    "action_card_items_work_item_scope_fk",
+    "action_card_items_run_scope_fk",
+    "agent_runs_source_conversation_workspace_fk",
+    "agent_runs_source_action_item_conversation_fk",
+    "action_card_items_run_requires_work_item_ck",
+    "agent_runs_source_conversation_workspace_ck",
+    "agent_runs_source_action_item_conversation_ck"
   ]) {
     assert.equal(migration.includes(`ADD CONSTRAINT "${constraintName}"`), true, `migration missing ${constraintName}`);
   }
@@ -404,7 +561,13 @@ test("R12 migration 0046 is journaled, replay-safe, and never allocates with max
     'FOREIGN KEY ("parent_conversation_id","source_message_id") REFERENCES "conversation_messages"("conversation_id","id")',
     'FOREIGN KEY ("conversation_id","thread_root_id") REFERENCES "conversation_messages"("conversation_id","id")',
     'FOREIGN KEY ("conversation_id","message_id") REFERENCES "conversation_messages"("conversation_id","id")',
-    'FOREIGN KEY ("conversation_id","active_card_id") REFERENCES "action_cards"("conversation_id","id")'
+    'FOREIGN KEY ("conversation_id","active_card_id") REFERENCES "action_cards"("conversation_id","id")',
+    'FOREIGN KEY ("conversation_id","project_id","workspace_id") REFERENCES "project_conversations"("id","project_id","workspace_id")',
+    'FOREIGN KEY ("conversation_id","action_card_id") REFERENCES "action_cards"("conversation_id","id")',
+    'FOREIGN KEY ("work_item_id","project_id","workspace_id") REFERENCES "work_items"("id","project_id","workspace_id")',
+    'FOREIGN KEY ("run_id","work_item_id","workspace_id") REFERENCES "agent_runs"("id","work_item_id","workspace_id")',
+    'FOREIGN KEY ("source_conversation_id","workspace_id") REFERENCES "project_conversations"("id","workspace_id")',
+    'FOREIGN KEY ("source_action_card_item_id","source_conversation_id","workspace_id") REFERENCES "action_card_items"("id","conversation_id","workspace_id")'
   ]) {
     assert.equal(migration.includes(expectedSql), true, `migration missing ${expectedSql}`);
   }
