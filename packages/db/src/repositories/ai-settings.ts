@@ -46,6 +46,7 @@ export type FindUserProfileAccessInput = {
 export type UpsertUserProfileInput = FindUserProfileAccessInput & {
   patch: UserAiProfilePatch;
   at?: Date;
+  validateWritten?: (row: Readonly<UserAiProfileRow>) => void;
 };
 
 export type UserProfileAccessRecord = {
@@ -62,6 +63,7 @@ export type FindProjectGovernanceAccessInput = {
 export type UpsertProjectGovernanceInput = FindProjectGovernanceAccessInput & {
   patch: ProjectAiGovernancePatch;
   at?: Date;
+  validateWritten?: (row: Readonly<ProjectAiGovernanceRow>) => void;
 };
 
 export type ProjectGovernanceAccessRecord = {
@@ -94,6 +96,8 @@ export class AiSettingsEmptyPatchError extends NamedAiSettingsError {}
 export class AiSettingsInvalidPatchError extends NamedAiSettingsError {}
 export class AiSettingsAccessDeniedError extends NamedAiSettingsError {}
 export class AiSettingsWriteFailedError extends NamedAiSettingsError {}
+export class AiSettingsAsyncValidatorError extends NamedAiSettingsError {}
+export class AiSettingsInvalidValidatorError extends NamedAiSettingsError {}
 
 const USER_PROFILE_PATCH_KEYS = [
   "defaultMode",
@@ -159,6 +163,32 @@ function assertPatch(
   }
   if (!allowedKeys.some((key) => patch[key] !== undefined)) {
     throw new AiSettingsEmptyPatchError(`${label} patch must include at least one defined field`);
+  }
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return value !== null
+    && (typeof value === "object" || typeof value === "function")
+    && typeof (value as { then?: unknown }).then === "function";
+}
+
+function validateWrittenSynchronously<TRow>(
+  validator: ((row: Readonly<TRow>) => void) | undefined,
+  row: TRow,
+  label: string
+) {
+  if (!validator) {
+    return;
+  }
+  if (validator.constructor.name === "AsyncFunction") {
+    throw new AiSettingsAsyncValidatorError(`${label} written-row validator must be synchronous`);
+  }
+  const result: unknown = validator(row);
+  if (isPromiseLike(result)) {
+    throw new AiSettingsAsyncValidatorError(`${label} written-row validator returned a Promise`);
+  }
+  if (result !== undefined) {
+    throw new AiSettingsInvalidValidatorError(`${label} written-row validator must not return a value`);
   }
 }
 
@@ -338,6 +368,11 @@ export function createAiSettingsRepository(db: WorkHubDb): AiSettingsRepository 
         if (!written) {
           throw new AiSettingsWriteFailedError("user AI profile upsert returned no row");
         }
+        validateWrittenSynchronously(
+          input.validateWritten,
+          written,
+          "user AI profile"
+        );
         return written;
       });
     },
@@ -382,6 +417,11 @@ export function createAiSettingsRepository(db: WorkHubDb): AiSettingsRepository 
         if (!written) {
           throw new AiSettingsWriteFailedError("project AI governance upsert returned no row");
         }
+        validateWrittenSynchronously(
+          input.validateWritten,
+          written,
+          "project AI governance"
+        );
         return written;
       });
     }

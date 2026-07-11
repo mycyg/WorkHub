@@ -431,3 +431,76 @@ test("R12 governance missing-return rollback and DB errors remain observable", a
     (error: unknown) => error === sentinel
   );
 });
+
+test("R12 written-row validators run synchronously before commit and preserve thrown errors", async () => {
+  const module = await settingsModule();
+  const capture = async (operation: Promise<unknown>) => {
+    try {
+      await operation;
+      return null;
+    } catch (error) {
+      return error;
+    }
+  };
+  const profileSentinel = new Error("profile output contract drift");
+  const profileRecorder = createQueryRecorder([
+    [{ membershipRole: "member" }],
+    [profile]
+  ]);
+  const profileError = await capture(
+    module.createAiSettingsRepository(profileRecorder.db).upsertUserProfile({
+      workspaceId,
+      userId,
+      patch: { defaultMode: 4 },
+      at: now,
+      validateWritten(written) {
+        assert.deepEqual(written, profile);
+        throw profileSentinel;
+      }
+    })
+  );
+
+  const governanceSentinel = new Error("governance output contract drift");
+  const governanceRecorder = createQueryRecorder([
+    [project],
+    [{ membershipRole: "owner" }],
+    [governance]
+  ]);
+  const governanceError = await capture(
+    module.createAiSettingsRepository(governanceRecorder.db).upsertProjectGovernance({
+      workspaceId,
+      projectId,
+      actorUserId: userId,
+      patch: { observerEnabled: false },
+      at: now,
+      validateWritten(written) {
+        assert.deepEqual(written, governance);
+        throw governanceSentinel;
+      }
+    })
+  );
+
+  const asyncRecorder = createQueryRecorder([
+    [{ membershipRole: "member" }],
+    [profile]
+  ]);
+  const asyncError = await capture(
+    module.createAiSettingsRepository(asyncRecorder.db).upsertUserProfile({
+      workspaceId,
+      userId,
+      patch: { defaultMode: 4 },
+      at: now,
+      async validateWritten() {}
+    })
+  );
+
+  assert.equal(profileError, profileSentinel, "profile validator error identity must survive rollback");
+  assert.equal(governanceError, governanceSentinel, "governance validator error identity must survive rollback");
+  assert.ok(asyncError instanceof module.AiSettingsAsyncValidatorError);
+  assert.deepEqual(profileRecorder.transactions, [{ outcome: "rejected", errorName: "Error" }]);
+  assert.deepEqual(governanceRecorder.transactions, [{ outcome: "rejected", errorName: "Error" }]);
+  assert.deepEqual(asyncRecorder.transactions, [{
+    outcome: "rejected",
+    errorName: "AiSettingsAsyncValidatorError"
+  }]);
+});

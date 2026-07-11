@@ -6,9 +6,11 @@ import {
 import {
   DEFAULT_PROJECT_AI_GOVERNANCE,
   DEFAULT_USER_AI_PROFILE,
+  aiBudgetSummaryVmSchema,
   aiProviderVmSchema,
   projectAiGovernanceVmSchema,
   userAiProfileVmSchema,
+  type AiBudgetSummaryVM,
   type AiQuietHours,
   type PatchProjectAiGovernanceRequest,
   type PatchUserAiProfileRequest,
@@ -190,6 +192,13 @@ function usageView(
   };
 }
 
+function requireValidatedWriteView<T>(value: T | undefined, label: string): T {
+  if (value === undefined) {
+    throw new Error(`${label} repository did not run its written-row validator`);
+  }
+  return value;
+}
+
 export function createAiSettingsService(deps: AiSettingsServiceDependencies): AiSettingsService {
   const runtimeSettings = deps.settings ?? defaultSettings;
   const currentTime = deps.now ?? (() => new Date());
@@ -219,12 +228,10 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
     return { human, access };
   }
 
-  async function buildProfileView(input: {
+  async function readBudgetSummary(input: {
     human: HumanAiSettingsActor;
-    profile: UserAiProfileRow | null;
-    providers: ReturnType<typeof providerView>;
     generatedAt: Date;
-  }) {
+  }): Promise<AiBudgetSummaryVM> {
     const settings = tenantSettings(runtimeSettings, input.human);
     const [snapshots, budgetPolicies] = await Promise.all([
       deps.ledger.usageSnapshots(
@@ -238,6 +245,30 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
       && policy.scopeKind === "user"
       && policy.period === "day"
     );
+    return parseOutputContract(aiBudgetSummaryVmSchema, {
+      daily_quota: dailyPolicy
+        ? {
+            policy_id: dailyPolicy.id,
+            period: "day",
+            max_tokens: dailyPolicy.maxTokens,
+            max_cost_cny: dailyPolicy.maxCostCny,
+            enabled: dailyPolicy.enabled
+          }
+        : null,
+      usage: {
+        day: usageView(snapshots, input.human.userId, "day"),
+        month: usageView(snapshots, input.human.userId, "month")
+      }
+    }, "ai-settings.budget-summary");
+  }
+
+  function buildProfileView(input: {
+    human: HumanAiSettingsActor;
+    profile: UserAiProfileRow | null;
+    providers: ReturnType<typeof providerView>;
+    budgetSummary: AiBudgetSummaryVM;
+    generatedAt: Date;
+  }) {
     const profile = input.profile;
     return parseOutputContract(userAiProfileVmSchema, {
       workspace_id: input.human.workspaceId,
@@ -250,21 +281,7 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
       cuu_proactivity: profile?.cuuProactivity ?? DEFAULT_USER_AI_PROFILE.cuu_proactivity,
       model_tier_preference: profile?.modelTierPref ?? DEFAULT_USER_AI_PROFILE.model_tier_preference,
       providers: input.providers,
-      budget_summary: {
-        daily_quota: dailyPolicy
-          ? {
-              policy_id: dailyPolicy.id,
-              period: "day",
-              max_tokens: dailyPolicy.maxTokens,
-              max_cost_cny: dailyPolicy.maxCostCny,
-              enabled: dailyPolicy.enabled
-            }
-          : null,
-        usage: {
-          day: usageView(snapshots, input.human.userId, "day"),
-          month: usageView(snapshots, input.human.userId, "month")
-        }
-      },
+      budget_summary: input.budgetSummary,
       generated_at: input.generatedAt.toISOString(),
       updated_at: profile?.updatedAt.toISOString() ?? null
     }, "ai-settings.profile");
@@ -293,7 +310,14 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
       const generatedAt = currentTime();
       const metadata = deps.providers.publicMetadata();
       const providers = providerView(metadata);
-      return buildProfileView({ human, profile: access.profile, providers, generatedAt });
+      const budgetSummary = await readBudgetSummary({ human, generatedAt });
+      return buildProfileView({
+        human,
+        profile: access.profile,
+        providers,
+        budgetSummary,
+        generatedAt
+      });
     },
 
     async patchUserProfile({ actor, payload }) {
@@ -308,9 +332,10 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
         throw unavailableModelPreference();
       }
       const generatedAt = currentTime();
-      let written: UserAiProfileRow;
+      const budgetSummary = await readBudgetSummary({ human, generatedAt });
+      let validatedView: UserAiProfileVM | undefined;
       try {
-        written = await deps.repository.upsertUserProfile({
+        await deps.repository.upsertUserProfile({
           workspaceId: human.workspaceId,
           userId: human.userId,
           patch: {
@@ -324,7 +349,16 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
               ? { modelTierPref: payload.model_tier_preference }
               : {})
           },
-          at: generatedAt
+          at: generatedAt,
+          validateWritten(row) {
+            validatedView = buildProfileView({
+              human,
+              profile: row,
+              providers,
+              budgetSummary,
+              generatedAt
+            });
+          }
         });
       } catch (error) {
         if (error instanceof AiSettingsAccessDeniedError) {
@@ -332,7 +366,7 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
         }
         throw error;
       }
-      return buildProfileView({ human, profile: written, providers, generatedAt });
+      return requireValidatedWriteView(validatedView, "user AI profile");
     },
 
     async assertProjectGovernanceAccess({ actor, projectId }) {
@@ -347,9 +381,9 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
     async patchProjectGovernance({ actor, projectId, payload }) {
       const human = requireHumanActor(actor);
       const at = currentTime();
-      let written: ProjectAiGovernanceRow;
+      let validatedView: ProjectAiGovernanceVM | undefined;
       try {
-        written = await deps.repository.upsertProjectGovernance({
+        await deps.repository.upsertProjectGovernance({
           workspaceId: human.workspaceId,
           projectId,
           actorUserId: human.userId,
@@ -365,7 +399,10 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
               ? { granularJson: { ...payload.granular_settings } }
               : {})
           },
-          at
+          at,
+          validateWritten(row) {
+            validatedView = governanceView(projectId, row);
+          }
         });
       } catch (error) {
         if (error instanceof AiSettingsAccessDeniedError) {
@@ -373,7 +410,7 @@ export function createAiSettingsService(deps: AiSettingsServiceDependencies): Ai
         }
         throw error;
       }
-      return governanceView(projectId, written);
+      return requireValidatedWriteView(validatedView, "project AI governance");
     }
   };
 }

@@ -101,8 +101,10 @@ type RepositoryOptions = {
 function repository(options: RepositoryOptions = {}) {
   const profileReads: unknown[] = [];
   const profileWrites: unknown[] = [];
+  const profileCommits: unknown[] = [];
   const governanceReads: unknown[] = [];
   const governanceWrites: unknown[] = [];
+  const governanceCommits: unknown[] = [];
   const repo: AiSettingsRepository = {
     async findUserProfileAccessRecord(input) {
       profileReads.push(input);
@@ -115,17 +117,22 @@ function repository(options: RepositoryOptions = {}) {
     },
     async upsertUserProfile(input) {
       profileWrites.push(input);
+      let written: UserAiProfileRow;
       if (options.writeProfile) {
-        return options.writeProfile(input);
+        written = await options.writeProfile(input);
+      } else {
+        written = profile({
+          defaultMode: input.patch.defaultMode ?? 3,
+          granularJson: { ...(input.patch.granularJson ?? {}) },
+          dispatchPolicy: input.patch.dispatchPolicy ?? "auto",
+          cuuProactivity: input.patch.cuuProactivity ?? "balanced",
+          modelTierPref: input.patch.modelTierPref ?? null,
+          updatedAt: input.at ?? now
+        });
       }
-      return profile({
-        defaultMode: input.patch.defaultMode ?? 3,
-        granularJson: { ...(input.patch.granularJson ?? {}) },
-        dispatchPolicy: input.patch.dispatchPolicy ?? "auto",
-        cuuProactivity: input.patch.cuuProactivity ?? "balanced",
-        modelTierPref: input.patch.modelTierPref ?? null,
-        updatedAt: input.at ?? now
-      });
+      input.validateWritten?.(written);
+      profileCommits.push(input);
+      return written;
     },
     async findProjectGovernanceAccessRecord(input) {
       governanceReads.push(input);
@@ -138,19 +145,32 @@ function repository(options: RepositoryOptions = {}) {
     },
     async upsertProjectGovernance(input) {
       governanceWrites.push(input);
+      let written: ProjectAiGovernanceRow;
       if (options.writeGovernance) {
-        return options.writeGovernance(input);
+        written = await options.writeGovernance(input);
+      } else {
+        written = governance({
+          observerEnabled: input.patch.observerEnabled ?? true,
+          silenceWindowSecs: input.patch.silenceWindowSecs ?? 60,
+          quietHoursJson: input.patch.quietHoursJson ?? { enabled: false },
+          granularJson: { ...(input.patch.granularJson ?? {}) },
+          updatedAt: input.at ?? now
+        });
       }
-      return governance({
-        observerEnabled: input.patch.observerEnabled ?? true,
-        silenceWindowSecs: input.patch.silenceWindowSecs ?? 60,
-        quietHoursJson: input.patch.quietHoursJson ?? { enabled: false },
-        granularJson: { ...(input.patch.granularJson ?? {}) },
-        updatedAt: input.at ?? now
-      });
+      input.validateWritten?.(written);
+      governanceCommits.push(input);
+      return written;
     }
   };
-  return { repo, profileReads, profileWrites, governanceReads, governanceWrites };
+  return {
+    repo,
+    profileReads,
+    profileWrites,
+    profileCommits,
+    governanceReads,
+    governanceWrites,
+    governanceCommits
+  };
 }
 
 function model(id: string, modelName: string) {
@@ -429,7 +449,11 @@ test("AI profile PATCH maps only contract fields, accepts null reset, and reject
   const updated = await service.patchUserProfile({ actor: actor(), payload });
 
   assert.equal(updated.model_tier_preference, null);
-  assert.deepEqual(db.profileWrites, [{
+  assert.equal(db.profileWrites.length, 1);
+  const profileWrite = db.profileWrites[0]! as Parameters<AiSettingsRepository["upsertUserProfile"]>[0];
+  assert.equal(typeof profileWrite.validateWritten, "function");
+  const { validateWritten: _validateProfileWrite, ...profileWriteFields } = profileWrite;
+  assert.deepEqual(profileWriteFields, {
     workspaceId,
     userId,
     patch: {
@@ -440,7 +464,7 @@ test("AI profile PATCH maps only contract fields, accepts null reset, and reject
       modelTierPref: null
     },
     at: now
-  }]);
+  });
 
   await assert.rejects(
     service.patchUserProfile({
@@ -569,6 +593,82 @@ test("AI profile maps transactional revocation to 403 and propagates ledger and 
   );
 });
 
+test("AI profile PATCH validates ledger and policy response inputs before writing", async () => {
+  const module = await serviceModule();
+  const ledgerFailure = new Error("patch ledger unavailable");
+  const policyFailure = new Error("patch policy store unavailable");
+  const cases: Array<{
+    label: string;
+    ledgerStore: Pick<CostLedgerStore, "usageSnapshots">;
+    policyStore: Pick<BudgetPolicyStore, "listPolicies">;
+    expected: (error: unknown) => boolean;
+  }> = [
+    {
+      label: "ledger failure",
+      ledgerStore: {
+        async usageSnapshots(): Promise<BudgetUsageSnapshot[]> {
+          throw ledgerFailure;
+        }
+      },
+      policyStore: policies().store,
+      expected: (error) => error === ledgerFailure
+    },
+    {
+      label: "policy failure",
+      ledgerStore: ledger().store,
+      policyStore: {
+        async listPolicies(): Promise<BudgetPolicy[]> {
+          throw policyFailure;
+        }
+      },
+      expected: (error) => error === policyFailure
+    },
+    {
+      label: "malformed matching usage snapshot",
+      ledgerStore: ledger([{
+        scope: { kind: "user", userId },
+        period: "day",
+        tokenIn: -1,
+        tokenOut: 2,
+        estimatedCostCny: "0.1"
+      }]).store,
+      policyStore: policies().store,
+      expected: (error) => error instanceof InternalContractError
+    },
+    {
+      label: "malformed daily policy",
+      ledgerStore: ledger().store,
+      policyStore: policies([userDayPolicy({ maxTokens: 0 })]).store,
+      expected: (error) => error instanceof InternalContractError
+    }
+  ];
+  const observedWrites: Array<{ label: string; writes: number }> = [];
+
+  for (const testCase of cases) {
+    const db = repository();
+    const service = module.createAiSettingsService({
+      repository: db.repo,
+      providers: providerRegistry().registry,
+      ledger: testCase.ledgerStore,
+      policies: testCase.policyStore,
+      settings: runtimeSettings,
+      now: () => now
+    });
+
+    await assert.rejects(
+      service.patchUserProfile({ actor: actor(), payload: { default_mode: 4 } }),
+      testCase.expected,
+      testCase.label
+    );
+    observedWrites.push({ label: testCase.label, writes: db.profileWrites.length });
+  }
+  assert.deepEqual(
+    observedWrites,
+    cases.map((testCase) => ({ label: testCase.label, writes: 0 })),
+    "all response dependency failures and malformed values must fail before profile mutation"
+  );
+});
+
 test("project governance GET synthesizes defaults without writing and PATCH maps owner settings", async () => {
   const module = await serviceModule();
   const db = repository();
@@ -612,7 +712,13 @@ test("project governance GET synthesizes defaults without writing and PATCH maps
 
   assert.equal(updated.observer_enabled, false);
   assert.deepEqual(updated.quiet_hours, quietHours);
-  assert.deepEqual(db.governanceWrites, [{
+  assert.equal(db.governanceWrites.length, 1);
+  const governanceWrite = db.governanceWrites[0]! as Parameters<
+    AiSettingsRepository["upsertProjectGovernance"]
+  >[0];
+  assert.equal(typeof governanceWrite.validateWritten, "function");
+  const { validateWritten: _validateGovernanceWrite, ...governanceWriteFields } = governanceWrite;
+  assert.deepEqual(governanceWriteFields, {
     workspaceId,
     projectId,
     actorUserId: userId,
@@ -623,7 +729,7 @@ test("project governance GET synthesizes defaults without writing and PATCH maps
       granularJson: { dispatch_run: false }
     },
     at: now
-  }]);
+  });
 });
 
 test("project governance stays owner-only for admins and maps post-preflight revocation to the same 404", async () => {
@@ -665,6 +771,57 @@ test("project governance stays owner-only for admins and maps post-preflight rev
       && error.code === "ai_governance_not_found"
   );
   assert.equal(revoked.governanceWrites.length, 1, "transactional repository check remains authoritative");
+});
+
+test("AI settings PATCH validates malformed RETURNING rows before transaction commit", async () => {
+  const module = await serviceModule();
+  const deps = {
+    providers: providerRegistry().registry,
+    ledger: ledger().store,
+    policies: policies().store,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  const malformedProfile = repository({
+    writeProfile: async () => profile({ defaultMode: 99 as never })
+  });
+  await assert.rejects(
+    module.createAiSettingsService({
+      repository: malformedProfile.repo,
+      ...deps
+    }).patchUserProfile({ actor: actor(), payload: { dispatch_policy: "ask" } }),
+    (error: unknown) => error instanceof InternalContractError
+  );
+
+  const malformedGovernance = repository({
+    writeGovernance: async () => governance({ silenceWindowSecs: 86_401 })
+  });
+  await assert.rejects(
+    module.createAiSettingsService({
+      repository: malformedGovernance.repo,
+      ...deps
+    }).patchProjectGovernance({
+      actor: actor(),
+      projectId,
+      payload: { observer_enabled: false }
+    }),
+    (error: unknown) => error instanceof InternalContractError
+  );
+
+  assert.deepEqual(
+    {
+      profile_attempts: malformedProfile.profileWrites.length,
+      profile_commits: malformedProfile.profileCommits.length,
+      governance_attempts: malformedGovernance.governanceWrites.length,
+      governance_commits: malformedGovernance.governanceCommits.length
+    },
+    {
+      profile_attempts: 1,
+      profile_commits: 0,
+      governance_attempts: 1,
+      governance_commits: 0
+    }
+  );
 });
 
 test("AI profile output drift throws InternalContractError and provider failures are not swallowed", async () => {
