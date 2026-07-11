@@ -12,6 +12,7 @@ const conversationId = "30000000-0000-4000-8000-000000000003";
 const messageId = "40000000-0000-4000-8000-000000000004";
 const driveItemId = "50000000-0000-4000-8000-000000000005";
 const userId = "60000000-0000-4000-8000-000000000006";
+const participantUserId = "60000000-0000-4000-8000-000000000007";
 const runId = "70000000-0000-4000-8000-000000000007";
 
 function requiredSchema<T = unknown>(name: string): SchemaLike<T> {
@@ -83,7 +84,8 @@ test("R12 conversation creation and user message contracts expose bounded metada
       title: "重写第三节",
       visibility: "private",
       parent_conversation_id: conversationId,
-      source_message_id: messageId
+      source_message_id: messageId,
+      participant_user_ids: []
     }
   );
   assert.equal(
@@ -135,14 +137,71 @@ test("R12 conversation creation and user message contracts expose bounded metada
   );
 });
 
-test("R12 message cursor query uses safe integers and a bounded default", () => {
-  const schema = requiredSchema<{ after_seq: number; limit: number }>("conversationMessageListQuerySchema");
+test("R12 collab creation defaults and bounds unique active participant IDs", () => {
+  const schema = requiredSchema<Record<string, unknown>>("createConversationRequestSchema");
+  const base = {
+    kind: "collab",
+    title: "协作区",
+    visibility: "private"
+  };
 
-  assert.deepEqual(schema.parse({}), { after_seq: 0, limit: 50 });
-  assert.deepEqual(schema.parse({ after_seq: "42", limit: "100" }), { after_seq: 42, limit: 100 });
+  assert.deepEqual(schema.parse(base), { ...base, participant_user_ids: [] });
+  assert.deepEqual(schema.parse({ ...base, participant_user_ids: [participantUserId] }), {
+    ...base,
+    participant_user_ids: [participantUserId]
+  });
+
+  const maximumParticipants = Array.from({ length: 99 }, (_, index) =>
+    `60000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`
+  );
+  assert.equal(schema.safeParse({ ...base, participant_user_ids: maximumParticipants }).success, true);
+  assert.equal(
+    schema.safeParse({
+      ...base,
+      participant_user_ids: [participantUserId, participantUserId]
+    }).success,
+    false
+  );
+  assert.equal(
+    schema.safeParse({
+      ...base,
+      participant_user_ids: [...maximumParticipants, "60000000-0000-4000-8000-000000000100"]
+    }).success,
+    false
+  );
+  assert.equal(schema.safeParse({ ...base, participant_user_ids: ["not-a-uuid"] }).success, false);
+});
+
+test("R12 message cursor query uses safe integers and a bounded default", () => {
+  const schema = requiredSchema<{ afterSeq: number; limit: number }>("conversationMessageListQuerySchema");
+
+  assert.deepEqual(schema.parse({}), { afterSeq: 0, limit: 50 });
+  assert.deepEqual(schema.parse({ afterSeq: "42", limit: "100" }), { afterSeq: 42, limit: 100 });
   for (const afterSeq of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
-    assert.equal(schema.safeParse({ after_seq: afterSeq }).success, false);
+    assert.equal(schema.safeParse({ afterSeq }).success, false);
   }
+  for (const limit of [0, 101, 1.5]) {
+    assert.equal(schema.safeParse({ limit }).success, false);
+  }
+  assert.equal(schema.safeParse({ after_seq: 42 }).success, false);
+});
+
+test("R12 conversation list query exposes one paired created-at and UUID keyset", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationListQuerySchema");
+  const afterCreatedAt = "2026-07-12T08:30:00.000Z";
+  const afterId = conversationId;
+
+  assert.deepEqual(schema.parse({}), { limit: 50 });
+  assert.deepEqual(schema.parse({ afterCreatedAt, afterId, limit: "100" }), {
+    afterCreatedAt,
+    afterId,
+    limit: 100
+  });
+  assert.equal(schema.safeParse({ afterCreatedAt }).success, false);
+  assert.equal(schema.safeParse({ afterId }).success, false);
+  assert.equal(schema.safeParse({ afterCreatedAt: "not-a-date", afterId }).success, false);
+  assert.equal(schema.safeParse({ afterCreatedAt, afterId: "not-a-uuid" }).success, false);
+  assert.equal(schema.safeParse({ after_created_at: afterCreatedAt, after_id: afterId }).success, false);
   for (const limit of [0, 101, 1.5]) {
     assert.equal(schema.safeParse({ limit }).success, false);
   }

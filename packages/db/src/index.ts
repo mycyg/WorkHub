@@ -28,6 +28,7 @@ export * from "./repositories/confidence.js";
 export * from "./repositories/work-items.js";
 export * from "./repositories/proposals.js";
 export * from "./repositories/projects.js";
+export * from "./repositories/conversations.js";
 export * from "./repositories/drive.js";
 export * from "./repositories/meetings.js";
 export * from "./repositories/schedule-notify.js";
