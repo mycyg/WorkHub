@@ -7,12 +7,13 @@ import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
 import { loadSettings, type Settings } from "@workhub/config";
-import type {
-  ClientDeviceAuthRow,
-  ClientDeviceRepository,
-  ProjectRepository,
-  UserAuthRow,
-  UserRepository
+import {
+  ProjectSlugOccupiedError,
+  type ClientDeviceAuthRow,
+  type ClientDeviceRepository,
+  type ProjectRepository,
+  type UserAuthRow,
+  type UserRepository
 } from "@workhub/db";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
@@ -406,7 +407,7 @@ test("project bootstrap derives a stable slug for repeated non-ascii project nam
 test("project bootstrap maps archived/deleted slug occupancy to a recoverable conflict", async () => {
   const repository: ProjectRepository = {
     async bootstrapPilotProject() {
-      throw new Error("Failed to create or reuse project (slug occupied by an archived/deleted row in this workspace)");
+      throw new ProjectSlugOccupiedError("archived-project");
     },
     async listForWorkspace() {
       return [];

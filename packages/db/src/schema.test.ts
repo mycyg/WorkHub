@@ -583,6 +583,40 @@ test("R12 migration 0046 is journaled, replay-safe, and never allocates with max
   });
 });
 
+test("R12 migration 0046 backfills one active main only for eligible legacy projects", () => {
+  const migration = readFileSync(
+    new URL("../migrations/0046_r12_conversation_foundation.sql", import.meta.url),
+    "utf8"
+  );
+  const activeMainIndex = migration.indexOf(
+    'CREATE UNIQUE INDEX IF NOT EXISTS "project_conversations_active_main_uq"'
+  );
+  const backfill = migration.indexOf('INSERT INTO "project_conversations"');
+
+  assert.ok(activeMainIndex >= 0, "active-main conflict identity must exist before backfill");
+  assert.ok(backfill > activeMainIndex, "legacy main backfill must run after its partial unique index");
+  const sql = migration.slice(backfill);
+  for (const required of [
+    "gen_random_uuid()",
+    "p.\"workspace_id\"",
+    "p.\"id\"",
+    "'main'",
+    "'主区'",
+    "'project'",
+    "p.\"owner_user_id\"",
+    'p."workspace_id" IS NOT NULL',
+    'p."archived" = false',
+    'p."deleted_at" IS NULL',
+    "NOT EXISTS",
+    'existing_main."project_id" = p."id"',
+    'existing_main."kind" = \'main\'',
+    'existing_main."deleted_at" IS NULL',
+    'ON CONFLICT ("project_id") WHERE "kind" = \'main\' AND "deleted_at" IS NULL DO NOTHING'
+  ]) {
+    assert.equal(sql.includes(required), true, `legacy main backfill missing: ${required}`);
+  }
+});
+
 test("R9.5 OKR tables expose non-blocking planning and progress fields", () => {
   assert.equal(getTableName(objectives), "objectives");
   assert.equal(objectives.workspaceId.name, "workspace_id");

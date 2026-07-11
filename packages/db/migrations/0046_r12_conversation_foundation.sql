@@ -426,6 +426,42 @@ END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS "project_conversations_active_main_uq"
   ON "project_conversations" ("project_id") WHERE "kind" = 'main' AND "deleted_at" IS NULL;
 --> statement-breakpoint
+INSERT INTO "project_conversations" (
+  "id",
+  "workspace_id",
+  "project_id",
+  "kind",
+  "title",
+  "visibility",
+  "next_seq",
+  "created_by",
+  "created_at",
+  "updated_at"
+)
+SELECT
+  gen_random_uuid(),
+  p."workspace_id",
+  p."id",
+  'main',
+  '主区',
+  'project',
+  0,
+  p."owner_user_id",
+  now(),
+  now()
+FROM "projects" AS p
+WHERE p."workspace_id" IS NOT NULL
+  AND p."archived" = false
+  AND p."deleted_at" IS NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM "project_conversations" AS existing_main
+    WHERE existing_main."project_id" = p."id"
+      AND existing_main."kind" = 'main'
+      AND existing_main."deleted_at" IS NULL
+  )
+ON CONFLICT ("project_id") WHERE "kind" = 'main' AND "deleted_at" IS NULL DO NOTHING;
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "project_conversations_workspace_project_idx"
   ON "project_conversations" ("workspace_id","project_id");
 --> statement-breakpoint

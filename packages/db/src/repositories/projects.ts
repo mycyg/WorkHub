@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
-import { orgs, projects, workItems, workspaces } from "../schema/index.js";
+import { orgs, projectConversations, projects, workItems, workspaces } from "../schema/index.js";
 
 export type ProjectRow = typeof projects.$inferSelect;
 
@@ -49,6 +49,55 @@ export type ProjectRepository = {
   listForWorkspace: (workspaceId: string) => Promise<ProjectListRow[]>;
 };
 
+async function ensureActiveMain(
+  tx: WorkHubDb,
+  project: ProjectRow,
+  input: Pick<BootstrapProjectInput, "workspaceId" | "ownerUserId">,
+  at: Date
+) {
+  const inserted = await tx
+    .insert(projectConversations)
+    .values({
+      id: randomUUID(),
+      workspaceId: input.workspaceId,
+      projectId: project.id,
+      kind: "main",
+      title: "主区",
+      visibility: "project",
+      nextSeq: 0,
+      createdBy: project.ownerUserId ?? input.ownerUserId,
+      createdAt: at,
+      updatedAt: at
+    })
+    .onConflictDoNothing({
+      target: projectConversations.projectId,
+      where: and(
+        eq(projectConversations.kind, "main"),
+        isNull(projectConversations.deletedAt)
+      )!
+    })
+    .returning({ id: projectConversations.id });
+  if (inserted[0]) {
+    return;
+  }
+
+  const existing = await tx
+    .select({ id: projectConversations.id })
+    .from(projectConversations)
+    .where(
+      and(
+        eq(projectConversations.workspaceId, input.workspaceId),
+        eq(projectConversations.projectId, project.id),
+        eq(projectConversations.kind, "main"),
+        isNull(projectConversations.deletedAt)
+      )
+    )
+    .limit(1);
+  if (!existing[0]) {
+    throw new Error("Project active main conversation conflict could not be resolved");
+  }
+}
+
 export function createProjectRepository(db: WorkHubDb): ProjectRepository {
   return {
     async listForWorkspace(workspaceId) {
@@ -86,81 +135,86 @@ export function createProjectRepository(db: WorkHubDb): ProjectRepository {
 
     async bootstrapPilotProject(input) {
       const at = input.at ?? new Date();
-      await db
-        .insert(orgs)
-        .values({
-          id: input.orgId,
-          name: "WorkHub Local",
-          slug: "workhub-local",
-          plan: "lan",
-          createdAt: at,
-          updatedAt: at
-        })
-        .onConflictDoNothing();
+      return db.transaction(async (tx) => {
+        await tx
+          .insert(orgs)
+          .values({
+            id: input.orgId,
+            name: "WorkHub Local",
+            slug: "workhub-local",
+            plan: "lan",
+            createdAt: at,
+            updatedAt: at
+          })
+          .onConflictDoNothing();
 
-      await db
-        .insert(workspaces)
-        .values({
-          id: input.workspaceId,
-          orgId: input.orgId,
-          name: "Pilot Workspace",
-          slug: "pilot",
-          createdAt: at,
-          updatedAt: at
-        })
-        .onConflictDoNothing();
+        await tx
+          .insert(workspaces)
+          .values({
+            id: input.workspaceId,
+            orgId: input.orgId,
+            name: "Pilot Workspace",
+            slug: "pilot",
+            createdAt: at,
+            updatedAt: at
+          })
+          .onConflictDoNothing();
 
-      // rank1：复用查询必须按工作区过滤——否则 slug 全局命中会把别的工作区的项目串给本工作区（跨租户泄漏）。
-      const findActive = async (): Promise<ProjectRow | undefined> => {
-        const rows = await db
-          .select()
-          .from(projects)
-          .where(
-            and(
-              eq(projects.workspaceId, input.workspaceId),
-              eq(projects.slug, input.slug),
-              eq(projects.archived, false),
-              isNull(projects.deletedAt)
+        // rank1：复用查询必须按工作区过滤——否则 slug 全局命中会把别的工作区的项目串给本工作区（跨租户泄漏）。
+        const findActive = async (): Promise<ProjectRow | undefined> => {
+          const rows = await tx
+            .select()
+            .from(projects)
+            .where(
+              and(
+                eq(projects.workspaceId, input.workspaceId),
+                eq(projects.slug, input.slug),
+                eq(projects.archived, false),
+                isNull(projects.deletedAt)
+              )
             )
-          )
-          .limit(1);
-        return rows[0];
-      };
+            .limit(1);
+          return rows[0];
+        };
 
-      const existing = await findActive();
-      if (existing) {
-        return { project: existing, created: false };
-      }
+        const existing = await findActive();
+        if (existing) {
+          await ensureActiveMain(tx, existing, input, at);
+          return { project: existing, created: false };
+        }
 
-      // 原子创建：ON CONFLICT (workspace_id, slug) DO NOTHING（与迁移 0028 的工作区级唯一索引对齐）。
-      // 并发同 (workspace, slug) 时第二发不再撞唯一抛 500，而是落空→回查已存在的那条按复用返回。
-      const rows = await db
-        .insert(projects)
-        .values({
-          id: input.projectId ?? randomUUID(),
-          workspaceId: input.workspaceId,
-          name: input.name,
-          slug: input.slug,
-          ...(input.description ? { description: input.description } : {}),
-          ownerNickname: input.ownerNickname,
-          ownerUserId: input.ownerUserId,
-          archived: false,
-          nextSeq: 0,
-          createdAt: at,
-          updatedAt: at
-        })
-        .onConflictDoNothing({ target: [projects.workspaceId, projects.slug] })
-        .returning();
-      const project = rows[0];
-      if (project) {
-        return { project, created: true };
-      }
-      // onConflict 落空：要么并发抢先建了同一条（回查复用），要么 slug 被同工作区的归档/软删行占用（无可复用→报错）。
-      const raced = await findActive();
-      if (!raced) {
-        throw new ProjectSlugOccupiedError(input.slug);
-      }
-      return { project: raced, created: false };
+        // 原子创建：ON CONFLICT (workspace_id, slug) DO NOTHING（与迁移 0028 的工作区级唯一索引对齐）。
+        // 并发同 (workspace, slug) 时第二发不再撞唯一抛 500，而是落空→回查已存在的那条按复用返回。
+        const rows = await tx
+          .insert(projects)
+          .values({
+            id: input.projectId ?? randomUUID(),
+            workspaceId: input.workspaceId,
+            name: input.name,
+            slug: input.slug,
+            ...(input.description ? { description: input.description } : {}),
+            ownerNickname: input.ownerNickname,
+            ownerUserId: input.ownerUserId,
+            archived: false,
+            nextSeq: 0,
+            createdAt: at,
+            updatedAt: at
+          })
+          .onConflictDoNothing({ target: [projects.workspaceId, projects.slug] })
+          .returning();
+        const project = rows[0];
+        if (project) {
+          await ensureActiveMain(tx, project, input, at);
+          return { project, created: true };
+        }
+        // onConflict 落空：要么并发抢先建了同一条（回查复用），要么 slug 被同工作区的归档/软删行占用（无可复用→报错）。
+        const raced = await findActive();
+        if (!raced) {
+          throw new ProjectSlugOccupiedError(input.slug);
+        }
+        await ensureActiveMain(tx, raced, input, at);
+        return { project: raced, created: false };
+      });
     }
   };
 }
