@@ -313,8 +313,10 @@ test("R12 action cards, observer state, AI profiles, and governance expose their
   assert.equal(userAiProfiles.userId.notNull, true);
   assert.equal(userAiProfiles.defaultMode.default, 3);
   assert.equal(userAiProfiles.dispatchPolicy.default, "auto");
+  assert.equal(userAiProfiles.cuuProactivity.default, "balanced");
   assert.equal(projectAiGovernance.observerEnabled.default, true);
   assert.equal(projectAiGovernance.silenceWindowSecs.default, 60);
+  assert.deepEqual(projectAiGovernance.quietHoursJson.default, { enabled: false });
   assert.equal(
     getTableConfig(actionCards).indexes.some(
       (candidate) => candidate.config.name === "action_cards_conversation_id_uq"
@@ -438,7 +440,7 @@ test("R12 action cards, observer state, AI profiles, and governance expose their
     assert.equal(itemChecks.includes(value), true, `action_card_items checks missing ${value}`);
   }
   const profileChecks = checkSqlText(userAiProfiles);
-  for (const value of ["'auto'", "'ask'", "'manual'"]) {
+  for (const value of ["'auto'", "'ask'", "'manual'", "'quiet'", "'balanced'", "'proactive'"]) {
     assert.equal(profileChecks.includes(value), true, `user_ai_profiles checks missing ${value}`);
   }
 });
@@ -572,6 +574,36 @@ test("R12 migration 0046 is journaled, replay-safe, and never allocates with max
     assert.equal(migration.includes(expectedSql), true, `migration missing ${expectedSql}`);
   }
   assert.doesNotMatch(migration, /max\s*\(\s*"?seq"?\s*\)\s*\+\s*1/i);
+
+  assert.match(
+    migration,
+    /"cuu_proactivity" varchar\(32\) NOT NULL DEFAULT 'balanced'/u
+  );
+  assert.match(
+    migration,
+    /CONSTRAINT "user_ai_profiles_cuu_proactivity_ck" CHECK \("cuu_proactivity" IN \('quiet','balanced','proactive'\)\)/u
+  );
+  assert.match(
+    migration,
+    /ALTER TABLE "user_ai_profiles" ALTER COLUMN "cuu_proactivity" SET DEFAULT 'balanced'/u
+  );
+  assert.match(migration, /ADD CONSTRAINT "user_ai_profiles_cuu_proactivity_ck"/u);
+  assert.match(
+    migration,
+    /"quiet_hours_json" jsonb NOT NULL DEFAULT '\{"enabled":false\}'::jsonb/u
+  );
+  assert.match(
+    migration,
+    /ALTER TABLE "project_ai_governance" ALTER COLUMN "quiet_hours_json" SET DEFAULT '\{"enabled":false\}'::jsonb/u
+  );
+  assert.match(
+    migration,
+    /UPDATE "project_ai_governance"\s+SET "quiet_hours_json" = '\{"enabled":false\}'::jsonb\s+WHERE "quiet_hours_json" = '\{\}'::jsonb/u
+  );
+  assert.match(
+    migration,
+    /conname = 'user_ai_profiles_cuu_proactivity_ck'[\s\S]+conrelid = 'user_ai_profiles'::regclass/u
+  );
 
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")

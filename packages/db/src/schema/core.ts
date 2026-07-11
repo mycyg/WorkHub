@@ -4,6 +4,7 @@ import type {
   ConversationMessageKind,
   ConversationSenderType,
   ConversationVisibility,
+  CuuProactivity,
   DeliverableChange,
   DeliverableChangeManifest,
   DispatchPolicy,
@@ -17,6 +18,7 @@ import type {
   WorkItemMode,
   WorkItemStatus
 } from "@workhub/contracts";
+import { DEFAULT_CUU_PROACTIVITY } from "@workhub/contracts";
 import { sql } from "drizzle-orm";
 import type { AnyPgColumn, PgTableExtraConfigValue } from "drizzle-orm/pg-core";
 import {
@@ -631,13 +633,20 @@ export const userAiProfiles = pgTable(
     defaultMode: smallint("default_mode").$type<AiMode>().notNull().default(3),
     granularJson: jsonb("granular_json").$type<JsonObject>().notNull().default({}),
     dispatchPolicy: varchar("dispatch_policy", { length: 16 }).$type<DispatchPolicy>().notNull().default("auto"),
-    cuuProactivity: varchar("cuu_proactivity", { length: 32 }).notNull(),
+    cuuProactivity: varchar("cuu_proactivity", { length: 32 })
+      .$type<CuuProactivity>()
+      .notNull()
+      .default(DEFAULT_CUU_PROACTIVITY),
     modelTierPref: varchar("model_tier_pref", { length: 32 }),
     ...timestamps()
   },
   (table) => [
     check("user_ai_profiles_default_mode_ck", sql`${table.defaultMode} between 1 and 5`),
     check("user_ai_profiles_dispatch_policy_ck", sql`${table.dispatchPolicy} in ('auto', 'ask', 'manual')`),
+    check(
+      "user_ai_profiles_cuu_proactivity_ck",
+      sql`${table.cuuProactivity} in ('quiet', 'balanced', 'proactive')`
+    ),
     uniqueIndex("user_ai_profiles_workspace_user_uq").on(table.workspaceId, table.userId),
     index("user_ai_profiles_user_id_idx").on(table.userId)
   ]
@@ -649,7 +658,7 @@ export const projectAiGovernance = pgTable(
     projectId: uuid("project_id").primaryKey().references(() => projects.id, { onDelete: "cascade" }),
     observerEnabled: boolean("observer_enabled").notNull().default(true),
     silenceWindowSecs: integer("silence_window_secs").notNull().default(60),
-    quietHoursJson: jsonb("quiet_hours_json").$type<JsonObject>().notNull().default({}),
+    quietHoursJson: jsonb("quiet_hours_json").$type<JsonObject>().notNull().default({ enabled: false }),
     granularJson: jsonb("granular_json").$type<JsonObject>().notNull().default({}),
     ...timestamps()
   },

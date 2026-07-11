@@ -26,6 +26,106 @@ export type AiMode = z.infer<typeof aiModeSchema>;
 export const dispatchPolicySchema = z.enum(["auto", "ask", "manual"]);
 export type DispatchPolicy = z.infer<typeof dispatchPolicySchema>;
 
+export const CUU_PROACTIVITY_VALUES = ["quiet", "balanced", "proactive"] as const;
+export const DEFAULT_CUU_PROACTIVITY = "balanced" as const;
+export const cuuProactivitySchema = z.enum(CUU_PROACTIVITY_VALUES);
+export type CuuProactivity = z.infer<typeof cuuProactivitySchema>;
+
+export const aiGranularSettingsSchema = z
+  .object({
+    create_work_item: z.boolean().optional(),
+    dispatch_run: z.boolean().optional(),
+    mutate_drive: z.boolean().optional(),
+    send_notification: z.boolean().optional()
+  })
+  .strict();
+export type AiGranularSettings = z.infer<typeof aiGranularSettingsSchema>;
+
+const disabledAiQuietHoursSchema = z
+  .object({
+    enabled: z.literal(false)
+  })
+  .strict();
+
+function isRuntimeSupportedTimeZone(value: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return true;
+  } catch (error) {
+    if (error instanceof RangeError) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+const enabledAiQuietHoursSchema = z
+  .object({
+    enabled: z.literal(true),
+    timezone: z.string().min(1).max(64).refine(isRuntimeSupportedTimeZone, {
+      message: "quiet-hours timezone must be supported by this runtime"
+    }),
+    start_minute: z.number().int().min(0).max(1439),
+    end_minute: z.number().int().min(0).max(1439),
+    weekdays: z.array(z.number().int().min(0).max(6)).min(1).max(7)
+  })
+  .strict();
+
+export const aiQuietHoursSchema = z
+  .discriminatedUnion("enabled", [disabledAiQuietHoursSchema, enabledAiQuietHoursSchema])
+  .superRefine((value, ctx) => {
+    if (value.enabled && value.start_minute === value.end_minute) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["end_minute"],
+        message: "quiet-hours start and end minutes must differ"
+      });
+    }
+    if (value.enabled && new Set(value.weekdays).size !== value.weekdays.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["weekdays"],
+        message: "quiet-hours weekdays must be unique"
+      });
+    }
+  });
+export type AiQuietHours = z.infer<typeof aiQuietHoursSchema>;
+
+export const DEFAULT_AI_QUIET_HOURS = { enabled: false } as const satisfies AiQuietHours;
+
+const modelTierPreferenceSchema = z
+  .string()
+  .min(1)
+  .max(32)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u, "model tier preference must be a safe identifier");
+
+export const patchUserAiProfileRequestSchema = z
+  .object({
+    default_mode: aiModeSchema.optional(),
+    granular_settings: aiGranularSettingsSchema.optional(),
+    dispatch_policy: dispatchPolicySchema.optional(),
+    cuu_proactivity: cuuProactivitySchema.optional(),
+    model_tier_preference: modelTierPreferenceSchema.nullable().optional()
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "user AI profile patch must include at least one field"
+  });
+export type PatchUserAiProfileRequest = z.infer<typeof patchUserAiProfileRequestSchema>;
+
+export const patchProjectAiGovernanceRequestSchema = z
+  .object({
+    observer_enabled: z.boolean().optional(),
+    silence_window_seconds: z.number().int().min(0).max(86400).optional(),
+    quiet_hours: aiQuietHoursSchema.optional(),
+    granular_settings: aiGranularSettingsSchema.optional()
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "project AI governance patch must include at least one field"
+  });
+export type PatchProjectAiGovernanceRequest = z.infer<typeof patchProjectAiGovernanceRequestSchema>;
+
 export const executionHintSchema = z.enum(["server", "local", "any"]);
 export type ExecutionHint = z.infer<typeof executionHintSchema>;
 

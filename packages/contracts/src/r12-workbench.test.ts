@@ -244,6 +244,130 @@ test("R12 AI profile and execution selectors keep their frozen value ranges", ()
   assert.equal(executionHintSchema.safeParse("desktop").success, false);
 });
 
+test("R12 Cuu proactivity and granular AI settings expose only frozen choices", () => {
+  const cuuProactivitySchema = requiredSchema("cuuProactivitySchema");
+  const aiGranularSettingsSchema = requiredSchema<Record<string, boolean>>("aiGranularSettingsSchema");
+  const defaultCuuProactivity = (contracts as Record<string, unknown>)["DEFAULT_CUU_PROACTIVITY"];
+  const values = (contracts as Record<string, unknown>)["CUU_PROACTIVITY_VALUES"];
+
+  assert.deepEqual(values, ["quiet", "balanced", "proactive"]);
+  assert.equal(defaultCuuProactivity, "balanced");
+  assert.deepEqual(
+    ["quiet", "balanced", "proactive"].map((value) => cuuProactivitySchema.parse(value)),
+    ["quiet", "balanced", "proactive"]
+  );
+  assert.equal(cuuProactivitySchema.safeParse("silent").success, false);
+
+  assert.deepEqual(aiGranularSettingsSchema.parse({}), {});
+  assert.deepEqual(
+    aiGranularSettingsSchema.parse({
+      create_work_item: true,
+      dispatch_run: false,
+      mutate_drive: true,
+      send_notification: false
+    }),
+    {
+      create_work_item: true,
+      dispatch_run: false,
+      mutate_drive: true,
+      send_notification: false
+    }
+  );
+  assert.equal(aiGranularSettingsSchema.safeParse({ browse_web: true }).success, false);
+  assert.equal(aiGranularSettingsSchema.safeParse({ dispatch_run: "yes" }).success, false);
+});
+
+test("R12 quiet hours are an explicit strict union with bounded unique weekdays", () => {
+  const schema = requiredSchema<Record<string, unknown>>("aiQuietHoursSchema");
+  const disabled = { enabled: false };
+  const enabled = {
+    enabled: true,
+    timezone: "Asia/Singapore",
+    start_minute: 1320,
+    end_minute: 480,
+    weekdays: [1, 2, 3, 4, 5]
+  };
+
+  assert.deepEqual(schema.parse(disabled), disabled);
+  assert.deepEqual(schema.parse(enabled), enabled);
+  for (const invalid of [
+    {},
+    { enabled: false, timezone: "UTC" },
+    { ...enabled, timezone: "" },
+    { ...enabled, timezone: "x".repeat(65) },
+    { ...enabled, timezone: "not/a-zone" },
+    { ...enabled, start_minute: -1 },
+    { ...enabled, end_minute: 1440 },
+    { ...enabled, start_minute: 1.5 },
+    { ...enabled, start_minute: 480, end_minute: 480 },
+    { ...enabled, weekdays: [] },
+    { ...enabled, weekdays: [0, 1, 2, 3, 4, 5, 6, 0] },
+    { ...enabled, weekdays: [1, 1] },
+    { ...enabled, weekdays: [7] },
+    { ...enabled, extra: true }
+  ]) {
+    assert.equal(schema.safeParse(invalid).success, false, `accepted malformed quiet hours: ${JSON.stringify(invalid)}`);
+  }
+});
+
+test("R12 user AI profile PATCH is strict, snake-case, and nonempty", () => {
+  const schema = requiredSchema<Record<string, unknown>>("patchUserAiProfileRequestSchema");
+  const patch = {
+    default_mode: 4,
+    granular_settings: { dispatch_run: false },
+    dispatch_policy: "ask",
+    cuu_proactivity: "proactive",
+    model_tier_preference: "premium-v2"
+  };
+
+  assert.deepEqual(schema.parse(patch), patch);
+  assert.deepEqual(schema.parse({ model_tier_preference: null }), { model_tier_preference: null });
+  for (const invalid of [
+    {},
+    { defaultMode: 4 },
+    { dispatch_policy: "silent" },
+    { granular_settings: { arbitrary: true } },
+    { model_tier_preference: "" },
+    { model_tier_preference: "contains spaces" },
+    { model_tier_preference: "x".repeat(33) },
+    { cuu_proactivity: "chatty" },
+    { unknown_key: true }
+  ]) {
+    assert.equal(schema.safeParse(invalid).success, false, `accepted malformed user patch: ${JSON.stringify(invalid)}`);
+  }
+});
+
+test("R12 project AI governance PATCH is strict, bounded, and nonempty", () => {
+  const schema = requiredSchema<Record<string, unknown>>("patchProjectAiGovernanceRequestSchema");
+  const patch = {
+    observer_enabled: false,
+    silence_window_seconds: 86400,
+    quiet_hours: {
+      enabled: true,
+      timezone: "UTC",
+      start_minute: 0,
+      end_minute: 480,
+      weekdays: [0, 6]
+    },
+    granular_settings: { create_work_item: false }
+  };
+
+  assert.deepEqual(schema.parse(patch), patch);
+  for (const invalid of [
+    {},
+    { observerEnabled: false },
+    { silence_window_seconds: -1 },
+    { silence_window_seconds: 86401 },
+    { silence_window_seconds: 1.5 },
+    { quiet_hours: {} },
+    { quiet_hours: { enabled: true, timezone: "UTC", start_minute: 0, end_minute: 1, weekdays: [1, 1] } },
+    { granular_settings: { send_email: true } },
+    { unknown_key: true }
+  ]) {
+    assert.equal(schema.safeParse(invalid).success, false, `accepted malformed governance patch: ${JSON.stringify(invalid)}`);
+  }
+});
+
 test("R12 conversation topics and all nine event names are formal protocol values", () => {
   const eventTopicSchema = requiredSchema<{ kind: string; topic: string; id?: string }>("eventTopicSchema");
   const eventTypes = (contracts as Record<string, unknown>)["eventTypes"] as Record<string, string> | undefined;

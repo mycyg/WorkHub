@@ -99,9 +99,9 @@ conversation_observer_state
 
 user_ai_profiles
   workspace_id fk + user_id fk · UNIQUE(workspace_id, user_id)
-  default_mode smallint(1-5, default 3) · granular_json jsonb
+  default_mode smallint(1-5, default 3) · granular_json jsonb(`create_work_item`/`dispatch_run`/`mutate_drive`/`send_notification` 四个可选 bool,缺键=继承)
   dispatch_policy varchar('auto'|'ask'|'manual', default 'auto')  ← 接单策略(03 §0)
-  cuu_proactivity varchar · model_tier_pref varchar nullable · timestamps
+  cuu_proactivity varchar('quiet'|'balanced'|'proactive', default 'balanced') · model_tier_pref varchar nullable · timestamps
 
 (agent_runs 扩展列,随批0迁移一并加:execution_hint varchar('server'|'local'|'any') default 'server'
  · source_conversation_id uuid nullable · source_action_card_item_id uuid nullable;复合 FK 绑定来源 workspace/conversation,
@@ -110,7 +110,9 @@ user_ai_profiles
 
 project_ai_governance
   project_id pk · observer_enabled bool default true
-  silence_window_secs int default 60 · quiet_hours_json jsonb · granular_json jsonb · timestamps
+  silence_window_secs int default 60 · quiet_hours_json jsonb default `{enabled:false}` · granular_json 同上 · timestamps
+  quiet_hours 启用态必须给 runtime 支持的 IANA timezone、0..1439 的 start/end minute 与 1..7 个不重复 weekday(0..6);
+  `start_minute == end_minute` 视为无效输入并直接拒绝,不静默解释成全天或零时长。
 ```
 
 ### 端点(新 `apps/api/src/routes/conversations.ts` + pages VM)

@@ -99,24 +99,46 @@ CREATE TABLE IF NOT EXISTS "user_ai_profiles" (
   "default_mode" smallint NOT NULL DEFAULT 3,
   "granular_json" jsonb NOT NULL DEFAULT '{}'::jsonb,
   "dispatch_policy" varchar(16) NOT NULL DEFAULT 'auto',
-  "cuu_proactivity" varchar(32) NOT NULL,
+  "cuu_proactivity" varchar(32) NOT NULL DEFAULT 'balanced',
   "model_tier_pref" varchar(32),
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
   "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT "user_ai_profiles_default_mode_ck" CHECK ("default_mode" BETWEEN 1 AND 5),
-  CONSTRAINT "user_ai_profiles_dispatch_policy_ck" CHECK ("dispatch_policy" IN ('auto','ask','manual'))
+  CONSTRAINT "user_ai_profiles_dispatch_policy_ck" CHECK ("dispatch_policy" IN ('auto','ask','manual')),
+  CONSTRAINT "user_ai_profiles_cuu_proactivity_ck" CHECK ("cuu_proactivity" IN ('quiet','balanced','proactive'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "project_ai_governance" (
   "project_id" uuid PRIMARY KEY NOT NULL REFERENCES "projects"("id") ON DELETE cascade,
   "observer_enabled" boolean NOT NULL DEFAULT true,
   "silence_window_secs" integer NOT NULL DEFAULT 60,
-  "quiet_hours_json" jsonb NOT NULL DEFAULT '{}'::jsonb,
+  "quiet_hours_json" jsonb NOT NULL DEFAULT '{"enabled":false}'::jsonb,
   "granular_json" jsonb NOT NULL DEFAULT '{}'::jsonb,
   "created_at" timestamp with time zone NOT NULL DEFAULT now(),
   "updated_at" timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT "project_ai_governance_silence_window_ck" CHECK ("silence_window_secs" >= 0)
 );
+--> statement-breakpoint
+ALTER TABLE "user_ai_profiles" ALTER COLUMN "cuu_proactivity" SET DEFAULT 'balanced';
+--> statement-breakpoint
+ALTER TABLE "project_ai_governance" ALTER COLUMN "quiet_hours_json" SET DEFAULT '{"enabled":false}'::jsonb;
+--> statement-breakpoint
+UPDATE "project_ai_governance"
+SET "quiet_hours_json" = '{"enabled":false}'::jsonb
+WHERE "quiet_hours_json" = '{}'::jsonb;
+--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'user_ai_profiles_cuu_proactivity_ck'
+      AND conrelid = 'user_ai_profiles'::regclass
+  ) THEN
+    ALTER TABLE "user_ai_profiles"
+      ADD CONSTRAINT "user_ai_profiles_cuu_proactivity_ck"
+      CHECK ("cuu_proactivity" IN ('quiet','balanced','proactive'));
+  END IF;
+END $$;
 --> statement-breakpoint
 ALTER TABLE "agent_runs" ADD COLUMN IF NOT EXISTS "execution_hint" varchar(16) NOT NULL DEFAULT 'server';
 --> statement-breakpoint
