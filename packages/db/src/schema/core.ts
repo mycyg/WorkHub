@@ -1,6 +1,13 @@
 import type {
+  AiMode,
+  ConversationKind,
+  ConversationMessageKind,
+  ConversationSenderType,
+  ConversationVisibility,
   DeliverableChange,
   DeliverableChangeManifest,
+  DispatchPolicy,
+  ExecutionHint,
   RiskLevel,
   TaskPlanItemRole,
   TaskPlanItemStatus,
@@ -11,16 +18,20 @@ import type {
   WorkItemStatus
 } from "@workhub/contracts";
 import { sql } from "drizzle-orm";
-import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import type { AnyPgColumn, PgTableExtraConfigValue } from "drizzle-orm/pg-core";
 import {
   bigint,
   boolean,
+  check,
   doublePrecision,
+  foreignKey,
+  ForeignKeyBuilder,
   index,
   integer,
   jsonb,
   numeric,
   pgTable,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -32,6 +43,19 @@ type JsonObject = Record<string, unknown>;
 type JsonArray = unknown[];
 type ObjectiveStatus = "active" | "paused" | "done" | "archived";
 type KeyResultStatus = "active" | "done" | "at_risk" | "cancelled";
+type ConversationParticipantRole = "owner" | "member";
+type ActionCardStatus = "active" | "superseded";
+type ActionCardItemKind = "execute" | "decide" | "observe";
+type ActionCardConfidence = "high" | "mid" | "low";
+type ActionCardItemStatus = "running" | "done" | "undone" | "waiting_decision" | "dismissed" | "escalated";
+
+type DeferredForeignKeyConfig = {
+  name?: string;
+  columns: AnyPgColumn[];
+  foreignColumns: AnyPgColumn[];
+};
+
+const deferredForeignKey = (reference: () => DeferredForeignKeyConfig) => new ForeignKeyBuilder(reference);
 
 const id = () => uuid("id").primaryKey();
 const timestampTz = (name: string) => timestamp(name, { withTimezone: true });
@@ -271,6 +295,7 @@ export const projects = pgTable(
   (table) => [
     // rank1：slug 唯一性按工作区隔离（非全局），杜绝 create-or-reuse-by-slug 的跨租户串号。见迁移 0028。
     uniqueIndex("projects_slug_uq").on(table.workspaceId, table.slug),
+    uniqueIndex("projects_id_workspace_uq").on(table.id, table.workspaceId),
     index("projects_workspace_id_idx").on(table.workspaceId),
     index("projects_owner_user_id_idx").on(table.ownerUserId),
     index("projects_deleted_at_idx").on(table.deletedAt)
@@ -355,6 +380,241 @@ export const workItems = pgTable(
     index("work_items_main_branch_id_idx").on(table.mainBranchId),
     index("work_items_latest_confidence_id_idx").on(table.latestConfidenceId),
     index("work_items_deleted_at_idx").on(table.deletedAt)
+  ]
+);
+
+export const projectConversations = pgTable(
+  "project_conversations",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    kind: varchar("kind", { length: 16 }).$type<ConversationKind>().notNull(),
+    title: varchar("title", { length: 256 }).notNull(),
+    parentConversationId: uuid("parent_conversation_id").references(
+      (): AnyPgColumn => projectConversations.id,
+      { onDelete: "set null" }
+    ),
+    sourceMessageId: uuid("source_message_id").references(
+      (): AnyPgColumn => conversationMessages.id,
+      { onDelete: "set null" }
+    ),
+    visibility: varchar("visibility", { length: 16 }).$type<ConversationVisibility>().notNull(),
+    nextSeq: bigint("next_seq", { mode: "number" }).notNull().default(0),
+    // Legacy projects may not have an owner; new conversation creation must still populate this when known.
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    deletedAt: timestampTz("deleted_at"),
+    deletedByUserId: uuid("deleted_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps()
+  },
+  (table): PgTableExtraConfigValue[] => [
+    check("project_conversations_kind_ck", sql`${table.kind} in ('main', 'collab')`),
+    check("project_conversations_visibility_ck", sql`${table.visibility} in ('project', 'private')`),
+    check(
+      "project_conversations_next_seq_ck",
+      sql`${table.nextSeq} between 0 and 9007199254740991`
+    ),
+    check(
+      "project_conversations_source_parent_ck",
+      sql`${table.sourceMessageId} is null or ${table.parentConversationId} is not null`
+    ),
+    foreignKey({
+      name: "project_conversations_project_workspace_fk",
+      columns: [table.projectId, table.workspaceId],
+      foreignColumns: [projects.id, projects.workspaceId]
+    }),
+    deferredForeignKey((): DeferredForeignKeyConfig => ({
+      name: "project_conversations_parent_project_fk",
+      columns: [table.parentConversationId, table.projectId],
+      foreignColumns: [table.id, table.projectId]
+    })),
+    deferredForeignKey((): DeferredForeignKeyConfig => ({
+      name: "project_conversations_source_message_parent_fk",
+      columns: [table.parentConversationId, table.sourceMessageId],
+      foreignColumns: [conversationMessages.conversationId, conversationMessages.id]
+    })),
+    uniqueIndex("project_conversations_active_main_uq")
+      .on(table.projectId)
+      .where(sql`${table.kind} = 'main' and ${table.deletedAt} is null`),
+    index("project_conversations_workspace_project_idx").on(table.workspaceId, table.projectId),
+    index("project_conversations_project_created_idx").on(table.projectId, table.createdAt),
+    uniqueIndex("project_conversations_id_project_uq").on(table.id, table.projectId),
+    index("project_conversations_parent_id_idx").on(table.parentConversationId),
+    index("project_conversations_source_message_id_idx").on(table.sourceMessageId),
+    index("project_conversations_deleted_at_idx").on(table.deletedAt)
+  ]
+);
+
+export const conversationParticipants = pgTable(
+  "conversation_participants",
+  {
+    id: id(),
+    conversationId: uuid("conversation_id").notNull().references((): AnyPgColumn => projectConversations.id, {
+      onDelete: "cascade"
+    }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    role: varchar("role", { length: 16 }).$type<ConversationParticipantRole>().notNull(),
+    ...timestamps()
+  },
+  (table) => [
+    check("conversation_participants_role_ck", sql`${table.role} in ('owner', 'member')`),
+    uniqueIndex("conversation_participants_conversation_user_uq").on(table.conversationId, table.userId),
+    index("conversation_participants_user_id_idx").on(table.userId)
+  ]
+);
+
+export const conversationMessages = pgTable(
+  "conversation_messages",
+  {
+    id: id(),
+    conversationId: uuid("conversation_id").notNull().references((): AnyPgColumn => projectConversations.id, {
+      onDelete: "cascade"
+    }),
+    seq: bigint("seq", { mode: "number" }).notNull(),
+    senderType: varchar("sender_type", { length: 16 }).$type<ConversationSenderType>().notNull(),
+    senderUserId: uuid("sender_user_id").references(() => users.id, { onDelete: "set null" }),
+    kind: varchar("kind", { length: 24 }).$type<ConversationMessageKind>().notNull(),
+    contentJson: jsonb("content_json").$type<JsonObject>().notNull(),
+    threadRootId: uuid("thread_root_id").references((): AnyPgColumn => conversationMessages.id, {
+      onDelete: "set null"
+    }),
+    createdAt: createdAt()
+  },
+  (table): PgTableExtraConfigValue[] => [
+    check("conversation_messages_seq_ck", sql`${table.seq} between 0 and 9007199254740991`),
+    check("conversation_messages_sender_type_ck", sql`${table.senderType} in ('user', 'cuu', 'system')`),
+    check(
+      "conversation_messages_kind_ck",
+      sql`${table.kind} in ('text', 'file_card', 'action_card', 'system_event', 'tool_note')`
+    ),
+    deferredForeignKey((): DeferredForeignKeyConfig => ({
+      name: "conversation_messages_thread_root_conversation_fk",
+      columns: [table.conversationId, table.threadRootId],
+      foreignColumns: [table.conversationId, table.id]
+    })),
+    uniqueIndex("conversation_messages_conversation_seq_uq").on(table.conversationId, table.seq),
+    uniqueIndex("conversation_messages_conversation_id_uq").on(table.conversationId, table.id),
+    index("conversation_messages_cursor_idx").on(table.conversationId, table.seq),
+    index("conversation_messages_sender_user_id_idx").on(table.senderUserId),
+    index("conversation_messages_thread_root_id_idx").on(table.threadRootId)
+  ]
+);
+
+export const actionCards = pgTable(
+  "action_cards",
+  {
+    id: id(),
+    conversationId: uuid("conversation_id").notNull().references(() => projectConversations.id, {
+      onDelete: "cascade"
+    }),
+    messageId: uuid("message_id").notNull().references(() => conversationMessages.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 16 }).$type<ActionCardStatus>().notNull().default("active"),
+    analyzedToSeq: bigint("analyzed_to_seq", { mode: "number" }).notNull(),
+    ...timestamps()
+  },
+  (table) => [
+    check("action_cards_status_ck", sql`${table.status} in ('active', 'superseded')`),
+    check("action_cards_analyzed_to_seq_ck", sql`${table.analyzedToSeq} between 0 and 9007199254740991`),
+    foreignKey({
+      name: "action_cards_conversation_message_fk",
+      columns: [table.conversationId, table.messageId],
+      foreignColumns: [conversationMessages.conversationId, conversationMessages.id]
+    }),
+    index("action_cards_conversation_status_idx").on(table.conversationId, table.status),
+    uniqueIndex("action_cards_message_id_uq").on(table.messageId),
+    uniqueIndex("action_cards_conversation_id_uq").on(table.conversationId, table.id)
+  ]
+);
+
+export const actionCardItems = pgTable(
+  "action_card_items",
+  {
+    id: id(),
+    actionCardId: uuid("action_card_id").notNull().references(() => actionCards.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    kind: varchar("kind", { length: 16 }).$type<ActionCardItemKind>().notNull(),
+    titleMd: text("title_md").notNull(),
+    confidence: varchar("confidence", { length: 16 }).$type<ActionCardConfidence>().notNull(),
+    workItemId: uuid("work_item_id").references(() => workItems.id, { onDelete: "set null" }),
+    runId: uuid("run_id").references((): AnyPgColumn => agentRuns.id, { onDelete: "set null" }),
+    assigneeUserId: uuid("assignee_user_id").references(() => users.id, { onDelete: "set null" }),
+    status: varchar("status", { length: 24 }).$type<ActionCardItemStatus>().notNull(),
+    undoDeadlineAt: timestampTz("undo_deadline_at"),
+    ...timestamps()
+  },
+  (table) => [
+    check("action_card_items_ordinal_ck", sql`${table.ordinal} >= 0`),
+    check("action_card_items_kind_ck", sql`${table.kind} in ('execute', 'decide', 'observe')`),
+    check("action_card_items_confidence_ck", sql`${table.confidence} in ('high', 'mid', 'low')`),
+    check(
+      "action_card_items_status_ck",
+      sql`${table.status} in ('running', 'done', 'undone', 'waiting_decision', 'dismissed', 'escalated')`
+    ),
+    uniqueIndex("action_card_items_card_ordinal_uq").on(table.actionCardId, table.ordinal),
+    index("action_card_items_work_item_id_idx").on(table.workItemId),
+    index("action_card_items_run_id_idx").on(table.runId),
+    index("action_card_items_assignee_status_idx").on(table.assigneeUserId, table.status)
+  ]
+);
+
+export const conversationObserverState = pgTable(
+  "conversation_observer_state",
+  {
+    conversationId: uuid("conversation_id").primaryKey().references(() => projectConversations.id, {
+      onDelete: "cascade"
+    }),
+    lastAnalyzedSeq: bigint("last_analyzed_seq", { mode: "number" }).notNull().default(0),
+    activeCardId: uuid("active_card_id").references(() => actionCards.id, { onDelete: "set null" }),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    updatedAt: updatedAt()
+  },
+  (table) => [
+    check(
+      "conversation_observer_state_last_seq_ck",
+      sql`${table.lastAnalyzedSeq} between 0 and 9007199254740991`
+    ),
+    check("conversation_observer_state_failures_ck", sql`${table.consecutiveFailures} >= 0`),
+    foreignKey({
+      name: "conversation_observer_state_active_card_conversation_fk",
+      columns: [table.conversationId, table.activeCardId],
+      foreignColumns: [actionCards.conversationId, actionCards.id]
+    }),
+    index("conversation_observer_state_active_card_id_idx").on(table.activeCardId)
+  ]
+);
+
+export const userAiProfiles = pgTable(
+  "user_ai_profiles",
+  {
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    defaultMode: smallint("default_mode").$type<AiMode>().notNull().default(3),
+    granularJson: jsonb("granular_json").$type<JsonObject>().notNull().default({}),
+    dispatchPolicy: varchar("dispatch_policy", { length: 16 }).$type<DispatchPolicy>().notNull().default("auto"),
+    cuuProactivity: varchar("cuu_proactivity", { length: 32 }).notNull(),
+    modelTierPref: varchar("model_tier_pref", { length: 32 }),
+    ...timestamps()
+  },
+  (table) => [
+    check("user_ai_profiles_default_mode_ck", sql`${table.defaultMode} between 1 and 5`),
+    check("user_ai_profiles_dispatch_policy_ck", sql`${table.dispatchPolicy} in ('auto', 'ask', 'manual')`),
+    uniqueIndex("user_ai_profiles_workspace_user_uq").on(table.workspaceId, table.userId),
+    index("user_ai_profiles_user_id_idx").on(table.userId)
+  ]
+);
+
+export const projectAiGovernance = pgTable(
+  "project_ai_governance",
+  {
+    projectId: uuid("project_id").primaryKey().references(() => projects.id, { onDelete: "cascade" }),
+    observerEnabled: boolean("observer_enabled").notNull().default(true),
+    silenceWindowSecs: integer("silence_window_secs").notNull().default(60),
+    quietHoursJson: jsonb("quiet_hours_json").$type<JsonObject>().notNull().default({}),
+    granularJson: jsonb("granular_json").$type<JsonObject>().notNull().default({}),
+    ...timestamps()
+  },
+  (table) => [
+    check("project_ai_governance_silence_window_ck", sql`${table.silenceWindowSecs} >= 0`)
   ]
 );
 
@@ -1181,6 +1441,14 @@ export const agentRuns = pgTable(
     claimedAt: timestampTz("claimed_at"),
     heartbeatAt: timestampTz("heartbeat_at"),
     leaseExpiresAt: timestampTz("lease_expires_at"),
+    executionHint: varchar("execution_hint", { length: 16 }).$type<ExecutionHint>().notNull().default("server"),
+    sourceConversationId: uuid("source_conversation_id").references(() => projectConversations.id, {
+      onDelete: "set null"
+    }),
+    sourceActionCardItemId: uuid("source_action_card_item_id").references(
+      (): AnyPgColumn => actionCardItems.id,
+      { onDelete: "set null" }
+    ),
     // 因租约过期被恢复(requeue)的累计次数；超过 maxRecoverAttempts 即转死信 failed，不再无限重跑。
     recoverAttempts: integer("recover_attempts").notNull().default(0),
     startedAt: timestampTz("started_at"),
@@ -1188,6 +1456,7 @@ export const agentRuns = pgTable(
     ...timestamps()
   },
   (table) => [
+    check("agent_runs_execution_hint_ck", sql`${table.executionHint} in ('server', 'local', 'any')`),
     index("agent_runs_org_id_idx").on(table.orgId),
     index("agent_runs_workspace_id_idx").on(table.workspaceId),
     index("agent_runs_work_item_id_idx").on(table.workItemId),
@@ -1205,7 +1474,15 @@ export const agentRuns = pgTable(
       .on(table.taskPlanItemId)
       .where(sql`${table.status} in ('queued', 'running') and ${table.taskPlanItemId} is not null`),
     index("agent_runs_claim_idx").on(table.status, table.leaseExpiresAt, table.createdAt),
-    index("agent_runs_claimed_by_idx").on(table.claimedBy)
+    index("agent_runs_claimed_by_idx").on(table.claimedBy),
+    index("agent_runs_execution_claim_idx").on(
+      table.executionHint,
+      table.status,
+      table.leaseExpiresAt,
+      table.createdAt
+    ),
+    index("agent_runs_source_conversation_id_idx").on(table.sourceConversationId),
+    index("agent_runs_source_action_card_item_id_idx").on(table.sourceActionCardItemId)
   ]
 );
 
@@ -1683,6 +1960,14 @@ export const workHubTables = {
   meetingRecords,
   meetingInsights,
   workItems,
+  projectConversations,
+  conversationParticipants,
+  conversationMessages,
+  actionCards,
+  actionCardItems,
+  conversationObserverState,
+  userAiProfiles,
+  projectAiGovernance,
   workItemAssignments,
   workItemWorkspaces,
   workItemWorkspaceItems,
