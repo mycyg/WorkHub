@@ -44,6 +44,10 @@ const conversationTextContentSchema = z
   .strict();
 
 const safeIntegerInputSchema = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+const canonicalConversationCursorTimestampSchema = isoDateTimeSchema.regex(
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u,
+  "conversation cursor timestamp must be canonical UTC with six fractional digits"
+);
 
 export const conversationMessageListQuerySchema = z
   .object({
@@ -55,7 +59,7 @@ export type ConversationMessageListQuery = z.infer<typeof conversationMessageLis
 
 export const conversationListQuerySchema = z
   .object({
-    afterCreatedAt: isoDateTimeSchema.optional(),
+    afterCreatedAt: canonicalConversationCursorTimestampSchema.optional(),
     afterId: idSchema.optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50)
   })
@@ -90,7 +94,10 @@ export const createConversationRequestSchema = z
         message: "source message requires a parent conversation"
       });
     }
-    if (new Set(value.participant_user_ids).size !== value.participant_user_ids.length) {
+    if (
+      new Set(value.participant_user_ids.map((userId) => userId.toLowerCase())).size !==
+      value.participant_user_ids.length
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["participant_user_ids"],

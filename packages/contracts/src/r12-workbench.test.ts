@@ -13,6 +13,7 @@ const messageId = "40000000-0000-4000-8000-000000000004";
 const driveItemId = "50000000-0000-4000-8000-000000000005";
 const userId = "60000000-0000-4000-8000-000000000006";
 const participantUserId = "60000000-0000-4000-8000-000000000007";
+const caseParticipantUserId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const runId = "70000000-0000-4000-8000-000000000007";
 
 function requiredSchema<T = unknown>(name: string): SchemaLike<T> {
@@ -165,6 +166,13 @@ test("R12 collab creation defaults and bounds unique active participant IDs", ()
   assert.equal(
     schema.safeParse({
       ...base,
+      participant_user_ids: [caseParticipantUserId, caseParticipantUserId.toUpperCase()]
+    }).success,
+    false
+  );
+  assert.equal(
+    schema.safeParse({
+      ...base,
       participant_user_ids: [...maximumParticipants, "60000000-0000-4000-8000-000000000100"]
     }).success,
     false
@@ -188,7 +196,7 @@ test("R12 message cursor query uses safe integers and a bounded default", () => 
 
 test("R12 conversation list query exposes one paired created-at and UUID keyset", () => {
   const schema = requiredSchema<Record<string, unknown>>("conversationListQuerySchema");
-  const afterCreatedAt = "2026-07-12T08:30:00.000Z";
+  const afterCreatedAt = "2026-07-12T08:30:00.123456Z";
   const afterId = conversationId;
 
   assert.deepEqual(schema.parse({}), { limit: 50 });
@@ -200,6 +208,14 @@ test("R12 conversation list query exposes one paired created-at and UUID keyset"
   assert.equal(schema.safeParse({ afterCreatedAt }).success, false);
   assert.equal(schema.safeParse({ afterId }).success, false);
   assert.equal(schema.safeParse({ afterCreatedAt: "not-a-date", afterId }).success, false);
+  assert.equal(
+    schema.safeParse({ afterCreatedAt: "2026-07-12T08:30:00.123Z", afterId }).success,
+    false
+  );
+  assert.equal(
+    schema.safeParse({ afterCreatedAt: "2026-07-12T16:30:00.123456+08:00", afterId }).success,
+    false
+  );
   assert.equal(schema.safeParse({ afterCreatedAt, afterId: "not-a-uuid" }).success, false);
   assert.equal(schema.safeParse({ after_created_at: afterCreatedAt, after_id: afterId }).success, false);
   for (const limit of [0, 101, 1.5]) {

@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 
-import type { ConversationVisibility } from "@workhub/contracts";
+import {
+  conversationListQuerySchema,
+  type ConversationVisibility
+} from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
 import {
@@ -38,7 +41,7 @@ export type ListVisibleConversationsInput = {
 };
 
 export type ConversationListCursor = {
-  createdAt: Date;
+  createdAt: string;
   id: string;
 };
 
@@ -159,6 +162,11 @@ const messageSelection = {
   createdAt: conversationMessages.createdAt
 };
 
+const conversationCursorCreatedAtSelection = sql<string>`to_char(
+  ${projectConversations.createdAt} at time zone 'UTC',
+  'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+)`;
+
 function assertLimit(limit: number) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
     throw new ConversationRepositoryInputError("conversation limit must be an integer from 1 through 100");
@@ -175,13 +183,14 @@ function assertConversationListCursor(cursor: ConversationListCursor | undefined
   if (!cursor) {
     return;
   }
-  if (
-    !(cursor.createdAt instanceof Date) ||
-    !Number.isFinite(cursor.createdAt.getTime()) ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(cursor.id)
-  ) {
+  const parsed = conversationListQuerySchema.safeParse({
+    afterCreatedAt: cursor.createdAt,
+    afterId: cursor.id,
+    limit: 1
+  });
+  if (!parsed.success) {
     throw new ConversationRepositoryInputError(
-      "conversation list cursor requires a valid date and UUID"
+      "conversation list cursor requires a canonical UTC microsecond timestamp and UUID"
     );
   }
 }
@@ -193,8 +202,10 @@ function assertCollabInput(input: CreateCollabConversationInput) {
   if (input.participantUserIds.length > 99) {
     throw new ConversationRepositoryInputError("a collab may request at most 99 members");
   }
-  const unique = new Set(input.participantUserIds);
-  if (unique.size !== input.participantUserIds.length || unique.has(input.creatorUserId)) {
+  const normalizedCreatorUserId = input.creatorUserId.toLowerCase();
+  const normalizedParticipantUserIds = input.participantUserIds.map((userId) => userId.toLowerCase());
+  const unique = new Set(normalizedParticipantUserIds);
+  if (unique.size !== normalizedParticipantUserIds.length || unique.has(normalizedCreatorUserId)) {
     throw new ConversationRepositoryInputError("collab participants must be unique and exclude the creator");
   }
 }
@@ -250,21 +261,14 @@ function conversationListCursorCondition(cursor: ConversationListCursor | undefi
   if (!cursor) {
     return undefined;
   }
-  return or(
-    gt(projectConversations.createdAt, cursor.createdAt),
-    and(
-      eq(projectConversations.createdAt, cursor.createdAt),
-      gt(projectConversations.id, cursor.id)
-    )
-  );
+  return sql`(${projectConversations.createdAt}, ${projectConversations.id}) > (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`;
 }
 
 async function readVisibleAccess(
   db: WorkHubDb,
-  input: FindConversationAccessInput & { projectId?: string },
-  lock = false
+  input: FindConversationAccessInput & { projectId?: string }
 ): Promise<ConversationAccessRecord | null> {
-  const query = db
+  const rows = await db
     .select({
       conversation: conversationSelection,
       projectOwnerUserId: projects.ownerUserId,
@@ -296,10 +300,157 @@ async function readVisibleAccess(
     )
     .where(activeConversationCondition(input))
     .limit(1);
-  const rows = lock
-    ? await query.for("update", { of: projectConversations })
-    : await query;
   return (rows[0] as ConversationAccessRecord | undefined) ?? null;
+}
+
+async function readActiveProjectMembership(
+  db: WorkHubDb,
+  input: { workspaceId: string; projectId: string; userId: string }
+) {
+  const [access] = await db
+    .select({ projectId: projects.id, membershipRole: workspaceMemberships.role })
+    .from(projects)
+    .innerJoin(
+      workspaceMemberships,
+      and(
+        eq(workspaceMemberships.workspaceId, projects.workspaceId),
+        eq(workspaceMemberships.userId, input.userId),
+        isNull(workspaceMemberships.deletedAt)
+      )
+    )
+    .where(
+      and(
+        eq(projects.id, input.projectId),
+        eq(projects.workspaceId, input.workspaceId),
+        eq(projects.archived, false),
+        isNull(projects.deletedAt),
+        eq(workspaceMemberships.workspaceId, input.workspaceId),
+        eq(workspaceMemberships.userId, input.userId),
+        isNull(workspaceMemberships.deletedAt)
+      )
+    )
+    .limit(1);
+  return access ?? null;
+}
+
+async function lockActiveProject(
+  db: WorkHubDb,
+  input: { workspaceId: string; projectId: string }
+) {
+  const [project] = await db
+    .select({ projectId: projects.id, projectOwnerUserId: projects.ownerUserId })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.id, input.projectId),
+        eq(projects.workspaceId, input.workspaceId),
+        eq(projects.archived, false),
+        isNull(projects.deletedAt)
+      )
+    )
+    .for("share", { of: projects })
+    .limit(1);
+  return project ?? null;
+}
+
+async function lockActiveMembershipSet(
+  db: WorkHubDb,
+  input: { workspaceId: string; userIds: string[] }
+) {
+  if (input.userIds.length === 0) {
+    return [];
+  }
+  return db
+    .select({ id: workspaceMemberships.id, userId: workspaceMemberships.userId })
+    .from(workspaceMemberships)
+    .where(
+      and(
+        eq(workspaceMemberships.workspaceId, input.workspaceId),
+        inArray(workspaceMemberships.userId, input.userIds),
+        isNull(workspaceMemberships.deletedAt)
+      )
+    )
+    .orderBy(asc(workspaceMemberships.userId))
+    .for("share", { of: workspaceMemberships });
+}
+
+async function lockConversationParticipant(
+  db: WorkHubDb,
+  input: { conversationId: string; userId: string }
+) {
+  const [participant] = await db
+    .select({ id: conversationParticipants.id, role: conversationParticipants.role })
+    .from(conversationParticipants)
+    .where(
+      and(
+        eq(conversationParticipants.conversationId, input.conversationId),
+        eq(conversationParticipants.userId, input.userId)
+      )
+    )
+    .for("share", { of: conversationParticipants })
+    .limit(1);
+  return participant ?? null;
+}
+
+async function lockParentConversation(
+  db: WorkHubDb,
+  input: { workspaceId: string; projectId: string; conversationId: string }
+) {
+  const [parent] = await db
+    .select(conversationSelection)
+    .from(projectConversations)
+    .where(
+      and(
+        eq(projectConversations.workspaceId, input.workspaceId),
+        eq(projectConversations.projectId, input.projectId),
+        eq(projectConversations.id, input.conversationId),
+        isNull(projectConversations.deletedAt)
+      )
+    )
+    .for("update", { of: projectConversations })
+    .limit(1);
+  if (!parent) {
+    return null;
+  }
+  return parent;
+}
+
+async function readConversationProjectId(
+  db: WorkHubDb,
+  input: { workspaceId: string; conversationId: string }
+) {
+  const [locator] = await db
+    .select({ projectId: projectConversations.projectId })
+    .from(projectConversations)
+    .where(
+      and(
+        eq(projectConversations.workspaceId, input.workspaceId),
+        eq(projectConversations.id, input.conversationId),
+        isNull(projectConversations.deletedAt)
+      )
+    )
+    .limit(1);
+  return locator ?? null;
+}
+
+async function lockActiveConversation(
+  db: WorkHubDb,
+  input: { workspaceId: string; projectId: string; conversationId: string }
+) {
+  const [conversation] = await db
+    .select(conversationSelection)
+    .from(projectConversations)
+    .where(
+      and(
+        eq(projectConversations.workspaceId, input.workspaceId),
+        eq(projectConversations.projectId, input.projectId),
+        eq(projectConversations.id, input.conversationId),
+        isNull(projectConversations.deletedAt)
+      )
+    )
+    .for("update", { of: projectConversations })
+    .limit(1);
+  return conversation ?? null;
 }
 
 export function createConversationRepository(db: WorkHubDb): ConversationRepository {
@@ -307,10 +458,19 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
     async listVisibleForProject(input) {
       assertLimit(input.limit);
       assertConversationListCursor(input.after);
+      const projectAccess = await readActiveProjectMembership(db, {
+        workspaceId: input.workspaceId,
+        projectId: input.projectId,
+        userId: input.viewerUserId
+      });
+      if (!projectAccess) {
+        return null;
+      }
       const rows = await db
         .select({
           ...conversationSelection,
-          participantRole: conversationParticipants.role
+          participantRole: conversationParticipants.role,
+          cursorCreatedAt: conversationCursorCreatedAtSelection
         })
         .from(projectConversations)
         .innerJoin(
@@ -343,19 +503,17 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         )
         .orderBy(asc(projectConversations.createdAt), asc(projectConversations.id))
         .limit(input.limit + 1);
-      if (rows.length === 0) {
-        return null;
-      }
-      const pageRows = rows.slice(0, input.limit).map((row) => ({
-          ...(row as ConversationRow),
-          participantRole: (row.participantRole as ConversationParticipantRole | null) ?? null
-        }));
+      const pageSourceRows = rows.slice(0, input.limit);
+      const pageRows = pageSourceRows.map(({ cursorCreatedAt: _cursorCreatedAt, ...row }) => ({
+        ...row,
+        participantRole: (row.participantRole as ConversationParticipantRole | null) ?? null
+      }));
       const capped = rows.length > input.limit;
-      const last = pageRows.at(-1);
+      const last = pageSourceRows.at(-1);
       return {
         rows: pageRows,
         capped,
-        nextCursor: capped && last ? { createdAt: last.createdAt, id: last.id } : null
+        nextCursor: capped && last ? { createdAt: last.cursorCreatedAt, id: last.id } : null
       };
     },
 
@@ -366,87 +524,65 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
     async createCollab(input) {
       assertCollabInput(input);
       const at = input.at ?? new Date();
+      const creatorUserId = input.creatorUserId.toLowerCase();
+      const participantUserIds = input.participantUserIds.map((userId) => userId.toLowerCase());
       return db.transaction(async (tx) => {
-        const [projectAccess] = await tx
-          .select({
-            projectId: projects.id,
-            projectOwnerUserId: projects.ownerUserId,
-            membershipRole: workspaceMemberships.role
-          })
-          .from(projects)
-          .innerJoin(
-            workspaceMemberships,
-            and(
-              eq(workspaceMemberships.workspaceId, projects.workspaceId),
-              eq(workspaceMemberships.userId, input.creatorUserId),
-              isNull(workspaceMemberships.deletedAt)
-            )
-          )
-          .where(
-            and(
-              eq(projects.id, input.projectId),
-              eq(projects.workspaceId, input.workspaceId),
-              eq(projects.archived, false),
-              isNull(projects.deletedAt),
-              eq(workspaceMemberships.workspaceId, input.workspaceId),
-              eq(workspaceMemberships.userId, input.creatorUserId),
-              isNull(workspaceMemberships.deletedAt)
-            )
-          )
-          .for("update", { of: projects })
-          .limit(1);
-        if (!projectAccess) {
+        const project = await lockActiveProject(tx, input);
+        if (!project) {
           throw new ConversationAccessDeniedError("creator cannot access the active project");
         }
 
-        if (input.participantUserIds.length > 0) {
-          const activeParticipants = await tx
-            .select({ userId: workspaceMemberships.userId })
-            .from(workspaceMemberships)
-            .where(
-              and(
-                eq(workspaceMemberships.workspaceId, input.workspaceId),
-                inArray(workspaceMemberships.userId, input.participantUserIds),
-                isNull(workspaceMemberships.deletedAt)
-              )
-            );
-          const activeIds = new Set(activeParticipants.map((row) => row.userId));
-          if (
-            activeIds.size !== input.participantUserIds.length ||
-            input.participantUserIds.some((userId) => !activeIds.has(userId))
-          ) {
-            throw new ConversationParticipantMembershipError(
-              "every collab participant must be an active workspace member"
-            );
-          }
-        }
-
+        let parent: ConversationRow | null = null;
         if (input.parentConversationId) {
-          const parent = await readVisibleAccess(tx, {
+          parent = await lockParentConversation(tx, {
             workspaceId: input.workspaceId,
-            viewerUserId: input.creatorUserId,
             conversationId: input.parentConversationId,
             projectId: input.projectId
           });
           if (!parent) {
             throw new ConversationParentAccessError("parent conversation is not visible in this project");
           }
-          if (input.sourceMessageId) {
-            const [source] = await tx
-              .select({ id: conversationMessages.id })
-              .from(conversationMessages)
-              .where(
-                and(
-                  eq(conversationMessages.conversationId, input.parentConversationId),
-                  eq(conversationMessages.id, input.sourceMessageId)
-                )
+        }
+
+        const activeMemberships = await lockActiveMembershipSet(tx, {
+          workspaceId: input.workspaceId,
+          userIds: [creatorUserId, ...participantUserIds]
+        });
+        const activeIds = new Set(activeMemberships.map((row) => row.userId.toLowerCase()));
+        if (!activeIds.has(creatorUserId)) {
+          throw new ConversationAccessDeniedError("creator is not an active workspace member");
+        }
+        if (participantUserIds.some((userId) => !activeIds.has(userId))) {
+          throw new ConversationParticipantMembershipError(
+            "every collab participant must be an active workspace member"
+          );
+        }
+
+        if (parent?.kind === "collab") {
+          const parentParticipant = await lockConversationParticipant(tx, {
+            conversationId: parent.id,
+            userId: creatorUserId
+          });
+          if (!parentParticipant) {
+            throw new ConversationParentAccessError("parent conversation is not visible in this project");
+          }
+        }
+
+        if (parent && input.sourceMessageId) {
+          const [source] = await tx
+            .select({ id: conversationMessages.id })
+            .from(conversationMessages)
+            .where(
+              and(
+                eq(conversationMessages.conversationId, parent.id),
+                eq(conversationMessages.id, input.sourceMessageId)
               )
-              .limit(1);
-            if (!source) {
-              throw new ConversationSourceMessageMismatchError(
-                "source message does not belong to the selected parent conversation"
-              );
-            }
+            )
+            .limit(1);
+          if (!source) {
+            throw new ConversationSourceMessageMismatchError(
+              "source message does not belong to the selected parent conversation"
+            );
           }
         }
 
@@ -462,7 +598,7 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
             ...(input.sourceMessageId ? { sourceMessageId: input.sourceMessageId } : {}),
             visibility: input.visibility,
             nextSeq: 0,
-            createdBy: input.creatorUserId,
+            createdBy: creatorUserId,
             createdAt: at,
             updatedAt: at
           })
@@ -475,12 +611,12 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
           {
             id: randomUUID(),
             conversationId: created.id,
-            userId: input.creatorUserId,
+            userId: creatorUserId,
             role: "owner" as const,
             createdAt: at,
             updatedAt: at
           },
-          ...input.participantUserIds.map((userId) => ({
+          ...participantUserIds.map((userId) => ({
             id: randomUUID(),
             conversationId: created.id,
             userId,
@@ -513,18 +649,42 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
     async createUserMessage(input) {
       assertMessageContent(input);
       const at = input.at ?? new Date();
+      const senderUserId = input.senderUserId.toLowerCase();
       return db.transaction(async (tx) => {
-        const access = await readVisibleAccess(
-          tx,
-          {
-            workspaceId: input.workspaceId,
-            viewerUserId: input.senderUserId,
-            conversationId: input.conversationId
-          },
-          true
-        );
-        if (!access) {
+        const locator = await readConversationProjectId(tx, input);
+        if (!locator) {
           throw new ConversationAccessDeniedError("sender cannot access the active conversation");
+        }
+        const project = await lockActiveProject(tx, {
+          workspaceId: input.workspaceId,
+          projectId: locator.projectId
+        });
+        if (!project) {
+          throw new ConversationAccessDeniedError("sender cannot access the active project");
+        }
+        const conversation = await lockActiveConversation(tx, {
+          workspaceId: input.workspaceId,
+          projectId: locator.projectId,
+          conversationId: input.conversationId
+        });
+        if (!conversation) {
+          throw new ConversationAccessDeniedError("sender cannot access the active conversation");
+        }
+        const senderMemberships = await lockActiveMembershipSet(tx, {
+          workspaceId: input.workspaceId,
+          userIds: [senderUserId]
+        });
+        if (!senderMemberships.some((row) => row.userId.toLowerCase() === senderUserId)) {
+          throw new ConversationAccessDeniedError("sender is not an active workspace member");
+        }
+        if (conversation.kind === "collab") {
+          const participant = await lockConversationParticipant(tx, {
+            conversationId: input.conversationId,
+            userId: senderUserId
+          });
+          if (!participant) {
+            throw new ConversationAccessDeniedError("sender is not an active collab participant");
+          }
         }
 
         if (input.threadRootId) {
@@ -545,7 +705,7 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
           }
         }
 
-        const currentSeq = access.conversation.nextSeq;
+        const currentSeq = conversation.nextSeq;
         if (!Number.isSafeInteger(currentSeq) || currentSeq < 0) {
           throw new ConversationSequenceAllocationError("stored conversation sequence is not a safe integer");
         }
@@ -562,7 +722,7 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
             and(
               eq(projectConversations.workspaceId, input.workspaceId),
               eq(projectConversations.id, input.conversationId),
-              eq(projectConversations.projectId, access.conversation.projectId),
+              eq(projectConversations.projectId, conversation.projectId),
               eq(projectConversations.nextSeq, currentSeq),
               isNull(projectConversations.deletedAt)
             )
@@ -582,7 +742,7 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
             conversationId: input.conversationId,
             seq: nextSeq,
             senderType: "user",
-            senderUserId: input.senderUserId,
+            senderUserId,
             kind: input.kind,
             contentJson: input.contentJson,
             ...(input.threadRootId ? { threadRootId: input.threadRootId } : {}),

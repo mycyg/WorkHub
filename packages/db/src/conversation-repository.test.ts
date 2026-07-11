@@ -30,6 +30,7 @@ import {
 import {
   createQueryRecorder,
   queryParamValues,
+  queryRawStrings,
   queryReferences,
   queryTextFragments,
   type RecordedQuery
@@ -45,7 +46,9 @@ const sourceMessageId = "13000000-0000-4000-8000-000000000006";
 const creatorUserId = "13000000-0000-4000-8000-000000000007";
 const memberUserId = "13000000-0000-4000-8000-000000000008";
 const secondMemberUserId = "13000000-0000-4000-8000-000000000009";
-const listCursorCreatedAt = new Date("2026-07-12T08:30:00.000Z");
+const caseMemberUserId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const caseCreatorUserId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const listCursorCreatedAt = "2026-07-12T08:30:00.123456Z";
 const listCursorId = "13000000-0000-4000-8000-000000000011";
 
 function conversation(overrides: Partial<ConversationRow> = {}): ConversationRow {
@@ -74,7 +77,7 @@ function participant(
   overrides: Partial<ConversationParticipantRow> = {}
 ): ConversationParticipantRow {
   return {
-    id: `23000000-0000-4000-8000-0000000000${role === "owner" ? "01" : userId === memberUserId ? "02" : "03"}`,
+    id: `23000000-0000-4000-8000-0000000000${role === "owner" ? "01" : userId === memberUserId || userId === caseMemberUserId ? "02" : "03"}`,
     conversationId,
     userId,
     role,
@@ -107,6 +110,27 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
     participantRole: "owner",
     ...overrides
   };
+}
+
+const creatorMembershipLockRow = {
+  id: "43000000-0000-4000-8000-000000000001",
+  userId: creatorUserId,
+  role: "owner"
+};
+
+const creatorParticipantLockRow = {
+  id: "43000000-0000-4000-8000-000000000002",
+  role: "owner"
+};
+
+function messageAccessLockResponses(overrides: Partial<ConversationRow> = {}) {
+  return [
+    [{ projectId }],
+    [{ projectId, projectOwnerUserId: creatorUserId }],
+    [conversation(overrides)],
+    [creatorMembershipLockRow],
+    [creatorParticipantLockRow]
+  ];
 }
 
 function allPredicates(query: RecordedQuery | undefined) {
@@ -162,7 +186,16 @@ test("R12 conversation list is tenant-safe, participant-aware, and truthfully ca
   const first = { ...conversation({ kind: "main", visibility: "project" }), participantRole: null };
   const second = { ...conversation({ id: parentConversationId }), participantRole: "member" as const };
   const extra = { ...conversation({ id: "13000000-0000-4000-8000-000000000010" }), participantRole: "member" as const };
-  const { db, queries } = createQueryRecorder([[first, second, extra]]);
+  const firstCursorCreatedAt = "2026-07-12T09:00:00.549357Z";
+  const secondCursorCreatedAt = "2026-07-12T09:00:00.549357Z";
+  const { db, queries } = createQueryRecorder([
+    [{ projectId, membershipRole: "member" }],
+    [
+      { ...first, cursorCreatedAt: firstCursorCreatedAt },
+      { ...second, cursorCreatedAt: secondCursorCreatedAt },
+      { ...extra, cursorCreatedAt: "2026-07-12T09:00:00.549358Z" }
+    ]
+  ]);
 
   const result = await createConversationRepository(db).listVisibleForProject({
     workspaceId,
@@ -175,18 +208,17 @@ test("R12 conversation list is tenant-safe, participant-aware, and truthfully ca
   assert.deepEqual(result, {
     rows: [first, second],
     capped: true,
-    nextCursor: { createdAt: second.createdAt, id: second.id }
+    nextCursor: { createdAt: secondCursorCreatedAt, id: second.id }
   });
-  const query = queries[0];
+  const query = queries[1];
   assert.equal(query?.limit, 3);
   assertFullConversationAccessPredicates(query, { viewerUserId: memberUserId, projectId });
   assert.equal(query?.orderBy.length, 2);
   assert.ok(queryReferences(query?.where, projectConversations.createdAt));
   assert.ok(queryReferences(query?.where, projectConversations.id));
-  assert.ok(queryParamValues(query?.where).some(
-    (value) => value instanceof Date && value.getTime() === listCursorCreatedAt.getTime()
-  ));
-  assert.ok(queryParamValues(query?.where).includes(listCursorId));
+  assert.ok(queryRawStrings(query?.where).includes(listCursorCreatedAt));
+  assert.ok(queryRawStrings(query?.where).includes(listCursorId));
+  assert.match(queryTextFragments(query?.selection).join(""), /to_char\(/u);
 });
 
 test("R12 access record fails closed on deleted or cross-workspace visibility", async () => {
@@ -204,17 +236,54 @@ test("R12 access record fails closed on deleted or cross-workspace visibility", 
   assert.equal(queries[0]?.limit, 1);
 });
 
+test("R12 authorized conversation list returns an empty tail page instead of access denial", async () => {
+  const { db, queries } = createQueryRecorder([
+    [{ projectId, membershipRole: "member" }],
+    []
+  ]);
+
+  const result = await createConversationRepository(db).listVisibleForProject({
+    workspaceId,
+    viewerUserId: memberUserId,
+    projectId,
+    after: { createdAt: listCursorCreatedAt, id: listCursorId },
+    limit: 50
+  });
+
+  assert.deepEqual(result, { rows: [], capped: false, nextCursor: null });
+  assert.equal(queries.length, 2);
+  const projectAccess = queries[0];
+  assert.equal(projectAccess?.fromTable, projects);
+  assert.equal(projectAccess?.limit, 1);
+  for (const column of [
+    projects.id,
+    projects.workspaceId,
+    projects.archived,
+    projects.deletedAt,
+    workspaceMemberships.workspaceId,
+    workspaceMemberships.userId,
+    workspaceMemberships.deletedAt
+  ]) {
+    assert.equal(referencesAny(projectAccess, column), true);
+  }
+  assertFullConversationAccessPredicates(queries[1], { viewerUserId: memberUserId, projectId });
+});
+
 test("R12 collab creation inserts the owner and requested members in one transaction", async () => {
   const created = conversation({ parentConversationId, sourceMessageId });
   const participants = [
     participant(creatorUserId, "owner"),
-    participant(memberUserId, "member"),
+    participant(caseMemberUserId, "member"),
     participant(secondMemberUserId, "member")
   ];
   const { db, queries, transactions } = createQueryRecorder([
-    [{ projectId, projectOwnerUserId: creatorUserId, membershipRole: "owner" }],
-    [{ userId: memberUserId }, { userId: secondMemberUserId }],
-    [accessRecord({ conversation: conversation({ id: parentConversationId, kind: "main" }), participantRole: null })],
+    [{ projectId, projectOwnerUserId: creatorUserId }],
+    [conversation({ id: parentConversationId, kind: "main" })],
+    [
+      creatorMembershipLockRow,
+      { id: "43000000-0000-4000-8000-000000000003", userId: caseMemberUserId },
+      { id: "43000000-0000-4000-8000-000000000004", userId: secondMemberUserId }
+    ],
     [{ id: sourceMessageId }],
     [created],
     participants
@@ -229,7 +298,7 @@ test("R12 collab creation inserts the owner and requested members in one transac
     visibility: "private",
     parentConversationId,
     sourceMessageId,
-    participantUserIds: [memberUserId, secondMemberUserId],
+    participantUserIds: [caseMemberUserId.toUpperCase(), secondMemberUserId],
     at: now
   });
 
@@ -237,23 +306,36 @@ test("R12 collab creation inserts the owner and requested members in one transac
   assert.deepEqual(transactions, [{ outcome: "resolved" }]);
   const projectLock = queries[0];
   assert.equal(projectLock?.fromTable, projects);
-  assert.equal(projectLock?.lock, "update");
+  assert.equal(projectLock?.lock, "share");
   for (const column of [
     projects.id,
     projects.workspaceId,
     projects.archived,
-    projects.deletedAt,
-    workspaceMemberships.workspaceId,
-    workspaceMemberships.userId,
-    workspaceMemberships.deletedAt
+    projects.deletedAt
   ]) {
     assert.equal(referencesAny(projectLock, column), true);
   }
-  assertFullConversationAccessPredicates(queries[2], {
-    viewerUserId: creatorUserId,
-    conversationId: parentConversationId,
-    projectId
-  });
+  assert.deepEqual(queries.slice(0, 3).map((query) => query.fromTable), [
+    projects,
+    projectConversations,
+    workspaceMemberships
+  ]);
+  const membershipLocks = queries.filter(
+    (query) => query.fromTable === workspaceMemberships && query.lock === "share"
+  );
+  assert.equal(membershipLocks.length, 1, "all workspace memberships must share one stable lock order");
+  assert.equal(membershipLocks[0]?.orderBy.length, 1);
+  const parentLock = queries[1];
+  assert.equal(parentLock?.fromTable, projectConversations);
+  assert.equal(parentLock?.lock, "update", "visible parent conversation must remain locked until commit");
+  for (const column of [
+    projectConversations.workspaceId,
+    projectConversations.projectId,
+    projectConversations.id,
+    projectConversations.deletedAt
+  ]) {
+    assert.ok(queryReferences(parentLock?.where, column));
+  }
   const sourceRead = queries[3];
   assert.equal(sourceRead?.fromTable, conversationMessages);
   assert.ok(queryReferences(sourceRead?.where, conversationMessages.conversationId));
@@ -269,7 +351,7 @@ test("R12 collab creation inserts the owner and requested members in one transac
     (participantInsert?.valuesValue as Array<Record<string, unknown>>).map(({ userId, role }) => ({ userId, role })),
     [
       { userId: creatorUserId, role: "owner" },
-      { userId: memberUserId, role: "member" },
+      { userId: caseMemberUserId, role: "member" },
       { userId: secondMemberUserId, role: "member" }
     ]
   );
@@ -277,8 +359,11 @@ test("R12 collab creation inserts the owner and requested members in one transac
 
 test("R12 collab creation rejects incomplete participant membership and rolls back", async () => {
   const { db, queries, transactions } = createQueryRecorder([
-    [{ projectId, projectOwnerUserId: creatorUserId, membershipRole: "owner" }],
-    [{ userId: memberUserId }]
+    [{ projectId, projectOwnerUserId: creatorUserId }],
+    [
+      creatorMembershipLockRow,
+      { id: "43000000-0000-4000-8000-000000000003", userId: memberUserId }
+    ]
   ]);
 
   await assert.rejects(
@@ -300,8 +385,9 @@ test("R12 collab creation rejects incomplete participant membership and rolls ba
 
 test("R12 collab creation rejects an invisible parent and wrong-parent source with rollback", async () => {
   const invisible = createQueryRecorder([
-    [{ projectId, projectOwnerUserId: creatorUserId, membershipRole: "owner" }],
-    [],
+    [{ projectId, projectOwnerUserId: creatorUserId }],
+    [conversation({ id: parentConversationId, kind: "collab" })],
+    [creatorMembershipLockRow],
     []
   ]);
   await assert.rejects(
@@ -321,8 +407,9 @@ test("R12 collab creation rejects an invisible parent and wrong-parent source wi
   assert.equal(invisible.queries.some((query) => query.operation === "insert"), false);
 
   const wrongSource = createQueryRecorder([
-    [{ projectId, projectOwnerUserId: creatorUserId, membershipRole: "owner" }],
-    [accessRecord({ conversation: conversation({ id: parentConversationId, kind: "main" }), participantRole: null })],
+    [{ projectId, projectOwnerUserId: creatorUserId }],
+    [conversation({ id: parentConversationId, kind: "main" })],
+    [creatorMembershipLockRow],
     []
   ]);
   await assert.rejects(
@@ -347,7 +434,8 @@ test("R12 collab creation rejects an invisible parent and wrong-parent source wi
 
 test("R12 collab creation fails closed on missing conversation or participant returning rows", async () => {
   const noConversation = createQueryRecorder([
-    [{ projectId, projectOwnerUserId: creatorUserId, membershipRole: "owner" }],
+    [{ projectId, projectOwnerUserId: creatorUserId }],
+    [creatorMembershipLockRow],
     []
   ]);
   await assert.rejects(
@@ -365,7 +453,8 @@ test("R12 collab creation fails closed on missing conversation or participant re
 
   const created = conversation();
   const noParticipants = createQueryRecorder([
-    [{ projectId, projectOwnerUserId: creatorUserId, membershipRole: "owner" }],
+    [{ projectId, projectOwnerUserId: creatorUserId }],
+    [creatorMembershipLockRow],
     [created],
     []
   ]);
@@ -386,7 +475,7 @@ test("R12 collab creation fails closed on missing conversation or participant re
 test("R12 user message allocates next_seq atomically before inserting", async () => {
   const inserted = message(1);
   const { db, queries, transactions } = createQueryRecorder([
-    [accessRecord()],
+    ...messageAccessLockResponses(),
     [{ nextSeq: 1 }],
     [inserted]
   ]);
@@ -403,9 +492,36 @@ test("R12 user message allocates next_seq atomically before inserting", async ()
 
   assert.deepEqual(result, inserted);
   assert.deepEqual(transactions, [{ outcome: "resolved" }]);
-  assertFullConversationAccessPredicates(queries[0], { viewerUserId: creatorUserId, conversationId });
-  assert.equal(queries[0]?.lock, "update");
-  const allocation = queries[1];
+  assert.deepEqual(queries.slice(0, 5).map((query) => [query.fromTable, query.lock]), [
+    [projectConversations, undefined],
+    [projects, "share"],
+    [projectConversations, "update"],
+    [workspaceMemberships, "share"],
+    [conversationParticipants, "share"]
+  ]);
+  for (const column of [projectConversations.workspaceId, projectConversations.id, projectConversations.deletedAt]) {
+    assert.ok(queryReferences(queries[0]?.where, column));
+  }
+  for (const column of [projects.id, projects.workspaceId, projects.archived, projects.deletedAt]) {
+    assert.ok(queryReferences(queries[1]?.where, column));
+  }
+  for (const column of [
+    projectConversations.workspaceId,
+    projectConversations.projectId,
+    projectConversations.id,
+    projectConversations.deletedAt
+  ]) {
+    assert.ok(queryReferences(queries[2]?.where, column));
+  }
+  assert.ok(
+    queries.some((query) => query.fromTable === workspaceMemberships && query.lock === "share"),
+    "sender membership must be revalidated and locked"
+  );
+  assert.ok(
+    queries.some((query) => query.fromTable === conversationParticipants && query.lock === "share"),
+    "collab participant row must be revalidated and locked"
+  );
+  const allocation = queries[5];
   assert.equal(allocation?.operation, "update");
   assert.equal(allocation?.targetTable, projectConversations);
   assert.equal(allocation?.returningCalled, true);
@@ -414,14 +530,17 @@ test("R12 user message allocates next_seq atomically before inserting", async ()
   assert.ok(queryReferences(allocation?.where, projectConversations.workspaceId));
   assert.ok(queryReferences(allocation?.where, projectConversations.id));
   assert.ok(queryReferences(allocation?.where, projectConversations.deletedAt));
-  const insert = queries[2];
+  const insert = queries[6];
   assert.equal(insert?.targetTable, conversationMessages);
   assert.equal(insert?.returningCalled, true);
   assert.equal((insert?.valuesValue as Record<string, unknown>)["seq"], 1);
 });
 
 test("R12 user message rejects a wrong thread root before sequence allocation", async () => {
-  const { db, queries, transactions } = createQueryRecorder([[accessRecord()], []]);
+  const { db, queries, transactions } = createQueryRecorder([
+    ...messageAccessLockResponses(),
+    []
+  ]);
 
   await assert.rejects(
     createConversationRepository(db).createUserMessage({
@@ -442,7 +561,7 @@ test("R12 user message rejects a wrong thread root before sequence allocation", 
 
 test("R12 message sequence exhaustion and missing returning rows are explicit transaction errors", async () => {
   const exhausted = createQueryRecorder([
-    [accessRecord({ conversation: conversation({ nextSeq: Number.MAX_SAFE_INTEGER }) })]
+    ...messageAccessLockResponses({ nextSeq: Number.MAX_SAFE_INTEGER })
   ]);
   await assert.rejects(
     createConversationRepository(exhausted.db).createUserMessage({
@@ -457,7 +576,10 @@ test("R12 message sequence exhaustion and missing returning rows are explicit tr
   );
   assert.equal(exhausted.queries.some((query) => query.operation === "update"), false);
 
-  const missingAllocation = createQueryRecorder([[accessRecord()], []]);
+  const missingAllocation = createQueryRecorder([
+    ...messageAccessLockResponses(),
+    []
+  ]);
   await assert.rejects(
     createConversationRepository(missingAllocation.db).createUserMessage({
       workspaceId,
@@ -470,7 +592,11 @@ test("R12 message sequence exhaustion and missing returning rows are explicit tr
     (error: unknown) => error instanceof ConversationSequenceAllocationError
   );
 
-  const missingMessage = createQueryRecorder([[accessRecord()], [{ nextSeq: 1 }], []]);
+  const missingMessage = createQueryRecorder([
+    ...messageAccessLockResponses(),
+    [{ nextSeq: 1 }],
+    []
+  ]);
   await assert.rejects(
     createConversationRepository(missingMessage.db).createUserMessage({
       workspaceId,
@@ -556,11 +682,23 @@ test("R12 repository rejects invalid bounds and participant identities before qu
     (error: unknown) => error instanceof ConversationRepositoryInputError
   );
   await assert.rejects(
+    repository.createCollab({
+      workspaceId,
+      projectId,
+      creatorUserId: caseCreatorUserId,
+      title: "协作区",
+      visibility: "private",
+      participantUserIds: [caseCreatorUserId.toUpperCase()],
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+  await assert.rejects(
     repository.listVisibleForProject({
       workspaceId,
       viewerUserId: creatorUserId,
       projectId,
-      after: { createdAt: new Date("invalid"), id: listCursorId },
+      after: { createdAt: "invalid", id: listCursorId },
       limit: 50
     }),
     (error: unknown) => error instanceof ConversationRepositoryInputError
