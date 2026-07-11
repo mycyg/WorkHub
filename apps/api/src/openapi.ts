@@ -4545,6 +4545,7 @@ const conversationCursorResponseSchema = {
   properties: {
     afterCreatedAt: {
       type: "string",
+      format: "date-time",
       pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
     },
     afterId: uuidStringSchema
@@ -4598,9 +4599,14 @@ const createConversationRequestBodySchema = {
       type: "array",
       maxItems: 99,
       uniqueItems: true,
+      description: "Active workspace user UUIDs; uniqueness is enforced case-insensitively.",
+      "x-workhub-case-insensitive-unique": true,
       items: uuidStringSchema,
       default: []
     }
+  },
+  dependentRequired: {
+    source_message_id: ["parent_conversation_id"]
   },
   additionalProperties: false
 } as const;
@@ -4637,8 +4643,11 @@ const conversationAfterCreatedAtQueryParameter = {
   name: "afterCreatedAt",
   in: "query",
   required: false,
+  description: "Canonical UTC microsecond cursor timestamp; afterCreatedAt and afterId must be provided together.",
+  "x-workhub-paired-with": "afterId",
   schema: {
     type: "string",
+    format: "date-time",
     pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
   }
 } as const;
@@ -4646,6 +4655,8 @@ const conversationAfterIdQueryParameter = {
   name: "afterId",
   in: "query",
   required: false,
+  description: "Conversation UUID cursor tie-breaker; afterCreatedAt and afterId must be provided together.",
+  "x-workhub-paired-with": "afterCreatedAt",
   schema: uuidStringSchema
 } as const;
 const conversationAfterSeqQueryParameter = {
@@ -4680,6 +4691,11 @@ const conversationInternalResponse = jsonErrorStatusResponse(
   "Conversation output assembly or an unexpected dependency failed",
   ["internal_contract_error", "internal_error"]
 ).responses["500"];
+const conversationPayloadTooLargeResponse = jsonErrorStatusResponse(
+  "413",
+  "Conversation request body exceeds the configured global JSON limit",
+  ["payload_too_large"]
+).responses["413"];
 const conversationProjectListResponses = {
   responses: {
     "200": jsonDataResponse(conversationListPageResponseSchema, "Visible project conversations").responses["200"],
@@ -4710,6 +4726,7 @@ const conversationProjectCreateResponses = {
       "conversation_project_not_found",
       "conversation_not_found"
     ]).responses["404"],
+    "413": conversationPayloadTooLargeResponse,
     "422": conversationValidationResponse,
     "500": conversationInternalResponse
   }
@@ -4744,6 +4761,7 @@ const conversationMessageCreateResponses = {
     "409": jsonErrorStatusResponse("409", "Conversation message sequence is exhausted", [
       "conversation_sequence_exhausted"
     ]).responses["409"],
+    "413": conversationPayloadTooLargeResponse,
     "422": conversationValidationResponse,
     "500": conversationInternalResponse
   }
@@ -5656,6 +5674,9 @@ export function getOpenApiDocument() {
         get: {
           tags: ["conversations"],
           summary: "List conversations visible in a project",
+          "x-workhub-query-constraints": {
+            allOrNone: [["afterCreatedAt", "afterId"]]
+          },
           parameters: [
             pathUuidParameter("id"),
             conversationAfterCreatedAtQueryParameter,

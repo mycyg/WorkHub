@@ -430,7 +430,11 @@ test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP end
   const response = await app.request("/api/openapi.json");
   const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
   const projectPath = body.paths["/api/projects/{id}/conversations"] as {
-    get?: { parameters?: Array<{ name: string; in: string }>; responses?: Record<string, unknown> };
+    get?: {
+      parameters?: Array<{ name: string; in: string; description?: string; "x-workhub-paired-with"?: string }>;
+      responses?: Record<string, unknown>;
+      "x-workhub-query-constraints"?: { allOrNone?: string[][] };
+    };
     post?: {
       parameters?: Array<{ name: string; in: string }>;
       requestBody?: { content?: { "application/json"?: { schema?: Record<string, unknown> } } };
@@ -464,13 +468,26 @@ test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP end
     "path:id"
   ]);
   assert.deepEqual(Object.keys(projectPath?.get?.responses ?? {}).sort(), ["200", "401", "403", "404", "422", "500"]);
-  assert.deepEqual(Object.keys(projectPath?.post?.responses ?? {}).sort(), ["201", "400", "401", "403", "404", "422", "500"]);
+  assert.deepEqual(Object.keys(projectPath?.post?.responses ?? {}).sort(), ["201", "400", "401", "403", "404", "413", "422", "500"]);
   assert.deepEqual(Object.keys(messagePath?.get?.responses ?? {}).sort(), ["200", "401", "403", "404", "422", "500"]);
-  assert.deepEqual(Object.keys(messagePath?.post?.responses ?? {}).sort(), ["201", "400", "401", "403", "404", "409", "422", "500"]);
+  assert.deepEqual(Object.keys(messagePath?.post?.responses ?? {}).sort(), ["201", "400", "401", "403", "404", "409", "413", "422", "500"]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/conversations", "post", "413", ["payload_too_large"]);
+  assertJsonErrorCodes(body.paths, "/api/conversations/{id}/messages", "post", "413", ["payload_too_large"]);
+
+  assert.deepEqual(projectPath?.get?.["x-workhub-query-constraints"], {
+    allOrNone: [["afterCreatedAt", "afterId"]]
+  });
+  const createdAtParameter = projectPath?.get?.parameters?.find((parameter) => parameter.name === "afterCreatedAt");
+  const afterIdParameter = projectPath?.get?.parameters?.find((parameter) => parameter.name === "afterId");
+  assert.equal(createdAtParameter?.["x-workhub-paired-with"], "afterId");
+  assert.equal(afterIdParameter?.["x-workhub-paired-with"], "afterCreatedAt");
+  assert.match(createdAtParameter?.description ?? "", /must be provided together/iu);
+  assert.match(afterIdParameter?.description ?? "", /must be provided together/iu);
 
   const projectBody = projectPath?.post?.requestBody?.content?.["application/json"]?.schema as {
     properties?: Record<string, unknown>;
     required?: string[];
+    dependentRequired?: Record<string, string[]>;
   } | undefined;
   assert.deepEqual(projectBody?.required, ["kind", "title", "visibility"]);
   assert.deepEqual(Object.keys(projectBody?.properties ?? {}).sort(), [
@@ -481,6 +498,17 @@ test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP end
     "title",
     "visibility"
   ]);
+  assert.deepEqual(projectBody?.dependentRequired, {
+    source_message_id: ["parent_conversation_id"]
+  });
+  const participants = projectBody?.properties?.participant_user_ids as {
+    uniqueItems?: boolean;
+    description?: string;
+    "x-workhub-case-insensitive-unique"?: boolean;
+  } | undefined;
+  assert.equal(participants?.uniqueItems, true);
+  assert.equal(participants?.["x-workhub-case-insensitive-unique"], true);
+  assert.match(participants?.description ?? "", /case-insensitive/iu);
 
   const messageBody = messagePath?.post?.requestBody?.content?.["application/json"]?.schema as {
     oneOf?: Array<{

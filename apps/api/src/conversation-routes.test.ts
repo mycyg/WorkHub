@@ -438,6 +438,25 @@ test("conversation routes preserve typed service 400, 404, and 409 errors", asyn
   }
 });
 
+test("conversation routes return an internal 500 envelope for output-contract drift", async () => {
+  const runtimeSettings = settings();
+  const app = routeApp(runtimeSettings, service({
+    async listConversations() {
+      throw new InternalContractError("conversations.list", new ZodError([]));
+    }
+  }));
+
+  const response = await app.request(`/api/projects/${projectId}/conversations`, {
+    headers: { Cookie: await cookie(runtimeSettings) }
+  });
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: { code: "internal_contract_error", message: "internal" }
+  });
+});
+
 test("conversation route factory exposes exactly four endpoints and no action-card or SSE placeholders", () => {
   const routes = createConversationRoutes({ auth: authDeps(settings()), conversations: service() });
   const inventory = [...new Set(
