@@ -64,7 +64,7 @@ project_conversations
   id uuid pk · project_id fk · kind varchar('main'|'collab') · title varchar(256)
   parent_conversation_id uuid nullable(行动卡拆出的血缘)
   source_message_id uuid nullable · visibility varchar('project'|'private')
-  workspace_id uuid fk(租户 SQL 过滤) · next_seq bigint default 0(原子分配消息序号)
+  workspace_id uuid not null fk(租户 SQL 过滤) · next_seq bigint default 0(原子分配消息序号)
   created_by uuid nullable fk users(仅兼容存量无 owner 项目;新建项目必填) · timestamps · soft delete
   UNIQUE(project_id) WHERE kind='main' AND deleted_at IS NULL
 
@@ -112,7 +112,7 @@ project_ai_governance
 ### 端点(新 `apps/api/src/routes/conversations.ts` + pages VM)
 
 - `GET /api/projects/:id/conversations`(树:main+collab 列表)
-- `POST /api/projects/:id/conversations`(建协同;main 由建项目原子创建——扩展现有 projects 创建为同事务建 main 会话)
+- `POST /api/projects/:id/conversations`(建协同;main 由建项目原子创建——扩展现有 projects 创建为同事务建 main 会话,create-or-reuse 路径都要补齐 active main)
 - `GET /api/conversations/:id/messages?afterSeq=&limit=`(分页游标=seq)
 - `POST /api/conversations/:id/messages`(text/file_card chip;服务端校验 chip 的 drive 权限)
 - `POST /api/action-card-items/:id/decide`(body: `{action:'take'|'assign'|'hold', assigneeId?}`,仅被 @ 负责人或项目负责人可调)
@@ -124,12 +124,12 @@ project_ai_governance
 ### SSE(扩展 `apps/api/src/sse/`)
 
 - 事件层新增 topic 族 `conversation`:事件 `conversation.message.created`(整条小消息)、`conversation.message.delta`(Cuu 流式)、`conversation.tool.begin/output_delta/end`、`conversation.action_card.updated`、`conversation.item.started/completed`(兜底)——命名与分层按 codex 规范(01 §1)。现有 `/me` 仍只订个人 topic;工作台用新增 `/api/push/stream/conversation/:id` 订当前会话,不把 broker 不具备的多 topic/replay 能力写成假承诺。
-- topic-access:按会话可见性鉴权(main=项目成员,collab=参与者);沿用 EC-1 uuid 守卫与 reconcile 语义。
+- topic-access:按会话可见性鉴权(main=项目所属 workspace 的 active membership,collab=参与者且租户一致);沿用 EC-1 uuid 守卫。broker 不存回放日志,断线恢复必须用 `GET messages?afterSeq=` 补缺口,不得把 `Last-Event-ID` 写成假 reconcile。
 - typing 指示走瞬态事件 `conversation.presence.typing`(不落库,3s 过期)。
 
 ### 任务
 
-- [ ] 迁移+schema+repository(含 seq 分配:原子 `UPDATE project_conversations SET next_seq=next_seq+1 RETURNING next_seq`;`UNIQUE(conversation_id,seq)` 是最终防线,不使用会并发撞号的裸 `max(seq)+1`)
+- [ ] 迁移+schema+repository(含 seq 分配:原子 `UPDATE project_conversations SET next_seq=next_seq+1 RETURNING next_seq`;`UNIQUE(conversation_id,seq)` 是最终防线,不使用会并发撞号的裸 `max(seq)+1`;迁移回填 workspace 非空的 active 存量项目,不为 workspace 缺失的脏项目伪造租户)
 - [ ] routes + 鉴权 + uuid 守卫 + json-body 校验;repository 单测 + 路由测试
 - [ ] SSE topic + access + reconcile;事件 shape 单测
 - [ ] PG smoke 增断言:建项目→main 会话自动存在→发消息→afterSeq 拉取有序
