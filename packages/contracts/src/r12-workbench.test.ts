@@ -15,6 +15,8 @@ const userId = "60000000-0000-4000-8000-000000000006";
 const participantUserId = "60000000-0000-4000-8000-000000000007";
 const caseParticipantUserId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const runId = "70000000-0000-4000-8000-000000000007";
+const workspaceId = "80000000-0000-4000-8000-000000000008";
+const projectId = "90000000-0000-4000-8000-000000000009";
 
 function requiredSchema<T = unknown>(name: string): SchemaLike<T> {
   const candidate = (contracts as Record<string, unknown>)[name] as Partial<SchemaLike<T>> | undefined;
@@ -527,6 +529,160 @@ test("R12 project AI governance PATCH is strict, bounded, and nonempty", () => {
   ]) {
     assert.equal(schema.safeParse(invalid).success, false, `accepted malformed governance patch: ${JSON.stringify(invalid)}`);
   }
+});
+
+test("R12 AI settings defaults are complete shared domain values", () => {
+  assert.deepEqual((contracts as Record<string, unknown>)["DEFAULT_USER_AI_PROFILE"], {
+    default_mode: 3,
+    granular_settings: {},
+    dispatch_policy: "auto",
+    cuu_proactivity: "balanced",
+    model_tier_preference: null
+  });
+  assert.deepEqual((contracts as Record<string, unknown>)["DEFAULT_PROJECT_AI_GOVERNANCE"], {
+    observer_enabled: true,
+    silence_window_seconds: 60,
+    quiet_hours: { enabled: false },
+    granular_settings: {}
+  });
+});
+
+test("R12 user AI profile VM is strict, secret-free, and separates monthly usage from the daily quota", () => {
+  const schema = requiredSchema<Record<string, unknown>>("userAiProfileVmSchema");
+  const value = {
+    workspace_id: workspaceId,
+    user_id: userId,
+    default_mode: 4,
+    granular_settings: { dispatch_run: false },
+    dispatch_policy: "ask",
+    cuu_proactivity: "proactive",
+    model_tier_preference: "default",
+    providers: [
+      {
+        name: "deepseek",
+        configured: true,
+        default_model_id: "default",
+        models: [
+          {
+            id: "default",
+            model: "deepseek-v4-pro",
+            display_name: "DeepSeek V4 Pro",
+            context_window_tokens: 128000,
+            supports_streaming: true,
+            supports_tools: true,
+            cost_input_cny_per_mtok: 2,
+            cost_output_cny_per_mtok: 8
+          }
+        ]
+      }
+    ],
+    budget_summary: {
+      daily_quota: {
+        policy_id: "pcost-user-day-v0",
+        period: "day",
+        max_tokens: 500000,
+        max_cost_cny: "20",
+        enabled: false
+      },
+      usage: {
+        day: {
+          period: "day",
+          token_in: 10,
+          token_out: 2,
+          total_tokens: 12,
+          estimated_cost_cny: "0.1"
+        },
+        month: {
+          period: "month",
+          token_in: 100,
+          token_out: 20,
+          total_tokens: 120,
+          estimated_cost_cny: "1.25"
+        }
+      }
+    },
+    generated_at: "2026-07-12T10:00:00.000Z",
+    updated_at: null
+  };
+  const provider = value.providers[0]!;
+  const model = provider.models[0]!;
+
+  assert.deepEqual(schema.parse(value), value);
+  assert.equal(schema.safeParse({ ...value, api_key: "secret" }).success, false);
+  assert.equal(
+    schema.safeParse({
+      ...value,
+      providers: [{ ...provider, base_url: "https://provider.invalid" }]
+    }).success,
+    false
+  );
+  assert.equal(
+    schema.safeParse({
+      ...value,
+      providers: [{ ...provider, models: [] }]
+    }).success,
+    false
+  );
+  assert.equal(
+    schema.safeParse({
+      ...value,
+      providers: [{
+        ...provider,
+        default_model_id: "missing",
+        models: [model]
+      }]
+    }).success,
+    false
+  );
+  assert.equal(
+    schema.safeParse({
+      ...value,
+      providers: [{
+        ...provider,
+        models: [model, { ...model, model: "duplicate-upstream-name" }]
+      }]
+    }).success,
+    false
+  );
+  assert.equal(
+    schema.safeParse({
+      ...value,
+      providers: [{
+        ...provider,
+        models: [{ ...model, api_key: "secret" }]
+      }]
+    }).success,
+    false
+  );
+  assert.equal(
+    schema.safeParse({
+      ...value,
+      budget_summary: {
+        ...value.budget_summary,
+        usage: {
+          ...value.budget_summary.usage,
+          month: { ...value.budget_summary.usage.month, max_tokens: 500000 }
+        }
+      }
+    }).success,
+    false
+  );
+});
+
+test("R12 project AI governance VM is strict and nullable-explicit for synthesized defaults", () => {
+  const schema = requiredSchema<Record<string, unknown>>("projectAiGovernanceVmSchema");
+  const value = {
+    project_id: projectId,
+    observer_enabled: true,
+    silence_window_seconds: 60,
+    quiet_hours: { enabled: false },
+    granular_settings: {},
+    updated_at: null
+  };
+
+  assert.deepEqual(schema.parse(value), value);
+  assert.equal(schema.safeParse({ ...value, owner_user_id: userId }).success, false);
+  assert.equal(schema.safeParse({ ...value, quiet_hours: {} }).success, false);
 });
 
 test("R12 conversation topics and all nine event names are formal protocol values", () => {

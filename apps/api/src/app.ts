@@ -33,6 +33,7 @@ import { createTaskPlanRoutes } from "./routes/task-plans.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
 import { createCostRoutes } from "./routes/cost.js";
 import { createConversationRoutes } from "./routes/conversations.js";
+import { createAiSettingsRoutes } from "./routes/ai-settings.js";
 import { TaskPlanApprovalError } from "./services/task-plan-approval.js";
 import { ProjectServiceError } from "./services/projects.js";
 import { PilotDay1MetricsServiceError } from "./services/pilot-day1-metrics.js";
@@ -49,6 +50,7 @@ import {
 import { WorkItemServiceError } from "./services/work-items.js";
 import { InternalContractError } from "./pages/output-contract.js";
 import { ConversationServiceError } from "./services/conversations.js";
+import { AiSettingsServiceError } from "./services/ai-settings.js";
 
 import { LOCAL_CLIENT_HEADER } from "./middleware/auth.js";
 import { createSameOriginGuardMiddleware } from "./middleware/csrf.js";
@@ -227,6 +229,7 @@ app.route("/api/drive", createDriveRoutes());
 app.route("/api/meetings", createMeetingRoutes());
 app.route("/api/projects", createProjectRoutes());
 app.route("/api", createConversationRoutes());
+app.route("/api", createAiSettingsRoutes());
 app.route("/api/pilot", createPilotRoutes());
 app.route("/api/ai-worklog", createAiWorklogRoutes());
 
@@ -347,6 +350,19 @@ app.onError((error, c) => {
         }
       },
       error.status as 400
+    );
+  }
+
+  if (error instanceof AiSettingsServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 403
     );
   }
 

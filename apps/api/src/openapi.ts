@@ -4767,6 +4767,307 @@ const conversationMessageCreateResponses = {
   }
 } as const;
 
+const aiModelPreferenceStringSchema = {
+  type: "string",
+  minLength: 1,
+  maxLength: 32,
+  pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+} as const;
+const aiGranularSettingsSchema = {
+  type: "object",
+  properties: {
+    create_work_item: { type: "boolean" },
+    dispatch_run: { type: "boolean" },
+    mutate_drive: { type: "boolean" },
+    send_notification: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const;
+const aiQuietHoursSchema = {
+  oneOf: [
+    {
+      type: "object",
+      required: ["enabled"],
+      properties: { enabled: { type: "boolean", const: false } },
+      additionalProperties: false
+    },
+    {
+      type: "object",
+      required: ["enabled", "timezone", "start_minute", "end_minute", "weekdays"],
+      properties: {
+        enabled: { type: "boolean", const: true },
+        timezone: {
+          type: "string",
+          minLength: 1,
+          maxLength: 64,
+          description: "IANA timezone supported by the server runtime."
+        },
+        start_minute: { type: "integer", minimum: 0, maximum: 1439 },
+        end_minute: { type: "integer", minimum: 0, maximum: 1439 },
+        weekdays: {
+          type: "array",
+          minItems: 1,
+          maxItems: 7,
+          uniqueItems: true,
+          items: { type: "integer", minimum: 0, maximum: 6 }
+        }
+      },
+      additionalProperties: false
+    }
+  ],
+  "x-workhub-runtime-supported-timezone": true,
+  "x-workhub-start-end-must-differ": true
+} as const;
+const aiProviderModelResponseSchema = {
+  type: "object",
+  required: [
+    "id",
+    "model",
+    "display_name",
+    "context_window_tokens",
+    "supports_streaming",
+    "supports_tools",
+    "cost_input_cny_per_mtok",
+    "cost_output_cny_per_mtok"
+  ],
+  properties: {
+    id: aiModelPreferenceStringSchema,
+    model: { type: "string", minLength: 1, maxLength: 128 },
+    display_name: { type: "string", minLength: 1, maxLength: 128 },
+    context_window_tokens: { type: "integer", minimum: 1 },
+    supports_streaming: { type: "boolean" },
+    supports_tools: { type: "boolean" },
+    cost_input_cny_per_mtok: { type: "number", minimum: 0 },
+    cost_output_cny_per_mtok: { type: "number", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const aiProviderResponseSchema = {
+  type: "object",
+  required: ["name", "configured", "default_model_id", "models"],
+  properties: {
+    name: { type: "string", minLength: 1, maxLength: 64 },
+    configured: { type: "boolean" },
+    default_model_id: aiModelPreferenceStringSchema,
+    models: {
+      type: "array",
+      minItems: 1,
+      maxItems: 100,
+      items: aiProviderModelResponseSchema,
+      description: "Models sorted by id; id values are unique and include default_model_id.",
+      "x-workhub-unique-model-ids": true,
+      "x-workhub-contains-default-model-id": true
+    }
+  },
+  additionalProperties: false
+} as const;
+const aiDailyQuotaResponseSchema = {
+  type: "object",
+  required: ["policy_id", "period", "max_tokens", "max_cost_cny", "enabled"],
+  properties: {
+    policy_id: { type: "string", minLength: 1 },
+    period: { type: "string", const: "day" },
+    max_tokens: { type: "integer", minimum: 1 },
+    max_cost_cny: { type: "string", pattern: "^\\d+(?:\\.\\d+)?$" },
+    enabled: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const;
+function aiUsagePeriodResponseSchema(period: "day" | "month") {
+  return {
+    type: "object",
+    required: ["period", "token_in", "token_out", "total_tokens", "estimated_cost_cny"],
+    properties: {
+      period: { type: "string", const: period },
+      token_in: { type: "integer", minimum: 0 },
+      token_out: { type: "integer", minimum: 0 },
+      total_tokens: { type: "integer", minimum: 0 },
+      estimated_cost_cny: { type: "string", pattern: "^\\d+(?:\\.\\d+)?$" }
+    },
+    additionalProperties: false
+  } as const;
+}
+const aiBudgetSummaryResponseSchema = {
+  type: "object",
+  required: ["daily_quota", "usage"],
+  properties: {
+    daily_quota: { anyOf: [aiDailyQuotaResponseSchema, { type: "null" }] },
+    usage: {
+      type: "object",
+      required: ["day", "month"],
+      properties: {
+        day: aiUsagePeriodResponseSchema("day"),
+        month: aiUsagePeriodResponseSchema("month")
+      },
+      additionalProperties: false
+    }
+  },
+  additionalProperties: false
+} as const;
+const userAiProfileResponseSchema = {
+  type: "object",
+  required: [
+    "workspace_id",
+    "user_id",
+    "default_mode",
+    "granular_settings",
+    "dispatch_policy",
+    "cuu_proactivity",
+    "model_tier_preference",
+    "providers",
+    "budget_summary",
+    "generated_at",
+    "updated_at"
+  ],
+  properties: {
+    workspace_id: uuidStringSchema,
+    user_id: uuidStringSchema,
+    default_mode: { type: "integer", minimum: 1, maximum: 5 },
+    granular_settings: aiGranularSettingsSchema,
+    dispatch_policy: { type: "string", enum: ["auto", "ask", "manual"] },
+    cuu_proactivity: { type: "string", enum: ["quiet", "balanced", "proactive"] },
+    model_tier_preference: { anyOf: [aiModelPreferenceStringSchema, { type: "null" }] },
+    providers: {
+      type: "array",
+      maxItems: 100,
+      items: aiProviderResponseSchema,
+      description: "Providers sorted by name. API keys and base URLs are never returned."
+    },
+    budget_summary: aiBudgetSummaryResponseSchema,
+    generated_at: dateTimeStringSchema,
+    updated_at: { anyOf: [dateTimeStringSchema, { type: "null" }] }
+  },
+  additionalProperties: false
+} as const;
+const projectAiGovernanceResponseSchema = {
+  type: "object",
+  required: [
+    "project_id",
+    "observer_enabled",
+    "silence_window_seconds",
+    "quiet_hours",
+    "granular_settings",
+    "updated_at"
+  ],
+  properties: {
+    project_id: uuidStringSchema,
+    observer_enabled: { type: "boolean" },
+    silence_window_seconds: { type: "integer", minimum: 0, maximum: 86400 },
+    quiet_hours: aiQuietHoursSchema,
+    granular_settings: aiGranularSettingsSchema,
+    updated_at: { anyOf: [dateTimeStringSchema, { type: "null" }] }
+  },
+  additionalProperties: false
+} as const;
+const patchUserAiProfileRequestBodySchema = {
+  type: "object",
+  minProperties: 1,
+  properties: {
+    default_mode: { type: "integer", minimum: 1, maximum: 5 },
+    granular_settings: aiGranularSettingsSchema,
+    dispatch_policy: { type: "string", enum: ["auto", "ask", "manual"] },
+    cuu_proactivity: { type: "string", enum: ["quiet", "balanced", "proactive"] },
+    model_tier_preference: {
+      anyOf: [aiModelPreferenceStringSchema, { type: "null" }],
+      description: "Non-null values must match a provider model id returned by this resource."
+    }
+  },
+  additionalProperties: false
+} as const;
+const patchProjectAiGovernanceRequestBodySchema = {
+  type: "object",
+  minProperties: 1,
+  properties: {
+    observer_enabled: { type: "boolean" },
+    silence_window_seconds: { type: "integer", minimum: 0, maximum: 86400 },
+    quiet_hours: aiQuietHoursSchema,
+    granular_settings: aiGranularSettingsSchema
+  },
+  additionalProperties: false
+} as const;
+const aiAuthRequiredResponse = jsonErrorStatusResponse(
+  "401",
+  "AI settings require an authenticated user",
+  ["not_identified"]
+).responses["401"];
+const aiInternalResponse = jsonErrorStatusResponse(
+  "500",
+  "AI settings output assembly or an unexpected dependency failed",
+  ["internal_contract_error", "internal_error"]
+).responses["500"];
+const aiPayloadTooLargeResponse = jsonErrorStatusResponse(
+  "413",
+  "AI settings request body exceeds the configured global JSON limit",
+  ["payload_too_large"]
+).responses["413"];
+const userAiProfileReadResponses = {
+  responses: {
+    "200": jsonDataResponse(userAiProfileResponseSchema, "Current user's AI profile and usage summary").responses["200"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "AI profile is not accessible", [
+      "invalid_client_token",
+      "ai_profile_access_denied"
+    ]).responses["403"],
+    "500": aiInternalResponse
+  }
+} as const;
+const userAiProfilePatchResponses = {
+  responses: {
+    "200": jsonDataResponse(userAiProfileResponseSchema, "Updated AI profile and usage summary").responses["200"],
+    "400": jsonErrorStatusResponse("400", "AI profile body is not a JSON object", [
+      "malformed_json",
+      "json_object_required"
+    ]).responses["400"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "AI profile update is not authorized", [
+      "invalid_client_token",
+      "forbidden",
+      "ai_profile_access_denied"
+    ]).responses["403"],
+    "413": aiPayloadTooLargeResponse,
+    "422": jsonErrorStatusResponse("422", "AI profile patch is invalid or unavailable", [
+      "validation_error",
+      "ai_model_preference_unavailable"
+    ]).responses["422"],
+    "500": aiInternalResponse
+  }
+} as const;
+const projectAiGovernanceReadResponses = {
+  responses: {
+    "200": jsonDataResponse(projectAiGovernanceResponseSchema, "Project AI governance for its owner").responses["200"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "AI governance authentication failed", [
+      "invalid_client_token"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Project AI governance was not found", [
+      "ai_governance_not_found"
+    ]).responses["404"],
+    "500": aiInternalResponse
+  }
+} as const;
+const projectAiGovernancePatchResponses = {
+  responses: {
+    "200": jsonDataResponse(projectAiGovernanceResponseSchema, "Updated project AI governance").responses["200"],
+    "400": jsonErrorStatusResponse("400", "AI governance body is not a JSON object", [
+      "malformed_json",
+      "json_object_required"
+    ]).responses["400"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "AI governance update failed request authorization", [
+      "invalid_client_token",
+      "forbidden"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Project AI governance was not found", [
+      "ai_governance_not_found"
+    ]).responses["404"],
+    "413": aiPayloadTooLargeResponse,
+    "422": jsonErrorStatusResponse("422", "AI governance patch does not match the contract", [
+      "validation_error"
+    ]).responses["422"],
+    "500": aiInternalResponse
+  }
+} as const;
+
 export function getOpenApiDocument() {
   return withInferredPathParameters({
     openapi: "3.1.0",
@@ -5710,6 +6011,34 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           ...jsonRequestBody(createConversationMessageRequestBodySchema),
           ...conversationMessageCreateResponses
+        }
+      },
+      "/api/me/ai-profile": {
+        get: {
+          tags: ["ai-settings"],
+          summary: "Read the current user's AI profile, provider metadata, and usage summary",
+          ...userAiProfileReadResponses
+        },
+        patch: {
+          tags: ["ai-settings"],
+          summary: "Update the current user's AI preferences",
+          ...jsonRequestBody(patchUserAiProfileRequestBodySchema),
+          ...userAiProfilePatchResponses
+        }
+      },
+      "/api/projects/{id}/ai-governance": {
+        get: {
+          tags: ["ai-settings"],
+          summary: "Read project AI governance as the active project owner",
+          parameters: [pathUuidParameter("id")],
+          ...projectAiGovernanceReadResponses
+        },
+        patch: {
+          tags: ["ai-settings"],
+          summary: "Update project AI governance as the active project owner",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(patchProjectAiGovernanceRequestBodySchema),
+          ...projectAiGovernancePatchResponses
         }
       },
       "/api/proposals/{id}": {

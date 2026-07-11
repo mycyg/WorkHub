@@ -5,7 +5,10 @@ import type {
   CuuProactivity,
   DispatchPolicy
 } from "@workhub/contracts";
-import { DEFAULT_AI_QUIET_HOURS, DEFAULT_CUU_PROACTIVITY } from "@workhub/contracts";
+import {
+  DEFAULT_PROJECT_AI_GOVERNANCE,
+  DEFAULT_USER_AI_PROFILE
+} from "@workhub/contracts";
 import { and, eq, isNull } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
@@ -163,11 +166,15 @@ function profileInsertValues(input: UpsertUserProfileInput, at: Date) {
   return {
     workspaceId: input.workspaceId,
     userId: input.userId,
-    defaultMode: input.patch.defaultMode ?? 3,
-    granularJson: input.patch.granularJson ?? {},
-    dispatchPolicy: input.patch.dispatchPolicy ?? "auto",
-    cuuProactivity: input.patch.cuuProactivity ?? DEFAULT_CUU_PROACTIVITY,
-    modelTierPref: input.patch.modelTierPref === undefined ? null : input.patch.modelTierPref,
+    defaultMode: input.patch.defaultMode ?? DEFAULT_USER_AI_PROFILE.default_mode,
+    granularJson: {
+      ...(input.patch.granularJson ?? DEFAULT_USER_AI_PROFILE.granular_settings)
+    },
+    dispatchPolicy: input.patch.dispatchPolicy ?? DEFAULT_USER_AI_PROFILE.dispatch_policy,
+    cuuProactivity: input.patch.cuuProactivity ?? DEFAULT_USER_AI_PROFILE.cuu_proactivity,
+    modelTierPref: input.patch.modelTierPref === undefined
+      ? DEFAULT_USER_AI_PROFILE.model_tier_preference
+      : input.patch.modelTierPref,
     createdAt: at,
     updatedAt: at
   };
@@ -176,7 +183,7 @@ function profileInsertValues(input: UpsertUserProfileInput, at: Date) {
 function profileUpdateValues(patch: UserAiProfilePatch, at: Date) {
   return {
     ...(patch.defaultMode !== undefined ? { defaultMode: patch.defaultMode } : {}),
-    ...(patch.granularJson !== undefined ? { granularJson: patch.granularJson } : {}),
+    ...(patch.granularJson !== undefined ? { granularJson: { ...patch.granularJson } } : {}),
     ...(patch.dispatchPolicy !== undefined ? { dispatchPolicy: patch.dispatchPolicy } : {}),
     ...(patch.cuuProactivity !== undefined ? { cuuProactivity: patch.cuuProactivity } : {}),
     ...(patch.modelTierPref !== undefined ? { modelTierPref: patch.modelTierPref } : {}),
@@ -184,13 +191,21 @@ function profileUpdateValues(patch: UserAiProfilePatch, at: Date) {
   };
 }
 
+function copyQuietHours(value: AiQuietHours): AiQuietHours {
+  return value.enabled
+    ? { ...value, weekdays: [...value.weekdays] }
+    : { enabled: false };
+}
+
 function governanceInsertValues(input: UpsertProjectGovernanceInput, at: Date) {
   return {
     projectId: input.projectId,
-    observerEnabled: input.patch.observerEnabled ?? true,
-    silenceWindowSecs: input.patch.silenceWindowSecs ?? 60,
-    quietHoursJson: input.patch.quietHoursJson ?? { ...DEFAULT_AI_QUIET_HOURS },
-    granularJson: input.patch.granularJson ?? {},
+    observerEnabled: input.patch.observerEnabled ?? DEFAULT_PROJECT_AI_GOVERNANCE.observer_enabled,
+    silenceWindowSecs: input.patch.silenceWindowSecs ?? DEFAULT_PROJECT_AI_GOVERNANCE.silence_window_seconds,
+    quietHoursJson: copyQuietHours(input.patch.quietHoursJson ?? DEFAULT_PROJECT_AI_GOVERNANCE.quiet_hours),
+    granularJson: {
+      ...(input.patch.granularJson ?? DEFAULT_PROJECT_AI_GOVERNANCE.granular_settings)
+    },
     createdAt: at,
     updatedAt: at
   };
@@ -200,8 +215,8 @@ function governanceUpdateValues(patch: ProjectAiGovernancePatch, at: Date) {
   return {
     ...(patch.observerEnabled !== undefined ? { observerEnabled: patch.observerEnabled } : {}),
     ...(patch.silenceWindowSecs !== undefined ? { silenceWindowSecs: patch.silenceWindowSecs } : {}),
-    ...(patch.quietHoursJson !== undefined ? { quietHoursJson: patch.quietHoursJson } : {}),
-    ...(patch.granularJson !== undefined ? { granularJson: patch.granularJson } : {}),
+    ...(patch.quietHoursJson !== undefined ? { quietHoursJson: copyQuietHours(patch.quietHoursJson) } : {}),
+    ...(patch.granularJson !== undefined ? { granularJson: { ...patch.granularJson } } : {}),
     updatedAt: at
   };
 }

@@ -93,6 +93,32 @@ export type AiQuietHours = z.infer<typeof aiQuietHoursSchema>;
 
 export const DEFAULT_AI_QUIET_HOURS = { enabled: false } as const satisfies AiQuietHours;
 
+export const DEFAULT_USER_AI_PROFILE = {
+  default_mode: 3,
+  granular_settings: {},
+  dispatch_policy: "auto",
+  cuu_proactivity: DEFAULT_CUU_PROACTIVITY,
+  model_tier_preference: null
+} as const satisfies {
+  default_mode: AiMode;
+  granular_settings: AiGranularSettings;
+  dispatch_policy: DispatchPolicy;
+  cuu_proactivity: CuuProactivity;
+  model_tier_preference: string | null;
+};
+
+export const DEFAULT_PROJECT_AI_GOVERNANCE = {
+  observer_enabled: true,
+  silence_window_seconds: 60,
+  quiet_hours: DEFAULT_AI_QUIET_HOURS,
+  granular_settings: {}
+} as const satisfies {
+  observer_enabled: boolean;
+  silence_window_seconds: number;
+  quiet_hours: AiQuietHours;
+  granular_settings: AiGranularSettings;
+};
+
 const modelTierPreferenceSchema = z
   .string()
   .min(1)
@@ -125,6 +151,119 @@ export const patchProjectAiGovernanceRequestSchema = z
     message: "project AI governance patch must include at least one field"
   });
 export type PatchProjectAiGovernanceRequest = z.infer<typeof patchProjectAiGovernanceRequestSchema>;
+
+const nonnegativeCnySchema = z.string().regex(/^\d+(?:\.\d+)?$/u);
+
+export const aiProviderModelVmSchema = z
+  .object({
+    id: modelTierPreferenceSchema,
+    model: z.string().min(1).max(128),
+    display_name: z.string().min(1).max(128),
+    context_window_tokens: z.number().int().positive(),
+    supports_streaming: z.boolean(),
+    supports_tools: z.boolean(),
+    cost_input_cny_per_mtok: z.number().finite().nonnegative(),
+    cost_output_cny_per_mtok: z.number().finite().nonnegative()
+  })
+  .strict();
+export type AiProviderModelVM = z.infer<typeof aiProviderModelVmSchema>;
+
+export const aiProviderVmSchema = z
+  .object({
+    name: z.string().min(1).max(64),
+    configured: z.boolean(),
+    default_model_id: modelTierPreferenceSchema,
+    models: z.array(aiProviderModelVmSchema).min(1).max(100)
+  })
+  .strict()
+  .superRefine((provider, ctx) => {
+    const modelIds = provider.models.map((model) => model.id);
+    if (new Set(modelIds).size !== modelIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["models"],
+        message: "provider model IDs must be unique"
+      });
+    }
+    if (!modelIds.includes(provider.default_model_id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["default_model_id"],
+        message: "provider default model ID must be present in models"
+      });
+    }
+  });
+export type AiProviderVM = z.infer<typeof aiProviderVmSchema>;
+
+export const aiDailyQuotaVmSchema = z
+  .object({
+    policy_id: z.string().min(1),
+    period: z.literal("day"),
+    max_tokens: z.number().int().positive(),
+    max_cost_cny: nonnegativeCnySchema,
+    enabled: z.boolean()
+  })
+  .strict();
+export type AiDailyQuotaVM = z.infer<typeof aiDailyQuotaVmSchema>;
+
+function aiUsagePeriodVmSchema<TPeriod extends "day" | "month">(period: TPeriod) {
+  return z
+    .object({
+      period: z.literal(period),
+      token_in: z.number().int().nonnegative(),
+      token_out: z.number().int().nonnegative(),
+      total_tokens: z.number().int().nonnegative(),
+      estimated_cost_cny: nonnegativeCnySchema
+    })
+    .strict();
+}
+
+export const aiDayUsageVmSchema = aiUsagePeriodVmSchema("day");
+export type AiDayUsageVM = z.infer<typeof aiDayUsageVmSchema>;
+export const aiMonthUsageVmSchema = aiUsagePeriodVmSchema("month");
+export type AiMonthUsageVM = z.infer<typeof aiMonthUsageVmSchema>;
+
+export const aiBudgetSummaryVmSchema = z
+  .object({
+    daily_quota: aiDailyQuotaVmSchema.nullable(),
+    usage: z
+      .object({
+        day: aiDayUsageVmSchema,
+        month: aiMonthUsageVmSchema
+      })
+      .strict()
+  })
+  .strict();
+export type AiBudgetSummaryVM = z.infer<typeof aiBudgetSummaryVmSchema>;
+
+export const userAiProfileVmSchema = z
+  .object({
+    workspace_id: idSchema,
+    user_id: idSchema,
+    default_mode: aiModeSchema,
+    granular_settings: aiGranularSettingsSchema,
+    dispatch_policy: dispatchPolicySchema,
+    cuu_proactivity: cuuProactivitySchema,
+    model_tier_preference: modelTierPreferenceSchema.nullable(),
+    providers: z.array(aiProviderVmSchema).max(100),
+    budget_summary: aiBudgetSummaryVmSchema,
+    generated_at: isoDateTimeSchema,
+    updated_at: isoDateTimeSchema.nullable()
+  })
+  .strict();
+export type UserAiProfileVM = z.infer<typeof userAiProfileVmSchema>;
+
+export const projectAiGovernanceVmSchema = z
+  .object({
+    project_id: idSchema,
+    observer_enabled: z.boolean(),
+    silence_window_seconds: z.number().int().min(0).max(86400),
+    quiet_hours: aiQuietHoursSchema,
+    granular_settings: aiGranularSettingsSchema,
+    updated_at: isoDateTimeSchema.nullable()
+  })
+  .strict();
+export type ProjectAiGovernanceVM = z.infer<typeof projectAiGovernanceVmSchema>;
 
 export const executionHintSchema = z.enum(["server", "local", "any"]);
 export type ExecutionHint = z.infer<typeof executionHintSchema>;

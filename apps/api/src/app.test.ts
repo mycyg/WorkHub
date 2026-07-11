@@ -9,6 +9,8 @@ import {
   createApprovalRequestSchema,
   delegateApprovalRequestSchema,
   delegateEscalationRequestSchema,
+  patchProjectAiGovernanceRequestSchema,
+  patchUserAiProfileRequestSchema,
   permissionPolicyWriteSchema,
   resolveEscalationRequestSchema,
   respondApprovalRequestSchema,
@@ -372,6 +374,10 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/projects/{id}/conversations"],
     ["get", "/api/conversations/{id}/messages"],
     ["post", "/api/conversations/{id}/messages"],
+    ["get", "/api/me/ai-profile"],
+    ["patch", "/api/me/ai-profile"],
+    ["get", "/api/projects/{id}/ai-governance"],
+    ["patch", "/api/projects/{id}/ai-governance"],
     ["post", "/api/workitems/{id}/proposals"],
     ["get", "/api/workitems/{id}/proposals"],
     ["get", "/api/workitems/{id}/conflicts"],
@@ -530,6 +536,239 @@ test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP end
   }
 });
 
+test("R12 AI settings runtime and OpenAPI expose four strict secret-free operations", async () => {
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+  const profilePath = body.paths["/api/me/ai-profile"] as {
+    get?: { responses?: Record<string, unknown> };
+    patch?: {
+      requestBody?: { content?: { "application/json"?: { schema?: Record<string, unknown> } } };
+      responses?: Record<string, unknown>;
+    };
+  } | undefined;
+  const governancePath = body.paths["/api/projects/{id}/ai-governance"] as {
+    get?: { parameters?: unknown[]; responses?: Record<string, unknown> };
+    patch?: {
+      parameters?: unknown[];
+      requestBody?: { content?: { "application/json"?: { schema?: Record<string, unknown> } } };
+      responses?: Record<string, unknown>;
+    };
+  } | undefined;
+
+  assert.deepEqual(
+    Object.keys(body.paths).filter((path) => path.includes("ai-profile") || path.includes("ai-governance")).sort(),
+    ["/api/me/ai-profile", "/api/projects/{id}/ai-governance"]
+  );
+  assert.deepEqual(Object.keys(profilePath ?? {}).sort(), ["get", "patch"]);
+  assert.deepEqual(Object.keys(governancePath ?? {}).sort(), ["get", "patch"]);
+  assert.deepEqual(
+    parameterByName(body.paths, "/api/projects/{id}/ai-governance", "get", "id"),
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }
+  );
+  assert.deepEqual(
+    parameterByName(body.paths, "/api/projects/{id}/ai-governance", "patch", "id"),
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }
+  );
+
+  assert.deepEqual(Object.keys(profilePath?.get?.responses ?? {}).sort(), ["200", "401", "403", "500"]);
+  assert.deepEqual(
+    Object.keys(profilePath?.patch?.responses ?? {}).sort(),
+    ["200", "400", "401", "403", "413", "422", "500"]
+  );
+  assert.deepEqual(
+    Object.keys(governancePath?.get?.responses ?? {}).sort(),
+    ["200", "401", "403", "404", "500"]
+  );
+  assert.deepEqual(
+    Object.keys(governancePath?.patch?.responses ?? {}).sort(),
+    ["200", "400", "401", "403", "404", "413", "422", "500"]
+  );
+  assertJsonErrorCodes(body.paths, "/api/me/ai-profile", "patch", "400", [
+    "malformed_json",
+    "json_object_required"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/me/ai-profile", "patch", "413", ["payload_too_large"]);
+  assertJsonErrorCodes(body.paths, "/api/me/ai-profile", "patch", "422", [
+    "validation_error",
+    "ai_model_preference_unavailable"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/ai-governance", "get", "404", [
+    "ai_governance_not_found"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/ai-governance", "patch", "400", [
+    "malformed_json",
+    "json_object_required"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/ai-governance", "patch", "413", [
+    "payload_too_large"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/ai-governance", "patch", "422", [
+    "validation_error"
+  ]);
+
+  const profileRequest = jsonRequestSchema(body.paths, "/api/me/ai-profile", "patch") as {
+    minProperties?: number;
+    additionalProperties?: boolean;
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.equal(profileRequest?.minProperties, 1);
+  assert.equal(profileRequest?.additionalProperties, false);
+  assert.deepEqual(Object.keys(profileRequest?.properties ?? {}).sort(), [
+    "cuu_proactivity",
+    "default_mode",
+    "dispatch_policy",
+    "granular_settings",
+    "model_tier_preference"
+  ]);
+  const modelPreference = profileRequest?.properties?.model_tier_preference as {
+    anyOf?: Array<Record<string, unknown>>;
+    description?: string;
+  } | undefined;
+  assert.deepEqual(modelPreference?.anyOf, [
+    {
+      type: "string",
+      minLength: 1,
+      maxLength: 32,
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    { type: "null" }
+  ]);
+  assert.match(modelPreference?.description ?? "", /provider model id/iu);
+
+  const governanceRequest = jsonRequestSchema(
+    body.paths,
+    "/api/projects/{id}/ai-governance",
+    "patch"
+  ) as {
+    minProperties?: number;
+    additionalProperties?: boolean;
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.equal(governanceRequest?.minProperties, 1);
+  assert.equal(governanceRequest?.additionalProperties, false);
+  const quietHours = governanceRequest?.properties?.quiet_hours as {
+    oneOf?: Array<{
+      properties?: Record<string, unknown>;
+      required?: string[];
+      additionalProperties?: boolean;
+    }>;
+    "x-workhub-runtime-supported-timezone"?: boolean;
+    "x-workhub-start-end-must-differ"?: boolean;
+  } | undefined;
+  assert.equal(quietHours?.["x-workhub-runtime-supported-timezone"], true);
+  assert.equal(quietHours?.["x-workhub-start-end-must-differ"], true);
+  assert.equal(quietHours?.oneOf?.length, 2);
+  assert.equal(quietHours?.oneOf?.every((variant) => variant.additionalProperties === false), true);
+  const enabledQuietHours = quietHours?.oneOf?.find((variant) =>
+    (variant.properties?.enabled as { const?: boolean } | undefined)?.const === true
+  );
+  assert.deepEqual(enabledQuietHours?.required, [
+    "enabled",
+    "timezone",
+    "start_minute",
+    "end_minute",
+    "weekdays"
+  ]);
+  assert.deepEqual(enabledQuietHours?.properties?.start_minute, {
+    type: "integer",
+    minimum: 0,
+    maximum: 1439
+  });
+  assert.deepEqual(enabledQuietHours?.properties?.weekdays, {
+    type: "array",
+    minItems: 1,
+    maxItems: 7,
+    uniqueItems: true,
+    items: { type: "integer", minimum: 0, maximum: 6 }
+  });
+
+  const profileResponse = jsonResponseSchema(body.paths, "/api/me/ai-profile", "get", "200");
+  const profileData = profileResponse?.properties?.data as {
+    required?: string[];
+    properties?: Record<string, unknown>;
+    additionalProperties?: boolean;
+  } | undefined;
+  assert.deepEqual(profileResponse?.required, ["ok", "data"]);
+  assert.deepEqual(profileData?.required, [
+    "workspace_id",
+    "user_id",
+    "default_mode",
+    "granular_settings",
+    "dispatch_policy",
+    "cuu_proactivity",
+    "model_tier_preference",
+    "providers",
+    "budget_summary",
+    "generated_at",
+    "updated_at"
+  ]);
+  assert.equal(profileData?.additionalProperties, false);
+  const serializedProfileSchema = JSON.stringify(profileData);
+  for (const secretField of ["api_key", "base_url", "storage_secret"]) {
+    assert.equal(serializedProfileSchema.includes(secretField), false, `profile schema leaked ${secretField}`);
+  }
+  const providerSchema = (profileData?.properties?.providers as {
+    items?: { properties?: Record<string, unknown>; additionalProperties?: boolean };
+  } | undefined)?.items;
+  assert.equal(providerSchema?.additionalProperties, false);
+  const modelsSchema = providerSchema?.properties?.models as {
+    minItems?: number;
+    items?: { additionalProperties?: boolean };
+    "x-workhub-unique-model-ids"?: boolean;
+    "x-workhub-contains-default-model-id"?: boolean;
+  } | undefined;
+  assert.equal(modelsSchema?.minItems, 1);
+  assert.equal(modelsSchema?.items?.additionalProperties, false);
+  assert.equal(modelsSchema?.["x-workhub-unique-model-ids"], true);
+  assert.equal(modelsSchema?.["x-workhub-contains-default-model-id"], true);
+  const budget = profileData?.properties?.budget_summary as { properties?: Record<string, unknown> } | undefined;
+  const usage = budget?.properties?.usage as { properties?: Record<string, unknown> } | undefined;
+  const month = usage?.properties?.month as { properties?: Record<string, unknown> } | undefined;
+  assert.deepEqual(Object.keys(month?.properties ?? {}).sort(), [
+    "estimated_cost_cny",
+    "period",
+    "token_in",
+    "token_out",
+    "total_tokens"
+  ]);
+
+  const governanceResponse = jsonResponseSchema(
+    body.paths,
+    "/api/projects/{id}/ai-governance",
+    "get",
+    "200"
+  );
+  const governanceData = governanceResponse?.properties?.data as {
+    required?: string[];
+    additionalProperties?: boolean;
+  } | undefined;
+  assert.deepEqual(governanceData?.required, [
+    "project_id",
+    "observer_enabled",
+    "silence_window_seconds",
+    "quiet_hours",
+    "granular_settings",
+    "updated_at"
+  ]);
+  assert.equal(governanceData?.additionalProperties, false);
+
+  for (const path of [
+    "/api/me/ai-profile",
+    `/api/projects/14000000-0000-4000-8000-000000000004/ai-governance`
+  ]) {
+    const overLimit = await app.request(path, {
+      method: "PATCH",
+      headers: {
+        "Content-Length": String(1_048_576 + 1),
+        "Content-Type": "application/json"
+      },
+      body: "{}"
+    });
+    assert.equal(overLimit.status, 413);
+    assert.equal((await overLimit.json() as ErrorBody).error.code, "payload_too_large");
+  }
+});
+
 test("runtime API routes stay in lockstep with the OpenAPI document", async () => {
   const response = await app.request("/api/openapi.json");
   const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
@@ -681,7 +920,13 @@ test("OpenAPI JSON request bodies stay aligned with zod input contracts", async 
     { path: "/api/approvals/{id}/comments", method: "post", schema: addApprovalCommentRequestSchema },
     { path: "/api/escalations/{id}/resolve", method: "post", schema: resolveEscalationRequestSchema },
     { path: "/api/escalations/{id}/delegate", method: "post", schema: delegateEscalationRequestSchema },
-    { path: "/api/workitems/{id}/evidence-bindings", method: "post", schema: useEvidenceForTaskRequestSchema }
+    { path: "/api/workitems/{id}/evidence-bindings", method: "post", schema: useEvidenceForTaskRequestSchema },
+    { path: "/api/me/ai-profile", method: "patch", schema: patchUserAiProfileRequestSchema },
+    {
+      path: "/api/projects/{id}/ai-governance",
+      method: "patch",
+      schema: patchProjectAiGovernanceRequestSchema
+    }
   ] as const) {
     assertJsonRequestMatchesZodObject(body.paths, path, method, schema);
   }
@@ -3182,6 +3427,7 @@ function childRouteTestEnv() {
 
 test("isolated route tests execute with production app imports forbidden", () => {
   const routeTestFiles = [
+    "ai-settings-routes.test.ts",
     "auth.test.ts",
     "gold-path.test.ts",
     "knowledge.test.ts",
