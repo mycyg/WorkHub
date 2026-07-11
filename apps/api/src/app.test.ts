@@ -368,6 +368,10 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/notifications/{id}/complete"],
     ["get", "/api/projects"],
     ["post", "/api/projects/bootstrap"],
+    ["get", "/api/projects/{id}/conversations"],
+    ["post", "/api/projects/{id}/conversations"],
+    ["get", "/api/conversations/{id}/messages"],
+    ["post", "/api/conversations/{id}/messages"],
     ["post", "/api/workitems/{id}/proposals"],
     ["get", "/api/workitems/{id}/proposals"],
     ["get", "/api/workitems/{id}/conflicts"],
@@ -420,6 +424,82 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
   } | undefined;
   assert.ok(driveUpload?.requestBody?.content?.["application/json"]?.schema?.properties?.parent_id);
   assert.ok(driveUpload?.requestBody?.content?.["multipart/form-data"]?.schema?.properties?.parent_id);
+});
+
+test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP endpoints", async () => {
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+  const projectPath = body.paths["/api/projects/{id}/conversations"] as {
+    get?: { parameters?: Array<{ name: string; in: string }>; responses?: Record<string, unknown> };
+    post?: {
+      parameters?: Array<{ name: string; in: string }>;
+      requestBody?: { content?: { "application/json"?: { schema?: Record<string, unknown> } } };
+      responses?: Record<string, unknown>;
+    };
+  } | undefined;
+  const messagePath = body.paths["/api/conversations/{id}/messages"] as {
+    get?: { parameters?: Array<{ name: string; in: string }>; responses?: Record<string, unknown> };
+    post?: {
+      parameters?: Array<{ name: string; in: string }>;
+      requestBody?: { content?: { "application/json"?: { schema?: Record<string, unknown> } } };
+      responses?: Record<string, unknown>;
+    };
+  } | undefined;
+
+  assert.deepEqual(projectPath?.get?.parameters?.map((parameter) => `${parameter.in}:${parameter.name}`), [
+    "path:id",
+    "query:afterCreatedAt",
+    "query:afterId",
+    "query:limit"
+  ]);
+  assert.deepEqual(projectPath?.post?.parameters?.map((parameter) => `${parameter.in}:${parameter.name}`), [
+    "path:id"
+  ]);
+  assert.deepEqual(messagePath?.get?.parameters?.map((parameter) => `${parameter.in}:${parameter.name}`), [
+    "path:id",
+    "query:afterSeq",
+    "query:limit"
+  ]);
+  assert.deepEqual(messagePath?.post?.parameters?.map((parameter) => `${parameter.in}:${parameter.name}`), [
+    "path:id"
+  ]);
+  assert.deepEqual(Object.keys(projectPath?.get?.responses ?? {}).sort(), ["200", "401", "403", "404", "422", "500"]);
+  assert.deepEqual(Object.keys(projectPath?.post?.responses ?? {}).sort(), ["201", "400", "401", "403", "404", "422", "500"]);
+  assert.deepEqual(Object.keys(messagePath?.get?.responses ?? {}).sort(), ["200", "401", "403", "404", "422", "500"]);
+  assert.deepEqual(Object.keys(messagePath?.post?.responses ?? {}).sort(), ["201", "400", "401", "403", "404", "409", "422", "500"]);
+
+  const projectBody = projectPath?.post?.requestBody?.content?.["application/json"]?.schema as {
+    properties?: Record<string, unknown>;
+    required?: string[];
+  } | undefined;
+  assert.deepEqual(projectBody?.required, ["kind", "title", "visibility"]);
+  assert.deepEqual(Object.keys(projectBody?.properties ?? {}).sort(), [
+    "kind",
+    "parent_conversation_id",
+    "participant_user_ids",
+    "source_message_id",
+    "title",
+    "visibility"
+  ]);
+
+  const messageBody = messagePath?.post?.requestBody?.content?.["application/json"]?.schema as {
+    oneOf?: Array<{
+      properties?: {
+        kind?: { const?: string };
+        content?: { properties?: Record<string, unknown> };
+      };
+    }>;
+  } | undefined;
+  const fileVariant = messageBody?.oneOf?.find((variant) => variant.properties?.kind?.const === "file_card");
+  assert.deepEqual(Object.keys(fileVariant?.properties?.content?.properties ?? {}), ["drive_item_id"]);
+
+  for (const stale of [
+    "/api/conversations/{id}/action-cards/{itemId}/decide",
+    "/api/conversations/{id}/action-cards/{itemId}/undo",
+    "/api/push/stream/conversation/{id}"
+  ]) {
+    assert.equal(body.paths[stale], undefined, `${stale} must not be documented before its implementation batch`);
+  }
 });
 
 test("runtime API routes stay in lockstep with the OpenAPI document", async () => {

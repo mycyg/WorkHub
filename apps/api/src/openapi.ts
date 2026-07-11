@@ -4415,6 +4415,340 @@ const agentRunRevertResponse = {
   }
 } as const;
 
+const conversationSafeSequenceSchema = {
+  type: "integer",
+  minimum: 0,
+  maximum: Number.MAX_SAFE_INTEGER
+} as const;
+const conversationNullableUuidSchema = {
+  anyOf: [uuidStringSchema, { type: "null" }]
+} as const;
+const conversationParticipantRoleSchema = {
+  type: "string",
+  enum: ["owner", "member"]
+} as const;
+const conversationNullableParticipantRoleSchema = {
+  anyOf: [conversationParticipantRoleSchema, { type: "null" }]
+} as const;
+const conversationResponseSchema = {
+  type: "object",
+  required: [
+    "id",
+    "workspace_id",
+    "project_id",
+    "kind",
+    "title",
+    "parent_conversation_id",
+    "source_message_id",
+    "visibility",
+    "next_seq",
+    "created_by",
+    "participant_role",
+    "created_at",
+    "updated_at"
+  ],
+  properties: {
+    id: uuidStringSchema,
+    workspace_id: uuidStringSchema,
+    project_id: uuidStringSchema,
+    kind: { type: "string", enum: ["main", "collab"] },
+    title: { type: "string", minLength: 1, maxLength: 256 },
+    parent_conversation_id: conversationNullableUuidSchema,
+    source_message_id: conversationNullableUuidSchema,
+    visibility: { type: "string", enum: ["project", "private"] },
+    next_seq: conversationSafeSequenceSchema,
+    created_by: conversationNullableUuidSchema,
+    participant_role: conversationNullableParticipantRoleSchema,
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const conversationParticipantResponseSchema = {
+  type: "object",
+  required: ["id", "conversation_id", "user_id", "role", "created_at", "updated_at"],
+  properties: {
+    id: uuidStringSchema,
+    conversation_id: uuidStringSchema,
+    user_id: uuidStringSchema,
+    role: conversationParticipantRoleSchema,
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const conversationTextContentResponseSchema = {
+  type: "object",
+  required: ["text"],
+  properties: {
+    text: { type: "string", minLength: 1, maxLength: 20_000 }
+  },
+  additionalProperties: false
+} as const;
+const conversationFileCardContentResponseSchema = {
+  type: "object",
+  required: ["drive_item_id", "snapshot_name"],
+  properties: {
+    drive_item_id: uuidStringSchema,
+    snapshot_name: { type: "string", minLength: 1, maxLength: 256 }
+  },
+  additionalProperties: false
+} as const;
+const conversationGenericContentResponseSchema = {
+  type: "object",
+  maxProperties: 64,
+  additionalProperties: true
+} as const;
+function conversationMessageResponseVariant(
+  kind: "text" | "file_card" | "action_card" | "system_event" | "tool_note",
+  content: Record<string, unknown>
+) {
+  return {
+    type: "object",
+    required: [
+      "id",
+      "conversation_id",
+      "seq",
+      "sender_type",
+      "sender_user_id",
+      "kind",
+      "content",
+      "thread_root_id",
+      "created_at"
+    ],
+    properties: {
+      id: uuidStringSchema,
+      conversation_id: uuidStringSchema,
+      seq: conversationSafeSequenceSchema,
+      sender_type: { type: "string", enum: ["user", "cuu", "system"] },
+      sender_user_id: conversationNullableUuidSchema,
+      kind: { type: "string", const: kind },
+      content,
+      thread_root_id: conversationNullableUuidSchema,
+      created_at: dateTimeStringSchema
+    },
+    additionalProperties: false
+  };
+}
+const conversationMessageResponseSchema = {
+  oneOf: [
+    conversationMessageResponseVariant("text", conversationTextContentResponseSchema),
+    conversationMessageResponseVariant("file_card", conversationFileCardContentResponseSchema),
+    conversationMessageResponseVariant("action_card", conversationGenericContentResponseSchema),
+    conversationMessageResponseVariant("system_event", conversationGenericContentResponseSchema),
+    conversationMessageResponseVariant("tool_note", conversationGenericContentResponseSchema)
+  ]
+} as const;
+const conversationCursorResponseSchema = {
+  type: "object",
+  required: ["afterCreatedAt", "afterId"],
+  properties: {
+    afterCreatedAt: {
+      type: "string",
+      pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
+    },
+    afterId: uuidStringSchema
+  },
+  additionalProperties: false
+} as const;
+const conversationListPageResponseSchema = {
+  type: "object",
+  required: ["conversations", "capped", "next_cursor"],
+  properties: {
+    conversations: { type: "array", maxItems: 100, items: conversationResponseSchema },
+    capped: { type: "boolean" },
+    next_cursor: { anyOf: [conversationCursorResponseSchema, { type: "null" }] }
+  },
+  additionalProperties: false
+} as const;
+const conversationMessagePageResponseSchema = {
+  type: "object",
+  required: ["messages", "has_more", "next_after_seq"],
+  properties: {
+    messages: { type: "array", maxItems: 100, items: conversationMessageResponseSchema },
+    has_more: { type: "boolean" },
+    next_after_seq: conversationSafeSequenceSchema
+  },
+  additionalProperties: false
+} as const;
+const createConversationResponseSchema = {
+  type: "object",
+  required: ["conversation", "participants"],
+  properties: {
+    conversation: conversationResponseSchema,
+    participants: {
+      type: "array",
+      minItems: 1,
+      maxItems: 100,
+      items: conversationParticipantResponseSchema
+    }
+  },
+  additionalProperties: false
+} as const;
+const createConversationRequestBodySchema = {
+  type: "object",
+  required: ["kind", "title", "visibility"],
+  properties: {
+    kind: { type: "string", const: "collab" },
+    title: { type: "string", minLength: 1, maxLength: 256 },
+    visibility: { type: "string", enum: ["project", "private"] },
+    parent_conversation_id: uuidStringSchema,
+    source_message_id: uuidStringSchema,
+    participant_user_ids: {
+      type: "array",
+      maxItems: 99,
+      uniqueItems: true,
+      items: uuidStringSchema,
+      default: []
+    }
+  },
+  additionalProperties: false
+} as const;
+const createConversationMessageRequestBodySchema = {
+  oneOf: [
+    {
+      type: "object",
+      required: ["kind", "content"],
+      properties: {
+        kind: { type: "string", const: "text" },
+        content: conversationTextContentResponseSchema,
+        thread_root_id: uuidStringSchema
+      },
+      additionalProperties: false
+    },
+    {
+      type: "object",
+      required: ["kind", "content"],
+      properties: {
+        kind: { type: "string", const: "file_card" },
+        content: {
+          type: "object",
+          required: ["drive_item_id"],
+          properties: { drive_item_id: uuidStringSchema },
+          additionalProperties: false
+        },
+        thread_root_id: uuidStringSchema
+      },
+      additionalProperties: false
+    }
+  ]
+} as const;
+const conversationAfterCreatedAtQueryParameter = {
+  name: "afterCreatedAt",
+  in: "query",
+  required: false,
+  schema: {
+    type: "string",
+    pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
+  }
+} as const;
+const conversationAfterIdQueryParameter = {
+  name: "afterId",
+  in: "query",
+  required: false,
+  schema: uuidStringSchema
+} as const;
+const conversationAfterSeqQueryParameter = {
+  name: "afterSeq",
+  in: "query",
+  required: false,
+  schema: conversationSafeSequenceSchema
+} as const;
+const conversationLimitQueryParameter = {
+  name: "limit",
+  in: "query",
+  required: false,
+  schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }
+} as const;
+const conversationAuthRequiredResponse = jsonErrorStatusResponse(
+  "401",
+  "Conversation access requires an authenticated user",
+  ["not_identified"]
+).responses["401"];
+const conversationForbiddenResponse = jsonErrorStatusResponse(
+  "403",
+  "Conversation access failed the client-token, CSRF, or human-workspace guard",
+  ["invalid_client_token", "forbidden", "human_required"]
+).responses["403"];
+const conversationValidationResponse = jsonErrorStatusResponse(
+  "422",
+  "Conversation query or request payload does not match the contract",
+  ["validation_error"]
+).responses["422"];
+const conversationInternalResponse = jsonErrorStatusResponse(
+  "500",
+  "Conversation output assembly or an unexpected dependency failed",
+  ["internal_contract_error", "internal_error"]
+).responses["500"];
+const conversationProjectListResponses = {
+  responses: {
+    "200": jsonDataResponse(conversationListPageResponseSchema, "Visible project conversations").responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Project conversation area was not found", [
+      "conversation_project_not_found"
+    ]).responses["404"],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationProjectCreateResponses = {
+  responses: {
+    "201": jsonDataStatusResponse(createConversationResponseSchema, "201", "Created a collaboration conversation")
+      .responses["201"],
+    "400": jsonErrorStatusResponse("400", "Conversation creation input is semantically invalid", [
+      "malformed_json",
+      "json_object_required",
+      "conversation_invalid_input",
+      "conversation_participant_invalid",
+      "conversation_parent_invalid",
+      "conversation_source_invalid"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Project conversation area disappeared or is inaccessible", [
+      "conversation_project_not_found",
+      "conversation_not_found"
+    ]).responses["404"],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationMessageListResponses = {
+  responses: {
+    "200": jsonDataResponse(conversationMessagePageResponseSchema, "Conversation messages after the sequence cursor")
+      .responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses["404"],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationMessageCreateResponses = {
+  responses: {
+    "201": jsonDataStatusResponse(conversationMessageResponseSchema, "201", "Created a conversation message")
+      .responses["201"],
+    "400": jsonErrorStatusResponse("400", "Message input is malformed or semantically invalid", [
+      "malformed_json",
+      "json_object_required",
+      "conversation_invalid_input",
+      "conversation_thread_invalid"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation or referenced Drive file was not found", [
+      "conversation_not_found",
+      "conversation_file_not_found"
+    ]).responses["404"],
+    "409": jsonErrorStatusResponse("409", "Conversation message sequence is exhausted", [
+      "conversation_sequence_exhausted"
+    ]).responses["409"],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
 export function getOpenApiDocument() {
   return withInferredPathParameters({
     openapi: "3.1.0",
@@ -5316,6 +5650,45 @@ export function getOpenApiDocument() {
             additionalProperties: false
           }, { required: false }),
           ...bootstrapProjectResponse
+        }
+      },
+      "/api/projects/{id}/conversations": {
+        get: {
+          tags: ["conversations"],
+          summary: "List conversations visible in a project",
+          parameters: [
+            pathUuidParameter("id"),
+            conversationAfterCreatedAtQueryParameter,
+            conversationAfterIdQueryParameter,
+            conversationLimitQueryParameter
+          ],
+          ...conversationProjectListResponses
+        },
+        post: {
+          tags: ["conversations"],
+          summary: "Create a collaboration conversation in a project",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(createConversationRequestBodySchema),
+          ...conversationProjectCreateResponses
+        }
+      },
+      "/api/conversations/{id}/messages": {
+        get: {
+          tags: ["conversations"],
+          summary: "List conversation messages after a sequence cursor",
+          parameters: [
+            pathUuidParameter("id"),
+            conversationAfterSeqQueryParameter,
+            conversationLimitQueryParameter
+          ],
+          ...conversationMessageListResponses
+        },
+        post: {
+          tags: ["conversations"],
+          summary: "Create a text message or authorized Drive file card",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(createConversationMessageRequestBodySchema),
+          ...conversationMessageCreateResponses
         }
       },
       "/api/proposals/{id}": {

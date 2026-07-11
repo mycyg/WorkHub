@@ -66,6 +66,17 @@ test("R12 file cards are metadata-only and reject embedded file content", () => 
   assert.equal(schema.safeParse({ ...parsed, body: "secret bytes" }).success, false);
 });
 
+test("R12 file-card POST input accepts only a Drive item id and keeps snapshot names server-owned", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationFileCardRequestContentSchema");
+
+  assert.deepEqual(schema.parse({ drive_item_id: driveItemId }), { drive_item_id: driveItemId });
+  assert.equal(
+    schema.safeParse({ drive_item_id: driveItemId, snapshot_name: "client-controlled.docx" }).success,
+    false
+  );
+  assert.equal(schema.safeParse({ drive_item_id: driveItemId, storage_path: "/secret" }).success, false);
+});
+
 test("R12 conversation creation and user message contracts expose bounded metadata shapes", () => {
   const createConversationRequestSchema = requiredSchema<Record<string, unknown>>("createConversationRequestSchema");
   const createConversationMessageRequestSchema = requiredSchema<Record<string, unknown>>(
@@ -122,18 +133,143 @@ test("R12 conversation creation and user message contracts expose bounded metada
   assert.deepEqual(
     createConversationMessageRequestSchema.parse({
       kind: "file_card",
-      content: { drive_item_id: driveItemId, snapshot_name: "brief-v3.docx" }
+      content: { drive_item_id: driveItemId }
     }),
     {
       kind: "file_card",
-      content: { drive_item_id: driveItemId, snapshot_name: "brief-v3.docx" }
+      content: { drive_item_id: driveItemId }
     }
   );
   assert.equal(
     createConversationMessageRequestSchema.safeParse({
       kind: "file_card",
-      content: { drive_item_id: driveItemId, snapshot_name: "brief-v3.docx", body: "embedded" }
+      content: { drive_item_id: driveItemId, snapshot_name: "client-controlled.docx" }
     }).success,
+    false
+  );
+  assert.equal(
+    createConversationMessageRequestSchema.safeParse({
+      kind: "text",
+      content: { text: "x".repeat(20_001) }
+    }).success,
+    false
+  );
+  assert.equal(
+    createConversationMessageRequestSchema.safeParse({
+      kind: "text",
+      content: { text: "x".repeat(20_000) }
+    }).success,
+    true
+  );
+});
+
+test("R12 conversation HTTP VMs are strict, nullable-explicit, and safe-integer bounded", () => {
+  const conversationSchema = requiredSchema<Record<string, unknown>>("conversationVmSchema");
+  const participantSchema = requiredSchema<Record<string, unknown>>("conversationParticipantVmSchema");
+  const createResultSchema = requiredSchema<Record<string, unknown>>("createConversationResultVmSchema");
+  const baseConversation = {
+    id: conversationId,
+    workspace_id: "10000000-0000-4000-8000-000000000001",
+    project_id: "20000000-0000-4000-8000-000000000002",
+    kind: "collab",
+    title: "重写第三节",
+    parent_conversation_id: null,
+    source_message_id: null,
+    visibility: "private",
+    next_seq: 42,
+    created_by: userId,
+    participant_role: "owner",
+    created_at: "2026-07-12T08:30:00.123Z",
+    updated_at: "2026-07-12T08:31:00.123Z"
+  };
+  const participant = {
+    id: "61000000-0000-4000-8000-000000000001",
+    conversation_id: conversationId,
+    user_id: userId,
+    role: "owner",
+    created_at: "2026-07-12T08:30:00.123Z",
+    updated_at: "2026-07-12T08:30:00.123Z"
+  };
+
+  assert.deepEqual(conversationSchema.parse(baseConversation), baseConversation);
+  assert.deepEqual(participantSchema.parse(participant), participant);
+  assert.deepEqual(createResultSchema.parse({ conversation: baseConversation, participants: [participant] }), {
+    conversation: baseConversation,
+    participants: [participant]
+  });
+  assert.equal(conversationSchema.safeParse({ ...baseConversation, parent_conversation_id: undefined }).success, false);
+  assert.equal(conversationSchema.safeParse({ ...baseConversation, participant_role: undefined }).success, false);
+  assert.equal(conversationSchema.safeParse({ ...baseConversation, next_seq: Number.MAX_SAFE_INTEGER + 1 }).success, false);
+  assert.equal(conversationSchema.safeParse({ ...baseConversation, storage_path: "/secret" }).success, false);
+});
+
+test("R12 message VMs validate text/file cards fail-closed and bound future content records", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationMessageVmSchema");
+  const base = {
+    id: messageId,
+    conversation_id: conversationId,
+    seq: 1,
+    sender_type: "user",
+    sender_user_id: userId,
+    thread_root_id: null,
+    created_at: "2026-07-12T08:31:00.123Z"
+  };
+
+  assert.equal(schema.safeParse({ ...base, kind: "text", content: { text: "hello" } }).success, true);
+  assert.equal(
+    schema.safeParse({ ...base, kind: "file_card", content: { drive_item_id: driveItemId, snapshot_name: "brief.docx" } })
+      .success,
+    true
+  );
+  assert.equal(
+    schema.safeParse({ ...base, kind: "text", content: { text: "hello", hidden: "leak" } }).success,
+    false
+  );
+  assert.equal(
+    schema.safeParse({
+      ...base,
+      kind: "file_card",
+      content: { drive_item_id: driveItemId, snapshot_name: "brief.docx", parsed_text: "secret" }
+    }).success,
+    false
+  );
+  assert.equal(schema.safeParse({ ...base, kind: "system_event", content: [] }).success, false);
+  assert.equal(
+    schema.safeParse({ ...base, kind: "system_event", content: { body: "x".repeat(65_537) } }).success,
+    false
+  );
+  assert.equal(schema.safeParse({ ...base, kind: "tool_note", content: { state: "done" } }).success, true);
+  assert.equal(schema.safeParse({ ...base, seq: Number.MAX_SAFE_INTEGER + 1, kind: "text", content: { text: "x" } }).success, false);
+});
+
+test("R12 conversation pages expose canonical round-trip cursors and explicit message pagination", () => {
+  const conversationPageSchema = requiredSchema<Record<string, unknown>>("conversationListPageVmSchema");
+  const messagePageSchema = requiredSchema<Record<string, unknown>>("conversationMessagePageVmSchema");
+  const afterCreatedAt = "2026-07-12T08:30:00.123456Z";
+  const nextCursor = { afterCreatedAt, afterId: conversationId };
+
+  assert.deepEqual(
+    conversationPageSchema.parse({ conversations: [], capped: true, next_cursor: nextCursor }),
+    { conversations: [], capped: true, next_cursor: nextCursor }
+  );
+  assert.deepEqual(
+    messagePageSchema.parse({ messages: [], has_more: false, next_after_seq: 42 }),
+    { messages: [], has_more: false, next_after_seq: 42 }
+  );
+  assert.equal(
+    conversationPageSchema.safeParse({
+      conversations: [],
+      capped: true,
+      next_cursor: { afterCreatedAt: "2026-07-12T08:30:00.123Z", afterId: conversationId }
+    }).success,
+    false
+  );
+  assert.equal(
+    conversationPageSchema.safeParse({ conversations: [], capped: false, next_cursor: nextCursor }).success,
+    false
+  );
+  assert.equal(
+    messagePageSchema.safeParse({ messages: [], has_more: false, next_after_seq: Number.MAX_SAFE_INTEGER + 1 }).success,
     false
   );
 });
