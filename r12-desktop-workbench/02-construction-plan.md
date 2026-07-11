@@ -85,11 +85,13 @@ action_cards
   analyzed_to_seq bigint(水位线) · timestamps
 
 action_card_items
-  id uuid pk · action_card_id fk · ordinal int
+  id uuid pk · workspace_id/project_id/conversation_id not null(复合租户/会话边界)
+  action_card_id fk · ordinal int
   kind('execute'|'decide'|'observe') · title_md text
   confidence('high'|'mid'|'low') · work_item_id nullable · run_id nullable
   assignee_user_id nullable · status('running'|'done'|'undone'|'waiting_decision'|'dismissed'|'escalated')
   undo_deadline_at timestamptz nullable · timestamps
+  复合 FK 保证 action_card/work_item/run 与本项同 conversation/project/workspace;run_id 非空时 work_item_id 必须非空
 
 conversation_observer_state
   conversation_id pk · last_analyzed_seq bigint · active_card_id nullable
@@ -102,7 +104,9 @@ user_ai_profiles
   cuu_proactivity varchar · model_tier_pref varchar nullable · timestamps
 
 (agent_runs 扩展列,随批0迁移一并加:execution_hint varchar('server'|'local'|'any') default 'server'
- · source_conversation_id uuid nullable · source_action_card_item_id uuid nullable)
+ · source_conversation_id uuid nullable · source_action_card_item_id uuid nullable;复合 FK 绑定来源 workspace/conversation,
+ source_action_card_item_id 非空时 source_conversation_id 必须非空。裸 source_conversation 与 run work_item 同项目因
+ agent_runs 无 project_id 无法纯 FK 证明,repository/route 必须 fail-closed 校验)
 
 project_ai_governance
   project_id pk · observer_enabled bool default true
