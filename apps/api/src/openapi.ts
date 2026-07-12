@@ -6496,6 +6496,31 @@ export function getOpenApiDocument() {
           ...armyOverviewResponses
         }
       },
+      "/api/conversations/{id}/typing": {
+        post: {
+          tags: ["conversations"],
+          summary: "Publish a transient typing presence ping (server-throttled, never persisted)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "202": jsonDataResponse(
+              {
+                type: "object",
+                properties: { published: { type: "boolean" } },
+                required: ["published"],
+                additionalProperties: false,
+                description: "published=false means the ping was throttled away; both outcomes are success."
+              },
+              "Typing ping accepted (published or throttled)"
+            ).responses["200"],
+            "401": conversationAuthRequiredResponse,
+            "403": conversationForbiddenResponse,
+            "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses[
+              "404"
+            ],
+            "500": conversationInternalResponse
+          }
+        }
+      },
       "/api/conversations/{id}/turns": {
         post: {
           tags: ["conversations"],
