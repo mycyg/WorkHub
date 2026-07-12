@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ConversationMessagePageVM, ConversationMessageVM } from "@workhub/contracts";
+import type { ConversationMessagePageVM, ConversationMessageVM, UserAiProfileVM } from "@workhub/contracts";
 
 import {
   fetchConversationMessagesPage,
   fetchLatestConversationMessagesPage,
+  fetchMyAiProfile,
   fetchOlderConversationMessagesPage,
+  patchMyAiMode,
   pingConversationTyping,
   requestConversationTurn,
   sendConversationFileCardMessage,
@@ -17,6 +19,29 @@ import {
 function fakeClient(handler: (path: string, init?: RequestInit) => unknown): ChatApiClient {
   return {
     request: async <T>(path: string, init?: RequestInit) => handler(path, init) as T
+  };
+}
+
+function aiProfile(overrides: Partial<UserAiProfileVM> = {}): UserAiProfileVM {
+  return {
+    workspace_id: "ws-1",
+    user_id: "user-1",
+    default_mode: 3,
+    granular_settings: {},
+    dispatch_policy: "auto",
+    cuu_proactivity: "balanced",
+    model_tier_preference: null,
+    providers: [],
+    budget_summary: {
+      daily_quota: null,
+      usage: {
+        day: { period: "day", token_in: 0, token_out: 0, total_tokens: 0, estimated_cost_cny: "0" },
+        month: { period: "month", token_in: 0, token_out: 0, total_tokens: 0, estimated_cost_cny: "0" }
+      }
+    },
+    generated_at: "2026-07-12T09:00:00.000000Z",
+    updated_at: null,
+    ...overrides
   };
 }
 
@@ -219,4 +244,38 @@ test("requestConversationTurn URL-encodes the conversation id", async () => {
   await requestConversationTurn(client, "conv/needs escaping", { userMessageId: "user-msg-1" });
 
   assert.equal(calls[0], "/api/conversations/conv%2Fneeds%20escaping/turns");
+});
+
+// —— R12（模式五档弹层）：GET/PATCH /api/me/ai-profile —— //
+
+test("fetchMyAiProfile requests the profile endpoint with no body and returns the parsed VM", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const profile = aiProfile({ default_mode: 4 });
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return profile;
+  });
+
+  const result = await fetchMyAiProfile(client);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.path, "/api/me/ai-profile");
+  assert.equal(calls[0]!.init, undefined);
+  assert.equal(result, profile);
+});
+
+test("patchMyAiMode PATCHes only default_mode and returns the refreshed profile", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const profile = aiProfile({ default_mode: 5 });
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return profile;
+  });
+
+  const result = await patchMyAiMode(client, 5);
+
+  assert.equal(calls[0]!.path, "/api/me/ai-profile");
+  assert.equal(calls[0]!.init?.method, "PATCH");
+  assert.deepEqual(JSON.parse(calls[0]!.init!.body as string), { default_mode: 5 });
+  assert.equal(result, profile);
 });

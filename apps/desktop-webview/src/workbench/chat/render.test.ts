@@ -5,6 +5,7 @@ import type { ConversationMessageVM, WorkbenchPageVM } from "@workhub/contracts"
 
 import {
   membersById,
+  modePatchFailedText,
   renderChatEmptyStateHtml,
   renderComingSoonPickerHtml,
   renderComposerHtml,
@@ -19,6 +20,10 @@ import {
   renderMemberBarHtml,
   renderMentionPickerHtml,
   renderMessageHtml,
+  renderModeChipHtml,
+  renderModeErrorHintHtml,
+  renderModeObserveOnlyHintHtml,
+  renderModePopoverHtml,
   renderPendingOutgoingHtml,
   renderStreamingCuuBubbleHtml,
   renderTypingIndicatorHtml,
@@ -610,4 +615,124 @@ test("renderComingSoonPickerHtml for / is clearly labeled coming-soon", () => {
   const html = renderComingSoonPickerHtml({ locale: "zh-CN", trigger: "/" });
   assert.match(html, /技能唤起/u);
   assert.match(html, /即将可用/u);
+});
+
+// —— R12（模式五档弹层，仅协同会话 composer）—— //
+
+test("renderComposerHtml renders no mode chip / mode markup when the caller omits modeChipHtml (main conversation)", () => {
+  const html = renderComposerHtml({ locale: "zh-CN", draftText: "", attachments: [], sending: false });
+  assert.doesNotMatch(html, /wh-wb-mode-chip/u);
+  assert.doesNotMatch(html, /data-wb-chat-mode-toggle/u);
+  // The mount point for the popover is always present (view.ts only ever writes into it for collab
+  // conversations — see render.ts's renderComposerHtml doc comment), but it stays empty here.
+  assert.match(html, /<div data-wb-chat-mode-pop-slot><\/div>/u);
+});
+
+test("renderComposerHtml embeds a caller-supplied mode chip in the composer tools row (collab conversation)", () => {
+  const chip = renderModeChipHtml(3, "zh-CN");
+  const html = renderComposerHtml({
+    locale: "zh-CN",
+    draftText: "",
+    attachments: [],
+    sending: false,
+    modeChipHtml: chip
+  });
+  assert.match(html, /data-wb-chat-mode-toggle/u);
+  assert.match(html, /分级自动/u);
+});
+
+test("renderModeChipHtml shows the honest 'Mode' fallback (not a guessed level) when the mode hasn't loaded yet", () => {
+  const html = renderModeChipHtml(undefined, "zh-CN");
+  assert.match(html, /模式/u);
+  assert.doesNotMatch(html, /只观察|全部先问|分级自动|全自动|全托管/u);
+});
+
+test("renderModeChipHtml shows the compact level label for each of the five modes (zh-CN)", () => {
+  assert.match(renderModeChipHtml(1, "zh-CN"), />只观察</u);
+  assert.match(renderModeChipHtml(2, "zh-CN"), />全部先问</u);
+  // The chip label for level 3 has no "(default)" suffix — that only appears in the popover's option
+  // title, not the compact chip text (matches the prototype: setLvl()'s label argument vs. .lt text).
+  assert.match(renderModeChipHtml(3, "zh-CN"), />分级自动</u);
+  assert.doesNotMatch(renderModeChipHtml(3, "zh-CN"), /默认/u);
+  assert.match(renderModeChipHtml(4, "zh-CN"), />全自动 · 人审</u);
+  assert.match(renderModeChipHtml(5, "zh-CN"), />全托管 · AI 审</u);
+});
+
+test("renderModeChipHtml has an English label table too", () => {
+  assert.match(renderModeChipHtml(1, "en-US"), />Observe only</u);
+  assert.match(renderModeChipHtml(5, "en-US"), />Fully managed/u);
+});
+
+test("renderModeChipHtml applies the warn variant only for the fifth (fully-managed) level", () => {
+  assert.doesNotMatch(renderModeChipHtml(4, "zh-CN"), /wh-wb-mode-chip--warn/u);
+  assert.match(renderModeChipHtml(5, "zh-CN"), /wh-wb-mode-chip--warn/u);
+});
+
+test("renderModePopoverHtml renders all five levels with 1-5 shortcut numbers", () => {
+  const html = renderModePopoverHtml({ mode: 3, locale: "zh-CN" });
+  for (let level = 1; level <= 5; level += 1) {
+    assert.match(html, new RegExp(`data-wb-chat-mode-option="${level}"[^>]*>`, "u"));
+    assert.match(html, new RegExp(`wh-wb-mode-lvl-num">${level}<`, "u"));
+  }
+});
+
+test("renderModePopoverHtml highlights the currently selected level and no other", () => {
+  const html = renderModePopoverHtml({ mode: 2, locale: "zh-CN" });
+  assert.match(html, /class="wh-wb-mode-lvl wh-wb-mode-lvl--on" data-wb-chat-mode-option="2"/u);
+  const onCount = (html.match(/wh-wb-mode-lvl--on/gu) ?? []).length;
+  assert.equal(onCount, 1);
+  assert.doesNotMatch(html, /class="wh-wb-mode-lvl" data-wb-chat-mode-option="1"[^>]*wh-wb-mode-lvl--on/u);
+});
+
+test("renderModePopoverHtml renders no highlighted level when the current mode hasn't loaded", () => {
+  const html = renderModePopoverHtml({ mode: undefined, locale: "zh-CN" });
+  assert.doesNotMatch(html, /wh-wb-mode-lvl--on/u);
+});
+
+test("renderModePopoverHtml always marks the fifth level with the warn class, selected or not", () => {
+  const notSelected = renderModePopoverHtml({ mode: 3, locale: "zh-CN" });
+  const selected = renderModePopoverHtml({ mode: 5, locale: "zh-CN" });
+  assert.match(notSelected, /class="wh-wb-mode-lvl wh-wb-mode-lvl--warn" data-wb-chat-mode-option="5"/u);
+  assert.match(selected, /class="wh-wb-mode-lvl wh-wb-mode-lvl--on wh-wb-mode-lvl--warn" data-wb-chat-mode-option="5"/u);
+});
+
+test("renderModePopoverHtml includes the per-level descriptions from the interaction design table", () => {
+  const html = renderModePopoverHtml({ mode: 3, locale: "zh-CN" });
+  assert.match(html, /只总结讨论，不提出也不执行/u);
+  assert.match(html, /提出方案，任何执行都等人点头/u);
+  assert.match(html, /有把握的直接干\(可撤销\)；拿不准的先问你/u);
+  assert.match(html, /拎出的事全都干，合并前仍由人审提议/u);
+  assert.match(html, /AI 复核通过即自动合并；法务\/财务\/身份类永远升级给人/u);
+  // Only the third level's option title carries the "(default)" suffix.
+  assert.match(html, /分级自动\(默认\)/u);
+});
+
+test("renderModePopoverHtml states the server-issued model/key line and never implies a local API key", () => {
+  const html = renderModePopoverHtml({ mode: 3, locale: "zh-CN" });
+  assert.match(html, /服务端下发/u);
+  assert.match(html, /桌面不保存任何 API key/u);
+});
+
+test("renderModePopoverHtml includes the granular-breakdown note as plain text, not a fake button", () => {
+  const html = renderModePopoverHtml({ mode: 3, locale: "zh-CN" });
+  assert.match(html, /按能力细分/u);
+  // No data-* hook and no <button> wrapper — this line isn't wired to anything real yet, so it must
+  // not look clickable (04 §4 rule 3: don't render an affordance with no real destination).
+  assert.doesNotMatch(html, /<button[^>]*按能力细分/u);
+});
+
+test("renderModeObserveOnlyHintHtml warns that Cuu will not reply, before the user hits the 409", () => {
+  const html = renderModeObserveOnlyHintHtml("zh-CN");
+  assert.match(html, /只观察/u);
+  assert.match(html, /不会回话/u);
+});
+
+test("modePatchFailedText / renderModeErrorHintHtml surface a gentle retry message without leaking codes", () => {
+  const zh = modePatchFailedText("zh-CN");
+  const en = modePatchFailedText("en-US");
+  assert.match(zh, /再试一次/u);
+  assert.match(en, /try again/u);
+  const html = renderModeErrorHintHtml(zh);
+  assert.match(html, /wh-wb-mode-hint--error/u);
+  assert.match(html, /再试一次/u);
 });

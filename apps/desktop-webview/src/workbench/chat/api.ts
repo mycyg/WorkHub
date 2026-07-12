@@ -6,9 +6,11 @@
 // 的薄封装 + 首屏/向上翻页策略。
 
 import type {
+  AiMode,
   ConversationMessagePageVM,
   ConversationMessageVM,
-  CreateConversationMessageRequest
+  CreateConversationMessageRequest,
+  UserAiProfileVM
 } from "@workhub/contracts";
 
 export type ChatApiClient = {
@@ -126,5 +128,27 @@ export function requestConversationTurn(
   return client.request<ConversationTurnResult>(conversationPath(conversationId, "turns"), {
     method: "POST",
     body: JSON.stringify({ user_message_id: input.userMessageId })
+  });
+}
+
+// R12（模式五档弹层，2026-07-12 纠偏后归位到单聊）：GET/PATCH /api/me/ai-profile——不是 conversation
+// 下的端点，不走 conversationPath。契约见 apps/api/src/routes/ai-settings.ts +
+// apps/api/src/services/ai-settings.ts：GET 返回完整的 UserAiProfileVM（含 providers/预算摘要，工作台
+// composer 只用得到 default_mode 这一个字段，其余字段留给设置页 · AI 消费）；PATCH 收
+// PatchUserAiProfileRequest，这里只发 default_mode（granular_settings/dispatch_policy/
+// cuu_proactivity/model_tier_preference 是同一份档案的其它偏好，不在 composer 的模式弹层范围内）。
+// 同上面所有会话端点一样，不为这一个特性去扩大 WorkHubApiClient 的具名方法面，继续走 client.request——
+// client.request 已经按 apps/api 统一的 {ok,data} 信封解出 data，失败会抛 WorkHubApiError（见
+// packages/api-client/src/client.ts），调用方（view.ts）用 error instanceof WorkHubApiError 判断。
+const AI_PROFILE_PATH = "/api/me/ai-profile";
+
+export function fetchMyAiProfile(client: ChatApiClient): Promise<UserAiProfileVM> {
+  return client.request<UserAiProfileVM>(AI_PROFILE_PATH);
+}
+
+export function patchMyAiMode(client: ChatApiClient, mode: AiMode): Promise<UserAiProfileVM> {
+  return client.request<UserAiProfileVM>(AI_PROFILE_PATH, {
+    method: "PATCH",
+    body: JSON.stringify({ default_mode: mode })
   });
 }

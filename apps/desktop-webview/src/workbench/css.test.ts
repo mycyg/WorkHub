@@ -39,3 +39,29 @@ test("the # and / composer tags are visually distinct (not-yet-available) from t
 test("reduced-motion users get the chat typing dots and composer tag transitions shortened too", () => {
   assert.match(workbenchCss, /prefers-reduced-motion:reduce\)\{[^}]*\.wh-wb-chat-typing-dots i\{transition-duration:\.01ms!important;animation-duration:\.01ms!important\}/u);
 });
+
+// —— R12（模式五档弹层，仅协同会话 composer）—— //
+
+test("the mode popover has an opaque-enough gradient fallback background, not transparent-only", () => {
+  assert.match(workbenchCss, /\.wh-wb-mode-pop\{[^}]*background:linear-gradient\(180deg,rgba\(44,49,64,\.97\)/u);
+});
+
+test("the mode chip and the fifth (fully-managed) level reuse the shared warn design tokens, not a hardcoded color", () => {
+  assert.match(workbenchCss, /\.wh-wb-mode-chip--warn\{color:var\(--ds-warn\)/u);
+  assert.match(workbenchCss, /\.wh-wb-mode-lvl--warn\.wh-wb-mode-lvl--on\{background:var\(--ds-warn-soft\)/u);
+});
+
+test("the granular-breakdown note is not styled as clickable (it isn't wired to anything real yet)", () => {
+  assert.doesNotMatch(workbenchCss, /\.wh-wb-mode-gran\{[^}]*cursor:pointer/u);
+});
+
+test("a failed mode PATCH uses the shared danger token for its inline hint, not a literal red", () => {
+  assert.match(workbenchCss, /\.wh-wb-mode-hint--error\{color:var\(--ds-danger\)\}/u);
+});
+
+test("reduced-motion users get the mode chip and level-row transitions shortened too", () => {
+  assert.match(
+    workbenchCss,
+    /prefers-reduced-motion:reduce\)\{\.wh-wb-mode-chip,\.wh-wb-mode-lvl\{transition-duration:\.01ms!important;animation-duration:\.01ms!important\}\}/u
+  );
+});

@@ -333,6 +333,54 @@ export const workbenchCss = [
   ".wh-wb-drive-version-confirm{display:flex;align-items:center;gap:6px;margin-top:4px;font:500 11.5px/1.4 var(--ds-font);color:var(--ds-warn)}",
   ".wh-wb-drive-version-error{margin-top:4px;font:500 11.5px/1.4 var(--ds-font);color:var(--ds-danger)}",
 
+  // —— R12（模式五档弹层，仅协同会话 composer）：照 prototype 的 .power chip / #powerPop 弹层观感——
+  // 玻璃底/圆角/选中态复用既有 --ds-glass*/--ds-radius-*/--wb-cuu* token，第 5 档警示变体复用
+  // --ds-warn*，不写死不透明白底（04 §4-2 铁律：透明 Tauri 窗里 backdrop-filter 是空操作，这里的
+  // linear-gradient 深色底同 .wh-wb-chat-picker/.wh-wb-modal 的既有做法一致，是真正的不透明兜底，
+  // 不是"看起来透明实际乳白"）。 —— //
+  ".wh-wb-mode-chip{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:600 11px/1 var(--ds-font);" +
+    "color:var(--ds-ink-muted);padding:4px 10px;border-radius:var(--ds-radius-pill);border:1px solid var(--ds-glass-border);" +
+    "background:transparent;cursor:pointer;white-space:nowrap;transition:background var(--ds-dur-fast) var(--ds-ease)," +
+    "color var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-mode-chip:hover{color:var(--ds-ink);background:var(--ds-glass)}",
+  ".wh-wb-mode-chip-lv{color:var(--wb-cuu)}",
+  ".wh-wb-mode-chip--warn{color:var(--ds-warn);border-color:rgba(246,198,107,.45);background:var(--ds-warn-soft)}",
+  ".wh-wb-mode-chip--warn .wh-wb-mode-chip-lv{color:var(--ds-warn)}",
+  ".wh-wb-mode-pop{position:absolute;right:0;bottom:calc(100% + 8px);width:280px;z-index:6;box-sizing:border-box;" +
+    "background:linear-gradient(180deg,rgba(44,49,64,.97),rgba(28,32,43,.98));border:1px solid var(--ds-glass-border);" +
+    "border-radius:var(--ds-radius-lg);padding:14px;box-shadow:0 24px 80px rgba(0,0,0,.5)}",
+  ".wh-wb-mode-pop-title{font:700 12.5px/1.3 var(--ds-font);color:var(--ds-ink);margin-bottom:3px}",
+  ".wh-wb-mode-pop-sub{font:500 11px/1.5 var(--ds-font);color:var(--ds-ink-muted);margin-bottom:11px}",
+  ".wh-wb-mode-lvl{display:flex;align-items:flex-start;gap:9px;padding:8px 9px;border-radius:var(--ds-radius-sm);" +
+    "cursor:pointer;border:1px solid transparent;transition:background var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-mode-lvl:hover{background:var(--ds-glass)}",
+  ".wh-wb-mode-lvl--on{background:var(--wb-cuu-soft);border-color:rgba(255,171,94,.3)}",
+  ".wh-wb-mode-lvl-r{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--ds-ink-faint);margin-top:2px;flex:0 0 auto}",
+  ".wh-wb-mode-lvl--on .wh-wb-mode-lvl-r{border-color:var(--wb-cuu);" +
+    "background:radial-gradient(circle at center,var(--wb-cuu) 45%,transparent 50%)}",
+  ".wh-wb-mode-lvl-body{flex:1 1 auto;min-width:0}",
+  ".wh-wb-mode-lvl-title{display:block;font:600 12.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-mode-lvl-desc{display:block;font:500 11px/1.5 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-mode-lvl-num{font:500 11px/1 var(--ds-font);color:var(--ds-ink-faint);align-self:center}",
+  // 第 5 档「全托管 · AI 审」——选中时才切到警示色（未选中只是普通行，同 prototype 的 .lvl.warn 只在
+  // 叠加 .on 才真正变色），照原型 .lvl.warn.on 的取舍。
+  ".wh-wb-mode-lvl--warn.wh-wb-mode-lvl--on{background:var(--ds-warn-soft);border-color:rgba(246,198,107,.35)}",
+  ".wh-wb-mode-lvl--warn.wh-wb-mode-lvl--on .wh-wb-mode-lvl-r{border-color:var(--ds-warn);" +
+    "background:radial-gradient(circle at center,var(--ds-warn) 45%,transparent 50%)}",
+  // 「按能力细分」纯说明文字——没有 cursor:pointer（不是按钮，见 render.ts renderModePopoverHtml 顶部
+  // 注释，04 §4 铁律 3：没有真接线就不能看起来能点）。
+  ".wh-wb-mode-gran{font:500 11px/1.5 var(--ds-font);color:var(--ds-ink-faint);margin-top:9px}",
+  ".wh-wb-mode-srv{display:flex;gap:7px;margin-top:11px;padding-top:10px;border-top:1px solid var(--ds-glass-border);" +
+    "font:500 11px/1.7 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-mode-srv svg{width:13px;height:13px;margin-top:2px;color:var(--ds-ink-muted);flex:0 0 auto}",
+  ".wh-wb-mode-srv b{color:var(--ds-ink-soft);font-weight:600}",
+  // composer 旁的模式提示行——只观察档预告用中性灰字，PATCH 失败用 --error 修饰符换成 danger 色。
+  ".wh-wb-mode-hint{flex:none;padding:0 20px 4px;font:500 11px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-mode-hint--error{color:var(--ds-danger)}",
+
   "@media (prefers-reduced-motion:reduce){.wh-wb-side,.wh-wb-winbtn,.wh-wb-project-row,.wh-wb-leaf,.wh-wb-btn," +
-    ".wh-wb-chat-ctag,.wh-wb-chat-typing-dots i{transition-duration:.01ms!important;animation-duration:.01ms!important}}"
+    ".wh-wb-chat-ctag,.wh-wb-chat-typing-dots i{transition-duration:.01ms!important;animation-duration:.01ms!important}}",
+  // 独立追加一条规则，而不是塞进上面那条既有选择器列表——那条字符串被 css.test.ts 的既有测试按
+  // 精确子串匹配锁死（04 §4 铁律 1：不许为了迁就实现去改断言），追加新选择器会破坏它的匹配。
+  "@media (prefers-reduced-motion:reduce){.wh-wb-mode-chip,.wh-wb-mode-lvl{transition-duration:.01ms!important;animation-duration:.01ms!important}}"
 ].join("");

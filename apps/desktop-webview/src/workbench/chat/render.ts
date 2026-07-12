@@ -1,7 +1,7 @@
 // WorkHub 桌面 · 主区群聊的纯 HTML 渲染函数（照 shell.ts/rail.ts 的 render*/mount* 分工：这里全部是
 // 无副作用的字符串拼装，可单测；imperative 的 DOM 挂载/事件绑定在 view.ts）。
 
-import type { ConversationMessageVM, WorkbenchPageVM } from "@workhub/contracts";
+import type { AiMode, ConversationMessageVM, WorkbenchPageVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { workbenchIcons } from "../icons.js";
@@ -451,6 +451,12 @@ export function renderComposerHtml(input: {
   attachments: readonly ComposerAttachmentChip[];
   sending: boolean;
   sendError?: string | undefined;
+  // R12（模式五档，2026-07-12 纠偏后归位到单聊）：只有协同会话（conversationKind === 'collab'）的
+  // 调用方才会传——由 view.ts 用下面的 renderModeChipHtml 算好 HTML 再传进来，这个函数本身不关心
+  // mode 的具体值，只负责把它摆在 @/#// chip 之后、发送按钮之前（照 prototype 的 .ctools 顺序）。
+  // 省略这个参数（主区群聊）时不渲染任何模式相关标记——见"模式五档"一节顶部注释与其 colocated 测试，
+  // 这条测试就是 04 §4 铁律要求的"主区不渲染,写测试锁死"。
+  modeChipHtml?: string | undefined;
 }): string {
   const zh = input.locale === "zh-CN";
   const attachmentsHtml = input.attachments.length
@@ -468,10 +474,138 @@ export function renderComposerHtml(input: {
   const placeholder = zh
     ? "发消息给项目组和 Cuu…(@ 引用网盘文件/成员 · # 会话 · / 技能)"
     : "Message the team and Cuu… (@ file/member · # conversation · / skill)";
+  const modeChip = input.modeChipHtml ?? "";
   // data-wb-chat-picker-slot：@/#// picker 的挂载点，特意留空——view.ts 单独更新这一个子节点的
   // innerHTML（每次按键都可能要开关/刷新 picker），绝不重建整个 composer（那会打断 textarea 的
   // 焦点/光标位置，rail.ts 的「新建项目」输入框已经踩过这个坑，见其 input 事件里的注释）。
-  return `<div class="wh-wb-chat-composer">${errorHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将可用 · 批 4 起接入" : "Coming soon · lands in batch 4"}"><b>#</b> ${zh ? "会话" : "conversation"}</span><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将可用 · 批 4 起接入" : "Coming soon · lands in batch 4"}"><b>/</b> ${zh ? "技能" : "skill"}</span><button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-picker-slot></div></div></div>`;
+  // data-wb-chat-mode-pop-slot：模式五档弹层的挂载点，同一套"独立子节点刷新"取舍——主区会话里这个
+  // 节点永远是空的（view.ts 从不在那里写入），有节点但不写内容，比"这个节点本身按会话种类条件渲染"
+  // 更简单也更安全（不会因为切换会话种类漏挂/漏卸载一个挂载点）。
+  return `<div class="wh-wb-chat-composer">${errorHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将可用 · 批 4 起接入" : "Coming soon · lands in batch 4"}"><b>#</b> ${zh ? "会话" : "conversation"}</span><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将可用 · 批 4 起接入" : "Coming soon · lands in batch 4"}"><b>/</b> ${zh ? "技能" : "skill"}</span>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
+}
+
+// —— R12（模式五档）：仅协同会话（conversationKind === 'collab'）composer 出现——2026-07-12 纠偏后
+// 模式五档只属于单聊，主区群聊固定走项目治理的静默观察者档，composer 不渲染这个控件。视觉/文案照抄
+// r12-desktop-workbench/prototype/index.html 的 .power chip + #powerPop 弹层与
+// 00-interaction-design.md §3 的模式五档表（两者一致，这里以原型的逐字文案为准）。
+
+const AI_MODE_LEVELS = [1, 2, 3, 4, 5] as const;
+type AiModeLevel = (typeof AI_MODE_LEVELS)[number];
+
+// chip 上的短名——不带"(默认)"后缀（那只出现在弹层第 3 档的选项标题里；原型里 chip 文本和弹层选项
+// 标题本来就是两份不同的字符串，setLvl() 的第二个参数没有"(默认)"，.lvl 列表的 .lt 才有）。
+const AI_MODE_CHIP_LABEL: Record<AiModeLevel, { zh: string; en: string }> = {
+  1: { zh: "只观察", en: "Observe only" },
+  2: { zh: "全部先问", en: "Ask first" },
+  3: { zh: "分级自动", en: "Tiered auto" },
+  4: { zh: "全自动 · 人审", en: "Full auto · human review" },
+  5: { zh: "全托管 · AI 审", en: "Fully managed · AI review" }
+};
+
+const AI_MODE_OPTION: Record<AiModeLevel, { titleZh: string; titleEn: string; descZh: string; descEn: string }> = {
+  1: {
+    titleZh: "只观察",
+    titleEn: "Observe only",
+    descZh: "只总结讨论，不提出也不执行",
+    descEn: "Only summarizes the discussion — no proposals, no execution"
+  },
+  2: {
+    titleZh: "全部先问",
+    titleEn: "Ask first",
+    descZh: "提出方案，任何执行都等人点头",
+    descEn: "Proposes a plan — any execution waits for your go-ahead"
+  },
+  3: {
+    titleZh: "分级自动(默认)",
+    titleEn: "Tiered auto (default)",
+    descZh: "有把握的直接干(可撤销)；拿不准的先问你",
+    descEn: "Acts directly when confident (undoable) — asks first when unsure"
+  },
+  4: {
+    titleZh: "全自动 · 人审",
+    titleEn: "Full auto · human review",
+    descZh: "拎出的事全都干，合并前仍由人审提议",
+    descEn: "Does everything it pulls out — a human still reviews before merge"
+  },
+  5: {
+    titleZh: "全托管 · AI 审",
+    titleEn: "Fully managed · AI review",
+    descZh: "AI 复核通过即自动合并；法务/财务/身份类永远升级给人",
+    descEn: "Auto-merges once AI review passes — legal/finance/identity always escalate to a human"
+  }
+};
+
+function isKnownAiModeLevel(mode: AiMode | undefined): mode is AiModeLevel {
+  return mode !== undefined && (AI_MODE_LEVELS as readonly number[]).includes(mode);
+}
+
+// chip：mode 未知（还没拉到 GET /api/me/ai-profile，或者拉失败）时诚实显示「模式」，不瞎猜一个默认档
+// 糊弄过去——见 chat/view.ts loadMyAiProfile 顶部注释（04 §4 铁律 3 的"不假接线"延伸：宁可看起来
+// 没加载完，也不能显示一个不一定真的当前档）。
+export function renderModeChipHtml(mode: AiMode | undefined, locale: Locale): string {
+  const zh = locale === "zh-CN";
+  const known = isKnownAiModeLevel(mode);
+  const label = known ? (zh ? AI_MODE_CHIP_LABEL[mode]!.zh : AI_MODE_CHIP_LABEL[mode]!.en) : undefined;
+  const warn = mode === 5;
+  const cls = ["wh-wb-mode-chip", warn ? "wh-wb-mode-chip--warn" : ""].filter(Boolean).join(" ");
+  const prefix = zh ? "我的模式" : "My mode";
+  // 半角冒号、无空格——照原型 .power chip 的原文「我的模式:分级自动」（prototype/index.html:599），
+  // 不是全角「：」。
+  const separator = zh ? ":" : ": ";
+  const body = label
+    ? `${escapeHtml(prefix)}${separator}<span class="wh-wb-mode-chip-lv">${escapeHtml(label)}</span>`
+    : `<span class="wh-wb-mode-chip-lv">${escapeHtml(zh ? "模式" : "Mode")}</span>`;
+  return `<button type="button" class="${cls}" data-wb-chat-mode-toggle aria-haspopup="true">${body}</button>`;
+}
+
+// 弹层：五档单选行（数字键 1-5 由 view.ts 的 keydown 处理，这里只渲染 .num 徽标提示快捷键）+
+// 「按能力细分」灰字（照原型 .gran，纯说明文字，不是按钮——批次范围不含真正的按能力粒度开关，见
+// AiGranularSettings，摆一个看起来能点却什么都不做的入口违反 04 §4 铁律 3，所以这里既没有 cursor:pointer
+// 也没有 data-* 挂钩）+ 服务端下发说明行（照原型 .srv，忠于原型的锁图标 + 加粗「服务端下发」）。
+export function renderModePopoverHtml(input: { mode: AiMode | undefined; locale: Locale }): string {
+  const zh = input.locale === "zh-CN";
+  const title = zh ? "我的 AI 模式 · 与 Cuu 单聊" : "My AI mode · 1:1 with Cuu";
+  const sub = zh
+    ? "只影响你的协同会话；主区观察者由项目治理管。按 1-5 快切"
+    : "Only affects your 1:1 conversations — the main-chat observer is governed at the project level. Press 1-5 to switch.";
+  const rows = AI_MODE_LEVELS.map((level) => {
+    const opt = AI_MODE_OPTION[level];
+    const isOn = input.mode === level;
+    const isWarn = level === 5;
+    const cls = ["wh-wb-mode-lvl", isOn ? "wh-wb-mode-lvl--on" : "", isWarn ? "wh-wb-mode-lvl--warn" : ""]
+      .filter(Boolean)
+      .join(" ");
+    const titleText = zh ? opt.titleZh : opt.titleEn;
+    const descText = zh ? opt.descZh : opt.descEn;
+    return `<div class="${cls}" data-wb-chat-mode-option="${level}" role="radio" aria-checked="${isOn}"><span class="wh-wb-mode-lvl-r"></span><span class="wh-wb-mode-lvl-body"><span class="wh-wb-mode-lvl-title">${escapeHtml(titleText)}</span><span class="wh-wb-mode-lvl-desc">${escapeHtml(descText)}</span></span><span class="wh-wb-mode-lvl-num">${level}</span></div>`;
+  }).join("");
+  const gran = zh
+    ? "按能力细分：建任务 / 派 run / 动网盘 / 发通知…"
+    : "Break down by capability: create task / dispatch run / touch drive / send notification…";
+  const srvLead = zh ? "模型与密钥由" : "Model & keys are ";
+  const srvStrong = zh ? "服务端下发" : "issued by the server";
+  const srvTail = zh ? "，桌面不保存任何 API key。" : " — the desktop app never stores an API key.";
+  return `<div class="wh-wb-mode-pop" data-wb-chat-mode-pop role="menu"><div class="wh-wb-mode-pop-title">${escapeHtml(title)}</div><div class="wh-wb-mode-pop-sub">${escapeHtml(sub)}</div>${rows}<div class="wh-wb-mode-gran">${escapeHtml(gran)}</div><div class="wh-wb-mode-srv">${workbenchIcons.lock}<span>${escapeHtml(srvLead)}<b>${escapeHtml(srvStrong)}</b>${escapeHtml(srvTail)}</span></div></div>`;
+}
+
+// 只观察档(1)预告——composer 旁的诚实预告，免得用户发完一句话才被服务端 409
+// conversation_turn_mode_observe_only 拒了才知道 Cuu 不会回话；那条 409 文案（turn.ts 的
+// mapConversationTurnError）是事后补救，这条是事先预告，两者互补，不重复渲染。
+export function renderModeObserveOnlyHintHtml(locale: Locale): string {
+  const zh = locale === "zh-CN";
+  const text = zh ? "当前是只观察档，Cuu 不会回话" : "You're in observe-only mode — Cuu won't reply";
+  return `<div class="wh-wb-mode-hint">${escapeHtml(text)}</div>`;
+}
+
+// PATCH /api/me/ai-profile 失败后的温和行内提示——通用文案，不按服务端 code 分支（ai-settings.ts
+// 当前的失败码只有访问权限/模型档位不可用这类跟"切个人模式档"关系不大的错误，没有专属文案表可维护；
+// 照 turn.ts 的 fallback 文案同一个取舍：不暴露内部错误码，只给一句诚实的重试建议）。
+export function modePatchFailedText(locale: Locale): string {
+  return locale === "zh-CN" ? "模式没保存成功，再试一次。" : "Couldn't save the mode change — try again.";
+}
+
+export function renderModeErrorHintHtml(message: string): string {
+  return `<div class="wh-wb-mode-hint wh-wb-mode-hint--error">${escapeHtml(message)}</div>`;
 }
 
 // —— @ picker（真实：成员本地过滤 + 网盘文件复用既有搜索端点） —— //
