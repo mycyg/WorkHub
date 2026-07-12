@@ -55,6 +55,7 @@ import {
 import { WorkItemServiceError } from "./services/work-items.js";
 import { InternalContractError } from "./pages/output-contract.js";
 import { ConversationServiceError } from "./services/conversations.js";
+import { ConversationTurnServiceError } from "./services/conversation-turns.js";
 import { AiSettingsServiceError } from "./services/ai-settings.js";
 import { ConversationTurnServiceError } from "./services/conversation-turns.js";
 import { ActionCardServiceError } from "./services/action-cards.js";
@@ -354,6 +355,20 @@ app.onError((error, c) => {
   }
 
   if (error instanceof ConversationServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof ConversationTurnServiceError) {
+    // 桌面工作台按 code 分支给温和提示（busy/observe-only/budget 等），压成 internal_error 客户端就只剩通用重试。
     return c.json(
       {
         ok: false,
