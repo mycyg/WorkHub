@@ -14,12 +14,14 @@
 // 纯函数里逐一单测过，这里只是把它们接起来。
 
 import { WorkHubApiError } from "@workhub/api-client";
-import type { ConversationKind, ConversationMessageVM } from "@workhub/contracts";
+import type { AiMode, ConversationKind, ConversationMessageVM } from "@workhub/contracts";
 
 import {
   fetchConversationMessagesPage,
   fetchLatestConversationMessagesPage,
+  fetchMyAiProfile,
   fetchOlderConversationMessagesPage,
+  patchMyAiMode,
   pingConversationTyping,
   requestConversationTurn,
   sendConversationFileCardMessage,
@@ -34,6 +36,7 @@ import {
 } from "./events.js";
 import {
   membersById,
+  modePatchFailedText,
   renderChatEmptyStateHtml,
   renderComingSoonPickerHtml,
   renderComposerHtml,
@@ -48,6 +51,10 @@ import {
   renderMemberBarHtml,
   renderMentionPickerHtml,
   renderMessageHtml,
+  renderModeChipHtml,
+  renderModeErrorHintHtml,
+  renderModeObserveOnlyHintHtml,
+  renderModePopoverHtml,
   renderPendingOutgoingHtml,
   renderStreamingCuuBubbleHtml,
   renderTypingIndicatorHtml,
@@ -196,6 +203,16 @@ export function mountChatView(
   let turnActive = false;
   let turnDeltaState: TurnDeltaState = EMPTY_TURN_DELTA_STATE;
   let turnErrorText: string | undefined;
+  // R12（模式五档弹层，2026-07-12 纠偏后归位到单聊）：见 render.ts"模式五档"一节顶部注释——
+  // isCollabConversation 是这整块功能唯一的读取点，主区（'main'）永远拿到 false，composer 不会渲染
+  // 模式 chip，点击/数字键处理函数也都以这个布尔值把关（04 §4 铁律 3 的双重保险：不但不渲染入口，
+  // 连事件处理都不会被触发）。myMode undefined = 还没拉到 GET /api/me/ai-profile 或者拉失败——诚实
+  // 显示「模式」，不假装知道当前档（见 loadMyAiProfile）。modePopoverOpen/modeErrorText 都是这个
+  // 功能自己的瞬态 UI 状态，不落库。
+  const isCollabConversation = input.conversationKind === "collab";
+  let myMode: AiMode | undefined;
+  let modePopoverOpen = false;
+  let modeErrorText: string | undefined;
 
   const membersMap = membersById(input.members);
   const renderCtx = (): ChatRenderContext => ({
@@ -211,6 +228,7 @@ export function mountChatView(
     <div class="wh-wb-chat-scroll" data-wb-chat-scroll></div>
     <div data-wb-chat-typing></div>
     <div data-wb-chat-turn-status></div>
+    <div data-wb-chat-mode-hint></div>
     <div data-wb-chat-composer-wrap></div>
   </div>`;
   const bannerEl = container.querySelector<HTMLElement>("[data-wb-chat-banner]");
@@ -218,8 +236,9 @@ export function mountChatView(
   const scrollEl = container.querySelector<HTMLElement>("[data-wb-chat-scroll]");
   const typingEl = container.querySelector<HTMLElement>("[data-wb-chat-typing]");
   const turnStatusEl = container.querySelector<HTMLElement>("[data-wb-chat-turn-status]");
+  const modeHintEl = container.querySelector<HTMLElement>("[data-wb-chat-mode-hint]");
   const composerWrapEl = container.querySelector<HTMLElement>("[data-wb-chat-composer-wrap]");
-  if (!bannerEl || !headEl || !scrollEl || !typingEl || !turnStatusEl || !composerWrapEl) {
+  if (!bannerEl || !headEl || !scrollEl || !typingEl || !turnStatusEl || !modeHintEl || !composerWrapEl) {
     throw new Error("workbench chat view markup is missing an expected mount point");
   }
 
@@ -230,6 +249,9 @@ export function mountChatView(
   }
   function pickerSlotEl(): HTMLElement | null {
     return composerWrapEl!.querySelector<HTMLElement>("[data-wb-chat-picker-slot]");
+  }
+  function modePopSlotEl(): HTMLElement | null {
+    return composerWrapEl!.querySelector<HTMLElement>("[data-wb-chat-mode-pop-slot]");
   }
 
   function renderBanner(): void {
@@ -256,6 +278,25 @@ export function mountChatView(
       return;
     }
     turnStatusEl!.innerHTML = "";
+  }
+
+  // R12（模式五档）：只在协同会话出现——modeErrorText（PATCH 失败的温和提示）优先，其次是「只观察档，
+  // Cuu 不会回话」的预告（myMode === 1 时），都不是就清空。main 会话（isCollabConversation 为 false）
+  // 永远清空这个挂载点，composer 旁不会出现任何模式相关文字。
+  function renderModeHint(): void {
+    if (!isCollabConversation) {
+      modeHintEl!.innerHTML = "";
+      return;
+    }
+    if (modeErrorText) {
+      modeHintEl!.innerHTML = renderModeErrorHintHtml(modeErrorText);
+      return;
+    }
+    if (myMode === 1) {
+      modeHintEl!.innerHTML = renderModeObserveOnlyHintHtml(input.locale);
+      return;
+    }
+    modeHintEl!.innerHTML = "";
   }
 
   // R12 批8：DOM 只挂载最近 renderWindowSize 条（windowRecentMessages，见 timeline.ts）——更早的
@@ -372,7 +413,10 @@ export function mountChatView(
       locale: input.locale,
       draftText: savedValue,
       attachments,
-      sending: false
+      sending: false,
+      // R12（模式五档）：只有协同会话才算出这个 HTML 传进去——main 会话永远是 undefined，
+      // renderComposerHtml 就完全不渲染模式相关标记（见其顶部注释与 colocated 测试）。
+      modeChipHtml: isCollabConversation ? renderModeChipHtml(myMode, input.locale) : undefined
     });
     const nextTa = textareaEl();
     if (nextTa && hadFocus) {
@@ -384,6 +428,20 @@ export function mountChatView(
       }
     }
     renderPicker();
+    renderModePopover();
+  }
+
+  // R12（模式五档）：独立于 renderPicker 的同款"只重刷这一个子节点"取舍——modePopoverOpen 只在
+  // 用户点击模式 chip / 选档 / Escape / 点外时变化，跟 @/#// picker 的开关走的是两条互不相干的状态线，
+  // 分开维护更不容易互相踩。
+  function renderModePopover(): void {
+    const slot = modePopSlotEl();
+    if (!slot) {
+      return;
+    }
+    slot.innerHTML = isCollabConversation && modePopoverOpen
+      ? renderModePopoverHtml({ mode: myMode, locale: input.locale })
+      : "";
   }
 
   function syncSendButtonDisabled(): void {
@@ -818,6 +876,83 @@ export function mountChatView(
       });
   }
 
+  // R12（模式五档）：挂载时拉一次「我的模式」——只有协同会话才拉（主区 composer 根本不渲染这个控件，
+  // 拉了也没地方展示）。失败就让 myMode 保持 undefined，chip 诚实显示「模式」，不瞎猜一个默认档；
+  // 04 §4 铁律 3 的"不假接线"延伸到"不假装知道状态"。
+  async function loadMyAiProfile(): Promise<void> {
+    if (!isCollabConversation) {
+      return;
+    }
+    try {
+      const profile = await fetchMyAiProfile(input.client);
+      if (disposed) {
+        return;
+      }
+      myMode = profile.default_mode;
+    } catch {
+      if (disposed) {
+        return;
+      }
+      myMode = undefined;
+    }
+    renderComposerChrome();
+    renderModeHint();
+  }
+
+  function closeModePopover(): void {
+    if (!modePopoverOpen) {
+      return;
+    }
+    modePopoverOpen = false;
+    renderComposerChrome();
+  }
+
+  function toggleModePopover(): void {
+    if (!isCollabConversation) {
+      return;
+    }
+    modePopoverOpen = !modePopoverOpen;
+    renderComposerChrome();
+  }
+
+  // 乐观更新 + 失败回滚：chip/弹层立刻切到 nextMode，PATCH 在背后跑；失败就把 myMode 换回去、弹一句
+  // 温和的行内提示（renderModeHint 里的 modeErrorText 分支），不是阻断式对话框（同 turn.ts 的
+  // "不弹阻断"取舍）。选中当前已经生效的档位也会关掉弹层，但不会发一次没意义的 PATCH。
+  function selectMode(nextMode: number): void {
+    if (!isCollabConversation) {
+      return;
+    }
+    modePopoverOpen = false;
+    modeErrorText = undefined;
+    if (nextMode === myMode) {
+      renderComposerChrome();
+      renderModeHint();
+      return;
+    }
+    const previousMode = myMode;
+    myMode = nextMode;
+    renderComposerChrome();
+    renderModeHint();
+    patchMyAiMode(input.client, nextMode)
+      .then((profile) => {
+        if (disposed) {
+          return;
+        }
+        myMode = profile.default_mode;
+        renderComposerChrome();
+        renderModeHint();
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        myMode = previousMode;
+        modeErrorText = modePatchFailedText(input.locale);
+        renderComposerChrome();
+        renderModeHint();
+      });
+  }
+
   function enqueueSend(kind: "text" | "file_card", payload: { text?: string; driveItemId?: string; fileName?: string }): void {
     pendingCounter += 1;
     const record: PendingSendRecord = {
@@ -905,6 +1040,18 @@ export function mountChatView(
       insertMentionShortcut();
       return;
     }
+    if (target.closest("[data-wb-chat-mode-toggle]")) {
+      toggleModePopover();
+      return;
+    }
+    const modeOption = target.closest<HTMLElement>("[data-wb-chat-mode-option]");
+    if (modeOption?.dataset.wbChatModeOption) {
+      const level = Number(modeOption.dataset.wbChatModeOption);
+      if (Number.isInteger(level) && level >= 1 && level <= 5) {
+        selectMode(level);
+      }
+      return;
+    }
     const removeBtn = target.closest<HTMLElement>("[data-wb-chat-remove-attachment]");
     if (removeBtn?.dataset.wbChatRemoveAttachment) {
       attachments = removeAttachment(attachments, removeBtn.dataset.wbChatRemoveAttachment);
@@ -972,13 +1119,48 @@ export function mountChatView(
     }
   });
 
+  // R12（模式五档）：点外关闭 + Escape 关闭 + 弹层开着时数字键 1-5 快切——都是弹层开着才生效
+  // （modePopoverOpen 把关），不会抢主区/其它会话种类里任何一次点击或按键。这两个监听器挂在
+  // ownerDocument 上而不是 composerWrapEl 上，因为"点外"本来就要能听到 composer 之外的点击。
+  function handleDocumentModeClick(event: MouseEvent): void {
+    if (!modePopoverOpen || !(event.target instanceof Node)) {
+      return;
+    }
+    const chip = composerWrapEl!.querySelector("[data-wb-chat-mode-toggle]");
+    const pop = composerWrapEl!.querySelector("[data-wb-chat-mode-pop]");
+    if (chip?.contains(event.target) || pop?.contains(event.target)) {
+      return; // 这条点击本身就是触发弹层开合的那次点击，composerWrapEl 自己的监听器已经处理过。
+    }
+    closeModePopover();
+  }
+
+  function handleDocumentModeKeydown(event: KeyboardEvent): void {
+    if (!modePopoverOpen) {
+      return;
+    }
+    if (event.key === "Escape") {
+      closeModePopover();
+      return;
+    }
+    if (event.key >= "1" && event.key <= "5") {
+      event.preventDefault();
+      selectMode(Number(event.key));
+    }
+  }
+
+  doc.addEventListener("click", handleDocumentModeClick);
+  doc.addEventListener("keydown", handleDocumentModeKeydown);
+
   void loadHistory();
+  void loadMyAiProfile();
 
   return {
     dispose() {
       disposed = true;
       streamHandle?.close();
       clearInterval(typingPruneTimer);
+      doc.removeEventListener("click", handleDocumentModeClick);
+      doc.removeEventListener("keydown", handleDocumentModeKeydown);
       if (fileSearchTimer !== undefined) {
         clearTimeout(fileSearchTimer);
       }
