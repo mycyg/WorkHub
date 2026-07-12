@@ -55,7 +55,7 @@
 
 ## 2. 批 0 · 数据与协议地基(2 切片)
 
-**目标**:会话/消息/行动卡/AI 档案的表与端点齐,SSE 会话事件可推,群聊数据闭环可用 curl 演示。
+**目标**:会话/消息/AI 档案端点与行动卡存储/协议地基齐,SSE 会话事件可推,群聊数据闭环可用 curl 演示。行动卡 decide/undo 的运行时语义依赖观察者、派发和 abort,归批3实现。
 
 ### 表设计(迁移 1 个文件,drizzle schema 进 `packages/db/src/schema/core.ts`)
 
@@ -121,11 +121,11 @@ project_ai_governance
 - `POST /api/projects/:id/conversations`(建协同;main 由建项目原子创建——扩展现有 projects 创建为同事务建 main 会话,create-or-reuse 路径都要补齐 active main)
 - `GET /api/conversations/:id/messages?afterSeq=&limit=`(分页游标=seq)
 - `POST /api/conversations/:id/messages`(text/file_card chip;服务端校验 chip 的 drive 权限)
-- `POST /api/action-card-items/:id/decide`(body: `{action:'take'|'assign'|'hold', assigneeId?}`,仅被 @ 负责人或项目负责人可调)
-- `POST /api/action-card-items/:id/undo`(窗口内;abort run + 关 work_item + 线程留痕)
 - `GET/PATCH /api/me/ai-profile`(下发 provider 档位/预算摘要/模式默认;PATCH 只收偏好字段)
 - `GET/PATCH /api/projects/:id/ai-governance`(负责人)
-- `GET /api/pages/workbench/:projectId`(聚合 VM:会话树+成员+军团计数+输出+后台任务;走既有 pages 模式)
+- `GET /api/pages/workbench/:projectId`(有界 bootstrap VM:项目元信息+首屏会话(limit 50)+当前工作区 active membership 切片(limit 100)+项目级可见活跃计划精确计数+最近可见项目文件(limit 5);不返回会话输出/runs/后台任务)
+
+批0 只冻结 `action_cards/action_card_items` 的存储与协议,不提供空壳 decide/undo 路由。`POST /api/action-card-items/:id/decide|undo` 随批3 的观察者、派发、abort 与语义化线程留痕一起交付。
 
 ### SSE(扩展 `apps/api/src/sse/`)
 
@@ -191,7 +191,7 @@ project_ai_governance
 - worker `apps/api/src/workers/conversation-observer.ts`(仿 agent-runner 的 claim-lease 模式):扫描 观察开启 && 有新消息(seq>水位线) && 静默≥窗口 && 非安静时段 的 main 会话 → 预算 reservation → LLM 分析(输入=水位线以来增量+被引用上下文;输出结构化 plan:items[{kind, title, confidence, suggestedAssignee}])→ 建/追加行动卡。
 - 派发:execute 类 → 建 work_item + 按受派人 `dispatch_policy` 分叉(auto=直接建工作副本 branch+enqueue;ask=通知受派人等接单;manual=挂任务列表)——完整链路见 03 §2C;decide 类 → attention 决策收件箱建卡(复用 escalation/approvals 卡模式)+ 群聊 @负责人;observe 类只落卡文。**接单即建工作副本**:run 全程产物锚在副本,人可中途查看/接管,合并仍走审核。
 - 追加语义:active 卡存在则 items 追加+卡 message 原地更新(SSE `action_card.updated`);防重复=水位线,无新增讨论不触发。
-- 撤销:`/undo` 端点已在批0;本批接 UI+abort 语义化留痕(codex 规范 01 §4)。
+- 决策与撤销端点在本批实现:`POST /api/action-card-items/:id/decide` 绑定被 @ 负责人/项目负责人权限;`POST /api/action-card-items/:id/undo` 在窗口内执行 abort run + 关闭 work_item + 语义化线程留痕(codex 规范 01 §4),并与 UI 同批验收。
 - 行动卡 UI:卡+条目 chips(三话术)+线程(run 事件回贴,终局才冒主流摘要)。
 
 - [ ] worker+水位线+安静时段+预算+失败静默(连续失败进 governance 健康提示,绝不群里刷错)
@@ -231,7 +231,7 @@ project_ai_governance
 
 **目标**:右栏三区(输出/军团/后台任务)真数据实时,run 卡下钻详情,per-assignee 执行身份闭环。
 
-- 数据:workbench VM 扩展(会话维度 runs=来源 message/action_card 关联;输出=该会话产出的 drive 版本+提议;后台任务=该项目 scheduled 任务);`GET /api/conversations/:id/army`。
+- 数据:在真实溯源存在后扩展 workbench VM(会话维度 runs=来源 message/action_card 关联;输出=该会话产出的 drive 版本+提议);后台任务只有在本批补齐/确认真实 scheduled-task 数据模型与项目归属后才可加入,不得拿 `background_jobs`、schedule events 或项目最近文件冒充;另加 `GET /api/conversations/:id/army`。
 - runs 需要 per-conversation 列表:agent_runs 加 `source_conversation_id/source_action_card_item_id`(批0 预留列,本批接线)。
 - 执行身份:enqueue 时按 assignee 注入其 memories/技能上下文/预算 scope,成本 labor-split 记 assignee(复用 K5);被派人 /me 流收 run 事件→其军团可见+Cuu 气泡(批7 接)。
 - UI:三区列表+卡(名字代号:词表生成猫名,存 run 元数据)+详情下钻(时间线=agent_steps 摘要;操作=abort/handoff/replay 既有端点)+过滤。

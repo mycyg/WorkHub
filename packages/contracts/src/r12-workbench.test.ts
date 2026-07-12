@@ -370,6 +370,341 @@ test("R12 conversation pages expose canonical round-trip cursors and explicit me
   );
 });
 
+function workbenchVm(overrides: Record<string, unknown> = {}) {
+  const mainConversation = {
+    id: conversationId,
+    workspace_id: workspaceId,
+    project_id: projectId,
+    kind: "main",
+    title: "主区",
+    parent_conversation_id: null,
+    source_message_id: null,
+    visibility: "project",
+    next_seq: 0,
+    created_by: userId,
+    participant_role: null,
+    created_at: "2026-07-12T08:30:00.123Z",
+    updated_at: "2026-07-12T08:30:00.123Z"
+  };
+  return {
+    generated_at: "2026-07-12T09:00:00.000Z",
+    project: {
+      id: projectId,
+      workspace_id: workspaceId,
+      name: "星尘短剧",
+      slug: "stardust",
+      description: null,
+      owner_label: "阿曼"
+    },
+    viewer: {
+      user_id: userId,
+      membership_role: "member",
+      is_project_owner: false
+    },
+    conversations: {
+      conversations: [mainConversation],
+      capped: false,
+      next_cursor: null
+    },
+    workspace_members: {
+      scope: "workspace",
+      total: 2,
+      returned: 2,
+      capped: false,
+      items: [
+        {
+          user_id: userId,
+          nickname: "张三",
+          membership_role: "member",
+          is_project_owner: false,
+          is_self: true
+        },
+        {
+          user_id: participantUserId,
+          nickname: "阿曼",
+          membership_role: "owner",
+          is_project_owner: true,
+          is_self: false
+        }
+      ]
+    },
+    army_summary: {
+      active_plan_count: 0,
+      empty_state: "no_active_armies"
+    },
+    recent_project_files: {
+      items: [],
+      empty_state: "no_recent_files"
+    },
+    ...overrides
+  };
+}
+
+test("R12 workbench bootstrap VM is strict, bounded, and secret-free", () => {
+  const schema = requiredSchema<Record<string, unknown>>("workbenchPageVmSchema");
+  const value = workbenchVm();
+
+  assert.deepEqual(schema.parse(value), value);
+  for (const invalid of [
+    { ...value, background_tasks: [] },
+    { ...value, conversation_outputs: [] },
+    { ...value, runs: [] },
+    { ...value, steps: [] },
+    {
+      ...value,
+      project: { ...(value.project as Record<string, unknown>), secret: true }
+    },
+    {
+      ...value,
+      viewer: { ...(value.viewer as Record<string, unknown>), role_ids: ["admin"] }
+    },
+    {
+      ...value,
+      conversations: { ...(value.conversations as Record<string, unknown>), hidden: true }
+    },
+    {
+      ...value,
+      workspace_members: { ...(value.workspace_members as Record<string, unknown>), workspace_name: "secret" }
+    },
+    {
+      ...value,
+      army_summary: { ...(value.army_summary as Record<string, unknown>), runs: [] }
+    },
+    {
+      ...value,
+      recent_project_files: { ...(value.recent_project_files as Record<string, unknown>), storage_root: "/private" }
+    },
+    {
+      ...value,
+      workspace_members: {
+        ...(value.workspace_members as Record<string, unknown>),
+        items: [{
+          ...((value.workspace_members as { items: Record<string, unknown>[] }).items[0]),
+          cookie_token: "secret"
+        }]
+      }
+    },
+    {
+      ...value,
+      recent_project_files: {
+        items: [{
+          id: driveItemId,
+          name: "brief.docx",
+          updated_at: "2026-07-12T08:30:00.123Z",
+          href: `/drive?project_id=${projectId}&item_id=${driveItemId}`,
+          storage_path: "/private/brief.docx"
+        }]
+      }
+    }
+  ]) {
+    assert.equal(schema.safeParse(invalid).success, false, `accepted unsafe workbench VM: ${JSON.stringify(invalid)}`);
+  }
+});
+
+test("R12 workbench VM rejects broken conversation and viewer/member identity invariants", () => {
+  const schema = requiredSchema<Record<string, unknown>>("workbenchPageVmSchema");
+  const value = workbenchVm() as ReturnType<typeof workbenchVm> & {
+    conversations: { conversations: Record<string, unknown>[] };
+    workspace_members: { items: Record<string, unknown>[] };
+    viewer: Record<string, unknown>;
+  };
+  const main = value.conversations.conversations[0] as Record<string, unknown>;
+  const self = value.workspace_members.items[0] as Record<string, unknown>;
+
+  for (const invalid of [
+    { ...value, conversations: { conversations: [], capped: false, next_cursor: null } },
+    { ...value, conversations: { conversations: [main, { ...main, id: messageId }], capped: false, next_cursor: null } },
+    { ...value, conversations: { conversations: [{ ...main, project_id: driveItemId }], capped: false, next_cursor: null } },
+    { ...value, conversations: { conversations: [{ ...main, workspace_id: driveItemId }], capped: false, next_cursor: null } },
+    { ...value, workspace_members: { ...value.workspace_members, returned: 1 } },
+    { ...value, workspace_members: { ...value.workspace_members, total: 1 } },
+    { ...value, workspace_members: { ...value.workspace_members, capped: true } },
+    { ...value, workspace_members: { ...value.workspace_members, total: 3, capped: false } },
+    {
+      ...value,
+      workspace_members: {
+        ...value.workspace_members,
+        items: [{ ...self, is_self: false }, value.workspace_members.items[1]]
+      }
+    },
+    {
+      ...value,
+      workspace_members: {
+        ...value.workspace_members,
+        items: [value.workspace_members.items[1], self]
+      }
+    },
+    {
+      ...value,
+      workspace_members: {
+        ...value.workspace_members,
+        items: [{ ...self, user_id: participantUserId }, value.workspace_members.items[1]]
+      }
+    },
+    {
+      ...value,
+      workspace_members: {
+        ...value.workspace_members,
+        items: [{ ...self, membership_role: "admin" }, value.workspace_members.items[1]]
+      }
+    },
+    {
+      ...value,
+      workspace_members: {
+        ...value.workspace_members,
+        items: [{ ...self, membership_role: "superadmin" }, value.workspace_members.items[1]]
+      }
+    },
+    {
+      ...value,
+      viewer: { ...value.viewer, is_project_owner: true }
+    },
+    {
+      ...value,
+      workspace_members: {
+        ...value.workspace_members,
+        items: [
+          { ...self, is_project_owner: true },
+          { ...value.workspace_members.items[1], is_project_owner: true }
+        ]
+      }
+    }
+  ]) {
+    assert.equal(schema.safeParse(invalid).success, false, `accepted inconsistent workbench VM: ${JSON.stringify(invalid)}`);
+  }
+});
+
+test("R12 workbench VM accepts a full bounded page and rejects member/file overflow", () => {
+  const schema = requiredSchema<Record<string, unknown>>("workbenchPageVmSchema");
+  const base = workbenchVm() as ReturnType<typeof workbenchVm> & {
+    conversations: { conversations: Record<string, unknown>[] };
+    workspace_members: { items: Record<string, unknown>[] };
+  };
+  const main = base.conversations.conversations[0] as Record<string, unknown>;
+  const fullMembers = Array.from({ length: 100 }, (_, index) => ({
+    user_id: `83000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    nickname: `成员 ${index + 1}`,
+    membership_role: index === 1 ? "owner" : "member",
+    is_project_owner: index === 1,
+    is_self: index === 0
+  }));
+  fullMembers[0] = {
+    user_id: userId,
+    nickname: "张三",
+    membership_role: "member",
+    is_project_owner: false,
+    is_self: true
+  };
+  const collabId = "30000000-0000-4000-8000-000000000099";
+  const file = {
+    id: driveItemId,
+    name: "brief.docx",
+    updated_at: "2026-07-12T08:30:00.123Z",
+    href: `/drive?project_id=${projectId}&item_id=${driveItemId}`
+  };
+  const full = {
+    ...base,
+    conversations: {
+      conversations: [
+        main,
+        {
+          ...main,
+          id: collabId,
+          kind: "collab",
+          title: "改第三幕",
+          parent_conversation_id: conversationId,
+          visibility: "private",
+          participant_role: "member"
+        }
+      ],
+      capped: false,
+      next_cursor: null
+    },
+    workspace_members: {
+      scope: "workspace",
+      total: 137,
+      returned: 100,
+      capped: true,
+      items: fullMembers
+    },
+    army_summary: { active_plan_count: 4 },
+    recent_project_files: { items: [file] }
+  };
+
+  assert.deepEqual(schema.parse(full), full);
+  assert.equal(schema.safeParse({
+    ...full,
+    conversations: {
+      conversations: [
+        main,
+        ...Array.from({ length: 50 }, (_, index) => ({
+          ...main,
+          id: `85000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          kind: "collab",
+          title: `协作区 ${index + 1}`,
+          parent_conversation_id: conversationId,
+          visibility: "private",
+          participant_role: "member"
+        }))
+      ],
+      capped: false,
+      next_cursor: null
+    }
+  }).success, false);
+  assert.equal(schema.safeParse({
+    ...full,
+    workspace_members: {
+      scope: "workspace",
+      total: 138,
+      returned: 101,
+      capped: true,
+      items: [...fullMembers, {
+        user_id: "83000000-0000-4000-8000-000000000101",
+        nickname: "成员 101",
+        membership_role: "member",
+        is_project_owner: false,
+        is_self: false
+      }]
+    }
+  }).success, false);
+  assert.equal(schema.safeParse({
+    ...full,
+    recent_project_files: {
+      items: Array.from({ length: 6 }, (_, index) => ({
+        ...file,
+        id: `84000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`
+      }))
+    }
+  }).success, false);
+});
+
+test("R12 workbench VM makes army and recent-file empty states exact", () => {
+  const schema = requiredSchema<Record<string, unknown>>("workbenchPageVmSchema");
+  const value = workbenchVm();
+  const file = {
+    id: driveItemId,
+    name: "brief.docx",
+    updated_at: "2026-07-12T08:30:00.123Z",
+    href: `/drive?project_id=${projectId}&item_id=${driveItemId}`
+  };
+
+  assert.equal(schema.safeParse({
+    ...value,
+    army_summary: { active_plan_count: 1, empty_state: "no_active_armies" }
+  }).success, false);
+  assert.equal(schema.safeParse({ ...value, army_summary: { active_plan_count: 0 } }).success, false);
+  assert.equal(schema.safeParse({
+    ...value,
+    recent_project_files: { items: [file], empty_state: "no_recent_files" }
+  }).success, false);
+  assert.equal(schema.safeParse({ ...value, recent_project_files: { items: [] } }).success, false);
+  assert.equal(schema.safeParse({
+    ...value,
+    army_summary: { active_plan_count: 1 },
+    recent_project_files: { items: [file] }
+  }).success, true);
+});
+
 test("R12 collab creation defaults and bounds unique active participant IDs", () => {
   const schema = requiredSchema<Record<string, unknown>>("createConversationRequestSchema");
   const base = {

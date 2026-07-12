@@ -153,7 +153,7 @@ const MAX_DASHBOARD_RUN_LIMIT = 500;
 const DEFAULT_DASHBOARD_ESCALATION_LIMIT = 5;
 const MAX_DASHBOARD_ESCALATION_LIMIT = 20;
 // paused 也算「活跃军团」：暂停不是取消，指挥台/项目主页 pill 都得继续可见，否则暂停=假删除。
-const DASHBOARD_PLAN_STATUSES = ["proposed", "approved", "dispatching", "paused"] satisfies TaskPlanStatus[];
+export const DASHBOARD_PLAN_STATUSES = ["proposed", "approved", "dispatching", "paused"] satisfies TaskPlanStatus[];
 const taskPlanItemColumns = {
   id: taskPlanItems.id,
   planId: taskPlanItems.planId,

@@ -343,6 +343,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["get", "/api/pages/proposals/{id}"],
     ["get", "/api/pages/drive"],
     ["get", "/api/pages/project/{id}"],
+    ["get", "/api/pages/workbench/{projectId}"],
     ["get", "/api/pages/meetings"],
     ["get", "/api/pages/notifications"],
     ["get", "/api/pages/calendar"],
@@ -1015,6 +1016,127 @@ test("project and drive OpenAPI routes document runtime path and query parameter
       schema: { type: "string", enum: ["zh-CN", "en-US"] }
     }, `${method.toUpperCase()} ${path} missing locale query parameter`);
   }
+});
+
+test("R12 workbench OpenAPI locks the bounded strict VM, invariants, and non-oracle errors", async () => {
+  type OpenApiSchema = {
+    additionalProperties?: boolean;
+    enum?: unknown[];
+    items?: OpenApiSchema;
+    maxItems?: number;
+    properties?: Record<string, OpenApiSchema>;
+    required?: string[];
+  };
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+  const path = "/api/pages/workbench/{projectId}";
+  const operation = body.paths[path]?.get as {
+    responses?: Record<string, unknown>;
+    "x-workhub-invariants"?: string[];
+  } | undefined;
+
+  assert.deepEqual(operationParameters(body.paths, path, "get"), [
+    { name: "projectId", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+    { name: "locale", in: "query", required: false, schema: { type: "string", enum: ["zh-CN", "en-US"] } }
+  ]);
+  assert.deepEqual(Object.keys(operation?.responses ?? {}).sort(), ["200", "401", "403", "404", "500"]);
+  assert.deepEqual(operation?.["x-workhub-invariants"], [
+    "Exactly one conversation is kind=main; every conversation matches data.project.id and workspace_id.",
+    "conversations.capped is true if and only if conversations.next_cursor is non-null.",
+    "workspace_members.total is at least returned; returned equals items.length; capped is true if and only if total is greater than returned.",
+    "Exactly one returned workspace member is self; it is first and matches viewer.user_id, viewer.membership_role, and viewer.is_project_owner.",
+    "At most one returned workspace member is the project owner.",
+    "army_summary and recent_project_files expose their empty_state exactly when their corresponding result is empty."
+  ]);
+
+  const envelope = jsonResponseSchema(body.paths, path, "get", "200") as OpenApiSchema | undefined;
+  const data = envelope?.properties?.data;
+  const meta = envelope?.properties?.meta;
+  assert.equal(envelope?.additionalProperties, false);
+  assert.deepEqual(envelope?.required, ["ok", "data", "meta"]);
+  assert.equal(meta?.additionalProperties, false);
+  assert.deepEqual(meta?.required, ["locale"]);
+  assert.equal(data?.additionalProperties, false);
+  assert.deepEqual(data?.required, [
+    "generated_at",
+    "project",
+    "viewer",
+    "conversations",
+    "workspace_members",
+    "army_summary",
+    "recent_project_files"
+  ]);
+  assert.deepEqual(Object.keys(data?.properties ?? {}).sort(), [
+    "army_summary",
+    "conversations",
+    "generated_at",
+    "project",
+    "recent_project_files",
+    "viewer",
+    "workspace_members"
+  ]);
+
+  const project = data?.properties?.project;
+  assert.equal(project?.additionalProperties, false);
+  assert.deepEqual(project?.required, ["id", "workspace_id", "name", "slug", "description", "owner_label"]);
+  const viewer = data?.properties?.viewer;
+  assert.equal(viewer?.additionalProperties, false);
+  assert.deepEqual(viewer?.required, ["user_id", "membership_role", "is_project_owner"]);
+  assert.deepEqual(viewer?.properties?.membership_role?.enum, ["member", "admin", "owner"]);
+
+  const conversations = data?.properties?.conversations;
+  assert.equal(conversations?.additionalProperties, false);
+  assert.deepEqual(conversations?.required, ["conversations", "capped", "next_cursor"]);
+  assert.equal(conversations?.properties?.conversations?.maxItems, 50);
+  assert.equal(conversations?.properties?.conversations?.items?.additionalProperties, false);
+  assert.deepEqual(conversations?.properties?.conversations?.items?.required, [
+    "id",
+    "workspace_id",
+    "project_id",
+    "kind",
+    "title",
+    "parent_conversation_id",
+    "source_message_id",
+    "visibility",
+    "next_seq",
+    "created_by",
+    "participant_role",
+    "created_at",
+    "updated_at"
+  ]);
+
+  const memberPage = data?.properties?.workspace_members;
+  const member = memberPage?.properties?.items?.items;
+  assert.equal(memberPage?.additionalProperties, false);
+  assert.deepEqual(memberPage?.required, ["scope", "total", "returned", "capped", "items"]);
+  assert.deepEqual(memberPage?.properties?.scope?.enum, ["workspace"]);
+  assert.equal(memberPage?.properties?.items?.maxItems, 100);
+  assert.equal(member?.additionalProperties, false);
+  assert.deepEqual(member?.required, [
+    "user_id",
+    "nickname",
+    "membership_role",
+    "is_project_owner",
+    "is_self"
+  ]);
+  assert.deepEqual(member?.properties?.membership_role?.enum, ["member", "admin", "owner"]);
+
+  const army = data?.properties?.army_summary;
+  assert.equal(army?.additionalProperties, false);
+  assert.deepEqual(army?.required, ["active_plan_count"]);
+  assert.deepEqual(army?.properties?.empty_state?.enum, ["no_active_armies"]);
+  const files = data?.properties?.recent_project_files;
+  assert.equal(files?.additionalProperties, false);
+  assert.deepEqual(files?.required, ["items"]);
+  assert.equal(files?.properties?.items?.maxItems, 5);
+  assert.equal(files?.properties?.items?.items?.additionalProperties, false);
+  assert.deepEqual(files?.properties?.items?.items?.required, ["id", "name", "updated_at", "href"]);
+  assert.deepEqual(files?.properties?.empty_state?.enum, ["no_recent_files"]);
+
+  assertJsonErrorCodes(body.paths, path, "get", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, path, "get", "403", ["invalid_client_token"]);
+  assertJsonErrorCodes(body.paths, path, "get", "404", ["workbench_not_found"]);
+  assertJsonErrorCodes(body.paths, path, "get", "500", ["internal_contract_error", "internal_error"]);
 });
 
 test("push streams and audit OpenAPI routes document runtime UUID guards and responses", async () => {

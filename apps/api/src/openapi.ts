@@ -4562,6 +4562,132 @@ const conversationListPageResponseSchema = {
   },
   additionalProperties: false
 } as const;
+const workbenchMembershipRoleResponseSchema = {
+  type: "string",
+  enum: ["member", "admin", "owner"]
+} as const;
+const workbenchPageResponseSchema = {
+  type: "object",
+  required: [
+    "generated_at",
+    "project",
+    "viewer",
+    "conversations",
+    "workspace_members",
+    "army_summary",
+    "recent_project_files"
+  ],
+  properties: {
+    generated_at: dateTimeStringSchema,
+    project: {
+      type: "object",
+      required: ["id", "workspace_id", "name", "slug", "description", "owner_label"],
+      properties: {
+        id: uuidStringSchema,
+        workspace_id: uuidStringSchema,
+        name: { type: "string", minLength: 1 },
+        slug: { type: "string", minLength: 1 },
+        description: { anyOf: [{ type: "string" }, { type: "null" }] },
+        owner_label: { type: "string", minLength: 1 }
+      },
+      additionalProperties: false
+    },
+    viewer: {
+      type: "object",
+      required: ["user_id", "membership_role", "is_project_owner"],
+      properties: {
+        user_id: uuidStringSchema,
+        membership_role: workbenchMembershipRoleResponseSchema,
+        is_project_owner: { type: "boolean" }
+      },
+      additionalProperties: false
+    },
+    conversations: {
+      type: "object",
+      required: ["conversations", "capped", "next_cursor"],
+      properties: {
+        conversations: { type: "array", maxItems: 50, items: conversationResponseSchema },
+        capped: { type: "boolean" },
+        next_cursor: { anyOf: [conversationCursorResponseSchema, { type: "null" }] }
+      },
+      additionalProperties: false
+    },
+    workspace_members: {
+      type: "object",
+      required: ["scope", "total", "returned", "capped", "items"],
+      properties: {
+        scope: { type: "string", enum: ["workspace"] },
+        total: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+        returned: { type: "integer", minimum: 0, maximum: 100 },
+        capped: { type: "boolean" },
+        items: {
+          type: "array",
+          maxItems: 100,
+          items: {
+            type: "object",
+            required: ["user_id", "nickname", "membership_role", "is_project_owner", "is_self"],
+            properties: {
+              user_id: uuidStringSchema,
+              nickname: { type: "string", minLength: 1 },
+              membership_role: workbenchMembershipRoleResponseSchema,
+              is_project_owner: { type: "boolean" },
+              is_self: { type: "boolean" }
+            },
+            additionalProperties: false
+          }
+        }
+      },
+      additionalProperties: false
+    },
+    army_summary: {
+      type: "object",
+      required: ["active_plan_count"],
+      properties: {
+        active_plan_count: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+        empty_state: { type: "string", enum: ["no_active_armies"] }
+      },
+      additionalProperties: false
+    },
+    recent_project_files: {
+      type: "object",
+      required: ["items"],
+      properties: {
+        items: {
+          type: "array",
+          maxItems: 5,
+          items: {
+            type: "object",
+            required: ["id", "name", "updated_at", "href"],
+            properties: {
+              id: uuidStringSchema,
+              name: { type: "string", minLength: 1 },
+              updated_at: dateTimeStringSchema,
+              href: { type: "string", minLength: 1 }
+            },
+            additionalProperties: false
+          }
+        },
+        empty_state: { type: "string", enum: ["no_recent_files"] }
+      },
+      additionalProperties: false
+    }
+  },
+  additionalProperties: false
+} as const;
+const workbenchPageResponses = {
+  responses: {
+    "200": jsonOkResponse(workbenchPageResponseSchema).responses["200"],
+    "401": pageNotIdentifiedResponse,
+    "403": pageInvalidClientTokenResponse,
+    "404": jsonErrorStatusResponse("404", "Workbench project is inaccessible or was not found", [
+      "workbench_not_found"
+    ]).responses["404"],
+    "500": jsonErrorStatusResponse("500", "Workbench assembly or a source dependency failed", [
+      "internal_contract_error",
+      "internal_error"
+    ]).responses["500"]
+  }
+} as const;
 const conversationMessagePageResponseSchema = {
   type: "object",
   required: ["messages", "has_more", "next_after_seq"],
@@ -5481,6 +5607,26 @@ export function getOpenApiDocument() {
             localeQueryParameter
           ],
           ...projectHomePageResponse
+        }
+      },
+      "/api/pages/workbench/{projectId}": {
+        get: {
+          tags: ["pages"],
+          summary: "Bounded desktop workbench bootstrap VM",
+          description: "Returns only current tenant-safe project, conversation, workspace-member, active-plan, and recent-file sources. Conversation-scoped runs, outputs, and background tasks are intentionally deferred.",
+          parameters: [
+            pathUuidParameter("projectId"),
+            localeQueryParameter
+          ],
+          "x-workhub-invariants": [
+            "Exactly one conversation is kind=main; every conversation matches data.project.id and workspace_id.",
+            "conversations.capped is true if and only if conversations.next_cursor is non-null.",
+            "workspace_members.total is at least returned; returned equals items.length; capped is true if and only if total is greater than returned.",
+            "Exactly one returned workspace member is self; it is first and matches viewer.user_id, viewer.membership_role, and viewer.is_project_owner.",
+            "At most one returned workspace member is the project owner.",
+            "army_summary and recent_project_files expose their empty_state exactly when their corresponding result is empty."
+          ],
+          ...workbenchPageResponses
         }
       },
       "/api/pages/meetings": {

@@ -47,6 +47,11 @@ import {
   type ProjectHomePageService
 } from "../services/project-home-pages.js";
 import {
+  getDefaultWorkbenchPageService,
+  WorkbenchPageServiceError,
+  type WorkbenchPageService
+} from "../services/workbench-pages.js";
+import {
   getDefaultMeetingPageService,
   MeetingPageServiceError,
   type MeetingPageService
@@ -102,6 +107,7 @@ export type PageRoutesDependencies = {
   workItems?: WorkItemService;
   drivePages?: DrivePageService;
   projectHomePages?: ProjectHomePageService;
+  workbenchPages?: WorkbenchPageService;
   meetingPages?: MeetingPageService;
   scheduleNotifyPages?: ScheduleNotifyPageService;
   projectHealthPages?: ProjectHealthPageService;
@@ -282,6 +288,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const workItems = deps.workItems ?? getDefaultWorkItemService();
   const drivePages = deps.drivePages ?? getDefaultDrivePageService();
   const projectHomePages = deps.projectHomePages ?? getDefaultProjectHomePageService();
+  const workbenchPages = deps.workbenchPages ?? getDefaultWorkbenchPageService();
   const meetingPages = deps.meetingPages ?? getDefaultMeetingPageService();
   const scheduleNotifyPages = deps.scheduleNotifyPages ?? createScheduleNotifyPageService();
   const projectHealthPages = deps.projectHealthPages ?? createProjectHealthPageService();
@@ -745,6 +752,27 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       return c.json(pageEnvelope(data, locale));
     } catch (error) {
       if (error instanceof ProjectHomePageServiceError) {
+        return pageServiceErrorResponse(c, error);
+      }
+      throw error;
+    }
+  });
+
+  routes.get("/workbench/:projectId", createCurrentUserMiddleware(authSource), async (c) => {
+    const locale = requestLocale(c);
+    const rawProjectId = c.req.param("projectId");
+    if (!isUuidParam(rawProjectId)) {
+      return pageServiceErrorResponse(
+        c,
+        new WorkbenchPageServiceError(404, "workbench_not_found", "没有找到这个桌面工作台。")
+      );
+    }
+    const projectId = rawProjectId.toLowerCase();
+    try {
+      const data = await workbenchPages.page({ actor: c.var.actor, projectId, locale });
+      return c.json(pageEnvelope(data, locale));
+    } catch (error) {
+      if (error instanceof WorkbenchPageServiceError) {
         return pageServiceErrorResponse(c, error);
       }
       throw error;

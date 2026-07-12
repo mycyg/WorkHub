@@ -34,6 +34,10 @@ import {
   workHubEventSchema
 } from "./experience.js";
 import { idSchema, isoDateTimeSchema } from "./domain/common.js";
+import {
+  conversationListCursorVmSchema,
+  conversationVmSchema
+} from "./domain/conversation.js";
 
 export const actionSpecSchema = z.object({
   id: z.string().min(1),
@@ -599,6 +603,182 @@ export const projectHomePageVmSchema = z.object({
   empty_state: z.enum(["no_open_work"]).optional()
 });
 export type ProjectHomePageVM = z.infer<typeof projectHomePageVmSchema>;
+
+const workbenchMembershipRoleSchema = z.enum(["member", "admin", "owner"]);
+const workbenchConversationPageVmSchema = z
+  .object({
+    conversations: z.array(conversationVmSchema).max(50),
+    capped: z.boolean(),
+    next_cursor: conversationListCursorVmSchema.nullable()
+  })
+  .strict()
+  .superRefine((page, ctx) => {
+    if (page.capped !== (page.next_cursor !== null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["next_cursor"],
+        message: "workbench conversation cursor must be present exactly when the page is capped"
+      });
+    }
+  });
+
+const workbenchMemberVmSchema = z
+  .object({
+    user_id: idSchema,
+    nickname: z.string().min(1),
+    membership_role: workbenchMembershipRoleSchema,
+    is_project_owner: z.boolean(),
+    is_self: z.boolean()
+  })
+  .strict();
+
+const workbenchRecentProjectFileVmSchema = z
+  .object({
+    id: idSchema,
+    name: z.string().min(1),
+    updated_at: isoDateTimeSchema,
+    href: z.string().min(1)
+  })
+  .strict();
+
+export const workbenchPageVmSchema = z
+  .object({
+    generated_at: isoDateTimeSchema,
+    project: z
+      .object({
+        id: idSchema,
+        workspace_id: idSchema,
+        name: z.string().min(1),
+        slug: z.string().min(1),
+        description: z.string().nullable(),
+        owner_label: z.string().min(1)
+      })
+      .strict(),
+    viewer: z
+      .object({
+        user_id: idSchema,
+        membership_role: workbenchMembershipRoleSchema,
+        is_project_owner: z.boolean()
+      })
+      .strict(),
+    conversations: workbenchConversationPageVmSchema,
+    workspace_members: z
+      .object({
+        scope: z.literal("workspace"),
+        total: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+        returned: z.number().int().nonnegative().max(100),
+        capped: z.boolean(),
+        items: z.array(workbenchMemberVmSchema).max(100)
+      })
+      .strict(),
+    army_summary: z
+      .object({
+        active_plan_count: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+        empty_state: z.literal("no_active_armies").optional()
+      })
+      .strict(),
+    recent_project_files: z
+      .object({
+        items: z.array(workbenchRecentProjectFileVmSchema).max(5),
+        empty_state: z.literal("no_recent_files").optional()
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((page, ctx) => {
+    const mainCount = page.conversations.conversations.filter((conversation) => conversation.kind === "main").length;
+    if (mainCount !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["conversations", "conversations"],
+        message: "workbench must contain exactly one main conversation"
+      });
+    }
+    for (const [index, conversation] of page.conversations.conversations.entries()) {
+      if (conversation.project_id !== page.project.id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["conversations", "conversations", index, "project_id"],
+          message: "workbench conversation project must match the page project"
+        });
+      }
+      if (conversation.workspace_id !== page.project.workspace_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["conversations", "conversations", index, "workspace_id"],
+          message: "workbench conversation workspace must match the page project workspace"
+        });
+      }
+    }
+
+    const members = page.workspace_members;
+    if (members.returned !== members.items.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workspace_members", "returned"],
+        message: "returned member count must equal the returned item length"
+      });
+    }
+    if (members.total < members.returned) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workspace_members", "total"],
+        message: "total member count cannot be smaller than returned"
+      });
+    }
+    if (members.capped !== (members.total > members.returned)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workspace_members", "capped"],
+        message: "member capped flag must exactly reflect total greater than returned"
+      });
+    }
+    const selfMembers = members.items.filter((member) => member.is_self);
+    if (selfMembers.length !== 1 || members.items[0]?.is_self !== true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workspace_members", "items"],
+        message: "workbench members must contain exactly one self row ordered first"
+      });
+    }
+    const self = selfMembers[0];
+    if (self && (
+      self.user_id !== page.viewer.user_id
+      || self.membership_role !== page.viewer.membership_role
+      || self.is_project_owner !== page.viewer.is_project_owner
+    )) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["viewer"],
+        message: "workbench viewer must match the returned self member row"
+      });
+    }
+    if (members.items.filter((member) => member.is_project_owner).length > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workspace_members", "items"],
+        message: "workbench members may contain at most one project owner"
+      });
+    }
+
+    const armyIsEmpty = page.army_summary.active_plan_count === 0;
+    if (armyIsEmpty !== (page.army_summary.empty_state === "no_active_armies")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["army_summary", "empty_state"],
+        message: "army empty state must be present exactly when there are no active plans"
+      });
+    }
+    const filesAreEmpty = page.recent_project_files.items.length === 0;
+    if (filesAreEmpty !== (page.recent_project_files.empty_state === "no_recent_files")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["recent_project_files", "empty_state"],
+        message: "recent-file empty state must be present exactly when there are no files"
+      });
+    }
+  });
+export type WorkbenchPageVM = z.infer<typeof workbenchPageVmSchema>;
 
 export const replayMergeCandidateVmSchema = z.object({
   option_key: z.string().min(1),
