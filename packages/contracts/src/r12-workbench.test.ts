@@ -479,6 +479,20 @@ test("R12 conversation pages expose canonical round-trip cursors and explicit me
     messagePageSchema.parse({ messages: [], has_more: false, next_after_seq: 42 }),
     { messages: [], has_more: false, next_after_seq: 42 }
   );
+  // R12 批8：next_before_seq 只在响应 beforeSeq 请求时出现——可选字段，forward 分页的既有形状零改动。
+  assert.deepEqual(
+    messagePageSchema.parse({ messages: [], has_more: true, next_after_seq: 12, next_before_seq: 3 }),
+    { messages: [], has_more: true, next_after_seq: 12, next_before_seq: 3 }
+  );
+  assert.equal(
+    messagePageSchema.safeParse({
+      messages: [],
+      has_more: false,
+      next_after_seq: 12,
+      next_before_seq: Number.MAX_SAFE_INTEGER + 1
+    }).success,
+    false
+  );
   assert.equal(
     conversationPageSchema.safeParse({
       conversations: [],
@@ -886,6 +900,25 @@ test("R12 message cursor query uses safe integers and a bounded default", () => 
     assert.equal(schema.safeParse({ limit }).success, false);
   }
   assert.equal(schema.safeParse({ after_seq: 42 }).success, false);
+});
+
+// R12 批8：反向翻页游标——两个 union 分支都是 .strict()，同时给 afterSeq 和 beforeSeq 时任一分支都会
+// 因为收到对方的「未识别字段」整体失败，天然互斥，不需要额外的 superRefine。
+test("R12 message cursor query accepts a mutually exclusive beforeSeq cursor for backward paging", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationMessageListQuerySchema");
+
+  assert.deepEqual(schema.parse({ beforeSeq: "42", limit: "20" }), { beforeSeq: 42, limit: 20 });
+  assert.deepEqual(schema.parse({ beforeSeq: 0 }), { beforeSeq: 0, limit: 50 });
+  for (const beforeSeq of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(schema.safeParse({ beforeSeq }).success, false);
+  }
+  for (const limit of [0, 101, 1.5]) {
+    assert.equal(schema.safeParse({ beforeSeq: 5, limit }).success, false);
+  }
+  assert.equal(schema.safeParse({ before_seq: 42 }).success, false);
+  // 互斥：afterSeq 和 beforeSeq 不能同时出现，即便两个值本身都合法。
+  assert.equal(schema.safeParse({ afterSeq: 1, beforeSeq: 5 }).success, false);
+  assert.equal(schema.safeParse({ afterSeq: 0, beforeSeq: 0 }).success, false);
 });
 
 test("R12 conversation list query exposes one paired created-at and UUID keyset", () => {
