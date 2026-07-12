@@ -330,12 +330,59 @@ test("R12 typing events reserve a strict server-owned 3000ms transient contract 
     "conversationToolBeginEventSchema",
     "conversationToolOutputDeltaEventSchema",
     "conversationToolEndEventSchema",
-    "conversationActionCardUpdatedEventSchema",
     "conversationItemStartedEventSchema",
     "conversationItemCompletedEventSchema"
   ]) {
     assert.equal((contracts as Record<string, unknown>)[reservedName], undefined, reservedName);
   }
+});
+
+// R12 批3：conversation.action_card.updated 从批0的「仅保留名称」升级为真实 payload/校验——
+// 与上面的「仅保留名称」断言分离到自己的正例测试，同 message-created/typing 事件同等对待。
+test("R12 action-card-updated events carry a minimal renderable summary bound to one conversation topic", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationActionCardUpdatedEventSchema");
+  const actionCardId = "43000000-0000-4000-8000-000000000043";
+  const event = {
+    event_id: "44000000-0000-4000-8000-000000000044",
+    type: "conversation.action_card.updated",
+    topic: `conversation:${conversationId}`,
+    ts: "2026-07-12T08:31:00.000Z",
+    actor: { actor_kind: "ai", label: "Cuu" },
+    project_id: projectId,
+    preview_text: "Cuu 从刚才的讨论里拎出 2 件事",
+    data: {
+      conversation_id: conversationId,
+      action_card_id: actionCardId,
+      message_id: messageId,
+      status: "active",
+      appended: false,
+      items: [
+        { id: "45000000-0000-4000-8000-000000000045", kind: "execute", confidence: "high", status: "running" },
+        { id: "46000000-0000-4000-8000-000000000046", kind: "decide", confidence: "low", status: "waiting_decision" }
+      ]
+    }
+  };
+
+  assert.deepEqual(schema.parse(event), event);
+  for (const invalid of [
+    { ...event, type: "conversation.message.created" },
+    { ...event, topic: "conversation:30000000-0000-4000-8000-000000000099" },
+    { ...event, hidden: "leak" },
+    { ...event, actor: { actor_kind: "human" } },
+    { ...event, data: { ...event.data, status: "archived" } },
+    { ...event, data: { ...event.data, items: [{ ...event.data.items[0], kind: "unknown" }] } },
+    { ...event, data: { ...event.data, items: new Array(9).fill(event.data.items[0]) } }
+  ]) {
+    assert.equal(schema.safeParse(invalid).success, false);
+  }
+
+  assert.deepEqual(
+    schema.parse({
+      ...event,
+      actor: { actor_kind: "human", actor_user_id: userId, label: "阿曼" }
+    }).actor,
+    { actor_kind: "human", actor_user_id: userId, label: "阿曼" }
+  );
 });
 
 test("R12 conversation pages expose canonical round-trip cursors and explicit message pagination", () => {
