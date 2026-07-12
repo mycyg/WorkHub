@@ -12,6 +12,7 @@ import { applyIdentityLocale, browserLocale, setDocumentLocale } from "@workhub/
 
 import { isStaleDesktopClientTokenError } from "../auth-recovery.js";
 import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
+import { consumePendingWorkbenchDeepLink } from "./pending-deep-link.js";
 import { mountWorkbenchShell, renderWorkbenchDocumentHead, type WorkbenchShellHandle } from "./shell.js";
 import { isWorkbenchWindowControlPlan, parseWorkbenchDeepLinkPlan, parseWorkbenchRoute } from "./route.js";
 
@@ -140,6 +141,22 @@ export function bindWorkbenchDeepLinkListener(
   });
 }
 
+// 深链冷启动竞态兜底（批 1 遗留，见 pending-deep-link.ts 顶部注释）：本 App 自己发起的「打开工作台」
+// （Spotlight → workbench-open.ts）在 invoke 之前已经把目标同步写进 localStorage；这里在挂载 shell
+// 之后立即消费一次——命中就 selectProject，不命中（没有 stash / 已过期）就是正常的「从空态开始」冷启动，
+// 什么都不做。和 bindWorkbenchDeepLinkListener 是两条互补的路：这条兜底"窗口创建前已经错过的事件"，
+// 那条订阅"窗口活着之后到来的事件"（例如窗口已存在、这次只是复用/切换项目）。
+export function applyPendingWorkbenchDeepLink(
+  shell: Pick<WorkbenchShellHandle, "selectProject">,
+  storage: Pick<Storage, "getItem" | "setItem" | "removeItem"> = window.localStorage,
+  now?: () => number
+): void {
+  const target = consumePendingWorkbenchDeepLink({ storage, ...(now ? { now } : {}) });
+  if (target) {
+    shell.selectProject(target.projectId, target.conversationId);
+  }
+}
+
 async function boot(): Promise<void> {
   const root = document.getElementById("root");
   if (!root) {
@@ -160,8 +177,12 @@ async function boot(): Promise<void> {
   locale = applyIdentityLocale(identity, locale);
   setDocumentLocale(locale);
 
-  const shell = mountWorkbenchShell(root, { client, locale });
+  // chat/stream.ts 的手写 SSE 客户端要用同一个 clientToken() 读法设 X-YQGL-Client-Token 头——
+  // 显式传引用，而不是让 shell.ts 用它自己的兜底默认值（两边逻辑目前碰巧一样，但显式传递才是
+  // 真正的"复用 boot.ts 已有 helper"，不是"恰好重复实现了一遍"）。
+  const shell = mountWorkbenchShell(root, { client, locale, getClientToken: clientToken });
   bindWorkbenchDeepLinkListener(shell);
+  applyPendingWorkbenchDeepLink(shell);
 }
 
 // node:test 环境没有 document——colocated boot.test.ts 只测上面导出的纯函数，不需要真跑 boot()。

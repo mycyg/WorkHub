@@ -2,15 +2,30 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  applyPendingWorkbenchDeepLink,
   bindWorkbenchDeepLinkListener,
   clientToken,
   isWorkbenchDesktopLoggedOut,
   resolveWorkbenchApiBase,
   resolveWorkbenchTauriListen
 } from "./boot.js";
+import { stashPendingWorkbenchDeepLink } from "./pending-deep-link.js";
 
 function fakeStorage(values: Record<string, string> = {}): Pick<Storage, "getItem"> {
   return { getItem: (key: string) => values[key] ?? null };
+}
+
+function fakeReadWriteStorage(initial: Record<string, string> = {}): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
+  const values = new Map(Object.entries(initial));
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      values.set(key, value);
+    },
+    removeItem: (key: string) => {
+      values.delete(key);
+    }
+  };
 }
 
 test("clientToken reads workhub_client_token first, then falls back to the legacy yqgl key", () => {
@@ -57,6 +72,32 @@ test("bindWorkbenchDeepLinkListener no-ops without a Tauri listen bridge instead
     }
   };
   assert.doesNotThrow(() => bindWorkbenchDeepLinkListener(shell, {}));
+  assert.deepEqual(calls, []);
+});
+
+test("applyPendingWorkbenchDeepLink selects the stashed project when a cold-start stash is present", () => {
+  const storage = fakeReadWriteStorage();
+  stashPendingWorkbenchDeepLink({ projectId: "project-1", conversationId: "conv-1" }, { storage, now: () => 0 });
+  const calls: Array<[string, string | undefined]> = [];
+  const shell = {
+    selectProject: (projectId: string, conversationId?: string) => {
+      calls.push([projectId, conversationId]);
+    }
+  };
+
+  applyPendingWorkbenchDeepLink(shell, storage, () => 0);
+
+  assert.deepEqual(calls, [["project-1", "conv-1"]]);
+  // 一次性消费：storage 里不应再残留这条 stash。
+  assert.equal(storage.getItem("workhub_workbench_pending_deep_link"), null);
+});
+
+test("applyPendingWorkbenchDeepLink is a no-op when there is nothing stashed (normal cold start)", () => {
+  const storage = fakeReadWriteStorage();
+  const calls: unknown[] = [];
+  const shell = { selectProject: (...args: unknown[]) => calls.push(args) };
+
+  assert.doesNotThrow(() => applyPendingWorkbenchDeepLink(shell, storage));
   assert.deepEqual(calls, []);
 });
 

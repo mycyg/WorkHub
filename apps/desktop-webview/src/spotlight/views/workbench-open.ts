@@ -8,6 +8,7 @@ import { escapeHtml } from "@workhub/web-runtime";
 
 import type { CommandId } from "../../command-palette.js";
 import { resolveDesktopTauriInvoke } from "../../desktop-window-controls.js";
+import { stashPendingWorkbenchDeepLink } from "../../workbench/pending-deep-link.js";
 import type { SpotlightCapabilityView, SpotlightViewContext } from "../view-context.js";
 
 function openWorkbenchLoadingHtml(zh: boolean): string {
@@ -58,6 +59,13 @@ export function createWorkbenchOpenView(id: CommandId, options: { bare: boolean 
       const attempt = () => {
         ctx.body.innerHTML = openWorkbenchLoadingHtml(zh);
         ctx.requestResize();
+        // 冷启动深链竞态兜底（见 workbench/pending-deep-link.ts 顶部注释）：Rust 侧在原生窗口刚创建、
+        // 前端 JS 还没跑到订阅 "deep-link" 事件之前就会 emit 一次，那次 emit 几乎总是丢的。这里在
+        // invoke 之前同步把目标写进 localStorage（跨窗口共享同一 origin，读写零 IPC 往返），workbench
+        // 窗口的 boot() 会在挂载后消费它——不依赖那条几乎必丢的事件也能选中项目。
+        if (projectId) {
+          stashPendingWorkbenchDeepLink({ projectId });
+        }
         void Promise.resolve(invoke("open_workbench", projectId ? { projectId } : {}))
           .then(() => {
             ctx.body.innerHTML = openWorkbenchSuccessHtml(zh, projectLabel);
