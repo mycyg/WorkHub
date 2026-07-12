@@ -138,6 +138,10 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     async listMessagesAfter() {
       throw new Error("listMessagesAfter not expected");
     },
+    // R12 批8：新增 listMessagesBefore（反向翻页），同其它未测方法一样给个拒绝桩。
+    async listMessagesBefore() {
+      throw new Error("listMessagesBefore not expected");
+    },
     ...overrides
   };
 }
@@ -397,6 +401,75 @@ test("message listing forwards the safe cursor and maps explicit page metadata",
   assert.equal(page.messages[0]?.seq, 8);
   assert.equal(page.has_more, true);
   assert.equal(page.next_after_seq, 8);
+});
+
+// R12 批8：beforeSeq（反向翻页）走仓库的 listMessagesBefore，绝不落到 listMessagesAfter——两条路径
+// 在契约层就已经互斥（见 conversationMessageListQuerySchema 的 union），这里再验证服务层的分叉正确。
+test("message listing with a beforeSeq cursor calls listMessagesBefore and stitches a forward-continuation seq", async () => {
+  let received: unknown;
+  const service = createConversationService(repository({
+    async listMessagesBefore(input) {
+      received = input;
+      return { rows: [messageRow({ seq: 5 }), messageRow({ seq: 6 })], hasMore: true, nextBeforeSeq: 5 };
+    }
+  }), {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    })
+  });
+
+  const page = await service.listMessages({
+    actor: actor(),
+    conversationId,
+    query: { beforeSeq: 7, limit: 20 }
+  });
+
+  assert.deepEqual(received, { workspaceId, viewerUserId: userId, conversationId, beforeSeq: 7, limit: 20 });
+  assert.deepEqual(page.messages.map((message) => message.seq), [5, 6]);
+  assert.equal(page.has_more, true);
+  assert.equal(page.next_after_seq, 6);
+  assert.equal(page.next_before_seq, 5);
+});
+
+test("message listing with a beforeSeq cursor on an empty page reports no forward-continuation seq beyond zero", async () => {
+  const service = createConversationService(repository({
+    async listMessagesBefore() {
+      return { rows: [], hasMore: false, nextBeforeSeq: 1 };
+    }
+  }), {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    })
+  });
+
+  const page = await service.listMessages({
+    actor: actor(),
+    conversationId,
+    query: { beforeSeq: 1, limit: 20 }
+  });
+
+  assert.deepEqual(page.messages, []);
+  assert.equal(page.has_more, false);
+  assert.equal(page.next_after_seq, 0);
+  assert.equal(page.next_before_seq, 1);
+});
+
+test("message listing with a beforeSeq cursor maps an invisible conversation to the same non-oracular 404", async () => {
+  const service = createConversationService(repository({
+    async listMessagesBefore() {
+      return null;
+    }
+  }), {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    })
+  });
+
+  await assert.rejects(
+    service.listMessages({ actor: actor(), conversationId, query: { beforeSeq: 7, limit: 20 } }),
+    (error: unknown) =>
+      error instanceof ConversationServiceError && error.status === 404 && error.code === "conversation_not_found"
+  );
 });
 
 test("text message creation never calls Drive and persists only bounded text metadata", async () => {

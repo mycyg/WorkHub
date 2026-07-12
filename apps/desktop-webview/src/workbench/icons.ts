@@ -21,7 +21,9 @@ export const workbenchIcons = {
   // R12 批 6（网盘整合 + git 化）：文件行图标 + 版本历史（时钟）+ 已找回确认（对勾）。
   file: ic('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/>'),
   history: ic('<circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.6 1.6"/><path d="M9 2.5h6"/>'),
-  check: ic('<path d="M5 12.5 9.5 17 19 6.5"/>')
+  check: ic('<path d="M5 12.5 9.5 17 19 6.5"/>'),
+  // R12 批8：无权限深链空态（00 §9）——群聊气泡挂锁图标，替代不存在的 emoji。
+  lock: ic('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>')
 } as const;
 
 export type WorkbenchIconKey = keyof typeof workbenchIcons;

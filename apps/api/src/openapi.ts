@@ -4694,7 +4694,9 @@ const conversationMessagePageResponseSchema = {
   properties: {
     messages: { type: "array", maxItems: 100, items: conversationMessageResponseSchema },
     has_more: { type: "boolean" },
-    next_after_seq: conversationSafeSequenceSchema
+    next_after_seq: conversationSafeSequenceSchema,
+    // R12 批8：仅在响应 beforeSeq（反向翻页）请求时出现；afterSeq 请求的响应形状零改动。
+    next_before_seq: conversationSafeSequenceSchema
   },
   additionalProperties: false
 } as const;
@@ -4789,6 +4791,18 @@ const conversationAfterSeqQueryParameter = {
   name: "afterSeq",
   in: "query",
   required: false,
+  description: "Forward cursor; mutually exclusive with beforeSeq.",
+  "x-workhub-mutually-exclusive-with": "beforeSeq",
+  schema: conversationSafeSequenceSchema
+} as const;
+// R12 批8：反向翻页游标——「滚到顶加载更早」。与 afterSeq 互斥（契约层用 zod union 天然表达，见
+// packages/contracts/src/domain/conversation.ts 的 conversationMessageListQuerySchema）。
+const conversationBeforeSeqQueryParameter = {
+  name: "beforeSeq",
+  in: "query",
+  required: false,
+  description: "Backward cursor for loading earlier history; mutually exclusive with afterSeq.",
+  "x-workhub-mutually-exclusive-with": "afterSeq",
   schema: conversationSafeSequenceSchema
 } as const;
 const conversationLimitQueryParameter = {
@@ -4859,8 +4873,10 @@ const conversationProjectCreateResponses = {
 } as const;
 const conversationMessageListResponses = {
   responses: {
-    "200": jsonDataResponse(conversationMessagePageResponseSchema, "Conversation messages after the sequence cursor")
-      .responses["200"],
+    "200": jsonDataResponse(
+      conversationMessagePageResponseSchema,
+      "Conversation messages after (afterSeq) or before (beforeSeq) the sequence cursor"
+    ).responses["200"],
     "401": conversationAuthRequiredResponse,
     "403": conversationForbiddenResponse,
     "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses["404"],
@@ -6455,10 +6471,14 @@ export function getOpenApiDocument() {
       "/api/conversations/{id}/messages": {
         get: {
           tags: ["conversations"],
-          summary: "List conversation messages after a sequence cursor",
+          summary: "List conversation messages after (or, with beforeSeq, before) a sequence cursor",
+          "x-workhub-query-constraints": {
+            exclusive: [["afterSeq", "beforeSeq"]]
+          },
           parameters: [
             pathUuidParameter("id"),
             conversationAfterSeqQueryParameter,
+            conversationBeforeSeqQueryParameter,
             conversationLimitQueryParameter
           ],
           ...conversationMessageListResponses

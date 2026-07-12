@@ -651,6 +651,80 @@ test("R12 message page repeats full access predicates and advances a safe ascend
   }
 });
 
+test("R12 message page (beforeSeq) mirrors full access predicates and returns an ascending page from a descending scan", async () => {
+  const { db, queries } = createQueryRecorder([
+    [accessRecord()],
+    [message(4), message(3), message(2)]
+  ]);
+
+  const result = await createConversationRepository(db).listMessagesBefore({
+    workspaceId,
+    viewerUserId: creatorUserId,
+    conversationId,
+    beforeSeq: 5,
+    limit: 2
+  });
+
+  assert.deepEqual(result, { rows: [message(3), message(4)], hasMore: true, nextBeforeSeq: 3 });
+  assertFullConversationAccessPredicates(queries[0], { viewerUserId: creatorUserId, conversationId });
+  const messageQuery = queries[1];
+  assert.equal(messageQuery?.fromTable, conversationMessages);
+  assert.equal(messageQuery?.limit, 3);
+  assert.equal(messageQuery?.orderBy.length, 1);
+  assert.ok(
+    queryTextFragments(messageQuery?.orderBy[0]).some((fragment) => fragment.includes("desc")),
+    "beforeSeq page must scan in descending seq order"
+  );
+  assert.ok(queryReferences(messageQuery?.where, conversationMessages.seq));
+  assert.ok(queryParamValues(messageQuery?.where).includes(5));
+  for (const column of [
+    projectConversations.workspaceId,
+    projectConversations.projectId,
+    projectConversations.kind,
+    projectConversations.deletedAt,
+    projects.id,
+    projects.workspaceId,
+    projects.archived,
+    projects.deletedAt,
+    workspaceMemberships.workspaceId,
+    workspaceMemberships.userId,
+    workspaceMemberships.deletedAt,
+    conversationParticipants.conversationId,
+    conversationParticipants.userId
+  ]) {
+    assert.equal(referencesAny(messageQuery, column), true, `message page (beforeSeq) missing ${String(column)}`);
+  }
+});
+
+test("R12 message page (beforeSeq) returns an empty page without advancing the cursor when nothing precedes it", async () => {
+  const { db } = createQueryRecorder([[accessRecord()], []]);
+
+  const result = await createConversationRepository(db).listMessagesBefore({
+    workspaceId,
+    viewerUserId: creatorUserId,
+    conversationId,
+    beforeSeq: 1,
+    limit: 50
+  });
+
+  assert.deepEqual(result, { rows: [], hasMore: false, nextBeforeSeq: 1 });
+});
+
+test("R12 message page (beforeSeq) fails closed on an invisible conversation without leaking a page", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+
+  const result = await createConversationRepository(db).listMessagesBefore({
+    workspaceId,
+    viewerUserId: creatorUserId,
+    conversationId,
+    beforeSeq: 5,
+    limit: 50
+  });
+
+  assert.equal(result, null);
+  assert.equal(queries.length, 1);
+});
+
 test("R12 repository rejects invalid bounds and participant identities before querying", async () => {
   const { db, queries } = createQueryRecorder();
   const repository = createConversationRepository(db);
@@ -666,6 +740,27 @@ test("R12 repository rejects invalid bounds and participant identities before qu
       conversationId,
       afterSeq: Number.MAX_SAFE_INTEGER + 1,
       limit: 50
+    }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+  // R12 批8：listMessagesBefore 复用同一个 assertCursor/assertLimit，边界检查同款。
+  await assert.rejects(
+    repository.listMessagesBefore({
+      workspaceId,
+      viewerUserId: creatorUserId,
+      conversationId,
+      beforeSeq: -1,
+      limit: 50
+    }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+  await assert.rejects(
+    repository.listMessagesBefore({
+      workspaceId,
+      viewerUserId: creatorUserId,
+      conversationId,
+      beforeSeq: 5,
+      limit: 0
     }),
     (error: unknown) => error instanceof ConversationRepositoryInputError
   );

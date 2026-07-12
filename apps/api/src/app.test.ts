@@ -458,7 +458,11 @@ test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP end
     };
   } | undefined;
   const messagePath = body.paths["/api/conversations/{id}/messages"] as {
-    get?: { parameters?: Array<{ name: string; in: string }>; responses?: Record<string, unknown> };
+    get?: {
+      parameters?: Array<{ name: string; in: string; description?: string; "x-workhub-mutually-exclusive-with"?: string }>;
+      responses?: Record<string, unknown>;
+      "x-workhub-query-constraints"?: { exclusive?: string[][] };
+    };
     post?: {
       parameters?: Array<{ name: string; in: string }>;
       requestBody?: { content?: { "application/json"?: { schema?: Record<string, unknown> } } };
@@ -478,6 +482,7 @@ test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP end
   assert.deepEqual(messagePath?.get?.parameters?.map((parameter) => `${parameter.in}:${parameter.name}`), [
     "path:id",
     "query:afterSeq",
+    "query:beforeSeq",
     "query:limit"
   ]);
   assert.deepEqual(messagePath?.post?.parameters?.map((parameter) => `${parameter.in}:${parameter.name}`), [
@@ -499,6 +504,18 @@ test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP end
   assert.equal(afterIdParameter?.["x-workhub-paired-with"], "afterCreatedAt");
   assert.match(createdAtParameter?.description ?? "", /must be provided together/iu);
   assert.match(afterIdParameter?.description ?? "", /must be provided together/iu);
+
+  // R12 批8：beforeSeq（反向翻页）与 afterSeq 互斥——同 afterCreatedAt/afterId 配对标记同款模式，
+  // 只是语义反过来（互斥而非成对）。
+  assert.deepEqual(messagePath?.get?.["x-workhub-query-constraints"], {
+    exclusive: [["afterSeq", "beforeSeq"]]
+  });
+  const afterSeqParameter = messagePath?.get?.parameters?.find((parameter) => parameter.name === "afterSeq");
+  const beforeSeqParameter = messagePath?.get?.parameters?.find((parameter) => parameter.name === "beforeSeq");
+  assert.equal(afterSeqParameter?.["x-workhub-mutually-exclusive-with"], "beforeSeq");
+  assert.equal(beforeSeqParameter?.["x-workhub-mutually-exclusive-with"], "afterSeq");
+  assert.match(afterSeqParameter?.description ?? "", /mutually exclusive/iu);
+  assert.match(beforeSeqParameter?.description ?? "", /mutually exclusive/iu);
 
   const projectBody = projectPath?.post?.requestBody?.content?.["application/json"]?.schema as {
     properties?: Record<string, unknown>;

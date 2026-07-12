@@ -9,11 +9,13 @@
 // 已经拆进 render.ts/api.ts/stream.ts/events.ts/timeline.ts/trigger-parser.ts/typing-state.ts 的纯函数里
 // 逐一单测过，这里只是把它们接起来。
 
+import { WorkHubApiError } from "@workhub/api-client";
 import type { ConversationMessageVM } from "@workhub/contracts";
 
 import {
-  fetchAllConversationMessagesFromStart,
   fetchConversationMessagesPage,
+  fetchLatestConversationMessagesPage,
+  fetchOlderConversationMessagesPage,
   pingConversationTyping,
   sendConversationFileCardMessage,
   sendConversationTextMessage,
@@ -26,10 +28,11 @@ import {
   renderComingSoonPickerHtml,
   renderComposerHtml,
   renderConnectionBannerHtml,
+  renderConversationAccessDeniedHtml,
   renderDaySeparatorHtml,
   renderHistoryLoadErrorHtml,
   renderHistoryLoadingHtml,
-  renderHistoryTruncatedNoticeHtml,
+  renderLoadEarlierHtml,
   renderMemberBarHtml,
   renderMentionPickerHtml,
   renderMessageHtml,
@@ -38,6 +41,7 @@ import {
   type ChatRenderContext,
   type ComposerAttachmentChip,
   type ConnectionBannerState,
+  type LoadEarlierState,
   type MentionPickerFile,
   type MentionPickerMember,
   type PendingOutgoingMessage,
@@ -45,7 +49,12 @@ import {
 } from "./render.js";
 import { connectConversationStream, type ConversationStreamHandle } from "./stream.js";
 import { applyComposerChipInsertion, detectComposerTrigger, type ComposerTriggerMatch } from "./trigger-parser.js";
-import { groupMessagesByDay, sortAndDedupeMessages } from "./timeline.js";
+import {
+  DEFAULT_MESSAGE_RENDER_WINDOW,
+  groupMessagesByDay,
+  sortAndDedupeMessages,
+  windowRecentMessages
+} from "./timeline.js";
 import { pruneExpiredTypingUsers, upsertTypingUser, type TypingState } from "./typing-state.js";
 
 type Locale = "zh-CN" | "en-US";
@@ -77,6 +86,11 @@ const TYPING_PING_MIN_INTERVAL_MS = 2000;
 const FILE_SEARCH_DEBOUNCE_MS = 250;
 const TYPING_PRUNE_INTERVAL_MS = 750;
 const MAX_PICKER_RESULTS = 8;
+// R12 批8：滚到顶（scrollTop 小于这个像素阈值）自动触发「加载更早」，同「贴底」判定
+// （renderScroll 里 wasNearBottom 的 48px）同一档量级。
+const SCROLL_TOP_LOAD_EARLIER_PX = 48;
+// 本地 DOM 窗口每次展开的步长——不是一次性全展开（那样又变回批 2 的性能问题），小步渐进。
+const RENDER_WINDOW_EXPAND_STEP = 150;
 
 function toPendingRenderModel(record: PendingSendRecord): PendingOutgoingMessage {
   return {
@@ -125,8 +139,16 @@ export function mountChatView(
   let pending: PendingSendRecord[] = [];
   let typing: TypingState = [];
   let connection: ConnectionBannerState = "idle";
-  let historyLoad: "loading" | "ready" | "error" = "loading";
-  let historyTruncated = false;
+  // R12 批8："denied" 是 00 §9「无权限项目/深链到无权会话」的空态——后端非预言式 404，见
+  // renderConversationAccessDeniedHtml 顶部注释。
+  let historyLoad: "loading" | "ready" | "error" | "denied" = "loading";
+  // R12 批8：向上翻页状态——beforeSeq 反向游标（服务端 next_before_seq，见 api.ts 顶部注释）+
+  // DOM 渲染窗口（见 timeline.ts 的 windowRecentMessages）。取代批 2 的 historyTruncated 单一标记。
+  let hasOlderHistory = false;
+  let oldestKnownBeforeSeq: number | undefined;
+  let olderLoad: "idle" | "loading" | "error" = "idle";
+  let renderWindowSize = DEFAULT_MESSAGE_RENDER_WINDOW;
+  let expandedMessageIds = new Set<string>();
   let attachments: ComposerAttachmentChip[] = [];
   let activeTrigger: ComposerTriggerMatch | undefined;
   let mentionMembers: MentionPickerMember[] = [];
@@ -140,7 +162,12 @@ export function mountChatView(
   let streamHandle: ConversationStreamHandle | undefined;
 
   const membersMap = membersById(input.members);
-  const renderCtx = (): ChatRenderContext => ({ locale: input.locale, members: membersMap, currentUserId: input.currentUserId });
+  const renderCtx = (): ChatRenderContext => ({
+    locale: input.locale,
+    members: membersMap,
+    currentUserId: input.currentUserId,
+    expandedMessageIds
+  });
 
   container.innerHTML = `<div class="wh-wb-chat">
     <div data-wb-chat-banner></div>
@@ -178,6 +205,44 @@ export function mountChatView(
     typingEl!.innerHTML = renderTypingIndicatorHtml(labels, input.locale);
   }
 
+  // R12 批8：DOM 只挂载最近 renderWindowSize 条（windowRecentMessages，见 timeline.ts）——更早的
+  // 留在 messages 数组里（翻页/去重/SSE 合并的权威数据源不变），只是不进 DOM。窗口之外还分两层：
+  // 本地已经拉到内存但没展开（"local"，点了立即展开，不发请求）、和内存里也没有、要问服务端要
+  // （"server-*"，beforeSeq 反向翻页，见 loadOlderHistory）。
+  function currentLoadEarlierState(): LoadEarlierState {
+    const { hiddenLocalCount } = windowRecentMessages(messages, renderWindowSize);
+    if (hiddenLocalCount > 0) {
+      return { kind: "local", hiddenCount: hiddenLocalCount };
+    }
+    if (olderLoad === "loading") {
+      return { kind: "server-loading" };
+    }
+    if (olderLoad === "error") {
+      return { kind: "server-error" };
+    }
+    if (hasOlderHistory) {
+      return { kind: "server-idle" };
+    }
+    return { kind: "none" };
+  }
+
+  function buildScrollBodyHtml(): string {
+    const ctx = renderCtx();
+    const { visible } = windowRecentMessages(messages, renderWindowSize);
+    const groups = groupMessagesByDay(visible, { locale: input.locale });
+    let html = renderLoadEarlierHtml(currentLoadEarlierState(), input.locale);
+    for (const group of groups) {
+      html += renderDaySeparatorHtml(group.label);
+      for (const message of group.messages) {
+        html += renderMessageHtml(message, ctx);
+      }
+    }
+    for (const record of pending) {
+      html += renderPendingOutgoingHtml(toPendingRenderModel(record), ctx);
+    }
+    return html;
+  }
+
   function renderScroll(): void {
     const el = scrollEl!;
     const wasNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
@@ -189,26 +254,30 @@ export function mountChatView(
       el.innerHTML = renderHistoryLoadErrorHtml(input.locale);
       return;
     }
+    if (historyLoad === "denied") {
+      el.innerHTML = renderConversationAccessDeniedHtml(input.locale);
+      return;
+    }
     if (messages.length === 0 && pending.length === 0) {
       el.innerHTML = renderChatEmptyStateHtml({ locale: input.locale, projectName: input.projectName });
       return;
     }
-    const ctx = renderCtx();
-    const groups = groupMessagesByDay(messages, { locale: input.locale });
-    let html = historyTruncated ? renderHistoryTruncatedNoticeHtml(input.locale) : "";
-    for (const group of groups) {
-      html += renderDaySeparatorHtml(group.label);
-      for (const message of group.messages) {
-        html += renderMessageHtml(message, ctx);
-      }
-    }
-    for (const record of pending) {
-      html += renderPendingOutgoingHtml(toPendingRenderModel(record), ctx);
-    }
-    el.innerHTML = html;
+    el.innerHTML = buildScrollBodyHtml();
     if (wasNearBottom) {
       el.scrollTop = el.scrollHeight;
     }
+  }
+
+  // 加载更早历史后重渲染：不能用 renderScroll 的 wasNearBottom/贴底逻辑（那是为"新消息到达时如果
+  // 用户本来就在看最新消息，跟着滚到底"设计的）——这里是往顶部插入更早的内容，要保持用户当前正在看
+  // 的那条消息在视口里的相对位置不跳动（同 Slack/Discord 的"向上无限滚动"手感），靠 scrollHeight
+  // 差值补偿 scrollTop。
+  function renderScrollPreservingTopAnchor(): void {
+    const el = scrollEl!;
+    const beforeHeight = el.scrollHeight;
+    const beforeTop = el.scrollTop;
+    el.innerHTML = buildScrollBodyHtml();
+    el.scrollTop = beforeTop + (el.scrollHeight - beforeHeight);
   }
 
   function renderPicker(): void {
@@ -268,25 +337,30 @@ export function mountChatView(
     button.disabled = text.trim().length === 0 && attachments.length === 0;
   }
 
-  // —— 历史加载（批 0 只给正向 afterSeq，首屏一次性正向拉到当前，见 api.ts 顶部注释） —— //
+  // —— 历史加载（R12 批8：首屏直接要「最新一页」，不再从 afterSeq=0 正向走全量——见 api.ts 顶部
+  // 注释与 batch-2-chat.md 记录的缺口） —— //
   async function loadHistory(): Promise<void> {
     historyLoad = "loading";
     renderScroll();
     try {
-      const result = await fetchAllConversationMessagesFromStart(input.client, input.conversationId);
+      const page = await fetchLatestConversationMessagesPage(input.client, input.conversationId);
       if (disposed) {
         return;
       }
-      messages = sortAndDedupeMessages(result.messages);
-      historyTruncated = result.truncated;
+      messages = sortAndDedupeMessages(page.messages);
+      hasOlderHistory = page.has_more;
+      oldestKnownBeforeSeq = page.next_before_seq;
+      olderLoad = "idle";
       historyLoad = "ready";
       renderScroll();
       connectStream();
-    } catch {
+    } catch (error) {
       if (disposed) {
         return;
       }
-      historyLoad = "error";
+      // R12 批8：00 §9「无权限项目」——深链到一个 404（不可见/不存在，后端故意同形，见
+      // renderConversationAccessDeniedHtml 注释）的会话，给温和的专属空态，不是"网络抖动重试"。
+      historyLoad = error instanceof WorkHubApiError && error.status === 404 ? "denied" : "error";
       renderScroll();
     }
   }
@@ -297,6 +371,62 @@ export function mountChatView(
     }
     messages = sortAndDedupeMessages([...messages, ...incoming]);
     renderScroll();
+  }
+
+  // —— R12 批8：「滚到顶加载更早」 —— //
+
+  // 本地 DOM 窗口里还有未展开的已加载消息，就地展开，不发网络请求（见 currentLoadEarlierState 的
+  // "local" 分支）；本地已经展开到头、服务端还有更早的，才真的发一次 beforeSeq 请求。
+  function handleReachedTop(): void {
+    if (disposed) {
+      return;
+    }
+    const { hiddenLocalCount } = windowRecentMessages(messages, renderWindowSize);
+    if (hiddenLocalCount > 0) {
+      renderWindowSize += RENDER_WINDOW_EXPAND_STEP;
+      renderScrollPreservingTopAnchor();
+      return;
+    }
+    if (hasOlderHistory && olderLoad !== "loading") {
+      void loadOlderHistory();
+    }
+  }
+
+  async function loadOlderHistory(): Promise<void> {
+    if (olderLoad === "loading" || !hasOlderHistory || oldestKnownBeforeSeq === undefined) {
+      return;
+    }
+    olderLoad = "loading";
+    renderScroll();
+    let page;
+    try {
+      page = await fetchOlderConversationMessagesPage(input.client, input.conversationId, {
+        beforeSeq: oldestKnownBeforeSeq
+      });
+    } catch {
+      if (disposed) {
+        return;
+      }
+      olderLoad = "error";
+      renderScroll();
+      return;
+    }
+    if (disposed) {
+      return;
+    }
+    // 防御性熔断：服务端契约保证空页外 next_before_seq 严格倒退（同 listMessagesAfter 的
+    // next_after_seq 前进保证是一对镜像约束），万一没推进（回归 bug）就当作"没有更多了"，
+    // 不要在 scroll 事件驱动下反复自动重试出死循环。
+    const madeProgress = page.messages.length > 0
+      && page.next_before_seq !== undefined
+      && page.next_before_seq < oldestKnownBeforeSeq;
+    messages = sortAndDedupeMessages([...page.messages, ...messages]);
+    // 展开窗口以纳入刚拉到的这批，否则它们会立刻又被本地窗口折叠掉。
+    renderWindowSize += page.messages.length;
+    hasOlderHistory = madeProgress && page.has_more;
+    oldestKnownBeforeSeq = madeProgress ? page.next_before_seq : oldestKnownBeforeSeq;
+    olderLoad = "idle";
+    renderScrollPreservingTopAnchor();
   }
 
   // 重连成功后补缺口：断线期间的消息只能靠 afterSeq=本地已知最高 seq 重新拉一遍（broker 不存回放日志，
@@ -633,6 +763,24 @@ export function mountChatView(
       void loadHistory();
       return;
     }
+    if (target.closest("[data-wb-chat-load-earlier]")) {
+      handleReachedTop();
+      return;
+    }
+    const expandBtn = target.closest<HTMLElement>("[data-wb-chat-expand-message]");
+    if (expandBtn?.dataset.wbChatExpandMessage) {
+      expandedMessageIds = new Set(expandedMessageIds).add(expandBtn.dataset.wbChatExpandMessage);
+      renderScroll();
+      return;
+    }
+    const collapseBtn = target.closest<HTMLElement>("[data-wb-chat-collapse-message]");
+    if (collapseBtn?.dataset.wbChatCollapseMessage) {
+      const next = new Set(expandedMessageIds);
+      next.delete(collapseBtn.dataset.wbChatCollapseMessage);
+      expandedMessageIds = next;
+      renderScroll();
+      return;
+    }
     const retryBtn = target.closest<HTMLElement>("[data-wb-chat-retry-pending]");
     if (retryBtn) {
       retryPending(retryBtn.dataset.wbChatRetryPending);
@@ -644,6 +792,15 @@ export function mountChatView(
         itemId: fileCardBtn.dataset.wbChatOpenFile,
         itemName: fileCardBtn.dataset.wbChatOpenFileName ?? ""
       });
+    }
+  });
+
+  // R12 批8：滚到顶自动触发「加载更早」（00 §9 交互约定），和上面的手动按钮走同一个 handleReachedTop——
+  // 按钮是为了可发现性/无障碍（不是每个人都知道滚动到顶有效），滚动是为了老用户的肌肉记忆（同类聊天
+  // 应用的既有习惯）。
+  scrollEl.addEventListener("scroll", () => {
+    if (scrollEl!.scrollTop <= SCROLL_TOP_LOAD_EARLIER_PX) {
+      handleReachedTop();
     }
   });
 

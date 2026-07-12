@@ -312,12 +312,28 @@ const canonicalConversationCursorTimestampSchema = isoDateTimeSchema.regex(
   "conversation cursor timestamp must be canonical UTC with six fractional digits"
 );
 
-export const conversationMessageListQuerySchema = z
+const conversationMessageListLimitSchema = z.coerce.number().int().min(1).max(100).default(50);
+
+// R12 批8：反向翻页游标。与 afterSeq 互斥——两个 union 分支都是 .strict()，任一分支收到对方的键都会
+// 因为“未识别字段”整体校验失败，不需要额外的 superRefine 就能天然表达互斥；先试 beforeSeq 分支再试
+// afterSeq 分支，保证 {} 或只给 afterSeq 时行为与批 0 完全一致（afterSeq 分支的 default(0) 兜底）。
+const conversationMessageListBeforeQuerySchema = z
   .object({
-    afterSeq: safeIntegerInputSchema.default(0),
-    limit: z.coerce.number().int().min(1).max(100).default(50)
+    beforeSeq: safeIntegerInputSchema,
+    limit: conversationMessageListLimitSchema
   })
   .strict();
+const conversationMessageListAfterQuerySchema = z
+  .object({
+    afterSeq: safeIntegerInputSchema.default(0),
+    limit: conversationMessageListLimitSchema
+  })
+  .strict();
+
+export const conversationMessageListQuerySchema = z.union([
+  conversationMessageListBeforeQuerySchema,
+  conversationMessageListAfterQuerySchema
+]);
 export type ConversationMessageListQuery = z.infer<typeof conversationMessageListQuerySchema>;
 
 export const conversationListQuerySchema = z
@@ -530,7 +546,10 @@ export const conversationMessagePageVmSchema = z
   .object({
     messages: z.array(conversationMessageVmSchema).max(100),
     has_more: z.boolean(),
-    next_after_seq: safeIntegerOutputSchema
+    next_after_seq: safeIntegerOutputSchema,
+    // R12 批8：仅在响应 beforeSeq（反向翻页）请求时出现——continuing 更早历史的游标。afterSeq
+    // 请求的响应形状保持批 0 原样不变（这个键完全不出现，不是出现后填 null），向后兼容零改动。
+    next_before_seq: safeIntegerOutputSchema.optional()
   })
   .strict();
 export type ConversationMessagePageVM = z.infer<typeof conversationMessagePageVmSchema>;

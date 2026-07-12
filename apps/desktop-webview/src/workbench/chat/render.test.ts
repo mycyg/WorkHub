@@ -9,10 +9,11 @@ import {
   renderComingSoonPickerHtml,
   renderComposerHtml,
   renderConnectionBannerHtml,
+  renderConversationAccessDeniedHtml,
   renderDaySeparatorHtml,
   renderHistoryLoadErrorHtml,
   renderHistoryLoadingHtml,
-  renderHistoryTruncatedNoticeHtml,
+  renderLoadEarlierHtml,
   renderMemberBarHtml,
   renderMentionPickerHtml,
   renderMessageHtml,
@@ -112,6 +113,33 @@ test("renderMessageHtml escapes text content — no raw HTML injection from mess
   const html = renderMessageHtml(baseMessage({ content: { text: "<img src=x onerror=alert(1)>" } }), ctxWith([]));
   assert.doesNotMatch(html, /<img/u);
   assert.match(html, /&lt;img/u);
+});
+
+// —— R12 批8：超长文本消息折叠 —— //
+
+test("renderMessageHtml renders a short text message unfolded, with no toggle affordance", () => {
+  const html = renderMessageHtml(baseMessage({ content: { text: "short message" } }), ctxWith([]));
+  assert.doesNotMatch(html, /wh-wb-chat-text-toggle/u);
+  assert.doesNotMatch(html, /wh-wb-chat-txt--folded/u);
+});
+
+test("renderMessageHtml folds a long text message behind a Show-full-message toggle by default", () => {
+  const longText = "长".repeat(900);
+  const html = renderMessageHtml(baseMessage({ id: "m-long", content: { text: longText } }), ctxWith([]));
+  assert.match(html, /wh-wb-chat-txt--folded/u);
+  assert.match(html, /data-wb-chat-expand-message="m-long"/u);
+  assert.doesNotMatch(html, /data-wb-chat-collapse-message/u);
+  // the folded preview must not contain the full 900-char text verbatim.
+  assert.ok(!html.includes(longText));
+});
+
+test("renderMessageHtml renders a long text message in full once its id is in expandedMessageIds", () => {
+  const longText = "长".repeat(900);
+  const ctx: ChatRenderContext = { ...ctxWith([]), expandedMessageIds: new Set(["m-long"]) };
+  const html = renderMessageHtml(baseMessage({ id: "m-long", content: { text: longText } }), ctx);
+  assert.doesNotMatch(html, /wh-wb-chat-txt--folded/u);
+  assert.match(html, /data-wb-chat-collapse-message="m-long"/u);
+  assert.ok(html.includes(longText));
 });
 
 test("renderMessageHtml renders a cuu-sent message with the cuu avatar variant and label", () => {
@@ -318,13 +346,51 @@ test("renderHistoryLoadErrorHtml offers a real retry affordance", () => {
   assert.match(renderHistoryLoadErrorHtml("zh-CN"), /data-wb-chat-retry-history/u);
 });
 
+// R12 批8：00 §9「无权限项目」——深链到无权会话的温和空态。后端故意用非预言式 404（存在但无权 vs
+// 真不存在同一响应），所以这里也不给一个只会一直失败的重试按钮——权限问题重试不会变好。
+test("renderConversationAccessDeniedHtml gives a gentle you're-not-in-this-project message with no dead retry button", () => {
+  const html = renderConversationAccessDeniedHtml("zh-CN");
+  assert.match(html, /你不在这个项目里/u);
+  assert.doesNotMatch(html, /data-wb-chat-retry-history/u);
+});
+
+test("renderConversationAccessDeniedHtml is available in en-US too", () => {
+  const html = renderConversationAccessDeniedHtml("en-US");
+  assert.match(html, /not in this project/u);
+});
+
 test("renderHistoryLoadingHtml is distinct from the error state", () => {
   assert.notEqual(renderHistoryLoadingHtml("zh-CN"), renderHistoryLoadErrorHtml("zh-CN"));
 });
 
-test("renderHistoryTruncatedNoticeHtml discloses the beforeSeq gap honestly instead of pretending paging works", () => {
-  const html = renderHistoryTruncatedNoticeHtml("zh-CN");
-  assert.match(html, /后续批次/u);
+// —— R12 批8：加载更早（beforeSeq 反向翻页 + 本地 DOM 窗口展开） —— //
+
+test("renderLoadEarlierHtml renders nothing when there is truly nothing earlier", () => {
+  assert.equal(renderLoadEarlierHtml({ kind: "none" }, "zh-CN"), "");
+});
+
+test("renderLoadEarlierHtml offers an instant local-expand affordance naming the hidden count", () => {
+  const html = renderLoadEarlierHtml({ kind: "local", hiddenCount: 42 }, "zh-CN");
+  assert.match(html, /data-wb-chat-load-earlier/u);
+  assert.match(html, /42/u);
+});
+
+test("renderLoadEarlierHtml shows a loading state while fetching an older page from the server", () => {
+  const html = renderLoadEarlierHtml({ kind: "server-loading" }, "zh-CN");
+  assert.match(html, /正在加载更早/u);
+  assert.doesNotMatch(html, /data-wb-chat-load-earlier/u);
+});
+
+test("renderLoadEarlierHtml offers a real retry affordance after a failed older-page fetch", () => {
+  const html = renderLoadEarlierHtml({ kind: "server-error" }, "zh-CN");
+  assert.match(html, /data-wb-chat-load-earlier/u);
+  assert.match(html, /没加载出/u);
+});
+
+test("renderLoadEarlierHtml offers an idle load-earlier button when the server still has more history", () => {
+  const html = renderLoadEarlierHtml({ kind: "server-idle" }, "en-US");
+  assert.match(html, /data-wb-chat-load-earlier/u);
+  assert.match(html, /Load earlier/u);
 });
 
 // —— composer —— //

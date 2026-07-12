@@ -268,6 +268,29 @@ export function createConversationService(
 
     async listMessages(input) {
       const human = requireHumanActor(input.actor);
+      // R12 批8：beforeSeq（反向翻页）和 afterSeq（正向，批 0 既有）在契约层互斥——
+      // conversationMessageListQuerySchema 是一个 union，两个分支的键不会同时出现。
+      if ("beforeSeq" in input.query) {
+        const result = await repository.listMessagesBefore({
+          workspaceId: human.workspaceId,
+          viewerUserId: human.userId,
+          conversationId: input.conversationId,
+          beforeSeq: input.query.beforeSeq,
+          limit: input.query.limit
+        });
+        if (!result) {
+          throw new ConversationServiceError(404, "conversation_not_found", "没有找到这个会话。");
+        }
+        // rows 已经是 seq 升序（仓库层保证）——next_after_seq 复用页内最高 seq，让客户端加载完一页
+        // 更早历史后，仍然能无缝拼上「继续往前追」的正向翻页游标，不强制它单独再查一次。
+        const highestSeqInPage = result.rows.reduce((max, row) => Math.max(max, row.seq), 0);
+        return parseOutputContract(conversationMessagePageVmSchema, {
+          messages: result.rows.map(messageToVm),
+          has_more: result.hasMore,
+          next_after_seq: highestSeqInPage,
+          next_before_seq: result.nextBeforeSeq
+        }, "conversations.messages.list");
+      }
       const result = await repository.listMessagesAfter({
         workspaceId: human.workspaceId,
         viewerUserId: human.userId,

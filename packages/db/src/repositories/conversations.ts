@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 
 import {
   conversationListQuerySchema,
@@ -103,6 +103,16 @@ export type ListConversationMessagesInput = {
   limit: number;
 };
 
+// R12 批8：反向翻页（listMessagesBefore）的输入——除了游标方向（beforeSeq 而非 afterSeq），access
+// 判定与 listMessagesAfter 完全同款（复用同一个 readVisibleAccess + activeConversationCondition）。
+export type ListConversationMessagesBeforeInput = {
+  workspaceId: string;
+  viewerUserId: string;
+  conversationId: string;
+  beforeSeq: number;
+  limit: number;
+};
+
 export type VisibleConversationListResult = {
   rows: VisibleConversationRow[];
   capped: boolean;
@@ -120,6 +130,16 @@ export type ConversationMessagePage = {
   nextAfterSeq: number;
 };
 
+// R12 批8：rows 始终按 seq 升序返回（和 listMessagesAfter 的页形状一致，调用方不需要按方向切换排序
+// 逻辑）——仓库内部按 seq 降序扫描离 beforeSeq 最近的一页，取回后再翻正。nextBeforeSeq 是继续向更早
+// 翻页的游标（本页最旧一条的 seq）；页为空时保持 beforeSeq 不变，同 listMessagesAfter 空页时的既有
+// 约定（nextAfterSeq 保持 afterSeq 不变）。
+export type ConversationMessageBeforePage = {
+  rows: ConversationMessageRow[];
+  hasMore: boolean;
+  nextBeforeSeq: number;
+};
+
 export type ConversationRepository = {
   listVisibleForProject: (
     input: ListVisibleConversationsInput
@@ -130,6 +150,9 @@ export type ConversationRepository = {
   // R12 批4a：新增，不改动上面任何既有方法的签名/行为。
   createCuuMessage: (input: CreateCuuMessageInput) => Promise<ConversationMessageRow>;
   listMessagesAfter: (input: ListConversationMessagesInput) => Promise<ConversationMessagePage | null>;
+  // R12 批8：反向翻页——「滚到顶加载更早」。access 判定/鉴权与 listMessagesAfter 完全同款（同一份
+  // readVisibleAccess + activeConversationCondition），仅游标方向与排序不同。
+  listMessagesBefore: (input: ListConversationMessagesBeforeInput) => Promise<ConversationMessageBeforePage | null>;
 };
 
 class NamedConversationRepositoryError extends Error {
@@ -932,6 +955,60 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         rows: pageRows,
         hasMore: rows.length > input.limit,
         nextAfterSeq: pageRows.at(-1)?.seq ?? input.afterSeq
+      };
+    },
+
+    // R12 批8：反向翻页——同一份 access 判定（readVisibleAccess）+ 同一份 activeConversationCondition，
+    // 唯一的区别是排序方向（seq 降序找离 beforeSeq 最近的一页）与游标比较符（lt 而非 gt）。取回后翻正
+    // 序，保证 rows 始终是 seq 升序（和 listMessagesAfter 的页形状一致，渲染层不需要为方向分叉排序）。
+    async listMessagesBefore(input) {
+      assertCursor(input.beforeSeq);
+      assertLimit(input.limit);
+      const access = await readVisibleAccess(db, input);
+      if (!access) {
+        return null;
+      }
+      const rows = await db
+        .select(messageSelection)
+        .from(conversationMessages)
+        .innerJoin(projectConversations, eq(projectConversations.id, conversationMessages.conversationId))
+        .innerJoin(
+          projects,
+          and(
+            eq(projects.id, projectConversations.projectId),
+            eq(projects.workspaceId, projectConversations.workspaceId)
+          )
+        )
+        .innerJoin(
+          workspaceMemberships,
+          and(
+            eq(workspaceMemberships.workspaceId, projectConversations.workspaceId),
+            eq(workspaceMemberships.userId, input.viewerUserId),
+            isNull(workspaceMemberships.deletedAt)
+          )
+        )
+        .leftJoin(
+          conversationParticipants,
+          and(
+            eq(conversationParticipants.conversationId, projectConversations.id),
+            eq(conversationParticipants.userId, input.viewerUserId)
+          )
+        )
+        .where(
+          and(
+            eq(conversationMessages.conversationId, input.conversationId),
+            lt(conversationMessages.seq, input.beforeSeq),
+            activeConversationCondition(input)
+          )
+        )
+        .orderBy(desc(conversationMessages.seq))
+        .limit(input.limit + 1);
+      const hasMore = rows.length > input.limit;
+      const pageRows = (rows.slice(0, input.limit) as ConversationMessageRow[]).reverse();
+      return {
+        rows: pageRows,
+        hasMore,
+        nextBeforeSeq: pageRows.at(0)?.seq ?? input.beforeSeq
       };
     }
   };

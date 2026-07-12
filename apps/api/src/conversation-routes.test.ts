@@ -359,6 +359,43 @@ test("conversation reads parse canonical cursors, call the service, and return 2
   ]);
 });
 
+// R12 批8：beforeSeq（反向翻页）——与 afterSeq 互斥，路由层原样转发解析好的 query 给服务，不做任何
+// 额外分叉（分叉在服务层，见 services/conversations.ts 的 listMessages）。
+test("conversation message reads forward a beforeSeq cursor and reject afterSeq+beforeSeq together", async () => {
+  const runtimeSettings = settings();
+  const calls: unknown[] = [];
+  const app = routeApp(runtimeSettings, service({
+    async listMessages(input) {
+      calls.push(input);
+      return { messages: [messageVm()], has_more: true, next_after_seq: 6, next_before_seq: 5 };
+    }
+  }));
+  const headers = { Cookie: await cookie(runtimeSettings) };
+
+  const before = await app.request(
+    `/api/conversations/${conversationId}/messages?beforeSeq=7&limit=20`,
+    { headers }
+  );
+  const both = await app.request(
+    `/api/conversations/${conversationId}/messages?afterSeq=1&beforeSeq=7`,
+    { headers }
+  );
+
+  assert.equal(before.status, 200);
+  assert.deepEqual(await before.json(), {
+    ok: true,
+    data: { messages: [messageVm()], has_more: true, next_after_seq: 6, next_before_seq: 5 }
+  });
+  assert.equal(both.status, 422);
+  assert.deepEqual(calls.map((call) => {
+    const input = call as { actor: unknown; [key: string]: unknown };
+    const { actor: _actor, ...rest } = input;
+    return rest;
+  }), [
+    { conversationId, query: { beforeSeq: 7, limit: 20 } }
+  ]);
+});
+
 test("conversation writes run access preflight, parse payloads, and return 201", async () => {
   const runtimeSettings = settings();
   const seen: string[] = [];

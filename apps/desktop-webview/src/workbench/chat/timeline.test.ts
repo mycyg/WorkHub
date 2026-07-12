@@ -3,7 +3,13 @@ import { test } from "node:test";
 
 import type { ConversationMessageVM } from "@workhub/contracts";
 
-import { formatMessageTime, groupMessagesByDay, sortAndDedupeMessages } from "./timeline.js";
+import {
+  DEFAULT_MESSAGE_RENDER_WINDOW,
+  formatMessageTime,
+  groupMessagesByDay,
+  sortAndDedupeMessages,
+  windowRecentMessages
+} from "./timeline.js";
 
 function textMessage(input: { id: string; seq: number; text: string; createdAt: Date; senderUserId?: string }): ConversationMessageVM {
   return {
@@ -121,4 +127,40 @@ test("formatMessageTime renders a plain 24h HH:mm, no AM/PM marker, for either l
   assert.match(formatMessageTime(iso, "zh-CN"), /^\d{2}:\d{2}$/u);
   assert.match(formatMessageTime(iso, "en-US"), /^\d{2}:\d{2}$/u);
   assert.doesNotMatch(formatMessageTime(iso, "en-US"), /[AaPp][Mm]/u);
+});
+
+// —— R12 批8：消息列表窗口化（DOM 只挂载最近 N 条，不引第三方库） —— //
+
+test("windowRecentMessages keeps every item and reports zero hidden when under the window size", () => {
+  const items = [1, 2, 3];
+  const result = windowRecentMessages(items, 300);
+  assert.deepEqual(result, { visible: [1, 2, 3], hiddenLocalCount: 0 });
+});
+
+test("windowRecentMessages keeps only the most recent windowSize items, hiding the older ones", () => {
+  const items = Array.from({ length: 320 }, (_, i) => i + 1);
+  const result = windowRecentMessages(items, 300);
+  assert.equal(result.hiddenLocalCount, 20);
+  assert.equal(result.visible.length, 300);
+  assert.equal(result.visible[0], 21);
+  assert.equal(result.visible.at(-1), 320);
+});
+
+test("windowRecentMessages defaults to DEFAULT_MESSAGE_RENDER_WINDOW (300) when no size is given", () => {
+  const items = Array.from({ length: 305 }, (_, i) => i);
+  const result = windowRecentMessages(items);
+  assert.equal(DEFAULT_MESSAGE_RENDER_WINDOW, 300);
+  assert.equal(result.hiddenLocalCount, 5);
+  assert.equal(result.visible.length, 300);
+});
+
+test("windowRecentMessages treats a non-positive or fractional window size defensively (floors, never negative)", () => {
+  const items = [1, 2, 3];
+  assert.deepEqual(windowRecentMessages(items, -5), { visible: [], hiddenLocalCount: 3 });
+  assert.deepEqual(windowRecentMessages(items, 0), { visible: [], hiddenLocalCount: 3 });
+  assert.deepEqual(windowRecentMessages(items, 2.9), { visible: [2, 3], hiddenLocalCount: 1 });
+});
+
+test("windowRecentMessages on an empty list is a no-op", () => {
+  assert.deepEqual(windowRecentMessages([], 300), { visible: [], hiddenLocalCount: 0 });
 });
