@@ -3,7 +3,8 @@ use url::Url;
 
 use crate::locale::WorkHubLocale;
 use crate::window_controls::{
-    focus_main_route, ShellWindowControlError, ShellWindowControlPlan, ShellWindowControlSource,
+    focus_main_route, focus_workbench_route, ShellWindowControlError, ShellWindowControlPlan,
+    ShellWindowControlSource,
 };
 
 pub const WORKHUB_DEEP_LINK_SCHEME: &str = "workhub";
@@ -38,8 +39,13 @@ pub fn deep_link_plan_from_url(raw_url: &str) -> Result<ShellDeepLinkPlan, Shell
     }
 
     let route = route_from_deep_link(&url)?;
-    let window_control = focus_main_route(ShellWindowControlSource::DeepLink, &route)
-        .map_err(ShellDeepLinkError::UnsafeRoute)?;
+    // R12:工作台路由指到常驻 workbench 窗,其余仍聚焦 Spotlight 主窗。
+    let window_control = if is_workbench_route(&route) {
+        focus_workbench_route(ShellWindowControlSource::DeepLink, &route)
+    } else {
+        focus_main_route(ShellWindowControlSource::DeepLink, &route)
+    }
+    .map_err(ShellDeepLinkError::UnsafeRoute)?;
 
     Ok(ShellDeepLinkPlan {
         raw_url: raw_url.to_string(),
@@ -175,6 +181,7 @@ fn route_from_open_segments(segments: &[String]) -> Result<String, ShellDeepLink
         "settings" => Ok("/settings".to_string()),
         "me" => Ok("/me".to_string()),
         "cost" | "budget" => Ok("/dashboard/cost".to_string()),
+        "workbench" => route_workbench(segments.get(1), segments.get(2)),
         other => Err(ShellDeepLinkError::UnknownTarget(other.to_string())),
     }
 }
@@ -202,7 +209,34 @@ fn route_from_target_segments(segments: &[String]) -> Result<String, ShellDeepLi
         "settings" => Ok("/settings".to_string()),
         "me" => Ok("/me".to_string()),
         "cost" | "budget" => Ok("/dashboard/cost".to_string()),
+        "workbench" => route_workbench(segments.get(1), segments.get(2)),
         other => Err(ShellDeepLinkError::UnknownTarget(other.to_string())),
+    }
+}
+
+fn is_workbench_route(route: &str) -> bool {
+    route == "/workbench" || route.starts_with("/workbench/")
+}
+
+// 工作台深链:workbench[/<projectId>[/<conversationId>]]。段内容过 safe_segment(拒绝路径
+// 逃逸/空段),不在壳层校验 uuid 形状——存在性与访问权由 webview 拿 VM 时服务端裁决,fail-closed。
+fn route_workbench(
+    raw_project: Option<&String>,
+    raw_conversation: Option<&String>,
+) -> Result<String, ShellDeepLinkError> {
+    let Some(project) = raw_project else {
+        if raw_conversation.is_some() {
+            return Err(ShellDeepLinkError::MissingTarget);
+        }
+        return Ok("/workbench".to_string());
+    };
+    let project = safe_segment(project)?;
+    match raw_conversation {
+        None => Ok(format!("/workbench/{project}")),
+        Some(conversation) => {
+            let conversation = safe_segment(conversation)?;
+            Ok(format!("/workbench/{project}/{conversation}"))
+        }
     }
 }
 
@@ -310,6 +344,58 @@ mod tests {
             plan.window_control.source,
             ShellWindowControlSource::DeepLink
         );
+    }
+
+    #[test]
+    fn workbench_deep_links_target_the_workbench_window() {
+        let bare = deep_link_plan_from_url("workhub://workbench").unwrap();
+        assert_eq!(bare.route, "/workbench");
+        assert_eq!(bare.window_control.label, "workbench");
+
+        let project = deep_link_plan_from_url(
+            "workhub://workbench/86000000-0000-4000-8000-000000000001",
+        )
+        .unwrap();
+        assert_eq!(
+            project.route,
+            "/workbench/86000000-0000-4000-8000-000000000001"
+        );
+        assert_eq!(project.window_control.label, "workbench");
+        assert_eq!(
+            project.window_control.route,
+            Some("/workbench/86000000-0000-4000-8000-000000000001".to_string())
+        );
+
+        let conversation = deep_link_plan_from_url(
+            "workhub://open/workbench/86000000-0000-4000-8000-000000000001/86000000-0000-4000-8000-000000000002",
+        )
+        .unwrap();
+        assert_eq!(
+            conversation.route,
+            "/workbench/86000000-0000-4000-8000-000000000001/86000000-0000-4000-8000-000000000002"
+        );
+        assert_eq!(conversation.window_control.label, "workbench");
+
+        // 非工作台目标仍聚焦主窗,分流不串线。
+        assert_eq!(
+            deep_link_plan_from_url("workhub://open/approvals")
+                .unwrap()
+                .window_control
+                .label,
+            "main"
+        );
+    }
+
+    #[test]
+    fn workbench_deep_links_reject_unsafe_segments() {
+        assert!(matches!(
+            deep_link_plan_from_url("workhub://workbench/..%2fsecret"),
+            Err(ShellDeepLinkError::UnsafeTarget(_))
+        ));
+        assert!(matches!(
+            deep_link_plan_from_url("workhub://workbench/p%2e%2e/x"),
+            Err(ShellDeepLinkError::UnsafeTarget(_))
+        ));
     }
 
     #[test]

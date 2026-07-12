@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum ShellWindowKind {
     Main,
     Pet,
+    Workbench,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,7 +39,7 @@ impl ShellWindowPlan {
 }
 
 pub fn default_window_plans() -> Vec<ShellWindowPlan> {
-    vec![main_window_plan(), pet_window_plan()]
+    vec![main_window_plan(), pet_window_plan(), workbench_window_plan()]
 }
 
 pub fn main_window_plan() -> ShellWindowPlan {
@@ -85,6 +86,30 @@ pub fn pet_window_plan() -> ShellWindowPlan {
         decorations: false,
         always_on_top: true,
         skip_taskbar: true,
+    }
+}
+
+pub fn workbench_window_plan() -> ShellWindowPlan {
+    ShellWindowPlan {
+        label: "workbench".to_string(),
+        kind: ShellWindowKind::Workbench,
+        title: "WorkHub 工作台".to_string(),
+        route: "/workbench.html".to_string(),
+        // R12 项目工作台：常驻三栏主窗（群聊/协同/网盘 + 右栏情境面板）。与 Spotlight 聚焦盒
+        // 分工——盒子用完即走，工作台承载常驻协作；默认隐藏，由 open_workbench / 深链唤起。
+        width: 1280,
+        height: 800,
+        min_width: Some(960),
+        min_height: Some(620),
+        resizable: true,
+        visible: false,
+        focus: false,
+        // 玻璃同主窗策略：透明窗 + 原生 vibrancy（CSS backdrop-filter 在透明窗是空操作）。
+        transparent: true,
+        decorations: false,
+        // 工作台是普通工作窗口，不悬浮压别人。
+        always_on_top: false,
+        skip_taskbar: false,
     }
 }
 
@@ -151,14 +176,39 @@ mod tests {
     }
 
     #[test]
-    fn default_window_plan_has_main_and_pet_labels() {
+    fn default_window_plan_has_main_pet_and_workbench_labels() {
         let labels = default_window_plans()
             .into_iter()
             .map(|plan| plan.label)
             .collect::<Vec<_>>();
 
-        assert_eq!(labels, vec!["main", "pet"]);
+        // R12 起默认窗口族新增常驻工作台窗（此前为 ["main","pet"]，属声明式行为变更）。
+        assert_eq!(labels, vec!["main", "pet", "workbench"]);
         assert_eq!(window_plan_by_label("pet").unwrap().is_pet_window(), true);
         assert_eq!(window_plan_by_label("unknown"), None);
+    }
+
+    #[test]
+    fn workbench_window_is_a_resident_glass_workspace() {
+        let workbench = workbench_window_plan();
+
+        assert_eq!(workbench.label, "workbench");
+        assert_eq!(workbench.kind, ShellWindowKind::Workbench);
+        assert_eq!(workbench.route, "/workbench.html");
+        // 常驻工作窗：默认隐藏等唤起、可缩放、不置顶、不跳过任务栏。
+        assert_eq!(workbench.visible, false);
+        assert_eq!(workbench.focus, false);
+        assert_eq!(workbench.resizable, true);
+        assert_eq!(workbench.always_on_top, false);
+        assert_eq!(workbench.skip_taskbar, false);
+        // 玻璃约束：透明 + frameless（毛玻璃靠原生 vibrancy，不靠 CSS blur）。
+        assert_eq!(workbench.transparent, true);
+        assert_eq!(workbench.decorations, false);
+        // 三栏工作台需要真实桌面级面积，且最小尺寸不能塌到三栏摆不下。
+        assert!(workbench.width >= 1200);
+        assert!(workbench.height >= 720);
+        assert_eq!(workbench.min_width, Some(960));
+        assert_eq!(workbench.min_height, Some(620));
+        assert_eq!(workbench.is_pet_window(), false);
     }
 }

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::windows::{main_window_plan, pet_window_plan, ShellWindowPlan};
+use crate::windows::{main_window_plan, pet_window_plan, workbench_window_plan, ShellWindowPlan};
 
 pub const SHOW_MAIN_WINDOW_COMMAND: &str = "show_main_window";
 pub const HIDE_MAIN_WINDOW_COMMAND: &str = "hide_main_window";
@@ -77,6 +77,19 @@ pub fn focus_main_route(
         source,
         Some(safe_route(route)?),
         "focus-main-route",
+    ))
+}
+
+pub fn focus_workbench_route(
+    source: ShellWindowControlSource,
+    route: &str,
+) -> Result<ShellWindowControlPlan, ShellWindowControlError> {
+    Ok(control_plan(
+        workbench_window_plan(),
+        ShellWindowControlAction::ShowAndFocus,
+        source,
+        Some(safe_route(route)?),
+        "focus-workbench-route",
     ))
 }
 
