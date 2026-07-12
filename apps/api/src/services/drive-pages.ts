@@ -3,10 +3,15 @@ import { rm } from "node:fs/promises";
 
 import {
   getSharedDatabaseClient,
+  createActionCardRepository,
+  createConversationRepository,
   createDriveRepository,
   createWorkItemRepository,
   DriveRepositoryConflictError,
+  type ActionCardConversationMessageRow,
+  type ConversationRepository,
   type DriveItemRow,
+  type DriveMutationRows,
   type DriveOperationRow,
   type DrivePageRows,
   type DriveRepository,
@@ -15,6 +20,10 @@ import {
   type WorkItemDataRepository,
   type WorkHubDatabaseClient
 } from "@workhub/db";
+// 批 6（网盘整合 + git 化）：版本历史/回滚——这两个方法目前只有 ad-hoc 返回形状（不是全站契约
+// drivePageVmSchema 的一部分），故没有从 @workhub/contracts 拉新 schema，也没有改动 packages/contracts
+// 既有定义（超出本批范围围栏）。rollbackVersion 复用既有 DrivePageVM（走 pageAfterMutation，与
+// uploadFile/deleteItem/restoreItem 同构），listVersions 单独定义一个窄类型见下。
 import {
   drivePageVmSchema,
   type AcceptedDeliverableVM,
@@ -83,6 +92,41 @@ export type DrivePageService = {
     locale?: WorkHubLocale;
     workItemId: string;
   }) => Promise<WorkItemDetailVM>;
+  // 批 6（只读）：单文件版本历史(时间/操作者/大小)，读权限同 file()——canViewProjectDrive。
+  // 可选字段：不强迫既有测试里的几十个 DrivePageService 假对象字面量跟着补桩（照 repo 层同款取舍）。
+  listVersions?: (input: DriveMutationInput & {
+    itemId: string;
+    limit?: number;
+  }) => Promise<DriveVersionHistoryVM>;
+  // 批 6（回滚=追加新版本，不抹历史）：管理权限同 deleteItem/restoreItem——canManageProjectDrive；
+  // 返回刷新后的网盘页 VM，与其它变更端点同构。同样是可选字段。
+  rollbackVersion?: (input: DriveMutationInput & {
+    itemId: string;
+    targetVersionId: string;
+  }) => Promise<DrivePageVM>;
+};
+
+// 批 6：单文件版本历史响应形状——不是 drivePageVmSchema 的一部分，独立的窄类型（见文件顶部注释）。
+export type DriveVersionHistoryEntryVM = {
+  id: string;
+  version_no: number;
+  filename: string;
+  mime?: string;
+  size_bytes: number;
+  sha256?: string;
+  created_at: string;
+  created_by_label: string;
+  current: boolean;
+  // 只在请求者有管理权、且这一行不是当前版本时才给出——照 driveItemVm 的 restore_href/delete_href
+  // 只在服务端确认可用时才填充的既有惯例，前端不会渲染出一个点了必 409 的死按钮。
+  restore_href?: string;
+};
+
+export type DriveVersionHistoryVM = {
+  item_id: string;
+  filename: string;
+  current_version_id?: string;
+  versions: DriveVersionHistoryEntryVM[];
 };
 
 export type DrivePageServiceDependencies = {
@@ -95,6 +139,19 @@ export type DrivePageServiceDependencies = {
     findWorkItemAccessRecords?: WorkItemDataRepository["findWorkItemAccessRecords"];
   };
   now?: () => Date;
+  // 批 6（版本历史/回滚）：回滚成功后往项目主区群聊落一条 system_event 消息——两个都可选、
+  // best-effort（找不到主会话/发布失败都不影响回滚本身已经落库的结果，只是静默跳过这条系统消息）。
+  // 复用批 0 的会话仓库找主会话 id + 批 3 已有的 postSystemMessage 写入口（照
+  // services/action-cards.ts 里 reassign/undo 那两处系统消息同款调法），不新起一套消息写路径。
+  conversations?: Pick<ConversationRepository, "listVisibleForProject">;
+  postSystemMessage?: (input: {
+    workspaceId: string;
+    conversationId: string;
+    senderType: "system" | "cuu";
+    content: Record<string, unknown>;
+    threadRootId?: string;
+    at?: Date;
+  }) => Promise<ActionCardConversationMessageRow>;
 };
 
 export type DriveMutationInput = {
@@ -789,6 +846,60 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
     throw error;
   }
 
+  // 批 6：回滚成功后往项目主区群聊落一条 system_event 消息，人话说明「找回了哪个版本」。
+  // best-effort——找不到主会话、没配 conversations/postSystemMessage 依赖、或发布失败，都只是
+  // 静默跳过：回滚本身已经在 deps.repo.rollbackToVersion 里落库成功了，不该因为这条锦上添花的
+  // 消息失败而让整个请求报错（用户会以为回滚没生效，实际上文件早就找回了）。
+  async function announceVersionRollback(input: {
+    actor: AuthActor;
+    actorUserId: string;
+    projectId: string;
+    rolledBack: DriveMutationRows;
+  }): Promise<void> {
+    if (!deps.conversations || !deps.postSystemMessage) {
+      return;
+    }
+    const workspaceId = input.actor.workspaceId;
+    if (!workspaceId) {
+      return;
+    }
+    try {
+      const visible = await deps.conversations.listVisibleForProject({
+        workspaceId,
+        viewerUserId: input.actorUserId,
+        projectId: input.projectId,
+        limit: 50
+      });
+      const main = visible?.rows.find((row) => row.kind === "main");
+      if (!main) {
+        return;
+      }
+      const payload = input.rolledBack.operation.payloadJson as Record<string, unknown>;
+      const restoredFromVersionNo = typeof payload.restored_from_version_no === "number" ? payload.restored_from_version_no : undefined;
+      const newVersionNo = input.rolledBack.version?.versionNo;
+      const filename = input.rolledBack.item.name;
+      const summary = restoredFromVersionNo !== undefined && newVersionNo !== undefined
+        ? `《${filename}》找回了 v${restoredFromVersionNo} 的内容，追加成了新版本 v${newVersionNo}——原历史都还在。`
+        : `《${filename}》的一个旧版本已被找回，追加成了新版本——原历史都还在。`;
+      await deps.postSystemMessage({
+        workspaceId: main.workspaceId,
+        conversationId: main.id,
+        senderType: "system",
+        content: {
+          event: "drive_version_restored",
+          summary,
+          drive_item_id: input.rolledBack.item.id,
+          ...(newVersionNo !== undefined ? { new_version_no: newVersionNo } : {}),
+          ...(restoredFromVersionNo !== undefined ? { restored_from_version_no: restoredFromVersionNo } : {}),
+          actor_label: input.actor.label
+        },
+        at: deps.now?.() ?? new Date()
+      });
+    } catch {
+      // best-effort，见函数顶部注释。
+    }
+  }
+
   async function cleanupRejectedUpload(storagePath?: string) {
     if (!storagePath) {
       return;
@@ -1178,6 +1289,79 @@ export function createDrivePageService(deps: DrivePageServiceDependencies): Driv
         actor: input.actor,
         ...(input.locale ? { locale: input.locale } : {})
       });
+    },
+
+    async listVersions(input) {
+      if (!deps.repo.listVersionsForItem) {
+        // 假仓库（多数测试）没实现这个可选方法——诚实报错而不是假装能拉到版本历史。
+        throw new DrivePageServiceError(404, "没有找到这个网盘文件的版本历史。", "drive_versions_unavailable");
+      }
+      const rows = await pageForActor({ actor: input.actor, projectId: input.projectId });
+      if (!rows.project) {
+        throw new DrivePageServiceError(404, "没有找到这个项目网盘。", "drive_not_found");
+      }
+      // 读权限同 file()：能看这个项目网盘就能看版本历史的元信息（时间/操作者/大小），
+      // 不下载/预览旧版本内容——本批不做逐版本下载链接（见汇报「缺口」）。
+      if (!canViewProjectDrive(rows.project, input.actor)) {
+        throw new DrivePageServiceError(403, "你没有权限查看这个项目网盘。", "drive_forbidden");
+      }
+      const result = await deps.repo.listVersionsForItem({
+        projectId: input.projectId,
+        itemId: input.itemId,
+        ...(input.limit !== undefined ? { limit: input.limit } : {})
+      });
+      if (!result || result.item.deletedAt || result.item.kind !== "file") {
+        throw new DrivePageServiceError(404, "没有找到这个网盘文件。", "drive_file_not_found");
+      }
+      const canManage = canManageProjectDrive(rows.project, input.actor);
+      const currentVersionId = result.item.currentVersionId ?? undefined;
+      return {
+        item_id: result.item.id,
+        filename: result.item.name,
+        ...(currentVersionId ? { current_version_id: currentVersionId } : {}),
+        versions: result.versions.map((version) => {
+          const isCurrent = currentVersionId === version.id;
+          return {
+            id: version.id,
+            version_no: version.versionNo,
+            filename: version.filename,
+            ...(version.mime ? { mime: version.mime } : {}),
+            size_bytes: version.sizeBytes,
+            ...(version.sha256 ? { sha256: version.sha256 } : {}),
+            created_at: version.createdAt.toISOString(),
+            created_by_label: version.createdByLabel,
+            current: isCurrent,
+            ...(canManage && !isCurrent
+              ? { restore_href: `/api/drive/projects/${input.projectId}/items/${input.itemId}/versions/${version.id}/restore` }
+              : {})
+          };
+        })
+      };
+    },
+
+    async rollbackVersion(input) {
+      if (!deps.repo.rollbackToVersion) {
+        throw new DrivePageServiceError(404, "没有找到这个网盘文件的版本历史。", "drive_versions_unavailable");
+      }
+      const actorUserId = ensureHumanActor(input);
+      await ensureCanManage(input);
+      try {
+        const rolledBack = await deps.repo.rollbackToVersion({
+          actorKind: input.actor.kind,
+          actorUserId,
+          projectId: input.projectId,
+          itemId: input.itemId,
+          targetVersionId: input.targetVersionId,
+          at: deps.now?.() ?? new Date()
+        });
+        if (!rolledBack) {
+          throw new DrivePageServiceError(404, "没有找到这个网盘文件或版本。", "drive_version_not_found");
+        }
+        await announceVersionRollback({ actor: input.actor, actorUserId, projectId: input.projectId, rolledBack });
+        return pageAfterMutation(input, rolledBack.item.id);
+      } catch (error) {
+        mutationError(error);
+      }
     }
   };
 }
@@ -1188,9 +1372,15 @@ let defaultDrivePageDbClient: WorkHubDatabaseClient | undefined;
 export function getDefaultDrivePageService() {
   if (!defaultDrivePageService) {
     defaultDrivePageDbClient = getSharedDatabaseClient();
+    const db = defaultDrivePageDbClient.db;
     defaultDrivePageService = createDrivePageService({
-      repo: createDriveRepository(defaultDrivePageDbClient.db),
-      workItemAccess: createWorkItemRepository(defaultDrivePageDbClient.db)
+      repo: createDriveRepository(db),
+      workItemAccess: createWorkItemRepository(db),
+      // 批 6：回滚成功后的 system_event 消息——直接走 @workhub/db 的会话仓库找主会话
+      // （不经 services/conversations.ts，避免和它已经反向 import drive-pages.ts 形成循环依赖）+
+      // 批 3 已有的 postSystemMessage 写入口（照 services/action-cards.ts 的既有调法）。
+      conversations: createConversationRepository(db),
+      postSystemMessage: (message) => createActionCardRepository(db).postSystemMessage(message)
     });
   }
   return defaultDrivePageService;

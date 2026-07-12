@@ -134,7 +134,10 @@ function messageBodyHtml(message: ConversationMessageVM, ctx: ChatRenderContext)
     case "text":
       return `<div class="wh-wb-chat-txt">${highlightMentions(escapeHtml(message.content.text), ctx.members).replace(/\n/gu, "<br>")}</div>`;
     case "file_card":
-      return `<div class="wh-wb-chat-filecard">${workbenchIcons.folder}<span class="wh-wb-chat-filecard-name">${escapeHtml(message.content.snapshot_name)}</span></div>`;
+      // R12 批 6：file_card 点击 → 右栏预览（和网盘标签共用同一个情境面板组件，见
+      // workbench/drive/side-panel.ts）。只有已落库的确认消息才可点——发送中的乐观渲染
+      // （renderPendingOutgoingHtml）还没有服务端确认的 drive_item_id 归属，继续保持非交互。
+      return `<button type="button" class="wh-wb-chat-filecard wh-wb-chat-filecard--live" data-wb-chat-open-file="${escapeHtml(message.content.drive_item_id)}" data-wb-chat-open-file-name="${escapeHtml(message.content.snapshot_name)}">${workbenchIcons.folder}<span class="wh-wb-chat-filecard-name">${escapeHtml(message.content.snapshot_name)}</span></button>`;
     case "action_card":
       return renderActionCardSummaryHtml(message.content, ctx.locale);
     case "tool_note":

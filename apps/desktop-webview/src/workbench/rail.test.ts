@@ -121,7 +121,10 @@ test("the main-conversation leaf is a real, clickable button once batch 2 wires 
   assert.match(html, /<button[^>]*data-wb-open-main-chat[^>]*>[^]*主区/u);
 });
 
-test("the drive leaf is still informational-only (no view to route to until batch 6)", () => {
+// R12 批 6：网盘视图接进这个窗口后，「网盘」树叶从只读升级成真按钮（切中栏到 drive 标签，见
+// shell.ts 的 onOpenDrive）——上面批 2 的测试已经预告了这次升级会在批 6 发生，这不是临时改断言迁就
+// 实现，是照原定计划把断言换成新行为。
+test("the drive leaf is a real, clickable button once batch 6 wires the drive view", () => {
   const vm = workbenchVm();
   const html = renderProjectTreeHtml({
     projects: [project()],
@@ -129,9 +132,22 @@ test("the drive leaf is still informational-only (no view to route to until batc
     vm,
     locale: "zh-CN"
   });
-  const driveLeafMatch = html.match(/<div class="wh-wb-leaf">[^]*?<\/div>/u);
-  assert.ok(driveLeafMatch, "expected a plain, non-button drive leaf");
-  assert.doesNotMatch(driveLeafMatch![0], /data-wb-open/u);
+  assert.match(html, /<button[^>]*data-wb-open-drive[^>]*>[^]*网盘/u);
+});
+
+function leafTag(html: string, marker: string): string {
+  const match = html.match(new RegExp(`<button[^>]*${marker}[^>]*>`, "u"));
+  assert.ok(match, `expected to find a <button> tag carrying ${marker}`);
+  return match![0];
+}
+
+test("centerTab decides which leaf is visually selected (defaults to the main chat)", () => {
+  const vm = workbenchVm();
+  const defaultTab = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm, locale: "zh-CN" });
+  const driveTab = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm, locale: "zh-CN", centerTab: "drive" });
+  assert.match(leafTag(defaultTab, "data-wb-open-main-chat"), / sel/u);
+  assert.match(leafTag(driveTab, "data-wb-open-drive"), / sel/u);
+  assert.doesNotMatch(leafTag(driveTab, "data-wb-open-main-chat"), / sel/u);
 });
 
 test("renderProjectTreeHtml does not leak a stale VM onto a different project's row", () => {

@@ -12,6 +12,8 @@ import { appleGlassDesignSystemCss } from "../design-system.js";
 import { resolveDesktopShellEmitter } from "../desktop-cuu-runtime.js";
 import { mountChatView, type ChatViewApiClient, type ChatViewHandle } from "./chat/view.js";
 import { workbenchCss } from "./css.js";
+import { mountDriveSidePanel, type DriveSidePanelApiClient, type DriveSidePanelHandle } from "./drive/side-panel.js";
+import { mountDriveView, type DriveTabApiClient, type DriveViewHandle } from "./drive/view.js";
 import { workbenchIcons } from "./icons.js";
 import { createWorkbenchInterruptBroadcaster } from "./interrupt-broadcast.js";
 import { mountWorkbenchRail, type WorkbenchRailApiClient } from "./rail.js";
@@ -22,10 +24,13 @@ type Locale = "zh-CN" | "en-US";
 
 // R12 批 2：中栏在项目选中且 VM 就绪时渲染真实群聊（chat/view.ts），需要 request（消息/typing 走
 // client.request，见 chat/api.ts 顶部注释——不为一个只有工作台窗口用的批次特性扩大 WorkHubApiClient
-// 的具名方法面）+ streams（拼 SSE 订阅 URL）。
+// 的具名方法面）+ streams（拼 SSE 订阅 URL）。批 6 加网盘标签（drive/view.ts）需要的
+// uploadDriveFile/deleteDriveItem/restoreDriveItem 是既有具名方法，直接 Pick 进来，不新增。
 export type WorkbenchShellApiClient = WorkbenchRailApiClient &
   ChatViewApiClient &
-  Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages" | "request" | "streams">;
+  DriveTabApiClient &
+  DriveSidePanelApiClient &
+  Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages" | "request" | "streams" | "uploadDriveFile" | "deleteDriveItem" | "restoreDriveItem">;
 
 // 照 boot.ts 的 clientToken() 同款 helper——shell.ts 不 import boot.ts（避免 boot.ts → shell.ts →
 // chat/view.ts → ... 的循环 import 风险），改由 mountWorkbenchShell 的调用方（boot.ts 本尊）注入
@@ -165,6 +170,8 @@ export function mountWorkbenchShell(
   let vmRequestGen = 0;
   let chatHandle: ChatViewHandle | undefined;
   let chatMountKey: string | undefined;
+  let driveHandle: DriveViewHandle | undefined;
+  let driveMountKey: string | undefined;
 
   // R12 批7:打扰矩阵——windowBridge.isFocused() 告诉我们"用户是否正看着这个工作台窗口"；
   // resolveDesktopShellEmitter 是桌宠/主窗共用的通用 Tauri 事件桥(__TAURI__.event.emit),这里复用它
@@ -190,6 +197,12 @@ export function mountWorkbenchShell(
     chatMountKey = undefined;
   };
 
+  const disposeDrive = () => {
+    driveHandle?.dispose();
+    driveHandle = undefined;
+    driveMountKey = undefined;
+  };
+
   root.innerHTML = renderWorkbenchDocumentHead() + renderWorkbenchShellHtml(input.locale);
   const railEl = root.querySelector<HTMLElement>("[data-wb-rail]");
   const centerEl = root.querySelector<HTMLElement>("[data-wb-center]");
@@ -202,15 +215,34 @@ export function mountWorkbenchShell(
     throw new Error("workbench shell markup is missing an expected mount point");
   }
 
+  // R12 批 6：情境面板的网盘内容控制器——挂载一次，活过项目/标签切换，这样聊天视图的 file_card
+  // 点击和网盘标签的文件点击才能共用同一份右栏状态（见 drive/side-panel.ts 顶部注释）。
+  const driveSidePanel: DriveSidePanelHandle = mountDriveSidePanel(sideBodyEl, store, {
+    client: input.client,
+    locale: input.locale,
+    onRolledBack: ({ projectId }) => {
+      if (driveHandle && driveMountKey === `${projectId}:drive`) {
+        driveHandle.refresh();
+      }
+    }
+  });
+
   const selectProject = (projectId: string, conversationId?: string) => {
     const my = ++vmRequestGen;
+    // 换项目时回到默认的主区群聊标签——上一个项目的中栏标签对新项目没有意义。
     store.setState({
       selectedProjectId: projectId,
       pendingConversationId: conversationId,
       vm: undefined,
       vmLoad: "loading",
-      vmError: undefined
+      vmError: undefined,
+      centerTab: "chat"
     });
+    // 右栏跟着清空：上一个项目挑的文件预览/版本历史对新项目没有意义，留着会显示错误项目的内容。
+    // 必须走 showIdle()（而不是直接 store.setState({sidePanelContent: undefined})）——showIdle()
+    // 会让还没回来的预览/版本历史请求失效，否则旧项目一个晚到的响应会把这次清空又盖回去（见
+    // side-panel.ts 的 loadGeneration 注释）。
+    driveSidePanel.showIdle();
     // pages.workbench 在 PageClient 上是可选字段（不强迫其它 workspace 的完整 PageClient mock 跟着补桩，
     // 见 packages/api-client/src/types.ts 的注释）；真实 createApiClient() 一定实现它，但这里仍老实处理
     // 「万一没有」——报真错误，不假装能拿到数据。
@@ -246,21 +278,50 @@ export function mountWorkbenchShell(
   // 批 2 汇报）。chat 视图是有状态的 imperative 组件（SSE 订阅/composer 草稿/翻页），只在
   // "项目+主会话" 真的变化时才重新挂载——store 的其它字段变化（如侧栏收放）不该把它拆了重建，
   // 否则每次都会打断用户正在打的字、重新连一次 SSE。
+  // R12 批 6：中栏现在按 state.centerTab 在群聊/网盘两个视图之间切——同一时刻只有一个挂在 centerEl
+  // 上（和 chat 视图同款"只在 key 真变化时才重挂"纪律，见下 driveMountKey/chatMountKey）。切标签时
+  // 非活动那个视图会被销毁（chat 的 SSE 订阅/composer 草稿、drive 的当前文件夹都会丢），这是已知的
+  // 简化取舍（两个标签共用同一个中栏挂载位，不常驻）——留给后续批次决定要不要改成隐藏而不是销毁。
   const renderCenter = (state: WorkbenchStoreState) => {
     if (!state.selectedProjectId) {
       disposeChat();
+      disposeDrive();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderEmptyStateHtml(input.locale, state.projects.length > 0);
       return;
     }
     if (state.vmLoad === "error") {
       disposeChat();
+      disposeDrive();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderCenterErrorHtml(input.locale);
       return;
     }
     if (state.vm) {
-      const mainConversation = state.vm.conversations.conversations.find((conversation) => conversation.kind === "main");
+      const vm = state.vm;
+      if (state.centerTab === "drive") {
+        disposeChat();
+        const key = `${vm.project.id}:drive`;
+        if (driveHandle && driveMountKey === key) {
+          return; // 已经是这个项目的网盘标签——它自己的 store 在内部持续更新，无需重挂。
+        }
+        disposeDrive();
+        centerEl.className = "wh-wb-center wh-wb-center--drive";
+        driveHandle = mountDriveView(centerEl, {
+          client: input.client,
+          locale: input.locale,
+          projectId: vm.project.id,
+          projectName: vm.project.name,
+          sidePanel: driveSidePanel
+        });
+        driveMountKey = key;
+        // 刚打开网盘标签——右栏给个「点文件查看」的诚实占位，取代批 5 那条通用预告文案
+        // （这里已经有真内容了）。
+        driveSidePanel.showIdle();
+        return;
+      }
+      disposeDrive();
+      const mainConversation = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
       if (!mainConversation) {
         // 批 0 的 workbenchPageVmSchema 已经用 superRefine 保证"恰好一个 main 会话"存在；真到这里说明
         // 服务端契约被破坏，老实报错而不是假装能渲染群聊。
@@ -269,7 +330,7 @@ export function mountWorkbenchShell(
         centerEl.innerHTML = renderCenterErrorHtml(input.locale);
         return;
       }
-      const key = `${state.vm.project.id}:${mainConversation.id}`;
+      const key = `${vm.project.id}:${mainConversation.id}`;
       if (chatHandle && chatMountKey === key) {
         return; // 已经是这个会话的 chat 视图——它自己的 store/SSE 订阅在内部持续更新，无需重挂。
       }
@@ -278,11 +339,11 @@ export function mountWorkbenchShell(
       chatHandle = mountChatView(centerEl, {
         client: input.client,
         locale: input.locale,
-        projectId: state.vm.project.id,
-        projectName: state.vm.project.name,
+        projectId: vm.project.id,
+        projectName: vm.project.name,
         conversationId: mainConversation.id,
-        currentUserId: state.vm.viewer.user_id,
-        members: state.vm.workspace_members.items,
+        currentUserId: vm.viewer.user_id,
+        members: vm.workspace_members.items,
         getClientToken,
         streamUrl: input.client.streams.conversation(mainConversation.id),
         ...(interruptBroadcaster
@@ -291,22 +352,28 @@ export function mountWorkbenchShell(
                 void interruptBroadcaster.handleRawConversationEvent(raw);
               }
             }
-          : {})
+          : {}),
+        // R12 批 6：file_card 点击 → 右栏预览，和网盘标签共用同一个 driveSidePanel 控制器。
+        onOpenDriveFile: (fileInput) => driveSidePanel.showPreview({ projectId: vm.project.id, itemId: fileInput.itemId, itemName: fileInput.itemName })
       });
       chatMountKey = key;
       return;
     }
     disposeChat();
+    disposeDrive();
     centerEl.className = "wh-wb-center";
     centerEl.innerHTML = renderCenterLoadingHtml(input.locale);
   };
 
+  // R12 批 6：右栏内容现在有真正的所有者概念（state.sidePanelContent，见 store.ts 顶部注释）——
+  // driveSidePanel 在有内容时把渲染好的 html 推进 store，这里只管展示；没有任何视图认领时才落回
+  // 批 5 之前就有的通用占位文案（renderSidePanelPlaceholderHtml，测试仍覆盖这条兜底路径）。
   const renderSide = (state: WorkbenchStoreState) => {
     sideEl.dataset.open = state.sidePanelOpen ? "true" : "false";
     if (sideToggleBtn) {
       sideToggleBtn.innerHTML = state.sidePanelOpen ? workbenchIcons.chevronRight : workbenchIcons.chevronLeft;
     }
-    sideBodyEl.innerHTML = renderSidePanelPlaceholderHtml(input.locale);
+    sideBodyEl.innerHTML = state.sidePanelContent?.html ?? renderSidePanelPlaceholderHtml(input.locale);
   };
 
   const crumbEl = root.querySelector<HTMLElement>("[data-wb-crumb]");
@@ -338,7 +405,12 @@ export function mountWorkbenchShell(
     onSelectProject: selectProject,
     // 会话点击路由：点「主区」树叶把焦点交回已经挂载好的 chat composer（不重新拉数据/不重连
     // SSE——中栏此刻本来就是这个项目的 chat 视图，见 renderCenter 的 chatMountKey 复用逻辑）。
-    onOpenMainConversation: () => chatHandle?.focusComposer()
+    onOpenMainConversation: () => {
+      store.setState({ centerTab: "chat" });
+      chatHandle?.focusComposer();
+    },
+    // R12 批 6：「网盘」树叶点击路由——切 store.centerTab，renderCenter 的订阅回调负责挂真视图。
+    onOpenDrive: () => store.setState({ centerTab: "drive" })
   });
 
   centerEl.addEventListener("click", (event) => {
@@ -379,6 +451,8 @@ export function mountWorkbenchShell(
       unsubscribe();
       railHandle.dispose();
       disposeChat();
+      disposeDrive();
+      driveSidePanel.dispose();
     }
   };
 }

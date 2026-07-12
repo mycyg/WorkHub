@@ -17,7 +17,11 @@ export const workbenchIcons = {
   chevronRight: ic('<path d="M9 6l6 6-6 6"/>'),
   chevronLeft: ic('<path d="M15 6l-6 6 6 6"/>'),
   send: ic('<path d="M4 12 20 4l-7 16-2.5-6.5L4 12Z"/>'),
-  cat: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5 10.2V4.6L9.3 7.5C10.2 7.2 11.1 7 12 7c.9 0 1.8.2 2.7.5L19 4.6v5.6a7 7 0 1 1-14 0Zm3.3 2.4a1.1 1.1 0 1 0 2.2 0 1.1 1.1 0 1 0-2.2 0Zm5.2 0a1.1 1.1 0 1 0 2.2 0 1.1 1.1 0 1 0-2.2 0Z"/></svg>`
+  cat: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5 10.2V4.6L9.3 7.5C10.2 7.2 11.1 7 12 7c.9 0 1.8.2 2.7.5L19 4.6v5.6a7 7 0 1 1-14 0Zm3.3 2.4a1.1 1.1 0 1 0 2.2 0 1.1 1.1 0 1 0-2.2 0Zm5.2 0a1.1 1.1 0 1 0 2.2 0 1.1 1.1 0 1 0-2.2 0Z"/></svg>`,
+  // R12 批 6（网盘整合 + git 化）：文件行图标 + 版本历史（时钟）+ 已找回确认（对勾）。
+  file: ic('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/>'),
+  history: ic('<circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.6 1.6"/><path d="M9 2.5h6"/>'),
+  check: ic('<path d="M5 12.5 9.5 17 19 6.5"/>')
 } as const;
 
 export type WorkbenchIconKey = keyof typeof workbenchIcons;

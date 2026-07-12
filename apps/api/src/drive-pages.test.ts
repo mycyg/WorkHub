@@ -13,20 +13,27 @@ import { ZodError } from "zod";
 import { loadSettings, type Settings } from "@workhub/config";
 import { DriveRepositoryConflictError } from "@workhub/db";
 import type {
+  ActionCardConversationMessageRow,
   ClientDeviceAuthRow,
   ClientDeviceRepository,
   DriveAcceptedDeliverableRow,
   DrivePageRows,
   DriveRepository,
   UserAuthRow,
-  UserRepository
+  UserRepository,
+  VisibleConversationRow
 } from "@workhub/db";
 import type { DeliverableChangeManifest, DrivePageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import { COOKIE_NAME, type AuthDependencies, type AuthEnv } from "./middleware/auth.js";
 import { createDriveRoutes } from "./routes/drive.js";
 import { createPageRoutes } from "./routes/pages.js";
-import { createDrivePageService, DrivePageServiceError, type DrivePageService } from "./services/drive-pages.js";
+import {
+  createDrivePageService,
+  DrivePageServiceError,
+  type DrivePageService,
+  type DriveVersionHistoryVM
+} from "./services/drive-pages.js";
 import { ProposalServiceError, type StoredProposal } from "./services/proposals.js";
 import { WorkItemServiceError } from "./services/work-items.js";
 
@@ -3937,4 +3944,366 @@ test("drive mutation routes preserve service conflict codes", async () => {
       message: "文件版本已经变化，请刷新后重试。"
     }
   });
+});
+
+// —— R12 批 6（网盘整合 + git 化）：drivePageService.listVersions / rollbackVersion —— //
+// 路由层合同（认证前置/uuid 守卫/query 透传）在 routes/drive-versions.test.ts 覆盖；
+// 这里专门钉死服务层的鉴权分叉（能看 vs 能管）、VM 组装（cap/操作者昵称/仅非当前版本给回滚链接）、
+// 与 repo 返回 null/冲突时的错误映射。
+
+function baseDriveRepo(overrides: Partial<DriveRepository> = {}): DriveRepository {
+  return {
+    async listRecentFilesByProject() { return []; },
+    async countFilesByProject() { return 0; },
+    async readPage() { return rows(); },
+    async uploadFile() { throw new Error("not needed"); },
+    async softDeleteItem() { throw new Error("not needed"); },
+    async restoreDeletedItem() { throw new Error("not needed"); },
+    async createComment(): Promise<never> { throw new Error("not needed"); },
+    async commentToDraft() { throw new Error("not needed"); },
+    async recordDraftProposal() { throw new Error("not needed"); },
+    ...overrides
+  };
+}
+
+function outsiderActor() {
+  return {
+    kind: "human" as const,
+    id: "91000000-0000-4000-8000-0000000000aa",
+    label: "outsider",
+    userId: "91000000-0000-4000-8000-0000000000aa",
+    isAdmin: false,
+    orgId: "91000000-0000-4000-8000-000000000013",
+    workspaceId: "91000000-0000-4000-8000-0000000000bb"
+  };
+}
+
+function driveVersionHistoryRow(id: string, versionNo: number, createdByLabel: string) {
+  return {
+    id,
+    itemId,
+    versionNo,
+    filename: "客户复盘.md",
+    mime: "text/markdown",
+    sizeBytes: 1000 + versionNo,
+    storagePath: `drive/r12/v${versionNo}.md`,
+    sha256: null,
+    parsedText: null,
+    parsedTextPath: null,
+    createdByUserId: userId,
+    createdAt: new Date(`2026-06-1${versionNo}T00:00:00.000Z`),
+    updatedAt: new Date(`2026-06-1${versionNo}T00:00:00.000Z`),
+    createdByLabel
+  };
+}
+
+test("drive page service lists version history with operator labels and gates restore links to non-current versions the actor can manage", async () => {
+  const item = rows().items[1]!; // the file row (kind="file", currentVersionId=currentVersionId)
+  const versions = [
+    driveVersionHistoryRow(currentVersionId, 2, "PM"),
+    driveVersionHistoryRow(previousVersionId, 1, "PM")
+  ];
+  const seen: unknown[] = [];
+  const repo = baseDriveRepo({
+    async listVersionsForItem(input) {
+      seen.push(input);
+      return { item, versions };
+    }
+  });
+  const service = createDrivePageService({ repo, now: () => now });
+
+  const result = await service.listVersions!({ actor: actor(), projectId, itemId, limit: 5 }) as DriveVersionHistoryVM;
+
+  assert.deepEqual(seen, [{ projectId, itemId, limit: 5 }]);
+  assert.equal(result.item_id, itemId);
+  assert.equal(result.current_version_id, currentVersionId);
+  assert.deepEqual(result.versions.map((version) => version.id), [currentVersionId, previousVersionId]);
+  assert.equal(result.versions[0]?.current, true);
+  assert.equal(result.versions[0]?.restore_href, undefined, "the current version must not offer a restore link");
+  assert.equal(result.versions[1]?.current, false);
+  assert.equal(
+    result.versions[1]?.restore_href,
+    `/api/drive/projects/${projectId}/items/${itemId}/versions/${previousVersionId}/restore`
+  );
+  assert.equal(result.versions[1]?.created_by_label, "PM");
+  assert.equal(result.versions[1]?.size_bytes, 1001);
+});
+
+test("drive page service refuses version history to an actor outside the project's workspace, without touching the repo", async () => {
+  const repo = baseDriveRepo({
+    async listVersionsForItem() {
+      throw new Error("must not reach the repository once the permission check fails");
+    }
+  });
+  const service = createDrivePageService({ repo, now: () => now });
+
+  await assert.rejects(
+    () => service.listVersions!({ actor: outsiderActor(), projectId, itemId }),
+    (error: unknown) => error instanceof DrivePageServiceError && error.status === 403 && error.code === "drive_forbidden"
+  );
+});
+
+test("drive page service reports drive_versions_unavailable when the repository does not implement listVersionsForItem", async () => {
+  const repo = baseDriveRepo();
+  const service = createDrivePageService({ repo, now: () => now });
+
+  await assert.rejects(
+    () => service.listVersions!({ actor: actor(), projectId, itemId }),
+    (error: unknown) => error instanceof DrivePageServiceError && error.status === 404 && error.code === "drive_versions_unavailable"
+  );
+});
+
+test("drive page service 404s version history for a deleted item instead of leaking its history", async () => {
+  const repo = baseDriveRepo({
+    async listVersionsForItem() {
+      return {
+        item: { ...rows().items[1]!, deletedAt: new Date("2026-06-12T00:00:00.000Z") },
+        versions: [driveVersionHistoryRow(currentVersionId, 1, "PM")]
+      };
+    }
+  });
+  const service = createDrivePageService({ repo, now: () => now });
+
+  await assert.rejects(
+    () => service.listVersions!({ actor: actor(), projectId, itemId }),
+    (error: unknown) => error instanceof DrivePageServiceError && error.status === 404 && error.code === "drive_file_not_found"
+  );
+});
+
+test("drive page service rollback delegates to the repository and returns the refreshed page VM", async () => {
+  const rolledBackItem = { ...rows().items[1]!, currentVersionId: "91000000-0000-4000-8000-000000000099" };
+  const seen: unknown[] = [];
+  const repo = baseDriveRepo({
+    async rollbackToVersion(input) {
+      seen.push(input);
+      return {
+        item: rolledBackItem,
+        version: driveVersionHistoryRow("91000000-0000-4000-8000-000000000099", 3, "PM"),
+        operation: rows().operations[0]!
+      };
+    }
+  });
+  const service = createDrivePageService({ repo, now: () => now });
+
+  const page = await service.rollbackVersion!({ actor: actor(), projectId, itemId, targetVersionId: previousVersionId });
+
+  assert.equal(page.project?.id, projectId);
+  assert.equal(seen.length, 1);
+  const call = seen[0] as { projectId: string; itemId: string; targetVersionId: string; actorUserId: string };
+  assert.equal(call.projectId, projectId);
+  assert.equal(call.itemId, itemId);
+  assert.equal(call.targetVersionId, previousVersionId);
+  assert.equal(call.actorUserId, userId);
+});
+
+test("drive page service rollback requires manage permission and never calls the repository otherwise", async () => {
+  const repo = baseDriveRepo({
+    async rollbackToVersion() {
+      throw new Error("must not reach the repository once the permission check fails");
+    }
+  });
+  const service = createDrivePageService({ repo, now: () => now });
+
+  await assert.rejects(
+    () => service.rollbackVersion!({ actor: outsiderActor(), projectId, itemId, targetVersionId: previousVersionId }),
+    (error: unknown) => error instanceof DrivePageServiceError && error.status === 403 && error.code === "drive_forbidden"
+  );
+});
+
+test("drive page service rollback maps the repository's 'already current' conflict to a 409", async () => {
+  const repo = baseDriveRepo({
+    async rollbackToVersion() {
+      throw new DriveRepositoryConflictError("drive_version_is_current", "这已经是当前版本，无需找回。");
+    }
+  });
+  const service = createDrivePageService({ repo, now: () => now });
+
+  await assert.rejects(
+    () => service.rollbackVersion!({ actor: actor(), projectId, itemId, targetVersionId: currentVersionId }),
+    (error: unknown) =>
+      error instanceof DrivePageServiceError
+      && error.status === 409
+      && error.code === "drive_version_is_current"
+  );
+});
+
+test("drive page service rollback 404s when the repository can't find the item or target version", async () => {
+  const repo = baseDriveRepo({
+    async rollbackToVersion() {
+      return null;
+    }
+  });
+  const service = createDrivePageService({ repo, now: () => now });
+
+  await assert.rejects(
+    () => service.rollbackVersion!({ actor: actor(), projectId, itemId, targetVersionId: "91000000-0000-4000-8000-0000000000ff" }),
+    (error: unknown) => error instanceof DrivePageServiceError && error.status === 404 && error.code === "drive_version_not_found"
+  );
+});
+
+test("drive page service rollback reports drive_versions_unavailable when the repository does not implement rollbackToVersion", async () => {
+  const repo = baseDriveRepo();
+  const service = createDrivePageService({ repo, now: () => now });
+
+  await assert.rejects(
+    () => service.rollbackVersion!({ actor: actor(), projectId, itemId, targetVersionId: previousVersionId }),
+    (error: unknown) => error instanceof DrivePageServiceError && error.status === 404 && error.code === "drive_versions_unavailable"
+  );
+});
+
+// —— R12 批 6：回滚成功后往项目主区群聊落一条 system_event 消息（复用批 3 的 postSystemMessage） —— //
+
+function mainConversationRow(overrides: Partial<VisibleConversationRow> = {}): VisibleConversationRow {
+  return {
+    id: "91000000-0000-4000-8000-000000000401",
+    workspaceId: actor().workspaceId,
+    projectId,
+    kind: "main",
+    title: "主区",
+    parentConversationId: null,
+    sourceMessageId: null,
+    visibility: "project",
+    nextSeq: 5,
+    createdBy: null,
+    deletedAt: null,
+    deletedByUserId: null,
+    createdAt: now,
+    updatedAt: now,
+    participantRole: null,
+    ...overrides
+  };
+}
+
+function rollbackTargetRows() {
+  return {
+    item: { ...rows().items[1]!, currentVersionId: "91000000-0000-4000-8000-000000000099" },
+    version: {
+      id: "91000000-0000-4000-8000-000000000099",
+      itemId,
+      versionNo: 3,
+      filename: "客户复盘.md",
+      mime: "text/markdown",
+      sizeBytes: 1024,
+      storagePath: "drive/r5/previous.md",
+      sha256: null,
+      parsedText: null,
+      parsedTextPath: null,
+      createdByUserId: userId,
+      createdAt: now,
+      updatedAt: now
+    },
+    operation: {
+      id: "91000000-0000-4000-8000-000000000402",
+      projectId,
+      actorUserId: userId,
+      opType: "restore_version",
+      payloadJson: { drive_item_id: itemId, restored_from_version_no: 1, new_version_no: 3 },
+      undoneAt: null,
+      createdAt: now,
+      updatedAt: now
+    }
+  };
+}
+
+test("drive page service posts a plain-language system_event message into the main conversation after a successful rollback", async () => {
+  const repo = baseDriveRepo({
+    async rollbackToVersion() {
+      return rollbackTargetRows();
+    }
+  });
+  const listCalls: unknown[] = [];
+  const postCalls: unknown[] = [];
+  const service = createDrivePageService({
+    repo,
+    now: () => now,
+    conversations: {
+      async listVisibleForProject(input) {
+        listCalls.push(input);
+        return { rows: [mainConversationRow()], capped: false, nextCursor: null };
+      }
+    },
+    postSystemMessage: async (message) => {
+      postCalls.push(message);
+      return {} as ActionCardConversationMessageRow;
+    }
+  });
+
+  await service.rollbackVersion!({ actor: actor(), projectId, itemId, targetVersionId: previousVersionId });
+
+  assert.equal(listCalls.length, 1);
+  assert.deepEqual(listCalls[0], { workspaceId: actor().workspaceId, viewerUserId: userId, projectId, limit: 50 });
+  assert.equal(postCalls.length, 1);
+  const posted = postCalls[0] as { workspaceId: string; conversationId: string; senderType: string; content: Record<string, unknown> };
+  assert.equal(posted.workspaceId, actor().workspaceId);
+  assert.equal(posted.conversationId, mainConversationRow().id);
+  assert.equal(posted.senderType, "system");
+  assert.equal(posted.content.event, "drive_version_restored");
+  assert.equal(posted.content.summary, "《客户复盘.md》找回了 v1 的内容，追加成了新版本 v3——原历史都还在。");
+  assert.doesNotMatch(String(posted.content.summary), /\brevert\b|\brollback\b|\bbranch\b/iu);
+});
+
+test("drive page service skips the system message (but the rollback itself still succeeds) when the project has no main conversation", async () => {
+  const repo = baseDriveRepo({
+    async rollbackToVersion() {
+      return rollbackTargetRows();
+    }
+  });
+  let postCalls = 0;
+  const service = createDrivePageService({
+    repo,
+    now: () => now,
+    conversations: {
+      async listVisibleForProject() {
+        return { rows: [], capped: false, nextCursor: null };
+      }
+    },
+    postSystemMessage: async () => {
+      postCalls += 1;
+      return {} as ActionCardConversationMessageRow;
+    }
+  });
+
+  const page = await service.rollbackVersion!({ actor: actor(), projectId, itemId, targetVersionId: previousVersionId });
+
+  assert.equal(page.project?.id, projectId);
+  assert.equal(postCalls, 0);
+});
+
+test("drive page service rollback still succeeds even when posting the system message throws (best-effort, not a hard dependency)", async () => {
+  const repo = baseDriveRepo({
+    async rollbackToVersion() {
+      return rollbackTargetRows();
+    }
+  });
+  const service = createDrivePageService({
+    repo,
+    now: () => now,
+    conversations: {
+      async listVisibleForProject() {
+        return { rows: [mainConversationRow()], capped: false, nextCursor: null };
+      }
+    },
+    postSystemMessage: async () => {
+      throw new Error("simulated conversation-write outage");
+    }
+  });
+
+  const page = await service.rollbackVersion!({ actor: actor(), projectId, itemId, targetVersionId: previousVersionId });
+
+  assert.equal(page.project?.id, projectId, "the already-committed rollback must not be reported as a failure to the caller");
+});
+
+test("drive page service skips the system message entirely when the deps aren't wired (no conversations/postSystemMessage)", async () => {
+  const repo = baseDriveRepo({
+    async rollbackToVersion() {
+      return rollbackTargetRows();
+    }
+  });
+  // 不传 conversations/postSystemMessage——照 DrivePageServiceDependencies 的可选字段约定，
+  // 老实跳过而不是抛错（这也是本文件其余几十个 rollbackVersion 测试都没有喂这两个依赖仍然全绿的原因）。
+  const service = createDrivePageService({ repo, now: () => now });
+
+  const page = await service.rollbackVersion!({ actor: actor(), projectId, itemId, targetVersionId: previousVersionId });
+
+  assert.equal(page.project?.id, projectId);
 });
