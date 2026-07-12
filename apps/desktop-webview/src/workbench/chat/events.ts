@@ -1,0 +1,49 @@
+// WorkHub 桌面 · 解析从 SSE 流收到的会话事件——纯函数，真正用契约的 zod schema 校验（不是 ad hoc
+// 摸字段），未过校验/会话 id 不匹配的一律返回 undefined，调用方（view.ts）静默丢弃，不崩渲染。
+// 这也是「不写伪测试」的具体体现之一：这里的单测跑的是真实 zod 校验路径，不是 mock 掉校验只测传参。
+
+import {
+  conversationMessageCreatedEventSchema,
+  conversationPresenceTypingEventSchema,
+  type ConversationMessageVM
+} from "@workhub/contracts";
+
+export function parseIncomingMessageCreated(raw: unknown, conversationId: string): ConversationMessageVM | undefined {
+  const parsed = conversationMessageCreatedEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.data.conversation_id !== conversationId) {
+    return undefined;
+  }
+  return parsed.data.data;
+}
+
+export type IncomingTypingSignal = {
+  userId: string;
+  expiresAtMs: number;
+};
+
+// currentUserId 传入时会过滤掉"自己正在输入"的回声——服务端并不区分发送者/接收者广播同一个
+// 会话主题，是否展示给自己是纯前端展示层的决定。
+export function parseIncomingTyping(
+  raw: unknown,
+  conversationId: string,
+  currentUserId: string | undefined
+): IncomingTypingSignal | undefined {
+  const parsed = conversationPresenceTypingEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.data.conversation_id !== conversationId) {
+    return undefined;
+  }
+  if (currentUserId !== undefined && parsed.data.data.user_id === currentUserId) {
+    return undefined;
+  }
+  const expiresAtMs = Date.parse(parsed.data.data.expires_at);
+  if (!Number.isFinite(expiresAtMs)) {
+    return undefined;
+  }
+  return { userId: parsed.data.data.user_id, expiresAtMs };
+}

@@ -102,6 +102,83 @@ test("workbench view invokes the real open_workbench Tauri command with the targ
   });
 });
 
+test("selecting a project stashes the pending deep link before invoking (cold-start race mitigation)", async () => {
+  await withFakeHTMLElement(async () => {
+    const calls: Array<[string, Record<string, unknown> | undefined]> = [];
+    (globalThis as { __TAURI__?: unknown }).__TAURI__ = {
+      core: {
+        invoke: async (command: string, args?: Record<string, unknown>) => {
+          calls.push([command, args]);
+          return undefined;
+        }
+      }
+    };
+    const storageValues = new Map<string, string>();
+    const fakeWindow = {
+      localStorage: {
+        getItem: (key: string) => storageValues.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          storageValues.set(key, value);
+        },
+        removeItem: (key: string) => {
+          storageValues.delete(key);
+        }
+      }
+    };
+    const globals = globalThis as unknown as { window?: unknown };
+    try {
+      globals.window = fakeWindow;
+      const body = new FakeBody();
+      createWorkbenchOpenView("workbench").mount(
+        baseCtx(body, { target: { id: "project-1", label: "星尘短剧" } })
+      );
+      // The stash must land synchronously, before the invoke() promise even settles — that is the
+      // whole point (see pending-deep-link.ts): it has to be there before Rust creates the window.
+      assert.ok(storageValues.has("workhub_workbench_pending_deep_link"));
+      const stashed = JSON.parse(storageValues.get("workhub_workbench_pending_deep_link")!) as { projectId?: string };
+      assert.equal(stashed.projectId, "project-1");
+      await tick();
+      assert.deepEqual(calls, [["open_workbench", { projectId: "project-1" }]]);
+    } finally {
+      delete globals.window;
+      delete (globalThis as { __TAURI__?: unknown }).__TAURI__;
+    }
+  });
+});
+
+test("the bare 'new project' entry does not stash anything (there is no project id to route to)", async () => {
+  await withFakeHTMLElement(async () => {
+    (globalThis as { __TAURI__?: unknown }).__TAURI__ = {
+      core: { invoke: async () => undefined }
+    };
+    const storageValues = new Map<string, string>();
+    const fakeWindow = {
+      localStorage: {
+        getItem: (key: string) => storageValues.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          storageValues.set(key, value);
+        },
+        removeItem: (key: string) => {
+          storageValues.delete(key);
+        }
+      }
+    };
+    const globals = globalThis as unknown as { window?: unknown };
+    try {
+      globals.window = fakeWindow;
+      const body = new FakeBody();
+      createWorkbenchOpenView("new_project", { bare: true }).mount(
+        baseCtx(body, { target: { id: "project-1", label: "星尘短剧" } })
+      );
+      await tick();
+      assert.equal(storageValues.size, 0);
+    } finally {
+      delete globals.window;
+      delete (globalThis as { __TAURI__?: unknown }).__TAURI__;
+    }
+  });
+});
+
 test("the 'new project' entry always opens bare (never leaks a stray project id from spotlight context)", async () => {
   await withFakeHTMLElement(async () => {
     const calls: Array<[string, Record<string, unknown> | undefined]> = [];

@@ -26,3 +26,16 @@ test("the side panel collapses to zero width instead of just hiding overflow", (
 test("no rule styles an emoji-bearing selector or content string", () => {
   assert.doesNotMatch(workbenchCss, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
 });
+
+test("the chat center view manages its own scroll/layout instead of inheriting the default padded scroll box", () => {
+  assert.match(workbenchCss, /\.wh-wb-center\.wh-wb-center--chat\{padding:0;display:flex;flex-direction:column;overflow:hidden\}/u);
+});
+
+test("the # and / composer tags are visually distinct (not-yet-available) from the live @ tag", () => {
+  assert.match(workbenchCss, /\.wh-wb-chat-ctag--soon\{[^}]*cursor:default/u);
+  assert.doesNotMatch(workbenchCss, /\.wh-wb-chat-ctag\{[^}]*cursor:default/u);
+});
+
+test("reduced-motion users get the chat typing dots and composer tag transitions shortened too", () => {
+  assert.match(workbenchCss, /prefers-reduced-motion:reduce\)\{[^}]*\.wh-wb-chat-typing-dots i\{transition-duration:\.01ms!important;animation-duration:\.01ms!important\}/u);
+});

@@ -105,8 +105,33 @@ test("renderProjectTreeHtml marks the selected project active and shows its real
   // Real main-conversation title and message count from the VM, not a placeholder.
   assert.match(html, /主区/u);
   assert.match(html, /wh-wb-leaf-count">12</u);
-  // Leaves are informational only — no click affordance markers.
-  assert.doesNotMatch(html, /data-wb-select-project="90000000-0000-4000-8000-000000000101"/u);
+});
+
+// R12 批 2：主区群聊接进这个窗口后，「主区」树叶从只读升级成真按钮（会话点击路由）——
+// batch-1-frontend.md 已经预告了这次升级（"批 2/6 把对应视图接进来时再升级成可点"）。
+// 「网盘」还没有对应视图（批 6），继续保持只读，不给假点击反馈。
+test("the main-conversation leaf is a real, clickable button once batch 2 wires the chat view", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN"
+  });
+  assert.match(html, /<button[^>]*data-wb-open-main-chat[^>]*>[^]*主区/u);
+});
+
+test("the drive leaf is still informational-only (no view to route to until batch 6)", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN"
+  });
+  const driveLeafMatch = html.match(/<div class="wh-wb-leaf">[^]*?<\/div>/u);
+  assert.ok(driveLeafMatch, "expected a plain, non-button drive leaf");
+  assert.doesNotMatch(driveLeafMatch![0], /data-wb-open/u);
 });
 
 test("renderProjectTreeHtml does not leak a stale VM onto a different project's row", () => {

@@ -16,6 +16,7 @@ export const workbenchIcons = {
   minimize: ic('<path d="M5 12h14"/>'),
   chevronRight: ic('<path d="M9 6l6 6-6 6"/>'),
   chevronLeft: ic('<path d="M15 6l-6 6 6 6"/>'),
+  send: ic('<path d="M4 12 20 4l-7 16-2.5-6.5L4 12Z"/>'),
   cat: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5 10.2V4.6L9.3 7.5C10.2 7.2 11.1 7 12 7c.9 0 1.8.2 2.7.5L19 4.6v5.6a7 7 0 1 1-14 0Zm3.3 2.4a1.1 1.1 0 1 0 2.2 0 1.1 1.1 0 1 0-2.2 0Zm5.2 0a1.1 1.1 0 1 0 2.2 0 1.1 1.1 0 1 0-2.2 0Z"/></svg>`
 } as const;
 
