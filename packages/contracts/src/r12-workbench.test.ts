@@ -242,6 +242,51 @@ test("R12 message VMs validate text/file cards fail-closed and bound future cont
   );
   assert.equal(schema.safeParse({ ...base, kind: "tool_note", content: { state: "done" } }).success, true);
   assert.equal(schema.safeParse({ ...base, seq: Number.MAX_SAFE_INTEGER + 1, kind: "text", content: { text: "x" } }).success, false);
+
+  // R12 批4a：Cuu 协同回应携带的 memory_citations 是 additive optional 字段——正常文本消息（无该字段）
+  // 仍然照旧通过；这里补 kind="text" 的引用清单正反例。
+  const cuuBase = { ...base, sender_type: "cuu" as const, sender_user_id: null };
+  assert.equal(
+    schema.safeParse({
+      ...cuuBase,
+      kind: "text",
+      content: {
+        text: "已经帮你查过之前的偏好了",
+        memory_citations: [
+          { kind: "user_memory", title: "偏好中文回复" },
+          { kind: "team_skill", title: "PPT 交付自检" }
+        ]
+      }
+    }).success,
+    true
+  );
+  assert.equal(
+    schema.safeParse({
+      ...cuuBase,
+      kind: "text",
+      content: { text: "x", memory_citations: [{ kind: "unknown_kind", title: "x" }] }
+    }).success,
+    false
+  );
+  assert.equal(
+    schema.safeParse({
+      ...cuuBase,
+      kind: "text",
+      content: { text: "x", memory_citations: [{ kind: "user_memory", title: "" }] }
+    }).success,
+    false
+  );
+  assert.equal(
+    schema.safeParse({
+      ...cuuBase,
+      kind: "text",
+      content: {
+        text: "x",
+        memory_citations: new Array(21).fill({ kind: "user_memory", title: "x" })
+      }
+    }).success,
+    false
+  );
 });
 
 test("R12 message-created events are strict complete envelopes bound to one conversation topic", () => {
@@ -326,7 +371,6 @@ test("R12 typing events reserve a strict server-owned 3000ms transient contract 
   }
 
   for (const reservedName of [
-    "conversationMessageDeltaEventSchema",
     "conversationToolBeginEventSchema",
     "conversationToolOutputDeltaEventSchema",
     "conversationToolEndEventSchema",
@@ -334,6 +378,42 @@ test("R12 typing events reserve a strict server-owned 3000ms transient contract 
     "conversationItemCompletedEventSchema"
   ]) {
     assert.equal((contracts as Record<string, unknown>)[reservedName], undefined, reservedName);
+  }
+});
+
+// R12 批4a：conversation.message.delta 从批0遗留的「仅保留名称」升级为真实 payload/校验——
+// 与上面的「仅保留名称」断言分离到自己的正例测试，同 message-created/action-card-updated 同等对待。
+test("R12 message-delta events are a minimal strict transient contract with no seq or actor", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationMessageDeltaEventSchema");
+  const turnId = "47000000-0000-4000-8000-000000000047";
+  const event = {
+    event_id: "48000000-0000-4000-8000-000000000048",
+    type: "conversation.message.delta",
+    topic: `conversation:${conversationId}`,
+    ts: "2026-07-12T08:31:00.000Z",
+    data: {
+      conversation_id: conversationId,
+      turn_id: turnId,
+      delta_text: "先看一下这段草稿",
+      ordinal: 0
+    }
+  };
+
+  assert.deepEqual(schema.parse(event), event);
+  for (const invalid of [
+    { ...event, type: "conversation.message.created" },
+    { ...event, topic: "conversation:30000000-0000-4000-8000-000000000099" },
+    { ...event, actor: { actor_kind: "human", actor_user_id: userId } },
+    { ...event, project_id: projectId },
+    { ...event, hidden: "leak" },
+    { ...event, data: { ...event.data, delta_text: "" } },
+    { ...event, data: { ...event.data, delta_text: "x".repeat(4001) } },
+    { ...event, data: { ...event.data, ordinal: -1 } },
+    { ...event, data: { ...event.data, ordinal: 1.5 } },
+    { ...event, data: { ...event.data, seq: 1 } },
+    { ...event, data: { ...event.data, turn_id: undefined } }
+  ]) {
+    assert.equal(schema.safeParse(invalid).success, false);
   }
 });
 
