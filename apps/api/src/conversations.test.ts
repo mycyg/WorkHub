@@ -130,6 +130,11 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     async createUserMessage() {
       throw new Error("createUserMessage not expected");
     },
+    // R12 批4a：ConversationRepository 新增了 createCuuMessage（apps/api/src/services/
+    // conversation-turns.ts 用），这个套件不测那条路径，同其它未测方法一样给个拒绝桩。
+    async createCuuMessage() {
+      throw new Error("createCuuMessage not expected");
+    },
     async listMessagesAfter() {
       throw new Error("listMessagesAfter not expected");
     },
