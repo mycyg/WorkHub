@@ -135,11 +135,11 @@ project_ai_governance
 
 ### 任务
 
-- [ ] 迁移+schema+repository(含 seq 分配:原子 `UPDATE project_conversations SET next_seq=next_seq+1 RETURNING next_seq`;`UNIQUE(conversation_id,seq)` 是最终防线,不使用会并发撞号的裸 `max(seq)+1`;迁移回填 workspace 非空的 active 存量项目,不为 workspace 缺失的脏项目伪造租户)
-- [ ] routes + 鉴权 + uuid 守卫 + json-body 校验;repository 单测 + 路由测试
+- [x] 迁移+schema+repository(含 seq 分配:原子 `UPDATE project_conversations SET next_seq=next_seq+1 RETURNING next_seq`;`UNIQUE(conversation_id,seq)` 是最终防线,不使用会并发撞号的裸 `max(seq)+1`;迁移回填 workspace 非空的 active 存量项目,不为 workspace 缺失的脏项目伪造租户)
+- [x] routes + 鉴权 + uuid 守卫 + json-body 校验;repository 单测 + 路由测试
 - [x] SSE topic + access + message-created 生产者 + DB reconcile 契约;created/typing 事件 shape 单测(其余事件名仅保留)
-- [ ] PG smoke 增断言:建项目→main 会话自动存在→发消息→afterSeq 拉取有序
-- [ ] `pnpm -r typecheck` + CI 全绿
+- [x] PG smoke 增断言:建项目→main 会话自动存在→发消息→afterSeq 拉取有序(scratch 库全绿,见 reports/batch-0.md)
+- [x] `pnpm -r typecheck` 全绿(本地全仓);CI 待分支推送后逐 job 核 conclusion——批 1 推送时一并核,未核前不宣称 CI 绿
 
 **踩雷**:wisp 只提供 seq 唯一约束,没有可复用的并发分配实现;本仓用 PG 原子计数并保留唯一约束兜底,错误不得吞。file_card 绝不落文件内容。
 **验收门**:curl 全链路演示(建项目→列会话→发消息→SSE 收到→行动卡表可手插演示);PG smoke 绿。
