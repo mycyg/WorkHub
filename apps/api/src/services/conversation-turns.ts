@@ -6,6 +6,7 @@ import { settings as runtimeSettings, type Settings } from "@workhub/config";
 import {
   DEFAULT_USER_AI_PROFILE,
   USER_MEMORY_PROMPT_TOP_N,
+  conversationMessageCreatedEventSchema,
   conversationMessageVmSchema,
   conversationMessageDeltaEventSchema,
   eventTypes,
@@ -470,6 +471,34 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
         }
 
         const message = parseOutputContract(conversationMessageVmSchema, messageToVm(created), "conversation-turns.message");
+
+        // R12 批4a 集成修订:落库的 Cuu 回复广播 message.created(ai actor↔cuu sender 严格配对已在
+        // 契约放开)——其他在看成员不再只能靠瞬态 delta,断线/后进场者按既有 afterSeq 语义补齐。
+        // 广播失败仅告警不回滚:消息已持久,可靠性由拉取通道兜底(与 conversations.ts 同款容错)。
+        try {
+          const conversationTopic = topics.conversation(input.conversationId).topic;
+          const createdEvent = parseOutputContract(
+            conversationMessageCreatedEventSchema,
+            makeWorkHubEvent({
+              type: eventTypes.conversationMessageCreated,
+              topic: conversationTopic,
+              ts: now(),
+              actor: { actor_kind: "ai", label: "Cuu" },
+              project_id: access.conversation.projectId,
+              preview_text: contentJson.text.slice(0, 200),
+              data: message
+            }),
+            "conversation-turns.event.created"
+          );
+          await deps.bus?.publish(conversationTopic, eventTypes.conversationMessageCreated, createdEvent);
+        } catch (error) {
+          logger.warn("conversation_turn_created_publish_failed", {
+            conversationId: input.conversationId,
+            turnId,
+            error
+          });
+        }
+
         return parseOutputContract(conversationTurnResultSchema, { turn_id: turnId, message }, "conversation-turns.result");
       } finally {
         activeTurns.delete(input.conversationId);

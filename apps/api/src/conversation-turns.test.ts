@@ -551,7 +551,9 @@ test("createTurn streams ordinal-numbered delta events on the conversation topic
     { kind: "team_skill", title: "PPT 交付自检" }
   ]);
 
-  assert.equal(published.length, 2);
+  // R12 批4a 集成修订:2 条瞬态 delta 之后,落库的 Cuu 回复还要广播 1 条 message.created(ai actor),
+  // 其他在看成员靠它拿到真 seq/id,不再只能看打字动画。
+  assert.equal(published.length, 3);
   assert.equal(published[0]?.topic, `conversation:${conversationId}`);
   assert.equal(published[0]?.type, "conversation.message.delta");
   const firstData = published[0]?.data as { data: { ordinal: number; delta_text: string; turn_id: string } };
@@ -561,6 +563,16 @@ test("createTurn streams ordinal-numbered delta events on the conversation topic
   const secondData = published[1]?.data as { data: { ordinal: number; delta_text: string } };
   assert.equal(secondData.data.ordinal, 1);
   assert.equal(secondData.data.delta_text, "整体不错");
+  assert.equal(published[2]?.topic, `conversation:${conversationId}`);
+  assert.equal(published[2]?.type, "conversation.message.created");
+  const createdData = published[2]?.data as {
+    actor: { actor_kind: string; label?: string };
+    data: { sender_type: string; sender_user_id: string | null; seq: number };
+  };
+  assert.equal(createdData.actor.actor_kind, "ai");
+  assert.equal(createdData.data.sender_type, "cuu");
+  assert.equal(createdData.data.sender_user_id, null);
+  assert.equal(typeof createdData.data.seq, "number");
 
   assert.equal(createCuuMessageCalls.length, 1);
   const persistInput = createCuuMessageCalls[0] as { workspaceId: string; conversationId: string; contentJson: { text: string } };

@@ -69,13 +69,23 @@ const conversationHumanActorSchema = z
   })
   .strict();
 
+// R12 批4a 集成修订：message.created 是「一切持久消息」的规范事件——批0 只有人类发消息一条
+// 写路径,故锁死 human;协同 turn 落库的 Cuu 回复同样需要向其他在看成员广播(delta 是瞬态的,
+// 断线/后进场的人只能靠 created+afterSeq 补齐)。放开为 human↔user / ai↔cuu 的严格配对,不松其它。
+const conversationAiActorSchema = z
+  .object({
+    actor_kind: z.literal("ai"),
+    label: z.string().optional()
+  })
+  .strict();
+
 export const conversationMessageCreatedEventSchema = z
   .object({
     event_id: idSchema,
     type: z.literal("conversation.message.created"),
     topic: z.string().min(1),
     ts: isoDateTimeSchema,
-    actor: conversationHumanActorSchema,
+    actor: z.union([conversationHumanActorSchema, conversationAiActorSchema]),
     project_id: idSchema,
     preview_text: z.string().max(200).optional(),
     data: conversationMessageVmSchema
@@ -89,18 +99,35 @@ export const conversationMessageCreatedEventSchema = z
         message: "message-created topic must match data.conversation_id"
       });
     }
-    if (event.data.sender_type !== "user") {
+    if (event.actor.actor_kind === "human") {
+      if (event.data.sender_type !== "user") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["data", "sender_type"],
+          message: "message-created events from a human actor must have a user sender"
+        });
+      }
+      if (event.data.sender_user_id !== event.actor.actor_user_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["data", "sender_user_id"],
+          message: "message-created sender must match the human event actor"
+        });
+      }
+      return;
+    }
+    if (event.data.sender_type !== "cuu") {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["data", "sender_type"],
-        message: "message-created events from the user POST must have a user sender"
+        message: "message-created events from an ai actor must have a cuu sender"
       });
     }
-    if (event.data.sender_user_id !== event.actor.actor_user_id) {
+    if (event.data.sender_user_id !== null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["data", "sender_user_id"],
-        message: "message-created sender must match the human event actor"
+        message: "cuu message-created events must not carry a sender_user_id"
       });
     }
   });

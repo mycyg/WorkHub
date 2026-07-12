@@ -5154,6 +5154,57 @@ const actionCardUndoResponses = {
   }
 } as const;
 
+// R12 批4a(协同会话 turn)——与 routes/conversation-turns.ts 对齐。
+const conversationTurnRequestBodySchema = {
+  type: "object",
+  properties: {
+    user_message_id: uuidStringSchema
+  },
+  required: ["user_message_id"],
+  additionalProperties: false
+} as const;
+const conversationTurnResultResponseSchema = {
+  type: "object",
+  properties: {
+    turn_id: uuidStringSchema,
+    message: {
+      type: "object",
+      description: "Persisted Cuu reply message VM (real seq; also broadcast as conversation.message.created with an ai actor)."
+    }
+  },
+  required: ["turn_id", "message"],
+  additionalProperties: false
+} as const;
+const conversationTurnResponses = {
+  responses: {
+    "200": jsonDataResponse(conversationTurnResultResponseSchema, "Completed collab turn with the persisted Cuu reply")
+      .responses["200"],
+    "400": jsonErrorStatusResponse("400", "Turn input is malformed", ["malformed_json", "json_object_required"])
+      .responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation or the referenced user message was not found", [
+      "conversation_not_found",
+      "conversation_turn_message_not_found"
+    ]).responses["404"],
+    "409": jsonErrorStatusResponse("409", "Turn is not allowed in the conversation's current state", [
+      "conversation_turn_not_collab",
+      "conversation_turn_busy",
+      "conversation_turn_mode_observe_only"
+    ]).responses["409"],
+    "429": jsonErrorStatusResponse("429", "Team budget is exhausted for AI turns", [
+      "conversation_turn_budget_exhausted"
+    ]).responses["429"],
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": jsonErrorStatusResponse("500", "Turn generation or persistence failed; nothing was saved", [
+      "conversation_turn_failed",
+      "internal_contract_error",
+      "internal_error"
+    ]).responses["500"]
+  }
+} as const;
+
 const aiModelPreferenceStringSchema = {
   type: "string",
   minLength: 1,
@@ -6443,6 +6494,15 @@ export function getOpenApiDocument() {
             armyLimitQueryParameter
           ],
           ...armyOverviewResponses
+        }
+      },
+      "/api/conversations/{id}/turns": {
+        post: {
+          tags: ["conversations"],
+          summary: "Run one streaming Cuu turn in a collab conversation (deltas over SSE, final reply persisted)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(conversationTurnRequestBodySchema),
+          ...conversationTurnResponses
         }
       },
       "/api/action-card-items/{id}/decide": {
