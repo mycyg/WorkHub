@@ -35,6 +35,28 @@ export type WorkbenchAccessInput = {
   projectId: string;
 };
 
+export type ListWorkspaceMembersInput = {
+  workspaceId: string;
+  viewerUserId: string;
+  projectOwnerUserId: string | null;
+  limit?: number;
+};
+
+export type CountVisibleActivePlansInput = {
+  workspaceId: string;
+  projectId: string;
+  viewerUserId: string;
+  isAdmin: boolean;
+};
+
+export type ListRecentVisibleFilesInput = {
+  workspaceId: string;
+  projectId: string;
+  viewerUserId: string;
+  isAdmin: boolean;
+  limit?: number;
+};
+
 export type WorkbenchAccess = {
   project: {
     id: string;
@@ -180,12 +202,7 @@ export function createWorkbenchRepository(db: WorkHubDb) {
       };
     },
 
-    async listWorkspaceMembers(input: {
-      workspaceId: string;
-      viewerUserId: string;
-      projectOwnerUserId: string | null;
-      limit?: number;
-    }): Promise<WorkbenchMemberPage> {
+    async listWorkspaceMembers(input: ListWorkspaceMembersInput): Promise<WorkbenchMemberPage> {
       const limit = exactLimit(input.limit, 100, 100, "workspace member limit");
       const isProjectOwner = input.projectOwnerUserId
         ? sql<boolean>`${users.id} = ${input.projectOwnerUserId}`
@@ -238,12 +255,7 @@ export function createWorkbenchRepository(db: WorkHubDb) {
       };
     },
 
-    async countVisibleActivePlans(input: {
-      workspaceId: string;
-      projectId: string;
-      viewerUserId: string;
-      isAdmin: boolean;
-    }): Promise<number> {
+    async countVisibleActivePlans(input: CountVisibleActivePlansInput): Promise<number> {
       const conditions: SQL[] = [
         eq(taskPlans.workspaceId, input.workspaceId),
         inArray(taskPlans.status, DASHBOARD_PLAN_STATUSES),
@@ -270,13 +282,7 @@ export function createWorkbenchRepository(db: WorkHubDb) {
       return exactNonnegativeCount(rows[0]?.value, "active plan count");
     },
 
-    async listRecentVisibleFiles(input: {
-      workspaceId: string;
-      projectId: string;
-      viewerUserId: string;
-      isAdmin: boolean;
-      limit?: number;
-    }): Promise<WorkbenchRecentFile[]> {
+    async listRecentVisibleFiles(input: ListRecentVisibleFilesInput): Promise<WorkbenchRecentFile[]> {
       const limit = exactLimit(input.limit, 5, 5, "recent file limit");
       const linkedWorkItemVisibility = input.isAdmin
         ? sql`true`
