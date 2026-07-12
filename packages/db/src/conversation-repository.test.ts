@@ -729,3 +729,179 @@ test("R12 inaccessible conversation cannot create a message", async () => {
   assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "ConversationAccessDeniedError" }]);
   assert.equal(queries.some((query) => query.operation === "insert" || query.operation === "update"), false);
 });
+
+// ── R12 批4a: createCuuMessage ──────────────────────────────────────────────────────
+// Cuu 回应精简掉了 createUserMessage 的 membership/participant 锁（Cuu 不是 workspace 成员），只保留
+// 会话/项目活跃性锁 + 同一套原子 seq 分配。调用方职责：在调用前已经用 findVisibleAccessRecord 确认过
+// 发起 turn 的人类是这个会话的可见参与者。
+
+function cuuMessage(seq: number, overrides: Partial<ConversationMessageRow> = {}): ConversationMessageRow {
+  return {
+    id: `53000000-0000-4000-8000-${String(seq).padStart(12, "0")}`,
+    conversationId,
+    seq,
+    senderType: "cuu",
+    senderUserId: null,
+    kind: "text",
+    contentJson: { text: `Cuu 回应 ${seq}` },
+    threadRootId: null,
+    createdAt: now,
+    ...overrides
+  };
+}
+
+function cuuMessageAccessLockResponses(overrides: Partial<ConversationRow> = {}) {
+  return [
+    [{ projectId }],
+    [{ projectId, projectOwnerUserId: creatorUserId }],
+    [conversation(overrides)]
+  ];
+}
+
+test("R12 cuu message allocates next_seq atomically and writes a null-sender text row", async () => {
+  const inserted = cuuMessage(1, {
+    contentJson: {
+      text: "已经帮你查过之前的偏好了",
+      memory_citations: [{ kind: "user_memory", title: "偏好中文回复" }]
+    }
+  });
+  const { db, queries, transactions } = createQueryRecorder([
+    ...cuuMessageAccessLockResponses(),
+    [{ nextSeq: 1 }],
+    [inserted]
+  ]);
+
+  const result = await createConversationRepository(db).createCuuMessage({
+    id: inserted.id,
+    workspaceId,
+    conversationId,
+    contentJson: inserted.contentJson as { text: string; memory_citations?: Array<{ kind: "user_memory" | "team_skill"; title: string }> },
+    at: now
+  });
+
+  assert.deepEqual(result, inserted);
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  // 只有 3 把锁（locator/project/conversation），没有 createUserMessage 那两把 membership/participant 锁。
+  assert.deepEqual(queries.slice(0, 3).map((query) => [query.fromTable, query.lock]), [
+    [projectConversations, undefined],
+    [projects, "share"],
+    [projectConversations, "update"]
+  ]);
+  assert.equal(
+    queries.some((query) => query.fromTable === workspaceMemberships),
+    false,
+    "cuu messages must not touch workspace membership locks"
+  );
+  assert.equal(
+    queries.some((query) => query.fromTable === conversationParticipants),
+    false,
+    "cuu messages must not touch conversation participant locks"
+  );
+  const allocation = queries[3];
+  assert.equal(allocation?.operation, "update");
+  assert.equal(allocation?.targetTable, projectConversations);
+  assert.equal(allocation?.returningCalled, true);
+  const insert = queries[4];
+  assert.equal(insert?.targetTable, conversationMessages);
+  assert.equal(insert?.returningCalled, true);
+  const insertValues = insert?.valuesValue as Record<string, unknown>;
+  assert.equal(insertValues["senderType"], "cuu");
+  assert.equal(insertValues["senderUserId"], null);
+  assert.equal(insertValues["kind"], "text");
+  assert.equal(insertValues["seq"], 1);
+  assert.deepEqual(insertValues["contentJson"], inserted.contentJson);
+});
+
+test("R12 cuu message content rejects empty text and non-array citations before opening a transaction", async () => {
+  const { db, queries } = createQueryRecorder();
+  const repository = createConversationRepository(db);
+
+  await assert.rejects(
+    repository.createCuuMessage({
+      workspaceId,
+      conversationId,
+      contentJson: { text: "" },
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+  await assert.rejects(
+    repository.createCuuMessage({
+      workspaceId,
+      conversationId,
+      contentJson: { text: "ok", memory_citations: "not-an-array" as unknown as [] },
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+  assert.equal(queries.length, 0);
+});
+
+test("R12 inaccessible conversation cannot create a cuu message", async () => {
+  const { db, queries, transactions } = createQueryRecorder([[]]);
+
+  await assert.rejects(
+    createConversationRepository(db).createCuuMessage({
+      workspaceId,
+      conversationId,
+      contentJson: { text: "hello" },
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationAccessDeniedError
+  );
+
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "ConversationAccessDeniedError" }]);
+  assert.equal(queries.some((query) => query.operation === "insert" || query.operation === "update"), false);
+});
+
+test("R12 cuu message rejects a wrong thread root before sequence allocation", async () => {
+  const { db, queries, transactions } = createQueryRecorder([
+    ...cuuMessageAccessLockResponses(),
+    []
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).createCuuMessage({
+      workspaceId,
+      conversationId,
+      contentJson: { text: "reply" },
+      threadRootId: sourceMessageId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationThreadRootMismatchError
+  );
+
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "ConversationThreadRootMismatchError" }]);
+  assert.equal(queries.some((query) => query.operation === "update"), false);
+});
+
+test("R12 cuu message sequence exhaustion and missing returning rows are explicit transaction errors", async () => {
+  const exhausted = createQueryRecorder([
+    ...cuuMessageAccessLockResponses({ nextSeq: Number.MAX_SAFE_INTEGER })
+  ]);
+  await assert.rejects(
+    createConversationRepository(exhausted.db).createCuuMessage({
+      workspaceId,
+      conversationId,
+      contentJson: { text: "overflow" },
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationSequenceExhaustedError
+  );
+  assert.equal(exhausted.queries.some((query) => query.operation === "update"), false);
+
+  const missingInsert = createQueryRecorder([
+    ...cuuMessageAccessLockResponses(),
+    [{ nextSeq: 1 }],
+    []
+  ]);
+  await assert.rejects(
+    createConversationRepository(missingInsert.db).createCuuMessage({
+      workspaceId,
+      conversationId,
+      contentJson: { text: "missing insert" },
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationMessageInsertFailedError
+  );
+});
