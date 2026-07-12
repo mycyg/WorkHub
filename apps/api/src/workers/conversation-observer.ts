@@ -310,7 +310,11 @@ async function dispatchExecuteItem(
         workItemId: workItem.id,
         actorId: assignee.userId,
         workspaceId: candidate.workspaceId,
-        title: planItem.title_md
+        title: planItem.title_md,
+        // R12 批5 军团面板靠这条血缘把 run 挂回会话右栏;执行地默认 server(本地执行器=批9)。
+        sourceConversationId: candidate.conversationId,
+        sourceActionCardItemId: itemId,
+        executionHint: "server"
       });
       return {
         item: {

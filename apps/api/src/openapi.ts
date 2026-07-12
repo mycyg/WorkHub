@@ -5071,6 +5071,89 @@ const armyOverviewResponses = {
   }
 } as const;
 
+// R12 批3(行动卡 decide/undo)——与 routes/action-cards.ts 的 zod 请求与 ActionCardItemVM 对齐。
+const actionCardItemVmJsonSchema = {
+  type: "object",
+  properties: {
+    id: uuidStringSchema,
+    action_card_id: uuidStringSchema,
+    kind: { type: "string", enum: ["execute", "decide", "observe"] },
+    title_md: { type: "string", minLength: 1 },
+    confidence: { type: "string", enum: ["high", "mid", "low"] },
+    status: {
+      type: "string",
+      enum: ["running", "done", "undone", "waiting_decision", "dismissed", "escalated"]
+    },
+    assignee_user_id: { ...uuidStringSchema, type: ["string", "null"] },
+    work_item_id: { ...uuidStringSchema, type: ["string", "null"] },
+    run_id: { ...uuidStringSchema, type: ["string", "null"] },
+    undo_deadline_at: { type: ["string", "null"], format: "date-time" }
+  },
+  required: [
+    "id",
+    "action_card_id",
+    "kind",
+    "title_md",
+    "confidence",
+    "status",
+    "assignee_user_id",
+    "work_item_id",
+    "run_id",
+    "undo_deadline_at"
+  ],
+  additionalProperties: false
+} as const;
+const decideActionCardItemRequestBodySchema = {
+  type: "object",
+  properties: {
+    action: { type: "string", enum: ["claim", "reassign", "defer"] },
+    assignee_user_id: uuidStringSchema
+  },
+  required: ["action"],
+  additionalProperties: false,
+  "x-workhub-invariants": [
+    "assignee_user_id is required exactly when action is reassign and rejected otherwise."
+  ]
+} as const;
+const actionCardConflictResponse = jsonErrorStatusResponse(
+  "409",
+  "Action-card item state no longer allows this operation",
+  ["action_card_item_already_decided", "action_card_decision_already_resolved", "action_card_item_not_undoable"]
+).responses["409"];
+const actionCardNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Action-card item is inaccessible or was not found",
+  ["action_card_item_not_found"]
+).responses["404"];
+const actionCardDecideResponses = {
+  responses: {
+    "200": jsonDataResponse(actionCardItemVmJsonSchema, "Decided action-card item").responses["200"],
+    "400": jsonErrorStatusResponse("400", "Decision input is malformed or semantically invalid", [
+      "malformed_json",
+      "json_object_required",
+      "action_card_reassign_requires_assignee"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": actionCardNotFoundResponse,
+    "409": actionCardConflictResponse,
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const actionCardUndoResponses = {
+  responses: {
+    "200": jsonDataResponse(actionCardItemVmJsonSchema, "Undone action-card item").responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": actionCardNotFoundResponse,
+    "409": actionCardConflictResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
 const aiModelPreferenceStringSchema = {
   type: "string",
   minLength: 1,
@@ -6360,6 +6443,23 @@ export function getOpenApiDocument() {
             armyLimitQueryParameter
           ],
           ...armyOverviewResponses
+        }
+      },
+      "/api/action-card-items/{id}/decide": {
+        post: {
+          tags: ["conversations"],
+          summary: "Decide a waiting action-card item as its addressed owner (claim, reassign, or defer)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(decideActionCardItemRequestBodySchema),
+          ...actionCardDecideResponses
+        }
+      },
+      "/api/action-card-items/{id}/undo": {
+        post: {
+          tags: ["conversations"],
+          summary: "Undo a dispatched action-card item inside its undo window (abort run, close work item, leave a trace)",
+          parameters: [pathUuidParameter("id")],
+          ...actionCardUndoResponses
         }
       },
       "/api/me/ai-profile": {

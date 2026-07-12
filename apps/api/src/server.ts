@@ -2,8 +2,10 @@ import { serve } from "@hono/node-server";
 
 import app, { attachWebStatic, logger } from "./app.js";
 import { settings } from "@workhub/config";
+import { getDefaultProviderRegistry } from "./services/provider-registry.js";
 import { getDefaultAgentRunRecoveryScheduler } from "./workers/agent-run-recovery.js";
 import { getDefaultAgentRunSkillCurationScheduler } from "./workers/agent-skill-curation.js";
+import { getDefaultConversationObserverScheduler } from "./workers/conversation-observer.js";
 import { getDefaultSessionSweepScheduler } from "./workers/session-sweep.js";
 
 // 进程级兜底：未捕获异常/未处理 rejection 此前无人接，一次走线的 throw/reject 会静默杀掉 daemon
@@ -41,6 +43,17 @@ const sessionSweepScheduler =
   settings.auth.authMode !== "nickname" ? getDefaultSessionSweepScheduler() : undefined;
 sessionSweepScheduler?.start();
 
+// R12 批3：主区静默观察者——LLM provider 未配置时不启动（tick 会逐会话打 LLM，未配置只会
+// 刷 consecutive_failures 噪音），与 meta-planner/cross-agent-judge 的 isConfigured 守卫同款语义。
+const conversationObserverScheduler = getDefaultProviderRegistry().isConfigured()
+  ? getDefaultConversationObserverScheduler()
+  : undefined;
+if (conversationObserverScheduler) {
+  conversationObserverScheduler.start();
+} else {
+  logger.info("conversation_observer_disabled", { reason: "llm_provider_not_configured" });
+}
+
 const server = serve(
   {
     fetch: app.fetch,
@@ -62,6 +75,7 @@ function shutdown(exitCode: number) {
   recoveryScheduler.stop();
   skillCurationScheduler?.stop();
   sessionSweepScheduler?.stop();
+  conversationObserverScheduler?.stop();
   const forceExit = setTimeout(() => process.exit(exitCode), 2000);
   forceExit.unref?.();
   server.close(() => {

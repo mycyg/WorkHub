@@ -134,6 +134,11 @@ export type AgentRunQueueRecord = {
   task_plan_item_id?: string;
   // B-R9.2-3：run 所属的派发代（enqueue 时从 item 的 dispatch_epoch 记下）。
   task_plan_item_epoch?: number;
+  // R12 批3/5：run 的会话血缘(观察者行动卡派发时记下)与执行地提示。0046 的复合 FK 把
+  // source 绑死在同 workspace 的真会话/真条目上,这里只透传不造语义。
+  source_conversation_id?: string;
+  source_action_card_item_id?: string;
+  execution_hint?: "server" | "local" | "any";
   objective_id?: string;
   agent_role?: TaskPlanItemRole;
   objective_md?: string;
@@ -220,6 +225,10 @@ export type EnqueueAgentRunInput = {
   budgetCapCny?: string;
   // B-R9.2-3：本次派发的代际（item.dispatch_epoch）；结算/恢复只认同代。
   taskPlanItemEpoch?: number;
+  // R12 批3/5：会话血缘与执行地提示(默认 server;本地执行器是后置批9)。
+  sourceConversationId?: string;
+  sourceActionCardItemId?: string;
+  executionHint?: "server" | "local" | "any";
 };
 
 // B-R9.2-2（branch-review 结构性必失败）：research/review 此前只拿 read 类工具，却仍被
@@ -2032,6 +2041,9 @@ export function createInMemoryAgentRunQueue(options: {
           ...(input.objectiveId ? { objective_id: input.objectiveId } : {}),
           ...(input.agentRole ? { agent_role: input.agentRole } : {}),
           ...(input.objectiveMd ? { objective_md: input.objectiveMd } : {}),
+          ...(input.sourceConversationId ? { source_conversation_id: input.sourceConversationId } : {}),
+          ...(input.sourceActionCardItemId ? { source_action_card_item_id: input.sourceActionCardItemId } : {}),
+          ...(input.executionHint ? { execution_hint: input.executionHint } : {}),
           actor_id: input.actorId,
           mode: input.mode ?? "worker",
           status: "queued",

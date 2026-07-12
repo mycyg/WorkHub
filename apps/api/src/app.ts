@@ -35,6 +35,7 @@ import { createCostRoutes } from "./routes/cost.js";
 import { createConversationRoutes } from "./routes/conversations.js";
 import { createAiSettingsRoutes } from "./routes/ai-settings.js";
 import { createConversationArmyRoutes } from "./routes/conversation-army.js";
+import { createActionCardRoutes } from "./routes/action-cards.js";
 import { TaskPlanApprovalError } from "./services/task-plan-approval.js";
 import { ProjectServiceError } from "./services/projects.js";
 import { PilotDay1MetricsServiceError } from "./services/pilot-day1-metrics.js";
@@ -232,6 +233,7 @@ app.route("/api/projects", createProjectRoutes());
 app.route("/api", createConversationRoutes());
 app.route("/api", createAiSettingsRoutes());
 app.route("/api", createConversationArmyRoutes());
+app.route("/api", createActionCardRoutes());
 app.route("/api/pilot", createPilotRoutes());
 app.route("/api/ai-worklog", createAiWorklogRoutes());
 

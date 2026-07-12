@@ -419,7 +419,9 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["get", "/api/pilot/day1/metrics"],
     ["get", "/api/ai-worklog/today"],
     ["get", "/api/conversations/{id}/army"],
-    ["get", "/api/me/army"]
+    ["get", "/api/me/army"],
+    ["post", "/api/action-card-items/{id}/decide"],
+    ["post", "/api/action-card-items/{id}/undo"]
   ] as const;
   for (const [method, route] of expectedRoutes) {
     assert.ok(body.paths[route]?.[method], `${method.toUpperCase()} ${route} missing from OpenAPI document`);
@@ -531,11 +533,13 @@ test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP end
   const fileVariant = messageBody?.oneOf?.find((variant) => variant.properties?.kind?.const === "file_card");
   assert.deepEqual(Object.keys(fileVariant?.properties?.content?.properties ?? {}), ["drive_item_id"]);
 
+  // R12 批3落地后,decide/undo 的真实路径是 /api/action-card-items/{id}/*(见 routes/action-cards.ts);
+  // 批0 预占的会话嵌套形态从未实现,必须继续保持未文档化,防止旧猜测路径复活。
   for (const stale of [
     "/api/conversations/{id}/action-cards/{itemId}/decide",
     "/api/conversations/{id}/action-cards/{itemId}/undo"
   ]) {
-    assert.equal(body.paths[stale], undefined, `${stale} must not be documented before its implementation batch`);
+    assert.equal(body.paths[stale], undefined, `${stale} is a superseded speculative path and must stay undocumented`);
   }
 });
 
