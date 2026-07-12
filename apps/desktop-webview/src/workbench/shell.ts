@@ -9,6 +9,7 @@ import type { WorkbenchPageVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { appleGlassDesignSystemCss } from "../design-system.js";
+import { mountChatView, type ChatViewApiClient, type ChatViewHandle } from "./chat/view.js";
 import { workbenchCss } from "./css.js";
 import { workbenchIcons } from "./icons.js";
 import { mountWorkbenchRail, type WorkbenchRailApiClient } from "./rail.js";
@@ -17,7 +18,25 @@ import { resolveWorkbenchWindowBridge } from "./window-bridge.js";
 
 type Locale = "zh-CN" | "en-US";
 
-export type WorkbenchShellApiClient = WorkbenchRailApiClient & Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages">;
+// R12 批 2：中栏在项目选中且 VM 就绪时渲染真实群聊（chat/view.ts），需要 request（消息/typing 走
+// client.request，见 chat/api.ts 顶部注释——不为一个只有工作台窗口用的批次特性扩大 WorkHubApiClient
+// 的具名方法面）+ streams（拼 SSE 订阅 URL）。
+export type WorkbenchShellApiClient = WorkbenchRailApiClient &
+  ChatViewApiClient &
+  Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages" | "request" | "streams">;
+
+// 照 boot.ts 的 clientToken() 同款 helper——shell.ts 不 import boot.ts（避免 boot.ts → shell.ts →
+// chat/view.ts → ... 的循环 import 风险），改由 mountWorkbenchShell 的调用方（boot.ts 本尊）注入
+// 同一个函数引用；这里只是没传时的兜底默认值，独立实现一份和 desktop-cuu-runtime.ts 的
+// desktopCuuBrowserClientToken 同款最小 helper（这个仓库里第三份，都是同样 6 行，没有值得抽共享
+// 模块的复杂度）。
+function defaultClientTokenReader(): string | undefined {
+  try {
+    return window.localStorage.getItem("workhub_client_token") ?? window.localStorage.getItem("yqgl_client_token") ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export function renderWorkbenchDocumentHead(): string {
   return `<style>${appleGlassDesignSystemCss}${workbenchCss}</style>`;
@@ -131,12 +150,25 @@ export function mountWorkbenchShell(
     client: WorkbenchShellApiClient;
     locale: Locale;
     store?: WorkbenchStore;
+    // 照 boot.ts 已有的 clientToken() helper 传入——SSE 手写客户端（chat/stream.ts）要用它设
+    // X-YQGL-Client-Token 头（EventSource 加不了自定义头）。没传时兜底用本文件顶部的同款小 helper，
+    // 保证 shell.test.ts 等不必每次都喂这个参数。
+    getClientToken?: () => string | undefined;
   }
 ): WorkbenchShellHandle {
   const doc = root.ownerDocument ?? document;
   const store = input.store ?? createWorkbenchStore();
+  const getClientToken = input.getClientToken ?? defaultClientTokenReader;
   let disposed = false;
   let vmRequestGen = 0;
+  let chatHandle: ChatViewHandle | undefined;
+  let chatMountKey: string | undefined;
+
+  const disposeChat = () => {
+    chatHandle?.dispose();
+    chatHandle = undefined;
+    chatMountKey = undefined;
+  };
 
   root.innerHTML = renderWorkbenchDocumentHead() + renderWorkbenchShellHtml(input.locale);
   const railEl = root.querySelector<HTMLElement>("[data-wb-rail]");
@@ -188,19 +220,57 @@ export function mountWorkbenchShell(
       });
   };
 
+  // R12 批 2：项目选中且 VM 就绪时，中栏渲染真实主区群聊（chat/view.ts），取代批 1 的数字摘要占位
+  // （renderProjectSummaryHtml 仍留着 + 仍有单测——批 1 报告已经预告"批 2 把对应视图接进来"，这个函数
+  // 本身没错，只是不再是 renderCenter 的调用路径；不删是为了不必连带改 shell.test.ts，范围外发现见
+  // 批 2 汇报）。chat 视图是有状态的 imperative 组件（SSE 订阅/composer 草稿/翻页），只在
+  // "项目+主会话" 真的变化时才重新挂载——store 的其它字段变化（如侧栏收放）不该把它拆了重建，
+  // 否则每次都会打断用户正在打的字、重新连一次 SSE。
   const renderCenter = (state: WorkbenchStoreState) => {
     if (!state.selectedProjectId) {
+      disposeChat();
+      centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderEmptyStateHtml(input.locale, state.projects.length > 0);
       return;
     }
     if (state.vmLoad === "error") {
+      disposeChat();
+      centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderCenterErrorHtml(input.locale);
       return;
     }
     if (state.vm) {
-      centerEl.innerHTML = renderProjectSummaryHtml(state.vm, input.locale);
+      const mainConversation = state.vm.conversations.conversations.find((conversation) => conversation.kind === "main");
+      if (!mainConversation) {
+        // 批 0 的 workbenchPageVmSchema 已经用 superRefine 保证"恰好一个 main 会话"存在；真到这里说明
+        // 服务端契约被破坏，老实报错而不是假装能渲染群聊。
+        disposeChat();
+        centerEl.className = "wh-wb-center";
+        centerEl.innerHTML = renderCenterErrorHtml(input.locale);
+        return;
+      }
+      const key = `${state.vm.project.id}:${mainConversation.id}`;
+      if (chatHandle && chatMountKey === key) {
+        return; // 已经是这个会话的 chat 视图——它自己的 store/SSE 订阅在内部持续更新，无需重挂。
+      }
+      disposeChat();
+      centerEl.className = "wh-wb-center wh-wb-center--chat";
+      chatHandle = mountChatView(centerEl, {
+        client: input.client,
+        locale: input.locale,
+        projectId: state.vm.project.id,
+        projectName: state.vm.project.name,
+        conversationId: mainConversation.id,
+        currentUserId: state.vm.viewer.user_id,
+        members: state.vm.workspace_members.items,
+        getClientToken,
+        streamUrl: input.client.streams.conversation(mainConversation.id)
+      });
+      chatMountKey = key;
       return;
     }
+    disposeChat();
+    centerEl.className = "wh-wb-center";
     centerEl.innerHTML = renderCenterLoadingHtml(input.locale);
   };
 
@@ -238,7 +308,10 @@ export function mountWorkbenchShell(
     client: input.client,
     store,
     locale: input.locale,
-    onSelectProject: selectProject
+    onSelectProject: selectProject,
+    // 会话点击路由：点「主区」树叶把焦点交回已经挂载好的 chat composer（不重新拉数据/不重连
+    // SSE——中栏此刻本来就是这个项目的 chat 视图，见 renderCenter 的 chatMountKey 复用逻辑）。
+    onOpenMainConversation: () => chatHandle?.focusComposer()
   });
 
   centerEl.addEventListener("click", (event) => {
@@ -279,6 +352,7 @@ export function mountWorkbenchShell(
       disposed = true;
       unsubscribe();
       railHandle.dispose();
+      disposeChat();
     }
   };
 }

@@ -17,15 +17,16 @@ function projectInitial(name: string): string {
   return trimmed ? trimmed[0]!.toUpperCase() : "?";
 }
 
-// 项目行下的只读树叶——批 1 只展示 VM 里已有的真数据(主区会话标题/网盘文件数)，不渲染任何点了没反应的
-// 交互；主区群聊/网盘视图接进这个窗口是批 2/6 的事，接进来之前树叶保持非交互（css.ts 里 .wh-wb-leaf
-// 没有 hover/cursor:pointer）。
+// 项目行下的树叶——批 1 全部只读(没有任何视图能接)。批 2 把主区群聊接进这个窗口后，「主区」升级成
+// 真按钮(会话点击路由：点它把焦点交回已经挂载好的 chat composer，见 shell.ts 的 onOpenMainConversation)；
+// 「网盘」还是批 6 的事，继续保持非交互（css.ts 里 .wh-wb-leaf 没有 hover/cursor:pointer，
+// .wh-wb-leaf--live 才有——只加在主区这一个叶子上）。
 function renderProjectTreeLeavesHtml(vm: WorkbenchPageVM, zh: boolean): string {
   const main = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
   const mainLeaf = main
-    ? `<div class="wh-wb-leaf sel">${workbenchIcons.chat}<span>${escapeHtml(main.title)}</span>${
+    ? `<button type="button" class="wh-wb-leaf wh-wb-leaf--live sel" data-wb-open-main-chat>${workbenchIcons.chat}<span>${escapeHtml(main.title)}</span>${
         main.next_seq > 0 ? `<span class="wh-wb-leaf-count">${main.next_seq}</span>` : ""
-      }</div>`
+      }</button>`
     : "";
   const fileCount = vm.recent_project_files.items.length;
   const driveLeaf = `<div class="wh-wb-leaf">${workbenchIcons.folder}<span>${zh ? "网盘" : "Drive"}</span>${
@@ -123,8 +124,8 @@ export type WorkbenchRailHandle = {
   dispose: () => void;
 };
 
-// mount 只做三件事：拉项目列表填树 + 选中项目时拉 workbench VM + 新建项目模态提交调真端点。
-// 树叶（主区/网盘）只读不接事件——见 renderProjectTreeLeavesHtml 的注释。
+// mount 做四件事：拉项目列表填树 + 选中项目时拉 workbench VM + 新建项目模态提交调真端点 +
+// 「主区」树叶点击路由（网盘树叶仍只读——见 renderProjectTreeLeavesHtml 的注释）。
 export function mountWorkbenchRail(
   container: HTMLElement,
   input: {
@@ -132,6 +133,7 @@ export function mountWorkbenchRail(
     store: WorkbenchStore;
     locale: Locale;
     onSelectProject: (projectId: string) => void;
+    onOpenMainConversation?: () => void;
   }
 ): WorkbenchRailHandle {
   let modalName = "";
@@ -228,6 +230,10 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-new-project]")) {
       openNewProjectModal();
+      return;
+    }
+    if (target.closest("[data-wb-open-main-chat]")) {
+      input.onOpenMainConversation?.();
       return;
     }
     // 取消按钮，或直接点在遮罩背景上（不是点在模态框内容里冒泡出来的）都关闭模态。

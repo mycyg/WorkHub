@@ -56,14 +56,17 @@ export const workbenchCss = [
   ".wh-wb-project-name--muted{color:var(--ds-ink-muted);font-weight:500}",
   ".wh-wb-project-dot{width:7px;height:7px;border-radius:50%;background:var(--ds-success);box-shadow:0 0 8px var(--ds-success);flex:0 0 auto}",
   ".wh-wb-tree{padding:2px 0 6px 22px}",
-  // 批 1 的树叶行是只读信息(真会话标题/真文件数),主区群聊/网盘视图还没接进这个窗口——不给 cursor:pointer/
-  // hover 反馈,免得看起来能点却什么都不做（04 §4-3 铁律）。批 2/6 把对应视图接进来时再升级成可点。
+  // 批 1 的树叶行是只读信息(真会话标题/真文件数)——网盘视图还没接进这个窗口(批 6)，不给
+  // cursor:pointer/hover 反馈,免得看起来能点却什么都不做（04 §4-3 铁律）。批 2 把主区群聊接进这个
+  // 窗口后，「主区」升级成 .wh-wb-leaf--live（真 <button>，会话点击路由）；「网盘」仍是这条规则。
   ".wh-wb-leaf{display:flex;align-items:center;gap:8px;width:calc(100% - 8px);box-sizing:border-box;font:500 13px/1.3 var(--ds-font);" +
-    "color:var(--ds-ink-muted);padding:6px 10px;margin:1px 8px 1px 0;border-radius:9px;border:1px solid transparent;" +
+    "text-align:left;color:var(--ds-ink-muted);padding:6px 10px;margin:1px 8px 1px 0;border-radius:9px;border:1px solid transparent;" +
     "background:transparent;cursor:default}",
   ".wh-wb-leaf.sel{background:var(--ds-accent-soft);color:var(--ds-ink);border-color:rgba(122,162,255,.25)}",
   ".wh-wb-leaf svg{width:13px;height:13px;flex:0 0 auto;color:var(--ds-ink-faint)}",
   ".wh-wb-leaf.sel svg{color:var(--ds-accent)}",
+  ".wh-wb-leaf--live{cursor:pointer;transition:background var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-leaf--live:hover{background:var(--ds-glass-strong)}",
   ".wh-wb-leaf-count{margin-left:auto;font:700 10.5px/1 var(--ds-font);color:var(--ds-ink-faint);background:var(--ds-glass);padding:1px 6px;border-radius:99px}",
   ".wh-wb-rail-foot{margin-top:auto;border-top:1px solid var(--ds-glass-border);padding:10px 12px}",
   // 军团总览是批 5 的预告条,不是可点按钮(真聚合端点还没接)——没有 hover/cursor:pointer，理由同 .wh-wb-leaf。
@@ -132,5 +135,116 @@ export const workbenchCss = [
   ".wh-wb-btn--primary{border:0;color:#0b0d12;background:linear-gradient(135deg,#7aa2ff,#9db8ff);font-weight:700}",
   ".wh-wb-btn--ghost{color:var(--ds-ink-muted);background:transparent;border-color:transparent}",
 
-  "@media (prefers-reduced-motion:reduce){.wh-wb-side,.wh-wb-winbtn,.wh-wb-project-row,.wh-wb-leaf,.wh-wb-btn{transition-duration:.01ms!important}}"
+  // —— 批 2：主区群聊。中栏在渲染群聊时切成 flex 列布局，自己管内部滚动区（composer 常驻底部），
+  // 不再吃 .wh-wb-center 默认的整体滚动+内边距。 —— //
+  ".wh-wb-center.wh-wb-center--chat{padding:0;display:flex;flex-direction:column;overflow:hidden}",
+  ".wh-wb-chat{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}",
+  ".wh-wb-chat-banner{flex:none;padding:6px 20px;text-align:center;font:600 11.5px/1.4 var(--ds-font);" +
+    "color:var(--ds-warn);background:var(--ds-warn-soft);border-bottom:1px solid var(--ds-glass-border)}",
+  ".wh-wb-chat-head{flex:none;display:flex;align-items:center;gap:10px;padding:9px 20px;" +
+    "border-bottom:1px solid var(--ds-glass-border);font:500 11.5px/1 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-chat-avs{display:flex}",
+  ".wh-wb-chat-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;" +
+    "font:700 10px/1 var(--ds-font);color:#fff;margin-right:-6px;border:1.5px solid var(--wb-bg1);flex:0 0 auto}",
+  ".wh-wb-chat-avatar--cuu{background:var(--wb-cuu-soft);color:var(--wb-cuu)}",
+  ".wh-wb-chat-avatar--cuu svg{width:12px;height:12px}",
+  ".wh-wb-chat-head-label{margin-left:4px}",
+  ".wh-wb-chat-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;padding:16px 20px 6px}",
+  ".wh-wb-chat-daysep{display:flex;align-items:center;gap:10px;color:var(--ds-ink-faint);font:600 10.5px/1 var(--ds-font);margin:6px 0 14px}",
+  ".wh-wb-chat-daysep::before,.wh-wb-chat-daysep::after{content:\"\";flex:1;height:1px;background:var(--ds-glass-border)}",
+  ".wh-wb-chat-msg{display:flex;gap:9px;margin:0 0 14px;align-items:flex-start}",
+  ".wh-wb-chat-bub{min-width:0;max-width:min(560px,86%)}",
+  ".wh-wb-chat-msg--self{flex-direction:row-reverse}",
+  ".wh-wb-chat-msg--self .wh-wb-chat-bub{text-align:right}",
+  ".wh-wb-chat-msg--self .wh-wb-chat-who{flex-direction:row-reverse}",
+  ".wh-wb-chat-who{display:flex;align-items:baseline;gap:7px;font:600 12px/1 var(--ds-font);color:var(--ds-ink-soft);margin-bottom:4px}",
+  ".wh-wb-chat-tm{font:500 10.5px/1 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-txt{font:500 13px/1.55 var(--ds-font);color:var(--ds-ink);white-space:pre-wrap;word-break:break-word;" +
+    "background:var(--ds-glass);border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);padding:9px 12px;display:inline-block;text-align:left}",
+  ".wh-wb-chat-msg--cuu .wh-wb-chat-txt{background:var(--wb-cuu-soft);border-color:rgba(255,171,94,.28)}",
+  ".wh-wb-chat-msg--self .wh-wb-chat-txt{background:var(--ds-accent-soft);border-color:rgba(122,162,255,.3)}",
+  ".wh-wb-chat-mention{color:var(--ds-accent-2);font-weight:700}",
+  ".wh-wb-chat-msg--pending{opacity:.72}",
+  ".wh-wb-chat-pending-status{display:block;margin-top:3px;font:500 10.5px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-pending-status--error{color:var(--ds-danger)}",
+  ".wh-wb-chat-pending-retry{margin-left:4px;border:0;background:transparent;color:var(--ds-accent-2);" +
+    "font:700 10.5px/1 var(--ds-font);cursor:pointer;padding:0;text-decoration:underline}",
+  ".wh-wb-chat-filecard{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--ds-radius-md);" +
+    "border:1px solid var(--ds-glass-border);background:var(--ds-glass);cursor:default}",
+  ".wh-wb-chat-filecard svg{width:15px;height:15px;color:var(--ds-ink-muted);flex:0 0 auto}",
+  ".wh-wb-chat-filecard-name{font:600 12.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-chat-actioncard{max-width:420px;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);" +
+    "background:var(--wb-cuu-soft);padding:11px 13px}",
+  ".wh-wb-chat-actioncard-h{font:700 12.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-chat-actioncard-list{margin:8px 0 0;padding-left:18px;font:500 12px/1.6 var(--ds-font);color:var(--ds-ink-soft)}",
+  ".wh-wb-chat-actioncard-note{margin-top:8px;font:500 11px/1.5 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-note{font:500 12px/1.5 var(--ds-font);color:var(--ds-ink-muted);font-style:italic}",
+  ".wh-wb-chat-sysline{display:flex;align-items:center;justify-content:center;gap:8px;margin:8px 0;" +
+    "font:500 11.5px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-sysline-tm{color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-empty{max-width:380px;margin:10vh auto 0;text-align:center}",
+  ".wh-wb-chat-empty-icon{display:inline-flex;width:30px;height:30px;color:var(--wb-cuu)}",
+  ".wh-wb-chat-empty-icon svg{width:30px;height:30px}",
+  ".wh-wb-chat-empty-title{margin:12px 0 0;font:700 15.5px/1.35 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-chat-empty-body{margin:8px 0 0;font:500 12.5px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-chat-error{padding:30px 18px;text-align:center;color:var(--ds-ink-muted);font:500 13px/1.6 var(--ds-font)}",
+  ".wh-wb-chat-truncated{margin:0 0 12px;padding:9px 12px;border:1px dashed var(--ds-glass-border);border-radius:var(--ds-radius-md);" +
+    "font:500 11.5px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
+
+  // —— 正在输入 —— //
+  ".wh-wb-chat-typing{flex:none;padding:0 20px 4px;font:500 11px/1 var(--ds-font);color:var(--ds-ink-faint);" +
+    "display:flex;align-items:center;gap:5px;min-height:15px}",
+  ".wh-wb-chat-typing-dots{display:inline-flex;gap:2px}",
+  ".wh-wb-chat-typing-dots i{width:3px;height:3px;border-radius:50%;background:var(--ds-ink-faint);" +
+    "animation:ds-chat-typing-pulse 1.1s var(--ds-ease) infinite}",
+  ".wh-wb-chat-typing-dots i:nth-child(2){animation-delay:.15s}",
+  ".wh-wb-chat-typing-dots i:nth-child(3){animation-delay:.3s}",
+  "@keyframes ds-chat-typing-pulse{0%,60%,100%{opacity:.25;transform:scale(.85)}30%{opacity:1;transform:scale(1)}}",
+
+  // —— composer —— //
+  ".wh-wb-chat-composer{flex:none;padding:8px 20px 16px}",
+  ".wh-wb-chat-attachments{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}",
+  ".wh-wb-chat-attachment-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 8px 5px 10px;" +
+    "border-radius:99px;border:1px solid var(--ds-glass-border);background:var(--ds-glass);font:600 11.5px/1 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-chat-attachment-chip svg{width:12px;height:12px;color:var(--ds-ink-muted)}",
+  ".wh-wb-chat-attachment-chip button{display:inline-flex;border:0;background:transparent;color:var(--ds-ink-faint);cursor:pointer;padding:0}",
+  ".wh-wb-chat-attachment-chip button svg{width:11px;height:11px}",
+  ".wh-wb-chat-send-error{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px 12px;" +
+    "border-radius:var(--ds-radius-md);border:1px solid rgba(255,122,136,.3);background:var(--ds-danger-soft);" +
+    "font:600 12px/1.4 var(--ds-font);color:var(--ds-danger)}",
+  ".wh-wb-chat-cbox{border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-lg);background:var(--ds-glass);" +
+    "padding:10px 12px 8px;position:relative}",
+  ".wh-wb-chat-input{width:100%;box-sizing:border-box;resize:none;border:0;background:transparent;outline:none;" +
+    "font:500 13px/1.5 var(--ds-font);color:var(--ds-ink);min-height:20px;max-height:120px}",
+  ".wh-wb-chat-input::placeholder{color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-input:disabled{opacity:.6}",
+  ".wh-wb-chat-ctools{display:flex;align-items:center;gap:6px;margin-top:8px}",
+  ".wh-wb-chat-ctag{display:inline-flex;align-items:center;gap:3px;font:600 11px/1 var(--ds-font);color:var(--ds-ink-muted);" +
+    "padding:4px 8px;border-radius:99px;background:var(--ds-glass-quiet);border:0;cursor:pointer}",
+  ".wh-wb-chat-ctag b{color:var(--ds-accent-2)}",
+  ".wh-wb-chat-ctag:hover{background:var(--ds-glass-strong)}",
+  ".wh-wb-chat-ctag--soon{cursor:default;opacity:.55}",
+  ".wh-wb-chat-ctag--soon:hover{background:var(--ds-glass-quiet)}",
+  ".wh-wb-chat-send{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;" +
+    "border-radius:50%;border:0;background:linear-gradient(135deg,#7aa2ff,#9db8ff);color:#0b0d12;cursor:pointer}",
+  ".wh-wb-chat-send svg{width:13px;height:13px}",
+  ".wh-wb-chat-send:disabled{opacity:.35;cursor:default;background:var(--ds-glass)}",
+
+  // —— @ picker / 「即将可用」占位 picker —— //
+  ".wh-wb-chat-picker{position:absolute;left:12px;right:12px;bottom:calc(100% + 8px);max-height:220px;overflow-y:auto;" +
+    "border-radius:var(--ds-radius-md);border:1px solid var(--ds-glass-border);" +
+    "background:linear-gradient(180deg,rgba(44,49,64,.98),rgba(28,32,43,.99));box-shadow:0 24px 60px rgba(0,0,0,.4);padding:6px}",
+  ".wh-wb-chat-picker-section-title{padding:6px 8px 3px;font:700 10px/1 var(--ds-font);letter-spacing:.08em;" +
+    "text-transform:uppercase;color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-picker-row{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:6px 8px;" +
+    "border:0;border-radius:8px;background:transparent;color:var(--ds-ink);font:500 12.5px/1.3 var(--ds-font);text-align:left;cursor:pointer}",
+  ".wh-wb-chat-picker-row:hover{background:var(--ds-glass-strong)}",
+  ".wh-wb-chat-picker-row svg{width:14px;height:14px;color:var(--ds-ink-muted);flex:0 0 auto}",
+  ".wh-wb-chat-picker-loading,.wh-wb-chat-picker-empty{padding:8px;font:500 12px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-picker--soon{padding:12px}",
+  ".wh-wb-chat-picker-title{font:700 12.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-chat-picker-soon-note{margin-top:4px;font:500 11.5px/1.5 var(--ds-font);color:var(--ds-ink-faint)}",
+
+  "@media (prefers-reduced-motion:reduce){.wh-wb-side,.wh-wb-winbtn,.wh-wb-project-row,.wh-wb-leaf,.wh-wb-btn," +
+    ".wh-wb-chat-ctag,.wh-wb-chat-typing-dots i{transition-duration:.01ms!important;animation-duration:.01ms!important}}"
 ].join("");
