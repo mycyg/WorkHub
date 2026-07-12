@@ -526,6 +526,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
       },
       async proposal() {
         return surface.page_vms.proposal;
+      },
+      async workbench() {
+        throw new Error("not needed");
       }
     },
     streams: {

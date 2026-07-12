@@ -524,3 +524,27 @@ test("SSE parser extracts WorkHubEvent envelopes and run-specific event streams"
   assert.equal(runEvents.length, 1);
   assert.equal(runEvents[0]?.topic, "run:run-1");
 });
+
+// R12 批 1：desktop 工作台外壳消费 GET /api/pages/workbench/:projectId 拿 bootstrap VM。
+test("api client exposes the workbench bootstrap page VM endpoint", async () => {
+  const calls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  // workbench 是 PageClient 上的可选方法（其它 workspace 的完整 PageClient 字面量 mock 不必跟着补桩），
+  // 但真实 createApiClient() 一定实现它——非空断言反映这个契约，不是绕过类型检查。
+  await client.pages.workbench!("project-1");
+  await client.pages.workbench!("project 1", { locale: "en-US" });
+
+  assert.deepEqual(calls, [
+    "/api/pages/workbench/project-1",
+    "/api/pages/workbench/project%201?locale=en-US"
+  ]);
+});
