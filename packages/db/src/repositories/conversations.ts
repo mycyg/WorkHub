@@ -79,6 +79,22 @@ export type CreateUserMessageInput = CreateUserMessageBaseInput &
     | { kind: "file_card"; contentJson: { drive_item_id: string; snapshot_name: string } }
   );
 
+// R12 批4a：协同会话 turn 落库的 Cuu 回应——kind 固定 'text'（本批只做纯对话，不产出 file_card 等其它
+// kind）。sender_user_id 固定 null（Cuu 不是 workspace 成员，不需要也不能过 createUserMessage 那套
+// membership/participant 校验）。memory_citations 是本轮实际注入过的记忆/技能引用清单，additive，
+// 由调用方（services/conversation-turns.ts）组装好后原样落 content_json。
+export type CreateCuuMessageInput = {
+  id?: string;
+  workspaceId: string;
+  conversationId: string;
+  contentJson: {
+    text: string;
+    memory_citations?: Array<{ kind: "user_memory" | "team_skill"; title: string }>;
+  };
+  threadRootId?: string;
+  at?: Date;
+};
+
 export type ListConversationMessagesInput = {
   workspaceId: string;
   viewerUserId: string;
@@ -111,6 +127,8 @@ export type ConversationRepository = {
   findVisibleAccessRecord: (input: FindConversationAccessInput) => Promise<ConversationAccessRecord | null>;
   createCollab: (input: CreateCollabConversationInput) => Promise<CreatedCollabConversation>;
   createUserMessage: (input: CreateUserMessageInput) => Promise<ConversationMessageRow>;
+  // R12 批4a：新增，不改动上面任何既有方法的签名/行为。
+  createCuuMessage: (input: CreateCuuMessageInput) => Promise<ConversationMessageRow>;
   listMessagesAfter: (input: ListConversationMessagesInput) => Promise<ConversationMessagePage | null>;
 };
 
@@ -226,6 +244,19 @@ function assertMessageContent(input: CreateUserMessageInput) {
     input.contentJson.snapshot_name.length === 0
   ) {
     throw new ConversationRepositoryInputError("file cards accept only drive item and snapshot metadata");
+  }
+}
+
+// R12 批4a：仓库层只做轻量防御性形状检查（与 assertMessageContent 同一档次），不复述
+// @workhub/contracts 的 conversationTextContentSchema 全套边界校验——那份校验在调用方
+// （services/conversation-turns.ts）用 parseOutputContract 对装配好的 VM 做一次即可，双写两份
+// 校验逻辑只会随时间漂移。这里只保证不会把明显错形状的值写进 content_json。
+function assertCuuMessageContent(contentJson: CreateCuuMessageInput["contentJson"]) {
+  if (typeof contentJson.text !== "string" || contentJson.text.length === 0) {
+    throw new ConversationRepositoryInputError("cuu text messages require non-empty text metadata");
+  }
+  if (contentJson.memory_citations !== undefined && !Array.isArray(contentJson.memory_citations)) {
+    throw new ConversationRepositoryInputError("cuu memory citations must be an array when present");
   }
 }
 
@@ -751,6 +782,104 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
           .returning();
         if (!created) {
           throw new ConversationMessageInsertFailedError("message insert returned no row");
+        }
+        return created;
+      });
+    },
+
+    // R12 批4a：新增方法，createUserMessage 上面一字未改。刻意比 createUserMessage 精简——Cuu 不是
+    // workspace 成员，不需要（也无法）复用 lockActiveMembershipSet/lockConversationParticipant 那两段
+    // 人类发言人校验；调用方（services/conversation-turns.ts）在调这个方法之前已经用
+    // findVisibleAccessRecord 确认过发起 turn 的人类是会话的可见参与者，这里只需要重新锁定并确认
+    // 会话本身仍然活跃（租户围栏 + 并发安全，与 createUserMessage 同一套 seq 分配防重复模式）。
+    async createCuuMessage(input) {
+      assertCuuMessageContent(input.contentJson);
+      const at = input.at ?? new Date();
+      return db.transaction(async (tx) => {
+        const locator = await readConversationProjectId(tx, input);
+        if (!locator) {
+          throw new ConversationAccessDeniedError("cuu message target conversation is not active");
+        }
+        const project = await lockActiveProject(tx, {
+          workspaceId: input.workspaceId,
+          projectId: locator.projectId
+        });
+        if (!project) {
+          throw new ConversationAccessDeniedError("cuu message target project is not active");
+        }
+        const conversation = await lockActiveConversation(tx, {
+          workspaceId: input.workspaceId,
+          projectId: locator.projectId,
+          conversationId: input.conversationId
+        });
+        if (!conversation) {
+          throw new ConversationAccessDeniedError("cuu message target conversation is not active");
+        }
+
+        if (input.threadRootId) {
+          const [root] = await tx
+            .select({ id: conversationMessages.id })
+            .from(conversationMessages)
+            .where(
+              and(
+                eq(conversationMessages.conversationId, input.conversationId),
+                eq(conversationMessages.id, input.threadRootId)
+              )
+            )
+            .limit(1);
+          if (!root) {
+            throw new ConversationThreadRootMismatchError(
+              "thread root does not belong to the target conversation"
+            );
+          }
+        }
+
+        const currentSeq = conversation.nextSeq;
+        if (!Number.isSafeInteger(currentSeq) || currentSeq < 0) {
+          throw new ConversationSequenceAllocationError("stored conversation sequence is not a safe integer");
+        }
+        if (currentSeq >= Number.MAX_SAFE_INTEGER) {
+          throw new ConversationSequenceExhaustedError("conversation sequence space is exhausted");
+        }
+        const [allocation] = await tx
+          .update(projectConversations)
+          .set({
+            nextSeq: sql<number>`${projectConversations.nextSeq} + 1`,
+            updatedAt: at
+          })
+          .where(
+            and(
+              eq(projectConversations.workspaceId, input.workspaceId),
+              eq(projectConversations.id, input.conversationId),
+              eq(projectConversations.projectId, conversation.projectId),
+              eq(projectConversations.nextSeq, currentSeq),
+              isNull(projectConversations.deletedAt)
+            )
+          )
+          .returning({ nextSeq: projectConversations.nextSeq });
+        const nextSeq = allocation?.nextSeq;
+        if (!Number.isSafeInteger(nextSeq) || nextSeq !== currentSeq + 1) {
+          throw new ConversationSequenceAllocationError(
+            "conversation sequence update returned no exact next sequence"
+          );
+        }
+
+        const [created] = await tx
+          .insert(conversationMessages)
+          .values({
+            id: input.id ?? randomUUID(),
+            conversationId: input.conversationId,
+            seq: nextSeq,
+            senderType: "cuu",
+            senderUserId: null,
+            kind: "text",
+            contentJson: input.contentJson,
+            ...(input.threadRootId ? { threadRootId: input.threadRootId } : {}),
+            createdAt: at
+          })
+          .returning();
+        if (!created) {
+          throw new ConversationMessageInsertFailedError("cuu message insert returned no row");
         }
         return created;
       });

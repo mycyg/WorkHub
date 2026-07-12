@@ -106,6 +106,40 @@ export const conversationMessageCreatedEventSchema = z
   });
 export type ConversationMessageCreatedEvent = z.infer<typeof conversationMessageCreatedEventSchema>;
 
+// R12 批4a：conversation.message.delta 从批0的「仅保留名称」升级为真实 payload/校验——同批3对
+// conversation.action_card.updated 的做法一致（见 r12-workbench.test.ts 的正例契约测试）。
+// 故意保持极简：只有 4 个 data 字段，没有 actor/project_id/preview_text——这是纯瞬态的流式打字
+// 事件（一次协同会话 turn 生成过程中的增量文本），不落库、没有 seq、不参与任何 reconcile；
+// 真正落库的 Cuu 回复走的是另一条路径（sender_type='cuu' 的 conversation_messages 行），
+// 设计取舍与已知缺口见 apps/api/src/services/conversation-turns.ts 顶部注释与
+// r12-desktop-workbench/reports/batch-4a-turns.md。
+export const conversationMessageDeltaEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.message.delta"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    data: z
+      .object({
+        conversation_id: idSchema,
+        turn_id: idSchema,
+        delta_text: z.string().min(1).max(4000),
+        ordinal: z.number().int().min(0)
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "message-delta topic must match data.conversation_id"
+      });
+    }
+  });
+export type ConversationMessageDeltaEvent = z.infer<typeof conversationMessageDeltaEventSchema>;
+
 const typingTimestampSchema = z.string().datetime({ offset: true, precision: 3 });
 
 export const conversationPresenceTypingEventSchema = z

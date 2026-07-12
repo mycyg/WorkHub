@@ -283,10 +283,24 @@ export const conversationFileCardRequestContentSchema = z
   .strict();
 export type ConversationFileCardRequestContent = z.infer<typeof conversationFileCardRequestContentSchema>;
 
+// R12 批4a：Cuu 协同回应携带的记忆/技能引用清单（回应组装时实际注入过哪些条目）。additive——
+// 只在 text 内容上新增一个 optional 字段，人类发的文本消息不受影响（仓库层 createUserMessage 的
+// assertMessageContent 仍然只接受唯一 text 键，这个字段只会出现在 createCuuMessage 落库的消息上）。
+export const conversationMemoryCitationSchema = z
+  .object({
+    kind: z.enum(["user_memory", "team_skill"]),
+    title: z.string().min(1).max(256)
+  })
+  .strict();
+export type ConversationMemoryCitation = z.infer<typeof conversationMemoryCitationSchema>;
+
+export const MAX_CONVERSATION_MEMORY_CITATIONS = 20;
+
 export const MAX_CONVERSATION_TEXT_CODE_UNITS = 20_000;
 export const conversationTextContentSchema = z
   .object({
-    text: z.string().min(1).max(MAX_CONVERSATION_TEXT_CODE_UNITS)
+    text: z.string().min(1).max(MAX_CONVERSATION_TEXT_CODE_UNITS),
+    memory_citations: z.array(conversationMemoryCitationSchema).max(MAX_CONVERSATION_MEMORY_CITATIONS).optional()
   })
   .strict();
 export type ConversationTextContent = z.infer<typeof conversationTextContentSchema>;
