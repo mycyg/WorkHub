@@ -17,6 +17,7 @@ import { settings as runtimeSettings, type Settings } from "@workhub/config";
 import {
   eventTypes,
   evidenceRefSchema,
+  type ConfidenceVerdict,
   type CuuState,
   type EvidenceRef,
   type TaskPlanItemRole,
@@ -57,7 +58,12 @@ import {
   type LifecycleUserRef,
   type LifecycleWorkItemRef
 } from "@workhub/events";
-import { createAiDecisionRepository, getSharedDatabaseClient, createWorkItemRepository } from "@workhub/db";
+import {
+  createActionCardRepository,
+  createAiDecisionRepository,
+  getSharedDatabaseClient,
+  createWorkItemRepository
+} from "@workhub/db";
 import type {
   AiDecisionRepository,
   AuditLogRepository,
@@ -95,6 +101,7 @@ import {
   type AgentRunUserRefResolver
 } from "../services/agent-run-notification-workitem.js";
 import { getDefaultProposalService, type ProposalService, type StoredProposal } from "../services/proposals.js";
+import { estimateDeliverableDiffStats } from "../services/deliverable-diff-stats.js";
 import { getDefaultAgentRunPersistence } from "../services/agent-run-persistence.js";
 import { getDefaultBudgetReservationRepository } from "../services/budget-reservation-store.js";
 import {
@@ -263,7 +270,19 @@ export type AgentRunToolsProvider = (input: AgentRunExecutionInput) => {
 };
 export type AgentRunNotificationPublisher = Pick<NotificationService, "notifyMilestone">;
 export type AgentRunEventBus = Pick<PushBus, "publish">;
-export type AgentRunProposalSink = Pick<ProposalService, "createFromManifest">;
+// R12 批 4b：createFromManifest 是唯一硬依赖（不接就完全没有「开提议」这条能力，行为不变）；
+// review/merge 是可选的自动合并能力——不接就没有第 5 档全托管，attemptAutoMerge 直接短路返回
+// false（照旧只开提议）。旧测试/QA 脚本构造的最小 sink（只给 createFromManifest）零改动仍然编译过。
+export type AgentRunProposalSink = Pick<ProposalService, "createFromManifest"> &
+  Partial<Pick<ProposalService, "review" | "merge">>;
+// R12 批 4b：产出卡系统消息发布口——直接复用批 3 postSystemMessage/批 6 回滚播报的同款依赖注入形态
+// （见 apps/api/src/services/drive-pages.ts 的 announceVersionRollback），不新起一套消息写路径。
+export type AgentRunConversationSystemMessagePoster = (input: {
+  workspaceId: string;
+  conversationId: string;
+  content: Record<string, unknown>;
+  at: Date;
+}) => Promise<unknown> | unknown;
 export type AgentRunWorkItemContextProvider =
   (run: AgentRunQueueRecord) => Promise<string | undefined> | string | undefined;
 export type AgentRunSettledHook = (run: AgentRunQueueRecord) => Promise<void> | void;
@@ -494,6 +513,8 @@ export function createInMemoryAgentRunQueue(options: {
   confidence?: AgentRunConfidenceRecorder | false;
   humanReserved?: HumanReservedGuard | false;
   proposals?: AgentRunProposalSink | false;
+  // R12 批 4b：产出卡回灌——不传（旧调用方/绝大多数单测）→ 不发系统消息，零行为影响。
+  postSystemMessage?: AgentRunConversationSystemMessagePoster | false;
   notifications?: AgentRunNotificationPublisher | false;
   notificationWorkItem?: AgentRunNotificationWorkItemResolver | false;
   // R2 audit#5：把里程碑收件人解析成活跃度引用，让 lifecycle 过滤丢弃已停用收件人。
@@ -541,6 +562,7 @@ export function createInMemoryAgentRunQueue(options: {
   });
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
   const proposalSink = options.proposals === false ? undefined : options.proposals;
+  const postSystemMessage = options.postSystemMessage === false ? undefined : options.postSystemMessage;
   const notificationWorkItem = options.notificationWorkItem === false ? undefined : options.notificationWorkItem;
   const resolveUserRefs = options.resolveUserRefs === false ? undefined : options.resolveUserRefs;
   const transitionWorkItemStatus = options.transitionWorkItemStatus === false ? undefined : options.transitionWorkItemStatus;
@@ -1341,10 +1363,80 @@ export function createInMemoryAgentRunQueue(options: {
     }
   }
 
+  // R12 批 4b：产出卡回灌——一个带 source_conversation_id 的 run 开出提议、或（第 5 档 · 全托管）
+  // 自动合并成功时，往那条会话里 post 一条 system_event，前端渲成产出卡（标题+加减行数；
+  // auto_merged 变体多一句「已自动采纳 · 全托管」）。「看提议」深链按钮本批未接（需要工作台外壳
+  // 打开跨窗口的提议详情页，超出 chat/** 渲染范围，见批次汇报「没做/存疑」）。best-effort：
+  // 找不到会话/没接 postSystemMessage 依赖/发布失败，都不影响提议已经落库的结果，只是静默跳过这条播报。
+  async function postDeliverableSystemMessage(input: {
+    run: AgentRunQueueRecord;
+    proposal: StoredProposal;
+    event: "proposal_opened" | "proposal_auto_merged";
+  }) {
+    if (!postSystemMessage || !input.run.source_conversation_id || !input.run.workspace_id) {
+      return;
+    }
+    try {
+      const workdir = input.run.workdir_ref ?? runWorkdirs.get(input.run.run_id);
+      const diffStats = workdir
+        ? await estimateDeliverableDiffStats({ workdir, manifest: input.proposal.diff_manifest })
+        : { adds: 0, dels: 0 };
+      await postSystemMessage({
+        workspaceId: input.run.workspace_id,
+        conversationId: input.run.source_conversation_id,
+        content: {
+          event: input.event,
+          proposal_id: input.proposal.id,
+          run_id: input.run.run_id,
+          title: input.proposal.title,
+          adds: diffStats.adds,
+          dels: diffStats.dels
+        },
+        at: now()
+      });
+    } catch (error) {
+      getDefaultStructuredLogger().warn("agent_run_deliverable_system_message_failed", {
+        error,
+        runId: input.run.run_id,
+        proposalId: input.proposal.id,
+        event: input.event
+      });
+    }
+  }
+
+  // R12 批 4b：全托管档（mode===5）+ grade5 复核通过时，confidence 裁决点已经把 verdict 判成
+  // "auto_merge"（见 services/agent-run-confidence.ts）。这里只是照实执行这个裁决——AI 以自己的
+  // 身份 review→merge 这份刚开出的提议；失败（撞车/需要对底稿/仓库层任何拒绝）一律 fail-open：
+  // 吞掉错误、提议留在已开状态等人处理，绝不让"自动合并失败"倒退成"run 失败"。
+  async function attemptAutoMerge(run: AgentRunQueueRecord, proposal: StoredProposal): Promise<boolean> {
+    if (!proposalSink?.review || !proposalSink.merge) {
+      return false;
+    }
+    const aiActor = { actor_kind: "ai" as const, label: "WorkHub AI" };
+    try {
+      await proposalSink.review({
+        proposalId: proposal.id,
+        actor: aiActor,
+        decision: "approve",
+        reasonMd: "全托管模式（第 5 档）：AI 复核通过，按你的授权自动采纳。"
+      });
+      await proposalSink.merge({ proposalId: proposal.id, actor: aiActor });
+      return true;
+    } catch (error) {
+      getDefaultStructuredLogger().warn("agent_run_auto_merge_failed", {
+        error,
+        runId: run.run_id,
+        proposalId: proposal.id
+      });
+      return false;
+    }
+  }
+
   async function openProposalFromManifest(
     run: AgentRunQueueRecord,
     result: AgentLoopResult,
-    confidenceId?: string
+    confidenceId?: string,
+    verdict?: ConfidenceVerdict
   ) {
     if (!proposalSink || result.status !== "succeeded" || !result.manifest) {
       return;
@@ -1370,6 +1462,12 @@ export function createInMemoryAgentRunQueue(options: {
       ...(result.manifest.branch_id ? { branchId: result.manifest.branch_id } : {})
     });
     await emitProposalOpenedEvent(run, proposal);
+    const autoMerged = verdict === "auto_merge" && await attemptAutoMerge(run, proposal);
+    await postDeliverableSystemMessage({
+      run,
+      proposal,
+      event: autoMerged ? "proposal_auto_merged" : "proposal_opened"
+    });
   }
 
   async function executeRun(runId: string, claimedRun?: AgentRunQueueRecord) {
@@ -1602,7 +1700,7 @@ export function createInMemoryAgentRunQueue(options: {
       // 否则 confidence/escalation 写失败会被吞掉，run 已经 terminal，后续 recovery 没有可重试面。
       const proposalWillOpen = Boolean(proposalSink && result.status === "succeeded" && result.manifest);
       const confidenceBeforeTerminal = result.status === "failed";
-      const preTerminalConfidenceId = confidenceBeforeTerminal
+      const preTerminalConfidence = confidenceBeforeTerminal
         ? await recordRunConfidence(current, result, { proposalWillOpen, failClosed: true })
         : undefined;
 
@@ -1618,12 +1716,16 @@ export function createInMemoryAgentRunQueue(options: {
       // FIX#5：成功且有 manifest 且接了 proposalSink → 本次会开出可审阅提议。据此告诉置信记录器：
       // 即便低置信 escalate，也别把工作项推到 escalated（有提议要审），只记升级/注意力事件；
       // 最终状态由 notifyRunMilestone 这个唯一写入者落到 in_review。与 openProposalFromManifest 的开提议门同口径。
-      const confidenceId = confidenceBeforeTerminal
-        ? preTerminalConfidenceId
+      const confidence = confidenceBeforeTerminal
+        ? preTerminalConfidence
         : await recordRunConfidence(current, result, { proposalWillOpen });
       let proposalOpened = false;
       try {
-        await openProposalFromManifest(current, result, confidenceId);
+        // R12 批 4b：verdict 只在「本次确实会开提议」时才可能触发自动合并——failed/无 manifest 的
+        // preTerminalConfidence 分支永远拿不到 verdict==="auto_merge"（openProposalFromManifest
+        // 自己也会因 result.status!=="succeeded" 直接短路），这里透传是给「succeeded 但被判 escalate」
+        // 之外的正常路径用。
+        await openProposalFromManifest(current, result, confidence?.confidenceId, confidence?.verdict);
         proposalOpened = proposalWillOpen;
       } catch (error) {
         getDefaultStructuredLogger().warn("agent_run_open_proposal_failed", { error });
@@ -1754,19 +1856,22 @@ export function createInMemoryAgentRunQueue(options: {
     run: AgentRunQueueRecord,
     result: AgentLoopResult,
     opts: { proposalWillOpen?: boolean; failClosed?: boolean } = {}
-  ): Promise<string | undefined> {
+  ): Promise<{ confidenceId?: string; verdict?: ConfidenceVerdict }> {
     if (options.confidence === false || !options.confidence) {
-      return undefined;
+      return {};
     }
     try {
       const recorded = await options.confidence({ run, result, proposalWillOpen: opts.proposalWillOpen ?? false });
-      return recorded?.confidenceId;
+      // R12 批 4b：verdict 透传给调用方，据此决定要不要在开完提议后接着自动合并（见
+      // openProposalFromManifest）。裁决本身（含模式五档 mode===5 门）全部发生在 confidence 记录器里
+      // （services/agent-run-confidence.ts），这里只搬运结果，不重复判断。
+      return { confidenceId: recorded?.confidenceId, verdict: recorded?.verdict };
     } catch (error) {
       getDefaultStructuredLogger().warn("agent_run_confidence_record_failed", { error });
       if (opts.failClosed) {
         throw markFailClosedConfidenceError(error);
       }
-      return undefined;
+      return {};
     }
   }
 
@@ -2749,6 +2854,10 @@ export function getDefaultAgentRunQueue() {
     policyStore: getDefaultBudgetPolicyStore(),
     ledgerStore: getDefaultCostLedgerStore(),
     proposals: getDefaultProposalService(),
+    // R12 批 4b：产出卡回灌——复用批 3 已有的 postSystemMessage 写入口（照 services/drive-pages.ts
+    // announceVersionRollback 的同款调法），不新起一套消息写路径。
+    postSystemMessage: (message) =>
+      createActionCardRepository(getSharedDatabaseClient().db).postSystemMessage({ ...message, senderType: "system" }),
     persistence: getDefaultAgentRunPersistence(),
     // R2 原子预算：生产 PG 队列注入预留仓库，串行化并发起跑、防集体超预算。
     reservationRepo: getDefaultBudgetReservationRepository(),

@@ -154,6 +154,72 @@ test("renderMessageHtml falls back to an honest generic label when a system_even
   assert.match(html, /系统事件/u);
 });
 
+// R12 批 4b：产出卡回灌——system_event 的 content.event 是 proposal_opened/proposal_auto_merged 时，
+// 渲成 editcard 样式（标题+加减行数），不是普通折叠灰线。
+test("renderMessageHtml renders a proposal_opened system_event as a deliverable card with title and +adds/-dels, not the plain collapsed sysline", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "system_event",
+      sender_type: "system",
+      sender_user_id: null,
+      content: {
+        event: "proposal_opened",
+        proposal_id: "proposal-1",
+        run_id: "run-1",
+        title: "选题报告 · 第三节",
+        adds: 86,
+        dels: 12
+      }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /wh-wb-chat-actioncard/u);
+  assert.match(html, /选题报告 · 第三节/u);
+  assert.match(html, /\+86/u);
+  assert.match(html, /-12/u);
+  // 等待人工确认——不是「已自动采纳」话术，也不假装有个能点的撤销/交给审核按钮。
+  assert.match(html, /等待人工确认后采纳/u);
+  assert.doesNotMatch(html, /已自动采纳/u);
+  assert.doesNotMatch(html, /<button/u);
+  assert.doesNotMatch(html, /wh-wb-chat-sysline"/u);
+});
+
+test("renderMessageHtml renders a proposal_auto_merged system_event with the full-autonomy badge instead of the pending-review note", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "system_event",
+      sender_type: "system",
+      sender_user_id: null,
+      content: {
+        event: "proposal_auto_merged",
+        proposal_id: "proposal-2",
+        run_id: "run-2",
+        title: "选题报告 · 第三节",
+        adds: 86,
+        dels: 12
+      }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /wh-wb-chat-actioncard/u);
+  assert.match(html, /已自动采纳 · 全托管/u);
+  assert.doesNotMatch(html, /等待人工确认后采纳/u);
+});
+
+test("renderMessageHtml still renders a non-deliverable system_event (e.g. drive_version_restored) as the plain collapsed sysline", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "system_event",
+      sender_type: "system",
+      sender_user_id: null,
+      content: { event: "drive_version_restored", summary: "《报告.md》找回了旧版本" }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /wh-wb-chat-sysline"/u);
+  assert.doesNotMatch(html, /wh-wb-chat-actioncard/u);
+});
+
 test("renderMessageHtml renders a real, minimal action_card summary from the actual item titles", () => {
   const html = renderMessageHtml(
     baseMessage({

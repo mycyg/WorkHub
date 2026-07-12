@@ -129,6 +129,47 @@ function renderActionCardSummaryHtml(content: Record<string, unknown>, locale: L
   }<div class="wh-wb-chat-actioncard-note">${escapeHtml(note)}</div></div>`;
 }
 
+// R12 批 4b：产出卡回灌——一个带来源会话的 run 开出提议/自动合并时，服务端往会话里落一条
+// system_event，content 形如 {event:'proposal_opened'|'proposal_auto_merged', proposal_id, run_id,
+// title, adds, dels}（见 apps/api/src/workers/agent-runner.ts 的 postDeliverableSystemMessage）。
+// 这里识别出这类事件，渲成 prototype 的 editcard 样式（标题+加减行数），auto_merged 变体多一行
+// 「已自动采纳 · 全托管」。其它 system_event（如批 6 的 drive_version_restored）仍走下面
+// renderSystemEventLineHtml 的普通折叠行，不受影响。
+type DeliverableSystemEvent = "proposal_opened" | "proposal_auto_merged";
+
+function deliverableSystemEventKind(content: Record<string, unknown>): DeliverableSystemEvent | undefined {
+  const event = content["event"];
+  return event === "proposal_opened" || event === "proposal_auto_merged" ? event : undefined;
+}
+
+function renderDeliverableCardHtml(
+  message: Extract<ConversationMessageVM, { kind: "system_event" }>,
+  event: DeliverableSystemEvent,
+  ctx: ChatRenderContext
+): string {
+  const zh = ctx.locale === "zh-CN";
+  const content = message.content;
+  const rawTitle = content["title"];
+  const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle : (zh ? "一份变更申请" : "a change request");
+  const adds = typeof content["adds"] === "number" ? content["adds"] : undefined;
+  const dels = typeof content["dels"] === "number" ? content["dels"] : undefined;
+  const header = zh ? `已起草 ${title}` : `Drafted ${title}`;
+  const diffLine = adds !== undefined && dels !== undefined
+    ? `<div class="wh-wb-chat-actioncard-note"><span style="color:var(--ds-success);font-weight:700">+${adds}</span> <span style="color:var(--ds-danger);font-weight:700">-${dels}</span></div>`
+    : "";
+  // 不新做撤销按钮（撤销走既有提议/回滚通道，见批 4b 设计），也不摆一个没接线的「看提议」按钮——
+  // 跨窗口打开提议详情页需要工作台外壳（shell.ts）配合，这批范围只到产出卡渲染，先给诚实的纯文字状态，
+  // 照批 2 行动卡「完整交互由后续批次接入」的同款取舍，不假装这里已经可点。
+  const statusLine = event === "proposal_auto_merged"
+    ? `<div class="wh-wb-chat-actioncard-note" style="color:var(--ds-warn);font-weight:700">${zh ? "已自动采纳 · 全托管" : "Auto-adopted · Full autonomy"}</div>`
+    : `<div class="wh-wb-chat-actioncard-note">${zh
+        ? "已生成变更申请，等待人工确认后采纳。提议详情页由后续批次接入这个窗口。"
+        : "Change request opened — waiting for review before it's adopted. The proposal detail view lands in a later batch."
+      }</div>`;
+  const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
+  return `<div class="wh-wb-chat-actioncard"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${diffLine}${statusLine}${timestamp}</div>`;
+}
+
 function messageBodyHtml(message: ConversationMessageVM, ctx: ChatRenderContext): string {
   switch (message.kind) {
     case "text":
@@ -163,7 +204,10 @@ function renderSystemEventLineHtml(
 
 export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRenderContext): string {
   if (message.kind === "system_event") {
-    return renderSystemEventLineHtml(message, ctx);
+    const deliverableEvent = deliverableSystemEventKind(message.content);
+    return deliverableEvent
+      ? renderDeliverableCardHtml(message, deliverableEvent, ctx)
+      : renderSystemEventLineHtml(message, ctx);
   }
   const isCuu = message.sender_type === "cuu";
   const isSelf = ctx.currentUserId !== undefined && message.sender_user_id === ctx.currentUserId;
