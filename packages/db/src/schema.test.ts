@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { existsSync, readFileSync } from "node:fs";
 
 import { getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 
-import { confidenceGrades, escalationTriggers } from "@workhub/contracts";
+import { confidenceGrades, escalationTriggers, taskPlanStatuses } from "@workhub/contracts";
 import * as dbSchema from "./index.js";
 import {
   acceptedDeliverableChanges,
@@ -608,11 +609,79 @@ test("R12 migration 0046 is journaled, replay-safe, and never allocates with max
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as { entries: Array<{ idx: number; tag: string }> };
-  assert.deepEqual(journal.entries.at(-1), {
-    ...journal.entries.at(-1),
+  const entry0046 = journal.entries.find((entry) => entry.idx === 46);
+  assert.deepEqual(entry0046 && { idx: entry0046.idx, tag: entry0046.tag }, {
     idx: 46,
     tag: "0046_r12_conversation_foundation"
   });
+});
+
+test("0047 task plan status migration preserves 0031 and replaces the CHECK in safe order", () => {
+  const migrationUrl = new URL("../migrations/0047_task_plan_paused_status.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0047_task_plan_paused_status.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+
+  const statusCheck = migration.match(/CHECK\s*\(\s*"status"\s+IN\s*\(([^)]*)\)\s*\)/iu);
+  assert.ok(statusCheck, "migration 0047 must declare the task plan status CHECK");
+  const statusListSql = statusCheck[1];
+  assert.ok(statusListSql, "migration 0047 task plan status CHECK must contain a status list");
+  assert.deepEqual(
+    [...statusListSql.matchAll(/'([^']+)'/gu)].map((match) => match[1]),
+    [...taskPlanStatuses],
+    "migration 0047 task plan statuses must match the shared contract exactly"
+  );
+
+  const operationPatterns = [
+    /ALTER TABLE\s+"task_plans"\s+DROP CONSTRAINT\s+IF EXISTS\s+"task_plans_status_with_paused_ck"\s*;/iu,
+    /ALTER TABLE\s+"task_plans"\s+ADD CONSTRAINT\s+"task_plans_status_with_paused_ck"\s+CHECK[\s\S]*?NOT VALID\s*;/iu,
+    /ALTER TABLE\s+"task_plans"\s+VALIDATE CONSTRAINT\s+"task_plans_status_with_paused_ck"\s*;/iu,
+    /ALTER TABLE\s+"task_plans"\s+DROP CONSTRAINT(?:\s+IF EXISTS)?\s+"task_plans_status_ck"\s*;/iu,
+    /ALTER TABLE\s+"task_plans"\s+RENAME CONSTRAINT\s+"task_plans_status_with_paused_ck"\s+TO\s+"task_plans_status_ck"\s*;/iu
+  ];
+  const operationPositions = operationPatterns.map((pattern) => migration.search(pattern));
+  assert.equal(
+    operationPositions.every((position) => position >= 0),
+    true,
+    "migration 0047 must drop the stale temporary CHECK, add NOT VALID, validate, drop the old CHECK, and rename the temporary CHECK"
+  );
+  assert.deepEqual(
+    operationPositions,
+    [...operationPositions].sort((left, right) => left - right),
+    "migration 0047 CHECK replacement operations are out of order"
+  );
+  assert.doesNotMatch(migration, /0031(?:_task_plans)?(?:\.sql)?/iu, "migration 0047 must not reference migration 0031");
+
+  const publishedMigration0031 = readFileSync(
+    new URL("../migrations/0031_task_plans.sql", import.meta.url)
+  );
+  assert.equal(
+    createHash("sha256").update(publishedMigration0031).digest("hex"),
+    "549939f8541bde287e4663d11c66b109b73aa25ef9dd92ab6bd5761ff74aac09",
+    "published migration 0031 must remain immutable"
+  );
+});
+
+test("migration journal ends with 0047 task plan status", () => {
+  const journal = JSON.parse(
+    readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
+  ) as {
+    entries: Array<{ idx: number; version: string; tag: string; breakpoints: boolean }>;
+  };
+  const finalEntry = journal.entries.at(-1);
+  assert.deepEqual(
+    finalEntry && {
+      idx: finalEntry.idx,
+      version: finalEntry.version,
+      tag: finalEntry.tag,
+      breakpoints: finalEntry.breakpoints
+    },
+    {
+      idx: 47,
+      version: "7",
+      tag: "0047_task_plan_paused_status",
+      breakpoints: true
+    }
+  );
 });
 
 test("R12 migration 0046 backfills one active main only for eligible legacy projects", () => {
@@ -731,6 +800,30 @@ test("R9.1 task plan tables expose auditable decomposition fields", () => {
   assert.equal(taskPlanItems.budgetSharePct.name, "budget_share_pct");
   assert.equal(taskPlanItems.dependsOn.name, "depends_on");
   assert.equal(taskPlanItems.status.name, "status");
+});
+
+test("task plan status CHECK matches every shared contract value exactly once", () => {
+  const statusChecks = getTableConfig(taskPlans).checks.filter(
+    (constraint) => constraint.name === "task_plans_status_ck"
+  );
+  assert.equal(statusChecks.length, 1, "task_plans must declare exactly one task_plans_status_ck");
+
+  const statusCheck = statusChecks[0];
+  assert.ok(statusCheck, "task_plans must declare task_plans_status_ck");
+  const statusCheckSql = sqlChunkText(statusCheck.value);
+  assert.deepEqual(
+    [...statusCheckSql.matchAll(/'([^']+)'/gu)].map((match) => match[1]),
+    [...taskPlanStatuses],
+    "task_plans_status_ck statuses must match the shared contract exactly"
+  );
+  for (const status of taskPlanStatuses) {
+    const quotedStatus = `'${status}'`;
+    assert.equal(
+      statusCheckSql.split(quotedStatus).length - 1,
+      1,
+      `task_plans_status_ck must contain ${quotedStatus} exactly once`
+    );
+  }
 });
 
 test("R9.7 budget reservations keep workspace scope referentially valid", () => {

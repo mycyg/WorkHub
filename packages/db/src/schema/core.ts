@@ -18,7 +18,7 @@ import type {
   WorkItemMode,
   WorkItemStatus
 } from "@workhub/contracts";
-import { DEFAULT_CUU_PROACTIVITY } from "@workhub/contracts";
+import { DEFAULT_CUU_PROACTIVITY, taskPlanStatuses } from "@workhub/contracts";
 import { sql } from "drizzle-orm";
 import type { AnyPgColumn, PgTableExtraConfigValue } from "drizzle-orm/pg-core";
 import {
@@ -1087,7 +1087,11 @@ export const taskPlans = pgTable(
     index("task_plans_workspace_status_idx").on(table.workspaceId, table.status),
     index("task_plans_work_item_status_idx").on(table.workItemId, table.status),
     index("task_plans_created_by_idx").on(table.createdByUserId),
-    index("task_plans_created_at_idx").on(table.createdAt)
+    index("task_plans_created_at_idx").on(table.createdAt),
+    check(
+      "task_plans_status_ck",
+      sql`${table.status} in (${sql.raw(taskPlanStatuses.map((status) => `'${status}'`).join(", "))})`
+    )
   ]
 );
 
