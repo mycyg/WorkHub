@@ -250,7 +250,143 @@ test("desktop Cuu runtime listens to Rust push-event and sse-status channels", a
   assert.deepEqual(systemNotificationRoutes, ["/approvals?approvalId=approval-runtime"]);
 
   await runtime.dispose();
-  assert.deepEqual(stopped, ["push-event", "sse-status", "system-notification"]);
+  // R12 批7 新增了第四条订阅——workbench-interrupt(接收工作台窗口广播的打扰矩阵结论，见
+  // workbench/interrupt-broadcast.ts 与本文件的 buildDesktopWorkbenchInterruptCuuCard)。
+  assert.deepEqual(stopped, ["push-event", "sse-status", "system-notification", "workbench-interrupt"]);
+});
+
+// R12 批7:action_card_item.dispatch_ask 通知(真实来源:conversation-observer.ts 的
+// dispatchExecuteItem，dispatchPolicy==="ask" 时经既有 /me SSE 流推送)要换成 Cuu 二次元问询话术 +
+// 深链进工作台的动作，且只出一张卡(不能连 cardFromEvent 的通用通知卡一起冒出两张)。
+test("desktop Cuu runtime turns a dispatch_ask notification into a single custom bubble with a workbench deep link", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const notices: DesktopCuuNotice[] = [];
+  const decisions: CuuControllerDecision[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+
+  const runtime = await bindDesktopShellCuuRuntime({
+    listen,
+    locale: "zh-CN",
+    notify: (notice) => notices.push(notice),
+    onDecision: (decision) => decisions.push(decision)
+  });
+  handlers.get("push-event")?.({
+    payload: shellPayload(eventTypes.notificationCreated, {
+      id: "notification-dispatch-ask-1",
+      type: "action_card_item.dispatch_ask",
+      severity: "normal",
+      title: "有个活想派给你",
+      body: "把选题报告初稿重写第三节",
+      project_id: "10000000-0000-4000-8000-000000000777",
+      created_at: "2026-07-12T09:00:00.000Z"
+    })
+  });
+
+  assert.equal(runtime.subscribed, true);
+  assert.equal(notices.length, 1, "exactly one bubble — not the generic card plus the custom one");
+  const card = notices[0]?.card;
+  assert.equal(card?.id, "dispatch-ask:notification-dispatch-ask-1");
+  assert.equal(card?.title, "有个活儿想派给我");
+  assert.match(card?.message ?? "", /把选题报告初稿重写第三节/u);
+  assert.match(card?.message ?? "", /？$/u); // 问句,不是"已经开工了"的既成事实
+  assert.deepEqual(card?.actions, [
+    {
+      id: "open_workbench",
+      label: "去工作台看看",
+      tone: "primary",
+      method: "GET",
+      href: "/workbench/10000000-0000-4000-8000-000000000777"
+    }
+  ]);
+  assert.equal(decisions[0]?.outcome, "show");
+
+  await runtime.dispose();
+});
+
+test("desktop Cuu runtime dedupes a replayed dispatch_ask notification (same id) instead of showing it twice", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const notices: DesktopCuuNotice[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+
+  const runtime = await bindDesktopShellCuuRuntime({
+    listen,
+    locale: "zh-CN",
+    notify: (notice) => notices.push(notice)
+  });
+  const payload = {
+    id: "notification-dispatch-ask-replay",
+    type: "action_card_item.dispatch_ask",
+    severity: "normal",
+    title: "有个活想派给你",
+    body: "整理会议纪要",
+    project_id: "10000000-0000-4000-8000-000000000778"
+  };
+  handlers.get("push-event")?.({ payload: shellPayload(eventTypes.notificationCreated, payload) });
+  handlers.get("push-event")?.({ payload: shellPayload(eventTypes.notificationCreated, payload) });
+
+  assert.equal(notices.length, 1);
+  await runtime.dispose();
+});
+
+// R12 批7:接收工作台窗口广播的"该弹气泡了"结论(见 workbench/interrupt-broadcast.ts)，转成一张
+// CuuCard 走同一条 controller 队列——garbage/不完整 payload 静默忽略，不崩、不出卡。
+test("desktop Cuu runtime turns a workbench-interrupt broadcast into a bubble with a workbench deep link", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const notices: DesktopCuuNotice[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+
+  const runtime = await bindDesktopShellCuuRuntime({
+    listen,
+    locale: "zh-CN",
+    notify: (notice) => notices.push(notice)
+  });
+  handlers.get("workbench-interrupt")?.({
+    payload: {
+      id: "action-card-event-1",
+      category: "action_card",
+      projectId: "10000000-0000-4000-8000-000000000779",
+      conversationId: "20000000-0000-4000-8000-000000000001",
+      title: "Cuu 行动卡",
+      message: "Cuu 整理出了 2 件事，等你看一眼。",
+      createdAt: "2026-07-12T09:05:00.000Z"
+    }
+  });
+
+  assert.equal(notices.length, 1);
+  const card = notices[0]?.card;
+  assert.equal(card?.id, "workbench-interrupt:action-card-event-1");
+  assert.equal(card?.title, "Cuu 行动卡");
+  assert.deepEqual(card?.actions[0]?.href, "/workbench/10000000-0000-4000-8000-000000000779/20000000-0000-4000-8000-000000000001");
+
+  await runtime.dispose();
+});
+
+test("desktop Cuu runtime ignores a malformed workbench-interrupt payload instead of crashing", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const notices: DesktopCuuNotice[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+
+  const runtime = await bindDesktopShellCuuRuntime({
+    listen,
+    notify: (notice) => notices.push(notice)
+  });
+  handlers.get("workbench-interrupt")?.({ payload: { nonsense: true } });
+  handlers.get("workbench-interrupt")?.({ payload: null });
+
+  assert.equal(notices.length, 0);
+  await runtime.dispose();
 });
 
 test("desktop Cuu runtime forwards a live locale getter to shell-pushed cards", async () => {
