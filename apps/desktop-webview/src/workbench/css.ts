@@ -181,6 +181,12 @@ export const workbenchCss = [
     "background:var(--wb-cuu-soft);padding:11px 13px}",
   ".wh-wb-chat-actioncard-h{font:700 12.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
   ".wh-wb-chat-actioncard-list{margin:8px 0 0;padding-left:18px;font:500 12px/1.6 var(--ds-font);color:var(--ds-ink-soft)}",
+  // 00 §9：撤销后该项置灰划线 +「已撤销」，不删卡——划线只落在标题上，状态标不划（划掉的「已撤销」
+  // 三个字会读成双重否定）。
+  ".wh-wb-chat-actioncard-item-status{margin-left:6px;font:600 10.5px/1 var(--ds-font);color:var(--ds-ink-faint);" +
+    "border:1px solid var(--ds-glass-border);border-radius:999px;padding:2px 7px;white-space:nowrap}",
+  ".wh-wb-chat-actioncard-item--undone{color:var(--ds-ink-faint)}",
+  ".wh-wb-chat-actioncard-item--undone .wh-wb-chat-actioncard-item-title{text-decoration:line-through}",
   ".wh-wb-chat-actioncard-note{margin-top:8px;font:500 11px/1.5 var(--ds-font);color:var(--ds-ink-faint)}",
   ".wh-wb-chat-note{font:500 12px/1.5 var(--ds-font);color:var(--ds-ink-muted);font-style:italic}",
   ".wh-wb-chat-sysline{display:flex;align-items:center;justify-content:center;gap:8px;margin:8px 0;" +

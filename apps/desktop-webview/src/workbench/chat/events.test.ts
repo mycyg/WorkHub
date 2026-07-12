@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseIncomingMessageCreated, parseIncomingMessageDelta, parseIncomingTyping } from "./events.js";
+import {
+  parseIncomingActionCardUpdated,
+  parseIncomingMessageCreated,
+  parseIncomingMessageDelta,
+  parseIncomingTyping
+} from "./events.js";
 
 const conversationId = "40000000-0000-4000-8000-000000000001";
 const userId = "40000000-0000-4000-8000-000000000002";
@@ -157,6 +162,32 @@ function validMessageDeltaEvent(overrides: Record<string, unknown> = {}): Record
   };
 }
 
+// —— conversation.action_card.updated（R12 行动卡状态回流，00 §9 撤销置灰划线的实时通道） —— //
+
+const actionCardId = "40000000-0000-4000-8000-000000000010";
+const cardItemId = "40000000-0000-4000-8000-000000000011";
+
+function validActionCardUpdatedEvent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    event_id: eventId,
+    type: "conversation.action_card.updated",
+    topic: `conversation:${conversationId}`,
+    ts,
+    actor: { actor_kind: "ai", label: "Cuu" },
+    project_id: projectId,
+    preview_text: "一条执行被撤销了",
+    data: {
+      conversation_id: conversationId,
+      action_card_id: actionCardId,
+      message_id: messageId,
+      status: "active",
+      appended: true,
+      items: [{ id: cardItemId, kind: "execute", confidence: "high", status: "undone" }]
+    },
+    ...overrides
+  };
+}
+
 test("parseIncomingMessageDelta accepts a real, well-formed event and returns the delta fields", () => {
   const result = parseIncomingMessageDelta(validMessageDeltaEvent(), conversationId);
   assert.deepEqual(result, { turnId, deltaText: "hello", ordinal: 0 });
@@ -177,4 +208,43 @@ test("parseIncomingMessageDelta rejects an event for a different conversation (t
 test("parseIncomingMessageDelta rejects a payload that violates the contract's own invariant (topic must mirror data.conversation_id)", () => {
   const tampered = validMessageDeltaEvent({ topic: "conversation:40000000-0000-4000-8000-000000000099" });
   assert.equal(parseIncomingMessageDelta(tampered, conversationId), undefined);
+});
+
+test("parseIncomingActionCardUpdated accepts a real, well-formed event and returns the update signal", () => {
+  const result = parseIncomingActionCardUpdated(validActionCardUpdatedEvent(), conversationId);
+  assert.ok(result);
+  assert.equal(result!.messageId, messageId);
+  assert.equal(result!.actionCardId, actionCardId);
+  assert.deepEqual(result!.items, [{ id: cardItemId, kind: "execute", confidence: "high", status: "undone" }]);
+});
+
+test("parseIncomingActionCardUpdated rejects garbage payloads instead of throwing", () => {
+  assert.equal(parseIncomingActionCardUpdated({ nonsense: true }, conversationId), undefined);
+  assert.equal(parseIncomingActionCardUpdated(null, conversationId), undefined);
+  assert.equal(parseIncomingActionCardUpdated("a string", conversationId), undefined);
+  assert.equal(parseIncomingActionCardUpdated(undefined, conversationId), undefined);
+});
+
+test("parseIncomingActionCardUpdated rejects an event for a different conversation (topic isolation)", () => {
+  const otherConversationId = "40000000-0000-4000-8000-000000000099";
+  assert.equal(parseIncomingActionCardUpdated(validActionCardUpdatedEvent(), otherConversationId), undefined);
+});
+
+test("parseIncomingActionCardUpdated rejects a payload violating the contract's own invariants (human actor without actor_user_id)", () => {
+  const tampered = validActionCardUpdatedEvent({ actor: { actor_kind: "human", label: "张三" } });
+  assert.equal(parseIncomingActionCardUpdated(tampered, conversationId), undefined);
+});
+
+test("parseIncomingActionCardUpdated rejects an out-of-enum item status instead of passing it through to the renderer", () => {
+  const tampered = validActionCardUpdatedEvent({
+    data: {
+      conversation_id: conversationId,
+      action_card_id: actionCardId,
+      message_id: messageId,
+      status: "active",
+      appended: true,
+      items: [{ id: cardItemId, kind: "execute", confidence: "high", status: "obliterated" }]
+    }
+  });
+  assert.equal(parseIncomingActionCardUpdated(tampered, conversationId), undefined);
 });

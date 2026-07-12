@@ -1,5 +1,5 @@
-// WorkHub 桌面 · 主区群聊消息流的纯函数部分：排序去重（seq 是权威顺序）、按天分隔、时间格式化。
-// 不含任何 DOM/网络——render.ts 消费这里的输出拼 HTML，view.ts 负责拉数据喂进来。
+// WorkHub 桌面 · 主区群聊消息流的纯函数部分：排序去重（seq 是权威顺序）、按天分隔、时间格式化、
+// 行动卡条目状态就地更新。不含任何 DOM/网络——render.ts 消费这里的输出拼 HTML，view.ts 负责拉数据喂进来。
 
 import type { ConversationMessageVM } from "@workhub/contracts";
 
@@ -14,6 +14,66 @@ export function sortAndDedupeMessages(messages: readonly ConversationMessageVM[]
     byId.set(message.id, message);
   }
   return [...byId.values()].sort((a, b) => a.seq - b.seq);
+}
+
+// R12 行动卡状态回流：把 conversation.action_card.updated 事件里的条目状态，合并进本地持有的那条
+// action_card 消息的 content 快照（快照是建卡/追加时的时点数据，decide/undo 之后服务端不重写它，
+// 实时状态只走这个事件）。规则：
+//  - 只按条目 id 改 status，绝不增删条目（00 §9「不删卡」留痕；事件也不带 title_md，凭空加渲染不出标题）；
+//  - 消息不在本地、或事件里出现快照没有的条目 id → snapshotStale=true，调用方按需重拉这条消息
+//    （观察者建卡/追加时会在服务端重写快照，但不重发 message.created——只能补拉）；
+//  - changed=false 表示没有任何条目状态真的变了，调用方可据此跳过重渲。
+export type ActionCardUpdatePatch = {
+  messageId: string;
+  items: ReadonlyArray<{ id: string; status: string }>;
+};
+
+export type ApplyActionCardUpdateResult = {
+  messages: ConversationMessageVM[];
+  changed: boolean;
+  snapshotStale: boolean;
+};
+
+type SnapshotItem = Record<string, unknown>;
+
+export function applyActionCardUpdate(
+  messages: readonly ConversationMessageVM[],
+  patch: ActionCardUpdatePatch
+): ApplyActionCardUpdateResult {
+  const index = messages.findIndex((message) => message.id === patch.messageId && message.kind === "action_card");
+  if (index < 0) {
+    return { messages: [...messages], changed: false, snapshotStale: true };
+  }
+  // findIndex 已经筛过 kind === "action_card"，这里只是把窄化结果告诉 TS（content 才可按键索引）。
+  const target = messages[index]! as Extract<ConversationMessageVM, { kind: "action_card" }>;
+  const rawItems = Array.isArray(target.content["items"]) ? (target.content["items"] as unknown[]) : [];
+  const statusById = new Map(patch.items.map((item) => [item.id, item.status]));
+  let changed = false;
+  const nextItems = rawItems.map((raw) => {
+    if (!raw || typeof raw !== "object") {
+      return raw;
+    }
+    const item = raw as SnapshotItem;
+    const id = item["id"];
+    const nextStatus = typeof id === "string" ? statusById.get(id) : undefined;
+    if (nextStatus === undefined || item["status"] === nextStatus) {
+      if (typeof id === "string") {
+        statusById.delete(id);
+      }
+      return raw;
+    }
+    changed = true;
+    statusById.delete(id as string);
+    return { ...item, status: nextStatus };
+  });
+  // 事件里剩下没消化掉的条目 id = 快照里没有的新条目（观察者追加）——快照过期，需要补拉。
+  const snapshotStale = statusById.size > 0;
+  if (!changed) {
+    return { messages: [...messages], changed: false, snapshotStale };
+  }
+  const next = [...messages];
+  next[index] = { ...target, content: { ...target.content, items: nextItems } } as ConversationMessageVM;
+  return { messages: next, changed: true, snapshotStale };
 }
 
 export type DayGroup = {
