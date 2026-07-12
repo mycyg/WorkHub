@@ -3,8 +3,10 @@
 // 这也是「不写伪测试」的具体体现之一：这里的单测跑的是真实 zod 校验路径，不是 mock 掉校验只测传参。
 
 import {
+  conversationActionCardUpdatedEventSchema,
   conversationMessageCreatedEventSchema,
   conversationPresenceTypingEventSchema,
+  type ConversationActionCardUpdatedEvent,
   type ConversationMessageVM
 } from "@workhub/contracts";
 
@@ -46,4 +48,31 @@ export function parseIncomingTyping(
     return undefined;
   }
   return { userId: parsed.data.data.user_id, expiresAtMs };
+}
+
+// R12 行动卡条目状态回流（00 §9：撤销后卡上该项置灰划线，不删卡）。事件 payload 只带条目摘要
+// （id/kind/confidence/status），没有 title_md——契约注释写明它是「该刷新了」的信号，完整卡片以
+// GET 为准；view.ts 拿这个信号就地改本地快照的 status，快照里没有的条目再按需补拉消息。
+export type IncomingActionCardUpdate = {
+  messageId: string;
+  actionCardId: string;
+  items: ConversationActionCardUpdatedEvent["data"]["items"];
+};
+
+export function parseIncomingActionCardUpdated(
+  raw: unknown,
+  conversationId: string
+): IncomingActionCardUpdate | undefined {
+  const parsed = conversationActionCardUpdatedEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.data.conversation_id !== conversationId) {
+    return undefined;
+  }
+  return {
+    messageId: parsed.data.data.message_id,
+    actionCardId: parsed.data.data.action_card_id,
+    items: parsed.data.data.items
+  };
 }

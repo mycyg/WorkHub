@@ -21,7 +21,7 @@ import {
   sendConversationTextMessage,
   type ChatApiClient
 } from "./api.js";
-import { parseIncomingMessageCreated, parseIncomingTyping } from "./events.js";
+import { parseIncomingActionCardUpdated, parseIncomingMessageCreated, parseIncomingTyping } from "./events.js";
 import {
   membersById,
   renderChatEmptyStateHtml,
@@ -51,6 +51,7 @@ import { connectConversationStream, type ConversationStreamHandle } from "./stre
 import { applyComposerChipInsertion, detectComposerTrigger, type ComposerTriggerMatch } from "./trigger-parser.js";
 import {
   DEFAULT_MESSAGE_RENDER_WINDOW,
+  applyActionCardUpdate,
   groupMessagesByDay,
   sortAndDedupeMessages,
   windowRecentMessages
@@ -454,6 +455,37 @@ export function mountChatView(
     }
   }
 
+  // 行动卡快照过期时的按需补拉（契约注释的原话：事件只负责「该刷新了」，完整卡片以 GET 为准）：
+  //  - 本地根本没有这条消息（观察者建卡只发 action_card.updated，不重发 message.created）——
+  //    新卡消息 seq 必然大于本地最高 seq，走既有 reconcileGap 补进来。批8 之后首屏只拉最新一页，
+  //    「本地没有」也可能是这张卡老到还没被向上翻页加载——此时 reconcileGap 无缺口可补=无害 no-op，
+  //    等 beforeSeq 翻页真加载到它时再渲（渲的是当时的服务端快照）；
+  //  - 本地有但事件里出现快照没有的条目（观察者追加，服务端已重写这条消息的 content 但 seq 不变）——
+  //    用 afterSeq=seq-1 定点重拉这一条，mergeMessages 的按 id 去重「后到覆盖先到」把旧快照换掉。
+  // best-effort：拉失败就保持现状，下一条事件或断线重连的 reconcile 再补。
+  async function refreshActionCardMessage(messageId: string): Promise<void> {
+    const local = messages.find((message) => message.id === messageId);
+    if (!local) {
+      await reconcileGap();
+      return;
+    }
+    try {
+      const page = await fetchConversationMessagesPage(input.client, input.conversationId, {
+        afterSeq: local.seq - 1,
+        limit: 1
+      });
+      if (disposed) {
+        return;
+      }
+      const fresh = page.messages.find((message) => message.id === messageId);
+      if (fresh) {
+        mergeMessages([fresh]);
+      }
+    } catch {
+      // best-effort，见上。
+    }
+  }
+
   function connectStream(): void {
     streamHandle = connectConversationStream({
       url: input.streamUrl,
@@ -468,12 +500,26 @@ export function mountChatView(
           mergeMessages([message]);
           return;
         }
+        // R12 行动卡状态回流（00 §9 撤销后置灰划线）：条目状态就地合并进本地快照，快照缺条目/缺消息
+        // 时按需补拉——事件不带 title_md，光靠它渲不出新条目。
+        const cardUpdate = parseIncomingActionCardUpdated(event.data, input.conversationId);
+        if (cardUpdate) {
+          const result = applyActionCardUpdate(messages, cardUpdate);
+          if (result.changed) {
+            messages = result.messages;
+            renderScroll();
+          }
+          if (result.snapshotStale) {
+            void refreshActionCardMessage(cardUpdate.messageId);
+          }
+          return;
+        }
         const typingSignal = parseIncomingTyping(event.data, input.conversationId, input.currentUserId);
         if (typingSignal) {
           typing = upsertTypingUser(typing, typingSignal, Date.now());
           renderTyping();
         }
-        // 其它事件名（"connected" 控制帧、批3/4 的 action_card/tool 事件）本批不处理，静默忽略。
+        // 其它事件名（"connected" 控制帧、批4 的 tool 事件）本批不处理，静默忽略。
       },
       onStatus: (status) => {
         if (disposed) {

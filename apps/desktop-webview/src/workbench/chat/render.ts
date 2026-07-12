@@ -107,26 +107,67 @@ function bestEffortNoteText(content: Record<string, unknown>, fallback: string):
   return fallback;
 }
 
+// 行动卡条目状态 → 展示文案（契约枚举见 packages/contracts/src/events.ts 的
+// actionCardUpdatedItemSummarySchema）。契约将来新增状态时返回 undefined——不瞎编文案，条目照常
+// 渲标题、只是不带状态标。
+function actionCardItemStatusLabel(status: string, zh: boolean): string | undefined {
+  switch (status) {
+    case "running":
+      return zh ? "进行中" : "In progress";
+    case "done":
+      return zh ? "已完成" : "Done";
+    case "undone":
+      return zh ? "已撤销" : "Undone";
+    case "waiting_decision":
+      return zh ? "待拍板" : "Awaiting decision";
+    case "dismissed":
+      return zh ? "先不动" : "Set aside";
+    case "escalated":
+      return zh ? "已升级" : "Escalated";
+    default:
+      return undefined;
+  }
+}
+
+// 00 §9：行动卡撤销后「卡片该项置灰划线 +『已撤销』，不删卡（留痕）」——undone 条目加
+// --undone 修饰类（css.ts：标题划线、整行置灰），其它状态只带一枚状态标。快照是建卡时点数据，
+// 实时状态由 view.ts 消费 conversation.action_card.updated 事件后就地合并进来（timeline.ts 的
+// applyActionCardUpdate）。
 function renderActionCardSummaryHtml(content: Record<string, unknown>, locale: Locale): string {
   const zh = locale === "zh-CN";
   const rawItems = Array.isArray(content["items"]) ? (content["items"] as unknown[]) : [];
-  const titles = rawItems
+  const rows = rawItems
     .slice(0, 8)
     .map((item) => {
       if (!item || typeof item !== "object") {
         return undefined;
       }
-      const titleMd = (item as Record<string, unknown>)["title_md"];
-      return typeof titleMd === "string" ? titleMd : undefined;
+      const record = item as Record<string, unknown>;
+      const titleMd = record["title_md"];
+      if (typeof titleMd !== "string" || !titleMd) {
+        return undefined;
+      }
+      const status = typeof record["status"] === "string" ? (record["status"] as string) : "";
+      return { title: titleMd, status };
     })
-    .filter((title): title is string => Boolean(title));
+    .filter((row): row is { title: string; status: string } => Boolean(row));
   const header = zh
     ? `Cuu 从讨论里拎出 ${rawItems.length} 件事`
     : `Cuu pulled ${rawItems.length} item${rawItems.length === 1 ? "" : "s"} out of the discussion`;
-  const list = titles.map((title) => `<li>${escapeHtml(title)}</li>`).join("");
+  const list = rows
+    .map((row) => {
+      const undone = row.status === "undone";
+      const label = actionCardItemStatusLabel(row.status, zh);
+      const liClass = undone ? "wh-wb-chat-actioncard-item wh-wb-chat-actioncard-item--undone" : "wh-wb-chat-actioncard-item";
+      const statusHtml = label ? `<span class="wh-wb-chat-actioncard-item-status">${escapeHtml(label)}</span>` : "";
+      return `<li class="${liClass}"><span class="wh-wb-chat-actioncard-item-title">${escapeHtml(row.title)}</span>${statusHtml}</li>`;
+    })
+    .join("");
+  // 撤销/指派的操作按钮仍未接入这个窗口（快照/事件都不带 assignee 与撤销窗口截止时间，客户端判不了
+  // 「当前用户能不能点」，先不摆假按钮）；状态展示自本批起是实时的。
   const note = zh
-    ? "完整的行动卡交互（撤销/指派）由后续批次接入这个窗口。"
-    : "The full action-card UI (undo / assign) lands in a later batch.";
+    ? "撤销/指派的操作按钮由后续批次接入这个窗口。"
+    : "Undo / assign controls land in a later batch.";
   return `<div class="wh-wb-chat-actioncard"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${
     list ? `<ul class="wh-wb-chat-actioncard-list">${list}</ul>` : ""
   }<div class="wh-wb-chat-actioncard-note">${escapeHtml(note)}</div></div>`;

@@ -5,6 +5,7 @@ import type { ConversationMessageVM } from "@workhub/contracts";
 
 import {
   DEFAULT_MESSAGE_RENDER_WINDOW,
+  applyActionCardUpdate,
   formatMessageTime,
   groupMessagesByDay,
   sortAndDedupeMessages,
@@ -163,4 +164,109 @@ test("windowRecentMessages treats a non-positive or fractional window size defen
 
 test("windowRecentMessages on an empty list is a no-op", () => {
   assert.deepEqual(windowRecentMessages([], 300), { visible: [], hiddenLocalCount: 0 });
+});
+
+// —— applyActionCardUpdate（R12 行动卡状态回流：SSE 事件条目状态合并进本地快照） —— //
+
+function actionCardMessage(input: {
+  id: string;
+  seq: number;
+  items: Array<{ id: string; status: string; title?: string }>;
+}): ConversationMessageVM {
+  return {
+    id: input.id,
+    conversation_id: "conv-1",
+    seq: input.seq,
+    sender_type: "cuu",
+    sender_user_id: null,
+    kind: "action_card",
+    content: {
+      card_id: "card-1",
+      items: input.items.map((item) => ({
+        id: item.id,
+        kind: "execute",
+        title_md: item.title ?? `条目 ${item.id}`,
+        confidence: "high",
+        status: item.status
+      }))
+    },
+    thread_root_id: null,
+    created_at: new Date(2026, 6, 12, 10, 0).toISOString()
+  };
+}
+
+test("applyActionCardUpdate patches a matching item's status in place and reports changed", () => {
+  const card = actionCardMessage({ id: "m-card", seq: 2, items: [{ id: "i1", status: "running" }, { id: "i2", status: "waiting_decision" }] });
+  const other = textMessage({ id: "m-text", seq: 1, text: "hello", createdAt: new Date(2026, 6, 12, 9, 0) });
+
+  const result = applyActionCardUpdate([other, card], { messageId: "m-card", items: [{ id: "i1", status: "undone" }] });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.snapshotStale, false);
+  const patched = result.messages.find((m) => m.id === "m-card")!;
+  const items = (patched.content as Record<string, unknown>)["items"] as Array<{ id: string; status: string; title_md: string }>;
+  assert.equal(items.length, 2); // 不删卡：条目只改状态，不增不删。
+  assert.equal(items.find((i) => i.id === "i1")!.status, "undone");
+  assert.equal(items.find((i) => i.id === "i1")!.title_md, "条目 i1"); // 快照的标题原样保留（事件不带 title_md）。
+  assert.equal(items.find((i) => i.id === "i2")!.status, "waiting_decision");
+  // 不碰别的消息。
+  assert.equal(result.messages.find((m) => m.id === "m-text"), other);
+});
+
+test("applyActionCardUpdate does not mutate the input messages or the original snapshot", () => {
+  const card = actionCardMessage({ id: "m-card", seq: 1, items: [{ id: "i1", status: "running" }] });
+  const input = [card];
+
+  applyActionCardUpdate(input, { messageId: "m-card", items: [{ id: "i1", status: "undone" }] });
+
+  const originalItems = (card.content as Record<string, unknown>)["items"] as Array<{ status: string }>;
+  assert.equal(originalItems[0]!.status, "running");
+});
+
+test("applyActionCardUpdate reports changed=false when statuses already match", () => {
+  const card = actionCardMessage({ id: "m-card", seq: 1, items: [{ id: "i1", status: "undone" }] });
+
+  const result = applyActionCardUpdate([card], { messageId: "m-card", items: [{ id: "i1", status: "undone" }] });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.snapshotStale, false);
+});
+
+test("applyActionCardUpdate flags a stale snapshot when the event carries an item the snapshot doesn't have (observer append)", () => {
+  const card = actionCardMessage({ id: "m-card", seq: 1, items: [{ id: "i1", status: "running" }] });
+
+  const result = applyActionCardUpdate([card], {
+    messageId: "m-card",
+    items: [
+      { id: "i1", status: "done" },
+      { id: "i-new", status: "running" }
+    ]
+  });
+
+  // 已知条目照改，同时报告快照过期（新条目没有 title_md，渲不出来，得补拉消息）。
+  assert.equal(result.changed, true);
+  assert.equal(result.snapshotStale, true);
+  const items = ((result.messages[0]!.content as Record<string, unknown>)["items"] as Array<{ id: string; status: string }>);
+  assert.equal(items.length, 1);
+  assert.equal(items[0]!.status, "done");
+});
+
+test("applyActionCardUpdate flags a stale snapshot when the message isn't held locally (new card, no message.created broadcast)", () => {
+  const other = textMessage({ id: "m-text", seq: 1, text: "hello", createdAt: new Date(2026, 6, 12, 9, 0) });
+
+  const result = applyActionCardUpdate([other], { messageId: "m-missing", items: [{ id: "i1", status: "running" }] });
+
+  assert.equal(result.changed, false);
+  assert.equal(result.snapshotStale, true);
+  assert.equal(result.messages.length, 1);
+});
+
+test("applyActionCardUpdate ignores an action_card update aimed at a non-action_card message id", () => {
+  const other = textMessage({ id: "m-text", seq: 1, text: "hello", createdAt: new Date(2026, 6, 12, 9, 0) });
+
+  const result = applyActionCardUpdate([other], { messageId: "m-text", items: [{ id: "i1", status: "running" }] });
+
+  // kind 不是 action_card → 视同本地没有这条卡消息：不改内容，报 stale 交给补拉。
+  assert.equal(result.changed, false);
+  assert.equal(result.snapshotStale, true);
 });

@@ -270,6 +270,95 @@ test("renderMessageHtml renders a real, minimal action_card summary from the act
   assert.match(html, /wh-wb-chat-actioncard/u);
 });
 
+// R12 行动卡状态回流（00 §9：撤销后「卡片该项置灰划线 +『已撤销』，不删卡」）。
+test("renderMessageHtml marks an undone action_card item grey + strikethrough with the 已撤销 label, and keeps it on the card", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [
+          { id: "i1", kind: "execute", title_md: "重写选题报告第三节", confidence: "high", status: "undone" },
+          { id: "i2", kind: "decide", title_md: "预算是否砍半", confidence: "low", status: "waiting_decision" }
+        ]
+      }
+    }),
+    ctxWith([])
+  );
+  // 撤销的条目不删（留痕）：标题还在，行上带 --undone 修饰类（css.ts 置灰+标题划线），状态标是「已撤销」。
+  assert.match(html, /重写选题报告第三节/u);
+  assert.match(
+    html,
+    /<li class="wh-wb-chat-actioncard-item wh-wb-chat-actioncard-item--undone"><span class="wh-wb-chat-actioncard-item-title">重写选题报告第三节<\/span><span class="wh-wb-chat-actioncard-item-status">已撤销<\/span>/u
+  );
+  // 卡片头部计数不因撤销而缩水——两件事还是两件事。
+  assert.match(html, /Cuu 从讨论里拎出 2 件事/u);
+  // 未撤销的条目不划线不置灰。
+  assert.match(html, /<li class="wh-wb-chat-actioncard-item"><span class="wh-wb-chat-actioncard-item-title">预算是否砍半<\/span>/u);
+});
+
+test("renderMessageHtml renders per-status labels for non-undone action_card items without the undone treatment", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [
+          { id: "i1", kind: "execute", title_md: "重写第三节", confidence: "high", status: "running" },
+          { id: "i2", kind: "decide", title_md: "预算是否砍半", confidence: "low", status: "waiting_decision" },
+          { id: "i3", kind: "execute", title_md: "整理会议纪要", confidence: "high", status: "done" },
+          { id: "i4", kind: "decide", title_md: "换不换供应商", confidence: "mid", status: "dismissed" }
+        ]
+      }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, />进行中</u);
+  assert.match(html, />待拍板</u);
+  assert.match(html, />已完成</u);
+  assert.match(html, />先不动</u);
+  assert.doesNotMatch(html, /已撤销/u);
+  assert.doesNotMatch(html, /--undone/u);
+});
+
+test("renderMessageHtml leaves an action_card item without a recognized status label-free instead of inventing copy", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [{ id: "i1", kind: "execute", title_md: "重写第三节", confidence: "high", status: "some_future_status" }]
+      }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /重写第三节/u);
+  assert.doesNotMatch(html, /wh-wb-chat-actioncard-item-status/u);
+});
+
+test("renderMessageHtml escapes action_card item titles even when the item carries a status", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [{ id: "i1", kind: "execute", title_md: "<img src=x onerror=alert(1)>", confidence: "high", status: "undone" }]
+      }
+    }),
+    ctxWith([])
+  );
+  assert.doesNotMatch(html, /<img/u);
+  assert.match(html, /&lt;img/u);
+});
+
 test("renderMessageHtml gives tool_note a minimal, honest fallback label", () => {
   const html = renderMessageHtml(baseMessage({ kind: "tool_note", content: {} }), ctxWith([]));
   assert.match(html, /（一次工具调用）/u);
