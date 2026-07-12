@@ -60,14 +60,10 @@ import { getDefaultProviderRegistry } from "./provider-registry.js";
 // 4. 流式 delta 通过 push bus 发 conversation.message.delta（严格 payload，见 events.ts）；delta 不落库、
 //    无 seq、不参与 reconcile。
 // 5. 完成后用 conversations 仓库的 createCuuMessage 落一条真 seq 的 kind='text' 消息。
-//    **已知设计冲突（写入报告，供集成者裁决）**：conversationMessageCreatedEventSchema 的 superRefine
-//    强制 sender_type==='user' 且 actor.actor_kind==='human'——这个契约完全没有给 AI 发言者的路径开口，
-//    这批范围内不允许放宽它（范围围栏只批准了 events.ts 里的 delta schema 新增）。所以 Cuu 落库的这条
-//    消息**不会**触发任何"消息已创建"类的广播事件；发起 turn 的客户端从这次 HTTP 响应本身拿到完整的
-//    消息 VM（含真 id/seq），其它同会话在线查看者目前只能看到 delta 流的实时打字，要拿到最终真实
-//    seq/id 需要客户端自己重新拉取 GET /conversations/:id/messages。这与批3 的 postSystemMessage
-//    （系统事件消息同样不配对任何专属实时事件，只靠 action-card-updated 事件提示"该刷新了"）是同一个
-//    先例档位，不是我漏做。
+//    集成裁决（b22f8c28，取代批 4a 原报告里的「设计冲突」记录）：message.created 契约已放开为
+//    human↔user / ai↔cuu 的严格配对，本服务落库后会补广播一条 created 事件（见下方
+//    conversation_turn_created_publish 段）——发起端从 HTTP 响应拿最终消息 VM，其它在看成员靠这条
+//    广播拿真 id/seq，两路都到时由客户端按 id 去重。广播失败仅告警不回滚，拉取通道兜底。
 // 6. 模式档：mode=1（只观察）拒绝；mode>=2 都允许纯对话 turn。执行/审核语义归批 4b。
 // 7. 60s 硬超时；超时/任何 LLM 失败都统一映射成 500 conversation_turn_failed，不落半截消息。
 
