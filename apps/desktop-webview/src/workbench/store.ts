@@ -6,9 +6,11 @@ import type { ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
 
 export type WorkbenchLoadState = "idle" | "loading" | "ready" | "error";
 
-// 中栏当前显示哪个能力视图。批 2 只有 "chat"；批 6 加 "drive"（rail 的「网盘」树叶接真视图）。
-// 军团/协同等后续批次会往这个联合类型追加,不在这里预先设计更多分支。
-export type WorkbenchCenterTab = "chat" | "drive";
+// 中栏当前显示哪个能力视图。批 2 只有 "chat"；批 6 加 "drive"（rail 的「网盘」树叶接真视图）；
+// final-turns-wiring 加 "collab"——rail.ts 新增的协同会话树叶点开后，中栏切到某个具体的协同会话
+// （哪一个由下面的 activeConversationId 指出），复用同一个 chat/view.ts 组件（mountChatView 的
+// conversationKind 参数区分主区/单聊）。军团等后续批次会往这个联合类型追加,不在这里预先设计更多分支。
+export type WorkbenchCenterTab = "chat" | "drive" | "collab";
 
 // 右栏情境面板的内容——刻意保持不透明（ownerId + 预渲染好的 html），store.ts 不认识任何具体视图
 // 的类型（drive 的版本历史/军团卡片等），谁在挂载期间持有内容所有权就把自己的 ownerId 写进来、
@@ -30,6 +32,10 @@ export type WorkbenchStoreState = {
   vmError: string | undefined;
   // 中栏当前视图（批 6 新增；默认 "chat"，rail「网盘」树叶点击切到 "drive"）。
   centerTab: WorkbenchCenterTab;
+  // final-turns-wiring 新增：centerTab === "collab" 时，中栏具体打开的是 vm.conversations.conversations
+  // 里哪一个 kind==='collab' 的会话（rail.ts 的协同会话树叶点击写入这个字段，见 shell.ts 的
+  // onOpenCollabConversation）。其它 centerTab 下这个字段不参与渲染决策，不必清空。
+  activeConversationId: string | undefined;
   // 右栏情境面板收放（批 5 起有真内容，见 WorkbenchSidePanelContent 注释）。
   sidePanelOpen: boolean;
   sidePanelContent: WorkbenchSidePanelContent;
@@ -55,6 +61,7 @@ export function initialWorkbenchStoreState(): WorkbenchStoreState {
     vmLoad: "idle",
     vmError: undefined,
     centerTab: "chat",
+    activeConversationId: undefined,
     sidePanelOpen: true,
     sidePanelContent: undefined,
     newProjectModalOpen: false

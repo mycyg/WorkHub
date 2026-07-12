@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseIncomingMessageCreated, parseIncomingTyping } from "./events.js";
+import { parseIncomingMessageCreated, parseIncomingMessageDelta, parseIncomingTyping } from "./events.js";
 
 const conversationId = "40000000-0000-4000-8000-000000000001";
 const userId = "40000000-0000-4000-8000-000000000002";
@@ -137,4 +137,44 @@ test("parseIncomingTyping rejects a ttl_ms other than the contract's fixed 3000"
     data: { conversation_id: conversationId, user_id: userId, ttl_ms: 9999, expires_at: "2026-07-12T09:00:09.999Z" }
   });
   assert.equal(parseIncomingTyping(tampered, conversationId, "someone-else"), undefined);
+});
+
+const turnId = "40000000-0000-4000-8000-000000000007";
+
+function validMessageDeltaEvent(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    event_id: eventId,
+    type: "conversation.message.delta",
+    topic: `conversation:${conversationId}`,
+    ts,
+    data: {
+      conversation_id: conversationId,
+      turn_id: turnId,
+      delta_text: "hello",
+      ordinal: 0
+    },
+    ...overrides
+  };
+}
+
+test("parseIncomingMessageDelta accepts a real, well-formed event and returns the delta fields", () => {
+  const result = parseIncomingMessageDelta(validMessageDeltaEvent(), conversationId);
+  assert.deepEqual(result, { turnId, deltaText: "hello", ordinal: 0 });
+});
+
+test("parseIncomingMessageDelta rejects garbage payloads instead of throwing", () => {
+  assert.equal(parseIncomingMessageDelta({ nonsense: true }, conversationId), undefined);
+  assert.equal(parseIncomingMessageDelta(null, conversationId), undefined);
+  assert.equal(parseIncomingMessageDelta("a string", conversationId), undefined);
+  assert.equal(parseIncomingMessageDelta(undefined, conversationId), undefined);
+});
+
+test("parseIncomingMessageDelta rejects an event for a different conversation (topic isolation, no cross-talk)", () => {
+  const otherConversationId = "40000000-0000-4000-8000-000000000099";
+  assert.equal(parseIncomingMessageDelta(validMessageDeltaEvent(), otherConversationId), undefined);
+});
+
+test("parseIncomingMessageDelta rejects a payload that violates the contract's own invariant (topic must mirror data.conversation_id)", () => {
+  const tampered = validMessageDeltaEvent({ topic: "conversation:40000000-0000-4000-8000-000000000099" });
+  assert.equal(parseIncomingMessageDelta(tampered, conversationId), undefined);
 });

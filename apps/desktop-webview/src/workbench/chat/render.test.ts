@@ -10,6 +10,8 @@ import {
   renderComposerHtml,
   renderConnectionBannerHtml,
   renderConversationAccessDeniedHtml,
+  renderCuuTurnErrorHtml,
+  renderCuuTurnPendingHtml,
   renderDaySeparatorHtml,
   renderHistoryLoadErrorHtml,
   renderHistoryLoadingHtml,
@@ -18,6 +20,7 @@ import {
   renderMentionPickerHtml,
   renderMessageHtml,
   renderPendingOutgoingHtml,
+  renderStreamingCuuBubbleHtml,
   renderTypingIndicatorHtml,
   type ChatRenderContext,
   type WorkbenchMemberVM
@@ -321,6 +324,48 @@ test("renderTypingIndicatorHtml names a single typer", () => {
 test("renderTypingIndicatorHtml joins multiple typers with a locale-appropriate separator", () => {
   assert.match(renderTypingIndicatorHtml(["张三", "阿曼"], "zh-CN"), /张三、阿曼 正在输入/u);
   assert.match(renderTypingIndicatorHtml(["Zhang", "Aman"], "en-US"), /Zhang, Aman are typing/u);
+});
+
+// —— R12（final-turns-wiring）：协同会话 turn 状态 —— //
+
+test("renderCuuTurnPendingHtml reuses the typing indicator's class/dots but says Cuu is replying", () => {
+  const html = renderCuuTurnPendingHtml("zh-CN");
+  assert.match(html, /class="wh-wb-chat-typing"/u);
+  assert.match(html, /wh-wb-chat-typing-dots/u);
+  assert.match(html, /Cuu 正在回复/u);
+});
+
+test("renderCuuTurnPendingHtml has an English variant", () => {
+  assert.match(renderCuuTurnPendingHtml("en-US"), /Cuu is replying/u);
+});
+
+test("renderCuuTurnErrorHtml renders the given gentle message, not a raw error code, and no alarming style hook", () => {
+  const html = renderCuuTurnErrorHtml("Cuu 正忙着上一轮，等它说完再试。");
+  assert.match(html, /Cuu 正忙着上一轮/u);
+  assert.doesNotMatch(html, /conversation_turn_busy/u);
+  assert.doesNotMatch(html, /wh-wb-chat-send-error/u);
+});
+
+test("renderCuuTurnErrorHtml escapes its message (defense in depth, even though the source is our own mapped copy)", () => {
+  const html = renderCuuTurnErrorHtml("<script>bad</script>");
+  assert.doesNotMatch(html, /<script>/u);
+});
+
+test("renderStreamingCuuBubbleHtml shows typing dots while there is no text yet", () => {
+  const html = renderStreamingCuuBubbleHtml("", ctxWith([]));
+  assert.match(html, /wh-wb-chat-typing-dots/u);
+  assert.match(html, /wh-wb-chat-msg--cuu/u);
+  assert.match(html, /wh-wb-chat-msg--pending/u);
+});
+
+test("renderStreamingCuuBubbleHtml renders the accumulated delta text once it arrives, escaped and newline-safe", () => {
+  const html = renderStreamingCuuBubbleHtml("line one\nline two <b>", ctxWith([]));
+  assert.match(html, /line one<br>line two &lt;b&gt;/u);
+  assert.doesNotMatch(html, /<b>/u);
+});
+
+test("renderStreamingCuuBubbleHtml carries a stable marker attribute so view.ts can target it for removal", () => {
+  assert.match(renderStreamingCuuBubbleHtml("hi", ctxWith([])), /data-wb-chat-streaming-cuu/u);
 });
 
 // —— connection banner —— //

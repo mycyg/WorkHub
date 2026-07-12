@@ -11,6 +11,8 @@ test("initialWorkbenchStoreState starts empty with the side panel open and no mo
   assert.equal(state.vm, undefined);
   assert.equal(state.sidePanelOpen, true);
   assert.equal(state.newProjectModalOpen, false);
+  assert.equal(state.centerTab, "chat");
+  assert.equal(state.activeConversationId, undefined);
 });
 
 test("setState merges a patch and returns the merged state", () => {

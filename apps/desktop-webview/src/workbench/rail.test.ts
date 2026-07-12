@@ -150,6 +150,98 @@ test("centerTab decides which leaf is visually selected (defaults to the main ch
   assert.doesNotMatch(leafTag(driveTab, "data-wb-open-main-chat"), / sel/u);
 });
 
+// leafTag 只截取开标签（够 rail 既有测试判断 " sel" class 用）；这里还要断言标签内部的计数徽标，
+// 需要连闭合 </button> 一起截出来。
+function leafButtonOuterHtml(html: string, marker: string): string {
+  const match = html.match(new RegExp(`<button[^>]*${marker}[^>]*>[^]*?</button>`, "u"));
+  assert.ok(match, `expected to find a full <button>...</button> carrying ${marker}`);
+  return match![0];
+}
+
+// R12（final-turns-wiring）：协同会话树叶——批 4a 只做了服务端 POST /conversations/:id/turns，
+// 从没有任何 UI 调用方能真的点开一个协同会话；这几条测试锁死 rail 这一侧的洞已经补上。
+function collabConversationVm(over: Partial<WorkbenchPageVM["conversations"]["conversations"][number]> = {}) {
+  return {
+    id: "90000000-0000-4000-8000-000000000102",
+    workspace_id: "90000000-0000-4000-8000-000000000000",
+    project_id: "90000000-0000-4000-8000-000000000001",
+    kind: "collab" as const,
+    title: "与 Cuu 的对话",
+    parent_conversation_id: null,
+    source_message_id: null,
+    visibility: "private" as const,
+    next_seq: 4,
+    created_by: "90000000-0000-4000-8000-000000000009",
+    participant_role: "owner" as const,
+    created_at: "2026-07-01T00:00:00.000Z",
+    updated_at: "2026-07-01T00:00:00.000Z",
+    ...over
+  };
+}
+
+test("renderProjectTreeHtml renders a real, clickable leaf for every collab conversation visible to the viewer", () => {
+  const vm = workbenchVm({
+    conversations: {
+      conversations: [...workbenchVm().conversations.conversations, collabConversationVm()],
+      capped: false,
+      next_cursor: null
+    }
+  });
+  const html = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm, locale: "zh-CN" });
+  assert.match(html, /<button[^>]*data-wb-open-collab-chat="90000000-0000-4000-8000-000000000102"[^>]*>[^]*与 Cuu 的对话/u);
+  assert.match(
+    leafButtonOuterHtml(html, 'data-wb-open-collab-chat="90000000-0000-4000-8000-000000000102"'),
+    /wh-wb-leaf-count">4</u
+  );
+});
+
+test("renderProjectTreeHtml renders one leaf per collab conversation when there are several", () => {
+  const vm = workbenchVm({
+    conversations: {
+      conversations: [
+        ...workbenchVm().conversations.conversations,
+        collabConversationVm({ id: "collab-a", title: "阿曼与 Cuu" }),
+        collabConversationVm({ id: "collab-b", title: "小马与 Cuu" })
+      ],
+      capped: false,
+      next_cursor: null
+    }
+  });
+  const html = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm, locale: "zh-CN" });
+  assert.match(html, /data-wb-open-collab-chat="collab-a"/u);
+  assert.match(html, /data-wb-open-collab-chat="collab-b"/u);
+});
+
+test("a collab leaf is marked selected only when centerTab is 'collab' and its id matches activeConversationId", () => {
+  const vm = workbenchVm({
+    conversations: {
+      conversations: [...workbenchVm().conversations.conversations, collabConversationVm()],
+      capped: false,
+      next_cursor: null
+    }
+  });
+  const notSelected = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm, locale: "zh-CN" });
+  assert.doesNotMatch(leafTag(notSelected, 'data-wb-open-collab-chat="90000000-0000-4000-8000-000000000102"'), / sel/u);
+
+  const selected = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN",
+    centerTab: "collab",
+    activeConversationId: "90000000-0000-4000-8000-000000000102"
+  });
+  assert.match(leafTag(selected, 'data-wb-open-collab-chat="90000000-0000-4000-8000-000000000102"'), / sel/u);
+  // Selecting a collab conversation must not also mark the main leaf as selected.
+  assert.doesNotMatch(leafTag(selected, "data-wb-open-main-chat"), / sel/u);
+});
+
+test("no collab leaves render when the project has no visible collab conversations (the common case today)", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm, locale: "zh-CN" });
+  assert.doesNotMatch(html, /data-wb-open-collab-chat/u);
+});
+
 test("renderProjectTreeHtml does not leak a stale VM onto a different project's row", () => {
   const vm = workbenchVm();
   const html = renderProjectTreeHtml({
