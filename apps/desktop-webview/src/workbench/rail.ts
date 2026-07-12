@@ -12,6 +12,16 @@ export type WorkbenchRailApiClient = Pick<WorkHubApiClient, "listProjects" | "bo
 
 type Locale = "zh-CN" | "en-US";
 
+// 原型的多项目辨识度:每个项目一个稳定色块(accent/success/warn/cuu 四色,按 id 哈希),同 id 永远同色。
+export function tileVariantClass(projectId: string): string {
+  let hash = 0;
+  for (let i = 0; i < projectId.length; i += 1) {
+    hash = (hash * 31 + projectId.charCodeAt(i)) >>> 0;
+  }
+  const variants = ["", "wh-wb-tile--ok", "wh-wb-tile--warn", "wh-wb-tile--cuu"];
+  return variants[hash % variants.length] ?? "";
+}
+
 function projectInitial(name: string): string {
   const trimmed = name.trim();
   return trimmed ? trimmed[0]!.toUpperCase() : "?";
@@ -74,7 +84,7 @@ export function renderProjectTreeHtml(input: {
         : "";
       return `<div class="wh-wb-project${active ? " active" : ""}">
         <button type="button" class="wh-wb-project-row" data-wb-select-project="${escapeHtml(project.id)}" aria-current="${active ? "true" : "false"}">
-          <span class="wh-wb-tile">${escapeHtml(projectInitial(project.name))}</span>
+          <span class="wh-wb-tile ${tileVariantClass(project.id)}">${escapeHtml(projectInitial(project.name))}</span>
           <span class="wh-wb-project-name">${escapeHtml(project.name)}</span>
           ${project.open_work_item_count > 0 ? `<span class="wh-wb-project-dot" title="${zh ? "有进行中工作项" : "Has open work"}"></span>` : ""}
         </button>

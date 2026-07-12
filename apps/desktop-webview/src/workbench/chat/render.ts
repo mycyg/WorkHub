@@ -211,7 +211,7 @@ function renderDeliverableCardHtml(
         : "Change request opened — waiting for review before it's adopted. The proposal detail view lands in a later batch."
       }</div>`;
   const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
-  return `<div class="wh-wb-chat-actioncard"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${diffLine}${statusLine}${timestamp}</div>`;
+  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${diffLine}${statusLine}${timestamp}</div>`;
 }
 
 // R12 批8：长消息折叠——超过阈值的文本消息默认只渲染预览片段 + 「展开全文」，避免超长粘贴/观察者
