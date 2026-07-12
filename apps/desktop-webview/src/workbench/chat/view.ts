@@ -1,27 +1,32 @@
-// WorkHub 桌面 · 主区群聊视图——imperative 挂载/事件绑定层（照 shell.ts/rail.ts 的分工：纯渲染在
+// WorkHub 桌面 · 群聊/协同会话共用视图——imperative 挂载/事件绑定层（照 shell.ts/rail.ts 的分工：纯渲染在
 // render.ts，这里只负责拉数据、绑 DOM 事件、维护会话内的瞬态状态）。批 2 范围：文本+file_card 发送、
 // @ 成员/文件 picker（真实）、# 会话与 / 技能 picker（外壳，「即将可用」灰态，见 render.ts 的
 // renderComingSoonPickerHtml）、SSE 接线（断线指数退避重连+重连后 afterSeq 补缺口）、typing 节流。
-// 本批不接 LLM——@Cuu 不会真的回应，只是把消息原样发出去（人话已经写进空态文案）。
+// R12（final-turns-wiring）起：input.conversationKind === 'collab' 时，发一条文本消息之后会自动请求
+// 一轮 Cuu 回应（POST /conversations/:id/turns），流式 delta 拼进临时气泡，落定后换成真消息——
+// 逻辑全部下沉进 turn.ts 的纯函数（shouldRequestConversationTurn/appendTurnDelta/
+// mapConversationTurnError），这里只接线。kind === 'main' 的主区群聊完全不触碰这条通道（主区归
+// 静默观察者/批3处理），@Cuu 在主区里仍然只是把消息原样发出去，不会自动回应。
 //
 // mountChatView 本身没有直接单测（和 mountWorkbenchShell/mountWorkbenchRail 同样的取舍——这个 workspace
 // 的测试运行器没有真实 DOM，见 shell.test.ts/rail.test.ts 只测 render*/纯函数这一既有事实）；真正的逻辑
-// 已经拆进 render.ts/api.ts/stream.ts/events.ts/timeline.ts/trigger-parser.ts/typing-state.ts 的纯函数里
-// 逐一单测过，这里只是把它们接起来。
+// 已经拆进 render.ts/api.ts/stream.ts/events.ts/timeline.ts/trigger-parser.ts/typing-state.ts/turn.ts 的
+// 纯函数里逐一单测过，这里只是把它们接起来。
 
 import { WorkHubApiError } from "@workhub/api-client";
-import type { ConversationMessageVM } from "@workhub/contracts";
+import type { ConversationKind, ConversationMessageVM } from "@workhub/contracts";
 
 import {
   fetchConversationMessagesPage,
   fetchLatestConversationMessagesPage,
   fetchOlderConversationMessagesPage,
   pingConversationTyping,
+  requestConversationTurn,
   sendConversationFileCardMessage,
   sendConversationTextMessage,
   type ChatApiClient
 } from "./api.js";
-import { parseIncomingMessageCreated, parseIncomingTyping } from "./events.js";
+import { parseIncomingMessageCreated, parseIncomingMessageDelta, parseIncomingTyping } from "./events.js";
 import {
   membersById,
   renderChatEmptyStateHtml,
@@ -29,6 +34,8 @@ import {
   renderComposerHtml,
   renderConnectionBannerHtml,
   renderConversationAccessDeniedHtml,
+  renderCuuTurnErrorHtml,
+  renderCuuTurnPendingHtml,
   renderDaySeparatorHtml,
   renderHistoryLoadErrorHtml,
   renderHistoryLoadingHtml,
@@ -37,6 +44,7 @@ import {
   renderMentionPickerHtml,
   renderMessageHtml,
   renderPendingOutgoingHtml,
+  renderStreamingCuuBubbleHtml,
   renderTypingIndicatorHtml,
   type ChatRenderContext,
   type ComposerAttachmentChip,
@@ -55,6 +63,14 @@ import {
   sortAndDedupeMessages,
   windowRecentMessages
 } from "./timeline.js";
+import {
+  appendTurnDelta,
+  EMPTY_TURN_DELTA_STATE,
+  mapConversationTurnError,
+  renderTurnDeltaText,
+  shouldRequestConversationTurn,
+  type TurnDeltaState
+} from "./turn.js";
 import { pruneExpiredTypingUsers, upsertTypingUser, type TypingState } from "./typing-state.js";
 
 type Locale = "zh-CN" | "en-US";
@@ -120,6 +136,11 @@ export function mountChatView(
     projectId: string;
     projectName: string;
     conversationId: string;
+    // R12（final-turns-wiring）：main（主区群聊，归静默观察者/批3处理）还是 collab（协同会话/单聊）——
+    // 只有 collab 才会在文本消息发出去之后自动请求一轮 Cuu 回应（见 turn.ts 的
+    // shouldRequestConversationTurn，这条判断本身就是"主区绝不调 turns"这条红线的唯一权威位置）。
+    // 由挂载方（shell.ts）传入：主区挂载传 "main"，rail.ts 新增的协同会话树叶点开时传 "collab"。
+    conversationKind: ConversationKind;
     currentUserId: string;
     members: readonly WorkbenchMemberVM[];
     getClientToken: () => string | undefined;
@@ -160,6 +181,15 @@ export function mountChatView(
   let fileSearchTimer: ReturnType<typeof setTimeout> | undefined;
   let fileSearchGeneration = 0;
   let streamHandle: ConversationStreamHandle | undefined;
+  // R12（final-turns-wiring）：协同会话 turn 的瞬态 UI 状态——只在 input.conversationKind === "collab"
+  // 时才会被置为非初始值（beginTurn 是唯一的写入点，而 beginTurn 只在 shouldRequestConversationTurn
+  // 通过之后才被调用，见下 issueSend）。turnActive 覆盖"等第一个 delta"和"delta 正在流"两个阶段
+  // （用 turnDeltaState.chunks 是否为空区分要渲染哪一种）；turnErrorText 只在这一轮失败时短暂出现，
+  // 下一次发送开始新一轮时清空（不是"点掉"的 dismiss 交互，够温和，见 render.ts 的两个 renderCuuTurn*
+  // 函数顶部注释）。
+  let turnActive = false;
+  let turnDeltaState: TurnDeltaState = EMPTY_TURN_DELTA_STATE;
+  let turnErrorText: string | undefined;
 
   const membersMap = membersById(input.members);
   const renderCtx = (): ChatRenderContext => ({
@@ -174,14 +204,16 @@ export function mountChatView(
     <div data-wb-chat-head></div>
     <div class="wh-wb-chat-scroll" data-wb-chat-scroll></div>
     <div data-wb-chat-typing></div>
+    <div data-wb-chat-turn-status></div>
     <div data-wb-chat-composer-wrap></div>
   </div>`;
   const bannerEl = container.querySelector<HTMLElement>("[data-wb-chat-banner]");
   const headEl = container.querySelector<HTMLElement>("[data-wb-chat-head]");
   const scrollEl = container.querySelector<HTMLElement>("[data-wb-chat-scroll]");
   const typingEl = container.querySelector<HTMLElement>("[data-wb-chat-typing]");
+  const turnStatusEl = container.querySelector<HTMLElement>("[data-wb-chat-turn-status]");
   const composerWrapEl = container.querySelector<HTMLElement>("[data-wb-chat-composer-wrap]");
-  if (!bannerEl || !headEl || !scrollEl || !typingEl || !composerWrapEl) {
+  if (!bannerEl || !headEl || !scrollEl || !typingEl || !turnStatusEl || !composerWrapEl) {
     throw new Error("workbench chat view markup is missing an expected mount point");
   }
 
@@ -203,6 +235,21 @@ export function mountChatView(
       .map((entry) => membersMap.get(entry.userId)?.nickname)
       .filter((label): label is string => Boolean(label));
     typingEl!.innerHTML = renderTypingIndicatorHtml(labels, input.locale);
+  }
+
+  // R12（final-turns-wiring）：三态——turnErrorText 优先（最新的、需要被看到的信号）；否则只在还没有
+  // 任何 delta 文字时显示"Cuu 正在回复…"（一旦 turnDeltaState 有内容，正在生成的气泡本身已经在
+  // 消息流里做了"还在继续"的视觉提示，这里不需要重复一份，见 buildScrollBodyHtml）；都不是就清空。
+  function renderTurnStatus(): void {
+    if (turnErrorText) {
+      turnStatusEl!.innerHTML = renderCuuTurnErrorHtml(turnErrorText);
+      return;
+    }
+    if (turnActive && turnDeltaState.chunks.size === 0) {
+      turnStatusEl!.innerHTML = renderCuuTurnPendingHtml(input.locale);
+      return;
+    }
+    turnStatusEl!.innerHTML = "";
   }
 
   // R12 批8：DOM 只挂载最近 renderWindowSize 条（windowRecentMessages，见 timeline.ts）——更早的
@@ -239,6 +286,12 @@ export function mountChatView(
     }
     for (const record of pending) {
       html += renderPendingOutgoingHtml(toPendingRenderModel(record), ctx);
+    }
+    // R12（final-turns-wiring）：正在生成的 Cuu 回复——只在真的收到过至少一个 delta 时才占一个气泡位置
+    // （比 turnActive 更窄；"已经发起 turn 但还没收到第一个字"由 renderTurnStatus 的"Cuu 正在回复…"
+    // 状态条覆盖，不需要在消息流里先摆一个空气泡）。
+    if (turnActive && turnDeltaState.chunks.size > 0) {
+      html += renderStreamingCuuBubbleHtml(renderTurnDeltaText(turnDeltaState), ctx);
     }
     return html;
   }
@@ -473,6 +526,19 @@ export function mountChatView(
           typing = upsertTypingUser(typing, typingSignal, Date.now());
           renderTyping();
         }
+        // R12（final-turns-wiring）：只在这条会话真的是本地已经发起了一轮 turn（turnActive）时才拼接
+        // delta——不靠 conversationKind 二次把关（parseIncomingMessageDelta 已经按 conversation_id 过滤，
+        // 主区的 SSE 连接订阅的是主区自己的 topic，物理上收不到协同会话的 delta），turnActive 这层只是
+        // 避免把一个跟当前"这次发送"无关的旧/重复 delta 拼进一个已经结束的气泡。
+        if (turnActive) {
+          const delta = parseIncomingMessageDelta(event.data, input.conversationId);
+          if (delta) {
+            turnDeltaState = appendTurnDelta(turnDeltaState, delta);
+            renderScroll();
+            renderTurnStatus();
+            return;
+          }
+        }
         // 其它事件名（"connected" 控制帧、批3/4 的 action_card/tool 事件）本批不处理，静默忽略。
       },
       onStatus: (status) => {
@@ -637,6 +703,14 @@ export function mountChatView(
         }
         pending = pending.filter((entry) => entry.tempId !== record.tempId);
         mergeMessages([created]);
+        // R12（final-turns-wiring）：一条文本消息真的落库之后，协同会话（kind='collab'）自动请 Cuu
+        // 接一句——shouldRequestConversationTurn 是唯一的判定点（见 turn.ts 顶部注释），主区
+        // （kind='main'）在这里永远拿到 false，不会走到 beginTurn 半步。file_card 消息不触发——服务端
+        // 契约本来就只认"最近一条 user_message_id 指向的文本消息"当锚点，丢一个文件不构成"该 Cuu 说话了"
+        // 的信号。
+        if (record.kind === "text" && shouldRequestConversationTurn(input.conversationKind)) {
+          beginTurn(created.id);
+        }
       })
       .catch(() => {
         if (disposed) {
@@ -647,6 +721,49 @@ export function mountChatView(
           found.status = "error";
           renderScroll();
         }
+      });
+  }
+
+  // R12（final-turns-wiring）：POST /conversations/:id/turns 的等待/流式/落定三段。同一会话同时只有
+  // 一轮进行中（服务端并发闸，见 conversation-turns.ts），所以不需要在这里做本地互斥——下一次
+  // enqueueSend 只会在这一轮的 promise 还没结束时也发起（用户可以边等边接着打字/发下一条），那种情况下
+  // 服务端会用 409 conversation_turn_busy 拒第二个 turn 请求，mapConversationTurnError 会把它翻成
+  // 「Cuu 正忙着上一轮」——不是本地要去拦的错误，是要如实展示的服务端状态。
+  function beginTurn(userMessageId: string): void {
+    if (disposed) {
+      return;
+    }
+    turnActive = true;
+    turnDeltaState = EMPTY_TURN_DELTA_STATE;
+    turnErrorText = undefined;
+    renderTurnStatus();
+    requestConversationTurn(input.client, input.conversationId, { userMessageId })
+      .then((result) => {
+        if (disposed) {
+          return;
+        }
+        turnActive = false;
+        turnDeltaState = EMPTY_TURN_DELTA_STATE;
+        // 服务端设计决策：Cuu 落库的回复不会触发任何 message.created 广播（见 turn.ts 顶部注释）——
+        // 这次 HTTP 响应本身就是唯一的权威"这一轮说完了"信号。mergeMessages 按 id 去重，真把它排进
+        // 消息流该在的位置，同时（内部调用 renderScroll）把上面的临时气泡换成这条真消息。
+        mergeMessages([result.message]);
+        renderTurnStatus();
+      })
+      .catch((error) => {
+        if (disposed) {
+          return;
+        }
+        turnActive = false;
+        turnDeltaState = EMPTY_TURN_DELTA_STATE;
+        turnErrorText = mapConversationTurnError(
+          error instanceof WorkHubApiError ? { status: error.status, code: error.code } : undefined,
+          input.locale
+        );
+        // mergeMessages 在成功路径里已经会 renderScroll；失败路径没有新消息可合并，这里手动补一次
+        // 好让临时气泡从消息流里消失（turnActive 已经是 false，buildScrollBodyHtml 不会再画它）。
+        renderScroll();
+        renderTurnStatus();
       });
   }
 

@@ -321,6 +321,49 @@ export function mountWorkbenchShell(
         return;
       }
       disposeDrive();
+      // final-turns-wiring：centerTab === "collab" 时中栏挂的是某个具体的协同会话（单聊），不是主区。
+      // 在 vm 里找 activeConversationId 对应的那个 kind='collab' 会话——找不到（树叶指向的会话已经不在
+      // 这次 VM 快照里，比如权限变化/深链过期）就不假装能渲染它，静默落回下面的主区分支，而不是渲染一个
+      // "会话不存在"的死胡同页：主区在契约上保证总是存在，落回去是诚实的可用降级，不是掩盖问题
+      // （真正的"这个会话你看不到"场景在 chat/view.ts 的 renderConversationAccessDeniedHtml 里已经有
+      // 处理——那是"选中了一个会话再去请求历史时才发现拿不到"，这里是"rail 压根没能提供这个会话"，
+      // 两种情况不同，见批 8 report 对 denied 状态的既有边界说明）。
+      const collabConversation =
+        state.centerTab === "collab" && state.activeConversationId
+          ? vm.conversations.conversations.find(
+              (conversation) => conversation.kind === "collab" && conversation.id === state.activeConversationId
+            )
+          : undefined;
+      if (collabConversation) {
+        const key = `${vm.project.id}:${collabConversation.id}`;
+        if (chatHandle && chatMountKey === key) {
+          return; // 已经是这个协同会话的 chat 视图——同主区分支的"key 没变就不重挂"纪律。
+        }
+        disposeChat();
+        centerEl.className = "wh-wb-center wh-wb-center--chat";
+        chatHandle = mountChatView(centerEl, {
+          client: input.client,
+          locale: input.locale,
+          projectId: vm.project.id,
+          projectName: vm.project.name,
+          conversationId: collabConversation.id,
+          conversationKind: "collab",
+          currentUserId: vm.viewer.user_id,
+          members: vm.workspace_members.items,
+          getClientToken,
+          streamUrl: input.client.streams.conversation(collabConversation.id),
+          ...(interruptBroadcaster
+            ? {
+                onConversationEvent: (raw: unknown) => {
+                  void interruptBroadcaster.handleRawConversationEvent(raw);
+                }
+              }
+            : {}),
+          onOpenDriveFile: (fileInput) => driveSidePanel.showPreview({ projectId: vm.project.id, itemId: fileInput.itemId, itemName: fileInput.itemName })
+        });
+        chatMountKey = key;
+        return;
+      }
       const mainConversation = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
       if (!mainConversation) {
         // 批 0 的 workbenchPageVmSchema 已经用 superRefine 保证"恰好一个 main 会话"存在；真到这里说明
@@ -342,6 +385,7 @@ export function mountWorkbenchShell(
         projectId: vm.project.id,
         projectName: vm.project.name,
         conversationId: mainConversation.id,
+        conversationKind: "main",
         currentUserId: vm.viewer.user_id,
         members: vm.workspace_members.items,
         getClientToken,
@@ -407,6 +451,13 @@ export function mountWorkbenchShell(
     // SSE——中栏此刻本来就是这个项目的 chat 视图，见 renderCenter 的 chatMountKey 复用逻辑）。
     onOpenMainConversation: () => {
       store.setState({ centerTab: "chat" });
+      chatHandle?.focusComposer();
+    },
+    // final-turns-wiring：某个协同会话树叶被点开——写入 activeConversationId + 切 centerTab，
+    // renderCenter 的订阅回调负责按新状态挂真视图（同一个会话再点一次，key 没变，renderCenter 会
+    // 直接跳过重挂，只是把焦点交回去，同 onOpenMainConversation 的既有手感一致）。
+    onOpenCollabConversation: (conversationId) => {
+      store.setState({ centerTab: "collab", activeConversationId: conversationId });
       chatHandle?.focusComposer();
     },
     // R12 批 6：「网盘」树叶点击路由——切 store.centerTab，renderCenter 的订阅回调负责挂真视图。

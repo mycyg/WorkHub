@@ -4,6 +4,7 @@
 
 import {
   conversationMessageCreatedEventSchema,
+  conversationMessageDeltaEventSchema,
   conversationPresenceTypingEventSchema,
   type ConversationMessageVM
 } from "@workhub/contracts";
@@ -17,6 +18,31 @@ export function parseIncomingMessageCreated(raw: unknown, conversationId: string
     return undefined;
   }
   return parsed.data.data;
+}
+
+// R12（final-turns-wiring）：conversation.message.delta——协同会话 turn 的流式打字增量（见
+// packages/contracts/src/events.ts 的 conversationMessageDeltaEventSchema 顶部注释：无 seq、不落库、
+// 不参与 reconcile，纯瞬态）。同 parseIncomingMessageCreated/parseIncomingTyping 一样，未过 zod 校验
+// 或会话 id 不匹配一律 undefined，调用方静默丢弃，不崩渲染。
+export type IncomingMessageDelta = {
+  turnId: string;
+  deltaText: string;
+  ordinal: number;
+};
+
+export function parseIncomingMessageDelta(raw: unknown, conversationId: string): IncomingMessageDelta | undefined {
+  const parsed = conversationMessageDeltaEventSchema.safeParse(raw);
+  if (!parsed.success) {
+    return undefined;
+  }
+  if (parsed.data.data.conversation_id !== conversationId) {
+    return undefined;
+  }
+  return {
+    turnId: parsed.data.data.turn_id,
+    deltaText: parsed.data.data.delta_text,
+    ordinal: parsed.data.data.ordinal
+  };
 }
 
 export type IncomingTypingSignal = {

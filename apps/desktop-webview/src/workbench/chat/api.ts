@@ -105,3 +105,26 @@ export function sendConversationFileCardMessage(
 export function pingConversationTyping(client: ChatApiClient, conversationId: string): Promise<TypingPingResult> {
   return client.request<TypingPingResult>(conversationPath(conversationId, "typing"), { method: "POST" });
 }
+
+// R12（final-turns-wiring）：POST /conversations/:id/turns——协同会话（kind='collab'）发一句话之后，
+// 请 Cuu 真的回一句。契约见 apps/api/src/services/conversation-turns.ts 顶部注释/
+// r12-desktop-workbench/reports/batch-4a-turns.md：请求体只有 { user_message_id }；成功响应直接带回
+// 完整的 Cuu 消息 VM（含真实 id/seq）——这一批范围里请求/响应 schema 是路由本地定义，没有被 promote
+// 进 @workhub/contracts（批 4a 报告写明了这一点，范围围栏没批准新增 contracts），所以这里同
+// TypingPingResult 一样，在这个文件本地声明一个薄类型，不是漏了处理。同上面所有会话端点一致，
+// 不为这一个批次特性去扩大 packages/api-client 的具名方法面——继续走 client.request。
+export type ConversationTurnResult = {
+  turn_id: string;
+  message: ConversationMessageVM;
+};
+
+export function requestConversationTurn(
+  client: ChatApiClient,
+  conversationId: string,
+  input: { userMessageId: string }
+): Promise<ConversationTurnResult> {
+  return client.request<ConversationTurnResult>(conversationPath(conversationId, "turns"), {
+    method: "POST",
+    body: JSON.stringify({ user_message_id: input.userMessageId })
+  });
+}

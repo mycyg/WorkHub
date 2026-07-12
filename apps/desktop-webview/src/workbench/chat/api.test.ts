@@ -8,6 +8,7 @@ import {
   fetchLatestConversationMessagesPage,
   fetchOlderConversationMessagesPage,
   pingConversationTyping,
+  requestConversationTurn,
   sendConversationFileCardMessage,
   sendConversationTextMessage,
   type ChatApiClient
@@ -186,4 +187,36 @@ test("pingConversationTyping posts with no body and surfaces the published flag"
   assert.equal(calls[0]!.init?.method, "POST");
   assert.equal(calls[0]!.init?.body, undefined);
   assert.deepEqual(result, { published: true });
+});
+
+test("requestConversationTurn posts the user_message_id and returns the turn id + Cuu message VM", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const cuuMessage: ConversationMessageVM = {
+    ...textMessage("cuu-msg-1", 9),
+    sender_type: "cuu",
+    sender_user_id: null
+  };
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return { turn_id: "turn-1", message: cuuMessage };
+  });
+
+  const result = await requestConversationTurn(client, "conv-1", { userMessageId: "user-msg-1" });
+
+  assert.equal(calls[0]!.path, "/api/conversations/conv-1/turns");
+  assert.equal(calls[0]!.init?.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0]!.init!.body as string), { user_message_id: "user-msg-1" });
+  assert.deepEqual(result, { turn_id: "turn-1", message: cuuMessage });
+});
+
+test("requestConversationTurn URL-encodes the conversation id", async () => {
+  const calls: string[] = [];
+  const client = fakeClient((path) => {
+    calls.push(path);
+    return { turn_id: "turn-1", message: textMessage("cuu-msg-1", 9) };
+  });
+
+  await requestConversationTurn(client, "conv/needs escaping", { userMessageId: "user-msg-1" });
+
+  assert.equal(calls[0], "/api/conversations/conv%2Fneeds%20escaping/turns");
 });

@@ -22,18 +22,39 @@ function projectInitial(name: string): string {
 // 批 6 把网盘视图接进这个窗口后，「网盘」同样升级成真按钮(data-wb-open-drive，切中栏到 drive 标签，
 // 见 shell.ts 的 onOpenDrive)——.wh-wb-leaf--live 现在挂在两个叶子上。selected 参数标出当前中栏
 // 显示哪个标签(sel 高亮跟着走，而不是主区永远高亮)。
-function renderProjectTreeLeavesHtml(vm: WorkbenchPageVM, zh: boolean, centerTab: "chat" | "drive"): string {
+//
+// final-turns-wiring：协同会话（kind='collab'）也升级成真按钮——这是批 4a 只做了服务端
+// POST /conversations/:id/turns、从没有任何 UI 调用方留下的洞（Cuu 在协同会话里没法被真正点开/回话）。
+// vm.conversations.conversations 里本来就包含调用方可见的 collab 会话（服务端 listConversations 已经
+// 按参与者过滤，见 apps/api/src/services/conversations.ts），只是这个文件之前从没渲染出来。每个
+// collab 会话一个叶子，用 workbenchIcons.collab（批 1 就已经定义、此前从未被用到的双人图标）区分于
+// 主区的单气泡图标；选中态按会话 id 比对，不是简单布尔量（一个项目可能有多个 collab 会话）。
+function renderProjectTreeLeavesHtml(
+  vm: WorkbenchPageVM,
+  zh: boolean,
+  centerTab: "chat" | "drive" | "collab",
+  activeConversationId: string | undefined
+): string {
   const main = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
   const mainLeaf = main
     ? `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "chat" ? " sel" : ""}" data-wb-open-main-chat>${workbenchIcons.chat}<span>${escapeHtml(main.title)}</span>${
         main.next_seq > 0 ? `<span class="wh-wb-leaf-count">${main.next_seq}</span>` : ""
       }</button>`
     : "";
+  const collabLeaves = vm.conversations.conversations
+    .filter((conversation) => conversation.kind === "collab")
+    .map((conversation) => {
+      const selected = centerTab === "collab" && activeConversationId === conversation.id;
+      return `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${selected ? " sel" : ""}" data-wb-open-collab-chat="${escapeHtml(conversation.id)}">${workbenchIcons.collab}<span>${escapeHtml(conversation.title)}</span>${
+        conversation.next_seq > 0 ? `<span class="wh-wb-leaf-count">${conversation.next_seq}</span>` : ""
+      }</button>`;
+    })
+    .join("");
   const fileCount = vm.recent_project_files.items.length;
   const driveLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "drive" ? " sel" : ""}" data-wb-open-drive>${workbenchIcons.folder}<span>${zh ? "网盘" : "Drive"}</span>${
     fileCount > 0 ? `<span class="wh-wb-leaf-count">${fileCount}</span>` : ""
   }</button>`;
-  return `<div class="wh-wb-tree">${mainLeaf}${driveLeaf}</div>`;
+  return `<div class="wh-wb-tree">${mainLeaf}${collabLeaves}${driveLeaf}</div>`;
 }
 
 export function renderProjectTreeHtml(input: {
@@ -41,14 +62,15 @@ export function renderProjectTreeHtml(input: {
   selectedProjectId: string | undefined;
   vm: WorkbenchPageVM | undefined;
   locale: Locale;
-  centerTab?: "chat" | "drive";
+  centerTab?: "chat" | "drive" | "collab";
+  activeConversationId?: string;
 }): string {
   const zh = input.locale === "zh-CN";
   const rows = input.projects
     .map((project) => {
       const active = project.id === input.selectedProjectId;
       const leaves = active && input.vm && input.vm.project.id === project.id
-        ? renderProjectTreeLeavesHtml(input.vm, zh, input.centerTab ?? "chat")
+        ? renderProjectTreeLeavesHtml(input.vm, zh, input.centerTab ?? "chat", input.activeConversationId)
         : "";
       return `<div class="wh-wb-project${active ? " active" : ""}">
         <button type="button" class="wh-wb-project-row" data-wb-select-project="${escapeHtml(project.id)}" aria-current="${active ? "true" : "false"}">
@@ -129,7 +151,8 @@ export type WorkbenchRailHandle = {
 };
 
 // mount 做五件事：拉项目列表填树 + 选中项目时拉 workbench VM + 新建项目模态提交调真端点 +
-// 「主区」/「网盘」树叶点击路由（切 store.centerTab，见 renderProjectTreeLeavesHtml 的注释）。
+// 「主区」/「协同会话」/「网盘」树叶点击路由（切 store.centerTab（+ activeConversationId），见
+// renderProjectTreeLeavesHtml 的注释）。
 export function mountWorkbenchRail(
   container: HTMLElement,
   input: {
@@ -138,6 +161,9 @@ export function mountWorkbenchRail(
     locale: Locale;
     onSelectProject: (projectId: string) => void;
     onOpenMainConversation?: () => void;
+    // final-turns-wiring：某个协同会话树叶被点开——传的是那个会话的真实 id（shell.ts 用它去
+    // vm.conversations.conversations 里找到对应的 collab 会话并挂载 chat 视图）。
+    onOpenCollabConversation?: (conversationId: string) => void;
     onOpenDrive?: () => void;
   }
 ): WorkbenchRailHandle {
@@ -160,7 +186,10 @@ export function mountWorkbenchRail(
       selectedProjectId: state.selectedProjectId,
       vm: state.vm,
       locale: input.locale,
-      centerTab: state.centerTab
+      centerTab: state.centerTab,
+      // exactOptionalPropertyTypes：activeConversationId?: string 不接受显式 undefined（同
+      // view.ts toPendingRenderModel 的既有取舍），state.activeConversationId 没值时干脆不传这个键。
+      ...(state.activeConversationId !== undefined ? { activeConversationId: state.activeConversationId } : {})
     })}${renderRailFootHtml(zh, viewerLabel)}${renderNewProjectModalHtml({
       locale: input.locale,
       open: state.newProjectModalOpen,
@@ -240,6 +269,11 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-open-main-chat]")) {
       input.onOpenMainConversation?.();
+      return;
+    }
+    const collabLeaf = target.closest<HTMLElement>("[data-wb-open-collab-chat]");
+    if (collabLeaf?.dataset.wbOpenCollabChat) {
+      input.onOpenCollabConversation?.(collabLeaf.dataset.wbOpenCollabChat);
       return;
     }
     if (target.closest("[data-wb-open-drive]")) {

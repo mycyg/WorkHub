@@ -270,6 +270,37 @@ export function renderPendingOutgoingHtml(pending: PendingOutgoingMessage, ctx: 
   return `<div class="wh-wb-chat-msg wh-wb-chat-msg--self wh-wb-chat-msg--pending" data-wb-chat-pending-id="${escapeHtml(pending.tempId)}">${avatar}<div class="wh-wb-chat-bub">${body}${status}</div></div>`;
 }
 
+// —— R12（final-turns-wiring）：协同会话 turn 状态 —— //
+//
+// 只在 kind='collab' 的会话里出现（view.ts 用 turn.ts 的 shouldRequestConversationTurn 判定，主区
+// 永远不会进到这两个函数）。两态复用同一块视觉语言、不新增 CSS 规则：
+// - "pending"（等待第一个 delta）：直接复用 renderTypingIndicatorHtml 同款 class
+//   （.wh-wb-chat-typing/-dots），措辞换成"Cuu 正在回复…"。
+// - "error"（409/429/500 → turn.ts 的 mapConversationTurnError 温和文案）：同一个容器 class，
+//   不用红色报错样式——这是"不弹阻断"的直接体现，视觉上应该像一条安静的状态提示，不是一个警报。
+
+export function renderCuuTurnPendingHtml(locale: Locale): string {
+  const zh = locale === "zh-CN";
+  const text = zh ? "Cuu 正在回复…" : "Cuu is replying…";
+  return `<div class="wh-wb-chat-typing" data-wb-chat-turn-pending>${escapeHtml(text)}<span class="wh-wb-chat-typing-dots"><i></i><i></i><i></i></span></div>`;
+}
+
+export function renderCuuTurnErrorHtml(message: string): string {
+  return `<div class="wh-wb-chat-typing" data-wb-chat-turn-error>${escapeHtml(message)}</div>`;
+}
+
+// 流式增量拼出的临时"正在生成"气泡——挂在消息流末尾（pending outgoing 消息之后），用真实消息气泡的
+// 视觉语言（wh-wb-chat-msg--cuu 头像/配色），套 --pending 的半透明态标出"还没定"，同批 8
+// renderPendingOutgoingHtml 的处理是同一个视觉语汇。turn.ts 的 renderTurnDeltaText 已经按 ordinal
+// 排好序拼好了文本，这里只管渲染；没有 mention 高亮（Cuu 自己的话没有"@某人"需要标记的场景）。
+export function renderStreamingCuuBubbleHtml(text: string, ctx: ChatRenderContext): string {
+  const avatar = avatarTileHtml({ label: "Cuu", id: "cuu", variant: "cuu" });
+  const body = text
+    ? `<div class="wh-wb-chat-txt">${escapeHtml(text).replace(/\n/gu, "<br>")}</div>`
+    : `<div class="wh-wb-chat-typing-dots"><i></i><i></i><i></i></div>`;
+  return `<div class="wh-wb-chat-msg wh-wb-chat-msg--cuu wh-wb-chat-msg--pending" data-wb-chat-streaming-cuu>${avatar}<div class="wh-wb-chat-bub"><div class="wh-wb-chat-who">Cuu</div>${body}</div></div>`;
+}
+
 // —— 正在输入 —— //
 
 export function renderTypingIndicatorHtml(labels: readonly string[], locale: Locale): string {
