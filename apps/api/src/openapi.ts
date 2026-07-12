@@ -6496,6 +6496,54 @@ export function getOpenApiDocument() {
           ...armyOverviewResponses
         }
       },
+      "/api/drive/projects/{projectId}/items/{itemId}/versions": {
+        get: {
+          tags: ["drive"],
+          summary: "List a drive file's version history (append-only, capped)",
+          parameters: [pathUuidParameter("projectId"), pathUuidParameter("itemId")],
+          responses: {
+            "200": jsonDataResponse(
+              {
+                type: "object",
+                properties: {
+                  items: { type: "array", maxItems: 100, items: { type: "object" } },
+                  capped: { type: "boolean" }
+                },
+                required: ["items", "capped"],
+                additionalProperties: false
+              },
+              "Version rows, newest first"
+            ).responses["200"],
+            "401": conversationAuthRequiredResponse,
+            "403": conversationForbiddenResponse,
+            "404": jsonErrorStatusResponse("404", "Drive file is inaccessible or was not found", [
+              "drive_item_not_found"
+            ]).responses["404"],
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/drive/projects/{projectId}/items/{itemId}/versions/{versionId}/restore": {
+        post: {
+          tags: ["drive"],
+          summary: "Restore a historical version by appending a new version (history is never deleted; audited)",
+          parameters: [
+            pathUuidParameter("projectId"),
+            pathUuidParameter("itemId"),
+            pathUuidParameter("versionId")
+          ],
+          responses: {
+            "200": jsonDataResponse({ type: "object" }, "The newly appended current version").responses["200"],
+            "401": conversationAuthRequiredResponse,
+            "403": conversationForbiddenResponse,
+            "404": jsonErrorStatusResponse("404", "Drive file or version is inaccessible or was not found", [
+              "drive_item_not_found",
+              "drive_version_not_found"
+            ]).responses["404"],
+            "500": conversationInternalResponse
+          }
+        }
+      },
       "/api/conversations/{id}/typing": {
         post: {
           tags: ["conversations"],
