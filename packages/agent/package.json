@@ -31,6 +31,10 @@
     "./observer": {
       "types": "./src/observer/index.ts",
       "import": "./src/observer/index.ts"
+    },
+    "./turns": {
+      "types": "./src/turns/index.ts",
+      "import": "./src/turns/index.ts"
     }
   },
   "scripts": {
