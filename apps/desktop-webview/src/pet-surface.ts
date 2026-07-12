@@ -86,6 +86,8 @@ import {
   type DesktopPetWindowMode,
   type DesktopPetWindowSettings
 } from "./pet-window-bridge.js";
+import { parseWorkbenchDeepLinkHref } from "./workbench/cuu-bubble-deeplink.js";
+import { openWorkbenchRouteFromPet } from "./workbench/cuu-bubble-open.js";
 
 export type DesktopSurface = "main" | "pet";
 
@@ -786,6 +788,10 @@ function desktopPetOpenMainRouteFallback(locale: WorkHubLocale) {
   return locale === "en-US" ? "Cuu could not open this in WorkHub." : "Cuu 暂时打不开主窗口。";
 }
 
+function desktopPetOpenWorkbenchRouteFallback(locale: WorkHubLocale) {
+  return locale === "en-US" ? "Cuu could not open the workbench window." : "Cuu 暂时打不开工作台窗口。";
+}
+
 function primaryDesktopCuuAction(card: CuuCard, actionId: string, freeText?: string): DesktopCuuActionRequest {
   const action = card.actions.find((candidate) => candidate.id === actionId);
   if (!action) {
@@ -1438,6 +1444,19 @@ export async function bootDesktopPetSurface(
       freeText: root.querySelector<HTMLTextAreaElement>("[data-pet-free-text]")?.value.trim()
     });
     if (!action) {
+      // R12 批7:Cuu 气泡点击 → 深链定位工作台会话/行动卡(dispatch_ask/workbench-interrupt 卡的
+      // "去工作台看看"动作，见 buildDesktopDispatchAskCuuCard/buildDesktopWorkbenchInterruptCuuCard)。
+      // 先于 desktopPetMainRouteFromHref 检查——两者的 href 前缀不重叠，顺序不影响正确性。
+      const workbenchTarget = parseWorkbenchDeepLinkHref(anchor.getAttribute("href"));
+      if (workbenchTarget) {
+        event.preventDefault();
+        const opened = await openWorkbenchRouteFromPet(workbenchTarget).catch(() => false);
+        if (!opened) {
+          statusText = desktopPetOpenWorkbenchRouteFallback(locale);
+          render();
+        }
+        return;
+      }
       const route = desktopPetMainRouteFromHref(anchor.getAttribute("href"));
       if (route) {
         event.preventDefault();

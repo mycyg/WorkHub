@@ -110,6 +110,10 @@ export function mountChatView(
     members: readonly WorkbenchMemberVM[];
     getClientToken: () => string | undefined;
     streamUrl: string;
+    // R12 批7:打扰矩阵的触发源——每条会话 SSE 帧的原始 event.data 都转发给它一份(不只是本视图消费
+    // 得了的 message/typing),由调用方(shell.ts)接进 interrupt-broadcast.ts 判断要不要往其它窗口广播
+    // 一条"该弹气泡了"。可选:不传就是纯本地渲染,不做任何打扰路由(colocated 测试/未来非工作台宿主场景)。
+    onConversationEvent?: (raw: unknown) => void;
   }
 ): ChatViewHandle {
   const doc = container.ownerDocument ?? document;
@@ -325,6 +329,7 @@ export function mountChatView(
         if (disposed) {
           return;
         }
+        input.onConversationEvent?.(event.data);
         const message = parseIncomingMessageCreated(event.data, input.conversationId);
         if (message) {
           mergeMessages([message]);

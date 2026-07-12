@@ -9,9 +9,11 @@ import type { WorkbenchPageVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { appleGlassDesignSystemCss } from "../design-system.js";
+import { resolveDesktopShellEmitter } from "../desktop-cuu-runtime.js";
 import { mountChatView, type ChatViewApiClient, type ChatViewHandle } from "./chat/view.js";
 import { workbenchCss } from "./css.js";
 import { workbenchIcons } from "./icons.js";
+import { createWorkbenchInterruptBroadcaster } from "./interrupt-broadcast.js";
 import { mountWorkbenchRail, type WorkbenchRailApiClient } from "./rail.js";
 import { createWorkbenchStore, type WorkbenchStore, type WorkbenchStoreState } from "./store.js";
 import { resolveWorkbenchWindowBridge } from "./window-bridge.js";
@@ -164,6 +166,24 @@ export function mountWorkbenchShell(
   let chatHandle: ChatViewHandle | undefined;
   let chatMountKey: string | undefined;
 
+  // R12 批7:打扰矩阵——windowBridge.isFocused() 告诉我们"用户是否正看着这个工作台窗口"；
+  // resolveDesktopShellEmitter 是桌宠/主窗共用的通用 Tauri 事件桥(__TAURI__.event.emit),这里复用它
+  // 把"该弹气泡了"的结论广播出去，接收端在 desktop-cuu-runtime.ts 的 bindDesktopShellCuuRuntime 里监听
+  // 同一个新事件名("workbench-interrupt")。两者任一在当前环境不可用(浏览器 dev 预览 / capabilities
+  // 缺口)时优雅降级为 undefined——mountChatView 不会收到 onConversationEvent，纯本地渲染不受影响。
+  const windowBridge = resolveWorkbenchWindowBridge(doc.defaultView ?? globalThis);
+  const shellEmitter = resolveDesktopShellEmitter(doc.defaultView ?? globalThis);
+  const interruptBroadcaster =
+    shellEmitter?.emit
+      ? createWorkbenchInterruptBroadcaster({
+          emit: (eventName, payload) => shellEmitter.emit!(eventName, payload),
+          // 拿不到 isFocused()(无 Tauri / capabilities 尚未把 "workbench" 加进 windows 列表——见
+          // window-bridge.ts 顶部注释)时默认当作"前台"：宁可少弹一次气泡，也不要背景乱弹。
+          isForeground: async () => (await windowBridge?.isFocused?.()) ?? true,
+          locale: input.locale
+        })
+      : undefined;
+
   const disposeChat = () => {
     chatHandle?.dispose();
     chatHandle = undefined;
@@ -264,7 +284,14 @@ export function mountWorkbenchShell(
         currentUserId: state.vm.viewer.user_id,
         members: state.vm.workspace_members.items,
         getClientToken,
-        streamUrl: input.client.streams.conversation(mainConversation.id)
+        streamUrl: input.client.streams.conversation(mainConversation.id),
+        ...(interruptBroadcaster
+          ? {
+              onConversationEvent: (raw: unknown) => {
+                void interruptBroadcaster.handleRawConversationEvent(raw);
+              }
+            }
+          : {})
       });
       chatMountKey = key;
       return;
@@ -335,7 +362,6 @@ export function mountWorkbenchShell(
     store.setState({ sidePanelOpen: !store.getState().sidePanelOpen });
   });
 
-  const windowBridge = resolveWorkbenchWindowBridge(doc.defaultView ?? globalThis);
   minimizeBtn?.addEventListener("click", () => {
     void windowBridge?.minimize?.();
   });

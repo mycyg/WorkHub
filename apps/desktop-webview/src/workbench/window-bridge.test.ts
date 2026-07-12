@@ -57,6 +57,27 @@ test("resolveWorkbenchWindowBridge omits methods the current window handle does 
   const bridge = resolveWorkbenchWindowBridge({
     __TAURI__: { window: { getCurrentWindow: () => ({ label: "workbench" }) } }
   });
-  // The handle exists but exposes none of the three methods → no bridge to offer.
+  // The handle exists but exposes none of the four methods → no bridge to offer.
   assert.equal(bridge, undefined);
+});
+
+// R12 批7:打扰矩阵靠 isFocused() 判断"用户是否正看着这个工作台窗口"。
+test("resolveWorkbenchWindowBridge forwards isFocused to the real Tauri window handle", async () => {
+  const currentWindow = {
+    label: "workbench",
+    isFocused: () => Promise.resolve(true)
+  };
+  const bridge = resolveWorkbenchWindowBridge({
+    __TAURI__: { window: { getCurrentWindow: () => currentWindow } }
+  });
+  assert.ok(bridge);
+  assert.equal(await bridge?.isFocused?.(), true);
+});
+
+test("resolveWorkbenchWindowBridge omits isFocused when the current window handle does not expose it", () => {
+  const bridge = resolveWorkbenchWindowBridge({
+    __TAURI__: { window: { getCurrentWindow: () => ({ label: "workbench", hide: () => {} }) } }
+  });
+  assert.ok(bridge);
+  assert.equal(bridge?.isFocused, undefined);
 });

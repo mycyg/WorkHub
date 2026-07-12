@@ -18,6 +18,9 @@ export type WorkbenchWindowBridge = {
   startDragging?: () => void | Promise<void>;
   minimize?: () => void | Promise<void>;
   hide?: () => void | Promise<void>;
+  // R12 批7:打扰矩阵用它判断"用户是否正看着这个工作台窗口"(见 workbench/interrupt-broadcast.ts)。
+  // Tauri v2 内置 Window.isFocused() 的直接透传,不是新协议。
+  isFocused?: () => Promise<boolean>;
 };
 
 type TauriWindowHandle = {
@@ -25,6 +28,7 @@ type TauriWindowHandle = {
   startDragging?: () => void | Promise<void>;
   minimize?: () => void | Promise<void>;
   hide?: () => void | Promise<void>;
+  isFocused?: () => Promise<boolean>;
 };
 
 type TauriGlobal = {
@@ -58,6 +62,9 @@ export function resolveWorkbenchWindowBridge(input: unknown = globalThis): Workb
   }
   if (typeof currentWindow.hide === "function") {
     bridge.hide = () => currentWindow.hide?.();
+  }
+  if (typeof currentWindow.isFocused === "function") {
+    bridge.isFocused = () => currentWindow.isFocused!();
   }
   return Object.keys(bridge).length > 0 ? bridge : undefined;
 }

@@ -35,6 +35,12 @@ import {
 
 import { createDesktopShellEventBridge, parseDesktopShellSseStatusPayload } from "./shell-events.js";
 import type { DesktopShellSystemNotificationPlan } from "./shell-events.js";
+import { buildDispatchAskBubbleCopy, buildWorkbenchDeepLinkHref } from "./workbench/cuu-bubble-deeplink.js";
+import {
+  classifyWorkbenchInterruptionCategory,
+  createWorkbenchNotificationDeduper,
+  type WorkbenchInterruptionCategory
+} from "./workbench/interruption-policy.js";
 
 export type DesktopShellEventEnvelope = {
   payload: unknown;
@@ -49,7 +55,11 @@ export type DesktopShellEventName =
   | "tray-action"
   | "pet-settings"
   | "pet-locale-changed"
-  | "attention-refresh";
+  | "attention-refresh"
+  // R12 批7:工作台窗口(interrupt-broadcast.ts)广播"该弹气泡了"的结论用的事件名——桌宠/主窗自己的
+  // SSE worker 目前只订阅 /api/push/stream/me，收不到 conversation:<id> 话题的事件（见批7汇报），
+  // 所以这条广播只能由已经在看这些事件的工作台窗口发起，走同一套通用 Tauri 事件桥。
+  | "workbench-interrupt";
 
 export type DesktopShellListen = (
   eventName: DesktopShellEventName,
@@ -860,6 +870,159 @@ export function createDesktopCuuDemoScript(
   return script;
 }
 
+// ── R12 批7:被派活告知气泡(action_card_item.dispatch_ask) ────────────────────────────
+// 真实来源:apps/api/src/workers/conversation-observer.ts 的 dispatchExecuteItem 在
+// dispatchPolicy==="ask" 时创建的 notification，经既有 /me SSE 流(notifications.ts 的
+// bus.publish(topics.user(...), eventTypes.notificationCreated, ...))推到桌面——这条通路已经真实
+// 打通，不需要任何新的订阅。cardFromEvent(@workhub/cuu)对 notification.created 只会给出通用文案
+// （标题/正文照搬通知行），这里在它之前拦截，换成 00 §8 要求的 Cuu 二次元人格话术 + 深链进工作台的动作。
+
+type DesktopDispatchAskNotification = {
+  id: string;
+  taskTitle?: string | undefined;
+  projectId?: string | undefined;
+  createdAt?: string | undefined;
+};
+
+function parseDesktopDispatchAskNotification(event: WorkHubEvent<unknown>): DesktopDispatchAskNotification | undefined {
+  if (event.type !== "notification.created") {
+    return undefined;
+  }
+  const data = event.data;
+  if (!data || typeof data !== "object") {
+    return undefined;
+  }
+  const record = data as Record<string, unknown>;
+  const notificationType = typeof record.type === "string" ? record.type : undefined;
+  const category: WorkbenchInterruptionCategory | undefined = classifyWorkbenchInterruptionCategory({
+    notificationType
+  });
+  if (category !== "dispatch_ask") {
+    return undefined;
+  }
+  const id = typeof record.id === "string" ? record.id : undefined;
+  if (!id) {
+    return undefined;
+  }
+  return {
+    id,
+    taskTitle: stringFromUnknown(record.body) ?? stringFromUnknown(record.title),
+    projectId: stringFromUnknown(record.project_id),
+    createdAt: stringFromUnknown(record.created_at)
+  };
+}
+
+function buildDesktopDispatchAskCuuCard(
+  notification: DesktopDispatchAskNotification,
+  options: { locale?: CuuLocaleOptions["locale"] } = {}
+): CuuCard {
+  const locale = options.locale ?? "zh-CN";
+  const copy = buildDispatchAskBubbleCopy({
+    locale,
+    taskTitle: notification.taskTitle ?? ""
+  });
+  const actions: CuuCardAction[] = notification.projectId
+    ? [
+        {
+          id: "open_workbench",
+          label: locale === "en-US" ? "Open the workbench" : "去工作台看看",
+          tone: "primary",
+          method: "GET",
+          href: buildWorkbenchDeepLinkHref({ projectId: notification.projectId })
+        }
+      ]
+    : [];
+  return {
+    id: `dispatch-ask:${notification.id}`,
+    kind: "bubble",
+    state: "asking_approval",
+    motion: cuuMotionForState("asking_approval"),
+    title: copy.title,
+    message: copy.message,
+    priority: "normal",
+    actions,
+    payload_ref: { entity_type: "event", entity_id: notification.id },
+    source: {
+      entity_type: "event",
+      entity_id: notification.id,
+      ...(notification.projectId ? { project_id: notification.projectId } : {})
+    },
+    created_at: notification.createdAt ?? new Date().toISOString()
+  };
+}
+
+// ── R12 批7:跨窗口打扰广播的接收端(workbench-interrupt) ────────────────────────────────
+// 发送端见 workbench/interrupt-broadcast.ts 顶部注释——工作台窗口自己看到会话事件、判断该弹气泡后，
+// 把一份轻量摘要广播给桌宠/主窗。这里把它转成一张 CuuCard 接进同一条 controller 队列，和其它气泡
+// 共享同一套排队/节流/dismiss 逻辑，不另起一套呈现通道。
+
+type DesktopWorkbenchInterruptPayload = {
+  id: string;
+  category: WorkbenchInterruptionCategory;
+  projectId: string;
+  conversationId: string;
+  title: string;
+  message: string;
+  createdAt?: string | undefined;
+};
+
+function isWorkbenchInterruptionCategory(value: string | undefined): value is WorkbenchInterruptionCategory {
+  return value === "message" || value === "action_card" || value === "dispatch_ask" || value === "proposal";
+}
+
+function parseDesktopWorkbenchInterruptPayload(input: unknown): DesktopWorkbenchInterruptPayload | undefined {
+  if (!input || typeof input !== "object") {
+    return undefined;
+  }
+  const record = input as Record<string, unknown>;
+  const id = stringFromUnknown(record.id);
+  const category = stringFromUnknown(record.category);
+  const projectId = stringFromUnknown(record.projectId);
+  const conversationId = stringFromUnknown(record.conversationId);
+  const title = stringFromUnknown(record.title);
+  const message = stringFromUnknown(record.message);
+  if (!id || !isWorkbenchInterruptionCategory(category) || !projectId || !conversationId || !title || !message) {
+    return undefined;
+  }
+  return {
+    id,
+    category,
+    projectId,
+    conversationId,
+    title,
+    message,
+    createdAt: stringFromUnknown(record.createdAt)
+  };
+}
+
+function buildDesktopWorkbenchInterruptCuuCard(
+  payload: DesktopWorkbenchInterruptPayload,
+  options: { locale?: CuuLocaleOptions["locale"] } = {}
+): CuuCard {
+  const locale = options.locale ?? "zh-CN";
+  return {
+    id: `workbench-interrupt:${payload.id}`,
+    kind: "bubble",
+    state: "idle",
+    motion: cuuMotionForState("idle"),
+    title: payload.title,
+    message: payload.message,
+    priority: "normal",
+    actions: [
+      {
+        id: "open_workbench",
+        label: locale === "en-US" ? "Open the workbench" : "去工作台看看",
+        tone: "primary",
+        method: "GET",
+        href: buildWorkbenchDeepLinkHref({ projectId: payload.projectId, conversationId: payload.conversationId })
+      }
+    ],
+    payload_ref: { entity_type: "event", entity_id: payload.id },
+    source: { entity_type: "event", entity_id: payload.id, project_id: payload.projectId },
+    created_at: payload.createdAt ?? new Date().toISOString()
+  };
+}
+
 export async function bindDesktopShellCuuRuntime(input: {
   listen?: DesktopShellListen | undefined;
   notify: (notice: DesktopCuuNotice) => void;
@@ -892,12 +1055,32 @@ export async function bindDesktopShellCuuRuntime(input: {
       html: renderDesktopCuuNotice(shownCard, input)
     });
   };
+  // R12 批7:dispatch_ask 通知走自定义的二次元问询卡(见上方 buildDesktopDispatchAskCuuCard)，不用
+  // cardFromEvent 的通用通知文案——同一条推送两边都会触发(onEvent 先、onCuuCard 随后)，用这个标志把
+  // 已经在 onEvent 里手动 emitCard 过的那次挡掉，避免同一条通知冒出两张卡。
+  let suppressNextGenericCuuCard = false;
+  const dispatchAskDeduper = createWorkbenchNotificationDeduper();
   const bridge = createDesktopShellEventBridge({
     ...(input.now ? { now: input.now } : {}),
     get locale() {
       return input.locale;
     },
+    onEvent(bridged) {
+      const dispatchAsk = parseDesktopDispatchAskNotification(bridged.event);
+      if (!dispatchAsk) {
+        return;
+      }
+      suppressNextGenericCuuCard = true;
+      if (!dispatchAskDeduper.shouldDeliver(dispatchAsk.id)) {
+        return;
+      }
+      emitCard(buildDesktopDispatchAskCuuCard(dispatchAsk, { locale: input.locale }));
+    },
     onCuuCard(card) {
+      if (suppressNextGenericCuuCard) {
+        suppressNextGenericCuuCard = false;
+        return;
+      }
       emitCard(card);
     },
     onSystemNotification(plan) {
@@ -957,6 +1140,19 @@ export async function bindDesktopShellCuuRuntime(input: {
   });
   if (typeof systemNotificationUnlisten === "function") {
     unlisten.push(systemNotificationUnlisten);
+  }
+  // R12 批7:接收工作台窗口广播的"该弹气泡了"结论(见 workbench/interrupt-broadcast.ts)。独立的
+  // dedupe 实例——广播源自己也会 dedupe，但重连/多实例广播时这里再挡一道，双保险不双弹。
+  const workbenchInterruptDeduper = createWorkbenchNotificationDeduper();
+  const workbenchInterruptUnlisten = await listen("workbench-interrupt", (event) => {
+    const payload = parseDesktopWorkbenchInterruptPayload(event.payload);
+    if (!payload || !workbenchInterruptDeduper.shouldDeliver(payload.id)) {
+      return;
+    }
+    emitCard(buildDesktopWorkbenchInterruptCuuCard(payload, { locale: input.locale }));
+  });
+  if (typeof workbenchInterruptUnlisten === "function") {
+    unlisten.push(workbenchInterruptUnlisten);
   }
 
   return {

@@ -2125,6 +2125,125 @@ test("pet right-click menu broadcasts hover setting changes to the main settings
   }
 });
 
+// R12 批7:被派活问询气泡的「去工作台看看」按钮点击 → 真实 invoke("open_workbench", ...)。
+test("pet surface routes a dispatch_ask bubble's workbench action through a real open_workbench invoke", async () => {
+  const handlers = new Map<string, (event: { payload: unknown }) => void>();
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => handlers.delete(eventName);
+  };
+  const invokeCalls: Array<{ command: string; args: Record<string, unknown> | undefined }> = [];
+  const target = globalThis as typeof globalThis & {
+    __TAURI__?: unknown;
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+  };
+  const originalTauri = target.__TAURI__;
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  target.__TAURI__ = {
+    core: {
+      async invoke(command: string, args?: Record<string, unknown>) {
+        invokeCalls.push({ command, args });
+        return undefined;
+      }
+    }
+  };
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([]),
+        listen
+      });
+      try {
+        handlers.get("push-event")?.({
+          payload: shellPayload(eventTypes.notificationCreated, {
+            id: "notification-dispatch-ask-dom",
+            type: "action_card_item.dispatch_ask",
+            severity: "normal",
+            title: "有个活想派给你",
+            body: "整理会议纪要",
+            project_id: "10000000-0000-4000-8000-000000000780"
+          })
+        });
+        // 真实(伪装的)__TAURI__.core.invoke 存在时，卡片进入 card 窗口模式会先过一次异步
+        // syncPetWindowMode(见 pet-surface.ts)，气泡在"syncing"瞬态里被抑制——等它落定，照抄
+        // waitForFakePetCardMode 在其它 card-mode 用例里的同款等待。
+        await waitForFakePetCardMode();
+        assert.match(root.innerHTML, /data-pet-bubble-kind="bubble"/u);
+        assert.match(root.innerHTML, /有个活儿想派给我/u);
+        assert.match(root.innerHTML, /data-cuu-action-id="open_workbench"/u);
+        assert.match(root.innerHTML, /href="\/workbench\/10000000-0000-4000-8000-000000000780"/u);
+
+        const click = await root.click(fakePetTarget({
+          href: "/workbench/10000000-0000-4000-8000-000000000780",
+          "data-cuu-action-id": "open_workbench"
+        }, "a"));
+
+        assert.equal(click.defaultPrevented, true);
+        assert.deepEqual(
+          invokeCalls.filter((call) => call.command === "open_workbench"),
+          [{ command: "open_workbench", args: { projectId: "10000000-0000-4000-8000-000000000780" } }]
+        );
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    target.__TAURI__ = originalTauri;
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
+test("pet surface falls back to an honest 'could not open' message when no Tauri invoke is available", async () => {
+  const handlers = new Map<string, (event: { payload: unknown }) => void>();
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => handlers.delete(eventName);
+  };
+  const target = globalThis as typeof globalThis & {
+    __TAURI__?: unknown;
+    __WORKHUB_CUU_QA_LOCALE__?: unknown;
+  };
+  const originalTauri = target.__TAURI__;
+  const originalQaLocale = target.__WORKHUB_CUU_QA_LOCALE__;
+  target.__WORKHUB_CUU_QA_LOCALE__ = "zh-CN";
+  delete target.__TAURI__;
+
+  try {
+    await withFakePetDom(async (root) => {
+      const runtime = await bootDesktopPetSurface(root as unknown as HTMLElement, {
+        client: createPetHarnessClient([]),
+        listen
+      });
+      try {
+        handlers.get("push-event")?.({
+          payload: shellPayload(eventTypes.notificationCreated, {
+            id: "notification-dispatch-ask-degraded",
+            type: "action_card_item.dispatch_ask",
+            severity: "normal",
+            title: "有个活想派给你",
+            body: "整理会议纪要",
+            project_id: "10000000-0000-4000-8000-000000000781"
+          })
+        });
+
+        await root.click(fakePetTarget({
+          href: "/workbench/10000000-0000-4000-8000-000000000781",
+          "data-cuu-action-id": "open_workbench"
+        }, "a"));
+
+        assert.match(root.innerHTML, /Cuu 暂时打不开工作台窗口/u);
+      } finally {
+        await runtime.dispose();
+      }
+    });
+  } finally {
+    target.__TAURI__ = originalTauri;
+    target.__WORKHUB_CUU_QA_LOCALE__ = originalQaLocale;
+  }
+});
+
 test("pet surface persists and restores the current session question card", async () => {
   const storage = createFakeLocalStorage();
   const target = globalThis as typeof globalThis & {
