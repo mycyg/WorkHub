@@ -4893,6 +4893,184 @@ const conversationMessageCreateResponses = {
   }
 } as const;
 
+// R12 批 5(军团面板读侧)——与 packages/contracts/src/pages.ts 的 army VM zod 逐字段对齐。
+const armyRunRecentStepJsonSchema = {
+  type: "object",
+  properties: {
+    phase: { type: "string" },
+    tool_name: { type: ["string", "null"], maxLength: 64 },
+    output_excerpt: { type: ["string", "null"], maxLength: 240 },
+    step_no: { type: "integer", minimum: 1 }
+  },
+  required: ["phase", "tool_name", "output_excerpt", "step_no"],
+  additionalProperties: false
+} as const;
+const armyRunCardBaseJsonProperties = {
+  id: uuidStringSchema,
+  status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "cancelled"] },
+  goal_summary: { type: "string", minLength: 1, maxLength: 201 },
+  assignee_user_id: { ...uuidStringSchema, type: ["string", "null"] },
+  cost_cny: { type: ["string", "null"], pattern: "^\\d+(?:\\.\\d+)?$" },
+  execution_hint: { type: "string", enum: ["server", "local", "any"] },
+  work_item_id: uuidStringSchema,
+  source_conversation_id: { ...uuidStringSchema, type: ["string", "null"] },
+  source_action_card_item_id: { ...uuidStringSchema, type: ["string", "null"] },
+  cat_codename: { type: "string", minLength: 1, maxLength: 16 },
+  recent_step: { ...armyRunRecentStepJsonSchema, type: ["object", "null"] },
+  created_at: { type: "string", format: "date-time" },
+  updated_at: { type: "string", format: "date-time" }
+} as const;
+const armyRunCardRequiredJsonFields = [
+  "id",
+  "status",
+  "goal_summary",
+  "assignee_user_id",
+  "cost_cny",
+  "execution_hint",
+  "work_item_id",
+  "source_conversation_id",
+  "source_action_card_item_id",
+  "cat_codename",
+  "recent_step",
+  "created_at",
+  "updated_at"
+] as const;
+const armyRunListCursorJsonSchema = {
+  type: ["object", "null"],
+  properties: {
+    after_created_at: {
+      type: "string",
+      format: "date-time",
+      pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
+    },
+    after_id: uuidStringSchema
+  },
+  required: ["after_created_at", "after_id"],
+  additionalProperties: false
+} as const;
+function armyRunListJsonSchema(cardProperties: Record<string, unknown>, cardRequired: readonly string[]) {
+  return {
+    type: "object",
+    properties: {
+      runs: {
+        type: "array",
+        maxItems: 50,
+        items: {
+          type: "object",
+          properties: cardProperties,
+          required: [...cardRequired],
+          additionalProperties: false
+        }
+      },
+      capped: { type: "boolean" },
+      next_cursor: armyRunListCursorJsonSchema,
+      empty_state: { type: "string", const: "no_army_runs" }
+    },
+    required: ["runs", "capped", "next_cursor"],
+    additionalProperties: false,
+    "x-workhub-invariants": [
+      "next_cursor is non-null exactly when capped is true.",
+      "empty_state is present exactly when runs is empty."
+    ]
+  } as const;
+}
+const armyOutputsJsonSchema = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      maxItems: 50,
+      items: {
+        type: "object",
+        properties: {
+          proposal_id: uuidStringSchema,
+          work_item_id: uuidStringSchema,
+          run_id: uuidStringSchema,
+          title: { type: "string", minLength: 1, maxLength: 256 },
+          status: { type: "string", minLength: 1, maxLength: 32 },
+          proposal_href: { type: "string", minLength: 1 },
+          updated_at: { type: "string", format: "date-time" }
+        },
+        required: ["proposal_id", "work_item_id", "run_id", "title", "status", "proposal_href", "updated_at"],
+        additionalProperties: false
+      }
+    },
+    capped: { type: "boolean" }
+  },
+  required: ["items", "capped"],
+  additionalProperties: false
+} as const;
+const armyBackgroundTasksJsonSchema = {
+  type: "object",
+  properties: {
+    items: { type: "array", maxItems: 0, items: {} },
+    empty_state: { type: "string", const: "not_yet_available" }
+  },
+  required: ["items", "empty_state"],
+  additionalProperties: false,
+  description:
+    "Honestly empty until a real scheduled-task data source lands; never backed by unrelated background_jobs or schedule events."
+} as const;
+const conversationArmyPanelResponseSchema = {
+  type: "object",
+  properties: {
+    generated_at: { type: "string", format: "date-time" },
+    conversation_id: uuidStringSchema,
+    project_id: uuidStringSchema,
+    runs: armyRunListJsonSchema(armyRunCardBaseJsonProperties, armyRunCardRequiredJsonFields),
+    outputs: armyOutputsJsonSchema,
+    background_tasks: armyBackgroundTasksJsonSchema
+  },
+  required: ["generated_at", "conversation_id", "project_id", "runs", "outputs", "background_tasks"],
+  additionalProperties: false
+} as const;
+const armyOverviewPageResponseSchema = {
+  type: "object",
+  properties: {
+    generated_at: { type: "string", format: "date-time" },
+    viewer_user_id: uuidStringSchema,
+    runs: armyRunListJsonSchema(
+      {
+        ...armyRunCardBaseJsonProperties,
+        project_id: uuidStringSchema,
+        project_name: { type: "string", minLength: 1, maxLength: 128 }
+      },
+      [...armyRunCardRequiredJsonFields, "project_id", "project_name"]
+    )
+  },
+  required: ["generated_at", "viewer_user_id", "runs"],
+  additionalProperties: false
+} as const;
+const armyLimitQueryParameter = {
+  name: "limit",
+  in: "query",
+  required: false,
+  schema: { type: "integer", minimum: 1, maximum: 50, default: 20 }
+} as const;
+const conversationArmyPanelResponses = {
+  responses: {
+    "200": jsonDataResponse(conversationArmyPanelResponseSchema, "Conversation army context panel").responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation army panel is inaccessible or was not found", [
+      "conversation_army_not_found"
+    ]).responses["404"],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const armyOverviewResponses = {
+  responses: {
+    "200": jsonDataResponse(armyOverviewPageResponseSchema, "Cross-project army overview for the viewer").responses[
+      "200"
+    ],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
 const aiModelPreferenceStringSchema = {
   type: "string",
   minLength: 1,
@@ -6157,6 +6335,31 @@ export function getOpenApiDocument() {
           parameters: [pathUuidParameter("id")],
           ...jsonRequestBody(createConversationMessageRequestBodySchema),
           ...conversationMessageCreateResponses
+        }
+      },
+      "/api/conversations/{id}/army": {
+        get: {
+          tags: ["conversations"],
+          summary: "Conversation context panel: derived runs, output links, background tasks",
+          parameters: [
+            pathUuidParameter("id"),
+            conversationAfterCreatedAtQueryParameter,
+            conversationAfterIdQueryParameter,
+            armyLimitQueryParameter
+          ],
+          ...conversationArmyPanelResponses
+        }
+      },
+      "/api/me/army": {
+        get: {
+          tags: ["conversations"],
+          summary: "Cross-project army overview for the current user",
+          parameters: [
+            conversationAfterCreatedAtQueryParameter,
+            conversationAfterIdQueryParameter,
+            armyLimitQueryParameter
+          ],
+          ...armyOverviewResponses
         }
       },
       "/api/me/ai-profile": {

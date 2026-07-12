@@ -417,7 +417,9 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/knowledge/search"],
     ["get", "/api/workitems/{id}/audit"],
     ["get", "/api/pilot/day1/metrics"],
-    ["get", "/api/ai-worklog/today"]
+    ["get", "/api/ai-worklog/today"],
+    ["get", "/api/conversations/{id}/army"],
+    ["get", "/api/me/army"]
   ] as const;
   for (const [method, route] of expectedRoutes) {
     assert.ok(body.paths[route]?.[method], `${method.toUpperCase()} ${route} missing from OpenAPI document`);
