@@ -18,10 +18,12 @@ import {
 } from "@workhub/db";
 import {
   conversationFileCardContentSchema,
+  conversationMessageCreatedEventSchema,
   conversationListPageVmSchema,
   conversationMessagePageVmSchema,
   conversationMessageVmSchema,
   createConversationResultVmSchema,
+  eventTypes,
   type ConversationListPageVM,
   type ConversationListQuery,
   type ConversationMessageListQuery,
@@ -31,7 +33,10 @@ import {
   type CreateConversationRequest,
   type CreateConversationResultVM
 } from "@workhub/contracts";
+import { makeWorkHubEvent, topics } from "@workhub/events";
 
+import { getDefaultPushBus, type PushBus } from "../broker/index.js";
+import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
 import {
@@ -85,6 +90,8 @@ export type ConversationService = {
 export type ConversationServiceOptions = {
   driveFiles: Pick<DrivePageService, "file">;
   now?: () => Date;
+  bus?: Pick<PushBus, "backend" | "publish">;
+  logger?: Pick<StructuredLogger, "warn">;
 };
 
 function requireHumanActor(actor: AuthActor): HumanConversationActor {
@@ -173,6 +180,8 @@ export function createConversationService(
   options: ConversationServiceOptions
 ): ConversationService {
   const now = options.now ?? (() => new Date());
+  const bus = options.bus ?? getDefaultPushBus();
+  const logger = options.logger ?? getDefaultStructuredLogger();
 
   async function visibleConversation(input: { actor: AuthActor; conversationId: string }) {
     const human = requireHumanActor(input.actor);
@@ -324,12 +333,54 @@ export function createConversationService(
         };
       }
 
+      let created: ConversationMessageRow;
       try {
-        const created = await repository.createUserMessage(writeInput);
-        return parseOutputContract(conversationMessageVmSchema, messageToVm(created), "conversations.messages.create");
+        created = await repository.createUserMessage(writeInput);
       } catch (error) {
         mapRepositoryError(error);
       }
+      const message = parseOutputContract(
+        conversationMessageVmSchema,
+        messageToVm(created),
+        "conversations.messages.create"
+      );
+      const conversationTopic = topics.conversation(access.conversation.id).topic;
+      const previewText = message.kind === "text"
+        ? message.content.text
+        : message.kind === "file_card"
+          ? message.content.snapshot_name
+          : message.kind;
+      const event = parseOutputContract(
+        conversationMessageCreatedEventSchema,
+        makeWorkHubEvent({
+          type: eventTypes.conversationMessageCreated,
+          topic: conversationTopic,
+          ts: now(),
+          actor: {
+            actor_kind: "human",
+            actor_user_id: human.userId,
+            label: human.actor.label
+          },
+          project_id: access.conversation.projectId,
+          preview_text: previewText,
+          data: message
+        }),
+        "conversations.messages.event.created"
+      );
+      try {
+        await bus.publish(conversationTopic, eventTypes.conversationMessageCreated, event);
+      } catch (error) {
+        logger.warn("conversation_message_publish_failed", {
+          event_id: event.event_id,
+          topic: conversationTopic,
+          conversation_id: message.conversation_id,
+          message_id: message.id,
+          seq: message.seq,
+          broker_backend: bus.backend,
+          error
+        });
+      }
+      return message;
     }
   };
 }
@@ -342,7 +393,11 @@ export function getDefaultConversationService(): ConversationService {
     defaultDbClient = getSharedDatabaseClient();
     defaultConversationService = createConversationService(
       createConversationRepository(defaultDbClient.db),
-      { driveFiles: getDefaultDrivePageService() }
+      {
+        driveFiles: getDefaultDrivePageService(),
+        bus: getDefaultPushBus(),
+        logger: getDefaultStructuredLogger()
+      }
     );
   }
   return defaultConversationService;

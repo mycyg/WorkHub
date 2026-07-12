@@ -5,13 +5,48 @@ import { z } from "zod";
 
 import { eventTypes, type BudgetNotice, workHubEventSchema } from "@workhub/contracts";
 
-import { createWorkHubEventId, formatSseEvent, makeWorkHubEvent, parseSseFrames, toAttentionItem, toCuuState, topics } from "./index.js";
+import { createWorkHubEventId, formatSseEvent, makeWorkHubEvent, parseSseFrames, parseTopic, toAttentionItem, toCuuState, topics } from "./index.js";
 
 test("topic helpers keep identity-scoped topic names explicit", () => {
   assert.equal(topics.all().topic, "all");
   assert.equal(topics.user("u1").topic, "user:u1");
   assert.equal(topics.workitem("w1").topic, "workitem:w1");
   assert.equal(topics.run("r1").topic, "run:r1");
+});
+
+test("conversation topic helpers and runtime parser accept only canonical UUID topics", () => {
+  const conversationId = "30000000-0000-4000-8000-000000000003";
+  const expected = {
+    kind: "conversation",
+    topic: `conversation:${conversationId}`,
+    id: conversationId
+  };
+
+  assert.deepEqual(topics.conversation(conversationId), expected);
+  assert.deepEqual(parseTopic(expected.topic), expected);
+  assert.deepEqual(
+    topics.conversation("AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"),
+    {
+      kind: "conversation",
+      topic: "conversation:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    }
+  );
+  assert.deepEqual(
+    parseTopic("conversation:AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"),
+    {
+      kind: "conversation",
+      topic: "conversation:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    }
+  );
+  for (const malformed of [
+    "conversation:not-a-uuid",
+    "conversation:",
+    `conversation:${conversationId}:extra`
+  ]) {
+    assert.throws(() => parseTopic(malformed));
+  }
 });
 
 test("WorkHubEvent envelope creates browser-safe UUID ids", () => {

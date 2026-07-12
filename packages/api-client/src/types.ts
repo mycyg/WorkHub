@@ -251,6 +251,7 @@ export type PushStreamClient = {
   run: (id: string) => string;
   session: (id: string) => string;
   proposal: (id: string) => string;
+  conversation: (id: string) => string;
 };
 
 export type WorkHubApiClient = {

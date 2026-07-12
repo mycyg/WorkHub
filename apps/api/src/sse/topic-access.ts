@@ -9,6 +9,7 @@ export type TopicAccessResolver = {
   canViewRun?: (user: StreamUser, id: string) => Promise<boolean>;
   canViewSession?: (user: StreamUser, id: string) => Promise<boolean>;
   canViewProposal?: (user: StreamUser, id: string) => Promise<boolean>;
+  canViewConversation?: (user: StreamUser, id: string) => Promise<boolean>;
 };
 
 export type StreamTopicRequest =
@@ -17,7 +18,8 @@ export type StreamTopicRequest =
   | { kind: "workitem"; id: string }
   | { kind: "run"; id: string }
   | { kind: "session"; id: string }
-  | { kind: "proposal"; id: string };
+  | { kind: "proposal"; id: string }
+  | { kind: "conversation"; id: string };
 
 export async function resolveAuthorizedTopic(
   user: StreamUser,
@@ -54,5 +56,10 @@ export async function resolveAuthorizedTopic(
         return topics.proposal(request.id).topic;
       }
       throw new HTTPException(403, { message: "cannot stream this proposal" });
+    case "conversation":
+      if (await access.canViewConversation?.(user, request.id)) {
+        return topics.conversation(request.id).topic;
+      }
+      throw new HTTPException(403, { message: "cannot stream this conversation" });
   }
 }

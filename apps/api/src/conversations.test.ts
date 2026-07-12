@@ -16,6 +16,7 @@ import {
   type ConversationRow,
   type VisibleConversationRow
 } from "@workhub/db";
+import * as conversationContracts from "@workhub/contracts";
 import type { CreateConversationMessageRequest, CreateConversationRequest } from "@workhub/contracts";
 
 import type { AuthActor } from "./middleware/auth.js";
@@ -138,6 +139,32 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
 
 function driveFiles(file: DrivePageService["file"]): Pick<DrivePageService, "file"> {
   return { file };
+}
+
+function capturingBus(input: { error?: Error; backend?: "memory" | "redis" } = {}) {
+  const published: Array<{ topic: string; type: string; data: unknown }> = [];
+  return {
+    published,
+    bus: {
+      backend: input.backend ?? "memory",
+      async publish(topic: string, type: string, data: unknown) {
+        published.push({ topic, type, data });
+        if (input.error) {
+          throw input.error;
+        }
+      }
+    }
+  };
+}
+
+function parseCreatedEvent(value: unknown) {
+  const schema = (conversationContracts as Record<string, unknown>)["conversationMessageCreatedEventSchema"] as {
+    parse(value: unknown): Record<string, unknown>;
+  } | undefined;
+  if (!schema || typeof schema.parse !== "function") {
+    assert.fail("missing conversationMessageCreatedEventSchema");
+  }
+  return schema.parse(value);
 }
 
 function collabPayload(overrides: Partial<CreateConversationRequest> = {}): CreateConversationRequest {
@@ -370,6 +397,7 @@ test("message listing forwards the safe cursor and maps explicit page metadata",
 test("text message creation never calls Drive and persists only bounded text metadata", async () => {
   let driveCalls = 0;
   let received: unknown;
+  const push = capturingBus();
   const service = createConversationService(repository({
     async findVisibleAccessRecord() {
       return accessRecord();
@@ -383,7 +411,8 @@ test("text message creation never calls Drive and persists only bounded text met
       driveCalls += 1;
       throw new Error("Drive must not be called for text");
     }),
-    now: () => now
+    now: () => now,
+    bus: push.bus
   });
   const payload: CreateConversationMessageRequest = {
     kind: "text",
@@ -404,11 +433,164 @@ test("text message creation never calls Drive and persists only bounded text met
     at: now
   });
   assert.deepEqual(result.content, { text: "请先核对引用。" });
+  assert.equal(push.published.length, 1);
+  assert.equal(push.published[0]?.topic, `conversation:${conversationId}`);
+  assert.equal(push.published[0]?.type, "conversation.message.created");
+  const event = parseCreatedEvent(push.published[0]?.data);
+  assert.match(String(event.event_id), /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u);
+  assert.equal(event.type, "conversation.message.created");
+  assert.equal(event.topic, `conversation:${conversationId}`);
+  assert.equal(event.project_id, projectId);
+  assert.deepEqual(event.actor, { actor_kind: "human", actor_user_id: userId, label: "R12 owner" });
+  assert.deepEqual(event.data, result);
+});
+
+test("message publishing starts only after the repository promise resolves", async () => {
+  const push = capturingBus();
+  let resolveWrite: ((row: ConversationMessageRow) => void) | undefined;
+  const write = new Promise<ConversationMessageRow>((resolve) => {
+    resolveWrite = resolve;
+  });
+  const service = createConversationService(repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async createUserMessage() {
+      return write;
+    }
+  }), {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now,
+    bus: push.bus
+  });
+
+  const pending = service.createMessage({
+    actor: actor(),
+    conversationId,
+    payload: { kind: "text", content: { text: "hello" } }
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(push.published.length, 0);
+  assert.ok(resolveWrite);
+  resolveWrite(messageRow({ contentJson: { text: "hello" } }));
+  await pending;
+  assert.equal(push.published.length, 1);
+});
+
+test("message output contract failure never reaches the live broker", async () => {
+  const push = capturingBus();
+  const service = createConversationService(repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async createUserMessage() {
+      return messageRow({ seq: Number.MAX_SAFE_INTEGER + 1 });
+    }
+  }), {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    bus: push.bus
+  });
+
+  await assert.rejects(
+    () => service.createMessage({
+      actor: actor(),
+      conversationId,
+      payload: { kind: "text", content: { text: "hello" } }
+    }),
+    (error) => error instanceof InternalContractError && error.context === "conversations.messages.create"
+  );
+  assert.equal(push.published.length, 0);
+});
+
+test("corrupt committed message identity fails the event contract and never publishes", async () => {
+  const corruptRows: ConversationMessageRow[] = [
+    messageRow({ conversationId: "30000000-0000-4000-8000-000000000099" }),
+    messageRow({ senderType: "cuu", senderUserId: null }),
+    messageRow({ senderUserId: "60000000-0000-4000-8000-000000000099" })
+  ];
+
+  for (const corruptRow of corruptRows) {
+    const push = capturingBus();
+    const service = createConversationService(repository({
+      async findVisibleAccessRecord() {
+        return accessRecord();
+      },
+      async createUserMessage() {
+        return corruptRow;
+      }
+    }), {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      bus: push.bus
+    });
+
+    await assert.rejects(
+      () => service.createMessage({
+        actor: actor(),
+        conversationId,
+        payload: { kind: "text", content: { text: "hello" } }
+      }),
+      (error) => error instanceof InternalContractError
+        && error.context === "conversations.messages.event.created"
+    );
+    assert.equal(push.published.length, 0);
+  }
+});
+
+test("post-commit broker failure returns the message and emits one traceable structured warning", async () => {
+  const brokerError = new Error("redis publish unavailable");
+  const push = capturingBus({ error: brokerError, backend: "redis" });
+  const warnings: Array<{ name: string; fields?: Record<string, unknown> }> = [];
+  const service = createConversationService(repository({
+    async findVisibleAccessRecord() {
+      return accessRecord();
+    },
+    async createUserMessage(input) {
+      return messageRow({ contentJson: input.contentJson });
+    }
+  }), {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now,
+    bus: push.bus,
+    logger: {
+      warn(name, fields) {
+        warnings.push(fields ? { name, fields } : { name });
+      }
+    }
+  });
+
+  const result = await service.createMessage({
+    actor: actor(),
+    conversationId,
+    payload: { kind: "text", content: { text: "hello" } }
+  });
+
+  assert.equal(result.id, messageId);
+  assert.equal(push.published.length, 1);
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0]?.name, "conversation_message_publish_failed");
+  assert.deepEqual(warnings[0]?.fields, {
+    event_id: (parseCreatedEvent(push.published[0]?.data)).event_id,
+    topic: `conversation:${conversationId}`,
+    conversation_id: conversationId,
+    message_id: messageId,
+    seq: 1,
+    broker_backend: "redis",
+    error: brokerError
+  });
 });
 
 test("file-card creation authorizes through Drive and persists only server-owned item and filename metadata", async () => {
   const driveCalls: unknown[] = [];
   let received: unknown;
+  const push = capturingBus();
   const service = createConversationService(repository({
     async findVisibleAccessRecord() {
       return accessRecord();
@@ -431,7 +613,8 @@ test("file-card creation authorizes through Drive and persists only server-owned
         parsedText: "secret contents"
       };
     }),
-    now: () => now
+    now: () => now,
+    bus: push.bus
   });
 
   const result = await service.createMessage({
@@ -453,6 +636,12 @@ test("file-card creation authorizes through Drive and persists only server-owned
   assert.equal("storage_path" in result.content, false);
   assert.equal("parsed_text" in result.content, false);
   assert.equal("sha256" in result.content, false);
+  assert.equal(push.published.length, 1);
+  const event = parseCreatedEvent(push.published[0]?.data);
+  assert.deepEqual(event.data, result);
+  assert.equal(JSON.stringify(event).includes("/private/brief-v3.docx"), false);
+  assert.equal(JSON.stringify(event).includes("secret contents"), false);
+  assert.equal(JSON.stringify(event).includes("secret-hash"), false);
 });
 
 test("file-card creation maps forbidden and missing Drive items to the same non-oracular 404", async () => {
@@ -512,6 +701,7 @@ test("file-card creation rejects mismatched Drive project/item returns and prese
   }
 
   const unexpected = new Error("database disconnected");
+  const push = capturingBus();
   const service = createConversationService(repository({
     async findVisibleAccessRecord() {
       return accessRecord();
@@ -519,7 +709,10 @@ test("file-card creation rejects mismatched Drive project/item returns and prese
     async createUserMessage() {
       throw unexpected;
     }
-  }), { driveFiles: driveFiles(async () => { throw new Error("Drive not expected"); }) });
+  }), {
+    driveFiles: driveFiles(async () => { throw new Error("Drive not expected"); }),
+    bus: push.bus
+  });
   await assert.rejects(
     () => service.createMessage({
       actor: actor(),
@@ -528,6 +721,7 @@ test("file-card creation rejects mismatched Drive project/item returns and prese
     }),
     (error) => error === unexpected
   );
+  assert.equal(push.published.length, 0);
 });
 
 test("conversation output assembly drift becomes InternalContractError instead of a client 422", async () => {

@@ -244,6 +244,100 @@ test("R12 message VMs validate text/file cards fail-closed and bound future cont
   assert.equal(schema.safeParse({ ...base, seq: Number.MAX_SAFE_INTEGER + 1, kind: "text", content: { text: "x" } }).success, false);
 });
 
+test("R12 message-created events are strict complete envelopes bound to one conversation topic", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationMessageCreatedEventSchema");
+  const message = {
+    id: messageId,
+    conversation_id: conversationId,
+    seq: 7,
+    sender_type: "user",
+    sender_user_id: userId,
+    kind: "text",
+    content: { text: "请先核对引用。" },
+    thread_root_id: null,
+    created_at: "2026-07-12T08:31:00.123Z"
+  };
+  const event = {
+    event_id: "41000000-0000-4000-8000-000000000041",
+    type: "conversation.message.created",
+    topic: `conversation:${conversationId}`,
+    ts: "2026-07-12T08:31:00.123Z",
+    actor: { actor_kind: "human", actor_user_id: userId, label: "R12 owner" },
+    project_id: projectId,
+    preview_text: "请先核对引用。",
+    data: message
+  };
+
+  assert.deepEqual(schema.parse(event), event);
+  for (const invalid of [
+    { ...event, type: "conversation.message.delta" },
+    { ...event, topic: "conversation:30000000-0000-4000-8000-000000000099" },
+    { ...event, project_id: undefined },
+    { ...event, hidden: "leak" },
+    { ...event, data: { ...message, sender_type: "cuu" } },
+    {
+      ...event,
+      data: { ...message, sender_user_id: "60000000-0000-4000-8000-000000000099" }
+    },
+    { ...event, data: { ...message, seq: undefined } },
+    {
+      ...event,
+      data: {
+        ...message,
+        kind: "file_card",
+        content: { drive_item_id: driveItemId, snapshot_name: "brief.docx", parsed_text: "secret" }
+      }
+    }
+  ]) {
+    assert.equal(schema.safeParse(invalid).success, false);
+  }
+});
+
+test("R12 typing events reserve a strict server-owned 3000ms transient contract only", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationPresenceTypingEventSchema");
+  const event = {
+    event_id: "42000000-0000-4000-8000-000000000042",
+    type: "conversation.presence.typing",
+    topic: `conversation:${conversationId}`,
+    ts: "2026-07-12T08:31:00.000Z",
+    actor: { actor_kind: "human", actor_user_id: userId, label: "R12 owner" },
+    data: {
+      conversation_id: conversationId,
+      user_id: userId,
+      ttl_ms: 3000,
+      expires_at: "2026-07-12T08:31:03.000Z"
+    }
+  };
+
+  assert.deepEqual(schema.parse(event), event);
+  for (const invalid of [
+    { ...event, type: "conversation.message.created" },
+    { ...event, topic: "conversation:30000000-0000-4000-8000-000000000099" },
+    { ...event, extra: true },
+    { ...event, data: { ...event.data, user_id: "browser-user" } },
+    {
+      ...event,
+      actor: { ...event.actor, actor_user_id: "60000000-0000-4000-8000-000000000099" }
+    },
+    { ...event, data: { ...event.data, ttl_ms: 2999 } },
+    { ...event, data: { ...event.data, expires_at: "2026-07-12T08:31:02.999Z" } }
+  ]) {
+    assert.equal(schema.safeParse(invalid).success, false);
+  }
+
+  for (const reservedName of [
+    "conversationMessageDeltaEventSchema",
+    "conversationToolBeginEventSchema",
+    "conversationToolOutputDeltaEventSchema",
+    "conversationToolEndEventSchema",
+    "conversationActionCardUpdatedEventSchema",
+    "conversationItemStartedEventSchema",
+    "conversationItemCompletedEventSchema"
+  ]) {
+    assert.equal((contracts as Record<string, unknown>)[reservedName], undefined, reservedName);
+  }
+});
+
 test("R12 conversation pages expose canonical round-trip cursors and explicit message pagination", () => {
   const conversationPageSchema = requiredSchema<Record<string, unknown>>("conversationListPageVmSchema");
   const messagePageSchema = requiredSchema<Record<string, unknown>>("conversationMessagePageVmSchema");
@@ -706,6 +800,11 @@ test("R12 conversation topics and all nine event names are formal protocol value
     { kind: "conversation", topic: `conversation:${conversationId}` },
     { kind: "conversation", topic: "conversation:not-a-uuid", id: "not-a-uuid" },
     { kind: "conversation", topic: `user:${conversationId}`, id: conversationId },
+    {
+      kind: "conversation",
+      topic: "conversation:AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+      id: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"
+    },
     {
       kind: "conversation",
       topic: `conversation:${conversationId}`,

@@ -129,15 +129,15 @@ project_ai_governance
 
 ### SSE(扩展 `apps/api/src/sse/`)
 
-- 事件层新增 topic 族 `conversation`:事件 `conversation.message.created`(整条小消息)、`conversation.message.delta`(Cuu 流式)、`conversation.tool.begin/output_delta/end`、`conversation.action_card.updated`、`conversation.item.started/completed`(兜底)——命名与分层按 codex 规范(01 §1)。现有 `/me` 仍只订个人 topic;工作台用新增 `/api/push/stream/conversation/:id` 订当前会话,不把 broker 不具备的多 topic/replay 能力写成假承诺。
+- 事件层已实现 topic 族 `conversation` 与严格 `conversation.message.created` payload/生产者(整条已校验消息,含 `seq`),工作台用 `/api/push/stream/conversation/:id` 只订当前会话;现有 `/me` 仍只订个人 topic。其余名字当前只保留名称,没有假 `unknown` payload 或运行时生产者:typing 归批2,`conversation.action_card.updated` 与 `conversation.item.started/completed` 归批3,需要真 turn/LLM 通道的 `conversation.message.delta` 与 `conversation.tool.begin/output_delta/end` 归批4。
 - topic-access:按会话可见性鉴权(main=项目所属 workspace 的 active membership,collab=参与者且租户一致);沿用 EC-1 uuid 守卫。broker 不存回放日志,断线恢复必须用 `GET messages?afterSeq=` 补缺口,不得把 `Last-Event-ID` 写成假 reconcile。
-- typing 指示走瞬态事件 `conversation.presence.typing`(不落库,3s 过期)。
+- `conversation.presence.typing` 当前只实现严格保留契约(服务端用户身份、固定 3000ms 过期);本批没有生产者,运行时 typing 要到批2 presence/typing 接线后才可宣称可用。typing 瞬态且永不参与 reconcile。
 
 ### 任务
 
 - [ ] 迁移+schema+repository(含 seq 分配:原子 `UPDATE project_conversations SET next_seq=next_seq+1 RETURNING next_seq`;`UNIQUE(conversation_id,seq)` 是最终防线,不使用会并发撞号的裸 `max(seq)+1`;迁移回填 workspace 非空的 active 存量项目,不为 workspace 缺失的脏项目伪造租户)
 - [ ] routes + 鉴权 + uuid 守卫 + json-body 校验;repository 单测 + 路由测试
-- [ ] SSE topic + access + reconcile;事件 shape 单测
+- [x] SSE topic + access + message-created 生产者 + DB reconcile 契约;created/typing 事件 shape 单测(其余事件名仅保留)
 - [ ] PG smoke 增断言:建项目→main 会话自动存在→发消息→afterSeq 拉取有序
 - [ ] `pnpm -r typecheck` + CI 全绿
 

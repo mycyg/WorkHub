@@ -49,7 +49,7 @@ function isEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
   return (record.ok === true && "data" in record) || (record.ok === false && "error" in record);
 }
 
-function encodedStreamPath(kind: "workitem" | "run" | "session" | "proposal", id: string) {
+function encodedStreamPath(kind: "workitem" | "run" | "session" | "proposal" | "conversation", id: string) {
   return `/api/push/stream/${kind}/${encodeURIComponent(id)}`;
 }
 
@@ -324,7 +324,8 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
       workItem: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("workitem", id)),
       run: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("run", id)),
       session: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("session", id)),
-      proposal: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("proposal", id))
+      proposal: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("proposal", id)),
+      conversation: (id) => joinApiUrl(options.baseUrl, encodedStreamPath("conversation", id))
     },
     health: () => request<HealthResponse>("/api/health"),
     openapi: () => request<unknown>("/api/openapi.json"),

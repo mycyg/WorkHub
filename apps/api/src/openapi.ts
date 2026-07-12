@@ -6345,6 +6345,17 @@ export function getOpenApiDocument() {
           ...eventStreamAuthResponse("Proposal server-sent event stream", ["invalid_client_token", "forbidden"])
         }
       },
+      "/api/push/stream/conversation/{id}": {
+        get: {
+          tags: ["push"],
+          summary: "Subscribe to one conversation push topic",
+          parameters: [pathUuidParameter("id")],
+          ...eventStreamAuthResponse(
+            "Live-only server-sent events for one conversation topic; no replay is provided. After connected, catch up through GET /api/conversations/{id}/messages?afterSeq=... using the highest locally durable seq.",
+            ["invalid_client_token", "forbidden"]
+          )
+        }
+      },
       "/api/sessions": {
         post: {
           tags: ["sessions"],

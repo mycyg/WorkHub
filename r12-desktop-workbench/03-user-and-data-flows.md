@@ -74,9 +74,16 @@
 ### A. 主区消息
 
 ```
-composer(chip 只含 id) → POST /conversations/:id/messages
+composer(chip 只含 id) → POST /api/conversations/:id/messages
   → 校验 membership + chip 权限 → 写 conversation_messages(seq 唯一)
-  → SSE /me 流 conversation.message.created → 各端 store 按会话切片渲染
+  → 提交并校验完整消息 VM 后,尽力发布 conversation.message.created
+
+客户端先订阅 GET /api/push/stream/conversation/:id(单会话、live-only、无 replay)
+  → 收到 connected(resume_mode=fresh) 后,从本地最高 durable seq 调 GET /api/conversations/:id/messages?afterSeq=
+  → while has_more,用 next_after_seq 继续拉;按 (conversation_id,seq) 去重后渲染
+  → 实时 created.seq > lastSeq+1 时走同一 GET 补洞;订阅与 GET 重叠由 seq 去重
+  → broker 发布失败/断线期间的消息仍以 PostgreSQL 为准,由 afterSeq 补齐
+  → typing 是 3s 瞬态信号,不落库、永不 reconcile;当前仅保留契约,运行时生产者归批2
 ```
 
 ### B. 观察者 → 行动卡

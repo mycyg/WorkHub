@@ -407,6 +407,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["get", "/api/push/stream/run/{id}"],
     ["get", "/api/push/stream/session/{id}"],
     ["get", "/api/push/stream/proposal/{id}"],
+    ["get", "/api/push/stream/conversation/{id}"],
     ["post", "/api/workitems"],
     ["post", "/api/workitems/{id}/evidence-bindings"],
     ["get", "/api/workitems/{id}/deliverables/{acceptedChangeId}/download"],
@@ -529,8 +530,7 @@ test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP end
 
   for (const stale of [
     "/api/conversations/{id}/action-cards/{itemId}/decide",
-    "/api/conversations/{id}/action-cards/{itemId}/undo",
-    "/api/push/stream/conversation/{id}"
+    "/api/conversations/{id}/action-cards/{itemId}/undo"
   ]) {
     assert.equal(body.paths[stale], undefined, `${stale} must not be documented before its implementation batch`);
   }
@@ -1026,7 +1026,8 @@ test("push streams and audit OpenAPI routes document runtime UUID guards and res
     "/api/push/stream/req/{id}",
     "/api/push/stream/run/{id}",
     "/api/push/stream/session/{id}",
-    "/api/push/stream/proposal/{id}"
+    "/api/push/stream/proposal/{id}",
+    "/api/push/stream/conversation/{id}"
   ] as const) {
     assert.deepEqual(parameterByName(body.paths, path, "get", "id"), {
       name: "id",
@@ -1043,7 +1044,8 @@ test("push streams and audit OpenAPI routes document runtime UUID guards and res
     "/api/push/stream/req/{id}",
     "/api/push/stream/run/{id}",
     "/api/push/stream/session/{id}",
-    "/api/push/stream/proposal/{id}"
+    "/api/push/stream/proposal/{id}",
+    "/api/push/stream/conversation/{id}"
   ] as const) {
     assert.ok(
       responseObject(body.paths, path, "get", "200")?.content?.["text/event-stream"],
@@ -1057,7 +1059,8 @@ test("push streams and audit OpenAPI routes document runtime UUID guards and res
     "/api/push/stream/req/{id}",
     "/api/push/stream/run/{id}",
     "/api/push/stream/session/{id}",
-    "/api/push/stream/proposal/{id}"
+    "/api/push/stream/proposal/{id}",
+    "/api/push/stream/conversation/{id}"
   ] as const) {
     assert.deepEqual(jsonErrorCodeProperty(body.paths, path, "get", "401"), {
       type: "string",
@@ -1074,13 +1077,26 @@ test("push streams and audit OpenAPI routes document runtime UUID guards and res
     "/api/push/stream/req/{id}",
     "/api/push/stream/run/{id}",
     "/api/push/stream/session/{id}",
-    "/api/push/stream/proposal/{id}"
+    "/api/push/stream/proposal/{id}",
+    "/api/push/stream/conversation/{id}"
   ] as const) {
     assert.deepEqual(jsonErrorCodeProperty(body.paths, path, "get", "403"), {
       type: "string",
       enum: ["invalid_client_token", "forbidden"]
     });
   }
+
+  const conversationStream = body.paths["/api/push/stream/conversation/{id}"]?.get as {
+    responses?: Record<string, { description?: string }>;
+  } | undefined;
+  assert.deepEqual(Object.keys(conversationStream?.responses ?? {}).sort(), ["200", "401", "403"]);
+  assert.match(conversationStream?.responses?.["200"]?.description ?? "", /one conversation topic/iu);
+  assert.match(conversationStream?.responses?.["200"]?.description ?? "", /live-only/iu);
+  assert.match(conversationStream?.responses?.["200"]?.description ?? "", /no replay/iu);
+  assert.match(
+    conversationStream?.responses?.["200"]?.description ?? "",
+    /GET \/api\/conversations\/\{id\}\/messages\?afterSeq/iu
+  );
 
   assert.deepEqual(parameterByName(body.paths, "/api/workitems/{id}/audit", "get", "id"), {
     name: "id",
