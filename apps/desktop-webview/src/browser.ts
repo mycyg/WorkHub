@@ -242,6 +242,10 @@ const desktopBoxHomeCss = [
 ].join("");
 
 // R8 S3b：命令 → 既有壳层路由（复用 hashchange→activateRoute→懒拉 LIVE 数据）。drive 暂经项目下钻进入。
+// 这张表只喂 boot()/mountCommandHome()——那条路径已被 R8 的 bootSpotlight() 取代，当前是死代码
+// （没有任何地方调用 boot()），但它仍然编译进 bundle，Record<CommandId,string> 仍要求穷举全部键。
+// R12 批 1 新增的 workbench/new_project 两条不走盒子内联路由（它们 invoke Tauri open_workbench 开
+// 独立窗口，见 spotlight/views/workbench-open.ts），这里只给个占位路由让 tsc 通过。
 const COMMAND_ROUTE: Record<CommandId, string> = {
   intake: "/intake",
   approvals: "/approvals",
@@ -255,7 +259,9 @@ const COMMAND_ROUTE: Record<CommandId, string> = {
   agents: "/dashboard/agents",
   team: "/team",
   notifications: "/notifications",
-  settings: "/settings"
+  settings: "/settings",
+  workbench: "/workbench",
+  new_project: "/workbench"
 };
 
 // R8 彻底重构：主窗 = 一个常驻的「透明玻璃命令盒」（搜索框 + 能力列表）就是整个 app。
