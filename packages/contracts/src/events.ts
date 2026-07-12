@@ -149,3 +149,62 @@ export const conversationPresenceTypingEventSchema = z
     }
   });
 export type ConversationPresenceTypingEvent = z.infer<typeof conversationPresenceTypingEventSchema>;
+
+// R12 批3：行动卡变更事件。payload 只带最小可渲染摘要（卡片 id/状态、条目 id/kind/confidence/status），
+// 不携带 title_md 全文/工作项细节——客户端收到后按需拉 GET 行动卡详情，事件本身只负责"该刷新了"。
+// 事件的 actor 是 Cuu（观察者）自己产出卡片时为 ai；被 @ 的负责人做决策/撤销时为 human。
+const actionCardUpdatedActorSchema = z
+  .object({
+    actor_kind: z.enum(["human", "ai"]),
+    actor_user_id: idSchema.optional(),
+    label: z.string().optional()
+  })
+  .strict();
+
+const actionCardUpdatedItemSummarySchema = z
+  .object({
+    id: idSchema,
+    kind: z.enum(["execute", "decide", "observe"]),
+    confidence: z.enum(["high", "mid", "low"]),
+    status: z.enum(["running", "done", "undone", "waiting_decision", "dismissed", "escalated"])
+  })
+  .strict();
+
+export const conversationActionCardUpdatedEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.action_card.updated"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    actor: actionCardUpdatedActorSchema,
+    project_id: idSchema,
+    preview_text: z.string().max(200).optional(),
+    data: z
+      .object({
+        conversation_id: idSchema,
+        action_card_id: idSchema,
+        message_id: idSchema,
+        status: z.enum(["active", "superseded"]),
+        appended: z.boolean(),
+        items: z.array(actionCardUpdatedItemSummarySchema).max(8)
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "action-card-updated topic must match data.conversation_id"
+      });
+    }
+    if (event.actor.actor_kind === "human" && !event.actor.actor_user_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["actor", "actor_user_id"],
+        message: "human actors on action-card-updated events must carry actor_user_id"
+      });
+    }
+  });
+export type ConversationActionCardUpdatedEvent = z.infer<typeof conversationActionCardUpdatedEventSchema>;
