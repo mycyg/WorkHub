@@ -59,7 +59,10 @@ const OBSERVER_ACTOR_ID = "conversation-observer";
 const OBSERVER_ACTOR_LABEL = "Cuu";
 const DEFAULT_INTERVAL_MS = 15_000;
 const DEFAULT_MAX_CANDIDATES_PER_TICK = 10;
-const DEFAULT_MAX_MESSAGES_PER_ANALYSIS = 200;
+// 真 key 冒烟(qa/r12-real-key-smoke.ts)逮到的跨层漂移:仓库层 listMessagesForAnalysis 的
+// assertLimit 上限是 100,这里原来写 200——mock 单测不校验所以全绿,真库一跑就 failed:1。
+// 对齐到仓库上限;跨层一致性由 conversation-observer.test.ts 的对齐断言锁死,防再漂。
+export const DEFAULT_MAX_MESSAGES_PER_ANALYSIS = 100;
 const DEFAULT_MAX_ANALYSIS_TOKENS = 2000;
 // 00-interaction-design.md §2.3：执行类条目「10 分钟内可撤销」。
 const UNDO_WINDOW_MS = 10 * 60 * 1000;

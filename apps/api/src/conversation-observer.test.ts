@@ -17,9 +17,11 @@ import type { BudgetPolicy } from "@workhub/cost";
 
 import {
   createConversationObserverScheduler,
+  DEFAULT_MAX_MESSAGES_PER_ANALYSIS,
   isWithinQuietHours,
   type ConversationObserverDeps
 } from "./workers/conversation-observer.js";
+import { ACTION_CARD_ANALYSIS_LIMIT_MAX } from "@workhub/db";
 import type { AgentRunQueueRecord } from "./workers/agent-runner.js";
 
 const now = new Date("2026-07-12T09:00:00.000Z");
@@ -807,4 +809,11 @@ test("stats accumulate tick/analyzed/card counts across ticks", async () => {
   assert.equal(stats.analyzed_count, 1);
   assert.equal(stats.cards_created_count, 1);
   assert.equal(stats.error_count, 0);
+});
+
+test("R12 真 key 冒烟回归:分析窗口默认值不得超过 action-cards 仓库的 limit 上限(跨层漂移曾致真库 tick 全失败)", () => {
+  assert.ok(
+    DEFAULT_MAX_MESSAGES_PER_ANALYSIS <= ACTION_CARD_ANALYSIS_LIMIT_MAX,
+    `observer default analysis window (${DEFAULT_MAX_MESSAGES_PER_ANALYSIS}) must fit the repository cap (${ACTION_CARD_ANALYSIS_LIMIT_MAX})`
+  );
 });

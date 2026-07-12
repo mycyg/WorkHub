@@ -52,7 +52,11 @@ export class ActionCardSequenceAllocationError extends NamedActionCardRepository
 export class ActionCardInsertFailedError extends NamedActionCardRepositoryError {}
 export class ActionCardMessageInsertFailedError extends NamedActionCardRepositoryError {}
 
-function assertLimit(limit: number, max = 100) {
+// 分析窗口上限——conversation-observer worker 的 DEFAULT_MAX_MESSAGES_PER_ANALYSIS 必须 ≤ 它
+// (跨层一致性在 worker 测试里有对齐断言;此前 worker 写 200 被真 key 冒烟逮到)。
+export const ACTION_CARD_ANALYSIS_LIMIT_MAX = 100;
+
+function assertLimit(limit: number, max = ACTION_CARD_ANALYSIS_LIMIT_MAX) {
   if (!Number.isInteger(limit) || limit < 1 || limit > max) {
     throw new ActionCardRepositoryInputError(`limit must be an integer from 1 through ${max}`);
   }
@@ -115,10 +119,10 @@ export function createActionCardRepository(db: WorkHubDb) {
           projectId: projectConversations.projectId,
           workspaceId: projectConversations.workspaceId,
           nextSeq: projectConversations.nextSeq,
-          lastAnalyzedSeq: sql<number>`coalesce(${conversationObserverState.lastAnalyzedSeq}, 0)`,
+          lastAnalyzedSeq: sql<number>`coalesce(${conversationObserverState.lastAnalyzedSeq}, 0)`.mapWith(Number),
           activeCardId: conversationObserverState.activeCardId,
-          consecutiveFailures: sql<number>`coalesce(${conversationObserverState.consecutiveFailures}, 0)`,
-          silenceWindowSecs: sql<number>`coalesce(${projectAiGovernance.silenceWindowSecs}, ${DEFAULT_SILENCE_WINDOW_SECS})`,
+          consecutiveFailures: sql<number>`coalesce(${conversationObserverState.consecutiveFailures}, 0)`.mapWith(Number),
+          silenceWindowSecs: sql<number>`coalesce(${projectAiGovernance.silenceWindowSecs}, ${DEFAULT_SILENCE_WINDOW_SECS})`.mapWith(Number),
           quietHoursJson: sql<Record<string, unknown>>`coalesce(${projectAiGovernance.quietHoursJson}, '{"enabled":false}'::jsonb)`,
           lastMessageAt: lastMessageAtSelection
         })
@@ -615,7 +619,7 @@ async function appendToCard(
   at: Date
 ): Promise<UpsertCardResult> {
   const [maxOrdinalRow] = await tx
-    .select({ maxOrdinal: sql<number>`coalesce(max(${actionCardItems.ordinal}), -1)` })
+    .select({ maxOrdinal: sql<number>`coalesce(max(${actionCardItems.ordinal}), -1)`.mapWith(Number) })
     .from(actionCardItems)
     .where(eq(actionCardItems.actionCardId, activeCard.id));
   const startOrdinal = (maxOrdinalRow?.maxOrdinal ?? -1) + 1;
