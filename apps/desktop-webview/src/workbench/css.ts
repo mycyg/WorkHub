@@ -170,9 +170,13 @@ export const workbenchCss = [
   ".wh-wb-chat-pending-retry{margin-left:4px;border:0;background:transparent;color:var(--ds-accent-2);" +
     "font:700 10.5px/1 var(--ds-font);cursor:pointer;padding:0;text-decoration:underline}",
   ".wh-wb-chat-filecard{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--ds-radius-md);" +
-    "border:1px solid var(--ds-glass-border);background:var(--ds-glass);cursor:default}",
+    "border:1px solid var(--ds-glass-border);background:var(--ds-glass);cursor:default;font:inherit;color:inherit;text-align:left}",
   ".wh-wb-chat-filecard svg{width:15px;height:15px;color:var(--ds-ink-muted);flex:0 0 auto}",
   ".wh-wb-chat-filecard-name{font:600 12.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  // R12 批 6：已落库消息的 file_card 可点开右栏预览——发送中的乐观渲染（无 --live 修饰符）继续
+  // 保持 cursor:default，不给假点击反馈。
+  ".wh-wb-chat-filecard--live{cursor:pointer;transition:background var(--ds-dur-fast) var(--ds-ease),border-color var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-chat-filecard--live:hover{background:var(--ds-glass-strong);border-color:rgba(122,162,255,.3)}",
   ".wh-wb-chat-actioncard{max-width:420px;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);" +
     "background:var(--wb-cuu-soft);padding:11px 13px}",
   ".wh-wb-chat-actioncard-h{font:700 12.5px/1.3 var(--ds-font);color:var(--ds-ink)}",

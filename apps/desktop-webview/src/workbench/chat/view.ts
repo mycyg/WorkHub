@@ -110,6 +110,9 @@ export function mountChatView(
     members: readonly WorkbenchMemberVM[];
     getClientToken: () => string | undefined;
     streamUrl: string;
+    // R12 批 6：file_card 点击 → 右栏预览，和网盘标签共用同一个情境面板控制器（在 shell.ts 挂载一次，
+    // 活过项目/标签切换——见 workbench/drive/side-panel.ts 顶部注释）。可选，测试/未来消费者不必补桩。
+    onOpenDriveFile?: (input: { itemId: string; itemName: string }) => void;
   }
 ): ChatViewHandle {
   const doc = container.ownerDocument ?? document;
@@ -628,6 +631,14 @@ export function mountChatView(
     const retryBtn = target.closest<HTMLElement>("[data-wb-chat-retry-pending]");
     if (retryBtn) {
       retryPending(retryBtn.dataset.wbChatRetryPending);
+      return;
+    }
+    const fileCardBtn = target.closest<HTMLElement>("[data-wb-chat-open-file]");
+    if (fileCardBtn?.dataset.wbChatOpenFile) {
+      input.onOpenDriveFile?.({
+        itemId: fileCardBtn.dataset.wbChatOpenFile,
+        itemName: fileCardBtn.dataset.wbChatOpenFileName ?? ""
+      });
     }
   });
 

@@ -124,14 +124,16 @@ test("renderMessageHtml renders a cuu-sent message with the cuu avatar variant a
   assert.match(html, />Cuu</u);
 });
 
-test("renderMessageHtml renders a file_card message as a non-interactive file card (no click affordance yet)", () => {
+// R12 批 6：file_card 点击 → 右栏预览（和网盘标签共用同一个情境面板组件）——上面批 2 的原始测试
+// 名字就叫"no click affordance yet"，本来就预告了这次升级在批 6 发生；这不是迁就实现改断言，
+// 是照原定计划把断言换成新行为（真按钮 + 携带 drive_item_id，不是 onclick 内联脚本那种假接线）。
+test("renderMessageHtml renders a confirmed file_card message as a real, clickable button carrying its drive item id", () => {
   const html = renderMessageHtml(
     baseMessage({ kind: "file_card", content: { drive_item_id: "drive-1", snapshot_name: "投放周报 W27.xlsx" } }),
     ctxWith([])
   );
   assert.match(html, /投放周报 W27\.xlsx/u);
-  assert.match(html, /wh-wb-chat-filecard/u);
-  assert.doesNotMatch(html, /onclick/u);
+  assert.match(html, /<button[^>]*wh-wb-chat-filecard[^>]*data-wb-chat-open-file="drive-1"[^>]*data-wb-chat-open-file-name="投放周报 W27\.xlsx"/u);
 });
 
 test("renderMessageHtml renders a system_event message as a collapsed single line, not a full bubble", () => {
@@ -207,6 +209,9 @@ test("renderPendingOutgoingHtml renders a pending file attachment as a file card
   );
   assert.match(html, /wh-wb-chat-filecard/u);
   assert.match(html, /周报\.xlsx/u);
+  // 发送中的乐观渲染还没有服务端确认的 drive_item_id 归属——不给「点了但打不开预览」的假点击反馈。
+  assert.doesNotMatch(html, /wh-wb-chat-filecard--live/u);
+  assert.doesNotMatch(html, /data-wb-chat-open-file/u);
 });
 
 // —— typing —— //

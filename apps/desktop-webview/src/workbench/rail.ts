@@ -19,19 +19,20 @@ function projectInitial(name: string): string {
 
 // 项目行下的树叶——批 1 全部只读(没有任何视图能接)。批 2 把主区群聊接进这个窗口后，「主区」升级成
 // 真按钮(会话点击路由：点它把焦点交回已经挂载好的 chat composer，见 shell.ts 的 onOpenMainConversation)；
-// 「网盘」还是批 6 的事，继续保持非交互（css.ts 里 .wh-wb-leaf 没有 hover/cursor:pointer，
-// .wh-wb-leaf--live 才有——只加在主区这一个叶子上）。
-function renderProjectTreeLeavesHtml(vm: WorkbenchPageVM, zh: boolean): string {
+// 批 6 把网盘视图接进这个窗口后，「网盘」同样升级成真按钮(data-wb-open-drive，切中栏到 drive 标签，
+// 见 shell.ts 的 onOpenDrive)——.wh-wb-leaf--live 现在挂在两个叶子上。selected 参数标出当前中栏
+// 显示哪个标签(sel 高亮跟着走，而不是主区永远高亮)。
+function renderProjectTreeLeavesHtml(vm: WorkbenchPageVM, zh: boolean, centerTab: "chat" | "drive"): string {
   const main = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
   const mainLeaf = main
-    ? `<button type="button" class="wh-wb-leaf wh-wb-leaf--live sel" data-wb-open-main-chat>${workbenchIcons.chat}<span>${escapeHtml(main.title)}</span>${
+    ? `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "chat" ? " sel" : ""}" data-wb-open-main-chat>${workbenchIcons.chat}<span>${escapeHtml(main.title)}</span>${
         main.next_seq > 0 ? `<span class="wh-wb-leaf-count">${main.next_seq}</span>` : ""
       }</button>`
     : "";
   const fileCount = vm.recent_project_files.items.length;
-  const driveLeaf = `<div class="wh-wb-leaf">${workbenchIcons.folder}<span>${zh ? "网盘" : "Drive"}</span>${
+  const driveLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "drive" ? " sel" : ""}" data-wb-open-drive>${workbenchIcons.folder}<span>${zh ? "网盘" : "Drive"}</span>${
     fileCount > 0 ? `<span class="wh-wb-leaf-count">${fileCount}</span>` : ""
-  }</div>`;
+  }</button>`;
   return `<div class="wh-wb-tree">${mainLeaf}${driveLeaf}</div>`;
 }
 
@@ -40,12 +41,15 @@ export function renderProjectTreeHtml(input: {
   selectedProjectId: string | undefined;
   vm: WorkbenchPageVM | undefined;
   locale: Locale;
+  centerTab?: "chat" | "drive";
 }): string {
   const zh = input.locale === "zh-CN";
   const rows = input.projects
     .map((project) => {
       const active = project.id === input.selectedProjectId;
-      const leaves = active && input.vm && input.vm.project.id === project.id ? renderProjectTreeLeavesHtml(input.vm, zh) : "";
+      const leaves = active && input.vm && input.vm.project.id === project.id
+        ? renderProjectTreeLeavesHtml(input.vm, zh, input.centerTab ?? "chat")
+        : "";
       return `<div class="wh-wb-project${active ? " active" : ""}">
         <button type="button" class="wh-wb-project-row" data-wb-select-project="${escapeHtml(project.id)}" aria-current="${active ? "true" : "false"}">
           <span class="wh-wb-tile">${escapeHtml(projectInitial(project.name))}</span>
@@ -124,8 +128,8 @@ export type WorkbenchRailHandle = {
   dispose: () => void;
 };
 
-// mount 做四件事：拉项目列表填树 + 选中项目时拉 workbench VM + 新建项目模态提交调真端点 +
-// 「主区」树叶点击路由（网盘树叶仍只读——见 renderProjectTreeLeavesHtml 的注释）。
+// mount 做五件事：拉项目列表填树 + 选中项目时拉 workbench VM + 新建项目模态提交调真端点 +
+// 「主区」/「网盘」树叶点击路由（切 store.centerTab，见 renderProjectTreeLeavesHtml 的注释）。
 export function mountWorkbenchRail(
   container: HTMLElement,
   input: {
@@ -134,6 +138,7 @@ export function mountWorkbenchRail(
     locale: Locale;
     onSelectProject: (projectId: string) => void;
     onOpenMainConversation?: () => void;
+    onOpenDrive?: () => void;
   }
 ): WorkbenchRailHandle {
   let modalName = "";
@@ -154,7 +159,8 @@ export function mountWorkbenchRail(
       projects: state.projects,
       selectedProjectId: state.selectedProjectId,
       vm: state.vm,
-      locale: input.locale
+      locale: input.locale,
+      centerTab: state.centerTab
     })}${renderRailFootHtml(zh, viewerLabel)}${renderNewProjectModalHtml({
       locale: input.locale,
       open: state.newProjectModalOpen,
@@ -234,6 +240,10 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-open-main-chat]")) {
       input.onOpenMainConversation?.();
+      return;
+    }
+    if (target.closest("[data-wb-open-drive]")) {
+      input.onOpenDrive?.();
       return;
     }
     // 取消按钮，或直接点在遮罩背景上（不是点在模态框内容里冒泡出来的）都关闭模态。
