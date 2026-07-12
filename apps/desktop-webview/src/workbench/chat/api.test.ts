@@ -4,8 +4,9 @@ import { test } from "node:test";
 import type { ConversationMessagePageVM, ConversationMessageVM } from "@workhub/contracts";
 
 import {
-  fetchAllConversationMessagesFromStart,
   fetchConversationMessagesPage,
+  fetchLatestConversationMessagesPage,
+  fetchOlderConversationMessagesPage,
   pingConversationTyping,
   sendConversationFileCardMessage,
   sendConversationTextMessage,
@@ -70,65 +71,62 @@ test("fetchConversationMessagesPage URL-encodes the conversation id", async () =
   assert.match(calls[0]!, /^\/api\/conversations\/conv%2Fneeds%20escaping\/messages\?/u);
 });
 
-test("fetchAllConversationMessagesFromStart walks pages forward from afterSeq=0 until has_more is false", async () => {
+// R12 批8：首屏改为直接要「最新一页」（beforeSeq=Number.MAX_SAFE_INTEGER），替换掉批 2 那个
+// "从 afterSeq=0 逐页正向拉到当前"的降级实现——见 api.ts 顶部注释与 batch-2-chat.md 的缺口记录。
+
+test("fetchLatestConversationMessagesPage requests the newest page via beforeSeq=MAX_SAFE_INTEGER", async () => {
   const calls: string[] = [];
-  const pages: ConversationMessagePageVM[] = [
-    { messages: [textMessage("a", 1), textMessage("b", 2)], has_more: true, next_after_seq: 2 },
-    { messages: [textMessage("c", 3)], has_more: false, next_after_seq: 3 }
-  ];
-  let call = 0;
   const client = fakeClient((path) => {
     calls.push(path);
-    return pages[call++]!;
+    return {
+      messages: [textMessage("a", 41), textMessage("b", 42)],
+      has_more: true,
+      next_after_seq: 42,
+      next_before_seq: 41
+    } satisfies ConversationMessagePageVM;
   });
 
-  const result = await fetchAllConversationMessagesFromStart(client, "conv-1", { pageLimit: 2 });
+  const result = await fetchLatestConversationMessagesPage(client, "conv-1", { limit: 50 });
 
-  assert.equal(result.truncated, false);
-  assert.deepEqual(result.messages.map((m) => m.id), ["a", "b", "c"]);
-  assert.deepEqual(calls, [
-    "/api/conversations/conv-1/messages?afterSeq=0&limit=2",
-    "/api/conversations/conv-1/messages?afterSeq=2&limit=2"
-  ]);
+  assert.equal(calls[0], `/api/conversations/conv-1/messages?beforeSeq=${Number.MAX_SAFE_INTEGER}&limit=50`);
+  assert.deepEqual(result.messages.map((m) => m.id), ["a", "b"]);
 });
 
-test("fetchAllConversationMessagesFromStart returns an empty, non-truncated result for a brand-new conversation", async () => {
-  const client = fakeClient(() => ({ messages: [], has_more: false, next_after_seq: 0 }) satisfies ConversationMessagePageVM);
-
-  const result = await fetchAllConversationMessagesFromStart(client, "conv-1");
-
-  assert.deepEqual(result, { messages: [], truncated: false });
-});
-
-test("fetchAllConversationMessagesFromStart stops at maxPages instead of looping forever, and reports truncated:true", async () => {
-  let call = 0;
-  const client = fakeClient(() => {
-    call += 1;
-    // has_more never turns false — a pathological/regressed server would otherwise loop forever.
-    return { messages: [textMessage(`m${call}`, call)], has_more: true, next_after_seq: call } satisfies ConversationMessagePageVM;
+test("fetchLatestConversationMessagesPage defaults limit to 100 when not given", async () => {
+  const calls: string[] = [];
+  const client = fakeClient((path) => {
+    calls.push(path);
+    return { messages: [], has_more: false, next_after_seq: 0 } satisfies ConversationMessagePageVM;
   });
 
-  const result = await fetchAllConversationMessagesFromStart(client, "conv-1", { pageLimit: 1, maxPages: 3 });
+  await fetchLatestConversationMessagesPage(client, "conv-1");
 
-  assert.equal(call, 3);
-  assert.equal(result.truncated, true);
-  assert.equal(result.messages.length, 3);
+  assert.equal(calls[0], `/api/conversations/conv-1/messages?beforeSeq=${Number.MAX_SAFE_INTEGER}&limit=100`);
 });
 
-test("fetchAllConversationMessagesFromStart stops defensively if next_after_seq stops advancing (server contract violation)", async () => {
-  let call = 0;
-  const client = fakeClient(() => {
-    call += 1;
-    // next_after_seq stuck at 5 forever while claiming has_more — must not spin forever. The first
-    // page still legitimately advances afterSeq 0 -> 5; it's the *second* page repeating next_after_seq=5
-    // without progress that must trip the guard (rather than spinning at maxPages=1000).
-    return { messages: [textMessage(`m${call}`, 5)], has_more: true, next_after_seq: 5 } satisfies ConversationMessagePageVM;
+test("fetchOlderConversationMessagesPage builds the beforeSeq/limit query string", async () => {
+  const calls: string[] = [];
+  const client = fakeClient((path) => {
+    calls.push(path);
+    return { messages: [textMessage("z", 10)], has_more: false, next_after_seq: 10, next_before_seq: 10 } satisfies ConversationMessagePageVM;
   });
 
-  const result = await fetchAllConversationMessagesFromStart(client, "conv-1", { pageLimit: 1, maxPages: 1000 });
+  const result = await fetchOlderConversationMessagesPage(client, "conv-1", { beforeSeq: 41, limit: 30 });
 
-  assert.equal(call, 2);
-  assert.equal(result.truncated, true);
+  assert.equal(calls[0], "/api/conversations/conv-1/messages?beforeSeq=41&limit=30");
+  assert.equal(result.messages[0]?.id, "z");
+});
+
+test("fetchOlderConversationMessagesPage URL-encodes the conversation id", async () => {
+  const calls: string[] = [];
+  const client = fakeClient((path) => {
+    calls.push(path);
+    return { messages: [], has_more: false, next_after_seq: 0, next_before_seq: 5 } satisfies ConversationMessagePageVM;
+  });
+
+  await fetchOlderConversationMessagesPage(client, "conv/needs escaping", { beforeSeq: 5 });
+
+  assert.match(calls[0]!, /^\/api\/conversations\/conv%2Fneeds%20escaping\/messages\?/u);
 });
 
 test("sendConversationTextMessage posts a text-kind payload and returns the created message", async () => {

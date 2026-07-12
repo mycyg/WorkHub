@@ -77,3 +77,23 @@ export function groupMessagesByDay(
 export function formatMessageTime(iso: string, locale: Locale): string {
   return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
 }
+
+// R12 批8：消息列表窗口化——不引第三方虚拟滚动库，做最简单的"只挂载最近 N 条到 DOM"。messages 必须
+// 已经按 seq 升序（同 groupMessagesByDay 的前置条件）。更早的那些留在内存（messages 数组本身不截断，
+// 仍然是翻页/去重/SSE 合并的权威数据源），只是不进 DOM——render.ts 在它们前面渲染一个折叠占位，
+// view.ts 的点击/滚动到顶事件把 windowSize 调大来展开，不需要重新请求网络。
+export const DEFAULT_MESSAGE_RENDER_WINDOW = 300;
+
+export type MessageWindow<T> = {
+  visible: T[];
+  hiddenLocalCount: number;
+};
+
+export function windowRecentMessages<T>(
+  messages: readonly T[],
+  windowSize: number = DEFAULT_MESSAGE_RENDER_WINDOW
+): MessageWindow<T> {
+  const size = Math.max(0, Math.trunc(windowSize));
+  const start = Math.max(0, messages.length - size);
+  return { visible: messages.slice(start), hiddenLocalCount: start };
+}

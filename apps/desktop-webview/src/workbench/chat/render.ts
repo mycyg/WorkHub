@@ -64,6 +64,9 @@ export type ChatRenderContext = {
   locale: Locale;
   members: ChatRenderMembers;
   currentUserId: string | undefined;
+  // R12 批8：长文本折叠——展开态是瞬态 UI 状态，由 view.ts 维护一个 message id 集合，不落库。
+  // 可选：既有调用点（现有测试）不用管这个字段，折叠只在文本超过阈值时才生效。
+  expandedMessageIds?: ReadonlySet<string>;
 };
 
 function senderLabel(message: ConversationMessageVM, ctx: ChatRenderContext): string {
@@ -129,10 +132,33 @@ function renderActionCardSummaryHtml(content: Record<string, unknown>, locale: L
   }<div class="wh-wb-chat-actioncard-note">${escapeHtml(note)}</div></div>`;
 }
 
+// R12 批8：长消息折叠——超过阈值的文本消息默认只渲染预览片段 + 「展开全文」，避免超长粘贴/观察者
+// 摘要把单条气泡撑成整屏。展开态由 view.ts 的 expandedMessageIds 驱动（纯函数，这里不持有状态）。
+const LONG_TEXT_FOLD_THRESHOLD_CHARS = 800;
+const LONG_TEXT_PREVIEW_CHARS = 400;
+
+function textMessageBodyHtml(
+  message: Extract<ConversationMessageVM, { kind: "text" }>,
+  ctx: ChatRenderContext
+): string {
+  const text = message.content.text;
+  const zh = ctx.locale === "zh-CN";
+  const isLong = text.length > LONG_TEXT_FOLD_THRESHOLD_CHARS;
+  if (!isLong) {
+    return `<div class="wh-wb-chat-txt">${highlightMentions(escapeHtml(text), ctx.members).replace(/\n/gu, "<br>")}</div>`;
+  }
+  const expanded = ctx.expandedMessageIds?.has(message.id) ?? false;
+  if (expanded) {
+    return `<div class="wh-wb-chat-txt">${highlightMentions(escapeHtml(text), ctx.members).replace(/\n/gu, "<br>")}</div><button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-collapse-message="${escapeHtml(message.id)}">${zh ? "收起" : "Show less"}</button>`;
+  }
+  const preview = text.slice(0, LONG_TEXT_PREVIEW_CHARS);
+  return `<div class="wh-wb-chat-txt wh-wb-chat-txt--folded">${highlightMentions(escapeHtml(preview), ctx.members).replace(/\n/gu, "<br>")}<span class="wh-wb-chat-txt-fade"></span></div><button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-expand-message="${escapeHtml(message.id)}">${zh ? "展开全文" : "Show full message"}</button>`;
+}
+
 function messageBodyHtml(message: ConversationMessageVM, ctx: ChatRenderContext): string {
   switch (message.kind) {
     case "text":
-      return `<div class="wh-wb-chat-txt">${highlightMentions(escapeHtml(message.content.text), ctx.members).replace(/\n/gu, "<br>")}</div>`;
+      return textMessageBodyHtml(message, ctx);
     case "file_card":
       // R12 批 6：file_card 点击 → 右栏预览（和网盘标签共用同一个情境面板组件，见
       // workbench/drive/side-panel.ts）。只有已落库的确认消息才可点——发送中的乐观渲染
@@ -240,6 +266,22 @@ export function renderChatEmptyStateHtml(input: { locale: Locale; projectName: s
   return `<div class="wh-wb-chat-empty ds-anim-fade-in"><span class="wh-wb-chat-empty-icon">${workbenchIcons.cat}</span><h3 class="wh-wb-chat-empty-title">${escapeHtml(title)}</h3><p class="wh-wb-chat-empty-body">${escapeHtml(body)}</p></div>`;
 }
 
+// R12 批8：无权限深链空态（00 §9「无权限项目」行的后半句：深链到无权会话→温和的「你不在这个项目里」
+// +申请入口）。后端对"会话不存在"和"会话存在但你没权限"故意用同一个非预言式 404（见
+// apps/api/src/services/conversations.ts 的 conversation_not_found），前端也没法、也不该替它区分
+// 到底是哪种——"你不在这个项目里"这句话对两种情况都成立、都不算说谎。没有真实的"申请加入"后端流程
+// （仓库现状只有管理员发起的邀请，没有自助申请端点），所以这里不摆一个点了没反应的按钮（04 §4 铁律
+// 3），只给文字指引去找已经在项目里的人帮忙拉。retry 按钮也不给——权限问题重试不会变好，给一个
+// 只会一直失败的按钮不是诚实的加固。
+export function renderConversationAccessDeniedHtml(locale: Locale): string {
+  const zh = locale === "zh-CN";
+  const title = zh ? "你不在这个项目里" : "You're not in this project";
+  const body = zh
+    ? "这个会话对你不可见——可能链接过期，也可能你还没被拉进这个项目。找项目里的同事帮你加进来。"
+    : "This conversation isn't visible to you — the link may be stale, or you haven't been added to this project yet. Ask someone already on the project to add you.";
+  return `<div class="wh-wb-chat-empty ds-anim-fade-in"><span class="wh-wb-chat-empty-icon">${workbenchIcons.lock}</span><h3 class="wh-wb-chat-empty-title">${escapeHtml(title)}</h3><p class="wh-wb-chat-empty-body">${escapeHtml(body)}</p></div>`;
+}
+
 export function renderHistoryLoadErrorHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
   return `<div class="wh-wb-chat-error">${zh ? "没加载出聊天记录，稍后重试" : "Couldn't load the chat history — retry"}<div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-retry-history>${zh ? "重试" : "Retry"}</button></div></div>`;
@@ -250,15 +292,37 @@ export function renderHistoryLoadingHtml(locale: Locale): string {
   return `<div class="wh-wb-wb-loading wh-wb-loading"><span class="wh-wb-spinner"></span>${zh ? "正在加载聊天记录…" : "Loading chat history…"}</div>`;
 }
 
-// 反向翻页需要 beforeSeq（批 0 只给了正向 afterSeq）——批 2 诚实降级为「首屏一次性正向拉到当前」，
-// 命中防御性上限时提示用户，而不是假装"往上翻页"能补出更早的历史。
-export function renderHistoryTruncatedNoticeHtml(locale: Locale): string {
+// R12 批8：「滚到顶加载更早」的占位——批 8 补了 beforeSeq，替换掉批 2 的
+// renderHistoryTruncatedNoticeHtml（那个只能诚实承认"翻不上去"）。四态：
+// - "none"：本地没有隐藏消息，服务端也没有更早的了——真的到最开头，不渲染任何东西。
+// - "local"：本地 messages 数组里还有 DOM 窗口之外的消息（批 8 §2 的 DOM 窗口化），点一下就地展开，
+//   不发网络请求。
+// - "server-idle"/"server-loading"/"server-error"：本地已经展开到头，要不要继续问服务端要更早一页。
+export type LoadEarlierState =
+  | { kind: "none" }
+  | { kind: "local"; hiddenCount: number }
+  | { kind: "server-idle" }
+  | { kind: "server-loading" }
+  | { kind: "server-error" };
+
+export function renderLoadEarlierHtml(state: LoadEarlierState, locale: Locale): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-wb-chat-truncated">${
-    zh
-      ? "这个会话历史很长，只加载了最早的一部分——完整的向上翻页要等后续批次支持。"
-      : "This conversation's history is long — only an early slice loaded. Full backward paging needs a later batch."
-  }</div>`;
+  if (state.kind === "none") {
+    return "";
+  }
+  if (state.kind === "local") {
+    const label = zh
+      ? `展开更早的 ${state.hiddenCount} 条消息`
+      : `Show ${state.hiddenCount} earlier message${state.hiddenCount === 1 ? "" : "s"}`;
+    return `<div class="wh-wb-chat-load-earlier"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-load-earlier>${escapeHtml(label)}</button></div>`;
+  }
+  if (state.kind === "server-loading") {
+    return `<div class="wh-wb-chat-load-earlier wh-wb-chat-load-earlier--loading"><span class="wh-wb-spinner"></span>${zh ? "正在加载更早的消息…" : "Loading earlier messages…"}</div>`;
+  }
+  if (state.kind === "server-error") {
+    return `<div class="wh-wb-chat-load-earlier wh-wb-chat-load-earlier--error">${zh ? "没加载出更早的消息" : "Couldn't load earlier messages"}<button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-load-earlier>${zh ? "重试" : "Retry"}</button></div>`;
+  }
+  return `<div class="wh-wb-chat-load-earlier"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-load-earlier>${zh ? "加载更早的消息" : "Load earlier messages"}</button></div>`;
 }
 
 // —— composer —— //

@@ -192,8 +192,21 @@ export const workbenchCss = [
   ".wh-wb-chat-empty-title{margin:12px 0 0;font:700 15.5px/1.35 var(--ds-font);color:var(--ds-ink)}",
   ".wh-wb-chat-empty-body{margin:8px 0 0;font:500 12.5px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-wb-chat-error{padding:30px 18px;text-align:center;color:var(--ds-ink-muted);font:500 13px/1.6 var(--ds-font)}",
-  ".wh-wb-chat-truncated{margin:0 0 12px;padding:9px 12px;border:1px dashed var(--ds-glass-border);border-radius:var(--ds-radius-md);" +
-    "font:500 11.5px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
+  // R12 批8：滚到顶「加载更早」占位——本地展开/服务端翻页共用同一套外观，loading/error 修饰符切换
+  // 内容而不是重排布局，避免翻页时的视觉跳动。
+  ".wh-wb-chat-load-earlier{margin:0 0 12px;padding:9px 12px;border-radius:var(--ds-radius-md);text-align:center;" +
+    "font:600 11.5px/1.5 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-chat-load-earlier--loading{display:flex;align-items:center;justify-content:center;gap:7px}",
+  ".wh-wb-chat-load-earlier--error{color:var(--ds-danger)}",
+  ".wh-wb-chat-load-earlier button{margin-left:6px}",
+  // 长文本折叠——渐隐尾巴暗示"还有更多"，展开/收起按钮复用消息气泡外的通栏小字链接样式。
+  ".wh-wb-chat-txt--folded{position:relative;max-height:9.5em;overflow:hidden}",
+  ".wh-wb-chat-txt-fade{position:absolute;left:0;right:0;bottom:0;height:2.4em;pointer-events:none;" +
+    "background:linear-gradient(to bottom,transparent,var(--ds-glass))}",
+  ".wh-wb-chat-msg--cuu .wh-wb-chat-txt-fade{background:linear-gradient(to bottom,transparent,var(--wb-cuu-soft))}",
+  ".wh-wb-chat-msg--self .wh-wb-chat-txt-fade{background:linear-gradient(to bottom,transparent,var(--ds-accent-soft))}",
+  ".wh-wb-chat-text-toggle{display:block;margin-top:4px;border:0;background:transparent;color:var(--ds-accent-2);" +
+    "font:700 11px/1 var(--ds-font);cursor:pointer;padding:0;text-decoration:underline}",
 
   // —— 正在输入 —— //
   ".wh-wb-chat-typing{flex:none;padding:0 20px 4px;font:500 11px/1 var(--ds-font);color:var(--ds-ink-faint);" +

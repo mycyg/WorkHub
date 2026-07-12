@@ -3,7 +3,7 @@
 // 是共享给 apps/web 的公共面，为一个只有工作台窗口用的批次特性扩大它的公共接口面不值得；`request<T>`
 // 已经是 WorkHubApiClient 上现成的、供临时/单一消费者端点使用的转发口，apps/web/src/browser.ts:1099
 // 的 client.request<DrivePreviewPayload>(href) 是同款先例），这里只是给 client.request 包一层类型安全
-// 的薄封装 + 首屏历史翻页策略。
+// 的薄封装 + 首屏/向上翻页策略。
 
 import type {
   ConversationMessagePageVM,
@@ -35,45 +35,37 @@ export function fetchConversationMessagesPage(
   return client.request<ConversationMessagePageVM>(`${conversationPath(conversationId, "messages")}?${query.toString()}`);
 }
 
-// 批 0 只给了 afterSeq 正向游标，没有 beforeSeq——不能反向翻页补更早的历史（04 §4 铁律「不改 API」，
-// 本批范围围栏明确禁止碰 packages/contracts/apps/api 之外的契约面）。诚实的降级策略：首屏只在
-// mount 时，从 afterSeq=0 逐页正向推进拉到「当前」（has_more=false），一次性吃下全部历史再渲染，
-// 而不是假装支持"向上翻页补历史"却什么都不做。maxPages 是运行时防御性上限（不是产品设计的截断
-// 阈值）——服务端契约保证 next_after_seq 严格递增，正常情况下这个循环靠 has_more=false 终止；
-// maxPages 只在服务端出现回归 bug（next_after_seq 不推进）时兜底，避免真的死循环。
-// 缺口见 r12-desktop-workbench/reports/batch-2-chat.md：长会话的"回到更早消息"翻页需要批 8 补
-// beforeSeq 端点。
 export const DEFAULT_INITIAL_HISTORY_PAGE_LIMIT = 100;
-export const DEFAULT_INITIAL_HISTORY_MAX_PAGES = 100;
 
-export type InitialHistoryResult = {
-  messages: ConversationMessageVM[];
-  // true = 命中了 maxPages 防御上限（服务端契约异常，不是正常路径）；不是"这个会话历史被有意截断"。
-  truncated: boolean;
-};
-
-export async function fetchAllConversationMessagesFromStart(
+// R12 批8：批 0 只给了 afterSeq，批 2 的首屏策略只能"从 afterSeq=0 逐页正向拉到当前"（长会话是
+// O(会话长度) 且命中防御上限时只能展示最早一部分，见 batch-2-chat.md 的缺口记录）。批 8 补了
+// packages/contracts 的 beforeSeq 反向游标（详见该包 conversationMessageListQuerySchema），首屏改为
+// 直接要「最新一页」——beforeSeq 传 Number.MAX_SAFE_INTEGER（契约允许的游标上界，语义就是「早于一切
+// 已存在的 seq」），一次请求就拿到最近 limit 条，O(1) 而不是 O(会话长度)。
+export function fetchLatestConversationMessagesPage(
   client: ChatApiClient,
   conversationId: string,
-  input: { pageLimit?: number; maxPages?: number } = {}
-): Promise<InitialHistoryResult> {
-  const pageLimit = input.pageLimit ?? DEFAULT_INITIAL_HISTORY_PAGE_LIMIT;
-  const maxPages = input.maxPages ?? DEFAULT_INITIAL_HISTORY_MAX_PAGES;
-  const messages: ConversationMessageVM[] = [];
-  let afterSeq = 0;
-  let pages = 0;
-  for (;;) {
-    const page = await fetchConversationMessagesPage(client, conversationId, { afterSeq, limit: pageLimit });
-    messages.push(...page.messages);
-    pages += 1;
-    if (!page.has_more) {
-      return { messages, truncated: false };
-    }
-    if (pages >= maxPages || page.next_after_seq <= afterSeq) {
-      return { messages, truncated: true };
-    }
-    afterSeq = page.next_after_seq;
-  }
+  input: { limit?: number } = {}
+): Promise<ConversationMessagePageVM> {
+  const query = new URLSearchParams({
+    beforeSeq: String(Number.MAX_SAFE_INTEGER),
+    limit: String(input.limit ?? DEFAULT_INITIAL_HISTORY_PAGE_LIMIT)
+  });
+  return client.request<ConversationMessagePageVM>(`${conversationPath(conversationId, "messages")}?${query.toString()}`);
+}
+
+// R12 批8：「滚到顶加载更早」的网络侧——beforeSeq 传上一页最旧一条的 seq（服务端回的 next_before_seq，
+// 空页时保持不变，见 packages/db/src/repositories/conversations.ts 的 listMessagesBefore 注释）。
+export function fetchOlderConversationMessagesPage(
+  client: ChatApiClient,
+  conversationId: string,
+  input: { beforeSeq: number; limit?: number }
+): Promise<ConversationMessagePageVM> {
+  const query = new URLSearchParams({
+    beforeSeq: String(input.beforeSeq),
+    limit: String(input.limit ?? DEFAULT_INITIAL_HISTORY_PAGE_LIMIT)
+  });
+  return client.request<ConversationMessagePageVM>(`${conversationPath(conversationId, "messages")}?${query.toString()}`);
 }
 
 export function sendConversationTextMessage(
