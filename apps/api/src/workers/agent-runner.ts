@@ -118,6 +118,7 @@ import {
 import { getDefaultProjectHydrator, type ProjectHydrator } from "./project-hydrate.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
 import { createRunConversationReportHook } from "../services/run-conversation-report.js";
+import { createActionCardRunSettlementHook } from "../services/action-card-run-settlement.js";
 import { getDefaultTaskDispatcher } from "../services/task-dispatcher.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
@@ -2863,6 +2864,20 @@ function getDefaultRunConversationReportHook() {
   return defaultRunConversationReportHook;
 }
 
+// R13（execute 类 action_card_items.status 永远停在 running）：条目结算器——挂进下面 runSettled 组合链
+// 的一环，见 services/action-card-run-settlement.ts 顶部的终态映射表与"已知风险"说明。放在会话汇报器
+// 之前：先改状态再汇报。
+let defaultActionCardRunSettlementHook: ReturnType<typeof createActionCardRunSettlementHook> | undefined;
+
+function getDefaultActionCardRunSettlementHook() {
+  if (!defaultActionCardRunSettlementHook) {
+    defaultActionCardRunSettlementHook = createActionCardRunSettlementHook({
+      actionCards: createActionCardRepository(getSharedDatabaseClient().db)
+    });
+  }
+  return defaultActionCardRunSettlementHook;
+}
+
 export function getDefaultAgentRunQueue() {
   defaultQueue ??= createInMemoryAgentRunQueue({
     confidence: createAgentRunConfidenceRecorder(),
@@ -2905,6 +2920,9 @@ export function getDefaultAgentRunQueue() {
         return;
       }
       await getDefaultTaskDispatcher(defaultQueue).handleRunSettled(run);
+      // R13：执行类行动卡条目结算——best-effort，见 services/action-card-run-settlement.ts（绝不抛错）。
+      // 顺序放在会话汇报之前：先改状态，再让 PM 汇报读到的是结算后的状态。
+      await getDefaultActionCardRunSettlementHook()(run);
       // R13 批 S2：会话汇报器——best-effort，见 services/run-conversation-report.ts（绝不抛错，所以放在
       // task-dispatcher 的结算之后也不会因为它失败而阻断/重放前面那个必须成功的写路径）。
       await getDefaultRunConversationReportHook()(run);
