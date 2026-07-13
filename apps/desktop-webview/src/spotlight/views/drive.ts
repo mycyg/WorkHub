@@ -13,7 +13,10 @@ const FOLDER_ICON =
 const FILE_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
 
-function fmtSize(bytes?: number): string {
+// 批 6（工作台网盘标签）：导出这几个纯函数/fetch helper 供 workbench/drive/* 复用——同一套下载/预览鉴权+
+// token 自愈逻辑不该有第二份实现（03 铁律「先通读，能复用的组件抽公共不复制粘贴」）。工作台的呈现层
+// （HTML/CSS 类名）是深色玻璃设计系统，和这里的 Spotlight 浅色玻璃不是同一套 class 前缀，那部分不复用。
+export function fmtSize(bytes?: number): string {
   if (!bytes && bytes !== 0) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -28,7 +31,7 @@ export function driveResourceHref(href: string, apiBaseUrl?: string): string {
   return base ? `${base}${href}` : href;
 }
 
-function driveResourceApiBase(): string {
+export function driveResourceApiBase(): string {
   const override = driveResourceStorage()?.getItem("workhub_api_base")?.trim();
   return (override && override.length > 0 ? override : `http://127.0.0.1:${defaultPorts.api}`).replace(/\/+$/u, "");
 }
@@ -101,7 +104,7 @@ async function shouldRefreshDriveResourceToken(response: Response): Promise<bool
   }
 }
 
-async function fetchDriveResource(href: string, init: RequestInit = {}, apiBaseUrl = driveResourceApiBase()): Promise<Response> {
+export async function fetchDriveResource(href: string, init: RequestInit = {}, apiBaseUrl = driveResourceApiBase()): Promise<Response> {
   const withAuth = (): RequestInit => {
     const headers = new Headers(init.headers);
     driveResourceHeaders().forEach((value, key) => headers.set(key, value));
@@ -164,7 +167,7 @@ export function driveTargetItemIdFromRoute(route: string | undefined): string | 
   }
 }
 
-async function downloadDriveResource(href: string, fallbackName: string): Promise<void> {
+export async function downloadDriveResource(href: string, fallbackName: string): Promise<void> {
   const response = await fetchDriveResource(href);
   if (!response.ok) {
     let message = "download failed";

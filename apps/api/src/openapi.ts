@@ -4415,6 +4415,1113 @@ const agentRunRevertResponse = {
   }
 } as const;
 
+const conversationSafeSequenceSchema = {
+  type: "integer",
+  minimum: 0,
+  maximum: Number.MAX_SAFE_INTEGER
+} as const;
+const conversationNullableUuidSchema = {
+  anyOf: [uuidStringSchema, { type: "null" }]
+} as const;
+const conversationParticipantRoleSchema = {
+  type: "string",
+  enum: ["owner", "member"]
+} as const;
+const conversationNullableParticipantRoleSchema = {
+  anyOf: [conversationParticipantRoleSchema, { type: "null" }]
+} as const;
+const conversationResponseSchema = {
+  type: "object",
+  required: [
+    "id",
+    "workspace_id",
+    "project_id",
+    "kind",
+    "title",
+    "parent_conversation_id",
+    "source_message_id",
+    "visibility",
+    "next_seq",
+    "created_by",
+    "participant_role",
+    "created_at",
+    "updated_at"
+  ],
+  properties: {
+    id: uuidStringSchema,
+    workspace_id: uuidStringSchema,
+    project_id: uuidStringSchema,
+    kind: { type: "string", enum: ["main", "collab"] },
+    title: { type: "string", minLength: 1, maxLength: 256 },
+    parent_conversation_id: conversationNullableUuidSchema,
+    source_message_id: conversationNullableUuidSchema,
+    visibility: { type: "string", enum: ["project", "private"] },
+    next_seq: conversationSafeSequenceSchema,
+    created_by: conversationNullableUuidSchema,
+    participant_role: conversationNullableParticipantRoleSchema,
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const conversationParticipantResponseSchema = {
+  type: "object",
+  required: ["id", "conversation_id", "user_id", "role", "created_at", "updated_at"],
+  properties: {
+    id: uuidStringSchema,
+    conversation_id: uuidStringSchema,
+    user_id: uuidStringSchema,
+    role: conversationParticipantRoleSchema,
+    created_at: dateTimeStringSchema,
+    updated_at: dateTimeStringSchema
+  },
+  additionalProperties: false
+} as const;
+const conversationTextContentResponseSchema = {
+  type: "object",
+  required: ["text"],
+  properties: {
+    text: { type: "string", minLength: 1, maxLength: 20_000 }
+  },
+  additionalProperties: false
+} as const;
+const conversationFileCardContentResponseSchema = {
+  type: "object",
+  required: ["drive_item_id", "snapshot_name"],
+  properties: {
+    drive_item_id: uuidStringSchema,
+    snapshot_name: { type: "string", minLength: 1, maxLength: 256 }
+  },
+  additionalProperties: false
+} as const;
+const conversationGenericContentResponseSchema = {
+  type: "object",
+  maxProperties: 64,
+  additionalProperties: true
+} as const;
+function conversationMessageResponseVariant(
+  kind: "text" | "file_card" | "action_card" | "system_event" | "tool_note",
+  content: Record<string, unknown>
+) {
+  return {
+    type: "object",
+    required: [
+      "id",
+      "conversation_id",
+      "seq",
+      "sender_type",
+      "sender_user_id",
+      "kind",
+      "content",
+      "thread_root_id",
+      "created_at"
+    ],
+    properties: {
+      id: uuidStringSchema,
+      conversation_id: uuidStringSchema,
+      seq: conversationSafeSequenceSchema,
+      sender_type: { type: "string", enum: ["user", "cuu", "system"] },
+      sender_user_id: conversationNullableUuidSchema,
+      kind: { type: "string", const: kind },
+      content,
+      thread_root_id: conversationNullableUuidSchema,
+      created_at: dateTimeStringSchema
+    },
+    additionalProperties: false
+  };
+}
+const conversationMessageResponseSchema = {
+  oneOf: [
+    conversationMessageResponseVariant("text", conversationTextContentResponseSchema),
+    conversationMessageResponseVariant("file_card", conversationFileCardContentResponseSchema),
+    conversationMessageResponseVariant("action_card", conversationGenericContentResponseSchema),
+    conversationMessageResponseVariant("system_event", conversationGenericContentResponseSchema),
+    conversationMessageResponseVariant("tool_note", conversationGenericContentResponseSchema)
+  ]
+} as const;
+const conversationCursorResponseSchema = {
+  type: "object",
+  required: ["afterCreatedAt", "afterId"],
+  properties: {
+    afterCreatedAt: {
+      type: "string",
+      format: "date-time",
+      pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
+    },
+    afterId: uuidStringSchema
+  },
+  additionalProperties: false
+} as const;
+const conversationListPageResponseSchema = {
+  type: "object",
+  required: ["conversations", "capped", "next_cursor"],
+  properties: {
+    conversations: { type: "array", maxItems: 100, items: conversationResponseSchema },
+    capped: { type: "boolean" },
+    next_cursor: { anyOf: [conversationCursorResponseSchema, { type: "null" }] }
+  },
+  additionalProperties: false
+} as const;
+const workbenchMembershipRoleResponseSchema = {
+  type: "string",
+  enum: ["member", "admin", "owner"]
+} as const;
+const workbenchPageResponseSchema = {
+  type: "object",
+  required: [
+    "generated_at",
+    "project",
+    "viewer",
+    "conversations",
+    "workspace_members",
+    "army_summary",
+    "recent_project_files"
+  ],
+  properties: {
+    generated_at: dateTimeStringSchema,
+    project: {
+      type: "object",
+      required: ["id", "workspace_id", "name", "slug", "description", "owner_label"],
+      properties: {
+        id: uuidStringSchema,
+        workspace_id: uuidStringSchema,
+        name: { type: "string", minLength: 1 },
+        slug: { type: "string", minLength: 1 },
+        description: { anyOf: [{ type: "string" }, { type: "null" }] },
+        owner_label: { type: "string", minLength: 1 }
+      },
+      additionalProperties: false
+    },
+    viewer: {
+      type: "object",
+      required: ["user_id", "membership_role", "is_project_owner"],
+      properties: {
+        user_id: uuidStringSchema,
+        membership_role: workbenchMembershipRoleResponseSchema,
+        is_project_owner: { type: "boolean" }
+      },
+      additionalProperties: false
+    },
+    conversations: {
+      type: "object",
+      required: ["conversations", "capped", "next_cursor"],
+      properties: {
+        conversations: { type: "array", maxItems: 50, items: conversationResponseSchema },
+        capped: { type: "boolean" },
+        next_cursor: { anyOf: [conversationCursorResponseSchema, { type: "null" }] }
+      },
+      additionalProperties: false
+    },
+    workspace_members: {
+      type: "object",
+      required: ["scope", "total", "returned", "capped", "items"],
+      properties: {
+        scope: { type: "string", enum: ["workspace"] },
+        total: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+        returned: { type: "integer", minimum: 0, maximum: 100 },
+        capped: { type: "boolean" },
+        items: {
+          type: "array",
+          maxItems: 100,
+          items: {
+            type: "object",
+            required: ["user_id", "nickname", "membership_role", "is_project_owner", "is_self"],
+            properties: {
+              user_id: uuidStringSchema,
+              nickname: { type: "string", minLength: 1 },
+              membership_role: workbenchMembershipRoleResponseSchema,
+              is_project_owner: { type: "boolean" },
+              is_self: { type: "boolean" }
+            },
+            additionalProperties: false
+          }
+        }
+      },
+      additionalProperties: false
+    },
+    army_summary: {
+      type: "object",
+      required: ["active_plan_count"],
+      properties: {
+        active_plan_count: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
+        empty_state: { type: "string", enum: ["no_active_armies"] }
+      },
+      additionalProperties: false
+    },
+    recent_project_files: {
+      type: "object",
+      required: ["items"],
+      properties: {
+        items: {
+          type: "array",
+          maxItems: 5,
+          items: {
+            type: "object",
+            required: ["id", "name", "updated_at", "href"],
+            properties: {
+              id: uuidStringSchema,
+              name: { type: "string", minLength: 1 },
+              updated_at: dateTimeStringSchema,
+              href: { type: "string", minLength: 1 }
+            },
+            additionalProperties: false
+          }
+        },
+        empty_state: { type: "string", enum: ["no_recent_files"] }
+      },
+      additionalProperties: false
+    }
+  },
+  additionalProperties: false
+} as const;
+const workbenchPageResponses = {
+  responses: {
+    "200": jsonOkResponse(workbenchPageResponseSchema).responses["200"],
+    "401": pageNotIdentifiedResponse,
+    "403": pageInvalidClientTokenResponse,
+    "404": jsonErrorStatusResponse("404", "Workbench project is inaccessible or was not found", [
+      "workbench_not_found"
+    ]).responses["404"],
+    "500": jsonErrorStatusResponse("500", "Workbench assembly or a source dependency failed", [
+      "internal_contract_error",
+      "internal_error"
+    ]).responses["500"]
+  }
+} as const;
+const conversationMessagePageResponseSchema = {
+  type: "object",
+  required: ["messages", "has_more", "next_after_seq"],
+  properties: {
+    messages: { type: "array", maxItems: 100, items: conversationMessageResponseSchema },
+    has_more: { type: "boolean" },
+    next_after_seq: conversationSafeSequenceSchema,
+    // R12 批8：仅在响应 beforeSeq（反向翻页）请求时出现；afterSeq 请求的响应形状零改动。
+    next_before_seq: conversationSafeSequenceSchema
+  },
+  additionalProperties: false
+} as const;
+const createConversationResponseSchema = {
+  type: "object",
+  required: ["conversation", "participants"],
+  properties: {
+    conversation: conversationResponseSchema,
+    participants: {
+      type: "array",
+      minItems: 1,
+      maxItems: 100,
+      items: conversationParticipantResponseSchema
+    }
+  },
+  additionalProperties: false
+} as const;
+const createConversationRequestBodySchema = {
+  type: "object",
+  required: ["kind", "title", "visibility"],
+  properties: {
+    kind: { type: "string", const: "collab" },
+    title: { type: "string", minLength: 1, maxLength: 256 },
+    visibility: { type: "string", enum: ["project", "private"] },
+    parent_conversation_id: uuidStringSchema,
+    source_message_id: uuidStringSchema,
+    participant_user_ids: {
+      type: "array",
+      maxItems: 99,
+      uniqueItems: true,
+      description: "Active workspace user UUIDs; uniqueness is enforced case-insensitively.",
+      "x-workhub-case-insensitive-unique": true,
+      items: uuidStringSchema,
+      default: []
+    }
+  },
+  dependentRequired: {
+    source_message_id: ["parent_conversation_id"]
+  },
+  additionalProperties: false
+} as const;
+const createConversationMessageRequestBodySchema = {
+  oneOf: [
+    {
+      type: "object",
+      required: ["kind", "content"],
+      properties: {
+        kind: { type: "string", const: "text" },
+        content: conversationTextContentResponseSchema,
+        thread_root_id: uuidStringSchema
+      },
+      additionalProperties: false
+    },
+    {
+      type: "object",
+      required: ["kind", "content"],
+      properties: {
+        kind: { type: "string", const: "file_card" },
+        content: {
+          type: "object",
+          required: ["drive_item_id"],
+          properties: { drive_item_id: uuidStringSchema },
+          additionalProperties: false
+        },
+        thread_root_id: uuidStringSchema
+      },
+      additionalProperties: false
+    }
+  ]
+} as const;
+const conversationAfterCreatedAtQueryParameter = {
+  name: "afterCreatedAt",
+  in: "query",
+  required: false,
+  description: "Canonical UTC microsecond cursor timestamp; afterCreatedAt and afterId must be provided together.",
+  "x-workhub-paired-with": "afterId",
+  schema: {
+    type: "string",
+    format: "date-time",
+    pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
+  }
+} as const;
+const conversationAfterIdQueryParameter = {
+  name: "afterId",
+  in: "query",
+  required: false,
+  description: "Conversation UUID cursor tie-breaker; afterCreatedAt and afterId must be provided together.",
+  "x-workhub-paired-with": "afterCreatedAt",
+  schema: uuidStringSchema
+} as const;
+const conversationAfterSeqQueryParameter = {
+  name: "afterSeq",
+  in: "query",
+  required: false,
+  description: "Forward cursor; mutually exclusive with beforeSeq.",
+  "x-workhub-mutually-exclusive-with": "beforeSeq",
+  schema: conversationSafeSequenceSchema
+} as const;
+// R12 批8：反向翻页游标——「滚到顶加载更早」。与 afterSeq 互斥（契约层用 zod union 天然表达，见
+// packages/contracts/src/domain/conversation.ts 的 conversationMessageListQuerySchema）。
+const conversationBeforeSeqQueryParameter = {
+  name: "beforeSeq",
+  in: "query",
+  required: false,
+  description: "Backward cursor for loading earlier history; mutually exclusive with afterSeq.",
+  "x-workhub-mutually-exclusive-with": "afterSeq",
+  schema: conversationSafeSequenceSchema
+} as const;
+const conversationLimitQueryParameter = {
+  name: "limit",
+  in: "query",
+  required: false,
+  schema: { type: "integer", minimum: 1, maximum: 100, default: 50 }
+} as const;
+const conversationAuthRequiredResponse = jsonErrorStatusResponse(
+  "401",
+  "Conversation access requires an authenticated user",
+  ["not_identified"]
+).responses["401"];
+const conversationForbiddenResponse = jsonErrorStatusResponse(
+  "403",
+  "Conversation access failed the client-token, CSRF, or human-workspace guard",
+  ["invalid_client_token", "forbidden", "human_required"]
+).responses["403"];
+const conversationValidationResponse = jsonErrorStatusResponse(
+  "422",
+  "Conversation query or request payload does not match the contract",
+  ["validation_error"]
+).responses["422"];
+const conversationInternalResponse = jsonErrorStatusResponse(
+  "500",
+  "Conversation output assembly or an unexpected dependency failed",
+  ["internal_contract_error", "internal_error"]
+).responses["500"];
+const conversationPayloadTooLargeResponse = jsonErrorStatusResponse(
+  "413",
+  "Conversation request body exceeds the configured global JSON limit",
+  ["payload_too_large"]
+).responses["413"];
+const conversationProjectListResponses = {
+  responses: {
+    "200": jsonDataResponse(conversationListPageResponseSchema, "Visible project conversations").responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Project conversation area was not found", [
+      "conversation_project_not_found"
+    ]).responses["404"],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationProjectCreateResponses = {
+  responses: {
+    "201": jsonDataStatusResponse(createConversationResponseSchema, "201", "Created a collaboration conversation")
+      .responses["201"],
+    "400": jsonErrorStatusResponse("400", "Conversation creation input is semantically invalid", [
+      "malformed_json",
+      "json_object_required",
+      "conversation_invalid_input",
+      "conversation_participant_invalid",
+      "conversation_parent_invalid",
+      "conversation_source_invalid"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Project conversation area disappeared or is inaccessible", [
+      "conversation_project_not_found",
+      "conversation_not_found"
+    ]).responses["404"],
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationMessageListResponses = {
+  responses: {
+    "200": jsonDataResponse(
+      conversationMessagePageResponseSchema,
+      "Conversation messages after (afterSeq) or before (beforeSeq) the sequence cursor"
+    ).responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses["404"],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const conversationMessageCreateResponses = {
+  responses: {
+    "201": jsonDataStatusResponse(conversationMessageResponseSchema, "201", "Created a conversation message")
+      .responses["201"],
+    "400": jsonErrorStatusResponse("400", "Message input is malformed or semantically invalid", [
+      "malformed_json",
+      "json_object_required",
+      "conversation_invalid_input",
+      "conversation_thread_invalid"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation or referenced Drive file was not found", [
+      "conversation_not_found",
+      "conversation_file_not_found"
+    ]).responses["404"],
+    "409": jsonErrorStatusResponse("409", "Conversation message sequence is exhausted", [
+      "conversation_sequence_exhausted"
+    ]).responses["409"],
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
+// R12 批 5(军团面板读侧)——与 packages/contracts/src/pages.ts 的 army VM zod 逐字段对齐。
+const armyRunRecentStepJsonSchema = {
+  type: "object",
+  properties: {
+    phase: { type: "string" },
+    tool_name: { type: ["string", "null"], maxLength: 64 },
+    output_excerpt: { type: ["string", "null"], maxLength: 240 },
+    step_no: { type: "integer", minimum: 1 }
+  },
+  required: ["phase", "tool_name", "output_excerpt", "step_no"],
+  additionalProperties: false
+} as const;
+const armyRunCardBaseJsonProperties = {
+  id: uuidStringSchema,
+  status: { type: "string", enum: ["queued", "running", "succeeded", "failed", "escalated", "cancelled"] },
+  goal_summary: { type: "string", minLength: 1, maxLength: 201 },
+  assignee_user_id: { ...uuidStringSchema, type: ["string", "null"] },
+  cost_cny: { type: ["string", "null"], pattern: "^\\d+(?:\\.\\d+)?$" },
+  execution_hint: { type: "string", enum: ["server", "local", "any"] },
+  work_item_id: uuidStringSchema,
+  source_conversation_id: { ...uuidStringSchema, type: ["string", "null"] },
+  source_action_card_item_id: { ...uuidStringSchema, type: ["string", "null"] },
+  cat_codename: { type: "string", minLength: 1, maxLength: 16 },
+  recent_step: { ...armyRunRecentStepJsonSchema, type: ["object", "null"] },
+  created_at: { type: "string", format: "date-time" },
+  updated_at: { type: "string", format: "date-time" }
+} as const;
+const armyRunCardRequiredJsonFields = [
+  "id",
+  "status",
+  "goal_summary",
+  "assignee_user_id",
+  "cost_cny",
+  "execution_hint",
+  "work_item_id",
+  "source_conversation_id",
+  "source_action_card_item_id",
+  "cat_codename",
+  "recent_step",
+  "created_at",
+  "updated_at"
+] as const;
+const armyRunListCursorJsonSchema = {
+  type: ["object", "null"],
+  properties: {
+    after_created_at: {
+      type: "string",
+      format: "date-time",
+      pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$"
+    },
+    after_id: uuidStringSchema
+  },
+  required: ["after_created_at", "after_id"],
+  additionalProperties: false
+} as const;
+function armyRunListJsonSchema(cardProperties: Record<string, unknown>, cardRequired: readonly string[]) {
+  return {
+    type: "object",
+    properties: {
+      runs: {
+        type: "array",
+        maxItems: 50,
+        items: {
+          type: "object",
+          properties: cardProperties,
+          required: [...cardRequired],
+          additionalProperties: false
+        }
+      },
+      capped: { type: "boolean" },
+      next_cursor: armyRunListCursorJsonSchema,
+      empty_state: { type: "string", const: "no_army_runs" }
+    },
+    required: ["runs", "capped", "next_cursor"],
+    additionalProperties: false,
+    "x-workhub-invariants": [
+      "next_cursor is non-null exactly when capped is true.",
+      "empty_state is present exactly when runs is empty."
+    ]
+  } as const;
+}
+const armyOutputsJsonSchema = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      maxItems: 50,
+      items: {
+        type: "object",
+        properties: {
+          proposal_id: uuidStringSchema,
+          work_item_id: uuidStringSchema,
+          run_id: uuidStringSchema,
+          title: { type: "string", minLength: 1, maxLength: 256 },
+          status: { type: "string", minLength: 1, maxLength: 32 },
+          proposal_href: { type: "string", minLength: 1 },
+          updated_at: { type: "string", format: "date-time" }
+        },
+        required: ["proposal_id", "work_item_id", "run_id", "title", "status", "proposal_href", "updated_at"],
+        additionalProperties: false
+      }
+    },
+    capped: { type: "boolean" }
+  },
+  required: ["items", "capped"],
+  additionalProperties: false
+} as const;
+const armyBackgroundTasksJsonSchema = {
+  type: "object",
+  properties: {
+    items: { type: "array", maxItems: 0, items: {} },
+    empty_state: { type: "string", const: "not_yet_available" }
+  },
+  required: ["items", "empty_state"],
+  additionalProperties: false,
+  description:
+    "Honestly empty until a real scheduled-task data source lands; never backed by unrelated background_jobs or schedule events."
+} as const;
+const conversationArmyPanelResponseSchema = {
+  type: "object",
+  properties: {
+    generated_at: { type: "string", format: "date-time" },
+    conversation_id: uuidStringSchema,
+    project_id: uuidStringSchema,
+    runs: armyRunListJsonSchema(armyRunCardBaseJsonProperties, armyRunCardRequiredJsonFields),
+    outputs: armyOutputsJsonSchema,
+    background_tasks: armyBackgroundTasksJsonSchema
+  },
+  required: ["generated_at", "conversation_id", "project_id", "runs", "outputs", "background_tasks"],
+  additionalProperties: false
+} as const;
+const armyOverviewPageResponseSchema = {
+  type: "object",
+  properties: {
+    generated_at: { type: "string", format: "date-time" },
+    viewer_user_id: uuidStringSchema,
+    runs: armyRunListJsonSchema(
+      {
+        ...armyRunCardBaseJsonProperties,
+        project_id: uuidStringSchema,
+        project_name: { type: "string", minLength: 1, maxLength: 128 }
+      },
+      [...armyRunCardRequiredJsonFields, "project_id", "project_name"]
+    )
+  },
+  required: ["generated_at", "viewer_user_id", "runs"],
+  additionalProperties: false
+} as const;
+const armyLimitQueryParameter = {
+  name: "limit",
+  in: "query",
+  required: false,
+  schema: { type: "integer", minimum: 1, maximum: 50, default: 20 }
+} as const;
+const conversationArmyPanelResponses = {
+  responses: {
+    "200": jsonDataResponse(conversationArmyPanelResponseSchema, "Conversation army context panel").responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation army panel is inaccessible or was not found", [
+      "conversation_army_not_found"
+    ]).responses["404"],
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const armyOverviewResponses = {
+  responses: {
+    "200": jsonDataResponse(armyOverviewPageResponseSchema, "Cross-project army overview for the viewer").responses[
+      "200"
+    ],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
+// R12 批3(行动卡 decide/undo)——与 routes/action-cards.ts 的 zod 请求与 ActionCardItemVM 对齐。
+const actionCardItemVmJsonSchema = {
+  type: "object",
+  properties: {
+    id: uuidStringSchema,
+    action_card_id: uuidStringSchema,
+    kind: { type: "string", enum: ["execute", "decide", "observe"] },
+    title_md: { type: "string", minLength: 1 },
+    confidence: { type: "string", enum: ["high", "mid", "low"] },
+    status: {
+      type: "string",
+      enum: ["running", "done", "undone", "waiting_decision", "dismissed", "escalated"]
+    },
+    assignee_user_id: { ...uuidStringSchema, type: ["string", "null"] },
+    work_item_id: { ...uuidStringSchema, type: ["string", "null"] },
+    run_id: { ...uuidStringSchema, type: ["string", "null"] },
+    undo_deadline_at: { type: ["string", "null"], format: "date-time" }
+  },
+  required: [
+    "id",
+    "action_card_id",
+    "kind",
+    "title_md",
+    "confidence",
+    "status",
+    "assignee_user_id",
+    "work_item_id",
+    "run_id",
+    "undo_deadline_at"
+  ],
+  additionalProperties: false
+} as const;
+const decideActionCardItemRequestBodySchema = {
+  type: "object",
+  properties: {
+    action: { type: "string", enum: ["claim", "reassign", "defer"] },
+    assignee_user_id: uuidStringSchema
+  },
+  required: ["action"],
+  additionalProperties: false,
+  "x-workhub-invariants": [
+    "assignee_user_id is required exactly when action is reassign and rejected otherwise."
+  ]
+} as const;
+const actionCardConflictResponse = jsonErrorStatusResponse(
+  "409",
+  "Action-card item state no longer allows this operation",
+  ["action_card_item_already_decided", "action_card_decision_already_resolved", "action_card_item_not_undoable"]
+).responses["409"];
+const actionCardNotFoundResponse = jsonErrorStatusResponse(
+  "404",
+  "Action-card item is inaccessible or was not found",
+  ["action_card_item_not_found"]
+).responses["404"];
+const actionCardDecideResponses = {
+  responses: {
+    "200": jsonDataResponse(actionCardItemVmJsonSchema, "Decided action-card item").responses["200"],
+    "400": jsonErrorStatusResponse("400", "Decision input is malformed or semantically invalid", [
+      "malformed_json",
+      "json_object_required",
+      "action_card_reassign_requires_assignee"
+    ]).responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": actionCardNotFoundResponse,
+    "409": actionCardConflictResponse,
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+const actionCardUndoResponses = {
+  responses: {
+    "200": jsonDataResponse(actionCardItemVmJsonSchema, "Undone action-card item").responses["200"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": actionCardNotFoundResponse,
+    "409": actionCardConflictResponse,
+    "422": conversationValidationResponse,
+    "500": conversationInternalResponse
+  }
+} as const;
+
+// R12 批4a(协同会话 turn)——与 routes/conversation-turns.ts 对齐。
+const conversationTurnRequestBodySchema = {
+  type: "object",
+  properties: {
+    user_message_id: uuidStringSchema
+  },
+  required: ["user_message_id"],
+  additionalProperties: false
+} as const;
+const conversationTurnResultResponseSchema = {
+  type: "object",
+  properties: {
+    turn_id: uuidStringSchema,
+    message: {
+      type: "object",
+      description: "Persisted Cuu reply message VM (real seq; also broadcast as conversation.message.created with an ai actor)."
+    }
+  },
+  required: ["turn_id", "message"],
+  additionalProperties: false
+} as const;
+const conversationTurnResponses = {
+  responses: {
+    "200": jsonDataResponse(conversationTurnResultResponseSchema, "Completed collab turn with the persisted Cuu reply")
+      .responses["200"],
+    "400": jsonErrorStatusResponse("400", "Turn input is malformed", ["malformed_json", "json_object_required"])
+      .responses["400"],
+    "401": conversationAuthRequiredResponse,
+    "403": conversationForbiddenResponse,
+    "404": jsonErrorStatusResponse("404", "Conversation or the referenced user message was not found", [
+      "conversation_not_found",
+      "conversation_turn_message_not_found"
+    ]).responses["404"],
+    "409": jsonErrorStatusResponse("409", "Turn is not allowed in the conversation's current state", [
+      "conversation_turn_not_collab",
+      "conversation_turn_busy",
+      "conversation_turn_mode_observe_only"
+    ]).responses["409"],
+    "429": jsonErrorStatusResponse("429", "Team budget is exhausted for AI turns", [
+      "conversation_turn_budget_exhausted"
+    ]).responses["429"],
+    "413": conversationPayloadTooLargeResponse,
+    "422": conversationValidationResponse,
+    "500": jsonErrorStatusResponse("500", "Turn generation or persistence failed; nothing was saved", [
+      "conversation_turn_failed",
+      "internal_contract_error",
+      "internal_error"
+    ]).responses["500"]
+  }
+} as const;
+
+const aiModelPreferenceStringSchema = {
+  type: "string",
+  minLength: 1,
+  maxLength: 32,
+  pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+} as const;
+const aiGranularSettingsSchema = {
+  type: "object",
+  properties: {
+    create_work_item: { type: "boolean" },
+    dispatch_run: { type: "boolean" },
+    mutate_drive: { type: "boolean" },
+    send_notification: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const;
+const aiQuietHoursSchema = {
+  oneOf: [
+    {
+      type: "object",
+      required: ["enabled"],
+      properties: { enabled: { type: "boolean", const: false } },
+      additionalProperties: false
+    },
+    {
+      type: "object",
+      required: ["enabled", "timezone", "start_minute", "end_minute", "weekdays"],
+      properties: {
+        enabled: { type: "boolean", const: true },
+        timezone: {
+          type: "string",
+          minLength: 1,
+          maxLength: 64,
+          description: "IANA timezone supported by the server runtime."
+        },
+        start_minute: { type: "integer", minimum: 0, maximum: 1439 },
+        end_minute: { type: "integer", minimum: 0, maximum: 1439 },
+        weekdays: {
+          type: "array",
+          minItems: 1,
+          maxItems: 7,
+          uniqueItems: true,
+          items: { type: "integer", minimum: 0, maximum: 6 }
+        }
+      },
+      additionalProperties: false
+    }
+  ],
+  "x-workhub-runtime-supported-timezone": true,
+  "x-workhub-start-end-must-differ": true
+} as const;
+const aiProviderModelResponseSchema = {
+  type: "object",
+  required: [
+    "id",
+    "model",
+    "display_name",
+    "context_window_tokens",
+    "supports_streaming",
+    "supports_tools",
+    "cost_input_cny_per_mtok",
+    "cost_output_cny_per_mtok"
+  ],
+  properties: {
+    id: aiModelPreferenceStringSchema,
+    model: { type: "string", minLength: 1, maxLength: 128 },
+    display_name: { type: "string", minLength: 1, maxLength: 128 },
+    context_window_tokens: { type: "integer", minimum: 1 },
+    supports_streaming: { type: "boolean" },
+    supports_tools: { type: "boolean" },
+    cost_input_cny_per_mtok: { type: "number", minimum: 0 },
+    cost_output_cny_per_mtok: { type: "number", minimum: 0 }
+  },
+  additionalProperties: false
+} as const;
+const aiProviderResponseSchema = {
+  type: "object",
+  required: ["name", "configured", "default_model_id", "models"],
+  properties: {
+    name: { type: "string", minLength: 1, maxLength: 64 },
+    configured: { type: "boolean" },
+    default_model_id: aiModelPreferenceStringSchema,
+    models: {
+      type: "array",
+      minItems: 1,
+      maxItems: 100,
+      items: aiProviderModelResponseSchema,
+      description: "Models sorted by id; id values are unique and include default_model_id.",
+      "x-workhub-unique-model-ids": true,
+      "x-workhub-contains-default-model-id": true
+    }
+  },
+  additionalProperties: false
+} as const;
+const aiDailyQuotaResponseSchema = {
+  type: "object",
+  required: ["policy_id", "period", "max_tokens", "max_cost_cny", "enabled"],
+  properties: {
+    policy_id: { type: "string", minLength: 1 },
+    period: { type: "string", const: "day" },
+    max_tokens: { type: "integer", minimum: 1 },
+    max_cost_cny: { type: "string", pattern: "^\\d+(?:\\.\\d+)?$" },
+    enabled: { type: "boolean" }
+  },
+  additionalProperties: false
+} as const;
+function aiUsagePeriodResponseSchema(period: "day" | "month") {
+  return {
+    type: "object",
+    required: ["period", "token_in", "token_out", "total_tokens", "estimated_cost_cny"],
+    properties: {
+      period: { type: "string", const: period },
+      token_in: { type: "integer", minimum: 0 },
+      token_out: { type: "integer", minimum: 0 },
+      total_tokens: { type: "integer", minimum: 0 },
+      estimated_cost_cny: { type: "string", pattern: "^\\d+(?:\\.\\d+)?$" }
+    },
+    additionalProperties: false
+  } as const;
+}
+const aiBudgetSummaryResponseSchema = {
+  type: "object",
+  required: ["daily_quota", "usage"],
+  properties: {
+    daily_quota: { anyOf: [aiDailyQuotaResponseSchema, { type: "null" }] },
+    usage: {
+      type: "object",
+      required: ["day", "month"],
+      properties: {
+        day: aiUsagePeriodResponseSchema("day"),
+        month: aiUsagePeriodResponseSchema("month")
+      },
+      additionalProperties: false
+    }
+  },
+  additionalProperties: false
+} as const;
+const userAiProfileResponseSchema = {
+  type: "object",
+  required: [
+    "workspace_id",
+    "user_id",
+    "default_mode",
+    "granular_settings",
+    "dispatch_policy",
+    "cuu_proactivity",
+    "model_tier_preference",
+    "providers",
+    "budget_summary",
+    "generated_at",
+    "updated_at"
+  ],
+  properties: {
+    workspace_id: uuidStringSchema,
+    user_id: uuidStringSchema,
+    default_mode: { type: "integer", minimum: 1, maximum: 5 },
+    granular_settings: aiGranularSettingsSchema,
+    dispatch_policy: { type: "string", enum: ["auto", "ask", "manual"] },
+    cuu_proactivity: { type: "string", enum: ["quiet", "balanced", "proactive"] },
+    model_tier_preference: { anyOf: [aiModelPreferenceStringSchema, { type: "null" }] },
+    providers: {
+      type: "array",
+      maxItems: 100,
+      items: aiProviderResponseSchema,
+      description: "Providers sorted by name. API keys and base URLs are never returned."
+    },
+    budget_summary: aiBudgetSummaryResponseSchema,
+    generated_at: dateTimeStringSchema,
+    updated_at: { anyOf: [dateTimeStringSchema, { type: "null" }] }
+  },
+  additionalProperties: false
+} as const;
+const projectAiGovernanceResponseSchema = {
+  type: "object",
+  required: [
+    "project_id",
+    "observer_enabled",
+    "silence_window_seconds",
+    "quiet_hours",
+    "granular_settings",
+    "updated_at"
+  ],
+  properties: {
+    project_id: uuidStringSchema,
+    observer_enabled: { type: "boolean" },
+    silence_window_seconds: { type: "integer", minimum: 0, maximum: 86400 },
+    quiet_hours: aiQuietHoursSchema,
+    granular_settings: aiGranularSettingsSchema,
+    updated_at: { anyOf: [dateTimeStringSchema, { type: "null" }] }
+  },
+  additionalProperties: false
+} as const;
+const patchUserAiProfileRequestBodySchema = {
+  type: "object",
+  minProperties: 1,
+  properties: {
+    default_mode: { type: "integer", minimum: 1, maximum: 5 },
+    granular_settings: aiGranularSettingsSchema,
+    dispatch_policy: { type: "string", enum: ["auto", "ask", "manual"] },
+    cuu_proactivity: { type: "string", enum: ["quiet", "balanced", "proactive"] },
+    model_tier_preference: {
+      anyOf: [aiModelPreferenceStringSchema, { type: "null" }],
+      description: "Non-null values must match a provider model id returned by this resource."
+    }
+  },
+  additionalProperties: false
+} as const;
+const patchProjectAiGovernanceRequestBodySchema = {
+  type: "object",
+  minProperties: 1,
+  properties: {
+    observer_enabled: { type: "boolean" },
+    silence_window_seconds: { type: "integer", minimum: 0, maximum: 86400 },
+    quiet_hours: aiQuietHoursSchema,
+    granular_settings: aiGranularSettingsSchema
+  },
+  additionalProperties: false
+} as const;
+const aiAuthRequiredResponse = jsonErrorStatusResponse(
+  "401",
+  "AI settings require an authenticated user",
+  ["not_identified"]
+).responses["401"];
+const aiInternalResponse = jsonErrorStatusResponse(
+  "500",
+  "AI settings output assembly or an unexpected dependency failed",
+  ["internal_contract_error", "internal_error"]
+).responses["500"];
+const aiPayloadTooLargeResponse = jsonErrorStatusResponse(
+  "413",
+  "AI settings request body exceeds the configured global JSON limit",
+  ["payload_too_large"]
+).responses["413"];
+const userAiProfileReadResponses = {
+  responses: {
+    "200": jsonDataResponse(userAiProfileResponseSchema, "Current user's AI profile and usage summary").responses["200"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "AI profile is not accessible", [
+      "invalid_client_token",
+      "ai_profile_access_denied"
+    ]).responses["403"],
+    "500": aiInternalResponse
+  }
+} as const;
+const userAiProfilePatchResponses = {
+  responses: {
+    "200": jsonDataResponse(userAiProfileResponseSchema, "Updated AI profile and usage summary").responses["200"],
+    "400": jsonErrorStatusResponse("400", "AI profile body is not a JSON object", [
+      "malformed_json",
+      "json_object_required"
+    ]).responses["400"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "AI profile update is not authorized", [
+      "invalid_client_token",
+      "forbidden",
+      "ai_profile_access_denied"
+    ]).responses["403"],
+    "413": aiPayloadTooLargeResponse,
+    "422": jsonErrorStatusResponse("422", "AI profile patch is invalid or unavailable", [
+      "validation_error",
+      "ai_model_preference_unavailable"
+    ]).responses["422"],
+    "500": aiInternalResponse
+  }
+} as const;
+const projectAiGovernanceReadResponses = {
+  responses: {
+    "200": jsonDataResponse(projectAiGovernanceResponseSchema, "Project AI governance for its owner").responses["200"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "AI governance authentication failed", [
+      "invalid_client_token"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Project AI governance was not found", [
+      "ai_governance_not_found"
+    ]).responses["404"],
+    "500": aiInternalResponse
+  }
+} as const;
+const projectAiGovernancePatchResponses = {
+  responses: {
+    "200": jsonDataResponse(projectAiGovernanceResponseSchema, "Updated project AI governance").responses["200"],
+    "400": jsonErrorStatusResponse("400", "AI governance body is not a JSON object", [
+      "malformed_json",
+      "json_object_required"
+    ]).responses["400"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "AI governance update failed request authorization", [
+      "invalid_client_token",
+      "forbidden"
+    ]).responses["403"],
+    "404": jsonErrorStatusResponse("404", "Project AI governance was not found", [
+      "ai_governance_not_found"
+    ]).responses["404"],
+    "413": aiPayloadTooLargeResponse,
+    "422": jsonErrorStatusResponse("422", "AI governance patch does not match the contract", [
+      "validation_error"
+    ]).responses["422"],
+    "500": aiInternalResponse
+  }
+} as const;
+
 export function getOpenApiDocument() {
   return withInferredPathParameters({
     openapi: "3.1.0",
@@ -4828,6 +5935,26 @@ export function getOpenApiDocument() {
             localeQueryParameter
           ],
           ...projectHomePageResponse
+        }
+      },
+      "/api/pages/workbench/{projectId}": {
+        get: {
+          tags: ["pages"],
+          summary: "Bounded desktop workbench bootstrap VM",
+          description: "Returns only current tenant-safe project, conversation, workspace-member, active-plan, and recent-file sources. Conversation-scoped runs, outputs, and background tasks are intentionally deferred.",
+          parameters: [
+            pathUuidParameter("projectId"),
+            localeQueryParameter
+          ],
+          "x-workhub-invariants": [
+            "Exactly one conversation is kind=main; every conversation matches data.project.id and workspace_id.",
+            "conversations.capped is true if and only if conversations.next_cursor is non-null.",
+            "workspace_members.total is at least returned; returned equals items.length; capped is true if and only if total is greater than returned.",
+            "Exactly one returned workspace member is self; it is first and matches viewer.user_id, viewer.membership_role, and viewer.is_project_owner.",
+            "At most one returned workspace member is the project owner.",
+            "army_summary and recent_project_files expose their empty_state exactly when their corresponding result is empty."
+          ],
+          ...workbenchPageResponses
         }
       },
       "/api/pages/meetings": {
@@ -5318,6 +6445,204 @@ export function getOpenApiDocument() {
           ...bootstrapProjectResponse
         }
       },
+      "/api/projects/{id}/conversations": {
+        get: {
+          tags: ["conversations"],
+          summary: "List conversations visible in a project",
+          "x-workhub-query-constraints": {
+            allOrNone: [["afterCreatedAt", "afterId"]]
+          },
+          parameters: [
+            pathUuidParameter("id"),
+            conversationAfterCreatedAtQueryParameter,
+            conversationAfterIdQueryParameter,
+            conversationLimitQueryParameter
+          ],
+          ...conversationProjectListResponses
+        },
+        post: {
+          tags: ["conversations"],
+          summary: "Create a collaboration conversation in a project",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(createConversationRequestBodySchema),
+          ...conversationProjectCreateResponses
+        }
+      },
+      "/api/conversations/{id}/messages": {
+        get: {
+          tags: ["conversations"],
+          summary: "List conversation messages after (or, with beforeSeq, before) a sequence cursor",
+          "x-workhub-query-constraints": {
+            exclusive: [["afterSeq", "beforeSeq"]]
+          },
+          parameters: [
+            pathUuidParameter("id"),
+            conversationAfterSeqQueryParameter,
+            conversationBeforeSeqQueryParameter,
+            conversationLimitQueryParameter
+          ],
+          ...conversationMessageListResponses
+        },
+        post: {
+          tags: ["conversations"],
+          summary: "Create a text message or authorized Drive file card",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(createConversationMessageRequestBodySchema),
+          ...conversationMessageCreateResponses
+        }
+      },
+      "/api/conversations/{id}/army": {
+        get: {
+          tags: ["conversations"],
+          summary: "Conversation context panel: derived runs, output links, background tasks",
+          parameters: [
+            pathUuidParameter("id"),
+            conversationAfterCreatedAtQueryParameter,
+            conversationAfterIdQueryParameter,
+            armyLimitQueryParameter
+          ],
+          ...conversationArmyPanelResponses
+        }
+      },
+      "/api/me/army": {
+        get: {
+          tags: ["conversations"],
+          summary: "Cross-project army overview for the current user",
+          parameters: [
+            conversationAfterCreatedAtQueryParameter,
+            conversationAfterIdQueryParameter,
+            armyLimitQueryParameter
+          ],
+          ...armyOverviewResponses
+        }
+      },
+      "/api/drive/projects/{projectId}/items/{itemId}/versions": {
+        get: {
+          tags: ["drive"],
+          summary: "List a drive file's version history (append-only, capped)",
+          parameters: [pathUuidParameter("projectId"), pathUuidParameter("itemId")],
+          responses: {
+            "200": jsonDataResponse(
+              {
+                type: "object",
+                properties: {
+                  items: { type: "array", maxItems: 100, items: { type: "object" } },
+                  capped: { type: "boolean" }
+                },
+                required: ["items", "capped"],
+                additionalProperties: false
+              },
+              "Version rows, newest first"
+            ).responses["200"],
+            "401": conversationAuthRequiredResponse,
+            "403": conversationForbiddenResponse,
+            "404": jsonErrorStatusResponse("404", "Drive file is inaccessible or was not found", [
+              "drive_item_not_found"
+            ]).responses["404"],
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/drive/projects/{projectId}/items/{itemId}/versions/{versionId}/restore": {
+        post: {
+          tags: ["drive"],
+          summary: "Restore a historical version by appending a new version (history is never deleted; audited)",
+          parameters: [
+            pathUuidParameter("projectId"),
+            pathUuidParameter("itemId"),
+            pathUuidParameter("versionId")
+          ],
+          responses: {
+            "200": jsonDataResponse({ type: "object" }, "The newly appended current version").responses["200"],
+            "401": conversationAuthRequiredResponse,
+            "403": conversationForbiddenResponse,
+            "404": jsonErrorStatusResponse("404", "Drive file or version is inaccessible or was not found", [
+              "drive_item_not_found",
+              "drive_version_not_found"
+            ]).responses["404"],
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/conversations/{id}/typing": {
+        post: {
+          tags: ["conversations"],
+          summary: "Publish a transient typing presence ping (server-throttled, never persisted)",
+          parameters: [pathUuidParameter("id")],
+          responses: {
+            "202": jsonDataResponse(
+              {
+                type: "object",
+                properties: { published: { type: "boolean" } },
+                required: ["published"],
+                additionalProperties: false,
+                description: "published=false means the ping was throttled away; both outcomes are success."
+              },
+              "Typing ping accepted (published or throttled)"
+            ).responses["200"],
+            "401": conversationAuthRequiredResponse,
+            "403": conversationForbiddenResponse,
+            "404": jsonErrorStatusResponse("404", "Conversation was not found", ["conversation_not_found"]).responses[
+              "404"
+            ],
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/conversations/{id}/turns": {
+        post: {
+          tags: ["conversations"],
+          summary: "Run one streaming Cuu turn in a collab conversation (deltas over SSE, final reply persisted)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(conversationTurnRequestBodySchema),
+          ...conversationTurnResponses
+        }
+      },
+      "/api/action-card-items/{id}/decide": {
+        post: {
+          tags: ["conversations"],
+          summary: "Decide a waiting action-card item as its addressed owner (claim, reassign, or defer)",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(decideActionCardItemRequestBodySchema),
+          ...actionCardDecideResponses
+        }
+      },
+      "/api/action-card-items/{id}/undo": {
+        post: {
+          tags: ["conversations"],
+          summary: "Undo a dispatched action-card item inside its undo window (abort run, close work item, leave a trace)",
+          parameters: [pathUuidParameter("id")],
+          ...actionCardUndoResponses
+        }
+      },
+      "/api/me/ai-profile": {
+        get: {
+          tags: ["ai-settings"],
+          summary: "Read the current user's AI profile, provider metadata, and usage summary",
+          ...userAiProfileReadResponses
+        },
+        patch: {
+          tags: ["ai-settings"],
+          summary: "Update the current user's AI preferences",
+          ...jsonRequestBody(patchUserAiProfileRequestBodySchema),
+          ...userAiProfilePatchResponses
+        }
+      },
+      "/api/projects/{id}/ai-governance": {
+        get: {
+          tags: ["ai-settings"],
+          summary: "Read project AI governance as the active project owner",
+          parameters: [pathUuidParameter("id")],
+          ...projectAiGovernanceReadResponses
+        },
+        patch: {
+          tags: ["ai-settings"],
+          summary: "Update project AI governance as the active project owner",
+          parameters: [pathUuidParameter("id")],
+          ...jsonRequestBody(patchProjectAiGovernanceRequestBodySchema),
+          ...projectAiGovernancePatchResponses
+        }
+      },
       "/api/proposals/{id}": {
         get: {
           tags: ["proposals"],
@@ -5620,6 +6945,17 @@ export function getOpenApiDocument() {
           summary: "Subscribe to a proposal push topic",
           parameters: [pathUuidParameter("id")],
           ...eventStreamAuthResponse("Proposal server-sent event stream", ["invalid_client_token", "forbidden"])
+        }
+      },
+      "/api/push/stream/conversation/{id}": {
+        get: {
+          tags: ["push"],
+          summary: "Subscribe to one conversation push topic",
+          parameters: [pathUuidParameter("id")],
+          ...eventStreamAuthResponse(
+            "Live-only server-sent events for one conversation topic; no replay is provided. After connected, catch up through GET /api/conversations/{id}/messages?afterSeq=... using the highest locally durable seq.",
+            ["invalid_client_token", "forbidden"]
+          )
         }
       },
       "/api/sessions": {

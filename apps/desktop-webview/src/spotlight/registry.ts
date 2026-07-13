@@ -16,10 +16,13 @@ import { createPlaceholderView } from "./views/placeholder.js";
 import { createProposalsView } from "./views/proposals.js";
 import { createReplayView } from "./views/replay.js";
 import { createSettingsView } from "./views/settings.js";
+import { createWorkbenchOpenView } from "./views/workbench-open.js";
 import { createWorkItemView } from "./views/workitem.js";
 import type { SpotlightCapabilityView } from "./view-context.js";
 
 // 已做成内联的能力工厂表（11/11 全部内联；placeholder 仅作未知 id 的兜底）。
+// R12 批 1：workbench/new_project 不是「内联」能力——它们的 view 只 invoke Tauri open_workbench
+// 开一个独立原生窗口，见 views/workbench-open.ts 顶部注释。
 const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   approvals: createAttentionView,
   intake: createIntakeView,
@@ -33,7 +36,9 @@ const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   proposals: createProposalsView,
   workitem: createWorkItemView,
   notifications: createNotificationsView,
-  settings: createSettingsView
+  settings: createSettingsView,
+  workbench: () => createWorkbenchOpenView("workbench", { bare: false }),
+  new_project: () => createWorkbenchOpenView("new_project", { bare: true })
 };
 
 export function resolveCapabilityView(id: CommandId): SpotlightCapabilityView {

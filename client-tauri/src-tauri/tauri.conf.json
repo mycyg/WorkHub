@@ -49,6 +49,24 @@
         "decorations": false,
         "alwaysOnTop": true,
         "shadow": false
+      },
+      {
+        "label": "workbench",
+        "title": "WorkHub 工作台",
+        "url": "/workbench.html",
+        "create": false,
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 620,
+        "resizable": true,
+        "visible": false,
+        "focus": false,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "decorations": false,
+        "alwaysOnTop": false,
+        "center": true
       }
     ]
   },

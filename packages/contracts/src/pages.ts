@@ -14,6 +14,7 @@ import { notificationSeveritySchema } from "./notification.js";
 import { taskPlanVmSchema } from "./task-plan.js";
 import {
   agentRunStatusSchema,
+  agentStepPhaseSchema,
   taskPlanItemRoleSchema,
   taskPlanItemStatusSchema,
   taskPlanStatusSchema
@@ -34,6 +35,11 @@ import {
   workHubEventSchema
 } from "./experience.js";
 import { idSchema, isoDateTimeSchema } from "./domain/common.js";
+import {
+  conversationListCursorVmSchema,
+  conversationVmSchema,
+  executionHintSchema
+} from "./domain/conversation.js";
 
 export const actionSpecSchema = z.object({
   id: z.string().min(1),
@@ -600,6 +606,182 @@ export const projectHomePageVmSchema = z.object({
 });
 export type ProjectHomePageVM = z.infer<typeof projectHomePageVmSchema>;
 
+const workbenchMembershipRoleSchema = z.enum(["member", "admin", "owner"]);
+const workbenchConversationPageVmSchema = z
+  .object({
+    conversations: z.array(conversationVmSchema).max(50),
+    capped: z.boolean(),
+    next_cursor: conversationListCursorVmSchema.nullable()
+  })
+  .strict()
+  .superRefine((page, ctx) => {
+    if (page.capped !== (page.next_cursor !== null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["next_cursor"],
+        message: "workbench conversation cursor must be present exactly when the page is capped"
+      });
+    }
+  });
+
+const workbenchMemberVmSchema = z
+  .object({
+    user_id: idSchema,
+    nickname: z.string().min(1),
+    membership_role: workbenchMembershipRoleSchema,
+    is_project_owner: z.boolean(),
+    is_self: z.boolean()
+  })
+  .strict();
+
+const workbenchRecentProjectFileVmSchema = z
+  .object({
+    id: idSchema,
+    name: z.string().min(1),
+    updated_at: isoDateTimeSchema,
+    href: z.string().min(1)
+  })
+  .strict();
+
+export const workbenchPageVmSchema = z
+  .object({
+    generated_at: isoDateTimeSchema,
+    project: z
+      .object({
+        id: idSchema,
+        workspace_id: idSchema,
+        name: z.string().min(1),
+        slug: z.string().min(1),
+        description: z.string().nullable(),
+        owner_label: z.string().min(1)
+      })
+      .strict(),
+    viewer: z
+      .object({
+        user_id: idSchema,
+        membership_role: workbenchMembershipRoleSchema,
+        is_project_owner: z.boolean()
+      })
+      .strict(),
+    conversations: workbenchConversationPageVmSchema,
+    workspace_members: z
+      .object({
+        scope: z.literal("workspace"),
+        total: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+        returned: z.number().int().nonnegative().max(100),
+        capped: z.boolean(),
+        items: z.array(workbenchMemberVmSchema).max(100)
+      })
+      .strict(),
+    army_summary: z
+      .object({
+        active_plan_count: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+        empty_state: z.literal("no_active_armies").optional()
+      })
+      .strict(),
+    recent_project_files: z
+      .object({
+        items: z.array(workbenchRecentProjectFileVmSchema).max(5),
+        empty_state: z.literal("no_recent_files").optional()
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((page, ctx) => {
+    const mainCount = page.conversations.conversations.filter((conversation) => conversation.kind === "main").length;
+    if (mainCount !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["conversations", "conversations"],
+        message: "workbench must contain exactly one main conversation"
+      });
+    }
+    for (const [index, conversation] of page.conversations.conversations.entries()) {
+      if (conversation.project_id !== page.project.id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["conversations", "conversations", index, "project_id"],
+          message: "workbench conversation project must match the page project"
+        });
+      }
+      if (conversation.workspace_id !== page.project.workspace_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["conversations", "conversations", index, "workspace_id"],
+          message: "workbench conversation workspace must match the page project workspace"
+        });
+      }
+    }
+
+    const members = page.workspace_members;
+    if (members.returned !== members.items.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workspace_members", "returned"],
+        message: "returned member count must equal the returned item length"
+      });
+    }
+    if (members.total < members.returned) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workspace_members", "total"],
+        message: "total member count cannot be smaller than returned"
+      });
+    }
+    if (members.capped !== (members.total > members.returned)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workspace_members", "capped"],
+        message: "member capped flag must exactly reflect total greater than returned"
+      });
+    }
+    const selfMembers = members.items.filter((member) => member.is_self);
+    if (selfMembers.length !== 1 || members.items[0]?.is_self !== true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workspace_members", "items"],
+        message: "workbench members must contain exactly one self row ordered first"
+      });
+    }
+    const self = selfMembers[0];
+    if (self && (
+      self.user_id !== page.viewer.user_id
+      || self.membership_role !== page.viewer.membership_role
+      || self.is_project_owner !== page.viewer.is_project_owner
+    )) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["viewer"],
+        message: "workbench viewer must match the returned self member row"
+      });
+    }
+    if (members.items.filter((member) => member.is_project_owner).length > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["workspace_members", "items"],
+        message: "workbench members may contain at most one project owner"
+      });
+    }
+
+    const armyIsEmpty = page.army_summary.active_plan_count === 0;
+    if (armyIsEmpty !== (page.army_summary.empty_state === "no_active_armies")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["army_summary", "empty_state"],
+        message: "army empty state must be present exactly when there are no active plans"
+      });
+    }
+    const filesAreEmpty = page.recent_project_files.items.length === 0;
+    if (filesAreEmpty !== (page.recent_project_files.empty_state === "no_recent_files")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["recent_project_files", "empty_state"],
+        message: "recent-file empty state must be present exactly when there are no files"
+      });
+    }
+  });
+export type WorkbenchPageVM = z.infer<typeof workbenchPageVmSchema>;
+
 export const replayMergeCandidateVmSchema = z.object({
   option_key: z.string().min(1),
   target_kind: z.string().min(1).optional(),
@@ -1162,3 +1344,202 @@ export const goldPathSurfaceVmSchema = z.object({
   cuu_states: z.array(cuuStateSchema)
 });
 export type GoldPathSurfaceVM = z.infer<typeof goldPathSurfaceVmSchema>;
+
+// ---------------------------------------------------------------------------
+// R12 批 5(军团面板,服务端读侧切片) —— 00-interaction-design.md §4 + 02-construction-plan.md 批 5。
+// 只读:会话情境面板(军团/输出/后台任务三区)与跨项目军团总览。派发写路径不在这批范围内。
+// ---------------------------------------------------------------------------
+
+export const armyRunRecentStepVmSchema = z
+  .object({
+    phase: agentStepPhaseSchema,
+    tool_name: z.string().max(64).nullable(),
+    output_excerpt: z.string().max(240).nullable(),
+    step_no: z.number().int().positive()
+  })
+  .strict();
+export type ArmyRunRecentStepVM = z.infer<typeof armyRunRecentStepVmSchema>;
+
+// 与 domain/conversation.ts 里未导出的 nonnegativeCnySchema 同一形状；cost_cny 在 run 还没有任何计费
+// 记录时可以是 null（区别于 "0"，避免把「还没花钱」和「已知花了 0 元」混为一谈）。
+const armyRunCostCnySchema = z.string().regex(/^\d+(?:\.\d+)?$/u).nullable();
+
+// goal_summary 上限 = 仓库层 GOAL_SUMMARY_MAX_LENGTH(200)+ 1 个省略号字符。
+const armyRunCardBaseShape = {
+  id: idSchema,
+  status: agentRunStatusSchema,
+  goal_summary: z.string().min(1).max(201),
+  assignee_user_id: idSchema.nullable(),
+  cost_cny: armyRunCostCnySchema,
+  execution_hint: executionHintSchema,
+  work_item_id: idSchema,
+  source_conversation_id: idSchema.nullable(),
+  source_action_card_item_id: idSchema.nullable(),
+  // 猫仔代号(packages/contracts/src/domain/cat-codename.ts 的 catCodename(id))——纯展示，词表最长的
+  // 中文猫名是两个字，16 留足未来扩表的余量。
+  cat_codename: z.string().min(1).max(16),
+  recent_step: armyRunRecentStepVmSchema.nullable(),
+  created_at: isoDateTimeSchema,
+  updated_at: isoDateTimeSchema
+} as const;
+
+function assertArmyRunSourceLineage(
+  card: { source_action_card_item_id: string | null; source_conversation_id: string | null },
+  ctx: z.RefinementCtx
+) {
+  if (card.source_action_card_item_id && !card.source_conversation_id) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["source_conversation_id"],
+      message: "a run sourced from an action-card item must also carry its source conversation"
+    });
+  }
+}
+
+export const armyRunCardVmSchema = z.object(armyRunCardBaseShape).strict().superRefine(assertArmyRunSourceLineage);
+export type ArmyRunCardVM = z.infer<typeof armyRunCardVmSchema>;
+
+// 军团总览额外带 project_id/project_name——00 文档§4「点开是按项目分组的同款卡片流」。
+export const armyOverviewRunCardVmSchema = z
+  .object({
+    ...armyRunCardBaseShape,
+    project_id: idSchema,
+    project_name: z.string().min(1).max(128)
+  })
+  .strict()
+  .superRefine(assertArmyRunSourceLineage);
+export type ArmyOverviewRunCardVM = z.infer<typeof armyOverviewRunCardVmSchema>;
+
+const armyRunCursorTimestampSchema = isoDateTimeSchema.regex(
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u,
+  "army run cursor timestamp must be canonical UTC with six fractional digits"
+);
+
+export const armyRunListCursorVmSchema = z
+  .object({
+    after_created_at: armyRunCursorTimestampSchema,
+    after_id: idSchema
+  })
+  .strict();
+export type ArmyRunListCursorVM = z.infer<typeof armyRunListCursorVmSchema>;
+
+// 请求侧查询参数(同一形状复用给会话情境面板与军团总览两个 GET 端点)——沿用 conversationListQuerySchema
+// 的 afterCreatedAt/afterId/limit 惯例，cap 收紧到仓库层的 20/50(而不是会话列表的 50/100)。
+export const armyRunListQuerySchema = z
+  .object({
+    afterCreatedAt: armyRunCursorTimestampSchema.optional(),
+    afterId: idSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20)
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.afterCreatedAt === undefined) !== (value.afterId === undefined)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: value.afterCreatedAt === undefined ? ["afterCreatedAt"] : ["afterId"],
+        message: "army run list cursor requires both afterCreatedAt and afterId"
+      });
+    }
+  });
+export type ArmyRunListQuery = z.infer<typeof armyRunListQuerySchema>;
+
+function buildArmyRunListVmSchema<TCard extends z.ZodTypeAny>(cardSchema: TCard) {
+  return z
+    .object({
+      runs: z.array(cardSchema).max(50),
+      capped: z.boolean(),
+      next_cursor: armyRunListCursorVmSchema.nullable(),
+      empty_state: z.literal("no_army_runs").optional()
+    })
+    .strict()
+    .superRefine((page, ctx) => {
+      if (page.capped !== (page.next_cursor !== null)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["next_cursor"],
+          message: "army run list cursor must be present exactly when the page is capped"
+        });
+      }
+      const isEmpty = (page.runs as unknown[]).length === 0;
+      if (isEmpty !== (page.empty_state === "no_army_runs")) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["empty_state"],
+          message: "army run list empty state must be present exactly when there are no runs"
+        });
+      }
+    });
+}
+
+export const conversationArmyRunListVmSchema = buildArmyRunListVmSchema(armyRunCardVmSchema);
+export type ConversationArmyRunListVM = z.infer<typeof conversationArmyRunListVmSchema>;
+
+export const armyOverviewRunListVmSchema = buildArmyRunListVmSchema(armyOverviewRunCardVmSchema);
+export type ArmyOverviewRunListVM = z.infer<typeof armyOverviewRunListVmSchema>;
+
+// 输出区 = 该会话下这些 run 产出的提议链接聚合(00 §4「点击回跳」同款思路，复用既有 /proposals/:id 详情页，
+// 不新开路由)。
+export const armyOutputLinkVmSchema = z
+  .object({
+    proposal_id: idSchema,
+    work_item_id: idSchema,
+    run_id: idSchema,
+    title: z.string().min(1).max(256),
+    status: z.string().min(1).max(32),
+    proposal_href: z.string().min(1),
+    updated_at: isoDateTimeSchema
+  })
+  .strict();
+export type ArmyOutputLinkVM = z.infer<typeof armyOutputLinkVmSchema>;
+
+export const armyOutputsVmSchema = z
+  .object({
+    items: z.array(armyOutputLinkVmSchema).max(50),
+    capped: z.boolean()
+  })
+  .strict();
+export type ArmyOutputsVM = z.infer<typeof armyOutputsVmSchema>;
+
+// 后台任务区:02-construction-plan.md 批 5 节原话——「后台任务只有在本批补齐/确认真实 scheduled-task
+// 数据模型与项目归属后才可加入，不得拿 background_jobs、schedule events 或项目最近文件冒充」。这批没有
+// 这样一个数据源，所以这个区永远是空数组 + 固定的 not_yet_available，诚实地告诉前端「这块还没接」，
+// 而不是拿别的数据伪装。等真数据源接上后再放开 items 的 schema。
+export const armyBackgroundTasksVmSchema = z
+  .object({
+    items: z.array(z.unknown()).max(0),
+    empty_state: z.literal("not_yet_available")
+  })
+  .strict();
+export type ArmyBackgroundTasksVM = z.infer<typeof armyBackgroundTasksVmSchema>;
+
+export const conversationArmyPanelVmSchema = z
+  .object({
+    generated_at: isoDateTimeSchema,
+    conversation_id: idSchema,
+    project_id: idSchema,
+    runs: conversationArmyRunListVmSchema,
+    outputs: armyOutputsVmSchema,
+    background_tasks: armyBackgroundTasksVmSchema
+  })
+  .strict()
+  .superRefine((page, ctx) => {
+    for (const [index, run] of page.runs.runs.entries()) {
+      if (run.source_conversation_id && run.source_conversation_id !== page.conversation_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["runs", "runs", index, "source_conversation_id"],
+          message: "conversation army run must be sourced from the panel's own conversation"
+        });
+      }
+    }
+  });
+export type ConversationArmyPanelVM = z.infer<typeof conversationArmyPanelVmSchema>;
+
+export const armyOverviewPageVmSchema = z
+  .object({
+    generated_at: isoDateTimeSchema,
+    viewer_user_id: idSchema,
+    runs: armyOverviewRunListVmSchema
+  })
+  .strict();
+export type ArmyOverviewPageVM = z.infer<typeof armyOverviewPageVmSchema>;

@@ -1,6 +1,8 @@
 import { relations } from "drizzle-orm";
 
 import {
+  actionCardItems,
+  actionCards,
   agentMemory,
   agentMemoryVersions,
   agentRuns,
@@ -10,6 +12,9 @@ import {
   clientDevices,
   comments,
   confidenceRecords,
+  conversationMessages,
+  conversationObserverState,
+  conversationParticipants,
   deliveries,
   meetingRecords,
   keyResults,
@@ -17,6 +22,8 @@ import {
   objectives,
   orgs,
   permissionPolicies,
+  projectAiGovernance,
+  projectConversations,
   projectDriveItems,
   projectDriveVersions,
   projects,
@@ -27,6 +34,7 @@ import {
   taskPlanItems,
   taskPlans,
   users,
+  userAiProfiles,
   userProfiles,
   workItemAcceptanceItems,
   workItemAssignments,
@@ -40,7 +48,11 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   devices: many(clientDevices),
   profile: one(userProfiles, { fields: [users.id], references: [userProfiles.userId] }),
   ownedProjects: many(projects),
-  assignments: many(workItemAssignments)
+  assignments: many(workItemAssignments),
+  createdConversations: many(projectConversations, { relationName: "conversation_created_by" }),
+  conversationParticipants: many(conversationParticipants),
+  assignedActionCardItems: many(actionCardItems),
+  aiProfiles: many(userAiProfiles)
 }));
 
 export const orgsRelations = relations(orgs, ({ many }) => ({
@@ -54,6 +66,9 @@ export const workspacesRelations = relations(workspaces, ({ many, one }) => ({
   taskPlans: many(taskPlans),
   objectives: many(objectives),
   agentMemory: many(agentMemory),
+  conversations: many(projectConversations),
+  actionCardItems: many(actionCardItems),
+  userAiProfiles: many(userAiProfiles),
   permissionPolicies: many(permissionPolicies)
 }));
 
@@ -61,7 +76,115 @@ export const projectsRelations = relations(projects, ({ many, one }) => ({
   workspace: one(workspaces, { fields: [projects.workspaceId], references: [workspaces.id] }),
   owner: one(users, { fields: [projects.ownerUserId], references: [users.id] }),
   workItems: many(workItems),
-  driveItems: many(projectDriveItems)
+  driveItems: many(projectDriveItems),
+  conversations: many(projectConversations),
+  actionCardItems: many(actionCardItems),
+  aiGovernance: one(projectAiGovernance, {
+    fields: [projects.id],
+    references: [projectAiGovernance.projectId]
+  })
+}));
+
+export const projectConversationsRelations = relations(projectConversations, ({ many, one }) => ({
+  workspace: one(workspaces, { fields: [projectConversations.workspaceId], references: [workspaces.id] }),
+  project: one(projects, { fields: [projectConversations.projectId], references: [projects.id] }),
+  parent: one(projectConversations, {
+    fields: [projectConversations.parentConversationId],
+    references: [projectConversations.id],
+    relationName: "conversation_parent"
+  }),
+  children: many(projectConversations, { relationName: "conversation_parent" }),
+  sourceMessage: one(conversationMessages, {
+    fields: [projectConversations.sourceMessageId],
+    references: [conversationMessages.id],
+    relationName: "project_conversation_source_message"
+  }),
+  createdBy: one(users, {
+    fields: [projectConversations.createdBy],
+    references: [users.id],
+    relationName: "conversation_created_by"
+  }),
+  participants: many(conversationParticipants),
+  messages: many(conversationMessages, { relationName: "conversation_messages" }),
+  actionCards: many(actionCards),
+  actionCardItems: many(actionCardItems),
+  observerState: one(conversationObserverState),
+  sourceRuns: many(agentRuns)
+}));
+
+export const conversationParticipantsRelations = relations(conversationParticipants, ({ one }) => ({
+  conversation: one(projectConversations, {
+    fields: [conversationParticipants.conversationId],
+    references: [projectConversations.id]
+  }),
+  user: one(users, { fields: [conversationParticipants.userId], references: [users.id] })
+}));
+
+export const conversationMessagesRelations = relations(conversationMessages, ({ many, one }) => ({
+  conversation: one(projectConversations, {
+    fields: [conversationMessages.conversationId],
+    references: [projectConversations.id],
+    relationName: "conversation_messages"
+  }),
+  senderUser: one(users, { fields: [conversationMessages.senderUserId], references: [users.id] }),
+  threadRoot: one(conversationMessages, {
+    fields: [conversationMessages.threadRootId],
+    references: [conversationMessages.id],
+    relationName: "conversation_message_thread"
+  }),
+  replies: many(conversationMessages, { relationName: "conversation_message_thread" }),
+  sourceForConversations: many(projectConversations, { relationName: "project_conversation_source_message" }),
+  actionCard: one(actionCards, {
+    fields: [conversationMessages.id],
+    references: [actionCards.messageId],
+    relationName: "conversation_message_action_card"
+  })
+}));
+
+export const actionCardsRelations = relations(actionCards, ({ many, one }) => ({
+  conversation: one(projectConversations, { fields: [actionCards.conversationId], references: [projectConversations.id] }),
+  message: one(conversationMessages, {
+    fields: [actionCards.messageId],
+    references: [conversationMessages.id],
+    relationName: "conversation_message_action_card"
+  }),
+  items: many(actionCardItems),
+  observerStates: many(conversationObserverState)
+}));
+
+export const actionCardItemsRelations = relations(actionCardItems, ({ many, one }) => ({
+  workspace: one(workspaces, { fields: [actionCardItems.workspaceId], references: [workspaces.id] }),
+  project: one(projects, { fields: [actionCardItems.projectId], references: [projects.id] }),
+  conversation: one(projectConversations, {
+    fields: [actionCardItems.conversationId],
+    references: [projectConversations.id]
+  }),
+  actionCard: one(actionCards, { fields: [actionCardItems.actionCardId], references: [actionCards.id] }),
+  workItem: one(workItems, { fields: [actionCardItems.workItemId], references: [workItems.id] }),
+  run: one(agentRuns, {
+    fields: [actionCardItems.runId],
+    references: [agentRuns.id],
+    relationName: "action_card_item_run"
+  }),
+  assignee: one(users, { fields: [actionCardItems.assigneeUserId], references: [users.id] }),
+  sourceRuns: many(agentRuns, { relationName: "agent_run_source_action_card_item" })
+}));
+
+export const conversationObserverStateRelations = relations(conversationObserverState, ({ one }) => ({
+  conversation: one(projectConversations, {
+    fields: [conversationObserverState.conversationId],
+    references: [projectConversations.id]
+  }),
+  activeCard: one(actionCards, { fields: [conversationObserverState.activeCardId], references: [actionCards.id] })
+}));
+
+export const userAiProfilesRelations = relations(userAiProfiles, ({ one }) => ({
+  workspace: one(workspaces, { fields: [userAiProfiles.workspaceId], references: [workspaces.id] }),
+  user: one(users, { fields: [userAiProfiles.userId], references: [users.id] })
+}));
+
+export const projectAiGovernanceRelations = relations(projectAiGovernance, ({ one }) => ({
+  project: one(projects, { fields: [projectAiGovernance.projectId], references: [projects.id] })
 }));
 
 export const workItemsRelations = relations(workItems, ({ many, one }) => ({
@@ -82,7 +205,8 @@ export const workItemsRelations = relations(workItems, ({ many, one }) => ({
   agentTaskPlans: many(taskPlans),
   objectiveLinks: many(objectiveWorkItemLinks),
   taskPlans: many(workItemTaskPlans),
-  comments: many(comments)
+  comments: many(comments),
+  actionCardItems: many(actionCardItems)
 }));
 
 export const branchesRelations = relations(branches, ({ many, one }) => ({
@@ -109,6 +233,16 @@ export const agentRunsRelations = relations(agentRuns, ({ many, one }) => ({
   workItem: one(workItems, { fields: [agentRuns.workItemId], references: [workItems.id] }),
   branch: one(branches, { fields: [agentRuns.branchId], references: [branches.id] }),
   actorUser: one(users, { fields: [agentRuns.actorUserId], references: [users.id] }),
+  sourceConversation: one(projectConversations, {
+    fields: [agentRuns.sourceConversationId],
+    references: [projectConversations.id]
+  }),
+  sourceActionCardItem: one(actionCardItems, {
+    fields: [agentRuns.sourceActionCardItemId],
+    references: [actionCardItems.id],
+    relationName: "agent_run_source_action_card_item"
+  }),
+  actionCardItems: many(actionCardItems, { relationName: "action_card_item_run" }),
   steps: many(agentSteps),
   agentMemory: many(agentMemory),
   agentMemoryVersions: many(agentMemoryVersions),

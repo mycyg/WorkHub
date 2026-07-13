@@ -10,16 +10,19 @@ import {
   resolveEscalationRequestSchema
 } from "@workhub/contracts";
 import {
+  createActionCardRepository,
   createAiDecisionRepository,
   createWorkspaceMembershipRepository,
   createUserRepository,
   getSharedDatabaseClient,
+  type ActionCardRepository,
   type EscalationServiceRow as DbEscalationServiceRow,
   type UserRepository,
   type WorkspaceMembershipRepository
 } from "@workhub/db";
 
 import { localizedBudgetActionLabel, localizedBudgetUsageScopeLabel } from "../budget-labels.js";
+import { getDefaultStructuredLogger } from "../logging.js";
 import type { AuthActor } from "../middleware/auth.js";
 import { getDefaultAgentRunQueue, type AgentRunQueue } from "../workers/agent-runner.js";
 import { getDefaultTaskDispatcher, type TaskDispatcher } from "./task-dispatcher.js";
@@ -85,6 +88,8 @@ type EscalationServiceDependencies = {
   taskDispatcher?: Pick<TaskDispatcher, "dispatch"> | false;
   // B-R9.0-2：非计划升级「让它重试」要真重新入队 agent run。false 仅供纯读测试用。
   runQueue?: Pick<AgentRunQueue, "enqueue"> | false;
+  // R12 A2/A3：观察者 decide 类升级 resolve 后回写行动卡条目状态。false 仅供纯读测试用。
+  actionCards?: Pick<ActionCardRepository, "transitionItemStatus"> | false;
   now?: () => Date;
 };
 
@@ -138,6 +143,18 @@ function taskPlanIdFromHandoff(row: EscalationServiceRow) {
 
 function hasTaskPlanResolutionTarget(row: EscalationServiceRow) {
   return Boolean(taskPlanIdFromHandoff(row));
+}
+
+// R12 功能审查 A2/A3 修复：观察者的 decide 类升级带着 action_card_item_id（conversation-observer.ts
+// 写进 handoffJson）。此前从通用升级卡 resolve 后，群聊里的行动卡条目永久停在 waiting_decision，
+// 且之后正规 decide 端点因 requireUnresolvedEscalation 前置检查 409 死锁。这里读出该 id 供 resolve
+// 后回写条目状态，让两套状态机保持一致。
+function actionCardItemIdFromHandoff(row: EscalationServiceRow) {
+  if (row.handoffJson["source"] !== "conversation_observer") {
+    return null;
+  }
+  const value = row.handoffJson["action_card_item_id"];
+  return typeof value === "string" && value.trim() ? value : null;
 }
 
 function defaultTaskDispatcher() {
@@ -423,6 +440,18 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
     return deps.runQueue ?? getDefaultAgentRunQueue();
   }
 
+  // R12 A2/A3：同款懒解析——只有观察者 decide 类升级 resolve 时才需要回写行动卡条目。
+  function resolveActionCards(): Pick<ActionCardRepository, "transitionItemStatus"> | undefined {
+    if (deps.actionCards === false) {
+      return undefined;
+    }
+    if (deps.actionCards) {
+      return deps.actionCards;
+    }
+    defaultDbClient ??= getSharedDatabaseClient();
+    return createActionCardRepository(defaultDbClient.db);
+  }
+
   async function listAttentionPage(input: { actor: AuthActor; locale: WorkHubLocale }): Promise<EscalationAttentionPage> {
     const fetchedRows = await repository.listUnresolvedForWorkspace({
       workspaceId: input.actor.workspaceId,
@@ -510,6 +539,33 @@ export function createEscalationService(deps: EscalationServiceDependencies = {}
       }
       if (!row) {
         throw new EscalationServiceError(409, "escalation_race", "这条升级已经被处理过了。");
+      }
+      // R12 A2/A3：观察者 decide 类升级从通用卡 resolve 后，回写群聊行动卡条目状态——
+      // 否则聊天里那张卡永久停在「待拍板」，且正规 decide 端点被 requireUnresolvedEscalation 409 死锁。
+      // 映射：转成我来做→running(记到操作者名下)；取消→dismissed；让它重试→running(AI 再试)。
+      // best-effort：升级/工单状态已是权威结果，条目回写失败只告警不回滚（transitionItemStatus 返回
+      // null=条目已被别的路径处理，天然幂等，不算失败）。
+      const actionCardItemId = actionCardItemIdFromHandoff(existing);
+      if (actionCardItemId) {
+        const actionCardsRepo = resolveActionCards();
+        if (actionCardsRepo) {
+          try {
+            await actionCardsRepo.transitionItemStatus({
+              itemId: actionCardItemId,
+              workspaceId: actor.workspaceId,
+              fromStatuses: ["waiting_decision"],
+              toStatus: payload.action === "cancel" ? "dismissed" : "running",
+              ...(payload.action === "pm_mode" && actor.userId ? { assigneeUserId: actor.userId } : {}),
+              at: now()
+            });
+          } catch (error) {
+            getDefaultStructuredLogger().warn("escalation_action_card_backflow_failed", {
+              escalationId: id,
+              actionCardItemId,
+              error
+            });
+          }
+        }
       }
       if (taskPlanAction === "retry" && taskPlanId) {
         try {

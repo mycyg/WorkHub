@@ -14,6 +14,7 @@ import {
   projectDriveVersions,
   proposals,
   projects,
+  users,
   workItems,
   workspaces
 } from "../schema/index.js";
@@ -71,6 +72,14 @@ export type DriveMutationRows = {
   operation: DriveOperationRow;
 };
 
+// 批 6（网盘整合 + git 化）：单文件版本历史行——版本本身字段 + 操作者昵称（前端要展示「谁在什么时候」）。
+export type DriveVersionHistoryRow = DriveVersionRow & { createdByLabel: string };
+
+export type DriveVersionHistoryRows = {
+  item: DriveItemRow;
+  versions: DriveVersionHistoryRow[];
+};
+
 export type DriveCommentDraftRows = {
   comment: DriveCommentRow;
   workItem: DriveWorkItemRow | null;
@@ -101,7 +110,9 @@ export class DriveRepositoryConflictError extends Error {
       | "drive_accepted_deliverable_locked"
       | "drive_comment_draft_exists"
       | "drive_comment_draft_missing"
-      | "drive_comment_not_pending",
+      | "drive_comment_not_pending"
+      // 批 6（版本历史/回滚）：目标版本已经是当前版本，回滚没有意义。
+      | "drive_version_is_current",
     message: string
   ) {
     super(message);
@@ -199,6 +210,22 @@ export type DriveRepository = {
     proposalId: string;
     at?: Date;
   }) => Promise<DriveDraftProposalRows | null>;
+  // 批 6（网盘整合 + git 化，只读）：单文件版本历史，带操作者昵称，cap 上限（服务层默认 50/上限 200）。
+  // 可选——真实仓库实现它；未实现的假仓库（既有测试大量以对象字面量方式实现 DriveRepository）不必跟着补桩。
+  listVersionsForItem?: (input: {
+    projectId: string;
+    itemId: string;
+    limit?: number;
+  }) => Promise<DriveVersionHistoryRows | null>;
+  // 批 6（回滚）：回滚=追加新版本（复用目标版本的存储内容，不拷字节、不抹历史），更新 item.currentVersionId，
+  // 留痕 project_drive_operations(op_type="restore_version") + audit_logs，可审计。目标版本必须属于该 item；
+  // 目标已是当前版本时抛 DriveRepositoryConflictError("drive_version_is_current", ...)。同样是可选方法。
+  rollbackToVersion?: (input: DriveRepositoryActor & {
+    projectId: string;
+    itemId: string;
+    targetVersionId: string;
+    at?: Date;
+  }) => Promise<DriveMutationRows | null>;
 };
 
 function clampLimit(limit: number | undefined) {
@@ -347,6 +374,19 @@ async function attachAcceptedDeliverableRestoreState<T extends DriveAcceptedDeli
     });
     return { ...row, canRestore };
   });
+}
+
+// 批 6：回滚追加新版本时算下一个 version_no——与 proposals.ts 里 nextDriveVersionNo 同口径
+// （取该 item 现有最大 versionNo + 1），但那份是 proposals.ts 的私有 helper，这里独立写一份而不是
+// 导出复用（两处调用场景不同：一个在采纳交付物事务里，一个在本文件的回滚事务里；各自持有自己的 tx）。
+async function nextVersionNoForItem(db: WorkHubDb, itemId: string) {
+  const rows = await db
+    .select({ versionNo: projectDriveVersions.versionNo })
+    .from(projectDriveVersions)
+    .where(eq(projectDriveVersions.itemId, itemId))
+    .orderBy(desc(projectDriveVersions.versionNo))
+    .limit(1);
+  return (rows[0]?.versionNo ?? 0) + 1;
 }
 
 async function insertDriveOperation(
@@ -1481,6 +1521,137 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
           at
         });
         result = { comment: updatedComment, operation };
+      });
+      return result;
+    },
+
+    async listVersionsForItem(input) {
+      const project = await findProject(db, input.projectId);
+      if (!project) {
+        return null;
+      }
+      const itemRows = await db
+        .select()
+        .from(projectDriveItems)
+        .where(and(
+          eq(projectDriveItems.id, input.itemId),
+          eq(projectDriveItems.projectId, input.projectId),
+          eq(projectDriveItems.kind, "file")
+        ))
+        .limit(1);
+      const item = itemRows[0] as DriveItemRow | undefined;
+      if (!item) {
+        return null;
+      }
+      const limit = Math.max(1, Math.min(input.limit ?? 50, 200));
+      const versionRows = await db
+        .select({ version: projectDriveVersions, createdByLabel: users.nickname })
+        .from(projectDriveVersions)
+        .innerJoin(users, eq(users.id, projectDriveVersions.createdByUserId))
+        .where(eq(projectDriveVersions.itemId, item.id))
+        .orderBy(desc(projectDriveVersions.versionNo))
+        .limit(limit);
+      return {
+        item,
+        versions: versionRows.map((row) => ({ ...row.version, createdByLabel: row.createdByLabel }))
+      };
+    },
+
+    async rollbackToVersion(input) {
+      const at = input.at ?? new Date();
+      let result: DriveMutationRows | null = null;
+      await db.transaction(async (tx) => {
+        const project = await findProject(tx, input.projectId);
+        if (!project) {
+          return;
+        }
+        // 与 softDeleteItem/restoreDeletedItem 同口径：先对 item 行加锁，关闭并发回滚/其它写操作
+        // 交错时 currentVersionId 的丢更新窗口。
+        const itemRows = await tx
+          .select()
+          .from(projectDriveItems)
+          .where(and(eq(projectDriveItems.id, input.itemId), eq(projectDriveItems.projectId, input.projectId)))
+          .for("update")
+          .limit(1);
+        const item = itemRows[0];
+        if (!item || item.deletedAt || item.kind !== "file") {
+          return;
+        }
+        const targetRows = await tx
+          .select()
+          .from(projectDriveVersions)
+          .where(and(
+            eq(projectDriveVersions.id, input.targetVersionId),
+            eq(projectDriveVersions.itemId, item.id)
+          ))
+          .limit(1);
+        const target = targetRows[0];
+        if (!target) {
+          return;
+        }
+        if (item.currentVersionId === target.id) {
+          throw new DriveRepositoryConflictError("drive_version_is_current", "这已经是当前版本，无需找回。");
+        }
+        const newVersionId = randomUUID();
+        // 先算好下一个 version_no 再 insert——不要把 await 塞进 .values({...}) 字面量里：
+        // tx.insert(table) 本身是同步调用、会立刻构建出 builder，而 .values() 的参数对象在此之后才求值，
+        // 于是内联 `versionNo: await nextVersionNoForItem(...)` 会让这次 select 排在 insert 调用「之后」，
+        // 与代码读起来的顺序倒挂，容易在测试/复核时数错查询次数（这里就踩过一次）。
+        const nextVersionNo = await nextVersionNoForItem(tx, item.id);
+        const versionRows = await tx
+          .insert(projectDriveVersions)
+          .values({
+            id: newVersionId,
+            itemId: item.id,
+            versionNo: nextVersionNo,
+            filename: target.filename,
+            mime: target.mime,
+            sizeBytes: target.sizeBytes,
+            storagePath: target.storagePath,
+            sha256: target.sha256,
+            parsedText: target.parsedText,
+            parsedTextPath: target.parsedTextPath,
+            createdByUserId: input.actorUserId,
+            createdAt: at,
+            updatedAt: at
+          })
+          .returning();
+        const newVersion = versionRows[0] as DriveVersionRow;
+        const updatedItemRows = await tx
+          .update(projectDriveItems)
+          .set({
+            currentVersionId: newVersion.id,
+            updatedByUserId: input.actorUserId,
+            updatedAt: at
+          })
+          .where(eq(projectDriveItems.id, item.id))
+          .returning();
+        const updatedItem = updatedItemRows[0] as DriveItemRow;
+        const path = await driveItemPath(tx, updatedItem);
+        const payloadJson = {
+          drive_item_id: item.id,
+          path,
+          restored_from_version_id: target.id,
+          restored_from_version_no: target.versionNo,
+          new_version_id: newVersion.id,
+          new_version_no: newVersion.versionNo
+        };
+        const operation = await insertDriveOperation(tx, {
+          ...input,
+          projectId: input.projectId,
+          opType: "restore_version",
+          payloadJson,
+          at
+        });
+        await insertDriveAudit(tx, {
+          ...input,
+          project,
+          action: "drive.item.version_restored",
+          entityId: item.id,
+          detailJson: payloadJson,
+          at
+        });
+        result = { item: updatedItem, version: newVersion, operation };
       });
       return result;
     }

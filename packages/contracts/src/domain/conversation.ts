@@ -1,0 +1,555 @@
+import { z } from "zod";
+
+import { idSchema, isoDateTimeSchema } from "./common.js";
+
+export const conversationKindSchema = z.enum(["main", "collab"]);
+export type ConversationKind = z.infer<typeof conversationKindSchema>;
+
+export const conversationVisibilitySchema = z.enum(["project", "private"]);
+export type ConversationVisibility = z.infer<typeof conversationVisibilitySchema>;
+
+export const conversationSenderTypeSchema = z.enum(["user", "cuu", "system"]);
+export type ConversationSenderType = z.infer<typeof conversationSenderTypeSchema>;
+
+export const conversationMessageKindSchema = z.enum([
+  "text",
+  "file_card",
+  "action_card",
+  "system_event",
+  "tool_note"
+]);
+export type ConversationMessageKind = z.infer<typeof conversationMessageKindSchema>;
+
+export const aiModeSchema = z.number().int().min(1).max(5);
+export type AiMode = z.infer<typeof aiModeSchema>;
+
+export const dispatchPolicySchema = z.enum(["auto", "ask", "manual"]);
+export type DispatchPolicy = z.infer<typeof dispatchPolicySchema>;
+
+export const CUU_PROACTIVITY_VALUES = ["quiet", "balanced", "proactive"] as const;
+export const DEFAULT_CUU_PROACTIVITY = "balanced" as const;
+export const cuuProactivitySchema = z.enum(CUU_PROACTIVITY_VALUES);
+export type CuuProactivity = z.infer<typeof cuuProactivitySchema>;
+
+export const aiGranularSettingsSchema = z
+  .object({
+    create_work_item: z.boolean().optional(),
+    dispatch_run: z.boolean().optional(),
+    mutate_drive: z.boolean().optional(),
+    send_notification: z.boolean().optional()
+  })
+  .strict();
+export type AiGranularSettings = z.infer<typeof aiGranularSettingsSchema>;
+
+const disabledAiQuietHoursSchema = z
+  .object({
+    enabled: z.literal(false)
+  })
+  .strict();
+
+function isRuntimeSupportedTimeZone(value: string) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return true;
+  } catch (error) {
+    if (error instanceof RangeError) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+const enabledAiQuietHoursSchema = z
+  .object({
+    enabled: z.literal(true),
+    timezone: z.string().min(1).max(64).refine(isRuntimeSupportedTimeZone, {
+      message: "quiet-hours timezone must be supported by this runtime"
+    }),
+    start_minute: z.number().int().min(0).max(1439),
+    end_minute: z.number().int().min(0).max(1439),
+    weekdays: z.array(z.number().int().min(0).max(6)).min(1).max(7)
+  })
+  .strict();
+
+export const aiQuietHoursSchema = z
+  .discriminatedUnion("enabled", [disabledAiQuietHoursSchema, enabledAiQuietHoursSchema])
+  .superRefine((value, ctx) => {
+    if (value.enabled && value.start_minute === value.end_minute) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["end_minute"],
+        message: "quiet-hours start and end minutes must differ"
+      });
+    }
+    if (value.enabled && new Set(value.weekdays).size !== value.weekdays.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["weekdays"],
+        message: "quiet-hours weekdays must be unique"
+      });
+    }
+  });
+export type AiQuietHours = z.infer<typeof aiQuietHoursSchema>;
+
+export const DEFAULT_AI_QUIET_HOURS = { enabled: false } as const satisfies AiQuietHours;
+
+export const DEFAULT_USER_AI_PROFILE = {
+  default_mode: 3,
+  granular_settings: {},
+  dispatch_policy: "auto",
+  cuu_proactivity: DEFAULT_CUU_PROACTIVITY,
+  model_tier_preference: null
+} as const satisfies {
+  default_mode: AiMode;
+  granular_settings: AiGranularSettings;
+  dispatch_policy: DispatchPolicy;
+  cuu_proactivity: CuuProactivity;
+  model_tier_preference: string | null;
+};
+
+export const DEFAULT_PROJECT_AI_GOVERNANCE = {
+  observer_enabled: true,
+  silence_window_seconds: 60,
+  quiet_hours: DEFAULT_AI_QUIET_HOURS,
+  granular_settings: {}
+} as const satisfies {
+  observer_enabled: boolean;
+  silence_window_seconds: number;
+  quiet_hours: AiQuietHours;
+  granular_settings: AiGranularSettings;
+};
+
+const modelTierPreferenceSchema = z
+  .string()
+  .min(1)
+  .max(32)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u, "model tier preference must be a safe identifier");
+
+export const patchUserAiProfileRequestSchema = z
+  .object({
+    default_mode: aiModeSchema.optional(),
+    granular_settings: aiGranularSettingsSchema.optional(),
+    dispatch_policy: dispatchPolicySchema.optional(),
+    cuu_proactivity: cuuProactivitySchema.optional(),
+    model_tier_preference: modelTierPreferenceSchema.nullable().optional()
+  })
+  .strict()
+  .refine((value) => Object.values(value).some((field) => field !== undefined), {
+    message: "user AI profile patch must include at least one field"
+  });
+export type PatchUserAiProfileRequest = z.infer<typeof patchUserAiProfileRequestSchema>;
+
+export const patchProjectAiGovernanceRequestSchema = z
+  .object({
+    observer_enabled: z.boolean().optional(),
+    silence_window_seconds: z.number().int().min(0).max(86400).optional(),
+    quiet_hours: aiQuietHoursSchema.optional(),
+    granular_settings: aiGranularSettingsSchema.optional()
+  })
+  .strict()
+  .refine((value) => Object.values(value).some((field) => field !== undefined), {
+    message: "project AI governance patch must include at least one field"
+  });
+export type PatchProjectAiGovernanceRequest = z.infer<typeof patchProjectAiGovernanceRequestSchema>;
+
+const nonnegativeCnySchema = z.string().regex(/^\d+(?:\.\d+)?$/u);
+
+export const aiProviderModelVmSchema = z
+  .object({
+    id: modelTierPreferenceSchema,
+    model: z.string().min(1).max(128),
+    display_name: z.string().min(1).max(128),
+    context_window_tokens: z.number().int().positive(),
+    supports_streaming: z.boolean(),
+    supports_tools: z.boolean(),
+    cost_input_cny_per_mtok: z.number().finite().nonnegative(),
+    cost_output_cny_per_mtok: z.number().finite().nonnegative()
+  })
+  .strict();
+export type AiProviderModelVM = z.infer<typeof aiProviderModelVmSchema>;
+
+export const aiProviderVmSchema = z
+  .object({
+    name: z.string().min(1).max(64),
+    configured: z.boolean(),
+    default_model_id: modelTierPreferenceSchema,
+    models: z.array(aiProviderModelVmSchema).min(1).max(100)
+  })
+  .strict()
+  .superRefine((provider, ctx) => {
+    const modelIds = provider.models.map((model) => model.id);
+    if (new Set(modelIds).size !== modelIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["models"],
+        message: "provider model IDs must be unique"
+      });
+    }
+    if (!modelIds.includes(provider.default_model_id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["default_model_id"],
+        message: "provider default model ID must be present in models"
+      });
+    }
+  });
+export type AiProviderVM = z.infer<typeof aiProviderVmSchema>;
+
+export const aiDailyQuotaVmSchema = z
+  .object({
+    policy_id: z.string().min(1),
+    period: z.literal("day"),
+    max_tokens: z.number().int().positive(),
+    max_cost_cny: nonnegativeCnySchema,
+    enabled: z.boolean()
+  })
+  .strict();
+export type AiDailyQuotaVM = z.infer<typeof aiDailyQuotaVmSchema>;
+
+function aiUsagePeriodVmSchema<TPeriod extends "day" | "month">(period: TPeriod) {
+  return z
+    .object({
+      period: z.literal(period),
+      token_in: z.number().int().nonnegative(),
+      token_out: z.number().int().nonnegative(),
+      total_tokens: z.number().int().nonnegative(),
+      estimated_cost_cny: nonnegativeCnySchema
+    })
+    .strict();
+}
+
+export const aiDayUsageVmSchema = aiUsagePeriodVmSchema("day");
+export type AiDayUsageVM = z.infer<typeof aiDayUsageVmSchema>;
+export const aiMonthUsageVmSchema = aiUsagePeriodVmSchema("month");
+export type AiMonthUsageVM = z.infer<typeof aiMonthUsageVmSchema>;
+
+export const aiBudgetSummaryVmSchema = z
+  .object({
+    daily_quota: aiDailyQuotaVmSchema.nullable(),
+    usage: z
+      .object({
+        day: aiDayUsageVmSchema,
+        month: aiMonthUsageVmSchema
+      })
+      .strict()
+  })
+  .strict();
+export type AiBudgetSummaryVM = z.infer<typeof aiBudgetSummaryVmSchema>;
+
+export const userAiProfileVmSchema = z
+  .object({
+    workspace_id: idSchema,
+    user_id: idSchema,
+    default_mode: aiModeSchema,
+    granular_settings: aiGranularSettingsSchema,
+    dispatch_policy: dispatchPolicySchema,
+    cuu_proactivity: cuuProactivitySchema,
+    model_tier_preference: modelTierPreferenceSchema.nullable(),
+    providers: z.array(aiProviderVmSchema).max(100),
+    budget_summary: aiBudgetSummaryVmSchema,
+    generated_at: isoDateTimeSchema,
+    updated_at: isoDateTimeSchema.nullable()
+  })
+  .strict();
+export type UserAiProfileVM = z.infer<typeof userAiProfileVmSchema>;
+
+export const projectAiGovernanceVmSchema = z
+  .object({
+    project_id: idSchema,
+    observer_enabled: z.boolean(),
+    silence_window_seconds: z.number().int().min(0).max(86400),
+    quiet_hours: aiQuietHoursSchema,
+    granular_settings: aiGranularSettingsSchema,
+    updated_at: isoDateTimeSchema.nullable()
+  })
+  .strict();
+export type ProjectAiGovernanceVM = z.infer<typeof projectAiGovernanceVmSchema>;
+
+export const executionHintSchema = z.enum(["server", "local", "any"]);
+export type ExecutionHint = z.infer<typeof executionHintSchema>;
+
+export const conversationFileCardContentSchema = z
+  .object({
+    drive_item_id: idSchema,
+    snapshot_name: z.string().min(1).max(256)
+  })
+  .strict();
+export type ConversationFileCardContent = z.infer<typeof conversationFileCardContentSchema>;
+
+export const conversationFileCardRequestContentSchema = z
+  .object({
+    drive_item_id: idSchema
+  })
+  .strict();
+export type ConversationFileCardRequestContent = z.infer<typeof conversationFileCardRequestContentSchema>;
+
+// R12 批4a：Cuu 协同回应携带的记忆/技能引用清单（回应组装时实际注入过哪些条目）。additive——
+// 只在 text 内容上新增一个 optional 字段，人类发的文本消息不受影响（仓库层 createUserMessage 的
+// assertMessageContent 仍然只接受唯一 text 键，这个字段只会出现在 createCuuMessage 落库的消息上）。
+export const conversationMemoryCitationSchema = z
+  .object({
+    kind: z.enum(["user_memory", "team_skill"]),
+    title: z.string().min(1).max(256)
+  })
+  .strict();
+export type ConversationMemoryCitation = z.infer<typeof conversationMemoryCitationSchema>;
+
+export const MAX_CONVERSATION_MEMORY_CITATIONS = 20;
+
+export const MAX_CONVERSATION_TEXT_CODE_UNITS = 20_000;
+export const conversationTextContentSchema = z
+  .object({
+    text: z.string().min(1).max(MAX_CONVERSATION_TEXT_CODE_UNITS),
+    memory_citations: z.array(conversationMemoryCitationSchema).max(MAX_CONVERSATION_MEMORY_CITATIONS).optional()
+  })
+  .strict();
+export type ConversationTextContent = z.infer<typeof conversationTextContentSchema>;
+
+const safeIntegerInputSchema = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+const safeIntegerOutputSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+const canonicalConversationCursorTimestampSchema = isoDateTimeSchema.regex(
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u,
+  "conversation cursor timestamp must be canonical UTC with six fractional digits"
+);
+
+const conversationMessageListLimitSchema = z.coerce.number().int().min(1).max(100).default(50);
+
+// R12 批8：反向翻页游标。与 afterSeq 互斥——两个 union 分支都是 .strict()，任一分支收到对方的键都会
+// 因为“未识别字段”整体校验失败，不需要额外的 superRefine 就能天然表达互斥；先试 beforeSeq 分支再试
+// afterSeq 分支，保证 {} 或只给 afterSeq 时行为与批 0 完全一致（afterSeq 分支的 default(0) 兜底）。
+const conversationMessageListBeforeQuerySchema = z
+  .object({
+    beforeSeq: safeIntegerInputSchema,
+    limit: conversationMessageListLimitSchema
+  })
+  .strict();
+const conversationMessageListAfterQuerySchema = z
+  .object({
+    afterSeq: safeIntegerInputSchema.default(0),
+    limit: conversationMessageListLimitSchema
+  })
+  .strict();
+
+export const conversationMessageListQuerySchema = z.union([
+  conversationMessageListBeforeQuerySchema,
+  conversationMessageListAfterQuerySchema
+]);
+export type ConversationMessageListQuery = z.infer<typeof conversationMessageListQuerySchema>;
+
+export const conversationListQuerySchema = z
+  .object({
+    afterCreatedAt: canonicalConversationCursorTimestampSchema.optional(),
+    afterId: idSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50)
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.afterCreatedAt === undefined) !== (value.afterId === undefined)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: value.afterCreatedAt === undefined ? ["afterCreatedAt"] : ["afterId"],
+        message: "conversation cursor requires both afterCreatedAt and afterId"
+      });
+    }
+  });
+export type ConversationListQuery = z.infer<typeof conversationListQuerySchema>;
+
+export const createConversationRequestSchema = z
+  .object({
+    // Main conversations are created atomically with projects, never through the public conversation endpoint.
+    kind: z.literal("collab"),
+    title: z.string().min(1).max(256),
+    visibility: conversationVisibilitySchema,
+    parent_conversation_id: idSchema.optional(),
+    source_message_id: idSchema.optional(),
+    participant_user_ids: z.array(idSchema).max(99).default([])
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.source_message_id && !value.parent_conversation_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["parent_conversation_id"],
+        message: "source message requires a parent conversation"
+      });
+    }
+    if (
+      new Set(value.participant_user_ids.map((userId) => userId.toLowerCase())).size !==
+      value.participant_user_ids.length
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["participant_user_ids"],
+        message: "participant user IDs must be unique"
+      });
+    }
+  });
+export type CreateConversationRequest = z.infer<typeof createConversationRequestSchema>;
+
+export const createConversationMessageRequestSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("text"),
+      content: conversationTextContentSchema,
+      thread_root_id: idSchema.optional()
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("file_card"),
+      content: conversationFileCardRequestContentSchema,
+      thread_root_id: idSchema.optional()
+    })
+    .strict()
+]);
+export type CreateConversationMessageRequest = z.infer<typeof createConversationMessageRequestSchema>;
+
+const conversationParticipantRoleSchema = z.enum(["owner", "member"]);
+
+export const conversationVmSchema = z
+  .object({
+    id: idSchema,
+    workspace_id: idSchema,
+    project_id: idSchema,
+    kind: conversationKindSchema,
+    title: z.string().min(1).max(256),
+    parent_conversation_id: idSchema.nullable(),
+    source_message_id: idSchema.nullable(),
+    visibility: conversationVisibilitySchema,
+    next_seq: safeIntegerOutputSchema,
+    created_by: idSchema.nullable(),
+    participant_role: conversationParticipantRoleSchema.nullable(),
+    created_at: isoDateTimeSchema,
+    updated_at: isoDateTimeSchema
+  })
+  .strict();
+export type ConversationVM = z.infer<typeof conversationVmSchema>;
+
+export const conversationParticipantVmSchema = z
+  .object({
+    id: idSchema,
+    conversation_id: idSchema,
+    user_id: idSchema,
+    role: conversationParticipantRoleSchema,
+    created_at: isoDateTimeSchema,
+    updated_at: isoDateTimeSchema
+  })
+  .strict();
+export type ConversationParticipantVM = z.infer<typeof conversationParticipantVmSchema>;
+
+export const createConversationResultVmSchema = z
+  .object({
+    conversation: conversationVmSchema,
+    participants: z.array(conversationParticipantVmSchema).min(1).max(100)
+  })
+  .strict();
+export type CreateConversationResultVM = z.infer<typeof createConversationResultVmSchema>;
+
+const MAX_GENERIC_CONVERSATION_CONTENT_KEYS = 64;
+const MAX_GENERIC_CONVERSATION_CONTENT_CODE_UNITS = 65_536;
+const boundedConversationObjectContentSchema = z
+  .record(z.string().min(1).max(128), z.unknown())
+  .superRefine((content, ctx) => {
+    if (Object.keys(content).length > MAX_GENERIC_CONVERSATION_CONTENT_KEYS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.too_big,
+        origin: "object",
+        maximum: MAX_GENERIC_CONVERSATION_CONTENT_KEYS,
+        inclusive: true,
+        message: "conversation content has too many fields"
+      });
+    }
+    let serialized: string | undefined;
+    try {
+      serialized = JSON.stringify(content);
+    } catch {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "conversation content must be JSON serializable"
+      });
+      return;
+    }
+    if (serialized === undefined || serialized.length > MAX_GENERIC_CONVERSATION_CONTENT_CODE_UNITS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "conversation content exceeds the bounded JSON size"
+      });
+    }
+  });
+
+const conversationMessageBaseShape = {
+  id: idSchema,
+  conversation_id: idSchema,
+  seq: safeIntegerOutputSchema,
+  sender_type: conversationSenderTypeSchema,
+  sender_user_id: idSchema.nullable(),
+  thread_root_id: idSchema.nullable(),
+  created_at: isoDateTimeSchema
+} as const;
+
+export const conversationMessageVmSchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...conversationMessageBaseShape,
+    kind: z.literal("text"),
+    content: conversationTextContentSchema
+  }).strict(),
+  z.object({
+    ...conversationMessageBaseShape,
+    kind: z.literal("file_card"),
+    content: conversationFileCardContentSchema
+  }).strict(),
+  z.object({
+    ...conversationMessageBaseShape,
+    kind: z.literal("action_card"),
+    content: boundedConversationObjectContentSchema
+  }).strict(),
+  z.object({
+    ...conversationMessageBaseShape,
+    kind: z.literal("system_event"),
+    content: boundedConversationObjectContentSchema
+  }).strict(),
+  z.object({
+    ...conversationMessageBaseShape,
+    kind: z.literal("tool_note"),
+    content: boundedConversationObjectContentSchema
+  }).strict()
+]);
+export type ConversationMessageVM = z.infer<typeof conversationMessageVmSchema>;
+
+export const conversationListCursorVmSchema = z
+  .object({
+    afterCreatedAt: canonicalConversationCursorTimestampSchema,
+    afterId: idSchema
+  })
+  .strict();
+export type ConversationListCursorVM = z.infer<typeof conversationListCursorVmSchema>;
+
+export const conversationListPageVmSchema = z
+  .object({
+    conversations: z.array(conversationVmSchema).max(100),
+    capped: z.boolean(),
+    next_cursor: conversationListCursorVmSchema.nullable()
+  })
+  .strict()
+  .superRefine((page, ctx) => {
+    if (page.capped !== (page.next_cursor !== null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["next_cursor"],
+        message: "conversation next cursor must be present exactly when the page is capped"
+      });
+    }
+  });
+export type ConversationListPageVM = z.infer<typeof conversationListPageVmSchema>;
+
+export const conversationMessagePageVmSchema = z
+  .object({
+    messages: z.array(conversationMessageVmSchema).max(100),
+    has_more: z.boolean(),
+    next_after_seq: safeIntegerOutputSchema,
+    // R12 批8：仅在响应 beforeSeq（反向翻页）请求时出现——continuing 更早历史的游标。afterSeq
+    // 请求的响应形状保持批 0 原样不变（这个键完全不出现，不是出现后填 null），向后兼容零改动。
+    next_before_seq: safeIntegerOutputSchema.optional()
+  })
+  .strict();
+export type ConversationMessagePageVM = z.infer<typeof conversationMessagePageVmSchema>;

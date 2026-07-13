@@ -9,6 +9,8 @@ import {
   createApprovalRequestSchema,
   delegateApprovalRequestSchema,
   delegateEscalationRequestSchema,
+  patchProjectAiGovernanceRequestSchema,
+  patchUserAiProfileRequestSchema,
   permissionPolicyWriteSchema,
   resolveEscalationRequestSchema,
   respondApprovalRequestSchema,
@@ -341,6 +343,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["get", "/api/pages/proposals/{id}"],
     ["get", "/api/pages/drive"],
     ["get", "/api/pages/project/{id}"],
+    ["get", "/api/pages/workbench/{projectId}"],
     ["get", "/api/pages/meetings"],
     ["get", "/api/pages/notifications"],
     ["get", "/api/pages/calendar"],
@@ -368,6 +371,14 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/notifications/{id}/complete"],
     ["get", "/api/projects"],
     ["post", "/api/projects/bootstrap"],
+    ["get", "/api/projects/{id}/conversations"],
+    ["post", "/api/projects/{id}/conversations"],
+    ["get", "/api/conversations/{id}/messages"],
+    ["post", "/api/conversations/{id}/messages"],
+    ["get", "/api/me/ai-profile"],
+    ["patch", "/api/me/ai-profile"],
+    ["get", "/api/projects/{id}/ai-governance"],
+    ["patch", "/api/projects/{id}/ai-governance"],
     ["post", "/api/workitems/{id}/proposals"],
     ["get", "/api/workitems/{id}/proposals"],
     ["get", "/api/workitems/{id}/conflicts"],
@@ -397,6 +408,7 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["get", "/api/push/stream/run/{id}"],
     ["get", "/api/push/stream/session/{id}"],
     ["get", "/api/push/stream/proposal/{id}"],
+    ["get", "/api/push/stream/conversation/{id}"],
     ["post", "/api/workitems"],
     ["post", "/api/workitems/{id}/evidence-bindings"],
     ["get", "/api/workitems/{id}/deliverables/{acceptedChangeId}/download"],
@@ -405,7 +417,15 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/knowledge/search"],
     ["get", "/api/workitems/{id}/audit"],
     ["get", "/api/pilot/day1/metrics"],
-    ["get", "/api/ai-worklog/today"]
+    ["get", "/api/ai-worklog/today"],
+    ["get", "/api/conversations/{id}/army"],
+    ["get", "/api/me/army"],
+    ["post", "/api/action-card-items/{id}/decide"],
+    ["post", "/api/action-card-items/{id}/undo"],
+    ["post", "/api/conversations/{id}/turns"],
+    ["post", "/api/conversations/{id}/typing"],
+    ["get", "/api/drive/projects/{projectId}/items/{itemId}/versions"],
+    ["post", "/api/drive/projects/{projectId}/items/{itemId}/versions/{versionId}/restore"]
   ] as const;
   for (const [method, route] of expectedRoutes) {
     assert.ok(body.paths[route]?.[method], `${method.toUpperCase()} ${route} missing from OpenAPI document`);
@@ -420,6 +440,361 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
   } | undefined;
   assert.ok(driveUpload?.requestBody?.content?.["application/json"]?.schema?.properties?.parent_id);
   assert.ok(driveUpload?.requestBody?.content?.["multipart/form-data"]?.schema?.properties?.parent_id);
+});
+
+test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP endpoints", async () => {
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+  const projectPath = body.paths["/api/projects/{id}/conversations"] as {
+    get?: {
+      parameters?: Array<{ name: string; in: string; description?: string; "x-workhub-paired-with"?: string }>;
+      responses?: Record<string, unknown>;
+      "x-workhub-query-constraints"?: { allOrNone?: string[][] };
+    };
+    post?: {
+      parameters?: Array<{ name: string; in: string }>;
+      requestBody?: { content?: { "application/json"?: { schema?: Record<string, unknown> } } };
+      responses?: Record<string, unknown>;
+    };
+  } | undefined;
+  const messagePath = body.paths["/api/conversations/{id}/messages"] as {
+    get?: {
+      parameters?: Array<{ name: string; in: string; description?: string; "x-workhub-mutually-exclusive-with"?: string }>;
+      responses?: Record<string, unknown>;
+      "x-workhub-query-constraints"?: { exclusive?: string[][] };
+    };
+    post?: {
+      parameters?: Array<{ name: string; in: string }>;
+      requestBody?: { content?: { "application/json"?: { schema?: Record<string, unknown> } } };
+      responses?: Record<string, unknown>;
+    };
+  } | undefined;
+
+  assert.deepEqual(projectPath?.get?.parameters?.map((parameter) => `${parameter.in}:${parameter.name}`), [
+    "path:id",
+    "query:afterCreatedAt",
+    "query:afterId",
+    "query:limit"
+  ]);
+  assert.deepEqual(projectPath?.post?.parameters?.map((parameter) => `${parameter.in}:${parameter.name}`), [
+    "path:id"
+  ]);
+  assert.deepEqual(messagePath?.get?.parameters?.map((parameter) => `${parameter.in}:${parameter.name}`), [
+    "path:id",
+    "query:afterSeq",
+    "query:beforeSeq",
+    "query:limit"
+  ]);
+  assert.deepEqual(messagePath?.post?.parameters?.map((parameter) => `${parameter.in}:${parameter.name}`), [
+    "path:id"
+  ]);
+  assert.deepEqual(Object.keys(projectPath?.get?.responses ?? {}).sort(), ["200", "401", "403", "404", "422", "500"]);
+  assert.deepEqual(Object.keys(projectPath?.post?.responses ?? {}).sort(), ["201", "400", "401", "403", "404", "413", "422", "500"]);
+  assert.deepEqual(Object.keys(messagePath?.get?.responses ?? {}).sort(), ["200", "401", "403", "404", "422", "500"]);
+  assert.deepEqual(Object.keys(messagePath?.post?.responses ?? {}).sort(), ["201", "400", "401", "403", "404", "409", "413", "422", "500"]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/conversations", "post", "413", ["payload_too_large"]);
+  assertJsonErrorCodes(body.paths, "/api/conversations/{id}/messages", "post", "413", ["payload_too_large"]);
+
+  assert.deepEqual(projectPath?.get?.["x-workhub-query-constraints"], {
+    allOrNone: [["afterCreatedAt", "afterId"]]
+  });
+  const createdAtParameter = projectPath?.get?.parameters?.find((parameter) => parameter.name === "afterCreatedAt");
+  const afterIdParameter = projectPath?.get?.parameters?.find((parameter) => parameter.name === "afterId");
+  assert.equal(createdAtParameter?.["x-workhub-paired-with"], "afterId");
+  assert.equal(afterIdParameter?.["x-workhub-paired-with"], "afterCreatedAt");
+  assert.match(createdAtParameter?.description ?? "", /must be provided together/iu);
+  assert.match(afterIdParameter?.description ?? "", /must be provided together/iu);
+
+  // R12 批8：beforeSeq（反向翻页）与 afterSeq 互斥——同 afterCreatedAt/afterId 配对标记同款模式，
+  // 只是语义反过来（互斥而非成对）。
+  assert.deepEqual(messagePath?.get?.["x-workhub-query-constraints"], {
+    exclusive: [["afterSeq", "beforeSeq"]]
+  });
+  const afterSeqParameter = messagePath?.get?.parameters?.find((parameter) => parameter.name === "afterSeq");
+  const beforeSeqParameter = messagePath?.get?.parameters?.find((parameter) => parameter.name === "beforeSeq");
+  assert.equal(afterSeqParameter?.["x-workhub-mutually-exclusive-with"], "beforeSeq");
+  assert.equal(beforeSeqParameter?.["x-workhub-mutually-exclusive-with"], "afterSeq");
+  assert.match(afterSeqParameter?.description ?? "", /mutually exclusive/iu);
+  assert.match(beforeSeqParameter?.description ?? "", /mutually exclusive/iu);
+
+  const projectBody = projectPath?.post?.requestBody?.content?.["application/json"]?.schema as {
+    properties?: Record<string, unknown>;
+    required?: string[];
+    dependentRequired?: Record<string, string[]>;
+  } | undefined;
+  assert.deepEqual(projectBody?.required, ["kind", "title", "visibility"]);
+  assert.deepEqual(Object.keys(projectBody?.properties ?? {}).sort(), [
+    "kind",
+    "parent_conversation_id",
+    "participant_user_ids",
+    "source_message_id",
+    "title",
+    "visibility"
+  ]);
+  assert.deepEqual(projectBody?.dependentRequired, {
+    source_message_id: ["parent_conversation_id"]
+  });
+  const participants = projectBody?.properties?.participant_user_ids as {
+    uniqueItems?: boolean;
+    description?: string;
+    "x-workhub-case-insensitive-unique"?: boolean;
+  } | undefined;
+  assert.equal(participants?.uniqueItems, true);
+  assert.equal(participants?.["x-workhub-case-insensitive-unique"], true);
+  assert.match(participants?.description ?? "", /case-insensitive/iu);
+
+  const messageBody = messagePath?.post?.requestBody?.content?.["application/json"]?.schema as {
+    oneOf?: Array<{
+      properties?: {
+        kind?: { const?: string };
+        content?: { properties?: Record<string, unknown> };
+      };
+    }>;
+  } | undefined;
+  const fileVariant = messageBody?.oneOf?.find((variant) => variant.properties?.kind?.const === "file_card");
+  assert.deepEqual(Object.keys(fileVariant?.properties?.content?.properties ?? {}), ["drive_item_id"]);
+
+  // R12 批3落地后,decide/undo 的真实路径是 /api/action-card-items/{id}/*(见 routes/action-cards.ts);
+  // 批0 预占的会话嵌套形态从未实现,必须继续保持未文档化,防止旧猜测路径复活。
+  for (const stale of [
+    "/api/conversations/{id}/action-cards/{itemId}/decide",
+    "/api/conversations/{id}/action-cards/{itemId}/undo"
+  ]) {
+    assert.equal(body.paths[stale], undefined, `${stale} is a superseded speculative path and must stay undocumented`);
+  }
+});
+
+test("R12 AI settings runtime and OpenAPI expose four strict secret-free operations", async () => {
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+  const profilePath = body.paths["/api/me/ai-profile"] as {
+    get?: { responses?: Record<string, unknown> };
+    patch?: {
+      requestBody?: { content?: { "application/json"?: { schema?: Record<string, unknown> } } };
+      responses?: Record<string, unknown>;
+    };
+  } | undefined;
+  const governancePath = body.paths["/api/projects/{id}/ai-governance"] as {
+    get?: { parameters?: unknown[]; responses?: Record<string, unknown> };
+    patch?: {
+      parameters?: unknown[];
+      requestBody?: { content?: { "application/json"?: { schema?: Record<string, unknown> } } };
+      responses?: Record<string, unknown>;
+    };
+  } | undefined;
+
+  assert.deepEqual(
+    Object.keys(body.paths).filter((path) => path.includes("ai-profile") || path.includes("ai-governance")).sort(),
+    ["/api/me/ai-profile", "/api/projects/{id}/ai-governance"]
+  );
+  assert.deepEqual(Object.keys(profilePath ?? {}).sort(), ["get", "patch"]);
+  assert.deepEqual(Object.keys(governancePath ?? {}).sort(), ["get", "patch"]);
+  assert.deepEqual(
+    parameterByName(body.paths, "/api/projects/{id}/ai-governance", "get", "id"),
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }
+  );
+  assert.deepEqual(
+    parameterByName(body.paths, "/api/projects/{id}/ai-governance", "patch", "id"),
+    { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }
+  );
+
+  assert.deepEqual(Object.keys(profilePath?.get?.responses ?? {}).sort(), ["200", "401", "403", "500"]);
+  assert.deepEqual(
+    Object.keys(profilePath?.patch?.responses ?? {}).sort(),
+    ["200", "400", "401", "403", "413", "422", "500"]
+  );
+  assert.deepEqual(
+    Object.keys(governancePath?.get?.responses ?? {}).sort(),
+    ["200", "401", "403", "404", "500"]
+  );
+  assert.deepEqual(
+    Object.keys(governancePath?.patch?.responses ?? {}).sort(),
+    ["200", "400", "401", "403", "404", "413", "422", "500"]
+  );
+  assertJsonErrorCodes(body.paths, "/api/me/ai-profile", "patch", "400", [
+    "malformed_json",
+    "json_object_required"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/me/ai-profile", "patch", "413", ["payload_too_large"]);
+  assertJsonErrorCodes(body.paths, "/api/me/ai-profile", "patch", "422", [
+    "validation_error",
+    "ai_model_preference_unavailable"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/ai-governance", "get", "404", [
+    "ai_governance_not_found"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/ai-governance", "patch", "400", [
+    "malformed_json",
+    "json_object_required"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/ai-governance", "patch", "413", [
+    "payload_too_large"
+  ]);
+  assertJsonErrorCodes(body.paths, "/api/projects/{id}/ai-governance", "patch", "422", [
+    "validation_error"
+  ]);
+
+  const profileRequest = jsonRequestSchema(body.paths, "/api/me/ai-profile", "patch") as {
+    minProperties?: number;
+    additionalProperties?: boolean;
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.equal(profileRequest?.minProperties, 1);
+  assert.equal(profileRequest?.additionalProperties, false);
+  assert.deepEqual(Object.keys(profileRequest?.properties ?? {}).sort(), [
+    "cuu_proactivity",
+    "default_mode",
+    "dispatch_policy",
+    "granular_settings",
+    "model_tier_preference"
+  ]);
+  const modelPreference = profileRequest?.properties?.model_tier_preference as {
+    anyOf?: Array<Record<string, unknown>>;
+    description?: string;
+  } | undefined;
+  assert.deepEqual(modelPreference?.anyOf, [
+    {
+      type: "string",
+      minLength: 1,
+      maxLength: 32,
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    { type: "null" }
+  ]);
+  assert.match(modelPreference?.description ?? "", /provider model id/iu);
+
+  const governanceRequest = jsonRequestSchema(
+    body.paths,
+    "/api/projects/{id}/ai-governance",
+    "patch"
+  ) as {
+    minProperties?: number;
+    additionalProperties?: boolean;
+    properties?: Record<string, unknown>;
+  } | undefined;
+  assert.equal(governanceRequest?.minProperties, 1);
+  assert.equal(governanceRequest?.additionalProperties, false);
+  const quietHours = governanceRequest?.properties?.quiet_hours as {
+    oneOf?: Array<{
+      properties?: Record<string, unknown>;
+      required?: string[];
+      additionalProperties?: boolean;
+    }>;
+    "x-workhub-runtime-supported-timezone"?: boolean;
+    "x-workhub-start-end-must-differ"?: boolean;
+  } | undefined;
+  assert.equal(quietHours?.["x-workhub-runtime-supported-timezone"], true);
+  assert.equal(quietHours?.["x-workhub-start-end-must-differ"], true);
+  assert.equal(quietHours?.oneOf?.length, 2);
+  assert.equal(quietHours?.oneOf?.every((variant) => variant.additionalProperties === false), true);
+  const enabledQuietHours = quietHours?.oneOf?.find((variant) =>
+    (variant.properties?.enabled as { const?: boolean } | undefined)?.const === true
+  );
+  assert.deepEqual(enabledQuietHours?.required, [
+    "enabled",
+    "timezone",
+    "start_minute",
+    "end_minute",
+    "weekdays"
+  ]);
+  assert.deepEqual(enabledQuietHours?.properties?.start_minute, {
+    type: "integer",
+    minimum: 0,
+    maximum: 1439
+  });
+  assert.deepEqual(enabledQuietHours?.properties?.weekdays, {
+    type: "array",
+    minItems: 1,
+    maxItems: 7,
+    uniqueItems: true,
+    items: { type: "integer", minimum: 0, maximum: 6 }
+  });
+
+  const profileResponse = jsonResponseSchema(body.paths, "/api/me/ai-profile", "get", "200");
+  const profileData = profileResponse?.properties?.data as {
+    required?: string[];
+    properties?: Record<string, unknown>;
+    additionalProperties?: boolean;
+  } | undefined;
+  assert.deepEqual(profileResponse?.required, ["ok", "data"]);
+  assert.deepEqual(profileData?.required, [
+    "workspace_id",
+    "user_id",
+    "default_mode",
+    "granular_settings",
+    "dispatch_policy",
+    "cuu_proactivity",
+    "model_tier_preference",
+    "providers",
+    "budget_summary",
+    "generated_at",
+    "updated_at"
+  ]);
+  assert.equal(profileData?.additionalProperties, false);
+  const serializedProfileSchema = JSON.stringify(profileData);
+  for (const secretField of ["api_key", "base_url", "storage_secret"]) {
+    assert.equal(serializedProfileSchema.includes(secretField), false, `profile schema leaked ${secretField}`);
+  }
+  const providerSchema = (profileData?.properties?.providers as {
+    items?: { properties?: Record<string, unknown>; additionalProperties?: boolean };
+  } | undefined)?.items;
+  assert.equal(providerSchema?.additionalProperties, false);
+  const modelsSchema = providerSchema?.properties?.models as {
+    minItems?: number;
+    items?: { additionalProperties?: boolean };
+    "x-workhub-unique-model-ids"?: boolean;
+    "x-workhub-contains-default-model-id"?: boolean;
+  } | undefined;
+  assert.equal(modelsSchema?.minItems, 1);
+  assert.equal(modelsSchema?.items?.additionalProperties, false);
+  assert.equal(modelsSchema?.["x-workhub-unique-model-ids"], true);
+  assert.equal(modelsSchema?.["x-workhub-contains-default-model-id"], true);
+  const budget = profileData?.properties?.budget_summary as { properties?: Record<string, unknown> } | undefined;
+  const usage = budget?.properties?.usage as { properties?: Record<string, unknown> } | undefined;
+  const month = usage?.properties?.month as { properties?: Record<string, unknown> } | undefined;
+  assert.deepEqual(Object.keys(month?.properties ?? {}).sort(), [
+    "estimated_cost_cny",
+    "period",
+    "token_in",
+    "token_out",
+    "total_tokens"
+  ]);
+
+  const governanceResponse = jsonResponseSchema(
+    body.paths,
+    "/api/projects/{id}/ai-governance",
+    "get",
+    "200"
+  );
+  const governanceData = governanceResponse?.properties?.data as {
+    required?: string[];
+    additionalProperties?: boolean;
+  } | undefined;
+  assert.deepEqual(governanceData?.required, [
+    "project_id",
+    "observer_enabled",
+    "silence_window_seconds",
+    "quiet_hours",
+    "granular_settings",
+    "updated_at"
+  ]);
+  assert.equal(governanceData?.additionalProperties, false);
+
+  for (const path of [
+    "/api/me/ai-profile",
+    `/api/projects/14000000-0000-4000-8000-000000000004/ai-governance`
+  ]) {
+    const overLimit = await app.request(path, {
+      method: "PATCH",
+      headers: {
+        "Content-Length": String(1_048_576 + 1),
+        "Content-Type": "application/json"
+      },
+      body: "{}"
+    });
+    assert.equal(overLimit.status, 413);
+    assert.equal((await overLimit.json() as ErrorBody).error.code, "payload_too_large");
+  }
 });
 
 test("runtime API routes stay in lockstep with the OpenAPI document", async () => {
@@ -573,7 +948,13 @@ test("OpenAPI JSON request bodies stay aligned with zod input contracts", async 
     { path: "/api/approvals/{id}/comments", method: "post", schema: addApprovalCommentRequestSchema },
     { path: "/api/escalations/{id}/resolve", method: "post", schema: resolveEscalationRequestSchema },
     { path: "/api/escalations/{id}/delegate", method: "post", schema: delegateEscalationRequestSchema },
-    { path: "/api/workitems/{id}/evidence-bindings", method: "post", schema: useEvidenceForTaskRequestSchema }
+    { path: "/api/workitems/{id}/evidence-bindings", method: "post", schema: useEvidenceForTaskRequestSchema },
+    { path: "/api/me/ai-profile", method: "patch", schema: patchUserAiProfileRequestSchema },
+    {
+      path: "/api/projects/{id}/ai-governance",
+      method: "patch",
+      schema: patchProjectAiGovernanceRequestSchema
+    }
   ] as const) {
     assertJsonRequestMatchesZodObject(body.paths, path, method, schema);
   }
@@ -664,6 +1045,127 @@ test("project and drive OpenAPI routes document runtime path and query parameter
   }
 });
 
+test("R12 workbench OpenAPI locks the bounded strict VM, invariants, and non-oracle errors", async () => {
+  type OpenApiSchema = {
+    additionalProperties?: boolean;
+    enum?: unknown[];
+    items?: OpenApiSchema;
+    maxItems?: number;
+    properties?: Record<string, OpenApiSchema>;
+    required?: string[];
+  };
+  const response = await app.request("/api/openapi.json");
+  const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
+  const path = "/api/pages/workbench/{projectId}";
+  const operation = body.paths[path]?.get as {
+    responses?: Record<string, unknown>;
+    "x-workhub-invariants"?: string[];
+  } | undefined;
+
+  assert.deepEqual(operationParameters(body.paths, path, "get"), [
+    { name: "projectId", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+    { name: "locale", in: "query", required: false, schema: { type: "string", enum: ["zh-CN", "en-US"] } }
+  ]);
+  assert.deepEqual(Object.keys(operation?.responses ?? {}).sort(), ["200", "401", "403", "404", "500"]);
+  assert.deepEqual(operation?.["x-workhub-invariants"], [
+    "Exactly one conversation is kind=main; every conversation matches data.project.id and workspace_id.",
+    "conversations.capped is true if and only if conversations.next_cursor is non-null.",
+    "workspace_members.total is at least returned; returned equals items.length; capped is true if and only if total is greater than returned.",
+    "Exactly one returned workspace member is self; it is first and matches viewer.user_id, viewer.membership_role, and viewer.is_project_owner.",
+    "At most one returned workspace member is the project owner.",
+    "army_summary and recent_project_files expose their empty_state exactly when their corresponding result is empty."
+  ]);
+
+  const envelope = jsonResponseSchema(body.paths, path, "get", "200") as OpenApiSchema | undefined;
+  const data = envelope?.properties?.data;
+  const meta = envelope?.properties?.meta;
+  assert.equal(envelope?.additionalProperties, false);
+  assert.deepEqual(envelope?.required, ["ok", "data", "meta"]);
+  assert.equal(meta?.additionalProperties, false);
+  assert.deepEqual(meta?.required, ["locale"]);
+  assert.equal(data?.additionalProperties, false);
+  assert.deepEqual(data?.required, [
+    "generated_at",
+    "project",
+    "viewer",
+    "conversations",
+    "workspace_members",
+    "army_summary",
+    "recent_project_files"
+  ]);
+  assert.deepEqual(Object.keys(data?.properties ?? {}).sort(), [
+    "army_summary",
+    "conversations",
+    "generated_at",
+    "project",
+    "recent_project_files",
+    "viewer",
+    "workspace_members"
+  ]);
+
+  const project = data?.properties?.project;
+  assert.equal(project?.additionalProperties, false);
+  assert.deepEqual(project?.required, ["id", "workspace_id", "name", "slug", "description", "owner_label"]);
+  const viewer = data?.properties?.viewer;
+  assert.equal(viewer?.additionalProperties, false);
+  assert.deepEqual(viewer?.required, ["user_id", "membership_role", "is_project_owner"]);
+  assert.deepEqual(viewer?.properties?.membership_role?.enum, ["member", "admin", "owner"]);
+
+  const conversations = data?.properties?.conversations;
+  assert.equal(conversations?.additionalProperties, false);
+  assert.deepEqual(conversations?.required, ["conversations", "capped", "next_cursor"]);
+  assert.equal(conversations?.properties?.conversations?.maxItems, 50);
+  assert.equal(conversations?.properties?.conversations?.items?.additionalProperties, false);
+  assert.deepEqual(conversations?.properties?.conversations?.items?.required, [
+    "id",
+    "workspace_id",
+    "project_id",
+    "kind",
+    "title",
+    "parent_conversation_id",
+    "source_message_id",
+    "visibility",
+    "next_seq",
+    "created_by",
+    "participant_role",
+    "created_at",
+    "updated_at"
+  ]);
+
+  const memberPage = data?.properties?.workspace_members;
+  const member = memberPage?.properties?.items?.items;
+  assert.equal(memberPage?.additionalProperties, false);
+  assert.deepEqual(memberPage?.required, ["scope", "total", "returned", "capped", "items"]);
+  assert.deepEqual(memberPage?.properties?.scope?.enum, ["workspace"]);
+  assert.equal(memberPage?.properties?.items?.maxItems, 100);
+  assert.equal(member?.additionalProperties, false);
+  assert.deepEqual(member?.required, [
+    "user_id",
+    "nickname",
+    "membership_role",
+    "is_project_owner",
+    "is_self"
+  ]);
+  assert.deepEqual(member?.properties?.membership_role?.enum, ["member", "admin", "owner"]);
+
+  const army = data?.properties?.army_summary;
+  assert.equal(army?.additionalProperties, false);
+  assert.deepEqual(army?.required, ["active_plan_count"]);
+  assert.deepEqual(army?.properties?.empty_state?.enum, ["no_active_armies"]);
+  const files = data?.properties?.recent_project_files;
+  assert.equal(files?.additionalProperties, false);
+  assert.deepEqual(files?.required, ["items"]);
+  assert.equal(files?.properties?.items?.maxItems, 5);
+  assert.equal(files?.properties?.items?.items?.additionalProperties, false);
+  assert.deepEqual(files?.properties?.items?.items?.required, ["id", "name", "updated_at", "href"]);
+  assert.deepEqual(files?.properties?.empty_state?.enum, ["no_recent_files"]);
+
+  assertJsonErrorCodes(body.paths, path, "get", "401", ["not_identified"]);
+  assertJsonErrorCodes(body.paths, path, "get", "403", ["invalid_client_token"]);
+  assertJsonErrorCodes(body.paths, path, "get", "404", ["workbench_not_found"]);
+  assertJsonErrorCodes(body.paths, path, "get", "500", ["internal_contract_error", "internal_error"]);
+});
+
 test("push streams and audit OpenAPI routes document runtime UUID guards and responses", async () => {
   const response = await app.request("/api/openapi.json");
   const body = await response.json() as { paths: Record<string, Record<string, unknown>> };
@@ -673,7 +1175,8 @@ test("push streams and audit OpenAPI routes document runtime UUID guards and res
     "/api/push/stream/req/{id}",
     "/api/push/stream/run/{id}",
     "/api/push/stream/session/{id}",
-    "/api/push/stream/proposal/{id}"
+    "/api/push/stream/proposal/{id}",
+    "/api/push/stream/conversation/{id}"
   ] as const) {
     assert.deepEqual(parameterByName(body.paths, path, "get", "id"), {
       name: "id",
@@ -690,7 +1193,8 @@ test("push streams and audit OpenAPI routes document runtime UUID guards and res
     "/api/push/stream/req/{id}",
     "/api/push/stream/run/{id}",
     "/api/push/stream/session/{id}",
-    "/api/push/stream/proposal/{id}"
+    "/api/push/stream/proposal/{id}",
+    "/api/push/stream/conversation/{id}"
   ] as const) {
     assert.ok(
       responseObject(body.paths, path, "get", "200")?.content?.["text/event-stream"],
@@ -704,7 +1208,8 @@ test("push streams and audit OpenAPI routes document runtime UUID guards and res
     "/api/push/stream/req/{id}",
     "/api/push/stream/run/{id}",
     "/api/push/stream/session/{id}",
-    "/api/push/stream/proposal/{id}"
+    "/api/push/stream/proposal/{id}",
+    "/api/push/stream/conversation/{id}"
   ] as const) {
     assert.deepEqual(jsonErrorCodeProperty(body.paths, path, "get", "401"), {
       type: "string",
@@ -721,13 +1226,26 @@ test("push streams and audit OpenAPI routes document runtime UUID guards and res
     "/api/push/stream/req/{id}",
     "/api/push/stream/run/{id}",
     "/api/push/stream/session/{id}",
-    "/api/push/stream/proposal/{id}"
+    "/api/push/stream/proposal/{id}",
+    "/api/push/stream/conversation/{id}"
   ] as const) {
     assert.deepEqual(jsonErrorCodeProperty(body.paths, path, "get", "403"), {
       type: "string",
       enum: ["invalid_client_token", "forbidden"]
     });
   }
+
+  const conversationStream = body.paths["/api/push/stream/conversation/{id}"]?.get as {
+    responses?: Record<string, { description?: string }>;
+  } | undefined;
+  assert.deepEqual(Object.keys(conversationStream?.responses ?? {}).sort(), ["200", "401", "403"]);
+  assert.match(conversationStream?.responses?.["200"]?.description ?? "", /one conversation topic/iu);
+  assert.match(conversationStream?.responses?.["200"]?.description ?? "", /live-only/iu);
+  assert.match(conversationStream?.responses?.["200"]?.description ?? "", /no replay/iu);
+  assert.match(
+    conversationStream?.responses?.["200"]?.description ?? "",
+    /GET \/api\/conversations\/\{id\}\/messages\?afterSeq/iu
+  );
 
   assert.deepEqual(parameterByName(body.paths, "/api/workitems/{id}/audit", "get", "id"), {
     name: "id",
@@ -3074,6 +3592,7 @@ function childRouteTestEnv() {
 
 test("isolated route tests execute with production app imports forbidden", () => {
   const routeTestFiles = [
+    "ai-settings-routes.test.ts",
     "auth.test.ts",
     "gold-path.test.ts",
     "knowledge.test.ts",

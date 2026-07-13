@@ -14,6 +14,11 @@ import {
 import { resolveAuthorizedTopic, type TopicAccessResolver } from "../sse/topic-access.js";
 import { writeEventStream, type WriteEventStreamOptions } from "../sse/stream.js";
 import {
+  ConversationServiceError,
+  getDefaultConversationService,
+  type ConversationService
+} from "../services/conversations.js";
+import {
   getDefaultProposalService,
   type ProposalService
 } from "../services/proposals.js";
@@ -35,6 +40,7 @@ export type PushRoutesDependencies = {
   agentRuns?: AgentRunQueue;
   workItems?: WorkItemService | false;
   proposals?: ProposalService | false;
+  conversations?: ConversationService | false;
   stream?: WriteEventStreamOptions;
 };
 
@@ -79,6 +85,7 @@ function createDefaultTopicAccess(input: {
   agentRuns: AgentRunQueue;
   workItems: () => WorkItemService | undefined;
   proposals: () => ProposalService | undefined;
+  conversations: () => ConversationService | undefined;
 }): TopicAccessResolver {
   return {
     async canViewRun(user, id) {
@@ -106,6 +113,21 @@ function createDefaultTopicAccess(input: {
         return false;
       }
       return canReadByWorkItemService(input.workItems(), user, proposal.work_item_id);
+    },
+    async canViewConversation(user, id) {
+      const conversations = input.conversations();
+      if (!conversations) {
+        return false;
+      }
+      try {
+        await conversations.assertConversationAccess({ actor: streamActor(user), conversationId: id });
+        return true;
+      } catch (error) {
+        if (error instanceof ConversationServiceError && (error.status === 403 || error.status === 404)) {
+          return false;
+        }
+        throw error;
+      }
     }
   };
 }
@@ -119,7 +141,10 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
   const access = deps.access ?? createDefaultTopicAccess({
     agentRuns: deps.agentRuns ?? getDefaultAgentRunQueue(),
     workItems: () => deps.workItems === false ? undefined : deps.workItems ?? getDefaultWorkItemService(),
-    proposals: () => deps.proposals === false ? undefined : deps.proposals ?? getDefaultProposalService()
+    proposals: () => deps.proposals === false ? undefined : deps.proposals ?? getDefaultProposalService(),
+    conversations: () => deps.conversations === false
+      ? undefined
+      : deps.conversations ?? getDefaultConversationService()
   });
 
   routes.get("/stream", async (c) => {
@@ -185,6 +210,20 @@ export function createPushRoutes(deps: PushRoutesDependencies = {}) {
     const authDeps = resolveAuthDependencies(authSource);
     const user = await resolveStreamUser(c, authDeps);
     const topic = await resolveAuthorizedTopic(user, { kind: "proposal", id: c.req.param("id") }, access);
+    return writeEventStream(c, bus, presence, topic, user, deps.stream);
+  });
+
+  routes.get("/stream/conversation/:id", async (c) => {
+    if (!isUuidParam(c.req.param("id"))) {
+      throw new HTTPException(403, { message: "cannot stream this conversation" });
+    }
+    const authDeps = resolveAuthDependencies(authSource);
+    const user = await resolveStreamUser(c, authDeps);
+    const topic = await resolveAuthorizedTopic(
+      user,
+      { kind: "conversation", id: c.req.param("id") },
+      access
+    );
     return writeEventStream(c, bus, presence, topic, user, deps.stream);
   });
 

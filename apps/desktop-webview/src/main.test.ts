@@ -526,6 +526,9 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
       },
       async proposal() {
         return surface.page_vms.proposal;
+      },
+      async workbench() {
+        throw new Error("not needed");
       }
     },
     streams: {
@@ -534,7 +537,8 @@ function fakeClient(surface: DesktopTestSurface, session: SessionVM = intakeSess
       workItem: (id) => `/api/push/stream/workitem/${id}`,
       run: (id) => `/api/push/stream/run/${id}`,
       session: (id) => `/api/push/stream/session/${id}`,
-      proposal: (id) => `/api/push/stream/proposal/${id}`
+      proposal: (id) => `/api/push/stream/proposal/${id}`,
+      conversation: (id) => `/api/push/stream/conversation/${encodeURIComponent(id)}`
     },
     streamUrl: (path) => path,
     async request() {
@@ -788,6 +792,10 @@ test("desktop webview surface advertises and loads the shared P0.5 gold path pag
   assert.equal(desktopWebviewSurface.rustEventBridge, "push-event -> shell-events -> @workhub/cuu");
   assert.equal((await loadDesktopGoldPathSurface(fakeClient(surface))).fixture_id, "weekly_report_manifest_doc");
   assert.equal((await renderDesktopGoldPathSurface(fakeClient(surface))).surface, "desktop");
+  assert.equal(
+    fakeClient(surface).streams.conversation("conversation/一"),
+    "/api/push/stream/conversation/conversation%2F%E4%B8%80"
+  );
   assert.equal((await renderDesktopGoldPathSurface(fakeClient(surface), "en-US")).pages[0]?.html.includes("Needs your decision"), true);
   assert.equal((await renderDesktopWorkItemDetail(fakeClient(surface), "work")).surface, "desktop");
   assert.equal((await renderDesktopWorkItemDetail(fakeClient(surface), "work")).html.includes("wh-desktop"), true);

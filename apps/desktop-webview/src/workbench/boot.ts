@@ -1,0 +1,192 @@
+// WorkHub 桌面 · 工作台窗口入口（workbench.html 的 <script type="module"> 直接指到这个文件）。
+// 故意不 import ./browser.ts——那是 1371 行的主窗/桌宠共用壳层，工作台是独立窗口、独立生命周期，
+// 复用它只会把主窗特有的命令盒/gold-path 路由一起拖进来。这里只拿三样通用、非 browser.ts 私有的积木：
+// @workhub/api-client 的 createApiClient、@workhub/web-runtime 的 locale 工具、auth-recovery 的
+// stale-token 判定 + desktop-window-controls 的 Tauri invoke 解析——都是跨 surface 共享的小模块。
+
+import { createApiClient } from "@workhub/api-client/client";
+import type { IdentityResponse, WorkHubApiClient } from "@workhub/api-client";
+import { defaultPorts } from "@workhub/config/ports";
+import type { WorkHubLocale } from "@workhub/ui/gold-path";
+import { applyIdentityLocale, browserLocale, setDocumentLocale } from "@workhub/web-runtime";
+
+import { isStaleDesktopClientTokenError } from "../auth-recovery.js";
+import { resolveDesktopTauriInvoke } from "../desktop-window-controls.js";
+import { consumePendingWorkbenchDeepLink } from "./pending-deep-link.js";
+import { mountWorkbenchShell, renderWorkbenchDocumentHead, type WorkbenchShellHandle } from "./shell.js";
+import { isWorkbenchWindowControlPlan, parseWorkbenchDeepLinkPlan, parseWorkbenchRoute } from "./route.js";
+
+const CLIENT_TOKEN_KEYS = ["workhub_client_token", "yqgl_client_token"] as const;
+const DESKTOP_LOGGED_OUT_FLAG = "workhub_desktop_logged_out";
+
+// 照 browser.ts:128 的 clientToken()——先读新键，兼容期回退旧的 yqgl_* 键。
+export function clientToken(storage: Pick<Storage, "getItem"> = window.localStorage): string | undefined {
+  for (const key of CLIENT_TOKEN_KEYS) {
+    const value = storage.getItem(key);
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+// 照 browser.ts:136 的 resolveDesktopApiBase()——本机复制一份小 helper，不 import browser.ts。
+export function resolveWorkbenchApiBase(storage: Pick<Storage, "getItem"> = window.localStorage): string {
+  const override = storage.getItem("workhub_api_base");
+  if (override && override.trim().length > 0) {
+    return override.trim().replace(/\/+$/u, "");
+  }
+  return `http://127.0.0.1:${defaultPorts.api}`;
+}
+
+export function isWorkbenchDesktopLoggedOut(storage: Pick<Storage, "getItem"> = window.localStorage): boolean {
+  try {
+    return storage.getItem(DESKTOP_LOGGED_OUT_FLAG) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function pushClientTokenToShell(token: string): void {
+  const invoke = resolveDesktopTauriInvoke();
+  if (invoke) {
+    void Promise.resolve(invoke("set_client_token", { token })).catch(() => undefined);
+  }
+}
+
+// 和 browser.ts 的 ensureDesktopClientToken 同语义：登出态不重新自动绑定；有 token 就探活一次，
+// 陈旧/吊销(not_identified/invalid_client_token)才清掉重铸；网络/后端问题不动 token。
+// 顺带把探活拿到的 identity 返回，给 boot() 复用去解析 locale，省一次重复往返（R12 首帧同款优化）。
+export async function ensureWorkbenchClientToken(client: WorkHubApiClient): Promise<IdentityResponse | null> {
+  if (isWorkbenchDesktopLoggedOut()) {
+    return null;
+  }
+  let identity: IdentityResponse | null = null;
+  if (!clientToken()) {
+    await bootstrapWorkbenchClientToken(client);
+  } else {
+    try {
+      identity = await client.me();
+    } catch (error) {
+      if (isStaleDesktopClientTokenError(error)) {
+        window.localStorage.removeItem("workhub_client_token");
+        await bootstrapWorkbenchClientToken(client);
+      }
+    }
+  }
+  const token = clientToken();
+  if (token) {
+    pushClientTokenToShell(token);
+  }
+  return identity;
+}
+
+async function bootstrapWorkbenchClientToken(client: WorkHubApiClient): Promise<void> {
+  try {
+    const result = await client.bootstrapDesktop({
+      nickname: "WorkHub Desktop",
+      device_name: "WorkHub Desktop",
+      platform: "desktop"
+    });
+    if (result?.client_token) {
+      window.localStorage.setItem("workhub_client_token", result.client_token);
+    }
+  } catch (error) {
+    console.warn("WorkHub workbench desktop bootstrap failed; continuing without client token", error);
+  }
+}
+
+// —— 深链事件订阅 —— //
+// Tauri v2 的 event.listen 不受 desktop-cuu-runtime.ts 那个窄事件名联合类型约束（"deep-link" 不在其中，
+// 那个联合是主/桌宠壳层自己的私有契约），这里直接解析全局 __TAURI__.event.listen，事件名用字符串。
+export type WorkbenchTauriEventEnvelope = { payload: unknown };
+export type WorkbenchTauriListen = (
+  eventName: string,
+  handler: (event: WorkbenchTauriEventEnvelope) => void
+) => Promise<() => void> | (() => void) | void;
+
+export function resolveWorkbenchTauriListen(scope: unknown = globalThis): WorkbenchTauriListen | undefined {
+  const target = scope as { __TAURI__?: { event?: { listen?: WorkbenchTauriListen } } };
+  return target.__TAURI__?.event?.listen;
+}
+
+// 只处理 windowControl.label === "workbench" 的深链 plan：解析 route 里的 projectId/conversationId，
+// 切当前工作台窗口的项目上下文。非工作台目标（主窗深链）忽略——那条广播其它窗口也会收到。
+export function bindWorkbenchDeepLinkListener(
+  shell: Pick<WorkbenchShellHandle, "selectProject">,
+  scope: unknown = globalThis
+): void {
+  const listen = resolveWorkbenchTauriListen(scope);
+  if (!listen) {
+    // 浏览器 dev 预览 / capabilities 尚未把 "workbench" 加进 windows 列表：no-op，不崩溃。
+    // 见 window-bridge.ts 顶部注释——这是已知的、超出本批范围的 Rust/配置缺口。
+    return;
+  }
+  void Promise.resolve(
+    listen("deep-link", (event) => {
+      const plan = parseWorkbenchDeepLinkPlan(event.payload);
+      if (!plan || !isWorkbenchWindowControlPlan(plan)) {
+        return;
+      }
+      const context = parseWorkbenchRoute(plan.route);
+      if (context?.projectId) {
+        shell.selectProject(context.projectId, context.conversationId);
+      }
+    })
+  ).catch((error) => {
+    console.warn(
+      "WorkHub workbench: could not subscribe to the deep-link event (likely missing 'workbench' in client-tauri capabilities/default.json windows list)",
+      error
+    );
+  });
+}
+
+// 深链冷启动竞态兜底（批 1 遗留，见 pending-deep-link.ts 顶部注释）：本 App 自己发起的「打开工作台」
+// （Spotlight → workbench-open.ts）在 invoke 之前已经把目标同步写进 localStorage；这里在挂载 shell
+// 之后立即消费一次——命中就 selectProject，不命中（没有 stash / 已过期）就是正常的「从空态开始」冷启动，
+// 什么都不做。和 bindWorkbenchDeepLinkListener 是两条互补的路：这条兜底"窗口创建前已经错过的事件"，
+// 那条订阅"窗口活着之后到来的事件"（例如窗口已存在、这次只是复用/切换项目）。
+export function applyPendingWorkbenchDeepLink(
+  shell: Pick<WorkbenchShellHandle, "selectProject">,
+  storage: Pick<Storage, "getItem" | "setItem" | "removeItem"> = window.localStorage,
+  now?: () => number
+): void {
+  const target = consumePendingWorkbenchDeepLink({ storage, ...(now ? { now } : {}) });
+  if (target) {
+    shell.selectProject(target.projectId, target.conversationId);
+  }
+}
+
+async function boot(): Promise<void> {
+  const root = document.getElementById("root");
+  if (!root) {
+    return;
+  }
+  let locale: WorkHubLocale = browserLocale();
+  setDocumentLocale(locale);
+  root.innerHTML = `${renderWorkbenchDocumentHead()}<div class="wh-ds wh-wb"><div class="wh-wb-loading"><span class="wh-wb-spinner"></span>${
+    locale === "zh-CN" ? "正在打开工作台…" : "Opening the workbench…"
+  }</div></div>`;
+
+  const client = createApiClient({
+    baseUrl: resolveWorkbenchApiBase(),
+    getClientToken: clientToken
+  });
+
+  const identity = await ensureWorkbenchClientToken(client).catch(() => null);
+  locale = applyIdentityLocale(identity, locale);
+  setDocumentLocale(locale);
+
+  // chat/stream.ts 的手写 SSE 客户端要用同一个 clientToken() 读法设 X-YQGL-Client-Token 头——
+  // 显式传引用，而不是让 shell.ts 用它自己的兜底默认值（两边逻辑目前碰巧一样，但显式传递才是
+  // 真正的"复用 boot.ts 已有 helper"，不是"恰好重复实现了一遍"）。
+  const shell = mountWorkbenchShell(root, { client, locale, getClientToken: clientToken });
+  bindWorkbenchDeepLinkListener(shell);
+  applyPendingWorkbenchDeepLink(shell);
+}
+
+// node:test 环境没有 document——colocated boot.test.ts 只测上面导出的纯函数，不需要真跑 boot()。
+// 这个 guard 只在真实 webview/浏览器里触发自动启动，测试 import 这个模块不会因为顶层副作用而崩。
+if (typeof document !== "undefined") {
+  void boot();
+}

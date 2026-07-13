@@ -3412,7 +3412,7 @@ test("aborted running agent runs keep the cancelled state during finalize drift"
     requireDeliverable: false,
     confidence: async () => {
       confidenceCalls += 1;
-      return { confidenceId };
+      return { confidenceId, verdict: "human_spotcheck" };
     },
     notifications,
     tools: () => ({
@@ -5549,6 +5549,133 @@ test("successful agent run opens a proposal from its generated manifest", async 
   assert.ok(userProposalEvent, "proposal.opened must also reach the dispatcher's /me stream (chain1)");
   assert.equal(userProposalEvent?.data.proposal_id, opened[0]?.id);
   assert.equal(userProposalEvent?.data.cuu_state, "carrying_document");
+});
+
+test("R12 批 4b: mode===5 全托管档 + grade5 复核自动合并已开出的提议，并往来源会话回灌 proposal_auto_merged 产出卡", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-automerge-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-automerge-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  const conversationId = "80000000-0000-4000-8000-000000000031";
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => "60000000-0000-4000-8000-000000000031"
+  });
+  const systemMessages: { workspaceId: string; conversationId: string; content: Record<string, unknown> }[] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000031",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: createAgentRunConfidenceRecorder({
+      decisions,
+      auditLogs,
+      settings: runtimeSettings,
+      // 全托管档：不接真 ai-settings 仓库，直接注入 mode===5（第 5 档 · 全托管 · AI 审）。
+      modeResolver: async () => 5
+    }),
+    notifications: false,
+    eventBus: false,
+    postSystemMessage: async (message) => {
+      systemMessages.push(message);
+      return undefined;
+    }
+  });
+
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    title: "全托管档 worker run",
+    sourceConversationId: conversationId
+  });
+  const executed = await queue.runNext();
+  const opened = await proposals.listByWorkItem(workItemId);
+
+  assert.equal(executed?.status, "succeeded");
+  assert.equal(opened.length, 1);
+  // 第 5 档 · 全托管：AI 复核给了 grade 5、mode===5，裁决点判 auto_merge，run 结束时提议应已经是
+  // "merged"（不是停在 "opened"/"reviewed" 等人）——这是本批新增的真实自动合并动作，不只是打个标签。
+  assert.equal(opened[0]?.status, "merged");
+  assert.equal(decisions.confidenceRows[0]?.verdict, "auto_merge");
+
+  assert.equal(systemMessages.length, 1);
+  const posted = systemMessages[0];
+  assert.equal(posted?.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(posted?.conversationId, conversationId);
+  assert.equal(posted?.content["event"], "proposal_auto_merged");
+  assert.equal(posted?.content["proposal_id"], opened[0]?.id);
+  assert.equal(posted?.content["run_id"], queued.run_id);
+  assert.equal(posted?.content["title"], opened[0]?.title);
+  // outputs/result.md 内容是 "done"（无 project/ 镜像，纯新增）——1 行 +1/-0。
+  assert.equal(posted?.content["adds"], 1);
+  assert.equal(posted?.content["dels"], 0);
+});
+
+test("R12 批 4b: mode<5 时即便 grade5 复核也只开提议回灌 proposal_opened 产出卡，不自动合并", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-manual-review-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-manual-review-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  const conversationId = "80000000-0000-4000-8000-000000000032";
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => "60000000-0000-4000-8000-000000000032"
+  });
+  const systemMessages: { workspaceId: string; conversationId: string; content: Record<string, unknown> }[] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000032",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: createAgentRunConfidenceRecorder({
+      decisions,
+      auditLogs,
+      settings: runtimeSettings,
+      // 默认档 3（第 3 档 · 分级自动，本仓库五档表的默认值）——不是全托管，即便评审给 grade5 也不该自动合并。
+      modeResolver: async () => 3
+    }),
+    notifications: false,
+    eventBus: false,
+    postSystemMessage: async (message) => {
+      systemMessages.push(message);
+      return undefined;
+    }
+  });
+
+  await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    title: "分级自动档 worker run",
+    sourceConversationId: conversationId
+  });
+  const executed = await queue.runNext();
+  const opened = await proposals.listByWorkItem(workItemId);
+
+  assert.equal(executed?.status, "succeeded");
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0]?.status, "opened");
+  assert.equal(decisions.confidenceRows[0]?.verdict, "human_spotcheck");
+
+  assert.equal(systemMessages.length, 1);
+  assert.equal(systemMessages[0]?.content["event"], "proposal_opened");
 });
 
 test("P-COLLAB M2: a hydrated run captures a base snapshot and stamps manifest.base.snapshot_id", async () => {

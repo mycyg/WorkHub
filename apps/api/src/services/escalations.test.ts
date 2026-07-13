@@ -970,3 +970,67 @@ test("R9.7 escalation delegation passes actor workspace to the repository mutati
     workspaceId: actor().workspaceId
   }]);
 });
+
+// R12 功能审查 A2/A3：观察者 decide 类升级从通用卡 resolve 后，必须把结果回写行动卡条目——
+// 否则群聊里的卡永久停在「待拍板」，且正规 decide 端点被 requireUnresolvedEscalation 409 死锁。
+test("R12 A2/A3: resolving an observer decide escalation flows the outcome back into the action-card item", async () => {
+  const itemId = "13000000-0000-4000-8000-000000000013";
+  const repository = new MemoryEscalationRepository({
+    findRow: row({ handoffJson: { source: "conversation_observer", action_card_item_id: itemId } })
+  });
+  const transitions: Array<{
+    itemId: string;
+    toStatus: string;
+    fromStatuses: readonly string[];
+    assigneeUserId?: string;
+  }> = [];
+  const service = createEscalationService({
+    repository,
+    runQueue: false,
+    actionCards: {
+      async transitionItemStatus(input) {
+        transitions.push({
+          itemId: input.itemId,
+          toStatus: input.toStatus,
+          fromStatuses: input.fromStatuses,
+          ...(input.assigneeUserId ? { assigneeUserId: input.assigneeUserId } : {})
+        });
+        // 返回 null=条目已被别的路径处理——幂等，resolve 不得因此失败。
+        return null;
+      }
+    },
+    now: () => now
+  });
+
+  await service.resolve(escalationId, actor(), { action: "pm_mode" });
+  await service.resolve(escalationId, actor(), { action: "cancel" });
+
+  assert.equal(transitions.length, 2);
+  assert.deepEqual(transitions[0], {
+    itemId,
+    toStatus: "running",
+    fromStatuses: ["waiting_decision"],
+    assigneeUserId: actor().userId
+  });
+  assert.deepEqual(transitions[1], { itemId, toStatus: "dismissed", fromStatuses: ["waiting_decision"] });
+});
+
+test("R12 A2/A3: non-observer escalations never touch action-card state", async () => {
+  const repository = new MemoryEscalationRepository();
+  let called = 0;
+  const service = createEscalationService({
+    repository,
+    runQueue: false,
+    actionCards: {
+      async transitionItemStatus() {
+        called += 1;
+        return null;
+      }
+    },
+    now: () => now
+  });
+
+  await service.resolve(escalationId, actor(), { action: "retry" });
+
+  assert.equal(called, 0);
+});

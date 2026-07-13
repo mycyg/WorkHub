@@ -58,6 +58,7 @@ import type {
   UpdateUserPreferencesRequest,
   UseEvidenceForTaskRequest,
   UserPreferences,
+  WorkbenchPageVM,
   WorkHubLocale,
   WorkItemDetailVM
 } from "@workhub/contracts";
@@ -242,6 +243,11 @@ export type PageClient = {
   project: (id: string, options?: PageRequestOptions) => Promise<ProjectHomePageVM>;
   workItem: (id: string, options?: PageRequestOptions) => Promise<WorkItemDetailVM>;
   proposal: (id: string, options?: PageRequestOptions) => Promise<ProposalDetailVM>;
+  // R12 批 1：桌面工作台 bootstrap VM（项目元信息 + 首屏会话 + 工作区成员切片 + 军团/最近文件摘要）。
+  // 可选（而不是像其它 page 方法那样必填）：这个字段目前只有桌面工作台窗口消费；标成必填会强迫
+  // apps/web 等其它 workspace 里已有的完整 PageClient 字面量 mock 也补一个用不到的桩——那些文件不在
+  // 本批改动范围内（apps/desktop-webview/**、packages/api-client/**、报告文件），不能顺手改。
+  workbench?: (projectId: string, options?: PageRequestOptions) => Promise<WorkbenchPageVM>;
 };
 
 export type PushStreamClient = {
@@ -251,6 +257,7 @@ export type PushStreamClient = {
   run: (id: string) => string;
   session: (id: string) => string;
   proposal: (id: string) => string;
+  conversation: (id: string) => string;
 };
 
 export type WorkHubApiClient = {

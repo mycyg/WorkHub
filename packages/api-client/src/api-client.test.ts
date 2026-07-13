@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deliverableManifestFixtures } from "@workhub/contracts";
+import { conversationMessageCreatedEventSchema, deliverableManifestFixtures } from "@workhub/contracts";
 
 import { createApiClient, joinApiUrl, parseRunEventSse, parseWorkHubEventSse, parseWorkHubSse, WorkHubApiError } from "./index.js";
 
@@ -487,7 +487,15 @@ test("api client exposes typed push stream URLs for web and desktop clients", ()
   assert.equal(relative.streams.run("run/1"), "/api/push/stream/run/run%2F1");
   assert.equal(relative.streams.session("session 1"), "/api/push/stream/session/session%201");
   assert.equal(relative.streams.proposal("proposal:1"), "/api/push/stream/proposal/proposal%3A1");
+  assert.equal(
+    relative.streams.conversation("conversation/一"),
+    "/api/push/stream/conversation/conversation%2F%E4%B8%80"
+  );
   assert.equal(daemon.streams.run("run-1"), "http://127.0.0.1:8787/api/push/stream/run/run-1");
+  assert.equal(
+    daemon.streams.conversation("conversation-1"),
+    "http://127.0.0.1:8787/api/push/stream/conversation/conversation-1"
+  );
 });
 
 test("SSE parser keeps event names and parses JSON payloads", () => {
@@ -501,14 +509,42 @@ test("SSE parser extracts WorkHubEvent envelopes and run-specific event streams"
   const input = [
     'event: agent_run.step\ndata: {"event_id":"event-1","type":"agent_run.step","topic":"run:run-1","ts":"2026-06-05T01:00:00.000Z","run_id":"run-1","data":{"kind":"step","summary":"读取文档"}}',
     'event: budget.warning\ndata: {"event_id":"event-2","type":"budget.warning","topic":"workitem:work-1","ts":"2026-06-05T01:00:01.000Z","data":{"message":"预算提醒"}}',
+    'id: 41000000-0000-4000-8000-000000000003\nevent: conversation.message.created\ndata: {"event_id":"41000000-0000-4000-8000-000000000003","type":"conversation.message.created","topic":"conversation:30000000-0000-4000-8000-000000000003","ts":"2026-07-12T01:00:02.000Z","actor":{"actor_kind":"human","actor_user_id":"60000000-0000-4000-8000-000000000006","label":"R12 owner"},"project_id":"20000000-0000-4000-8000-000000000002","preview_text":"hello","data":{"id":"40000000-0000-4000-8000-000000000004","conversation_id":"30000000-0000-4000-8000-000000000003","seq":9,"sender_type":"user","sender_user_id":"60000000-0000-4000-8000-000000000006","kind":"text","content":{"text":"hello"},"thread_root_id":null,"created_at":"2026-07-12T01:00:02.000Z"}}',
     "event: message\ndata: not-json"
   ].join("\n\n");
 
   const events = parseWorkHubEventSse(input);
   const runEvents = parseRunEventSse("run-1", input);
 
-  assert.equal(events.length, 2);
+  assert.equal(events.length, 3);
   assert.equal(events[0]?.type, "agent_run.step");
+  assert.equal(events[2]?.type, "conversation.message.created");
+  const created = conversationMessageCreatedEventSchema.parse(events[2]);
+  assert.equal(created.data.seq, 9);
   assert.equal(runEvents.length, 1);
   assert.equal(runEvents[0]?.topic, "run:run-1");
+});
+
+// R12 批 1：desktop 工作台外壳消费 GET /api/pages/workbench/:projectId 拿 bootstrap VM。
+test("api client exposes the workbench bootstrap page VM endpoint", async () => {
+  const calls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ ok: true, data: { id: "ok" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  // workbench 是 PageClient 上的可选方法（其它 workspace 的完整 PageClient 字面量 mock 不必跟着补桩），
+  // 但真实 createApiClient() 一定实现它——非空断言反映这个契约，不是绕过类型检查。
+  await client.pages.workbench!("project-1");
+  await client.pages.workbench!("project 1", { locale: "en-US" });
+
+  assert.deepEqual(calls, [
+    "/api/pages/workbench/project-1",
+    "/api/pages/workbench/project%201?locale=en-US"
+  ]);
 });

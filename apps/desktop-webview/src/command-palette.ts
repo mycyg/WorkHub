@@ -19,7 +19,11 @@ export type CommandId =
   | "cost"
   | "team"
   | "notifications"
-  | "settings";
+  | "settings"
+  // R12 批 1：工作台是独立原生窗口（workhub://workbench 深链），不是盒子内联能力——这两条的 view
+  // 只 invoke Tauri command "open_workbench" 打开/聚焦那个窗口，见 spotlight/views/workbench-open.ts。
+  | "workbench"
+  | "new_project";
 
 // 命令落到客户端的两类动作：开一个临时玻璃窗，或触发一次流程（如开始 intake）。
 export type CommandActionKind = "open-window" | "start-flow";
@@ -151,6 +155,22 @@ export const commandRegistry: DesktopCommand[] = [
     keywords: ["设置", "偏好", "账户", "settings", "preferences", "config"],
     icon: ic('<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>'),
     action: { kind: "open-window", target: "settings" }
+  },
+  {
+    id: "workbench",
+    label: { "zh-CN": "打开工作台", en: "Open workbench" },
+    hint: { "zh-CN": "项目群聊、网盘、军团在一个窗口里", en: "Team chat, drive, and the army in one window" },
+    keywords: ["工作台", "群聊", "workbench", "project window", "team chat"],
+    icon: ic('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/>'),
+    action: { kind: "open-window", target: "workbench" }
+  },
+  {
+    id: "new_project",
+    label: { "zh-CN": "新建项目", en: "New project" },
+    hint: { "zh-CN": "自动配好群聊、网盘和 Cuu", en: "Sets up chat, drive, and Cuu for you" },
+    keywords: ["新建项目", "建项目", "new project", "create project"],
+    icon: ic('<path d="M3 8a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/>'),
+    action: { kind: "open-window", target: "new_project" }
   }
 ];
 

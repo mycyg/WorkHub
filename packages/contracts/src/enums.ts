@@ -187,7 +187,16 @@ export const eventTypes = {
   usageRecorded: "usage.recorded",
   budgetWarning: "budget.warning",
   budgetExhausted: "budget.exhausted",
-  notificationCreated: "notification.created"
+  notificationCreated: "notification.created",
+  conversationMessageCreated: "conversation.message.created",
+  conversationMessageDelta: "conversation.message.delta",
+  conversationToolBegin: "conversation.tool.begin",
+  conversationToolOutputDelta: "conversation.tool.output_delta",
+  conversationToolEnd: "conversation.tool.end",
+  conversationActionCardUpdated: "conversation.action_card.updated",
+  conversationItemStarted: "conversation.item.started",
+  conversationItemCompleted: "conversation.item.completed",
+  conversationPresenceTyping: "conversation.presence.typing"
 } as const;
 
 export const eventTypeSchema = z.enum(Object.values(eventTypes) as [string, ...string[]]);

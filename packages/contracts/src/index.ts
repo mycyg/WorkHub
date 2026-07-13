@@ -23,4 +23,7 @@ export * from "./domain/governance.js";
 export * from "./domain/user-memory.js";
 export * from "./domain/agent-memory.js";
 export * from "./domain/team-skill.js";
+export * from "./domain/conversation.js";
+export * from "./domain/local-execution.js";
+export * from "./domain/cat-codename.js";
 export * from "./fixtures/manifest-fixtures.js";

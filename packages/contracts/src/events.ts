@@ -2,15 +2,54 @@ import { z } from "zod";
 
 import { eventTypeSchema } from "./enums.js";
 import { idSchema, isoDateTimeSchema } from "./domain/common.js";
+import { conversationMessageVmSchema } from "./domain/conversation.js";
 
-export const topicKindSchema = z.enum(["all", "user", "workitem", "run", "session", "proposal", "job"]);
+export const topicKindSchema = z.enum([
+  "all",
+  "user",
+  "workitem",
+  "run",
+  "session",
+  "proposal",
+  "job",
+  "conversation"
+]);
 export type TopicKind = z.infer<typeof topicKindSchema>;
 
-export const eventTopicSchema = z.object({
-  kind: topicKindSchema,
-  topic: z.string().min(1),
-  id: z.string().optional()
-});
+export const eventTopicSchema = z
+  .object({
+    kind: topicKindSchema,
+    topic: z.string().min(1),
+    id: z.string().optional()
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind !== "conversation") {
+      return;
+    }
+    const parsedId = idSchema.safeParse(value.id);
+    if (!parsedId.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["id"],
+        message: "conversation topic requires a UUID id"
+      });
+      return;
+    }
+    if (parsedId.data !== parsedId.data.toLowerCase()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["id"],
+        message: "conversation topic UUID must use canonical lowercase form"
+      });
+    }
+    if (value.topic !== `conversation:${parsedId.data}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "conversation topic must match its UUID id"
+      });
+    }
+  });
 export type EventTopic = z.infer<typeof eventTopicSchema>;
 
 export const workHubEventEnvelopeSchema = z.object({
@@ -21,3 +60,212 @@ export const workHubEventEnvelopeSchema = z.object({
   preview_text: z.string().max(200).optional()
 });
 export type WorkHubEventEnvelope = z.infer<typeof workHubEventEnvelopeSchema>;
+
+const conversationHumanActorSchema = z
+  .object({
+    actor_kind: z.literal("human"),
+    actor_user_id: idSchema,
+    label: z.string().optional()
+  })
+  .strict();
+
+// R12 批4a 集成修订：message.created 是「一切持久消息」的规范事件——批0 只有人类发消息一条
+// 写路径,故锁死 human;协同 turn 落库的 Cuu 回复同样需要向其他在看成员广播(delta 是瞬态的,
+// 断线/后进场的人只能靠 created+afterSeq 补齐)。放开为 human↔user / ai↔cuu 的严格配对,不松其它。
+const conversationAiActorSchema = z
+  .object({
+    actor_kind: z.literal("ai"),
+    label: z.string().optional()
+  })
+  .strict();
+
+export const conversationMessageCreatedEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.message.created"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    actor: z.union([conversationHumanActorSchema, conversationAiActorSchema]),
+    project_id: idSchema,
+    preview_text: z.string().max(200).optional(),
+    data: conversationMessageVmSchema
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "message-created topic must match data.conversation_id"
+      });
+    }
+    if (event.actor.actor_kind === "human") {
+      if (event.data.sender_type !== "user") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["data", "sender_type"],
+          message: "message-created events from a human actor must have a user sender"
+        });
+      }
+      if (event.data.sender_user_id !== event.actor.actor_user_id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["data", "sender_user_id"],
+          message: "message-created sender must match the human event actor"
+        });
+      }
+      return;
+    }
+    if (event.data.sender_type !== "cuu") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["data", "sender_type"],
+        message: "message-created events from an ai actor must have a cuu sender"
+      });
+    }
+    if (event.data.sender_user_id !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["data", "sender_user_id"],
+        message: "cuu message-created events must not carry a sender_user_id"
+      });
+    }
+  });
+export type ConversationMessageCreatedEvent = z.infer<typeof conversationMessageCreatedEventSchema>;
+
+// R12 批4a：conversation.message.delta 从批0的「仅保留名称」升级为真实 payload/校验——同批3对
+// conversation.action_card.updated 的做法一致（见 r12-workbench.test.ts 的正例契约测试）。
+// 故意保持极简：只有 4 个 data 字段，没有 actor/project_id/preview_text——这是纯瞬态的流式打字
+// 事件（一次协同会话 turn 生成过程中的增量文本），不落库、没有 seq、不参与任何 reconcile；
+// 真正落库的 Cuu 回复走的是另一条路径（sender_type='cuu' 的 conversation_messages 行），
+// 设计取舍与已知缺口见 apps/api/src/services/conversation-turns.ts 顶部注释与
+// r12-desktop-workbench/reports/batch-4a-turns.md。
+export const conversationMessageDeltaEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.message.delta"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    data: z
+      .object({
+        conversation_id: idSchema,
+        turn_id: idSchema,
+        delta_text: z.string().min(1).max(4000),
+        ordinal: z.number().int().min(0)
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "message-delta topic must match data.conversation_id"
+      });
+    }
+  });
+export type ConversationMessageDeltaEvent = z.infer<typeof conversationMessageDeltaEventSchema>;
+
+const typingTimestampSchema = z.string().datetime({ offset: true, precision: 3 });
+
+export const conversationPresenceTypingEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.presence.typing"),
+    topic: z.string().min(1),
+    ts: typingTimestampSchema,
+    actor: conversationHumanActorSchema,
+    data: z
+      .object({
+        conversation_id: idSchema,
+        user_id: idSchema,
+        ttl_ms: z.literal(3000),
+        expires_at: typingTimestampSchema
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "typing topic must match data.conversation_id"
+      });
+    }
+    if (event.actor.actor_user_id !== event.data.user_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["actor", "actor_user_id"],
+        message: "typing actor must match data.user_id"
+      });
+    }
+    if (Date.parse(event.data.expires_at) - Date.parse(event.ts) !== 3000) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["data", "expires_at"],
+        message: "typing expires_at must be exactly 3000ms after event ts"
+      });
+    }
+  });
+export type ConversationPresenceTypingEvent = z.infer<typeof conversationPresenceTypingEventSchema>;
+
+// R12 批3：行动卡变更事件。payload 只带最小可渲染摘要（卡片 id/状态、条目 id/kind/confidence/status），
+// 不携带 title_md 全文/工作项细节——客户端收到后按需拉 GET 行动卡详情，事件本身只负责"该刷新了"。
+// 事件的 actor 是 Cuu（观察者）自己产出卡片时为 ai；被 @ 的负责人做决策/撤销时为 human。
+const actionCardUpdatedActorSchema = z
+  .object({
+    actor_kind: z.enum(["human", "ai"]),
+    actor_user_id: idSchema.optional(),
+    label: z.string().optional()
+  })
+  .strict();
+
+const actionCardUpdatedItemSummarySchema = z
+  .object({
+    id: idSchema,
+    kind: z.enum(["execute", "decide", "observe"]),
+    confidence: z.enum(["high", "mid", "low"]),
+    status: z.enum(["running", "done", "undone", "waiting_decision", "dismissed", "escalated"])
+  })
+  .strict();
+
+export const conversationActionCardUpdatedEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.action_card.updated"),
+    topic: z.string().min(1),
+    ts: isoDateTimeSchema,
+    actor: actionCardUpdatedActorSchema,
+    project_id: idSchema,
+    preview_text: z.string().max(200).optional(),
+    data: z
+      .object({
+        conversation_id: idSchema,
+        action_card_id: idSchema,
+        message_id: idSchema,
+        status: z.enum(["active", "superseded"]),
+        appended: z.boolean(),
+        items: z.array(actionCardUpdatedItemSummarySchema).max(8)
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "action-card-updated topic must match data.conversation_id"
+      });
+    }
+    if (event.actor.actor_kind === "human" && !event.actor.actor_user_id) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["actor", "actor_user_id"],
+        message: "human actors on action-card-updated events must carry actor_user_id"
+      });
+    }
+  });
+export type ConversationActionCardUpdatedEvent = z.infer<typeof conversationActionCardUpdatedEventSchema>;

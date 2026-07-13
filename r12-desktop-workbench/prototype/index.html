@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorkHub · 项目工作台 高保真原型</title>
+<style>
+  :root{
+    --bg0:#0b0d12; --bg1:#12151d; --glass:rgba(255,255,255,.055); --glass-2:rgba(255,255,255,.09);
+    --line:rgba(255,255,255,.08); --line-2:rgba(255,255,255,.14);
+    --tx:#e8eaf0; --tx2:#9aa1b2; --tx3:#666d80;
+    --acc:#7aa2ff; --acc-soft:rgba(122,162,255,.16);
+    --cuu:#ffab5e; --cuu-soft:rgba(255,171,94,.14);
+    --ok:#5ed49a; --ok-soft:rgba(94,212,154,.14);
+    --warn:#f6c66b; --warn-soft:rgba(246,198,107,.14);
+    --danger:#ff7a88;
+    --r-lg:20px; --r-md:14px; --r-sm:9px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    font-family:-apple-system,"SF Pro SC","PingFang SC","Helvetica Neue",sans-serif;
+    background:
+      radial-gradient(1100px 700px at 75% -10%, rgba(122,162,255,.13), transparent 60%),
+      radial-gradient(900px 600px at 10% 110%, rgba(255,171,94,.09), transparent 55%),
+      var(--bg0);
+    color:var(--tx); display:flex; align-items:center; justify-content:center; padding:22px;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* 图标 */
+  .ic{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .ic.fill{fill:currentColor;stroke:none}
+  .ic.sm{width:13px;height:13px}
+  .ic.lg{width:18px;height:18px}
+
+  /* ============ macOS 玻璃窗 ============ */
+  .window{
+    width:min(1460px,100%); height:min(920px,calc(100vh - 44px));
+    background:linear-gradient(180deg, rgba(30,34,46,.92), rgba(18,21,29,.94));
+    border:1px solid var(--line-2); border-radius:22px; overflow:hidden;
+    box-shadow:0 40px 120px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.07);
+    display:flex; flex-direction:column;
+  }
+  .titlebar{height:46px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line);flex:none}
+  .lights{display:flex;gap:8px}
+  .lights i{width:12px;height:12px;border-radius:50%;display:block}
+  .lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+  .titlebar .crumb{font-size:13px;color:var(--tx2);margin-left:8px}
+  .crumb b{color:var(--tx);font-weight:600}
+  .titlebar .spacer{flex:1}
+  .tb-btn{
+    font-size:12px;color:var(--tx2);border:1px solid var(--line);background:var(--glass);
+    padding:5px 11px;border-radius:99px;cursor:pointer;display:flex;align-items:center;gap:6px;
+    transition:.15s;user-select:none;
+  }
+  .tb-btn:hover{background:var(--glass-2);color:var(--tx)}
+  .tb-btn.acc{color:var(--acc);border-color:rgba(122,162,255,.35)}
+  .body{flex:1;display:flex;min-height:0}
+
+  /* ============ 左栏 ============ */
+  .rail{width:242px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;background:rgba(0,0,0,.14)}
+  .rail-head{padding:14px 14px 8px;font-size:11px;letter-spacing:.12em;color:var(--tx3)}
+  .proj{margin:2px 8px;border-radius:var(--r-md);cursor:pointer}
+  .proj-row{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r-md)}
+  .proj.active .proj-row{background:var(--glass-2)}
+  .tile{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:none}
+  .tile.t-acc{background:var(--acc-soft);color:var(--acc)}
+  .tile.t-ok{background:var(--ok-soft);color:var(--ok)}
+  .tile.t-warn{background:var(--warn-soft);color:var(--warn)}
+  .tile.t-cuu{background:var(--cuu-soft);color:var(--cuu)}
+  .proj-name{font-size:13.5px;font-weight:600;flex:1}
+  .proj-dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .tree{padding:2px 0 6px 22px;display:none}
+  .proj.active .tree{display:block}
+  .leaf{
+    display:flex;align-items:center;gap:8px;font-size:13px;color:var(--tx2);
+    padding:6px 10px;margin:1px 8px 1px 0;border-radius:var(--r-sm);cursor:pointer;border:1px solid transparent;
+  }
+  .leaf:hover{background:var(--glass)}
+  .leaf.sel{background:var(--acc-soft);color:var(--tx);border-color:rgba(122,162,255,.25)}
+  .leaf .ic{color:var(--tx3)}
+  .leaf.sel .ic{color:var(--acc)}
+  .leaf .n{margin-left:auto;font-size:10.5px;color:var(--tx3);background:var(--glass);padding:1px 6px;border-radius:99px}
+  .leaf .live{margin-left:auto;font-size:10.5px;color:var(--ok)}
+  .rail-foot{margin-top:auto;border-top:1px solid var(--line);padding:10px 12px}
+  .army-sum{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r-md);cursor:pointer;background:var(--glass)}
+  .army-sum:hover{background:var(--glass-2)}
+  .army-sum .t{font-size:12.5px;font-weight:600}
+  .army-sum .s{font-size:11px;color:var(--tx2)}
+  .me{display:flex;align-items:center;gap:8px;padding:10px 10px 2px;font-size:12.5px;color:var(--tx2)}
+
+  .avatar{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;flex:none;color:#0b0d12}
+  .av-a{background:#9db8ff}.av-z{background:#8fd9b8}.av-l{background:#e6b6ff}
+  .av-cuu{background:linear-gradient(135deg,#ffb26b,#ff8f4f);color:#4a2508}
+  .av-cuu .ic{width:16px;height:16px}
+
+  /* ============ 中栏 ============ */
+  .center{flex:1;display:flex;flex-direction:column;min-width:0}
+  .view{display:none;flex:1;min-height:0;flex-direction:column}
+  .view.on{display:flex}
+  .chat-scroll{flex:1;overflow-y:auto;padding:20px 26px 8px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.14) transparent}
+  .day-sep{display:flex;align-items:center;gap:12px;color:var(--tx3);font-size:11px;margin:6px 0 14px}
+  .day-sep::before,.day-sep::after{content:"";flex:1;height:1px;background:var(--line)}
+  .msg{display:flex;gap:11px;margin-bottom:16px;max-width:760px}
+  .msg .bub{min-width:0}
+  .msg .who{font-size:12px;color:var(--tx2);margin-bottom:4px}
+  .msg .who .tm{color:var(--tx3);margin-left:7px;font-size:11px}
+  .msg .txt{font-size:13.5px;line-height:1.65;background:var(--glass);border:1px solid var(--line);padding:9px 13px;border-radius:4px var(--r-md) var(--r-md) var(--r-md)}
+  .msg.cuu .txt{background:var(--cuu-soft);border-color:rgba(255,171,94,.22)}
+  .mention{color:var(--acc)}
+  .filecard{
+    display:inline-flex;align-items:center;gap:9px;margin-top:7px;padding:8px 12px;
+    background:var(--glass);border:1px solid var(--line-2);border-radius:var(--r-sm);cursor:pointer;font-size:12.5px;
+  }
+  .filecard:hover{border-color:rgba(122,162,255,.4)}
+  .filecard .fi{width:26px;height:26px;border-radius:7px;background:var(--acc-soft);color:var(--acc);display:flex;align-items:center;justify-content:center}
+  .filecard .fm{color:var(--tx3);font-size:11px}
+  .sysline{display:flex;justify-content:center;margin:10px 0}
+  .sysline span{font-size:11.5px;color:var(--tx3);background:var(--glass);border:1px solid var(--line);padding:4px 12px;border-radius:99px}
+  .sysline .ok{color:var(--ok)}
+
+  /* 静默观察 */
+  .observing{display:flex;align-items:center;gap:9px;margin:4px 0 14px;color:var(--tx3);font-size:12px}
+  .observing .av-cuu{animation:breath 2.2s ease-in-out infinite}
+  @keyframes breath{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.09);opacity:1}}
+  .dots i{display:inline-block;width:3.5px;height:3.5px;border-radius:50%;background:var(--tx3);margin-right:3px;animation:blink 1.2s infinite}
+  .dots i:nth-child(2){animation-delay:.2s}.dots i:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,100%{opacity:.25}50%{opacity:1}}
+
+  /* 行动卡 */
+  .action-card{
+    max-width:640px;border:1px solid rgba(255,171,94,.3);border-radius:var(--r-lg);
+    background:linear-gradient(180deg, rgba(255,171,94,.09), rgba(255,255,255,.03));
+    padding:14px 16px;margin:2px 0 4px;box-shadow:0 10px 34px rgba(0,0,0,.25);
+  }
+  .ac-head{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+  .ac-head .t{font-size:13.5px;font-weight:700}
+  .ac-head .gear{margin-left:auto;color:var(--tx3);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:5px}
+  .ac-head .gear:hover{color:var(--tx2)}
+  .ac-item{border:1px solid var(--line);background:rgba(0,0,0,.16);border-radius:var(--r-md);padding:11px 13px;margin-bottom:9px}
+  .ac-item:last-child{margin-bottom:0}
+  .ac-item .it{font-size:13.5px;line-height:1.5;margin-bottom:7px}
+  .ac-item .meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .chip{font-size:11px;padding:3px 9px;border-radius:99px;border:1px solid var(--line-2);color:var(--tx2)}
+  .chip.conf-hi{background:var(--ok-soft);color:var(--ok);border-color:rgba(94,212,154,.3)}
+  .chip.conf-lo{background:var(--warn-soft);color:var(--warn);border-color:rgba(246,198,107,.3)}
+  .chip.run{background:var(--acc-soft);color:var(--acc);border-color:rgba(122,162,255,.3)}
+  .chip.run .pulse{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--acc);margin-right:5px;animation:breath 1.4s infinite}
+  .ac-actions{display:flex;gap:7px;margin-top:9px}
+  .btn{font-size:12px;padding:5.5px 13px;border-radius:99px;border:1px solid var(--line-2);background:var(--glass);color:var(--tx);cursor:pointer;transition:.15s}
+  .btn:hover{background:var(--glass-2)}
+  .btn.primary{background:var(--acc-soft);border-color:rgba(122,162,255,.4);color:var(--acc);font-weight:600}
+  .btn.ghost{color:var(--tx2)}
+  .btn.undo{color:var(--tx3);font-size:11.5px;padding:4px 10px}
+  .ac-item.done-pick .ac-actions{display:none}
+  .ac-item .picked{display:none;font-size:12px;color:var(--ok);margin-top:8px}
+  .ac-item.done-pick .picked{display:block}
+
+  /* 线程 */
+  .thread{margin:6px 0 0 14px;padding-left:14px;border-left:2px solid rgba(255,171,94,.25);max-width:600px}
+  .th-line{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--tx2);padding:5px 0}
+  .th-line .dot{flex:none;width:7px;height:7px;border-radius:50%;margin-top:5px;background:var(--tx3)}
+  .th-line .dot.acc{background:var(--acc)}
+  .th-line .dot.ok{background:var(--ok)}
+  .th-line a{color:var(--acc);text-decoration:none;cursor:pointer}
+  .th-line .tm{color:var(--tx3);font-size:11px;margin-left:6px}
+
+  /* composer */
+  .composer{flex:none;padding:12px 26px 16px}
+  .cbox{border:1px solid var(--line-2);background:var(--glass);border-radius:var(--r-lg);padding:11px 14px}
+  .cbox:focus-within{border-color:rgba(122,162,255,.45);box-shadow:0 0 0 3px rgba(122,162,255,.1)}
+  .cbox input{width:100%;background:none;border:none;outline:none;color:var(--tx);font-size:13.5px;font-family:inherit}
+  .cbox input::placeholder{color:var(--tx3)}
+  .ctools{display:flex;align-items:center;gap:6px;margin-top:9px}
+  .ctag{font-size:11.5px;color:var(--tx3);padding:3px 9px;border-radius:99px;cursor:pointer;border:1px solid transparent;white-space:nowrap}
+  .ctag:hover{background:var(--glass-2);color:var(--tx2)}
+  .ctag b{color:var(--tx2)}
+  .csend{margin-left:8px;width:30px;height:30px;border-radius:50%;background:var(--acc);border:none;color:#0b0d12;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .power{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--tx3);cursor:pointer;padding:3px 9px;border-radius:99px;border:1px solid var(--line);white-space:nowrap}
+  .power:hover{color:var(--tx2);background:var(--glass)}
+  .power .lv{color:var(--cuu)}
+
+  /* 工具 chips(协同) */
+  .toolchip{
+    display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tx2);
+    background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:var(--r-sm);
+    padding:6px 11px;margin:5px 0;max-width:430px;cursor:pointer;font-family:"SF Mono",ui-monospace,monospace;
+  }
+  .toolchip .k{color:var(--acc);font-weight:600;font-family:inherit}
+  .toolchip .ok{color:var(--ok);margin-left:auto}
+  .toolchip .spin{margin-left:auto;color:var(--acc);animation:blink 1s infinite}
+
+  /* ============ 网盘视图 ============ */
+  .drive-wrap{flex:1;overflow-y:auto;padding:20px 26px}
+  .drive-bar{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+  .drive-bar .path{font-size:13px;color:var(--tx2)}
+  .drive-bar .path b{color:var(--tx)}
+  .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .fitem{border:1px solid var(--line);background:var(--glass);border-radius:var(--r-md);padding:14px 13px;cursor:pointer;transition:.15s}
+  .fitem:hover{border-color:rgba(122,162,255,.4);background:var(--glass-2)}
+  .fitem .fic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:9px}
+  .fitem .fn{font-size:12.5px;font-weight:600;line-height:1.35;margin-bottom:4px;word-break:break-all}
+  .fitem .fs{font-size:11px;color:var(--tx3)}
+  .fitem.folder .fn{color:var(--acc)}
+  .fitem .ftag{display:inline-flex;align-items:center;gap:4px;font-size:10px;color:var(--cuu);background:var(--cuu-soft);padding:2px 7px;border-radius:99px;margin-top:6px}
+  .fitem .ftag.ok{color:var(--ok);background:var(--ok-soft)}
+
+  /* ============ 右栏:军团面板 ============ */
+  .side{width:322px;flex:none;border-left:1px solid var(--line);display:flex;flex-direction:column;background:rgba(0,0,0,.14)}
+  .side-head{padding:13px 15px 10px;border-bottom:1px solid var(--line)}
+  .side-head .t{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .side-head .t .n{font-size:10.5px;color:var(--acc);background:var(--acc-soft);padding:1px 8px;border-radius:99px}
+  .side-head .sub{font-size:11px;color:var(--tx3);margin-top:3px}
+  .filters{display:flex;gap:5px;padding:9px 13px;border-bottom:1px solid var(--line)}
+  .filters span{font-size:11px;padding:3.5px 10px;border-radius:99px;color:var(--tx3);cursor:pointer;border:1px solid transparent}
+  .filters span.on{background:var(--glass-2);color:var(--tx);border-color:var(--line-2)}
+  .runs{flex:1;overflow-y:auto;padding:11px;scrollbar-width:thin}
+  .runcard{border:1px solid var(--line);background:var(--glass);border-radius:var(--r-md);padding:11px 12px;margin-bottom:10px;cursor:pointer;transition:.15s}
+  .runcard:hover{border-color:var(--line-2);background:var(--glass-2)}
+  .runcard.running{border-color:rgba(122,162,255,.35)}
+  .rc-top{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+  .rc-role{font-size:10.5px;color:var(--tx3);border:1px solid var(--line);padding:1px 7px;border-radius:99px}
+  .rc-status{margin-left:auto;font-size:10.5px;padding:2px 8px;border-radius:99px}
+  .st-run{color:var(--acc);background:var(--acc-soft)}
+  .st-wait{color:var(--warn);background:var(--warn-soft)}
+  .st-done{color:var(--ok);background:var(--ok-soft)}
+  .rc-goal{font-size:12.5px;font-weight:600;line-height:1.45;margin-bottom:7px}
+  .rc-steps{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+  .rc-step{font-size:11px;color:var(--tx3);font-family:"SF Mono",ui-monospace,monospace;display:flex;gap:6px;align-items:center}
+  .rc-step .ok{color:var(--ok)}
+  .rc-step.cur{color:var(--acc)}
+  .rc-step.cur::after{content:"▌";animation:blink 1s infinite;font-size:9px}
+  .rc-foot{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--tx3);border-top:1px solid var(--line);padding-top:7px}
+  .rc-foot .cost{margin-left:auto}
+  .rc-ops{display:flex;gap:5px;margin-top:8px}
+  .rc-ops .btn{font-size:10.5px;padding:3px 9px}
+  .side-src{font-size:11px;color:var(--tx3);padding:2px 0 0}
+  .side-src a{color:var(--acc);cursor:pointer;text-decoration:none}
+
+  /* ============ Spotlight overlay ============ */
+  .overlay{position:fixed;inset:0;background:rgba(5,7,12,.55);display:none;align-items:flex-start;justify-content:center;padding-top:16vh;z-index:50;backdrop-filter:blur(6px)}
+  .overlay.on{display:flex}
+  .spot{
+    width:600px;border-radius:24px;overflow:hidden;
+    background:linear-gradient(180deg, rgba(44,49,64,.96), rgba(28,32,43,.97));
+    border:1px solid rgba(255,255,255,.16);box-shadow:0 50px 140px rgba(0,0,0,.6);
+    animation:pop .18s ease-out;
+  }
+  @keyframes pop{from{transform:scale(.97) translateY(-8px);opacity:0}to{transform:none;opacity:1}}
+  .spot .sin{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line);color:var(--tx2)}
+  .spot .sin .q{font-size:17px;color:var(--tx)}
+  .spot .sin .q .caret{animation:blink 1s infinite}
+  .spot .sres{padding:8px}
+  .sr{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:14px;cursor:pointer}
+  .sr.sel{background:var(--acc-soft)}
+  .sr .si{width:32px;height:32px;border-radius:9px;background:var(--glass-2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+  .sr .st1{font-size:13.5px;font-weight:600}
+  .sr .st2{font-size:11.5px;color:var(--tx3)}
+  .sr .key{margin-left:auto;font-size:11px;color:var(--tx3);border:1px solid var(--line-2);padding:2px 7px;border-radius:6px}
+
+  /* ============ AI 力度弹层 ============ */
+  .pop{position:absolute;right:340px;bottom:86px;width:300px;z-index:40;display:none;
+    background:linear-gradient(180deg, rgba(44,49,64,.97), rgba(28,32,43,.98));
+    border:1px solid var(--line-2);border-radius:var(--r-lg);padding:14px;box-shadow:0 24px 80px rgba(0,0,0,.5);}
+  .pop.on{display:block}
+  .pop .pt{font-size:12.5px;font-weight:700;margin-bottom:3px}
+  .pop .ps{font-size:11px;color:var(--tx3);margin-bottom:11px}
+  .lvl{display:flex;align-items:flex-start;gap:9px;padding:8px 9px;border-radius:var(--r-sm);cursor:pointer;border:1px solid transparent}
+  .lvl:hover{background:var(--glass)}
+  .lvl.on{background:var(--cuu-soft);border-color:rgba(255,171,94,.3)}
+  .lvl .r{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--tx3);margin-top:2px;flex:none}
+  .lvl.on .r{border-color:var(--cuu);background:radial-gradient(circle at center,var(--cuu) 45%,transparent 50%)}
+  .lvl .lt{font-size:12.5px;font-weight:600}
+  .lvl .ld{font-size:11px;color:var(--tx3);line-height:1.5}
+  .pop .srv{margin-top:11px;border-top:1px solid var(--line);padding-top:10px;font-size:11px;color:var(--tx3);line-height:1.7;display:flex;gap:7px}
+  .pop .srv .ic{margin-top:2px;color:var(--tx2)}
+  .pop .srv b{color:var(--tx2);font-weight:600}
+
+  /* 右栏分区 */
+  .sec-h{display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.08em;color:var(--tx3);padding:11px 15px 7px}
+  .sec-h .n2{font-size:10px;color:var(--tx3);background:var(--glass);padding:1px 6px;border-radius:99px}
+  .out-row{display:flex;align-items:center;gap:9px;padding:7px 15px;font-size:12px;cursor:pointer}
+  .out-row:hover{background:var(--glass)}
+  .out-row .oi{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex:none}
+  .out-row .om{font-size:10.5px;color:var(--tx3)}
+  .out-row .chev{margin-left:auto;color:var(--tx3);font-size:13px}
+  .bg-row{display:flex;align-items:center;gap:9px;padding:7px 15px;font-size:12px;color:var(--tx2)}
+  .bg-row .om{font-size:10.5px;color:var(--tx3)}
+  .bg-row .st{margin-left:auto;font-size:10px;color:var(--tx3);border:1px solid var(--line);padding:1px 7px;border-radius:99px}
+  /* run 详情下钻 */
+  .run-detail{display:none;flex:1;overflow-y:auto;padding:13px 15px}
+  .side.detail .run-detail{display:block}
+  .side.detail .side-list{display:none}
+  .back{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--acc);cursor:pointer;margin-bottom:10px}
+  .rd-name{font-size:14px;font-weight:700;margin-bottom:2px}
+  .rd-goal{font-size:12px;color:var(--tx2);line-height:1.5;margin-bottom:10px}
+  .rd-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .tl{border-left:2px solid var(--line-2);margin-left:6px;padding-left:13px;display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+  .tl-item{position:relative;font-size:12px;color:var(--tx2);line-height:1.5}
+  .tl-item::before{content:"";position:absolute;left:-18.5px;top:4px;width:9px;height:9px;border-radius:50%;background:var(--tx3);border:2px solid #191d27}
+  .tl-item.ok::before{background:var(--ok)}
+  .tl-item.cur::before{background:var(--acc);box-shadow:0 0 8px var(--acc)}
+  .tl-item .tm{color:var(--tx3);font-size:10.5px;margin-left:6px}
+  /* 产出/编辑卡 */
+  .editcard{display:flex;align-items:center;gap:10px;margin-top:8px;padding:9px 12px;background:var(--glass);border:1px solid var(--line-2);border-radius:var(--r-sm);font-size:12.5px;max-width:430px}
+  .editcard .oi{width:26px;height:26px;border-radius:7px;background:var(--ok-soft);color:var(--ok);display:flex;align-items:center;justify-content:center;flex:none}
+  .editcard .diffn{font-size:11px;color:var(--tx3)}
+  .editcard .add{color:var(--ok)}.editcard .del{color:var(--danger)}
+  .editcard .ops{margin-left:auto;display:flex;gap:5px}
+  /* 记忆引用 */
+  .memref{margin-top:7px;max-width:430px;font-size:11.5px;color:var(--tx3)}
+  .memref summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:5px}
+  .memref summary::-webkit-details-marker{display:none}
+  .memref summary::before{content:"›";transition:.15s;display:inline-block}
+  .memref[open] summary::before{transform:rotate(90deg)}
+  .memref .m{padding:5px 0 0 14px;line-height:1.55}
+  /* 群聊成员条与输入中 */
+  .chat-head{display:flex;align-items:center;gap:10px;padding:9px 26px;border-bottom:1px solid var(--line);flex:none;font-size:11.5px;color:var(--tx3)}
+  .chat-head .avs{display:flex}
+  .chat-head .avs .avatar{width:22px;height:22px;font-size:10px;margin-right:-6px;border:1.5px solid #1a1e28}
+  .chat-head .onl{margin-left:auto;display:flex;align-items:center;gap:5px}
+  .chat-head .on-dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+  .typing{padding:0 4px 5px;font-size:11px;color:var(--tx3)}
+  /* 模式弹层补充 */
+  .lvl .num{margin-left:auto;font-size:11px;color:var(--tx3);align-self:center}
+  .lvl.warn.on{background:var(--warn-soft);border-color:rgba(246,198,107,.35)}
+  .lvl.warn.on .r{border-color:var(--warn);background:radial-gradient(circle at center,var(--warn) 45%,transparent 50%)}
+  .pop .gran{font-size:11px;color:var(--acc);margin-top:9px;cursor:pointer}
+  .power.warn{color:var(--warn);border-color:rgba(246,198,107,.45);background:var(--warn-soft)}
+  .power.warn .lv{color:var(--warn)}
+  /* 新建项目 */
+  .np-b{padding:18px 20px}
+  .np-in{width:100%;margin:12px 0 10px;padding:10px 12px;background:var(--glass);border:1px solid var(--line-2);border-radius:10px;color:var(--tx);font-size:13.5px;outline:none;font-family:inherit}
+  .np-in:focus{border-color:rgba(122,162,255,.45)}
+  .np-note{font-size:11.5px;color:var(--tx3);line-height:1.7}
+  .np-note b{color:var(--tx2);font-weight:600}
+
+  .cuu-pet{position:fixed;right:30px;bottom:26px;z-index:30;text-align:center;pointer-events:none}
+  .cuu-pet .cat{
+    width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#ffb26b,#ff8f4f);color:#4a2508;
+    animation:breath 3s ease-in-out infinite;box-shadow:0 8px 26px rgba(255,171,94,.35);
+  }
+  .cuu-pet .cat .ic{width:26px;height:26px}
+  .cuu-pet .bub{
+    position:absolute;right:52px;bottom:50px;white-space:nowrap;font-size:11.5px;color:var(--tx);
+    background:linear-gradient(180deg, rgba(48,53,68,.97), rgba(34,38,50,.97));
+    border:1px solid var(--line-2);padding:7px 12px;border-radius:14px 14px 3px 14px;
+    opacity:0;transform:translateY(6px);transition:.3s;
+  }
+  .cuu-pet .bub.on{opacity:1;transform:none}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<!-- SVG 图标库 -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-cat" viewBox="0 0 24 24">
+      <path fill-rule="evenodd" d="M5 10.2 V4.6 L9.3 7.5 C10.2 7.2 11.1 7 12 7 c.9 0 1.8 .2 2.7 .5 L19 4.6 V10.2 A7 7 0 1 1 5 10.2 Z
+        M8.3 12.6 a1.1 1.1 0 1 0 2.2 0 a1.1 1.1 0 1 0 -2.2 0
+        M13.5 12.6 a1.1 1.1 0 1 0 2.2 0 a1.1 1.1 0 1 0 -2.2 0"/>
+    </symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 6 a2 2 0 0 1 2 -2 h12 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 H11 l-4.5 4 v-4 H6 a2 2 0 0 1 -2 -2 Z"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19 a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.4"/><path d="M15 15.4 a4.8 4.8 0 0 1 5.5 3.6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5 v14 M5 12 h14"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7 a2 2 0 0 1 2 -2 h4 l2 2 h8 a2 2 0 0 1 2 2 v8 a2 2 0 0 1 -2 2 H5 a2 2 0 0 1 -2 -2 Z"/></symbol>
+    <symbol id="i-army" viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="2.3"/><circle cx="6" cy="17.5" r="2.3"/><circle cx="18" cy="17.5" r="2.3"/><path d="M10.9 7.6 L7.2 15.4 M13.1 7.6 L16.8 15.4 M8.3 17.5 h7.4"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M7 3 h7 l4 4 v14 H7 Z M14 3 v4 h4"/></symbol>
+    <symbol id="i-table" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 10 h16 M10 10 v9"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8.5 5 v14 M15.5 5 v14 M4 12 h16"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M15.6 15.6 L20 20"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7.5 h9 M17.5 7.5 H20 M4 16.5 h2.5 M11 16.5 h9"/><circle cx="15.2" cy="7.5" r="2.1"/><circle cx="8.8" cy="16.5" r="2.1"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11 V8 a3 3 0 0 1 6 0 v3"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12 C5 7.5 8.2 5.5 12 5.5 s7 2 9.5 6.5 C19 16.5 15.8 18.5 12 18.5 s-7 -2 -9.5 -6.5 Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19 V6 M6.5 11.5 L12 6 l5.5 5.5"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5 L19 12 L8 18.5 Z"/></symbol>
+    <symbol id="i-proposal" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2.2"/><circle cx="7" cy="18" r="2.2"/><circle cx="17" cy="12" r="2.2"/><path d="M7 8.2 v7.6 M9 6.8 C14 8 14 16 9 17.2"/></symbol>
+  </defs>
+</svg>
+
+<div class="window">
+  <!-- 标题栏 -->
+  <div class="titlebar">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="crumb">WorkHub 工作台 · <b id="crumbName">星尘短剧 / 主区</b></div>
+    <div class="spacer"></div>
+    <div class="tb-btn" onclick="toggleSpot(true)"><svg class="ic sm"><use href="#i-search"/></svg>聚焦 ⌘K</div>
+    <div class="tb-btn acc" onclick="replayDemo()"><svg class="ic sm fill"><use href="#i-play"/></svg>重播 60s 触发</div>
+  </div>
+
+  <div class="body">
+    <!-- ============ 左栏 ============ -->
+    <div class="rail">
+      <div class="rail-head">项目</div>
+
+      <div class="proj active">
+        <div class="proj-row">
+          <div class="tile t-acc">星</div>
+          <div class="proj-name">星尘短剧</div>
+          <div class="proj-dot" title="有 run 进行中"></div>
+        </div>
+        <div class="tree">
+          <div class="leaf sel" data-view="chat" onclick="go('chat',this,'星尘短剧 / 主区')"><svg class="ic sm"><use href="#i-chat"/></svg>主区<span class="live">2 在跑</span></div>
+          <div class="leaf" data-view="collab" onclick="go('collab',this,'星尘短剧 / 协同 · 选题报告重写')"><svg class="ic sm"><use href="#i-users"/></svg>选题报告重写<span class="n">协同</span></div>
+          <div class="leaf" style="color:var(--tx3)" onclick="event.stopPropagation()"><svg class="ic sm"><use href="#i-plus"/></svg>新建协同会话</div>
+          <div class="leaf" data-view="drive" onclick="go('drive',this,'星尘短剧 / 网盘')"><svg class="ic sm"><use href="#i-folder"/></svg>网盘<span class="n">34</span></div>
+        </div>
+      </div>
+
+      <div class="proj">
+        <div class="proj-row">
+          <div class="tile t-ok">知</div>
+          <div class="proj-name" style="color:var(--tx2)">知识库改版</div>
+        </div>
+      </div>
+      <div class="proj">
+        <div class="proj-row">
+          <div class="tile t-warn">投</div>
+          <div class="proj-name" style="color:var(--tx2)">投放实验 Q3</div>
+        </div>
+      </div>
+      <div class="proj">
+        <div class="proj-row" onclick="toggleNewProj(true)">
+          <div class="tile" style="background:var(--glass);color:var(--tx3)"><svg class="ic sm"><use href="#i-plus"/></svg></div>
+          <div class="proj-name" style="color:var(--tx3);font-weight:500">新建项目</div>
+        </div>
+      </div>
+
+      <div class="rail-foot">
+        <div class="army-sum">
+          <div class="tile t-cuu"><svg class="ic"><use href="#i-army"/></svg></div>
+          <div>
+            <div class="t">军团总览</div>
+            <div class="s">3 运行中 · 2 等你拍板</div>
+          </div>
+        </div>
+        <div class="me"><div class="avatar av-a">曼</div>阿曼 · 已连接 <span style="color:var(--ok)">●</span></div>
+      </div>
+    </div>
+
+    <!-- ============ 中栏 ============ -->
+    <div class="center">
+
+      <!-- 视图 1:主区群聊 -->
+      <div class="view on" id="view-chat">
+        <div class="chat-head">
+          <div class="avs">
+            <span class="avatar av-a">曼</span><span class="avatar av-z">张</span><span class="avatar av-l">林</span>
+            <span class="avatar av-cuu"><svg class="ic" style="width:13px;height:13px;fill:currentColor;stroke:none"><use href="#i-cat"/></svg></span>
+          </div>
+          <span>项目组 3 人 + Cuu · 全员群聊</span>
+          <span class="onl"><span class="on-dot"></span>3 人在线</span>
+        </div>
+        <div class="chat-scroll" id="chatScroll">
+          <div class="day-sep">今天 · 周六</div>
+
+          <div class="msg">
+            <div class="avatar av-z">张</div>
+            <div class="bub">
+              <div class="who">张三<span class="tm">14:02</span></div>
+              <div class="txt">选题报告初稿我看完了,第三节的口径不对——「完播率」应该按新的 15s 口径算,不是旧的 30s。数据源直接用网盘里那份周报就行。</div>
+            </div>
+          </div>
+
+          <div class="msg">
+            <div class="avatar av-a">曼</div>
+            <div class="bub">
+              <div class="who">阿曼<span class="tm">14:04</span></div>
+              <div class="txt">同意。另外下周投放预算我倾向砍半,先看这周 AB 结果再说,<span class="mention">@小林</span> 你那边有意见吗?</div>
+            </div>
+          </div>
+
+          <div class="msg">
+            <div class="avatar av-l">林</div>
+            <div class="bub">
+              <div class="who">小林<span class="tm">14:05</span></div>
+              <div class="txt">砍半有点激进…AB 数据周三才齐。周报我传网盘了:</div>
+              <div class="filecard" onclick="openPreview('投放周报 W27.xlsx')">
+                <div class="fi"><svg class="ic"><use href="#i-table"/></svg></div>
+                <div><div>投放周报 W27.xlsx</div><div class="fm">网盘 / 数据 · 214 KB</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 60s 静默 → Cuu 观察 -->
+          <div class="observing" id="observing">
+            <div class="avatar av-cuu"><svg class="ic fill"><use href="#i-cat"/></svg></div>
+            <span>安静了 60 秒,Cuu 正在整理刚才的讨论</span>
+            <span class="dots"><i></i><i></i><i></i></span>
+          </div>
+
+          <!-- 行动卡 -->
+          <div class="msg cuu" id="actionMsg">
+            <div class="avatar av-cuu"><svg class="ic fill"><use href="#i-cat"/></svg></div>
+            <div class="bub" style="min-width:0;flex:1">
+              <div class="who">Cuu · 项目 AI<span class="tm">14:06</span></div>
+              <div class="action-card">
+                <div class="ac-head">
+                  <div class="t">从刚才的讨论里,我拎出 2 件事</div>
+                  <div class="gear" title="主区观察者全自动派活;决策项 @负责人异步拍板">自动派活 · 决策项@负责人</div>
+                </div>
+
+                <div class="ac-item">
+                  <div class="it">1. 按 15s 完播率新口径重写选题报告第三节,数据用 <span class="mention">@投放周报 W27.xlsx</span></div>
+                  <div class="meta">
+                    <span class="chip conf-hi">我比较有把握</span>
+                    <span class="chip run"><span class="pulse"></span>已开工 · 军团可见</span>
+                    <button class="btn undo" onclick="this.textContent='已撤销';this.disabled=true">撤销(9 分钟内)</button>
+                  </div>
+                </div>
+
+                <div class="ac-item" id="acItem2">
+                  <div class="it">2. 下周投放预算是否砍半——张三未表态,小林觉得激进,AB 数据周三才齐</div>
+                  <div class="meta">
+                    <span class="chip conf-lo">我拿不准,你来定</span>
+                    <span class="chip">@阿曼</span>
+                  </div>
+                  <div class="ac-actions">
+                    <button class="btn primary" onclick="pick(this,'已交给 Cuu:周三 AB 数据齐后出对比分析,派进军团')">交给我干</button>
+                    <button class="btn" onclick="pick(this,'已派给 张三:在他的 agent 里执行,他的 Cuu 会通知他')">派给张三</button>
+                    <button class="btn ghost" onclick="pick(this,'好的,先放着,我盯着 AB 数据')">先不动</button>
+                  </div>
+                  <div class="picked"></div>
+                </div>
+              </div>
+
+              <!-- 线程 -->
+              <div class="thread">
+                <div class="th-line"><span class="dot acc"></span><span>1. 阿墨 已开工,读取了 <a>选题报告.md</a> 和 <a>投放周报 W27.xlsx</a><span class="tm">14:06</span></span></div>
+                <div class="th-line"><span class="dot acc"></span><span>1. 第三节草稿完成,正在自检(judge 复核中)<span class="tm">14:09</span></span></div>
+                <div class="th-line" id="thProposal" style="display:none"><span class="dot ok"></span><span>1. 已开提议 <a>「重写第三节(15s 口径)」</a>,建议你扫一眼<span class="tm">14:11</span></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sysline" id="sysMerge" style="display:none"><span><span class="ok">✓</span> 提议「会议纪要归档 · 7/11」已被张三采纳进正式版</span></div>
+        </div>
+
+        <!-- composer -->
+        <div class="composer">
+          <div class="typing">张三 正在输入<span class="dots"><i></i><i></i><i></i></span></div>
+          <div class="cbox">
+            <input placeholder="发消息给项目组和 Cuu…(@ 引用网盘文件 / # 引用会话 / 技能)" />
+            <div class="ctools">
+              <span class="ctag"><b>@</b> 文件·成员</span>
+              <span class="ctag"><b>#</b> 会话</span>
+              <span class="ctag"><b>/</b> 技能</span>
+              <span class="ctag" style="margin-left:auto;cursor:default" title="主区不设个人模式;观察者治理在项目设置">Cuu 自动派活</span>
+              <button class="csend"><svg class="ic sm"><use href="#i-send"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 视图 2:协同会话 -->
+      <div class="view" id="view-collab">
+        <div class="chat-scroll">
+          <div class="day-sep">协同会话 · 从行动卡 1 深入处理 · 参与:阿曼 + Cuu</div>
+
+          <div class="msg">
+            <div class="avatar av-a">曼</div>
+            <div class="bub">
+              <div class="who">阿曼<span class="tm">14:12</span></div>
+              <div class="txt">第三节重写时,把「爆款率」的定义也顺手统一一下,用 <span class="mention">#主区</span> 里张三说的口径。</div>
+            </div>
+          </div>
+
+          <div class="msg cuu">
+            <div class="avatar av-cuu"><svg class="ic fill"><use href="#i-cat"/></svg></div>
+            <div class="bub" style="flex:1;min-width:0">
+              <div class="who">Cuu<span class="tm">14:12</span></div>
+              <div class="txt">收到,我把两个口径一起统一。先核对一下数据——</div>
+              <div class="toolchip"><span class="k">读取</span> 网盘 / 数据 / 投放周报 W27.xlsx <span class="ok">✓</span></div>
+              <div class="toolchip"><span class="k">技能</span> /短剧选题·口径对照表 <span class="ok">✓</span></div>
+              <div class="toolchip"><span class="k">起草</span> 选题报告 · 第三节(15s 口径) <span class="spin">●</span></div>
+              <div class="txt" style="margin-top:7px">按新口径,Top3 选题的完播率是 41% / 38% / 33%,比旧口径普遍低 12 个点左右——第三节的结论方向不变,但数字全部要换。我先改完贴给你对比,<b>不直接动正式版</b>,采纳走提议。</div>
+              <div class="editcard">
+                <div class="oi"><svg class="ic sm"><use href="#i-file"/></svg></div>
+                <div>已起草 选题报告 · 第三节<div class="diffn"><span class="add">+86</span> <span class="del">-12</span> · 草稿,未动正式版</div></div>
+                <div class="ops"><button class="btn undo">撤销</button><button class="btn primary">交给审核</button></div>
+              </div>
+              <details class="memref">
+                <summary>2 条记忆引用</summary>
+                <div class="m">张三 7-08 在主区说过:完播率口径统一按 15s 算</div>
+                <div class="m">团队技能:短剧选题·口径对照表 v3(上周夜间整理更新)</div>
+              </details>
+            </div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="cbox">
+            <input placeholder="和 Cuu 深入聊这件事…" />
+            <div class="ctools">
+              <span class="ctag"><b>@</b> 文件·成员</span>
+              <span class="ctag"><b>#</b> 会话</span>
+              <span class="ctag"><b>/</b> 技能</span>
+              <div class="power" onclick="togglePower()">我的模式:<span class="lv">分级自动</span></div>
+              <span class="ctag">变成任务</span>
+              <button class="csend"><svg class="ic sm"><use href="#i-send"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 视图 3:网盘 -->
+      <div class="view" id="view-drive">
+        <div class="drive-wrap">
+          <div class="drive-bar">
+            <div class="path"><b>星尘短剧</b> 的网盘 / 全部 <span style="font-size:11px;color:var(--tx3);margin-left:8px">全部文件自动留版本 · 可回滚</span></div>
+            <div class="spacer" style="flex:1"></div>
+            <button class="btn">上传</button>
+            <button class="btn ghost">新建文件夹</button>
+          </div>
+          <div class="fgrid">
+            <div class="fitem folder"><div class="fic t-acc tile"><svg class="ic"><use href="#i-folder"/></svg></div><div class="fn">数据</div><div class="fs">8 项</div></div>
+            <div class="fitem folder"><div class="fic t-acc tile"><svg class="ic"><use href="#i-folder"/></svg></div><div class="fn">选题</div><div class="fs">12 项</div></div>
+            <div class="fitem folder"><div class="fic t-acc tile"><svg class="ic"><use href="#i-folder"/></svg></div><div class="fn">聊天上传</div><div class="fs">6 项</div></div>
+            <div class="fitem" onclick="openPreview('选题报告.md')"><div class="fic tile t-cuu"><svg class="ic"><use href="#i-file"/></svg></div><div class="fn">选题报告.md</div><div class="fs">昨天 · 张三</div><span class="ftag"><svg class="ic sm fill" style="width:10px;height:10px"><use href="#i-cat"/></svg>Cuu 正在改</span></div>
+            <div class="fitem" onclick="openPreview('投放周报 W27.xlsx')"><div class="fic tile t-ok"><svg class="ic"><use href="#i-table"/></svg></div><div class="fn">投放周报 W27.xlsx</div><div class="fs">14:05 · 小林 · 来自群聊</div></div>
+            <div class="fitem"><div class="fic tile t-warn"><svg class="ic"><use href="#i-film"/></svg></div><div class="fn">样片 v3.mp4</div><div class="fs">周四 · 阿曼</div></div>
+            <div class="fitem"><div class="fic tile t-acc"><svg class="ic"><use href="#i-file"/></svg></div><div class="fn">会议纪要 7-11.md</div><div class="fs">周五 · Cuu 归档</div><span class="ftag ok">✓ 提议已采纳</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============ 右栏:情境面板(输出/军团/后台任务) ============ -->
+    <div class="side" id="sidePanel">
+      <div class="side-head">
+        <div class="t" id="sideTitle"><svg class="ic sm"><use href="#i-army"/></svg>情境 <span class="n">主区</span></div>
+        <div class="sub">本会话的输出、军团与后台任务 · 实时</div>
+      </div>
+
+      <div class="side-list" style="flex:1;overflow-y:auto">
+        <div class="sec-h">输出<span class="n2">3</span></div>
+        <div class="out-row" onclick="openPreview('选题报告 · 第三节(草稿)')">
+          <div class="oi tile t-ok"><svg class="ic sm"><use href="#i-file"/></svg></div>
+          <div><div>选题报告 · 第三节(草稿)</div><div class="om">阿墨 · 提议待审</div></div>
+          <span class="chev">›</span>
+        </div>
+        <div class="out-row" onclick="openPreview('会议纪要 7-11 索引')">
+          <div class="oi tile t-acc"><svg class="ic sm"><use href="#i-file"/></svg></div>
+          <div><div>会议纪要 7-11 索引</div><div class="om">雪球 · 提议待审</div></div>
+          <span class="chev">›</span>
+        </div>
+        <div class="out-row" onclick="openPreview('竞品短剧日报 7-12')">
+          <div class="oi tile t-warn"><svg class="ic sm"><use href="#i-table"/></svg></div>
+          <div><div>竞品短剧日报 7-12</div><div class="om">橘皮 · 已合并</div></div>
+          <span class="chev">›</span>
+        </div>
+
+        <div class="sec-h" style="border-top:1px solid var(--line);margin-top:6px">军团<span class="n2">本会话 3</span></div>
+        <div class="filters" style="border-bottom:none;padding-top:2px">
+          <span class="on">全部</span><span>进行中</span><span>等我拍板</span><span>已完成</span>
+        </div>
+        <div class="runs" style="padding-top:4px">
+
+          <div class="runcard running" onclick="showRun('mo')">
+            <div class="rc-top">
+              <div class="avatar av-cuu" style="width:20px;height:20px"><svg class="ic" style="width:12px;height:12px;fill:currentColor;stroke:none"><use href="#i-cat"/></svg></div>
+              <b style="font-size:12px">阿墨</b>
+              <span class="rc-role">写作</span>
+              <span class="rc-status st-run">运行中</span>
+            </div>
+            <div class="rc-goal">重写选题报告第三节(15s 完播口径)</div>
+            <div class="side-src">来自 行动卡 1 · 执行身份:阿曼</div>
+            <div class="rc-steps" style="margin-top:8px">
+              <div class="rc-step"><span class="ok">✓</span>读取 选题报告.md · 投放周报 W27.xlsx</div>
+              <div class="rc-step"><span class="ok">✓</span>技能 /短剧选题·口径对照表</div>
+              <div class="rc-step cur">起草第三节(1,900 字)…</div>
+            </div>
+            <div class="rc-foot"><span>3 分 12 秒</span><span class="cost">¥0.021</span></div>
+          </div>
+
+          <div class="runcard" onclick="showRun('xue')">
+            <div class="rc-top">
+              <div class="avatar av-cuu" style="width:20px;height:20px"><svg class="ic" style="width:12px;height:12px;fill:currentColor;stroke:none"><use href="#i-cat"/></svg></div>
+              <b style="font-size:12px">雪球</b>
+              <span class="rc-role">归档</span>
+              <span class="rc-status st-wait">等审批</span>
+            </div>
+            <div class="rc-goal">会议纪要 7-11 归档进网盘并建索引</div>
+            <div class="side-src">来自 周五的行动卡 · 执行身份:张三</div>
+            <div class="rc-foot" style="margin-top:8px"><span>已出提议,等张三点头</span><span class="cost">¥0.008</span></div>
+          </div>
+
+          <div class="runcard" style="opacity:.72" onclick="showRun('ju')">
+            <div class="rc-top">
+              <div class="avatar av-cuu" style="width:20px;height:20px"><svg class="ic" style="width:12px;height:12px;fill:currentColor;stroke:none"><use href="#i-cat"/></svg></div>
+              <b style="font-size:12px">橘皮</b>
+              <span class="rc-role">调研</span>
+              <span class="rc-status st-done">已完成</span>
+            </div>
+            <div class="rc-goal">竞品短剧日报(7-12)</div>
+            <div class="side-src">定时任务 · 执行身份:阿曼</div>
+            <div class="rc-foot" style="margin-top:8px"><span>已合并进知识库</span><span class="cost">¥0.014</span></div>
+          </div>
+
+        </div>
+
+        <div class="sec-h" style="border-top:1px solid var(--line)">后台任务</div>
+        <div class="bg-row">
+          <div class="oi tile t-warn" style="width:24px;height:24px"><svg class="ic sm"><use href="#i-table"/></svg></div>
+          <div><div>竞品日报</div><div class="om">每天 09:00 · 橘皮执行</div></div>
+          <span class="st">运行正常</span>
+        </div>
+        <div class="bg-row">
+          <div class="oi tile t-acc" style="width:24px;height:24px"><svg class="ic sm"><use href="#i-army"/></svg></div>
+          <div><div>夜间技能整理</div><div class="om">每天 03:00 · 全项目</div></div>
+          <span class="st">昨晚已跑</span>
+        </div>
+      </div>
+
+      <!-- run 详情(点击军团卡下钻) -->
+      <div class="run-detail" id="runDetail">
+        <span class="back" onclick="backRuns()">‹ 返回</span>
+        <div class="rd-name" id="rdName"></div>
+        <div class="rd-goal" id="rdGoal"></div>
+        <div class="rd-meta" id="rdMeta"></div>
+        <div class="sec-h" style="padding-left:0">时间线</div>
+        <div class="tl" id="rdTl"></div>
+        <div class="rc-ops" id="rdOps"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Spotlight overlay -->
+<div class="overlay" id="spot" onclick="toggleSpot(false)">
+  <div class="spot" onclick="event.stopPropagation()">
+    <div class="sin"><svg class="ic lg"><use href="#i-search"/></svg><div class="q">星尘<span class="caret">▌</span></div></div>
+    <div class="sres">
+      <div class="sr sel" onclick="toggleSpot(false)">
+        <div class="si" style="color:var(--acc);background:var(--acc-soft)">星</div>
+        <div><div class="st1">打开「星尘短剧」工作台</div><div class="st2">主区 2 条新消息 · 军团 1 个在跑</div></div>
+        <span class="key">⏎</span>
+      </div>
+      <div class="sr"><div class="si"><svg class="ic"><use href="#i-file"/></svg></div><div><div class="st1">选题报告.md</div><div class="st2">星尘短剧 / 网盘 / 选题</div></div></div>
+      <div class="sr"><div class="si"><svg class="ic"><use href="#i-proposal"/></svg></div><div><div class="st1">提议 · 重写第三节(15s 口径)</div><div class="st2">等你扫一眼 · Cuu 比较有把握</div></div></div>
+      <div class="sr"><div class="si"><svg class="ic"><use href="#i-army"/></svg></div><div><div class="st1">军团总览</div><div class="st2">3 运行中 · 2 等你拍板</div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 模式弹层 -->
+<div class="pop" id="powerPop">
+  <div class="pt">我的 AI 模式 · 与 Cuu 单聊</div>
+  <div class="ps">只影响你的协同会话;主区观察者由项目治理管。按 1-5 快切</div>
+  <div class="lvl" onclick="setLvl(this,'只观察')"><div class="r"></div><div><div class="lt">只观察</div><div class="ld">只总结讨论,不提出也不执行</div></div><span class="num">1</span></div>
+  <div class="lvl" onclick="setLvl(this,'全部先问')"><div class="r"></div><div><div class="lt">全部先问</div><div class="ld">提出方案,任何执行都等人点头</div></div><span class="num">2</span></div>
+  <div class="lvl on" onclick="setLvl(this,'分级自动')"><div class="r"></div><div><div class="lt">分级自动(默认)</div><div class="ld">有把握的直接干(可撤销);拿不准的先问你</div></div><span class="num">3</span></div>
+  <div class="lvl" onclick="setLvl(this,'全自动 · 人审')"><div class="r"></div><div><div class="lt">全自动 · 人审</div><div class="ld">拎出的事全都干,合并前仍由人审提议</div></div><span class="num">4</span></div>
+  <div class="lvl warn" onclick="setLvl(this,'全托管 · AI 审')"><div class="r"></div><div><div class="lt">全托管 · AI 审</div><div class="ld">AI 复核通过即自动合并;法务/财务/身份类永远升级给人</div></div><span class="num">5</span></div>
+  <div class="gran">按能力细分:建任务 / 派 run / 动网盘 / 发通知…</div>
+  <div class="srv"><svg class="ic sm"><use href="#i-lock"/></svg><span>模型与密钥由<b>服务端下发</b>:deepseek · 高档位 · 本月预算已用 ¥3.2 / ¥50。桌面端不保存任何 API key。</span></div>
+</div>
+
+<!-- 新建项目 -->
+<div class="overlay" id="npModal" onclick="toggleNewProj(false)">
+  <div class="spot" style="width:480px" onclick="event.stopPropagation()">
+    <div class="np-b">
+      <div class="pt" style="font-size:14px">新建项目</div>
+      <input class="np-in" placeholder="项目名,如:泰诺麦博推广" />
+      <div class="np-note">创建即自动配好:<b>主区群聊(全员可聊) · 项目网盘 · Cuu 入驻 · 模式默认「分级自动」</b>。成员邀请和权限之后在项目设置里调。</div>
+      <div class="ac-actions" style="justify-content:flex-end;margin-top:14px">
+        <button class="btn ghost" onclick="toggleNewProj(false)">取消</button>
+        <button class="btn primary" onclick="toggleNewProj(false)">创建项目</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Cuu 桌宠 -->
+<div class="cuu-pet">
+  <div class="bub" id="petBub">第三节的提议好了,扫一眼喵?</div>
+  <div class="cat"><svg class="ic fill"><use href="#i-cat"/></svg></div>
+</div>
+
+<script>
+  const ctxTitle = '<svg class="ic sm"><use href="#i-army"/></svg>情境 <span class="n">本会话</span>';
+  function go(view, leaf, crumb){
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+    document.getElementById('view-'+view).classList.add('on');
+    document.querySelectorAll('.leaf').forEach(l=>l.classList.remove('sel'));
+    if(leaf && leaf.classList) leaf.classList.add('sel');
+    document.getElementById('crumbName').textContent = crumb;
+    backRuns();
+    const head = document.getElementById('sideTitle');
+    if(view==='drive'){ head.innerHTML = '<svg class="ic sm"><use href="#i-eye"/></svg>预览 <span class="n">点文件查看</span>'; }
+    else { head.innerHTML = ctxTitle; }
+  }
+
+  // —— 军团详情下钻 ——
+  const RUNS = {
+    mo:{name:'阿墨 · 写作 agent', goal:'重写选题报告第三节(15s 完播口径)',
+      meta:['运行中','来自 行动卡 1','执行身份:阿曼','¥0.021'],
+      tl:[['ok','认领任务,读取 选题报告.md 与 投放周报 W27.xlsx','14:06'],
+          ['ok','加载技能 /短剧选题·口径对照表','14:06'],
+          ['ok','按 15s 口径重算 Top3 完播率:41% / 38% / 33%','14:07'],
+          ['cur','起草第三节(1,900 字)…','14:09']],
+      ops:['看回放','交接','中止']},
+    xue:{name:'雪球 · 归档 agent', goal:'会议纪要 7-11 归档进网盘并建索引',
+      meta:['等审批','来自 周五的行动卡','执行身份:张三','¥0.008'],
+      tl:[['ok','解析会议纪要,识别 6 个议题','周五 18:02'],
+          ['ok','归档至 网盘 / 会议,生成索引','周五 18:03'],
+          ['cur','已开提议,等张三点头','周五 18:04']],
+      ops:['看提议 diff','交接']},
+    ju:{name:'橘皮 · 调研 agent', goal:'竞品短剧日报(7-12)',
+      meta:['已完成','定时任务','执行身份:阿曼','¥0.014'],
+      tl:[['ok','抓取 4 个竞品账号近 24h 数据','09:00'],
+          ['ok','对比昨日,产出日报','09:03'],
+          ['ok','提议已自动合并(高把握)','09:05']],
+      ops:['看回放']}
+  };
+  function showRun(k){
+    const r = RUNS[k];
+    document.getElementById('sidePanel').classList.add('detail');
+    document.getElementById('rdName').textContent = r.name;
+    document.getElementById('rdGoal').textContent = r.goal;
+    document.getElementById('rdMeta').innerHTML = r.meta.map(m=>'<span class="chip">'+m+'</span>').join('');
+    document.getElementById('rdTl').innerHTML = r.tl.map(t=>'<div class="tl-item '+t[0]+'">'+t[1]+'<span class="tm">'+t[2]+'</span></div>').join('');
+    document.getElementById('rdOps').innerHTML = r.ops.map(o=>'<button class="btn">'+o+'</button>').join('');
+    document.getElementById('sideTitle').innerHTML = '<svg class="ic sm"><use href="#i-army"/></svg>军团成员';
+  }
+  function backRuns(){
+    document.getElementById('sidePanel').classList.remove('detail');
+    document.getElementById('sideTitle').innerHTML = ctxTitle;
+  }
+  function pick(btn, text){
+    const item = document.getElementById('acItem2');
+    item.classList.add('done-pick');
+    item.querySelector('.picked').textContent = '✓ ' + text;
+  }
+  function toggleSpot(on){ document.getElementById('spot').classList.toggle('on', on); }
+  function togglePower(){ document.getElementById('powerPop').classList.toggle('on'); }
+  function setLvl(el, name){
+    document.querySelectorAll('.lvl').forEach(l=>l.classList.remove('on'));
+    el.classList.add('on');
+    document.querySelectorAll('.power .lv, .gear-lv').forEach(x=>{ x.textContent = name; });
+    document.querySelector('.power').classList.toggle('warn', name.indexOf('全托管')===0);
+  }
+  function toggleNewProj(on){ document.getElementById('npModal').classList.toggle('on', on); }
+  function openPreview(name){
+    backRuns();
+    document.getElementById('sideTitle').innerHTML = '<svg class="ic sm"><use href="#i-eye"/></svg>预览 <span class="n">'+name+'</span>';
+  }
+  document.addEventListener('keydown', e=>{
+    if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); toggleSpot(true); }
+    if(e.key==='Escape'){ toggleSpot(false); toggleNewProj(false); document.getElementById('powerPop').classList.remove('on'); }
+    const pop = document.getElementById('powerPop');
+    if(pop.classList.contains('on') && e.key>='1' && e.key<='5'){
+      pop.querySelectorAll('.lvl')[Number(e.key)-1].click();
+    }
+  });
+
+  // 演示:重播 60s 静默 → 行动卡 → 线程推进 → 桌宠气泡
+  function replayDemo(){
+    go('chat', document.querySelector('[data-view=chat]'), '星尘短剧 / 主区');
+    const obs = document.getElementById('observing');
+    const act = document.getElementById('actionMsg');
+    const th  = document.getElementById('thProposal');
+    const sys = document.getElementById('sysMerge');
+    const bub = document.getElementById('petBub');
+    act.style.display='none'; th.style.display='none'; sys.style.display='none'; bub.classList.remove('on');
+    obs.style.display='flex';
+    const sc = document.getElementById('chatScroll'); sc.scrollTop = sc.scrollHeight;
+    setTimeout(()=>{ act.style.display='flex'; sc.scrollTop = sc.scrollHeight; }, 1800);
+    setTimeout(()=>{ th.style.display='flex'; sc.scrollTop = sc.scrollHeight; }, 4200);
+    setTimeout(()=>{ bub.classList.add('on'); }, 5000);
+    setTimeout(()=>{ bub.classList.remove('on'); }, 9000);
+    setTimeout(()=>{ sys.style.display='flex'; }, 5600);
+  }
+  // 首屏 6 秒后演示一次桌宠气泡
+  setTimeout(()=>{ document.getElementById('petBub').classList.add('on');
+    setTimeout(()=>document.getElementById('petBub').classList.remove('on'), 4500); }, 6000);
+</script>
+</body>
+</html>

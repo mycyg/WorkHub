@@ -412,7 +412,8 @@ function fakeClient(surface: GoldPathSurfaceVM, session: SessionVM = intakeSessi
       workItem: (id) => `/api/push/stream/workitem/${id}`,
       run: (id) => `/api/push/stream/run/${id}`,
       session: (id) => `/api/push/stream/session/${id}`,
-      proposal: (id) => `/api/push/stream/proposal/${id}`
+      proposal: (id) => `/api/push/stream/proposal/${id}`,
+      conversation: (id) => `/api/push/stream/conversation/${encodeURIComponent(id)}`
     },
     streamUrl: (path) => path,
     async request() {
@@ -670,6 +671,10 @@ test("web surface advertises and loads the shared P0.5 gold path page VM", async
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).surface, "web");
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal")).html.includes("这次改了什么"), true);
   assert.equal((await renderWebProposalDetail(fakeClient(surface), "proposal", "en-US")).html.includes("What changed"), true);
+  assert.equal(
+    fakeClient(surface).streams.conversation("conversation/一"),
+    "/api/push/stream/conversation/conversation%2F%E4%B8%80"
+  );
   assert.equal((await loadWebAgentRunReplay(fakeClient(surface), "run")).run.handoff_md, "AI 完成了草稿生成。");
   assert.equal((await renderWebAgentRunReplay(fakeClient(surface), "run")).html.includes("查看 AI 怎么做的"), true);
   assert.equal((await renderWebAgentRunReplay(fakeClient(surface), "run", "en-US")).html.includes("See how AI did it"), true);

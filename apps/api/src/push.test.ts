@@ -19,6 +19,7 @@ import { InMemoryPresenceStore } from "./broker/presence.js";
 import type { AuthDependencies, AuthEnv } from "./middleware/auth.js";
 import { COOKIE_NAME } from "./middleware/auth.js";
 import { createPushRoutes } from "./routes/push.js";
+import { ConversationServiceError, type ConversationService } from "./services/conversations.js";
 import type { ProposalService } from "./services/proposals.js";
 import { WorkItemServiceError, type WorkItemService } from "./services/work-items.js";
 import { resolveAuthorizedTopic } from "./sse/topic-access.js";
@@ -39,6 +40,214 @@ test("topic authorization derives user streams from identity and rejects unregis
   await assert.rejects(() => resolveAuthorizedTopic(user, { kind: "run", id: "r1" }));
   await assert.rejects(() => resolveAuthorizedTopic(user, { kind: "session", id: "s1" }));
   await assert.rejects(() => resolveAuthorizedTopic(user, { kind: "proposal", id: "p1" }));
+});
+
+test("conversation topic authorization never grants admin bypass and resolves one exact private topic", async () => {
+  const workspaceId = "00000000-0000-4000-8000-000000000002";
+  const conversationId = "30000000-0000-4000-8000-000000000003";
+  const member = { id: "10000000-0000-4000-8000-000000000001", nickname: "alice", isAdmin: false, orgId: "00000000-0000-4000-8000-000000000001", workspaceId };
+  const admin = { ...member, id: "10000000-0000-4000-8000-000000000002", nickname: "admin", isAdmin: true };
+  const calls: Array<{ userId: string; id: string }> = [];
+  const access = {
+    async canViewConversation(candidate: typeof member, id: string) {
+      calls.push({ userId: candidate.id, id });
+      return candidate.id === member.id;
+    }
+  };
+
+  assert.equal(
+    await resolveAuthorizedTopic(member, { kind: "conversation", id: conversationId }, access),
+    `conversation:${conversationId}`
+  );
+  await assert.rejects(
+    () => resolveAuthorizedTopic(admin, { kind: "conversation", id: conversationId }, access),
+    (error) => error instanceof HTTPException && error.status === 403
+  );
+  assert.deepEqual(calls, [
+    { userId: member.id, id: conversationId },
+    { userId: admin.id, id: conversationId }
+  ]);
+});
+
+test("default conversation stream access delegates every identity to ConversationService without admin bypass", async () => {
+  const runtimeSettings = settings();
+  const conversationId = "30000000-0000-4000-8000-000000000003";
+  const mainMember = user();
+  const collabParticipant = user({
+    id: "10000000-0000-4000-8000-000000000002",
+    nickname: "collaborator",
+    cookieToken: "cookie-collaborator"
+  });
+  const deniedUsers = [
+    ["collab non-participant", false],
+    ["admin non-participant", true],
+    ["cross-workspace viewer", false],
+    ["revoked membership", false],
+    ["deleted or inactive resource", false]
+  ].map(([label, isAdmin], index) => user({
+    id: `10000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`,
+    nickname: String(label),
+    cookieToken: `cookie-denied-${index}`,
+    isAdmin: Boolean(isAdmin)
+  }));
+  const allowedIds = new Set([mainMember.id, collabParticipant.id]);
+  const accessCalls: Array<{ actorId: string; userId: string | undefined; isAdmin: boolean; conversationId: string }> = [];
+  const conversations = {
+    async assertConversationAccess(input: Parameters<ConversationService["assertConversationAccess"]>[0]) {
+      accessCalls.push({
+        actorId: input.actor.id,
+        userId: input.actor.userId,
+        isAdmin: input.actor.isAdmin,
+        conversationId: input.conversationId
+      });
+      if (!allowedIds.has(input.actor.id)) {
+        throw new ConversationServiceError(404, "conversation_not_found", "missing");
+      }
+      return { projectId: "20000000-0000-4000-8000-000000000002" };
+    }
+  } as ConversationService;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/push", createPushRoutes({
+    auth: deps([mainMember, collabParticipant, ...deniedUsers], [], runtimeSettings),
+    bus: new InProcessPushBus(),
+    presence: new InMemoryPresenceStore(),
+    conversations,
+    stream: { heartbeatMs: 20 }
+  }));
+
+  for (const allowed of [mainMember, collabParticipant]) {
+    const controller = new AbortController();
+    const response = await app.request(`/api/push/stream/conversation/${conversationId}`, {
+      headers: { Cookie: await signedCookie(allowed.cookieToken, runtimeSettings) },
+      signal: controller.signal
+    });
+    assert.equal(response.status, 200, allowed.nickname);
+    controller.abort();
+  }
+  for (const denied of deniedUsers) {
+    const response = await app.request(`/api/push/stream/conversation/${conversationId}`, {
+      headers: { Cookie: await signedCookie(denied.cookieToken, runtimeSettings) }
+    });
+    assert.equal(response.status, 403, denied.nickname);
+  }
+  assert.equal(accessCalls.length, 7);
+  assert.deepEqual(accessCalls.at(-4), {
+    actorId: deniedUsers[1]?.id,
+    userId: deniedUsers[1]?.id,
+    isAdmin: true,
+    conversationId
+  });
+});
+
+test("conversation stream rejects malformed UUIDs before access and propagates unknown access outages", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  const unexpected = new Error("conversation database unavailable");
+  let accessCalls = 0;
+  const conversations = {
+    async assertConversationAccess(input: Parameters<ConversationService["assertConversationAccess"]>[0]) {
+      accessCalls += 1;
+      if (input.conversationId === "30000000-0000-4000-8000-000000000003") {
+        throw unexpected;
+      }
+      return { projectId: "20000000-0000-4000-8000-000000000002" };
+    }
+  } as ConversationService;
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/push", createPushRoutes({
+    auth: deps([alice], [], runtimeSettings),
+    bus: new InProcessPushBus(),
+    presence: new InMemoryPresenceStore(),
+    conversations
+  }));
+
+  const malformed = await app.request("/api/push/stream/conversation/not-a-uuid", {
+    headers: { Cookie: await signedCookie(alice.cookieToken, runtimeSettings) }
+  });
+  assert.equal(malformed.status, 403);
+  assert.equal(accessCalls, 0);
+  const cookie = await signedCookie(alice.cookieToken, runtimeSettings);
+  await assert.rejects(
+    async () => app.request("/api/push/stream/conversation/30000000-0000-4000-8000-000000000003", {
+      headers: { Cookie: cookie }
+    }),
+    (error: unknown) => error === unexpected
+  );
+  assert.equal(accessCalls, 1);
+});
+
+test("conversation SSE is live-only, keeps fresh resume semantics, forwards event ids, and aborts its one topic", async () => {
+  const runtimeSettings = settings();
+  const alice = user();
+  const conversationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const routeConversationId = conversationId.toUpperCase();
+  const topic = `conversation:${conversationId}`;
+  class TrackingBus extends InProcessPushBus {
+    public readonly subscriptions: string[] = [];
+    public readonly unsubscriptions: string[] = [];
+    override async subscribe(value: string) {
+      this.subscriptions.push(value);
+      return super.subscribe(value);
+    }
+    override async unsubscribe(value: string, subscription: Parameters<InProcessPushBus["unsubscribe"]>[1]) {
+      this.unsubscriptions.push(value);
+      await super.unsubscribe(value, subscription);
+    }
+  }
+  const bus = new TrackingBus();
+  await bus.publish(topic, "conversation.message.created", {
+    event_id: "41000000-0000-4000-8000-000000000040",
+    type: "conversation.message.created",
+    topic,
+    ts: "2026-07-12T08:30:00.000Z",
+    data: { seq: 1 }
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/push", createPushRoutes({
+    auth: deps([alice], [], runtimeSettings),
+    bus,
+    presence: new InMemoryPresenceStore(),
+    access: { canViewConversation: async () => true },
+    stream: { heartbeatMs: 1_000 }
+  }));
+  const controller = new AbortController();
+  const response = await app.request(`/api/push/stream/conversation/${routeConversationId}`, {
+    headers: {
+      Cookie: await signedCookie(alice.cookieToken, runtimeSettings),
+      "Last-Event-ID": "41000000-0000-4000-8000-000000000039"
+    },
+    signal: controller.signal
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(bus.subscriptions, [topic]);
+  assert.equal(response.headers.get("x-workhub-sse-cursor"), "resume-requested");
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  const connected = decoder.decode((await reader.read()).value ?? new Uint8Array());
+  assert.match(connected, /event: connected/u);
+  assert.match(connected, /"resume_mode":"fresh"/u);
+  assert.doesNotMatch(connected, /41000000-0000-4000-8000-000000000040/u);
+
+  const eventId = "41000000-0000-4000-8000-000000000041";
+  await bus.publish(topic, "conversation.message.created", {
+    event_id: eventId,
+    type: "conversation.message.created",
+    topic,
+    ts: "2026-07-12T08:31:00.000Z",
+    data: { seq: 2 }
+  });
+  const live = decoder.decode((await reader.read()).value ?? new Uint8Array());
+  assert.match(live, new RegExp(`id: ${eventId}`, "u"));
+  assert.match(live, /event: conversation\.message\.created/u);
+  assert.match(live, /"seq":2/u);
+
+  controller.abort();
+  await reader.cancel().catch(() => undefined);
+  for (let attempt = 0; attempt < 20 && bus.unsubscriptions.length === 0; attempt += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.deepEqual(bus.unsubscriptions, [topic]);
 });
 
 test("push route limits the global all stream to admins", async () => {

@@ -32,6 +32,13 @@ import { createWorkItemRoutes } from "./routes/workitems.js";
 import { createTaskPlanRoutes } from "./routes/task-plans.js";
 import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/proposals.js";
 import { createCostRoutes } from "./routes/cost.js";
+import { createConversationRoutes } from "./routes/conversations.js";
+import { createAiSettingsRoutes } from "./routes/ai-settings.js";
+import { createConversationArmyRoutes } from "./routes/conversation-army.js";
+import { createActionCardRoutes } from "./routes/action-cards.js";
+import { createConversationTurnRoutes } from "./routes/conversation-turns.js";
+import { createConversationTypingRoutes } from "./routes/conversation-typing.js";
+import { createDriveVersionRoutes } from "./routes/drive-versions.js";
 import { TaskPlanApprovalError } from "./services/task-plan-approval.js";
 import { ProjectServiceError } from "./services/projects.js";
 import { PilotDay1MetricsServiceError } from "./services/pilot-day1-metrics.js";
@@ -47,6 +54,11 @@ import {
 } from "./services/proposals.js";
 import { WorkItemServiceError } from "./services/work-items.js";
 import { InternalContractError } from "./pages/output-contract.js";
+import { ConversationServiceError } from "./services/conversations.js";
+import { AiSettingsServiceError } from "./services/ai-settings.js";
+import { ConversationTurnServiceError } from "./services/conversation-turns.js";
+import { ActionCardServiceError } from "./services/action-cards.js";
+import { ConversationArmyServiceError } from "./services/conversation-army.js";
 
 import { LOCAL_CLIENT_HEADER } from "./middleware/auth.js";
 import { createSameOriginGuardMiddleware } from "./middleware/csrf.js";
@@ -224,6 +236,13 @@ app.route("/api/pages", createPageRoutes());
 app.route("/api/drive", createDriveRoutes());
 app.route("/api/meetings", createMeetingRoutes());
 app.route("/api/projects", createProjectRoutes());
+app.route("/api", createConversationRoutes());
+app.route("/api", createAiSettingsRoutes());
+app.route("/api", createConversationArmyRoutes());
+app.route("/api", createActionCardRoutes());
+app.route("/api", createConversationTurnRoutes());
+app.route("/api", createConversationTypingRoutes());
+app.route("/api/drive", createDriveVersionRoutes());
 app.route("/api/pilot", createPilotRoutes());
 app.route("/api/ai-worklog", createAiWorklogRoutes());
 
@@ -322,6 +341,51 @@ app.onError((error, c) => {
   }
 
   if (error instanceof ProjectServiceError || error instanceof PilotDay1MetricsServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof ConversationServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 400
+    );
+  }
+
+  if (error instanceof AiSettingsServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status as 403
+    );
+  }
+
+  // R12 终缝复核发现:turn/行动卡/军团三个新服务的类型化错误此前没进这张映射表,
+  // 线上会被兜底压成 500——busy/observe_only/预算等语义码前端全都接了,必须透传。
+  if (
+    error instanceof ConversationTurnServiceError ||
+    error instanceof ActionCardServiceError ||
+    error instanceof ConversationArmyServiceError
+  ) {
     return c.json(
       {
         ok: false,

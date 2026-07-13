@@ -1,4 +1,4 @@
-import type { EventTopic, TopicKind } from "@workhub/contracts";
+import { eventTopicSchema, type EventTopic, type TopicKind } from "@workhub/contracts";
 
 const topic = (kind: TopicKind, id?: string): EventTopic => ({
   kind,
@@ -15,7 +15,8 @@ export const topics = {
   run: (id: string) => topic("run", id),
   session: (id: string) => topic("session", id),
   proposal: (id: string) => topic("proposal", id),
-  job: (id: string) => topic("job", id)
+  job: (id: string) => topic("job", id),
+  conversation: (id: string) => eventTopicSchema.parse(topic("conversation", id.toLowerCase()))
 } as const;
 
 export function parseTopic(rawTopic: string): EventTopic {
@@ -30,8 +31,11 @@ export function parseTopic(rawTopic: string): EventTopic {
 
   const kind = rawTopic.slice(0, splitAt) as TopicKind;
   const id = rawTopic.slice(splitAt + 1);
-  if (!["all", "user", "workitem", "run", "session", "proposal", "job"].includes(kind)) {
+  if (!["all", "user", "workitem", "run", "session", "proposal", "job", "conversation"].includes(kind)) {
     throw new Error(`Unknown WorkHub event topic kind: ${kind}`);
+  }
+  if (kind === "conversation") {
+    return topics.conversation(id);
   }
   return topic(kind, id);
 }

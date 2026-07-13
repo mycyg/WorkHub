@@ -21,6 +21,9 @@ test("registry covers every backend capability surface", () => {
       "drive",
       "intake",
       "knowledge",
+      // R12 批 1：工作台是独立窗口(deep-link 打开)，「新建项目」是它的快捷入口，两条都只 invoke
+      // open_workbench，不在盒子内联渲染——见 spotlight/views/workbench-open.ts。
+      "new_project",
       // R5 双端一致：桌面补通知中心入口（通知箱+按类型静音），与 web 对齐。
       "notifications",
       "projects",
@@ -28,6 +31,7 @@ test("registry covers every backend capability surface", () => {
       "replay",
       "settings",
       "team",
+      "workbench",
       "workitem"
     ].sort()
   );
@@ -59,6 +63,11 @@ test("fuzzy router: one phrase reaches the right capability (zh + en + alias)", 
   assert.equal(matchCommands("files", "en")[0]?.command.id, "drive");
   assert.equal(matchCommands("agents", "en")[0]?.command.id, "agents");
   assert.equal(matchCommands("army", "en")[0]?.command.id, "agents");
+  // R12 批 1：工作台 / 新建项目 两条新入口。
+  assert.equal(matchCommands("工作台", "zh-CN")[0]?.command.id, "workbench");
+  assert.equal(matchCommands("新建项目", "zh-CN")[0]?.command.id, "new_project");
+  assert.equal(matchCommands("workbench", "en")[0]?.command.id, "workbench");
+  assert.equal(matchCommands("new project", "en")[0]?.command.id, "new_project");
 });
 
 test("ranking: exact/prefix beats substring beats subsequence", () => {

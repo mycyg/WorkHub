@@ -1131,7 +1131,10 @@ function notificationTypeLabel(type: string, zh: boolean): string {
     "drive.page": ["网盘更新", "Drive"],
     "system.notice": ["系统通知", "System"],
     milestone: ["里程碑", "Milestone"],
-    "notification.created": ["新通知", "Update"]
+    "notification.created": ["新通知", "Update"],
+    // R12 功能审查 F5：观察者派活问询——此前落进 humanizeToken 兜底，渲成裸英文
+    // "Action Card Item Dispatch Ask"。
+    "action_card_item.dispatch_ask": ["派活问询", "Dispatch ask"]
   };
   const hit = exact[type];
   if (hit) {
@@ -1148,7 +1151,8 @@ function notificationTypeLabel(type: string, zh: boolean): string {
     drive_comment: ["网盘评论", "Drive comment"],
     meeting: ["会议", "Meeting"],
     budget: ["预算", "Budget"],
-    system: ["系统", "System"]
+    system: ["系统", "System"],
+    action_card_item: ["行动卡", "Action card"]
   };
   const ns = prefix[type.split(".")[0] ?? type];
   if (ns) {

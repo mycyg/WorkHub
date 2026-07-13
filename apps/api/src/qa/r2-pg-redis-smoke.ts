@@ -15,6 +15,7 @@ import {
   createClientDeviceRepository,
   createCredentialRepository,
   createDatabaseClient,
+  createConversationRepository,
   createDriveRepository,
   createInviteRepository,
   createProjectRepository,
@@ -585,6 +586,142 @@ async function main() {
       assert.equal(reuseA.created, false, "same slug in the same workspace reuses");
       assert.equal(reuseA.project.id, inA.project.id, "reuse returns the same project row");
       console.log("[r2-pg-redis-smoke] project create-or-reuse is workspace-scoped (rank1) ok");
+    }
+
+    // R12 批0(工作台群聊数据闭环):建项目→main 会话自动存在→双成员发消息→afterSeq 有序拉取;
+    // 复用路径不复制 main 会话;外人(无工作区成员身份)读同一会话 fail-closed 返回 null。
+    // 并发撞号的最终防线是 0046 的 UNIQUE(conversation_id, seq),这里验证串行分配严格递增。
+    {
+      const projectRepo = createProjectRepository(db);
+      const conversationRepo = createConversationRepository(db);
+      const memberships = createWorkspaceMembershipRepository(db);
+      const wsId = settings.auth.defaultWorkspaceId;
+
+      const memberAId = randomUUID();
+      const memberBId = randomUUID();
+      const outsiderId = randomUUID();
+      await db.insert(users).values([
+        {
+          id: memberAId,
+          nickname: `r12-a-${memberAId.slice(0, 8)}`,
+          cookieToken: `r12-a-cookie-${randomUUID()}`,
+          availabilityStatus: "free",
+          isAdmin: false
+        },
+        {
+          id: memberBId,
+          nickname: `r12-b-${memberBId.slice(0, 8)}`,
+          cookieToken: `r12-b-cookie-${randomUUID()}`,
+          availabilityStatus: "free",
+          isAdmin: false
+        },
+        {
+          id: outsiderId,
+          nickname: `r12-out-${outsiderId.slice(0, 8)}`,
+          cookieToken: `r12-out-cookie-${randomUUID()}`,
+          availabilityStatus: "free",
+          isAdmin: false
+        }
+      ]).onConflictDoNothing();
+      await memberships.create({ workspaceId: wsId, userId: memberAId, role: "member" });
+      await memberships.create({ workspaceId: wsId, userId: memberBId, role: "member" });
+      // outsiderId 故意不给成员身份。
+
+      const slug = `r12-wb-${randomUUID().slice(0, 8)}`;
+      const bootstrapArgs = {
+        orgId: settings.auth.defaultOrgId,
+        workspaceId: wsId,
+        name: "R12 workbench smoke project",
+        slug,
+        ownerNickname: "r12-a",
+        ownerUserId: memberAId
+      };
+      const boot = await projectRepo.bootstrapPilotProject(bootstrapArgs);
+      assert.equal(boot.created, true, "R12 smoke project bootstrap is a real create");
+
+      const tree = await conversationRepo.listVisibleForProject({
+        workspaceId: wsId,
+        viewerUserId: memberAId,
+        projectId: boot.project.id,
+        limit: 10
+      });
+      assert.ok(tree, "member A can list conversations for the new project");
+      const mains = tree.rows.filter((row) => row.kind === "main");
+      assert.equal(mains.length, 1, "creating a project atomically creates exactly one active main conversation");
+      const mainConversation = mains[0];
+      assert.ok(mainConversation, "main conversation row is present");
+
+      const reuse = await projectRepo.bootstrapPilotProject(bootstrapArgs);
+      assert.equal(reuse.created, false, "same slug reuses the project");
+      const treeAfterReuse = await conversationRepo.listVisibleForProject({
+        workspaceId: wsId,
+        viewerUserId: memberAId,
+        projectId: boot.project.id,
+        limit: 10
+      });
+      assert.equal(
+        treeAfterReuse?.rows.filter((row) => row.kind === "main").length,
+        1,
+        "create-or-reuse does not duplicate the main conversation"
+      );
+
+      const first = await conversationRepo.createUserMessage({
+        workspaceId: wsId,
+        conversationId: mainConversation.id,
+        senderUserId: memberAId,
+        kind: "text",
+        contentJson: { text: "先把口径对齐再动笔" }
+      });
+      const second = await conversationRepo.createUserMessage({
+        workspaceId: wsId,
+        conversationId: mainConversation.id,
+        senderUserId: memberBId,
+        kind: "text",
+        contentJson: { text: "收到,数据我来补" }
+      });
+      assert.equal(second.seq, first.seq + 1, "message seq allocation is strictly increasing per conversation");
+
+      const page = await conversationRepo.listMessagesAfter({
+        workspaceId: wsId,
+        viewerUserId: memberBId,
+        conversationId: mainConversation.id,
+        afterSeq: 0,
+        limit: 10
+      });
+      assert.ok(page, "member B can read the main conversation");
+      assert.deepEqual(
+        page.rows.map((row) => row.seq),
+        [first.seq, second.seq],
+        "afterSeq=0 returns both messages in seq order"
+      );
+      assert.deepEqual(
+        page.rows.map((row) => row.senderUserId),
+        [memberAId, memberBId],
+        "message senders round-trip in send order"
+      );
+      const tail = await conversationRepo.listMessagesAfter({
+        workspaceId: wsId,
+        viewerUserId: memberBId,
+        conversationId: mainConversation.id,
+        afterSeq: first.seq,
+        limit: 10
+      });
+      assert.deepEqual(
+        tail?.rows.map((row) => row.seq),
+        [second.seq],
+        "afterSeq cursor skips already-seen messages"
+      );
+
+      const outsiderPage = await conversationRepo.listMessagesAfter({
+        workspaceId: wsId,
+        viewerUserId: outsiderId,
+        conversationId: mainConversation.id,
+        afterSeq: 0,
+        limit: 10
+      });
+      assert.equal(outsiderPage, null, "non-member cannot read the project main conversation (fail-closed)");
+
+      console.log("[r2-pg-redis-smoke] R12 conversation foundation (project→main→messages→afterSeq) ok");
     }
 
     // R2 auth epic（邀请）：邀请 DB 层真 PG 往返（create→token 解析→接受墓碑→已用/过期均解析不到）。

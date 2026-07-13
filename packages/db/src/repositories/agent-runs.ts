@@ -51,6 +51,10 @@ export type AgentRunForPersistence = {
   taskPlanId?: string;
   taskPlanItemId?: string;
   taskPlanItemEpoch?: number | null;
+  // R12 批3/5：会话血缘与执行地(0046 扩展列;复合 FK 在库层校验同租户/同会话绑定)。
+  sourceConversationId?: string;
+  sourceActionCardItemId?: string;
+  executionHint?: "server" | "local" | "any";
   objectiveId?: string;
   agentRole?: TaskPlanItemRole;
   objectiveMd?: string;
@@ -173,6 +177,9 @@ function runInsertValues(run: AgentRunForPersistence): typeof agentRuns.$inferIn
     taskPlanId: run.taskPlanId,
     taskPlanItemId: run.taskPlanItemId,
     taskPlanItemEpoch: run.taskPlanItemEpoch ?? null,
+    sourceConversationId: run.sourceConversationId ?? null,
+    sourceActionCardItemId: run.sourceActionCardItemId ?? null,
+    ...(run.executionHint ? { executionHint: run.executionHint } : {}),
     objectiveId: run.objectiveId,
     agentRole: run.agentRole,
     objectiveMd: run.objectiveMd,

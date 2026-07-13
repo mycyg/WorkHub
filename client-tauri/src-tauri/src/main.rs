@@ -907,6 +907,116 @@ fn create_pet_window_with_surface_flag(app: &tauri::App) -> Result<(), String> {
     Ok(())
 }
 
+fn create_workbench_window_if_missing(
+    app: &tauri::AppHandle,
+) -> Result<tauri::WebviewWindow, String> {
+    if let Some(window) = app.get_webview_window("workbench") {
+        return Ok(window);
+    }
+
+    let workbench_config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "workbench")
+        .ok_or_else(|| "workbench window config is missing".to_string())?;
+
+    let mut builder = WebviewWindowBuilder::new(
+        app,
+        workbench_config.label.clone(),
+        WebviewUrl::App("workbench.html".into()),
+    )
+    .title(workbench_config.title.clone())
+    .inner_size(workbench_config.width, workbench_config.height)
+    .resizable(workbench_config.resizable)
+    .maximizable(workbench_config.maximizable)
+    .minimizable(workbench_config.minimizable)
+    .closable(workbench_config.closable)
+    .fullscreen(workbench_config.fullscreen)
+    .focused(workbench_config.focus)
+    .decorations(workbench_config.decorations)
+    .always_on_top(workbench_config.always_on_top)
+    .skip_taskbar(workbench_config.skip_taskbar)
+    .visible(workbench_config.visible)
+    .transparent(true)
+    .background_color(Color(0, 0, 0, 0));
+    if let (Some(min_width), Some(min_height)) =
+        (workbench_config.min_width, workbench_config.min_height)
+    {
+        builder = builder.min_inner_size(min_width, min_height);
+    }
+    if workbench_config.center {
+        builder = builder.center();
+    }
+
+    let window = builder
+        .build()
+        .map_err(|error| format!("failed to create workbench window: {error}"))?;
+    apply_workbench_glass(&window);
+    Ok(window)
+}
+
+// 工作台毛玻璃:同主窗策略——透明窗 + OS 原生材质(macOS vibrancy / Windows acrylic),透明窗里
+// CSS backdrop-filter 无内容可糊。失败不致命(前端 ds-glass-strong 半透底兜底),但留下真机诊断。
+fn apply_workbench_glass(window: &tauri::WebviewWindow) {
+    if let Err(error) = window.set_background_color(Some(Color(0, 0, 0, 0))) {
+        eprintln!("failed to clear workbench window background: {error}");
+    }
+    #[cfg(target_os = "macos")]
+    if std::env::var("WORKHUB_DISABLE_VIBRANCY").is_err() {
+        if let Err(error) = window_vibrancy::apply_vibrancy(
+            window,
+            window_vibrancy::NSVisualEffectMaterial::HudWindow,
+            Some(window_vibrancy::NSVisualEffectState::Active),
+            Some(24.0),
+        ) {
+            eprintln!("workbench vibrancy unavailable, falling back to translucent base: {error}");
+        }
+    }
+    #[cfg(target_os = "windows")]
+    if let Err(error) = window_vibrancy::apply_acrylic(window, Some((24, 24, 32, 120))) {
+        eprintln!("workbench acrylic unavailable, falling back to translucent base: {error}");
+    }
+}
+
+// R12:打开项目工作台。合成规范深链走统一管线(段校验/窗口分流/deep-link 事件),不造第二条控制路。
+#[tauri::command]
+fn open_workbench(
+    app: tauri::AppHandle,
+    project_id: Option<String>,
+    conversation_id: Option<String>,
+) -> Result<(), String> {
+    let project_id = project_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let conversation_id = conversation_id
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if conversation_id.is_some() && project_id.is_none() {
+        return Err("open_workbench: conversation_id requires project_id".to_string());
+    }
+    for id in [project_id.as_deref(), conversation_id.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        if id.contains('/') || id.contains('\\') || id.contains('?') || id.contains('#') {
+            return Err(format!("open_workbench: unsafe id segment: {id}"));
+        }
+    }
+
+    let mut url = String::from("workhub://workbench");
+    if let Some(project) = project_id {
+        url.push('/');
+        url.push_str(&project);
+        if let Some(conversation) = conversation_id {
+            url.push('/');
+            url.push_str(&conversation);
+        }
+    }
+    handle_deep_link_url(&app, &url)
+}
+
 fn configure_pet_window_chrome(window: &tauri::WebviewWindow) -> Result<(), String> {
     window
         .set_background_color(Some(Color(0, 0, 0, 0)))
@@ -1306,6 +1416,10 @@ fn handle_deep_link_url(app: &tauri::AppHandle, raw_url: &str) -> Result<(), Str
         )
     })?;
 
+    // 工作台窗按需创建(conf 里 create:false);先确保存在再执行 show/focus,否则冷启动深链会打空。
+    if plan.window_control.label == "workbench" {
+        create_workbench_window_if_missing(app)?;
+    }
     execute_window_control(app, plan.window_control.clone())?;
     app.emit(event_channel_name(ShellEvent::DeepLink), plan)
         .map_err(|error| format!("failed to emit deep-link event: {error}"))
@@ -1506,6 +1620,7 @@ fn main() {
             show_main_window,
             hide_main_window,
             focus_main_route,
+            open_workbench,
             show_pet_window,
             hide_pet_window,
             toggle_pet_window,
