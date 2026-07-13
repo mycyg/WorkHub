@@ -16,6 +16,7 @@
 import { WorkHubApiError } from "@workhub/api-client";
 import type { AiMode, ConversationKind, ConversationMessageVM, Notification } from "@workhub/contracts";
 
+import { fetchConversationArmyPanel } from "../army/api.js";
 import {
   decideActionCardItem,
   fetchConversationMessagesPage,
@@ -75,6 +76,12 @@ import {
   type PendingOutgoingMessage,
   type WorkbenchMemberVM
 } from "./render.js";
+import {
+  inferActionCardRunProgress,
+  nextAllowedActionCardRunProgressFetchAtMs,
+  shouldRefetchActionCardRunProgressNow,
+  type ActionCardRunProgress
+} from "./run-progress.js";
 import { connectConversationStream, type ConversationStreamHandle } from "./stream.js";
 import { applyComposerChipInsertion, detectComposerTrigger, type ComposerTriggerMatch } from "./trigger-parser.js";
 import {
@@ -94,6 +101,12 @@ import {
   shouldRequestConversationTurn,
   type TurnDeltaState
 } from "./turn.js";
+import {
+  applyBufferedActionCardUpdates,
+  EMPTY_BUFFERED_ACTION_CARD_UPDATE_QUEUE,
+  enqueueBufferedActionCardUpdate,
+  type BufferedActionCardUpdateQueue
+} from "./turn-task-buffer.js";
 import { pruneExpiredTypingUsers, upsertTypingUser, type TypingState } from "./typing-state.js";
 
 type Locale = "zh-CN" | "en-US";
@@ -278,6 +291,17 @@ export function mountChatView(
   // R13 H1（键盘可达性）：改派选择器方向键高亮下标——跟 openReassignItemId 的开关同生共死（切换/关闭
   // 时一起重置成 0/undefined），下标口径对齐 render.ts 导出的 reassignPickerMemberIds 顺序。
   let reassignHighlightIndex: number | undefined;
+  // R13 批 S2（Cuu 异步化与进度可视）：turn 流式进行期间收到的 action_card.updated 事件先攒在这里，
+  // 不立即应用（见 turn-task-buffer.ts 顶部注释）——turnActive 翻回 false 时由 flushBufferedActionCardUpdates
+  // 统一重放。main 会话里 turnActive 恒为 false（beginTurn 只在协同会话被调用，见其声明处注释），
+  // 这个队列在主区永远不会真的攒上东西。
+  let bufferedActionCardUpdates: BufferedActionCardUpdateQueue = EMPTY_BUFFERED_ACTION_CARD_UPDATE_QUEUE;
+  // R13 批 S2：execute 条目(status=running)的阶段流进度——按条目 id 索引，从该会话军团面板节流拉取
+  // （见 run-progress.ts）。空 map = 还没拉到/这个会话暂时没有可关联的 run，渲染层据此退回既有的纯文字
+  // 「进行中」，不强渲染进度行。
+  let actionCardRunProgressByItemId: ReadonlyMap<string, ActionCardRunProgress> = new Map();
+  let lastActionCardRunProgressFetchAt: number | undefined;
+  let actionCardRunProgressRefetchTimer: ReturnType<typeof setTimeout> | undefined;
 
   const membersMap = membersById(input.members);
   const renderCtx = (): ChatRenderContext => ({
@@ -290,7 +314,8 @@ export function mountChatView(
     // 时整个键都不出现，不是"键在、值是 undefined"（那样和 currentUserId 那种"键必须在、值可以是
     // undefined"的字段不是一回事，TS 会拒绝后者赋给前者）。
     ...(openReassignItemId !== undefined ? { openReassignItemId } : {}),
-    ...(reassignHighlightIndex !== undefined ? { reassignHighlightIndex } : {})
+    ...(reassignHighlightIndex !== undefined ? { reassignHighlightIndex } : {}),
+    actionCardRunProgress: actionCardRunProgressByItemId
   });
 
   container.innerHTML = `<div class="wh-wb-chat">
@@ -644,6 +669,10 @@ export function mountChatView(
       historyLoad = "ready";
       renderScroll();
       connectStream();
+      // R13 批 S2：首屏就顺带查一次执行进度，不必等第一条 action_card.updated 事件才第一次看到阶段流
+      // （否则一张已经在跑的执行卡在这个视图刚打开时会一直显示旧的纯文字"进行中"，直到下一次观察者
+      // tick 才补上）。之后的刷新只靠事件触发+节流，见 maybeRefreshActionCardRunProgress 顶部注释。
+      maybeRefreshActionCardRunProgress();
     } catch (error) {
       if (disposed) {
         return;
@@ -775,6 +804,87 @@ export function mountChatView(
     }
   }
 
+  // —— R13 批 S2：execute 条目的阶段流进度（军团面板节流拉取） —— //
+
+  // 节流窗口内真的发一次请求——lastActionCardRunProgressFetchAt 必须在请求发起（而不是拿到响应）时就
+  // 更新，否则一个慢请求还没回来时的第二次触发会误判"该发了"而重复发起。best-effort：拉取失败保留
+  // 上一次已知快照，不是致命错误——下一次节流窗口/action_card.updated 事件会再试一次。
+  async function refreshActionCardRunProgress(): Promise<void> {
+    lastActionCardRunProgressFetchAt = Date.now();
+    try {
+      const panel = await fetchConversationArmyPanel(input.client, input.conversationId);
+      if (disposed) {
+        return;
+      }
+      const next = new Map<string, ActionCardRunProgress>();
+      for (const run of panel.runs.runs) {
+        if (!run.source_action_card_item_id) {
+          continue;
+        }
+        const progress = inferActionCardRunProgress({
+          runStatus: run.status,
+          recentStepPhase: run.recent_step?.phase ?? null
+        });
+        if (progress) {
+          next.set(run.source_action_card_item_id, progress);
+        }
+      }
+      actionCardRunProgressByItemId = next;
+      // turn 正在流式进行时不在这里重渲——这次拉取本来就可能是被 action_card.updated 事件触发的，
+      // 若立即 renderScroll 会打断正在阅读的流式气泡，跟 task 1 想避免的是同一件事。已经算出的最新
+      // 进度快照会在 turn 落定时随 flushBufferedActionCardUpdates 的 renderScroll 一并呈现；如果那次
+      // flush 恰好没有变化（changed=false）而这里又不渲，下一次 renderScroll（新增消息/typing 等任何
+      // 触发点）也会用上最新的 actionCardRunProgressByItemId——不会永远卡住。
+      if (!turnActive) {
+        renderScroll();
+      }
+    } catch {
+      // best-effort，见上。
+    }
+  }
+
+  // 节流入口——由「聊天视图挂载/历史加载完成」和每一条 action_card.updated 事件触发（不新造 SSE，
+  // 数据仍然只走既有的会话军团面板 GET）。窗口内的触发不会被直接丢弃：安排一次收尾重取，见
+  // run-progress.ts 顶部注释。
+  function maybeRefreshActionCardRunProgress(): void {
+    if (disposed) {
+      return;
+    }
+    const now = Date.now();
+    if (shouldRefetchActionCardRunProgressNow(lastActionCardRunProgressFetchAt, now)) {
+      void refreshActionCardRunProgress();
+      return;
+    }
+    if (actionCardRunProgressRefetchTimer !== undefined) {
+      return; // 已经安排了一次收尾重取，不重复安排。
+    }
+    const delay = Math.max(0, nextAllowedActionCardRunProgressFetchAtMs(lastActionCardRunProgressFetchAt!) - now);
+    actionCardRunProgressRefetchTimer = setTimeout(() => {
+      actionCardRunProgressRefetchTimer = undefined;
+      void refreshActionCardRunProgress();
+    }, delay);
+  }
+
+  // —— R13 批 S2：turn 期间任务事件缓冲 —— //
+
+  // turn 落定（成功/失败都算）后一次性重放缓冲队列（见 turn-task-buffer.ts 顶部注释）。main 会话
+  // 里这个队列永远是空的（beginTurn 只在协同会话被调用），这里对它调用是无害 no-op。
+  function flushBufferedActionCardUpdates(): void {
+    if (bufferedActionCardUpdates.length === 0) {
+      return;
+    }
+    const queue = bufferedActionCardUpdates;
+    bufferedActionCardUpdates = EMPTY_BUFFERED_ACTION_CARD_UPDATE_QUEUE;
+    const result = applyBufferedActionCardUpdates(messages, queue);
+    if (result.changed) {
+      messages = result.messages;
+      renderScroll();
+    }
+    for (const messageId of result.staleMessageIds) {
+      void refreshActionCardMessage(messageId);
+    }
+  }
+
   // —— R12 P0-A1：行动卡条目 decide/undo 接线 —— //
 
   function clearActionCardItemError(itemId: string): void {
@@ -889,6 +999,16 @@ export function mountChatView(
         // 时按需补拉——事件不带 title_md，光靠它渲不出新条目。
         const cardUpdate = parseIncomingActionCardUpdated(event.data, input.conversationId);
         if (cardUpdate) {
+          // R13 批 S2：这类事件也是"该重取一次执行进度了"的信号（节流，见 maybeRefreshActionCardRunProgress
+          // 顶部注释）——跟下面 turnActive 缓冲判断是两件独立的事：进度数据本身随时可以去查，只是
+          // "查回来之后要不要立刻画出来"才受 turnActive 影响（refreshActionCardRunProgress 内部自己判断）。
+          maybeRefreshActionCardRunProgress();
+          if (turnActive) {
+            // turn 正在流式进行——缓冲这条任务类事件，turn 落定后统一重放，不打断正在阅读的流式气泡
+            // （见 turn-task-buffer.ts 顶部注释）。typing/delta 事件不受这条影响，见下方对应分支。
+            bufferedActionCardUpdates = enqueueBufferedActionCardUpdate(bufferedActionCardUpdates, cardUpdate);
+            return;
+          }
           const result = applyActionCardUpdate(messages, cardUpdate);
           if (result.changed) {
             messages = result.messages;
@@ -1130,6 +1250,10 @@ export function mountChatView(
         }
         turnActive = false;
         turnDeltaState = EMPTY_TURN_DELTA_STATE;
+        // R13 批 S2：turn 落定——把流式期间攒下的任务类事件一次性重放（见 flushBufferedActionCardUpdates
+        // 顶部注释）。放在 mergeMessages 之前/之后都行（两者改的是不相交的消息 id），这里选在它之前，
+        // 让"后台任务的事"先归位，再落这一轮对话本身的最终消息。
+        flushBufferedActionCardUpdates();
         // 服务端设计决策：Cuu 落库的回复不会触发任何 message.created 广播（见 turn.ts 顶部注释）——
         // 这次 HTTP 响应本身就是唯一的权威"这一轮说完了"信号。mergeMessages 按 id 去重，真把它排进
         // 消息流该在的位置，同时（内部调用 renderScroll）把上面的临时气泡换成这条真消息。
@@ -1147,6 +1271,8 @@ export function mountChatView(
           error instanceof WorkHubApiError ? { status: error.status, code: error.code } : undefined,
           input.locale
         );
+        // R13 批 S2：turn 落定（这一轮失败也算数）——同样要重放缓冲队列，见上。
+        flushBufferedActionCardUpdates();
         // mergeMessages 在成功路径里已经会 renderScroll；失败路径没有新消息可合并，这里手动补一次
         // 好让临时气泡从消息流里消失（turnActive 已经是 false，buildScrollBodyHtml 不会再画它）。
         renderScroll();
@@ -1601,6 +1727,9 @@ export function mountChatView(
       doc.removeEventListener("keydown", handleDocumentReassignKeydown);
       if (fileSearchTimer !== undefined) {
         clearTimeout(fileSearchTimer);
+      }
+      if (actionCardRunProgressRefetchTimer !== undefined) {
+        clearTimeout(actionCardRunProgressRefetchTimer);
       }
     },
     focusComposer() {

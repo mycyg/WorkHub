@@ -117,6 +117,7 @@ import {
 } from "../services/team-skill-context.js";
 import { getDefaultProjectHydrator, type ProjectHydrator } from "./project-hydrate.js";
 import { getDefaultAuditStores } from "../services/audit-stores.js";
+import { createRunConversationReportHook } from "../services/run-conversation-report.js";
 import { getDefaultTaskDispatcher } from "../services/task-dispatcher.js";
 
 export type AgentRunQueueStatus = "queued" | "running" | "succeeded" | "failed" | "escalated" | "cancelled";
@@ -2846,6 +2847,22 @@ function getDefaultWorkItemStatusWriter() {
   return defaultWorkItemStatusWriter;
 }
 
+// R13 批 S2（Cuu 异步化与进度可视，run 终态 PM 汇报）：会话汇报器——挂进下面 runSettled 组合链的一环，
+// 见 services/run-conversation-report.ts 顶部的终态矩阵注释。senderType 用 "cuu"（不是批 4b 产出卡的
+// "system"）——这条消息是 Cuu 以第一人称主动汇报，不是中立的系统通知，同批3
+// action_card_item_undone 播报的取舍一致（services/action-cards.ts 的 undoActionCardItem）。
+let defaultRunConversationReportHook: ReturnType<typeof createRunConversationReportHook> | undefined;
+
+function getDefaultRunConversationReportHook() {
+  if (!defaultRunConversationReportHook) {
+    defaultRunConversationReportHook = createRunConversationReportHook({
+      postSystemMessage: (message) =>
+        createActionCardRepository(getSharedDatabaseClient().db).postSystemMessage({ ...message, senderType: "cuu" })
+    });
+  }
+  return defaultRunConversationReportHook;
+}
+
 export function getDefaultAgentRunQueue() {
   defaultQueue ??= createInMemoryAgentRunQueue({
     confidence: createAgentRunConfidenceRecorder(),
@@ -2888,6 +2905,9 @@ export function getDefaultAgentRunQueue() {
         return;
       }
       await getDefaultTaskDispatcher(defaultQueue).handleRunSettled(run);
+      // R13 批 S2：会话汇报器——best-effort，见 services/run-conversation-report.ts（绝不抛错，所以放在
+      // task-dispatcher 的结算之后也不会因为它失败而阻断/重放前面那个必须成功的写路径）。
+      await getDefaultRunConversationReportHook()(run);
     }
   });
   // 启动时回收上次进程崩溃/重启遗留的过期 workdir（fire-and-forget，失败不影响队列就绪）。

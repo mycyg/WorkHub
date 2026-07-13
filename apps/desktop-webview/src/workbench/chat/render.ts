@@ -5,6 +5,12 @@ import type { AiMode, ConversationMessageVM, WorkbenchPageVM } from "@workhub/co
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { workbenchIcons } from "../icons.js";
+import {
+  ACTION_CARD_RUN_PROGRESS_STAGES,
+  type ActionCardRunProgress,
+  type ActionCardRunProgressStage,
+  type ActionCardRunProgressTerminal
+} from "./run-progress.js";
 import { computeUndoRemainingMinutes, formatMessageTime } from "./timeline.js";
 
 type Locale = "zh-CN" | "en-US";
@@ -81,6 +87,11 @@ export type ChatRenderContext = {
   openReassignItemId?: string;
   actionCardItemErrors?: ReadonlyMap<string, string>;
   reassignHighlightIndex?: number;
+  // R13 批 S2（Cuu 异步化与进度可视）：execute 条目(status=running)的阶段流进度——按条目 id 索引，
+  // 由 view.ts 从该会话军团面板节流拉取后喂进来（见 chat/run-progress.ts 的
+  // inferActionCardRunProgress）。这个 map 里没有对应条目 id 的 key（还没关联到 run / 面板还没拉回来 /
+  // 拉取失败），就退回既有的纯文字「进行中」标签，不强渲染进度行——04 §4 铁律 3 的延伸。
+  actionCardRunProgress?: ReadonlyMap<string, ActionCardRunProgress>;
 };
 
 function senderLabel(message: ConversationMessageVM, ctx: ChatRenderContext): string {
@@ -141,6 +152,67 @@ function actionCardItemStatusLabel(status: string, zh: boolean): string | undefi
     default:
       return undefined;
   }
+}
+
+// R13 批 S2（Cuu 异步化与进度可视）：execute 条目从静态「进行中」升级出来的阶段流进度行——四段
+// 认领→干活→产出→提议（run-progress.ts 的 inferActionCardRunProgress 负责推断走到哪一段，这里只管
+// 把它拼成 HTML）。当前段加粗上色（--ds-accent，跟终态的成功/失败/升级三色区分开，避免读者把"正在
+// 进行"误认成某种终态）；已经走过的段降到 .55 透明度，还没到的段降到 .3——一眼能看出方向感，不需要
+// 图例。
+const ACTION_CARD_RUN_PROGRESS_STAGE_LABEL: Record<ActionCardRunProgressStage, { zh: string; en: string }> = {
+  claim: { zh: "认领", en: "Claimed" },
+  work: { zh: "干活", en: "Working" },
+  produce: { zh: "产出", en: "Wrapping up" },
+  propose: { zh: "提议", en: "Proposing" }
+};
+
+function renderActionCardRunProgressStageHtml(stage: ActionCardRunProgressStage, zh: boolean): string {
+  const currentIndex = ACTION_CARD_RUN_PROGRESS_STAGES.indexOf(stage);
+  const segments = ACTION_CARD_RUN_PROGRESS_STAGES.map((candidate, index) => {
+    const label = escapeHtml(ACTION_CARD_RUN_PROGRESS_STAGE_LABEL[candidate][zh ? "zh" : "en"]);
+    if (index === currentIndex) {
+      return `<b style="color:var(--ds-accent)">${label}</b>`;
+    }
+    return `<span style="opacity:${index < currentIndex ? ".55" : ".3"}">${label}</span>`;
+  });
+  return `<span class="wh-wb-chat-actioncard-item-status" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap">${segments.join('<span style="opacity:.3">→</span>')}</span>`;
+}
+
+// 三终态各有明确视觉（00 §「异步心智模型」的要求）：完成=成功绿（跟批 4b 产出卡的 --ds-success 同一个
+// 颜色语汇——这个条目的 run 已经成功，提议正在等审，跟 renderDeliverableCardHtml 是同一件事的两个
+// 视角）；失败=危险红；升级=警示黄，措辞照「Cuu = 项目经理」的汇报口吻，不使用技术术语。
+function renderActionCardRunProgressTerminalHtml(terminal: ActionCardRunProgressTerminal, zh: boolean): string {
+  const text =
+    terminal === "done"
+      ? zh
+        ? "已完成 · 提议在等审"
+        : "Done · proposal awaiting review"
+      : terminal === "failed"
+        ? zh
+          ? "没干成"
+          : "Didn't land"
+        : zh
+          ? "已升级 · 等你拍板"
+          : "Escalated · awaiting your call";
+  const color = terminal === "done" ? "var(--ds-success)" : terminal === "failed" ? "var(--ds-danger)" : "var(--ds-warn)";
+  return `<span class="wh-wb-chat-actioncard-item-status" style="color:${color};font-weight:700">${escapeHtml(text)}</span>`;
+}
+
+// execute+running 条目优先尝试用军团面板喂进来的实时进度渲染阶段流/终态；查不到（还没关联 run、面板
+// 还没拉回来、拉取失败）或者不是这种条目，退回既有的纯文字状态标（actionCardItemStatusLabel），
+// 不强渲染一行编造的进度。
+function renderActionCardItemStatusHtml(row: ActionCardItemRow, ctx: ChatRenderContext, zh: boolean): string {
+  if (row.kind === "execute" && row.status === "running") {
+    const progress = ctx.actionCardRunProgress?.get(row.id);
+    if (progress?.kind === "stage") {
+      return renderActionCardRunProgressStageHtml(progress.stage, zh);
+    }
+    if (progress?.kind === "terminal") {
+      return renderActionCardRunProgressTerminalHtml(progress.terminal, zh);
+    }
+  }
+  const label = actionCardItemStatusLabel(row.status, zh);
+  return label ? `<span class="wh-wb-chat-actioncard-item-status">${escapeHtml(label)}</span>` : "";
 }
 
 type ActionCardItemRow = {
@@ -285,9 +357,8 @@ function renderActionCardSummaryHtml(content: Record<string, unknown>, ctx: Chat
   const list = rows
     .map((row) => {
       const undone = row.status === "undone";
-      const label = actionCardItemStatusLabel(row.status, zh);
       const liClass = undone ? "wh-wb-chat-actioncard-item wh-wb-chat-actioncard-item--undone" : "wh-wb-chat-actioncard-item";
-      const statusHtml = label ? `<span class="wh-wb-chat-actioncard-item-status">${escapeHtml(label)}</span>` : "";
+      const statusHtml = renderActionCardItemStatusHtml(row, ctx, zh);
       const actionsHtml = undone ? "" : actionCardItemActionsHtml(row, ctx);
       return `<li class="${liClass}"><span class="wh-wb-chat-actioncard-item-title">${escapeHtml(row.title)}</span>${statusHtml}${actionsHtml}</li>`;
     })
@@ -336,6 +407,55 @@ function renderDeliverableCardHtml(
       }</div>`;
   const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
   return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${diffLine}${statusLine}${timestamp}</div>`;
+}
+
+// R13 批 S2（Cuu 异步化与进度可视，run 终态 PM 汇报）：一个带 source_conversation_id 的 run 到达
+// failed/escalated 终态时，服务端（apps/api/src/services/run-conversation-report.ts，挂进
+// agent-runner.ts 的 runSettled 组合链）往会话里 post 一条 system_event，content 形如
+// {event:'run_settled_report', run_id, work_item_id, outcome:'failed'|'escalated', title, reason}。
+// succeeded 终态不会出现这个事件——批 4b 的 proposal_opened/proposal_auto_merged 已经在 run 结算之前
+// 播报过「提议在等审/已自动采纳」，服务端故意不重复发（见该模块顶部的终态矩阵注释），这里也就没有
+// "done" 这个变体要渲染。
+type RunSettledReportOutcome = "failed" | "escalated";
+
+function runSettledReportOutcome(content: Record<string, unknown>): RunSettledReportOutcome | undefined {
+  const outcome = content["outcome"];
+  if (content["event"] !== "run_settled_report") {
+    return undefined;
+  }
+  return outcome === "failed" || outcome === "escalated" ? outcome : undefined;
+}
+
+function renderRunSettledReportHtml(
+  message: Extract<ConversationMessageVM, { kind: "system_event" }>,
+  outcome: RunSettledReportOutcome,
+  ctx: ChatRenderContext
+): string {
+  const zh = ctx.locale === "zh-CN";
+  const content = message.content;
+  const rawTitle = content["title"];
+  const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle : zh ? "这件事" : "this task";
+  const rawReason = content["reason"];
+  const reason = typeof rawReason === "string" && rawReason.trim() ? rawReason.trim() : undefined;
+  const header = zh ? `${title} · 这次没干成` : `${title} · didn't land this time`;
+  const escalatedHeader = zh ? `${title} · 需要你拍板` : `${title} · needs your call`;
+  const bodyText =
+    outcome === "failed"
+      ? zh
+        ? reason
+          ? `原因：${reason}。我先记下了，你有空再看。`
+          : "具体原因还在整理，我先记下了，你有空再看。"
+        : reason
+          ? `Reason: ${reason}. I've made a note of it — take a look when you can.`
+          : "Still sorting out why — I've made a note of it for you to look at when you can."
+      : zh
+        ? "我拿不准该怎么走，已经放进你的待拍板里了。"
+        : "I'm not sure how to proceed — I've put it in your queue for a decision.";
+  const color = outcome === "failed" ? "var(--ds-danger)" : "var(--ds-warn)";
+  const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
+  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h" style="color:${color}">${escapeHtml(
+    outcome === "failed" ? header : escalatedHeader
+  )}</div><div class="wh-wb-chat-actioncard-note">${escapeHtml(bodyText)}</div>${timestamp}</div>`;
 }
 
 // R12 批8：长消息折叠——超过阈值的文本消息默认只渲染预览片段 + 「展开全文」，避免超长粘贴/观察者
@@ -396,9 +516,14 @@ function renderSystemEventLineHtml(
 export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRenderContext): string {
   if (message.kind === "system_event") {
     const deliverableEvent = deliverableSystemEventKind(message.content);
-    return deliverableEvent
-      ? renderDeliverableCardHtml(message, deliverableEvent, ctx)
-      : renderSystemEventLineHtml(message, ctx);
+    if (deliverableEvent) {
+      return renderDeliverableCardHtml(message, deliverableEvent, ctx);
+    }
+    const settledReportOutcome = runSettledReportOutcome(message.content);
+    if (settledReportOutcome) {
+      return renderRunSettledReportHtml(message, settledReportOutcome, ctx);
+    }
+    return renderSystemEventLineHtml(message, ctx);
   }
   const isCuu = message.sender_type === "cuu";
   const isSelf = ctx.currentUserId !== undefined && message.sender_user_id === ctx.currentUserId;
