@@ -2036,6 +2036,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindRouteLineEditor(root, { signal, markDirty: markActiveRouteDirty });
   bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
   bindNotificationMutePanel(root, result, client, locale, signal);
+  bindSettingsAiProfilePanel(root, result, client, locale, signal);
   bindLiveRouteStreams(result, client, locale);
 }
 
@@ -2142,6 +2143,148 @@ function bindNotificationMutePanel(
   for (const checkbox of checkboxes) {
     checkbox.addEventListener("change", () => void save(), { signal });
   }
+}
+
+// R13 批 P3（功能审查 B4）：设置页「AI 助手」区块的客户端水合 + 写接线。SSR 渲染的两个 <select>
+// （route-components renderSettingsAiAssistantCard）是禁用的——设置页 VM 不带用户 AI 档案（扩 VM 要动
+// contracts/routes，超出批次围栏），当前档位由这里 GET /api/me/ai-profile 回填后才解禁；GET 失败保持
+// 锁定 + 显式错误 + 重试（照上面通知静音面板 R10-P1-7 的同一竞态收口：不给用户一个「假的当前值」去保存）。
+// change 即 PATCH（每次只发被改的那一个字段）；失败回滚 select 到上次已保存值 + 状态行报错。
+function bindSettingsAiProfilePanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "settings") {
+    return;
+  }
+  const panel = container.querySelector<HTMLElement>("[data-r13-settings-ai-panel]");
+  if (!panel) {
+    return;
+  }
+  const modeSelect = panel.querySelector<HTMLSelectElement>("[data-r13-settings-ai-mode-select]");
+  const dispatchSelect = panel.querySelector<HTMLSelectElement>("[data-r13-settings-ai-dispatch-select]");
+  if (!modeSelect || !dispatchSelect) {
+    return;
+  }
+  const status = panel.querySelector<HTMLElement>("[data-r13-settings-ai-status]");
+  const retryButton = panel.querySelector<HTMLButtonElement>("[data-r13-settings-ai-retry]");
+  const zh = locale === "zh-CN";
+  // GET/PATCH 都走 client.request 的类型安全转发口（drive_preview 同款先例），只声明用得到的字段。
+  type AiProfileSlice = { default_mode: number; dispatch_policy: string };
+  const profilePath = "/api/me/ai-profile";
+  let lastSaved: AiProfileSlice | undefined;
+
+  const setStatus = (text: string, tone: "saving" | "saved" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r13-settings-ai-status", tone);
+  };
+  const setEnabled = (enabled: boolean) => {
+    modeSelect.disabled = !enabled;
+    dispatchSelect.disabled = !enabled;
+  };
+
+  const hydrate = async () => {
+    setEnabled(false);
+    if (retryButton) {
+      retryButton.hidden = true;
+    }
+    setStatus(zh ? "正在读取当前设置…" : "Loading current settings…", "saving");
+    try {
+      const profile = await client.request<AiProfileSlice>(profilePath);
+      if (signal.aborted) {
+        return;
+      }
+      lastSaved = { default_mode: profile.default_mode, dispatch_policy: profile.dispatch_policy };
+      modeSelect.value = String(profile.default_mode);
+      dispatchSelect.value = profile.dispatch_policy;
+      setEnabled(true);
+      if (status) {
+        status.hidden = true;
+      }
+    } catch {
+      if (signal.aborted) {
+        return;
+      }
+      setStatus(
+        zh
+          ? "没能读取当前 AI 设置。为避免误存，下拉框已暂时锁定。"
+          : "Couldn't load your current AI settings — the selectors stay locked so nothing is saved by mistake.",
+        "error"
+      );
+      if (retryButton) {
+        retryButton.hidden = false;
+      }
+    }
+  };
+  void hydrate();
+  retryButton?.addEventListener("click", () => void hydrate(), { signal });
+
+  // 保存按到达顺序串行（同静音面板的 saveChain 取舍——乱序完成会用旧值盖新值）。
+  let saveChain: Promise<void> = Promise.resolve();
+  const doSave = async (patch: Record<string, unknown>, rollback: () => void) => {
+    setStatus(zh ? "保存中…" : "Saving…", "saving");
+    try {
+      const profile = await client.request<AiProfileSlice>(profilePath, {
+        method: "PATCH",
+        body: JSON.stringify(patch)
+      });
+      if (signal.aborted) {
+        return;
+      }
+      lastSaved = { default_mode: profile.default_mode, dispatch_policy: profile.dispatch_policy };
+      modeSelect.value = String(profile.default_mode);
+      dispatchSelect.value = profile.dispatch_policy;
+      setStatus(zh ? "已保存" : "Saved", "saved");
+    } catch {
+      if (signal.aborted) {
+        return;
+      }
+      rollback();
+      setStatus(zh ? "保存失败，请重试" : "Save failed, please retry", "error");
+    }
+  };
+  const enqueueSave = (patch: Record<string, unknown>, rollback: () => void) => {
+    saveChain = saveChain.then(() => doSave(patch, rollback));
+    return saveChain;
+  };
+
+  modeSelect.addEventListener(
+    "change",
+    () => {
+      const nextMode = Number(modeSelect.value);
+      if (!Number.isInteger(nextMode) || nextMode < 1 || nextMode > 5 || nextMode === lastSaved?.default_mode) {
+        return;
+      }
+      void enqueueSave({ default_mode: nextMode }, () => {
+        if (lastSaved) {
+          modeSelect.value = String(lastSaved.default_mode);
+        }
+      });
+    },
+    { signal }
+  );
+  dispatchSelect.addEventListener(
+    "change",
+    () => {
+      const nextPolicy = dispatchSelect.value;
+      if (!["auto", "ask", "manual"].includes(nextPolicy) || nextPolicy === lastSaved?.dispatch_policy) {
+        return;
+      }
+      void enqueueSave({ dispatch_policy: nextPolicy }, () => {
+        if (lastSaved) {
+          dispatchSelect.value = lastSaved.dispatch_policy;
+        }
+      });
+    },
+    { signal }
+  );
 }
 
 async function renderCurrentRoute(client: BrowserApiClient, locale: WorkHubLocale, options: { silent?: boolean } = {}) {

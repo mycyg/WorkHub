@@ -4261,6 +4261,46 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
   });
 }
 
+// R13 批 P3（功能审查 B4）：web /settings 的「AI 助手」区块——web-only 用户此前对 5 类 AI 配置零入口，
+// mode=1（只观察）的用户被 409 永久拒绝且无法自救。这里给 default_mode 与 dispatch_policy 两个真表单
+// （PATCH /api/me/ai-profile 已有）；其余 AI 项（Granular/Cuu 主动性/模型档位/项目治理）诚实标注
+// 「需要桌面客户端」（data-requires-desktop 既有模式，同下方 open_desktop_settings 按钮）。
+// 两个 <select> 服务端渲染为 disabled——当前档位不在 SettingsPageVM 里（设置页 VM 不带用户 AI 档案，
+// 扩 VM 要动 contracts/routes，超出本批范围围栏），由 apps/web/src/browser.ts 的
+// bindSettingsAiProfilePanel 拉 GET /api/me/ai-profile 回填后解禁——照通知页静音面板（R10-P1-7）的
+// 水合竞态收口纪律：读不到当前值就保持锁定 + 显式错误 + 重试，绝不让用户在「假的默认选项」上保存。
+function renderSettingsAiAssistantCard(locale: WorkHubLocale, desktopHref: string): string {
+  const zh = locale === "zh-CN";
+  const modeOptions: Array<[string, string, string]> = [
+    ["1", "1 · 只观察", "1 · Observe only"],
+    ["2", "2 · 全部先问", "2 · Ask first"],
+    ["3", "3 · 分级自动（默认）", "3 · Tiered auto (default)"],
+    ["4", "4 · 全自动 · 人审", "4 · Full auto, human review"],
+    ["5", "5 · 全托管 · AI 审", "5 · Fully managed, AI review"]
+  ];
+  const dispatchOptions: Array<[string, string, string]> = [
+    ["auto", "自动接单（指派即开工）", "Auto-accept (starts on assignment)"],
+    ["ask", "先问我（确认后开工）", "Ask me first (starts after I confirm)"],
+    ["manual", "只挂单（我手动启动）", "Queue only (I start it manually)"]
+  ];
+  const renderOptions = (options: Array<[string, string, string]>) =>
+    options.map(([value, zhLabel, enLabel]) => `<option value="${escapeHtml(value)}">${escapeHtml(zh ? zhLabel : enLabel)}</option>`).join("");
+  return `<section class="wh-card wh-r4-route-card" data-r13-settings-ai-panel="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "AI 助手" : "AI assistant")}</h3>
+          <p class="wh-subtle">${escapeHtml(zh ? "单聊默认档与接单策略在这里就能改，改完立即生效——即使你在「只观察」档也能在这里自救。" : "Change your default 1:1 mode and dispatch policy right here — it takes effect immediately, even if you're stuck in observe-only mode.")}</p>
+          <p class="wh-subtle" data-r13-settings-ai-status="loading" hidden></p>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "默认模式（单聊五档）" : "Default mode (1:1, five levels)")}</strong>
+            <select class="wh-pill" data-r13-settings-ai-mode-select aria-label="${escapeHtml(zh ? "默认模式" : "Default mode")}" disabled>${renderOptions(modeOptions)}</select>
+          </div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "接单策略" : "Dispatch policy")}</strong>
+            <select class="wh-pill" data-r13-settings-ai-dispatch-select aria-label="${escapeHtml(zh ? "接单策略" : "Dispatch policy")}" disabled>${renderOptions(dispatchOptions)}</select>
+          </div>
+          <button type="button" class="wh-btn" data-r13-settings-ai-retry hidden>${escapeHtml(zh ? "重试读取" : "Retry loading")}</button>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "细粒度开关 · 助手主动性 · 模型档位 · 项目治理" : "Granular switches, assistant proactivity, model tier, project governance")}</strong><span class="wh-pill">${escapeHtml(zh ? "需要桌面客户端" : "Desktop app required")}</span></div>
+          <a class="wh-btn" href="${escapeHtml(safeHref(desktopHref))}" data-action-id="open_desktop_ai_settings" data-method="GET" data-requires-desktop="true">${escapeHtml(zh ? "其余 AI 项在桌面客户端调整" : "Adjust the rest in the desktop app")}</a>
+        </section>`;
+}
+
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale): WebRouteComponent {
   const reactComponent = createSettingsReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
@@ -4302,6 +4342,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(routeT(locale, "settings.webLocalActions"))}</strong><span class="wh-pill">${escapeHtml(yesNoLabel(locale, props.webLocalActionsEnabled))}</span></div>
           <a class="wh-btn" href="${escapeHtml(safeHref(props.restoreHref))}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
         </section>
+        ${renderSettingsAiAssistantCard(locale, props.restoreHref)}
       </div>
       ${vm.permission_policies !== undefined ? `<section class="wh-card wh-r4-route-card" data-r9-settings-policies="${escapeHtml(String(vm.permission_policies.length))}">
         <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "自动通过规则" : "Auto-approve rules")}</h3>

@@ -2529,6 +2529,35 @@ test("R4.11 Settings route component uses a typed Settings Page VM without leaki
   assertNoMainWindowBoundaryLeak(settings.html);
 });
 
+// R13 批 P3（功能审查 B4）：web /settings 的「AI 助手」区块——default_mode 与 dispatch_policy 两个
+// 真表单（当前值由 apps/web/src/browser.ts 水合后解禁，SSR 必须是 disabled——R10-P1-7 的竞态收口纪律），
+// 其余 AI 项走既有 data-requires-desktop 提示模式，不再静默留白。
+test("R13-P3 settings route renders the AI assistant block: locked selects for hydration plus desktop notices", () => {
+  const vm = surfaceVm();
+  const settings = renderWebRouteComponents(vm, { locale: "zh-CN" }).settings;
+
+  assert.ok(settings);
+  assert.equal(settings.html.includes('data-r13-settings-ai-panel="true"'), true);
+  // Both selects render disabled until the client hydrates the real current values.
+  assert.match(settings.html, /data-r13-settings-ai-mode-select[^>]*disabled/u);
+  assert.match(settings.html, /data-r13-settings-ai-dispatch-select[^>]*disabled/u);
+  // All five modes and all three dispatch policies are real options.
+  for (const value of ["1", "2", "3", "4", "5"]) {
+    assert.equal(settings.html.includes(`<option value="${value}">`), true);
+  }
+  for (const value of ["auto", "ask", "manual"]) {
+    assert.equal(settings.html.includes(`<option value="${value}">`), true);
+  }
+  assert.match(settings.html, /只观察/u);
+  assert.match(settings.html, /自动接单/u);
+  // Hydration status line and retry control exist for the locked-on-failure path.
+  assert.equal(settings.html.includes("data-r13-settings-ai-status"), true);
+  assert.equal(settings.html.includes("data-r13-settings-ai-retry"), true);
+  // The remaining AI items are honestly labeled as desktop-only, via the established pattern.
+  assert.match(settings.html, /data-action-id="open_desktop_ai_settings"[^>]*data-requires-desktop="true"/u);
+  assert.match(settings.html, /需要桌面客户端/u);
+});
+
 test("R4.16 route components expose hydration boundary metadata without weakening markers", () => {
   const vm = {
     ...surfaceVm(),

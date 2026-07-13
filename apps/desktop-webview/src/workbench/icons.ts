@@ -23,7 +23,9 @@ export const workbenchIcons = {
   history: ic('<circle cx="12" cy="13" r="8"/><path d="M12 9.5V13l2.6 1.6"/><path d="M9 2.5h6"/>'),
   check: ic('<path d="M5 12.5 9.5 17 19 6.5"/>'),
   // R12 批8：无权限深链空态（00 §9）——群聊气泡挂锁图标，替代不存在的 emoji。
-  lock: ic('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>')
+  lock: ic('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'),
+  // R13 批 P3：rail 项目行的「项目设置」入口（AI 治理表单）——齿轮。
+  gear: ic('<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M21.2 12h-2.6M5.4 12H2.8M18.5 5.5l-1.9 1.9M7.4 16.6l-1.9 1.9M18.5 18.5l-1.9-1.9M7.4 7.4 5.5 5.5"/>')
 } as const;
 
 export type WorkbenchIconKey = keyof typeof workbenchIcons;

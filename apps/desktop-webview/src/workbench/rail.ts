@@ -155,21 +155,32 @@ export function renderProjectTreeHtml(input: {
   const rows = input.projects
     .map((project) => {
       const active = project.id === input.selectedProjectId;
-      const leaves = active && input.vm && input.vm.project.id === project.id
+      const activeVm = active && input.vm && input.vm.project.id === project.id ? input.vm : undefined;
+      const leaves = activeVm
         ? renderProjectTreeLeavesHtml(
-            input.vm,
+            activeVm,
             zh,
             input.centerTab ?? "chat",
             input.activeConversationId,
             input.newCollab ?? IDLE_NEW_COLLAB_STATE
           )
         : "";
+      // R13 批 P3：项目名右侧的「项目设置」齿轮——只对项目负责人渲染（vm.viewer.is_project_owner；
+      // 服务端把治理端点的读与写都锁在负责人上，见 settings/render.ts 顶部注释——给非负责人摆一个
+      // 点开只会撞 404 的按钮违反 04 §4 铁律 3）。齿轮是 .wh-wb-project-row 的兄弟节点而不是子节点
+      // （按钮里不能套按钮），选中态跟 centerTab === "project-settings" 走，同树叶的 sel 约定。
+      const gear = activeVm?.viewer.is_project_owner
+        ? `<button type="button" class="wh-wb-project-gear${input.centerTab === "project-settings" ? " sel" : ""}" data-wb-open-project-settings aria-label="${zh ? "项目设置" : "Project settings"}" title="${zh ? "项目设置" : "Project settings"}">${workbenchIcons.gear}</button>`
+        : "";
       return `<div class="wh-wb-project${active ? " active" : ""}">
+        <div class="wh-wb-project-head">
         <button type="button" class="wh-wb-project-row" data-wb-select-project="${escapeHtml(project.id)}" aria-current="${active ? "true" : "false"}">
           <span class="wh-wb-tile ${tileVariantClass(project.id)}">${escapeHtml(projectInitial(project.name))}</span>
           <span class="wh-wb-project-name">${escapeHtml(project.name)}</span>
           ${project.open_work_item_count > 0 ? `<span class="wh-wb-project-dot" title="${zh ? "有进行中工作项" : "Has open work"}"></span>` : ""}
         </button>
+        ${gear}
+        </div>
         ${leaves}
       </div>`;
     })
@@ -265,6 +276,8 @@ export function mountWorkbenchRail(
     onOpenDrive?: () => void;
     // R13 批 P1：军团总览一级入口点击——shell.ts 把它接成 store.centerTab = "army-overview"。
     onOpenArmyOverview?: () => void;
+    // R13 批 P3：项目行的「项目设置」齿轮点击——shell.ts 把它接成 store.centerTab = "project-settings"。
+    onOpenProjectSettings?: () => void;
   }
 ): WorkbenchRailHandle {
   let modalName = "";
@@ -432,6 +445,10 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-open-army-overview]")) {
       input.onOpenArmyOverview?.();
+      return;
+    }
+    if (target.closest("[data-wb-open-project-settings]")) {
+      input.onOpenProjectSettings?.();
       return;
     }
     // 取消按钮，或直接点在遮罩背景上（不是点在模态框内容里冒泡出来的）都关闭模态。
