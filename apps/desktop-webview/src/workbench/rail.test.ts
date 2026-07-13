@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import type { ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
 
-import { renderNewProjectModalHtml, renderProjectTreeHtml, renderRailFootHtml } from "./rail.js";
+import { renderArmyOverviewNavHtml, renderNewProjectModalHtml, renderProjectTreeHtml, renderRailFootHtml } from "./rail.js";
 
 function project(over: Partial<ProjectListItemVM> = {}): ProjectListItemVM {
   return {
@@ -253,19 +253,27 @@ test("renderProjectTreeHtml does not leak a stale VM onto a different project's 
   assert.doesNotMatch(html, /wh-wb-tree/u);
 });
 
-test("renderRailFootHtml surfaces the army overview preview and the viewer label when present", () => {
+// R13 批 P1：军团总览从 rail-foot 的不可点预告条升级成左栏一级入口（renderArmyOverviewNavHtml，
+// 见下面新测试）——rail-foot 现在只剩「我」这一行，旧的"即将上线"摘要条已退役（用户拍板 4）。
+test("renderRailFootHtml no longer carries the retired army-overview summary strip, only the viewer label", () => {
   const withViewer = renderRailFootHtml(true, "阿曼 · 已连接");
-  assert.match(withViewer, /军团总览/u);
-  assert.match(withViewer, /即将上线/u);
+  assert.doesNotMatch(withViewer, /军团总览/u);
+  assert.doesNotMatch(withViewer, /wh-wb-army-sum/u);
   assert.match(withViewer, /阿曼 · 已连接/u);
   const withoutViewer = renderRailFootHtml(true, undefined);
   assert.doesNotMatch(withoutViewer, /wh-wb-me/u);
 });
 
-test("the army overview preview is not rendered as a clickable control (its real endpoint is batch 5)", () => {
-  const html = renderRailFootHtml(true, undefined);
-  assert.doesNotMatch(html, /<button[^>]*wh-wb-army-sum/u);
-  assert.doesNotMatch(html, /data-wb-open-army-overview/u);
+test("renderArmyOverviewNavHtml is a real, clickable top-level entry point (peer to the project list)", () => {
+  const html = renderArmyOverviewNavHtml(true, false);
+  assert.match(html, /<button[^>]*data-wb-open-army-overview[^>]*>[^]*军团总览/u);
+});
+
+test("renderArmyOverviewNavHtml marks itself active only when the caller says so", () => {
+  const active = renderArmyOverviewNavHtml(true, true);
+  assert.match(active, /class="wh-wb-army-nav active"/u);
+  const inactive = renderArmyOverviewNavHtml(true, false);
+  assert.doesNotMatch(inactive, /class="wh-wb-army-nav active"/u);
 });
 
 test("renderNewProjectModalHtml toggles data-open and disables the submit button until a name is entered", () => {

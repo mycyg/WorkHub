@@ -77,13 +77,17 @@ export const workbenchCss = [
   ".wh-wb-leaf--live:hover{background:var(--ds-glass-strong)}",
   ".wh-wb-leaf-count{margin-left:auto;font:700 10.5px/1 var(--ds-font);color:var(--ds-ink-faint);background:var(--ds-glass);padding:1px 6px;border-radius:99px}",
   ".wh-wb-rail-foot{margin-top:auto;border-top:1px solid var(--ds-glass-border);padding:10px 12px}",
-  // 军团总览是批 5 的预告条,不是可点按钮(真聚合端点还没接)——没有 hover/cursor:pointer，理由同 .wh-wb-leaf。
-  ".wh-wb-army-sum{display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;padding:8px 10px;" +
-    "border-radius:var(--ds-radius-md);background:var(--ds-glass);color:inherit;cursor:default}",
-  ".wh-wb-army-sum svg{width:18px;height:18px;color:var(--wb-cuu)}",
-  ".wh-wb-army-sum-t{font:600 12.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
-  ".wh-wb-army-sum-s{font:500 11px/1.3 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-wb-me{display:flex;align-items:center;gap:8px;padding:10px 10px 2px;font:500 12.5px/1.3 var(--ds-font);color:var(--ds-ink-muted)}",
+  // R13 批 P1：军团总览左栏一级入口——与项目列表平级，独立分组（用户拍板 4）。真按钮，不是批 1/5
+  // 那条不可点的预告条了，所以有 hover/active 反馈（同 .wh-wb-project-row 的既有手感）。
+  ".wh-wb-rail-group{margin:6px 8px 2px;padding-top:8px;border-top:1px solid var(--ds-glass-border)}",
+  ".wh-wb-army-nav{display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;padding:8px 10px;" +
+    "border:0;border-radius:var(--ds-radius-md);background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;" +
+    "transition:background var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-army-nav:hover{background:rgba(20,30,50,.05)}",
+  ".wh-wb-army-nav.active{background:var(--ds-glass-strong)}",
+  ".wh-wb-army-nav svg{width:18px;height:18px;color:var(--wb-cuu);flex:0 0 auto}",
+  ".wh-wb-army-nav-label{font:600 13.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
 
   // —— 中栏 —— //
   ".wh-wb-center{flex:1 1 auto;min-width:0;overflow-y:auto;padding:20px 26px}",
@@ -108,7 +112,8 @@ export const workbenchCss = [
   "@keyframes ds-spin{to{transform:rotate(360deg)}}",
   ".wh-wb-error{padding:40px 18px;text-align:center;color:var(--ds-ink-muted);font:500 13px/1.6 var(--ds-font)}",
 
-  // —— 右栏：情境面板外壳（批 1 只给收放骨架 + 未接内容的诚实占位；真内容归批 5）。 —— //
+  // —— 右栏：情境面板外壳（骨架批 1 就有；R13 批 P1 把真内容——军团三区/run 详情下钻——接进
+  // .wh-wb-side-body，见下面 .wh-wb-army-* 一整块）。 —— //
   ".wh-wb-side{width:322px;flex:0 0 auto;border-left:1px solid var(--ds-glass-border);display:flex;flex-direction:column;" +
     "background:var(--ds-glass-quiet);transition:width var(--ds-dur) var(--ds-ease),opacity var(--ds-dur) var(--ds-ease)}",
   ".wh-wb-side[data-open=\"false\"]{width:0;opacity:0;overflow:hidden;border-left:0}",
@@ -117,6 +122,91 @@ export const workbenchCss = [
   ".wh-wb-side-title{font:700 13px/1 var(--ds-font);color:var(--ds-ink)}",
   ".wh-wb-side-body{flex:1 1 auto;overflow-y:auto;padding:16px 15px;font:500 12.5px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-wb-side-toggle{position:absolute;top:8px;right:8px;-webkit-app-region:no-drag}",
+
+  // —— R13 批 P1：军团面板三区（输出/军团/后台任务）+ run 卡下钻详情——视觉基准 prototype 的
+  // .out-row/.runcard/.bg-row/.run-detail，配色改浅色 --ds-* token。 —— //
+  ".wh-wb-army-loading{display:flex;align-items:center;gap:9px;padding:24px 4px;font:600 12.5px/1 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-army-error{padding:20px 4px;text-align:center;font:500 12.5px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-army-empty-note{margin:2px 0 12px;font:500 12px/1.6 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-army-capped-note{margin:2px 0 12px;font:500 11px/1.5 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-army-sec-h{display:flex;align-items:center;gap:7px;font:700 11px/1 var(--ds-font);letter-spacing:.06em;" +
+    "text-transform:uppercase;color:var(--ds-ink-faint);padding:0 0 8px;margin-top:4px}",
+  ".wh-wb-army-sec-n{font:600 10px/1 var(--ds-font);color:var(--ds-ink-faint);background:var(--ds-glass);padding:1px 7px;border-radius:99px;text-transform:none;letter-spacing:0}",
+  // 输出行：<details>/<summary> 原生折叠——点击只展示 proposal_href 文案，深链跳转是后续批次的活
+  // （04 §4 铁律 3：没有真接线就不能装成能点）。
+  ".wh-wb-army-out-row{margin-bottom:6px;border-radius:var(--ds-radius-sm);background:var(--ds-glass);border:1px solid var(--ds-glass-border)}",
+  ".wh-wb-army-out-row summary{display:flex;align-items:center;gap:9px;padding:8px 10px;cursor:pointer;list-style:none}",
+  ".wh-wb-army-out-row summary::-webkit-details-marker{display:none}",
+  ".wh-wb-army-out-row:hover{background:var(--ds-glass-strong)}",
+  ".wh-wb-army-out-icon{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;" +
+    "background:var(--ds-accent-soft);color:var(--ds-accent);flex:0 0 auto}",
+  ".wh-wb-army-out-icon svg{width:13px;height:13px}",
+  ".wh-wb-army-out-main{flex:1 1 auto;min-width:0}",
+  ".wh-wb-army-out-title{display:block;font:600 12.5px/1.3 var(--ds-font);color:var(--ds-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-wb-army-out-meta{display:block;font:500 10.5px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-army-out-chev{color:var(--ds-ink-faint);flex:0 0 auto}",
+  ".wh-wb-army-out-href{margin:0;padding:0 10px 9px 43px;font:500 11px/1.5 var(--ds-font);color:var(--ds-ink-faint);word-break:break-all}",
+  ".wh-wb-army-runs{display:flex;flex-direction:column;gap:9px;margin-bottom:6px}",
+  ".wh-wb-army-rc{display:block;width:100%;box-sizing:border-box;text-align:left;font:inherit;color:inherit;" +
+    "border:1px solid var(--ds-glass-border);background:var(--ds-glass);border-radius:var(--ds-radius-md);padding:11px 12px;cursor:pointer}",
+  ".wh-wb-army-rc:hover{background:var(--ds-glass-strong);border-color:rgba(15,23,42,.16)}",
+  ".wh-wb-army-rc--static{cursor:default}",
+  ".wh-wb-army-rc--static:hover{background:var(--ds-glass);border-color:var(--ds-glass-border)}",
+  ".wh-wb-army-rc--run{border-color:rgba(10,132,255,.3)}",
+  ".wh-wb-army-rc-top{display:flex;align-items:center;gap:7px;margin-bottom:6px;flex-wrap:wrap}",
+  ".wh-wb-army-rc-cat{display:inline-flex;width:16px;height:16px;color:var(--wb-cuu);flex:0 0 auto}",
+  ".wh-wb-army-rc-cat svg{width:16px;height:16px}",
+  ".wh-wb-army-rc-name{font:700 12px/1 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-army-rc-project{font:600 10.5px/1 var(--ds-font);color:var(--ds-ink-muted);background:var(--ds-glass);" +
+    "border:1px solid var(--ds-glass-border);padding:2px 7px;border-radius:99px}",
+  ".wh-wb-army-rc-exec{font:600 10.5px/1 var(--ds-font);color:var(--ds-ink-muted);border:1px solid var(--ds-glass-border);padding:1px 7px;border-radius:99px}",
+  ".wh-wb-army-rc-status{margin-left:auto;font:700 10.5px/1 var(--ds-font);padding:2px 8px;border-radius:99px}",
+  ".wh-wb-army-rc-status--run{color:var(--ds-accent);background:var(--ds-accent-soft)}",
+  ".wh-wb-army-rc-status--wait{color:var(--ds-warn);background:var(--ds-warn-soft)}",
+  ".wh-wb-army-rc-status--done{color:var(--ds-success);background:var(--ds-success-soft)}",
+  ".wh-wb-army-rc-status--fail{color:var(--ds-danger);background:var(--ds-danger-soft)}",
+  ".wh-wb-army-rc-goal{font:600 12.5px/1.45 var(--ds-font);color:var(--ds-ink);margin-bottom:6px}",
+  ".wh-wb-army-rc-meta{display:flex;flex-wrap:wrap;gap:8px;font:500 10.5px/1.4 var(--ds-font);color:var(--ds-ink-faint);margin-bottom:5px}",
+  ".wh-wb-army-rc-step{font:500 11px/1.4 var(--ds-font);color:var(--ds-ink-muted);margin-bottom:7px}",
+  ".wh-wb-army-rc-foot{display:flex;align-items:center;gap:8px;font:600 10.5px/1 var(--ds-font);color:var(--ds-ink-faint);" +
+    "border-top:1px solid var(--ds-glass-border);padding-top:7px}",
+  ".wh-wb-army-loadmore{width:100%;margin-bottom:6px;padding:8px;border-radius:var(--ds-radius-sm);border:1px solid var(--ds-glass-border);" +
+    "background:transparent;color:var(--ds-accent);font:600 12px/1 var(--ds-font);cursor:pointer}",
+  ".wh-wb-army-loadmore:hover{background:var(--ds-accent-soft)}",
+  ".wh-wb-army-loadmore:disabled{opacity:.6;cursor:default}",
+  ".wh-wb-army-loadmore-error{margin:0 0 6px;font:500 11px/1.5 var(--ds-font);color:var(--ds-danger)}",
+  // run 详情下钻
+  ".wh-wb-army-back{border:0;background:transparent;padding:0;margin-bottom:12px;color:var(--ds-accent);" +
+    "font:600 11.5px/1 var(--ds-font);cursor:pointer}",
+  ".wh-wb-army-rd-name{font:700 14px/1.3 var(--ds-font);color:var(--ds-ink);margin-bottom:3px}",
+  ".wh-wb-army-rd-goal{font:500 12px/1.55 var(--ds-font);color:var(--ds-ink-muted);margin-bottom:10px}",
+  ".wh-wb-army-rd-meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}",
+  ".wh-wb-army-chip{font:600 10.5px/1 var(--ds-font);color:var(--ds-ink-muted);background:var(--ds-glass);" +
+    "border:1px solid var(--ds-glass-border);padding:3px 9px;border-radius:99px}",
+  ".wh-wb-army-rd-step{margin-bottom:14px;padding:10px 12px;border-radius:var(--ds-radius-md);background:var(--wb-cuu-soft);" +
+    "border:1px solid rgba(255,171,94,.28)}",
+  ".wh-wb-army-rd-step-phase{font:700 10.5px/1 var(--ds-font);color:var(--wb-cuu);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}",
+  ".wh-wb-army-rd-step-out{font:500 12px/1.55 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-army-replay-loading{display:flex;align-items:center;gap:8px;font:500 12px/1 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-army-replay-error{margin:0 0 8px;font:500 12px/1.5 var(--ds-font);color:var(--ds-danger)}",
+  ".wh-wb-army-timeline{border-left:2px solid var(--ds-glass-border);margin:8px 0 14px 6px;padding-left:13px;" +
+    "display:flex;flex-direction:column;gap:11px}",
+  ".wh-wb-army-tl-item{position:relative;font:500 12px/1.5 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-army-tl-item::before{content:\"\";position:absolute;left:-18.5px;top:4px;width:9px;height:9px;border-radius:50%;" +
+    "background:var(--ds-ink-faint);border:2px solid var(--ds-glass-quiet)}",
+  ".wh-wb-army-tl-phase{font:700 10px/1 var(--ds-font);letter-spacing:.05em;text-transform:uppercase;color:var(--ds-ink-faint);margin-bottom:2px}",
+  ".wh-wb-army-tl-out{color:var(--ds-ink)}",
+  ".wh-wb-army-tl-tm{margin-left:6px;font:500 10.5px/1 var(--ds-font);color:var(--ds-ink-faint)}",
+
+  // —— R13 批 P1：军团总览（跨项目卡片流，中栏 centerTab === "army-overview"）—— //
+  ".wh-wb-center.wh-wb-center--army-overview{padding:0;display:flex;flex-direction:column;overflow:hidden}",
+  ".wh-wb-army-overview{display:flex;flex-direction:column;height:100%;min-height:0}",
+  ".wh-wb-army-ov-bar{display:flex;align-items:center;gap:10px;padding:16px 26px;border-bottom:1px solid var(--ds-glass-border);flex:0 0 auto}",
+  ".wh-wb-army-ov-title{font:700 16px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-army-ov-body{flex:1 1 auto;overflow-y:auto;padding:16px 26px 26px}",
+  ".wh-wb-army-ov-group{margin-bottom:20px}",
+  ".wh-wb-army-ov-group-h{display:flex;align-items:center;gap:7px;font:700 12.5px/1 var(--ds-font);color:var(--ds-ink);margin-bottom:10px}",
+  ".wh-wb-army-ov-empty{padding:40px 18px;text-align:center;font:500 13px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
 
   // —— 新建项目模态 —— //
   // 遮罩层保留深色 scrim（这是弹窗遮罩的通用惯例，跟壳体本身是浅是深无关，只是把注意力摁到模态上；

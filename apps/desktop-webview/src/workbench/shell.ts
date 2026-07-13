@@ -13,6 +13,9 @@ import { escapeHtml } from "@workhub/web-runtime";
 
 import { appleGlassDesignSystemCss } from "../design-system.js";
 import { resolveDesktopShellEmitter } from "../desktop-cuu-runtime.js";
+import { mountArmyOverviewView, type ArmyOverviewApiClient, type ArmyOverviewViewHandle } from "./army/overview.js";
+import { mountArmyContextPanel, type ArmyContextPanelApiClient, type ArmyContextPanelHandle } from "./army/panel.js";
+import { renderArmySidePanelIdleHtml } from "./army/render.js";
 import { mountChatView, type ChatViewApiClient, type ChatViewHandle } from "./chat/view.js";
 import { workbenchCss } from "./css.js";
 import { mountDriveSidePanel, type DriveSidePanelApiClient, type DriveSidePanelHandle } from "./drive/side-panel.js";
@@ -28,12 +31,16 @@ type Locale = "zh-CN" | "en-US";
 // R12 批 2：中栏在项目选中且 VM 就绪时渲染真实群聊（chat/view.ts），需要 request（消息/typing 走
 // client.request，见 chat/api.ts 顶部注释——不为一个只有工作台窗口用的批次特性扩大 WorkHubApiClient
 // 的具名方法面）+ streams（拼 SSE 订阅 URL）。批 6 加网盘标签（drive/view.ts）需要的
-// uploadDriveFile/deleteDriveItem/restoreDriveItem 是既有具名方法，直接 Pick 进来，不新增。
+// uploadDriveFile/deleteDriveItem/restoreDriveItem 是既有具名方法，直接 Pick 进来，不新增。R13 批 P1
+// 加军团面板/军团总览（army/panel.ts、army/overview.ts）需要的 request/getAgentRun——getAgentRun 也是
+// 既有具名方法（Spotlight 回放视图已经在用），同样不新增 api-client 面。
 export type WorkbenchShellApiClient = WorkbenchRailApiClient &
   ChatViewApiClient &
   DriveTabApiClient &
   DriveSidePanelApiClient &
-  Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages" | "request" | "streams" | "uploadDriveFile" | "deleteDriveItem" | "restoreDriveItem">;
+  ArmyContextPanelApiClient &
+  ArmyOverviewApiClient &
+  Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages" | "request" | "streams" | "uploadDriveFile" | "deleteDriveItem" | "restoreDriveItem" | "getAgentRun">;
 
 // 照 boot.ts 的 clientToken() 同款 helper——shell.ts 不 import boot.ts（避免 boot.ts → shell.ts →
 // chat/view.ts → ... 的循环 import 风险），改由 mountWorkbenchShell 的调用方（boot.ts 本尊）注入
@@ -152,15 +159,6 @@ export function renderProjectSummaryHtml(vm: WorkbenchPageVM, locale: Locale): s
   </div>`;
 }
 
-export function renderSidePanelPlaceholderHtml(locale: Locale): string {
-  const zh = locale === "zh-CN";
-  return `<p>${
-    zh
-      ? "输出、军团任务卡、后台任务会显示在这里——即将上线。"
-      : "Outputs, army task cards, and background tasks will show up here — wired in batch 5 (the army panel)."
-  }</p>`;
-}
-
 export type WorkbenchShellHandle = {
   store: WorkbenchStore;
   // 选中项目（rail 点击 / Spotlight「打开工作台」/ 深链三路共用）。conversationId 目前只落库，批 2 起消费。
@@ -189,6 +187,7 @@ export function mountWorkbenchShell(
   let chatMountKey: string | undefined;
   let driveHandle: DriveViewHandle | undefined;
   let driveMountKey: string | undefined;
+  let armyOverviewHandle: ArmyOverviewViewHandle | undefined;
 
   // R12 批7:打扰矩阵——windowBridge.isFocused() 告诉我们"用户是否正看着这个工作台窗口"；
   // resolveDesktopShellEmitter 是桌宠/主窗共用的通用 Tauri 事件桥(__TAURI__.event.emit),这里复用它
@@ -220,6 +219,11 @@ export function mountWorkbenchShell(
     driveMountKey = undefined;
   };
 
+  const disposeArmyOverview = () => {
+    armyOverviewHandle?.dispose();
+    armyOverviewHandle = undefined;
+  };
+
   // R13 批 V2:macOS 上 Rust 侧把 workbench 窗切成原生红绿灯（decorations:true + titleBarStyle
   // Overlay），自绘的 min/close 按钮就不该再渲染——不然两套控件叠一起。非 macOS（decorations:false）
   // 走原来的全自绘路径，行为不变。
@@ -248,6 +252,14 @@ export function mountWorkbenchShell(
     }
   });
 
+  // R13 批 P1：情境面板的军团内容控制器——同样挂载一次、活过项目/会话切换（见 army/panel.ts 顶部
+  // 注释）。它和 driveSidePanel 共用同一个 store.sidePanelContent 插槽，靠 ownerId 决定谁的内容显示——
+  // 这就是 02 计划 P1 原话「drive 预览态互斥切换的既有 store 机制沿用」。
+  const armyPanel: ArmyContextPanelHandle = mountArmyContextPanel(sideBodyEl, store, {
+    client: input.client,
+    locale: input.locale
+  });
+
   const selectProject = (projectId: string, conversationId?: string) => {
     const my = ++vmRequestGen;
     // 换项目时回到默认的主区群聊标签——上一个项目的中栏标签对新项目没有意义。
@@ -262,8 +274,10 @@ export function mountWorkbenchShell(
     // 右栏跟着清空：上一个项目挑的文件预览/版本历史对新项目没有意义，留着会显示错误项目的内容。
     // 必须走 showIdle()（而不是直接 store.setState({sidePanelContent: undefined})）——showIdle()
     // 会让还没回来的预览/版本历史请求失效，否则旧项目一个晚到的响应会把这次清空又盖回去（见
-    // side-panel.ts 的 loadGeneration 注释）。
+    // side-panel.ts 的 loadGeneration 注释）。armyPanel.clear() 同理让上一个会话的军团面板请求失效
+    // （renderCenter 拿到新 VM 后会调 showForConversation 重新指向新项目的会话）。
     driveSidePanel.showIdle();
+    armyPanel.clear();
     // pages.workbench 在 PageClient 上是可选字段（不强迫其它 workspace 的完整 PageClient mock 跟着补桩，
     // 见 packages/api-client/src/types.ts 的注释）；真实 createApiClient() 一定实现它，但这里仍老实处理
     // 「万一没有」——报真错误，不假装能拿到数据。
@@ -318,9 +332,23 @@ export function mountWorkbenchShell(
   // 非活动那个视图会被销毁（chat 的 SSE 订阅/composer 草稿、drive 的当前文件夹都会丢），这是已知的
   // 简化取舍（两个标签共用同一个中栏挂载位，不常驻）——留给后续批次决定要不要改成隐藏而不是销毁。
   const renderCenter = (state: WorkbenchStoreState) => {
+    // R13 批 P1：军团总览是一个不依赖 selectedProjectId 的跨项目视图——必须在"没选项目"的空态判断
+    // 之前拦下来，否则用户还没选过任何项目时点「军团总览」会先撞见空态页。
+    if (state.centerTab === "army-overview") {
+      disposeChat();
+      disposeDrive();
+      armyPanel.clear();
+      centerEl.className = "wh-wb-center wh-wb-center--army-overview";
+      if (!armyOverviewHandle) {
+        armyOverviewHandle = mountArmyOverviewView(centerEl, { client: input.client, locale: input.locale });
+      }
+      return;
+    }
+    disposeArmyOverview();
     if (!state.selectedProjectId) {
       disposeChat();
       disposeDrive();
+      armyPanel.clear();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderEmptyStateHtml(input.locale, state.projects.length > 0);
       return;
@@ -328,6 +356,7 @@ export function mountWorkbenchShell(
     if (state.vmLoad === "error") {
       disposeChat();
       disposeDrive();
+      armyPanel.clear();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderCenterErrorHtml(input.locale);
       return;
@@ -341,6 +370,7 @@ export function mountWorkbenchShell(
           return; // 已经是这个项目的网盘标签——它自己的 store 在内部持续更新，无需重挂。
         }
         disposeDrive();
+        armyPanel.clear();
         centerEl.className = "wh-wb-center wh-wb-center--drive";
         driveHandle = mountDriveView(centerEl, {
           client: input.client,
@@ -387,16 +417,16 @@ export function mountWorkbenchShell(
           members: vm.workspace_members.items,
           getClientToken,
           streamUrl: input.client.streams.conversation(collabConversation.id),
-          ...(interruptBroadcaster
-            ? {
-                onConversationEvent: (raw: unknown) => {
-                  void interruptBroadcaster.handleRawConversationEvent(raw);
-                }
-              }
-            : {}),
+          onConversationEvent: (raw: unknown) => {
+            void interruptBroadcaster?.handleRawConversationEvent(raw);
+            armyPanel.handleRawConversationEvent(raw);
+          },
           onOpenDriveFile: (fileInput) => driveSidePanel.showPreview({ projectId: vm.project.id, itemId: fileInput.itemId, itemName: fileInput.itemName })
         });
         chatMountKey = key;
+        // R13 批 P1：情境面板默认态挂军团三区——会话情境存在时（这里是刚挂上这个协同会话的 chat 视图）
+        // 就该拉这个会话的军团面板，取代批 5 之前的通用占位文案。
+        armyPanel.showForConversation({ projectId: vm.project.id, conversationId: collabConversation.id });
         return;
       }
       const mainConversation = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
@@ -404,6 +434,7 @@ export function mountWorkbenchShell(
         // 批 0 的 workbenchPageVmSchema 已经用 superRefine 保证"恰好一个 main 会话"存在；真到这里说明
         // 服务端契约被破坏，老实报错而不是假装能渲染群聊。
         disposeChat();
+        armyPanel.clear();
         centerEl.className = "wh-wb-center";
         centerEl.innerHTML = renderCenterErrorHtml(input.locale);
         return;
@@ -425,34 +456,35 @@ export function mountWorkbenchShell(
         members: vm.workspace_members.items,
         getClientToken,
         streamUrl: input.client.streams.conversation(mainConversation.id),
-        ...(interruptBroadcaster
-          ? {
-              onConversationEvent: (raw: unknown) => {
-                void interruptBroadcaster.handleRawConversationEvent(raw);
-              }
-            }
-          : {}),
+        onConversationEvent: (raw: unknown) => {
+          void interruptBroadcaster?.handleRawConversationEvent(raw);
+          armyPanel.handleRawConversationEvent(raw);
+        },
         // R12 批 6：file_card 点击 → 右栏预览，和网盘标签共用同一个 driveSidePanel 控制器。
         onOpenDriveFile: (fileInput) => driveSidePanel.showPreview({ projectId: vm.project.id, itemId: fileInput.itemId, itemName: fileInput.itemName })
       });
       chatMountKey = key;
+      // R13 批 P1：见上面协同会话分支同款注释——主区会话情境存在时，情境面板默认态挂军团三区。
+      armyPanel.showForConversation({ projectId: vm.project.id, conversationId: mainConversation.id });
       return;
     }
     disposeChat();
     disposeDrive();
+    armyPanel.clear();
     centerEl.className = "wh-wb-center";
     centerEl.innerHTML = renderCenterLoadingHtml(input.locale);
   };
 
   // R12 批 6：右栏内容现在有真正的所有者概念（state.sidePanelContent，见 store.ts 顶部注释）——
-  // driveSidePanel 在有内容时把渲染好的 html 推进 store，这里只管展示；没有任何视图认领时才落回
-  // 批 5 之前就有的通用占位文案（renderSidePanelPlaceholderHtml，测试仍覆盖这条兜底路径）。
+  // driveSidePanel/armyPanel 在有内容时把渲染好的 html 推进 store，这里只管展示；没有任何视图认领时
+  // （还没选项目/切到网盘或军团总览标签）落回一句诚实的「选一个会话」提示，不再是批 5 之前那条
+  // "即将上线" 的占位文案（renderArmySidePanelIdleHtml 与军团面板自身的空状态共用同一句文案）。
   const renderSide = (state: WorkbenchStoreState) => {
     sideEl.dataset.open = state.sidePanelOpen ? "true" : "false";
     if (sideToggleBtn) {
       sideToggleBtn.innerHTML = state.sidePanelOpen ? workbenchIcons.chevronRight : workbenchIcons.chevronLeft;
     }
-    sideBodyEl.innerHTML = state.sidePanelContent?.html ?? renderSidePanelPlaceholderHtml(input.locale);
+    sideBodyEl.innerHTML = state.sidePanelContent?.html ?? renderArmySidePanelIdleHtml(input.locale);
   };
 
   const crumbEl = root.querySelector<HTMLElement>("[data-wb-crumb]");
@@ -496,7 +528,10 @@ export function mountWorkbenchShell(
       chatHandle?.focusComposer();
     },
     // R12 批 6：「网盘」树叶点击路由——切 store.centerTab，renderCenter 的订阅回调负责挂真视图。
-    onOpenDrive: () => store.setState({ centerTab: "drive" })
+    onOpenDrive: () => store.setState({ centerTab: "drive" }),
+    // R13 批 P1：左栏一级入口「军团总览」点击路由——切 store.centerTab，renderCenter 的订阅回调
+    // 负责挂 army/overview.ts 真视图。
+    onOpenArmyOverview: () => store.setState({ centerTab: "army-overview" })
   });
 
   centerEl.addEventListener("click", (event) => {
@@ -552,7 +587,9 @@ export function mountWorkbenchShell(
       railHandle.dispose();
       disposeChat();
       disposeDrive();
+      disposeArmyOverview();
       driveSidePanel.dispose();
+      armyPanel.dispose();
     }
   };
 }

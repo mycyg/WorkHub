@@ -6,7 +6,7 @@ import type { ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { workbenchIcons } from "./icons.js";
-import type { WorkbenchStore } from "./store.js";
+import type { WorkbenchCenterTab, WorkbenchStore } from "./store.js";
 
 export type WorkbenchRailApiClient = Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages">;
 
@@ -42,7 +42,7 @@ function projectInitial(name: string): string {
 function renderProjectTreeLeavesHtml(
   vm: WorkbenchPageVM,
   zh: boolean,
-  centerTab: "chat" | "drive" | "collab",
+  centerTab: WorkbenchCenterTab,
   activeConversationId: string | undefined
 ): string {
   const main = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
@@ -72,7 +72,7 @@ export function renderProjectTreeHtml(input: {
   selectedProjectId: string | undefined;
   vm: WorkbenchPageVM | undefined;
   locale: Locale;
-  centerTab?: "chat" | "drive" | "collab";
+  centerTab?: WorkbenchCenterTab;
   activeConversationId?: string;
 }): string {
   const zh = input.locale === "zh-CN";
@@ -101,18 +101,24 @@ export function renderProjectTreeHtml(input: {
   return `<div class="wh-wb-rail-head">${zh ? "项目" : "Projects"}</div>${rows}${newProjectRow}`;
 }
 
-// 军团总览的真内容(逐 actor 鉴权聚合端点)是批 5 的活；批 1 只给一个诚实的预告条——不渲染成按钮，
-// 不给 hover/点击反馈(css.ts 的 .wh-wb-army-sum 没有 cursor:pointer)，免得看起来能点却什么都不做。
-export function renderRailFootHtml(zh: boolean, viewerLabel: string | undefined): string {
+// R13 批 P1：军团总览从这条预告条升级成左栏一级入口（renderArmyOverviewNavHtml，与项目列表平级，见
+// 下方注释）——rail-foot 现在只剩「我」这一行（用户拍板 4：旧摘要条退役）。
+export function renderRailFootHtml(_zh: boolean, viewerLabel: string | undefined): string {
   return `<div class="wh-wb-rail-foot">
-    <div class="wh-wb-army-sum">
-      ${workbenchIcons.army}
-      <span>
-        <span class="wh-wb-army-sum-t">${zh ? "军团总览" : "Army overview"}</span>
-        <br /><span class="wh-wb-army-sum-s">${zh ? "即将上线" : "Opens in batch 5"}</span>
-      </span>
-    </div>
     ${viewerLabel ? `<div class="wh-wb-me">${escapeHtml(viewerLabel)}</div>` : ""}
+  </div>`;
+}
+
+// 军团总览一级入口（R13 批 P1，用户拍板 4：与项目列表平级，位置在项目列表下方独立分组）——真实
+// GET /me/army 聚合端点已经挂载（army/overview.ts），这是一个真按钮：点击切 centerTab 到
+// "army-overview"，中栏渲染跨项目军团卡片流。active 由 centerTab 决定，同 renderProjectTreeHtml
+// 的 leaf 选中态判定同一套约定。
+export function renderArmyOverviewNavHtml(zh: boolean, active: boolean): string {
+  return `<div class="wh-wb-rail-group">
+    <button type="button" class="wh-wb-army-nav${active ? " active" : ""}" data-wb-open-army-overview aria-current="${active ? "true" : "false"}">
+      ${workbenchIcons.army}
+      <span class="wh-wb-army-nav-label">${zh ? "军团总览" : "Army overview"}</span>
+    </button>
   </div>`;
 }
 
@@ -175,6 +181,8 @@ export function mountWorkbenchRail(
     // vm.conversations.conversations 里找到对应的 collab 会话并挂载 chat 视图）。
     onOpenCollabConversation?: (conversationId: string) => void;
     onOpenDrive?: () => void;
+    // R13 批 P1：军团总览一级入口点击——shell.ts 把它接成 store.centerTab = "army-overview"。
+    onOpenArmyOverview?: () => void;
   }
 ): WorkbenchRailHandle {
   let modalName = "";
@@ -200,7 +208,7 @@ export function mountWorkbenchRail(
       // exactOptionalPropertyTypes：activeConversationId?: string 不接受显式 undefined（同
       // view.ts toPendingRenderModel 的既有取舍），state.activeConversationId 没值时干脆不传这个键。
       ...(state.activeConversationId !== undefined ? { activeConversationId: state.activeConversationId } : {})
-    })}${renderRailFootHtml(zh, viewerLabel)}${renderNewProjectModalHtml({
+    })}${renderArmyOverviewNavHtml(zh, state.centerTab === "army-overview")}${renderRailFootHtml(zh, viewerLabel)}${renderNewProjectModalHtml({
       locale: input.locale,
       open: state.newProjectModalOpen,
       name: modalName,
@@ -288,6 +296,10 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-open-drive]")) {
       input.onOpenDrive?.();
+      return;
+    }
+    if (target.closest("[data-wb-open-army-overview]")) {
+      input.onOpenArmyOverview?.();
       return;
     }
     // 取消按钮，或直接点在遮罩背景上（不是点在模态框内容里冒泡出来的）都关闭模态。
