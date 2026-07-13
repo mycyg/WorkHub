@@ -897,6 +897,114 @@ test("registering without a secret stays a regular user", async () => {
   assert.equal(body.is_admin, false);
 });
 
+// ——— ENV-01（R12 人工验收打回）：identify/desktop-bootstrap 必须建默认工作区 active membership ———
+function identifyCtx(seedUsers: UserAuthRow[] = []) {
+  const runtimeSettings = settings();
+  const memUsers = new MemoryUsers(seedUsers);
+  const memberships = new MemoryMemberships();
+  const authDeps: AuthDependencies = {
+    users: memUsers,
+    devices: new MemoryDevices([]),
+    memberships,
+    settings: runtimeSettings,
+    now: () => now
+  };
+  return { deps: authDeps, memberships, users: memUsers, runtimeSettings };
+}
+
+test("ENV-01: identify creates a default workspace membership for a brand-new nickname user", async () => {
+  const { deps: authDeps, memberships, runtimeSettings } = identifyCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/identify", jsonPost({ nickname: "Nova" }));
+  assert.equal(response.status, 201);
+
+  assert.equal(memberships.rows.length, 1, "identify must create exactly one membership row");
+  assert.equal(memberships.rows[0]?.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(memberships.rows[0]?.role, "member");
+  assert.equal(memberships.rows[0]?.defaultWorkspace, true);
+});
+
+test("ENV-01: repeated identify for the same nickname stays idempotent (no duplicate membership row)", async () => {
+  const { deps: authDeps, memberships } = identifyCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const first = await app.request("/api/auth/identify", jsonPost({ nickname: "Nova" }));
+  assert.equal(first.status, 201);
+  assert.equal(memberships.rows.length, 1);
+
+  const second = await app.request("/api/auth/identify", jsonPost({ nickname: "Nova" }));
+  assert.equal(second.status, 200, "returning nickname gets 200, not 201");
+  assert.equal(memberships.rows.length, 1, "repeated identify must not create a duplicate membership row");
+});
+
+test("ENV-01: identify without a memberships seam wired stays a no-op (legacy runtime / fake repo without membership support)", async () => {
+  // deps() 助手默认不带 memberships——回归防护：老运行时/未注入成员仓库时 identify 依旧成功，
+  // 不因缺失可选 seam 而抛错。
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(deps([], [])));
+
+  const response = await app.request("/api/auth/identify", jsonPost({ nickname: "Nova" }));
+  assert.equal(response.status, 201);
+});
+
+test("ENV-01: identify for a user with an existing active membership does not duplicate or overwrite it", async () => {
+  const alice = user({ nickname: "alice" });
+  const { deps: authDeps, memberships, runtimeSettings } = identifyCtx([alice]);
+  await memberships.create({
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    userId: alice.id,
+    role: "owner",
+    defaultWorkspace: true
+  });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/identify", jsonPost({ nickname: "alice" }));
+  assert.equal(response.status, 200);
+  assert.equal(memberships.rows.length, 1, "must not create a duplicate row for an already-member user");
+  assert.equal(memberships.rows[0]?.role, "owner", "must not overwrite the existing role");
+});
+
+test("ENV-01: identify does not set a second default-workspace row when the user already has a default elsewhere", async () => {
+  const alice = user({ nickname: "alice" });
+  const { deps: authDeps, memberships, runtimeSettings } = identifyCtx([alice]);
+  const otherWorkspaceId = "70000000-0000-4000-8000-000000000099";
+  await memberships.create({ workspaceId: otherWorkspaceId, userId: alice.id, role: "member", defaultWorkspace: true });
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/identify", jsonPost({ nickname: "alice" }));
+  assert.equal(response.status, 200);
+  assert.equal(memberships.rows.length, 2, "adds a membership row in the default workspace too");
+  const defaultWsRow = memberships.rows.find((row) => row.workspaceId === runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(
+    defaultWsRow?.defaultWorkspace,
+    false,
+    "must not set a second default row and violate the partial unique index (workspace_memberships_user_default_uq)"
+  );
+});
+
+test("ENV-01: desktop-bootstrap also creates a default workspace membership for the bootstrapped user", async () => {
+  const { deps: authDeps, memberships, runtimeSettings } = identifyCtx();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/desktop-bootstrap", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nickname: "Desktop Nova", device_name: "Nova's Mac", platform: "desktop" })
+  });
+
+  assert.equal(response.status, 201);
+  assert.equal(memberships.rows.length, 1);
+  assert.equal(memberships.rows[0]?.workspaceId, runtimeSettings.auth.defaultWorkspaceId);
+  assert.equal(memberships.rows[0]?.role, "member");
+  assert.equal(memberships.rows[0]?.defaultWorkspace, true);
+});
+
 test("findings: malformed JSON body to /identify returns malformed_json, not a generic 400", async () => {
   const app = withProductionHttpErrors(new Hono<AuthEnv>());
   app.route("/api/auth", createAuthRoutes(deps([], [], settings())));

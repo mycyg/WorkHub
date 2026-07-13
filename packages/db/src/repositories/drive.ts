@@ -139,6 +139,19 @@ export type DriveRecentFileRow = {
   acceptedWorkItemIds?: string[];
 };
 
+export type UploadFileInput = DriveRepositoryActor & {
+  projectId: string;
+  parentId?: string | null;
+  filename: string;
+  mime?: string;
+  sizeBytes: number;
+  storagePath?: string;
+  sha256?: string;
+  parsedText?: string;
+  parsedTextPath?: string;
+  at?: Date;
+};
+
 export type DriveRepository = {
   readPage: (input?: {
     projectId?: string;
@@ -169,18 +182,9 @@ export type DriveRepository = {
     driveItemId: string;
     driveVersionId: string;
   }) => Promise<string[]>;
-  uploadFile: (input: DriveRepositoryActor & {
-    projectId: string;
-    parentId?: string | null;
-    filename: string;
-    mime?: string;
-    sizeBytes: number;
-    storagePath?: string;
-    sha256?: string;
-    parsedText?: string;
-    parsedTextPath?: string;
-    at?: Date;
-  }) => Promise<DriveMutationRows | null>;
+  // R12 E-01（人工验收打回）：同 parent 下已存在同名活跃文件时不再 409——追加新版本
+  // （历史版本不抹，见下方 uploadFile 实现里的 appendUploadedVersion）。撞的若是文件夹则仍 409。
+  uploadFile: (input: UploadFileInput) => Promise<DriveMutationRows | null>;
   softDeleteItem: (input: DriveRepositoryActor & {
     projectId: string;
     itemId: string;
@@ -436,6 +440,94 @@ async function insertDriveAudit(
     detailJson: input.detailJson,
     createdAt: input.at
   });
+}
+
+// R12 E-01（人工验收打回）：同 parent 下重名上传此前直接 409，用户没有"换个名字才能上传"之外的出路。
+// 沿用批 6 rollbackToVersion 的版本追加先例——插入新 project_drive_versions 行、把 item.currentVersionId
+// 指到新版本、operations+audit 留痕，旧版本行原样保留、历史不抹。调用方（uploadFile）已确认命中的
+// matchedItem.kind === "file"（文件夹撞名仍走原 409）；这里对该 item 行重新 FOR UPDATE 加锁，
+// 防止与并发的软删/搬移交错（拿到锁后若发现条目已被删或不再是文件，视为真冲突而不是悄悄新建重名条目）。
+async function appendUploadedVersion(
+  db: WorkHubDb,
+  project: DriveProjectRow,
+  matchedItem: DriveItemRow,
+  input: UploadFileInput,
+  at: Date
+): Promise<DriveMutationRows> {
+  const itemRows = await db
+    .select()
+    .from(projectDriveItems)
+    .where(and(eq(projectDriveItems.id, matchedItem.id), eq(projectDriveItems.projectId, input.projectId)))
+    .for("update")
+    .limit(1);
+  const item = itemRows[0];
+  if (!item || item.deletedAt || item.kind !== "file") {
+    // 拿锁之间该条目被软删/变成文件夹——按真冲突处理，不悄悄新建一个重名条目。
+    throw new DriveRepositoryConflictError("drive_name_conflict", "同名文件已经存在，请换一个名字。");
+  }
+  const newVersionId = randomUUID();
+  const nextVersionNo = await nextVersionNoForItem(db, item.id);
+  const storagePath = input.storagePath ?? `drive/${input.projectId}/${item.id}/${newVersionId}/${input.filename}`;
+  const versionRows = await db
+    .insert(projectDriveVersions)
+    .values({
+      id: newVersionId,
+      itemId: item.id,
+      versionNo: nextVersionNo,
+      filename: input.filename,
+      mime: input.mime,
+      sizeBytes: input.sizeBytes,
+      storagePath,
+      sha256: input.sha256,
+      parsedText: input.parsedText,
+      parsedTextPath: input.parsedTextPath,
+      createdByUserId: input.actorUserId,
+      createdAt: at,
+      updatedAt: at
+    })
+    .returning();
+  const newVersion = versionRows[0] as DriveVersionRow;
+  const previousVersionId = item.currentVersionId;
+  const updatedItemRows = await db
+    .update(projectDriveItems)
+    .set({
+      currentVersionId: newVersion.id,
+      updatedByUserId: input.actorUserId,
+      updatedAt: at
+    })
+    .where(eq(projectDriveItems.id, item.id))
+    .returning();
+  const updatedItem = updatedItemRows[0] as DriveItemRow;
+  const path = await driveItemPath(db, updatedItem);
+  // op_type 沿用既有 "upload_file"（packages/contracts 的 op_type 枚举没有专门的"新版本"值，
+  // 这个动作本质仍是"上传文件"，只是落到了已有条目上）；payload 额外带 new_version_no/
+  // previous_version_id 供审计区分这是一次版本追加而非全新条目。
+  const payloadJson = {
+    drive_item_id: item.id,
+    drive_version_id: newVersion.id,
+    filename: input.filename,
+    path,
+    size_bytes: input.sizeBytes,
+    sha256: input.sha256 ?? null,
+    new_version_no: newVersion.versionNo,
+    ...(previousVersionId ? { previous_version_id: previousVersionId } : {})
+  };
+  const operation = await insertDriveOperation(db, {
+    ...input,
+    projectId: input.projectId,
+    opType: "upload_file",
+    payloadJson,
+    at
+  });
+  await insertDriveAudit(db, {
+    ...input,
+    project,
+    action: "drive.item.version_uploaded",
+    entityId: item.id,
+    detailJson: payloadJson,
+    at
+  });
+  return { item: updatedItem, version: newVersion, operation };
 }
 
 function draftTitleFromComment(body: string) {
@@ -988,8 +1080,21 @@ export function createDriveRepository(db: WorkHubDb): DriveRepository {
             throw new DriveRepositoryConflictError("drive_parent_deleted", "父文件夹不可用，请刷新后重试。");
           }
         }
-        if (await activeItemByName(tx, { projectId: input.projectId, parentId: input.parentId ?? null, name: input.filename })) {
-          throw new DriveRepositoryConflictError("drive_name_conflict", "同名文件已经存在，请换一个名字。");
+        // R12 E-01：同 parent 下已有同名【活跃文件】时不再 409——追加新版本（历史不抹）。
+        // 撞的若是文件夹仍然 409（不能把版本挂在文件夹名下）。同名条目若已被软删——
+        // activeItemByName 本就只查 deletedAt IS NULL 的行，查不到即视为"没有活跃同名冲突"，
+        // 按仓库现状语义原样落到下面的"全新条目"分支（回收站里的旧条目不受影响）。
+        const existingActive = await activeItemByName(tx, {
+          projectId: input.projectId,
+          parentId: input.parentId ?? null,
+          name: input.filename
+        });
+        if (existingActive) {
+          if (existingActive.kind !== "file") {
+            throw new DriveRepositoryConflictError("drive_name_conflict", "同名文件已经存在，请换一个名字。");
+          }
+          result = await appendUploadedVersion(tx, project, existingActive, input, at);
+          return;
         }
 
         const itemId = randomUUID();

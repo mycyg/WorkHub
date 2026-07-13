@@ -1261,6 +1261,74 @@ test("drive page service returns an upload refresh focused on the created file",
   assert.equal(page.items[0]?.name, "刚上传.md");
 });
 
+// R12 E-01（人工验收打回）：同 parent 下重名上传此前在仓库层直接 409；packages/db 的仓库现在对撞上的
+// 活跃文件追加新版本而不是抛冲突（见 drive-versions-repository.test.ts）。服务层这里只需确认：当仓库
+// 返回「同一个 item、版本号更高」的成功结果时，service.uploadFile 正常 resolve（不再抛 409），并且刷新出
+// 来的页面停在同一个 item 上、current_version 反映的是追加后的新版本号，而不是被当成全新文件。
+test("drive page service resolves (not 409) and reflects the bumped version when re-uploading an existing filename", async () => {
+  const bumpedVersionId = "91000000-0000-4000-8000-0000000000e1";
+  const pageRows = rows();
+  const bumpedItem = {
+    ...pageRows.items[1]!, // itemId：既有的「客户复盘.md」文件
+    currentVersionId: bumpedVersionId,
+    updatedAt: new Date("2026-06-11T02:00:00.000Z")
+  };
+  const bumpedVersion = {
+    ...pageRows.versions[0]!, // 原 currentVersion 是 versionNo 2
+    id: bumpedVersionId,
+    versionNo: 3,
+    sizeBytes: 4096,
+    sha256: "d".repeat(64),
+    parsedText: "重新上传的内容",
+    createdAt: new Date("2026-06-11T02:00:00.000Z"),
+    updatedAt: new Date("2026-06-11T02:00:00.000Z")
+  };
+  let uploadCallArgs: Parameters<DriveRepository["uploadFile"]>[0] | undefined;
+  const repo: DriveRepository = {
+    async listRecentFilesByProject() { return []; },
+    async countFilesByProject() { return 0; },
+    async readPage(input) {
+      return input?.targetItemId === itemId
+        ? { ...pageRows, items: [bumpedItem], versions: [bumpedVersion] }
+        : pageRows;
+    },
+    async uploadFile(input) {
+      uploadCallArgs = input;
+      // 真实仓库层（packages/db）此时对同名活跃文件不再 409，而是追加新版本；
+      // 这里的假仓库直接模拟它的成功返回值，验证 service 层不会把它错当失败处理。
+      return {
+        item: bumpedItem as DrivePageRows["items"][number],
+        version: bumpedVersion as DrivePageRows["versions"][number],
+        operation: pageRows.operations[0]!
+      };
+    },
+    async softDeleteItem() { throw new Error("not needed"); },
+    async restoreDeletedItem() { throw new Error("not needed"); },
+    async createComment(): Promise<never> {
+      throw new Error("createComment not wired in this test");
+    },
+    async commentToDraft() { throw new Error("not needed"); },
+    async recordDraftProposal() { throw new Error("not needed"); }
+  };
+  const service = createDrivePageService({ repo, now: () => now });
+
+  const page = await service.uploadFile({
+    actor: actor(),
+    projectId,
+    filename: "客户复盘.md",
+    mime: "text/markdown",
+    sizeBytes: 4096,
+    sha256: "d".repeat(64),
+    parsedText: "重新上传的内容"
+  });
+
+  assert.equal(uploadCallArgs?.filename, "客户复盘.md");
+  assert.equal(page.selected_item_id, itemId, "same-name re-upload lands back on the existing item, not a brand-new one");
+  const uploadedItemVm = page.items.find((item) => item.id === itemId);
+  assert.equal(uploadedItemVm?.current_version_id, bumpedVersionId);
+  assert.equal(uploadedItemVm?.current_version?.version_no, 3, "page reflects the appended version, not a reset to version 1");
+});
+
 test("drive page service returns a delete refresh with the deleted item in recycle", async () => {
   const deletedItemId = "91000000-0000-4000-8000-0000000000d1";
   const deletedVersionId = "91000000-0000-4000-8000-0000000000d2";
