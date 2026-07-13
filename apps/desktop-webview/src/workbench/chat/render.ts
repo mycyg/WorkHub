@@ -463,7 +463,7 @@ function renderRunSettledReportHtml(
 const LONG_TEXT_FOLD_THRESHOLD_CHARS = 800;
 const LONG_TEXT_PREVIEW_CHARS = 400;
 
-function textMessageBodyHtml(
+function textMessageFoldedBodyHtml(
   message: Extract<ConversationMessageVM, { kind: "text" }>,
   ctx: ChatRenderContext
 ): string {
@@ -479,6 +479,35 @@ function textMessageBodyHtml(
   }
   const preview = text.slice(0, LONG_TEXT_PREVIEW_CHARS);
   return `<div class="wh-wb-chat-txt wh-wb-chat-txt--folded">${highlightMentions(escapeHtml(preview), ctx.members).replace(/\n/gu, "<br>")}<span class="wh-wb-chat-txt-fade"></span></div><button type="button" class="wh-wb-chat-text-toggle" data-wb-chat-expand-message="${escapeHtml(message.id)}">${zh ? "展开全文" : "Show full message"}</button>`;
+}
+
+// R13 批4c（Cuu 对话工具面 · 澄清反问）：is_clarifying_question 是 conversationTextContentSchema 上
+// 的 additive 标记（没有新增 DB kind，复用既有 kind='text'，见 packages/contracts 的
+// domain/conversation.ts 顶部注释）——渲染层只需要认出这个标记，给它一个不同于普通文字气泡的视觉
+// （左侧强调条 + 「Cuu 在问」标签），并把 clarify_options 摆成可点的选项按钮，点了直接把选项文本填进
+// 输入框（view.ts 的 data-wb-chat-clarify-option 处理），不是摆一个中看不中用的静态列表。没有定义
+// 新 CSS 类（css.ts 不在本批范围围栏内），视觉全部走行内样式，复用 design-system 的 CSS 自定义属性。
+function textMessageBodyHtml(
+  message: Extract<ConversationMessageVM, { kind: "text" }>,
+  ctx: ChatRenderContext
+): string {
+  const foldedHtml = textMessageFoldedBodyHtml(message, ctx);
+  if (message.content.is_clarifying_question !== true) {
+    return foldedHtml;
+  }
+  const zh = ctx.locale === "zh-CN";
+  const options = message.content.clarify_options ?? [];
+  const optionsHtml =
+    options.length > 0
+      ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${options
+          .map(
+            (option) =>
+              `<button type="button" data-wb-chat-clarify-option="${escapeHtml(option)}" style="padding:4px 10px;border-radius:999px;border:1px solid var(--ds-border, rgba(0,0,0,.16));background:transparent;color:inherit;font:inherit;cursor:pointer">${escapeHtml(option)}</button>`
+          )
+          .join("")}</div>`
+      : "";
+  const badge = `<div style="font-size:12px;font-weight:700;color:var(--ds-accent, #5b8def);margin-bottom:4px">${zh ? "Cuu 在问" : "Cuu is asking"}</div>`;
+  return `<div style="border-left:2px solid var(--ds-accent, #5b8def);padding-left:10px">${badge}${foldedHtml}${optionsHtml}</div>`;
 }
 
 function messageBodyHtml(message: ConversationMessageVM, ctx: ChatRenderContext): string {
@@ -909,7 +938,13 @@ export function renderMentionPickerHtml(input: {
       // composer keydown 处理函数管理高亮下标，焦点仍留在 textarea 里（边打字边过滤这条 UX 不能丢——
       // 移走真实焦点会打断输入），Enter 提交当前高亮的那一行。
       const highlightAttr = isHighlighted ? ' style="outline:2px solid rgba(10,132,255,.55);outline-offset:-2px"' : "";
-      return `<button type="button" class="wh-wb-chat-picker-row" tabindex="-1" role="option" aria-selected="${isHighlighted}"${highlightAttr} data-wb-chat-pick-member="${escapeHtml(member.userId)}">${avatarTileHtml({ label: member.nickname, id: member.userId })}<span>${escapeHtml(member.nickname)}</span></button>`;
+      // R13 批4c：Cuu 的 sentinel 候选（userId==="cuu"）用她在气泡里同款的猫头像变体，不是随机色块——
+      // 一眼能认出这是 @ Cuu，不是 @ 了一个叫 "Cuu" 的真人成员。
+      const avatar =
+        member.userId === "cuu"
+          ? avatarTileHtml({ label: member.nickname, id: member.userId, variant: "cuu" })
+          : avatarTileHtml({ label: member.nickname, id: member.userId });
+      return `<button type="button" class="wh-wb-chat-picker-row" tabindex="-1" role="option" aria-selected="${isHighlighted}"${highlightAttr} data-wb-chat-pick-member="${escapeHtml(member.userId)}">${avatar}<span>${escapeHtml(member.nickname)}</span></button>`;
     })
     .join("");
   const fileRows = input.files

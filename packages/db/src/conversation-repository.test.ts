@@ -939,6 +939,7 @@ test("R12 cuu message allocates next_seq atomically and writes a null-sender tex
     id: inserted.id,
     workspaceId,
     conversationId,
+    kind: "text",
     contentJson: inserted.contentJson as { text: string; memory_citations?: Array<{ kind: "user_memory" | "team_skill"; title: string }> },
     at: now
   });
@@ -984,6 +985,7 @@ test("R12 cuu message content rejects empty text and non-array citations before 
     repository.createCuuMessage({
       workspaceId,
       conversationId,
+      kind: "text",
       contentJson: { text: "" },
       at: now
     }),
@@ -993,6 +995,7 @@ test("R12 cuu message content rejects empty text and non-array citations before 
     repository.createCuuMessage({
       workspaceId,
       conversationId,
+      kind: "text",
       contentJson: { text: "ok", memory_citations: "not-an-array" as unknown as [] },
       at: now
     }),
@@ -1008,6 +1011,7 @@ test("R12 inaccessible conversation cannot create a cuu message", async () => {
     createConversationRepository(db).createCuuMessage({
       workspaceId,
       conversationId,
+      kind: "text",
       contentJson: { text: "hello" },
       at: now
     }),
@@ -1028,6 +1032,7 @@ test("R12 cuu message rejects a wrong thread root before sequence allocation", a
     createConversationRepository(db).createCuuMessage({
       workspaceId,
       conversationId,
+      kind: "text",
       contentJson: { text: "reply" },
       threadRootId: sourceMessageId,
       at: now
@@ -1047,6 +1052,7 @@ test("R12 cuu message sequence exhaustion and missing returning rows are explici
     createConversationRepository(exhausted.db).createCuuMessage({
       workspaceId,
       conversationId,
+      kind: "text",
       contentJson: { text: "overflow" },
       at: now
     }),
@@ -1063,6 +1069,7 @@ test("R12 cuu message sequence exhaustion and missing returning rows are explici
     createConversationRepository(missingInsert.db).createCuuMessage({
       workspaceId,
       conversationId,
+      kind: "text",
       contentJson: { text: "missing insert" },
       at: now
     }),
@@ -1115,3 +1122,162 @@ test("R13 G1 collab creation defaults cuu_enabled to true and honors an explicit
   assert.equal(disabledResult.conversation.cuuEnabled, false);
 });
 
+// ── R13 批4c: createCuuMessage 扩成判别联合 ──────────────────────────────────────────
+// file_card/tool_note 是既有 DB kind（check 约束早就允许），只是这个方法之前只会写 text——这里断言
+// 新分支落库时把 kind 如实写成对应值（不是继续硬编码 "text"），且各自的内容校验按分支生效。
+
+test("R13 createCuuMessage persists a file_card kind and rejects malformed file card content", async () => {
+  const inserted = cuuMessage(1, {
+    kind: "file_card",
+    contentJson: { drive_item_id: "14000000-0000-4000-8000-000000000001", snapshot_name: "合同.pdf" }
+  });
+  const { db, queries } = createQueryRecorder([...cuuMessageAccessLockResponses(), [{ nextSeq: 1 }], [inserted]]);
+
+  const result = await createConversationRepository(db).createCuuMessage({
+    workspaceId,
+    conversationId,
+    kind: "file_card",
+    contentJson: { drive_item_id: "14000000-0000-4000-8000-000000000001", snapshot_name: "合同.pdf" },
+    at: now
+  });
+
+  assert.deepEqual(result, inserted);
+  const insert = queries[4];
+  const insertValues = insert?.valuesValue as Record<string, unknown>;
+  assert.equal(insertValues["kind"], "file_card");
+  assert.equal(insertValues["senderType"], "cuu");
+
+  const repository = createConversationRepository(createQueryRecorder().db);
+  await assert.rejects(
+    repository.createCuuMessage({
+      workspaceId,
+      conversationId,
+      kind: "file_card",
+      contentJson: { drive_item_id: "", snapshot_name: "合同.pdf" },
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+});
+
+test("R13 createCuuMessage persists a tool_note kind and rejects a non-object content payload", async () => {
+  const inserted = cuuMessage(1, { kind: "tool_note", contentJson: { tool: "drive_search", summary: "检索“合同”，命中 2 条" } });
+  const { db, queries } = createQueryRecorder([...cuuMessageAccessLockResponses(), [{ nextSeq: 1 }], [inserted]]);
+
+  const result = await createConversationRepository(db).createCuuMessage({
+    workspaceId,
+    conversationId,
+    kind: "tool_note",
+    contentJson: { tool: "drive_search", summary: "检索“合同”，命中 2 条" },
+    at: now
+  });
+
+  assert.deepEqual(result, inserted);
+  const insert = queries[4];
+  const insertValues = insert?.valuesValue as Record<string, unknown>;
+  assert.equal(insertValues["kind"], "tool_note");
+
+  const repository = createConversationRepository(createQueryRecorder().db);
+  await assert.rejects(
+    repository.createCuuMessage({
+      workspaceId,
+      conversationId,
+      kind: "tool_note",
+      contentJson: ["not", "an", "object"] as unknown as Record<string, unknown>,
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+});
+
+test("R13 createCuuMessage accepts the additive clarifying-question markers on the text kind", async () => {
+  const inserted = cuuMessage(1, {
+    contentJson: { text: "你要 PPT 还是 Word？", is_clarifying_question: true, clarify_options: ["PPT", "Word"] }
+  });
+  const { db } = createQueryRecorder([...cuuMessageAccessLockResponses(), [{ nextSeq: 1 }], [inserted]]);
+
+  const result = await createConversationRepository(db).createCuuMessage({
+    workspaceId,
+    conversationId,
+    kind: "text",
+    contentJson: { text: "你要 PPT 还是 Word？", is_clarifying_question: true, clarify_options: ["PPT", "Word"] },
+    at: now
+  });
+
+  assert.deepEqual(result, inserted);
+});
+
+// ── R13 批4c/G1: listReplyJudgeCandidates ────────────────────────────────────────────
+
+test("R13 listReplyJudgeCandidates rejects an out-of-range limit before querying", async () => {
+  const { db, queries } = createQueryRecorder();
+  await assert.rejects(
+    createConversationRepository(db).listReplyJudgeCandidates({ limit: 0, sinceCreatedAt: now }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+  await assert.rejects(
+    createConversationRepository(db).listReplyJudgeCandidates({ limit: 101, sinceCreatedAt: now }),
+    (error: unknown) => error instanceof ConversationRepositoryInputError
+  );
+  assert.equal(queries.length, 0);
+});
+
+test("R13 listReplyJudgeCandidates returns an empty list without a second query when no group has a recent message", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+  const result = await createConversationRepository(db).listReplyJudgeCandidates({ limit: 20, sinceCreatedAt: now });
+  assert.deepEqual(result, []);
+  assert.equal(queries.length, 1);
+});
+
+test("R13 listReplyJudgeCandidates joins each candidate group to its own latest human message via one bounded IN query", async () => {
+  const otherConversationId = "13000000-0000-4000-8000-000000000012";
+  const groups = [
+    { conversationId, workspaceId, projectId, participantCount: 3 },
+    { conversationId: otherConversationId, workspaceId, projectId, participantCount: 2 }
+  ];
+  // 每个会话各两条候选人类消息，倒序返回（seq 大的在前）——归并逻辑必须只留每个会话遇到的第一条
+  // （也就是 seq 最大的那条），忽略同会话里更旧的第二条。
+  const recentMessages = [
+    { conversationId, id: "13000000-0000-4000-8000-000000000020", seq: 5, senderUserId: memberUserId, kind: "text", contentJson: { text: "帮我建个工单" }, createdAt: now },
+    { conversationId, id: "13000000-0000-4000-8000-000000000019", seq: 4, senderUserId: memberUserId, kind: "text", contentJson: { text: "较早的一条" }, createdAt: now },
+    { conversationId: otherConversationId, id: "13000000-0000-4000-8000-000000000021", seq: 2, senderUserId: secondMemberUserId, kind: "text", contentJson: { text: "在的" }, createdAt: now }
+  ];
+  const { db, queries } = createQueryRecorder([groups, recentMessages]);
+
+  const result = await createConversationRepository(db).listReplyJudgeCandidates({ limit: 20, sinceCreatedAt: now });
+
+  assert.equal(queries.length, 2);
+  assert.deepEqual(result, [
+    {
+      conversationId,
+      workspaceId,
+      projectId,
+      participantCount: 3,
+      lastMessageId: "13000000-0000-4000-8000-000000000020",
+      lastMessageSeq: 5,
+      lastMessageSenderUserId: memberUserId,
+      lastMessageKind: "text",
+      lastMessageContentJson: { text: "帮我建个工单" },
+      lastMessageCreatedAt: now
+    },
+    {
+      conversationId: otherConversationId,
+      workspaceId,
+      projectId,
+      participantCount: 2,
+      lastMessageId: "13000000-0000-4000-8000-000000000021",
+      lastMessageSeq: 2,
+      lastMessageSenderUserId: secondMemberUserId,
+      lastMessageKind: "text",
+      lastMessageContentJson: { text: "在的" },
+      lastMessageCreatedAt: now
+    }
+  ]);
+});
+
+test("R13 listReplyJudgeCandidates drops a group whose latest human message could not be resolved in the second query", async () => {
+  const groups = [{ conversationId, workspaceId, projectId, participantCount: 3 }];
+  const { db } = createQueryRecorder([groups, []]);
+  const result = await createConversationRepository(db).listReplyJudgeCandidates({ limit: 20, sinceCreatedAt: now });
+  assert.deepEqual(result, []);
+});

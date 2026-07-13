@@ -10,6 +10,9 @@ export type RecordedQuery = {
   where?: unknown;
   orderBy: unknown[];
   groupBy: unknown[];
+  // R13 批4c/G1：conversations 仓库新增的 listReplyJudgeCandidates 用了 .having()（聚合过滤），这个
+  // 假 DB 之前没有任何调用方用到过 having，补一个和 groupBy/orderBy 同档次的透传记录字段。
+  having?: unknown;
   limit?: number;
   lock?: string;
   alias?: string;
@@ -64,6 +67,12 @@ class RecordedQueryBuilder implements PromiseLike<unknown[]> {
   groupBy(...values: unknown[]): this {
     this.query.groupBy.push(...values);
     this.query.steps.push("groupBy");
+    return this;
+  }
+
+  having(condition: unknown): this {
+    this.query.having = condition;
+    this.query.steps.push("having");
     return this;
   }
 

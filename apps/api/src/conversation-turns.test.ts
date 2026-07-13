@@ -9,6 +9,7 @@ import type {
   UserAiProfileRow,
   UserMemoryRow
 } from "@workhub/db";
+import type { DriveItemVM, DrivePageVM, WorkItemDetailVM } from "@workhub/contracts";
 
 import {
   ConversationTurnServiceError,
@@ -21,7 +22,14 @@ import {
   type TurnLlmStream,
   type TurnLlmStreamEvent
 } from "./services/conversation-turns.js";
+import { DrivePageServiceError, type DriveStoredFile } from "./services/drive-pages.js";
 import type { AuthActor } from "./middleware/auth.js";
+import {
+  ASK_CLARIFYING_QUESTION_TOOL,
+  CREATE_WORK_ITEM_TOOL,
+  DRIVE_SEARCH_TOOL,
+  SEND_FILE_CARD_TOOL
+} from "@workhub/agent/turns";
 
 // conversationMessageVmSchema 的 message 是按 kind 判别的联合类型；测试只关心本批唯一会产出的
 // text 分支，这里窄化一次，避免每处断言都要重复 assert kind 再做类型断言。
@@ -118,6 +126,74 @@ function cuuMessageRow(overrides: Partial<ConversationMessageRow> = {}): Convers
     createdAt: now,
     ...overrides
   } as ConversationMessageRow;
+}
+
+// R13 批4c：三个工具背后的真实依赖（DrivePageService.page/file、WorkItemService.createWorkItem）
+// 的最小夹具——只填测试真正断言到的字段，其余用 `as unknown as` 跳过大型 VM 的全字段要求（这些 VM
+// 本身在别处已经有完整契约测试，这里只关心 conversation-turns.ts 怎么消费它们）。
+function driveItemFixture(overrides: Partial<DriveItemVM> = {}): DriveItemVM {
+  return {
+    id: "18000000-0000-4000-8000-000000000001",
+    project_id: projectId,
+    name: "合同.pdf",
+    kind: "file",
+    path: "/合同.pdf",
+    depth: 0,
+    children_count: 0,
+    updated_at: now.toISOString(),
+    current_version: { id: "19000000-0000-4000-8000-000000000001", item_id: "18000000-0000-4000-8000-000000000001", version_no: 1, filename: "合同.pdf", mime: "application/pdf", size_bytes: 1024, created_at: now.toISOString(), current: true, source: "manual_upload" },
+    ...overrides
+  } as DriveItemVM;
+}
+
+function drivePageFixture(overrides: Partial<DrivePageVM> = {}): DrivePageVM {
+  return {
+    generated_at: now.toISOString(),
+    summary: {
+      item_count: 0,
+      file_count: 0,
+      folder_count: 0,
+      deleted_item_count: 0,
+      version_count: 0,
+      accepted_deliverable_count: 0,
+      pending_comment_count: 0,
+      operation_count: 0
+    },
+    can_manage: false,
+    items: [],
+    deleted_items: [],
+    versions: [],
+    accepted_deliverables: [],
+    comments: [],
+    operations: [],
+    actions: {},
+    ...overrides
+  } as DrivePageVM;
+}
+
+function driveStoredFileFixture(overrides: Partial<DriveStoredFile> = {}): DriveStoredFile {
+  return {
+    id: "18000000-0000-4000-8000-000000000001",
+    itemId: "18000000-0000-4000-8000-000000000001",
+    projectId,
+    filename: "合同.pdf",
+    mime: "application/pdf",
+    sizeBytes: 1024,
+    storagePath: "/tmp/合同.pdf",
+    ...overrides
+  };
+}
+
+function workItemDetailFixture(overrides: { id?: string; title?: string } = {}): WorkItemDetailVM {
+  return {
+    workitem: {
+      id: overrides.id ?? "17000000-0000-4000-8000-000000000001",
+      title: overrides.title ?? "整理季度报告",
+      project_id: projectId
+    },
+    acceptance: [],
+    agent_trace_preview: []
+  } as unknown as WorkItemDetailVM;
 }
 
 function userMemoryRow(overrides: Partial<UserMemoryRow> = {}): UserMemoryRow {
@@ -240,6 +316,58 @@ function hangingUntilAbortedClient(): ConversationTurnClientProvider {
   });
 }
 
+// R13 批4c：受限工具环的测试用具——每次 client.messages.stream 调用按顺序消费下一个"这一轮模型该
+// 回什么"（可以是纯文本，也可以是带 tool_use 块的完整 final message），最后一轮之后重复最后一个响应
+// （防止测试没写够轮次时崩成 undefined，而不是让断言在错误的地方失败）。
+function fakeStreamFinal(events: TurnLlmStreamEvent[], final: TurnLlmFinalMessage): TurnLlmStream {
+  return {
+    [Symbol.asyncIterator]() {
+      let index = 0;
+      return {
+        async next() {
+          if (index >= events.length) {
+            return { value: undefined as unknown as TurnLlmStreamEvent, done: true as const };
+          }
+          const value = events[index]!;
+          index += 1;
+          return { value, done: false as const };
+        }
+      };
+    },
+    async getFinalMessage() {
+      return final;
+    }
+  };
+}
+
+function toolUseFinal(id: string, name: string, input: unknown): TurnLlmFinalMessage {
+  return { content: [{ type: "tool_use", id, name, input }] };
+}
+
+function textFinal(text: string): TurnLlmFinalMessage {
+  return { content: [{ type: "text", text }] };
+}
+
+function sequencedClient(
+  rounds: Array<{ events?: TurnLlmStreamEvent[]; final: TurnLlmFinalMessage }>,
+  spy?: unknown[]
+): ConversationTurnClientProvider {
+  let callIndex = 0;
+  return async (input) => {
+    spy?.push(input);
+    return {
+      messages: {
+        async stream(params) {
+          spy?.push(params);
+          const round = rounds[callIndex] ?? rounds[rounds.length - 1]!;
+          callIndex += 1;
+          return fakeStreamFinal(round.events ?? [], round.final);
+        }
+      }
+    };
+  };
+}
+
 function baseDeps(overrides: Partial<ConversationTurnServiceDeps> = {}): ConversationTurnServiceDeps {
   const defaults: ConversationTurnServiceDeps = {
     conversations: {
@@ -249,10 +377,10 @@ function baseDeps(overrides: Partial<ConversationTurnServiceDeps> = {}): Convers
       async listMessagesAfter() {
         return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
       },
-      // 回显实际写入的 contentJson——同真实仓库的行为一致，让下游断言看到的是这一轮真正生成的文本/
-      // 引用清单，而不是一个跟输入脱节的固定夹具。
+      // 回显实际写入的 kind/contentJson——同真实仓库的行为一致，让下游断言看到的是这一轮真正生成的
+      // 文本/文件卡/工具日志，而不是一个跟输入脱节的固定夹具（R13 批4c：kind 现在可能不是 text）。
       async createCuuMessage(input) {
-        return cuuMessageRow({ contentJson: input.contentJson });
+        return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
       }
     },
     aiSettings: {
@@ -275,6 +403,22 @@ function baseDeps(overrides: Partial<ConversationTurnServiceDeps> = {}): Convers
     client: respondingClient([textDeltaEvent("看过了，"), textDeltaEvent("整体不错")], "看过了，整体不错"),
     policyStore: { listPolicies: () => [] },
     ledgerStore: { usageSnapshots: async () => [] },
+    // R13 批4c：drive_search/send_file_card/create_work_item 三个工具的默认桩——本批既有测试（不涉及
+    // 工具调用的纯文本回复）不会碰到它们，命中就说明测试路径没有按预期短路，直接报错比静默返回假数据
+    // 更容易定位问题（同这个文件里其它未测方法的既有取舍）。
+    drive: {
+      async page() {
+        throw new Error("drive.page not expected");
+      },
+      async file() {
+        throw new Error("drive.file not expected");
+      }
+    },
+    workItems: {
+      async createWorkItem() {
+        throw new Error("workItems.createWorkItem not expected");
+      }
+    },
     now: () => now,
     id: () => turnId,
     bus: { publish: async () => {} },
@@ -1063,4 +1207,426 @@ test("mentionsCuu returns false for empty text or an empty display name", () => 
 test("mentionsCuu honors a custom display name (nickname override)", () => {
   assert.equal(mentionsCuu("@小库 帮我看看", "小库"), true);
   assert.equal(mentionsCuu("Cuu 在吗", "小库"), false);
+});
+
+// ── R13 批4c: 受限工具环 ──────────────────────────────────────────────────────────────
+
+test("createTurn runs drive_search then send_file_card across rounds, persists a real file_card, and logs a tool_note per call", async () => {
+  const createCuuMessageCalls: Array<{ kind: string; contentJson: unknown }> = [];
+  const driveCalls: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "帮我找一下上次的合同" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(callInput) {
+          createCuuMessageCalls.push({ kind: callInput.kind, contentJson: callInput.contentJson });
+          return cuuMessageRow({ kind: callInput.kind, contentJson: callInput.contentJson });
+        }
+      },
+      drive: {
+        async page(pageInput) {
+          driveCalls.push({ op: "page", pageInput });
+          return drivePageFixture({ items: [driveItemFixture()] });
+        },
+        async file(fileInput) {
+          driveCalls.push({ op: "file", fileInput });
+          return driveStoredFileFixture();
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("call1", DRIVE_SEARCH_TOOL, { query: "合同" }) },
+        { final: toolUseFinal("call2", SEND_FILE_CARD_TOOL, { drive_item_id: "18000000-0000-4000-8000-000000000001" }) },
+        { final: textFinal("找到啦，发给你了。") }
+      ])
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(textContent(result.message).text, "找到啦，发给你了。");
+  assert.deepEqual(
+    createCuuMessageCalls.map((call) => call.kind),
+    ["tool_note", "file_card", "tool_note", "text"]
+  );
+  assert.deepEqual(createCuuMessageCalls[1]?.contentJson, {
+    drive_item_id: "18000000-0000-4000-8000-000000000001",
+    snapshot_name: "合同.pdf"
+  });
+  assert.equal(driveCalls.length, 2);
+  const pageCall = driveCalls[0] as { op: string; pageInput: { projectId: string; nameQuery?: string } };
+  assert.equal(pageCall.op, "page");
+  assert.equal(pageCall.pageInput.projectId, projectId);
+  assert.equal(pageCall.pageInput.nameQuery, "合同");
+});
+
+test("createTurn honestly reports no match when drive_search finds nothing, without inventing a file card", async () => {
+  const createCuuMessageCalls: Array<{ kind: string }> = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "帮我找一下上次的合同" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(callInput) {
+          createCuuMessageCalls.push({ kind: callInput.kind });
+          return cuuMessageRow({ kind: callInput.kind, contentJson: callInput.contentJson });
+        }
+      },
+      drive: {
+        async page() {
+          return drivePageFixture({ items: [] });
+        },
+        async file() {
+          throw new Error("file must not be called when nothing was found");
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("call1", DRIVE_SEARCH_TOOL, { query: "合同" }) },
+        { final: textFinal("没找到叫这个名字的文件，麻烦确认一下文件名。") }
+      ])
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(textContent(result.message).text, "没找到叫这个名字的文件，麻烦确认一下文件名。");
+  assert.ok(!createCuuMessageCalls.some((call) => call.kind === "file_card"));
+});
+
+test("createTurn does not persist a file_card when the file is not visible (403/404), and tells the model to be honest", async () => {
+  const createCuuMessageCalls: Array<{ kind: string }> = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "把那个文件发给我" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(callInput) {
+          createCuuMessageCalls.push({ kind: callInput.kind });
+          return cuuMessageRow({ kind: callInput.kind, contentJson: callInput.contentJson });
+        }
+      },
+      drive: {
+        async page() {
+          throw new Error("page must not be called in this scenario");
+        },
+        async file() {
+          throw new DrivePageServiceError(404, "drive_file_not_found", "not found");
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("call1", SEND_FILE_CARD_TOOL, { drive_item_id: "18000000-0000-4000-8000-000000000001" }) },
+        { final: textFinal("没找到这个文件，可能是权限问题。") }
+      ])
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(textContent(result.message).text, "没找到这个文件，可能是权限问题。");
+  assert.ok(!createCuuMessageCalls.some((call) => call.kind === "file_card"));
+});
+
+test("createTurn ends the turn immediately on ask_clarifying_question, persisting the additive clarify markers on a text message", async () => {
+  const createCuuMessageCalls: Array<{ kind: string; contentJson: unknown }> = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "帮我建个任务" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(callInput) {
+          createCuuMessageCalls.push({ kind: callInput.kind, contentJson: callInput.contentJson });
+          return cuuMessageRow({ kind: callInput.kind, contentJson: callInput.contentJson });
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("callQ", ASK_CLARIFYING_QUESTION_TOOL, { question: "你要 PPT 还是 Word？", options: ["PPT", "Word"] }) }
+      ])
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const content = textContent(result.message) as {
+    text: string;
+    is_clarifying_question?: boolean;
+    clarify_options?: string[];
+  };
+  assert.equal(content.text, "你要 PPT 还是 Word？");
+  assert.equal(content.is_clarifying_question, true);
+  assert.deepEqual(content.clarify_options, ["PPT", "Word"]);
+  assert.deepEqual(
+    createCuuMessageCalls.map((call) => call.kind),
+    ["text"]
+  );
+});
+
+test("createTurn unlocks and executes create_work_item once the previous Cuu message was the clarifying question this reply answers", async () => {
+  const clarifyingMessageId = "14000000-0000-4000-8000-000000000010";
+  const createWorkItemCalls: unknown[] = [];
+  const streamSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return {
+            rows: [
+              cuuMessageRow({
+                id: clarifyingMessageId,
+                seq: 1,
+                contentJson: { text: "你要 PPT 还是 Word？", is_clarifying_question: true, clarify_options: ["PPT", "Word"] }
+              }),
+              userMessageRow({ seq: 2, contentJson: { text: "Word 就行" } })
+            ],
+            hasMore: false,
+            nextAfterSeq: 2
+          };
+        },
+        async createCuuMessage(callInput) {
+          return cuuMessageRow({ kind: callInput.kind, contentJson: callInput.contentJson });
+        }
+      },
+      workItems: {
+        async createWorkItem(workItemInput) {
+          createWorkItemCalls.push(workItemInput);
+          return workItemDetailFixture({ title: "整理季度报告（Word 版）" });
+        }
+      },
+      client: sequencedClient(
+        [
+          { final: toolUseFinal("callW", CREATE_WORK_ITEM_TOOL, { title: "整理季度报告（Word 版）", summary: "按上季度数据整理", clarification_answer: "Word 版本" }) },
+          { final: textFinal("已经建好了，麻烦确认一下细节。") }
+        ],
+        streamSpy
+      )
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(textContent(result.message).text, "已经建好了，麻烦确认一下细节。");
+  assert.equal(createWorkItemCalls.length, 1);
+  const call = createWorkItemCalls[0] as { payload: { project_id: string; title: string; raw_description: string } };
+  assert.equal(call.payload.project_id, projectId);
+  assert.equal(call.payload.title, "整理季度报告（Word 版）");
+  assert.match(call.payload.raw_description, /Word 版本/u);
+
+  // round1 的 stream 调用必须真的把 create_work_item 摆进了 tools 清单——工具可见性门槛与
+  // pendingClarification 联动，不是只靠 system prompt 里的一句嘱咐。
+  const firstStreamParams = streamSpy[1] as { tools?: Array<{ name: string }> };
+  assert.ok(firstStreamParams.tools?.some((tool) => tool.name === CREATE_WORK_ITEM_TOOL));
+});
+
+test("createTurn refuses create_work_item server-side even if the model calls it without an answered clarification (defense in depth)", async () => {
+  let createWorkItemCalled = false;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "帮我建个任务" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(callInput) {
+          return cuuMessageRow({ kind: callInput.kind, contentJson: callInput.contentJson });
+        }
+      },
+      workItems: {
+        async createWorkItem() {
+          createWorkItemCalled = true;
+          throw new Error("must not be called without an answered clarification");
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("callW", CREATE_WORK_ITEM_TOOL, { title: "顺嘴建的工单", summary: "没有问清楚" }) },
+        { final: textFinal("抱歉，我先问清楚需求。") }
+      ])
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(textContent(result.message).text, "抱歉，我先问清楚需求。");
+  assert.equal(createWorkItemCalled, false);
+});
+
+test("createTurn degrades a truncated/malformed tool_use input to an error tool_result instead of crashing (dangling tool_use guard)", async () => {
+  const streamSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      client: sequencedClient(
+        [
+          // 模拟 max_tokens 截断：anthropic-compatible.ts 的 finalizeBlock 在 partial_json 解析失败时
+          // 会把 input 原样存成字符串，而不是对象。
+          { final: toolUseFinal("callBad", SEND_FILE_CARD_TOOL, "{\"drive_item_id\": \"not-fini") },
+          { final: textFinal("换个方式我再帮你确认一下。") }
+        ],
+        streamSpy
+      )
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(textContent(result.message).text, "换个方式我再帮你确认一下。");
+  // sequencedClient 的 spy 记录形状：[0]=client provider 的 input，[1..N]=每一轮 stream 的 params——
+  // 这里是 2 轮（工具调用 + 收尾文本），第二轮 params 在下标 2。
+  assert.equal(streamSpy.length, 3);
+  const secondRoundParams = streamSpy[2] as { messages: Array<{ role: string; content: unknown }> };
+  const toolResultMessage = secondRoundParams.messages.at(-1) as { role: string; content: Array<{ type: string; tool_use_id: string; is_error: boolean }> };
+  assert.equal(toolResultMessage.role, "user");
+  assert.equal(toolResultMessage.content[0]?.tool_use_id, "callBad");
+  assert.equal(toolResultMessage.content[0]?.is_error, true);
+});
+
+test("createTurn rechecks the soft budget gate before every additional model call and stops calling the LLM once it's exhausted", async () => {
+  let usageCallCount = 0;
+  const streamSpy: unknown[] = [];
+  const createCuuMessageCalls: Array<{ kind: string }> = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      policyStore: {
+        listPolicies: () => [
+          {
+            id: "p1",
+            scopeKind: "team" as const,
+            period: "day" as const,
+            maxTokens: 1_000_000,
+            maxCostCny: "1",
+            warningRatio: 0.7,
+            criticalRatio: 0.9,
+            onWarning: "notify" as const,
+            onExhausted: "block_new_run" as const,
+            enabled: true,
+            version: 1
+          }
+        ]
+      },
+      ledgerStore: {
+        usageSnapshots: async () => {
+          usageCallCount += 1;
+          return [
+            {
+              scope: { kind: "team" as const, teamId: workspaceId },
+              tokenIn: 10,
+              tokenOut: 10,
+              estimatedCostCny: usageCallCount <= 1 ? "0" : "5"
+            }
+          ];
+        }
+      },
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord();
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(callInput) {
+          createCuuMessageCalls.push({ kind: callInput.kind });
+          return cuuMessageRow({ kind: callInput.kind, contentJson: callInput.contentJson });
+        }
+      },
+      client: sequencedClient(
+        [
+          { final: toolUseFinal("call1", DRIVE_SEARCH_TOOL, { query: "合同" }) },
+          { final: textFinal("不该被调用到这里。") }
+        ],
+        streamSpy
+      )
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 429 && error.code === "conversation_turn_budget_exhausted"
+  );
+
+  // 只有 1 次 LLM 调用（round 1）——round 2 之前的预算重检查拦下了第二次调用。
+  assert.equal(streamSpy.length, 2);
+  assert.equal(usageCallCount, 2);
+  // round 1 的工具调用（drive_search）已经真实发生过，它的 tool_note 审计日志不会被回滚。
+  assert.deepEqual(createCuuMessageCalls.map((call) => call.kind), ["tool_note"]);
+});
+
+test("createTurn stops offering tools once the hard cap of 3 tool calls is reached, forcing a text-only closing round", async () => {
+  const streamSpy: unknown[] = [];
+  const service = createConversationTurnService(
+    baseDeps({
+      drive: {
+        async page() {
+          return drivePageFixture({ items: [] });
+        },
+        async file() {
+          throw new Error("file must not be called in this scenario");
+        }
+      },
+      client: sequencedClient(
+        [
+          { final: toolUseFinal("call1", DRIVE_SEARCH_TOOL, { query: "a" }) },
+          { final: toolUseFinal("call2", DRIVE_SEARCH_TOOL, { query: "b" }) },
+          { final: toolUseFinal("call3", DRIVE_SEARCH_TOOL, { query: "c" }) },
+          { final: textFinal("问完了，都没找到。") }
+        ],
+        streamSpy
+      )
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  assert.equal(textContent(result.message).text, "问完了，都没找到。");
+  // sequencedClient 的 spy 形状：[0]=client provider 的 input（只调用一次，createTurn 每次调用只拿
+  // 一次 client），[1..N]=每一轮 stream 的 params。4 轮模型调用（3 次工具轮 + 1 次强制收尾轮）→
+  // spy 长度 1+4=5，第四轮 params 在下标 4。
+  assert.equal(streamSpy.length, 5);
+  const fourthRoundParams = streamSpy[4] as { tools?: unknown[] };
+  assert.equal(fourthRoundParams.tools, undefined);
+});
+
+test("createTurn fails closed with conversation_turn_failed if the model hallucinates a tool_use on the forced final round", async () => {
+  const service = createConversationTurnService(
+    baseDeps({
+      drive: {
+        async page() {
+          return drivePageFixture({ items: [] });
+        },
+        async file() {
+          throw new Error("file must not be called in this scenario");
+        }
+      },
+      client: sequencedClient([
+        { final: toolUseFinal("call1", DRIVE_SEARCH_TOOL, { query: "a" }) },
+        { final: toolUseFinal("call2", DRIVE_SEARCH_TOOL, { query: "b" }) },
+        { final: toolUseFinal("call3", DRIVE_SEARCH_TOOL, { query: "c" }) },
+        // 第 4 轮（强制不带 tools）模型仍然幻觉出一个 tool_use——没有第 5 轮可用，服务端必须 fail
+        // closed，而不是挂起或悄悄继续。
+        { final: toolUseFinal("call4", DRIVE_SEARCH_TOOL, { query: "d" }) }
+      ])
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 500 && error.code === "conversation_turn_failed"
+  );
 });

@@ -39,6 +39,10 @@
     "./spotlight-intent": {
       "types": "./src/spotlight-intent/index.ts",
       "import": "./src/spotlight-intent/index.ts"
+    },
+    "./reply-judge": {
+      "types": "./src/reply-judge/index.ts",
+      "import": "./src/reply-judge/index.ts"
     }
   },
   "scripts": {
