@@ -1230,6 +1230,93 @@ test("R9.1 WorkItem route component drafts a task plan before any agent run", ()
   assert.equal(workitem.html.includes('data-action-id="start_agent_run"'), false);
 });
 
+// R13 批 P4（全托管透明度：reviewer_kind 溯源）：ai 复核合并的交付物要显示过去时提示，
+// 且置信度 pill 的「可自动采纳」（未来时/资格描述）此时该改成「已自动采纳」（过去时）。
+test("R13 P4 WorkItem route component marks AI-auto-merged deliverables with a past-tense notice", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const aiMergedVm: WorkItemDetailVM = {
+    ...base,
+    confidence: { score: 0.9, grade: "high", verdict: "auto_merge" },
+    accepted_deliverables: [{
+      id: "93000000-0000-4000-8000-000000000601",
+      work_item_id: base.workitem.id,
+      proposal_id: "93000000-0000-4000-8000-000000000602",
+      change_id: "93000000-0000-4000-8000-000000000603",
+      target_kind: "text_doc",
+      target_key: "delivery:/outputs/report.md",
+      change_type: "updated",
+      accepted_version: 1,
+      target_path: "/outputs/report.md",
+      reviewer_kind: "ai",
+      accepted_at: "2026-07-13T00:00:00.000Z"
+    }]
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: aiMergedVm }, { locale: "zh-CN" });
+
+  assert.equal(workitem.html.includes('data-r13-workitem-accepted-reviewer-kind="ai"'), true);
+  assert.equal(workitem.html.includes("已由 AI 自动合并，无人工复核。"), true);
+  assert.equal(workitem.html.includes('data-r13-workitem-confidence-auto-merged="true"'), true);
+  assert.equal(workitem.html.includes("已自动采纳"), true);
+  assert.equal(workitem.html.includes("可自动采纳"), false);
+});
+
+test("R13 P4 WorkItem route component keeps the eligibility (未发生) wording when auto_merge has not actually merged anything yet", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const notYetMergedVm: WorkItemDetailVM = {
+    ...base,
+    confidence: { score: 0.9, grade: "high", verdict: "auto_merge" },
+    accepted_deliverables: []
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: notYetMergedVm }, { locale: "zh-CN" });
+
+  assert.equal(workitem.html.includes('data-r13-workitem-confidence-auto-merged="false"'), true);
+  assert.equal(workitem.html.includes("可自动采纳"), true);
+  assert.equal(workitem.html.includes("已由 AI 自动合并，无人工复核。"), false);
+});
+
+test("R13 P4 WorkItem route component leaves human-reviewed deliverables without the AI auto-merge notice", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const humanReviewedVm: WorkItemDetailVM = {
+    ...base,
+    accepted_deliverables: [{
+      id: "93000000-0000-4000-8000-000000000604",
+      work_item_id: base.workitem.id,
+      proposal_id: "93000000-0000-4000-8000-000000000605",
+      change_id: "93000000-0000-4000-8000-000000000606",
+      target_kind: "text_doc",
+      target_key: "delivery:/outputs/report-2.md",
+      change_type: "updated",
+      accepted_version: 1,
+      target_path: "/outputs/report-2.md",
+      reviewer_kind: "human",
+      accepted_at: "2026-07-13T00:00:00.000Z"
+    }]
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: humanReviewedVm }, { locale: "zh-CN" });
+
+  assert.equal(workitem.html.includes('data-r13-workitem-accepted-reviewer-kind="human"'), true);
+  assert.equal(workitem.html.includes("已由 AI 自动合并，无人工复核。"), false);
+});
+
+// R13 批 P4（观察者工单来源标注）：与 drive_comment/meeting_insight 平级——没有正文可显示，只标注来源会话。
+test("R13 P4 WorkItem route component renders the conversation-observer source context", () => {
+  const base = surfaceVm().page_vms.workitem;
+  const observerVm: WorkItemDetailVM = {
+    ...base,
+    source_context: {
+      source_type: "conversation_observer",
+      project_id: "93000000-0000-4000-8000-000000000701",
+      conversation_id: "93000000-0000-4000-8000-000000000702",
+      created_at: "2026-07-05T00:00:00.000Z"
+    }
+  };
+  const workitem = renderWebRouteComponent({ key: "workitem", workitem: observerVm }, { locale: "zh-CN" });
+
+  assert.equal(workitem.html.includes('data-r5-workitem-source-context="conversation_observer"'), true);
+  assert.equal(workitem.html.includes('data-r13-workitem-source-conversation-id="93000000-0000-4000-8000-000000000702"'), true);
+  assert.equal(workitem.html.includes("由项目群聊的 Cuu 观察者创建。"), true);
+});
+
 test("R9.2 WorkItem route component renders the task-plan run tree without inline decisions", () => {
   const base = surfaceVm().page_vms.workitem;
   const planId = "93000000-0000-4000-8000-000000000901";
@@ -2196,6 +2283,36 @@ test("R9.6 Agent Army route component renders empty state without fake plan card
   assertNoMainWindowBoundaryLeak(agents.html);
 });
 
+// R13 批 P4（KPI：AI 自动合并数/占比）：与 cost 页同源同口径；缺省时整张卡不渲染，不冒充 0 次。
+test("R13 P4 Agent Army route component renders the ai-auto-merge KPI card when present", () => {
+  const agents = renderWebRouteComponent({
+    key: "agents",
+    agents: agentArmyDashboardVm({
+      kpis: {
+        active_team_count: 1,
+        waiting_decision_count: 2,
+        today_cost_cny: "0.006",
+        autonomy_rate_pct: 67,
+        ai_auto_merge_count: 6,
+        ai_auto_merge_ratio_pct: 75
+      }
+    })
+  }, { locale: "zh-CN" });
+
+  assert.ok(agents);
+  assert.equal(agents.html.includes('data-r9-agent-kpi="ai_auto_merge"'), true);
+  assert.equal(agents.html.includes("AI 自动合并"), true);
+  assert.equal(agents.html.includes("6 次"), true);
+  assert.equal(agents.html.includes("占今日通过评审的 75%"), true);
+});
+
+test("R13 P4 Agent Army route component omits the ai-auto-merge KPI card when absent", () => {
+  const agents = renderWebRouteComponent({ key: "agents", agents: agentArmyDashboardVm() }, { locale: "zh-CN" });
+
+  assert.ok(agents);
+  assert.equal(agents.html.includes('data-r9-agent-kpi="ai_auto_merge"'), false);
+});
+
 test("R9.7 Agent Army route component shows attention source warnings beside the KPI", () => {
   const agents = renderWebRouteComponent({
     key: "agents",
@@ -2275,6 +2392,66 @@ test("K5 Cost route component omits the labor split card when labor_split is abs
   assert.ok(cost);
   // 默认 fixture 的 cost VM 没有 labor_split → 不渲染该卡。
   assert.equal(cost.html.includes('data-r4-cost-labor-split="true"'), false);
+});
+
+// R13 批 P4（labor-split 按 assignee 记账）：与 by_user 并排的独立分组维度——降序、「我」/系统标签、含运行次数。
+test("R13 P4 Cost route component renders spend by assignee with current-user and system labels", () => {
+  const base = surfaceVm();
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: {
+        ...base.page_vms.cost,
+        by_assignee: [
+          { user_id: "97000000-0000-4000-8000-000000000004", label: "当前用户", cost_cny: "3", tokens: 900, run_count: 4 },
+          { label: "系统（无执行者）", cost_cny: "1.2", tokens: 300, run_count: 0 }
+        ]
+      }
+    }
+  };
+  const cost = renderWebRouteComponents(vm, { locale: "en-US" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r13-cost-by-assignee="true"'), true);
+  assert.equal(cost.html.includes('data-r13-cost-assignee="97000000-0000-4000-8000-000000000004"'), true);
+  assert.equal(cost.html.includes('data-r13-cost-assignee="system"'), true);
+  assert.equal(cost.html.includes("当前用户"), true);
+  assert.equal(cost.html.includes("系统（无执行者）"), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
+test("R13 P4 Cost route component omits the by-assignee card when by_assignee is empty", () => {
+  const cost = renderWebRouteComponents(surfaceVm(), { locale: "en-US" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r13-cost-by-assignee="true"'), false);
+});
+
+// R13 批 P4（KPI：AI 自动合并数/占比）：与 labor_split 同级——把全托管档 AI 自己合并了多少次显性化。
+test("R13 P4 Cost route component renders the ai-auto-merge KPI card", () => {
+  const base = surfaceVm();
+  const vm = {
+    ...base,
+    page_vms: {
+      ...base.page_vms,
+      cost: {
+        ...base.page_vms.cost,
+        ai_auto_merge: { count: 4, ratio_pct: 80 }
+      }
+    }
+  };
+  const cost = renderWebRouteComponents(vm, { locale: "en-US" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r13-cost-ai-auto-merge="true"'), true);
+  assert.equal(cost.html.includes('data-r13-cost-ai-auto-merge-count="4"'), true);
+  assert.equal(cost.html.includes('data-r13-cost-ai-auto-merge-ratio="80"'), true);
+  assert.equal(cost.html.includes("80%"), true);
+  assertNoMainWindowBoundaryLeak(cost.html);
+});
+
+test("R13 P4 Cost route component omits the ai-auto-merge card when ai_auto_merge is absent", () => {
+  const cost = renderWebRouteComponents(surfaceVm(), { locale: "en-US" }).cost;
+  assert.ok(cost);
+  assert.equal(cost.html.includes('data-r13-cost-ai-auto-merge="true"'), false);
 });
 
 // B-R9.6 §3.5：军团花费卡——by_task_plan 非空（管理员口径）时按任务计划分组渲出，
@@ -2638,6 +2815,36 @@ test("Drive route version history follows the selected file instead of showing u
   assert.equal((drive.html.match(/data-r4-drive-version="/gu) ?? []).length, 1);
   assert.equal(drive.html.includes('data-r4-drive-version="94000000-0000-4000-8000-000000000010"'), true);
   assert.equal(drive.html.includes('data-r4-drive-version="94000000-0000-4000-8000-000000000003"'), false);
+});
+
+// R13 批 P4（网盘版本历史两端不对称的诚实标注）：version.restore_href 是服务端为两端共出的同一份字段，
+// 但 web 从不渲染恢复按钮（回滚是桌面独有能力）——此前完全没有提示，看起来像「没有历史版本可恢复」。
+test("R13 P4 Drive route version history notes that restoring an older version needs the desktop client", () => {
+  const vm = drivePageVm();
+  vm.selected_item_id = "94000000-0000-4000-8000-000000000009";
+  const currentVersion = vm.versions.find((version) => version.id === "94000000-0000-4000-8000-000000000010")!;
+  vm.versions.push({
+    ...currentVersion,
+    id: "94000000-0000-4000-8000-000000000012",
+    version_no: 0,
+    current: false,
+    restore_href: "/api/workitems/x/deliverables/y/restore"
+  });
+
+  const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
+
+  assert.equal(drive.html.includes('data-r13-drive-versions-desktop-notice="true"'), true);
+  assert.equal(drive.html.includes("Restoring an older version requires the desktop client."), true);
+  assert.equal(drive.html.includes('data-r4-drive-version="94000000-0000-4000-8000-000000000012"'), true);
+});
+
+test("R13 P4 Drive route version history omits the desktop notice when every loaded version is current", () => {
+  const vm = drivePageVm();
+  vm.selected_item_id = "94000000-0000-4000-8000-000000000009";
+
+  const drive = renderWebRouteComponent({ key: "drive", drive: vm }, { locale: "en-US" });
+
+  assert.equal(drive.html.includes('data-r13-drive-versions-desktop-notice="true"'), false);
 });
 
 test("Drive route recycle bin renders every loaded deleted item", () => {
