@@ -1,0 +1,20 @@
+Observed at 2026-07-13 11:01 Asia/Singapore
+
+Accounts created through demo-walkthrough.md curl A:
+- 阿曼: 2d78577f-f8b3-4814-80b7-d46cb3c9b0f7
+- 张三: d9405f90-da1d-4a3d-ad9d-9400d4c866c8
+- Both auth/me responses reported workspace_id 00000000-0000-4000-8000-000000000002.
+
+Database membership check:
+- workspace_memberships rows for the two user IDs: 0
+
+Project bootstrap result:
+- project_id: cbd077ca-64b6-4048-bc30-03622a984465
+- project name: R12人工验收-20260713
+
+GET /api/projects/cbd077ca-64b6-4048-bc30-03622a984465/conversations
+with /tmp/wh-r12-cookie-a.txt returned:
+{"ok":false,"error":{"code":"conversation_project_not_found","message":"没有找到这个项目会话区。"}}
+
+The pre-existing WorkHub Desktop member can access the same project and main conversation,
+so the failure is account membership provisioning rather than missing project/conversation data.

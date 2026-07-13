@@ -1,0 +1,21 @@
+Observed at 2026-07-13 11:24 and reproduced at 11:40 Asia/Singapore.
+
+Context:
+- Account: WorkHub Desktop
+- Conversation: R12验收协同会话
+- Current mode chip: 我的模式: 分级自动
+
+Attempts:
+1. Click the mode chip through its accessibility element.
+2. Focus it with Tab and press Return.
+3. Focus it with Tab and press Space.
+4. Focus it and press Alt+Down.
+5. Click the chip by its visible screen coordinates in the foreground window.
+
+Actual:
+- No five-option popover appeared.
+- No mode PATCH request was emitted.
+- Profile stayed default_mode=3 until a direct API PATCH was used for the separate C-line observe-only rejection check.
+
+Expected:
+- Popover opens with all five modes; mode 5 uses warning styling; keys 1-5 switch mode while the popover is open.

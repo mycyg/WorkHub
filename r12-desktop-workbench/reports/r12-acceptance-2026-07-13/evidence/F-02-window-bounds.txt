@@ -1,0 +1,15 @@
+Observed at 2026-07-13 11:37 and reproduced on recording at 11:46 Asia/Singapore.
+
+CoreGraphics bounds before drag:
+Height=800 Width=1280 X=512 Y=218
+
+Computer Use drag attempts:
+1. title bar from (600, 20) to (700, 100)
+2. title bar from (600, 25) to (450, 120)
+3. recorded: title bar from (600, 24) to (400, 120)
+4. recorded: title bar from (700, 24) to (900, 120)
+
+CoreGraphics bounds after drag:
+Height=800 Width=1280 X=512 Y=218
+
+Result: the title bar did not move the workbench window.

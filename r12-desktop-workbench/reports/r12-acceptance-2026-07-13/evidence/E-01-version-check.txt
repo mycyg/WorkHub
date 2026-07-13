@@ -1,0 +1,16 @@
+Observed at 2026-07-13 11:30 Asia/Singapore.
+
+First upload:
+- filename: r12-version-test.txt
+- size: 67 bytes
+- API POST /api/drive/projects/cbd077ca-64b6-4048-bc30-03622a984465/files -> 200
+- version v1 created
+
+Second upload (same filename, changed content, 117 bytes):
+- the desktop client issued two POST requests to the same files endpoint
+- both returned 409
+- the UI still displayed the 67-byte file
+- GET versions returned only v1; current_version_id remained 6fa3be1d-0bd5-4c4d-b86f-ba12ba723a9f
+
+Expected: same-name upload adds v2.
+Actual: upload rejected with 409; no v2 exists, so restore-to-v3 cannot be tested.
