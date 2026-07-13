@@ -1288,6 +1288,15 @@ export function mountChatView(
       closeModePopover();
       return;
     }
+    // R12 自审修复：数字快捷键只在焦点不在可编辑区时生效——弹层开着时用户 Tab 回输入框继续打字，
+    // "1"-"5" 是正常文本输入，不能被劫持成切档（Escape 不受此限：从输入框里关弹层是合理操作）。
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable)
+    ) {
+      return;
+    }
     if (event.key >= "1" && event.key <= "5") {
       event.preventDefault();
       selectMode(Number(event.key));
