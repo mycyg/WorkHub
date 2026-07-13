@@ -39,6 +39,7 @@ import { createActionCardRoutes } from "./routes/action-cards.js";
 import { createConversationTurnRoutes } from "./routes/conversation-turns.js";
 import { createConversationTypingRoutes } from "./routes/conversation-typing.js";
 import { createDriveVersionRoutes } from "./routes/drive-versions.js";
+import { createSpotlightIntentRoutes } from "./routes/spotlight-intent.js";
 import { TaskPlanApprovalError } from "./services/task-plan-approval.js";
 import { ProjectServiceError } from "./services/projects.js";
 import { PilotDay1MetricsServiceError } from "./services/pilot-day1-metrics.js";
@@ -243,6 +244,7 @@ app.route("/api", createActionCardRoutes());
 app.route("/api", createConversationTurnRoutes());
 app.route("/api", createConversationTypingRoutes());
 app.route("/api/drive", createDriveVersionRoutes());
+app.route("/api", createSpotlightIntentRoutes());
 app.route("/api/pilot", createPilotRoutes());
 app.route("/api/ai-worklog", createAiWorklogRoutes());
 

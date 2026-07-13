@@ -6564,6 +6564,41 @@ export function getOpenApiDocument() {
           }
         }
       },
+      "/api/spotlight/intent": {
+        post: {
+          tags: ["spotlight"],
+          summary: "Classify a natural-language spotlight query into an actionable intent (PM persona, non-streaming)",
+          ...jsonRequestBody({
+            type: "object",
+            properties: {
+              query: { type: "string", minLength: 1, maxLength: 512 },
+              capabilities: { type: "array", maxItems: 32, items: { type: "string", maxLength: 64 } }
+            },
+            required: ["query"],
+            additionalProperties: false
+          }),
+          responses: {
+            "200": jsonDataResponse(
+              {
+                type: "object",
+                description: "Intent verdict: open_page / new_project / create_task / answer with confidence and params.",
+              },
+              "Classified intent"
+            ).responses["200"],
+            "401": conversationAuthRequiredResponse,
+            "403": conversationForbiddenResponse,
+            "422": conversationValidationResponse,
+            "429": jsonErrorStatusResponse("429", "Team budget is exhausted for AI intents", [
+              "spotlight_intent_budget_exhausted"
+            ]).responses["429"],
+            "500": jsonErrorStatusResponse("500", "Intent classification failed; nothing was executed", [
+              "spotlight_intent_failed",
+              "internal_contract_error",
+              "internal_error"
+            ]).responses["500"]
+          }
+        }
+      },
       "/api/conversations/{id}/typing": {
         post: {
           tags: ["conversations"],
