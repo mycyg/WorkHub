@@ -4441,6 +4441,7 @@ const conversationResponseSchema = {
     "parent_conversation_id",
     "source_message_id",
     "visibility",
+    "cuu_enabled",
     "next_seq",
     "created_by",
     "participant_role",
@@ -4456,6 +4457,7 @@ const conversationResponseSchema = {
     parent_conversation_id: conversationNullableUuidSchema,
     source_message_id: conversationNullableUuidSchema,
     visibility: { type: "string", enum: ["project", "private"] },
+    cuu_enabled: { type: "boolean" },
     next_seq: conversationSafeSequenceSchema,
     created_by: conversationNullableUuidSchema,
     participant_role: conversationNullableParticipantRoleSchema,
@@ -4718,6 +4720,7 @@ const createConversationRequestBodySchema = {
   type: "object",
   required: ["kind", "title", "visibility"],
   properties: {
+    cuu_enabled: { type: "boolean", default: true, description: "Small groups: whether Cuu participates; false = hard mute." },
     kind: { type: "string", const: "collab" },
     title: { type: "string", minLength: 1, maxLength: 256 },
     visibility: { type: "string", enum: ["project", "private"] },
@@ -5206,7 +5209,8 @@ const conversationTurnResponses = {
     "409": jsonErrorStatusResponse("409", "Turn is not allowed in the conversation's current state", [
       "conversation_turn_not_collab",
       "conversation_turn_busy",
-      "conversation_turn_mode_observe_only"
+      "conversation_turn_mode_observe_only",
+      "conversation_turn_cuu_disabled"
     ]).responses["409"],
     "429": jsonErrorStatusResponse("429", "Team budget is exhausted for AI turns", [
       "conversation_turn_budget_exhausted"
@@ -6560,6 +6564,36 @@ export function getOpenApiDocument() {
               "drive_item_not_found",
               "drive_version_not_found"
             ]).responses["404"],
+            "500": conversationInternalResponse
+          }
+        }
+      },
+      "/api/me/personal-projects": {
+        get: {
+          tags: ["projects"],
+          summary: "List the current user's personal spaces",
+          responses: {
+            "200": jsonDataResponse({ type: "object", description: "Personal projects list (capped)." }, "Personal spaces").responses["200"],
+            "401": conversationAuthRequiredResponse,
+            "403": conversationForbiddenResponse,
+            "500": conversationInternalResponse
+          }
+        },
+        post: {
+          tags: ["projects"],
+          summary: "Create a personal space (auto-named when the name is blank; observer defaults off)",
+          ...jsonRequestBody({
+            type: "object",
+            properties: { name: { type: "string", maxLength: 128 } },
+            additionalProperties: false
+          }),
+          responses: {
+            "201": jsonDataStatusResponse({ type: "object", description: "Created personal project." }, "201", "Created a personal space").responses["201"],
+            "400": jsonErrorStatusResponse("400", "Personal space input is malformed", ["malformed_json", "json_object_required"]).responses["400"],
+            "401": conversationAuthRequiredResponse,
+            "403": conversationForbiddenResponse,
+            "413": conversationPayloadTooLargeResponse,
+            "422": conversationValidationResponse,
             "500": conversationInternalResponse
           }
         }

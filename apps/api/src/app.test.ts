@@ -425,6 +425,8 @@ test("GET /api/openapi.json exposes the headless daemon contract seed", async ()
     ["post", "/api/conversations/{id}/turns"],
     ["post", "/api/conversations/{id}/typing"],
     ["post", "/api/spotlight/intent"],
+    ["get", "/api/me/personal-projects"],
+    ["post", "/api/me/personal-projects"],
     ["get", "/api/drive/projects/{projectId}/items/{itemId}/versions"],
     ["post", "/api/drive/projects/{projectId}/items/{itemId}/versions/{versionId}/restore"]
   ] as const;
@@ -525,6 +527,7 @@ test("R12 conversation runtime and OpenAPI expose only the four batch-0 HTTP end
   } | undefined;
   assert.deepEqual(projectBody?.required, ["kind", "title", "visibility"]);
   assert.deepEqual(Object.keys(projectBody?.properties ?? {}).sort(), [
+    "cuu_enabled",
     "kind",
     "parent_conversation_id",
     "participant_user_ids",
@@ -1126,6 +1129,7 @@ test("R12 workbench OpenAPI locks the bounded strict VM, invariants, and non-ora
     "parent_conversation_id",
     "source_message_id",
     "visibility",
+    "cuu_enabled",
     "next_seq",
     "created_by",
     "participant_role",
