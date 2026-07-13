@@ -138,6 +138,12 @@ const TYPING_PING_MIN_INTERVAL_MS = 2000;
 const FILE_SEARCH_DEBOUNCE_MS = 250;
 const TYPING_PRUNE_INTERVAL_MS = 750;
 const MAX_PICKER_RESULTS = 8;
+// R13 批4c：Cuu 不是真实 workspace 成员（没有 user_id），@ picker 里用一个固定的 sentinel id 代表她；
+// 落库后与其它 @ 提及一样只是纯文本 "@Cuu " 前缀，没有任何结构化标记——服务端的 @Cuu 检测（回话判定器）
+// 就是靠对这段文本做词边界匹配，这是已知的、拍过板接受的局限（04 手册铁律#1 精神：不为了显得"更结构化"
+// 而虚构一个这个系统本来没有的 user_id）。
+const CUU_MENTION_SENTINEL_USER_ID = "cuu";
+const CUU_MENTION_DISPLAY_NAME = "Cuu";
 // AI 模式弹层的档位数——render.ts 的 AI_MODE_LEVELS 是私有 const（[1,2,3,4,5]），这里不额外导出
 // 它来对齐，五档是 00-interaction-design.md 定死的常量，跟既有点击处理器里 `level <= 5` 的魔法数
 // 同一个来源。
@@ -1072,7 +1078,9 @@ export function mountChatView(
   function filterMembers(query: string): MentionPickerMember[] {
     const normalized = query.trim().toLowerCase();
     const all = input.members.map((member) => ({ userId: member.user_id, nickname: member.nickname }));
-    const matches = normalized ? all.filter((member) => member.nickname.toLowerCase().includes(normalized)) : all;
+    // R13 批4c：Cuu 的 sentinel 候选永远排在最前——@ 一下 Cuu 是最常见的意图，不该被淹没在成员列表里。
+    const withCuu = [{ userId: CUU_MENTION_SENTINEL_USER_ID, nickname: CUU_MENTION_DISPLAY_NAME }, ...all];
+    const matches = normalized ? withCuu.filter((member) => member.nickname.toLowerCase().includes(normalized)) : withCuu;
     return matches.slice(0, MAX_PICKER_RESULTS);
   }
 
@@ -1128,7 +1136,10 @@ export function mountChatView(
     if (!userId || !activeTrigger) {
       return;
     }
-    const nickname = membersMap.get(userId)?.nickname;
+    // R13 批4c：Cuu 是 @ picker 里的一个 sentinel 候选（不是真实 workspace 成员，membersMap 里
+    // 查不到），让用户能用同一套 @ 交互点出「@Cuu」；落库后仍然只是纯文本 "@Cuu " 前缀——服务端的
+    // @Cuu 检测（回话判定器）按显示名词边界匹配这段文本，不依赖任何结构化 user_id 标记。
+    const nickname = userId === CUU_MENTION_SENTINEL_USER_ID ? CUU_MENTION_DISPLAY_NAME : membersMap.get(userId)?.nickname;
     const ta = textareaEl();
     if (!nickname || !ta) {
       return;
@@ -1168,6 +1179,29 @@ export function mountChatView(
     }
     attachments = addAttachment(attachments, { driveItemId: file.itemId, name: file.name });
     renderComposerChrome();
+  }
+
+  // R13 批4c：Cuu 的澄清追问带了几个选项按钮（render.ts 的 textMessageBodyHtml）——点一个直接把
+  // 选项文本填进输入框并聚焦，不需要用户重新敲一遍；不追加进已有草稿（澄清追问的回答通常就是这几个
+  // 词之一，直接替换比追加更符合"选一个答案"的心智）。真正发送仍然要用户自己按发送/回车，这里只是
+  // 帮忙填好，不代替用户确认。
+  function applyClarifyOptionToComposer(optionText: string | undefined): void {
+    if (!optionText) {
+      return;
+    }
+    const ta = textareaEl();
+    if (!ta) {
+      return;
+    }
+    ta.value = optionText;
+    draftFallback = optionText;
+    ta.focus();
+    try {
+      ta.setSelectionRange(optionText.length, optionText.length);
+    } catch {
+      // ignore — value is already correct even if the cursor can't be restored.
+    }
+    syncSendButtonDisabled();
   }
 
   function insertMentionShortcut(): void {
@@ -1548,6 +1582,11 @@ export function mountChatView(
         itemId: fileCardBtn.dataset.wbChatOpenFile,
         itemName: fileCardBtn.dataset.wbChatOpenFileName ?? ""
       });
+      return;
+    }
+    const clarifyOptionBtn = target.closest<HTMLElement>("[data-wb-chat-clarify-option]");
+    if (clarifyOptionBtn) {
+      applyClarifyOptionToComposer(clarifyOptionBtn.dataset.wbChatClarifyOption);
       return;
     }
     // R12 P0-A1：行动卡条目的操作按钮——decide 三键（交给我干/派给别人/先不动）、reassign 极简成员

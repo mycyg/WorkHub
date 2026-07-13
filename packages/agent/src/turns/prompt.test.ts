@@ -8,11 +8,30 @@ import {
   type TurnHistoryMessage
 } from "./index.js";
 
-test("buildTurnSystemPrompt carries the data-isolation fence and the observe-only conversational boundary", () => {
+// R13 批4c：this assertion set was revised deliberately, not weakened to chase a passing test — the
+// design (r13-workbench-refinement/01-new-batches-design.md 一、批4c「踩雷」) explicitly requires
+// rewriting this boundary language now that turns carry real tools. The old assertion
+// `/不要在回复里声称自己已经修改了文件/` tested wording from batch 4a that predates any tool access;
+// it's replaced below with assertions on the *new* boundary (still forbids editing files/merging/
+// approving, still allows the model to say it searched drive/sent a file card/filed a work item).
+test("buildTurnSystemPrompt carries the data-isolation fence and the tool-scoped conversational boundary", () => {
   const prompt = buildTurnSystemPrompt();
   assert.match(prompt, /数据隔离/u);
-  assert.match(prompt, /不代表你已经拿到执行权限/u);
-  assert.match(prompt, /不要在回复里声称自己已经修改了文件/u);
+  assert.match(prompt, /不能修改文件内容/u);
+  assert.match(prompt, /不能合并任何变更/u);
+  assert.match(prompt, /不能批准任何提议/u);
+  assert.match(prompt, /drive_search/u);
+  assert.match(prompt, /send_file_card/u);
+  assert.match(prompt, /ask_clarifying_question/u);
+  // create_work_item is only mentioned once a pending clarification is answered — the base prompt
+  // (no options) must not casually invite the model to file work items unprompted.
+  assert.doesNotMatch(prompt, /create_work_item/u);
+});
+
+test("buildTurnSystemPrompt mentions create_work_item and the prior question once a pending clarification is supplied", () => {
+  const prompt = buildTurnSystemPrompt({ pendingClarification: { question: "你要 PPT 还是 Word？" } });
+  assert.match(prompt, /create_work_item/u);
+  assert.match(prompt, /你要 PPT 还是 Word？/u);
 });
 
 test("buildTurnMemorySection returns an empty section and no citations when nothing was injected", () => {

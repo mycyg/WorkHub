@@ -165,6 +165,70 @@ test("renderMessageHtml renders a long text message in full once its id is in ex
   assert.ok(html.includes(longText));
 });
 
+// —— R13 批4c：Cuu 主动发起的澄清追问（additive is_clarifying_question 标记，复用 text kind）—— //
+
+test("renderMessageHtml gives a clarifying question a distinct 'Cuu is asking' badge that a plain reply does not get", () => {
+  const question = renderMessageHtml(
+    baseMessage({ sender_type: "cuu", sender_user_id: null, content: { text: "你要 PPT 还是 Word？", is_clarifying_question: true } }),
+    ctxWith([])
+  );
+  assert.match(question, /Cuu 在问/u);
+  const plain = renderMessageHtml(baseMessage({ sender_type: "cuu", sender_user_id: null, content: { text: "看过了，整体不错" } }), ctxWith([]));
+  assert.doesNotMatch(plain, /Cuu 在问/u);
+});
+
+test("renderMessageHtml renders clarify_options as clickable chips carrying the option text as their payload", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { text: "你要 PPT 还是 Word？", is_clarifying_question: true, clarify_options: ["PPT", "Word"] }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /data-wb-chat-clarify-option="PPT"/u);
+  assert.match(html, /data-wb-chat-clarify-option="Word"/u);
+});
+
+test("renderMessageHtml renders a clarifying question with no options and no empty chip row", () => {
+  const html = renderMessageHtml(
+    baseMessage({ sender_type: "cuu", sender_user_id: null, content: { text: "你具体想改哪部分？", is_clarifying_question: true } }),
+    ctxWith([])
+  );
+  assert.match(html, /Cuu 在问/u);
+  assert.doesNotMatch(html, /data-wb-chat-clarify-option/u);
+});
+
+test("renderMessageHtml escapes clarify_options — no raw HTML injection from option text", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { text: "选一个", is_clarifying_question: true, clarify_options: ["<img src=x onerror=alert(1)>"] }
+    }),
+    ctxWith([])
+  );
+  assert.doesNotMatch(html, /<img/u);
+  assert.match(html, /&lt;img/u);
+});
+
+// —— R13 批4c：@ picker 里 Cuu 的 sentinel 候选 —— //
+
+test("renderMentionPickerHtml puts a Cuu sentinel candidate first, ahead of real members", () => {
+  const html = renderMentionPickerHtml({
+    locale: "zh-CN",
+    members: [
+      { userId: "cuu", nickname: "Cuu" },
+      { userId: "u1", nickname: "张三" }
+    ],
+    files: [],
+    filesLoading: false
+  });
+  const cuuIndex = html.indexOf('data-wb-chat-pick-member="cuu"');
+  const memberIndex = html.indexOf('data-wb-chat-pick-member="u1"');
+  assert.ok(cuuIndex >= 0 && memberIndex >= 0 && cuuIndex < memberIndex);
+});
+
 // R13 批 P2：每条消息的外层气泡现在带 data-wb-chat-message-id——dispatch_ask 追赶提醒条点击后靠这个
 // 属性反查 DOM 节点滚进视口（见 dispatch-ask-catchup.ts）。
 test("renderMessageHtml carries the message id as a stable DOM anchor for scroll-to-message", () => {

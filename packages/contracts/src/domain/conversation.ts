@@ -297,10 +297,20 @@ export type ConversationMemoryCitation = z.infer<typeof conversationMemoryCitati
 export const MAX_CONVERSATION_MEMORY_CITATIONS = 20;
 
 export const MAX_CONVERSATION_TEXT_CODE_UNITS = 20_000;
+export const MAX_CONVERSATION_CLARIFY_OPTIONS = 8;
+// R13 批4c（Cuu 对话工具面）：additive 澄清追问标记。设计稿（r13-workbench-refinement/
+// 01-new-batches-design.md 一、批4c）原本提议新增一个 DB kind `clarifying_question`，但本批范围围栏
+// 明确不许碰 schema/迁移——改为在既有 kind='text' 内容上加三个 optional 字段：不新增 DB kind、不需要
+// 迁移，旧的纯文本消息（不带这些字段）完全不受影响。is_clarifying_question 缺省视为 false；
+// clarify_options/clarify_placeholder 只在 is_clarifying_question=true 时有意义（服务层/前端按此
+// 约定渲染，这里不做跨字段 superRefine——保持 additive 精神，不给既有字段追加新的失败模式）。
 export const conversationTextContentSchema = z
   .object({
     text: z.string().min(1).max(MAX_CONVERSATION_TEXT_CODE_UNITS),
-    memory_citations: z.array(conversationMemoryCitationSchema).max(MAX_CONVERSATION_MEMORY_CITATIONS).optional()
+    memory_citations: z.array(conversationMemoryCitationSchema).max(MAX_CONVERSATION_MEMORY_CITATIONS).optional(),
+    is_clarifying_question: z.boolean().optional(),
+    clarify_options: z.array(z.string().min(1).max(200)).max(MAX_CONVERSATION_CLARIFY_OPTIONS).optional(),
+    clarify_placeholder: z.string().min(1).max(200).optional()
   })
   .strict();
 export type ConversationTextContent = z.infer<typeof conversationTextContentSchema>;

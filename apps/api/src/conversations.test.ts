@@ -142,6 +142,11 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     async listMessagesBefore() {
       throw new Error("listMessagesBefore not expected");
     },
+    // R13 批4c/G1：新增 listReplyJudgeCandidates（回话判定器 worker 用），这个套件不测那条路径，
+    // 同其它未测方法一样给个拒绝桩。
+    async listReplyJudgeCandidates() {
+      throw new Error("listReplyJudgeCandidates not expected");
+    },
     ...overrides
   };
 }

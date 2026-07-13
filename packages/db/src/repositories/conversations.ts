@@ -79,21 +79,40 @@ export type CreateUserMessageInput = CreateUserMessageBaseInput &
     | { kind: "file_card"; contentJson: { drive_item_id: string; snapshot_name: string } }
   );
 
-// R12 批4a：协同会话 turn 落库的 Cuu 回应——kind 固定 'text'（本批只做纯对话，不产出 file_card 等其它
-// kind）。sender_user_id 固定 null（Cuu 不是 workspace 成员，不需要也不能过 createUserMessage 那套
-// membership/participant 校验）。memory_citations 是本轮实际注入过的记忆/技能引用清单，additive，
-// 由调用方（services/conversation-turns.ts）组装好后原样落 content_json。
+// R12 批4a：协同会话 turn 落库的 Cuu 回应——最初 kind 固定 'text'。sender_user_id 固定 null（Cuu 不是
+// workspace 成员，不需要也不能过 createUserMessage 那套 membership/participant 校验），这一点在下面
+// 三个分支里都不变。memory_citations 是本轮实际注入过的记忆/技能引用清单，additive，由调用方
+// （services/conversation-turns.ts）组装好后原样落 content_json。
+//
+// R13 批4c（Cuu 对话工具面）：扩成判别联合——file_card（发文件卡）、tool_note（工具调用透明日志）都是
+// conversation_messages_kind_ck 既有 check 约束里本来就允许的值（'text'|'file_card'|'action_card'|
+// 'system_event'|'tool_note'，未新增迁移），只是 createCuuMessage 之前只会写 'text'。这里只是把
+// "这个方法能写的 kind"对齐到"DB 已经允许、Cuu 有资格写的 kind"子集，不涉及任何 schema 改动。
+// is_clarifying_question/clarify_options/clarify_placeholder 是 text 分支上的 additive 标记，对齐
+// @workhub/contracts 的 conversationTextContentSchema 同名字段（该文件顶部注释解释了为什么澄清追问
+// 复用 text kind 而不是新增 DB kind：范围围栏不许碰 schema/迁移）。
 export type CreateCuuMessageInput = {
   id?: string;
   workspaceId: string;
   conversationId: string;
-  contentJson: {
-    text: string;
-    memory_citations?: Array<{ kind: "user_memory" | "team_skill"; title: string }>;
-  };
   threadRootId?: string;
   at?: Date;
-};
+} & (
+  | {
+      kind: "text";
+      contentJson: {
+        text: string;
+        memory_citations?: Array<{ kind: "user_memory" | "team_skill"; title: string }>;
+        is_clarifying_question?: boolean;
+        clarify_options?: string[];
+        clarify_placeholder?: string;
+      };
+    }
+  | { kind: "file_card"; contentJson: { drive_item_id: string; snapshot_name: string } }
+  // tool_note 的内容形状留给服务层的 boundedConversationObjectContentSchema 校验（同 system_event/
+  // action_card 现有的分工）；仓库层只做"是个普通对象、不是数组"这一档次的防御性检查。
+  | { kind: "tool_note"; contentJson: Record<string, unknown> }
+);
 
 export type ListConversationMessagesInput = {
   workspaceId: string;
@@ -140,6 +159,26 @@ export type ConversationMessageBeforePage = {
   nextBeforeSeq: number;
 };
 
+// R13 批4c/G1（回话判定器）：listReplyJudgeCandidates 的输入/输出——见该方法实现处的注释了解为什么
+// 只挑 participantCount>1 的会话、为什么是两条查询而不是一条 LATERAL。
+export type ListReplyJudgeCandidatesInput = {
+  limit: number;
+  sinceCreatedAt: Date;
+};
+
+export type ReplyJudgeCandidateRow = {
+  conversationId: string;
+  workspaceId: string;
+  projectId: string;
+  participantCount: number;
+  lastMessageId: string;
+  lastMessageSeq: number;
+  lastMessageSenderUserId: string;
+  lastMessageKind: ConversationMessageRow["kind"];
+  lastMessageContentJson: Record<string, unknown>;
+  lastMessageCreatedAt: Date;
+};
+
 export type ConversationRepository = {
   listVisibleForProject: (
     input: ListVisibleConversationsInput
@@ -153,6 +192,9 @@ export type ConversationRepository = {
   // R12 批8：反向翻页——「滚到顶加载更早」。access 判定/鉴权与 listMessagesAfter 完全同款（同一份
   // readVisibleAccess + activeConversationCondition），仅游标方向与排序不同。
   listMessagesBefore: (input: ListConversationMessagesBeforeInput) => Promise<ConversationMessageBeforePage | null>;
+  // R13 批4c/G1：新增，不改动上面任何既有方法的签名/行为——回话判定器 worker 的候选扫描（跨会话，
+  // 无 viewerUserId，与 action-cards.ts 的 listObserverCandidates 同一档次的"系统级批量读"）。
+  listReplyJudgeCandidates: (input: ListReplyJudgeCandidatesInput) => Promise<ReplyJudgeCandidateRow[]>;
 };
 
 class NamedConversationRepositoryError extends Error {
@@ -274,12 +316,36 @@ function assertMessageContent(input: CreateUserMessageInput) {
 // @workhub/contracts 的 conversationTextContentSchema 全套边界校验——那份校验在调用方
 // （services/conversation-turns.ts）用 parseOutputContract 对装配好的 VM 做一次即可，双写两份
 // 校验逻辑只会随时间漂移。这里只保证不会把明显错形状的值写进 content_json。
-function assertCuuMessageContent(contentJson: CreateCuuMessageInput["contentJson"]) {
-  if (typeof contentJson.text !== "string" || contentJson.text.length === 0) {
-    throw new ConversationRepositoryInputError("cuu text messages require non-empty text metadata");
+// R13 批4c：按 kind 分支扩展同一档次的检查，text 分支保持原有校验完全不变。
+function assertCuuMessageContent(input: CreateCuuMessageInput) {
+  if (input.kind === "text") {
+    const contentJson = input.contentJson;
+    if (typeof contentJson.text !== "string" || contentJson.text.length === 0) {
+      throw new ConversationRepositoryInputError("cuu text messages require non-empty text metadata");
+    }
+    if (contentJson.memory_citations !== undefined && !Array.isArray(contentJson.memory_citations)) {
+      throw new ConversationRepositoryInputError("cuu memory citations must be an array when present");
+    }
+    if (contentJson.clarify_options !== undefined && !Array.isArray(contentJson.clarify_options)) {
+      throw new ConversationRepositoryInputError("cuu clarify options must be an array when present");
+    }
+    return;
   }
-  if (contentJson.memory_citations !== undefined && !Array.isArray(contentJson.memory_citations)) {
-    throw new ConversationRepositoryInputError("cuu memory citations must be an array when present");
+  if (input.kind === "file_card") {
+    const contentJson = input.contentJson;
+    if (
+      typeof contentJson.drive_item_id !== "string" ||
+      contentJson.drive_item_id.length === 0 ||
+      typeof contentJson.snapshot_name !== "string" ||
+      contentJson.snapshot_name.length === 0
+    ) {
+      throw new ConversationRepositoryInputError("cuu file card messages require drive item and snapshot metadata");
+    }
+    return;
+  }
+  // tool_note
+  if (!input.contentJson || typeof input.contentJson !== "object" || Array.isArray(input.contentJson)) {
+    throw new ConversationRepositoryInputError("cuu tool note messages require an object content payload");
   }
 }
 
@@ -816,7 +882,7 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
     // findVisibleAccessRecord 确认过发起 turn 的人类是会话的可见参与者，这里只需要重新锁定并确认
     // 会话本身仍然活跃（租户围栏 + 并发安全，与 createUserMessage 同一套 seq 分配防重复模式）。
     async createCuuMessage(input) {
-      assertCuuMessageContent(input.contentJson);
+      assertCuuMessageContent(input);
       const at = input.at ?? new Date();
       return db.transaction(async (tx) => {
         const locator = await readConversationProjectId(tx, input);
@@ -895,7 +961,7 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
             seq: nextSeq,
             senderType: "cuu",
             senderUserId: null,
-            kind: "text",
+            kind: input.kind,
             contentJson: input.contentJson,
             ...(input.threadRootId ? { threadRootId: input.threadRootId } : {}),
             createdAt: at
@@ -1010,6 +1076,117 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         hasMore,
         nextBeforeSeq: pageRows.at(0)?.seq ?? input.beforeSeq
       };
+    },
+
+    // R13 批4c/G1（回话判定器候选扫描）：不是给某个人类查——是给后台判定器 worker 扫「哪些小群
+    // （collab 会话，participantCount>1）最近有一条新的人类消息，值得判一下 Cuu 该不该接话」。
+    // 只挑 participantCount>1（真正的多人小群）——今天的 1:1 协同会话（G1 之前，rail.ts 建会话时
+    // participant_user_ids 恒为空数组，故 participantCount 恒为 1）继续 100% 由桌面端既有的
+    // 「发消息后自动请一轮 turn」路径处理（apps/desktop-webview/src/workbench/chat/turn.ts 的
+    // shouldRequestConversationTurn），本方法刻意不把它们纳入候选——否则同一条消息会被桌面端和这个
+    // 判定器 worker 各触发一次 turn，重复消耗预算、甚至可能出现两条 Cuu 回复。等 G1 的建群 UI 落地、
+    // 真正出现 participantCount>1 的会话之前，这个方法在当前仓库状态下恒返回空数组（无副作用地
+    // 提前就位）。
+    //
+    // 两条查询而非一条 LATERAL 子查询：先聚合出候选会话 id（按参与者数/最近人类消息时间过滤+限流），
+    // 再用一条 IN 查询把这些会话各自最新的人类消息一次性取回、在内存里按会话归并成"每会话一条"——
+    // 避免在候选列表上循环发查询（04 铁律#4），也避免依赖本仓库其它地方未曾用过的 DISTINCT ON/
+    // LATERAL 语法。
+    async listReplyJudgeCandidates(input) {
+      assertLimit(input.limit);
+      const participantCountSelection = sql<number>`count(distinct ${conversationParticipants.id})`.mapWith(Number);
+      const groups = await db
+        .select({
+          conversationId: projectConversations.id,
+          workspaceId: projectConversations.workspaceId,
+          projectId: projectConversations.projectId,
+          participantCount: participantCountSelection
+        })
+        .from(projectConversations)
+        .innerJoin(
+          projects,
+          and(
+            eq(projects.id, projectConversations.projectId),
+            eq(projects.workspaceId, projectConversations.workspaceId)
+          )
+        )
+        .innerJoin(conversationParticipants, eq(conversationParticipants.conversationId, projectConversations.id))
+        .innerJoin(
+          conversationMessages,
+          and(
+            eq(conversationMessages.conversationId, projectConversations.id),
+            eq(conversationMessages.senderType, "user")
+          )
+        )
+        .where(
+          and(
+            eq(projectConversations.kind, "collab"),
+            isNull(projectConversations.deletedAt),
+            eq(projects.archived, false),
+            isNull(projects.deletedAt)
+          )
+        )
+        .groupBy(projectConversations.id, projectConversations.workspaceId, projectConversations.projectId)
+        .having(
+          sql`count(distinct ${conversationParticipants.id}) > 1 and max(${conversationMessages.createdAt}) >= ${input.sinceCreatedAt}`
+        )
+        .orderBy(sql`max(${conversationMessages.createdAt}) desc`)
+        .limit(input.limit);
+
+      if (groups.length === 0) {
+        return [];
+      }
+
+      const conversationIds = groups.map((group) => group.conversationId);
+      // 每会话最多 20 条打底：候选会话数已经被上面的 limit 卡死，这里只是给"归并出每会话最新一条"
+      // 留够余量，不是一个会随候选数无界增长的查询。
+      const recentUserMessages = await db
+        .select({
+          conversationId: conversationMessages.conversationId,
+          id: conversationMessages.id,
+          seq: conversationMessages.seq,
+          senderUserId: conversationMessages.senderUserId,
+          kind: conversationMessages.kind,
+          contentJson: conversationMessages.contentJson,
+          createdAt: conversationMessages.createdAt
+        })
+        .from(conversationMessages)
+        .where(
+          and(
+            inArray(conversationMessages.conversationId, conversationIds),
+            eq(conversationMessages.senderType, "user")
+          )
+        )
+        .orderBy(desc(conversationMessages.seq))
+        .limit(Math.min(conversationIds.length * 20, 500));
+
+      const lastByConversation = new Map<string, (typeof recentUserMessages)[number]>();
+      for (const row of recentUserMessages) {
+        if (!lastByConversation.has(row.conversationId)) {
+          lastByConversation.set(row.conversationId, row);
+        }
+      }
+
+      const candidates: ReplyJudgeCandidateRow[] = [];
+      for (const group of groups) {
+        const last = lastByConversation.get(group.conversationId);
+        if (!last || !last.senderUserId) {
+          continue;
+        }
+        candidates.push({
+          conversationId: group.conversationId,
+          workspaceId: group.workspaceId,
+          projectId: group.projectId,
+          participantCount: group.participantCount,
+          lastMessageId: last.id,
+          lastMessageSeq: last.seq,
+          lastMessageSenderUserId: last.senderUserId,
+          lastMessageKind: last.kind,
+          lastMessageContentJson: last.contentJson as Record<string, unknown>,
+          lastMessageCreatedAt: last.createdAt
+        });
+      }
+      return candidates;
     }
   };
 }
