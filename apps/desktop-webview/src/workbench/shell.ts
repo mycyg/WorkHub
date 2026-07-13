@@ -139,7 +139,7 @@ export function renderSidePanelPlaceholderHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
   return `<p>${
     zh
-      ? "输出、军团任务卡、后台任务会显示在这里——这一部分接在批 5（军团面板）。"
+      ? "输出、军团任务卡、后台任务会显示在这里——即将上线。"
       : "Outputs, army task cards, and background tasks will show up here — wired in batch 5 (the army panel)."
   }</p>`;
 }
@@ -259,7 +259,21 @@ export function mountWorkbenchShell(
         if (disposed || my !== vmRequestGen) {
           return;
         }
-        store.setState({ vm, vmLoad: "ready" });
+        // R12 功能审查 F3 修复：深链带来的 pendingConversationId 此前全链路打通却在这里被忽略——
+        // Rust open_workbench(conversation_id) 精确到会话的深链永远只落到主区。现在 VM 就绪时消费一次：
+        // 匹配到协同会话就直接打开它，匹配不到（含就是主区 id）诚实回退主区；用后即清，不影响后续手动切换。
+        const pendingId = store.getState().pendingConversationId;
+        const pendingCollab = pendingId
+          ? vm.conversations.conversations.find(
+              (conversation) => conversation.id === pendingId && conversation.kind === "collab"
+            )
+          : undefined;
+        store.setState({
+          vm,
+          vmLoad: "ready",
+          pendingConversationId: undefined,
+          ...(pendingCollab ? { centerTab: "collab" as const, activeConversationId: pendingCollab.id } : {})
+        });
       })
       .catch((error) => {
         if (disposed || my !== vmRequestGen) {

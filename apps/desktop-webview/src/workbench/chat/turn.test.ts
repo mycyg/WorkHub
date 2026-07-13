@@ -62,9 +62,9 @@ test("mapConversationTurnError maps the busy code to a gentle zh-CN notice", () 
   );
 });
 
-test("mapConversationTurnError maps the observe-only mode code and points at the settings page", () => {
+test("mapConversationTurnError maps the observe-only mode code and points at the real mode control", () => {
   const text = mapConversationTurnError({ status: 409, code: "conversation_turn_mode_observe_only" }, "zh-CN");
-  assert.match(text, /设置 · AI/u);
+  assert.match(text, /「模式」/u);
 });
 
 test("mapConversationTurnError maps the budget-exhausted code (429)", () => {

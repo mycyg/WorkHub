@@ -113,6 +113,6 @@ test("renderCenterLoadingHtml and renderCenterErrorHtml render distinct, honest 
 
 test("renderSidePanelPlaceholderHtml is an honest 'not built yet' notice, not fake data", () => {
   const html = renderSidePanelPlaceholderHtml("zh-CN");
-  assert.match(html, /批 5/u);
+  assert.match(html, /即将上线/u);
   assert.doesNotMatch(html, /wh-wb-runcard/u);
 });

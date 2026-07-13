@@ -109,7 +109,7 @@ export function renderRailFootHtml(zh: boolean, viewerLabel: string | undefined)
       ${workbenchIcons.army}
       <span>
         <span class="wh-wb-army-sum-t">${zh ? "军团总览" : "Army overview"}</span>
-        <br /><span class="wh-wb-army-sum-s">${zh ? "批 5 开放" : "Opens in batch 5"}</span>
+        <br /><span class="wh-wb-army-sum-s">${zh ? "即将上线" : "Opens in batch 5"}</span>
       </span>
     </div>
     ${viewerLabel ? `<div class="wh-wb-me">${escapeHtml(viewerLabel)}</div>` : ""}

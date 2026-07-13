@@ -256,7 +256,7 @@ test("renderProjectTreeHtml does not leak a stale VM onto a different project's 
 test("renderRailFootHtml surfaces the army overview preview and the viewer label when present", () => {
   const withViewer = renderRailFootHtml(true, "阿曼 · 已连接");
   assert.match(withViewer, /军团总览/u);
-  assert.match(withViewer, /批 5 开放/u);
+  assert.match(withViewer, /即将上线/u);
   assert.match(withViewer, /阿曼 · 已连接/u);
   const withoutViewer = renderRailFootHtml(true, undefined);
   assert.doesNotMatch(withoutViewer, /wh-wb-me/u);

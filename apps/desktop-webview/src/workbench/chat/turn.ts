@@ -66,7 +66,7 @@ export type ConversationTurnErrorSource = { status?: number; code?: string } | u
 const TURN_ERROR_TEXT: Record<"zh-CN" | "en-US", Record<string, string>> = {
   "zh-CN": {
     conversation_turn_busy: "Cuu 正忙着上一轮，等它说完再试。",
-    conversation_turn_mode_observe_only: "你的模式是只观察，去「设置 · AI」里调整。",
+    conversation_turn_mode_observe_only: "你的模式是只观察，点输入框旁的「模式」切换后再试。",
     conversation_turn_budget_exhausted: "这段时间用得有点多，稍后再试。",
     conversation_turn_not_collab: "这个会话没法单独请 Cuu 回话。",
     conversation_turn_message_not_found: "这条消息有点旧了，重新说一句试试。",
@@ -74,7 +74,7 @@ const TURN_ERROR_TEXT: Record<"zh-CN" | "en-US", Record<string, string>> = {
   },
   "en-US": {
     conversation_turn_busy: "Cuu is still finishing the last reply — try again in a moment.",
-    conversation_turn_mode_observe_only: "Your mode is observe-only — adjust it in Settings · AI.",
+    conversation_turn_mode_observe_only: "Your mode is observe-only — switch it with the Mode control next to the composer.",
     conversation_turn_budget_exhausted: "Usage has been high lately — try again later.",
     conversation_turn_not_collab: "This conversation can't request a one-on-one reply.",
     conversation_turn_message_not_found: "That message is a bit stale — try saying it again.",
