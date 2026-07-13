@@ -271,6 +271,9 @@ export const userProfiles = pgTable(
     skillTags: jsonb("skill_tags").$type<string[]>().notNull().default([]),
     availabilityPref: jsonb("availability_pref").$type<JsonObject>().notNull().default({}),
     onboardedAt: timestampTz("onboarded_at"),
+    // R13 批 A2（派人推荐 v2）：这张表此前是零接线死表（无 repository/service/route/UI）。
+    // 补的第一个真字段是 title（职位/角色头衔）——bioMd 已经承担"个人介绍"，确实缺的只有这个。
+    title: varchar("title", { length: 128 }),
     ...timestamps()
   },
   (table) => [

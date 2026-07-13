@@ -661,7 +661,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0049 personal projects", () => {
+test("migration journal ends with 0052 user profiles title", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -676,15 +676,30 @@ test("migration journal ends with 0049 personal projects", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R13 批 S3：0048 留给并行施工的另一批（这个 worktree 里看不到那份迁移/journal 行），
-      // 本批的迁移编号已预分配为 0049，跳过 0048 不占用——两批各自的 journal 尾在合并时
+      // R13 批 A2：0050/0051 留给并行施工的其它批次（这个 worktree 里看不到那些迁移/journal 行），
+      // 本批的迁移编号已预分配为 0052，跳过 0050/0051 不占用——各批各自的 journal 尾在合并时
       // 由人工核对拼接顺序，不是本测试要处理的事。
-      idx: 49,
+      idx: 52,
       version: "7",
-      tag: "0049_personal_projects",
+      tag: "0052_user_profiles_title",
       breakpoints: true
     }
   );
+});
+
+// R13 批 A2（派人推荐 v2）：user_profiles 此前是零接线死表，本批补的第一个真字段是 title。
+test("R13 A2 migration 0052 adds user_profiles.title as a nullable varchar(128) column", () => {
+  const migrationUrl = new URL("../migrations/0052_user_profiles_title.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0052_user_profiles_title.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"user_profiles"\s+ADD COLUMN IF NOT EXISTS\s+"title"\s+varchar\(128\)\s*;/iu
+  );
+
+  const userProfiles = requiredTable("userProfiles") as WorkHubTable & Record<string, any>;
+  assert.equal(userProfiles.title.notNull, false);
+  assert.equal(userProfiles.title.columnType, "PgVarchar");
 });
 
 test("R13 G1 migration 0048 adds project_conversations.cuu_enabled as a non-null default-true column", () => {
