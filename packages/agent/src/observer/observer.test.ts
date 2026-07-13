@@ -49,6 +49,49 @@ test("buildObserverUserPrompt renders an explicit empty state when there is no n
   assert.match(prompt, /（无）/u);
 });
 
+// R13 批 A2（派人推荐 v2）：候选名单是可选入参，不传/空数组时完全不影响既有行为——不新增任何 prompt 分段。
+test("buildObserverUserPrompt omits the candidate roster section entirely when no roster is supplied", () => {
+  const withoutField = buildObserverUserPrompt({ projectName: "星尘计划", messages: [] });
+  const withEmptyArray = buildObserverUserPrompt({ projectName: "星尘计划", messages: [], candidateRoster: [] });
+  assert.doesNotMatch(withoutField, /候选名单/u);
+  assert.doesNotMatch(withEmptyArray, /候选名单/u);
+});
+
+// R13 批 A2：候选名单 prompt 用「项目经理挑人」口吻校准（Cuu 角色总纲=项目经理），并且明确交代
+// 点名优先——不能让名单本身盖过讨论里已经点名的人。
+test("buildObserverUserPrompt renders the candidate roster in a project-manager voice and preserves nickname-first priority", () => {
+  const prompt = buildObserverUserPrompt({
+    projectName: "星尘计划",
+    messages: [],
+    candidateRoster: [
+      { nickname: "张三", title: "前端负责人", topSkills: ["react", "typescript"], score: 42.5 },
+      { nickname: "李四", title: null, topSkills: [], score: 10 }
+    ]
+  });
+  assert.match(prompt, /派活候选名单/u);
+  assert.match(prompt, /项目经理/u);
+  assert.match(prompt, /张三/u);
+  assert.match(prompt, /前端负责人/u);
+  assert.match(prompt, /react、typescript/u);
+  assert.match(prompt, /李四/u);
+  // 分数本身不该被机械地贴在候选名单展示文本里给模型抄。
+  assert.doesNotMatch(prompt, /42\.5/u);
+  assert.match(prompt, /点名的必须原样用那个名字/u);
+});
+
+test("buildObserverUserPrompt caps the candidate roster and each candidate's skill list", () => {
+  const roster = Array.from({ length: 12 }, (_unused, index) => ({
+    nickname: `候选${index}`,
+    title: null,
+    topSkills: Array.from({ length: 10 }, (_unusedSkill, skillIndex) => `skill-${skillIndex}`),
+    score: 12 - index
+  }));
+  const prompt = buildObserverUserPrompt({ projectName: "星尘计划", messages: [], candidateRoster: roster });
+  assert.match(prompt, /候选0/u);
+  assert.doesNotMatch(prompt, /候选8/u, "roster must be capped at 8 entries even when more are supplied");
+  assert.doesNotMatch(prompt, /skill-6/u, "each candidate's skill list must be capped");
+});
+
 test("buildObserverUserPrompt caps referenced context and marks non-user senders distinctly", () => {
   const prompt = buildObserverUserPrompt({
     projectName: "星尘计划",
