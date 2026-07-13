@@ -963,11 +963,17 @@ fn apply_workbench_glass(window: &tauri::WebviewWindow) {
     if let Err(error) = window.set_background_color(Some(Color(0, 0, 0, 0))) {
         eprintln!("failed to clear workbench window background: {error}");
     }
+    // R13 V1：固定浅色玻璃（用户拍板）——先把窗口外观钉死 light（系统深色模式下浅色材质会翻黑,
+    // set_theme 在 macOS 落到 NSAppearance）,材质从深色 HudWindow 换 UnderWindowBackground
+    // （浅外观下的标准衬底毛玻璃;真机 A/B 候选还有 Sidebar/Popover,以与聚焦盒浅色面板协调为准）。
+    if let Err(error) = window.set_theme(Some(tauri::Theme::Light)) {
+        eprintln!("failed to pin workbench light appearance: {error}");
+    }
     #[cfg(target_os = "macos")]
     if std::env::var("WORKHUB_DISABLE_VIBRANCY").is_err() {
         if let Err(error) = window_vibrancy::apply_vibrancy(
             window,
-            window_vibrancy::NSVisualEffectMaterial::HudWindow,
+            window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
             Some(window_vibrancy::NSVisualEffectState::Active),
             Some(24.0),
         ) {
