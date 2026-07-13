@@ -115,6 +115,7 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
   return {
     conversation: conversationRow(),
     projectOwnerUserId: userId,
+    projectIsPersonal: false,
     membershipRole: "member",
     participantRole: "owner",
     participantCount: 1,

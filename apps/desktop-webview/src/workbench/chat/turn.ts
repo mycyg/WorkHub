@@ -16,9 +16,15 @@
 
 import type { ConversationKind } from "@workhub/contracts";
 
-// 主区归静默观察者（批3）处理；只有单聊（协同会话）才走这条"发消息后自动请 Cuu 回一句"的通道。
-export function shouldRequestConversationTurn(conversationKind: ConversationKind): boolean {
-  return conversationKind === "collab";
+// 主区归静默观察者（批3）处理；协同会话（单聊/小群）走"发消息后自动请 Cuu 回一句"通道。
+// R13 终验修复（个人空间单聊必回）：个人空间的默认线程是该项目的 main 会话（S3 设计），它是
+// 纯 1:1 单聊——同样放行。团队项目的 main 仍然绝不调 turns（这条红线不变），由 personalProject
+// 标志把两种 main 区分开，服务端 conversation-turns.ts 有同一条语义的镜像闸。
+export function shouldRequestConversationTurn(
+  conversationKind: ConversationKind,
+  context: { personalProject?: boolean | undefined } = {}
+): boolean {
+  return conversationKind === "collab" || (conversationKind === "main" && context.personalProject === true);
 }
 
 // —— 流式增量拼接 —— //

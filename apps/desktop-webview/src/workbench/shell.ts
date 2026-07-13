@@ -463,6 +463,9 @@ export function mountWorkbenchShell(
         projectName: vm.project.name,
         conversationId: mainConversation.id,
         conversationKind: "main",
+        // R13 终验修复（个人空间单聊必回）：个人空间的 main 会话是 1:1 单聊，chat 视图放行 turn
+        // 通道；数据源=左栏「我的空间」列表（GET /me/personal-projects），与团队项目列表互斥。
+        projectIsPersonal: store.getState().personalProjects.some((project) => project.id === vm.project.id),
         currentUserId: vm.viewer.user_id,
         members: vm.workspace_members.items,
         getClientToken,

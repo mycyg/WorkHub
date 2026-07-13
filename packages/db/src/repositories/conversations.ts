@@ -28,6 +28,10 @@ export type VisibleConversationRow = ConversationRow & {
 export type ConversationAccessRecord = {
   conversation: ConversationRow;
   projectOwnerUserId: string | null;
+  // R13 终验修复（个人空间单聊必回）：会话所属项目是否个人空间——conversation-turns.ts 据此放行
+  // "个人项目的 main 会话"这一单聊特例（团队项目的 main 仍归观察者，turns 恒 409）。跟着
+  // readVisibleAccess 的 select 一起加（不显式投影运行时就是 undefined，教训同 cuuEnabled）。
+  projectIsPersonal: boolean;
   membershipRole: string;
   participantRole: ConversationParticipantRole | null;
   // R13 批 G1（小群）：conversation_participants 的真实行数（含创建者）——服务端回话判定的
@@ -443,6 +447,7 @@ async function readVisibleAccess(
     .select({
       conversation: conversationSelection,
       projectOwnerUserId: projects.ownerUserId,
+      projectIsPersonal: projects.isPersonal,
       membershipRole: workspaceMemberships.role,
       participantRole: conversationParticipants.role
     })

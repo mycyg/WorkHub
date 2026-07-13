@@ -217,6 +217,9 @@ export function mountChatView(
     // shouldRequestConversationTurn，这条判断本身就是"主区绝不调 turns"这条红线的唯一权威位置）。
     // 由挂载方（shell.ts）传入：主区挂载传 "main"，rail.ts 新增的协同会话树叶点开时传 "collab"。
     conversationKind: ConversationKind;
+    // R13 终验修复（个人空间单聊必回）：当前项目是否个人空间——main 会话在个人空间里是 1:1 单聊，
+    // turn 通道（自动请回应/模式 chip/流式气泡）全部放行；团队项目的 main 不受影响。缺省 false。
+    projectIsPersonal?: boolean;
     currentUserId: string;
     members: readonly WorkbenchMemberVM[];
     getClientToken: () => string | undefined;
@@ -272,12 +275,15 @@ export function mountChatView(
   let turnDeltaState: TurnDeltaState = EMPTY_TURN_DELTA_STATE;
   let turnErrorText: string | undefined;
   // R12（模式五档弹层，2026-07-12 纠偏后归位到单聊）：见 render.ts"模式五档"一节顶部注释——
-  // isCollabConversation 是这整块功能唯一的读取点，主区（'main'）永远拿到 false，composer 不会渲染
-  // 模式 chip，点击/数字键处理函数也都以这个布尔值把关（04 §4 铁律 3 的双重保险：不但不渲染入口，
+  // isCollabConversation 语义=「这个会话支持直接的 Cuu turn 通道」：collab 恒真；main 仅在个人空间
+  // （R13 终验修复，1:1 单聊）为真，团队项目的主区永远 false——composer 不渲染模式 chip，
+  // 点击/数字键处理函数也都以这个布尔值把关（04 §4 铁律 3 的双重保险：不但不渲染入口，
   // 连事件处理都不会被触发）。myMode undefined = 还没拉到 GET /api/me/ai-profile 或者拉失败——诚实
   // 显示「模式」，不假装知道当前档（见 loadMyAiProfile）。modePopoverOpen/modeErrorText 都是这个
   // 功能自己的瞬态 UI 状态，不落库。
-  const isCollabConversation = input.conversationKind === "collab";
+  const isCollabConversation = shouldRequestConversationTurn(input.conversationKind, {
+    personalProject: input.projectIsPersonal
+  });
   let myMode: AiMode | undefined;
   let modePopoverOpen = false;
   let modeErrorText: string | undefined;
@@ -1243,7 +1249,7 @@ export function mountChatView(
         // （kind='main'）在这里永远拿到 false，不会走到 beginTurn 半步。file_card 消息不触发——服务端
         // 契约本来就只认"最近一条 user_message_id 指向的文本消息"当锚点，丢一个文件不构成"该 Cuu 说话了"
         // 的信号。
-        if (record.kind === "text" && shouldRequestConversationTurn(input.conversationKind)) {
+        if (record.kind === "text" && shouldRequestConversationTurn(input.conversationKind, { personalProject: input.projectIsPersonal })) {
           beginTurn(created.id);
         }
       })

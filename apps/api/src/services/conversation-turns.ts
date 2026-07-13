@@ -758,7 +758,10 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
         if (!access) {
           throw new ConversationTurnServiceError(404, "conversation_not_found", "没有找到这个会话。");
         }
-        if (access.conversation.kind !== "collab") {
+        // R13 终验修复（个人空间单聊必回）：个人空间的默认线程就是该项目的 main 会话（S3 设计），
+        // 它是纯 1:1 单聊——放行 turn。团队项目的 main 仍归静默观察者，恒 409 不变。
+        const personalSingleChat = access.conversation.kind === "main" && access.projectIsPersonal === true;
+        if (access.conversation.kind !== "collab" && !personalSingleChat) {
           throw new ConversationTurnServiceError(
             409,
             "conversation_turn_not_collab",
@@ -838,7 +841,8 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
         // mentionsCuu/ConversationTurnRespondDecider 的注释）。没被 @ 时才去问判定器；默认判定器
         // （4c 落地前）保守永远放行，维持存量行为零回归。
         const triggerText = historyDisplayText(anchor) ?? "";
-        if (!mentionsCuu(triggerText)) {
+        // 个人空间单聊=判定的必回特例（用户终裁语义）：不要求 @、判定器无权否决。
+        if (!personalSingleChat && !mentionsCuu(triggerText)) {
           const decider = deps.respondDecider ?? defaultConversationTurnRespondDecider;
           const shouldRespond = await decider({
             participantCount: access.participantCount,

@@ -19,6 +19,18 @@ test("shouldRequestConversationTurn refuses the main conversation (observer-owne
   assert.equal(shouldRequestConversationTurn("main"), false);
 });
 
+// —— R13 终验修复：个人空间单聊必回 —— //
+
+test("shouldRequestConversationTurn allows the main conversation of a personal project (1:1 single chat)", () => {
+  assert.equal(shouldRequestConversationTurn("main", { personalProject: true }), true);
+});
+
+test("shouldRequestConversationTurn keeps refusing team-project main even with an explicit false/undefined flag", () => {
+  assert.equal(shouldRequestConversationTurn("main", { personalProject: false }), false);
+  assert.equal(shouldRequestConversationTurn("main", { personalProject: undefined }), false);
+  assert.equal(shouldRequestConversationTurn("main", {}), false);
+});
+
 // —— appendTurnDelta / renderTurnDeltaText —— //
 
 test("renderTurnDeltaText on the empty state is an empty string", () => {

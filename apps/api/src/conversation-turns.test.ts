@@ -95,6 +95,7 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
   return {
     conversation: conversationRow(),
     projectOwnerUserId: userId,
+    projectIsPersonal: false,
     membershipRole: "member",
     participantRole: "owner",
     participantCount: 1,
@@ -530,6 +531,103 @@ test("createTurn rejects the project main conversation with 409 conversation_tur
   await assert.rejects(
     service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
     (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_not_collab"
+  );
+  assert.equal(llmCalled, false);
+});
+
+// —— R13 终验修复：个人空间单聊必回 —— //
+
+test("createTurn allows the main conversation of a personal project and replies without an @Cuu mention (single-chat must-reply)", async () => {
+  let deciderCalled = false;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          // 个人空间的默认线程就是项目 main 会话（S3 设计）——1:1 单聊，必回特例：不要求 @Cuu，
+          // 判定器也无权否决（用户终裁语义：单聊=判定的必回特例）。
+          return accessRecord({
+            conversation: conversationRow({ kind: "main" }),
+            projectIsPersonal: true,
+            participantCount: 0
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "帮我想想这周周报怎么写？" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      respondDecider: async () => {
+        deciderCalled = true;
+        return false;
+      }
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  assert.equal(result.message.sender_type, "cuu");
+  assert.equal(deciderCalled, false, "single-chat must-reply must not consult the respond decider");
+});
+
+test("createTurn still rejects the main conversation of a team (non-personal) project with 409 conversation_turn_not_collab", async () => {
+  let llmCalled = false;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ conversation: conversationRow({ kind: "main" }), projectIsPersonal: false });
+        },
+        async listMessagesAfter() {
+          throw new Error("must not be called");
+        },
+        async createCuuMessage() {
+          throw new Error("must not be called");
+        }
+      },
+      client: async () => {
+        llmCalled = true;
+        throw new Error("must not be called");
+      }
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_not_collab"
+  );
+  assert.equal(llmCalled, false);
+});
+
+test("createTurn keeps the cuu_enabled gate above the personal single-chat exception (silence stays absolute)", async () => {
+  let llmCalled = false;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            conversation: conversationRow({ kind: "main", cuuEnabled: false }),
+            projectIsPersonal: true
+          });
+        },
+        async listMessagesAfter() {
+          throw new Error("must not be called");
+        },
+        async createCuuMessage() {
+          throw new Error("must not be called");
+        }
+      },
+      client: async () => {
+        llmCalled = true;
+        throw new Error("must not be called");
+      }
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) =>
+      error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_cuu_disabled"
   );
   assert.equal(llmCalled, false);
 });
