@@ -972,7 +972,13 @@ fn create_workbench_window_if_missing(
     let window = builder
         .build()
         .map_err(|error| format!("failed to create workbench window: {error}"))?;
-    apply_workbench_glass(&window);
+    // R13 真机根因（验收 F-01）:apply_vibrancy 只能在主线程调,而 open_workbench 作为 Tauri command
+    // 跑在线程池上——此前直接调用永远静默失败(eprintln 无人看),工作台从没真正有过毛玻璃,用户看到的
+    // 是 CSS 半透兜底的"实底"。必须调度回主线程。
+    let glass_window = window.clone();
+    if let Err(error) = window.run_on_main_thread(move || apply_workbench_glass(&glass_window)) {
+        eprintln!("failed to schedule workbench glass on main thread: {error}");
+    }
     Ok(window)
 }
 
