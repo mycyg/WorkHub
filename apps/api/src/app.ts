@@ -34,6 +34,7 @@ import { createProposalRoutes, createWorkItemProposalRoutes } from "./routes/pro
 import { createCostRoutes } from "./routes/cost.js";
 import { createConversationRoutes } from "./routes/conversations.js";
 import { createAiSettingsRoutes } from "./routes/ai-settings.js";
+import { createUserProfileRoutes } from "./routes/user-profile.js";
 import { createConversationArmyRoutes } from "./routes/conversation-army.js";
 import { createActionCardRoutes } from "./routes/action-cards.js";
 import { createConversationTurnRoutes } from "./routes/conversation-turns.js";
@@ -58,6 +59,7 @@ import { WorkItemServiceError } from "./services/work-items.js";
 import { InternalContractError } from "./pages/output-contract.js";
 import { ConversationServiceError } from "./services/conversations.js";
 import { AiSettingsServiceError } from "./services/ai-settings.js";
+import { UserProfileServiceError } from "./services/user-profile.js";
 import { ConversationTurnServiceError } from "./services/conversation-turns.js";
 import { ActionCardServiceError } from "./services/action-cards.js";
 import { ConversationArmyServiceError } from "./services/conversation-army.js";
@@ -240,6 +242,8 @@ app.route("/api/meetings", createMeetingRoutes());
 app.route("/api/projects", createProjectRoutes());
 app.route("/api", createConversationRoutes());
 app.route("/api", createAiSettingsRoutes());
+// R13 批 A2（派人推荐 v2）：GET/PATCH /me/profile ——「我是谁」资料面（title/bio/技能标签）。
+app.route("/api", createUserProfileRoutes());
 app.route("/api", createConversationArmyRoutes());
 app.route("/api", createActionCardRoutes());
 app.route("/api", createConversationTurnRoutes());
@@ -380,6 +384,20 @@ app.onError((error, c) => {
         }
       },
       error.status as 403
+    );
+  }
+
+  // R13 批 A2：/me/profile 的类型化 403——不进这张表会被兜底压成 500。
+  if (error instanceof UserProfileServiceError) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      },
+      error.status
     );
   }
 

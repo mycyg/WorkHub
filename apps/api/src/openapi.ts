@@ -5478,6 +5478,67 @@ const aiPayloadTooLargeResponse = jsonErrorStatusResponse(
   "AI settings request body exceeds the configured global JSON limit",
   ["payload_too_large"]
 ).responses["413"];
+// R13 批 A2（派人推荐 v2）：GET/PATCH /me/profile ——「我是谁」资料面，与 /me/ai-profile
+// （「AI 该怎么替我干活」）语义分开。形状钉死 packages/contracts/src/domain/user-profile.ts 的
+// userProfileVmSchema / patchUserProfileRequestSchema。
+const userProfileVmResponseSchema = {
+  type: "object",
+  required: ["user_id", "nickname", "title", "bio_md", "skill_tags", "onboarded_at"],
+  properties: {
+    user_id: uuidStringSchema,
+    nickname: { type: "string", minLength: 1, maxLength: 64 },
+    title: { type: ["string", "null"], minLength: 1, maxLength: 128 },
+    bio_md: { type: ["string", "null"], minLength: 1, maxLength: 4000 },
+    skill_tags: {
+      type: "array",
+      maxItems: 50,
+      items: { type: "string", minLength: 1, maxLength: 64 }
+    },
+    onboarded_at: { type: ["string", "null"], format: "date-time" }
+  },
+  additionalProperties: false
+} as const;
+const patchUserProfileRequestBodySchema = {
+  type: "object",
+  properties: {
+    title: { type: ["string", "null"], minLength: 1, maxLength: 128 },
+    bio_md: { type: ["string", "null"], minLength: 1, maxLength: 4000 },
+    skill_tags: {
+      type: "array",
+      maxItems: 50,
+      items: { type: "string", minLength: 1, maxLength: 64 }
+    }
+  },
+  additionalProperties: false
+} as const;
+const userProfileReadResponses = {
+  responses: {
+    "200": jsonDataResponse(userProfileVmResponseSchema, "Current user's profile").responses["200"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Profile is not accessible", [
+      "invalid_client_token",
+      "user_profile_access_denied"
+    ]).responses["403"],
+    "500": aiInternalResponse
+  }
+} as const;
+const userProfilePatchResponses = {
+  responses: {
+    "200": jsonDataResponse(userProfileVmResponseSchema, "Updated profile").responses["200"],
+    "400": jsonErrorStatusResponse("400", "Profile body is not a JSON object", [
+      "malformed_json",
+      "json_object_required"
+    ]).responses["400"],
+    "401": aiAuthRequiredResponse,
+    "403": jsonErrorStatusResponse("403", "Profile update is not authorized", [
+      "invalid_client_token",
+      "user_profile_access_denied"
+    ]).responses["403"],
+    "422": jsonErrorStatusResponse("422", "Profile patch is invalid", ["validation_error"]).responses["422"],
+    "500": aiInternalResponse
+  }
+} as const;
+
 const userAiProfileReadResponses = {
   responses: {
     "200": jsonDataResponse(userAiProfileResponseSchema, "Current user's AI profile and usage summary").responses["200"],
@@ -6715,6 +6776,19 @@ export function getOpenApiDocument() {
           summary: "Update the current user's AI preferences",
           ...jsonRequestBody(patchUserAiProfileRequestBodySchema),
           ...userAiProfilePatchResponses
+        }
+      },
+      "/api/me/profile": {
+        get: {
+          tags: ["user-profile"],
+          summary: "Read the current user's profile (title, bio, skill tags)",
+          ...userProfileReadResponses
+        },
+        patch: {
+          tags: ["user-profile"],
+          summary: "Update the current user's profile",
+          ...jsonRequestBody(patchUserProfileRequestBodySchema),
+          ...userProfilePatchResponses
         }
       },
       "/api/projects/{id}/ai-governance": {
