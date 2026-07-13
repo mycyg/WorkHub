@@ -4309,7 +4309,7 @@ function renderSettingsMyProfileCard(locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
   return `<section class="wh-card wh-r4-route-card" data-r13-settings-profile-panel="true">
           <h3 role="heading" aria-level="2">${escapeHtml(zh ? "我的资料" : "My profile")}</h3>
-          <p class="wh-subtle">${escapeHtml(zh ? "以后 Cuu 派活时会参考这些信息，帮你把活派给最合适的人。" : "Cuu uses this information when suggesting who to assign work to.")}</p>
+          <p class="wh-subtle">${escapeHtml(zh ? "以后 AI 助手派活时会参考这些信息，帮你把活派给最合适的人。" : "The AI assistant uses this information when suggesting who to assign work to.")}</p>
           <p class="wh-subtle" data-r13-settings-profile-status="loading" hidden></p>
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "职位/角色头衔" : "Title / role")}</strong>
             <input type="text" class="wh-pill" data-r13-settings-profile-title-input aria-label="${escapeHtml(zh ? "职位/角色头衔" : "Title / role")}" placeholder="${escapeHtml(zh ? "例如：前端负责人" : "e.g. Frontend lead")}" maxlength="128" disabled />

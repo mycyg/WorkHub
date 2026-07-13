@@ -2571,7 +2571,7 @@ test("R13-A2 settings route renders the my-profile block: locked inputs for hydr
   assert.match(settings.html, /data-r13-settings-profile-bio-input[^>]*disabled/u);
   assert.match(settings.html, /data-r13-settings-profile-skills-input[^>]*disabled/u);
   assert.match(settings.html, /我的资料/u);
-  assert.match(settings.html, /Cuu 派活时会参考这些信息/u);
+  assert.match(settings.html, /AI 助手派活时会参考这些信息/u);
   // Hydration status line and retry control exist for the locked-on-failure path.
   assert.equal(settings.html.includes("data-r13-settings-profile-status"), true);
   assert.equal(settings.html.includes("data-r13-settings-profile-retry"), true);
