@@ -1272,6 +1272,13 @@ export function mountChatView(
     if (!modePopoverOpen || !(event.target instanceof Node)) {
       return;
     }
+    // R12 验收 D-01 修复：点击 chip 会让 composer 整块 innerHTML 重建，同一次点击冒泡到 document
+    // 时 event.target 已经从 DOM 上拆下——新渲染的 chip 不 contains 旧节点，会被误判成「点在外面」，
+    // 弹层开了又立刻关（真机表现=永远点不开；单测只断言 HTML 字符串抓不到这条时序）。target 已断开
+    // 即说明这次点击落在 composer 内部并触发过重渲染，绝不是「点外」，直接放行。
+    if (!event.target.isConnected) {
+      return;
+    }
     const chip = composerWrapEl!.querySelector("[data-wb-chat-mode-toggle]");
     const pop = composerWrapEl!.querySelector("[data-wb-chat-mode-pop]");
     if (chip?.contains(event.target) || pop?.contains(event.target)) {

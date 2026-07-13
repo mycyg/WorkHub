@@ -507,6 +507,20 @@ export function mountWorkbenchShell(
     // 销毁窗口——和主窗/桌宠窗一致，避免下次 open_workbench 还要重新起窗口。
     void windowBridge?.hide?.();
   });
+  // R12 验收 F-02 修复：`-webkit-app-region:drag` 是 Electron 的私有属性，WKWebView/Tauri 根本不认——
+  // 真机上标题栏四次拖动窗口坐标纹丝不动（验收证据 F-02-window-bounds.txt）。真正的拖动要在 mousedown
+  // 时调 Tauri Window API 的 startDragging（window-bridge.ts 批 1 起就有这个方法，一直没接线）。
+  // 按钮/可交互元素上按下不拖（否则点最小化会先把窗口拖起来）；CSS 里的 app-region 声明保留无害。
+  const titlebarEl = root.querySelector<HTMLElement>("[data-wb-titlebar]");
+  titlebarEl?.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+    if (event.target instanceof HTMLElement && event.target.closest("button")) {
+      return;
+    }
+    void windowBridge?.startDragging?.();
+  });
 
   return {
     store,
