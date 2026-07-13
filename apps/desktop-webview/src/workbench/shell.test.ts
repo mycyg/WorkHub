@@ -8,7 +8,6 @@ import {
   renderCenterLoadingHtml,
   renderEmptyStateHtml,
   renderProjectSummaryHtml,
-  renderSidePanelPlaceholderHtml,
   renderWorkbenchShellHtml
 } from "./shell.js";
 
@@ -111,8 +110,7 @@ test("renderCenterLoadingHtml and renderCenterErrorHtml render distinct, honest 
   assert.match(errored, /data-wb-retry-vm/u);
 });
 
-test("renderSidePanelPlaceholderHtml is an honest 'not built yet' notice, not fake data", () => {
-  const html = renderSidePanelPlaceholderHtml("zh-CN");
-  assert.match(html, /即将上线/u);
-  assert.doesNotMatch(html, /wh-wb-runcard/u);
-});
+// renderSidePanelPlaceholderHtml (the "coming soon" notice) retired in R13 batch P1 — the army panel
+// now renders real three-zone content (army/render.ts, covered by army/render.test.ts) instead of a
+// placeholder. shell.ts's own idle fallback (no conversation focused at all) is
+// renderArmySidePanelIdleHtml, covered in army/render.test.ts alongside the rest of that module.
