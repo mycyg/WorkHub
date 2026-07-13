@@ -980,6 +980,8 @@ test("cost dashboard cards localize budget risk statuses", () => {
     by_workitem: [],
     by_task_plan: [],
     by_objective: [],
+    // R13 批 P4：新增必填字段（labor-split 按 assignee 记账），手写字面量需显式给上。
+    by_assignee: [],
     model_breakdown: [],
     budget: [],
     notices: [],

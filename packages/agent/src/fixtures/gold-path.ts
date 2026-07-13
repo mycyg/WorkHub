@@ -993,6 +993,9 @@ const costDashboard: CostDashboardVM = {
   ],
   by_task_plan: [],
   by_objective: [],
+  // R13 批 P4（labor-split 按 assignee 记账）：新增必填字段（zod `.default([])`→z.infer 输出非可选），
+  // 这份手写字面量 fixture 不经 parseOutputContract 补默认值，必须显式给上，否则整个 gold-path 契约门失守。
+  by_assignee: [],
   model_breakdown: [
     {
       provider: usageRecord.provider,

@@ -142,6 +142,10 @@ export const acceptedDeliverableVmSchema = z.object({
   preview_href: z.string().min(1).optional(),
   restore_href: z.string().min(1).optional(),
   access_notice: z.string().min(1).optional(),
+  // R13 批 P4（全托管透明度：reviewer_kind 溯源）：这份交付物是被谁复核通过并合并的——'ai'=批 4b
+  // 全托管档自动合并（无人工复核），'human'=人工复核通过。缺省=没能推导出（历史数据/异常路径），
+  // UI 据此保持沉默而不是瞎猜「已由 AI 自动合并」。
+  reviewer_kind: z.enum(["human", "ai"]).optional(),
   accepted_at: isoDateTimeSchema
 });
 export type AcceptedDeliverableVM = z.infer<typeof acceptedDeliverableVmSchema>;
@@ -880,9 +884,19 @@ export const meetingWorkItemSourceContextVmSchema = z.object({
   proposal_href: z.string().min(1).optional(),
   proposal_status: z.string().min(1).optional()
 });
+// R13 批 P4（观察者工单来源标注）：与 drive_comment/meeting_insight 平级的第三种来源——
+// 会话观察者（Cuu）自动创建的工单，来源是项目群聊会话而不是网盘评论/会议纪要。没有 web 端可达的
+// 会话深链（桌面优先战略，web 无群聊 UI），故不带 href——只人话标注「由哪场会话创建」。
+export const observerWorkItemSourceContextVmSchema = z.object({
+  source_type: z.literal("conversation_observer"),
+  project_id: idSchema.optional(),
+  conversation_id: idSchema,
+  created_at: isoDateTimeSchema
+});
 export const workItemSourceContextVmSchema = z.discriminatedUnion("source_type", [
   driveWorkItemSourceContextVmSchema,
-  meetingWorkItemSourceContextVmSchema
+  meetingWorkItemSourceContextVmSchema,
+  observerWorkItemSourceContextVmSchema
 ]);
 export type WorkItemSourceContextVM = z.infer<typeof workItemSourceContextVmSchema>;
 
@@ -997,7 +1011,11 @@ export const agentArmyDashboardVmSchema = z.object({
     active_team_count: z.number().int().nonnegative(),
     waiting_decision_count: z.number().int().nonnegative(),
     today_cost_cny: z.string(),
-    autonomy_rate_pct: z.number().int().min(0).max(100)
+    autonomy_rate_pct: z.number().int().min(0).max(100),
+    // R13 批 P4（KPI：AI 自动合并数/占比）——与 cost 页 ai_auto_merge 同源同口径（今日通过评审里
+    // reviewer_kind=ai 的计数/占比）。缺省=取数失败或非管理员，不当 0% 端出去。
+    ai_auto_merge_count: z.number().int().nonnegative().optional(),
+    ai_auto_merge_ratio_pct: z.number().int().min(0).max(100).optional()
   }),
   plans: z.array(agentArmyDashboardPlanVmSchema).max(20),
   recent_escalations: z.array(z.object({
@@ -1242,6 +1260,24 @@ export const costDashboardVmSchema = z.object({
     production_cost_cny: z.string(),
     self_improvement_cost_cny: z.string(),
     self_improvement_ratio: z.number().min(0).max(1)
+  }).optional(),
+  // R13 批 P4（全托管透明度 D：labor-split 按 assignee 记账）：与上面 labor_split（生产/自进化维度）
+  // 是两个正交的分账——这条是「这笔钱是哪个执行者干活花的」。user_id 缺省=「系统」桶（无 run 关联的账目，
+  // 如夜间技能蒸馏，或历史上未挂 run 的账目）。仅管理员可见（与 by_user/by_team/by_workitem 同门槛——
+  // 暴露的是同组织其他成员的花费）。按花费降序，封顶（见 apps/api 组装处的 cap）。
+  by_assignee: z.array(z.object({
+    user_id: idSchema.optional(),
+    label: z.string().min(1),
+    cost_cny: z.string(),
+    tokens: z.number().int().nonnegative(),
+    run_count: z.number().int().nonnegative()
+  })).default([]),
+  // R13 批 P4（KPI：AI 自动合并数/占比）：今日「通过」类评审里，reviewer_kind=ai 的那部分——
+  // 批 4b 全托管档（第 5 模式）AI 复核通过并立刻自己合并的次数。count/ratio_pct 都缺省=当日无任何通过评审
+  // （不是「AI 从未自动合并过」，是「今天没有可比对的分母」，UI 应区分空数据与 0%）。仅管理员可见。
+  ai_auto_merge: z.object({
+    count: z.number().int().nonnegative(),
+    ratio_pct: z.number().int().min(0).max(100)
   }).optional(),
   budget: z.array(budgetUsageSchema),
   notices: z.array(budgetNoticeSchema),
