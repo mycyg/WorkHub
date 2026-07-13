@@ -411,6 +411,10 @@ export const projectConversations = pgTable(
     ),
     visibility: varchar("visibility", { length: 16 }).$type<ConversationVisibility>().notNull(),
     nextSeq: bigint("next_seq", { mode: "number" }).notNull().default(0),
+    // R13 批 G1（小群）：会话级「Cuu 是否参与」硬开关——不可被回话判定（现在的「被 @ 必回」/未来 4c 的
+    // 轻量判定器）绕过；false 时 conversation-turns.ts 的 createTurn 在任何判定逻辑之前直接 409。
+    // default true 保持所有既有会话（含存量 1:1 协同会话）的当前行为零回归。
+    cuuEnabled: boolean("cuu_enabled").notNull().default(true),
     // Legacy projects may not have an owner; new conversation creation must still populate this when known.
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     deletedAt: timestampTz("deleted_at"),

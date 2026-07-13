@@ -136,6 +136,7 @@ function conversationPage() {
       next_seq: 0,
       created_by: ownerUserId,
       participant_role: null,
+      cuu_enabled: true,
       created_at: "2026-07-12T08:30:00.000Z",
       updated_at: "2026-07-12T08:30:00.000Z"
     }],
@@ -815,6 +816,7 @@ test("R12 workbench real PostgreSQL endpoint returns 200 then uniform 404 after 
               next_seq: 0,
               created_by: realUserId,
               participant_role: null,
+              cuu_enabled: true,
               created_at: now.toISOString(),
               updated_at: now.toISOString()
             }],

@@ -339,6 +339,13 @@
       "breakpoints": true
     },
     {
+      "idx": 48,
+      "version": "7",
+      "when": 1783899000000,
+      "tag": "0048_small_group_cuu_enabled",
+      "breakpoints": true
+    },
+    {
       "idx": 49,
       "version": "7",
       "when": 1783900000000,

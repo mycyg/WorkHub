@@ -30,6 +30,12 @@ export type ConversationAccessRecord = {
   projectOwnerUserId: string | null;
   membershipRole: string;
   participantRole: ConversationParticipantRole | null;
+  // R13 批 G1（小群）：conversation_participants 的真实行数（含创建者）——服务端回话判定的
+  // "1:1 vs 小群"维度（见 apps/api/src/services/conversation-turns.ts 的 mentionsCuu/respondDecider
+  // 接缝）从这里读，不是另开一次循环查询。只在 findVisibleAccessRecord 上附加（见下），
+  // listMessagesAfter/listMessagesBefore 复用的 readVisibleAccess 内部辅助类型不带这个字段——
+  // 那两条是高频轮询路径，不需要为一个用不上的字段多付一次 count 查询。
+  participantCount: number;
 };
 
 export type ListVisibleConversationsInput = {
@@ -61,6 +67,10 @@ export type CreateCollabConversationInput = {
   parentConversationId?: string;
   sourceMessageId?: string;
   participantUserIds: string[];
+  // R13 批 G1（小群）：会话级「Cuu 是否参与」硬开关。可选——省略时仓库层退回 true（同 DB 列
+  // default true、同 createConversationRequestSchema.cuu_enabled 的 zod default(true)，三处默认值
+  // 保持一致，不会出现"契约说默认开、仓库测试没传却建出关闭会话"的漂移）。
+  cuuEnabled?: boolean;
   at?: Date;
 };
 
@@ -184,6 +194,10 @@ const conversationSelection = {
   sourceMessageId: projectConversations.sourceMessageId,
   visibility: projectConversations.visibility,
   nextSeq: projectConversations.nextSeq,
+  // R13 批 G1（小群）：加进显式投影——conversationSelection 是这个仓库文件里对 project_conversations
+  // 的唯一 select 列表，不加这一行 access.conversation.cuuEnabled 在运行时会是 undefined（哪怕
+  // ConversationRow 的 TS 类型因为 schema 改了而"看起来"总是有这个字段）。
+  cuuEnabled: projectConversations.cuuEnabled,
   createdBy: projectConversations.createdBy,
   deletedAt: projectConversations.deletedAt,
   deletedByUserId: projectConversations.deletedByUserId,
@@ -324,10 +338,14 @@ function conversationListCursorCondition(cursor: ConversationListCursor | undefi
   return sql`(${projectConversations.createdAt}, ${projectConversations.id}) > (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)`;
 }
 
+// R13 批 G1：不带 participantCount 的内部行形状——listMessagesAfter/listMessagesBefore 这两条高频轮询
+// 路径只用它做一次可见性布尔判断，不需要额外一次 count 查询（见 ConversationAccessRecord 顶部注释）。
+type ConversationAccessRow = Omit<ConversationAccessRecord, "participantCount">;
+
 async function readVisibleAccess(
   db: WorkHubDb,
   input: FindConversationAccessInput & { projectId?: string }
-): Promise<ConversationAccessRecord | null> {
+): Promise<ConversationAccessRow | null> {
   const rows = await db
     .select({
       conversation: conversationSelection,
@@ -360,7 +378,7 @@ async function readVisibleAccess(
     )
     .where(activeConversationCondition(input))
     .limit(1);
-  return (rows[0] as ConversationAccessRecord | undefined) ?? null;
+  return (rows[0] as ConversationAccessRow | undefined) ?? null;
 }
 
 async function readActiveProjectMembership(
@@ -584,7 +602,15 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
     },
 
     async findVisibleAccessRecord(input) {
-      return readVisibleAccess(db, input);
+      const access = await readVisibleAccess(db, input);
+      if (!access) {
+        return null;
+      }
+      const [participantCountRow] = await db
+        .select({ value: sql<number>`count(*)::int` })
+        .from(conversationParticipants)
+        .where(eq(conversationParticipants.conversationId, access.conversation.id));
+      return { ...access, participantCount: participantCountRow?.value ?? 0 };
     },
 
     async createCollab(input) {
@@ -669,6 +695,7 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
             ...(input.sourceMessageId ? { sourceMessageId: input.sourceMessageId } : {}),
             visibility: input.visibility,
             nextSeq: 0,
+            cuuEnabled: input.cuuEnabled ?? true,
             createdBy: creatorUserId,
             createdAt: at,
             updatedAt: at

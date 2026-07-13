@@ -120,6 +120,8 @@ function conversationToVm(row: ConversationRow | VisibleConversationRow, partici
     next_seq: row.nextSeq,
     created_by: row.createdBy,
     participant_role: participantRole ?? ("participantRole" in row ? row.participantRole : null),
+    // R13 批 G1（小群）：会话级 Cuu 硬开关——additive 输出字段，直接透传 DB 列。
+    cuu_enabled: row.cuuEnabled,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString()
   };
@@ -252,6 +254,7 @@ export function createConversationService(
             : {}),
           ...(input.payload.source_message_id ? { sourceMessageId: input.payload.source_message_id } : {}),
           participantUserIds: input.payload.participant_user_ids,
+          cuuEnabled: input.payload.cuu_enabled,
           at: now()
         });
         const creatorRole = result.participants.find(

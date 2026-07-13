@@ -93,6 +93,27 @@ test("renderMemberBarHtml caps the rendered avatar row at 6 members but keeps th
   assert.equal((html.match(/class="wh-wb-chat-avatar"/gu) ?? []).length, 6);
 });
 
+// R13 批 G1（小群）：senderLabel/renderMessageHtml 按 sender_user_id 查 ctx.members（一个纯 Map 查找，
+// 见 render.ts 的 senderLabel），对小群（3+ 位真人参与者）天然成立，不需要为群聊场景额外改造——这条
+// 补一条回归测试钉死这个事实（同批设计稿"多人昵称解析不是风险点"一节的结论）。
+test("renderMessageHtml resolves each of three distinct human senders in a small group to their own nickname (multi-sender nickname resolution)", () => {
+  const ctx = ctxWith([
+    member({ user_id: "u1", nickname: "张三" }),
+    member({ user_id: "u2", nickname: "李四" }),
+    member({ user_id: "u3", nickname: "王五" })
+  ]);
+  const zhangHtml = renderMessageHtml(baseMessage({ id: "m1", sender_user_id: "u1", content: { text: "第一条" } }), ctx);
+  const liHtml = renderMessageHtml(baseMessage({ id: "m2", sender_user_id: "u2", content: { text: "第二条" } }), ctx);
+  const wangHtml = renderMessageHtml(baseMessage({ id: "m3", sender_user_id: "u3", content: { text: "第三条" } }), ctx);
+
+  assert.match(zhangHtml, /张三/u);
+  assert.doesNotMatch(zhangHtml, /李四|王五/u);
+  assert.match(liHtml, /李四/u);
+  assert.doesNotMatch(liHtml, /张三|王五/u);
+  assert.match(wangHtml, /王五/u);
+  assert.doesNotMatch(wangHtml, /张三|李四/u);
+});
+
 // —— day separator —— //
 
 test("renderDaySeparatorHtml escapes and wraps the label", () => {

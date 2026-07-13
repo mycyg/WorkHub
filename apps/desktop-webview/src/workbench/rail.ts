@@ -74,14 +74,24 @@ export type CreateCollabConversationApiClient = Pick<WorkbenchRailApiClient, "re
 // （00-interaction-design.md §3：协同会话是"1:1 人机为主，可拉其他成员"的单聊，服务端当前运行时
 // 对 project/private 一视同仁只放行参与者可见——这里选 private 是更准确的协议语义，不影响实际可见性）。
 // 同 chat/api.ts 里其它会话端点一样,不为这一个批次特性扩大 WorkHubApiClient 的具名方法面。
+//
+// R13 批 G1（小群）：participantUserIds/cuuEnabled 都是新增的可选字段（additive，契约层
+// createConversationRequestSchema 两者都有 zod default）——省略时请求体和批 P2 落地时完全一样，
+// 不影响任何既有调用方/既有测试的期望 body 形状。
 export function createCollabConversation(
   client: CreateCollabConversationApiClient,
   projectId: string,
-  input: { title: string }
+  input: { title: string; participantUserIds?: string[]; cuuEnabled?: boolean }
 ): Promise<CreateConversationResultVM> {
   return client.request<CreateConversationResultVM>(`/api/projects/${encodeURIComponent(projectId)}/conversations`, {
     method: "POST",
-    body: JSON.stringify({ kind: "collab", title: input.title, visibility: "private" })
+    body: JSON.stringify({
+      kind: "collab",
+      title: input.title,
+      visibility: "private",
+      ...(input.participantUserIds !== undefined ? { participant_user_ids: input.participantUserIds } : {}),
+      ...(input.cuuEnabled !== undefined ? { cuu_enabled: input.cuuEnabled } : {})
+    })
   });
 }
 
@@ -340,6 +350,77 @@ export function renderNewPersonalSpaceModalHtml(input: {
         <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-new-personal-space-cancel ${input.submitting ? "disabled" : ""}>${zh ? "取消" : "Cancel"}</button>
         <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-new-personal-space-submit ${input.submitting ? "disabled" : ""}>
           ${input.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "创建个人空间" : "Create personal space"}
+// R13 批 G1（小群）：建群模态——把批 P2 落地的"点一下就用自动标题建一条只有自己的协同会话"极简流程
+// 升级为"标题 + 成员多选 + Cuu 开关"。成员候选来自当前项目 workbench VM 已经在拉的
+// workspace_members.items（@ picker 同一份数据源），按 is_self 排除自己（服务端 assertCollabInput
+// 本来就要求 participant_user_ids 不含创建者，这里在 UI 层先天然满足，不依赖服务端兜底报错）。
+export type NewCollabMemberOption = {
+  userId: string;
+  nickname: string;
+};
+
+export type NewCollabModalUiState = {
+  open: boolean;
+  title: string;
+  selectedUserIds: readonly string[];
+  cuuEnabled: boolean;
+  submitting: boolean;
+  error?: string | undefined;
+};
+
+export const IDLE_NEW_COLLAB_MODAL_STATE: NewCollabModalUiState = {
+  open: false,
+  title: "",
+  selectedUserIds: [],
+  cuuEnabled: true,
+  submitting: false
+};
+
+export function renderNewCollabModalHtml(input: {
+  locale: Locale;
+  state: NewCollabModalUiState;
+  memberOptions: readonly NewCollabMemberOption[];
+}): string {
+  const zh = input.locale === "zh-CN";
+  const state = input.state;
+  const selected = new Set(state.selectedUserIds);
+  const memberRowsHtml =
+    input.memberOptions.length > 0
+      ? input.memberOptions
+          .map((member) => {
+            const checked = selected.has(member.userId);
+            return `<label class="wh-wb-new-collab-member-row">
+        <input type="checkbox" data-wb-new-collab-member="${escapeHtml(member.userId)}" ${checked ? "checked" : ""} ${state.submitting ? "disabled" : ""} />
+        <span>${escapeHtml(member.nickname)}</span>
+      </label>`;
+          })
+          .join("")
+      : `<p class="wh-wb-new-collab-member-empty">${zh ? "这个工作区暂时没有其他成员" : "No other workspace members yet"}</p>`;
+  return `<div class="wh-wb-modal-overlay" data-wb-new-collab-overlay data-open="${state.open ? "true" : "false"}">
+    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${zh ? "新建协同会话" : "New collab chat"}">
+      <h3 class="wh-wb-modal-title">${zh ? "新建协同会话" : "New collab chat"}</h3>
+      <input
+        class="wh-wb-modal-input"
+        type="text"
+        maxlength="256"
+        placeholder="${zh ? "会话名，如：改第三幕" : "Chat name"}"
+        data-wb-new-collab-title
+        value="${escapeHtml(state.title)}"
+        ${state.submitting ? "disabled" : ""}
+      />
+      <div class="wh-wb-new-collab-members">
+        <p class="wh-wb-new-collab-members-label">${zh ? "拉人进来（不选就只有你和 Cuu）" : "Add members (leave empty for just you and Cuu)"}</p>
+        ${memberRowsHtml}
+      </div>
+      <label class="wh-wb-new-collab-cuu-toggle">
+        <input type="checkbox" data-wb-new-collab-cuu-toggle ${state.cuuEnabled ? "checked" : ""} ${state.submitting ? "disabled" : ""} />
+        <span>${zh ? "Cuu 参与这个会话" : "Cuu takes part in this chat"}</span>
+      </label>
+      ${state.error ? `<p class="wh-wb-modal-error">${escapeHtml(state.error)}</p>` : ""}
+      <div class="wh-wb-modal-actions">
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-new-collab-cancel ${state.submitting ? "disabled" : ""}>${zh ? "取消" : "Cancel"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-new-collab-submit ${state.submitting || !state.title.trim() ? "disabled" : ""}>
+          ${state.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "创建" : "Create"}
         </button>
       </div>
     </div>
@@ -384,6 +465,14 @@ export function mountWorkbenchRail(
   let personalSpaceName = "";
   let personalSpaceSubmitting = false;
   let personalSpaceError: string | undefined;
+  // R13 批 G1（小群）：建群模态的瞬态输入态——同 modalName/modalSubmitting 一样是纯本地状态，不进
+  // 共享 store（只有这个组件自己的渲染需要读它）。newCollabSubmitting/newCollabError 复用批 P2 已有的
+  // 那两个变量，语义不变（真的在发 HTTP 请求/请求失败），只是现在由模态的提交按钮触发，不再是树叶
+  // 按钮直接触发。
+  let newCollabModalOpen = false;
+  let newCollabModalTitle = "";
+  let newCollabModalSelectedUserIds: string[] = [];
+  let newCollabModalCuuEnabled = true;
   let disposed = false;
 
   const render = () => {
@@ -427,6 +516,19 @@ export function mountWorkbenchRail(
       name: personalSpaceName,
       submitting: personalSpaceSubmitting,
       error: personalSpaceError
+    })}${renderNewCollabModalHtml({
+      locale: input.locale,
+      state: {
+        open: newCollabModalOpen,
+        title: newCollabModalTitle,
+        selectedUserIds: newCollabModalSelectedUserIds,
+        cuuEnabled: newCollabModalCuuEnabled,
+        submitting: newCollabSubmitting,
+        error: newCollabError
+      },
+      memberOptions: (state.vm?.workspace_members.items ?? [])
+        .filter((member) => !member.is_self)
+        .map((member) => ({ userId: member.user_id, nickname: member.nickname }))
     })}`;
   };
 
@@ -543,6 +645,22 @@ export function mountWorkbenchRail(
     personalSpaceName = "";
     personalSpaceError = undefined;
     input.store.setState({ newPersonalSpaceModalOpen: true });
+  // R13 批 G1（小群）：「+ 新建协同会话」从批 P2 的"点一下就用自动标题建一条只有自己的会话"升级为
+  // 打开建群模态——标题预填自动命名（用户仍可改）、成员多选默认不选（不选=1:1）、Cuu 开关默认开。
+  const openNewCollabModal = () => {
+    const state = input.store.getState();
+    const vm = state.vm;
+    newCollabModalTitle = vm ? nextCollabConversationTitle(vm.conversations.conversations, input.locale) : "";
+    newCollabModalSelectedUserIds = [];
+    newCollabModalCuuEnabled = true;
+    newCollabError = undefined;
+    newCollabModalOpen = true;
+    render();
+  };
+
+  const closeNewCollabModal = () => {
+    newCollabModalOpen = false;
+    render();
   };
 
   // R13 批 P2：协同会话「+ 新建」——POST /projects/:id/conversations 建好之后立即打开它(store.centerTab
@@ -552,6 +670,10 @@ export function mountWorkbenchRail(
   // 但这里仍然老实地判一次现状而不是假设调用时机(用户可能在网络请求还没打完前切换了项目)。
   const submitNewCollabConversation = async () => {
     if (newCollabSubmitting) {
+      return;
+    }
+    const title = newCollabModalTitle.trim();
+    if (!title) {
       return;
     }
     const state = input.store.getState();
@@ -564,12 +686,16 @@ export function mountWorkbenchRail(
     newCollabError = undefined;
     render();
     try {
-      const title = nextCollabConversationTitle(vm.conversations.conversations, input.locale);
-      const result = await createCollabConversation(input.client, projectId, { title });
+      const result = await createCollabConversation(input.client, projectId, {
+        title,
+        participantUserIds: [...newCollabModalSelectedUserIds],
+        cuuEnabled: newCollabModalCuuEnabled
+      });
       if (disposed) {
         return;
       }
       newCollabSubmitting = false;
+      newCollabModalOpen = false;
       const latestVm = input.store.getState().vm;
       // 请求打完之间用户可能已经切走了项目——只在还停在同一个项目时才把新会话合并进当前 VM 并跳过去，
       // 切走了就只是静默地把它建在服务端(会话仍然存在，下次回到这个项目时会在树叶里看到)，不硬切回去。
@@ -616,7 +742,7 @@ export function mountWorkbenchRail(
       return;
     }
     if (target.closest("[data-wb-new-collab-conversation]")) {
-      void submitNewCollabConversation();
+      openNewCollabModal();
       return;
     }
     if (target.closest("[data-wb-open-drive]")) {
@@ -649,6 +775,14 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-new-personal-space-submit]")) {
       void submitNewPersonalSpace();
+    // R13 批 G1：建群模态的取消/点遮罩背景关闭，同新建项目模态同一套约定。
+    const clickedNewCollabOverlayBackdrop = target.hasAttribute("data-wb-new-collab-overlay");
+    if (target.closest("[data-wb-new-collab-cancel]") || clickedNewCollabOverlayBackdrop) {
+      closeNewCollabModal();
+      return;
+    }
+    if (target.closest("[data-wb-new-collab-submit]")) {
+      void submitNewCollabConversation();
     }
   });
 
@@ -679,10 +813,41 @@ export function mountWorkbenchRail(
         const end = input3.value.length;
         try {
           input3.setSelectionRange(end, end);
+    // R13 批 G1：建群模态标题输入——同上一段新建项目名称输入同一套"重渲后还焦点/光标"处理。
+    if (target instanceof HTMLInputElement && target.matches("[data-wb-new-collab-title]")) {
+      newCollabModalTitle = target.value;
+      render();
+      const titleInput = container.querySelector<HTMLInputElement>("[data-wb-new-collab-title]");
+      if (titleInput) {
+        titleInput.focus();
+        const end = titleInput.value.length;
+        try {
+          titleInput.setSelectionRange(end, end);
         } catch {
           // ignore: some input rendering modes reject setSelectionRange.
         }
       }
+    }
+  });
+
+  // R13 批 G1：建群模态的成员多选 checkbox + Cuu 开关 checkbox——用 change 而不是 click/input，
+  // 匹配 checkbox 的原生语义（复选框状态变化事件），委托到容器同其它监听器一致。
+  container.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") {
+      return;
+    }
+    const memberUserId = target.dataset.wbNewCollabMember;
+    if (memberUserId) {
+      newCollabModalSelectedUserIds = target.checked
+        ? [...newCollabModalSelectedUserIds, memberUserId]
+        : newCollabModalSelectedUserIds.filter((userId) => userId !== memberUserId);
+      render();
+      return;
+    }
+    if (target.matches("[data-wb-new-collab-cuu-toggle]")) {
+      newCollabModalCuuEnabled = target.checked;
+      render();
     }
   });
 

@@ -115,7 +115,10 @@ function runRow(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 test("listRunsForConversation reuses the conversation repository access judgment before listing runs", async () => {
-  const { db, queries } = createQueryRecorder([[accessRow()], [runRow()]]);
+  // R13 批 G1：findVisibleAccessRecord 现在附带一次 conversation_participants 的 count(*) 查询
+  // （回话判定的 1:1 vs 小群维度，见 packages/db/src/repositories/conversations.ts 顶部注释）——
+  // 这是本批改过的既有断言：queries.length 从 2 变成 3（仍是 O(1) 次固定查询，不是 N+1）。
+  const { db, queries } = createQueryRecorder([[accessRow()], [{ value: 1 }], [runRow()]]);
 
   const result = await repository(db).listRunsForConversation({
     workspaceId,
@@ -125,11 +128,11 @@ test("listRunsForConversation reuses the conversation repository access judgment
   });
 
   assert.ok(result);
-  assert.equal(queries.length, 2, "must run exactly one access check plus one run list query, no N+1");
+  assert.equal(queries.length, 3, "must run the access check, its participant count, and one run list query, no N+1");
   const accessQuery = queries[0];
   assert.equal(accessQuery?.fromTable, projectConversations, "access check must reuse the conversations repo query");
 
-  const runQuery = queries[1];
+  const runQuery = queries[2];
   assert.equal(runQuery?.fromTable, agentRuns);
   assert.deepEqual(runQuery?.joins.map((join) => [join.kind, join.table]), [["left", actionCardItems]]);
   assert.equal(runQuery?.limit, 21, "must fetch limit+1 to detect capped pages");
@@ -176,6 +179,7 @@ test("listRunsForConversation returns null and never queries agent_runs when the
 test("listRunsForConversation falls back the goal summary to the run title when objective_md is blank", async () => {
   const { db } = createQueryRecorder([
     [accessRow()],
+    [{ value: 1 }],
     [runRow({ objectiveMd: null, title: "AI worker run", recentStepJson: null })]
   ]);
 
@@ -188,6 +192,7 @@ test("listRunsForConversation falls back the goal summary to the run title when 
 test("listRunsForConversation drops a malformed recent-step payload instead of surfacing a half-built shape", async () => {
   const { db } = createQueryRecorder([
     [accessRow()],
+    [{ value: 1 }],
     [runRow({ recentStepJson: { toolName: "search_docs" } })]
   ]);
 
@@ -202,7 +207,7 @@ test("listRunsForConversation reports capped pages with a next cursor from the l
     runRow({ id: fixtureId(102), createdAt: new Date("2026-07-12T08:01:00.000Z"), cursorCreatedAt: "2026-07-12T08:01:00.000000Z" }),
     runRow({ id: fixtureId(103), createdAt: new Date("2026-07-12T08:00:00.000Z"), cursorCreatedAt: "2026-07-12T08:00:00.000000Z" })
   ];
-  const { db } = createQueryRecorder([[accessRow()], rows]);
+  const { db } = createQueryRecorder([[accessRow()], [{ value: 1 }], rows]);
 
   const result = await repository(db).listRunsForConversation({ workspaceId, viewerUserId, conversationId, limit: 2 });
 

@@ -687,6 +687,21 @@ test("migration journal ends with 0049 personal projects", () => {
   );
 });
 
+test("R13 G1 migration 0048 adds project_conversations.cuu_enabled as a non-null default-true column", () => {
+  const migrationUrl = new URL("../migrations/0048_small_group_cuu_enabled.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0048_small_group_cuu_enabled.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"project_conversations"\s+ADD COLUMN IF NOT EXISTS\s+"cuu_enabled"\s+boolean\s+NOT NULL\s+DEFAULT\s+true\s*;/iu
+  );
+
+  const projectConversations = requiredTable("projectConversations") as WorkHubTable & Record<string, any>;
+  assert.equal(projectConversations.cuuEnabled.notNull, true);
+  assert.equal(projectConversations.cuuEnabled.default, true);
+  assert.equal(projectConversations.cuuEnabled.columnType, "PgBoolean");
+});
+
 test("R12 migration 0046 backfills one active main only for eligible legacy projects", () => {
   const migration = readFileSync(
     new URL("../migrations/0046_r12_conversation_foundation.sql", import.meta.url),

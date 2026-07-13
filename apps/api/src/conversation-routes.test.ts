@@ -129,6 +129,7 @@ function conversationVm() {
     next_seq: 1,
     created_by: userId,
     participant_role: "owner" as const,
+    cuu_enabled: true,
     created_at: now.toISOString(),
     updated_at: now.toISOString()
   };

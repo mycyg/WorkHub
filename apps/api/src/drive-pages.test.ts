@@ -4251,6 +4251,7 @@ function mainConversationRow(overrides: Partial<VisibleConversationRow> = {}): V
     sourceMessageId: null,
     visibility: "project",
     nextSeq: 5,
+    cuuEnabled: true,
     createdBy: null,
     deletedAt: null,
     deletedByUserId: null,

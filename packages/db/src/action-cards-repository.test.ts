@@ -138,6 +138,21 @@ test("listObserverCandidates is tenant/active-project scoped, joins governance a
   assert.equal(query?.joins.length, 3);
 });
 
+// R13 批 G1（小群）：设计稿前置发现——observer 已经天然排除 collab（含 cuu_enabled=true 的小群）,
+// 这条查询从来只认 kind='main'。这不是新代码，是钉死既有事实的回归测试：小群批次不需要给这条 SQL
+// 加任何 kind/cuu_enabled 分支，60s 主区观察者永远不会把一个小群的沉默期拆成行动卡。
+test("listObserverCandidates hard-codes kind='main' — a cuu_enabled small group is never a candidate, by construction", async () => {
+  const { db, queries } = createQueryRecorder([[]]);
+
+  await createActionCardRepository(db).listObserverCandidates({ now, limit: 10 });
+
+  const query = queries[0];
+  assert.equal(queryReferences(query?.where, projectConversations.kind), true, "query must filter on projectConversations.kind");
+  const boundValues = queryParamValues(query?.where);
+  assert.equal(boundValues.includes("main"), true, "the bound kind value must be 'main'");
+  assert.equal(boundValues.includes("collab"), false, "collab must never be a bound candidate kind, small group or not");
+});
+
 test("listObserverCandidates rejects an out-of-range limit before querying", async () => {
   const { db, queries } = createQueryRecorder();
   await assert.rejects(
