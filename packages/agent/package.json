@@ -35,6 +35,10 @@
     "./turns": {
       "types": "./src/turns/index.ts",
       "import": "./src/turns/index.ts"
+    },
+    "./spotlight-intent": {
+      "types": "./src/spotlight-intent/index.ts",
+      "import": "./src/spotlight-intent/index.ts"
     }
   },
   "scripts": {

@@ -5,6 +5,17 @@
 import { escapeHtml } from "@workhub/web-runtime";
 import type { WorkHubLocale } from "@workhub/ui/gold-path";
 
+import {
+  ASK_CUU_MIN_QUERY_LENGTH,
+  askCuuReducer,
+  buildAskCuuRequestPayload,
+  decideAskCuuPresentation,
+  initialAskCuuState,
+  renderAskCuuAnswerHtml,
+  type AskCuuPresentation,
+  type AskCuuResult,
+  type AskCuuUiState
+} from "./ask-cuu.js";
 import { commandRegistry, type CommandId, type CommandMatch } from "../command-palette.js";
 import { renderWorkHubLiquidGlassLayer, scheduleWorkHubLiquidGlassFilterRebuild } from "../liquid-glass-filter.js";
 import { resolveCapabilityView } from "./registry.js";
@@ -54,6 +65,9 @@ const SEARCH_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.3-4.3"/></svg>';
 const BACK_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+// R13 批 S1：「问问 Cuu」行的图标——一个带三点的对话气泡（"正在想"的视觉隐喻），非 emoji，字符 tile 风格。
+const ASK_CUU_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5a8.2 8.2 0 0 0-7 12.4L4 20l4.4-1.2A8.2 8.2 0 1 0 12 3.5z"/><path d="M8.7 12h.01M12 12h.01M15.3 12h.01"/></svg>';
 const DRAG_EXCLUDED_SELECTOR = "input,textarea,button,a,select,[contenteditable=true]";
 // UX-M15：军团 plan 详情的「← 返回小队列表」也算内部回退层——Esc 先回列表再回 launcher。
 export const SPOTLIGHT_INTERNAL_BACK_SELECTOR = "[data-att-detail-collapse],[data-wi-back],[data-prop-back],[data-run-back],[data-back-to-projects],[data-back-to-agent-armies]";
@@ -97,21 +111,87 @@ export function renderSpotlightShellHtml(locale: WorkHubLocale): string {
           <kbd class="wh-spot-kbd">⌘K</kbd>
           <button type="button" aria-hidden="true" tabindex="-1" class="wh-spot-drag-sheet" data-spot-drag-sheet></button>
         </div>
+        <div class="wh-spot-ask-banner" data-spot-ask-banner hidden role="status" aria-live="polite">
+          <span class="wh-spot-ask-banner-text" data-spot-ask-banner-text></span>
+          <button type="button" class="wh-spot-ask-banner-undo ds-pressable" data-spot-ask-banner-undo>${zh ? "撤回" : "Undo"}</button>
+        </div>
         <div class="wh-spot-body" data-spot-body></div>
       </div>
     </div>`;
+}
+
+// R13 批 S1：命令面板无命中时的「问问 Cuu」区块——按 askCuu 微状态机的当前阶段渲染四种形态
+// （idle 的入口行 / asking 的呼吸态 / presenting 的确认条或内联回答 / error 的重试）。纯渲染函数，
+// 决策本身（该不该自动执行、该不该先确认）已经在 ask-cuu.ts 的 decideAskCuuPresentation 里做完，
+// 这里只管把决策结果画出来。
+function renderAskCuuBlock(askCuu: AskCuuUiState, query: string, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  const trimmed = query.trim();
+
+  if (askCuu.phase === "asking") {
+    return `<div class="wh-spot-ask-cuu-asking" role="status" aria-live="polite">
+      <span class="wh-spot-ask-cuu-breathe" aria-hidden="true"></span>
+      ${zh ? `Cuu 正在想「${escapeHtml(askCuu.query)}」…` : `Cuu is thinking about "${escapeHtml(askCuu.query)}"…`}
+    </div>`;
+  }
+  if (askCuu.phase === "error") {
+    return `<div class="wh-spot-error">${escapeHtml(askCuu.message)}
+      <div style="margin-top:13px"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-ask-cuu-retry>${zh ? "重试" : "Retry"}</button></div>
+    </div>`;
+  }
+  if (askCuu.phase === "presenting") {
+    const presentation = askCuu.presentation;
+    if (presentation.kind === "answer") {
+      return `<div class="wh-spot-ask-cuu-answer">
+        <p class="wh-spot-ask-cuu-answer-text">${renderAskCuuAnswerHtml(presentation.answerMd)}</p>
+        <p class="wh-spot-ask-cuu-disclaimer">${zh ? "这不是会话，不会保存" : "Not a conversation — nothing is saved"}</p>
+        <div class="wh-spot-intake-actions" style="justify-content:flex-end"><button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-ask-cuu-dismiss>${zh ? "知道了" : "Got it"}</button></div>
+      </div>`;
+    }
+    // confirm_open_page / confirm_new_project / confirm_create_task：低把握或本就该多问一句的动作，
+    // 先展示「Cuu 理解为：XX」，等用户点确认才真正执行（见 ask-cuu.ts 的低把握先确认矩阵）。
+    return `<div class="wh-spot-ask-cuu-confirm">
+      <p class="wh-spot-ask-cuu-understood">${escapeHtml(presentation.understoodText)}</p>
+      <div class="wh-spot-intake-actions">
+        <button type="button" class="wh-spot-act wh-spot-act--quiet" data-spot-ask-cuu-cancel>${zh ? "取消" : "Cancel"}</button>
+        <button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-spot-ask-cuu-confirm>${zh ? "确认" : "Confirm"}</button>
+      </div>
+    </div>`;
+  }
+  // idle：只有输入达到最短字数才露出这一行——太短的残词不值得一次网络往返。
+  if (trimmed.length < ASK_CUU_MIN_QUERY_LENGTH) {
+    return "";
+  }
+  return `<div class="wh-spot-ask-cuu-row-wrap">
+    <button type="button" class="wh-spot-ask-cuu-row ds-pressable" data-spot-ask-cuu>
+      <span class="wh-spot-ask-cuu-icon" aria-hidden="true">${ASK_CUU_ICON}</span>
+      <span class="wh-spot-ask-cuu-text">
+        <span class="wh-spot-ask-cuu-label">${zh ? "问问 Cuu" : "Ask Cuu"}</span>
+        <span class="wh-spot-ask-cuu-hint">${zh ? `“${escapeHtml(trimmed)}”` : `"${escapeHtml(trimmed)}"`}</span>
+      </span>
+      <kbd class="wh-spot-ask-cuu-kbd">${zh ? "回车" : "Enter"}</kbd>
+    </button>
+  </div>`;
 }
 
 function renderLauncherGrid(
   matches: CommandMatch[],
   locale: WorkHubLocale,
   badges: Partial<Record<CommandId, number>>,
-  showHello: boolean
+  showHello: boolean,
+  askCuu: AskCuuUiState,
+  query: string
 ): string {
   const zh = locale === "zh-CN";
   if (matches.length === 0) {
+    // R13 批 S1：一旦「问问 Cuu」进入 asking/presenting/error，这块区域整体交给它（避免和下面的
+    // 「当新任务交给 Cuu」旧出口同时出现、抢注意力）；只有 idle 阶段才是「没有匹配」+ 两个出口并存。
+    if (askCuu.phase !== "idle") {
+      return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${renderAskCuuBlock(askCuu, query, locale)}</div></div>`;
+    }
     // 普通用户审查 R2：搜索框邀请自然语言，整句需求却落「没有匹配」死路——给「当新任务交给 Cuu」出口。
     return `<div class="wh-spot-grid"><div class="wh-spot-empty-grid">${zh ? "没有匹配的能力" : "No matching capability"}
+      ${renderAskCuuBlock(askCuu, query, locale)}
       <div class="wh-spot-intake-actions"><button type="button" class="wh-spot-act wh-spot-act--primary ds-pressable" data-spot-fallback-intake>${zh ? "把这句话当新任务交给 Cuu" : "Hand this to Cuu as a new task"}</button></div>
     </div></div>`;
   }
@@ -171,9 +251,25 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   const body = host.querySelector<HTMLElement>("[data-spot-body]")!;
   const titleEl = host.querySelector<HTMLElement>("[data-spot-title]")!;
   const subtitleEl = host.querySelector<HTMLElement>("[data-spot-subtitle]")!;
+  const askBanner = host.querySelector<HTMLElement>("[data-spot-ask-banner]")!;
+  const askBannerText = host.querySelector<HTMLElement>("[data-spot-ask-banner-text]")!;
   let suppressNextFocusExpansion = false;
   let suppressSearchFocusUntil = 0;
   let suppressSearchClickUntil = 0;
+
+  // R13 批 S1：「问问 Cuu」微状态机——idle/asking/presenting/error，纯 reducer 在 ask-cuu.ts。
+  // askCuuRequestSeq 是竞态令牌：请求发出后用户又改了查询/发起新一次 ask，旧请求落地时按令牌判断
+  // 是否已经过期（过期就丢弃，不覆盖更新的状态）。
+  let askCuuState: AskCuuUiState = initialAskCuuState;
+  let askCuuRequestSeq = 0;
+  const hideAskBanner = () => {
+    askBanner.hidden = true;
+    askBannerText.textContent = "";
+  };
+  const showAskBanner = (text: string) => {
+    askBannerText.textContent = text;
+    askBanner.hidden = false;
+  };
 
   // —— 原生窗口缩放：测内容高度，clamp 到屏幕上限，超出则盒内滚动。去抖合并多次请求。 ——
   let resizeRaf = 0;
@@ -247,9 +343,16 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     const expanded = searchActive || state.query.trim().length > 0;
     box.dataset.collapsed = expanded ? "false" : "true";
     body.innerHTML = expanded
-      ? renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0)
+      ? renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0, askCuuState, state.query)
       : "";
     syncLauncherActiveDescendant();
+  };
+
+  // 「问问 Cuu」区块随 askCuuState 变化时的重渲——只重画能力网格区，不动 mode/顶栏（还在 launcher 内）。
+  const refreshAskCuuArea = () => {
+    renderLauncherBody();
+    scheduleWorkHubLiquidGlassFilterRebuild(doc);
+    requestResize();
   };
 
   const renderLauncher = () => {
@@ -258,6 +361,13 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       disposeView = undefined;
     }
     box.dataset.mode = "launcher";
+    // 回到（真正的）launcher 时，之前留下的撤回条 / 未完成的 ask（asking·presenting·error）都不该
+    // 继续挂着——正常的 runAskCuu/applyAskCuuAction 流程在导航走之前已经自己 dismiss 过，这里的兜底
+    // 只在「外部入口（托盘/深链/桌宠卡）在 ask 尚未落定时直接跳到某个能力」这种边界情形下才真正起作用：
+    // 令牌自增让任何仍在飞的响应落地时判定过期，避免用户几经辗转回到 launcher 时又冒出一条陈旧确认条。
+    askCuuRequestSeq += 1;
+    askCuuState = initialAskCuuState;
+    hideAskBanner();
     renderLauncherBody();
     scheduleWorkHubLiquidGlassFilterRebuild(doc);
     requestResize();
@@ -346,6 +456,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     input2.value = "";
     searchActive = false;
     pendingTarget = undefined;
+    // askCuu 的令牌自增/状态复位由 renderLauncher() 统一兜底（见其内部注释），这里不重复。
     state = initialSpotlightState();
     box.dataset.kbd = "false";
     renderLauncher();
@@ -421,10 +532,85 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     dispatch({ type: "openCapability", id });
   };
 
+  // R13 批 S1：真正执行一次 askCuu 分类结果——open_page/new_project 跳到既有能力入口，create_task
+  // 复用既有 intake 澄清流程（prefill 走 R2 审查已有的 "spotlight-intent:" 前缀约定，见 intake.ts
+  // renderStart 的 prefillIntent 解析），answer 不落到这里（它没有可执行的动作）。执行后统一亮出
+  // 「Cuu 理解为」撤回条——撤回条的「撤回」按钮只做一件事：dispatch back 回 launcher，对三种动作都成立
+  // （关掉打开的能力 / 关掉预填的意图草稿），这也是它对新建项目场景里"撤回"的诚实含义：撤回条不能、
+  // 也不假装能关掉已经打开的原生工作台窗口，只回到聚焦盒的搜索起点。
+  const applyAskCuuAction = (presentation: AskCuuPresentation) => {
+    switch (presentation.kind) {
+      case "auto":
+      case "confirm_open_page":
+        openCapabilityWithTarget(presentation.commandId);
+        showAskBanner(presentation.understoodText);
+        return;
+      case "auto_new_project":
+      case "confirm_new_project":
+        openCapabilityWithTarget("new_project");
+        showAskBanner(presentation.understoodText);
+        return;
+      case "confirm_create_task":
+        openCapabilityWithTarget("intake", { route: `spotlight-intent:${presentation.taskTitle}` });
+        showAskBanner(presentation.understoodText);
+        return;
+      case "answer":
+        return;
+    }
+  };
+
+  // R13 批 S1：command-palette 无命中、输入达到最短字数时的「问问 Cuu」——调服务端一次轻量意图分类
+  // （POST /api/spotlight/intent，桌面零 key，走 client.request 复用既有鉴权/超时/信封解包，不新增
+  // api-client 方法）。竞态用 askCuuRequestSeq 令牌：请求期间用户改了查询或又发起一次 ask，旧响应
+  // 落地时发现令牌已经不是自己的，直接丢弃，不覆盖更新的状态。
+  const runAskCuu = () => {
+    const trimmed = input2.value.trim();
+    if (trimmed.length < ASK_CUU_MIN_QUERY_LENGTH || askCuuState.phase === "asking") {
+      return;
+    }
+    const seq = (askCuuRequestSeq += 1);
+    askCuuState = askCuuReducer(askCuuState, { type: "ask", query: trimmed });
+    refreshAskCuuArea();
+    const payload = buildAskCuuRequestPayload(trimmed, zh ? "zh-CN" : "en");
+    void client
+      .request<AskCuuResult>("/api/spotlight/intent", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      })
+      .then((result) => {
+        if (seq !== askCuuRequestSeq) {
+          return;
+        }
+        const presentation = decideAskCuuPresentation(result, zh ? "zh-CN" : "en");
+        if (presentation.kind === "auto" || presentation.kind === "auto_new_project") {
+          askCuuState = askCuuReducer(askCuuState, { type: "dismiss" });
+          applyAskCuuAction(presentation);
+          return;
+        }
+        askCuuState = askCuuReducer(askCuuState, { type: "resolved", presentation });
+        refreshAskCuuArea();
+      })
+      .catch(() => {
+        if (seq !== askCuuRequestSeq) {
+          return;
+        }
+        const message = zh
+          ? "Cuu 没能理解这句话，请再试一次或换个说法。"
+          : "Cuu couldn't work that out — try again or rephrase.";
+        askCuuState = askCuuReducer(askCuuState, { type: "failed", message });
+        refreshAskCuuArea();
+      });
+  };
+
   // —— 交互 —— //
   input2.addEventListener("input", () => {
     if (!openCapabilityId(state)) {
       searchActive = true;
+    }
+    if (askCuuState.phase !== "idle") {
+      // 用户改了查询：之前那一次 ask（呼吸中/已呈现/已出错）不再对应当前输入，失效并回到干净状态。
+      askCuuRequestSeq += 1;
+      askCuuState = askCuuReducer(askCuuState, { type: "dismiss" });
     }
     dispatch({ type: "setQuery", query: input2.value });
     box.dataset.kbd = "true"; // L5：打字也是键盘交互 → 高亮 Enter 将选中的首项(box 跨重渲存活)
@@ -468,6 +654,17 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
   host.querySelector<HTMLElement>("[data-spot-back]")?.addEventListener("click", () => {
     dispatch({ type: "back" });
   });
+
+  // R13 批 S1：撤回条的「撤回」——banner 是壳层常驻节点（renderCapability 只替换 body，不碰它），
+  // 所以这个监听器只绑一次；语义统一是「回到 launcher」，见 applyAskCuuAction 顶部注释。
+  host.querySelector<HTMLElement>("[data-spot-ask-banner-undo]")?.addEventListener(
+    "click",
+    () => {
+      hideAskBanner();
+      dispatch({ type: "back" });
+    },
+    { signal: controllerAbort.signal }
+  );
 
   let manualDrag:
     | {
@@ -689,6 +886,22 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     if (target.closest<HTMLElement>("[data-spot-fallback-intake]")) {
       const query = input2.value.trim();
       openCapabilityWithTarget("intake", query ? { route: `spotlight-intent:${query}` } : undefined);
+      return;
+    }
+    // R13 批 S1：「问问 Cuu」行 / 出错重试——同一个触发函数（runAskCuu 内部会拒绝重复并发请求）。
+    if (target.closest<HTMLElement>("[data-spot-ask-cuu],[data-spot-ask-cuu-retry]")) {
+      runAskCuu();
+      return;
+    }
+    if (target.closest<HTMLElement>("[data-spot-ask-cuu-cancel],[data-spot-ask-cuu-dismiss]")) {
+      askCuuState = askCuuReducer(askCuuState, { type: "dismiss" });
+      refreshAskCuuArea();
+      return;
+    }
+    if (target.closest<HTMLElement>("[data-spot-ask-cuu-confirm]") && askCuuState.phase === "presenting") {
+      const presentation = askCuuState.presentation;
+      askCuuState = askCuuReducer(askCuuState, { type: "dismiss" });
+      applyAskCuuAction(presentation);
     }
   });
 
@@ -734,6 +947,21 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       if (id) {
         event.preventDefault();
         dispatch({ type: "openCapability", id });
+        return;
+      }
+      // R13 批 S1：无命中时 Enter 触发/确认「问问 Cuu」——asking/answer 阶段 Enter 没有意义（answer
+      // 只有「知道了」，asking 已经在飞），confirm_* 阶段 Enter 等同点确认按钮，idle/error 阶段
+      // Enter 等同点「问问 Cuu」/「重试」行。
+      if (askCuuState.phase === "presenting" && askCuuState.presentation.kind !== "answer") {
+        event.preventDefault();
+        const presentation = askCuuState.presentation;
+        askCuuState = askCuuReducer(askCuuState, { type: "dismiss" });
+        applyAskCuuAction(presentation);
+        return;
+      }
+      if ((askCuuState.phase === "idle" || askCuuState.phase === "error") && input2.value.trim().length >= ASK_CUU_MIN_QUERY_LENGTH) {
+        event.preventDefault();
+        runAskCuu();
       }
     }
   });
@@ -749,6 +977,15 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
         resetLauncher();
       } else if (event.key === "Escape") {
         if (event.isComposing || event.keyCode === 229) {
+          return;
+        }
+        // R13 批 S1：askCuu 面板（呼吸中/确认条/回答/出错）优先吃掉第一个 Esc——先退出这一层，
+        // 再谈是否清空查询/关闭盒子，与下面 capability 内部详情"先退一级"的分层退出同一套纪律。
+        if (askCuuState.phase !== "idle") {
+          event.preventDefault();
+          askCuuRequestSeq += 1;
+          askCuuState = askCuuReducer(askCuuState, { type: "dismiss" });
+          refreshAskCuuArea();
           return;
         }
         // 普通用户审查 R2：capability 内有未提交的输入（打回说明/合并草稿/需求文本）时，
@@ -804,13 +1041,16 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
     setBadges: (next) => {
       badges = { ...badges, ...next };
       if (!openCapabilityId(state)) {
-        body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0);
+        body.innerHTML = renderLauncherGrid(launcherMatches(state, locale), locale, badges, state.query.trim().length === 0, askCuuState, state.query);
         syncLauncherActiveDescendant();
         requestResize();
       }
     },
     dispose: () => {
       controllerAbort.abort();
+      // 任何仍在飞的「问问 Cuu」请求落地时会看到令牌已经不匹配（自增后不可能再等于任何后续读到的
+      // 值），据此丢弃响应，不在已卸载的 host 上继续操作 DOM。
+      askCuuRequestSeq += 1;
       if (resizeRaf) {
         window.cancelAnimationFrame(resizeRaf);
         resizeRaf = 0;
