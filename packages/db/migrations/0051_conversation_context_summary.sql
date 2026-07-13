@@ -6,5 +6,17 @@ ALTER TABLE "project_conversations" ADD COLUMN IF NOT EXISTS "context_summary_md
 --> statement-breakpoint
 ALTER TABLE "project_conversations" ADD COLUMN IF NOT EXISTS "context_summary_through_seq" bigint NOT NULL DEFAULT 0;
 --> statement-breakpoint
-ALTER TABLE "project_conversations" ADD CONSTRAINT "project_conversations_context_summary_through_seq_ck"
-  CHECK ("context_summary_through_seq" BETWEEN 0 AND 9007199254740991);
+-- migration-audit 的 replay 阶段会把整链再跑一遍——ADD CONSTRAINT 没有 IF NOT EXISTS，
+-- 必须走 pg_constraint 守卫的 DO 块（同 0040/0043/0046 的既有先例），否则二次应用直接炸。
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'project_conversations_context_summary_through_seq_ck'
+      AND conrelid = 'project_conversations'::regclass
+  ) THEN
+    ALTER TABLE "project_conversations"
+      ADD CONSTRAINT "project_conversations_context_summary_through_seq_ck"
+      CHECK ("context_summary_through_seq" BETWEEN 0 AND 9007199254740991);
+  END IF;
+END $$;
