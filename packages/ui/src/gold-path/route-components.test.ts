@@ -2558,6 +2558,25 @@ test("R13-P3 settings route renders the AI assistant block: locked selects for h
   assert.match(settings.html, /需要桌面客户端/u);
 });
 
+// R13 批 A2（派人推荐 v2）：web /settings 的「我的资料」区块——GET/PATCH /me/profile 此前完全没有
+// 任何 UI 入口。同一套水合竞态收口纪律：三个输入服务端渲染为 disabled，由 browser.ts 水合后解禁。
+test("R13-A2 settings route renders the my-profile block: locked inputs for hydration plus retry affordance", () => {
+  const vm = surfaceVm();
+  const settings = renderWebRouteComponents(vm, { locale: "zh-CN" }).settings;
+
+  assert.ok(settings);
+  assert.equal(settings.html.includes('data-r13-settings-profile-panel="true"'), true);
+  // All three inputs render disabled until the client hydrates the real current values.
+  assert.match(settings.html, /data-r13-settings-profile-title-input[^>]*disabled/u);
+  assert.match(settings.html, /data-r13-settings-profile-bio-input[^>]*disabled/u);
+  assert.match(settings.html, /data-r13-settings-profile-skills-input[^>]*disabled/u);
+  assert.match(settings.html, /我的资料/u);
+  assert.match(settings.html, /Cuu 派活时会参考这些信息/u);
+  // Hydration status line and retry control exist for the locked-on-failure path.
+  assert.equal(settings.html.includes("data-r13-settings-profile-status"), true);
+  assert.equal(settings.html.includes("data-r13-settings-profile-retry"), true);
+});
+
 test("R4.16 route components expose hydration boundary metadata without weakening markers", () => {
   const vm = {
     ...surfaceVm(),
