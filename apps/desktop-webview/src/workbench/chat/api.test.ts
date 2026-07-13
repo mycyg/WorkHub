@@ -8,6 +8,7 @@ import {
   fetchConversationMessagesPage,
   fetchLatestConversationMessagesPage,
   fetchMyAiProfile,
+  fetchNotifications,
   fetchOlderConversationMessagesPage,
   patchMyAiMode,
   pingConversationTyping,
@@ -368,4 +369,21 @@ test("undoActionCardItem URL-encodes the item id", async () => {
   await undoActionCardItem(client, { itemId: "item/needs escaping" });
 
   assert.equal(calls[0], "/api/action-card-items/item%2Fneeds%20escaping/undo");
+});
+
+// —— R13 批 P2（拍板链路收尾）：dispatch_ask 错过补偿 —— //
+
+test("fetchNotifications requests the existing GET /api/notifications endpoint with no body", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return { items: [], counts: { unread: 0, total: 0 } };
+  });
+
+  const result = await fetchNotifications(client);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.path, "/api/notifications");
+  assert.equal(calls[0]!.init, undefined);
+  assert.deepEqual(result, { items: [], counts: { unread: 0, total: 0 } });
 });

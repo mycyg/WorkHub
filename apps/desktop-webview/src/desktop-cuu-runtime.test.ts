@@ -306,6 +306,50 @@ test("desktop Cuu runtime turns a dispatch_ask notification into a single custom
   await runtime.dispose();
 });
 
+// R13 批 P2（拍板链路收尾）：Notification 契约新增的 additive conversation_id 字段（服务端从
+// dispatch_ask 通知的 target_url 查询参数解出来）要能让气泡深链直接定位到发起这次派活讨论的会话——
+// 不只是项目首屏。conversation_id 缺失时（老通知/契约还没升级的部署）href 照旧只带 projectId，
+// 上一条测试已经锁死这个退化路径不受影响。
+test("desktop Cuu runtime deep-links a dispatch_ask bubble straight to the source conversation when conversation_id is present", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const notices: DesktopCuuNotice[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+
+  const runtime = await bindDesktopShellCuuRuntime({
+    listen,
+    locale: "zh-CN",
+    notify: (notice) => notices.push(notice)
+  });
+  handlers.get("push-event")?.({
+    payload: shellPayload(eventTypes.notificationCreated, {
+      id: "notification-dispatch-ask-2",
+      type: "action_card_item.dispatch_ask",
+      severity: "normal",
+      title: "有个活想派给你",
+      body: "整理会议纪要",
+      project_id: "10000000-0000-4000-8000-000000000777",
+      conversation_id: "10000000-0000-4000-8000-000000000801",
+      created_at: "2026-07-13T09:00:00.000Z"
+    })
+  });
+
+  const card = notices[0]?.card;
+  assert.deepEqual(card?.actions, [
+    {
+      id: "open_workbench",
+      label: "去工作台看看",
+      tone: "primary",
+      method: "GET",
+      href: "/workbench/10000000-0000-4000-8000-000000000777/10000000-0000-4000-8000-000000000801"
+    }
+  ]);
+
+  await runtime.dispose();
+});
+
 test("desktop Cuu runtime dedupes a replayed dispatch_ask notification (same id) instead of showing it twice", async () => {
   const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
   const notices: DesktopCuuNotice[] = [];

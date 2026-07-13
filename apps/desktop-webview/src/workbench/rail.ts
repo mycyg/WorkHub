@@ -2,15 +2,20 @@
 // 纯 TS DOM，风格照 spotlight/views/*：render* 是可单测的纯函数，mount* 负责拉数据 + 绑事件。
 
 import type { WorkHubApiClient } from "@workhub/api-client";
-import type { ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
+import type { CreateConversationResultVM, ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { workbenchIcons } from "./icons.js";
 import type { WorkbenchCenterTab, WorkbenchStore } from "./store.js";
 
-export type WorkbenchRailApiClient = Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages">;
+// R13 批 P2（拍板链路收尾）：协同会话「+ 新建」真按钮需要 client.request——同 chat/api.ts 顶部注释的
+// 既有取舍(不为一个批次特性扩大 WorkHubApiClient 具名方法面，POST /projects/:id/conversations 走
+// client.request 而不是新增具名方法)。
+export type WorkbenchRailApiClient = Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages" | "request">;
 
 type Locale = "zh-CN" | "en-US";
+
+type WorkbenchConversationVM = WorkbenchPageVM["conversations"]["conversations"][number];
 
 // 原型的多项目辨识度:每个项目一个稳定色块(accent/success/warn/cuu 四色,按 id 哈希),同 id 永远同色。
 export function tileVariantClass(projectId: string): string {
@@ -27,6 +32,59 @@ function projectInitial(name: string): string {
   return trimmed ? trimmed[0]!.toUpperCase() : "?";
 }
 
+// R13 批 P2：协同会话「+ 新建」——rail.ts 的项目树协同分组此前只能渲染服务端已经建好的会话
+// （final-turns-wiring 补的树叶），从没有任何入口能真的建一个新的（POST /projects/:id/conversations
+// 从 R12 批 0 落地起就没有 UI 调用方，见 apps/api/src/routes/conversations.ts）。这三个纯函数是
+// 这次补洞的可测那一半（imperative 的拉取/挂载在 mountWorkbenchRail 里，同本文件其它 mount* 函数
+// 一样不直接单测——见 rail.test.ts 只测 render*/纯函数这一既有事实）。
+
+// 极简自动命名："协同会话 N"——N 按当前项目里已有多少条协同会话（不含主区）计数 + 1。不追求全局
+// 唯一（标题本来就不是唯一键，服务端 createConversationRequestSchema 也没有唯一约束），两个人几乎
+// 同时各自新建一条也只是标题偶尔重复，不影响可用性，比引入服务端往返生成序号更简单诚实。
+export function nextCollabConversationTitle(
+  existingConversations: readonly Pick<WorkbenchConversationVM, "kind">[],
+  locale: Locale
+): string {
+  const collabCount = existingConversations.filter((conversation) => conversation.kind === "collab").length;
+  return locale === "zh-CN" ? `协同会话 ${collabCount + 1}` : `Collab chat ${collabCount + 1}`;
+}
+
+// 新建成功后立即让这条会话在左栏树叶/中栏可见——不用重新拉一次完整 workbench VM（避免一次网络往返
+// 和潜在的竞态：期间用户可能已经切换了项目)，直接把服务端返回的会话 VM（形状与 vm.conversations.
+// conversations 的元素完全一致，见 packages/contracts 的 conversationVmSchema/createConversationResultVmSchema
+// 共用同一个 conversationVmSchema）就地追加进去。按 id 去重防重复追加（比如调用方意外重复调用一次）。
+export function appendCollabConversationToVm(vm: WorkbenchPageVM, conversation: WorkbenchConversationVM): WorkbenchPageVM {
+  if (vm.conversations.conversations.some((existing) => existing.id === conversation.id)) {
+    return vm;
+  }
+  return {
+    ...vm,
+    conversations: {
+      ...vm.conversations,
+      conversations: [...vm.conversations.conversations, conversation]
+    }
+  };
+}
+
+export type CreateCollabConversationApiClient = Pick<WorkbenchRailApiClient, "request">;
+
+// POST /api/projects/:id/conversations——契约见 apps/api/src/routes/conversations.ts +
+// packages/contracts 的 createConversationRequestSchema：kind 固定 'collab'（主区会话只能随项目
+// 原子创建，公共端点拒绝 kind='main'，见该 schema 顶部注释），visibility 固定 'private'
+// （00-interaction-design.md §3：协同会话是"1:1 人机为主，可拉其他成员"的单聊，服务端当前运行时
+// 对 project/private 一视同仁只放行参与者可见——这里选 private 是更准确的协议语义，不影响实际可见性）。
+// 同 chat/api.ts 里其它会话端点一样,不为这一个批次特性扩大 WorkHubApiClient 的具名方法面。
+export function createCollabConversation(
+  client: CreateCollabConversationApiClient,
+  projectId: string,
+  input: { title: string }
+): Promise<CreateConversationResultVM> {
+  return client.request<CreateConversationResultVM>(`/api/projects/${encodeURIComponent(projectId)}/conversations`, {
+    method: "POST",
+    body: JSON.stringify({ kind: "collab", title: input.title, visibility: "private" })
+  });
+}
+
 // 项目行下的树叶——批 1 全部只读(没有任何视图能接)。批 2 把主区群聊接进这个窗口后，「主区」升级成
 // 真按钮(会话点击路由：点它把焦点交回已经挂载好的 chat composer，见 shell.ts 的 onOpenMainConversation)；
 // 批 6 把网盘视图接进这个窗口后，「网盘」同样升级成真按钮(data-wb-open-drive，切中栏到 drive 标签，
@@ -39,11 +97,23 @@ function projectInitial(name: string): string {
 // 按参与者过滤，见 apps/api/src/services/conversations.ts），只是这个文件之前从没渲染出来。每个
 // collab 会话一个叶子，用 workbenchIcons.collab（批 1 就已经定义、此前从未被用到的双人图标）区分于
 // 主区的单气泡图标；选中态按会话 id 比对，不是简单布尔量（一个项目可能有多个 collab 会话）。
+//
+// R13 批 P2：协同分组末尾加「+ 新建协同会话」真按钮（data-wb-new-collab-conversation）——
+// mountWorkbenchRail 点击后调 createCollabConversation，submitting/error 是瞬态 UI 状态（同
+// renderNewProjectModalHtml 的既有取舍），跟渲染函数一起传进来，保持这个函数本身是纯的可测函数。
+export type NewCollabConversationUiState = {
+  submitting: boolean;
+  error?: string | undefined;
+};
+
+const IDLE_NEW_COLLAB_STATE: NewCollabConversationUiState = { submitting: false };
+
 function renderProjectTreeLeavesHtml(
   vm: WorkbenchPageVM,
   zh: boolean,
   centerTab: WorkbenchCenterTab,
-  activeConversationId: string | undefined
+  activeConversationId: string | undefined,
+  newCollab: NewCollabConversationUiState
 ): string {
   const main = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
   const mainLeaf = main
@@ -60,11 +130,16 @@ function renderProjectTreeLeavesHtml(
       }</button>`;
     })
     .join("");
+  const newCollabButton = `<div class="wh-wb-new-collab">
+    <button type="button" class="wh-wb-leaf wh-wb-leaf--new" data-wb-new-collab-conversation${newCollab.submitting ? " disabled" : ""}>${workbenchIcons.plus}<span>${
+      newCollab.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "新建协同会话" : "New collab chat"
+    }</span></button>${newCollab.error ? `<p class="wh-wb-new-collab-error">${escapeHtml(newCollab.error)}</p>` : ""}
+  </div>`;
   const fileCount = vm.recent_project_files.items.length;
   const driveLeaf = `<button type="button" class="wh-wb-leaf wh-wb-leaf--live${centerTab === "drive" ? " sel" : ""}" data-wb-open-drive>${workbenchIcons.folder}<span>${zh ? "网盘" : "Drive"}</span>${
     fileCount > 0 ? `<span class="wh-wb-leaf-count">${fileCount}</span>` : ""
   }</button>`;
-  return `<div class="wh-wb-tree">${mainLeaf}${collabLeaves}${driveLeaf}</div>`;
+  return `<div class="wh-wb-tree">${mainLeaf}${collabLeaves}${newCollabButton}${driveLeaf}</div>`;
 }
 
 export function renderProjectTreeHtml(input: {
@@ -74,13 +149,20 @@ export function renderProjectTreeHtml(input: {
   locale: Locale;
   centerTab?: WorkbenchCenterTab;
   activeConversationId?: string;
+  newCollab?: NewCollabConversationUiState;
 }): string {
   const zh = input.locale === "zh-CN";
   const rows = input.projects
     .map((project) => {
       const active = project.id === input.selectedProjectId;
       const leaves = active && input.vm && input.vm.project.id === project.id
-        ? renderProjectTreeLeavesHtml(input.vm, zh, input.centerTab ?? "chat", input.activeConversationId)
+        ? renderProjectTreeLeavesHtml(
+            input.vm,
+            zh,
+            input.centerTab ?? "chat",
+            input.activeConversationId,
+            input.newCollab ?? IDLE_NEW_COLLAB_STATE
+          )
         : "";
       return `<div class="wh-wb-project${active ? " active" : ""}">
         <button type="button" class="wh-wb-project-row" data-wb-select-project="${escapeHtml(project.id)}" aria-current="${active ? "true" : "false"}">
@@ -188,6 +270,8 @@ export function mountWorkbenchRail(
   let modalName = "";
   let modalSubmitting = false;
   let modalError: string | undefined;
+  let newCollabSubmitting = false;
+  let newCollabError: string | undefined;
   let disposed = false;
 
   const render = () => {
@@ -207,7 +291,8 @@ export function mountWorkbenchRail(
       centerTab: state.centerTab,
       // exactOptionalPropertyTypes：activeConversationId?: string 不接受显式 undefined（同
       // view.ts toPendingRenderModel 的既有取舍），state.activeConversationId 没值时干脆不传这个键。
-      ...(state.activeConversationId !== undefined ? { activeConversationId: state.activeConversationId } : {})
+      ...(state.activeConversationId !== undefined ? { activeConversationId: state.activeConversationId } : {}),
+      newCollab: { submitting: newCollabSubmitting, error: newCollabError }
     })}${renderArmyOverviewNavHtml(zh, state.centerTab === "army-overview")}${renderRailFootHtml(zh, viewerLabel)}${renderNewProjectModalHtml({
       locale: input.locale,
       open: state.newProjectModalOpen,
@@ -271,6 +356,49 @@ export function mountWorkbenchRail(
     input.store.setState({ newProjectModalOpen: true });
   };
 
+  // R13 批 P2：协同会话「+ 新建」——POST /projects/:id/conversations 建好之后立即打开它(store.centerTab
+  // = "collab" + activeConversationId)，不是建完还要用户自己再点一次左栏树叶。这条只在已经选中一个
+  // 项目、且这个项目的 workbench VM 已经就绪时才有意义(按钮本身只在这个状态下才会被渲染出来，见
+  // renderProjectTreeLeavesHtml 只在 active && vm.project.id === project.id 时才画协同分组)，
+  // 但这里仍然老实地判一次现状而不是假设调用时机(用户可能在网络请求还没打完前切换了项目)。
+  const submitNewCollabConversation = async () => {
+    if (newCollabSubmitting) {
+      return;
+    }
+    const state = input.store.getState();
+    const projectId = state.selectedProjectId;
+    const vm = state.vm;
+    if (!projectId || !vm || vm.project.id !== projectId) {
+      return;
+    }
+    newCollabSubmitting = true;
+    newCollabError = undefined;
+    render();
+    try {
+      const title = nextCollabConversationTitle(vm.conversations.conversations, input.locale);
+      const result = await createCollabConversation(input.client, projectId, { title });
+      if (disposed) {
+        return;
+      }
+      newCollabSubmitting = false;
+      const latestVm = input.store.getState().vm;
+      // 请求打完之间用户可能已经切走了项目——只在还停在同一个项目时才把新会话合并进当前 VM 并跳过去，
+      // 切走了就只是静默地把它建在服务端(会话仍然存在，下次回到这个项目时会在树叶里看到)，不硬切回去。
+      if (latestVm && latestVm.project.id === projectId) {
+        input.store.setState({ vm: appendCollabConversationToVm(latestVm, result.conversation) });
+        input.onOpenCollabConversation?.(result.conversation.id);
+      }
+    } catch (error) {
+      if (disposed) {
+        return;
+      }
+      newCollabSubmitting = false;
+      newCollabError =
+        error instanceof Error ? error.message : input.locale === "zh-CN" ? "创建失败，请重试" : "Couldn't create it — retry";
+      render();
+    }
+  };
+
   container.addEventListener("click", (event) => {
     if (!(event.target instanceof HTMLElement)) {
       return;
@@ -292,6 +420,10 @@ export function mountWorkbenchRail(
     const collabLeaf = target.closest<HTMLElement>("[data-wb-open-collab-chat]");
     if (collabLeaf?.dataset.wbOpenCollabChat) {
       input.onOpenCollabConversation?.(collabLeaf.dataset.wbOpenCollabChat);
+      return;
+    }
+    if (target.closest("[data-wb-new-collab-conversation]")) {
+      void submitNewCollabConversation();
       return;
     }
     if (target.closest("[data-wb-open-drive]")) {

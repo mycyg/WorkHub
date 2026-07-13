@@ -67,6 +67,14 @@ const DEFAULT_MAX_ANALYSIS_TOKENS = 2000;
 // 00-interaction-design.md §2.3：执行类条目「10 分钟内可撤销」。
 const UNDO_WINDOW_MS = 10 * 60 * 1000;
 
+// R13 批 P2（拍板链路收尾）：dispatch_ask 通知的 target_url 里除了指向工作项，还要能带用户回到发起
+// 这次派活讨论的会话——notifications 表没有 conversation_id 列，这批不加迁移（范围围栏禁碰
+// schema），改用 target_url 的查询串承载（服务端 apps/api/src/services/notifications.ts 的
+// extractConversationIdFromTargetUrl 解出来，additive 暴露成响应体的 conversation_id 字段）。
+export function buildDispatchAskTargetUrl(workItemId: string, conversationId: string): string {
+  return `/workitems/${workItemId}?conversation_id=${encodeURIComponent(conversationId)}`;
+}
+
 export type ConversationObserverTickResult = {
   scanned: number;
   analyzed: number;
@@ -342,7 +350,7 @@ async function dispatchExecuteItem(
           severity: "normal",
           title: "有个活想派给你",
           body: planItem.title_md,
-          targetUrl: `/workitems/${workItem.id}`,
+          targetUrl: buildDispatchAskTargetUrl(workItem.id, candidate.conversationId),
           projectId: candidate.projectId,
           workItemId: workItem.id,
           dedupeKey: `action-card-item:${itemId}:dispatch-ask`

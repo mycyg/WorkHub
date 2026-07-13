@@ -10,6 +10,7 @@ import type {
   ConversationMessagePageVM,
   ConversationMessageVM,
   CreateConversationMessageRequest,
+  NotificationList,
   UserAiProfileVM
 } from "@workhub/contracts";
 
@@ -199,4 +200,14 @@ export function undoActionCardItem(
   return client.request<ActionCardItemDecisionResult>(actionCardItemPath(input.itemId, "undo"), {
     method: "POST"
   });
+}
+
+// R13 批 P2（拍板链路收尾）：dispatch_ask 错过补偿——workbench 打开/切项目时用来查"这个项目里有没有
+// 我错过的派活问询"（见 dispatch-ask-catchup.ts 的 pickDispatchAskCatchupNotification）。
+// GET /api/notifications 是已经挂载的既有端点（服务端 listForUser 自带 200 条硬上限，见
+// apps/api/src/services/notifications.ts），这批不新增任何服务端端点/查询参数——同这个文件其它
+// 会话端点一样，走 client.request 而不是 WorkHubApiClient 的具名方法 notifications()（虽然那个方法
+// 也存在，但为保持这个模块内部调用方式统一，不在这一处单独切换成具名方法）。
+export function fetchNotifications(client: ChatApiClient): Promise<NotificationList> {
+  return client.request<NotificationList>("/api/notifications");
 }

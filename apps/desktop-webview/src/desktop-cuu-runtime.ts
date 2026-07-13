@@ -881,6 +881,12 @@ type DesktopDispatchAskNotification = {
   id: string;
   taskTitle?: string | undefined;
   projectId?: string | undefined;
+  // R13 批 P2（拍板链路收尾）：conversation_id 是 Notification 契约新增的 additive 字段（服务端从
+  // dispatch_ask 通知的 target_url 查询参数里解出来，见 apps/api/src/services/notifications.ts 的
+  // extractConversationIdFromTargetUrl）——有它就能让气泡的深链直接定位到发起这次派活讨论的会话，
+  // 而不是只到工作台的项目首屏。老通知/契约还没升级到的部署没有这个字段时保持 undefined，
+  // buildWorkbenchDeepLinkHref 照旧只带 projectId 退化，不是假接线。
+  conversationId?: string | undefined;
   createdAt?: string | undefined;
 };
 
@@ -908,6 +914,7 @@ function parseDesktopDispatchAskNotification(event: WorkHubEvent<unknown>): Desk
     id,
     taskTitle: stringFromUnknown(record.body) ?? stringFromUnknown(record.title),
     projectId: stringFromUnknown(record.project_id),
+    conversationId: stringFromUnknown(record.conversation_id),
     createdAt: stringFromUnknown(record.created_at)
   };
 }
@@ -928,7 +935,10 @@ function buildDesktopDispatchAskCuuCard(
           label: locale === "en-US" ? "Open the workbench" : "去工作台看看",
           tone: "primary",
           method: "GET",
-          href: buildWorkbenchDeepLinkHref({ projectId: notification.projectId })
+          href: buildWorkbenchDeepLinkHref({
+            projectId: notification.projectId,
+            ...(notification.conversationId ? { conversationId: notification.conversationId } : {})
+          })
         }
       ]
     : [];

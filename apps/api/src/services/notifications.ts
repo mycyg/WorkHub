@@ -29,6 +29,7 @@ import { getDefaultPushBus } from "../broker/index.js";
 import { getDefaultStructuredLogger } from "../logging.js";
 import type { PushBus } from "../broker/types.js";
 import type { AuthActor } from "../middleware/auth.js";
+import { isUuidParam } from "../routes/uuid-param.js";
 
 export class NotificationServiceError extends Error {
   constructor(
@@ -109,6 +110,25 @@ function targetUrlBelongsToWorkItem(targetUrl: string | null, workItemId: string
   return new RegExp(`^/(?:api/pages/)?workitems/${escapedId}(?:$|[/?#])`, "u").test(targetUrl);
 }
 
+// R13 批 P2（拍板链路收尾）：conversation_id 深链——notifications 表没有专门的列，这批不加迁移
+// （范围围栏禁碰 schema），改用「已有的 target_url 自由文本字段」承载它：conversation-observer.ts
+// 的 dispatch_ask 分支把 `?conversation_id=<uuid>` 追加进 target_url 查询串（targetUrlBelongsToWorkItem
+// 的正则本来就用 `[/?#]` 收尾，早就容许 target_url 带查询串，不是新引入的兼容性风险），这里再解出来
+// 暴露成响应体上独立的 conversation_id 字段（additive，见 packages/contracts 的 notificationSchema）。
+// 解析失败/没有这个参数/不是合法 uuid 时一律返回 undefined——不假装知道，静默退化成"没有深链目标"。
+function extractConversationIdFromTargetUrl(targetUrl: string | null | undefined): string | undefined {
+  if (!targetUrl) {
+    return undefined;
+  }
+  let conversationId: string | null;
+  try {
+    conversationId = new URL(targetUrl, "http://internal.workhub.invalid").searchParams.get("conversation_id");
+  } catch {
+    return undefined;
+  }
+  return conversationId && isUuidParam(conversationId) ? conversationId : undefined;
+}
+
 export function toNotificationResponse(row: NotificationRow, options: {
   stripUnreadableWorkItemTarget?: boolean;
 } = {}): Notification {
@@ -127,6 +147,12 @@ export function toNotificationResponse(row: NotificationRow, options: {
   const stripWorkItemTarget = options.stripUnreadableWorkItemTarget === true && Boolean(row.workItemId);
   if (row.targetUrl && !(stripWorkItemTarget && targetUrlBelongsToWorkItem(row.targetUrl, row.workItemId!))) {
     notification.target_url = row.targetUrl;
+    // R13 批 P2：只在 target_url 本身没被剥离（可见）时才附带 conversation_id——两者共享同一条
+    // 可见性判定,不单独放宽。
+    const conversationId = extractConversationIdFromTargetUrl(row.targetUrl);
+    if (conversationId) {
+      notification.conversation_id = conversationId;
+    }
   }
   if (row.projectId) {
     notification.project_id = row.projectId;

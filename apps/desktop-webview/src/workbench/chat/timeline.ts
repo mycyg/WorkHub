@@ -118,6 +118,37 @@ export function findActionCardMessageIdForItem(
   return undefined;
 }
 
+// R13 批 P2（拍板链路收尾）：dispatch_ask 追赶提醒点击后想跳到"对应行动卡"，但通知只带
+// work_item_id/conversation_id——服务端 buildActionCardMessageContent 的 itemSummary 从来没把
+// work_item_id 塞进消息 content（这批范围围栏不碰 packages/db，见 dispatch-ask-catchup.ts 顶部
+// 注释的取舍说明），没有可靠的条目 id 可以直接比对。退而求其次：dispatch_ask 通知的 body 字段
+// 就是建卡时的 planItem.title_md（见 apps/api/src/workers/conversation-observer.ts 的
+// dispatchExecuteItem），和卡片条目的 title_md 同源同值——用精确文本匹配做最佳努力定位；
+// 找不到（标题被后续追加改写/已经翻页翻出了本地窗口）就让调用方老实地退化成"滚到会话顶部"，
+// 不假装总能精确定位。
+export function findActionCardMessageIdByTitle(
+  messages: readonly ConversationMessageVM[],
+  titleMd: string
+): string | undefined {
+  const needle = titleMd.trim();
+  if (!needle) {
+    return undefined;
+  }
+  for (const message of messages) {
+    if (message.kind !== "action_card") {
+      continue;
+    }
+    const rawItems = Array.isArray(message.content["items"]) ? (message.content["items"] as unknown[]) : [];
+    const hit = rawItems.some(
+      (raw) => Boolean(raw) && typeof raw === "object" && (raw as SnapshotItem)["title_md"] === needle
+    );
+    if (hit) {
+      return message.id;
+    }
+  }
+  return undefined;
+}
+
 export type DayGroup = {
   dateKey: string;
   label: string;

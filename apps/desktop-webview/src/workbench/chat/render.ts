@@ -385,7 +385,11 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
   const rowClass = ["wh-wb-chat-msg", isCuu ? "wh-wb-chat-msg--cuu" : "", isSelf ? "wh-wb-chat-msg--self" : ""]
     .filter(Boolean)
     .join(" ");
-  return `<div class="${rowClass}">${avatar}<div class="wh-wb-chat-bub"><div class="wh-wb-chat-who">${escapeHtml(senderLabel(message, ctx))}<span class="wh-wb-chat-tm">${formatMessageTime(message.created_at, ctx.locale)}</span></div>${messageBodyHtml(message, ctx)}</div></div>`;
+  // R13 批 P2：data-wb-chat-message-id——dispatch_ask 追赶提醒条点击后想把对应的行动卡滚进视口
+  // （见 dispatch-ask-catchup.ts 顶部注释 + timeline.ts 的 findActionCardMessageIdByTitle），
+  // 需要一个稳定的 DOM 锚点定位到具体是哪条消息。之前完全没有——view.ts 只能重建 innerHTML，
+  // 没法用消息 id 反查 DOM 节点。
+  return `<div class="${rowClass}" data-wb-chat-message-id="${escapeHtml(message.id)}">${avatar}<div class="wh-wb-chat-bub"><div class="wh-wb-chat-who">${escapeHtml(senderLabel(message, ctx))}<span class="wh-wb-chat-tm">${formatMessageTime(message.created_at, ctx.locale)}</span></div>${messageBodyHtml(message, ctx)}</div></div>`;
 }
 
 // —— 发送中乐观渲染（以服务端 message.created 回执为准去重，见 view.ts）—— //
@@ -558,8 +562,15 @@ export function renderComposerHtml(input: {
   // 省略这个参数（主区群聊）时不渲染任何模式相关标记——见"模式五档"一节顶部注释与其 colocated 测试，
   // 这条测试就是 04 §4 铁律要求的"主区不渲染,写测试锁死"。
   modeChipHtml?: string | undefined;
+  // R13 批 P2（拍板链路收尾）：turn（协同会话对 Cuu 的一轮请求）进行中时的「禁发+文案」方案——
+  // 采用禁发而不是本地排队重试（00 §3 交互设计没有承诺过排队语义，禁发更诚实：这一轮还没落定前
+  // 发第二条只会撞服务端 409 conversation_turn_busy，见 turn.ts 顶部注释）。只有协同会话才会真的把
+  // 这个参数传成 true（view.ts 的 turnActive 只在 collab 会话里被置位，见 turn.ts 的
+  // shouldRequestConversationTurn 唯一判定点）——主区省略这个参数，行为与升级前完全一致，不受影响。
+  turnActive?: boolean | undefined;
 }): string {
   const zh = input.locale === "zh-CN";
+  const turnActive = input.turnActive === true;
   const attachmentsHtml = input.attachments.length
     ? `<div class="wh-wb-chat-attachments">${input.attachments
         .map(
@@ -571,10 +582,14 @@ export function renderComposerHtml(input: {
   const errorHtml = input.sendError
     ? `<div class="wh-wb-chat-send-error">${escapeHtml(input.sendError)}<button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-chat-retry-send>${zh ? "重试" : "Retry"}</button></div>`
     : "";
-  const canSend = !input.sending && (input.draftText.trim().length > 0 || input.attachments.length > 0);
-  const placeholder = zh
-    ? "发消息给项目组和 Cuu…(@ 引用网盘文件/成员 · # 会话 · / 技能)"
-    : "Message the team and Cuu… (@ file/member · # conversation · / skill)";
+  const canSend = !input.sending && !turnActive && (input.draftText.trim().length > 0 || input.attachments.length > 0);
+  const placeholder = turnActive
+    ? zh
+      ? "Cuu 回完这条就好…"
+      : "Just a moment — Cuu is replying to the last one…"
+    : zh
+      ? "发消息给项目组和 Cuu…(@ 引用网盘文件/成员 · # 会话 · / 技能)"
+      : "Message the team and Cuu… (@ file/member · # conversation · / skill)";
   const modeChip = input.modeChipHtml ?? "";
   // data-wb-chat-picker-slot：@/#// picker 的挂载点，特意留空——view.ts 单独更新这一个子节点的
   // innerHTML（每次按键都可能要开关/刷新 picker），绝不重建整个 composer（那会打断 textarea 的

@@ -15,6 +15,12 @@ export const notificationSchema = z.object({
   target_url: z.string().optional(),
   project_id: idSchema.optional(),
   work_item_id: idSchema.optional(),
+  // R13 批 P2（拍板链路收尾）：dispatch_ask 通知深链到发起它的会话，好让气泡/追赶提醒能直接把用户
+  // 带回那个会话（而不是只到工作项页）。additive——notifications 表本身没有 conversation_id 列，
+  // 这批不碰迁移，服务端把它编码进 target_url 的查询参数里再解出来填这个字段（见
+  // apps/api/src/services/notifications.ts 的 extractConversationIdFromTargetUrl）；旧数据/其它
+  // 通知类型没有这个参数时，这个字段就不出现，老调用方不受影响。
+  conversation_id: idSchema.optional(),
   dedupe_key: z.string().max(256).optional(),
   read_at: isoDateTimeSchema.optional(),
   archived_at: isoDateTimeSchema.optional(),
