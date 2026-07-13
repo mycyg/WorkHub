@@ -12,11 +12,16 @@ import {
 import {
   buildObserverSystemPrompt,
   buildObserverUserPrompt,
+  CANDIDATE_ROSTER_PROMPT_MAX,
   deriveActionCardItemId,
   isLowQualityObserverPlan,
   parseObserverPlanResponse,
+  rankCandidates,
+  scoreCandidate,
+  skillTagOverlapRatio,
   type ObserverPlanItem,
-  type ObserverPromptMessage
+  type ObserverPromptMessage,
+  type ScoredCandidate
 } from "@workhub/agent/observer";
 import {
   decideRunBudget,
@@ -29,6 +34,7 @@ import {
   createAiDecisionRepository,
   createAiSettingsRepository,
   createNotificationRepository,
+  createUserProfileRepository,
   createWorkItemRepository,
   getSharedDatabaseClient,
   type ActionCardConversationMessageRow,
@@ -39,6 +45,7 @@ import {
   type NotificationRepository,
   type ObserverCandidateRow,
   type PlanItemInput,
+  type UserProfileRepository,
   type WorkItemDataRepository
 } from "@workhub/db";
 
@@ -143,6 +150,9 @@ export type ConversationObserverDeps = {
   notifications: Pick<NotificationRepository, "createOrUpdateNotification">;
   decisions: Pick<AiDecisionRepository, "createEscalationEvent">;
   aiSettings: Pick<AiSettingsRepository, "findUserProfileAccessRecord">;
+  // R13 批 A2（派人推荐 v2）：派活候选名单——聚合资料完整度/历史交付/技能标签，喂给 LLM prompt 参考
+  // 及 resolveAssignee 的兜底排序（见 buildAssigneeRoster 顶部注释）。
+  userProfiles: Pick<UserProfileRepository, "listCandidatesForProject">;
   client: ObserverClientProvider;
   policyStore: Pick<BudgetPolicyStore, "listPolicies">;
   ledgerStore: Pick<CostLedgerStore, "usageSnapshots">;
@@ -260,25 +270,86 @@ type DispatchOutcome = {
   systemNote?: { content: Record<string, unknown> };
 };
 
+// R13 批 A2（派人推荐 v2）：候选打分排序，附带候选人自己的技能标签（供 prompt 里的 topSkills 用，
+// 见 buildAssigneeRoster 顶部注释）。resolveAssignee 只需要 userId/nickname/score 这几项就够用。
+type RankedAssigneeCandidate = ScoredCandidate & { skillTags: string[] };
+
+// 派活候选名单——观察者本次分析时构建一次，同时喂给两处消费点：
+// (1) buildObserverUserPrompt 的 candidateRoster（只给 LLM 看 top N，"项目经理挑人"参考）；
+// (2) resolveAssignee 的兜底候选（LLM 没点名/点的名字查无此人时，退化到这份名单里分数最高者）。
+// 两处用同一份排序结果，不逐条目按任务文本重新计算一遍——是本设计一个明确记录在案的简化（见
+// packages/agent/src/observer/assignee-scoring.ts 顶部注释），不是遗漏。
+async function buildAssigneeRoster(
+  deps: ConversationObserverDeps,
+  candidate: ObserverCandidateRow,
+  discussionText: string,
+  now: Date
+): Promise<RankedAssigneeCandidate[]> {
+  const rows = await deps.userProfiles.listCandidatesForProject({ projectId: candidate.projectId });
+  const scored: RankedAssigneeCandidate[] = rows.map((row) => {
+    const daysSinceLastAccepted = row.lastAcceptedAt
+      ? (now.getTime() - row.lastAcceptedAt.getTime()) / (1000 * 60 * 60 * 24)
+      : null;
+    const skillTags = row.skillTags ?? [];
+    const score = scoreCandidate({
+      hasProfile: Boolean(row.bioMd),
+      hasTitle: Boolean(row.title),
+      acceptedDeliverableCount: row.acceptedDeliverableCount,
+      daysSinceLastAccepted,
+      skillTagOverlapWithTask: skillTagOverlapRatio(skillTags, discussionText)
+    });
+    return { userId: row.userId, nickname: row.nickname, title: row.title, score, skillTags };
+  });
+  return rankCandidates(scored) as RankedAssigneeCandidate[];
+}
+
+type AssigneeResolution = {
+  userId: string;
+  nickname: string;
+  // "点名优先" 铁律（04 铁律 + 设计稿明确拍板）：LLM 明确点名且命中真实用户→原样采用（nickname）；
+  // 没点名或点的名字查无此人→退化到候选名单里分数最高者（roster_score）；名单也是空→项目负责人
+  // 兜底（project_owner）。三者互斥，顺序不可颠倒——resolveAssignee 的调用方靠 resolvedVia 判断
+  // 要不要在行动卡里追加"根据资料与历史交付选中"的说明（只有 roster_score 才追加）。
+  resolvedVia: "nickname" | "roster_score" | "project_owner";
+};
+
 async function resolveAssignee(
   deps: ConversationObserverDeps,
   candidate: ObserverCandidateRow,
-  planItem: ObserverPlanItem
-): Promise<{ userId: string; nickname: string } | null> {
+  planItem: ObserverPlanItem,
+  roster: RankedAssigneeCandidate[]
+): Promise<AssigneeResolution | null> {
   if (planItem.suggested_assignee_nickname) {
     const matched = await deps.actionCards.resolveAssigneeByNickname({
       workspaceId: candidate.workspaceId,
       nickname: planItem.suggested_assignee_nickname
     });
     if (matched) {
-      return matched;
+      return { ...matched, resolvedVia: "nickname" };
     }
+  }
+  const topScorer = roster[0];
+  if (topScorer) {
+    return { userId: topScorer.userId, nickname: topScorer.nickname, resolvedVia: "roster_score" };
   }
   const project = await deps.workItems.findProjectById(candidate.projectId);
   if (!project?.ownerUserId) {
     return null;
   }
-  return { userId: project.ownerUserId, nickname: project.ownerNickname };
+  return { userId: project.ownerUserId, nickname: project.ownerNickname, resolvedVia: "project_owner" };
+}
+
+// 评分结果不神秘化（设计稿交互要点）：观察者采用了分数最高候选人而非 LLM 直接点名时，行动卡追加一句
+// 说明，避免用户觉得"AI 凭空点了我的名"。
+function assigneeAutoSelectedNote(itemId: string, assignee: AssigneeResolution): { content: Record<string, unknown> } {
+  return {
+    content: {
+      event: "assignee_auto_selected",
+      action_card_item_id: itemId,
+      assignee_user_id: assignee.userId,
+      summary: `这件事派给了 @${assignee.nickname}——根据资料与历史交付选中。`
+    }
+  };
 }
 
 async function dispatchExecuteItem(
@@ -286,9 +357,10 @@ async function dispatchExecuteItem(
   candidate: ObserverCandidateRow,
   planItem: ObserverPlanItem,
   itemId: string,
-  at: Date
+  at: Date,
+  roster: RankedAssigneeCandidate[]
 ): Promise<DispatchOutcome> {
-  const assignee = await resolveAssignee(deps, candidate, planItem);
+  const assignee = await resolveAssignee(deps, candidate, planItem, roster);
   if (!assignee) {
     return {
       item: {
@@ -300,6 +372,9 @@ async function dispatchExecuteItem(
       }
     };
   }
+  // 只在"算法自己挑的人"（roster_score）才追加说明——LLM 明确点名或退化到项目负责人兜底都不需要
+  // 这句话（点名本来就是用户/讨论自己说的；项目负责人兜底是既有语义，不是新引入的算法推荐）。
+  const autoSelectedNote = assignee.resolvedVia === "roster_score" ? assigneeAutoSelectedNote(itemId, assignee) : undefined;
   const profileAccess = await deps.aiSettings.findUserProfileAccessRecord({
     workspaceId: candidate.workspaceId,
     userId: assignee.userId
@@ -341,7 +416,8 @@ async function dispatchExecuteItem(
           runId: run.run_id,
           status: "running",
           undoDeadlineAt: new Date(at.getTime() + UNDO_WINDOW_MS)
-        }
+        },
+        ...(autoSelectedNote ? { systemNote: autoSelectedNote } : {})
       };
     }
 
@@ -371,7 +447,8 @@ async function dispatchExecuteItem(
         assigneeUserId: assignee.userId,
         workItemId: workItem.id,
         status: "running"
-      }
+      },
+      ...(autoSelectedNote ? { systemNote: autoSelectedNote } : {})
     };
   } catch (error) {
     deps.logger?.warn?.("conversation_observer_execute_dispatch_failed", {
@@ -396,9 +473,10 @@ async function dispatchDecideItem(
   candidate: ObserverCandidateRow,
   planItem: ObserverPlanItem,
   itemId: string,
-  at: Date
+  at: Date,
+  roster: RankedAssigneeCandidate[]
 ): Promise<DispatchOutcome> {
-  const assignee = await resolveAssignee(deps, candidate, planItem);
+  const assignee = await resolveAssignee(deps, candidate, planItem, roster);
   if (!assignee) {
     return {
       item: {
@@ -448,7 +526,9 @@ async function dispatchDecideItem(
           event: "decide_item_created",
           action_card_item_id: itemId,
           assignee_user_id: assignee.userId,
-          summary: `@${assignee.nickname} 这件事我拿不准，你来定：${planItem.title_md}`
+          summary: `@${assignee.nickname} 这件事我拿不准，你来定：${planItem.title_md}${
+            assignee.resolvedVia === "roster_score" ? "（根据资料与历史交付选中）" : ""
+          }`
         }
       }
     };
@@ -602,6 +682,18 @@ async function analyzeConversation(
   const nicknames = await deps.actionCards.listNicknamesByUserIds(senderIds);
   const promptMessages = buildPromptMessages(messages, nicknames);
 
+  // R13 批 A2（派人推荐 v2）：候选名单只算这一次分析、用同一份排序结果喂两处消费点（见
+  // buildAssigneeRoster 顶部注释）。任务文本近似为这批讨论的拼接文本——分析这一刻还没有 plan.items，
+  // 没法按每条要派的活单独重排，这是设计文档记录在案的简化。
+  const discussionText = promptMessages.map((message) => message.text).join(" ");
+  const roster = await buildAssigneeRoster(deps, candidate, discussionText, now);
+  const candidateRosterForPrompt = roster.slice(0, CANDIDATE_ROSTER_PROMPT_MAX).map((entry) => ({
+    nickname: entry.nickname,
+    title: entry.title,
+    topSkills: entry.skillTags,
+    score: entry.score
+  }));
+
   const client = await deps.client({ actorId: OBSERVER_ACTOR_ID, workspaceId: candidate.workspaceId });
   const response = await client.messages.create({
     maxTokens: DEFAULT_MAX_ANALYSIS_TOKENS,
@@ -610,7 +702,11 @@ async function analyzeConversation(
     messages: [
       {
         role: "user",
-        content: buildObserverUserPrompt({ projectName: candidate.projectId, messages: promptMessages })
+        content: buildObserverUserPrompt({
+          projectName: candidate.projectId,
+          messages: promptMessages,
+          candidateRoster: candidateRosterForPrompt
+        })
       }
     ]
   });
@@ -628,9 +724,9 @@ async function analyzeConversation(
   for (const [ordinal, planItem] of plan.items.entries()) {
     const itemId = deriveActionCardItemId(candidate.conversationId, analyzedToSeq, ordinal);
     if (planItem.kind === "execute") {
-      outcomes.push(await dispatchExecuteItem(deps, candidate, planItem, itemId, now));
+      outcomes.push(await dispatchExecuteItem(deps, candidate, planItem, itemId, now, roster));
     } else if (planItem.kind === "decide") {
-      outcomes.push(await dispatchDecideItem(deps, candidate, planItem, itemId, now));
+      outcomes.push(await dispatchDecideItem(deps, candidate, planItem, itemId, now, roster));
     } else {
       outcomes.push(observeItem(planItem, itemId));
     }
@@ -864,6 +960,7 @@ export function getDefaultConversationObserverScheduler(): ConversationObserverS
     notifications: createNotificationRepository(db),
     decisions: createAiDecisionRepository(db),
     aiSettings: createAiSettingsRepository(db),
+    userProfiles: createUserProfileRepository(db),
     client: defaultClientProvider(),
     policyStore: getDefaultBudgetPolicyStore(),
     ledgerStore: getDefaultCostLedgerStore(),
