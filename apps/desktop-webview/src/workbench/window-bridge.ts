@@ -43,6 +43,35 @@ type TauriGlobal = {
   };
 };
 
+// R13 批 V2:macOS 原生红绿灯接管标题栏控制（Rust 侧 create_workbench_window_if_missing 的平台分支：
+// decorations:true + titleBarStyle Overlay + hiddenTitle，见 04 手册铁律与 00-plan.md 批 V2）。
+// shell.ts 用这个判定隐藏自绘的 min/close 按钮——两套控件叠在同一个角落是 bug，不是冗余保险。
+// 仓库里没有既有的 OS 判定先例（tauri-plugin-os 没进依赖，不为一个布尔值新增插件），用
+// navigator.userAgentData/platform/userAgent 做最小 UA 判定，和这个文件本身「从 globalThis 读环境
+// 探测、拿不到就优雅退化」的既有写法一致。
+type NavigatorPlatformHint = {
+  platform?: string;
+  userAgent?: string;
+  userAgentData?: { platform?: string };
+};
+
+export function isMacOsWebview(input: unknown = globalThis): boolean {
+  const nav = (input as { navigator?: NavigatorPlatformHint }).navigator;
+  if (!nav) {
+    return false;
+  }
+  const uaDataPlatform = nav.userAgentData?.platform;
+  if (typeof uaDataPlatform === "string" && uaDataPlatform.length > 0) {
+    return uaDataPlatform.toLowerCase().includes("mac");
+  }
+  const platform = nav.platform;
+  if (typeof platform === "string" && platform.length > 0) {
+    return platform.toLowerCase().includes("mac");
+  }
+  const userAgent = nav.userAgent;
+  return typeof userAgent === "string" && /mac os x/iu.test(userAgent);
+}
+
 export function resolveWorkbenchWindowBridge(input: unknown = globalThis): WorkbenchWindowBridge | undefined {
   const target = input as TauriGlobal;
   const currentWindow =

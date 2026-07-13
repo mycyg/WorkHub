@@ -15,14 +15,23 @@ export const workbenchCss = [
   // 其它颜色 token 不再本地覆盖，级联自 design-system.ts 的浅色 .wh-ds 根。 —— //
   ".wh-ds.wh-wb{--wb-cuu:#ffab5e;--wb-cuu-soft:rgba(255,171,94,.14)}",
 
-  // —— 窗口外壳：无边框，靠自绘拖拽区 + 关闭/最小化控件（透明窗无原生标题栏）。 —— //
+  // —— 窗口外壳：macOS 用原生红绿灯（decorations:true + titleBarStyle Overlay，Rust 侧
+  // create_workbench_window_if_missing 的平台分支），非 macOS 仍无边框靠自绘拖拽区 + 关闭/最小化控件。
+  // R13 批 V2：圆角工艺三层打架修复——原生 vibrancy 圆角(24) 已经在裁剪窗口的可见形状，这里的
+  // border-radius 只做内容裁剪（overflow:hidden 配合 CSS 圆角，避免方形内容溢出圆角外），不再画
+  // box-shadow：矩形投影会在原生裁剪出的圆角外画出残角（04 §4 铁律：真机截图实锤的 bug，不是审美
+  // 偏好）。阴影交给原生 NSWindow.hasShadow（Rust 侧显式 .shadow(true)）。 —— //
   "html,body,#root{margin:0;height:100%;background:transparent}",
   ".wh-wb-window{position:relative;height:100vh;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;" +
     "border-radius:24px;border:1px solid rgba(255,255,255,.7);" +
-    "background:linear-gradient(180deg,rgba(250,251,253,.88),rgba(242,245,250,.92));" +
-    "box-shadow:0 32px 90px -30px rgba(60,60,67,.32),inset 0 1px 0 rgba(255,255,255,.75)}",
+    "background:linear-gradient(180deg,rgba(250,251,253,.88),rgba(242,245,250,.92))}",
   ".wh-wb-titlebar{flex:0 0 auto;height:44px;display:flex;align-items:center;gap:10px;padding:0 8px 0 16px;" +
     "border-bottom:1px solid var(--ds-glass-border);-webkit-app-region:drag}",
+  // macOS 原生红绿灯接管（titleBarStyle:Overlay + hiddenTitle + trafficLightPosition，见 main.rs
+  // create_workbench_window_if_missing）：自绘的 min/close 按钮整个不渲染（shell.ts renderWorkbenchShellHtml
+  // 的 nativeWindowChrome 分支），左侧让出空间别被红绿灯压住面包屑文字——78px 覆盖三个原生按钮的可点范围
+  // (~18px 起、每个直径 12px + 间距 8px)再留一点呼吸空间，具体像素值待真机核对（见集成者验收清单）。
+  ".wh-wb-titlebar--native{padding-left:78px}",
   ".wh-wb-crumb{font:600 13px/1 var(--ds-font);color:var(--ds-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
   ".wh-wb-crumb b{color:var(--ds-ink);font-weight:700}",
   ".wh-wb-titlebar-spacer{flex:1 1 auto}",

@@ -14,6 +14,21 @@ test("does not rely on CSS backdrop-filter alone for the window chrome (transpar
   assert.match(workbenchCss, /\.wh-wb-window\{[^}]*background:linear-gradient\(180deg,rgba\(250,251,253,\.88\)/u);
 });
 
+// R13 batch V2: a rectangular CSS box-shadow painted past the native vibrancy's rounded corners,
+// leaving a stray corner artifact in real-device screenshots (00-plan.md V2 root-cause diagnosis).
+// The window's depth now comes from the native NSWindow shadow (Rust side calls .shadow(true)); the
+// CSS radius here only clips content, it must never draw a shadow of its own again.
+test("the window shell has no CSS box-shadow of its own — depth comes from the native window shadow", () => {
+  assert.doesNotMatch(workbenchCss, /\.wh-wb-window\{[^}]*box-shadow/u);
+});
+
+// R13 batch V2: on macOS the workbench window switches to native traffic lights (titleBarStyle
+// Overlay); the custom titlebar must yield left-side space so the breadcrumb text doesn't sit under
+// the native close/minimize/zoom buttons.
+test("the native-chrome titlebar variant reserves left space for the macOS traffic lights", () => {
+  assert.match(workbenchCss, /\.wh-wb-titlebar--native\{padding-left:78px\}/u);
+});
+
 // R13 batch V1: the workbench flipped from a bespoke dark palette to a fixed light glass theme that
 // shares design-system.ts's tokens (same visual language as the Spotlight box) — it must not redefine
 // --ds-ink/--ds-glass/etc. under .wh-ds.wh-wb anymore, only the Cuu brand orange stays scoped there.

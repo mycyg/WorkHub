@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { resolveWorkbenchWindowBridge } from "./window-bridge.js";
+import { isMacOsWebview, resolveWorkbenchWindowBridge } from "./window-bridge.js";
 
 test("resolveWorkbenchWindowBridge returns undefined in a plain browser dev preview (no __TAURI__)", () => {
   assert.equal(resolveWorkbenchWindowBridge({}), undefined);
@@ -80,4 +80,47 @@ test("resolveWorkbenchWindowBridge omits isFocused when the current window handl
   });
   assert.ok(bridge);
   assert.equal(bridge?.isFocused, undefined);
+});
+
+// R13 批 V2:自绘 min/close 在 macOS 隐藏（原生红绿灯接管）靠这个判定——见 window-bridge.ts 顶部注释。
+
+test("isMacOsWebview is false with no navigator at all (e.g. a bare object in tests)", () => {
+  assert.equal(isMacOsWebview({}), false);
+});
+
+test("isMacOsWebview prefers navigator.userAgentData.platform when present", () => {
+  assert.equal(isMacOsWebview({ navigator: { userAgentData: { platform: "macOS" } } }), true);
+  assert.equal(isMacOsWebview({ navigator: { userAgentData: { platform: "Windows" } } }), false);
+});
+
+test("isMacOsWebview falls back to navigator.platform", () => {
+  assert.equal(isMacOsWebview({ navigator: { platform: "MacIntel" } }), true);
+  assert.equal(isMacOsWebview({ navigator: { platform: "Win32" } }), false);
+  assert.equal(isMacOsWebview({ navigator: { platform: "Linux x86_64" } }), false);
+});
+
+test("isMacOsWebview falls back to navigator.userAgent as a last resort", () => {
+  assert.equal(
+    isMacOsWebview({
+      navigator: { userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15" }
+    }),
+    true
+  );
+  assert.equal(
+    isMacOsWebview({ navigator: { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } }),
+    false
+  );
+});
+
+test("isMacOsWebview treats an empty-string platform/userAgentData as absent and keeps checking fallbacks", () => {
+  assert.equal(
+    isMacOsWebview({
+      navigator: {
+        userAgentData: { platform: "" },
+        platform: "",
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"
+      }
+    }),
+    true
+  );
 });
