@@ -3,6 +3,8 @@ import { test } from "node:test";
 
 import type {
   AgentRunLiveVM,
+  ArmyChangedFileVM,
+  ArmyOutputsVM,
   ArmyOverviewRunCardVM,
   ArmyRunCardVM,
   ConversationArmyPanelVM
@@ -10,6 +12,7 @@ import type {
 
 import type { ChatRenderMembers } from "../chat/render.js";
 import {
+  collectArmyChangedFiles,
   groupArmyOverviewRunsByProject,
   mergeArmyRunPages,
   renderArmyOverviewEmptyHtml,
@@ -65,6 +68,24 @@ function panelVm(over: Partial<ConversationArmyPanelVM> = {}): ConversationArmyP
       capped: false
     },
     background_tasks: { items: [], empty_state: "not_yet_available" },
+    ...over
+  };
+}
+
+// R13 批 P1.5（右栏变动文件区）：一个带 changed_files 的输出条目，其余字段沿用 panelVm() 默认输出。
+function outputWithFiles(
+  files: ArmyChangedFileVM[],
+  over: Partial<ArmyOutputsVM["items"][number]> = {}
+): ArmyOutputsVM["items"][number] {
+  return {
+    proposal_id: "prop-1",
+    work_item_id: "wi-1",
+    run_id: "run-1",
+    title: "选题报告 · 第三节(草稿)",
+    status: "opened",
+    proposal_href: "/proposals/prop-1",
+    updated_at: "2026-07-13T00:00:00.000000Z",
+    changed_files: files,
     ...over
   };
 }
@@ -152,6 +173,93 @@ test("renderArmyPanelHtml output rows use a native <details> disclosure, not a r
   const html = renderArmyPanelHtml(state, "zh-CN", noMembers);
   assert.match(html, /<details class="wh-wb-army-out-row"/u);
   assert.doesNotMatch(html, /<a[^>]*href="\/proposals\/prop-1"/u);
+});
+
+// R13 批 P1.5（右栏变动文件区）：下面几条覆盖设计稿验收门列的三种边界——整体缺失（老 proposal）/
+// 部分文件缺 adds-dels / 超过 20 条截断，外加去重语义。
+
+test("collectArmyChangedFiles dedupes by path across multiple outputs, keeping the newest (first-listed) occurrence", () => {
+  const newer: ArmyChangedFileVM = { path: "/outputs/result.md", change_type: "updated", adds: 5, dels: 2 };
+  const older: ArmyChangedFileVM = { path: "/outputs/result.md", change_type: "updated", adds: 1, dels: 1 };
+  // outputs.items 本就按 updated_at desc 排列（服务端 orderBy）——较新的输出排在数组前面。
+  const outputs: ArmyOutputsVM = {
+    items: [outputWithFiles([newer], { proposal_id: "prop-new" }), outputWithFiles([older], { proposal_id: "prop-old" })],
+    capped: false
+  };
+
+  const files = collectArmyChangedFiles(outputs);
+
+  assert.equal(files.length, 1);
+  assert.deepEqual(files[0], newer);
+});
+
+test("collectArmyChangedFiles keeps entries without a path as separate rows instead of incorrectly merging them", () => {
+  const first: ArmyChangedFileVM = { change_type: "generated" };
+  const second: ArmyChangedFileVM = { change_type: "deleted" };
+  const outputs: ArmyOutputsVM = { items: [outputWithFiles([first, second])], capped: false };
+
+  const files = collectArmyChangedFiles(outputs);
+
+  assert.equal(files.length, 2);
+});
+
+test("renderArmyPanelHtml changed-files section lists one row per file with a human change-type badge and +N -M", () => {
+  const vm = panelVm({
+    outputs: {
+      items: [outputWithFiles([
+        { path: "/outputs/result.md", change_type: "updated", adds: 3, dels: 1 },
+        { path: "/outputs/new.md", change_type: "created", adds: 5 }
+      ])],
+      capped: false
+    }
+  });
+  const html = renderArmyPanelHtml({ mode: "list", vm, loadingMore: false }, "zh-CN", noMembers);
+
+  assert.match(html, /变动文件/u);
+  assert.match(html, /result\.md/u);
+  assert.match(html, /更新/u);
+  assert.match(html, /\+3 -1/u);
+  assert.match(html, /new\.md/u);
+  assert.match(html, /新建/u);
+});
+
+test("renderArmyPanelHtml shows 'change details unavailable' instead of faking +0 -0 when a file has no adds/dels", () => {
+  const vm = panelVm({
+    outputs: { items: [outputWithFiles([{ path: "/outputs/result.md", change_type: "generated" }])], capped: false }
+  });
+  const html = renderArmyPanelHtml({ mode: "list", vm, loadingMore: false }, "zh-CN", noMembers);
+
+  assert.match(html, /改动详情不可用/u);
+  assert.doesNotMatch(html, /\+0 -0/u);
+});
+
+test("renderArmyPanelHtml changed-files section shows an honest empty note when no output carries changed_files (e.g. every proposal predates the P1.5 stats column)", () => {
+  const html = renderArmyPanelHtml({ mode: "list", vm: panelVm(), loadingMore: false }, "zh-CN", noMembers);
+
+  assert.match(html, /这个会话的产出还没有可展示的变动文件/u);
+});
+
+test("renderArmyPanelHtml notes there may be more changes when a proposal hits the 20-change diff cap", () => {
+  const manyFiles: ArmyChangedFileVM[] = Array.from({ length: 20 }, (_unused, index) => ({
+    path: `/outputs/f${index}.md`,
+    change_type: "generated",
+    adds: 1,
+    dels: 0
+  }));
+  const vm = panelVm({ outputs: { items: [outputWithFiles(manyFiles)], capped: false } });
+
+  const html = renderArmyPanelHtml({ mode: "list", vm, loadingMore: false }, "zh-CN", noMembers);
+
+  assert.match(html, /可能还有更多改动没有逐条统计/u);
+});
+
+test("renderArmyPanelHtml does not warn about truncation when a proposal has fewer than 20 changed files", () => {
+  const fewFiles: ArmyChangedFileVM[] = [{ path: "/outputs/result.md", change_type: "updated", adds: 1, dels: 1 }];
+  const vm = panelVm({ outputs: { items: [outputWithFiles(fewFiles)], capped: false } });
+
+  const html = renderArmyPanelHtml({ mode: "list", vm, loadingMore: false }, "zh-CN", noMembers);
+
+  assert.doesNotMatch(html, /可能还有更多改动没有逐条统计/u);
 });
 
 test("renderArmyPanelHtml shows an empty note when there are no runs or outputs, without inventing data", () => {

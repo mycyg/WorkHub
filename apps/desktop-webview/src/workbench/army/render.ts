@@ -8,6 +8,7 @@
 import type {
   AgentRunLiveVM,
   ArmyBackgroundTasksVM,
+  ArmyChangedFileVM,
   ArmyOutputsVM,
   ArmyOverviewPageVM,
   ArmyOverviewRunCardVM,
@@ -173,6 +174,91 @@ function renderArmyOutputsSectionHtml(outputs: ArmyOutputsVM, zh: boolean): stri
   return `${header}${rows}${cappedNote}`;
 }
 
+// R13 批 P1.5（右栏变动文件区）：聚合当前会话所有 outputs[].changed_files，按 path 去重——同一文件
+// 被多个提议改过时取最新一条。outputs.items 本就按 updated_at desc 排列（见
+// listOutputLinksForConversation 的 orderBy），所以第一次遇到某个 path 时就是最新的那条，直接
+// "先到者赢"即可，不需要额外比较时间戳。没有 path 的改动（理论上限——非文件类改动，如
+// structured_record）各自当独立条目处理，不强行按缺省 key 归并到一起。
+export function collectArmyChangedFiles(outputs: ArmyOutputsVM): ArmyChangedFileVM[] {
+  const seen = new Map<string, ArmyChangedFileVM>();
+  outputs.items.forEach((item, itemIndex) => {
+    (item.changed_files ?? []).forEach((file, fileIndex) => {
+      const key = file.path ?? `__no-path__:${item.proposal_id}:${itemIndex}:${fileIndex}`;
+      if (!seen.has(key)) {
+        seen.set(key, file);
+      }
+    });
+  });
+  return [...seen.values()];
+}
+
+const ARMY_CHANGE_TYPE_LABEL: Record<string, [string, string]> = {
+  created: ["新建", "Created"],
+  updated: ["更新", "Updated"],
+  deleted: ["删除", "Deleted"],
+  renamed: ["重命名", "Renamed"],
+  moved: ["移动", "Moved"],
+  replaced: ["替换", "Replaced"],
+  generated: ["生成", "Generated"]
+};
+
+function armyChangeTypeLabel(changeType: string, zh: boolean): string {
+  const entry = ARMY_CHANGE_TYPE_LABEL[changeType];
+  return entry ? (zh ? entry[0] : entry[1]) : changeType;
+}
+
+function armyChangedFileNameLabel(file: ArmyChangedFileVM, zh: boolean): string {
+  if (!file.path) {
+    return zh ? "（未知文件）" : "(unknown file)";
+  }
+  const segments = file.path.split("/");
+  return segments[segments.length - 1] || file.path;
+}
+
+// adds/dels 缺省即"这条改动没能计入统计"(见 armyChangedFileVmSchema 的契约注释)，绝不能显示成
+// "+0 -0"——那会被读成"这条改动没有实质内容"，是一句谎言。
+function armyChangedFileDiffLabel(file: ArmyChangedFileVM, zh: boolean): string {
+  if (file.adds === undefined && file.dels === undefined) {
+    return zh ? "改动详情不可用" : "Change details unavailable";
+  }
+  return `+${file.adds ?? 0} -${file.dels ?? 0}`;
+}
+
+// 变动文件区(P1.5 契约)：紧跟输出区之后——文件正是输出区里各个提议产出的具体物。与网盘侧栏
+// "最近文件"的边界：这里只展示已经进入提议的 AI 产出改动，不是网盘全量最近文件列表。点击展开
+// 复用输出区同款 <details> 折叠(04 铁律#3：没有深链接线就不装作能跳转)，样式复用既有
+// .wh-wb-army-out-* 类(没有为这批新增 CSS，见批次汇报)。
+function renderArmyChangedFilesSectionHtml(outputs: ArmyOutputsVM, zh: boolean): string {
+  const files = collectArmyChangedFiles(outputs);
+  const header = `<div class="wh-wb-army-sec-h">${zh ? "变动文件" : "Changed files"}<span class="wh-wb-army-sec-n">${files.length}</span></div>`;
+  if (files.length === 0) {
+    return `${header}<p class="wh-wb-army-empty-note">${zh ? "这个会话的产出还没有可展示的变动文件。" : "No changed files from this conversation's outputs yet."}</p>`;
+  }
+  const rows = files
+    .map(
+      (file) => `<details class="wh-wb-army-out-row">
+        <summary>
+          <span class="wh-wb-army-out-icon">${workbenchIcons.file}</span>
+          <span class="wh-wb-army-out-main">
+            <span class="wh-wb-army-out-title">${escapeHtml(armyChangedFileNameLabel(file, zh))}</span>
+            <span class="wh-wb-army-out-meta">${escapeHtml(armyChangeTypeLabel(file.change_type, zh))} · ${escapeHtml(armyChangedFileDiffLabel(file, zh))}</span>
+          </span>
+          <span class="wh-wb-army-out-chev">${workbenchIcons.chevronRight}</span>
+        </summary>
+        <p class="wh-wb-army-out-href">${escapeHtml(file.path ?? (zh ? "这条改动没有具体文件路径。" : "This change has no specific file path."))}</p>
+      </details>`
+    )
+    .join("");
+  // 20 条上限就是既有的 MAX_CHANGES_DIFFED 统计上限(deliverable-diff-stats.ts)。恰好命中这个数字时
+  // 提示"可能还有更多"——这是一个诚实但不精确的启发式(changes 数恰好等于 20 的边界会被误判成
+  // "截断"),比对用户完全隐藏这件事更负责任。
+  const possiblyTruncated = outputs.items.some((item) => (item.changed_files?.length ?? 0) >= 20);
+  const truncationNote = possiblyTruncated
+    ? `<p class="wh-wb-army-capped-note">${zh ? "部分提议的改动较多，可能还有更多改动没有逐条统计。" : "Some proposals have many changes — there may be more not individually counted here."}</p>`
+    : "";
+  return `${header}${rows}${truncationNote}`;
+}
+
 function renderArmyRunsSectionHtml(
   runsPage: ConversationArmyPanelVM["runs"],
   locale: Locale,
@@ -228,6 +314,7 @@ function renderArmyPanelListHtml(
 ): string {
   const zh = locale === "zh-CN";
   const outputsHtml = renderArmyOutputsSectionHtml(state.vm.outputs, zh);
+  const changedFilesHtml = renderArmyChangedFilesSectionHtml(state.vm.outputs, zh);
   const runsHtml = renderArmyRunsSectionHtml(state.vm.runs, locale, members, {
     loadingMore: state.loadingMore,
     loadMoreError: state.loadMoreError,
@@ -236,7 +323,7 @@ function renderArmyPanelListHtml(
     loadMoreDataAttr: "data-wb-army-load-more"
   });
   const backgroundHtml = renderArmyBackgroundTasksSectionHtml(state.vm.background_tasks, zh);
-  return `<div class="wh-wb-army">${outputsHtml}${runsHtml}${backgroundHtml}</div>`;
+  return `<div class="wh-wb-army">${outputsHtml}${changedFilesHtml}${runsHtml}${backgroundHtml}</div>`;
 }
 
 function renderArmyReplaySectionHtml(trace: ArmyRunTraceState, locale: Locale): string {
