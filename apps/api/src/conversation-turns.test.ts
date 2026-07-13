@@ -13,6 +13,7 @@ import type {
 import {
   ConversationTurnServiceError,
   createConversationTurnService,
+  mentionsCuu,
   type ConversationTurnClientProvider,
   type ConversationTurnResultVM,
   type ConversationTurnServiceDeps,
@@ -68,6 +69,7 @@ function conversationRow(overrides: Partial<ConversationRow> = {}): Conversation
     sourceMessageId: null,
     visibility: "private",
     nextSeq: 2,
+    cuuEnabled: true,
     createdBy: userId,
     deletedAt: null,
     deletedByUserId: null,
@@ -83,6 +85,7 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
     projectOwnerUserId: userId,
     membershipRole: "member",
     participantRole: "owner",
+    participantCount: 1,
     ...overrides
   };
 }
@@ -359,6 +362,233 @@ test("createTurn rejects the project main conversation with 409 conversation_tur
     (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_not_collab"
   );
   assert.equal(llmCalled, false);
+});
+
+// —— R13 批 G1（小群）：cuu_enabled 硬闸 —— //
+
+test("createTurn rejects a cuu_enabled:false conversation with 409 conversation_turn_cuu_disabled and never calls the LLM", async () => {
+  let llmCalled = false;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ conversation: conversationRow({ cuuEnabled: false }) });
+        },
+        async listMessagesAfter() {
+          throw new Error("must not be called");
+        },
+        async createCuuMessage() {
+          throw new Error("must not be called");
+        }
+      },
+      client: async () => {
+        llmCalled = true;
+        throw new Error("must not be called");
+      }
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) =>
+      error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_cuu_disabled"
+  );
+  assert.equal(llmCalled, false);
+});
+
+test("createTurn's cuu_enabled gate is not bypassed by an explicit @Cuu mention in the trigger message", async () => {
+  // 用户拍板:cuu_enabled=false 是"强静默不可绕过"的硬开关——即便这一轮消息明确 @Cuu,判定器/被@必回
+  // 都不应该有机会介入,硬闸必须排在它们前面直接 409。
+  let llmCalled = false;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ conversation: conversationRow({ cuuEnabled: false }) });
+        },
+        async listMessagesAfter() {
+          return {
+            rows: [userMessageRow({ contentJson: { text: "@Cuu 帮我看一下这段" } })],
+            hasMore: false,
+            nextAfterSeq: 1
+          };
+        },
+        async createCuuMessage() {
+          throw new Error("must not be called");
+        }
+      },
+      client: async () => {
+        llmCalled = true;
+        throw new Error("must not be called");
+      }
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) =>
+      error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_cuu_disabled"
+  );
+  assert.equal(llmCalled, false);
+});
+
+test("createTurn rejects cuu_enabled:false ahead of the mode=1 observe-only check (cuu_enabled has top priority)", async () => {
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ conversation: conversationRow({ cuuEnabled: false }) });
+        },
+        async listMessagesAfter() {
+          throw new Error("must not be called");
+        },
+        async createCuuMessage() {
+          throw new Error("must not be called");
+        }
+      },
+      aiSettings: {
+        async findUserProfileAccessRecord() {
+          return { membershipRole: "member", profile: userAiProfileRow({ defaultMode: 1 }) };
+        }
+      }
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) =>
+      error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_cuu_disabled"
+  );
+});
+
+// —— R13 批 G1：回话判定接缝——被 @ 必回 + respondDecider 注入点 —— //
+
+test("createTurn calls the LLM when cuu_enabled is true and no respondDecider is configured (default preserves today's always-reply behavior)", async () => {
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          // 小群场景：participantCount > 1，且触发消息没有 @Cuu——没有配置 respondDecider 时,
+          // 默认实现必须保守放行（维持存量行为零回归，见 defaultConversationTurnRespondDecider 注释）。
+          return accessRecord({ participantCount: 3 });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "这段还需要再改改" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      }
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  assert.equal(result.message.sender_type, "cuu");
+});
+
+test("createTurn rejects with 409 conversation_turn_not_warranted when an injected respondDecider declines an un-mentioned group message", async () => {
+  let llmCalled = false;
+  let deciderInput: unknown;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ participantCount: 4 });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "今天天气不错" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage() {
+          throw new Error("must not be called");
+        }
+      },
+      client: async () => {
+        llmCalled = true;
+        throw new Error("must not be called");
+      },
+      respondDecider: async (input) => {
+        deciderInput = input;
+        return false;
+      }
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) =>
+      error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_not_warranted"
+  );
+  assert.equal(llmCalled, false);
+  assert.deepEqual(deciderInput, { participantCount: 4, triggerMessageText: "今天天气不错" });
+});
+
+test("createTurn's @Cuu mention overrides an injected respondDecider that would otherwise decline", async () => {
+  let deciderCalled = false;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ participantCount: 4 });
+        },
+        async listMessagesAfter() {
+          return {
+            rows: [userMessageRow({ contentJson: { text: "@Cuu 帮我看看这段" } })],
+            hasMore: false,
+            nextAfterSeq: 1
+          };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ contentJson: input.contentJson });
+        }
+      },
+      respondDecider: async () => {
+        deciderCalled = true;
+        return false;
+      }
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  assert.equal(result.message.sender_type, "cuu");
+  assert.equal(deciderCalled, false, "mentioning Cuu must short-circuit before the decider is ever consulted");
+});
+
+test("createTurn's un-mentioned gate consults the decider even for a 1:1 conversation (participantCount 1) — only @Cuu is a hardcoded override, the 1:1 short-circuit is the decider's own job (see G1 design note)", async () => {
+  // 设计原话:"1:1 时判定器直接短路成'必回'……是判定器的一个输入维度,不是另一套逻辑"——也就是说
+  // createTurn 本身不硬编码 participantCount<=1 的旁路,只有"被 @"是钉死的、判定器无法覆盖的例外。
+  // 4c 落地前的默认判定器（永远 true）让 1:1 today 照常必回；这里注入一个总是拒绝的判定器，证明
+  // 1:1 并不会绕过它——真正的"1:1 必回"要靠判定器自己的实现来保证。
+  let deciderCalled = false;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ participantCount: 1 });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ contentJson: { text: "顺手帮我查一下这个" } })], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage() {
+          throw new Error("must not be called");
+        }
+      },
+      client: async () => {
+        throw new Error("must not be called");
+      },
+      respondDecider: async (input) => {
+        deciderCalled = true;
+        assert.equal(input.participantCount, 1);
+        return false;
+      }
+    })
+  );
+
+  await assert.rejects(
+    service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
+    (error: unknown) =>
+      error instanceof ConversationTurnServiceError && error.status === 409 && error.code === "conversation_turn_not_warranted"
+  );
+  assert.equal(deciderCalled, true);
 });
 
 test("createTurn rejects mode=1 (observe-only) with 409 conversation_turn_mode_observe_only and never calls the LLM", async () => {
@@ -807,4 +1037,30 @@ test("createTurn does not cross-block two different conversations", async () => 
 
   releaseFirst?.();
   await first;
+});
+
+// —— R13 批 G1：mentionsCuu 纯函数——脆弱的文本子串匹配，只钉死"带词边界"这条底线 —— //
+
+test("mentionsCuu matches @Cuu and bare Cuu with a word boundary, case-insensitively", () => {
+  assert.equal(mentionsCuu("@Cuu 帮我看看这段"), true);
+  assert.equal(mentionsCuu("cuu 在吗"), true);
+  assert.equal(mentionsCuu("CUU!"), true);
+  assert.equal(mentionsCuu("麻烦 Cuu 看一下"), true);
+  assert.equal(mentionsCuu("(Cuu)"), true);
+});
+
+test("mentionsCuu rejects substrings that merely contain the display name without a word boundary", () => {
+  assert.equal(mentionsCuu("这是 reticuum 的写法"), false);
+  assert.equal(mentionsCuu("Cuuxyz 是谁"), false);
+  assert.equal(mentionsCuu("xCuu"), false);
+});
+
+test("mentionsCuu returns false for empty text or an empty display name", () => {
+  assert.equal(mentionsCuu(""), false);
+  assert.equal(mentionsCuu("Cuu 在吗", ""), false);
+});
+
+test("mentionsCuu honors a custom display name (nickname override)", () => {
+  assert.equal(mentionsCuu("@小库 帮我看看", "小库"), true);
+  assert.equal(mentionsCuu("Cuu 在吗", "小库"), false);
 });

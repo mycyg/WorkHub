@@ -6,11 +6,14 @@ import type { ConversationVM, ProjectListItemVM, WorkbenchPageVM } from "@workhu
 import {
   appendCollabConversationToVm,
   createCollabConversation,
+  IDLE_NEW_COLLAB_MODAL_STATE,
   nextCollabConversationTitle,
   renderArmyOverviewNavHtml,
+  renderNewCollabModalHtml,
   renderNewProjectModalHtml,
   renderProjectTreeHtml,
-  renderRailFootHtml
+  renderRailFootHtml,
+  type NewCollabModalUiState
 } from "./rail.js";
 
 function project(over: Partial<ProjectListItemVM> = {}): ProjectListItemVM {
@@ -58,6 +61,7 @@ function workbenchVm(over: Partial<WorkbenchPageVM> = {}): WorkbenchPageVM {
           next_seq: 12,
           created_by: null,
           participant_role: null,
+          cuu_enabled: true,
           created_at: "2026-07-01T00:00:00.000Z",
           updated_at: "2026-07-01T00:00:00.000Z"
         }
@@ -181,6 +185,7 @@ function collabConversationVm(over: Partial<WorkbenchPageVM["conversations"]["co
     next_seq: 4,
     created_by: "90000000-0000-4000-8000-000000000009",
     participant_role: "owner" as const,
+    cuu_enabled: true,
     created_at: "2026-07-01T00:00:00.000Z",
     updated_at: "2026-07-01T00:00:00.000Z",
     ...over
@@ -415,6 +420,7 @@ function conversationVm(over: Partial<ConversationVM> = {}): ConversationVM {
     next_seq: 0,
     created_by: "90000000-0000-4000-8000-000000000009",
     participant_role: "owner",
+    cuu_enabled: true,
     created_at: "2026-07-13T00:00:00.000Z",
     updated_at: "2026-07-13T00:00:00.000Z",
     ...over
@@ -473,4 +479,116 @@ test("createCollabConversation posts kind=collab, visibility=private with the gi
     visibility: "private"
   });
   assert.equal(result.conversation.id, conversationVm().id);
+});
+
+// R13 批 G1（小群）：createCollabConversation 加 participantUserIds/cuuEnabled 两个可选字段（additive）。
+
+test("createCollabConversation posts participant_user_ids and cuu_enabled when a member list and toggle are given", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const client = {
+    request: async <T>(path: string, init?: RequestInit): Promise<T> => {
+      calls.push({ path, init });
+      return { conversation: conversationVm(), participants: [] } as unknown as T;
+    }
+  };
+  await createCollabConversation(client, "90000000-0000-4000-8000-000000000001", {
+    title: "改第三幕",
+    participantUserIds: ["u1", "u2"],
+    cuuEnabled: false
+  });
+  assert.deepEqual(JSON.parse(calls[0]?.init?.body as string), {
+    kind: "collab",
+    title: "改第三幕",
+    visibility: "private",
+    participant_user_ids: ["u1", "u2"],
+    cuu_enabled: false
+  });
+});
+
+// —— R13 批 G1：建群模态（标题 + 成员多选 + Cuu 开关） —— //
+
+function newCollabModalState(over: Partial<NewCollabModalUiState> = {}): NewCollabModalUiState {
+  return { ...IDLE_NEW_COLLAB_MODAL_STATE, ...over };
+}
+
+test("renderNewCollabModalHtml toggles data-open and renders every candidate member as a real checkbox", () => {
+  const closed = renderNewCollabModalHtml({ locale: "zh-CN", state: newCollabModalState(), memberOptions: [] });
+  assert.match(closed, /data-open="false"/u);
+
+  const html = renderNewCollabModalHtml({
+    locale: "zh-CN",
+    state: newCollabModalState({ open: true, title: "改第三幕" }),
+    memberOptions: [
+      { userId: "u1", nickname: "张三" },
+      { userId: "u2", nickname: "李四" }
+    ]
+  });
+  assert.match(html, /data-open="true"/u);
+  assert.match(html, /value="改第三幕"/u);
+  assert.match(html, /data-wb-new-collab-member="u1"/u);
+  assert.match(html, /张三/u);
+  assert.match(html, /data-wb-new-collab-member="u2"/u);
+  assert.match(html, /李四/u);
+});
+
+test("renderNewCollabModalHtml checks exactly the selected member checkboxes and leaves the rest unchecked", () => {
+  const html = renderNewCollabModalHtml({
+    locale: "zh-CN",
+    state: newCollabModalState({ open: true, selectedUserIds: ["u2"] }),
+    memberOptions: [
+      { userId: "u1", nickname: "张三" },
+      { userId: "u2", nickname: "李四" }
+    ]
+  });
+  const u1Row = html.slice(html.indexOf('data-wb-new-collab-member="u1"') - 80, html.indexOf('data-wb-new-collab-member="u1"') + 40);
+  const u2Row = html.slice(html.indexOf('data-wb-new-collab-member="u2"') - 80, html.indexOf('data-wb-new-collab-member="u2"') + 40);
+  assert.doesNotMatch(u1Row, /checked/u);
+  assert.match(u2Row, /checked/u);
+});
+
+test("renderNewCollabModalHtml shows an honest empty state when the workspace has no other members", () => {
+  const html = renderNewCollabModalHtml({ locale: "zh-CN", state: newCollabModalState({ open: true }), memberOptions: [] });
+  assert.match(html, /这个工作区暂时没有其他成员/u);
+});
+
+test("renderNewCollabModalHtml defaults the Cuu toggle to checked (participates by default)", () => {
+  const html = renderNewCollabModalHtml({ locale: "zh-CN", state: newCollabModalState({ open: true }), memberOptions: [] });
+  const toggleTag = html.slice(html.indexOf("data-wb-new-collab-cuu-toggle") - 20, html.indexOf("data-wb-new-collab-cuu-toggle") + 60);
+  assert.match(toggleTag, /checked/u);
+});
+
+test("renderNewCollabModalHtml renders an unchecked Cuu toggle when the state says cuuEnabled is false", () => {
+  const html = renderNewCollabModalHtml({
+    locale: "zh-CN",
+    state: newCollabModalState({ open: true, cuuEnabled: false }),
+    memberOptions: []
+  });
+  const toggleTag = html.slice(html.indexOf("data-wb-new-collab-cuu-toggle") - 20, html.indexOf("data-wb-new-collab-cuu-toggle") + 60);
+  assert.doesNotMatch(toggleTag, /checked/u);
+});
+
+test("renderNewCollabModalHtml disables submit until a title is entered and shows a busy label while submitting", () => {
+  const empty = renderNewCollabModalHtml({ locale: "zh-CN", state: newCollabModalState({ open: true, title: "" }), memberOptions: [] });
+  assert.match(empty.slice(empty.indexOf("data-wb-new-collab-submit") - 5, empty.indexOf("data-wb-new-collab-submit") + 40), /disabled/u);
+
+  const submitting = renderNewCollabModalHtml({
+    locale: "zh-CN",
+    state: newCollabModalState({ open: true, title: "改第三幕", submitting: true }),
+    memberOptions: []
+  });
+  assert.match(submitting, /创建中…/u);
+});
+
+test("renderNewCollabModalHtml surfaces a gentle inline error", () => {
+  const html = renderNewCollabModalHtml({
+    locale: "zh-CN",
+    state: newCollabModalState({ open: true, error: "创建失败，请重试" }),
+    memberOptions: []
+  });
+  assert.match(html, /wh-wb-modal-error">创建失败，请重试/u);
+});
+
+test("renderNewCollabModalHtml never claims a git-jargon action verb", () => {
+  const html = renderNewCollabModalHtml({ locale: "zh-CN", state: newCollabModalState({ open: true }), memberOptions: [] });
+  assert.doesNotMatch(html, /branch|merge|commit|pull request/iu);
 });

@@ -79,6 +79,30 @@ test("mapConversationTurnError has an English table too", () => {
   assert.match(text, /still finishing/u);
 });
 
+// R13 批 G1（小群）：cuu_enabled 硬闸 + 回话判定接缝的两个新错误码——温和提示，不暴露内部错误码。
+
+test("mapConversationTurnError maps the cuu_enabled-disabled code to a gentle, honest zh-CN notice", () => {
+  const text = mapConversationTurnError({ status: 409, code: "conversation_turn_cuu_disabled" }, "zh-CN");
+  assert.match(text, /关掉了 Cuu/u);
+  assert.doesNotMatch(text, /conversation_turn/u);
+});
+
+test("mapConversationTurnError maps the cuu_enabled-disabled code in English too", () => {
+  const text = mapConversationTurnError({ status: 409, code: "conversation_turn_cuu_disabled" }, "en-US");
+  assert.match(text, /turned off/u);
+});
+
+test("mapConversationTurnError maps the not-warranted respond-decider code and suggests @Cuu", () => {
+  const text = mapConversationTurnError({ status: 409, code: "conversation_turn_not_warranted" }, "zh-CN");
+  assert.match(text, /@Cuu/u);
+  assert.doesNotMatch(text, /conversation_turn/u);
+});
+
+test("mapConversationTurnError maps the not-warranted respond-decider code in English too", () => {
+  const text = mapConversationTurnError({ status: 409, code: "conversation_turn_not_warranted" }, "en-US");
+  assert.match(text, /@Cuu/u);
+});
+
 test("mapConversationTurnError falls back to a generic retry notice for an unrecognized code", () => {
   assert.equal(
     mapConversationTurnError({ status: 500, code: "internal_error" }, "zh-CN"),

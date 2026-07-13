@@ -362,7 +362,11 @@ export const createConversationRequestSchema = z
     visibility: conversationVisibilitySchema,
     parent_conversation_id: idSchema.optional(),
     source_message_id: idSchema.optional(),
-    participant_user_ids: z.array(idSchema).max(99).default([])
+    participant_user_ids: z.array(idSchema).max(99).default([]),
+    // R13 批 G1（小群）：会话级「Cuu 是否参与」硬开关——additive optional，default(true) 保持既有
+    // 调用方（未传这个字段的存量客户端）行为零回归。false 时 conversation-turns.ts 的 createTurn
+    // 会在任何回话判定之前直接 409 conversation_turn_cuu_disabled，见该服务顶部注释。
+    cuu_enabled: z.boolean().default(true)
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -419,6 +423,9 @@ export const conversationVmSchema = z
     next_seq: safeIntegerOutputSchema,
     created_by: idSchema.nullable(),
     participant_role: conversationParticipantRoleSchema.nullable(),
+    // R13 批 G1（小群）：与请求侧 cuu_enabled 对称——服务端总是产出一个具体值（DB 列 default true，
+    // 存量行迁移时全部回填 true），VM 输出侧不是 optional。
+    cuu_enabled: z.boolean(),
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema
   })

@@ -661,7 +661,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0047 task plan status", () => {
+test("migration journal ends with 0048 small group cuu_enabled", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -676,12 +676,27 @@ test("migration journal ends with 0047 task plan status", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      idx: 47,
+      idx: 48,
       version: "7",
-      tag: "0047_task_plan_paused_status",
+      tag: "0048_small_group_cuu_enabled",
       breakpoints: true
     }
   );
+});
+
+test("R13 G1 migration 0048 adds project_conversations.cuu_enabled as a non-null default-true column", () => {
+  const migrationUrl = new URL("../migrations/0048_small_group_cuu_enabled.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0048_small_group_cuu_enabled.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"project_conversations"\s+ADD COLUMN IF NOT EXISTS\s+"cuu_enabled"\s+boolean\s+NOT NULL\s+DEFAULT\s+true\s*;/iu
+  );
+
+  const projectConversations = requiredTable("projectConversations") as WorkHubTable & Record<string, any>;
+  assert.equal(projectConversations.cuuEnabled.notNull, true);
+  assert.equal(projectConversations.cuuEnabled.default, true);
+  assert.equal(projectConversations.cuuEnabled.columnType, "PgBoolean");
 });
 
 test("R12 migration 0046 backfills one active main only for eligible legacy projects", () => {

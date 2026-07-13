@@ -62,6 +62,7 @@ function conversation(overrides: Partial<ConversationRow> = {}): ConversationRow
     sourceMessageId: null,
     visibility: "private",
     nextSeq: 0,
+    cuuEnabled: true,
     createdBy: creatorUserId,
     deletedAt: null,
     deletedByUserId: null,
@@ -108,6 +109,7 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
     projectOwnerUserId: creatorUserId,
     membershipRole: "member",
     participantRole: "owner",
+    participantCount: 1,
     ...overrides
   };
 }
@@ -355,6 +357,51 @@ test("R12 collab creation inserts the owner and requested members in one transac
       { userId: secondMemberUserId, role: "member" }
     ]
   );
+});
+
+test("R13 G1 collab creation defaults cuu_enabled to true and honors an explicit false", async () => {
+  const defaultCreated = conversation({ id: "13000000-0000-4000-8000-000000000021" });
+  const defaultRecorder = createQueryRecorder([
+    [{ projectId, projectOwnerUserId: creatorUserId }],
+    [creatorMembershipLockRow],
+    [defaultCreated],
+    [participant(creatorUserId, "owner")]
+  ]);
+  await createConversationRepository(defaultRecorder.db).createCollab({
+    id: "13000000-0000-4000-8000-000000000021",
+    workspaceId,
+    projectId,
+    creatorUserId,
+    title: "协作区",
+    visibility: "private",
+    participantUserIds: [],
+    at: now
+  });
+  const defaultInsert = defaultRecorder.queries[2];
+  assert.equal(defaultInsert?.targetTable, projectConversations);
+  assert.equal((defaultInsert?.valuesValue as Record<string, unknown>)["cuuEnabled"], true);
+
+  const disabledCreated = conversation({ id: "13000000-0000-4000-8000-000000000022", cuuEnabled: false });
+  const disabledRecorder = createQueryRecorder([
+    [{ projectId, projectOwnerUserId: creatorUserId }],
+    [creatorMembershipLockRow],
+    [disabledCreated],
+    [participant(creatorUserId, "owner")]
+  ]);
+  const disabledResult = await createConversationRepository(disabledRecorder.db).createCollab({
+    id: "13000000-0000-4000-8000-000000000022",
+    workspaceId,
+    projectId,
+    creatorUserId,
+    title: "协作区",
+    visibility: "private",
+    participantUserIds: [],
+    cuuEnabled: false,
+    at: now
+  });
+  const disabledInsert = disabledRecorder.queries[2];
+  assert.equal((disabledInsert?.valuesValue as Record<string, unknown>)["cuuEnabled"], false);
+  assert.equal(disabledResult.conversation.cuuEnabled, false);
 });
 
 test("R12 collab creation rejects incomplete participant membership and rolls back", async () => {

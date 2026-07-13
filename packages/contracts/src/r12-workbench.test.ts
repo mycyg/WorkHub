@@ -99,7 +99,8 @@ test("R12 conversation creation and user message contracts expose bounded metada
       visibility: "private",
       parent_conversation_id: conversationId,
       source_message_id: messageId,
-      participant_user_ids: []
+      participant_user_ids: [],
+      cuu_enabled: true
     }
   );
   assert.equal(
@@ -181,6 +182,7 @@ test("R12 conversation HTTP VMs are strict, nullable-explicit, and safe-integer 
     next_seq: 42,
     created_by: userId,
     participant_role: "owner",
+    cuu_enabled: true,
     created_at: "2026-07-12T08:30:00.123Z",
     updated_at: "2026-07-12T08:31:00.123Z"
   };
@@ -201,6 +203,7 @@ test("R12 conversation HTTP VMs are strict, nullable-explicit, and safe-integer 
   });
   assert.equal(conversationSchema.safeParse({ ...baseConversation, parent_conversation_id: undefined }).success, false);
   assert.equal(conversationSchema.safeParse({ ...baseConversation, participant_role: undefined }).success, false);
+  assert.equal(conversationSchema.safeParse({ ...baseConversation, cuu_enabled: undefined }).success, false);
   assert.equal(conversationSchema.safeParse({ ...baseConversation, next_seq: Number.MAX_SAFE_INTEGER + 1 }).success, false);
   assert.equal(conversationSchema.safeParse({ ...baseConversation, storage_path: "/secret" }).success, false);
 });
@@ -524,6 +527,7 @@ function workbenchVm(overrides: Record<string, unknown> = {}) {
     next_seq: 0,
     created_by: userId,
     participant_role: null,
+    cuu_enabled: true,
     created_at: "2026-07-12T08:30:00.123Z",
     updated_at: "2026-07-12T08:30:00.123Z"
   };
@@ -854,10 +858,16 @@ test("R12 collab creation defaults and bounds unique active participant IDs", ()
     visibility: "private"
   };
 
-  assert.deepEqual(schema.parse(base), { ...base, participant_user_ids: [] });
+  assert.deepEqual(schema.parse(base), { ...base, participant_user_ids: [], cuu_enabled: true });
   assert.deepEqual(schema.parse({ ...base, participant_user_ids: [participantUserId] }), {
     ...base,
-    participant_user_ids: [participantUserId]
+    participant_user_ids: [participantUserId],
+    cuu_enabled: true
+  });
+  assert.deepEqual(schema.parse({ ...base, cuu_enabled: false }), {
+    ...base,
+    participant_user_ids: [],
+    cuu_enabled: false
   });
 
   const maximumParticipants = Array.from({ length: 99 }, (_, index) =>

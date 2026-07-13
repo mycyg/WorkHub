@@ -62,6 +62,7 @@ function conversationRow(overrides: Partial<ConversationRow> = {}): Conversation
     sourceMessageId: null,
     visibility: "private",
     nextSeq: 1,
+    cuuEnabled: true,
     createdBy: userId,
     deletedAt: null,
     deletedByUserId: null,
@@ -112,6 +113,7 @@ function accessRecord(overrides: Partial<ConversationAccessRecord> = {}): Conver
     projectOwnerUserId: userId,
     membershipRole: "member",
     participantRole: "owner",
+    participantCount: 1,
     ...overrides
   };
 }
@@ -182,6 +184,7 @@ function collabPayload(overrides: Partial<CreateConversationRequest> = {}): Crea
     title: "重写第三节",
     visibility: "private",
     participant_user_ids: [participantUserId],
+    cuu_enabled: true,
     ...overrides
   };
 }
@@ -330,10 +333,36 @@ test("conversation create maps rows and forwards only actor-scoped repository fi
     parentConversationId,
     sourceMessageId,
     participantUserIds: [participantUserId],
+    cuuEnabled: true,
     at: now
   });
   assert.equal(result.conversation.participant_role, "owner");
   assert.equal(result.participants[0]?.role, "owner");
+});
+
+test("conversation create forwards an explicit cuu_enabled:false to the repository and the resulting VM", async () => {
+  let received: unknown;
+  const repo = repository({
+    async createCollab(input) {
+      received = input;
+      return { conversation: conversationRow({ cuuEnabled: false }), participants: [participantRow()] };
+    }
+  });
+  const service = createConversationService(repo, {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now
+  });
+
+  const result = await service.createConversation({
+    actor: actor(),
+    projectId,
+    payload: collabPayload({ cuu_enabled: false })
+  });
+
+  assert.equal((received as { cuuEnabled: boolean }).cuuEnabled, false);
+  assert.equal(result.conversation.cuu_enabled, false);
 });
 
 test("conversation semantic repository errors stay client-correct while sequence exhaustion is a conflict", async () => {

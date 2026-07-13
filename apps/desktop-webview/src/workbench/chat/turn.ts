@@ -57,10 +57,9 @@ export function renderTurnDeltaText(state: TurnDeltaState): string {
 //
 // 不弹阻断式对话框——服务端的错误码/文案见 apps/api/src/services/conversation-turns.ts 里对应的
 // ConversationTurnServiceError 抛出点；这里维护一份独立的、更口语化的桌面端文案（服务端的 message
-// 字段是给 API 消费者看的通用文案，不一定是这个具体表面最合适的措辞）。未识别的 code（含目前
-// apps/api/src/app.ts 尚未给 ConversationTurnServiceError 注册专属 onError 分支、导致它被通用
-// internal_error 500 兜底吞掉真实 code 的已知缺口——见本批汇报"范围外发现"）统一落一句通用重试文案，
-// 不暴露内部错误码。
+// 字段是给 API 消费者看的通用文案，不一定是这个具体表面最合适的措辞）。apps/api/src/app.ts 已经给
+// ConversationTurnServiceError 注册了透传专属分支（不是内部 500 兜底吞掉真实 code——上一版注释在这里
+// 记错了，R13 批 G1 顺手更正），未识别的 code 才会落到下面的通用重试文案，不暴露内部错误码。
 export type ConversationTurnErrorSource = { status?: number; code?: string } | undefined;
 
 const TURN_ERROR_TEXT: Record<"zh-CN" | "en-US", Record<string, string>> = {
@@ -70,6 +69,11 @@ const TURN_ERROR_TEXT: Record<"zh-CN" | "en-US", Record<string, string>> = {
     conversation_turn_budget_exhausted: "这段时间用得有点多，稍后再试。",
     conversation_turn_not_collab: "这个会话没法单独请 Cuu 回话。",
     conversation_turn_message_not_found: "这条消息有点旧了，重新说一句试试。",
+    // R13 批 G1（小群）：cuu_enabled 硬闸——用户在这个会话里手动关掉了 Cuu，不是失败，如实说明。
+    conversation_turn_cuu_disabled: "这个会话关掉了 Cuu，不会有回应——想让它说话，去开一下「Cuu 参与」。",
+    // R13 批 G1：回话判定接缝的拒绝码——4c 判定器接入前几乎不会触发（默认判定器永远放行），
+    // 触发时说明这一句消息被判定为不需要 Cuu 主动接话，@Cuu 可以强制它回应。
+    conversation_turn_not_warranted: "这句话看起来不用 Cuu 接话——想让它回应，@Cuu 一下。",
     conversation_turn_failed: "Cuu 这次没接上，你可以再说一句试试。"
   },
   "en-US": {
@@ -78,6 +82,8 @@ const TURN_ERROR_TEXT: Record<"zh-CN" | "en-US", Record<string, string>> = {
     conversation_turn_budget_exhausted: "Usage has been high lately — try again later.",
     conversation_turn_not_collab: "This conversation can't request a one-on-one reply.",
     conversation_turn_message_not_found: "That message is a bit stale — try saying it again.",
+    conversation_turn_cuu_disabled: "Cuu is turned off in this chat — flip on \"Cuu takes part\" to hear from it again.",
+    conversation_turn_not_warranted: "That message didn't look like it needed a reply — @Cuu it to make sure.",
     conversation_turn_failed: "Cuu couldn't get a reply out — try saying it again."
   }
 };

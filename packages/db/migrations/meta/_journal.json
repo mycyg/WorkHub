@@ -337,6 +337,13 @@
       "when": 1783832553600,
       "tag": "0047_task_plan_paused_status",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1783900000000,
+      "tag": "0048_small_group_cuu_enabled",
+      "breakpoints": true
     }
   ]
 }

@@ -66,6 +66,12 @@ import { getDefaultProviderRegistry } from "./provider-registry.js";
 //    广播拿真 id/seq，两路都到时由客户端按 id 去重。广播失败仅告警不回滚，拉取通道兜底。
 // 6. 模式档：mode=1（只观察）拒绝；mode>=2 都允许纯对话 turn。执行/审核语义归批 4b。
 // 7. 60s 硬超时；超时/任何 LLM 失败都统一映射成 500 conversation_turn_failed，不落半截消息。
+// 8. R13 批 G1（小群）：会话级 cuu_enabled 是「强静默不可绕过」的硬开关——false 时在任何回话判定
+//    （含下面 4c 将接入的轻量判定器）之前直接 409，见下方 access.conversation.cuuEnabled 检查。
+//    「被 @ 必回」是本批钉死的第二条规则：触发消息包含 @Cuu 提及时，不管判定器怎么说都必须响应；
+//    判定器本身（规则前置 + 小模型、限频合并、预算意识）归 4c 并行批建设，这里只留一个注入点
+//    （respondDecider），4c 落地时把默认实现换掉、不需要改调用点形状（见 mentionsCuu 与
+//    ConversationTurnRespondDecider 顶部注释）。
 
 const DEFAULT_HISTORY_WINDOW = 50;
 const DEFAULT_MAX_TURN_RESPONSE_TOKENS = 4000;
@@ -142,6 +148,10 @@ export type ConversationTurnServiceDeps = {
   historyWindowSize?: number;
   maxResponseTokens?: number;
   turnTimeoutMs?: number;
+  // R13 批 G1（小群）：4c 并行批的轻量回话判定器注入点——只在"这一轮触发消息没有 @Cuu"时才会被
+  // 问到（见 createTurn 里的调用点与 mentionsCuu 顶部注释）。省略时退回
+  // defaultConversationTurnRespondDecider（保守永远 true，维持存量行为零回归）。
+  respondDecider?: ConversationTurnRespondDecider;
 };
 
 export type ConversationTurnService = {
@@ -218,6 +228,60 @@ function buildHistory(rows: ConversationMessageRow[], nicknames: Map<string, str
     }
   }
   return history;
+}
+
+// ── R13 批 G1（小群）：回话判定接缝 ──────────────────────────────────────────────────
+//
+// 「被 @ 必回」是这里唯一的具体实现——脆弱的文本子串匹配（昵称可自定义、用户可能提到"cuu"这个词但
+// 不是想 @ 她），已知局限如实记录，不追求完美，只要求带词边界（不能是任意子串出现就命中，例如
+// "reticuum" 不算提及）。真正的"该不该在没人 @ 时主动接话"判定（规则前置 + 小模型、限频合并、
+// 预算意识）归 4c 并行批建设——ConversationTurnRespondDecider 就是留给它的注入点：createTurn 只在
+// 「没有被 @」时才会去问这个函数，一旦问了它并且它说不该回，就整轮 409（见下方
+// conversation_turn_not_warranted）；4c 落地前的默认实现（defaultConversationTurnRespondDecider）
+// 保守地永远返回 true——维持"今天所有协同会话，不论 1:1 还是小群，只要客户端发起 turn 请求就一定有
+// 回应"这条存量行为，不在判定器真正建成前就静默丢弃请求（那样用户会以为 Cuu 没看到消息，且当前
+// 契约形状也没有"这轮特意不回"的诚实表达方式）。
+export const CUU_MENTION_DISPLAY_NAME = "Cuu";
+
+const WORD_CHAR_PATTERN = /[\p{L}\p{N}_]/u;
+
+export function mentionsCuu(text: string, displayName: string = CUU_MENTION_DISPLAY_NAME): boolean {
+  if (text.length === 0 || displayName.length === 0) {
+    return false;
+  }
+  const haystack = text.toLowerCase();
+  const needle = displayName.toLowerCase();
+  let fromIndex = 0;
+  while (fromIndex <= haystack.length - needle.length) {
+    const index = haystack.indexOf(needle, fromIndex);
+    if (index === -1) {
+      return false;
+    }
+    const before = index > 0 ? haystack[index - 1] : undefined;
+    const afterIndex = index + needle.length;
+    const after = afterIndex < haystack.length ? haystack[afterIndex] : undefined;
+    const beforeIsWord = before !== undefined && WORD_CHAR_PATTERN.test(before);
+    const afterIsWord = after !== undefined && WORD_CHAR_PATTERN.test(after);
+    if (!beforeIsWord && !afterIsWord) {
+      return true;
+    }
+    fromIndex = index + 1;
+  }
+  return false;
+}
+
+export type ConversationTurnRespondDecisionInput = {
+  // conversation_participants 的真实行数（含创建者）——1（只有创建者，即"1:1 与 Cuu 单聊"）与
+  // >1（小群）是判定器唯一需要关心的会话规模维度，来自 ConversationAccessRecord.participantCount。
+  participantCount: number;
+  triggerMessageText: string;
+};
+export type ConversationTurnRespondDecider = (
+  input: ConversationTurnRespondDecisionInput
+) => boolean | Promise<boolean>;
+
+function defaultConversationTurnRespondDecider(): boolean {
+  return true;
 }
 
 function extractDeltaText(event: TurnLlmStreamEvent): string | null {
@@ -340,6 +404,15 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
             "主区群聊由静默观察者处理，不支持单独发起协同回应。"
           );
         }
+        // R13 批 G1：cuu_enabled 硬闸——用户已拍板"强静默不可绕过"，必须排在 mode/回话判定之前，
+        // 且不接受任何形式的绕过（包括本轮触发消息里 @Cuu）。
+        if (access.conversation.cuuEnabled === false) {
+          throw new ConversationTurnServiceError(
+            409,
+            "conversation_turn_cuu_disabled",
+            "这个会话已经关掉了 Cuu，不会有回应。"
+          );
+        }
 
         const profileAccess = await deps.aiSettings.findUserProfileAccessRecord({
           workspaceId: human.workspaceId,
@@ -377,6 +450,25 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
             "conversation_turn_message_not_found",
             "没有找到这条待回应的消息。"
           );
+        }
+
+        // R13 批 G1：回话判定——被 @Cuu 必回，任何判定器都不能覆盖这条（见本文件顶部 §8 与
+        // mentionsCuu/ConversationTurnRespondDecider 的注释）。没被 @ 时才去问判定器；默认判定器
+        // （4c 落地前）保守永远放行，维持存量行为零回归。
+        const triggerText = historyDisplayText(anchor) ?? "";
+        if (!mentionsCuu(triggerText)) {
+          const decider = deps.respondDecider ?? defaultConversationTurnRespondDecider;
+          const shouldRespond = await decider({
+            participantCount: access.participantCount,
+            triggerMessageText: triggerText
+          });
+          if (!shouldRespond) {
+            throw new ConversationTurnServiceError(
+              409,
+              "conversation_turn_not_warranted",
+              "这轮消息看起来还不需要 Cuu 回应。"
+            );
+          }
         }
 
         const budgetOk = await checkTurnBudget(deps, human.workspaceId, now());
