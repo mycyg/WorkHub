@@ -20,6 +20,8 @@ import {
   MAX_TURN_MODEL_ROUNDS,
   MAX_TURN_TOOL_CALLS,
   SEND_FILE_CARD_TOOL,
+  buildContextCompactionPrompt,
+  buildTurnContextSummarySection,
   buildTurnMemorySection,
   buildTurnMessages,
   buildTurnSystemPrompt,
@@ -100,6 +102,24 @@ const DEFAULT_MAX_TURN_RESPONSE_TOKENS = 4000;
 const DEFAULT_TURN_TIMEOUT_MS = 120_000;
 const TURN_TEAM_SKILL_TOP_N = 5;
 
+// ── R13 批 C1（会话上下文压缩）常量 ───────────────────────────────────────────────────
+//
+// 攒够多少条"新滑出窗口"的消息才刷新一次摘要——不是每轮都摘要，避免每条消息都触发一次额外 LLM 调用。
+// MVP 用消息条数而非严格 token 计数：仓库里没有面向"自然语言会话历史"的 token 估算工具（loop.ts 的
+// compactConversation 服务的是完全不同的数据形状——工具调用步骤，不是自然语言对话）。token 版本是
+// 后续加固项，如实标注这个简化，不在本批打包。
+const CONTEXT_SUMMARY_REFRESH_BATCH = 20;
+// 单次压缩 LLM 调用最多吃多少条历史消息——与仓库层 listMessagesAfter 的 assertLimit 上限（100）对齐。
+// 保证压缩确实是"滚动/增量"的：单次调用输入长度有界，不随会话总长度线性增长（04 铁律#4）。如果积压
+// 超过这个数（很久没有 turn 触发过压缩），一次只吃最早的一批，context_summary_through_seq 只推进到
+// 实际吃到的那条——下一轮 createTurn 会因为差值仍然 > REFRESH_BATCH 而继续追赶，几轮内自然追平，不需要
+// 一次性无上限地啃完整个积压。
+const CONTEXT_SUMMARY_MAX_BATCH_MESSAGES = 100;
+const CONTEXT_SUMMARY_MAX_RESPONSE_TOKENS = 800;
+// 压缩调用不面向任何用户等待中的界面反馈，给它一个比主 turn 更短的独立超时——超时即 fail-open（见
+// tryCompactConversationContext），不拖累这一轮真正的用户对话。
+const CONTEXT_SUMMARY_TIMEOUT_MS = 30_000;
+
 export class ConversationTurnServiceError extends Error {
   constructor(
     public readonly status: 400 | 403 | 404 | 409 | 429 | 500,
@@ -163,8 +183,21 @@ export type ConversationTurnClientProvider = (input: {
 
 export type ConversationNicknameLookup = (userIds: string[]) => Promise<Map<string, string>>;
 
+// R13 批 C1（会话上下文压缩）：压缩完成后往会话里落一条 system_event(context_compacted) 透明提示的
+// 注入点——直接是一个函数而不是整个仓库的 Pick（同 `nicknames`/`client` 的风格），省略时静默跳过这条
+// 播报（见下方 ConversationTurnServiceDeps.postContextCompactionSystemMessage 的注释）。
+export type ConversationTurnSystemEventPoster = (input: {
+  workspaceId: string;
+  conversationId: string;
+  content: Record<string, unknown>;
+  at: Date;
+}) => Promise<unknown>;
+
 export type ConversationTurnServiceDeps = {
-  conversations: Pick<ConversationRepository, "findVisibleAccessRecord" | "listMessagesAfter" | "createCuuMessage">;
+  conversations: Pick<
+    ConversationRepository,
+    "findVisibleAccessRecord" | "listMessagesAfter" | "createCuuMessage" | "updateContextSummary"
+  >;
   aiSettings: Pick<AiSettingsRepository, "findUserProfileAccessRecord">;
   userMemories: Pick<UserMemoryRepository, "listForUser" | "touch">;
   teamSkills: Pick<TeamSkillRepository, "listActive">;
@@ -194,6 +227,15 @@ export type ConversationTurnServiceDeps = {
   // 问到（见 createTurn 里的调用点与 mentionsCuu 顶部注释）。省略时退回
   // defaultConversationTurnRespondDecider（保守永远 true，维持存量行为零回归）。
   respondDecider?: ConversationTurnRespondDecider;
+  // R13 批 C1：摘要 LLM 调用的独立 client provider——任务类 "context_compact"，与主回应的 "assistant"
+  // 分开路由/成本归因（见 packages/agent/src/providers/types.ts 的 taskClasses 注释）。省略时退回主
+  // `client`（同一个 provider，只是任务类归因退化成 "assistant"）——不是长期正确状态，但保证这个可选
+  // 依赖缺失时压缩仍能工作而不是直接抛错，与「摘要失败必须 fail-open」的精神一致。
+  compactionClient?: ConversationTurnClientProvider;
+  // R13 批 C1：压缩完成后往会话里落一条 system_event(context_compacted) 透明提示。省略时静默跳过这条
+  // 播报（同 apps/api/src/workers/agent-runner.ts 的 postDeliverableSystemMessage 对同一类依赖的既有
+  // 取舍："没接依赖/发布失败，都不影响...只是静默跳过"），不影响摘要本身已经落库的结果。
+  postContextCompactionSystemMessage?: ConversationTurnSystemEventPoster;
 };
 
 export type ConversationTurnService = {
@@ -512,6 +554,139 @@ async function checkTurnBudget(deps: ConversationTurnServiceDeps, workspaceId: s
   return decision.allowed;
 }
 
+// ── R13 批 C1（会话上下文压缩）─────────────────────────────────────────────────────────
+//
+// WorkHub 的历史窗口本来就是硬截断的 DEFAULT_HISTORY_WINDOW 条，从不会真的撑爆 context window——真正
+// 的问题是"超出窗口之外的内容被静默永久遗忘，用户毫无感知"。这个函数在窗口起点越过阈值时，把这次新
+// 滑出窗口的一批原始消息压缩成一段滚动摘要（与旧摘要合并更新，不是从头整段重新摘要），落库并追加一条
+// system_event(context_compacted) 透明提示。
+//
+// fail-open 是这个函数唯一的契约：调用方（createTurn）永远不会因为这个函数失败而让整轮 turn 失败——
+// 任何一步出错（预算耗尽、DB 读写失败、LLM 调用失败/超时、摘要产出空文本）都在这里被吞掉，返回
+// undefined，调用方据此原样沿用旧摘要（或没有摘要），下次 createTurn 再试。
+async function tryCompactConversationContext(
+  deps: ConversationTurnServiceDeps,
+  logger: Pick<StructuredLogger, "warn">,
+  input: {
+    workspaceId: string;
+    viewerUserId: string;
+    conversationId: string;
+    previousSummaryMd: string | null;
+    // 已经覆盖到的 seq（含）——新一批要从这之后开始取。
+    fromSeqExclusive: number;
+    // 这一轮的新窗口起点（access.conversation.nextSeq - 1 - windowSize）——新滑出窗口就是
+    // (fromSeqExclusive, toSeqExclusive] 这一段。
+    toSeqExclusive: number;
+    at: Date;
+  }
+): Promise<{ summaryMd: string; throughSeq: number } | undefined> {
+  const gap = input.toSeqExclusive - input.fromSeqExclusive;
+  if (gap <= 0) {
+    return undefined;
+  }
+  try {
+    // 摘要调用本身也要过预算软闸——额外的 LLM 调用不能变成账外开销（同主 turn 的 checkTurnBudget
+    // 复用同一个函数）。预算耗尬时直接放弃这次压缩尝试，不读消息、不调模型，下次 createTurn 再判断。
+    const budgetOk = await checkTurnBudget(deps, input.workspaceId, input.at);
+    if (!budgetOk) {
+      return undefined;
+    }
+
+    const batchLimit = Math.min(gap, CONTEXT_SUMMARY_MAX_BATCH_MESSAGES);
+    const page = await deps.conversations.listMessagesAfter({
+      workspaceId: input.workspaceId,
+      viewerUserId: input.viewerUserId,
+      conversationId: input.conversationId,
+      afterSeq: input.fromSeqExclusive,
+      limit: batchLimit
+    });
+    if (!page || page.rows.length === 0) {
+      return undefined;
+    }
+
+    const senderIds = [
+      ...new Set(page.rows.map((row) => row.senderUserId).filter((value): value is string => Boolean(value)))
+    ];
+    const nicknames = await deps.nicknames(senderIds);
+    const history = buildHistory(page.rows, nicknames);
+    if (history.length === 0) {
+      // 这一批全是不进摘要的消息种类（比如清一色 action_card）——没有可摘要的文本。不推进覆盖游标；
+      // 随着后续 turn 不断到来，gap 只会越滑越大，下一次会用更大的 batchLimit 重新尝试，几乎必然会
+      // 带上一些真正的文本消息（同一批 100 条全是非文本消息的概率极低），不需要为这个边界特殊处理。
+      return undefined;
+    }
+
+    const prompt = buildContextCompactionPrompt({
+      previousSummaryMd: input.previousSummaryMd,
+      newMessages: history
+    });
+    const clientProvider = deps.compactionClient ?? deps.client;
+    const client = await clientProvider({
+      actorId: input.viewerUserId,
+      userId: input.viewerUserId,
+      workspaceId: input.workspaceId
+    });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CONTEXT_SUMMARY_TIMEOUT_MS);
+    let summaryText: string;
+    try {
+      const stream = await client.messages.stream({
+        maxTokens: CONTEXT_SUMMARY_MAX_RESPONSE_TOKENS,
+        source: "agent_step",
+        system: prompt.system,
+        messages: prompt.messages,
+        signal: controller.signal
+      });
+      // 压缩摘要不面向任何用户展示——不需要迭代事件流产出 delta，直接要最终文本即可
+      // （AnthropicCompatibleStream.getFinalMessage() 内部自己驱动消费，不依赖调用方先迭代一遍）。
+      const final = await stream.getFinalMessage();
+      summaryText = extractFinalText(final).trim();
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (summaryText.length === 0) {
+      return undefined;
+    }
+
+    const throughSeq = page.rows[page.rows.length - 1]!.seq;
+    await deps.conversations.updateContextSummary({
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+      summaryMd: summaryText,
+      throughSeq
+    });
+
+    const poster = deps.postContextCompactionSystemMessage;
+    if (poster) {
+      try {
+        await poster({
+          workspaceId: input.workspaceId,
+          conversationId: input.conversationId,
+          content: {
+            event: "context_compacted",
+            compacted_message_count: page.rows.length,
+            summary_excerpt: summaryText.slice(0, 200)
+          },
+          at: input.at
+        });
+      } catch (error) {
+        // 透明提示是锦上添花——同 tryPersistToolNote 的既有取舍，写失败不影响摘要本身已经落库的结果。
+        logger.warn?.("conversation_turn_context_compaction_system_message_failed", {
+          conversationId: input.conversationId,
+          error
+        });
+      }
+    }
+
+    return { summaryMd: summaryText, throughSeq };
+  } catch (error) {
+    logger.warn?.("conversation_turn_context_compaction_failed", { conversationId: input.conversationId, error });
+    return undefined;
+  }
+}
+
 // ── delta SSE 生产者 ──────────────────────────────────────────────────────────────
 
 async function emitDelta(
@@ -615,6 +790,27 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
 
         const windowSize = deps.historyWindowSize ?? DEFAULT_HISTORY_WINDOW;
         const afterSeq = Math.max(0, access.conversation.nextSeq - 1 - windowSize);
+
+        // R13 批 C1（会话上下文压缩）：触发判定放在拉取历史窗口之前、cuu_enabled 闸与模式闸之后——
+        // afterSeq 就是这一轮的新窗口起点，超出它的内容原本会被 listMessagesAfter 的滑窗静默丢弃。
+        // 攒够 CONTEXT_SUMMARY_REFRESH_BATCH 条才刷新一次，不是每轮都摘要。
+        let contextSummaryMd = access.conversation.contextSummaryMd ?? null;
+        const contextSummaryThroughSeq = access.conversation.contextSummaryThroughSeq ?? 0;
+        if (afterSeq > contextSummaryThroughSeq + CONTEXT_SUMMARY_REFRESH_BATCH) {
+          const compacted = await tryCompactConversationContext(deps, logger, {
+            workspaceId: human.workspaceId,
+            viewerUserId: human.userId,
+            conversationId: input.conversationId,
+            previousSummaryMd: contextSummaryMd,
+            fromSeqExclusive: contextSummaryThroughSeq,
+            toSeqExclusive: afterSeq,
+            at: now()
+          });
+          if (compacted) {
+            contextSummaryMd = compacted.summaryMd;
+          }
+        }
+
         const page = await deps.conversations.listMessagesAfter({
           workspaceId: human.workspaceId,
           viewerUserId: human.userId,
@@ -783,6 +979,9 @@ export function createConversationTurnService(deps: ConversationTurnServiceDeps)
             const tools = allowTools ? buildTurnToolDefinitions({ allowCreateWorkItem: Boolean(pendingClarification) }) : undefined;
             const system = [
               buildTurnSystemPrompt(pendingClarification ? { pendingClarification } : {}),
+              // R13 批 C1：滚动摘要插在 memorySection 之前——"这个会话更早内容的背景"先于"用户偏好/
+              // 团队技能"这类跨会话的参考材料。
+              contextSummaryMd ? buildTurnContextSummarySection(contextSummaryMd) : "",
               memorySection.promptSection
             ]
               .filter((part) => part.length > 0)
@@ -968,6 +1167,16 @@ function defaultClientProvider(): ConversationTurnClientProvider {
     getDefaultProviderRegistry().get({ id: actorId, userId, workspaceId }, "assistant") as unknown as TurnLlmClient;
 }
 
+// R13 批 C1：压缩摘要调用走独立的 "context_compact" 任务类——provider-registry 据此单独路由/记账，
+// 与主回应的 "assistant" 分开归因（见 packages/agent/src/providers/types.ts 的 taskClasses 注释）。
+function defaultCompactionClientProvider(): ConversationTurnClientProvider {
+  return ({ actorId, userId, workspaceId }) =>
+    getDefaultProviderRegistry().get(
+      { id: actorId, userId, workspaceId },
+      "context_compact"
+    ) as unknown as TurnLlmClient;
+}
+
 export function getDefaultConversationTurnService(): ConversationTurnService {
   if (!defaultConversationTurnService) {
     defaultDbClient = defaultDbClient ?? getSharedDatabaseClient();
@@ -987,7 +1196,12 @@ export function getDefaultConversationTurnService(): ConversationTurnService {
       drive: getDefaultDrivePageService(),
       workItems: getDefaultWorkItemService(),
       bus: getDefaultPushBus(),
-      logger: getDefaultStructuredLogger()
+      logger: getDefaultStructuredLogger(),
+      // R13 批 C1：压缩摘要的独立 client + 压缩完成后的透明提示，都直接复用已经在这个函数里建好的
+      // 依赖（provider registry / action-cards 仓库），不新增任何服务或仓库。
+      compactionClient: defaultCompactionClientProvider(),
+      postContextCompactionSystemMessage: ({ workspaceId, conversationId, content, at }) =>
+        actionCards.postSystemMessage({ workspaceId, conversationId, senderType: "system", content, at })
     });
   }
   return defaultConversationTurnService;

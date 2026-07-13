@@ -63,6 +63,10 @@ function conversationRow(overrides: Partial<ConversationRow> = {}): Conversation
     visibility: "private",
     nextSeq: 1,
     cuuEnabled: true,
+    // R13 批 C1：默认"从未压缩过"——同 cuuEnabled 当初加进这个 fixture 的理由一致，不加就会撞上
+    // ConversationRow 现在多出的两个必需字段。
+    contextSummaryMd: null,
+    contextSummaryThroughSeq: 0,
     createdBy: userId,
     deletedAt: null,
     deletedByUserId: null,
@@ -148,6 +152,11 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     // 同其它未测方法一样给个拒绝桩。
     async listReplyJudgeCandidates() {
       throw new Error("listReplyJudgeCandidates not expected");
+    },
+    // R13 批 C1：新增 updateContextSummary（会话上下文压缩用），这个套件不测那条路径，同其它未测
+    // 方法一样给个拒绝桩。
+    async updateContextSummary() {
+      throw new Error("updateContextSummary not expected");
     },
     ...overrides
   };

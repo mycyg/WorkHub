@@ -132,6 +132,16 @@ export type ListConversationMessagesInput = {
   limit: number;
 };
 
+// R13 批 C1（会话上下文压缩）：createTurn 刷新滚动摘要后落库用——只更新摘要正文与覆盖游标这两列，
+// 不碰 nextSeq/其它任何列（与 createCuuMessage/createUserMessage 那套「分配 seq、插消息」的事务完全
+// 独立，这里只是给已经存在的会话行做一次幂等的字段更新）。
+export type UpdateContextSummaryInput = {
+  workspaceId: string;
+  conversationId: string;
+  summaryMd: string;
+  throughSeq: number;
+};
+
 // R12 批8：反向翻页（listMessagesBefore）的输入——除了游标方向（beforeSeq 而非 afterSeq），access
 // 判定与 listMessagesAfter 完全同款（复用同一个 readVisibleAccess + activeConversationCondition）。
 export type ListConversationMessagesBeforeInput = {
@@ -205,6 +215,8 @@ export type ConversationRepository = {
   // R13 批4c/G1：新增，不改动上面任何既有方法的签名/行为——回话判定器 worker 的候选扫描（跨会话，
   // 无 viewerUserId，与 action-cards.ts 的 listObserverCandidates 同一档次的"系统级批量读"）。
   listReplyJudgeCandidates: (input: ListReplyJudgeCandidatesInput) => Promise<ReplyJudgeCandidateRow[]>;
+  // R13 批 C1：新增，不改动上面任何既有方法的签名/行为——滚动摘要落库。
+  updateContextSummary: (input: UpdateContextSummaryInput) => Promise<void>;
 };
 
 class NamedConversationRepositoryError extends Error {
@@ -240,6 +252,10 @@ const conversationSelection = {
   // 的唯一 select 列表，不加这一行 access.conversation.cuuEnabled 在运行时会是 undefined（哪怕
   // ConversationRow 的 TS 类型因为 schema 改了而"看起来"总是有这个字段）。
   cuuEnabled: projectConversations.cuuEnabled,
+  // R13 批 C1（会话上下文压缩）：同上一行的教训——不显式投影，createTurn 读到的 context_summary_md/
+  // context_summary_through_seq 就是 undefined，压缩触发判定与摘要注入都会悄悄失效。
+  contextSummaryMd: projectConversations.contextSummaryMd,
+  contextSummaryThroughSeq: projectConversations.contextSummaryThroughSeq,
   createdBy: projectConversations.createdBy,
   deletedAt: projectConversations.deletedAt,
   deletedByUserId: projectConversations.deletedByUserId,
@@ -273,6 +289,17 @@ function assertLimit(limit: number) {
 function assertCursor(afterSeq: number) {
   if (!Number.isSafeInteger(afterSeq) || afterSeq < 0) {
     throw new ConversationRepositoryInputError("conversation cursor must be a non-negative safe integer");
+  }
+}
+
+// R13 批 C1：同一档次的轻量防御性检查（与 assertCursor/assertLimit 同款），不复述调用方
+// （services/conversation-turns.ts）已经做过的压缩触发判定逻辑。
+function assertUpdateContextSummaryInput(input: UpdateContextSummaryInput) {
+  if (!Number.isSafeInteger(input.throughSeq) || input.throughSeq < 0) {
+    throw new ConversationRepositoryInputError("context summary through-seq must be a non-negative safe integer");
+  }
+  if (typeof input.summaryMd !== "string" || input.summaryMd.trim().length === 0) {
+    throw new ConversationRepositoryInputError("context summary markdown must be non-empty");
   }
 }
 
@@ -1231,6 +1258,30 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
         });
       }
       return candidates;
+    },
+
+    // R13 批 C1（会话上下文压缩）：滚动摘要落库——只更新 context_summary_md/context_summary_through_seq
+    // 这两列，不做 seq 分配（不是消息，不占用 conversation_messages 的 seq 空间）。防止落后的并发压缩
+    // 覆盖已经更靠前的覆盖游标：WHERE 里带上 `context_summary_through_seq < :throughSeq`，退化更新
+    // 静默无操作而不是报错（调用方本来就把整条压缩路径当 best-effort/fail-open 处理，见
+    // apps/api/src/services/conversation-turns.ts 的 tryCompactConversationContext）。
+    async updateContextSummary(input) {
+      assertUpdateContextSummaryInput(input);
+      await db
+        .update(projectConversations)
+        .set({
+          contextSummaryMd: input.summaryMd,
+          contextSummaryThroughSeq: input.throughSeq,
+          updatedAt: new Date()
+        })
+        .where(
+          and(
+            eq(projectConversations.id, input.conversationId),
+            eq(projectConversations.workspaceId, input.workspaceId),
+            isNull(projectConversations.deletedAt),
+            lt(projectConversations.contextSummaryThroughSeq, input.throughSeq)
+          )
+        );
     }
   };
 }

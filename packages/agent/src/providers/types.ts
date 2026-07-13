@@ -10,7 +10,12 @@ export const taskClasses = [
   "delivery_doc",
   "decompose",
   "assistant",
-  "eval"
+  "eval",
+  // R13 批 C1（会话上下文压缩）：滚动摘要调用的独立任务类——与 "assistant"（协同会话正式回应）分开
+  // 归因，方便 provider-registry 的路由/成本记账区分「回复对方」与「整理更早的讨论给自己看」这两类
+  // 完全不面向用户的内部调用。taskRouting 是 Record<string, ...>（packages/config/src/providers.ts），
+  // 未配置的任务类天然回退到 defaultProvider/defaultModelId，不需要额外的路由配置项才能生效。
+  "context_compact"
 ] as const;
 export type TaskClass = (typeof taskClasses)[number];
 

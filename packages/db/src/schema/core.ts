@@ -415,6 +415,12 @@ export const projectConversations = pgTable(
     // 轻量判定器）绕过；false 时 conversation-turns.ts 的 createTurn 在任何判定逻辑之前直接 409。
     // default true 保持所有既有会话（含存量 1:1 协同会话）的当前行为零回归。
     cuuEnabled: boolean("cuu_enabled").notNull().default(true),
+    // R13 批 C1（会话上下文压缩）：滚动摘要——context_summary_md 是当前累积摘要正文（null=从未压缩过），
+    // context_summary_through_seq 是摘要已经覆盖到的消息 seq（含）。apps/api/src/services/
+    // conversation-turns.ts 的 createTurn 用这两列判断何时该刷新摘要、往 system prompt 里注入什么内容。
+    // 与 cuuEnabled 同一个教训：conversationSelection 必须显式投影这两列，否则运行时读到的是 undefined。
+    contextSummaryMd: text("context_summary_md"),
+    contextSummaryThroughSeq: bigint("context_summary_through_seq", { mode: "number" }).notNull().default(0),
     // Legacy projects may not have an owner; new conversation creation must still populate this when known.
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     deletedAt: timestampTz("deleted_at"),
@@ -427,6 +433,10 @@ export const projectConversations = pgTable(
     check(
       "project_conversations_next_seq_ck",
       sql`${table.nextSeq} between 0 and 9007199254740991`
+    ),
+    check(
+      "project_conversations_context_summary_through_seq_ck",
+      sql`${table.contextSummaryThroughSeq} between 0 and 9007199254740991`
     ),
     check(
       "project_conversations_source_parent_ck",
