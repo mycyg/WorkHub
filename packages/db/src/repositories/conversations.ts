@@ -304,6 +304,12 @@ function activeConversationCondition(input: {
     eq(projects.workspaceId, input.workspaceId),
     eq(projects.archived, false),
     isNull(projects.deletedAt),
+    // R13 批 S3（个人空间）：is_personal=true 的项目只对 owner 本人可见——工作区里其他任何正常成员
+    // （含 admin）都看不到、进不去别人的个人空间会话。is_personal=false 时这个条件恒真，团队项目的
+    // 既有行为（工作区内全员可见）完全不变。这一个条件同时守住单会话访问（readVisibleAccess）、
+    // 消息翻页（listMessagesAfter/listMessagesBefore）与项目内会话列表（listVisibleForProject 的
+    // 行查询）——四处共用同一份 activeConversationCondition。
+    or(eq(projects.isPersonal, false), eq(projects.ownerUserId, input.viewerUserId)),
     eq(workspaceMemberships.workspaceId, input.workspaceId),
     eq(workspaceMemberships.userId, input.viewerUserId),
     isNull(workspaceMemberships.deletedAt),
@@ -378,6 +384,8 @@ async function readActiveProjectMembership(
         eq(projects.workspaceId, input.workspaceId),
         eq(projects.archived, false),
         isNull(projects.deletedAt),
+        // R13 批 S3：与 activeConversationCondition 同款——个人空间的会话列表只对 owner 本人可见。
+        or(eq(projects.isPersonal, false), eq(projects.ownerUserId, input.userId)),
         eq(workspaceMemberships.workspaceId, input.workspaceId),
         eq(workspaceMemberships.userId, input.userId),
         isNull(workspaceMemberships.deletedAt)
@@ -392,7 +400,11 @@ async function lockActiveProject(
   input: { workspaceId: string; projectId: string }
 ) {
   const [project] = await db
-    .select({ projectId: projects.id, projectOwnerUserId: projects.ownerUserId })
+    .select({
+      projectId: projects.id,
+      projectOwnerUserId: projects.ownerUserId,
+      isPersonal: projects.isPersonal
+    })
     .from(projects)
     .where(
       and(
@@ -583,6 +595,11 @@ export function createConversationRepository(db: WorkHubDb): ConversationReposit
       return db.transaction(async (tx) => {
         const project = await lockActiveProject(tx, input);
         if (!project) {
+          throw new ConversationAccessDeniedError("creator cannot access the active project");
+        }
+        // R13 批 S3：个人空间成员语义=仅本人——即便发起人是正常工作区成员，也不能在别人的个人空间
+        // 下新建协同会话。fail-closed 语义与上面的 !project 分支一致（同一个错误/同一个 404）。
+        if (project.isPersonal && project.projectOwnerUserId !== creatorUserId) {
           throw new ConversationAccessDeniedError("creator cannot access the active project");
         }
 

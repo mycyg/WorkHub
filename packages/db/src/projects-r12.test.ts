@@ -6,7 +6,7 @@ import {
   createProjectRepository,
   type ProjectRow
 } from "./repositories/projects.js";
-import { orgs, projectConversations, projects, workspaces } from "./schema/index.js";
+import { orgs, projectAiGovernance, projectConversations, projects, workItems, workspaces } from "./schema/index.js";
 import {
   createQueryRecorder,
   queryParamValues,
@@ -46,6 +46,7 @@ function project(overrides: Partial<ProjectRow> = {}): ProjectRow {
     deletedAt: null,
     deletedByNickname: null,
     nextSeq: 0,
+    isPersonal: false,
     createdAt: now,
     updatedAt: now,
     ...overrides
@@ -212,4 +213,102 @@ test("R12 archived or deleted slug occupancy remains typed and never inserts a m
 
   assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "Error" }]);
   assert.equal(queries.some((query) => query.targetTable === projectConversations), false);
+});
+
+// R13 批 S3（个人空间）——团队项目列表必须把 is_personal=true 的行过滤掉，否则个人空间会混进
+// 「项目」分组（设计稿明确要求两个列表互斥，见 01-new-batches-design.md 第五节验收门）。
+test("R13 S3 listForWorkspace excludes personal projects from the team project list", async () => {
+  const { db, queries } = createQueryRecorder([[project()]]);
+  const repository = createProjectRepository(db);
+
+  const rows = await repository.listForWorkspace(workspaceId);
+
+  assert.equal(rows.length, 1);
+  const query = queries[0];
+  assert.equal(query?.fromTable, projects);
+  assert.equal(query?.joins[0]?.table, workItems);
+  assert.ok(queryReferences(query?.where, projects.isPersonal), "team list must filter on projects.isPersonal");
+  assert.ok(queryParamValues(query?.where).includes(false), "team list must require isPersonal = false");
+});
+
+test("R13 S3 listPersonalForUser scopes to the owner, the workspace, and is_personal=true only", async () => {
+  const personalProject = project({ isPersonal: true, ownerUserId: requestOwnerUserId });
+  const { db, queries } = createQueryRecorder([[personalProject]]);
+  const repository = createProjectRepository(db);
+
+  const rows = await repository.listPersonalForUser({ workspaceId, ownerUserId: requestOwnerUserId });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.id, personalProject.id);
+  const query = queries[0];
+  assert.equal(query?.fromTable, projects);
+  for (const column of [projects.workspaceId, projects.ownerUserId, projects.isPersonal, projects.archived]) {
+    assert.ok(queryReferences(query?.where, column), `missing personal-list predicate for ${String(column)}`);
+  }
+  const params = queryParamValues(query?.where);
+  assert.ok(params.includes(workspaceId));
+  assert.ok(params.includes(requestOwnerUserId));
+  assert.ok(params.includes(true));
+  // 排序：按创建时间升序——「我的空间」在「我的空间 2」之前，符合创建先后。
+  assert.equal(query?.orderBy.length, 1);
+});
+
+test("R13 S3 bootstrapPersonalProject creates a personal project, its main conversation, and turns the 60s observer off", async () => {
+  const createdProject = project({ isPersonal: true, ownerUserId: requestOwnerUserId });
+  const { db, queries, transactions } = createQueryRecorder([
+    [createdProject],
+    [{ id: "12000000-0000-4000-8000-000000000011" }],
+    []
+  ]);
+  const repository = createProjectRepository(db);
+
+  const result = await repository.bootstrapPersonalProject({
+    workspaceId,
+    name: "我的空间",
+    slug: "personal-space",
+    ownerNickname: input.ownerNickname,
+    ownerUserId: requestOwnerUserId,
+    at: now
+  });
+
+  assert.equal(result.created, true);
+  assert.equal(result.project.id, createdProject.id);
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  const projectInsert = queries.find((query) => query.operation === "insert" && query.targetTable === projects);
+  assert.ok(projectInsert, "expected a projects insert");
+  const insertedValues = projectInsert.valuesValue as Record<string, unknown>;
+  assert.equal(insertedValues["isPersonal"], true);
+  assert.equal(insertedValues["workspaceId"], workspaceId);
+  assert.equal(insertedValues["ownerUserId"], requestOwnerUserId);
+  assertMainInsert(mainInsert(queries), requestOwnerUserId, createdProject.id);
+  const governanceInsert = queries.find(
+    (query) => query.operation === "insert" && query.targetTable === projectAiGovernance
+  );
+  assert.ok(governanceInsert, "expected a project_ai_governance insert turning the observer off");
+  const governanceValues = governanceInsert.valuesValue as Record<string, unknown>;
+  assert.equal(governanceValues["projectId"], createdProject.id);
+  assert.equal(governanceValues["observerEnabled"], false, "personal space observer must default off (user拍板)");
+  assert.ok(governanceInsert.steps.includes("onConflictDoNothing"));
+});
+
+test("R13 S3 bootstrapPersonalProject never reuses another project on a slug conflict (no find-or-reuse semantics)", async () => {
+  const { db, queries, transactions } = createQueryRecorder([[]]);
+  const repository = createProjectRepository(db);
+
+  await assert.rejects(
+    repository.bootstrapPersonalProject({
+      workspaceId,
+      name: "我的空间",
+      slug: "personal-space",
+      ownerNickname: input.ownerNickname,
+      ownerUserId: requestOwnerUserId,
+      at: now
+    }),
+    (error: unknown) => error instanceof ProjectSlugOccupiedError && error.slug === "personal-space"
+  );
+
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "Error" }]);
+  // 撞车时不能顺手插了主区会话或治理行——报错必须发生在任何其它写入之前。
+  assert.equal(queries.some((query) => query.targetTable === projectConversations), false);
+  assert.equal(queries.some((query) => query.targetTable === projectAiGovernance), false);
 });

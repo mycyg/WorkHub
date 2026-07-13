@@ -8,7 +8,9 @@ import {
   createCollabConversation,
   nextCollabConversationTitle,
   renderArmyOverviewNavHtml,
+  renderNewPersonalSpaceModalHtml,
   renderNewProjectModalHtml,
+  renderPersonalSpaceSectionHtml,
   renderProjectTreeHtml,
   renderRailFootHtml
 } from "./rail.js";
@@ -357,6 +359,80 @@ test("renderNewProjectModalHtml disables inputs while submitting and surfaces a 
 test("renderNewProjectModalHtml never claims a git-jargon action verb in the user-facing copy", () => {
   const html = renderNewProjectModalHtml({ locale: "zh-CN", open: true, name: "", submitting: false });
   assert.doesNotMatch(html, /branch|merge|commit|pull request/iu);
+});
+
+// R13 批 S3（个人空间）：rail 顶部独立分组——与「项目」平级但是另一个数据源（personalProjects），
+// 不出现在团队项目树里。这几条锁死：分组渲染出真实可选行/新建入口、创建模态允许空名提交、
+// 中文黑话铁律（04 §4 铁律 12）同样适用于这个模态。
+test("renderPersonalSpaceSectionHtml renders a real, selectable row for every personal project", () => {
+  const html = renderPersonalSpaceSectionHtml({
+    personalProjects: [project({ id: "my-space-1", name: "我的空间" }), project({ id: "my-space-2", name: "我的空间 2" })],
+    selectedProjectId: undefined,
+    vm: undefined,
+    locale: "zh-CN"
+  });
+  assert.match(html, /我的空间/u);
+  assert.match(html, /data-wb-select-project="my-space-1"/u);
+  assert.match(html, /data-wb-select-project="my-space-2"/u);
+  assert.match(html, /我的空间 2/u);
+});
+
+test("renderPersonalSpaceSectionHtml heading says 'My space', distinct from the team project list heading", () => {
+  const html = renderPersonalSpaceSectionHtml({ personalProjects: [], selectedProjectId: undefined, vm: undefined, locale: "zh-CN" });
+  assert.match(html, /wh-wb-rail-head--personal/u);
+  assert.match(html, /我的空间/u);
+  const projectListHtml = renderProjectTreeHtml({ projects: [], selectedProjectId: undefined, vm: undefined, locale: "zh-CN" });
+  assert.doesNotMatch(projectListHtml, /我的空间/u);
+});
+
+test("renderPersonalSpaceSectionHtml always includes a real 'new personal space' entry point", () => {
+  const html = renderPersonalSpaceSectionHtml({ personalProjects: [], selectedProjectId: undefined, vm: undefined, locale: "zh-CN" });
+  assert.match(html, /data-wb-new-personal-space[^-]/u);
+  assert.match(html, /新建个人空间/u);
+});
+
+test("renderPersonalSpaceSectionHtml marks the selected personal space active and shows its real conversation leaves", () => {
+  const vm = workbenchVm({ project: { ...workbenchVm().project, id: "my-space-1" } });
+  const html = renderPersonalSpaceSectionHtml({
+    personalProjects: [project({ id: "my-space-1", name: "我的空间" })],
+    selectedProjectId: "my-space-1",
+    vm,
+    locale: "zh-CN"
+  });
+  assert.match(html, /class="wh-wb-project active"/u);
+  assert.match(html, /主区/u);
+});
+
+test("renderNewPersonalSpaceModalHtml toggles data-open and allows submitting with a blank name (server auto-names it)", () => {
+  const closed = renderNewPersonalSpaceModalHtml({ locale: "zh-CN", open: false, name: "", submitting: false });
+  assert.match(closed, /data-open="false"/u);
+  assert.doesNotMatch(closed, /data-wb-new-personal-space-submit disabled/u);
+
+  const openBlank = renderNewPersonalSpaceModalHtml({ locale: "zh-CN", open: true, name: "", submitting: false });
+  assert.match(openBlank, /data-open="true"/u);
+  assert.doesNotMatch(openBlank, /data-wb-new-personal-space-submit disabled/u);
+});
+
+test("renderNewPersonalSpaceModalHtml disables inputs while submitting and surfaces a server error", () => {
+  const submitting = renderNewPersonalSpaceModalHtml({ locale: "zh-CN", open: true, name: "读论文", submitting: true });
+  assert.match(submitting, /data-wb-new-personal-space-name[^>]*disabled/u);
+  assert.match(submitting, /创建中/u);
+
+  const errored = renderNewPersonalSpaceModalHtml({
+    locale: "zh-CN",
+    open: true,
+    name: "读论文",
+    submitting: false,
+    error: "创建失败，请重试"
+  });
+  assert.match(errored, /创建失败，请重试/u);
+});
+
+test("renderNewPersonalSpaceModalHtml never claims team-project semantics (no invite/team chat copy) or git jargon", () => {
+  const html = renderNewPersonalSpaceModalHtml({ locale: "zh-CN", open: true, name: "", submitting: false });
+  assert.doesNotMatch(html, /branch|merge|commit|pull request/iu);
+  assert.doesNotMatch(html, /全员可聊|成员邀请/u);
+  assert.match(html, /只有你自己能看到/u);
 });
 
 // R13 批 P2（拍板链路收尾）：协同会话「+ 新建」——rail.ts 的协同分组此前只能渲染服务端已经建好的会话，

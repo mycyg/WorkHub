@@ -292,6 +292,10 @@ export const projects = pgTable(
     deletedAt: timestampTz("deleted_at"),
     deletedByNickname: varchar("deleted_by_nickname", { length: 64 }),
     nextSeq: integer("next_seq").notNull().default(0),
+    // R13 批 S3（个人空间）：is_personal=true 的行是「owner_user_id 名下的个人空间」，语义上仍是一条
+    // 普通 projects 行（主区/网盘/工单全链路零改动直接复用），只是团队级列表要按这一列过滤掉它、
+    // 会话可见性也要收在 owner 一人（见 conversations.ts 的 isPersonal-aware 可见性条件）。
+    isPersonal: boolean("is_personal").notNull().default(false),
     ...timestamps()
   },
   (table) => [
@@ -300,7 +304,10 @@ export const projects = pgTable(
     uniqueIndex("projects_id_workspace_uq").on(table.id, table.workspaceId),
     index("projects_workspace_id_idx").on(table.workspaceId),
     index("projects_owner_user_id_idx").on(table.ownerUserId),
-    index("projects_deleted_at_idx").on(table.deletedAt)
+    index("projects_deleted_at_idx").on(table.deletedAt),
+    // 「我的空间」列表查询用：按 owner 找他名下的个人空间。部分索引只覆盖 is_personal=true 的行，
+    // 不占团队项目（多数行）的索引体积。
+    index("projects_personal_owner_idx").on(table.ownerUserId).where(sql`${table.isPersonal}`)
   ]
 );
 

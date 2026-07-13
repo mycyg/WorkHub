@@ -661,7 +661,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0047 task plan status", () => {
+test("migration journal ends with 0049 personal projects", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -676,9 +676,12 @@ test("migration journal ends with 0047 task plan status", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      idx: 47,
+      // R13 批 S3：0048 留给并行施工的另一批（这个 worktree 里看不到那份迁移/journal 行），
+      // 本批的迁移编号已预分配为 0049，跳过 0048 不占用——两批各自的 journal 尾在合并时
+      // 由人工核对拼接顺序，不是本测试要处理的事。
+      idx: 49,
       version: "7",
-      tag: "0047_task_plan_paused_status",
+      tag: "0049_personal_projects",
       breakpoints: true
     }
   );

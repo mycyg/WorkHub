@@ -45,6 +45,8 @@ function project(partial: Partial<ScheduleNotifyProjectRow> = {}): ScheduleNotif
     deletedAt: null,
     deletedByNickname: null,
     nextSeq: 1,
+    // R13 批 S3：projects 加了 is_personal 列——机械补齐，不是本文件测的功能改动。
+    isPersonal: false,
     createdAt: now,
     updatedAt: now,
     ...partial

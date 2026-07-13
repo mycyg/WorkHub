@@ -161,6 +161,10 @@ function assertFullConversationAccessPredicates(
     projects.workspaceId,
     projects.archived,
     projects.deletedAt,
+    // R13 批 S3：个人空间 fail-closed 可见性条件必须在每一条会话访问查询里都出现（单会话/消息
+    // 翻页/项目内列表共用这同一份 activeConversationCondition），不是只补一处漏掉别处。
+    projects.isPersonal,
+    projects.ownerUserId,
     workspaceMemberships.workspaceId,
     workspaceMemberships.userId,
     workspaceMemberships.deletedAt,
@@ -260,6 +264,11 @@ test("R12 authorized conversation list returns an empty tail page instead of acc
     projects.workspaceId,
     projects.archived,
     projects.deletedAt,
+    // R13 批 S3：readActiveProjectMembership 也要带这条 fail-closed 条件——否则非 owner 会先
+    // 通过这道预检查，等到下面的行查询才被 activeConversationCondition 挡下，行为虽然一致但
+    // 少了一层「提前拒绝」的清晰度，这里直接钉死两处都要有。
+    projects.isPersonal,
+    projects.ownerUserId,
     workspaceMemberships.workspaceId,
     workspaceMemberships.userId,
     workspaceMemberships.deletedAt
@@ -355,6 +364,56 @@ test("R12 collab creation inserts the owner and requested members in one transac
       { userId: secondMemberUserId, role: "member" }
     ]
   );
+});
+
+// R13 批 S3（个人空间）：projects.is_personal=true 的项目——就算发起人是正常工作区成员，也不能在
+// 别人的个人空间下新建协同会话。这条锁死 lockActiveProject 选出 isPersonal/projectOwnerUserId 后
+// createCollab 追加的 fail-closed 检查。
+test("R13 S3 collab creation rejects a non-owner creating a collab conversation under someone else's personal space", async () => {
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ projectId, projectOwnerUserId: memberUserId, isPersonal: true }]
+  ]);
+
+  await assert.rejects(
+    createConversationRepository(db).createCollab({
+      workspaceId,
+      projectId,
+      creatorUserId,
+      title: "协作区",
+      visibility: "private",
+      participantUserIds: [],
+      at: now
+    }),
+    (error: unknown) => error instanceof ConversationAccessDeniedError
+  );
+
+  assert.deepEqual(transactions, [{ outcome: "rejected", errorName: "ConversationAccessDeniedError" }]);
+  assert.equal(queries.some((query) => query.operation === "insert"), false);
+});
+
+test("R13 S3 collab creation allows the personal space's own owner to create a collab conversation in it", async () => {
+  const created = conversation();
+  const participants = [participant(creatorUserId, "owner")];
+  const { db, queries, transactions } = createQueryRecorder([
+    [{ projectId, projectOwnerUserId: creatorUserId, isPersonal: true }],
+    [creatorMembershipLockRow],
+    [created],
+    participants
+  ]);
+
+  const result = await createConversationRepository(db).createCollab({
+    workspaceId,
+    projectId,
+    creatorUserId,
+    title: "协作区",
+    visibility: "private",
+    participantUserIds: [],
+    at: now
+  });
+
+  assert.deepEqual(result, { conversation: created, participants });
+  assert.deepEqual(transactions, [{ outcome: "resolved" }]);
+  assert.equal(queries.some((query) => query.operation === "insert"), true);
 });
 
 test("R12 collab creation rejects incomplete participant membership and rolls back", async () => {
@@ -641,6 +700,10 @@ test("R12 message page repeats full access predicates and advances a safe ascend
     projects.workspaceId,
     projects.archived,
     projects.deletedAt,
+    // R13 批 S3：个人空间 fail-closed 可见性条件必须在每一条会话访问查询里都出现（单会话/消息
+    // 翻页/项目内列表共用这同一份 activeConversationCondition），不是只补一处漏掉别处。
+    projects.isPersonal,
+    projects.ownerUserId,
     workspaceMemberships.workspaceId,
     workspaceMemberships.userId,
     workspaceMemberships.deletedAt,
@@ -686,6 +749,10 @@ test("R12 message page (beforeSeq) mirrors full access predicates and returns an
     projects.workspaceId,
     projects.archived,
     projects.deletedAt,
+    // R13 批 S3：个人空间 fail-closed 可见性条件必须在每一条会话访问查询里都出现（单会话/消息
+    // 翻页/项目内列表共用这同一份 activeConversationCondition），不是只补一处漏掉别处。
+    projects.isPersonal,
+    projects.ownerUserId,
     workspaceMemberships.workspaceId,
     workspaceMemberships.userId,
     workspaceMemberships.deletedAt,
