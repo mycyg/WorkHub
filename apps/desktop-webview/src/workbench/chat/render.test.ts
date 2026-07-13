@@ -43,7 +43,7 @@ function member(input: Partial<WorkbenchMemberVM> & { user_id: string; nickname:
 function ctxWith(
   members: WorkbenchMemberVM[],
   currentUserId?: string,
-  extra?: Partial<Pick<ChatRenderContext, "now" | "openReassignItemId">>
+  extra?: Partial<Pick<ChatRenderContext, "now" | "openReassignItemId" | "actionCardRunProgress">>
 ): ChatRenderContext {
   return { locale: "zh-CN", members: membersById(members), currentUserId, ...extra };
 }
@@ -278,6 +278,75 @@ test("renderMessageHtml still renders a non-deliverable system_event (e.g. drive
   assert.doesNotMatch(html, /wh-wb-chat-actioncard/u);
 });
 
+// —— R13 批 S2：run 终态 PM 汇报（run_settled_report system_event） —— //
+
+test("renderMessageHtml renders a failed run_settled_report as a distinct danger-colored card with the one-line reason", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "system_event",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        event: "run_settled_report",
+        run_id: "run-1",
+        work_item_id: "wi-1",
+        outcome: "failed",
+        title: "重写选题报告第三节",
+        reason: "沙箱写文件权限被拒绝"
+      }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /wh-wb-chat-actioncard/u);
+  assert.match(html, /重写选题报告第三节/u);
+  assert.match(html, /没干成/u);
+  assert.match(html, /沙箱写文件权限被拒绝/u);
+  assert.match(html, /var\(--ds-danger\)/u);
+});
+
+test("renderMessageHtml renders an escalated run_settled_report asking for a decision, without inventing a reason when none is given", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "system_event",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        event: "run_settled_report",
+        run_id: "run-2",
+        work_item_id: "wi-2",
+        outcome: "escalated",
+        title: "预算复核",
+        reason: null
+      }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /wh-wb-chat-actioncard/u);
+  assert.match(html, /预算复核/u);
+  assert.match(html, /需要你拍板/u);
+  assert.match(html, /var\(--ds-warn\)/u);
+});
+
+test("renderMessageHtml falls back to an honest generic reason line for a failed run_settled_report with no reason text", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "system_event",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        event: "run_settled_report",
+        run_id: "run-3",
+        work_item_id: "wi-3",
+        outcome: "failed",
+        title: "整理会议纪要",
+        reason: null
+      }
+    }),
+    ctxWith([])
+  );
+  assert.match(html, /具体原因还在整理/u);
+});
+
 test("renderMessageHtml renders a real, minimal action_card summary from the actual item titles", () => {
   const html = renderMessageHtml(
     baseMessage({
@@ -353,6 +422,94 @@ test("renderMessageHtml renders per-status labels for non-undone action_card ite
   assert.match(html, />先不动</u);
   assert.doesNotMatch(html, /已撤销/u);
   assert.doesNotMatch(html, /--undone/u);
+});
+
+// —— R13 批 S2：execute 条目的阶段流进度行 —— //
+
+function executeRunningActionCardMessage(itemId: string): ConversationMessageVM {
+  return baseMessage({
+    kind: "action_card",
+    sender_type: "cuu",
+    sender_user_id: null,
+    content: {
+      card_id: "card-1",
+      items: [{ id: itemId, kind: "execute", title_md: "重写第三节", confidence: "high", status: "running" }]
+    }
+  });
+}
+
+test("renderMessageHtml renders the four-stage progress row for an execute item whose run is still working, highlighting the current stage", () => {
+  const html = renderMessageHtml(
+    executeRunningActionCardMessage("i1"),
+    ctxWith([], undefined, { actionCardRunProgress: new Map([["i1", { kind: "stage", stage: "work" }]]) })
+  );
+  assert.doesNotMatch(html, />进行中</u);
+  assert.match(html, /<b style="color:var\(--ds-accent\)">干活<\/b>/u);
+  assert.match(html, /认领/u);
+  assert.match(html, /产出/u);
+  assert.match(html, /提议/u);
+});
+
+test("renderMessageHtml renders the claim stage as current when the run hasn't started stepping yet", () => {
+  const html = renderMessageHtml(
+    executeRunningActionCardMessage("i1"),
+    ctxWith([], undefined, { actionCardRunProgress: new Map([["i1", { kind: "stage", stage: "claim" }]]) })
+  );
+  assert.match(html, /<b style="color:var\(--ds-accent\)">认领<\/b>/u);
+});
+
+test("renderMessageHtml renders a distinct danger-colored terminal line for a failed execute item, replacing the stage row", () => {
+  const html = renderMessageHtml(
+    executeRunningActionCardMessage("i1"),
+    ctxWith([], undefined, { actionCardRunProgress: new Map([["i1", { kind: "terminal", terminal: "failed" }]]) })
+  );
+  assert.match(html, /没干成/u);
+  assert.match(html, /var\(--ds-danger\)/u);
+  assert.doesNotMatch(html, /干活|产出|提议|认领/u);
+});
+
+test("renderMessageHtml renders a distinct warn-colored terminal line for an escalated execute item", () => {
+  const html = renderMessageHtml(
+    executeRunningActionCardMessage("i1"),
+    ctxWith([], undefined, { actionCardRunProgress: new Map([["i1", { kind: "terminal", terminal: "escalated" }]]) })
+  );
+  assert.match(html, /已升级 · 等你拍板/u);
+  assert.match(html, /var\(--ds-warn\)/u);
+});
+
+test("renderMessageHtml renders a success-colored terminal line for a succeeded execute item (propose stage)", () => {
+  const html = renderMessageHtml(
+    executeRunningActionCardMessage("i1"),
+    ctxWith([], undefined, { actionCardRunProgress: new Map([["i1", { kind: "stage", stage: "propose" }]]) })
+  );
+  assert.match(html, /<b style="color:var\(--ds-accent\)">提议<\/b>/u);
+});
+
+test("renderMessageHtml falls back to the plain 进行中 label when no run progress is known for this item yet (honest, no fabricated story)", () => {
+  const html = renderMessageHtml(executeRunningActionCardMessage("i1"), ctxWith([], undefined, { actionCardRunProgress: new Map() }));
+  assert.match(html, />进行中</u);
+});
+
+test("renderMessageHtml falls back to the plain 进行中 label when actionCardRunProgress isn't wired up at all", () => {
+  const html = renderMessageHtml(executeRunningActionCardMessage("i1"), ctxWith([]));
+  assert.match(html, />进行中</u);
+});
+
+test("renderMessageHtml does not apply run progress to a decide item even when a matching id happens to be present", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [{ id: "i1", kind: "decide", title_md: "预算是否砍半", confidence: "low", status: "waiting_decision" }]
+      }
+    }),
+    ctxWith([], undefined, { actionCardRunProgress: new Map([["i1", { kind: "stage", stage: "work" }]]) })
+  );
+  assert.match(html, />待拍板</u);
+  assert.doesNotMatch(html, /干活/u);
 });
 
 test("renderMessageHtml leaves an action_card item without a recognized status label-free instead of inventing copy", () => {
