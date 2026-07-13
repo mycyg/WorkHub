@@ -929,14 +929,14 @@ test("renderMentionPickerHtml shows an honest empty state when nothing matches",
 test("renderComingSoonPickerHtml for # is clearly labeled coming-soon, not a live search box", () => {
   const html = renderComingSoonPickerHtml({ locale: "zh-CN", trigger: "#" });
   assert.match(html, /会话引用/u);
-  assert.match(html, /即将可用/u);
-  assert.match(html, /批 4/u);
+  assert.match(html, /即将上线/u);
+  assert.match(html, /即将上线/u);
 });
 
 test("renderComingSoonPickerHtml for / is clearly labeled coming-soon", () => {
   const html = renderComingSoonPickerHtml({ locale: "zh-CN", trigger: "/" });
   assert.match(html, /技能唤起/u);
-  assert.match(html, /即将可用/u);
+  assert.match(html, /即将上线/u);
 });
 
 // —— R12（模式五档弹层，仅协同会话 composer）—— //

@@ -582,7 +582,7 @@ export function renderComposerHtml(input: {
   // data-wb-chat-mode-pop-slot：模式五档弹层的挂载点，同一套"独立子节点刷新"取舍——主区会话里这个
   // 节点永远是空的（view.ts 从不在那里写入），有节点但不写内容，比"这个节点本身按会话种类条件渲染"
   // 更简单也更安全（不会因为切换会话种类漏挂/漏卸载一个挂载点）。
-  return `<div class="wh-wb-chat-composer">${errorHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将可用 · 批 4 起接入" : "Coming soon · lands in batch 4"}"><b>#</b> ${zh ? "会话" : "conversation"}</span><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将可用 · 批 4 起接入" : "Coming soon · lands in batch 4"}"><b>/</b> ${zh ? "技能" : "skill"}</span>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
+  return `<div class="wh-wb-chat-composer">${errorHtml}${attachmentsHtml}<div class="wh-wb-chat-cbox"><textarea class="wh-wb-chat-input" rows="1" placeholder="${escapeHtml(placeholder)}" data-wb-chat-input${input.sending ? " disabled" : ""}>${escapeHtml(input.draftText)}</textarea><div class="wh-wb-chat-ctools"><button type="button" class="wh-wb-chat-ctag" data-wb-chat-tool-trigger="@"><b>@</b> ${zh ? "文件·成员" : "file · member"}</button><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将上线" : "Coming soon"}"><b>#</b> ${zh ? "会话" : "conversation"}</span><span class="wh-wb-chat-ctag wh-wb-chat-ctag--soon" title="${zh ? "即将上线" : "Coming soon"}"><b>/</b> ${zh ? "技能" : "skill"}</span>${modeChip}<button type="button" class="wh-wb-chat-send" data-wb-chat-send${canSend ? "" : " disabled"} aria-label="${zh ? "发送" : "Send"}">${workbenchIcons.send}</button></div><div data-wb-chat-mode-pop-slot></div><div data-wb-chat-picker-slot></div></div></div>`;
 }
 
 // —— R12（模式五档）：仅协同会话（conversationKind === 'collab'）composer 出现——2026-07-12 纠偏后
@@ -752,6 +752,6 @@ export function renderMentionPickerHtml(input: {
 export function renderComingSoonPickerHtml(input: { locale: Locale; trigger: "#" | "/" }): string {
   const zh = input.locale === "zh-CN";
   const title = input.trigger === "#" ? (zh ? "会话引用" : "Conversation reference") : zh ? "技能唤起" : "Skill invocation";
-  const note = zh ? "即将可用 · 批 4 起接入" : "Coming soon · lands in batch 4";
+  const note = zh ? "即将上线" : "Coming soon";
   return `<div class="wh-wb-chat-picker wh-wb-chat-picker--soon" data-wb-chat-picker="soon"><div class="wh-wb-chat-picker-title">${escapeHtml(title)}</div><div class="wh-wb-chat-picker-soon-note">${escapeHtml(note)}</div></div>`;
 }
