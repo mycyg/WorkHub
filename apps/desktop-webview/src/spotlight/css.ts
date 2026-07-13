@@ -151,6 +151,9 @@ export const spotlightCss = [
   ".wh-spot-opt-desc{font:500 12px/1.5 var(--ds-font);color:var(--ds-ink-muted);overflow-wrap:anywhere}",
   ".wh-spot-freetext{width:100%;box-sizing:border-box;min-height:64px;resize:vertical;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);background:transparent;color:var(--ds-ink);font:500 13.5px/1.5 var(--ds-font);padding:11px 13px}",
   ".wh-spot-freetext:focus{outline:none;border-color:var(--ds-accent);box-shadow:0 0 0 3px var(--ds-accent-soft)}",
+  // R13 批 A2（派人推荐 v2）：单行变体——复用 .wh-spot-freetext 的边框/字体，去掉 textarea 专属的
+  // min-height/resize，给「我的资料」区的职位头衔/技能标签这类单行输入用。
+  ".wh-spot-freetext--line{min-height:0;resize:none}",
   ".wh-spot-intake-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:2px}",
   ".wh-spot-act:disabled{opacity:.6;cursor:default}",
   // 只读/检索类（项目·成本·日历·知识）。

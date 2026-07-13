@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { SettingsPageVM, UserAiProfileVM } from "@workhub/contracts";
+import type { SettingsPageVM, UserAiProfileVM, UserProfileVM } from "@workhub/contracts";
 
 import { createSettingsView } from "./settings.js";
 import type { SpotlightViewContext } from "../view-context.js";
@@ -12,9 +12,15 @@ function tick() {
 
 class FakeElement {
   public dataset: Record<string, string> = {};
+  public value = "";
 
-  constructor(private readonly selectors = new Set<string>(), dataset: Record<string, string> = {}) {
+  constructor(
+    private readonly selectors = new Set<string>(),
+    dataset: Record<string, string> = {},
+    value = ""
+  ) {
     this.dataset = dataset;
+    this.value = value;
   }
 
   closest<T extends Element = Element>(selector: string): T | null {
@@ -25,10 +31,14 @@ class FakeElement {
 class FakeBody extends FakeElement {
   public innerHTML = "";
   private readonly clickListeners: Array<(event: { target: unknown }) => void> = [];
+  // R13 批 A2（派人推荐 v2）："我的资料"分区的三个自由文本字段用 focusout（不是 click）保存——
+  // 这个假 body 需要同时支持两种委托事件类型才能测那条保存路径。
+  private readonly focusoutListeners: Array<(event: { target: unknown }) => void> = [];
 
   addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
-    if (type !== "click") return;
-    this.clickListeners.push((event) => {
+    const bucket = type === "click" ? this.clickListeners : type === "focusout" ? this.focusoutListeners : undefined;
+    if (!bucket) return;
+    bucket.push((event) => {
       if (typeof listener === "function") {
         listener(event as unknown as Event);
       } else {
@@ -39,6 +49,12 @@ class FakeBody extends FakeElement {
 
   click(target: FakeElement) {
     for (const listener of this.clickListeners) {
+      listener({ target });
+    }
+  }
+
+  focusOutOn(target: FakeElement) {
+    for (const listener of this.focusoutListeners) {
       listener({ target });
     }
   }
@@ -134,6 +150,19 @@ function aiProfileVm(over: Partial<UserAiProfileVM> = {}): UserAiProfileVM {
   } as unknown as UserAiProfileVM;
 }
 
+// R13 批 A2（派人推荐 v2）："我的资料"（title/bio_md/skill_tags），独立于上面的 AI profile fixture。
+function userProfileVm(over: Partial<UserProfileVM> = {}): UserProfileVM {
+  return {
+    user_id: "60000000-0000-4000-8000-000000000002",
+    nickname: "张三",
+    title: null,
+    bio_md: null,
+    skill_tags: [],
+    onboarded_at: null,
+    ...over
+  } as unknown as UserProfileVM;
+}
+
 function baseCtx(body: FakeBody, overrides: Partial<SpotlightViewContext> = {}): SpotlightViewContext {
   return {
     body: body as unknown as HTMLElement,
@@ -159,6 +188,9 @@ test("settings view renders the AI section with the profile's current selections
       client: {
         pages: { async settings() { return vm; } },
         async request<T>(path: string) {
+          if (path === "/api/me/profile") {
+            return userProfileVm() as unknown as T;
+          }
           assert.equal(path, "/api/me/ai-profile");
           return profile as unknown as T;
         }
@@ -190,6 +222,9 @@ test("clicking a mode chip optimistically updates and PATCHes only default_mode"
             if (init?.method === "PATCH") {
               patchCalls.push({ path, init });
               return aiProfileVm({ default_mode: 5 }) as unknown as T;
+            }
+            if (path === "/api/me/profile") {
+              return userProfileVm() as unknown as T;
             }
             return profile as unknown as T;
           }
@@ -225,6 +260,9 @@ test("a failed PATCH rolls the mode back and shows a gentle inline error, not a 
             if (init?.method === "PATCH") {
               throw new Error("network down");
             }
+            if (path === "/api/me/profile") {
+              return userProfileVm() as unknown as T;
+            }
             return profile as unknown as T;
           }
         } as unknown as SpotlightViewContext["client"]
@@ -259,6 +297,9 @@ test("toggling one granular switch resends all four keys explicitly (PATCH repla
               patchCalls.push(body2);
               return aiProfileVm({ granular_settings: body2.granular_settings }) as unknown as T;
             }
+            if (path === "/api/me/profile") {
+              return userProfileVm() as unknown as T;
+            }
             return profile as unknown as T;
           }
         } as unknown as SpotlightViewContext["client"]
@@ -292,7 +333,13 @@ test("a failed AI profile fetch does not block the rest of settings, and offers 
       baseCtx(body, {
         client: {
           pages: { async settings() { return vm; } },
-          async request<T>() {
+          async request<T>(path: string) {
+            // R13 批 A2：这条计数只跟踪 AI profile 路径的失败/重试，"我的资料" fetch 是一条独立的、
+            // 与本用例无关的并行请求——一律安静成功，不参与这条计数（否则并行加入的第二条请求会
+            // 抢走"第一次调用失败"的名额，让下面的 profileCalls 断言错位）。
+            if (path === "/api/me/profile") {
+              return userProfileVm() as unknown as T;
+            }
             profileCalls += 1;
             if (profileCalls === 1) {
               throw new Error("boom");
@@ -315,5 +362,180 @@ test("a failed AI profile fetch does not block the rest of settings, and offers 
 
     assert.equal(profileCalls, 2);
     assert.match(body.innerHTML, /data-set-ai-mode="3" data-sel="true"/u);
+  });
+});
+
+// ── R13 批 A2（派人推荐 v2）："我的资料"分区 ──────────────────────────────────────────────
+
+test("settings view renders the my-profile section with the profile's current values", async () => {
+  const body = new FakeBody();
+  const vm = settingsVm();
+  const profile = userProfileVm({ title: "前端负责人", bio_md: "做过三个交付项目", skill_tags: ["react", "typescript"] });
+
+  await createSettingsView().mount(
+    baseCtx(body, {
+      client: {
+        pages: { async settings() { return vm; } },
+        async request<T>(path: string) {
+          if (path === "/api/me/profile") {
+            return profile as unknown as T;
+          }
+          return aiProfileVm() as unknown as T;
+        }
+      } as unknown as SpotlightViewContext["client"]
+    })
+  );
+  await tick();
+
+  assert.match(body.innerHTML, /data-spot-profile-section="true"/u);
+  assert.match(body.innerHTML, /data-set-profile-title[^>]*value="前端负责人"/u);
+  assert.match(body.innerHTML, /做过三个交付项目/u);
+  assert.match(body.innerHTML, /data-set-profile-skills[^>]*value="react, typescript"/u);
+  assert.match(body.innerHTML, /Cuu 派活会参考这些信息/u);
+});
+
+test("leaving the title field (focusout) with a changed value optimistically updates and PATCHes only title", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const profile = userProfileVm({ title: "前端负责人" });
+    const patchCalls: Array<{ path: string; init: RequestInit | undefined }> = [];
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string, init?: RequestInit) {
+            if (init?.method === "PATCH") {
+              patchCalls.push({ path, init });
+              return userProfileVm({ title: "后端负责人" }) as unknown as T;
+            }
+            if (path === "/api/me/profile") {
+              return profile as unknown as T;
+            }
+            return aiProfileVm() as unknown as T;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-profile-title]"]), {}, "后端负责人"));
+    // Optimistic update should show immediately, before the PATCH promise settles.
+    assert.match(body.innerHTML, /data-set-profile-title[^>]*value="后端负责人"/u);
+    await tick();
+    await tick();
+
+    assert.equal(patchCalls.length, 1);
+    assert.equal(patchCalls[0]!.path, "/api/me/profile");
+    assert.deepEqual(JSON.parse(String(patchCalls[0]!.init?.body)), { title: "后端负责人" });
+    assert.match(body.innerHTML, /data-set-profile-title[^>]*value="后端负责人"/u);
+  });
+});
+
+test("leaving the skills field with an unchanged value (round-tripped through the comma-split/join) does not PATCH", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const profile = userProfileVm({ skill_tags: ["react", "typescript"] });
+    let patchCount = 0;
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string, init?: RequestInit) {
+            if (init?.method === "PATCH") {
+              patchCount += 1;
+              return profile as unknown as T;
+            }
+            if (path === "/api/me/profile") {
+              return profile as unknown as T;
+            }
+            return aiProfileVm() as unknown as T;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-profile-skills]"]), {}, "react, typescript"));
+    await tick();
+    await tick();
+
+    assert.equal(patchCount, 0, "unchanged skill tags must not trigger a PATCH");
+  });
+});
+
+test("a failed profile PATCH rolls the title back and shows a gentle inline error, not a blocking dialog", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    const profile = userProfileVm({ title: "前端负责人" });
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string, init?: RequestInit) {
+            if (init?.method === "PATCH") {
+              throw new Error("network down");
+            }
+            if (path === "/api/me/profile") {
+              return profile as unknown as T;
+            }
+            return aiProfileVm() as unknown as T;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+
+    body.focusOutOn(new FakeElement(new Set(["[data-set-profile-title]"]), {}, "后端负责人"));
+    await tick();
+    await tick();
+
+    // Rolled back to the original saved title, not stuck on the optimistic value.
+    assert.match(body.innerHTML, /data-set-profile-title[^>]*value="前端负责人"/u);
+    assert.match(body.innerHTML, /data-spot-profile-error="true"/u);
+  });
+});
+
+test("a failed my-profile fetch does not block the rest of settings, and offers a scoped retry", async () => {
+  await withFakeHtmlElement(async () => {
+    const body = new FakeBody();
+    const vm = settingsVm();
+    let profileFetchCalls = 0;
+
+    await createSettingsView().mount(
+      baseCtx(body, {
+        client: {
+          pages: { async settings() { return vm; } },
+          async request<T>(path: string) {
+            if (path === "/api/me/profile") {
+              profileFetchCalls += 1;
+              if (profileFetchCalls === 1) {
+                throw new Error("boom");
+              }
+              return userProfileVm({ title: "前端负责人" }) as unknown as T;
+            }
+            return aiProfileVm() as unknown as T;
+          }
+        } as unknown as SpotlightViewContext["client"]
+      })
+    );
+    await tick();
+
+    // The rest of settings (AI section) still renders even though the my-profile fetch failed.
+    assert.match(body.innerHTML, /data-spot-ai-section="true"/u);
+    assert.match(body.innerHTML, /data-spot-profile-retry/u);
+    assert.doesNotMatch(body.innerHTML, /data-set-profile-title=/u);
+
+    body.click(new FakeElement(new Set(["[data-spot-profile-retry]"])));
+    await tick();
+    await tick();
+
+    assert.equal(profileFetchCalls, 2);
+    assert.match(body.innerHTML, /data-set-profile-title[^>]*value="前端负责人"/u);
   });
 });
