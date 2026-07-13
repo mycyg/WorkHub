@@ -2194,7 +2194,12 @@ test("drive page service creates a deterministic proposal from a drive comment d
     proposalId: manifests[0]!.proposal_id!,
     actorUserId: userId
   }]);
-  assert.equal(result.source_context?.proposal_status, "opened");
+  // R13 批 P4: source_context is now a 3-way union (drive_comment/meeting_insight/conversation_observer);
+  // narrow before reading a drive_comment-only field.
+  assert.equal(result.source_context?.source_type, "drive_comment");
+  if (result.source_context?.source_type === "drive_comment") {
+    assert.equal(result.source_context.proposal_status, "opened");
+  }
 });
 
 test("drive draftToProposal requires artifact mutation access before creating a proposal", async () => {
@@ -2301,9 +2306,15 @@ test("drive page service treats deterministic proposal conflicts as idempotent",
     },
     workItems: {
       async detailPage() {
+        // R13 批 P4: source_context is a 3-way union now; this fixture is always drive_comment-shaped,
+        // so narrow the spread source explicitly instead of widening to the full union.
+        const baseSourceContext = workItemDetail().source_context as Extract<
+          NonNullable<WorkItemDetailVM["source_context"]>,
+          { source_type: "drive_comment" }
+        >;
         return workItemDetail({
           source_context: {
-            ...workItemDetail().source_context!,
+            ...baseSourceContext,
             proposal_id: recordedProposalId,
             proposal_href: recordedProposalId ? `/proposals/${recordedProposalId}` : undefined,
             proposal_status: recordedProposalId ? "opened" : undefined
@@ -2321,7 +2332,10 @@ test("drive page service treats deterministic proposal conflicts as idempotent",
   const result = await service.draftToProposal({ actor: actor(), workItemId });
 
   assert.equal(recordedProposalId?.length, 36);
-  assert.equal(result.source_context?.proposal_id, recordedProposalId);
+  assert.equal(result.source_context?.source_type, "drive_comment");
+  if (result.source_context?.source_type === "drive_comment") {
+    assert.equal(result.source_context.proposal_id, recordedProposalId);
+  }
 });
 
 // findings[#22/#24 后继]：draft→proposal 跨服务写入幂等 + self-heal 回归。
@@ -3787,7 +3801,10 @@ test("drive draft proposal route authenticates and returns a refreshed work item
   assert.equal(response.status, 200);
   const body = await response.json() as { ok: true; data: WorkItemDetailVM; meta: { locale: string } };
   assert.equal(body.meta.locale, "en-US");
-  assert.equal(body.data.source_context?.proposal_href, `/proposals/${proposalId}`);
+  assert.equal(body.data.source_context?.source_type, "drive_comment");
+  if (body.data.source_context?.source_type === "drive_comment") {
+    assert.equal(body.data.source_context.proposal_href, `/proposals/${proposalId}`);
+  }
   assert.deepEqual(calls, [{ workItemId, locale: "en-US", actorId: userId }]);
 });
 

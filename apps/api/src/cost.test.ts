@@ -1207,3 +1207,90 @@ test("team skills page route requires authentication", async () => {
   const response = await app.request("/api/pages/skills");
   assert.equal(response.status, 401);
 });
+
+// R13 批 P4：labor-split 按 assignee 记账 + KPI「AI 自动合并数/占比」——两条新 DI 注入点
+// （assigneeCostReader/proposalMergeStats）实际接进 /api/pages/cost，且与 by_user 等既有分组同门槛。
+test("R13 P4 /api/pages/cost wires assignee cost rows and the ai-auto-merge KPI for admins only", async () => {
+  const runtimeSettings = settings();
+  const assigneeCostReaderCalls: unknown[] = [];
+  const proposalMergeStatsCalls: unknown[] = [];
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore: createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId }),
+    assigneeCostReader: async (input) => {
+      assigneeCostReaderCalls.push(input);
+      return [
+        { actorUserId: adminId, nickname: "cost-admin", costCny: "2", tokens: 500, runCount: 3 },
+        { actorUserId: null, nickname: null, costCny: "0.4", tokens: 40, runCount: 0 }
+      ];
+    },
+    proposalMergeStats: {
+      countTodayMergeReviewsByActorKind: async (input) => {
+        proposalMergeStatsCalls.push(input);
+        return { total: 5, aiApproved: 4 };
+      }
+    }
+  }));
+
+  const adminResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+  assert.equal(adminResponse.status, 200);
+  const adminBody = await adminResponse.json() as {
+    ok: true;
+    data: {
+      by_assignee: Array<{ user_id?: string; label: string; cost_cny: string; run_count: number }>;
+      ai_auto_merge?: { count: number; ratio_pct: number };
+    };
+  };
+  assert.equal(adminBody.data.by_assignee.length, 2);
+  assert.equal(adminBody.data.by_assignee[0]?.user_id, adminId);
+  assert.equal(adminBody.data.by_assignee[0]?.label, "当前用户");
+  assert.equal(adminBody.data.by_assignee[1]?.user_id, undefined);
+  assert.equal(adminBody.data.by_assignee[1]?.label, "系统（无执行者）");
+  assert.deepEqual(adminBody.data.ai_auto_merge, { count: 4, ratio_pct: 80 });
+  assert.equal(assigneeCostReaderCalls.length, 1);
+  assert.equal(proposalMergeStatsCalls.length, 1);
+
+  const userResponse = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-user") }
+  });
+  assert.equal(userResponse.status, 200);
+  const userBody = await userResponse.json() as {
+    ok: true;
+    data: { by_assignee: unknown[]; ai_auto_merge?: unknown };
+  };
+  assert.deepEqual(userBody.data.by_assignee, []);
+  assert.equal(userBody.data.ai_auto_merge, undefined);
+  // non-admin request must never touch either dependency (same fail-closed posture as by_user/by_task_plan).
+  assert.equal(assigneeCostReaderCalls.length, 1);
+  assert.equal(proposalMergeStatsCalls.length, 1);
+});
+
+test("R13 P4 /api/pages/cost degrades assignee rows and ai-auto-merge KPI silently when the readers throw", async () => {
+  const runtimeSettings = settings();
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    auth: authDeps(runtimeSettings),
+    policyStore: createMemoryBudgetPolicyStore(),
+    ledgerStore: createMemoryCostLedgerStore({ teamId: runtimeSettings.auth.defaultWorkspaceId }),
+    assigneeCostReader: async () => {
+      throw new Error("db unavailable");
+    },
+    proposalMergeStats: {
+      countTodayMergeReviewsByActorKind: async () => {
+        throw new Error("db unavailable");
+      }
+    }
+  }));
+
+  const response = await app.request("/api/pages/cost", {
+    headers: { Cookie: await cookie(runtimeSettings, "cookie-cost-admin") }
+  });
+  assert.equal(response.status, 200);
+  const body = await response.json() as { ok: true; data: { by_assignee: unknown[]; ai_auto_merge?: unknown } };
+  assert.deepEqual(body.data.by_assignee, []);
+  assert.equal(body.data.ai_auto_merge, undefined);
+});

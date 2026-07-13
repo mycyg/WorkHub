@@ -21,7 +21,7 @@ function isPreviewableText(mime?: string | null, filename?: string | null) {
 
 export function acceptedDeliverableToVm(
   row: DriveAcceptedDeliverableRow,
-  options: { includeRestore?: boolean } = {}
+  options: { includeRestore?: boolean; reviewerKind?: "human" | "ai" } = {}
 ): AcceptedDeliverableVM {
   const accepted = row.accepted;
   const driveVersion = row.driveVersion;
@@ -37,6 +37,9 @@ export function acceptedDeliverableToVm(
     accepted_version: accepted.acceptedVersion,
     accepted_at: accepted.createdAt.toISOString()
   };
+  if (options.reviewerKind) {
+    vm.reviewer_kind = options.reviewerKind;
+  }
   if (accepted.targetPath) {
     vm.target_path = accepted.targetPath;
   }

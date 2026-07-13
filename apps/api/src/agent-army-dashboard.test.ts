@@ -757,6 +757,119 @@ test("B-R9.6 /api/pages/agents autonomy rate prefers judge review outcomes over 
   assert.equal(fallbackBody.data.kpis.autonomy_rate_pct, 20);
 });
 
+// R13 批 P4（KPI：AI 自动合并数/占比）：同一个 proposalMergeStats 依赖同时喂 cost 页和 army 页，
+// 这里只对 army 页验证接线——只对管理员取（暴露的是同组织评审活动，与 cost 页 by_assignee 同门槛）。
+test("R13 批 P4 /api/pages/agents surfaces the ai-auto-merge KPI for admins and omits it for regular members", async () => {
+  const settings = runtimeSettings();
+  const adminUserId = "96000000-0000-4000-8000-0000000000ad";
+  const authWithAdmin: AuthDependencies = {
+    users: new MemoryUsers([
+      user(),
+      user({ id: adminUserId, nickname: "army-admin", cookieToken: "cookie-army-admin", isAdmin: true })
+    ]),
+    devices: new MemoryDevices(),
+    settings,
+    now: () => now
+  };
+  const emptySourceStubs = {
+    auth: authWithAdmin,
+    taskPlans: {
+      async listDashboardPlans() {
+        return {
+          plans: [],
+          plansCapped: false,
+          items: [],
+          itemsCapped: false,
+          runs: [],
+          runsCapped: false,
+          escalations: [],
+          escalationsCapped: false
+        };
+      }
+    },
+    workItems: {
+      async canReadWorkItems() {
+        return new Set<string>();
+      }
+    },
+    ledgerStore: {
+      async listEntriesForScopes() {
+        return [];
+      }
+    },
+    aiWorklog: {
+      async getTodayMetrics() {
+        return {
+          runs_today: 0,
+          autonomy_rate: 0,
+          accepted_today: 0,
+          saved_hours_estimate: 0,
+          generated_at: now.toISOString()
+        };
+      }
+    },
+    escalations: {
+      async listAttentionItems() {
+        return [];
+      }
+    },
+    memoryConflicts: {
+      async listAttentionItems() {
+        return [];
+      }
+    },
+    approvals: {
+      async listPendingForUser() {
+        return { requests: [], counts: { pending: 0, pending_total: 0, pending_total_capped: 0 } };
+      }
+    },
+    proposals: {
+      async listReviewableForUser() {
+        return [];
+      },
+      async countTodayAiReviewOutcomes() {
+        return { total: 0, approved: 0 };
+      }
+    }
+  };
+  const calls: unknown[] = [];
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/pages", createPageRoutes({
+    ...emptySourceStubs,
+    proposalMergeStats: {
+      countTodayMergeReviewsByActorKind: async (input: { workspaceId: string; now?: Date }) => {
+        calls.push(input);
+        return { total: 8, aiApproved: 6 };
+      }
+    }
+  } as never));
+
+  const adminResponse = await app.request("/api/pages/agents?locale=zh-CN", {
+    headers: { Cookie: await generateSignedCookie(COOKIE_NAME, "cookie-army-admin", settings.auth.cookieSecret) }
+  });
+  assert.equal(adminResponse.status, 200);
+  const adminBody = await adminResponse.json() as {
+    ok: true;
+    data: { kpis: { ai_auto_merge_count?: number; ai_auto_merge_ratio_pct?: number } };
+  };
+  assert.equal(adminBody.data.kpis.ai_auto_merge_count, 6);
+  assert.equal(adminBody.data.kpis.ai_auto_merge_ratio_pct, 75);
+  assert.equal(calls.length, 1);
+
+  const memberResponse = await app.request("/api/pages/agents?locale=zh-CN", {
+    headers: { Cookie: await cookie(settings) }
+  });
+  assert.equal(memberResponse.status, 200);
+  const memberBody = await memberResponse.json() as {
+    ok: true;
+    data: { kpis: { ai_auto_merge_count?: number; ai_auto_merge_ratio_pct?: number } };
+  };
+  assert.equal(memberBody.data.kpis.ai_auto_merge_count, undefined);
+  assert.equal(memberBody.data.kpis.ai_auto_merge_ratio_pct, undefined);
+  // regular member request must never reach the merge-stats dependency (fail-closed, same as by_assignee).
+  assert.equal(calls.length, 1);
+});
+
 test("R9.7 /api/pages/agents counts capped approval lower-bound totals in the decision KPI", async () => {
   const settings = runtimeSettings();
   const approvalId = testUuid(0x300);

@@ -1774,6 +1774,111 @@ test("work item detail hides source proposal actions after the source was dismis
   assert.equal(vm.actions.create_proposal_draft, undefined);
 });
 
+// R13 批 P4（全托管透明度：reviewer_kind 溯源）：仓库层批量反查好 reviewer_kind 挂在 row 上
+// （见 attachAcceptedDeliverableReviewerKind），服务层只需忠实透传到 VM。
+test("work item detail threads reviewer_kind onto accepted deliverables from the repository row", async () => {
+  const repo = repository();
+  repo.readWorkItemDetail = async () => ({
+    ...detailRows({
+      status: "in_review",
+      submitterUserId: "93000000-0000-4000-8000-000000000302",
+      claimedByUserId: null
+    }),
+    acceptedDeliverables: [{ ...acceptedDeliverableRow(), reviewerKind: "ai" }]
+  } as unknown as StoredWorkItemDetailRows);
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  const vm = await service.detailPage({ workItemId, actor, locale: "zh-CN" });
+
+  assert.equal(vm.accepted_deliverables[0]?.reviewer_kind, "ai");
+});
+
+test("work item detail leaves reviewer_kind undefined when the repository row has none", async () => {
+  const repo = repository();
+  repo.readWorkItemDetail = async () => ({
+    ...detailRows({
+      status: "in_review",
+      submitterUserId: "93000000-0000-4000-8000-000000000302",
+      claimedByUserId: null
+    }),
+    acceptedDeliverables: [acceptedDeliverableRow()]
+  } as unknown as StoredWorkItemDetailRows);
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  const vm = await service.detailPage({ workItemId, actor, locale: "zh-CN" });
+
+  assert.equal(vm.accepted_deliverables[0]?.reviewer_kind, undefined);
+});
+
+// R13 批 P4（观察者工单来源标注）：action_card_items 反查到的会话 id 只在没有既有 drive_comment/meeting_insight
+// 来源时才补 conversation_observer 分支——三者互斥（观察者派发从不途经评论/会议）。
+test("work item detail surfaces the conversation-observer source when action_card_items links to it", async () => {
+  const observerConversationId = "93000000-0000-4000-8000-000000000801";
+  const observerCreatedAt = new Date("2026-07-05T00:00:00.000Z");
+  const repo = repository();
+  repo.readWorkItemDetail = async () => ({
+    ...detailRows({
+      status: "ai_working",
+      submitterUserId: "93000000-0000-4000-8000-000000000302",
+      claimedByUserId: null
+    }),
+    observerActionCardItem: {
+      conversationId: observerConversationId,
+      createdAt: observerCreatedAt
+    }
+  } as unknown as StoredWorkItemDetailRows);
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  const vm = await service.detailPage({ workItemId, actor, locale: "zh-CN" });
+
+  assert.equal(vm.source_context?.source_type, "conversation_observer");
+  assert.ok(vm.source_context && vm.source_context.source_type === "conversation_observer");
+  if (vm.source_context?.source_type === "conversation_observer") {
+    assert.equal(vm.source_context.conversation_id, observerConversationId);
+    assert.equal(vm.source_context.created_at, observerCreatedAt.toISOString());
+  }
+  // no draft-to-proposal action makes sense for an observer-created item (no comment/insight body).
+  assert.equal(vm.actions.create_proposal_draft, undefined);
+});
+
+test("work item detail prefers the drive-comment source over the observer source when both are present", async () => {
+  const repo = repository();
+  repo.readWorkItemDetail = async () => ({
+    ...detailRows({
+      status: "in_review",
+      submitterUserId: "93000000-0000-4000-8000-000000000302",
+      claimedByUserId: null
+    }),
+    driveSourceComment: {
+      comment: {
+        id: "93000000-0000-4000-8000-000000000703",
+        projectId,
+        folderId: null,
+        authorUserId: "93000000-0000-4000-8000-000000000302",
+        authorNickname: "PM",
+        body: "既有网盘评论来源不应被观察者来源覆盖。",
+        status: "draft_created",
+        llmKind: null,
+        llmReason: null,
+        draftWorkItemId: workItemId,
+        createdAt: now,
+        updatedAt: now
+      },
+      folder: null,
+      folderPath: null
+    },
+    observerActionCardItem: {
+      conversationId: "93000000-0000-4000-8000-000000000802",
+      createdAt: now
+    }
+  } as unknown as StoredWorkItemDetailRows);
+  const service = createDbWorkItemService(repo, { now: () => now });
+
+  const vm = await service.detailPage({ workItemId, actor, locale: "zh-CN" });
+
+  assert.equal(vm.source_context?.source_type, "drive_comment");
+});
+
 test("project knowledge search hides work items the actor cannot open", async () => {
   const hiddenId = "93000000-0000-4000-8000-000000000502";
   const visibleId = "93000000-0000-4000-8000-000000000503";

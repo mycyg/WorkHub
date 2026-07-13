@@ -28,6 +28,7 @@ import {
   type MergeProposalCandidateApplicationContext,
   type MergeProposalRow,
   type ProposalAcceptedDriveFile,
+  type ReviewRow,
   type StoredProposalRows,
   ClientDeviceAuthRow as DbClientDeviceAuthRow,
   ClientDeviceRepository as DbClientDeviceRepository,
@@ -1180,6 +1181,37 @@ class MemoryProposalRepository implements ProposalRepository {
 
   async countTodayAiReviewOutcomes() {
     return { total: 0, approved: 0 };
+  }
+
+  // R13 批 P4：内存假仓库最小实现——按已落库的 reviews（本类没有单独 reviews 表，reviews 挂在
+  // StoredProposalRows.reviews 里）现算，与真库口径（decision=approve 总数/其中 reviewerKind=ai 的数量）一致。
+  async countTodayMergeReviewsByActorKind() {
+    let total = 0;
+    let aiApproved = 0;
+    for (const stored of this.rows.values()) {
+      for (const review of stored.reviews) {
+        if (review.decision !== "approve") {
+          continue;
+        }
+        total += 1;
+        if (review.reviewerKind === "ai") {
+          aiApproved += 1;
+        }
+      }
+    }
+    return { total, aiApproved };
+  }
+
+  async listReviewsByProposalIds(proposalIds: string[]) {
+    const idSet = new Set(proposalIds);
+    const reviews: ReviewRow[] = [];
+    for (const stored of this.rows.values()) {
+      if (!idSet.has(stored.proposal.id)) {
+        continue;
+      }
+      reviews.push(...stored.reviews);
+    }
+    return reviews;
   }
 
   async merge(input: Parameters<ProposalRepository["merge"]>[0]) {

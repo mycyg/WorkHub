@@ -143,3 +143,92 @@ test("B-R9.6 buildCostDashboardPage enriches by_task_plan rows with meta and sor
   assert.equal(cost.by_task_plan[1]?.label, undefined);
   assert.equal(cost.by_task_plan[1]?.burn_pct, undefined);
 });
+
+// R13 批 P4（labor-split 按 assignee 记账）：与 K5 的 labor_split（生产/自进化维度）正交——
+// 这是「这笔钱是哪个执行者干活花的」维度，行数据由路由层一次 SQL GROUP BY 查出后传入，
+// page builder 只做展示装配（谁是「我」/谁归「系统」/降序）。
+test("R13 P4 buildCostDashboardPage assembles by_assignee with current-user and system labels, sorted by cost", () => {
+  const me = "00000000-0000-4000-8000-000000000001";
+  const other = "00000000-0000-4000-8000-000000000002";
+  const cost = buildCostDashboardPage({
+    settings,
+    isAdmin: true,
+    userId: me,
+    generatedAt: new Date("2026-07-13T02:00:00.000Z"),
+    ledgerEntries: [entry({ usageRecordId: "u1", source: "agent_step", estimatedCostCny: "0.6" })],
+    assigneeCostRows: [
+      { actorUserId: other, nickname: "李四", costCny: "0.5", tokens: 200, runCount: 1 },
+      { actorUserId: me, nickname: "本人昵称", costCny: "3", tokens: 900, runCount: 4 },
+      { actorUserId: null, nickname: null, costCny: "1.2", tokens: 300, runCount: 0 }
+    ]
+  });
+  assert.equal(cost.by_assignee.length, 3);
+  // 降序：我(3) > 系统(1.2) > 李四(0.5)。
+  assert.equal(cost.by_assignee[0]?.user_id, me);
+  assert.equal(cost.by_assignee[0]?.label, "当前用户");
+  assert.equal(cost.by_assignee[0]?.cost_cny, "3");
+  assert.equal(cost.by_assignee[0]?.run_count, 4);
+  assert.equal(cost.by_assignee[1]?.user_id, undefined);
+  assert.equal(cost.by_assignee[1]?.label, "系统（无执行者）");
+  assert.equal(cost.by_assignee[2]?.user_id, other);
+  assert.equal(cost.by_assignee[2]?.label, "李四");
+});
+
+test("R13 P4 buildCostDashboardPage keeps by_assignee empty for non-admins even when rows are passed", () => {
+  const cost = buildCostDashboardPage({
+    settings,
+    isAdmin: false,
+    userId: "00000000-0000-4000-8000-000000000001",
+    generatedAt: new Date("2026-07-13T02:00:00.000Z"),
+    ledgerEntries: [],
+    assigneeCostRows: [{ actorUserId: "00000000-0000-4000-8000-000000000002", nickname: "李四", costCny: "0.5", tokens: 200, runCount: 1 }]
+  });
+  assert.deepEqual(cost.by_assignee, []);
+});
+
+test("R13 P4 buildCostDashboardPage omits by_assignee when no rows were supplied (取数失败/无数据)", () => {
+  const cost = buildCostDashboardPage({
+    settings,
+    isAdmin: true,
+    userId: "00000000-0000-4000-8000-000000000001",
+    generatedAt: new Date("2026-07-13T02:00:00.000Z"),
+    ledgerEntries: []
+  });
+  assert.deepEqual(cost.by_assignee, []);
+});
+
+// R13 批 P4（KPI：AI 自动合并数/占比）：count/total 由路由层传入，page builder 只算比例。
+test("R13 P4 buildCostDashboardPage computes ai_auto_merge ratio from raw counts", () => {
+  const cost = buildCostDashboardPage({
+    settings,
+    isAdmin: true,
+    userId: "00000000-0000-4000-8000-000000000001",
+    generatedAt: new Date("2026-07-13T02:00:00.000Z"),
+    ledgerEntries: [],
+    aiAutoMergeCounts: { total: 4, aiApproved: 3 }
+  });
+  assert.deepEqual(cost.ai_auto_merge, { count: 3, ratio_pct: 75 });
+});
+
+test("R13 P4 buildCostDashboardPage keeps ai_auto_merge undefined when no counts were supplied", () => {
+  const cost = buildCostDashboardPage({
+    settings,
+    isAdmin: true,
+    userId: "00000000-0000-4000-8000-000000000001",
+    generatedAt: new Date("2026-07-13T02:00:00.000Z"),
+    ledgerEntries: []
+  });
+  assert.equal(cost.ai_auto_merge, undefined);
+});
+
+test("R13 P4 buildCostDashboardPage hides ai_auto_merge from non-admins even when counts are passed", () => {
+  const cost = buildCostDashboardPage({
+    settings,
+    isAdmin: false,
+    userId: "00000000-0000-4000-8000-000000000001",
+    generatedAt: new Date("2026-07-13T02:00:00.000Z"),
+    ledgerEntries: [],
+    aiAutoMergeCounts: { total: 4, aiApproved: 3 }
+  });
+  assert.equal(cost.ai_auto_merge, undefined);
+});
