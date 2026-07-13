@@ -21,14 +21,19 @@ import type {
   CuuProactivity,
   DispatchPolicy,
   PatchUserAiProfileRequest,
+  PatchUserProfileRequest,
   SettingsPageVM,
-  UserAiProfileVM
+  UserAiProfileVM,
+  UserProfileVM
 } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
 
 const AI_PROFILE_PATH = "/api/me/ai-profile";
+// R13 批 A2（派人推荐 v2）："我是谁"（个人资料），与上面的 AI_PROFILE_PATH（"AI 该怎么替我干活"）
+// 语义分开，不同端点不同表。
+const PROFILE_PATH = "/api/me/profile";
 
 function localeLabel(locale: string, zh: boolean): string {
   if (locale === "zh-CN") return zh ? "简体中文" : "Chinese";
@@ -154,12 +159,39 @@ function aiSectionHtml(profile: UserAiProfileVM | undefined, aiFailed: boolean, 
   </div>`;
 }
 
+// R13 批 A2（派人推荐 v2）："我的资料"分区，落在 AI 分区旁边（P3 已规划的落点）。三个自由文本字段
+// （title/bio_md/skill_tags）用 focusout 委托保存（同一份 innerHTML 全量重绘架构下，逐字符 input
+// 事件会打断输入焦点——照 AI 分区已有的"点击即改即 PATCH，乐观更新+失败回滚"取舍，只是触发时机从
+// click 换成 focusout，因为这里是文本字段不是按钮）。
+function profileSectionHtml(profile: UserProfileVM | undefined, profileFailed: boolean, zh: boolean): string {
+  if (profileFailed) {
+    return `<div class="wh-spot-set-group" data-spot-profile-section="true">
+      <div class="wh-spot-set-label">${zh ? "我的资料" : "My profile"}</div>
+      <div class="wh-spot-row-sub">${zh ? "资料没拉到。" : "Couldn't load your profile."}<button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-profile-retry style="margin-left:8px">${zh ? "重试" : "Retry"}</button></div>
+    </div>`;
+  }
+  if (!profile) {
+    return "";
+  }
+  const skillsValue = profile.skill_tags.join(", ");
+  return `<div class="wh-spot-set-group" data-spot-profile-section="true">
+    <div class="wh-spot-set-label">${zh ? "我的资料" : "My profile"}</div>
+    <div class="wh-spot-row-sub">${zh ? "以后 Cuu 派活会参考这些信息。" : "Cuu will use this when suggesting who to assign work to."}</div>
+    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-profile-title value="${escapeHtml(profile.title ?? "")}" maxlength="128" placeholder="${escapeHtml(zh ? "职位/角色头衔，例如：前端负责人" : "Title, e.g. Frontend lead")}" />
+    <textarea class="wh-spot-freetext" data-set-profile-bio rows="3" maxlength="4000" placeholder="${escapeHtml(zh ? "简单介绍一下自己" : "A short bio")}">${escapeHtml(profile.bio_md ?? "")}</textarea>
+    <input type="text" class="wh-spot-freetext wh-spot-freetext--line" data-set-profile-skills value="${escapeHtml(skillsValue)}" placeholder="${escapeHtml(zh ? "技能标签，用逗号分隔" : "Skill tags, comma separated")}" />
+  </div>`;
+}
+
 function settingsHtml(
   vm: SettingsPageVM,
   zh: boolean,
   aiProfile: UserAiProfileVM | undefined,
   aiFailed: boolean,
-  aiErrorText: string | undefined
+  aiErrorText: string | undefined,
+  profile: UserProfileVM | undefined,
+  profileFailed: boolean,
+  profileErrorText: string | undefined
 ): string {
   const lang = vm.language;
   const langChips = lang.supported_locales
@@ -180,6 +212,8 @@ function settingsHtml(
     </div>
     ${aiSectionHtml(aiProfile, aiFailed, zh)}
     ${aiErrorText ? `<div class="wh-spot-row-sub" data-spot-ai-error="true" style="color:var(--ds-danger)">${escapeHtml(aiErrorText)}</div>` : ""}
+    ${profileSectionHtml(profile, profileFailed, zh)}
+    ${profileErrorText ? `<div class="wh-spot-row-sub" data-spot-profile-error="true" style="color:var(--ds-danger)">${escapeHtml(profileErrorText)}</div>` : ""}
     <div class="wh-spot-row" style="cursor:default">
       <div class="wh-spot-row-main">
         <div class="wh-spot-row-title">${zh ? "桌面客户端" : "Desktop client"}</div>
@@ -207,13 +241,18 @@ export function createSettingsView(): SpotlightCapabilityView {
       let aiProfile: UserAiProfileVM | undefined;
       let aiFailed = false;
       let aiErrorText: string | undefined;
+      // R13 批 A2（派人推荐 v2）："我的资料"（title/bio_md/skill_tags），独立于上面的 aiProfile
+      // （PATCH /me/ai-profile 是"AI 该怎么替我干活"，这里是"我是谁"，不同表不同端点）。
+      let profile: UserProfileVM | undefined;
+      let profileFailed = false;
+      let profileErrorText: string | undefined;
       ctx.setSubtitle(zh ? "偏好与状态" : "Preferences & status");
 
       const renderAll = () => {
         if (!vm) {
           return;
         }
-        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText);
+        ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText);
         ctx.requestResize();
       };
 
@@ -225,6 +264,17 @@ export function createSettingsView(): SpotlightCapabilityView {
           if (disposed) return;
           aiProfile = undefined;
           aiFailed = true;
+        }
+      };
+
+      const loadProfile = async () => {
+        try {
+          profile = await ctx.client.request<UserProfileVM>(PROFILE_PATH);
+          profileFailed = false;
+        } catch {
+          if (disposed) return;
+          profile = undefined;
+          profileFailed = true;
         }
       };
 
@@ -242,7 +292,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
         if (disposed) return;
         storageKey = vm.language.storage_key || storageKey;
-        await loadAiProfile();
+        await Promise.all([loadAiProfile(), loadProfile()]);
         if (disposed) return;
         renderAll();
       };
@@ -267,6 +317,25 @@ export function createSettingsView(): SpotlightCapabilityView {
           });
       }
 
+      // 同款乐观更新 + PATCH + 失败回滚，作用在 profile 这份独立状态上。
+      function patchProfile(patch: PatchUserProfileRequest, previous: UserProfileVM): void {
+        profileErrorText = undefined;
+        renderAll();
+        ctx.client
+          .request<UserProfileVM>(PROFILE_PATH, { method: "PATCH", body: JSON.stringify(patch) })
+          .then((next) => {
+            if (disposed) return;
+            profile = next;
+            renderAll();
+          })
+          .catch(() => {
+            if (disposed) return;
+            profile = previous;
+            profileErrorText = zh ? "没保存成功，再试一次。" : "Couldn't save — try again.";
+            renderAll();
+          });
+      }
+
       ctx.body.addEventListener("click", (event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
@@ -279,6 +348,16 @@ export function createSettingsView(): SpotlightCapabilityView {
           ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
           ctx.requestResize();
           void loadAiProfile().then(() => {
+            if (disposed) return;
+            renderAll();
+          });
+          return;
+        }
+        if (target.closest("[data-spot-profile-retry]")) {
+          profileFailed = false;
+          ctx.body.innerHTML = `<div class="wh-spot-loading"><span class="wh-spot-spinner"></span>${zh ? "正在拉设置…" : "Loading settings…"}</div>`;
+          ctx.requestResize();
+          void loadProfile().then(() => {
             if (disposed) return;
             renderAll();
           });
@@ -375,6 +454,43 @@ export function createSettingsView(): SpotlightCapabilityView {
           }
           aiProfile = { ...aiProfile, granular_settings: nextGranular };
           patchAiProfile({ granular_settings: nextGranular }, previous);
+        }
+      });
+
+      // —— "我的资料"分区：自由文本字段用 focusout（离开字段时才触发，不是逐字符的 input）保存 ——
+      // 同一份 innerHTML 全量重绘架构下，input 事件会在用户还在打字时就把 DOM 重建掉，打断输入焦点；
+      // focusout 本身就意味着用户已经离开这个字段，这时候重绘不会有体验代价（同 AI 分区的按钮点击
+      // 场景一样，都是"交互已经结束才重绘"）。focusout 会冒泡（blur 不会），所以能用同一个委托监听器。
+      ctx.body.addEventListener("focusout", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement) || !profile) return;
+        const titleInput = target.closest<HTMLInputElement>("[data-set-profile-title]");
+        if (titleInput) {
+          const next = titleInput.value.trim();
+          const nextValue = next.length > 0 ? next : null;
+          if (nextValue === (profile.title ?? null)) return;
+          const previous = profile;
+          profile = { ...profile, title: nextValue };
+          patchProfile({ title: nextValue }, previous);
+          return;
+        }
+        const bioInput = target.closest<HTMLTextAreaElement>("[data-set-profile-bio]");
+        if (bioInput) {
+          const next = bioInput.value.trim();
+          const nextValue = next.length > 0 ? next : null;
+          if (nextValue === (profile.bio_md ?? null)) return;
+          const previous = profile;
+          profile = { ...profile, bio_md: nextValue };
+          patchProfile({ bio_md: nextValue }, previous);
+          return;
+        }
+        const skillsInput = target.closest<HTMLInputElement>("[data-set-profile-skills]");
+        if (skillsInput) {
+          const next = skillsInput.value.split(",").map((tag) => tag.trim()).filter((tag) => tag.length > 0);
+          if (JSON.stringify(next) === JSON.stringify(profile.skill_tags)) return;
+          const previous = profile;
+          profile = { ...profile, skill_tags: next };
+          patchProfile({ skill_tags: next }, previous);
         }
       });
 

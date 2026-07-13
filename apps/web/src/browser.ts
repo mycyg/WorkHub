@@ -2037,6 +2037,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
   bindNotificationMutePanel(root, result, client, locale, signal);
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
+  bindSettingsMyProfilePanel(root, result, client, locale, signal);
   bindLiveRouteStreams(result, client, locale);
 }
 
@@ -2280,6 +2281,170 @@ function bindSettingsAiProfilePanel(
       void enqueueSave({ dispatch_policy: nextPolicy }, () => {
         if (lastSaved) {
           dispatchSelect.value = lastSaved.dispatch_policy;
+        }
+      });
+    },
+    { signal }
+  );
+}
+
+// R13 批 A2（派人推荐 v2）：设置页「我的资料」区块的客户端水合 + 写接线。SSR 渲染的三个输入
+// （route-components renderSettingsMyProfileCard）是禁用的——当前值由这里 GET /api/me/profile
+// 回填后才解禁；GET 失败保持锁定 + 显式错误 + 重试（同上面 AI 助手面板 R10-P1-7 的竞态收口纪律）。
+// change 事件（失焦/回车才触发，不是 input）即 PATCH（每次只发被改的那一个字段）；失败回滚到上次
+// 已保存值 + 状态行报错。
+function bindSettingsMyProfilePanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "settings") {
+    return;
+  }
+  const panel = container.querySelector<HTMLElement>("[data-r13-settings-profile-panel]");
+  if (!panel) {
+    return;
+  }
+  const titleInput = panel.querySelector<HTMLInputElement>("[data-r13-settings-profile-title-input]");
+  const bioInput = panel.querySelector<HTMLTextAreaElement>("[data-r13-settings-profile-bio-input]");
+  const skillsInput = panel.querySelector<HTMLInputElement>("[data-r13-settings-profile-skills-input]");
+  if (!titleInput || !bioInput || !skillsInput) {
+    return;
+  }
+  const status = panel.querySelector<HTMLElement>("[data-r13-settings-profile-status]");
+  const retryButton = panel.querySelector<HTMLButtonElement>("[data-r13-settings-profile-retry]");
+  const zh = locale === "zh-CN";
+  type ProfileSlice = { title: string | null; bio_md: string | null; skill_tags: string[] };
+  const profilePath = "/api/me/profile";
+  let lastSaved: ProfileSlice | undefined;
+
+  const setStatus = (text: string, tone: "saving" | "saved" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r13-settings-profile-status", tone);
+  };
+  const setEnabled = (enabled: boolean) => {
+    titleInput.disabled = !enabled;
+    bioInput.disabled = !enabled;
+    skillsInput.disabled = !enabled;
+  };
+  const applySlice = (slice: ProfileSlice) => {
+    titleInput.value = slice.title ?? "";
+    bioInput.value = slice.bio_md ?? "";
+    skillsInput.value = slice.skill_tags.join(", ");
+  };
+
+  const hydrate = async () => {
+    setEnabled(false);
+    if (retryButton) {
+      retryButton.hidden = true;
+    }
+    setStatus(zh ? "正在读取当前资料…" : "Loading current profile…", "saving");
+    try {
+      const profile = await client.request<ProfileSlice>(profilePath);
+      if (signal.aborted) {
+        return;
+      }
+      lastSaved = { title: profile.title, bio_md: profile.bio_md, skill_tags: [...profile.skill_tags] };
+      applySlice(lastSaved);
+      setEnabled(true);
+      if (status) {
+        status.hidden = true;
+      }
+    } catch {
+      if (signal.aborted) {
+        return;
+      }
+      setStatus(
+        zh
+          ? "没能读取当前资料。为避免误存，输入框已暂时锁定。"
+          : "Couldn't load your profile — the inputs stay locked so nothing is saved by mistake.",
+        "error"
+      );
+      if (retryButton) {
+        retryButton.hidden = false;
+      }
+    }
+  };
+  void hydrate();
+  retryButton?.addEventListener("click", () => void hydrate(), { signal });
+
+  let saveChain: Promise<void> = Promise.resolve();
+  const doSave = async (patch: Record<string, unknown>, rollback: () => void) => {
+    setStatus(zh ? "保存中…" : "Saving…", "saving");
+    try {
+      const profile = await client.request<ProfileSlice>(profilePath, {
+        method: "PATCH",
+        body: JSON.stringify(patch)
+      });
+      if (signal.aborted) {
+        return;
+      }
+      lastSaved = { title: profile.title, bio_md: profile.bio_md, skill_tags: [...profile.skill_tags] };
+      applySlice(lastSaved);
+      setStatus(zh ? "已保存" : "Saved", "saved");
+    } catch {
+      if (signal.aborted) {
+        return;
+      }
+      rollback();
+      setStatus(zh ? "保存失败，请重试" : "Save failed, please retry", "error");
+    }
+  };
+  const enqueueSave = (patch: Record<string, unknown>, rollback: () => void) => {
+    saveChain = saveChain.then(() => doSave(patch, rollback));
+    return saveChain;
+  };
+
+  // 用 change（失焦/回车才触发）而不是 input——避免用户每敲一个字符就打一次 PATCH。
+  titleInput.addEventListener(
+    "change",
+    () => {
+      const next = titleInput.value.trim();
+      const nextValue = next.length > 0 ? next : null;
+      if (nextValue === (lastSaved?.title ?? null)) {
+        return;
+      }
+      void enqueueSave({ title: nextValue }, () => {
+        if (lastSaved) {
+          titleInput.value = lastSaved.title ?? "";
+        }
+      });
+    },
+    { signal }
+  );
+  bioInput.addEventListener(
+    "change",
+    () => {
+      const next = bioInput.value.trim();
+      const nextValue = next.length > 0 ? next : null;
+      if (nextValue === (lastSaved?.bio_md ?? null)) {
+        return;
+      }
+      void enqueueSave({ bio_md: nextValue }, () => {
+        if (lastSaved) {
+          bioInput.value = lastSaved.bio_md ?? "";
+        }
+      });
+    },
+    { signal }
+  );
+  skillsInput.addEventListener(
+    "change",
+    () => {
+      const next = skillsInput.value.split(",").map((tag) => tag.trim()).filter((tag) => tag.length > 0);
+      const previous = lastSaved?.skill_tags ?? [];
+      if (JSON.stringify(next) === JSON.stringify(previous)) {
+        return;
+      }
+      void enqueueSave({ skill_tags: next }, () => {
+        if (lastSaved) {
+          skillsInput.value = lastSaved.skill_tags.join(", ");
         }
       });
     },

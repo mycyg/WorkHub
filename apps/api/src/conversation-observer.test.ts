@@ -5,6 +5,7 @@ import type {
   ActionCardConversationMessageRow,
   ActionCardItemRow,
   ActionCardRow,
+  CandidateForProjectRow,
   EscalationEventRow,
   NotificationRow,
   ObserverCandidateRow,
@@ -180,6 +181,23 @@ function escalationRow(overrides: Partial<EscalationEventRow> = {}): EscalationE
   };
 }
 
+// R13 批 A2（派人推荐 v2）：派活候选名单一行的测试构造器。
+const rosterUserId = "13000000-0000-4000-8000-000000000020";
+const rosterNickname = "李四";
+
+function candidateForProjectRow(overrides: Partial<CandidateForProjectRow> = {}): CandidateForProjectRow {
+  return {
+    userId: rosterUserId,
+    nickname: rosterNickname,
+    title: "后端负责人",
+    bioMd: "做过五个交付项目",
+    skillTags: ["go", "postgres"],
+    acceptedDeliverableCount: 5,
+    lastAcceptedAt: now,
+    ...overrides
+  };
+}
+
 function actionCardRow(overrides: Partial<ActionCardRow> = {}): ActionCardRow {
   return {
     id: "70000000-0000-4000-8000-000000000001",
@@ -291,6 +309,13 @@ function baseDeps(overrides: Partial<ConversationObserverDeps> = {}): Conversati
     aiSettings: {
       async findUserProfileAccessRecord() {
         return null;
+      }
+    },
+    // R13 批 A2（派人推荐 v2）：默认空候选名单——不影响任何既有测试（既有"点名/查无此人→项目负责人
+    // 兜底"断言全部假设名单为空，见下方专门的候选名单测试组）。
+    userProfiles: {
+      async listCandidatesForProject() {
+        return [];
       }
     },
     client: llmClientReturning({ items: [] }),
@@ -949,4 +974,246 @@ test("R12 真 key 冒烟回归:分析窗口默认值不得超过 action-cards �
     DEFAULT_MAX_MESSAGES_PER_ANALYSIS <= ACTION_CARD_ANALYSIS_LIMIT_MAX,
     `observer default analysis window (${DEFAULT_MAX_MESSAGES_PER_ANALYSIS}) must fit the repository cap (${ACTION_CARD_ANALYSIS_LIMIT_MAX})`
   );
+});
+
+// ── R13 批 A2（派人推荐 v2）：候选名单 + resolveAssignee 优先级 ──────────────────────────────
+
+test("R13 A2: the observer builds a candidate roster once per analysis and passes it into the prompt in a project-manager voice", async () => {
+  let capturedPrompt: string | undefined;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      }
+    },
+    userProfiles: {
+      async listCandidatesForProject(input) {
+        assert.equal(input.projectId, projectId);
+        return [candidateForProjectRow()];
+      }
+    },
+    client: async () => ({
+      messages: {
+        async create(input: { messages: Array<{ content: string }> }) {
+          capturedPrompt = input.messages[0]?.content;
+          return { content: [{ type: "text", text: JSON.stringify({ items: [] }) }] };
+        }
+      }
+    })
+  });
+
+  await createConversationObserverScheduler(deps).tick();
+
+  assert.ok(capturedPrompt, "expected the observer to have called the LLM client");
+  assert.match(capturedPrompt!, /派活候选名单/u);
+  assert.match(capturedPrompt!, /项目经理/u);
+  assert.match(capturedPrompt!, new RegExp(rosterNickname, "u"));
+  assert.match(capturedPrompt!, /后端负责人/u);
+});
+
+test("R13 A2: execute items fall back to the roster's top scorer (not the project owner) when the LLM names no one", async () => {
+  let submitter: string | undefined;
+  let systemNoteContent: unknown;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async postSystemMessage(input) {
+        systemNoteContent = input.content;
+        return cardMessageRow({ id: "system-message-1", kind: "system_event" });
+      }
+    },
+    userProfiles: {
+      async listCandidatesForProject() {
+        return [candidateForProjectRow()];
+      }
+    },
+    workItems: {
+      async createWorkItem(input) {
+        submitter = input.submitterUserId;
+        return workItemRow({ submitterUserId: input.submitterUserId });
+      },
+      async findProjectById() {
+        throw new Error("must not fall back to the project owner when the roster has a candidate");
+      }
+    },
+    client: llmClientReturning({
+      items: [{ kind: "execute", title_md: "重写第三节", confidence: "high" }]
+    })
+  });
+
+  await createConversationObserverScheduler(deps).tick();
+
+  assert.equal(submitter, rosterUserId);
+  assert.equal((systemNoteContent as { assignee_user_id: string }).assignee_user_id, rosterUserId);
+  assert.match((systemNoteContent as { summary: string }).summary, /根据资料与历史交付选中/u);
+});
+
+test("R13 A2: execute items fall back to the roster's top scorer (not the project owner) when the suggested nickname matches no member", async () => {
+  let submitter: string | undefined;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      }
+    },
+    userProfiles: {
+      async listCandidatesForProject() {
+        return [candidateForProjectRow()];
+      }
+    },
+    workItems: {
+      async createWorkItem(input) {
+        submitter = input.submitterUserId;
+        return workItemRow({ submitterUserId: input.submitterUserId });
+      },
+      async findProjectById() {
+        throw new Error("must not fall back to the project owner when the roster has a candidate");
+      }
+    },
+    client: llmClientReturning({
+      items: [{ kind: "execute", title_md: "重写第三节", confidence: "high", suggested_assignee_nickname: "查无此人" }]
+    })
+  });
+
+  await createConversationObserverScheduler(deps).tick();
+  assert.equal(submitter, rosterUserId);
+});
+
+test("R13 A2: an explicit LLM nickname match is never overridden by the roster, even when the roster's top scorer has a far higher score", async () => {
+  let submitter: string | undefined;
+  const higherScoringOtherUserId = "13000000-0000-4000-8000-000000000030";
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async resolveAssigneeByNickname(input) {
+        return input.nickname === "张三" ? { userId: assigneeUserId, nickname: "张三" } : null;
+      }
+    },
+    userProfiles: {
+      async listCandidatesForProject() {
+        // 名单里分数最高的是另一个人（李四，交付量刷到 999）——nickname 命中必须原样采用张三，
+        // 不能被这份高分名单压过去（用户拍板的点名优先语义铁律）。
+        return [
+          candidateForProjectRow({
+            userId: higherScoringOtherUserId,
+            nickname: "李四",
+            acceptedDeliverableCount: 999,
+            title: "交付大户"
+          })
+        ];
+      }
+    },
+    workItems: {
+      async createWorkItem(input) {
+        submitter = input.submitterUserId;
+        return workItemRow({ submitterUserId: input.submitterUserId });
+      },
+      async findProjectById() {
+        throw new Error("must not reach the project-owner fallback — the nickname already resolved");
+      }
+    },
+    client: llmClientReturning({
+      items: [{ kind: "execute", title_md: "重写第三节", confidence: "high", suggested_assignee_nickname: "张三" }]
+    })
+  });
+
+  await createConversationObserverScheduler(deps).tick();
+  assert.equal(submitter, assigneeUserId, "explicit nickname match must win over the roster's top scorer");
+});
+
+test("R13 A2: an empty roster still falls back to the project owner (pre-existing behavior, not regressed)", async () => {
+  let submitter: string | undefined;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async resolveAssigneeByNickname() {
+        return null;
+      }
+    },
+    userProfiles: {
+      async listCandidatesForProject() {
+        return [];
+      }
+    },
+    workItems: {
+      async createWorkItem(input) {
+        submitter = input.submitterUserId;
+        return workItemRow({ submitterUserId: input.submitterUserId });
+      },
+      async findProjectById() {
+        return projectRow();
+      }
+    },
+    client: llmClientReturning({
+      items: [{ kind: "execute", title_md: "重写第三节", confidence: "high", suggested_assignee_nickname: "查无此人" }]
+    })
+  });
+
+  await createConversationObserverScheduler(deps).tick();
+  assert.equal(submitter, ownerUserId);
+});
+
+test("R13 A2: decide item system note appends the roster-selection explainer only when the assignee came from the roster", async () => {
+  let systemNoteContent: unknown;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async postSystemMessage(input) {
+        systemNoteContent = input.content;
+        return cardMessageRow({ id: "system-message-1", kind: "system_event" });
+      }
+    },
+    userProfiles: {
+      async listCandidatesForProject() {
+        return [candidateForProjectRow()];
+      }
+    },
+    client: llmClientReturning({
+      items: [{ kind: "decide", title_md: "预算是否砍半", confidence: "low" }]
+    })
+  });
+
+  await createConversationObserverScheduler(deps).tick();
+  assert.match((systemNoteContent as { summary: string }).summary, /根据资料与历史交付选中/u);
+});
+
+test("R13 A2: decide item system note does not carry the roster-selection explainer when the LLM named someone explicitly", async () => {
+  let systemNoteContent: unknown;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async postSystemMessage(input) {
+        systemNoteContent = input.content;
+        return cardMessageRow({ id: "system-message-1", kind: "system_event" });
+      }
+    },
+    userProfiles: {
+      async listCandidatesForProject() {
+        return [candidateForProjectRow()];
+      }
+    },
+    client: llmClientReturning({
+      items: [{ kind: "decide", title_md: "预算是否砍半", confidence: "low", suggested_assignee_nickname: "张三" }]
+    })
+  });
+
+  await createConversationObserverScheduler(deps).tick();
+  assert.doesNotMatch((systemNoteContent as { summary: string }).summary, /根据资料与历史交付选中/u);
 });

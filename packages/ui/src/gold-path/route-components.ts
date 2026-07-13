@@ -4301,6 +4301,29 @@ function renderSettingsAiAssistantCard(locale: WorkHubLocale, desktopHref: strin
         </section>`;
 }
 
+// R13 批 A2（派人推荐 v2）：web /settings 的「我的资料」区块——GET/PATCH /me/profile 此前完全没有
+// 任何 UI 入口（user_profiles 是零接线死表）。与上面的「AI 助手」卡同一套水合竞态收口纪律：三个输入
+// 服务端渲染为 disabled，由 apps/web/src/browser.ts 的 bindSettingsMyProfilePanel 拉取当前值回填后
+// 才解禁，读取失败保持锁定 + 显式错误 + 重试，不让用户在假的空白表单上覆盖已保存的资料。
+function renderSettingsMyProfileCard(locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  return `<section class="wh-card wh-r4-route-card" data-r13-settings-profile-panel="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(zh ? "我的资料" : "My profile")}</h3>
+          <p class="wh-subtle">${escapeHtml(zh ? "以后 Cuu 派活时会参考这些信息，帮你把活派给最合适的人。" : "Cuu uses this information when suggesting who to assign work to.")}</p>
+          <p class="wh-subtle" data-r13-settings-profile-status="loading" hidden></p>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "职位/角色头衔" : "Title / role")}</strong>
+            <input type="text" class="wh-pill" data-r13-settings-profile-title-input aria-label="${escapeHtml(zh ? "职位/角色头衔" : "Title / role")}" placeholder="${escapeHtml(zh ? "例如：前端负责人" : "e.g. Frontend lead")}" maxlength="128" disabled />
+          </div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "简介" : "Bio")}</strong>
+            <textarea class="wh-pill" data-r13-settings-profile-bio-input aria-label="${escapeHtml(zh ? "简介" : "Bio")}" rows="3" maxlength="4000" placeholder="${escapeHtml(zh ? "简单介绍一下自己" : "A short bio")}" disabled></textarea>
+          </div>
+          <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "技能标签" : "Skill tags")}</strong>
+            <input type="text" class="wh-pill" data-r13-settings-profile-skills-input aria-label="${escapeHtml(zh ? "技能标签，用逗号分隔" : "Skill tags, comma separated")}" placeholder="${escapeHtml(zh ? "用逗号分隔，例如：react, typescript" : "Comma separated, e.g. react, typescript")}" disabled />
+          </div>
+          <button type="button" class="wh-btn" data-r13-settings-profile-retry hidden>${escapeHtml(zh ? "重试读取" : "Retry loading")}</button>
+        </section>`;
+}
+
 function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale): WebRouteComponent {
   const reactComponent = createSettingsReactRouteComponent(vm, locale);
   const reactAttrs = dataAttrs(reactRouteComponentMarkerAttrs(reactComponent));
@@ -4343,6 +4366,7 @@ function renderSettingsRouteComponent(vm: SettingsPageVM, locale: WorkHubLocale)
           <a class="wh-btn" href="${escapeHtml(safeHref(props.restoreHref))}" data-action-id="open_desktop_settings" data-method="GET" data-requires-desktop="${escapeHtml(String(props.restoreRequiresDesktop))}">${escapeHtml(routeT(locale, "settings.restore"))}</a>
         </section>
         ${renderSettingsAiAssistantCard(locale, props.restoreHref)}
+        ${renderSettingsMyProfileCard(locale)}
       </div>
       ${vm.permission_policies !== undefined ? `<section class="wh-card wh-r4-route-card" data-r9-settings-policies="${escapeHtml(String(vm.permission_policies.length))}">
         <h3 role="heading" aria-level="2">${escapeHtml(locale === "zh-CN" ? "自动通过规则" : "Auto-approve rules")}</h3>
