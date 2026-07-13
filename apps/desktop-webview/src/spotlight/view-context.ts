@@ -23,7 +23,7 @@ export type SpotlightViewContext = {
   back: () => void;
   // R13 收尾(用户真机反馈):动作型能力(如打开工作台)完成后把盒子整体复位回首页搜索态——
   // 与 back()(退一层)不同,这是「事办完了,盒子让位」的语义。
-  resetShell: () => void;
+  resetShell?: () => void;
   // 跳到另一个能力（可带目标实体 id，让目标 view 直接展开该项）。用于「项目→网盘」「深链→详情」等跨能力跳转。
   open: (id: CommandId, target?: SpotlightTarget) => void;
   // 本次进入该能力时携带的目标实体（来自 open()/深链）。view 可据此直接打开详情，无则从列表起。

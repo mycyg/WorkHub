@@ -74,7 +74,7 @@ export function createWorkbenchOpenView(id: CommandId, options: { bare: boolean 
             // 首页搜索态,不留在这个动作视图里挡路。signal 守卫:用户在这 0.9s 里切走/关盒则不复位。
             const resetTimer = setTimeout(() => {
               if (!ctx.signal.aborted) {
-                ctx.resetShell();
+                ctx.resetShell?.();
               }
             }, 900);
             ctx.signal.addEventListener("abort", () => clearTimeout(resetTimer), { once: true });
