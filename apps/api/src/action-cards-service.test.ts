@@ -435,3 +435,36 @@ test("undo rejects a caller who is neither the assignee nor an admin", async () 
     (error: unknown) => error instanceof ActionCardServiceError && error.status === 403
   );
 });
+
+// R13 条目终态回写钩子上线后的确定性顺序:undo 内 await abort() 时 settled 钩子先把 running→undone
+// 赢得 CAS——undo 自己的 CAS 落空不是失败,复读确认殊途同归,必须按成功返回而不是误抛 409。
+test("undo succeeds when the settlement hook already flipped the item to undone during abort", async () => {
+  let findCalls = 0;
+  const noteCalls: unknown[] = [];
+  const service = createActionCardService(baseOptions({
+    actionCards: {
+      ...baseOptions().actionCards,
+      async findItemForActor() {
+        findCalls += 1;
+        // 第一次读:仍是 running(通过前置校验);abort 之后的复读:钩子已写成 undone。
+        return findCalls === 1
+          ? { item: executeItemRow(), card: cardRow() }
+          : { item: executeItemRow({ status: "undone" }), card: cardRow() };
+      },
+      async transitionItemStatus() {
+        return null; // 钩子已抢先,CAS 落空
+      },
+      async postSystemMessage(input) {
+        noteCalls.push(input);
+        return { id: "system-1", conversationId, seq: 9, senderType: "cuu", senderUserId: null, kind: "system_event", contentJson: {}, threadRootId: input.threadRootId ?? null, createdAt: now };
+      }
+    },
+    agentRuns: { async abort() { return agentRunRow(); } },
+    workItems: { async transitionWorkItemStatus() { return { id: workItemId, status: "cancelled", transitioned: true }; } }
+  }));
+
+  const result = await service.undo({ actor: actor(), itemId });
+  assert.equal(result.status, "undone");
+  assert.equal(findCalls, 2);
+  assert.equal(noteCalls.length, 1);
+});

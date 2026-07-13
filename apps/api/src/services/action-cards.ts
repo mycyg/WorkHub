@@ -310,7 +310,7 @@ export function createActionCardService(options: ActionCardServiceOptions): Acti
         throw new ActionCardServiceError(409, "action_card_item_not_undoable", "这个事项的状态已经变化，无法再撤销。");
       }
 
-      const updated = await options.actionCards.transitionItemStatus({
+      let updated = await options.actionCards.transitionItemStatus({
         itemId: item.id,
         workspaceId: human.workspaceId,
         fromStatuses: ["running"],
@@ -318,7 +318,18 @@ export function createActionCardService(options: ActionCardServiceOptions): Acti
         at
       });
       if (!updated) {
-        throw new ActionCardServiceError(409, "action_card_item_not_undoable", "这个条目已经过了可撤销的窗口。");
+        // R13 条目终态回写钩子(action-card-run-settlement)上线后的确定性顺序:上面 await abort() 时
+        // settled 钩子已把 cancelled 映射成 running→undone 并赢得 CAS——这里落空不代表撤销失败,
+        // 复读确认:条目已是 undone 即殊途同归,按成功继续(留痕/播报照旧);其它状态才是真的不可撤销。
+        const settled = await options.actionCards.findItemForActor({
+          itemId: item.id,
+          workspaceId: human.workspaceId
+        });
+        if (settled?.item.status === "undone") {
+          updated = settled.item;
+        } else {
+          throw new ActionCardServiceError(409, "action_card_item_not_undoable", "这个条目已经过了可撤销的窗口。");
+        }
       }
       await options.actionCards.postSystemMessage({
         workspaceId: human.workspaceId,
