@@ -6,6 +6,8 @@ import type { ConversationMessageVM } from "@workhub/contracts";
 import {
   DEFAULT_MESSAGE_RENDER_WINDOW,
   applyActionCardUpdate,
+  computeUndoRemainingMinutes,
+  findActionCardMessageIdForItem,
   formatMessageTime,
   groupMessagesByDay,
   sortAndDedupeMessages,
@@ -171,7 +173,13 @@ test("windowRecentMessages on an empty list is a no-op", () => {
 function actionCardMessage(input: {
   id: string;
   seq: number;
-  items: Array<{ id: string; status: string; title?: string }>;
+  items: Array<{
+    id: string;
+    status: string;
+    title?: string;
+    assigneeUserId?: string | null;
+    undoDeadlineAt?: string | null;
+  }>;
 }): ConversationMessageVM {
   return {
     id: input.id,
@@ -187,7 +195,9 @@ function actionCardMessage(input: {
         kind: "execute",
         title_md: item.title ?? `条目 ${item.id}`,
         confidence: "high",
-        status: item.status
+        status: item.status,
+        assignee_user_id: item.assigneeUserId ?? null,
+        undo_deadline_at: item.undoDeadlineAt ?? null
       }))
     },
     thread_root_id: null,
@@ -269,4 +279,107 @@ test("applyActionCardUpdate ignores an action_card update aimed at a non-action_
   // kind 不是 action_card → 视同本地没有这条卡消息：不改内容，报 stale 交给补拉。
   assert.equal(result.changed, false);
   assert.equal(result.snapshotStale, true);
+});
+
+// R12 P0-A1：decide/undo 的 HTTP 响应（ActionCardItemVM）落地到本地快照——assigneeUserId/undoDeadlineAt
+// 是可选字段，SSE 那条既有路径完全不传，行为必须保持原样（上面几条已覆盖）；这里覆盖新增的合并分支。
+
+test("applyActionCardUpdate merges assigneeUserId and undoDeadlineAt when the caller provides them (decide/undo HTTP response path)", () => {
+  const card = actionCardMessage({
+    id: "m-card",
+    seq: 1,
+    items: [{ id: "i1", status: "waiting_decision", assigneeUserId: "user-1", undoDeadlineAt: null }]
+  });
+
+  const result = applyActionCardUpdate([card], {
+    messageId: "m-card",
+    items: [{ id: "i1", status: "running", assigneeUserId: "user-2", undoDeadlineAt: "2026-07-12T09:10:00.000Z" }]
+  });
+
+  assert.equal(result.changed, true);
+  const items = (result.messages[0]!.content as Record<string, unknown>)["items"] as Array<Record<string, unknown>>;
+  assert.equal(items[0]!["status"], "running");
+  assert.equal(items[0]!["assignee_user_id"], "user-2");
+  assert.equal(items[0]!["undo_deadline_at"], "2026-07-12T09:10:00.000Z");
+});
+
+test("applyActionCardUpdate treats a status-only patch (SSE shape) as a no-op for assignee/undo-deadline fields", () => {
+  const card = actionCardMessage({
+    id: "m-card",
+    seq: 1,
+    items: [{ id: "i1", status: "running", assigneeUserId: "user-1", undoDeadlineAt: "2026-07-12T09:10:00.000Z" }]
+  });
+
+  const result = applyActionCardUpdate([card], { messageId: "m-card", items: [{ id: "i1", status: "done" }] });
+
+  assert.equal(result.changed, true);
+  const items = (result.messages[0]!.content as Record<string, unknown>)["items"] as Array<Record<string, unknown>>;
+  assert.equal(items[0]!["status"], "done");
+  // assigneeUserId/undoDeadlineAt 没在 patch 里出现（undefined）——保持原值，不被清空成 null。
+  assert.equal(items[0]!["assignee_user_id"], "user-1");
+  assert.equal(items[0]!["undo_deadline_at"], "2026-07-12T09:10:00.000Z");
+});
+
+test("applyActionCardUpdate reports changed=true when only assigneeUserId changes and status stays the same", () => {
+  const card = actionCardMessage({
+    id: "m-card",
+    seq: 1,
+    items: [{ id: "i1", status: "waiting_decision", assigneeUserId: "user-1" }]
+  });
+
+  const result = applyActionCardUpdate([card], {
+    messageId: "m-card",
+    items: [{ id: "i1", status: "waiting_decision", assigneeUserId: "user-2" }]
+  });
+
+  assert.equal(result.changed, true);
+  const items = (result.messages[0]!.content as Record<string, unknown>)["items"] as Array<Record<string, unknown>>;
+  assert.equal(items[0]!["assignee_user_id"], "user-2");
+});
+
+// —— findActionCardMessageIdForItem —— //
+
+test("findActionCardMessageIdForItem locates the action_card message that holds a given item id", () => {
+  const cardA = actionCardMessage({ id: "m-card-a", seq: 1, items: [{ id: "i1", status: "running" }] });
+  const cardB = actionCardMessage({ id: "m-card-b", seq: 2, items: [{ id: "i2", status: "waiting_decision" }] });
+
+  assert.equal(findActionCardMessageIdForItem([cardA, cardB], "i2"), "m-card-b");
+  assert.equal(findActionCardMessageIdForItem([cardA, cardB], "i1"), "m-card-a");
+});
+
+test("findActionCardMessageIdForItem returns undefined when no local message holds the item (not yet loaded/paged in)", () => {
+  const cardA = actionCardMessage({ id: "m-card-a", seq: 1, items: [{ id: "i1", status: "running" }] });
+  const other = textMessage({ id: "m-text", seq: 2, text: "hi", createdAt: new Date(2026, 6, 12, 9, 0) });
+
+  assert.equal(findActionCardMessageIdForItem([cardA, other], "missing-item"), undefined);
+});
+
+// —— computeUndoRemainingMinutes —— //
+
+test("computeUndoRemainingMinutes rounds up to the nearest minute so a near-expiry deadline doesn't read as 0", () => {
+  const now = Date.parse("2026-07-12T09:00:00.000Z");
+  const deadline = "2026-07-12T09:00:05.000Z"; // 5 seconds out
+  assert.equal(computeUndoRemainingMinutes(deadline, now), 1);
+});
+
+test("computeUndoRemainingMinutes returns the exact minute count for a round interval", () => {
+  const now = Date.parse("2026-07-12T09:00:00.000Z");
+  const deadline = "2026-07-12T09:09:00.000Z";
+  assert.equal(computeUndoRemainingMinutes(deadline, now), 9);
+});
+
+test("computeUndoRemainingMinutes returns undefined once the deadline has passed", () => {
+  const now = Date.parse("2026-07-12T09:10:00.000Z");
+  const deadline = "2026-07-12T09:09:59.000Z";
+  assert.equal(computeUndoRemainingMinutes(deadline, now), undefined);
+});
+
+test("computeUndoRemainingMinutes returns undefined exactly at the deadline (not still-undoable)", () => {
+  const now = Date.parse("2026-07-12T09:09:00.000Z");
+  const deadline = "2026-07-12T09:09:00.000Z";
+  assert.equal(computeUndoRemainingMinutes(deadline, now), undefined);
+});
+
+test("computeUndoRemainingMinutes returns undefined for an unparseable timestamp", () => {
+  assert.equal(computeUndoRemainingMinutes("not-a-date", Date.now()), undefined);
 });

@@ -40,8 +40,23 @@ function member(input: Partial<WorkbenchMemberVM> & { user_id: string; nickname:
   };
 }
 
-function ctxWith(members: WorkbenchMemberVM[], currentUserId?: string): ChatRenderContext {
-  return { locale: "zh-CN", members: membersById(members), currentUserId };
+function ctxWith(
+  members: WorkbenchMemberVM[],
+  currentUserId?: string,
+  extra?: Partial<Pick<ChatRenderContext, "now" | "openReassignItemId">>
+): ChatRenderContext {
+  return { locale: "zh-CN", members: membersById(members), currentUserId, ...extra };
+}
+
+function actionCardItem(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    id: "i1",
+    kind: "decide",
+    title_md: "预算是否砍半",
+    confidence: "low",
+    status: "waiting_decision",
+    ...overrides
+  };
 }
 
 function baseMessage(overrides: Partial<ConversationMessageVM> = {}): ConversationMessageVM {
@@ -365,6 +380,313 @@ test("renderMessageHtml escapes action_card item titles even when the item carri
   );
   assert.doesNotMatch(html, /<img/u);
   assert.match(html, /&lt;img/u);
+});
+
+// —— R12 P0-A1：行动卡条目的操作按钮（decide 三键 / execute 撤销 / 非本人纯文字） —— //
+
+test("renderMessageHtml renders claim/reassign/defer buttons for a decide item assigned to the current user", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    ctxWith([member({ user_id: "me", nickname: "张三" })], "me")
+  );
+  assert.match(html, /data-wb-chat-actioncard-decide="claim"/u);
+  assert.match(html, /data-wb-chat-actioncard-reassign-toggle="i1"/u);
+  assert.match(html, /data-wb-chat-actioncard-decide="defer"/u);
+  assert.match(html, /交给我干/u);
+  assert.match(html, /派给别人/u);
+  assert.match(html, /先不动/u);
+  // 未展开成员选择器时不渲染任何成员行。
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-reassign-to=/u);
+});
+
+test("renderMessageHtml renders a plain 等 @昵称 拍板 text (no buttons) for a decide item assigned to someone else", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "other" })] }
+    }),
+    ctxWith([member({ user_id: "other", nickname: "李四" })], "me")
+  );
+  assert.match(html, /等 @李四 拍板/u);
+  assert.doesNotMatch(html, /<button/u);
+});
+
+test("renderMessageHtml falls back to 负责人 when the assignee's nickname can't be resolved", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "ghost" })] }
+    }),
+    ctxWith([], "me")
+  );
+  assert.match(html, /等 @负责人 拍板/u);
+});
+
+test("renderMessageHtml gives an unassigned decide item the same honest waiting text instead of a stray button", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: null })] }
+    }),
+    ctxWith([], "me")
+  );
+  assert.doesNotMatch(html, /<button/u);
+  assert.match(html, /等 @负责人 拍板/u);
+});
+
+test("renderMessageHtml renders no action row for a decide item that's already been claimed (status moved past waiting_decision)", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me", status: "running" })] }
+    }),
+    ctxWith([], "me")
+  );
+  assert.doesNotMatch(html, /<button/u);
+  assert.doesNotMatch(html, /拍板/u);
+});
+
+test("renderMessageHtml opens the reassign member picker when openReassignItemId matches, listing members other than self", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    ctxWith(
+      [member({ user_id: "me", nickname: "张三" }), member({ user_id: "other", nickname: "李四" })],
+      "me",
+      { openReassignItemId: "i1" }
+    )
+  );
+  assert.match(html, /data-wb-chat-actioncard-reassign-to="other"/u);
+  assert.match(html, /李四/u);
+  // 自己不出现在"派给别人"的候选列表里——claim 已经覆盖那条路径。
+  assert.doesNotMatch(html, /data-wb-chat-actioncard-reassign-to="me"/u);
+});
+
+test("renderMessageHtml shows an honest empty state in the reassign picker when there's no one else to pick", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    ctxWith([member({ user_id: "me", nickname: "张三" })], "me", { openReassignItemId: "i1" })
+  );
+  assert.match(html, /没有其他成员可选/u);
+});
+
+test("renderMessageHtml renders an undo button with remaining minutes for a running execute item assigned to the current user within the undo window", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [
+          actionCardItem({
+            id: "i2",
+            kind: "execute",
+            status: "running",
+            assignee_user_id: "me",
+            undo_deadline_at: "2026-07-12T09:09:00.000Z"
+          })
+        ]
+      }
+    }),
+    ctxWith([], "me", { now: new Date("2026-07-12T09:00:00.000Z") })
+  );
+  assert.match(html, /data-wb-chat-actioncard-undo="i2"/u);
+  assert.match(html, /9 分钟内/u);
+  assert.match(html, /wh-wb-act--danger/u);
+});
+
+test("renderMessageHtml renders no undo button once the undo window has passed", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [
+          actionCardItem({
+            id: "i2",
+            kind: "execute",
+            status: "running",
+            assignee_user_id: "me",
+            undo_deadline_at: "2026-07-12T08:59:00.000Z"
+          })
+        ]
+      }
+    }),
+    ctxWith([], "me", { now: new Date("2026-07-12T09:00:00.000Z") })
+  );
+  assert.doesNotMatch(html, /<button/u);
+});
+
+test("renderMessageHtml renders no undo button for an execute item that's running but has no undo deadline", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [actionCardItem({ id: "i2", kind: "execute", status: "running", assignee_user_id: "me", undo_deadline_at: null })]
+      }
+    }),
+    ctxWith([], "me")
+  );
+  assert.doesNotMatch(html, /<button/u);
+});
+
+test("renderMessageHtml renders no undo button for someone else's running execute item, even within the undo window", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [
+          actionCardItem({
+            id: "i2",
+            kind: "execute",
+            status: "running",
+            assignee_user_id: "other",
+            undo_deadline_at: "2026-07-12T09:09:00.000Z"
+          })
+        ]
+      }
+    }),
+    ctxWith([], "me", { now: new Date("2026-07-12T09:00:00.000Z") })
+  );
+  assert.doesNotMatch(html, /<button/u);
+});
+
+test("renderMessageHtml never renders an action row for an undone item, even if it would otherwise qualify", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [
+          actionCardItem({
+            id: "i2",
+            kind: "execute",
+            status: "undone",
+            assignee_user_id: "me",
+            undo_deadline_at: "2026-07-12T09:09:00.000Z"
+          })
+        ]
+      }
+    }),
+    ctxWith([], "me", { now: new Date("2026-07-12T09:00:00.000Z") })
+  );
+  assert.doesNotMatch(html, /<button/u);
+  assert.match(html, /已撤销/u);
+});
+
+test("renderMessageHtml drops an item missing an id rather than rendering a button with no target", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [{ kind: "decide", title_md: "没有 id 的条目", confidence: "low", status: "waiting_decision", assignee_user_id: "me" }]
+      }
+    }),
+    ctxWith([], "me")
+  );
+  assert.doesNotMatch(html, /<button/u);
+  assert.doesNotMatch(html, /没有 id 的条目/u);
+});
+
+test("renderMessageHtml shows a mild inline error hint under the decide actions when actionCardItemErrors has an entry for that item", () => {
+  const ctx = ctxWith([member({ user_id: "me", nickname: "张三" })], "me");
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    { ...ctx, actionCardItemErrors: new Map([["i1", "这条已经被处理过了。"]]) }
+  );
+  assert.match(html, /这条已经被处理过了。/u);
+});
+
+test("renderMessageHtml shows the inline error hint under the execute/undo actions too, escaped", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: {
+        card_id: "card-1",
+        items: [
+          actionCardItem({
+            id: "i2",
+            kind: "execute",
+            status: "running",
+            assignee_user_id: "me",
+            undo_deadline_at: "2026-07-12T09:09:00.000Z"
+          })
+        ]
+      }
+    }),
+    { ...ctxWith([], "me", { now: new Date("2026-07-12T09:00:00.000Z") }), actionCardItemErrors: new Map([["i2", "<b>x</b>"]]) }
+  );
+  assert.match(html, /&lt;b&gt;x&lt;\/b&gt;/u);
+  assert.doesNotMatch(html, /<b>x<\/b>/u);
+});
+
+test("renderMessageHtml renders no error hint for an item that isn't in actionCardItemErrors", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    { ...ctxWith([], "me"), actionCardItemErrors: new Map([["some-other-item", "不相关的错误"]]) }
+  );
+  assert.doesNotMatch(html, /不相关的错误/u);
+});
+
+test("renderMessageHtml no longer renders the stale 后续批次接入 placeholder note", () => {
+  const html = renderMessageHtml(
+    baseMessage({
+      kind: "action_card",
+      sender_type: "cuu",
+      sender_user_id: null,
+      content: { card_id: "card-1", items: [actionCardItem({ assignee_user_id: "me" })] }
+    }),
+    ctxWith([], "me")
+  );
+  assert.doesNotMatch(html, /后续批次接入/u);
 });
 
 test("renderMessageHtml gives tool_note a minimal, honest fallback label", () => {

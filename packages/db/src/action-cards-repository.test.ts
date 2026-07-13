@@ -250,6 +250,13 @@ test("createOrAppendCard opens a new card when no active card exists, atomically
   assert.equal((messageInsert?.valuesValue as Record<string, unknown>)["seq"], 6);
   assert.equal((messageInsert?.valuesValue as Record<string, unknown>)["kind"], "action_card");
   assert.equal((messageInsert?.valuesValue as Record<string, unknown>)["senderType"], "cuu");
+  // R12 P0-A1：新卡的消息内容摘要要带 assignee_user_id/undo_deadline_at，桌面客户端渲染操作按钮
+  // 靠这两个字段判断「谁能点」——不能只有 GET 才拿得到。
+  const newCardContentJson = (messageInsert?.valuesValue as Record<string, unknown>)["contentJson"] as {
+    items: Array<Record<string, unknown>>;
+  };
+  assert.equal(newCardContentJson.items[0]?.["assignee_user_id"], userId);
+  assert.equal(newCardContentJson.items[0]?.["undo_deadline_at"], null);
 
   const itemInsert = queries[5];
   assert.equal(itemInsert?.targetTable, actionCardItems);
@@ -349,7 +356,7 @@ test("createOrAppendCard raises a sequence-allocation error when the CAS update 
 // ── createOrAppendCard: append path ─────────────────────────────────────────────────
 
 test("createOrAppendCard appends to the active card in place, extends ordinals, and rewrites the card message", async () => {
-  const existingItem = itemRow({ ordinal: 0 });
+  const existingItem = itemRow({ ordinal: 0, undoDeadlineAt: new Date("2026-07-12T09:05:00.000Z") });
   const newItem = itemRow({ id: "new-item", ordinal: 1, kind: "decide", titleMd: "预算是否砍半", confidence: "low" });
   const updatedMessage = { id: messageId, conversationId, seq: 3, senderType: "cuu", senderUserId: null, kind: "action_card", contentJson: {}, threadRootId: null, createdAt: now };
   const { db, queries, transactions } = createQueryRecorder([
@@ -385,8 +392,14 @@ test("createOrAppendCard appends to the active card in place, extends ordinals, 
   const messageUpdate = queries[6];
   assert.equal(messageUpdate?.targetTable, conversationMessages);
   assert.equal(referencesAny(messageUpdate, conversationMessages.id), true);
-  const setValue = messageUpdate?.setValue as { contentJson?: { items?: unknown[] } };
+  const setValue = messageUpdate?.setValue as { contentJson?: { items?: Array<Record<string, unknown>> } };
   assert.equal(setValue?.contentJson?.items?.length, 2, "card message content must reflect the full item set, not just the new items");
+  // R12 P0-A1：追加路径的重写内容也要带上这两个字段（且 Date 序列化成 ISO 字符串），
+  // 否则改派/撤销刚发生时，聊天里当场刷出来的摘要还是旧值。
+  assert.equal(setValue?.contentJson?.items?.[0]?.["assignee_user_id"], userId);
+  assert.equal(setValue?.contentJson?.items?.[0]?.["undo_deadline_at"], "2026-07-12T09:05:00.000Z");
+  assert.equal(setValue?.contentJson?.items?.[1]?.["assignee_user_id"], userId);
+  assert.equal(setValue?.contentJson?.items?.[1]?.["undo_deadline_at"], null);
 
   const stateUpdate = queries[8];
   assert.equal(stateUpdate?.targetTable, conversationObserverState);

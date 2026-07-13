@@ -17,6 +17,7 @@ import { WorkHubApiError } from "@workhub/api-client";
 import type { AiMode, ConversationKind, ConversationMessageVM } from "@workhub/contracts";
 
 import {
+  decideActionCardItem,
   fetchConversationMessagesPage,
   fetchLatestConversationMessagesPage,
   fetchMyAiProfile,
@@ -26,8 +27,12 @@ import {
   requestConversationTurn,
   sendConversationFileCardMessage,
   sendConversationTextMessage,
+  undoActionCardItem,
+  type ActionCardItemDecisionAction,
+  type ActionCardItemDecisionResult,
   type ChatApiClient
 } from "./api.js";
+import { mapActionCardDecisionError, shouldReconcileActionCardOnError } from "./action-card-decision.js";
 import {
   parseIncomingActionCardUpdated,
   parseIncomingMessageCreated,
@@ -72,6 +77,7 @@ import { applyComposerChipInsertion, detectComposerTrigger, type ComposerTrigger
 import {
   DEFAULT_MESSAGE_RENDER_WINDOW,
   applyActionCardUpdate,
+  findActionCardMessageIdForItem,
   groupMessagesByDay,
   sortAndDedupeMessages,
   windowRecentMessages
@@ -213,13 +219,24 @@ export function mountChatView(
   let myMode: AiMode | undefined;
   let modePopoverOpen = false;
   let modeErrorText: string | undefined;
+  // R12 P0-A1：行动卡按钮的瞬态 UI 状态——两个都不落库：
+  //  - openReassignItemId：当前展开了"派给别人"极简成员选择器的条目 id（一次只开一个）；
+  //  - actionCardItemErrors：decide/undo 失败后的温和行内提示，按条目 id 索引，下一次对同一条目
+  //    发起操作时先清掉（见 submitActionCardDecision/submitActionCardUndo）。
+  let openReassignItemId: string | undefined;
+  let actionCardItemErrors = new Map<string, string>();
 
   const membersMap = membersById(input.members);
   const renderCtx = (): ChatRenderContext => ({
     locale: input.locale,
     members: membersMap,
     currentUserId: input.currentUserId,
-    expandedMessageIds
+    expandedMessageIds,
+    actionCardItemErrors,
+    // exactOptionalPropertyTypes：openReassignItemId 是可选字段，undefined 时整个键都不出现，
+    // 不是"键在、值是 undefined"（那样和 currentUserId 那种"键必须在、值可以是 undefined"的
+    // 字段不是一回事，TS 会拒绝后者赋给前者）。
+    ...(openReassignItemId !== undefined ? { openReassignItemId } : {})
   });
 
   container.innerHTML = `<div class="wh-wb-chat">
@@ -600,6 +617,101 @@ export function mountChatView(
     } catch {
       // best-effort，见上。
     }
+  }
+
+  // —— R12 P0-A1：行动卡条目 decide/undo 接线 —— //
+
+  function clearActionCardItemError(itemId: string): void {
+    if (!actionCardItemErrors.has(itemId)) {
+      return;
+    }
+    const next = new Map(actionCardItemErrors);
+    next.delete(itemId);
+    actionCardItemErrors = next;
+  }
+
+  function setActionCardItemError(itemId: string, text: string): void {
+    const next = new Map(actionCardItemErrors);
+    next.set(itemId, text);
+    actionCardItemErrors = next;
+  }
+
+  // decide/undo 成功后用 HTTP 响应的条目 VM 就地更新本地快照——同一条合并函数（timeline.ts 的
+  // applyActionCardUpdate）也是 SSE 回流用的那条，见其顶部注释。找不到归属消息（理论上不该发生：
+  // 按钮只会渲在本地已经持有的消息上）就静默跳过，不崩——后续 SSE 事件/reconcile 仍会补齐。
+  function applyActionCardResultLocally(itemId: string, result: ActionCardItemDecisionResult): void {
+    const messageId = findActionCardMessageIdForItem(messages, itemId);
+    if (!messageId) {
+      return;
+    }
+    const patchResult = applyActionCardUpdate(messages, {
+      messageId,
+      items: [
+        {
+          id: result.id,
+          status: result.status,
+          assigneeUserId: result.assignee_user_id,
+          undoDeadlineAt: result.undo_deadline_at
+        }
+      ]
+    });
+    if (patchResult.changed) {
+      messages = patchResult.messages;
+    }
+  }
+
+  // 409 already_decided/already_resolved：本地快照确定过期（另一个人抢先处理了，或者上一次点击其实
+  // 成功了但响应丢了）——触发一次消息重取对账，比只展示错误文案更诚实（见 action-card-decision.ts
+  // 顶部注释）。其它错误码不代表本地状态过期，不重拉。
+  function handleActionCardDecisionError(itemId: string, error: unknown): void {
+    if (disposed) {
+      return;
+    }
+    const code = error instanceof WorkHubApiError ? error.code : undefined;
+    setActionCardItemError(
+      itemId,
+      mapActionCardDecisionError(error instanceof WorkHubApiError ? { status: error.status, code: error.code } : undefined, input.locale)
+    );
+    renderScroll();
+    if (shouldReconcileActionCardOnError(code)) {
+      const messageId = findActionCardMessageIdForItem(messages, itemId);
+      if (messageId) {
+        void refreshActionCardMessage(messageId);
+      }
+    }
+  }
+
+  function submitActionCardDecision(itemId: string, action: ActionCardItemDecisionAction, assigneeUserId?: string): void {
+    clearActionCardItemError(itemId);
+    openReassignItemId = undefined;
+    renderScroll();
+    decideActionCardItem(input.client, { itemId, action, ...(assigneeUserId ? { assigneeUserId } : {}) })
+      .then((result) => {
+        if (disposed) {
+          return;
+        }
+        applyActionCardResultLocally(itemId, result);
+        renderScroll();
+      })
+      .catch((error) => {
+        handleActionCardDecisionError(itemId, error);
+      });
+  }
+
+  function submitActionCardUndo(itemId: string): void {
+    clearActionCardItemError(itemId);
+    renderScroll();
+    undoActionCardItem(input.client, { itemId })
+      .then((result) => {
+        if (disposed) {
+          return;
+        }
+        applyActionCardResultLocally(itemId, result);
+        renderScroll();
+      })
+      .catch((error) => {
+        handleActionCardDecisionError(itemId, error);
+      });
   }
 
   function connectStream(): void {
@@ -1107,6 +1219,40 @@ export function mountChatView(
         itemId: fileCardBtn.dataset.wbChatOpenFile,
         itemName: fileCardBtn.dataset.wbChatOpenFileName ?? ""
       });
+      return;
+    }
+    // R12 P0-A1：行动卡条目的操作按钮——decide 三键（交给我干/派给别人/先不动）、reassign 极简成员
+    // 选择器的展开/选中提交、execute 的撤销。
+    const decideBtn = target.closest<HTMLElement>("[data-wb-chat-actioncard-decide]");
+    if (decideBtn) {
+      const action = decideBtn.dataset.wbChatActioncardDecide as ActionCardItemDecisionAction | undefined;
+      const itemId = decideBtn.dataset.wbChatActioncardItem;
+      if (action && itemId) {
+        submitActionCardDecision(itemId, action);
+      }
+      return;
+    }
+    const reassignToggleBtn = target.closest<HTMLElement>("[data-wb-chat-actioncard-reassign-toggle]");
+    if (reassignToggleBtn) {
+      const itemId = reassignToggleBtn.dataset.wbChatActioncardReassignToggle;
+      if (itemId) {
+        openReassignItemId = openReassignItemId === itemId ? undefined : itemId;
+        renderScroll();
+      }
+      return;
+    }
+    const reassignToBtn = target.closest<HTMLElement>("[data-wb-chat-actioncard-reassign-to]");
+    if (reassignToBtn) {
+      const assigneeUserId = reassignToBtn.dataset.wbChatActioncardReassignTo;
+      const itemId = reassignToBtn.dataset.wbChatActioncardItem;
+      if (assigneeUserId && itemId) {
+        submitActionCardDecision(itemId, "reassign", assigneeUserId);
+      }
+      return;
+    }
+    const undoBtn = target.closest<HTMLElement>("[data-wb-chat-actioncard-undo]");
+    if (undoBtn?.dataset.wbChatActioncardUndo) {
+      submitActionCardUndo(undoBtn.dataset.wbChatActioncardUndo);
     }
   });
 
