@@ -18,8 +18,8 @@ use workhub_client_tauri::single_instance::single_instance_plan_from_args_for_lo
 use workhub_client_tauri::sse_worker::{spawn_default_shell_sse_workers, ShellClientToken};
 use workhub_client_tauri::tray::{
     tray_menu_action_plan_by_id_for_locale, tray_tooltip, TRAY_HIDE_MAIN_ID, TRAY_OPEN_INBOX_ID,
-    TRAY_OPEN_SETTINGS_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID, TRAY_SHOW_MAIN_ID,
-    TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID,
+    TRAY_OPEN_SETTINGS_ID, TRAY_OPEN_WORKBENCH_ID, TRAY_QUIT_ID, TRAY_RESTORE_PET_INTERACTION_ID,
+    TRAY_SHOW_MAIN_ID, TRAY_TOGGLE_PET_ID, WORKHUB_TRAY_ID,
 };
 use workhub_client_tauri::window_controls::{
     focus_main_route as focus_main_route_plan, hide_main_window as hide_main_window_plan,
@@ -935,12 +935,31 @@ fn create_workbench_window_if_missing(
     .closable(workbench_config.closable)
     .fullscreen(workbench_config.fullscreen)
     .focused(workbench_config.focus)
+    // Cross-platform base: frameless + fully self-drawn chrome (min/close buttons in shell.ts).
+    // The macOS branch below overrides this to native traffic lights.
     .decorations(workbench_config.decorations)
     .always_on_top(workbench_config.always_on_top)
     .skip_taskbar(workbench_config.skip_taskbar)
     .visible(workbench_config.visible)
     .transparent(true)
-    .background_color(Color(0, 0, 0, 0));
+    .background_color(Color(0, 0, 0, 0))
+    // R13 批 V2：圆角工艺三层打架的第二块——阴影交给原生 NSWindow.hasShadow（webview 侧的
+    // CSS box-shadow 已删，见 css.ts），显式声明而不依赖 tao 的隐式默认值。
+    .shadow(true);
+    // R13 批 V2：macOS 用原生红绿灯（decorations:true + titleBarStyle Overlay + hiddenTitle），
+    // 标题栏透明、内容全出血（webview 撑满整个窗口，webview 侧的 .wh-wb-titlebar 仍渲染，只是自绘的
+    // min/close 按钮不再渲染——见 shell.ts renderWorkbenchShellHtml 的 nativeWindowChrome 分支）。
+    // trafficLightPosition 把红绿灯挪进玻璃内部的呼吸空间，跟 css.ts 的 .wh-wb-titlebar--native
+    // padding-left 对应（真机像素值待集成者核对，见批 V2 报告的验收清单）。用户已拍板 Windows 暂不做
+    // 平台分支，非 macOS 维持上面的 decorations:false 全自绘路径不变。
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .decorations(true)
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .traffic_light_position(tauri::LogicalPosition::new(18.0, 16.0));
+    }
     if let (Some(min_width), Some(min_height)) =
         (workbench_config.min_width, workbench_config.min_height)
     {
@@ -1242,6 +1261,10 @@ fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), S
         .ok_or_else(|| "missing open-inbox tray action".to_string())?;
     let open_settings = tray_menu_action_plan_by_id_for_locale(TRAY_OPEN_SETTINGS_ID, locale)
         .ok_or_else(|| "missing open-settings tray action".to_string())?;
+    // R13 批 V2：托盘加「打开工作台」，跟 open_settings 同款挂法（构建 MenuItemBuilder → 塞进
+    // MenuBuilder），行为特判在 handle_tray_action 里直接调 open_workbench。
+    let open_workbench = tray_menu_action_plan_by_id_for_locale(TRAY_OPEN_WORKBENCH_ID, locale)
+        .ok_or_else(|| "missing open-workbench tray action".to_string())?;
     let quit = tray_menu_action_plan_by_id_for_locale(TRAY_QUIT_ID, locale)
         .ok_or_else(|| "missing quit tray action".to_string())?;
 
@@ -1269,6 +1292,10 @@ fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), S
         MenuItemBuilder::with_id(open_settings.id.as_str(), open_settings.label.as_str())
             .build(app)
             .map_err(|error| format!("failed to build open-settings tray item: {error}"))?;
+    let open_workbench_item =
+        MenuItemBuilder::with_id(open_workbench.id.as_str(), open_workbench.label.as_str())
+            .build(app)
+            .map_err(|error| format!("failed to build open-workbench tray item: {error}"))?;
     let quit_item = MenuItemBuilder::with_id(quit.id.as_str(), quit.label.as_str())
         .build(app)
         .map_err(|error| format!("failed to build quit tray item: {error}"))?;
@@ -1281,6 +1308,7 @@ fn install_workhub_tray(app: &tauri::App, locale: WorkHubLocale) -> Result<(), S
         .item(&restore_pet_item)
         .item(&open_inbox_item)
         .item(&open_settings_item)
+        .item(&open_workbench_item)
         .separator()
         .item(&quit_item)
         .build()
@@ -1357,6 +1385,14 @@ fn handle_tray_action(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
 
     if plan.id == TRAY_RESTORE_PET_INTERACTION_ID {
         restore_pet_window_interaction_state(app)?;
+    }
+
+    // R13 批 V2：「打开工作台」不走通用 window_control（那套假定窗口已存在）——workbench 窗
+    // create:false 按需建，且"无参数=复用上次选中项目/前端默认态"这个语义已经在 open_workbench
+    // 自己的深链管线里定义好了（同 workhub://workbench 深链、同 create_workbench_window_if_missing
+    // 的存在即复用逻辑），这里直接复用它，不新造第二条控制路。
+    if plan.id == TRAY_OPEN_WORKBENCH_ID {
+        open_workbench(app.clone(), None, None)?;
     }
 
     if let Some(control) = plan.window_control.clone() {
@@ -1522,6 +1558,15 @@ fn load_workhub_shell_config(app: &tauri::AppHandle) -> Result<WorkHubShellConfi
         .map_err(|error| format!("failed to load shell config {}: {error:?}", path.display()))
 }
 
+// findings[#132/H15] + R13 批 V2：main/workbench 都是 create:false 复用同一个窗口实例（托盘/深链/
+// 通知/open_workbench 都要能再次唤起），关闭按钮（不管是自绘的还是 macOS 原生红绿灯的）语义都是
+// 「藏起来」而不是「销毁」——销毁后下次唤起都会先撞见 get_webview_window(label)==None。pet 窗口
+// visible:false 也是常驻复用，但它从不带 OS 关闭按钮（decorations:false 全自绘，且没有关闭 UI），
+// 不需要拦截。抽成纯函数是因为这条判断此前内联在 on_window_event 闭包里、完全没有测试覆盖过。
+fn should_hide_instead_of_close(window_label: &str) -> bool {
+    matches!(window_label, "main" | "workbench")
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
@@ -1539,8 +1584,14 @@ fn main() {
             // findings[#132/H15]：主窗口带 OS 关闭按钮(tauri.conf decorations:true)，Tauri v2 默认关闭即销毁 webview，
             // 之后托盘/深链/通知再想唤起主窗都会因 get_webview_window("main")==None 而失败（execute_window_control 报错），
             // 等于关一次主窗就永久失联。改为「关闭即收进托盘」：拦截 main 窗的 CloseRequested、阻止真正关闭、改为隐藏；
-            // show_main_window（托盘/深链/通知触发）仍可把它重新显示出来。pet 等其它 label 的窗口行为不变。
-            if window.label() == "main" {
+            // show_main_window（托盘/深链/通知触发）仍可把它重新显示出来。
+            // R13 批 V2：workbench 窗在 macOS 换成原生红绿灯（decorations:true + titleBarStyle Overlay）后，
+            // 点原生关闭按钮会触发同样的默认销毁行为——workbench 窗是 create:false 复用同一个实例
+            // （create_workbench_window_if_missing 先查存在再建），销毁一次就必须重新走一遍窗口构建，
+            // 且下次 open_workbench/深链/托盘唤起都会先撞见"窗口不存在"。语义上关闭按钮本就是「藏起来」
+            // （shell.ts 自绘关闭按钮此前就是调 hide 不是 close，见 window-bridge.ts），拦截逻辑照 main 窗同款处理，
+            // 让原生红绿灯的关闭按钮和自绘关闭按钮语义一致。pet 等其它 label 的窗口行为不变。
+            if should_hide_instead_of_close(window.label()) {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window.hide();
@@ -1657,6 +1708,14 @@ mod tests {
                 .find(|(key, _)| *key == name)
                 .map(|(_, value)| value.to_string())
         }
+    }
+
+    #[test]
+    fn should_hide_instead_of_close_covers_main_and_workbench_but_not_pet_or_unknown_labels() {
+        assert!(should_hide_instead_of_close("main"));
+        assert!(should_hide_instead_of_close("workbench"));
+        assert!(!should_hide_instead_of_close("pet"));
+        assert!(!should_hide_instead_of_close("some-other-window"));
     }
 
     #[test]

@@ -1,8 +1,11 @@
 // WorkHub 桌面 · 工作台三栏外壳：左栏项目树 / 中栏内容 / 右栏情境面板（可收放）。
-// 无边框透明窗——顶部拖拽区靠纯 CSS `-webkit-app-region:drag`（浏览器/webview 原生行为，不经 Tauri IPC，
+// 透明窗——顶部拖拽区靠纯 CSS `-webkit-app-region:drag`（浏览器/webview 原生行为，不经 Tauri IPC，
 // 参照 apps/desktop-webview/src/browser.ts 的 .wh-cmd-home 用法）；关闭/最小化走 window-bridge.ts 的真实
-// Tauri Window API（真机验收前请先确认 capabilities/default.json 是否已把 "workbench" 加进 windows 列表，
-// 见 window-bridge.ts 顶部注释——这是范围外的 Rust/配置缺口，本批不修）。
+// Tauri Window API（capabilities/workbench.json 已授权 hide/minimize/start-dragging）。
+// R13 批 V2：macOS 原生红绿灯接管标题栏控制（Rust 侧 create_workbench_window_if_missing 的平台分支：
+// decorations:true + titleBarStyle Overlay + hiddenTitle + trafficLightPosition）——自绘的 min/close
+// 按钮此时整个不渲染（renderWorkbenchShellHtml 的 nativeWindowChrome 分支，见 isMacOsWebview 判定），
+// 不是 CSS 藏起来，两套控件叠一起是 bug 不是冗余保险。非 macOS 维持 decorations:false 全套自绘。
 
 import type { WorkHubApiClient } from "@workhub/api-client";
 import type { WorkbenchPageVM } from "@workhub/contracts";
@@ -18,7 +21,7 @@ import { workbenchIcons } from "./icons.js";
 import { createWorkbenchInterruptBroadcaster } from "./interrupt-broadcast.js";
 import { mountWorkbenchRail, type WorkbenchRailApiClient } from "./rail.js";
 import { createWorkbenchStore, type WorkbenchStore, type WorkbenchStoreState } from "./store.js";
-import { resolveWorkbenchWindowBridge } from "./window-bridge.js";
+import { isMacOsWebview, resolveWorkbenchWindowBridge } from "./window-bridge.js";
 
 type Locale = "zh-CN" | "en-US";
 
@@ -49,18 +52,32 @@ export function renderWorkbenchDocumentHead(): string {
   return `<style>${appleGlassDesignSystemCss}${workbenchCss}</style>`;
 }
 
+// R13 批 V2:macOS 用原生红绿灯接管标题栏控制（titleBarStyle Overlay，见 main.rs
+// create_workbench_window_if_missing 的平台分支）——nativeWindowChrome 为真时不渲染自绘的
+// 最小化/关闭按钮（不是 CSS 藏起来，直接不生成这段 DOM，04 §4 铁律 3：没有真接线的控件不能看起来能点，
+// 这里反过来——有原生控件接管时，自绘控件本身就是多余且会重叠的假控件）。默认 false 保持既有非 macOS
+// 全自绘行为不变（shell.test.ts 既有断言按单参数调用，行为不受影响）。
+export type WorkbenchShellChromeOptions = {
+  nativeWindowChrome?: boolean;
+};
+
 // 静态骨架：三栏容器 + 拖拽区 + 关闭/最小化控件。中栏/左栏/右栏内容由 mountWorkbenchShell 按状态填入。
-export function renderWorkbenchShellHtml(locale: Locale): string {
+export function renderWorkbenchShellHtml(locale: Locale, chrome: WorkbenchShellChromeOptions = {}): string {
   const zh = locale === "zh-CN";
-  return `<div class="wh-ds wh-wb">
-    <div class="wh-wb-window" data-wb-window>
-      <div class="wh-wb-titlebar" data-wb-titlebar>
-        <span class="wh-wb-crumb" data-wb-crumb>${zh ? "WorkHub 工作台" : "WorkHub Workbench"}</span>
-        <div class="wh-wb-titlebar-spacer"></div>
-        <div class="wh-wb-titlebar-controls">
+  const nativeWindowChrome = chrome.nativeWindowChrome === true;
+  const titlebarClass = nativeWindowChrome ? "wh-wb-titlebar wh-wb-titlebar--native" : "wh-wb-titlebar";
+  const titlebarControlsHtml = nativeWindowChrome
+    ? ""
+    : `<div class="wh-wb-titlebar-controls">
           <button type="button" class="wh-wb-winbtn" data-wb-minimize aria-label="${zh ? "最小化" : "Minimize"}">${workbenchIcons.minimize}</button>
           <button type="button" class="wh-wb-winbtn wh-wb-winbtn--close" data-wb-close aria-label="${zh ? "关闭" : "Close"}">${workbenchIcons.close}</button>
-        </div>
+        </div>`;
+  return `<div class="wh-ds wh-wb">
+    <div class="wh-wb-window" data-wb-window>
+      <div class="${titlebarClass}" data-wb-titlebar>
+        <span class="wh-wb-crumb" data-wb-crumb>${zh ? "WorkHub 工作台" : "WorkHub Workbench"}</span>
+        <div class="wh-wb-titlebar-spacer"></div>
+        ${titlebarControlsHtml}
       </div>
       <div class="wh-wb-body">
         <div class="wh-wb-rail" data-wb-rail></div>
@@ -203,7 +220,11 @@ export function mountWorkbenchShell(
     driveMountKey = undefined;
   };
 
-  root.innerHTML = renderWorkbenchDocumentHead() + renderWorkbenchShellHtml(input.locale);
+  // R13 批 V2:macOS 上 Rust 侧把 workbench 窗切成原生红绿灯（decorations:true + titleBarStyle
+  // Overlay），自绘的 min/close 按钮就不该再渲染——不然两套控件叠一起。非 macOS（decorations:false）
+  // 走原来的全自绘路径，行为不变。
+  const nativeWindowChrome = isMacOsWebview(doc.defaultView ?? globalThis);
+  root.innerHTML = renderWorkbenchDocumentHead() + renderWorkbenchShellHtml(input.locale, { nativeWindowChrome });
   const railEl = root.querySelector<HTMLElement>("[data-wb-rail]");
   const centerEl = root.querySelector<HTMLElement>("[data-wb-center]");
   const sideEl = root.querySelector<HTMLElement>("[data-wb-side]");

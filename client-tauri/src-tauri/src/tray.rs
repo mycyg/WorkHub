@@ -16,6 +16,13 @@ pub const TRAY_TOGGLE_PET_ID: &str = "toggle-pet";
 pub const TRAY_RESTORE_PET_INTERACTION_ID: &str = "restore-pet-interaction";
 pub const TRAY_OPEN_INBOX_ID: &str = "open-inbox";
 pub const TRAY_OPEN_SETTINGS_ID: &str = "open-settings";
+// R13 批 V2：托盘加「打开工作台」。这个动作不走 ShellWindowControlPlan/execute_window_control
+// 那套通用窗口控制（那套假定窗口已存在，`focus_main_route` 也只认 main 窗的 `/`-前缀前端路由）——
+// workbench 窗是 create:false 按需建（create_workbench_window_if_missing），且真正的"打开工作台"
+// 语义（无参数=复用上次选中项目/前端默认态）已经由 `open_workbench` 这个 tauri::command 定义好了，
+// 就是深链 `workhub://workbench` 的同一条管线。所以这个 kind 的 window_control 留空（同 Quit 的先例），
+// main.rs 的 handle_tray_action 特判这个 id 直接调 open_workbench(app, None, None)。
+pub const TRAY_OPEN_WORKBENCH_ID: &str = "open-workbench";
 pub const TRAY_QUIT_ID: &str = "quit";
 
 pub const MAIN_TRAY_FOCUS_ROUTE: &str = "/";
@@ -31,6 +38,7 @@ pub enum TrayMenuActionKind {
     RestorePetInteraction,
     OpenInbox,
     OpenSettings,
+    OpenWorkbench,
     Quit,
 }
 
@@ -81,6 +89,11 @@ pub fn tray_menu_items(locale: WorkHubLocale) -> Vec<TrayMenuActionPlan> {
             TrayMenuActionKind::OpenSettings,
         ),
         tray_menu_action_plan(
+            TRAY_OPEN_WORKBENCH_ID,
+            tray_label(locale, TrayMenuActionKind::OpenWorkbench),
+            TrayMenuActionKind::OpenWorkbench,
+        ),
+        tray_menu_action_plan(
             TRAY_QUIT_ID,
             tray_label(locale, TrayMenuActionKind::Quit),
             TrayMenuActionKind::Quit,
@@ -116,6 +129,7 @@ fn tray_label(locale: WorkHubLocale, kind: TrayMenuActionKind) -> &'static str {
         (WorkHubLocale::ZhCn, TrayMenuActionKind::RestorePetInteraction) => "恢复 Cuu 交互",
         (WorkHubLocale::ZhCn, TrayMenuActionKind::OpenInbox) => "打开收件箱",
         (WorkHubLocale::ZhCn, TrayMenuActionKind::OpenSettings) => "设置",
+        (WorkHubLocale::ZhCn, TrayMenuActionKind::OpenWorkbench) => "打开工作台",
         (WorkHubLocale::ZhCn, TrayMenuActionKind::Quit) => "退出 WorkHub",
         (WorkHubLocale::EnUs, TrayMenuActionKind::ShowMain) => "Open WorkHub",
         (WorkHubLocale::EnUs, TrayMenuActionKind::HideMain) => "Hide main window",
@@ -125,6 +139,7 @@ fn tray_label(locale: WorkHubLocale, kind: TrayMenuActionKind) -> &'static str {
         }
         (WorkHubLocale::EnUs, TrayMenuActionKind::OpenInbox) => "Open inbox",
         (WorkHubLocale::EnUs, TrayMenuActionKind::OpenSettings) => "Settings",
+        (WorkHubLocale::EnUs, TrayMenuActionKind::OpenWorkbench) => "Open workbench",
         (WorkHubLocale::EnUs, TrayMenuActionKind::Quit) => "Quit WorkHub",
     }
 }
@@ -143,6 +158,9 @@ fn tray_menu_action_plan(id: &str, label: &str, kind: TrayMenuActionKind) -> Tra
         TrayMenuActionKind::OpenSettings => {
             focus_main_route(ShellWindowControlSource::Tray, SETTINGS_TRAY_ROUTE).ok()
         }
+        // 特判在 main.rs 的 handle_tray_action：直接调 open_workbench(app, None, None)，
+        // 不走通用 window_control（见上面 TRAY_OPEN_WORKBENCH_ID 的注释）。
+        TrayMenuActionKind::OpenWorkbench => None,
         TrayMenuActionKind::Quit => None,
     };
 
@@ -173,7 +191,7 @@ mod tests {
             .map(|item| item.id.as_str())
             .collect::<HashSet<_>>();
 
-        assert_eq!(items.len(), 7);
+        assert_eq!(items.len(), 8);
         assert_eq!(ids.len(), items.len());
         assert!(ids.contains(TRAY_SHOW_MAIN_ID));
         assert!(ids.contains(TRAY_HIDE_MAIN_ID));
@@ -181,6 +199,7 @@ mod tests {
         assert!(ids.contains(TRAY_RESTORE_PET_INTERACTION_ID));
         assert!(ids.contains(TRAY_OPEN_INBOX_ID));
         assert!(ids.contains(TRAY_OPEN_SETTINGS_ID));
+        assert!(ids.contains(TRAY_OPEN_WORKBENCH_ID));
         assert!(ids.contains(TRAY_QUIT_ID));
     }
 
@@ -282,5 +301,30 @@ mod tests {
         assert_eq!(plan.kind, TrayMenuActionKind::Quit);
         assert!(plan.exits_app);
         assert_eq!(plan.window_control, None);
+    }
+
+    // R13 批 V2：托盘「打开工作台」不走通用 ShellWindowControlPlan（workbench 窗按需建、
+    // open_workbench 自己的深链管线才知道怎么处理"无参数"），main.rs 的 handle_tray_action 特判这个
+    // id 直接调 open_workbench(app, None, None)——这里只锁住 id/label/kind 契约不漂移，不锁具体调用
+    // （那部分只能在 main.rs 里用集成测试或真机验）。
+    #[test]
+    fn open_workbench_action_claims_no_generic_window_control_and_does_not_exit_the_app() {
+        let plan = tray_menu_action_plan_by_id(TRAY_OPEN_WORKBENCH_ID).unwrap();
+
+        assert_eq!(plan.kind, TrayMenuActionKind::OpenWorkbench);
+        assert_eq!(plan.window_control, None);
+        assert!(!plan.exits_app);
+        assert_eq!(
+            tray_menu_action_plan_by_id_for_locale(TRAY_OPEN_WORKBENCH_ID, WorkHubLocale::ZhCn)
+                .unwrap()
+                .label,
+            "打开工作台"
+        );
+        assert_eq!(
+            tray_menu_action_plan_by_id_for_locale(TRAY_OPEN_WORKBENCH_ID, WorkHubLocale::EnUs)
+                .unwrap()
+                .label,
+            "Open workbench"
+        );
     }
 }
