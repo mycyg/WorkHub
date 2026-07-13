@@ -44,6 +44,7 @@ import {
 import {
   membersById,
   modePatchFailedText,
+  reassignPickerMemberIds,
   renderChatEmptyStateHtml,
   renderComingSoonPickerHtml,
   renderComposerHtml,
@@ -124,6 +125,10 @@ const TYPING_PING_MIN_INTERVAL_MS = 2000;
 const FILE_SEARCH_DEBOUNCE_MS = 250;
 const TYPING_PRUNE_INTERVAL_MS = 750;
 const MAX_PICKER_RESULTS = 8;
+// AI 模式弹层的档位数——render.ts 的 AI_MODE_LEVELS 是私有 const（[1,2,3,4,5]），这里不额外导出
+// 它来对齐，五档是 00-interaction-design.md 定死的常量，跟既有点击处理器里 `level <= 5` 的魔法数
+// 同一个来源。
+const MODE_LEVEL_COUNT = 5;
 // R12 批8：滚到顶（scrollTop 小于这个像素阈值）自动触发「加载更早」，同「贴底」判定
 // （renderScroll 里 wasNearBottom 的 48px）同一档量级。
 const SCROLL_TOP_LOAD_EARLIER_PX = 48;
@@ -148,6 +153,36 @@ export function addAttachment(list: readonly ComposerAttachmentChip[], next: Com
 
 export function removeAttachment(list: readonly ComposerAttachmentChip[], driveItemId: string): ComposerAttachmentChip[] {
   return list.filter((attachment) => attachment.driveItemId !== driveItemId);
+}
+
+// R13 H1（键盘可达性）：@ picker / 改派 picker / 模式弹层三处可选行列表共用的高亮索引状态机——纯函数，
+// 不碰 DOM。这些列表都不再靠浏览器原生 Tab 逐行移动（render.ts 给每一行都打了 tabindex="-1"，
+// roving：容器/keydown 处理函数才是"管理焦点"的那个,不是原生 Tab 顺序),方向键改的是这里算出来的
+// 索引，Enter 用它去挑一条，Escape 关闭整个列表。
+
+// ArrowDown/ArrowUp（direction=+1/-1）——越过两端就绕回另一端；count<=0（没有可选项）恒定给
+// undefined，没有东西可高亮；从"还没高亮任何一项"开始按下 ArrowDown 落到第一项，ArrowUp 落到最后一项
+// （常见列表导航习惯，如 Slack/GitHub 的 @ 建议框）。
+export function movePickerHighlight(current: number | undefined, direction: 1 | -1, count: number): number | undefined {
+  if (count <= 0) {
+    return undefined;
+  }
+  if (current === undefined) {
+    return direction === 1 ? 0 : count - 1;
+  }
+  return ((current + direction) % count + count) % count;
+}
+
+// 列表内容变化后（比如 @ picker 边打字边过滤，候选数量随时在变）把上一次记的高亮索引收进新范围——
+// count<=0 时没有东西可高亮；未设置过时默认高亮第一项；越界就夹回最后一项，不做别的猜测。
+export function clampPickerHighlight(current: number | undefined, count: number): number | undefined {
+  if (count <= 0) {
+    return undefined;
+  }
+  if (current === undefined) {
+    return 0;
+  }
+  return Math.min(Math.max(current, 0), count - 1);
 }
 
 export function mountChatView(
@@ -197,6 +232,11 @@ export function mountChatView(
   let mentionMembers: MentionPickerMember[] = [];
   let mentionFiles: MentionPickerFile[] = [];
   let mentionFilesLoading = false;
+  // R13 H1（键盘可达性）：@ picker 的方向键高亮下标——下标口径是"成员在前、文件在后"拼起来的一条
+  // 序列（跟 renderMentionPickerHtml 内部的 optionIndex 计数一致）。每次触发状态变化（新字符、
+  // 切换/关闭 trigger）都在 applyTriggerState 里重置成 0——边打字边过滤这种交互，每次结果变化都
+  // 该回到"第一条最相关"，不保留上一次的位置。
+  let mentionHighlightIndex: number | undefined;
   let draftFallback = "";
   let pendingCounter = 0;
   let lastTypingPingAt = 0;
@@ -222,6 +262,9 @@ export function mountChatView(
   let myMode: AiMode | undefined;
   let modePopoverOpen = false;
   let modeErrorText: string | undefined;
+  // R13 H1（键盘可达性）：模式弹层方向键高亮下标（0..4，对应档位 1..5）——弹层一打开就定位到当前
+  // 生效的档位（没拉到 myMode 时退回第一档），不强迫用户先按一下方向键才有反应；弹层关闭时清空。
+  let modeHighlightIndex: number | undefined;
   // R12 P0-A1：行动卡按钮的瞬态 UI 状态——两个都不落库：
   //  - openReassignItemId：当前展开了"派给别人"极简成员选择器的条目 id（一次只开一个）；
   //  - actionCardItemErrors：decide/undo 失败后的温和行内提示，按条目 id 索引，下一次对同一条目
@@ -232,6 +275,9 @@ export function mountChatView(
   // 顶部注释("群里"派活问询才有这条追赶提醒；协同会话是 1:1 单聊，Cuu 有没有回应本来就在眼前，
   // 没有"错过"的场景)。undefined = 还没查完/查失败（诚实地不渲染，不是查到了"没有"）。
   let catchupNotification: Notification | undefined;
+  // R13 H1（键盘可达性）：改派选择器方向键高亮下标——跟 openReassignItemId 的开关同生共死（切换/关闭
+  // 时一起重置成 0/undefined），下标口径对齐 render.ts 导出的 reassignPickerMemberIds 顺序。
+  let reassignHighlightIndex: number | undefined;
 
   const membersMap = membersById(input.members);
   const renderCtx = (): ChatRenderContext => ({
@@ -240,10 +286,11 @@ export function mountChatView(
     currentUserId: input.currentUserId,
     expandedMessageIds,
     actionCardItemErrors,
-    // exactOptionalPropertyTypes：openReassignItemId 是可选字段，undefined 时整个键都不出现，
-    // 不是"键在、值是 undefined"（那样和 currentUserId 那种"键必须在、值可以是 undefined"的
-    // 字段不是一回事，TS 会拒绝后者赋给前者）。
-    ...(openReassignItemId !== undefined ? { openReassignItemId } : {})
+    // exactOptionalPropertyTypes：openReassignItemId/reassignHighlightIndex 都是可选字段，undefined
+    // 时整个键都不出现，不是"键在、值是 undefined"（那样和 currentUserId 那种"键必须在、值可以是
+    // undefined"的字段不是一回事，TS 会拒绝后者赋给前者）。
+    ...(openReassignItemId !== undefined ? { openReassignItemId } : {}),
+    ...(reassignHighlightIndex !== undefined ? { reassignHighlightIndex } : {})
   });
 
   container.innerHTML = `<div class="wh-wb-chat">
@@ -468,6 +515,13 @@ export function mountChatView(
     el.scrollTop = beforeTop + (el.scrollHeight - beforeHeight);
   }
 
+  // R13 H1（键盘可达性）：@ picker 当前可选行总数——成员在前、文件在后拼起来的同一条序列（跟
+  // renderMentionPickerHtml 内部的 optionIndex 计数口径一致）；mentionMembers/mentionFiles 本身已经
+  // 分别封顶到 MAX_PICKER_RESULTS，这里不用再切一刀。
+  function mentionOptionCount(): number {
+    return mentionMembers.length + mentionFiles.length;
+  }
+
   function renderPicker(): void {
     const slot = pickerSlotEl();
     if (!slot) {
@@ -478,15 +532,34 @@ export function mountChatView(
       return;
     }
     if (activeTrigger.kind === "mention") {
+      // exactOptionalPropertyTypes：highlightedIndex 是可选字段，undefined 时整个键都不出现
+      // （同 renderCtx 里 openReassignItemId 的取舍）。
+      const highlightedIndex = clampPickerHighlight(mentionHighlightIndex, mentionOptionCount());
       slot.innerHTML = renderMentionPickerHtml({
         locale: input.locale,
         members: mentionMembers,
         files: mentionFiles,
-        filesLoading: mentionFilesLoading
+        filesLoading: mentionFilesLoading,
+        ...(highlightedIndex !== undefined ? { highlightedIndex } : {})
       });
       return;
     }
     slot.innerHTML = renderComingSoonPickerHtml({ locale: input.locale, trigger: activeTrigger.trigger as "#" | "/" });
+  }
+
+  // R13 H1（键盘可达性）：方向键/Enter 选中 @ picker 当前高亮的那一行——跟鼠标点 data-wb-chat-pick-*
+  // 走的是同一条落地路径（pickMember/pickFile），只是入口从 click 换成 keydown。高亮下标越界（比如
+  // 列表在异步文件搜索落地前后缩小了）先夹回合法范围，取不到就什么都不做（没有可选项）。
+  function selectHighlightedMentionOption(): void {
+    const highlighted = clampPickerHighlight(mentionHighlightIndex, mentionOptionCount());
+    if (highlighted === undefined) {
+      return;
+    }
+    if (highlighted < mentionMembers.length) {
+      pickMember(mentionMembers[highlighted]?.userId);
+      return;
+    }
+    pickFile(mentionFiles[highlighted - mentionMembers.length]?.itemId);
   }
 
   // 重建整个 composer chrome（attachments 行/send 禁用态变化时才需要）——重建前后原样保留 textarea
@@ -530,8 +603,13 @@ export function mountChatView(
     if (!slot) {
       return;
     }
+    // exactOptionalPropertyTypes：highlightedIndex 是可选字段，undefined 时整个键都不出现。
     slot.innerHTML = isCollabConversation && modePopoverOpen
-      ? renderModePopoverHtml({ mode: myMode, locale: input.locale })
+      ? renderModePopoverHtml({
+          mode: myMode,
+          locale: input.locale,
+          ...(modeHighlightIndex !== undefined ? { highlightedIndex: modeHighlightIndex } : {})
+        })
       : "";
   }
 
@@ -762,6 +840,7 @@ export function mountChatView(
   function submitActionCardDecision(itemId: string, action: ActionCardItemDecisionAction, assigneeUserId?: string): void {
     clearActionCardItemError(itemId);
     openReassignItemId = undefined;
+    reassignHighlightIndex = undefined;
     renderScroll();
     decideActionCardItem(input.client, { itemId, action, ...(assigneeUserId ? { assigneeUserId } : {}) })
       .then((result) => {
@@ -912,6 +991,9 @@ export function mountChatView(
   function applyTriggerState(text: string, cursor: number): void {
     const trigger = detectComposerTrigger(text, cursor);
     activeTrigger = trigger ?? undefined;
+    // R13 H1（键盘可达性）：每次触发状态变化（新字符改了过滤词、切换/关闭 trigger）都回到"第一条
+    // 最相关"——边打字边过滤的列表不该保留上一次按键留下的高亮位置。
+    mentionHighlightIndex = 0;
     if (trigger?.kind === "mention") {
       mentionMembers = filterMembers(trigger.query);
       scheduleFileSearch(trigger.query);
@@ -1101,6 +1183,7 @@ export function mountChatView(
       return;
     }
     modePopoverOpen = false;
+    modeHighlightIndex = undefined;
     renderComposerChrome();
   }
 
@@ -1109,6 +1192,9 @@ export function mountChatView(
       return;
     }
     modePopoverOpen = !modePopoverOpen;
+    // R13 H1（键盘可达性）：一打开就定位到当前生效的档位（没拉到 myMode 时退回第一档）——不强迫
+    // 用户先按一下方向键才看到高亮在哪；关闭时清空，不留一个不再有意义的下标。
+    modeHighlightIndex = modePopoverOpen ? (myMode ?? 1) - 1 : undefined;
     renderComposerChrome();
   }
 
@@ -1120,6 +1206,7 @@ export function mountChatView(
       return;
     }
     modePopoverOpen = false;
+    modeHighlightIndex = undefined;
     modeErrorText = undefined;
     if (nextMode === myMode) {
       renderComposerChrome();
@@ -1222,6 +1309,31 @@ export function mountChatView(
 
   composerWrapEl.addEventListener("keydown", (event) => {
     if (!(event.target instanceof HTMLTextAreaElement) || !event.target.matches("[data-wb-chat-input]")) {
+      return;
+    }
+    // R13 H1（键盘可达性）：@ picker 打开着的时候，方向键/Enter/Escape 先喂给它——焦点仍然留在
+    // textarea 里（边打字边过滤这条 UX 不能丢，见 mentionHighlightIndex 顶部注释），只是这几个键
+    // 从"移动文本光标/发送/什么都不做"临时改道成"picker 导航"。「即将上线」的 #// picker 没有可选
+    // 行，Escape 仍然生效（关掉它），方向键/Enter 对它是 no-op（activeTrigger.kind !== "mention"）。
+    if (activeTrigger?.kind === "mention") {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        mentionHighlightIndex = movePickerHighlight(mentionHighlightIndex, event.key === "ArrowDown" ? 1 : -1, mentionOptionCount());
+        renderPicker();
+        return;
+      }
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        selectHighlightedMentionOption();
+        return;
+      }
+    }
+    if (activeTrigger && event.key === "Escape") {
+      event.preventDefault();
+      activeTrigger = undefined;
+      mentionFiles = [];
+      mentionFilesLoading = false;
+      renderPicker();
       return;
     }
     if (event.key === "Enter" && !event.shiftKey) {
@@ -1328,6 +1440,9 @@ export function mountChatView(
       const itemId = reassignToggleBtn.dataset.wbChatActioncardReassignToggle;
       if (itemId) {
         openReassignItemId = openReassignItemId === itemId ? undefined : itemId;
+        // R13 H1（键盘可达性）：开/关这个极简选择器的同时重置方向键高亮——0（第一行）打开时，
+        // undefined（没有可选项要高亮）关闭时。
+        reassignHighlightIndex = openReassignItemId !== undefined ? 0 : undefined;
         renderScroll();
       }
       return;
@@ -1388,11 +1503,27 @@ export function mountChatView(
     }
     // R12 自审修复：数字快捷键只在焦点不在可编辑区时生效——弹层开着时用户 Tab 回输入框继续打字，
     // "1"-"5" 是正常文本输入，不能被劫持成切档（Escape 不受此限：从输入框里关弹层是合理操作）。
+    // R13 H1：方向键/Enter 的键盘导航同一条守卫——editable 目标里 ArrowUp/Down/Enter 都是正常的
+    // 光标移动/换行，不该被弹层劫持。
     const target = event.target;
     if (
       target instanceof HTMLElement &&
       (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable)
     ) {
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      modeHighlightIndex = movePickerHighlight(modeHighlightIndex, event.key === "ArrowDown" ? 1 : -1, MODE_LEVEL_COUNT);
+      renderModePopover();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const highlighted = clampPickerHighlight(modeHighlightIndex, MODE_LEVEL_COUNT);
+      if (highlighted !== undefined) {
+        selectMode(highlighted + 1);
+      }
       return;
     }
     if (event.key >= "1" && event.key <= "5") {
@@ -1401,8 +1532,48 @@ export function mountChatView(
     }
   }
 
+  // R13 H1（键盘可达性）：改派选择器的方向键/Enter/Escape——跟模式弹层同一套"挂在 document 上、
+  // 靠自己的开关状态把关"取舍（openReassignItemId 是它的开关），焦点仍然停在触发它的那个「派给
+  // 别人」按钮上（点击不会主动挪走焦点），不强求真的把 DOM 焦点搬进 scrollEl 里的某一行。
+  function handleDocumentReassignKeydown(event: KeyboardEvent): void {
+    const itemId = openReassignItemId;
+    if (itemId === undefined) {
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      openReassignItemId = undefined;
+      reassignHighlightIndex = undefined;
+      renderScroll();
+      return;
+    }
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable)
+    ) {
+      return;
+    }
+    const candidateIds = reassignPickerMemberIds(membersMap, input.currentUserId);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      reassignHighlightIndex = movePickerHighlight(reassignHighlightIndex, event.key === "ArrowDown" ? 1 : -1, candidateIds.length);
+      renderScroll();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const highlighted = clampPickerHighlight(reassignHighlightIndex, candidateIds.length);
+      const userId = highlighted !== undefined ? candidateIds[highlighted] : undefined;
+      if (userId) {
+        submitActionCardDecision(itemId, "reassign", userId);
+      }
+    }
+  }
+
   doc.addEventListener("click", handleDocumentModeClick);
   doc.addEventListener("keydown", handleDocumentModeKeydown);
+  doc.addEventListener("keydown", handleDocumentReassignKeydown);
 
   // R13 批 P2：追赶提醒条本身是一个独立的小挂载点（不跟消息流一起被 renderScroll 整块重建），
   // 单独绑一个点击监听器，同 sideToggleBtn 在 shell.ts 里的既有取舍一致。
@@ -1427,6 +1598,7 @@ export function mountChatView(
       clearInterval(typingPruneTimer);
       doc.removeEventListener("click", handleDocumentModeClick);
       doc.removeEventListener("keydown", handleDocumentModeKeydown);
+      doc.removeEventListener("keydown", handleDocumentReassignKeydown);
       if (fileSearchTimer !== undefined) {
         clearTimeout(fileSearchTimer);
       }

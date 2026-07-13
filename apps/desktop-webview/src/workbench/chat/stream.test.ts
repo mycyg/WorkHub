@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  computeHeartbeatWatchdogMs,
   computeReconnectDelayMs,
   connectConversationStream,
+  DEFAULT_HEARTBEAT_WATCHDOG_MULTIPLIER,
+  DEFAULT_SERVER_HEARTBEAT_MS,
+  isHeartbeatWatchdogExpired,
   parseConversationSseFrame,
   type ConversationStreamEvent,
   type ConversationStreamStatus
@@ -67,6 +71,26 @@ test("computeReconnectDelayMs jitter only ever adds delay and never exceeds maxM
 test("computeReconnectDelayMs uses sane defaults when no options are given", () => {
   const delay = computeReconnectDelayMs(1, { random: () => 0 });
   assert.equal(delay, 500);
+});
+
+// —— R13 H1：心跳看门狗 —— //
+
+test("computeHeartbeatWatchdogMs defaults to 2.5x the server's 30s heartbeat interval", () => {
+  assert.equal(DEFAULT_SERVER_HEARTBEAT_MS, 30_000);
+  assert.equal(DEFAULT_HEARTBEAT_WATCHDOG_MULTIPLIER, 2.5);
+  assert.equal(computeHeartbeatWatchdogMs(), 75_000);
+});
+
+test("computeHeartbeatWatchdogMs multiplies whatever heartbeat/multiplier it's given", () => {
+  assert.equal(computeHeartbeatWatchdogMs(10_000, 2), 20_000);
+  assert.equal(computeHeartbeatWatchdogMs(4, 2.5), 10);
+});
+
+test("isHeartbeatWatchdogExpired is false while inside the window and true once it's reached", () => {
+  assert.equal(isHeartbeatWatchdogExpired({ lastFrameAtMs: 1_000, nowMs: 1_000, watchdogMs: 20 }), false);
+  assert.equal(isHeartbeatWatchdogExpired({ lastFrameAtMs: 1_000, nowMs: 1_019, watchdogMs: 20 }), false);
+  assert.equal(isHeartbeatWatchdogExpired({ lastFrameAtMs: 1_000, nowMs: 1_020, watchdogMs: 20 }), true);
+  assert.equal(isHeartbeatWatchdogExpired({ lastFrameAtMs: 1_000, nowMs: 5_000, watchdogMs: 20 }), true);
 });
 
 test("parseConversationSseFrame extracts the event name and joined data lines", () => {
@@ -270,4 +294,93 @@ test("when neither an injected fetch nor a global fetch exists, the stream repor
   } finally {
     globals.fetch = originalFetch;
   }
+});
+
+// —— R13 H1：心跳看门狗接线（真实小间隔计时器，跟本文件其它重连测试同一套 tick() 风格，
+// 不引入 node:test 的 mock.timers——这个 workspace 里没有任何先例用过它，真实小 ms 值更贴合既有约定） —— //
+
+test("connectConversationStream aborts and reconnects a connection that never sends a single frame (not even a heartbeat)", async () => {
+  let fetchCalls = 0;
+  const opensAtCall: number[] = [];
+  const fetchImpl = (async (_url: string, init?: RequestInit) => {
+    fetchCalls += 1;
+    // Stays open forever but never enqueues anything — simulates a half-open TCP connection where
+    // reader.read() would hang indefinitely without the watchdog stepping in.
+    return okResponse(sseStream({ signal: init?.signal as AbortSignal | undefined }));
+  }) as typeof fetch;
+
+  const handle = connectConversationStream({
+    url: "http://x/stream",
+    getClientToken: () => undefined,
+    onEvent: () => {},
+    onStatus: (status) => {
+      if (status.state === "open") {
+        opensAtCall.push(fetchCalls);
+      }
+    },
+    heartbeatMs: 10,
+    heartbeatWatchdogMultiplier: 2, // watchdogMs = 20ms
+    baseDelayMs: 0,
+    maxDelayMs: 0,
+    random: () => 0,
+    fetchImpl
+  });
+
+  await tick(120);
+  handle.close();
+
+  assert.ok(fetchCalls >= 2, `expected the watchdog to force at least one reconnect, saw ${fetchCalls} fetch call(s)`);
+  assert.deepEqual(opensAtCall.slice(0, 2), [1, 2]);
+});
+
+test("connectConversationStream's heartbeat watchdog is reset by comment-only ping frames, not just real events", async () => {
+  const events: ConversationStreamEvent[] = [];
+  let fetchCalls = 0;
+  const fetchImpl = (async (_url: string, init?: RequestInit) => {
+    fetchCalls += 1;
+    const encoder = new TextEncoder();
+    let pingTimer: ReturnType<typeof setInterval> | undefined;
+    return okResponse(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          // Faster than the 20ms watchdog window below — steady heartbeat pings should keep the
+          // connection alive indefinitely even though they never reach onEvent (see
+          // parseConversationSseFrame's "ignores comment-only frames" behavior).
+          pingTimer = setInterval(() => {
+            try {
+              controller.enqueue(encoder.encode(": ping\n\n"));
+            } catch {
+              clearInterval(pingTimer);
+            }
+          }, 8);
+          init?.signal?.addEventListener("abort", () => {
+            clearInterval(pingTimer);
+            try {
+              controller.error(new DOMException("aborted", "AbortError"));
+            } catch {
+              // stream already closed/errored — nothing to do.
+            }
+          });
+        }
+      })
+    );
+  }) as typeof fetch;
+
+  const handle = connectConversationStream({
+    url: "http://x/stream",
+    getClientToken: () => undefined,
+    onEvent: (event) => events.push(event),
+    heartbeatMs: 10,
+    heartbeatWatchdogMultiplier: 2, // watchdogMs = 20ms
+    baseDelayMs: 0,
+    maxDelayMs: 0,
+    random: () => 0,
+    fetchImpl
+  });
+
+  await tick(100);
+  handle.close();
+
+  assert.equal(fetchCalls, 1, "steady pings faster than the watchdog window must keep the single connection alive with no forced reconnect");
+  assert.deepEqual(events, []);
 });

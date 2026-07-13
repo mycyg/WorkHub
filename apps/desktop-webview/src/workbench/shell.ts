@@ -8,7 +8,6 @@
 // 不是 CSS 藏起来，两套控件叠一起是 bug 不是冗余保险。非 macOS 维持 decorations:false 全套自绘。
 
 import type { WorkHubApiClient } from "@workhub/api-client";
-import type { WorkbenchPageVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { appleGlassDesignSystemCss } from "../design-system.js";
@@ -129,33 +128,6 @@ export function renderCenterErrorHtml(locale: Locale): string {
   const zh = locale === "zh-CN";
   return `<div class="wh-wb-error">${zh ? "没打开这个项目的工作台，稍后重试" : "Couldn't open this project's workbench — retry"}
     <div style="margin-top:13px"><button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-retry-vm>${zh ? "重试" : "Retry"}</button></div>
-  </div>`;
-}
-
-// 批 1 只展示这个项目的真实 bootstrap 数据（消息数/成员数/军团 run 数/网盘文件数）——群聊/网盘/军团面板
-// 的完整视图分别在批 2/6/5 接进这个窗口，接进来之前老实说明「下一批会开」，不假装已经能用。
-export function renderProjectSummaryHtml(vm: WorkbenchPageVM, locale: Locale): string {
-  const zh = locale === "zh-CN";
-  const main = vm.conversations.conversations.find((conversation) => conversation.kind === "main");
-  const subtitle = vm.project.description
-    ? vm.project.description
-    : zh
-      ? `负责人 ${vm.project.owner_label}`
-      : `Owner ${vm.project.owner_label}`;
-  return `<div class="wh-wb-summary ds-anim-fade-in">
-    <h2 class="wh-wb-summary-title">${escapeHtml(vm.project.name)}</h2>
-    <p class="wh-wb-summary-sub">${escapeHtml(subtitle)}</p>
-    <div class="wh-wb-summary-grid">
-      <div class="wh-wb-summary-metric"><div class="wh-wb-summary-metric-k">${zh ? "主区消息" : "Main chat"}</div><div class="wh-wb-summary-metric-v">${main?.next_seq ?? 0}</div></div>
-      <div class="wh-wb-summary-metric"><div class="wh-wb-summary-metric-k">${zh ? "工作区成员" : "Members"}</div><div class="wh-wb-summary-metric-v">${vm.workspace_members.total}</div></div>
-      <div class="wh-wb-summary-metric"><div class="wh-wb-summary-metric-k">${zh ? "军团在跑" : "Active runs"}</div><div class="wh-wb-summary-metric-v">${vm.army_summary.active_plan_count}</div></div>
-      <div class="wh-wb-summary-metric"><div class="wh-wb-summary-metric-k">${zh ? "网盘文件" : "Drive files"}</div><div class="wh-wb-summary-metric-v">${vm.recent_project_files.items.length}</div></div>
-    </div>
-    <p class="wh-wb-summary-note">${
-      zh
-        ? "群聊、网盘和军团面板下一批陆续开放——你现在看到的已经是这个项目的真实数据，不是占位。"
-        : "Team chat, drive, and the army panel open up in the next batches — what you see here is already real data, not a placeholder."
-    }</p>
   </div>`;
 }
 
@@ -322,11 +294,10 @@ export function mountWorkbenchShell(
   };
 
   // R12 批 2：项目选中且 VM 就绪时，中栏渲染真实主区群聊（chat/view.ts），取代批 1 的数字摘要占位
-  // （renderProjectSummaryHtml 仍留着 + 仍有单测——批 1 报告已经预告"批 2 把对应视图接进来"，这个函数
-  // 本身没错，只是不再是 renderCenter 的调用路径；不删是为了不必连带改 shell.test.ts，范围外发现见
-  // 批 2 汇报）。chat 视图是有状态的 imperative 组件（SSE 订阅/composer 草稿/翻页），只在
-  // "项目+主会话" 真的变化时才重新挂载——store 的其它字段变化（如侧栏收放）不该把它拆了重建，
-  // 否则每次都会打断用户正在打的字、重新连一次 SSE。
+  // （批 1 的 renderProjectSummaryHtml 连同它的单测已在 R13 H1 删除——批 2 起就不再是 renderCenter
+  // 的调用路径，自审确认全仓库无其它调用方）。chat 视图是有状态的 imperative 组件（SSE 订阅/
+  // composer 草稿/翻页），只在"项目+主会话"真的变化时才重新挂载——store 的其它字段变化（如侧栏
+  // 收放）不该把它拆了重建，否则每次都会打断用户正在打的字、重新连一次 SSE。
   // R12 批 6：中栏现在按 state.centerTab 在群聊/网盘两个视图之间切——同一时刻只有一个挂在 centerEl
   // 上（和 chat 视图同款"只在 key 真变化时才重挂"纪律，见下 driveMountKey/chatMountKey）。切标签时
   // 非活动那个视图会被销毁（chat 的 SSE 订阅/composer 草稿、drive 的当前文件夹都会丢），这是已知的

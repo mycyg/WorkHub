@@ -36,10 +36,37 @@ export type ConnectConversationStreamInput = {
   random?: () => number;
   baseDelayMs?: number;
   maxDelayMs?: number;
+  // R13 H1（自审 backlog 项1）：心跳看门狗——服务端 heartbeatMs（apps/api/src/sse/stream.ts 默认
+  // 30_000ms，无路由覆盖，走 ": ping" 注释帧）与看门狗倍率，都可注入以便测试用更短的窗口。
+  heartbeatMs?: number;
+  heartbeatWatchdogMultiplier?: number;
+  // 测试用可注入时钟；生产默认 Date.now。
+  now?: () => number;
 };
 
 const DEFAULT_BASE_DELAY_MS = 500;
 const DEFAULT_MAX_DELAY_MS = 15_000;
+// 服务端心跳默认间隔——见 apps/api/src/sse/stream.ts 的 `heartbeatMs = options.heartbeatMs ?? 30000`
+// （本仓库目前没有任何路由覆盖这个默认值，见 grep 结果：只有 qa 冒烟脚本会传自定义值）。
+export const DEFAULT_SERVER_HEARTBEAT_MS = 30_000;
+// N=2.5×心跳间隔——规划里定的倍率（r13-workbench-refinement/00-plan.md 批 H1），留够两次心跳的抖动
+// 余量再判定为"半开连接"，不会被单次心跳延迟误伤。
+export const DEFAULT_HEARTBEAT_WATCHDOG_MULTIPLIER = 2.5;
+
+// 纯函数——看门狗窗口时长，不碰时钟/定时器，方便直接断言。
+export function computeHeartbeatWatchdogMs(
+  heartbeatMs: number = DEFAULT_SERVER_HEARTBEAT_MS,
+  multiplier: number = DEFAULT_HEARTBEAT_WATCHDOG_MULTIPLIER
+): number {
+  return heartbeatMs * multiplier;
+}
+
+// 纯函数——给定"最后一次收到任意帧（含心跳注释帧）的时刻"和"现在"，判定看门狗窗口是否已经过期。
+// 定时器只是"到点了调一下这个函数复核"的壳（见 connectConversationStream 里的 armWatchdog/
+// checkWatchdog），真正的判定逻辑在这里，可以脱离 setTimeout 直接单测。
+export function isHeartbeatWatchdogExpired(input: { lastFrameAtMs: number; nowMs: number; watchdogMs: number }): boolean {
+  return input.nowMs - input.lastFrameAtMs >= input.watchdogMs;
+}
 
 // 指数退避 + 抖动（照 04 §0 参考规范总纲「重试可见：指数退避+抖动」）：抖动只加不减，避免多个客户端
 // 同时断线时在同一时刻扎堆重连（thundering herd）。纯函数，random 可注入，方便确定性单测。
@@ -99,6 +126,49 @@ export function connectConversationStream(input: ConnectConversationStreamInput)
 
   const emitStatus = (status: ConversationStreamStatus) => input.onStatus?.(status);
 
+  // R13 H1（自审 backlog 项1）：心跳看门狗——TCP 半开时 reader.read() 可能永久挂起而不 resolve/
+  // 不抛错，UI 却仍然显示"已连接"（服务端早就收不到、也发不出任何东西了）。这里在连接一打开、以及
+  // 此后每收到一帧（含心跳注释帧本身，见 flushBuffer 里的 noteFrameReceived 调用——那种帧从不到达
+  // input.onEvent，但一样证明连接活着）时，重置一个 N=heartbeatMs×multiplier 的计时器；到点还没
+  // 收到任何新帧就主动 abort 当前连接，走 runLoop 既有的 catch→scheduleReconnect 路径，不需要
+  // 额外分支。定时器只是"到点了拿纯函数复核一下"的壳，真正的判定在 isHeartbeatWatchdogExpired。
+  const watchdogMs = computeHeartbeatWatchdogMs(input.heartbeatMs, input.heartbeatWatchdogMultiplier);
+  const nowFn = input.now ?? Date.now;
+  let watchdogTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastFrameAtMs = 0;
+
+  function clearWatchdog(): void {
+    if (watchdogTimer !== undefined) {
+      clearTimeout(watchdogTimer);
+      watchdogTimer = undefined;
+    }
+  }
+
+  function armWatchdog(): void {
+    clearWatchdog();
+    watchdogTimer = setTimeout(checkWatchdog, watchdogMs);
+  }
+
+  function checkWatchdog(): void {
+    watchdogTimer = undefined;
+    if (closed) {
+      return;
+    }
+    if (isHeartbeatWatchdogExpired({ lastFrameAtMs, nowMs: nowFn(), watchdogMs })) {
+      // controller 在这一刻永远指向"当前这次" openOnce 的 activeController——openOnce 的
+      // try/finally 保证每次读循环结束（无论正常/异常）都会 clearWatchdog，所以这个定时器不可能
+      // 活过它所属的那次连接、去误伤后续重连出来的新连接。
+      controller?.abort();
+      return;
+    }
+    armWatchdog(); // 罕见：系统调度抖动导致定时器提前触发，纯函数复核后没到点就重新武装一整轮。
+  }
+
+  function noteFrameReceived(): void {
+    lastFrameAtMs = nowFn();
+    armWatchdog();
+  }
+
   const resolvedFetch = resolveFetchImpl(input.fetchImpl);
   if (!resolvedFetch) {
     emitStatus({ state: "closed" });
@@ -121,6 +191,9 @@ export function connectConversationStream(input: ConnectConversationStreamInput)
       }
       const rawFrame = remaining.slice(0, boundary);
       remaining = remaining.slice(boundary + 2);
+      // 任何帧都算"连接还活着"——心跳注释帧（parsed 为 undefined）尤其重要，它才是看门狗真正
+      // 要盯的信号：真实事件稀疏时,靠心跳撑住不误判半开连接。
+      noteFrameReceived();
       const parsed = parseConversationSseFrame(rawFrame);
       if (parsed) {
         input.onEvent({ type: parsed.event, data: jsonOrRawString(parsed.data) });
@@ -155,16 +228,23 @@ export function connectConversationStream(input: ConnectConversationStreamInput)
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    for (;;) {
-      const result = await reader.read();
-      if (closed) {
-        return;
+    // 看门狗的武装/拆除都收在这个 try/finally 里——保证读循环无论怎么结束（自然 done、抛错、
+    // 被自己 abort）都会清掉定时器，绝不会有一个属于"上一次连接"的计时器活到下一次 openOnce。
+    try {
+      noteFrameReceived(); // 连接一打开就当作收到一帧,开始计时(服务端可能要等到第一次心跳才发东西)。
+      for (;;) {
+        const result = await reader.read();
+        if (closed) {
+          return;
+        }
+        if (result.done) {
+          break;
+        }
+        buffer += decoder.decode(result.value, { stream: true });
+        buffer = flushBuffer(buffer);
       }
-      if (result.done) {
-        break;
-      }
-      buffer += decoder.decode(result.value, { stream: true });
-      buffer = flushBuffer(buffer);
+    } finally {
+      clearWatchdog();
     }
   }
 
@@ -213,6 +293,7 @@ export function connectConversationStream(input: ConnectConversationStreamInput)
         clearTimeout(reconnectTimer);
         reconnectTimer = undefined;
       }
+      clearWatchdog();
       controller?.abort();
       emitStatus({ state: "closed" });
     }

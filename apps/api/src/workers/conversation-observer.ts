@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { settings as runtimeSettings, type Settings } from "@workhub/config";
 import {
   aiQuietHoursSchema,
@@ -14,6 +12,7 @@ import {
 import {
   buildObserverSystemPrompt,
   buildObserverUserPrompt,
+  deriveActionCardItemId,
   isLowQualityObserverPlan,
   parseObserverPlanResponse,
   type ObserverPlanItem,
@@ -83,6 +82,10 @@ export type ConversationObserverTickResult = {
   skipped_quiet_hours: number;
   skipped_low_quality: number;
   skipped_budget: number;
+  // R13 H1：createOrAppendCard 撞了 items 表唯一约束、被当幂等重复吞掉的次数——跟
+  // skipped_low_quality 分开计，不然会把"这批已经落过库"误读成"AI 判断没活儿"（见
+  // isUniqueViolation 分支）。
+  skipped_duplicate_write: number;
   failed: number;
   started_at: string;
   finished_at: string;
@@ -562,7 +565,14 @@ async function emitActionCardUpdated(
 
 // ── 单会话分析 ──────────────────────────────────────────────────────────────────────
 
-type AnalyzeOutcome = "card_created" | "card_appended" | "no_card" | "budget_blocked";
+type AnalyzeOutcome = "card_created" | "card_appended" | "no_card" | "budget_blocked" | "duplicate_write";
+
+// 裸 PG 唯一冲突（23505）——同一判定手法照 packages/db/src/repositories/drive.ts /
+// proposals.ts、apps/api/src/routes/auth.ts 的既有 isUniqueViolation：`pg` 驱动的
+// DatabaseError 直接把 SQLSTATE 挂在 `.code` 上，drizzle-orm/node-postgres 不做二次包装。
+function isUniqueViolation(error: unknown): boolean {
+  return !!error && typeof error === "object" && (error as { code?: string }).code === "23505";
+}
 
 async function analyzeConversation(
   deps: ConversationObserverDeps,
@@ -611,9 +621,12 @@ async function analyzeConversation(
     return "no_card";
   }
 
+  // R13 H1（自审 backlog 项2）：条目 id 由 (conversationId, analyzedToSeq, ordinal) 确定性派生
+  // （见 deriveActionCardItemId 顶部注释）——ordinal 就是这批计划条目在 plan.items 里的下标，跟
+  // createOrAppendCard 落库时给它们分配的 ordinal（见 packages/db 的 itemInsertValues）一致。
   const outcomes: DispatchOutcome[] = [];
-  for (const planItem of plan.items) {
-    const itemId = randomUUID();
+  for (const [ordinal, planItem] of plan.items.entries()) {
+    const itemId = deriveActionCardItemId(candidate.conversationId, analyzedToSeq, ordinal);
     if (planItem.kind === "execute") {
       outcomes.push(await dispatchExecuteItem(deps, candidate, planItem, itemId, now));
     } else if (planItem.kind === "decide") {
@@ -623,14 +636,33 @@ async function analyzeConversation(
     }
   }
 
-  const result = await deps.actionCards.createOrAppendCard({
-    workspaceId: candidate.workspaceId,
-    projectId: candidate.projectId,
-    conversationId: candidate.conversationId,
-    analyzedToSeq,
-    items: outcomes.map((outcome) => outcome.item),
-    at: now
-  });
+  let result: Awaited<ReturnType<typeof deps.actionCards.createOrAppendCard>>;
+  try {
+    result = await deps.actionCards.createOrAppendCard({
+      workspaceId: candidate.workspaceId,
+      projectId: candidate.projectId,
+      conversationId: candidate.conversationId,
+      analyzedToSeq,
+      items: outcomes.map((outcome) => outcome.item),
+      at: now
+    });
+  } catch (error) {
+    if (!isUniqueViolation(error)) {
+      throw error;
+    }
+    // 上面的 dispatch*Item 已经跑完——可能已经建了真实 work_item/agent_run/通知，那些不在
+    // createOrAppendCard 的事务里，回不了滚（见文件顶部注释里这条 backlog 的病根）。走到这里说明
+    // items 表撞了唯一约束：这批 (conversationId, analyzedToSeq) 的条目此前已经落过库，这次重扫
+    // 是水位线没推成功导致的重复分析，不是新错误。幂等吞掉——只推水位线挡住下一 tick 再扫同一批，
+    // 不当成分析失败计数（也不会再重复派发，因为这个 tick 到此为止不会再进 for 循环）。
+    deps.logger?.warn?.("conversation_observer_card_write_conflict_treated_as_idempotent", {
+      conversationId: candidate.conversationId,
+      analyzedToSeq,
+      error
+    });
+    await deps.actionCards.advanceWatermark({ conversationId: candidate.conversationId, analyzedToSeq, at: now });
+    return "duplicate_write";
+  }
 
   for (const outcome of outcomes) {
     if (outcome.systemNote) {
@@ -691,6 +723,7 @@ export function createConversationObserverScheduler(deps: ConversationObserverDe
     let skippedQuietHours = 0;
     let skippedLowQuality = 0;
     let skippedBudget = 0;
+    let skippedDuplicateWrite = 0;
     let failed = 0;
     try {
       const candidates = await deps.actionCards.listObserverCandidates({ now: startedAt, limit: maxCandidatesPerTick });
@@ -709,6 +742,8 @@ export function createConversationObserverScheduler(deps: ConversationObserverDe
             cardsAppended += 1;
           } else if (outcome === "no_card") {
             skippedLowQuality += 1;
+          } else if (outcome === "duplicate_write") {
+            skippedDuplicateWrite += 1;
           } else {
             skippedBudget += 1;
           }
@@ -741,6 +776,7 @@ export function createConversationObserverScheduler(deps: ConversationObserverDe
         skipped_quiet_hours: skippedQuietHours,
         skipped_low_quality: skippedLowQuality,
         skipped_budget: skippedBudget,
+        skipped_duplicate_write: skippedDuplicateWrite,
         failed,
         started_at: startedAt.toISOString(),
         finished_at: finishedAt.toISOString()
@@ -764,6 +800,7 @@ export function createConversationObserverScheduler(deps: ConversationObserverDe
       skipped_quiet_hours: 0,
       skipped_low_quality: 0,
       skipped_budget: 0,
+      skipped_duplicate_write: 0,
       failed: 0,
       started_at: startedAt.toISOString(),
       finished_at: startedAt.toISOString()
