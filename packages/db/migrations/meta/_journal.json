@@ -353,6 +353,13 @@
       "breakpoints": true
     },
     {
+      "idx": 50,
+      "version": "7",
+      "when": 1783903000000,
+      "tag": "0050_proposal_diff_stats",
+      "breakpoints": true
+    },
+    {
       "idx": 51,
       "version": "7",
       "when": 1783903500000,

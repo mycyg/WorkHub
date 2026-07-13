@@ -130,3 +130,24 @@ test("listReviewsByProposalIds batches an IN query ordered by createdAt so the l
   assert.deepEqual(queryParamValues(query?.where), ["proposal-1", "proposal-2"]);
   assert.ok(query?.orderBy.length, "should be ordered so callers can take the last approve per proposal");
 });
+
+// R13 批 P1.5（右栏变动文件区）：agent-runner 在 workdir 仍存活时把 estimateDeliverableDiffStats
+// 的 per-file 明细回写这一列——这是一次旁路 UPDATE，只碰 diff_stats_json，不带 CAS/租约守卫。
+test("updateDiffStats issues a single-column UPDATE scoped to the proposal id", async () => {
+  const { db, queries } = createQueryRecorder();
+  const repository = createProposalRepository(db);
+  const diffStats = {
+    total: { adds: 1, dels: 1 },
+    files: [{ change_id: "change-1", path: "/outputs/result.md", change_type: "updated" as const, adds: 1, dels: 1 }]
+  };
+
+  await repository.updateDiffStats?.({ proposalId: "proposal-1", diffStats });
+
+  assert.equal(queries.length, 1);
+  const [query] = queries;
+  assert.equal(query?.operation, "update");
+  assert.equal(query?.targetTable, proposals);
+  assert.deepEqual(query?.setValue, { diffStatsJson: diffStats });
+  assert.ok(queryReferences(query?.where, proposals.id));
+  assert.deepEqual(queryParamValues(query?.where), ["proposal-1"]);
+});

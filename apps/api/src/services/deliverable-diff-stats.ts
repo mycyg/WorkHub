@@ -5,10 +5,14 @@
 // workdir/outputs/（改动后的版本）。两边按 manifest 记录的相对路径直接读全量内容比行，比摘录准。
 // 尽最大努力：单条改动读不到（新建文件没有 project/ 版本、被删文件没有 outputs/ 版本、非文本、超限）
 // 都不报错，只是那一条不计入统计，不拖垮已经成功的 run。
+//
+// R13 批 P1.5（右栏变动文件区）：右栏"变动文件"需要 per-file 明细，不只是聚合总数——这里在同一次
+// 遍历里同时产出两个视图（聚合 adds/dels 保持字段名不变，向后兼容既有调用方；新增 files[] 逐条明细），
+// 保证产出卡系统消息与右栏两条消费路径的数字来自同一次计算、不会各自算出不同答案。
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { DeliverableChangeManifest } from "@workhub/contracts";
+import type { DeliverableChange, DeliverableChangeManifest } from "@workhub/contracts";
 
 // 单条改动最多读这么多字符参与比较，避免超大文件把这条「锦上添花」的播报拖成性能问题。
 const MAX_DIFF_CHARS = 500_000;
@@ -70,12 +74,32 @@ function safeRelativePath(rawPath: string | undefined): string | undefined {
   return normalized;
 }
 
+// R13 批 P1.5：右栏"变动文件"逐条明细的形状——adds/dels 缺省即"这条改动没能计入统计"
+// （新建/被删/非文本/超限/路径不安全等 fail-open 情形），不是 0，调用方（agent-runner.ts）原样
+// 持久化进 proposals.diff_stats_json，读侧（conversation-army.ts）诚实展示"改动详情不可用"。
+export type DeliverableDiffStatsFile = {
+  change_id: string;
+  path?: string;
+  change_type: DeliverableChange["change_type"];
+  adds?: number;
+  dels?: number;
+};
+
+export type DeliverableDiffStatsResult = {
+  adds: number;
+  dels: number;
+  files: DeliverableDiffStatsFile[];
+};
+
 export async function estimateDeliverableDiffStats(input: {
   workdir: string;
   manifest: Pick<DeliverableChangeManifest, "changes">;
-}): Promise<{ adds: number; dels: number }> {
+}): Promise<DeliverableDiffStatsResult> {
   let adds = 0;
   let dels = 0;
+  const files: DeliverableDiffStatsFile[] = [];
+  // 铁律#4「所有循环不许发无上限的重活」：files[] 与聚合总数来自同一次被 MAX_CHANGES_DIFFED 截断的
+  // 遍历——右栏行数与产出卡系统消息数字天然对得上，不会出现"两条路径各自算出不同数字"的分叉。
   const changes = input.manifest.changes.slice(0, MAX_CHANGES_DIFFED);
   for (const change of changes) {
     // manifest 里的 target_ref.path 已经是 workdir 相对路径、带 "outputs/" 前缀（例如
@@ -83,20 +107,29 @@ export async function estimateDeliverableDiffStats(input: {
     // 改动后的文件。物化进 workdir/project/ 的改动前镜像用的是原始项目文件路径（没有 "outputs/"
     // 前缀），按约定去掉这一段前缀去 project/ 底下找同名文件；找不到（新建文件）就当纯新增。
     const relPath = safeRelativePath(change.target_ref.path);
-    if (!relPath) {
-      continue;
+    let fileAdds: number | undefined;
+    let fileDels: number | undefined;
+    if (relPath) {
+      const projectRelPath = relPath.replace(/^outputs\//u, "");
+      const [afterText, beforeText] = await Promise.all([
+        readSmallTextFile(path.join(input.workdir, relPath)),
+        readSmallTextFile(path.join(input.workdir, "project", projectRelPath))
+      ]);
+      if (afterText !== undefined || beforeText !== undefined) {
+        const counts = lineDiffCounts(beforeText ?? "", afterText ?? "");
+        fileAdds = counts.added;
+        fileDels = counts.removed;
+        adds += counts.added;
+        dels += counts.removed;
+      }
     }
-    const projectRelPath = relPath.replace(/^outputs\//u, "");
-    const [afterText, beforeText] = await Promise.all([
-      readSmallTextFile(path.join(input.workdir, relPath)),
-      readSmallTextFile(path.join(input.workdir, "project", projectRelPath))
-    ]);
-    if (afterText === undefined && beforeText === undefined) {
-      continue;
-    }
-    const counts = lineDiffCounts(beforeText ?? "", afterText ?? "");
-    adds += counts.added;
-    dels += counts.removed;
+    files.push({
+      change_id: change.id,
+      ...(change.target_ref.path ? { path: change.target_ref.path } : {}),
+      change_type: change.change_type,
+      ...(fileAdds !== undefined ? { adds: fileAdds } : {}),
+      ...(fileDels !== undefined ? { dels: fileDels } : {})
+    });
   }
-  return { adds, dels };
+  return { adds, dels, files };
 }

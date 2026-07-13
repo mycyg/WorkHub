@@ -13,6 +13,7 @@ import type {
 } from "@workhub/contracts";
 
 import type { WorkHubDb } from "../client.js";
+import type { ProposalDiffStats } from "../schema/index.js";
 import { TaskPlanBudgetShareMismatch, validateDraftItemGraph } from "./task-plans.js";
 import {
   acceptedDeliverableChanges,
@@ -395,6 +396,13 @@ export type ProposalRepository = {
   listReviewsByProposalIds: (proposalIds: string[]) => Promise<ReviewRow[]>;
   merge: (input: MergeProposalInput) => Promise<StoredProposalRows | null>;
   rebase: (input: RebaseProposalInput) => Promise<ProposalMergeConflict[] | null>;
+  // R13 批 P1.5（右栏变动文件区）：agent-runner 在 workdir 仍存活时把 estimateDeliverableDiffStats
+  // 算出的聚合 + per-file 明细回写这里；读侧见 conversation-runs.ts 的 listOutputLinksForConversation
+  // 新选的 diffStatsJson 列。这是一次旁路写（不经过创建/审阅/合并那条状态机），只更新这一列。
+  // 可选：不是 ProposalRepository 核心契约的一部分（真实 DB 实现总是提供它——见
+  // createProposalRepository），标成可选只是不强迫仓库外的既有测试假实现（如
+  // apps/api/src/proposals.test.ts 的 MemoryProposalRepository，超出本批施工范围）都补一份空实现。
+  updateDiffStats?: (input: { proposalId: string; diffStats: ProposalDiffStats }) => Promise<void>;
 };
 
 async function readReviewsForProposal(db: WorkHubDb, proposalId: string) {
@@ -3161,6 +3169,16 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
         return null;
       }
       return detected;
+    },
+
+    // R13 批 P1.5：单纯一列 UPDATE，不带 CAS/租约守卫——diff_stats_json 是一份"锦上添花"的旁路
+    // 播报数据（右栏展示用），不参与 proposal 状态机，覆盖写是安全的（同一 proposal 只会被
+    // postDeliverableSystemMessage 调用一次，见 agent-runner.ts）。
+    async updateDiffStats(input) {
+      await db
+        .update(proposals)
+        .set({ diffStatsJson: input.diffStats })
+        .where(eq(proposals.id, input.proposalId));
     }
   };
 }

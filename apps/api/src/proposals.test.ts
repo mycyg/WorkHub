@@ -562,6 +562,9 @@ class MemoryProposalRepository implements ProposalRepository {
         title: input.title ?? manifest.title,
         status: "opened",
         diffManifest: manifest,
+        // R13 批 P1.5 ripple：proposals 加了 diffStatsJson 列（nullable），这份 fixture 满足的
+        // ProposalRow 类型形状要求这个 key 存在——null=还没跑过右栏"变动文件"统计，无行为断言变化。
+        diffStatsJson: null,
         confidenceId: null,
         mergeSnapshotId: null,
         openedByKind: input.actor.actorKind,

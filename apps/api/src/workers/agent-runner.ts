@@ -61,6 +61,7 @@ import {
 import {
   createActionCardRepository,
   createAiDecisionRepository,
+  createProposalRepository,
   getSharedDatabaseClient,
   createWorkItemRepository
 } from "@workhub/db";
@@ -69,6 +70,7 @@ import type {
   AuditLogRepository,
   BudgetReservationRepository,
   BudgetReservationScopeInput,
+  ProposalDiffStats,
   SnapshotRepository,
   StoredWorkItemDetailRows,
   WorkItemDataRepository,
@@ -277,6 +279,15 @@ export type AgentRunEventBus = Pick<PushBus, "publish">;
 // false（照旧只开提议）。旧测试/QA 脚本构造的最小 sink（只给 createFromManifest）零改动仍然编译过。
 export type AgentRunProposalSink = Pick<ProposalService, "createFromManifest"> &
   Partial<Pick<ProposalService, "review" | "merge">>;
+// R13 批 P1.5（右栏变动文件区）：per-file 增删明细回写口——独立于上面的 AgentRunProposalSink（不
+// 强行给 ProposalService 加方法；agent-runner 本就直接用 @workhub/db 的仓库层做旁路写，
+// getDefaultRunConversationReportHook() 已有先例）。不传（旧调用方/绝大多数单测）→ 不写
+// diff_stats_json，右栏诚实展示"改动详情不可用"，零行为影响；写入失败同样 fail-open，不影响
+// 已经成功的 run 或既有的产出卡系统消息播报。
+export type AgentRunProposalDiffStatsWriter = (input: {
+  proposalId: string;
+  diffStats: ProposalDiffStats;
+}) => Promise<void> | void;
 // R12 批 4b：产出卡系统消息发布口——直接复用批 3 postSystemMessage/批 6 回滚播报的同款依赖注入形态
 // （见 apps/api/src/services/drive-pages.ts 的 announceVersionRollback），不新起一套消息写路径。
 export type AgentRunConversationSystemMessagePoster = (input: {
@@ -517,6 +528,8 @@ export function createInMemoryAgentRunQueue(options: {
   proposals?: AgentRunProposalSink | false;
   // R12 批 4b：产出卡回灌——不传（旧调用方/绝大多数单测）→ 不发系统消息，零行为影响。
   postSystemMessage?: AgentRunConversationSystemMessagePoster | false;
+  // R13 批 P1.5：右栏"变动文件"持久化口，见 AgentRunProposalDiffStatsWriter 类型注释。
+  diffStatsWriter?: AgentRunProposalDiffStatsWriter | false;
   notifications?: AgentRunNotificationPublisher | false;
   notificationWorkItem?: AgentRunNotificationWorkItemResolver | false;
   // R2 audit#5：把里程碑收件人解析成活跃度引用，让 lifecycle 过滤丢弃已停用收件人。
@@ -565,6 +578,7 @@ export function createInMemoryAgentRunQueue(options: {
   const humanReservedGuard = options.humanReserved === false ? undefined : options.humanReserved;
   const proposalSink = options.proposals === false ? undefined : options.proposals;
   const postSystemMessage = options.postSystemMessage === false ? undefined : options.postSystemMessage;
+  const diffStatsWriter = options.diffStatsWriter === false ? undefined : options.diffStatsWriter;
   const notificationWorkItem = options.notificationWorkItem === false ? undefined : options.notificationWorkItem;
   const resolveUserRefs = options.resolveUserRefs === false ? undefined : options.resolveUserRefs;
   const transitionWorkItemStatus = options.transitionWorkItemStatus === false ? undefined : options.transitionWorkItemStatus;
@@ -1382,7 +1396,25 @@ export function createInMemoryAgentRunQueue(options: {
       const workdir = input.run.workdir_ref ?? runWorkdirs.get(input.run.run_id);
       const diffStats = workdir
         ? await estimateDeliverableDiffStats({ workdir, manifest: input.proposal.diff_manifest })
-        : { adds: 0, dels: 0 };
+        : { adds: 0, dels: 0, files: [] };
+      // R13 批 P1.5：workdir 仍存活的这一刻是持久化 per-file 明细的唯一机会（workdir 是 ephemeral
+      // sandbox，run 结束后大概率被清理，右栏不能在渲染时现读）。没有 workdir（本就走不到
+      // estimateDeliverableDiffStats 真实计算）时不写——留 diff_stats_json 为 null，比写一份
+      // 冒充的全零统计更诚实。写入失败 fail-open：只警告，绝不影响下面已有的系统消息播报。
+      if (diffStatsWriter && workdir) {
+        try {
+          await diffStatsWriter({
+            proposalId: input.proposal.id,
+            diffStats: { total: { adds: diffStats.adds, dels: diffStats.dels }, files: diffStats.files }
+          });
+        } catch (error) {
+          getDefaultStructuredLogger().warn("agent_run_deliverable_diff_stats_write_failed", {
+            error,
+            runId: input.run.run_id,
+            proposalId: input.proposal.id
+          });
+        }
+      }
       await postSystemMessage({
         workspaceId: input.run.workspace_id,
         conversationId: input.run.source_conversation_id,
@@ -2890,6 +2922,9 @@ export function getDefaultAgentRunQueue() {
     // announceVersionRollback 的同款调法），不新起一套消息写路径。
     postSystemMessage: (message) =>
       createActionCardRepository(getSharedDatabaseClient().db).postSystemMessage({ ...message, senderType: "system" }),
+    // R13 批 P1.5：右栏"变动文件"持久化——直接用仓库层做旁路写（不经过 ProposalService 那条创建/
+    // 审阅/合并状态机），与上面 postSystemMessage 的接线思路一致。
+    diffStatsWriter: (input) => createProposalRepository(getSharedDatabaseClient().db).updateDiffStats?.(input),
     persistence: getDefaultAgentRunPersistence(),
     // R2 原子预算：生产 PG 队列注入预留仓库，串行化并发起跑、防集体超预算。
     reservationRepo: getDefaultBudgetReservationRepository(),

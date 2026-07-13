@@ -687,6 +687,21 @@ test("migration journal ends with 0053 default org/workspace seed", () => {
   );
 });
 
+test("R13 P1.5 migration 0050 adds proposals.diff_stats_json as a nullable jsonb column", () => {
+  const migrationUrl = new URL("../migrations/0050_proposal_diff_stats.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0050_proposal_diff_stats.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"proposals"\s+ADD COLUMN IF NOT EXISTS\s+"diff_stats_json"\s+jsonb\s*;/iu
+  );
+  assert.doesNotMatch(migration, /NOT NULL/iu, "diff_stats_json must stay nullable — historical rows have no stats");
+
+  assert.equal(proposals.diffStatsJson.name, "diff_stats_json");
+  assert.equal(proposals.diffStatsJson.notNull, false);
+  assert.equal(proposals.diffStatsJson.columnType, "PgJsonb");
+});
+
 test("R13 G1 migration 0048 adds project_conversations.cuu_enabled as a non-null default-true column", () => {
   const migrationUrl = new URL("../migrations/0048_small_group_cuu_enabled.sql", import.meta.url);
   assert.equal(existsSync(migrationUrl), true, "missing migration 0048_small_group_cuu_enabled.sql");

@@ -5678,6 +5678,141 @@ test("R12 批 4b: mode<5 时即便 grade5 复核也只开提议回灌 proposal_o
   assert.equal(systemMessages[0]?.content["event"], "proposal_opened");
 });
 
+// R13 批 P1.5（右栏变动文件区）：agent-runner 在 workdir 仍存活时把 estimateDeliverableDiffStats
+// 算出的 per-file 明细顺手回写——下面两条钉死「两条消费路径数字必须一致」与「写入失败 fail-open」。
+test("R13 批 P1.5: diffStatsWriter receives per-file details whose total matches the produced system-message adds/dels", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-diff-stats-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-diff-stats-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  const conversationId = "80000000-0000-4000-8000-000000000033";
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => "60000000-0000-4000-8000-000000000033"
+  });
+  const systemMessages: { workspaceId: string; conversationId: string; content: Record<string, unknown> }[] = [];
+  const diffStatsWrites: { proposalId: string; diffStats: { total: { adds: number; dels: number }; files: unknown[] } }[] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000033",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: createAgentRunConfidenceRecorder({
+      decisions,
+      auditLogs,
+      settings: runtimeSettings,
+      modeResolver: async () => 3
+    }),
+    notifications: false,
+    eventBus: false,
+    postSystemMessage: async (message) => {
+      systemMessages.push(message);
+      return undefined;
+    },
+    diffStatsWriter: (input) => {
+      diffStatsWrites.push(input);
+    }
+  });
+
+  await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    title: "P1.5 diff-stats worker run",
+    sourceConversationId: conversationId
+  });
+  const executed = await queue.runNext();
+  const opened = await proposals.listByWorkItem(workItemId);
+
+  assert.equal(executed?.status, "succeeded");
+  assert.equal(opened.length, 1);
+  assert.equal(systemMessages.length, 1);
+  // outputs/result.md 内容是 "done"（无 project/ 镜像，纯新增）——1 行 +1/-0，与既有产出卡断言同源。
+  assert.equal(systemMessages[0]?.content["adds"], 1);
+  assert.equal(systemMessages[0]?.content["dels"], 0);
+
+  assert.equal(diffStatsWrites.length, 1);
+  const write = diffStatsWrites[0];
+  assert.equal(write?.proposalId, opened[0]?.id);
+  // 两条消费路径（产出卡系统消息的聚合数字 / 持久化写入的 total）必须一致，不能各自算出不同数字。
+  assert.deepEqual(write?.diffStats.total, { adds: 1, dels: 0 });
+  assert.equal(write?.diffStats.files.length, 1);
+  const [file] = write?.diffStats.files as { change_id: string; path: string; change_type: string; adds: number; dels: number }[];
+  assert.equal(typeof file?.change_id, "string");
+  assert.ok((file?.change_id.length ?? 0) > 0, "change_id must be a real id, not an empty placeholder");
+  assert.equal(file?.path, "/outputs/result.md");
+  assert.equal(file?.change_type, "generated");
+  assert.equal(file?.adds, 1);
+  assert.equal(file?.dels, 0);
+});
+
+test("R13 批 P1.5: a diffStatsWriter failure is fail-open — the run still succeeds and the deliverable system message still posts", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-run-diff-stats-fail-test-"));
+  const snapshotRoot = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-diff-stats-fail-snapshot-test-"));
+  const snapshots = new MemorySnapshots();
+  const auditLogs = new MemoryAuditLogs();
+  const decisions = new MemoryAiDecisions();
+  const conversationId = "80000000-0000-4000-8000-000000000034";
+  const proposals = createInMemoryProposalService({
+    now: () => now,
+    id: () => "60000000-0000-4000-8000-000000000034"
+  });
+  const systemMessages: { workspaceId: string; conversationId: string; content: Record<string, unknown> }[] = [];
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000034",
+    workdir: () => workdir,
+    client: () => executableAgentClient(),
+    snapshotRoot,
+    snapshotId: () => snapshotId,
+    snapshots,
+    auditLogs,
+    proposals,
+    confidence: createAgentRunConfidenceRecorder({
+      decisions,
+      auditLogs,
+      settings: runtimeSettings,
+      modeResolver: async () => 3
+    }),
+    notifications: false,
+    eventBus: false,
+    postSystemMessage: async (message) => {
+      systemMessages.push(message);
+      return undefined;
+    },
+    diffStatsWriter: () => {
+      throw new Error("diff stats store unreachable");
+    }
+  });
+
+  await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    workspaceId: runtimeSettings.auth.defaultWorkspaceId,
+    title: "P1.5 diff-stats failure worker run",
+    sourceConversationId: conversationId
+  });
+  const executed = await queue.runNext();
+  const opened = await proposals.listByWorkItem(workItemId);
+
+  assert.equal(executed?.status, "succeeded");
+  assert.equal(opened.length, 1);
+  // diffStatsWriter throwing must not swallow the existing deliverable system message.
+  assert.equal(systemMessages.length, 1);
+  assert.equal(systemMessages[0]?.content["event"], "proposal_opened");
+  assert.equal(systemMessages[0]?.content["adds"], 1);
+});
+
 test("P-COLLAB M2: a hydrated run captures a base snapshot and stamps manifest.base.snapshot_id", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-agent-base-snapshot-test-"));

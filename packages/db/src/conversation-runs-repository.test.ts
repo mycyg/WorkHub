@@ -304,7 +304,8 @@ test("listOutputLinksForConversation joins proposals through branches to the run
       runId: fixtureId(100),
       title: "重写第三节",
       status: "opened",
-      updatedAt: new Date("2026-07-12T08:05:00.000Z")
+      updatedAt: new Date("2026-07-12T08:05:00.000Z"),
+      diffStatsJson: null
     }
   ]]);
 
@@ -323,6 +324,32 @@ test("listOutputLinksForConversation joins proposals through branches to the run
   assert.equal(result.capped, false);
   assert.equal(result.rows.length, 1);
   assert.equal(result.rows[0]?.proposalId, fixtureId(400));
+  // R13 批 P1.5：右栏"变动文件"读侧需要 diff_stats_json 一起选出来（不需要额外一次查询）。
+  const selection = query?.selection as Record<string, unknown> | undefined;
+  assert.equal(selection?.["diffStatsJson"], proposals.diffStatsJson, "select must include proposals.diffStatsJson");
+  assert.equal(result.rows[0]?.diffStatsJson, null, "a proposal with no diff stats yet must surface null, not a faked empty result");
+});
+
+test("listOutputLinksForConversation passes a populated diff_stats_json straight through to the caller", async () => {
+  const diffStats = {
+    total: { adds: 3, dels: 1 },
+    files: [{ change_id: "change-1", path: "/outputs/result.md", change_type: "updated", adds: 3, dels: 1 }]
+  };
+  const { db } = createQueryRecorder([[
+    {
+      proposalId: fixtureId(401),
+      workItemId: fixtureId(200),
+      runId: fixtureId(100),
+      title: "重写第三节",
+      status: "opened",
+      updatedAt: new Date("2026-07-12T08:05:00.000Z"),
+      diffStatsJson: diffStats
+    }
+  ]]);
+
+  const result = await repository(db).listOutputLinksForConversation({ workspaceId, conversationId, limit: 20 });
+
+  assert.deepEqual(result.rows[0]?.diffStatsJson, diffStats);
 });
 
 test("listOutputLinksForConversation rejects out-of-range limits before issuing any query", async () => {

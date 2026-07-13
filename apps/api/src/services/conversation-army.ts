@@ -4,12 +4,14 @@ import {
   type ArmyOverviewRunCardRow,
   type ConversationRunCardRow,
   type ConversationRunRepository,
+  type ProposalDiffStatsFile,
   type WorkHubDatabaseClient
 } from "@workhub/db";
 import {
   armyOverviewPageVmSchema,
   catCodename,
   conversationArmyPanelVmSchema,
+  type ArmyChangedFileVM,
   type ArmyOverviewPageVM,
   type ArmyRunListQuery,
   type ConversationArmyPanelVM
@@ -108,6 +110,18 @@ function overviewCardToVm(row: ArmyOverviewRunCardRow) {
   };
 }
 
+// R13 批 P1.5（右栏变动文件区）：把 proposals.diff_stats_json 的一条 per-file 明细映射成公开 VM——
+// 有意丢弃内部 change_id（VM 只暴露 path/change_type/adds/dels，去重靠 path，见 army/render.ts 的
+// collectArmyChangedFiles），adds/dels 缺省即"这条改动没能计入统计"，不冒充 0。
+function changedFileToVm(file: ProposalDiffStatsFile): ArmyChangedFileVM {
+  return {
+    ...(file.path ? { path: file.path } : {}),
+    change_type: file.change_type,
+    ...(file.adds !== undefined ? { adds: file.adds } : {}),
+    ...(file.dels !== undefined ? { dels: file.dels } : {})
+  };
+}
+
 function cursorToVm(cursor: { createdAt: string; id: string } | null) {
   return cursor ? { after_created_at: cursor.createdAt, after_id: cursor.id } : null;
 }
@@ -164,7 +178,10 @@ export function createConversationArmyService(deps: ConversationArmyServiceDepen
               title: row.title,
               status: row.status,
               proposal_href: `/proposals/${row.proposalId}`,
-              updated_at: row.updatedAt.toISOString()
+              updated_at: row.updatedAt.toISOString(),
+              // R13 批 P1.5：null（历史 proposal/还没统计过）时整个字段不出现，不冒充空数组——
+              // 右栏据此区分"这份产出没有变动文件"与"这份产出还没跑过统计"。
+              ...(row.diffStatsJson ? { changed_files: row.diffStatsJson.files.map(changedFileToVm) } : {})
             })),
             capped: outputPage.capped
           },
