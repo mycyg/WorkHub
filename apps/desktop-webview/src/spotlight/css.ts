@@ -242,7 +242,33 @@ export const spotlightCss = [
   // #20：toast 退场动画——移除前先播一帧缩放淡出(translateX(-50%) 居中,关键帧须带上),不再硬删。
   ".wh-spot-toast--leaving{animation:ds-spot-toast-out var(--ds-dur-fast) var(--ds-ease) both}",
   "@keyframes ds-spot-toast-out{from{transform:translateX(-50%) scale(1);opacity:1}to{transform:translateX(-50%) scale(.94);opacity:0}}",
+  // R13 批 S1：「问问 Cuu」——命令面板无命中时的入口行 + 呼吸态 + 确认条 + 内联回答，全部浅色 token。
+  ".wh-spot-ask-cuu-row-wrap{margin-top:12px;grid-column:1 / -1}",
+  ".wh-spot-ask-cuu-row{display:flex;align-items:center;gap:11px;width:100%;box-sizing:border-box;text-align:left;border:1px solid rgba(10,132,255,.24);background:transparent;border-radius:var(--ds-radius-md);padding:11px 13px;cursor:pointer;color:var(--ds-ink);box-shadow:inset 0 0 0 1px rgba(10,132,255,.06);transition:transform var(--ds-dur-fast) var(--ds-ease-out),border-color var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-spot-ask-cuu-row:hover{border-color:rgba(10,132,255,.4);transform:translateY(-1px)}",
+  ".wh-spot-ask-cuu-row:active{transform:translateY(0) scale(.98)}",
+  ".wh-spot-ask-cuu-icon{display:inline-flex;width:22px;height:22px;flex:0 0 auto;color:var(--ds-accent)}.wh-spot-ask-cuu-icon svg{width:22px;height:22px}",
+  ".wh-spot-ask-cuu-text{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left}",
+  ".wh-spot-ask-cuu-label{font:650 13.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-spot-ask-cuu-hint{font:500 12px/1.4 var(--ds-font);color:var(--ds-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-spot-ask-cuu-kbd{margin-left:auto;flex:0 0 auto;font:700 11px/1 var(--ds-font);color:var(--ds-accent);background:transparent;border:1px solid rgba(10,132,255,.18);border-radius:6px;padding:4px 7px}",
+  // 呼吸态：一个柔和缩放/透明度脉动的点，配「Cuu 正在想…」文案——不是转圈的确定性 spinner，
+  // 是「正在琢磨」的软反馈（与 wh-spot-spinner 的确定性加载区分开）。
+  ".wh-spot-ask-cuu-asking{display:flex;align-items:center;justify-content:center;gap:10px;padding:22px 12px;color:var(--ds-ink-muted);font:600 13px/1.4 var(--ds-font);text-align:center}",
+  ".wh-spot-ask-cuu-breathe{width:10px;height:10px;flex:0 0 auto;border-radius:50%;background:var(--ds-accent);animation:wh-spot-ask-cuu-breathe 1.4s ease-in-out infinite}",
+  "@keyframes wh-spot-ask-cuu-breathe{0%,100%{transform:scale(.72);opacity:.55}50%{transform:scale(1);opacity:1}}",
+  ".wh-spot-ask-cuu-confirm{display:flex;flex-direction:column;gap:10px;padding:12px 2px;text-align:left}",
+  ".wh-spot-ask-cuu-understood{margin:0;font:600 13.5px/1.5 var(--ds-font);color:var(--ds-ink);overflow-wrap:anywhere}",
+  ".wh-spot-ask-cuu-answer{display:flex;flex-direction:column;gap:8px;padding:6px 2px;text-align:left}",
+  ".wh-spot-ask-cuu-answer-text{margin:0;font:500 13.5px/1.6 var(--ds-font);color:var(--ds-ink);overflow-wrap:anywhere}",
+  ".wh-spot-ask-cuu-disclaimer{margin:0;font:500 11px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
+  // 撤回条：壳层常驻（顶栏和内容区之间），高把握动作执行后或用户确认后亮出，「撤回」统一回到 launcher。
+  ".wh-spot-ask-banner{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--ds-glass-hairline);background:rgba(10,132,255,.07)}",
+  ".wh-spot-ask-banner[hidden]{display:none}",
+  ".wh-spot-ask-banner-text{flex:1 1 auto;min-width:0;font:600 12.5px/1.4 var(--ds-font);color:var(--ds-ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+  ".wh-spot-ask-banner-undo{flex:0 0 auto;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-pill);background:transparent;color:var(--ds-accent);font:700 12px/1 var(--ds-font);padding:6px 11px;cursor:pointer}",
+  ".wh-spot-ask-banner-undo:hover{filter:brightness(1.04)}.wh-spot-ask-banner-undo:active{transform:scale(.95)}",
   // 内层控件只保留透明边线和高光；折射统一交给外层 liquid-glass warp，避免多层 backing 叠出可变底色。
   // 尊重「减少动态效果」系统偏好：去掉装饰性位移/缩放，保留颜色提示（苹果级无障碍）。
-  "@media (prefers-reduced-motion:reduce){.wh-spot-cap,.wh-spot-act,.wh-spot-back,.wh-spot-opt,.wh-spot-reason,a.wh-spot-row,button.wh-spot-row{transition-duration:.01ms!important}.wh-spot-cap:hover,.wh-spot-cap:active,.wh-spot-act:active,.wh-spot-back:active,.wh-spot-opt:hover,.wh-spot-opt:active,.wh-spot-reason:active,a.wh-spot-row:hover,a.wh-spot-row:active,button.wh-spot-row:hover,button.wh-spot-row:active{transform:none}}"
+  "@media (prefers-reduced-motion:reduce){.wh-spot-cap,.wh-spot-act,.wh-spot-back,.wh-spot-opt,.wh-spot-reason,a.wh-spot-row,button.wh-spot-row,.wh-spot-ask-cuu-row{transition-duration:.01ms!important}.wh-spot-cap:hover,.wh-spot-cap:active,.wh-spot-act:active,.wh-spot-back:active,.wh-spot-opt:hover,.wh-spot-opt:active,.wh-spot-reason:active,a.wh-spot-row:hover,a.wh-spot-row:active,button.wh-spot-row:hover,button.wh-spot-row:active,.wh-spot-ask-cuu-row:hover,.wh-spot-ask-cuu-row:active{transform:none}.wh-spot-ask-cuu-breathe{animation:none;opacity:1}}"
 ].join("");
