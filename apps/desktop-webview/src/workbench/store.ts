@@ -25,6 +25,11 @@ export type WorkbenchStoreState = {
   // 左栏项目树数据源。
   projects: ProjectListItemVM[];
   projectsLoad: WorkbenchLoadState;
+  // R13 批 S3（个人空间）：独立于团队项目树的数据源——GET /api/me/personal-projects 只回该用户
+  // 名下 is_personal=true 的项目，与 projects（团队列表，服务端已过滤掉 is_personal=true）互斥，
+  // rail.ts 渲染成「我的空间」独立分组，不与 renderProjectTreeHtml 的团队项目列表合并。
+  personalProjects: ProjectListItemVM[];
+  personalProjectsLoad: WorkbenchLoadState;
   // 当前选中的项目（rail 点击 / Spotlight「打开工作台」/ 深链三路共用同一份状态）。
   selectedProjectId: string | undefined;
   // 深链带来的会话目标：批 1 还没有会话视图，先存着，批 2 群聊/协同视图接入时直接消费。
@@ -44,6 +49,9 @@ export type WorkbenchStoreState = {
   sidePanelContent: WorkbenchSidePanelContent;
   // 新建项目模态开关。
   newProjectModalOpen: boolean;
+  // R13 批 S3：新建个人空间模态开关——与团队项目模态分开的独立状态（拍板：个人空间创建只填
+  // 名字，不需要选工作区/邀请成员那一整套团队项目的步骤，复用同一个模态语义上会混淆两件事）。
+  newPersonalSpaceModalOpen: boolean;
 };
 
 export type WorkbenchStoreListener = (state: WorkbenchStoreState) => void;
@@ -58,6 +66,8 @@ export function initialWorkbenchStoreState(): WorkbenchStoreState {
   return {
     projects: [],
     projectsLoad: "idle",
+    personalProjects: [],
+    personalProjectsLoad: "idle",
     selectedProjectId: undefined,
     pendingConversationId: undefined,
     vm: undefined,
@@ -67,7 +77,8 @@ export function initialWorkbenchStoreState(): WorkbenchStoreState {
     activeConversationId: undefined,
     sidePanelOpen: true,
     sidePanelContent: undefined,
-    newProjectModalOpen: false
+    newProjectModalOpen: false,
+    newPersonalSpaceModalOpen: false
   };
 }
 

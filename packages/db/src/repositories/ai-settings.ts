@@ -139,7 +139,11 @@ const projectSelection = {
   deletedByNickname: projects.deletedByNickname,
   nextSeq: projects.nextSeq,
   createdAt: projects.createdAt,
-  updatedAt: projects.updatedAt
+  updatedAt: projects.updatedAt,
+  // R13 批 S3：projects 加了 is_personal 列——这份手选列表要和 typeof projects.$inferSelect
+  // 完整对齐才能编译（AiSettingsProjectRow 就是那个类型），否则每次建表加列这里都会红。
+  // 不是本批的功能改动，纯粹是共享表加列牵连的机械补齐。
+  isPersonal: projects.isPersonal
 };
 
 const governanceSelection = {

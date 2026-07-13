@@ -13,6 +13,10 @@ test("initialWorkbenchStoreState starts empty with the side panel open and no mo
   assert.equal(state.newProjectModalOpen, false);
   assert.equal(state.centerTab, "chat");
   assert.equal(state.activeConversationId, undefined);
+  // R13 批 S3（个人空间）：独立于团队项目树的数据源/模态状态，初始态同样空/关闭。
+  assert.deepEqual(state.personalProjects, []);
+  assert.equal(state.personalProjectsLoad, "idle");
+  assert.equal(state.newPersonalSpaceModalOpen, false);
 });
 
 test("setState merges a patch and returns the merged state", () => {

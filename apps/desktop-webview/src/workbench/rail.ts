@@ -142,6 +142,41 @@ function renderProjectTreeLeavesHtml(
   return `<div class="wh-wb-tree">${mainLeaf}${collabLeaves}${newCollabButton}${driveLeaf}</div>`;
 }
 
+// R13 批 S3（个人空间）：项目行 + 树叶的渲染逻辑从 renderProjectTreeHtml 里提出来，供团队项目分组
+// 与「我的空间」分组共用（两个分组的每一行长得一样——选中态/树叶/项目设置齿轮全部同一套规则，
+// 只是数据源和分组标题不同）。纯函数，行为与提取前逐字节相同。
+function renderProjectRowHtml(
+  project: ProjectListItemVM,
+  active: boolean,
+  activeVm: WorkbenchPageVM | undefined,
+  zh: boolean,
+  centerTab: WorkbenchCenterTab,
+  activeConversationId: string | undefined,
+  newCollab: NewCollabConversationUiState
+): string {
+  const leaves = activeVm
+    ? renderProjectTreeLeavesHtml(activeVm, zh, centerTab, activeConversationId, newCollab)
+    : "";
+  // R13 批 P3：项目名右侧的「项目设置」齿轮——只对项目负责人渲染（vm.viewer.is_project_owner；
+  // 服务端把治理端点的读与写都锁在负责人上，见 settings/render.ts 顶部注释——给非负责人摆一个
+  // 点开只会撞 404 的按钮违反 04 §4 铁律 3）。齿轮是 .wh-wb-project-row 的兄弟节点而不是子节点
+  // （按钮里不能套按钮），选中态跟 centerTab === "project-settings" 走，同树叶的 sel 约定。
+  const gear = activeVm?.viewer.is_project_owner
+    ? `<button type="button" class="wh-wb-project-gear${centerTab === "project-settings" ? " sel" : ""}" data-wb-open-project-settings aria-label="${zh ? "项目设置" : "Project settings"}" title="${zh ? "项目设置" : "Project settings"}">${workbenchIcons.gear}</button>`
+    : "";
+  return `<div class="wh-wb-project${active ? " active" : ""}">
+    <div class="wh-wb-project-head">
+    <button type="button" class="wh-wb-project-row" data-wb-select-project="${escapeHtml(project.id)}" aria-current="${active ? "true" : "false"}">
+      <span class="wh-wb-tile ${tileVariantClass(project.id)}">${escapeHtml(projectInitial(project.name))}</span>
+      <span class="wh-wb-project-name">${escapeHtml(project.name)}</span>
+      ${project.open_work_item_count > 0 ? `<span class="wh-wb-project-dot" title="${zh ? "有进行中工作项" : "Has open work"}"></span>` : ""}
+    </button>
+    ${gear}
+    </div>
+    ${leaves}
+  </div>`;
+}
+
 export function renderProjectTreeHtml(input: {
   projects: ProjectListItemVM[];
   selectedProjectId: string | undefined;
@@ -156,33 +191,15 @@ export function renderProjectTreeHtml(input: {
     .map((project) => {
       const active = project.id === input.selectedProjectId;
       const activeVm = active && input.vm && input.vm.project.id === project.id ? input.vm : undefined;
-      const leaves = activeVm
-        ? renderProjectTreeLeavesHtml(
-            activeVm,
-            zh,
-            input.centerTab ?? "chat",
-            input.activeConversationId,
-            input.newCollab ?? IDLE_NEW_COLLAB_STATE
-          )
-        : "";
-      // R13 批 P3：项目名右侧的「项目设置」齿轮——只对项目负责人渲染（vm.viewer.is_project_owner；
-      // 服务端把治理端点的读与写都锁在负责人上，见 settings/render.ts 顶部注释——给非负责人摆一个
-      // 点开只会撞 404 的按钮违反 04 §4 铁律 3）。齿轮是 .wh-wb-project-row 的兄弟节点而不是子节点
-      // （按钮里不能套按钮），选中态跟 centerTab === "project-settings" 走，同树叶的 sel 约定。
-      const gear = activeVm?.viewer.is_project_owner
-        ? `<button type="button" class="wh-wb-project-gear${input.centerTab === "project-settings" ? " sel" : ""}" data-wb-open-project-settings aria-label="${zh ? "项目设置" : "Project settings"}" title="${zh ? "项目设置" : "Project settings"}">${workbenchIcons.gear}</button>`
-        : "";
-      return `<div class="wh-wb-project${active ? " active" : ""}">
-        <div class="wh-wb-project-head">
-        <button type="button" class="wh-wb-project-row" data-wb-select-project="${escapeHtml(project.id)}" aria-current="${active ? "true" : "false"}">
-          <span class="wh-wb-tile ${tileVariantClass(project.id)}">${escapeHtml(projectInitial(project.name))}</span>
-          <span class="wh-wb-project-name">${escapeHtml(project.name)}</span>
-          ${project.open_work_item_count > 0 ? `<span class="wh-wb-project-dot" title="${zh ? "有进行中工作项" : "Has open work"}"></span>` : ""}
-        </button>
-        ${gear}
-        </div>
-        ${leaves}
-      </div>`;
+      return renderProjectRowHtml(
+        project,
+        active,
+        activeVm,
+        zh,
+        input.centerTab ?? "chat",
+        input.activeConversationId,
+        input.newCollab ?? IDLE_NEW_COLLAB_STATE
+      );
     })
     .join("");
   const newProjectRow = `<div class="wh-wb-project">
@@ -192,6 +209,45 @@ export function renderProjectTreeHtml(input: {
     </button>
   </div>`;
   return `<div class="wh-wb-rail-head">${zh ? "项目" : "Projects"}</div>${rows}${newProjectRow}`;
+}
+
+// R13 批 S3（个人空间）：rail 顶部独立分组，与「项目」平级但视觉/语义分开——个人空间没有团队
+// 成员头像、没有「军团总览」跨项目入口那套团队语境，就是普通项目行（同一套渲染）加一个专属
+// 创建入口。列表数据源是 GET /api/me/personal-projects（只回该用户名下 is_personal=true 的项目，
+// 见 apps/api/src/routes/personal-projects.ts），与团队项目列表（GET /api/projects，服务端已经
+// 过滤掉 is_personal=true 的行）是两个互斥的数据源——不靠前端再去重/再过滤一次。
+export function renderPersonalSpaceSectionHtml(input: {
+  personalProjects: ProjectListItemVM[];
+  selectedProjectId: string | undefined;
+  vm: WorkbenchPageVM | undefined;
+  locale: Locale;
+  centerTab?: WorkbenchCenterTab;
+  activeConversationId?: string;
+  newCollab?: NewCollabConversationUiState;
+}): string {
+  const zh = input.locale === "zh-CN";
+  const rows = input.personalProjects
+    .map((project) => {
+      const active = project.id === input.selectedProjectId;
+      const activeVm = active && input.vm && input.vm.project.id === project.id ? input.vm : undefined;
+      return renderProjectRowHtml(
+        project,
+        active,
+        activeVm,
+        zh,
+        input.centerTab ?? "chat",
+        input.activeConversationId,
+        input.newCollab ?? IDLE_NEW_COLLAB_STATE
+      );
+    })
+    .join("");
+  const newPersonalSpaceRow = `<div class="wh-wb-project">
+    <button type="button" class="wh-wb-project-row" data-wb-new-personal-space>
+      <span class="wh-wb-tile wh-wb-tile--new">${workbenchIcons.plus}</span>
+      <span class="wh-wb-project-name wh-wb-project-name--muted">${zh ? "新建个人空间" : "New personal space"}</span>
+    </button>
+  </div>`;
+  return `<div class="wh-wb-rail-head wh-wb-rail-head--personal">${zh ? "我的空间" : "My space"}</div>${rows}${newPersonalSpaceRow}`;
 }
 
 // R13 批 P1：军团总览从这条预告条升级成左栏一级入口（renderArmyOverviewNavHtml，与项目列表平级，见
@@ -251,6 +307,45 @@ export function renderNewProjectModalHtml(input: {
   </div>`;
 }
 
+// R13 批 S3（个人空间）：创建入口只填名字，不需要选工作区/邀请成员——名字甚至可以留空（服务端
+// 按「我的空间」/「我的空间 2」…自动命名），所以提交按钮不像团队项目模态那样要求非空才可点。
+// 文案也不提团队语境（无「全员可聊」/「成员邀请」），个人空间仅本人可见。
+export function renderNewPersonalSpaceModalHtml(input: {
+  locale: Locale;
+  open: boolean;
+  name: string;
+  submitting: boolean;
+  error?: string | undefined;
+}): string {
+  const zh = input.locale === "zh-CN";
+  return `<div class="wh-wb-modal-overlay" data-wb-new-personal-space-overlay data-open="${input.open ? "true" : "false"}">
+    <div class="wh-wb-modal" role="dialog" aria-modal="true" aria-label="${zh ? "新建个人空间" : "New personal space"}">
+      <h3 class="wh-wb-modal-title">${zh ? "新建个人空间" : "New personal space"}</h3>
+      <input
+        class="wh-wb-modal-input"
+        type="text"
+        maxlength="128"
+        placeholder="${zh ? "留空即自动命名「我的空间」" : "Leave blank to auto-name it \"My space\""}"
+        data-wb-new-personal-space-name
+        value="${escapeHtml(input.name)}"
+        ${input.submitting ? "disabled" : ""}
+      />
+      <p class="wh-wb-modal-note">${
+        zh
+          ? "个人空间只有你自己能看到，跳过团队邀请与治理设置，建好即可和 Cuu 对话。"
+          : "Only you can see a personal space — no team invites or governance setup, just you and Cuu."
+      }</p>
+      ${input.error ? `<p class="wh-wb-modal-error">${escapeHtml(input.error)}</p>` : ""}
+      <div class="wh-wb-modal-actions">
+        <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-new-personal-space-cancel ${input.submitting ? "disabled" : ""}>${zh ? "取消" : "Cancel"}</button>
+        <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-new-personal-space-submit ${input.submitting ? "disabled" : ""}>
+          ${input.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "创建个人空间" : "Create personal space"}
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
 export type WorkbenchRailHandle = {
   refresh: () => void;
   // 开新建项目模态、重置上一次遗留的输入/错误态。中栏的空态 CTA 也调这个（不是自己拼一份重复逻辑），
@@ -285,6 +380,10 @@ export function mountWorkbenchRail(
   let modalError: string | undefined;
   let newCollabSubmitting = false;
   let newCollabError: string | undefined;
+  // R13 批 S3（个人空间）：与团队项目模态平行的一套瞬态 UI 状态，互不共享。
+  let personalSpaceName = "";
+  let personalSpaceSubmitting = false;
+  let personalSpaceError: string | undefined;
   let disposed = false;
 
   const render = () => {
@@ -296,7 +395,17 @@ export function mountWorkbenchRail(
     const viewerLabel = state.vm
       ? `${state.vm.workspace_members.items[0]?.nickname ?? ""}${zh ? " · 已连接" : " · connected"}`
       : undefined;
-    container.innerHTML = `${renderProjectTreeHtml({
+    const activeConversationIdField =
+      state.activeConversationId !== undefined ? { activeConversationId: state.activeConversationId } : {};
+    container.innerHTML = `${renderPersonalSpaceSectionHtml({
+      personalProjects: state.personalProjects,
+      selectedProjectId: state.selectedProjectId,
+      vm: state.vm,
+      locale: input.locale,
+      centerTab: state.centerTab,
+      ...activeConversationIdField,
+      newCollab: { submitting: newCollabSubmitting, error: newCollabError }
+    })}${renderProjectTreeHtml({
       projects: state.projects,
       selectedProjectId: state.selectedProjectId,
       vm: state.vm,
@@ -304,7 +413,7 @@ export function mountWorkbenchRail(
       centerTab: state.centerTab,
       // exactOptionalPropertyTypes：activeConversationId?: string 不接受显式 undefined（同
       // view.ts toPendingRenderModel 的既有取舍），state.activeConversationId 没值时干脆不传这个键。
-      ...(state.activeConversationId !== undefined ? { activeConversationId: state.activeConversationId } : {}),
+      ...activeConversationIdField,
       newCollab: { submitting: newCollabSubmitting, error: newCollabError }
     })}${renderArmyOverviewNavHtml(zh, state.centerTab === "army-overview")}${renderRailFootHtml(zh, viewerLabel)}${renderNewProjectModalHtml({
       locale: input.locale,
@@ -312,7 +421,29 @@ export function mountWorkbenchRail(
       name: modalName,
       submitting: modalSubmitting,
       error: modalError
+    })}${renderNewPersonalSpaceModalHtml({
+      locale: input.locale,
+      open: state.newPersonalSpaceModalOpen,
+      name: personalSpaceName,
+      submitting: personalSpaceSubmitting,
+      error: personalSpaceError
     })}`;
+  };
+
+  const loadPersonalProjects = async () => {
+    input.store.setState({ personalProjectsLoad: "loading" });
+    try {
+      const result = await input.client.request<{ projects: ProjectListItemVM[] }>("/api/me/personal-projects");
+      if (disposed) {
+        return;
+      }
+      input.store.setState({ personalProjects: result.projects, personalProjectsLoad: "ready" });
+    } catch {
+      if (disposed) {
+        return;
+      }
+      input.store.setState({ personalProjectsLoad: "error" });
+    }
   };
 
   const loadProjects = async () => {
@@ -367,6 +498,51 @@ export function mountWorkbenchRail(
     modalName = "";
     modalError = undefined;
     input.store.setState({ newProjectModalOpen: true });
+  };
+
+  // R13 批 S3（个人空间）：POST /api/me/personal-projects——名字可以留空（服务端按「我的空间」/
+  // 「我的空间 2」…自动命名），所以这里不像 submitNewProject 那样在空名时直接 return。走
+  // client.request 而不是新增 WorkHubApiClient 具名方法（同 createCollabConversation 顶部注释的
+  // 既有取舍：不为单个批次特性扩大具名方法面）。
+  const submitNewPersonalSpace = async () => {
+    if (personalSpaceSubmitting) {
+      return;
+    }
+    const name = personalSpaceName.trim();
+    personalSpaceSubmitting = true;
+    personalSpaceError = undefined;
+    render();
+    try {
+      const result = await input.client.request<{ project: { id: string } }>("/api/me/personal-projects", {
+        method: "POST",
+        body: JSON.stringify(name ? { name } : {})
+      });
+      if (disposed) {
+        return;
+      }
+      personalSpaceSubmitting = false;
+      personalSpaceName = "";
+      input.store.setState({ newPersonalSpaceModalOpen: false });
+      await loadPersonalProjects();
+      if (disposed) {
+        return;
+      }
+      input.onSelectProject(result.project.id);
+    } catch (error) {
+      if (disposed) {
+        return;
+      }
+      personalSpaceSubmitting = false;
+      personalSpaceError =
+        error instanceof Error ? error.message : input.locale === "zh-CN" ? "创建失败，请重试" : "Couldn't create it — retry";
+      render();
+    }
+  };
+
+  const openNewPersonalSpaceModal = () => {
+    personalSpaceName = "";
+    personalSpaceError = undefined;
+    input.store.setState({ newPersonalSpaceModalOpen: true });
   };
 
   // R13 批 P2：协同会话「+ 新建」——POST /projects/:id/conversations 建好之后立即打开它(store.centerTab
@@ -426,6 +602,10 @@ export function mountWorkbenchRail(
       openNewProjectModal();
       return;
     }
+    if (target.closest("[data-wb-new-personal-space]")) {
+      openNewPersonalSpaceModal();
+      return;
+    }
     if (target.closest("[data-wb-open-main-chat]")) {
       input.onOpenMainConversation?.();
       return;
@@ -459,6 +639,16 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-new-project-submit]")) {
       void submitNewProject();
+      return;
+    }
+    // R13 批 S3：新建个人空间模态的取消/背景点击/提交——与上面团队项目模态同一套约定，独立状态。
+    const clickedPersonalSpaceOverlayBackdrop = target.hasAttribute("data-wb-new-personal-space-overlay");
+    if (target.closest("[data-wb-new-personal-space-cancel]") || clickedPersonalSpaceOverlayBackdrop) {
+      input.store.setState({ newPersonalSpaceModalOpen: false });
+      return;
+    }
+    if (target.closest("[data-wb-new-personal-space-submit]")) {
+      void submitNewPersonalSpace();
     }
   });
 
@@ -478,6 +668,21 @@ export function mountWorkbenchRail(
           // ignore: some input rendering modes reject setSelectionRange.
         }
       }
+      return;
+    }
+    if (target instanceof HTMLInputElement && target.matches("[data-wb-new-personal-space-name]")) {
+      personalSpaceName = target.value;
+      render();
+      const input3 = container.querySelector<HTMLInputElement>("[data-wb-new-personal-space-name]");
+      if (input3) {
+        input3.focus();
+        const end = input3.value.length;
+        try {
+          input3.setSelectionRange(end, end);
+        } catch {
+          // ignore: some input rendering modes reject setSelectionRange.
+        }
+      }
     }
   });
 
@@ -486,10 +691,12 @@ export function mountWorkbenchRail(
   });
   render();
   void loadProjects();
+  void loadPersonalProjects();
 
   return {
     refresh: () => {
       void loadProjects();
+      void loadPersonalProjects();
     },
     openNewProjectModal,
     dispose: () => {

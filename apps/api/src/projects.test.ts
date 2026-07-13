@@ -156,6 +156,12 @@ test("project bootstrap creates a Day0 project context for the current actor", a
     },
     async listProjects() {
       return { generated_at: now.toISOString(), projects: [] };
+    },
+    async createPersonalProject() {
+      throw new Error("should not be called");
+    },
+    async listPersonalProjects() {
+      throw new Error("should not be called");
     }
   };
   const app = withErrors(new Hono<AuthEnv>());
@@ -188,6 +194,12 @@ test("project bootstrap is not available without identity", async () => {
       },
       async listProjects() {
         throw new Error("should not be called");
+      },
+      async createPersonalProject() {
+        throw new Error("should not be called");
+      },
+      async listPersonalProjects() {
+        throw new Error("should not be called");
       }
     }
   }));
@@ -207,6 +219,12 @@ test("project bootstrap returns malformed_json for malformed request bodies", as
         throw new Error("bootstrapProject must not be reached for malformed JSON");
       },
       async listProjects() {
+        throw new Error("should not be called");
+      },
+      async createPersonalProject() {
+        throw new Error("should not be called");
+      },
+      async listPersonalProjects() {
         throw new Error("should not be called");
       }
     }
@@ -238,6 +256,12 @@ test("project bootstrap rejects blank names and slugs before creating a default 
     },
     async listProjects() {
       return { generated_at: now.toISOString(), projects: [] };
+    },
+    async createPersonalProject() {
+      throw new Error("should not be called");
+    },
+    async listPersonalProjects() {
+      throw new Error("should not be called");
     }
   };
   const app = withErrors(new Hono<AuthEnv>());
@@ -267,6 +291,12 @@ test("GET /api/projects preserves project service error codes", async () => {
     },
     async listProjects() {
       throw new ProjectServiceError(403, "project_forbidden", "你没有权限查看项目。");
+    },
+    async createPersonalProject() {
+      throw new Error("should not be called");
+    },
+    async listPersonalProjects() {
+      throw new Error("should not be called");
     }
   };
   const app = withErrors(new Hono<AuthEnv>());
@@ -308,6 +338,12 @@ test("GET /api/projects lists the current actor's projects with open work item c
           }
         ]
       };
+    },
+    async createPersonalProject() {
+      throw new Error("should not be called");
+    },
+    async listPersonalProjects() {
+      throw new Error("should not be called");
     }
   };
   const app = withErrors(new Hono<AuthEnv>());
@@ -335,6 +371,12 @@ test("GET /api/projects requires identity", async () => {
         throw new Error("should not be called");
       },
       async listProjects() {
+        throw new Error("should not be called");
+      },
+      async createPersonalProject() {
+        throw new Error("should not be called");
+      },
+      async listPersonalProjects() {
         throw new Error("should not be called");
       }
     }
@@ -367,6 +409,12 @@ test("project bootstrap derives a stable slug for repeated non-ascii project nam
       };
     },
     async listForWorkspace() {
+      return [];
+    },
+    async bootstrapPersonalProject() {
+      throw new Error("not needed for this test");
+    },
+    async listPersonalForUser() {
       return [];
     }
   };
@@ -410,6 +458,12 @@ test("project bootstrap maps archived/deleted slug occupancy to a recoverable co
       throw new ProjectSlugOccupiedError("archived-project");
     },
     async listForWorkspace() {
+      return [];
+    },
+    async bootstrapPersonalProject() {
+      throw new Error("not needed for this test");
+    },
+    async listPersonalForUser() {
       return [];
     }
   };

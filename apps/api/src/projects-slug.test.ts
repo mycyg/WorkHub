@@ -34,6 +34,12 @@ function fakeRepo(): { repo: ProjectRepository; slugs: string[] } {
     },
     async listForWorkspace() {
       return [];
+    },
+    async bootstrapPersonalProject() {
+      throw new Error("not needed for this test");
+    },
+    async listPersonalForUser() {
+      return [];
     }
   };
   return { repo, slugs };

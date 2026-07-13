@@ -72,6 +72,9 @@ const project = {
   deletedAt: null,
   deletedByNickname: null,
   nextSeq: 0,
+  // R13 批 S3：projects 加了 is_personal 列——AiSettingsProjectRow 现在要求这个字段，
+  // 不是本文件测的功能改动，纯粹是共享表加列牵连的机械补齐。
+  isPersonal: false,
   createdAt: now,
   updatedAt: now
 };
