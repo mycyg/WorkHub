@@ -6,6 +6,7 @@ import { getDefaultProviderRegistry } from "./services/provider-registry.js";
 import { getDefaultAgentRunRecoveryScheduler } from "./workers/agent-run-recovery.js";
 import { getDefaultAgentRunSkillCurationScheduler } from "./workers/agent-skill-curation.js";
 import { getDefaultConversationObserverScheduler } from "./workers/conversation-observer.js";
+import { getDefaultConversationReplyJudgeScheduler } from "./workers/conversation-reply-judge.js";
 import { getDefaultSessionSweepScheduler } from "./workers/session-sweep.js";
 
 // 进程级兜底：未捕获异常/未处理 rejection 此前无人接，一次走线的 throw/reject 会静默杀掉 daemon
@@ -54,6 +55,17 @@ if (conversationObserverScheduler) {
   logger.info("conversation_observer_disabled", { reason: "llm_provider_not_configured" });
 }
 
+// R13 批4c：回话判定器——未被 @ 的群聊消息用便宜档 LLM 判断 Cuu 该不该主动回话（项目经理
+// 视角）。与观察者同款 isConfigured 守卫：provider 未配置时不启动。
+const conversationReplyJudgeScheduler = getDefaultProviderRegistry().isConfigured()
+  ? getDefaultConversationReplyJudgeScheduler()
+  : undefined;
+if (conversationReplyJudgeScheduler) {
+  conversationReplyJudgeScheduler.start();
+} else {
+  logger.info("conversation_reply_judge_disabled", { reason: "llm_provider_not_configured" });
+}
+
 const server = serve(
   {
     fetch: app.fetch,
@@ -76,6 +88,7 @@ function shutdown(exitCode: number) {
   skillCurationScheduler?.stop();
   sessionSweepScheduler?.stop();
   conversationObserverScheduler?.stop();
+  conversationReplyJudgeScheduler?.stop();
   const forceExit = setTimeout(() => process.exit(exitCode), 2000);
   forceExit.unref?.();
   server.close(() => {

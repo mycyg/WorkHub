@@ -4483,7 +4483,27 @@ const conversationTextContentResponseSchema = {
   type: "object",
   required: ["text"],
   properties: {
-    text: { type: "string", minLength: 1, maxLength: 20_000 }
+    text: { type: "string", minLength: 1, maxLength: 20_000 },
+    memory_citations: {
+      type: "array",
+      maxItems: 20,
+      items: {
+        type: "object",
+        required: ["kind", "title"],
+        properties: {
+          kind: { type: "string", enum: ["user_memory", "team_skill"] },
+          title: { type: "string", minLength: 1, maxLength: 256 }
+        },
+        additionalProperties: false
+      }
+    },
+    is_clarifying_question: { type: "boolean" },
+    clarify_options: {
+      type: "array",
+      maxItems: 8,
+      items: { type: "string", minLength: 1, maxLength: 200 }
+    },
+    clarify_placeholder: { type: "string", minLength: 1, maxLength: 200 }
   },
   additionalProperties: false
 } as const;
