@@ -351,6 +351,13 @@
       "when": 1783900000000,
       "tag": "0049_personal_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1783920000000,
+      "tag": "0051_conversation_context_summary",
+      "breakpoints": true
     }
   ]
 }

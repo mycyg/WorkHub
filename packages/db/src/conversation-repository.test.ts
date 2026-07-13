@@ -63,6 +63,10 @@ function conversation(overrides: Partial<ConversationRow> = {}): ConversationRow
     visibility: "private",
     nextSeq: 0,
     cuuEnabled: true,
+    // R13 批 C1：默认"从未压缩过"，同 cuuEnabled 当初加进这个 fixture 的理由一致——不加就会撞上
+    // ConversationRow 现在多出的两个必需字段（这个 fixture 没有 `as ConversationRow` 兜底断言）。
+    contextSummaryMd: null,
+    contextSummaryThroughSeq: 0,
     createdBy: creatorUserId,
     deletedAt: null,
     deletedByUserId: null,
