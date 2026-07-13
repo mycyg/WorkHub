@@ -11,12 +11,17 @@ test("the titlebar is a drag region, but its interactive controls opt out of dra
 test("does not rely on CSS backdrop-filter alone for the window chrome (transparent Tauri windows ignore it)", () => {
   // The window shell itself must have an opaque-enough gradient background as the real fallback —
   // native vibrancy (window_controls.rs) is what actually produces the frosted look.
-  assert.match(workbenchCss, /\.wh-wb-window\{[^}]*background:linear-gradient\(180deg,rgba\(30,34,46,\.92\)/u);
+  assert.match(workbenchCss, /\.wh-wb-window\{[^}]*background:linear-gradient\(180deg,rgba\(250,251,253,\.88\)/u);
 });
 
-test("dark theme tokens are scoped under .wh-ds.wh-wb, not the shared light .wh-ds root", () => {
-  assert.match(workbenchCss, /\.wh-ds\.wh-wb\{--ds-ink:#e8eaf0/u);
-  assert.doesNotMatch(workbenchCss, /^\.wh-ds\{--ds-ink:#e8eaf0/mu);
+// R13 batch V1: the workbench flipped from a bespoke dark palette to a fixed light glass theme that
+// shares design-system.ts's tokens (same visual language as the Spotlight box) — it must not redefine
+// --ds-ink/--ds-glass/etc. under .wh-ds.wh-wb anymore, only the Cuu brand orange stays scoped there.
+test("only the Cuu brand color is scoped under .wh-ds.wh-wb — ds-* tokens cascade from the shared light .wh-ds root", () => {
+  assert.match(workbenchCss, /\.wh-ds\.wh-wb\{--wb-cuu:#ffab5e/u);
+  assert.doesNotMatch(workbenchCss, /\.wh-ds\.wh-wb\{[^}]*--ds-ink:/u);
+  assert.doesNotMatch(workbenchCss, /--ds-ink:#e8eaf0/u);
+  assert.doesNotMatch(workbenchCss, /--wb-bg0|--wb-bg1/u);
 });
 
 test("the side panel collapses to zero width instead of just hiding overflow", () => {
@@ -43,7 +48,7 @@ test("reduced-motion users get the chat typing dots and composer tag transitions
 // —— R12（模式五档弹层，仅协同会话 composer）—— //
 
 test("the mode popover has an opaque-enough gradient fallback background, not transparent-only", () => {
-  assert.match(workbenchCss, /\.wh-wb-mode-pop\{[^}]*background:linear-gradient\(180deg,rgba\(44,49,64,\.97\)/u);
+  assert.match(workbenchCss, /\.wh-wb-mode-pop\{[^}]*background:linear-gradient\(180deg,rgba\(255,255,255,\.97\)/u);
 });
 
 test("the mode chip and the fifth (fully-managed) level reuse the shared warn design tokens, not a hardcoded color", () => {

@@ -1,31 +1,26 @@
 // WorkHub 桌面 · 工作台样式（照 src/spotlight/css.ts 的注入模式：一批 rule 字符串，join 后整块 <style>）。
-// token 复用 design-system.ts 的 --ds-* 体系（间距/圆角/时长/缓动/字体不变），但工作台是深色玻璃视觉
-// （原型 prototype/index.html 的配色），不是 Spotlight 盒子那套浅色玻璃——所以在 .wh-wb 作用域内重新赋值
-// 一批颜色相关 token（--ds-ink/--ds-glass/--ds-accent 等），结构类 token（--ds-s*/--ds-radius-*/--ds-dur-*）
-// 不动，靠 CSS 自定义属性的级联天然只影响 .wh-wb 子树，不污染同一 bundle 里可能出现的其它浅色表面。
+// R13 批 V1：工作台从深色玻璃改为固定浅色玻璃，与 Spotlight 聚焦盒同一视觉语言（用户拍板：固定浅色，
+// 不做跟随系统）。token 全部复用 design-system.ts 的 --ds-* 浅色基线（间距/圆角/时长/缓动/字体本就不变，
+// 现在颜色/玻璃相关 token 也不再本地覆盖）——.wh-ds.wh-wb 这个作用域现在只保留 Cuu 品牌橙
+// （--wb-cuu/--wb-cuu-soft），其余全部级联自 design-system 的浅色 .wh-ds 根。--wb-bg0/--wb-bg1
+// 这两个纯深色背景 token（连同引用它们的规则）已废弃移除。
 //
 // 透明 Tauri 窗口里 backdrop-filter 是空操作（本仓库踩过的坑，见 04 §4-2 与 02 §0）：玻璃质感真正来源是
-// window_controls.rs 里的原生 vibrancy（macOS HudWindow material）；这里的 backdrop-filter 只是「有 vibrancy
-// 时锦上添花、没有时也不出错」的渐进增强，不透明兜底用 .92 实底（浏览器 dev 预览/vibrancy 失败都落到这层）。
+// window_controls.rs 里的原生 vibrancy（macOS HudWindow material，由集成者切换成浅色 vibrancy）；这里的
+// backdrop-filter 只是「有 vibrancy 时锦上添花、没有时也不出错」的渐进增强，不透明兜底换成浅色薄透明底
+// （rgba(250,251,253,...)系——浏览器 dev 预览/vibrancy 失败都落到这层，同样要读得清）。
 
 export const workbenchCss = [
-  // —— 深色玻璃 token 覆盖（作用域 .wh-ds.wh-wb，选择器特异性天然高于 .wh-ds 本身） —— //
-  ".wh-ds.wh-wb{--ds-ink:#e8eaf0;--ds-ink-soft:#c3c7d6;--ds-ink-muted:#9aa1b2;--ds-ink-faint:#666d80;" +
-    "--ds-accent:#7aa2ff;--ds-accent-2:#9db8ff;--ds-accent-soft:rgba(122,162,255,.16);" +
-    "--ds-success:#5ed49a;--ds-success-soft:rgba(94,212,154,.14);--ds-warn:#f6c66b;--ds-warn-soft:rgba(246,198,107,.14);" +
-    "--ds-danger:#ff7a88;--ds-danger-soft:rgba(255,122,136,.14);--ds-info:#7aa2ff;--ds-info-soft:rgba(122,162,255,.14);" +
-    "--ds-glass:rgba(255,255,255,.055);--ds-glass-strong:rgba(255,255,255,.09);--ds-glass-quiet:rgba(255,255,255,.035);" +
-    "--ds-glass-border:rgba(255,255,255,.08);--ds-glass-hairline:rgba(255,255,255,.14);" +
-    "--wb-bg0:#0b0d12;--wb-bg1:#12151d;--wb-cuu:#ffab5e;--wb-cuu-soft:rgba(255,171,94,.14)}",
-  ".wh-wb .ds-field{background:rgba(255,255,255,.06);color:var(--ds-ink)}",
-  ".wh-wb .ds-field::placeholder{color:var(--ds-ink-faint)}",
+  // —— 品牌色 token（作用域 .wh-ds.wh-wb，选择器特异性天然高于 .wh-ds 本身）——只保留 Cuu 橙，
+  // 其它颜色 token 不再本地覆盖，级联自 design-system.ts 的浅色 .wh-ds 根。 —— //
+  ".wh-ds.wh-wb{--wb-cuu:#ffab5e;--wb-cuu-soft:rgba(255,171,94,.14)}",
 
   // —— 窗口外壳：无边框，靠自绘拖拽区 + 关闭/最小化控件（透明窗无原生标题栏）。 —— //
   "html,body,#root{margin:0;height:100%;background:transparent}",
   ".wh-wb-window{position:relative;height:100vh;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;" +
-    "border-radius:24px;border:1px solid rgba(255,255,255,.1);" +
-    "background:linear-gradient(180deg,rgba(30,34,46,.92),rgba(18,21,29,.94));" +
-    "box-shadow:0 40px 120px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.06)}",
+    "border-radius:24px;border:1px solid rgba(255,255,255,.7);" +
+    "background:linear-gradient(180deg,rgba(250,251,253,.88),rgba(242,245,250,.92));" +
+    "box-shadow:0 32px 90px -30px rgba(60,60,67,.32),inset 0 1px 0 rgba(255,255,255,.75)}",
   ".wh-wb-titlebar{flex:0 0 auto;height:44px;display:flex;align-items:center;gap:10px;padding:0 8px 0 16px;" +
     "border-bottom:1px solid var(--ds-glass-border);-webkit-app-region:drag}",
   ".wh-wb-crumb{font:600 13px/1 var(--ds-font);color:var(--ds-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
@@ -35,18 +30,19 @@ export const workbenchCss = [
   ".wh-wb-winbtn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;" +
     "border:0;background:transparent;color:var(--ds-ink-muted);cursor:pointer;transition:background var(--ds-dur-fast) var(--ds-ease),color var(--ds-dur-fast) var(--ds-ease)}",
   ".wh-wb-winbtn svg{width:14px;height:14px}",
-  ".wh-wb-winbtn:hover{background:rgba(255,255,255,.08);color:var(--ds-ink)}",
-  ".wh-wb-winbtn--close:hover{background:rgba(255,122,136,.16);color:var(--ds-danger)}",
+  // 浅底上白色半透明 hover 不可见——换深色低透明度（rank：hover 反馈普适规则，见批次说明）。
+  ".wh-wb-winbtn:hover{background:rgba(20,30,50,.06);color:var(--ds-ink)}",
+  ".wh-wb-winbtn--close:hover{background:var(--ds-danger-soft);color:var(--ds-danger)}",
 
   // —— 三栏骨架 —— //
   ".wh-wb-body{flex:1 1 auto;min-height:0;display:flex}",
   ".wh-wb-rail{width:242px;flex:0 0 auto;border-right:1px solid var(--ds-glass-border);display:flex;flex-direction:column;" +
-    "background:rgba(0,0,0,.14);overflow-y:auto}",
+    "background:var(--ds-glass-quiet);overflow-y:auto}",
   ".wh-wb-rail-head{padding:14px 14px 8px;font:700 11px/1 var(--ds-font);letter-spacing:.12em;color:var(--ds-ink-faint);text-transform:uppercase}",
   ".wh-wb-project{margin:2px 8px;border-radius:var(--ds-radius-md)}",
   ".wh-wb-project-row{display:flex;align-items:center;gap:9px;width:100%;box-sizing:border-box;padding:8px 10px;" +
     "border:0;border-radius:var(--ds-radius-md);background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}",
-  ".wh-wb-project-row:hover{background:rgba(255,255,255,.05)}",
+  ".wh-wb-project-row:hover{background:rgba(20,30,50,.05)}",
   ".wh-wb-project.active .wh-wb-project-row{background:var(--ds-glass-strong)}",
   ".wh-wb-tile{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;" +
     "font:700 12px/1 var(--ds-font);flex:0 0 auto;background:var(--ds-accent-soft);color:var(--ds-accent)}",
@@ -65,7 +61,7 @@ export const workbenchCss = [
   ".wh-wb-leaf{display:flex;align-items:center;gap:8px;width:calc(100% - 8px);box-sizing:border-box;font:500 13px/1.3 var(--ds-font);" +
     "text-align:left;color:var(--ds-ink-muted);padding:6px 10px;margin:1px 8px 1px 0;border-radius:9px;border:1px solid transparent;" +
     "background:transparent;cursor:default}",
-  ".wh-wb-leaf.sel{background:var(--ds-accent-soft);color:var(--ds-ink);border-color:rgba(122,162,255,.25)}",
+  ".wh-wb-leaf.sel{background:var(--ds-accent-soft);color:var(--ds-ink);border-color:rgba(10,132,255,.25)}",
   ".wh-wb-leaf svg{width:13px;height:13px;flex:0 0 auto;color:var(--ds-ink-faint)}",
   ".wh-wb-leaf.sel svg{color:var(--ds-accent)}",
   ".wh-wb-leaf--live{cursor:pointer;transition:background var(--ds-dur-fast) var(--ds-ease)}",
@@ -105,7 +101,7 @@ export const workbenchCss = [
 
   // —— 右栏：情境面板外壳（批 1 只给收放骨架 + 未接内容的诚实占位；真内容归批 5）。 —— //
   ".wh-wb-side{width:322px;flex:0 0 auto;border-left:1px solid var(--ds-glass-border);display:flex;flex-direction:column;" +
-    "background:rgba(0,0,0,.14);transition:width var(--ds-dur) var(--ds-ease),opacity var(--ds-dur) var(--ds-ease)}",
+    "background:var(--ds-glass-quiet);transition:width var(--ds-dur) var(--ds-ease),opacity var(--ds-dur) var(--ds-ease)}",
   ".wh-wb-side[data-open=\"false\"]{width:0;opacity:0;overflow:hidden;border-left:0}",
   ".wh-wb-side-head{padding:13px 15px 10px;border-bottom:1px solid var(--ds-glass-border);display:flex;align-items:center;gap:8px}",
   ".wh-wb-side-head svg{width:16px;height:16px;color:var(--ds-ink-muted)}",
@@ -114,28 +110,31 @@ export const workbenchCss = [
   ".wh-wb-side-toggle{position:absolute;top:8px;right:8px;-webkit-app-region:no-drag}",
 
   // —— 新建项目模态 —— //
+  // 遮罩层保留深色 scrim（这是弹窗遮罩的通用惯例，跟壳体本身是浅是深无关，只是把注意力摁到模态上；
+  // 比原深色主题版本调淡一档，别在浅色壳体上显得突兀）。
   ".wh-wb-modal-overlay{position:fixed;inset:0;display:none;align-items:flex-start;justify-content:center;" +
-    "padding-top:16vh;z-index:50;background:rgba(5,7,12,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}",
+    "padding-top:16vh;z-index:50;background:rgba(15,20,35,.3);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}",
   ".wh-wb-modal-overlay[data-open=\"true\"]{display:flex}",
   ".wh-wb-modal{width:min(480px,calc(100vw - 40px));border-radius:20px;overflow:hidden;" +
-    "background:linear-gradient(180deg,rgba(44,49,64,.97),rgba(28,32,43,.98));border:1px solid rgba(255,255,255,.14);" +
-    "box-shadow:0 50px 140px rgba(0,0,0,.55);padding:18px 20px}",
+    "background:linear-gradient(180deg,rgba(255,255,255,.97),rgba(248,250,253,.98));border:1px solid rgba(255,255,255,.7);" +
+    "box-shadow:0 40px 110px -30px rgba(60,60,67,.38),inset 0 1px 0 rgba(255,255,255,.8);padding:18px 20px}",
   ".wh-wb-modal-title{margin:0;font:700 14px/1 var(--ds-font);color:var(--ds-ink)}",
   ".wh-wb-modal-input{width:100%;box-sizing:border-box;margin:12px 0 10px;padding:10px 12px;" +
-    "background:rgba(255,255,255,.06);border:1px solid var(--ds-glass-border);border-radius:10px;" +
+    "background:rgba(15,23,42,.045);border:1px solid rgba(15,23,42,.14);border-radius:10px;" +
     "color:var(--ds-ink);font:500 13.5px/1.3 var(--ds-font);outline:none}",
-  ".wh-wb-modal-input:focus{border-color:rgba(122,162,255,.45)}",
+  ".wh-wb-modal-input:focus{border-color:rgba(10,132,255,.45)}",
   ".wh-wb-modal-note{margin:0;font:500 11.5px/1.7 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-wb-modal-note b{color:var(--ds-ink-soft);font-weight:600}",
   ".wh-wb-modal-error{margin:10px 0 0;font:600 12px/1.5 var(--ds-font);color:var(--ds-danger)}",
   ".wh-wb-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}",
 
-  // —— 通用按钮（复用 .ds-btn 结构，深色配色）。 —— //
+  // —— 通用按钮（复用 .ds-btn 结构，浅色配色——主按钮照 design-system.ts 的 .ds-btn-primary 同款蓝色渐变
+  // + 白字，不再是深色主题那套「浅蓝底配深字」）。 —— //
   ".wh-wb-btn{font:600 12.5px/1 var(--ds-font);padding:8px 14px;border-radius:99px;border:1px solid var(--ds-glass-border);" +
     "background:var(--ds-glass);color:var(--ds-ink);cursor:pointer;transition:background var(--ds-dur-fast) var(--ds-ease)}",
   ".wh-wb-btn:hover{background:var(--ds-glass-strong)}",
   ".wh-wb-btn:disabled{opacity:.5;cursor:default}",
-  ".wh-wb-btn--primary{border:0;color:#0b0d12;background:linear-gradient(135deg,#7aa2ff,#9db8ff);font-weight:700}",
+  ".wh-wb-btn--primary{border:0;color:#fff;background:linear-gradient(135deg,#0a84ff,#64d2ff);box-shadow:var(--ds-shadow-glow);font-weight:700}",
   ".wh-wb-btn--ghost{color:var(--ds-ink-muted);background:transparent;border-color:transparent}",
 
   // —— 批 2：主区群聊。中栏在渲染群聊时切成 flex 列布局，自己管内部滚动区（composer 常驻底部），
@@ -147,8 +146,10 @@ export const workbenchCss = [
   ".wh-wb-chat-head{flex:none;display:flex;align-items:center;gap:10px;padding:9px 20px;" +
     "border-bottom:1px solid var(--ds-glass-border);font:500 11.5px/1 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-wb-chat-avs{display:flex}",
+  // 头像堆叠的描边用白色（新壳体底色本就是近白的浅色玻璃），照 .wh-wb-chat-avatar--cuu/render.ts
+  // avatarTileHtml 的深底色块配白字在浅底上依然成立——这条边框只是让重叠头像有「切出来」的轮廓感。
   ".wh-wb-chat-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;" +
-    "font:700 10px/1 var(--ds-font);color:#fff;margin-right:-6px;border:1.5px solid var(--wb-bg1);flex:0 0 auto}",
+    "font:700 10px/1 var(--ds-font);color:#fff;margin-right:-6px;border:1.5px solid #fff;flex:0 0 auto}",
   ".wh-wb-chat-avatar--cuu{background:var(--wb-cuu-soft);color:var(--wb-cuu)}",
   ".wh-wb-chat-avatar--cuu svg{width:12px;height:12px}",
   ".wh-wb-chat-head-label{margin-left:4px}",
@@ -165,12 +166,15 @@ export const workbenchCss = [
   ".wh-wb-chat-txt{font:500 13px/1.55 var(--ds-font);color:var(--ds-ink);white-space:pre-wrap;word-break:break-word;" +
     "background:var(--ds-glass);border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);padding:9px 12px;display:inline-block;text-align:left}",
   ".wh-wb-chat-msg--cuu .wh-wb-chat-txt{background:var(--wb-cuu-soft);border-color:rgba(255,171,94,.28)}",
-  ".wh-wb-chat-msg--self .wh-wb-chat-txt{background:var(--ds-accent-soft);border-color:rgba(122,162,255,.3)}",
-  ".wh-wb-chat-mention{color:var(--ds-accent-2);font-weight:700}",
+  ".wh-wb-chat-msg--self .wh-wb-chat-txt{background:var(--ds-accent-soft);border-color:rgba(10,132,255,.3)}",
+  // @提及高亮——原先用 --ds-accent-2（design-system 的浅青色）在深底上够亮，浅底上前景文字对比不够；
+  // 这三处（mention/撤回重试链接/展开全文）都是要读的可交互文字，换成 --ds-accent 主蓝（design-system
+  // 自己给"高亮/可点文字"用的那个 token，不是新发明的颜色）。
+  ".wh-wb-chat-mention{color:var(--ds-accent);font-weight:700}",
   ".wh-wb-chat-msg--pending{opacity:.72}",
   ".wh-wb-chat-pending-status{display:block;margin-top:3px;font:500 10.5px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
   ".wh-wb-chat-pending-status--error{color:var(--ds-danger)}",
-  ".wh-wb-chat-pending-retry{margin-left:4px;border:0;background:transparent;color:var(--ds-accent-2);" +
+  ".wh-wb-chat-pending-retry{margin-left:4px;border:0;background:transparent;color:var(--ds-accent);" +
     "font:700 10.5px/1 var(--ds-font);cursor:pointer;padding:0;text-decoration:underline}",
   ".wh-wb-chat-filecard{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--ds-radius-md);" +
     "border:1px solid var(--ds-glass-border);background:var(--ds-glass);cursor:default;font:inherit;color:inherit;text-align:left}",
@@ -179,13 +183,12 @@ export const workbenchCss = [
   // R12 批 6：已落库消息的 file_card 可点开右栏预览——发送中的乐观渲染（无 --live 修饰符）继续
   // 保持 cursor:default，不给假点击反馈。
   ".wh-wb-chat-filecard--live{cursor:pointer;transition:background var(--ds-dur-fast) var(--ds-ease),border-color var(--ds-dur-fast) var(--ds-ease)}",
-  ".wh-wb-chat-filecard--live:hover{background:var(--ds-glass-strong);border-color:rgba(122,162,255,.3)}",
+  ".wh-wb-chat-filecard--live:hover{background:var(--ds-glass-strong);border-color:rgba(10,132,255,.3)}",
   ".wh-wb-chat-actioncard{max-width:420px;border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-md);" +
-    "",
+    "background:var(--wb-cuu-soft);padding:11px 13px}",
   // 产出卡(批 4b,原型 .editcard):与行动卡共用骨架但必须有独立身份——决策卡问"要不要",产出卡说"做完了"。
   ".wh-wb-chat-actioncard--deliverable{border-left:3px solid var(--ds-success);background:linear-gradient(90deg,var(--ds-success-soft),transparent 42%)}",
-  ".wh-wb-chat-actioncard--deliverable .wh-wb-chat-actioncard-h{color:var(--ds-ink)}" +
-    "background:var(--wb-cuu-soft);padding:11px 13px}",
+  ".wh-wb-chat-actioncard--deliverable .wh-wb-chat-actioncard-h{color:var(--ds-ink)}",
   ".wh-wb-chat-actioncard-h{font:700 12.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
   ".wh-wb-chat-actioncard-list{margin:8px 0 0;padding-left:18px;font:500 12px/1.6 var(--ds-font);color:var(--ds-ink-soft)}",
   // 00 §9：撤销后该项置灰划线 +「已撤销」，不删卡——划线只落在标题上，状态标不划（划掉的「已撤销」
@@ -218,7 +221,7 @@ export const workbenchCss = [
     "background:linear-gradient(to bottom,transparent,var(--ds-glass))}",
   ".wh-wb-chat-msg--cuu .wh-wb-chat-txt-fade{background:linear-gradient(to bottom,transparent,var(--wb-cuu-soft))}",
   ".wh-wb-chat-msg--self .wh-wb-chat-txt-fade{background:linear-gradient(to bottom,transparent,var(--ds-accent-soft))}",
-  ".wh-wb-chat-text-toggle{display:block;margin-top:4px;border:0;background:transparent;color:var(--ds-accent-2);" +
+  ".wh-wb-chat-text-toggle{display:block;margin-top:4px;border:0;background:transparent;color:var(--ds-accent);" +
     "font:700 11px/1 var(--ds-font);cursor:pointer;padding:0;text-decoration:underline}",
 
   // —— 正在输入 —— //
@@ -240,7 +243,7 @@ export const workbenchCss = [
   ".wh-wb-chat-attachment-chip button{display:inline-flex;border:0;background:transparent;color:var(--ds-ink-faint);cursor:pointer;padding:0}",
   ".wh-wb-chat-attachment-chip button svg{width:11px;height:11px}",
   ".wh-wb-chat-send-error{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:8px 12px;" +
-    "border-radius:var(--ds-radius-md);border:1px solid rgba(255,122,136,.3);background:var(--ds-danger-soft);" +
+    "border-radius:var(--ds-radius-md);border:1px solid rgba(255,69,58,.3);background:var(--ds-danger-soft);" +
     "font:600 12px/1.4 var(--ds-font);color:var(--ds-danger)}",
   ".wh-wb-chat-cbox{border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-lg);background:var(--ds-glass);" +
     "padding:10px 12px 8px;position:relative}",
@@ -251,24 +254,24 @@ export const workbenchCss = [
   ".wh-wb-chat-ctools{display:flex;align-items:center;gap:6px;margin-top:8px}",
   ".wh-wb-chat-ctag{display:inline-flex;align-items:center;gap:3px;font:600 11px/1 var(--ds-font);color:var(--ds-ink-muted);" +
     "padding:4px 8px;border-radius:99px;background:var(--ds-glass-quiet);border:0;cursor:pointer}",
-  ".wh-wb-chat-ctag b{color:var(--ds-accent-2)}",
+  ".wh-wb-chat-ctag b{color:var(--ds-accent)}",
   ".wh-wb-chat-ctag:hover{background:var(--ds-glass-strong)}",
   ".wh-wb-chat-ctag--soon{cursor:default;opacity:.55}",
   ".wh-wb-chat-ctag--soon:hover{background:var(--ds-glass-quiet)}",
   ".wh-wb-chat-send{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;" +
-    "border-radius:50%;border:0;background:linear-gradient(135deg,#7aa2ff,#9db8ff);color:#0b0d12;cursor:pointer}",
+    "border-radius:50%;border:0;background:linear-gradient(135deg,#0a84ff,#64d2ff);color:#fff;cursor:pointer}",
   ".wh-wb-chat-send svg{width:13px;height:13px}",
   ".wh-wb-chat-send:disabled{opacity:.35;cursor:default;background:var(--ds-glass)}",
 
   // —— @ picker / 「即将可用」占位 picker —— //
   ".wh-wb-chat-picker{position:absolute;left:12px;right:12px;bottom:calc(100% + 8px);max-height:220px;overflow-y:auto;" +
     "border-radius:var(--ds-radius-md);border:1px solid var(--ds-glass-border);" +
-    "background:linear-gradient(180deg,rgba(44,49,64,.98),rgba(28,32,43,.99));box-shadow:0 24px 60px rgba(0,0,0,.4);padding:6px}",
+    "background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,250,253,.99));box-shadow:0 20px 50px -20px rgba(60,60,67,.35);padding:6px}",
   ".wh-wb-chat-picker-section-title{padding:6px 8px 3px;font:700 10px/1 var(--ds-font);letter-spacing:.08em;" +
     "text-transform:uppercase;color:var(--ds-ink-faint)}",
   ".wh-wb-chat-picker-row{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:6px 8px;" +
     "border:0;border-radius:8px;background:transparent;color:var(--ds-ink);font:500 12.5px/1.3 var(--ds-font);text-align:left;cursor:pointer}",
-  ".wh-wb-chat-picker-row:hover{background:var(--ds-glass-strong)}",
+  ".wh-wb-chat-picker-row:hover{background:rgba(20,30,50,.05)}",
   ".wh-wb-chat-picker-row svg{width:14px;height:14px;color:var(--ds-ink-muted);flex:0 0 auto}",
   ".wh-wb-chat-picker-loading,.wh-wb-chat-picker-empty{padding:8px;font:500 12px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
   ".wh-wb-chat-picker--soon{padding:12px}",
@@ -288,7 +291,7 @@ export const workbenchCss = [
   ".wh-wb-drive-upload-label{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:9px;" +
     "background:var(--ds-glass-strong);border:1px solid var(--ds-glass-border);color:var(--ds-ink);" +
     "font:600 12px/1.2 var(--ds-font);cursor:pointer}",
-  ".wh-wb-drive-upload-label:hover{background:var(--ds-accent-soft);border-color:rgba(122,162,255,.3)}",
+  ".wh-wb-drive-upload-label:hover{background:var(--ds-accent-soft);border-color:rgba(10,132,255,.3)}",
   ".wh-wb-drive-upload-input{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0)}",
   ".wh-wb-drive-list{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-height:0}",
   ".wh-wb-drive-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--ds-radius-sm);cursor:default}",
@@ -304,10 +307,10 @@ export const workbenchCss = [
   ".wh-wb-act{background:transparent;border:1px solid var(--ds-glass-border);border-radius:8px;padding:4px 10px;" +
     "color:var(--ds-ink-muted);font:600 11.5px/1.2 var(--ds-font);cursor:pointer}",
   ".wh-wb-act:hover{background:var(--ds-glass-strong);color:var(--ds-ink)}",
-  ".wh-wb-act--danger:hover{background:var(--ds-danger-soft);border-color:rgba(255,122,136,.35);color:var(--ds-danger)}",
+  ".wh-wb-act--danger:hover{background:var(--ds-danger-soft);border-color:rgba(255,69,58,.35);color:var(--ds-danger)}",
   ".wh-wb-drive-empty{padding:36px 20px;text-align:center;font:500 12.5px/1.6 var(--ds-font);color:var(--ds-ink-faint)}",
   ".wh-wb-drive-action-error{margin:6px 18px;padding:8px 12px;border-radius:var(--ds-radius-sm);" +
-    "background:var(--ds-danger-soft);border:1px solid rgba(255,122,136,.3);color:var(--ds-danger);font:500 12px/1.4 var(--ds-font)}",
+    "background:var(--ds-danger-soft);border:1px solid rgba(255,69,58,.3);color:var(--ds-danger);font:500 12px/1.4 var(--ds-font)}",
   ".wh-wb-drive-side-head{display:flex;align-items:center;gap:8px;padding:0 0 8px;border-bottom:1px solid var(--ds-glass-border);margin-bottom:10px}",
   ".wh-wb-drive-side-title{font:700 12.5px/1.3 var(--ds-font);color:var(--ds-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   ".wh-wb-drive-side-note{font:500 11px/1.5 var(--ds-font);color:var(--ds-ink-faint);margin:4px 0 8px}",
@@ -315,7 +318,7 @@ export const workbenchCss = [
   ".wh-wb-drive-side-item{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:var(--ds-radius-sm);" +
     "background:var(--ds-glass);border:1px solid var(--ds-glass-border);margin-bottom:8px;font:500 12px/1.5 var(--ds-font);color:var(--ds-ink-muted)}",
   ".wh-wb-drive-side-error{padding:8px 10px;border-radius:var(--ds-radius-sm);background:var(--ds-danger-soft);" +
-    "border:1px solid rgba(255,122,136,.3);color:var(--ds-danger);font:500 12px/1.5 var(--ds-font)}",
+    "border:1px solid rgba(255,69,58,.3);color:var(--ds-danger);font:500 12px/1.5 var(--ds-font)}",
   ".wh-wb-drive-preview-text{white-space:pre-wrap;font:500 12px/1.65 var(--ds-font);color:var(--ds-ink-muted);" +
     "background:var(--ds-glass);border:1px solid var(--ds-glass-border);border-radius:var(--ds-radius-sm);padding:10px 12px;" +
     "max-height:320px;overflow-y:auto}",
@@ -329,31 +332,31 @@ export const workbenchCss = [
   ".wh-wb-drive-version-meta{font:500 11px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
   ".wh-wb-drive-restore-btn{align-self:flex-start;margin-top:3px;background:transparent;border:1px solid var(--ds-glass-border);" +
     "border-radius:8px;padding:4px 10px;color:var(--ds-accent);font:600 11.5px/1.2 var(--ds-font);cursor:pointer}",
-  ".wh-wb-drive-restore-btn:hover{background:var(--ds-accent-soft);border-color:rgba(122,162,255,.3)}",
+  ".wh-wb-drive-restore-btn:hover{background:var(--ds-accent-soft);border-color:rgba(10,132,255,.3)}",
   ".wh-wb-drive-version-confirm{display:flex;align-items:center;gap:6px;margin-top:4px;font:500 11.5px/1.4 var(--ds-font);color:var(--ds-warn)}",
   ".wh-wb-drive-version-error{margin-top:4px;font:500 11.5px/1.4 var(--ds-font);color:var(--ds-danger)}",
 
   // —— R12（模式五档弹层，仅协同会话 composer）：照 prototype 的 .power chip / #powerPop 弹层观感——
   // 玻璃底/圆角/选中态复用既有 --ds-glass*/--ds-radius-*/--wb-cuu* token，第 5 档警示变体复用
-  // --ds-warn*，不写死不透明白底（04 §4-2 铁律：透明 Tauri 窗里 backdrop-filter 是空操作，这里的
-  // linear-gradient 深色底同 .wh-wb-chat-picker/.wh-wb-modal 的既有做法一致，是真正的不透明兜底，
-  // 不是"看起来透明实际乳白"）。 —— //
+  // --ds-warn*。R13 批 V1：弹层不透明兜底改浅色渐变（同 .wh-wb-modal/.wh-wb-chat-picker 的处理），
+  // 不是"看起来透明实际乳白"——04 §4-2 铁律：透明 Tauri 窗里 backdrop-filter 是空操作，这里的
+  // linear-gradient 浅色底才是真正的不透明兜底。 —— //
   ".wh-wb-mode-chip{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:600 11px/1 var(--ds-font);" +
     "color:var(--ds-ink-muted);padding:4px 10px;border-radius:var(--ds-radius-pill);border:1px solid var(--ds-glass-border);" +
     "background:transparent;cursor:pointer;white-space:nowrap;transition:background var(--ds-dur-fast) var(--ds-ease)," +
     "color var(--ds-dur-fast) var(--ds-ease)}",
   ".wh-wb-mode-chip:hover{color:var(--ds-ink);background:var(--ds-glass)}",
   ".wh-wb-mode-chip-lv{color:var(--wb-cuu)}",
-  ".wh-wb-mode-chip--warn{color:var(--ds-warn);border-color:rgba(246,198,107,.45);background:var(--ds-warn-soft)}",
+  ".wh-wb-mode-chip--warn{color:var(--ds-warn);border-color:rgba(255,159,10,.45);background:var(--ds-warn-soft)}",
   ".wh-wb-mode-chip--warn .wh-wb-mode-chip-lv{color:var(--ds-warn)}",
   ".wh-wb-mode-pop{position:absolute;right:0;bottom:calc(100% + 8px);width:280px;z-index:6;box-sizing:border-box;" +
-    "background:linear-gradient(180deg,rgba(44,49,64,.97),rgba(28,32,43,.98));border:1px solid var(--ds-glass-border);" +
-    "border-radius:var(--ds-radius-lg);padding:14px;box-shadow:0 24px 80px rgba(0,0,0,.5)}",
+    "background:linear-gradient(180deg,rgba(255,255,255,.97),rgba(248,250,253,.98));border:1px solid var(--ds-glass-border);" +
+    "border-radius:var(--ds-radius-lg);padding:14px;box-shadow:0 20px 60px -22px rgba(60,60,67,.4)}",
   ".wh-wb-mode-pop-title{font:700 12.5px/1.3 var(--ds-font);color:var(--ds-ink);margin-bottom:3px}",
   ".wh-wb-mode-pop-sub{font:500 11px/1.5 var(--ds-font);color:var(--ds-ink-muted);margin-bottom:11px}",
   ".wh-wb-mode-lvl{display:flex;align-items:flex-start;gap:9px;padding:8px 9px;border-radius:var(--ds-radius-sm);" +
     "cursor:pointer;border:1px solid transparent;transition:background var(--ds-dur-fast) var(--ds-ease)}",
-  ".wh-wb-mode-lvl:hover{background:var(--ds-glass)}",
+  ".wh-wb-mode-lvl:hover{background:rgba(20,30,50,.05)}",
   ".wh-wb-mode-lvl--on{background:var(--wb-cuu-soft);border-color:rgba(255,171,94,.3)}",
   ".wh-wb-mode-lvl-r{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--ds-ink-faint);margin-top:2px;flex:0 0 auto}",
   ".wh-wb-mode-lvl--on .wh-wb-mode-lvl-r{border-color:var(--wb-cuu);" +
@@ -364,7 +367,7 @@ export const workbenchCss = [
   ".wh-wb-mode-lvl-num{font:500 11px/1 var(--ds-font);color:var(--ds-ink-faint);align-self:center}",
   // 第 5 档「全托管 · AI 审」——选中时才切到警示色（未选中只是普通行，同 prototype 的 .lvl.warn 只在
   // 叠加 .on 才真正变色），照原型 .lvl.warn.on 的取舍。
-  ".wh-wb-mode-lvl--warn.wh-wb-mode-lvl--on{background:var(--ds-warn-soft);border-color:rgba(246,198,107,.35)}",
+  ".wh-wb-mode-lvl--warn.wh-wb-mode-lvl--on{background:var(--ds-warn-soft);border-color:rgba(255,159,10,.35)}",
   ".wh-wb-mode-lvl--warn.wh-wb-mode-lvl--on .wh-wb-mode-lvl-r{border-color:var(--ds-warn);" +
     "background:radial-gradient(circle at center,var(--ds-warn) 45%,transparent 50%)}",
   // 「按能力细分」纯说明文字——没有 cursor:pointer（不是按钮，见 render.ts renderModePopoverHtml 顶部
