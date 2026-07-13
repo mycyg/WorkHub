@@ -351,6 +351,13 @@
       "when": 1783900000000,
       "tag": "0049_personal_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1783905000000,
+      "tag": "0053_seed_default_org_workspace",
+      "breakpoints": true
     }
   ]
 }

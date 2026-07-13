@@ -70,6 +70,11 @@ function isUniqueViolation(error: unknown): boolean {
   return !!error && typeof error === "object" && (error as { code?: string }).code === "23505";
 }
 
+// 裸 PG 外键违约（23503）→ ensureDefaultWorkspaceMembership 的 best-effort 降级判定，见其 catch。
+function isForeignKeyViolation(error: unknown): boolean {
+  return !!error && typeof error === "object" && (error as { code?: string }).code === "23503";
+}
+
 // 唯一冲突就地映射成 409（昵称/邮箱各自的文案），其余原样抛出。在事务内抛出即触发整笔回滚。
 async function createUserOr409(
   users: AuthAtomicWriteRepos["users"],
@@ -174,9 +179,17 @@ async function ensureDefaultWorkspaceMembership(deps: AuthDependencies, userId: 
     });
   } catch (error) {
     // 并发 identify/desktop-bootstrap 竞态：另一请求已抢先建好同一 (workspace,user) 行——幂等丢弃。
-    if (!isUniqueViolation(error)) {
-      throw error;
+    if (isUniqueViolation(error)) {
+      return;
     }
+    // 默认工作区行不存在（migrate-only 库在迁移 0053 之前的存量状态，或 DEFAULT_WORKSPACE_ID 被
+    // 指向不存在的行）→ FK 违约。登录不能因补建 membership 失败而 500：降级为本次跳过（与
+    // ENV-01 修复前同等体验），修好数据后下次 identify 自愈。
+    if (isForeignKeyViolation(error)) {
+      console.warn("auth membership ensure skipped (best-effort): default workspace row missing", error);
+      return;
+    }
+    throw error;
   }
 }
 

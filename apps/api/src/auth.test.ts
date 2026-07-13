@@ -1005,6 +1005,23 @@ test("ENV-01: desktop-bootstrap also creates a default workspace membership for 
   assert.equal(memberships.rows[0]?.defaultWorkspace, true);
 });
 
+test("ENV-01: identify degrades to no membership (not a 500) when the default workspace row is missing (FK violation)", async () => {
+  // pilot-stack-smoke 病根回归钉：migrate-only 库里 workspaces 表为空，memberships.create 撞 FK
+  //（PG code 23503）。identify 必须照常登录成功，而不是把 FK 违约冒泡成 500。
+  const { deps: authDeps, memberships } = identifyCtx();
+  memberships.create = async () => {
+    const error = new Error('insert or update on table "workspace_memberships" violates foreign key constraint');
+    (error as Error & { code?: string }).code = "23503";
+    throw error;
+  };
+  const app = withErrors(new Hono<AuthEnv>());
+  app.route("/api/auth", createAuthRoutes(authDeps));
+
+  const response = await app.request("/api/auth/identify", jsonPost({ nickname: "Nova" }));
+  assert.equal(response.status, 201, "identify must succeed even when the membership backfill hits a missing workspace");
+  assert.equal(memberships.rows.length, 0);
+});
+
 test("findings: malformed JSON body to /identify returns malformed_json, not a generic 400", async () => {
   const app = withProductionHttpErrors(new Hono<AuthEnv>());
   app.route("/api/auth", createAuthRoutes(deps([], [], settings())));
