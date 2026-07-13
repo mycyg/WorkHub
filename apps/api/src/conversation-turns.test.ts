@@ -78,6 +78,10 @@ function conversationRow(overrides: Partial<ConversationRow> = {}): Conversation
     visibility: "private",
     nextSeq: 2,
     cuuEnabled: true,
+    // R13 批 C1：默认"从未压缩过"——绝大多数既有测试的 nextSeq 远低于压缩阈值，这两个字段的默认值
+    // 只是让 fixture 显式、可预测（同 cuuEnabled 当初被 G1 显式加进这个 fixture 的理由一致）。
+    contextSummaryMd: null,
+    contextSummaryThroughSeq: 0,
     createdBy: userId,
     deletedAt: null,
     deletedByUserId: null,
@@ -368,21 +372,43 @@ function sequencedClient(
   };
 }
 
-function baseDeps(overrides: Partial<ConversationTurnServiceDeps> = {}): ConversationTurnServiceDeps {
-  const defaults: ConversationTurnServiceDeps = {
-    conversations: {
-      async findVisibleAccessRecord() {
-        return accessRecord();
-      },
-      async listMessagesAfter() {
-        return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
-      },
-      // 回显实际写入的 kind/contentJson——同真实仓库的行为一致，让下游断言看到的是这一轮真正生成的
-      // 文本/文件卡/工具日志，而不是一个跟输入脱节的固定夹具（R13 批4c：kind 现在可能不是 text）。
-      async createCuuMessage(input) {
-        return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
-      }
+// R13 批 C1：`conversations` 依赖的默认桩单独抽出来，既是 baseDeps() 的默认值来源，也是下面浅合并的
+// 兜底来源——本文件里几十处既有测试只按各自场景覆盖 `conversations` 里的 1-3 个方法（比如只关心
+// findVisibleAccessRecord 返回 null 的 404 分支，从不会真的调用 updateContextSummary）；如果
+// `...overrides` 把整个 `conversations` 子对象整体替换掉，这些既有覆盖就都要补全 4 个方法——纯体力活
+// 且和那些测试关心的场景无关。baseDeps() 因此对 `conversations` 单独做一层浅合并，让没有显式覆盖某个
+// 方法的测试自动继承这里的默认桩，不需要挨个改历史用例。
+function defaultConversationsDeps(): ConversationTurnServiceDeps["conversations"] {
+  return {
+    async findVisibleAccessRecord() {
+      return accessRecord();
     },
+    async listMessagesAfter() {
+      return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+    },
+    // 回显实际写入的 kind/contentJson——同真实仓库的行为一致，让下游断言看到的是这一轮真正生成的
+    // 文本/文件卡/工具日志，而不是一个跟输入脱节的固定夹具（R13 批4c：kind 现在可能不是 text）。
+    async createCuuMessage(input) {
+      return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+    },
+    // R13 批 C1：本批既有测试的会话夹具都远低于压缩阈值（nextSeq 恒为个位数），不会触碰这个方法——
+    // 命中就说明某处测试的 seq 设置没有按预期短路在压缩触发判定之前，直接报错比静默返回更容易定位。
+    async updateContextSummary() {
+      throw new Error("updateContextSummary not expected");
+    }
+  };
+}
+
+// R13 批 C1：`overrides.conversations` 特意收窄成 Partial（而不是整个 ConversationTurnServiceDeps 那样
+// 逐字段要求完整 Pick）——见 baseDeps() 里的合并逻辑与上面 defaultConversationsDeps() 的注释。
+type BaseDepsOverrides = Partial<Omit<ConversationTurnServiceDeps, "conversations">> & {
+  conversations?: Partial<ConversationTurnServiceDeps["conversations"]>;
+};
+
+function baseDeps(overrides: BaseDepsOverrides = {}): ConversationTurnServiceDeps {
+  const { conversations: conversationsOverride, ...restOverrides } = overrides;
+  const defaults: ConversationTurnServiceDeps = {
+    conversations: { ...defaultConversationsDeps(), ...conversationsOverride },
     aiSettings: {
       async findUserProfileAccessRecord() {
         return { membershipRole: "member", profile: userAiProfileRow() };
@@ -424,7 +450,7 @@ function baseDeps(overrides: Partial<ConversationTurnServiceDeps> = {}): Convers
     bus: { publish: async () => {} },
     logger: { warn: () => {} },
     turnTimeoutMs: 5_000,
-    ...overrides
+    ...restOverrides
   };
   return defaults;
 }
@@ -1629,4 +1655,196 @@ test("createTurn fails closed with conversation_turn_failed if the model halluci
     service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } }),
     (error: unknown) => error instanceof ConversationTurnServiceError && error.status === 500 && error.code === "conversation_turn_failed"
   );
+});
+
+// ── R13 批 C1（会话上下文压缩）────────────────────────────────────────────────────────
+
+test("createTurn does not attempt to compact when the window has not yet crossed the refresh threshold", async () => {
+  // afterSeq = nextSeq - 1 - windowSize(50)。选 nextSeq 使 afterSeq 恰好等于阈值本身（=REFRESH_BATCH
+  // 20，不大于）——触发条件是严格大于，这一步不该触发压缩。updateContextSummary 桩命中即抛错，让这条
+  // 断言真的会失败而不是形同虚设（同这个文件里其它"not expected"桩的既有取舍）。
+  const nextSeq = 1 + 50 + 20;
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ conversation: conversationRow({ nextSeq, contextSummaryThroughSeq: 0 }) });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow({ seq: nextSeq })], hasMore: false, nextAfterSeq: nextSeq };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        },
+        async updateContextSummary() {
+          throw new Error("updateContextSummary must not be called at or below the refresh threshold");
+        }
+      }
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  assert.equal(textContent(result.message).text, "看过了，整体不错");
+});
+
+test("createTurn compacts the newly slid-out window once the refresh threshold is crossed, persists the summary, and posts a context_compacted system event", async () => {
+  const compactionSpy: unknown[] = [];
+  const mainSpy: unknown[] = [];
+  let updateContextSummaryCall: { workspaceId: string; conversationId: string; summaryMd: string; throughSeq: number } | undefined;
+  let postedSystemMessage: { workspaceId: string; conversationId: string; content: Record<string, unknown>; at: Date } | undefined;
+
+  // afterSeq = 80 - 1 - 50 = 29 > 0 + 20 → 触发；这批"新滑出窗口"是 seq 1..29。
+  const nextSeq = 80;
+  const oldBatch = Array.from({ length: 29 }, (_, i) =>
+    userMessageRow({
+      id: `21000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+      seq: i + 1,
+      senderUserId: userId,
+      contentJson: { text: `历史讨论第 ${i + 1} 条` }
+    })
+  );
+
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ conversation: conversationRow({ nextSeq, contextSummaryThroughSeq: 0, contextSummaryMd: null }) });
+        },
+        async listMessagesAfter(params) {
+          if (params.afterSeq === 0) {
+            return { rows: oldBatch, hasMore: false, nextAfterSeq: 29 };
+          }
+          return { rows: [userMessageRow({ seq: nextSeq })], hasMore: false, nextAfterSeq: nextSeq };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        },
+        async updateContextSummary(input) {
+          updateContextSummaryCall = input;
+        }
+      },
+      compactionClient: respondingClient(
+        [],
+        "当前进度：正在准备季度报告初稿。\n关键决策与偏好：偏好中文回复。\n待办事项：等待对方确认数据来源。",
+        compactionSpy
+      ),
+      postContextCompactionSystemMessage: async (input) => {
+        postedSystemMessage = input;
+      },
+      client: respondingClient([textDeltaEvent("好的，")], "好的，收到", mainSpy)
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  // 压缩失败与否都不该影响这一轮真实回复本身。
+  assert.equal(textContent(result.message).text, "好的，收到");
+
+  assert.ok(updateContextSummaryCall, "updateContextSummary should have been called");
+  assert.equal(updateContextSummaryCall?.throughSeq, 29);
+  assert.match(updateContextSummaryCall?.summaryMd ?? "", /当前进度：正在准备季度报告初稿/);
+
+  assert.ok(postedSystemMessage, "a context_compacted system event should have been posted");
+  assert.equal(postedSystemMessage?.content["event"], "context_compacted");
+  assert.equal(postedSystemMessage?.content["compacted_message_count"], 29);
+
+  // 压缩调用本身：system prompt 里能看到三段式交接摘要的指令口径；不带 tools（这不是对话轮次）。
+  const compactionStreamParams = compactionSpy.find(
+    (entry): entry is { system: string; tools?: unknown[] } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(compactionStreamParams);
+  assert.match(compactionStreamParams.system, /项目经理式交接/);
+  assert.equal(compactionStreamParams.tools, undefined);
+
+  // 这一轮真正的回复调用：system prompt 里必须已经带上刚刚产出的摘要（本轮压缩产出的摘要，紧接着
+  // 就在同一次 createTurn 调用里注入生效）。
+  const mainStreamParams = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(mainStreamParams);
+  assert.match(mainStreamParams.system, /当前进度：正在准备季度报告初稿/);
+  assert.match(mainStreamParams.system, /这个会话更早内容的滚动摘要/);
+});
+
+test("createTurn injects an already-persisted rolling summary into the system prompt without recompacting below the threshold", async () => {
+  const mainSpy: unknown[] = [];
+  const existingSummary =
+    "当前进度：正在核对交付清单。\n关键决策与偏好：对方偏好周报形式。\n待办事项：等设计稿定稿。";
+
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({
+            conversation: conversationRow({
+              nextSeq: 2,
+              contextSummaryMd: existingSummary,
+              contextSummaryThroughSeq: 40
+            })
+          });
+        },
+        async listMessagesAfter() {
+          return { rows: [userMessageRow()], hasMore: false, nextAfterSeq: 1 };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        },
+        async updateContextSummary() {
+          throw new Error("updateContextSummary must not be called when nextSeq is nowhere near the threshold");
+        }
+      },
+      client: respondingClient([textDeltaEvent("好的")], "好的", mainSpy)
+    })
+  );
+
+  await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+
+  const mainStreamParams = mainSpy.find(
+    (entry): entry is { system: string } => typeof (entry as Record<string, unknown>)?.["system"] === "string"
+  );
+  assert.ok(mainStreamParams);
+  assert.match(mainStreamParams.system, /当前进度：正在核对交付清单/);
+  assert.match(mainStreamParams.system, /这个会话更早内容的滚动摘要/);
+});
+
+test("createTurn fails open when the context-compaction LLM call throws: the real reply still succeeds and nothing is persisted for the failed compaction", async () => {
+  const nextSeq = 80; // afterSeq = 29 > 20，仍然会尝试一次压缩
+  const service = createConversationTurnService(
+    baseDeps({
+      conversations: {
+        async findVisibleAccessRecord() {
+          return accessRecord({ conversation: conversationRow({ nextSeq, contextSummaryThroughSeq: 0, contextSummaryMd: null }) });
+        },
+        async listMessagesAfter(params) {
+          if (params.afterSeq === 0) {
+            return {
+              rows: [
+                userMessageRow({
+                  id: "22000000-0000-4000-8000-000000000001",
+                  seq: 1,
+                  contentJson: { text: "历史消息" }
+                })
+              ],
+              hasMore: false,
+              nextAfterSeq: 1
+            };
+          }
+          return { rows: [userMessageRow({ seq: nextSeq })], hasMore: false, nextAfterSeq: nextSeq };
+        },
+        async createCuuMessage(input) {
+          return cuuMessageRow({ kind: input.kind, contentJson: input.contentJson });
+        },
+        async updateContextSummary() {
+          throw new Error("updateContextSummary must not be called when the compaction LLM call fails");
+        }
+      },
+      compactionClient: throwingClient(),
+      postContextCompactionSystemMessage: async () => {
+        throw new Error("postContextCompactionSystemMessage must not be called when compaction fails upstream");
+      }
+    })
+  );
+
+  const result = await service.createTurn({ actor: actor(), conversationId, payload: { user_message_id: userMessageId } });
+  assert.equal(textContent(result.message).text, "看过了，整体不错");
 });

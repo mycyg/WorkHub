@@ -4252,6 +4252,10 @@ function mainConversationRow(overrides: Partial<VisibleConversationRow> = {}): V
     visibility: "project",
     nextSeq: 5,
     cuuEnabled: true,
+    // R13 批 C1：默认"从未压缩过"——同 cuuEnabled 当初加进这个 fixture 的理由一致，不加就会撞上
+    // ConversationRow 现在多出的两个必需字段。
+    contextSummaryMd: null,
+    contextSummaryThroughSeq: 0,
     createdBy: null,
     deletedAt: null,
     deletedByUserId: null,
