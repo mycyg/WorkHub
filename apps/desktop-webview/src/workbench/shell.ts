@@ -22,6 +22,8 @@ import { mountDriveView, type DriveTabApiClient, type DriveViewHandle } from "./
 import { workbenchIcons } from "./icons.js";
 import { createWorkbenchInterruptBroadcaster } from "./interrupt-broadcast.js";
 import { mountWorkbenchRail, type WorkbenchRailApiClient } from "./rail.js";
+import type { ProjectSettingsApiClient } from "./settings/api.js";
+import { mountProjectSettingsView, type ProjectSettingsViewHandle } from "./settings/view.js";
 import { createWorkbenchStore, type WorkbenchStore, type WorkbenchStoreState } from "./store.js";
 import { isMacOsWebview, resolveWorkbenchWindowBridge } from "./window-bridge.js";
 
@@ -33,12 +35,14 @@ type Locale = "zh-CN" | "en-US";
 // uploadDriveFile/deleteDriveItem/restoreDriveItem 是既有具名方法，直接 Pick 进来，不新增。R13 批 P1
 // 加军团面板/军团总览（army/panel.ts、army/overview.ts）需要的 request/getAgentRun——getAgentRun 也是
 // 既有具名方法（Spotlight 回放视图已经在用），同样不新增 api-client 面。
+// R13 批 P3 加项目设置标签（settings/view.ts）需要的 request 同样已在 Pick 里，零新增 api-client 面。
 export type WorkbenchShellApiClient = WorkbenchRailApiClient &
   ChatViewApiClient &
   DriveTabApiClient &
   DriveSidePanelApiClient &
   ArmyContextPanelApiClient &
   ArmyOverviewApiClient &
+  ProjectSettingsApiClient &
   Pick<WorkHubApiClient, "listProjects" | "bootstrapProject" | "pages" | "request" | "streams" | "uploadDriveFile" | "deleteDriveItem" | "restoreDriveItem" | "getAgentRun">;
 
 // 照 boot.ts 的 clientToken() 同款 helper——shell.ts 不 import boot.ts（避免 boot.ts → shell.ts →
@@ -160,6 +164,8 @@ export function mountWorkbenchShell(
   let driveHandle: DriveViewHandle | undefined;
   let driveMountKey: string | undefined;
   let armyOverviewHandle: ArmyOverviewViewHandle | undefined;
+  let projectSettingsHandle: ProjectSettingsViewHandle | undefined;
+  let projectSettingsMountKey: string | undefined;
 
   // R12 批7:打扰矩阵——windowBridge.isFocused() 告诉我们"用户是否正看着这个工作台窗口"；
   // resolveDesktopShellEmitter 是桌宠/主窗共用的通用 Tauri 事件桥(__TAURI__.event.emit),这里复用它
@@ -194,6 +200,12 @@ export function mountWorkbenchShell(
   const disposeArmyOverview = () => {
     armyOverviewHandle?.dispose();
     armyOverviewHandle = undefined;
+  };
+
+  const disposeProjectSettings = () => {
+    projectSettingsHandle?.dispose();
+    projectSettingsHandle = undefined;
+    projectSettingsMountKey = undefined;
   };
 
   // R13 批 V2:macOS 上 Rust 侧把 workbench 窗切成原生红绿灯（decorations:true + titleBarStyle
@@ -308,6 +320,7 @@ export function mountWorkbenchShell(
     if (state.centerTab === "army-overview") {
       disposeChat();
       disposeDrive();
+      disposeProjectSettings();
       armyPanel.clear();
       centerEl.className = "wh-wb-center wh-wb-center--army-overview";
       if (!armyOverviewHandle) {
@@ -319,6 +332,7 @@ export function mountWorkbenchShell(
     if (!state.selectedProjectId) {
       disposeChat();
       disposeDrive();
+      disposeProjectSettings();
       armyPanel.clear();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderEmptyStateHtml(input.locale, state.projects.length > 0);
@@ -327,6 +341,7 @@ export function mountWorkbenchShell(
     if (state.vmLoad === "error") {
       disposeChat();
       disposeDrive();
+      disposeProjectSettings();
       armyPanel.clear();
       centerEl.className = "wh-wb-center";
       centerEl.innerHTML = renderCenterErrorHtml(input.locale);
@@ -336,6 +351,7 @@ export function mountWorkbenchShell(
       const vm = state.vm;
       if (state.centerTab === "drive") {
         disposeChat();
+        disposeProjectSettings();
         const key = `${vm.project.id}:drive`;
         if (driveHandle && driveMountKey === key) {
           return; // 已经是这个项目的网盘标签——它自己的 store 在内部持续更新，无需重挂。
@@ -356,7 +372,31 @@ export function mountWorkbenchShell(
         driveSidePanel.showIdle();
         return;
       }
+      // R13 批 P3：项目设置标签（AI 治理表单，settings/view.ts）——同 drive/chat 的"key 没变就不重挂"
+      // 纪律。editable 由 vm.viewer.is_project_owner 决定（rail 只对负责人渲染入口，这里仍传真实值兜底：
+      // 所有权在会话中途变更时表单老实降级成只读，见 settings/view.ts 顶部注释）。
+      if (state.centerTab === "project-settings") {
+        disposeChat();
+        disposeDrive();
+        const key = `${vm.project.id}:project-settings`;
+        if (projectSettingsHandle && projectSettingsMountKey === key) {
+          return;
+        }
+        disposeProjectSettings();
+        armyPanel.clear();
+        centerEl.className = "wh-wb-center wh-wb-center--project-settings";
+        projectSettingsHandle = mountProjectSettingsView(centerEl, {
+          client: input.client,
+          locale: input.locale,
+          projectId: vm.project.id,
+          projectName: vm.project.name,
+          editable: vm.viewer.is_project_owner
+        });
+        projectSettingsMountKey = key;
+        return;
+      }
       disposeDrive();
+      disposeProjectSettings();
       // final-turns-wiring：centerTab === "collab" 时中栏挂的是某个具体的协同会话（单聊），不是主区。
       // 在 vm 里找 activeConversationId 对应的那个 kind='collab' 会话——找不到（树叶指向的会话已经不在
       // 这次 VM 快照里，比如权限变化/深链过期）就不假装能渲染它，静默落回下面的主区分支，而不是渲染一个
@@ -441,6 +481,7 @@ export function mountWorkbenchShell(
     }
     disposeChat();
     disposeDrive();
+    disposeProjectSettings();
     armyPanel.clear();
     centerEl.className = "wh-wb-center";
     centerEl.innerHTML = renderCenterLoadingHtml(input.locale);
@@ -502,7 +543,10 @@ export function mountWorkbenchShell(
     onOpenDrive: () => store.setState({ centerTab: "drive" }),
     // R13 批 P1：左栏一级入口「军团总览」点击路由——切 store.centerTab，renderCenter 的订阅回调
     // 负责挂 army/overview.ts 真视图。
-    onOpenArmyOverview: () => store.setState({ centerTab: "army-overview" })
+    onOpenArmyOverview: () => store.setState({ centerTab: "army-overview" }),
+    // R13 批 P3：项目行「项目设置」齿轮点击路由——切 store.centerTab，renderCenter 的订阅回调
+    // 负责挂 settings/view.ts 真视图（治理表单）。
+    onOpenProjectSettings: () => store.setState({ centerTab: "project-settings" })
   });
 
   centerEl.addEventListener("click", (event) => {
@@ -559,6 +603,7 @@ export function mountWorkbenchShell(
       disposeChat();
       disposeDrive();
       disposeArmyOverview();
+      disposeProjectSettings();
       driveSidePanel.dispose();
       armyPanel.dispose();
     }

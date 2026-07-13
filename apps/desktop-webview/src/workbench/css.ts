@@ -63,6 +63,16 @@ export const workbenchCss = [
   ".wh-wb-project-name{font:600 13.5px/1.3 var(--ds-font);flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ds-ink)}",
   ".wh-wb-project-name--muted{color:var(--ds-ink-muted);font-weight:500}",
   ".wh-wb-project-dot{width:7px;height:7px;border-radius:50%;background:var(--ds-success);box-shadow:0 0 8px var(--ds-success);flex:0 0 auto}",
+  // R13 批 P3：项目行 + 项目设置齿轮的水平容器（齿轮是 .wh-wb-project-row 的兄弟节点——按钮里不能套
+  // 按钮，见 rail.ts renderProjectTreeHtml 的注释）。齿轮只在选中项目且 viewer 是项目负责人时渲染。
+  ".wh-wb-project-head{display:flex;align-items:center;gap:2px}",
+  ".wh-wb-project-head .wh-wb-project-row{flex:1 1 auto;min-width:0}",
+  ".wh-wb-project-gear{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;flex:0 0 auto;" +
+    "border:0;border-radius:8px;background:transparent;color:var(--ds-ink-faint);cursor:pointer;" +
+    "transition:background var(--ds-dur-fast) var(--ds-ease),color var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-project-gear svg{width:14px;height:14px}",
+  ".wh-wb-project-gear:hover{background:rgba(20,30,50,.06);color:var(--ds-ink)}",
+  ".wh-wb-project-gear.sel{background:var(--ds-accent-soft);color:var(--ds-accent)}",
   ".wh-wb-tree{padding:2px 0 6px 22px}",
   // 批 1 的树叶行是只读信息(真会话标题/真文件数)——网盘视图还没接进这个窗口(批 6)，不给
   // cursor:pointer/hover 反馈,免得看起来能点却什么都不做（04 §4-3 铁律）。批 2 把主区群聊接进这个
@@ -207,6 +217,54 @@ export const workbenchCss = [
   ".wh-wb-army-ov-group{margin-bottom:20px}",
   ".wh-wb-army-ov-group-h{display:flex;align-items:center;gap:7px;font:700 12.5px/1 var(--ds-font);color:var(--ds-ink);margin-bottom:10px}",
   ".wh-wb-army-ov-empty{padding:40px 18px;text-align:center;font:500 13px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
+
+  // —— R13 批 P3：项目设置（AI 治理表单，中栏 centerTab === "project-settings"）——浅色玻璃行/开关/
+  // chips，视觉照 .wh-wb-summary 与 .wh-spot-row 的既有语言。中栏保持默认滚动盒（不像 chat/drive 那样
+  // 自管布局），沿用 .wh-wb-center 的 padding。 —— //
+  ".wh-wb-pset{max-width:640px}",
+  ".wh-wb-pset-head{margin-bottom:16px}",
+  ".wh-wb-pset-title{margin:0;font:700 18px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-pset-sub{margin:6px 0 0;font:500 12.5px/1.6 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-pset-readonly-note{margin:8px 0 0;font:600 12px/1.5 var(--ds-font);color:var(--ds-warn)}",
+  ".wh-wb-pset-error{margin:0 0 12px;font:600 12px/1.5 var(--ds-font);color:var(--ds-danger)}",
+  ".wh-wb-pset-group{border:1px solid var(--ds-glass-border);background:var(--ds-glass);border-radius:var(--ds-radius-md);" +
+    "padding:13px 15px;margin-bottom:10px}",
+  ".wh-wb-pset-row{display:flex;align-items:center;gap:12px}",
+  ".wh-wb-pset-row-main{flex:1 1 auto;min-width:0}",
+  ".wh-wb-pset-row-title{font:600 13.5px/1.3 var(--ds-font);color:var(--ds-ink)}",
+  ".wh-wb-pset-row-sub{margin-top:3px;font:500 11.5px/1.5 var(--ds-font);color:var(--ds-ink-muted)}",
+  // 开关：浅底轨道 + 白色小圆钮，选中态换蓝（同 design-system 的 accent）。禁用态（只读表单）降不透明度。
+  ".wh-wb-pset-switch{position:relative;width:38px;height:22px;flex:0 0 auto;border:1px solid var(--ds-glass-border);" +
+    "border-radius:99px;background:rgba(15,23,42,.08);cursor:pointer;padding:0;transition:background var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-pset-switch[data-on=\"true\"]{background:var(--ds-accent);border-color:var(--ds-accent)}",
+  ".wh-wb-pset-switch:disabled{opacity:.55;cursor:default}",
+  ".wh-wb-pset-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;" +
+    "box-shadow:0 1px 3px rgba(15,23,42,.3);transition:transform var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-pset-switch[data-on=\"true\"] .wh-wb-pset-knob{transform:translateX(16px)}",
+  ".wh-wb-pset-inline{display:flex;align-items:center;gap:7px;flex:0 0 auto}",
+  ".wh-wb-pset-inline-k{font:500 12px/1 var(--ds-font);color:var(--ds-ink-muted)}",
+  ".wh-wb-pset-num{width:84px;box-sizing:border-box;padding:7px 9px;background:rgba(15,23,42,.045);" +
+    "border:1px solid rgba(15,23,42,.14);border-radius:9px;color:var(--ds-ink);font:500 13px/1.2 var(--ds-font);outline:none}",
+  ".wh-wb-pset-num:focus{border-color:rgba(10,132,255,.45)}",
+  ".wh-wb-pset-time{box-sizing:border-box;padding:6px 8px;background:rgba(15,23,42,.045);" +
+    "border:1px solid rgba(15,23,42,.14);border-radius:9px;color:var(--ds-ink);font:500 12.5px/1.2 var(--ds-font);outline:none}",
+  ".wh-wb-pset-time:focus{border-color:rgba(10,132,255,.45)}",
+  ".wh-wb-pset-quiet-body{margin-top:11px;padding-top:11px;border-top:1px solid var(--ds-glass-border);" +
+    "display:flex;flex-direction:column;gap:9px}",
+  ".wh-wb-pset-days{display:flex;gap:6px;flex-wrap:wrap}",
+  ".wh-wb-pset-day{min-width:30px;padding:6px 8px;border:1px solid var(--ds-glass-border);border-radius:99px;" +
+    "background:transparent;color:var(--ds-ink-muted);font:600 11.5px/1 var(--ds-font);cursor:pointer;" +
+    "transition:border-color var(--ds-dur-fast) var(--ds-ease),color var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-pset-day[data-sel=\"true\"]{border-color:var(--ds-accent);color:var(--ds-accent);box-shadow:inset 0 0 0 1px rgba(10,132,255,.18)}",
+  ".wh-wb-pset-day:disabled{cursor:default;opacity:.7}",
+  ".wh-wb-pset-note{font:500 11px/1.4 var(--ds-font);color:var(--ds-ink-faint)}",
+  ".wh-wb-pset-chips{margin-top:10px;display:flex;gap:7px;flex-wrap:wrap}",
+  // Granular chip：data-sel="true" = 已禁止（警示红边，同 spotlight .wh-spot-reason[data-sel] 的语义）。
+  ".wh-wb-pset-chip{border:1px solid var(--ds-glass-border);border-radius:99px;background:transparent;color:var(--ds-ink-soft);" +
+    "font:600 12px/1 var(--ds-font);padding:8px 12px;cursor:pointer;" +
+    "transition:border-color var(--ds-dur-fast) var(--ds-ease),color var(--ds-dur-fast) var(--ds-ease)}",
+  ".wh-wb-pset-chip[data-sel=\"true\"]{border-color:var(--ds-danger);color:var(--ds-danger);box-shadow:inset 0 0 0 1px rgba(255,69,58,.22)}",
+  ".wh-wb-pset-chip:disabled{cursor:default;opacity:.7}",
 
   // —— 新建项目模态 —— //
   // 遮罩层保留深色 scrim（这是弹窗遮罩的通用惯例，跟壳体本身是浅是深无关，只是把注意力摁到模态上；

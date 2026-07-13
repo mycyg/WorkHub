@@ -261,6 +261,51 @@ test("renderProjectTreeHtml does not leak a stale VM onto a different project's 
   assert.doesNotMatch(html, /wh-wb-tree/u);
 });
 
+// R13 批 P3：项目名右侧的「项目设置」齿轮——只对项目负责人渲染（服务端治理端点读写都锁在负责人上，
+// 给非负责人一个点开只会撞 404 的按钮违反 04 §4 铁律 3）。
+test("the project-settings gear renders only when the viewer owns the selected project", () => {
+  const ownerVm = workbenchVm({
+    viewer: { user_id: "90000000-0000-4000-8000-000000000009", membership_role: "member", is_project_owner: true }
+  });
+  const ownerHtml = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm: ownerVm, locale: "zh-CN" });
+  assert.match(ownerHtml, /<button[^>]*data-wb-open-project-settings[^>]*>/u);
+  assert.match(ownerHtml, /aria-label="项目设置"/u);
+
+  const memberHtml = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm: workbenchVm(), locale: "zh-CN" });
+  assert.doesNotMatch(memberHtml, /data-wb-open-project-settings/u);
+});
+
+test("the project-settings gear never renders on an unselected project row or a stale VM", () => {
+  const ownerVm = workbenchVm({
+    viewer: { user_id: "90000000-0000-4000-8000-000000000009", membership_role: "member", is_project_owner: true }
+  });
+  const unselected = renderProjectTreeHtml({ projects: [project()], selectedProjectId: undefined, vm: ownerVm, locale: "zh-CN" });
+  assert.doesNotMatch(unselected, /data-wb-open-project-settings/u);
+  const staleVm = renderProjectTreeHtml({
+    projects: [project({ id: "other-project" })],
+    selectedProjectId: "other-project",
+    vm: ownerVm,
+    locale: "zh-CN"
+  });
+  assert.doesNotMatch(staleVm, /data-wb-open-project-settings/u);
+});
+
+test("the project-settings gear is marked selected while the project-settings tab is open", () => {
+  const ownerVm = workbenchVm({
+    viewer: { user_id: "90000000-0000-4000-8000-000000000009", membership_role: "member", is_project_owner: true }
+  });
+  const open = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm: ownerVm,
+    locale: "zh-CN",
+    centerTab: "project-settings"
+  });
+  assert.match(open, /class="wh-wb-project-gear sel"/u);
+  const closed = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm: ownerVm, locale: "zh-CN" });
+  assert.doesNotMatch(closed, /class="wh-wb-project-gear sel"/u);
+});
+
 // R13 批 P1：军团总览从 rail-foot 的不可点预告条升级成左栏一级入口（renderArmyOverviewNavHtml，
 // 见下面新测试）——rail-foot 现在只剩「我」这一行，旧的"即将上线"摘要条已退役（用户拍板 4）。
 test("renderRailFootHtml no longer carries the retired army-overview summary strip, only the viewer label", () => {
