@@ -351,6 +351,13 @@
       "when": 1783900000000,
       "tag": "0049_personal_projects",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1783901000000,
+      "tag": "0050_proposal_diff_stats",
+      "breakpoints": true
     }
   ]
 }

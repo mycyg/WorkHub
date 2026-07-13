@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
+import type { ProposalDiffStats } from "../schema/index.js";
 import {
   actionCardItems,
   agentRuns,
@@ -86,6 +87,9 @@ export type ConversationRunOutputLink = {
   title: string;
   status: string;
   updatedAt: Date;
+  // R13 批 P1.5（右栏变动文件区）：null=历史 proposal/还没跑过 estimateDeliverableDiffStats
+  // 持久化，服务层（conversation-army.ts）据此决定是否输出 changed_files 字段，绝不冒充空数组。
+  diffStatsJson: ProposalDiffStats | null;
 };
 
 export type ListOutputLinksForConversationInput = {
@@ -401,7 +405,8 @@ export function createConversationRunRepository(db: WorkHubDb): ConversationRunR
           runId: agentRuns.id,
           title: proposals.title,
           status: proposals.status,
-          updatedAt: proposals.updatedAt
+          updatedAt: proposals.updatedAt,
+          diffStatsJson: proposals.diffStatsJson
         })
         .from(proposals)
         .innerJoin(branches, eq(branches.id, proposals.branchId))

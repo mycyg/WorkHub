@@ -51,6 +51,23 @@ type ActionCardItemKind = "execute" | "decide" | "observe";
 type ActionCardConfidence = "high" | "mid" | "low";
 type ActionCardItemStatus = "running" | "done" | "undone" | "waiting_decision" | "dismissed" | "escalated";
 
+// R13 批 P1.5（右栏变动文件区）：proposals.diff_stats_json 的持久化形状——agent-runner 在 workdir
+// 仍存活时把 estimateDeliverableDiffStats 算出的聚合 + per-file 明细一起写进来（同一次计算的两个
+// 视图，保证「产出卡系统消息」与「右栏变动文件」两条路径数字一致）。字段整体可空：历史行/未跑过
+// 统计的行留 null，读侧诚实展示「改动详情不可用」而不是冒充 0（见 conversation-army.ts 的映射）。
+export type ProposalDiffStatsFile = {
+  change_id: string;
+  path?: string;
+  change_type: DeliverableChange["change_type"];
+  // adds/dels 缺省即「这条改动没能计入统计」（新建/被删/非文本/超限等 fail-open 情形），不是 0。
+  adds?: number;
+  dels?: number;
+};
+export type ProposalDiffStats = {
+  total: { adds: number; dels: number };
+  files: ProposalDiffStatsFile[];
+};
+
 type DeferredForeignKeyConfig = {
   name?: string;
   columns: AnyPgColumn[];
@@ -1306,6 +1323,8 @@ export const proposals = pgTable(
     title: varchar("title", { length: 256 }).notNull(),
     status: varchar("status", { length: 16 }).notNull().default("opened"),
     diffManifest: jsonb("diff_manifest").$type<DeliverableChangeManifest>().notNull(),
+    // R13 批 P1.5：nullable——历史行/未跑过统计的允许为 null，读侧不得冒充 0（见类型定义处注释）。
+    diffStatsJson: jsonb("diff_stats_json").$type<ProposalDiffStats>(),
     confidenceId: uuid("confidence_id"),
     mergeSnapshotId: uuid("merge_snapshot_id"),
     openedByKind: varchar("opened_by_kind", { length: 16 }).notNull(),
