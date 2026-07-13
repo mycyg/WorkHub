@@ -1622,6 +1622,17 @@ fn main() {
                 spawn_default_shell_sse_workers(app.handle().clone(), shell_config)
                     .map_err(|error| format!("failed to start WorkHub SSE worker: {error:?}"))?;
             }
+            // R13 真机迭代 QA 钩子（与 WORKHUB_DISABLE_VIBRANCY 同族,仅本机截图验收用）:置位时启动即开
+            // 工作台窗,免去截图流水线里"深链被旧注册劫持/键盘敲不进聚焦盒"的木偶戏。生产不置位=零行为变化。
+            if std::env::var("WORKHUB_QA_OPEN_WORKBENCH").is_ok() {
+                let qa_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    if let Err(error) = open_workbench(qa_handle, None, None) {
+                        eprintln!("qa open_workbench failed: {error}");
+                    }
+                });
+            }
             // 主窗口保持透明 + 原生拖拽，且贴一层 OS 级毛玻璃（macOS vibrancy / Windows acrylic）让玻璃真正"磨砂"
             // 透出桌面 —— 纯透明窗里 CSS backdrop-filter 无内容可糊，半透白底也只是奶白不带模糊，真·毛玻璃必须靠原生材质。
             // 失败不致命（不支持的系统退回半透白底 ds-glass-strong 兜底），但必须留下真机诊断。第 4 参数=圆角半径，对齐盒子 24px。
