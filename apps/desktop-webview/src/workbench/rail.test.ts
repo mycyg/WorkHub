@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
+import type { ConversationVM, ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
 
-import { renderArmyOverviewNavHtml, renderNewProjectModalHtml, renderProjectTreeHtml, renderRailFootHtml } from "./rail.js";
+import {
+  appendCollabConversationToVm,
+  createCollabConversation,
+  nextCollabConversationTitle,
+  renderArmyOverviewNavHtml,
+  renderNewProjectModalHtml,
+  renderProjectTreeHtml,
+  renderRailFootHtml
+} from "./rail.js";
 
 function project(over: Partial<ProjectListItemVM> = {}): ProjectListItemVM {
   return {
@@ -304,4 +312,120 @@ test("renderNewProjectModalHtml disables inputs while submitting and surfaces a 
 test("renderNewProjectModalHtml never claims a git-jargon action verb in the user-facing copy", () => {
   const html = renderNewProjectModalHtml({ locale: "zh-CN", open: true, name: "", submitting: false });
   assert.doesNotMatch(html, /branch|merge|commit|pull request/iu);
+});
+
+// R13 批 P2（拍板链路收尾）：协同会话「+ 新建」——rail.ts 的协同分组此前只能渲染服务端已经建好的会话，
+// 从没有任何入口能真的建一个新的（POST /projects/:id/conversations 从 R12 批 0 落地起就没有 UI 调用方）。
+// 这几条锁死这次补的真按钮：渲染态（idle/submitting/error）+ 两个纯 helper（自动命名/合并回 VM）+
+// 请求 helper 的 method/path/body 形状。
+
+test("renderProjectTreeHtml renders a real 'new collab conversation' button in the active project's tree", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm, locale: "zh-CN" });
+  assert.match(html, /<button[^>]*data-wb-new-collab-conversation[^>]*>[^]*新建协同会话/u);
+  assert.doesNotMatch(leafTag(html, "data-wb-new-collab-conversation"), /disabled/u);
+});
+
+test("renderProjectTreeHtml disables the new-collab button and shows a busy label while submitting", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN",
+    newCollab: { submitting: true }
+  });
+  assert.match(leafTag(html, "data-wb-new-collab-conversation"), /disabled/u);
+  assert.match(html, /创建中…/u);
+});
+
+test("renderProjectTreeHtml surfaces a gentle inline error under the new-collab button when creation fails", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({
+    projects: [project()],
+    selectedProjectId: project().id,
+    vm,
+    locale: "zh-CN",
+    newCollab: { submitting: false, error: "创建失败，请重试" }
+  });
+  assert.match(html, /wh-wb-new-collab-error">创建失败，请重试/u);
+});
+
+test("renderProjectTreeHtml new-collab button never claims a git-jargon action verb", () => {
+  const vm = workbenchVm();
+  const html = renderProjectTreeHtml({ projects: [project()], selectedProjectId: project().id, vm, locale: "zh-CN" });
+  assert.doesNotMatch(html, /branch|merge|commit|pull request/iu);
+});
+
+function conversationVm(over: Partial<ConversationVM> = {}): ConversationVM {
+  return {
+    id: "90000000-0000-4000-8000-000000000201",
+    workspace_id: "90000000-0000-4000-8000-000000000000",
+    project_id: "90000000-0000-4000-8000-000000000001",
+    kind: "collab",
+    title: "协同会话 1",
+    parent_conversation_id: null,
+    source_message_id: null,
+    visibility: "private",
+    next_seq: 0,
+    created_by: "90000000-0000-4000-8000-000000000009",
+    participant_role: "owner",
+    created_at: "2026-07-13T00:00:00.000Z",
+    updated_at: "2026-07-13T00:00:00.000Z",
+    ...over
+  };
+}
+
+test("nextCollabConversationTitle counts only collab conversations (not main) and numbers from 1", () => {
+  const main = { kind: "main" as const };
+  assert.equal(nextCollabConversationTitle([main], "zh-CN"), "协同会话 1");
+  assert.equal(nextCollabConversationTitle([main, { kind: "collab" as const }], "zh-CN"), "协同会话 2");
+  assert.equal(
+    nextCollabConversationTitle([main, { kind: "collab" as const }, { kind: "collab" as const }], "zh-CN"),
+    "协同会话 3"
+  );
+});
+
+test("nextCollabConversationTitle localizes to English", () => {
+  assert.equal(nextCollabConversationTitle([], "en-US"), "Collab chat 1");
+});
+
+test("appendCollabConversationToVm appends a newly created conversation so it shows up immediately", () => {
+  const vm = workbenchVm();
+  const created = conversationVm();
+  const next = appendCollabConversationToVm(vm, created);
+  assert.equal(next.conversations.conversations.length, vm.conversations.conversations.length + 1);
+  assert.ok(next.conversations.conversations.some((conversation) => conversation.id === created.id));
+  // Original VM is untouched — the caller decides when to swap it into the store.
+  assert.equal(vm.conversations.conversations.length, 1);
+});
+
+test("appendCollabConversationToVm is a no-op when the conversation is already present (dedupe by id)", () => {
+  const created = conversationVm();
+  const vm = workbenchVm({
+    conversations: { conversations: [...workbenchVm().conversations.conversations, created], capped: false, next_cursor: null }
+  });
+  const next = appendCollabConversationToVm(vm, created);
+  assert.equal(next.conversations.conversations.length, vm.conversations.conversations.length);
+  assert.equal(next, vm);
+});
+
+test("createCollabConversation posts kind=collab, visibility=private with the given title to the project's conversations endpoint", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const client = {
+    request: async <T>(path: string, init?: RequestInit): Promise<T> => {
+      calls.push({ path, init });
+      return { conversation: conversationVm(), participants: [] } as unknown as T;
+    }
+  };
+  const result = await createCollabConversation(client, "90000000-0000-4000-8000-000000000001", { title: "协同会话 1" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.path, "/api/projects/90000000-0000-4000-8000-000000000001/conversations");
+  assert.equal(calls[0]?.init?.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0]?.init?.body as string), {
+    kind: "collab",
+    title: "协同会话 1",
+    visibility: "private"
+  });
+  assert.equal(result.conversation.id, conversationVm().id);
 });

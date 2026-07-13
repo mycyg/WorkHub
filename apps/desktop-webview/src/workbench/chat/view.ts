@@ -14,13 +14,14 @@
 // 纯函数里逐一单测过，这里只是把它们接起来。
 
 import { WorkHubApiError } from "@workhub/api-client";
-import type { AiMode, ConversationKind, ConversationMessageVM } from "@workhub/contracts";
+import type { AiMode, ConversationKind, ConversationMessageVM, Notification } from "@workhub/contracts";
 
 import {
   decideActionCardItem,
   fetchConversationMessagesPage,
   fetchLatestConversationMessagesPage,
   fetchMyAiProfile,
+  fetchNotifications,
   fetchOlderConversationMessagesPage,
   patchMyAiMode,
   pingConversationTyping,
@@ -33,6 +34,7 @@ import {
   type ChatApiClient
 } from "./api.js";
 import { mapActionCardDecisionError, shouldReconcileActionCardOnError } from "./action-card-decision.js";
+import { pickDispatchAskCatchupNotification, renderDispatchAskCatchupBannerHtml } from "./dispatch-ask-catchup.js";
 import {
   parseIncomingActionCardUpdated,
   parseIncomingMessageCreated,
@@ -77,6 +79,7 @@ import { applyComposerChipInsertion, detectComposerTrigger, type ComposerTrigger
 import {
   DEFAULT_MESSAGE_RENDER_WINDOW,
   applyActionCardUpdate,
+  findActionCardMessageIdByTitle,
   findActionCardMessageIdForItem,
   groupMessagesByDay,
   sortAndDedupeMessages,
@@ -225,6 +228,10 @@ export function mountChatView(
   //    发起操作时先清掉（见 submitActionCardDecision/submitActionCardUndo）。
   let openReassignItemId: string | undefined;
   let actionCardItemErrors = new Map<string, string>();
+  // R13 批 P2（拍板链路收尾）：dispatch_ask 错过补偿——只在主区（群聊）里查，见 dispatch-ask-catchup.ts
+  // 顶部注释("群里"派活问询才有这条追赶提醒；协同会话是 1:1 单聊，Cuu 有没有回应本来就在眼前，
+  // 没有"错过"的场景)。undefined = 还没查完/查失败（诚实地不渲染，不是查到了"没有"）。
+  let catchupNotification: Notification | undefined;
 
   const membersMap = membersById(input.members);
   const renderCtx = (): ChatRenderContext => ({
@@ -242,6 +249,7 @@ export function mountChatView(
   container.innerHTML = `<div class="wh-wb-chat">
     <div data-wb-chat-banner></div>
     <div data-wb-chat-head></div>
+    <div data-wb-chat-catchup></div>
     <div class="wh-wb-chat-scroll" data-wb-chat-scroll></div>
     <div data-wb-chat-typing></div>
     <div data-wb-chat-turn-status></div>
@@ -250,12 +258,13 @@ export function mountChatView(
   </div>`;
   const bannerEl = container.querySelector<HTMLElement>("[data-wb-chat-banner]");
   const headEl = container.querySelector<HTMLElement>("[data-wb-chat-head]");
+  const catchupEl = container.querySelector<HTMLElement>("[data-wb-chat-catchup]");
   const scrollEl = container.querySelector<HTMLElement>("[data-wb-chat-scroll]");
   const typingEl = container.querySelector<HTMLElement>("[data-wb-chat-typing]");
   const turnStatusEl = container.querySelector<HTMLElement>("[data-wb-chat-turn-status]");
   const modeHintEl = container.querySelector<HTMLElement>("[data-wb-chat-mode-hint]");
   const composerWrapEl = container.querySelector<HTMLElement>("[data-wb-chat-composer-wrap]");
-  if (!bannerEl || !headEl || !scrollEl || !typingEl || !turnStatusEl || !modeHintEl || !composerWrapEl) {
+  if (!bannerEl || !headEl || !catchupEl || !scrollEl || !typingEl || !turnStatusEl || !modeHintEl || !composerWrapEl) {
     throw new Error("workbench chat view markup is missing an expected mount point");
   }
 
@@ -273,6 +282,68 @@ export function mountChatView(
 
   function renderBanner(): void {
     bannerEl!.innerHTML = renderConnectionBannerHtml(connection, input.locale);
+  }
+
+  // R13 批 P2：dispatch_ask 追赶提醒条——只在主区渲染（见 catchupNotification 声明处的注释）。
+  function renderCatchup(): void {
+    catchupEl!.innerHTML =
+      input.conversationKind === "main" ? renderDispatchAskCatchupBannerHtml(catchupNotification, input.locale) : "";
+  }
+
+  // 打开/切到这个项目的主区群聊时查一次"有没有错过的派活问询"——workbench 每次挂载主区 chat 视图都会
+  // 调这个（shell.ts 的 renderCenter 只在项目/会话真的变化时才重挂，见其顶部注释），天然满足
+  // "workbench 打开/切项目时"这个触发时机，不需要在 shell.ts 另开一条轮询/订阅。best-effort：
+  // 拉取失败就静默保持"没有追赶提醒"，不阻塞群聊本身的可用性，也不重试轰炸——下次重新打开这个项目
+  // 时会再查一次。
+  async function loadDispatchAskCatchup(): Promise<void> {
+    if (input.conversationKind !== "main") {
+      return;
+    }
+    try {
+      const list = await fetchNotifications(input.client);
+      if (disposed) {
+        return;
+      }
+      catchupNotification = pickDispatchAskCatchupNotification(list.items, input.projectId);
+      renderCatchup();
+    } catch {
+      if (disposed) {
+        return;
+      }
+      catchupNotification = undefined;
+      renderCatchup();
+    }
+  }
+
+  // 点开追赶提醒——最佳努力定位到"对应行动卡"（按标题文本精确匹配当前已加载的消息，见 timeline.ts 的
+  // findActionCardMessageIdByTitle 顶部注释：契约里没有能直接互相关联的条目 id，这是退而求其次的方案）；
+  // 找不到（标题没匹配上，或者那条卡还没被翻页加载进本地/已经滚出了当前 DOM 窗口）就诚实地退化成
+  // "滚到会话顶部"——不假装总能精确定位，00 §4 铁律 3 的延伸：宁可诚实降级，不假装接线成功。
+  function handleCatchupClick(): void {
+    const notification = catchupNotification;
+    if (!notification) {
+      return;
+    }
+    const title = notification.body?.trim();
+    const messageId = title ? findActionCardMessageIdByTitle(messages, title) : undefined;
+    const targetEl = messageId
+      ? Array.from(scrollEl!.querySelectorAll<HTMLElement>("[data-wb-chat-message-id]")).find(
+          (node) => node.dataset.wbChatMessageId === messageId
+        )
+      : undefined;
+    if (targetEl) {
+      targetEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      scrollEl!.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    // 点过一次就不用再提醒了——乐观地立刻收起这条提醒条（不等服务端确认），POST /api/notifications/:id/
+    // read 是既有端点（走 client.request，不新增任何 API 面），best-effort：标记失败也不影响这次
+    // "去看看"已经完成的交互，只是下次重开这个项目时这条提醒可能会再出现一次，不是致命问题。
+    catchupNotification = undefined;
+    renderCatchup();
+    void input.client
+      .request(`/api/notifications/${encodeURIComponent(notification.id)}/read`, { method: "POST" })
+      .catch(() => undefined);
   }
 
   function renderTyping(): void {
@@ -433,7 +504,10 @@ export function mountChatView(
       sending: false,
       // R12（模式五档）：只有协同会话才算出这个 HTML 传进去——main 会话永远是 undefined，
       // renderComposerHtml 就完全不渲染模式相关标记（见其顶部注释与 colocated 测试）。
-      modeChipHtml: isCollabConversation ? renderModeChipHtml(myMode, input.locale) : undefined
+      modeChipHtml: isCollabConversation ? renderModeChipHtml(myMode, input.locale) : undefined,
+      // R13 批 P2："禁发+文案"——turnActive 只在协同会话里被置位（beginTurn 是唯一写入点，见其
+      // 顶部注释），主区这里永远拿到 false，行为不受影响。
+      turnActive
     });
     const nextTa = textareaEl();
     if (nextTa && hadFocus) {
@@ -468,7 +542,11 @@ export function mountChatView(
     }
     const ta = textareaEl();
     const text = ta?.value ?? draftFallback;
-    button.disabled = text.trim().length === 0 && attachments.length === 0;
+    // R13 批 P2：这个函数是"输入事件里不重建整个 composer、只同步按钮 disabled 属性"的性能快捷路径
+    // （见调用点的 input 监听器注释）——turnActive 时必须在这里也把关，否则用户在 turn 进行中继续
+    // 打字会让这条快捷路径按"有没有文字"重新推导出 disabled=false，把 renderComposerChrome 刚设好的
+    // "禁发" 状态又打开（视觉上的禁用态失效，同 handleSend 内部的硬闸门是同一条红线的两侧）。
+    button.disabled = turnActive || (text.trim().length === 0 && attachments.length === 0);
   }
 
   // —— 历史加载（R12 批8：首屏直接要「最新一页」，不再从 afterSeq=0 正向走全量——见 api.ts 顶部
@@ -958,6 +1036,11 @@ export function mountChatView(
     turnDeltaState = EMPTY_TURN_DELTA_STATE;
     turnErrorText = undefined;
     renderTurnStatus();
+    // R13 批 P2："禁发+文案"——turnActive 每次翻转都要重刷 composer chrome，不然发送按钮的 disabled
+    // 属性/占位提示只会在下一次别的原因触发 renderComposerChrome 时才跟着更新（比如打字触发的是
+    // 更轻量的 syncSendButtonDisabled，不会重画 placeholder）。renderComposerChrome 内部会保留当前
+    // 已经打的草稿文字与光标位置，不会打断用户在 turn 进行中继续打字。
+    renderComposerChrome();
     requestConversationTurn(input.client, input.conversationId, { userMessageId })
       .then((result) => {
         if (disposed) {
@@ -970,6 +1053,7 @@ export function mountChatView(
         // 消息流该在的位置，同时（内部调用 renderScroll）把上面的临时气泡换成这条真消息。
         mergeMessages([result.message]);
         renderTurnStatus();
+        renderComposerChrome();
       })
       .catch((error) => {
         if (disposed) {
@@ -985,6 +1069,7 @@ export function mountChatView(
         // 好让临时气泡从消息流里消失（turnActive 已经是 false，buildScrollBodyHtml 不会再画它）。
         renderScroll();
         renderTurnStatus();
+        renderComposerChrome();
       });
   }
 
@@ -1094,6 +1179,12 @@ export function mountChatView(
   }
 
   function handleSend(): void {
+    // R13 批 P2："禁发"的权威闸门——按钮的 disabled 属性只挡得住鼠标点击，Enter 键的 keydown 监听器
+    // 从来不看按钮状态、直接调这个函数（见下面 composerWrapEl 的 keydown 监听器），turnActive 时必须
+    // 在这里再把一次关，不能只依赖 UI 层的视觉禁用态。
+    if (turnActive) {
+      return;
+    }
     const ta = textareaEl();
     const text = (ta?.value ?? draftFallback).trim();
     const toAttach = attachments;
@@ -1313,8 +1404,21 @@ export function mountChatView(
   doc.addEventListener("click", handleDocumentModeClick);
   doc.addEventListener("keydown", handleDocumentModeKeydown);
 
+  // R13 批 P2：追赶提醒条本身是一个独立的小挂载点（不跟消息流一起被 renderScroll 整块重建），
+  // 单独绑一个点击监听器，同 sideToggleBtn 在 shell.ts 里的既有取舍一致。
+  catchupEl.addEventListener("click", (event) => {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    if (event.target.closest("[data-wb-chat-catchup-open]")) {
+      handleCatchupClick();
+    }
+  });
+
+  renderCatchup();
   void loadHistory();
   void loadMyAiProfile();
+  void loadDispatchAskCatchup();
 
   return {
     dispose() {

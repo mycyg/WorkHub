@@ -460,6 +460,48 @@ test("notification list clamps drifted DB severity values to the public contract
   assert.equal(list.items[0]?.severity, "normal");
 });
 
+// R13 批 P2（拍板链路收尾）：conversation_id 是从 target_url 的查询串解出来的 additive 字段
+// （notifications 表本身没有这一列，见 services/notifications.ts 的 extractConversationIdFromTargetUrl
+// 顶部注释）——这三条锁死"能解出来才暴露、格式不对/没有就诚实地不带这个字段"。
+test("notification list exposes conversation_id parsed from a dispatch_ask target_url query param", async () => {
+  const service = createNotificationService({
+    notifications: new StubNotifications(
+      row({
+        type: "action_card_item.dispatch_ask",
+        targetUrl: "/workitems/90000000-0000-4000-8000-000000000003?conversation_id=90000000-0000-4000-8000-000000000099"
+      })
+    ),
+    now: () => now
+  });
+
+  const list = await service.listForUser("90000000-0000-4000-8000-000000000002");
+  assert.equal(list.items[0]?.conversation_id, "90000000-0000-4000-8000-000000000099");
+  // The path itself keeps working as a work item deep link — additive, not a replacement.
+  assert.equal(list.items[0]?.work_item_id, "90000000-0000-4000-8000-000000000003");
+});
+
+test("notification list omits conversation_id when target_url carries no such query param", async () => {
+  const service = createNotificationService({
+    notifications: new StubNotifications(),
+    now: () => now
+  });
+
+  const list = await service.listForUser("90000000-0000-4000-8000-000000000002");
+  assert.equal(list.items[0]?.conversation_id, undefined);
+});
+
+test("notification list ignores a malformed conversation_id query param instead of exposing garbage", async () => {
+  const service = createNotificationService({
+    notifications: new StubNotifications(
+      row({ targetUrl: "/workitems/90000000-0000-4000-8000-000000000003?conversation_id=not-a-uuid" })
+    ),
+    now: () => now
+  });
+
+  const list = await service.listForUser("90000000-0000-4000-8000-000000000002");
+  assert.equal(list.items[0]?.conversation_id, undefined);
+});
+
 test("notification list hides unreadable work item notifications from raw list and counts", async () => {
   const hiddenWorkItemId = "90000000-0000-4000-8000-000000000003";
   const service = createNotificationService({

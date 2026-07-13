@@ -7,6 +7,7 @@ import {
   DEFAULT_MESSAGE_RENDER_WINDOW,
   applyActionCardUpdate,
   computeUndoRemainingMinutes,
+  findActionCardMessageIdByTitle,
   findActionCardMessageIdForItem,
   formatMessageTime,
   groupMessagesByDay,
@@ -352,6 +353,33 @@ test("findActionCardMessageIdForItem returns undefined when no local message hol
   const other = textMessage({ id: "m-text", seq: 2, text: "hi", createdAt: new Date(2026, 6, 12, 9, 0) });
 
   assert.equal(findActionCardMessageIdForItem([cardA, other], "missing-item"), undefined);
+});
+
+// —— findActionCardMessageIdByTitle (R13 批 P2：dispatch_ask 追赶提醒的"跳到对应行动卡"最佳努力匹配) —— //
+
+test("findActionCardMessageIdByTitle locates the action_card message holding an item with the exact title", () => {
+  const cardA = actionCardMessage({ id: "m-card-a", seq: 1, items: [{ id: "i1", status: "running", title: "重写第三节" }] });
+  const cardB = actionCardMessage({ id: "m-card-b", seq: 2, items: [{ id: "i2", status: "waiting_decision", title: "预算是否砍半" }] });
+
+  assert.equal(findActionCardMessageIdByTitle([cardA, cardB], "预算是否砍半"), "m-card-b");
+  assert.equal(findActionCardMessageIdByTitle([cardA, cardB], "重写第三节"), "m-card-a");
+});
+
+test("findActionCardMessageIdByTitle returns undefined when no local action_card item has that exact title", () => {
+  const cardA = actionCardMessage({ id: "m-card-a", seq: 1, items: [{ id: "i1", status: "running", title: "重写第三节" }] });
+  const other = textMessage({ id: "m-text", seq: 2, text: "hi", createdAt: new Date(2026, 6, 12, 9, 0) });
+
+  assert.equal(findActionCardMessageIdByTitle([cardA, other], "从没建过的标题"), undefined);
+});
+
+test("findActionCardMessageIdByTitle does not partial-match — a substring of the real title is not enough", () => {
+  const cardA = actionCardMessage({ id: "m-card-a", seq: 1, items: [{ id: "i1", status: "running", title: "重写选题报告第三节" }] });
+  assert.equal(findActionCardMessageIdByTitle([cardA], "重写选题报告"), undefined);
+});
+
+test("findActionCardMessageIdByTitle ignores a blank title instead of matching the first card by accident", () => {
+  const cardA = actionCardMessage({ id: "m-card-a", seq: 1, items: [{ id: "i1", status: "running", title: "" }] });
+  assert.equal(findActionCardMessageIdByTitle([cardA], "   "), undefined);
 });
 
 // —— computeUndoRemainingMinutes —— //

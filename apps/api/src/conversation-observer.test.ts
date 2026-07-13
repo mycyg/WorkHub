@@ -16,6 +16,7 @@ import type {
 import type { BudgetPolicy } from "@workhub/cost";
 
 import {
+  buildDispatchAskTargetUrl,
   createConversationObserverScheduler,
   DEFAULT_MAX_MESSAGES_PER_ANALYSIS,
   isWithinQuietHours,
@@ -539,6 +540,13 @@ test("execute items with dispatch_policy=ask notify the assignee and do not enqu
   assert.ok(notified);
   assert.equal((notified as { userId: string }).userId, assigneeUserId);
   assert.equal((notified as { dedupeKey: string }).dedupeKey.startsWith("action-card-item:"), true);
+  // R13 批 P2：target_url 带上发起这次派活讨论的会话 id（additive 深链，见
+  // apps/api/src/services/notifications.ts 的 extractConversationIdFromTargetUrl）——气泡/追赶提醒
+  // 才能把用户带回那个会话，不只是工作项页。
+  assert.equal(
+    (notified as { targetUrl: string }).targetUrl,
+    buildDispatchAskTargetUrl(workItemRow().id, conversationId)
+  );
 });
 
 test("execute items with dispatch_policy=manual create only a work item with no run and no notification", async () => {

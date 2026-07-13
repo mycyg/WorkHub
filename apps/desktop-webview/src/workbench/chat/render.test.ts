@@ -165,6 +165,13 @@ test("renderMessageHtml renders a long text message in full once its id is in ex
   assert.ok(html.includes(longText));
 });
 
+// R13 批 P2：每条消息的外层气泡现在带 data-wb-chat-message-id——dispatch_ask 追赶提醒条点击后靠这个
+// 属性反查 DOM 节点滚进视口（见 dispatch-ask-catchup.ts）。
+test("renderMessageHtml carries the message id as a stable DOM anchor for scroll-to-message", () => {
+  const html = renderMessageHtml(baseMessage({ id: "m-42" }), ctxWith([]));
+  assert.match(html, /data-wb-chat-message-id="m-42"/u);
+});
+
 test("renderMessageHtml renders a cuu-sent message with the cuu avatar variant and label", () => {
   const html = renderMessageHtml(
     baseMessage({ sender_type: "cuu", sender_user_id: null, content: { text: "我记下了" } }),
@@ -887,6 +894,39 @@ test("renderComposerHtml shows a retry affordance when there is a send error", (
   const html = renderComposerHtml({ locale: "zh-CN", draftText: "hi", attachments: [], sending: false, sendError: "网络错误" });
   assert.match(html, /网络错误/u);
   assert.match(html, /data-wb-chat-retry-send/u);
+});
+
+// R13 批 P2（拍板链路收尾）："禁发+文案"——turn（协同会话对 Cuu 的一轮请求）进行中时发送按钮禁用，
+// 但输入框保持可打字（不带 disabled），占位提示换成"Cuu 回完这条就好"。turnActive 结束后（省略这个
+// 参数或显式传 false）行为完全恢复成升级前的样子——下面这条覆盖主区（永远不传 turnActive）不受影响。
+test("renderComposerHtml disables send but keeps the textarea typable while a collab turn is active", () => {
+  const html = renderComposerHtml({ locale: "zh-CN", draftText: "还有一件事", attachments: [], sending: false, turnActive: true });
+  assert.match(html, /data-wb-chat-send disabled/u);
+  assert.doesNotMatch(html, /data-wb-chat-input disabled/u);
+  assert.match(html, /placeholder="Cuu 回完这条就好…"/u);
+});
+
+test("renderComposerHtml keeps send disabled while a turn is active even with an empty draft (not just re-deriving from text)", () => {
+  const html = renderComposerHtml({ locale: "zh-CN", draftText: "", attachments: [], sending: false, turnActive: true });
+  assert.match(html, /data-wb-chat-send disabled/u);
+});
+
+test("renderComposerHtml localizes the turn-active placeholder to English", () => {
+  const html = renderComposerHtml({ locale: "en-US", draftText: "", attachments: [], sending: false, turnActive: true });
+  assert.match(html, /Just a moment/u);
+});
+
+test("renderComposerHtml behaves exactly as before when turnActive is omitted (main conversation is unaffected)", () => {
+  const withoutTurnActive = renderComposerHtml({ locale: "zh-CN", draftText: "hi", attachments: [], sending: false });
+  const withExplicitFalse = renderComposerHtml({
+    locale: "zh-CN",
+    draftText: "hi",
+    attachments: [],
+    sending: false,
+    turnActive: false
+  });
+  assert.doesNotMatch(withoutTurnActive, /data-wb-chat-send disabled/u);
+  assert.equal(withoutTurnActive, withExplicitFalse);
 });
 
 test("renderComposerHtml marks the # and / composer tags as not-yet-available, distinctly from the live @ tag", () => {
