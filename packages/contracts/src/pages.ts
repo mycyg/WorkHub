@@ -1513,6 +1513,21 @@ export type ConversationArmyRunListVM = z.infer<typeof conversationArmyRunListVm
 export const armyOverviewRunListVmSchema = buildArmyRunListVmSchema(armyOverviewRunCardVmSchema);
 export type ArmyOverviewRunListVM = z.infer<typeof armyOverviewRunListVmSchema>;
 
+// R13 批 P1.5（右栏变动文件区）：同一份提议 diff_stats_json 的 per-file 明细在 VM 上的形状——
+// 历史 proposal（还没跑过 estimateDeliverableDiffStats 持久化）整个 changed_files 字段不出现，
+// 前端诚实展示"改动详情不可用"；单条文件缺 adds/dels 同样表示"这条改动没能计入统计"，不是 0
+// （见 apps/api/src/services/deliverable-diff-stats.ts 的踩雷注释）。change_type 复用
+// deliverableChangeSchema 的既有枚举，不重复定义一份可能漂移的字面量列表。
+export const armyChangedFileVmSchema = z
+  .object({
+    path: z.string().max(512).optional(),
+    change_type: deliverableChangeSchema.shape.change_type,
+    adds: z.number().int().nonnegative().optional(),
+    dels: z.number().int().nonnegative().optional()
+  })
+  .strict();
+export type ArmyChangedFileVM = z.infer<typeof armyChangedFileVmSchema>;
+
 // 输出区 = 该会话下这些 run 产出的提议链接聚合(00 §4「点击回跳」同款思路，复用既有 /proposals/:id 详情页，
 // 不新开路由)。
 export const armyOutputLinkVmSchema = z
@@ -1523,7 +1538,9 @@ export const armyOutputLinkVmSchema = z
     title: z.string().min(1).max(256),
     status: z.string().min(1).max(32),
     proposal_href: z.string().min(1),
-    updated_at: isoDateTimeSchema
+    updated_at: isoDateTimeSchema,
+    // R13 批 P1.5：可选——旧 proposal/没有统计过的行整体不带这个字段，见 armyChangedFileVmSchema 注释。
+    changed_files: z.array(armyChangedFileVmSchema).max(20).optional()
   })
   .strict();
 export type ArmyOutputLinkVM = z.infer<typeof armyOutputLinkVmSchema>;

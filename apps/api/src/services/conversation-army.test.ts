@@ -80,7 +80,7 @@ function repo(overrides: Partial<ConversationArmyRepositorySources> = {}): Conve
     },
     async listOutputLinksForConversation(): Promise<ConversationRunOutputLinkResult> {
       return {
-        rows: [{ proposalId, workItemId, runId, title: "重写第三节", status: "opened", updatedAt: now }],
+        rows: [{ proposalId, workItemId, runId, title: "重写第三节", status: "opened", updatedAt: now, diffStatsJson: null }],
         capped: false
       };
     },
@@ -135,6 +135,51 @@ test("conversationArmyPanel assembles runs, outputs, and an honest empty backgro
 
   // 后台任务区没有真数据源:永远空数组 + not_yet_available,不拿别的数据冒充。
   assert.deepEqual(panel.background_tasks, { items: [], empty_state: "not_yet_available" });
+});
+
+// R13 批 P1.5（右栏变动文件区）：diff_stats_json 非空时映射出 changed_files；为 null（历史 proposal/
+// 还没跑过统计）时整个字段不出现，不冒充空数组——两条断言分别钉死这两半。
+test("conversationArmyPanel maps a populated diff_stats_json onto changed_files, keeping adds/dels absent when a file couldn't be diffed", async () => {
+  const service = createConversationArmyService({
+    repo: repo({
+      async listOutputLinksForConversation() {
+        return {
+          rows: [{
+            proposalId,
+            workItemId,
+            runId,
+            title: "重写第三节",
+            status: "opened",
+            updatedAt: now,
+            diffStatsJson: {
+              total: { adds: 3, dels: 1 },
+              files: [
+                { change_id: "change-1", path: "/outputs/result.md", change_type: "updated", adds: 3, dels: 1 },
+                { change_id: "change-2", change_type: "generated" }
+              ]
+            }
+          }],
+          capped: false
+        };
+      }
+    }),
+    now: () => now
+  });
+
+  const panel = await service.conversationArmyPanel({ actor: humanActor(), conversationId, query: defaultQuery() });
+
+  assert.deepEqual(panel.outputs.items[0]?.changed_files, [
+    { path: "/outputs/result.md", change_type: "updated", adds: 3, dels: 1 },
+    { change_type: "generated" }
+  ]);
+});
+
+test("conversationArmyPanel omits changed_files entirely for a proposal with no diff stats yet (honest 'unavailable', not a faked empty list)", async () => {
+  const service = createConversationArmyService({ repo: repo(), now: () => now });
+
+  const panel = await service.conversationArmyPanel({ actor: humanActor(), conversationId, query: defaultQuery() });
+
+  assert.equal("changed_files" in (panel.outputs.items[0] ?? {}), false);
 });
 
 test("conversationArmyPanel sets no_army_runs only when the run list is actually empty", async () => {
