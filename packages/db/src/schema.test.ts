@@ -661,7 +661,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0049 personal projects", () => {
+test("migration journal ends with 0053 default org/workspace seed", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -676,12 +676,12 @@ test("migration journal ends with 0049 personal projects", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R13 批 S3：0048 留给并行施工的另一批（这个 worktree 里看不到那份迁移/journal 行），
-      // 本批的迁移编号已预分配为 0049，跳过 0048 不占用——两批各自的 journal 尾在合并时
-      // 由人工核对拼接顺序，不是本测试要处理的事。
-      idx: 49,
+      // R14 前夜：0050-0052 已预分配给并行施工中的 P1.5/C1/A2 三批，0053（pilot smoke 病根：
+      // 默认 org/workspace 种子）由集成者先行落主干。三批合并时把 0050-0052 的 when 归一成
+      // 递增序插在 0053 之前，journal 尾保持 0053 不变——所以本断言在合并波次中是稳定的。
+      idx: 53,
       version: "7",
-      tag: "0049_personal_projects",
+      tag: "0053_seed_default_org_workspace",
       breakpoints: true
     }
   );
