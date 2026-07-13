@@ -913,6 +913,20 @@ fn create_workbench_window_if_missing(
     if let Some(window) = app.get_webview_window("workbench") {
         return Ok(window);
     }
+    // R13 真机根因二号（webview 空白灰）：Tauri command 跑在线程池上,而 macOS 的窗口创建/Overlay 标题栏/
+    // 红绿灯偏移都是 AppKit 主线程契约——非主线程建窗时窗框能出来（红绿灯可见）,webview 内容却不挂/零尺寸。
+    // 与 apply_vibrancy 主线程修复同族:整个建窗过程调度回主线程,用通道同步拿结果（5s 超时防死等）。
+    if std::thread::current().name() != Some("main") {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let handle = app.clone();
+        app.run_on_main_thread(move || {
+            let _ = tx.send(create_workbench_window_if_missing(&handle));
+        })
+        .map_err(|error| format!("failed to schedule workbench window creation: {error}"))?;
+        return rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .map_err(|error| format!("workbench window creation timed out: {error}"))?;
+    }
 
     let workbench_config = app
         .config()

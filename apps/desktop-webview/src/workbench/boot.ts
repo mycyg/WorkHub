@@ -187,6 +187,27 @@ async function boot(): Promise<void> {
 
 // node:test 环境没有 document——colocated boot.test.ts 只测上面导出的纯函数，不需要真跑 boot()。
 // 这个 guard 只在真实 webview/浏览器里触发自动启动，测试 import 这个模块不会因为顶层副作用而崩。
+// R13 真机加固:boot 任何一步未捕获异常/rejection 都不许留一块空白灰屏（验收暴露的最差 UX——
+// 窗框在、内容空、日志无声）。渲染一块可读的致命错误面板,把真实错误原文亮出来,截图即可分诊。
+function renderFatalBootError(error: unknown): void {
+  const detail = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ""}` : String(error);
+  document.body.innerHTML = `<div style="font:500 13px/1.7 -apple-system,sans-serif;color:#1c2333;background:rgba(248,250,253,.92);height:100vh;box-sizing:border-box;padding:48px 56px;overflow:auto">
+    <div style="font-size:17px;font-weight:700;margin-bottom:10px">工作台没能启动</div>
+    <div style="color:#5a6478;margin-bottom:18px">把下面这段原样发给开发,或直接截图。</div>
+    <pre style="white-space:pre-wrap;background:rgba(20,30,50,.06);border-radius:10px;padding:14px 16px;font-size:11.5px">${detail.replace(/&/gu, "&amp;").replace(/</gu, "&lt;")}</pre>
+  </div>`;
+}
+
 if (typeof document !== "undefined") {
-  void boot();
+  window.addEventListener("error", (event) => {
+    if (!document.querySelector("[data-wb-window]")) {
+      renderFatalBootError(event.error ?? event.message);
+    }
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    if (!document.querySelector("[data-wb-window]")) {
+      renderFatalBootError(event.reason);
+    }
+  });
+  boot().catch(renderFatalBootError);
 }
