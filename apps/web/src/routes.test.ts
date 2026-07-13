@@ -1874,6 +1874,26 @@ test("R4.15 settings route keeps locale preference and device boundary markers a
   assert.equal(/sk-[0-9A-Za-z]{20,}/u.test(result.html), false);
 });
 
+// R13 批 P3（功能审查 B4）：/settings 渲染「AI 助手」区块——两个可改表单（水合前锁定）+ 其余 AI 项的
+// 「需要桌面客户端」诚实提示；web-only 用户从此能自行脱离只观察档（409 自救入口）。
+test("R13-P3 settings route ships the AI assistant self-rescue block", async () => {
+  const surface = goldPathSurfaceVm();
+  const settings = settingsVm("en-US");
+  const { client } = fakeRouteClient(surface, { settings });
+  const match = resolveWebRoute("/settings");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "en-US");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r13-settings-ai-panel="true"'), true);
+  // Selects arrive disabled — browser.ts hydrates the real current values before unlocking them.
+  assert.equal(/data-r13-settings-ai-mode-select[^>]*disabled/u.test(result.html), true);
+  assert.equal(/data-r13-settings-ai-dispatch-select[^>]*disabled/u.test(result.html), true);
+  assert.equal(result.html.includes("data-r13-settings-ai-retry"), true);
+  assert.equal(result.html.includes('data-action-id="open_desktop_ai_settings"'), true);
+});
+
 test("F11/簇A: empty approvals stays a full page in the shell (no collapse to a bare card)", async () => {
   const surface = goldPathSurfaceVm();
   const emptyApprovals: ApprovalCenterVM = {
