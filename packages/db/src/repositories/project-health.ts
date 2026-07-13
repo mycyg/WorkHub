@@ -73,6 +73,8 @@ export type ProjectHealthRepository = {
 function projectScopeConditions(actor: ProjectHealthActorScope | undefined): SQL[] {
   const conditions: SQL[] = [
     eq(projects.archived, false),
+    // R13 S3 隐私收尾:个人空间不进跨项目健康总览——管理员也不该在团队仪表盘里看到别人的私人空间。
+    eq(projects.isPersonal, false),
     isNull(projects.deletedAt)
   ];
   if (!actor) {

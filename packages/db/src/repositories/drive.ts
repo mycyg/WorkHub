@@ -276,7 +276,8 @@ async function driveItemPath(db: WorkHubDb, item: DriveItemRow) {
 }
 
 async function findProject(db: WorkHubDb, projectId?: string, workspaceId?: string) {
-  const baseConditions = [eq(projects.archived, false), isNull(projects.deletedAt)];
+  // R13 S3 隐私收尾:个人空间绝不参与「挑默认项目」——裸 /drive 不能落进别人的私人空间。
+  const baseConditions = [eq(projects.archived, false), eq(projects.isPersonal, false), isNull(projects.deletedAt)];
   // 显式 projectId → 按 id 查（上层再做 canView 鉴权）。否则挑「默认项目」时必须限定在 actor 所在 workspace，
   // 不能全库取最老的一个（M8：多租户里 B 工作区成员永远落到别人最老的项目→空 drive）。
   const conditions = projectId

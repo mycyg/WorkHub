@@ -109,7 +109,8 @@ function clampLimit(limit: number | undefined) {
 }
 
 async function findProject(db: WorkHubDb, projectId?: string, workspaceId?: string) {
-  const baseConditions = [eq(projects.archived, false), isNull(projects.deletedAt)];
+  // R13 S3 隐私收尾:同 drive——裸 /meetings 挑默认项目排除个人空间。
+  const baseConditions = [eq(projects.archived, false), eq(projects.isPersonal, false), isNull(projects.deletedAt)];
   // 同 drive（M8）：挑默认项目时限定在 actor 所在 workspace，不能全库取最老的一个。显式 projectId 仍按 id 查。
   const conditions = projectId
     ? [...baseConditions, eq(projects.id, projectId)]

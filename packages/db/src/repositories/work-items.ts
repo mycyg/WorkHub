@@ -874,7 +874,8 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
       const rows = await db
         .select()
         .from(projects)
-        .where(and(eq(projects.archived, false), isNull(projects.deletedAt)))
+        // R13 S3 隐私收尾:intake 兜底绝不把工单落进个人空间。
+        .where(and(eq(projects.archived, false), eq(projects.isPersonal, false), isNull(projects.deletedAt)))
         .orderBy(asc(projects.createdAt))
         .limit(1);
       return rows[0] ?? null;
@@ -885,7 +886,7 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         .select()
         .from(projects)
         .where(
-          and(eq(projects.workspaceId, workspaceId), eq(projects.archived, false), isNull(projects.deletedAt))
+          and(eq(projects.workspaceId, workspaceId), eq(projects.archived, false), eq(projects.isPersonal, false), isNull(projects.deletedAt))
         )
         .orderBy(asc(projects.createdAt))
         .limit(1);
