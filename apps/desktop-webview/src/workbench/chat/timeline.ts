@@ -23,9 +23,21 @@ export function sortAndDedupeMessages(messages: readonly ConversationMessageVM[]
 //  - 消息不在本地、或事件里出现快照没有的条目 id → snapshotStale=true，调用方按需重拉这条消息
 //    （观察者建卡/追加时会在服务端重写快照，但不重发 message.created——只能补拉）；
 //  - changed=false 表示没有任何条目状态真的变了，调用方可据此跳过重渲。
+//
+// R12 P0-A1：这个合并函数也是 decide/undo 的 HTTP 响应落地的地方——SSE 事件契约（strict schema）
+// 只带 {id,status}，但 decide/undo 的响应是 ActionCardItemVM，多带 assignee_user_id/undo_deadline_at。
+// assigneeUserId/undoDeadlineAt 是可选字段：SSE 调用点不传（undefined）→ 完全不碰这两个键，行为和
+// 批3落地时一模一样；HTTP 响应调用点会传，按需覆盖快照里对应的 assignee_user_id/undo_deadline_at。
+export type ActionCardItemStatusPatch = {
+  id: string;
+  status: string;
+  assigneeUserId?: string | null;
+  undoDeadlineAt?: string | null;
+};
+
 export type ActionCardUpdatePatch = {
   messageId: string;
-  items: ReadonlyArray<{ id: string; status: string }>;
+  items: ReadonlyArray<ActionCardItemStatusPatch>;
 };
 
 export type ApplyActionCardUpdateResult = {
@@ -47,7 +59,7 @@ export function applyActionCardUpdate(
   // findIndex 已经筛过 kind === "action_card"，这里只是把窄化结果告诉 TS（content 才可按键索引）。
   const target = messages[index]! as Extract<ConversationMessageVM, { kind: "action_card" }>;
   const rawItems = Array.isArray(target.content["items"]) ? (target.content["items"] as unknown[]) : [];
-  const statusById = new Map(patch.items.map((item) => [item.id, item.status]));
+  const patchById = new Map(patch.items.map((item) => [item.id, item]));
   let changed = false;
   const nextItems = rawItems.map((raw) => {
     if (!raw || typeof raw !== "object") {
@@ -55,25 +67,55 @@ export function applyActionCardUpdate(
     }
     const item = raw as SnapshotItem;
     const id = item["id"];
-    const nextStatus = typeof id === "string" ? statusById.get(id) : undefined;
-    if (nextStatus === undefined || item["status"] === nextStatus) {
-      if (typeof id === "string") {
-        statusById.delete(id);
-      }
+    const itemPatch = typeof id === "string" ? patchById.get(id) : undefined;
+    if (!itemPatch) {
+      return raw;
+    }
+    patchById.delete(id as string);
+    const statusChanged = item["status"] !== itemPatch.status;
+    const assigneeChanged =
+      itemPatch.assigneeUserId !== undefined && item["assignee_user_id"] !== itemPatch.assigneeUserId;
+    const undoDeadlineChanged =
+      itemPatch.undoDeadlineAt !== undefined && item["undo_deadline_at"] !== itemPatch.undoDeadlineAt;
+    if (!statusChanged && !assigneeChanged && !undoDeadlineChanged) {
       return raw;
     }
     changed = true;
-    statusById.delete(id as string);
-    return { ...item, status: nextStatus };
+    return {
+      ...item,
+      status: itemPatch.status,
+      ...(itemPatch.assigneeUserId !== undefined ? { assignee_user_id: itemPatch.assigneeUserId } : {}),
+      ...(itemPatch.undoDeadlineAt !== undefined ? { undo_deadline_at: itemPatch.undoDeadlineAt } : {})
+    };
   });
   // 事件里剩下没消化掉的条目 id = 快照里没有的新条目（观察者追加）——快照过期，需要补拉。
-  const snapshotStale = statusById.size > 0;
+  const snapshotStale = patchById.size > 0;
   if (!changed) {
     return { messages: [...messages], changed: false, snapshotStale };
   }
   const next = [...messages];
   next[index] = { ...target, content: { ...target.content, items: nextItems } } as ConversationMessageVM;
   return { messages: next, changed: true, snapshotStale };
+}
+
+// R12 P0-A1：decide/undo 成功后，调用方（view.ts）只知道被点的条目 id，不知道它挂在哪条 action_card
+// 消息下——扫描本地消息快照的 content.items 找归属（不落网络请求，纯内存查找；找不到就是本地还没有
+// 这条卡消息，调用方据此走 reconcileGap 的既有补拉路径，同 applyActionCardUpdate 对「本地没有」的处理）。
+export function findActionCardMessageIdForItem(
+  messages: readonly ConversationMessageVM[],
+  itemId: string
+): string | undefined {
+  for (const message of messages) {
+    if (message.kind !== "action_card") {
+      continue;
+    }
+    const rawItems = Array.isArray(message.content["items"]) ? (message.content["items"] as unknown[]) : [];
+    const hit = rawItems.some((raw) => Boolean(raw) && typeof raw === "object" && (raw as SnapshotItem)["id"] === itemId);
+    if (hit) {
+      return message.id;
+    }
+  }
+  return undefined;
 }
 
 export type DayGroup = {
@@ -136,6 +178,23 @@ export function groupMessagesByDay(
 
 export function formatMessageTime(iso: string, locale: Locale): string {
   return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso));
+}
+
+// R12 P0-A1：行动卡「执行」条目的撤销按钮要带一个「还剩几分钟」的提示——纯函数，渲染时刻为准，
+// 不开倒计时 interval（过期后用户点了由服务端 409 兜底并温和提示，见 turn.ts 同款「不本地假装
+// 权威」的取舍）。向上取整：剩 0.1 分钟也显示「1 分钟」而不是「0 分钟」，不假装比实际更紧迫。
+// 无效时间戳或已过期（deadline <= now）一律返回 undefined——调用方据此不渲染撤销按钮，而不是
+// 渲染一个「0 分钟」的死按钮。
+export function computeUndoRemainingMinutes(undoDeadlineAtIso: string, nowMs: number): number | undefined {
+  const deadlineMs = Date.parse(undoDeadlineAtIso);
+  if (!Number.isFinite(deadlineMs)) {
+    return undefined;
+  }
+  const diffMs = deadlineMs - nowMs;
+  if (diffMs <= 0) {
+    return undefined;
+  }
+  return Math.ceil(diffMs / 60_000);
 }
 
 // R12 批8：消息列表窗口化——不引第三方虚拟滚动库，做最简单的"只挂载最近 N 条到 DOM"。messages 必须

@@ -152,3 +152,51 @@ export function patchMyAiMode(client: ChatApiClient, mode: AiMode): Promise<User
     body: JSON.stringify({ default_mode: mode })
   });
 }
+
+// R12 P0-A1：行动卡条目的决策(decide)/撤销(undo)。契约见 apps/api/src/routes/action-cards.ts +
+// apps/api/src/services/action-cards.ts 的 ActionCardItemVM——这两个端点不是 conversation 下的路由
+// （挂在 /api/action-card-items/:id/*），也没有被 promote 进 @workhub/contracts（服务端范围围栏没批准
+// 新增 contracts），同上面 ConversationTurnResult/UserAiProfileVM 之外的会话端点一样，这里本地声明一个
+// 薄的、镜像服务端 ActionCardItemVM 字段的类型（snake_case——照抄服务端 JSON 形状，不在这层转驼峰），
+// 继续走 client.request，不为这两个端点扩大 WorkHubApiClient 的具名方法面。
+export type ActionCardItemDecisionAction = "claim" | "reassign" | "defer";
+
+export type ActionCardItemDecisionResult = {
+  id: string;
+  conversation_id: string;
+  action_card_id: string;
+  kind: string;
+  title_md: string;
+  confidence: string;
+  status: string;
+  assignee_user_id: string | null;
+  work_item_id: string | null;
+  run_id: string | null;
+  undo_deadline_at: string | null;
+};
+
+function actionCardItemPath(itemId: string, suffix: string): string {
+  return `/api/action-card-items/${encodeURIComponent(itemId)}/${suffix}`;
+}
+
+export function decideActionCardItem(
+  client: ChatApiClient,
+  input: { itemId: string; action: ActionCardItemDecisionAction; assigneeUserId?: string }
+): Promise<ActionCardItemDecisionResult> {
+  return client.request<ActionCardItemDecisionResult>(actionCardItemPath(input.itemId, "decide"), {
+    method: "POST",
+    body: JSON.stringify({
+      action: input.action,
+      ...(input.assigneeUserId ? { assignee_user_id: input.assigneeUserId } : {})
+    })
+  });
+}
+
+export function undoActionCardItem(
+  client: ChatApiClient,
+  input: { itemId: string }
+): Promise<ActionCardItemDecisionResult> {
+  return client.request<ActionCardItemDecisionResult>(actionCardItemPath(input.itemId, "undo"), {
+    method: "POST"
+  });
+}

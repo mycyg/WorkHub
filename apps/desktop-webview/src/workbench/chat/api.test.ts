@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { ConversationMessagePageVM, ConversationMessageVM, UserAiProfileVM } from "@workhub/contracts";
 
 import {
+  decideActionCardItem,
   fetchConversationMessagesPage,
   fetchLatestConversationMessagesPage,
   fetchMyAiProfile,
@@ -13,6 +14,8 @@ import {
   requestConversationTurn,
   sendConversationFileCardMessage,
   sendConversationTextMessage,
+  undoActionCardItem,
+  type ActionCardItemDecisionResult,
   type ChatApiClient
 } from "./api.js";
 
@@ -278,4 +281,91 @@ test("patchMyAiMode PATCHes only default_mode and returns the refreshed profile"
   assert.equal(calls[0]!.init?.method, "PATCH");
   assert.deepEqual(JSON.parse(calls[0]!.init!.body as string), { default_mode: 5 });
   assert.equal(result, profile);
+});
+
+// —— R12 P0-A1：行动卡条目 decide/undo —— //
+
+function actionCardItemResult(overrides: Partial<ActionCardItemDecisionResult> = {}): ActionCardItemDecisionResult {
+  return {
+    id: "item-1",
+    conversation_id: "conv-1",
+    action_card_id: "card-1",
+    kind: "decide",
+    title_md: "预算是否砍半",
+    confidence: "low",
+    status: "running",
+    assignee_user_id: "user-1",
+    work_item_id: "wi-1",
+    run_id: null,
+    undo_deadline_at: null,
+    ...overrides
+  };
+}
+
+test("decideActionCardItem posts the action and omits assignee_user_id when not given", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const result = actionCardItemResult({ status: "running" });
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return result;
+  });
+
+  const outcome = await decideActionCardItem(client, { itemId: "item-1", action: "claim" });
+
+  assert.equal(calls[0]!.path, "/api/action-card-items/item-1/decide");
+  assert.equal(calls[0]!.init?.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0]!.init!.body as string), { action: "claim" });
+  assert.equal(outcome, result);
+});
+
+test("decideActionCardItem includes assignee_user_id for a reassign action", async () => {
+  const calls: Array<RequestInit | undefined> = [];
+  const client = fakeClient((_path, init) => {
+    calls.push(init);
+    return actionCardItemResult({ assignee_user_id: "user-2" });
+  });
+
+  await decideActionCardItem(client, { itemId: "item-1", action: "reassign", assigneeUserId: "user-2" });
+
+  assert.deepEqual(JSON.parse(calls[0]!.body as string), { action: "reassign", assignee_user_id: "user-2" });
+});
+
+test("decideActionCardItem URL-encodes the item id", async () => {
+  const calls: string[] = [];
+  const client = fakeClient((path) => {
+    calls.push(path);
+    return actionCardItemResult();
+  });
+
+  await decideActionCardItem(client, { itemId: "item/needs escaping", action: "defer" });
+
+  assert.equal(calls[0], "/api/action-card-items/item%2Fneeds%20escaping/decide");
+});
+
+test("undoActionCardItem posts with no body and returns the updated item", async () => {
+  const calls: Array<{ path: string; init: RequestInit | undefined }> = [];
+  const result = actionCardItemResult({ kind: "execute", status: "undone" });
+  const client = fakeClient((path, init) => {
+    calls.push({ path, init });
+    return result;
+  });
+
+  const outcome = await undoActionCardItem(client, { itemId: "item-1" });
+
+  assert.equal(calls[0]!.path, "/api/action-card-items/item-1/undo");
+  assert.equal(calls[0]!.init?.method, "POST");
+  assert.equal(calls[0]!.init?.body, undefined);
+  assert.equal(outcome, result);
+});
+
+test("undoActionCardItem URL-encodes the item id", async () => {
+  const calls: string[] = [];
+  const client = fakeClient((path) => {
+    calls.push(path);
+    return actionCardItemResult();
+  });
+
+  await undoActionCardItem(client, { itemId: "item/needs escaping" });
+
+  assert.equal(calls[0], "/api/action-card-items/item%2Fneeds%20escaping/undo");
 });

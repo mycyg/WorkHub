@@ -5,7 +5,7 @@ import type { AiMode, ConversationMessageVM, WorkbenchPageVM } from "@workhub/co
 import { escapeHtml } from "@workhub/web-runtime";
 
 import { workbenchIcons } from "../icons.js";
-import { formatMessageTime } from "./timeline.js";
+import { computeUndoRemainingMinutes, formatMessageTime } from "./timeline.js";
 
 type Locale = "zh-CN" | "en-US";
 export type WorkbenchMemberVM = WorkbenchPageVM["workspace_members"]["items"][number];
@@ -67,6 +67,17 @@ export type ChatRenderContext = {
   // R12 批8：长文本折叠——展开态是瞬态 UI 状态，由 view.ts 维护一个 message id 集合，不落库。
   // 可选：既有调用点（现有测试）不用管这个字段，折叠只在文本超过阈值时才生效。
   expandedMessageIds?: ReadonlySet<string>;
+  // R12 P0-A1：行动卡条目的操作按钮——都可选，既有调用点（现有测试）不用管：
+  //  - now：算撤销窗口剩余分钟数的基准时刻，纯函数、渲染时刻为准（见 timeline.ts 的
+  //    computeUndoRemainingMinutes），缺省用真实"现在"；
+  //  - openReassignItemId：当前展开了"派给别人"极简成员选择器的条目 id（一次只开一个，
+  //    瞬态 UI 状态，由 view.ts 持有，不落库）；
+  //  - actionCardItemErrors：decide/undo 失败后的温和行内提示，按条目 id 索引（见
+  //    action-card-decision.ts 的 mapActionCardDecisionError），瞬态、不落库，下一次对同一条目的
+  //    操作发起时 view.ts 会先清掉旧提示。
+  now?: Date;
+  openReassignItemId?: string;
+  actionCardItemErrors?: ReadonlyMap<string, string>;
 };
 
 function senderLabel(message: ConversationMessageVM, ctx: ChatRenderContext): string {
@@ -129,28 +140,122 @@ function actionCardItemStatusLabel(status: string, zh: boolean): string | undefi
   }
 }
 
+type ActionCardItemRow = {
+  id: string;
+  title: string;
+  kind: string;
+  status: string;
+  assigneeUserId: string | null;
+  undoDeadlineAt: string | null;
+};
+
+// R12 P0-A1：「派给别人」的极简成员选择——列出除当前用户以外的活跃工作区成员（当前用户已经是这条
+// 决策的 assignee，选它自己没有意义，「交给我干」已经覆盖那条路径），选中即提交，不需要二次确认。
+// 复用 mention picker 同款 .wh-wb-chat-picker-row 行样式（本批范围围栏不许改 css.ts，这个类已经是
+// 通用的"可点成员行"外观，不必新造一个）。
+const REASSIGN_PICKER_MEMBER_CAP = 20;
+
+function renderReassignPickerHtml(itemId: string, members: ChatRenderMembers, currentUserId: string | undefined, zh: boolean): string {
+  const rows = [...members.entries()]
+    .filter(([userId]) => userId !== currentUserId)
+    .slice(0, REASSIGN_PICKER_MEMBER_CAP)
+    .map(
+      ([userId, member]) =>
+        `<button type="button" class="wh-wb-chat-picker-row" data-wb-chat-actioncard-reassign-to="${escapeHtml(userId)}" data-wb-chat-actioncard-item="${escapeHtml(itemId)}">${avatarTileHtml({ label: member.nickname, id: userId })}<span>${escapeHtml(member.nickname)}</span></button>`
+    )
+    .join("");
+  if (!rows) {
+    return `<div class="wh-wb-chat-actioncard-reassign" style="margin-top:6px"><div class="wh-wb-chat-picker-empty">${zh ? "没有其他成员可选" : "No other members to pick"}</div></div>`;
+  }
+  return `<div class="wh-wb-chat-actioncard-reassign" style="margin-top:6px">${rows}</div>`;
+}
+
+// R12 P0-A1：一个 decide 条目的操作区——只有「这条卡当前指给我」时才摆得出可点的按钮（服务端
+// assertCanActOnItem 的授权红线：仅当前 assignee 或管理员；前端这里更窄，不做管理员旁路，管理员目前
+// 也只能走「等 @xxx 拍板」的纯文字态——04 §4 铁律 3 的延伸：没有把握判断的权限分支，先不摆按钮）。
+// 非本人：温和的纯文字「等 @谁 拍板」，找不到昵称就写「负责人」，不编造更具体的话术。
+function renderDecideItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderContext, zh: boolean): string {
+  if (row.assigneeUserId && row.assigneeUserId === ctx.currentUserId) {
+    const reassignOpen = ctx.openReassignItemId === row.id;
+    const actions = `<div class="wh-wb-chat-actioncard-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">` +
+      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="claim" data-wb-chat-actioncard-item="${escapeHtml(row.id)}">${zh ? "交给我干" : "I'll do it"}</button>` +
+      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-reassign-toggle="${escapeHtml(row.id)}">${zh ? "派给别人" : "Assign to someone else"}</button>` +
+      `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="defer" data-wb-chat-actioncard-item="${escapeHtml(row.id)}">${zh ? "先不动" : "Leave it for now"}</button>` +
+      `</div>`;
+    const picker = reassignOpen ? renderReassignPickerHtml(row.id, ctx.members, ctx.currentUserId, zh) : "";
+    return `${actions}${picker}`;
+  }
+  const nickname = row.assigneeUserId ? ctx.members.get(row.assigneeUserId)?.nickname : undefined;
+  const label = nickname ?? (zh ? "负责人" : "the assignee");
+  const waitingText = zh ? `等 @${label} 拍板` : `Waiting on @${label} to decide`;
+  return `<div class="wh-wb-chat-actioncard-note">${escapeHtml(waitingText)}</div>`;
+}
+
+// R12 P0-A1：一个 execute 条目的撤销区——只有「这条卡当前指给我」+「还在撤销窗口内」才摆得出按钮；
+// 过期不渲染（不是渲染一个会点出 409 的死按钮——04 §4 铁律 3），真晚一步点到的边界情况（渲染那一刻
+// 还没过期、提交时刚好过期）交给服务端 409 兜底，view.ts 温和提示。
+function renderExecuteItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderContext, zh: boolean): string {
+  if (!row.assigneeUserId || row.assigneeUserId !== ctx.currentUserId || !row.undoDeadlineAt) {
+    return "";
+  }
+  const now = ctx.now ?? new Date();
+  const remaining = computeUndoRemainingMinutes(row.undoDeadlineAt, now.getTime());
+  if (remaining === undefined) {
+    return "";
+  }
+  const label = zh ? `撤销（${remaining} 分钟内）` : `Undo (within ${remaining} min)`;
+  return `<div class="wh-wb-chat-actioncard-actions" style="margin-top:6px"><button type="button" class="wh-wb-act wh-wb-act--danger" data-wb-chat-actioncard-undo="${escapeHtml(row.id)}">${escapeHtml(label)}</button></div>`;
+}
+
+// decide/undo 失败后的温和行内提示（见 action-card-decision.ts 的 mapActionCardDecisionError）——
+// 不用红色报错样式，跟 turn.ts 的 renderCuuTurnErrorHtml 同一个"不弹阻断"的取舍，直接复用
+// .wh-wb-chat-actioncard-note 的既有中性文字样式。
+function actionCardItemErrorHtml(row: ActionCardItemRow, ctx: ChatRenderContext): string {
+  const text = ctx.actionCardItemErrors?.get(row.id);
+  return text ? `<div class="wh-wb-chat-actioncard-note">${escapeHtml(text)}</div>` : "";
+}
+
+function actionCardItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderContext): string {
+  const zh = ctx.locale === "zh-CN";
+  if (row.kind === "decide" && row.status === "waiting_decision") {
+    return `${renderDecideItemActionsHtml(row, ctx, zh)}${actionCardItemErrorHtml(row, ctx)}`;
+  }
+  if (row.kind === "execute" && row.status === "running") {
+    return `${renderExecuteItemActionsHtml(row, ctx, zh)}${actionCardItemErrorHtml(row, ctx)}`;
+  }
+  return "";
+}
+
 // 00 §9：行动卡撤销后「卡片该项置灰划线 +『已撤销』，不删卡（留痕）」——undone 条目加
 // --undone 修饰类（css.ts：标题划线、整行置灰），其它状态只带一枚状态标。快照是建卡时点数据，
 // 实时状态由 view.ts 消费 conversation.action_card.updated 事件后就地合并进来（timeline.ts 的
-// applyActionCardUpdate）。
-function renderActionCardSummaryHtml(content: Record<string, unknown>, locale: Locale): string {
-  const zh = locale === "zh-CN";
+// applyActionCardUpdate），decide/undo 的 HTTP 响应也走同一条合并函数（见其顶部注释）。
+//
+// R12 P0-A1：条目摘要现在带 assignee_user_id/undo_deadline_at（packages/db 的
+// buildActionCardMessageContent 已经把这两个只增字段塞进消息 content），这里按 kind/status/身份
+// 渲染真实可点的操作区——不再是「操作按钮由后续批次接入」的占位文案。
+function renderActionCardSummaryHtml(content: Record<string, unknown>, ctx: ChatRenderContext): string {
+  const zh = ctx.locale === "zh-CN";
   const rawItems = Array.isArray(content["items"]) ? (content["items"] as unknown[]) : [];
   const rows = rawItems
     .slice(0, 8)
-    .map((item) => {
+    .map((item): ActionCardItemRow | undefined => {
       if (!item || typeof item !== "object") {
         return undefined;
       }
       const record = item as Record<string, unknown>;
       const titleMd = record["title_md"];
-      if (typeof titleMd !== "string" || !titleMd) {
+      const id = record["id"];
+      if (typeof titleMd !== "string" || !titleMd || typeof id !== "string" || !id) {
         return undefined;
       }
       const status = typeof record["status"] === "string" ? (record["status"] as string) : "";
-      return { title: titleMd, status };
+      const kind = typeof record["kind"] === "string" ? (record["kind"] as string) : "";
+      const assigneeUserId = typeof record["assignee_user_id"] === "string" ? (record["assignee_user_id"] as string) : null;
+      const undoDeadlineAt = typeof record["undo_deadline_at"] === "string" ? (record["undo_deadline_at"] as string) : null;
+      return { id, title: titleMd, kind, status, assigneeUserId, undoDeadlineAt };
     })
-    .filter((row): row is { title: string; status: string } => Boolean(row));
+    .filter((row): row is ActionCardItemRow => Boolean(row));
   const header = zh
     ? `Cuu 从讨论里拎出 ${rawItems.length} 件事`
     : `Cuu pulled ${rawItems.length} item${rawItems.length === 1 ? "" : "s"} out of the discussion`;
@@ -160,17 +265,13 @@ function renderActionCardSummaryHtml(content: Record<string, unknown>, locale: L
       const label = actionCardItemStatusLabel(row.status, zh);
       const liClass = undone ? "wh-wb-chat-actioncard-item wh-wb-chat-actioncard-item--undone" : "wh-wb-chat-actioncard-item";
       const statusHtml = label ? `<span class="wh-wb-chat-actioncard-item-status">${escapeHtml(label)}</span>` : "";
-      return `<li class="${liClass}"><span class="wh-wb-chat-actioncard-item-title">${escapeHtml(row.title)}</span>${statusHtml}</li>`;
+      const actionsHtml = undone ? "" : actionCardItemActionsHtml(row, ctx);
+      return `<li class="${liClass}"><span class="wh-wb-chat-actioncard-item-title">${escapeHtml(row.title)}</span>${statusHtml}${actionsHtml}</li>`;
     })
     .join("");
-  // 撤销/指派的操作按钮仍未接入这个窗口（快照/事件都不带 assignee 与撤销窗口截止时间，客户端判不了
-  // 「当前用户能不能点」，先不摆假按钮）；状态展示自本批起是实时的。
-  const note = zh
-    ? "撤销/指派的操作按钮由后续批次接入这个窗口。"
-    : "Undo / assign controls land in a later batch.";
   return `<div class="wh-wb-chat-actioncard"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${
     list ? `<ul class="wh-wb-chat-actioncard-list">${list}</ul>` : ""
-  }<div class="wh-wb-chat-actioncard-note">${escapeHtml(note)}</div></div>`;
+  }</div>`;
 }
 
 // R12 批 4b：产出卡回灌——一个带来源会话的 run 开出提议/自动合并时，服务端往会话里落一条
@@ -247,7 +348,7 @@ function messageBodyHtml(message: ConversationMessageVM, ctx: ChatRenderContext)
       // （renderPendingOutgoingHtml）还没有服务端确认的 drive_item_id 归属，继续保持非交互。
       return `<button type="button" class="wh-wb-chat-filecard wh-wb-chat-filecard--live" data-wb-chat-open-file="${escapeHtml(message.content.drive_item_id)}" data-wb-chat-open-file-name="${escapeHtml(message.content.snapshot_name)}">${workbenchIcons.folder}<span class="wh-wb-chat-filecard-name">${escapeHtml(message.content.snapshot_name)}</span></button>`;
     case "action_card":
-      return renderActionCardSummaryHtml(message.content, ctx.locale);
+      return renderActionCardSummaryHtml(message.content, ctx);
     case "tool_note":
       return `<div class="wh-wb-chat-note">${escapeHtml(bestEffortNoteText(message.content, ctx.locale === "zh-CN" ? "（一次工具调用）" : "(a tool call)"))}</div>`;
     case "system_event":

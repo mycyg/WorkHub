@@ -572,13 +572,40 @@ export type PostSystemMessageInput = {
   at?: Date;
 };
 
-function itemSummary(row: { id: string; kind: string; titleMd: string; confidence: string; status: string }) {
-  return { id: row.id, kind: row.kind, title_md: row.titleMd, confidence: row.confidence, status: row.status };
+// R12 P0-A1：消息内容里的条目摘要是发给桌面客户端渲染操作按钮用的 bounded 松对象（不是 SSE 事件的
+// strict schema，SSE 契约的 items 形状不动）——增补 assignee_user_id/undo_deadline_at 两个只增字段，
+// 让前端不必再为了拿这两个值单独打一次 GET。
+function itemSummary(row: {
+  id: string;
+  kind: string;
+  titleMd: string;
+  confidence: string;
+  status: string;
+  assigneeUserId?: string | null;
+  undoDeadlineAt?: Date | null;
+}) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    title_md: row.titleMd,
+    confidence: row.confidence,
+    status: row.status,
+    assignee_user_id: row.assigneeUserId ?? null,
+    undo_deadline_at: row.undoDeadlineAt ? row.undoDeadlineAt.toISOString() : null
+  };
 }
 
 function buildActionCardMessageContent(
   cardId: string,
-  items: ReadonlyArray<{ id: string; kind: string; titleMd: string; confidence: string; status: string }>
+  items: ReadonlyArray<{
+    id: string;
+    kind: string;
+    titleMd: string;
+    confidence: string;
+    status: string;
+    assigneeUserId?: string | null;
+    undoDeadlineAt?: Date | null;
+  }>
 ): Record<string, unknown> {
   return {
     card_id: cardId,
@@ -728,7 +755,9 @@ async function createNewCard(
       kind: item.kind,
       titleMd: item.titleMd,
       confidence: item.confidence,
-      status: item.status
+      status: item.status,
+      assigneeUserId: item.assigneeUserId ?? null,
+      undoDeadlineAt: item.undoDeadlineAt ?? null
     }))
   );
 
