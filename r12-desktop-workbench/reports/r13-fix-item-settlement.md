@@ -133,3 +133,14 @@ git status --short
 - `packages/db` 仓库层没有为"四终态映射"新增测试——如上文"测试覆盖说明"所述，判断为已被通用 CAS
   测试覆盖，映射本身是本模块的业务逻辑不是仓库职责；如果人工认为仓库层也需要针对这四个具体 toStatus
   值的专门测试，属于本批未做的补充项。
+
+---
+
+## 阻塞风险已解决（集成者跟进,main 1b87b1bb）
+
+「范围外发现——阻塞风险」一节描述的 undo() 确定性 409 已在合并本分支的同一波集成中修复:
+apps/api/src/services/action-cards.ts 的 undo() 在自身 CAS 落空后复读条目——已是 undone 即视为
+成功(钩子抢先=殊途同归,留痕/播报照旧),其它状态才维持原 409。回归测试
+「undo succeeds when the settlement hook already flipped the item to undone during abort」
+落在 apps/api/src/action-cards-service.test.ts。验证:pnpm --filter @workhub/api test = 1123/0,
+pnpm -r typecheck = 16/16 净。三个候选方案中选了「修 undo 幂等」——语义最诚实,cancelled 映射保留。
