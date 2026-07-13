@@ -260,3 +260,162 @@ test("rollbackToVersion returns null when the item is missing, deleted, or a fol
   assert.equal(result, null);
   assert.equal(queries.length, 2, "must not query versions once the item is deleted");
 });
+
+// ——— R12 E-01（人工验收打回）：同 parent 下重名上传此前直接 409，用户没有出路。
+// uploadFile 现在对撞上的【活跃文件】追加新版本（沿用上面 rollbackToVersion 的追加先例：insert 新
+// version 行 + 更新 item.currentVersionId 指针 + operations/audit 留痕，历史版本不删/不改）。撞的若是
+// 文件夹仍然 409——不能把版本挂在文件夹名下。———
+
+test("uploadFile appends a new version instead of 409ing when an active file with the same name already exists", async () => {
+  const existingItem = itemRow();
+  const insertedVersion = versionRow(newVersionId, 3, { filename: "report.md", sizeBytes: 555, sha256: "c".repeat(64) });
+  const updatedItem = itemRow({ currentVersionId: newVersionId, updatedByUserId: actorUserId });
+  const operationRow = {
+    id: "91000000-0000-4000-8000-000000000309",
+    projectId,
+    actorUserId,
+    opType: "upload_file",
+    payloadJson: { drive_item_id: itemId },
+    undoneAt: null,
+    createdAt: new Date("2026-07-06T00:00:00.000Z"),
+    updatedAt: new Date("2026-07-06T00:00:00.000Z")
+  };
+  const responses = [
+    [{ project: projectRow(), orgId: null }], // findProject
+    [existingItem], // activeItemByName (name-conflict precheck)
+    [existingItem], // FOR UPDATE re-lock inside appendUploadedVersion
+    [{ versionNo: 2 }], // nextVersionNoForItem
+    [insertedVersion], // insert projectDriveVersions .returning()
+    [updatedItem], // update projectDriveItems .returning()
+    [operationRow], // insert projectDriveOperations .returning()
+    [] // insert auditLogs (no .returning())
+  ];
+  const { db, queries, transactions } = createQueryRecorder(responses);
+  const repository = createDriveRepository(db);
+
+  const result = await repository.uploadFile({
+    actorKind: "human",
+    actorUserId,
+    projectId,
+    filename: "report.md",
+    mime: "text/markdown",
+    sizeBytes: 555,
+    sha256: "c".repeat(64),
+    at: new Date("2026-07-06T00:00:00.000Z")
+  });
+
+  assert.ok(result, "same-name upload onto an active file must succeed, not throw");
+  assert.equal(result!.item.currentVersionId, newVersionId, "item now points at the freshly appended version");
+  assert.equal(result!.version!.id, newVersionId);
+  assert.equal(result!.version!.versionNo, 3, "version number increments off the item's existing history, not reset to 1");
+  assert.equal(result!.operation.opType, "upload_file");
+  assert.equal(transactions.at(-1)?.outcome, "resolved");
+
+  // 没有任何一条查询删除/修改历史版本行——只 insert 一条新版本 + update item 指针。
+  const versionMutations = queries.filter(
+    (query) => query.targetTable === projectDriveVersions && query.steps.includes("set")
+  );
+  assert.equal(versionMutations.length, 0, "re-upload must never mutate/delete a historical version row");
+  const versionInserts = queries.filter(
+    (query) => query.targetTable === projectDriveVersions && query.steps.includes("values")
+  );
+  assert.equal(versionInserts.length, 1, "re-upload appends exactly one new version row");
+  const itemUpdates = queries.filter(
+    (query) => query.targetTable === projectDriveItems && query.steps.includes("set")
+  );
+  assert.equal(itemUpdates.length, 1, "exactly one pointer update to the item's currentVersionId");
+  const auditInsert = queries.find((query) => query.targetTable === auditLogs);
+  assert.ok(auditInsert, "re-upload must still write an audit log entry");
+  const operationInsert = queries.find((query) => query.targetTable === projectDriveOperations);
+  assert.ok(operationInsert, "re-upload must still write a drive operation entry");
+});
+
+test("uploadFile still rejects with a 409 name conflict when the same-name active entry is a folder", async () => {
+  const folderItem = { ...itemRow(), kind: "folder", currentVersionId: null };
+  const responses = [
+    [{ project: projectRow(), orgId: null }], // findProject
+    [folderItem] // activeItemByName
+  ];
+  const { db, queries, transactions } = createQueryRecorder(responses);
+  const repository = createDriveRepository(db);
+
+  await assert.rejects(
+    () =>
+      repository.uploadFile({
+        actorKind: "human",
+        actorUserId,
+        projectId,
+        filename: "report.md",
+        sizeBytes: 10
+      }),
+    (error: unknown) => error instanceof DriveRepositoryConflictError && error.code === "drive_name_conflict"
+  );
+
+  // 撞的是文件夹——在锁/建版本之前就必须拒绝，不能把版本挂在文件夹名下。
+  assert.equal(queries.length, 2, "must reject before ever locking a target item once the collision is a folder");
+  assert.equal(transactions.at(-1)?.outcome, "rejected");
+});
+
+test("uploadFile still creates a brand-new item+version when no active item shares the name", async () => {
+  const createdItem = itemRow({ id: "91000000-0000-4000-8000-00000000030a", currentVersionId: newVersionId });
+  const createdVersion = versionRow(newVersionId, 1, { filename: "new-report.md" });
+  const operationRow = {
+    id: "91000000-0000-4000-8000-00000000030b",
+    projectId,
+    actorUserId,
+    opType: "upload_file",
+    payloadJson: { drive_item_id: createdItem.id },
+    undoneAt: null,
+    createdAt: new Date("2026-07-06T00:00:00.000Z"),
+    updatedAt: new Date("2026-07-06T00:00:00.000Z")
+  };
+  const responses = [
+    [{ project: projectRow(), orgId: null }], // findProject
+    [], // activeItemByName misses — no active namesake
+    [createdItem], // insert projectDriveItems .returning()
+    [createdVersion], // insert projectDriveVersions .returning()
+    [operationRow], // insert projectDriveOperations .returning()
+    [] // insert auditLogs (no .returning())
+  ];
+  const { db, transactions } = createQueryRecorder(responses);
+  const repository = createDriveRepository(db);
+
+  const result = await repository.uploadFile({
+    actorKind: "human",
+    actorUserId,
+    projectId,
+    filename: "new-report.md",
+    sizeBytes: 42,
+    at: new Date("2026-07-06T00:00:00.000Z")
+  });
+
+  assert.ok(result);
+  assert.equal(result!.version!.versionNo, 1, "brand-new file still starts at version 1");
+  assert.equal(transactions.at(-1)?.outcome, "resolved");
+});
+
+test("uploadFile treats a same-name active file that gets soft-deleted between the precheck and the row lock as a conflict, not a silent new item", async () => {
+  const raceItem = { ...itemRow(), deletedAt: new Date("2026-07-06T00:00:00.000Z") };
+  const responses = [
+    [{ project: projectRow(), orgId: null }], // findProject
+    [itemRow()], // activeItemByName (precheck sees it active)
+    [raceItem] // FOR UPDATE re-lock sees it now soft-deleted (concurrent race)
+  ];
+  const { db, queries, transactions } = createQueryRecorder(responses);
+  const repository = createDriveRepository(db);
+
+  await assert.rejects(
+    () =>
+      repository.uploadFile({
+        actorKind: "human",
+        actorUserId,
+        projectId,
+        filename: "report.md",
+        sizeBytes: 10
+      }),
+    (error: unknown) => error instanceof DriveRepositoryConflictError && error.code === "drive_name_conflict"
+  );
+
+  assert.equal(queries.length, 3, "must reject right after the lock re-check, without inserting a version");
+  assert.equal(transactions.at(-1)?.outcome, "rejected");
+});
