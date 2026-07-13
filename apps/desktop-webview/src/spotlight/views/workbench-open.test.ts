@@ -59,6 +59,7 @@ function baseCtx(body: FakeBody, overrides: Partial<SpotlightViewContext> = {}):
     locale: "zh-CN",
     client: {} as SpotlightViewContext["client"],
     back() {},
+    resetShell() {},
     open() {},
     setSubtitle() {},
     toast() {},
@@ -227,4 +228,33 @@ test("a failed invoke renders a retry affordance that is wired to a real retry, 
       delete (globalThis as { __TAURI__?: unknown }).__TAURI__;
     }
   });
+});
+
+// R13 收尾:动作完成后聚焦盒复位回首页搜索态——成功路径在短暂展示后调度 resetShell,
+// 且盒子被关掉(signal abort)时不复位(定时器已清)。
+test("a successful open schedules a shell reset back to the idle launcher, cancelled by abort", async () => {
+  (globalThis as { __TAURI__?: unknown }).__TAURI__ = {
+    core: { invoke: async () => undefined }
+  };
+  const body = new FakeBody();
+  const abort = new AbortController();
+  let resets = 0;
+  const previousSetTimeout = globalThis.setTimeout;
+  const scheduled: Array<() => void> = [];
+  (globalThis as { setTimeout: unknown }).setTimeout = ((fn: () => void) => {
+    scheduled.push(fn);
+    return 0 as unknown as ReturnType<typeof setTimeout>;
+  }) as typeof setTimeout;
+  try {
+    createWorkbenchOpenView("workbench").mount(
+      baseCtx(body, { signal: abort.signal, resetShell: () => { resets += 1; } })
+    );
+    await new Promise((resolve) => previousSetTimeout(resolve, 0));
+    assert.equal(scheduled.length >= 1, true);
+    scheduled.forEach((fn) => fn());
+    assert.equal(resets, 1);
+  } finally {
+    (globalThis as { setTimeout: unknown }).setTimeout = previousSetTimeout;
+    delete (globalThis as { __TAURI__?: unknown }).__TAURI__;
+  }
 });

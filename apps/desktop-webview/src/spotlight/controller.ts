@@ -304,6 +304,7 @@ export function mountSpotlight(input: MountSpotlightInput): SpotlightHandle {
       locale,
       body: viewRoot,
       back: () => dispatch({ type: "back" }),
+      resetShell: () => dispatch({ type: "reset" }),
       open: (nextId, nextTarget) => openCapabilityWithTarget(nextId, nextTarget),
       ...(target ? { target } : {}),
       setSubtitle: (text) => {
