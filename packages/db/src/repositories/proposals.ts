@@ -386,6 +386,13 @@ export type ProposalRepository = {
   review: (input: ReviewProposalInput) => Promise<StoredProposalRows | null>;
   // B-R9.6（KPI 真源）：今日 AI 判官审阅结果，供指挥台「复核通过率」跨页同口径。
   countTodayAiReviewOutcomes: (input: { workspaceId: string; now?: Date }) => Promise<{ total: number; approved: number }>;
+  // R13 批 P4（全托管透明度）：今日「通过」类评审里，AI 与人类各评了多少——供 army/cost 页
+  // 「AI 自动合并数/占比」KPI（reviewerKind='ai' 的 approve 评审=批 4b 自动合并那一刻）。
+  // 与 countTodayAiReviewOutcomes 用同一套 workspace 归属 + 当日窗口口径，唯独不预先按 reviewerKind 过滤。
+  countTodayMergeReviewsByActorKind: (input: { workspaceId: string; now?: Date }) => Promise<{ total: number; aiApproved: number }>;
+  // R13 批 P4（reviewer_kind 溯源）：批量按 proposalId 取全部评审（含 reviewerKind），供 accepted_deliverables
+  // 反查「这份交付物是被 AI 自动合并的，还是人工复核的」——调用方按 proposalId 分组取最新一条 approve。
+  listReviewsByProposalIds: (proposalIds: string[]) => Promise<ReviewRow[]>;
   merge: (input: MergeProposalInput) => Promise<StoredProposalRows | null>;
   rebase: (input: RebaseProposalInput) => Promise<ProposalMergeConflict[] | null>;
 };
@@ -2646,6 +2653,45 @@ export function createProposalRepository(db: WorkHubDb): ProposalRepository {
       const total = rows.length;
       const approved = rows.filter((row) => row.decision === "approve").length;
       return { total, approved };
+    },
+
+    // R13 批 P4：与上面同款 workspace 归属 + 当日窗口口径，但只看「通过」的评审（decision=approve），
+    // 不预先按 reviewerKind 过滤——total 是当日全部通过的评审（人+AI），aiApproved 是其中 AI 评的那部分。
+    // ratio=aiApproved/total 即「今日通过的评审里，有多大比例是 AI 自动合并的」。
+    async countTodayMergeReviewsByActorKind(input) {
+      const at = input.now ?? new Date();
+      const dayStart = new Date(at);
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const rows = await db
+        .select({ reviewerKind: reviews.reviewerKind })
+        .from(reviews)
+        .innerJoin(proposals, eq(reviews.proposalId, proposals.id))
+        .innerJoin(workItems, eq(proposals.workItemId, workItems.id))
+        .innerJoin(projects, eq(projects.id, workItems.projectId))
+        .where(and(
+          eq(reviews.decision, "approve"),
+          or(
+            eq(workItems.workspaceId, input.workspaceId),
+            eq(projects.workspaceId, input.workspaceId)
+          ),
+          gte(reviews.createdAt, dayStart)
+        ))
+        .orderBy(desc(reviews.createdAt))
+        .limit(500);
+      const total = rows.length;
+      const aiApproved = rows.filter((row) => row.reviewerKind === "ai").length;
+      return { total, aiApproved };
+    },
+
+    async listReviewsByProposalIds(proposalIds) {
+      if (proposalIds.length === 0) {
+        return [];
+      }
+      return db
+        .select()
+        .from(reviews)
+        .where(inArray(reviews.proposalId, proposalIds))
+        .orderBy(asc(reviews.createdAt));
     },
 
     async merge(input) {

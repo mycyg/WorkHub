@@ -214,6 +214,8 @@ type RouteCopyKey =
   | "workitem.deliverables"
   | "workitem.driveSource"
   | "workitem.meetingSource"
+  | "workitem.observerSource"
+  | "workitem.observerSourceBody"
   | "workitem.openProposal"
   | "workitem.openReplay"
   | "workitem.createTaskPlan"
@@ -425,6 +427,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.deliverables": "AI 提议的改动",
     "workitem.driveSource": "网盘评论来源",
     "workitem.meetingSource": "会议洞察来源",
+    "workitem.observerSource": "会话观察者来源",
+    "workitem.observerSourceBody": "由项目群聊的 Cuu 观察者创建。",
     "workitem.openProposal": "查看变更申请",
     "workitem.openReplay": "查看回放",
     "workitem.createTaskPlan": "生成任务计划",
@@ -635,6 +639,8 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "workitem.deliverables": "Proposed changes",
     "workitem.driveSource": "Drive comment source",
     "workitem.meetingSource": "Meeting insight source",
+    "workitem.observerSource": "Conversation observer source",
+    "workitem.observerSourceBody": "Created by Cuu, the project chat observer.",
     "workitem.openProposal": "Open change request",
     "workitem.openReplay": "Open replay",
     "workitem.createTaskPlan": "Draft task plan",
@@ -2283,6 +2289,16 @@ function renderWorkItemSourceContext(vm: WorkItemDetailVM, locale: WorkHubLocale
       </div>
     </div>`;
   }
+  // R13 批 P4（观察者工单来源标注）：与 drive_comment/meeting_insight 平级——会话观察者创建的工单没有
+  // 评论/纪要正文可显示，只人话标注「由哪场会话创建」，且没有 web 端可达的会话深链（桌面优先战略）。
+  if (source.source_type === "conversation_observer") {
+    return `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-workitem-source-context="${escapeHtml(source.source_type)}" data-r13-workitem-source-conversation-id="${escapeHtml(source.conversation_id)}">
+      <div>
+        <strong>${escapeHtml(routeT(locale, "workitem.observerSource"))}</strong>
+        <p>${escapeHtml(routeT(locale, "workitem.observerSourceBody"))}</p>
+      </div>
+    </div>`;
+  }
   const proposal = source.proposal_href
     ? `<a class="wh-pill" href="${escapeHtml(safeHref(source.proposal_href))}" data-r5-workitem-source-proposal-link="true" data-r5-workitem-source-proposal-id="${escapeHtml(source.proposal_id ?? "")}" data-r5-workitem-source-proposal-status="${escapeHtml(source.proposal_status ?? "")}">${escapeHtml(routeT(locale, "workitem.openProposal"))}</a>`
     : "";
@@ -2318,6 +2334,10 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
       <span class="wh-pill">${escapeHtml(deliverableTargetLabel(locale, change.target_kind))}</span>
     </div>`).join("")
     : `<p class="wh-subtle" data-r4-workitem-empty-deliverable-status="${escapeHtml(vm.workitem.status)}">${escapeHtml(emptyDeliverableCopy(vm.workitem.status, locale))}</p>`;
+  // R13 批 P4（全托管透明度：reviewer_kind 溯源）：只要有一条已采纳交付物是 AI 自己复核并合并的
+  // （reviewer_kind==="ai"），说明这个工作项确实发生过「全托管自动合并」——置信度 pill 的
+  // 「可自动采纳」（未来时/资格描述）此时该改成过去时，不能对已发生的事实用「可以」这种语气。
+  const hasAiAutoMergedDeliverable = vm.accepted_deliverables.some((accepted) => accepted.reviewer_kind === "ai");
 
   return createWebRouteComponent({
     key: "workitem",
@@ -2344,9 +2364,9 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
             <span class="wh-pill">${escapeHtml(vm.workitem.code)}</span>
             <span class="wh-pill">${escapeHtml(attentionPriorityLabel(vm.workitem.priority, locale === "zh-CN"))}</span>
             <span class="wh-pill">${escapeHtml(localizedEnumLabel(vm.workitem.mode, locale === "zh-CN", { worker: "执行", pm: "项目管理" }, { worker: "Worker", pm: "PM" }))}</span>
-            ${vm.confidence ? `<span class="wh-pill wh-r4-prio ${vm.confidence.verdict === "escalate" ? "wh-r4-prio--warn" : ""}" data-r9-workitem-confidence="${escapeHtml(vm.confidence.verdict)}" title="${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的置信评级与分流结论" : "AI's confidence grade and routing verdict for the latest output")}">${escapeHtml(locale === "zh-CN"
-    ? `${vm.confidence.score >= 0.85 ? "AI 很有把握" : vm.confidence.score >= 0.6 ? "AI 比较有把握" : "AI 把握不大"} · ${vm.confidence.verdict === "auto_merge" ? "可自动采纳" : vm.confidence.verdict === "human_spotcheck" ? "建议抽查" : "建议人工把关"}`
-    : `${vm.confidence.score >= 0.85 ? "AI is confident" : vm.confidence.score >= 0.6 ? "AI is fairly confident" : "AI is unsure"} · ${vm.confidence.verdict === "auto_merge" ? "auto-merge ok" : vm.confidence.verdict === "human_spotcheck" ? "spot-check" : "needs review"}`)}</span>` : ""}
+            ${vm.confidence ? `<span class="wh-pill wh-r4-prio ${vm.confidence.verdict === "escalate" ? "wh-r4-prio--warn" : ""}" data-r9-workitem-confidence="${escapeHtml(vm.confidence.verdict)}" data-r13-workitem-confidence-auto-merged="${escapeHtml(String(vm.confidence.verdict === "auto_merge" && hasAiAutoMergedDeliverable))}" title="${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的置信评级与分流结论" : "AI's confidence grade and routing verdict for the latest output")}">${escapeHtml(locale === "zh-CN"
+    ? `${vm.confidence.score >= 0.85 ? "AI 很有把握" : vm.confidence.score >= 0.6 ? "AI 比较有把握" : "AI 把握不大"} · ${vm.confidence.verdict === "auto_merge" ? (hasAiAutoMergedDeliverable ? "已自动采纳" : "可自动采纳") : vm.confidence.verdict === "human_spotcheck" ? "建议抽查" : "建议人工把关"}`
+    : `${vm.confidence.score >= 0.85 ? "AI is confident" : vm.confidence.score >= 0.6 ? "AI is fairly confident" : "AI is unsure"} · ${vm.confidence.verdict === "auto_merge" ? (hasAiAutoMergedDeliverable ? "auto-merged already" : "auto-merge ok") : vm.confidence.verdict === "human_spotcheck" ? "spot-check" : "needs review"}`)}</span>` : ""}
           </div>
           ${vm.confidence ? `<p class="wh-subtle" data-r9-workitem-confidence-note="true">${escapeHtml(locale === "zh-CN" ? "AI 对最近一次输出的置信评级与分流结论。" : "AI's confidence grade and routing verdict for the latest output.")}</p>` : ""}
           ${(() => {
@@ -2367,8 +2387,11 @@ function renderWorkItemRouteComponent(vm: WorkItemDetailVM, locale: WorkHubLocal
           <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, "workitem.deliverables"))}</h3>
           <div class="wh-r4-route-timeline" role="list">${deliverableRows}</div>
           ${vm.accepted_deliverables.length ? `<h4 role="heading" aria-level="3">${escapeHtml(locale === "zh-CN" ? "已采纳的交付物" : "Accepted deliverables")}</h4>
-          <div class="wh-r4-route-timeline" role="list">${vm.accepted_deliverables.slice(0, 6).map((accepted) => `<div role="listitem" class="wh-r4-route-row" data-r9-workitem-accepted-deliverable="${escapeHtml(accepted.change_id)}">
-            <div><strong>${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</strong></div>
+          <div class="wh-r4-route-timeline" role="list">${vm.accepted_deliverables.slice(0, 6).map((accepted) => `<div role="listitem" class="wh-r4-route-row" data-r9-workitem-accepted-deliverable="${escapeHtml(accepted.change_id)}" data-r13-workitem-accepted-reviewer-kind="${escapeHtml(accepted.reviewer_kind ?? "")}">
+            <div>
+              <strong>${escapeHtml(accepted.filename ?? accepted.target_path ?? accepted.target_key)}</strong>
+              ${accepted.reviewer_kind === "ai" ? `<p class="wh-subtle" data-r13-workitem-accepted-auto-merge-notice="true">${escapeHtml(locale === "zh-CN" ? "已由 AI 自动合并，无人工复核。" : "Automatically merged by AI — no human review.")}</p>` : ""}
+            </div>
             <div class="wh-r4-route-meta">
               ${accepted.drive_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.drive_href))}" data-r9-accepted-drive-link="true">${escapeHtml(locale === "zh-CN" ? "在网盘中查看" : "Open in drive")}</a>` : ""}
               ${accepted.download_href ? `<a class="wh-pill" href="${escapeHtml(safeHref(accepted.download_href))}" data-action-id="drive_download" data-native-resource-link="true" target="_blank" rel="noreferrer">${escapeHtml(locale === "zh-CN" ? "下载" : "Download")}</a>` : ""}
@@ -2806,6 +2829,13 @@ function renderDriveRouteComponent(
   const versionsCapNote = selectedFileVersions.length > 8
     ? `<p class="wh-subtle" data-r13-drive-versions-capped="${escapeHtml(String(selectedFileVersions.length - 8))}">${escapeHtml(locale === "zh-CN" ? `只显示最近 8 个版本（共 ${selectedFileVersions.length} 个）。` : `Showing the 8 most recent versions of ${selectedFileVersions.length}.`)}</p>`
     : "";
+  // R13 批 P4（网盘版本历史两端不对称的诚实标注）：version.restore_href 是服务端为两端共出的同一份 VM
+  // 字段，但 web 这里从不渲染恢复按钮（回滚是桌面独有能力，见 apps/web/src/browser.ts 的
+  // desktopRequiredNotice 先例）——此前网页用户完全看不出「能不能恢复」，只是静默没有按钮。
+  // 只在真有非当前版本（值得恢复）时才提示，避免只有一个当前版本时的噪音。
+  const versionsDesktopNotice = selectedFileVersions.some((version) => !version.current)
+    ? `<p class="wh-subtle" data-r13-drive-versions-desktop-notice="true">${escapeHtml(locale === "zh-CN" ? "找回历史版本需要桌面客户端。" : "Restoring an older version requires the desktop client.")}</p>`
+    : "";
   const acceptedRows = vm.accepted_deliverables.length
     ? vm.accepted_deliverables.slice(0, 6).map((accepted) => `<article class="wh-card wh-r4-route-card" data-r4-drive-accepted-deliverable="${escapeHtml(accepted.id)}">
       <div class="wh-r4-route-meta">
@@ -2924,6 +2954,7 @@ function renderDriveRouteComponent(
         <section class="wh-card wh-r4-route-card" data-r4-drive-versions="true">
           <h3 role="heading" aria-level="2">${escapeHtml(driveVersionsHeading)}</h3>
           <div class="wh-r4-route-timeline" role="list">${versionRows}${versionsCapNote}</div>
+          ${versionsDesktopNotice}
         </section>
       </div>
       <div class="wh-r4-route-grid">
@@ -3513,7 +3544,17 @@ function renderAgentArmyRouteComponent(vm: AgentArmyDashboardVM, locale: WorkHub
     // UX-M11：今日成本口径=当前可见的活跃军团账目，不是全组织今日总账——标签说清楚，不冒充。
     { id: "today_cost", label: routeT(locale, "agents.todayCost"), value: costAmount(vm.kpis.today_cost_cny, locale), note: locale === "zh-CN" ? "仅含当前可见军团" : "Visible teams only" },
     // 普通用户审查：「自治率」没人看得懂——注明口径（当日 AI 判官复核通过率，无审阅回退 run 成功率）。
-    { id: "autonomy_rate", label: routeT(locale, "agents.autonomy"), value: `${vm.kpis.autonomy_rate_pct}%`, note: locale === "zh-CN" ? "今日 AI 复核通过率" : "Today's AI review pass rate" }
+    { id: "autonomy_rate", label: routeT(locale, "agents.autonomy"), value: `${vm.kpis.autonomy_rate_pct}%`, note: locale === "zh-CN" ? "今日 AI 复核通过率" : "Today's AI review pass rate" },
+    // R13 批 P4（KPI：AI 自动合并数/占比）：与 cost 页 ai_auto_merge 同源同口径；缺省（取数失败/非管理员）
+    // 时整张卡不渲染，不冒充 0 次。
+    ...(vm.kpis.ai_auto_merge_count !== undefined ? [{
+      id: "ai_auto_merge",
+      label: locale === "zh-CN" ? "AI 自动合并" : "AI auto-merges",
+      value: locale === "zh-CN" ? `${vm.kpis.ai_auto_merge_count} 次` : `${vm.kpis.ai_auto_merge_count}`,
+      ...(vm.kpis.ai_auto_merge_ratio_pct !== undefined
+        ? { note: locale === "zh-CN" ? `占今日通过评审的 ${vm.kpis.ai_auto_merge_ratio_pct}%` : `${vm.kpis.ai_auto_merge_ratio_pct}% of today's approvals` }
+        : {})
+    }] : [])
   ].map((item: { id: string; label: string; value: string; href?: string; note?: string }) => {
     const body = `<strong>${escapeHtml(item.value)}</strong><span>${escapeHtml(item.label)}</span>${item.note ? `<span class="wh-subtle" data-r9-agent-kpi-note="true">${escapeHtml(item.note)}</span>` : ""}`;
     return item.href
@@ -4026,6 +4067,46 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           ${byObjectiveCapNote}
         </section>`
     : "";
+  // R13 批 P4（labor-split 按 assignee 记账）：与 by_user 同构但维度不同——by_user 是记账时的
+  // usage.userId（起意者/触发这次调用的身份），by_assignee 是 run 的真实执行身份
+  // （agent_runs.actor_user_id）。系统桶（无 run 关联的账目，如夜间技能蒸馏）单独一行，
+  // 不与任何真人的名字混在一起，也不静默吞掉这部分花费。
+  const byAssigneeRows = vm.by_assignee.slice(0, 8)
+    .map((item) => `<div role="listitem" class="wh-r4-route-row" data-r13-cost-assignee="${escapeHtml(item.user_id ?? "system")}">
+      <div>
+        <strong>${escapeHtml(item.label)}</strong>
+        <p>${escapeHtml(zhNotice ? `${item.run_count} 次运行` : `${item.run_count} ${item.run_count === 1 ? "run" : "runs"}`)}</p>
+      </div>
+      <span class="wh-pill">${escapeHtml(costAmount(item.cost_cny, locale))}</span>
+    </div>`)
+    .join("");
+  const byAssigneeCapNote = vm.by_assignee.length > 8
+    ? `<p class="wh-subtle" data-r13-cost-by-assignee-capped="true">${escapeHtml(zhNotice
+      ? `按花费只显示前 8 位执行者（共 ${vm.by_assignee.length} 位）。`
+      : `Showing the 8 costliest assignees of ${vm.by_assignee.length}.`)}</p>`
+    : "";
+  const byAssigneeCard = vm.by_assignee.length
+    ? `<section class="wh-card wh-r4-route-card" data-r13-cost-by-assignee="true">
+          <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "按执行者分账" : "Spend by assignee")}</h3>
+          <p class="wh-subtle">${escapeHtml(zhNotice ? "谁执行了这些 AI 运行——按干活的人记账，而不是按提任务的人。" : "Who ran the work — attributed to the assignee who executed it, not whoever filed the task.")}</p>
+          <div class="wh-r4-route-timeline" role="list">${byAssigneeRows}</div>
+          ${byAssigneeCapNote}
+        </section>`
+    : "";
+  // R13 批 P4（KPI：AI 自动合并数/占比）：与 labor_split 同级——把「全托管档 AI 自己复核并合并了多少次」显性化，
+  // 是 D 主题（全托管透明度）在成本页的落点。
+  const aiAutoMergeCard = vm.ai_auto_merge
+    ? `<section class="wh-card wh-r4-route-card" data-r13-cost-ai-auto-merge="true" data-r13-cost-ai-auto-merge-count="${escapeHtml(String(vm.ai_auto_merge.count))}" data-r13-cost-ai-auto-merge-ratio="${escapeHtml(String(vm.ai_auto_merge.ratio_pct))}">
+          <h3 role="heading" aria-level="2">${escapeHtml(zhNotice ? "AI 自动合并" : "AI auto-merges")}</h3>
+          <div class="wh-r4-route-meta">
+            <span class="wh-pill">${escapeHtml(zhNotice ? `今日 ${vm.ai_auto_merge.count} 次` : `${vm.ai_auto_merge.count} today`)}</span>
+            <span class="wh-pill">${escapeHtml(zhNotice ? `占今日通过评审的 ${vm.ai_auto_merge.ratio_pct}%` : `${vm.ai_auto_merge.ratio_pct}% of today's approvals`)}</span>
+          </div>
+          <p class="wh-subtle">${escapeHtml(zhNotice
+            ? "全托管模式（第 5 档）下，AI 复核通过并立刻自己合并，这些次数里没有人工复核这一步。"
+            : "Under fully-managed mode (tier 5), AI reviews and merges on its own — no human check happens for these.")}</p>
+        </section>`
+    : "";
   // K5：「干活 vs 自进化」分账卡——把夜间技能自迭代的开销显性化（复利劳动力的自我打磨成本）。
   const laborSplitCard = vm.labor_split
     ? `<section class="wh-card wh-r4-route-card" data-r4-cost-labor-split="true" data-r4-cost-self-improvement-ratio="${escapeHtml(String(vm.labor_split.self_improvement_ratio))}">
@@ -4108,9 +4189,9 @@ function renderCostRouteComponent(vm: CostDashboardVM, locale: WorkHubLocale): W
           ${vm.model_breakdown.length > 5 ? `<p class="wh-subtle" data-r13-cost-models-capped="${escapeHtml(String(vm.model_breakdown.length - 5))}">${escapeHtml(locale === "zh-CN" ? `按花费只显示前 5 个模型（共 ${vm.model_breakdown.length} 个）。` : `Showing the 5 costliest models of ${vm.model_breakdown.length}.`)}</p>` : ""}
         </section>
       </div>
-      ${armyCard || laborSplitCard ? `<div class="wh-r4-route-grid">${armyCard}${laborSplitCard}</div>` : ""}
+      ${armyCard || laborSplitCard || aiAutoMergeCard ? `<div class="wh-r4-route-grid">${armyCard}${laborSplitCard}${aiAutoMergeCard}</div>` : ""}
       ${nonAdminNote}
-      ${byUserCard || byObjectiveCard ? `<div class="wh-r4-route-grid">${byUserCard}${byObjectiveCard}</div>` : ""}
+      ${byUserCard || byObjectiveCard || byAssigneeCard ? `<div class="wh-r4-route-grid">${byUserCard}${byObjectiveCard}${byAssigneeCard}</div>` : ""}
     </section>`
   });
 }

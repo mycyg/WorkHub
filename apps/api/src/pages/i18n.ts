@@ -8,6 +8,7 @@ type PageCopyKey =
   | "cost.scope.teamMonth"
   | "cost.label.currentUser"
   | "cost.label.teamBudget"
+  | "cost.label.system"
   | "cost.notice.warning"
   | "cost.notice.exhausted"
   | "cost.action.downgrade"
@@ -48,6 +49,7 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "cost.scope.teamMonth": "团队本月 AI 预算",
     "cost.label.currentUser": "当前用户",
     "cost.label.teamBudget": "团队预算",
+    "cost.label.system": "系统（无执行者）",
     "cost.notice.warning": "AI 预算快用完了，建议先选择更省的执行方式。",
     "cost.notice.exhausted": "AI 预算已经用完，先暂停新的自动执行。",
     "cost.action.downgrade": "降级模型继续",
@@ -87,6 +89,7 @@ const pageCopy: Record<WorkHubLocale, Record<PageCopyKey, string>> = {
     "cost.scope.teamMonth": "Team AI budget this month",
     "cost.label.currentUser": "Current user",
     "cost.label.teamBudget": "Team budget",
+    "cost.label.system": "System (no run owner)",
     "cost.notice.warning": "AI budget is nearly used up. Choose a cheaper run mode first.",
     "cost.notice.exhausted": "AI budget is exhausted. Pause new automated runs first.",
     "cost.action.downgrade": "Use a cheaper model",

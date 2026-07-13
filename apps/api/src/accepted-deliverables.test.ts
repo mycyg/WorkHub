@@ -159,3 +159,59 @@ test("accepted deliverable VM hides restore when the repository marks it non-res
   assert.equal(vm.download_href, `/api/workitems/${workItemId}/deliverables/${acceptedId}/download`);
   assert.equal(vm.restore_href, undefined);
 });
+
+// R13 批 P4（全托管透明度：reviewer_kind 溯源）：reviewer_kind 是调用方（work-items 服务，从批量反查
+// 的评审记录里）算好传进来的可选项——这里只验证 acceptedDeliverableToVm 忠实透传，不重新推导。
+test("accepted deliverable VM carries reviewer_kind when the caller supplies it, and omits it otherwise", () => {
+  const workItemId = "72000000-0000-4000-8000-000000000005";
+  const acceptedId = "72000000-0000-4000-8000-000000000204";
+  const row: DriveAcceptedDeliverableRow = {
+    accepted: {
+      id: acceptedId,
+      workItemId,
+      projectId: null,
+      proposalId: "72000000-0000-4000-8000-000000000206",
+      branchId: null,
+      changeId: "72000000-0000-4000-8000-000000000207",
+      targetKind: "text_doc",
+      targetEntityType: "drive_item",
+      targetEntityId: "72000000-0000-4000-8000-000000000208",
+      targetPath: "/outputs/result.yaml",
+      targetKey: "delivery:/outputs/result.yaml",
+      changeType: "updated",
+      acceptedVersion: 1,
+      baseVersionRef: null,
+      acceptedRef: "72000000-0000-4000-8000-000000000210",
+      driveItemId: "72000000-0000-4000-8000-000000000208",
+      driveVersionId: "72000000-0000-4000-8000-000000000210",
+      sha256Before: null,
+      sha256After: "c".repeat(64),
+      previewRefJson: null,
+      manifestChangeJson: {
+        id: "change",
+        target_kind: "text_doc",
+        target_ref: {
+          entity_type: "drive_item",
+          entity_id: "72000000-0000-4000-8000-000000000208",
+          path: "/outputs/result.yaml"
+        },
+        change_type: "updated",
+        human_summary: "更新结果文档"
+      },
+      supersededAt: null,
+      createdAt: baseDate,
+      updatedAt: baseDate
+    },
+    driveItem: null,
+    driveVersion: null
+  };
+
+  const aiVm = acceptedDeliverableToVm(row, { reviewerKind: "ai" });
+  assert.equal(aiVm.reviewer_kind, "ai");
+
+  const humanVm = acceptedDeliverableToVm(row, { reviewerKind: "human" });
+  assert.equal(humanVm.reviewer_kind, "human");
+
+  const unknownVm = acceptedDeliverableToVm(row);
+  assert.equal(unknownVm.reviewer_kind, undefined);
+});

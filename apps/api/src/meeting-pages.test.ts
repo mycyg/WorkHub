@@ -1127,7 +1127,12 @@ test("meeting draftToProposal lets assigned work item leads create the proposal 
   const records: Array<{ workItemId: string; proposalId: string; actorUserId: string }> = [];
   const manifests: DeliverableChangeManifest[] = [];
   const sourceDetail = minimalWorkItemDetail();
-  const sourceContext = sourceDetail.source_context!;
+  // R13 批 P4: source_context is a 3-way union now; this fixture is always meeting_insight-shaped,
+  // so narrow before destructuring fields that only exist on that variant.
+  const sourceContext = sourceDetail.source_context as Extract<
+    NonNullable<WorkItemDetailVM["source_context"]>,
+    { source_type: "meeting_insight" }
+  >;
   const {
     proposal_id: _proposalId,
     proposal_href: _proposalHref,

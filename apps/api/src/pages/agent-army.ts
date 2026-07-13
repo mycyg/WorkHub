@@ -21,6 +21,9 @@ type AgentArmyDashboardPageInput = {
   isAdmin?: boolean;
   sourceWarnings?: NonNullable<AgentArmyDashboardVM["source_warnings"]>;
   autonomyRatePct?: number;
+  // R13 批 P4（KPI：AI 自动合并数/占比）：与 cost 页 ai_auto_merge 同源同口径（路由层传原始计数，
+  // 这里只算比例，与 autonomyRatePct 的既有惯例一致）。缺省=取数失败/非管理员，不显示该 KPI。
+  aiAutoMergeCounts?: { total: number; aiApproved: number };
   plans: TaskPlanDashboardPlanRow[];
   items: TaskPlanItemRow[];
   runs: TaskPlanRunRow[];
@@ -314,7 +317,13 @@ export function buildAgentArmyDashboardPage(input: AgentArmyDashboardPageInput):
       // 自己捞的升级数抬高（收件箱按可见性/分页收口后就是用户看到的数）。
       waiting_decision_count: input.attentionCount,
       today_cost_cny: formatCny(todayCost),
-      autonomy_rate_pct: input.autonomyRatePct ?? 0
+      autonomy_rate_pct: input.autonomyRatePct ?? 0,
+      ...(input.aiAutoMergeCounts ? {
+        ai_auto_merge_count: input.aiAutoMergeCounts.aiApproved,
+        ai_auto_merge_ratio_pct: input.aiAutoMergeCounts.total > 0
+          ? Math.round((input.aiAutoMergeCounts.aiApproved / input.aiAutoMergeCounts.total) * 100)
+          : 0
+      } : {})
     },
     plans,
     recent_escalations: recentEscalations,

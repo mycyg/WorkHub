@@ -15,6 +15,7 @@ import type { WorkHubDb } from "../client.js";
 import type { TaskPlanWithItems } from "./task-plans.js";
 import {
   acceptedDeliverableChanges,
+  actionCardItems,
   approvalRequests,
   agentRuns,
   agentSteps,
@@ -30,6 +31,7 @@ import {
   projectDriveVersions,
   projects,
   proposals,
+  reviews,
   taskPlanItems,
   taskPlans,
   workItemAcceptanceItems,
@@ -145,6 +147,18 @@ export type WorkItemAcceptedDeliverableRow = {
   driveItem: typeof projectDriveItems.$inferSelect | null;
   driveVersion: typeof projectDriveVersions.$inferSelect | null;
   canRestore?: boolean;
+  // R13 批 P4（reviewer_kind 溯源）：这份交付物所属提议的最新一条 approve 评审是谁评的
+  // （'ai'=批 4b 全托管档自动合并，'human'=人工复核通过）。缺省(undefined)=没找到 approve 评审
+  // （历史数据/异常路径），详情页据此不渲「已由 AI 自动合并」提示——宁可不显示，不能瞎猜。
+  reviewerKind?: "human" | "ai";
+};
+
+// R13 批 P4（观察者工单来源标注）：这个工作项若是被会话观察者创建的，action_card_items 里恰有一行
+// workItemId=这个事项、conversationId=当时的会话——这是全部三种观察者派发路径(execute/auto、execute/ask、
+// decide)共通的最直接可推导路径(conversation-observer.ts 的 createOrAppendCard 落库时统一写入)。
+export type WorkItemObserverActionCardItemRow = {
+  conversationId: string;
+  createdAt: Date;
 };
 
 type WorkHubTx = Parameters<Parameters<WorkHubDb["transaction"]>[0]>[0];
@@ -236,6 +250,9 @@ export type StoredWorkItemDetailRows = {
   latestConfidence?: { confidenceScore: number; grade: "low" | "medium" | "high"; verdict: string } | null;
   // R8（留痕）：本工作项上已决策的审批（谁批的/结论/理由/时间），详情页时间线用。
   approvalDecisions?: Array<{ id: string; status: string; decisionReasonMd: string | null; decidedByUserId: string | null; updatedAt: Date }>;
+  // R13 批 P4：这个工作项是否由会话观察者创建的（有则带来源会话 id）；没有则为 null
+  // （drive_comment/meeting_insight 两种既有来源与此互斥，观察者派发从不途经它们）。
+  observerActionCardItem?: WorkItemObserverActionCardItemRow | null;
 };
 
 export type WorkItemKnowledgeSearchInput = {
@@ -472,6 +489,52 @@ async function attachAcceptedDeliverableRestoreState<T extends WorkItemAcceptedD
     restored.push({ ...row, canRestore: Boolean(previousRows[0]) });
   }
   return restored;
+}
+
+// R13 批 P4（reviewer_kind 溯源）：一次批量查询取这批交付物涉及的全部 proposalId 的评审，
+// 按 proposalId 分组取「最新一条 approve」的 reviewerKind——不逐行查（不构成 N+1）。
+// 一个提议可能先被打回过（decision=request_changes）又重新提交通过，取最新 approve 才是真正促成
+// 这批交付物落地的那次评审；reviewerKind 非 human/ai（如历史 system 评审/无评审）时不附加字段，
+// 详情页据此保持沉默而不是瞎猜。
+async function attachAcceptedDeliverableReviewerKind<T extends WorkItemAcceptedDeliverableRow>(
+  db: WorkHubDb,
+  rows: T[]
+): Promise<Array<T & { reviewerKind?: "human" | "ai" }>> {
+  const proposalIds = [...new Set(rows.map((row) => row.accepted.proposalId))];
+  if (proposalIds.length === 0) {
+    return rows;
+  }
+  const reviewRows = await db
+    .select({ proposalId: reviews.proposalId, reviewerKind: reviews.reviewerKind })
+    .from(reviews)
+    .where(and(inArray(reviews.proposalId, proposalIds), eq(reviews.decision, "approve")))
+    .orderBy(asc(reviews.createdAt));
+  const latestByProposal = new Map<string, "human" | "ai">();
+  for (const row of reviewRows) {
+    if (row.reviewerKind === "ai" || row.reviewerKind === "human") {
+      // 按 createdAt 升序遍历，后写的覆盖先写的 → map 里落地的就是最新一条。
+      latestByProposal.set(row.proposalId, row.reviewerKind);
+    }
+  }
+  return rows.map((row) => {
+    const reviewerKind = latestByProposal.get(row.accepted.proposalId);
+    return reviewerKind ? { ...row, reviewerKind } : row;
+  });
+}
+
+// R13 批 P4（观察者工单来源标注）：观察者创建的工作项在 action_card_items 上恰有一行反查
+// （work_item_id=这个事项），取其中最近一条即可——理论上每个观察者创建的工作项只对应一次派发。
+async function readObserverActionCardItem(
+  db: WorkHubDb,
+  workItemId: string
+): Promise<WorkItemObserverActionCardItemRow | null> {
+  const rows = await db
+    .select({ conversationId: actionCardItems.conversationId, createdAt: actionCardItems.createdAt })
+    .from(actionCardItems)
+    .where(eq(actionCardItems.workItemId, workItemId))
+    .orderBy(desc(actionCardItems.createdAt))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository {
@@ -1198,6 +1261,16 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
             .limit(1)
         : [];
 
+      // R13 批 P4：交付物先补 canRestore（既有逐条逻辑），再批量补 reviewer_kind（一次 IN 查询，见上）。
+      const acceptedDeliverablesWithRestoreState = await attachAcceptedDeliverableRestoreState(db, acceptedDeliverables);
+      const acceptedDeliverablesWithReviewerKind = await attachAcceptedDeliverableReviewerKind(
+        db,
+        acceptedDeliverablesWithRestoreState
+      );
+      // R13 批 P4：观察者来源标注——只在事项没有既有 drive_comment/meeting_insight 来源时才有意义查，
+      // 但两者互斥且都已并行取过，这里补一次按 work_item_id 索引的单行查询即可（不构成 N+1，详情页每次只查一个事项）。
+      const observerActionCardItem = await readObserverActionCardItem(db, workItemId);
+
       return {
         workItem: row.workItem,
         projectName: row.projectName,
@@ -1209,8 +1282,9 @@ export function createWorkItemRepository(db: WorkHubDb): WorkItemDataRepository 
         acceptance,
         agentSteps: agentStepRows,
         latestProposal: latestProposals[0] ?? null,
-        acceptedDeliverables: await attachAcceptedDeliverableRestoreState(db, acceptedDeliverables),
+        acceptedDeliverables: acceptedDeliverablesWithReviewerKind,
         evidenceBindings,
+        observerActionCardItem,
         taskPlan,
         driveSourceComment: driveSourceCommentWithPath,
         meetingSourceInsight: meetingSourceInsights[0] ?? null,

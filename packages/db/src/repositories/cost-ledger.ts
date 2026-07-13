@@ -10,13 +10,23 @@ import {
   type UsageSource
 } from "@workhub/cost";
 
-import { and, eq, gte, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, or, sql, type SQL } from "drizzle-orm";
 
 import type { WorkHubDb } from "../client.js";
-import { costLedgerEntries, usageRecords } from "../schema/index.js";
+import { agentRuns, costLedgerEntries, usageRecords, users } from "../schema/index.js";
 
 export type UsageRecordRow = typeof usageRecords.$inferSelect;
 export type CostLedgerEntryRow = typeof costLedgerEntries.$inferSelect;
+
+// R13 批 P4（labor-split 按执行者记账）：一个 assignee 分账行——actorUserId=null 归「系统」
+// （落库时 run_id 为空的账目，如夜间技能蒸馏/curation，或历史上未挂 run 的账目）。
+export type AssigneeCostSummaryRow = {
+  actorUserId: string | null;
+  nickname: string | null;
+  costCny: string;
+  tokens: number;
+  runCount: number;
+};
 
 function maybeDate(value: string | Date) {
   return value instanceof Date ? value : new Date(value);
@@ -325,4 +335,51 @@ export function createDbCostLedgerStore(
     listRecords,
     sumUsageCostSince
   };
+}
+
+// R13 批 P4（全托管透明度 D：labor-split 按 assignee 记账）：cost_ledger_entries 本身不带「谁执行的」
+// 维度——只有 denormalized userId（=usage.userId=起意 run 时的 actorId，语义模糊）。任务书明确要求按
+// agent_runs.actor_user_id（run 的执行身份=assignee）聚合，故在 SQL 里 LEFT JOIN agent_runs 取真正执行者，
+// 再 LEFT JOIN users 取昵称。一次 GROUP BY 查询完成全部聚合（不在应用层循环取昵称，不构成 N+1）。
+//
+// 口径：只取该工作区的 team 与 curation 两类 scope 条目（与 listEntriesForWorkspace 的「工作区归属」判定
+// 同口径），因为同一条 usage record 会按 scopesForUsage 扇出 workitem/task/objective/user/team 多个 scope
+// 各一条 ledger 行——只认 team/curation 这两种 scope 各恰好一条，避免把同一次花费重复计入多个 assignee 行。
+// curation（夜间技能蒸馏）没有关联的 run（scopesForUsage 从不给它挂 workItemId/runId），LEFT JOIN 后
+// actorUserId 天然为 NULL，与「无 run 关联」的条目一起落进「系统」桶（actorUserId===null 的分组）。
+export async function listCostByAssigneeForWorkspace(
+  db: WorkHubDb,
+  input: { teamId: string; sinceBucket?: string; limit?: number }
+): Promise<AssigneeCostSummaryRow[]> {
+  const limit = Math.max(1, Math.min(Math.floor(input.limit ?? 50), 200));
+  const workspacePredicate = or(
+    and(eq(costLedgerEntries.scopeKind, "team"), eq(costLedgerEntries.scopeId, input.teamId)),
+    and(eq(costLedgerEntries.scopeKind, "curation"), eq(costLedgerEntries.scopeId, input.teamId))
+  ) as SQL;
+  const where = input.sinceBucket
+    ? (and(workspacePredicate, gte(costLedgerEntries.periodBucket, input.sinceBucket)) as SQL)
+    : workspacePredicate;
+  const costSumExpr = sql<string>`coalesce(sum(${costLedgerEntries.estimatedCostCny}), 0)`;
+  const rows = await db
+    .select({
+      actorUserId: agentRuns.actorUserId,
+      nickname: users.nickname,
+      costCny: sql<string>`${costSumExpr}::text`,
+      tokens: sql<number>`coalesce(sum(${costLedgerEntries.tokenIn} + ${costLedgerEntries.tokenOut}), 0)::int`,
+      runCount: sql<number>`count(distinct ${costLedgerEntries.runId})::int`
+    })
+    .from(costLedgerEntries)
+    .leftJoin(agentRuns, eq(costLedgerEntries.runId, agentRuns.id))
+    .leftJoin(users, eq(agentRuns.actorUserId, users.id))
+    .where(where)
+    .groupBy(agentRuns.actorUserId, users.nickname)
+    .orderBy(desc(costSumExpr))
+    .limit(limit);
+  return rows.map((row) => ({
+    actorUserId: row.actorUserId,
+    nickname: row.nickname,
+    costCny: row.costCny,
+    tokens: row.tokens,
+    runCount: row.runCount
+  }));
 }

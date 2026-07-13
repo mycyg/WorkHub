@@ -5,6 +5,18 @@ import { localizedBudgetActionLabel } from "../budget-labels.js";
 import { pageT } from "./i18n.js";
 import { parseOutputContract } from "./output-contract.js";
 
+// R13 批 P4（labor-split 按 assignee 记账）：路由层用 packages/db 的 listCostByAssigneeForWorkspace
+// 一次 SQL GROUP BY 查出后传入——这里只做展示装配（谁是「我」/谁归「系统」/降序），不重新聚合。
+// 结构上与 @workhub/db 的 AssigneeCostSummaryRow 一致，但不直接依赖该包（page builder 保持对 DB 层无耦合，
+// 只依赖结构兼容的普通对象，方便单测直接构造）。
+export type AssigneeCostInputRow = {
+  actorUserId: string | null;
+  nickname: string | null;
+  costCny: string;
+  tokens: number;
+  runCount: number;
+};
+
 type CostPageInput = {
   settings: Settings;
   isAdmin: boolean;
@@ -19,6 +31,12 @@ type CostPageInput = {
   taskPlanMeta?: Map<string, { label: string; status: string; maxCostCny?: number; workItemId?: string }>;
   // UX-M10：目标标题（按目标维度不渲裸 UUID）。
   objectiveTitles?: Map<string, string>;
+  // R13 批 P4：按执行者（assignee）分账的行，仅管理员传入（与 by_user/by_team/by_workitem 同门槛）；
+  // 取数失败/非管理员时不传，页面对应区块不渲染。
+  assigneeCostRows?: AssigneeCostInputRow[];
+  // R13 批 P4：今日「AI 自动合并」KPI 的原始计数（ratio 由这里算，与 autonomy_rate_pct 的既有惯例一致——
+  // 路由层只传原始 total/aiApproved，避免多处重复算百分比）。缺省=取数失败/非管理员，不显示该 KPI。
+  aiAutoMergeCounts?: { total: number; aiApproved: number };
   locale?: WorkHubLocale;
 };
 
@@ -207,6 +225,9 @@ export function buildCostDashboardPage(input: CostPageInput): CostDashboardVM {
     })) : [],
     model_breakdown: modelBreakdown,
     ...(laborSplit ? { labor_split: laborSplit } : {}),
+    // R13 批 P4：与 by_user/by_team/by_workitem 同门槛——仅管理员可见（暴露同组织其他成员花费）。
+    by_assignee: input.isAdmin ? buildByAssignee(input.assigneeCostRows, input.userId, locale) : [],
+    ...(input.isAdmin && input.aiAutoMergeCounts ? { ai_auto_merge: buildAiAutoMerge(input.aiAutoMergeCounts) } : {}),
     budget: budgetRows,
     notices: summary.active_notices,
     top_exhaustion_risks: budgetRows
@@ -477,6 +498,43 @@ function buildLaborSplit(entries: readonly CostLedgerEntry[]): CostDashboardVM["
     self_improvement_cost_cny: formatCny(selfImprovement),
     // 两位小数的比值，避免把吵的浮点尾巴塞进契约。
     self_improvement_ratio: total > 0 ? Math.round((selfImprovement / total) * 100) / 100 : 0
+  };
+}
+
+// R13 批 P4（labor-split 按 assignee 记账）：路由层已用一次 SQL GROUP BY 聚合好了每个执行者的花费
+// （见 packages/db 的 listCostByAssigneeForWorkspace），这里只是纯展示装配——「我」的特殊标签、
+// 空昵称兜底、系统桶命名、按花费降序（与 by_task_plan/by_objective 同惯例）。
+function buildByAssignee(
+  rows: AssigneeCostInputRow[] | undefined,
+  currentUserId: string,
+  locale: WorkHubLocale
+): CostDashboardVM["by_assignee"] {
+  if (!rows || rows.length === 0) {
+    return [];
+  }
+  return [...rows]
+    .sort((left, right) => parseCny(right.costCny) - parseCny(left.costCny))
+    .map((row) => ({
+      ...(row.actorUserId ? { user_id: row.actorUserId } : {}),
+      label: row.actorUserId === null
+        ? pageT(locale, "cost.label.system")
+        : row.actorUserId === currentUserId
+          ? pageT(locale, "cost.label.currentUser")
+          : row.nickname ?? row.actorUserId,
+      cost_cny: formatCny(parseCny(row.costCny)),
+      tokens: row.tokens,
+      run_count: row.runCount
+    }));
+}
+
+// R13 批 P4（KPI：AI 自动合并数/占比）：count/total 由路由层的 countTodayMergeReviewsByActorKind
+// 提供（今日全部「通过」评审 vs 其中 reviewer_kind=ai 的部分），这里只算百分比（与 autonomy_rate_pct
+// 的既有惯例一致：原始计数在路由层取，比例在 page builder 里算）。total=0 时 ratio 记 0（无分母，
+// UI 不应展示成「0% 自动合并」，应结合 count 一起看：count 也是 0）。
+function buildAiAutoMerge(counts: { total: number; aiApproved: number }): CostDashboardVM["ai_auto_merge"] {
+  return {
+    count: counts.aiApproved,
+    ratio_pct: counts.total > 0 ? Math.round((counts.aiApproved / counts.total) * 100) : 0
   };
 }
 

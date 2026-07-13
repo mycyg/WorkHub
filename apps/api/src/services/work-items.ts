@@ -1522,14 +1522,28 @@ function buildWorkItemDetail(
       ...(rows.latestProposal?.status ? { proposal_status: rows.latestProposal.status } : {})
     }
     : undefined;
-  const sourceContext = driveSourceContext ?? meetingSourceContext;
+  // R13 批 P4（观察者工单来源标注）：与上面两种既有来源互斥（观察者派发从不途经网盘评论/会议纪要）——
+  // 只在两者都没有、但 action_card_items 反查到这个事项确是观察者创建的时候才补这条。
+  const observerSourceContext = (!driveSourceContext && !meetingSourceContext && rows.observerActionCardItem)
+    ? {
+      source_type: "conversation_observer" as const,
+      ...(rows.workItem.projectId ? { project_id: rows.workItem.projectId } : {}),
+      conversation_id: rows.observerActionCardItem.conversationId,
+      created_at: rows.observerActionCardItem.createdAt.toISOString()
+    }
+    : undefined;
+  const sourceContext = driveSourceContext ?? meetingSourceContext ?? observerSourceContext;
   const taskPlan = taskPlanToVm(rows.taskPlan);
   const agentTeam = taskPlanAgentTeamToVm(rows.taskPlan, locale);
+  // R13 批 P4：conversation_observer 没有评论/纪要正文可转草稿——三路显式分支，第三路（观察者来源）
+  // 恒 false，不给这个不存在的动作留隐式 fallthrough。
   const canCreateSourceProposal = sourceContext
     && !latestProposalId
     && (sourceContext.source_type === "drive_comment"
       ? sourceContext.status !== "dismissed"
-      : sourceContext.status === "confirmed");
+      : sourceContext.source_type === "meeting_insight"
+        ? sourceContext.status === "confirmed"
+        : false);
   const createProposalAction = (options.includeSourceProposalDraftAction ?? true) && canCreateSourceProposal
     ? {
       id: sourceContext.source_type === "drive_comment" ? "drive_draft_to_proposal" : "meeting_draft_to_proposal",
@@ -1556,11 +1570,12 @@ function buildWorkItemDetail(
     })),
     agent_trace_preview: rows.agentSteps.map(toAgentStepVm),
     ...(latestProposal?.success ? { latest_proposal: latestProposal.data } : {}),
-    accepted_deliverables: rows.acceptedDeliverables.map((row) =>
-      options.includeAcceptedDeliverableRestore === undefined
-        ? acceptedDeliverableToVm(row)
-        : acceptedDeliverableToVm(row, { includeRestore: options.includeAcceptedDeliverableRestore })
-    ),
+    // R13 批 P4：reviewer_kind 是仓库层批量反查好、直接挂在 row 上的字段（见 attachAcceptedDeliverableReviewerKind），
+    // 这里始终原样透传——与 includeRestore 是否显式传入无关（两者是正交的两个可选项）。
+    accepted_deliverables: rows.acceptedDeliverables.map((row) => acceptedDeliverableToVm(row, {
+      ...(options.includeAcceptedDeliverableRestore === undefined ? {} : { includeRestore: options.includeAcceptedDeliverableRestore }),
+      ...(row.reviewerKind ? { reviewerKind: row.reviewerKind } : {})
+    })),
     evidence_refs: evidenceRefsFromBindings(rows.evidenceBindings),
     ...(taskPlan ? { task_plan: taskPlan } : {}),
     ...(agentTeam ? { agent_team: agentTeam } : {}),

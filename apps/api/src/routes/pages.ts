@@ -24,14 +24,24 @@ import {
   type AuthDependencySource,
   type AuthEnv
 } from "../middleware/auth.js";
-import { createObjectiveRepository, createTaskPlanRepository, createTeamSkillRepository, getSharedDatabaseClient, type ObjectiveRepository, type TeamSkillRepository } from "@workhub/db";
+import {
+  createObjectiveRepository,
+  createProposalRepository,
+  createTaskPlanRepository,
+  createTeamSkillRepository,
+  getSharedDatabaseClient,
+  listCostByAssigneeForWorkspace,
+  type ObjectiveRepository,
+  type ProposalRepository,
+  type TeamSkillRepository
+} from "@workhub/db";
 
 import { isUuidParam } from "./uuid-param.js";
 
 import { buildAttentionHomePage } from "../pages/attention.js";
 import { buildAgentArmyDashboardPage } from "../pages/agent-army.js";
 import { getDefaultAiWorklogMetricsService, type AiWorklogMetricsService } from "../services/ai-worklog-metrics.js";
-import { buildCostDashboardPage } from "../pages/cost.js";
+import { buildCostDashboardPage, type AssigneeCostInputRow } from "../pages/cost.js";
 import { buildTeamSkillsPage } from "../pages/team-skills.js";
 import { buildP05GoldPathSurfacePage } from "../pages/gold-path.js";
 import { buildProposalDetailPage, buildProposalReviewAttentionItem } from "../pages/proposals.js";
@@ -115,6 +125,11 @@ export type PageRoutesDependencies = {
   teamSkills?: Pick<TeamSkillRepository, "listActive">;
   taskPlans?: Pick<ReturnType<typeof createTaskPlanRepository>, "listDashboardPlans" | "listPlanMetaByIds">;
   objectives?: Pick<ObjectiveRepository, "listObjectiveTitlesByIds">;
+  // R13 批 P4：KPI「AI 自动合并数/占比」的计数来源（reviews 表 ai actor 的今日通过评审计数）。
+  proposalMergeStats?: Pick<ProposalRepository, "countTodayMergeReviewsByActorKind">;
+  // R13 批 P4：labor-split 按 assignee 记账的一次性 SQL 聚合读——注入点仅供测试替身，
+  // 生产默认直接调 packages/db 的 listCostByAssigneeForWorkspace。
+  assigneeCostReader?: (input: { teamId: string; sinceBucket?: string; limit?: number }) => Promise<AssigneeCostInputRow[]>;
   agentArmyDashboard?: {
     page: (input: {
       actor: AuthEnv["Variables"]["actor"];
@@ -296,6 +311,12 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const teamSkills = deps.teamSkills ?? createTeamSkillRepository(getSharedDatabaseClient().db);
   const taskPlans = deps.taskPlans ?? createTaskPlanRepository(getSharedDatabaseClient().db);
   const objectives = deps.objectives ?? createObjectiveRepository(getSharedDatabaseClient().db);
+  // R13 批 P4：KPI「AI 自动合并数/占比」+ labor-split 按 assignee 记账，均只读、均照 taskPlans/objectives
+  // 同款「未注入则直连共享 DB 客户端」惯例——不新增服务层，直接用 packages/db 的仓库/查询函数。
+  const proposalMergeStats = deps.proposalMergeStats ?? createProposalRepository(getSharedDatabaseClient().db);
+  const assigneeCostReader = deps.assigneeCostReader
+    ?? ((input: { teamId: string; sinceBucket?: string; limit?: number }) =>
+      listCostByAssigneeForWorkspace(getSharedDatabaseClient().db, input));
 
   type DashboardSourceWarning = NonNullable<AgentArmyDashboardVM["source_warnings"]>[number];
   type DashboardSourceWarnings = DashboardSourceWarning[];
@@ -479,12 +500,25 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       const kpiWarnings = reviewOutcomes === undefined && worklog === undefined
         ? [...attention.sourceWarnings, dashboardSourceWarning("worklog", input.locale)]
         : attention.sourceWarnings;
+      // R13 批 P4（KPI：AI 自动合并数/占比）：与 cost 页同源同口径，同样只对管理员取
+      // （暴露的是同组织的评审活动，与 cost 页 by_assignee 同一门槛，两页应给出一致的可见性）。
+      let aiAutoMergeCounts: { total: number; aiApproved: number } | undefined;
+      if (input.currentUser.isAdmin) {
+        try {
+          aiAutoMergeCounts = await proposalMergeStats.countTodayMergeReviewsByActorKind({
+            workspaceId: input.actor.workspaceId
+          });
+        } catch {
+          aiAutoMergeCounts = undefined;
+        }
+      }
       return buildAgentArmyDashboardPage({
         locale: input.locale,
         attentionCount: attention.count,
         isAdmin: input.currentUser.isAdmin,
         sourceWarnings: kpiWarnings,
         autonomyRatePct,
+        ...(aiAutoMergeCounts ? { aiAutoMergeCounts } : {}),
         plans: visiblePlans,
         items: rows.items.filter((item) => visiblePlanIds.has(item.planId)),
         runs: rows.runs.filter((run) => run.taskPlanId ? visiblePlanIds.has(run.taskPlanId) : false),
@@ -914,6 +948,22 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
         }
       }
     }
+    // R13 批 P4（labor-split 按 assignee 记账 + KPI「AI 自动合并数/占比」）：与 taskPlanMeta/objectiveTitles
+    // 同款降级安全——仅管理员取（暴露同组织其他成员花费/评审活动），取数失败静默降级，不拖垮成本页。
+    let assigneeCostRows: AssigneeCostInputRow[] | undefined;
+    let aiAutoMergeCounts: { total: number; aiApproved: number } | undefined;
+    if (c.var.currentUser.isAdmin) {
+      try {
+        assigneeCostRows = await assigneeCostReader({ teamId, sinceBucket: costSinceBucket, limit: 50 });
+      } catch {
+        assigneeCostRows = undefined;
+      }
+      try {
+        aiAutoMergeCounts = await proposalMergeStats.countTodayMergeReviewsByActorKind({ workspaceId: teamId });
+      } catch {
+        aiAutoMergeCounts = undefined;
+      }
+    }
     const data = buildCostDashboardPage({
       settings: tenantSettings,
       isAdmin: c.var.currentUser.isAdmin,
@@ -924,7 +974,9 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
       budgetNotices: decision.notice ? [decision.notice] : [],
       ledgerEntries,
       ...(taskPlanMeta ? { taskPlanMeta } : {}),
-      ...(objectiveTitles ? { objectiveTitles } : {})
+      ...(objectiveTitles ? { objectiveTitles } : {}),
+      ...(assigneeCostRows ? { assigneeCostRows } : {}),
+      ...(aiAutoMergeCounts ? { aiAutoMergeCounts } : {})
     });
     return c.json(pageEnvelope(data, locale));
   });
