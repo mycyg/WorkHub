@@ -75,9 +75,12 @@ export type ChatRenderContext = {
   //  - actionCardItemErrors：decide/undo 失败后的温和行内提示，按条目 id 索引（见
   //    action-card-decision.ts 的 mapActionCardDecisionError），瞬态、不落库，下一次对同一条目的
   //    操作发起时 view.ts 会先清掉旧提示。
+  //  - reassignHighlightIndex（R13 H1 键盘可达性）：改派选择器当前方向键高亮到第几行（下标对齐
+  //    reassignPickerMemberIds 的返回顺序），瞬态、不落库，只在 openReassignItemId 有值时才有意义。
   now?: Date;
   openReassignItemId?: string;
   actionCardItemErrors?: ReadonlyMap<string, string>;
+  reassignHighlightIndex?: number;
 };
 
 function senderLabel(message: ConversationMessageVM, ctx: ChatRenderContext): string {
@@ -155,19 +158,37 @@ type ActionCardItemRow = {
 // 通用的"可点成员行"外观，不必新造一个）。
 const REASSIGN_PICKER_MEMBER_CAP = 20;
 
-function renderReassignPickerHtml(itemId: string, members: ChatRenderMembers, currentUserId: string | undefined, zh: boolean): string {
-  const rows = [...members.entries()]
-    .filter(([userId]) => userId !== currentUserId)
-    .slice(0, REASSIGN_PICKER_MEMBER_CAP)
-    .map(
-      ([userId, member]) =>
-        `<button type="button" class="wh-wb-chat-picker-row" data-wb-chat-actioncard-reassign-to="${escapeHtml(userId)}" data-wb-chat-actioncard-item="${escapeHtml(itemId)}">${avatarTileHtml({ label: member.nickname, id: userId })}<span>${escapeHtml(member.nickname)}</span></button>`
-    )
+// R13 H1（键盘可达性）：view.ts 需要跟渲染这里完全同一份「除自己以外、封顶 20 个」的成员 id 顺序，
+// 才能把方向键算出来的高亮下标换算成 Enter 要提交的用户 id——单独导出这份顺序，不在 view.ts 里
+// 重新拼一遍同样的 filter/cap（两处一旦各写一份很容易悄悄漂移）。
+export function reassignPickerMemberIds(members: ChatRenderMembers, currentUserId: string | undefined): string[] {
+  return [...members.keys()].filter((userId) => userId !== currentUserId).slice(0, REASSIGN_PICKER_MEMBER_CAP);
+}
+
+function renderReassignPickerHtml(
+  itemId: string,
+  members: ChatRenderMembers,
+  currentUserId: string | undefined,
+  zh: boolean,
+  highlightedIndex?: number
+): string {
+  const rows = reassignPickerMemberIds(members, currentUserId)
+    .map((userId, index) => {
+      const member = members.get(userId);
+      if (!member) {
+        return "";
+      }
+      const isHighlighted = index === highlightedIndex;
+      // roving tabindex：这一行不再靠原生 Tab 单独停留（tabindex="-1"），方向键由 view.ts 的
+      // handleDocumentReassignKeydown 管理高亮下标，Enter 提交当前高亮的那一行。
+      const highlightAttr = isHighlighted ? ' style="outline:2px solid rgba(10,132,255,.55);outline-offset:-2px"' : "";
+      return `<button type="button" class="wh-wb-chat-picker-row" tabindex="-1" role="option" aria-selected="${isHighlighted}"${highlightAttr} data-wb-chat-actioncard-reassign-to="${escapeHtml(userId)}" data-wb-chat-actioncard-item="${escapeHtml(itemId)}">${avatarTileHtml({ label: member.nickname, id: userId })}<span>${escapeHtml(member.nickname)}</span></button>`;
+    })
     .join("");
   if (!rows) {
     return `<div class="wh-wb-chat-actioncard-reassign" style="margin-top:6px"><div class="wh-wb-chat-picker-empty">${zh ? "没有其他成员可选" : "No other members to pick"}</div></div>`;
   }
-  return `<div class="wh-wb-chat-actioncard-reassign" style="margin-top:6px">${rows}</div>`;
+  return `<div class="wh-wb-chat-actioncard-reassign" style="margin-top:6px" role="listbox">${rows}</div>`;
 }
 
 // R12 P0-A1：一个 decide 条目的操作区——只有「这条卡当前指给我」时才摆得出可点的按钮（服务端
@@ -182,7 +203,9 @@ function renderDecideItemActionsHtml(row: ActionCardItemRow, ctx: ChatRenderCont
       `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-reassign-toggle="${escapeHtml(row.id)}">${zh ? "派给别人" : "Assign to someone else"}</button>` +
       `<button type="button" class="wh-wb-act" data-wb-chat-actioncard-decide="defer" data-wb-chat-actioncard-item="${escapeHtml(row.id)}">${zh ? "先不动" : "Leave it for now"}</button>` +
       `</div>`;
-    const picker = reassignOpen ? renderReassignPickerHtml(row.id, ctx.members, ctx.currentUserId, zh) : "";
+    const picker = reassignOpen
+      ? renderReassignPickerHtml(row.id, ctx.members, ctx.currentUserId, zh, ctx.reassignHighlightIndex)
+      : "";
     return `${actions}${picker}`;
   }
   const nickname = row.assigneeUserId ? ctx.members.get(row.assigneeUserId)?.nickname : undefined;
@@ -663,22 +686,33 @@ export function renderModeChipHtml(mode: AiMode | undefined, locale: Locale): st
 // 「按能力细分」灰字（照原型 .gran，纯说明文字，不是按钮——批次范围不含真正的按能力粒度开关，见
 // AiGranularSettings，摆一个看起来能点却什么都不做的入口违反 04 §4 铁律 3，所以这里既没有 cursor:pointer
 // 也没有 data-* 挂钩）+ 服务端下发说明行（照原型 .srv，忠于原型的锁图标 + 加粗「服务端下发」）。
-export function renderModePopoverHtml(input: { mode: AiMode | undefined; locale: Locale }): string {
+export function renderModePopoverHtml(input: {
+  mode: AiMode | undefined;
+  locale: Locale;
+  // R13 H1（键盘可达性）：方向键当前高亮到第几档（下标 0..4，对应 AI_MODE_LEVELS[0..4] = 1..5）。
+  // 跟 aria-checked 反映的"当前生效档位"是两回事——可选，既有调用点（现有测试）不用管，不传就是
+  // "没有键盘高亮"（比如鼠标点开弹层、还没按过方向键的那一刻）。
+  highlightedIndex?: number;
+}): string {
   const zh = input.locale === "zh-CN";
   const title = zh ? "我的 AI 模式 · 与 Cuu 单聊" : "My AI mode · 1:1 with Cuu";
   const sub = zh
     ? "只影响你的协同会话；主区观察者由项目治理管。按 1-5 快切"
     : "Only affects your 1:1 conversations — the main-chat observer is governed at the project level. Press 1-5 to switch.";
-  const rows = AI_MODE_LEVELS.map((level) => {
+  const rows = AI_MODE_LEVELS.map((level, index) => {
     const opt = AI_MODE_OPTION[level];
     const isOn = input.mode === level;
     const isWarn = level === 5;
+    const isHighlighted = index === input.highlightedIndex;
     const cls = ["wh-wb-mode-lvl", isOn ? "wh-wb-mode-lvl--on" : "", isWarn ? "wh-wb-mode-lvl--warn" : ""]
       .filter(Boolean)
       .join(" ");
     const titleText = zh ? opt.titleZh : opt.titleEn;
     const descText = zh ? opt.descZh : opt.descEn;
-    return `<div class="${cls}" data-wb-chat-mode-option="${level}" role="radio" aria-checked="${isOn}"><span class="wh-wb-mode-lvl-r"></span><span class="wh-wb-mode-lvl-body"><span class="wh-wb-mode-lvl-title">${escapeHtml(titleText)}</span><span class="wh-wb-mode-lvl-desc">${escapeHtml(descText)}</span></span><span class="wh-wb-mode-lvl-num">${level}</span></div>`;
+    // roving tabindex：这一行不靠原生 Tab 单独停留（tabindex="-1"），方向键由 view.ts 的
+    // handleDocumentModeKeydown 管理高亮下标（跟既有的数字键 1-5 快切共用同一个 selectMode）。
+    const highlightAttr = isHighlighted ? ' style="outline:2px solid rgba(10,132,255,.55);outline-offset:-2px"' : "";
+    return `<div class="${cls}" data-wb-chat-mode-option="${level}" role="radio" aria-checked="${isOn}" tabindex="-1"${highlightAttr}><span class="wh-wb-mode-lvl-r"></span><span class="wh-wb-mode-lvl-body"><span class="wh-wb-mode-lvl-title">${escapeHtml(titleText)}</span><span class="wh-wb-mode-lvl-desc">${escapeHtml(descText)}</span></span><span class="wh-wb-mode-lvl-num">${level}</span></div>`;
   }).join("");
   const gran = zh
     ? "按能力细分：建任务 / 派 run / 动网盘 / 发通知…"
@@ -719,21 +753,33 @@ export function renderMentionPickerHtml(input: {
   members: readonly MentionPickerMember[];
   files: readonly MentionPickerFile[];
   filesLoading: boolean;
+  // R13 H1（键盘可达性）：下标对齐"成员在前、文件在后"这一整条拼起来的选项序列（跟 view.ts 的
+  // mentionOptionCount/selectHighlightedMentionOption 用的是同一套下标口径）。可选——既有调用点
+  // （现有测试）不用管，不传就等于"没有高亮"。
+  highlightedIndex?: number;
 }): string {
   const zh = input.locale === "zh-CN";
+  let optionIndex = 0;
   const memberRows = input.members
     .slice(0, 8)
-    .map(
-      (member) =>
-        `<button type="button" class="wh-wb-chat-picker-row" data-wb-chat-pick-member="${escapeHtml(member.userId)}">${avatarTileHtml({ label: member.nickname, id: member.userId })}<span>${escapeHtml(member.nickname)}</span></button>`
-    )
+    .map((member) => {
+      const isHighlighted = optionIndex === input.highlightedIndex;
+      optionIndex += 1;
+      // roving tabindex：不再靠原生 Tab 单独停留（tabindex="-1"），方向键由 view.ts 的
+      // composer keydown 处理函数管理高亮下标，焦点仍留在 textarea 里（边打字边过滤这条 UX 不能丢——
+      // 移走真实焦点会打断输入），Enter 提交当前高亮的那一行。
+      const highlightAttr = isHighlighted ? ' style="outline:2px solid rgba(10,132,255,.55);outline-offset:-2px"' : "";
+      return `<button type="button" class="wh-wb-chat-picker-row" tabindex="-1" role="option" aria-selected="${isHighlighted}"${highlightAttr} data-wb-chat-pick-member="${escapeHtml(member.userId)}">${avatarTileHtml({ label: member.nickname, id: member.userId })}<span>${escapeHtml(member.nickname)}</span></button>`;
+    })
     .join("");
   const fileRows = input.files
     .slice(0, 8)
-    .map(
-      (file) =>
-        `<button type="button" class="wh-wb-chat-picker-row" data-wb-chat-pick-file="${escapeHtml(file.itemId)}">${workbenchIcons.folder}<span>${escapeHtml(file.name)}</span></button>`
-    )
+    .map((file) => {
+      const isHighlighted = optionIndex === input.highlightedIndex;
+      optionIndex += 1;
+      const highlightAttr = isHighlighted ? ' style="outline:2px solid rgba(10,132,255,.55);outline-offset:-2px"' : "";
+      return `<button type="button" class="wh-wb-chat-picker-row" tabindex="-1" role="option" aria-selected="${isHighlighted}"${highlightAttr} data-wb-chat-pick-file="${escapeHtml(file.itemId)}">${workbenchIcons.folder}<span>${escapeHtml(file.name)}</span></button>`;
+    })
     .join("");
   const memberSection = memberRows
     ? `<div class="wh-wb-chat-picker-section-title">${zh ? "成员" : "Members"}</div>${memberRows}`
@@ -744,7 +790,7 @@ export function renderMentionPickerHtml(input: {
       ? `<div class="wh-wb-chat-picker-section-title">${zh ? "网盘文件" : "Drive files"}</div>${fileRows}`
       : "";
   const empty = !memberSection && !fileSection ? `<div class="wh-wb-chat-picker-empty">${zh ? "没有匹配结果" : "No matches"}</div>` : "";
-  return `<div class="wh-wb-chat-picker" data-wb-chat-picker="mention">${memberSection}${fileSection}${empty}</div>`;
+  return `<div class="wh-wb-chat-picker" data-wb-chat-picker="mention" role="listbox">${memberSection}${fileSection}${empty}</div>`;
 }
 
 // —— # / picker：本批只做外壳，「即将可用」灰态，不发真实搜索请求（见批 2 汇报的范围说明）。 —— //

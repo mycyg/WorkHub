@@ -707,6 +707,129 @@ test("decide items open a pm-mode work item, create an escalation, and post a th
   assert.match((systemNoteInput as { content: { summary: string } }).content.summary, /张三/u);
 });
 
+// ── R13 H1：条目 id 确定性派生 + 建卡冲突幂等 ──────────────────────────────────────────
+//
+// 自审 backlog 项2：execute/decide 派发（建真实 work_item/agent_run/通知）发生在
+// createOrAppendCard 落库、推水位线之前，且那些派发写不进同一个事务、回不了滚。此前条目 id 是
+// randomUUID()——若 createOrAppendCard 这一步失败，水位线不会推进，下一 tick 会对同一批消息重新
+// 分析，每次都造一批全新 id、全新的真实 work_item。这里验证：(a) id 现在是 (conversationId,
+// analyzedToSeq, ordinal) 的确定性派生，同一批消息重扫两次拿到相同 id；(b) createOrAppendCard 撞
+// items 表唯一约束（23505）时被当幂等吞掉,不算分析失败,只推水位线；(c) 其它非唯一冲突错误依然
+// 原样冒泡成分析失败,不会被这条幂等分支误吞。
+
+test("re-analyzing the same message window twice derives the same item id both times (not a fresh randomUUID)", async () => {
+  const cardInputs: Array<{ items: Array<{ id: string }> }> = [];
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async createOrAppendCard(input) {
+        const result = await baseDeps().actionCards.createOrAppendCard(input);
+        cardInputs.push(input as { items: Array<{ id: string }> });
+        return result;
+      }
+    },
+    client: llmClientReturning({
+      items: [{ kind: "execute", title_md: "重写第三节", confidence: "high", suggested_assignee_nickname: "张三" }]
+    })
+  });
+  const scheduler = createConversationObserverScheduler(deps);
+  await scheduler.tick();
+  await scheduler.tick();
+
+  assert.equal(cardInputs.length, 2);
+  const firstId = cardInputs[0]?.items[0]?.id;
+  const secondId = cardInputs[1]?.items[0]?.id;
+  assert.ok(firstId, "first tick must produce an item id");
+  assert.equal(firstId, secondId, "the same (conversationId, analyzedToSeq, ordinal) must derive the same id on retry");
+});
+
+test("item ids differ by ordinal within the same plan", async () => {
+  let cardInput: { items: Array<{ id: string }> } | undefined;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async createOrAppendCard(input) {
+        const result = await baseDeps().actionCards.createOrAppendCard(input);
+        cardInput = input as { items: Array<{ id: string }> };
+        return result;
+      }
+    },
+    client: llmClientReturning({
+      // 两条都得是非 observe（isLowQualityObserverPlan 把"全 observe"计划当低质早退，走不到
+      // createOrAppendCard），随便混一个 execute 一个 decide 就够验证 ordinal 区分。
+      items: [
+        { kind: "execute", title_md: "重写第三节", confidence: "high", suggested_assignee_nickname: "张三" },
+        { kind: "decide", title_md: "预算是否砍半", confidence: "low", suggested_assignee_nickname: "张三" }
+      ]
+    })
+  });
+  await createConversationObserverScheduler(deps).tick();
+  const ids = cardInput?.items.map((item) => item.id) ?? [];
+  assert.equal(ids.length, 2);
+  assert.notEqual(ids[0], ids[1]);
+});
+
+test("a unique-violation (23505) from createOrAppendCard is treated as an idempotent duplicate: watermark advances, no failure is recorded", async () => {
+  let advanced: unknown;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async createOrAppendCard() {
+        throw Object.assign(new Error('duplicate key value violates unique constraint "action_card_items_pkey"'), {
+          code: "23505"
+        });
+      },
+      async advanceWatermark(input) {
+        advanced = input;
+        return {} as ObserverStateRow;
+      }
+    },
+    client: llmClientReturning({
+      items: [{ kind: "execute", title_md: "重写第三节", confidence: "high", suggested_assignee_nickname: "张三" }]
+    })
+  });
+  const result = await createConversationObserverScheduler(deps).tick();
+  assert.equal(result.failed, 0, "a duplicate-key conflict on retry is not a genuine analysis failure");
+  assert.equal(result.skipped_duplicate_write, 1);
+  assert.equal(result.cards_created, 0);
+  assert.deepEqual(advanced, { conversationId, analyzedToSeq: 6, at: now });
+});
+
+test("a non-unique-violation error from createOrAppendCard still propagates as a genuine analysis failure", async () => {
+  let recorded: unknown;
+  const deps = baseDeps({
+    actionCards: {
+      ...baseDeps().actionCards,
+      async listObserverCandidates() {
+        return [candidate()];
+      },
+      async createOrAppendCard() {
+        throw new Error("connection terminated unexpectedly");
+      },
+      async recordAnalysisFailure(input) {
+        recorded = input;
+        return {} as ObserverStateRow;
+      }
+    },
+    client: llmClientReturning({
+      items: [{ kind: "execute", title_md: "重写第三节", confidence: "high", suggested_assignee_nickname: "张三" }]
+    })
+  });
+  const result = await createConversationObserverScheduler(deps).tick();
+  assert.equal(result.failed, 1, "a non-duplicate-key error must not be swallowed by the idempotency branch");
+  assert.equal(result.skipped_duplicate_write, 0);
+  assert.equal((recorded as { conversationId: string } | undefined)?.conversationId, conversationId);
+});
+
 // ── SSE ──────────────────────────────────────────────────────────────────────────────
 
 test("tick publishes a conversation.action_card.updated event carrying only the minimal renderable summary", async () => {
