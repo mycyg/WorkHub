@@ -146,6 +146,40 @@ async function bestEffortAuthCleanup(action: string, cleanup: () => Promise<void
   }
 }
 
+// ENV-01 修复（R12 人工验收）：昵称 identify / 桌面首启引导此前只调用 getOrCreateActiveByNickname
+// 建 user 行，从不建 workspace_memberships——conversations/workbench 等路由的鉴权都要求 active
+// membership，新用户由此处处 404。密码注册路径（见下方 /register）已有先例（memberships.create +
+// defaultWorkspace:true），这里补齐同一语义，供 /identify 与 /desktop-bootstrap 共用。
+// 幂等：先查 active 成员行，命中即短路；不重复建行、不覆写既有 role/defaultWorkspace。
+async function ensureDefaultWorkspaceMembership(deps: AuthDependencies, userId: string): Promise<void> {
+  const memberships = deps.memberships;
+  if (!memberships) {
+    return; // OPTIONAL seam：老运行时/假仓库缺席时跳过（与 /register 的 `if (memberships)` 同范式）。
+  }
+  const defaultWorkspaceId = getAuthSettings(deps).auth.defaultWorkspaceId;
+  const existing = await memberships.findActiveForUserWorkspace(userId, defaultWorkspaceId);
+  if (existing) {
+    return; // 已是该工作区的 active 成员——幂等短路。
+  }
+  // schema 有「每用户至多一个 default workspace」的部分唯一索引
+  // （workspace_memberships_user_default_uq）；只有该用户当前没有任何 active 默认工作区成员行时
+  // 才把这行标记为默认，避免撞索引。
+  const hasAnyDefault = await memberships.resolveDefaultWorkspace(userId);
+  try {
+    await memberships.create({
+      workspaceId: defaultWorkspaceId,
+      userId,
+      role: "member",
+      defaultWorkspace: !hasAnyDefault
+    });
+  } catch (error) {
+    // 并发 identify/desktop-bootstrap 竞态：另一请求已抢先建好同一 (workspace,user) 行——幂等丢弃。
+    if (!isUniqueViolation(error)) {
+      throw error;
+    }
+  }
+}
+
 export function createAuthRoutes(
   source: AuthDependencySource = getDefaultAuthDependencies,
   options: { adminClaimThrottle?: AdminClaimThrottle } = {}
@@ -215,6 +249,10 @@ export function createAuthRoutes(
       adminClaimThrottle.recordSuccess(throttleKey);
     }
 
+    // ENV-01：identify 出来的用户必须有默认工作区的 active membership，否则 conversations/
+    // workbench 等鉴权全部 404。新建/已有用户都过一遍幂等 ensure。
+    await ensureDefaultWorkspaceMembership(deps, user.id);
+
     await issueUserCookie(c, user, getAuthSettings(deps));
     await deps.touchUser?.(user.id);
 
@@ -249,6 +287,9 @@ export function createAuthRoutes(
       }
       adminClaimThrottle.recordSuccess(throttleKey);
     }
+    // ENV-01：桌面首启引导同样只建用户不建成员——同一修法一并补上，否则桌面新设备首启的用户也
+    // 进不了任何项目会话。
+    await ensureDefaultWorkspaceMembership(deps, user.id);
     const token = makeClientToken();
     const device = await deps.devices.createClientDevice({
       userId: user.id,
