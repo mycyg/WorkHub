@@ -350,6 +350,12 @@ export function renderNewPersonalSpaceModalHtml(input: {
         <button type="button" class="wh-wb-btn wh-wb-btn--ghost" data-wb-new-personal-space-cancel ${input.submitting ? "disabled" : ""}>${zh ? "取消" : "Cancel"}</button>
         <button type="button" class="wh-wb-btn wh-wb-btn--primary" data-wb-new-personal-space-submit ${input.submitting ? "disabled" : ""}>
           ${input.submitting ? (zh ? "创建中…" : "Creating…") : zh ? "创建个人空间" : "Create personal space"}
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
 // R13 批 G1（小群）：建群模态——把批 P2 落地的"点一下就用自动标题建一条只有自己的协同会话"极简流程
 // 升级为"标题 + 成员多选 + Cuu 开关"。成员候选来自当前项目 workbench VM 已经在拉的
 // workspace_members.items（@ picker 同一份数据源），按 is_self 排除自己（服务端 assertCollabInput
@@ -645,6 +651,8 @@ export function mountWorkbenchRail(
     personalSpaceName = "";
     personalSpaceError = undefined;
     input.store.setState({ newPersonalSpaceModalOpen: true });
+  };
+
   // R13 批 G1（小群）：「+ 新建协同会话」从批 P2 的"点一下就用自动标题建一条只有自己的会话"升级为
   // 打开建群模态——标题预填自动命名（用户仍可改）、成员多选默认不选（不选=1:1）、Cuu 开关默认开。
   const openNewCollabModal = () => {
@@ -775,6 +783,8 @@ export function mountWorkbenchRail(
     }
     if (target.closest("[data-wb-new-personal-space-submit]")) {
       void submitNewPersonalSpace();
+      return;
+    }
     // R13 批 G1：建群模态的取消/点遮罩背景关闭，同新建项目模态同一套约定。
     const clickedNewCollabOverlayBackdrop = target.hasAttribute("data-wb-new-collab-overlay");
     if (target.closest("[data-wb-new-collab-cancel]") || clickedNewCollabOverlayBackdrop) {
@@ -813,6 +823,12 @@ export function mountWorkbenchRail(
         const end = input3.value.length;
         try {
           input3.setSelectionRange(end, end);
+        } catch {
+          // ignore: some input rendering modes reject setSelectionRange.
+        }
+      }
+      return;
+    }
     // R13 批 G1：建群模态标题输入——同上一段新建项目名称输入同一套"重渲后还焦点/光标"处理。
     if (target instanceof HTMLInputElement && target.matches("[data-wb-new-collab-title]")) {
       newCollabModalTitle = target.value;
