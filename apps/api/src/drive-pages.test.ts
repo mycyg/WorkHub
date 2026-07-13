@@ -454,6 +454,9 @@ test("drive page service surfaces proposal links for comment-created drafts", as
     title: "Drive draft proposal",
     status: "opened",
     diffManifest: proposalManifest(),
+    // R13 批 P1.5 ripple：proposals 加了 diffStatsJson 列（nullable），这份 fixture 满足的
+    // ProposalRow 类型形状要求这个 key 存在——null=还没跑过右栏"变动文件"统计，无行为断言变化。
+    diffStatsJson: null,
     confidenceId: null,
     mergeSnapshotId: null,
     openedByKind: "human",
@@ -616,6 +619,9 @@ test("drive page service hides draft, proposal, and accepted-deliverable links w
     title: "Drive draft proposal",
     status: "opened",
     diffManifest: proposalManifest(),
+    // R13 批 P1.5 ripple：proposals 加了 diffStatsJson 列（nullable），这份 fixture 满足的
+    // ProposalRow 类型形状要求这个 key 存在——null=还没跑过右栏"变动文件"统计，无行为断言变化。
+    diffStatsJson: null,
     confidenceId: null,
     mergeSnapshotId: null,
     openedByKind: "human",
@@ -938,6 +944,9 @@ test("drive page service keeps backing work item links for claimed private work 
     title: "Drive draft proposal",
     status: "opened",
     diffManifest: proposalManifest(),
+    // R13 批 P1.5 ripple：proposals 加了 diffStatsJson 列（nullable），这份 fixture 满足的
+    // ProposalRow 类型形状要求这个 key 存在——null=还没跑过右栏"变动文件"统计，无行为断言变化。
+    diffStatsJson: null,
     confidenceId: null,
     mergeSnapshotId: null,
     openedByKind: "human",
