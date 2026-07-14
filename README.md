@@ -1,56 +1,70 @@
 # WorkHub
 
-> **业务版 GitHub × AI-native 工作中台。让 AI 当默认劳动力,把人还给最值得做的事——判断。**
+> **一个项目群聊,配一位 AI 项目经理 Cuu:她观察讨论、把活儿拎出来、派给合适的人;活干完了,人来审批。**
 
 简体中文 ｜ [English](./README.en.md)
 
-[![License: PolyForm NC 1.0.0](https://img.shields.io/badge/License-PolyForm%20NC%201.0.0-orange)](LICENSE) · 状态:代码完成 · CI 全绿 · 具备试运行条件
+[![License: PolyForm NC 1.0.0](https://img.shields.io/badge/License-PolyForm%20NC%201.0.0-orange)](LICENSE)
+[![verify](https://github.com/mycyg/WorkHub/actions/workflows/verify.yml/badge.svg)](https://github.com/mycyg/WorkHub/actions/workflows/verify.yml)
 
 ---
 
-亚里士多德在《政治学》里写过一段话,大意是:如果每一件工具都能听从吩咐、自动完成自己的工作,那么工头就不再需要帮手,主人也不再需要奴隶。
+## WorkHub 是什么
 
-他写这句话的时候是公元前 350 年,自己也清楚那只是空想——在他的时代,会自己干活的工具并不存在,"劳动"只能压在另一群人的肩上。于是这句话成了一则悬置的预言,一等就是两千三百年。
+打开一个项目,你看到的是一个**群聊**:人在里面讨论,Cuu 也在——不是一个被 @ 才答话的机器人,而是安静地跟着讨论,自己判断"这段话里有没有一件该干的活"。聊天停下来一小段时间,她会把讨论提炼成一张**行动卡**,标好该谁去干;认领之后,她要么直接把活干出来,要么在卡不住的地方把人拉进来一起商量。干完的东西不会直接改到正式版本里——它先变成一份**提议**,负责人看过、确认了,才会被采纳。
 
-直到今天,会听吩咐、能把活儿从头干到尾的"工具"才第一次真的出现。**WorkHub 想做的,就是让这则预言落一次地:把繁重的执行交给 AI,把人从"干活的人"还原成"做判断的人"。**
-
-## 缘起与野心
-
-几乎所有协作工具——飞书、Notion、Jira,也包括本项目的前身「需求管理大师」——都默认同一件事:活儿主要靠人干,AI 顶多算个会起草、能问答的助手。这个假设太理所当然了,以至于很少有人真的追问一句:**如果反过来呢?**
-
-如果团队日常里的大多数事,默认都交给 AI 去做;如果 AI 不再是"提建议的",而是"第一个动手的";如果人不必再亲手敲下每一份文档、每一版方案,而是退后一步,只在该点头时点头、该接手时接手——那会是一种什么样的工作?
-
-这就是 WorkHub 的野心:**不是给旧的工作方式装 AI 插件,而是把"谁来干活"这个底层假设整个颠倒过来。** 人被从重复劳动里解放出来,去做机器替不了的那部分。孔子说"君子不器"——人不该把自己活成一件工具;把工具性的劳动交还给真正的工具,人才有余裕去做判断、负责、共情、拍板这些"不器"的事。这不是要取代谁,而是一次位置的归还:**让机器做机器擅长的,让人重新做人擅长的。**
-
-野心越大,越需要一条不可逾越的底线兜住它。WorkHub 的底线只有一句:**AI 的任何改动,都不会悄悄写进生产数据。** 每一处改动都必须讲得清理由、留得下快照(可一键回滚),并且只能走「提议 → 审批 → 合并」这一条路,汇入唯一的可信版本。我们用一个北极星指标衡量它走得好不好:自主率——全程没人插手、AI 自己跑完并成功合并的任务占比;同时死死盯住回滚率、打回率、升级准不准这几个护栏。**自主率再高,也绝不拿信任去换。**
-
-## 一种看不见的秩序
-
-好的自动化,最高境界是让人几乎感觉不到它的存在。老子讲"太上,不知有之"——最好的治理,是百姓只知道有这么回事,却感觉不到它在管自己。WorkHub 追求的正是这种"看不见的秩序":你提一句需求,事情就在背后悄然成形;只有真正需要你拍板的那一刻,它才来敲门。绝大多数时候,你不需要知道齿轮是怎么转的。
-
-而为了让"看不见"不等于"不可信",WorkHub 在内核里其实是一套**业务版 GitHub**:人人(连同每个 AI 工人)都在自己的副本上改,改动以提议的形式提交,负责人评审通过后,才合并进唯一可信的正式版。这套久经考验的协作纪律,被原封不动地搬到了业务对象上——需求、文档、方案、结构化记录——而不再是源代码。
-
-但用户永远不必看见这套机器的内脏。麦克卢汉说"我们塑造了工具,此后,工具反过来塑造我们"——正因为工具会反过来塑造人,WorkHub 坚持把所有 git 黑话挡在门外。它对内对外说两套话:
+这套"AI 先动手、人来把关"的分工,不止在聊天里,而是这个产品从内核到界面的统一设计:你看到的每一份文档、每一条工作记录、每一次改动,背后都是同一条纪律——**AI 的任何改动都不会悄悄写进生产数据**,必须讲得清理由、留得下快照(可一键回滚),并且只走「提议 → 审批 → 合并」这一条路。
 
 | 你看到的 | 内部其实是 |
 |---|---|
-| 工作副本 | 分支 branch |
+| 工作副本 | 分支(branch) |
 | 提议 | Pull Request |
 | 确认 / 打回 | 评审 approve / request changes |
 | 采纳进正式版 | 合并到 main |
 | 撞车了 | merge conflict |
 
-两份改动撞了,系统不会甩给你"冲突"二字,而是说:"你和别人的改动撞上了,AI 拟了几个合并方案,挑一个。" AI 有几分把握,也从不露数字,只用三句大白话:**我比较有把握 / 建议你扫一眼 / 我拿不准,你来定。**
+亚里士多德在《政治学》里设想过:如果织布机能自己织布、拨片能自己弹琴,工头就不再需要帮手,主人也不再需要奴隶——他写下这句话的时候知道那只是空想,两千三百年后,WorkHub 想认真试一次让它落地:**把重复的执行交给 AI,把人还原成负责判断、拍板的人。**
 
-## AI 的两顶帽子
+## 功能亮点
 
-WorkHub 里的 AI,戴着两顶帽子。
+以下每一项都是可以点开跑起来的真实功能,不是路线图:
 
-平时戴"工人帽":直接把活干出来。一旦受阻,就换上"项目经理帽":不硬扛,转而去组织人——派活、拆任务、排期、催进度、再复审。什么时候换帽子,由把握度和风险高低决定;而**换帽子的那一刻,正是升级的那一刻**。三种情况会触发升级:活儿不合格(没过评审)、用户不满意(打回——而且打回必须给理由,这条理由会回灌给 AI,让它在原来的副本上接着改,而不是卡死)、以及用户明确规定这件事不许 AI 碰(可按任务、项目、个人三级设开关)。
+- **完整的项目群聊**:编辑 / 删除(留痕墓碑)/ 引用回复 / emoji 表态 / 置顶 / 已读聚合 / 在线状态,外加 Cuu 「正在整理讨论」的实时指示灯。
+- **全局搜索**:一个搜索框跨会话消息、网盘文件、工单、会议纪要检索,结果分组直达——基于 PostgreSQL `pg_trgm`,不需要额外部署搜索引擎。
+- **记忆可见可治理**:Cuu 对你的了解(「关于我」)与团队技能沉淀,都能在设置页里看到出处、编辑、删除——不是黑箱。
+- **AI 反馈闭环**:对 Cuu 的每条回复/提议/产出打「有用 / 没用」,差评会真实进入夜间技能蒸馏的反例池。
+- **风险预警巡检**:项目经理视角的例行巡检——工单停滞、临期未动工、成本异常放量,汇总成一条日报推进群聊与通知,不逐条骚扰。
+- **GitHub 集成**:项目绑定仓库后,commit / PR / issue 动态成为 Cuu 感知项目进度的客观事实来源,而不只是靠人自己汇报。
 
-撑不下去时,它不会无声无息地断在半路,而是交出一份"做了什么、没做什么、建议下一步怎么走"的交接。**在 WorkHub 里,升级是设计好的体面退场,不是失败。**
+## 快速自托管:三步走
 
-事情升级到人这边时,AI 项目经理还会推荐"一个负责人 + 若干协作者",并附上一句大白话的"为什么是 TA"——依据是每个人的技能自述,和一张协作图谱:谁擅长什么、和谁合作过、命中率多高、当前手头多忙。信息不足时,它不替你拍板,只把理由摆出来,把决定权留给你。
+**前置条件**:一台可访问的机器(Linux/macOS)、Docker 24+(含 `docker compose` 插件)、克隆下来的这份代码。
+
+**第一步 · 配置**
+
+```bash
+cp .env.pilot.example .env.pilot
+# 必改两项:
+#   COOKIE_SECRET=$(openssl rand -hex 32)
+#   ADMIN_CLAIM_SECRET=<给管理员的口令>
+$EDITOR .env.pilot
+```
+
+**第二步 · 起栈(自动构建 + 自动迁移数据库)**
+
+```bash
+docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build
+# 看到 workhub 容器 healthy 即就绪:
+docker compose --env-file .env.pilot -f docker-compose.pilot.yml ps
+```
+
+**第三步 · 登录**
+
+浏览器打开 `http://<这台机器的IP>:8787/`,进入注册屏:填昵称即可加入;第一个用户勾选"我是管理员"并填入上一步设置的 `ADMIN_CLAIM_SECRET` 来认领管理员身份。
+
+**没有大模型 key 也能跑**:`LLM_API_KEY` 留空时,群聊、工单、审批、网盘、看板这些照常可用,Cuu 不会主动观察讨论或抢答——顶部会出现一条"AI 服务未配置"的横幅提醒。这条横幅是提示性的,不拦你发送;如果这时你仍然直接找 Cuu 说话,会收到一条明确的失败提示("这一轮 Cuu 没接上,请再试一次"),而不是卡死或没反应。填上 key 后重启容器即可点亮 AI 能力。
+
+完整的部署细节(备份恢复、单实例假设、故障排查、安全口径)见 [`DEPLOY.md`](DEPLOY.md)。本地开发(不经 Docker 打包镜像)见下方「本地开发」。
 
 ## 核心闭环
 
@@ -58,111 +72,80 @@ WorkHub 里的 AI,戴着两顶帽子。
 
 ```mermaid
 flowchart LR
-  A["用户一句话需求<br/>/intake"] --> B["澄清会话<br/>给选项式提问<br/>+ 绑定证据"]
+  A["群聊里的一句话<br/>或 /intake"] --> B["Cuu 观察/澄清<br/>拎出行动卡"]
   B --> C["AgentRun<br/>先过预算闸门 → 真 LLM<br/>想→调工具→看结果 循环<br/>沙箱 + 快照"]
-  C --> D["交付物清单<br/>DeliverableManifest"]
+  C --> D["交付物清单"]
   D --> E["自动开提议<br/>Proposal + diff"]
   E --> F{"按把握 /<br/>风险分级"}
   F -->|高| G["审批<br/>通过 / 打回带理由"]
-  F -->|中·低| H["升级<br/>AI 戴上项目经理帽子"]
+  F -->|中·低| H["升级<br/>拉人一起商量"]
   H --> G
-  G --> I["采纳进正式版 main<br/>留快照可回滚 + 撞车给合并方案"]
+  G --> I["采纳进正式版<br/>留快照可回滚 + 撞车给合并方案"]
   I --> J["回放 + 成本 + 审计"]
 ```
 
 这条线的每一环都是真代码,不是示意图:[`agent-runner.ts`](apps/api/src/workers/agent-runner.ts) 认领并租约式地跑队列、驱动 agent 循环;[`loop.ts`](packages/agent/src/loop/loop.ts) 做"想→调工具→看结果",带死循环检测与预算控制;[`proposals.ts`](apps/api/src/services/proposals.ts) 管提议、评审、合并与撞车合并。
 
-## 它不是 PPT,是跑得起来的东西
-
-野心容易吹,代码不会撒谎。截至目前:
-
-- **核心闭环已用真大模型端到端验证过。** 6 次真实 DeepSeek 运行里,T1–T4 人评质量满分、T5 在信息不足时**正确选择了升级而非编造**、B1 准确命中预算护栏——全程真金白银,花费 **¥0.142346 / 30103 tokens**。AI 会干活,这件事是被证明的,不是被声称的。
-- **从需求到交付,整条管线是活的:** 选项式澄清 → 真实 agent 循环(provider 路由 → 沙箱工具 → 快照 → 交付物清单 → 自动开提议)→ 把握度评分与自动升级 → 带 SLA 的审批路由 → 留账本、防撞车的合并 → 回放、审计、恢复。
-- **「复利劳动力」八个阶段全部上线、CI 全绿:** 决策收件箱首页、AI 战绩、用户记忆、团队技能自迭代、桌宠情绪、三栏审批 diff 工作台……一步步让 AI 的产出可以累积、复用、自我增益。
-- **质量是被拷打出来的。** 一轮多 agent 深度评审挖出 87 个真问题(3 个致命 + 14 个高危 + 27 个中等 + 43 个低),已修 84 个、CI 全绿,只留 3 个架构项明确暂缓;70 步浏览器实路由冒烟里 66 步进了 CI,约 64 秒跑完。160 篇规格文档落盘在案。
-
-诚实也是一种牛逼。所以这些还**没有**抵达终点,我们照样写出来:首页的决策队列骨架已就位,但生产还没把审批和待办喂进去;团队技能的闲时自迭代建好了却默认关闭、从没真跑过;桌宠还是黑白猫,概念图里的橙猫尚未对齐。**真正的缺口只有一个,也是最重的一个——还没有一支真实的团队,用这套闭环,踏踏实实干满一周活。** 这是北极星的最后一公里,系统已经站在起跑线上(队列清零:0 待处理提议 / 0 进行中运行 / 0 待审批),只等真人入场。
-
-威廉·吉布森说过:"未来已来,只是分布不均。"
-
-## 部署与上手
-
-WorkHub 是一套 **TS-first 的 monorepo**(pnpm workspaces):一个无头 agent 守护进程,配 OpenAPI/SSE、PostgreSQL、Redis,前端是 Web 瘦客户端与 Tauri 桌面端。局域网优先,同时为上云留好了接口。
-
-**前置条件**
-
-- Node ≥ 22、pnpm 11(`corepack enable` 即可)
-- 一个大模型 API key(默认走 DeepSeek 的 Anthropic 兼容端点)
-- 如需一键全栈:Docker Desktop
-- 数据库:本地 PostgreSQL 16 + Redis(下面任选一种方式起)
-
-**方式一 · 本地开发**
+## 本地开发
 
 ```bash
 corepack enable
 pnpm install
 
 cp .env.example .env          # 填入大模型 key、数据库连接等本地密钥
-docker compose up -d postgres redis   # 起本地 PG + Redis
-pnpm db:migrate               # 跑 Drizzle 迁移(0000–0045)
+docker compose up -d postgres redis   # 起本地 PG + Redis(仅依赖,不含应用本身)
+pnpm db:migrate                # 跑 Drizzle 迁移
 
-pnpm dev                      # 拉起 API(8787)；另开终端 pnpm --filter @workhub/web dev 起 Web(5173)
+pnpm dev                       # 拉起 API(8787)
+pnpm --filter @workhub/web dev # 另开终端起 Web(5173)
 ```
 
-**方式二 · 一键全栈(Pilot,推荐用于试运行)**
+`pnpm verify`(typecheck + test + lint,含迁移重放安全审计与文档一致性门)是 CI 跑的同一条命令。贡献流程、测试跑法、迁移纪律、文案约定见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
-```bash
-# 起 api + web 静态 + postgres + redis 全栈,自动构建、自动迁移
-docker compose --env-file .env.pilot -f docker-compose.pilot.yml up -d --build
+## 架构:一个 headless 核心 + 多个瘦客户端
+
 ```
+apps/
+  api/               无头 agent 守护进程 —— Hono + OpenAPI + SSE,全部业务逻辑与 AI 引擎所在,PostgreSQL 支撑。唯一真相源,所有客户端都只跟它对话。
+  web/               React + Vite 瘦客户端 —— 浏览器可达的项目管理面:会话镜像、网盘、审批、看板、设置。
+  desktop-webview/   Tauri webview 界面 —— 完整的项目工作台(群聊主区、Cuu、行动卡、军团任务面板、网盘、聚焦盒)。
 
-**端口与健康检查**
+client-tauri/
+  src-tauri/         包裹 desktop-webview 的 Rust 外壳 —— 原生窗口、托盘、通知、深链、桌宠渲染。
 
-| 服务 | 端口 | 探活 |
-|---|---|---|
-| API 守护进程 | `8787` | `GET /api/health` |
-| Web | `5173` | — |
-| Tauri webview | `1420` | — |
-
-**验证与运维**
-
-- `pnpm verify`:typecheck + test + lint 一把过(内含文档一致性门)。
-- 数据库迁移:`pnpm db:generate` / `pnpm db:check` / `pnpm db:migrate`。
-- 默认配置集中在 [`packages/config`](packages/config);所有密钥从 `.env` 注入,生产环境会对弱 cookie 密钥、通配 CORS、内存 broker 配多 worker 等情况 **fail-closed**(直接拒绝启动)。
-- 备份 / 恢复脚本随部署包提供,Pilot Week 期间每日留证。
-- 注意:生产沙箱与 Agent 执行需要 Linux;数据库验收优先在本地构建、本地 PG + Redis 上复跑。
-
-## 仍在路上
-
-| 方向 | 为什么 | 状态 |
-|---|---|---|
-| **真实试运行周** | 北极星的最后一公里:真人用真任务跑满一周,验证"AI 当默认劳动力"的论点 | 🗺️ 规划中 |
-| **决策收件箱接上真实数据源** | 首页决策队列已接上"用户待决策的审批"真实数据源（与审批中心同源、按用户路由,取数失败优雅降级） | ✅ 已接线 |
-| **业务对象合并语义 + AI 调解冲突**(护城河) | 现仅最低风险层(账本 + 乐观熔断 + diff3 + AI 合并方案);完整三方合并体验留给真实冲突数据驱动 | 📊 数据驱动 |
-| **把握度 / 风险阈值校准** | 现用 6 次真跑得出的 v0 权重,样本太小;须真实数据重调并发新策略版本 | 📊 数据驱动 |
-| **团队技能闲时自迭代上生产** | 子系统已建好但默认关闭;复利劳动力得让它真跑起来才兑现 | 🟡 默认关闭 |
-| **多租户 / 多 workspace** | 现单部署单 workspace;`workspace_id` 已埋线,但云部署/隔离/计费属 P5 | ⏸️ 暂缓 |
-| **桌宠真机全场景长录(#27)** | 黑白猫与 5 情绪 / 3 气泡已上;真机长录与橙猫对齐待补 | ⏸️ 非关键路径 |
-| **P-COLLAB M2 收尾**:base-snapshot 基线 +「对一下底稿再采纳」 | 防丢更新核心已 CI 绿;stale base 已从报错中止升级为可恢复的对底稿流程 | ✅ M2 已落 |
+packages/
+  agent/             agent 循环本体:想→调工具→看结果,provider 路由(DeepSeek/Anthropic 兼容协议)、预算控制、死循环检测、沙箱工具。
+  contracts/         API/Web/桌面共用的 zod 契约 —— 请求响应形状、Page VM 类型、OpenAPI 的唯一真相源。
+  db/                Drizzle schema、迁移文件与仓库层 —— 唯一允许碰 SQL 的代码。
+  config/            环境变量解析与校验过的运行时 Settings(packages/config/src/env.ts)。
+  events/            SSE 事件信封与两端共用的事件总线。
+  permissions/       RBAC、审批路由、委派。
+  audit/             审计日志 + 文件快照/回滚 —— AI 写的每一处改动都可一键撤销。
+  cost/              预算与成本治理,API 与两端 UI 共用。
+  cuu/               Cuu 的共享人格/状态逻辑(闲时调度器、卡片渲染、i18n)。
+  ui/                web 与桌面共用的「gold path」服务端渲染组件库。
+  web-runtime/       两端共用的客户端运行时(SSE 订阅、动作派发、脏态跟踪)。
+  api-client/        对着 contracts 生成的带类型 HTTP 客户端。
+  tools/             agent 工具实现 —— 沙箱文件操作、run_command、技能加载 —— 以及迁移重放安全审计器。
+```
 
 ## 文档
 
-- 📐 **规格树索引**:[`docs/workhub/`](docs/workhub/README.md)
-- 📋 **PRD(总纲)**:[`docs/prd/2026-06-04-workhub-prd.md`](docs/prd/2026-06-04-workhub-prd.md)
-- 🧭 **愿景与原则**:[`docs/workhub/00-overview/vision-and-principles.md`](docs/workhub/00-overview/vision-and-principles.md);**去黑话词表**:[`docs/workhub/00-overview/glossary-dejargon.md`](docs/workhub/00-overview/glossary-dejargon.md)
-- 💡 **缘起(头脑风暴)**:[`docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md`](docs/brainstorms/2026-06-04-workhub-ai-native-platform-brainstorm.md)
+- 规格树索引:[`docs/workhub/`](docs/workhub/README.md)
+- PRD(总纲):[`docs/prd/2026-06-04-workhub-prd.md`](docs/prd/2026-06-04-workhub-prd.md)
+- 愿景与原则:[`docs/workhub/00-overview/vision-and-principles.md`](docs/workhub/00-overview/vision-and-principles.md);去黑话词表:[`docs/workhub/00-overview/glossary-dejargon.md`](docs/workhub/00-overview/glossary-dejargon.md)
+- 部署指南:[`DEPLOY.md`](DEPLOY.md);贡献指南:[`CONTRIBUTING.md`](CONTRIBUTING.md);安全策略:[`SECURITY.md`](SECURITY.md)
 
-## 许可证与商业授权 ⚖️
+## 许可证与商业授权
 
-本项目以 **[PolyForm Noncommercial License 1.0.0](LICENSE)** 发布:**源码公开,仅限非商业用途**(非 OSI 开源)。
+本项目以 **[PolyForm Noncommercial License 1.0.0](LICENSE)** 发布:**源码公开,仅限非商业用途**(不是 OSI 定义下的开源许可证)。
 
 > Required Notice: Copyright 2026 mycyg (https://github.com/mycyg/WorkHub)
 
-- ✅ **允许**:个人学习、研究、实验、爱好项目,以及非营利 / 教育 / 公益 / 政府机构使用。
-- ⛔ **禁止**:任何**商业化**或**真实企业生产场景**的使用。
-- 📩 **商业 / 企业授权须经版权所有者书面许可。** 需要商用授权,请通过 GitHub 联系 [@mycyg](https://github.com/mycyg)。
+- **允许**:个人学习、研究、实验、爱好项目,以及非营利 / 教育 / 公益 / 政府机构使用。
+- **不允许**:任何**商业化**或**真实企业生产场景**的使用。
+- **商业 / 企业授权须经版权所有者书面许可。** 需要商用授权,请通过 GitHub 联系 [@mycyg](https://github.com/mycyg)。
 
 ---
 
 > 把重复交给机器,把判断留给人。
-> 两千三百年前的预言,我们想认真试一次。
