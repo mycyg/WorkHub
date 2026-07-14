@@ -39,6 +39,12 @@ import { getDefaultPushBus, type PushBus } from "../broker/index.js";
 import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js";
 import type { AuthActor } from "../middleware/auth.js";
 import { parseOutputContract } from "../pages/output-contract.js";
+import { getDefaultConversationReplyJudgeService } from "./conversation-reply-judge.js";
+import {
+  getDefaultConversationTurnService,
+  mentionsCuu,
+  type ConversationTurnService
+} from "./conversation-turns.js";
 import {
   DrivePageServiceError,
   getDefaultDrivePageService,
@@ -87,11 +93,28 @@ export type ConversationService = {
   }): Promise<ConversationMessageVM>;
 };
 
+// R14 FIX批10（被 @ 的回复延迟：事件驱动直通）：消息落库后，如果这条消息命中 @Cuu 且会话是真小群
+// （collab、participantCount>1，与回话判定器 listReplyJudgeCandidates 的候选口径完全一致），createMessage
+// 会异步（fire-and-forget，不阻塞这次 HTTP 响应）触发一次 turn，不必再等判定器最长 15s 的轮询 tick。
+// 这个依赖可选——省略时（比如既有测试的 createConversationService 调用点）createMessage 完全不做任何
+// 直通尝试，行为与本批之前一致，不会因为缺依赖而抛错。
+export type ConversationMentionTriggerDeps = {
+  // 复用既有 ConversationTurnService.createTurn——不重新实现一遍鉴权/预算/工具环/并发闸；这里只是多了
+  // 一个"消息落库时机"的触发点，闸语义（activeTurns busy/cuu_enabled/mode）完全交给 createTurn 自己判断。
+  turns: Pick<ConversationTurnService, "createTurn">;
+  // 接到 conversation-reply-judge.ts 的"已判定"水位线——见该文件 markMentionHandled 的注释：直通命中时
+  // 同步（在任何 await 之前）标记这条消息，关闭与轮询 tick 的竞态窗口，保证同一条消息不会被两条路径各
+  // 触发一次 turn。
+  markMentionHandled: (input: { conversationId: string; messageId: string }) => void;
+  cuuDisplayName?: string;
+};
+
 export type ConversationServiceOptions = {
   driveFiles: Pick<DrivePageService, "file">;
   now?: () => Date;
   bus?: Pick<PushBus, "backend" | "publish">;
   logger?: Pick<StructuredLogger, "warn">;
+  mentionTrigger?: ConversationMentionTriggerDeps;
 };
 
 function requireHumanActor(actor: AuthActor): HumanConversationActor {
@@ -406,6 +429,60 @@ export function createConversationService(
           error
         });
       }
+
+      // R14 FIX批10（被 @ 的回复延迟：事件驱动直通）——见 ConversationMentionTriggerDeps 顶部注释。
+      // 触发口径必须与回话判定器 listReplyJudgeCandidates 的候选口径完全一致（kind='collab' 且
+      // participantCount>1），否则会出现"直通覆盖了判定器根本不会扫到的会话"这种新分叉行为：
+      //   - 主区（kind='main'，含团队主区与个人空间单聊）：kind !== 'collab' 直接短路，不占用一次
+      //     createTurn 调用——个人空间单聊/1:1 协同会话本来就由桌面端"发消息后自动请一轮 turn"的既有
+      //     路径处理（shouldRequestConversationTurn），直通对它们刻意不生效，避免同一条消息被两条
+      //     机制各触发一次 turn（这两条路径唯一的共同防线是 createTurn 自己的 activeTurns busy 闸，
+      //     不能指望它、更不应该主动制造原本不存在的竞态）。
+      //   - cuu_enabled=false：前置跳过，省一次注定会被 createTurn 自己的硬闸拒掉（409）的调用；
+      //     这个字段已经在本次 access 读取里拿到，不需要多一次查询。
+      //   - participantCount<=1 的 collab 会话：同 kind='main' 的理由，已经有客户端即时自动请路径。
+      if (options.mentionTrigger && message.kind === "text") {
+        const trigger = options.mentionTrigger;
+        const conversation = access.conversation;
+        const isMentionTriggerEligible =
+          conversation.kind === "collab" &&
+          access.participantCount > 1 &&
+          conversation.cuuEnabled !== false &&
+          mentionsCuu(message.content.text, trigger.cuuDisplayName);
+        if (isMentionTriggerEligible) {
+          // 标记必须是函数体接下来第一个同步动作（在任何 await 之前）：这次 createMessage 调用还没有
+          // 返回给 HTTP 层之前，判定器的"已判定"水位线就已经更新——关闭它与后台轮询 tick 之间的竞态
+          // 窗口（判定器最长 15s 才会扫一次，实践中窗口早已关闭，这里只是把"尽量早"钉成"确定早"）。
+          trigger.markMentionHandled({ conversationId: conversation.id, messageId: message.id });
+          const syntheticActor: AuthActor = {
+            kind: "human",
+            id: human.userId,
+            label: "workspace-member",
+            userId: human.userId,
+            isAdmin: false,
+            orgId: "",
+            workspaceId: human.workspaceId
+          };
+          // fire-and-forget：不 await，不能让一次 Cuu 回应的耗时（可能到 120s 的 turn 超时）拖慢这次
+          // 消息创建的 HTTP 响应。失败（撞会话忙碌闸/模式闸/预算耗尽/LLM 失败等）只记警告——发送者
+          // 已经看到消息落库成功，这与判定器 runOnce 自己对失败候选的既有取舍（只 warn 不重试）一致，
+          // 也不产生"消息发出去了但服务端 500"这种矛盾观感。
+          void trigger.turns
+            .createTurn({
+              actor: syntheticActor,
+              conversationId: conversation.id,
+              payload: { user_message_id: message.id }
+            })
+            .catch((error) => {
+              logger.warn("conversation_mention_direct_trigger_failed", {
+                conversation_id: conversation.id,
+                message_id: message.id,
+                error
+              });
+            });
+        }
+      }
+
       return message;
     }
   };
@@ -422,7 +499,14 @@ export function getDefaultConversationService(): ConversationService {
       {
         driveFiles: getDefaultDrivePageService(),
         bus: getDefaultPushBus(),
-        logger: getDefaultStructuredLogger()
+        logger: getDefaultStructuredLogger(),
+        // R14 FIX批10：直通复用既有的 turn 服务单例（与判定器 worker 触发 turn 走的是同一个
+        // ConversationTurnService 实例，activeTurns busy 闸因此天然共享）和判定器服务单例（模块级
+        // 缓存，markMentionHandled 操作的是同一张 lastJudgedByConversation Map，见该文件顶部注释）。
+        mentionTrigger: {
+          turns: getDefaultConversationTurnService(),
+          markMentionHandled: (input) => getDefaultConversationReplyJudgeService().markMentionHandled(input)
+        }
       }
     );
   }

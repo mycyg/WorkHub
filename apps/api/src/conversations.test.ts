@@ -21,10 +21,12 @@ import type { CreateConversationMessageRequest, CreateConversationRequest } from
 
 import type { AuthActor } from "./middleware/auth.js";
 import { InternalContractError } from "./pages/output-contract.js";
+import { ConversationTurnServiceError, type ConversationTurnResultVM } from "./services/conversation-turns.js";
 import { DrivePageServiceError, type DrivePageService } from "./services/drive-pages.js";
 import {
   ConversationServiceError,
-  createConversationService
+  createConversationService,
+  type ConversationMentionTriggerDeps
 } from "./services/conversations.js";
 
 const now = new Date("2026-07-12T08:30:00.123Z");
@@ -202,6 +204,52 @@ function collabPayload(overrides: Partial<CreateConversationRequest> = {}): Crea
     cuu_enabled: true,
     ...overrides
   };
+}
+
+// R14 FIX批10（被 @ 的回复延迟：事件驱动直通）——下面这组 fixture/helper 只服务这一批新增的
+// createMessage 直通触发测试；turnResult() 的字段形状照抄 conversation-reply-judge.test.ts 里同名
+// helper（同一份 ConversationTurnResultVM 契约）。
+function turnResult(): ConversationTurnResultVM {
+  return {
+    turn_id: "70000000-0000-4000-8000-000000000001",
+    message: {
+      id: "70000000-0000-4000-8000-000000000002",
+      conversation_id: conversationId,
+      seq: 2,
+      sender_type: "cuu",
+      sender_user_id: null,
+      thread_root_id: null,
+      created_at: now.toISOString(),
+      kind: "text",
+      content: { text: "好的，马上处理。" }
+    }
+  };
+}
+
+// 可控的 fake mentionTrigger：createTurn 默认返回一个由调用方掌控何时 resolve 的 promise——不少直通
+// 测试都要证明"createMessage 的返回不等直通 turn 完成"，这需要能在断言时机上手动卡住它。
+function mentionTrigger(overrides: {
+  createTurn?: ConversationMentionTriggerDeps["turns"]["createTurn"];
+  markMentionHandled?: ConversationMentionTriggerDeps["markMentionHandled"];
+} = {}) {
+  const createTurnCalls: unknown[] = [];
+  const markCalls: Array<{ conversationId: string; messageId: string }> = [];
+  const deps: ConversationMentionTriggerDeps = {
+    turns: {
+      createTurn:
+        overrides.createTurn
+        ?? (async (input) => {
+          createTurnCalls.push(input);
+          return turnResult();
+        })
+    },
+    markMentionHandled:
+      overrides.markMentionHandled
+      ?? ((input) => {
+        markCalls.push(input);
+      })
+  };
+  return { deps, createTurnCalls, markCalls };
 }
 
 test("conversation service requires a human user and a nonempty actor workspace without tenant fallback", async () => {
@@ -865,4 +913,199 @@ test("conversation output assembly drift becomes InternalContractError instead o
     () => service.listConversations({ actor: actor(), projectId, query: { limit: 50 } }),
     (error) => error instanceof InternalContractError && error.context === "conversations.list"
   );
+});
+
+// ── R14 FIX批10（被 @ 的回复延迟：事件驱动直通）───────────────────────────────────────
+
+test("an @Cuu text message in a real small group asynchronously triggers a direct turn without blocking the response", async () => {
+  const createTurnCalls: unknown[] = [];
+  const markCalls: Array<{ conversationId: string; messageId: string }> = [];
+  let resolveTurn: ((value: ConversationTurnResultVM) => void) | undefined;
+  const pendingTurn = new Promise<ConversationTurnResultVM>((resolve) => {
+    resolveTurn = resolve;
+  });
+  const service = createConversationService(repository({
+    async findVisibleAccessRecord() {
+      return accessRecord({ participantCount: 3 });
+    },
+    async createUserMessage(input) {
+      return messageRow({ contentJson: input.contentJson });
+    }
+  }), {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now,
+    mentionTrigger: {
+      turns: {
+        async createTurn(input) {
+          createTurnCalls.push(input);
+          // 故意不 resolve——证明 createMessage 的返回不等这个直通 turn 完成（fire-and-forget）。
+          return pendingTurn;
+        }
+      },
+      markMentionHandled(input) {
+        markCalls.push(input);
+      }
+    }
+  });
+
+  const result = await service.createMessage({
+    actor: actor(),
+    conversationId,
+    payload: { kind: "text", content: { text: "@Cuu 帮我看一下这个" } }
+  });
+
+  assert.deepEqual(result.content, { text: "@Cuu 帮我看一下这个" });
+  // markMentionHandled 必须在 createMessage 返回之前就已经跑完——同步先于触发 createTurn（见实现里
+  // "标记必须是函数体接下来第一个同步动作"的注释），这里能断言到就是证据：这个 await 已经完成，
+  // pendingTurn 还没有 resolve，markCalls 却已经有记录。
+  assert.deepEqual(markCalls, [{ conversationId, messageId }]);
+  assert.equal(createTurnCalls.length, 1);
+  const call = createTurnCalls[0] as {
+    actor: AuthActor;
+    conversationId: string;
+    payload: { user_message_id: string };
+  };
+  assert.equal(call.actor.kind, "human");
+  assert.equal(call.actor.userId, userId);
+  assert.equal(call.actor.workspaceId, workspaceId);
+  assert.equal(call.actor.isAdmin, false);
+  assert.equal(call.actor.orgId, "");
+  assert.equal(call.conversationId, conversationId);
+  assert.equal(call.payload.user_message_id, messageId);
+
+  resolveTurn?.(turnResult());
+});
+
+test("a busy-conflict from the direct trigger's createTurn is only logged, never surfaces to the message-creation caller (409, no 500)", async () => {
+  const warnings: Array<{ name: string; fields?: Record<string, unknown> }> = [];
+  const service = createConversationService(repository({
+    async findVisibleAccessRecord() {
+      return accessRecord({ participantCount: 2 });
+    },
+    async createUserMessage(input) {
+      return messageRow({ contentJson: input.contentJson });
+    }
+  }), {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now,
+    logger: {
+      warn(name, fields) {
+        warnings.push(fields ? { name, fields } : { name });
+      }
+    },
+    mentionTrigger: {
+      turns: {
+        async createTurn() {
+          // 模拟真实的会话忙碌闸冲突——另一条路径（判定器 tick / 客户端补请）恰好正在跑这个会话的
+          // turn。这必须只记警告，绝不能变成这次消息创建请求的 500。
+          throw new ConversationTurnServiceError(
+            409,
+            "conversation_turn_busy",
+            "这个会话已经有一轮 Cuu 回应正在进行，请稍候。"
+          );
+        }
+      },
+      markMentionHandled() {}
+    }
+  });
+
+  const result = await service.createMessage({
+    actor: actor(),
+    conversationId,
+    payload: { kind: "text", content: { text: "@Cuu 帮我看一下这个" } }
+  });
+
+  assert.equal(result.id, messageId);
+  // 让直通那条 fire-and-forget 链有机会跑完它的 .catch()。
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const mentionWarning = warnings.find((entry) => entry.name === "conversation_mention_direct_trigger_failed");
+  assert.ok(mentionWarning, "expected a warning for the failed direct trigger, not a thrown/unhandled error");
+  assert.equal((mentionWarning?.fields as { conversation_id?: string } | undefined)?.conversation_id, conversationId);
+  assert.equal((mentionWarning?.fields as { message_id?: string } | undefined)?.message_id, messageId);
+});
+
+test("the direct trigger stays silent for team main chats, cuu-disabled conversations, 1:1 collab, and un-mentioned text", async () => {
+  const scenarios: Array<{ label: string; access: Partial<ConversationAccessRecord>; text: string }> = [
+    {
+      label: "team main conversation (owned by the silent observer, not turns)",
+      access: { conversation: conversationRow({ kind: "main" }), participantCount: 5 },
+      text: "@Cuu 帮我看一下这个"
+    },
+    {
+      label: "cuu_enabled=false conversation",
+      access: { conversation: conversationRow({ cuuEnabled: false }), participantCount: 3 },
+      text: "@Cuu 帮我看一下这个"
+    },
+    {
+      label: "1:1 collab (participantCount<=1) — the desktop client's own instant-request path owns this",
+      access: { participantCount: 1 },
+      text: "@Cuu 帮我看一下这个"
+    },
+    {
+      label: "text without an @Cuu mention — the polling judge remains the fallback for this case",
+      access: { participantCount: 3 },
+      text: "先这样吧，我再想想"
+    }
+  ];
+
+  for (const scenario of scenarios) {
+    const trigger = mentionTrigger();
+    const service = createConversationService(repository({
+      async findVisibleAccessRecord() {
+        return accessRecord(scenario.access);
+      },
+      async createUserMessage(input) {
+        return messageRow({ contentJson: input.contentJson });
+      }
+    }), {
+      driveFiles: driveFiles(async () => {
+        throw new Error("Drive must not be called");
+      }),
+      now: () => now,
+      mentionTrigger: trigger.deps
+    });
+
+    await service.createMessage({
+      actor: actor(),
+      conversationId,
+      payload: { kind: "text", content: { text: scenario.text } }
+    });
+    // 即便这个场景本不该触发，也留一次事件循环空隙——万一实现有 bug 异步触发了，这里能抓到。
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assert.equal(trigger.createTurnCalls.length, 0, `${scenario.label}: must not call createTurn`);
+    assert.equal(trigger.markCalls.length, 0, `${scenario.label}: must not mark the message as judge-handled`);
+  }
+});
+
+test("createMessage without a mentionTrigger dependency behaves exactly as before (opt-in, zero regression for existing callers)", async () => {
+  const push = capturingBus();
+  const service = createConversationService(repository({
+    async findVisibleAccessRecord() {
+      return accessRecord({ participantCount: 3 });
+    },
+    async createUserMessage(input) {
+      return messageRow({ contentJson: input.contentJson });
+    }
+  }), {
+    driveFiles: driveFiles(async () => {
+      throw new Error("Drive must not be called");
+    }),
+    now: () => now,
+    bus: push.bus
+    // 故意不传 mentionTrigger——所有既有测试/调用点(路由层) 都是这个形状。
+  });
+
+  const result = await service.createMessage({
+    actor: actor(),
+    conversationId,
+    payload: { kind: "text", content: { text: "@Cuu 帮我看一下这个" } }
+  });
+
+  assert.deepEqual(result.content, { text: "@Cuu 帮我看一下这个" });
+  assert.equal(push.published.length, 1);
 });
