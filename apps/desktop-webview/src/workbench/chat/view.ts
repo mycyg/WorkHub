@@ -65,6 +65,7 @@ import {
   renderModeErrorHintHtml,
   renderModeObserveOnlyHintHtml,
   renderModePopoverHtml,
+  renderNoAiProviderBannerHtml,
   renderPendingOutgoingHtml,
   renderStreamingCuuBubbleHtml,
   renderTypingIndicatorHtml,
@@ -210,6 +211,28 @@ export function clampPickerHighlight(current: number | undefined, count: number)
     return 0;
   }
   return Math.min(Math.max(current, 0), count - 1);
+}
+
+// —— R14 FIX#8 前端半（composer 无 key 横幅） —— //
+//
+// 后端 /api/health 已经把 ai_provider_configured 亮出来（apps/api/src/app.ts）——自托管没配模型密钥时，
+// 观察者/判定器/turn 全部会静默失败，用户此前毫无感知。mountChatView 挂载时探一次这个端点，把结果
+// 归到三态之一：只有明确探到 false 才算「未配置」，需要展示横幅；探测本身失败（网络抖动/服务端还没
+// 起来）或者响应形状不对（防御性——万一将来这个字段被挪走）都归入 unknown，跟"明确没配置"是两个不同
+// 信号，不能混为一谈——健康探测失败不该吓用户，这条红线本身就得能被单测钉住，所以拆成两个纯函数：
+// mapAiProviderHealthState 只做归类，不摸网络；shouldShowNoAiProviderBanner 只做"这个状态要不要出横幅"
+// 这一个布尔判断，真正的 fetch 在下面 mountChatView 内部的 loadAiProviderHealth 里。
+export type AiProviderHealthState = "unknown" | "configured" | "not_configured";
+
+export function mapAiProviderHealthState(response: { ai_provider_configured?: boolean } | undefined): AiProviderHealthState {
+  if (!response || typeof response.ai_provider_configured !== "boolean") {
+    return "unknown";
+  }
+  return response.ai_provider_configured ? "configured" : "not_configured";
+}
+
+export function shouldShowNoAiProviderBanner(state: AiProviderHealthState): boolean {
+  return state === "not_configured";
 }
 
 // R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）：把 render.ts 打了 data-wb-avatar-user-id
@@ -376,6 +399,8 @@ export function mountChatView(
   let actionCardRunProgressByItemId: ReadonlyMap<string, ActionCardRunProgress> = new Map();
   let lastActionCardRunProgressFetchAt: number | undefined;
   let actionCardRunProgressRefetchTimer: ReturnType<typeof setTimeout> | undefined;
+  // R14 FIX#8 前端半：见上方 mapAiProviderHealthState 顶部注释——"unknown" 是唯一安全的初始值/失败退化值。
+  let aiProviderHealthState: AiProviderHealthState = "unknown";
 
   const membersMap = membersById(input.members);
   const renderCtx = (): ChatRenderContext => ({
@@ -400,6 +425,7 @@ export function mountChatView(
     <div data-wb-chat-typing></div>
     <div data-wb-chat-turn-status></div>
     <div data-wb-chat-mode-hint></div>
+    <div data-wb-chat-ai-provider-banner></div>
     <div data-wb-chat-composer-wrap></div>
   </div>`;
   const bannerEl = container.querySelector<HTMLElement>("[data-wb-chat-banner]");
@@ -409,8 +435,19 @@ export function mountChatView(
   const typingEl = container.querySelector<HTMLElement>("[data-wb-chat-typing]");
   const turnStatusEl = container.querySelector<HTMLElement>("[data-wb-chat-turn-status]");
   const modeHintEl = container.querySelector<HTMLElement>("[data-wb-chat-mode-hint]");
+  const aiProviderBannerEl = container.querySelector<HTMLElement>("[data-wb-chat-ai-provider-banner]");
   const composerWrapEl = container.querySelector<HTMLElement>("[data-wb-chat-composer-wrap]");
-  if (!bannerEl || !headEl || !catchupEl || !scrollEl || !typingEl || !turnStatusEl || !modeHintEl || !composerWrapEl) {
+  if (
+    !bannerEl ||
+    !headEl ||
+    !catchupEl ||
+    !scrollEl ||
+    !typingEl ||
+    !turnStatusEl ||
+    !modeHintEl ||
+    !aiProviderBannerEl ||
+    !composerWrapEl
+  ) {
     throw new Error("workbench chat view markup is missing an expected mount point");
   }
 
@@ -532,6 +569,35 @@ export function mountChatView(
       return;
     }
     modeHintEl!.innerHTML = "";
+  }
+
+  // R14 FIX#8 前端半：常驻横幅，独立于 modeHint/turn 错误提示的挂载点（各自的 renderXxx 只重刷自己
+  // 那一个 div，互不打架）——只有明确探到「未配置」才渲，其余两态（unknown/configured）都清空。
+  // 主区与协同会话都会渲这条（跟 modeHint 不同，modeHint 只在协同会话出现）：AI provider 没配置时，
+  // 无论群聊里 @Cuu 还是单聊，Cuu 都不会回应，这是同一个事实。
+  function renderAiProviderBanner(): void {
+    aiProviderBannerEl!.innerHTML = shouldShowNoAiProviderBanner(aiProviderHealthState)
+      ? renderNoAiProviderBannerHtml(input.locale)
+      : "";
+  }
+
+  // 挂载时探一次 health——best-effort：探测失败（网络抖动/服务端还没起来）静默归入 unknown，不渲染
+  // 任何东西，不重试轮询（同 loadMyAiProfile/loadDispatchAskCatchup 这批既有 best-effort 一次性拉取
+  // 的取舍一致），不阻塞输入——composer 的发送闸门完全不读这个状态。
+  async function loadAiProviderHealth(): Promise<void> {
+    try {
+      const response = await input.client.request<{ ai_provider_configured?: boolean }>("/api/health");
+      if (disposed) {
+        return;
+      }
+      aiProviderHealthState = mapAiProviderHealthState(response);
+    } catch {
+      if (disposed) {
+        return;
+      }
+      aiProviderHealthState = mapAiProviderHealthState(undefined);
+    }
+    renderAiProviderBanner();
   }
 
   // R12 批8：DOM 只挂载最近 renderWindowSize 条（windowRecentMessages，见 timeline.ts）——更早的
@@ -1872,6 +1938,7 @@ export function mountChatView(
   void loadHistory();
   void loadMyAiProfile();
   void loadDispatchAskCatchup();
+  void loadAiProviderHealth();
 
   return {
     dispose() {

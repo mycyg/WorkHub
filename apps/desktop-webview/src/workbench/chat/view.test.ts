@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { addAttachment, clampPickerHighlight, movePickerHighlight, removeAttachment } from "./view.js";
+import {
+  addAttachment,
+  clampPickerHighlight,
+  mapAiProviderHealthState,
+  movePickerHighlight,
+  removeAttachment,
+  shouldShowNoAiProviderBanner
+} from "./view.js";
 
 // mountChatView 本身没有直接单测——这个 workspace 的测试运行器没有真实 DOM（node --import tsx --test，
 // 无 jsdom；见 shell.test.ts/rail.test.ts 只测 render*/纯函数这一既有事实，boot.test.ts 同理只测
@@ -85,4 +92,30 @@ test("clampPickerHighlight pulls an out-of-range index back to the last option (
 test("clampPickerHighlight returns undefined once the list is empty", () => {
   assert.equal(clampPickerHighlight(0, 0), undefined);
   assert.equal(clampPickerHighlight(undefined, 0), undefined);
+});
+
+// —— R14 FIX#8 前端半：无 key 横幅的状态归类/展示判定（纯函数，网络探测本身在 view.ts 内部，不在这里
+// 测——同这个文件其它函数一样，只测能剥离出来的纯逻辑）——//
+
+test("mapAiProviderHealthState reports not_configured only when the server explicitly says false", () => {
+  assert.equal(mapAiProviderHealthState({ ai_provider_configured: false }), "not_configured");
+});
+
+test("mapAiProviderHealthState reports configured when the server says true", () => {
+  assert.equal(mapAiProviderHealthState({ ai_provider_configured: true }), "configured");
+});
+
+test("mapAiProviderHealthState falls back to unknown when the probe failed (no response at all)", () => {
+  assert.equal(mapAiProviderHealthState(undefined), "unknown");
+});
+
+test("mapAiProviderHealthState falls back to unknown when the field is missing or the wrong shape", () => {
+  assert.equal(mapAiProviderHealthState({}), "unknown");
+  assert.equal(mapAiProviderHealthState({ ai_provider_configured: "nope" as unknown as boolean }), "unknown");
+});
+
+test("shouldShowNoAiProviderBanner is true only for the explicit not_configured state", () => {
+  assert.equal(shouldShowNoAiProviderBanner("not_configured"), true);
+  assert.equal(shouldShowNoAiProviderBanner("configured"), false);
+  assert.equal(shouldShowNoAiProviderBanner("unknown"), false);
 });

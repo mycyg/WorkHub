@@ -661,6 +661,22 @@ export function renderConnectionBannerHtml(state: ConnectionBannerState, locale:
   return "";
 }
 
+// —— R14 FIX#8 前端半（composer 无 key 横幅） —— //
+//
+// 后端 /api/health 已经把 ai_provider_configured 亮出来（apps/api/src/app.ts）——自托管的人没配模型
+// 密钥时，观察者/判定器/turn 全部会静默失败，用户此前毫无感知。这里只管纯渲染；view.ts 挂载时探一次
+// health、把结果映射成三态之一（见其 mapAiProviderHealthState），只有明确探到「未配置」才渲这条横幅——
+// 探测本身失败（网络抖动/服务端还没起来）不该被当成「没配置」去吓用户，两者是完全不同的信号。
+// 横幅是常驻的（不是点掉就消失的一次性提示）：只要服务端确实没配置，每次挂载都应该如实提醒，不阻塞
+// 输入——人与人聊天不受影响，composer 的发送闸门不读这个状态。
+export function renderNoAiProviderBannerHtml(locale: Locale): string {
+  const zh = locale === "zh-CN";
+  const text = zh
+    ? "AI 服务未配置，Cuu 不会回应——需要在服务端配置模型密钥（见部署文档 DEPLOY.md）"
+    : "The AI service isn't configured, so Cuu won't reply — a model key needs to be set up on the server (see DEPLOY.md).";
+  return `<div class="wh-wb-chat-banner" data-wb-chat-no-ai-provider-banner="true">${escapeHtml(text)}</div>`;
+}
+
 // —— 空态（照 00 §9：新项目空群聊 → Cuu 开场白，引导第一条消息） —— //
 
 export function renderChatEmptyStateHtml(input: { locale: Locale; projectName: string }): string {

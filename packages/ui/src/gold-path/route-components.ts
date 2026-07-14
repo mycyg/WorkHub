@@ -4351,8 +4351,16 @@ function renderSettingsAiAssistantCard(locale: WorkHubLocale, desktopHref: strin
 // 才解禁，读取失败保持锁定 + 显式错误 + 重试，不让用户在假的空白表单上覆盖已保存的资料。
 function renderSettingsMyProfileCard(locale: WorkHubLocale): string {
   const zh = locale === "zh-CN";
+  // R14 批 ONBOARD（资料引导提示，2026-07-14）：本来想在决策队列（/attention）首页也放一张「资料为空」
+  // 提示卡，但 AttentionHomeVM（packages/contracts/src/pages.ts 的 attentionHomeVmSchema）完全不带任何
+  // viewer 资料态字段（primary/queue/source_warnings/background_runs/cuu_state/worklog，没一个能判断
+  // 「这个人资料填没填」）——服务端不给这个信号，前端没法诚实地只在"资料为空"时才显示，只能瞎猜着常显
+  // 或者常隐，两者都不对。范围围栏也不许为了这一条改 API/VM，所以退化成这里：资料卡顶部常驻加一句
+  // 点破用途的引导语，不看条件（04 §4 铁律 3 的精神延伸：宁可老实地"总是提示"，不假装能判断"要不要提示"）。
+  // 决策队列版本的提示卡留作后续项，见本批汇报。
   return `<section class="wh-card wh-r4-route-card" data-r13-settings-profile-panel="true">
           <h3 role="heading" aria-level="2">${escapeHtml(zh ? "我的资料" : "My profile")}</h3>
+          <p class="wh-subtle" data-r14-settings-profile-guidance-hint="true">${escapeHtml(zh ? "填好这些，AI 助手派活会更准。" : "Fill these in — the AI assistant's task assignments get more accurate.")}</p>
           <p class="wh-subtle">${escapeHtml(zh ? "以后 AI 助手派活时会参考这些信息，帮你把活派给最合适的人。" : "The AI assistant uses this information when suggesting who to assign work to.")}</p>
           <p class="wh-subtle" data-r13-settings-profile-status="loading" hidden></p>
           <div role="listitem" class="wh-r4-route-row" data-r14-settings-avatar-row="true"><strong>${escapeHtml(zh ? "头像" : "Avatar")}</strong>

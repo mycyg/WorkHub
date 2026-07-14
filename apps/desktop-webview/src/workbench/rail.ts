@@ -259,7 +259,17 @@ export function renderPersonalSpaceSectionHtml(input: {
       <span class="wh-wb-project-name wh-wb-project-name--muted">${zh ? "新建个人空间" : "New personal space"}</span>
     </button>
   </div>`;
-  return `<div class="wh-wb-rail-head wh-wb-rail-head--personal">${zh ? "我的空间" : "My space"}</div>${rows}${newPersonalSpaceRow}`;
+  // R14 批 ONBOARD（个人空间发现性，2026-07-14）：一个人还没建过任何个人空间时，多数人不知道这行
+  // 「新建个人空间」按钮是干嘛用的（不是团队项目，容易被当成又一个团队项目而跳过）。只在
+  // personalProjects 为空时补一行小字点破用途；一旦建了第一个个人空间，rows 非空，这行就再也不出现——
+  // 不是常驻文案，是新手期的一次性引导。
+  // 范围围栏不许改 css.ts，这里用内联样式而不是新起一个没有对应规则的 class（同 avatarTileHtml 的
+  // 既有先例：hue 色块也是内联 style，不是每一处视觉细节都值得为它专门开一条 CSS 规则）——字号/颜色
+  // 抄的是 wh-wb-army-empty-note 同一档"小字浅色提示"视觉语言（12px/ds-ink-faint），保持全应用观感一致。
+  const discoveryHint = input.personalProjects.length === 0
+    ? `<p data-wb-personal-space-discovery-hint="true" style="margin:2px 14px 10px;font:500 12px/1.5 var(--ds-font);color:var(--ds-ink-faint)">${zh ? "你的私人 AI 工作台——想周报、读材料、记待办都行" : "Your private AI workspace — draft reports, read through materials, or track your own to-dos"}</p>`
+    : "";
+  return `<div class="wh-wb-rail-head wh-wb-rail-head--personal">${zh ? "我的空间" : "My space"}</div>${rows}${newPersonalSpaceRow}${discoveryHint}`;
 }
 
 // R13 批 P1：军团总览从这条预告条升级成左栏一级入口（renderArmyOverviewNavHtml，与项目列表平级，见

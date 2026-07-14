@@ -396,6 +396,28 @@ test("renderPersonalSpaceSectionHtml always includes a real 'new personal space'
   assert.match(html, /新建个人空间/u);
 });
 
+// R14 批 ONBOARD（个人空间发现性）：没有任何个人空间时，「新建个人空间」按钮下补一句点破用途的小字——
+// 一旦建了第一个，这行就该消失（不是常驻文案，只是新手期一次性引导）。
+test("renderPersonalSpaceSectionHtml shows the discovery hint under 'new personal space' only when the user has none yet", () => {
+  const empty = renderPersonalSpaceSectionHtml({ personalProjects: [], selectedProjectId: undefined, vm: undefined, locale: "zh-CN" });
+  assert.match(empty, /data-wb-personal-space-discovery-hint="true"/u);
+  assert.match(empty, /你的私人 AI 工作台/u);
+
+  const withOne = renderPersonalSpaceSectionHtml({
+    personalProjects: [project({ id: "my-space-1", name: "我的空间" })],
+    selectedProjectId: undefined,
+    vm: undefined,
+    locale: "zh-CN"
+  });
+  assert.doesNotMatch(withOne, /data-wb-personal-space-discovery-hint/u);
+});
+
+test("renderPersonalSpaceSectionHtml discovery hint has an English copy too", () => {
+  const html = renderPersonalSpaceSectionHtml({ personalProjects: [], selectedProjectId: undefined, vm: undefined, locale: "en-US" });
+  assert.match(html, /data-wb-personal-space-discovery-hint="true"/u);
+  assert.match(html, /Your private AI workspace/u);
+});
+
 test("renderPersonalSpaceSectionHtml marks the selected personal space active and shows its real conversation leaves", () => {
   const vm = workbenchVm({ project: { ...workbenchVm().project, id: "my-space-1" } });
   const html = renderPersonalSpaceSectionHtml({
