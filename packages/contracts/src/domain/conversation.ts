@@ -20,6 +20,22 @@ export const conversationMessageKindSchema = z.enum([
 ]);
 export type ConversationMessageKind = z.infer<typeof conversationMessageKindSchema>;
 
+// R14 批 CHAT：精选五键反应。存储/契约层全程 ASCII slug——emoji 字形只存在于桌面渲染层的
+// slug→字形映射常量（approve=赞、disagree=踩、done=完成、question=疑问、watch=关注），绝不进契约/
+// css.ts/icons.ts/文档。扩充键集须回 r14-release-readiness/01-chat-design.md 改表。
+export const conversationReactionKeySchema = z.enum([
+  "approve",
+  "disagree",
+  "done",
+  "question",
+  "watch"
+]);
+export type ConversationReactionKey = z.infer<typeof conversationReactionKeySchema>;
+// reaction 展示层文案上限（user_ids 单键封顶——聚合读取端点已 cap，契约层做同档次的防御性上限）。
+export const MAX_CONVERSATION_REACTION_USER_IDS = 500;
+// 引用预览文本硬顶（≤80 code units，读时 join 目标消息裁剪得到）。
+export const MAX_CONVERSATION_REPLY_PREVIEW_CODE_UNITS = 80;
+
 export const aiModeSchema = z.number().int().min(1).max(5);
 export type AiMode = z.infer<typeof aiModeSchema>;
 
@@ -400,12 +416,55 @@ export const createConversationRequestSchema = z
   });
 export type CreateConversationRequest = z.infer<typeof createConversationRequestSchema>;
 
+// R14 批 CHAT：编辑消息请求体——只带新正文（仅 text 消息可编辑，kind 判定在服务/仓库层）。text 的
+// 长度约束与创建侧对齐（min 1、上限同 MAX_CONVERSATION_TEXT_CODE_UNITS）。
+export const editConversationMessageRequestSchema = z
+  .object({
+    text: z.string().min(1).max(MAX_CONVERSATION_TEXT_CODE_UNITS)
+  })
+  .strict();
+export type EditConversationMessageRequest = z.infer<typeof editConversationMessageRequestSchema>;
+
+// R14 批 CHAT：已读游标推进请求体——单调夹紧在服务端做，请求只声明「我读到 seq 几了」。
+export const advanceReadCursorRequestSchema = z
+  .object({
+    last_read_seq: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER)
+  })
+  .strict();
+export type AdvanceReadCursorRequest = z.infer<typeof advanceReadCursorRequestSchema>;
+
+// R14 批 CHAT：读游标读取端点（GET /receipts）的输出——聚合式「已读 N/M」在上层算，这里只回原始游标。
+export const conversationReadReceiptVmSchema = z
+  .object({
+    user_id: idSchema,
+    last_read_seq: safeIntegerOutputSchema
+  })
+  .strict();
+export type ConversationReadReceiptVM = z.infer<typeof conversationReadReceiptVmSchema>;
+
+export const conversationReadReceiptsVmSchema = z
+  .object({
+    receipts: z.array(conversationReadReceiptVmSchema).max(500)
+  })
+  .strict();
+export type ConversationReadReceiptsVM = z.infer<typeof conversationReadReceiptsVmSchema>;
+
+export const conversationReadCursorVmSchema = z
+  .object({
+    last_read_seq: safeIntegerOutputSchema
+  })
+  .strict();
+export type ConversationReadCursorVM = z.infer<typeof conversationReadCursorVmSchema>;
+
 export const createConversationMessageRequestSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("text"),
       content: conversationTextContentSchema,
-      thread_root_id: idSchema.optional()
+      thread_root_id: idSchema.optional(),
+      // R14 批 CHAT（引用回复）：仅 text 新消息可带引用；目标须同会话、存在、未删除（服务/仓库层校验，
+      // 对已删目标回 400）。additive optional——不带这个字段的存量客户端行为零回归。
+      reply_to_message_id: idSchema.optional()
     })
     .strict(),
   z
@@ -494,6 +553,38 @@ const boundedConversationObjectContentSchema = z
     }
   });
 
+// R14 批 CHAT：消息 VM 上的全量 reaction 聚合项——一键一项，user_ids 是该键的全部反应者（去重、
+// 幂等替换语义，读时页级 grouped 查询构建，禁 N+1）。
+export const conversationMessageReactionVmSchema = z
+  .object({
+    key: conversationReactionKeySchema,
+    user_ids: z.array(idSchema).min(1).max(MAX_CONVERSATION_REACTION_USER_IDS)
+  })
+  .strict();
+export type ConversationMessageReactionVM = z.infer<typeof conversationMessageReactionVmSchema>;
+
+// R14 批 CHAT：引用回复的原消息预览——读时 join 目标构建。preview_text ≤80（墓碑目标为 ''），
+// deleted 表示原消息事后被删（引用侧渲染「原消息已删除」占位）。
+export const conversationMessageReplyPreviewVmSchema = z
+  .object({
+    message_id: idSchema,
+    sender_type: conversationSenderTypeSchema,
+    sender_user_id: idSchema.nullable(),
+    preview_text: z.string().max(MAX_CONVERSATION_REPLY_PREVIEW_CODE_UNITS),
+    deleted: z.boolean()
+  })
+  .strict();
+export type ConversationMessageReplyPreviewVM = z.infer<typeof conversationMessageReplyPreviewVmSchema>;
+
+// R14 批 CHAT：置顶元数据。by_user_id 可空——置顶者用户被删时列 set null（墓碑外键语义）。
+export const conversationMessagePinVmSchema = z
+  .object({
+    at: isoDateTimeSchema,
+    by_user_id: idSchema.nullable()
+  })
+  .strict();
+export type ConversationMessagePinVM = z.infer<typeof conversationMessagePinVmSchema>;
+
 const conversationMessageBaseShape = {
   id: idSchema,
   conversation_id: idSchema,
@@ -501,36 +592,85 @@ const conversationMessageBaseShape = {
   sender_type: conversationSenderTypeSchema,
   sender_user_id: idSchema.nullable(),
   thread_root_id: idSchema.nullable(),
+  // R14 批 CHAT：以下 5 个 additive optional 字段——openapi 只进 properties 不进 required，存量客户端
+  // （不认识这些键）读旧消息（不带这些字段）行为零回归。
+  //   edited_at：编辑后置位（读侧渲染「已编辑」灰标）。
+  //   deleted_at：墓碑置位（VM 已归一成 kind:'text' content:{text:''}，见下方 superRefine）。
+  //   pinned：置顶元数据（未置顶时字段不出现）。
+  //   reply_to：引用的原消息预览（读时 join；仅 text 新消息可带 reply）。
+  //   reactions：全量 reaction 聚合（页级 grouped 查询，禁 N+1）。
+  edited_at: isoDateTimeSchema.optional(),
+  deleted_at: isoDateTimeSchema.optional(),
+  pinned: conversationMessagePinVmSchema.optional(),
+  reply_to: conversationMessageReplyPreviewVmSchema.optional(),
+  reactions: z.array(conversationMessageReactionVmSchema).max(conversationReactionKeySchema.options.length).optional(),
   created_at: isoDateTimeSchema
 } as const;
 
-export const conversationMessageVmSchema = z.discriminatedUnion("kind", [
-  z.object({
-    ...conversationMessageBaseShape,
-    kind: z.literal("text"),
-    content: conversationTextContentSchema
-  }).strict(),
-  z.object({
-    ...conversationMessageBaseShape,
-    kind: z.literal("file_card"),
-    content: conversationFileCardContentSchema
-  }).strict(),
-  z.object({
-    ...conversationMessageBaseShape,
-    kind: z.literal("action_card"),
-    content: boundedConversationObjectContentSchema
-  }).strict(),
-  z.object({
-    ...conversationMessageBaseShape,
-    kind: z.literal("system_event"),
-    content: boundedConversationObjectContentSchema
-  }).strict(),
-  z.object({
-    ...conversationMessageBaseShape,
-    kind: z.literal("tool_note"),
-    content: boundedConversationObjectContentSchema
-  }).strict()
-]);
+// R14 批 CHAT：读侧 text 内容 schema——放宽 text 到允许空串，专供墓碑归一（content:{text:''}）。
+// 创建侧 conversationTextContentSchema（min 1）完全不变；「空串当且仅当墓碑」的收紧由下方 message VM
+// 的 superRefine 兜住，活消息的 text 仍然强制非空。extend 保留 strict 与其它 additive 字段。
+const conversationMessageTextContentVmSchema = conversationTextContentSchema.extend({
+  text: z.string().max(MAX_CONVERSATION_TEXT_CODE_UNITS)
+});
+
+export const conversationMessageVmSchema = z
+  .discriminatedUnion("kind", [
+    z.object({
+      ...conversationMessageBaseShape,
+      kind: z.literal("text"),
+      content: conversationMessageTextContentVmSchema
+    }).strict(),
+    z.object({
+      ...conversationMessageBaseShape,
+      kind: z.literal("file_card"),
+      content: conversationFileCardContentSchema
+    }).strict(),
+    z.object({
+      ...conversationMessageBaseShape,
+      kind: z.literal("action_card"),
+      content: boundedConversationObjectContentSchema
+    }).strict(),
+    z.object({
+      ...conversationMessageBaseShape,
+      kind: z.literal("system_event"),
+      content: boundedConversationObjectContentSchema
+    }).strict(),
+    z.object({
+      ...conversationMessageBaseShape,
+      kind: z.literal("tool_note"),
+      content: boundedConversationObjectContentSchema
+    }).strict()
+  ])
+  .superRefine((message, ctx) => {
+    // 墓碑归一不变量：deleted_at 置位 ⟺ kind='text' 且 content.text=''（服务层 messageToVm 强制）。
+    if (message.deleted_at !== undefined) {
+      if (message.kind !== "text") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["kind"],
+          message: "a deleted message VM must be normalized to a text tombstone"
+        });
+        return;
+      }
+      if (message.content.text !== "") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["content", "text"],
+          message: "a deleted message tombstone must carry empty text"
+        });
+      }
+      return;
+    }
+    // 活着的 text 消息仍然强制非空（保住创建侧 min(1) 的读侧对称）。
+    if (message.kind === "text" && message.content.text.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["content", "text"],
+        message: "a live text message must not carry empty text"
+      });
+    }
+  });
 export type ConversationMessageVM = z.infer<typeof conversationMessageVmSchema>;
 
 export const conversationListCursorVmSchema = z
@@ -570,3 +710,12 @@ export const conversationMessagePageVmSchema = z
   })
   .strict();
 export type ConversationMessagePageVM = z.infer<typeof conversationMessagePageVmSchema>;
+
+// R14 批 CHAT：置顶清单端点（GET /pins）的输出——seq 降序、cap 50。定义在 conversationMessageVmSchema
+// 之后（引用它），避免 const 使用前声明。
+export const conversationPinsVmSchema = z
+  .object({
+    messages: z.array(conversationMessageVmSchema).max(50)
+  })
+  .strict();
+export type ConversationPinsVM = z.infer<typeof conversationPinsVmSchema>;

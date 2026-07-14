@@ -190,6 +190,12 @@ export const eventTypes = {
   notificationCreated: "notification.created",
   conversationMessageCreated: "conversation.message.created",
   conversationMessageDelta: "conversation.message.delta",
+  // R14 批 CHAT：编辑/删除/置顶后广播——data=变更后全量消息 VM，客户端按 id 整条替换。
+  conversationMessageUpdated: "conversation.message.updated",
+  // R14 批 CHAT：reaction 全量聚合幂等替换（不发增量）。
+  conversationReactionUpdated: "conversation.reaction.updated",
+  // R14 批 CHAT：已读游标推进。
+  conversationReadUpdated: "conversation.read.updated",
   conversationToolBegin: "conversation.tool.begin",
   conversationToolOutputDelta: "conversation.tool.output_delta",
   conversationToolEnd: "conversation.tool.end",
