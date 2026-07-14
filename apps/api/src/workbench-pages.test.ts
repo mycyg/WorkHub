@@ -532,6 +532,8 @@ function authUser(): UserAuthRow {
     availabilityUpdatedAt: null,
     isAdmin: false,
     mutedNotificationTypes: [],
+    avatarWebp: null,
+    avatarUpdatedAt: null,
     deletedAt: null,
     deletedByUserId: null,
     createdAt: now,

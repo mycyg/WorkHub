@@ -5,6 +5,8 @@ import type { WorkHubApiClient } from "@workhub/api-client";
 import type { CreateConversationResultVM, ProjectListItemVM, WorkbenchPageVM } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
+import { avatarTileHtml } from "./chat/render.js";
+import { hydrateAvatarPhotos } from "./chat/view.js";
 import { workbenchIcons } from "./icons.js";
 import type { WorkbenchCenterTab, WorkbenchStore } from "./store.js";
 
@@ -395,8 +397,13 @@ export function renderNewCollabModalHtml(input: {
       ? input.memberOptions
           .map((member) => {
             const checked = selected.has(member.userId);
+            // R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）：建群选人器每行加头像 tile——
+            // 复用 chat/render.ts 导出的 avatarTileHtml（同一套首字母色块+hue 算法+
+            // data-wb-avatar-user-id 钩子），不重写第二份。真实头像图的挂载见 mountWorkbenchRail 的
+            // render() 里对 hydrateAvatarPhotos(container) 的调用（从 chat/view.ts 复用同一个函数）。
             return `<label class="wh-wb-new-collab-member-row">
         <input type="checkbox" data-wb-new-collab-member="${escapeHtml(member.userId)}" ${checked ? "checked" : ""} ${state.submitting ? "disabled" : ""} />
+        ${avatarTileHtml({ label: member.nickname, id: member.userId })}
         <span>${escapeHtml(member.nickname)}</span>
       </label>`;
           })
@@ -536,6 +543,9 @@ export function mountWorkbenchRail(
         .filter((member) => !member.is_self)
         .map((member) => ({ userId: member.user_id, nickname: member.nickname }))
     })}`;
+    // R14 批 AVATAR：建群选人器行的头像 tile 换真图（若有）——复用 chat/view.ts 的同一个命令式
+    // 挂载步骤，不重写第二份 fetch+blob URL 逻辑。
+    hydrateAvatarPhotos(container);
   };
 
   const loadPersonalProjects = async () => {

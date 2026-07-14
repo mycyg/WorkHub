@@ -208,7 +208,16 @@ export const webRouteComponentCss = [
   ".wh-r4-approval-detail-panel[hidden]{display:none}.wh-r4-approval-detail-panel section{display:grid;gap:6px}.wh-r4-approval-field{display:grid;gap:4px}.wh-r4-approval-reason,.wh-r4-approval-comment-input{width:100%;max-width:100%;box-sizing:border-box;min-width:0;resize:vertical;font:inherit;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:6px;overflow-wrap:anywhere}.wh-r4-approval-remember{display:flex;gap:6px;align-items:flex-start;font-size:13px;color:var(--wh-product-secondary,#5B616E)}.wh-r4-approval-comment-form{display:grid;gap:6px}",
   ".wh-r4-approval-detail .wh-r4-route-row{grid-template-columns:1fr}.wh-r4-approval-detail .wh-r4-route-row p,.wh-r4-approval-detail .wh-r4-route-row strong{overflow-wrap:anywhere;white-space:normal}.wh-r4-approval-detail .wh-r4-route-meta{justify-content:flex-start}",
   "@media (max-width:1040px){.wh-r4-approvals-grid{grid-template-columns:1fr}}",
-  "@media (max-width:860px){.wh-r4-route-head,.wh-r4-route-grid,.wh-r4-route-row{grid-template-columns:1fr}.wh-r4-route-head{align-items:start}.wh-r4-route-count{width:max-content}.wh-r4-route-actions{align-items:flex-start}}"
+  "@media (max-width:860px){.wh-r4-route-head,.wh-r4-route-grid,.wh-r4-route-row{grid-template-columns:1fr}.wh-r4-route-head{align-items:start}.wh-r4-route-count{width:max-content}.wh-r4-route-actions{align-items:flex-start}}",
+  // R14 批 AVATAR（头像与资料入口）：设置页「我的资料」卡的头像位——圆形预览（无头像回退首字母
+  // 色块 tile，与工作台聊天/成员条同一套视觉语言，见 apps/desktop-webview 的 avatarTileHtml）+
+  // 隐藏 file input（label 触发）+ 移除按钮。裁剪层本身在 apps/web/src/browser.ts 里用内联样式
+  // 构造（一次性弹层，不值得为它单开一份共享 CSS）。
+  ".wh-avatar-field{display:flex;align-items:center;gap:10px;flex-wrap:wrap}",
+  ".wh-avatar-preview{position:relative;display:inline-flex;width:48px;height:48px;flex:0 0 auto;border-radius:50%;overflow:hidden;background:var(--wh-product-line,#E6E7EB)}",
+  ".wh-avatar-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:18px}",
+  ".wh-avatar-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}",
+  ".wh-avatar-upload-label{cursor:pointer}"
 ].join("");
 
 type RouteCopyKey =
@@ -4346,6 +4355,20 @@ function renderSettingsMyProfileCard(locale: WorkHubLocale): string {
           <h3 role="heading" aria-level="2">${escapeHtml(zh ? "我的资料" : "My profile")}</h3>
           <p class="wh-subtle">${escapeHtml(zh ? "以后 AI 助手派活时会参考这些信息，帮你把活派给最合适的人。" : "The AI assistant uses this information when suggesting who to assign work to.")}</p>
           <p class="wh-subtle" data-r13-settings-profile-status="loading" hidden></p>
+          <div role="listitem" class="wh-r4-route-row" data-r14-settings-avatar-row="true"><strong>${escapeHtml(zh ? "头像" : "Avatar")}</strong>
+            <div class="wh-avatar-field">
+              <span class="wh-avatar-preview" data-r14-avatar-preview="true">
+                <span class="wh-avatar-fallback" data-r14-avatar-fallback="true" aria-hidden="true">?</span>
+                <img class="wh-avatar-img" data-r14-avatar-img="true" alt="${escapeHtml(zh ? "当前头像" : "Current avatar")}" hidden />
+              </span>
+              <label class="wh-btn wh-avatar-upload-label" data-r14-avatar-upload-label="true">
+                <span>${escapeHtml(zh ? "更换头像" : "Change avatar")}</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp" class="wh-avatar-file-input" data-r14-avatar-file-input="true" hidden disabled />
+              </label>
+              <button type="button" class="wh-btn" data-r14-avatar-remove-btn="true" hidden disabled>${escapeHtml(zh ? "移除头像" : "Remove avatar")}</button>
+              <p class="wh-subtle" data-r14-avatar-status="true" hidden></p>
+            </div>
+          </div>
           <div role="listitem" class="wh-r4-route-row"><strong>${escapeHtml(zh ? "职位/角色头衔" : "Title / role")}</strong>
             <input type="text" class="wh-pill" data-r13-settings-profile-title-input aria-label="${escapeHtml(zh ? "职位/角色头衔" : "Title / role")}" placeholder="${escapeHtml(zh ? "例如：前端负责人" : "e.g. Frontend lead")}" maxlength="128" disabled />
           </div>

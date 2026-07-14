@@ -25,6 +25,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   doublePrecision,
   foreignKey,
   ForeignKeyBuilder,
@@ -40,6 +41,15 @@ import {
   uuid,
   varchar
 } from "drizzle-orm/pg-core";
+
+// R14 批 AVATAR：drizzle-orm 0.44 的 pg-core 没有内置 bytea 列类型（客户端 canvas 降采样出的头像
+// 二进制直接落库，见 02-construction-plan「零对象存储」设计）。node-postgres 驱动对 bytea 列本就
+// 原生收发 Buffer，这里只需要声明 SQL 类型字符串，不需要 toDriver/fromDriver 转换。
+const bytea = customType<{ data: Buffer }>({
+  dataType() {
+    return "bytea";
+  }
+});
 
 type JsonObject = Record<string, unknown>;
 type JsonArray = unknown[];
@@ -107,6 +117,11 @@ export const users = pgTable(
     // 团队就绪 must-have（通知偏好-按类型静音）：被静音的通知类型清单（jsonb 字符串数组）。
     // 空数组=不静音=既有行为逐字不变（DEFAULT-OFF 不变量）。通知创建路径命中此列则跳过、不建。
     mutedNotificationTypes: jsonb("muted_notification_types").$type<string[]>().notNull().default([]),
+    // R14 批 AVATAR：用户自配头像。客户端裁剪+降采样到 256x256 再上传，服务端只做 magic bytes
+    // 校验（webp/png/jpeg）+ 256KB 硬顶，不做图片处理、不引对象存储（开源自托管友好）。两列均可空——
+    // 没头像时渲染层回退既有首字母色块 tile（不受影响）。avatarUpdatedAt 兼作 GET 端点的 ETag 源。
+    avatarWebp: bytea("avatar_webp"),
+    avatarUpdatedAt: timestampTz("avatar_updated_at"),
     deletedAt: timestampTz("deleted_at"),
     // R2 auth epic：记录是谁停用/离职了该账号（与 softDeleteColumns() 约定一致）。自引用 set null。
     deletedByUserId: uuid("deleted_by_user_id").references((): AnyPgColumn => users.id, { onDelete: "set null" }),

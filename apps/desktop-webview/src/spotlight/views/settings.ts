@@ -28,12 +28,32 @@ import type {
 } from "@workhub/contracts";
 import { escapeHtml } from "@workhub/web-runtime";
 
+import {
+  AVATAR_CROP_OUTPUT_SIZE,
+  cropSourceRect,
+  initialCropState,
+  maxCropScale,
+  minCropScale,
+  panCropBy,
+  zoomCropTo,
+  type CropState,
+  type NaturalSize
+} from "@workhub/ui";
+
 import { spotlightErrorHtml, type SpotlightCapabilityView, type SpotlightViewContext } from "../view-context.js";
+import { driveResourceApiBase, fetchDriveResource } from "./drive.js";
 
 const AI_PROFILE_PATH = "/api/me/ai-profile";
 // R13 批 A2（派人推荐 v2）："我是谁"（个人资料），与上面的 AI_PROFILE_PATH（"AI 该怎么替我干活"）
 // 语义分开，不同端点不同表。
 const PROFILE_PATH = "/api/me/profile";
+// R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）：头像二进制的 PUT/DELETE 端点；
+// GET 的预览走 fetchDriveResource（同网盘那套 client-token 鉴权+401 自愈重试——桌面端 auth 是
+// token 走响应体，不是 cookie，<img src> 直连拿不到鉴权头，必须走这条已有的授权 fetch 复用同一份逻辑）。
+const AVATAR_PATH = "/api/me/avatar";
+function avatarHref(userId: string): string {
+  return `/api/users/${encodeURIComponent(userId)}/avatar`;
+}
 
 function localeLabel(locale: string, zh: boolean): string {
   if (locale === "zh-CN") return zh ? "简体中文" : "Chinese";
@@ -159,6 +179,33 @@ function aiSectionHtml(profile: UserAiProfileVM | undefined, aiFailed: boolean, 
   </div>`;
 }
 
+// R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）：头像分区落在"我的资料"文本字段前面
+// （同一个"我是谁"故事的一部分）。<img> 起手 hidden——预览走鉴权 fetch（见文件头 avatarHref 注释），
+// 不能像 web 端那样直接给 src；createSettingsView().mount 的 renderAll() 每次全量重绘后异步把
+// blob URL 塞回来（hydrateAvatarPreview），拉不到/没头像就保持回退首字母 tile。
+function avatarSectionHtml(profile: UserProfileVM | undefined, profileFailed: boolean, zh: boolean): string {
+  if (profileFailed || !profile) {
+    return "";
+  }
+  const initial = (profile.nickname ?? "").trim();
+  const fallbackLetter = initial ? initial[0]!.toUpperCase() : "?";
+  return `<div class="wh-spot-set-group" data-spot-avatar-section="true">
+    <div class="wh-spot-set-label">${zh ? "头像" : "Avatar"}</div>
+    <div class="wh-spot-avatar-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="wh-spot-avatar-preview" data-spot-avatar-preview="true" style="position:relative;display:inline-flex;width:44px;height:44px;flex:0 0 auto;border-radius:50%;overflow:hidden;background:var(--ds-ink-faint)">
+        <span class="wh-spot-avatar-fallback" data-spot-avatar-fallback="true" aria-hidden="true" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800">${escapeHtml(fallbackLetter)}</span>
+        <img class="wh-spot-avatar-img" data-spot-avatar-img="true" alt="${escapeHtml(zh ? "当前头像" : "Current avatar")}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" hidden />
+      </span>
+      <label class="wh-spot-act wh-spot-act--quiet ds-pressable wh-spot-upload-label" data-spot-avatar-upload-label="true">
+        <span>${zh ? "更换头像" : "Change avatar"}</span>
+        <input type="file" accept="image/png,image/jpeg,image/webp" class="wh-spot-file-input" data-spot-avatar-file-input="true" />
+      </label>
+      <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-spot-avatar-remove-btn="true" hidden>${zh ? "移除头像" : "Remove avatar"}</button>
+    </div>
+    <div class="wh-spot-row-sub" data-spot-avatar-status="true" hidden></div>
+  </div>`;
+}
+
 // R13 批 A2（派人推荐 v2）："我的资料"分区，落在 AI 分区旁边（P3 已规划的落点）。三个自由文本字段
 // （title/bio_md/skill_tags）用 focusout 委托保存（同一份 innerHTML 全量重绘架构下，逐字符 input
 // 事件会打断输入焦点——照 AI 分区已有的"点击即改即 PATCH，乐观更新+失败回滚"取舍，只是触发时机从
@@ -212,6 +259,7 @@ function settingsHtml(
     </div>
     ${aiSectionHtml(aiProfile, aiFailed, zh)}
     ${aiErrorText ? `<div class="wh-spot-row-sub" data-spot-ai-error="true" style="color:var(--ds-danger)">${escapeHtml(aiErrorText)}</div>` : ""}
+    ${avatarSectionHtml(profile, profileFailed, zh)}
     ${profileSectionHtml(profile, profileFailed, zh)}
     ${profileErrorText ? `<div class="wh-spot-row-sub" data-spot-profile-error="true" style="color:var(--ds-danger)">${escapeHtml(profileErrorText)}</div>` : ""}
     <div class="wh-spot-row" style="cursor:default">
@@ -230,6 +278,260 @@ function settingsHtml(
   </div>`;
 }
 
+// R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增，追加拍板：必须支持用户自己裁剪，不能只做
+// 自动居中裁）——桌面 Spotlight 设置视图自己的裁剪层：选图后弹一个固定方形取景框，支持拖动平移
+// （Pointer Events）+ 缩放滑杆，确认后按取景框换算出源图区域、canvas 裁出 256x256 再走
+// PUT /api/me/avatar。取景框↔源图的坐标数学复用 packages/ui 的纯函数（同 apps/web/src/
+// avatar-crop-modal.ts 那份 web 端实现），DOM 编排各自独立成文——两端"薄 DOM 层各写一份、
+// 共享同一套坐标数学"是本批设计的既定取舍，不是遗漏了去重。
+//
+// SpotlightAvatarCropDeps 是这层相对"真实 DOM/Image/canvas"的唯一接缝：生产用
+// defaultSpotlightAvatarCropDeps（真浏览器 API），测试注入假 dom/假图片加载/假 canvas 编码——
+// createSettingsView() 本身可以在无 DOM 的 node:test 下 import（不像 apps/web/src/browser.ts
+// 顶层直接摸 document 那样一 import 就炸），但 mount() 内部的真实交互仍然离不开真 DOM，所以这个
+// 裁剪层同样需要走依赖注入才能被单测覆盖。
+const SPOTLIGHT_AVATAR_CROP_VIEWPORT_SIZE = 240;
+
+export type SpotlightAvatarCropElement = {
+  style: Record<string, string>;
+  className: string;
+  textContent: string | null;
+  hidden: boolean;
+  disabled?: boolean;
+  type?: string;
+  value?: string;
+  min?: string;
+  max?: string;
+  step?: string;
+  alt?: string;
+  appendChild(child: SpotlightAvatarCropElement): void;
+  remove(): void;
+  setAttribute(name: string, value: string): void;
+  addEventListener(type: string, handler: (event: any) => void): void;
+  setPointerCapture?(pointerId: number): void;
+};
+
+export type SpotlightAvatarCropRect = { sx: number; sy: number; sWidth: number; sHeight: number };
+
+export type SpotlightAvatarCropLoadedImage = {
+  previewElement: SpotlightAvatarCropElement;
+  drawSource: unknown;
+  naturalSize: NaturalSize;
+  release: () => void;
+};
+
+export type SpotlightAvatarCropDeps = {
+  createElement: (tag: string) => SpotlightAvatarCropElement;
+  appendToBody: (el: SpotlightAvatarCropElement) => void;
+  loadImage: (file: File) => Promise<SpotlightAvatarCropLoadedImage>;
+  renderCrop: (source: unknown, rect: SpotlightAvatarCropRect, outputSize: number) => Promise<Blob>;
+};
+
+export function defaultSpotlightAvatarCropDeps(): SpotlightAvatarCropDeps {
+  return {
+    createElement: (tag) => document.createElement(tag) as unknown as SpotlightAvatarCropElement,
+    appendToBody: (el) => document.body.appendChild(el as unknown as Node),
+    loadImage: (file) =>
+      new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+          resolve({
+            previewElement: image as unknown as SpotlightAvatarCropElement,
+            drawSource: image,
+            naturalSize: { width: image.naturalWidth, height: image.naturalHeight },
+            release: () => URL.revokeObjectURL(url)
+          });
+        };
+        image.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error("avatar_image_load_failed"));
+        };
+        image.src = url;
+      }),
+    renderCrop: (source, rect, outputSize) =>
+      new Promise((resolve, reject) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = outputSize;
+        canvas.height = outputSize;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("avatar_canvas_unavailable"));
+          return;
+        }
+        ctx.drawImage(source as CanvasImageSource, rect.sx, rect.sy, rect.sWidth, rect.sHeight, 0, 0, outputSize, outputSize);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              resolve(blob);
+              return;
+            }
+            canvas.toBlob((pngBlob) => {
+              if (pngBlob) {
+                resolve(pngBlob);
+              } else {
+                reject(new Error("avatar_encode_failed"));
+              }
+            }, "image/png");
+          },
+          "image/webp",
+          0.86
+        );
+      })
+  };
+}
+
+// 导出供测试注入假 deps；生产调用点（createSettingsView 的 mount 内部）不传第四参，走真浏览器 API。
+export function openSpotlightAvatarCropModal(
+  file: File,
+  zh: boolean,
+  onConfirm: (blob: Blob) => void | Promise<void>,
+  deps: SpotlightAvatarCropDeps = defaultSpotlightAvatarCropDeps()
+): Promise<void> {
+  return new Promise((resolveOpen, rejectOpen) => {
+    void deps
+      .loadImage(file)
+      .then((loaded) => {
+        let disposed = false;
+        let state: CropState = initialCropState(loaded.naturalSize, SPOTLIGHT_AVATAR_CROP_VIEWPORT_SIZE);
+
+        const overlay = deps.createElement("div");
+        overlay.className = "wh-spot-avatar-crop-overlay";
+        overlay.style.cssText =
+          "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(15,18,28,.55);z-index:2000";
+
+        const modal = deps.createElement("div");
+        modal.setAttribute("role", "dialog");
+        modal.setAttribute("aria-modal", "true");
+        modal.setAttribute("aria-label", zh ? "裁剪头像" : "Crop avatar");
+        modal.style.cssText =
+          "background:#fff;border-radius:16px;padding:20px;display:grid;gap:14px;max-width:calc(100vw - 32px)";
+
+        const title = deps.createElement("h3");
+        title.textContent = zh ? "裁剪头像" : "Crop avatar";
+        title.style.cssText = "margin:0;font-size:16px";
+
+        const viewport = deps.createElement("div");
+        viewport.style.cssText = `position:relative;width:${SPOTLIGHT_AVATAR_CROP_VIEWPORT_SIZE}px;height:${SPOTLIGHT_AVATAR_CROP_VIEWPORT_SIZE}px;overflow:hidden;border-radius:12px;background:#111;touch-action:none;cursor:grab`;
+
+        const previewEl = loaded.previewElement;
+        previewEl.style.position = "absolute";
+        previewEl.style.left = "0px";
+        previewEl.style.top = "0px";
+        previewEl.style.transformOrigin = "top left";
+        previewEl.alt = "";
+
+        const zoomSlider = deps.createElement("input");
+        zoomSlider.type = "range";
+        const minScale = minCropScale(loaded.naturalSize, SPOTLIGHT_AVATAR_CROP_VIEWPORT_SIZE);
+        const maxScale = maxCropScale(loaded.naturalSize, SPOTLIGHT_AVATAR_CROP_VIEWPORT_SIZE);
+        zoomSlider.min = String(minScale);
+        zoomSlider.max = String(maxScale);
+        zoomSlider.step = String((maxScale - minScale) / 200 || 0.001);
+        zoomSlider.value = String(state.scale);
+        zoomSlider.setAttribute("aria-label", zh ? "缩放" : "Zoom");
+
+        const hint = deps.createElement("p");
+        hint.textContent = zh
+          ? "拖动图片调整位置，用滑杆缩放，取景框内的区域会被保存为头像。"
+          : "Drag to reposition, use the slider to zoom — the area inside the frame becomes your avatar.";
+        hint.style.cssText = "margin:0;font-size:12px;color:#666";
+
+        const actions = deps.createElement("div");
+        actions.style.cssText = "display:flex;gap:10px;justify-content:flex-end";
+        const cancelBtn = deps.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "wh-spot-act wh-spot-act--quiet";
+        cancelBtn.textContent = zh ? "取消" : "Cancel";
+        const confirmBtn = deps.createElement("button");
+        confirmBtn.type = "button";
+        confirmBtn.className = "wh-spot-act wh-spot-act--primary";
+        confirmBtn.textContent = zh ? "确认" : "Confirm";
+
+        viewport.appendChild(previewEl);
+        actions.appendChild(cancelBtn);
+        actions.appendChild(confirmBtn);
+        modal.appendChild(title);
+        modal.appendChild(viewport);
+        modal.appendChild(zoomSlider);
+        modal.appendChild(hint);
+        modal.appendChild(actions);
+        overlay.appendChild(modal);
+        deps.appendToBody(overlay);
+
+        const applyState = () => {
+          previewEl.style.width = `${loaded.naturalSize.width * state.scale}px`;
+          previewEl.style.height = `${loaded.naturalSize.height * state.scale}px`;
+          previewEl.style.left = `${state.offset.x}px`;
+          previewEl.style.top = `${state.offset.y}px`;
+        };
+        applyState();
+
+        const close = () => {
+          if (disposed) {
+            return;
+          }
+          disposed = true;
+          overlay.remove();
+          loaded.release();
+        };
+
+        let dragging = false;
+        let dragStart = { x: 0, y: 0 };
+        let dragBase = state;
+        viewport.addEventListener("pointerdown", (event: PointerEvent) => {
+          dragging = true;
+          dragStart = { x: event.clientX, y: event.clientY };
+          dragBase = state;
+          viewport.setPointerCapture?.(event.pointerId);
+        });
+        viewport.addEventListener("pointermove", (event: PointerEvent) => {
+          if (!dragging) {
+            return;
+          }
+          const delta = { x: event.clientX - dragStart.x, y: event.clientY - dragStart.y };
+          state = panCropBy(dragBase, delta, loaded.naturalSize, SPOTLIGHT_AVATAR_CROP_VIEWPORT_SIZE);
+          applyState();
+        });
+        const endDrag = () => {
+          dragging = false;
+        };
+        viewport.addEventListener("pointerup", endDrag);
+        viewport.addEventListener("pointercancel", endDrag);
+
+        zoomSlider.addEventListener("input", () => {
+          const next = Number(zoomSlider.value);
+          state = zoomCropTo(state, Number.isFinite(next) ? next : state.scale, loaded.naturalSize, SPOTLIGHT_AVATAR_CROP_VIEWPORT_SIZE);
+          zoomSlider.value = String(state.scale);
+          applyState();
+        });
+
+        cancelBtn.addEventListener("click", () => {
+          close();
+          resolveOpen();
+        });
+
+        confirmBtn.addEventListener("click", () => {
+          const rect = cropSourceRect(state, SPOTLIGHT_AVATAR_CROP_VIEWPORT_SIZE);
+          void deps
+            .renderCrop(loaded.drawSource, rect, AVATAR_CROP_OUTPUT_SIZE)
+            .then((blob) => {
+              close();
+              return onConfirm(blob);
+            })
+            .then(() => resolveOpen())
+            .catch((error: unknown) => {
+              close();
+              rejectOpen(error);
+            });
+        });
+      })
+      .catch((error: unknown) => {
+        rejectOpen(error);
+      });
+  });
+}
+
 export function createSettingsView(): SpotlightCapabilityView {
   return {
     id: "settings",
@@ -246,7 +548,58 @@ export function createSettingsView(): SpotlightCapabilityView {
       let profile: UserProfileVM | undefined;
       let profileFailed = false;
       let profileErrorText: string | undefined;
+      // R14 批 AVATAR：头像预览走鉴权 fetch（见文件头 avatarHref 注释），拿到的 blob URL 只在
+      // 本次挂载生命周期内有效——单调代次防止连续快速重渲（比如连点 AI 分区开关）时晚到的预览
+      // 覆盖新一轮渲染；dispose 时连同最后一个 blob URL 一起释放，不留内存泄漏。
+      let avatarHydrateGen = 0;
+      let lastAvatarObjectUrl: string | undefined;
       ctx.setSubtitle(zh ? "偏好与状态" : "Preferences & status");
+
+      const revokeAvatarObjectUrl = () => {
+        if (lastAvatarObjectUrl) {
+          URL.revokeObjectURL(lastAvatarObjectUrl);
+          lastAvatarObjectUrl = undefined;
+        }
+      };
+
+      // 头像预览：<img> 不能像 web 端那样直接给 src——桌面鉴权是 client-token 走响应体，不是
+      // cookie，<img src> 直连拿不到鉴权头。走 fetchDriveResource（同网盘那套授权 fetch + 401
+      // 自愈重试）拿字节转 blob URL；404（没设头像）或任何失败都安静回退首字母 tile，不报错闪烁。
+      function hydrateAvatarPreview(): void {
+        if (!profile) {
+          return;
+        }
+        const img = ctx.body.querySelector<HTMLImageElement>("[data-spot-avatar-img]");
+        const removeBtn = ctx.body.querySelector<HTMLElement>("[data-spot-avatar-remove-btn]");
+        if (!img) {
+          return;
+        }
+        const gen = ++avatarHydrateGen;
+        const href = `${driveResourceApiBase()}${avatarHref(profile.user_id)}`;
+        void fetchDriveResource(href)
+          .then((response) => {
+            if (disposed || gen !== avatarHydrateGen || !response.ok) {
+              return undefined;
+            }
+            return response.blob();
+          })
+          .then((blob) => {
+            if (!blob || disposed || gen !== avatarHydrateGen) {
+              return;
+            }
+            revokeAvatarObjectUrl();
+            const url = URL.createObjectURL(blob);
+            lastAvatarObjectUrl = url;
+            img.src = url;
+            img.hidden = false;
+            if (removeBtn) {
+              removeBtn.hidden = false;
+            }
+          })
+          .catch(() => {
+            // best-effort：留在回退首字母 tile 上，不报错、不重试轮询。
+          });
+      }
 
       const renderAll = () => {
         if (!vm) {
@@ -254,6 +607,7 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
         ctx.body.innerHTML = settingsHtml(vm, zh, aiProfile, aiFailed, aiErrorText, profile, profileFailed, profileErrorText);
         ctx.requestResize();
+        hydrateAvatarPreview();
       };
 
       const loadAiProfile = async () => {
@@ -395,6 +749,34 @@ export function createSettingsView(): SpotlightCapabilityView {
             });
           return;
         }
+        // R14 批 AVATAR：移除头像——DELETE 成功后隐藏预览图+按钮本身（回退首字母 tile 自然露出）。
+        const removeAvatarBtn = target.closest<HTMLElement>("[data-spot-avatar-remove-btn]");
+        if (removeAvatarBtn) {
+          const status = ctx.body.querySelector<HTMLElement>("[data-spot-avatar-status]");
+          const setAvatarStatus = (text: string) => {
+            if (!status) return;
+            status.hidden = false;
+            status.textContent = text;
+          };
+          setAvatarStatus(zh ? "正在移除…" : "Removing…");
+          void ctx.client
+            .request(AVATAR_PATH, { method: "DELETE" })
+            .then(() => {
+              if (disposed) return;
+              revokeAvatarObjectUrl();
+              const img = ctx.body.querySelector<HTMLImageElement>("[data-spot-avatar-img]");
+              if (img) {
+                img.hidden = true;
+              }
+              removeAvatarBtn.hidden = true;
+              setAvatarStatus(zh ? "已移除头像" : "Avatar removed");
+            })
+            .catch(() => {
+              if (disposed) return;
+              setAvatarStatus(zh ? "移除失败，请重试" : "Failed to remove — please try again");
+            });
+          return;
+        }
         const loc = target.closest<HTMLElement>("[data-set-locale]");
         if (loc?.dataset.setLocale && loc.dataset.sel !== "true") {
           const next = loc.dataset.setLocale;
@@ -457,6 +839,47 @@ export function createSettingsView(): SpotlightCapabilityView {
         }
       });
 
+      // R14 批 AVATAR：文件选择器 change——开裁剪层（选图→拖动/缩放→确认才真正上传，见
+      // openSpotlightAvatarCropModal 顶部注释），取消什么都不发生。change 委托监听（不是绑到单个
+      // input 上，同这个文件其余交互一样走 ctx.body 一处委托）。
+      ctx.body.addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        const fileInput = target.closest<HTMLInputElement>("[data-spot-avatar-file-input]");
+        if (!fileInput) {
+          return;
+        }
+        const file = fileInput.files?.[0];
+        fileInput.value = "";
+        if (!file || !profile) {
+          return;
+        }
+        const status = ctx.body.querySelector<HTMLElement>("[data-spot-avatar-status]");
+        const setAvatarStatus = (text: string) => {
+          if (!status) return;
+          status.hidden = false;
+          status.textContent = text;
+        };
+        void openSpotlightAvatarCropModal(file, zh, async (blob) => {
+          setAvatarStatus(zh ? "正在上传…" : "Uploading…");
+          try {
+            await ctx.client.request(AVATAR_PATH, {
+              method: "PUT",
+              headers: { "Content-Type": blob.type || "application/octet-stream" },
+              body: blob
+            });
+            if (disposed) return;
+            setAvatarStatus(zh ? "头像已更新" : "Avatar updated");
+            hydrateAvatarPreview();
+          } catch {
+            if (disposed) return;
+            setAvatarStatus(zh ? "上传失败，请重试" : "Upload failed — please try again");
+          }
+        });
+      });
+
       // —— "我的资料"分区：自由文本字段用 focusout（离开字段时才触发，不是逐字符的 input）保存 ——
       // 同一份 innerHTML 全量重绘架构下，input 事件会在用户还在打字时就把 DOM 重建掉，打断输入焦点；
       // focusout 本身就意味着用户已经离开这个字段，这时候重绘不会有体验代价（同 AI 分区的按钮点击
@@ -496,6 +919,7 @@ export function createSettingsView(): SpotlightCapabilityView {
 
       return () => {
         disposed = true;
+        revokeAvatarObjectUrl();
       };
     }
   };

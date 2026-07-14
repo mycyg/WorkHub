@@ -2577,6 +2577,41 @@ test("R13-A2 settings route renders the my-profile block: locked inputs for hydr
   assert.equal(settings.html.includes("data-r13-settings-profile-retry"), true);
 });
 
+// R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）：设置页「我的资料」卡加头像位——
+// 圆形预览（回退首字母 tile）+ 隐藏 file input（label 触发,disabled 直到 browser.ts 水合出真实
+// user_id）+ 移除按钮。裁剪层本身是浏览器端交互产物，不在 SSR 字符串里，这里只钉 SSR 骨架的形状。
+test("R14 AVATAR settings route renders the avatar block: fallback tile + disabled file input + hidden remove button", () => {
+  const vm = surfaceVm();
+  const settings = renderWebRouteComponents(vm, { locale: "zh-CN" }).settings;
+
+  assert.ok(settings);
+  assert.equal(settings.html.includes('data-r14-settings-avatar-row="true"'), true);
+  assert.equal(settings.html.includes('data-r14-avatar-preview="true"'), true);
+  assert.equal(settings.html.includes('data-r14-avatar-fallback="true"'), true);
+  // The <img> starts hidden — browser.ts reveals it only after a successful load, falling back
+  // to the initial-letter tile via onerror (no head/tone-deaf attempt to guess avatar existence at SSR time).
+  assert.match(settings.html, /data-r14-avatar-img="true"[^>]*hidden/u);
+  // The file input is disabled until browser.ts hydrates the real user_id from GET /me/profile —
+  // uploading before we know who "me" is would be a race, same discipline as the text fields above.
+  assert.match(settings.html, /data-r14-avatar-file-input="true"[^>]*disabled/u);
+  assert.match(settings.html, /accept="image\/png,image\/jpeg,image\/webp"/u);
+  // The remove button starts hidden+disabled — browser.ts reveals it only once it confirms an avatar exists.
+  assert.match(settings.html, /data-r14-avatar-remove-btn="true"[^>]*hidden[^>]*disabled/u);
+  assert.match(settings.html, /更换头像/u);
+  assert.match(settings.html, /移除头像/u);
+});
+
+test("R14 AVATAR settings route avatar copy has no emoji and no git jargon", () => {
+  const vm = surfaceVm();
+  const settings = renderWebRouteComponents(vm, { locale: "zh-CN" }).settings;
+
+  assert.ok(settings);
+  const avatarRowStart = settings.html.indexOf('data-r14-settings-avatar-row="true"');
+  const avatarRowHtml = settings.html.slice(avatarRowStart, avatarRowStart + 900);
+  assert.doesNotMatch(avatarRowHtml, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "no emoji in avatar copy");
+  assert.doesNotMatch(avatarRowHtml, /\bCuu\b/u, "web copy must never say Cuu");
+});
+
 test("R4.16 route components expose hydration boundary metadata without weakening markers", () => {
   const vm = {
     ...surfaceVm(),

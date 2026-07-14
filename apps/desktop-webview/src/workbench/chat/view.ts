@@ -17,6 +17,7 @@ import { WorkHubApiError } from "@workhub/api-client";
 import type { AiMode, ConversationKind, ConversationMessageVM, Notification } from "@workhub/contracts";
 
 import { fetchConversationArmyPanel } from "../army/api.js";
+import { driveResourceApiBase, fetchDriveResource } from "../../spotlight/views/drive.js";
 import {
   decideActionCardItem,
   fetchConversationMessagesPage,
@@ -211,6 +212,56 @@ export function clampPickerHighlight(current: number | undefined, count: number)
   return Math.min(Math.max(current, 0), count - 1);
 }
 
+// R14 批 AVATAR（头像与资料入口，2026-07-14 用户点名新增）：把 render.ts 打了 data-wb-avatar-user-id
+// 标记的色块 tile（消息行/成员条）换成真实头像图（若该用户设了头像）。桌面鉴权是 client-token 走
+// 响应体，不是 cookie——<img src="/api/users/:id/avatar"> 直连拿不到鉴权头，必须走 fetchDriveResource
+// 那套已有的授权 fetch + 401 自愈重试（同网盘文件预览同一份逻辑），拿字节转 blob URL 再叠一个 <img>
+// 到色块之上；无头像（404）/请求失败都静默保留色块，不重试轮询、不报错。
+//
+// avatarPhotoCache 按 userId 缓存 blob URL 的 Promise（模块级，跨会话/跨挂载复用）——群聊消息列表
+// 全量重绘架构下，同一个人发的每一条消息、每一次重渲染都会重新拿到一个"新"色块 tile（旧 DOM 连同
+// 已经挂上的 <img> 一起被 innerHTML 整个替换掉），不缓存字节的话会对同一个用户反复发相同的鉴权请求。
+// 有意不做缓存失效/blob URL 回收：桌面客户端进程生命周期内，一个工作区的真人成员数量是几十量级，
+// 常驻这点 blob URL 的内存开销可忽略；用户中途换头像要等下次启动客户端才能看见新图——同一批设计
+// 取舍下可接受（同 mountChatView 本身没有 dispose 时清理网络缓存的既有先例）。
+const avatarPhotoCache = new Map<string, Promise<string | null>>();
+
+function fetchAvatarPhotoObjectUrl(userId: string): Promise<string | null> {
+  const cached = avatarPhotoCache.get(userId);
+  if (cached) {
+    return cached;
+  }
+  const promise = fetchDriveResource(`${driveResourceApiBase()}/api/users/${encodeURIComponent(userId)}/avatar`)
+    .then((response) => (response.ok ? response.blob() : null))
+    .then((blob) => (blob ? URL.createObjectURL(blob) : null))
+    .catch(() => null);
+  avatarPhotoCache.set(userId, promise);
+  return promise;
+}
+
+// 命令式步骤，在任何一次把带 data-wb-avatar-user-id 标记的 HTML 塞进真实 DOM 之后调用
+// （renderScroll/renderScrollPreservingTopAnchor 的消息列表、成员条的 renderMemberBarHtml）。
+export function hydrateAvatarPhotos(root: ParentNode): void {
+  const tiles = root.querySelectorAll<HTMLElement>("[data-wb-avatar-user-id]");
+  tiles.forEach((tile) => {
+    const userId = tile.dataset.wbAvatarUserId;
+    if (!userId) {
+      return;
+    }
+    void fetchAvatarPhotoObjectUrl(userId).then((url) => {
+      if (!url || !tile.isConnected) {
+        return;
+      }
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = url;
+      img.style.cssText = "position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover";
+      tile.style.position = "relative";
+      tile.appendChild(img);
+    });
+  });
+}
+
 export function mountChatView(
   container: HTMLElement,
   input: {
@@ -364,6 +415,7 @@ export function mountChatView(
   }
 
   headEl.innerHTML = renderMemberBarHtml({ members: input.members, locale: input.locale });
+  hydrateAvatarPhotos(headEl);
 
   function textareaEl(): HTMLTextAreaElement | null {
     return composerWrapEl!.querySelector<HTMLTextAreaElement>("[data-wb-chat-input]");
@@ -546,6 +598,7 @@ export function mountChatView(
       return;
     }
     el.innerHTML = buildScrollBodyHtml();
+    hydrateAvatarPhotos(el);
     if (wasNearBottom) {
       el.scrollTop = el.scrollHeight;
     }
@@ -560,6 +613,7 @@ export function mountChatView(
     const beforeHeight = el.scrollHeight;
     const beforeTop = el.scrollTop;
     el.innerHTML = buildScrollBodyHtml();
+    hydrateAvatarPhotos(el);
     el.scrollTop = beforeTop + (el.scrollHeight - beforeHeight);
   }
 

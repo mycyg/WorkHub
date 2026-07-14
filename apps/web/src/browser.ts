@@ -9,6 +9,7 @@ import {
 } from "@workhub/ui/gold-path";
 import { renderProposalConflictCards } from "@workhub/ui/proposal";
 import { renderOnboardingScreen } from "@workhub/ui";
+import { openAvatarCropModal } from "./avatar-crop-modal.js";
 import {
   acceptedDeliverableRestoreFromHref,
   actionElementApplyPayload,
@@ -2038,6 +2039,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindNotificationMutePanel(root, result, client, locale, signal);
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
   bindSettingsMyProfilePanel(root, result, client, locale, signal);
+  bindSettingsAvatarPanel(root, result, client, locale, signal);
   bindLiveRouteStreams(result, client, locale);
 }
 
@@ -2447,6 +2449,135 @@ function bindSettingsMyProfilePanel(
           skillsInput.value = lastSaved.skill_tags.join(", ");
         }
       });
+    },
+    { signal }
+  );
+}
+
+// R14 批 AVATAR：设置页「我的资料」卡的头像位。GET /api/me/profile 已经在 bindSettingsMyProfilePanel
+// 里拉过一次（user_id/nickname）——这里独立再拉一次同一个只读端点（各自水合、互不依赖对方的水合
+// 时序，与 AI 面板/资料面板两个独立绑定函数同一套分工，避免一处失败连累另一处）。无头像回退：<img>
+// 一律尝试加载 /api/users/{id}/avatar，onerror 隐藏、露出下层首字母色块 tile（不改 Cuu 猫头像）。
+function bindSettingsAvatarPanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "settings") {
+    return;
+  }
+  const panel = container.querySelector<HTMLElement>("[data-r13-settings-profile-panel]");
+  if (!panel) {
+    return;
+  }
+  const fallback = panel.querySelector<HTMLElement>("[data-r14-avatar-fallback]");
+  const img = panel.querySelector<HTMLImageElement>("[data-r14-avatar-img]");
+  const fileInput = panel.querySelector<HTMLInputElement>("[data-r14-avatar-file-input]");
+  const removeBtn = panel.querySelector<HTMLButtonElement>("[data-r14-avatar-remove-btn]");
+  const status = panel.querySelector<HTMLElement>("[data-r14-avatar-status]");
+  if (!fallback || !img || !fileInput || !removeBtn) {
+    return;
+  }
+  const zh = locale === "zh-CN";
+  let userId: string | undefined;
+
+  const setStatus = (text: string, tone: "saving" | "saved" | "error") => {
+    if (!status) {
+      return;
+    }
+    status.hidden = false;
+    status.textContent = text;
+    status.setAttribute("data-r14-avatar-status", tone);
+  };
+
+  const showAvatarUrl = (url: string) => {
+    img.onerror = () => {
+      img.hidden = true;
+    };
+    img.onload = () => {
+      img.hidden = false;
+      removeBtn.hidden = false;
+      removeBtn.disabled = false;
+    };
+    img.src = url;
+  };
+
+  const hydrate = async () => {
+    try {
+      const profile = await client.request<{ user_id: string; nickname: string }>("/api/me/profile");
+      if (signal.aborted) {
+        return;
+      }
+      userId = profile.user_id;
+      const initial = profile.nickname.trim();
+      fallback.textContent = initial ? initial[0]!.toUpperCase() : "?";
+      fileInput.disabled = false;
+      showAvatarUrl(`/api/users/${encodeURIComponent(userId)}/avatar`);
+    } catch {
+      // best-effort：拉不到 user_id 就没法上传/删除头像，保持文件输入禁用、头像位安静显示回退 tile。
+    }
+  };
+  void hydrate();
+
+  fileInput.addEventListener(
+    "change",
+    () => {
+      const file = fileInput.files?.[0];
+      fileInput.value = "";
+      if (!file || !userId) {
+        return;
+      }
+      const activeUserId = userId;
+      void openAvatarCropModal(file, zh, async (blob) => {
+        setStatus(zh ? "正在上传…" : "Uploading…", "saving");
+        try {
+          await client.request(`/api/me/avatar`, {
+            method: "PUT",
+            headers: { "Content-Type": blob.type || "application/octet-stream" },
+            body: blob
+          });
+          if (signal.aborted) {
+            return;
+          }
+          setStatus(zh ? "头像已更新" : "Avatar updated", "saved");
+          showAvatarUrl(`/api/users/${encodeURIComponent(activeUserId)}/avatar?v=${Date.now()}`);
+        } catch {
+          if (signal.aborted) {
+            return;
+          }
+          setStatus(zh ? "上传失败，请重试" : "Upload failed — please try again", "error");
+        }
+      });
+    },
+    { signal }
+  );
+
+  removeBtn.addEventListener(
+    "click",
+    () => {
+      if (!userId) {
+        return;
+      }
+      setStatus(zh ? "正在移除…" : "Removing…", "saving");
+      void client
+        .request(`/api/me/avatar`, { method: "DELETE" })
+        .then(() => {
+          if (signal.aborted) {
+            return;
+          }
+          img.hidden = true;
+          removeBtn.hidden = true;
+          removeBtn.disabled = true;
+          setStatus(zh ? "已移除头像" : "Avatar removed", "saved");
+        })
+        .catch(() => {
+          if (signal.aborted) {
+            return;
+          }
+          setStatus(zh ? "移除失败，请重试" : "Failed to remove — please try again", "error");
+        });
     },
     { signal }
   );
