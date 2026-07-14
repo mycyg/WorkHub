@@ -27,7 +27,12 @@ import type {
   TaskPlanVM,
   GoldPathSurfaceVM,
   WorkItemAgentTeamVM,
-  WorkItemDetailVM
+  WorkItemDetailVM,
+  // R14 批 MEM（记忆可见可治理）：/settings/memory 两 tab 的管理面 VM。
+  UserMemoryManagementPageVM,
+  UserMemoryManagementItemVM,
+  TeamSkillManagementPageVM,
+  TeamSkillManagementItemVM
 } from "@workhub/contracts";
 
 import { personAvatarTileHtml } from "../avatar/avatar-tile.js";
@@ -64,8 +69,8 @@ import {
 import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type WorkHubLocale } from "./i18n.js";
 import type { GoldPathRenderedPage } from "./render.js";
 
-// "agents"/"skills"/"projects"/"project-home" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "search" | "settings"> | "agents" | "skills" | "projects" | "project-home";
+// "agents"/"skills"/"projects"/"project-home"/"memory" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "search" | "settings"> | "agents" | "skills" | "projects" | "project-home" | "memory";
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -230,7 +235,18 @@ export const webRouteComponentCss = [
   // .wh-avatar-img 三个 class，只加尺寸 modifier，不重开一套视觉；margin-right 兼顾内联文本前缀
   // （p/strong 里直接拼接）与 .wh-r4-route-meta 里 flex 兄弟节点两种用法。
   ".wh-avatar-preview--sm{width:18px;height:18px;margin-right:6px;vertical-align:-4px}",
-  ".wh-avatar-preview--sm .wh-avatar-fallback{font-size:10px}"
+  ".wh-avatar-preview--sm .wh-avatar-fallback{font-size:10px}",
+  // R14 批 MEM（记忆可见可治理）：/settings/memory 两 tab（关于我/团队技能）——tab 切换条 + 记忆/
+  // 技能列表卡片内的编辑态（整段替换 textarea / K2 段落级 op 行）+ 两段式确认（armed）危险按钮态。
+  ".wh-r14-mem-tabs{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--wh-product-line,#E6E7EB);padding-bottom:2px}",
+  ".wh-r14-mem-tab{border:0;background:transparent;padding:10px 4px;font-weight:800;color:var(--wh-product-muted,#66728c);cursor:pointer;border-bottom:2px solid transparent}",
+  ".wh-r14-mem-tab[aria-selected=true]{color:var(--wh-product-blue,#4F46E5);border-bottom-color:var(--wh-product-blue,#4F46E5)}",
+  ".wh-r14-mem-panel[hidden]{display:none}",
+  ".wh-r14-mem-textarea{width:100%;min-height:88px;resize:vertical;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:10px 12px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:rgba(255,255,255,.92);overflow-wrap:anywhere}",
+  ".wh-r14-mem-textarea:disabled{opacity:.6}",
+  "[data-r14-mem-delete-btn][data-r9-confirm-armed=true],[data-r14-skill-deactivate-btn][data-r9-confirm-armed=true]{background:#fff1ef;color:#d64545;border-color:#f3c5c0}",
+  ".wh-r14-mem-op-row{display:grid;gap:6px;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:10px;margin-top:8px}",
+  ".wh-r14-mem-op-row select,.wh-r14-mem-op-row input{font:inherit;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:8px;padding:6px 8px;background:rgba(255,255,255,.92);color:var(--wh-product-ink,#172033)}"
 ].join("");
 
 type RouteCopyKey =
@@ -458,7 +474,33 @@ type RouteCopyKey =
   | "settings.petBoundary"
   | "settings.desktopGate"
   | "settings.webLocalActions"
-  | "settings.restore";
+  | "settings.restore"
+  // R14 批 MEM（记忆可见可治理）：/settings/memory 两 tab（关于我/团队技能）静态文案。
+  | "memory.kicker"
+  | "memory.title"
+  | "memory.summary"
+  | "memory.tabProfile"
+  | "memory.tabSkills"
+  | "memory.profileEmpty"
+  | "memory.category.preference"
+  | "memory.category.correction"
+  | "memory.category.recurring_context"
+  | "memory.provenanceUnknown"
+  | "memory.edit"
+  | "memory.save"
+  | "memory.cancel"
+  | "memory.delete"
+  | "memory.deleteConfirm"
+  | "memory.deleteHint"
+  | "memory.skillsEmpty"
+  | "memory.status.draft"
+  | "memory.status.active"
+  | "memory.status.deprecated"
+  | "memory.deactivate"
+  | "memory.deactivateConfirm"
+  | "memory.adminOnlyNote"
+  | "memory.humanEdited"
+  | "memory.reasonPlaceholder";
 
 const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
   "zh-CN": {
@@ -686,7 +728,32 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.petBoundary": "桌宠形象在独立窗口里设置",
     "settings.desktopGate": "桌面功能开关",
     "settings.webLocalActions": "网页端本地操作",
-    "settings.restore": "恢复入口"
+    "settings.restore": "恢复入口",
+    "memory.kicker": "记忆与技能",
+    "memory.title": "记忆管理",
+    "memory.summary": "查看并管理 AI 助手记住的关于你的偏好，以及团队共享的技能库。",
+    "memory.tabProfile": "关于我",
+    "memory.tabSkills": "团队技能",
+    "memory.profileEmpty": "AI 助手还没有记住关于你的任何偏好。",
+    "memory.category.preference": "偏好",
+    "memory.category.correction": "纠正",
+    "memory.category.recurring_context": "常用上下文",
+    "memory.provenanceUnknown": "早期记录，出处不明",
+    "memory.edit": "编辑",
+    "memory.save": "保存",
+    "memory.cancel": "取消",
+    "memory.delete": "删除",
+    "memory.deleteConfirm": "确定删除？再点一次",
+    "memory.deleteHint": "删除后 AI 助手将忘记这条。",
+    "memory.skillsEmpty": "还没有沉淀出团队技能。",
+    "memory.status.draft": "草稿",
+    "memory.status.active": "在用",
+    "memory.status.deprecated": "已停用",
+    "memory.deactivate": "停用",
+    "memory.deactivateConfirm": "确定停用？再点一次",
+    "memory.adminOnlyNote": "编辑与停用仅管理员可操作。",
+    "memory.humanEdited": "管理员手改",
+    "memory.reasonPlaceholder": "停用原因（可选）"
   },
   "en-US": {
     "workitem.context": "Task context",
@@ -913,7 +980,32 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "settings.petBoundary": "Pet look is not configured in the Web main window",
     "settings.desktopGate": "Desktop capability gate",
     "settings.webLocalActions": "Web local actions",
-    "settings.restore": "Recovery entry"
+    "settings.restore": "Recovery entry",
+    "memory.kicker": "Memory & skills",
+    "memory.title": "Memory management",
+    "memory.summary": "Review and manage what the AI assistant remembers about you, plus the team's shared skill library.",
+    "memory.tabProfile": "About me",
+    "memory.tabSkills": "Team skills",
+    "memory.profileEmpty": "The AI assistant hasn't learned any preferences about you yet.",
+    "memory.category.preference": "Preference",
+    "memory.category.correction": "Correction",
+    "memory.category.recurring_context": "Recurring context",
+    "memory.provenanceUnknown": "Early record, source unknown",
+    "memory.edit": "Edit",
+    "memory.save": "Save",
+    "memory.cancel": "Cancel",
+    "memory.delete": "Delete",
+    "memory.deleteConfirm": "Really delete? Click again",
+    "memory.deleteHint": "The AI assistant will forget this once deleted.",
+    "memory.skillsEmpty": "No team skills yet.",
+    "memory.status.draft": "Draft",
+    "memory.status.active": "Active",
+    "memory.status.deprecated": "Deprecated",
+    "memory.deactivate": "Deactivate",
+    "memory.deactivateConfirm": "Really deactivate? Click again",
+    "memory.adminOnlyNote": "Editing and deactivating are admin-only.",
+    "memory.humanEdited": "Manually edited",
+    "memory.reasonPlaceholder": "Deactivation reason (optional)"
   }
 };
 
@@ -3861,6 +3953,158 @@ function renderTeamSkillsRouteComponent(vm: TeamSkillsPageVM, locale: WorkHubLoc
   });
 }
 
+// R14 批 MEM（记忆可见可治理）：出处三级降级已由服务端拼好 provenance.label（见 03-mem-design §2.3）；
+// 前端只在完全没有 provenance 时兜底显示「早期记录，出处不明」，绝不留空白或显示 null 字样。
+function memoryProvenanceLabel(item: UserMemoryManagementItemVM, locale: WorkHubLocale): string {
+  return item.provenance?.label ?? routeT(locale, "memory.provenanceUnknown");
+}
+
+function memoryCategoryLabel(category: UserMemoryManagementItemVM["category"], locale: WorkHubLocale): string {
+  const key = `memory.category.${category}` as RouteCopyKey;
+  return routeT(locale, key);
+}
+
+function renderMemoryProfileItem(item: UserMemoryManagementItemVM, locale: WorkHubLocale): string {
+  const zh = locale === "zh-CN";
+  const editedLine = item.edited_at
+    ? `<p class="wh-subtle" data-r14-mem-edited="true">${escapeHtml(zh ? `最近由你于 ${item.edited_at.slice(0, 10)} 修改` : `Last edited by you on ${item.edited_at.slice(0, 10)}`)}</p>`
+    : "";
+  return `<article class="wh-card wh-r4-route-card" data-r14-mem-item="${escapeHtml(item.id)}" data-r14-mem-updated-at="${escapeHtml(item.updated_at)}">
+    <div class="wh-r4-route-meta">
+      <span class="wh-pill">${escapeHtml(memoryCategoryLabel(item.category, locale))}</span>
+      ${item.workspace_scoped ? "" : `<span class="wh-pill">${escapeHtml(zh ? "全局" : "Global")}</span>`}
+    </div>
+    <p data-r14-mem-value-view="true">${escapeHtml(item.value_md)}</p>
+    <textarea class="wh-r14-mem-textarea" data-r14-mem-value-input maxlength="2000" hidden>${escapeHtml(item.value_md)}</textarea>
+    <p class="wh-subtle" data-r14-mem-provenance="true">${escapeHtml(memoryProvenanceLabel(item, locale))}</p>
+    ${editedLine}
+    <p class="wh-subtle" data-r14-mem-status="true" hidden></p>
+    <p class="wh-subtle" data-r14-mem-delete-hint="true" hidden>${escapeHtml(routeT(locale, "memory.deleteHint"))}</p>
+    <div class="wh-r4-route-actions">
+      <button type="button" class="wh-btn" data-r14-mem-edit-btn="true" data-r14-mem-id="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "memory.edit"))}</button>
+      <button type="button" class="wh-btn wh-btn-primary" data-r14-mem-save-btn="true" hidden>${escapeHtml(routeT(locale, "memory.save"))}</button>
+      <button type="button" class="wh-btn" data-r14-mem-cancel-btn="true" hidden>${escapeHtml(routeT(locale, "memory.cancel"))}</button>
+      <button type="button" class="wh-btn wh-btn-danger" data-r14-mem-delete-btn="true" data-r14-mem-id="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "memory.delete"))}</button>
+    </div>
+  </article>`;
+}
+
+function renderMemoryProfilePanel(vm: UserMemoryManagementPageVM, locale: WorkHubLocale, active: boolean): string {
+  const items = vm.memories.length
+    ? vm.memories.map((item) => renderMemoryProfileItem(item, locale)).join("")
+    : `<p class="wh-subtle" data-r14-mem-profile-empty="true">${escapeHtml(routeT(locale, "memory.profileEmpty"))}</p>`;
+  return `<section class="wh-r14-mem-panel" role="tabpanel" id="wh-r14-mem-panel-profile" aria-labelledby="wh-r14-mem-tab-profile" data-r14-mem-profile-panel="true" data-r14-mem-active-count="${escapeHtml(String(vm.totals.active))}" ${active ? "" : "hidden"}>
+    <div class="wh-r4-route-grid">${items}</div>
+  </section>`;
+}
+
+// K2 段落级受限编辑补丁（最多 TEAM_SKILL_MAX_EDIT_OPS=3 个 op）的最简 UI：一个可见 op 行 + 「加一处修改」
+// 按钮逐步露出第 2/3 行——不强套复杂 diff 编辑器，普通管理员日常只改一段的场景一步到位。
+function renderMemorySkillOpRow(index: number, locale: WorkHubLocale, visible: boolean): string {
+  const zh = locale === "zh-CN";
+  return `<div class="wh-r14-mem-op-row" data-r14-skill-op-row="${index}" ${visible ? "" : "hidden"}>
+    <select data-r14-skill-op-type aria-label="${escapeHtml(zh ? "操作类型" : "Operation")}">
+      <option value="">${escapeHtml(zh ? "（不改这一行）" : "(leave unchanged)")}</option>
+      <option value="add_section">${escapeHtml(zh ? "新增段落" : "Add section")}</option>
+      <option value="modify_section">${escapeHtml(zh ? "修改段落" : "Modify section")}</option>
+      <option value="remove_section">${escapeHtml(zh ? "删除段落" : "Remove section")}</option>
+    </select>
+    <input type="text" data-r14-skill-op-section maxlength="80" placeholder="${escapeHtml(zh ? "段落标题，如：边界情况" : "Section title, e.g. Edge cases")}" aria-label="${escapeHtml(zh ? "段落标题" : "Section title")}" />
+    <textarea class="wh-r14-mem-textarea" data-r14-skill-op-content maxlength="4000" placeholder="${escapeHtml(zh ? "段落正文（新增/修改时需要）" : "Section body (required for add/modify)")}" aria-label="${escapeHtml(zh ? "段落正文" : "Section body")}"></textarea>
+  </div>`;
+}
+
+function renderMemorySkillItem(item: TeamSkillManagementItemVM, locale: WorkHubLocale, isAdmin: boolean): string {
+  const zh = locale === "zh-CN";
+  const statusKey = `memory.status.${item.status}` as RouteCopyKey;
+  const badges = [
+    `<span class="wh-pill">${escapeHtml(`${routeT(locale, "skills.version")} v${item.version}`)}</span>`,
+    `<span class="wh-pill" data-r14-skill-status="${escapeHtml(item.status)}">${escapeHtml(routeT(locale, statusKey))}</span>`,
+    item.created_by_kind === "ai"
+      ? `<span class="wh-pill">${escapeHtml(routeT(locale, "skills.aiAuthored"))}</span>`
+      : `<span class="wh-pill">${escapeHtml(routeT(locale, "memory.humanEdited"))}</span>`,
+    item.provenance
+      ? `<span class="wh-pill wh-pill--accent">${escapeHtml(`${routeT(locale, "skills.refinedFrom")}${item.provenance.refined_from_version}`)}</span>`
+      : ""
+  ].filter(Boolean).join("");
+  const deprecatedLine = item.status === "deprecated" && item.deprecated_reason
+    ? `<p class="wh-subtle" data-r14-skill-deprecated-reason="true">${escapeHtml(item.deprecated_reason)}</p>`
+    : "";
+  // 编辑/停用仅对当前激活版本、且仅管理员开放（服务端 §3.2 同款门槛；isAdmin 在 SSR 阶段已从
+  // shellUser 拿到，此处直接按条件渲染，不做「先渲后隐藏」的闪烁写法）。
+  const adminActions = isAdmin && item.status === "active"
+    ? `<div class="wh-r4-route-actions">
+        <button type="button" class="wh-btn" data-r14-skill-edit-btn="true" data-r14-skill-id="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "memory.edit"))}</button>
+        <button type="button" class="wh-btn wh-btn-danger" data-r14-skill-deactivate-btn="true" data-r14-skill-id="${escapeHtml(item.id)}">${escapeHtml(routeT(locale, "memory.deactivate"))}</button>
+      </div>
+      <p class="wh-subtle" data-r14-skill-status-line="true" hidden></p>
+      <div data-r14-skill-edit-form="true" data-r14-skill-id="${escapeHtml(item.id)}" data-r14-skill-base-version="${escapeHtml(String(item.version))}" hidden>
+        ${renderMemorySkillOpRow(0, locale, true)}
+        ${renderMemorySkillOpRow(1, locale, false)}
+        ${renderMemorySkillOpRow(2, locale, false)}
+        <button type="button" class="wh-btn" data-r14-skill-add-op-btn="true">${escapeHtml(zh ? "+ 加一处修改" : "+ Add another edit")}</button>
+        <textarea class="wh-r14-mem-textarea" data-r14-skill-rationale maxlength="2000" placeholder="${escapeHtml(zh ? "为什么这样改（可选）" : "Why this change (optional)")}" aria-label="${escapeHtml(zh ? "修改说明" : "Rationale")}"></textarea>
+        <div class="wh-r4-route-actions">
+          <button type="button" class="wh-btn wh-btn-primary" data-r14-skill-submit-btn="true">${escapeHtml(routeT(locale, "memory.save"))}</button>
+          <button type="button" class="wh-btn" data-r14-skill-edit-cancel-btn="true">${escapeHtml(routeT(locale, "memory.cancel"))}</button>
+        </div>
+        <p class="wh-subtle" data-r14-skill-edit-status="true" hidden></p>
+      </div>
+      <div data-r14-skill-deactivate-form="true" data-r14-skill-id="${escapeHtml(item.id)}" hidden>
+        <input type="text" data-r14-skill-deactivate-reason maxlength="500" placeholder="${escapeHtml(routeT(locale, "memory.reasonPlaceholder"))}" aria-label="${escapeHtml(routeT(locale, "memory.reasonPlaceholder"))}" />
+      </div>`
+    : "";
+  return `<article class="wh-card wh-r4-route-card" data-r14-skill-item="${escapeHtml(item.id)}" data-r14-skill-key="${escapeHtml(item.skill_key)}" data-r14-skill-version="${escapeHtml(String(item.version))}">
+    <h3 role="heading" aria-level="2">${escapeHtml(item.name)}</h3>
+    <p>${escapeHtml(item.when_to_use)}</p>
+    <div class="wh-r4-route-meta">${badges}</div>
+    ${deprecatedLine}
+    ${adminActions}
+  </article>`;
+}
+
+function renderMemorySkillsPanel(vm: TeamSkillManagementPageVM, locale: WorkHubLocale, isAdmin: boolean, active: boolean): string {
+  const items = vm.skills.length
+    ? vm.skills.map((item) => renderMemorySkillItem(item, locale, isAdmin)).join("")
+    : `<p class="wh-subtle" data-r14-mem-skills-empty="true">${escapeHtml(routeT(locale, "memory.skillsEmpty"))}</p>`;
+  const adminNote = isAdmin ? "" : `<p class="wh-subtle" data-r14-mem-admin-note="true">${escapeHtml(routeT(locale, "memory.adminOnlyNote"))}</p>`;
+  return `<section class="wh-r14-mem-panel" role="tabpanel" id="wh-r14-mem-panel-skills" aria-labelledby="wh-r14-mem-tab-skills" data-r14-mem-skills-panel="true" ${active ? "" : "hidden"}>
+    ${adminNote}
+    <div class="wh-r4-route-grid">${items}</div>
+  </section>`;
+}
+
+function renderMemoryRouteComponent(
+  input: { userMemories: UserMemoryManagementPageVM; teamSkills: TeamSkillManagementPageVM; tab: "profile" | "skills"; isAdmin: boolean },
+  locale: WorkHubLocale
+): WebRouteComponent {
+  const activeTab = input.tab === "skills" ? "skills" : "profile";
+  const tabHref = (tab: "profile" | "skills") => `/settings/memory${tab === "profile" ? "" : `?tab=${tab}`}`;
+  return createWebRouteComponent({
+    key: "memory",
+    css: webRouteComponentCss,
+    primaryHrefs: [],
+    source: "page-vm",
+    locale,
+    pageVm: "memory",
+    html: `<section class="wh-r4-route" data-r4-route-component="memory" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r14-mem-active-tab="${escapeHtml(activeTab)}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "memory.kicker"))}</span>
+          <h1>${escapeHtml(routeT(locale, "memory.title"))}</h1>
+          <p>${escapeHtml(routeT(locale, "memory.summary"))}</p>
+        </div>
+      </header>
+      <nav class="wh-r14-mem-tabs" role="tablist" aria-label="${escapeHtml(routeT(locale, "memory.title"))}">
+        <a role="tab" id="wh-r14-mem-tab-profile" class="wh-r14-mem-tab" href="${escapeHtml(tabHref("profile"))}" data-wh-route="${escapeHtml(tabHref("profile"))}" data-r14-mem-tab="profile" aria-selected="${escapeHtml(String(activeTab === "profile"))}" aria-controls="wh-r14-mem-panel-profile">${escapeHtml(routeT(locale, "memory.tabProfile"))}</a>
+        <a role="tab" id="wh-r14-mem-tab-skills" class="wh-r14-mem-tab" href="${escapeHtml(tabHref("skills"))}" data-wh-route="${escapeHtml(tabHref("skills"))}" data-r14-mem-tab="skills" aria-selected="${escapeHtml(String(activeTab === "skills"))}" aria-controls="wh-r14-mem-panel-skills">${escapeHtml(routeT(locale, "memory.tabSkills"))}</a>
+      </nav>
+      ${renderMemoryProfilePanel(input.userMemories, locale, activeTab === "profile")}
+      ${renderMemorySkillsPanel(input.teamSkills, locale, input.isAdmin, activeTab === "skills")}
+    </section>`
+  });
+}
+
 function renderProjectsRouteComponent(vm: ProjectListVM, locale: WorkHubLocale): WebRouteComponent {
   // GitHub 式仓库索引：每个项目一行卡片（名称 + 负责人 + 进行中工作项 + 归档徽标 + 更新时间），
   // 头部带「新建项目」表单（输入项目名 → POST /api/projects/bootstrap，bootstrap 按 slug 派生新建/复用，
@@ -4648,7 +4892,8 @@ export type WebRouteComponentInput =
   | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined; scopeLanding?: boolean | undefined; projects?: ProjectListVM | undefined }
   | { key: "search"; q?: string | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
-  | { key: "settings"; settings: SettingsPageVM };
+  | { key: "settings"; settings: SettingsPageVM }
+  | { key: "memory"; memory: { userMemories: UserMemoryManagementPageVM; teamSkills: TeamSkillManagementPageVM; tab: "profile" | "skills"; isAdmin: boolean } };
 
 export function renderWebRouteComponent(
   input: WebRouteComponentInput,
@@ -4697,6 +4942,8 @@ export function renderWebRouteComponent(
       return renderTeamSkillsRouteComponent(input.skills, locale);
     case "settings":
       return renderSettingsRouteComponent(input.settings, locale);
+    case "memory":
+      return renderMemoryRouteComponent(input.memory, locale);
   }
 }
 

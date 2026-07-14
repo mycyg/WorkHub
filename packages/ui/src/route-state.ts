@@ -21,7 +21,8 @@ export type R4WebRouteKey =
   | "knowledge"
   | "search"
   | "skills"
-  | "settings";
+  | "settings"
+  | "memory";
 
 export type RouteStateCardInput = {
   routeKey: R4WebRouteKey;
@@ -59,7 +60,8 @@ export const r4WebRouteKeys = [
   "knowledge",
   "search",
   "skills",
-  "settings"
+  "settings",
+  "memory"
 ] as const satisfies readonly R4WebRouteKey[];
 
 export const r4RouteStateKinds = [
@@ -103,7 +105,8 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     knowledge: { label: "证据检索", route: "/knowledge/search" },
     search: { label: "搜索", route: "/dashboard/search" },
     skills: { label: "团队技能", route: "/dashboard/skills" },
-    settings: { label: "设置", route: "/settings" }
+    settings: { label: "设置", route: "/settings" },
+    memory: { label: "记忆管理", route: "/settings/memory" }
   },
   "en-US": {
     home: { label: "Overview", route: "/" },
@@ -124,7 +127,8 @@ const routeInfo: Record<WorkHubLocale, Record<R4WebRouteKey, { label: string; ro
     knowledge: { label: "Evidence search", route: "/knowledge/search" },
     search: { label: "Search", route: "/dashboard/search" },
     skills: { label: "Team skills", route: "/dashboard/skills" },
-    settings: { label: "Settings", route: "/settings" }
+    settings: { label: "Settings", route: "/settings" },
+    memory: { label: "Memory", route: "/settings/memory" }
   }
 };
 

@@ -18,7 +18,10 @@ import type {
   SessionVM,
   SettingsPageVM,
   TeamSkillsPageVM,
-  WorkItemDetailVM
+  WorkItemDetailVM,
+  // R14 批 MEM（记忆可见可治理）：/settings/memory 两 tab 的管理面 VM。
+  UserMemoryManagementPageVM,
+  TeamSkillManagementPageVM
 } from "@workhub/contracts";
 import {
   goldPathCss,
@@ -103,7 +106,8 @@ export type WebRouteSurface =
   // 客户端 route-component fetch GET /api/search 后注入（见 02-search-design.md §7 拍板）。
   | { key: "search"; q?: string | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
-  | { key: "settings"; settings: SettingsPageVM };
+  | { key: "settings"; settings: SettingsPageVM }
+  | { key: "memory"; tab: "profile" | "skills"; userMemories: UserMemoryManagementPageVM; teamSkills: TeamSkillManagementPageVM };
 
 const routeMatchers = [
   {
@@ -238,6 +242,15 @@ const routeMatchers = [
     apiBaseLabel: "/settings",
     regex: /^\/settings$/u,
     paramNames: []
+  },
+  {
+    // R14 批 MEM（记忆可见可治理）：两 tab（关于我/团队技能）用 ?tab= query 切换，不分裂路由——
+    // 正则只锚定 pathname，query 由 loadRouteSurface 自己解析（同 knowledge/calendar 既有口径）。
+    key: "memory",
+    pattern: "/settings/memory",
+    apiBaseLabel: "/api/me/memories",
+    regex: /^\/settings\/memory$/u,
+    paramNames: []
   }
 ] as const satisfies readonly WebRouteMatcher[];
 
@@ -266,7 +279,8 @@ type WebRouteTreePageVm =
   | "evidence"
   | "search"
   | "skills"
-  | "settings";
+  | "settings"
+  | "memory";
 
 export type WebReactRouteTreeNode = WebRouteDefinition & {
   hydration: {
@@ -315,7 +329,8 @@ const routeTreePageVmByKey = {
   knowledge: "evidence",
   search: "search",
   skills: "skills",
-  settings: "settings"
+  settings: "settings",
+  memory: "memory"
 } satisfies Record<R4WebRouteKey, WebRouteTreePageVm>;
 
 const routeTreeReactComponentByKey: Partial<Record<R4WebRouteKey, WebReactRouteComponentName>> = {
@@ -511,6 +526,9 @@ const shellPageOrder = [
   "notifications",
   "calendar",
   "health",
+  // R14 批 MEM：紧邻 team 组内其余成员（notifications/calendar/health），与 product-shell.ts 的
+  // nav 分组顺序保持一致（见 productNavGroups 的 "team" 组）。
+  "memory",
   "replay",
   "cost",
   "agents",
@@ -547,7 +565,8 @@ const shellDefaultRoutes = {
   knowledge: "/knowledge/search",
   search: "/dashboard/search",
   skills: "/dashboard/skills",
-  settings: "/settings"
+  settings: "/settings",
+  memory: "/settings/memory"
 } satisfies Record<GoldPathRenderedPage["key"], string>;
 
 const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"], string>> = {
@@ -571,7 +590,8 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     knowledge: "知识证据",
     search: "搜索",
     skills: "团队技能",
-    settings: "设置"
+    settings: "设置",
+    memory: "记忆管理"
   },
   "en-US": {
     home: "Overview",
@@ -592,7 +612,8 @@ const shellPageTitles: Record<WorkHubLocale, Record<GoldPathRenderedPage["key"],
     knowledge: "Knowledge evidence",
     search: "Search",
     skills: "Team skills",
-    settings: "Settings"
+    settings: "Settings",
+    memory: "Memory management"
   }
 };
 
@@ -641,6 +662,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     skillsActive: "激活技能",
     skillsRefined: "已精修",
     skillsAiAuthored: "AI 撰写",
+    skillsDeprecated: "已停用",
+    memoriesActive: "AI 记住",
     acceptedDeliverables: "已采纳",
     activeProjects: "有进展",
     query: "搜索词"
@@ -689,6 +712,8 @@ const metricLabels: Record<WorkHubLocale, Record<string, string>> = {
     skillsActive: "Active skills",
     skillsRefined: "Refined",
     skillsAiAuthored: "AI-authored",
+    skillsDeprecated: "Deprecated",
+    memoriesActive: "AI remembers",
     acceptedDeliverables: "Accepted",
     activeProjects: "Active",
     query: "Query"
@@ -901,6 +926,14 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
       metric(locale, "skillsAiAuthored", String(surface.skills.totals.ai_authored))
     ];
   }
+  if (surface.key === "memory") {
+    const deprecatedCount = surface.teamSkills.skills.filter((skill) => skill.status === "deprecated").length;
+    return [
+      metric(locale, "memoriesActive", String(surface.userMemories.totals.active)),
+      metric(locale, "skillsActive", String(surface.teamSkills.skills.filter((skill) => skill.status === "active").length)),
+      metric(locale, "skillsDeprecated", String(deprecatedCount))
+    ];
+  }
   return [
     metric(locale, "runtime", surface.settings.runtime.app_env),
     metric(locale, "queue", surface.settings.runtime.broker_backend),
@@ -908,7 +941,7 @@ function metricsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): Web
   ];
 }
 
-function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocale): WebRouteComponent {
+function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocale, isAdmin: boolean = false): WebRouteComponent {
   if (surface.key === "home") {
     return renderWebRouteComponent({ key: "home", attention: surface.attention, projects: surface.projects }, { locale });
   }
@@ -980,12 +1013,20 @@ function routeComponentForSurface(surface: WebRouteSurface, locale: WorkHubLocal
   if (surface.key === "skills") {
     return renderWebRouteComponent({ key: "skills", skills: surface.skills }, { locale });
   }
+  if (surface.key === "memory") {
+    // isAdmin 决定团队技能 tab 的编辑/停用按钮要不要渲——从 shellUser（登录态，SSR 阶段已知）取，
+    // 不是从页面 VM 取（同现有 topbar 管理员徽标同一条已验证过的通路，见 03-mem-design §6.1）。
+    return renderWebRouteComponent({
+      key: "memory",
+      memory: { userMemories: surface.userMemories, teamSkills: surface.teamSkills, tab: surface.tab, isAdmin }
+    }, { locale });
+  }
   return renderWebRouteComponent({ key: "settings", settings: surface.settings }, { locale });
 }
 
-function routeComponentsForSurface(surface: WebRouteSurface, locale: WorkHubLocale): WebRouteComponentMap {
+function routeComponentsForSurface(surface: WebRouteSurface, locale: WorkHubLocale, isAdmin: boolean): WebRouteComponentMap {
   return {
-    [surface.key]: routeComponentForSurface(surface, locale)
+    [surface.key]: routeComponentForSurface(surface, locale, isAdmin)
   };
 }
 
@@ -1309,6 +1350,25 @@ async function loadRouteSurface(client: WorkHubApiClient, match: WebRouteMatch, 
     const settings = await client.pages.settings(withLocale(locale));
     return { key: "settings", settings } satisfies WebRouteSurface;
   }
+  if (match.key === "memory") {
+    // R14 批 MEM：两 tab 用 ?tab= 区分，不分裂路由（默认「关于我」= profile）；两个治理端点各自
+    // 全量拉取（同 skills 页既有口径——列表数据不多，服务端已有硬顶 USER_MEMORY_MAX_ACTIVE_PER_USER=50），
+    // 零缓存路由层纪律同其余路由一致：每次导航都重新拉取，不让陈旧的编辑/停用结果留在屏上。
+    // listUserMemories/listTeamSkillsManage 在 WorkHubApiClient 上是可选字段（不强迫
+    // apps/desktop-webview 的完整 mock 字面量跟着补桩，见 packages/api-client/src/types.ts 注释）；
+    // 真实 createApiClient() 一定实现它们，这里仍老实处理「万一没有」，不假装能拿到数据。
+    const { listUserMemories, listTeamSkillsManage } = client;
+    if (!listUserMemories || !listTeamSkillsManage) {
+      throw new Error("This client does not support memory governance data");
+    }
+    const tabParam = new URLSearchParams(match.search).get("tab");
+    const tab: "profile" | "skills" = tabParam === "skills" ? "skills" : "profile";
+    const [userMemories, teamSkills] = await Promise.all([
+      listUserMemories(),
+      listTeamSkillsManage()
+    ]);
+    return { key: "memory", tab, userMemories, teamSkills } satisfies WebRouteSurface;
+  }
   return "error" as const;
 }
 
@@ -1456,7 +1516,7 @@ function renderReadyRoute(
   shellUser?: WebProductShellCurrentUser
 ): WebRouteReadyResult {
   const rendered = shellSurfaceFor(surface, match, locale);
-  const routeComponents = routeComponentsForSurface(surface, locale);
+  const routeComponents = routeComponentsForSurface(surface, locale, shellUser?.isAdmin ?? false);
   const shell = renderWebProductShell(rendered, {
     appName: "WorkHub",
     surfaceLabel: "Web R4",

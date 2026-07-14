@@ -3439,6 +3439,118 @@ test("R9.7 Team skills route hides confidence jargon in skill score badges", () 
   assert.doesNotMatch(zh.html, /置信/u);
 });
 
+test("R14 批 MEM: memory route renders the profile tab with category badge, provenance, and edited-by line", () => {
+  const userMemories = {
+    generated_at: "2026-07-14T00:00:00.000Z",
+    memories: [
+      {
+        id: "99000000-0000-4000-8000-000000000010",
+        category: "preference" as const,
+        key: "reply-tone",
+        value_md: "喜欢简洁的回复",
+        confidence: 0.8,
+        workspace_scoped: true,
+        created_at: "2026-07-01T00:00:00.000Z",
+        updated_at: "2026-07-10T00:00:00.000Z",
+        edited_at: "2026-07-12T00:00:00.000Z",
+        provenance: { kind: "agent_run" as const, label: "来自会话《周报》的一次 AI 执行" }
+      },
+      {
+        id: "99000000-0000-4000-8000-000000000011",
+        category: "correction" as const,
+        key: "proposal:90000000-0000-4000-8000-000000000099",
+        value_md: "不要用黑话",
+        confidence: 1,
+        workspace_scoped: false,
+        created_at: "2026-06-01T00:00:00.000Z",
+        updated_at: "2026-06-01T00:00:00.000Z"
+      }
+    ],
+    totals: { active: 2 }
+  };
+  const teamSkills = { generated_at: "2026-07-14T00:00:00.000Z", skills: [] };
+
+  const zh = renderWebRouteComponent({ key: "memory", memory: { userMemories, teamSkills, tab: "profile", isAdmin: false } }, { locale: "zh-CN" });
+  const en = renderWebRouteComponent({ key: "memory", memory: { userMemories, teamSkills, tab: "profile", isAdmin: false } }, { locale: "en-US" });
+
+  assert.equal(zh.key, "memory");
+  assert.equal(zh.html.includes('data-r4-route-component="memory"'), true);
+  assert.equal(zh.html.includes('data-r14-mem-active-tab="profile"'), true);
+  assert.equal(zh.html.includes('data-r14-mem-item="99000000-0000-4000-8000-000000000010"'), true);
+  assert.equal(zh.html.includes("喜欢简洁的回复"), true);
+  // 出处：有 provenance.label 就用它；否则三级降级到「早期记录，出处不明」。
+  assert.equal(zh.html.includes("来自会话《周报》的一次 AI 执行"), true);
+  assert.equal(zh.html.includes("早期记录，出处不明"), true);
+  // edited_at 是独立叠加行，不是取代出处。
+  assert.equal(zh.html.includes("最近由你于 2026-07-12 修改"), true);
+  assert.equal(en.html.includes("Last edited by you on 2026-07-12"), true);
+  // 「团队技能」tab 面板仍在（hidden），空态文案存在。
+  assert.equal(zh.html.includes('data-r14-mem-skills-panel="true" hidden'), true);
+  assert.equal(zh.html.includes('data-r14-mem-skills-empty="true"'), true);
+  assertNoMainWindowBoundaryLeak(zh.html);
+});
+
+test("R14 批 MEM: memory route shows the honest empty state for a user with no memories yet", () => {
+  const userMemories = { generated_at: "2026-07-14T00:00:00.000Z", memories: [], totals: { active: 0 } };
+  const teamSkills = { generated_at: "2026-07-14T00:00:00.000Z", skills: [] };
+  const en = renderWebRouteComponent({ key: "memory", memory: { userMemories, teamSkills, tab: "profile", isAdmin: false } }, { locale: "en-US" });
+  assert.equal(en.html.includes('data-r14-mem-profile-empty="true"'), true);
+});
+
+test("R14 批 MEM: memory route gates team-skill edit/deactivate to admins and active versions only", () => {
+  const userMemories = { generated_at: "2026-07-14T00:00:00.000Z", memories: [], totals: { active: 0 } };
+  const teamSkills = {
+    generated_at: "2026-07-14T00:00:00.000Z",
+    skills: [
+      {
+        id: "99000000-0000-4000-8000-000000000020",
+        skill_key: "quarterly-report",
+        name: "季度报告",
+        when_to_use: "生成季度业务报告",
+        version: 3,
+        source_kind: "distilled" as const,
+        created_by_kind: "ai" as const,
+        sample_count: 4,
+        updated_at: "2026-07-10T00:00:00.000Z",
+        content_md: "## 总则\n写清楚数据来源",
+        status: "active" as const
+      },
+      {
+        id: "99000000-0000-4000-8000-000000000021",
+        skill_key: "quarterly-report",
+        name: "季度报告",
+        when_to_use: "生成季度业务报告",
+        version: 2,
+        source_kind: "distilled" as const,
+        created_by_kind: "human" as const,
+        sample_count: 4,
+        updated_at: "2026-06-10T00:00:00.000Z",
+        content_md: "## 总则\n旧版本",
+        status: "deprecated" as const,
+        deprecated_reason: "由 admin 手动停用"
+      }
+    ]
+  };
+
+  // 非管理员：全员可读列表（含 deprecated 历史版本），但没有编辑/停用按钮。
+  const member = renderWebRouteComponent({ key: "memory", memory: { userMemories, teamSkills, tab: "skills", isAdmin: false } }, { locale: "zh-CN" });
+  assert.equal(member.html.includes('data-r14-skill-item="99000000-0000-4000-8000-000000000020"'), true);
+  assert.equal(member.html.includes('data-r14-skill-item="99000000-0000-4000-8000-000000000021"'), true);
+  assert.equal(member.html.includes('data-r14-skill-edit-btn="true"'), false);
+  assert.equal(member.html.includes('data-r14-skill-deactivate-btn="true"'), false);
+  assert.equal(member.html.includes("data-r14-mem-admin-note"), true);
+  assert.equal(member.html.includes("由 admin 手动停用"), true);
+  assert.equal(member.html.includes("管理员手改"), true);
+
+  // 管理员：仅当前激活版本(v3)有编辑/停用；已 deprecated 的历史版本(v2)只读，不因为 isAdmin 也长出按钮。
+  const admin = renderWebRouteComponent({ key: "memory", memory: { userMemories, teamSkills, tab: "skills", isAdmin: true } }, { locale: "zh-CN" });
+  assert.equal(admin.html.includes('data-r14-skill-edit-btn="true" data-r14-skill-id="99000000-0000-4000-8000-000000000020"'), true);
+  assert.equal(admin.html.includes('data-r14-skill-deactivate-btn="true" data-r14-skill-id="99000000-0000-4000-8000-000000000020"'), true);
+  assert.equal(admin.html.includes('data-r14-skill-edit-btn="true" data-r14-skill-id="99000000-0000-4000-8000-000000000021"'), false);
+  assert.equal(admin.html.includes("data-r14-mem-admin-note"), false);
+  assertNoMainWindowBoundaryLeak(admin.html);
+});
+
 test("R4.10 Replay route component uses replay renderer while preserving route component markers", () => {
   const vm = surfaceVm();
   const replay = renderWebRouteComponents(vm, { locale: "en-US" }).replay;
