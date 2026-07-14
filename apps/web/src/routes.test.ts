@@ -1351,6 +1351,34 @@ test("R4.13 proposal route loader carries conflict API data into advanced route 
   assert.equal(result.html.includes("Use AI fusion draft"), true);
 });
 
+// R14 批 FEEDBACK（web-feedback-ui）：提议详情页反馈块要经过完整的 loadWebRoute 管线（不只是
+// renderWebRouteComponent 的直接单测）——additive 字段从 client.pages.proposal() 一路带到最终 HTML。
+test("R14 batch FEEDBACK: proposal route loader renders the feedback block end-to-end when the VM carries it", async () => {
+  const surface = goldPathSurfaceVm();
+  surface.page_vms.proposal = {
+    ...surface.page_vms.proposal,
+    feedback: {
+      my_verdict: "useful",
+      my_note: "这次交付很清楚",
+      mark_useful: { id: "mark_useful", label: "有用", method: "PUT", href: "/api/proposals/proposal-42/feedback", request_json: { verdict: "useful" } },
+      mark_not_useful: { id: "mark_not_useful", label: "没用", method: "PUT", href: "/api/proposals/proposal-42/feedback", request_json: { verdict: "not_useful" } },
+      clear: { id: "clear_feedback", label: "撤销反馈", method: "DELETE", href: "/api/proposals/proposal-42/feedback" }
+    }
+  };
+  const { client } = fakeRouteClient(surface);
+  const match = resolveWebRoute("/proposals/proposal-42");
+  assert.ok(match);
+
+  const result = await loadWebRoute(client, match, "zh-CN");
+
+  assert.equal(result.status, "ready");
+  assert.equal(result.html.includes('data-r14-proposal-feedback="true"'), true);
+  assert.equal(result.html.includes('data-r14-proposal-feedback-verdict="useful"'), true);
+  assert.equal(result.html.includes('data-request-json="{&quot;verdict&quot;:&quot;useful&quot;}"'), true);
+  assert.equal(result.html.includes(">这次交付很清楚</textarea>"), true);
+  assert.equal(/\bCuu\b/u.test(/<section class="wh-card wh-r4-route-card wh-r14-proposal-feedback"[\s\S]*?<\/section>/u.exec(result.html)?.[0] ?? ""), false);
+});
+
 test("R4.22 proposal route loader exposes a React mutation editor host without removing HTML fallback", async () => {
   const surface = goldPathSurfaceVm();
   const conflict = routeStructuredProposalConflict(surface);
