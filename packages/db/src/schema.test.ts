@@ -662,7 +662,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0055 conversation chat completeness", () => {
+test("migration journal ends with 0057 search trgm indexes", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -677,15 +677,48 @@ test("migration journal ends with 0055 conversation chat completeness", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R14 批 CHAT：0055 顺排在 0054 之后，给 conversation_messages 补编辑/墓碑/引用/置顶列并新增
-      // message_reactions + conversation_read_cursors。若后续并行批次的迁移号与本批冲突，集成者合并时
-      // 把 when 归一成递增序插在 0055 之前，journal 尾保持 0055 不变（这是设计批准的契约变更）。
-      idx: 55,
+      // R14 批 SEARCH：0057 顺排在 0055 之后（0056 让给并行落地的 MEM 批，journal 直接 55→57，集成裁定）。
+      // 只建 pg_trgm 扩展 + 五个 GIN 索引，零加表零加列。若并行批次的迁移号与本批冲突，集成者合并时把
+      // when 归一成递增序、journal 尾以实际链尾为准（这是设计批准的契约变更，非迁就）。
+      idx: 57,
       version: "7",
-      tag: "0055_conversation_chat_completeness",
+      tag: "0057_search_trgm_indexes",
       breakpoints: true
     }
   );
+});
+
+test("R14 批 SEARCH migration 0057 builds pg_trgm plus five replay-safe GIN indexes", () => {
+  const migrationUrl = new URL("../migrations/0057_search_trgm_indexes.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0057_search_trgm_indexes.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  // 扩展用 IF NOT EXISTS（重放安全）+ 必须在建索引之前（gin_trgm_ops 依赖它）。
+  assert.match(migration, /CREATE EXTENSION IF NOT EXISTS pg_trgm/u, "must create the pg_trgm extension");
+  // migration-audit 硬门：所有 CREATE INDEX（含 GIN）必须 IF NOT EXISTS，否则 replay 阶段红。
+  const createIndexCount = (migration.match(/CREATE INDEX IF NOT EXISTS/gu) ?? []).length;
+  assert.equal(createIndexCount, 5, "expected exactly five CREATE INDEX IF NOT EXISTS statements");
+  assert.doesNotMatch(
+    migration,
+    /CREATE\s+INDEX\s+(?!IF\s+NOT\s+EXISTS)/iu,
+    "every CREATE INDEX must be replay-safe (IF NOT EXISTS)"
+  );
+  // 五个具名索引都在（对齐 repository 里查询依赖的表达式索引）。
+  for (const indexName of [
+    "conversation_messages_text_trgm_idx",
+    "work_items_search_trgm_idx",
+    "meeting_records_search_trgm_idx",
+    "project_drive_items_name_trgm_idx",
+    "project_drive_versions_parsed_text_trgm_idx"
+  ]) {
+    assert.ok(migration.includes(indexName), `missing GIN index ${indexName}`);
+  }
+  // 全部走 gin_trgm_ops（trgm 子串检索），不是普通 btree/其它 opclass。
+  assert.equal((migration.match(/gin_trgm_ops/gu) ?? []).length, 5, "all five indexes must use gin_trgm_ops");
+  // CONCURRENTLY 不用（单事务重放不能进事务）。
+  assert.doesNotMatch(migration, /CONCURRENTLY/iu, "migration 0057 must not use CONCURRENTLY (single-tx replay)");
+  // 零加表零加列——本批纯索引。
+  assert.doesNotMatch(migration, /ADD\s+COLUMN/iu, "search migration must not add columns");
+  assert.doesNotMatch(migration, /CREATE\s+TABLE/iu, "search migration must not add tables");
 });
 
 test("R14 批 CHAT migration 0055 adds nullable chat-completeness columns and two additive tables", () => {
