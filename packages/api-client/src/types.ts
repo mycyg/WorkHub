@@ -50,6 +50,8 @@ import type {
   ApprovalCommentVM,
   MergeProposalRequest,
   NextQuestionRequest,
+  SearchResultsVm,
+  SearchScope,
   SessionVM,
   SettingsPageVM,
   TeamSkillsPageVM,
@@ -148,6 +150,14 @@ export type MeetingPageRequestOptions = PageRequestOptions & {
   project_id?: string;
   meetingId?: string;
   meeting_id?: string;
+};
+
+// R14 批 SEARCH（web-search-page）：GET /api/search 的请求参数——不挂 PageRequestOptions（服务端不认
+// locale 参数，见 02-search-design.md §4 参数表：仅 q/scopes/limit）。scopes 缺省=服务端四 scope 全开。
+export type SearchRequestParams = {
+  q: string;
+  scopes?: SearchScope[];
+  limit?: number;
 };
 
 export type CalendarPageRequestOptions = PageRequestOptions & {
@@ -327,6 +337,10 @@ export type WorkHubApiClient = {
   ) => Promise<ProposalMergeResult>;
   nextQuestion: (sessionId: string, payload?: NextQuestionRequest, options?: PageRequestOptions) => Promise<SessionVM>;
   searchKnowledge: (payload?: unknown, options?: PageRequestOptions) => Promise<EvidenceBubble>;
+  // R14 批 SEARCH（web-search-page）：全局搜索统一读端点 GET /api/search（跨会话/网盘/工单/会议）。
+  // 可选——只有 web 顶栏搜索页调用；桌面端走独立的聚焦盒能力（另一工包），其 fakeClient mock
+  // 不需要补这个方法，故此处不声明成必需字段（desktop main.test.ts 不在本工包改动范围内）。
+  search?: (params: SearchRequestParams) => Promise<SearchResultsVm>;
   useEvidenceForWorkItem: (workItemId: string, payload: UseEvidenceForTaskRequest) => Promise<WorkItemDetailVM>;
   restoreAcceptedDeliverable: (
     workItemId: string,

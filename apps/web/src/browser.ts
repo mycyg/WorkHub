@@ -1,5 +1,5 @@
 import { createApiClient, WorkHubApiError } from "@workhub/api-client/client";
-import { eventTypes, type ActionSpec } from "@workhub/contracts";
+import { eventTypes, type ActionSpec, type SearchResultsVm } from "@workhub/contracts";
 import {
   classifyGoldPathHref,
   goldPathT,
@@ -2037,6 +2037,7 @@ function bindReadyRoute(result: WebRouteReadyResult, client: BrowserApiClient, l
   bindRouteLineEditor(root, { signal, markDirty: markActiveRouteDirty });
   bindGoldPathNavigation(root, result.shell, client, locale, (href) => navigateWebRoute(href, client, locale), signal);
   bindNotificationMutePanel(root, result, client, locale, signal);
+  bindSearchRoutePanel(root, result, client, locale, signal);
   bindSettingsAiProfilePanel(root, result, client, locale, signal);
   bindSettingsMyProfilePanel(root, result, client, locale, signal);
   bindSettingsAvatarPanel(root, result, client, locale, signal);
@@ -2177,6 +2178,207 @@ function bindNotificationMutePanel(
   for (const checkbox of checkboxes) {
     checkbox.addEventListener("change", () => void save(), { signal });
   }
+}
+
+// R14 批 SEARCH（web-search-page，02-search-design.md §7）：顶栏搜索页的客户端水合。SSR
+// （route-components renderSearchRouteComponent）只渲搜索框外壳 + 诚实的空/短词提示，四个结果分组卡
+// 先隐藏、无数据。这里在 q ≥ 2 字符时拉 GET /api/search（默认四 scope、limit=10）后按固定 scope 顺序
+// 填充分组、揭示 has_more、揭示"此范围无匹配"。会话结果 web 端没有聊天页可跳（R13 定调"聊天归桌面"）——
+// 不渲染成链接，只保留 SSR 已给的说明行；命中行只显示项目/会话上下文 + 片段 + 发送者/时间，诚实降级。
+// 拉取失败保留错误提示 + 重试，不吞错、不假装成功。
+function formatSearchTimestamp(iso: string | undefined) {
+  if (!iso) {
+    return "";
+  }
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(iso);
+  return match ? `${match[1]} ${match[2]}` : iso;
+}
+
+function searchMatchedInLabel(matchedIn: string, locale: WorkHubLocale) {
+  const zh = locale === "zh-CN";
+  const labels: Record<string, [string, string]> = {
+    name: ["文件名", "filename"],
+    body: ["正文", "content"],
+    title: ["标题", "title"],
+    description: ["描述", "description"],
+    text: ["消息内容", "message"],
+    minutes: ["会议纪要", "minutes"]
+  };
+  const label = labels[matchedIn];
+  return label ? (zh ? label[0] : label[1]) : matchedIn;
+}
+
+function bindSearchRoutePanel(
+  container: HTMLElement,
+  result: WebRouteReadyResult,
+  client: BrowserApiClient,
+  locale: WorkHubLocale,
+  signal: AbortSignal
+) {
+  if (result.match.key !== "search") {
+    return;
+  }
+  const panel = container.querySelector<HTMLElement>("[data-r14-search-route]");
+  if (!panel) {
+    return;
+  }
+  const q = (result.surface.key === "search" ? result.surface.q : undefined)?.trim() ?? "";
+  if (q.length < 2) {
+    // SSR 已经渲了诚实的空/短词提示（renderSearchRouteComponent 的 search.promptEmpty/promptShort），
+    // 没有可拉的数据——不发请求。
+    return;
+  }
+  const status = panel.querySelector<HTMLElement>("[data-r14-search-status]");
+  const resultsRoot = panel.querySelector<HTMLElement>("[data-r14-search-results]");
+  const retryButton = panel.querySelector<HTMLButtonElement>("[data-r14-search-retry]");
+  const zh = locale === "zh-CN";
+  const groupSections = new Map<string, HTMLElement>();
+  panel.querySelectorAll<HTMLElement>("[data-r14-search-group]").forEach((section) => {
+    const scope = section.getAttribute("data-r14-search-group");
+    if (scope) {
+      groupSections.set(scope, section);
+    }
+  });
+
+  const setStatus = (text: string, hidden: boolean) => {
+    if (!status) {
+      return;
+    }
+    status.textContent = text;
+    status.hidden = hidden;
+  };
+
+  const appendEmptyGroupNote = (list: HTMLElement) => {
+    const empty = document.createElement("p");
+    empty.className = "wh-subtle";
+    empty.textContent = zh ? "此范围没有匹配。" : "No matches in this scope.";
+    list.append(empty);
+  };
+
+  const appendConversationRow = (list: HTMLElement, item: SearchResultsVm["groups"][number]["results"][number]) => {
+    if (!("conversation_title" in item)) {
+      return;
+    }
+    const row = document.createElement("div");
+    row.className = "wh-r4-route-row";
+    row.setAttribute("data-r14-search-result-scope", "conversations");
+    const main = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = `${item.project_name} · ${item.conversation_title}`;
+    const snippet = document.createElement("p");
+    snippet.textContent = item.snippet;
+    const meta = document.createElement("p");
+    meta.className = "wh-subtle";
+    const senderLabel = item.sender_label ?? (zh ? "AI 助手" : "AI assistant");
+    meta.textContent = `${senderLabel} · ${formatSearchTimestamp(item.created_at)}`;
+    main.append(title, snippet, meta);
+    row.append(main);
+    list.append(row);
+  };
+
+  const appendLinkRow = (list: HTMLElement, href: string, titleText: string, snippetText: string, metaText: string) => {
+    const link = document.createElement("a");
+    link.className = "wh-r4-route-row wh-r14-search-result-link";
+    link.href = href;
+    const main = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = titleText;
+    const snippet = document.createElement("p");
+    snippet.textContent = snippetText;
+    const meta = document.createElement("p");
+    meta.className = "wh-subtle";
+    meta.textContent = metaText;
+    main.append(title, snippet, meta);
+    link.append(main);
+    list.append(link);
+  };
+
+  const renderGroups = (data: SearchResultsVm) => {
+    let anyResults = false;
+    for (const group of data.groups) {
+      const section = groupSections.get(group.scope);
+      if (!section) {
+        continue;
+      }
+      section.hidden = false;
+      const list = section.querySelector<HTMLElement>("[data-r14-search-group-list]");
+      const more = section.querySelector<HTMLElement>("[data-r14-search-group-more]");
+      if (list) {
+        list.replaceChildren();
+      }
+      if (group.results.length === 0) {
+        if (list) {
+          appendEmptyGroupNote(list);
+        }
+      } else if (list) {
+        anyResults = true;
+        // findings：narrowing group.scope 内层再取 group.results 才生效——先在 for...of 外层拿到
+        // item 会把它的类型定死成四种结果形状的并集,分支里访问 item_id/work_item_id 等专属字段会报错。
+        if (group.scope === "conversations") {
+          for (const item of group.results) {
+            appendConversationRow(list, item);
+          }
+        } else if (group.scope === "drive") {
+          for (const item of group.results) {
+            const href = `/drive?project_id=${encodeURIComponent(item.project_id)}&item_id=${encodeURIComponent(item.item_id)}`;
+            appendLinkRow(list, href, item.name, item.snippet, `${item.project_name} · ${searchMatchedInLabel(item.matched_in, locale)} · ${formatSearchTimestamp(item.updated_at)}`);
+          }
+        } else if (group.scope === "work_items") {
+          for (const item of group.results) {
+            const href = `/workitems/${encodeURIComponent(item.work_item_id)}`;
+            appendLinkRow(list, href, item.title ? `${item.code} · ${item.title}` : item.code, item.snippet, `${item.project_name} · ${formatSearchTimestamp(item.updated_at)}`);
+          }
+        } else if (group.scope === "meetings") {
+          for (const item of group.results) {
+            const href = `/meetings?project_id=${encodeURIComponent(item.project_id)}&m=${encodeURIComponent(item.meeting_id)}`;
+            appendLinkRow(list, href, item.title, item.snippet, `${item.project_name} · ${formatSearchTimestamp(item.created_at)}`);
+          }
+        }
+      }
+      if (more) {
+        more.hidden = !group.has_more;
+        if (group.has_more) {
+          more.textContent = zh ? "还有更多结果——换更精确的关键词缩小范围。" : "More results available — try a more specific keyword.";
+        }
+      }
+    }
+    if (anyResults) {
+      setStatus("", true);
+    } else {
+      setStatus(zh ? `没有找到包含"${q}"的结果。换个关键词试试。` : `No results for "${q}". Try a different keyword.`, false);
+    }
+  };
+
+  const run = async () => {
+    if (resultsRoot) {
+      resultsRoot.hidden = false;
+    }
+    setStatus(zh ? "正在搜索…" : "Searching…", false);
+    if (retryButton) {
+      retryButton.hidden = true;
+    }
+    try {
+      const data = await client.search?.({ q, limit: 10 });
+      if (signal.aborted) {
+        return;
+      }
+      if (!data) {
+        throw new Error("search endpoint unavailable");
+      }
+      renderGroups(data);
+    } catch {
+      if (signal.aborted) {
+        return;
+      }
+      setStatus(zh ? "搜索失败，请重试。" : "Search failed. Please retry.", false);
+      if (retryButton) {
+        retryButton.hidden = false;
+      }
+    }
+  };
+
+  retryButton?.addEventListener("click", () => void run(), { signal });
+  void run();
 }
 
 // R13 批 P3（功能审查 B4）：设置页「AI 助手」区块的客户端水合 + 写接线。SSR 渲染的两个 <select>

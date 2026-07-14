@@ -430,6 +430,27 @@ test("api client carries locale on session creation and launch requests", async 
   ]);
 });
 
+test("R14 batch SEARCH: api client builds the global search query string (q required, scopes csv, limit optional)", async () => {
+  const calls: string[] = [];
+  const client = createApiClient({
+    fetchFn: async (input) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ ok: true, data: { query: "", groups: [] } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  });
+
+  await client.search?.({ q: "预算" });
+  await client.search?.({ q: "50%", scopes: ["drive", "work_items"], limit: 5 });
+
+  assert.deepEqual(calls, [
+    "/api/search?q=%E9%A2%84%E7%AE%97",
+    "/api/search?q=50%25&scopes=drive%2Cwork_items&limit=5"
+  ]);
+});
+
 test("api client carries approval paging options on the typed approvals page request", async () => {
   const calls: string[] = [];
   const client = createApiClient({

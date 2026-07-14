@@ -65,7 +65,7 @@ import { approvalQueuePageInfoText, goldPathT, normalizeWorkHubLocale, type Work
 import type { GoldPathRenderedPage } from "./render.js";
 
 // "agents"/"skills"/"projects"/"project-home" 是 live-only 路由（不在 gold-path 静态 surface 渲染里），故单独并入而非走 Extract。
-export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "settings"> | "agents" | "skills" | "projects" | "project-home";
+export type WebRouteComponentKey = Extract<GoldPathRenderedPage["key"], "home" | "intake" | "approvals" | "workitem" | "proposal" | "drive" | "meetings" | "notifications" | "calendar" | "health" | "replay" | "cost" | "knowledge" | "search" | "settings"> | "agents" | "skills" | "projects" | "project-home";
 
 export type WebRouteComponent = {
   key: WebRouteComponentKey;
@@ -166,6 +166,11 @@ export const webRouteComponentCss = [
   ".wh-r4-route details:not([open])>*:not(summary){display:none}",
   ".wh-r4-intake-free-text{width:100%;min-height:92px;resize:vertical;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:10px 12px;font:inherit;line-height:1.45;color:var(--wh-product-ink,#172033);background:rgba(255,255,255,.92);overflow-wrap:anywhere}",
   ".wh-r4-knowledge-search{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 4px;min-width:0;max-width:100%}.wh-r4-knowledge-search input{flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;line-height:1.45;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:9px 12px;color:var(--wh-product-ink,#172033);background:rgba(255,255,255,.92)}.wh-r4-knowledge-search .wh-btn{flex:0 0 auto}",
+  // R14 批 SEARCH（web-search-page）：顶栏搜索页表单，照 .wh-r4-knowledge-search 同款输入+按钮布局；
+  // 结果行复用 .wh-r4-route-row 骨架，链接行加 .wh-r14-search-result-link（照 .wh-r4-drive-item-link
+  // 整行可点、strong 变色悬停下划线的模式）。会话结果不可点（web 无聊天页），不套此类。
+  ".wh-r14-search-form{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 4px;min-width:0;max-width:100%}.wh-r14-search-form input{flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;line-height:1.45;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:9px 12px;color:var(--wh-product-ink,#172033);background:rgba(255,255,255,.92)}.wh-r14-search-form .wh-btn{flex:0 0 auto}",
+  ".wh-r14-search-result-link{display:block;color:inherit;text-decoration:none}.wh-r14-search-result-link strong{color:var(--wh-product-accent,#2f6df0)}.wh-r14-search-result-link:hover strong,.wh-r14-search-result-link:focus-visible strong{text-decoration:underline}",
   ".wh-r4-project-create{display:flex;gap:8px;flex-wrap:wrap;align-items:center;min-width:0;max-width:100%}.wh-r4-project-create input{flex:1 1 220px;min-width:0;max-width:100%;box-sizing:border-box;font:inherit;line-height:1.45;border:1px solid var(--wh-product-line,#E6E7EB);border-radius:12px;padding:9px 12px;color:var(--wh-product-ink,#172033);background:rgba(255,255,255,.92)}.wh-r4-project-create .wh-btn{flex:0 0 auto}",
   ".wh-r5-notif-mute summary{cursor:pointer;font-weight:800;font-size:14px;color:var(--wh-product-ink,#172033)}.wh-r5-notif-mute-list{display:grid;gap:8px;margin-top:8px;min-width:0}.wh-r5-notif-mute-row{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.4;color:var(--wh-product-secondary,#5B616E);min-width:0;overflow-wrap:anywhere}.wh-r5-notif-mute-row input{margin-top:2px;flex:0 0 auto}.wh-r5-notif-mute-row span{min-width:0}.wh-r5-notif-mute-status{margin:8px 0 0;font-size:12px}",
   ".wh-r4-route-count{display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.75);border-radius:12px;background:rgba(255,255,255,.8);padding:8px 10px;color:var(--wh-product-ink,#172033);font-weight:900;line-height:1}",
@@ -267,6 +272,20 @@ type RouteCopyKey =
   | "knowledge.searchLabel"
   | "knowledge.searchSubmit"
   | "knowledge.scopeLandingCta"
+  | "search.kicker"
+  | "search.title"
+  | "search.summary"
+  | "search.placeholder"
+  | "search.label"
+  | "search.submit"
+  | "search.promptEmpty"
+  | "search.promptShort"
+  | "search.loading"
+  | "search.groupConversations"
+  | "search.groupDrive"
+  | "search.groupWorkItems"
+  | "search.groupMeetings"
+  | "search.desktopOnlyNote"
   | "proposal.summary"
   | "proposal.review"
   | "proposal.files"
@@ -478,6 +497,20 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "knowledge.searchLabel": "搜索知识库证据",
     "knowledge.searchSubmit": "搜索",
     "knowledge.scopeLandingCta": "去项目列表",
+    "search.kicker": "全局搜索",
+    "search.title": "搜索",
+    "search.summary": "跨会话、网盘、工单、会议搜索。",
+    "search.placeholder": "搜索关键词…",
+    "search.label": "搜索全部",
+    "search.submit": "搜索",
+    "search.promptEmpty": "输入至少 2 个字符开始搜索。",
+    "search.promptShort": "搜索词至少需要 2 个字符。",
+    "search.loading": "正在搜索…",
+    "search.groupConversations": "会话",
+    "search.groupDrive": "网盘",
+    "search.groupWorkItems": "任务",
+    "search.groupMeetings": "会议",
+    "search.desktopOnlyNote": "会话内容在桌面工作台查看，这里只显示命中的会话线索。",
     "proposal.summary": "AI 摘要",
     "proposal.review": "审阅动作",
     "proposal.files": "文件与对象变化",
@@ -691,6 +724,20 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "knowledge.searchLabel": "Search knowledge evidence",
     "knowledge.searchSubmit": "Search",
     "knowledge.scopeLandingCta": "Go to projects",
+    "search.kicker": "Global search",
+    "search.title": "Search",
+    "search.summary": "Search across chat, drive, tasks, and meetings.",
+    "search.placeholder": "Search keyword…",
+    "search.label": "Search everything",
+    "search.submit": "Search",
+    "search.promptEmpty": "Type at least 2 characters to start searching.",
+    "search.promptShort": "Your search needs at least 2 characters.",
+    "search.loading": "Searching…",
+    "search.groupConversations": "Chat",
+    "search.groupDrive": "Drive",
+    "search.groupWorkItems": "Tasks",
+    "search.groupMeetings": "Meetings",
+    "search.desktopOnlyNote": "Conversation content opens in the desktop workbench — this only shows matched chat leads.",
     "proposal.summary": "AI summary",
     "proposal.review": "Review actions",
     "proposal.files": "Files and object changes",
@@ -4339,6 +4386,65 @@ function renderKnowledgeRouteComponent(vm: EvidenceBubble, locale: WorkHubLocale
   });
 }
 
+// R14 批 SEARCH（web-search-page，02-search-design.md §7）：web 顶栏搜索页。服务端只渲搜索框外壳 +
+// 诚实的空/短词提示（q 未给 or <2 字符）——四个结果分组卡先隐藏、不带数据。真结果由
+// apps/web/src/browser.ts 的 bindSearchRoutePanel 客户端拉 GET /api/search（q≥2 字符时）后注入，
+// 照 renderNotificationMutePanel/renderSettingsAiAssistantCard 的「SSR 骨架 + 客户端水合解禁」纪律
+// （见 route-components.ts:4382 起的settings AI面板与 notifications 静音面板先例）。四组固定顺序=
+// SEARCH_SCOPE_ORDER（conversations/drive/work_items/meetings），中文组标题「会话/网盘/任务/会议」
+// （用「任务」而非「工单」，与本页面其余导航/标题已用的「任务」措辞对齐，见 nav.workitem）。
+// 会话结果 web 端没有聊天页可跳（R13 定调"聊天归桌面"）——不渲染成链接，只给一条诚实说明。
+const SEARCH_GROUP_SCOPES = ["conversations", "drive", "work_items", "meetings"] as const;
+
+function searchGroupTitleKey(scope: typeof SEARCH_GROUP_SCOPES[number]): RouteCopyKey {
+  if (scope === "conversations") {
+    return "search.groupConversations";
+  }
+  if (scope === "drive") {
+    return "search.groupDrive";
+  }
+  if (scope === "work_items") {
+    return "search.groupWorkItems";
+  }
+  return "search.groupMeetings";
+}
+
+function renderSearchRouteComponent(q: string | undefined, locale: WorkHubLocale): WebRouteComponent {
+  const trimmed = (q ?? "").trim();
+  const hasValidQuery = trimmed.length >= 2;
+  const promptKey = !q ? "search.promptEmpty" : !hasValidQuery ? "search.promptShort" : "search.loading";
+  const groups = SEARCH_GROUP_SCOPES.map((scope) => `<section class="wh-card wh-r4-route-card" data-r14-search-group="${escapeHtml(scope)}" hidden>
+        <h3 role="heading" aria-level="2">${escapeHtml(routeT(locale, searchGroupTitleKey(scope)))}</h3>
+        ${scope === "conversations" ? `<p class="wh-subtle">${escapeHtml(routeT(locale, "search.desktopOnlyNote"))}</p>` : ""}
+        <div class="wh-r4-route-timeline" role="list" data-r14-search-group-list="true"></div>
+        <p class="wh-subtle" data-r14-search-group-more="true" hidden></p>
+      </section>`).join("");
+  return createWebRouteComponent({
+    key: "search",
+    css: webRouteComponentCss,
+    primaryHrefs: [],
+    source: "page-vm",
+    locale,
+    pageVm: "search",
+    html: `<section class="wh-r4-route" data-r4-route-component="search" data-r4-route-component-source="page-vm" data-r4-route-component-locale="${escapeHtml(locale)}" data-r14-search-route="true" data-r14-search-query="${escapeHtml(trimmed)}">
+      <header class="wh-r4-route-head">
+        <div>
+          <span class="wh-r4-route-kicker">${escapeHtml(routeT(locale, "search.kicker"))}</span>
+          <h1>${escapeHtml(routeT(locale, "search.title"))}</h1>
+          <p>${escapeHtml(routeT(locale, "search.summary"))}</p>
+        </div>
+      </header>
+      <form class="wh-r14-search-form" method="get" action="/dashboard/search" role="search" data-r14-search-form="true">
+        <input type="search" name="q" value="${escapeHtml(trimmed)}" minlength="2" maxlength="64" placeholder="${escapeHtml(routeT(locale, "search.placeholder"))}" aria-label="${escapeHtml(routeT(locale, "search.label"))}" autocomplete="off" />
+        <button class="wh-btn wh-btn-primary" type="submit">${escapeHtml(routeT(locale, "search.submit"))}</button>
+      </form>
+      <p class="wh-subtle" data-r14-search-status="${hasValidQuery ? "loading" : "prompt"}">${escapeHtml(routeT(locale, promptKey))}</p>
+      <button type="button" class="wh-btn" data-r14-search-retry="true" hidden>${escapeHtml(locale === "zh-CN" ? "重试" : "Retry")}</button>
+      <div class="wh-r4-route-stack" data-r14-search-results="true" ${hasValidQuery ? "" : "hidden"}>${groups}</div>
+    </section>`
+  });
+}
+
 // R13 批 P3（功能审查 B4）：web /settings 的「AI 助手」区块——web-only 用户此前对 5 类 AI 配置零入口，
 // mode=1（只观察）的用户被 409 永久拒绝且无法自救。这里给 default_mode 与 dispatch_policy 两个真表单
 // （PATCH /api/me/ai-profile 已有）；其余 AI 项（Granular/Cuu 主动性/模型档位/项目治理）诚实标注
@@ -4540,6 +4646,7 @@ export type WebRouteComponentInput =
   | { key: "cost"; cost: CostDashboardVM }
   | { key: "agents"; agents: AgentArmyDashboardVM }
   | { key: "knowledge"; evidence: EvidenceBubble; sourceRef?: string | undefined; scopeLanding?: boolean | undefined; projects?: ProjectListVM | undefined }
+  | { key: "search"; q?: string | undefined }
   | { key: "skills"; skills: TeamSkillsPageVM }
   | { key: "settings"; settings: SettingsPageVM };
 
@@ -4584,6 +4691,8 @@ export function renderWebRouteComponent(
       return renderAgentArmyRouteComponent(input.agents, locale);
     case "knowledge":
       return renderKnowledgeRouteComponent(input.evidence, locale, input.sourceRef, input.scopeLanding, input.projects);
+    case "search":
+      return renderSearchRouteComponent(input.q, locale);
     case "skills":
       return renderTeamSkillsRouteComponent(input.skills, locale);
     case "settings":
