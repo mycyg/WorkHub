@@ -21,6 +21,8 @@ test("registry covers every backend capability surface", () => {
       "drive",
       "intake",
       "knowledge",
+      // R14 批 MEM：Cuu 的记忆——独立能力视图（关于我/团队技能两个 tab），见 spotlight/views/memory.ts。
+      "memory",
       // R12 批 1：工作台是独立窗口(deep-link 打开)，「新建项目」是它的快捷入口，两条都只 invoke
       // open_workbench，不在盒子内联渲染——见 spotlight/views/workbench-open.ts。
       "new_project",

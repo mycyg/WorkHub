@@ -260,6 +260,9 @@ const COMMAND_ROUTE: Record<CommandId, string> = {
   team: "/team",
   notifications: "/notifications",
   settings: "/settings",
+  // R14 批 MEM：同 workbench/new_project 的占位路由取舍——CommandId 新增一个键，这张已死的
+  // Record<CommandId,string> 仍要求穷举，给个占位让 tsc 通过（真实路由走 bootSpotlight()/registry.ts）。
+  memory: "/settings",
   workbench: "/workbench",
   new_project: "/workbench"
 };

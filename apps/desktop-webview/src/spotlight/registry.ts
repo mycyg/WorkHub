@@ -12,6 +12,7 @@ import {
   createProjectsView, createNotificationsView } from "./views/dashboards.js";
 import { createDriveView } from "./views/drive.js";
 import { createIntakeView } from "./views/intake.js";
+import { createMemoryView } from "./views/memory.js";
 import { createPlaceholderView } from "./views/placeholder.js";
 import { createProposalsView } from "./views/proposals.js";
 import { createReplayView } from "./views/replay.js";
@@ -37,6 +38,8 @@ const builtViews: Partial<Record<CommandId, () => SpotlightCapabilityView>> = {
   workitem: createWorkItemView,
   notifications: createNotificationsView,
   settings: createSettingsView,
+  // R14 批 MEM：独立能力视图（list→detail 多层交互），不是 settings.ts 内联区块——见 views/memory.ts。
+  memory: createMemoryView,
   workbench: () => createWorkbenchOpenView("workbench", { bare: false }),
   new_project: () => createWorkbenchOpenView("new_project", { bare: true })
 };
