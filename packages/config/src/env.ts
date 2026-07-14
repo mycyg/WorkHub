@@ -58,6 +58,10 @@ export const envSchema = z.object({
   COOKIE_SECRET: z.string().default("dev-change-me"),
   COOKIE_SECURE: booleanString.default(false),
   ADMIN_CLAIM_SECRET: z.string().default(""),
+  // R14 批 GH（GitHub 集成）：项目级 GitHub PAT 落库前用 AES-256-GCM 加密的主密钥（32 字节 base64）。
+  // 与 COOKIE_SECRET 刻意分离——两者威胁模型/轮换节奏不同（会话伪造 vs 解密所有项目 PAT）。
+  // 默认空串=功能未配置：绑定端点 fail-closed 503（绝不明文落库），轮询 worker 空转，见 07-gh-design §1.1。
+  GITHUB_TOKEN_ENC_KEY: z.string().default(""),
   CORS_ALLOW_ORIGINS: z.string().default("*"),
   TOUCH_DEVICE_ON_AUTH: booleanString.default(true),
   DEFAULT_ORG_ID: z.string().uuid().default(authDefaults.defaultOrgId),
@@ -148,6 +152,10 @@ export type Settings = {
     sessionAbsoluteTtlMs: number;
     sessionIdleTtlMs: number;
   };
+  github: {
+    // AES-256-GCM 主密钥（base64）。空串=未配置，GH 集成端点 fail-closed 503，绝不明文落库。
+    tokenEncKey: string;
+  };
   llm: {
     defaultProvider: string;
     baseUrl: string;
@@ -228,6 +236,9 @@ export function loadSettings(env: EnvInput = process.env): Settings {
       authMode: parsed.AUTH_MODE,
       sessionAbsoluteTtlMs: parsed.SESSION_ABSOLUTE_TTL_HOURS * 60 * 60 * 1000,
       sessionIdleTtlMs: parsed.SESSION_IDLE_TTL_HOURS * 60 * 60 * 1000
+    },
+    github: {
+      tokenEncKey: parsed.GITHUB_TOKEN_ENC_KEY
     },
     llm: {
       defaultProvider: parsed.LLM_PROVIDER_DEFAULT,

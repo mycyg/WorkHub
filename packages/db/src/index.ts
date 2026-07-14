@@ -48,3 +48,4 @@ export * from "./repositories/presence.js";
 export * from "./repositories/search.js";
 export * from "./repositories/ai-feedback.js";
 export * from "./repositories/risk-monitor.js";
+export * from "./repositories/github-bindings.js";

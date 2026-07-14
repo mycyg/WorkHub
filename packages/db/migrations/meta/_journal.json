@@ -421,6 +421,13 @@
       "when": 1783912000000,
       "tag": "0059_project_risk_monitor",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1783914000000,
+      "tag": "0060_project_github_bindings",
+      "breakpoints": true
     }
   ]
 }

@@ -45,7 +45,9 @@ import {
 // R12 batch 0: the old count (58) was correct before the conversation foundation existed.
 // This slice intentionally adds exactly eight named tables, so the graph contract evolves to 66.
 // R14 批 CHAT：新增 message_reactions + conversation_read_cursors 两张表（迁移 0055），graph 涨到 68。
-const F02_TABLE_COUNT = 68;
+// R14 批 FEEDBACK：新增 ai_feedback 一张表（迁移 0058），graph 涨到 69。
+// R14 批 GH：新增 project_github_bindings + project_github_activities 两张表（迁移 0060），graph 涨到 71。
+const F02_TABLE_COUNT = 71;
 
 type WorkHubTable = (typeof workHubTables)[keyof typeof workHubTables];
 
@@ -662,7 +664,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0059 project risk monitor", () => {
+test("migration journal ends with 0060 project github bindings", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -677,10 +679,10 @@ test("migration journal ends with 0059 project risk monitor", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R14 集成收口：FEEDBACK(0058)+RISK(0059) 双批合并后链尾=0059，when 严格递增。
-      idx: 59,
+      // R14 集成收口：FEEDBACK(0058)+RISK(0059)+GH(0060) 三批合并后链尾=0060，when 严格递增。
+      idx: 60,
       version: "7",
-      tag: "0059_project_risk_monitor",
+      tag: "0060_project_github_bindings",
       breakpoints: true
     }
   );
@@ -727,6 +729,72 @@ test("R14 批 RISK migration 0059 adds project_ai_governance.risk_monitor_json a
   assert.equal(projectAiGovernance.riskMonitorJson.notNull, true);
   assert.deepEqual(projectAiGovernance.riskMonitorJson.default, {});
   assert.equal(projectAiGovernance.riskMonitorJson.columnType, "PgJsonb");
+});
+
+test("R14 批 GH migration 0060 creates the binding and activity tables replay-safe with ciphertext-only PAT columns", () => {
+  const migrationUrl = new URL("../migrations/0060_project_github_bindings.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0060_project_github_bindings.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "project_github_bindings"/u);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS "project_github_activities"/u);
+  // PAT 只以 AES-256-GCM 密文三列落库（bytea NOT NULL），迁移里绝不出现任何明文 token 列。
+  for (const column of ["pat_ciphertext", "pat_iv", "pat_auth_tag"]) {
+    assert.match(
+      migration,
+      new RegExp(`"${column}"\\s+bytea\\s+NOT NULL`, "iu"),
+      `missing ciphertext column ${column}`
+    );
+  }
+  assert.doesNotMatch(migration, /personal_access_token|"pat"\s|plaintext/iu, "migration must not carry a plaintext token column");
+  // 一对一绑定：主键=project_id，projects 级联删除；解绑/删项目=密文物理销毁。
+  assert.match(migration, /"project_id" uuid PRIMARY KEY REFERENCES "projects"\("id"\) ON DELETE cascade/u);
+  // 活动表幂等写入原语：(project_id, kind, external_id) 唯一约束 + 级联清理。
+  assert.match(
+    migration,
+    /CONSTRAINT "project_github_activities_dedupe_uq" UNIQUE \("project_id", "kind", "external_id"\)/u
+  );
+  assert.match(migration, /CREATE INDEX IF NOT EXISTS "project_github_activities_project_occurred_idx"/u);
+  assert.doesNotMatch(migration, /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]/u, "migration must not contain emoji glyphs");
+
+  // Drizzle schema 与迁移同步：两张表在活跃 graph 上，密文列 bytea、唯一约束与索引同名同列。
+  const bindings = requiredTable("projectGithubBindings") as WorkHubTable & Record<string, any>;
+  assert.equal(getTableName(bindings), "project_github_bindings");
+  for (const key of ["patCiphertext", "patIv", "patAuthTag"] as const) {
+    assert.equal(bindings[key].notNull, true, `${key} must be NOT NULL`);
+    assert.equal(bindings[key].getSQLType(), "bytea", `${key} must be bytea`);
+  }
+  assert.equal(bindings.projectId.primary, true);
+  assert.equal(bindings.enabled.notNull, true);
+  assert.equal(bindings.lastError.notNull, false);
+  assert.equal(bindings.commitsSince.notNull, false);
+  assert.equal(bindings.issuesSince.notNull, false);
+
+  const activities = requiredTable("projectGithubActivities");
+  assert.equal(getTableName(activities), "project_github_activities");
+  const activitiesConfig = getTableConfig(activities);
+  const dedupe = activitiesConfig.uniqueConstraints.find(
+    (constraint) => constraint.name === "project_github_activities_dedupe_uq"
+  );
+  assert.ok(dedupe, "missing dedupe unique constraint");
+  assert.deepEqual(dedupe.columns.map((column) => column.name), ["project_id", "kind", "external_id"]);
+  assert.equal(
+    activitiesConfig.indexes.some((index) => index.config.name === "project_github_activities_project_occurred_idx"),
+    true
+  );
+  // 活动表 FK 形状：project 级联删除（解绑/删项目连带清活动），工单关联删除置空（stretch 列）。
+  const activityForeignKeys = activitiesConfig.foreignKeys.map((foreignKey) => ({
+    name: foreignKey.getName(),
+    onDelete: foreignKey.onDelete
+  }));
+  assert.deepEqual(
+    activityForeignKeys.find((fk) => fk.name.includes("project_id"))?.onDelete,
+    "cascade"
+  );
+  assert.deepEqual(
+    activityForeignKeys.find((fk) => fk.name.includes("related_work_item_id"))?.onDelete,
+    "set null"
+  );
 });
 
 test("R14 批 SEARCH migration 0057 builds pg_trgm plus five replay-safe GIN indexes", () => {

@@ -30,4 +30,5 @@ export * from "./domain/user-profile.js";
 export * from "./domain/presence.js";
 export * from "./domain/search.js";
 export * from "./domain/ai-feedback.js";
+export * from "./domain/github.js";
 export * from "./fixtures/manifest-fixtures.js";
