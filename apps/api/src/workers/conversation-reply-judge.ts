@@ -11,10 +11,8 @@ import { getDefaultStructuredLogger, type StructuredLogger } from "../logging.js
 // apps/api/src/workers/conversation-observer.ts 的 createConversationObserverScheduler（running 守卫
 // + 独立可测 tick() + 定时器 unref 不挡进程退出）。
 //
-// 挂载说明（本批范围围栏不许碰 apps/api/src/server.ts）：这个 scheduler 目前只被本文件的测试直接
-// 构造调用，没有在服务端启动流程里被自动 start()——需要另外在 server.ts 里加一行
-// `getDefaultConversationReplyJudgeScheduler().start()`（与
-// `getDefaultConversationObserverScheduler().start()` 相邻挂载即可）。见批次汇报"挂载清单"。
+// 挂载现状（R13 集成时已接线）：server.ts 在 provider 已配置时构造并 start() 本 scheduler
+// （isConfigured 守卫，与观察者调度器同款语义），shutdown 时同步 stop()。
 
 const DEFAULT_INTERVAL_MS = 15_000;
 
