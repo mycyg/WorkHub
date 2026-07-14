@@ -86,6 +86,9 @@ function governance(overrides: Partial<ProjectAiGovernanceRow> = {}): ProjectAiG
     silenceWindowSecs: 60,
     quietHoursJson: { enabled: false },
     granularJson: {},
+    // R14 批 RISK：projectAiGovernance 加了 risk_monitor_json 列——ProjectAiGovernanceRow
+    // ($inferSelect) 现在要求这个字段，不是本文件测的功能改动，纯粹是共享表加列牵连的机械补齐。
+    riskMonitorJson: {},
     createdAt: now,
     updatedAt: now,
     ...overrides
@@ -157,6 +160,7 @@ function repository(options: RepositoryOptions = {}) {
           silenceWindowSecs: input.patch.silenceWindowSecs ?? 60,
           quietHoursJson: input.patch.quietHoursJson ?? { enabled: false },
           granularJson: { ...(input.patch.granularJson ?? {}) },
+          riskMonitorJson: { ...(input.patch.riskMonitorJson ?? {}) },
           updatedAt: input.at ?? now
         });
       }
@@ -691,6 +695,15 @@ test("project governance GET synthesizes defaults without writing and PATCH maps
     silence_window_seconds: 60,
     quiet_hours: { enabled: false },
     granular_settings: {},
+    // R14 批 RISK（批准变更，见 r14-release-readiness/05-risk-design.md §2.1）：additive risk_monitor,
+    // 读侧完整默认值合并输出。
+    risk_monitor: {
+      enabled: true,
+      stall_days_threshold: 5,
+      deadline_lookahead_days: 2,
+      cost_spike_ratio_pct: 300,
+      cost_spike_min_cny: 20
+    },
     updated_at: null
   });
   assert.deepEqual(db.governanceWrites, []);
@@ -732,6 +745,41 @@ test("project governance GET synthesizes defaults without writing and PATCH maps
       granularJson: { dispatch_run: false }
     },
     at: now
+  });
+});
+
+// R14 批 RISK：PATCH .risk_monitor 映射到仓库 patch 的 riskMonitorJson，读侧输出用
+// DEFAULT_RISK_MONITOR_SETTINGS 补全成完整对象（非 partial）。
+test("project governance PATCH maps risk_monitor to riskMonitorJson and GET merges it with conservative defaults", async () => {
+  const module = await serviceModule();
+  const db = repository();
+  const service = module.createAiSettingsService({
+    repository: db.repo,
+    providers: providerRegistry().registry,
+    ledger: ledger().store,
+    policies: policies().store,
+    settings: runtimeSettings,
+    now: () => now
+  });
+
+  const updated = await service.patchProjectGovernance({
+    actor: actor(),
+    projectId,
+    payload: { risk_monitor: { stall_days_threshold: 3, cost_spike_ratio_pct: 500 } }
+  });
+
+  assert.deepEqual(updated.risk_monitor, {
+    enabled: true,
+    stall_days_threshold: 3,
+    deadline_lookahead_days: 2,
+    cost_spike_ratio_pct: 500,
+    cost_spike_min_cny: 20
+  });
+  const governanceWrite = db.governanceWrites[0]! as Parameters<
+    AiSettingsRepository["upsertProjectGovernance"]
+  >[0];
+  assert.deepEqual(governanceWrite.patch, {
+    riskMonitorJson: { stall_days_threshold: 3, cost_spike_ratio_pct: 500 }
   });
 });
 
