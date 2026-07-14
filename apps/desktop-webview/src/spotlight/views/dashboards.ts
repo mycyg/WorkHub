@@ -8,6 +8,7 @@ import type {
   CalendarPageVM,
   CostDashboardVM,
   EvidenceBubble,
+  GithubActivityVM,
   NotificationPageVM,
   TeamSkillsPageVM,
   ProjectHomePageVM,
@@ -280,6 +281,37 @@ export function projectListEmptyHtml(zh: boolean): string {
   return `<div class="wh-spot-dash ds-anim-fade-in">${emptyHtml("📁", zh ? "还没有项目" : "No projects yet", zh ? "新建任务后会自动建立项目和网盘" : "Create a task to create one")}<div style="text-align:center">${newTaskCta(zh)}</div></div>`;
 }
 
+// R14 批 GH（07-gh-design.md §5.1）：项目主页 github_activities 区块——GH-B 已把它接进
+// ProjectHomePageVM（扁平数组，非富对象；绑定/同步元信息走独立的绑定卡端点，见 workbench/settings）。
+// 无绑定/绑定但暂无活动/取数失败三种情况服务端都省略这个字段，故这里只需判空即可诚实不渲区块。
+function githubActivityKindLabel(kind: GithubActivityVM["kind"], zh: boolean): string {
+  switch (kind) {
+    case "commit":
+      return zh ? "提交" : "Commit";
+    case "pull_request":
+      return "PR";
+    case "issue":
+      return zh ? "议题" : "Issue";
+    default:
+      return kind;
+  }
+}
+
+function githubActivityRow(item: GithubActivityVM, zh: boolean): string {
+  const stateTag = item.state ? `<span class="wh-spot-row-tag">${escapeHtml(item.state)}</span>` : "";
+  const whenMatch = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/u.exec(item.occurred_at);
+  const when = whenMatch ? `${whenMatch[1]} ${whenMatch[2]}` : item.occurred_at;
+  const meta = [when, item.author_login].filter((part): part is string => Boolean(part)).join(" · ");
+  // 桌面 Tauri webview 对外部链接没有承接（target=_blank 点了没反应，同上面知识检索证据行的既有处理：
+  // 点击给一句诚实提示，不假装能内联打开 github.com）——照抄那条既有外链模式，不新增打开能力。
+  return `<button type="button" class="wh-spot-row" data-open-gh-activity="${escapeHtml(safeHref(item.html_url))}" style="cursor:pointer;width:100%;text-align:left">
+    <div class="wh-spot-row-main">
+      <div class="wh-spot-row-title">${escapeHtml(item.title)}<span class="wh-spot-row-tag">${escapeHtml(githubActivityKindLabel(item.kind, zh))}</span>${stateTag}</div>
+      <div class="wh-spot-row-sub">${escapeHtml(meta)}</div>
+    </div>
+  </button>`;
+}
+
 // 项目主页（list→detail morph）：点项目行 → 在同一盒子内 morph 出该项目的「项目主页」
 // （元信息 + 进行中工作清单链工作项 + 新任务/打开网盘入口），镜像 web /projects/:id。盒子随内容生长。
 export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): string {
@@ -324,6 +356,11 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
     ? `<p class="wh-spot-row-sub" style="text-align:center">${escapeHtml(zh ? `还有 ${hiddenFiles} 个文件未显示，可用「打开网盘」查看完整文件树。` : `+${hiddenFiles} more files not shown here — use Open drive to review the full file tree.`)}</p>`
     : "";
   const filesBlock = `<div class="wh-spot-row-metalabel" style="margin-top:4px">${escapeHtml(zh ? `最近文件 ${vm.drive.file_count}` : `Recent files ${vm.drive.file_count}`)}</div><div class="wh-spot-list">${fileRows}</div>${filesMoreNote}`;
+  // 未绑定/绑定但暂无活动/取数失败：服务端三种情况都省略这个字段（诚实缺省），故只有非空数组才渲区块。
+  const githubActivities = vm.github_activities ?? [];
+  const githubBlock = githubActivities.length
+    ? `<div class="wh-spot-row-metalabel" style="margin-top:4px">${escapeHtml(zh ? "最近 GitHub 动态" : "Recent GitHub activity")}</div><div class="wh-spot-list">${githubActivities.map((item) => githubActivityRow(item, zh)).join("")}</div>`
+    : "";
   return `<div class="wh-spot-dash ds-anim-fade-in">
     <button type="button" class="wh-spot-act wh-spot-act--quiet ds-pressable" data-back-to-projects style="align-self:flex-start">${zh ? "← 返回项目列表" : "← Back to projects"}</button>
     <div>
@@ -338,6 +375,7 @@ export function projectHomeDetailHtml(vm: ProjectHomePageVM, zh: boolean): strin
     <div class="wh-spot-list ds-stagger">${rows}</div>
     ${moreNote}
     ${filesBlock}
+    ${githubBlock}
   </div>`;
 }
 
@@ -407,6 +445,14 @@ export function createProjectsView(): SpotlightCapabilityView {
           const wi = target.closest<HTMLElement>("[data-open-workitem]");
           if (wi?.dataset.openWorkitem) {
             ctx.open("workitem", { id: wi.dataset.openWorkitem });
+            return;
+          }
+          // R14 批 GH：GitHub 活动行的 html_url 是真外部站点（github.com），既不是 WorkHub 内部路由也
+          // 不是"主窗口能打开"的东西——Tauri webview 对 target=_blank 没有承接（点了没反应，同上面知识
+          // 检索证据行 rank2 的既有教训），故照抄那条既有外链模式：给一句诚实提示，不假装能内联打开。
+          const ghActivity = target.closest<HTMLElement>("[data-open-gh-activity]");
+          if (ghActivity?.dataset.openGhActivity) {
+            ctx.toast(zh ? "GitHub 链接需要在系统浏览器中打开" : "Open GitHub links in your system browser", "info");
             return;
           }
           const drive = target.closest<HTMLElement>("[data-open-drive]");
