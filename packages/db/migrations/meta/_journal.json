@@ -379,6 +379,13 @@
       "when": 1783905000000,
       "tag": "0053_seed_default_org_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1783906000000,
+      "tag": "0054_user_avatar",
+      "breakpoints": true
     }
   ]
 }

@@ -661,7 +661,7 @@ test("0047 task plan status migration preserves 0031 and replaces the CHECK in s
   );
 });
 
-test("migration journal ends with 0053 default org/workspace seed", () => {
+test("migration journal ends with 0054 user avatar columns", () => {
   const journal = JSON.parse(
     readFileSync(new URL("../migrations/meta/_journal.json", import.meta.url), "utf8")
   ) as {
@@ -676,15 +676,39 @@ test("migration journal ends with 0053 default org/workspace seed", () => {
       breakpoints: finalEntry.breakpoints
     },
     {
-      // R14 前夜：0050-0052 已预分配给并行施工中的 P1.5/C1/A2 三批，0053（pilot smoke 病根：
-      // 默认 org/workspace 种子）由集成者先行落主干。三批合并时把 0050-0052 的 when 归一成
-      // 递增序插在 0053 之前，journal 尾保持 0053 不变——所以本断言在合并波次中是稳定的。
-      idx: 53,
+      // R14 批 AVATAR：0050-0053 已落主干（P1.5/C1/A2 三批 + pilot smoke 病根种子），本批 0054
+      // 顺排在其后，加 users.avatar_webp/avatar_updated_at 两列。若后续并行批次的迁移号与本批
+      // 冲突，集成者合并时把 when 归一成递增序插在 0054 之前，journal 尾保持 0054 不变。
+      idx: 54,
       version: "7",
-      tag: "0053_seed_default_org_workspace",
+      tag: "0054_user_avatar",
       breakpoints: true
     }
   );
+});
+
+test("R14 批 AVATAR migration 0054 adds users.avatar_webp/avatar_updated_at as nullable, replay-safe columns", () => {
+  const migrationUrl = new URL("../migrations/0054_user_avatar.sql", import.meta.url);
+  assert.equal(existsSync(migrationUrl), true, "missing migration 0054_user_avatar.sql");
+  const migration = readFileSync(migrationUrl, "utf8");
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"users"\s+ADD COLUMN IF NOT EXISTS\s+"avatar_webp"\s+bytea\s*;/iu
+  );
+  assert.match(
+    migration,
+    /ALTER TABLE\s+"users"\s+ADD COLUMN IF NOT EXISTS\s+"avatar_updated_at"\s+timestamp with time zone\s*;/iu
+  );
+  assert.doesNotMatch(migration, /NOT NULL/iu, "both avatar columns must stay nullable — historical users have no avatar");
+
+  assert.equal(users.avatarWebp.name, "avatar_webp");
+  assert.equal(users.avatarWebp.notNull, false);
+  assert.equal(users.avatarWebp.columnType, "PgCustomColumn");
+  assert.equal(users.avatarWebp.getSQLType(), "bytea");
+
+  assert.equal(users.avatarUpdatedAt.name, "avatar_updated_at");
+  assert.equal(users.avatarUpdatedAt.notNull, false);
+  assert.equal(users.avatarUpdatedAt.columnType, "PgTimestamp");
 });
 
 test("R13 P1.5 migration 0050 adds proposals.diff_stats_json as a nullable jsonb column", () => {

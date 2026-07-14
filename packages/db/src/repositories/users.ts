@@ -47,6 +47,13 @@ export type UserRepository = {
   // R10-P2-5（委派选人器）：活跃成员简表（id+昵称+admin），按昵称排序、上限 200——只暴露转交
   // 所需的最小字段。OPTIONAL（假仓库不实现则 /api/users 回 501，前端选人器降级隐藏）。
   listActiveRefs?: () => Promise<Array<Pick<UserAuthRow, "id" | "nickname" | "isAdmin">>>;
+  // R14 批 AVATAR（头像与资料入口）：写入/清空/读取用户头像二进制。setAvatar 覆盖写（含
+  // avatarUpdatedAt，兼作 GET 端点的 ETag 源）；clearAvatar 回退「无头像」（渲染层回退首字母
+  // 色块 tile）；findAvatar 只取头像相关两列，避免整行 SELECT * 把 bytea 意外带进不需要它的查询。
+  // OPTIONAL：假仓库不实现则头像端点回 501（同 mutedNotificationTypes 的可选契约先例）。
+  setAvatar?: (userId: string, avatarWebp: Buffer, at: Date) => Promise<UserAuthRow | null>;
+  clearAvatar?: (userId: string, at: Date) => Promise<UserAuthRow | null>;
+  findAvatar?: (userId: string) => Promise<{ avatarWebp: Buffer | null; avatarUpdatedAt: Date | null } | null>;
 };
 
 export function createUserRepository(db: WorkHubDb): UserRepository {
@@ -214,6 +221,33 @@ export function createUserRepository(db: WorkHubDb): UserRepository {
         .returning();
       const user = rows[0] ?? null;
       return user && user.deletedAt === null ? user : null;
+    },
+
+    async setAvatar(userId, avatarWebp, at) {
+      const rows = await db
+        .update(users)
+        .set({ avatarWebp, avatarUpdatedAt: at, updatedAt: at })
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+        .returning();
+      return rows[0] ?? null;
+    },
+
+    async clearAvatar(userId, at) {
+      const rows = await db
+        .update(users)
+        .set({ avatarWebp: null, avatarUpdatedAt: null, updatedAt: at })
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+        .returning();
+      return rows[0] ?? null;
+    },
+
+    async findAvatar(userId) {
+      const rows = await db
+        .select({ avatarWebp: users.avatarWebp, avatarUpdatedAt: users.avatarUpdatedAt })
+        .from(users)
+        .where(and(eq(users.id, userId), isNull(users.deletedAt)))
+        .limit(1);
+      return rows[0] ?? null;
     }
   };
 }
