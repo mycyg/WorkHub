@@ -2024,7 +2024,12 @@ export function createInMemoryAgentRunQueue(options: {
         },
         newStatus,
         reasonOneline,
-        ...(usersById ? { usersById } : {})
+        ...(usersById ? { usersById } : {}),
+        // R14 FIX（通知深链缺 conversation_id）：这个 run 若是工作台会话里派发出去的
+        // （conversation-observer.ts 的 dispatchExecuteItem auto 分支设的 source_conversation_id），
+        // 「升级/待审查」这条里程碑通知就该能深链回那段讨论，不止是工作项页。非会话来源的 run
+        // 没有这个字段，targetUrl 原样不变。
+        ...(run.source_conversation_id ? { conversationId: run.source_conversation_id } : {})
       });
     } catch (error) {
       getDefaultStructuredLogger().warn("agent_run_notification_milestone_failed", { error });

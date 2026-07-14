@@ -4,6 +4,7 @@ import test from "node:test";
 import type {
   AuditLogRepository,
   AuditLogRow,
+  CreateNotificationInput,
   NotificationRepository,
   NotificationRow,
   NotificationWriteResult
@@ -109,14 +110,18 @@ class ThrowingAuditLogs implements AuditLogRepository {
 // 团队就绪 must-have（通知偏好-按类型静音）：记录每次 createOrUpdate 的入参，便于断言哪些类型被建。
 class RecordingNotifications implements NotificationRepository {
   public created: { userId: string; type: string }[] = [];
+  // R14 FIX（通知深链缺 conversation_id）：额外记完整 input（含 targetUrl），不动上面那个只记
+  // {userId,type} 的旧数组——上面几条既有用例对 `created` 做 exact deepEqual，混进 targetUrl 会炸掉它们。
+  public createdInputs: { userId: string; type: string; targetUrl: string | undefined }[] = [];
 
   async createOrUpdateNotification(
-    input: { userId: string; type: string },
+    input: CreateNotificationInput,
     _at: Date
   ): Promise<NotificationWriteResult> {
     this.created.push({ userId: input.userId, type: input.type });
+    this.createdInputs.push({ userId: input.userId, type: input.type, targetUrl: input.targetUrl });
     return {
-      notification: row({ userId: input.userId, type: input.type }),
+      notification: row({ userId: input.userId, type: input.type, targetUrl: input.targetUrl ?? null }),
       created: true,
       resurfaced: true
     };
@@ -448,6 +453,72 @@ test("milestone notifications publish only private user topics and dedupe replay
 
   assert.deepEqual(published, [{ topic: "user:90000000-0000-4000-8000-000000000002", type: "notification.created" }]);
   assert.equal(published.some((event) => event.topic === "all"), false);
+});
+
+// R14 FIX（通知深链缺 conversation_id）：agent-runner.ts 的 notifyRunMilestone 在 run 带
+// source_conversation_id（即工作项是工作台会话观察者派发出去的）时，把它透传成 notifyMilestone 的
+// conversationId 参数——这条测试锁死"透传后 targetUrl 真的带上了 ?conversation_id=" 这条产生点行为，
+// 不只是类型层面接受这个参数。
+test("notifyMilestone appends conversation_id onto the lifecycle draft's targetUrl when the triggering run came from a conversation", async () => {
+  const repo = new RecordingNotifications();
+  const service = createNotificationService({
+    notifications: repo,
+    now: () => now
+  });
+
+  await service.notifyMilestone({
+    workItem: {
+      id: "90000000-0000-4000-8000-000000000003",
+      code: "WH-1",
+      title: "预算申请",
+      submitterUserId: "90000000-0000-4000-8000-000000000004",
+      approverUserId: "90000000-0000-4000-8000-000000000002"
+    },
+    actor: { id: "ai-auto", label: "AI 工人" },
+    newStatus: "escalated",
+    reasonOneline: "预算已经用完",
+    conversationId: "90000000-0000-4000-8000-000000000099"
+  });
+
+  // "escalated" 里程碑的收件人清单是 submitter+approver 两个角色（见 packages/events/src/lifecycle.ts
+  // 的 lifecycleMilestones.escalated.recipients），本例两者不同人，故落两条草稿——都该带上同一个
+  // conversation_id（同一次里程碑事件，同一个会话来源，不分收件人）。
+  assert.equal(repo.createdInputs.length, 2);
+  for (const created of repo.createdInputs) {
+    assert.equal(
+      created.targetUrl,
+      "/workitems/90000000-0000-4000-8000-000000000003?conversation_id=90000000-0000-4000-8000-000000000099"
+    );
+  }
+});
+
+// 没有会话上下文的里程碑通知（run 不是从工作台会话派发的）不该硬造 conversation_id——targetUrl 原样
+// 指向工作项页，和这批之前的行为完全一致，不能因为新增了可选参数就改变了老调用方（没传
+// conversationId 的调用点）的输出。
+test("notifyMilestone leaves targetUrl untouched when there is no conversation context", async () => {
+  const repo = new RecordingNotifications();
+  const service = createNotificationService({
+    notifications: repo,
+    now: () => now
+  });
+
+  await service.notifyMilestone({
+    workItem: {
+      id: "90000000-0000-4000-8000-000000000003",
+      code: "WH-1",
+      title: "预算申请",
+      submitterUserId: "90000000-0000-4000-8000-000000000004",
+      approverUserId: "90000000-0000-4000-8000-000000000002"
+    },
+    actor: { id: "ai-auto", label: "AI 工人" },
+    newStatus: "escalated",
+    reasonOneline: "预算已经用完"
+  });
+
+  assert.equal(repo.createdInputs.length, 2);
+  for (const created of repo.createdInputs) {
+    assert.equal(created.targetUrl, "/workitems/90000000-0000-4000-8000-000000000003");
+  }
 });
 
 test("notification list clamps drifted DB severity values to the public contract", async () => {

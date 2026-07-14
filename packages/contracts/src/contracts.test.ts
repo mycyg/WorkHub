@@ -1951,6 +1951,32 @@ test("R5.7 notification grounding carries reason and product-route evidence refs
   assert.throws(() => notificationGroundingVmSchema.parse({ reason_text: "", evidence_refs: [] }));
 });
 
+// R14 FIX（通知深链缺 conversation_id）：additive——镜像 notification.ts 的 Notification.conversation_id，
+// 老通知/没有会话上下文的通知类型不带这个字段也要照常解析通过。
+test("R14 notificationItemVmSchema accepts an optional conversation_id and stays backward compatible without it", () => {
+  const BASE = {
+    id: "83000000-0000-4000-8000-000000000002",
+    type: "workitem.escalated",
+    severity: "high" as const,
+    status: "unread" as const,
+    inbox_bucket: "needs_decision" as const,
+    title: "WH-9 需要你来定一下",
+    created_at: "2026-07-14T00:00:00.000Z",
+    updated_at: "2026-07-14T00:00:00.000Z",
+    actions: {}
+  };
+  const withoutConversation = notificationItemVmSchema.parse(BASE);
+  assert.equal(withoutConversation.conversation_id, undefined);
+
+  const withConversation = notificationItemVmSchema.parse({
+    ...BASE,
+    conversation_id: "83000000-0000-4000-8000-000000000003"
+  });
+  assert.equal(withConversation.conversation_id, "83000000-0000-4000-8000-000000000003");
+
+  assert.throws(() => notificationItemVmSchema.parse({ ...BASE, conversation_id: "not-a-uuid" }));
+});
+
 test("S1 Day1 pilot metrics snapshot carries six ops metrics and gates", () => {
   const snapshot = pilotDay1MetricsSnapshotSchema.parse({
     generated_at: "2026-06-13T12:00:00.000Z",

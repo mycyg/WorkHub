@@ -3074,7 +3074,53 @@ test("R5.6 Notifications route component groups inbox buckets and exposes audite
   assert.equal(notifications.primaryHrefs.includes("/api/notifications/read-all"), true);
   assert.equal(notifications.primaryHrefs.includes("/api/notifications/96000000-0000-4000-8000-000000000002/dismiss"), true);
   assert.equal(zh.html.includes("需要你决定"), true);
+  // R14 FIX（通知深链缺 conversation_id）：这条 fixture 的通知没有 conversation_id——不该硬造
+  // "关联一段讨论"的标注。
+  assert.equal(notifications.html.includes('data-r14-notification-conversation-note="true"'), false);
   assertNoMainWindowBoundaryLeak(notifications.html);
+});
+
+// R14 FIX（通知深链缺 conversation_id）：page VM 新增的可选 conversation_id 字段（服务端从
+// target_href 查询参数解出，见 apps/api/src/services/schedule-notify-pages.ts 的 notificationItem）
+// 要在通知列表项上标注"这条通知关联一段讨论"——web 没有聊天 UI，跳转目标仍是既有的 target_href
+// （已经带上 ?conversation_id= 查询串），这里只补一句人话提示，不发明新路由/新跳转目标。
+test("R14 notifications route annotates items that carry a conversation_id without changing the jump target", () => {
+  const vm = notificationPageVm();
+  const withConversation: NotificationPageVM["items"][number] = {
+    ...vm.items[0]!,
+    id: "96000000-0000-4000-8000-000000000009",
+    type: "workitem.escalated",
+    target_href: "/workitems/95000000-0000-4000-8000-000000000009?conversation_id=95000000-0000-4000-8000-00000000c009",
+    conversation_id: "95000000-0000-4000-8000-00000000c009",
+    actions: {
+      ...vm.items[0]!.actions,
+      open: {
+        id: "open",
+        label: "Open",
+        method: "GET",
+        href: "/workitems/95000000-0000-4000-8000-000000000009?conversation_id=95000000-0000-4000-8000-00000000c009"
+      }
+    }
+  };
+  const withConversationVm: NotificationPageVM = {
+    ...vm,
+    items: [withConversation],
+    buckets: { ...vm.buckets, needs_decision: [withConversation] }
+  };
+
+  const en = renderWebRouteComponent({ key: "notifications", notifications: withConversationVm }, { locale: "en-US" });
+  const zh = renderWebRouteComponent({ key: "notifications", notifications: withConversationVm }, { locale: "zh-CN" });
+
+  assert.equal(en.html.includes('data-r14-notification-conversation-id="95000000-0000-4000-8000-00000000c009"'), true);
+  assert.equal(en.html.includes('data-r14-notification-conversation-note="true"'), true);
+  assert.equal(en.html.includes("tied to a discussion"), true);
+  assert.equal(zh.html.includes("这条通知关联一段讨论"), true);
+  // web 没有聊天 UI：跳转目标仍是既有的工作项页链接（带上 ?conversation_id= 查询串），不是发明的新路由。
+  assert.equal(en.html.includes('href="/workitems/95000000-0000-4000-8000-000000000009?conversation_id=95000000-0000-4000-8000-00000000c009"'), true);
+  // smoke 门：web 端不出现 "Cuu" 字样。
+  assert.equal(/cuu/iu.test(en.html), false);
+  assert.equal(/cuu/iu.test(zh.html), false);
+  assertNoMainWindowBoundaryLeak(en.html);
 });
 
 test("R5.6 Calendar route component renders deterministic day blocks and target links", () => {

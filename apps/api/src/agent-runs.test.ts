@@ -6246,6 +6246,109 @@ test("FIX#4: a failed run whose item is at an illegal predecessor (spec_ready) s
   assert.deepEqual(milestoneNotifications, []);
 });
 
+// R14 FIX（通知深链缺 conversation_id）：一个由工作台会话观察者派发出去的 run（带
+// source_conversation_id，见 apps/api/src/workers/conversation-observer.ts 的 dispatchExecuteItem
+// auto 分支）失败/升级时，notifyRunMilestone 该把这个会话 id 透传给 notifications.notifyMilestone
+// 的 conversationId 参数——这样"升级给人"通知才能深链回发起这次讨论的会话，而不是只到工作项页。
+test("FIX#4 + R14: a run dispatched from a workbench conversation threads source_conversation_id into the escalated milestone notification", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-fix4-conversation-test-"));
+  const auditLogs = new MemoryAuditLogs();
+  const milestoneNotifications: { newStatus: string; conversationId?: string }[] = [];
+  const notifications: AgentRunNotificationPublisher = {
+    async notifyMilestone(context) {
+      milestoneNotifications.push({
+        newStatus: context.newStatus,
+        ...(context.conversationId ? { conversationId: context.conversationId } : {})
+      });
+      return [];
+    }
+  };
+  const sourceConversationId = "60000000-0000-4000-8000-000000000601";
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000043",
+    workdir: () => workdir,
+    client: () => noDeliverableAgentClient(),
+    auditLogs,
+    confidence: false,
+    proposals: false,
+    notifications,
+    notificationWorkItem: async () => ({
+      id: workItemId,
+      code: "WH-21",
+      title: "Failed worker run from a conversation",
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: userId,
+      projectOwnerUserId: projectOwnerId
+    }),
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+
+  const queued = await queue.enqueue({
+    workItemId,
+    actorId: userId,
+    title: "Failed worker run from a conversation",
+    sourceConversationId
+  });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "failed");
+  assert.deepEqual(milestoneNotifications, [{ newStatus: "escalated", conversationId: sourceConversationId }]);
+});
+
+// 对照组：没有 source_conversation_id 的 run（不是从工作台会话派发的）不该硬造一个 conversationId——
+// notifyMilestone 收到的 context 里这个字段该缺席，不是空字符串/伪造值。
+test("FIX#4 + R14: a run with no conversation source omits conversationId from the escalated milestone notification", async () => {
+  const runtimeSettings = settings();
+  const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-fix4-no-conversation-test-"));
+  const auditLogs = new MemoryAuditLogs();
+  const milestoneNotifications: { newStatus: string; conversationId?: string }[] = [];
+  const notifications: AgentRunNotificationPublisher = {
+    async notifyMilestone(context) {
+      milestoneNotifications.push({
+        newStatus: context.newStatus,
+        ...(context.conversationId ? { conversationId: context.conversationId } : {})
+      });
+      return [];
+    }
+  };
+  const status = faithfulWorkItemStatusWriter({ [workItemId]: "ai_working" });
+  const queue = createInMemoryAgentRunQueue({
+    settings: runtimeSettings,
+    now: () => now,
+    id: () => "40000000-0000-4000-8000-000000000044",
+    workdir: () => workdir,
+    client: () => noDeliverableAgentClient(),
+    auditLogs,
+    confidence: false,
+    proposals: false,
+    notifications,
+    notificationWorkItem: async () => ({
+      id: workItemId,
+      code: "WH-21",
+      title: "Failed worker run without a conversation source",
+      projectId: "50000000-0000-4000-8000-000000000099",
+      submitterUserId: userId,
+      projectOwnerUserId: projectOwnerId
+    }),
+    eventBus: false,
+    transitionWorkItemStatus: status.writer
+  });
+
+  const queued = await queue.enqueue({ workItemId, actorId: userId, title: "Failed worker run without a conversation source" });
+  const executed = await queue.runNext();
+
+  assert.equal(executed?.run_id, queued.run_id);
+  assert.equal(executed?.status, "failed");
+  assert.deepEqual(milestoneNotifications, [{ newStatus: "escalated" }]);
+  assert.equal("conversationId" in (milestoneNotifications[0] ?? {}), false);
+});
+
 test("FIX#7: POST /workitems/:id/agent-runs on a spec_ready item kicks it to ai_working and reaches in_review (not stuck)", async () => {
   const runtimeSettings = settings();
   const workdir = await mkdtemp(path.join(os.tmpdir(), "workhub-fix7-test-"));
