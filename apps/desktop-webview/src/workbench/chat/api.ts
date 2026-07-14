@@ -9,8 +9,14 @@ import type {
   AiMode,
   ConversationMessagePageVM,
   ConversationMessageVM,
+  ConversationPinsVM,
+  ConversationReactionKey,
+  ConversationReadCursorVM,
+  ConversationReadReceiptsVM,
   CreateConversationMessageRequest,
+  EditConversationMessageRequest,
   NotificationList,
+  PresenceListResponse,
   UserAiProfileVM
 } from "@workhub/contracts";
 
@@ -71,16 +77,20 @@ export function fetchOlderConversationMessagesPage(
   return client.request<ConversationMessagePageVM>(`${conversationPath(conversationId, "messages")}?${query.toString()}`);
 }
 
+// R14 批 CHAT：text 变体新增 optional reply_to_message_id（引用回复）——additive，不带这个字段的既有
+// 调用点（issueSend 普通发送）行为零回归。threadRootId 仍是第 4 个位置参数保持兼容。
 export function sendConversationTextMessage(
   client: ChatApiClient,
   conversationId: string,
   text: string,
-  threadRootId?: string
+  threadRootId?: string,
+  replyToMessageId?: string
 ): Promise<ConversationMessageVM> {
   const payload: CreateConversationMessageRequest = {
     kind: "text",
     content: { text },
-    ...(threadRootId ? { thread_root_id: threadRootId } : {})
+    ...(threadRootId ? { thread_root_id: threadRootId } : {}),
+    ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {})
   };
   return client.request<ConversationMessageVM>(conversationPath(conversationId, "messages"), {
     method: "POST",
@@ -210,4 +220,107 @@ export function undoActionCardItem(
 // 也存在，但为保持这个模块内部调用方式统一，不在这一处单独切换成具名方法）。
 export function fetchNotifications(client: ChatApiClient): Promise<NotificationList> {
   return client.request<NotificationList>("/api/notifications");
+}
+
+// —— R14 批 CHAT（消息动作：编辑/删除/反应/置顶/已读/presence） —— //
+//
+// 全部照本文件既有取舍走 client.request（{ok,data} 信封由 client 解出 data；失败抛 WorkHubApiError），
+// 不为这一批特性扩大 packages/api-client 的具名方法面。204 端点（反应/置顶的加减）在 api-client 里
+// 走 readJson→空 body→isEnvelope 为 false→返回 undefined，这里类型标 Promise<void>，调用方不读返回值。
+
+// PATCH /messages/:messageId：编辑，body {text} → 200 全量消息 VM（含 edited_at）/ 403 / 404 / 409（窗过期・已删除）。
+export function editConversationMessage(
+  client: ChatApiClient,
+  conversationId: string,
+  messageId: string,
+  text: string
+): Promise<ConversationMessageVM> {
+  const payload: EditConversationMessageRequest = { text };
+  return client.request<ConversationMessageVM>(conversationPath(conversationId, `messages/${encodeURIComponent(messageId)}`), {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+// DELETE /messages/:messageId：墓碑删除（幂等）→ 200 墓碑 VM（deleted_at 置位、content.text 空串）。
+export function deleteConversationMessage(
+  client: ChatApiClient,
+  conversationId: string,
+  messageId: string
+): Promise<ConversationMessageVM> {
+  return client.request<ConversationMessageVM>(conversationPath(conversationId, `messages/${encodeURIComponent(messageId)}`), {
+    method: "DELETE"
+  });
+}
+
+// PUT/DELETE /messages/:messageId/reactions/:key：加/减反应（各自幂等）→ 204。key 是 ASCII slug
+// （approve/disagree/done/question/watch），emoji 字形只在渲染层，见 render.ts 的 REACTION_EMOJI。
+export function addConversationReaction(
+  client: ChatApiClient,
+  conversationId: string,
+  messageId: string,
+  key: ConversationReactionKey
+): Promise<void> {
+  return client.request<void>(
+    conversationPath(conversationId, `messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(key)}`),
+    { method: "PUT" }
+  );
+}
+
+export function removeConversationReaction(
+  client: ChatApiClient,
+  conversationId: string,
+  messageId: string,
+  key: ConversationReactionKey
+): Promise<void> {
+  return client.request<void>(
+    conversationPath(conversationId, `messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(key)}`),
+    { method: "DELETE" }
+  );
+}
+
+// PUT/DELETE /messages/:messageId/pin：置顶/取消置顶（取消幂等）→ 204。
+export function pinConversationMessage(client: ChatApiClient, conversationId: string, messageId: string): Promise<void> {
+  return client.request<void>(conversationPath(conversationId, `messages/${encodeURIComponent(messageId)}/pin`), {
+    method: "PUT"
+  });
+}
+
+export function unpinConversationMessage(client: ChatApiClient, conversationId: string, messageId: string): Promise<void> {
+  return client.request<void>(conversationPath(conversationId, `messages/${encodeURIComponent(messageId)}/pin`), {
+    method: "DELETE"
+  });
+}
+
+// GET /pins：置顶清单（seq 降序 cap 50）→ 200 { messages: [VM] }。
+export function fetchConversationPins(client: ChatApiClient, conversationId: string): Promise<ConversationPinsVM> {
+  return client.request<ConversationPinsVM>(conversationPath(conversationId, "pins"));
+}
+
+// PUT /read：已读游标推进（服务端单调夹紧）→ 200 { last_read_seq }。
+export function advanceConversationReadCursor(
+  client: ChatApiClient,
+  conversationId: string,
+  lastReadSeq: number
+): Promise<ConversationReadCursorVM> {
+  return client.request<ConversationReadCursorVM>(conversationPath(conversationId, "read"), {
+    method: "PUT",
+    body: JSON.stringify({ last_read_seq: lastReadSeq })
+  });
+}
+
+// GET /receipts：全部读游标 → 200 { receipts: [{ user_id, last_read_seq }] }。
+export function fetchConversationReceipts(client: ChatApiClient, conversationId: string): Promise<ConversationReadReceiptsVM> {
+  return client.request<ConversationReadReceiptsVM>(conversationPath(conversationId, "receipts"));
+}
+
+// GET /api/presence?user_ids=：≤50 个逗号分隔 uuid，同工作区过滤 → { presence: [{ user_id, is_online, last_seen_at }] }。
+// 不是 conversation 下的端点，不走 conversationPath。空列表直接返回空结果，不打网络。
+export function fetchPresence(client: ChatApiClient, userIds: readonly string[]): Promise<PresenceListResponse> {
+  const unique = [...new Set(userIds)].slice(0, 50);
+  if (unique.length === 0) {
+    return Promise.resolve({ presence: [] });
+  }
+  const query = new URLSearchParams({ user_ids: unique.join(",") });
+  return client.request<PresenceListResponse>(`/api/presence?${query.toString()}`);
 }

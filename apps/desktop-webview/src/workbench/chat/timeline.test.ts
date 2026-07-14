@@ -6,6 +6,8 @@ import type { ConversationMessageVM } from "@workhub/contracts";
 import {
   DEFAULT_MESSAGE_RENDER_WINDOW,
   applyActionCardUpdate,
+  applyMessageReplacement,
+  applyReactionUpdate,
   computeUndoRemainingMinutes,
   findActionCardMessageIdByTitle,
   findActionCardMessageIdForItem,
@@ -410,4 +412,67 @@ test("computeUndoRemainingMinutes returns undefined exactly at the deadline (not
 
 test("computeUndoRemainingMinutes returns undefined for an unparseable timestamp", () => {
   assert.equal(computeUndoRemainingMinutes("not-a-date", Date.now()), undefined);
+});
+
+// —— R14 批 CHAT：applyMessageReplacement（编辑/删除/置顶回流） —— //
+
+const now = new Date("2026-07-12T09:00:00.000Z");
+
+test("applyMessageReplacement swaps a message in place by id and reports changed", () => {
+  const messages = [
+    textMessage({ id: "m1", seq: 1, text: "one", createdAt: now }),
+    textMessage({ id: "m2", seq: 2, text: "two", createdAt: now })
+  ];
+  const edited = { ...textMessage({ id: "m2", seq: 2, text: "two-edited", createdAt: now }), edited_at: now.toISOString() };
+  const result = applyMessageReplacement(messages, edited);
+  assert.equal(result.changed, true);
+  assert.equal(result.unknownId, false);
+  assert.equal((result.messages[1] as { content: { text: string } }).content.text, "two-edited");
+  assert.equal(result.messages[0]!.id, "m1", "other messages are untouched");
+});
+
+test("applyMessageReplacement reports unknownId when the message is not local (needs a refetch)", () => {
+  const messages = [textMessage({ id: "m1", seq: 1, text: "one", createdAt: now })];
+  const stranger = textMessage({ id: "m99", seq: 5, text: "later", createdAt: now });
+  const result = applyMessageReplacement(messages, stranger);
+  assert.equal(result.changed, false);
+  assert.equal(result.unknownId, true);
+});
+
+test("applyMessageReplacement reports changed=false for a byte-identical replacement", () => {
+  const messages = [textMessage({ id: "m1", seq: 1, text: "one", createdAt: now })];
+  const same = textMessage({ id: "m1", seq: 1, text: "one", createdAt: now });
+  const result = applyMessageReplacement(messages, same);
+  assert.equal(result.changed, false);
+  assert.equal(result.unknownId, false);
+});
+
+// —— R14 批 CHAT：applyReactionUpdate（全量聚合幂等替换） —— //
+
+test("applyReactionUpdate overwrites the target message's reactions with the aggregate", () => {
+  const messages = [textMessage({ id: "m1", seq: 1, text: "one", createdAt: now })];
+  const result = applyReactionUpdate(messages, { messageId: "m1", reactions: [{ key: "approve", user_ids: ["u1", "u2"] }] });
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.messages[0]!.reactions, [{ key: "approve", user_ids: ["u1", "u2"] }]);
+});
+
+test("applyReactionUpdate writes an empty array (all reactions cleared), not a stale one", () => {
+  const messages = [{ ...textMessage({ id: "m1", seq: 1, text: "one", createdAt: now }), reactions: [{ key: "approve" as const, user_ids: ["u1"] }] }];
+  const result = applyReactionUpdate(messages, { messageId: "m1", reactions: [] });
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.messages[0]!.reactions, []);
+});
+
+test("applyReactionUpdate reports unknownId for a message not in the local window", () => {
+  const messages = [textMessage({ id: "m1", seq: 1, text: "one", createdAt: now })];
+  const result = applyReactionUpdate(messages, { messageId: "m99", reactions: [{ key: "watch", user_ids: ["u1"] }] });
+  assert.equal(result.changed, false);
+  assert.equal(result.unknownId, true);
+});
+
+test("applyReactionUpdate reports changed=false when the aggregate is identical", () => {
+  const messages = [{ ...textMessage({ id: "m1", seq: 1, text: "one", createdAt: now }), reactions: [{ key: "done" as const, user_ids: ["u1"] }] }];
+  const result = applyReactionUpdate(messages, { messageId: "m1", reactions: [{ key: "done", user_ids: ["u1"] }] });
+  assert.equal(result.changed, false);
+  assert.equal(result.unknownId, false);
 });
