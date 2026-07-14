@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import type { ProjectAiGovernanceVM } from "@workhub/contracts";
+import type { GithubBindingStatusVM, ProjectAiGovernanceVM } from "@workhub/contracts";
 
 import {
   hhmmToMinute,
   minuteToHhmm,
+  renderGithubBindingSectionHtml,
   renderProjectSettingsHtml,
   renderProjectSettingsOwnerOnlyHtml
 } from "./render.js";
@@ -136,4 +137,151 @@ test("an inline error row renders when errorText is set", () => {
     errorText: "没保存成功，再试一次。"
   });
   assert.match(html, /data-wb-pset-error="true">没保存成功，再试一次。/u);
+});
+
+// —— R14 批 GH（07-gh-design.md §3 UI 节）：GitHub 绑定卡——独立分区、独立状态机。 —— //
+
+function githubBindingVm(over: Partial<GithubBindingStatusVM> = {}): GithubBindingStatusVM {
+  return { project_id: "90000000-0000-4000-8000-000000000001", bound: false, ...over };
+}
+
+function githubSectionInput(over: Partial<Parameters<typeof renderGithubBindingSectionHtml>[0]> = {}) {
+  return {
+    locale: "zh-CN" as const,
+    editable: true,
+    loadState: "ready" as const,
+    status: githubBindingVm(),
+    mode: "status" as const,
+    formRepo: "",
+    formPat: "",
+    saving: false,
+    testPending: false,
+    unbindArmed: false,
+    ...over
+  };
+}
+
+test("GH: the loading state shows a scoped spinner, not the page-level loader", () => {
+  const html = renderGithubBindingSectionHtml(githubSectionInput({ loadState: "loading" }));
+  assert.match(html, /data-wb-gh-loading="true"/u);
+  assert.match(html, /GitHub 集成/u);
+  assert.doesNotMatch(html, /data-wb-pset-retry/u);
+});
+
+test("GH: the error state renders its own retry hook, distinct from the governance retry", () => {
+  const html = renderGithubBindingSectionHtml(githubSectionInput({ loadState: "error", status: undefined }));
+  assert.match(html, /data-wb-gh-retry/u);
+  assert.doesNotMatch(html, /data-wb-pset-retry/u);
+});
+
+test("GH: an unbound project shows the honest placeholder and, for the owner, a bind CTA", () => {
+  const ownerHtml = renderGithubBindingSectionHtml(githubSectionInput({ editable: true }));
+  assert.match(ownerHtml, /还没有关联 GitHub 仓库/u);
+  assert.match(ownerHtml, /data-wb-gh-bind-cta/u);
+
+  const readOnlyHtml = renderGithubBindingSectionHtml(githubSectionInput({ editable: false }));
+  assert.match(readOnlyHtml, /还没有关联 GitHub 仓库/u);
+  assert.doesNotMatch(readOnlyHtml, /data-wb-gh-bind-cta/u);
+  assert.match(readOnlyHtml, /只有项目负责人能管理 GitHub 绑定。/u);
+});
+
+test("GH: a bound project shows repo, sync time, and 7-day activity count", () => {
+  const html = renderGithubBindingSectionHtml(githubSectionInput({
+    status: githubBindingVm({
+      bound: true,
+      repo_full_name: "octocat/Hello-World",
+      last_synced_at: "2026-07-14T09:30:00.000Z",
+      activity_count_7d: 12
+    })
+  }));
+  assert.match(html, /octocat\/Hello-World/u);
+  assert.match(html, /最近同步 2026-07-14 09:30/u);
+  assert.match(html, /近 7 天活动 12 条/u);
+});
+
+test("GH: a bound project with no prior sync says so honestly instead of a blank/misleading time", () => {
+  const html = renderGithubBindingSectionHtml(githubSectionInput({
+    status: githubBindingVm({ bound: true, repo_full_name: "octocat/Hello-World" })
+  }));
+  assert.match(html, /尚未完成过同步/u);
+});
+
+test("GH: a last_error renders as an inline failure banner with the human reason and timestamp", () => {
+  const html = renderGithubBindingSectionHtml(githubSectionInput({
+    status: githubBindingVm({
+      bound: true,
+      repo_full_name: "octocat/Hello-World",
+      last_error: "PAT 无效或已过期",
+      last_error_at: "2026-07-14T08:00:00.000Z"
+    })
+  }));
+  assert.match(html, /data-wb-gh-last-error="true"/u);
+  assert.match(html, /最近一次同步失败（2026-07-14 08:00）：PAT 无效或已过期/u);
+});
+
+test("GH: the bound owner view exposes retest/edit/unbind hooks; the non-owner view exposes none of them", () => {
+  const status = githubBindingVm({ bound: true, repo_full_name: "octocat/Hello-World" });
+  const ownerHtml = renderGithubBindingSectionHtml(githubSectionInput({ status, editable: true }));
+  assert.match(ownerHtml, /data-wb-gh-retest/u);
+  assert.match(ownerHtml, /data-wb-gh-edit-cta/u);
+  assert.match(ownerHtml, /data-wb-gh-unbind\b/u);
+
+  const readOnlyHtml = renderGithubBindingSectionHtml(githubSectionInput({ status, editable: false }));
+  assert.doesNotMatch(readOnlyHtml, /data-wb-gh-retest/u);
+  assert.doesNotMatch(readOnlyHtml, /data-wb-gh-edit-cta/u);
+  assert.doesNotMatch(readOnlyHtml, /data-wb-gh-unbind\b/u);
+  assert.match(readOnlyHtml, /只有项目负责人能管理 GitHub 绑定。/u);
+});
+
+test("GH: an armed unbind renders a confirmation label and the armed style hook", () => {
+  const html = renderGithubBindingSectionHtml(githubSectionInput({
+    status: githubBindingVm({ bound: true, repo_full_name: "octocat/Hello-World" }),
+    unbindArmed: true
+  }));
+  assert.match(html, /确认解绑？/u);
+  assert.match(html, /wh-wb-pset-gh-unbind--armed/u);
+});
+
+test("GH: the bind/edit form renders repo + password-type PAT inputs, test/submit/cancel hooks, and never labels the PAT field as anything but a token entry", () => {
+  const html = renderGithubBindingSectionHtml(githubSectionInput({ mode: "form", formRepo: "octocat/Hello-World" }));
+  assert.match(html, /data-wb-gh-repo-input/u);
+  assert.match(html, /type="password"[^>]*data-wb-gh-pat-input/u);
+  assert.match(html, /value="octocat\/Hello-World"[^>]*data-wb-gh-repo-input/u);
+  assert.match(html, /data-wb-gh-test\b/u);
+  assert.match(html, /data-wb-gh-submit\b/u);
+  assert.match(html, /data-wb-gh-cancel\b/u);
+});
+
+test("GH: a successful test-connection result renders the repo/branch/visibility summary; a failed one renders the server's human reason", () => {
+  const ok = renderGithubBindingSectionHtml(githubSectionInput({
+    mode: "form",
+    testResult: { ok: true, repo_full_name: "octocat/Hello-World", repo_default_branch: "main", repo_private: false }
+  }));
+  assert.match(ok, /data-wb-gh-test-result="ok"/u);
+  assert.match(ok, /连接成功/u);
+  assert.match(ok, /main/u);
+
+  const fail = renderGithubBindingSectionHtml(githubSectionInput({
+    mode: "form",
+    testResult: { ok: false, error: "PAT 无效或已过期" }
+  }));
+  assert.match(fail, /data-wb-gh-test-result="fail"/u);
+  assert.match(fail, /PAT 无效或已过期/u);
+});
+
+test("GH: a bound status view never renders the PAT anywhere, even when a stale form draft is still held in state", () => {
+  const html = renderGithubBindingSectionHtml(githubSectionInput({
+    mode: "status",
+    status: githubBindingVm({ bound: true, repo_full_name: "octocat/Hello-World" }),
+    formPat: "ghp_shouldneverappearhere1234"
+  }));
+  assert.doesNotMatch(html, /ghp_shouldneverappearhere1234/u);
+  assert.doesNotMatch(html, /personal_access_token/u);
+});
+
+test("GH: en-US copy is used end to end when locale is en-US", () => {
+  const html = renderGithubBindingSectionHtml(githubSectionInput({ locale: "en-US" }));
+  assert.match(html, /GitHub integration/u);
+  assert.match(html, /No GitHub repository linked yet\./u);
+  assert.match(html, /Link a GitHub repository/u);
 });

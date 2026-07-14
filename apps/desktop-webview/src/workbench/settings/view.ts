@@ -9,18 +9,38 @@
 // governanceUpdateValues，只发一个 key 会把其余键的既有覆盖清空）。
 
 import { WorkHubApiError } from "@workhub/api-client";
-import type { AiGranularSettings, AiQuietHours, PatchProjectAiGovernanceRequest, ProjectAiGovernanceVM } from "@workhub/contracts";
+import type {
+  AiGranularSettings,
+  AiQuietHours,
+  GithubBindingStatusVM,
+  GithubTestConnectionRequest,
+  GithubTestConnectionResult,
+  PatchProjectAiGovernanceRequest,
+  ProjectAiGovernanceVM
+} from "@workhub/contracts";
 
-import { fetchProjectAiGovernance, patchProjectAiGovernance, type ProjectSettingsApiClient } from "./api.js";
+import {
+  deleteGithubBinding,
+  fetchGithubBindingStatus,
+  fetchProjectAiGovernance,
+  patchProjectAiGovernance,
+  putGithubBinding,
+  testGithubBindingConnection,
+  type ProjectSettingsApiClient
+} from "./api.js";
 import {
   PROJECT_GRANULAR_KEYS,
   hhmmToMinute,
   projectGranularEffective,
+  renderGithubBindingSectionHtml,
   renderProjectSettingsErrorHtml,
   renderProjectSettingsHtml,
   renderProjectSettingsLoadingHtml,
   renderProjectSettingsOwnerOnlyHtml
 } from "./render.js";
+
+// R14 批 GH 解绑武装态自动复原时长——同 drive/side-panel.ts 版本回滚两段式确认的既有先例（5 秒）。
+const GITHUB_UNBIND_ARM_TIMEOUT_MS = 5000;
 
 type Locale = "zh-CN" | "en-US";
 
@@ -71,23 +91,40 @@ export function mountProjectSettingsView(
   let errorText: string | undefined;
   let loadGeneration = 0;
 
-  function render(): void {
-    if (disposed) {
-      return;
+  // R14 批 GH（07-gh-design.md §3 UI 节）：GitHub 绑定卡是独立分区、独立状态机——GET 权限口径是
+  // 项目可见者（比上面 governance 的"读也锁负责人"松），所以它不能挂在 loadState 上，非负责人打开
+  // 这个标签时（governance 走 owner_only 分支）这个分区仍要独立加载并展示只读状态。
+  let githubStatus: GithubBindingStatusVM | undefined;
+  let githubLoadState: "loading" | "ready" | "error" = "loading";
+  let githubMode: "status" | "form" = "status";
+  let githubFormRepo = "";
+  let githubFormPat = "";
+  let githubSaving = false;
+  let githubTestPending = false;
+  let githubTestResult: GithubTestConnectionResult | undefined;
+  let githubUnbindArmed = false;
+  let githubErrorText: string | undefined;
+  let githubLoadGeneration = 0;
+  let githubUnbindArmTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function clearGithubUnbindTimer(): void {
+    if (githubUnbindArmTimer !== undefined) {
+      clearTimeout(githubUnbindArmTimer);
+      githubUnbindArmTimer = undefined;
     }
+  }
+
+  function governanceSectionHtml(): string {
     if (loadState === "owner_only") {
-      container.innerHTML = renderProjectSettingsOwnerOnlyHtml(input.locale);
-      return;
+      return renderProjectSettingsOwnerOnlyHtml(input.locale);
     }
     if (loadState === "error") {
-      container.innerHTML = renderProjectSettingsErrorHtml(input.locale);
-      return;
+      return renderProjectSettingsErrorHtml(input.locale);
     }
     if (loadState === "loading" || !governance) {
-      container.innerHTML = renderProjectSettingsLoadingHtml(input.locale);
-      return;
+      return renderProjectSettingsLoadingHtml(input.locale);
     }
-    container.innerHTML = renderProjectSettingsHtml({
+    return renderProjectSettingsHtml({
       locale: input.locale,
       projectName: input.projectName,
       governance,
@@ -95,6 +132,26 @@ export function mountProjectSettingsView(
       savingSilenceWindow,
       errorText
     });
+  }
+
+  function render(): void {
+    if (disposed) {
+      return;
+    }
+    container.innerHTML = `${governanceSectionHtml()}${renderGithubBindingSectionHtml({
+      locale: input.locale,
+      editable: input.editable,
+      loadState: githubLoadState,
+      status: githubStatus,
+      mode: githubMode,
+      formRepo: githubFormRepo,
+      formPat: githubFormPat,
+      saving: githubSaving,
+      testPending: githubTestPending,
+      testResult: githubTestResult,
+      unbindArmed: githubUnbindArmed,
+      errorText: githubErrorText
+    })}`;
   }
 
   function load(): void {
@@ -115,6 +172,142 @@ export function mountProjectSettingsView(
           return;
         }
         loadState = error instanceof WorkHubApiError && error.status === 404 ? "owner_only" : "error";
+        render();
+      });
+  }
+
+  function githubErrorMessage(error: unknown): string {
+    if (error instanceof WorkHubApiError) {
+      if (error.status === 503) {
+        return zh
+          ? "GitHub 集成未配置加密密钥，请联系管理员查看部署文档完成配置。"
+          : "GitHub integration isn't configured with an encryption key yet — ask an administrator to check the deployment docs.";
+      }
+      if (error.status === 403) {
+        return zh ? "只有项目负责人能管理 GitHub 绑定。" : "Only the project owner can manage the GitHub binding.";
+      }
+      if (error.message) {
+        return error.message;
+      }
+    }
+    return zh ? "没保存成功，再试一次。" : "Couldn't save — try again.";
+  }
+
+  function loadGithub(): void {
+    const generation = ++githubLoadGeneration;
+    githubLoadState = "loading";
+    render();
+    void fetchGithubBindingStatus(input.client, input.projectId)
+      .then((status) => {
+        if (disposed || generation !== githubLoadGeneration) {
+          return;
+        }
+        githubStatus = status;
+        githubLoadState = "ready";
+        githubMode = "status";
+        render();
+      })
+      .catch(() => {
+        if (disposed || generation !== githubLoadGeneration) {
+          return;
+        }
+        githubLoadState = "error";
+        render();
+      });
+  }
+
+  function captureGithubFormInputs(): void {
+    const repoField = container.querySelector<HTMLInputElement>("[data-wb-gh-repo-input]");
+    const patField = container.querySelector<HTMLInputElement>("[data-wb-gh-pat-input]");
+    if (repoField) {
+      githubFormRepo = repoField.value.trim();
+    }
+    if (patField) {
+      githubFormPat = patField.value;
+    }
+  }
+
+  function runGithubTest(payload: GithubTestConnectionRequest): void {
+    githubTestPending = true;
+    githubErrorText = undefined;
+    githubTestResult = undefined;
+    render();
+    testGithubBindingConnection(input.client, input.projectId, payload)
+      .then((result) => {
+        if (disposed) {
+          return;
+        }
+        githubTestPending = false;
+        githubTestResult = result;
+        render();
+      })
+      .catch((error: unknown) => {
+        if (disposed) {
+          return;
+        }
+        githubTestPending = false;
+        githubErrorText = githubErrorMessage(error);
+        render();
+      });
+  }
+
+  function submitGithubBinding(): void {
+    if (!githubFormRepo || !githubFormPat) {
+      githubErrorText = zh ? "仓库和 PAT 都要填。" : "Fill in both the repository and the token.";
+      render();
+      return;
+    }
+    githubSaving = true;
+    githubErrorText = undefined;
+    render();
+    putGithubBinding(input.client, input.projectId, {
+      repo_full_name: githubFormRepo,
+      personal_access_token: githubFormPat
+    })
+      .then((status) => {
+        if (disposed) {
+          return;
+        }
+        githubStatus = status;
+        githubSaving = false;
+        githubMode = "status";
+        // PAT 提交后清空、永不回显（§6 安全红线）——响应 VM 结构性无 token 字段，本地草稿也一并丢弃。
+        githubFormRepo = "";
+        githubFormPat = "";
+        githubTestResult = undefined;
+        render();
+      })
+      .catch((error: unknown) => {
+        if (disposed) {
+          return;
+        }
+        githubSaving = false;
+        githubErrorText = githubErrorMessage(error);
+        render();
+      });
+  }
+
+  function executeGithubUnbind(): void {
+    githubSaving = true;
+    githubUnbindArmed = false;
+    githubErrorText = undefined;
+    render();
+    deleteGithubBinding(input.client, input.projectId)
+      .then(() => {
+        if (disposed) {
+          return;
+        }
+        githubStatus = { project_id: input.projectId, bound: false };
+        githubSaving = false;
+        githubMode = "status";
+        render();
+      })
+      .catch((error: unknown) => {
+        if (disposed) {
+          return;
+        }
+        githubSaving = false;
+        githubErrorText = githubErrorMessage(error);
         render();
       });
   }
@@ -277,11 +470,96 @@ export function mountProjectSettingsView(
     patchGovernance({ quiet_hours: nextQuiet }, previous);
   });
 
+  // R14 批 GH：独立的点击处理器，不挂在上面 governance 的早退守卫上——GH 分区的加载/只读态要在
+  // governance 是 owner_only/loading 时也能工作（两者权限口径不同，见顶部注释）。多个 addEventListener
+  // 互不干扰，这里的 return 只退出本回调，不影响上面那个监听器。
+  container.addEventListener("click", (event) => {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    const target = event.target;
+    if (target.closest("[data-wb-gh-retry]")) {
+      loadGithub();
+      return;
+    }
+    if (!input.editable || !githubStatus) {
+      // 只读查看者：分区没有渲任何写钩子，除了上面的重试没有别的可点。
+      return;
+    }
+    if (target.closest("[data-wb-gh-bind-cta]") || target.closest("[data-wb-gh-edit-cta]")) {
+      githubMode = "form";
+      githubFormRepo = githubStatus.repo_full_name ?? "";
+      githubFormPat = "";
+      githubTestResult = undefined;
+      githubErrorText = undefined;
+      render();
+      return;
+    }
+    if (target.closest("[data-wb-gh-cancel]")) {
+      githubMode = "status";
+      githubFormRepo = "";
+      githubFormPat = "";
+      githubTestResult = undefined;
+      githubErrorText = undefined;
+      render();
+      return;
+    }
+    if (target.closest("[data-wb-gh-test]")) {
+      if (githubTestPending || githubSaving) {
+        return;
+      }
+      captureGithubFormInputs();
+      runGithubTest({
+        ...(githubFormRepo ? { repo_full_name: githubFormRepo } : {}),
+        ...(githubFormPat ? { personal_access_token: githubFormPat } : {})
+      });
+      return;
+    }
+    if (target.closest("[data-wb-gh-retest]")) {
+      if (githubTestPending || githubSaving) {
+        return;
+      }
+      runGithubTest({});
+      return;
+    }
+    if (target.closest("[data-wb-gh-submit]")) {
+      if (githubSaving || githubTestPending) {
+        return;
+      }
+      captureGithubFormInputs();
+      submitGithubBinding();
+      return;
+    }
+    if (target.closest("[data-wb-gh-unbind]")) {
+      if (githubSaving) {
+        return;
+      }
+      if (!githubUnbindArmed) {
+        githubUnbindArmed = true;
+        clearGithubUnbindTimer();
+        githubUnbindArmTimer = setTimeout(() => {
+          githubUnbindArmTimer = undefined;
+          if (disposed) {
+            return;
+          }
+          githubUnbindArmed = false;
+          render();
+        }, GITHUB_UNBIND_ARM_TIMEOUT_MS);
+        render();
+        return;
+      }
+      clearGithubUnbindTimer();
+      executeGithubUnbind();
+    }
+  });
+
   load();
+  loadGithub();
 
   return {
     dispose: () => {
       disposed = true;
+      clearGithubUnbindTimer();
     }
   };
 }
