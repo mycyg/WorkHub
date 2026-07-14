@@ -13,6 +13,7 @@ import type {
   PageRequestOptions,
   PilotDay1MetricsRequestOptions,
   MeetingPageRequestOptions,
+  SearchRequestParams,
   WorkHubApiClient,
   WorkHubApiClientOptions
 } from "./types.js";
@@ -134,6 +135,18 @@ function withPilotDay1MetricsOptions(path: string, options?: PilotDay1MetricsReq
   }
   const query = params.toString();
   return query ? `${path}?${query}` : path;
+}
+
+// R14 批 SEARCH（web-search-page）：q 必填、scopes 逗号拼接（省略即用服务端默认四 scope 全开）、limit 可选。
+function withSearchParams(path: string, params: SearchRequestParams) {
+  const query = new URLSearchParams({ q: params.q });
+  if (params.scopes && params.scopes.length > 0) {
+    query.set("scopes", params.scopes.join(","));
+  }
+  if (params.limit !== undefined) {
+    query.set("limit", String(params.limit));
+  }
+  return `${path}?${query.toString()}`;
 }
 
 async function readJson(response: Response) {
@@ -515,6 +528,7 @@ export function createApiClient(options: WorkHubApiClientOptions = {}): WorkHubA
         method: "POST",
         body: JSON.stringify(payload)
       }),
+    search: (params) => request(withSearchParams("/api/search", params)),
     useEvidenceForWorkItem: (workItemId, payload) =>
       request(`/api/workitems/${encodeURIComponent(workItemId)}/evidence-bindings`, {
         method: "POST",
