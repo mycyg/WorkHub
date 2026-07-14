@@ -1,7 +1,7 @@
 // WorkHub 桌面 · 主区群聊消息流的纯函数部分：排序去重（seq 是权威顺序）、按天分隔、时间格式化、
 // 行动卡条目状态就地更新。不含任何 DOM/网络——render.ts 消费这里的输出拼 HTML，view.ts 负责拉数据喂进来。
 
-import type { ConversationMessageReactionVM, ConversationMessageVM } from "@workhub/contracts";
+import type { AiFeedbackVerdict, ConversationMessageReactionVM, ConversationMessageVM, MyAiFeedbackVM } from "@workhub/contracts";
 
 type Locale = "zh-CN" | "en-US";
 
@@ -203,6 +203,119 @@ export function applyReactionUpdate(
   const next = [...messages];
   next[index] = { ...existing, reactions: nextReactions };
   return { messages: next, changed: true, unknownId: false };
+}
+
+// R14 批 FEEDBACK：Cuu 文字消息的本人反馈——乐观 PUT/DELETE 落地（同 applyReactionUpdate 的「本地没有
+// 这条消息→unknownId」处理）。反馈没有 SSE（见 04-feedback-design.md §0 结论 3/§9），unknownId 这里
+// 只在极端竞态下出现（比如反馈发生在一条刚被本地移除的墓碑消息上）。feedback=undefined 表示「本地视图
+// 里现在没有反馈」（DELETE 落地）。exactOptionalPropertyTypes 下用 delete 摘掉 my_feedback 键而不是把它
+// 设成 undefined——键要么不出现，要么真有值。
+export type ApplyMessageFeedbackUpdateResult = {
+  messages: ConversationMessageVM[];
+  changed: boolean;
+  unknownId: boolean;
+};
+
+export function applyMessageFeedbackUpdate(
+  messages: readonly ConversationMessageVM[],
+  patch: { messageId: string; feedback: MyAiFeedbackVM | undefined }
+): ApplyMessageFeedbackUpdateResult {
+  const index = messages.findIndex((message) => message.id === patch.messageId);
+  if (index < 0) {
+    return { messages: [...messages], changed: false, unknownId: true };
+  }
+  const existing = messages[index]!;
+  if (JSON.stringify(existing.my_feedback ?? null) === JSON.stringify(patch.feedback ?? null)) {
+    return { messages: [...messages], changed: false, unknownId: false };
+  }
+  const base = { ...existing } as Record<string, unknown>;
+  delete base["my_feedback"];
+  const updated = (patch.feedback ? { ...base, my_feedback: patch.feedback } : base) as ConversationMessageVM;
+  const next = [...messages];
+  next[index] = updated;
+  return { messages: next, changed: true, unknownId: false };
+}
+
+// R14 批 FEEDBACK：行动卡条目反馈——本人对某个条目的判定，读时合并进 content.items[i].feedback（per-user，
+// 不落 DB 共享快照，见 04-feedback-design.md §5.3）。落地方式镜像 applyActionCardUpdate：按 id 找归属
+// 消息，就地替换命中条目的 feedback 键，其余条目原样透传。itemId 在本地任何 action_card 消息里都找不到
+// →unknownId=true（同 findActionCardMessageIdForItem 对「本地没有」的既有处理）。
+export type ApplyActionCardItemFeedbackUpdateResult = {
+  messages: ConversationMessageVM[];
+  changed: boolean;
+  unknownId: boolean;
+};
+
+export function applyActionCardItemFeedbackUpdate(
+  messages: readonly ConversationMessageVM[],
+  patch: { itemId: string; feedback: { verdict: AiFeedbackVerdict; note?: string } | undefined }
+): ApplyActionCardItemFeedbackUpdateResult {
+  const messageId = findActionCardMessageIdForItem(messages, patch.itemId);
+  if (!messageId) {
+    return { messages: [...messages], changed: false, unknownId: true };
+  }
+  const index = messages.findIndex((message) => message.id === messageId);
+  const target = messages[index]! as Extract<ConversationMessageVM, { kind: "action_card" }>;
+  const rawItems = Array.isArray(target.content["items"]) ? (target.content["items"] as unknown[]) : [];
+  let changed = false;
+  const nextItems = rawItems.map((raw) => {
+    if (!raw || typeof raw !== "object") {
+      return raw;
+    }
+    const item = raw as SnapshotItem;
+    if (item["id"] !== patch.itemId) {
+      return raw;
+    }
+    if (JSON.stringify(item["feedback"] ?? null) === JSON.stringify(patch.feedback ?? null)) {
+      return raw;
+    }
+    changed = true;
+    const nextItem: SnapshotItem = { ...item };
+    if (patch.feedback) {
+      nextItem["feedback"] = patch.feedback;
+    } else {
+      delete nextItem["feedback"];
+    }
+    return nextItem;
+  });
+  if (!changed) {
+    return { messages: [...messages], changed: false, unknownId: false };
+  }
+  const next = [...messages];
+  next[index] = { ...target, content: { ...target.content, items: nextItems } } as ConversationMessageVM;
+  return { messages: next, changed: true, unknownId: false };
+}
+
+// R14 批 FEEDBACK：从本地消息快照读出「本人对这个行动卡条目的当前判定」——toggle 处理器据此算
+// decideFeedbackToggle 的 current 参数，不需要额外网络往返（同 findActionCardMessageIdForItem 的
+// 「纯内存查找」取舍）。找不到条目 / 条目没有 feedback / feedback 形状不认识都返回 undefined（没有
+// 判定，不是报错——04 §4 铁律 3 的延伸：没把握的形状不瞎猜）。
+export function findActionCardItemFeedbackVerdict(
+  messages: readonly ConversationMessageVM[],
+  itemId: string
+): AiFeedbackVerdict | undefined {
+  for (const message of messages) {
+    if (message.kind !== "action_card") {
+      continue;
+    }
+    const rawItems = Array.isArray(message.content["items"]) ? (message.content["items"] as unknown[]) : [];
+    for (const raw of rawItems) {
+      if (!raw || typeof raw !== "object") {
+        continue;
+      }
+      const item = raw as SnapshotItem;
+      if (item["id"] !== itemId) {
+        continue;
+      }
+      const feedback = item["feedback"];
+      if (!feedback || typeof feedback !== "object") {
+        return undefined;
+      }
+      const verdict = (feedback as SnapshotItem)["verdict"];
+      return verdict === "useful" || verdict === "not_useful" ? verdict : undefined;
+    }
+  }
+  return undefined;
 }
 
 export type DayGroup = {

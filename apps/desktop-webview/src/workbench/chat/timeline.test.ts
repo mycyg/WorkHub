@@ -5,10 +5,13 @@ import type { ConversationMessageVM } from "@workhub/contracts";
 
 import {
   DEFAULT_MESSAGE_RENDER_WINDOW,
+  applyActionCardItemFeedbackUpdate,
   applyActionCardUpdate,
+  applyMessageFeedbackUpdate,
   applyMessageReplacement,
   applyReactionUpdate,
   computeUndoRemainingMinutes,
+  findActionCardItemFeedbackVerdict,
   findActionCardMessageIdByTitle,
   findActionCardMessageIdForItem,
   formatMessageTime,
@@ -475,4 +478,107 @@ test("applyReactionUpdate reports changed=false when the aggregate is identical"
   const result = applyReactionUpdate(messages, { messageId: "m1", reactions: [{ key: "done", user_ids: ["u1"] }] });
   assert.equal(result.changed, false);
   assert.equal(result.unknownId, false);
+});
+
+// —— R14 批 FEEDBACK：applyMessageFeedbackUpdate（本人对 Cuu 文字消息的反馈，乐观落地） —— //
+
+function cuuTextMessage(input: { id: string; seq: number; text: string; createdAt: Date }): ConversationMessageVM {
+  return {
+    id: input.id,
+    conversation_id: "conv-1",
+    seq: input.seq,
+    sender_type: "cuu",
+    sender_user_id: null,
+    kind: "text",
+    content: { text: input.text },
+    thread_root_id: null,
+    created_at: input.createdAt.toISOString()
+  };
+}
+
+test("applyMessageFeedbackUpdate sets my_feedback on a message that had none", () => {
+  const messages = [cuuTextMessage({ id: "m1", seq: 1, text: "看过了", createdAt: now })];
+  const result = applyMessageFeedbackUpdate(messages, {
+    messageId: "m1",
+    feedback: { verdict: "useful", updated_at: now.toISOString() }
+  });
+  assert.equal(result.changed, true);
+  assert.equal(result.unknownId, false);
+  assert.deepEqual(result.messages[0]!.my_feedback, { verdict: "useful", updated_at: now.toISOString() });
+});
+
+test("applyMessageFeedbackUpdate clears my_feedback entirely (key gone, not set to undefined) on delete", () => {
+  const withFeedback = { ...cuuTextMessage({ id: "m1", seq: 1, text: "看过了", createdAt: now }), my_feedback: { verdict: "useful" as const, updated_at: now.toISOString() } };
+  const result = applyMessageFeedbackUpdate([withFeedback], { messageId: "m1", feedback: undefined });
+  assert.equal(result.changed, true);
+  assert.equal("my_feedback" in result.messages[0]!, false);
+});
+
+test("applyMessageFeedbackUpdate overwrites useful with not_useful in one step", () => {
+  const withFeedback = { ...cuuTextMessage({ id: "m1", seq: 1, text: "看过了", createdAt: now }), my_feedback: { verdict: "useful" as const, updated_at: now.toISOString() } };
+  const result = applyMessageFeedbackUpdate([withFeedback], {
+    messageId: "m1",
+    feedback: { verdict: "not_useful", updated_at: "2026-07-14T00:00:00.000000Z" }
+  });
+  assert.equal(result.changed, true);
+  assert.equal(result.messages[0]!.my_feedback?.verdict, "not_useful");
+});
+
+test("applyMessageFeedbackUpdate reports unknownId for a message not in the local window", () => {
+  const messages = [cuuTextMessage({ id: "m1", seq: 1, text: "看过了", createdAt: now })];
+  const result = applyMessageFeedbackUpdate(messages, { messageId: "m99", feedback: { verdict: "useful", updated_at: now.toISOString() } });
+  assert.equal(result.changed, false);
+  assert.equal(result.unknownId, true);
+});
+
+test("applyMessageFeedbackUpdate reports changed=false when the feedback is identical", () => {
+  const withFeedback = { ...cuuTextMessage({ id: "m1", seq: 1, text: "看过了", createdAt: now }), my_feedback: { verdict: "useful" as const, updated_at: "2026-07-14T00:00:00.000000Z" } };
+  const result = applyMessageFeedbackUpdate([withFeedback], {
+    messageId: "m1",
+    feedback: { verdict: "useful", updated_at: "2026-07-14T00:00:00.000000Z" }
+  });
+  assert.equal(result.changed, false);
+  assert.equal(result.unknownId, false);
+});
+
+// —— R14 批 FEEDBACK：applyActionCardItemFeedbackUpdate / findActionCardItemFeedbackVerdict —— //
+
+test("applyActionCardItemFeedbackUpdate sets a matching item's feedback in place, leaving siblings untouched", () => {
+  const card = actionCardMessage({ id: "m-card", seq: 2, items: [{ id: "i1", status: "done" }, { id: "i2", status: "done" }] });
+  const result = applyActionCardItemFeedbackUpdate([card], { itemId: "i1", feedback: { verdict: "useful" } });
+  assert.equal(result.changed, true);
+  const items = (result.messages[0]!.content as { items: Array<Record<string, unknown>> }).items;
+  assert.deepEqual(items[0]!["feedback"], { verdict: "useful" });
+  assert.equal("feedback" in items[1]!, false);
+});
+
+test("applyActionCardItemFeedbackUpdate clears feedback (key removed) on delete", () => {
+  const card = actionCardMessage({ id: "m-card", seq: 2, items: [{ id: "i1", status: "done" }] });
+  const withFeedback = {
+    ...card,
+    content: { ...card.content, items: [{ ...(card.content as { items: Array<Record<string, unknown>> }).items[0]!, feedback: { verdict: "useful" } }] }
+  } as ConversationMessageVM;
+  const result = applyActionCardItemFeedbackUpdate([withFeedback], { itemId: "i1", feedback: undefined });
+  assert.equal(result.changed, true);
+  const items = (result.messages[0]!.content as { items: Array<Record<string, unknown>> }).items;
+  assert.equal("feedback" in items[0]!, false);
+});
+
+test("applyActionCardItemFeedbackUpdate reports unknownId when no local action_card message holds the item", () => {
+  const other = textMessage({ id: "m-text", seq: 1, text: "hello", createdAt: now });
+  const result = applyActionCardItemFeedbackUpdate([other], { itemId: "i-missing", feedback: { verdict: "useful" } });
+  assert.equal(result.changed, false);
+  assert.equal(result.unknownId, true);
+});
+
+test("findActionCardItemFeedbackVerdict reads back the verdict of a specific item, ignoring others", () => {
+  const card = actionCardMessage({ id: "m-card", seq: 2, items: [{ id: "i1", status: "done" }, { id: "i2", status: "done" }] });
+  const withFeedback = applyActionCardItemFeedbackUpdate([card], { itemId: "i1", feedback: { verdict: "not_useful" } }).messages[0]!;
+  assert.equal(findActionCardItemFeedbackVerdict([withFeedback], "i1"), "not_useful");
+  assert.equal(findActionCardItemFeedbackVerdict([withFeedback], "i2"), undefined);
+});
+
+test("findActionCardItemFeedbackVerdict returns undefined for an item that isn't held locally", () => {
+  const card = actionCardMessage({ id: "m-card", seq: 2, items: [{ id: "i1", status: "done" }] });
+  assert.equal(findActionCardItemFeedbackVerdict([card], "i-missing"), undefined);
 });
