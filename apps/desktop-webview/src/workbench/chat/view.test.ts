@@ -4,10 +4,12 @@ import { test } from "node:test";
 import {
   addAttachment,
   clampPickerHighlight,
+  createRenderScrollScheduler,
   mapAiProviderHealthState,
   movePickerHighlight,
   removeAttachment,
-  shouldShowNoAiProviderBanner
+  shouldShowNoAiProviderBanner,
+  type ChatRenderScrollClock
 } from "./view.js";
 
 // mountChatView 本身没有直接单测——这个 workspace 的测试运行器没有真实 DOM（node --import tsx --test，
@@ -118,4 +120,127 @@ test("shouldShowNoAiProviderBanner is true only for the explicit not_configured 
   assert.equal(shouldShowNoAiProviderBanner("not_configured"), true);
   assert.equal(shouldShowNoAiProviderBanner("configured"), false);
   assert.equal(shouldShowNoAiProviderBanner("unknown"), false);
+});
+
+// —— R14 批 PERF（切片①）：渲染合帧调度器 createRenderScrollScheduler —— //
+// 这个 workspace 的测试运行器没有真实 DOM/rAF（node --import tsx --test，见文件顶部注释）——调度器刻意做成
+// 可注入时钟的纯逻辑（同 pet-surface.ts 的 scheduleDesktopPetFirstPaint），用手写 mock clock 驱动，断言合帧
+// 语义（N 次触发一帧一渲 / 跨帧不丢 / dispose 取消）。真实浏览器 innerHTML 解析+布局的综合成本只能真机验
+// （见 08-perf-design.md §3 方案 C，桌面 DevTools Performance 面板，人工，本批不跑）。
+
+function rafMockClock(): {
+  clock: ChatRenderScrollClock;
+  flushFrame: () => void;
+  cancelled: () => number;
+} {
+  let queue: Array<() => void> = [];
+  let cancels = 0;
+  const clock: ChatRenderScrollClock = {
+    requestAnimationFrame: (cb) => {
+      queue.push(() => cb(0));
+      return queue.length; // 句柄 = 1-based 序号（本测试不校验具体值，只要求可传给 cancelAnimationFrame）。
+    },
+    cancelAnimationFrame: () => {
+      cancels += 1;
+    }
+  };
+  return {
+    clock,
+    // 模拟浏览器进入下一帧：把这一帧排队的所有回调依次触发（真实 rAF 也是攒到帧边界一起跑）。
+    flushFrame: () => {
+      const batch = queue;
+      queue = [];
+      for (const cb of batch) {
+        cb();
+      }
+    },
+    cancelled: () => cancels
+  };
+}
+
+test("createRenderScrollScheduler coalesces many schedule() calls in one frame into a single run", () => {
+  let runs = 0;
+  const { clock, flushFrame } = rafMockClock();
+  const scheduler = createRenderScrollScheduler(() => {
+    runs += 1;
+  }, clock);
+  scheduler.schedule();
+  scheduler.schedule();
+  scheduler.schedule();
+  assert.equal(runs, 0, "nothing renders until the frame flushes");
+  flushFrame();
+  assert.equal(runs, 1, "a whole frame of triggers collapses to exactly one render");
+});
+
+test("createRenderScrollScheduler re-arms after a flush so a later trigger still renders (cross-frame not dropped)", () => {
+  let runs = 0;
+  const { clock, flushFrame } = rafMockClock();
+  const scheduler = createRenderScrollScheduler(() => {
+    runs += 1;
+  }, clock);
+  scheduler.schedule();
+  flushFrame();
+  assert.equal(runs, 1);
+  // A trigger arriving after the frame already flushed must queue a fresh frame, not be swallowed.
+  scheduler.schedule();
+  flushFrame();
+  assert.equal(runs, 2);
+});
+
+test("createRenderScrollScheduler cancel() drops the pending frame even if the queued callback still fires (dispose)", () => {
+  let runs = 0;
+  const { clock, flushFrame, cancelled } = rafMockClock();
+  const scheduler = createRenderScrollScheduler(() => {
+    runs += 1;
+  }, clock);
+  scheduler.schedule();
+  scheduler.cancel();
+  flushFrame(); // the host/mock still fires that frame's callback after dispose
+  assert.equal(runs, 0, "cancel wins: a disposed view never re-renders");
+  assert.equal(cancelled(), 1, "best-effort cancelAnimationFrame ran on the outstanding handle");
+});
+
+test("createRenderScrollScheduler falls back to setTimeout(~16ms) when requestAnimationFrame is absent", () => {
+  let runs = 0;
+  let scheduledMs: number | undefined;
+  let timeoutCb: (() => void) | undefined;
+  const clock: ChatRenderScrollClock = {
+    setTimeout: (cb, ms) => {
+      timeoutCb = cb;
+      scheduledMs = ms;
+      return 7;
+    }
+  };
+  const scheduler = createRenderScrollScheduler(() => {
+    runs += 1;
+  }, clock);
+  scheduler.schedule();
+  scheduler.schedule();
+  assert.equal(scheduledMs, 16, "one ~16ms frame budget timer for the whole batch");
+  assert.equal(runs, 0);
+  timeoutCb?.();
+  assert.equal(runs, 1, "still coalesced through the timeout fallback path");
+});
+
+test("createRenderScrollScheduler cancel() clears the fallback timeout too", () => {
+  let runs = 0;
+  let cleared: number | undefined;
+  let timeoutCb: (() => void) | undefined;
+  const clock: ChatRenderScrollClock = {
+    setTimeout: (cb) => {
+      timeoutCb = cb;
+      return 42;
+    },
+    clearTimeout: (handle) => {
+      cleared = handle;
+    }
+  };
+  const scheduler = createRenderScrollScheduler(() => {
+    runs += 1;
+  }, clock);
+  scheduler.schedule();
+  scheduler.cancel();
+  assert.equal(cleared, 42, "the outstanding fallback timer handle is cleared on dispose");
+  timeoutCb?.();
+  assert.equal(runs, 0, "and even if the timer still fires, the render is suppressed");
 });

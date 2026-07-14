@@ -136,12 +136,15 @@ import {
   applyMessageFeedbackUpdate,
   applyMessageReplacement,
   applyReactionUpdate,
+  capRenderWindowSize,
   findActionCardItemFeedbackVerdict,
   findActionCardMessageIdByTitle,
   findActionCardMessageIdForItem,
   groupMessagesByDay,
+  maybeShrinkRenderWindowSize,
   sortAndDedupeMessages,
-  windowRecentMessages
+  windowRecentMessages,
+  windowSizeAfterAppend
 } from "./timeline.js";
 import {
   appendTurnDelta,
@@ -247,6 +250,74 @@ export function removeAttachment(list: readonly ComposerAttachmentChip[], driveI
   return list.filter((attachment) => attachment.driveItemId !== driveItemId);
 }
 
+// R14 批 PERF（切片①：渲染合帧）：五个高频被动触发点（新消息到达 / reaction 回声 / message.updated 回声 /
+// read 游标回声 / Cuu 流式 delta）不再每次都同步整窗 `el.innerHTML = buildScrollBodyHtml()` 重建——同一帧内的
+// 多次触发合并成一次渲染。照仓库既有的可注入时钟先例（pet-surface.ts 的 scheduleDesktopPetFirstPaint /
+// spotlight/controller.ts 的 window.requestAnimationFrame）做成纯调度器：不碰 DOM，`run` 就是真正的
+// renderScroll，flush 时刻才读最新状态拼 HTML（流式文字不丢字——把"来一个字重建一次"变成"攒够一帧的量
+// 重建一次"，60fps 下人眼分辨不出 1~2 帧的合并延迟）。用户主动操作路径（发送/翻页/跳转/点反应/编辑/删除/
+// 置顶）保持同步 renderScroll，需要一帧不差的即时反馈，不接这个调度器。
+export type ChatRenderScrollClock = {
+  requestAnimationFrame?: (callback: FrameRequestCallback) => number;
+  cancelAnimationFrame?: (handle: number) => void;
+  setTimeout?: (callback: () => void, timeout: number) => number;
+  clearTimeout?: (handle: number) => void;
+};
+
+export type RenderScrollScheduler = {
+  // 请求一次"下一帧渲染"。已经排了一帧时，本次调用只是把"这一帧要渲"保持为真，不重复排队（合帧的核心）。
+  schedule: () => void;
+  // dispose 时取消尚未 flush 的那一帧——视图已卸载，别再往已 detach 的滚动容器写 innerHTML。
+  cancel: () => void;
+};
+
+export function createRenderScrollScheduler(
+  run: () => void,
+  clock: ChatRenderScrollClock = globalThis as ChatRenderScrollClock
+): RenderScrollScheduler {
+  let pending = false;
+  let rafHandle: number | undefined;
+  let timeoutHandle: number | undefined;
+  const flush = (): void => {
+    rafHandle = undefined;
+    timeoutHandle = undefined;
+    if (!pending) {
+      return; // 已被 cancel（dispose）抢先——这一帧作废，不渲。
+    }
+    pending = false;
+    run();
+  };
+  return {
+    schedule() {
+      if (pending) {
+        return;
+      }
+      pending = true;
+      const raf = clock.requestAnimationFrame;
+      if (raf) {
+        rafHandle = raf(flush);
+        return;
+      }
+      // 无 requestAnimationFrame（node 单测环境/非浏览器宿主）时退化成 ~16ms 定时器兜底，桌面 webview 是
+      // 真实 Chromium/WebKit，raf 一定在，这条只防"没有 window 时炸"，不是主路径。
+      timeoutHandle = clock.setTimeout?.(flush, 16);
+    },
+    cancel() {
+      // pending 置回 false 是权威闸门：即便已排的 raf/timeout 回调还是被宿主/mock 触发了，flush 也会因为
+      // !pending 直接返回、不渲。cancelAnimationFrame/clearTimeout 只是顺手回收句柄（宿主没提供也无妨）。
+      pending = false;
+      if (rafHandle !== undefined) {
+        clock.cancelAnimationFrame?.(rafHandle);
+        rafHandle = undefined;
+      }
+      if (timeoutHandle !== undefined) {
+        clock.clearTimeout?.(timeoutHandle);
+        timeoutHandle = undefined;
+      }
+    }
+  };
+}
+
 // R13 H1（键盘可达性）：@ picker / 改派 picker / 模式弹层三处可选行列表共用的高亮索引状态机——纯函数，
 // 不碰 DOM。这些列表都不再靠浏览器原生 Tab 逐行移动（render.ts 给每一行都打了 tabindex="-1"，
 // roving：容器/keydown 处理函数才是"管理焦点"的那个,不是原生 Tab 顺序),方向键改的是这里算出来的
@@ -327,7 +398,7 @@ function fetchAvatarPhotoObjectUrl(userId: string): Promise<string | null> {
 }
 
 // 命令式步骤，在任何一次把带 data-wb-avatar-user-id 标记的 HTML 塞进真实 DOM 之后调用
-// （renderScroll/renderScrollPreservingTopAnchor 的消息列表、成员条的 renderMemberBarHtml）。
+// （renderScroll 的消息列表、成员条的 renderMemberBarHtml）。
 export function hydrateAvatarPhotos(root: ParentNode): void {
   const tiles = root.querySelectorAll<HTMLElement>("[data-wb-avatar-user-id]");
   tiles.forEach((tile) => {
@@ -788,9 +859,16 @@ export function mountChatView(
     return html;
   }
 
+  // R14 批 PERF（切片③：锚定补全）：唯一的整窗渲染出口。贴底（wasNearBottom）时重新贴底跟随最新；
+  // 不贴底时统一走 beforeHeight/beforeTop 高度差补偿——保持用户当前正在看的内容相对不跳动（原来的
+  // renderScrollPreservingTopAnchor 只在向上翻页两处调用，其余五个高频被动触发点走的 renderScroll 在
+  // 不贴底时完全不管 scrollTop，导致上方内容高度一变就整体跳动，见 08-perf-design.md §0 第 4 点）。
+  // 合并后不管触发源是 loadOlderHistory / reaction 回流 / turn delta，不贴底时都做同一套补偿。
   function renderScroll(): void {
     const el = scrollEl!;
     const wasNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    const beforeHeight = el.scrollHeight;
+    const beforeTop = el.scrollTop;
     if (historyLoad === "loading") {
       el.innerHTML = renderHistoryLoadingHtml(input.locale);
       return;
@@ -811,23 +889,22 @@ export function mountChatView(
     hydrateAvatarPhotos(el);
     if (wasNearBottom) {
       el.scrollTop = el.scrollHeight;
+      // R14 批 PERF（切片②：回缩）：用户贴底回到"看最新"时，收回被翻页撑大的渲染窗口到默认值——下一次
+      // 翻页需求发生时再按需撑大，不把"翻过一次历史"的代价长期背在每一次后续渲染上。
+      renderWindowSize = maybeShrinkRenderWindowSize(renderWindowSize, wasNearBottom);
+    } else {
+      // R14 批 PERF（切片③）：不贴底——保持用户正在看的内容相对位置不跳动（同 Slack/Discord 的"向上无限
+      // 滚动"手感）。高度不变（如已读回声不改渲染高度）时补偿量为 0，scrollTop 不动。
+      el.scrollTop = beforeTop + (el.scrollHeight - beforeHeight);
     }
     renderJump();
   }
 
-  // 加载更早历史后重渲染：不能用 renderScroll 的 wasNearBottom/贴底逻辑（那是为"新消息到达时如果
-  // 用户本来就在看最新消息，跟着滚到底"设计的）——这里是往顶部插入更早的内容，要保持用户当前正在看
-  // 的那条消息在视口里的相对位置不跳动（同 Slack/Discord 的"向上无限滚动"手感），靠 scrollHeight
-  // 差值补偿 scrollTop。
-  function renderScrollPreservingTopAnchor(): void {
-    const el = scrollEl!;
-    const beforeHeight = el.scrollHeight;
-    const beforeTop = el.scrollTop;
-    el.innerHTML = buildScrollBodyHtml();
-    hydrateAvatarPhotos(el);
-    el.scrollTop = beforeTop + (el.scrollHeight - beforeHeight);
-    renderJump();
-  }
+  // R14 批 PERF（切片①）：五个高频被动触发点走这个合帧调度器（同一帧多次触发只 renderScroll 一次），
+  // 挂载时创建一次、dispose 时 cancel。用户主动操作路径继续直接调 renderScroll（见 createRenderScrollScheduler
+  // 顶部注释的取舍）。
+  const renderScrollScheduler = createRenderScrollScheduler(renderScroll);
+  const scheduleRenderScroll = renderScrollScheduler.schedule;
 
   // R14 批 CHAT：置顶条（聊天区顶部可折叠）——GET /pins 初始化，message.updated 里 pinned 变化增量维护。
   function renderPinBar(): void {
@@ -1014,12 +1091,22 @@ export function mountChatView(
     }
   }
 
-  function mergeMessages(incoming: readonly ConversationMessageVM[]): void {
+  function mergeMessages(incoming: readonly ConversationMessageVM[], nearBottomHint?: boolean): void {
     if (incoming.length === 0) {
       return;
     }
+    // R14 批 PERF（切片③-b）：不贴底时冻结窗口起点——见 timeline.ts 的 windowSizeAfterAppend。wasNearBottom
+    // 优先复用调用方（SSE handler）已经算好的那份（设计 §2.3-b 的「共享，不必重复计算」），没传就现算一次
+    // （廉价 DOM 读）。用实际新增到尾部的条数（去重后 messages 长度差）而不是 incoming.length，这样自广播
+    // 回声/补拉替换（净增 0）不会白撑窗口。
+    const wasNearBottom =
+      nearBottomHint ?? scrollEl!.scrollHeight - scrollEl!.scrollTop - scrollEl!.clientHeight < NEAR_BOTTOM_PX;
+    const before = messages.length;
     messages = sortAndDedupeMessages([...messages, ...incoming]);
-    renderScroll();
+    const added = messages.length - before;
+    renderWindowSize = windowSizeAfterAppend(renderWindowSize, added, wasNearBottom);
+    // R14 批 PERF（切片①）：新消息到达是高频被动触发（SSE message.created + turn 落定 + 补缺口），合帧。
+    scheduleRenderScroll();
   }
 
   // —— R14 批 CHAT：置顶条 / 已读游标 / presence 的加载与维护（都 best-effort，失败静默） —— //
@@ -1148,8 +1235,9 @@ export function mountChatView(
     }
     const { hiddenLocalCount } = windowRecentMessages(messages, renderWindowSize);
     if (hiddenLocalCount > 0) {
-      renderWindowSize += RENDER_WINDOW_EXPAND_STEP;
-      renderScrollPreservingTopAnchor();
+      // R14 批 PERF（切片②）：封顶——本地展开也不无限撑大窗口，超上限就让最旧那批保持折叠（用户可再点展开）。
+      renderWindowSize = capRenderWindowSize(renderWindowSize + RENDER_WINDOW_EXPAND_STEP);
+      renderScroll();
       return;
     }
     if (hasOlderHistory && olderLoad !== "loading") {
@@ -1187,11 +1275,14 @@ export function mountChatView(
       && page.next_before_seq < oldestKnownBeforeSeq;
     messages = sortAndDedupeMessages([...page.messages, ...messages]);
     // 展开窗口以纳入刚拉到的这批，否则它们会立刻又被本地窗口折叠掉。
-    renderWindowSize += page.messages.length;
+    // R14 批 PERF（切片②）：封顶——翻页也不无限撑大窗口。超上限后最旧那批会保持折叠（load-earlier 的
+    // local 态），这是 08-perf-design.md §2.2 拍板的取舍：单次上翻会话里挂载条数封顶，跨越 900 条深度的
+    // 定点访问交给 jumpToMessage（它允许突破 cap，见其注释）。
+    renderWindowSize = capRenderWindowSize(renderWindowSize + page.messages.length);
     hasOlderHistory = madeProgress && page.has_more;
     oldestKnownBeforeSeq = madeProgress ? page.next_before_seq : oldestKnownBeforeSeq;
     olderLoad = "idle";
-    renderScrollPreservingTopAnchor();
+    renderScroll();
   }
 
   // 重连成功后补缺口：断线期间的消息只能靠 afterSeq=本地已知最高 seq 重新拉一遍（broker 不存回放日志，
@@ -1809,12 +1900,15 @@ export function mountChatView(
       return;
     }
     // 2) 在本地 messages 里但被 DOM 窗口折叠了——把窗口撑到包含它，重渲后再滚。
+    // R14 批 PERF（切片②）：这里刻意不套 capRenderWindowSize——「用户明确要求跳到某条消息」是一次性主动
+    // 操作（引用/置顶/跳到未读），目标就算在 900 条之外也要够得到，否则跳转会静默落空。回到底部时切片②
+    // 的 maybeShrinkRenderWindowSize 会把这个临时撑大的窗口回缩到默认值，不会长期累积。
     const localIndex = messages.findIndex((entry) => entry.id === messageId);
     if (localIndex >= 0) {
       const neededFromEnd = messages.length - localIndex;
       if (neededFromEnd > renderWindowSize) {
         renderWindowSize = neededFromEnd + RENDER_WINDOW_EXPAND_STEP;
-        renderScrollPreservingTopAnchor();
+        renderScroll();
       }
       node = findMessageNode(messageId);
       if (node) {
@@ -1842,8 +1936,10 @@ export function mountChatView(
     }
     const neededFromEnd = messages.length - idx;
     if (neededFromEnd > renderWindowSize) {
+      // R14 批 PERF（切片②）：同上，主动跳转允许突破 cap——loadOlderHistory 在上面的循环里已经把目标拉进
+      // messages（它自己封顶的只是渲染窗口，不是 messages 数组），这里再无 cap 地撑窗口把目标纳入 DOM。
       renderWindowSize = neededFromEnd + RENDER_WINDOW_EXPAND_STEP;
-      renderScrollPreservingTopAnchor();
+      renderScroll();
     }
     node = findMessageNode(messageId);
     if (node) {
@@ -1908,7 +2004,8 @@ export function mountChatView(
     const applied = applyMessageReplacement(messages, updated);
     if (applied.changed) {
       messages = applied.messages;
-      renderScroll();
+      // R14 批 PERF（切片①）：编辑/删除/置顶回流是高频被动触发（群聊里任何人改一条都广播），合帧。
+      scheduleRenderScroll();
     }
     if (applied.unknownId) {
       // 本地没有这条消息（翻页还没加载到/补拉边界）——定点补拉，同行动卡快照过期的处理。
@@ -1941,7 +2038,8 @@ export function mountChatView(
     const applied = applyReactionUpdate(messages, update);
     if (applied.changed) {
       messages = applied.messages;
-      renderScroll();
+      // R14 批 PERF（切片①）：反应回声是高频被动触发（群聊里任何人加/取消反应都全量聚合广播），合帧。
+      scheduleRenderScroll();
     }
     if (applied.unknownId) {
       void refreshActionCardMessage(update.messageId);
@@ -1960,7 +2058,9 @@ export function mountChatView(
         const message = parseIncomingMessageCreated(event.data, input.conversationId);
         if (message) {
           const wasNearBottom = scrollEl!.scrollHeight - scrollEl!.scrollTop - scrollEl!.clientHeight < NEAR_BOTTOM_PX;
-          mergeMessages([message]);
+          // R14 批 PERF（切片③-b）：把这份已经算好的 wasNearBottom 交给 mergeMessages 冻结窗口起点（设计
+          // §2.3-b 的「共享」）——用户在上翻历史时，底部来的这条新消息不该把正在读的最旧那条挤出 DOM。
+          mergeMessages([message], wasNearBottom);
           // R14 批 CHAT：如果用户本来就贴着底看最新消息，一条新消息到达即视为"看见了"，节流标记已读——
           // 不在底部（在往上翻历史）时不标记，那条新消息对用户就是"未读"，交给未读分割线/跳到未读浮钮。
           if (wasNearBottom) {
@@ -1997,7 +2097,8 @@ export function mountChatView(
           if (nextCursors !== readCursors) {
             readCursors = nextCursors;
             if (!turnActive) {
-              renderScroll();
+              // R14 批 PERF（切片①）：已读游标回声是高频被动触发（群聊里任何成员滚到底都广播），合帧。
+              scheduleRenderScroll();
             }
           }
           return;
@@ -2052,7 +2153,10 @@ export function mountChatView(
           const delta = parseIncomingMessageDelta(event.data, input.conversationId);
           if (delta) {
             turnDeltaState = appendTurnDelta(turnDeltaState, delta);
-            renderScroll();
+            // R14 批 PERF（切片①，收益最大的一处）：Cuu 流式回复一轮 20~40 个 delta chunk，原本每个字都整窗
+            // 重建一次（逐字卡顿）——合帧后收敛到"每帧最多一次"。renderScroll 在 flush 时刻读最新的
+            // turnDeltaState，拼出来仍是最新全文，不丢字。renderTurnStatus 是独立小状态条（非整窗），保持即时。
+            scheduleRenderScroll();
             renderTurnStatus();
             return;
           }
@@ -3027,6 +3131,8 @@ export function mountChatView(
     dispose() {
       disposed = true;
       streamHandle?.close();
+      // R14 批 PERF（切片①）：取消尚未 flush 的那一帧，别在视图卸载后往已 detach 的滚动容器写 innerHTML。
+      renderScrollScheduler.cancel();
       clearInterval(typingPruneTimer);
       doc.removeEventListener("click", handleDocumentModeClick);
       doc.removeEventListener("keydown", handleDocumentModeKeydown);

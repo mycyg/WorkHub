@@ -416,3 +416,45 @@ export function windowRecentMessages<T>(
   const start = Math.max(0, messages.length - size);
   return { visible: messages.slice(start), hiddenLocalCount: start };
 }
+
+// R14 批 PERF（切片②：渲染窗封顶）：窗口只增不减会让长会话里"翻过一次历史"这个动作的代价长期背在
+// 每一次后续渲染上（renderWindowSize 只有 +=，进程生命周期内永不回落）——加一个上限，超过上限就不再放大
+// （宁可让最上面那批消息重新折叠回"本地未展开"态，用户可以再点一次「加载更早」展开）。900 的取值见
+// 08-perf-design.md §2.2 的基准表支撑：900 窗口纯字符串拼装 ~46ms，只发生在低频的主动翻页/跳转上、且
+// 本身有 loading 态铺垫，可接受；再往上（1800/3000）耗时不可接受。这个数字标了真机复核（§3 方案 C），
+// 先当一个有理由的起点。
+export const MAX_MESSAGE_RENDER_WINDOW = 900;
+
+export function capRenderWindowSize(size: number, cap: number = MAX_MESSAGE_RENDER_WINDOW): number {
+  return Math.min(size, cap);
+}
+
+// R14 批 PERF（切片②：回缩）：用户真的贴底回到"看最新"的状态时，没有理由继续背着一个被翻页撑大的
+// 窗口——收回默认值，下一次翻页需求发生时会重新按需撑大，不是一次性代价。只在贴底且当前确实撑大过
+// （currentSize > fallback）时回缩，否则原样返回（不贴底不动、已经是默认值也不动）。
+export function maybeShrinkRenderWindowSize(
+  currentSize: number,
+  wasNearBottom: boolean,
+  fallback: number = DEFAULT_MESSAGE_RENDER_WINDOW
+): number {
+  return wasNearBottom && currentSize > fallback ? fallback : currentSize;
+}
+
+// R14 批 PERF（切片③-b：冻结窗口起点）：用户上翻读历史（不贴底）时，底部来了新消息不应该把正在阅读的
+// 最旧那条挤出 DOM 窗口——windowRecentMessages 取"末尾 N 条"，messages 一变长窗口起点（start =
+// messages.length - size）就会随之后移，正在窗口最旧端阅读的用户会被无声抽走最上面那条的 DOM 节点（比
+// 视觉跳动更糟，是"正在看的内容消失"，见 08-perf-design.md §0 第 4 点后半）。补法：不贴底追加时把窗口跟着
+// 实际新增条数一起长（镜像 loadOlderHistory 往顶部塞旧消息时撑窗口，方向相反），让 start 保持不变。贴底时
+// 不补（本来就要看最新，且切片② 的回缩会把窗口拉回默认值，不会无限累积）。仍受 MAX_MESSAGE_RENDER_WINDOW
+// 封顶——极端长会话里冻结不到无穷，超上限后最旧那条退化成"折叠回未展开"（同切片② 的取舍）。
+export function windowSizeAfterAppend(
+  currentSize: number,
+  appendedCount: number,
+  wasNearBottom: boolean,
+  cap: number = MAX_MESSAGE_RENDER_WINDOW
+): number {
+  if (wasNearBottom || appendedCount <= 0) {
+    return currentSize;
+  }
+  return capRenderWindowSize(currentSize + appendedCount, cap);
+}
