@@ -5,17 +5,20 @@ import type { ConversationMessageVM } from "@workhub/contracts";
 
 import {
   DEFAULT_MESSAGE_RENDER_WINDOW,
+  MAX_MESSAGE_RENDER_WINDOW,
   applyActionCardItemFeedbackUpdate,
   applyActionCardUpdate,
   applyMessageFeedbackUpdate,
   applyMessageReplacement,
   applyReactionUpdate,
+  capRenderWindowSize,
   computeUndoRemainingMinutes,
   findActionCardItemFeedbackVerdict,
   findActionCardMessageIdByTitle,
   findActionCardMessageIdForItem,
   formatMessageTime,
   groupMessagesByDay,
+  maybeShrinkRenderWindowSize,
   sortAndDedupeMessages,
   windowRecentMessages
 } from "./timeline.js";
@@ -172,6 +175,43 @@ test("windowRecentMessages treats a non-positive or fractional window size defen
 
 test("windowRecentMessages on an empty list is a no-op", () => {
   assert.deepEqual(windowRecentMessages([], 300), { visible: [], hiddenLocalCount: 0 });
+});
+
+// —— R14 批 PERF（切片②）：渲染窗封顶 + 回缩（capRenderWindowSize / maybeShrinkRenderWindowSize） —— //
+
+test("capRenderWindowSize leaves a size at or under the cap untouched", () => {
+  assert.equal(capRenderWindowSize(300), 300);
+  assert.equal(capRenderWindowSize(MAX_MESSAGE_RENDER_WINDOW), MAX_MESSAGE_RENDER_WINDOW);
+  assert.equal(MAX_MESSAGE_RENDER_WINDOW, 900);
+});
+
+test("capRenderWindowSize truncates any growth beyond the 900 cap", () => {
+  assert.equal(capRenderWindowSize(MAX_MESSAGE_RENDER_WINDOW + 150), 900);
+  assert.equal(capRenderWindowSize(5000), 900);
+});
+
+test("capRenderWindowSize honours a custom cap (jumpToMessage keeps its own uncapped path in view.ts)", () => {
+  assert.equal(capRenderWindowSize(500, 400), 400);
+  assert.equal(capRenderWindowSize(300, 400), 300);
+});
+
+test("maybeShrinkRenderWindowSize reclaims an expanded window back to the default when the user is at the bottom", () => {
+  assert.equal(maybeShrinkRenderWindowSize(900, true), DEFAULT_MESSAGE_RENDER_WINDOW);
+  assert.equal(maybeShrinkRenderWindowSize(450, true), 300);
+});
+
+test("maybeShrinkRenderWindowSize does not shrink while the user is reading history (not near bottom)", () => {
+  assert.equal(maybeShrinkRenderWindowSize(900, false), 900);
+});
+
+test("maybeShrinkRenderWindowSize is a no-op when the window is already at (or under) the default", () => {
+  assert.equal(maybeShrinkRenderWindowSize(300, true), 300);
+  assert.equal(maybeShrinkRenderWindowSize(150, true), 150);
+});
+
+test("maybeShrinkRenderWindowSize honours a custom fallback", () => {
+  assert.equal(maybeShrinkRenderWindowSize(900, true, 500), 500);
+  assert.equal(maybeShrinkRenderWindowSize(400, true, 500), 400);
 });
 
 // —— applyActionCardUpdate（R12 行动卡状态回流：SSE 事件条目状态合并进本地快照） —— //

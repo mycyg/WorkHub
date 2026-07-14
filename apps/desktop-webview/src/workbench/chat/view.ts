@@ -136,10 +136,12 @@ import {
   applyMessageFeedbackUpdate,
   applyMessageReplacement,
   applyReactionUpdate,
+  capRenderWindowSize,
   findActionCardItemFeedbackVerdict,
   findActionCardMessageIdByTitle,
   findActionCardMessageIdForItem,
   groupMessagesByDay,
+  maybeShrinkRenderWindowSize,
   sortAndDedupeMessages,
   windowRecentMessages
 } from "./timeline.js";
@@ -879,6 +881,9 @@ export function mountChatView(
     hydrateAvatarPhotos(el);
     if (wasNearBottom) {
       el.scrollTop = el.scrollHeight;
+      // R14 批 PERF（切片②：回缩）：用户贴底回到"看最新"时，收回被翻页撑大的渲染窗口到默认值——下一次
+      // 翻页需求发生时再按需撑大，不把"翻过一次历史"的代价长期背在每一次后续渲染上。
+      renderWindowSize = maybeShrinkRenderWindowSize(renderWindowSize, wasNearBottom);
     }
     renderJump();
   }
@@ -1223,7 +1228,8 @@ export function mountChatView(
     }
     const { hiddenLocalCount } = windowRecentMessages(messages, renderWindowSize);
     if (hiddenLocalCount > 0) {
-      renderWindowSize += RENDER_WINDOW_EXPAND_STEP;
+      // R14 批 PERF（切片②）：封顶——本地展开也不无限撑大窗口，超上限就让最旧那批保持折叠（用户可再点展开）。
+      renderWindowSize = capRenderWindowSize(renderWindowSize + RENDER_WINDOW_EXPAND_STEP);
       renderScrollPreservingTopAnchor();
       return;
     }
@@ -1262,7 +1268,10 @@ export function mountChatView(
       && page.next_before_seq < oldestKnownBeforeSeq;
     messages = sortAndDedupeMessages([...page.messages, ...messages]);
     // 展开窗口以纳入刚拉到的这批，否则它们会立刻又被本地窗口折叠掉。
-    renderWindowSize += page.messages.length;
+    // R14 批 PERF（切片②）：封顶——翻页也不无限撑大窗口。超上限后最旧那批会保持折叠（load-earlier 的
+    // local 态），这是 08-perf-design.md §2.2 拍板的取舍：单次上翻会话里挂载条数封顶，跨越 900 条深度的
+    // 定点访问交给 jumpToMessage（它允许突破 cap，见其注释）。
+    renderWindowSize = capRenderWindowSize(renderWindowSize + page.messages.length);
     hasOlderHistory = madeProgress && page.has_more;
     oldestKnownBeforeSeq = madeProgress ? page.next_before_seq : oldestKnownBeforeSeq;
     olderLoad = "idle";
@@ -1884,6 +1893,9 @@ export function mountChatView(
       return;
     }
     // 2) 在本地 messages 里但被 DOM 窗口折叠了——把窗口撑到包含它，重渲后再滚。
+    // R14 批 PERF（切片②）：这里刻意不套 capRenderWindowSize——「用户明确要求跳到某条消息」是一次性主动
+    // 操作（引用/置顶/跳到未读），目标就算在 900 条之外也要够得到，否则跳转会静默落空。回到底部时切片②
+    // 的 maybeShrinkRenderWindowSize 会把这个临时撑大的窗口回缩到默认值，不会长期累积。
     const localIndex = messages.findIndex((entry) => entry.id === messageId);
     if (localIndex >= 0) {
       const neededFromEnd = messages.length - localIndex;
@@ -1917,6 +1929,8 @@ export function mountChatView(
     }
     const neededFromEnd = messages.length - idx;
     if (neededFromEnd > renderWindowSize) {
+      // R14 批 PERF（切片②）：同上，主动跳转允许突破 cap——loadOlderHistory 在上面的循环里已经把目标拉进
+      // messages（它自己封顶的只是渲染窗口，不是 messages 数组），这里再无 cap 地撑窗口把目标纳入 DOM。
       renderWindowSize = neededFromEnd + RENDER_WINDOW_EXPAND_STEP;
       renderScrollPreservingTopAnchor();
     }
