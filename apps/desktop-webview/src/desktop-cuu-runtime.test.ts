@@ -350,6 +350,92 @@ test("desktop Cuu runtime deep-links a dispatch_ask bubble straight to the sourc
   await runtime.dispose();
 });
 
+// R14 FIX（通知深链缺 conversation_id）：dispatch_ask 之外的通知类型（如 workitem.escalated/
+// workitem.in_review 里程碑通知，见 apps/api/src/services/notifications.ts 的 notifyMilestone）现在
+// 也可能带上 conversation_id（工作台会话派发出去的 run 失败/待审查时）。这类通知不该退化成
+// cardFromEvent 的通用兜底（href=target_url，点开只会打开主窗口的工作项页）——该像 dispatch_ask 一样
+// 直接深链进工作台会话，只是文案用通知自己的 title/body，不套 dispatch_ask 那句专属问句。
+test("desktop Cuu runtime deep-links any conversation-linked notification (not just dispatch_ask) straight to the workbench", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const notices: DesktopCuuNotice[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+
+  const runtime = await bindDesktopShellCuuRuntime({
+    listen,
+    locale: "zh-CN",
+    notify: (notice) => notices.push(notice)
+  });
+  handlers.get("push-event")?.({
+    payload: shellPayload(eventTypes.notificationCreated, {
+      id: "notification-escalated-1",
+      type: "workitem.escalated",
+      severity: "high",
+      title: "WH-9 需要你来定一下",
+      body: "这个活我先卡住了：预算已经用完。",
+      project_id: "10000000-0000-4000-8000-000000000777",
+      conversation_id: "10000000-0000-4000-8000-000000000802",
+      target_url: "/workitems/10000000-0000-4000-8000-000000000900?conversation_id=10000000-0000-4000-8000-000000000802",
+      created_at: "2026-07-14T09:00:00.000Z"
+    })
+  });
+
+  assert.equal(notices.length, 1, "exactly one bubble — not the generic notification card plus a custom one");
+  const card = notices[0]?.card;
+  assert.equal(card?.title, "WH-9 需要你来定一下");
+  assert.match(card?.message ?? "", /预算已经用完/u);
+  assert.deepEqual(card?.actions, [
+    {
+      id: "open_workbench",
+      label: "去工作台看看",
+      tone: "primary",
+      method: "GET",
+      href: "/workbench/10000000-0000-4000-8000-000000000777/10000000-0000-4000-8000-000000000802"
+    }
+  ]);
+
+  await runtime.dispose();
+});
+
+// 没有会话上下文的通知（没有 conversation_id，如老部署/其它通知类型）不该被这条新通路拦截——
+// 照旧退化成 cardFromEvent 的通用兜底（href 直接用 target_url），消费端不炸、不假装有深链目标。
+test("desktop Cuu runtime falls back to the generic notification card when there is no conversation_id", async () => {
+  const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
+  const notices: DesktopCuuNotice[] = [];
+  const listen: DesktopShellListen = (eventName, handler) => {
+    handlers.set(eventName, handler);
+    return () => {};
+  };
+
+  const runtime = await bindDesktopShellCuuRuntime({
+    listen,
+    locale: "zh-CN",
+    notify: (notice) => notices.push(notice)
+  });
+  handlers.get("push-event")?.({
+    payload: shellPayload(eventTypes.notificationCreated, {
+      id: "notification-in-review-1",
+      type: "workitem.in_review",
+      severity: "high",
+      title: "WH-10 成果待你确认采纳",
+      body: "AI 工人把成果整理好了，进去确认采纳或打回",
+      project_id: "10000000-0000-4000-8000-000000000777",
+      target_url: "/workitems/10000000-0000-4000-8000-000000000901",
+      created_at: "2026-07-14T09:05:00.000Z"
+    })
+  });
+
+  assert.equal(notices.length, 1);
+  const card = notices[0]?.card;
+  // 通用兜底：action href 就是通知自己的 target_url，没有 workbench 深链（没有会话上下文可深链）。
+  assert.equal(card?.actions[0]?.href, "/workitems/10000000-0000-4000-8000-000000000901");
+  assert.equal(card?.actions.some((action) => action.id === "open_workbench"), false);
+
+  await runtime.dispose();
+});
+
 test("desktop Cuu runtime dedupes a replayed dispatch_ask notification (same id) instead of showing it twice", async () => {
   const handlers = new Map<string, (event: DesktopShellEventEnvelope) => void>();
   const notices: DesktopCuuNotice[] = [];

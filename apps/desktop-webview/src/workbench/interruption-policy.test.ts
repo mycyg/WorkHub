@@ -106,6 +106,21 @@ test("extractWorkbenchDeepLinkTarget reads project id only from a Notification-r
   assert.deepEqual(target, { projectId: "project-2" });
 });
 
+// R14 FIX（通知深链缺 conversation_id）：Notification 行现在也可能在顶层带 conversation_id
+// （milestone/dispatch_ask 通知，服务端从 target_url 查询参数解出，见
+// apps/api/src/services/notifications.ts）——这条此前恒为"project id only"的用例补上有会话上下文
+// 的分支，锁死 desktop-cuu-runtime.ts 的 parseDesktopConversationNotification 真的能读到它。
+test("extractWorkbenchDeepLinkTarget reads both ids from a Notification-row-shaped payload once it carries conversation_id", () => {
+  const target = extractWorkbenchDeepLinkTarget({
+    id: "n2",
+    type: "workitem.escalated",
+    project_id: "project-2",
+    work_item_id: "work-1",
+    conversation_id: "conv-2"
+  });
+  assert.deepEqual(target, { projectId: "project-2", conversationId: "conv-2" });
+});
+
 test("extractWorkbenchDeepLinkTarget tolerates camelCase field names", () => {
   const target = extractWorkbenchDeepLinkTarget({ projectId: "project-3", data: { conversationId: "conv-3" } });
   assert.deepEqual(target, { projectId: "project-3", conversationId: "conv-3" });

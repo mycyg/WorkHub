@@ -75,8 +75,14 @@ export function classifyWorkbenchInterruptionCategory(input: {
 // 从一个宽松类型的事件/通知对象里尽量抠出 {projectId, conversationId}——两种真实来源都覆盖:
 //   1) WorkHubEvent 信封:project_id 在顶层,conversation_id 嵌在 data 里(见 events.ts 的
 //      conversationMessageCreatedEventSchema/conversationActionCardUpdatedEventSchema)。
-//   2) Notification 行:project_id 在顶层,没有 conversation_id 字段(诚实缺口,见批7汇报)。
-// 找不到就该字段缺席,不伪造。
+//   2) Notification 行:project_id 在顶层;conversation_id 曾经是恒缺的诚实缺口(批7汇报)，
+//      R14 FIX 批把它补上了——dispatch_ask 与 workitem.escalated/workitem.in_review 等里程碑通知
+//      现在也会带上顶层 conversation_id(服务端从 target_url 查询参数解出，additive，见
+//      apps/api/src/services/notifications.ts)。字段顶层/嵌套的判定逻辑不用跟着改：本来就先查
+//      顶层再查 data，Notification 行的 conversation_id 恰好落在顶层分支。没有会话上下文的通知
+//      类型这个字段依旧缺席，find 不到就该字段缺席,不伪造。
+//      本函数被 desktop-cuu-runtime.ts 的 parseDesktopConversationNotification 复用，把
+//      notification.created 事件深链进工作台会话(而不只是打开工作项页)。
 
 export type WorkbenchDeepLinkTarget = {
   projectId?: string;

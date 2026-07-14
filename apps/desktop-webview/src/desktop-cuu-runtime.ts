@@ -39,6 +39,7 @@ import { buildDispatchAskBubbleCopy, buildWorkbenchDeepLinkHref } from "./workbe
 import {
   classifyWorkbenchInterruptionCategory,
   createWorkbenchNotificationDeduper,
+  extractWorkbenchDeepLinkTarget,
   type WorkbenchInterruptionCategory
 } from "./workbench/interruption-policy.js";
 
@@ -961,6 +962,87 @@ function buildDesktopDispatchAskCuuCard(
   };
 }
 
+// ── R14 FIX(通知深链缺 conversation_id):任意携带会话上下文的通知 → 深链进工作台会话 ───────────
+//
+// dispatch_ask 上面已经有专属问询卡(带自己的二次元问句文案)。但 R14 FIX 批把 conversation_id 缝进了
+// 更多通知类型的 target_url(如 workitem.escalated/workitem.in_review 里程碑通知——见
+// apps/api/src/services/notifications.ts 的 notifyMilestone 与 apps/api/src/workers/agent-runner.ts 的
+// source_conversation_id 透传):这些通知如果什么都不做，会落进 cardFromEvent(@workhub/cuu)的通用兜底
+// ——href 直接用 target_url，点击后 desktopPetMainRouteFromHref 把它当成"主窗口路由"打开工作项页，
+// 完全绕过了工作台/会话。既然通知本身已经携带 project_id + conversation_id，就该像 dispatch_ask 一样
+// 走同一条 pendingConversationId 深链机制直达会话，而不是退化成打开工作项页。
+// 文案不套 dispatch_ask 那句专属问句(那是"有个活想派给你"的特定语境)——这里覆盖的通知类型各不相同，
+// 直接用通知自己的 title/body(服务端已经是人话文案)。
+
+type DesktopConversationNotification = {
+  id: string;
+  title: string;
+  body?: string | undefined;
+  projectId: string;
+  conversationId: string;
+  createdAt?: string | undefined;
+};
+
+// 只在 dispatch_ask 没有识别出来的前提下调用(调用方顺序见 bindDesktopShellCuuRuntime 的 onEvent)——
+// 需要同时具备 project_id 与 conversation_id 才能拼出合法的 buildWorkbenchDeepLinkHref 落点，
+// 缺任一个就诚实放弃、交还给 cardFromEvent 的通用兜底(不伪造一个打不通的深链)。project_id/
+// conversation_id 的抠取复用 workbench/interruption-policy.ts 的 extractWorkbenchDeepLinkTarget——
+// 那是本仓库已有的同款提取器(此前只有 WorkHubEvent 信封会命中 conversation_id，Notification 行
+// 恒缺；R14 FIX 批把 conversation_id 补进部分通知类型后，同一份提取逻辑现在对两种来源都生效，
+// 不需要另写一份)。
+function parseDesktopConversationNotification(event: WorkHubEvent<unknown>): DesktopConversationNotification | undefined {
+  if (event.type !== "notification.created") {
+    return undefined;
+  }
+  const data = event.data;
+  if (!data || typeof data !== "object") {
+    return undefined;
+  }
+  const record = data as Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id : undefined;
+  const title = typeof record.title === "string" && record.title ? record.title : undefined;
+  const { projectId, conversationId } = extractWorkbenchDeepLinkTarget(record);
+  if (!id || !title || !projectId || !conversationId) {
+    return undefined;
+  }
+  return {
+    id,
+    title,
+    body: stringFromUnknown(record.body),
+    projectId,
+    conversationId,
+    createdAt: stringFromUnknown(record.created_at)
+  };
+}
+
+function buildDesktopConversationNotificationCuuCard(
+  notification: DesktopConversationNotification,
+  options: { locale?: CuuLocaleOptions["locale"] } = {}
+): CuuCard {
+  const locale = options.locale ?? "zh-CN";
+  return {
+    id: `notification-conversation:${notification.id}`,
+    kind: "bubble",
+    state: "idle",
+    motion: cuuMotionForState("idle"),
+    title: notification.title,
+    message: compactTitle(notification.body ?? notification.title),
+    priority: "normal",
+    actions: [
+      {
+        id: "open_workbench",
+        label: locale === "en-US" ? "Open the workbench" : "去工作台看看",
+        tone: "primary",
+        method: "GET",
+        href: buildWorkbenchDeepLinkHref({ projectId: notification.projectId, conversationId: notification.conversationId })
+      }
+    ],
+    payload_ref: { entity_type: "event", entity_id: notification.id },
+    source: { entity_type: "event", entity_id: notification.id, project_id: notification.projectId },
+    created_at: notification.createdAt ?? new Date().toISOString()
+  };
+}
+
 // ── R12 批7:跨窗口打扰广播的接收端(workbench-interrupt) ────────────────────────────────
 // 发送端见 workbench/interrupt-broadcast.ts 顶部注释——工作台窗口自己看到会话事件、判断该弹气泡后，
 // 把一份轻量摘要广播给桌宠/主窗。这里把它转成一张 CuuCard 接进同一条 controller 队列，和其它气泡
@@ -1068,8 +1150,10 @@ export async function bindDesktopShellCuuRuntime(input: {
   // R12 批7:dispatch_ask 通知走自定义的二次元问询卡(见上方 buildDesktopDispatchAskCuuCard)，不用
   // cardFromEvent 的通用通知文案——同一条推送两边都会触发(onEvent 先、onCuuCard 随后)，用这个标志把
   // 已经在 onEvent 里手动 emitCard 过的那次挡掉，避免同一条通知冒出两张卡。
+  // R14 FIX：其它携带 conversation_id 的通知(见下方 parseDesktopConversationNotification)走同一套
+  // 拦截+去重+防双卡逻辑，只是换一张不带专属问句文案的卡。
   let suppressNextGenericCuuCard = false;
-  const dispatchAskDeduper = createWorkbenchNotificationDeduper();
+  const notificationBubbleDeduper = createWorkbenchNotificationDeduper();
   const bridge = createDesktopShellEventBridge({
     ...(input.now ? { now: input.now } : {}),
     get locale() {
@@ -1077,14 +1161,23 @@ export async function bindDesktopShellCuuRuntime(input: {
     },
     onEvent(bridged) {
       const dispatchAsk = parseDesktopDispatchAskNotification(bridged.event);
-      if (!dispatchAsk) {
+      if (dispatchAsk) {
+        suppressNextGenericCuuCard = true;
+        if (!notificationBubbleDeduper.shouldDeliver(dispatchAsk.id)) {
+          return;
+        }
+        emitCard(buildDesktopDispatchAskCuuCard(dispatchAsk, { locale: input.locale }));
+        return;
+      }
+      const conversationNotification = parseDesktopConversationNotification(bridged.event);
+      if (!conversationNotification) {
         return;
       }
       suppressNextGenericCuuCard = true;
-      if (!dispatchAskDeduper.shouldDeliver(dispatchAsk.id)) {
+      if (!notificationBubbleDeduper.shouldDeliver(conversationNotification.id)) {
         return;
       }
-      emitCard(buildDesktopDispatchAskCuuCard(dispatchAsk, { locale: input.locale }));
+      emitCard(buildDesktopConversationNotificationCuuCard(conversationNotification, { locale: input.locale }));
     },
     onCuuCard(card) {
       if (suppressNextGenericCuuCard) {
