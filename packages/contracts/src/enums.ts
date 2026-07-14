@@ -196,7 +196,10 @@ export const eventTypes = {
   conversationActionCardUpdated: "conversation.action_card.updated",
   conversationItemStarted: "conversation.item.started",
   conversationItemCompleted: "conversation.item.completed",
-  conversationPresenceTyping: "conversation.presence.typing"
+  conversationPresenceTyping: "conversation.presence.typing",
+  // R14 CHAT 批（presence-observer 工包）：观察者 worker 真正调用 LLM 分析某会话消息窗之前发布的
+  // 瞬态信号（见 events.ts 的 conversationObserverAnalyzingEventSchema）。
+  conversationObserverAnalyzing: "conversation.observer.analyzing"
 } as const;
 
 export const eventTypeSchema = z.enum(Object.values(eventTypes) as [string, ...string[]]);

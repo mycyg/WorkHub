@@ -1284,7 +1284,10 @@ test("R12 project AI governance VM is strict and nullable-explicit for synthesiz
   assert.equal(schema.safeParse({ ...value, quiet_hours: {} }).success, false);
 });
 
-test("R12 conversation topics and all nine event names are formal protocol values", () => {
+// R14 CHAT 批（presence-observer 工包）：加了第十个事件名 conversationObserverAnalyzing——批准变更，
+// 见 r14-release-readiness/01-chat-design.md §4「eventTypes 新增 4 名...r12-workbench.test.ts:1287
+// 钉死清单同步扩充，属批准变更」（W1-B 只负责这四名里的 observer.analyzing 这一个）。
+test("R12 conversation topics and all ten event names are formal protocol values", () => {
   const eventTopicSchema = requiredSchema<{ kind: string; topic: string; id?: string }>("eventTopicSchema");
   const eventTypes = (contracts as Record<string, unknown>)["eventTypes"] as Record<string, string> | undefined;
   assert.ok(eventTypes, "missing eventTypes export");
@@ -1328,7 +1331,8 @@ test("R12 conversation topics and all nine event names are formal protocol value
       conversationActionCardUpdated: eventTypes.conversationActionCardUpdated,
       conversationItemStarted: eventTypes.conversationItemStarted,
       conversationItemCompleted: eventTypes.conversationItemCompleted,
-      conversationPresenceTyping: eventTypes.conversationPresenceTyping
+      conversationPresenceTyping: eventTypes.conversationPresenceTyping,
+      conversationObserverAnalyzing: eventTypes.conversationObserverAnalyzing
     },
     {
       conversationMessageCreated: "conversation.message.created",
@@ -1339,9 +1343,42 @@ test("R12 conversation topics and all nine event names are formal protocol value
       conversationActionCardUpdated: "conversation.action_card.updated",
       conversationItemStarted: "conversation.item.started",
       conversationItemCompleted: "conversation.item.completed",
-      conversationPresenceTyping: "conversation.presence.typing"
+      conversationPresenceTyping: "conversation.presence.typing",
+      conversationObserverAnalyzing: "conversation.observer.analyzing"
     }
   );
+});
+
+// R14 CHAT 批（presence-observer 工包）：conversation.observer.analyzing 从「仅保留名称」升级为
+// 真实 payload/校验——同 typing/message-delta/action-card-updated 同等对待，正反例分离到自己的测试。
+test("R14 observer-analyzing events reserve a strict server-owned 30000ms transient contract only", () => {
+  const schema = requiredSchema<Record<string, unknown>>("conversationObserverAnalyzingEventSchema");
+  const event = {
+    event_id: "49000000-0000-4000-8000-000000000049",
+    type: "conversation.observer.analyzing",
+    topic: `conversation:${conversationId}`,
+    ts: "2026-07-12T08:31:00.000Z",
+    actor: { actor_kind: "ai", label: "Cuu" },
+    data: {
+      conversation_id: conversationId,
+      ttl_ms: 30000,
+      expires_at: "2026-07-12T08:31:30.000Z"
+    }
+  };
+
+  assert.deepEqual(schema.parse(event), event);
+  for (const invalid of [
+    { ...event, type: "conversation.presence.typing" },
+    { ...event, topic: "conversation:30000000-0000-4000-8000-000000000099" },
+    { ...event, extra: true },
+    { ...event, actor: { actor_kind: "human", actor_user_id: userId } },
+    { ...event, data: { ...event.data, user_id: userId } },
+    { ...event, data: { ...event.data, ttl_ms: 3000 } },
+    { ...event, data: { ...event.data, ttl_ms: 29999 } },
+    { ...event, data: { ...event.data, expires_at: "2026-07-12T08:31:29.999Z" } }
+  ]) {
+    assert.equal(schema.safeParse(invalid).success, false);
+  }
 });
 
 test("R12 batch 9 desktop claim requires the assignee and never accepts server work", () => {

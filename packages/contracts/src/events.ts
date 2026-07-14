@@ -211,6 +211,49 @@ export const conversationPresenceTypingEventSchema = z
   });
 export type ConversationPresenceTypingEvent = z.infer<typeof conversationPresenceTypingEventSchema>;
 
+// R14 CHAT 批（presence-observer 工包，00-interaction-design §2.2 承诺过、从未落地）：观察者 worker
+// 真正调用 LLM 分析某会话消息窗之前发布的瞬态信号——客户端渲染「Cuu 正在整理刚才的讨论…」，同 typing
+// 指示行同款样式。完全照 conversationPresenceTypingEventSchema 的瞬态模式（同一个 ts/expires_at
+// offset+precision:3 的 datetime 格式），只是：
+// - ttl_ms 锁死 30000（30s，比 typing 的 3s 长得多——一次分析的耗时不确定，指示灯允许多续几拍；
+//   真正的收尾信号是行动卡事件到达或 TTL 到期，不依赖精确计时）。
+// - actor 固定 ai（观察者自己触发，不是任何一个人类用户的信号，参见 conversationAiActorSchema）。
+// - data 只有 conversation_id + ttl_ms，没有 typing 那样的 user_id——分析是会话级的动作，不归属
+//   于某一个具体的人类用户。
+export const conversationObserverAnalyzingEventSchema = z
+  .object({
+    event_id: idSchema,
+    type: z.literal("conversation.observer.analyzing"),
+    topic: z.string().min(1),
+    ts: typingTimestampSchema,
+    actor: conversationAiActorSchema,
+    data: z
+      .object({
+        conversation_id: idSchema,
+        ttl_ms: z.literal(30000),
+        expires_at: typingTimestampSchema
+      })
+      .strict()
+  })
+  .strict()
+  .superRefine((event, ctx) => {
+    if (event.topic !== `conversation:${event.data.conversation_id}`) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["topic"],
+        message: "observer-analyzing topic must match data.conversation_id"
+      });
+    }
+    if (Date.parse(event.data.expires_at) - Date.parse(event.ts) !== 30000) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["data", "expires_at"],
+        message: "observer-analyzing expires_at must be exactly 30000ms after event ts"
+      });
+    }
+  });
+export type ConversationObserverAnalyzingEvent = z.infer<typeof conversationObserverAnalyzingEventSchema>;
+
 // R12 批3：行动卡变更事件。payload 只带最小可渲染摘要（卡片 id/状态、条目 id/kind/confidence/status），
 // 不携带 title_md 全文/工作项细节——客户端收到后按需拉 GET 行动卡详情，事件本身只负责"该刷新了"。
 // 事件的 actor 是 Cuu（观察者）自己产出卡片时为 ai；被 @ 的负责人做决策/撤销时为 human。
