@@ -310,6 +310,7 @@ type RouteCopyKey =
   | "notifications.completed"
   | "notifications.source"
   | "notifications.groundingWhy"
+  | "notifications.conversationLinked"
   | "knowledge.fromNotice"
   | "health.kicker"
   | "health.healthy"
@@ -520,6 +521,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.completed": "已处理",
     "notifications.source": "来源",
     "notifications.groundingWhy": "为什么提醒我",
+    "notifications.conversationLinked": "这条通知关联一段讨论，打开后能看到相关上下文",
     "knowledge.fromNotice": "来自通知的相关资料",
     "health.kicker": "项目健康",
     "health.title": "健康总览",
@@ -732,6 +734,7 @@ const routeCopy: Record<WorkHubLocale, Record<RouteCopyKey, string>> = {
     "notifications.completed": "Done",
     "notifications.source": "Source",
     "notifications.groundingWhy": "Why am I seeing this",
+    "notifications.conversationLinked": "This notification is tied to a discussion — open it to see the surrounding context",
     "knowledge.fromNotice": "Search context from a notification",
     "health.kicker": "Project health",
     "health.title": "Health overview",
@@ -3197,7 +3200,7 @@ function renderNotificationBucket(
   locale: WorkHubLocale
 ) {
   const rows = items.length
-    ? items.map((item) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-notification-item="${escapeHtml(item.id)}" data-r5-notification-status="${escapeHtml(item.status)}" data-r5-notification-severity="${escapeHtml(item.severity)}" data-r5-notification-type="${escapeHtml(item.type)}" data-r5-notification-source-type="${escapeHtml(item.source_context?.source_type ?? "")}">
+    ? items.map((item) => `<div role="listitem" class="wh-r4-route-row wh-r4-route-row--stacked" data-r5-notification-item="${escapeHtml(item.id)}" data-r5-notification-status="${escapeHtml(item.status)}" data-r5-notification-severity="${escapeHtml(item.severity)}" data-r5-notification-type="${escapeHtml(item.type)}" data-r5-notification-source-type="${escapeHtml(item.source_context?.source_type ?? "")}"${item.conversation_id ? ` data-r14-notification-conversation-id="${escapeHtml(item.conversation_id)}"` : ""}>
       <div>
         <div class="wh-r4-route-meta">
           <span class="wh-pill">${escapeHtml(notificationStatusLabel(item.status, locale))}</span>
@@ -3207,6 +3210,7 @@ function renderNotificationBucket(
         <strong>${escapeHtml(item.title)}</strong>
         ${item.body ? `<p>${escapeHtml(item.body)}</p>` : ""}
         <p>${escapeHtml(routeT(locale, "notifications.source"))}: ${escapeHtml(sourceContextLabel(item.source_context, locale))}</p>
+        ${item.conversation_id ? `<p class="wh-subtle" data-r14-notification-conversation-note="true">${escapeHtml(routeT(locale, "notifications.conversationLinked"))}</p>` : ""}
         ${renderNotificationGrounding(item, locale)}
         <p>${escapeHtml(formatApprovalTimestamp(item.created_at))}</p>
       </div>
