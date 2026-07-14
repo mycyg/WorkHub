@@ -195,6 +195,62 @@ test("runOnce does not re-judge the same last message twice across ticks (idempo
   assert.equal(createTurnCalls, 1);
 });
 
+// R14 FIX批10（被 @ 的回复延迟：事件驱动直通）：markMentionHandled 写的是 runOnce 自己读的同一张
+// lastJudgedByConversation 水位线——这条测试钉死"直通已经处理过的消息，轮询 tick 绝不再重复触发一次
+// createTurn"，不依赖直通那一侧的任何真实实现，只验证这个服务自己暴露的去重契约。
+test("markMentionHandled marks a message as already judged, so a subsequent tick skips it instead of calling createTurn a second time", async () => {
+  let createTurnCalls = 0;
+  const service = createConversationReplyJudgeService(
+    baseDeps({
+      turns: {
+        async createTurn() {
+          createTurnCalls += 1;
+          return turnResult();
+        }
+      }
+    })
+  );
+
+  // 模拟：这条消息已经被 createMessage 的直通路径处理过（它会在触发 turn 之前同步调用这个方法）。
+  service.markMentionHandled({ conversationId, messageId });
+
+  const result = await service.runOnce();
+
+  assert.equal(result.judged, 0);
+  assert.equal(result.skipped_already_judged, 1);
+  assert.equal(result.replied, 0);
+  assert.equal(createTurnCalls, 0, "the tick must not call createTurn a second time for a message the direct trigger already handled");
+});
+
+// 没被标记过的消息（不同 messageId）不应该被这张水位线误伤——markMentionHandled 只挡它明确记录过的
+// 那一条，不会连坐同一会话里后续的新消息。
+test("markMentionHandled does not suppress a later, different message in the same conversation", async () => {
+  const otherMessageId = "20000000-0000-4000-8000-000000000099";
+  let createTurnCalls = 0;
+  const service = createConversationReplyJudgeService(
+    baseDeps({
+      conversations: {
+        async listReplyJudgeCandidates() {
+          return [candidate({ lastMessageId: otherMessageId })];
+        }
+      },
+      turns: {
+        async createTurn() {
+          createTurnCalls += 1;
+          return turnResult();
+        }
+      }
+    })
+  );
+
+  service.markMentionHandled({ conversationId, messageId });
+  const result = await service.runOnce();
+
+  assert.equal(result.skipped_already_judged, 0);
+  assert.equal(result.replied, 1);
+  assert.equal(createTurnCalls, 1);
+});
+
 test("runOnce falls to the LLM classifier tier for ambiguous prose and honors a should_reply=true verdict", async () => {
   const classifyCalls: unknown[] = [];
   const service = createConversationReplyJudgeService(

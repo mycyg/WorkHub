@@ -92,6 +92,15 @@ export type ConversationReplyJudgeServiceDeps = {
 
 export type ConversationReplyJudgeService = {
   runOnce(): Promise<ConversationReplyJudgeTickResult>;
+  // R14 FIX批10（@Cuu 事件驱动直通，见 apps/api/src/services/conversations.ts 的 createMessage）：
+  // 消息落库时如果命中 @Cuu，直通路径会同步调用这个方法，把触发消息记进这个服务自己的"已判定"水位线
+  // （下面 runOnce 里的 lastJudgedByConversation，同一张 Map，不是另开一份状态）——下一次轮询 tick 扫到
+  // 同一个会话时，isAlreadyJudgedMessage 会因为 lastJudgedMessageId 已经等于这条消息 id 而把它计入
+  // skipped_already_judged，不会对同一条消息重复触发 createTurn。没有新表/新字段：这张 Map 本来就是
+  // 进程内内存态（见文件顶部注释第4点），重启会清空——退化到"重启后这条消息可能被轮询再判一次"，
+  // 不产生错误行为（轮询判定器本身的 shouldReply 判断依然成立，最坏情况是多算一次而不是漏判或错判），
+  // 与既有机制的重启安全等级一致。
+  markMentionHandled(input: { conversationId: string; messageId: string }): void;
 };
 
 function extractCandidateText(candidate: ReplyJudgeCandidateRow): string | undefined {
@@ -207,6 +216,9 @@ export function createConversationReplyJudgeService(
       }
 
       return { ...result, started_at: startedAt.toISOString(), finished_at: now().toISOString() };
+    },
+    markMentionHandled({ conversationId, messageId }) {
+      lastJudgedByConversation.set(conversationId, messageId);
     }
   };
 }

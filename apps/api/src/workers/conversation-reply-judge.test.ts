@@ -28,7 +28,10 @@ test("tick() delegates to the service and accumulates stats across calls", async
     async runOnce() {
       calls += 1;
       return tickResult({ replied: calls });
-    }
+    },
+    // R14 FIX批10：这个测试套件只关心调度节奏（tick/start/stop/stats），不关心
+    // markMentionHandled——接口新增的必需方法只需要一个不改变任何断言的空桩。
+    markMentionHandled() {}
   };
   const scheduler = createConversationReplyJudgeScheduler(service, { now: () => now });
 
@@ -56,7 +59,8 @@ test("tick() is reentrant-safe: a call made while one is already in flight retur
       runs += 1;
       await gate;
       return tickResult();
-    }
+    },
+    markMentionHandled() {}
   };
   const scheduler = createConversationReplyJudgeScheduler(service, { now: () => now });
 
@@ -75,7 +79,8 @@ test("tick() records a failure in stats when the service throws, and rethrows so
   const service: ConversationReplyJudgeService = {
     async runOnce() {
       throw new Error("boom");
-    }
+    },
+    markMentionHandled() {}
   };
   const scheduler = createConversationReplyJudgeScheduler(service, { now: () => now });
 
@@ -107,7 +112,8 @@ test("start()/stop() wire an interval that calls tick and can be torn down witho
       async runOnce() {
         runs += 1;
         return tickResult();
-      }
+      },
+      markMentionHandled() {}
     };
     const scheduler = createConversationReplyJudgeScheduler(service, { now: () => now, intervalMs: 15_000 });
 
@@ -135,7 +141,8 @@ test("start() does nothing when intervalMs is 0 or negative (disabled scheduling
   const service: ConversationReplyJudgeService = {
     async runOnce() {
       return tickResult();
-    }
+    },
+    markMentionHandled() {}
   };
   const scheduler = createConversationReplyJudgeScheduler(service, { now: () => now, intervalMs: 0 });
   scheduler.start();
