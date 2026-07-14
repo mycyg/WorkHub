@@ -6,6 +6,7 @@ import { HTTPException } from "hono/http-exception";
 import {
   applyMergeProposalCandidateRequestSchema,
   chooseMergeProposalCandidateRequestSchema,
+  conversationActionCardUpdatedEventSchema,
   createProposalFromManifestRequestSchema,
   eventTypes,
   mergeProposalCandidateChoiceResultSchema,
@@ -22,7 +23,13 @@ import {
 } from "@workhub/contracts";
 import { makeWorkHubEvent, topics } from "@workhub/events";
 import { getDefaultPushBus, type PushBus } from "../broker/index.js";
-import { createWorkItemRepository, getSharedDatabaseClient } from "@workhub/db";
+import {
+  createActionCardRepository,
+  createAgentRunRepository,
+  createProposalRepository,
+  createWorkItemRepository,
+  getSharedDatabaseClient
+} from "@workhub/db";
 import { createNotificationService, getDefaultNotificationServiceDependencies } from "../services/notifications.js";
 import { getDefaultStructuredLogger } from "../logging.js";
 
@@ -85,7 +92,124 @@ export type ProposalRoutesDependencies = {
   runQueue?: Pick<AgentRunQueue, "enqueue" | "abort"> | false;
   kickoffWorkItemStatus?: WorkItemStatusKickoff | false;
   logger?: Pick<typeof console, "warn">;
+  // R14 批 APPROVE-CHAT 档③：review/merge 落定后的来源会话回流器（见 notifyProposalSettled 顶部注释）。
+  // 缺省用共享 DB 的真实现；false 显式关闭；测试可注入记录桩。失败仅 warn，绝不影响 review/merge 2xx。
+  settledNotifier?: ProposalSettledNotifier | false;
 };
+
+// —— R14 批 APPROVE-CHAT 档③：审批落定往来源会话回流（跨客户端状态闭环） —— //
+//
+// 缺口（06 设计 §1.5 侦察证实）：review/merge 端点此前不往来源会话回灌任何东西——审批后群聊里那张产出卡
+// 永远停在「等待人工确认」，军团输出行 status 也不自动翻新，别的成员看不到「这份提议已被处理」。
+//
+// 血缘：proposal → branches.agent_run_id → agent_runs.source_conversation_id（与军团输出行
+// listOutputLinksForConversation 的既有 join 同一条链），全部走既有仓库方法（findMergeContext /
+// agentRuns.findById），零迁移零新列。找不到血缘（老数据/人工创建的提议没有 run）时诚实跳过并 warn，
+// 不瞎猜会话。
+//
+// 回流两件事（都 best-effort）：
+// ① 若提议源自行动卡条目（agent_runs.source_action_card_item_id）：publish 既有
+//    conversation.action_card.updated（照 services/action-cards.ts emitUpdated 的事件形状）——桌面军团
+//    面板已监听这个事件做后台重拉，输出行 status 即跨客户端翻新，零客户端改动。
+// ② 往来源会话 post 一条 system_event 消息，content = {event:'proposal_settled', proposal_id, outcome,
+//    title}——**新 event 取值而非新 kind，无迁移**（照 agent-runner.ts postDeliverableSystemMessage 的
+//    proposal_opened 同款写入口）；桌面聊天流渲染层认这个分支渲「落定行」。
+export type ProposalSettledOutcome = "approved" | "rejected" | "merged";
+
+export type ProposalSettledNotifier = (input: {
+  proposalId: string;
+  workItemId: string;
+  title: string;
+  outcome: ProposalSettledOutcome;
+  // 事件 actor（约减到 action_card.updated 事件 schema 认识的形状）；非 human/ai 的调用方在实现里回落为 ai。
+  actor: { actor_kind: string; actor_user_id?: string; label?: string };
+}) => Promise<void>;
+
+function settledPreviewText(outcome: ProposalSettledOutcome, title: string): string {
+  const label = outcome === "approved" ? "已通过" : outcome === "merged" ? "已合并" : "已打回";
+  // preview_text 上限 200（事件 schema），标题过长时截断。
+  return `${title.slice(0, 160)} ${label}`;
+}
+
+export function createDefaultProposalSettledNotifier(deps: {
+  bus: Pick<PushBus, "publish">;
+  // 跳过/失败的 warn 走结构化日志（照 proposal_revision_notify_failed 的既有口径）——不打进路由注入的
+  // eventLogger：那个 logger 被 task-plan 等既有测试按「warn 内容精确断言」使用，回流的常态跳过（无血缘的
+  // 人工提议/计划提议）会污染它们的断言口径。
+  logger: { warn: (message: string, context?: Record<string, unknown>) => void };
+}): ProposalSettledNotifier {
+  return async (input) => {
+    const db = getSharedDatabaseClient().db;
+    const context = await createProposalRepository(db).findMergeContext(input.proposalId);
+    if (!context?.agentRunId) {
+      // 无血缘（提议不来自 agent run）——诚实跳过，不猜会话。
+      deps.logger.warn("proposal_settled_no_run_lineage", { proposalId: input.proposalId });
+      return;
+    }
+    const stored = await createAgentRunRepository(db).findById(context.agentRunId);
+    const run = stored?.run;
+    if (!run?.sourceConversationId || !run.workspaceId) {
+      // run 没有来源会话（系统派发/直接对工单起跑）——没有可回灌的聊天现场，跳过。
+      deps.logger.warn("proposal_settled_no_source_conversation", {
+        proposalId: input.proposalId,
+        agentRunId: context.agentRunId
+      });
+      return;
+    }
+    const actionCards = createActionCardRepository(db);
+    const at = new Date();
+    // ② 落定行（system_event 新 content 变体，照 proposal_opened 同款写入口）。
+    await actionCards.postSystemMessage({
+      workspaceId: run.workspaceId,
+      conversationId: run.sourceConversationId,
+      senderType: "system",
+      content: {
+        event: "proposal_settled",
+        proposal_id: input.proposalId,
+        outcome: input.outcome,
+        title: input.title
+      },
+      at
+    });
+    // ① 源自行动卡条目 → publish 既有 conversation.action_card.updated（军团面板自动后台刷新）。
+    if (run.sourceActionCardItemId) {
+      const record = await actionCards.findItemForActor({
+        itemId: run.sourceActionCardItemId,
+        workspaceId: run.workspaceId
+      });
+      if (record) {
+        const topic = topics.conversation(record.item.conversationId).topic;
+        const actor =
+          input.actor.actor_kind === "human" && input.actor.actor_user_id
+            ? { actor_kind: "human" as const, actor_user_id: input.actor.actor_user_id, ...(input.actor.label ? { label: input.actor.label } : {}) }
+            : { actor_kind: "ai" as const, label: input.actor.label ?? "WorkHub AI" };
+        const event = parseOutputContract(
+          conversationActionCardUpdatedEventSchema,
+          makeWorkHubEvent({
+            type: eventTypes.conversationActionCardUpdated,
+            topic,
+            ts: at,
+            actor,
+            project_id: record.item.projectId,
+            preview_text: settledPreviewText(input.outcome, input.title),
+            data: {
+              conversation_id: record.item.conversationId,
+              action_card_id: record.item.actionCardId,
+              message_id: record.card.messageId,
+              // 事件是「该刷新了」的信号（照 action-cards.ts emitUpdated 的语义注释）：单条目视角不重判
+              // 整卡 superseded，条目状态照实带当前值。
+              status: "active",
+              appended: true,
+              items: [{ id: record.item.id, kind: record.item.kind, confidence: record.item.confidence, status: record.item.status }]
+            }
+          }),
+          "proposals.settled.action-card-event"
+        );
+        await deps.bus.publish(topic, eventTypes.conversationActionCardUpdated, event);
+      }
+    }
+  };
+}
 
 function actorFor(actor?: AuthActor) {
   if (!actor) {
@@ -547,6 +671,22 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     : deps.taskPlanDispatcher ?? { dispatch: dispatchWithDefaultTaskDispatcher };
   const bus = deps.bus ?? getDefaultPushBus();
   const eventLogger = deps.logger ?? console;
+  // R14 批 APPROVE-CHAT 档③：审批落定回流器（见 createDefaultProposalSettledNotifier 顶部注释）。
+  const notifySettled = deps.settledNotifier === false
+    ? undefined
+    : deps.settledNotifier ?? createDefaultProposalSettledNotifier({ bus, logger: getDefaultStructuredLogger() });
+  // best-effort 包装：血缘查询/写消息/发事件任何一步失败都只 warn（结构化日志，同 revision-notify 口径），
+  // 绝不影响 review/merge 已经成功的 2xx。
+  async function settleNotifyBestEffort(input: Parameters<ProposalSettledNotifier>[0]): Promise<void> {
+    if (!notifySettled) {
+      return;
+    }
+    try {
+      await notifySettled(input);
+    } catch (error) {
+      getDefaultStructuredLogger().warn("proposal_settled_notify_failed", { proposalId: input.proposalId, error });
+    }
+  }
   function resolveSkipPlanRuntime() {
     if (deps.runQueue === false || deps.kickoffWorkItemStatus === false) {
       return undefined;
@@ -779,6 +919,15 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
         getDefaultStructuredLogger().warn("proposal_revision_notify_failed", { proposalId: proposal.id, error });
       }
     }
+    // R14 批 APPROVE-CHAT 档③：审批落定回流——通过=approved（还没合并，终态是 merge 那一下）、
+    // 打回=rejected（服务层 review 已把 status 翻成 rejected 终态）。
+    await settleNotifyBestEffort({
+      proposalId: proposal.id,
+      workItemId: proposal.work_item_id,
+      title: proposal.title,
+      outcome: payload.decision === "approve" ? "approved" : "rejected",
+      actor: actorFor(c.var.actor)
+    });
     return c.json({ ok: true, data: parseOutputContract(proposalReviewResultSchema, resultBase, "proposal.review-result") });
   });
 
@@ -948,6 +1097,15 @@ export function createProposalRoutes(deps: ProposalRoutesDependencies = {}) {
     });
     // findings[#168/H12]：发布 proposal.merged（→ workitem topic）+ notification.created（→ user topic）。
     await publishProposalEvents(bus, mergeResult.events, eventLogger);
+    // R14 批 APPROVE-CHAT 档③：合入落定回流。已合并提议的重派发早路径（上面 proposal_already_merged 分支）
+    // 不发——第一次合并已经回流过，重派发不是新的落定。
+    await settleNotifyBestEffort({
+      proposalId: proposal.id,
+      workItemId: proposal.work_item_id,
+      title: proposal.title,
+      outcome: "merged",
+      actor: actorFor(c.var.actor)
+    });
     return c.json({ ok: true, data: mergeResult });
   });
 

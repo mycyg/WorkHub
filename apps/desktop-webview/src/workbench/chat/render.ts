@@ -487,6 +487,56 @@ function renderDeliverableCardHtml(
   return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h">${escapeHtml(header)}</div>${diffLine}${statusLine}${settledOverlay}${openButton}${timestamp}</div>`;
 }
 
+// R14 批 APPROVE-CHAT 档③（审批落定回流）：review/merge 落定后，服务端往来源会话 post 一条 system_event，
+// content = {event:'proposal_settled', proposal_id, outcome:'approved'|'merged'|'rejected', title}（见
+// apps/api/src/routes/proposals.ts 的 createDefaultProposalSettledNotifier）。这里渲成「落定行」——
+// 标题 + 落定态 + 「看提议」深链（打开右栏详情，此刻已是对应的已审阅/终态），让所有成员在聊天现场看到
+// 这份提议被处理了，产出卡不再永远停在「等待人工确认」。
+type ProposalSettledOutcome = "approved" | "merged" | "rejected";
+
+function proposalSettledOutcomeFromContent(content: Record<string, unknown>): ProposalSettledOutcome | undefined {
+  if (content["event"] !== "proposal_settled") {
+    return undefined;
+  }
+  const outcome = content["outcome"];
+  return outcome === "approved" || outcome === "merged" || outcome === "rejected" ? outcome : undefined;
+}
+
+function renderProposalSettledLineHtml(
+  message: Extract<ConversationMessageVM, { kind: "system_event" }>,
+  outcome: ProposalSettledOutcome,
+  ctx: ChatRenderContext
+): string {
+  const zh = ctx.locale === "zh-CN";
+  const content = message.content;
+  const rawTitle = content["title"];
+  const title = typeof rawTitle === "string" && rawTitle.trim() ? rawTitle : zh ? "一份变更申请" : "a change request";
+  const rawProposalId = content["proposal_id"];
+  const proposalId = typeof rawProposalId === "string" && rawProposalId.trim() ? rawProposalId : undefined;
+  const outcomeLabel =
+    outcome === "approved" ? (zh ? "已通过" : "Approved") : outcome === "merged" ? (zh ? "已合并" : "Merged") : zh ? "已打回" : "Sent back";
+  const color = outcome === "rejected" ? "var(--ds-danger)" : "var(--ds-success)";
+  const note =
+    outcome === "approved"
+      ? zh
+        ? "已确认通过，下一步合入交付物。"
+        : "Approved — merging the deliverable is next."
+      : outcome === "merged"
+        ? zh
+          ? "变更已合入正式版本，全程留档可追溯。"
+          : "The change is now in the official version, fully auditable."
+        : zh
+          ? "已打回，理由会带给下一轮 AI 继续修。"
+          : "Sent back — the reason feeds the next AI pass.";
+  const openButton = proposalId
+    ? `<div class="wh-wb-chat-actioncard-actions"><button type="button" class="wh-wb-chat-actioncard-open" data-wb-chat-open-proposal="${escapeHtml(proposalId)}">${zh ? "看提议" : "View proposal"}</button></div>`
+    : "";
+  const timestamp = `<div class="wh-wb-chat-actioncard-note">${formatMessageTime(message.created_at, ctx.locale)}</div>`;
+  return `<div class="wh-wb-chat-actioncard wh-wb-chat-actioncard--deliverable"><div class="wh-wb-chat-actioncard-h" style="color:${color}">${escapeHtml(
+    `${title} · ${outcomeLabel}`
+  )}</div><div class="wh-wb-chat-actioncard-note">${escapeHtml(note)}</div>${openButton}${timestamp}</div>`;
+}
+
 // R13 批 S2（Cuu 异步化与进度可视，run 终态 PM 汇报）：一个带 source_conversation_id 的 run 到达
 // failed/escalated 终态时，服务端（apps/api/src/services/run-conversation-report.ts，挂进
 // agent-runner.ts 的 runSettled 组合链）往会话里 post 一条 system_event，content 形如
@@ -742,6 +792,11 @@ export function renderMessageHtml(message: ConversationMessageVM, ctx: ChatRende
     const deliverableEvent = deliverableSystemEventKind(message.content);
     if (deliverableEvent) {
       return renderDeliverableCardHtml(message, deliverableEvent, ctx);
+    }
+    // R14 批 APPROVE-CHAT 档③：审批落定行（proposal_settled）——见 renderProposalSettledLineHtml 顶部注释。
+    const proposalSettled = proposalSettledOutcomeFromContent(message.content);
+    if (proposalSettled) {
+      return renderProposalSettledLineHtml(message, proposalSettled, ctx);
     }
     const settledReportOutcome = runSettledReportOutcome(message.content);
     if (settledReportOutcome) {

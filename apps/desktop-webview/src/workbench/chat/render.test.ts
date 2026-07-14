@@ -392,6 +392,31 @@ test("renderMessageHtml renders a proposal_auto_merged system_event with the ful
   assert.match(html, /看已采纳的提议/u);
 });
 
+// R14 批 APPROVE-CHAT 档③：服务端审批落定回流——system_event content.event === 'proposal_settled' 渲成
+// 落定行（标题 + 已通过/已合并/已打回 + 「看提议」深链），不是普通折叠灰线。
+test("renderMessageHtml renders a proposal_settled system_event as a settled line with the outcome and a real view-proposal button", () => {
+  const settledMessage = (outcome: string) =>
+    baseMessage({
+      kind: "system_event",
+      sender_type: "system",
+      sender_user_id: null,
+      content: { event: "proposal_settled", proposal_id: "proposal-7", outcome, title: "选题报告 · 第三节" }
+    });
+  const approved = renderMessageHtml(settledMessage("approved"), ctxWith([]));
+  assert.match(approved, /选题报告 · 第三节 · 已通过/u);
+  assert.match(approved, /<button[^>]*data-wb-chat-open-proposal="proposal-7"[^>]*>/u);
+  assert.doesNotMatch(approved, /wh-wb-chat-sysline"/u);
+  const merged = renderMessageHtml(settledMessage("merged"), ctxWith([]));
+  assert.match(merged, /已合并/u);
+  assert.match(merged, /正式版本/u);
+  const rejected = renderMessageHtml(settledMessage("rejected"), ctxWith([]));
+  assert.match(rejected, /已打回/u);
+  assert.match(rejected, /下一轮 AI/u);
+  // 未知 outcome 不假装认识——落回普通折叠系统行。
+  const unknown = renderMessageHtml(settledMessage("vanished"), ctxWith([]));
+  assert.match(unknown, /wh-wb-chat-sysline"/u);
+});
+
 test("renderMessageHtml overlays a local settled marker on a deliverable card when its proposal is in settledProposalIds", () => {
   const message = baseMessage({
     kind: "system_event",
