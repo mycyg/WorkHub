@@ -35,6 +35,7 @@ import {
   workHubEventSchema
 } from "./experience.js";
 import { idSchema, isoDateTimeSchema } from "./domain/common.js";
+import { aiFeedbackVerdictSchema, AI_FEEDBACK_NOTE_MAX_CHARS } from "./domain/ai-feedback.js";
 import {
   conversationListCursorVmSchema,
   conversationVmSchema,
@@ -1250,7 +1251,18 @@ export const proposalDetailVmSchema = z.object({
     author_label: z.string().min(1),
     body: z.string().min(1),
     created_at: isoDateTimeSchema
-  }))
+  })),
+  // R14 批 FEEDBACK：本人对这个提议的二值反馈 + 服务端算好的动作 href（客户端只管渲染点击，照
+  // review_actions「服务端算好 href/method」的既有风格）。additive optional——存量客户端不认识这个键
+  // 读旧响应零回归。mark_useful/mark_not_useful 用固定 request_json 覆盖「无备注」主路径；clear 只在
+  // 已有判定时出现（撤销反馈）。my_verdict/my_note 反映当前 actor 的现状（读聚合只读自己，见设计 §3）。
+  feedback: z.object({
+    my_verdict: aiFeedbackVerdictSchema.nullable(),
+    my_note: z.string().max(AI_FEEDBACK_NOTE_MAX_CHARS).nullable(),
+    mark_useful: actionSpecSchema,
+    mark_not_useful: actionSpecSchema,
+    clear: actionSpecSchema.optional()
+  }).optional()
 });
 export type ProposalDetailVM = z.infer<typeof proposalDetailVmSchema>;
 

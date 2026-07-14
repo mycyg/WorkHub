@@ -1,4 +1,6 @@
 import type {
+  AiFeedbackSubjectType,
+  AiFeedbackVerdict,
   AiMode,
   ConversationKind,
   ConversationMessageKind,
@@ -2003,6 +2005,49 @@ export const auditLogs = pgTable(
     index("audit_logs_action_idx").on(table.action),
     index("audit_logs_snapshot_id_idx").on(table.snapshotId),
     index("audit_logs_created_at_idx").on(table.createdAt)
+  ]
+);
+
+// R14 批 FEEDBACK：AI 产出的轻量二值反馈（有用/没用 + 可选一句话备注）。刻意贴近 audit_logs 的多态
+// 主体记录方式：subject_type + subject_id 无真实 FK（主体跨 conversation_messages / proposals /
+// action_card_items 三张表，单字段挂不到任一真实外键上），workspace_id 直接冗余列而非每次读时按三种
+// 主体各走一套 join——让夜间 curation 的按工作区查询是一条零 join 的裸索引扫描。
+// unique(subject_type, subject_id, user_id) 是幂等改判的地基（PUT=upsert，一人对一个主体至多一条）。
+// 孤儿行不需要级联清理：三张主体表都只软删或不删（见 04-feedback-design.md §2）。
+export const aiFeedback = pgTable(
+  "ai_feedback",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    subjectType: varchar("subject_type", { length: 24 }).$type<AiFeedbackSubjectType>().notNull(),
+    subjectId: uuid("subject_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    verdict: varchar("verdict", { length: 16 }).$type<AiFeedbackVerdict>().notNull(),
+    // 可选一句话备注，硬顶 200 字符；服务层 looksLikeInjection() 拦截注入措辞（备注会进 curation prompt）。
+    note: varchar("note", { length: 200 }),
+    ...timestamps()
+  },
+  (table): PgTableExtraConfigValue[] => [
+    check(
+      "ai_feedback_subject_type_ck",
+      sql`${table.subjectType} in ('conversation_message', 'proposal', 'action_card_item')`
+    ),
+    check("ai_feedback_verdict_ck", sql`${table.verdict} in ('useful', 'not_useful')`),
+    // 幂等改判的唯一约束（PUT upsert 命中它 DO UPDATE）。
+    uniqueIndex("ai_feedback_subject_user_uq").on(table.subjectType, table.subjectId, table.userId),
+    // 夜间 curation 的主查询路径（按工作区 + 主体类型 + 判定 + 新鲜度扫描）。
+    index("ai_feedback_curation_idx").on(
+      table.workspaceId,
+      table.subjectType,
+      table.verdict,
+      table.updatedAt
+    ),
+    // 单主体读聚合（listForSubjects / getForSubject）。
+    index("ai_feedback_subject_idx").on(table.subjectType, table.subjectId)
   ]
 );
 

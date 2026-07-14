@@ -205,6 +205,11 @@ function repository(overrides: Partial<ConversationRepository> = {}): Conversati
     async listReplyPreviews() {
       return new Map();
     },
+    // R14 批 FEEDBACK：新增 findMessageForFeedback（反馈目标消息的只读定位），这个套件不测那条路径，
+    // 同其它未测方法一样给个拒绝桩（要测反馈资格判定的用例在 ai-feedback.test.ts 自带假仓库）。
+    async findMessageForFeedback() {
+      throw new Error("findMessageForFeedback not expected");
+    },
     ...overrides
   };
 }

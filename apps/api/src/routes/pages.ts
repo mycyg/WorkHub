@@ -25,12 +25,14 @@ import {
   type AuthEnv
 } from "../middleware/auth.js";
 import {
+  createAiFeedbackRepository,
   createObjectiveRepository,
   createProposalRepository,
   createTaskPlanRepository,
   createTeamSkillRepository,
   getSharedDatabaseClient,
   listCostByAssigneeForWorkspace,
+  type AiFeedbackRepository,
   type ObjectiveRepository,
   type ProposalRepository,
   type TeamSkillRepository
@@ -111,6 +113,8 @@ export type PageRoutesDependencies = {
   escalations?: EscalationService;
   memoryConflicts?: Pick<MemoryConflictService, "listAttentionItems">;
   proposals?: ProposalService;
+  // R14 批 FEEDBACK：提议详情页读聚合——本人对这个提议的现状（只读自己，见设计 §4.2）。
+  aiFeedback?: Pick<AiFeedbackRepository, "getForSubject">;
   queue?: AgentRunQueue;
   policyStore?: BudgetPolicyStore;
   ledgerStore?: CostLedgerStore;
@@ -297,6 +301,7 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
   const escalations = deps.escalations ?? createEscalationService();
   const memoryConflicts = deps.memoryConflicts ?? createMemoryConflictService();
   const proposals = deps.proposals ?? getDefaultProposalService();
+  const aiFeedback = deps.aiFeedback ?? createAiFeedbackRepository(getSharedDatabaseClient().db);
   const queue = deps.queue ?? getDefaultAgentRunQueue();
   const policyStore = deps.policyStore ?? getDefaultBudgetPolicyStore();
   const ledgerStore = deps.ledgerStore ?? getDefaultCostLedgerStore();
@@ -740,7 +745,12 @@ export function createPageRoutes(deps: PageRoutesDependencies = {}) {
     if (!await canReadWorkItem(workItems, proposal.work_item_id, c.var.actor)) {
       throw new HTTPException(403, { message: "你没有权限查看这个变更申请。" });
     }
-    return c.json(pageEnvelope(buildProposalDetailPage(proposal, locale), locale));
+    // R14 批 FEEDBACK：可见性 403 短路之后再查本人反馈——绝不给无权限用户泄露「这条提议有没有被反馈过」。
+    const actorUserId = c.var.actor.userId;
+    const myFeedback = actorUserId
+      ? await aiFeedback.getForSubject({ subjectType: "proposal", subjectId: proposal.id, userId: actorUserId })
+      : null;
+    return c.json(pageEnvelope(buildProposalDetailPage(proposal, locale, myFeedback), locale));
   });
 
   routes.get("/drive", createCurrentUserMiddleware(authSource), async (c) => {
